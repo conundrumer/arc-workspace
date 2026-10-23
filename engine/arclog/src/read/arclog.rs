@@ -498,13 +498,25 @@ impl Reader {
             record.token(*place);
             rest = &rest[1..];
         }
-        let marks_at = rest.iter().position(|e| head_of(e) == Some(sp::ONE)).unwrap_or(rest.len());
+        let marks_at = rest.iter().position(|e| matches!(head_of(e), Some(sp::ONE | sp::SET))).unwrap_or(rest.len());
         let (conjuncts, marks) = rest.split_at(marks_at);
         let body = self.conjuncts(conjuncts, &path.child(0), scope, Record::new(None), None);
         let mut ones = Vec::new();
+        let mut set = false;
         for expr in marks {
+            if head_of(expr) == Some(sp::SET) {
+                let mark = self.list(expr, "a `SET` mark")?;
+                if set || mark.items.len() > 1 {
+                    return self.refuse("a clause holds at most one `SET` mark, `(SET)`, which holds no label", mark.place);
+                }
+                record.token(mark.open);
+                record.token(mark.items[0].place());
+                record.token(mark.close);
+                set = true;
+                continue;
+            }
             if head_of(expr) != Some(sp::ONE) {
-                return self.refuse("a clause's `ONE` marks stand after its body", expr.place());
+                return self.refuse("a clause's `ONE` and `SET` marks stand after its body", expr.place());
             }
             let mark = self.list(expr, "a `ONE` mark")?;
             record.token(mark.open);
@@ -529,6 +541,7 @@ impl Reader {
             proposers: proposers.into(),
             body,
             ones: ones.into(),
+            set,
             columns,
         }))
     }

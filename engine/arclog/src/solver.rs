@@ -562,7 +562,7 @@ fn line_of(form: &Form) -> Option<&Clause> {
 /// A reading of a `DET_OR_RULE` or `RULE_OR_DET` line: the stored
 /// parameter, or the derivation, by the proposer at an index on a line
 /// with several.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Reading {
     Stored,
     Derived(Option<usize>),
@@ -587,7 +587,7 @@ fn readings(line: &Clause) -> Vec<(AltsName, Reading)> {
 
 /// A line's clause in one reading: the stored reading a `DET`, and a derived
 /// reading a `RULE`. Each reading keeps the line's `ONE` marks and its
-/// columns. The line's body is one reading's, as
+/// columns; the stored reading alone keeps its `SET` mark. The line's body is one reading's, as
 /// `docs/arclog/arclog.md#the-alts-form` gives, and the other reading holds
 /// no body. The derived reading by a proposer other than the line's first
 /// holds the line's first proposer, which names the relation's columns, then
@@ -605,7 +605,7 @@ fn read_as(line: &Clause, reading: Reading) -> Clause {
         }
     };
     let body = if owns_body { line.body.clone() } else { Node::new(Body { conjuncts: Arc::from([]) }) };
-    Clause { keyword, proposers, body, ..line.clone() }
+    Clause { keyword, proposers, body, set: line.set && reading == Reading::Stored, ..line.clone() }
 }
 
 /// The relation, instance or rigid `DET` that a form derives. A case keeps,

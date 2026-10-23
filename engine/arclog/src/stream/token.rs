@@ -39,6 +39,8 @@ pub enum Control {
     Det,
     Init,
     One,
+    /// `SET`, the mark of a `DET` whose one value is its proposers' whole set of rows.
+    Set,
     Choose,
     RigidDet,
     Or,
@@ -79,6 +81,7 @@ impl Control {
             Control::Det => "DET",
             Control::Init => "INIT",
             Control::One => "ONE",
+            Control::Set => "SET",
             Control::Choose => "CHOOSE",
             Control::RigidDet => "RIGID_DET",
             Control::Or => "OR",
@@ -96,11 +99,12 @@ impl Control {
     }
 
     /// Every control token, in the order of the vocabulary's slots.
-    pub const ALL: [Control; 22] = [
+    pub const ALL: [Control; 23] = [
         Control::Rule,
         Control::Det,
         Control::Init,
         Control::One,
+        Control::Set,
         Control::Choose,
         Control::RigidDet,
         Control::Or,

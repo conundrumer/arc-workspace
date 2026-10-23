@@ -108,6 +108,7 @@ pub(super) fn clause<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, index: usize
     let at = sink.open(at, Tag::Form, index, Open::Clause(clause));
     let body = clause.body.value();
     sink.child(NodeRef::Clause(clause), NodeRef::Body(body), |sink| self::body(sink, at, Tag::Body, 0, body));
+    sink.len(usize::from(clause.set));
     sink.len(clause.ones.len());
     for (index, one) in clause.ones.iter().enumerate() {
         let mark = sink.open(at, Tag::One, index, Open::One(one));

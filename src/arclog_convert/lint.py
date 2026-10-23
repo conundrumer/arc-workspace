@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from arclog_convert import libmap, out
-from arclog_convert.convert import ALGEBRA_MODES, DET_COLS, PROPOSER_COLS, SIGNATURE, Lib, pascal
+from arclog_convert.convert import ALGEBRA_MODES, DET_COLS, PROPOSER_COLS, SIGNATURE, Lib, pascal, takes_set_mark
 
 GEN = out() / "gen"
 FACTS = {"input": ["P", "Col"], "ex_input": ["E", "P", "Col"], "ex_output": ["E", "P", "Col"]}
@@ -29,6 +29,7 @@ OPS = {"=", "!=", "<", "<=", ">", ">="}
 FORMS = {"OR", "IF", "ALL", "NOT"}
 SCENE_BUILTINS = {"ex": ["E"], "color": ["C"], "number": ["N"], "ident": ["Id"]}
 CLAIMS = {"INPUT", "OUTPUT"}
+MARKS = {"ONE", "SET"}   # the marks a clause ends in
 
 
 # ---------------------------------------------------------------- reader
@@ -198,6 +199,7 @@ class Linter:
         self.rigid_keyed: dict[str, bool] = {}
         self.stored: set[str] = set()   # the params: a proposer's DET, a DET_OR_RULE line, a RIGID_DET's parts
         self.params: set[str] = set()   # the param names of the arcdata file
+        self.set_marked: dict[str, int] = {}   # each relation whose clause ends in `(SET)`, and its line
         self.decl_cols: dict[str, list[set[str]]] = defaultdict(list)   # each declaration's own columns, in order
         self.placed: list[Placed] = []
         self.alt_chain: list[str] = []   # the ALT blocks open at the current form, outermost first
@@ -312,7 +314,7 @@ class Linter:
             pass
         elif h in ("RULE", "DET"):
             self.clause(f, h, alt)
-        elif h in ("RULE_OR_DET", "DET_OR_RULE") and any(isinstance(x, L) and x.head != "ONE"
+        elif h in ("RULE_OR_DET", "DET_OR_RULE") and any(isinstance(x, L) and x.head not in MARKS
                                                          for x in f.items[or_start(f):]):
             # the name, a gloss where the solver states one, a DET_OR_RULE's
             # proposers, then the body of the side the program derives
@@ -341,12 +343,16 @@ class Linter:
                 self.block_or_line(f.items[1].text, f.line)
             props = f.items[or_start(f):]
             marks = []
-            while props and isinstance(props[-1], L) and props[-1].head == "ONE":
+            while props and isinstance(props[-1], L) and props[-1].head in MARKS:
                 marks.insert(0, props.pop())
+            sets = [m for m in marks if m.head == "SET"]
+            marks = [m for m in marks if m.head == "ONE"]
             if marks:
                 self.chosen.add(f.items[1].text)
             if marks and h == "RULE_OR_DET":
                 self.err(f.line, "det-or-rule", f"{f.items[1].text}: a RULE_OR_DET line takes no ONE mark")
+            if sets and h == "RULE_OR_DET":
+                self.err(f.line, "det-or-rule", f"{f.items[1].text}: a RULE_OR_DET line takes no SET mark")
             if len(f.items) < 2 or not isinstance(f.items[1], Sym):
                 self.err(f.line, "det-or-rule", f"({h} &name [\"gloss\"] <proposer> ...)")
             elif h == "RULE_OR_DET" and props:
@@ -369,6 +375,8 @@ class Linter:
                     if not (isinstance(x, Sym) and known and x.text in known[0]):
                         self.err(m.line, "one", f"(ONE ...): {flat(x)} is no column of {f.items[1].text}")
             self.stored.add(f.items[1].text)
+            if sets and h == "DET_OR_RULE":
+                self.set_mark(f, f.items[1].text, [x.text for x in props if isinstance(x, Sym)], sets)
             # the relation of a line with no body has its first proposer's columns
             self.declare(f.items[1].text, set(known[0]) if known else set(), "DET", f.line)
         elif h == "INIT":
@@ -406,6 +414,19 @@ class Linter:
         self.block.setdefault(name, line)
         self.or_lines.add((id(self.block), name))
 
+    def set_mark(self, f: L, name: str, props: list[str], marks: list[L]) -> None:
+        """Refuses the `(SET)` marks of the clause `f` of `name`, by `props`,
+        unless it is one mark with no label, after proposers of one column
+        each that are no type-domain proposer. Notes the relation, whose
+        `param` form must hold several rows."""
+        self.set_marked[name] = f.line
+        if len(marks) > 1 or any(len(m.items) > 1 for m in marks):
+            self.err(f.line, "set", f"{name}: a clause takes one (SET) mark, which holds no label")
+        for p in props:
+            if not takes_set_mark(p):
+                self.err(f.line, "set", f"{name}: (SET) follows proposers of one column each that are no type-domain "
+                         f"proposer, and {p} is not one")
+
     def declare(self, name: str, cols: set[str], side: str, line: int) -> None:
         if not name.startswith("&"):
             self.err(line, "name", f"declared name {name} lacks &")
@@ -434,9 +455,15 @@ class Linter:
         if or_line:
             self.or_lines.add((id(self.block), name))
         n = len(body)
-        while n and isinstance(body[n - 1], L) and body[n - 1].head == "ONE":
+        while n and isinstance(body[n - 1], L) and body[n - 1].head in MARKS:
             n -= 1
+        sets = [m for m in body[n:] if m.head == "SET"]
+        body = [*body[:n], *(m for m in body[n:] if m.head == "ONE")]
+        if sets and not (side == "DET" and n == 1 and isinstance(body[0], Sym)):
+            self.err(f.line, "set", f"{name}: (SET) stands after the proposer of a DET with no body")
         if side == "DET" and n == 1 and isinstance(body[0], Sym):
+            if sets:
+                self.set_mark(f, name, [body[0].text], sets)
             if not re.fullmatch(r"[A-Z][A-Za-z0-9]*", body[0].text):
                 self.err(f.line, "proposer", f"{body[0].text} is no proposer name")
             elif body[0].text not in DET_COLS:
@@ -2395,6 +2422,9 @@ def arcdata_errs(path: Path, imp: Linter | None = None) -> list[tuple[int, str, 
             continue
         if not rows:
             err(f.line, "param", f"{name}: no rows")
+        if imp is not None and name in imp.set_marked and len(rows) < 2:
+            err(f.line, "set", f"{name}: the clause at line {imp.set_marked[name]} ends in (SET), and a param of "
+                f"{len(rows)} row gives it one value already")
         check_rows(f, name, types, rows)
 
     # exclude

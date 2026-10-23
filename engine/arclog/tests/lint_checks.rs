@@ -161,6 +161,21 @@ fn a_one_mark_on_a_label_that_is_no_column_is_refused() {
     assert_eq!(first_refused(MARK_ON_NO_COLUMN, CheckId::Picks), Some((path(&[]), vec![path(&[])])));
 }
 
+#[test]
+fn a_set_mark_after_a_one_column_proposer_is_kept() {
+    assert_eq!(refused_lines("(DET &c UnchangedColor (SET))", CheckId::Picks), Vec::<u32>::new());
+}
+
+#[test]
+fn a_set_mark_after_a_type_domain_proposer_is_refused() {
+    assert_eq!(refused_lines("(DET &c ColorDomain (SET))", CheckId::Picks), vec![1]);
+}
+
+#[test]
+fn a_set_mark_after_a_two_column_proposer_is_refused() {
+    assert_eq!(refused_lines("(DET &p ChangedPairs (SET))", CheckId::Picks), vec![1]);
+}
+
 const ONE_IN_A_BODY: &str = "(RULE &w (input *P (:Col *C))\n  (OR ((ONE P))\n      ((input P (:Col C)))))";
 
 #[test]

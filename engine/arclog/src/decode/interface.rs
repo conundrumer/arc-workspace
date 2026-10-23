@@ -394,6 +394,7 @@ pub(super) fn open_clause(form: &Form, open: &NodePath, registry: &Registry) -> 
                 proposers: Arc::from([]),
                 body: body.clone(),
                 ones: Arc::from([]),
+                set: false,
                 columns: Arc::from([]),
             };
             Some(OpenClause { clause, kept: conjuncts, open_at })

@@ -107,7 +107,7 @@ pub enum OutputOwner {
 }
 
 /// A clause form: its keyword, the relation's name, its proposers, its body
-/// and its `ONE` marks (`docs/arclog/arclog.md#program`). A `DET` that names
+/// and its `SET` and `ONE` marks (`docs/arclog/arclog.md#program`). A `DET` that names
 /// a proposer has that name in `proposers`, and a `DET_OR_RULE` or
 /// `RULE_OR_DET` line holds its proposers, then the body of the reading that
 /// has clauses of its own.
@@ -119,6 +119,10 @@ pub struct Clause {
     pub proposers: Arc<[crate::registry::LibName]>,
     pub body: Node<Body>,
     pub ones: Arc<[OneMark]>,
+    /// Whether the clause ends in the `(SET)` mark: a `DET` by proposers of
+    /// one column each, whose one value is the proposers' whole set of
+    /// rows (`docs/arclog/arclog.md#open-values`).
+    pub set: bool,
     /// The relation's columns, in the order the clause gives them
     /// (`docs/arclog/arclog.md#sites`), which the resolved content replaces
     /// by the canonical positions of their labels. A `DET` with a proposer

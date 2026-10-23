@@ -108,8 +108,9 @@ enum ClauseStage {
     Proposers,
     /// The body stands open above the clause.
     Body,
-    /// The body is complete: the `ONE` marks, then the clause's `END`.
-    Marks { body: Node<Body>, ones: Vec<OneMark> },
+    /// The body is complete: the `SET` mark, then the `ONE` marks, then the
+    /// clause's `END`.
+    Marks { body: Node<Body>, ones: Vec<OneMark>, set: bool },
 }
 
 /// What closes a body, by the node that holds it.
@@ -504,6 +505,11 @@ impl State {
                 self.push_body(Close::Clause, false);
                 Ok(Offer::Again)
             }
+            (ClauseStage::Marks { ones, set: false, .. }, Token::Control(Control::Set)) if ones.is_empty() => {
+                let ClauseStage::Marks { set, .. } = &mut clause.stage else { unreachable!("a clause at its marks") };
+                *set = true;
+                Ok(Offer::Taken)
+            }
             (ClauseStage::Marks { .. }, Token::Control(Control::One)) => {
                 self.stack.push(Frame::One(Vec::new()));
                 Ok(Offer::Taken)
@@ -548,7 +554,7 @@ impl State {
         let closes = match (body.close, token) {
             (Close::Not, _) => false,
             (_, Token::Control(Control::End)) => true,
-            (Close::Clause, Token::Control(Control::One)) | (Close::Branch, Token::Control(Control::Also)) => true,
+            (Close::Clause, Token::Control(Control::One | Control::Set)) | (Close::Branch, Token::Control(Control::Also)) => true,
             _ => false,
         };
         match closes && !body.negate {
@@ -819,7 +825,7 @@ impl State {
         let frame = self.stack.pop().expect("an open frame");
         let built = match frame {
             Frame::Clause(clause) => {
-                let ClauseStage::Marks { body, ones } = clause.stage else { unreachable!("a clause closes at its marks' `END`") };
+                let ClauseStage::Marks { body, ones, set } = clause.stage else { unreachable!("a clause closes at its marks' `END`") };
                 let slot = self.next_slot();
                 let columns = slot_columns(made_labels(body.value()), 0);
                 let names: Arc<[ColumnName]> = match (columns.is_empty(), clause.proposers.first()) {
@@ -827,7 +833,7 @@ impl State {
                     _ => columns.iter().map(|column| column.name.clone()).collect(),
                 };
                 let derives = ProgramRelation::Declared(RelationName(DeclaredName::Slot(slot)));
-                let value = Clause { keyword: clause.keyword, derives: derives.clone(), gloss: None, proposers: clause.proposers.into(), body, ones: ones.into(), columns };
+                let value = Clause { keyword: clause.keyword, derives: derives.clone(), gloss: None, proposers: clause.proposers.into(), body, ones: ones.into(), set, columns };
                 self.declare(derives, names, true);
                 forced.push(Token::Relation(slot));
                 Built::Form(Form::Clause(Node::new(value)))
@@ -870,13 +876,15 @@ impl State {
         let ends = closer == Some(&Token::Control(Control::End));
         match (self.stack.last_mut().expect("a frame below"), built) {
             (Frame::Clause(clause), Built::Body(body)) => {
-                clause.stage = ClauseStage::Marks { body, ones: Vec::new() };
-                match ends {
-                    true => {
+                let set = closer == Some(&Token::Control(Control::Set));
+                clause.stage = ClauseStage::Marks { body, ones: Vec::new(), set };
+                match (ends, set) {
+                    (true, _) => {
                         let built = self.close(context, forced)?.expect("a clause gives its form");
                         self.deliver(context, built, closer, forced)?;
                     }
-                    false => self.stack.push(Frame::One(Vec::new())),
+                    (false, true) => {}
+                    (false, false) => self.stack.push(Frame::One(Vec::new())),
                 }
             }
             (Frame::Body(body), Built::Conjunct(conjunct)) => {
@@ -1107,13 +1115,13 @@ impl State {
         let slot = DeclaredName::Slot(self.next_slot());
         let built = match frame {
             Frame::Clause(clause) => {
-                let (body, ones) = match &clause.stage {
-                    ClauseStage::Marks { body, ones } => (body.clone(), ones.clone()),
-                    _ => (open_body(child), Vec::new()),
+                let (body, ones, set) = match &clause.stage {
+                    ClauseStage::Marks { body, ones, set } => (body.clone(), ones.clone(), *set),
+                    _ => (open_body(child), Vec::new(), false),
                 };
                 let derives = ProgramRelation::Declared(RelationName(slot));
                 let proposers = clause.proposers.iter().cloned().collect();
-                let value = Clause { keyword: clause.keyword, derives, gloss: None, proposers, body, ones: ones.into(), columns: Arc::from([]) };
+                let value = Clause { keyword: clause.keyword, derives, gloss: None, proposers, body, ones: ones.into(), set, columns: Arc::from([]) };
                 Built::Form(Form::Clause(Node::new(value)))
             }
             Frame::One(_) | Frame::Constraint(_) => return None,

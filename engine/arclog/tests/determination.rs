@@ -6,6 +6,7 @@
 
 use arclog::check::{check_program, CheckCache, SolverClauses};
 use arclog::eval::instance::Constructions;
+use arclog::eval::determinations::Domain;
 use arclog::eval::{relation_of, Cancellation, Caps, Evaluation, Limits, Outcome, ParameterValues, ReachedBound};
 use arclog::judge::candidates::World;
 use arclog::judge::determination::{determine, CaseOutcome, DeterminedCase, Determination, Parameter};
@@ -17,10 +18,9 @@ use arclog::session::{SessionBound, TaskSession};
 use arclog::task::{Grid, JudgedPair, JudgedTask, Task, TrainPair};
 use arclog::terms::Color;
 
-/// Whether the domain of the `DET` of `&<name>` in `solver`, at
-/// determined values, on a task of one train pair of one row of the colors
-/// `colors`, are a fault.
-fn domain_fault(solver: &str, name: &str, colors: &[u8]) -> bool {
+/// The domain of the `DET` of `&<name>` in `solver`, at determined values,
+/// on a task of one train pair of one row of the colors `colors`.
+fn domain_of(solver: &str, name: &str, colors: &[u8]) -> Outcome<Domain> {
     let solver = read_solver("determination", solver, "", &|_| None).unwrap_or_else(|error| panic!("{error:?}")).value;
     let registry = Registry::get();
     let case = solver.concept_case();
@@ -35,8 +35,23 @@ fn domain_fault(solver: &str, name: &str, colors: &[u8]) -> bool {
     let constructions = Constructions::new(Vec::new(), registry).expect("an empty table");
     let evaluation = Evaluation { program: &program, concept: None, task: &task, parameters: &parameters, session: &session, registry, constructions: &constructions, limits: &limits };
     let relation = relation_of(&program, &ProgramRelation::Declared(RelationName(DeclaredName::Written(format!("&{name}").into())))).expect("the relation");
-    let outcome: Outcome<_> = evaluation.domain(relation.node);
-    outcome.is_err()
+    evaluation.domain(relation.node)
+}
+
+/// Whether the domain of the `DET` of `&<name>` in `solver`, at
+/// determined values, on a task of one train pair of one row of the colors
+/// `colors`, are a fault.
+fn domain_fault(solver: &str, name: &str, colors: &[u8]) -> bool {
+    domain_of(solver, name, colors).is_err()
+}
+
+/// The number of values in the domain of the `DET` of `&<name>` in
+/// `solver`, on a task of one train pair of one row of the colors `colors`.
+fn domain_size(solver: &str, name: &str, colors: &[u8]) -> usize {
+    match domain_of(solver, name, colors).expect("a domain") {
+        Domain::Rows(values) => values.len(),
+        other => panic!("a domain of rows, not {other:?}"),
+    }
 }
 
 const READS_A_PICK: &str = "(RULE &pick (input *P *Col)\n  (ONE))\n(DET &x\n  (&pick *P *Col))\n";
@@ -101,4 +116,21 @@ fn a_product_past_the_assignment_cap_stops_and_names_the_parameters() {
     let [(_, CaseOutcome::Stopped { stop, parameters }, _)] = &found.cases[..] else { panic!("one stopped case: {found:?}") };
     assert_eq!(stop.bound, ReachedBound::Assignments { cap: 3 });
     assert_eq!(parameters, &[declared("a"), declared("b")]);
+}
+
+const BOTH_COLORS_UNCHANGED: &[u8] = &[1, 2];
+
+#[test]
+fn a_det_by_a_one_column_proposer_has_one_value_per_row() {
+    assert_eq!(domain_size("(DET &c UnchangedColor)\n", "c", BOTH_COLORS_UNCHANGED), 2, "two rows, two values");
+}
+
+#[test]
+fn a_set_mark_gives_a_det_by_a_one_column_proposer_one_value() {
+    assert_eq!(domain_size("(DET &c UnchangedColor (SET))\n", "c", BOTH_COLORS_UNCHANGED), 1, "the whole set of rows is the one value");
+}
+
+#[test]
+fn a_det_by_a_two_column_proposer_has_one_value() {
+    assert_eq!(domain_size("(DET &p ChangedPairs)\n", "p", &[1, 2]), 1, "the proposer's whole set of rows");
 }

@@ -162,6 +162,11 @@ fn a_det_by_a_proposer_and_a_one_mark_decode_to_their_content() {
 }
 
 #[test]
+fn a_det_by_a_proposer_with_set_and_one_marks_decodes_to_its_content() {
+    same_content("(DET &arr_dim ScaleRatio (SET))\n(DET &other UnchangedColor (SET) (ONE))\n");
+}
+
+#[test]
 fn an_or_after_a_conjunct_of_a_branch_decodes_to_its_content() {
     same_content(&format!("{BG}{FG}(RULE &nested (input *P *Col) (OR ((&bg (:C Col)) (OR ((&fg P)) ((&fg (:Col Col))))) ((&fg P))))\n"));
 }

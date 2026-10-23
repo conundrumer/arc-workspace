@@ -6,7 +6,9 @@ use super::types::result;
 use super::{each_node, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{NodePath, NodeRef};
-use crate::program::{Atom, Body, Choose, ChoosePart, Clause, ColumnName, Conjunct, Form, ConstraintOp, LabelId, LabelUse, Operand, RelationRef, Site, SiteArg};
+use crate::registry::{LibName, Registry};
+use crate::resolver::registry_columns::{is_domain, proposer_columns};
+use crate::program::{Atom, Body, Choose, ChoosePart, Clause, ClauseKeyword, ColumnName, Conjunct, Form, ConstraintOp, LabelId, LabelUse, Operand, RelationRef, Site, SiteArg};
 
 /// [`CheckId::Picks`].
 pub struct PicksCheck;
@@ -20,7 +22,9 @@ impl Check for PicksCheck {
         Some(at.base(self.id()))
     }
 
-    /// Refuses an atom that reads `ONE`, a mark that stands only after a
+    /// Refuses a `SET` mark on a clause that is a `RULE`, has a body, or
+    /// names a proposer other than one of one column that the registry does
+    /// not mark `domain`. Refuses an atom that reads `ONE`, a mark that stands only after a
     /// clause's body. It refuses, at the clause, a `ONE` mark that names a
     /// label which is no column of the clause, as a mark with a key on a clause whose columns
     /// a proposer gives. At a `CHOOSE` form, it refuses:
@@ -32,7 +36,7 @@ impl Check for PicksCheck {
     ///   stands in two rows, which `ONE` marks state, as `states_one`
     ///   gives.
     fn check(&self, input: &CheckInput<'_>) -> CheckResult {
-        refusals(input.form, true)
+        refusals(input.form, true, input.scope.registry)
     }
 
     /// The check over the form once it ends: a mark follows the body of its
@@ -40,16 +44,19 @@ impl Check for PicksCheck {
     /// (`docs/engine/synthesis.md#token-mask`). An atom that reads `ONE` is
     /// refused once it is written.
     fn check_prefix(&self, prefix: &Prefix<'_>) -> PrefixResult {
-        super::prefix::settled_result(prefix, refusals(prefix.partial, prefix.open.is_none()))
+        super::prefix::settled_result(prefix, refusals(prefix.partial, prefix.open.is_none(), prefix.scope.registry))
     }
 }
 
 /// The refusals of [`PicksCheck`] on `form`, those of its `ONE` marks and
 /// its `CHOOSE` forms only where `ended`, where the form is written whole.
-fn refusals(form: &Form, ended: bool) -> CheckResult {
+fn refusals(form: &Form, ended: bool, registry: &Registry) -> CheckResult {
     let mut refused: Vec<(NodePath, &str)> = Vec::new();
     each_node(NodeRef::from(form), &NodePath::default(), &mut |node, at| match (node, node.atom()) {
         (NodeRef::Clause(clause), _) if ended && !marks_name_columns(clause) => refused.push((at.clone(), "a `ONE` mark names only columns of the clause")),
+        (NodeRef::Clause(clause), _) if ended && !set_mark_fits(clause, registry) => {
+            refused.push((at.clone(), "a `SET` mark stands only after proposers of one column each that the registry does not mark `domain`, in a clause with no body"))
+        }
         (NodeRef::Choose(choose), _) if ended => choose_refusals(choose, at, &mut refused),
         (_, Some(Atom { relation: RelationRef::Lib(name), .. })) if *name.0 == *crate::read::spelling::ONE => {
             refused.push((at.clone(), "`ONE` stands at a clause's top level, after its body"));
@@ -61,6 +68,14 @@ fn refusals(form: &Form, ended: bool) -> CheckResult {
     }
     let order = CanonicalOrder::of(form, &mut SearchBudget::new());
     result(refused.into_iter().map(|(at, message)| Refusal { message: message.into(), at: order.canonical_path(&at) }).collect())
+}
+
+/// Whether the `SET` mark of `clause`, if it has one, stands after a body of
+/// no conjunct and proposers that have one column each and that the registry
+/// does not mark `domain`.
+fn set_mark_fits(clause: &Clause, registry: &Registry) -> bool {
+    let one_column = |name: &LibName| !is_domain(registry, name) && proposer_columns(registry, name).is_some_and(|columns| columns.len() == 1);
+    !clause.set || (clause.keyword != ClauseKeyword::Rule && clause.body.value().conjuncts.is_empty() && !clause.proposers.is_empty() && clause.proposers.iter().all(one_column))
 }
 
 /// Whether each label of each `ONE` mark of `clause` is a column of the

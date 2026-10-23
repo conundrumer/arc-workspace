@@ -171,6 +171,9 @@ impl Writer<'_> {
             self.push(Token::Proposer(proposer.clone()), Emitter::Model, &path.child(0))?;
         }
         self.body(clause.body.value(), &path.child(0))?;
+        if clause.set {
+            self.model(Control::Set, path)?;
+        }
         for mark in clause.ones.iter() {
             self.model(Control::One, path)?;
             for label in mark.key.iter() {

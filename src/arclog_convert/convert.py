@@ -151,6 +151,7 @@ def registry_columns(kind: str, between: str) -> dict[str, list[Col]]:
 
 
 PROPOSER_COLS = proposer_columns()   # each proposer's columns
+DOMAIN_PROPOSERS = registry_columns("proposer", r"native domain")   # the type-domain proposers, which give one value per row
 DERIVATION_COLS = registry_columns("derivation", r"\(fields(?: \(\w+ \w+\))*\)")   # each fixed derivation's columns
 # the columns of each name a one-name DET can name: a proposer or a fixed derivation
 DET_COLS = PROPOSER_COLS | DERIVATION_COLS
@@ -162,6 +163,12 @@ type ColMismatch = dict[str, tuple[list[Col], list[Col]]]
 def derive_proposer(rest: str) -> str:
     """The proposer an `@derive` line gives, from the text after its directive."""
     return rest.split(":")[0].strip()
+
+
+def takes_set_mark(proposer: str) -> bool:
+    """Whether a `(SET)` mark may follow `proposer`: it has one column and is
+    no type-domain proposer."""
+    return len(PROPOSER_COLS.get(proposer, ())) == 1 and proposer not in DOMAIN_PROPOSERS
 
 
 def domain_proposer(types: list[str]) -> str:
@@ -3498,7 +3505,11 @@ class Solver:
                 if not us and prop:
                     # a part whose value a proposer covers: its table is the proposer's
                     part = c.rel_name(("Determine",), r.name)
-                    forms.append(Form([f"(DET {part} {prop})"], part, set(), line=r.span.first if r.span else 0))
+                    stored = decls.get("_rigid_" + r.name)   # the declaration of the part's `param` record
+                    mark = "" if stored is None else self.set_mark(
+                        c.rel_name(("Params",), r.name), stored, [prop], param_facts.get("_rigid_" + r.name, []),
+                        grid_params.get("_rigid_" + r.name, []))
+                    forms.append(Form([f"(DET {part} {prop}{mark})"], part, set(), line=r.span.first if r.span else 0))
                     self.rigid_proposed.add(r.name)
                 continue
             cm = self.comments_above(r.span.first) if r.span else []
@@ -3533,7 +3544,8 @@ class Solver:
                     f = Form([f"(DET_OR_RULE {amp}{or_gloss(gloss)} {' '.join(props)}", f"  (ex_input (:Col *{lab})))"],
                              amp, set(), line=r.span.first)
                 else:
-                    f = Form([f"(DET_OR_RULE {amp}{or_gloss(gloss)} {' '.join(props)})"], amp, set(),
+                    mark = self.set_mark(amp, r, props, param_facts.get(r.name, []), grid_params.get(r.name, []))
+                    f = Form([f"(DET_OR_RULE {amp}{or_gloss(gloss)} {' '.join(props)}{mark})"], amp, set(),
                              line=r.span.first)
                 forms.append(f)
                 derive_points.append((amp, derives, "Derived", r.name))
@@ -3561,7 +3573,8 @@ class Solver:
                 types = [col.type.name for col in r.columns]
                 prop = plan_proposer(verdict, types, r.name in c.open_params)
                 if prop:
-                    f = Form([f"(DET {amp} {prop})"], amp, set(), line=r.span.first if r.span else 0)
+                    mark = self.set_mark(amp, r, [prop], param_facts.get(r.name, []), grid_params.get(r.name, []))
+                    f = Form([f"(DET {amp} {prop}{mark})"], amp, set(), line=r.span.first if r.span else 0)
                     f.comments = [f";; {params_to_amp(gloss)}"] if gloss else []
                 else:
                     f = Form([f"(DET {amp})"], amp, set(), line=r.span.first if r.span else 0)
@@ -4038,10 +4051,9 @@ class Solver:
                 rows.append([*(self.value_text(k) for k in g.keys), place, *([text] if g.layout.valued else [])])
         return rows
 
-    def param_line(self, amp, r, facts, grids) -> str:
-        """The `param` form of `r`'s stored rows, with no column of an open
-        type, each row once, the values of a row in the order of
-        `Solver.ordered`."""
+    def param_rows(self, amp, r, facts, grids) -> tuple[list[str], list]:
+        """The rows of `r`'s `param` form, with no column of an open type,
+        each once, and the grids that stand as `grid` rows of their own."""
         kept = self.ordered(amp, [col.type.name not in self.c.open_types for col in r.columns])
         rows = list(dict.fromkeys(
             "(" + " ".join(self.value_text(a) for a, k in zip(self.ordered(amp, u.head.args), kept) if k) + ")"
@@ -4051,6 +4063,24 @@ class Solver:
                 "(" + " ".join(v for v, k in zip(self.ordered(amp, row), kept) if k) + ")"
                 for g in grids for row in self.grid_rows(g, r)))
             grids = []
+        return rows, grids
+
+    def set_mark(self, amp, r, props, facts, grids) -> str:
+        """` (SET)` for a `DET` or `DET_OR_RULE` of `r` with no body, by
+        `props`, where each proposer has one column and is no type-domain
+        proposer, and the parameter's `param` form holds several rows: the
+        parameter's one value is the proposers' whole set of rows. Else the
+        empty string."""
+        if not props or not all(takes_set_mark(p) for p in props):
+            return ""
+        rows, grids = self.param_rows(amp, r, facts, grids)
+        return " (SET)" if len(rows) + len(grids) > 1 else ""
+
+    def param_line(self, amp, r, facts, grids) -> str:
+        """The `param` form of `r`'s stored rows, with no column of an open
+        type, each row once, the values of a row in the order of
+        `Solver.ordered`."""
+        rows, grids = self.param_rows(amp, r, facts, grids)
         if not grids:
             return f"(param {amp} " + " ".join(rows) + ")"
         lines = [f"(param {amp}"] + ["  " + r for r in rows]
@@ -7024,7 +7054,8 @@ def fold_or_lines(text: str) -> str:
     """Each RULE_OR_DET or DET_OR_RULE line on a relation that a clause of
     the same block derives, folded into that clause: the clause takes the
     line's head, gloss and proposers, and the line goes, so one form
-    derives the relation."""
+    derives the relation. A `(SET)` mark of the line goes with it: a clause
+    with a body gives one value."""
     from arclog_convert.lint import L, Str, Sym, read, flat
     try:
         items = read(text)
@@ -7040,7 +7071,7 @@ def fold_or_lines(text: str) -> str:
                 continue
             named = len(x.items) >= 2 and isinstance(x.items[1], Sym)
             after = x.items[3:] if named and isinstance(x.items[2:3] and x.items[2], Str) else x.items[2:]
-            if x.head in side_of and named and all(isinstance(y, Sym) or y.head == "ONE" for y in after):
+            if x.head in side_of and named and all(isinstance(y, Sym) or y.head in ("ONE", "SET") for y in after):
                 lines_.append((block, x))
             elif x.head in ("RULE", "DET") and named and any(isinstance(y, L) and y.head != "ONE" for y in x.items[2:]):
                 clauses[(block, x.head, x.items[1].text)].append(x)
@@ -7058,7 +7089,7 @@ def fold_or_lines(text: str) -> str:
         glossed = len(f.items) > 2 and isinstance(f.items[2], Str)
         rest_ = f.items[2 + glossed:]
         props = [y.text for y in rest_ if isinstance(y, Sym)]
-        marks = {flat(y) for y in rest_ if isinstance(y, L)}
+        marks = {flat(y) for y in rest_ if isinstance(y, L) and y.head == "ONE"}   # a SET mark goes with the line
         if not marks <= {flat(y) for y in g.items[2:] if isinstance(y, L) and y.head == "ONE"}:
             continue
         a = text.rfind("\n", 0, f.start) + 1

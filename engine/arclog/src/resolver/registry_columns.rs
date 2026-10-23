@@ -4,7 +4,7 @@
 
 use super::columns::Columns;
 use crate::program::{ColumnName, RelationRef};
-use crate::registry::{Column, ColumnType, Component, LibEntry, LibName, Macro, Registry};
+use crate::registry::{Column, ColumnType, Component, LibEntry, LibName, Macro, Proposer, ProposerKind, Registry};
 
 fn of_columns(columns: &[Column]) -> Columns {
     Columns::of_names(columns.iter().map(|column| column.name.clone()))
@@ -55,6 +55,11 @@ pub(crate) fn proposer_columns(registry: &Registry, name: &LibName) -> Option<Bo
         Some(LibEntry::Proposer(proposer)) => Some(proposer.columns.iter().map(|c| c.name.clone()).collect()),
         _ => None,
     }
+}
+
+/// Whether the registry marks the proposer `name` as a type-domain proposer.
+pub(crate) fn is_domain(registry: &Registry, name: &LibName) -> bool {
+    matches!(registry.entry(name), Some(LibEntry::Proposer(Proposer { kind: ProposerKind::Native { domain: true }, .. })))
 }
 
 /// Whether `name` is a proposer that a `DET` can name.

@@ -341,6 +341,11 @@ impl<'l> Writer<'l> {
         }
         let body = clause.body.value();
         self.conjuncts(body, &ChildPaths::of(path, NodeRef::Clause(clause)).path(NodeRef::Body(body)), names);
+        if clause.set {
+            self.put(t, "(");
+            self.put(t, sp::SET);
+            self.put(t, ")");
+        }
         for mark in clause.ones.iter() {
             self.put(t, "(");
             self.put(t, sp::ONE);

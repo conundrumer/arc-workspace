@@ -16,7 +16,8 @@ use super::{Evaluation, Outcome, RelationValue, RunFault, Stop};
 use crate::check::CheckedProgram;
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{Clause, ClauseKeyword, ProgramRelation, RelationName};
-use crate::registry::{LibEntry, Proposer, ProposerKind, Registry};
+use crate::registry::Registry;
+use crate::resolver::registry_columns::{is_domain, proposer_columns};
 use crate::relations::{Relation, Row, RowSet};
 use crate::resolver::{DependencyKind, GraphNodeIndex};
 use crate::types::GraphRelation;
@@ -117,11 +118,12 @@ impl Evaluation<'_> {
     ///
     /// A form derives by the rule of `derivation`, which `Driver::clause`
     /// uses. A form with a body gives one value, its rows; a form with no
-    /// body, by the proposer that rule gives, one value of the proposer's
-    /// whole set of rows, or one value per row where the registry marks
-    /// that proposer type-domain. A `DET` form with no body that names several
-    /// proposers, the stored reading of a `DET_OR_RULE` line with several,
-    /// gives the domain of each proposer by that rule, its rows mapped by
+    /// body, by the proposer that rule gives, one value per row where the
+    /// registry marks that proposer type-domain or the proposer has one
+    /// column and the form carries no `(SET)` mark, and otherwise one value
+    /// of the proposer's whole set of rows. A `DET` form with no body that
+    /// names several proposers, the stored reading of a `DET_OR_RULE` line
+    /// with several, gives the domain of each proposer by that rule, its rows mapped by
     /// position onto the relation's columns. A `DET` of several forms has the
     /// values that each of its forms gives as its domain. A form with no body and no
     /// proposer is a fault of the conversion.
@@ -148,9 +150,9 @@ impl Evaluation<'_> {
             let several = clause.keyword == ClauseKeyword::Det && clause.proposers.len() > 1 && clause.body.value().conjuncts.is_empty();
             let sources: Vec<(Outcome<RelationValue>, bool)> = if several {
                 let proposers = clause.proposers.iter().enumerate();
-                proposers.map(|(index, proposer)| (driver.proposed(at, clause, index, None), is_domain(self.registry, proposer))).collect()
+                proposers.map(|(index, proposer)| (driver.proposed(at, clause, index, None), per_row(self.registry, clause, proposer))).collect()
             } else {
-                let domain = derivation(clause, at)?.is_some_and(|index| is_domain(self.registry, &clause.proposers[index]));
+                let domain = derivation(clause, at)?.is_some_and(|index| per_row(self.registry, clause, &clause.proposers[index]));
                 vec![(driver.clause(at, None), domain)]
             };
             let mut found: Vec<Vec<Row>> = Vec::new();
@@ -229,7 +231,9 @@ pub fn relation_spelled(relation: &ProgramRelation) -> String {
     }
 }
 
-/// Whether the registry marks the proposer `name` as a type-domain proposer.
-fn is_domain(registry: &Registry, name: &crate::registry::LibName) -> bool {
-    matches!(registry.entry(name), Some(LibEntry::Proposer(Proposer { kind: ProposerKind::Native { domain: true }, .. })))
+/// Whether the form `clause` takes one value per row of its proposer `name`:
+/// the registry marks the proposer type-domain, or the proposer has one
+/// column and the form carries no `(SET)` mark.
+fn per_row(registry: &Registry, clause: &Clause, name: &crate::registry::LibName) -> bool {
+    is_domain(registry, name) || (!clause.set && proposer_columns(registry, name).is_some_and(|columns| columns.len() == 1))
 }

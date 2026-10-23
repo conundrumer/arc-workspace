@@ -49,6 +49,9 @@
       "include": "#one"
     },
     {
+      "include": "#set"
+    },
+    {
       "include": "#clause"
     },
     {
@@ -274,6 +277,11 @@
       "comment": "A ONE mark: a constraint on the models of its relation, as a comparison is.",
       "name": "keyword.control.constraint.arclog",
       "match": "(?<=\\()ONE(?=[\\s)]|$)"
+    },
+    "set": {
+      "comment": "A SET mark: the DET has one value, its proposers' whole set of rows.",
+      "name": "keyword.control.constraint.arclog",
+      "match": "(?<=\\()SET(?=[\\s)]|$)"
     }
   }
 }

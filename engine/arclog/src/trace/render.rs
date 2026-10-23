@@ -213,7 +213,10 @@ impl<'a> Renderer<'a> {
             let record = self.next().expect("the proposer");
             pieces.push(vec![self.symbol(record, &name.0)]);
         }
-        pieces.extend(self.conjuncts(&[Control::One, Control::End]));
+        pieces.extend(self.conjuncts(&[Control::Set, Control::One, Control::End]));
+        if let Some(set) = self.take_control(Control::Set) {
+            pieces.push(vec![self.symbol(set, "SET")]);
+        }
         while let Some(one) = self.take_control(Control::One) {
             let mut words = vec![self.symbol(one, "ONE")];
             while let Some(DecodeRecord { token: Token::Label(slot), emitter: Emitter::Model, .. }) = self.peek() {

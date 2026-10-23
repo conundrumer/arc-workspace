@@ -194,7 +194,7 @@ fn cut_form(form: &Form, path: &[PathStep]) -> Form {
     match form {
         Form::Clause(clause) => {
             let clause = clause.value();
-            Form::Clause(Node::new(Clause { body: cut_body(&clause.body, rest), ones: Arc::from([]), columns: Arc::from([]), ..clause.clone() }))
+            Form::Clause(Node::new(Clause { body: cut_body(&clause.body, rest), ones: Arc::from([]), set: false, columns: Arc::from([]), ..clause.clone() }))
         }
         Form::Instance(instance) => {
             let instance = instance.value();

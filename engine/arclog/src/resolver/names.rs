@@ -233,6 +233,7 @@ impl Names {
             proposers: Arc::from([]),
             body: Node::new(Body { conjuncts: conjuncts.iter().map(|&index| body.conjuncts[index as usize].clone()).collect() }),
             ones: Arc::from([]),
+            set: false,
             columns: whole.columns.iter().filter(|column| columns.contains(&column.label)).cloned().collect(),
             ..whole.clone()
         };
