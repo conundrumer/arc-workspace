@@ -343,3 +343,24 @@ def test_a_request_goes_to_an_analyst_alone(tmp_path: Path) -> None:
     launch = settle(s)
     assert isinstance(launch, Launch)
     assert launch.subject == analyst_subject(Purpose.TRIAGE, "9-2")
+
+
+@pytest.mark.parametrize(("reported", "launches"), [(55.0, True), (45.0, False)])
+def test_a_report_after_a_decision_is_checked_though_the_worktree_is_unchanged(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reported: float,
+        launches: bool) -> None:
+    from operations import changes
+    t = ticket(tmp_path, "assigned", "9-1_change_x_ticket-analyst.md",
+               "---\nkind: change\neditors: code-editor\n---\n# x: fix\n\n## Log\n"
+               "2026-10-17T02:00:00Z approved [ticket-reviewer]: reviewed\n")
+    monkeypatch.setattr(changes, "unchanged_since", lambda *_: True)
+    base = t.last_time
+    editor = replace(attempt(Role.CODE_EDITOR, launched=base + 10),
+                     reports=(Report(base + reported, "done"),))
+    checker = attempt(Role.ITEM_CHECKER, reply="ok", launched=base + 20)
+    analyst = attempt(Role.TICKET_ANALYST, analyst_subject(Purpose.CHANGE, t.number),
+                      reply="no edit", launched=base + 50)
+    agents = [editor, checker, analyst]
+    s = with_agents(tmp_path, agents, [t])
+    step = changes.leftover(s, t, tmp_path, [editor], agents, "op")
+    assert (isinstance(step, Launch) and step.role is Role.ITEM_CHECKER) is launches

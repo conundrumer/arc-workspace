@@ -26,7 +26,9 @@ and an editor it sends a message reports again. So the change merges only
 once an item checker was launched after the last report of each editor other than that agent, or
 the latest checker sent no editor a message and its `reports.WORKTREE`
 line gives the `worktrees.fingerprint` the worktree has now, as then the
-worktree is in the state that checker read. The
+worktree is in the state that checker read, unless an editor reported after
+the launch of the last decision analyst on the change and that launch
+followed the latest checker. The
 checker gives under `reports.LEFT_FOR_DECISION` what those reports leave
 for a decision.
 Where no item checker is due, that part of the latest checker's reply,
@@ -725,11 +727,13 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
     if isinstance(editors, Undecided):
         return editors
     checked = max((a.launched for a in checkers), default=0.0)
+    judged = max((a.launched for a in analysts), default=0.0)
     needing = [a for a in latest if is_checked(a) and (r := a.last_report) is not None
                and r.time > checked]
-    if needing and not unchanged_since(state, checkers, w):
+    if needing and (not unchanged_since(state, checkers, w)
+                    or any(r.time > judged > checked
+                           for a in needing if (r := a.last_report))):
         return check_items(state, t, w, needing, editors, launcher)
-    judged = max((a.launched for a in analysts), default=0.0)
     given = left(state, t, latest, checkers, latest_reviewer(agents, w), judged)
     fresh = given.fresh(judged)
 
