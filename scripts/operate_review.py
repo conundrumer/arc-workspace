@@ -25,6 +25,7 @@ from ticket_reads import read_ticket  # noqa: E402
 from filed_texts import written_report  # noqa: E402
 
 from operations import changes  # noqa: E402
+from operations.editor_change import NO_OPERATOR  # noqa: E402
 from operations.roles import LAUNCHING_EDITORS, Role  # noqa: E402
 from operations.steps import Launch, Poll, Step, Undecided  # noqa: E402
 from operate_loop import MessageAccepted, Running, prepared, print_step, read_again, waited  # noqa: E402
@@ -43,7 +44,7 @@ def qualification(editor: str) -> str | None:
         parent = parent_id(path)
         kind = parent_type(path)
     if kind != Role.OPERATOR.agent_type:
-        print(changes.NO_OPERATOR.format(agent=editor))
+        print(NO_OPERATOR.format(agent=editor))
         return None
     return parent
 

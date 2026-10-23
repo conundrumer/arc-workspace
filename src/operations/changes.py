@@ -79,9 +79,9 @@ go.
 
 A code editor or a doc editor of a change launches, before its final
 reply, each design reviewer, item checker, ticket analyst and doc
-reviewer that these steps give with that editor ended and as the
-launcher (`editor_step`). The operator reads each as one it launched,
-so the steps go on from it.
+reviewer that these steps give with that editor ended, selected for its
+role and fragment part, and as the launcher (`editor_step`). The operator
+reads each as one it launched, so the steps go on from it.
 
 A change whose `editors` field gives a doc editor, the one
 `change_fragments` adds included, merges once its review passes as
@@ -105,10 +105,12 @@ from controlled_markdown import mctx
 from operations import briefs, deferring, merging, messages
 from operations.constants import AGAIN_SECONDS, COORDINATOR
 from operations.journal import AGAIN_LIMIT, backoff, done_of, retired
-from operations.change_agents import (REVIEWER_ROLES, change_editors, editors_in, elsewhere_on,
+from operations.change_agents import (REVIEWER_ROLES, change_editors, editor_part, editors_in, elsewhere_on,
                                       latest_editors, launched_on, named, of_change, Reported, reported,
-                                      reported_at, settled, unstaffed, waiting_on,
+                                      settled, unstaffed, waiting_on,
                                       with_before, with_elsewhere, worktree_occasion)
+from operations.editor_change import (Anchoring, EditorChange, Fingerprint, editor_change,
+                                      handed_on, peers_ended)
 from operations.change_holds import Hold, left_hold, open_questions, questions_given, questions_hold
 from operations.change_fragments import drafter_ids, fragments_step
 from operations.change_overrun import over_budget
@@ -118,9 +120,9 @@ from operations.directives import Decision, give_again_line, held_on, ruling
 from operations.item_check import check_items, is_checked, latest_reports, unfinished
 from operations.completion import occupies, replacement
 from operations.reports import Label, at_cap, items_of, left_for_decision, shows_current, to_editor
-from operations.roles import (CHECKS, LAUNCHING_EDITORS, Purpose, Role, analyst_of,
+from operations.roles import (CHECKS, Purpose, Role, analyst_of,
                               analyst_subject)
-from operations.state import Agent, Ended, Report, State, Ticket, last_reported
+from operations.state import Agent, Report, State, Ticket, last_reported
 from operations.filing import editor_scratch
 from operations.final_reply import live_holder
 from operations.handled import (answered, decided_by, held_aside, repeated, sendings, sent,
@@ -432,20 +434,6 @@ them: each gives its step, a `NoStep`, or `Pause.CLEAR`, which goes on
 to the next stage."""
 
 
-NO_OPERATOR = mctx("{agent} is no code editor or doc editor that an operator of the session "
-                   "launched: give your final reply.")
-"""The line `editor_step` gives an agent that is none of `LAUNCHING_EDITORS`
-an operator launched."""
-
-
-type Fingerprint = Callable[[Path, Path], str]
-"""The fingerprint of an editor's work, given its worktree and its report
-file; it raises a `ValueError` where it cannot read them."""
-type Anchoring = Callable[[str, str, float], float]
-"""The time an editor's work was first reviewed, given its agent id, the
-fingerprint of its work and the time now."""
-
-
 def editor_step(state: State, editor: str, written: Callable[[Path], str | None],
                 fingerprint: Fingerprint, anchoring: Anchoring) -> Step | str:
     """The step the editor `editor` takes at the end of its turn, where
@@ -470,136 +458,16 @@ def editor_step(state: State, editor: str, written: Callable[[Path], str | None]
     return check_or_line(state, change, agents)
 
 
-@dataclass(frozen=True)
-class EditorChange:
-    """The change `t` of the editor `editor`, with its editors `editors`,
-    its worktree `w`, and its agents, the editor read as ended with its
-    report at `at`."""
-    editor: str
-    t: Ticket
-    editors: tuple[Role, ...]
-    w: Path
-    at: float
-    agents: list[Agent]
-
-
-def editor_change(state: State, editor: str, written: Callable[[Path], str | None],
-                  fingerprint: Fingerprint, anchoring: Anchoring
-                  ) -> EditorChange | Undecided | str:
-    """The change of the editor `editor`, one of `LAUNCHING_EDITORS` an
-    operator launched, with its report the text `written` gives of the
-    report file its brief gives (`state.Agent.report_file`), at the time
-    `anchoring` gives for the fingerprint of its work: the time of its
-    first review of that work, so each later call of the command keeps that
-    time while the work does not change, and a change to the work moves it
-    to now.
-    Only a pending editor owns the checks; after it ends, the operator
-    owns them. Where the editor is none of those, or its report file is not there,
-    it gives the line for that, and where its ticket, the ticket's
-    editors, the change's worktree or its report file is not read, an
-    `Undecided`."""
-    mine = [a for a in state.transcripts.agents
-            if a.agent_id == editor and a.role in LAUNCHING_EDITORS]
-    if not mine:
-        return NO_OPERATOR.format(agent=editor)
-    if not mine[-1].pending:
-        return mctx("Your work has ended, so the operator takes the change's next step: "
-                    "give your final reply.")
-    t = state.tracker.tickets.get(mine[-1].subject)
-    if t is None:
-        return Undecided(mctx("the ticket of change {number} of {role} {agent} is not "
-                              "read").format(number=mine[-1].subject, role=mine[-1].role,
-                                             agent=editor))
-    editors = change_editors(t)
-    if not isinstance(editors, tuple):
-        return editors
-    w = worktree(t, state)
-    if w is None:
-        return Undecided(mctx("change {number} gives no worktree").format(number=t.number))
-    path = mine[-1].report_file
-    if path is None:
-        return Undecided(mctx("the brief of {role} {agent} gives no report file").format(
-            role=mine[-1].role, agent=editor))
-    text = written(path)
-    if text is None:
-        return mctx("Your report file {path} does not exist: write your report to it, then run "
-                    "this command again.").format(path=path)
-    try:
-        at = anchoring(editor, fingerprint(w, path), state.now)
-    except (ValueError, OSError) as e:
-        return Undecided(mctx("the work of {role} {agent} cannot be fingerprinted: {why}").format(
-            role=mine[-1].role, agent=editor, why=e))
-    agents = [as_ended(a, at, text, path) if a.agent_id == editor else a
-              for a in of_change(state, t)]
-    return EditorChange(editor, t, editors, w, at, agents)
-
-
-def as_ended(a: Agent, at: float, text: str, path: Path) -> Agent:
-    """The editor `a` read as ended with the report `text` of its report
-    file `path` at `at`, as `editor_step` reads an editor that has
-    reported."""
-    report = Report(at, text, path)
-    return replace(a, state=Ended(report, a.refused), reports=(*a.reports, report))
-
-
-def peers_ended(c: EditorChange, written: Callable[[Path], str | None],
-                fingerprint: Fingerprint) -> list[Agent] | Poll | Undecided:
-    """The agents of the change `c` with each other pending editor in its
-    worktree read as ended, each with the text `written` gives of its
-    report file as its report at its `change_agents.reported_at` (with
-    `fingerprint`, and an `Undecided` where that raises), where
-    each has such a report and that of `c.editor` is the latest of theirs,
-    or of the latest the one of the first agent id in sort order; and
-    `steps.Poll` where one has none, another's is later, or a check another
-    editor there launched is pending."""
-    here = editors_in(c.agents, c.w)
-    others = [a for a in here if a.pending]
-    peers = {a.agent_id for a in here} - {c.editor}
-    if any(a.pending and a.operator in peers for a in c.agents):
-        return Poll()
-    if not others:
-        return c.agents
-    other_ids = agent_ids(others)
-    if isinstance(other_ids, Undecided):
-        return other_ids
-    times = [(-c.at, c.editor)]
-    ended: dict[str, Agent] = {}
-    for a, i in zip(others, other_ids, strict=True):
-        try:
-            since = reported_at(a, c.w, fingerprint)
-        except (ValueError, OSError) as e:
-            return Undecided(mctx("the work of {role} {agent} cannot be fingerprinted: {why}").format(
-                role=a.role, agent=i, why=e))
-        other_text = None if a.report_file is None else written(a.report_file)
-        if since is None or a.report_file is None or other_text is None:
-            return Poll()
-        times.append((-since, i))
-        ended[i] = as_ended(a, since, other_text, a.report_file)
-    if min(times) != (-c.at, c.editor):
-        return Poll()
-    return [ended.get(a.agent_id or "", a) for a in c.agents]
-
-
-def handed_on(state: State, c: EditorChange) -> str | None:
-    """The line that has the editor of the change `c` give its final reply
-    as the operator takes the change's next step: where an editor role of
-    the change has no agent in its worktree or another editor there ended
-    with no report since its launch or its last resume; or None."""
-    here = editors_in(c.agents, c.w)
-    if unstaffed(c.editors, here) or any(a.unreported for a in latest_editors(here)):
-        return mctx("Another editor of change {number} has not reported, so the operator "
-                    "takes its next step: give your final reply.").format(
-                        number=c.t.number)
-    return None
-
-
 def check_or_line(state: State, c: EditorChange, agents: list[Agent]) -> Step | str:
     """The launch of the check of `CHECKS` that `reported_step` gives the
-    change `c`, with `agents` as its agents and its editor as the
-    launcher; where it gives none and a check the editor launched is
-    pending, the line that has it wait on that check; and otherwise the
+    change `c`, with `agents` as its agents and its editor selected for
+    its role and fragment part and as the launcher; where it gives none
+    and a check the editor launched is pending, the line that has it wait on that check; and otherwise the
     line that has it give its final reply."""
     here = editors_in(agents, c.w)
+    requester = next(a for a in here if a.agent_id == c.editor)
+    part = editor_part(requester)
+    here = [a for a in here if a.agent_id == c.editor or editor_part(a) != part]
     step = reported_step(state, c.t, c.w, c.editors, here, agents, c.editor)
     if isinstance(step, Launch) and step.role in CHECKS:
         return step
