@@ -45,7 +45,7 @@ HELP = mctx("""
         - The swap-in rate over {swap_in} pages a second for {swap_in_samples} samples in a row.
         - The memory pressure level at warn or critical for {pressure_samples} samples in a row.
         - The CPU over {busy}% busy for {cpu} samples in a row.
-    - A rule that holds at the first sample counts only once it has held for {realert} s, or after a sample without it, so that a load that stays gives a load re-alert once in {realert} s, the command having exited at each alert.
+    - A rule counts only once {realert} s have passed since the last alert of the monitor's folder that gave it, or after a sample without it, so that a load that stays gives a load re-alert once in {realert} s, the command having exited at each alert.
     - On a rule that holds the command writes an alert to a new file `{alerts}/<session id>/<time>{suffix}` of the main tree, the session id being the monitor's own and the time the UTC time of the alert, prints the file's path, and exits 0. The alert gives the rules that held, then the {top} processes of the largest physical footprint, the memory the process takes from the machine, and the {top} of the most CPU, each with its pid, parent pid, footprint, CPU percent, elapsed time, session id and command line.
     - It appends each sample's readings to `{alerts}/<session id>/{readings}` of the main tree, one line a sample of tab-separated fields: the UTC time, the CPU busy percent, the memory pressure level, the swap-in rate, the page-in rate and the swap in use in MB. It keeps the last {keep} hours of them.
     - One monitor watches the machine. Where another `load_monitor.py` process runs for a session that runs, the command exits with a message that gives that process's pid and session id. It exits as well at the first check, made every {check} s, at which its own session is not among the sessions that run.
@@ -165,21 +165,59 @@ def cpus() -> int:
     return n
 
 
+SWAP_TEXT = mctx("swap-ins {rate:.0f} pages a second, over {limit} for {n} samples in a row")
+PRESSURE_TEXT = mctx("memory pressure level {level}, at warn or critical for {n} samples in a row")
+CPU_TEXT = mctx("CPU {busy:.0f}% busy, over {limit}% for {n} samples in a row")
+TROUBLE = "trouble: "
+TROUBLE_SEPARATOR = "; "
+
+
+def text_pattern(text: str) -> re.Pattern[str]:
+    """The pattern that matches `text`, a rule's text, filled in with any
+    values."""
+    return re.compile("[^;]+".join(re.escape(part) for part in re.split(r"\{[^}]*\}", text)))
+
+
+def latest_alerts(folder: Path, texts: list[str]) -> list[float | None]:
+    """For each of `texts`, the rule texts, the wall-clock time of the
+    latest alert file in `folder` whose `trouble:` line gives that rule, or
+    None. A file with no `trouble:` line, or a name that is no UTC time, is
+    left out."""
+    patterns = [text_pattern(text) for text in texts]
+    latest: list[float | None] = [None] * len(texts)
+    for path in folder.glob(f"*{SUFFIX}"):
+        lines = path.read_text().splitlines()
+        if not lines or not lines[0].startswith(TROUBLE):
+            continue
+        try:
+            at = stamp_time(path.stem)
+        except ValueError:
+            continue
+        for given in (lines[0][len(TROUBLE):].split(TROUBLE_SEPARATOR)):
+            for j, pattern in enumerate(patterns):
+                seen = latest[j]
+                if pattern.fullmatch(given) and (seen is None or at > seen):
+                    latest[j] = at
+    return latest
+
+
 class Rule:
     """One load alert rule, as `HELP` gives it."""
 
-    def __init__(self, samples: int) -> None:
+    def __init__(self, samples: int, text: str, last_alert: float | None, now: float) -> None:
+        """`last_alert` is the wall-clock time of the latest alert that gave
+        the rule, and `now` the wall-clock time at the monitor's start."""
         self.samples = samples
+        self.text = text
         self.run = 0
         self.not_before: float | None = None
+        if last_alert is not None and now < last_alert + REALERT_SECONDS:
+            self.not_before = last_alert + REALERT_SECONDS
 
-    def held(self, now: bool, at: float, first: bool) -> bool:
-        """Whether the rule holds at the sample made at monotonic time
-        `at`, `now` being whether its condition stands at the sample and
-        `first` whether this is the monitor's first sample."""
-        if first and now:
-            self.not_before = at + REALERT_SECONDS
-        elif not now:
+    def held(self, now: bool, at: float) -> bool:
+        """Whether the rule holds at the sample made at wall-clock time
+        `at`, `now` being whether its condition stands at the sample."""
+        if not now:
             self.not_before = None
         self.run = self.run + 1 if now else 0
         return self.run >= self.samples and (self.not_before is None or at >= self.not_before)
@@ -224,18 +262,15 @@ def trim_readings(path: Path, now: float) -> None:
     path.write_text("".join(line + "\n" for line in kept))
 
 
-def held_rules(swap: Rule, pressure: Rule, cpu: Rule, reading: Reading, at: float, first: bool) -> list[str]:
+def held_rules(swap: Rule, pressure: Rule, cpu: Rule, reading: Reading, at: float) -> list[str]:
     """The load alert rules that hold at `reading`."""
     held = []
-    if swap.held(reading.swap_in > SWAP_IN_RATE, at, first):
-        held.append(mctx("swap-ins {rate:.0f} pages a second, over {limit} for {n} samples in a row").format(
-            rate=reading.swap_in, limit=SWAP_IN_RATE, n=SWAP_IN_SAMPLES))
-    if pressure.held(reading.pressure in PRESSURE_LEVELS, at, first):
-        held.append(mctx("memory pressure level {level}, at warn or critical for {n} samples in a row").format(
-            level=reading.pressure, n=PRESSURE_SAMPLES))
-    if cpu.held(reading.busy > BUSY_CPU, at, first):
-        held.append(mctx("CPU {busy:.0f}% busy, over {limit}% for {n} samples in a row").format(
-            busy=reading.busy, limit=BUSY_CPU, n=CPU_SAMPLES))
+    if swap.held(reading.swap_in > SWAP_IN_RATE, at):
+        held.append(swap.text.format(rate=reading.swap_in, limit=SWAP_IN_RATE, n=SWAP_IN_SAMPLES))
+    if pressure.held(reading.pressure in PRESSURE_LEVELS, at):
+        held.append(pressure.text.format(level=reading.pressure, n=PRESSURE_SAMPLES))
+    if cpu.held(reading.busy > BUSY_CPU, at):
+        held.append(cpu.text.format(busy=reading.busy, limit=BUSY_CPU, n=CPU_SAMPLES))
     return held
 
 
@@ -243,7 +278,7 @@ def report(trouble: str, found: list[Process], footprint: dict[int, int]) -> str
     known = [p for p in found if p.pid in footprint]
     by_memory = sorted(known, key=lambda p: (-footprint[p.pid], p.pid))[:TOP]
     by_cpu = sorted(known, key=lambda p: (-p.cpu, p.pid))[:TOP]
-    return "\n".join([mctx("trouble: {trouble}").format(trouble=trouble),
+    return "\n".join([TROUBLE + trouble,
                       mctx("largest by physical footprint:"),
                       *(p.line(footprint[p.pid]) for p in by_memory),
                       mctx("largest by CPU:"), *(p.line(footprint[p.pid]) for p in by_cpu)])
@@ -267,9 +302,13 @@ def main(argv: list[str]) -> int:
     if (stop := check(session)) is not None:
         print(stop, file=sys.stderr)
         return 1
-    swap, pressure, cpu = Rule(SWAP_IN_SAMPLES), Rule(PRESSURE_SAMPLES), Rule(CPU_SAMPLES)
+    started = time.time()
+    last = latest_alerts(folder, [SWAP_TEXT, PRESSURE_TEXT, CPU_TEXT])
+    swap, pressure, cpu = (Rule(SWAP_IN_SAMPLES, SWAP_TEXT, last[0], started),
+                           Rule(PRESSURE_SAMPLES, PRESSURE_TEXT, last[1], started),
+                           Rule(CPU_SAMPLES, CPU_TEXT, last[2], started))
     ticks, at, counted = busy_ticks(), time.monotonic(), counters()
-    checked, trimmed, first = at, at, True
+    checked, trimmed = at, at
     while True:
         time.sleep(SAMPLE_SECONDS)
         now_ticks, now_at, now_counted = busy_ticks(), time.monotonic(), counters()
@@ -287,11 +326,10 @@ def main(argv: list[str]) -> int:
             if (stop := check(session)) is not None:
                 print(stop, file=sys.stderr)
                 return 1
-        held = held_rules(swap, pressure, cpu, reading, at, first)
-        first = False
+        held = held_rules(swap, pressure, cpu, reading, time.time())
         if held:
             path = folder / f"{utc_stamp(time.time())}{SUFFIX}"
-            path.write_text(report("; ".join(held), processes(), footprints()) + "\n")
+            path.write_text(report(TROUBLE_SEPARATOR.join(held), processes(), footprints()) + "\n")
             print(path)
             return 0
 
