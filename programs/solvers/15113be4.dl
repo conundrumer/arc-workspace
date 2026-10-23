@@ -114,15 +114,21 @@ out(P, Col, Ch) :- stamp(P, Ch), parse.key_color($U(), Col).
     .decl cand(n: number)
     cand(N) :- ex_in(_, P, _), axis_elem(A), sub_extent(P, A, N).
 
-    .decl cut(e: Example, n: number, p: Position)
-    cut(E, N, P) :- ex_in(E, P, _), cand(N), params.gap(G), divide_2d(P, N, G, _, _).
+    // The lines along axis a that the cut into n cells leaves inside its tiles.
+    .decl cut(e: Example, n: number, a: Axis, l: Position)
+    cut(E, N, A, L) :-
+        ex_in(E, P, _), axis_elem(A), split(P, A, L, _),
+        cand(N), params.gap(G), divide(L, A, N, G, _, _).
 
     // A gap cell that carries no separator, or a separator cell inside a tile.
     .decl defect(n: number)
     defect(N) :-
         cand(N), ex_in(E, P, Col), !key_block(E, P),
-        ( !cut(E, N, P), !params.sep(Col)    // gap cell with no separator
-        ; cut(E, N, P), params.sep(Col)      // separator cell inside a tile
+        ( axis_elem(A), split(P, A, L, _), !cut(E, N, A, L),     // on a gap line
+          !params.sep(Col)                                     // with no separator
+        ; perp(A, A2), split(P, A, L, _), split(P, A2, L2, _),
+          cut(E, N, A, L), cut(E, N, A2, L2),                  // inside a tile
+          params.sep(Col)                                      // with a separator
         ).
 
     .decl cell_count(n: number)

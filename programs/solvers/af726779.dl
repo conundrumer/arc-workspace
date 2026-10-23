@@ -127,7 +127,7 @@ impl_choice([C, Sc]) :- level_color_choice(C), scope_choice(Sc).
     .init marks = Propagation<KeyedStack, Position>
     marks.source([Ky, St], P) :- base_mark(Ky, St, P).
     marks.join([Ky, St], A, B, Q) :-
-        stack(Ky, St), grid(Ky, G, _), !base_mark(Ky, St, G),
+        base_mark(Ky, St, _), grid(Ky, G, _), !base_mark(Ky, St, G),  // a stack with a mark
         params.growth_dir(D), perp_dir(D, D1), opposite(D1, D2),
         neighbor(G, D1, A), neighbor(G, D2, B),                     // the cells beside G
         params.level_step(K), jump(G, D, K, Q), grid(Ky, Q, _).
