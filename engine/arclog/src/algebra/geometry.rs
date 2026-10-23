@@ -34,13 +34,18 @@ impl Edge {
     }
 
     /// The next edge clockwise.
-    fn clockwise(self) -> Edge {
+    pub(super) fn clockwise(self) -> Edge {
         match self {
             Top => Right,
             Right => Bottom,
             Bottom => Left,
             Left => Top,
         }
+    }
+
+    /// The next edge counterclockwise.
+    pub(super) fn counterclockwise(self) -> Edge {
+        self.clockwise().opposite()
     }
 
     fn bit(self) -> u8 {

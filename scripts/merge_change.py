@@ -43,7 +43,7 @@ the command line of `master`'s copy. The checks are:
 
 The last two run only where the changes touch a path under `engine/`. The
 checks run concurrently. A check passes when it exits 0, and a refusal
-names every check that fails. The gate's dependency record decides which
+lists every check that fails. The gate's dependency record decides which
 of its commands a change affects, so the gate runs on every change, with
 `<base>` the `master` commit the stack is rebased onto. It writes into a
 new directory under `$TMPDIR`, whose name is `merge-change-gate-`, then the
@@ -53,7 +53,7 @@ then a random part. So `ls -dt "$TMPDIR"/merge-change-gate-*<hash>*`, with
 `<hash>` what `git rev-parse --short=8 <commit>` prints, lists the
 directories of the gates that checked `<commit>`, newest first, for a gate
 that passes as for one that fails. The merge's `running` line of the gate
-names its directory too. The gate's `--help` says which
+gives its directory too. The gate's `--help` says which
 commands `--affected` runs and how the gate's times are judged.
 
 The top of the stack holds every change committed, so where the gate runs
@@ -135,7 +135,7 @@ delete the files under a worktree's own `work/`. Before it removes a
 worktree whose `work` is a directory, the script moves each file under it
 to the same path under the main tree's `work/`, where nothing stands there.
 Where a file stands at one of those paths, or at a directory above one,
-the worktree and its branch stay, and the script names each file that
+the worktree and its branch stay, and the script lists each file that
 stays. Where a move fails, or the worktree's `work` is neither a directory
 nor a link, they stay as well, and the script says why. A `work` that is
 a link is removed as the link alone.
@@ -155,7 +155,7 @@ The script refuses a change, and says why, where:
 - a submodule of the worktree holds changes or untracked files, which no
   commit of the worktree's branch can hold;
 - a gitlink in the worktree's index, once the changes are staged, is not
-  listed in `.gitmodules`, or names a commit that the main tree's copy of
+  listed in `.gitmodules`, or gives a commit that the main tree's copy of
   that submodule's repository lacks. The removal of the worktree deletes
   the worktree's own copies of the submodules' repositories, so the commit
   would then exist nowhere. The refusal puts the index back as it was.
@@ -163,13 +163,13 @@ The script refuses a change, and says why, where:
   which case it aborts the rebase and leaves the worktree as it was before
   the commit;
 - the rebase onto `master` conflicts, in which case it aborts the rebase
-  and names the paths it conflicts in. Where the stack holds that change
+  and lists the paths it conflicts in. Where the stack holds that change
   alone, the script then puts the change onto that `master` in its
   worktree: it puts the index and the files at the change's commit, moves
   the branch to that `master` commit, and merges the change's commit onto
   it with `git merge --squash --no-commit`, which leaves each path that
   conflicts as git's 3-way merge leaves it, and it leaves the change
-  uncommitted with nothing staged and names that commit. Where
+  uncommitted with nothing staged and gives that commit. Where
   any part of that step fails, it puts the branch, the index and the files
   back as the abort left them, and says so;
 - `git diff --check` reports a leftover conflict marker in the change
@@ -187,7 +187,7 @@ the others merge.
 
 It pushes nothing and moves no branch but `master` and the worktrees' own.
 It prints a line per step on stdout, and a refusal, a wait for the
-merge lock with what its holder merges, and the line that names each
+merge lock with what its holder merges, and the line that gives the name of each
 check as it starts, on stderr. As each submodule
 setup, commit, rebase, check, command in the main tree and removal of a
 worktree ends, it writes the step's step line (`engine.duration.STEP`),

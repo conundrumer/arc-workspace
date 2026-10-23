@@ -195,12 +195,12 @@ impl<'a> NodeRef<'a> {
             NodeRef::Clause(clause) => bodies([&clause.body]),
             NodeRef::Body(body) => body.conjuncts.iter().map(Handle::Conjunct).collect(),
             NodeRef::Conjunct(conjunct) => match conjunct {
-                Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => sites(&atom.value().sites),
                 Conjunct::Not(Negated::Form(form)) => vec![Handle::Conjunct(form)],
                 Conjunct::Constraint(_) => Vec::new(),
                 Conjunct::Or(branches) => bodies(branches.iter()),
                 Conjunct::If { test, then, otherwise } => bodies([test, then, otherwise]),
                 Conjunct::All { domain, body } => bodies([domain, body]),
+                _ => conjunct.atom().map_or_else(Vec::new, |atom| sites(&atom.value().sites)),
             },
             NodeRef::Atom(atom) => sites(&atom.sites),
             NodeRef::Site(site) => site

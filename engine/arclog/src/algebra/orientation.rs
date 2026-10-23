@@ -1,7 +1,8 @@
 //! The orientation algebra's relations, each as its fact set: the tables of
 //! [`super::tables`] and the relations computed from the D4 action of
-//! [`super::geometry`]: the enumerations, `sym_member`, the group relations,
-//! `pose_difference`, and the relation macros over orientation values alone.
+//! [`super::geometry`]: the enumerations, `opposite`, `turn`, `sym_member`,
+//! the group relations, `pose_difference`, and the relation macros over
+//! orientation values alone.
 
 use super::geometry::{D4Element, Edges, Geometry, Meaning};
 use super::tables::OrientationTables;
@@ -131,6 +132,17 @@ fn computed_relations(registry: &Registry, geometry: &Geometry) -> Vec<(LibName,
         }
     }
     relations.push(("perp_dir", rows(2, perp_dir)));
+    let dir_at = |edge| geometry.direction(Edges::of(&[edge])).expect("a Dir of each edge");
+    relations.push(("opposite", rows(2, dirs.iter().map(|&d| vec![d, dir_at(geometry.edge(d).opposite())]).collect())));
+    let mut turn = Vec::new();
+    for &sense in geometry.domain(&ValueType::Sense) {
+        let Meaning::Sense { clockwise } = geometry.meaning(sense).1 else { unreachable!("a Sense constant") };
+        for &d in dirs {
+            let edge = geometry.edge(d);
+            turn.push(vec![sense, d, dir_at(if clockwise { edge.clockwise() } else { edge.counterclockwise() })]);
+        }
+    }
+    relations.push(("turn", rows(3, turn)));
     let mut diag_dirs = Vec::new();
     for &diag in geometry.domain(&ValueType::DiagDir) {
         for &a in geometry.domain(&ValueType::Axis) {

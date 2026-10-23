@@ -35,17 +35,15 @@ def refusal(state: State) -> Callable[[str], Hold | None]:
     does of the run scripts' `takes` (`passing`), the `Op pause.` and
     `Op scope:` lines (`scope_admits`), and the usage pace, or None where
     the operator may admit it."""
-    passes, held = passing(state)
-    clear = scope_admits(state)
+    passes, _ = passing(state)
+    admitted = unpaced(state, scope_admits(state))
     past = admission_held(state)
     scope = scope_hold(state)
 
     def of(n: str) -> Hold | None:
-        if not passes(n):
-            return Hold.TAKES
-        if not held(n) and not clear(n):
-            return scope
-        return Hold.PACE if past else None
+        if admitted(n):
+            return Hold.PACE if past else None
+        return scope if passes(n) else Hold.TAKES
     return of
 
 
