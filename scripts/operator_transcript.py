@@ -39,7 +39,7 @@ from operations.state import (
     Agent, AttemptState, Call, Ended, Message, PassReport, Report, Running, Tool, Waits,
 )
 from operations.command_words import is_next
-from operations.printing import unfenced
+from operations.printing import printed_idle, unfenced
 
 
 FILED_FIELDS: dict[str, str] = {Tool.AGENT: "prompt", Tool.SEND_MESSAGE: "message"}
@@ -255,7 +255,8 @@ def calls_of(aid: str, path: Path, read: OperatorLines, commits: frozenset[tuple
     """The calls of the operator `aid` that `read` gives, each with its
     outcome, with `subjects` as the pairs `commits` gives, the result of a
     call that is not an error held as empty where `reads_output` does not
-    hold, and the uses of
+    hold and the call is no call of `next` that printed that nothing is
+    ready (`printed_idle`), and the uses of
     `read` with each input read as `unfiled_call` gives it. The `Call` of a
     use is made anew only where a value it is made from changed since the
     last read on the same fold."""
@@ -277,7 +278,8 @@ def calls_of(aid: str, path: Path, read: OperatorLines, commits: frozenset[tuple
 
         def make(lines: list[str]) -> MadeCall:
             merge = merge_outcome(aid, command, t, text, error, subjects, denied, lines)
-            held = text if text is None or error or reads_output(tool, command, aid) else ""
+            held = (text if text is None or error or reads_output(tool, command, aid)
+                    or (is_next(command, aid) and printed_idle(text)) else "")
             return (Call(aid, t, tool, inp, held, error, merge, call_conflicts(merge, text)),
                     command in denied)
 
@@ -295,7 +297,8 @@ def reads_output(tool: str, command: str, aid: str) -> bool:
     operator `aid` that is not an error: that of a Bash call other than a
     call of `next`, such as a merge or a call of `--under`, or of a
     SendMessage call, whose result tells whether the harness refused the
-    message (`Agent.refused`)."""
+    message (`Agent.refused`). The text of a call of `next` is held only
+    where it prints that nothing is ready (`calls_of`)."""
     return tool == Tool.SEND_MESSAGE or (tool == Tool.BASH and not is_next(command, aid))
 
 

@@ -218,7 +218,7 @@ def launches(path: Path, undecided: list[str]) -> list[Launch]:
             entries = received_entries(sessions, launch.agent, tid)
             sign = last_sign(entries, launch.since, {v for v in (launch.agent, tid) if v})
             done = (sign[1] if sign[0] in ENDED else None) if sign else launch.done
-            if child is None and done is None and launch.answered:
+            if child is None and launch.agent is None and done is None and launch.answered:
                 undecided.append(mctx("{run}: no transcript gives call {call} as "
                                       "its launch").format(run=path.stem, call=tid))
             out.append(replace(launch, entries=entries, done=done))
