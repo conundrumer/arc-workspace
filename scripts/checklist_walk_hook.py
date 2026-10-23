@@ -148,9 +148,13 @@ def refusal(command: str, agent: str) -> str:
              "in the same result."),
         # Ticket 11-3130: doc editor ad68ab6b18e660953 advanced past
         # write-the-edit after a refusal, then made that item's edit.
+        # Request 11-3448: ticket reviewer ae30ef4e377e4d07d read the call as
+        # run, though it ran it joined with other work, and ran other calls.
         mctx("If `{command}` has an item argument, first do the work that item's "
-             "previously printed instruction gives. Run that call as the whole "
-             "command of a Bash call, with no pipe, do the item it prints, then "
+             "previously printed instruction gives. Run that call again, even "
+             "where you ran it before: a step call joined with other work or "
+             "piped holds no item. Run it as the whole command of a Bash call, "
+             "with no pipe, do the item it prints, then "
              "go on by the call each item ends with. Then give your report again."),
         mctx("Where you find no way to do the item your walk is at, run "
              "`uv run python scripts/step.py {agent} --stop <item>`, with that item as "
