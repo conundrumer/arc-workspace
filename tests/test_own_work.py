@@ -118,8 +118,8 @@ def test_an_analyst_before_a_not_own_judgment_settles_the_ticket_only_outside_th
         return replace(s, transcripts=replace(s.transcripts, agents=(analyst,)),
                        computed=Computed(to_settle=("9-3",)))
 
-    assert unsettled_open(at()) == []
-    assert unsettled_open(at((Message("op", 1.0, None, "Op scope: all."),))) == ["9-3"]
+    assert unsettled_open(at()) == ()
+    assert unsettled_open(at((Message("op", 1.0, None, "Op scope: all."),))) == ("9-3",)
 
 
 @pytest.mark.parametrize("title", TITLES)

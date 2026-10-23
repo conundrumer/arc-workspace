@@ -111,8 +111,7 @@ def party(state: State, e: Exit, t: Ticket) -> Party | None:
         case Exit.TICKET_REVIEW:
             if t.number in drafts.due(state) and review_held(state, t.number):
                 return Hold.PACE
-            return (drafts.writing(state, t)
-                    if any(d.number == t.number for d in drafts.drafts(state)) else None)
+            return drafts.writing(state, t) if t.number in drafts.draft_numbers(state) else None
         case Exit.TICKET_ANALYST:
             return triage.party(state, t.number)
         case (Exit.MERGE | Exit.CHANGE_ANALYST | Exit.COORDINATOR_MOVE | Exit.COORDINATOR_LINE
@@ -142,11 +141,12 @@ def review_held(state: State, number: str) -> bool:
         state, lambda: drafts.review_step(state, state.tracker.tickets[number]))
 
 
-def assigned(state: State) -> set[str]:
+@memoized
+def assigned(state: State) -> frozenset[str]:
     """The tickets under `tickets/assigned/` that no live holder other
     than this operator holds (`held_by_other_live_holder`)."""
-    return {n for n, t in state.tracker.tickets.items()
-            if t.status is Status.ASSIGNED and not held_by_other_live_holder(state, t)}
+    return frozenset(n for n, t in state.tracker.tickets.items()
+                     if t.status is Status.ASSIGNED and not held_by_other_live_holder(state, t))
 
 
 def agents_of(state: State, number: str) -> tuple[Agent, ...]:

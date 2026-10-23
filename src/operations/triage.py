@@ -196,6 +196,7 @@ def later_lines(state: State) -> Step | None:
     return None
 
 
+@memoized
 def batching(state: State) -> tuple[Agent, ...]:
     """The triage analysts that run on a ticket other than a `request`. A
     ticket other than a `request` waits for them."""
@@ -205,19 +206,28 @@ def batching(state: State) -> tuple[Agent, ...]:
                          and t.kind is not Kind.REQUEST for n in nums))
 
 
-def not_given(state: State) -> list[str]:
+@memoized
+def not_given(state: State) -> tuple[str, ...]:
     """The tickets of the list that no analyst was given and no solver
     pipeline awaits."""
-    return [n for n in state.computed.to_settle
-            if not given(state, n) and not awaits_analyst(state, n)]
+    return tuple(n for n in state.computed.to_settle
+                 if not given(state, n) and not awaits_analyst(state, n))
 
 
-def unsettled_open(state: State) -> list[str]:
-    """The tickets of `not_given`, other than those of a kind other than
-    `request` while `batching` gives an analyst."""
-    batch = batching(state)
-    return [n for n in not_given(state)
-            if not batch or state.tracker.tickets[n].kind is Kind.REQUEST]
+@memoized
+def held_back(state: State) -> frozenset[str]:
+    """The tickets of `not_given` of a kind other than `request` while
+    `batching` gives an analyst."""
+    if not batching(state):
+        return frozenset()
+    return frozenset(n for n in not_given(state) if state.tracker.tickets[n].kind is not Kind.REQUEST)
+
+
+@memoized
+def unsettled_open(state: State) -> tuple[str, ...]:
+    """The tickets of `not_given`, other than those `held_back`."""
+    held = held_back(state)
+    return tuple(n for n in not_given(state) if n not in held)
 
 
 def judged_apart(state: State) -> Callable[[str], bool]:
@@ -266,7 +276,7 @@ def party(state: State, number: str) -> Party | None:
     given_to_analyst = given_party(state, number)
     if given_to_analyst is not None:
         return given_to_analyst
-    if number in not_given(state) and number not in unsettled_open(state):
+    if number in held_back(state):
         return Agents(batching(state))
     return None
 

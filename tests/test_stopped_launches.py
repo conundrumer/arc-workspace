@@ -43,7 +43,7 @@ def test_released_ticket_gets_another_analyst(tmp_path: Path, status: str,
     s = with_agents(tmp_path, [a], [t])
     s = replace(s, computed=replace(s.computed, to_settle=(t.number,)))
     assert not given(s, t.number)
-    assert unsettled_open(s) == [t.number]
+    assert unsettled_open(s) == (t.number,)
     assert selected(s) == [t.number]
     assert isinstance(settle(s), Launch)
     for line in ("Op pause.", "Op scope: own."):

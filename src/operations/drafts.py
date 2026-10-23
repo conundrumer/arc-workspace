@@ -64,7 +64,7 @@ from operations.roles import ANALYST_NAMES, Purpose, Role, analyst_subject, join
 from operations.parties import Agents
 from operations.completion import decided, occupies
 from operations.reports import left_for_decision
-from operations.state import Agent, LogLine, State, Ticket
+from operations.state import Agent, LogLine, State, Ticket, memoized
 from ticketing.vocabulary import Note, Status, last_move_into, queued
 from operations.handled import repeated, sent
 from operations.steps import Bash, Launch, Send, Step, Undecided, decision_key
@@ -90,17 +90,24 @@ def elsewhere(state: State) -> list[Ticket]:
             and draft_change(state, t) and t.session is not None and not state.mine(t)]
 
 
-def drafts(state: State) -> list[Ticket]:
+@memoized
+def drafts(state: State) -> tuple[Ticket, ...]:
     names = named(state)
     analysed = {n for _, p, nums in state.analysts() if p is not Purpose.TRIAGE for n in nums}
     idle = {t.number for t in elsewhere(state) if t.session in state.sessions.idle}
-    return sorted((t for t in state.tracker.tickets.values()
-                   if draft_change(state, t)
-                   and (state.mine(t) or t.number in names or t.number in analysed
-                        or t.number in idle
-                        or ((ln := operator_finding(t, findings_start(t))) is not None
-                            and ln.agent_id in state.operators))),
-                  key=lambda t: t.order)
+    return tuple(sorted((t for t in state.tracker.tickets.values()
+                         if draft_change(state, t)
+                         and (state.mine(t) or t.number in names or t.number in analysed
+                              or t.number in idle
+                              or ((ln := operator_finding(t, findings_start(t))) is not None
+                                  and ln.agent_id in state.operators))),
+                        key=lambda t: t.order))
+
+
+@memoized
+def draft_numbers(state: State) -> frozenset[str]:
+    """The numbers of `drafts`."""
+    return frozenset(t.number for t in drafts(state))
 
 
 def on(state: State, t: Ticket) -> list[Agent]:
@@ -270,10 +277,11 @@ def occasion(group: list[Ticket], at: dict[str, float]) -> str:
     return str(max(max(t.input_time, at[t.number]) for t in group))
 
 
-def due(state: State) -> set[str]:
+@memoized
+def due(state: State) -> frozenset[str]:
     """The drafts on which a step of the review is due."""
-    return {t.number for t in drafts(state)
-            if (s := draft_step(state, t)) is not None and not isinstance(s, Undecided)}
+    return frozenset(t.number for t in drafts(state)
+                     if (s := draft_step(state, t)) is not None and not isinstance(s, Undecided))
 
 
 def analyst_writers(state: State, t: Ticket) -> list[Agent]:
@@ -328,6 +336,7 @@ def alone(state: State, t: Ticket) -> Step | None:
     return None if isinstance(s, Joined) else s
 
 
+@memoized
 def draft_step(state: State, t: Ticket) -> Step | Joined | None:
     """The step on the draft `t` alone, the group it joins, or None where
     it waits: on the agents of `writing`, or, with no party, for a
@@ -426,7 +435,7 @@ def linked(first: Ticket, waiting: list[Ticket]) -> list[Ticket]:
     return [t for t in waiting if t.number in group]
 
 
-def unended(state: State) -> list[Ticket]:
+def unended(state: State) -> tuple[Ticket, ...]:
     """The drafts given to the operators whose review has not ended."""
     return drafts(state)
 
