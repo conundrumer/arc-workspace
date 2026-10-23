@@ -285,22 +285,41 @@ parse.divider_color($DividerByLines(), Col) :- line_ink.value($U(), Col).
     .decl roles(t: number, m: number, f: number, g: number)
     roles(T, M, F, G) :- rank(T), rank(M), rank(F), rank(G).
 
-    // The output color an assignment gives a train output cell.
-    .decl predicted(t: number, m: number, f: number, g: number, e: Example, p: Position, col: Color)
-    predicted(T, M, F, G, E, P_grid_out, Col) :-
-        roles(T, M, F, G), ex_out(E, _, _),
+    // Each train output cell that a tile rank and a map rank give, in an n×n
+    // block of n×n cells: its block, and its cell in the block.
+    .decl product_cell(t: number, m: number, e: Example, p_tile: Position, p_intile: Position, p: Position)
+    product_cell(T, M, E, P_tile, P_intile, P_grid_out) :-
+        rank(T), rank(M), ex_out(E, _, _),
         frame_cell(E, M, P_tile), frame_cell(E, T, P_intile),
-        concat_2d(P_tile, P_intile, 0, P_grid_out),
-        ( frame_ink(E, M, P_tile), frame_ink(E, T, P_intile), ex.shade.value([E, F], Col)
-        ; !frame_ink(E, M, P_tile), ex.shade.value([E, G], Col)
-        ; !frame_ink(E, T, P_intile), ex.shade.value([E, G], Col)
-        ).
+        concat_2d(P_tile, P_intile, 0, P_grid_out).
 
-    // An assignment whose prediction and some train output differ at a cell.
+    // A train output cell that the product of a tile rank and a map rank
+    // leaves out.
+    .decl misfit(t: number, m: number)
+    misfit(T, M) :- rank(T), rank(M), ex_out(E, P, _), !product_cell(T, M, E, _, _, P).
+
+    // The colors a train output gives the product's cells where both shapes
+    // are set, which the fill panel's shade gives.
+    .decl fill_demand(t: number, m: number, e: Example, col: Color)
+    fill_demand(T, M, E, Col) :-
+        product_cell(T, M, E, P_tile, P_intile, P),
+        frame_ink(E, M, P_tile), frame_ink(E, T, P_intile), ex_out(E, P, Col).
+
+    // The colors a train output gives the product's other cells, which the
+    // ground panel's shade gives.
+    .decl ground_demand(t: number, m: number, e: Example, col: Color)
+    ground_demand(T, M, E, Col) :-
+        product_cell(T, M, E, P_tile, P_intile, P), ex_out(E, P, Col),
+        ( !frame_ink(E, M, P_tile) ; !frame_ink(E, T, P_intile) ).
+
+    // An assignment whose product and some train output differ at a cell.
     .decl contradicted(t: number, m: number, f: number, g: number)
-    contradicted(T, M, F, G) :- predicted(T, M, F, G, E, P, Col), !ex_out(E, P, Col).
     contradicted(T, M, F, G) :-
-        roles(T, M, F, G), ex_out(E, P, Col), !predicted(T, M, F, G, E, P, Col).
+        roles(T, M, F, G),
+        ( misfit(T, M)
+        ; fill_demand(T, M, E, Col), !ex.shade.value([E, F], Col)
+        ; ground_demand(T, M, E, Col), !ex.shade.value([E, G], Col)
+        ).
 
     // @workaround: the runner's fit of panel_role over its candidate values, which the plan's enumeration limit blocks
     // @ignore: determine prediction — the four roles are fixed jointly by the
