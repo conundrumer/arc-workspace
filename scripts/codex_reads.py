@@ -28,6 +28,8 @@ from pathlib import Path
 from typing import Any
 
 import codex_agent
+from codex_commands import (command_entries, command_output, live_commands, native_shell_call,
+                            output_blocks, rollout_message)
 from codex_agent import BUSY_REFUSAL, FRESH_REFUSAL
 from command_labels import segment_program, simple_commands
 from run_reads import blocks, is_prompt
@@ -46,21 +48,6 @@ class Native:
 
 
 _native_sessions: dict[str, Path] = {}
-
-
-def rollout_message(row: dict[str, Any]) -> tuple[str, str] | None:
-    payload = row["payload"]
-    kind = payload.get("type")
-    if row.get("type") == "response_item" and kind == "message":
-        return payload["role"], "\n".join(part["text"] for part in payload["content"] if "text" in part)
-    if row.get("type") == "event_msg":
-        if kind in ("user_message", "agent_message"):
-            return ("user" if kind == "user_message" else "assistant"), payload["message"]
-        item = payload.get("item", {})
-        if kind == "item_completed" and item.get("type") in ("UserMessage", "AgentMessage"):
-            return ("user" if item["type"] == "UserMessage" else "assistant"), "\n".join(
-                part["text"] for part in item["content"] if "text" in part)
-    return None
 
 
 def native_assignments(session_scratch: Path | None = None, *, include_history: bool = False) -> list[Native]:
@@ -160,42 +147,6 @@ def native_execution(assignment: Assignment, state: dict[str, Any], home: Path) 
         elif row.get("type") == "event_msg" and payload.get("type") == "agent_message":
             reply = payload["message"]
     return entries, reply
-
-
-def native_shell_call(payload: dict[str, Any]) -> str | None:
-    """Read one literal shell call from a native tool invocation; refuse code expressions."""
-    if payload.get("type") == "function_call" and payload.get("name") in ("exec_command", "functions.exec_command"):
-        return json.loads(payload["arguments"])["cmd"]
-    if payload.get("type") != "custom_tool_call" or payload.get("name") != "exec":
-        return None
-    found = re.fullmatch(r"\s*(?:text\(\s*)?await tools\.exec_command\(\s*(\{.*\})\s*\)\s*\)?\s*;?\s*",
-                         payload["input"], re.S)
-    if found is None:
-        return None
-    source = found[1]
-    position = 1
-    values = {}
-    decoder = json.JSONDecoder()
-    while True:
-        key = re.match(r'\s*(?:"([a-z_]+)"|([a-z_]+))\s*:\s*', source[position:])
-        if key is None:
-            return None
-        name = key[1] or key[2]
-        if name in values or name not in {"cmd", "workdir", "yield_time_ms", "max_output_tokens", "login", "tty"}:
-            return None
-        position += key.end()
-        try:
-            value, end = decoder.raw_decode(source[position:])
-        except ValueError:
-            return None
-        values[name] = value
-        position += end
-        tail = re.match(r"\s*([,}])\s*", source[position:])
-        if tail is None:
-            return None
-        position += tail.end()
-        if tail[1] == "}":
-            return values.get("cmd") if position == len(source) and isinstance(values.get("cmd"), str) else None
 
 
 def native_receipt(item: Native, home: Path | None = None):
@@ -463,7 +414,6 @@ def unrecorded_launch(entries: list[dict[str, Any]], index: int,
     Saved walks may recover killed processes; accounting retains those calls
     so their missing usage evidence remains visible.
     """
-    import re
     from run_reads import output_file
 
     output = launch_output(entries, call_id)
@@ -682,85 +632,6 @@ def saved_entries(entries: list[dict[str, Any]], kind: str,
         raise ValueError("a refusal after an accepted Codex call needs a valid retry")
     if used != len(records):
         raise ValueError("the launcher's calls do not match the Codex turn records")
-    return out
-
-
-def command_entries(call: str, command: str, result: str) -> list[dict[str, Any]]:
-    """A completed command in the transcript form the step reader accepts."""
-    if not isinstance(command, str) or not isinstance(result, str):
-        raise ValueError("the Codex command or output is not text")
-    return [
-        {"type": "assistant", "message": {"content": [
-            {"type": "tool_use", "name": "Bash", "id": call,
-             "input": {"command": command}}]}},
-        {"type": "user", "message": {"content": [
-            {"type": "tool_result", "tool_use_id": call, "content": result}]}},
-    ]
-
-
-def output_blocks(output: Any) -> list[str]:
-    """The texts of a result given as `input_text` blocks, else none."""
-    if (isinstance(output, list) and output
-            and all(isinstance(b, dict) and b.get("type") == "input_text" and isinstance(b.get("text"), str)
-                    for b in output)):
-        return [b["text"] for b in output]
-    return []
-
-
-def command_output(blocks: list[str]) -> str:
-    """The command's output text: the `output` of a trailing JSON block, else the joined blocks."""
-    try:
-        decoded = json.loads(blocks[-1])
-    except ValueError:
-        decoded = None
-    if isinstance(decoded, dict) and isinstance(decoded.get("output"), str):
-        return decoded["output"]
-    return "".join(blocks)
-
-
-def live_commands(activity: list[dict[str, Any]], *, include_prompts: bool = False) -> list[dict[str, Any]]:
-    """Pair completed rollout results with commands from this turn only."""
-    pending: dict[str, str] = {}
-    completed: set[str] = set()
-    out: list[dict[str, Any]] = []
-    for row in activity:
-        previous_length = len(out)
-        p = row["payload"]
-        kind = p.get("type")
-        message = rollout_message(row) if include_prompts else None
-        if message is not None and message[0] == "user":
-            out.append({"type": "user", "uuid": str(len(out)),
-                        "message": {"content": message[1]}})
-        if row.get("type") == "response_item" and kind in ("function_call", "custom_tool_call"):
-            command = native_shell_call(p)
-            if command is not None:
-                pending[p["call_id"]] = command
-        elif kind == "exec_command_begin":
-            pending[p["call_id"]] = shlex.join(p["command"])
-        elif ((row.get("type") == "response_item" and kind in ("function_call_output", "custom_tool_call_output"))
-              or kind == "exec_command_end"):
-            identity = p["call_id"]
-            if identity not in pending or identity in completed:
-                continue
-            output = p["output"]
-            texts = output_blocks(output)
-            # A running exec returns an acknowledgement, not a completed result.
-            if "Process running with session ID" in ("".join(texts) if texts else output):
-                continue
-            result = command_output(texts) if texts else output
-            out.extend(command_entries(identity, pending[identity], result))
-            completed.add(identity)
-        elif kind == "item_completed" and p["item"].get("type") == "CommandExecution":
-            item = p["item"]
-            identity = item["id"]
-            if identity not in completed:
-                command = item["command"]
-                out.extend(command_entries(identity, shlex.join(command) if isinstance(command, list)
-                                           else command, item["aggregated_output"]))
-                completed.add(identity)
-        if include_prompts:
-            for entry in out[previous_length:]:
-                entry["timestamp"] = row["timestamp"]
     return out
 
 

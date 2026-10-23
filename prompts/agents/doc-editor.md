@@ -10,7 +10,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 + document-size-budget: 46595
 * comment: when editing this doc
     - The doc editor's entry point: its system prompt, for its run on the part of a change that edits the agent-facing documents.
-    - Its checklist: [checklist.md](prompts/agents/doc-editor/checklist.md).
+    - Its checklist is the items `uv run python scripts/step.py doc-editor` prints.
+        + xref: scripts/step.py:main
     - Acts, each with its section:
         - Reading its brief and its request, messages to other agents, and taking its steps: [Doc editor](#doc-editor), with [An editor's brief](prompts/agents/notes/launching.md#an-editors-brief), [A change's brief](prompts/agents/notes/launching.md#a-changes-brief), [A doc editor's brief](prompts/agents/notes/launching.md#a-doc-editors-brief) and [editor-messages](prompts/agents/notes/worktree.md#editor-messages).
         - Sorting the findings of a review an item has it make: [Findings that block a change](prompts/agents/notes/launching.md#findings-that-block-a-change), by the link of [An editor's brief](prompts/agents/notes/launching.md#an-editors-brief).

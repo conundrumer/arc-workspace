@@ -1,6 +1,6 @@
 + document-size-budget: 1100
 * comment: when editing this doc
-    - The doc editor reads this document by the link of the item `Write the edit` of its [checklist](prompts/agents/doc-editor/checklist.md), once it has worked out the readers of the places it edits.
+    - The doc editor reads this document by the link of the item `Write the edit` of its checklist, once it has worked out the readers of the places it edits.
     - Acts, each with its section:
         - Building its ticket's `Design`, and sending the code change a move of an `mctx` fragment needs: [Building the Design](#building-the-design).
 

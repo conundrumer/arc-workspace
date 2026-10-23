@@ -10,7 +10,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 + document-size-budget: 20600
 * comment: when editing this doc
     - The code editor's entry point: its system prompt, for its run on the part of a change outside the documents, the lib and the solvers.
-    - Its checklist: [checklist.md](prompts/agents/code-editor/checklist.md).
+    - Its checklist is the items `uv run python scripts/step.py code-editor` prints.
+        + xref: scripts/step.py:main
     - Acts, each with its section:
         - Reading its brief, messages to other agents, and taking its steps: [Code editor](#code-editor), with [Findings that block a change](prompts/agents/notes/launching.md#findings-that-block-a-change) by the link of [An editor's brief](prompts/agents/notes/launching.md#an-editors-brief), for a review an item has it make.
         - Writing the code against the spec: [Writing the code](prompts/agents/code-editor/writing-the-code.md#writing-the-code), by the links of the items of its checklist, and [code-working-rules](prompts/agents/notes/code.md#code-working-rules).

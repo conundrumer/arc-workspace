@@ -1,6 +1,6 @@
 + document-size-budget: 1800
 * comment: when editing this doc
-    - The doc reviewer reads this document by the links of the items `File the tickets` and `Send the findings` of its [checklist](prompts/agents/doc-reviewer/checklist.md), once it has made the findings of a review.
+    - The doc reviewer reads this document by the links of the items `File the tickets` and `Send the findings` of its checklist, once it has made the findings of a review.
     - Acts, each with its section:
         - Filing a review's findings as tickets, sending the others, and holding back those left for a decision: [Filing and sending findings](#filing-and-sending-findings).
 

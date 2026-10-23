@@ -10,7 +10,8 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 + document-size-budget: 5600
 * comment: when editing this doc
     - The lib reviewer's entry point: its system prompt, for its run on a lib review of the lib's diff since the last baseline.
-    - Its checklist: [checklist.md](prompts/agents/lib-reviewer/checklist.md).
+    - Its checklist is the items `uv run python scripts/step.py lib-reviewer` prints.
+        + xref: scripts/step.py:main
     - Acts, each with its section:
         - Reading the handbook: [abridgement](prompts/agents/notes/reading.md#abridgement), [citations](prompts/agents/notes/reading.md#citations).
         - Reading its brief, and taking its steps: [Lib reviewer](#lib-reviewer).

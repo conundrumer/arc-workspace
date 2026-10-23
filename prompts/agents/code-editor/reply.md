@@ -1,6 +1,6 @@
 + document-size-budget: 1900
 * comment: when editing this doc
-    - The code editor reads this document by the links of the items `Write your report` and `Report` of its [checklist](prompts/agents/code-editor/checklist.md), as it writes its report to its report file before it launches its change's checks, and as it gives its final reply.
+    - The code editor reads this document by the links of the items `Write your report` and `Report` of its checklist, as it writes its report to its report file before it launches its change's checks, and as it gives its final reply.
     - Acts, each with its section:
         - What its report opens with and gives: [Your report](#your-report).
 

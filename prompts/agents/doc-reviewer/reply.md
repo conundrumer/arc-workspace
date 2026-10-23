@@ -1,6 +1,6 @@
 + document-size-budget: 1100
 * comment: when editing this doc
-    - The doc reviewer reads this document by the link of the item `Reply` of its [checklist](prompts/agents/doc-reviewer/checklist.md), once it has filed and sent the findings of a review.
+    - The doc reviewer reads this document by the link of the item `Reply` of its checklist, once it has filed and sent the findings of a review.
     - Acts, each with its section:
         - What its reply gives: [Your reply](#your-reply).
 

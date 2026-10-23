@@ -1,6 +1,6 @@
 + document-size-budget: 600
 * comment: when editing this doc
-    - The lib reviewer reads this document by the link of the item `Report` of its [checklist](prompts/agents/lib-reviewer/checklist.md), as it gives its final reply.
+    - The lib reviewer reads this document by the link of the item `Report` of its checklist, as it gives its final reply.
     - Acts, each with its section:
         - What its final reply gives: [Your reply](#your-reply).
 

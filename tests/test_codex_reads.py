@@ -761,3 +761,97 @@ def test_fallback_preparation_failure_cannot_reuse_an_earlier_report(tmp_path, b
         retry['timestamp'] = '2026-10-20T00:00:30Z'
         assert walk.step_calls(reads.walk_entries([*entries, retry], 'code-reviewer'),
                                'code-reviewer')[-1][1] == 'new completed work'
+
+
+def rollout_row(kind, **payload):
+    return {'type': 'response_item', 'timestamp': '2026-10-23T00:00:00Z',
+            'payload': {'type': kind, **payload}}
+
+
+def literal_call(identity='step', source=None):
+    return rollout_row('custom_tool_call', name='exec', call_id=identity,
+                       input=source or f'text(await tools.exec_command({{cmd:{json.dumps(STEP)}}}));')
+
+
+def call_result(identity='step', output='item'):
+    return rollout_row('custom_tool_call_output', call_id=identity, output=output)
+
+
+def wait_call(identity, cell='cell', **args):
+    return rollout_row('function_call', name='functions.wait', call_id=identity,
+                       arguments=json.dumps({'cell_id': cell, **args}))
+
+
+@pytest.mark.parametrize('source', [
+    'await tools.apply_patch("patch"); CALL',
+    'CALL await tools.apply_patch("patch");',
+    'await tools.exec_command({cmd:"work"}); CALL',
+    'CALL CALL',
+    'await tools.write_stdin({session_id:1}); CALL',
+    'const command = "step"; text(await tools.exec_command({cmd:command}));',
+])
+def test_mixed_exec_sources_earn_no_walk_credit(tmp_path, source):
+    literal = f'text(await tools.exec_command({{cmd:{json.dumps(STEP)}}}));'
+    rows = [literal_call(source=source.replace('CALL', literal)),
+            {'type': 'event_msg', 'payload': {'type': 'exec_command_begin',
+             'call_id': 'shell', 'command': STEP.split()}},
+            call_result(output='Script running with cell ID cell'),
+            {'type': 'event_msg', 'payload': {'type': 'exec_command_end',
+             'call_id': 'shell', 'output': 'item'}},
+            wait_call('wait'), call_result('wait')]
+    path = tmp_path / 'rollout.json'
+    path.write_text(json.dumps(rows))
+    stored = json.loads(path.read_text())
+    for end in range(len(stored) + 1):
+        assert walk.step_calls(reads.live_commands(stored[:end]), 'code-reviewer') == []
+
+
+@pytest.mark.parametrize('custom', [True, False])
+def test_literal_call_results_are_counted_once(custom):
+    call = literal_call() if custom else rollout_row(
+        'function_call', name='exec_command', call_id='step', arguments=json.dumps({'cmd': STEP}))
+    rows = [call, call_result(), call_result(), call_result('orphan')]
+    assert walk.step_calls(reads.live_commands(rows), 'code-reviewer') == [('step', 'item')]
+
+
+def test_yielded_cells_wait_for_their_own_completion_and_keep_prompt_order():
+    rows = [literal_call(), call_result(output='Script running with cell ID first\nOutput:\npart '),
+            literal_call('other'), call_result('other', 'Script running with cell ID second'),
+            wait_call('wait', 'first'),
+            call_result('wait', 'Script running with cell ID first\nOutput:\nmore '),
+            rollout_row('message', role='user', content=[{'text': 'continue'}]),
+            wait_call('other-wait', 'second'), call_result('other-wait', 'other item'),
+            wait_call('last', 'first'), call_result('last', 'first item')]
+    assert walk.step_calls(reads.live_commands(rows[:7]), 'code-reviewer') == []
+    entries = reads.live_commands(rows, include_prompts=True)
+    assert entries[0]['message']['content'] == 'continue'
+    assert walk.step_calls(entries, 'code-reviewer') == [
+        ('other', 'other item'), ('step', 'part more first item')]
+    assert all(entry['timestamp'] == rows[-1]['timestamp'] for entry in entries)
+
+
+@pytest.mark.parametrize('output', [
+    'Process running with session ID 1',
+    json.dumps({'session_id': 1, 'output': 'partial'}),
+    [{'type': 'input_text', 'text': json.dumps({'session_id': 1, 'output': 'partial'})}],
+    'Script failed: error', 'Script terminated',
+    json.dumps({'exit_code': 1, 'output': 'failed'}),
+])
+def test_unfinished_or_failed_results_earn_no_credit(output):
+    rows = [literal_call(), call_result(output=output),
+            rollout_row('function_call', name='write_stdin', call_id='poll',
+                        arguments=json.dumps({'session_id': 1})), call_result('poll')]
+    assert walk.step_calls(reads.live_commands(rows), 'code-reviewer') == []
+
+
+def test_terminated_wait_earns_no_credit():
+    rows = [literal_call(), call_result(output='Script running with cell ID cell'),
+            wait_call('wait', terminate=True), call_result('wait')]
+    assert walk.step_calls(reads.live_commands(rows), 'code-reviewer') == []
+
+
+def test_orphan_shell_events_earn_no_credit():
+    rows = [{'type': 'event_msg', 'payload': {'type': 'item_completed', 'item': {
+        'type': 'CommandExecution', 'id': 'orphan', 'command': STEP,
+        'aggregated_output': 'item'}}}]
+    assert walk.step_calls(reads.live_commands(rows * 2), 'code-reviewer') == []

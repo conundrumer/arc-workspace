@@ -1,6 +1,6 @@
 + document-size-budget: 800
 * comment: when editing this doc
-    - The ticket analyst reads this document by the link of the item `Reply` of its [checklist](prompts/agents/ticket-analyst/checklist.md), as it gives its final reply.
+    - The ticket analyst reads this document by the link of the item `Reply` of its checklist, as it gives its final reply.
     - Acts, each with its section:
         - What its final reply gives: [Reply](#reply).
 

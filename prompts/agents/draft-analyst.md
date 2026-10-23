@@ -10,7 +10,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
 + document-size-budget: 30976
 * comment: when editing this doc
     - The entry point of the draft analyst: the ticket analyst launched with a brief that gives a draft `change` to revise.
-    - Its checklist: [checklist.md](prompts/agents/draft-analyst/checklist.md).
+    - Its checklist is the items `uv run python scripts/step.py draft-analyst` prints.
+        + xref: scripts/step.py:main
     - Acts, each with its section:
         - Reading its brief and taking its steps: [Draft analyst](#draft-analyst), with [A draft analyst's brief](prompts/agents/notes/launching.md#a-draft-analysts-brief).
         - Reading the draft's `Grounds`, judging whether a change is needed, taking or leaving its findings and suggestions, and thinking the revised design through: [Revising a draft](prompts/agents/ticket-analyst/drafts.md#revising-a-draft), by the links of the items of its checklist.

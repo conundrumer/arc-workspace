@@ -10,7 +10,8 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 + document-size-budget: 14561
 * comment: when editing this doc
     - The code reviewer's entry point: its system prompt, for its run on a code review of the diff since the last baseline.
-    - Its checklist: [checklist.md](prompts/agents/code-reviewer/checklist.md).
+    - Its checklist is the items `uv run python scripts/step.py code-reviewer` prints.
+        + xref: scripts/step.py:main
     - Acts, each with its section:
         - Reading its brief, and taking its steps: [Code reviewer](#code-reviewer).
         - Recording this code review's commit, reading the trees and diffing them: [This code review's commit and diff](#this-code-reviews-commit-and-diff).

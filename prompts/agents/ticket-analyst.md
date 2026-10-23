@@ -10,7 +10,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
 + document-size-budget: 31966
 * comment: when editing this doc
     - The entry point of the ticket analyst, launched with a brief that gives tickets to settle or the process assessment, and resumed with a draft it filed to revise.
-    - Its checklist: [checklist.md](prompts/agents/ticket-analyst/checklist.md).
+    - Its checklist is the items `uv run python scripts/step.py ticket-analyst` prints.
+        + xref: scripts/step.py:main
     - Acts, each with its section:
         - Reading its brief and taking its steps: [Ticket analyst](#ticket-analyst), with [A ticket analyst's brief](prompts/agents/notes/launching.md#a-ticket-analysts-brief).
         - Weighing, reading rules by intent, making a decision and bringing it to the user: [Decisions](#decisions), from the subsections of [Decisions](prompts/agents/notes/decisions.md#decisions) other than [A decision's record in a reply](prompts/agents/notes/decisions.md#a-decisions-record-in-a-reply).

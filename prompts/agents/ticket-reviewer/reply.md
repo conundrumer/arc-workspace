@@ -1,6 +1,6 @@
 + document-size-budget: 600
 * comment: when editing this doc
-    - The ticket reviewer reads this document by the link of the item `Reply` of its [checklist](prompts/agents/ticket-reviewer/checklist.md), as it gives its final reply.
+    - The ticket reviewer reads this document by the link of the item `Reply` of its checklist, as it gives its final reply.
     - Acts, each with its section:
         - What its final reply gives: [Reply](#reply).
 

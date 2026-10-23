@@ -10,7 +10,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 + document-size-budget: 22681
 * comment: when editing this doc
     - The entry point of the decision analyst: the ticket analyst launched with a brief that gives what a change's editors leave, a step an operator holds, or a declined load act.
-    - Its checklist: [checklist.md](prompts/agents/decision-analyst/checklist.md).
+    - Its checklist is the items `uv run python scripts/step.py decision-analyst` prints.
+        + xref: scripts/step.py:main
     - Acts, each with its section:
         - Reading its brief and taking its steps: [Decision analyst](#decision-analyst), with [A decision analyst's brief](prompts/agents/notes/launching.md#a-decision-analysts-brief).
         - Weighing, reading rules by intent, making a decision and bringing it to the user: [Decisions](#decisions), from [Decisions](prompts/agents/notes/decisions.md#decisions).

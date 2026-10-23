@@ -1,6 +1,6 @@
 + document-size-budget: 1500
 * comment: when editing this doc
-    - The lib reviewer reads this document by the link of the item `Find the places` of its [checklist](prompts/agents/lib-reviewer/checklist.md).
+    - The lib reviewer reads this document by the link of the item `Find the places` of its checklist.
     - Acts, each with its section:
         - Finding places: [Finding places](#finding-places).
 

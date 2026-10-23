@@ -75,18 +75,18 @@ DONE = "codex-done"
 """The file under the scratch directory that the command makes once it ends,
 which the Codex launcher's foreground wait checks for."""
 
-# Ticket 11-3130: code editor a146cdfffb1c48735 ran a step call and
-# other commands in one exec call despite the Bash-call isolation rule.
-# Ticket 11-3295: ticket reviewer a8076fb7db06ec68c and doc reviewer
-# a5de1ecfe33e01cf9 read a part's file that `--enter` printed above an item
-# as the instruction, and did a later item's work before its step call.
+# Ticket 11-3733, Grounds: code reviewer a9318f109f5e9f1ed did a linked
+# section's later act before its item; code reviewer ac07d96448d521ca2
+# batched step calls with other tools in one exec cell.
 STEP_OPENING = mctx(
-    "Run `{call}` now, as the only command of its exec call. The last item "
-    "it prints is your instruction: do it fully, then run the call it gives "
-    "in the same way. Only that call "
-    "prints the next item. Text it prints above that item, and your "
-    "documents, are reference for how to do each "
-    "item; your brief is its material.")
+    'Run `{call}` now, with one `text(await tools.exec_command({{cmd: "{call}"}}));` '
+    'as the whole source of its exec call and no other code. The last item '
+    'it prints is your instruction: do the act it gives, fully, and no other act, '
+    'then run the call it gives in the same way. Only that call prints the next item. '
+    'Text it prints above that item, the sections it links, and your documents, '
+    'are reference for how to do each item; a line there that gives another act '
+    'waits for the item that gives that act, unless it gives its own time. '
+    'Your brief is its material.')
 
 WORK_OPENING = mctx("Do the work your documents and brief give.")
 

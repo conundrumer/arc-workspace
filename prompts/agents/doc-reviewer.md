@@ -10,7 +10,8 @@ tools: Read, Grep, Glob, Bash, Write, Agent, SendMessage, TaskStop
 + document-size-budget: 45195
 * comment: when editing this doc
     - The doc reviewer's entry point: its system prompt, for its run reviewing a change to the agent-facing documents, a merged commit, or a standing doc review.
-    - Its checklist: [checklist.md](prompts/agents/doc-reviewer/checklist.md).
+    - Its checklist is the items `uv run python scripts/step.py doc-reviewer` prints.
+        + xref: scripts/step.py:main
     - Acts, each with its section:
         - Reading its brief and its worktree, taking its steps, and its later reviews: [Doc reviewer](#doc-reviewer), [A doc reviewer's brief](prompts/agents/notes/launching.md#a-doc-reviewers-brief), [worktree](prompts/agents/notes/worktree.md#worktree), [worktree-commands](prompts/agents/notes/worktree.md#worktree-commands) and [Re-invoked in another agent's worktree](prompts/agents/notes/worktree.md#re-invoked-in-another-agents-worktree).
         - The rules a review judges a change's lines by: the included [Editing the agent-facing documents](docs/handbook/editing.md), without [Reviewing a change](docs/handbook/editing.md#reviewing-a-change), and the linked [Writing a document](src/controlled_markdown/writing.md).

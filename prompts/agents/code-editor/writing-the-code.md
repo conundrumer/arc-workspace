@@ -1,6 +1,6 @@
 + document-size-budget: 3700
 * comment: when editing this doc
-    - The code editor reads this document by the links of the items `Find the refactor tickets on your modules` and `Write the code` of its [checklist](prompts/agents/code-editor/checklist.md), once it has written its `Reuse` list.
+    - The code editor reads this document by the links of the items `Find the refactor tickets on your modules` and `Write the code` of its checklist, once it has written its `Reuse` list.
     - Acts, each with its section:
         - Writing the code against the spec, and finding the `refactor` tickets on its modules: [Writing the code](#writing-the-code).
 
