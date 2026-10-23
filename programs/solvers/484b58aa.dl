@@ -29,41 +29,45 @@
 .decl intact(p: Position, col: Color)
 intact(P, Col) :- in(P, Col), !params.hole(Col).
 
-.decl damaged(p: Position)
-damaged(P) :- in(P, Col), params.hole(Col).
-
 .decl impl_choice(ch: Choice)
 impl_choice($Lattice()). impl_choice($Lines()).
 
-// The period a damaged cell's pattern repeats under, per case.
+// The period a cell's pattern repeats under, per case.
 .decl period_at(ch: Choice, p: Position, a: Axis, k: number)
 
-// Cell q agrees with damaged cell p on axis a: within the period there, or
-// on the same line where the axis has no period.
-.decl axis_agree(ch: Choice, p: Position, a: Axis, q: Position)
-axis_agree(Ch, P, A, Q) :-
-    impl_choice(Ch), damaged(P), in(Q, _), axis_of(D, A),
-    ( period_at(Ch, P, A, K),                                       // within the period
-      dist(P, D, T), stride(T, K, 0, _, R),
-      dist(Q, D, T2), stride(T2, K, 0, _, R)
-    ; !period_at(Ch, P, A, _), same_dist(D, P, Q)                   // or on the same line
+// A cell's place toward d: its index within the period on d's axis, or its
+// distance from d's edge where the axis has no period.
+.decl place(ch: Choice, p: Position, d: Dir, r: number)
+place(Ch, P, D, R) :-
+    impl_choice(Ch), in(P, _), axis_of(D, A), dist(P, D, T),
+    ( period_at(Ch, P, A, K), stride(T, K, 0, _, R)                 // within the period
+    ; !period_at(Ch, P, A, _), R = T                                // or the line
     ).
 
-// The cells in a damaged cell's orbit under the periods.
-.decl orbit(ch: Choice, p: Position, q: Position)
-orbit(Ch, P, Q) :- axis_agree(Ch, P, A, Q), perp(A, A2), axis_agree(Ch, P, A2, Q).
+// A cell's orbit under the periods: its places toward d and toward d2, on the
+// two axes.
+.decl orbit(ch: Choice, p: Position, d: Dir, r: number, d2: Dir, r2: number)
+orbit(Ch, P, D, R, D2, R2) :-
+    place(Ch, P, D, R), axis_of(D, A), perp(A, A2), axis_of(D2, A2), place(Ch, P, D2, R2).
+
+// The color the intact cells of an orbit hold.
+// @ignore: single-consumer — one row per orbit, where a join in `out` holds one per pair of cells in an orbit
+.decl orbit_color(ch: Choice, d: Dir, r: number, d2: Dir, r2: number, col: Color)
+orbit_color(Ch, D, R, D2, R2, Col) :- orbit(Ch, Q, D, R, D2, R2), intact(Q, Col).
 
 // Intact cells pass through under every case.
 out(P, Col, Ch) :- impl_choice(Ch), intact(P, Col).
 
-out(P, Col, Ch) :- orbit(Ch, P, Q), intact(Q, Col).
+out(P, Col, Ch) :-
+    in(P, Hole), params.hole(Hole),                                 // damaged cell
+    orbit(Ch, P, D, R, D2, R2), orbit_color(Ch, D, R, D2, R2, Col).
 
 // --- $Lattice ---
 
 .init si = OffsetInvariance<Unit, Color>
 si.cell($U(), P, Col) :- intact(P, Col).
 
-period_at($Lattice(), P, A, K) :- damaged(P), si.min_period($U(), A, K).
+period_at($Lattice(), P, A, K) :- in(P, _), si.min_period($U(), A, K).
 
 // --- $Lines ---
 
@@ -71,5 +75,5 @@ period_at($Lattice(), P, A, K) :- damaged(P), si.min_period($U(), A, K).
 si_line.cell(L, P, Col) :- intact(P, Col), params.axis(A), split(P, A, _, L).
 
 period_at($Lines(), P, A, K) :-
-    damaged(P), params.axis(A), split(P, A, _, L),        // the cell's line
+    in(P, _), params.axis(A), split(P, A, _, L),          // the cell's line
     si_line.min_period(L, A, K).                          // that line's period

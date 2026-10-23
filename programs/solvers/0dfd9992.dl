@@ -30,4 +30,9 @@ wp.period($U(), A, K) :- si.min_period($U(), A, K).
 .init orbit = Canon<Position>
 orbit.edge(P, Q) :- wp.action($U(), P, Q).
 
-out(P, Col) :- orbit.id(P, Id), orbit.id(Q, Id), intact(Q, Col).
+// The color the intact cells of an orbit hold.
+// @ignore: single-consumer — one row per orbit, where a join in `out` holds one per pair of cells in an orbit
+.decl orbit_color(id: Ident, col: Color)
+orbit_color(Id, Col) :- orbit.id(Q, Id), intact(Q, Col).
+
+out(P, Col) :- orbit.id(P, Id), orbit_color(Id, Col).
