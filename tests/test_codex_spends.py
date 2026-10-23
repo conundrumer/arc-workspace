@@ -2,6 +2,7 @@
 
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 
 
 from handbook.paths import scripts_importable
@@ -113,3 +114,10 @@ def test_shared_spend_inputs_are_statted_once_and_refresh_at_next_state(tmp_path
     (source / "new").write_text("")
     state_reads.new_state()
     assert spends.fingerprint(source) != before
+
+
+def test_write_record_leaves_an_ignore_file_beside_the_records(tmp_path: Path) -> None:
+    directory = tmp_path / spends.SPENDS
+    spends.write_record(directory / "1-1.json", None)
+    spends.write_record(directory / "1-2.json", None)
+    assert (directory / spends.SPENDS_IGNORE).read_text() == "*\n"

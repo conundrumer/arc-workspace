@@ -54,6 +54,10 @@ number: the spend as `change_spend` read it, or JSON `null` where it has
 no known spend. It is no status directory, so no reader of tickets takes
 a record for a ticket."""
 
+SPENDS_IGNORE = ".gitignore"
+"""The file in `SPENDS` that holds `*`, so a recursive search of `tickets/`
+reads no record."""
+
 
 class Unknown(Enum):
     """A record with no known dollar spend."""
@@ -315,8 +319,13 @@ def all_stopped(owner: dict[Path, str], at: float) -> bool:
 
 @partial(read_interrupts.deferred, force=False)
 def write_record(record: Path, value: object) -> None:
-    """Write `value` as JSON to the file `record` under `SPENDS`."""
+    """Write `value` as JSON to the file `record` under `SPENDS`, after
+    writing in its directory, where it is missing, the ignore file
+    `SPENDS_IGNORE` holding `*`, so a recursive search skips the records."""
     record.parent.mkdir(exist_ok=True)
+    ignore = record.parent / SPENDS_IGNORE
+    if not ignore.exists():
+        write_whole(ignore, b"*\n")
     write_whole(record, (json.dumps(value, sort_keys=True) + "\n").encode())
 
 
