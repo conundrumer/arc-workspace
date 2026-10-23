@@ -43,31 +43,33 @@
 .init canvas = Frame2D<D4>
 canvas.extent(D, A, N) :- params.chart_cell_class(D, P, _), axis_elem(A), axis_dim(P, A, N).
 
-// A rendering of the chart: a pose, and a one-to-one map of the chart's two
-// cell classes onto the pair's two colors, class k taking col and class k2
-// taking col2.
-.type Render = [d: D4, k: Ident, col: Color, k2: Ident, col2: Color]
-
 // The chart's cell classes.
 .decl cell_class(k: Ident)
 cell_class(K) :- params.chart_cell_class(_, _, K).
 
-.decl render(r: Render)
-render([D, K, Col, K2, Col2]) :-
-    d4_elem(D), cell_class(K), cell_class(K2), K != K2,
+// A pairing: class k takes color col.
+.type Pairing = [k: Ident, col: Color]
+
+// A one-to-one map of the chart's two cell classes onto the pair's two
+// colors, as the class of the two pairings that make it up.
+.init color_map = Canon<Pairing>
+color_map.edge([K, Col], [K2, Col2]) :-
+    cell_class(K), cell_class(K2), K != K2,
     in(_, Col), in(_, Col2), Col != Col2.
+
+// A rendering of the chart: a pose, and a color map.
+.type Render = [d: D4, m: Ident]
 
 // The chart rendered: every canvas cell in the color its class takes.
 .decl chart(r: Render, p: Position, col: Color)
-chart([D, K1, Col1, K2, Col2], P, Col) :-
-    render([D, K1, Col1, K2, Col2]), canvas.cell(D, P),  // a rendering, cell by cell
-    params.chart_cell_class(D, P, K),                    // the cell's class
-    ( K = K1, Col = Col1 ; K = K2, Col = Col2 ).          // the color it takes
+chart([D, M], P, Col) :-
+    color_map.id([K, Col], M), canvas.cell(D, P),  // a rendering, cell by cell
+    params.chart_cell_class(D, P, K).              // the cell's class takes Col
 
 // Where the input lays onto the rendered chart, cell for cell.
 .init occ = Occurrences<Render, Color>
 occ.cell(R, P, Col) :- chart(R, P, Col).
-occ.shape(R, P, Col) :- render(R), in(P, Col).
+occ.shape([D, M], P, Col) :- d4_elem(D), color_map.id(_, M), in(P, Col).
 
 out(P, Col) :-
     occ.occurrence(R, _),  // the rendering the input fits
