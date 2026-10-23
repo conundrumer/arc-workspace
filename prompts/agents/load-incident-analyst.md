@@ -25,7 +25,8 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
     + xref: prompts/agents/notes/decisions.md#cost-and-time
 - Recommend a fix of load through the cost of the work, and never a cap on agents or commands, as [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences) gives.
     + xref: prompts/agents/notes/decisions.md#the-users-preferences
-- Your final reply is the load incident report: for each owning session, the session id, its processes, and a recommendation with its grounds. A recommendation is no order. Give the processes that no live session owns apart, and for each process judged justified at its load, the grounds.
+- Your final reply is the load incident report: for each owning session, the session id, its processes, and a recommendation with its grounds. A recommendation is no order. Give the processes that no live session owns apart, and for each process judged justified at its load, the grounds. For each ticket behind a load you judge unneeded or inefficient, give a load note, one line that opens with the ticket's number: what the work did that loaded the machine, and what to do instead.
+    * comment: The user's words, session 19071443-e929-490f-bb8b-cca32c92ba6b, 2026-10-22T23:42:21Z: "we need to ensure it doesn't repeat. like another agent could make the same mistake. so the ticket itself needs to be updated so whoever else working on it won't fall for the same laod trap".
 
 ## Commands
 * inline: notes/commands.md#commands
