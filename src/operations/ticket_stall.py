@@ -12,10 +12,11 @@ by design and is not due, and so does a ticket whose step the usage pace
 holds (`start_holds.pace_holds`). The party such a ticket waits on is the
 one that function names where it leaves it out (`party`), and `unwaited`
 watches such a ticket whose party does not stand. A ticket
-that a live holder outside the session's own agent runs holds waits on
-that holder's work, a step of no operator, which the operators'
-transcripts do not show and which that holder's own session watches, and
-is not due. Its progress is a line of its log other than a
+that a live holder other than this operator holds waits on that
+holder's work, a step of no operator, and is not due; the stuck check
+watches a holder of the session (`plan.elsewhere`,
+`TranscriptsRead.stuck`), and a holder outside it is watched by its own
+session. Its progress is a line of its log other than a
 take or a release, the first take after such progress, the launch of an
 agent of it, a report of such an agent, and, for a change, its merge onto
 `master`; an agent of it that is pending and not quiet is progress too,
@@ -37,7 +38,6 @@ A change that waits for a ticket that holds it up (`holding`), one under
 a line whose note is `taking.STALL_FINDING` on that ticket, once after the
 time from which that ticket holds it up (`stall`)."""
 
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import assert_never
@@ -49,7 +49,6 @@ from operations.constants import stuck_reached, ticket_stuck_reached
 from operations.final_reply import live_holder
 from operations.log_commands import log
 from operations.parties import Hold, Holder, Party
-from operations.roles import AGENT_ID
 from operations.state import (RELEASED_LINE, Agent, DueEntry, State, Ticket, kept_across_reads, memoized,
                               memoized_by_transcripts)
 from operations.handled import held_aside
@@ -60,10 +59,9 @@ from ticketing.times import utc_stamp
 from ticketing.vocabulary import Kind, Status
 
 
-def held_outside_session(state: State, t: Ticket) -> bool:
-    return (t.holder is not None and live_holder(state, t.holder)
-            and (re.fullmatch(AGENT_ID, t.holder) is None
-                 or t.holder not in state.session_holders))
+def held_by_other_live_holder(state: State, t: Ticket) -> bool:
+    return (t.holder is not None and t.holder != state.me
+            and live_holder(state, t.holder))
 
 
 @memoized
@@ -145,10 +143,10 @@ def review_held(state: State, number: str) -> bool:
 
 
 def assigned(state: State) -> set[str]:
-    """The tickets under `tickets/assigned/` that no live holder outside
-    the session holds (`held_outside_session`)."""
+    """The tickets under `tickets/assigned/` that no live holder other
+    than this operator holds (`held_by_other_live_holder`)."""
     return {n for n, t in state.tracker.tickets.items()
-            if t.status is Status.ASSIGNED and not held_outside_session(state, t)}
+            if t.status is Status.ASSIGNED and not held_by_other_live_holder(state, t)}
 
 
 def agents_of(state: State, number: str) -> tuple[Agent, ...]:

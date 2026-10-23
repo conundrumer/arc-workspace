@@ -129,3 +129,14 @@ def test_a_ticket_due_at_every_read_keeps_its_time(tmp_path: Path) -> None:
                                                 due_since=record))
     assert ticket_stall.stalled(replace(s, now=s.now + TICKET_STUCK_SECONDS, due_since=record)) == {
         "9-1": s.now}
+
+
+def test_a_ticket_held_by_a_live_holder_other_than_me_is_not_due_and_one_held_by_a_dead_holder_is(
+        tmp_path: Path) -> None:
+    from operations import ticket_stall
+    other = "a00000000000000a1"
+    lines = f"{FILED} assigned [ticket-analyst {other}]: taken\n"
+    s = state(tmp_path, {"assigned/9-1_change_x_ticket-analyst.md": lines})
+    live = replace(s, open_holders=frozenset({other}), session_holders=frozenset({other}))
+    assert ticket_stall.due(live) == frozenset()
+    assert ticket_stall.due(s) == frozenset({"9-1"})
