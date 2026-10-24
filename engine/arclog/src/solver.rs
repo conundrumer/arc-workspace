@@ -693,6 +693,20 @@ fn derives(form: &Form) -> Option<Derives> {
     }
 }
 
+/// Whether two forms are of one variant and have equal nodes.
+fn equal_forms(left: &Form, right: &Form) -> bool {
+    match (left, right) {
+        (Form::Claim(a), Form::Claim(b)) => a == b,
+        (Form::Clause(a), Form::Clause(b)) => a == b,
+        (Form::Instance(a), Form::Instance(b)) => a == b,
+        (Form::Choose(a), Form::Choose(b)) => a == b,
+        (Form::RigidDet(a), Form::RigidDet(b)) => a == b,
+        (Form::Demonstrated(a), Form::Demonstrated(b)) => a == b,
+        (Form::Alts(a), Form::Alts(b)) => a == b,
+        _ => false,
+    }
+}
+
 fn is_det(form: &Form) -> bool {
     matches!(form, Form::Clause(clause) if clause.value().keyword == ClauseKeyword::Det)
 }
@@ -703,6 +717,9 @@ fn is_det(form: &Form) -> bool {
 /// several blocks determine keeps each block's `DET`. The place of a thing
 /// that a `DEMO_RULE` form of the concept program derives is in each such
 /// form, at its first form that derives it, as [`Taken::in_rules`] gives.
+/// Of the kept forms of one thing that are equal, the first in the walk's
+/// order stands: forms that derive one thing equally derive it once, so their
+/// combination needs no nested `ALT`, and a relation is derived by one clause.
 fn rederived(placed: &[Placed]) -> Vec<Taken<'_>> {
     let keys: Vec<Derives> = placed.iter().map(|p| derives(&p.form).expect("a reached form derives")).collect();
     let mut deepest: StableHashMap<&Derives, (u32, bool)> = StableHashMap::default();
@@ -714,7 +731,7 @@ fn rederived(placed: &[Placed]) -> Vec<Taken<'_>> {
             entry.1 &= is_det(&p.form);
         }
     }
-    let keep: Vec<bool> = placed
+    let mut keep: Vec<bool> = placed
         .iter()
         .zip(&keys)
         .map(|(p, key)| {
@@ -722,6 +739,11 @@ fn rederived(placed: &[Placed]) -> Vec<Taken<'_>> {
             p.depth == depth || (all_det && is_det(&p.form))
         })
         .collect();
+    for index in 0..placed.len() {
+        if keep[index] && (0..index).any(|earlier| keep[earlier] && keys[earlier] == keys[index] && equal_forms(&placed[earlier].form, &placed[index].form)) {
+            keep[index] = false;
+        }
+    }
     let rederived_in = |rules: &StableHashSet<Derives>| -> Vec<&Placed> {
         (0..placed.len()).filter(|index| placed[*index].depth > 0 && keep[*index] && rules.contains(&keys[*index])).map(|index| &placed[index]).collect()
     };
