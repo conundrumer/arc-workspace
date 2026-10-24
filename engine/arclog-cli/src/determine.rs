@@ -9,6 +9,7 @@
 //! then the task ids of the solvers to run; every solver of the corpus where
 //! it is given none.
 
+use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -155,7 +156,7 @@ pub(crate) fn solver_determination(corpus: &Path, tasks: &Path, id: &str) -> Res
         let determination = determine(&base_cases, &judged, World::Closed);
         let mut findings: Vec<Finding> = determination.cases.iter().filter_map(|(name, outcome, _)| case_fault(name, outcome)).collect();
         let records: Vec<(&ProgramRelation, &ParamValue)> = solver.arcdata.value().params.iter().map(|param| (&param.value().name, &param.value().value)).collect();
-        let comparison = Comparison { determined: &base_cases, determination: &determination, records: &records, session: &session, registry };
+        let comparison = Comparison { determined: &base_cases, determination: &determination, records: &records, session: &session, registry, numbers: RefCell::default() };
         findings.extend(comparison.findings());
         (determination, findings)
     };
@@ -194,6 +195,9 @@ struct Comparison<'c> {
     records: &'c [(&'c ProgramRelation, &'c ParamValue)],
     session: &'c TaskSession,
     registry: &'c Registry,
+    /// The number of each Ident of the records, one numbering across every
+    /// relation compared, so that one entity has one number.
+    numbers: RefCell<StableHashMap<Ident, i64>>,
 }
 
 impl Comparison<'_> {
@@ -370,7 +374,7 @@ impl Comparison<'_> {
             let leaves: Result<Vec<Vec<EngineLeaf>>, String> = row.iter().zip(types).map(|(&id, ty)| term_leaves(Term::decode(id, ty), self.registry, &orientation)).collect();
             Ok(leaves?.concat())
         };
-        let mut numbers: StableHashMap<Ident, i64> = StableHashMap::default();
+        let mut numbers = self.numbers.borrow_mut();
         let mut written = BTreeSet::new();
         for row in &encoded {
             let leaves = row_leaves(row)?.into_iter().map(|leaf| match leaf {
