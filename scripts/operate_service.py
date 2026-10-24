@@ -200,6 +200,7 @@ class Request:
 
     def check(self, code: bool = False) -> None:
         beat(self.listener)
+        end_at_carry(self, time.monotonic())
         if self.waiting and not self.committed and time.monotonic() >= self.deadline - FINISH_SECONDS:
             self.detach(read_running(self))
         from refresh_locks import try_shared
@@ -812,15 +813,21 @@ def refresh_resident(main: Path, session: str, operator: str) -> None:
         raise RuntimeError("resident refresh failed")
 
 
-def arm(current: Request) -> None:
-    """Answer the client of `current` at its bound, end its run at `CARRY_SECONDS`,
-    and set the alarm for the earlier of those that has not come."""
-    now = time.monotonic()
+def end_at_carry(current: Request, now: float) -> float:
+    """Give the time at which the run of `current` ends, `CARRY_SECONDS` from
+    its start; raise `Unavailable` where `now` has reached it."""
     end = current.begun + CARRY_SECONDS
     if now >= end:
         raise Unavailable(f"state read did not finish within {CARRY_SECONDS} s "
                           f"while reading {current.phase}")
-    due = end
+    return end
+
+
+def arm(current: Request) -> None:
+    """Answer the client of `current` at its bound, end its run at `CARRY_SECONDS`,
+    and set the alarm for the earlier of those that has not come."""
+    now = time.monotonic()
+    due = end_at_carry(current, now)
     if current.waiting and not current.committed:
         if now >= current.deadline - FINISH_SECONDS:
             current.detach(read_running(current))
@@ -841,7 +848,8 @@ def child_read(current: Request) -> None:
     the reads it computed are in the kept-read store, so that the peak memory
     of this resident's first read ends with the child; the resident's own read
     then loads those records. Where the resident's first read has run, do
-    nothing. Cancellation of the request kills the child and propagates. A
+    nothing. Cancellation of the request, or the end of its run at
+    `CARRY_SECONDS`, kills the child and propagates. A
     child that fails gives the request the outcome of any failed read."""
     global read_first
     if not read_first:

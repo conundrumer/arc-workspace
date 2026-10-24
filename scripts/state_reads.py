@@ -572,71 +572,7 @@ def canonical(value: object) -> object:
     raise TypeError(f"{value!r} has no canonical form")
 
 
-class ReadDependencies:
-    """A read's validation sources and the lifetime of its transient reads."""
-
-    def __init__(self, stamp: Callable[..., Hashable] | None | Derived):
-        self.stamp = stamp
-        self.stamped: Made = ()
-        self.stamp_reads: Made = ()
-
-    @staticmethod
-    def source_dependencies(made: Made) -> Made:
-        """The tracked sources of complete stamp reads, with intermediate
-        derived values and callable-stamp computations omitted."""
-        found: dict[Held, object] = {}
-        pending = list(pairs(made))
-        seen: set[Held] = set()
-        while pending:
-            h, value = pending.pop()
-            if h in seen:
-                continue
-            seen.add(h)
-            if h.read.stamp is None:
-                found[h] = value
-            else:
-                pending.extend(pairs(h.stamped if h.source else h.made))
-        return made_of(found)
-
-    @staticmethod
-    def release_intermediates(made: Made) -> None:
-        """Detached computation reads are released after their consumer finishes.
-        Reads used by active callers or retained dependents remain readable."""
-        active = {h for frame in _frames for h in frame}
-        pending = list(belows(made))
-        seen: set[Held] = set()
-        while pending:
-            h = pending.pop()
-            if (h in seen or not h.held() or h.dependents is not None or h in active
-                    or h.source and h.read.kept is Kept.VALUE):
-                continue
-            seen.add(h)
-            pending.extend(h.rests_on())
-            h.drop()
-            h.rest_on((), ())
-
-    def mark(self, args: tuple[Any, ...], kwargs: dict[str, Any]) -> Hashable:
-        assert callable(self.stamp)
-        _frames.append({})
-        try:
-            return self.stamp(*args, **kwargs)
-        finally:
-            self.stamp_reads = made_of(_frames.pop())
-            self.stamped = self.source_dependencies(self.stamp_reads)
-
-    def persisted(self, made: Made) -> Made:
-        return self.stamped if callable(self.stamp) else made
-
-    def retain(self, hit: Held, made: Made) -> None:
-        if callable(self.stamp):
-            hit.rest_on((), self.stamped)
-            self.release_intermediates(made)
-            self.release_intermediates(self.stamp_reads)
-        else:
-            hit.rest_on(made, ())
-
-
-def state_cache[**P, R](stamp: Callable[..., Hashable] | None | Derived, *,
+def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
                         notes: str | None = None, kept: Kept | None = None) -> Callable[
         [Callable[P, R]], Callable[P, R]]:
     """Hold the result of a read for each of its arguments. Within one state
@@ -671,12 +607,7 @@ def state_cache[**P, R](stamp: Callable[..., Hashable] | None | Derived, *,
     are held with its result, and each call appends them to the list it
     passes.
 
-    Callable stamps track each external source through a cached read.
-    Their retained and persisted dependencies are the underlying tracked
-    sources. Detached computation reads are released after the consumer
-    finishes; active callers and retained dependents keep their reads.
-
-    `kept` gives how a read stands across processes (`Kept`).
+    `kept` gives how a `DERIVED` read stands across processes (`Kept`).
 
     Each process-life read cache that `state_assembly.read_state` reaches,
     in any module, is a `state_cache`, so the readers of one state see one
@@ -734,16 +665,20 @@ def state_cache[**P, R](stamp: Callable[..., Hashable] | None | Derived, *,
                 hit.state = _state
                 return hit
             mark: Hashable = None
-            dependencies = ReadDependencies(stamp)
+            stamped: Made = ()
             if hit is not None and derived:
                 if held_still(hit.made):
                     hit.state, hit.marked = _state, False
                     return hit
             elif not isinstance(stamp, Derived) and stamp is not None:
-                mark = dependencies.mark(args, kwargs)
+                _frames.append({})
+                try:
+                    mark = stamp(*args, **kwargs)
+                finally:
+                    stamped = made_of(_frames.pop())
                 if hit is not None and hit.mark == mark:
                     hit.state, hit.marked = _state, False
-                    dependencies.retain(hit, hit.made)
+                    hit.rest_on(hit.made, stamped)
                     return hit
             entered = script_calls.enter()
             try:
@@ -766,7 +701,7 @@ def state_cache[**P, R](stamp: Callable[..., Hashable] | None | Derived, *,
                     kept_lines = tuple(lines)
                     before = (record[1], record[3]) if record is not None else (
                         (hit.value, hit.version) if hit is not None else None)
-                    version = keep(place, dependencies.persisted(made), value, kept_lines,
+                    version = keep(place, made, value, kept_lines,
                                    before[1] if before is not None and same(value, before[0]) else None)
                 if hit is None:
                     hit = Held(info, key, positional)
@@ -777,7 +712,7 @@ def state_cache[**P, R](stamp: Callable[..., Hashable] | None | Derived, *,
                     mark_dependents(hit)
                 hit.state, hit.mark, hit.value, hit.lines = _state, mark, value, kept_lines
                 hit.marked, hit.version = False, version
-                dependencies.retain(hit, made)
+                hit.rest_on(made if stamp is None or derived else (), stamped)
                 return hit
             finally:
                 script_calls.leave(info.name, entered)

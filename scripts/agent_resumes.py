@@ -13,11 +13,12 @@ from run_reads import (blocks, parent_label, results_by_call, run_entries,
                        run_sessions)
 from state_reads import DERIVED, Kept, state_cache
 from transcripts import chain
+from entry_reads import read_entries
 from transcript_entries import epoch
 from transcript_folds import fold
 from transcript_snapshots import Entry
 from agent_deliveries import Delivery, delivery
-from session_changes import agents_facts, transcript_stamp
+from session_changes import agents_facts
 
 
 def pin_id(result: dict[str, Any]) -> str | None:
@@ -59,39 +60,25 @@ class Send:
     note: str | None
 
 
-@dataclass
-class SendPairs:
-    """SendMessage call times and the last result of each tool-use id."""
-    results: dict[str, dict[str, Any]]
-    calls: list[tuple[float, str]]
-
-    def step(self, _path: Path, _line: int, e: Entry) -> None:
-        self.add(e)
-
-    def add(self, e: Entry) -> None:
-        self.results.update(results_by_call((e,)))
-        if e.get("type") == "assistant" and e.get("timestamp"):
-            self.calls.extend((epoch(e["timestamp"]), b.get("id", ""))
-                              for b in blocks(e, "tool_use") if b.get("name") == "SendMessage")
-
-    def sends(self, run: str) -> list[Send]:
-        out: list[Send] = []
-        for t, call in self.calls:
-            result = self.results.get(call) or {}
-            notes: list[str] = []
-            aid = resumed(result, run, call, notes)
-            out.append(Send(t, aid, pin_id(result) if notes else None,
-                            notes[0] if notes else None))
-        return out
-
-
 def sends(entries: Iterable[Entry], run: str) -> list[Send]:
     """The SendMessage calls among `entries` that have a time, in their
     order, read in one pass."""
-    pairs = SendPairs({}, [])
+    results: dict[str, dict[str, Any]] = {}
+    calls: list[tuple[float, str]] = []
     for e in entries:
-        pairs.add(e)
-    return pairs.sends(run)
+        results.update(results_by_call((e,)))
+        if e.get("type") != "assistant" or not e.get("timestamp"):
+            continue
+        calls.extend((epoch(e["timestamp"]), b.get("id", "")) for b in blocks(e, "tool_use")
+                     if b.get("name") == "SendMessage")
+    out: list[Send] = []
+    for t, call in calls:
+        result = results.get(call) or {}
+        notes: list[str] = []
+        aid = resumed(result, run, call, notes)
+        pin = pin_id(result) if notes else None
+        out.append(Send(t, aid, pin, notes[0] if notes else None))
+    return out
 
 
 def picked(calls: Iterable[Send], agents: Collection[str] | None, undecided: list[str],
@@ -130,33 +117,12 @@ def run_sends(path: Path) -> tuple[Send, ...]:
     return tuple(sends(run_entries(path, naming=set(SEND_WORDS)), path.stem))
 
 
-@dataclass
-class ResumeResults:
-    """The call ids of results that refer to requested agents."""
-    agents: frozenset[str]
-    calls: set[str]
-
-    def step(self, _path: Path, _line: int, entry: Entry) -> None:
-        self.calls.update(call for call, result in results_by_call((entry,)).items()
-                          if result.get("resumedAgentId") in self.agents
-                          or pin_id(result) in self.agents)
-
-
-@state_cache(lambda path, agents: transcript_stamp(path) if agents else (), kept=Kept.DISK)
-def transcript_resumes(path: Path, agents: frozenset[str]) -> tuple[Send, ...]:
-    """Selected resume results paired with their calls, including earlier
-    calls and later replacement results. Both queries fold appended candidate
-    lines. Unknown delivery notes remain attached to the pin. Sources are
-    those of `transcript_stamp`."""
-    if not agents:
-        return ()
-    calls = frozenset(fold(ResumeResults.step, lambda: ResumeResults(agents, set()),
-                           (path, agents), [path], agents, selective=True).calls)
-    if not calls:
-        return ()
-    pairs = fold(SendPairs.step, lambda: SendPairs({}, []), (path, agents), [path],
-                 calls, selective=True)
-    return tuple(c for c in pairs.sends(parent_label(path)) if agents.intersection(send_agents(c)))
+@state_cache(DERIVED, kept=Kept.DISK)
+def transcript_resumes(path: Path) -> tuple[Send, ...]:
+    """`sends` of the transcript at `path`, from the lines that hold a word
+    of `SEND_WORDS`. `resumes_since` reads it for every transcript of a
+    session, so it holds none of their entries (`read_entries`)."""
+    return tuple(sends(read_entries(path, SEND_WORDS), parent_label(path)))
 
 
 def session_resumes(path: Path, agents: set[str], since: float,
@@ -174,8 +140,8 @@ def resumes_since(path: Path, agents: frozenset[str], since: float,
     """`session_resumes`, held so that a read derived from it sees a new
     transcript of the sessions only where it resumed one of `agents`."""
     own = set(chain(path))
-    return picked([at.fact for at in agents_facts(run_sessions(path), since,
-                                                  transcript_resumes, agents) if at.path not in own],
+    return picked([at.fact for at in agents_facts(run_sessions(path), since, transcript_resumes,
+                                                  send_agents, agents) if at.path not in own],
                   agents, undecided, before)
 
 

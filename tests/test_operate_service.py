@@ -270,6 +270,46 @@ def test_child_retries_a_flush_that_fails_on_a_lock(tmp_path, monkeypatch):
     assert found == "kept"
 
 
+def test_first_state_read_that_does_not_end_is_cut_at_the_carry_bound(tmp_path, monkeypatch):
+    import os
+    kept, assembly = script("kept_reads"), script("state_assembly")
+    monkeypatch.setattr(kept, "_store", None)
+    kept.open_store(tmp_path / "reads.sqlite")
+    monkeypatch.setattr(service, "read_first", True)
+    monkeypatch.setattr(service, "CARRY_SECONDS", 0.3)
+    monkeypatch.setattr(service, "CHILD_POLL_SECONDS", 0.01)
+    pids = tmp_path / "pids"
+
+    def read(operator):
+        pids.write_text(str(os.getpid()))
+        time.sleep(60)
+
+    monkeypatch.setattr(assembly, "read_state", read)
+    current, sockets = request_for_child_read()
+    try:
+        with pytest.raises(service.Unavailable, match="did not finish within"):
+            service.child_read(current)
+    finally:
+        for s in sockets:
+            s.close()
+    child = int(pids.read_text())
+    with pytest.raises(ProcessLookupError):
+        os.kill(child, 0)
+
+
+def test_a_request_check_ends_the_request_past_the_carry_bound(monkeypatch):
+    """The check holds the bound where nothing runs the alarm `arm` sets."""
+    current, sockets = request_for_child_read()
+    try:
+        monkeypatch.setattr(service, "CARRY_SECONDS", 0.05)
+        time.sleep(0.06)
+        with pytest.raises(service.Unavailable, match="did not finish within"):
+            current.check()
+    finally:
+        for s in sockets:
+            s.close()
+
+
 def test_wait_reply_carries_the_cpu_of_its_read():
     import json
     a, b = socket.socketpair()

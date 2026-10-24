@@ -110,7 +110,7 @@ def read_ticket(path: Path) -> Ticket:
     return ticket_of(path, text, log_lines(text))
 
 
-@state_cache(stat_of, kept=Kept.DISK)
+@state_cache(DERIVED, kept=Kept.DISK)
 def held_ticket(path: Path) -> Ticket:
     """`read_ticket` of the file at `path`, which rests on the file's stat
     (`file_reads.stat_read`), so that a call holds the `Ticket` alone."""
