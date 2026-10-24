@@ -1,7 +1,7 @@
 //! The replay of streams as a prefix tree gives, for each stream, the record
 //! and the outcome that a replay of that stream from a new decoder gives.
 
-use arclog::decode::corpus::{read_task_files, replay_prefix_tree, corpus_session, sorted_streams, mask_computations};
+use arclog::decode::corpus::{read_task_files, replay_prefix_tree, corpus_session, sorted_streams, model_steps};
 use arclog::decode::replay::replay;
 use arclog::decode::{Decoder, TokenMask};
 use arclog::eval::instance::Constructions;
@@ -67,7 +67,7 @@ fn a_prefix_tree_replay_gives_what_a_replay_from_a_new_decoder_gives() {
     std::fs::remove_dir_all(&dir).ok();
     let whole = token_ids(cases[0].stream.as_ref().expect("a stream"), &vocabulary);
     let constructions = Constructions::new(Vec::new(), registry).expect("an empty table");
-    let record = |record: &mut Record, _: &Decoder<'_>, stepped: arclog::decode::replay::Stepped<'_>| record.push((stepped.index, stepped.mask.clone()));
+    let record = |record: &mut Record, _: &Decoder<'_>, stepped: arclog::decode::replay::Stepped<'_>| record.push((stepped.index, stepped.mask.expect("the replay computes the mask").mask.clone()));
 
     let session = corpus_session();
     let train: Arc<[PairCandidates<'_>]> = judged.train.iter().map(|pair| PairCandidates::of(pair, Section::Train, World::Closed)).collect();
@@ -81,7 +81,7 @@ fn a_prefix_tree_replay_gives_what_a_replay_from_a_new_decoder_gives() {
                 return None;
             }
             let mut decoder = fresh();
-            let replayed = replay(&mut decoder, &tokens(&whole[..cut]), &mut |_, _| ControlFlow::Continue(())).ok()?;
+            let replayed = replay(&mut decoder, &tokens(&whole[..cut]), true, &mut |_, _| ControlFlow::Continue(())).ok()?;
             if !replayed.forced().is_empty() {
                 return None;
             }
@@ -95,12 +95,12 @@ fn a_prefix_tree_replay_gives_what_a_replay_from_a_new_decoder_gives() {
     refusing_longer.push(whole[cut]);
     let streams = vec![whole.clone(), refusing.clone(), whole[..cut].to_vec(), whole.clone(), refusing_longer, whole[..cut + 1].to_vec(), refusing];
 
-    let tree = replay_prefix_tree(&task, &judged, &streams, &constructions, &record);
+    let tree = replay_prefix_tree(&task, &judged, &streams, &constructions, true, &record);
     assert_eq!(tree.len(), streams.len());
     for (stream, outcome) in streams.iter().zip(&tree) {
         let mut decoder = fresh();
         let mut recorded = Record::new();
-        let alone = replay(&mut decoder, &tokens(stream), &mut |decoder, stepped| {
+        let alone = replay(&mut decoder, &tokens(stream), true, &mut |decoder, stepped| {
             record(&mut recorded, decoder, stepped);
             ControlFlow::Continue(())
         })
@@ -110,8 +110,17 @@ fn a_prefix_tree_replay_gives_what_a_replay_from_a_new_decoder_gives() {
     assert!(tree[1].is_err(), "the refused stream fails: {:?}", tree[1]);
     assert!(tree[0].is_ok(), "{:?}", tree[0]);
 
+    // A replay with no mask records the same steps and ends the same way, refusal lines included.
+    let indices = |record: &mut Vec<usize>, _: &Decoder<'_>, stepped: arclog::decode::replay::Stepped<'_>| {
+        assert!(stepped.mask.is_none());
+        record.push(stepped.index);
+    };
+    let unmasked = replay_prefix_tree(&task, &judged, &streams, &constructions, false, &indices);
+    let masked_indices: Vec<Result<Vec<usize>, String>> = tree.iter().map(|outcome| outcome.as_ref().map(|record| record.iter().map(|(index, _)| *index).collect()).map_err(Clone::clone)).collect();
+    assert_eq!(unmasked, masked_indices);
+
     let order = sorted_streams(&streams);
     let sorted: Vec<&[(u32, Emitter)]> = order.iter().map(|&index| streams[index].as_slice()).collect();
     let model = |stream: &[(u32, Emitter)]| stream.iter().filter(|(_, emitter)| *emitter == Emitter::Model).count();
-    assert!(mask_computations(&sorted) < streams.iter().map(|stream| model(stream)).sum::<usize>());
+    assert!(model_steps(&sorted) < streams.iter().map(|stream| model(stream)).sum::<usize>());
 }

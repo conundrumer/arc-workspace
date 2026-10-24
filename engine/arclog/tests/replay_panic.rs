@@ -53,8 +53,8 @@ fn a_panic_in_a_replay_is_the_fault_of_its_solver() {
         std::fs::write(dir.join(format!("{id}.json")), format!(r#"{{"train": [{pair}], "test": [{pair}]}}"#)).expect("the task file");
     }
     let constructions = Constructions::new(Vec::new(), Registry::get()).expect("an empty table");
-    let panicking = replay_solver(&dir, &dir, "tie", false, &constructions, &|_: &mut usize, _, _| panic!("the construction's inputs break its domain"));
-    let calm = replay_solver(&dir, &dir, "calm", false, &constructions, &|steps: &mut usize, _, _| *steps += 1);
+    let panicking = replay_solver(&dir, &dir, "tie", false, &constructions, false, &|_: &mut usize, _, _| panic!("the construction's inputs break its domain"));
+    let calm = replay_solver(&dir, &dir, "calm", false, &constructions, false, &|steps: &mut usize, _, _| *steps += 1);
     std::fs::remove_dir_all(&dir).ok();
     let fault = panicking.err().expect("the panic is the solver's fault");
     assert!(fault.contains("the construction's inputs break its domain"), "{fault}");

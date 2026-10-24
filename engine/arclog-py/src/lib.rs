@@ -12,11 +12,11 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use arclog::decode::columns::{case_columns, CaseColumns, StopColumns};
-use arclog::decode::corpus::{mask_computations, new_mask_computations, read_task_files, replay_panic, replay_prefix_tree, solver_tables, sorted_streams};
-use arclog::decode::{step_batch, Consistency, Decoder, Points, TokenMask, Views};
+use arclog::decode::corpus::{read_task_files, replay_units, UnitSolver};
+use arclog::decode::{step_batch, Consistency, Decoder, Points, Table, TokenMask, Views};
 use arclog::eval::instance::Constructions;
 use arclog::eval::pool::Pool;
-use arclog::harness::{corpus_threads, run_on_workers, run_over_corpus, SolverResult};
+use arclog::harness::{panic_message, run_over_corpus, SolverResult};
 use arclog::eval::{Outcome, RelationValue};
 use arclog::judge::attempts::Attempts;
 use arclog::judge::candidates::{PairCandidates, Section, World};
@@ -619,8 +619,10 @@ impl PyDecoder {
 
 /// The cases and fault lines of each solver of `corpus` that `task_ids`
 /// keeps (every solver where it is `None`), as `solver` gives them for the
-/// solver's task id, in the order of the task ids. The walk runs on the
-/// threads of the corpus harness with the GIL released.
+/// solver's task id, in the order of the task ids. A solver whose `solver`
+/// panics gives no cases and one fault line, `the walk of the solver
+/// panicked: <message>`. The walk runs on the threads of the corpus harness
+/// with the GIL released.
 fn walk_corpus<C: Send>(
     py: Python<'_>,
     corpus: &str,
@@ -635,7 +637,11 @@ fn walk_corpus<C: Send>(
                 if task_ids.as_ref().is_some_and(|ids| !ids.contains(&corpus_solver.task_id)) {
                     return SolverResult::Pass;
                 }
-                let (cases, faults) = solver(&corpus_solver.task_id);
+                let id = &corpus_solver.task_id;
+                let (cases, faults) = catch_unwind(AssertUnwindSafe(|| solver(id))).unwrap_or_else(|payload| {
+                    let message = panic_message(&*payload).unwrap_or("a payload that is not a message");
+                    (Vec::new(), vec![fault_line(id, None, &format!("the walk of the solver panicked: {message}"))])
+                });
                 found.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).push((corpus_solver.task_id.clone(), cases, faults));
                 SolverResult::Pass
             },
@@ -698,10 +704,10 @@ struct IdStream {
 /// The walk runs on the threads of the corpus harness with the GIL released,
 /// in phases. The first reads each solver, its streams and, with `tasks`, its
 /// task. The second, with `tasks`, cuts the streams of each solver, in the
-/// order of their tokens, into groups of consecutive streams, so that no
-/// group's mask computations pass the share of each thread in those of the
-/// call, but by the last stream's, and replays the groups, the largest
-/// first. A group replays the mask of each prefix its streams share once.
+/// order of their tokens, into groups of consecutive streams of at most
+/// `UNIT_STEPS` model steps but for the last stream's, and replays the groups,
+/// the largest first. A group replays the mask of each prefix its streams
+/// share once.
 #[pyfunction]
 #[pyo3(signature = (corpus, all_cases=false, task_ids=None, tasks=None))]
 fn corpus_streams(py: Python<'_>, corpus: &str, all_cases: bool, task_ids: Option<Vec<String>>, tasks: Option<&str>) -> PyResult<(Vec<PyCaseStream>, Vec<String>)> {
@@ -759,80 +765,55 @@ fn corpus_streams(py: Python<'_>, corpus: &str, all_cases: bool, task_ids: Optio
     Ok((streams, faults))
 }
 
-/// A run of consecutive streams of one solver, in the order of their
-/// tokens, which one thread replays from a new decoder.
-struct ReplayUnit {
-    /// The index in `found` of the solver.
-    solver: usize,
-    /// The indices in the solver's streams of the unit's streams.
-    streams: Vec<usize>,
-    /// The mask computations of the unit's replay.
-    masks: usize,
-}
-
 /// Replays the streams of `found` whose masks are due, which are those with
-/// `Ok(None)`, on the tasks that `reads` holds, in units cut so that no
-/// unit passes its share of the mask computations of the call but by its
-/// last stream's, and sets each stream's `masks`. A solver whose task did not
-/// read, or whose unit panicked, gives each of its streams that fault.
+/// `Ok(None)`, on the tasks that `reads` holds, as [`replay_units`] does, and
+/// sets each stream's `masks`. A solver whose task did not read, or whose
+/// unit panicked, gives each of its streams that fault.
 fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &HashMap<String, Result<(Task, JudgedTask), String>>, constructions: &'static Constructions) {
-    let mut solvers = Vec::new();
-    let mut total = 0;
+    let mut faults: HashMap<usize, String> = HashMap::new();
+    // For each solver whose task read: its index in `found`, the indices in its streams of the due streams, and their ids.
+    let mut due: Vec<(usize, Vec<usize>, Vec<Vec<(u32, Emitter)>>)> = Vec::new();
     for (solver, (id, streams, _)) in found.iter().enumerate() {
-        let Some(read) = reads.get(id) else { continue };
-        if let Err(fault) = read {
-            solvers.push((solver, Vec::new(), Some(fault.clone())));
-            continue;
-        }
-        let due: Vec<usize> = (0..streams.len()).filter(|&stream| matches!(streams[stream].masks, Ok(None))).collect();
-        let ids: Vec<Vec<(u32, Emitter)>> = due.iter().map(|&stream| streams[stream].ids.clone()).collect();
-        let sorted: Vec<usize> = sorted_streams(&ids);
-        total += mask_computations(&sorted.iter().map(|&stream| ids[stream].as_slice()).collect::<Vec<_>>());
-        solvers.push((solver, sorted.into_iter().map(|stream| (due[stream], ids[stream].clone())).collect::<Vec<_>>(), None));
-    }
-    let share = (total / corpus_threads()).max(1);
-    let mut units = Vec::new();
-    for (solver, sorted, _) in &solvers {
-        let mut unit = ReplayUnit { solver: *solver, streams: Vec::new(), masks: 0 };
-        let mut last: Option<&[(u32, Emitter)]> = None;
-        for (stream, ids) in sorted {
-            let masks = new_mask_computations(last, ids);
-            unit.streams.push(*stream);
-            unit.masks += masks;
-            last = Some(ids);
-            if unit.masks >= share {
-                units.push(std::mem::replace(&mut unit, ReplayUnit { solver: *solver, streams: Vec::new(), masks: 0 }));
-                last = None;
+        match reads.get(id) {
+            None => {}
+            Some(Err(fault)) => {
+                faults.insert(solver, fault.clone());
+            }
+            Some(Ok(_)) => {
+                let wanted: Vec<usize> = (0..streams.len()).filter(|&stream| matches!(streams[stream].masks, Ok(None))).collect();
+                let ids = wanted.iter().map(|&stream| streams[stream].ids.clone()).collect();
+                due.push((solver, wanted, ids));
             }
         }
-        if !unit.streams.is_empty() {
-            units.push(unit);
-        }
     }
-    units.sort_by(|a, b| b.masks.cmp(&a.masks));
-    let outcomes = run_on_workers(&units, |unit| {
-        let (_, streams, _) = &found[unit.solver];
-        let Some(Ok((task, judged))) = reads.get(&found[unit.solver].0) else { unreachable!("a unit stands over a task that read") };
-        let ids: Vec<Vec<(u32, Emitter)>> = unit.streams.iter().map(|&stream| streams[stream].ids.clone()).collect();
-        catch_unwind(AssertUnwindSafe(|| {
-            replay_prefix_tree(task, judged, &ids, constructions, &|masks: &mut Vec<u8>, decoder, stepped| {
-                masks.extend(mask_bytes(stepped.mask, decoder.vocabulary().len()));
-            })
-        }))
-        .map_err(|payload| replay_panic(&*payload))
-    });
-    let mut faults: HashMap<usize, String> = solvers.into_iter().filter_map(|(solver, _, fault)| fault.map(|fault| (solver, fault))).collect();
-    for (unit, outcome) in units.iter().zip(outcomes) {
-        match outcome {
-            Ok(masks) => {
-                for (&stream, masks) in unit.streams.iter().zip(masks) {
-                    found[unit.solver].1[stream].masks = masks.map(Some);
-                }
-            }
+    let solvers: Vec<UnitSolver<'_>> = due
+        .iter()
+        .map(|(solver, _, ids)| {
+            let Some(Ok((task, judged))) = reads.get(&found[*solver].0) else { unreachable!("a solver of `due` has a task that read") };
+            UnitSolver { task, judged, streams: ids }
+        })
+        .collect();
+    let results = replay_units(
+        &solvers,
+        constructions,
+        true,
+        &|masks: &mut Vec<u8>, decoder, stepped| {
+            let masked = stepped.mask.expect("the replay computes the mask");
+            masks.extend(mask_bytes(masked.mask, decoder.vocabulary().len()));
+        },
+        &|_, masks| masks,
+    );
+    let mut sets = Vec::new();
+    for ((solver, wanted, _), result) in due.iter().zip(results) {
+        match result {
+            Ok(outs) => sets.extend(wanted.iter().zip(outs).map(|(&stream, out)| (*solver, stream, out))),
             Err(fault) => {
-                faults.entry(unit.solver).or_insert(fault);
+                faults.insert(*solver, fault);
             }
         }
+    }
+    for (solver, stream, out) in sets {
+        found[solver].1[stream].masks = out.map(Some);
     }
     for (solver, fault) in faults {
         for stream in &mut found[solver].1 {
@@ -988,6 +969,14 @@ impl PyCaseTables {
     }
 }
 
+/// A case of a solver whose tables `corpus_tables` builds: its stream's
+/// token ids, or the writer's fault.
+struct TableCase {
+    case: String,
+    concept: bool,
+    ids: Result<Vec<(u32, Emitter)>, String>,
+}
+
 /// The tables of each case of each solver of `corpus`, on its task in
 /// `tasks`, the concept case or, with `all_cases`, every case, over the
 /// solvers whose task ids `task_ids` gives, or every solver where it is
@@ -996,35 +985,87 @@ impl PyCaseTables {
 /// finished forms are tabled, and with `bodies` the bodies in progress as well.
 /// The second value holds a line for each case that gives no tables and each
 /// solver that gives none, in the form of `corpus_streams`, in the order of
-/// the task ids. The walk runs on the threads of the corpus harness with the
-/// GIL released.
+/// the task ids. The replay computes no token mask.
+/// The call runs on the threads of the corpus harness with the GIL released,
+/// but for the build of each `CaseTables`, in phases. The first reads each
+/// solver, its streams and its task. The second cuts the streams of each
+/// solver into units, as `corpus_streams` does, replays the units, the
+/// largest first, and turns the tables of each stream into columns as its
+/// unit ends.
 #[pyfunction]
 #[pyo3(signature = (corpus, tasks, all_cases=false, task_ids=None, bodies=false))]
 fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, task_ids: Option<Vec<String>>, bodies: bool) -> PyResult<(Vec<PyCaseTables>, Vec<String>)> {
     let points = if bodies { Points::All } else { Points::Relations };
+    let wanted = if all_cases { WantedCases::All } else { WantedCases::Concept };
     let constructions = constructions()?;
+    let vocabulary = Vocabulary::new(Registry::get(), &DecodeSettings::default());
+    let reads: Mutex<HashMap<String, (Task, JudgedTask)>> = Mutex::new(HashMap::new());
     let found = walk_corpus(py, corpus, &task_ids, |id| {
         let (mut cases, mut faults) = (Vec::new(), Vec::new());
-        match solver_tables(Path::new(corpus), Path::new(tasks), id, all_cases, points, constructions) {
-            Ok(solver) => {
-                for case in solver.cases {
-                    match case.tables {
-                        Ok(tables) => cases.push((case.case, case.concept, case_columns(&tables, solver.train))),
-                        Err(fault) => faults.push(fault_line(id, Some(&case.case), &fault)),
+        match solver_streams(Path::new(corpus), id, wanted, &vocabulary) {
+            Ok(streams) => match read_task_files(Path::new(tasks), id) {
+                Ok(read) => {
+                    for case in streams.into_iter().filter(|case| !case.demonstrated) {
+                        let ids = case.stream.map(|stream| token_ids(&stream, &vocabulary));
+                        cases.push(TableCase { case: case.case, concept: case.concept, ids });
                     }
+                    reads.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).insert(id.to_string(), read);
                 }
-            }
+                Err(fault) => faults.push(fault_line(id, None, &fault)),
+            },
             Err(fault) => faults.push(fault_line(id, None, &fault)),
         }
         (cases, faults)
     })?;
+    let reads = reads.into_inner().unwrap_or_else(|poisoned| poisoned.into_inner());
+    // For each solver that has cases: the ids of the streams its writer gives.
+    let streamed: Vec<(&str, Vec<Vec<(u32, Emitter)>>)> = found
+        .iter()
+        .filter(|(id, cases, _)| !cases.is_empty() && reads.contains_key(id))
+        .map(|(id, cases, _)| (id.as_str(), cases.iter().filter_map(|case| case.ids.as_ref().ok().cloned()).collect()))
+        .collect();
+    let solvers: Vec<UnitSolver<'_>> = streamed
+        .iter()
+        .map(|(id, ids)| {
+            let (task, judged) = &reads[*id];
+            UnitSolver { task, judged, streams: ids }
+        })
+        .collect();
+    let trains: Vec<usize> = streamed.iter().map(|(id, _)| reads[*id].0.train.len()).collect();
+    let mut replayed = py
+        .detach(|| {
+            replay_units(
+                &solvers,
+                constructions,
+                false,
+                &|tables: &mut Vec<(usize, Table)>, decoder, stepped| tables.extend(decoder.tables(points).into_iter().map(|table| (stepped.index, table))),
+                &|solver, tables| case_columns(&tables, trains[solver]),
+            )
+        })
+        .into_iter();
     let mut tables = Vec::new();
     let mut faults = Vec::new();
-    for (task, cases, solver_faults) in found {
-        for (case, concept, columns) in cases {
-            tables.push(PyCaseTables::of(py, task.clone(), case, concept, &columns)?);
+    for (task, cases, solver_faults) in &found {
+        faults.extend(solver_faults.iter().cloned());
+        if cases.is_empty() || !reads.contains_key(task) {
+            continue;
         }
-        faults.extend(solver_faults);
+        match replayed.next().expect("a result for each solver that has cases") {
+            Err(fault) => faults.push(fault_line(task, None, &fault)),
+            Ok(outs) => {
+                let mut outs = outs.into_iter();
+                for case in cases {
+                    let outcome = match &case.ids {
+                        Ok(_) => outs.next().expect("a result for each stream"),
+                        Err(fault) => Err(fault.clone()),
+                    };
+                    match outcome {
+                        Ok(columns) => tables.push(PyCaseTables::of(py, task.clone(), case.case.clone(), case.concept, &columns)?),
+                        Err(fault) => faults.push(fault_line(task, Some(&case.case), &fault)),
+                    }
+                }
+            }
+        }
     }
     Ok((tables, faults))
 }

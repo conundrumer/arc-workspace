@@ -9,20 +9,17 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 use std::sync::Arc;
 
-use super::replay::{holds_demonstrated, replay_from, Stepped};
+use super::replay::{replay_from, Stepped};
 use super::{Decoder, Points, Table};
-use crate::check::{CheckCache, SolverClauses};
 use crate::eval::instance::Constructions;
 use crate::eval::Caps;
-use crate::harness::{panic_message, read_corpus_solver};
+use crate::harness::{panic_message, read_corpus_solver, run_on_workers};
 use crate::judge::candidates::{PairCandidates, Section, World};
 use crate::registry::Registry;
-use crate::resolver::resolve_cases;
 use crate::session::{SessionBound, TaskSession, SESSION_BYTES};
 use crate::solver::Solver;
-use crate::stream::corpus::{case_spelled, check_cases, decoded_cases};
-use crate::stream::corpus::token_ids;
-use crate::stream::{token_stream, DecodeSettings, Emitter, Token, Vocabulary};
+use crate::stream::corpus::{solver_streams, token_ids, CaseStream, WantedCases};
+use crate::stream::{DecodeSettings, Emitter, Token, Vocabulary};
 use crate::task::{read_judged_task, read_task, JudgedTask, Task};
 
 /// A solver of the corpus with its task, as a run reads it and as the
@@ -58,7 +55,7 @@ pub fn corpus_session() -> TaskSession {
 /// The record of one case of a solver, or the fault that gives none.
 #[derive(Debug)]
 pub struct CaseReplay<T> {
-    /// The case as [`case_spelled`] writes its name.
+    /// The case as [`case_spelled`](crate::stream::corpus::case_spelled) writes its name.
     pub case: String,
     /// Whether the case is the solver's concept case.
     pub concept: bool,
@@ -79,9 +76,10 @@ pub struct SolverReplay<T> {
 /// `tasks`, the concept case or, with `all`, every case, in the order of the
 /// cases, through a decoder that judges the train pairs under the default
 /// settings, the lib's constructions `constructions`, and the corpus's
-/// session. `record` runs after each step of a token the model emits, with
-/// the case's record, which starts as `T::default()`. A case that holds a
-/// `DEMONSTRATED` form is left out. Gives the fault that stops the solver,
+/// session. The replay computes the token mask before each step where
+/// `masked` holds. `record` runs after each step of a token the model emits,
+/// with the case's record, which starts as `T::default()`. A case that holds
+/// a `DEMONSTRATED` form is left out. Gives the fault that stops the solver,
 /// which is the panic's message where the replay panics.
 pub fn replay_solver<T: Default + Clone>(
     corpus: &Path,
@@ -89,9 +87,10 @@ pub fn replay_solver<T: Default + Clone>(
     id: &str,
     all: bool,
     constructions: &Constructions,
+    masked: bool,
     record: &dyn Fn(&mut T, &Decoder<'_>, Stepped<'_>),
 ) -> Result<SolverReplay<T>, String> {
-    catch_unwind(AssertUnwindSafe(|| replay_cases(corpus, tasks, id, all, constructions, record))).unwrap_or_else(|payload| Err(replay_panic(&*payload)))
+    catch_unwind(AssertUnwindSafe(|| replay_cases(corpus, tasks, id, all, constructions, masked, record))).unwrap_or_else(|payload| Err(replay_panic(&*payload)))
 }
 
 /// The fault of a solver whose replay panicked with `payload`.
@@ -105,37 +104,22 @@ fn replay_cases<T: Default + Clone>(
     id: &str,
     all: bool,
     constructions: &Constructions,
+    masked: bool,
     record: &dyn Fn(&mut T, &Decoder<'_>, Stepped<'_>),
 ) -> Result<SolverReplay<T>, String> {
-    let CorpusTask { solver, task, judged } = read_corpus_task(corpus, tasks, id)?;
-    let registry = Registry::get();
-    let cases = resolve_cases(&solver, registry);
-    let clauses = SolverClauses::of_cases(&cases);
-    let decoded = decoded_cases(&cases, all);
-    let programs = check_cases(&cases, &clauses, &mut CheckCache::default(), &|name| decoded.contains(name))?;
-    let concept = &cases.concept().case.name;
-    let settings = DecodeSettings::default();
-    let vocabulary = Vocabulary::new(registry, &settings);
-    let mut names = Vec::new();
-    let mut ids = Vec::new();
-    for (name, program) in &programs {
-        if holds_demonstrated(program) {
-            continue;
-        }
-        let stream = token_stream(program, &vocabulary).map_err(|diagnostic| format!("the writer gives no stream: {}", diagnostic.message));
-        if let Ok(stream) = &stream {
-            ids.push(token_ids(stream, &vocabulary));
-        }
-        names.push((name, stream.map(|_| ())));
-    }
-    let mut outcomes = replay_prefix_tree(&task, &judged, &ids, constructions, record).into_iter();
-    let recorded = names
+    let vocabulary = Vocabulary::new(Registry::get(), &DecodeSettings::default());
+    let cases = solver_streams(corpus, id, if all { WantedCases::All } else { WantedCases::Concept }, &vocabulary)?;
+    let (task, judged) = read_task_files(tasks, id)?;
+    let cases: Vec<CaseStream> = cases.into_iter().filter(|case| !case.demonstrated).collect();
+    let ids: Vec<Vec<(u32, Emitter)>> = cases.iter().filter_map(|case| case.stream.as_ref().ok()).map(|stream| token_ids(stream, &vocabulary)).collect();
+    let mut outcomes = replay_prefix_tree(&task, &judged, &ids, constructions, masked, record).into_iter();
+    let recorded = cases
         .into_iter()
-        .map(|(name, written)| CaseReplay {
-            case: case_spelled(name),
-            concept: name == concept,
-            outcome: match written {
-                Ok(()) => outcomes.next().expect("an outcome for each stream"),
+        .map(|case| CaseReplay {
+            case: case.case,
+            concept: case.concept,
+            outcome: match case.stream {
+                Ok(_) => outcomes.next().expect("an outcome for each stream"),
                 Err(fault) => Err(fault),
             },
         })
@@ -158,20 +142,20 @@ fn common_prefix(a: &[(u32, Emitter)], b: &[(u32, Emitter)]) -> usize {
     a.iter().zip(b).take_while(|(x, y)| x == y).count()
 }
 
-/// The token masks that a replay of `stream` computes after the replay of
-/// `previous`, which the prefix tree shares: those before the tokens the
-/// model writes past the prefix the two share.
-pub fn new_mask_computations(previous: Option<&[(u32, Emitter)]>, stream: &[(u32, Emitter)]) -> usize {
+/// The model's tokens that a replay of `stream` steps after the replay of
+/// `previous`, which the prefix tree shares: those past the prefix the two
+/// share. A replay computes one token mask for each, where it computes masks.
+pub fn new_model_steps(previous: Option<&[(u32, Emitter)]>, stream: &[(u32, Emitter)]) -> usize {
     let shared = previous.map_or(0, |previous| common_prefix(previous, stream));
     stream[shared..].iter().filter(|(_, emitter)| *emitter == Emitter::Model).count()
 }
 
-/// The token masks that the prefix tree computes over `sorted`, streams in
-/// the order of [`sorted_streams`]: for the first stream those before each
-/// token the model writes, and for each later stream
-/// [`new_mask_computations`] after the stream before.
-pub fn mask_computations(sorted: &[&[(u32, Emitter)]]) -> usize {
-    sorted.iter().enumerate().map(|(rank, stream)| new_mask_computations(rank.checked_sub(1).map(|before| sorted[before]), stream)).sum()
+/// The model's tokens that the prefix tree steps over `sorted`, streams in
+/// the order of [`sorted_streams`]: for the first stream each token the
+/// model writes, and for each later stream [`new_model_steps`] after the
+/// stream before.
+pub fn model_steps(sorted: &[&[(u32, Emitter)]]) -> usize {
+    sorted.iter().enumerate().map(|(rank, stream)| new_model_steps(rank.checked_sub(1).map(|before| sorted[before]), stream)).sum()
 }
 
 /// A replay stopped at `position` of a stream: the decoder there, the
@@ -188,7 +172,8 @@ struct Checkpoint<'a, T> {
 /// that judges the train pairs of `judged` under the default settings, the
 /// constructions `constructions`, and a corpus session of this call's own.
 /// `record` runs after each step of a token the model emits, with the
-/// stream's record, which starts as `T::default()`. The streams are
+/// stream's record, which starts as `T::default()`. The replay computes the
+/// token mask before each step where `masked` holds. The streams are
 /// replayed in the order of [`sorted_streams`] as a prefix tree: the token
 /// mask and the step of a prefix that streams share run once, and each
 /// stream that continues the prefix resumes from a fork of the decoder and
@@ -200,6 +185,7 @@ pub fn replay_prefix_tree<T: Default + Clone>(
     judged: &JudgedTask,
     streams: &[Vec<(u32, Emitter)>],
     constructions: &Constructions,
+    masked: bool,
     record: &dyn Fn(&mut T, &Decoder<'_>, Stepped<'_>),
 ) -> Vec<Result<T, String>> {
     let registry = Registry::get();
@@ -235,7 +221,7 @@ pub fn replay_prefix_tree<T: Default + Clone>(
             None => (root.fork(), 0, Vec::new(), T::default()),
         };
         let run = |decoder: &mut Decoder<'_>, tokens: &[(Token, Emitter)], from: usize, forced: Vec<Token>, recording: &mut T| {
-            replay_from(decoder, tokens, from, forced, &mut |decoder, stepped| {
+            replay_from(decoder, tokens, masked, from, forced, &mut |decoder, stepped| {
                 record(recording, decoder, stepped);
                 std::ops::ControlFlow::Continue(())
             })
@@ -263,11 +249,111 @@ pub fn replay_prefix_tree<T: Default + Clone>(
     outcomes.into_iter().map(|outcome| outcome.expect("each stream has an outcome")).collect()
 }
 
+/// A solver whose streams a call of [`replay_units`] replays: its task, the
+/// task as the judge reads its pairs, and the token ids of its streams.
+pub struct UnitSolver<'a> {
+    pub task: &'a Task,
+    pub judged: &'a JudgedTask,
+    pub streams: &'a [Vec<(u32, Emitter)>],
+}
+
+/// A run of consecutive streams of one solver, in the order of
+/// [`sorted_streams`], which one worker replays from a new decoder.
+struct ReplayUnit {
+    /// The index in the call's solvers of the solver.
+    solver: usize,
+    /// The indices in the solver's streams of the unit's streams.
+    streams: Vec<usize>,
+    /// The model's tokens that the unit's replay steps.
+    steps: usize,
+}
+
+/// The model's steps at which [`replay_units`] ends a unit. It is a fixed
+/// count, so the cut of a solver's streams into units depends on the solver
+/// alone, and so does the numbering of the Idents that a unit's session
+/// interns, whatever the thread count and whatever else the call holds.
+pub const UNIT_STEPS: usize = 50_000;
+
+/// Replays the streams of `solvers`, as [`replay_prefix_tree`] does, on the
+/// workers of [`run_on_workers`]. The streams of each solver are cut, in
+/// the order of [`sorted_streams`], into units of consecutive streams, so
+/// that no unit passes [`UNIT_STEPS`] model steps but by its last stream's,
+/// and the units run largest first, each in a session of its
+/// own and under `catch_unwind`. As a unit ends, its worker calls `ended`
+/// with the solver's index in `solvers` and the record of each of the unit's
+/// streams that the replay takes, and the stream's result is what `ended`
+/// gives.
+///
+/// Gives, for each solver, the result of each of its streams in the order of
+/// `streams`, or the fault of [`replay_panic`] where one of its units
+/// panicked.
+pub fn replay_units<T: Default + Clone, U: Send>(
+    solvers: &[UnitSolver<'_>],
+    constructions: &Constructions,
+    masked: bool,
+    record: &(dyn Fn(&mut T, &Decoder<'_>, Stepped<'_>) + Sync),
+    ended: &(dyn Fn(usize, T) -> U + Sync),
+) -> Vec<Result<Vec<Result<U, String>>, String>> {
+    let sorted: Vec<Vec<usize>> = solvers.iter().map(|solver| sorted_streams(solver.streams)).collect();
+    let mut units = Vec::new();
+    for (index, (solver, order)) in solvers.iter().zip(&sorted).enumerate() {
+        let mut unit = ReplayUnit { solver: index, streams: Vec::new(), steps: 0 };
+        let mut last: Option<&[(u32, Emitter)]> = None;
+        for &stream in order {
+            let ids = solver.streams[stream].as_slice();
+            unit.streams.push(stream);
+            unit.steps += new_model_steps(last, ids);
+            last = Some(ids);
+            if unit.steps >= UNIT_STEPS {
+                units.push(std::mem::replace(&mut unit, ReplayUnit { solver: index, streams: Vec::new(), steps: 0 }));
+                last = None;
+            }
+        }
+        if !unit.streams.is_empty() {
+            units.push(unit);
+        }
+    }
+    units.sort_by(|a, b| b.steps.cmp(&a.steps));
+    let outcomes = run_on_workers(&units, |unit| {
+        let solver = &solvers[unit.solver];
+        let ids: Vec<Vec<(u32, Emitter)>> = unit.streams.iter().map(|&stream| solver.streams[stream].clone()).collect();
+        catch_unwind(AssertUnwindSafe(|| {
+            replay_prefix_tree(solver.task, solver.judged, &ids, constructions, masked, record)
+                .into_iter()
+                .map(|outcome| outcome.map(|recorded| ended(unit.solver, recorded)))
+                .collect::<Vec<_>>()
+        }))
+        .map_err(|payload| replay_panic(&*payload))
+    });
+    let mut results: Vec<Vec<Option<Result<U, String>>>> = solvers.iter().map(|solver| solver.streams.iter().map(|_| None).collect()).collect();
+    let mut faults: Vec<Option<String>> = solvers.iter().map(|_| None).collect();
+    for (unit, outcome) in units.iter().zip(outcomes) {
+        match outcome {
+            Ok(outs) => {
+                for (&stream, out) in unit.streams.iter().zip(outs) {
+                    results[unit.solver][stream] = Some(out);
+                }
+            }
+            Err(fault) => {
+                faults[unit.solver].get_or_insert(fault);
+            }
+        }
+    }
+    results
+        .into_iter()
+        .zip(faults)
+        .map(|(results, fault)| match fault {
+            Some(fault) => Err(fault),
+            None => Ok(results.into_iter().map(|result| result.expect("a result for each stream")).collect()),
+        })
+        .collect()
+}
+
 /// The tables of one case of a solver, each with the index in the stream of
 /// the token whose step gives it, or the fault that gives none.
 #[derive(Debug)]
 pub struct CaseTables {
-    /// The case as [`case_spelled`] writes its name.
+    /// The case as [`case_spelled`](crate::stream::corpus::case_spelled) writes its name.
     pub case: String,
     /// Whether the case is the solver's concept case.
     pub concept: bool,
@@ -287,9 +373,9 @@ pub struct SolverTables {
 /// its task in `tasks`, the concept case or, with `all`, every case, in the
 /// order of the cases, with the lib's constructions `constructions`; or the
 /// fault that stops the solver. A case that holds a `DEMONSTRATED` form is
-/// left out.
+/// left out. The replay computes no token mask.
 pub fn solver_tables(corpus: &Path, tasks: &Path, id: &str, all: bool, points: Points, constructions: &Constructions) -> Result<SolverTables, String> {
-    let replayed = replay_solver(corpus, tasks, id, all, constructions, &|tables: &mut Vec<(usize, Table)>, decoder, stepped| {
+    let replayed = replay_solver(corpus, tasks, id, all, constructions, false, &|tables: &mut Vec<(usize, Table)>, decoder, stepped| {
         tables.extend(decoder.tables(points).into_iter().map(|table| (stepped.index, table)));
     })?;
     let cases = replayed.cases.into_iter().map(|case| CaseTables { case: case.case, concept: case.concept, tables: case.outcome }).collect();
