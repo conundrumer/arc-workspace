@@ -41,12 +41,23 @@ pub struct Refused {
     pub message: String,
 }
 
-/// What a replay left: the tokens the engine forces after its last step.
+/// What a replay left: the tokens the engine forces after its last step, and
+/// the end of the program the decode reads.
 pub struct Replayed {
     forced: Vec<Token>,
+    end: usize,
 }
 
 impl Replayed {
+    /// The index in the stream where the program the decode reads ends: the
+    /// index of the first token the model emits after the decode has ended
+    /// at its `&output`, or the stream's length where the replay reads the
+    /// whole stream. Where `after` broke the replay, the index after the
+    /// token it broke at.
+    pub fn end(&self) -> usize {
+        self.end
+    }
+
     /// The tokens the engine forces after the last step.
     pub fn forced(&self) -> &[Token] {
         &self.forced
@@ -63,7 +74,10 @@ impl Replayed {
 /// the step, after each step of a token the model emits; the replay ends
 /// early where `after` gives [`ControlFlow::Break`]. Gives the line of the
 /// first token the decoder refuses, or that the engine emits against the
-/// tokens the step before forced. A token the mask refuses is a token the
+/// tokens the step before forced. The replay ends with no refusal at the
+/// first token the model emits after the decode has ended at its `&output`,
+/// once the engine forces no token there, and the tokens from there on are no
+/// part of the program the decode reads ([`Replayed::end`]). A token the mask refuses is a token the
 /// step refuses, so a replay with no mask refuses the same tokens.
 pub fn replay(decoder: &mut Decoder<'_>, stream: &[(Token, Emitter)], masked: bool, after: &mut dyn FnMut(&Decoder<'_>, Stepped<'_>) -> ControlFlow<()>) -> Result<Replayed, String> {
     replay_from(decoder, stream, masked, 0, Vec::new(), after).map_err(|refused| refused.message)
@@ -72,7 +86,8 @@ pub fn replay(decoder: &mut Decoder<'_>, stream: &[(Token, Emitter)], masked: bo
 /// As [`replay`], from the token at position `start` of `stream`, where
 /// `decoder` has stepped the tokens before it and the engine still forces
 /// `forced` there. The indices that `after` and the faults give are those
-/// of `stream`, and the refusal gives the index of its token.
+/// of `stream`, and the refusal gives the index of its token. The replay ends
+/// as [`replay`] gives.
 pub fn replay_from(
     decoder: &mut Decoder<'_>,
     stream: &[(Token, Emitter)],
@@ -95,6 +110,9 @@ pub fn replay_from(
                 if !forced.is_empty() {
                     return Err(Refused { index, message: format!("token {index} {token:?}: the engine forces {forced:?} before it") });
                 }
+                if decoder.output().is_some() {
+                    return Ok(Replayed { forced, end: index });
+                }
                 let mask = masked.then(|| {
                     let start = Instant::now();
                     let mask = decoder.admissible();
@@ -112,12 +130,12 @@ pub fn replay_from(
                 forced = step.forced.into();
                 let mask = mask.as_ref().map(|(mask, seconds)| Masked { mask, seconds: *seconds });
                 if after(decoder, Stepped { index, token, mask, consistency: step.consistency, step_seconds }).is_break() {
-                    break;
+                    return Ok(Replayed { forced, end: index + 1 });
                 }
             }
         }
     }
-    Ok(Replayed { forced })
+    Ok(Replayed { forced, end: stream.len() })
 }
 
 /// Whether `program` holds a `DEMONSTRATED` form, whose stream the

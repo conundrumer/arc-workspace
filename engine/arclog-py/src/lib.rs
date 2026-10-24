@@ -665,7 +665,10 @@ fn walk_corpus<C: Send>(
 /// `numpy.frombuffer(masks, numpy.uint8).reshape(-1, (len(vocabulary) + 7) // 8)`
 /// has one row for each token the model writes. Otherwise it is `None`, and
 /// `mask_fault` is `None` where `tasks` is `None` and else the reason the
-/// case gives no masks.
+/// case gives no masks. Where the decode of the case ends at its `&output`
+/// before the stream does, `ids` and `model` hold the tokens before the first
+/// token the model writes after that end, and `masks` has one row for each
+/// model token among them.
 #[pyclass(name = "CaseStream", frozen, get_all, module = "arclog")]
 struct PyCaseStream {
     task: String,
@@ -797,8 +800,9 @@ fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &Hash
         constructions,
         &DecodeSettings::default(),
         true,
-        &|masks: &mut Vec<u8>, decoder, stepped| {
+        &|(rows, masks): &mut (usize, Vec<u8>), decoder, stepped| {
             let masked = stepped.mask.expect("the replay computes the mask");
+            *rows += 1;
             masks.extend(mask_bytes(masked.mask, decoder.vocabulary().len()));
         },
         &|_, masks| masks,
@@ -814,7 +818,15 @@ fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &Hash
         }
     }
     for (solver, stream, out) in sets {
-        found[solver].1[stream].masks = out.map(Some);
+        let stream = &mut found[solver].1[stream];
+        stream.masks = out.map(|(rows, masks)| {
+            // The tokens from the first one the model emits after the decode's end are no part of the program the decode reads.
+            let end = stream.ids.iter().enumerate().filter(|(_, (_, emitter))| *emitter == Emitter::Model).nth(rows).map(|(index, _)| index);
+            if let Some(end) = end {
+                stream.ids.truncate(end);
+            }
+            Some(masks)
+        });
     }
     for (solver, fault) in faults {
         for stream in &mut found[solver].1 {

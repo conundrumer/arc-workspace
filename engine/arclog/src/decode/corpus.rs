@@ -180,7 +180,9 @@ struct Checkpoint<'a, T> {
 /// mask and the step of a prefix that streams share run once, and each
 /// stream that continues the prefix resumes from a fork of the decoder and
 /// a clone of the record there. A stream equal to the one before takes a
-/// clone of its outcome, and a stream that shares the prefix through the
+/// clone of its outcome; a checkpoint stands at the position the replay
+/// reached, which is the end of the program the decode reads where that is
+/// before the shared prefix's end ([`super::replay::Replayed::end`]); and a stream that shares the prefix through the
 /// token at which the one before was refused is refused at that token.
 pub fn replay_prefix_tree<T: Default + Clone>(
     task: &Task,
@@ -232,7 +234,7 @@ pub fn replay_prefix_tree<T: Default + Clone>(
         if target > position {
             match run(&mut decoder, &tokens[..target], position, forced.clone(), &mut recording) {
                 Ok(replayed) => {
-                    position = target;
+                    position = replayed.end();
                     forced = replayed.forced().to_vec();
                     stack.push(Checkpoint { position, decoder: decoder.fork(), forced: forced.clone(), record: recording.clone() });
                 }
