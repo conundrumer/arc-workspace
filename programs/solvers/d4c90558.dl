@@ -1,0 +1,313 @@
+// d4c90558
+// @draft
+// @keywords: objects enclose count rank bbox
+// @scene background: the background is params.background_color
+// @scene frames: the input holds several frames, each a closed rectangular
+//  outline of one color, with no two frames of one color; a frame may have one
+//  or more sides thicker than one cell
+// @scene marks-inside: each frame's enclosed region holds cells of
+//  params.mark_color, scattered on background, and no other color; no
+//  params.mark_color cell lies outside a frame
+// @scene distinct-counts: no two frames hold the same number of
+//  params.mark_color cells
+// @rule count: each frame's count is the number of params.mark_color cells in
+//  the region it encloses
+// @rule bar: each frame gives one line of the output, filled with the frame's
+//  color for as many cells as its count, from the edge a quarter turn in
+//  params.bar_sense from params.short_end, and background after
+// @rule order: the lines are ordered by count, the smallest count at the
+//  params.short_end edge
+// @rule size: the output has one line per frame, and each line is as long as
+//  the largest count
+
+// which cells of a frame's region the count reads
+.type CountedCells =
+    // @claim count
+    CountMarks {}
+    // @rule count: every non-background cell of the region counts
+    // @witness stray-other-color: borderline concept
+    //     @relaxed marks-inside
+  | CountAnyColor {}
+
+// the region a frame's count reads
+.type CountArea =
+    // @claim count
+    CountEnclosed {}
+    // @rule count: the region is the frame's bounding box
+    // @scene frames: a frame is any one-color piece of more than one cell, of a
+    //  color other than params.mark_color, whether or not its outline is closed
+    // @witness broken-outline: foreign $CountInBbox
+    //     @relaxed frames
+  | CountInBbox {}
+
+// a frame that lies in another frame's region
+.type NestedFrame =
+    // @claim count
+    IncludeNested {}
+    // @rule count: the cells of a frame that lies in the region, and of that
+    //  frame's own region, do not count
+    // @witness nested-frame: borderline concept
+    //     @relaxed marks-inside
+  | ExcludeNested {}
+
+// what one line of the output stands for
+.type FrameUnit =
+    // @claim bar
+    BarPerFrame {}
+    // @rule bar: each frame color gives one line, which counts the cells of all
+    //  the frames of that color
+    // @witness two-frames-one-color: borderline concept
+    //     @relaxed frames
+  | FramePerColor {}
+
+// the key the lines ascend by
+.type OrderKey =
+    // @claim order
+    OrderByCount {}
+    // @rule order: the lines ascend by the cell count of the bounding boxes of
+    //  their frames
+    // @witness larger-frame-fewer-marks: ordinary concept
+  | OrderBySize {}
+
+// lines of one key
+.type TieOrder =
+    // @claim order
+    TiesUndefined {}
+    // @rule either-order: lines of one key take either order, and the output
+    //  holds each order
+    // @witness tied-counts: variant $TiesEitherOrder
+    //     @relaxed distinct-counts
+  | TiesEitherOrder {}
+
+// a frame whose count is 0
+.type EmptyFrame =
+    // @claim size
+    KeepEmpty {}
+    // @rule size: a frame whose count is 0 gives no line
+    // @witness empty-frame: variant concept
+    //     @relaxed marks-inside
+  | DropEmpty {}
+
+.type Choice = [cells: CountedCells, area: CountArea, nested: NestedFrame,
+                unit: FrameUnit, order: OrderKey, tie: TieOrder, empty: EmptyFrame]
+
+// A line of the output under a case: the frame, or the class of frames of one
+// color, it stands for.
+.type Bar = [ch: Choice, u: Ident]
+
+.type TiebreakResolution =
+    End {} | Sit {row: number, u: Ident, rest: TiebreakResolution}
+
+.decl out(p: Position, col: Color, ch: Choice, res: TiebreakResolution)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    .decl background_color(c: Color) background_color(0).
+
+    .decl short_end(d: Dir) short_end(DIR_T).
+    .decl bar_sense(s: Sense) bar_sense(SENSE_CC).
+
+    // --- $CountMarks ---
+    // @derive RarestColor: borderline concept
+    //     @relaxed marks-inside
+    .decl mark_color(c: Color) mark_color(5).
+}
+
+.init params = Params
+
+.decl counted_cells_choice(c: CountedCells)
+counted_cells_choice($CountMarks()). counted_cells_choice($CountAnyColor()).
+
+.decl count_area_choice(a: CountArea)
+count_area_choice($CountEnclosed()). count_area_choice($CountInBbox()).
+
+.decl nested_frame_choice(n: NestedFrame)
+nested_frame_choice($IncludeNested()). nested_frame_choice($ExcludeNested()).
+
+.decl frame_unit_choice(u: FrameUnit)
+frame_unit_choice($BarPerFrame()). frame_unit_choice($FramePerColor()).
+
+.decl order_key_choice(o: OrderKey)
+order_key_choice($OrderByCount()). order_key_choice($OrderBySize()).
+
+.decl tie_order_choice(t: TieOrder)
+tie_order_choice($TiesUndefined()). tie_order_choice($TiesEitherOrder()).
+
+.decl empty_frame_choice(e: EmptyFrame)
+empty_frame_choice($KeepEmpty()). empty_frame_choice($DropEmpty()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([$CountMarks(), A, Ns, U, O, T, E]) :-
+    count_area_choice(A), nested_frame_choice(Ns), frame_unit_choice(U),
+    order_key_choice(O), tie_order_choice(T), empty_frame_choice(E).
+impl_choice([$CountAnyColor(), $CountEnclosed(), Ns, U, O, T, E]) :-
+    nested_frame_choice(Ns), frame_unit_choice(U),
+    order_key_choice(O), tie_order_choice(T), empty_frame_choice(E).
+
+// @claim frames
+.init piece = Components<Color>
+piece.node(Col, P) :- in(P, Col), !params.background_color(Col).
+
+.decl piece_color(f: Ident, col: Color)
+piece_color(F, Col) :- piece.label(Col, _, F).
+
+// The cells a frame's count reads.
+.decl region(a: CountArea, f: Ident, p: Position)
+
+.decl frame(c: CountedCells, a: CountArea, f: Ident)
+
+// A cell the count of frame f reads.
+.decl counted(c: CountedCells, a: CountArea, f: Ident, p: Position)
+
+// The frames each line stands for.
+// @ignore: head-repeat — a line of $BarPerFrame stands for one frame, and is
+//  keyed by that frame
+.decl member(ch: Choice, u: Ident, f: Ident)
+
+// @claim count
+.init held = Tally<Bar, Position>
+held.domain([Ch, L]) :- member(Ch, L, _).
+
+// The lines the output draws.
+.decl line(ch: Choice, u: Ident)
+
+// @claim order
+.init ascending = Order<Choice, Ident>
+ascending.elem(Ch, L) :- line(Ch, L).
+ascending.before(Ch, L1, L2) :- key(Ch, L1, N1), key(Ch, L2, N2), N1 < N2.
+
+// @claim size
+.init lines = Tally<Choice, Ident>
+lines.item(Ch, L) :- line(Ch, L).
+
+// @claim size
+.init longest = Extremes<Choice>
+longest.cand(Ch, N) :- held.tally([Ch, _], N).
+
+.decl bar_start(d: Dir)
+bar_start(D2) :- params.short_end(D), params.bar_sense(S), turn(S, D, D2).
+
+.init chart = Frame2D<Choice>
+chart.extent(Ch, A, N) :- params.short_end(D), axis_of(D, A), lines.tally(Ch, N).
+chart.extent(Ch, A, N) :- bar_start(D), axis_of(D, A), longest.high(Ch, N).
+
+// A cell of the chart, and its row: its distance from the short_end edge.
+.decl row(ch: Choice, p: Position, k: number)
+row(Ch, P, K) :- chart.cell(Ch, P), params.short_end(D), dist(P, D, K).
+
+// The rows a line may take.
+.decl seat(ch: Choice, u: Ident, k: number)
+
+.init ties = TiebreakResolutions<Choice, number, Ident>
+ties.cand(Ch, K, L) :- seat(Ch, L, K).
+
+out(P, Col, Ch, Res) :-
+    row(Ch, P, K), ties.assign(Ch, Res, K, L), held.tally([Ch, L], N),   // the line seated in this row
+    bar_start(Db), dist(P, Db, K2),
+    ( K2 < N, member(Ch, L, F), piece_color(F, Col)   // the bar
+    ; K2 >= N, params.background_color(Col)           // past its end
+    ).
+
+// --- $CountEnclosed ---
+// @claim frames count
+.init closed = Closed<Ident>
+closed.cell(F, P) :- piece_color(F, _), in(P, _), !piece.label(_, P, F).
+
+region($CountEnclosed(), F, P) :- closed.region(F, P, _).
+frame(C, $CountEnclosed(), F) :- counted_cells_choice(C), region($CountEnclosed(), F, _).
+
+// --- $CountInBbox, $OrderBySize ---
+// @claim count order
+.init box = Bbox<Ident>
+box.cell(F, P) :- piece.label(_, P, F).
+
+// --- $CountInBbox ---
+region($CountInBbox(), F, P) :- box.box(F, B), in(P, _), crop(P, B, _).
+frame($CountMarks(), $CountInBbox(), F) :-
+    piece.label(Col, P, F), piece.label(Col, Q, F), P != Q,   // more than one cell
+    !params.mark_color(Col).
+
+// --- $CountMarks ---
+counted($CountMarks(), A, F, P) :-
+    frame($CountMarks(), A, F), region(A, F, P), in(P, Col), params.mark_color(Col).
+
+// --- $CountAnyColor ---
+counted($CountAnyColor(), A, F, P) :-
+    frame($CountAnyColor(), A, F), region(A, F, P), in(P, Col), !params.background_color(Col).
+
+// --- $IncludeNested ---
+held.item([[C, A, $IncludeNested(), U, O, T, E], L], P) :-
+    member([C, A, $IncludeNested(), U, O, T, E], L, F), counted(C, A, F, P).
+
+// --- $ExcludeNested ---
+// A cell of frame f's region that a frame lying in that region covers or
+// encloses.
+.decl shielded(c: CountedCells, a: CountArea, f: Ident, p: Position)
+shielded(C, A, F, P) :-
+    frame(C, A, F), frame(C, A, G), G != F,
+    piece.label(_, Q, G), region(A, F, Q),   // g lies in f's region
+    ( piece.label(_, P, G)
+    ; region(A, G, P)
+    ).
+
+held.item([[C, A, $ExcludeNested(), U, O, T, E], L], P) :-
+    member([C, A, $ExcludeNested(), U, O, T, E], L, F), counted(C, A, F, P),
+    !shielded(C, A, F, P).
+
+// --- $BarPerFrame ---
+member([C, A, Ns, $BarPerFrame(), O, T, E], F, F) :-
+    impl_choice([C, A, Ns, $BarPerFrame(), O, T, E]), frame(C, A, F).
+
+// --- $FramePerColor ---
+// One class per color.
+.init same_color = Canon<Ident>
+same_color.edge(F1, F2) :- piece_color(F1, Col), piece_color(F2, Col).
+
+member([C, A, Ns, $FramePerColor(), O, T, E], U, F) :-
+    impl_choice([C, A, Ns, $FramePerColor(), O, T, E]), frame(C, A, F), same_color.id(F, U).
+
+// --- $KeepEmpty ---
+line([C, A, Ns, U, O, T, $KeepEmpty()], L) :- member([C, A, Ns, U, O, T, $KeepEmpty()], L, _).
+
+// --- $DropEmpty ---
+line([C, A, Ns, U, O, T, $DropEmpty()], L) :- held.item([[C, A, Ns, U, O, T, $DropEmpty()], L], _).
+
+// The key the lines ascend by.
+.decl key(ch: Choice, u: Ident, n: number)
+
+// --- $OrderByCount ---
+key([C, A, Ns, U, $OrderByCount(), T, E], L, N) :-
+    held.tally([[C, A, Ns, U, $OrderByCount(), T, E], L], N).
+
+// --- $OrderBySize ---
+// The cells of the bounding boxes of a line's frames.
+// @claim order
+.init area = Tally<Bar, Position>
+area.item([[C, A, Ns, U, $OrderBySize(), T, E], L], P) :-
+    member([C, A, Ns, U, $OrderBySize(), T, E], L, F), box.box(F, B), in(P, _), crop(P, B, _).
+
+key(Ch, L, N) :- area.tally([Ch, L], N).
+
+// --- $TiesUndefined ---
+seat([C, A, Ns, U, O, $TiesUndefined(), E], L, K) :-
+    ascending.rank([C, A, Ns, U, O, $TiesUndefined(), E], L, K).
+
+// --- $TiesEitherOrder ---
+// Every line of a smaller key lies between this one and the short_end edge,
+// so a line sits no nearer that edge than their number.
+seat([C, A, Ns, U, O, $TiesEitherOrder(), E], L, K) :-
+    row([C, A, Ns, U, O, $TiesEitherOrder(), E], _, K),
+    ascending.rank([C, A, Ns, U, O, $TiesEitherOrder(), E], L, R), R <= K.
+
+.comp Determine {
+    // The marks are counted and never drawn.
+    .decl mark_color(c: Color)
+    mark_color(Col) :- ex_in(E, _, Col), ex_out(E, _, _), !ex_out(_, _, Col).
+
+    // The cell past the end of the shortest bar: the corner of the output at
+    // the short_end edge and the edge opposite the bars' start.
+    .decl background_color(c: Color)
+    background_color(Col) :-
+        ex_out(_, P, Col), params.short_end(D), dist(P, D, 0),
+        params.bar_sense(S), turn(S, D, D_start), opposite(D_start, D_end), dist(P, D_end, 0).
+}

@@ -1,0 +1,279 @@
+// d43fd935
+// @draft
+// @keywords: cast span objects
+// @scene one-block: a background of color params.background (0) holds one
+//  solid 2x2 block of color params.block_color (3)
+// @scene single-dots: every other non-background cell is a single cell of a
+//  color other than params.block_color, and no two of them share an edge
+// @scene clear-paths: between a dot that is level with the block and the
+//  block, every cell is background
+// @rule ray-to-block: a dot that shares a row or a column with a cell of the
+//  block paints every cell between it and the block, on that row or column,
+//  in the dot's color
+// @rule rest-unchanged: every other cell keeps its input color
+
+// which cells stop a dot's line
+.type Stopper =
+    // @claim ray-to-block
+    Cells {}
+    // @rule ray-to-block: the cells of the block's bounding box stop the line
+    // @witness l-block: borderline concept
+    //     @relaxed one-block
+  | Box {}
+
+// what a line does at a non-background cell between its dot and the block
+.type Obstacle =
+    // @claim ray-to-block
+    Over {}
+    // @rule ray-to-block: every non-background cell blocks a line, and a dot
+    //  casts only where the first cell it meets is a block cell; undefined
+    //  where two lines paint one cell in different colors
+    // @witness stacked-dots: borderline concept
+    //     @relaxed clear-paths
+  | StopAtDot {}
+    // @rule ray-to-block: a dot level with the block paints up to the first
+    //  non-background cell on its line, whatever that cell is; undefined
+    //  where two lines paint one cell in different colors
+    // @witness two-color-stack: borderline $PaintToDot
+    //     @relaxed clear-paths
+  | PaintToDot {}
+
+// which cells cast a line
+.type Casters =
+    // @claim ray-to-block
+    Every {}
+    // @rule ray-to-block: only a cell with no non-background cell beside it
+    //  casts
+    // @witness domino-caster: borderline concept
+    //     @relaxed single-dots
+  | SingletonsOnly {}
+
+// how the block is found
+.type Block =
+    // @claim one-block
+    ByColor {}
+    // @scene one-block: the block is the one 4-connected non-background
+    //  object larger than one cell, of any color; undefined on an input with
+    //  no such object or more than one
+    // @witness other-color-block: borderline $BlockByShape
+    //     @relaxed one-block
+  | BlockByShape {}
+    // @scene one-block: the block is the cells of params.block_color where
+    //  they fill a square of side params.block_size; where they do not,
+    //  there is no block, and no line is drawn
+    // @witness l-block: borderline concept
+  | Square {}
+
+.type Choice = [s: Stopper, o: Obstacle, ca: Casters, bk: Block]
+
+// The cells that stop lines, under one stopper reading and one way of finding
+// the block.
+.type Stop = [s: Stopper, bk: Block]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline derived
+    //     @relaxed one-block
+    .decl background(c: Color) background(0).
+
+    // --- $ByColor, $Square ---
+    .decl block_color(c: Color) block_color(3).
+
+    // --- $Square ---
+    // @derive TileCount: borderline derived
+    //     @relaxed one-block
+    // @derive TileDim: ordinary concept
+    .decl block_size(k: number) block_size(2).
+}
+
+.init params = Params
+
+.decl stopper_choice(s: Stopper)
+stopper_choice($Cells()). stopper_choice($Box()).
+
+.decl obstacle_choice(o: Obstacle)
+obstacle_choice($Over()). obstacle_choice($StopAtDot()). obstacle_choice($PaintToDot()).
+
+.decl casters_choice(ca: Casters)
+casters_choice($Every()). casters_choice($SingletonsOnly()).
+
+.decl block_choice(bk: Block)
+block_choice($ByColor()). block_choice($BlockByShape()). block_choice($Square()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([S, O, Ca, Bk]) :-
+    stopper_choice(S), obstacle_choice(O), casters_choice(Ca), block_choice(Bk).
+
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !params.background(Col).
+
+.decl block(bk: Block, p: Position)
+
+// The ways of finding the block under which the model is defined on the
+// input.
+.decl located(bk: Block)
+
+// The cells that stop a line.
+.decl stopper(k: Stop, p: Position)
+
+.decl stop_key(k: Stop)
+stop_key([S, Bk]) :- stopper_choice(S), block_choice(Bk).
+
+.decl caster(ca: Casters, bk: Block, p: Position)
+
+// The cells src's line paints, src itself included.
+.decl line(o: Obstacle, k: Stop, src: Position, p: Position)
+
+.decl paint(ch: Choice, p: Position, col: Color)
+paint([S, O, Ca, Bk], P, Col) :- caster(Ca, Bk, Src), in(Src, Col), line(O, [S, Bk], Src, P).
+
+out(P, Col, Ch) :- paint(Ch, P, Col).
+out(P, Col, [S, O, Ca, Bk]) :-
+    impl_choice([S, O, Ca, Bk]), located(Bk), in(P, Col), !paint([S, O, Ca, Bk], P, _).
+
+// --- $ByColor, $Square ---
+
+.decl tinted(p: Position)
+tinted(P) :- in(P, Col), params.block_color(Col).
+
+// --- $ByColor ---
+
+block($ByColor(), P) :- tinted(P).
+located($ByColor()).
+
+// --- $Square ---
+
+// @claim one-block
+.init tint = Bbox<Unit>
+tint.cell($U(), P) :- tinted(P).
+
+// The block-colored cells fill no square of side block_size: their box is
+// another size, or holds a cell of another color.
+.decl unsquare()
+unsquare() :-
+    tint.box($U(), B), in(P, _),
+    ( axis_elem(A), box_extent(B, P, A, N), !params.block_size(N)  // another size
+    ; inside(P, B), !tinted(P) ).                                  // a hole
+
+block($Square(), P) :- tinted(P), !unsquare().
+located($Square()).
+
+// --- $SingletonsOnly, $BlockByShape ---
+
+// An ink cell with ink beside it.
+.decl joined(p: Position)
+joined(P) :- ink(P), dir_elem(D), neighbor(P, D, Q), ink(Q).
+
+// --- $BlockByShape ---
+
+// @claim one-block
+.init piece = Components<Unit>
+piece.node($U(), P) :- joined(P).
+
+// Two objects larger than one cell.
+.decl two_blocks()
+two_blocks() :- piece.label($U(), _, Id1), piece.label($U(), _, Id2), Id1 != Id2.
+
+block($BlockByShape(), P) :- joined(P), !two_blocks().
+located($BlockByShape()) :- block($BlockByShape(), _).
+
+// --- $Cells ---
+
+stopper([$Cells(), Bk], P) :- block(Bk, P).
+
+// --- $Box ---
+
+// @claim ray-to-block
+.init hull = Bbox<Block>
+hull.cell(Bk, P) :- block(Bk, P).
+
+stopper([$Box(), Bk], P) :- hull.box(Bk, B), in(P, _), inside(P, B).
+
+// --- $Every ---
+
+caster($Every(), Bk, P) :- located(Bk), ink(P), !block(Bk, P).
+
+// --- $SingletonsOnly ---
+
+caster($SingletonsOnly(), Bk, P) :- located(Bk), ink(P), !joined(P), !block(Bk, P).
+
+// --- $Over, $PaintToDot ---
+
+// Each ink cell's cast toward each edge, stopped by the stoppers alone.
+// @claim ray-to-block
+.init reach = Ray<Stop>
+reach.dir(K, D) :- stop_key(K), dir_elem(D).
+reach.cell(K, P) :- stop_key(K), in(P, _).
+reach.mark(K, P) :- stop_key(K), ink(P).
+reach.blocked(K, P) :- stopper(K, P).
+
+// --- $StopAtDot, $PaintToDot ---
+
+// The same casts, stopped by every ink cell as well.
+// @claim ray-to-block
+.init obst = Ray<Stop>
+obst.dir(K, D) :- stop_key(K), dir_elem(D).
+obst.cell(K, P) :- stop_key(K), in(P, _).
+obst.mark(K, P) :- stop_key(K), ink(P).
+obst.blocked(K, P) :- stopper(K, P).
+obst.blocked(K, P) :- stop_key(K), ink(P).
+
+// --- $Over ---
+
+// A cast that meets a stopper paints its clear cells.
+line($Over(), K, Src, P) :- reach.stop(K, _, D, _, Src), reach.clear(K, P, D, _, Src).
+
+// --- $StopAtDot ---
+
+// A cast whose first obstacle is a stopper paints its clear cells.
+line($StopAtDot(), K, Src, P) :-
+    obst.stop(K, Q, D, _, Src), stopper(K, Q), obst.clear(K, P, D, _, Src).
+
+// --- $PaintToDot ---
+
+// A cast that meets a stopper paints up to its first obstacle.
+line($PaintToDot(), K, Src, P) :- reach.stop(K, _, D, _, Src), obst.clear(K, P, D, _, Src).
+
+.comp Determine {
+    // The commonest color of each input.
+    .init palette = Mode<Example, Color, Position>
+    palette.item(E, Col, P) :- ex_in(E, P, Col).
+
+    // A commonest color of some input that is not the commonest of a train
+    // input.
+    .decl uneven(col: Color)
+    uneven(Col) :- palette.mode(_, Col), ex_out(E, _, _), !palette.mode(E, Col).
+
+    .decl background(c: Color)
+    background(Col) :- palette.mode(_, Col), !uneven(Col).
+
+    // A non-background cell beside a cell of its own color: a block cell.
+    .decl solid(e: Example, p: Position, col: Color)
+    solid(E, P, Col) :-
+        ex_in(E, P, Col), !params.background(Col),
+        dir_elem(D), neighbor(P, D, Q), ex_in(E, Q, Col).
+
+    // A block color of some input that is no block color of a train input.
+    .decl unshared(col: Color)
+    unshared(Col) :- solid(_, _, Col), ex_out(E, _, _), !solid(E, _, Col).
+
+    .decl block_color(c: Color)
+    block_color(Col) :- solid(_, _, Col), !unshared(Col).
+
+    // The box of each input's block-colored cells.
+    .init tint = Bbox<Example>
+    tint.cell(E, P) :- ex_in(E, P, Col), params.block_color(Col).
+
+    // The box's extent on each axis.
+    .decl side(e: Example, n: number)
+    side(E, N) :- tint.box(E, B), ex_in(E, P, _), axis_elem(A), box_extent(B, P, A, N).
+
+    // A side of some input that is not every side of every train input.
+    .decl uneven_side(n: number)
+    uneven_side(N) :- side(_, N), side(E, N2), ex_out(E, _, _), N2 != N.
+    uneven_side(N) :- side(_, N), ex_out(E, _, _), !side(E, _).
+
+    .decl block_size(k: number)
+    block_size(N) :- side(_, N), !uneven_side(N).
+}

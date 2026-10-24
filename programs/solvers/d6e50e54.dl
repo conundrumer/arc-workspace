@@ -1,0 +1,431 @@
+// d6e50e54
+// @draft
+// @keywords: objects move count
+// @scene one-square-block: one solid square of params.block_color on a field
+//  of params.bg
+// @scene single-cell-marks: one or more single cells of params.mark_color,
+//  each outside the block
+// @scene marks-in-line: each mark lies in the block's rows or in the block's
+//  columns, so it faces exactly one side of the block
+// @rule block-recolor: every cell of the block becomes params.fill_color
+// @rule mark-cleared: each mark's input cell becomes params.bg
+// @rule mark-pull: a mark at distance d from the side it faces (d = 1 for a
+//  cell touching the block) moves toward the block along its line. When d is
+//  less than the block's side length, measured along the mark's line, the
+//  mark lands on the block's cell on that side, in the mark's line. Otherwise
+//  it lands on the cell just outside that side, in the mark's line
+// @rule mark-on-top: a mark that lands on the block is drawn in
+//  params.mark_color over the fill
+// @rule rest-kept: every other cell keeps its input color
+
+// which marks land on the block
+.type Landing =
+    // @claim mark-pull
+    Within {r: ReachBy}
+    // @rule mark-pull: a mark lands on the block when it is the nearest to the
+    //  block of all marks, ties included, and stops just outside it otherwise;
+    //  defined where the concept is
+    // @witness two-within-reach: variant concept
+  | NearestLands {}
+
+// what gives the reach a mark's distance is compared with
+.type ReachBy =
+    // @claim mark-pull
+    Along {}
+    // @rule mark-pull: the reach is the block's extent along the side the
+    //  mark faces; defined where the concept is
+    // @witness rectangle-block: variant concept
+    //     @relaxed one-square-block
+  | ReachAcross {}
+    // @rule mark-pull: the reach is the shorter of the block's two extents;
+    //  defined where the concept is
+    // @witness rectangle-block: variant concept
+  | ReachMin {}
+    // @rule mark-pull: the reach is the longer of the block's two extents;
+    //  defined where the concept is
+    // @witness rectangle-block: variant concept
+  | ReachMax {}
+
+// a mark that touches the block
+.type Touch =
+    // @claim mark-pull
+    TouchLands {}
+    // @rule mark-pull: a mark that touches the block stays where it is, just
+    //  outside it; defined where the concept is
+    // @witness touching-mark: variant concept
+  | TouchStays {}
+
+// when the block takes the fill color
+.type Recolor =
+    // @claim block-recolor
+    Always {}
+    // @rule block-recolor: the block takes params.fill_color only when a mark
+    //  lands on it, and keeps its color otherwise; defined where the concept is
+    // @witness none-within-reach: variant concept
+  | RecolorWhenHit {}
+
+// two marks that land on one cell
+.type Collision =
+    // @claim mark-pull
+    Merge {}
+    // @rule mark-pull: marks on one line and one side rest in order of
+    //  distance, each farther one on the next cell outward from the one before
+    //  it when its own landing cell is taken; defined where the concept is
+    // @witness same-line-pair: variant $Stack
+  | Stack {}
+
+// a mark in neither the block's rows nor its columns
+.type OffLine =
+    // @claim marks-in-line
+    OffLineUndefined {}
+    // @scene marks-in-line: a mark may lie in neither the block's rows nor its
+    //  columns
+    // @rule off-line-stay: such a mark stays where it is
+    // @witness off-line-mark: borderline $OffLineStay
+    //     @relaxed marks-in-line
+  | OffLineStay {}
+    // @scene marks-in-line: a mark may lie in neither the block's rows nor its
+    //  columns
+    // @rule off-line-erase: such a mark clears to params.bg
+    // @witness off-line-mark: borderline $OffLineStay
+  | OffLineErase {}
+
+// the cells no rule names
+.type Rest =
+    // @claim rest-kept
+    RestKept {}
+    // @rule rest-kept: every other cell becomes params.bg; defined where the
+    //  concept is
+    // @witness stray-cell: borderline concept
+  | RestCleared {}
+
+// how the marks are found
+.type MarkColor =
+    // @claim single-cell-marks
+    MarkStored {}
+    // @scene single-cell-marks: the marks are the single-cell objects of any
+    //  color other than params.bg; undefined where they have more than one
+    //  color
+    // @witness mark-other-color: variant $MarkColorByShape
+    //     @relaxed single-cell-marks
+  | MarkColorByShape {}
+
+// how the block is found
+.type BlockColor =
+    // @claim one-square-block
+    BlockStored {}
+    // @scene one-square-block: the block is the one object of more than one
+    //  cell of any color other than params.bg; undefined where there is not
+    //  exactly one
+    // @witness block-other-color: variant $BlockColorByShape
+    //     @relaxed one-square-block
+  | BlockColorByShape {}
+
+.type Choice = [l: Landing, tc: Touch, rc: Recolor, co: Collision, ol: OffLine, rs: Rest,
+                mc: MarkColor, bk: BlockColor]
+
+// The marks under one way of finding them, and the block under one way of
+// finding it.
+.type Find = [mc: MarkColor, bk: BlockColor]
+
+// One line and side of the block: the block cell the line meets first, and
+// the side.
+.type Lane = [f: Find, q: Position, d: Dir]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant concept
+    .decl bg(c: Color) bg(7).
+    .decl fill_color(c: Color) fill_color(2).
+
+    // --- $MarkStored ---
+    // @derive RarestColor: variant concept
+    // @ignore: derive concept — Subsumption: wherever it is defined, it gives
+    //  the output of the OffLineErase copy
+    .decl mark_color(c: Color) mark_color(9).
+
+    // --- $BlockStored ---
+    .decl block_color(c: Color) block_color(1).
+}
+
+.init params = Params
+
+.decl landing_choice(l: Landing)
+landing_choice($Within(R)) :- reach_by_choice(R).
+landing_choice($NearestLands()).
+
+.decl reach_by_choice(r: ReachBy)
+reach_by_choice($Along()). reach_by_choice($ReachAcross()).
+reach_by_choice($ReachMin()). reach_by_choice($ReachMax()).
+
+.decl touch_choice(tc: Touch)
+touch_choice($TouchLands()). touch_choice($TouchStays()).
+
+.decl recolor_choice(rc: Recolor)
+recolor_choice($Always()). recolor_choice($RecolorWhenHit()).
+
+.decl collision_choice(co: Collision)
+collision_choice($Merge()). collision_choice($Stack()).
+
+.decl off_line_choice(ol: OffLine)
+off_line_choice($OffLineUndefined()). off_line_choice($OffLineStay()).
+off_line_choice($OffLineErase()).
+
+.decl rest_choice(rs: Rest)
+rest_choice($RestKept()). rest_choice($RestCleared()).
+
+.decl mark_color_choice(mc: MarkColor)
+mark_color_choice($MarkStored()). mark_color_choice($MarkColorByShape()).
+
+.decl block_color_choice(bk: BlockColor)
+block_color_choice($BlockStored()). block_color_choice($BlockColorByShape()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([L, Tc, Rc, Co, Ol, Rs, Mc, Bk]) :-
+    landing_choice(L), touch_choice(Tc), recolor_choice(Rc), collision_choice(Co),
+    off_line_choice(Ol), rest_choice(Rs), mark_color_choice(Mc), block_color_choice(Bk).
+
+.decl mark(mc: MarkColor, p: Position)
+.decl found_mark(mc: MarkColor)
+
+.decl block(bk: BlockColor, p: Position)
+.decl found_block(bk: BlockColor)
+
+// Both are found, and no mark lies in the block.
+.decl find(f: Find)
+find([Mc, Bk]) :- found_mark(Mc), found_block(Bk), !overlap(Mc, Bk).
+
+.decl overlap(mc: MarkColor, bk: BlockColor)
+overlap(Mc, Bk) :- mark(Mc, P), block(Bk, P).
+
+// Each mark's casts along its row and column, stopped by the block.
+// @claim mark-pull
+.init pull = Ray<Find>
+pull.dir(F, D) :- find(F), dir_elem(D).
+pull.mark([Mc, Bk], P) :- find([Mc, Bk]), mark(Mc, P).
+pull.blocked([Mc, Bk], P) :- find([Mc, Bk]), block(Bk, P).
+
+// A mark's pull: the block cell its line meets first, the side of the block
+// it faces, and its distance from that side.
+.decl approach(f: Find, src: Position, q: Position, d: Dir, k: number)
+approach(F, Src, Q, D, K) :- pull.stop(F, Q, D_in, K, Src), dir_elem(D_in), opposite(D_in, D).
+
+// A mark in neither the block's rows nor its columns.
+.decl offline(f: Find, src: Position)
+offline([Mc, Bk], Src) :- find([Mc, Bk]), mark(Mc, Src), !approach([Mc, Bk], Src, _, _, _).
+
+// The marks within reach.
+.decl within(l: Landing, f: Find, src: Position)
+
+// The marks that land on the block.
+.decl lands(l: Landing, tc: Touch, f: Find, src: Position)
+
+// Where each mark lands: on the block cell its line meets, or just outside it.
+.decl landing(l: Landing, tc: Touch, f: Find, src: Position, p: Position)
+landing(L, Tc, F, Src, P) :-
+    landing_choice(L), touch_choice(Tc), approach(F, Src, Q, D, _),
+    ( lands(L, Tc, F, Src), P = Q
+    ; !lands(L, Tc, F, Src), neighbor(Q, D, P) ).
+
+// Where each mark comes to rest.
+.decl rest(l: Landing, tc: Touch, co: Collision, f: Find, src: Position, p: Position)
+
+// A mark at rest, and the mark's color.
+.decl placed(l: Landing, tc: Touch, co: Collision, ol: OffLine, f: Find, p: Position, col: Color)
+placed(L, Tc, Co, Ol, F, P, Col) :- off_line_choice(Ol), rest(L, Tc, Co, F, Src, P), in(Src, Col).
+
+.decl undefined(ch: Choice)
+
+.decl defined(ch: Choice)
+defined([L, Tc, Rc, Co, Ol, Rs, Mc, Bk]) :-
+    impl_choice([L, Tc, Rc, Co, Ol, Rs, Mc, Bk]), find([Mc, Bk]),
+    !undefined([L, Tc, Rc, Co, Ol, Rs, Mc, Bk]).
+
+out(P, Col, [L, Tc, Rc, Co, Ol, Rs, Mc, Bk]) :-              // a mark at rest
+    defined([L, Tc, Rc, Co, Ol, Rs, Mc, Bk]), placed(L, Tc, Co, Ol, [Mc, Bk], P, Col).
+out(P, Col, [L, Tc, Rc, Co, Ol, Rs, Mc, Bk]) :-              // a mark's input cell
+    defined([L, Tc, Rc, Co, Ol, Rs, Mc, Bk]), mark(Mc, P),
+    !placed(L, Tc, Co, Ol, [Mc, Bk], P, _), params.bg(Col).
+
+// --- $MarkStored ---
+
+mark($MarkStored(), P) :- in(P, Col), params.mark_color(Col).
+found_mark($MarkStored()).
+
+// --- $MarkColorByShape, $BlockColorByShape ---
+
+// A cell of an object larger than one cell: a cell beside one of its color.
+.decl joined(p: Position, col: Color)
+joined(P, Col) :-
+    in(P, Col), !params.bg(Col),
+    dir_elem(D), neighbor(P, D, Q), in(Q, Col).
+
+// --- $MarkColorByShape ---
+
+// A single-cell object.
+.decl lone(p: Position, col: Color)
+lone(P, Col) :- in(P, Col), !params.bg(Col), !joined(P, Col).
+
+// Single-cell objects of two colors.
+.decl mixed()
+mixed() :- lone(_, Col1), lone(_, Col2), Col1 != Col2.
+
+mark($MarkColorByShape(), P) :- lone(P, _), !mixed().
+found_mark($MarkColorByShape()) :- !mixed().
+
+// --- $BlockStored ---
+
+block($BlockStored(), P) :- in(P, Col), params.block_color(Col).
+found_block($BlockStored()) :- block($BlockStored(), _).
+
+// --- $BlockColorByShape ---
+
+// @claim one-square-block
+.init piece = Components<Color>
+piece.node(Col, P) :- joined(P, Col).
+
+.decl two_pieces()
+two_pieces() :- piece.label(_, _, Id1), piece.label(_, _, Id2), Id1 != Id2.
+
+block($BlockColorByShape(), P) :- joined(P, _), !two_pieces().
+found_block($BlockColorByShape()) :- block($BlockColorByShape(), _).
+
+// --- $Within ---
+
+// @claim mark-pull
+.init hull = Bbox<BlockColor>
+hull.cell(Bk, P) :- block(Bk, P).
+
+// The block's extent along each axis.
+.decl side(bk: BlockColor, a: Axis, n: number)
+side(Bk, A, N) :- hull.box(Bk, B), block(Bk, P), axis_elem(A), box_extent(B, P, A, N).
+
+// --- $Along ---
+
+// The mark's distance is below the block's extent along the mark's line.
+within($Within($Along()), [Mc, Bk], Src) :-
+    approach([Mc, Bk], Src, _, D, K), axis_of(D, A), side(Bk, A, N), K < N.
+
+// --- $ReachAcross ---
+
+// The distance is below the block's extent along the side the mark faces.
+within($Within($ReachAcross()), [Mc, Bk], Src) :-
+    approach([Mc, Bk], Src, _, D, K), axis_of(D, A), perp(A, A2), side(Bk, A2, N), K < N.
+
+// --- $ReachMin ---
+
+// The distance is below both of the block's extents.
+within($Within($ReachMin()), [Mc, Bk], Src) :-
+    approach([Mc, Bk], Src, _, D, K), axis_of(D, A), perp(A, A2),
+    side(Bk, A, N1), side(Bk, A2, N2), K < N1, K < N2.
+
+// --- $ReachMax ---
+
+// The distance is below one of the block's extents.
+within($Within($ReachMax()), [Mc, Bk], Src) :-
+    approach([Mc, Bk], Src, _, _, K), side(Bk, _, N), K < N.
+
+// --- $NearestLands ---
+
+// @claim mark-pull
+.init nearest = Extremes<Find>
+nearest.cand(F, K) :- approach(F, _, _, _, K).
+
+within($NearestLands(), F, Src) :- approach(F, Src, _, _, K), nearest.low(F, K).
+
+// --- $TouchLands ---
+
+lands(L, $TouchLands(), F, Src) :- within(L, F, Src).
+
+// --- $TouchStays ---
+
+// A mark beside the block cell its line meets.
+.decl touching(f: Find, src: Position)
+touching(F, Src) :- approach(F, Src, Q, D, _), neighbor(Q, D, Src).
+
+lands(L, $TouchStays(), F, Src) :- within(L, F, Src), !touching(F, Src).
+
+// --- $Merge ---
+
+rest(L, Tc, $Merge(), F, Src, P) :- landing(L, Tc, F, Src, P).
+
+// --- $Stack ---
+
+// The marks of each lane, ranked by distance.
+// @claim mark-pull
+.init lane = Ordinal<Lane>
+lane.idx_set([F, Q, D], K) :- approach(F, _, Q, D, K).
+
+// A lane's marks rest in a row outward from where its nearest mark lands, each
+// one cell further out per mark nearer than it.
+rest(L, Tc, $Stack(), F, Src, P) :-
+    approach(F, Src, Q, D, K), lane.rank([F, Q, D], K, R),
+    approach(F, Src0, Q, D, K0), lane.rank([F, Q, D], K0, 0), landing(L, Tc, F, Src0, P0),
+    jump(P0, D, R, P).
+
+// --- $Always ---
+
+out(P, Col, [L, Tc, $Always(), Co, Ol, Rs, Mc, Bk]) :-          // the block
+    defined([L, Tc, $Always(), Co, Ol, Rs, Mc, Bk]), block(Bk, P),
+    !placed(L, Tc, Co, Ol, [Mc, Bk], P, _), params.fill_color(Col).
+
+// --- $RecolorWhenHit ---
+
+// A mark rests on the block.
+.decl hit(l: Landing, tc: Touch, co: Collision, f: Find)
+hit(L, Tc, Co, [Mc, Bk]) :- rest(L, Tc, Co, [Mc, Bk], _, P), block(Bk, P).
+
+out(P, Col, [L, Tc, $RecolorWhenHit(), Co, Ol, Rs, Mc, Bk]) :-  // the block
+    defined([L, Tc, $RecolorWhenHit(), Co, Ol, Rs, Mc, Bk]), block(Bk, P),
+    !placed(L, Tc, Co, Ol, [Mc, Bk], P, _),
+    ( hit(L, Tc, Co, [Mc, Bk]), params.fill_color(Col)
+    ; !hit(L, Tc, Co, [Mc, Bk]), in(P, Col) ).
+
+// --- $OffLineUndefined ---
+
+undefined([L, Tc, Rc, Co, $OffLineUndefined(), Rs, Mc, Bk]) :-
+    impl_choice([L, Tc, Rc, Co, $OffLineUndefined(), Rs, Mc, Bk]), offline([Mc, Bk], _).
+
+// --- $OffLineStay ---
+
+placed(L, Tc, Co, $OffLineStay(), F, P, Col) :-
+    landing_choice(L), touch_choice(Tc), collision_choice(Co), offline(F, P), in(P, Col).
+
+// --- $RestKept ---
+
+out(P, Col, [L, Tc, Rc, Co, Ol, $RestKept(), Mc, Bk]) :-
+    defined([L, Tc, Rc, Co, Ol, $RestKept(), Mc, Bk]), in(P, Col),
+    !placed(L, Tc, Co, Ol, [Mc, Bk], P, _), !block(Bk, P), !mark(Mc, P).
+
+// --- $RestCleared ---
+
+out(P, Col, [L, Tc, Rc, Co, Ol, $RestCleared(), Mc, Bk]) :-
+    defined([L, Tc, Rc, Co, Ol, $RestCleared(), Mc, Bk]), in(P, _),
+    !placed(L, Tc, Co, Ol, [Mc, Bk], P, _), !block(Bk, P), !mark(Mc, P), params.bg(Col).
+
+.comp Determine {
+    // The commonest color of each input.
+    .init palette = Mode<Example, Color, Position>
+    palette.item(E, Col, P) :- ex_in(E, P, Col).
+
+    // A commonest color of some input that is not the commonest of a train
+    // input.
+    .decl uneven(col: Color)
+    uneven(Col) :- palette.mode(_, Col), ex_out(E, _, _), !palette.mode(E, Col).
+
+    .decl bg(c: Color)
+    bg(Col) :- palette.mode(_, Col), !uneven(Col).
+
+    // A color of the train outputs that no input holds.
+    .decl fill_color(c: Color)
+    fill_color(Col) :- ex_out(_, _, Col), !ex_in(_, _, Col).
+
+    // A color of a train input that no train output keeps.
+    .decl block_color(c: Color)
+    block_color(Col) :- ex_in(E, _, Col), ex_out(E, _, _), !ex_out(_, _, Col).
+
+    // A color of a cell that clears to the field: a mark leaving its cell.
+    .decl mark_color(c: Color)
+    mark_color(Col) :- ex_in(E, P, Col), ex_out(E, P, Bg), params.bg(Bg), !params.bg(Col).
+}

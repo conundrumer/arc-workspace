@@ -1,0 +1,149 @@
+// d89b689b
+// @draft
+// @keywords: objects markers move bbox
+// @scene one-block: the grid holds one 2×2 block of color block_color on a
+//  field of background
+// @scene four-markers: besides the block, the grid holds exactly four single
+//  cells, each of a color other than background and block_color
+// @scene one-marker-per-corner: each marker lies strictly above or strictly
+//  below the block's rows, and strictly left or strictly right of its columns,
+//  and each of the block's four diagonal corners has exactly one marker
+// @rule marker-to-corner: each block cell takes the color of the marker off the
+//  block corner that cell sits at
+// @rule clear-rest: every other cell of the output is background, so the
+//  markers leave their places
+
+// which block cell a marker moves into
+.type Target =
+    // @claim marker-to-corner
+    BlockCorner {}
+    // @rule marker-to-corner: the marker goes to the block cell at the corner of
+    //  the grid quadrant the marker sits in, split at the grid's middle;
+    //  undefined where a marker is on the middle row or column of an odd-sized
+    //  grid, or two markers share a grid quadrant
+    // @witness marker-past-grid-midline: ordinary concept
+    // @witness marker-in-right-half-column: borderline $GridQuadrant
+    //     @relaxed one-marker-per-corner
+  | GridQuadrant {}
+    // @rule marker-to-corner: the marker goes to the block cell at the least
+    //  4-step distance from it; undefined where two markers reach one cell
+    // @scene one-marker-per-corner: the corner condition is dropped
+    // @witness marker-in-block-column: borderline $NearestBlockCell
+    //     @relaxed one-marker-per-corner
+  | NearestBlockCell {}
+
+// how the block is found
+.type Locate =
+    // @claim one-block
+    ByColor {}
+    // @scene one-block: the block is the one 4-connected component of
+    //  non-background cells with more than one cell, of any color; undefined
+    //  where no such component, or more than one, exists
+    // @witness block-other-color: variant $BlockByShape
+    //     @relaxed one-block
+  | BlockByShape {}
+
+.type Choice = [t: Target, l: Locate]
+
+// A marker under one way of finding the block.
+.type MarkerOf = [l: Locate, m: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed one-block
+    .decl background(c: Color) background(0).
+
+    // --- $ByColor ---
+    .decl block_color(c: Color) block_color(8).
+}
+
+.init params = Params
+
+.decl target_choice(t: Target)
+target_choice($BlockCorner()). target_choice($GridQuadrant()). target_choice($NearestBlockCell()).
+
+.decl locate_choice(l: Locate)
+locate_choice($ByColor()). locate_choice($BlockByShape()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([T, L]) :- target_choice(T), locate_choice(L).
+
+// The cells of the block.
+.decl block_cell(p: Position, l: Locate)
+
+.decl marker(p: Position, col: Color, l: Locate)
+marker(P, Col, L) :- in(P, Col), !params.background(Col), locate_choice(L), !block_cell(P, L).
+
+// @claim marker-to-corner
+.init block = Bbox<Locate>
+block.cell(L, P) :- block_cell(P, L).
+
+// The block cell each marker moves into.
+.decl target(m: Position, c: Position, ch: Choice)
+
+out(C, Col, [T, L]) :- target(M, C, [T, L]), marker(M, Col, L).
+out(P, Col, [T, L]) :-
+    impl_choice([T, L]), block.box(L, _),                    // a block is found
+    in(P, _), !block_cell(P, L), params.background(Col).
+
+// --- $ByColor ---
+block_cell(P, $ByColor()) :- in(P, Col), params.block_color(Col).
+
+// --- $BlockByShape ---
+
+// @claim one-block
+.init blobs = Components<Unit>
+blobs.node($U(), P) :- in(P, Col), !params.background(Col).
+
+// @claim one-block
+.init the_block = Unanimous<Unit, Ident>
+the_block.item($U(), Id) :- blobs.label($U(), P, Id), blobs.label($U(), Q, Id), P != Q.
+
+block_cell(P, $BlockByShape()) :- the_block.value($U(), Id), blobs.label($U(), P, Id).
+
+// --- $BlockCorner ---
+target(M, C, [$BlockCorner(), L]) :-
+    marker(M, _, L), block_cell(C, L), block.box(L, B), box_corner(C, B, D),
+    diag_dirs(D, _, D1, D2), nearer(D1, M, C), nearer(D2, M, C).    // M lies off corner D
+
+// --- $GridQuadrant ---
+
+// @claim marker-to-corner
+.init halves = DiagPlacement<Unit>
+halves.cell($U(), P) :- in(P, _).
+
+target(M, C, [$GridQuadrant(), L]) :-
+    halves.quadrant($U(), M, D), block_cell(C, L), block.box(L, B), box_corner(C, B, D).
+
+// --- $NearestBlockCell ---
+
+// 4-step distances from each marker.
+// @claim marker-to-corner
+.init steps = GraphDistance<Position, Position>
+steps.seed(M, M) :- marker(M, _, _).
+steps.edge(M, P, Q) :- marker(M, _, _), in(P, _), dir_elem(D), neighbor(P, D, Q), in(Q, _).
+
+// @claim marker-to-corner
+.init nearest = ArgExtremes<MarkerOf, Position>
+nearest.cand([L, M], C, K) :- marker(M, _, L), block_cell(C, L), steps.distance(M, C, K).
+
+target(M, C, [$NearestBlockCell(), L]) :- nearest.low([L, M], C, _).
+
+.comp Determine {
+    // The commonest color of each solved input.
+    .init common = Mode<Example, Color, Position>
+    common.item(E, Col, P) :- ex_in(E, P, Col), ex_out(E, _, _).
+
+    // A solved input whose commonest color is another.
+    .decl outvoted(col: Color)
+    outvoted(Col) :- common.mode(_, Col), common.mode(E, _), !common.mode(E, Col).
+
+    .decl background(c: Color)
+    background(Col) :- common.mode(_, Col), !outvoted(Col).
+
+    // The block's color: the markers replace all of it, so no output holds it.
+    .decl block_color(c: Color)
+    block_color(Col) :- ex_in(E, _, Col), ex_out(E, _, _), !ex_out(_, _, Col).
+}

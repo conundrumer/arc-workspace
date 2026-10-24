@@ -1,0 +1,226 @@
+// d4f3cd78
+// @draft
+// @keywords: color-class objects bbox border enclose cast
+// @scene one-walled-box: one rectangular outline of params.wall_color, at
+//  least 3 cells on each side, on a field of background 0, with an empty
+//  interior
+// @scene one-gap: the outline lacks exactly one cell, which is on a side and
+//  not at a corner
+// @rule fill-interior: each cell strictly inside the bounding box of the
+//  params.wall_color cells takes params.fill_color
+// @rule fill-gap: each cell of that box's border, not at a corner, that is not
+//  params.wall_color is a gap, and takes params.fill_color
+// @rule stream-out: from each gap, each cell in a straight line outward,
+//  perpendicular to the gap's side and away from the interior, takes
+//  params.fill_color, up to the grid edge
+// @rule keep-rest: every other cell keeps its input color
+
+// which cells the water fills, and where the gaps are
+.type Interior =
+    // @claim fill-interior fill-gap stream-out
+    ColorHull {}
+    // @rule fill-interior: the bounding box is taken once per 4-connected
+    //  component of params.wall_color cells
+    // @rule fill-gap: the gaps of a component are the cells of its own box's
+    //  border, not at a corner, that are not cells of that component
+    // @rule stream-out: the stream runs from each gap of each component
+    // @witness two-boxes: variant $EachObject
+    //     @relaxed one-walled-box
+  | EachObject {}
+    // @rule fill-interior: the interior is the set of non-params.wall_color
+    //  cells that a walk from the grid edge reaches until one non-wall cell,
+    //  the gap, is sealed, and no walk reaches once it is
+    // @rule fill-gap: the gap is that sealed cell, where exactly one of its
+    //  neighbors is in the interior, and the stream leaves it away from that
+    //  neighbor; where no such cell exists, nothing is painted
+    // @witness two-gaps: variant concept
+    //     @relaxed one-gap
+  | SealedRegion {}
+
+// what the fill does to a cell of another color that it covers
+.type Obstacle =
+    // @claim fill-interior stream-out
+    Overwrite {}
+    // @rule fill-interior: only the params.background cells inside take
+    //  params.fill_color
+    // @rule fill-gap: the gap takes params.fill_color only where it is
+    //  params.background
+    // @rule stream-out: only the params.background cells along the stream
+    //  take params.fill_color, and the stream runs on to the edge
+    // @witness interior-object: borderline $PaintBackgroundOnly
+    //     @relaxed one-walled-box
+  | PaintBackgroundOnly {stop: StreamStop}
+
+// where the stream ends
+.type StreamStop =
+    // @claim stream-out
+    ToEdge {}
+    // @rule stream-out: the stream ends before the first non-params.background
+    //  cell on its line
+    // @witness stream-obstacle: borderline $StreamStops
+    //     @relaxed one-walled-box
+  | StreamStops {}
+
+.type Choice = [interior: Interior, obstacle: Obstacle]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive RarestColor: variant derived
+    //     @relaxed one-walled-box
+    .decl wall_color(c: Color) wall_color(5).
+    .decl fill_color(c: Color) fill_color(8).
+
+    // --- $PaintBackgroundOnly ---
+    // @ignore: derive SharedColor — on one input it gives every color of that input, so every cell is background and the case gives the output of $Overwrite on every input (Equivalence)
+    // @ignore: derive VanishedColor — on one input, with no train output, it gives every color of that input, so the case gives the output of $Overwrite on every input (Equivalence)
+    // @derive DominantColor: variant concept
+    //     @relaxed one-walled-box
+    .decl background(c: Color) background(0).
+}
+
+.init params = Params
+
+.decl interior_choice(i: Interior)
+interior_choice($ColorHull()). interior_choice($EachObject()). interior_choice($SealedRegion()).
+
+.decl obstacle_choice(o: Obstacle)
+obstacle_choice($Overwrite()).
+obstacle_choice($PaintBackgroundOnly($ToEdge())). obstacle_choice($PaintBackgroundOnly($StreamStops())).
+
+.decl impl_choice(ch: Choice)
+impl_choice([I, O]) :- interior_choice(I), obstacle_choice(O).
+
+.decl wall(p: Position)
+wall(P) :- in(P, Col), params.wall_color(Col).
+
+// The cells the water fills.
+.decl water(i: Interior, p: Position)
+
+// A gap, and the direction its stream runs.
+.decl gap(i: Interior, p: Position, d: Dir)
+
+// The cells the fill paints.
+.decl paint(ch: Choice, p: Position)
+
+// The line from each gap toward each direction.
+// @claim stream-out
+.init stream = Ray<Interior>
+stream.dir(I, D) :- interior_choice(I), dir_elem(D).
+stream.cell(I, P) :- interior_choice(I), in(P, _).
+stream.mark(I, P) :- gap(I, P, _).
+
+out(P, Col, Ch) :-
+    impl_choice(Ch), in(P, Col_in),
+    ( paint(Ch, P), params.fill_color(Col)
+    ; !paint(Ch, P), Col = Col_in
+    ).
+
+// --- $ColorHull, $EachObject ---
+
+// The wall cells whose bounding box B the water fills: every wall cell, or
+// one component's.
+// @ignore: case section — each case reads basin_wall at its own Interior value alone; the shared clauses reach it at a variable Interior
+.decl basin_wall(i: Interior, b: Box, p: Position)
+
+.decl basin_corner(b: Box, p: Position)
+basin_corner(B, P) :- basin_wall(_, B, _), in(P, _), box_corner(P, B, _).
+
+water(I, P) :- basin_wall(I, B, _), in(P, _), interior(P, B).
+gap(I, P, D) :-
+    basin_wall(I, B, _), in(P, _), box_edge(P, B, D),
+    !basin_corner(B, P), !basin_wall(I, B, P).
+
+// --- $ColorHull ---
+// @claim fill-interior fill-gap
+// @ignore: case section — only basin_wall at $ColorHull reads it
+.init hull = Bbox<Unit>
+hull.cell($U(), P) :- wall(P).
+
+basin_wall($ColorHull(), B, P) :- hull.box(_, B), wall(P).
+
+// --- $EachObject ---
+// @claim fill-interior fill-gap
+// @ignore: case section — only basin_wall at $EachObject reads it
+.init walls = Components<Unit>
+walls.node($U(), P) :- wall(P).
+
+// @claim fill-interior fill-gap
+// @ignore: case section — only basin_wall at $EachObject reads it
+.init object_box = Bbox<Ident>
+object_box.cell(Id, P) :- walls.label(_, P, Id).
+
+basin_wall($EachObject(), B, P) :- walls.label(_, P, Id), object_box.box(Id, B).
+
+// --- $SealedRegion ---
+.decl open(p: Position)
+open(P) :- in(P, _), !wall(P).
+
+// The cells closed off from the edge with no cell sealed.
+// @claim fill-interior
+.init closed = Closed<Unit>
+closed.cell($U(), P) :- open(P).
+
+// The cells closed off from the edge once G is sealed.
+// @claim fill-interior fill-gap
+.init sealed = Closed<Position>
+sealed.cell(G, P) :- open(G), open(P), P != G.
+
+// The cells that sealing G closes off.
+.decl sealed_off(g: Position, p: Position)
+sealed_off(G, P) :- sealed.region(G, P, _), !closed.region(_, P, _).
+
+// G's neighbor toward D is one of the cells sealing G closes off.
+.decl inlet(g: Position, d: Dir)
+inlet(G, D) :- sealed_off(G, P), dir_elem(D), neighbor(G, D, P).
+
+.decl inlets(g: Position)  // G has more than one inlet
+inlets(G) :- inlet(G, D1), inlet(G, D2), D1 != D2.
+
+gap($SealedRegion(), G, D) :- inlet(G, D_in), !inlets(G), opposite(D_in, D).
+water($SealedRegion(), P) :- gap($SealedRegion(), G, _), sealed_off(G, P).
+
+// --- $Overwrite ---
+paint([I, $Overwrite()], P) :- water(I, P).
+paint([I, $Overwrite()], P) :- gap(I, G, D), stream.ray(I, P, D, _, G).
+
+// --- $PaintBackgroundOnly ---
+.decl bg(p: Position)
+bg(P) :- in(P, Col), params.background(Col).
+
+paint([I, $PaintBackgroundOnly(S)], P) :-
+    obstacle_choice($PaintBackgroundOnly(S)), water(I, P), bg(P).
+
+// --- $ToEdge ---
+paint([I, $PaintBackgroundOnly($ToEdge())], P) :- gap(I, G, D), stream.ray(I, P, D, _, G), bg(P).
+
+// --- $StreamStops ---
+stream.blocked(I, P) :- interior_choice(I), in(P, _), !bg(P).
+
+paint([I, $PaintBackgroundOnly($StreamStops())], P) :-
+    gap(I, G, D), stream.clear(I, P, D, _, G), bg(P).
+
+.comp Determine {
+    .init counts = Mode<Example, Color, Position>
+    counts.item(E, Col, P) :- ex_in(E, P, Col).
+
+    .init rarest = ArgExtremes<Example, Color>
+    rarest.cand(E, Col, N) :- counts.tally(E, Col, N).
+
+    // A color that is not the commonest of some input.
+    .decl not_commonest(c: Color)
+    not_commonest(Col) :- counts.mode(_, Col), ex_in(E, _, _), !counts.mode(E, Col).
+
+    .decl background(c: Color)
+    background(Col) :- counts.mode(_, Col), !not_commonest(Col).
+
+    // A color that is not the rarest of some input.
+    .decl not_rarest(c: Color)
+    not_rarest(Col) :- rarest.low(_, Col, _), ex_in(E, _, _), !rarest.low(E, Col, _).
+
+    .decl wall_color(c: Color)
+    wall_color(Col) :- rarest.low(_, Col, _), !not_rarest(Col).
+
+    .decl fill_color(c: Color)
+    fill_color(Col) :- ex_out(E, _, Col), !ex_in(E, _, Col).
+}

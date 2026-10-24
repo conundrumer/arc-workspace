@@ -1,0 +1,251 @@
+// d749d46f
+// @draft
+// @keywords: objects tile-arrangement d4 rank
+// @scene two-colors: the input holds two colors, a background and a bar color
+// @scene bars-hang-from-top: each bar is a solid rectangle of the bar color
+//  whose side toward params.hang_edge lies on that edge
+// @scene bars-in-a-row: the bars stand side by side, separated by params.gap
+//  background columns, the first bar starting at the params.pack_edge edge and
+//  the last ending at the opposite edge
+// @rule bar-color: the bar color is the color of the cell at the corner of
+//  params.hang_edge and params.pack_edge, the corner of the first bar, and the
+//  other color is the background
+// @rule top-lies-flat: along params.hang_edge, each bar is turned so that its
+//  longer side runs along the row, with its top side on the edge row; the bars
+//  are packed from params.pack_edge, in input order, with params.gap
+//  background columns between neighbors
+// @rule bottom-stands-up: along the edge opposite params.hang_edge, each bar is
+//  turned so that its longer side runs down the column, with its bottom side
+//  on the edge row; the bars are packed as in top-lies-flat
+// @rule square-unchanged: a square bar is the same in both rows
+// @rule output-size: the output is params.output_height rows tall, and as wide
+//  as the top row of bars
+// @rule rest-background: every other cell is the background color
+
+// the spacing between neighboring bars in the output
+.type OutputGap =
+    // @claim top-lies-flat bottom-stands-up
+    StoredGap {}
+    // @rule top-lies-flat: each output gap between two neighbors is the input
+    //  gap between those two bars
+    // @rule bottom-stands-up: the same gaps as top-lies-flat
+    // @witness gap-two: variant $GapPerNeighbor
+    //     @relaxed bars-in-a-row
+    // @witness gaps-unequal: borderline $GapPerNeighbor
+    //     @relaxed bars-in-a-row
+  | GapPerNeighbor {}
+
+// which of the two input colors is the bar color
+.type BarColor =
+    // @claim bar-color
+    Corner {}
+    // @rule bar-color: the bar color is the color with fewer cells; undefined
+    //  where the two colors have equal counts
+    // @witness bars-outweigh-background: variant concept
+  | BarColorMinority {}
+
+.type Choice = [g: OutputGap, c: BarColor]
+
+// A column of a row of the output: the bar it belongs to, and the cell that
+// gives it. The columns of a gap belong to the bar after the gap.
+.type Slot = [bar: Ident, p: Position]
+
+// A row of bars in the output, named by the edge it lies along.
+.type RowKey = [ch: Choice, d: Dir]
+
+// A run of background cells in one example.
+.type RunKey = [e: Example, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl hang_edge(d: Dir) hang_edge(DIR_T).
+    .decl pack_edge(d: Dir) pack_edge(DIR_L).
+    .decl output_height(n: number) output_height(10).
+
+    // --- $StoredGap ---
+    .decl gap(n: number) gap(1).
+}
+
+.init params = Params
+
+.decl output_gap_choice(g: OutputGap)
+output_gap_choice($StoredGap()). output_gap_choice($GapPerNeighbor()).
+
+.decl bar_color_choice(c: BarColor)
+bar_color_choice($Corner()). bar_color_choice($BarColorMinority()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([G, C]) :- output_gap_choice(G), bar_color_choice(C).
+
+.comp Parse<Key> {
+    .decl cell(k: Key, p: Position, col: Color)
+
+    // The color of the cell at the corner.
+    .decl corner_color(k: Key, col: Color)
+    corner_color(K, Col) :- corner(C), cell(K, P, Col), corner_dist(P, C, 0).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// The corner the bars hang and pack from.
+.decl corner(c: DiagDir)
+corner(C) :- params.hang_edge(H), params.pack_edge(K), diag_dirs(C, _, H, K).
+
+// The two rows of the output: the flat row along the hang edge, and the
+// standing row along the opposite edge.
+.decl row_edge(d: Dir)
+row_edge(H) :- params.hang_edge(H).
+row_edge(D) :- params.hang_edge(H), opposite(H, D).
+
+.decl bar_color(c: BarColor, col: Color)
+
+// --- $Corner ---
+bar_color($Corner(), Col) :- parse.corner_color($U(), Col).
+
+// --- $BarColorMinority ---
+// @claim bar-color
+.init color_count = Tally<Color, Position>
+color_count.item(Col, P) :- in(P, Col).
+
+bar_color($BarColorMinority(), Col) :-
+    color_count.tally(Col, N), color_count.tally(_, N2), N < N2.
+
+// --- $Corner, $BarColorMinority ---
+.decl bg(c: BarColor, col: Color)
+bg(Cb, Col) :- bar_color(Cb, Bc), in(_, Col), Col != Bc.
+
+// @claim bars-hang-from-top
+.init bars = Components<BarColor>
+bars.node(Cb, P) :- bar_color(Cb, Col), in(P, Col).
+
+// The two bar colors give equal node sets or disjoint ones, so a bar's id
+// names one bar under every key.
+// @claim bars-hang-from-top
+.init bar_box = Bbox<Ident>
+bar_box.cell(Bar, P) :- bars.label(_, P, Bar).
+
+// The bar's cell at the corner the bars hang and pack from.
+.decl anchor(c: BarColor, bar: Ident, p: Position)
+anchor(Cb, Bar, P) :- bars.label(Cb, P, Bar), bar_box.box(Bar, B), corner(C), box_corner(P, B, C).
+
+// Bar1 stands nearer the pack edge than Bar2.
+.decl bar_before(c: BarColor, bar1: Ident, bar2: Ident)
+bar_before(Cb, Bar1, Bar2) :-
+    anchor(Cb, Bar1, P1), anchor(Cb, Bar2, P2), params.pack_edge(K), nearer(K, P1, P2).
+
+// The count of cells along the bar's side toward edge E, the hang edge or the
+// pack edge.
+.decl side_len(c: BarColor, bar: Ident, e: Dir, n: number)
+side_len(Cb, Bar, E, N) :-
+    anchor(Cb, Bar, P), bar_box.box(Bar, B),
+    ( params.hang_edge(E) ; params.pack_edge(E) ),
+    axis_of(E, A), perp(A, A2), box_extent(B, P, A2, N).
+
+// The side of the bar whose cells give it its columns in the row along edge
+// D: its longer side in the flat row, its shorter side in the standing row,
+// and its hang side for a square.
+.decl slot_side(c: BarColor, d: Dir, bar: Ident, e: Dir)
+slot_side(Cb, D, Bar, E) :-
+    params.hang_edge(H), params.pack_edge(K),
+    side_len(Cb, Bar, H, Nh), side_len(Cb, Bar, K, Nk),
+    ( D = H, ( Nh >= Nk, E = H ; Nk > Nh, E = K )               // flat row: the longer side
+    ; opposite(H, D), ( Nh <= Nk, E = H ; Nk < Nh, E = K )      // standing row: the shorter side
+    ).
+
+// A cell of the slot side, on edge E of its bar.
+.decl bar_slot(c: BarColor, d: Dir, bar: Ident, p: Position, e: Dir)
+bar_slot(Cb, D, Bar, P, E) :-
+    slot_side(Cb, D, Bar, E), bars.label(Cb, P, Bar), bar_box.box(Bar, B), box_edge(P, B, E).
+
+// The columns of the gap before a bar, one cell each.
+.decl gap_slot(ch: Choice, bar: Ident, p: Position)
+
+// --- $StoredGap ---
+.init gap_strip = AxisFrame<Unit>
+gap_strip.extent($U(), A, N) :- params.gap(N), params.pack_edge(K), axis_of(K, A).
+
+// params.gap cells toward the pack edge from the anchor of each bar but the
+// first.
+gap_slot([$StoredGap(), Cb], Bar, Q) :-
+    gap_strip.cell($U(), _, C), params.pack_edge(K), dist(C, K, J),
+    bar_before(Cb, _, Bar), anchor(Cb, Bar, P),
+    neighbor(P, K, P1), jump(P1, K, J, Q).
+
+// --- $GapPerNeighbor ---
+// A cell whose line across holds a bar cell.
+.decl spanned(c: BarColor, p: Position)
+spanned(Cb, P) :- in(P, _), params.pack_edge(K), bars.label(Cb, Q, _), same_dist(K, P, Q).
+
+// @claim bars-in-a-row
+.init gap_run = Slide<BarColor>
+gap_run.node(Cb, P) :-
+    bar_color_choice(Cb), params.hang_edge(H), in(P, _), dist(P, H, 0), !spanned(Cb, P).
+gap_run.dir(Cb, D) :- bar_color_choice(Cb), params.pack_edge(K), opposite(K, D).
+
+// The cells of the hang edge row in the lines between a bar and the bar
+// before it.
+gap_slot([$GapPerNeighbor(), Cb], Bar, P) :-
+    gap_run.rest(Cb, P, D, Q), neighbor(Q, D, R),
+    params.pack_edge(K), anchor(Cb, Bar, A), same_dist(K, R, A),
+    bar_before(Cb, _, Bar).
+
+// --- $StoredGap, $GapPerNeighbor ---
+.decl slot(ky: RowKey, s: Slot)
+slot([[G, Cb], D], [Bar, P]) :- output_gap_choice(G), bar_slot(Cb, D, Bar, P, _).
+slot([Ch, D], [Bar, P]) :- gap_slot(Ch, Bar, P), row_edge(D).
+
+// @claim top-lies-flat bottom-stands-up
+.init row = Order<RowKey, Slot>
+row.elem(Ky, S) :- slot(Ky, S).
+row.before([[G, Cb], D], [Bar1, P1], [Bar2, P2]) :-
+    slot([[G, Cb], D], [Bar1, P1]), slot([[G, Cb], D], [Bar2, P2]), bar_before(Cb, Bar1, Bar2).
+row.before(Ky, [Bar, P1], [Bar, P2]) :-
+    slot(Ky, [Bar, P1]), slot(Ky, [Bar, P2]), corner(C), nearer(C, P1, P2).
+
+// @claim output-size
+.init row_len = Tally<RowKey, Slot>
+row_len.item(Ky, S) :- slot(Ky, S).
+
+.init frame = Frame2D<Choice>
+frame.extent(Ch, A, N) :-
+    impl_choice(Ch), params.hang_edge(H), axis_of(H, A), params.output_height(N).
+frame.extent(Ch, A, N) :-
+    params.hang_edge(H), row_len.tally([Ch, H], N), axis_of(H, A_h), perp(A_h, A).
+
+// An output cell a bar covers: its column is the rank of a slot of the bar,
+// and the bar holds a cell as far in from the slot as the output cell lies
+// from the row's edge.
+.decl covered(ch: Choice, p: Position)
+covered([G, Cb], P) :-
+    frame.cell([G, Cb], P), dist(P, D, K),
+    params.pack_edge(Kp), dist(P, Kp, R), row.rank([[G, Cb], D], [Bar, S], R),
+    bar_slot(Cb, D, Bar, S, E), opposite(E, E_in), jump(S, E_in, K, Q), bars.label(Cb, Q, Bar).
+
+out(P, Col, [G, Cb]) :- covered([G, Cb], P), bar_color(Cb, Col).
+out(P, Col, [G, Cb]) :- frame.cell([G, Cb], P), !covered([G, Cb], P), bg(Cb, Col).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // The runs of background cells along the hang edge.
+    .init run = Components<Example>
+    run.node(E, P) :-
+        ex_in(E, P, Col), !parse.corner_color(E, Col), params.hang_edge(H), dist(P, H, 0).
+
+    // A run that reaches the frame edge at either end, and so lies between
+    // no two bars.
+    .decl open_run(e: Example, id: Ident)
+    open_run(E, Id) :-
+        run.label(E, P, Id), params.pack_edge(K),
+        ( dist(P, K, 0) ; opposite(K, K2), dist(P, K2, 0) ).
+
+    .init run_len = Tally<RunKey, Position>
+    run_len.item([E, Id], P) :- run.label(E, P, Id).
+
+    // The length of a run between two bars.
+    .decl gap(n: number)
+    gap(N) :- run_len.tally([E, Id], N), !open_run(E, Id).
+}

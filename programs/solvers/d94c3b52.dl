@@ -1,0 +1,214 @@
+// d94c3b52
+// @draft
+// @keywords: decompose markers match span
+// @scene tiling: the grid is a tiling of `tile_size`×`tile_size` tiles, separated
+//  from each other and from the frame edge by lines of `gap` background cells,
+//  4 tiles down and 6 across.
+// @scene shape-tiles: every tile but one holds a shape in 1 on background, and a
+//  shape may be as small as one cell.
+// @scene one-key-tile: one tile holds its shape in `key_color` and no 1 cell.
+// @rule match-takes-key-color: each tile whose shape equals the key tile's
+//  shape, cell for cell with no rotation or reflection, recolors its shape cells
+//  (its non-background cells) to `key_color`.
+// @rule between-takes-link-color: each tile that lies strictly between two
+//  key-shape tiles (the key tile included) in one tiling row or one tiling
+//  column, and is not a key-shape tile itself, recolors its shape cells to
+//  `link_color`.
+// @rule rest-unchanged: every other cell keeps its input color.
+
+// What makes a tile's shape the key's
+.type Identity =
+    // @claim match-takes-key-color
+    Exact {}
+    // @rule match-takes-key-color: a tile matches when its shape is a translate
+    //  of the key tile's within the tile
+    // @witness shifted-copy: ordinary concept
+  | TranslateMatch {}
+
+// Which color a key-shape tile takes when it lies between two others
+.type Precedence =
+    // @claim between-takes-link-color
+    KeepKey {}
+    // @rule between-takes-link-color: a key-shape tile that lies strictly
+    //  between two others takes `link_color` in place of `key_color`
+    // @witness collinear-copies: ordinary concept
+  | LinkOverMatch {}
+
+.type Choice = [i: Identity, p: Precedence]
+
+// A tile's shape under one reading of shape identity.
+.type FormKey = [i: Identity, t: Position]
+
+// A train input under one tile size.
+.type Tiled = [e: Example, k: number]
+
+// An input cell.
+.type Cell = [e: Example, p: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed tiling
+    //     @relaxed shape-tiles
+    .decl background(col: Color) background(0).
+    .decl tile_size(k: number) tile_size(3).
+    // the width of the background lines between tiles and at the frame edge
+    // @derive SepThickness: variant derived
+    //     @relaxed tiling
+    // @ignore: derive TileDim — fails Subsumption: no input found shows it defined and
+    //  differing from SepThickness
+    .decl gap(g: number) gap(1).
+    // @derive RarestColor: variant derived
+    //     @relaxed one-key-tile
+    .decl key_color(col: Color) key_color(8).
+    .decl link_color(col: Color) link_color(7).
+}
+
+.init params = Params
+
+.decl identity_choice(i: Identity)
+identity_choice($Exact()). identity_choice($TranslateMatch()).
+
+.decl precedence_choice(p: Precedence)
+precedence_choice($KeepKey()). precedence_choice($LinkOverMatch()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([I, Pr]) :- identity_choice(I), precedence_choice(Pr).
+
+.comp Parse<Key> {
+    .decl grid(key: Key, p: Position, col: Color)  // @input
+    .decl tile_size(key: Key, k: number)  // @input
+    .decl gap(key: Key, g: number)  // @input
+
+    // Each cell off the lines, with its tile and its place in the tile.
+    .decl tile(key: Key, p_grid: Position, p_tile: Position, p_intile: Position)
+    tile(Ky, P_grid, P_tile, P_intile) :-
+        grid(Ky, P_grid, _), gap(Ky, G),
+        uniform_inset(G, B), crop(P_grid, B, P_field),           // a cell inside the edge lines
+        tile_size(Ky, K), divide_by_size_2d(P_field, K, G, P_tile, P_intile).
+}
+
+.init parse = Parse<Unit>
+parse.grid($U(), P_grid, Col) :- in(P_grid, Col).
+parse.tile_size($U(), K) :- params.tile_size(K).
+parse.gap($U(), G) :- params.gap(G).
+
+// The tile's shape: its non-background cells.
+.decl shape(p_tile: Position, p_intile: Position)
+shape(P_tile, P_intile) :-
+    parse.tile($U(), P_grid, P_tile, P_intile), in(P_grid, Col), !params.background(Col).
+
+// The key tile.
+// @claim one-key-tile
+.init key = Unanimous<Unit, Position>
+key.item($U(), P_tile) :-
+    parse.tile($U(), P_grid, P_tile, _), in(P_grid, Col), params.key_color(Col).
+
+// The members of each tile's shape that identity compares.
+.decl form(i: Identity, p_tile: Position, m: Position)
+
+// @claim match-takes-key-color
+.init same = KeyedSetCompare<FormKey, FormKey, Position>
+same.pattern_member([I, P_tile], M) :- key.value($U(), P_tile), form(I, P_tile, M).
+same.observed_member([I, P_tile], M) :- form(I, P_tile, M).
+
+// A key-shape tile, the key tile included.
+.decl copy(i: Identity, p_tile: Position)
+copy(I, P_tile) :- same.equals([I, P_tile], _).
+
+// @claim between-takes-link-color
+// @store cell: variant concept
+//     @relaxed tiling
+.init link = Ray<Identity>
+link.dir(I, D) :- identity_choice(I), dir_elem(D).
+link.cell(I, P_tile) :- identity_choice(I), parse.tile($U(), _, P_tile, _).
+link.mark(I, P_tile) :- copy(I, P_tile).
+
+// Strictly between two key-shape tiles on one tiling row or column.
+.decl linked(i: Identity, p_tile: Position)
+linked(I, P_tile) :-
+    link.ray(I, P_tile, D, _, Q1), Q1 != P_tile,             // a copy toward d
+    dir8_opposite(D, O), link.ray(I, P_tile, O, _, Q2), Q2 != P_tile.  // and one the other way
+
+.decl paint(ch: Choice, p_tile: Position, col: Color)
+paint([I, Pr], P_tile, Col) :-
+    impl_choice([I, Pr]), copy(I, P_tile), !linked(I, P_tile), params.key_color(Col).
+paint([I, Pr], P_tile, Col) :-
+    impl_choice([I, Pr]), linked(I, P_tile), !copy(I, P_tile), params.link_color(Col).
+
+// A painted tile's shape cells take its color.
+.decl recolor(ch: Choice, p_grid: Position, col: Color)
+recolor(Ch, P_grid, Col) :-
+    paint(Ch, P_tile, Col), parse.tile($U(), P_grid, P_tile, P_intile), shape(P_tile, P_intile).
+
+out(P_grid, Col, Ch) :- recolor(Ch, P_grid, Col).
+out(P_grid, Col, Ch) :-
+    in(P_grid, Col), impl_choice(Ch), key.value($U(), _), !recolor(Ch, P_grid, _).
+
+// --- $Exact ---
+form($Exact(), P_tile, P_intile) :- shape(P_tile, P_intile).
+
+// --- $TranslateMatch ---
+// @claim match-takes-key-color
+.init shape_box = Bbox<Position>
+shape_box.cell(P_tile, P_intile) :- shape(P_tile, P_intile).
+
+// The shape's cells in its own bounding box, so a shift within the tile keeps them.
+form($TranslateMatch(), P_tile, P_rel) :-
+    shape(P_tile, P_intile), shape_box.box(P_tile, B), crop(P_intile, B, P_rel).
+
+// --- $KeepKey ---
+paint([I, $KeepKey()], P_tile, Col) :-
+    copy(I, P_tile), linked(I, P_tile), params.key_color(Col).
+
+// --- $LinkOverMatch ---
+paint([I, $LinkOverMatch()], P_tile, Col) :-
+    copy(I, P_tile), linked(I, P_tile), params.link_color(Col).
+
+.comp Determine {
+    // The commonest input color.
+    .init ground = Mode<Unit, Color, Cell>
+    ground.item($U(), Col, [E, P]) :- ex_in(E, P, Col).
+
+    .decl background(col: Color)
+    background(Col) :- ground.mode($U(), Col).
+
+    // The margin between the frame edge and the nearest shape cell.
+    .init margin = Extremes<Unit>
+    margin.cand($U(), K) :- ex_in(_, P, Col), !background(Col), dir_elem(D), dist(P, D, K).
+
+    .decl gap(g: number)
+    gap(G) :- margin.low($U(), G).
+
+    // Each tile size a train input's extent admits.
+    // @ignore tile_size: head-repeat — each candidate size keys its own tiling, which reads the
+    //  size from this input
+    .init tiling = Parse<Tiled>
+    tiling.grid([E, K], P, Col) :-
+        ex_out(E, _, _), ex_in(E, P, Col), axis_elem(A), sub_extent(P, A, K).
+    tiling.tile_size([E, K], K) :- tiling.grid([E, K], _, _).
+    tiling.gap(Ky, G) :- tiling.grid(Ky, _, _), gap(G).
+
+    // A tile size that leaves a shape cell of some train input on a line.
+    .decl stray(k: number)
+    stray(K) :- tiling.grid([E, K], P, Col), !background(Col), !tiling.tile([E, K], P, _, _).
+
+    // The finest tiling that leaves every shape cell in a tile.
+    .init finest = Extremes<Unit>
+    finest.cand($U(), K) :- tiling.tile_size(_, K), !stray(K).
+
+    .decl tile_size(k: number)
+    tile_size(K) :- finest.low($U(), K).
+
+    // A cell the output recolors.
+    .decl painted(e: Example, p: Position, col: Color)
+    painted(E, P, Col) :- ex_out(E, P, Col), ex_in(E, P, Col2), Col2 != Col.
+
+    // A recoloring the input already holds is the key's; a new one is the link's.
+    .decl key_color(col: Color)
+    key_color(Col) :- painted(E, _, Col), ex_in(E, _, Col).
+
+    .decl link_color(col: Color)
+    link_color(Col) :- painted(E, _, Col), !ex_in(E, _, Col).
+}

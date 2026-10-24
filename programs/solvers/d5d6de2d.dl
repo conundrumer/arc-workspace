@@ -1,0 +1,217 @@
+// d5d6de2d
+// @draft
+// @keywords: enclose objects bbox
+// @scene background-field: every cell that no shape covers has
+//  params.background, and that color is the commonest one
+// @scene outline-shapes: the shapes are separate rectangles in color 2, each
+//  a complete one-cell-wide border that encloses a rectangular hole of
+//  background, or a solid block too thin to hold a hole
+// @rule fill-hole: each params.background cell that no walk through
+//  params.background cells, from a cell to an edge neighbor, reaches from the
+//  frame edge takes params.fill_color
+// @rule erase-rest: every other cell, the outline cells included, takes
+//  params.background
+
+// which closed-off cells fill
+.type HoleScope =
+    // @claim fill-hole
+    Whole {}
+    // @rule fill-hole: shapes are the edge-connected components of the
+    //  non-background cells, and a background cell fills where one shape alone
+    //  closes it off from the frame edge
+    // @witness two-corners-missing: borderline concept
+    //     @relaxed outline-shapes
+  | PerObject {region: ObjectRegion, adj: ObjectAdj}
+
+// which cells of a shape fill
+.type ObjectRegion =
+    // @claim fill-hole
+    OwnHole {}
+    // @rule fill-hole: the background cells of each shape's bounding box fill
+    // @witness l-shaped-outline: borderline concept
+    //     @relaxed outline-shapes
+  | BboxInterior {}
+    // @rule fill-hole: every cell of each shape's bounding box inset by one
+    //  fills, the shape's own cells included
+    // @witness solid-block-with-center: borderline concept
+    //     @relaxed outline-shapes
+  | InsetBox {}
+
+// which steps join the cells of a shape
+.type ObjectAdj =
+    // @claim fill-hole
+    Objects4 {}
+    // @rule fill-hole: diagonal steps join the cells of a shape as well
+    // @witness four-corners-missing: borderline concept
+    //     @relaxed outline-shapes
+  | Objects8 {}
+
+// which steps a walk to the frame edge takes
+.type Walk =
+    // @claim fill-hole
+    Walk4 {}
+    // @rule fill-hole: the walk takes diagonal steps as well, so a hole that
+    //  touches the outside only at a corner is open
+    // @witness missing-corner: borderline concept
+    //     @relaxed outline-shapes
+  | Enclose8 {}
+
+// which cells block the walk
+.type WallCells =
+    // @claim fill-hole
+    AnyInk {}
+    // @rule fill-hole: only params.outline_color cells block the walk, and
+    //  every cell of another color that is closed off fills
+    // @witness box-of-other-color: borderline concept
+    //     @relaxed outline-shapes
+  | WallOutlineOnly {}
+
+.type Choice = [scope: HoleScope, walk: Walk, wall: WallCells]
+
+// One shape: a connected component of blocking cells, under one reading of
+// the blocking cells and of the steps that join them.
+.type Shape = [w: WallCells, a: ObjectAdj, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    //     @relaxed background-field
+    .decl background(c: Color) background(0).
+    .decl fill_color(c: Color) fill_color(3).
+
+    // --- $WallOutlineOnly ---
+    // @derive RarestColor: borderline concept
+    //     @relaxed outline-shapes
+    .decl outline_color(c: Color) outline_color(2).
+}
+
+.init params = Params
+
+.decl object_adj_choice(a: ObjectAdj)
+object_adj_choice($Objects4()). object_adj_choice($Objects8()).
+
+.decl walk_choice(k: Walk)
+walk_choice($Walk4()). walk_choice($Enclose8()).
+
+.decl wall_cells_choice(w: WallCells)
+wall_cells_choice($AnyInk()). wall_cells_choice($WallOutlineOnly()).
+
+// Under $BboxInterior and $InsetBox no walk finds the filled cells, so those
+// cases take $Walk4 alone. With $Objects8 or $Enclose8, $OwnHole gives the
+// output of $Whole on every input, since the cells that block a walk around a
+// closed-off region form one shape under the other adjacency; those
+// combinations are no cases.
+.decl impl_choice(ch: Choice)
+impl_choice([$Whole(), K, W]) :- walk_choice(K), wall_cells_choice(W).
+impl_choice([$PerObject($OwnHole(), $Objects4()), $Walk4(), W]) :- wall_cells_choice(W).
+impl_choice([$PerObject($BboxInterior(), A), $Walk4(), W]) :- object_adj_choice(A), wall_cells_choice(W).
+impl_choice([$PerObject($InsetBox(), A), $Walk4(), W]) :- object_adj_choice(A), wall_cells_choice(W).
+
+// The cells that block a walk to the frame edge.
+.decl wall(w: WallCells, p: Position)
+
+// The cells a walk may pass.
+.decl open(w: WallCells, p: Position)
+open(W, P) :- in(P, _), wall_cells_choice(W), !wall(W, P).
+
+// The cells that take the fill color.
+.decl filled(ch: Choice, p: Position)
+
+out(P, Col, Ch) :-
+    impl_choice(Ch), in(P, _),
+    ( filled(Ch, P), params.fill_color(Col)
+    ; !filled(Ch, P), params.background(Col)
+    ).
+
+// --- $AnyInk ---
+wall($AnyInk(), P) :- in(P, Col), !params.background(Col).
+
+// --- $WallOutlineOnly ---
+wall($WallOutlineOnly(), P) :- in(P, Col), params.outline_color(Col).
+
+// --- $Whole & $Walk4 ---
+// @claim fill-hole
+.init enclosed = Closed<WallCells>
+enclosed.cell(W, P) :- open(W, P).
+
+filled([$Whole(), $Walk4(), W], P) :- enclosed.region(W, P, _).
+
+// --- $Whole & $Enclose8 ---
+// @claim fill-hole
+.init leak = Reach<WallCells>
+leak.step(V) :- step_offset(_, V).  // a step to any of the eight neighbors
+leak.node(W, P) :- open(W, P).
+leak.seed(W, P) :- open(W, P), dir_elem(D), dist(P, D, 0).   // on the frame edge
+
+filled([$Whole(), $Enclose8(), W], P) :- open(W, P), !leak.reach(W, P).
+
+// --- $PerObject ---
+.decl shape(s: Shape, p: Position)
+
+// --- $Objects4 ---
+// @claim fill-hole
+.init shapes4 = Components<WallCells>
+shapes4.node(W, P) :- wall(W, P).
+
+shape([W, $Objects4(), Id], P) :- shapes4.label(W, P, Id).
+
+// --- $Objects8 ---
+// @claim fill-hole
+.init shapes8 = Components8<WallCells>
+shapes8.node(W, P) :- wall(W, P).
+
+shape([W, $Objects8(), Id], P) :- shapes8.label(W, P, Id).
+
+// --- $OwnHole ---
+// Each shape alone blocks the walk: every cell outside it is open.
+// @claim fill-hole
+.init hole = Closed<Shape>
+hole.cell([W, $Objects4(), Id], P) :- shapes4.label(W, _, Id), in(P, _), !shapes4.label(W, P, Id).
+
+filled([$PerObject($OwnHole(), $Objects4()), $Walk4(), W], P) :-
+    hole.region([W, $Objects4(), _], P, _), open(W, P).
+
+// --- $BboxInterior, $InsetBox ---
+// @claim fill-hole
+.init shape_box = Bbox<Shape>
+shape_box.cell(S, P) :- shape(S, P).
+
+// --- $BboxInterior ---
+filled([$PerObject($BboxInterior(), A), $Walk4(), W], P) :-
+    shape_box.box([W, A, _], B), open(W, P), inside(P, B).
+
+// --- $InsetBox ---
+filled([$PerObject($InsetBox(), A), $Walk4(), W], P) :-
+    shape_box.box([W, A, _], B), in(P, _), interior(P, B).
+
+.comp Determine {
+    // An example with an output.
+    .decl train(e: Example)
+    train(E) :- ex_out(E, _, _).
+
+    .init counts = Mode<Example, Color, Position>
+    counts.item(E, Col, P) :- ex_in(E, P, Col).
+
+    // The commonest color of some input.
+    .decl commonest(c: Color)
+    commonest(Col) :- counts.mode(E, Col), train(E).
+
+    // A color that is not the commonest of some input.
+    .decl not_commonest(c: Color)
+    not_commonest(Col) :- commonest(Col), train(E), !counts.mode(E, Col).
+
+    .decl background(c: Color)
+    background(Col) :- commonest(Col), !not_commonest(Col).
+
+    .decl fill_color(c: Color)
+    fill_color(Col) :- ex_out(E, _, Col), !ex_in(E, _, Col).
+
+    // A color that some input lacks.
+    .decl missing(c: Color)
+    missing(Col) :- ex_in(_, _, Col), train(E), !ex_in(E, _, Col).
+
+    // The color every input holds beside the commonest.
+    .decl outline_color(c: Color)
+    outline_color(Col) :- ex_in(E, _, Col), train(E), !missing(Col), !commonest(Col).
+}

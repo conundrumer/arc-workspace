@@ -1,0 +1,4 @@
+# d6e50e54 create: progress notes
+
+- delay: [Develop](#develop) step 1, "Run the solver", `uv run python scripts/run_dl.py d6e50e54`: 45 s with seven Choice fields, 163 s after the `Touch` point of step 3 doubled the bases. After `$CollideUndefined` left and the output was assembled from smaller relations, it takes 80–90 s. Every later command built on the solver was slow too: `derive` 262 s, `store` 220 s, and the first `audit` 1052 s (521 s after the restructure). These runs had to go in the background, with timed waits between them.
+- interference: the PreToolUse Bash hook blocked `printf '...' > file` for a witness grid ("executable input cannot be read: source: unsupported function or array syntax"), a `for` wait loop, and a `{ ...; } > file` splice. Each block cost one call; Write, Edit and plain `sleep` waits did the work instead. The hook still blocks these forms.

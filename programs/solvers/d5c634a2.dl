@@ -1,0 +1,422 @@
+// d5c634a2
+// @draft
+// @keywords: objects classify count rank lookup
+// @scene t-shapes: the input holds T tetrominoes of color 2 on a field of
+//  params.bg, each a bar of three cells with a stem cell at the middle of one
+//  long side, and no two of them share an edge
+// @scene stem-directions: each T's stem points up or down
+// @scene fits-the-panel: no more T shapes point toward one direction than a
+//  panel has corners
+// @rule panel-per-direction: the output is a grid of params.bg made of panels
+//  of params.panel_size laid out as params.dir_panel, each panel owned by one
+//  stem direction
+// @rule count-as-marks: in the panel of a direction, the first n corners of
+//  the panel, in the lexicographic order of params.order_axis from
+//  params.order_corner, take the mark color params.dir_mark of that
+//  direction, where n is the count of T shapes whose stem points that way
+// @rule same-slot-order: both panels fill their corners in one order, at the
+//  same places relative to the panel
+
+// which cells of its panel a count marks, and in what order
+.type SlotOrder =
+    // @claim count-as-marks
+    Corners {}
+    // @rule count-as-marks: the slots are the panel cells at an even distance
+    //  from both edges of params.order_corner, in the same order; undefined
+    //  where a count exceeds the slots
+    // @witness five-in-a-wide-panel: variant $PeriodSlots
+    //     @relaxed fits-the-panel
+    //     @reassigned panel_size
+  | PeriodSlots {}
+    // @rule count-as-marks: the stored table params.count_table gives the
+    //  panel cells each count marks; undefined at a count with no entry
+    // @witness swapped-count-table: ordinary $CountTable
+    //     @reassigned count_table
+  | CountTable {}
+
+// whether the two panels fill in one order
+.type OrderSharing =
+    // @claim same-slot-order
+    SharedOrder {}
+    // @rule same-slot-order: each direction stores its own order,
+    //  params.dir_order
+    // @witness per-panel-order: ordinary $SlotOrderPerDir
+    //     @reassigned dir_order
+  | SlotOrderPerDir {}
+
+// what one T shape is in the ink
+.type ComponentParse =
+    // @claim t-shapes
+    WholeComponent {}
+    // @scene t-shapes: each placement of a T whose cells all land on ink
+    //  counts, whatever the component around it
+    // @witness plus-holds-two-ts: foreign concept
+    //     @relaxed t-shapes
+  | ShapeOccurrences {}
+
+// how a T shape is assigned its direction
+.type ShapeClass =
+    // @claim stem-directions
+    StemGeometry {}
+    // @scene stem-directions: the stored table params.shape_table gives the
+    //  direction of each picture, and a shape whose picture has no entry is
+    //  not counted
+    // @witness l-in-shape-table: variant $ShapeTable
+    //     @relaxed t-shapes
+    //     @reassigned shape_table
+    //     @reassigned shape_key
+  | ShapeTable {}
+
+.type Choice = [order: SlotOrder, sharing: OrderSharing, parse: ComponentParse, shape: ShapeClass]
+
+.type HitKey = [parse: ComponentParse, shape: ShapeClass, d: Dir]
+.type Hit = [id: Ident, b: Box]
+.type OrderKey = [order: SlotOrder, sharing: OrderSharing, d: Dir]
+.type CornerAxis = [c: DiagDir, a: Axis]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .init helpers = ParamsHelpers
+
+    // @derive DominantColor: variant derived
+    //     @relaxed t-shapes
+    .decl bg(c: Color) bg(0).
+
+    // The mark color of each stem direction.
+    .decl dir_mark(d: Dir, c: Color) dir_mark(DIR_T, 3). dir_mark(DIR_B, 1).
+
+    // The panels as they lie side by side, each with the stem direction it
+    // counts.
+    .decl dir_panel(p_tile: Position, d: Dir)
+    GRID_1x2(dir_panel,
+        DIR_T, DIR_B)
+
+    .decl panel_size(a: Axis, n: number) panel_size(AXIS_V, 3). panel_size(AXIS_H, 3).
+
+    .decl panel_cell(p: Position)
+    panel_cell(P) :- panel_size(AXIS_V, V), panel_size(AXIS_H, H), helpers.frame_pos([V, H], P).
+
+    // --- $Corners & $SharedOrder, $PeriodSlots & $SharedOrder ---
+    // The order the corners fill in: the primary axis, and the corner it runs
+    // from.
+    .decl order_axis(a: Axis) order_axis(AXIS_H).
+    .decl order_corner(d: DiagDir) order_corner(DIAG_TL).
+
+    // --- $Corners & $SlotOrderPerDir, $PeriodSlots & $SlotOrderPerDir ---
+    .decl dir_order(d: Dir, a: Axis, c: DiagDir)
+    dir_order(DIR_T, AXIS_H, DIAG_TL).
+    dir_order(DIR_B, AXIS_H, DIAG_TL).
+
+    // --- $PeriodSlots ---
+    // A slot is w cells wide, with g cells between slots.
+    .decl slot_stride(w: number, g: number) slot_stride(1, 1).
+
+    // --- $CountTable & $SharedOrder ---
+    // The panel cells each count marks.
+    .decl count_table(n: number, p: Position)
+    GRID_MASK_3x3(count_table, 1,
+        1, _, _,
+        _, _, _,
+        _, _, _)
+    GRID_MASK_3x3(count_table, 2,
+        1, _, _,
+        _, _, _,
+        1, _, _)
+    GRID_MASK_3x3(count_table, 3,
+        1, _, 1,
+        _, _, _,
+        1, _, _)
+    GRID_MASK_3x3(count_table, 4,
+        1, _, 1,
+        _, _, _,
+        1, _, 1)
+
+    // --- $CountTable & $SlotOrderPerDir ---
+    .decl dir_count_table(d: Dir, n: number, p: Position)
+    GRID_MASK_3x3(dir_count_table, DIR_T, 1,
+        1, _, _,
+        _, _, _,
+        _, _, _)
+    GRID_MASK_3x3(dir_count_table, DIR_T, 2,
+        1, _, _,
+        _, _, _,
+        1, _, _)
+    GRID_MASK_3x3(dir_count_table, DIR_T, 3,
+        1, _, 1,
+        _, _, _,
+        1, _, _)
+    GRID_MASK_3x3(dir_count_table, DIR_T, 4,
+        1, _, 1,
+        _, _, _,
+        1, _, 1)
+    GRID_MASK_3x3(dir_count_table, DIR_B, 1,
+        1, _, _,
+        _, _, _,
+        _, _, _)
+    GRID_MASK_3x3(dir_count_table, DIR_B, 2,
+        1, _, _,
+        _, _, _,
+        1, _, _)
+    GRID_MASK_3x3(dir_count_table, DIR_B, 3,
+        1, _, 1,
+        _, _, _,
+        1, _, _)
+    GRID_MASK_3x3(dir_count_table, DIR_B, 4,
+        1, _, 1,
+        _, _, _,
+        1, _, 1)
+
+    // --- $ShapeTable ---
+    // Each shape picture, and the direction it counts toward.
+    .decl shape_table(id: Ident, p: Position)
+    .decl shape_key(id: Ident, d: Dir)
+    GRID_MASK_2x3(shape_table, 0,
+        _, 1, _,
+        1, 1, 1)
+    shape_key(0, DIR_T).
+    GRID_MASK_2x3(shape_table, 1,
+        1, 1, 1,
+        _, 1, _)
+    shape_key(1, DIR_B).
+}
+
+.init params = Params
+
+.decl slot_order_choice(o: SlotOrder)
+slot_order_choice($Corners()). slot_order_choice($PeriodSlots()). slot_order_choice($CountTable()).
+
+.decl order_sharing_choice(sh: OrderSharing)
+order_sharing_choice($SharedOrder()). order_sharing_choice($SlotOrderPerDir()).
+
+.decl component_parse_choice(pa: ComponentParse)
+component_parse_choice($WholeComponent()). component_parse_choice($ShapeOccurrences()).
+
+.decl shape_class_choice(cl: ShapeClass)
+shape_class_choice($StemGeometry()). shape_class_choice($ShapeTable()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([O, Sh, Pa, Cl]) :-
+    slot_order_choice(O), order_sharing_choice(Sh), component_parse_choice(Pa), shape_class_choice(Cl).
+
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !params.bg(Col).
+
+// The count of T shapes each detection finds toward each direction.
+.decl shape_count(k: HitKey, n: number)
+
+// The panel cells a count marks, and the cases whose model is undefined.
+.decl marked(ch: Choice, d: Dir, p: Position)
+.decl unfit(ch: Choice)
+
+out(P_grid, Col, Ch) :-
+    impl_choice(Ch), !unfit(Ch),
+    params.dir_panel(P_tile, D), params.panel_cell(P_inner),
+    concat_2d(P_tile, P_inner, 0, P_grid),
+    ( marked(Ch, D, P_inner), params.dir_mark(D, Col)
+    ; !marked(Ch, D, P_inner), params.bg(Col) ).
+
+// --- $WholeComponent ---
+// @claim t-shapes
+.init comps = Components<Unit>
+comps.node($U(), P) :- ink(P).
+
+// --- $StemGeometry ---
+// The directions of a T's arms from its middle cell: the stem, and the two
+// ends of the bar.
+.decl arm(s: Dir, d: Dir)
+arm(S, D) :- dir_elem(S), ( D = S ; perp_dir(S, D) ).
+
+.decl missing_arm(p: Position, s: Dir)
+missing_arm(P, S) :- ink(P), arm(S, D), neighbor(P, D, Q), !ink(Q).
+
+// A T placed with its middle cell at p and its stem toward s: its four cells
+// are ink.
+.decl t_place(p: Position, s: Dir)
+t_place(P, S) :- ink(P), dir_elem(S), !missing_arm(P, S).
+
+// The T shapes each parse counts, by middle cell and stem direction.
+.decl t_found(pa: ComponentParse, p: Position, s: Dir)
+
+// @claim count-as-marks
+.init geo_count = Tally<HitKey, Position>
+geo_count.item([Pa, $StemGeometry(), S], P) :- t_found(Pa, P, S).
+geo_count.domain([Pa, $StemGeometry(), D]) :- component_parse_choice(Pa), params.dir_panel(_, D).
+
+shape_count(K, N) :- geo_count.tally(K, N).
+
+// --- $WholeComponent & $StemGeometry ---
+.decl t_cell(p_mid: Position, s: Dir, p: Position)
+t_cell(M, S, P) :- t_place(M, S), ( P = M ; arm(S, D), neighbor(M, D, P) ).
+
+// The component of the T holds a cell outside it.
+.decl t_extra(p_mid: Position, s: Dir)
+t_extra(M, S) :-
+    t_place(M, S), comps.label($U(), M, Id),
+    comps.label($U(), P, Id), !t_cell(M, S, P).
+
+t_found($WholeComponent(), M, S) :- t_place(M, S), !t_extra(M, S).
+
+// --- $ShapeOccurrences & $StemGeometry ---
+t_found($ShapeOccurrences(), M, S) :- t_place(M, S).
+
+// --- $ShapeTable ---
+// A placed picture of the table: its id, and the box it covers.
+.decl table_hit(pa: ComponentParse, id: Ident, b: Box)
+
+// @claim count-as-marks
+.init table_count = Tally<HitKey, Hit>
+table_count.item([Pa, $ShapeTable(), D], [Id, B]) :- table_hit(Pa, Id, B), params.shape_key(Id, D).
+table_count.domain([Pa, $ShapeTable(), D]) :- component_parse_choice(Pa), params.dir_panel(_, D).
+
+shape_count(K, N) :- table_count.tally(K, N).
+
+// --- $WholeComponent & $ShapeTable ---
+// @claim stem-directions
+.init obox = Bbox<Ident>
+obox.cell(Id, P) :- comps.label($U(), P, Id).
+
+// @claim stem-directions
+.init picture = KeyedSetCompare<Ident, Ident, Position>
+picture.pattern_member(Id, P) :- params.shape_table(Id, P).
+picture.observed_member(C, P_inner) :-
+    comps.label($U(), P, C), obox.box(C, B), crop(P, B, P_inner).
+
+table_hit($WholeComponent(), Id, B) :- picture.equals(C, Id), obox.box(C, B).
+
+// --- $ShapeOccurrences & $ShapeTable ---
+// @claim t-shapes stem-directions
+.init occ = Occurrences<Ident, Unit>
+occ.shape(Id, P, $U()) :- params.shape_table(Id, P).
+occ.cell(Id, P, $U()) :- params.shape_table(Id, _), ink(P).
+
+table_hit($ShapeOccurrences(), Id, B) :- occ.occurrence(Id, B).
+
+// --- $Corners, $PeriodSlots ---
+// The order a direction's panel fills in: the primary axis, and the corner.
+.decl order_of(sh: OrderSharing, d: Dir, a: Axis, c: DiagDir)
+
+// The panel cells a count fills.
+.decl slot(k: OrderKey, p: Position)
+
+// @claim count-as-marks
+// @store rank: ordinary stored
+.init lex = LexOrder<OrderKey>
+lex.corner([O, Sh, D], C) :- slot([O, Sh, D], _), order_of(Sh, D, _, C).
+lex.axis([O, Sh, D], A) :- slot([O, Sh, D], _), order_of(Sh, D, A, _).
+lex.cell(K, P) :- slot(K, P).
+
+// @claim count-as-marks
+.init slots = Tally<OrderKey, Position>
+slots.item(K, P) :- lex.rank(K, P, _).
+
+marked([O, Sh, Pa, Cl], D, P) :-
+    lex.rank([O, Sh, D], P, R), shape_count([Pa, Cl, D], N), R < N.
+
+// A count exceeds the slots.
+unfit([O, Sh, Pa, Cl]) :-
+    slots.tally([O, Sh, D], M), shape_count([Pa, Cl, D], N), N > M.
+
+// --- $Corners & $SharedOrder, $PeriodSlots & $SharedOrder ---
+order_of($SharedOrder(), D, A, C) :-
+    params.dir_panel(_, D), params.order_axis(A), params.order_corner(C).
+
+// --- $Corners & $SlotOrderPerDir, $PeriodSlots & $SlotOrderPerDir ---
+order_of($SlotOrderPerDir(), D, A, C) :- params.dir_order(D, A, C).
+
+// --- $Corners ---
+slot([$Corners(), Sh, D], P) :-
+    order_of(Sh, D, _, _), params.panel_cell(P), box_corner(P, ZERO, _).
+
+// --- $PeriodSlots ---
+slot([$PeriodSlots(), Sh, D], P) :-
+    order_of(Sh, D, _, C), params.panel_cell(P), params.slot_stride(W, G),
+    diag_dist(P, C, _, K1, K2),                  // distances to the corner's edges
+    stride(K1, W, G, _, _), stride(K2, W, G, _, _).
+
+// --- $CountTable ---
+// The panel cells count n marks in a direction's panel.
+.decl table_entry(sh: OrderSharing, d: Dir, n: number, p: Position)
+
+marked([$CountTable(), Sh, Pa, Cl], D, P) :-
+    shape_count([Pa, Cl, D], N), table_entry(Sh, D, N, P).
+
+// A count has no entry.
+unfit([$CountTable(), Sh, Pa, Cl]) :-
+    impl_choice([$CountTable(), Sh, Pa, Cl]),
+    params.dir_panel(_, D), shape_count([Pa, Cl, D], N), !table_entry(Sh, D, N, _).
+
+// --- $CountTable & $SharedOrder ---
+table_entry($SharedOrder(), D, N, P) :- params.dir_panel(_, D), params.count_table(N, P).
+
+// --- $CountTable & $SlotOrderPerDir ---
+table_entry($SlotOrderPerDir(), D, N, P) :- params.dir_count_table(D, N, P).
+
+.comp Determine {
+    .decl in_color(e: Example, col: Color)
+    in_color(E, Col) :- ex_in(E, _, Col).
+
+    .decl out_color(e: Example, col: Color)
+    out_color(E, Col) :- ex_out(E, _, Col).
+
+    // A color some input lacks, and a color some train output lacks.
+    .decl input_lacks(col: Color)
+    input_lacks(Col) :- in_color(_, Col), in_color(E, _), !in_color(E, Col).
+
+    .decl output_lacks(col: Color)
+    output_lacks(Col) :- out_color(_, Col), out_color(E, _), !out_color(E, Col).
+
+    // The field: the color of every input and every train output.
+    .decl bg(c: Color)
+    bg(Col) :- in_color(_, Col), out_color(_, Col), !input_lacks(Col), !output_lacks(Col).
+
+    // The output frame cut into the panel arrangement's tiles.
+    .decl panel_size(a: Axis, n: number)
+    panel_size(A, K) :-
+        ex_out(_, P, _), params.dir_panel(P_tile, _),
+        axis_elem(A), axis_dim(P, A, N), axis_dim(P_tile, A, M), tile_size(N, M, 0, K).
+
+    .init panels = Tile2D<Unit>
+    panels.cell(P) :- ex_out(_, P, _).
+    panels.dim($U(), A, K) :- panel_size(A, K).
+    panels.gap(0).
+
+    .decl panel_frame(p: Position)
+    panel_frame(P_inner) :- panels.tile($U(), _, _, P_inner).
+
+    // A panel cell that some train output marks.
+    .decl panel_mark(p: Position)
+    panel_mark(P_inner) :- ex_out(_, P, Col), !bg(Col), panels.tile($U(), P, _, P_inner).
+
+    // The lines along axis a, by distance from corner c's edge on it, that
+    // hold a mark.
+    .decl mark_line(c: DiagDir, a: Axis, k: number)
+    mark_line(C, A, K) :- panel_mark(P), diag_dist(P, C, A, K, _).
+
+    // A marked line whose neighbor toward the corner's edge, off the panel
+    // included, is unmarked: where a slot starts.
+    .decl slot_start(c: DiagDir, a: Axis, k: number)
+    slot_start(C, A, K) :-
+        mark_line(C, A, K), panel_frame(P), diag_dist(P, C, A, K, _), dir_of(C, A, E),
+        neighbor(P, E, Q), diag_dist(Q, C, A, K2, _), !mark_line(C, A, K2).
+
+    .init first_gap = Extremes<CornerAxis>
+    first_gap.cand([C, A], K) :-
+        panel_frame(P), diag_dist(P, C, A, K, _), !mark_line(C, A, K).
+
+    .init starts = Tally<CornerAxis, number>
+    starts.item([C, A], K) :- slot_start(C, A, K).
+
+    // A slot is as wide as the marked lines before the first unmarked one,
+    // and the slots fill the panel with equal gaps.
+    .decl axis_stride(c: DiagDir, a: Axis, w: number, g: number)
+    axis_stride(C, A, W, G) :-
+        first_gap.low([C, A], W), starts.tally([C, A], N),
+        panel_frame(P), divide_gap(P, A, N, W, G).
+
+    .decl axis_disagree(c: DiagDir, w: number, g: number)
+    axis_disagree(C, W, G) :- axis_stride(C, _, W, G), axis_elem(A), !axis_stride(C, A, W, G).
+
+    .decl slot_stride(w: number, g: number)
+    slot_stride(W, G) :- axis_stride(C, _, W, G), !axis_disagree(C, W, G).
+}

@@ -1,0 +1,326 @@
+{
+  "id": "d37a1ef5",
+  "witnesses": [{
+    "id": "other-color-mark",
+    "separates": "A 3 cell sits inside the frame beside the 5 marks, outside their box. The concept and the branches that take every non-background interior cell as a mark keep the box over the 5s and the 3; $MarkColorStored keeps the box over the 5s alone and fills over the 3; mark_color=RarestColor takes the 3 as the one mark color and fills over the 5s.",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,2,2,2,2,2,2,2,2,0],
+      [0,2,0,0,0,0,0,0,2,0],
+      [0,2,0,5,0,0,3,0,2,0],
+      [0,2,0,0,5,0,0,0,2,0],
+      [0,2,0,0,0,0,0,0,2,0],
+      [0,2,2,2,2,2,2,2,2,0],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$NonBackgroundMarks"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,5,0,0,3,2,2,0],
+        [0,2,2,0,5,0,0,2,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$MarkColorStored & mark_color=stored"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,5,0,2,2,2,2,0],
+        [0,2,2,0,5,2,2,2,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["mark_color=RarestColor"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,2,2,2,3,2,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "mark_color=RarestColor",
+    "separates": "A 3 cell sits in the background outside the frame, and 3 is the rarest color. The concept and $MarkColorStored keep the box over the 5 marks; mark_color=RarestColor finds no 3 inside the frame and fills the whole interior; $GlobalMarksBox stretches the box out to the 3 and fills less.",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,2,2,2,2,2,2,2,2,0],
+      [0,2,0,0,0,0,0,0,2,0],
+      [0,2,0,5,0,0,0,0,2,0],
+      [0,2,0,0,0,5,0,0,2,0],
+      [0,2,0,0,0,0,0,0,2,0],
+      [0,2,2,2,2,2,2,2,2,0],
+      [0,0,0,0,0,0,0,0,0,3]
+    ],
+    "output": [{
+      "cases": ["$InteriorMarks & mark_color=stored"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,5,0,0,2,2,2,0],
+        [0,2,2,0,0,5,2,2,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,0,0,0,0,0,0,0,0,3]
+      ]
+    }, {
+      "cases": ["mark_color=RarestColor"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,0,0,0,0,0,0,0,0,3]
+      ]
+    }, {
+      "cases": ["$GlobalMarksBox"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,5,0,0,0,0,2,0],
+        [0,2,2,0,0,5,0,0,2,0],
+        [0,2,2,0,0,0,0,0,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,0,0,0,0,0,0,0,0,3]
+      ]
+    }]
+  }, {
+    "id": "stray-mark-outside",
+    "separates": "A 5 cell sits outside the frame. The concept keeps the box over the marks inside the frame; $GlobalMarksBox keeps the box over every mark of the grid, which stretches to the stray cell, and fills less of the interior.",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,2,2,2,2,2,2,2,2,0],
+      [0,2,0,0,0,0,0,0,2,0],
+      [0,2,0,0,5,0,0,0,2,0],
+      [0,2,0,0,0,5,0,0,2,0],
+      [0,2,0,0,0,0,0,0,2,0],
+      [0,2,2,2,2,2,2,2,2,0],
+      [0,0,0,0,0,0,0,0,0,5]
+    ],
+    "output": [{
+      "cases": ["$InteriorMarks"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,2,5,0,2,2,2,0],
+        [0,2,2,2,0,5,2,2,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,0,0,0,0,0,0,0,0,5]
+      ]
+    }, {
+      "cases": ["$GlobalMarksBox"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,2,5,0,0,0,2,0],
+        [0,2,2,2,0,5,0,0,2,0],
+        [0,2,2,2,0,0,0,0,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,0,0,0,0,0,0,0,0,5]
+      ]
+    }]
+  }, {
+    "id": "broken-outline",
+    "separates": "The frame's top side misses one cell, so no region is closed off. The concept finds no interior and returns the input; $InteriorByFrameBox takes the cells inside the frame cells' box as the interior and fills it outside the marks' box; $FrameColorFromOutline finds no color that closes a region off and is undefined.",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,2,2,2,0,2,2,2,2,0],
+      [0,2,0,0,0,0,0,0,2,0],
+      [0,2,0,5,0,0,0,0,2,0],
+      [0,2,0,0,0,5,0,0,2,0],
+      [0,2,0,0,0,0,0,0,2,0],
+      [0,2,2,2,2,2,2,2,2,0],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$EnclosedInterior & $StoredFrameColor"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,2,2,2,0,2,2,2,2,0],
+        [0,2,0,0,0,0,0,0,2,0],
+        [0,2,0,5,0,0,0,0,2,0],
+        [0,2,0,0,0,5,0,0,2,0],
+        [0,2,0,0,0,0,0,0,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$FrameColorFromOutline"],
+      "grid": null
+    }, {
+      "cases": ["$InteriorByFrameBox"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,2,2,2,0,2,2,2,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,5,0,0,2,2,2,0],
+        [0,2,2,0,0,5,2,2,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "empty-frame",
+    "separates": "The frame holds no mark. The concept fills the whole interior; $EmptyFrameKept leaves it empty.",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,2,2,2,2,2,2,2,2,0],
+      [0,2,0,0,0,0,0,0,2,0],
+      [0,2,0,0,0,0,0,0,2,0],
+      [0,2,0,0,0,0,0,0,2,0],
+      [0,2,0,0,0,0,0,0,2,0],
+      [0,2,2,2,2,2,2,2,2,0],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$EmptyFrameFilled"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$EmptyFrameKept"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,2,0,0,0,0,0,0,2,0],
+        [0,2,0,0,0,0,0,0,2,0],
+        [0,2,0,0,0,0,0,0,2,0],
+        [0,2,0,0,0,0,0,0,2,0],
+        [0,2,2,2,2,2,2,2,2,0],
+        [0,0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "background=DominantColor",
+    "separates": "The frame runs along the grid edge, so 2 is the commonest color. The concept fills the interior outside the marks' box; background=DominantColor takes 2 as background, takes every interior cell as a mark, and returns the input; $FrameColorFromOutline takes the corner color 2 as background, finds 0 as the outline color, and returns the input.",
+    "input": [
+      [2,2,2,2,2,2],
+      [2,0,0,0,0,2],
+      [2,0,5,5,0,2],
+      [2,0,0,0,0,2],
+      [2,2,2,2,2,2]
+    ],
+    "output": [{
+      "cases": ["$StoredFrameColor & background=stored"],
+      "grid": [
+        [2,2,2,2,2,2],
+        [2,2,2,2,2,2],
+        [2,2,5,5,2,2],
+        [2,2,2,2,2,2],
+        [2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": ["$FrameColorFromOutline","background=DominantColor"],
+      "grid": [
+        [2,2,2,2,2,2],
+        [2,0,0,0,0,2],
+        [2,0,5,5,0,2],
+        [2,0,0,0,0,2],
+        [2,2,2,2,2,2]
+      ]
+    }]
+  }, {
+    "id": "recolored-frame",
+    "separates": "The frame is drawn in 3. The concept, with frame_color 2, finds no frame and returns the input; $FrameColorFromOutline takes 3 as the frame color and fills the interior in 3 outside the marks' box.",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,3,3,3,3,3,3,3,3,0],
+      [0,3,0,0,0,0,0,0,3,0],
+      [0,3,0,5,0,0,0,0,3,0],
+      [0,3,0,0,0,5,0,0,3,0],
+      [0,3,0,0,0,0,0,0,3,0],
+      [0,3,3,3,3,3,3,3,3,0],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$StoredFrameColor & frame_color=stored"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,3,3,3,3,3,3,3,3,0],
+        [0,3,0,0,0,0,0,0,3,0],
+        [0,3,0,5,0,0,0,0,3,0],
+        [0,3,0,0,0,5,0,0,3,0],
+        [0,3,0,0,0,0,0,0,3,0],
+        [0,3,3,3,3,3,3,3,3,0],
+        [0,0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$FrameColorFromOutline","frame_color=SharedColor"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,3,3,3,3,3,3,3,3,0],
+        [0,3,3,3,3,3,3,3,3,0],
+        [0,3,3,5,0,0,3,3,3,0],
+        [0,3,3,0,0,5,3,3,3,0],
+        [0,3,3,3,3,3,3,3,3,0],
+        [0,3,3,3,3,3,3,3,3,0],
+        [0,0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "frame_color=SharedColor",
+    "separates": "`frame_color=SharedColor` from the stored value: train 0 with 2 and 1 swapped",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0],
+      [0,1,1,1,1,1,1,1,1,0,0],
+      [0,1,0,0,0,0,0,0,1,0,0],
+      [0,1,0,5,0,0,5,0,1,0,0],
+      [0,1,0,0,0,5,0,0,1,0,0],
+      [0,1,0,0,0,0,0,0,1,0,0],
+      [0,1,1,1,1,1,1,1,1,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$StoredFrameColor & frame_color=stored"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0,0],
+        [0,1,1,1,1,1,1,1,1,0,0],
+        [0,1,0,0,0,0,0,0,1,0,0],
+        [0,1,0,5,0,0,5,0,1,0,0],
+        [0,1,0,0,0,5,0,0,1,0,0],
+        [0,1,0,0,0,0,0,0,1,0,0],
+        [0,1,1,1,1,1,1,1,1,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$FrameColorFromOutline","frame_color=SharedColor"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0,0],
+        [0,1,1,1,1,1,1,1,1,0,0],
+        [0,1,1,1,1,1,1,1,1,0,0],
+        [0,1,1,5,0,0,5,1,1,0,0],
+        [0,1,1,0,0,5,0,1,1,0,0],
+        [0,1,1,1,1,1,1,1,1,0,0],
+        [0,1,1,1,1,1,1,1,1,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }]
+}

@@ -1,0 +1,270 @@
+// d931c21c
+// @draft
+// @keywords: objects enclose border
+// @scene outlines-on-background: the input is a `background` field with a few
+//  separate one-cell-wide outlines of `wall_color` drawn on it, each outline a
+//  4-connected set of `wall_color` cells
+// @scene some-closed-some-open: some outlines are closed: the outline alone
+//  closes a region off, its hole, made of the cells not in it that no walk
+//  from the frame edge reaches, where a walk steps to any of the eight
+//  neighbors through cells not in the outline. The other outlines are broken
+//  by one or more one-cell gaps that let the inside reach the outside, and a
+//  piece between two gaps can be a single cell
+// @scene outlines-apart: no cell is 8-adjacent both to a closed outline and to
+//  another outline
+// @rule outer-halo: each `background` cell that is 8-adjacent to a closed
+//  outline, and is not in that outline's hole, becomes `outer_color`
+// @rule inner-halo: each `background` cell of a closed outline's hole that is
+//  8-adjacent to that outline becomes `inner_color`, also where another
+//  outline's outer halo reaches it
+// @rule rest-unchanged: every other cell keeps its input color, so the cells
+//  of a hole that touch no outline cell stay `background`, and open outlines
+//  and their surroundings do not change
+
+// how the walk from the frame edge steps
+.type Walk =
+    // @claim some-closed-some-open
+    Walk8 {}
+    // @scene some-closed-some-open: the walk takes only the four cardinal
+    //  steps, so a gap that leaves the hole meeting the outside only
+    //  diagonally still closes it
+    // @witness missing-corner: ordinary concept
+  | Walk4 {}
+
+// which wall cells make up one outline
+.type Conn =
+    // @claim outlines-on-background
+    Outline4 {}
+    // @scene outlines-on-background: outlines are 8-connected sets of
+    //  `wall_color` cells, so pieces that touch at a corner are one outline
+    // @witness touching-piece: borderline $Outline8
+    //     @relaxed outlines-apart
+  | Outline8 {}
+
+// what closes a hole off
+.type Scope =
+    // @claim some-closed-some-open
+    OwnWalls {}
+    // @scene some-closed-some-open: the holes are the regions that all
+    //  `wall_color` cells together close off, and a closed outline is an
+    //  outline 4-adjacent to a hole
+    // @rule inner-halo: each hole cell 8-adjacent to a `wall_color` cell
+    //  becomes `inner_color`
+    // @rule outer-halo: each `background` cell outside every hole and
+    //  8-adjacent to a closed outline becomes `outer_color`
+    // @witness nested-outline: variant concept
+  | SharedWalls {}
+
+// which color a cell in one outline's inner halo and another's outer halo takes
+.type Meeting =
+    // @claim inner-halo
+    InnerOverOuter {}
+    // @rule inner-halo: a cell in one outline's inner halo and another
+    //  outline's outer halo takes `outer_color`
+    // @witness close-nested: borderline concept
+    //     @relaxed outlines-apart
+  | OuterOverInner {}
+
+// which outline cells the outer halo runs around
+.type Extent =
+    // @claim outer-halo
+    WholeOutline {}
+    // @rule outer-halo: the halo runs only around the outline cells that are
+    //  8-adjacent to its hole
+    // @witness spur: borderline concept
+    //     @relaxed outlines-on-background
+  | HoleRim {}
+
+.type Choice = [w: Walk, c: Conn, s: Scope, m: Meeting, e: Extent]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed outlines-on-background
+    .decl background(c: Color) background(0).
+    // @derive RarestColor: variant derived
+    //     @relaxed outlines-on-background
+    .decl wall_color(c: Color) wall_color(1).
+    .decl outer_color(c: Color) outer_color(2).
+    .decl inner_color(c: Color) inner_color(3).
+}
+
+.init params = Params
+
+.decl walk_choice(w: Walk)
+walk_choice($Walk8()). walk_choice($Walk4()).
+
+.decl conn_choice(c: Conn)
+conn_choice($Outline4()). conn_choice($Outline8()).
+
+.decl meeting_choice(m: Meeting)
+meeting_choice($InnerOverOuter()). meeting_choice($OuterOverInner()).
+
+.decl extent_choice(e: Extent)
+extent_choice($WholeOutline()). extent_choice($HoleRim()).
+
+// Under shared walls no cell is in both halos, so the meeting decides nothing.
+.decl impl_choice(ch: Choice)
+impl_choice([W, C, $OwnWalls(), M, E]) :-
+    walk_choice(W), conn_choice(C), meeting_choice(M), extent_choice(E).
+impl_choice([W, C, $SharedWalls(), $InnerOverOuter(), E]) :-
+    walk_choice(W), conn_choice(C), extent_choice(E).
+
+.decl wall(p: Position)
+wall(P) :- in(P, Col), params.wall_color(Col).
+
+.decl field(p: Position)
+field(P) :- in(P, Col), params.background(Col).
+
+.decl outline(c: Conn, o: Ident, p: Position)
+
+// The cells a walk from the frame edge may not cross, for outline o.
+.type Barrier = [s: Scope, c: Conn, o: Ident]
+.decl barrier(k: Barrier, p: Position)
+
+// The cells outside the barrier, which the walk crosses.
+.decl outside(k: Barrier, p: Position)
+outside(K, P) :- barrier(K, _), in(P, _), !barrier(K, P).
+
+.decl hole(w: Walk, k: Barrier, p: Position)
+
+// The cells closed outline o encloses.
+.decl within(w: Walk, c: Conn, s: Scope, o: Ident, p: Position)
+
+// The cells of closed outline o that its outer halo runs around.
+.decl rim(w: Walk, c: Conn, s: Scope, e: Extent, o: Ident, q: Position)
+
+.decl painted(p: Position, col: Color, ch: Choice)
+
+// --- $Outline4 ---
+
+// @claim outlines-on-background
+.init outlines4 = Components<Unit>
+outlines4.node($U(), P) :- wall(P).
+
+outline($Outline4(), O, P) :- outlines4.label($U(), P, O).
+
+// --- $Outline8 ---
+
+// @claim outlines-on-background
+.init outlines8 = Components8<Unit>
+outlines8.node($U(), P) :- wall(P).
+
+outline($Outline8(), O, P) :- outlines8.label($U(), P, O).
+
+// --- $OwnWalls ---
+
+barrier([$OwnWalls(), C, O], P) :- outline(C, O, P).
+
+within(W, C, $OwnWalls(), O, P) :- hole(W, [$OwnWalls(), C, O], P).
+
+// --- $SharedWalls ---
+
+barrier([$SharedWalls(), C, O], P) :- outline(C, O, _), wall(P).
+
+// The outline is 4-adjacent to a hole.
+.decl borders(w: Walk, c: Conn, o: Ident)
+borders(W, C, O) :-
+    outline(C, O, Q), dir_elem(D), neighbor(Q, D, H),
+    hole(W, [$SharedWalls(), C, O], H).
+
+// Every hole counts for each closed outline.
+within(W, C, $SharedWalls(), O, P) :-
+    borders(W, C, O), hole(W, [$SharedWalls(), C, O], P).
+
+// --- $Walk8 ---
+
+// @claim some-closed-some-open
+.init walk8 = Reach<Barrier>
+walk8.step(S) :- dir8_elem(D), step_offset(D, S).
+walk8.node(K, P) :- outside(K, P).
+walk8.seed(K, P) :- outside(K, P), dir_elem(D), dist(P, D, 0).   // on an edge
+
+hole($Walk8(), K, P) :- outside(K, P), !walk8.reach(K, P).
+
+// --- $Walk4 ---
+
+// @claim some-closed-some-open
+.init walk4 = Reach<Barrier>
+walk4.node(K, P) :- outside(K, P).
+walk4.seed(K, P) :- outside(K, P), dir_elem(D), dist(P, D, 0).   // on an edge
+
+hole($Walk4(), K, P) :- outside(K, P), !walk4.reach(K, P).
+
+// --- $WholeOutline ---
+
+rim(W, C, S, $WholeOutline(), O, Q) :- within(W, C, S, O, _), outline(C, O, Q).
+
+// --- $HoleRim ---
+
+rim(W, C, S, $HoleRim(), O, Q) :-
+    outline(C, O, Q), dir8_elem(D), neighbor(Q, D, H), within(W, C, S, O, H).
+
+// --- halos ---
+
+.decl inner(w: Walk, c: Conn, s: Scope, p: Position)
+inner(W, C, S, P) :-
+    within(W, C, S, O, P), field(P),
+    dir8_elem(D), neighbor(P, D, Q), outline(C, O, Q).   // touches the outline
+
+.decl outer(w: Walk, c: Conn, s: Scope, e: Extent, p: Position)
+outer(W, C, S, E, P) :-
+    rim(W, C, S, E, O, Q), dir8_elem(D), neighbor(Q, D, P),
+    field(P), !within(W, C, S, O, P).
+
+// --- $InnerOverOuter ---
+
+painted(P, Col, [W, C, S, $InnerOverOuter(), E]) :-
+    impl_choice([W, C, S, $InnerOverOuter(), E]),
+    inner(W, C, S, P), params.inner_color(Col).
+painted(P, Col, [W, C, S, $InnerOverOuter(), E]) :-
+    outer(W, C, S, E, P), !inner(W, C, S, P), params.outer_color(Col).
+
+// --- $OuterOverInner ---
+
+painted(P, Col, [W, C, S, $OuterOverInner(), E]) :-
+    impl_choice([W, C, S, $OuterOverInner(), E]),
+    outer(W, C, S, E, P), params.outer_color(Col).
+painted(P, Col, [W, C, S, $OuterOverInner(), E]) :-
+    impl_choice([W, C, S, $OuterOverInner(), E]),
+    inner(W, C, S, P), !outer(W, C, S, E, P), params.inner_color(Col).
+
+// --- output ---
+
+out(P, Col, Ch) :- painted(P, Col, Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(P, _, Ch).
+
+.comp Determine {
+    // The cells a train output repaints, with the input and output colors.
+    .decl repainted(e: Example, p: Position, c_in: Color, c_out: Color)
+    repainted(E, P, C_in, C_out) :- ex_in(E, P, C_in), ex_out(E, P, C_out), C_in != C_out.
+
+    // The halos cover only background cells.
+    .decl background(c: Color)
+    background(Col) :- repainted(_, _, Col, _).
+
+    // The field is the commonest color of each input.
+    .init palette = Mode<Example, Color, Position>
+    palette.item(E, Col, P) :- ex_in(E, P, Col), ex_out(E, _, _).
+
+    // The outlines take an input color that is no input's field.
+    .decl wall_color(c: Color)
+    wall_color(Col) :- ex_in(E, _, Col), ex_out(E, _, _), !palette.mode(_, Col).
+
+    .decl open_cell(e: Example, p: Position)
+    open_cell(E, P) :- ex_in(E, P, Col), !wall_color(Col).
+
+    // The cells an 8-step walk from the frame edge reaches without crossing
+    // an outline: the outer halo is among them, the inner halo is not.
+    .init outside = Reach<Example>
+    outside.step(S) :- dir8_elem(D), step_offset(D, S).
+    outside.node(E, P) :- open_cell(E, P).
+    outside.seed(E, P) :- open_cell(E, P), dir_elem(D), dist(P, D, 0).   // on an edge
+
+    .decl outer_color(c: Color)
+    outer_color(Col) :- repainted(E, P, _, Col), outside.reach(E, P).
+
+    .decl inner_color(c: Color)
+    inner_color(Col) :- repainted(E, P, _, Col), !outside.reach(E, P).
+}

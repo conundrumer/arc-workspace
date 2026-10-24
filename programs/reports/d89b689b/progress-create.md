@@ -1,0 +1,3 @@
+# d89b689b: progress notes for Create
+
+- interference: `uv run python scripts/run_dl.py determination-plan d89b689b` says "write a determination relation for each value here that a proposer derives from a fact other than any the concept derives it from". The concept stores both `background` and `block_color` and derives neither from anything, so it is not clear whether "other than any" holds vacuously. I first read it as needing no relation, then as needing one for each value. Cost: one extra plan run and a back-and-forth over the reading. Nothing in the output was wrong, and that is still the case.

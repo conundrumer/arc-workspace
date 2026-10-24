@@ -1,0 +1,222 @@
+// d8c310e9
+// @draft
+// @keywords: wallpaper lines
+// @scene background: every cell outside the pattern is bg
+// @scene segment-at-edge: the drawn segment starts at the edge opposite dir
+//  and runs toward dir, and every line across the segment (a column for dir
+//  right) holds a cell that is not bg; past the segment's end every cell is bg
+// @scene segment-on-ground: the drawn content rests on the ground edge
+//  (bottom), and the line along that edge is not bg across the whole segment
+// @rule period: the tile length is the smallest period of the segment along
+//  dir: the least p >= 1 at which each line of the segment equals the line p
+//  further along dir, wherever both lie in the segment
+// @rule extend: each cell of the output takes the cell of the segment that
+//  lies a whole number of periods back toward the start edge, so the output is
+//  the tile repeated from the start edge to the far edge, cut off there
+
+// where the direction of continuation comes from
+.type Direction =
+    // @claim segment-at-edge
+    StoredDir {}
+    // @scene segment-at-edge: dir is each direction d at which the ink touches
+    //  the edge opposite d, stops short of the edge toward d, and is periodic
+    //  along d with a period shorter than the segment; undefined where no
+    //  direction is
+    // @witness mirrored-scene: variant $DirFromScene
+    //     @relaxed segment-at-edge
+  | DirFromScene {}
+
+// what the period is a period of
+.type Period =
+    // @claim period
+    Whole {}
+    // @rule period: each line along dir has its own period, the smallest
+    //  period of its run from the start edge to its last non-bg cell
+    // @rule extend: each line repeats its own run by its own period, and a
+    //  line with no ink stays bg
+    // @witness short-row-run: ordinary concept
+  | PerLine {}
+    // @rule period: the period is the smallest period of the ground line's
+    //  run from the start edge to its last non-bg cell, and every line repeats
+    //  by it
+    // @witness ground-faster: ordinary concept
+  | GroundPeriod {g: Ground}
+
+// where the ground edge comes from
+.type Ground =
+    // @claim segment-on-ground
+    StoredGround {}
+    // @scene segment-on-ground: the ground edge is each edge along dir whose
+    //  line holds no bg cell across the segment; undefined where no edge does
+    // @witness hanging: variant concept
+    //     @relaxed segment-on-ground
+  | GroundFromScene {}
+
+.type Choice = [d: Direction, p: Period]
+
+// A line along a direction, as the key of its own period.
+.type LineKey = [d: Dir, line: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant concept
+    .decl bg(col: Color) bg(0).
+
+    // --- $StoredDir ---
+    .decl dir(d: Dir) dir(DIR_R).
+
+    // --- $StoredGround ---
+    .decl ground(d: Dir) ground(DIR_B).
+}
+
+.init params = Params
+
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !params.bg(Col).
+
+// A line along axis A, by its across component.
+.decl line(a: Axis, l: Position)
+line(A, L) :- in(P, _), axis_elem(A), split(P, A, _, L).
+
+// The direction each case continues toward.
+.decl dir_at(ch_d: Direction, d: Dir)
+
+// The period each case repeats a line by, toward D.
+.decl period_at(ch_p: Period, d: Dir, l: Position, k: number)
+
+// Each cell takes the input cell of its line that stands at its place within
+// the period, counted from the start edge.
+out(P, Col, [Ch_dir, Ch_per]) :-
+    dir_at(Ch_dir, D), opposite(D, O), axis_of(D, A),
+    in(P, _), split(P, A, _, L), period_at(Ch_per, D, L, K),   // the cell's line and its period
+    dist(P, O, T), stride(T, K, 0, _, R),                      // its place within the period
+    in(Q, Col), split(Q, A, _, L), dist(Q, O, R).              // the input cell at that place
+
+// --- $Whole, $DirFromScene, $GroundFromScene ---
+
+// The segment toward D: every cell no farther from the start edge than some
+// ink cell.
+.decl segment(d: Dir, p: Position)
+segment(D, P) :-
+    in(P, _), ink(Q), dir_elem(D), opposite(D, O),
+    dist(P, O, T), dist(Q, O, T2), T <= T2.
+
+// --- $Whole, $DirFromScene ---
+
+// @claim period
+// @store min_period: variant $DirFromScene
+//     @relaxed segment-at-edge
+.init seg = OffsetInvariance<Dir, Color>
+seg.cell(D, P, Col) :- segment(D, P), in(P, Col).
+
+// --- $StoredDir ---
+
+dir_at($StoredDir(), D) :- params.dir(D).
+
+// --- $DirFromScene ---
+
+// Ink touches the edge toward D.
+.decl reach(d: Dir)
+reach(D) :- ink(Q), dir_elem(D), dist(Q, D, 0).
+
+dir_at($DirFromScene(), D) :-
+    dir_elem(D), opposite(D, O), ink(Q), dist(Q, O, 0),   // ink at the start edge
+    !reach(D),                                            // and short of the far edge
+    axis_of(D, A), seg.min_period(D, A, _).               // a period shorter than the segment
+
+// --- $Whole ---
+
+// The segment's length along D, its period where it has no shorter one.
+// @claim period
+.init seg_len = Tally<Dir, Position>
+seg_len.item(D, L) :- segment(D, P), axis_of(D, A), split(P, A, L, _).
+
+// The segment's smallest period: its shortest exact one, or its length.
+.decl seg_period(d: Dir, k: number)
+seg_period(D, K) :- axis_of(D, A), seg.min_period(D, A, K).
+seg_period(D, N) :- axis_of(D, A), seg_len.tally(D, N), !seg.min_period(D, A, _).
+
+period_at($Whole(), D, L, K) :- seg_period(D, K), axis_of(D, A), line(A, L).
+
+// --- $PerLine, $GroundPeriod ---
+
+// Each line's run toward D: its cells no farther from the start edge than
+// some ink cell of the line.
+.decl run(k: LineKey, p: Position)
+run([D, L], P) :-
+    in(P, _), ink(Q), dir_elem(D), opposite(D, O), axis_of(D, A),
+    split(P, A, _, L), split(Q, A, _, L),
+    dist(P, O, T), dist(Q, O, T2), T <= T2.
+
+// @claim period
+.init run_len = Tally<LineKey, Position>
+run_len.item(Ky, L2) :- run(Ky, P), Ky = [D, _], axis_of(D, A), split(P, A, L2, _).
+
+// @claim period
+.init run_inv = OffsetInvariance<LineKey, Color>
+run_inv.cell(Ky, P, Col) :- run(Ky, P), in(P, Col).
+
+// A run's smallest period: its shortest exact one, or its length.
+.decl run_period(k: LineKey, n: number)
+run_period(Ky, K) :- Ky = [D, _], axis_of(D, A), run_inv.min_period(Ky, A, K).
+run_period(Ky, N) :-
+    run_len.tally(Ky, N), Ky = [D, _], axis_of(D, A), !run_inv.min_period(Ky, A, _).
+
+// --- $PerLine ---
+
+period_at($PerLine(), D, L, K) :- run_period([D, L], K).
+
+// A line with no ink stays bg.
+out(P, Col, [Ch_dir, $PerLine()]) :-
+    dir_at(Ch_dir, D), axis_of(D, A),
+    in(P, _), split(P, A, _, L), !run([D, L], _), params.bg(Col).
+
+// --- $GroundPeriod ---
+
+// The ground edge each case reads, toward D.
+.decl ground_at(ch_g: Ground, d: Dir, g: Dir)
+
+// The ground line's period, for every line.
+// @workaround: the period of the ground line's cells within the segment, in
+//  an OffsetInvariance instance of its own; the runner fails a solver that
+//  stores two instances of one comp
+period_at($GroundPeriod(Ch_g), D, L, K) :-
+    ground_at(Ch_g, D, G), perp_dir(D, G),                    // an edge along D
+    run_period([D, L_g], K), dist(L_g, G, 0),                 // the period of its line
+    axis_of(D, A), line(A, L).
+
+// --- $StoredGround ---
+
+ground_at($StoredGround(), D, G) :- dir_elem(D), params.ground(G).
+
+// --- $GroundFromScene ---
+
+// A segment cell on the edge line toward G is bg.
+.decl gap(d: Dir, g: Dir)
+gap(D, G) :- segment(D, P), dir_elem(G), dist(P, G, 0), in(P, Col), params.bg(Col).
+
+ground_at($GroundFromScene(), D, G) :-
+    segment(D, _), perp_dir(D, G), !gap(D, G).
+
+.comp Determine {
+    // The extension paints over background cells.
+    .decl bg(col: Color)
+    bg(Col) :- ex_in(E, P, Col), ex_out(E, P, C), C != Col.
+
+    // Ink touches the edge toward D in example E's input.
+    .decl in_reach(e: Example, d: Dir)
+    in_reach(E, D) :- ex_in(E, P, Col), !params.bg(Col), dir_elem(D), dist(P, D, 0).
+
+    // The output's ink reaches an edge the input's ink does not.
+    .decl dir(d: Dir)
+    dir(D) :- ex_out(E, P, Col), !params.bg(Col), dir_elem(D), dist(P, D, 0), !in_reach(E, D).
+
+    // A bg cell of example E's output lies on the edge toward G.
+    .decl out_gap(e: Example, g: Dir)
+    out_gap(E, G) :- ex_out(E, P, Col), params.bg(Col), dir_elem(G), dist(P, G, 0).
+
+    // The edge whose line no output leaves bg anywhere.
+    .decl ground(d: Dir)
+    ground(D) :- dir_elem(D), !out_gap(_, D).
+}
