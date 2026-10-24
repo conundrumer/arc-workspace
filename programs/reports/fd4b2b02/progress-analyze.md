@@ -1,0 +1,4 @@
+# Progress: fd4b2b02 analyze
+
+- `interference`: tool behavior, the PreToolUse:Bash hook, on the first Bash call of the pass (the worktree check). It blocked the call and sent a context diff, which removed the workflow NOTE and changed nothing that bore on the call. Cost: one repeated call plus reading the diff. Output wrong: nothing.
+- `interference`: tool behavior, `Bbox(Primitive.NUMBER, sizes=..., cell=...)` from `lib_components.components`, run by `uv run python -u work/task/fd4b2b02/check_concept.py`. It raised `RuntimeError: no souffle binary on PATH` from `src/souffle/install.py`. Step 2 had the script call the component, and no line of my documents gave a way to run it, so the script computes the same pointwise minimum of margins in plain Python. Cost: one failed run and a rewrite of the script. Output wrong: nothing; every pair fits with the stand-in. It is still the case that the lib call does not run.

@@ -1,0 +1,3 @@
+# f5c89df1 Analyze progress
+
+- `interference`: `timeout 60 uv run python -u work/task/f5c89df1/probe.py data/tasks/f5c89df1.json` — the call to `lib_components.components.Components8`, which the Analyze step 2 line "call the component in place of rebuilding it" has a probe make, raised `RuntimeError: no souffle binary on PATH` (`which souffle` finds none). Cost: one failed run and a rewrite of the probe. The probe computes the 8-connected component of the anchor in Python in place of the lib call; on these grids the two agree by construction (flood fill over the 8 neighbor steps), so the probe output is not wrong, and the lib remains uncallable in this environment.

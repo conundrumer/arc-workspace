@@ -1,0 +1,35 @@
+{ "id": "f18ec8cc",
+  "witnesses": [
+    { "id": "tie-in-later-stripe",
+      "separates": "the 4-wide first stripe's lines each have one commonest color, but the center lines of the 7 and 1 stripes each hold three colors once; the concept (stripes as runs of lines with one commonest color) is undefined there; $RotateColumns needs only the first stripe and rotates the lines by its width 4; $SolidLines cuts between adjacent solid lines and gives the same cycle",
+      "input": [
+        [5,5,5,5,7,7,7,1,1,1],
+        [5,1,5,5,7,5,7,1,7,1],
+        [5,5,7,5,7,1,7,1,5,1]
+      ],
+      "output": [
+        { "cases": ["$RotateColumns", "$SolidLines"],
+          "grid": [
+            [7,7,7,1,1,1,5,5,5,5],
+            [7,5,7,1,7,1,5,1,5,5],
+            [7,1,7,1,5,1,5,5,7,5]
+          ] },
+        { "cases": ["concept"], "grid": null }
+      ] },
+    { "id": "tie-in-first-stripe",
+      "separates": "the first stripe's center line holds 5, 1 and 7 once each, so it has no single commonest color; the concept and $RotateColumns are undefined; $SolidLines cuts between the adjacent solid lines (2,3) and (6,7) and moves the 5 stripe to the right end",
+      "input": [
+        [5,5,5,7,7,7,7,1,1,1,1],
+        [5,1,5,7,7,1,7,1,7,1,1],
+        [5,7,5,7,5,7,7,1,1,5,1]
+      ],
+      "output": [
+        { "cases": ["$SolidLines"],
+          "grid": [
+            [7,7,7,7,1,1,1,1,5,5,5],
+            [7,7,1,7,1,7,1,1,5,1,5],
+            [7,5,7,7,1,1,5,1,5,7,5]
+          ] },
+        { "cases": ["concept", "$RotateColumns"], "grid": null }
+      ] }
+  ] }
