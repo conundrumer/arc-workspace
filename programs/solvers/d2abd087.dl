@@ -1,0 +1,139 @@
+// d2abd087
+// @draft
+// @keywords: objects count
+// @scene shapes-on-background: a background of color 0 with several shapes of
+//  shape_color on it; a shape is a 4-connected component of the shape_color
+//  cells
+// @rule size-match-recolor: each cell of a shape whose cell count equals
+//  target_size takes match_color
+// @rule size-miss-recolor: each cell of a shape whose cell count differs from
+//  target_size takes other_color
+// @rule rest-kept: every cell outside the shapes keeps its color
+
+// which cells join one shape
+.type Adjacency =
+    // @claim shapes-on-background
+    Comp4 {}
+    // @scene shapes-on-background: a shape is an 8-connected component of the
+    //  shape_color cells
+    // @witness diagonal-contact: variant concept
+  | Diag8 {}
+
+// which cells the shapes are made of
+.type Ink =
+    // @claim shapes-on-background
+    ShapeInk {}
+    // @scene shapes-on-background: a shape is a same-color component of the
+    //  cells of any color other than background
+    // @witness second-ink-color: borderline $AnyInk
+    //     @relaxed shapes-on-background
+  | AnyInk {}
+
+.type Choice = [adj: Adjacency, ink: Ink]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl target_size(n: number) target_size(6).
+    .decl match_color(c: Color) match_color(2).
+    .decl other_color(c: Color) other_color(1).
+
+    // --- $ShapeInk ---
+    // @derive RarestColor: variant derived
+    //     @relaxed shapes-on-background
+    .decl shape_color(c: Color) shape_color(5).
+
+    // --- $AnyInk ---
+    // @derive DominantColor: borderline concept
+    .decl background(c: Color) background(0).
+}
+
+.init params = Params
+
+.decl adjacency_choice(a: Adjacency)
+adjacency_choice($Comp4()). adjacency_choice($Diag8()).
+
+.decl ink_choice(i: Ink)
+ink_choice($ShapeInk()). ink_choice($AnyInk()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([A, I]) :- adjacency_choice(A), ink_choice(I).
+
+// The shapes with their sizes.
+.comp Parse<Key> {
+    // The cells of one color under one reading of ink.
+    .type KInk = [k: Key, i: Ink, col: Color]
+    // A shape under one reading of adjacency and of ink.
+    .type KShape = [k: Key, a: Adjacency, i: Ink, o: Ident]
+
+    .decl cell(key: Key, p: Position, col: Color)  // input
+
+    .decl ink(ki: KInk, p: Position)
+    .decl shape(s: KShape, p: Position)
+
+    // @claim size-match-recolor size-miss-recolor
+    .init size = Tally<KShape, Position>
+    size.item(S, P) :- shape(S, P).
+
+    // --- $ShapeInk ---
+    ink([K, $ShapeInk(), Col], P) :- cell(K, P, Col), params.shape_color(Col).
+
+    // --- $AnyInk ---
+    ink([K, $AnyInk(), Col], P) :- cell(K, P, Col), !params.background(Col).
+
+    // --- $Comp4 ---
+    // @claim shapes-on-background
+    .init comps4 = Components<KInk>
+    comps4.node(KI, P) :- ink(KI, P).
+    shape([K, $Comp4(), I, O], P) :- comps4.label([K, I, _], P, O).
+
+    // --- $Diag8 ---
+    // @claim shapes-on-background
+    .init comps8 = Components8<KInk>
+    comps8.node(KI, P) :- ink(KI, P).
+    shape([K, $Diag8(), I, O], P) :- comps8.label([K, I, _], P, O).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// A shape cell with the color its size gives.
+.decl recolored(p: Position, col: Color, ch: Choice)
+recolored(P, Col, [A, I]) :-
+    parse.shape([$U(), A, I, O], P), parse.size.tally([$U(), A, I, O], N),
+    ( params.target_size(N), params.match_color(Col)
+    ; !params.target_size(N), params.other_color(Col)
+    ).
+
+out(P, Col, Ch) :- recolored(P, Col, Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !recolored(P, _, Ch).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // A train shape's size with the color its cells take.
+    .decl size_color(n: number, col: Color)
+    size_color(N, Col) :-
+        parse.shape([E, A, I, O], P), parse.size.tally([E, A, I, O], N),   // shape cell with its shape's size
+        ex_out(E, P, Col).                                                 // the color it takes
+
+    // The color the shapes of one size alone take.
+    .decl match_color(c: Color)
+    match_color(Col) :- size_color(N, Col), !size_color_elsewhere(N, Col).
+
+    // Shapes of some size other than n also take col.
+    .decl size_color_elsewhere(n: number, col: Color)
+    size_color_elsewhere(N, Col) :- size_color(N, Col), size_color(N2, Col), N2 != N.
+
+    .decl target_size(n: number)
+    target_size(N) :- size_color(N, Col), match_color(Col).
+
+    // The color the shapes of every other size take.
+    .decl other_color(c: Color)
+    other_color(Col) :- size_color(N, Col), !target_size(N).
+
+    // A color some train cell keeps; the cells outside the shapes keep theirs.
+    .decl background(c: Color)
+    background(Col) :- ex_in(E, P, Col), ex_out(E, P, Col).
+}

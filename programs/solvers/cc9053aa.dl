@@ -1,0 +1,438 @@
+// cc9053aa
+// @draft
+// @keywords: markers route rank
+// @scene wall-network: the cells of params.wall_color form one 4-connected
+//  structure of 1-wide straight wall lines
+// @scene two-markers: exactly two cells are params.marker_color, each on the
+//  grid edge outside the walls and 4-adjacent to exactly one wall cell, its
+//  contact cell
+// @scene hazards: one or more cells are params.hazard_color, each inside the
+//  structure's bounding box, in a wall line or in a room between walls
+// @scene one-clear-route: of the clear wall cells, the 4-connected walks from
+//  one contact cell to the other all visit the same cells, so one simple
+//  route joins them
+// @rule clear-walls: a wall cell is clear when no cell of its 8-neighborhood
+//  is params.hazard_color
+// @rule route: the route is a fewest-hop 4-connected walk of clear wall cells
+//  from one marker's contact cell to the other's; tied walks each give their
+//  own output
+// @rule paint-route: each cell of the route becomes params.marker_color;
+//  every other cell keeps its input color
+
+// which wall cells a hazard closes to the route
+.type HazardReach =
+    // @claim clear-walls
+    HazardTouch {}
+    // @rule clear-walls: a wall cell is clear when no cell 4-adjacent to it
+    //  is params.hazard_color
+    // @witness diagonal-hazard: ordinary concept
+  | HazardSide {}
+
+// which walks between the contacts the output paints
+.type Route =
+    // @claim route
+    RouteFewest {}
+    // @rule route: one output paints every cell of every fewest-hop walk
+    // @witness tied-routes: borderline concept
+    //     @relaxed one-clear-route
+  | RouteTieUnion {}
+    // @rule route: one output paints every clear wall cell on some simple
+    //  walk between the contacts, of any length
+    // @witness unequal-routes: borderline concept
+    //     @relaxed one-clear-route
+  | RouteAnyWalk {}
+    // @rule route: the simple walks with the fewest turns, of any length,
+    //  each give their own output; a turn count includes the step from each
+    //  marker into its contact cell
+    // @witness unequal-routes: borderline concept
+  | RouteFewestTurns {}
+    // @rule route: of the fewest-hop walks, those with the fewest turns each
+    //  give their own output
+    // @witness tied-turns: borderline concept
+    //     @relaxed one-clear-route
+  | RouteTieFewestTurns {}
+
+// where the wall color comes from
+.type WallRole =
+    // @claim wall-network
+    WallGiven {}
+    // @scene wall-network: the walls are the commonest color other than
+    //  params.bg; undefined on a tie
+    // @witness recolored-walls: variant $WallColorCommonest
+    //     @relaxed wall-network
+  | WallColorCommonest {}
+
+// where the marker color comes from
+.type MarkerRole =
+    // @claim two-markers
+    MarkerGiven {}
+    // @scene two-markers: the markers are the one color other than params.bg
+    //  on the grid edge; undefined where the edge holds no such color, or
+    //  more than one
+    // @witness recolored-markers: variant $MarkerColorEdge
+    //     @relaxed two-markers
+    // @witness edge-wall: variant concept
+  | MarkerColorEdge {}
+
+// where the hazard color comes from
+.type HazardRole =
+    // @claim hazards
+    HazardGiven {}
+    // @scene hazards: the hazards are the one input color other than
+    //  params.bg, the wall color and the marker color; undefined where there
+    //  is no such color, or more than one
+    // @witness recolored-hazards: variant $HazardColorRest
+    //     @relaxed hazards
+  | HazardColorRest {}
+
+.type Choice = [reach: HazardReach, route: Route, wall: WallRole, marker: MarkerRole, hazard: HazardRole]
+
+// One walk per resolution, as its cell at each hop count, or at the end of
+// each leg.
+.type TiebreakResolution =
+    End {} | Sit {slot: number, item: Position, rest: TiebreakResolution}
+
+.decl out(p: Position, col: Color, ch: Choice, res: TiebreakResolution)
+
+.comp Params {
+    // --- $WallGiven ---
+    .decl wall_color(col: Color) wall_color(8).
+
+    // --- $MarkerGiven ---
+    // @ignore: derive DominantColor — it gives 0, so every background cell is
+    //  a marker, and the model fails Fit at train0
+    // @ignore: derive SharedColor — it gives every color of every input, so
+    //  the walls are markers too, and the model fails Fit at train0
+    // @ignore: derive VanishedColor — on an input alone ex_out is empty, so it
+    //  gives every input color, as SharedColor does
+    .decl marker_color(col: Color) marker_color(9).
+
+    // --- $HazardGiven ---
+    .decl hazard_color(col: Color) hazard_color(7).
+
+    // --- $WallColorCommonest, $MarkerColorEdge, $HazardColorRest ---
+    .decl bg(col: Color) bg(0).
+}
+
+.init params = Params
+
+.decl hazard_reach_choice(r: HazardReach)
+hazard_reach_choice($HazardTouch()). hazard_reach_choice($HazardSide()).
+
+.decl route_choice(r: Route)
+route_choice($RouteFewest()). route_choice($RouteTieUnion()). route_choice($RouteAnyWalk()).
+route_choice($RouteFewestTurns()). route_choice($RouteTieFewestTurns()).
+
+.decl wall_role_choice(w: WallRole)
+wall_role_choice($WallGiven()). wall_role_choice($WallColorCommonest()).
+
+.decl marker_role_choice(m: MarkerRole)
+marker_role_choice($MarkerGiven()). marker_role_choice($MarkerColorEdge()).
+
+.decl hazard_role_choice(h: HazardRole)
+hazard_role_choice($HazardGiven()). hazard_role_choice($HazardColorRest()).
+
+// $HazardSide fits only beside a route that breaks ties by turns.
+.decl impl_choice(ch: Choice)
+impl_choice([R, Ro, W, M, H]) :-
+    hazard_reach_choice(R), route_choice(Ro),
+    wall_role_choice(W), marker_role_choice(M), hazard_role_choice(H),
+    ( R = $HazardTouch() ; Ro = $RouteFewestTurns() ; Ro = $RouteTieFewestTurns() ).
+
+// The cells a walk may use, under the choices that fix them.
+.type Net = [reach: HazardReach, wall: WallRole, marker: MarkerRole, hazard: HazardRole]
+
+// A net walked from one of its markers.
+.type Trip = [n: Net, e: Position]
+
+// A candidate walk of a trip.
+.type Walk = [t: Trip, res: TiebreakResolution]
+
+// A net with the cell c cut out.
+.type Cut = [n: Net, c: Position]
+
+// A leg of a walk: the cell it ends at and the axis it ran along.
+.type Leg = [p: Position, a: Axis]
+
+// The wall and marker choices a hazard color is told apart from.
+.type Known = [wall: WallRole, marker: MarkerRole]
+
+.decl net(n: Net)
+net([R, W, M, H]) :- impl_choice([R, _, W, M, H]).
+
+.decl wall_col(w: WallRole, col: Color)
+.decl marker_col(m: MarkerRole, col: Color)
+
+.decl wall(w: WallRole, p: Position)
+wall(W, P) :- wall_col(W, Col), in(P, Col).
+
+.decl marker(m: MarkerRole, p: Position)
+marker(M, P) :- marker_col(M, Col), in(P, Col).
+
+.decl hazard(n: Net, p: Position)
+
+// A wall cell a hazard closes to the route.
+.decl closed(n: Net, p: Position)
+
+// The cells a walk may use: the clear wall cells and the markers.
+.decl node(n: Net, p: Position)
+node([R, W, M, H], P) :- net([R, W, M, H]), wall(W, P), !closed([R, W, M, H], P).
+node([R, W, M, H], P) :- net([R, W, M, H]), marker(M, P).
+
+// The cells a case's output paints under each resolution: the route's wall
+// cells.
+.decl route_cell(ch: Choice, res: TiebreakResolution, p: Position)
+
+.decl paint(ch: Choice, res: TiebreakResolution, p: Position)
+paint([R, Ro, W, M, H], Res, P) :- route_cell([R, Ro, W, M, H], Res, P), wall(W, P).
+
+// The route takes the color of the markers it joins.
+// @store: ordinary stored
+.decl route_color(m: MarkerRole, col: Color)
+route_color(M, Col) :- marker(M, P), in(P, Col).
+
+out(P, Col, [R, Ro, W, M, H], Res) :- paint([R, Ro, W, M, H], Res, P), route_color(M, Col).
+out(P, Col, Ch, Res) :- route_cell(Ch, Res, _), in(P, Col), !paint(Ch, Res, P).
+
+// --- $HazardTouch ---
+
+closed([$HazardTouch(), W, M, H], P) :-
+    wall(W, P), dir8_elem(D), neighbor(P, D, Q), hazard([$HazardTouch(), W, M, H], Q).
+
+// --- $HazardSide ---
+
+closed([$HazardSide(), W, M, H], P) :-
+    wall(W, P), dir_elem(D), neighbor(P, D, Q), hazard([$HazardSide(), W, M, H], Q).
+
+// --- $RouteFewest, $RouteTieUnion, $RouteFewestTurns, $RouteTieFewestTurns ---
+
+.decl trip(t: Trip)
+trip([[R, W, M, H], E]) :- node([R, W, M, H], E), marker(M, E).
+
+// The marker a trip ends at.
+.decl goal(t: Trip, e: Position)
+goal([[R, W, M, H], E], E2) :- trip([[R, W, M, H], E]), marker(M, E2), E2 != E.
+
+// --- $RouteFewest, $RouteTieUnion, $RouteTieFewestTurns ---
+
+// @claim route
+.init hops = GraphDistance<Trip, Position>
+hops.seed([N, E], E) :- trip([N, E]).
+hops.edge([N, E], P, Q) :- trip([N, E]), node(N, P), dir_elem(D), neighbor(P, D, Q), node(N, Q).
+
+// The cells of the fewest-hop walks to the goal.
+.init fewest = Propagation<Trip, Position>
+fewest.source(T, E2) :- goal(T, E2), hops.distance(T, E2, _).
+fewest.edge(T, B, A) :- hops.pred(T, B, A).
+
+// --- $RouteFewest, $RouteTieFewestTurns ---
+
+// Each fewest-hop walk, as its cell at each hop count.
+.init walks = TiebreakResolutions<Trip, number, Position>
+walks.cand(T, K, P) :- fewest.reached(T, P), hops.distance(T, P, K).
+
+// b is one hop past a on a candidate walk.
+.decl walk_step(w: Walk, a: Position, b: Position)
+walk_step([T, Res], A, B) :-
+    walks.assign(T, Res, _, B), hops.pred(T, B, A), walks.assign(T, Res, _, A).
+
+// A candidate walk with a cell past the start that no cell of it steps to.
+.decl broken_walk(w: Walk)
+broken_walk([[N, E], Res]) :-
+    walks.assign([N, E], Res, _, B), B != E, !walk_step([[N, E], Res], _, B).
+
+.decl walk(w: Walk)
+walk([T, Res]) :- walks.resolution(T, Res), !broken_walk([T, Res]).
+
+// --- $RouteFewest ---
+
+route_cell([R, $RouteFewest(), W, M, H], Res, P) :-
+    impl_choice([R, $RouteFewest(), W, M, H]),
+    walk([[[R, W, M, H], E], Res]), walks.assign([[R, W, M, H], E], Res, _, P).
+
+// --- $RouteTieUnion ---
+
+route_cell([R, $RouteTieUnion(), W, M, H], $End(), P) :-
+    impl_choice([R, $RouteTieUnion(), W, M, H]), fewest.reached([[R, W, M, H], _], P).
+
+// --- $RouteAnyWalk ---
+
+// @claim route
+.init joined = Components<Net>
+joined.node(N, P) :- node(N, P).
+
+// The two markers lie in one component.
+.decl linked(n: Net)
+linked([R, W, M, H]) :-
+    marker(M, E), joined.label([R, W, M, H], E, Id),
+    marker(M, E2), E2 != E, joined.label([R, W, M, H], E2, Id).
+
+// What the markers still reach with one cell cut out.
+// @claim route
+.init uncut = Reach<Cut>
+uncut.node([N, C], P) :- node(N, C), node(N, P), P != C.
+uncut.seed([[R, W, M, H], C], E) :- node([R, W, M, H], C), marker(M, E), E != C.
+
+// Some cut cell leaves p reaching neither marker, so no simple walk between
+// the markers passes p.
+.decl cut_off(n: Net, p: Position)
+cut_off(N, P) :- uncut.node([N, C], P), !uncut.reach([N, C], P).
+
+route_cell([R, $RouteAnyWalk(), W, M, H], $End(), P) :-
+    impl_choice([R, $RouteAnyWalk(), W, M, H]),
+    linked([R, W, M, H]), node([R, W, M, H], P), !cut_off([R, W, M, H], P).
+
+// --- $RouteFewestTurns ---
+
+// @claim route
+.init line = Slide<Net>
+line.node(N, P) :- node(N, P).
+line.dir(N, D) :- net(N), dir_elem(D).
+
+// Legs: each hop turns onto the other axis and runs straight. At a marker no
+// leg has run yet, so either axis may come next.
+// @claim route
+.init turns = GraphDistance<Trip, Leg>
+turns.seed([N, E], [E, A]) :- trip([N, E]), axis_elem(A).
+turns.edge([N, E], [P, A], [Q, A2]) :-
+    trip([N, E]), line.run(N, P, D, Q), dir_elem(D), axis_of(D, A2), perp(A2, A).
+
+// @claim route
+.init least_turns = Extremes<Trip>
+least_turns.cand(T, K) :- goal(T, E2), turns.distance(T, [E2, _], K).
+
+// The legs of the walks with the fewest turns.
+.init turn_back = Propagation<Trip, Leg>
+turn_back.source(T, [E2, A]) :-
+    goal(T, E2), turns.distance(T, [E2, A], K), least_turns.low(T, K).
+turn_back.edge(T, B, A) :- turns.pred(T, B, A).
+
+// Each walk with the fewest turns, as its cell at each leg count.
+.init legs = TiebreakResolutions<Trip, number, Position>
+legs.cand(T, K, P) :- turn_back.reached(T, [P, A]), turns.distance(T, [P, A], K).
+
+// q is one leg past p on a candidate walk.
+.decl leg_step(w: Walk, p: Position, q: Position)
+leg_step([T, Res], P, Q) :-
+    legs.assign(T, Res, K2, Q), turns.distance(T, [Q, A2], K2),
+    turns.pred(T, [Q, A2], [P, A]), turns.distance(T, [P, A], K), legs.assign(T, Res, K, P).
+
+// A candidate walk with a leg end past the start that no leg of it reaches.
+.decl broken_legs(w: Walk)
+broken_legs([[N, E], Res]) :-
+    legs.assign([N, E], Res, _, Q), Q != E, !leg_step([[N, E], Res], _, Q).
+
+route_cell([R, $RouteFewestTurns(), W, M, H], Res, X) :-
+    impl_choice([R, $RouteFewestTurns(), W, M, H]),
+    legs.resolution([[R, W, M, H], E], Res), !broken_legs([[[R, W, M, H], E], Res]),
+    leg_step([[[R, W, M, H], E], Res], P, Q), line.run([R, W, M, H], P, D, Q),
+    ( X = P
+    ; X = Q
+    ; line.run([R, W, M, H], P, D, X), line.run([R, W, M, H], X, D, Q)   // between
+    ).
+
+// --- $RouteTieFewestTurns ---
+
+// A cell a walk runs straight through.
+.decl straight(w: Walk, p: Position)
+straight(Wk, P) :-
+    walk_step(Wk, A, P), walk_step(Wk, P, B), axis_elem(Ax), same_line(Ax, A, B).
+
+// @claim route
+.init bends = Tally<Walk, Position>
+bends.domain(Wk) :- walk(Wk).
+bends.item(Wk, P) :- walk(Wk), walk_step(Wk, _, P), walk_step(Wk, P, _), !straight(Wk, P).
+
+// @claim route
+.init fewest_bends = ArgExtremes<Trip, TiebreakResolution>
+fewest_bends.cand(T, Res, N) :- bends.tally([T, Res], N).
+
+route_cell([R, $RouteTieFewestTurns(), W, M, H], Res, P) :-
+    impl_choice([R, $RouteTieFewestTurns(), W, M, H]),
+    fewest_bends.low([[R, W, M, H], E], Res, _), walks.assign([[R, W, M, H], E], Res, _, P).
+
+// --- $WallGiven ---
+
+wall_col($WallGiven(), Col) :- params.wall_color(Col).
+
+// --- $WallColorCommonest ---
+
+// @claim wall-network
+// @ignore mode: store — a stored commonest color is the stored wall color
+//  of $WallGiven, which fails Equivalence
+.init commonest = Mode<Unit, Color, Position>
+commonest.item($U(), Col, P) :- in(P, Col), !params.bg(Col).
+
+// @claim wall-network
+// @ignore item: store — a stored commonest color is the stored wall color
+//  of $WallGiven, which fails Equivalence
+// @ignore value: store — as for item
+.init wall_pick = Unanimous<Unit, Color>
+wall_pick.item($U(), Col) :- commonest.mode($U(), Col).
+
+wall_col($WallColorCommonest(), Col) :- wall_pick.value($U(), Col).
+
+// --- $MarkerGiven ---
+
+marker_col($MarkerGiven(), Col) :- params.marker_color(Col).
+
+// --- $MarkerColorEdge ---
+
+// @claim two-markers
+// @ignore item: store — a stored edge color is the stored marker color of
+//  $MarkerGiven, which fails Equivalence
+// @ignore value: store — as for item
+.init edge_ink = Unanimous<Unit, Color>
+edge_ink.item($U(), Col) :- in(P, Col), !params.bg(Col), dir_elem(D), dist(P, D, 0).
+
+marker_col($MarkerColorEdge(), Col) :- edge_ink.value($U(), Col).
+
+// --- $HazardGiven ---
+
+hazard([R, W, M, $HazardGiven()], P) :-
+    net([R, W, M, $HazardGiven()]), params.hazard_color(Col), in(P, Col).
+
+// --- $HazardColorRest ---
+
+// @claim hazards
+// @ignore item: store — a stored remaining color is the stored hazard color
+//  of $HazardGiven, which fails Equivalence
+// @ignore value: store — as for item
+.init rest = Unanimous<Known, Color>
+rest.item([W, M], Col) :-
+    net([_, W, M, $HazardColorRest()]), in(_, Col),
+    !params.bg(Col), !wall_col(W, Col), !marker_col(M, Col).
+
+hazard([R, W, M, $HazardColorRest()], P) :-
+    net([R, W, M, $HazardColorRest()]), rest.value([W, M], Col), in(P, Col).
+
+.comp Determine {
+    // A cell an output repaints, with its input color and its output color.
+    .decl repaint(e: Example, p: Position, col: Color, col2: Color)
+    repaint(E, P, Col, Col2) :- ex_in(E, P, Col), ex_out(E, P, Col2), Col != Col2.
+
+    // The input color of the repainted cells.
+    .decl wall_color(col: Color)
+    wall_color(Col) :- repaint(_, _, Col, _).
+
+    // The color the repainted cells take.
+    .decl marker_color(col: Color)
+    marker_color(Col) :- repaint(_, _, _, Col).
+
+    // The commonest color of each input.
+    .init commonest = Mode<Example, Color, Position>
+    commonest.item(E, Col, P) :- ex_in(E, P, Col).
+
+    // A commonest color some train input does not have as its commonest.
+    .decl bg_missing(col: Color)
+    bg_missing(Col) :- commonest.mode(_, Col), ex_out(E, _, _), !commonest.mode(E, Col).
+
+    .decl bg(col: Color)
+    bg(Col) :- commonest.mode(_, Col), !bg_missing(Col).
+
+    // The input colors left over.
+    // @ignore: determine prediction — the wall and marker colors it excludes
+    //  are read from the repainted cells, not guessed
+    .decl hazard_color(col: Color)
+    hazard_color(Col) :- ex_in(_, _, Col), !bg(Col), !wall_color(Col), !marker_color(Col).
+}

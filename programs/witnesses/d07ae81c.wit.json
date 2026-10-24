@@ -1,0 +1,161 @@
+{
+  "id": "d07ae81c",
+  "witnesses": [{
+    "id": "marker-at-field-corner",
+    "separates": "The 1 marker sits on the top-left corner of a field rectangle, with five band-colored neighbors, and the 4 marker sits on a band column one cell wide, with six field-colored neighbors. Reading each marker's background from the repeating band layout maps 8 to 1 and 2 to 4. Reading it from the color most of its eight neighbors carry swaps that map, so every ray cell takes the other marker color. Reading it from a full-length line through the cell finds a full 8 row and a full 2 column through the 4 marker, and is undefined.",
+    "input": [
+      [8,8,2,8,8,8,8,8,8,8],
+      [8,8,4,8,8,8,8,8,8,8],
+      [8,8,2,8,8,8,8,8,8,8],
+      [8,8,2,8,8,8,8,8,8,8],
+      [2,2,2,2,2,2,2,2,2,2],
+      [2,2,2,2,2,2,2,2,2,2],
+      [8,8,2,1,8,8,8,8,8,8],
+      [8,8,2,8,8,8,8,8,8,8],
+      [8,8,2,8,8,8,8,8,8,8],
+      [8,8,2,8,8,8,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$Layout"],
+      "grid": [
+        [8,1,2,1,8,8,8,8,8,1],
+        [8,8,4,8,8,8,8,8,1,8],
+        [8,1,2,1,8,8,8,1,8,8],
+        [1,8,2,8,1,8,1,8,8,8],
+        [2,4,2,2,2,4,2,2,2,2],
+        [2,2,4,2,4,2,4,2,2,2],
+        [8,8,2,1,8,8,8,1,8,8],
+        [8,8,4,8,1,8,8,8,1,8],
+        [8,1,2,8,8,1,8,8,8,1],
+        [1,8,2,8,8,8,1,8,8,8]
+      ]
+    }, {
+      "cases": ["$FullLineBackground"],
+      "grid": null
+    }, {
+      "cases": ["$NeighborMajority"],
+      "grid": [
+        [8,4,2,4,8,8,8,8,8,4],
+        [8,8,4,8,8,8,8,8,4,8],
+        [8,4,2,4,8,8,8,4,8,8],
+        [4,8,2,8,4,8,4,8,8,8],
+        [2,1,2,2,2,1,2,2,2,2],
+        [2,2,1,2,1,2,1,2,2,2],
+        [8,8,2,1,8,8,8,4,8,8],
+        [8,8,1,8,4,8,8,8,4,8],
+        [8,4,2,8,8,4,8,8,8,4],
+        [4,8,2,8,8,8,4,8,8,8]
+      ]
+    }]
+  }, {
+    "id": "adjacent-markers",
+    "separates": "Two 1 markers sit side by side. Reading every cell of a non-background color as a marker casts rays from both. Reading only cells with no 4-neighbor of their own color as markers casts no ray from either, so their rays are missing.",
+    "input": [
+      [8,8,2,2,8,8,8,8,8,8],
+      [8,8,4,2,8,8,8,8,8,8],
+      [8,8,2,2,8,8,8,8,8,8],
+      [8,8,2,2,8,8,8,8,8,8],
+      [2,2,2,2,2,2,2,2,2,2],
+      [2,2,2,2,2,2,2,2,2,2],
+      [8,8,2,2,8,8,8,8,8,8],
+      [8,8,2,2,8,8,1,1,8,8],
+      [1,8,2,2,8,8,8,8,8,8],
+      [8,8,2,2,8,8,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$OtherColor"],
+      "grid": [
+        [1,1,2,4,8,8,8,8,1,8],
+        [1,1,4,2,8,8,8,1,8,8],
+        [8,1,4,4,8,8,1,8,8,8],
+        [1,8,4,4,1,1,8,8,8,8],
+        [2,2,2,4,4,4,2,2,2,4],
+        [2,2,2,4,4,4,4,2,4,4],
+        [8,8,4,2,8,1,1,1,1,8],
+        [8,1,2,2,8,8,1,1,1,8],
+        [1,8,2,2,8,1,1,1,1,1],
+        [8,1,2,2,1,1,8,8,1,1]
+      ]
+    }, {
+      "cases": ["$SingletonMarkers"],
+      "grid": [
+        [8,1,2,4,8,8,8,8,1,8],
+        [8,8,4,2,8,8,8,1,8,8],
+        [8,1,2,4,8,8,1,8,8,8],
+        [1,8,2,2,1,1,8,8,8,8],
+        [2,2,2,2,4,4,2,2,2,2],
+        [2,2,2,4,2,2,4,2,2,2],
+        [8,8,4,2,8,8,8,1,8,8],
+        [8,1,2,2,8,8,1,1,1,8],
+        [1,8,2,2,8,8,8,8,8,1],
+        [8,1,2,2,8,8,8,8,8,8]
+      ]
+    }]
+  }, {
+    "id": "stray-background-cell",
+    "separates": "The bands run on one axis only, and a stray 2 cell sits in the 8 field in the column of the 1 marker. The repeating-layout reading finds rows that match the marker's row and carry both 8 and 2 at its column, and is undefined. The full-line reading takes 8 from the marker's full row, and the eight-neighbor reading takes 8 from its neighbors, and both cast rays.",
+    "input": [
+      [8,8,8,8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8,1,8,8],
+      [8,8,8,8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8,8,8,8],
+      [2,2,2,2,2,2,2,2,2,2],
+      [2,4,2,2,2,2,2,2,2,2],
+      [8,8,8,8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8,2,8,8],
+      [8,8,8,8,8,8,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$Layout"],
+      "grid": null
+    }, {
+      "cases": ["$FullLineBackground","$NeighborMajority"],
+      "grid": [
+        [8,8,8,8,8,8,1,8,1,8],
+        [8,8,8,8,8,1,8,1,8,8],
+        [8,8,8,8,1,8,1,8,1,8],
+        [8,8,8,1,8,1,8,8,8,1],
+        [4,2,4,2,4,2,2,2,2,2],
+        [2,4,2,4,2,2,2,2,2,2],
+        [1,8,1,8,8,8,8,8,8,8],
+        [8,1,8,1,8,8,8,8,8,8],
+        [1,8,8,8,1,8,8,2,8,8],
+        [8,8,8,8,8,1,8,8,8,8]
+      ]
+    }]
+  }, {
+    "id": "full-line-field",
+    "separates": "The 1 marker sits on the 8 field at the corner next to the crossing of a one-cell-wide 2 band column and a two-row 2 band, and the 4 marker sits on that band row. The repeating-layout reading and the full-line reading both map 8 to 1 and 2 to 4, since no full line of 8 runs through the 1 marker and 8, filling no full line, is the field. Reading from the color most of the eight neighbors carry puts both markers on 2, maps 2 to two colors, and is undefined.",
+    "input": [
+      [8,8,2,8,8,8,8,8,8,8],
+      [8,8,2,8,8,8,8,8,8,8],
+      [8,8,2,8,8,8,8,8,8,8],
+      [8,8,2,8,8,8,8,8,8,8],
+      [2,2,2,2,2,2,4,2,2,2],
+      [2,2,2,2,2,2,2,2,2,2],
+      [8,8,2,1,8,8,8,8,8,8],
+      [8,8,2,8,8,8,8,8,8,8],
+      [8,8,2,8,8,8,8,8,8,8],
+      [8,8,2,8,8,8,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$FullLineBackground","$Layout"],
+      "grid": [
+        [8,8,4,8,8,8,8,8,8,1],
+        [8,8,2,1,8,8,8,8,1,1],
+        [8,8,2,8,1,8,8,1,1,8],
+        [1,8,2,8,8,1,1,1,8,8],
+        [2,4,2,2,2,4,4,2,2,2],
+        [2,2,4,2,4,4,2,4,2,2],
+        [8,8,2,1,1,8,8,8,1,8],
+        [8,8,4,1,1,8,8,8,8,1],
+        [8,1,4,8,8,1,8,8,8,8],
+        [1,1,2,8,8,8,1,8,8,8]
+      ]
+    }, {
+      "cases": ["$NeighborMajority"],
+      "grid": null
+    }]
+  }]
+}

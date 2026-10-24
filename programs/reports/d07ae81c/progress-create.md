@@ -1,0 +1,4 @@
+# d07ae81c progress
+
+- interference: [Develop](#develop) step 3, "Form as a branch each interpretation that an item under Not formed in `analyze.md` gives and that states one model". Two of the three Not formed items (rays that stop at the next marker, rays that repaint crossed markers) are models that `analyze.md` already shows equal to the concept wherever they are defined. Forming them took a scratch solver (`work/task/d07ae81c/d07ae81c_notformed.dl`), two extra runs, and a `witness` run, only to drop both again under Equivalence and Subsumption. Cost: about five minutes. Nothing in the output was wrong, and nothing is wrong now.
+- interference: `analyze.md` cites `work/task/d07ae81c/probe.py`, and `work/` held nothing, so the concept's fit could be checked only by running the solver. Cost: small. Nothing in the output was wrong.

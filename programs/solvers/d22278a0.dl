@@ -1,0 +1,118 @@
+// d22278a0
+// @draft
+// @keywords: markers rings rank parity
+// @scene square-grid: the grid is square, filled with params.background
+// @scene corner-seeds: a single non-background cell sits at each of two or
+//  more corners of the grid, each of its own color, and every other cell is
+//  params.background
+// @rule nearest-seed: each cell belongs to the seed at the least taxicab
+//  distance from it (the row distance plus the column distance); a cell at
+//  that least distance from two or more seeds belongs to no seed and is
+//  params.background
+// @rule alternating-rings: a cell that belongs to a seed takes the seed's
+//  color when its Chebyshev distance from the seed (the larger of the row
+//  distance and the column distance) is a multiple of params.ring_period, and
+//  is params.background otherwise
+
+// which distance picks a cell's seed
+.type Choice =
+    // @claim nearest-seed
+    Taxicab {}
+    // @rule nearest-seed: a cell goes to the seed at the least Chebyshev
+    //  distance, and among the seeds tied there, to the one at the least
+    //  taxicab distance; it is params.background where both tie
+    // @witness wide-grid: variant concept
+    //     @relaxed square-grid
+    // @witness edge-seed: borderline concept
+    //     @relaxed corner-seeds
+  | RingThenTaxicab {}
+
+// A cell under one way of picking its seed.
+.type TerritoryCell = [ch: Choice, p: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed square-grid
+    //     @relaxed corner-seeds
+    .decl background(c: Color) background(0).
+    // the step between one ring of a seed and the next
+    .decl ring_period(n: number) ring_period(2).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Taxicab()). impl_choice($RingThenTaxicab()).
+
+// A seed: a non-background cell.
+.decl seed(o: Position, col: Color)
+seed(O, Col) :- in(O, Col), !params.background(Col).
+
+// Cell P in the frame of seed O.
+.decl from_seed(o: Position, p: Position, v: Offset)
+from_seed(O, P, V) :- seed(O, _), in(P, _), relative(O, P, V).
+
+// The taxicab distance from seed O to cell P: P lies K1 and K2 cells farther
+// than O from the two edges of corner Diag, and N is their sum.
+.decl taxicab(o: Position, p: Position, n: number)
+taxicab(O, P, N) :-
+    from_seed(O, P, V), diag_dist(V, Diag, _, K1, K2), K1 >= 0, K2 >= 0,
+    corner_dist(V, Diag, N).
+
+// The Chebyshev distance from seed O to cell P: P lies on the outline of the
+// square that reaches K cells past O on every side.
+.decl ring(o: Position, p: Position, k: number)
+ring(O, P, K) :-
+    from_seed(O, P, V), dir_elem(D), dist(V, D, K),   // a candidate radius
+    uniform_outset(K, B_out), compose(O, B_out, B), box_edge(P, B, _).
+
+// The seeds that tie for nearest to cell P.
+.decl nearest(ch: Choice, p: Position, o: Position)
+
+// --- $Taxicab ---
+// @claim nearest-seed
+.init by_steps = Extremes<Position>
+by_steps.cand(P, N) :- taxicab(_, P, N).
+
+nearest($Taxicab(), P, O) :- by_steps.low(P, N), taxicab(O, P, N).
+
+// --- $RingThenTaxicab ---
+// @claim nearest-seed
+.init by_ring = Extremes<Position>
+by_ring.cand(P, K) :- ring(_, P, K).
+
+// Among the seeds nearest by ring, the least taxicab distance.
+// @claim nearest-seed
+.init ring_steps = Extremes<Position>
+ring_steps.cand(P, N) :- by_ring.low(P, K), ring(O, P, K), taxicab(O, P, N).
+
+nearest($RingThenTaxicab(), P, O) :-
+    by_ring.low(P, K), ring(O, P, K), ring_steps.low(P, N), taxicab(O, P, N).
+
+// --- $Taxicab, $RingThenTaxicab ---
+// The seed a cell belongs to, and the cells two or more seeds tie for.
+// @claim nearest-seed
+.init owner = Unanimous<TerritoryCell, Position>
+owner.item([Ch, P], O) :- nearest(Ch, P, O).
+
+out(P, Col, Ch) :-
+    owner.value([Ch, P], O), ring(O, P, K),
+    params.ring_period(N), stride(K, N, 0, _, J),       // J: K's place within its period
+    ( J = 0, seed(O, Col)                               // on a ring
+    ; J != 0, params.background(Col)                    // between two rings
+    ).
+out(P, Col, Ch) :- owner.clash([Ch, P]), params.background(Col).
+
+.comp Determine {
+    .init palette = Mode<Example, Color, Position>
+    palette.item(E, Col, P) :- ex_in(E, P, Col).
+
+    // A color that some train input does not hold most.
+    .decl outvoted(col: Color)
+    outvoted(Col) :- ex_in(_, _, Col), ex_out(E, _, _), !palette.mode(E, Col).
+
+    .decl background(c: Color)
+    background(Col) :- ex_in(_, _, Col), !outvoted(Col).
+}

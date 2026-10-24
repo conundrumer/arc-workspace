@@ -1,0 +1,326 @@
+// d06dbe63
+// @draft
+// @keywords: markers walk
+// @scene one-marker: every input is a field of 0 with exactly one cell of 8.
+// @rule staircase: toward each corner of params.diag_axis (the anti-diagonal), a
+//  path of 5 leaves each marker and repeats one step: 2 cells along V toward that
+//  corner's direction on V, then 2 cells across toward the corner's direction on
+//  H, each leg starting from the end of the one before.
+// @rule clip: the path is drawn only where it is in the grid, and it stops at the
+//  grid edge.
+// @rule keep-rest: every non-background input cell, and every cell no path
+//  reaches, keeps its input color.
+
+// whether the two legs of a step share one length
+.type LegLengths =
+    // @claim staircase
+    SharedLeg {}
+    // @rule staircase: the second leg has its own length leg2 (2), and the first
+    //  leg reads leg. Defined wherever the concept is.
+    // @witness unequal-legs: ordinary $UnequalLegs
+    //     @reassigned leg2
+  | UnequalLegs {}
+
+// how the two arms' first axes relate
+.type FirstAxisPick =
+    // @claim staircase
+    SharedFirstAxis {}
+    // @rule staircase: corner_first_axis stores a first axis for each corner.
+    //  Defined wherever the concept is.
+    // @witness first-axis-per-corner: ordinary $FirstAxisPerCorner
+    //     @reassigned corner_first_axis
+  | FirstAxisPerCorner {}
+
+// how one step of an arm is given
+.type StepForm =
+    // @claim staircase
+    Legs {legs: LegLengths, first: FirstAxisPick}
+    // @rule staircase: step stores the cells of one step relative to its start;
+    //  the step cell nearest the step's own corner is the next step's start, and
+    //  the arm toward each corner repeats the step turned by the rotation that
+    //  takes the step's corner to that corner. Defined wherever the concept is.
+    // @witness stored-step: ordinary $StoredStep
+    //     @reassigned step_cell
+  | StoredStep {}
+
+// which corners the arms climb toward
+.type CornerPick =
+    // @claim staircase
+    AxisCorners {}
+    // @rule staircase: corners stores the set of corners in place of diag_axis.
+    //  Defined wherever the concept is.
+    // @witness corner-set: ordinary $CornerSet
+    //     @reassigned corners
+  | CornerSet {}
+
+// which cells are markers
+.type MarkerPick =
+    // @claim staircase
+    NonBg {}
+    // @rule staircase: markers are the cells of marker_color (8). Defined
+    //  wherever the concept is.
+    // @witness marker-color: variant concept
+    //     @relaxed one-marker
+  | MarkerByColor {}
+
+// what an arm does when it reaches a non-background cell
+.type BlockPick =
+    // @claim staircase
+    PassCells {}
+    // @rule staircase: an arm ends at the first non-background cell it reaches.
+    //  Defined wherever the concept is.
+    // @witness crossing-paths: borderline concept
+    //     @relaxed one-marker
+  | StopAtCell {}
+
+.type Choice = [step: StepForm, corners: CornerPick, select: MarkerPick, block: BlockPick]
+
+// One arm: its step form, the corner it climbs toward, and the marker it leaves.
+.type Arm = [s: StepForm, c: DiagDir, m: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed one-marker
+    .decl bg(c: Color) bg(0).
+    .decl path_color(c: Color) path_color(5).
+
+    // --- $Legs ---
+    // the number of cells in each leg
+    .decl leg(n: number) leg(2).
+
+    // --- $SharedFirstAxis ---
+    // the axis of the leg that leaves the marker
+    .decl first_axis(a: Axis) first_axis(AXIS_V).
+
+    // --- $UnequalLegs ---
+    .decl leg2(n: number) leg2(2).
+
+    // --- $FirstAxisPerCorner ---
+    .decl corner_first_axis(c: DiagDir, a: Axis)
+    corner_first_axis(DIAG_TR, AXIS_V).
+    corner_first_axis(DIAG_BL, AXIS_V).
+
+    // --- $StoredStep ---
+    // the cells of one step, as offsets from its start
+    RIGID(step,
+        .decl cell(v: Offset)
+        GRID_STAMP_3x3(cell,
+            1, 1, 1,
+            1, _, _,
+            @_, _, _)
+    )
+
+    // --- $AxisCorners ---
+    // the axis whose two corners the arms climb toward
+    // @ignore: case section — the arms are keyed by corner and marker and shared; painted reads each case's arms at its own corners alone
+    .decl diag_axis(da: DiagAxis) diag_axis(DAXIS_AD).
+
+    // --- $CornerSet ---
+    // @ignore: case section — the arms are keyed by corner and marker and shared; painted reads each case's arms at its own corners alone
+    .decl corners(c: DiagDir) corners(DIAG_TR). corners(DIAG_BL).
+
+    // --- $MarkerByColor ---
+    // @derive RarestColor: variant derived
+    //     @relaxed one-marker
+    //     @ignore: derive $NonBg — $NonBg reads no marker_color, so each of these cases is equivalent to its stored case
+    // @ignore: case section — the arms are keyed by corner and marker and shared; painted reads each case's arms at its own markers alone
+    // @ignore: derive DominantColor — it gives 0, so every background cell is a marker and the arms cover the grid; fails Fit at train0
+    // @ignore: derive SharedColor — it gives 0 beside 8, so every background cell is a marker; fails Fit at train0
+    // @ignore: derive VanishedColor — on one input it gives 0 beside 8, so every background cell is a marker; fails Fit at train0
+    .decl marker_color(c: Color) marker_color(8).
+}
+
+.init params = Params
+
+.decl leg_lengths_choice(l: LegLengths)
+leg_lengths_choice($SharedLeg()). leg_lengths_choice($UnequalLegs()).
+
+.decl first_axis_pick_choice(f: FirstAxisPick)
+first_axis_pick_choice($SharedFirstAxis()). first_axis_pick_choice($FirstAxisPerCorner()).
+
+.decl step_form_choice(s: StepForm)
+step_form_choice($Legs(L, F)) :- leg_lengths_choice(L), first_axis_pick_choice(F).
+step_form_choice($StoredStep()).
+
+.decl corner_pick_choice(co: CornerPick)
+corner_pick_choice($AxisCorners()). corner_pick_choice($CornerSet()).
+
+.decl marker_pick_choice(m: MarkerPick)
+marker_pick_choice($NonBg()). marker_pick_choice($MarkerByColor()).
+
+.decl block_pick_choice(b: BlockPick)
+block_pick_choice($PassCells()). block_pick_choice($StopAtCell()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([S, Co, M, B]) :-
+    step_form_choice(S), corner_pick_choice(Co), marker_pick_choice(M), block_pick_choice(B).
+
+// The cells each arm leaves from.
+// @ignore: case section — the arms are keyed by corner and marker and shared; painted reads each case's arms at its own markers alone
+.decl marker(m: MarkerPick, p: Position)
+
+// The corners the arms climb toward.
+// @ignore: case section — the arms are keyed by corner and marker and shared; painted reads each case's arms at its own corners alone
+.decl arm_corner(co: CornerPick, c: DiagDir)
+
+// The first leg's axis toward corner c.
+.decl first_axis_of(f: FirstAxisPick, c: DiagDir, a: Axis)
+
+// The second leg's length.
+.decl second_leg(l: LegLengths, n: number)
+
+// The step from p, on the grid, ends at q.
+// @ignore: store — step geometry over the frame's cells, reading no color; it is one value only because every input is 13×13
+.decl step_next(s: StepForm, c: DiagDir, p: Position, q: Position)
+
+// The cells of an arm's steps.
+.decl arm_cell(a: Arm, p: Position)
+
+// Cells of arm a past the first non-background cell it reaches.
+.decl cut(b: BlockPick, a: Arm, p: Position)
+
+// The arms some case draws.
+.decl arm(a: Arm)
+arm([S, C, M]) :- impl_choice([S, Co, Sel, _]), arm_corner(Co, C), marker(Sel, M).
+
+// The start of each step of an arm: its marker, then each step's end.
+.init walk = Propagation<Arm, Position>
+walk.source([S, C, M], M) :- arm([S, C, M]).
+walk.edge([S, C, M], P, Q) :- arm([S, C, M]), step_next(S, C, P, Q).
+
+// The background cells a case's arms paint.
+.decl painted(ch: Choice, p: Position)
+painted([S, Co, Sel, B], P) :-
+    impl_choice([S, Co, Sel, B]), arm_corner(Co, C), marker(Sel, M),
+    arm_cell([S, C, M], P), in(P, Col), params.bg(Col), !cut(B, [S, C, M], P).
+
+out(P, Col, Ch) :- painted(Ch, P), params.path_color(Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(Ch, P).
+
+// --- $NonBg ---
+marker($NonBg(), P) :- in(P, Col), !params.bg(Col).
+
+// --- $MarkerByColor ---
+marker($MarkerByColor(), P) :- in(P, Col), params.marker_color(Col).
+
+// --- $AxisCorners ---
+arm_corner($AxisCorners(), C) :- params.diag_axis(DA), diag_axis_of(C, DA).
+
+// --- $CornerSet ---
+arm_corner($CornerSet(), C) :- params.corners(C).
+
+// --- $SharedFirstAxis ---
+first_axis_of($SharedFirstAxis(), C, A) :- params.first_axis(A), diag_dir_elem(C).
+
+// --- $FirstAxisPerCorner ---
+first_axis_of($FirstAxisPerCorner(), C, A) :- params.corner_first_axis(C, A).
+
+// --- $SharedLeg ---
+second_leg($SharedLeg(), N) :- params.leg(N).
+
+// --- $UnequalLegs ---
+second_leg($UnequalLegs(), N) :- params.leg2(N).
+
+// --- $Legs ---
+// The step from p, on the grid, toward corner c: its first leg runs toward d1
+// and ends at e, and its second runs toward d2 and ends at q.
+// @ignore: store — step geometry over the frame's cells, reading no color; it is one value only because every input is 13×13
+.decl legs(s: StepForm, c: DiagDir, p: Position, d1: Dir, e: Position, d2: Dir, q: Position)
+legs($Legs(L, F), C, P, D1, E, D2, Q) :-
+    first_axis_of(F, C, A), diag_dirs(C, A, D1, D2),
+    params.leg(N1), second_leg(L, N2),
+    in(P, _), jump(P, D1, N1, E), jump(E, D2, N2, Q).
+
+step_next(S, C, P, Q) :- legs(S, C, P, _, _, _, Q).
+
+arm_cell([S, C, M], Q) :-
+    walk.reached([S, C, M], P), legs(S, C, P, D1, E, D2, P2),
+    ( X = P, D = D1, Y = E ; X = E, D = D2, Y = P2 ),  // a leg: from x toward d, ending at y
+    in(Q, _), axis_of(D, A), same_line(A, X, Q),
+    nearer(D, Q, X), !nearer(D, Q, Y).                  // past x, up to y
+
+// --- $StoredStep ---
+// In the step's pose d, some cell lies behind the start, away from an edge of
+// corner c.
+.decl step_behind(d: D4, c: DiagDir)
+step_behind(D, C) :-
+    params.step_cell(D, V), diag_dirs(C, _, D1, D2),
+    ( opposite(D1, O) ; opposite(D2, O) ), nearer(O, V, ZERO).
+
+// The step's corner in pose d: no cell lies behind the start from it.
+.decl step_corner(d: D4, c: DiagDir)
+step_corner(D, C) :- params.step_cell(D, _), diag_dir_elem(C), !step_behind(D, C).
+
+// The cells of the step turned to climb toward c: a rotation of the stored pose.
+.decl turned(c: DiagDir, v: Offset)
+turned(C, V) :- c4_elem(D), step_corner(D, C), params.step_cell(D, V).
+
+// Some cell of the step turned toward c lies nearer c than v.
+.decl short_of(c: DiagDir, v: Offset)
+short_of(C, V) :- turned(C, V), turned(C, W), nearer(C, W, V).
+
+// Cell v of the step toward c, placed on the start p, lands on q.
+.decl placed(c: DiagDir, p: Position, v: Offset, q: Position)
+placed(C, P, V, Q) :- turned(C, V), in(P, _), compose(P, V, Q).
+
+arm_cell([$StoredStep(), C, M], Q) :- walk.reached([$StoredStep(), C, M], P), placed(C, P, _, Q).
+step_next($StoredStep(), C, P, Q) :- placed(C, P, V, Q), !short_of(C, V).  // the step cell nearest its corner
+
+// --- $StopAtCell ---
+cut($StopAtCell(), A, P) :- blocked(A, C, U), arm_cell(A, P), nearer(C, P, U).  // p past u
+
+// u, a non-background cell, is on arm a, which climbs toward c.
+.decl blocked(a: Arm, c: DiagDir, u: Position)
+blocked(A, C, U) :- arm_cell(A, U), A = [_, C, _], in(U, Col), !params.bg(Col).
+
+.comp Determine {
+    // The commonest color of each input.
+    .init shade = Mode<Example, Color, Position>
+    shade.item(E, Col, P) :- ex_in(E, P, Col).
+
+    // A commonest color of some input that is not the commonest of another.
+    .decl uncommon(c: Color)
+    uncommon(Col) :- shade.mode(_, Col), ex_in(E, _, _), !shade.mode(E, Col).
+
+    .decl bg(c: Color)
+    bg(Col) :- shade.mode(_, Col), !uncommon(Col).
+
+    .decl marker_color(c: Color)
+    marker_color(Col) :- ex_in(_, _, Col), !params.bg(Col).
+
+    // The color the output paints over background.
+    .decl path_color(c: Color)
+    path_color(Col) :- ex_in(E, P, Bg), params.bg(Bg), ex_out(E, P, Col), !params.bg(Col).
+
+    // The path's run that leaves the marker, toward each direction.
+    .init first = Ray<Example>
+    first.dir(E, D) :- ex_out(E, _, _), dir_elem(D).
+    first.cell(E, P) :- ex_out(E, P, _).
+    first.mark(E, M) :- ex_in(E, M, Col), !params.bg(Col).
+    first.blocked(E, P) :- ex_out(E, P, Col), !params.path_color(Col).
+
+    // The last cell of a run, n cells from the marker, along axis a.
+    .decl first_end(e: Example, a: Axis, p: Position, n: number)
+    first_end(E, A, P, N) :-
+        first.clear(E, P, D, N, M), first.stop(E, Q, D, _, M), neighbor(P, D, Q),
+        nearer(D, P, M), axis_of(D, A).
+
+    .decl leg(n: number)
+    leg(N) :- first_end(_, _, _, N).
+
+    // The run that leaves a first run's end across that run's axis.
+    .type Turn = [e: Example, a: Axis]
+    .init second = Ray<Turn>
+    second.dir([E, A2], D) :- first_end(E, A, _, _), perp(A, A2), axis_of(D, A2).
+    second.cell([E, A2], P) :- first_end(E, A, _, _), perp(A, A2), ex_out(E, P, _).
+    second.mark([E, A2], P) :- first_end(E, A, P, _), perp(A, A2).
+    second.blocked([E, A2], P) :-
+        first_end(E, A, _, _), perp(A, A2), ex_out(E, P, Col), !params.path_color(Col).
+
+    .decl leg2(n: number)
+    leg2(N) :-
+        second.clear(T, P, D, N, M), second.stop(T, Q, D, _, M), neighbor(P, D, Q),
+        nearer(D, P, M).
+}

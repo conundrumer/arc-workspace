@@ -1,0 +1,175 @@
+// d07ae81c
+// @draft
+// @keywords: markers cast mapping lines
+// @scene banded-background: each marker replaces one cell of a background of
+//  2 colors; that background is full-length row and column bands of one color
+//  laid over a field of the other color, so rows of one kind repeat and
+//  columns of one kind repeat
+// @scene lone-markers: a marker is a single cell of a color that is not a
+//  background color, and it sits on the color the bands give the cell it
+//  replaces
+// @scene one-marker-color-per-background: each background color has markers
+//  sitting on it, the markers on one background color all have one color, and
+//  the marker colors of different background colors differ
+// @rule marker-color-map: each background color maps to the color of the
+//  markers that sit on it; a marker sits on the color that another row has at
+//  the marker's column, where that row equals the marker's row at every column
+//  where neither holds a marker, or likewise with columns and rows swapped
+// @rule diagonal-rays: from each marker, a line runs toward each of the four
+//  diagonal directions, through markers, to the grid edge
+// @rule recolor-by-background: each background cell on a line takes the
+//  marker color its background color maps to; every other cell keeps its color
+
+// how a marker's background color is read
+.type Background =
+    // @claim marker-color-map
+    Layout {}
+    // @rule marker-color-map: a marker sits on the color of a full-length line
+    //  through its cell whose other cells all have one background color, and on
+    //  the field color when no such line runs through it; undefined where full
+    //  lines of both colors run through the cell
+    // @witness stray-background-cell: foreign $FullLineBackground
+    //     @relaxed banded-background
+  | FullLineBackground {}
+    // @rule marker-color-map: a marker sits on the color most of its eight
+    //  neighbors carry; undefined on a tie
+    // @witness marker-at-field-corner: variant concept
+  | NeighborMajority {}
+
+// which cells are markers
+.type Marker =
+    // @claim lone-markers
+    OtherColor {}
+    // @scene lone-markers: a marker is a cell of a color that is not a
+    //  background color with no 4-neighbor of its own color
+    // @witness adjacent-markers: borderline concept
+    //     @relaxed lone-markers
+  | SingletonMarkers {}
+
+.type Choice = [b: Background, m: Marker]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {}
+
+.init params = Params
+
+.decl background_choice(b: Background)
+background_choice($Layout()). background_choice($FullLineBackground()). background_choice($NeighborMajority()).
+
+.decl marker_choice(m: Marker)
+marker_choice($OtherColor()). marker_choice($SingletonMarkers()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([B, M]) :- background_choice(B), marker_choice(M).
+
+// The background colors: the commonest color, and the commonest of the rest.
+// @claim banded-background
+.init commonest = Mode<Unit, Color, Position>
+commonest.item($U(), Col, P) :- in(P, Col).
+
+// Two colors tie as the commonest, and then they are the background colors.
+.decl tied_commonest()
+tied_commonest() :- commonest.mode($U(), Col1), commonest.mode($U(), Col2), Col1 != Col2.
+
+// @claim banded-background
+.init next_commonest = Mode<Unit, Color, Position>
+next_commonest.item($U(), Col, P) :- in(P, Col), !commonest.mode($U(), Col), !tied_commonest().
+
+.decl background(col: Color)
+background(Col) :- commonest.mode($U(), Col).
+background(Col) :- next_commonest.mode($U(), Col).
+
+.decl marker(m: Marker, p: Position)
+
+// A cell's line on axis a, named by its component on that axis, and its place
+// along the line.
+.decl cell_line(a: Axis, p: Position, l: Position, x: Position)
+cell_line(A, P, L, X) :- in(P, _), axis_elem(A), split(P, A, L, X).
+
+// The color a marker sits on.
+.decl sits_on(ch: Choice, p: Position, col: Color)
+
+// Each background color maps to the color of the markers on it.
+// @ignore: single-consumer — the map is the object of rule `marker-color-map`
+.decl color_map(ch: Choice, bg: Color, col: Color)
+color_map(Ch, Bg, Col) :- sits_on(Ch, P, Bg), in(P, Col).
+
+// Some marker sits on two colors, where the case is undefined.
+.decl torn(ch: Choice)
+torn(Ch) :- sits_on(Ch, P, Col1), sits_on(Ch, P, Col2), Col1 != Col2.
+
+// @claim diagonal-rays
+.init rays = Ray<Marker>
+rays.dir(M, D) :- marker_choice(M), diag_dir_elem(D).
+rays.cell(M, P) :- marker_choice(M), in(P, _).
+rays.mark(M, P) :- marker(M, P).
+
+// A background cell on a marker's line.
+.decl painted(m: Marker, p: Position)
+painted(M, P) :- rays.ray(M, P, _, _, _), !marker(M, P).
+
+out(P, Col, [B, M]) :-
+    impl_choice([B, M]), !torn([B, M]), in(P, Col0),
+    ( painted(M, P), color_map([B, M], Col0, Col)
+    ; !painted(M, P), Col = Col0
+    ).
+
+// --- $OtherColor ---
+marker($OtherColor(), P) :- in(P, Col), !background(Col).
+
+// --- $SingletonMarkers ---
+
+.decl same_color_neighbor(p: Position)
+same_color_neighbor(P) :- in(P, Col), dir_elem(D), neighbor(P, D, Q), in(Q, Col).
+
+marker($SingletonMarkers(), P) :- in(P, Col), !background(Col), !same_color_neighbor(P).
+
+// --- $Layout ---
+
+// Two lines on axis a differ at some place where neither holds a marker.
+.decl line_clash(m: Marker, a: Axis, l1: Position, l2: Position)
+line_clash(M, A, L1, L2) :-
+    cell_line(A, P1, L1, X), cell_line(A, P2, L2, X), L1 != L2,
+    in(P1, Col1), in(P2, Col2), Col1 != Col2,
+    marker_choice(M), !marker(M, P1), !marker(M, P2).
+
+sits_on([$Layout(), M], P, Col) :-
+    marker(M, P), cell_line(A, P, L, X),                       // the marker's line
+    cell_line(A, Q, L2, X), L2 != L, !line_clash(M, A, L, L2), // a line that repeats it
+    !marker(M, Q), in(Q, Col).                                 // its color at the marker's place
+
+// --- $FullLineBackground ---
+
+// Line l on axis a holds a cell other than a marker in a color other than col.
+.decl line_off(m: Marker, a: Axis, l: Position, col: Color)
+line_off(M, A, L, Col) :-
+    cell_line(A, P, L, _), marker_choice(M), !marker(M, P),
+    in(P, Col2), background(Col), Col != Col2.
+
+// Every cell of line l on axis a but its markers has background color col.
+.decl full_line(m: Marker, a: Axis, l: Position, col: Color)
+full_line(M, A, L, Col) :-
+    cell_line(A, P, L, _), marker_choice(M), !marker(M, P),
+    background(Col), !line_off(M, A, L, Col).
+
+.decl on_full_line(m: Marker, p: Position)
+on_full_line(M, P) :- cell_line(A, P, L, _), full_line(M, A, L, _).
+
+// The field: a background color that fills no full line.
+.decl field(m: Marker, col: Color)
+field(M, Col) :- background(Col), marker_choice(M), !full_line(M, _, _, Col).
+
+sits_on([$FullLineBackground(), M], P, Col) :-
+    marker(M, P),
+    ( cell_line(A, P, L, _), full_line(M, A, L, Col)
+    ; !on_full_line(M, P), field(M, Col)
+    ).
+
+// --- $NeighborMajority ---
+
+// @claim marker-color-map
+.init around = Mode<Position, Color, Dir8>
+around.item(P, Col, D) :- in(P, _), dir8_elem(D), neighbor(P, D, Q), in(Q, Col).
+
+sits_on([$NeighborMajority(), M], P, Col) :- marker(M, P), around.mode(P, Col).

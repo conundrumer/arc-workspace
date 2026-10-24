@@ -1,0 +1,3 @@
+# cf5fd0ad create: progress notes
+
+- interference: `uv run python scripts/run_dl.py determination-plan cf5fd0ad` listed `tile_transform (TileD4 exact)` under "write a determination relation for each value here that a proposer derives from a fact other than any the concept derives it from". I wrote the relation as a per-tile D4 match against the outputs, and the run's `determine prediction` hint then flagged it as a guessed value kept by a test that reads inputs and outputs together. I removed the relation. Cost: one edit and two runs. What was wrong: the plan asked for a relation that the lint rejects. It is still wrong: the plan still lists the line.

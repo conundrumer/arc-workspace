@@ -1,0 +1,128 @@
+// cf5fd0ad
+// @draft
+// @keywords: tile-arrangement d4 lookup
+// @scene square-input: the input is a square of side 3.
+// @rule quadrant-turn: the output has four quadrants, and each one takes the
+//  input under the turn params.quadrant_transform gives it.
+// @rule quadrant-repeat: in each quadrant, the turned input repeats
+//  params.copies times on each axis, so the output side is 2 × copies × side.
+
+// where each quadrant's turn comes from
+.type Source =
+    // @claim quadrant-turn
+    Stored {}
+    // @rule quadrant-turn: the quadrant at params.anchor holds the input, and
+    //  each quadrant one clockwise step further around the arrangement holds it
+    //  turned one more quarter turn counterclockwise. Undefined on a non-square
+    //  input.
+    // @witness off-spin-table: ordinary concept
+    //     @reassigned quadrant_transform
+  | CounterSpin {}
+
+// the grain of the arrangement
+.type Choice =
+    // @claim quadrant-turn quadrant-repeat
+    Quadrants {source: Source}
+    // @rule quadrant-turn: a per-tile D4 table params.tile_transform over a
+    //  4 × 4 layout of input-sized tiles. Undefined on a non-square input.
+    // @rule quadrant-repeat: the table's layout fixes the repeat at two copies.
+    // @witness three-copies: ordinary concept
+    //     @reassigned copies
+  | TileTable {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $Quadrants ---
+    .decl copies(n: number) copies(2).
+
+    // --- concept ---
+    // The D4 element each quadrant applies to the input, by its place in the
+    // 2 × 2 arrangement.
+    .decl quadrant_transform(p: Position, d: D4)
+    GRID_2x2(quadrant_transform,
+        D4_HT, D4_CW,
+        D4_CC, D4_ID)
+
+    // --- $CounterSpin ---
+    // The quadrant that holds the input untransformed.
+    .decl anchor(p: Position)
+    GRID_MASK_2x2(anchor,
+        _, _,
+        _, 1)
+
+    // --- $TileTable ---
+    .decl tile_transform(p: Position, d: D4)
+    GRID_4x4(tile_transform,
+        D4_HT, D4_HT, D4_CW, D4_CW,
+        D4_HT, D4_HT, D4_CW, D4_CW,
+        D4_CC, D4_CC, D4_ID, D4_ID,
+        D4_CC, D4_CC, D4_ID, D4_ID)
+}
+
+.init params = Params
+
+// --- $Quadrants ---
+// The copies × copies layout of one quadrant.
+.init layout = Frame2D<Unit>
+layout.extent($U(), A, N) :- axis_elem(A), params.copies(N).
+
+// Each quadrant's place in the 2 × 2 arrangement, and the turn it applies.
+.decl quadrant_turn(p_quad: Position, d: D4, s: Source)
+
+out(P_grid, Col, $Quadrants(S)) :-
+    quadrant_turn(P_quad, D, S), in(P_in, Col), apply(D, P_in, P_intile),   // the input turned
+    layout.cell($U(), P_tile), concat_2d(P_tile, P_intile, 0, P_inquad),  // repeated across the quadrant
+    concat_2d(P_quad, P_inquad, 0, P_grid).                          // the quadrant placed
+
+// --- concept ---
+quadrant_turn(P_quad, D, $Stored()) :- params.quadrant_transform(P_quad, D).
+
+// --- $CounterSpin ---
+// A rotation carries the anchor to a quadrant and turns the input back by it.
+quadrant_turn(P_quad, D, $CounterSpin()) :-
+    params.anchor(P_anchor), c4_elem(R), apply(R, P_anchor, P_quad), d4_inverse(R, D).
+
+// --- $TileTable ---
+out(P_grid, Col, $TileTable()) :-
+    params.tile_transform(P_tile, D), in(P_in, Col), apply(D, P_in, P_intile),
+    concat_2d(P_tile, P_intile, 0, P_grid).
+
+.comp Determine {
+    // The side of each example's input.
+    .decl side(e: Example, k: number)
+    side(E, K) :- ex_in(E, P, _), axis_elem(A), axis_dim(P, A, K).
+
+    // The input-sized strips of a train output nearer edge d than its
+    // opposite: one quadrant's copies.
+    .type ExampleDir = [e: Example, d: Dir]
+    .init half = Tally<ExampleDir, Position>
+    half.item([E, D], P_tile) :-
+        ex_out(E, P, _), side(E, K), axis_elem(A), divide_by_size(P, A, K, 0, P_tile, _),
+        dist_pair(P_tile, D, K1, K2), K1 < K2.
+
+    .decl copies(n: number)
+    copies(N) :- half.tally(_, N).
+
+    // A train output's cell, in its input-sized tile, and that tile's
+    // quadrant in the 2 × 2 arrangement.
+    .decl tile_cell(e: Example, p_quad: Position, p_intile: Position, col: Color)
+    tile_cell(E, P_quad, P_intile, Col) :-
+        ex_out(E, P_grid, Col), side(E, K), divide_by_size_2d(P_grid, K, 0, P_tile, P_intile),
+        params.copies(N), divide_by_size_2d(P_tile, N, 0, P_quad, _).
+
+    // A quadrant that shows the input turned.
+    .decl turned(e: Example, p_quad: Position)
+    turned(E, P_quad) :- tile_cell(E, P_quad, P, Col), !ex_in(E, P, Col).
+
+    // A quadrant that shows the input as it stands.
+    .decl shown(e: Example, p_quad: Position)
+    shown(E, P_quad) :- tile_cell(E, P_quad, _, _), !turned(E, P_quad).
+
+    // A quadrant some train output does not show the input in as it stands.
+    .decl missed(p_quad: Position)
+    missed(P_quad) :- shown(_, P_quad), ex_out(E, _, _), !shown(E, P_quad).
+
+    .decl anchor(p: Position)
+    anchor(P_quad) :- shown(_, P_quad), !missed(P_quad).
+}

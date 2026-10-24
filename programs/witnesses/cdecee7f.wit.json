@@ -1,0 +1,269 @@
+{
+  "id": "cdecee7f",
+  "witnesses": [{
+    "id": "touching-same-color-row",
+    "separates": "two dots of one color side by side in a row: the concept ranks two dots and lists the color twice, $Objects and $Diag8 take the pair as one dot and list it once",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,7,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,8,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [3,3,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,2,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,4],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$Cell"],
+      "grid": [
+        [3,3,7],
+        [4,8,2],
+        [0,0,0]
+      ]
+    }, {
+      "cases": ["$Objects"],
+      "grid": [
+        [3,7,2],
+        [0,4,8],
+        [0,0,0]
+      ]
+    }]
+  }, {
+    "id": "touching-same-color-corner",
+    "separates": "two dots of one color that meet at a corner: the concept and $Objects list the color twice, $Diag8 takes the pair as one dot and lists it once",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,7,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,8,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [3,0,0,0,0,0,0,0,0,0],
+      [0,3,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,2,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,4],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$Cell","$Adj4"],
+      "grid": [
+        [3,3,7],
+        [4,8,2],
+        [0,0,0]
+      ]
+    }, {
+      "cases": ["$Diag8"],
+      "grid": [
+        [3,7,2],
+        [0,4,8],
+        [0,0,0]
+      ]
+    }]
+  }, {
+    "id": "shared-column",
+    "separates": "two dots in one column: the concept, $Objects, $Diag8, $FitSquare and $StoredPath give them one rank and are undefined, $LexTie orders them by row, the top one first or the bottom one first",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,8,0,0,0,0,0],
+      [1,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,9,0],
+      [0,0,3,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,2,0,0,0],
+      [6,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["concept"],
+      "grid": null
+    }, {
+      "cases": ["$LexTie"],
+      "grid": [
+        [
+          [1,6,3],
+          [9,2,8],
+          [0,0,0]
+        ],
+        [
+          [6,1,3],
+          [9,2,8],
+          [0,0,0]
+        ]
+      ]
+    }]
+  }, {
+    "id": "bg=DominantColor",
+    "separates": "dots on a field of 5: the concept takes every 5 cell as a dot and is undefined, bg=DominantColor takes 5 as the field and fills the empty output cells with 5",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,5,5,5,3,5,5,5,5,5],
+      [5,5,5,5,5,5,5,5,5,5],
+      [2,5,5,5,5,5,5,5,5,5],
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,5,5,5,5,5,1,5,5,5],
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,5,8,5,5,5,5,5,5,5],
+      [5,5,5,5,5,5,5,5,4,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "output": [{
+      "cases": ["concept"],
+      "grid": null
+    }, {
+      "cases": ["$Cell & $LexTie & $StoredSize & bg=stored","$StoredPath"],
+      "grid": [
+        [
+          [5,5,5],
+          [5,5,2],
+          [5,5,5]
+        ],
+        [
+          [5,5,5],
+          [5,5,5],
+          [2,5,5]
+        ]
+      ]
+    }, {
+      "cases": ["bg=DominantColor"],
+      "grid": [
+        [2,8,3],
+        [5,4,1],
+        [5,5,5]
+      ]
+    }, {
+      "cases": ["$FitSquare"],
+      "grid": [
+        [
+          [5,5,5,2,5,5,5,5,5,5],
+          [5,5,5,5,5,5,5,5,5,5],
+          [5,5,5,5,5,5,5,8,5,5],
+          [5,5,5,5,5,5,5,5,5,5],
+          [5,3,5,5,5,5,5,5,5,5],
+          [5,5,5,5,5,5,5,5,5,5],
+          [5,5,5,5,5,1,5,5,5,5],
+          [5,5,5,5,5,5,5,5,5,5],
+          [5,5,5,5,5,5,5,5,4,5],
+          [5,5,5,5,5,5,5,5,5,5]
+        ],
+        [
+          [5,5,5,5,5,5,2,5,5,5],
+          [5,5,5,5,5,5,5,5,5,5],
+          [5,5,8,5,5,5,5,5,5,5],
+          [5,5,5,5,5,5,5,5,5,5],
+          [5,5,5,5,5,5,5,5,3,5],
+          [5,5,5,5,5,5,5,5,5,5],
+          [5,5,5,5,1,5,5,5,5,5],
+          [5,5,5,5,5,5,5,5,5,5],
+          [5,4,5,5,5,5,5,5,5,5],
+          [5,5,5,5,5,5,5,5,5,5]
+        ]
+      ]
+    }, {
+      "cases": ["$Objects"],
+      "grid": [
+        [5,2,8],
+        [4,1,3],
+        [0,0,0]
+      ]
+    }]
+  }, {
+    "id": "ten-dots",
+    "separates": "ten dots, one in each column: the concept lays the first nine in the 3x3 output and drops the tenth, $FitSquare lays all ten in a 4x4 output",
+    "input": [
+      [0,0,0,0,0,8,0,0,0,0],
+      [2,0,0,0,0,0,0,0,0,5],
+      [0,0,0,9,0,0,0,0,0,0],
+      [0,0,0,0,0,0,4,0,0,0],
+      [0,7,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,9,0],
+      [0,0,0,0,3,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,1,0,0,0,0,6,0,0],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$StoredSize","$StoredPath"],
+      "grid": [
+        [2,7,1],
+        [8,3,9],
+        [4,6,9]
+      ]
+    }, {
+      "cases": ["$FitSquare"],
+      "grid": [
+        [2,7,1,9],
+        [6,4,8,3],
+        [9,5,0,0],
+        [0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "four-dots",
+    "separates": "four dots: the concept lays them in a 3x3 output, $FitSquare in the 2x2 output that holds them",
+    "input": [
+      [0,0,0,0,0,0,0,0,9,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,6,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,7,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,2,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$StoredSize","$StoredPath"],
+      "grid": [
+        [6,2,7],
+        [0,0,9],
+        [0,0,0]
+      ]
+    }, {
+      "cases": ["$FitSquare"],
+      "grid": [
+        [6,2],
+        [9,7]
+      ]
+    }]
+  }, {
+    "id": "raster-path",
+    "separates": "six dots, with the stored path in raster order: the concept lays the second row right to left, $StoredPath left to right",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,6],
+      [0,0,7,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,8,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [3,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,2,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,4,0,0],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "assign": {
+      "fill_order": [
+        [0,1,2],
+        [3,4,5],
+        [6,7,8]
+      ]
+    },
+    "output": [{
+      "cases": ["$Snake"],
+      "grid": [
+        [3,7,2],
+        [6,4,8],
+        [0,0,0]
+      ]
+    }, {
+      "cases": ["$StoredPath"],
+      "grid": [
+        [3,7,2],
+        [8,4,6],
+        [0,0,0]
+      ]
+    }]
+  }]
+}

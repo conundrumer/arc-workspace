@@ -1,0 +1,235 @@
+{
+  "id": "d255d7a7",
+  "witnesses": [{
+    "id": "short-handle",
+    "separates": "The handle stops two cells short of the right edge. The concept lands the cup with its closed side on the handle's last cell (cols 3-5); $EdgeLanding lands it on the right edge (cols 5-7).",
+    "input": [
+      [7,7,7,7,7,7,7,7],
+      [0,0,0,7,7,7,7,7],
+      [9,7,0,0,0,0,7,7],
+      [0,0,0,7,7,7,7,7],
+      [7,9,7,7,7,7,7,7]
+    ],
+    "output": [{
+      "cases": ["$HandleEnd"],
+      "grid": [
+        [7,7,7,7,7,7,7,7],
+        [7,7,7,0,0,0,7,7],
+        [7,7,7,9,7,0,7,7],
+        [7,7,7,0,0,0,7,7],
+        [7,9,7,7,7,7,7,7]
+      ]
+    }, {
+      "cases": ["$EdgeLanding"],
+      "grid": [
+        [7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,0,0,0],
+        [7,7,7,7,7,9,7,0],
+        [7,7,7,7,7,0,0,0],
+        [7,9,7,7,7,7,7,7]
+      ]
+    }]
+  }, {
+    "id": "inset-cup",
+    "separates": "The cup's open side lies one cell in from the left edge, with a mark at (2,0) beyond the opening. The concept moves the bracket and the cells inside it and leaves (2,0); $EdgeSlab moves the slab from the edge to the closed side, so the mark travels too.",
+    "input": [
+      [7,7,7,7,7,7,7,7,7],
+      [7,0,0,0,7,7,7,7,7],
+      [9,7,9,0,0,0,0,0,0],
+      [7,0,0,0,7,7,7,7,7],
+      [9,7,7,7,7,7,7,7,7]
+    ],
+    "output": [{
+      "cases": ["$BracketBox"],
+      "grid": [
+        [7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,0,0,0],
+        [9,7,7,7,7,7,7,9,0],
+        [7,7,7,7,7,7,0,0,0],
+        [9,7,7,7,7,7,7,7,7]
+      ]
+    }, {
+      "cases": ["$EdgeSlab"],
+      "grid": [
+        [7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,0,0,0],
+        [7,7,7,7,7,9,7,9,0],
+        [7,7,7,7,7,7,0,0,0],
+        [9,7,7,7,7,7,7,7,7]
+      ]
+    }]
+  }, {
+    "id": "mark-in-landing",
+    "separates": "A loose mark at (1,6) lies in the box where the cup lands. The concept paints the cup over it; $MarksOnTop keeps the mark over the cup.",
+    "input": [
+      [7,7,7,7,7,7,7,7],
+      [0,0,0,7,7,7,9,7],
+      [9,7,0,0,0,0,0,0],
+      [0,0,0,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7]
+    ],
+    "output": [{
+      "cases": ["$CupOnTop"],
+      "grid": [
+        [7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,0,0,0],
+        [7,7,7,7,7,9,7,0],
+        [7,7,7,7,7,0,0,0],
+        [7,7,7,7,7,7,7,7]
+      ]
+    }, {
+      "cases": ["$MarksOnTop"],
+      "grid": [
+        [7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,0,9,0],
+        [7,7,7,7,7,9,7,0],
+        [7,7,7,7,7,0,0,0],
+        [7,7,7,7,7,7,7,7]
+      ]
+    }]
+  }, {
+    "id": "deep-cup",
+    "separates": "The cup is 3 across and 4 deep. The concept moves the whole cup; at the stored width 3 $StoredWidth takes the 3 lines at the open end as the cup and the back wall as handle, so the back wall is lost.",
+    "input": [
+      [7,7,7,7,7,7,7,7,7],
+      [0,0,0,0,7,7,7,7,7],
+      [9,7,9,0,0,0,0,0,0],
+      [0,0,0,0,7,7,7,7,7],
+      [9,7,7,7,7,7,7,7,7]
+    ],
+    "output": [{
+      "cases": ["$Spanning"],
+      "grid": [
+        [7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,0,0,0,0],
+        [7,7,7,7,7,9,7,9,0],
+        [7,7,7,7,7,0,0,0,0],
+        [9,7,7,7,7,7,7,7,7]
+      ]
+    }, {
+      "cases": ["$StoredWidth"],
+      "grid": [
+        [7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,0,0,0],
+        [7,7,7,7,7,7,9,7,9],
+        [7,7,7,7,7,7,0,0,0],
+        [9,7,7,7,7,7,7,7,7]
+      ]
+    }]
+  }, {
+    "id": "background=DominantColor",
+    "separates": "Frame cells outnumber the 7 cells. The concept clears vacated cells to 7; the derivation gives 0, so the old cup boxes and handles become 0.",
+    "input": [
+      [0,0,0,7,7,7],
+      [9,9,0,0,0,0],
+      [0,0,0,7,7,7],
+      [9,7,7,7,7,7],
+      [0,0,0,7,7,7],
+      [9,7,0,0,0,0],
+      [0,0,0,7,7,7]
+    ],
+    "output": [{
+      "cases": ["background=stored"],
+      "grid": [
+        [7,7,7,0,0,0],
+        [7,7,7,9,9,0],
+        [7,7,7,0,0,0],
+        [9,7,7,7,7,7],
+        [7,7,7,0,0,0],
+        [7,7,7,9,7,0],
+        [7,7,7,0,0,0]
+      ]
+    }, {
+      "cases": ["$CupOnTop & background=DominantColor"],
+      "grid": [
+        [0,0,0,0,0,0],
+        [0,0,0,9,9,0],
+        [0,0,0,0,0,0],
+        [9,7,7,7,7,7],
+        [0,0,0,0,0,0],
+        [0,0,0,9,7,0],
+        [0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$MarksOnTop & background=DominantColor"],
+      "grid": [
+        [0,0,0,7,7,7],
+        [0,0,0,9,9,0],
+        [0,0,0,7,7,7],
+        [9,7,7,7,7,7],
+        [0,0,0,7,7,7],
+        [0,0,0,9,7,0],
+        [0,0,0,7,7,7]
+      ]
+    }]
+  }, {
+    "id": "cup_width=TileCount",
+    "separates": "The cup is 5 across and 3 deep, on a 5 x 10 grid. The concept moves the 3-deep cup to cols 7-9; the stored width 3 fits no piece, so $StoredWidth is undefined; TileCount derives 5 among its widths from this grid, so $StoredWidth & cup_width=TileCount takes cols 0-4 as the cup and lands it at cols 5-9.",
+    "input": [
+      [0,0,0,7,7,7,7,7,7,7],
+      [7,7,0,7,7,7,7,7,7,7],
+      [9,7,0,0,0,0,0,0,0,0],
+      [7,7,0,7,7,7,7,7,7,7],
+      [0,0,0,7,7,7,7,7,7,7]
+    ],
+    "output": [{
+      "cases": ["$Spanning"],
+      "grid": [
+        [7,7,7,7,7,7,7,0,0,0],
+        [7,7,7,7,7,7,7,7,7,0],
+        [7,7,7,7,7,7,7,9,7,0],
+        [7,7,7,7,7,7,7,7,7,0],
+        [7,7,7,7,7,7,7,0,0,0]
+      ]
+    }, {
+      "cases": ["$StoredWidth & cup_width=stored"],
+      "grid": null
+    }, {
+      "cases": ["cup_width=TileCount"],
+      "grid": [
+        [7,7,7,7,7,0,0,0,7,7],
+        [7,7,7,7,7,7,7,0,7,7],
+        [7,7,7,7,7,9,7,0,0,0],
+        [7,7,7,7,7,7,7,0,7,7],
+        [7,7,7,7,7,0,0,0,7,7]
+      ]
+    }]
+  }, {
+    "id": "tiny-grid",
+    "separates": "A 4 x 4 grid, on whose axes 3 tiles fit at no gap from 0 to 3. The concept and $StoredWidth slide the cup one cell to the right; TileCount derives no width of 3 from this grid, so $StoredWidth & cup_width=TileCount finds no cup and is undefined.",
+    "input": [
+      [0,0,0,7],
+      [9,7,0,0],
+      [0,0,0,7],
+      [7,7,7,7]
+    ],
+    "output": [{
+      "cases": ["background=stored & cup_width=stored"],
+      "grid": [
+        [7,0,0,0],
+        [7,9,7,0],
+        [7,0,0,0],
+        [7,7,7,7]
+      ]
+    }, {
+      "cases": ["$CupOnTop & background=DominantColor"],
+      "grid": [
+        [0,0,0,0],
+        [0,9,7,0],
+        [0,0,0,0],
+        [7,7,7,7]
+      ]
+    }, {
+      "cases": ["cup_width=TileCount"],
+      "grid": null
+    }, {
+      "cases": ["$MarksOnTop & background=DominantColor"],
+      "grid": [
+        [0,0,0,7],
+        [0,9,7,0],
+        [0,0,0,7],
+        [7,7,7,7]
+      ]
+    }]
+  }]
+}

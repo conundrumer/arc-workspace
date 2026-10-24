@@ -1,0 +1,211 @@
+// cf133acc
+// @draft
+// @keywords: lines cast
+// @scene background: every cell that is not part of a bar or a post has the
+//  background color
+// @scene bars: some lines across the post side's axis hold bars: runs of one
+//  color, each with a gap in each pole line it spans; runs of different
+//  colors can abut in one line
+// @scene posts: some lines along the post side's axis, the pole lines, each
+//  hold a post: a run of one color from the post side's edge toward the far
+//  edge that stops before the bar nearest that edge in the line
+// @scene poles: every bar's gap lies in a pole line; a gap is a background
+//  cell whose two neighbors along the bar's line have the bar's color
+// @rule post-grows: in each pole line, the cells between the post and the
+//  gap nearest the post side (or the far edge, where the line holds no gap)
+//  take the post's color
+// @rule bar-color-climbs: in each pole line, each gap, and the cells from it
+//  toward the far edge up to the next gap in the line (or up to the far
+//  edge), take that bar's color
+// @rule rest-kept: every other cell keeps its input color
+
+// which lines are pole lines
+.type Poles =
+    // @claim posts post-grows
+    FootPoles {}
+    // @scene posts: the pole lines are the lines that hold a gap; a line with
+    //  a post and no gap is no pole line
+    // @rule post-grows: in each pole line with a post, the cells between the
+    //  post and the gap nearest the post side take the post's color; a pole
+    //  line with no post keeps its cells there
+    // @witness gap-without-post: borderline $PolesFromGaps
+    //     @relaxed poles
+  | PolesFromGaps {}
+
+// which cells are gaps
+.type GapShape =
+    // @claim poles
+    TwoSidedGap {}
+    // @scene poles: a gap is a background cell in a pole line with a
+    //  non-background neighbor along the bar's line on one side or both, and
+    //  it takes that neighbor's color; undefined where the two neighbors have
+    //  different non-background colors
+    // @witness bar-end-beside-pole: ordinary concept
+  | OneSidedGap {}
+
+// what crosses a pole line
+.type Crossing =
+    // @claim post-grows bar-color-climbs
+    GapOnly {}
+    // @rule post-grows: the post's color also stops below a pole-line cell of a
+    //  bar that has no gap there
+    // @rule bar-color-climbs: such a cell is a crossing too, and its bar's
+    //  color climbs from it as from a gap
+    // @witness bar-without-gap: foreign $GaplessBar
+    //     @relaxed bars
+  | GaplessBar {}
+
+// where the post side comes from
+.type PostSide =
+    // @claim posts
+    StoredSide {}
+    // @scene posts: the post side is, on each input, the one edge that holds a
+    //  non-background cell while the opposite edge holds none; undefined where
+    //  no edge, or more than one, does
+    // @witness posts-on-top: variant $PostSideFromInput
+    //     @relaxed poles
+  | PostSideFromInput {}
+
+.type Choice = [po: Poles, g: GapShape, c: Crossing, s: PostSide]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed background
+    .decl bg(col: Color) bg(0).
+
+    // --- $StoredSide ---
+    // the edge the posts stand on
+    .decl post_side(d: Dir) post_side(DIR_B).
+}
+
+.init params = Params
+
+.decl gap_shape_choice(g: GapShape)
+gap_shape_choice($TwoSidedGap()). gap_shape_choice($OneSidedGap()).
+
+.decl crossing_choice(c: Crossing)
+crossing_choice($GapOnly()). crossing_choice($GaplessBar()).
+
+.decl post_side_choice(s: PostSide)
+post_side_choice($StoredSide()). post_side_choice($PostSideFromInput()).
+
+// $PolesFromGaps with $OneSidedGap fails Fit: the cell beside a post is a gap.
+.decl impl_choice(ch: Choice)
+impl_choice([$FootPoles(), G, C, S]) :-
+    gap_shape_choice(G), crossing_choice(C), post_side_choice(S).
+impl_choice([$PolesFromGaps(), $TwoSidedGap(), C, S]) :-
+    crossing_choice(C), post_side_choice(S).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
+
+.decl blank(p: Position)
+blank(P) :- in(P, Col), params.bg(Col).
+
+// The edge the posts stand on.
+.decl side(d: Dir, s: PostSide)
+
+// Both neighbors of p along the bar's line have col.
+.decl flanked(p: Position, col: Color, s: PostSide)
+flanked(P, Col, S) :-
+    in(P, _), side(D, S), perp_dir(D, D1), opposite(D1, D2),    // along the bar's line
+    neighbor(P, D1, Q1), in(Q1, Col), neighbor(P, D2, Q2), in(Q2, Col).
+
+// A gap candidate, with the bar color it takes.
+.decl gap_cell(p: Position, col: Color, g: GapShape, s: PostSide)
+
+// f is the cell on the post side's edge of p's line along that side's axis.
+.decl foot_of(p: Position, f: Position, s: PostSide)
+foot_of(P, F, S) :-
+    side(D, S), in(F, _), dist(F, D, 0),
+    perp_dir(D, D1), in(P, _), same_dist(D1, P, F).
+
+// The cell on the post side's edge of each pole line.
+.decl pole_foot(f: Position, ch: Choice)
+
+// A cell where a bar crosses a pole line, with the bar's color.
+.decl crossing(p: Position, col: Color, ch: Choice)
+crossing(P, Col, [Po, G, C, S]) :-
+    pole_foot(F, [Po, G, C, S]), gap_cell(P, Col, G, S), foot_of(P, F, S).
+
+// A cell the colors climb from: a post's foot, or a crossing.
+.decl source(p: Position, col: Color, ch: Choice)
+source(F, Col, Ch) :- pole_foot(F, Ch), ink(F, Col).
+source(P, Col, Ch) :- crossing(P, Col, Ch).
+
+// Each source's color climbs toward the far edge, up to the next crossing.
+// @claim post-grows bar-color-climbs
+.init climb = Ray<Choice>
+climb.dir([Po, G, C, S], D_far) :-
+    impl_choice([Po, G, C, S]), side(D, S), opposite(D, D_far).
+climb.cell(Ch, P) :- impl_choice(Ch), in(P, _).
+climb.mark(Ch, P) :- source(P, _, Ch).
+climb.blocked(Ch, P) :- crossing(P, _, Ch).
+
+.decl climbed(p: Position, col: Color, ch: Choice)
+climbed(P, Col, Ch) :- climb.clear(Ch, P, _, _, Src), source(Src, Col, Ch).
+
+out(P, Col, [Po, G, C, S]) :-
+    impl_choice([Po, G, C, S]), side(_, S), in(P, C0),
+    ( climbed(P, Col, [Po, G, C, S])
+    ; !climbed(P, _, [Po, G, C, S]), Col = C0
+    ).
+
+// --- $StoredSide ---
+
+side(D, $StoredSide()) :- params.post_side(D).
+
+// --- $PostSideFromInput ---
+
+// An edge that holds ink.
+// @ignore: store — a stored value fixes the post side, which is $StoredSide's model
+.decl ink_edge(d: Dir)
+ink_edge(D) :- dir_elem(D), ink(P, _), dist(P, D, 0).
+
+// The edges that hold ink while the opposite edge holds none.
+// @ignore item: store — a stored value fixes the post side, which is $StoredSide's model
+// @ignore value: store — a stored value is the post side, which is $StoredSide's model
+// @claim posts
+.init lone_edge = Unanimous<Unit, Dir>
+lone_edge.item($U(), D) :- ink_edge(D), opposite(D, O), !ink_edge(O).
+
+side(D, $PostSideFromInput()) :- lone_edge.value($U(), D).
+
+// --- $TwoSidedGap ---
+
+gap_cell(P, Col, $TwoSidedGap(), S) :- blank(P), flanked(P, Col, S), !params.bg(Col).
+
+// --- $OneSidedGap ---
+
+gap_cell(P, Col, $OneSidedGap(), S) :-
+    blank(P), side(D, S), perp_dir(D, D1), neighbor(P, D1, Q), ink(Q, Col).
+
+// --- $FootPoles ---
+
+pole_foot(F, [$FootPoles(), G, C, S]) :-
+    impl_choice([$FootPoles(), G, C, S]), side(D, S), ink(F, _), dist(F, D, 0).
+
+// --- $PolesFromGaps ---
+
+pole_foot(F, [$PolesFromGaps(), G, C, S]) :-
+    impl_choice([$PolesFromGaps(), G, C, S]), gap_cell(P, _, G, S), foot_of(P, F, S).
+
+// --- $GaplessBar ---
+
+crossing(P, Col, [Po, G, $GaplessBar(), S]) :-
+    pole_foot(F, [Po, G, $GaplessBar(), S]), ink(P, Col), flanked(P, Col, S),
+    foot_of(P, F, S).
+
+.comp Determine {
+    .init commonest = Mode<Example, Color, Position>
+    commonest.item(E, Col, P) :- ex_in(E, P, Col).
+
+    // A commonest color that some train input does not have as its commonest.
+    .decl bg_missing(col: Color)
+    bg_missing(Col) :- commonest.mode(_, Col), ex_out(E, _, _), !commonest.mode(E, Col).
+
+    .decl bg(col: Color)
+    bg(Col) :- commonest.mode(_, Col), !bg_missing(Col).
+}

@@ -1,0 +1,212 @@
+// d0f5fe59
+// @draft
+// @keywords: objects count
+// @scene shapes-on-background: a field of color `background` with one or more
+//  shapes, each a group of non-background cells joined through sides or corners
+// @scene one-shape-color: every shape is of one color, the shape color
+// @rule square-of-count: the output is an N×N grid, where N is the number of
+//  shapes
+// @rule diagonal-marks: the output cells on the `diagonal` of the square take
+//  the shape color, and every other cell takes `background`
+
+// how the cells of a shape join
+.type Adjacency =
+    // @claim shapes-on-background
+    CornerAdjacency {}
+    // @scene shapes-on-background: the cells of a shape join through sides
+    //  only; undefined where the concept is
+    // @witness corner-link: borderline concept
+  | SideAdjacency {}
+
+// which color the marks take
+.type MarkColor =
+    // @claim diagonal-marks
+    ShapeColor {}
+    // @scene one-shape-color: dropped
+    // @rule diagonal-marks: the marks take the color that most shape cells
+    //  have; undefined where that color ties
+    // @witness mixed-shape-colors: borderline $CommonestShapeColor
+    //     @relaxed one-shape-color
+  | CommonestShapeColor {}
+
+// which cells make up the shapes
+.type ShapeCells =
+    // @claim shapes-on-background
+    AllInk {mark: MarkColor}
+    // @scene shapes-on-background: the shapes are the groups of cells of
+    //  `shape_color`, and cells of other colors are ignored; undefined where
+    //  the input has no cell of `shape_color`
+    // @scene one-shape-color: dropped
+    // @rule diagonal-marks: the marks take `shape_color`
+    // @witness mixed-shape-colors: borderline $CommonestShapeColor
+  | ShapesOfOneColor {}
+
+// what the count counts
+.type Counted =
+    // @claim square-of-count
+    EveryShape {}
+    // @rule square-of-count: N is the number of shape forms up to
+    //  translation; undefined where the concept is
+    // @witness repeated-form: ordinary concept
+  | DistinctForms {}
+
+.type Choice = [adj: Adjacency, cells: ShapeCells, counted: Counted]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed shapes-on-background
+    .decl background(c: Color) background(0).
+    .decl diagonal(da: DiagAxis) diagonal(DAXIS_DG).
+
+    // --- $ShapesOfOneColor ---
+    // @derive RarestColor: variant derived
+    .decl shape_color(c: Color) shape_color(8).
+}
+
+.init params = Params
+
+.decl adjacency_choice(a: Adjacency)
+adjacency_choice($CornerAdjacency()). adjacency_choice($SideAdjacency()).
+
+.decl mark_color_choice(m: MarkColor)
+mark_color_choice($ShapeColor()). mark_color_choice($CommonestShapeColor()).
+
+.decl shape_cells_choice(c: ShapeCells)
+shape_cells_choice($AllInk(M)) :- mark_color_choice(M).
+shape_cells_choice($ShapesOfOneColor()).
+
+.decl counted_choice(k: Counted)
+counted_choice($EveryShape()). counted_choice($DistinctForms()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([A, C, K]) :- adjacency_choice(A), shape_cells_choice(C), counted_choice(K).
+
+// The cells the shapes are made of.
+.decl shape_cell(c: ShapeCells, p: Position)
+
+// A shape, under the adjacency and the shape cells that find it.
+.type Shape = [adj: Adjacency, cells: ShapeCells, id: Ident]
+
+.decl shape(s: Shape, p: Position)
+
+// --- $AllInk ---
+
+// The ink: every cell off the background.
+// @ignore: store — a stored ink color is `$ShapesOfOneColor`
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.background(Col).
+
+shape_cell($AllInk(M), P) :- mark_color_choice(M), ink(P, _).
+
+// --- $ShapesOfOneColor ---
+
+shape_cell($ShapesOfOneColor(), P) :- in(P, Col), params.shape_color(Col).
+
+// --- $CornerAdjacency ---
+
+// @claim shapes-on-background
+.init corner_shapes = Components8<ShapeCells>
+corner_shapes.node(C, P) :- shape_cell(C, P).
+
+shape([$CornerAdjacency(), C, Id], P) :- corner_shapes.label(C, P, Id).
+
+// --- $SideAdjacency ---
+
+// @claim shapes-on-background
+.init side_shapes = Components<ShapeCells>
+side_shapes.node(C, P) :- shape_cell(C, P).
+
+shape([$SideAdjacency(), C, Id], P) :- side_shapes.label(C, P, Id).
+
+// --- $ShapeColor ---
+
+// @claim one-shape-color diagonal-marks
+// @store value: variant concept
+// @ignore item: store — a stored item set gives the value it stores, as `value=stored` does
+.init mark_color = Unanimous<Unit, Color>
+mark_color.item($U(), Col) :- ink(_, Col).
+
+// The color of the marks.
+// @ignore: store — storing it is `mark_color.value=stored`, or under
+//  `$CommonestShapeColor` a model equivalent to it
+.decl mark(col: Color, m: MarkColor)
+mark(Col, $ShapeColor()) :- mark_color.value($U(), Col).
+
+// --- $CommonestShapeColor ---
+
+// @claim diagonal-marks
+// @ignore item: store — equivalent to `mark_color.value=stored`
+// @ignore mode: store — equivalent to `mark_color.value=stored`
+.init commonest = Mode<Unit, Color, Position>
+commonest.item($U(), Col, P) :- ink(P, Col).
+
+mark(Col, $CommonestShapeColor()) :- commonest.mode($U(), Col).
+
+// --- $EveryShape ---
+
+// @claim square-of-count
+.init shapes = Tally<Choice, Ident>
+shapes.item([A, C, $EveryShape()], Id) :- shape([A, C, Id], _).
+
+// --- $DistinctForms ---
+
+// @claim square-of-count
+.init form_box = Bbox<Shape>
+form_box.cell(S, P) :- shape(S, P).
+
+// Each shape's cells in its own box's frame: its form up to translation.
+.decl form(s: Shape, p_inner: Position)
+form(S, P_inner) :- shape(S, P), form_box.box(S, B), crop(P, B, P_inner).
+
+// @claim square-of-count
+.init same_form = KeyedSetCompare<Shape, Shape, Position>
+same_form.pattern_member(S, P_inner) :- form(S, P_inner).
+same_form.observed_member(S, P_inner) :- form(S, P_inner).
+
+.init forms = Canon<Shape>
+forms.equiv([A, C, Id], [A, C, Id2]) :- same_form.equals([A, C, Id], [A, C, Id2]).
+
+shapes.item([A, C, $DistinctForms()], Cls) :- forms.id([A, C, _], Cls).
+
+// --- output ---
+
+.init square = Frame2D<Choice>
+square.extent(Ch, A, N) :- shapes.tally(Ch, N), axis_elem(A).
+
+// @claim diagonal-marks
+.init marks = Diagonal<Choice>
+marks.cell(Ch, P) :- square.cell(Ch, P).
+marks.corner(Ch, D) :- impl_choice(Ch), params.diagonal(Da), diag_axis_of(D, Da).
+
+// The color of the marks, per case.
+.decl mark_of(ch: Choice, col: Color)
+mark_of([A, $AllInk(M), K], Col) :- impl_choice([A, $AllInk(M), K]), mark(Col, M).
+mark_of([A, $ShapesOfOneColor(), K], Col) :-
+    impl_choice([A, $ShapesOfOneColor(), K]), params.shape_color(Col).
+
+out(P, Col, Ch) :- marks.diagonal(Ch, P, _), mark_of(Ch, Col).
+out(P, Col, Ch) :- square.cell(Ch, P), !marks.diagonal(Ch, P, _), params.background(Col).
+
+.comp Determine {
+    .init palette = Mode<Example, Color, Position>
+    palette.item(E, Col, P) :- ex_in(E, P, Col).
+
+    // The field is the commonest color of every train input.
+    .decl uneven(col: Color)
+    uneven(Col) :- palette.mode(_, Col), ex_out(E, _, _), !palette.mode(E, Col).
+
+    .decl background(c: Color)
+    background(Col) :- palette.mode(_, Col), !uneven(Col).
+
+    // The shapes are the rarest color of every train input.
+    .init scarcity = ArgExtremes<Example, Color>
+    scarcity.cand(E, Col, N) :- palette.tally(E, Col, N).
+
+    .decl not_rarest(col: Color)
+    not_rarest(Col) :- scarcity.low(_, Col, _), ex_out(E, _, _), !scarcity.low(E, Col, _).
+
+    .decl shape_color(c: Color)
+    shape_color(Col) :- scarcity.low(_, Col, _), !not_rarest(Col).
+}

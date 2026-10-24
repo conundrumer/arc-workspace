@@ -1,0 +1,332 @@
+// d017b73f
+// @draft
+// @keywords: objects move walk chain
+// @scene strip-of-pieces: the input is a strip 3 rows high on a field of
+//  params.background; it holds pieces, each a 4-connected set of cells of one
+//  color, and each column holds cells of at most one piece.
+// @scene pieces-in-column-bands: the pieces take disjoint column bands in
+//  order along params.chain_dir, and every column between two bands is empty.
+// @scene piece-is-path: each piece is a simple path with one end in its first
+//  column and the other end in its last column (along params.chain_dir); its
+//  first column holds only its start cell.
+// @scene chain-fits: each piece, once moved, stays inside the strip's rows.
+// @rule drop-empty-columns: the output has the input's height and the pieces'
+//  columns alone, in order, with no empty column between them.
+// @rule first-piece-stays: the first piece keeps its rows.
+// @rule continue-path: each later piece moves across the strip so that its
+//  start cell lies in the row of the previous piece's end cell (the cell of
+//  the previous piece's last column that has at most one neighbor in its
+//  piece), right next to that end cell.
+// @rule colors-kept: each piece keeps its color, and every other cell is
+//  params.background.
+
+// what one piece is
+.type Piece =
+    // @claim pieces-in-column-bands
+    Band {}
+    // @scene pieces-in-column-bands: a piece is a 4-connected component of
+    //  non-background cells, and the pieces are ordered by their first column;
+    //  undefined where two pieces share a column
+    // @witness diagonal-step: borderline $PieceComponent
+    //     @relaxed strip-of-pieces
+  | PieceComponent {adj: Adjacency, color: ComponentColor}
+
+// which cells join one component
+.type Adjacency =
+    // @claim pieces-in-column-bands
+    Adj4 {}
+    // @scene pieces-in-column-bands: cells that touch at a corner join one
+    //  piece
+    // @witness diagonal-step: borderline $PieceComponent
+  | Adjacency8 {}
+
+// whether a component holds one color
+.type ComponentColor =
+    // @claim pieces-in-column-bands
+    AnyColor {}
+    // @scene pieces-in-column-bands: a piece is a 4-connected component of
+    //  one color
+    // @witness two-color-piece: borderline $OneColor
+    //     @relaxed strip-of-pieces
+    //     @relaxed piece-is-path
+  | OneColor {}
+
+// the cell of the previous piece that the next piece's start lies beside
+.type EndCell =
+    // @claim continue-path
+    EndLastColumn {}
+    // @rule continue-path: the end cell is the cell of the last column
+    //  farthest from the piece's start row; undefined on a tie
+    // @witness u-shape: ordinary concept
+  | EndFarthestRow {}
+    // @rule continue-path: the end cell is the path end other than the start,
+    //  wherever it lies; undefined where the piece has no single such cell
+    // @witness hook-end-inside: foreign $EndPathEnd
+    //     @relaxed piece-is-path
+  | EndPathEnd {}
+
+// what the output does where a moved piece passes the strip's rows
+.type Overflow =
+    // @claim drop-empty-columns
+    KeepHeight {}
+    // @rule drop-empty-columns: the output frame extends to every row the
+    //  moved pieces reach
+    // @witness descending-chain: borderline $GrowFrame
+    //     @relaxed chain-fits
+  | GrowFrame {}
+
+.type Choice = [piece: Piece, end: EndCell, overflow: Overflow]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed strip-of-pieces
+    .decl background(c: Color) background(0).
+    // The direction the pieces chain along, from the first piece to the last.
+    .decl chain_dir(d: Dir) chain_dir(DIR_R).
+}
+
+.init params = Params
+
+.decl piece_choice(pc: Piece)
+piece_choice($Band()).
+piece_choice($PieceComponent($Adj4(), $AnyColor())).
+piece_choice($PieceComponent($Adjacency8(), $AnyColor())).
+piece_choice($PieceComponent($Adj4(), $OneColor())).
+piece_choice($PieceComponent($Adjacency8(), $OneColor())).
+
+.decl end_cell_choice(e: EndCell)
+end_cell_choice($EndLastColumn()). end_cell_choice($EndFarthestRow()). end_cell_choice($EndPathEnd()).
+
+.decl overflow_choice(o: Overflow)
+overflow_choice($KeepHeight()). overflow_choice($GrowFrame()).
+
+// A piece reading and an end-cell reading: the walk they give.
+.type Walk = [pc: Piece, e: EndCell]
+
+// One piece under a piece reading.
+.type PieceKey = [pc: Piece, id: Ident]
+
+// A piece, with a row its start may land in.
+.type Landing = [id: Ident, r: Position]
+
+// Ink: a non-background cell.
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.background(Col).
+
+// The axis the pieces chain along.
+.decl chain_axis(a: Axis)
+chain_axis(A) :- params.chain_dir(D), axis_of(D, A).
+
+// The row a cell of the input stands in, as a line across the chain axis.
+.decl row(p: Position, r: Position)
+row(P, R) :- in(P, _), chain_axis(A), split(P, A, _, R).
+
+// The column an ink cell stands in, as a line of the chain axis.
+.decl ink_column(p: Position, l: Position)
+ink_column(P, L) :- ink(P, _), chain_axis(A), split(P, A, L, _).
+
+// The output's columns: the non-empty columns, closed up in order.
+// @claim drop-empty-columns
+.init columns = OrderFrame<Unit, Position>
+columns.axis($U(), A) :- chain_axis(A).
+columns.member($U(), L, L) :- ink_column(_, L).
+
+// The piece each ink cell belongs to.
+.decl piece_of(pc: Piece, p: Position, id: Ident)
+
+// Two pieces share a column.
+.decl shared_column(pc: Piece)
+shared_column(Pc) :-
+    piece_of(Pc, P, Id), piece_of(Pc, Q, Id2), Id != Id2,
+    ink_column(P, L), ink_column(Q, L).
+
+// Cell P has a 4-neighbor of its own piece toward D.
+.decl link(pc: Piece, p: Position, d: Dir)
+link(Pc, P, D) :- piece_of(Pc, P, Id), dir_elem(D), neighbor(P, D, Q), piece_of(Pc, Q, Id).
+
+.decl forked(pc: Piece, p: Position)
+forked(Pc, P) :- link(Pc, P, D), link(Pc, P, D2), D != D2.
+
+// A path end: a cell with at most one neighbor in its piece.
+.decl path_end(pc: Piece, id: Ident, p: Position)
+path_end(Pc, Id, P) :- piece_of(Pc, P, Id), !forked(Pc, P).
+
+// Some cell of P's piece lies nearer edge D than P.
+.decl outdone(pc: Piece, p: Position, d: Dir)
+outdone(Pc, P, D) :-
+    piece_of(Pc, P, Id), piece_of(Pc, Q, Id), dir_elem(D), nearer(D, Q, P).
+
+// Cell P lies in its piece's line nearest edge D.
+.decl piece_side(pc: Piece, id: Ident, p: Position, d: Dir)
+piece_side(Pc, Id, P, D) :- piece_of(Pc, P, Id), dir_elem(D), !outdone(Pc, P, D).
+
+// The piece's last column lies toward params.chain_dir, its first column
+// opposite.
+.decl first_column(pc: Piece, id: Ident, p: Position)
+first_column(Pc, Id, P) :- params.chain_dir(C), opposite(C, D), piece_side(Pc, Id, P, D).
+
+.decl last_column(pc: Piece, id: Ident, p: Position)
+last_column(Pc, Id, P) :- params.chain_dir(C), piece_side(Pc, Id, P, C).
+
+.decl start_cand(pc: Piece, id: Ident, p: Position)
+start_cand(Pc, Id, P) :- path_end(Pc, Id, P), first_column(Pc, Id, P).
+
+.decl start_tie(pc: Piece, id: Ident)
+start_tie(Pc, Id) :- start_cand(Pc, Id, P), start_cand(Pc, Id, Q), P != Q.
+
+// The piece's start: its one path end in its first column.
+.decl start(pc: Piece, id: Ident, p: Position)
+start(Pc, Id, P) :- start_cand(Pc, Id, P), !start_tie(Pc, Id).
+
+// The cell each end-cell reading takes as the piece's end.
+.decl end_cand(pc: Piece, e: EndCell, id: Ident, p: Position)
+
+.decl end_tie(pc: Piece, e: EndCell, id: Ident)
+end_tie(Pc, E, Id) :- end_cand(Pc, E, Id, P), end_cand(Pc, E, Id, Q), P != Q.
+
+// The output column of the piece's column nearest edge D.
+.decl side_column(pc: Piece, id: Ident, d: Dir, x: Position)
+side_column(Pc, Id, D, X) :- piece_side(Pc, Id, P, D), ink_column(P, L), columns.pos($U(), L, X).
+
+// Piece J follows piece I: J's first column is the next output column after
+// I's last.
+.decl follows(pc: Piece, id: Ident, id2: Ident)
+follows(Pc, I, J) :-
+    params.chain_dir(C), opposite(C, D), side_column(Pc, I, C, X), side_column(Pc, J, D, X2),
+    neighbor(X, C, X2).
+
+// The first piece: its first column is the first output column.
+.decl first_piece(pc: Piece, id: Ident)
+first_piece(Pc, Id) :-
+    params.chain_dir(C), opposite(C, D), side_column(Pc, Id, D, X), dist(X, D, 0).
+
+// The walk: the first piece's start stays in its row, and each next piece's
+// start lands in the row where the previous piece's end lands.
+.init walk = Propagation<Walk, Landing>
+walk.source([Pc, E], [Id, R]) :-
+    first_piece(Pc, Id), start(Pc, Id, S), row(S, R), end_cell_choice(E).
+walk.edge([Pc, E], [I, R], [J, R2]) :-
+    follows(Pc, I, J), start(Pc, I, S), row(S, R_s), row(_, R),
+    relative(R_s, R, V),                                     // I's move
+    end_cand(Pc, E, I, F), !end_tie(Pc, E, I), row(F, R_f),  // I's one end
+    compose(R_f, V, R2), row(_, R2).                         // the row it lands in
+
+.decl placed(w: Walk, id: Ident)
+placed(W, Id) :- walk.reached(W, [Id, _]).
+
+// Where each piece cell lands.
+.decl place(w: Walk, p_in: Position, p: Position)
+place([Pc, E], P_in, P) :-
+    walk.reached([Pc, E], [Id, R]), start(Pc, Id, S), row(S, R_s),
+    relative(R_s, R, V),                                     // the piece's move
+    piece_of(Pc, P_in, Id), compose(P_in, V, P).
+
+// A walk with no output: a piece shares a column or is never placed.
+.decl stuck(w: Walk)
+stuck([Pc, E]) :- shared_column(Pc), end_cell_choice(E).
+stuck([Pc, E]) :- piece_of(Pc, _, Id), end_cell_choice(E), !placed([Pc, E], Id).
+
+// The output frame, as a box of the input frame.
+// @claim drop-empty-columns
+.init frame = Bbox<Choice>
+frame.cell([Pc, E, O], P) :- in(P, _), piece_choice(Pc), end_cell_choice(E), overflow_choice(O).
+
+// The output row of a cell of the input frame or a landed cell.
+.decl row_of(ch: Choice, p: Position, r: Position)
+row_of([Pc, E, O], P, R) :-
+    frame.box([Pc, E, O], B), ( in(P, _) ; place([Pc, E], _, P) ),
+    crop(P, B, P_rel), chain_axis(A), split(P_rel, A, _, R).
+
+// Each piece cell in the output.
+.decl drawn(ch: Choice, p: Position, col: Color)
+drawn([Pc, E, O], P_out, Col) :-
+    place([Pc, E], P_in, P), in(P_in, Col), row_of([Pc, E, O], P, R),
+    ink_column(P_in, L), columns.pos($U(), L, X),          // the output column
+    compose(R, X, P_out).
+
+out(P, Col, Ch) :- drawn(Ch, P, Col).
+out(P, Col, [Pc, E, O]) :-
+    row_of([Pc, E, O], _, R), columns.pos($U(), _, X), compose(R, X, P),
+    !drawn([Pc, E, O], P, _), !stuck([Pc, E]), params.background(Col).
+
+// --- $Band ---
+
+// The bands: runs of neighboring non-empty columns.
+// @claim pieces-in-column-bands
+.init bands = Components<Unit>
+bands.node($U(), L) :- ink_column(_, L).
+
+piece_of($Band(), P, Id) :- ink_column(P, L), bands.label($U(), L, Id).
+
+// --- $Adj4 & $AnyColor ---
+
+// @claim strip-of-pieces
+.init comp4 = Components<Unit>
+comp4.node($U(), P) :- ink(P, _).
+
+piece_of($PieceComponent($Adj4(), $AnyColor()), P, Id) :- comp4.label($U(), P, Id).
+
+// --- $Adjacency8 & $AnyColor ---
+
+// @claim strip-of-pieces
+.init comp8 = Components8<Unit>
+comp8.node($U(), P) :- ink(P, _).
+
+piece_of($PieceComponent($Adjacency8(), $AnyColor()), P, Id) :- comp8.label($U(), P, Id).
+
+// --- $Adj4 & $OneColor ---
+
+// @claim strip-of-pieces
+.init comp4_color = Components<Color>
+comp4_color.node(Col, P) :- ink(P, Col).
+
+piece_of($PieceComponent($Adj4(), $OneColor()), P, Id) :- comp4_color.label(_, P, Id).
+
+// --- $Adjacency8 & $OneColor ---
+
+// @claim strip-of-pieces
+.init comp8_color = Components8<Color>
+comp8_color.node(Col, P) :- ink(P, Col).
+
+piece_of($PieceComponent($Adjacency8(), $OneColor()), P, Id) :- comp8_color.label(_, P, Id).
+
+// --- $EndLastColumn ---
+
+end_cand(Pc, $EndLastColumn(), Id, P) :- path_end(Pc, Id, P), last_column(Pc, Id, P).
+
+// --- $EndFarthestRow ---
+
+// The last-column cells farthest from the start row.
+// @claim continue-path
+.init farthest = ArgExtremes<PieceKey, Position>
+farthest.cand([Pc, Id], P, K) :-
+    last_column(Pc, Id, P), start(Pc, Id, S), row(P, R), row(S, R_s), relative(R_s, R, V),
+    params.chain_dir(C), perp_dir(C, D), dist(V, D, K), K >= 0.   // rows between P and the start
+
+end_cand(Pc, $EndFarthestRow(), Id, P) :- farthest.high([Pc, Id], P, _).
+
+// --- $EndPathEnd ---
+
+end_cand(Pc, $EndPathEnd(), Id, P) :- path_end(Pc, Id, P), start(Pc, Id, S), P != S.
+
+// --- $GrowFrame ---
+
+frame.cell([Pc, E, $GrowFrame()], P) :- place([Pc, E], _, P).
+
+.comp Determine {
+    // Each training input's commonest color.
+    .init ground = Mode<Example, Color, Position>
+    ground.item(E, Col, P) :- ex_in(E, P, Col).
+
+    .decl trained(e: Example)
+    trained(E) :- ex_out(E, _, _).
+
+    // Some training input has another commonest color.
+    .decl off_ground(c: Color)
+    off_ground(Col) :- ground.mode(_, Col), trained(E), !ground.mode(E, Col).
+
+    .decl background(c: Color)
+    background(Col) :- ground.mode(E, Col), trained(E), !off_ground(Col).
+}

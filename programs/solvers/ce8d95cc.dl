@@ -1,0 +1,147 @@
+// ce8d95cc
+// @draft
+// @keywords: lines
+// @scene full-lines: on a field of background 0, straight lines of one color
+//  each run the full width (rows) or the full height (columns) of the grid;
+//  where two lines cross, the cell takes one of the two colors
+// @scene lines-apart: no two lines of one axis are adjacent; at least one row
+//  or column of background lies between them, and between each outermost line
+//  and the grid edge
+// @rule dedupe-rows: the output keeps the input's rows in order, with each run
+//  of identical adjacent rows kept once
+// @rule dedupe-columns: in the result of dedupe-rows, each run of identical
+//  adjacent columns is kept once
+
+// which rows and columns the output keeps
+.type Choice =
+    // @claim dedupe-rows dedupe-columns
+    Dedupe {}
+    // @rule dedupe-rows: each run of adjacent rows that hold a background cell
+    //  is kept once, and every other row is kept; undefined where the rows of
+    //  such a run differ
+    // @rule dedupe-columns: the same for columns, in the result of dedupe-rows
+    // @witness thick-line: borderline concept
+    //     @relaxed lines-apart
+  | GapCollapse {}
+    // @rule dedupe-rows: each row that holds no background cell is a line, and
+    //  the output draws each line once, in order, with one background row
+    //  before the first, between each two and after the last; a background
+    //  row is the input's rows that hold a background cell, undefined where
+    //  they differ or where there is none
+    // @rule dedupe-columns: the same for columns, each output cell taken from
+    //  the crossing of its row's and its column's input lines
+    // @witness thick-line: borderline concept
+    // @witness edge-line: borderline concept
+    //     @relaxed lines-apart
+  | Rebuild {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $GapCollapse, $Rebuild ---
+    // @derive DominantColor: variant concept
+    //     @relaxed full-lines
+    .decl bg(c: Color) bg(0).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Dedupe()). impl_choice($GapCollapse()). impl_choice($Rebuild()).
+
+// The line of each input cell across axis a: its row for AXIS_V, its column
+// for AXIS_H.
+.decl cell_line(p: Position, a: Axis, l: Position)
+cell_line(P, A, L) :- in(P, _), axis_elem(A), split(P, A, L, _).
+
+.decl line(a: Axis, l: Position)
+line(A, L) :- cell_line(_, A, L).
+
+// The side of line l toward d.
+.type Flank = [l: Position, d: Dir]
+.type EdgeLine = [ch: Choice, d: Dir, l: Position]
+
+// A line's output distance from edge d: the flanks the case counts between
+// the line and that edge.
+// @claim dedupe-rows dedupe-columns
+.init bands = Tally<EdgeLine, Flank>
+bands.domain([Ch, D, L]) :- impl_choice(Ch), line(A, L), axis_of(D, A).
+
+.type AxisLine = [ch: Choice, a: Axis, l: Position]
+
+// Each input line's output line.
+.init place = DirPack<AxisLine>
+place.edge([Ch, A, L], D, N) :- bands.tally([Ch, D, L], N), axis_of(D, A).
+
+// The input lines each output line takes its cells from.
+.decl source(ch: Choice, a: Axis, o: Position, l: Position)
+source(Ch, A, O, L) :- place.axis_pos([Ch, A, L], A, O).
+
+out(P_out, Col, Ch) :-
+    source(Ch, A1, O1, L1), perp(A1, A2), source(Ch, A2, O2, L2),
+    compose(L1, L2, P), in(P, Col),                 // the crossing of the two input lines
+    compose(O1, O2, P_out).
+
+// --- $Dedupe, $GapCollapse ---
+
+// An output line begins at line l, counting from edge d.
+.decl boundary(ch: Choice, d: Dir, l: Position)
+
+bands.item([Ch, D, L], [L2, D]) :-
+    boundary(Ch, D, L2), axis_of(D, A), line(A, L),
+    ( L2 = L ; nearer(D, L2, L) ).                  // at l or nearer d
+
+// --- $Dedupe ---
+
+// Line l differs from its neighbor toward d.
+boundary($Dedupe(), D, L) :-
+    cell_line(P, A, L), axis_of(D, A), in(P, C1),
+    neighbor(P, D, P2), in(P2, C2), C1 != C2.
+
+// --- $GapCollapse, $Rebuild ---
+
+.decl bg_line(a: Axis, l: Position)
+bg_line(A, L) :- cell_line(P, A, L), in(P, Col), params.bg(Col).
+
+// --- $GapCollapse ---
+
+// Line l and its neighbor toward d do not both hold a background cell.
+boundary($GapCollapse(), D, L) :-
+    line(A, L), axis_of(D, A), neighbor(L, D, L2), line(A, L2),
+    ( !bg_line(A, L) ; !bg_line(A, L2) ).
+
+// --- $Rebuild ---
+
+// A line of the scene: a row or column with no background cell.
+.decl drawn(a: Axis, l: Position)
+drawn(A, L) :- line(A, L), !bg_line(A, L).
+
+bands.item([$Rebuild(), D, L], [L2, S]) :-
+    line(A, L), axis_of(D, A),
+    drawn(A, L2), nearer(D, L2, L), axis_of(S, A).  // both flanks of each line nearer d
+bands.item([$Rebuild(), D, L], [L, D]) :- drawn(A, L), axis_of(D, A).
+
+// An output line some input line falls on.
+.decl placed(a: Axis, o: Position)
+placed(A, O) :- place.axis_pos([$Rebuild(), A, _], A, O).
+
+.init frame = AxisFrame<Unit>
+frame.extent($U(), A, N) :- placed(A, O), axis_dim(O, A, N).
+
+// An output background line no input line falls on takes the input's
+// background lines.
+source($Rebuild(), A, O, L) :-
+    frame.cell($U(), A, O), !placed(A, O), bg_line(A, L).
+
+.comp Determine {
+    // The field: the commonest color of each train input.
+    .init counts = Mode<Example, Color, Position>
+    counts.item(E, Col, P) :- ex_in(E, P, Col), ex_out(E, _, _).
+
+    // A field color that another train input's field contradicts.
+    .decl clash(col: Color)
+    clash(Col) :- counts.mode(_, Col), counts.mode(E, _), !counts.mode(E, Col).
+
+    .decl bg(c: Color)
+    bg(Col) :- counts.mode(_, Col), !clash(Col).
+}
