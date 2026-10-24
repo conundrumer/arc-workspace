@@ -529,7 +529,7 @@ The trace form is the program's tree with the engine's forced tokens in brackets
    [node key] (END)
    [node P] (P END))
   [step] SKIP
-  [&comps.component &comps.connected &comps.adjacent &comps.node &comps.step])
+  [&comps.component &comps.adjacent &comps.node &comps.step])
 
 (RULE (&axis_len (:B *[B]) (:N *[N]))
       (&axis_len (:B *[B2]) (:N *[N2]))
@@ -545,7 +545,7 @@ The trace form is the program's tree with the engine's forced tokens in brackets
 The bracket's content says which kind of forced token it holds:
 
 - a relation after a clause's `END` is its declaration, `[&fg]`
-- the declarations after an instance's last input, each output and then each input whose name no output shares, `[&comps.component &comps.connected &comps.adjacent &comps.node &comps.step]`
+- the declarations after an instance's last input, each output and then each input whose name no output shares, `[&comps.component &comps.adjacent &comps.node &comps.step]`
 - an input's name alone, before its body or its `SKIP`, is the input name, `[node]`, `[key]`
 - an input's name with a column is the column name, `[node P]`, and the list that follows is the language model's answer, `(END)` for an empty projection
 - a label after `*` is its echo, `[P]`

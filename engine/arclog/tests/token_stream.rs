@@ -97,7 +97,7 @@ fn an_instance_gives_its_input_names_its_projection_and_its_outputs() {
         (Token::Column(2), E),
         (control(Control::Skip), M),
     ]);
-    want.extend((2..7).map(|slot| (Token::Relation(slot), E)));
+    want.extend((2..6).map(|slot| (Token::Relation(slot), E)));
     assert_eq!(after(&got, prefix), &want[..]);
 }
 

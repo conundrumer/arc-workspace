@@ -17,18 +17,18 @@ from arclog_convert.libmap.instances import Spec
 def components8(inst, ex):
     return Spec(".init {x} = Components<{Key}>",
                 {"node(Ky, P)": ["{x}.node(Ky, P)"], "step(S)": ["{x}.step(S)"]},
-                {"label(Ky, P, I)": "{x}.label(Ky, P, I)", "conn(Ky, P, Q)": "{x}.conn(Ky, P, Q)",
+                {"label(Ky, P, I)": "{x}.label(Ky, P, I)",
                  "node(Ky, P)": "{x}.node(Ky, P)", "step(S)": "{x}.step(S)"},
                 "{x}.step(S) :- diag_dir_elem(D), step_offset(D, S).")
 
 
 def reach(inst, ex):
-    if not ex.reads_of(inst) & {"label", "conn"}:
+    if "label" not in ex.reads_of(inst):
         return None
     return Spec(".init {x} = Reach<{Key}>\n.init {x}_label = Components<{Key}>",
                 {"node(Ky, P)": ["{x}.node(Ky, P)", "{x}_label.node(Ky, P)"],
                  "step(S)": ["{x}.step(S)", "{x}_label.step(S)"], "seed(Ky, P)": ["{x}.seed(Ky, P)"]},
-                {"label(Ky, P, I)": "{x}_label.label(Ky, P, I)", "conn(Ky, P, Q)": "{x}_label.conn(Ky, P, Q)",
+                {"label(Ky, P, I)": "{x}_label.label(Ky, P, I)",
                  "reach(Ky, P)": "{x}.reach(Ky, P)", "node(Ky, P)": "{x}.node(Ky, P)",
                  "seed(Ky, P)": "{x}.seed(Ky, P)", "step(S)": "{x}.step(S)"})
 

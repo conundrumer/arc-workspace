@@ -31,7 +31,7 @@ use arclog::trace::{DecodeTrace, RunTrace, Stop, TopK};
 const BG: &str = "(RULE &bg (input (:Col *C)))\n";
 const FG: &str = "(RULE &fg (input *P *Col) (&bg (:C *V)) (!= Col V))\n";
 const COMPS: &str = "(INIT &comps Connectivity (node ((:P P)) (&fg *P)))\n";
-const CONNECTED: &str = "(INIT &c2 Connectivity (node ((:P Q)) (&comps.connected *P *Q)))\n";
+const ADJACENT: &str = "(INIT &c2 Connectivity (node ((:P Q)) (&comps.adjacent *P *Q)))\n";
 const AXIS: &str = "(RULE &axis_len (input (:P *B)) (frame_extent (:P B) (:N *N)))\n(RULE &larger (&axis_len *B) (&axis_len (:B *B2)))\n";
 const PRIOR: &str = "(RULE &prior (&axis_len *B *N) (&axis_len (:B *B2) (:N *N2)) (OR ((> N N2)) ((= N N2) (&larger B B2))))\n";
 
@@ -134,7 +134,7 @@ fn a_decode_renders_the_trace_form_of_a_disjunction() {
 
 #[test]
 fn a_decode_renders_the_trace_form_of_an_instance() {
-    let names = ["&bg", "&fg", "&comps.component", "&comps.connected", "&comps.adjacent", "&comps.node", "&comps.step"];
+    let names = ["&bg", "&fg", "&comps.component", "&comps.adjacent", "&comps.node", "&comps.step"];
     let text = rendered(&format!("{BG}{FG}{COMPS}"), &names, false);
     let instance: Vec<&str> = text.lines().skip(8).collect();
     let expected = "\
@@ -145,7 +145,7 @@ fn a_decode_renders_the_trace_form_of_an_instance() {
    [node key] (END)
    [node P] (P END))
   [step] SKIP
-  [&comps.component &comps.connected &comps.adjacent &comps.node &comps.step])";
+  [&comps.component &comps.adjacent &comps.node &comps.step])";
     assert_eq!(instance.join("\n"), expected);
 }
 
@@ -314,9 +314,9 @@ fn the_program_form_of_a_decode_reads_back_to_its_content() {
 
 #[test]
 fn the_program_form_of_a_decode_names_each_label_as_its_trace_form_does() {
-    let arclog = format!("{BG}{FG}{COMPS}{CONNECTED}");
-    let trace = rendered(&arclog, &["&comps.connected"], false);
+    let arclog = format!("{BG}{FG}{COMPS}{ADJACENT}");
+    let trace = rendered(&arclog, &["&comps.adjacent"], false);
     assert!(trace.contains("((&r3 (:P *[P]) (:Q *[Q])) END\n   [node key] (END)\n   [node P] (Q END))"), "{trace}");
     let program = reads_back(&arclog);
-    assert!(program.ends_with("(INIT &r7 Connectivity (node ((:P Q)) (&r2.connected (:P *P) (:Q *Q))))\n"), "{program}");
+    assert!(program.ends_with("(INIT &r6 Connectivity (node ((:P Q)) (&r2.adjacent (:P *P) (:Q *Q))))\n"), "{program}");
 }

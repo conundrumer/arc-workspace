@@ -52,7 +52,7 @@ COMP: dict[str, Renamed] = {
     "CycleWalk": Renamed("Walk", {"succ": "successor", "step": "steps"}),
     "Take": Renamed("Unfold", {"init_taken": "initial_taken", "init_untaken": "initial_untaken"}),
     "GraphDistance": Renamed("Distance", {"seed": "source", "pred": "predecessor"}),
-    "Components": Renamed("Connectivity", {"label": "component", "conn": "connected"}),
+    "Components": Renamed("Connectivity", {"label": "component"}),
     "Bbox": Renamed("BoundingBox"),
     "Closed": Renamed("Enclosure", {"region": "enclosed"}),
     "Frame2D": Renamed("Frame"),

@@ -185,7 +185,6 @@
         (1 @_ 1)
         (_ 1 _)))))
   (outputs (component (key Key) (P Position) (Id Ident))
-    (connected (key Key) (P Position) (Q Position))
     (adjacent (key Key) (P Position) (Q Position))))
 (component Ray construction (type-parameters Key)
   (inputs (source (key Key) (P Position))

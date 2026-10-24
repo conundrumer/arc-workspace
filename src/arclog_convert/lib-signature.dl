@@ -249,7 +249,6 @@
     .decl node(key: Key, p: Position)  // @extensional
     .decl step(delta: Offset)  // @extensional
     .decl component(key: Key, p: Position, id: Ident)
-    .decl connected(key: Key, p: Position, q: Position)
     .decl adjacent(key: Key, p: Position, q: Position)
 }
 
