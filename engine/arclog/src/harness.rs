@@ -481,11 +481,16 @@ pub fn print_ended(solver: &CorpusSolver, result: &SolverResult) {
     eprintln!("{}: ended", solver.task_id);
 }
 
+/// The message of a panic whose payload is `payload`, where the payload is a
+/// `&str` or a `String`.
+pub fn panic_message(payload: &(dyn Any + Send)) -> Option<&str> {
+    payload.downcast_ref::<&str>().copied().or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+}
+
 /// The line that reports a panic whose payload is `payload`: its message,
-/// where the payload is a `&str` or a `String`.
+/// where the payload has one.
 fn panic_line(payload: &(dyn Any + Send)) -> String {
-    let message = payload.downcast_ref::<&str>().copied().or_else(|| payload.downcast_ref::<String>().map(String::as_str));
-    match message {
+    match panic_message(payload) {
         Some(message) => format!("the check panicked: {message}"),
         None => "the check panicked, with a payload that is not a message".to_owned(),
     }

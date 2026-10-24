@@ -5,6 +5,7 @@
 //! `arclog-cli` commands that replay a corpus and the Python package share
 //! the read of the task and the session of the run.
 
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -13,7 +14,7 @@ use super::{Decoder, Points, Table};
 use crate::check::{CheckCache, SolverClauses};
 use crate::eval::instance::Constructions;
 use crate::eval::Caps;
-use crate::harness::read_corpus_solver;
+use crate::harness::{panic_message, read_corpus_solver};
 use crate::judge::candidates::{PairCandidates, Section, World};
 use crate::registry::Registry;
 use crate::resolver::resolve_cases;
@@ -72,8 +73,22 @@ pub struct SolverReplay<T> {
 /// settings, the lib's constructions `constructions`, and the corpus's
 /// session. `record` runs after each step of a token the model emits, with
 /// the case's record, which starts as `T::default()`. A case that holds a
-/// `DEMONSTRATED` form is left out. Gives the fault that stops the solver.
+/// `DEMONSTRATED` form is left out. Gives the fault that stops the solver,
+/// which is the panic's message where the replay panics.
 pub fn replay_solver<T: Default>(
+    corpus: &Path,
+    tasks: &Path,
+    id: &str,
+    all: bool,
+    constructions: &Constructions,
+    record: &dyn Fn(&mut T, &Decoder<'_>, Stepped<'_>),
+) -> Result<SolverReplay<T>, String> {
+    catch_unwind(AssertUnwindSafe(|| replay_cases(corpus, tasks, id, all, constructions, record))).unwrap_or_else(|payload| {
+        Err(format!("the replay panicked: {}", panic_message(&*payload).unwrap_or("a payload that is not a message")))
+    })
+}
+
+fn replay_cases<T: Default>(
     corpus: &Path,
     tasks: &Path,
     id: &str,
