@@ -763,9 +763,10 @@ impl<'a> Inference<'a> {
             Some(ClauseColumns::Own(columns)) => columns.iter().map(|column| column.name.clone()).collect(),
             Some(ClauseColumns::Declared(columns)) => columns.iter().map(|column| column.name.clone()).collect(),
             Some(ClauseColumns::InstanceOutput(instance, port)) => {
-                let Some(component) = self.infer(&instance).and_then(|inference| inference.component) else { return Vec::new() };
+                let Some(inference) = self.infer(&instance) else { return Vec::new() };
+                let (Some(component), ScopeOwner::Form(Form::Instance(owner))) = (inference.component, inference.owner) else { return Vec::new() };
                 let output = component.outputs.iter().find(|output| output.name == *port);
-                output.map(|output| output.columns.iter().map(|column| column.name.clone()).collect()).unwrap_or_default()
+                output.map(|output| output.columns_at(owner.value().key.is_some()).map(|column| column.name.clone()).collect()).unwrap_or_default()
             }
         }
     }
@@ -847,7 +848,7 @@ impl<'a> Inference<'a> {
                 let written: Vec<&PortName> = written_inputs(instance.value().key.as_ref(), &instance.value().inputs).map(|input| &input.name).collect();
                 for port in component.relation_ports(&written) {
                     let column = |name: &ColumnName| port_column(&inference, port, std::slice::from_ref(name));
-                    relations.push((Arc::from([OutputStep::Port(port.name.clone())]), relation_columns(port.columns.iter().map(|column| &column.name), &column)));
+                    relations.push((Arc::from([OutputStep::Port(port.name.clone())]), relation_columns(port.columns_at(instance.value().key.is_some()).map(|column| &column.name), &column)));
                 }
             }
             Form::RigidDet(rigid) => {
@@ -904,7 +905,7 @@ impl<'a> Inference<'a> {
         let local = |ty: ValueType| try_map_labels(&ty, &|_| None);
         let key = columns::key();
         if *first == key {
-            let Some(key_body) = &rigid_value.key else { return project(&ValueType::Unit, rest) };
+            let Some(key_body) = &rigid_value.key else { return None };
             let field = |column: &RelationColumn| Some((column.name.clone(), inference.label(column.label)?));
             let record = ValueType::Record(key_body.columns.iter().map(field).collect::<Option<_>>()?);
             return local(project(&record, rest)?);
@@ -935,7 +936,7 @@ impl<'a> Inference<'a> {
         let label = |label: LabelId| inference.label(label);
         let ty = if *first == columns::key() {
             match &demonstrated.key {
-                None => ValueType::Unit,
+                None => return None,
                 Some(key) => {
                     let field = |column: &RelationColumn| Some((column.name.clone(), label(column.label)?));
                     ValueType::Record(key.value().key.columns.iter().map(field).collect::<Option<_>>()?)

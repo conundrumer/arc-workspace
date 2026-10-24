@@ -191,6 +191,14 @@ pub struct Port {
     pub columns: Box<[Column]>,
 }
 
+impl Port {
+    /// The columns of the port at an instance that has a key clause where
+    /// `keyed` holds, and otherwise those other than `key`.
+    pub fn columns_at(&self, keyed: bool) -> impl Iterator<Item = &Column> + '_ {
+        self.columns.iter().filter(move |column| keyed || !is_key(column))
+    }
+}
+
 /// An input of a component, with its default rows, which hold where the
 /// instance writes no clause for the input.
 #[derive(Clone, Debug)]

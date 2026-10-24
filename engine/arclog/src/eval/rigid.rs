@@ -28,7 +28,6 @@ use std::sync::Arc;
 
 use self::renaming::{renaming_between, IdentRowsBuilder};
 use super::join::{self, Budget};
-use super::values::OutputKey;
 use super::{ir, Evaluation, FormBodies, Outcome, RelationValue, RunFault, Stop};
 use crate::algebra::boxes::apply;
 use crate::algebra::geometry::{D4Element, Geometry};
@@ -150,9 +149,10 @@ impl<'e, 'p> Assembly<'e, 'p> {
         RelationValue::Stopped(Stop { bound, form: self.form.clone() })
     }
 
-    /// The key columns of the assembly's output rows.
-    fn output_key(&self) -> OutputKey {
-        OutputKey::of(self.key.is_some().then_some(self.key_labels.len()))
+    /// The count of key columns of the assembly's output rows: the key
+    /// clause's columns, and none where the form has no key clause.
+    fn key_width(&self) -> usize {
+        if self.key.is_some() { self.key_labels.len() } else { 0 }
     }
 
     /// The index among the parts of the one part whose output's path
@@ -319,7 +319,7 @@ impl<'e, 'p> Assembly<'e, 'p> {
         let part_types = &self.parts[part].types;
         let geometry = Geometry::get();
         let elements = geometry.domain(&ValueType::D4);
-        let mut rows = RowSet::empty((self.output_key().width() + 1 + part_types.len()) as u16);
+        let mut rows = RowSet::empty((self.key_width() + 1 + part_types.len()) as u16);
         for (key, frame) in &solution.frames {
             let reading = &frame[part];
             if let Err(bound) = budget.charge_rows((elements.len() * reading.len()) as u64) {
@@ -328,7 +328,7 @@ impl<'e, 'p> Assembly<'e, 'p> {
             for &element in elements {
                 let g = geometry.element(element);
                 for values in reading.rows() {
-                    let mut row = self.output_key().columns(key).into_owned();
+                    let mut row = key.to_vec();
                     row.push(element);
                     row.extend(image(geometry, g, values, part_types));
                     rows.insert(row.into());
@@ -347,11 +347,11 @@ impl<'e, 'p> Assembly<'e, 'p> {
             Ok(solution) => solution,
             Err(value) => return Ok(Err(value)),
         };
-        let mut rows = RowSet::empty((self.output_key().width() + self.instance_labels.len() + 1) as u16);
+        let mut rows = RowSet::empty((self.key_width() + self.instance_labels.len() + 1) as u16);
         for (instance, elements) in &solution.poses {
             let (key, at) = instance.split_at(self.key_labels.len());
             for &element in elements {
-                let mut row = self.output_key().columns(key).into_owned();
+                let mut row = key.to_vec();
                 row.extend_from_slice(at);
                 row.push(element);
                 rows.insert(row.into());

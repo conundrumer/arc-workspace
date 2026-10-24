@@ -36,7 +36,7 @@ The `RIGID_DET` form, a rigid determination, is the arclog form for parameters t
 
 - The `DET` forms are tables over the observed data that read the representative marker, with its cells in the frame of its box.
 - Each atom of the form is a part, and its sites are that part's reading. The program reads the part under the atom's relation name in the form's path: `&marker.glyph`, or `&marker.bbox.box` for a part that reads `&bbox.box`.
-- A form with no `instance` clause has one instance, as an instance with no key clause has the `Unit` key. Its parts read no instance label, and each part's `DET` table is that one instance's reading.
+- A form with no `instance` clause has one instance. Its parts read no instance label, and each part's `DET` table is that one instance's reading.
 
 ```
 (DET &member

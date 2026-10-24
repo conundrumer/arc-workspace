@@ -38,7 +38,7 @@ use crate::types::GraphRelation;
 /// is that of the run.
 ///
 /// The key clause's rows are the groups, and an instance with no key
-/// clause has one group, at the `Unit` key. A type parameter onto which no
+/// clause has one group, with no key column. A type parameter onto which no
 /// place of the form projects is `Unit`, and each row of an input or an
 /// output holds the one `Unit` term at each column of that parameter. A
 /// component whose inputs read its outputs, a task-structure component and
@@ -96,7 +96,6 @@ pub fn evaluate_instance<'a>(
     }
 
     let widths: Vec<Vec<Option<usize>>> = component.outputs.iter().map(|output| shape.widths(&output.columns)).collect::<Result<_, _>>().map_err(&fault)?;
-    let output_key = shape.output_key();
     let construct = |budget: &mut Budget<'a>| -> Outcome<Vec<(GraphRelation, RelationValue)>> {
         let mut rows: Vec<RowSet> = widths.iter().map(|widths| RowSet::empty(shape.arity(widths) as u16)).collect();
         let mut context = ConstructionContext { session: evaluation.session, registry: evaluation.registry, budget };
@@ -106,13 +105,12 @@ pub fn evaluate_instance<'a>(
                 Ok(outputs) => outputs,
                 Err(bound) => return Ok(each(RelationValue::Stopped(Stop { bound, form: form.clone() }))),
             };
-            let key_columns = output_key.columns(key);
             for (((rows, widths), values), wanted) in rows.iter_mut().zip(&widths).zip(&outputs.outputs).zip(&wanted) {
                 if !wanted {
                     continue;
                 }
                 for values in values.rows() {
-                    rows.insert(laid_out(widths, &key_columns, values));
+                    rows.insert(laid_out(widths, key, values));
                 }
             }
         }
@@ -170,12 +168,10 @@ pub fn evaluate_input(
         Err(value) => return Ok(value),
     };
     let widths = shape.widths(&input.port.columns).map_err(&fault)?;
-    let output_key = shape.output_key();
     let mut rows = RowSet::empty(shape.arity(&widths) as u16);
     for (key, group) in groups.iter().zip(&per_group) {
-        let key_columns = output_key.columns(key);
         for values in group.rows() {
-            rows.insert(laid_out(&widths, &key_columns, values));
+            rows.insert(laid_out(&widths, key, values));
         }
     }
     Ok(RelationValue::Rows(Arc::new(join::one_part(rows))))

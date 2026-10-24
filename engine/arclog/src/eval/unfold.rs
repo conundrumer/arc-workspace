@@ -471,7 +471,7 @@ impl<'r, 'a> Run<'r, 'a> {
         let mut graphs = Vec::with_capacity(groups.len());
         for group in &groups {
             match graph(group, &reads, budget) {
-                Ok(graph) => graphs.push((self.shape.output_key().columns(&group.key).into_owned().into(), graph)),
+                Ok(graph) => graphs.push((group.key.to_vec().into(), graph)),
                 Err(Halt::Fault(fault)) => return Err(fault),
                 Err(Halt::Value(value)) => return Ok(Err(value)),
                 Err(Halt::Bound(bound)) => return Ok(Err(RelationValue::Stopped(Stop { bound, form: self.form.clone() }))),
@@ -563,12 +563,12 @@ impl<'r, 'a> Run<'r, 'a> {
     /// The value of `evaluate`, with each read of the instance's outputs
     /// reading the rows of `state` and `take` at the key of `group`.
     fn with_state<T>(&self, group: &Group, state: &UnfoldState, take: &[TermId], evaluate: impl FnOnce() -> T) -> T {
-        let key = self.shape.output_key().columns(&group.key);
+        let key = &group.key;
         let branch = Branch { take: take.into(), next: Box::default() };
         let values = &self.bodies.driver.values;
         for (which, entry) in &self.own {
             let mut rows = RowSet::empty((key.len() + 2) as u16);
-            which.add_rows(&key, state, &branch, &mut rows);
+            which.add_rows(key, state, &branch, &mut rows);
             values.borrow_mut().insert(entry.clone(), RelationValue::Rows(Arc::new(join::one_part(rows))));
         }
         let value = evaluate();

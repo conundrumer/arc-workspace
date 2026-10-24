@@ -151,7 +151,7 @@ def instances_section() -> str:
                         assert isinstance(x, list)
                         choose[len(key_labels(x[1]))] += 1
     return body(
-        mctx("`INIT` forms per component; a `DEMONSTRATED` form counts as DemonstrationConsistency. The key width is the number of `^` labels in the key clause, 0 for the `Unit` key. Most instances in one file: {count} ({stem}).")
+        mctx("`INIT` forms per component; a `DEMONSTRATED` form counts as DemonstrationConsistency. The key width is the number of `^` labels in the key clause. Most instances in one file: {count} ({stem}).")
         .format(count=count, stem=stem),
         table(("component", "instances", "key widths {width: n}", "max width (stem)"), rows),
         items([

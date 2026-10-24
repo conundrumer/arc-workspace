@@ -12,7 +12,6 @@
 use super::driver::{Driver, FormBodies};
 use super::init_form::{grouped, joined_clause, key_rows, rows_of, site_labels};
 use super::ir;
-use super::values::OutputKey;
 use super::{Evaluation, Outcome, RelationValue, RunFault};
 use crate::hash::StableHashMap;
 use crate::program::canonical::{prediction, relation_of};
@@ -68,7 +67,6 @@ pub(super) fn confirmed(driver: &Driver<'_, '_>, relation: &GraphRelation, examp
     };
     let values: Vec<StableHashMap<Row, RowSet>> = values.iter().map(|rows| heads.value.by_object(rows)).collect();
 
-    let output_key = OutputKey::of(shape.key_body.is_some().then_some(shape.key_columns.len()));
     let mut candidates: Vec<Vec<RowSet>> = vec![Vec::new(); groups.len()];
     for (index, rule) in demonstrated.rules.iter().enumerate() {
         let path = form.child(demonstrated.position(DemonstratedPart::Rule(index)));
@@ -87,7 +85,7 @@ pub(super) fn confirmed(driver: &Driver<'_, '_>, relation: &GraphRelation, examp
                     consistent(predicted.get(&pick(&heads.demonstration.object)), values[at].get(&pick(&heads.demonstration.other)), heads.value.index_width())
                 });
                 if confirms {
-                    candidates[at].push(with_key(&output_key.columns(&groups[at]), set));
+                    candidates[at].push(with_key(&groups[at], set));
                 }
             }
         }

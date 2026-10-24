@@ -10,8 +10,8 @@ use std::sync::Arc;
 use crate::check::instance_inputs::inputs_at;
 use crate::eval::ir::{self, ClauseIr};
 use crate::eval::join;
-use crate::eval::values::OutputKey;
 use crate::eval::{Evaluation, FormBodies, Outcome, RelationValue, RunFault};
+use crate::terms::{Constant, Term};
 use crate::hash::StableHashMap;
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{Body, ColumnName, Instance, InstanceInput, InstanceInputPart, InstancePart, KeyClausePart, LabelId, PortName, Site};
@@ -244,19 +244,20 @@ impl<'p> InstanceShape<'p> {
 
     /// The number of row positions of each of `columns` in a port's rows,
     /// or `None` for its `key` column, which takes the width of
-    /// [`Self::output_key`] positions.
+    /// [`Self::key_width`] positions.
     pub(super) fn widths(&self, columns: &[Column]) -> Result<Vec<Option<usize>>, String> {
         columns.iter().map(|column| if is_key(column) { Ok(None) } else { self.column_types(column).map(|types| Some(types.len())) }).collect()
     }
 
     /// The count of row positions of a port whose columns have `widths`.
     pub(super) fn arity(&self, widths: &[Option<usize>]) -> usize {
-        widths.iter().map(|width| width.unwrap_or(self.output_key().width())).sum()
+        widths.iter().map(|width| width.unwrap_or(self.key_width())).sum()
     }
 
-    /// The key columns of the instance's output rows.
-    pub(super) fn output_key(&self) -> OutputKey {
-        OutputKey::of(self.key_body.is_some().then_some(self.key_columns.len()))
+    /// The count of key columns of the instance's output rows: the key
+    /// clause's columns, and none where the form has no key clause.
+    pub(super) fn key_width(&self) -> usize {
+        if self.key_body.is_some() { self.key_columns.len() } else { 0 }
     }
 
     /// `row`, a row of a port whose columns have `widths`, with the key's
@@ -266,7 +267,7 @@ impl<'p> InstanceShape<'p> {
         let (mut key, mut values) = (Vec::new(), Vec::new());
         let mut rest = &row[..];
         for width in widths {
-            let (taken, after) = rest.split_at(width.unwrap_or(self.output_key().width()));
+            let (taken, after) = rest.split_at(width.unwrap_or(self.key_width()));
             if width.is_some() {
                 values.extend_from_slice(taken);
             } else if self.key_body.is_some() {
@@ -415,13 +416,13 @@ pub(super) fn site_labels(site: &Site) -> Vec<(Vec<ColumnName>, LabelId)> {
 /// the labels of `head` that are not `None`, with the one `Unit` term at each
 /// position of `head` that is `None`.
 fn with_unit(prefix: usize, head: &[Option<LabelId>], row: &Row) -> Row {
-    let unit = OutputKey::Unit.columns(&[]);
+    let unit = Term::Constant(Constant::Unit).encode().expect("a Unit has a term id");
     let (key, mut values) = (&row[..prefix], row[prefix..].iter());
     let mut filled = key.to_vec();
     for label in head {
         filled.push(match label {
             Some(_) => *values.next().expect("a row position for each label of the head"),
-            None => unit[0],
+            None => unit,
         });
     }
     filled.into()

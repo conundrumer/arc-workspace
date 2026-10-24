@@ -236,15 +236,16 @@ impl<'a> Builder<'a> {
             }
         }
         let bindings = form_columns::bindings(instance, component);
+        let keyed = instance.key.is_some();
         let mut port_columns = StableHashMap::default();
         let relation = |port: &PortName| {
             RelationRef::Output(OutputName { of: OutputOwner::Instance(name.clone()), path: Arc::from([OutputStep::Port(port.clone())]) })
         };
         for input in component.inputs.iter() {
-            port_columns.insert(input.port.name.clone(), form_columns::port_columns(&input.port, &bindings).columns());
+            port_columns.insert(input.port.name.clone(), form_columns::port_columns(&input.port, &bindings, keyed).columns());
         }
         for (output, (port, node)) in component.outputs.iter().zip(&outputs) {
-            let listing = form_columns::port_columns(output, &bindings);
+            let listing = form_columns::port_columns(output, &bindings, keyed);
             port_columns.insert(port.clone(), listing.columns());
             self.relate(*node, &path, Some(Arc::from([OutputStep::Port(port.clone())])), listing);
         }
