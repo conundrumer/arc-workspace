@@ -22,6 +22,20 @@ pub struct CanonicalOrder {
     labels: StableHashMap<NodePath, Box<[(LabelId, u32)]>>,
 }
 
+/// The write of `form` under [`AsWritten`] that its node keeps, made on the
+/// first call for the node.
+fn written(form: &Form) -> &(CanonicalOrder, CanonicalForm, bool) {
+    super::form::cache(form).order.get_or_init(|| {
+        let mut own = SearchBudget::new();
+        let mut cx = Context::new(&mut own, &AsWritten);
+        cx.order = Some(Recorded::default());
+        let mut out = CanonicalWriter::default();
+        form_root(&mut cx, &mut out, form);
+        let recorded = cx.order.take().expect("the order is recorded");
+        (CanonicalOrder { lists: recorded.lists, labels: recorded.labels }, out.finish(), own.reached)
+    })
+}
+
 /// The orders a write records for [`CanonicalOrder`]: each sorted list's,
 /// and each scope's labels, by source path.
 #[derive(Default)]
@@ -45,17 +59,19 @@ impl CanonicalOrder {
     /// result reads nothing of `search`, and sets its `reached` where a
     /// search reached the cap.
     pub fn with_form(form: &Form, search: &mut SearchBudget) -> (Self, CanonicalForm) {
-        let (order, canonical, reached) = super::form::cache(form).order.get_or_init(|| {
-            let mut own = SearchBudget::new();
-            let mut cx = Context::new(&mut own, &AsWritten);
-            cx.order = Some(Recorded::default());
-            let mut out = CanonicalWriter::default();
-            form_root(&mut cx, &mut out, form);
-            let recorded = cx.order.take().expect("the order is recorded");
-            (CanonicalOrder { lists: recorded.lists, labels: recorded.labels }, out.finish(), own.reached)
-        });
+        let (order, canonical, reached) = written(form);
         search.reached |= *reached;
         (order.clone(), canonical.clone())
+    }
+
+    /// The labels of the scope of `form`, in the order of their canonical
+    /// positions under [`AsWritten`], from the one write of `form` that
+    /// [`CanonicalOrder::with_form`] keeps; none where `form` is no scope.
+    pub(in super::super) fn root_labels(form: &Form) -> Box<[LabelId]> {
+        if super::form::form_scope(form).is_none() {
+            return Box::default();
+        }
+        written(form).0.scope_labels(&NodePath::default()).iter().map(|(label, _)| *label).collect()
     }
 
     /// The source path of the node at `canonical`, a path in canonical

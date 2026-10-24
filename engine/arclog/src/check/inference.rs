@@ -26,7 +26,7 @@ use crate::resolver::columns;
 use crate::resolver::form_columns;
 use crate::resolver::registry_columns;
 use crate::resolver::{DependencyKind, GraphNodeIndex, Resolution, ResolvedProgram, Signature};
-use crate::types::{label_type_keyed, scope_list, use_label, AssemblyId, KeyRow, LabelFault, ValueType};
+use crate::types::{label_type_keyed, scope_lists, use_label, AssemblyId, KeyRow, LabelFault, ValueType};
 
 /// The labels of a form's own scope, with the list each label's sites stand
 /// in: the conjuncts of the form's bodies, each instance input a branch of
@@ -72,13 +72,15 @@ impl<'a> ScopeBody<'a> {
         ScopeBody { body: Body { conjuncts: conjuncts.into() }, heads, component: found_component, instance: found_instance }
     }
 
-    /// The list of the scope of `label`.
-    fn list(&self, label: LabelId) -> &Body {
-        if self.heads.contains(&label) {
-            &self.body
-        } else {
-            scope_list(&self.body, label)
+    /// The list of the scope of each of `labels`, in their order.
+    fn lists(&self, labels: &[LabelId]) -> Vec<&Body> {
+        let mut lists = scope_lists(&self.body, labels);
+        for (label, list) in labels.iter().zip(&mut lists) {
+            if self.heads.contains(label) {
+                *list = &self.body;
+            }
         }
+        lists
     }
 }
 
@@ -490,12 +492,13 @@ impl<'a> Inference<'a> {
         let scope = ScopeBody::of(form, self.registry);
         let walk = FormWalk::of(form);
         let labels = form_scope_labels(form);
+        let lists = scope.lists(&labels);
         let key = scope.instance.and_then(|instance| instance.key.as_ref()).map(|key| key.value().key.body.value());
         let no_bindings = StableHashMap::default();
         let type_all = |bindings: &StableHashMap<TypeParameter, ValueType>, pose_or: PoseOr| -> Vec<(LabelId, Result<Option<ValueType>, LabelFault>)> {
             let reading = SiteReading { path, walk: &walk, component: scope.component, bindings, pose_or };
             let site_type = |atom: &Atom, column: &[ColumnName]| self.site_type(reading, atom, column);
-            labels.iter().map(|label| (*label, label_type_keyed(scope.list(*label), *label, &site_type, key))).collect()
+            labels.iter().zip(&lists).map(|(label, list)| (*label, label_type_keyed(list, *label, &site_type, key))).collect()
         };
         let mut types = type_all(&no_bindings, PoseOr::Open);
         let mut bindings = StableHashMap::default();

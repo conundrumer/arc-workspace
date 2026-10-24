@@ -710,9 +710,14 @@ struct IdStream {
 /// `UNIT_STEPS` model steps but for the last stream's, and replays the groups,
 /// the largest first. A group replays the mask of each prefix its streams
 /// share once.
+/// `started` and `ended`, each a callable or `None`, are called with a
+/// solver's task id, holding the GIL, `started` as the first of the solver's
+/// units starts, and `ended` once the last of its streams has ended. A solver
+/// none of whose streams replays, and one whose unit panics, gives no `ended`
+/// call. An exception that a callable raises is printed and dropped.
 #[pyfunction]
-#[pyo3(signature = (corpus, all_cases=false, task_ids=None, tasks=None))]
-fn corpus_streams(py: Python<'_>, corpus: &str, all_cases: bool, task_ids: Option<Vec<String>>, tasks: Option<&str>) -> PyResult<(Vec<PyCaseStream>, Vec<String>)> {
+#[pyo3(signature = (corpus, all_cases=false, task_ids=None, tasks=None, started=None, ended=None))]
+fn corpus_streams(py: Python<'_>, corpus: &str, all_cases: bool, task_ids: Option<Vec<String>>, tasks: Option<&str>, started: Option<Py<PyAny>>, ended: Option<Py<PyAny>>) -> PyResult<(Vec<PyCaseStream>, Vec<String>)> {
     let wanted = if all_cases { WantedCases::All } else { WantedCases::Concept };
     let constructions = constructions()?;
     let vocabulary = Vocabulary::new(Registry::get(), &DecodeSettings::default());
@@ -740,7 +745,7 @@ fn corpus_streams(py: Python<'_>, corpus: &str, all_cases: bool, task_ids: Optio
     })?;
     if tasks.is_some() {
         let reads = reads.into_inner().unwrap_or_else(|poisoned| poisoned.into_inner());
-        py.detach(|| replay_masks(&mut found, &reads, constructions));
+        py.detach(|| replay_masks(&mut found, &reads, constructions, started.as_ref(), ended.as_ref()));
     }
     let mut streams = Vec::new();
     let mut faults = Vec::new();
@@ -767,11 +772,58 @@ fn corpus_streams(py: Python<'_>, corpus: &str, all_cases: bool, task_ids: Optio
     Ok((streams, faults))
 }
 
+/// The progress callbacks of a replay, `started` and `ended`, each a Python
+/// callable or `None`, with, for each solver, the count of its streams left
+/// and whether `started` was called.
+struct Progress<'a> {
+    started: Option<&'a Py<PyAny>>,
+    ended: Option<&'a Py<PyAny>>,
+    tasks: Vec<&'a str>,
+    streams_left: Vec<std::sync::atomic::AtomicUsize>,
+    begun: Vec<std::sync::atomic::AtomicBool>,
+}
+
+impl<'a> Progress<'a> {
+    /// The progress of solvers with the task ids `tasks`, of whom the solver at an index has `streams[index]` streams.
+    fn new(started: Option<&'a Py<PyAny>>, ended: Option<&'a Py<PyAny>>, tasks: Vec<&'a str>, streams: Vec<usize>) -> Self {
+        let streams_left = streams.into_iter().map(std::sync::atomic::AtomicUsize::new).collect();
+        let begun = tasks.iter().map(|_| std::sync::atomic::AtomicBool::new(false)).collect();
+        Self { started, ended, tasks, streams_left, begun }
+    }
+
+    /// Calls `callback`, holding the GIL, with the task id of `solver`; an exception it raises is printed and dropped.
+    fn call(&self, callback: &Py<PyAny>, solver: usize) {
+        Python::attach(|py| {
+            if let Err(error) = callback.call1(py, (self.tasks[solver],)) {
+                error.print(py);
+            }
+        });
+    }
+
+    /// A unit of `solver` starts: calls `started` for the first of its units.
+    fn start(&self, solver: usize) {
+        if let Some(callback) = self.started {
+            if !self.begun[solver].swap(true, std::sync::atomic::Ordering::SeqCst) {
+                self.call(callback, solver);
+            }
+        }
+    }
+
+    /// A stream of `solver` has ended: calls `ended` for the last of its streams.
+    fn settle(&self, solver: usize) {
+        if let Some(callback) = self.ended {
+            if self.streams_left[solver].fetch_sub(1, std::sync::atomic::Ordering::SeqCst) == 1 {
+                self.call(callback, solver);
+            }
+        }
+    }
+}
+
 /// Replays the streams of `found` whose masks are due, which are those with
 /// `Ok(None)`, on the tasks that `reads` holds, as [`replay_units`] does, and
 /// sets each stream's `masks`. A solver whose task did not read, or whose
 /// unit panicked, gives each of its streams that fault.
-fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &HashMap<String, Result<(Task, JudgedTask), String>>, constructions: &'static Constructions) {
+fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &HashMap<String, Result<(Task, JudgedTask), String>>, constructions: &'static Constructions, started: Option<&Py<PyAny>>, ended: Option<&Py<PyAny>>) {
     let mut faults: HashMap<usize, String> = HashMap::new();
     // For each solver whose task read: its index in `found`, the indices in its streams of the due streams, and their ids.
     let mut due: Vec<(usize, Vec<usize>, Vec<Vec<(u32, Emitter)>>)> = Vec::new();
@@ -795,6 +847,7 @@ fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &Hash
             UnitSolver { task, judged, streams: ids }
         })
         .collect();
+    let progress = Progress::new(started, ended, due.iter().map(|(solver, _, _)| found[*solver].0.as_str()).collect(), due.iter().map(|(_, wanted, _)| wanted.len()).collect());
     let results = replay_units(
         &solvers,
         constructions,
@@ -805,8 +858,9 @@ fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &Hash
             *rows += 1;
             masks.extend(mask_bytes(masked.mask, decoder.vocabulary().len()));
         },
+        &|solver| progress.start(solver),
         &|_, masks| masks,
-        &|_| {},
+        &|solver| progress.settle(solver),
     );
     let mut sets = Vec::new();
     for ((solver, wanted, _), result) in due.iter().zip(results) {
@@ -1061,7 +1115,7 @@ fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, tas
         .collect();
     let trains: Vec<usize> = streamed.iter().map(|(id, _)| reads[*id].0.train.len()).collect();
     let evidence: Vec<Vec<Table>> = solvers.iter().map(|solver| evidence_tables(solver.task, Registry::get())).collect();
-    let streams_left: Vec<std::sync::atomic::AtomicUsize> = streamed.iter().map(|(_, ids)| std::sync::atomic::AtomicUsize::new(ids.len())).collect();
+    let progress = Progress::new(None, ended.as_ref(), streamed.iter().map(|(id, _)| *id).collect(), streamed.iter().map(|(_, ids)| ids.len()).collect());
     let mut replayed = py
         .detach(|| {
             replay_units(
@@ -1070,18 +1124,9 @@ fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, tas
                 &settings,
                 false,
                 &|tables: &mut Vec<(usize, Table)>, decoder, stepped| tables.extend(decoder.tables(points).into_iter().map(|table| (stepped.index, table))),
+                &|solver| progress.start(solver),
                 &|solver, tables| case_columns(&evidence[solver], &tables, trains[solver]),
-                &|solver| {
-                    if let Some(callback) = &ended {
-                        if streams_left[solver].fetch_sub(1, std::sync::atomic::Ordering::SeqCst) == 1 {
-                            Python::attach(|py| {
-                                if let Err(error) = callback.call1(py, (streamed[solver].0,)) {
-                                    error.print(py);
-                                }
-                            });
-                        }
-                    }
-                },
+                &|solver| progress.settle(solver),
             )
         })
         .into_iter();

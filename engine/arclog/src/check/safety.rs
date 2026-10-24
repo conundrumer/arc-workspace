@@ -6,7 +6,7 @@ use super::reads::forms_within;
 use super::types::result;
 use super::{Check, CheckId, CheckInput, CheckResult, LabelInScope, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::eval::ir::atom_modes;
-use crate::safety::{body_labels, conjunct_labels, each_label_use_at, bound_labels, list_of, mode_holds, orientation_labels, parts_of};
+use crate::safety::{body_labels, conjunct_labels, each_label_use_at, bound_labels, conjunct_label_set, LabelCounts, list_of, mode_holds, orientation_labels, parts_of};
 use crate::hash::StableHashSet;
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{node_at, NodePath, NodeRef};
@@ -258,7 +258,7 @@ impl Walk<'_> {
         let outside = form_body.outside();
         let mut found = Vec::new();
         self.ordered(&list_of(form_body.body.value(), &form_body.at), &given, &outside, &mut found);
-        let bound = bound_labels(form_body.body.value(), &given, &outside, &|atom| atom_modes(self.registry, atom), self.types);
+        let bound = bound_labels(&form_body.body.value().conjuncts.iter().collect::<Vec<_>>(), &given, &outside, &|atom| atom_modes(self.registry, atom), self.types);
         let mut check_use = |at: &NodePath, use_: LabelUse| {
             if let Some(label) = use_label(use_).filter(|label| !bound.contains(label)) {
                 found.push((Some(label), "the body leaves the label unbound", at.clone()));
@@ -278,9 +278,8 @@ impl Walk<'_> {
 
     /// The labels that the conjuncts of `list` bind from `given`, with
     /// `outside` the labels that stand outside them.
-    fn bind(&self, list: &[(NodePath, &Conjunct)], given: &StableHashSet<LabelId>, outside: &StableHashSet<LabelId>) -> StableHashSet<LabelId> {
-        let body = Body { conjuncts: list.iter().map(|(_, conjunct)| (*conjunct).clone()).collect() };
-        bound_labels(&body, given, outside, &|atom| atom_modes(self.registry, atom), self.types)
+    fn bind(&self, list: &[&Conjunct], given: &StableHashSet<LabelId>, outside: &StableHashSet<LabelId>) -> StableHashSet<LabelId> {
+        bound_labels(list, given, outside, &|atom| atom_modes(self.registry, atom), self.types)
     }
 
     /// Pushes onto `found` each label that `list`, in its written order,
@@ -288,12 +287,14 @@ impl Walk<'_> {
     /// with `outside` the labels that stand outside `list`, and so for the
     /// parts of each of its forms.
     fn ordered(&self, list: &[(NodePath, &Conjunct)], given: &StableHashSet<LabelId>, outside: &StableHashSet<LabelId>, found: &mut Vec<(Option<LabelId>, &'static str, NodePath)>) {
+        let conjuncts: Vec<&Conjunct> = list.iter().map(|(_, conjunct)| *conjunct).collect();
+        let sets: Vec<StableHashSet<LabelId>> = conjuncts.iter().map(|conjunct| conjunct_label_set(conjunct)).collect();
+        let total = LabelCounts::of(&sets);
+        let mut suffix = LabelCounts::of(&sets);
         for (i, (at, conjunct)) in list.iter().enumerate() {
-            let mut from = outside.clone();
-            from.extend(list_labels(list[i..].iter().map(|(_, conjunct)| *conjunct)));
-            let before = self.bind(&list[..i], given, &from);
-            let mut around = outside.clone();
-            around.extend(list_labels(list.iter().enumerate().filter(|&(k, _)| k != i).map(|(_, (_, conjunct))| *conjunct)));
+            let from = suffix.around(outside, None);
+            let before = self.bind(&conjuncts[..i], given, &from);
+            let around = total.around(outside, Some(&sets[i]));
             match conjunct {
                 Conjunct::Atom(atom) if !atom_modes(self.registry, atom.value()).is_empty() => {
                     let mut written = before.clone();
@@ -301,9 +302,8 @@ impl Walk<'_> {
                     if !mode_holds(atom.value(), &written, atom_modes(self.registry, atom.value())) {
                         found.push((None, "no mode of the atom's relation has its columns written and bound by the conjuncts written before it", at.clone()));
                     }
-                    let mut after_outside = outside.clone();
-                    after_outside.extend(list_labels(list[i + 1..].iter().map(|(_, conjunct)| *conjunct)));
-                    let after = self.bind(&list[..=i], given, &after_outside);
+                    let after_outside = suffix.around(outside, Some(&sets[i]));
+                    let after = self.bind(&conjuncts[..=i], given, &after_outside);
                     each_label_use_at(NodeRef::Conjunct(conjunct), at, &mut |path, use_| {
                         if let Some(label) = use_label(use_).filter(|label| !after.contains(label)) {
                             found.push((Some(label), "no mode of the atom's relation has its columns bound by the conjuncts written before it", path.clone()));
@@ -319,6 +319,7 @@ impl Walk<'_> {
                 }
                 _ => {}
             }
+            suffix.remove(&sets[i]);
             let parts = parts_of(conjunct, at);
             for (j, part) in parts.iter().enumerate() {
                 let mut part_outside = around.clone();

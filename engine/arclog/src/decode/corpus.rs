@@ -284,7 +284,8 @@ pub const UNIT_STEPS: usize = 50_000;
 /// the order of [`sorted_streams`], into units of consecutive streams, so
 /// that no unit passes [`UNIT_STEPS`] model steps but by its last stream's,
 /// and the units run largest first, each in a session of its
-/// own and under `catch_unwind`. As a unit ends, its worker calls `ended`
+/// own and under `catch_unwind`. As a unit starts, its worker calls
+/// `started` with the solver's index in `solvers`. As a unit ends, its worker calls `ended`
 /// with the solver's index in `solvers` and the record of each of the unit's
 /// streams that the replay takes, and the stream's result is what `ended`
 /// gives. Once a stream's replay ends, whether it gives a record or a fault,
@@ -299,6 +300,7 @@ pub fn replay_units<T: Default + Clone, U: Send>(
     settings: &DecodeSettings,
     masked: bool,
     record: &(dyn Fn(&mut T, &Decoder<'_>, Stepped<'_>) + Sync),
+    started: &(dyn Fn(usize) + Sync),
     ended: &(dyn Fn(usize, T) -> U + Sync),
     settled: &(dyn Fn(usize) + Sync),
 ) -> Vec<Result<Vec<Result<U, String>>, String>> {
@@ -324,6 +326,7 @@ pub fn replay_units<T: Default + Clone, U: Send>(
     units.sort_by(|a, b| b.steps.cmp(&a.steps));
     let outcomes = run_on_workers(&units, |unit| {
         let solver = &solvers[unit.solver];
+        started(unit.solver);
         let ids: Vec<Vec<(u32, Emitter)>> = unit.streams.iter().map(|&stream| solver.streams[stream].clone()).collect();
         catch_unwind(AssertUnwindSafe(|| {
             replay_prefix_tree(solver.task, solver.judged, &ids, constructions, settings, masked, record)

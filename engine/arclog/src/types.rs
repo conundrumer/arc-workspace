@@ -181,7 +181,7 @@ pub(crate) fn label_fault_message(fault: LabelFault) -> String {
 
 /// The type that `body` gives `label`, `None` where it gives none, or the
 /// fault of that type. `body` is the list of the label's scope, as
-/// `scope_list` gives it.
+/// `scope_lists` gives it.
 ///
 /// The type is the meet, as [`ValueType::meet`] gives it, of the types of
 /// every site of the label, at any depth, and a join, as [`ValueType::join`]
@@ -233,42 +233,72 @@ pub fn label_type_keyed(
     LabelWalk { label, site_type, asked: vec![label], key }.body_type(body, &[], None)
 }
 
-/// The list of the scope of `label`, a label of `list` that is no head
+/// The list of the scope of a label of `list` that is no head
 /// label: the innermost list that holds each of its sites, or, where that
 /// list is an `IF`'s test or a list of an `ALL`, or where its sites stand in
 /// both the test and the then of an `IF`, the list that holds that form,
 /// since a label fresh there is local to the form.
-pub(crate) fn scope_list(list: &crate::program::Body, label: crate::program::LabelId) -> &crate::program::Body {
-    let holds = |conjunct: &crate::program::Conjunct| {
-        let mut labels = crate::hash::StableHashSet::default();
-        crate::safety::conjunct_labels(conjunct, &mut labels);
-        labels.contains(&label)
-    };
-    let mut holders = list.conjuncts.iter().filter(|conjunct| holds(conjunct));
-    let (Some(conjunct), None) = (holders.next(), holders.next()) else { return list };
-    let mut own = Vec::new();
-    crate::safety::own_labels(conjunct, &mut own);
-    if own.contains(&label) {
-        return list;
+/// For each of `labels`, in their order, the list of its scope. The labels of each
+/// conjunct of a list are taken once, and a part of a form is entered once
+/// for all the labels that stand in it alone.
+pub(crate) fn scope_lists<'a>(list: &'a crate::program::Body, labels: &[crate::program::LabelId]) -> Vec<&'a crate::program::Body> {
+    use crate::program::{Body, Conjunct, Negated};
+    // The parts of a form, with whether a label that stands only in it takes
+    // it as its scope, and the labels each part holds.
+    struct Parts<'a> {
+        own: Vec<crate::program::LabelId>,
+        parts: Vec<(&'a Body, bool, crate::hash::StableHashSet<crate::program::LabelId>)>,
     }
-    use crate::program::{Conjunct, Negated};
-    let mut form = conjunct;
-    while let Conjunct::Not(Negated::Form(inner)) = form {
-        form = inner;
+    let held: Vec<crate::hash::StableHashSet<crate::program::LabelId>> = list
+        .conjuncts
+        .iter()
+        .map(|conjunct| {
+            let mut labels = crate::hash::StableHashSet::default();
+            crate::safety::conjunct_labels(conjunct, &mut labels);
+            labels
+        })
+        .collect();
+    let mut parts_of: Vec<Option<Parts<'a>>> = list.conjuncts.iter().map(|_| None).collect();
+    let mut result = vec![list; labels.len()];
+    // For each conjunct and part, the positions of the labels that it takes.
+    let mut groups: Vec<((usize, usize), Vec<usize>)> = Vec::new();
+    for (at, label) in labels.iter().enumerate() {
+        let mut holders = held.iter().enumerate().filter(|(_, labels)| labels.contains(label)).map(|(i, _)| i);
+        let (Some(i), None) = (holders.next(), holders.next()) else { continue };
+        let conjunct = &list.conjuncts[i];
+        let parts = parts_of[i].get_or_insert_with(|| {
+            let mut own = Vec::new();
+            crate::safety::own_labels(conjunct, &mut own);
+            let mut form = conjunct;
+            while let Conjunct::Not(Negated::Form(inner)) = form {
+                form = inner;
+            }
+            let parts: Vec<(&Body, bool)> = match form {
+                Conjunct::Or(branches) => branches.iter().map(|branch| (branch.value(), true)).collect(),
+                Conjunct::If { test, then, otherwise } => vec![(test.value(), false), (then.value(), true), (otherwise.value(), true)],
+                Conjunct::All { domain, body } => vec![(domain.value(), false), (body.value(), false)],
+                Conjunct::Atom(_) | Conjunct::Not(_) | Conjunct::Constraint(_) => Vec::new(),
+            };
+            Parts { own, parts: parts.into_iter().map(|(part, takes)| (part, takes, crate::safety::body_labels(part))).collect() }
+        });
+        if parts.own.contains(label) {
+            continue;
+        }
+        let mut holding = parts.parts.iter().enumerate().filter(|(_, (_, _, held))| held.contains(label));
+        let (Some((k, (_, true, _))), None) = (holding.next(), holding.next()) else { continue };
+        match groups.iter_mut().find(|(key, _)| *key == (i, k)) {
+            Some((_, members)) => members.push(at),
+            None => groups.push(((i, k), vec![at])),
+        }
     }
-    // Each part of the form, with whether a label that stands only in it
-    // takes it as its scope.
-    let parts: Vec<(&crate::program::Body, bool)> = match form {
-        Conjunct::Or(branches) => branches.iter().map(|branch| (branch.value(), true)).collect(),
-        Conjunct::If { test, then, otherwise } => vec![(test.value(), false), (then.value(), true), (otherwise.value(), true)],
-        Conjunct::All { domain, body } => vec![(domain.value(), false), (body.value(), false)],
-        Conjunct::Atom(_) | Conjunct::Not(_) | Conjunct::Constraint(_) => Vec::new(),
-    };
-    let mut holding = parts.into_iter().filter(|(part, _)| crate::safety::body_labels(part).contains(&label));
-    match (holding.next(), holding.next()) {
-        (Some((part, true)), None) => scope_list(part, label),
-        _ => list,
+    for ((i, k), members) in groups {
+        let part = parts_of[i].as_ref().expect("a conjunct with a group").parts[k].0;
+        let inner: Vec<_> = members.iter().map(|&at| labels[at]).collect();
+        for (&at, scope) in members.iter().zip(scope_lists(part, &inner)) {
+            result[at] = scope;
+        }
     }
+    result
 }
 
 /// The walk of [`label_type`] for `label`, the label asked. `asked` holds

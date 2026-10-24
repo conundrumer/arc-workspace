@@ -250,6 +250,13 @@ impl<'a> Context<'a> {
         let mut best = None;
         let mut cut_short = false;
         let colors = graph.initial.clone();
+        // A refinement that leaves no cell to split has one leaf, whose labels are the labeling: no write of the scope is compared.
+        let mut refined = colors.clone();
+        graph.refine(&mut refined);
+        if graph.target_cell(&refined).is_none() {
+            self.search.remaining = outer;
+            return (graph.leaf_labels(&refined), false);
+        }
         self.visit(&graph, colors, scope, &mut best, &mut cut_short);
         self.search.remaining = outer;
         self.search.reached |= cut_short;

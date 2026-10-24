@@ -497,7 +497,7 @@ fn compile_mapped(
     let registry = Registry::get();
     let key_labels: &[LabelId] = key.as_ref().map_or(&[], |(_, labels)| labels);
     let bound = crate::safety::bound_labels(
-        &subset,
+        &subset.conjuncts.iter().collect::<Vec<_>>(),
         &key_labels.iter().copied().collect(),
         &StableHashSet::default(),
         &|atom| atom_modes(registry, atom),

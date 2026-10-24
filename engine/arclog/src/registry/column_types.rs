@@ -2,7 +2,7 @@
 //! definition.
 
 use super::*;
-use crate::types::{label_fault_message, scope_list};
+use crate::types::{label_fault_message, scope_lists};
 
 /// A relation macro of the file, or a proposer written in arclog with its
 /// clause as the definition, as [`macro_column_types`] reads it.
@@ -53,7 +53,7 @@ pub struct MacroDeclarations {
 /// that read one another, given at each macro of the cycle; a label of the
 /// definition, a column's or one that no column stands for, whose sites
 /// have an empty meet, or whose branches give types with no join, over the
-/// list of the label's scope that `crate::types::scope_list` gives, the
+/// list of the label's scope that `crate::types::scope_lists` gives, the
 /// definition for a column's label; a column whose label stands at no site
 /// that gives a type; or a definition that no set of the columns binds.
 /// A macro that reads a macro with a fault takes no declaration, and gives
@@ -222,9 +222,10 @@ impl MacroDerivation<'_, '_> {
         let label_types = |label: LabelId| label_types.get(&label).cloned();
         let atom_modes = |atom: &Atom| self.atom_modes(atom);
         let columns: Vec<usize> = (0..m.columns.len()).collect();
+        let definition: Vec<&crate::program::Conjunct> = m.definition.conjuncts.iter().collect();
         let binds = |set: &[usize]| {
             let bound: StableHashSet<LabelId> = set.iter().map(|&c| m.columns[c].1).collect();
-            let reached = bound_labels(m.definition, &bound, &column_labels, &atom_modes, &label_types);
+            let reached = bound_labels(&definition, &bound, &column_labels, &atom_modes, &label_types);
             definition_labels.iter().all(|label| reached.contains(label))
         };
         let mut found: Vec<Vec<usize>> = Vec::new();
@@ -307,7 +308,7 @@ fn subsets_of_size(items: &[usize], size: usize) -> Vec<Vec<usize>> {
 
 /// The type that [`label_type`] gives each label of `body` that `columns`
 /// gives no column, in the order of the label's first site in `body`, over
-/// the list of the label's scope, as [`crate::types::scope_list`] gives it.
+/// the list of the label's scope, as [`crate::types::scope_lists`] gives it.
 /// `body` stands for the body of a clause whose head labels are the labels
 /// of `columns`.
 fn local_label_types(
@@ -325,5 +326,6 @@ fn local_label_types(
             }
         }
     });
-    labels.into_iter().map(|label| (label, label_type(scope_list(body, label), label, site_type))).collect()
+    let lists = scope_lists(body, &labels);
+    labels.into_iter().zip(lists).map(|(label, list)| (label, label_type(list, label, site_type))).collect()
 }
