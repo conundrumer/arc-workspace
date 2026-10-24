@@ -179,9 +179,11 @@ struct Checkpoint<'a, T> {
 /// stream's record, which starts as `T::default()`. The replay computes the
 /// token mask before each step where `masked` holds. The streams are
 /// replayed in the order of [`sorted_streams`] as a prefix tree: the token
-/// mask and the step of a prefix that streams share run once, and each
-/// stream that continues the prefix resumes from a fork of the decoder and
-/// a clone of the record there. A stream equal to the one before takes a
+/// mask and the step of a prefix that streams share run once: a replay
+/// leaves a checkpoint at each prefix that a later stream shares with it,
+/// past the position it resumed from, and each stream resumes from a fork
+/// of the decoder and a clone of the record at the checkpoint of the
+/// prefix it shares with the stream before it. A stream equal to the one before takes a
 /// clone of its outcome; a checkpoint stands at the position the replay
 /// reached, which is the end of the program the decode reads where that is
 /// before the shared prefix's end ([`super::replay::Replayed::end`]); and a stream that shares the prefix through the
@@ -203,11 +205,14 @@ pub fn replay_prefix_tree<T: Default + Clone>(
     let mut outcomes: Vec<Option<Result<T, String>>> = streams.iter().map(|_| None).collect();
     // The index in a stream of the token at which its replay was refused.
     let mut refused_at: Vec<Option<usize>> = vec![None; streams.len()];
+    // The prefix that each stream shares with the stream before it.
+    let shared_with_before: Vec<usize> =
+        order.iter().enumerate().map(|(rank, &index)| rank.checked_sub(1).map_or(0, |before| common_prefix(&streams[order[before]], &streams[index]))).collect();
     let mut stack: Vec<Checkpoint<'_, T>> = Vec::new();
     for (rank, &index) in order.iter().enumerate() {
         let stream = &streams[index];
         let before = rank.checked_sub(1).map(|before| order[before]);
-        let shared = before.map_or(0, |before| common_prefix(&streams[before], stream));
+        let shared = shared_with_before[rank];
         while stack.last().is_some_and(|checkpoint| checkpoint.position > shared) {
             stack.pop();
         }
@@ -218,8 +223,6 @@ pub fn replay_prefix_tree<T: Default + Clone>(
                 continue;
             }
         }
-        // The prefix that the next stream of other tokens shares.
-        let target = order[rank + 1..].iter().map(|&next| &streams[next]).find(|next| *next != stream).map_or(0, |next| common_prefix(stream, next));
         let tokens: Vec<(Token, Emitter)> =
             stream.iter().map(|(id, emitter)| (root.vocabulary().token(*id).expect("an id of the decoder's vocabulary").clone(), *emitter)).collect();
         let (mut decoder, mut position, mut forced, mut recording) = match stack.last() {
@@ -232,15 +235,35 @@ pub fn replay_prefix_tree<T: Default + Clone>(
                 std::ops::ControlFlow::Continue(())
             })
         };
+        // The prefixes past `position` that later streams share with this one,
+        // in increasing order: a later stream shares with this one the least
+        // of the prefixes that the streams from this one to it share in turn.
+        let mut targets = Vec::new();
+        let mut least = stream.len();
+        for &next in &shared_with_before[rank + 1..] {
+            least = least.min(next);
+            if least <= position {
+                break;
+            }
+            if targets.last() != Some(&least) {
+                targets.push(least);
+            }
+        }
         let mut result = Ok(());
-        if target > position {
+        for &target in targets.iter().rev() {
             match run(&mut decoder, &tokens[..target], position, forced.clone(), &mut recording) {
                 Ok(replayed) => {
                     position = replayed.end();
                     forced = replayed.forced().to_vec();
                     stack.push(Checkpoint { position, decoder: decoder.fork(), forced: forced.clone(), record: recording.clone() });
+                    if position < target {
+                        break;
+                    }
                 }
-                Err(refused) => result = Err(refused),
+                Err(refused) => {
+                    result = Err(refused);
+                    break;
+                }
             }
         }
         let result = result.and_then(|()| run(&mut decoder, &tokens, position, forced, &mut recording));
