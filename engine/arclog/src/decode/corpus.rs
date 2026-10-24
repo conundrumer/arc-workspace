@@ -285,7 +285,8 @@ pub const UNIT_STEPS: usize = 50_000;
 /// own and under `catch_unwind`. As a unit ends, its worker calls `ended`
 /// with the solver's index in `solvers` and the record of each of the unit's
 /// streams that the replay takes, and the stream's result is what `ended`
-/// gives.
+/// gives. Once a stream's replay ends, whether it gives a record or a fault,
+/// its worker calls `settled` with the solver's index.
 ///
 /// Gives, for each solver, the result of each of its streams in the order of
 /// `streams`, or the fault of [`replay_panic`] where one of its units
@@ -297,6 +298,7 @@ pub fn replay_units<T: Default + Clone, U: Send>(
     masked: bool,
     record: &(dyn Fn(&mut T, &Decoder<'_>, Stepped<'_>) + Sync),
     ended: &(dyn Fn(usize, T) -> U + Sync),
+    settled: &(dyn Fn(usize) + Sync),
 ) -> Vec<Result<Vec<Result<U, String>>, String>> {
     let sorted: Vec<Vec<usize>> = solvers.iter().map(|solver| sorted_streams(solver.streams)).collect();
     let mut units = Vec::new();
@@ -324,7 +326,11 @@ pub fn replay_units<T: Default + Clone, U: Send>(
         catch_unwind(AssertUnwindSafe(|| {
             replay_prefix_tree(solver.task, solver.judged, &ids, constructions, settings, masked, record)
                 .into_iter()
-                .map(|outcome| outcome.map(|recorded| ended(unit.solver, recorded)))
+                .map(|outcome| {
+                    let out = outcome.map(|recorded| ended(unit.solver, recorded));
+                    settled(unit.solver);
+                    out
+                })
                 .collect::<Vec<_>>()
         }))
         .map_err(|payload| replay_panic(&*payload))

@@ -8,7 +8,7 @@
 //! A relation is a set: each function here that gives its rows gives them
 //! in an order of encodings and no order of the content.
 
-use crate::hash::{StableHashMap, StableHashSet};
+use crate::hash::{StableHash, StableHashMap, StableHashSet, StableHasher};
 use crate::terms::TermId;
 
 /// A row: a fixed-arity array of term ids, with no type tag.
@@ -112,6 +112,9 @@ pub struct Relation {
     /// The indexes built so far, one per column order, each added on its
     /// first use and kept, shared by the clones of the relation.
     indexes: std::sync::Arc<std::sync::RwLock<StableHashMap<ColumnOrder, std::sync::Arc<Index>>>>,
+    /// The rows hash, computed on first use and shared by the clones of the
+    /// relation.
+    rows_hash: std::sync::Arc<std::sync::OnceLock<StableHash>>,
 }
 
 impl Relation {
@@ -127,7 +130,29 @@ impl Relation {
             }
         }
         assert!(covered.iter().all(|&c| c), "parts that cover every column");
-        Relation { arity, parts, indexes: Default::default() }
+        Relation { arity, parts, indexes: Default::default(), rows_hash: Default::default() }
+    }
+
+    /// The hash of the relation's rows, which depends on its rows alone: no order
+    /// of its rows, and no split of its columns into parts. Each row hashes as
+    /// the product, modulo `MODULUS`, of a hash of each of its values at its
+    /// column, and the relation as the sum of its rows' hashes. Since a row of
+    /// the product of parts hashes as the product of its parts' rows' hashes,
+    /// that sum is the product of each part's sum, which reads each part's rows
+    /// once.
+    pub fn rows_hash(&self) -> StableHash {
+        *self.rows_hash.get_or_init(|| {
+            let sum = self.parts().iter().fold(1u64, |product, part| {
+                let rows = part.rows.rows().fold(0u64, |sum, row| {
+                    let hash = part.columns.iter().zip(row).fold(1u64, |hash, (column, value)| times(hash, value_hash(column.0, value.encoding())));
+                    (sum + hash) % MODULUS
+                });
+                times(product, rows)
+            });
+            let mut hasher = StableHasher::new();
+            std::hash::Hash::hash(&(self.arity(), sum), &mut hasher);
+            hasher.finish128()
+        })
     }
 
     /// The arity of the rows.
@@ -228,4 +253,18 @@ impl Index {
     pub fn is_empty(&self) -> bool {
         self.children.is_empty()
     }
+}
+
+/// The modulus of the rows hash, the Mersenne prime 2^61 - 1.
+const MODULUS: u64 = (1 << 61) - 1;
+
+/// The hash of `value` at `column`, in `1..MODULUS`.
+fn value_hash(column: u16, value: u32) -> u64 {
+    let mut hasher = StableHasher::new();
+    std::hash::Hash::hash(&(column, value), &mut hasher);
+    1 + (hasher.finish128().0 as u64) % (MODULUS - 1)
+}
+
+fn times(a: u64, b: u64) -> u64 {
+    ((u128::from(a) * u128::from(b)) % u128::from(MODULUS)) as u64
 }

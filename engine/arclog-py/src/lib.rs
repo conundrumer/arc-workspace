@@ -802,6 +802,7 @@ fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &Hash
             masks.extend(mask_bytes(masked.mask, decoder.vocabulary().len()));
         },
         &|_, masks| masks,
+        &|_| {},
     );
     let mut sets = Vec::new();
     for ((solver, wanted, _), result) in due.iter().zip(results) {
@@ -1002,9 +1003,13 @@ struct TableCase {
 /// solver into units, as `corpus_streams` does, replays the units, the
 /// largest first, and turns the tables of each stream into columns as its
 /// unit ends.
+/// `ended`, a callable or `None`, is called with a solver's task id, holding
+/// the GIL, once the last of that solver's streams has ended. A solver none
+/// of whose streams replays, and one whose unit panics, gives no call. An
+/// exception that `ended` raises is printed and dropped.
 #[pyfunction]
-#[pyo3(signature = (corpus, tasks, all_cases=false, task_ids=None, bodies=false, projection_cap=None))]
-fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, task_ids: Option<Vec<String>>, bodies: bool, projection_cap: Option<u64>) -> PyResult<(Vec<PyCaseTables>, Vec<String>)> {
+#[pyo3(signature = (corpus, tasks, all_cases=false, task_ids=None, bodies=false, projection_cap=None, ended=None))]
+fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, task_ids: Option<Vec<String>>, bodies: bool, projection_cap: Option<u64>, ended: Option<Py<PyAny>>) -> PyResult<(Vec<PyCaseTables>, Vec<String>)> {
     let points = if bodies { Points::All } else { Points::Relations };
     let wanted = if all_cases { WantedCases::All } else { WantedCases::Concept };
     let constructions = constructions()?;
@@ -1044,6 +1049,7 @@ fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, tas
         .collect();
     let trains: Vec<usize> = streamed.iter().map(|(id, _)| reads[*id].0.train.len()).collect();
     let evidence: Vec<Vec<Table>> = solvers.iter().map(|solver| evidence_tables(solver.task, Registry::get())).collect();
+    let streams_left: Vec<std::sync::atomic::AtomicUsize> = streamed.iter().map(|(_, ids)| std::sync::atomic::AtomicUsize::new(ids.len())).collect();
     let mut replayed = py
         .detach(|| {
             replay_units(
@@ -1053,6 +1059,17 @@ fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, tas
                 false,
                 &|tables: &mut Vec<(usize, Table)>, decoder, stepped| tables.extend(decoder.tables(points).into_iter().map(|table| (stepped.index, table))),
                 &|solver, tables| case_columns(&evidence[solver], &tables, trains[solver]),
+                &|solver| {
+                    if let Some(callback) = &ended {
+                        if streams_left[solver].fetch_sub(1, std::sync::atomic::Ordering::SeqCst) == 1 {
+                            Python::attach(|py| {
+                                if let Err(error) = callback.call1(py, (streamed[solver].0,)) {
+                                    error.print(py);
+                                }
+                            });
+                        }
+                    }
+                },
             )
         })
         .into_iter();

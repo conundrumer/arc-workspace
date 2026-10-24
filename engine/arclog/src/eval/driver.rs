@@ -505,7 +505,7 @@ impl<'e, 'a> Driver<'e, 'a> {
                     let relation = match &atom.source {
                         AtomSource::Fact(fact) => {
                             let on = (*fact == crate::program::FactRelation::Input).then_some(example).flatten();
-                            Arc::new(self.evaluation.task.fact_rows(*fact, on))
+                            self.evaluation.session.fact_relation(&self.evaluation.task, *fact, on)
                         }
                         AtomSource::Undefined(_) => return Ok(Err(RelationValue::Undefined)),
                         AtomSource::Key(key) => match self.bodies().relation(&key.form, &key.clause, example)? {
