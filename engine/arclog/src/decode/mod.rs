@@ -9,8 +9,9 @@
 //! resolution and the checks of its form in progress alone. Its interface
 //! beside the mask, in `interface`, gives the rows of the body so far and the
 //! consistency test at a `RULE` clause's end, and its batch form, in
-//! `batch`, steps many decodes at once, and its views of the body so far, in
-//! `views`, give the largest sets of its columns under the view cap, and its
+//! `batch`, steps many decodes at once, and its projections of the body so far,
+//! in `projections`, give the largest sets of its columns under the projection
+//! cap, and its
 //! tables of the last step, in `tables`, give the body of the clause in
 //! progress or the relations of the form finished. The replay of a case
 //! program's stream through a decoder, in `replay`, the walk of a solver's
@@ -26,12 +27,12 @@ mod interface;
 pub mod replay;
 mod state;
 mod tables;
-mod views;
+mod projections;
 
 pub use batch::step_batch;
 pub use interface::{Consistency, Step};
 pub use tables::{evidence_tables, Contents, ExampleRows, Point, Points, Table, TableColumn, TableDet, TableRelation};
-pub use views::{View, Views};
+pub use projections::{Projection, Projections};
 
 use std::sync::Arc;
 

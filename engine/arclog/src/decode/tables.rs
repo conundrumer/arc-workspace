@@ -5,7 +5,7 @@
 //! point, its relation's slot, its columns' names and types, and its rows on
 //! every example at each assignment of the `DET`s it reads, at each model for
 //! a relation with picks. Where a relation holds more rows on an example than
-//! the view cap of the decode settings, the table gives its views in place of
+//! the projection cap of the decode settings, the table gives its projections in place of
 //! its rows. The recording makes no choice among the points: it keeps each,
 //! and a caller that reads no body in progress asks for [`Points::Relations`],
 //! so that no body table is evaluated.
@@ -14,14 +14,14 @@
 //! of a task, `ex_input` and `ex_output`, which stand before the first step.
 //! Each holds one entry for each example whose grid the fact relation holds,
 //! so that no entry passes the 900 cells of a grid, and none is cut into
-//! views.
+//! projections.
 
 use std::ops::ControlFlow;
 use std::sync::Arc;
 
 use super::interface::{derived_at, open_clause, relation_dets, walked_dets, Assigned, OpenClause};
 use super::state::State;
-use super::views::{views, Views};
+use super::projections::{projections, Projections};
 use super::Decoder;
 use crate::check::CheckedProgram;
 use crate::eval::examples::scope_of;
@@ -102,11 +102,11 @@ pub struct Contents {
     /// The `DET`s of the assignments, in their order.
     pub dets: Box<[TableDet]>,
     pub examples: Box<[ExampleRows]>,
-    /// The views, in place of the rows, where a relation holds more rows on
-    /// an example than the view cap. The views' rows follow the order of the
+    /// The projections, in place of the rows, where a relation holds more rows on
+    /// an example than the projection cap. The projections' rows follow the order of the
     /// models of `examples`, each example's, one entry for each model at
     /// each assignment.
-    pub views: Option<Views>,
+    pub projections: Option<Projections>,
 }
 
 /// A table at a point of a form of the program.
@@ -198,8 +198,8 @@ impl Decoder<'_> {
     }
 
     /// The contents of the table of `relation` in `program`, from its rows
-    /// on each example: its slot, its columns, its `DET`s, and its views
-    /// where a relation holds more rows than the view cap.
+    /// on each example: its slot, its columns, its `DET`s, and its projections
+    /// where a relation holds more rows than the projection cap.
     fn contents(&self, program: &CheckedProgram, form: &NodePath, relation: &GraphRelation, slot: u32, dets: &[Det], examples: Vec<ExampleRows>) -> Outcome<Contents> {
         let fault = |message: &str| RunFault { message: message.into(), form: form.clone() };
         let types = program.types.columns(relation).ok_or_else(|| fault("the columns of the relation have no types"))?;
@@ -216,30 +216,30 @@ impl Decoder<'_> {
                 Ok(TableDet { relation: det.relation.clone(), types: types.into() })
             })
             .collect::<Outcome<Box<[_]>>>()?;
-        let cap = self.context.settings.view_cap;
+        let cap = self.context.settings.projection_cap;
         let over = examples.iter().any(|example| example.rows.as_ref().is_ok_and(|rows| rows.at.iter().flat_map(|(_, models)| models).any(|model| matches!(model, RelationValue::Rows(rows) if rows.len() > cap))));
-        let views = over.then(|| self.views_of(&examples, form)).flatten();
-        Ok(Contents { relation: TableRelation::Slot(slot), columns, dets, examples: examples.into(), views })
+        let projections = over.then(|| self.projections_of(&examples, form)).flatten();
+        Ok(Contents { relation: TableRelation::Slot(slot), columns, dets, examples: examples.into(), projections })
     }
 
-    /// The views of the rows of `examples`, none where an example gives a
+    /// The projections of the rows of `examples`, none where an example gives a
     /// fault.
-    fn views_of(&self, examples: &[ExampleRows], form: &NodePath) -> Option<Views> {
+    fn projections_of(&self, examples: &[ExampleRows], form: &NodePath) -> Option<Projections> {
         let flat: Vec<Assigned<BodyValue>> = examples.iter().map(|example| example.rows.as_ref().ok().map(flatten)).collect::<Option<_>>()?;
         let limits = self.limits();
         let mut budget = Budget::new(&limits, self.session);
-        let found = views(&flat, self.context.settings.view_cap, &mut budget, form);
+        let found = projections(&flat, self.context.settings.projection_cap, &mut budget, form);
         budget.record();
         Some(found)
     }
 }
 
 /// The evidence tables of `task`, `ex_input` then `ex_output`, each with the
-/// columns of the fact relation in `registry`, no `DET`s and no views, and
+/// columns of the fact relation in `registry`, no `DET`s and no projections, and
 /// one entry for each example whose grid the relation holds, in the order of
 /// [`Task::examples`]: the rows of that example alone, at the one assignment,
 /// as the one model. A grid holds at most 900 cells, so no entry passes a
-/// view cap of 900 or more, and the function applies no cap.
+/// projection cap of 900 or more, and the function applies no cap.
 pub fn evidence_tables(task: &Task, registry: &Registry) -> Vec<Table> {
     [FactRelation::ExInput, FactRelation::ExOutput].into_iter().map(|fact| evidence_table(task, registry, fact)).collect()
 }
@@ -271,7 +271,7 @@ fn evidence_table(task: &Task, registry: &Registry, fact: FactRelation) -> Table
         .zip(held)
         .map(|(example, rows)| ExampleRows { example: Some(example), rows: Ok(Assigned { at: vec![(Vec::new(), vec![RelationValue::Rows(Arc::new(crate::eval::join::one_part(rows)))])], stop: None }) })
         .collect();
-    Table { form: NodePath::default(), point: Point::Evidence, contents: Ok(Contents { relation: TableRelation::Fact(fact), columns, dets: Box::new([]), examples, views: None }) }
+    Table { form: NodePath::default(), point: Point::Evidence, contents: Ok(Contents { relation: TableRelation::Fact(fact), columns, dets: Box::new([]), examples, projections: None }) }
 }
 
 /// The relation of the graph that the form at `form` of `program` declares as

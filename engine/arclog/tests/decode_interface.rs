@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use arclog::check::{check_program, CheckCache, CheckedProgram, SolverClauses};
-use arclog::decode::{step_batch, Consistency, Decoder, Point, Points, Refusal, Views};
+use arclog::decode::{step_batch, Consistency, Decoder, Point, Points, Refusal, Projections};
 use arclog::eval::instance::Constructions;
 use arclog::eval::pool::Pool;
 use arclog::eval::{Caps, ReachedBound, RelationValue};
@@ -255,22 +255,22 @@ fn a_det_clause_in_progress_gives_the_rows_of_its_kept_conjuncts() {
 }
 
 #[test]
-fn a_body_under_the_view_cap_is_its_one_view_with_the_rows_of_the_body() {
+fn a_body_under_the_projection_cap_is_its_one_projection_with_the_rows_of_the_body() {
     let inputs = inputs(&[3, 3], Caps::CORPUS);
     let tokens = model_tokens(COPIES);
     let (_, prefix) = tokens.split_last().expect("a stream");
     let mut decoder = decoder(&inputs);
     walk(&mut decoder, prefix);
-    let Some(Ok(Views::Found(found))) = decoder.views() else { panic!("the views of a clause in progress") };
-    let [view] = &found[..] else { panic!("one view: {found:?}") };
+    let Some(Ok(Projections::Found(found))) = decoder.projections() else { panic!("the projections of a clause in progress") };
+    let [projection] = &found[..] else { panic!("one projection: {found:?}") };
     let rows = decoder.rows(Some(Example::at(0))).expect("a clause in progress").expect("the sub-body checks");
     let [(_, body)] = &rows.at[..] else { panic!("one entry: {rows:?}") };
     let RelationValue::Rows(body) = &body.0 else { panic!("rows: {body:?}") };
-    assert_eq!(view.columns.len(), usize::from(body.arity()));
-    let [viewed] = &view.rows[..] else { panic!("one example: {view:?}") };
-    let [(_, Some(projected))] = &viewed.at[..] else { panic!("one projection: {viewed:?}") };
+    assert_eq!(projection.columns.len(), usize::from(body.arity()));
+    let [projected_example] = &projection.rows[..] else { panic!("one example: {projection:?}") };
+    let [(_, Some(projected))] = &projected_example.at[..] else { panic!("one projection: {projected_example:?}") };
     assert_eq!((projected.arity(), projected.len()), (body.arity(), body.len()));
-    assert!(self::decoder(&inputs).views().is_none(), "no clause is in progress before the first token");
+    assert!(self::decoder(&inputs).projections().is_none(), "no clause is in progress before the first token");
 }
 
 #[test]

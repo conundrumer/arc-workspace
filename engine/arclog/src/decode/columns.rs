@@ -8,8 +8,8 @@
 //! - [`EntryColumns`]: a table, an example and an entry of its rows, which
 //!   is a model at an assignment of the `DET`s;
 //! - [`AssignedColumns`]: a `DET` at an entry's assignment;
-//! - [`ViewColumns`] and [`ViewRowColumns`]: a view of a table, and the
-//!   view's rows at an entry.
+//! - [`ProjectionColumns`] and [`ProjectionRowColumns`]: a projection of a table, and the
+//!   projection's rows at an entry.
 //!
 //! The first tables of a case are the evidence tables of its task, `ex_input`
 //! then `ex_output`, with point 2, token 0, the relation's name in `fact`,
@@ -23,9 +23,9 @@
 //! depends on the order of interning, so it is equal to another Ident of the
 //! same run and to no Ident of another. A run is an offset in `values` and a
 //! count of rows, and its width in cells is the table's, or the `DET`'s, or
-//! the view's. The rows of a run are in the order of their cells.
+//! the projection's. The rows of a run are in the order of their cells.
 
-use super::{Contents, Point, Table, TableRelation, Views};
+use super::{Contents, Point, Table, TableRelation, Projections};
 use crate::read::spelling::{spelling, FACT_RELATIONS};
 use crate::eval::determinations::relation_spelled;
 use crate::eval::join::each_row;
@@ -45,15 +45,15 @@ pub enum PointKind {
     Evidence = 2,
 }
 
-/// What the views of a table are, as the code in [`TableColumns::views`].
+/// What the projections of a table are, as the code in [`TableColumns::projections`].
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(u8)]
-pub enum ViewsKind {
-    /// The table gives its rows, and no views.
+pub enum ProjectionsKind {
+    /// The table gives its rows, and no projections.
     None = 0,
     /// The search stopped at a bound.
     Stopped = 1,
-    /// The views, possibly none.
+    /// The projections, possibly none.
     Found = 2,
 }
 
@@ -63,7 +63,7 @@ pub enum ViewsKind {
 pub enum ValueKind {
     /// Rows, in the run of the entry.
     Rows = 0,
-    /// The count of rows alone, since the table gives views.
+    /// The count of rows alone, since the table gives projections.
     Count = 1,
     Undefined = 2,
     /// The bound that stopped the enumeration of models, in `value_stop`.
@@ -118,10 +118,10 @@ pub struct TableColumns {
     pub det_relations: Vec<Vec<String>>,
     pub det_types: Vec<Vec<Vec<String>>>,
     pub det_widths: Vec<Vec<u32>>,
-    /// The [`ViewsKind`] code.
-    pub views: Vec<u8>,
-    /// The bound that stopped the views, and its form.
-    pub views_stop: StopColumns,
+    /// The [`ProjectionsKind`] code.
+    pub projections: Vec<u8>,
+    /// The bound that stopped the projections, and its form.
+    pub projections_stop: StopColumns,
     pub fault: Vec<Option<String>>,
 }
 
@@ -165,21 +165,21 @@ pub struct AssignedColumns {
     pub offset: Vec<u64>,
 }
 
-/// One row for each view of a table whose views are found.
+/// One row for each projection of a table whose projections are found.
 #[derive(Clone, Debug, Default)]
-pub struct ViewColumns {
+pub struct ProjectionColumns {
     pub table: Vec<u32>,
-    /// The columns of the table that the view projects, in increasing order.
+    /// The columns of the table that the projection projects, in increasing order.
     pub columns: Vec<Vec<u32>>,
-    /// The width in cells of a view row.
+    /// The width in cells of a projection row.
     pub width: Vec<u32>,
 }
 
-/// One row for each view at each entry of its table.
+/// One row for each projection at each entry of its table.
 #[derive(Clone, Debug, Default)]
-pub struct ViewRowColumns {
-    /// The row of the view in [`ViewColumns`].
-    pub view: Vec<u32>,
+pub struct ProjectionRowColumns {
+    /// The row of the projection in [`ProjectionColumns`].
+    pub projection: Vec<u32>,
     /// The row of the entry in [`EntryColumns`].
     pub entry: Vec<u32>,
     /// 0 where the entry holds no rows, and 1 where it gives its projection.
@@ -194,8 +194,8 @@ pub struct CaseColumns {
     pub tables: TableColumns,
     pub entries: EntryColumns,
     pub assigned: AssignedColumns,
-    pub views: ViewColumns,
-    pub view_rows: ViewRowColumns,
+    pub projections: ProjectionColumns,
+    pub projection_rows: ProjectionRowColumns,
     pub values: Vec<i32>,
 }
 
@@ -294,8 +294,8 @@ fn push_table(out: &mut CaseColumns, token: usize, table: &Table, train: usize) 
             tables.det_relations.push(Vec::new());
             tables.det_types.push(Vec::new());
             tables.det_widths.push(Vec::new());
-            tables.views.push(ViewsKind::None as u8);
-            tables.views_stop.push(None);
+            tables.projections.push(ProjectionsKind::None as u8);
+            tables.projections_stop.push(None);
             tables.fault.push(Some(format!("{} at {}", fault.message, form_path(&fault.form))));
         }
         Ok(contents) => {
@@ -312,22 +312,22 @@ fn push_table(out: &mut CaseColumns, token: usize, table: &Table, train: usize) 
             tables.det_relations.push(contents.dets.iter().map(|det| relation_spelled(&det.relation)).collect());
             tables.det_types.push(contents.dets.iter().map(|det| type_names(&det.types)).collect());
             tables.det_widths.push(contents.dets.iter().map(|det| row_width(&det.types)).collect());
-            let (views, stop) = match &contents.views {
-                None => (ViewsKind::None, None),
-                Some(Views::Stopped(stop)) => (ViewsKind::Stopped, Some(stop)),
-                Some(Views::Found(_)) => (ViewsKind::Found, None),
+            let (projections, stop) = match &contents.projections {
+                None => (ProjectionsKind::None, None),
+                Some(Projections::Stopped(stop)) => (ProjectionsKind::Stopped, Some(stop)),
+                Some(Projections::Found(_)) => (ProjectionsKind::Found, None),
             };
-            tables.views.push(views as u8);
-            tables.views_stop.push(stop);
+            tables.projections.push(projections as u8);
+            tables.projections_stop.push(stop);
             tables.fault.push(None);
             push_contents(out, row, contents, &types, train);
         }
     }
 }
 
-/// The entries of `contents`, the table at `row`, and its views.
+/// The entries of `contents`, the table at `row`, and its projections.
 fn push_contents(out: &mut CaseColumns, row: u32, contents: &Contents, types: &[ValueType], train: usize) {
-    let count_only = contents.views.is_some();
+    let count_only = contents.projections.is_some();
     let mut starts = Vec::with_capacity(contents.examples.len());
     for example in contents.examples.iter() {
         starts.push(out.entries.table.len());
@@ -393,27 +393,27 @@ fn push_contents(out: &mut CaseColumns, row: u32, contents: &Contents, types: &[
             }
         }
     }
-    if let Some(Views::Found(found)) = &contents.views {
-        for view in found {
-            let view_row = out.views.table.len() as u32;
-            let view_types: Vec<ValueType> = view.columns.iter().map(|column| types[column.0 as usize].clone()).collect();
-            out.views.table.push(row);
-            out.views.columns.push(view.columns.iter().map(|column| u32::from(column.0)).collect());
-            out.views.width.push(row_width(&view_types));
-            for (example, assigned) in view.rows.iter().enumerate() {
+    if let Some(Projections::Found(found)) = &contents.projections {
+        for projection in found {
+            let projection_row = out.projections.table.len() as u32;
+            let projection_types: Vec<ValueType> = projection.columns.iter().map(|column| types[column.0 as usize].clone()).collect();
+            out.projections.table.push(row);
+            out.projections.columns.push(projection.columns.iter().map(|column| u32::from(column.0)).collect());
+            out.projections.width.push(row_width(&projection_types));
+            for (example, assigned) in projection.rows.iter().enumerate() {
                 for (at, (_, projection)) in assigned.at.iter().enumerate() {
                     let (defined, count, offset) = match projection {
                         None => (0, 0, 0),
                         Some(rows) => {
-                            let (count, offset) = push_rows(&mut out.values, rows, &view_types);
+                            let (count, offset) = push_rows(&mut out.values, rows, &projection_types);
                             (1, count, offset)
                         }
                     };
-                    out.view_rows.view.push(view_row);
-                    out.view_rows.entry.push((starts[example] + at) as u32);
-                    out.view_rows.defined.push(defined);
-                    out.view_rows.rows.push(count);
-                    out.view_rows.offset.push(offset);
+                    out.projection_rows.projection.push(projection_row);
+                    out.projection_rows.entry.push((starts[example] + at) as u32);
+                    out.projection_rows.defined.push(defined);
+                    out.projection_rows.rows.push(count);
+                    out.projection_rows.offset.push(offset);
                 }
             }
         }

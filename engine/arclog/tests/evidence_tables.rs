@@ -37,7 +37,7 @@ fn the_evidence_tables_are_the_first_tables_of_a_case() {
     assert_eq!(tables.column_names, vec![vec!["E", "P", "Col"]; 2]);
     assert_eq!(tables.column_types, vec![vec!["Example", "Box", "Color"]; 2]);
     assert_eq!(tables.width, vec![6, 6]);
-    assert_eq!(tables.views, vec![0, 0]);
+    assert_eq!(tables.projections, vec![0, 0]);
     assert_eq!(tables.fault, vec![None, None]);
 
     let entries = &columns.entries;

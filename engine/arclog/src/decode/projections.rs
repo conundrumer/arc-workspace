@@ -1,12 +1,12 @@
-//! The views of the body so far, as `docs/engine/synthesis.md#decode-interface`
-//! gives them: the largest sets of the body's columns whose projection,
-//! without repeated rows, holds at most the view cap of
+//! The maximal projections of the body so far, as
+//! `docs/engine/synthesis.md#decode-interface` gives them: the largest sets of the body's columns whose projection,
+//! without repeated rows, holds at most the projection cap of
 //! `docs/engine/synthesis.md#decode-settings` on every example, at every
 //! assignment.
 //!
 //! A relation is the product of its parts, so the count of a set's
-//! projection is the product of the counts of its projections onto the parts
-//! it meets. The search projects each part apart and builds no product. A
+//! projection is the product of the counts of its plain projections onto the
+//! parts it meets. The search projects each part apart and builds no product. A
 //! set over the cap has every larger set over the cap too, so the search
 //! extends only the sets under it.
 
@@ -22,10 +22,10 @@ use crate::program::path::NodePath;
 use crate::relations::{ColumnIndex, Relation, RelationPart, RowSet};
 use crate::terms::TermId;
 
-/// One view: a set of the body's columns, and the body's rows projected onto
-/// them.
+/// One projection: a set of the body's columns, and the body's rows projected
+/// onto them.
 #[derive(Clone, Debug)]
-pub struct View {
+pub struct Projection {
     /// The set's columns in the body, in increasing order. Column `i` of
     /// `rows` is the body's column `columns[i]`.
     pub columns: Box<[ColumnIndex]>,
@@ -35,35 +35,35 @@ pub struct View {
     pub rows: Box<[Assigned<Option<Arc<Relation>>>]>,
 }
 
-/// The views of a body, or the bound that stopped the search.
+/// The projections of a body, or the bound that stopped the search.
 #[derive(Clone, Debug)]
-pub enum Views {
-    /// The views, in the order of their columns. Empty where no column
+pub enum Projections {
+    /// The projections, in the order of their columns. Empty where no column
     /// stands alone under the cap.
-    Found(Vec<View>),
+    Found(Vec<Projection>),
     /// A bound that ended the body on some example or assignment, or the
     /// search: no set's projection is known on every example.
     Stopped(Stop),
 }
 
-/// The views of `values`, the body's value on each example at each
+/// The projections of `values`, the body's value on each example at each
 /// assignment, at `cap` rows. A stop is at `form`.
-pub fn views(values: &[Assigned<BodyValue>], cap: u64, budget: &mut Budget<'_>, form: &NodePath) -> Views {
+pub fn projections(values: &[Assigned<BodyValue>], cap: u64, budget: &mut Budget<'_>, form: &NodePath) -> Projections {
     let mut relations: Vec<&Relation> = Vec::new();
     for assigned in values {
         if let Some(stop) = &assigned.stop {
-            return Views::Stopped(stop.clone());
+            return Projections::Stopped(stop.clone());
         }
         for (_, value) in &assigned.at {
             match &value.0 {
                 RelationValue::Rows(relation) => relations.push(relation),
                 RelationValue::Undefined => {}
-                RelationValue::Stopped(stop) => return Views::Stopped(stop.clone()),
+                RelationValue::Stopped(stop) => return Projections::Stopped(stop.clone()),
             }
         }
     }
-    let stopped = |bound: ReachedBound| Views::Stopped(Stop { bound, form: form.clone() });
-    let Some(arity) = relations.first().map(|relation| relation.arity()) else { return Views::Found(Vec::new()) };
+    let stopped = |bound: ReachedBound| Projections::Stopped(Stop { bound, form: form.clone() });
+    let Some(arity) = relations.first().map(|relation| relation.arity()) else { return Projections::Found(Vec::new()) };
     let mut search = Search { relations, cap, budget, projected: StableHashMap::default(), under: StableHashMap::default() };
     let sets = match search.maximal(arity) {
         Ok(sets) => sets,
@@ -90,9 +90,9 @@ pub fn views(values: &[Assigned<BodyValue>], cap: u64, budget: &mut Budget<'_>, 
             }
             rows.push(Assigned { at, stop: None });
         }
-        found.push(View { columns: set.iter().map(|&column| ColumnIndex(column)).collect(), rows: rows.into() });
+        found.push(Projection { columns: set.iter().map(|&column| ColumnIndex(column)).collect(), rows: rows.into() });
     }
-    Views::Found(found)
+    Projections::Found(found)
 }
 
 /// The search over the sets of columns of `relations`, which hold one arity.
@@ -100,7 +100,7 @@ struct Search<'a, 'b> {
     relations: Vec<&'a Relation>,
     cap: u64,
     budget: &'a mut Budget<'b>,
-    /// The projections of a part, by relation, part and the positions in the
+    /// The plain projections of a part, by relation, part and the positions in the
     /// part's rows, in increasing order.
     projected: StableHashMap<(usize, usize, Box<[u16]>), RowSet>,
     /// Whether a set of columns, in increasing order, is under the cap.
@@ -214,7 +214,7 @@ impl Search<'_, '_> {
     }
 
     /// The `relation`th relation projected onto `set`, whose columns stand at
-    /// their ranks in `set`: the product of the projections of the parts it
+    /// their ranks in `set`: the product of the plain projections of the parts it
     /// meets, or the empty relation where the relation is empty.
     fn relation_on(&mut self, relation: usize, set: &[u16]) -> Result<Relation, ReachedBound> {
         let arity = set.len() as u16;
@@ -242,13 +242,13 @@ impl Search<'_, '_> {
 }
 
 impl Decoder<'_> {
-    /// The views of the sub-body that [`Decoder::rows`] gives, at the
-    /// decode's view cap, as `docs/engine/synthesis.md#decode-interface`
+    /// The projections of the sub-body that [`Decoder::rows`] gives, at the
+    /// decode's projection cap, as `docs/engine/synthesis.md#decode-interface`
     /// gives them. `None` where no clause is in progress, and the sub-body's
     /// fault where it gives one. The search runs as one evaluation of its
     /// own, under the binding cap, the deadline and the cancellation. It
     /// writes no record of the trace.
-    pub fn views(&self) -> Option<Outcome<Views>> {
+    pub fn projections(&self) -> Option<Outcome<Projections>> {
         let values = self.sub_body_values()?;
         let (program, _) = self.state.partial()?;
         let form = NodePath::top(program.value().forms.len() as u32 - 1);
@@ -261,7 +261,7 @@ impl Decoder<'_> {
         }
         let limits = Limits { deadline: Some(Instant::now() + self.context.settings.deadline), cancellation: self.cancellation.clone() };
         let mut budget = Budget::new(&limits, self.session);
-        let found = views(&assigned, self.context.settings.view_cap, &mut budget, &form);
+        let found = projections(&assigned, self.context.settings.projection_cap, &mut budget, &form);
         budget.record();
         Some(Ok(found))
     }
@@ -285,8 +285,8 @@ mod tests {
         Relation::from_parts(arity, parts.into())
     }
 
-    /// The columns of each view of `relations`, one on each example, at `cap`.
-    fn views_of(relations: Vec<Relation>, cap: u64) -> Vec<Vec<u16>> {
+    /// The columns of each projection of `relations`, one on each example, at `cap`.
+    fn projections_of(relations: Vec<Relation>, cap: u64) -> Vec<Vec<u16>> {
         let values: Vec<_> = relations
             .into_iter()
             .map(|relation| Assigned { at: vec![(Vec::new(), BodyValue(RelationValue::Rows(Arc::new(relation))))], stop: None })
@@ -294,8 +294,8 @@ mod tests {
         let session = TaskSession::new(SessionBound { bytes: 1 << 26 }, Caps::CORPUS);
         let limits = Limits { deadline: None, cancellation: Default::default() };
         let mut budget = Budget::new(&limits, &session);
-        let Views::Found(found) = views(&values, cap, &mut budget, &NodePath::top(0)) else { panic!("the search ends") };
-        found.iter().map(|view| view.columns.iter().map(|column| column.0).collect()).collect()
+        let Projections::Found(found) = projections(&values, cap, &mut budget, &NodePath::top(0)) else { panic!("the search ends") };
+        found.iter().map(|projection| projection.columns.iter().map(|column| column.0).collect()).collect()
     }
 
     /// Nine rows over columns P, A, K at 0, 1, 2 with A = (P + K) % 2.
@@ -306,56 +306,56 @@ mod tests {
     }
 
     #[test]
-    fn the_sets_under_the_cap_that_no_larger_set_holds_are_the_views() {
-        assert_eq!(views_of(vec![pak()], 6), vec![vec![0, 1], vec![1, 2]]);
+    fn the_sets_under_the_cap_that_no_larger_set_holds_are_the_projections() {
+        assert_eq!(projections_of(vec![pak()], 6), vec![vec![0, 1], vec![1, 2]]);
     }
 
     #[test]
-    fn a_relation_under_the_cap_is_its_one_view() {
-        assert_eq!(views_of(vec![pak()], 9), vec![vec![0, 1, 2]]);
+    fn a_relation_under_the_cap_is_its_one_projection() {
+        assert_eq!(projections_of(vec![pak()], 9), vec![vec![0, 1, 2]]);
     }
 
     #[test]
-    fn the_product_of_two_parts_over_the_cap_gives_no_view_across_them() {
+    fn the_product_of_two_parts_over_the_cap_gives_no_projection_across_them() {
         let product = |cap| {
             let rows: [&[u32]; 3] = [&[0], &[1], &[2]];
-            views_of(vec![relation(2, vec![part(&[0], &rows), part(&[1], &rows)])], cap)
+            projections_of(vec![relation(2, vec![part(&[0], &rows), part(&[1], &rows)])], cap)
         };
         assert_eq!(product(5), vec![vec![0], vec![1]]);
         assert_eq!(product(9), vec![vec![0, 1]]);
     }
 
     #[test]
-    fn a_relation_over_the_cap_on_one_example_alone_gives_the_views_under_it_on_both() {
+    fn a_relation_over_the_cap_on_one_example_alone_gives_the_projections_under_it_on_both() {
         let small = relation(3, vec![part(&[0, 1, 2], &[&[0, 0, 0], &[1, 1, 1], &[2, 2, 2]])]);
         let rows: Vec<Vec<u32>> = (0..3).flat_map(|i| (0..3).map(move |j| vec![i, j, i])).collect();
         let rows: Vec<&[u32]> = rows.iter().map(|row| &row[..]).collect();
         let large = relation(3, vec![part(&[0, 1, 2], &rows)]);
-        assert_eq!(views_of(vec![small, large], 5), vec![vec![0, 2], vec![1]]);
+        assert_eq!(projections_of(vec![small, large], 5), vec![vec![0, 2], vec![1]]);
     }
 
     #[test]
-    fn a_column_alone_over_the_cap_is_in_no_view() {
+    fn a_column_alone_over_the_cap_is_in_no_projection() {
         let rows: [&[u32]; 3] = [&[0, 0], &[1, 1], &[2, 0]];
-        assert_eq!(views_of(vec![relation(2, vec![part(&[0, 1], &rows)])], 2), vec![vec![1]]);
-        assert_eq!(views_of(vec![relation(2, vec![part(&[0, 1], &rows)])], 1), Vec::<Vec<u16>>::new());
+        assert_eq!(projections_of(vec![relation(2, vec![part(&[0, 1], &rows)])], 2), vec![vec![1]]);
+        assert_eq!(projections_of(vec![relation(2, vec![part(&[0, 1], &rows)])], 1), Vec::<Vec<u16>>::new());
     }
 
     #[test]
-    fn a_view_holds_the_projected_rows_of_the_body() {
+    fn a_projection_holds_the_projected_rows_of_the_body() {
         let values = [Assigned { at: vec![(Vec::new(), BodyValue(RelationValue::Rows(Arc::new(pak()))))], stop: None }];
         let session = TaskSession::new(SessionBound { bytes: 1 << 26 }, Caps::CORPUS);
         let limits = Limits { deadline: None, cancellation: Default::default() };
         let mut budget = Budget::new(&limits, &session);
-        let Views::Found(found) = views(&values, 6, &mut budget, &NodePath::top(0)) else { panic!("the search ends") };
+        let Projections::Found(found) = projections(&values, 6, &mut budget, &NodePath::top(0)) else { panic!("the search ends") };
         let [(_, Some(projected))] = &found[0].rows[0].at[..] else { panic!("one projection") };
         assert_eq!((projected.arity(), projected.len()), (2, 6));
     }
 
     #[test]
-    fn a_wide_relation_under_the_cap_is_its_one_view_with_no_search_over_its_subsets() {
+    fn a_wide_relation_under_the_cap_is_its_one_projection_with_no_search_over_its_subsets() {
         let columns: Vec<u16> = (0..40).collect();
         let row = vec![0; 40];
-        assert_eq!(views_of(vec![relation(40, vec![part(&columns, &[&row])])], 1), vec![columns]);
+        assert_eq!(projections_of(vec![relation(40, vec![part(&columns, &[&row])])], 1), vec![columns]);
     }
 }

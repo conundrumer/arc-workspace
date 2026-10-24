@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use arclog::decode::columns::{case_columns, CaseColumns, StopColumns};
 use arclog::decode::corpus::{read_task_files, replay_units, UnitSolver};
-use arclog::decode::{evidence_tables, step_batch, Consistency, Decoder, Points, Table, TokenMask, Views};
+use arclog::decode::{evidence_tables, step_batch, Consistency, Decoder, Points, Table, TokenMask, Projections};
 use arclog::eval::instance::Constructions;
 use arclog::eval::pool::Pool;
 use arclog::harness::{panic_message, run_over_corpus, SolverResult};
@@ -142,7 +142,7 @@ struct PyDecodeSettings {
     columns: u32,
     labels: u32,
     deadline_seconds: f64,
-    view_cap: u64,
+    projection_cap: u64,
 }
 
 impl PyDecodeSettings {
@@ -154,7 +154,7 @@ impl PyDecodeSettings {
             columns: settings.vocabulary.columns,
             labels: settings.vocabulary.labels,
             deadline_seconds: settings.deadline.as_secs_f64(),
-            view_cap: settings.view_cap,
+            projection_cap: settings.projection_cap,
         }
     }
 
@@ -165,7 +165,7 @@ impl PyDecodeSettings {
             type_domain_proposers: self.type_domain_proposers,
             vocabulary: VocabularyCaps { relations: self.relations, columns: self.columns, labels: self.labels },
             deadline,
-            view_cap: self.view_cap,
+            projection_cap: self.projection_cap,
             ..DecodeSettings::default()
         })
     }
@@ -174,7 +174,7 @@ impl PyDecodeSettings {
 #[pymethods]
 impl PyDecodeSettings {
     #[new]
-    #[pyo3(signature = (*, proposer_tokens=None, type_domain_proposers=None, relations=None, columns=None, labels=None, deadline_seconds=None, view_cap=None))]
+    #[pyo3(signature = (*, proposer_tokens=None, type_domain_proposers=None, relations=None, columns=None, labels=None, deadline_seconds=None, projection_cap=None))]
     fn new(
         proposer_tokens: Option<bool>,
         type_domain_proposers: Option<bool>,
@@ -182,7 +182,7 @@ impl PyDecodeSettings {
         columns: Option<u32>,
         labels: Option<u32>,
         deadline_seconds: Option<f64>,
-        view_cap: Option<u64>,
+        projection_cap: Option<u64>,
     ) -> PyResult<PyDecodeSettings> {
         let base = PyDecodeSettings::of(&DecodeSettings::default());
         let settings = PyDecodeSettings {
@@ -192,7 +192,7 @@ impl PyDecodeSettings {
             columns: columns.unwrap_or(base.columns),
             labels: labels.unwrap_or(base.labels),
             deadline_seconds: deadline_seconds.unwrap_or(base.deadline_seconds),
-            view_cap: view_cap.unwrap_or(base.view_cap),
+            projection_cap: projection_cap.unwrap_or(base.projection_cap),
         };
         settings.engine()?;
         Ok(settings)
@@ -411,18 +411,18 @@ macro_rules! assigned {
     }};
 }
 
-/// One view of a sub-body: the positions of its columns in the body, and the
+/// One projection of a sub-body: the positions of its columns in the body, and the
 /// count of its rows on each example, in the shape of `counts`.
-#[pyclass(name = "View", frozen, get_all, module = "arclog")]
-struct PyView {
+#[pyclass(name = "Projection", frozen, get_all, module = "arclog")]
+struct PyProjection {
     columns: Vec<u16>,
     counts: Vec<Py<PyAssigned>>,
 }
 
-/// The views of a sub-body, or the bound that stopped them.
-#[pyclass(name = "Views", frozen, get_all, module = "arclog")]
-struct PyViews {
-    views: Vec<Py<PyView>>,
+/// The projections of a sub-body, or the bound that stopped them.
+#[pyclass(name = "Projections", frozen, get_all, module = "arclog")]
+struct PyProjections {
+    projections: Vec<Py<PyProjection>>,
     stop: Option<PyStopKind>,
 }
 
@@ -553,28 +553,28 @@ impl PyDecoder {
             .transpose()
     }
 
-    /// The views of the sub-body of the clause in progress, as
+    /// The projections of the sub-body of the clause in progress, as
     /// `docs/engine/synthesis.md#decode-interface` gives them, or `None`
-    /// where no clause is in progress. The views are empty and `stop` is set
-    /// where a bound ended the body or the search. The views give no rows.
+    /// where no clause is in progress. The projections are empty and `stop` is set
+    /// where a bound ended the body or the search. The projections give no rows.
     /// Raises `Fault` where the sub-body does not check or compile.
-    fn views(&self, py: Python<'_>) -> PyResult<Option<PyViews>> {
-        let Some(outcome) = self.decoder().views() else { return Ok(None) };
+    fn projections(&self, py: Python<'_>) -> PyResult<Option<PyProjections>> {
+        let Some(outcome) = self.decoder().projections() else { return Ok(None) };
         let found = match settled(outcome)? {
-            Views::Found(found) => found,
-            Views::Stopped(stop) => return Ok(Some(PyViews { views: Vec::new(), stop: Some(Stop::from(stop.bound).into()) })),
+            Projections::Found(found) => found,
+            Projections::Stopped(stop) => return Ok(Some(PyProjections { projections: Vec::new(), stop: Some(Stop::from(stop.bound).into()) })),
         };
-        let mut views = Vec::new();
-        for view in found {
-            let counts = view
+        let mut projections = Vec::new();
+        for projection in found {
+            let counts = projection
                 .rows
                 .into_vec()
                 .into_iter()
                 .map(|rows| Py::new(py, assigned!(py, rows, |rows| rows.map(|relation| relation.len()).into_pyobject(py)?.into_any().unbind())?))
                 .collect::<PyResult<Vec<_>>>()?;
-            views.push(Py::new(py, PyView { columns: view.columns.iter().map(|column| column.0).collect(), counts })?);
+            projections.push(Py::new(py, PyProjection { columns: projection.columns.iter().map(|column| column.0).collect(), counts })?);
         }
-        Ok(Some(PyViews { views, stop: None }))
+        Ok(Some(PyProjections { projections, stop: None }))
     }
 
     /// The attempts on each test input, as lists of at most two grids, or
@@ -828,26 +828,26 @@ fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &Hash
 /// The tables of one case program of a solver of a corpus, as flat columns
 /// (`arclog::decode::columns` gives the layout and the codes).
 ///
-/// `tables`, `entries`, `assigned`, `views` and `view_rows` are dicts of
+/// `tables`, `entries`, `assigned`, `projections` and `projection_rows` are dicts of
 /// columns, one for each part of the layout, named as its fields. An integer
 /// column is `bytes` in native byte order, which `numpy.frombuffer` reads at
 /// the dtype that `dtypes` gives for `"<part>.<column>"`; any other column is
 /// a list. `values` is the `int32` cells of every row, which the offsets of the
 /// parts index. The first two tables are the evidence tables of the task,
 /// `ex_input` and `ex_output`, at token 0, with point 2 and the relation's
-/// name in `fact`. `view_cap` is the cap of the view rows that the tables ran
+/// name in `fact`. `projection_cap` is the cap of the projection rows that the tables ran
 /// under.
 #[pyclass(name = "CaseTables", frozen, get_all, module = "arclog")]
 struct PyCaseTables {
     task: String,
     case: String,
     concept: bool,
-    view_cap: u64,
+    projection_cap: u64,
     tables: Py<PyDict>,
     entries: Py<PyDict>,
     assigned: Py<PyDict>,
-    views: Py<PyDict>,
-    view_rows: Py<PyDict>,
+    projections: Py<PyDict>,
+    projection_rows: Py<PyDict>,
     values: Py<PyBytes>,
     dtypes: Py<PyDict>,
 }
@@ -910,7 +910,7 @@ impl<'a, 'py> Part<'a, 'py> {
 }
 
 impl PyCaseTables {
-    fn of(py: Python<'_>, task: String, case: String, concept: bool, view_cap: u64, columns: &CaseColumns) -> PyResult<Self> {
+    fn of(py: Python<'_>, task: String, case: String, concept: bool, projection_cap: u64, columns: &CaseColumns) -> PyResult<Self> {
         let dtypes = PyDict::new(py);
         let t = Part::new(py, "tables", &dtypes);
         let c = &columns.tables;
@@ -927,8 +927,8 @@ impl PyCaseTables {
         t.list("det_relations", &c.det_relations)?;
         t.list("det_types", &c.det_types)?;
         t.list("det_widths", &c.det_widths)?;
-        t.ints("views", &c.views)?;
-        t.stop("views_stop", &c.views_stop)?;
+        t.ints("projections", &c.projections)?;
+        t.stop("projections_stop", &c.projections_stop)?;
         t.list("fault", &c.fault)?;
         let e = Part::new(py, "entries", &dtypes);
         let c = &columns.entries;
@@ -948,14 +948,14 @@ impl PyCaseTables {
         a.ints("det", &c.det)?;
         a.ints("rows", &c.rows)?;
         a.ints("offset", &c.offset)?;
-        let v = Part::new(py, "views", &dtypes);
-        let c = &columns.views;
+        let v = Part::new(py, "projections", &dtypes);
+        let c = &columns.projections;
         v.ints("table", &c.table)?;
         v.list("columns", &c.columns)?;
         v.ints("width", &c.width)?;
-        let r = Part::new(py, "view_rows", &dtypes);
-        let c = &columns.view_rows;
-        r.ints("view", &c.view)?;
+        let r = Part::new(py, "projection_rows", &dtypes);
+        let c = &columns.projection_rows;
+        r.ints("projection", &c.projection)?;
         r.ints("entry", &c.entry)?;
         r.ints("defined", &c.defined)?;
         r.ints("rows", &c.rows)?;
@@ -964,12 +964,12 @@ impl PyCaseTables {
             task,
             case,
             concept,
-            view_cap,
+            projection_cap,
             tables: t.dict.unbind(),
             entries: e.dict.unbind(),
             assigned: a.dict.unbind(),
-            views: v.dict.unbind(),
-            view_rows: r.dict.unbind(),
+            projections: v.dict.unbind(),
+            projection_rows: r.dict.unbind(),
             values: PyBytes::new(py, &cell_bytes(&columns.values)).unbind(),
             dtypes: dtypes.unbind(),
         })
@@ -990,7 +990,7 @@ struct TableCase {
 /// `None`, in the order of the task ids and then of the cases. Each table
 /// is at the index of the token whose step gives it, but for the first two,
 /// the evidence tables `ex_input` and `ex_output` of the task, which stand at
-/// token 0 with point 2. The tables are those of a decode under `view_cap`,
+/// token 0 with point 2. The tables are those of a decode under `projection_cap`,
 /// the cap of `DecodeSettings`, the engine's default where it is `None`, and
 /// each `CaseTables` gives it. The relations of the
 /// finished forms are tabled, and with `bodies` the bodies in progress as well.
@@ -1004,13 +1004,13 @@ struct TableCase {
 /// largest first, and turns the tables of each stream into columns as its
 /// unit ends.
 #[pyfunction]
-#[pyo3(signature = (corpus, tasks, all_cases=false, task_ids=None, bodies=false, view_cap=None))]
-fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, task_ids: Option<Vec<String>>, bodies: bool, view_cap: Option<u64>) -> PyResult<(Vec<PyCaseTables>, Vec<String>)> {
+#[pyo3(signature = (corpus, tasks, all_cases=false, task_ids=None, bodies=false, projection_cap=None))]
+fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, task_ids: Option<Vec<String>>, bodies: bool, projection_cap: Option<u64>) -> PyResult<(Vec<PyCaseTables>, Vec<String>)> {
     let points = if bodies { Points::All } else { Points::Relations };
     let wanted = if all_cases { WantedCases::All } else { WantedCases::Concept };
     let constructions = constructions()?;
     let vocabulary = Vocabulary::new(Registry::get(), &DecodeSettings::default());
-    let settings = DecodeSettings { view_cap: view_cap.unwrap_or(DecodeSettings::default().view_cap), ..DecodeSettings::default() };
+    let settings = DecodeSettings { projection_cap: projection_cap.unwrap_or(DecodeSettings::default().projection_cap), ..DecodeSettings::default() };
     let reads: Mutex<HashMap<String, (Task, JudgedTask)>> = Mutex::new(HashMap::new());
     let found = walk_corpus(py, corpus, &task_ids, |id| {
         let (mut cases, mut faults) = (Vec::new(), Vec::new());
@@ -1074,7 +1074,7 @@ fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, tas
                         Err(fault) => Err(fault.clone()),
                     };
                     match outcome {
-                        Ok(columns) => tables.push(PyCaseTables::of(py, task.clone(), case.case.clone(), case.concept, settings.view_cap, &columns)?),
+                        Ok(columns) => tables.push(PyCaseTables::of(py, task.clone(), case.case.clone(), case.concept, settings.projection_cap, &columns)?),
                         Err(fault) => faults.push(fault_line(task, Some(&case.case), &fault)),
                     }
                 }
@@ -1140,8 +1140,8 @@ fn arclog_module(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyValueKind>()?;
     module.add_class::<PyRowsView>()?;
     module.add_class::<PyAssigned>()?;
-    module.add_class::<PyView>()?;
-    module.add_class::<PyViews>()?;
+    module.add_class::<PyProjection>()?;
+    module.add_class::<PyProjections>()?;
     module.add_class::<PyCaseStream>()?;
     module.add_class::<PyCaseTables>()?;
     module.add("Refusal", module.py().get_type::<Refusal>())?;
