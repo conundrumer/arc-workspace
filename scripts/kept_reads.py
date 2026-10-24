@@ -13,7 +13,12 @@ computed, as with no store.
 
 SQLite writes each batch of a call's records in one transaction, under a
 lock it takes across processes, so no reader sees a record half written; a
-reader can see some of a call's records before the rest."""
+reader can see some of a call's records before the rest. Each write notes in
+the same transaction that the code of each record it writes was used, then
+drops records of codes no process has used for the store's keep time and gives
+back free pages, each for at most `CLEANUP_SECONDS` and one batch past it, so
+no write runs work that grows with the store; later writes go on with what is
+left."""
 
 import ast
 import copyreg
@@ -36,7 +41,18 @@ STORE_NAME = "kept-reads.sqlite"
 KEEP_SECONDS = 3600
 """How long the records of code that no process has written stay held: a
 worktree that runs other code within that time keeps its records, and the
-records of code a merge replaced are dropped."""
+records of code a merge replaced are dropped, by the writes that follow
+the expiry."""
+
+DROP_BATCH = 500
+"""How many records one statement of a write's drop deletes at most."""
+
+VACUUM_BATCH = 1024
+"""How many free pages one step of a write's giving back of free pages frees at most."""
+
+CLEANUP_SECONDS = 0.25
+"""How long a write's drop of records, and its giving back of free pages, each
+run before they end with the batch in progress."""
 
 LOCK_WAIT_SECONDS = 1
 """How long a process waits on the lock another process holds on the
@@ -109,8 +125,9 @@ def pickled(record: object) -> bytes:
 
 
 class StoreFile:
-    """The SQLite file of a store whose `records` are dropped by
-    `mark_used`, over one connection the process holds open until `close`."""
+    """The SQLite file of a store whose `records` are dropped by `put`
+    once their code has expired, over one connection the process holds open
+    until `close`."""
 
     def __init__(self, path: Path, schema: str) -> None:
         self.path = path
@@ -123,8 +140,8 @@ class StoreFile:
         """The connection this process holds open to the store, opened and
         the store created where none is. A store this creates runs in the
         WAL journal mode, so that a process reads while another writes, and
-        with incremental auto-vacuum, so that `write` gives back to the
-        system the pages of the records `mark_used` drops. Where the store
+        with incremental auto-vacuum, so that `put` gives back to the
+        system the pages of the records it drops. Where the store
         did not open, each later call raises what the open raised, so that
         no lookup waits on the lock again. The auto-vacuum mode is set only
         on a store with no tables, since setting it waits on another
@@ -158,8 +175,8 @@ class StoreFile:
     def put(self, writes: list[tuple[str, list[tuple[Any, ...]]]], used: Iterable[str],
             keep: float) -> bool:
         """Run each statement of `writes` over each of its rows, in one
-        transaction with `mark_used` of each code of `used`, and give back
-        to the system the pages of the records it drops. Where the store
+        transaction with `mark_used` of each code of `used` and `drop_expired`
+        for `keep`, then give back free pages (`give_back`). Where the store
         cannot be written, nothing is."""
         used = sorted(used)
         if not any(rows for _, rows in writes) and not used:
@@ -171,16 +188,16 @@ class StoreFile:
                 for statement, rows in writes:
                     db.executemany(statement, rows)
                 for code in used:
-                    mark_used(db, code, now, keep)
+                    mark_used(db, code, now)
+                drop_expired(db, now, keep)
         except (sqlite3.Error, OSError) as exc:
             self.write_error = exc
             return False
         self.write_error = None
-        if used:
-            try:
-                db.execute("PRAGMA incremental_vacuum").fetchall()
-            except sqlite3.Error:
-                pass  # The records have already committed.
+        try:
+            give_back(db)
+        except sqlite3.Error:
+            pass  # The records have already committed.
         return True
 
 
@@ -249,8 +266,8 @@ class Store(StoreFile):
     def flush(self) -> bool:
         """Write the records held since the last flush, note as used the
         code of each read this process looked up or wrote records of, drop
-        the records of code that no process has used for `KEEP_SECONDS`,
-        and close the connection."""
+        records of code that no process has used for `KEEP_SECONDS` as `put`
+        gives, and close the connection."""
         written = self.write(self.used)
         if written:
             self.used = set()
@@ -270,7 +287,7 @@ class Store(StoreFile):
         """Write the records and the parses held, and hold none of them
         after. Where it writes parses, drop those written more than
         `KEEP_SECONDS` ago. The writes, the drop and `mark_used` of each code
-        of `used` run in one transaction."""
+        of `used` and of each record written run in one transaction."""
         written = [(code_of(module_of(r)), r, k, v) for (r, k), v in self.new.items()]
         now = time.time()
         parsed = [(d, pickle.dumps(s, pickle.HIGHEST_PROTOCOL), now)
@@ -279,7 +296,7 @@ class Store(StoreFile):
         if parsed:
             writes += [("INSERT OR REPLACE INTO imports VALUES (?, ?, ?)", parsed),
                        ("DELETE FROM imports WHERE written < ?", [(now - KEEP_SECONDS,)])]
-        if not self.put(writes, used, KEEP_SECONDS):
+        if not self.put(writes, used | {code for code, *_ in written}, KEEP_SECONDS):
             return False
         self.new = {}
         self.new_bytes = 0
@@ -287,14 +304,44 @@ class Store(StoreFile):
         return True
 
 
-def mark_used(db: sqlite3.Connection, code: str, now: float, keep: float) -> None:
+def mark_used(db: sqlite3.Connection, code: str, now: float) -> None:
     """Note in `db`, a store with a `records` and a `codes` table, that
-    `code` was used at `now`, and drop the records of each code no process
-    has used for `keep` seconds."""
+    `code` was used at `now`."""
     db.execute("INSERT OR REPLACE INTO codes VALUES (?, ?)", (code, now))
-    db.execute("DELETE FROM records WHERE code IN (SELECT code FROM codes WHERE used < ?)",
-               (now - keep,))
-    db.execute("DELETE FROM codes WHERE used < ?", (now - keep,))
+
+
+def drop_expired(db: sqlite3.Connection, now: float, keep: float) -> None:
+    """Drop from `db` the records of each code no process has used for `keep`
+    seconds, `DROP_BATCH` records to a statement, selected by code and deleted
+    by `rowid`, while a statement deletes a whole batch and the drop has run
+    under `CLEANUP_SECONDS`; then drop the row of each such code that holds no
+    record."""
+    started = time.monotonic()
+    expired = now - keep
+    while True:
+        dropped = db.execute(
+            "DELETE FROM records WHERE rowid IN (SELECT rowid FROM records WHERE code IN "
+            "(SELECT code FROM codes WHERE used < ?) LIMIT ?)", (expired, DROP_BATCH)).rowcount
+        if dropped < DROP_BATCH or time.monotonic() - started >= CLEANUP_SECONDS:
+            break
+    db.execute("DELETE FROM codes WHERE used < ? AND NOT EXISTS "
+               "(SELECT 1 FROM records WHERE records.code = codes.code)", (expired,))
+
+
+def give_back(db: sqlite3.Connection) -> None:
+    """Give back to the system the free pages of `db`, `VACUUM_BATCH` pages to a
+    step, while the store has free pages and the steps have run under
+    `CLEANUP_SECONDS`, so that it ends within that time and one step past it;
+    end where a step frees none, as in a store without incremental
+    auto-vacuum."""
+    started = time.monotonic()
+    free = db.execute("PRAGMA freelist_count").fetchone()[0]
+    while free:
+        db.execute(f"PRAGMA incremental_vacuum({VACUUM_BATCH})").fetchall()
+        left = db.execute("PRAGMA freelist_count").fetchone()[0]
+        if left >= free or time.monotonic() - started >= CLEANUP_SECONDS:
+            break
+        free = left
 
 
 def module_of(read: str) -> str:

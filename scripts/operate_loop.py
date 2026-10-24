@@ -16,6 +16,7 @@ from pathlib import Path
 
 from collections.abc import Callable
 
+import alarms
 import file_events
 import read_interrupts
 import script_calls
@@ -114,11 +115,12 @@ def single_instance(me: str) -> None:
     os.pwrite(fd, f"{os.getpid()}\n".encode(), 0)
 
 
-def arm_watchdog(me: str, output: Callable[[str], int] | None = None) -> None:
+def arm_watchdog(me: str, output: Callable[[str], int] | None = None) -> alarms.Alarm:
     """Print a failure report for the coordinator and end the process once
     `LIMIT_SECONDS` have passed, as `--help next` gives it. A caller can pass
-    `output`, which prints and returns the exit status."""
-    def expire(_signum: int, _frame: object) -> None:
+    `output`, which prints and returns the exit status. Give the alarm that
+    ends the process, which the caller clears once the call has ended."""
+    def expire() -> None:
         status = 1
         if output is None:
             timeout_output(me)
@@ -126,8 +128,9 @@ def arm_watchdog(me: str, output: Callable[[str], int] | None = None) -> None:
             status = output(me)
         script_calls.record()
         os._exit(status)
-    signal.signal(signal.SIGALRM, expire)
-    signal.alarm(LIMIT_SECONDS)
+    watchdog = alarms.Alarm(expire)
+    watchdog.set(time.monotonic() + LIMIT_SECONDS)
+    return watchdog
 
 
 def timeout_output(me: str) -> None:
@@ -244,10 +247,11 @@ def waited[T](me: str, out_at: Callable[[float], T],
     current = operate_service.CURRENT.get()
     standalone = current is None
     started = time.monotonic()
+    watchdog = None
     if standalone:
         single_instance(me)
         limit = started + LIMIT_SECONDS
-        arm_watchdog(me)
+        watchdog = arm_watchdog(me)
     else:
         limit = current.deadline
     finish = limit - operate_service.FINISH_SECONDS
@@ -267,8 +271,8 @@ def waited[T](me: str, out_at: Callable[[float], T],
     except read_interrupts.Bounded:
         return Running(time.monotonic() - started)
     finally:
-        if standalone:
-            signal.alarm(0)
+        if watchdog is not None:
+            watchdog.clear()
 
 
 def watched[T](out_at: Callable[[float], T], ready: Callable[[T], bool], seconds: float,

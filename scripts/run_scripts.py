@@ -4,7 +4,6 @@ bound, as `operate.py --help run` and `operate.py --help pace` give
 them."""
 
 import json
-import signal
 import subprocess
 import sys
 import time
@@ -12,8 +11,9 @@ import traceback
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from types import FrameType, ModuleType
+from types import ModuleType
 
+import alarms
 from controlled_markdown import mctx
 from operations import (
     passes,
@@ -63,16 +63,15 @@ class ScriptTimeout(Exception):
 def bounded(seconds: int, calls: str) -> Iterator[None]:
     """Raise `ScriptTimeout` in the block once `seconds` have passed, with
     `calls` the calls the block makes."""
-    def expire(_signum: int, _frame: FrameType | None) -> None:
+    def expire() -> None:
         raise ScriptTimeout(mctx("the load and {calls} ran past "
                                  "{seconds} seconds").format(calls=calls, seconds=seconds))
-    before = signal.signal(signal.SIGALRM, expire)
-    signal.alarm(seconds)
+    alarm = alarms.Alarm(expire)
+    alarm.set(time.monotonic() + seconds)
     try:
         yield
     finally:
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, before)
+        alarm.clear()
 
 
 def fault_text(e: BaseException) -> str:
