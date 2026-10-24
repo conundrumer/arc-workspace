@@ -84,7 +84,7 @@ glyph(Col, V, Ink, [$Near(), Pt]) :-
     ink_cell(Q, Ink, Pt), step_offset(D, V).        // onto a glyph cell
 
 glyph(Col, V, Ink, [$Object(), Pt]) :-
-    key(P, Col), obj.conn($U(), P, Q), Q != P,   // another cell of the key's object
+    key(P, Col), obj.label($U(), P, Id), obj.label($U(), Q, Id), Q != P,   // another cell of the key's object
     ink_cell(Q, Ink, Pt), relative(P, Q, V).     // onto a glyph cell
 
 // --- out ---

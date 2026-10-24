@@ -69,7 +69,7 @@ tile(P, P_tile, $Period()) :-
 .init region = Components<Unit>
 region.node($U(), P) :- in(P, Col), !params.separator(Col).
 
-same_region(P, Q, $Flood()) :- region.conn($U(), P, Q).
+same_region(P, Q, $Flood()) :- region.label($U(), P, Id), region.label($U(), Q, Id).
 
 // --- output ---
 

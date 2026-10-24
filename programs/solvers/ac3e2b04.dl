@@ -323,5 +323,5 @@ mark_ink.node(K, S) :- roles(K, _, M), in(S, M).
 
 paint([$CopyMark(), Mk, Cr, Ce, Sz, Ls, Ms], R) :-
     framed(Mk, Cr, Ce, [Sz, Ls, Ms], P, Q),
-    around(Sz, P, S_ring), mark_ink.conn([Sz, Ls, Ms], S_ring, S),   // a cell joined to the mark's ring
+    around(Sz, P, S_ring), mark_ink.label([Sz, Ls, Ms], S_ring, Id), mark_ink.label([Sz, Ls, Ms], S, Id),   // a cell joined to the mark's ring
     relative(P, S, V), compose(Q, V, R), in(R, _).                    // at its offset from the crossing

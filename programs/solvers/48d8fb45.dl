@@ -39,7 +39,7 @@ blob.node($U(), P) :- in(P, Col), !params.bg(Col).
 // The shape the mark sits on.
 .decl marked(p: Position, col: Color)
 marked(P, Col) :-
-    mark(M), blob.conn($U(), M, P),   // in the mark's blob
+    mark(M), blob.label($U(), M, Id), blob.label($U(), P, Id),   // in the mark's blob
     !mark(P), in(P, Col).             // a shape cell, not the mark
 
 // The marked shape's box, and the grid seen from it.
