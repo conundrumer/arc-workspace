@@ -7,6 +7,8 @@
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
+use std::cell::Cell;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use super::replay::{replay_from, Stepped};
@@ -278,6 +280,27 @@ struct ReplayUnit {
 /// interns, whatever the thread count and whatever else the call holds.
 pub const UNIT_STEPS: usize = 50_000;
 
+/// The model steps of a call of [`replay_units`]: how many its units hold in
+/// all, and how many its workers have done. Another thread may read both while
+/// the call runs.
+#[derive(Debug, Default)]
+pub struct ReplayProgress {
+    total: AtomicUsize,
+    done: AtomicUsize,
+}
+
+impl ReplayProgress {
+    /// The model steps of all the call's units, 0 until the units are cut.
+    pub fn total(&self) -> usize {
+        self.total.load(Ordering::Relaxed)
+    }
+
+    /// The model steps done so far, at most [`total`](Self::total).
+    pub fn done(&self) -> usize {
+        self.done.load(Ordering::Relaxed)
+    }
+}
+
 /// Replays the streams of `solvers`, as [`replay_prefix_tree`] does under
 /// `settings`, on the
 /// workers of [`run_on_workers`]. The streams of each solver are cut, in
@@ -291,6 +314,11 @@ pub const UNIT_STEPS: usize = 50_000;
 /// gives. Once a stream's replay ends, whether it gives a record or a fault,
 /// its worker calls `settled` with the solver's index.
 ///
+/// `progress` is set to the model steps of all the units once they are cut,
+/// and its done count grows by one at each step of a unit's replay. As a unit
+/// ends, whatever way, its done count is the unit's steps, so a stream that
+/// is refused early or shares a prefix leaves the count exact.
+///
 /// Gives, for each solver, the result of each of its streams in the order of
 /// `streams`, or the fault of [`replay_panic`] where one of its units
 /// panicked.
@@ -299,6 +327,7 @@ pub fn replay_units<T: Default + Clone, U: Send>(
     constructions: &Constructions,
     settings: &DecodeSettings,
     masked: bool,
+    progress: &ReplayProgress,
     record: &(dyn Fn(&mut T, &Decoder<'_>, Stepped<'_>) + Sync),
     started: &(dyn Fn(usize) + Sync),
     ended: &(dyn Fn(usize, T) -> U + Sync),
@@ -324,12 +353,22 @@ pub fn replay_units<T: Default + Clone, U: Send>(
         }
     }
     units.sort_by(|a, b| b.steps.cmp(&a.steps));
+    progress.total.store(units.iter().map(|unit| unit.steps).sum(), Ordering::Relaxed);
     let outcomes = run_on_workers(&units, |unit| {
         let solver = &solvers[unit.solver];
         started(unit.solver);
         let ids: Vec<Vec<(u32, Emitter)>> = unit.streams.iter().map(|&stream| solver.streams[stream].clone()).collect();
-        catch_unwind(AssertUnwindSafe(|| {
-            replay_prefix_tree(solver.task, solver.judged, &ids, constructions, settings, masked, record)
+        // The steps of this unit counted into `progress`, at most `unit.steps`.
+        let counted = Cell::new(0);
+        let counting = |recording: &mut T, decoder: &Decoder<'_>, stepped: Stepped<'_>| {
+            record(recording, decoder, stepped);
+            if counted.get() < unit.steps {
+                counted.set(counted.get() + 1);
+                progress.done.fetch_add(1, Ordering::Relaxed);
+            }
+        };
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            replay_prefix_tree(solver.task, solver.judged, &ids, constructions, settings, masked, &counting)
                 .into_iter()
                 .map(|outcome| {
                     let out = outcome.map(|recorded| ended(unit.solver, recorded));
@@ -338,7 +377,9 @@ pub fn replay_units<T: Default + Clone, U: Send>(
                 })
                 .collect::<Vec<_>>()
         }))
-        .map_err(|payload| replay_panic(&*payload))
+        .map_err(|payload| replay_panic(&*payload));
+        progress.done.fetch_add(unit.steps - counted.get(), Ordering::Relaxed);
+        result
     });
     let mut results: Vec<Vec<Option<Result<U, String>>>> = solvers.iter().map(|solver| solver.streams.iter().map(|_| None).collect()).collect();
     let mut faults: Vec<Option<String>> = solvers.iter().map(|_| None).collect();
