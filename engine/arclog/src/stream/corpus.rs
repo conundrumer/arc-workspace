@@ -8,7 +8,7 @@ use crate::check::{check_shared_program, CheckCache, CheckedProgram, SolverClaus
 use crate::decode::replay::holds_demonstrated;
 use crate::harness::read_corpus_solver;
 use crate::registry::Registry;
-use crate::resolver::{resolve_cases, ResolvedCase, ResolvedCases};
+use crate::resolver::{resolve, resolve_cases, ResolvedCase, ResolvedCases, SolverScope};
 use crate::solver::CaseName;
 use crate::stream::{token_stream, Emitter, Token, Vocabulary};
 
@@ -56,13 +56,43 @@ pub fn solver_streams(corpus: &Path, id: &str, wanted: WantedCases<'_>, vocabula
     let concept = &cases.concept().case.name;
     Ok(programs
         .iter()
-        .map(|(name, program)| CaseStream {
-            case: case_spelled(name),
-            concept: name == concept,
-            demonstrated: holds_demonstrated(program),
-            stream: token_stream(program, vocabulary).map_err(|diagnostic| format!("the writer gives no stream: {}", diagnostic.message)),
+        .map(|(name, program)| {
+            let case = cases.cases().find(|case| case.case.name == *name).expect("a checked case is a case of the solver");
+            CaseStream {
+                case: case_spelled(name),
+                concept: name == concept,
+                demonstrated: holds_demonstrated(program),
+                stream: case_stream(case, name == concept, program, vocabulary),
+            }
         })
         .collect())
+}
+
+/// The token stream of `case`, whose checked program is `checked` and which
+/// is the solver's concept case where `concept` holds, or the writer's
+/// fault.
+///
+/// A decoded program reads each of its `DET` forms as the program itself
+/// derives what the form reads (`concept: None` in
+/// `decode::interface::Decoder::inputs`, no stored value as
+/// `docs/engine/synthesis.md` gives), so the stream of a case is the case
+/// program read alone: the writer resolves the case as the decoder resolves
+/// the program the stream decodes to. The concept program's derivation that
+/// a `DET` of the concept program reads in the case is no part of the
+/// stream. A case that takes no `DET` of the concept program copies nothing
+/// from it, so its checked program is written as it is.
+pub fn case_stream(case: &ResolvedCase, concept: bool, checked: &CheckedProgram, vocabulary: &Vocabulary) -> Result<Vec<(Token, Emitter)>, String> {
+    let written = |program: &CheckedProgram| token_stream(program, vocabulary).map_err(|diagnostic| format!("the writer gives no stream: {}", diagnostic.message));
+    if concept || case.case.concept_determinations().is_empty() {
+        return written(checked);
+    }
+    let resolved = std::sync::Arc::new(resolve(&case.case.program, None, &SolverScope::default(), Registry::get()).value);
+    let clauses = SolverClauses::of_shared_program(std::sync::Arc::clone(&resolved));
+    let alone = check_shared_program(resolved, &clauses, Registry::get(), &mut CheckCache::default()).map_err(|refusals| {
+        let messages: Vec<&str> = refusals.iter().map(|d| &*d.message).collect();
+        format!("the writer gives no stream: the case program read alone is refused: {}", messages.join("; "))
+    })?;
+    written(&alone)
 }
 
 /// The line of a fault in the corpus report: of the case `case` of the
