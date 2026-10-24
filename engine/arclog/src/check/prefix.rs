@@ -12,9 +12,10 @@ use crate::eval::ir::atom_modes;
 use crate::hash::StableHashMap;
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{node_at, NodePath, NodeRef, PathStep};
-use crate::program::{Atom, Body, Choose, Clause, Conjunct, Form, Instance, InstanceInput, KeyBody, KeyClause, LabelUse, Negated, Node, RigidDet, Site, SiteArg, SiteValue};
+use crate::program::{Atom, Body, Choose, Clause, Conjunct, Form, Instance, InstanceInput, KeyBody, KeyClause, LabelUse, Negated, Node, Program, RigidDet, Site, SiteArg, SiteValue};
 use crate::registry::Registry;
-use crate::resolver::ResolvedProgram;
+use crate::program::RelationRef;
+use crate::resolver::{resolve_last, ResolvedProgram};
 use crate::types::each_site_label;
 
 /// A prefix of a form: its partial form, as [`Prefix`] gives it, and the
@@ -132,6 +133,9 @@ struct AtomHead {
     labels: OnceCell<Vec<LabelInScope>>,
     results: RefCell<StableHashMap<CheckId, PrefixResult>>,
     bound: BoundCache,
+    /// The resolution of the lib-atom candidates ([`PrefixChecks::check_lib_head`]):
+    /// the one of the candidate checked last, retargeted to the next.
+    resolution: RefCell<Option<ResolvedProgram>>,
 }
 
 /// How a check reads the relation of an atom of no site.
@@ -195,6 +199,26 @@ impl PrefixChecks<'_> {
                 PrefixResult::Undecided => None,
             })
         })
+    }
+
+    /// [`PrefixChecks::check`] with [`Candidate::AtomHead`] for the prefix
+    /// whose last token opens, at `open`, an atom of `relation`, a lib
+    /// relation, relation macro or proposer, where `earlier` is the
+    /// resolution of the forms before the last of `program`. The
+    /// candidates of one mask at one open path share one resolution of
+    /// the form in progress, retargeted to each one's relation
+    /// ([`ResolvedProgram::retarget_lib_atom`]); where that gives no
+    /// retarget, the resolution is [`resolve_last`]'s.
+    pub fn check_lib_head(&self, earlier: &Arc<ResolvedProgram>, program: &Node<Program>, open: &NodePath, relation: &RelationRef) -> Option<(CheckId, Box<[Refusal]>)> {
+        let mut held = self.head.resolution.borrow_mut();
+        let last = program.value().forms.len() as u32 - 1;
+        let full = NodePath(std::iter::once(PathStep(last)).chain(open.0.iter().copied()).collect());
+        let retargeted = held.as_mut().is_some_and(|resolved| resolved.retarget_lib_atom(program, &full, relation, self.registry));
+        if !retargeted {
+            *held = Some(resolve_last(earlier, program, self.registry));
+        }
+        let resolved = held.as_ref().expect("the resolution is set");
+        self.check(resolved, Some(open), Candidate::AtomHead)
     }
 
     /// The result of `check` on `prefix`, which is the result of the first

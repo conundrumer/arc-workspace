@@ -12,10 +12,10 @@ use arclog::decode::{Decoder, Refusal};
 use arclog::eval::instance::Constructions;
 use arclog::eval::values::Caps;
 use arclog::program::path::{node_at, NodePath, NodeRef, PathStep};
-use arclog::program::{FactRelation, Form, Node, Program};
+use arclog::program::{FactRelation, Form, Node, Program, RelationRef};
 use arclog::read::read_solver;
 use arclog::registry::{LibName, Registry};
-use arclog::resolver::{resolve, SolverScope};
+use arclog::resolver::{resolve, resolve_last, GraphNodeIndex, ResolvedProgram, SolverScope};
 use arclog::session::{SessionBound, TaskSession};
 use arclog::stream::{token_stream, token_stream_with_paths, Control, DecodeSettings, Emitter, Token, Vocabulary};
 use arclog::task::Task;
@@ -253,4 +253,64 @@ fn the_mask_where_an_atom_opens_is_what_each_step_admits() {
         }
         assert!(admitted > 1, "the mask admits several tokens after {prefix:?}");
     }
+}
+
+/// What a resolution gives at `at` and for the nodes of the last form
+/// after the first `nodes`: the resolution and the signature at `at`, and
+/// the content of the last form at `form` and the hash of the content of
+/// each of its nodes.
+fn resolution_of_last(resolved: &ResolvedProgram, form: &NodePath, at: &NodePath, nodes: usize) -> String {
+    let hashes: Vec<_> = (nodes..resolved.graph.nodes.len()).map(|node| resolved.node_content(GraphNodeIndex(node as u32)).map(|content| content.content_hash())).collect();
+    format!("{:?} {:?} {:?} {:?}", resolved.resolution(at), resolved.signature(at), resolved.content(form).map(|content| content.content_hash()), hashes)
+}
+
+/// At each state of a decode where the next token may open an atom, the
+/// resolution of the form in progress for one lib relation, a relation
+/// macro or a proposer, retargeted to another's relation, gives what
+/// `resolve_last` gives for that other's program.
+#[test]
+fn a_retargeted_resolution_is_what_resolve_last_gives() {
+    let registry = Registry::get();
+    let vocabulary = Vocabulary::new(registry, &DecodeSettings::default());
+    let boxes = "(INIT &boxes BoundingBox (key ((&comps.component ^Id)) (cell (P) (&comps.component *P Id))))\n";
+    let written = checked(&format!("{BG}{FG}{COMPS}{AXIS}{PRIOR}{boxes}"));
+    let stream = token_stream(&written, &vocabulary).expect("the program has a stream");
+    let inputs = inputs();
+    let mut decoder = decoder(&inputs);
+    let (mut retargeted, mut compared) = (0, 0);
+    for (token, emitter) in &stream {
+        if matches!(emitter, Emitter::Engine) {
+            continue;
+        }
+        {
+            let mut resolved: Option<ResolvedProgram> = None;
+            for id in 0..u32::try_from(vocabulary.len()).expect("fewer than 2^32 tokens") {
+                let candidate = vocabulary.token(id).expect("an id of the vocabulary");
+                let (Token::Lib(name) | Token::Proposer(name)) = candidate else { continue };
+                let mut fork = decoder.fork();
+                if fork.step(candidate.clone()).is_err() {
+                    continue;
+                }
+                let Some((program, Some(open))) = fork.partial() else { continue };
+                let (_, complete) = program.value().forms.split_last().expect("a partial form");
+                let earlier = std::sync::Arc::new(resolve(&Node::new(Program { forms: complete.into() }), None, &SolverScope::default(), registry).value);
+                let form = NodePath::top(complete.len() as u32);
+                let at = form.join(&open);
+                let expected = resolve_last(&earlier, &program, registry);
+                let nodes = earlier.graph.nodes.len();
+                match resolved.as_mut() {
+                    Some(held) => {
+                        compared += 1;
+                        if held.retarget_lib_atom(&program, &at, &RelationRef::Lib(name.clone()), registry) {
+                            retargeted += 1;
+                            assert_eq!(resolution_of_last(held, &form, &at, nodes), resolution_of_last(&expected, &form, &at, nodes), "{candidate:?} after {token:?}");
+                        }
+                    }
+                    None => resolved = Some(expected),
+                }
+            }
+        }
+        decoder.step(token.clone()).expect("a token of the stream");
+    }
+    assert!(compared > 0 && retargeted > 0, "{retargeted} retargets of {compared} candidates");
 }

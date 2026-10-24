@@ -10,7 +10,9 @@
 //! whose step opens an atom are one program but for the atom's relation,
 //! which holds no site yet, so they share the labels and their types, the
 //! bindings of the conjuncts before the atom, and the result of each check
-//! that reads nothing of that relation ([`Candidate::AtomHead`]). Its interface
+//! that reads nothing of that relation ([`Candidate::AtomHead`]), and the candidates that open an
+//! atom of a lib relation, a relation macro or a proposer take one resolution of the form in
+//! progress, retargeted to each one's relation. Its interface
 //! beside the mask, in `interface`, gives the rows of the body so far and the
 //! consistency test at a `RULE` clause's end, and its batch form, in
 //! `batch`, steps many decodes at once, and its projections of the body so far,
@@ -46,7 +48,7 @@ use crate::eval::instance::Constructions;
 use crate::eval::Cancellation;
 use crate::judge::candidates::PairCandidates;
 use crate::program::path::NodePath;
-use crate::program::ProgramRelation;
+use crate::program::{ProgramRelation, RelationRef};
 use crate::program::{Node, Program};
 use crate::registry::Registry;
 use crate::resolver::resolve_last;
@@ -281,6 +283,13 @@ impl<'a> Decoder<'a> {
         }
         if let Some((program, open)) = state.partial() {
             if !program.value().forms.is_empty() {
+                if let (Some(open), Token::Lib(name) | Token::Proposer(name), None) = (&open, token, opened.as_ref().and_then(|opened| opened.resolved.as_ref())) {
+                    let earlier = self.state.resolved(self.context.registry);
+                    if let Some((check, refusals)) = checks.check_lib_head(&earlier, &program, open, &RelationRef::Lib(name.clone())) {
+                        return Err(Refusal::Check { check, refusals });
+                    }
+                    return Ok((state, forced));
+                }
                 let candidate = if opened.is_some() { Candidate::AtomHead } else { Candidate::Any };
                 let resolved = match opened.and_then(|opened| opened.resolved) {
                     Some(resolved) => resolved,
