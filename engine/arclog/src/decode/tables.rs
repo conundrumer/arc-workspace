@@ -1,7 +1,9 @@
 //! The tables of a decode's last step, the input of the feature encoder:
 //! where the step added a site or a conjunct to the body of the
 //! clause in progress, the table of that body; where the step finished a
-//! form, the table of each relation the form declares. Each table gives its
+//! form, the table of each relation the form declares, except the `connected`
+//! output of a Connectivity instance, which its `component` output holds
+//! as a join with itself. Each table gives its
 //! point, its relation's slot, its columns' names and types, and its rows on
 //! every example at each assignment of the `DET`s it reads, at each model for
 //! a relation with picks. Where a relation holds more rows on an example than
@@ -167,7 +169,9 @@ impl Decoder<'_> {
         Some(Table { form, point, contents: contents.and_then(|contents| contents) })
     }
 
-    /// The table of each relation the form that the step finished declares.
+    /// The table of each relation the form that the step finished declares,
+    /// but for the `connected` output of a Connectivity instance, which its
+    /// `component` output holds as a join with itself ([`is_connectivity_connected`]).
     fn relation_tables(&self, before: &State) -> Vec<Table> {
         let registry = self.context.registry;
         let program = self.state.program();
@@ -178,6 +182,7 @@ impl Decoder<'_> {
         };
         self.state
             .declared_from(before.finished_slots())
+            .filter(|(_, declared)| !is_connectivity_connected(program.value(), &form, declared))
             .map(|(slot, declared)| {
                 let contents = match graph_relation(checked, registry, &form, declared) {
                     Some(relation) => {
@@ -311,6 +316,14 @@ fn graph_relation(program: &CheckedProgram, registry: &Registry, form: &NodePath
         _ => false,
     })?;
     Some(GraphRelation { node: *shared, output: Some(Arc::clone(&name.path)) })
+}
+
+/// Whether `declared` is the `connected` output of the Connectivity instance
+/// that the form at `form` of `program` is.
+fn is_connectivity_connected(program: &crate::program::Program, form: &NodePath, declared: &ProgramRelation) -> bool {
+    let ProgramRelation::Output(name) = declared else { return false };
+    let [OutputStep::Port(port)] = &name.path[..] else { return false };
+    port.0.as_ref() == "connected" && matches!(node_at(NodeRef::Program(program), form), Some(NodeRef::Instance(written)) if written.component.0.as_ref() == "Connectivity")
 }
 
 /// A body's value at each assignment as the one model of that assignment.

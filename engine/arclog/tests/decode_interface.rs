@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use arclog::check::{check_program, CheckCache, CheckedProgram, SolverClauses};
-use arclog::decode::{step_batch, Consistency, Decoder, Point, Points, Refusal, Projections};
+use arclog::decode::{step_batch, Consistency, Decoder, Point, Points, Refusal, Projections, TableRelation};
 use arclog::eval::instance::Constructions;
 use arclog::eval::pool::Pool;
 use arclog::eval::{Caps, ReachedBound, RelationValue};
@@ -296,4 +296,27 @@ fn the_table_of_a_det_at_the_end_of_its_form_gives_its_rows_at_each_value() {
     assert!(rows.stop.is_none());
     assert!(rows.at.len() > 1, "one entry for each value of `&c`: {rows:?}");
     assert!(rows.at.iter().all(|(assigned, models)| assigned.len() == 1 && !models.is_empty()));
+}
+
+#[test]
+fn the_tables_of_a_connectivity_form_give_component_and_adjacent_and_no_connected() {
+    let inputs = inputs(&[2, 2], Caps::CORPUS);
+    let tokens = model_tokens("(RULE &fg (input *P *Col))\n(INIT &comps Connectivity (node ((:P P)) (&fg *P)))\n(RULE &output (&comps.component *P *Id))\n");
+    let mut decoder = decoder(&inputs);
+    let mut relation_batches = Vec::new();
+    for token in &tokens {
+        decoder.step(token.clone()).unwrap_or_else(|refusal| panic!("{token:?}: {refusal:?}"));
+        let tables: Vec<_> = decoder.tables(Points::Relations).into_iter().filter(|table| table.point == Point::Relation).collect();
+        if !tables.is_empty() {
+            relation_batches.push(tables);
+        }
+    }
+    let [_, comps, _] = &relation_batches[..] else { panic!("one batch each for `&fg`, the INIT form and `&output`: {}", relation_batches.len()) };
+    let slots: Vec<_> = comps.iter().map(|table| match &table.contents.as_ref().expect("the table has contents").relation {
+        TableRelation::Slot(slot) => *slot,
+        TableRelation::Fact(fact) => panic!("a fact relation {fact:?}"),
+    }).collect();
+    // The slots of the form, in order: `component` 1, `connected` 2, `adjacent` 3, and the input `node` 4. The slot of `connected` gives no table.
+    assert_eq!(slots, [1, 3, 4]);
+    assert!(comps.iter().all(|table| table.contents.is_ok()));
 }
