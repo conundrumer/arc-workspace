@@ -628,34 +628,32 @@ class ComponentsRows(NamedTuple):
     """The output relations of `Components` (programs/lib/cells.dl)."""
 
     label: Relation
-    conn: Relation
 
 
 def Components(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, node: Iterable[PyRow] | None = None, step: Iterable[PyRow] | None = None) -> ComponentsRows:
     """Runs `Components` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Components', [Key],
                GridTypes(LibType.POSITION, LibType.OFFSET),
-               {'node': Columns((Key, LibType.POSITION, ), True), 'step': Columns((LibType.OFFSET, ), False), 'label': Columns((Key, LibType.POSITION, LibType.IDENT, ), True), 'conn': Columns((Key, LibType.POSITION, LibType.POSITION, ), True)},
+               {'node': Columns((Key, LibType.POSITION, ), True), 'step': Columns((LibType.OFFSET, ), False), 'label': Columns((Key, LibType.POSITION, LibType.IDENT, ), True)},
                {'node': node, 'step': step},
-               ['label', 'conn'], sizes)
-    return ComponentsRows(got['label'], got['conn'])
+               ['label'], sizes)
+    return ComponentsRows(got['label'])
 
 
 class Components8Rows(NamedTuple):
     """The output relations of `Components8` (programs/lib/cells.dl)."""
 
     label: Relation
-    conn: Relation
 
 
 def Components8(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, node: Iterable[PyRow] | None = None, step: Iterable[PyRow] | None = None) -> Components8Rows:
     """Runs `Components8` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Components8', [Key],
                GridTypes(LibType.POSITION, LibType.OFFSET),
-               {'node': Columns((Key, LibType.POSITION, ), True), 'step': Columns((LibType.OFFSET, ), False), 'label': Columns((Key, LibType.POSITION, LibType.IDENT, ), True), 'conn': Columns((Key, LibType.POSITION, LibType.POSITION, ), True)},
+               {'node': Columns((Key, LibType.POSITION, ), True), 'step': Columns((LibType.OFFSET, ), False), 'label': Columns((Key, LibType.POSITION, LibType.IDENT, ), True)},
                {'node': node, 'step': step},
-               ['label', 'conn'], sizes)
-    return Components8Rows(got['label'], got['conn'])
+               ['label'], sizes)
+    return Components8Rows(got['label'])
 
 
 class ReachRows(NamedTuple):
@@ -663,17 +661,16 @@ class ReachRows(NamedTuple):
 
     reach: Relation
     label: Relation
-    conn: Relation
 
 
 def Reach(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, seed: Iterable[PyRow] | None = None, node: Iterable[PyRow] | None = None, step: Iterable[PyRow] | None = None) -> ReachRows:
     """Runs `Reach` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Reach', [Key],
                GridTypes(LibType.POSITION, LibType.OFFSET),
-               {'seed': Columns((Key, LibType.POSITION, ), True), 'reach': Columns((Key, LibType.POSITION, ), True), 'node': Columns((Key, LibType.POSITION, ), True), 'step': Columns((LibType.OFFSET, ), False), 'label': Columns((Key, LibType.POSITION, LibType.IDENT, ), True), 'conn': Columns((Key, LibType.POSITION, LibType.POSITION, ), True)},
+               {'seed': Columns((Key, LibType.POSITION, ), True), 'reach': Columns((Key, LibType.POSITION, ), True), 'node': Columns((Key, LibType.POSITION, ), True), 'step': Columns((LibType.OFFSET, ), False), 'label': Columns((Key, LibType.POSITION, LibType.IDENT, ), True)},
                {'seed': seed, 'node': node, 'step': step},
-               ['reach', 'label', 'conn'], sizes)
-    return ReachRows(got['reach'], got['label'], got['conn'])
+               ['reach', 'label'], sizes)
+    return ReachRows(got['reach'], got['label'])
 
 
 class RimRows(NamedTuple):
