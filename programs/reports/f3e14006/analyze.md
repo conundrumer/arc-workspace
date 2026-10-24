@@ -1,7 +1,7 @@
 # f3e14006
 
 ## Concept
-- Fits train0, train2, train3, test0 and test1 exactly. At train1 the pair's output holds `8` at output (4,3), (4,5), where the concept, and every branch, gives the cross line's base `5`; no interpretation found reproduces those two cells, and `progress-analyze.md` records it. Judged by the concept's output there, the concept fits every pair.
+- Fits every pair exactly: train0–train3, test0 and test1. Train1, row 4, as corrected by commit b03e15f, holds the cross line's base `5` between the marks, which is the output the concept and every branch give there (`work/task/f3e14006/probe.py`).
 - Every rule has a relational form; the program runs no approximation. No witness with verdict `other`.
 - Against the concept: at the `anchor-across-bar-line` witness the verdict is `$AnchorAcrossBarLine`. In every pair the bar line's own row is a hole row, its holes in the bar's mark color; anchoring at the stored top corner matches that only because the three pairs whose bar line lies below the cross marks (train0, train2, test1) have odd heights.
 - `anchor_corner` (top-left) is read on each axis only under that axis's concept branch; a case taking both anchor branches reads no `anchor_corner`.

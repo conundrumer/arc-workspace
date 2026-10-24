@@ -16,4 +16,4 @@
     ```
 
 - Judged by that output, the concept fits train1, as do `$AnchorAcrossBarLine`, `$AnchorAlongNearCross` and `background=DominantColor`, each of which gives that output on train1 (`work/task/f3e14006/probe.py`); judged by the pair's own output, every case fails Fit at train1. No witness is drawn from train1, so no verdict rests on it.
-- Cost: one check run and the time to search for a reading of the two cells. The output is still wrong in the task file.
+- Cost: one check run and the time to search for a reading of the two cells. The output is no longer wrong: commit b03e15f corrected train1 output row 4 to `0 0 9 5 9 5 9 0 0 0`, the concept's output, and on the rerun of `work/task/f3e14006/probe.py` the concept and every branch fit train1 exactly.
