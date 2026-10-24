@@ -6,16 +6,17 @@
 //! holds the session's data beside the decode.
 
 use std::collections::HashMap;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use arclog::decode::columns::{case_columns, CaseColumns, StopColumns};
-use arclog::decode::corpus::{replay_solver, solver_tables};
+use arclog::decode::corpus::{mask_computations, new_mask_computations, read_task_files, replay_panic, replay_prefix_tree, solver_tables, sorted_streams};
 use arclog::decode::{step_batch, Consistency, Decoder, Points, TokenMask, Views};
 use arclog::eval::instance::Constructions;
 use arclog::eval::pool::Pool;
-use arclog::harness::{run_over_corpus, SolverResult};
+use arclog::harness::{corpus_threads, run_on_workers, run_over_corpus, SolverResult};
 use arclog::eval::{Outcome, RelationValue};
 use arclog::judge::attempts::Attempts;
 use arclog::judge::candidates::{PairCandidates, Section, World};
@@ -678,7 +679,7 @@ struct IdStream {
     concept: bool,
     ids: Vec<(u32, Emitter)>,
     /// The masks of the model's tokens, or why the case gives none; `Ok`
-    /// with no bytes where the walk replays nothing.
+    /// with no bytes where the walk replays nothing, or has not yet.
     masks: Result<Option<Vec<u8>>, String>,
 }
 
@@ -694,43 +695,45 @@ struct IdStream {
 /// pairs in the closed world, and the stream's `masks` are the engine's
 /// masks of that replay; a stream whose replay gives none stays in the list
 /// with its `mask_fault`, and the second value is as it is without `tasks`.
-/// The walk runs on the threads of the corpus harness with the GIL released.
+/// The walk runs on the threads of the corpus harness with the GIL released,
+/// in phases. The first reads each solver, its streams and, with `tasks`, its
+/// task. The second, with `tasks`, cuts the streams of each solver, in the
+/// order of their tokens, into groups of consecutive streams, so that no
+/// group's mask computations pass the share of each thread in those of the
+/// call, but by the last stream's, and replays the groups, the largest
+/// first. A group replays the mask of each prefix its streams share once.
 #[pyfunction]
 #[pyo3(signature = (corpus, all_cases=false, task_ids=None, tasks=None))]
 fn corpus_streams(py: Python<'_>, corpus: &str, all_cases: bool, task_ids: Option<Vec<String>>, tasks: Option<&str>) -> PyResult<(Vec<PyCaseStream>, Vec<String>)> {
     let wanted = if all_cases { WantedCases::All } else { WantedCases::Concept };
     let constructions = constructions()?;
     let vocabulary = Vocabulary::new(Registry::get(), &DecodeSettings::default());
-    let found = walk_corpus(py, corpus, &task_ids, |id| {
+    let reads: Mutex<HashMap<String, Result<(Task, JudgedTask), String>>> = Mutex::new(HashMap::new());
+    let mut found = walk_corpus(py, corpus, &task_ids, |id| {
         let (mut streams, mut faults) = (Vec::new(), Vec::new());
         match solver_streams(Path::new(corpus), id, wanted, &vocabulary) {
             Ok(cases) => {
-                let mut masked = tasks.map(|tasks| {
-                    replay_solver(Path::new(corpus), Path::new(tasks), id, all_cases, constructions, &|masks: &mut Vec<u8>, decoder, stepped| {
-                        masks.extend(mask_bytes(stepped.mask, decoder.vocabulary().len()));
-                    })
-                });
                 for case in cases {
                     match case.stream {
                         Ok(stream) => {
-                            let masks = match &mut masked {
-                                None => Ok(None),
-                                Some(Err(fault)) => Err(fault.clone()),
-                                Some(Ok(replayed)) => match replayed.cases.iter_mut().find(|replayed| replayed.case == case.case) {
-                                    None => Err("the program holds a DEMONSTRATED form".to_string()),
-                                    Some(replayed) => replayed.outcome.as_mut().map(|masks| Some(std::mem::take(masks))).map_err(|fault| fault.clone()),
-                                },
-                            };
+                            let masks = if tasks.is_some() && case.demonstrated { Err("the program holds a DEMONSTRATED form".to_string()) } else { Ok(None) };
                             streams.push(IdStream { task: id.to_string(), case: case.case, concept: case.concept, ids: token_ids(&stream, &vocabulary), masks });
                         }
                         Err(fault) => faults.push(fault_line(id, Some(&case.case), &fault)),
                     }
+                }
+                if let (Some(tasks), false) = (tasks, streams.is_empty()) {
+                    reads.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).insert(id.to_string(), read_task_files(Path::new(tasks), id));
                 }
             }
             Err(fault) => faults.push(fault_line(id, None, &fault)),
         }
         (streams, faults)
     })?;
+    if tasks.is_some() {
+        let reads = reads.into_inner().unwrap_or_else(|poisoned| poisoned.into_inner());
+        py.detach(|| replay_masks(&mut found, &reads, constructions));
+    }
     let mut streams = Vec::new();
     let mut faults = Vec::new();
     for (_, solver_streams, solver_faults) in found {
@@ -754,6 +757,88 @@ fn corpus_streams(py: Python<'_>, corpus: &str, all_cases: bool, task_ids: Optio
         faults.extend(solver_faults);
     }
     Ok((streams, faults))
+}
+
+/// A run of consecutive streams of one solver, in the order of their
+/// tokens, which one thread replays from a new decoder.
+struct ReplayUnit {
+    /// The index in `found` of the solver.
+    solver: usize,
+    /// The indices in the solver's streams of the unit's streams.
+    streams: Vec<usize>,
+    /// The mask computations of the unit's replay.
+    masks: usize,
+}
+
+/// Replays the streams of `found` whose masks are due, which are those with
+/// `Ok(None)`, on the tasks that `reads` holds, in units cut so that no
+/// unit passes its share of the mask computations of the call but by its
+/// last stream's, and sets each stream's `masks`. A solver whose task did not
+/// read, or whose unit panicked, gives each of its streams that fault.
+fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &HashMap<String, Result<(Task, JudgedTask), String>>, constructions: &'static Constructions) {
+    let mut solvers = Vec::new();
+    let mut total = 0;
+    for (solver, (id, streams, _)) in found.iter().enumerate() {
+        let Some(read) = reads.get(id) else { continue };
+        if let Err(fault) = read {
+            solvers.push((solver, Vec::new(), Some(fault.clone())));
+            continue;
+        }
+        let due: Vec<usize> = (0..streams.len()).filter(|&stream| matches!(streams[stream].masks, Ok(None))).collect();
+        let ids: Vec<Vec<(u32, Emitter)>> = due.iter().map(|&stream| streams[stream].ids.clone()).collect();
+        let sorted: Vec<usize> = sorted_streams(&ids);
+        total += mask_computations(&sorted.iter().map(|&stream| ids[stream].as_slice()).collect::<Vec<_>>());
+        solvers.push((solver, sorted.into_iter().map(|stream| (due[stream], ids[stream].clone())).collect::<Vec<_>>(), None));
+    }
+    let share = (total / corpus_threads()).max(1);
+    let mut units = Vec::new();
+    for (solver, sorted, _) in &solvers {
+        let mut unit = ReplayUnit { solver: *solver, streams: Vec::new(), masks: 0 };
+        let mut last: Option<&[(u32, Emitter)]> = None;
+        for (stream, ids) in sorted {
+            let masks = new_mask_computations(last, ids);
+            unit.streams.push(*stream);
+            unit.masks += masks;
+            last = Some(ids);
+            if unit.masks >= share {
+                units.push(std::mem::replace(&mut unit, ReplayUnit { solver: *solver, streams: Vec::new(), masks: 0 }));
+                last = None;
+            }
+        }
+        if !unit.streams.is_empty() {
+            units.push(unit);
+        }
+    }
+    units.sort_by(|a, b| b.masks.cmp(&a.masks));
+    let outcomes = run_on_workers(&units, |unit| {
+        let (_, streams, _) = &found[unit.solver];
+        let Some(Ok((task, judged))) = reads.get(&found[unit.solver].0) else { unreachable!("a unit stands over a task that read") };
+        let ids: Vec<Vec<(u32, Emitter)>> = unit.streams.iter().map(|&stream| streams[stream].ids.clone()).collect();
+        catch_unwind(AssertUnwindSafe(|| {
+            replay_prefix_tree(task, judged, &ids, constructions, &|masks: &mut Vec<u8>, decoder, stepped| {
+                masks.extend(mask_bytes(stepped.mask, decoder.vocabulary().len()));
+            })
+        }))
+        .map_err(|payload| replay_panic(&*payload))
+    });
+    let mut faults: HashMap<usize, String> = solvers.into_iter().filter_map(|(solver, _, fault)| fault.map(|fault| (solver, fault))).collect();
+    for (unit, outcome) in units.iter().zip(outcomes) {
+        match outcome {
+            Ok(masks) => {
+                for (&stream, masks) in unit.streams.iter().zip(masks) {
+                    found[unit.solver].1[stream].masks = masks.map(Some);
+                }
+            }
+            Err(fault) => {
+                faults.entry(unit.solver).or_insert(fault);
+            }
+        }
+    }
+    for (solver, fault) in faults {
+        for stream in &mut found[solver].1 {
+            stream.masks = Err(fault.clone());
+        }
+    }
 }
 
 // ------------------------------------------------------------------ tables

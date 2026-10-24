@@ -5,6 +5,7 @@
 use std::path::Path;
 
 use crate::check::{check_shared_program, CheckCache, CheckedProgram, SolverClauses};
+use crate::decode::replay::holds_demonstrated;
 use crate::harness::read_corpus_solver;
 use crate::registry::Registry;
 use crate::resolver::{resolve_cases, ResolvedCase, ResolvedCases};
@@ -29,6 +30,9 @@ pub struct CaseStream {
     pub case: String,
     /// Whether the case is the solver's concept case.
     pub concept: bool,
+    /// Whether the case program holds a `DEMONSTRATED` form, whose stream
+    /// the commands that replay do not decode.
+    pub demonstrated: bool,
     /// The case's token stream, or the writer's fault.
     pub stream: Result<Vec<(Token, Emitter)>, String>,
 }
@@ -55,6 +59,7 @@ pub fn solver_streams(corpus: &Path, id: &str, wanted: WantedCases<'_>, vocabula
         .map(|(name, program)| CaseStream {
             case: case_spelled(name),
             concept: name == concept,
+            demonstrated: holds_demonstrated(program),
             stream: token_stream(program, vocabulary).map_err(|diagnostic| format!("the writer gives no stream: {}", diagnostic.message)),
         })
         .collect())
