@@ -1,9 +1,11 @@
 //! The tables of a decode's last step, the input of the feature encoder:
 //! where the step added a site or a conjunct to the body of the
 //! clause in progress, the table of that body; where the step finished a
-//! form, the table of each relation the form declares, except the `connected`
-//! output of a Connectivity instance, which its `component` output holds
-//! as a join with itself. Each table gives its
+//! form, the table of each relation the form declares, except a relation whose
+//! rows another table holds: the `connected` output of a Connectivity instance,
+//! which its `component` output holds as a join with itself, and an input
+//! written with a body of one positive atom of a fact relation, a declared
+//! relation or an output, which the table of that relation holds. Each table gives its
 //! point, its relation's slot, its columns' names and types, and its rows on
 //! every example at each assignment of the `DET`s it reads, at each model for
 //! a relation with picks. Where a relation holds more rows on an example than
@@ -40,7 +42,7 @@ use crate::judge::determination::{Assignment, Det, End};
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::registry::Registry;
 use crate::resolver::registry_columns::component;
-use crate::program::{ColumnName, Conjunct, FactRelation, OutputOwner, OutputStep, ProgramRelation};
+use crate::program::{ColumnName, Conjunct, FactRelation, OutputOwner, OutputStep, ProgramRelation, RelationRef};
 use crate::resolver::{DependencyKind, GraphNodeIndex};
 use crate::relations::RowSet;
 use crate::task::Task;
@@ -177,8 +179,7 @@ impl Decoder<'_> {
     }
 
     /// The table of each relation the form that the step finished declares,
-    /// but for the `connected` output of a Connectivity instance, which its
-    /// `component` output holds as a join with itself ([`is_connectivity_connected`]).
+    /// but for each whose rows another table holds ([`is_held_by_another_table`]).
     fn relation_tables(&self, before: &State) -> Vec<Table> {
         let registry = self.context.registry;
         let program = self.state.program();
@@ -189,7 +190,7 @@ impl Decoder<'_> {
         };
         self.state
             .declared_from(before.finished_slots())
-            .filter(|(_, declared)| !is_connectivity_connected(program.value(), &form, declared))
+            .filter(|(_, declared)| !is_held_by_another_table(program.value(), &form, declared))
             .map(|(slot, declared)| {
                 let contents = match graph_relation(checked, registry, &form, declared) {
                     Some(relation) => {
@@ -327,12 +328,34 @@ fn graph_relation(program: &CheckedProgram, registry: &Registry, form: &NodePath
     Some(GraphRelation { node: *shared, output: Some(Arc::clone(&name.path)) })
 }
 
-/// Whether `declared` is the `connected` output of the Connectivity instance
-/// that the form at `form` of `program` is.
-fn is_connectivity_connected(program: &crate::program::Program, form: &NodePath, declared: &ProgramRelation) -> bool {
+/// Whether another table of the decode holds the rows of `declared`, a
+/// relation of the form at `form` of `program`: the `connected` output of a
+/// Connectivity instance, which its `component` output holds as a join with
+/// itself; or an input that the form writes, in its key clause or after it,
+/// with a body of one positive atom of a fact relation, a declared relation or
+/// an output, whose table holds those rows with its columns renamed, dropped
+/// or joined.
+fn is_held_by_another_table(program: &crate::program::Program, form: &NodePath, declared: &ProgramRelation) -> bool {
     let ProgramRelation::Output(name) = declared else { return false };
     let [OutputStep::Port(port)] = &name.path[..] else { return false };
-    port.0.as_ref() == "connected" && matches!(node_at(NodeRef::Program(program), form), Some(NodeRef::Instance(written)) if written.component.0.as_ref() == "Connectivity")
+    let Some(NodeRef::Instance(written)) = node_at(NodeRef::Program(program), form) else { return false };
+    if port.0.as_ref() == "connected" && written.component.0.as_ref() == "Connectivity" {
+        return true;
+    }
+    let keyed = written.key.iter().flat_map(|key| key.value().inputs.iter());
+    keyed.chain(written.inputs.iter()).any(|input| {
+        let input = input.value();
+        input.name == *port && reads_one_held_atom(input.body.value())
+    })
+}
+
+/// Whether `body` is one positive atom whose relation is a fact relation, a
+/// relation the program declares, or an output.
+fn reads_one_held_atom(body: &crate::program::Body) -> bool {
+    matches!(
+        &body.conjuncts[..],
+        [Conjunct::Atom(atom)] if matches!(atom.value().relation, RelationRef::Fact(_) | RelationRef::Declared(_) | RelationRef::Output(_))
+    )
 }
 
 /// A body's value at each assignment as the one model of that assignment.

@@ -316,7 +316,44 @@ fn the_tables_of_a_connectivity_form_give_component_and_adjacent_and_no_connecte
         TableRelation::Slot(slot) => *slot,
         TableRelation::Fact(fact) => panic!("a fact relation {fact:?}"),
     }).collect();
-    // The slots of the form, in order: `component` 1, `connected` 2, `adjacent` 3, and the input `node` 4. The slot of `connected` gives no table.
-    assert_eq!(slots, [1, 3, 4]);
+    // The slots of the form, in order: `component` 1, `connected` 2, `adjacent` 3, and the input `node` 4. The slots of `connected` and of `node`, whose body is one atom of a declared relation, give no table.
+    assert_eq!(slots, [1, 3]);
     assert!(comps.iter().all(|table| table.contents.is_ok()));
+}
+
+/// The slots of the tables of the last form that `arclog` finishes, in order.
+fn slots_of_last_form(arclog: &str) -> Vec<u32> {
+    let inputs = inputs(&[2, 2], Caps::CORPUS);
+    let mut decoder = decoder(&inputs);
+    let mut last = Vec::new();
+    for token in &model_tokens(arclog) {
+        decoder.step(token.clone()).unwrap_or_else(|refusal| panic!("{token:?}: {refusal:?}"));
+        let tables: Vec<_> = decoder.tables(Points::Relations).into_iter().filter(|table| table.point == Point::Relation).collect();
+        if !tables.is_empty() {
+            last = tables;
+        }
+    }
+    last.iter().map(|table| match &table.contents.as_ref().expect("the table has contents").relation {
+        TableRelation::Slot(slot) => *slot,
+        TableRelation::Fact(fact) => panic!("a fact relation {fact:?}"),
+    }).collect()
+}
+
+#[test]
+fn an_input_of_one_atom_of_a_fact_or_declared_relation_gives_no_table() {
+    // `source` reads a declared relation, `node` a fact relation, and `dir` a lib relation.
+    let slots = slots_of_last_form("(RULE &fg (input *P *Col))\n(INIT &rays Ray (source (P) (&fg *P)) (node (P) (input *P *Col)) (dir (D) (dir8_elem *D)))\n");
+    assert_eq!(slots, [1, 2, 5], "`ray`, `end` and `dir`; `source` and `node` give none");
+}
+
+#[test]
+fn an_input_of_two_conjuncts_gives_its_table() {
+    let slots = slots_of_last_form("(RULE &fg (input *P *Col))\n(INIT &comps Connectivity (node (P) (&fg *P) (input *P *Col)))\n");
+    assert_eq!(slots, [1, 3, 4], "`component`, `adjacent` and `node`");
+}
+
+#[test]
+fn an_input_of_one_atom_in_a_key_clause_gives_no_table() {
+    let slots = slots_of_last_form("(RULE &fg (input *P *Col))\n(INIT &rays Ray (key ((&fg *P ^Col)) (source (P) (&fg *P Col))) (node (P) (input *P *Col)) (dir (D) (dir8_elem *D)))\n");
+    assert_eq!(slots, [1, 2, 5], "`source` in the key clause and `node` give none");
 }
