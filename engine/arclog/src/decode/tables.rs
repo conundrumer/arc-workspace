@@ -33,7 +33,7 @@ use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::registry::Registry;
 use crate::resolver::registry_columns::component;
 use crate::program::{ColumnName, Conjunct, FactRelation, OutputOwner, OutputStep, ProgramRelation};
-use crate::resolver::{resolve_last, DependencyKind, GraphNodeIndex};
+use crate::resolver::{DependencyKind, GraphNodeIndex};
 use crate::relations::RowSet;
 use crate::task::Task;
 use crate::terms::{Constant, Example, Term};
@@ -172,23 +172,22 @@ impl Decoder<'_> {
         let registry = self.context.registry;
         let program = self.state.program();
         let form = NodePath::top(program.value().forms.len() as u32 - 1);
-        let resolved = Arc::new(resolve_last(&before.resolved(registry), program, registry));
-        let checked = match self.checked(resolved, &form) {
+        let checked = match self.finished_checked(before, &self.state) {
             Ok(checked) => checked,
-            Err(fault) => return vec![Table { form, point: Point::Relation, contents: Err(fault) }],
+            Err(fault) => return vec![Table { form, point: Point::Relation, contents: Err(fault.clone()) }],
         };
         self.state
             .declared_from(before.finished_slots())
             .map(|(slot, declared)| {
-                let contents = match graph_relation(&checked, registry, &form, declared) {
+                let contents = match graph_relation(checked, registry, &form, declared) {
                     Some(relation) => {
-                        let dets = relation_dets(&checked, relation.node);
+                        let dets = relation_dets(checked, relation.node);
                         let examples = self
-                            .examples_of(scope_of(&checked, &relation))
+                            .examples_of(scope_of(checked, &relation))
                             .into_iter()
-                            .map(|example| ExampleRows { example, rows: self.assigned(&checked, relation.node, &dets, &mut |evaluation| models_at(evaluation, &relation, example)) })
+                            .map(|example| ExampleRows { example, rows: self.assigned(checked, relation.node, &dets, &mut |evaluation| models_at(evaluation, &relation, example)) })
                             .collect();
-                        self.contents(&checked, &form, &relation, slot, &dets, examples)
+                        self.contents(checked, &form, &relation, slot, &dets, examples)
                     }
                     None => Err(RunFault { message: "the graph holds no node for a relation the form declares".into(), form: form.clone() }),
                 };

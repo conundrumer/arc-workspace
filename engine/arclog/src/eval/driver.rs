@@ -178,7 +178,7 @@ impl<'e, 'a> Driver<'e, 'a> {
     /// gives, and otherwise its body's, by generic join.
     pub(super) fn clause(&self, form: &NodePath, example: Option<Example>) -> Outcome<RelationValue> {
         let program = self.program();
-        let content = program.content(form).expect("the resolved content of each form");
+        let content = self.evaluation.program.content(form).expect("the resolved content of each form");
         let Some(NodeRef::Clause(written)) = node_at(NodeRef::Program(program.program.value()), form) else { panic!("the path of a clause of the program") };
         if let Some(index) = derivation(written, form)? {
             let request = cache::EntryRequest { clause: cache::EntryContent::Form(&content), reads: &[], example, parameters: &[] };
@@ -206,8 +206,11 @@ impl<'e, 'a> Driver<'e, 'a> {
     /// The IR of the conjuncts at `kept` of the body of the clause at
     /// `form`, with what its nodes read on `example`, or the body's value
     /// where a read is `undefined` or stopped.
-    fn compiled(&self, form: &NodePath, kept: &[u32], example: Option<Example>) -> Outcome<Result<(CompiledBody, JoinInputs), RelationValue>> {
-        let body = ir::compile_body(self.evaluation.program, form, kept)
+    fn compiled(&self, form: &NodePath, kept: &[u32], example: Option<Example>) -> Outcome<Result<(Arc<CompiledBody>, JoinInputs), RelationValue>> {
+        let body = self
+            .evaluation
+            .program
+            .compiled_body(form, kept)
             .map_err(|fault| RunFault { message: format!("the body does not compile: {fault:?}").into(), form: form.clone() })?;
         Ok(self.inputs(&body.clause, scope_at(example), example)?.map(|inputs| (body, inputs)))
     }
@@ -366,7 +369,7 @@ impl<'e, 'a> Driver<'e, 'a> {
         conjuncts.sort_unstable();
         conjuncts.dedup();
         let labels: Vec<crate::program::LabelId> = part.columns(&body.clause).iter().map(|column| body.columns[usize::from(column.0)]).collect();
-        let (content, ordered) = self.program().part_content(form, &conjuncts, &labels).expect("the content of a part of a clause's body");
+        let (content, ordered) = self.evaluation.program.part_content(form, &conjuncts, &labels).expect("the content of a part of a clause's body");
         let columns = ordered
             .iter()
             .map(|label| ColumnIndex(body.columns.iter().position(|found| found == label).expect("a column of the body") as u16))

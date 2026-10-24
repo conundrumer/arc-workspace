@@ -31,17 +31,18 @@ pub mod types;
 pub mod unfold_reads;
 pub mod zero;
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
+use crate::eval::ir::{compile_body, ClauseIr, CompileFault, CompiledBody};
 use crate::diagnostic::{Diagnostic, DiagnosticKind, Location, Severity};
 use crate::hash::StableHashMap;
 use crate::program::canonical::{canonical_form, CanonicalForm, CanonicalOrder, CanonicalWriter, SearchBudget};
 use crate::layout::{NodeLayout, SourceFile};
 use crate::program::path::{node_at, NodePath, NodeRef};
-use crate::program::{Form, LabelId};
+use crate::program::{Form, LabelId, PortName};
 use crate::solver::{Case, FileOwner, Solver};
 use crate::registry::Registry;
-use crate::resolver::{DependencyGraph, ResolvedProgram, Signature};
+use crate::resolver::{DependencyGraph, ResolvedContent, ResolvedProgram, Signature};
 use crate::types::{ProgramTypes, ValueType};
 
 mod clauses;
@@ -426,6 +427,66 @@ pub struct CheckedProgram {
     /// The alerts on the program, such as a body whose canonical form
     /// reached the search cap, which refuse nothing.
     pub alerts: Vec<Diagnostic>,
+    /// What the evaluator derives from the program alone, shared by its
+    /// clones.
+    derived: Arc<Derived>,
+}
+
+/// What a function of a checked program, a path and its arguments alone
+/// gives, kept per argument on the first ask.
+#[derive(Debug, Default)]
+struct Derived {
+    /// The result of [`crate::eval::ir::compile_body`] for each clause path
+    /// and kept conjuncts.
+    bodies: Mutex<StableHashMap<(NodePath, Box<[u32]>), Result<Arc<CompiledBody>, CompileFault>>>,
+    /// The clause of an `INIT` form's input, or of its key where the name
+    /// is `None`, with the count of its key columns, as the evaluator
+    /// compiles it.
+    instance_clauses: Mutex<StableHashMap<(NodePath, Option<PortName>), Result<(Arc<ClauseIr>, usize), CompileFault>>>,
+    /// The resolved content of the clause at each path.
+    contents: Mutex<StableHashMap<NodePath, Option<ResolvedContent>>>,
+    /// The resolved content of the part of the clause at a path that its
+    /// conjuncts and columns make, with its columns in order.
+    parts: Mutex<StableHashMap<(NodePath, Box<[u32]>, Box<[LabelId]>), Option<(ResolvedContent, Box<[LabelId]>)>>>,
+}
+
+impl CheckedProgram {
+    /// The result of `compile_body` for the conjuncts at `kept` of the body
+    /// of the clause at `clause`, compiled on the first ask.
+    pub fn compiled_body(&self, clause: &NodePath, kept: &[u32]) -> Result<Arc<CompiledBody>, CompileFault> {
+        let key = (clause.clone(), Box::<[u32]>::from(kept));
+        let mut memo = self.derived.bodies.lock().expect("a memo that no panic poisoned");
+        memo.entry(key).or_insert_with(|| compile_body(self, clause, kept).map(Arc::new)).clone()
+    }
+
+    /// The clause of the input `input` of the `INIT` form at `form`, or of
+    /// its key where `input` is `None`, with the count of its key columns,
+    /// from `compile` on the first ask.
+    pub fn instance_clause(
+        &self,
+        form: &NodePath,
+        input: Option<&PortName>,
+        compile: impl FnOnce() -> Result<(ClauseIr, usize), CompileFault>,
+    ) -> Result<(Arc<ClauseIr>, usize), CompileFault> {
+        let key = (form.clone(), input.cloned());
+        let mut memo = self.derived.instance_clauses.lock().expect("a memo that no panic poisoned");
+        memo.entry(key).or_insert_with(|| compile().map(|(clause, key)| (Arc::new(clause), key))).clone()
+    }
+
+    /// The resolved content of the clause at `path`, as
+    /// [`ResolvedProgram::content`] gives it.
+    pub fn content(&self, path: &NodePath) -> Option<ResolvedContent> {
+        let mut memo = self.derived.contents.lock().expect("a memo that no panic poisoned");
+        memo.entry(path.clone()).or_insert_with(|| self.program.content(path)).clone()
+    }
+
+    /// The content of a part of the clause at `clause`, as
+    /// [`ResolvedProgram::part_content`] gives it.
+    pub fn part_content(&self, clause: &NodePath, conjuncts: &[u32], columns: &[LabelId]) -> Option<(ResolvedContent, Box<[LabelId]>)> {
+        let key = (clause.clone(), Box::<[u32]>::from(conjuncts), Box::<[LabelId]>::from(columns));
+        let mut memo = self.derived.parts.lock().expect("a memo that no panic poisoned");
+        memo.entry(key).or_insert_with(|| self.program.part_content(clause, conjuncts, columns)).clone()
+    }
 }
 
 /// Runs every check of [`checks`] over each form of `program`, and the
@@ -538,7 +599,7 @@ pub fn check_program_of_files(
     }
     let mut types = types::program_types(&program, registry, clauses, &form_types);
     types.set_example_nodes(reads::example_relations(&program));
-    Ok(CheckedProgram { program, types, alerts })
+    Ok(CheckedProgram { program, types, alerts, derived: Arc::default() })
 }
 
 /// A top-level form of a program, at its path, with its canonical order

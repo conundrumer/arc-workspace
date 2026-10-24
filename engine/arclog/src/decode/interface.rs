@@ -298,6 +298,18 @@ impl<'a> Decoder<'a> {
         })
     }
 
+    /// The program of `after`, whose last form just finished, checked: it
+    /// resolves from `before`, the state before the step, and is checked on
+    /// the first ask, then shared by each clone of `after`.
+    pub(super) fn finished_checked<'s>(&self, before: &State, after: &'s State) -> &'s Outcome<CheckedProgram> {
+        after.checked_last().get_or_init(|| {
+            let program = after.program();
+            let form = NodePath::top(program.value().forms.len() as u32 - 1);
+            let registry = self.context.registry;
+            self.checked(Arc::new(resolve_last(&before.resolved(registry), program, registry)), &form)
+        })
+    }
+
     /// The consistency of the relation of the `RULE` clause that ends the
     /// program of `after`, where `before`, the state before the step, holds
     /// fewer forms and the decode judges the train pairs.
@@ -313,14 +325,12 @@ impl<'a> Decoder<'a> {
             return None;
         }
         let form = NodePath::top(forms.len() as u32 - 1);
-        let registry = self.context.registry;
-        let resolved = Arc::new(resolve_last(&before.resolved(registry), program, registry));
-        let checked = match self.checked(resolved, &form) {
+        let checked = match self.finished_checked(before, after) {
             Ok(checked) => checked,
-            Err(fault) => return Some((Consistency::Fault(fault), None)),
+            Err(fault) => return Some((Consistency::Fault(fault.clone()), None)),
         };
-        let output = derived_at(&checked, &form);
-        Some(self.test(&checked, &output, train))
+        let output = derived_at(checked, &form);
+        Some(self.test(checked, &output, train))
     }
 
     /// The consistency test of `output` in `program`, at each joint

@@ -14,6 +14,8 @@
 use std::sync::Arc;
 
 use super::Context;
+use crate::check::CheckedProgram;
+use crate::eval::Outcome;
 use crate::program::path::{NodePath, PathStep};
 use crate::program::{
     written_inputs, Atom, Body, Choose, Clause, ClauseKeyword, ColumnName, Conjunct, Constraint, ConstraintLabel, ConstraintOp, DeclaredName, Form, Instance,
@@ -63,6 +65,11 @@ pub(super) struct State {
     /// The resolution of the finished forms, made on its first read, which
     /// every clone of the state shares until a form finishes.
     resolved: Arc<std::sync::OnceLock<Arc<ResolvedProgram>>>,
+    /// The checked program of the finished forms, resolved from the
+    /// resolution of the state before the last form finished, made on its
+    /// first read and shared by every clone of the state until a form
+    /// finishes.
+    checked_last: Arc<std::sync::OnceLock<Outcome<CheckedProgram>>>,
 }
 
 /// An open node of the form in progress, with its children so far.
@@ -286,7 +293,7 @@ enum Offer {
 
 impl State {
     pub(super) fn new() -> State {
-        State { program: Node::new(Program { forms: Arc::from([]) }), declared: Arc::from([]), finished_slots: 0, labels: 0, stack: Vec::new(), resolved: Arc::default() }
+        State { program: Node::new(Program { forms: Arc::from([]) }), declared: Arc::from([]), finished_slots: 0, labels: 0, stack: Vec::new(), resolved: Arc::default(), checked_last: Arc::default() }
     }
 
     /// The finished forms.
@@ -299,6 +306,12 @@ impl State {
     pub(super) fn resolved(&self, registry: &Registry) -> Arc<ResolvedProgram> {
         let resolved = self.resolved.get_or_init(|| Arc::new(resolve(&self.program, None, &SolverScope::default(), registry).value));
         Arc::clone(resolved)
+    }
+
+    /// The checked program of the finished forms, as [`State::checked_last`]
+    /// holds it.
+    pub(super) fn checked_last(&self) -> &std::sync::OnceLock<Outcome<CheckedProgram>> {
+        &self.checked_last
     }
 
     /// The resolution of `partial`, the finished forms with the form in
@@ -356,6 +369,7 @@ impl State {
         self.program = self.with_form(form);
         self.finished_slots = self.next_slot();
         self.resolved = Arc::default();
+        self.checked_last = Arc::default();
         self.labels = 0;
     }
 

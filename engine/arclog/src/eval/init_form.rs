@@ -75,9 +75,13 @@ pub(super) fn key_rows(
     example: Option<Example>,
 ) -> Outcome<Result<(Vec<Row>, Option<Arc<Relation>>), RelationValue>> {
     let fault = |message: String| RunFault { message: message.into(), form: form.clone() };
-    let Some(clause) = key_clause(evaluation, form, key_body, key_labels).map_err(|compile| fault(format!("the key body does not compile: {compile:?}")))? else {
+    let Some(key_body) = key_body else {
         return Ok(Ok((vec![Row::default()], None)));
     };
+    let (clause, _) = evaluation
+        .program
+        .instance_clause(form, None, || ir::compile_instance_body(evaluation.program, form, std::slice::from_ref(key_body), key_labels).map(|clause| (clause, 0)))
+        .map_err(|compile| fault(format!("the key body does not compile: {compile:?}")))?;
     Ok(rows_read(bodies.relation(form, &clause, example)?, key_labels.len()).map_err(&fault)?.map(|(rows, relation)| (rows, Some(relation))))
 }
 
@@ -124,7 +128,7 @@ enum Binding {
 /// `key` labels where the input stands in the key clause, then the labels
 /// of `head` that are not `None`.
 pub(super) struct InputClause {
-    pub(super) clause: ClauseIr,
+    pub(super) clause: Arc<ClauseIr>,
     key: usize,
     head: Vec<Option<LabelId>>,
 }
@@ -215,7 +219,9 @@ impl<'p> InstanceShape<'p> {
         let head = self.head_labels(written, &input.port.columns)?;
         let body = (written.body.value(), path.child(written.position(InstanceInputPart::Body)));
         let flat: Vec<LabelId> = head.iter().flatten().copied().collect();
-        let (clause, key) = joined_clause(evaluation, form, &self.key_body, &self.key_labels(), *keyed, body, &flat)
+        let (clause, key) = evaluation
+            .program
+            .instance_clause(form, Some(name), || joined_clause(evaluation, form, &self.key_body, &self.key_labels(), *keyed, body, &flat))
             .map_err(|compile| format!("input `{}` does not compile: {compile:?}", name.0))?;
         Ok(Some(InputClause { clause, key, head }))
     }
