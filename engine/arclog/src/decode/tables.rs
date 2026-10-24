@@ -1,10 +1,12 @@
 //! The tables of a decode's last step, the input of the feature encoder:
 //! where the step added a site or a conjunct to the body of the
 //! clause in progress, the table of that body; where the step finished a
-//! form, the table of each relation the form declares, except a relation whose
-//! rows another table holds: an input
+//! form, the table of each relation the form declares, except a relation that
+//! gets no table: an input
 //! written with a body of one positive atom of a fact relation, a declared
-//! relation or an output, which the table of that relation holds. Each table gives its
+//! relation or an output, which the table of that relation holds, the `adjacent`
+//! output of a Connectivity instance and the `predecessor` output of a
+//! CellDistance instance, which no clause reads. Each table gives its
 //! point, its relation's slot, its columns' names and types, and its rows on
 //! every example at each assignment of the `DET`s it reads, at each model for
 //! a relation with picks. Where a relation holds more rows on an example than
@@ -178,7 +180,7 @@ impl Decoder<'_> {
     }
 
     /// The table of each relation the form that the step finished declares,
-    /// but for each whose rows another table holds ([`is_held_by_another_table`]).
+    /// but for each that gets no table ([`gives_no_table`]).
     fn relation_tables(&self, before: &State) -> Vec<Table> {
         let registry = self.context.registry;
         let program = self.state.program();
@@ -189,7 +191,7 @@ impl Decoder<'_> {
         };
         self.state
             .declared_from(before.finished_slots())
-            .filter(|(_, declared)| !is_held_by_another_table(program.value(), &form, declared))
+            .filter(|(_, declared)| !gives_no_table(program.value(), &form, declared))
             .map(|(slot, declared)| {
                 let contents = match graph_relation(checked, registry, &form, declared) {
                     Some(relation) => {
@@ -327,15 +329,19 @@ fn graph_relation(program: &CheckedProgram, registry: &Registry, form: &NodePath
     Some(GraphRelation { node: *shared, output: Some(Arc::clone(&name.path)) })
 }
 
-/// Whether another table of the decode holds the rows of `declared`, a
-/// relation of the form at `form` of `program`: an input that the form writes, in its key clause or after it,
+/// Whether `declared`, a relation of the form at `form` of `program`, gets no
+/// table: an input that the form writes, in its key clause or after it,
 /// with a body of one positive atom of a fact relation, a declared relation or
 /// an output, whose table holds those rows with its columns renamed, dropped
-/// or joined.
-fn is_held_by_another_table(program: &crate::program::Program, form: &NodePath, declared: &ProgramRelation) -> bool {
+/// or joined; the `adjacent` output of a Connectivity instance and the
+/// `predecessor` output of a CellDistance instance, which no clause reads.
+fn gives_no_table(program: &crate::program::Program, form: &NodePath, declared: &ProgramRelation) -> bool {
     let ProgramRelation::Output(name) = declared else { return false };
     let [OutputStep::Port(port)] = &name.path[..] else { return false };
     let Some(NodeRef::Instance(written)) = node_at(NodeRef::Program(program), form) else { return false };
+    if matches!((written.component.0.as_ref(), port.0.as_ref()), ("Connectivity", "adjacent") | ("CellDistance", "predecessor")) {
+        return true;
+    }
     let keyed = written.key.iter().flat_map(|key| key.value().inputs.iter());
     keyed.chain(written.inputs.iter()).any(|input| {
         let input = input.value();

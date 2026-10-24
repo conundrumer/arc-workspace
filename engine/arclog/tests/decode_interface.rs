@@ -299,7 +299,7 @@ fn the_table_of_a_det_at_the_end_of_its_form_gives_its_rows_at_each_value() {
 }
 
 #[test]
-fn the_tables_of_a_connectivity_form_give_component_and_adjacent() {
+fn the_tables_of_a_connectivity_form_give_component_and_no_adjacent() {
     let inputs = inputs(&[2, 2], Caps::CORPUS);
     let tokens = model_tokens("(RULE &fg (input *P *Col))\n(INIT &comps Connectivity (node ((:P P)) (&fg *P)))\n(RULE &output (&comps.component *P *Id))\n");
     let mut decoder = decoder(&inputs);
@@ -316,8 +316,8 @@ fn the_tables_of_a_connectivity_form_give_component_and_adjacent() {
         TableRelation::Slot(slot) => *slot,
         TableRelation::Fact(fact) => panic!("a fact relation {fact:?}"),
     }).collect();
-    // The slots of the form, in order: `component` 1, `adjacent` 2, and the input `node` 3. The slot of `node`, whose body is one atom of a declared relation, gives no table.
-    assert_eq!(slots, [1, 2]);
+    // The slots of the form, in order: `component` 1, `adjacent` 2, and the input `node` 3. The slots of `adjacent`, which no clause reads, and of `node`, whose body is one atom of a declared relation, gives no table.
+    assert_eq!(slots, [1]);
     assert!(comps.iter().all(|table| table.contents.is_ok()));
 }
 
@@ -349,11 +349,18 @@ fn an_input_of_one_atom_of_a_fact_or_declared_relation_gives_no_table() {
 #[test]
 fn an_input_of_two_conjuncts_gives_its_table() {
     let slots = slots_of_last_form("(RULE &fg (input *P *Col))\n(INIT &comps Connectivity (node (P) (&fg *P) (input *P *Col)))\n");
-    assert_eq!(slots, [1, 2, 3], "`component`, `adjacent` and `node`");
+    assert_eq!(slots, [1, 3], "`component` and `node`; `adjacent` gives none");
 }
 
 #[test]
 fn an_input_of_one_atom_in_a_key_clause_gives_no_table() {
     let slots = slots_of_last_form("(RULE &fg (input *P *Col))\n(INIT &rays Ray (key ((&fg *P ^Col)) (source (P) (&fg *P Col))) (node (P) (input *P *Col)) (dir (D) (dir8_elem *D)))\n");
     assert_eq!(slots, [1, 2, 5], "`source` in the key clause and `node` give none");
+}
+
+#[test]
+fn the_tables_of_a_cell_distance_form_give_distance_and_no_predecessor() {
+    let slots = slots_of_last_form("(RULE &fg (input *P *Col))\n(INIT &ring CellDistance (node (P) (&fg *P)) (source (P) (&fg *P)))\n");
+    // The slots of the form, in order: `distance` 1, `predecessor` 2, and the inputs `node` 3 and `source` 4.
+    assert_eq!(slots, [1], "`distance`; `predecessor`, `node` and `source` give none");
 }
