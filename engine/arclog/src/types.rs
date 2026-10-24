@@ -194,10 +194,13 @@ pub(crate) fn label_fault_message(fault: LabelFault) -> String {
 /// branches give, and an `ALL` the meet of its domain's and its body's types.
 /// An `IF` gives the meet of its test's type with the join of its then and
 /// else lists' types, or, where the label is fresh in the test, the meet of
-/// its test's and its then's types (`docs/arclog/arclog.md#conditional`). A
-/// branch of an `OR` that holds no label equal to the label takes no part in
-/// the `OR`'s join, and a branch that holds one and gives the label no type
-/// gives that join none. A then or an else list that gives the label no
+/// its test's and its then's types (`docs/arclog/arclog.md#conditional`).
+/// Where a branch of an `OR` makes the label fresh, a branch that holds no
+/// label equal to the label takes no part in the `OR`'s join. Where no branch
+/// does, a branch that holds no such label lets each value of the label
+/// through and gives the join no type, so the label keeps the meet of its
+/// other sites' types. A branch that gives the label no type gives that join
+/// none. A then or an else list that gives the label no
 /// type gives the `IF`'s join none. In a list nested in `body`, a label
 /// that the list's constraints make equal to the label, and that the
 /// constraints of the lists around the list do not, gives the label in the
@@ -429,8 +432,11 @@ impl LabelWalk<'_> {
                     let labels = crate::safety::body_labels(branch);
                     class.iter().any(|label| labels.contains(label))
                 };
-                let holding = branches.iter().filter(|branch| holds(branch.value()) && !makes_only_by_zero(branch.value(), class));
-                join_branches(holding.map(|branch| self.body_type(branch.value(), pairs, Some(here))))
+                let made_here = branches.iter().any(|branch| self.fresh_in(branch.value()));
+                let taking = branches
+                    .iter()
+                    .filter(|branch| (!made_here || holds(branch.value())) && !makes_only_by_zero(branch.value(), class));
+                join_branches(taking.map(|branch| self.body_type(branch.value(), pairs, Some(here))))
             }
             Conjunct::If { test, then, otherwise } => {
                 let test_type = self.body_type(test.value(), pairs, Some(here))?;

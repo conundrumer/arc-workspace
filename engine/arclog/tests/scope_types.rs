@@ -3,8 +3,9 @@
 //! path in the program. A constraint gives its two labels each other's
 //! sites only in the list that holds it and in the lists nested in it. A
 //! read of an instance's input port gives its labels the types of that
-//! input's columns, and an `OR` gives a label the join of the types of the
-//! branches that hold it.
+//! input's columns, and an `OR` gives a label that it makes the join of the
+//! types of the branches that hold it. A branch that holds no label equal to
+//! a label made outside the `OR` gives the join no type.
 
 use arclog::check::{check_program, CheckCache, CheckedProgram, SolverClauses};
 use arclog::program::path::{NodePath, PathStep};
@@ -98,6 +99,22 @@ fn a_label_that_one_branch_of_an_or_does_not_hold_takes_the_join_of_the_branches
 ",
     );
     assert_eq!(untyped_labels(&checked, 0), Vec::<LabelId>::new());
+}
+
+#[test]
+fn a_label_made_outside_an_or_keeps_its_type_when_one_branch_holds_no_label_equal_to_it() {
+    let checked = checked(
+        "
+(RULE &placed
+  (d4_elem (:D *D))
+  (OR ((c4_elem (:D D)))
+      ((dir_elem (:D *X)))))
+",
+    );
+    let Form::Clause(clause) = &checked.program.program.value().forms[0] else { panic!("the first form is a clause") };
+    let column = clause.value().columns.iter().find(|column| column.name == ColumnName::Written("D".into())).expect("the clause has a column D");
+    let types = checked.types.form(&path(&[0])).expect("the clause is a label scope");
+    assert_eq!(types.label(column.label), Some(&ValueType::D4));
 }
 
 #[test]
