@@ -9,6 +9,12 @@
 //! its rows. The recording makes no choice among the points: it keeps each,
 //! and a caller that reads no body in progress asks for [`Points::Relations`],
 //! so that no body table is evaluated.
+//!
+//! Beside the tables of a step, [`evidence_tables`] gives the evidence tables
+//! of a task, `ex_input` and `ex_output`, which stand before the first step.
+//! Each holds one entry for each example whose grid the fact relation holds,
+//! so that no entry passes the 900 cells of a grid, and none is cut into
+//! views.
 
 use std::ops::ControlFlow;
 use std::sync::Arc;
@@ -21,13 +27,16 @@ use crate::check::CheckedProgram;
 use crate::eval::examples::scope_of;
 use crate::eval::join::Budget;
 use crate::eval::{BodyValue, ModelsEnd, Outcome, RelationValue, RunFault};
+use crate::eval::join::each_row;
 use crate::judge::determination::{Assignment, Det, End};
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::registry::Registry;
 use crate::resolver::registry_columns::component;
-use crate::program::{Conjunct, OutputOwner, OutputStep, ProgramRelation};
+use crate::program::{ColumnName, Conjunct, FactRelation, OutputOwner, OutputStep, ProgramRelation};
 use crate::resolver::{resolve_last, DependencyKind, GraphNodeIndex};
-use crate::terms::Example;
+use crate::relations::RowSet;
+use crate::task::Task;
+use crate::terms::{Constant, Example, Term};
 use crate::types::{GraphRelation, ValueType};
 
 /// Where in a form a table stands.
@@ -38,6 +47,9 @@ pub enum Point {
     Body { conjuncts: u32, sites: u32 },
     /// A relation of a form that the step finished.
     Relation,
+    /// A fact relation of the task, `ex_input` or `ex_output`, which stands
+    /// before the first step and in no form.
+    Evidence,
 }
 
 /// The points whose tables a caller wants.
@@ -74,11 +86,18 @@ pub struct ExampleRows {
     pub rows: Outcome<Assigned<Vec<RelationValue>>>,
 }
 
+/// The relation of a table: a slot of the program, or a fact relation of the
+/// task.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum TableRelation {
+    Slot(u32),
+    Fact(FactRelation),
+}
+
 /// What a table holds once its relation checks and its columns have types.
 #[derive(Clone, Debug)]
 pub struct Contents {
-    /// The slot of the relation.
-    pub relation: u32,
+    pub relation: TableRelation,
     pub columns: Box<[TableColumn]>,
     /// The `DET`s of the assignments, in their order.
     pub dets: Box<[TableDet]>,
@@ -200,7 +219,7 @@ impl Decoder<'_> {
         let cap = self.context.settings.view_cap;
         let over = examples.iter().any(|example| example.rows.as_ref().is_ok_and(|rows| rows.at.iter().flat_map(|(_, models)| models).any(|model| matches!(model, RelationValue::Rows(rows) if rows.len() > cap))));
         let views = over.then(|| self.views_of(&examples, form)).flatten();
-        Ok(Contents { relation: slot, columns, dets, examples: examples.into(), views })
+        Ok(Contents { relation: TableRelation::Slot(slot), columns, dets, examples: examples.into(), views })
     }
 
     /// The views of the rows of `examples`, none where an example gives a
@@ -213,6 +232,46 @@ impl Decoder<'_> {
         budget.record();
         Some(found)
     }
+}
+
+/// The evidence tables of `task`, `ex_input` then `ex_output`, each with the
+/// columns of the fact relation in `registry`, no `DET`s and no views, and
+/// one entry for each example whose grid the relation holds, in the order of
+/// [`Task::examples`]: the rows of that example alone, at the one assignment,
+/// as the one model. A grid holds at most 900 cells, so no entry passes a
+/// view cap of 900 or more, and the function applies no cap.
+pub fn evidence_tables(task: &Task, registry: &Registry) -> Vec<Table> {
+    [FactRelation::ExInput, FactRelation::ExOutput].into_iter().map(|fact| evidence_table(task, registry, fact)).collect()
+}
+
+fn evidence_table(task: &Task, registry: &Registry, fact: FactRelation) -> Table {
+    let columns = registry
+        .fact_columns(fact)
+        .iter()
+        .enumerate()
+        .map(|(index, column)| TableColumn {
+            name: match &column.name {
+                ColumnName::Written(text) => text.to_string(),
+                ColumnName::Slot(_) => format!("c{index}"),
+            },
+            ty: column.ty.fixed().expect("a fact column has a fixed type").clone(),
+        })
+        .collect();
+    let counts = match fact {
+        FactRelation::ExOutput => task.train.len(),
+        _ => task.train.len() + task.test.len(),
+    };
+    let mut held: Vec<RowSet> = (0..counts).map(|_| RowSet::empty(3)).collect();
+    each_row(&task.fact_rows(fact, None), &mut |row| {
+        let Term::Constant(Constant::Example(example)) = Term::decode(row[0], &ValueType::Example) else { unreachable!("the first column of an evidence row is an Example") };
+        held[usize::from(example.index())].insert(row.into());
+    });
+    let examples = task
+        .examples()
+        .zip(held)
+        .map(|(example, rows)| ExampleRows { example: Some(example), rows: Ok(Assigned { at: vec![(Vec::new(), vec![RelationValue::Rows(Arc::new(crate::eval::join::one_part(rows)))])], stop: None }) })
+        .collect();
+    Table { form: NodePath::default(), point: Point::Evidence, contents: Ok(Contents { relation: TableRelation::Fact(fact), columns, dets: Box::new([]), examples, views: None }) }
 }
 
 /// The relation of the graph that the form at `form` of `program` declares as

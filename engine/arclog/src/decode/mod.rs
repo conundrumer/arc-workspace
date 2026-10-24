@@ -30,7 +30,7 @@ mod views;
 
 pub use batch::step_batch;
 pub use interface::{Consistency, Step};
-pub use tables::{Contents, ExampleRows, Point, Points, Table, TableColumn, TableDet};
+pub use tables::{evidence_tables, Contents, ExampleRows, Point, Points, Table, TableColumn, TableDet, TableRelation};
 pub use views::{View, Views};
 
 use std::sync::Arc;

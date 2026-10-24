@@ -17,6 +17,7 @@ use std::process::ExitCode;
 use arclog::decode::corpus::solver_tables;
 use arclog::decode::Points;
 use arclog::harness::{print_ended, require_optimized_build, run_over_corpus, SolverResult};
+use arclog::stream::DecodeSettings;
 use arclog_constructions::shared as constructions;
 
 use crate::select::selected;
@@ -86,7 +87,7 @@ fn tables_solver(arguments: &Arguments, id: &str) -> SolverResult {
         Ok(constructions) => constructions,
         Err(fault) => return SolverResult::Fail(vec![format!("a fault that stops the tables: {fault}")]),
     };
-    match solver_tables(&arguments.corpus, &arguments.tasks, id, arguments.all, arguments.points, constructions) {
+    match solver_tables(&arguments.corpus, &arguments.tasks, id, arguments.all, arguments.points, constructions, &DecodeSettings::default()) {
         Ok(solver) => {
             let mut failures = Vec::new();
             for case in solver.cases {

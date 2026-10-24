@@ -3,12 +3,17 @@
 //!
 //! Each of its parts holds one row for each item, in a column of its own:
 //!
-//! - [`TableColumns`]: a table, in the order of the stream;
+//! - [`TableColumns`]: a table, in the order of the stream, after the
+//!   evidence tables;
 //! - [`EntryColumns`]: a table, an example and an entry of its rows, which
 //!   is a model at an assignment of the `DET`s;
 //! - [`AssignedColumns`]: a `DET` at an entry's assignment;
 //! - [`ViewColumns`] and [`ViewRowColumns`]: a view of a table, and the
 //!   view's rows at an entry.
+//!
+//! The first tables of a case are the evidence tables of its task, `ex_input`
+//! then `ex_output`, with point 2, token 0, the relation's name in `fact`,
+//! and one entry for each example whose grid the relation holds.
 //!
 //! Every row of every table is a run of cells in `values`, each cell an
 //! `i32` by the type of its column: a Box its four margins (top, bottom,
@@ -20,7 +25,8 @@
 //! count of rows, and its width in cells is the table's, or the `DET`'s, or
 //! the view's. The rows of a run are in the order of their cells.
 
-use super::{Contents, Point, Table, Views};
+use super::{Contents, Point, Table, TableRelation, Views};
+use crate::read::spelling::{spelling, FACT_RELATIONS};
 use crate::eval::determinations::relation_spelled;
 use crate::eval::join::each_row;
 use crate::eval::{RelationValue, Stop};
@@ -36,6 +42,7 @@ use crate::types::ValueType;
 pub enum PointKind {
     Relation = 0,
     Body = 1,
+    Evidence = 2,
 }
 
 /// What the views of a table are, as the code in [`TableColumns::views`].
@@ -96,8 +103,11 @@ pub struct TableColumns {
     /// relation.
     pub conjuncts: Vec<u32>,
     pub sites: Vec<u32>,
-    /// The relation's slot.
+    /// The relation's slot, and -1 for an evidence table.
     pub relation: Vec<i32>,
+    /// The name of the fact relation of an evidence table, as the program
+    /// spells it, and `None` for each other table.
+    pub fact: Vec<Option<String>>,
     pub column_names: Vec<Vec<String>>,
     /// The name of each column's type, as `ValueType` spells it.
     pub column_types: Vec<Vec<String>>,
@@ -189,12 +199,13 @@ pub struct CaseColumns {
     pub values: Vec<i32>,
 }
 
-/// The columns of `tables`, each with the index of its token, on a task of
-/// `train` train pairs, which names the examples.
-pub fn case_columns(tables: &[(usize, Table)], train: usize) -> CaseColumns {
+/// The columns of `evidence`, each at token 0, then of `tables`, each with
+/// the index of its token, on a task of `train` train pairs, which names the
+/// examples.
+pub fn case_columns(evidence: &[Table], tables: &[(usize, Table)], train: usize) -> CaseColumns {
     let mut columns = CaseColumns::default();
-    for (token, table) in tables {
-        push_table(&mut columns, *token, table, train);
+    for (token, table) in evidence.iter().map(|table| (0, table)).chain(tables.iter().map(|(token, table)| (*token, table))) {
+        push_table(&mut columns, token, table, train);
     }
     columns
 }
@@ -268,6 +279,7 @@ fn push_table(out: &mut CaseColumns, token: usize, table: &Table, train: usize) 
     let (kind, conjuncts, sites) = match table.point {
         Point::Body { conjuncts, sites } => (PointKind::Body, conjuncts, sites),
         Point::Relation => (PointKind::Relation, 0, 0),
+        Point::Evidence => (PointKind::Evidence, 0, 0),
     };
     tables.point.push(kind as u8);
     tables.conjuncts.push(conjuncts);
@@ -275,6 +287,7 @@ fn push_table(out: &mut CaseColumns, token: usize, table: &Table, train: usize) 
     match &table.contents {
         Err(fault) => {
             tables.relation.push(-1);
+            tables.fact.push(None);
             tables.column_names.push(Vec::new());
             tables.column_types.push(Vec::new());
             tables.width.push(0);
@@ -287,7 +300,12 @@ fn push_table(out: &mut CaseColumns, token: usize, table: &Table, train: usize) 
         }
         Ok(contents) => {
             let types: Vec<ValueType> = contents.columns.iter().map(|column| column.ty.clone()).collect();
-            tables.relation.push(i32::try_from(contents.relation).expect("a slot within an i32"));
+            let (slot, fact) = match contents.relation {
+                TableRelation::Slot(slot) => (i32::try_from(slot).expect("a slot within an i32"), None),
+                TableRelation::Fact(fact) => (-1, Some(spelling(FACT_RELATIONS, &fact).to_owned())),
+            };
+            tables.relation.push(slot);
+            tables.fact.push(fact);
             tables.column_names.push(contents.columns.iter().map(|column| column.name.clone()).collect());
             tables.column_types.push(type_names(&types));
             tables.width.push(row_width(&types));

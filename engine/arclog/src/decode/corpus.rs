@@ -74,8 +74,8 @@ pub struct SolverReplay<T> {
 
 /// Replays each wanted case of the solver `id` of `corpus` on its task in
 /// `tasks`, the concept case or, with `all`, every case, in the order of the
-/// cases, through a decoder that judges the train pairs under the default
-/// settings, the lib's constructions `constructions`, and the corpus's
+/// cases, through a decoder that judges the train pairs under `settings`,
+/// the lib's constructions `constructions`, and the corpus's
 /// session. The replay computes the token mask before each step where
 /// `masked` holds. `record` runs after each step of a token the model emits,
 /// with the case's record, which starts as `T::default()`. A case that holds
@@ -87,10 +87,11 @@ pub fn replay_solver<T: Default + Clone>(
     id: &str,
     all: bool,
     constructions: &Constructions,
+    settings: &DecodeSettings,
     masked: bool,
     record: &dyn Fn(&mut T, &Decoder<'_>, Stepped<'_>),
 ) -> Result<SolverReplay<T>, String> {
-    catch_unwind(AssertUnwindSafe(|| replay_cases(corpus, tasks, id, all, constructions, masked, record))).unwrap_or_else(|payload| Err(replay_panic(&*payload)))
+    catch_unwind(AssertUnwindSafe(|| replay_cases(corpus, tasks, id, all, constructions, settings, masked, record))).unwrap_or_else(|payload| Err(replay_panic(&*payload)))
 }
 
 /// The fault of a solver whose replay panicked with `payload`.
@@ -104,6 +105,7 @@ fn replay_cases<T: Default + Clone>(
     id: &str,
     all: bool,
     constructions: &Constructions,
+    settings: &DecodeSettings,
     masked: bool,
     record: &dyn Fn(&mut T, &Decoder<'_>, Stepped<'_>),
 ) -> Result<SolverReplay<T>, String> {
@@ -112,7 +114,7 @@ fn replay_cases<T: Default + Clone>(
     let (task, judged) = read_task_files(tasks, id)?;
     let cases: Vec<CaseStream> = cases.into_iter().filter(|case| !case.demonstrated).collect();
     let ids: Vec<Vec<(u32, Emitter)>> = cases.iter().filter_map(|case| case.stream.as_ref().ok()).map(|stream| token_ids(stream, &vocabulary)).collect();
-    let mut outcomes = replay_prefix_tree(&task, &judged, &ids, constructions, masked, record).into_iter();
+    let mut outcomes = replay_prefix_tree(&task, &judged, &ids, constructions, settings, masked, record).into_iter();
     let recorded = cases
         .into_iter()
         .map(|case| CaseReplay {
@@ -169,7 +171,7 @@ struct Checkpoint<'a, T> {
 
 /// The outcome of the replay of each of `streams`, token ids with their
 /// emitters, in the order of `streams`, as `replay` gives it on a decoder
-/// that judges the train pairs of `judged` under the default settings, the
+/// that judges the train pairs of `judged` under `settings`, the
 /// constructions `constructions`, and a corpus session of this call's own.
 /// `record` runs after each step of a token the model emits, with the
 /// stream's record, which starts as `T::default()`. The replay computes the
@@ -185,14 +187,14 @@ pub fn replay_prefix_tree<T: Default + Clone>(
     judged: &JudgedTask,
     streams: &[Vec<(u32, Emitter)>],
     constructions: &Constructions,
+    settings: &DecodeSettings,
     masked: bool,
     record: &dyn Fn(&mut T, &Decoder<'_>, Stepped<'_>),
 ) -> Vec<Result<T, String>> {
     let registry = Registry::get();
-    let settings = DecodeSettings::default();
     let session = corpus_session();
     let train: Arc<[PairCandidates<'_>]> = judged.train.iter().map(|pair| PairCandidates::of(pair, Section::Train, World::Closed)).collect();
-    let root = Decoder::new(task, &session, registry, constructions, &settings).judging(train);
+    let root = Decoder::new(task, &session, registry, constructions, settings).judging(train);
     let order = sorted_streams(streams);
     let mut outcomes: Vec<Option<Result<T, String>>> = streams.iter().map(|_| None).collect();
     // The index in a stream of the token at which its replay was refused.
@@ -274,7 +276,8 @@ struct ReplayUnit {
 /// interns, whatever the thread count and whatever else the call holds.
 pub const UNIT_STEPS: usize = 50_000;
 
-/// Replays the streams of `solvers`, as [`replay_prefix_tree`] does, on the
+/// Replays the streams of `solvers`, as [`replay_prefix_tree`] does under
+/// `settings`, on the
 /// workers of [`run_on_workers`]. The streams of each solver are cut, in
 /// the order of [`sorted_streams`], into units of consecutive streams, so
 /// that no unit passes [`UNIT_STEPS`] model steps but by its last stream's,
@@ -290,6 +293,7 @@ pub const UNIT_STEPS: usize = 50_000;
 pub fn replay_units<T: Default + Clone, U: Send>(
     solvers: &[UnitSolver<'_>],
     constructions: &Constructions,
+    settings: &DecodeSettings,
     masked: bool,
     record: &(dyn Fn(&mut T, &Decoder<'_>, Stepped<'_>) + Sync),
     ended: &(dyn Fn(usize, T) -> U + Sync),
@@ -318,7 +322,7 @@ pub fn replay_units<T: Default + Clone, U: Send>(
         let solver = &solvers[unit.solver];
         let ids: Vec<Vec<(u32, Emitter)>> = unit.streams.iter().map(|&stream| solver.streams[stream].clone()).collect();
         catch_unwind(AssertUnwindSafe(|| {
-            replay_prefix_tree(solver.task, solver.judged, &ids, constructions, masked, record)
+            replay_prefix_tree(solver.task, solver.judged, &ids, constructions, settings, masked, record)
                 .into_iter()
                 .map(|outcome| outcome.map(|recorded| ended(unit.solver, recorded)))
                 .collect::<Vec<_>>()
@@ -371,11 +375,12 @@ pub struct SolverTables {
 
 /// The tables, at `points`, of each case of the solver `id` of `corpus` on
 /// its task in `tasks`, the concept case or, with `all`, every case, in the
-/// order of the cases, with the lib's constructions `constructions`; or the
+/// order of the cases, with the lib's constructions `constructions`, under
+/// `settings`; or the
 /// fault that stops the solver. A case that holds a `DEMONSTRATED` form is
 /// left out. The replay computes no token mask.
-pub fn solver_tables(corpus: &Path, tasks: &Path, id: &str, all: bool, points: Points, constructions: &Constructions) -> Result<SolverTables, String> {
-    let replayed = replay_solver(corpus, tasks, id, all, constructions, false, &|tables: &mut Vec<(usize, Table)>, decoder, stepped| {
+pub fn solver_tables(corpus: &Path, tasks: &Path, id: &str, all: bool, points: Points, constructions: &Constructions, settings: &DecodeSettings) -> Result<SolverTables, String> {
+    let replayed = replay_solver(corpus, tasks, id, all, constructions, settings, false, &|tables: &mut Vec<(usize, Table)>, decoder, stepped| {
         tables.extend(decoder.tables(points).into_iter().map(|table| (stepped.index, table)));
     })?;
     let cases = replayed.cases.into_iter().map(|case| CaseTables { case: case.case, concept: case.concept, tables: case.outcome }).collect();

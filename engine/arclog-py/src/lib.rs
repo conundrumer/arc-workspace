@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use arclog::decode::columns::{case_columns, CaseColumns, StopColumns};
 use arclog::decode::corpus::{read_task_files, replay_units, UnitSolver};
-use arclog::decode::{step_batch, Consistency, Decoder, Points, Table, TokenMask, Views};
+use arclog::decode::{evidence_tables, step_batch, Consistency, Decoder, Points, Table, TokenMask, Views};
 use arclog::eval::instance::Constructions;
 use arclog::eval::pool::Pool;
 use arclog::harness::{panic_message, run_over_corpus, SolverResult};
@@ -796,6 +796,7 @@ fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &Hash
     let results = replay_units(
         &solvers,
         constructions,
+        &DecodeSettings::default(),
         true,
         &|masks: &mut Vec<u8>, decoder, stepped| {
             let masked = stepped.mask.expect("the replay computes the mask");
@@ -832,12 +833,16 @@ fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &Hash
 /// column is `bytes` in native byte order, which `numpy.frombuffer` reads at
 /// the dtype that `dtypes` gives for `"<part>.<column>"`; any other column is
 /// a list. `values` is the `int32` cells of every row, which the offsets of the
-/// parts index.
+/// parts index. The first two tables are the evidence tables of the task,
+/// `ex_input` and `ex_output`, at token 0, with point 2 and the relation's
+/// name in `fact`. `view_cap` is the cap of the view rows that the tables ran
+/// under.
 #[pyclass(name = "CaseTables", frozen, get_all, module = "arclog")]
 struct PyCaseTables {
     task: String,
     case: String,
     concept: bool,
+    view_cap: u64,
     tables: Py<PyDict>,
     entries: Py<PyDict>,
     assigned: Py<PyDict>,
@@ -905,7 +910,7 @@ impl<'a, 'py> Part<'a, 'py> {
 }
 
 impl PyCaseTables {
-    fn of(py: Python<'_>, task: String, case: String, concept: bool, columns: &CaseColumns) -> PyResult<Self> {
+    fn of(py: Python<'_>, task: String, case: String, concept: bool, view_cap: u64, columns: &CaseColumns) -> PyResult<Self> {
         let dtypes = PyDict::new(py);
         let t = Part::new(py, "tables", &dtypes);
         let c = &columns.tables;
@@ -915,6 +920,7 @@ impl PyCaseTables {
         t.ints("conjuncts", &c.conjuncts)?;
         t.ints("sites", &c.sites)?;
         t.ints("relation", &c.relation)?;
+        t.list("fact", &c.fact)?;
         t.list("column_names", &c.column_names)?;
         t.list("column_types", &c.column_types)?;
         t.ints("width", &c.width)?;
@@ -958,6 +964,7 @@ impl PyCaseTables {
             task,
             case,
             concept,
+            view_cap,
             tables: t.dict.unbind(),
             entries: e.dict.unbind(),
             assigned: a.dict.unbind(),
@@ -981,7 +988,11 @@ struct TableCase {
 /// `tasks`, the concept case or, with `all_cases`, every case, over the
 /// solvers whose task ids `task_ids` gives, or every solver where it is
 /// `None`, in the order of the task ids and then of the cases. Each table
-/// is at the index of the token whose step gives it. The relations of the
+/// is at the index of the token whose step gives it, but for the first two,
+/// the evidence tables `ex_input` and `ex_output` of the task, which stand at
+/// token 0 with point 2. The tables are those of a decode under `view_cap`,
+/// the cap of `DecodeSettings`, the engine's default where it is `None`, and
+/// each `CaseTables` gives it. The relations of the
 /// finished forms are tabled, and with `bodies` the bodies in progress as well.
 /// The second value holds a line for each case that gives no tables and each
 /// solver that gives none, in the form of `corpus_streams`, in the order of
@@ -993,12 +1004,13 @@ struct TableCase {
 /// largest first, and turns the tables of each stream into columns as its
 /// unit ends.
 #[pyfunction]
-#[pyo3(signature = (corpus, tasks, all_cases=false, task_ids=None, bodies=false))]
-fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, task_ids: Option<Vec<String>>, bodies: bool) -> PyResult<(Vec<PyCaseTables>, Vec<String>)> {
+#[pyo3(signature = (corpus, tasks, all_cases=false, task_ids=None, bodies=false, view_cap=None))]
+fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, task_ids: Option<Vec<String>>, bodies: bool, view_cap: Option<u64>) -> PyResult<(Vec<PyCaseTables>, Vec<String>)> {
     let points = if bodies { Points::All } else { Points::Relations };
     let wanted = if all_cases { WantedCases::All } else { WantedCases::Concept };
     let constructions = constructions()?;
     let vocabulary = Vocabulary::new(Registry::get(), &DecodeSettings::default());
+    let settings = DecodeSettings { view_cap: view_cap.unwrap_or(DecodeSettings::default().view_cap), ..DecodeSettings::default() };
     let reads: Mutex<HashMap<String, (Task, JudgedTask)>> = Mutex::new(HashMap::new());
     let found = walk_corpus(py, corpus, &task_ids, |id| {
         let (mut cases, mut faults) = (Vec::new(), Vec::new());
@@ -1032,14 +1044,16 @@ fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, tas
         })
         .collect();
     let trains: Vec<usize> = streamed.iter().map(|(id, _)| reads[*id].0.train.len()).collect();
+    let evidence: Vec<Vec<Table>> = solvers.iter().map(|solver| evidence_tables(solver.task, Registry::get())).collect();
     let mut replayed = py
         .detach(|| {
             replay_units(
                 &solvers,
                 constructions,
+                &settings,
                 false,
                 &|tables: &mut Vec<(usize, Table)>, decoder, stepped| tables.extend(decoder.tables(points).into_iter().map(|table| (stepped.index, table))),
-                &|solver, tables| case_columns(&tables, trains[solver]),
+                &|solver, tables| case_columns(&evidence[solver], &tables, trains[solver]),
             )
         })
         .into_iter();
@@ -1060,7 +1074,7 @@ fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, tas
                         Err(fault) => Err(fault.clone()),
                     };
                     match outcome {
-                        Ok(columns) => tables.push(PyCaseTables::of(py, task.clone(), case.case.clone(), case.concept, &columns)?),
+                        Ok(columns) => tables.push(PyCaseTables::of(py, task.clone(), case.case.clone(), case.concept, settings.view_cap, &columns)?),
                         Err(fault) => faults.push(fault_line(task, Some(&case.case), &fault)),
                     }
                 }

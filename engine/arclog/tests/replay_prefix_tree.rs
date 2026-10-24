@@ -95,7 +95,7 @@ fn a_prefix_tree_replay_gives_what_a_replay_from_a_new_decoder_gives() {
     refusing_longer.push(whole[cut]);
     let streams = vec![whole.clone(), refusing.clone(), whole[..cut].to_vec(), whole.clone(), refusing_longer, whole[..cut + 1].to_vec(), refusing];
 
-    let tree = replay_prefix_tree(&task, &judged, &streams, &constructions, true, &record);
+    let tree = replay_prefix_tree(&task, &judged, &streams, &constructions, &settings, true, &record);
     assert_eq!(tree.len(), streams.len());
     for (stream, outcome) in streams.iter().zip(&tree) {
         let mut decoder = fresh();
@@ -115,7 +115,7 @@ fn a_prefix_tree_replay_gives_what_a_replay_from_a_new_decoder_gives() {
         assert!(stepped.mask.is_none());
         record.push(stepped.index);
     };
-    let unmasked = replay_prefix_tree(&task, &judged, &streams, &constructions, false, &indices);
+    let unmasked = replay_prefix_tree(&task, &judged, &streams, &constructions, &settings, false, &indices);
     let masked_indices: Vec<Result<Vec<usize>, String>> = tree.iter().map(|outcome| outcome.as_ref().map(|record| record.iter().map(|(index, _)| *index).collect()).map_err(Clone::clone)).collect();
     assert_eq!(unmasked, masked_indices);
 
