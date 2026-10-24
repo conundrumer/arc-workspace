@@ -13,6 +13,7 @@
 //! the output of `src/arclog_convert/lint.py --all`.
 
 use std::any::Any;
+use std::collections::BTreeSet;
 use std::io::Write;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
@@ -445,19 +446,24 @@ pub fn run_on_workers<I: Sync, R: Send>(items: &[I], work: impl Fn(&I) -> R + Sy
     results.into_iter().map(|(_, result)| result).collect()
 }
 
-/// Runs `check` over every solver of `dir`, on the threads of
+/// Runs `check` over every solver of `dir` whose task id `selected` gives
+/// (every solver where it is `None`), on the threads of
 /// [`corpus_threads`] (`ARCLOG_THREADS`, or as many as the machine has), and
 /// gives the report over them. A panic of `check` on a
 /// solver is a failure of that solver, whose report is the panic's message.
 /// As the check of a solver ends, the worker that ran it calls `ended` with
 /// that solver and its result, so a run that stops before its last solver
 /// ends has passed `ended` the result of each solver that ended.
-pub fn run_over_corpus<F, E>(dir: &Path, check: F, ended: E) -> Result<CorpusReport, CorpusError>
+/// `CorpusReport.checked` counts the solvers run.
+pub fn run_over_corpus<F, E>(dir: &Path, selected: Option<&BTreeSet<String>>, check: F, ended: E) -> Result<CorpusReport, CorpusError>
 where
     F: Fn(&CorpusSolver) -> SolverResult + Sync,
     E: Fn(&CorpusSolver, &SolverResult) + Sync,
 {
-    let solvers = corpus_solvers(dir)?;
+    let mut solvers = corpus_solvers(dir)?;
+    if let Some(ids) = selected {
+        solvers.retain(|solver| ids.contains(&solver.task_id));
+    }
     let results = run_on_workers(&solvers, |solver| {
         let result = catch_unwind(AssertUnwindSafe(|| check(solver))).unwrap_or_else(|payload| SolverResult::Fail(vec![panic_line(&*payload)]));
         ended(solver, &result);

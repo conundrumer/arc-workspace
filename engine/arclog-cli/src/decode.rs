@@ -71,10 +71,7 @@ pub fn run(args: &[String]) -> ExitCode {
     };
     let selected = selected(&task_ids, &[], Path::new("")).expect("a selection by task id alone reads no file");
     let totals: Mutex<Totals> = Mutex::default();
-    let report = run_over_corpus(&corpus, |solver| match &selected {
-        Some(ids) if !ids.contains(&solver.task_id) => SolverResult::Pass,
-        _ => decode_solver(&corpus, &tasks, &solver.task_id, all, rows, &totals),
-    }, print_ended);
+    let report = run_over_corpus(&corpus, selected.as_ref(), |solver| decode_solver(&corpus, &tasks, &solver.task_id, all, rows, &totals), print_ended);
     let report = match report {
         Ok(report) => report,
         Err(error) => {

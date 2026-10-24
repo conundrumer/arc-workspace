@@ -59,10 +59,7 @@ pub fn run(args: &[String]) -> ExitCode {
     let (corpus, tasks) = (PathBuf::from(corpus), PathBuf::from(tasks));
     let selected = selected(task_ids, &[], Path::new("")).expect("a selection by task id alone reads no file");
     let differing: Mutex<BTreeSet<String>> = Mutex::default();
-    let report = run_over_corpus(&corpus, |solver| match &selected {
-        Some(ids) if !ids.contains(&solver.task_id) => SolverResult::Pass,
-        _ => determine_solver(&corpus, &tasks, solver, &differing),
-    }, print_ended);
+    let report = run_over_corpus(&corpus, selected.as_ref(), |solver| determine_solver(&corpus, &tasks, solver, &differing), print_ended);
     let report = match report {
         Ok(report) => report,
         Err(error) => {
@@ -71,7 +68,7 @@ pub fn run(args: &[String]) -> ExitCode {
         }
     };
     let differing = differing.into_inner().expect("a set that no panic poisoned").len();
-    let determined = selected.map_or(report.checked, |ids| ids.len());
+    let determined = report.checked;
     let faulted = report.failures.len() - differing;
     println!("{differing} of {determined} solvers differ from their `param` records, and {faulted} others give a fault that keeps a case or a parameter from its comparison");
     if report.failures.is_empty() { ExitCode::SUCCESS } else { ExitCode::FAILURE }

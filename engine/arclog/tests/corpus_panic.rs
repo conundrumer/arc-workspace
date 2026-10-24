@@ -12,7 +12,7 @@ fn a_panic_on_one_solver_fails_that_solver_and_the_run_reports_the_others() {
             std::fs::write(dir.join(format!("{stem}.{extension}")), "").unwrap();
         }
     }
-    let report = run_over_corpus(&dir, |solver| match solver.task_id.as_str() {
+    let report = run_over_corpus(&dir, None, |solver| match solver.task_id.as_str() {
         "a" => panic!("the form at a does not evaluate"),
         "b" => SolverResult::Fail(vec!["b fails".to_owned()]),
         _ => SolverResult::Pass,

@@ -207,7 +207,7 @@ fn main() -> ExitCode {
         }
     };
     let dir = Path::new(dir);
-    match run_over_corpus(dir, |solver| check(dir, solver, &report), print_ended) {
+    match run_over_corpus(dir, None, |solver| check(dir, solver, &report), print_ended) {
         Err(error) => {
             eprintln!("{}: {error:?}", dir.display());
             ExitCode::FAILURE

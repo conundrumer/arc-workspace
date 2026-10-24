@@ -54,7 +54,7 @@ fn main() -> ExitCode {
         eprintln!("usage: cases <dir>");
         return ExitCode::FAILURE;
     };
-    match run_over_corpus(&dir, |solver| check(&dir, solver), print_ended) {
+    match run_over_corpus(&dir, None, |solver| check(&dir, solver), print_ended) {
         Err(error) => {
             eprintln!("{error:?}");
             ExitCode::FAILURE

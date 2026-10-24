@@ -69,12 +69,9 @@ pub fn run(args: &[String]) -> ExitCode {
         _ => (None, args),
     };
     let [corpus, tasks, ids @ ..] = args else { return usage() };
-    let selected: BTreeSet<_> = ids.iter().collect();
+    let selected: BTreeSet<String> = ids.iter().cloned().collect();
     let lines = Mutex::new(BTreeMap::new());
-    let report = run_over_corpus(Path::new(corpus), |solver| {
-        if !selected.is_empty() && !selected.contains(&solver.task_id) {
-            return SolverResult::Pass;
-        }
+    let report = run_over_corpus(Path::new(corpus), (!selected.is_empty()).then_some(&selected), |solver| {
         match with_concept_case(Path::new(corpus), Path::new(tasks), &solver.task_id, |case| counts(&case.evaluation, &solver.task_id, dump.as_ref())) {
             Ok(report) => {
                 lines.lock().expect("the report map is not poisoned").insert(solver.task_id.clone(), report);

@@ -69,10 +69,7 @@ pub fn run(args: &[String]) -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let report = run_over_corpus(&arguments.corpus, |solver| match &selected {
-        Some(ids) if !ids.contains(&solver.task_id) => SolverResult::Pass,
-        _ => compare_solver(&arguments, solver),
-    }, print_ended);
+    let report = run_over_corpus(&arguments.corpus, selected.as_ref(), |solver| compare_solver(&arguments, solver), print_ended);
     let report = match report {
         Ok(report) => report,
         Err(error) => {

@@ -630,13 +630,12 @@ fn walk_corpus<C: Send>(
     solver: impl Fn(&str) -> (Vec<C>, Vec<String>) + Sync,
 ) -> PyResult<Vec<(String, Vec<C>, Vec<String>)>> {
     let found: Mutex<Vec<(String, Vec<C>, Vec<String>)>> = Mutex::new(Vec::new());
+    let selected: Option<std::collections::BTreeSet<String>> = task_ids.as_ref().map(|ids| ids.iter().cloned().collect());
     let walked = py.detach(|| {
         run_over_corpus(
             Path::new(corpus),
+            selected.as_ref(),
             |corpus_solver| {
-                if task_ids.as_ref().is_some_and(|ids| !ids.contains(&corpus_solver.task_id)) {
-                    return SolverResult::Pass;
-                }
                 let id = &corpus_solver.task_id;
                 let (cases, faults) = catch_unwind(AssertUnwindSafe(|| solver(id))).unwrap_or_else(|payload| {
                     let message = panic_message(&*payload).unwrap_or("a payload that is not a message");

@@ -43,10 +43,7 @@ pub fn run(args: &[String]) -> ExitCode {
         return ExitCode::from(2);
     };
     let selected = selected(&arguments.task_ids, &[], Path::new("")).expect("a selection by task id alone reads no file");
-    let report = run_over_corpus(&arguments.corpus, |solver| match &selected {
-        Some(ids) if !ids.contains(&solver.task_id) => SolverResult::Pass,
-        _ => tables_solver(&arguments, &solver.task_id),
-    }, print_ended);
+    let report = run_over_corpus(&arguments.corpus, selected.as_ref(), |solver| tables_solver(&arguments, &solver.task_id), print_ended);
     match report {
         Ok(report) if report.failures.is_empty() => ExitCode::SUCCESS,
         Ok(_) => ExitCode::FAILURE,

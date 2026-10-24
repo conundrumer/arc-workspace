@@ -17,7 +17,7 @@ use super::last_panic;
 /// what stops it, each in the order of the task ids.
 pub(super) fn compare_solvers(corpus: &Path, expanded: &Path, tasks: &Path) -> Result<(Vec<String>, Vec<String>), String> {
     let found = std::sync::Mutex::new(BTreeMap::new());
-    run_over_corpus(corpus, |solver| {
+    run_over_corpus(corpus, None, |solver| {
         let id = &solver.task_id;
         let line = match (outcomes(corpus, tasks, id), outcomes(expanded, tasks, id)) {
             (Ok(a), Ok(b)) if a == b => None,

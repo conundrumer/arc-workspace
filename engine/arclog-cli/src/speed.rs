@@ -51,13 +51,10 @@ pub fn run(args: &[String]) -> ExitCode {
         }
     };
     let counts: Mutex<BTreeMap<String, Counts>> = Mutex::default();
-    let report = run_over_corpus(&arguments.corpus, |solver| match &selected {
-        Some(ids) if !ids.contains(&solver.task_id) => SolverResult::Pass,
-        _ => match timed(&arguments, &solver.task_id, &counts) {
-            Ok(lines) if lines.is_empty() => SolverResult::Pass,
-            Ok(lines) => SolverResult::Fail(lines),
-            Err(line) => SolverResult::Fail(vec![line]),
-        },
+    let report = run_over_corpus(&arguments.corpus, selected.as_ref(), |solver| match timed(&arguments, &solver.task_id, &counts) {
+        Ok(lines) if lines.is_empty() => SolverResult::Pass,
+        Ok(lines) => SolverResult::Fail(lines),
+        Err(line) => SolverResult::Fail(vec![line]),
     }, print_ended);
     let report = match report {
         Ok(report) => report,
