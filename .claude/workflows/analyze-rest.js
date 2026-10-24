@@ -20,6 +20,19 @@ const mctx = (parts, ...values) => {
 }
 // A run takes an optional `args.limit`: the most tasks to analyze, taken in
 // queue order. A pass changes no git state, so each new file stands untracked.
+//
+// Before a run, in a fresh checkout (such as a cloud session):
+// - `git submodule update --init` fills `data/upstream/`. With it empty,
+//   `scripts/queue.sh` lists no task, and the select agent returns an empty list.
+// - `uv run python scripts/context.py --write` generates `.claude/agents/`,
+//   which git ignores. Without it, `agentType: 'analyze'` fails with "agent
+//   type 'analyze' not found". A session reads that directory at its start, so
+//   a session that started before the files existed must be restarted to see
+//   them. The session-start hook writes them only for the entry points
+//   `cli`, `claude-desktop` and `sdk-cli`.
+// - A script has no shell, so the select agent runs `scripts/queue.sh`.
+// - The workflow does not claim tasks. It leaves out a task that has a claim
+//   file, and two runs at the same time can pick the same task.
 
 const SELECTED = {
   type: 'object',
