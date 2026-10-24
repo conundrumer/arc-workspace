@@ -325,5 +325,16 @@ paint(Sym, P, Col, [S, K, $KeepUnknown()]) :-
     .decl box_key_color(id: Ident, col: Color)
     box_key_color(Key, Col) :- box_class.id([E, Id], Key), parse.piece(E, Id, P), ex_out(E, P, Col).
 
-    // --- shape_sym: the groups no two keys of different colors contradict ---
+    // --- shape_sym: the trivial group, and the groups that hold a quarter turn ---
+
+    .decl quarter_turn(s: Sym)
+    quarter_turn(S) :- sym_member(S, D), rotation(_, D).
+
+    // A group that moves something without a quarter turn: a matching that
+    // admits a mirror or a half turn and not every rotation.
+    .decl partial(s: Sym)
+    partial(S) :- sym_member(S, D), apply_dir(D, Dir, Dir2), Dir != Dir2, !quarter_turn(S).
+
+    .decl shape_sym(s: Sym)
+    shape_sym(S) :- sym_elem(S), !partial(S).
 }
