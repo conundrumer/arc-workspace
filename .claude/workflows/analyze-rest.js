@@ -51,6 +51,7 @@ const replies = await parallel(args.tasks.map((id) => () => agent(analyzeBrief(i
   label: `analyze:${id}`,
   phase: 'Analyze',
   agentType: 'analyze',
+  model: 'opus',
 })))
 
 const chains = args.tasks.map((id, i) => ({ task: id, analyze: replies[i] ?? null }))
