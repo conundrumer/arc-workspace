@@ -258,7 +258,14 @@ impl Writer<'_> {
         slot
     }
 
+    /// Emits the clause. A `DET` with no body and no proposer has no labels, so
+    /// the stream gives it no column, and a decoded program carries no stored
+    /// value for it: it gives no stream, and its fault is the conversion fault
+    /// of [Determination](../../../../docs/engine/determination.md#det).
     fn clause(&mut self, clause: &Clause, path: &NodePath) -> Written {
+        if let Some(fault) = crate::eval::determinations::conversion_fault(clause, path) {
+            return Err(run_fault(fault.message.into(), path));
+        }
         let keyword = match clause.keyword {
             ClauseKeyword::Rule => Control::Rule,
             ClauseKeyword::Det => Control::Det,

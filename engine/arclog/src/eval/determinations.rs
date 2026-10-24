@@ -198,7 +198,7 @@ impl Evaluation<'_> {
 /// The fault of the `DET` form `clause` at `form` where it has no body and no
 /// proposer, `(DET &x)` or `(DET &x (ONE))`: such a form gives no value, and
 /// is a fault of the conversion.
-pub(super) fn conversion_fault(clause: &Clause, form: &NodePath) -> Option<RunFault> {
+pub(crate) fn conversion_fault(clause: &Clause, form: &NodePath) -> Option<RunFault> {
     let empty = clause.keyword == ClauseKeyword::Det && clause.proposers.is_empty() && clause.body.value().conjuncts.is_empty();
     empty.then(|| {
         let name = relation_spelled(&clause.derives);
