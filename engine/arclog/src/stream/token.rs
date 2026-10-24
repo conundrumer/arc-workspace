@@ -32,6 +32,42 @@ pub enum Token {
     Label(u32),
 }
 
+/// The kind of a token: the token set of
+/// `docs/arclog/arclog.md#token-stream` that it belongs to, with that doc's
+/// set of lib relations, relation macros and components split by the
+/// registry's entry.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum TokenKind {
+    Control,
+    LibRelation,
+    RelationMacro,
+    Component,
+    Proposer,
+    Fact,
+    Relation,
+    Column,
+    Label,
+}
+
+impl TokenKind {
+    /// The spelling of the kind: `control`, `lib relation`, `relation macro`,
+    /// `component`, `proposer`, `fact relation`, `relation`, `column` or
+    /// `label`.
+    pub fn spelling(self) -> &'static str {
+        match self {
+            TokenKind::Control => "control",
+            TokenKind::LibRelation => "lib relation",
+            TokenKind::RelationMacro => "relation macro",
+            TokenKind::Component => "component",
+            TokenKind::Proposer => "proposer",
+            TokenKind::Fact => "fact relation",
+            TokenKind::Relation => "relation",
+            TokenKind::Column => "column",
+            TokenKind::Label => "label",
+        }
+    }
+}
+
 /// A control token.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Control {

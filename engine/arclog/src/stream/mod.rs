@@ -10,6 +10,6 @@ pub mod vocabulary;
 pub mod write;
 
 pub use settings::{DecodeSettings, VocabularyCaps};
-pub use token::{Control, Emitter, Token};
+pub use token::{Control, Emitter, Token, TokenKind};
 pub use vocabulary::Vocabulary;
 pub use write::{token_stream, token_stream_with_paths};

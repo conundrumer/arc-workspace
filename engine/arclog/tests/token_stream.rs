@@ -11,7 +11,7 @@ use arclog::program::{ConstraintOp, FactRelation};
 use arclog::read::read_solver;
 use arclog::registry::{LibName, Registry};
 use arclog::resolver::{resolve, resolve_cases};
-use arclog::stream::{token_stream, Control, DecodeSettings, Emitter, Token, Vocabulary, VocabularyCaps};
+use arclog::stream::{token_stream, Control, DecodeSettings, Emitter, Token, TokenKind, Vocabulary, VocabularyCaps};
 
 /// The checked program of the concept case of the arclog file `arclog`.
 fn checked(arclog: &str) -> CheckedProgram {
@@ -172,4 +172,24 @@ fn a_case_program_from_alts_is_written_after_what_its_forms_read() {
     let vocabulary = Vocabulary::new(registry, &DecodeSettings::default());
     let got = token_stream(&program, &vocabulary).expect("the case program has a stream");
     assert_eq!(got, stream("(RULE &box (input *P))\n(RULE &fill (&box *P))\n"));
+}
+
+#[test]
+fn a_vocabulary_gives_the_kind_of_each_token() {
+    let registry = Registry::get();
+    let vocabulary = Vocabulary::new(registry, &DecodeSettings::default());
+    let kind = |token: Token| vocabulary.kind(vocabulary.id(&token).expect("the vocabulary holds the token"));
+    let lib = |name: &str| Token::Lib(LibName(name.into()));
+    assert_eq!(kind(Token::Control(Control::Rule)), Some(TokenKind::Control));
+    assert_eq!(kind(lib("compose")), Some(TokenKind::LibRelation));
+    assert_eq!(kind(lib("Cardinality")), Some(TokenKind::Component));
+    assert_eq!(kind(Token::Proposer(LibName("AxisDomain".into()))), Some(TokenKind::Proposer));
+    assert_eq!(kind(Token::Fact(FactRelation::Input)), Some(TokenKind::Fact));
+    assert_eq!(kind(Token::Relation(0)), Some(TokenKind::Relation));
+    assert_eq!(kind(Token::Column(0)), Some(TokenKind::Column));
+    assert_eq!(kind(Token::Label(0)), Some(TokenKind::Label));
+    assert_eq!(vocabulary.kind(vocabulary.len() as u32), None);
+    let macros = (0..vocabulary.len() as u32).filter(|&id| vocabulary.kind(id) == Some(TokenKind::RelationMacro)).count();
+    let defined = registry.names().filter(|name| matches!(registry.entry(name), Some(arclog::registry::LibEntry::Macro(_)))).count();
+    assert_eq!(macros, defined);
 }
