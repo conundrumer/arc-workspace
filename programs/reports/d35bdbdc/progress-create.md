@@ -1,0 +1,3 @@
+# d35bdbdc progress (create)
+
+- interference, `uv run python scripts/run_dl.py d35bdbdc` hint "determine prediction": the hint cites [Models and tasks](docs/handbook/principles.md#models-and-tasks), and no handbook line says what a "guessed value" is or which tests count as reading inputs and outputs together; the interrupted earlier pass searched `docs/handbook/` for the words and found nothing. Cost: one rewrite of the `wire_color` determination and a search of earlier reports (d2abd087, cf5fd0ad, cc9053aa) to learn that a positive join reads a value while a negated test over a relation of both sides is flagged. The output is no longer wrong once the determination is rewritten.
