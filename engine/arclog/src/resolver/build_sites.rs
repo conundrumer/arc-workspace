@@ -129,6 +129,7 @@ impl Builder<'_> {
                 lifted: self.lifted,
                 names: self.names,
                 concept,
+                depths: Default::default(),
             },
             diagnostics: self.diagnostics,
         }

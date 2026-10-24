@@ -1,0 +1,535 @@
+//! Where the values of a relation's columns come from, over the case
+//! program's dependency graph: the sources of each column, the depth of a
+//! node, and the candidate keys of a relation.
+//!
+//! The sources of a column are the union over every form that gives the
+//! column, every clause and every branch of an `OR` or an `IF`. A source
+//! names the relation that a positive atom of a body reads, and the column
+//! of it that the atom's site stands on, with the path of the atom.
+
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
+use super::column_sources::{Listing, Source};
+use super::columns::{Columns, Place, Slot};
+use super::registry_columns;
+use super::{form_columns, ColumnPosition, DependencyKind, GraphNodeIndex, ResolvedProgram, Resolution};
+use crate::eval::ir::atom_modes;
+use crate::program::path::{node_at, NodePath, NodeRef};
+use crate::program::{
+    written_inputs, Atom, Body, Conjunct, ConstraintOp, FactRelation, LabelId, LabelUse, OutputName, OutputOwner, OutputStep, Operand, ProgramRelation,
+    RelationRef, RigidDetPart, Site, SiteArg,
+};
+use crate::registry::{LibName, Registry};
+use crate::safety::list_of;
+use crate::types::{each_site_label, use_label};
+
+/// How a source gives the column's values.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[repr(u8)]
+pub enum SourceKind {
+    /// The column holds the source column's values.
+    Copy = 0,
+    /// The column holds values that the engine computes from the source
+    /// column's.
+    Computed = 1,
+    /// The column is bound to `0`.
+    Constant = 2,
+    /// A lib name gives the values with no program relation read: a
+    /// proposer's or a component's default rows.
+    LibName = 3,
+}
+
+/// The column of the relation a source reads.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SourceColumn {
+    /// The source gives no column: a constant, or a lib name.
+    None,
+    /// The row position of the column.
+    Position(u16),
+    /// The Example of the entry that the source's table holds.
+    Example,
+}
+
+/// One source of a column.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct ColumnSource {
+    pub kind: SourceKind,
+    /// The relation read: `ex_input` for a read of `input`, the lib name
+    /// of a [`SourceKind::LibName`] source, and `None` for a constant.
+    pub relation: Option<RelationRef>,
+    pub column: SourceColumn,
+    /// The path of the atom that reads the source, empty where none does.
+    pub atom: NodePath,
+}
+
+impl ColumnSource {
+    fn without_atom(kind: SourceKind, relation: Option<RelationRef>) -> Self {
+        ColumnSource { kind, relation, column: SourceColumn::None, atom: NodePath::default() }
+    }
+
+    fn computed(mut self) -> Self {
+        self.kind = SourceKind::Computed;
+        self
+    }
+}
+
+/// The positive atoms of a body, with the label pairs its `=` constraints
+/// join, `None` for a pair with `0`. The atoms are those of the body, of the
+/// branches of its `OR`s, and of the then and the else of its `IF`s; an atom
+/// under `NOT`, in the test of an `IF` or in an `ALL` binds nothing.
+#[derive(Default)]
+struct Gathered<'p> {
+    atoms: Vec<(NodePath, &'p Atom)>,
+    equal: Vec<(LabelId, Option<LabelId>)>,
+}
+
+impl<'p> Gathered<'p> {
+    fn of_body(&mut self, body: &'p Body, at: &NodePath) {
+        for (path, conjunct) in list_of(body, at) {
+            match conjunct {
+                Conjunct::Atom(atom) => self.atoms.push((path, atom.value())),
+                Conjunct::Constraint(constraint) if constraint.op == ConstraintOp::Eq => {
+                    let second = match constraint.second {
+                        Operand::Zero => None,
+                        Operand::Label(label) => Some(label.label),
+                    };
+                    self.equal.push((constraint.first.label, second));
+                }
+                Conjunct::Or(branches) => {
+                    for (index, branch) in branches.iter().enumerate() {
+                        self.of_body(branch.value(), &path.child(index as u32));
+                    }
+                }
+                Conjunct::If { then, otherwise, .. } => {
+                    self.of_body(then.value(), &path.child(1));
+                    self.of_body(otherwise.value(), &path.child(2));
+                }
+                Conjunct::Not(_) | Conjunct::Constraint(_) | Conjunct::All { .. } => {}
+            }
+        }
+    }
+
+    /// The labels that `=` constraints join to `label`, `label` included,
+    /// and whether one is joined to `0`.
+    fn class_of(&self, label: LabelId) -> (Vec<LabelId>, bool) {
+        let mut class = vec![label];
+        let mut zero = false;
+        let mut grown = true;
+        while grown {
+            grown = false;
+            for &(first, second) in &self.equal {
+                match second {
+                    None => {
+                        if class.contains(&first) && !zero {
+                            zero = true;
+                            grown = true;
+                        }
+                    }
+                    Some(second) => {
+                        let (has_first, has_second) = (class.contains(&first), class.contains(&second));
+                        if has_first != has_second {
+                            class.push(if has_first { second } else { first });
+                            grown = true;
+                        }
+                    }
+                }
+            }
+        }
+        (class, zero)
+    }
+}
+
+/// A site of a positive atom that stands on a label of a class.
+struct Hit<'p> {
+    path: &'p NodePath,
+    atom: &'p Atom,
+    column: &'p crate::program::ColumnName,
+    position: Option<ColumnPosition>,
+}
+
+struct BodyFlows<'p> {
+    program: &'p ResolvedProgram,
+    registry: &'p Registry,
+    gathered: &'p Gathered<'p>,
+}
+
+impl<'p> BodyFlows<'p> {
+    /// The labels at `site`, a site of the atom at `atom`, with the row
+    /// position of the column each stands on.
+    fn uses(&self, path: &NodePath, site: &Site, visit: &mut dyn FnMut(LabelUse, Option<ColumnPosition>)) {
+        let at_site = self.program.column_position(path);
+        for (index, arg) in site.value.args.iter().enumerate() {
+            let child = path.child(index as u32);
+            match arg {
+                SiteArg::Label(use_) | SiteArg::NamedLabel { label: use_, .. } => visit(*use_, self.program.column_position(&child).or(at_site)),
+                SiteArg::Field(field) => self.uses(&child, field, visit),
+            }
+        }
+    }
+
+    fn hits(&self, class: &[LabelId]) -> Vec<Hit<'p>> {
+        let mut hits = Vec::new();
+        for (path, atom) in &self.gathered.atoms {
+            if !matches!(self.program.resolution(path), Some(Resolution::Node(_) | Resolution::Lib(_) | Resolution::Undefined(_))) {
+                continue;
+            }
+            for (index, site) in atom.sites.iter().enumerate() {
+                self.uses(&path.child(index as u32), site, &mut |use_, position| {
+                    if use_label(use_).is_some_and(|label| class.contains(&label)) {
+                        hits.push(Hit { path, atom, column: &site.column, position });
+                    }
+                });
+            }
+        }
+        hits
+    }
+
+    /// The source that the read of `hit` gives.
+    fn read(&self, kind: SourceKind, hit: &Hit<'_>) -> ColumnSource {
+        let lifted = self.program.reads_lifted(hit.path);
+        let (relation, column) = match (&hit.atom.relation, hit.position) {
+            (relation, None) => (relation.clone(), SourceColumn::None),
+            (RelationRef::Fact(FactRelation::Input), Some(position)) => (RelationRef::Fact(FactRelation::ExInput), SourceColumn::Position(position.0 + 1)),
+            (relation, Some(ColumnPosition(0))) if lifted => (relation.clone(), SourceColumn::Example),
+            (relation, Some(position)) if lifted => (relation.clone(), SourceColumn::Position(position.0 - 1)),
+            (relation, Some(position)) => (relation.clone(), SourceColumn::Position(position.0)),
+        };
+        ColumnSource { kind, relation: Some(relation), column, atom: hit.path.clone() }
+    }
+
+    /// The sources of `label`, which `visiting` holds the labels being
+    /// resolved above. A label that stands at a site of a positive atom of a
+    /// program relation or a fact gets a copy of each such column, and a
+    /// label bound to `0` is a constant. A label that only lib atoms bind
+    /// is computed from the labels at the columns of a mode of the atom
+    /// that the body binds elsewhere, and otherwise copies the lib
+    /// relation's column.
+    fn sources(&self, label: LabelId, visiting: &mut Vec<LabelId>) -> Vec<ColumnSource> {
+        if visiting.contains(&label) {
+            return Vec::new();
+        }
+        let (class, zero) = self.gathered.class_of(label);
+        let hits = self.hits(&class);
+        let (lib, program): (Vec<&Hit<'_>>, Vec<&Hit<'_>>) = hits.iter().partition(|hit| matches!(hit.atom.relation, RelationRef::Lib(_)));
+        let mut found: Vec<ColumnSource> = Vec::new();
+        if zero {
+            found.push(ColumnSource::without_atom(SourceKind::Constant, None));
+        }
+        found.extend(program.iter().map(|hit| self.read(SourceKind::Copy, hit)));
+        if !zero && program.is_empty() {
+            let before = visiting.len();
+            visiting.extend(class.iter().copied());
+            for hit in lib {
+                found.extend(self.lib_sources(hit, visiting));
+            }
+            visiting.truncate(before);
+        }
+        let mut distinct = Vec::new();
+        add_distinct(&mut distinct, found);
+        distinct
+    }
+
+    /// The sources that the lib atom of `hit` gives the label at its site:
+    /// computed from the labels of each mode that holds and does not bind
+    /// the site's column, and otherwise a copy of the lib relation's column.
+    fn lib_sources(&self, hit: &Hit<'_>, visiting: &mut Vec<LabelId>) -> Vec<ColumnSource> {
+        let mut computed = Vec::new();
+        let mut holds = false;
+        for mode in atom_modes(self.registry, hit.atom) {
+            if mode.bound.contains(hit.column) {
+                continue;
+            }
+            let mut from = Vec::new();
+            let mut bound = true;
+            for column in mode.bound.iter() {
+                let Some(site) = hit.atom.sites.iter().find(|site| &site.column == column) else {
+                    bound = false;
+                    break;
+                };
+                let mut labels = Vec::new();
+                each_site_label(site, &mut Vec::new(), &mut |use_, _| labels.extend(use_label(use_)));
+                for label in labels {
+                    let sources = self.sources(label, visiting);
+                    bound &= !sources.is_empty();
+                    from.extend(sources);
+                }
+            }
+            if bound {
+                holds = true;
+                computed.extend(from.into_iter().map(ColumnSource::computed));
+            }
+        }
+        if holds {
+            computed
+        } else {
+            vec![self.read(SourceKind::Copy, hit)]
+        }
+    }
+}
+
+/// The relation that a node of the graph stands for, where a read names
+/// it.
+fn node_relation(kind: &DependencyKind) -> Option<RelationRef> {
+    let of = |relation: &ProgramRelation| match relation {
+        ProgramRelation::Declared(name) => RelationRef::Declared(name.clone()),
+        ProgramRelation::Output(name) => RelationRef::Output(name.clone()),
+    };
+    let port = |instance: &crate::program::InstanceName, port: &crate::program::PortName| {
+        RelationRef::Output(OutputName { of: OutputOwner::Instance(instance.clone()), path: Arc::from([OutputStep::Port(port.clone())]) })
+    };
+    match kind {
+        DependencyKind::Fact(fact) => Some(RelationRef::Fact(*fact)),
+        DependencyKind::Clause(relation) | DependencyKind::Parameter(relation) => Some(of(relation)),
+        DependencyKind::Chosen(name) | DependencyKind::Demonstrated(name) => Some(RelationRef::Declared(name.clone())),
+        DependencyKind::InstanceInput { instance, input: name } | DependencyKind::InstanceOutput { instance, output: name } => Some(port(instance, name)),
+        DependencyKind::RigidAssembly(_) | DependencyKind::RecursiveInstance(_) => None,
+    }
+}
+
+/// A relation that a form gives a node: the form's path, the relation's
+/// path after the form's name where the form gives several, and its listing.
+struct Given {
+    form: NodePath,
+    output: Option<Arc<[OutputStep]>>,
+    listing: Listing,
+    /// The lib name that gives the relation's rows where the form reads no
+    /// program relation: the proposers of a clause, or the component of an
+    /// instance.
+    lib: Vec<LibName>,
+}
+
+impl ResolvedProgram {
+    /// The sources of each of the `width` row positions of the relation of
+    /// `node` that a read at `output` after the owner's name reads, in row
+    /// order. Each is the
+    /// union over the forms that give the node and, in each, over every
+    /// clause and branch:
+    ///
+    /// - a column that a form labels: the label's class under `=` in the
+    ///   body that binds it, each site of a positive atom on it a copy of
+    ///   that atom's column, `0` a constant, and, where only lib atoms bind
+    ///   it, the sources of the labels of a mode of the lib atom, computed;
+    /// - a column of a type parameter that an `INIT` form binds: the sources
+    ///   of the labels the form binds it to;
+    /// - another declared column of an instance or a `RIGID_DET` assembly:
+    ///   every row position of each relation the node reads, computed;
+    /// - a column with no source above and a proposer or a component to give
+    ///   it: the lib name.
+    pub fn column_flows(&self, node: GraphNodeIndex, output: Option<&[OutputStep]>, width: usize, registry: &Registry) -> Vec<Vec<ColumnSource>> {
+        let mut flows: Vec<Vec<ColumnSource>> = vec![Vec::new(); width];
+        let given: Vec<Given> = self.given(node, registry).into_iter().filter(|relation| output.zip(relation.output.as_deref()).is_none_or(|(read, own)| read == own)).collect();
+        let root = NodeRef::Program(self.program.value());
+        let mut gathered: BTreeMap<NodePath, Gathered<'_>> = BTreeMap::new();
+        for relation in &given {
+            for listed in &relation.listing.0 {
+                for (_, source) in &listed.sources {
+                    if let Source::Label { body, .. } = source {
+                        let at = relation.form.join(body);
+                        if !gathered.contains_key(&at) {
+                            let mut found = Gathered::default();
+                            match node_at(root, &at) {
+                                Some(NodeRef::Body(body)) => found.of_body(body, &at),
+                                Some(NodeRef::RigidDet(rigid)) => {
+                                    for (index, part) in rigid.parts.iter().enumerate() {
+                                        found.atoms.push((at.child(rigid.position(RigidDetPart::Part(index))), part.value()));
+                                    }
+                                }
+                                _ => {}
+                            }
+                            gathered.insert(at, found);
+                        }
+                    }
+                }
+            }
+        }
+        for relation in &given {
+            let columns = relation.listing.columns();
+            let mut start = 0usize;
+            for listed in &relation.listing.0 {
+                let slot_width = match &listed.slot {
+                    Slot::Column(_) => 1,
+                    Slot::Record { fields, .. } => fields.len(),
+                };
+                let labeled = listed.sources.iter().any(|(_, source)| matches!(source, Source::Label { .. }));
+                for (path, source) in &listed.sources {
+                    match source {
+                        Source::Label { label, body } => {
+                            let Some(position) = place(&columns, path) else { continue };
+                            let at = relation.form.join(body);
+                            let flow = BodyFlows { program: self, registry, gathered: &gathered[&at] };
+                            let found = flow.sources(*label, &mut Vec::new());
+                            if let Some(held) = flows.get_mut(position) {
+                                add_distinct(held, found);
+                            }
+                        }
+                        Source::Declared(_) if !labeled => {
+                            for position in start..start + slot_width {
+                                if let Some(held) = flows.get_mut(position) {
+                                    add_distinct(held, self.declared_sources(node));
+                                }
+                            }
+                        }
+                        Source::Declared(_) => {}
+                    }
+                }
+                start += slot_width;
+            }
+        }
+        for sources in flows.iter_mut().filter(|sources| sources.is_empty()) {
+            let lib = given.iter().flat_map(|relation| relation.lib.iter());
+            sources.extend(lib.map(|name| ColumnSource::without_atom(SourceKind::LibName, Some(RelationRef::Lib(name.clone())))));
+        }
+        flows
+    }
+
+    /// Every row position of each relation that `node` reads, computed:
+    /// the sources of a declared column of an instance or an assembly.
+    fn declared_sources(&self, node: GraphNodeIndex) -> Vec<ColumnSource> {
+        let mut found = Vec::new();
+        for &read in self.graph.reads[node.0 as usize].iter().filter(|&&read| read != node) {
+            let Some(relation) = node_relation(&self.graph.nodes[read.0 as usize].kind) else { continue };
+            let Some(columns) = self.names.columns(&self.graph.nodes[read.0 as usize].scope, &relation) else { continue };
+            for position in 0..columns.row_names().len() {
+                let (relation, position) = match relation {
+                    RelationRef::Fact(FactRelation::Input) => (RelationRef::Fact(FactRelation::ExInput), position + 1),
+                    ref other => (other.clone(), position),
+                };
+                found.push(ColumnSource { kind: SourceKind::Computed, relation: Some(relation), column: SourceColumn::Position(position as u16), atom: NodePath::default() });
+            }
+        }
+        found
+    }
+
+    /// The relations that the forms of `node` give it, with their listings.
+    fn given(&self, node: GraphNodeIndex, registry: &Registry) -> Vec<Given> {
+        let root = NodeRef::Program(self.program.value());
+        let mut given = Vec::new();
+        for form in self.forms_of(node) {
+            let Some(shape) = node_at(root, form) else { continue };
+            let whole = |listing: Listing, lib: Vec<LibName>| Given { form: form.clone(), output: None, listing, lib };
+            match shape {
+                NodeRef::Clause(clause) => given.push(whole(form_columns::form_listing(shape), clause.proposers.to_vec())),
+                NodeRef::Choose(_) => given.push(whole(form_columns::form_listing(shape), Vec::new())),
+                NodeRef::Demonstrated(demonstrated) => given.push(whole(form_columns::demonstrated_listing(demonstrated), Vec::new())),
+                NodeRef::RigidDet(rigid) => {
+                    for (steps, listing) in form_columns::rigid_listings(rigid) {
+                        given.push(Given { form: form.clone(), output: Some(steps), listing, lib: Vec::new() });
+                    }
+                }
+                NodeRef::Instance(instance) => {
+                    let Some(component) = registry_columns::component(registry, &instance.component) else { continue };
+                    let bindings = form_columns::bindings(instance, component);
+                    let keyed = instance.key.is_some();
+                    let written: Vec<_> = written_inputs(instance.key.as_ref(), &instance.inputs).collect();
+                    let lib = vec![instance.component.clone()];
+                    let mut port = |port: &crate::registry::Port, output: bool| {
+                        let output = output.then(|| Arc::from([OutputStep::Port(port.name.clone())]));
+                        given.push(Given { form: form.clone(), output, listing: form_columns::port_columns(port, &bindings, keyed), lib: lib.clone() });
+                    };
+                    match &self.graph.nodes[node.0 as usize].kind {
+                        DependencyKind::InstanceInput { input, .. } => {
+                            for own in component.inputs.iter().filter(|own| own.port.name == *input && written.iter().any(|written| written.name == *input)) {
+                                port(&own.port, false);
+                            }
+                        }
+                        DependencyKind::InstanceOutput { output, .. } => {
+                            for own in component.outputs.iter().filter(|own| own.name == *output) {
+                                port(own, true);
+                            }
+                        }
+                        DependencyKind::RecursiveInstance(_) => {
+                            for own in component.outputs.iter() {
+                                port(own, true);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+        given
+    }
+
+    /// The depth of `node` in the dependency graph: 0 for a fact relation,
+    /// and otherwise one more than the largest depth among the nodes it
+    /// reads, 1 for a node that reads none. A lib relation is no node and
+    /// adds nothing.
+    pub fn depth(&self, node: GraphNodeIndex) -> u32 {
+        let depths = self.depths.get_or_init(|| {
+            let mut depths: Vec<Option<u32>> = vec![None; self.graph.nodes.len()];
+            let mut open = vec![false; depths.len()];
+            for start in 0..depths.len() {
+                self.depth_of(start, &mut depths, &mut open);
+            }
+            depths.into_iter().map(|depth| depth.unwrap_or(0)).collect()
+        });
+        depths[node.0 as usize]
+    }
+
+    fn depth_of(&self, node: usize, depths: &mut [Option<u32>], open: &mut [bool]) -> u32 {
+        if let Some(depth) = depths[node] {
+            return depth;
+        }
+        if matches!(self.graph.nodes[node].kind, DependencyKind::Fact(_)) {
+            depths[node] = Some(0);
+            return 0;
+        }
+        open[node] = true;
+        let mut deepest = 0;
+        for &read in self.graph.reads[node].iter() {
+            let read = read.0 as usize;
+            if !open[read] {
+                deepest = deepest.max(self.depth_of(read, depths, open));
+            }
+        }
+        open[node] = false;
+        depths[node] = Some(deepest + 1);
+        deepest + 1
+    }
+
+    /// The candidate keys of the relation of `node` that the program text
+    /// gives, each as the row positions of its columns in increasing order:
+    /// the columns of each `ONE` mark of a clause, none for `(ONE)`, and
+    /// the row's columns of a `CHOOSE` form.
+    pub fn column_keys(&self, node: GraphNodeIndex) -> Vec<Vec<u16>> {
+        let root = NodeRef::Program(self.program.value());
+        let mut keys: Vec<Vec<u16>> = Vec::new();
+        for form in self.forms_of(node) {
+            let positions = |labels: &mut dyn Iterator<Item = LabelId>| {
+                let mut key: Vec<u16> = labels.filter_map(|label| self.label_position(form, label)).map(|position| position.0).collect();
+                key.sort_unstable();
+                key
+            };
+            let found: Vec<Vec<u16>> = match node_at(root, form) {
+                Some(NodeRef::Clause(clause)) => clause.ones.iter().map(|mark| positions(&mut mark.key.iter().copied())).collect(),
+                Some(NodeRef::Choose(choose)) => choose.rows.iter().map(|rows| positions(&mut rows.columns.iter().map(|column| column.label))).collect(),
+                _ => Vec::new(),
+            };
+            for key in found {
+                if !keys.contains(&key) {
+                    keys.push(key);
+                }
+            }
+        }
+        keys
+    }
+}
+
+/// The row position of the column at `path` of `columns`.
+fn place(columns: &Columns, path: &[crate::program::ColumnName]) -> Option<usize> {
+    match columns.place(path)? {
+        Place::Column(ColumnPosition(position)) | Place::Field(ColumnPosition(position), _) => Some(usize::from(position)),
+        Place::Group(_) => None,
+    }
+}
+
+/// Adds to `held` each of `sources` it does not hold, in order.
+fn add_distinct(held: &mut Vec<ColumnSource>, sources: Vec<ColumnSource>) {
+    for source in sources {
+        if !held.contains(&source) {
+            held.push(source);
+        }
+    }
+}

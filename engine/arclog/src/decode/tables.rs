@@ -21,6 +21,10 @@
 //! and a caller that reads no body in progress asks for [`Points::Relations`],
 //! so that no body table is evaluated.
 //!
+//! Each table also gives the sources of each column's values, its depth in
+//! the dependency graph, its candidate keys, and, for the relation at which
+//! the replay's consistency test found the grid columns, those columns.
+//!
 //! Beside the tables of a step, [`evidence_tables`] gives the evidence tables
 //! of a task, `ex_input` and `ex_output`, which stand before the first step.
 //! Each holds one entry for each example whose grid the fact relation holds,
@@ -35,7 +39,9 @@ use super::state::State;
 use super::projections::{projections, Projections};
 use super::Decoder;
 use crate::check::CheckedProgram;
+use crate::eval::determinations::relation_spelled;
 use crate::eval::examples::scope_of;
+use crate::eval::output::GridColumns;
 use crate::eval::join::Budget;
 use crate::eval::{BodyValue, ModelsEnd, Outcome, RelationValue, RunFault, TableWork};
 use crate::eval::join::each_row;
@@ -44,7 +50,7 @@ use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::registry::Registry;
 use crate::resolver::registry_columns::component;
 use crate::program::{ColumnName, Conjunct, FactRelation, OutputOwner, OutputStep, ProgramRelation, RelationRef};
-use crate::resolver::{DependencyKind, GraphNodeIndex};
+use crate::resolver::{ColumnSource, DependencyKind, GraphNodeIndex};
 use crate::relations::RowSet;
 use crate::task::Task;
 use crate::terms::{Constant, Example, Term};
@@ -118,6 +124,19 @@ pub struct Contents {
     /// models of `examples`, each example's, one entry for each model at
     /// each assignment.
     pub projections: Option<Projections>,
+    /// The relation's name as the program spells it, empty for a body and
+    /// for an evidence table, whose [`TableRelation::Fact`] names it.
+    pub name: String,
+    /// The sources of each column's values ([`crate::resolver::ResolvedProgram::column_flows`]),
+    /// none for an evidence table.
+    pub flows: Box<[Vec<ColumnSource>]>,
+    /// The depth of the relation in the dependency graph ([`crate::resolver::ResolvedProgram::depth`]).
+    pub depth: u32,
+    /// The candidate keys the program text gives, each as column positions.
+    pub keys: Vec<Vec<u16>>,
+    /// The grid columns of the relation, where the replay's consistency test
+    /// found them in it.
+    pub grid: Option<GridColumns>,
 }
 
 /// A table at a point of a form of the program.
@@ -202,7 +221,8 @@ impl Decoder<'_> {
                             .into_iter()
                             .map(|example| ExampleRows { example, rows: self.assigned(checked, relation.node, &dets, Some(&work), &mut |evaluation| models_at(evaluation, &relation, example)) })
                             .collect();
-                        self.contents(checked, &form, &relation, slot, &dets, examples, &work)
+                        let grid = self.columns.filter(|_| self.output.as_ref() == Some(declared));
+                        self.contents(checked, &form, &relation, slot, &dets, examples, &work).map(|contents| Contents { name: relation_spelled(declared), keys: checked.program.column_keys(relation.node), grid, ..contents })
                     }
                     None => Err(RunFault { message: "the graph holds no node for a relation the form declares".into(), form: form.clone() }),
                 };
@@ -233,7 +253,9 @@ impl Decoder<'_> {
         let cap = self.context.settings.projection_cap;
         let over = examples.iter().any(|example| example.rows.as_ref().is_ok_and(|rows| rows.at.iter().flat_map(|(_, models)| models).any(|model| matches!(model, RelationValue::Rows(rows) if rows.len() > cap))));
         let projections = over.then(|| self.projections_of(&examples, form, work)).flatten();
-        Ok(Contents { relation: TableRelation::Slot(slot), columns, dets, examples: examples.into(), projections })
+        let flows = program.program.column_flows(relation.node, relation.output.as_deref(), types.len(), self.context.registry).into();
+        let depth = program.program.depth(relation.node);
+        Ok(Contents { relation: TableRelation::Slot(slot), columns, dets, examples: examples.into(), projections, name: String::new(), flows, depth, keys: Vec::new(), grid: None })
     }
 
     /// The projections of the rows of `examples`, none where an example gives a
@@ -286,7 +308,7 @@ fn evidence_table(task: &Task, registry: &Registry, fact: FactRelation) -> Table
         .zip(held)
         .map(|(example, rows)| ExampleRows { example: Some(example), rows: Ok(Assigned { at: vec![(Vec::new(), vec![RelationValue::Rows(Arc::new(crate::eval::join::one_part(rows)))])], stop: None }) })
         .collect();
-    Table { form: NodePath::default(), point: Point::Evidence, contents: Ok(Contents { relation: TableRelation::Fact(fact), columns, dets: Box::new([]), examples, projections: None }) }
+    Table { form: NodePath::default(), point: Point::Evidence, contents: Ok(Contents { relation: TableRelation::Fact(fact), columns, dets: Box::new([]), examples, projections: None, name: String::new(), flows: Box::new([]), depth: 0, keys: vec![vec![0, 1]], grid: None }) }
 }
 
 /// The relation of the graph that the form at `form` of `program` declares as

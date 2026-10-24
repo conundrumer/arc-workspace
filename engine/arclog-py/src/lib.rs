@@ -943,14 +943,18 @@ fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &Hash
 /// The tables of one case program of a solver of a corpus, as flat columns
 /// (`arclog::decode::columns` gives the layout and the codes).
 ///
-/// `tables`, `entries`, `assigned`, `projections` and `projection_rows` are dicts of
+/// `tables`, `entries`, `assigned`, `projections`, `projection_rows` and `flows` are dicts of
 /// columns, one for each part of the layout, named as its fields. An integer
 /// column is `bytes` in native byte order, which `numpy.frombuffer` reads at
 /// the dtype that `dtypes` gives for `"<part>.<column>"`; any other column is
 /// a list. `values` is the `int32` cells of every row, which the offsets of the
 /// parts index. The first two tables are the evidence tables of the task,
 /// `ex_input` and `ex_output`, at token 0, with point 2 and the relation's
-/// name in `fact`. `projection_cap` is the cap of the projection rows that the tables ran
+/// name in `fact`. `tables` also gives each table's `depth` in the dependency graph, its
+/// candidate `keys` (lists of column indexes), and `output_position` and `output_color`,
+/// the grid columns of the relation at which the replay's consistency test found them, -1
+/// for each other table; `flows` gives one row for each source of each column of a table.
+/// `projection_cap` is the cap of the projection rows that the tables ran
 /// under.
 #[pyclass(name = "CaseTables", frozen, get_all, module = "arclog")]
 struct PyCaseTables {
@@ -963,6 +967,7 @@ struct PyCaseTables {
     assigned: Py<PyDict>,
     projections: Py<PyDict>,
     projection_rows: Py<PyDict>,
+    flows: Py<PyDict>,
     values: Py<PyBytes>,
     dtypes: Py<PyDict>,
 }
@@ -1045,6 +1050,10 @@ impl PyCaseTables {
         t.ints("projections", &c.projections)?;
         t.stop("projections_stop", &c.projections_stop)?;
         t.list("fault", &c.fault)?;
+        t.ints("depth", &c.depth)?;
+        t.list("keys", &c.keys)?;
+        t.ints("output_position", &c.output_position)?;
+        t.ints("output_color", &c.output_color)?;
         let e = Part::new(py, "entries", &dtypes);
         let c = &columns.entries;
         e.ints("table", &c.table)?;
@@ -1075,6 +1084,16 @@ impl PyCaseTables {
         r.ints("defined", &c.defined)?;
         r.ints("rows", &c.rows)?;
         r.ints("offset", &c.offset)?;
+        let f = Part::new(py, "flows", &dtypes);
+        let c = &columns.flows;
+        f.ints("table", &c.table)?;
+        f.ints("column", &c.column)?;
+        f.ints("kind", &c.kind)?;
+        f.ints("source_table", &c.source_table)?;
+        f.list("source_relation", &c.source_relation)?;
+        f.ints("source_column", &c.source_column)?;
+        f.ints("det", &c.det)?;
+        f.list("atom", &c.atom)?;
         Ok(PyCaseTables {
             task,
             case,
@@ -1085,6 +1104,7 @@ impl PyCaseTables {
             assigned: a.dict.unbind(),
             projections: v.dict.unbind(),
             projection_rows: r.dict.unbind(),
+            flows: f.dict.unbind(),
             values: PyBytes::new(py, &cell_bytes(&columns.values)).unbind(),
             dtypes: dtypes.unbind(),
         })

@@ -227,6 +227,9 @@ pub struct ResolvedProgram {
     widened: Widened,
     names: names::Names,
     concept: Option<ConceptForms>,
+    /// The depth of each node of the graph, by its index, made on the first
+    /// ask ([`ResolvedProgram::depth`]).
+    depths: std::sync::OnceLock<Box<[u32]>>,
 }
 
 type Widened = Arc<std::sync::Mutex<crate::hash::StableHashMap<Vec<(ProgramRelation, Vec<ColumnName>)>, Arc<ResolvedProgram>>>>;
@@ -682,6 +685,9 @@ pub(crate) mod column_sources;
 pub(crate) mod columns;
 pub(crate) mod form_columns;
 pub(crate) mod registry_columns;
+
+mod flows;
+pub use flows::{ColumnSource, SourceColumn, SourceKind};
 
 mod names;
 
