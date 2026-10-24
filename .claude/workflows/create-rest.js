@@ -40,7 +40,14 @@ const mctx = (parts, ...values) => {
 //   downloads from github.com, while `git clone` of
 //   `https://github.com/souffle-lang/souffle.git` at tag 2.5 works. Build it
 //   with cmake, with `-DSOUFFLE_USE_CURSES=OFF`, after
-//   `apt-get install flex libffi-dev zlib1g-dev libsqlite3-dev libncurses-dev mcpp`.
+//   `apt-get install flex libffi-dev zlib1g-dev libsqlite3-dev libncurses-dev mcpp sqlite3`.
+// - `scripts/run_dl.py` calls macOS `xcrun`, which Linux lacks. A script
+//   `xcrun` on PATH stands in for it: `xcrun -f clang` exits 1, and
+//   `xcrun clang++ <args>` runs `clang++` with the `-Wl,-install_name,*`
+//   argument left out. The functor library then builds as `libfunctors.dylib`,
+//   and `ln -s libfunctors.dylib programs/libfunctors.so` lets Souffle find it
+//   (git ignores both). With these in place `uv run python scripts/run_dl.py
+//   <stem>` passes on an existing solver.
 
 if (!args || !Array.isArray(args.tasks) || !args.tasks.length) {
   return { error: 'args needs { tasks: [<task_id>, ...] }' }
