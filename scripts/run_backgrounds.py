@@ -15,8 +15,9 @@ from noted_reads import note_live, note_read
 from command_labels import AGENT_TOOLS
 from run_reads import (BACKGROUND_TASK, LaunchStatus, blocks, in_background, notified,
                        output_file, run_entries, tool_calls)
-from file_reads import is_file, mtime, resolved
-from state_reads import DERIVED, Kept, state_cache
+from file_reads import is_file, mtime, resolved, stat_read
+from session_changes import run_stamp
+from state_reads import Kept, state_cache
 from transcript_entries import epoch
 from transcript_snapshots import Entry, Refused
 
@@ -147,20 +148,43 @@ def open_files() -> OpenFiles:
     return OpenFiles(frozenset(paths), frozenset(gone))
 
 
-@state_cache(DERIVED, notes="undecided", kept=Kept.DISK)
-def may_still_run(path: Path, reached: frozenset[str], undecided: list[str]) -> bool:
-    """Whether a call the run at `path` backgrounded, other than a call of
-    `reached`, may still run. Only the lines that name such a call or its
-    ids are read, which spares `profile` the whole run where none still
-    runs."""
+@state_cache(lambda path, reached: run_stamp(path), notes="undecided", kept=Kept.DISK)
+def background_subject(path: Path, reached: frozenset[str], undecided: list[str]
+                       ) -> tuple[dict[str, Background], dict[str, float], float]:
+    """Background calls and notifications from run bytes and ownership
+    metadata, including candidate transcripts and discovery directories."""
     results = list(run_entries(path, {BACKGROUND_TASK, LaunchStatus.ASYNC_LAUNCHED.value}))
     calls = {str(b["tool_use_id"]) for e in results for b in blocks(e, "tool_result")
              if b.get("tool_use_id")} - reached
     if not calls:
-        return False
+        return {}, {}, 0.0
     found = {c: b for c, b in backgrounds(results, tool_calls(run_entries(path, calls), AGENT_TOOLS),
                                           undecided).items() if c in calls}
     if not found:
-        return False
+        return {}, {}, 0.0
+    told: dict[str, float] = {}
+    last = 0.0
     ids = set().union(*(b.ids for b in found.values()))
-    return None in background_ends(found, run_entries(path, ids)).values()
+    for entry in run_entries(path, ids):
+        note_told(told, entry)
+        if entry.get("timestamp"):
+            last = max(last, epoch(entry["timestamp"]))
+    return found, told, last
+
+
+def background_stamp(path: Path, reached: frozenset[str]) -> tuple[object, ...]:
+    """Run sources, output files and symlink resolution, and live open
+    files where a background call has no completion notification."""
+    found, told, _ = background_subject(path, reached, [])
+    outputs = tuple(b.output for b in found.values()
+                    if told_end(b, told) is None and b.output is not None)
+    return (run_stamp(path), tuple((p, stat_read(p), resolved(p)) for p in outputs),
+            open_files() if outputs else None)
+
+
+@state_cache(background_stamp, notes="undecided", kept=Kept.DISK)
+def may_still_run(path: Path, reached: frozenset[str], undecided: list[str]) -> bool:
+    """Whether an unreached background call may still run. Sources are
+    those of `background_stamp`, including output files and live open files."""
+    found, told, last = background_subject(path, reached, undecided)
+    return None in ends_from(found, told, last).values()

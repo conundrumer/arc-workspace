@@ -11,6 +11,7 @@ import os
 import re
 import sys
 import zlib
+import weakref
 from array import array
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from pathlib import Path
@@ -88,9 +89,9 @@ class Snapshot:
     again of a file that is not, or whose whole lines no longer give their
     CRC-32 (`crc`), is refused.
 
-    At the first word asked of it of the form of an agent id, one search
-    indexes every substring of that form, overlapping ones too, by the
-    lines that hold it.
+    At its first query for an agent id, `holding` indexes every substring
+    of that form, overlapping ones too, by the lines that hold it.
+    `matching` indexes only its requested words.
 
     A snapshot read on from an earlier one (`extended`) keeps what that one
     found in its whole lines, and its `generation`, which a snapshot read
@@ -184,6 +185,29 @@ class Snapshot:
 
     def line_of(self, offset: int) -> int:
         return bisect.bisect_right(self.starts, offset) - 1
+
+    def matching(self, words: frozenset[str]) -> frozenset[int]:
+        """Lines holding requested words, with no index of other ids.
+        Overlapping queries reuse the offsets of words already searched."""
+        new = words - self.found.keys()
+        if new:
+            if any(not w or "\n" in w or "\r" in w for w in new):
+                raise ValueError("a search word must be nonempty and have no line break")
+            words_by_length = sorted(new, key=lambda w: (-len(w), w))
+            pattern = re.compile(b"(?=(" + b"|".join(re.escape(w.encode())
+                                                        for w in words_by_length) + b"))")
+            prefixes = {w.encode(): tuple(v for v in new if w.startswith(v))
+                        for w in new}
+            found: dict[str, Lines] = {w: array(LINE) for w in new}
+            for base, chunk in self.chunks():
+                for match in pattern.finditer(chunk):
+                    i = self.line_of(base + match.start())
+                    for w in prefixes[match[1]]:
+                        if not found[w] or found[w][-1] != i:
+                            found[w].append(i)
+            self.found.update(found)
+            keep_snapshot(self)
+        return frozenset[int]().union(*(self.found[w] for w in words))
 
     def holding(self, words: frozenset[str]) -> frozenset[int]:
         """The lines that hold a word of `words`. The words not searched
@@ -362,9 +386,9 @@ def parse(line: str | bytes) -> list[Entry]:
         return []
 
 
-_read: dict[Path, Snapshot] = {}
-"""The last snapshot of each transcript, which a later read of a
-transcript that grew goes on from."""
+_read: weakref.WeakValueDictionary[Path, Snapshot] = weakref.WeakValueDictionary()
+"""The last snapshot of each transcript while an active or cached read
+holds it. Later reads can recall its offsets from the store."""
 
 SNAPSHOT_READ = f"{__name__}:snapshot"
 
@@ -380,6 +404,9 @@ def read_at(snap: Snapshot, offset: int, length: int) -> bytes:
     """`length` bytes from `offset` of the file of `snap`, refused where its
     path now holds another file."""
     held = _open.pop(snap.path, None)
+    if held is not None and held[1] != snap.file:
+        os.close(held[0])
+        held = None
     if held is None:
         fd = os.open(snap.path, os.O_RDONLY)
         st = os.fstat(fd)

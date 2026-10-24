@@ -12,6 +12,7 @@ from transcripts import agent_id, chain
 from entry_reads import entries_back, entries_forward, read_entries
 from transcript_entries import epoch
 from transcript_snapshots import Entry
+from session_changes import run_stamp
 
 # The types of a transcript's message entries, the entries of a turn: the
 # message that opens it and its work.
@@ -124,10 +125,12 @@ def turn_end(path: Path) -> float | None:
                  if end and e.get("timestamp")), None)
 
 
-@state_cache(DERIVED, kept=Kept.DISK)
+@state_cache(run_stamp, kept=Kept.DISK)
 def has_ended(path: Path) -> bool:
     """`turn_ended` over the run at `path`, read from its last entry back to
-    its last timestamped assistant entry, which settles it."""
+    its last timestamped assistant entry, which settles it. Sources are
+    run and candidate transcript bytes, ownership metadata and discovery
+    directory membership."""
     tail: list[Entry] = []
     for e in run_back(path):
         tail.append(e)

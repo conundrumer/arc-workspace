@@ -6,14 +6,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent_reports import Sign, can_report, entry_signs, latest_sign
-from run_reads import is_prompt, notified, run_sessions
+from run_reads import is_prompt, notified
 from state_reads import DERIVED, Kept, state_cache
 from transcript_entries import epoch
-from transcript_folds import fold
 from transcript_snapshots import Entry
-from agent_launches import Launch, launched
+from agent_launches import Launch, launched, receipt_sessions
 from agent_resumes import note_latest
-from session_changes import agents_facts
+from session_changes import agents_facts, MatchingFacts, matching_facts, transcript_stamp
 
 from operations.roles import AGENT_ID
 
@@ -66,44 +65,27 @@ def session_signs(found: list[tuple[Path, Launch]], since: float) -> list[SignEn
     is known."""
     agents = {a.agent for _, a in found if a.agent}
     runs = [p for launcher, a in found for p in (launcher, a.path) if p]
-    sessions = dict.fromkeys(s for p in runs for s in run_sessions(p))
-    return signs_since(tuple(sessions), since, frozenset(agents))
+    return signs_since(receipt_sessions(runs), since, frozenset(agents))
 
 
 @state_cache(DERIVED, kept=Kept.VALUE)
 def signs_since(sessions: tuple[Path, ...], since: float,
                 agents: frozenset[str]) -> list[SignEntry]:
     """`session_signs`, held so that a read derived from it sees a new
-    transcript only where it names one of `agents`. Each session's entries
-    come from the index of `session_changes.facts_by_agent`, in the order
-    of its transcripts and of their entries."""
-    return [at.fact for at in agents_facts(sessions, since, sign_entries, sign_agents, agents)]
+    transcript only where it names one of `agents`, in transcript and
+    entry order."""
+    return [at.fact for at in agents_facts(sessions, since, sign_entries, agents)]
 
 
-def sign_agents(entry: SignEntry) -> tuple[str, ...]:
-    """The ids `entry` notifies or gives a sign of."""
-    return (*entry.notified, *(v for v, _ in entry.signs))
+@state_cache(lambda path, agents: transcript_stamp(path) if agents else (), kept=Kept.DISK)
+def sign_entries(path: Path, agents: frozenset[str]) -> tuple[SignEntry, ...]:
+    """Signs and notifications that refer to requested agents, read from
+    candidate lines in entry order. The fold parses appended candidates;
+    its sources are transcript bytes and ownership metadata."""
+    return matching_facts(path, agents, add_sign)
 
 
-SIGN_WORDS = frozenset({"<task-notification>", "<agent-message from="})
-"""Words the line of each entry that gives a notification
-(`run_reads.NOTIFICATION`) or a message from an agent
-(`run_reads.AGENT_MESSAGE`) holds."""
-
-
-@state_cache(DERIVED, kept=Kept.DISK)
-def sign_entries(path: Path) -> tuple[SignEntry, ...]:
-    """The `SignEntry` of each entry of the transcript at `path` that may
-    give a notification or a sign (`may_sign`) and gives one of an id of
-    the form of an agent id (`add_sign`). Only the lines that hold the
-    opening of a notification or of a message from an agent (`SIGN_WORDS`)
-    are read, each parsed for it alone, so that a read of every transcript
-    of a session holds no entry, and of those, as a fold
-    (`transcript_folds.fold`), only the lines added since the last read."""
-    return tuple(fold(add_sign, list[SignEntry], path, [path], SIGN_WORDS))
-
-
-def add_sign(out: list[SignEntry], _path: Path, _line: int, entry: Entry) -> None:
+def add_sign(out: MatchingFacts[SignEntry], _path: Path, _line: int, entry: Entry) -> None:
     """Add to `out` the `SignEntry` of `entry`, where it may give a
     notification or a sign (`may_sign`) and gives one of an id of the form
     of an agent id."""
@@ -111,8 +93,8 @@ def add_sign(out: list[SignEntry], _path: Path, _line: int, entry: Entry) -> Non
         return
     told = tuple(v for v in notified(entry) if re.fullmatch(AGENT_ID, v))
     signs = tuple((v, sign) for v, sign in entry_signs(entry) if re.fullmatch(AGENT_ID, v))
-    if told or signs:
-        out.append(SignEntry(epoch(entry["timestamp"]), told, signs))
+    if out.agents.intersection((*told, *(v for v, _ in signs))):
+        out.facts.append(SignEntry(epoch(entry["timestamp"]), told, signs))
 
 
 def may_sign(entry: Entry) -> bool:

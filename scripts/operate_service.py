@@ -889,6 +889,17 @@ def child_read(current: Request) -> None:
         os.close(errors)
 
 
+def publish_response(current: Request, response: dict[str, object]) -> None:
+    """Publish a successful reply. A journaled reply remains authoritative
+    while replacement holds the refresh lock."""
+    data = (json.dumps(response) + "\n").encode()
+    if current.committed:
+        current.connection.sendall(data)
+    else:
+        with side_effect():
+            current.connection.sendall(data)
+
+
 def serve_request(connection: socket.socket, listener: socket.socket, code: str,
                   pending: Pending | None = None) -> script_calls.End | None:
     """Serve one request; gives why this interpreter must end, or `None`
@@ -963,7 +974,9 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
                             status = operate.main(["next", current.operator])
                 current.check()
         except Replaced:
-            status, retry, ended = 1, True, script_calls.End.REPLACED
+            if not current.committed:
+                status, retry = 1, True
+            ended = script_calls.End.REPLACED
         except Detached:
             retry = kind is Kind.WAIT
         except (Unavailable, kept_reads.Unavailable) as exc:
@@ -1001,8 +1014,7 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
                 pass
             elif not retry and response["status"] == 0:
                 try:
-                    with side_effect():
-                        current.connection.sendall((json.dumps(response) + "\n").encode())
+                    publish_response(current, response)
                 except Replaced:
                     ended = script_calls.End.REPLACED
                     current.connection.sendall((json.dumps({"status": 1, "stdout": "", "stderr": "",
@@ -1039,6 +1051,8 @@ def serve() -> script_calls.End:
             fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return script_calls.End.LOCK_HELD
+        # The duplicate stays open until process exit, including a cleanup failure.
+        os.dup(owner.fileno())
         import kept_reads
         gc.disable()
         kept_reads.open_store(required=True)

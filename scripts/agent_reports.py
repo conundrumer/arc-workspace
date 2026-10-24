@@ -23,9 +23,8 @@ from run_reads import (MAIN, LaunchStatus, Notification, Status, agent_messages,
 from file_reads import is_file
 from transcripts import agent_id, chain, find, main_transcript
 from entry_reads import line_entries
-from session_changes import agents_facts
+from session_changes import agents_facts, MatchingFacts, matching_facts, session_sources
 from state_reads import DERIVED, Kept, state_cache
-from transcript_folds import fold
 from transcript_entries import epoch
 from transcript_snapshots import Entry
 
@@ -280,32 +279,32 @@ def delivery_entry(entry: Entry) -> Entry:
     return entry
 
 
-def add_report_line(out: list[ReportLine], _path: Path, line: int, entry: Entry) -> None:
-    if ids := report_ids(delivery_entry(entry)):
-        out.append(ReportLine(line, tuple(ids)))
-
-
-REPORT_WORDS = frozenset({"<task-notification>", "<agent-message from=", '"tool_result"'})
-"""Words present in the lines that `report_ids` can match."""
+def add_report_line(out: MatchingFacts[ReportLine], _path: Path, line: int, entry: Entry) -> None:
+    ids = report_ids(delivery_entry(entry))
+    if out.agents.intersection(ids):
+        out.facts.append(ReportLine(line, tuple(v for v in ids if v in out.agents)))
 
 
 @state_cache(DERIVED, kept=Kept.DISK)
-def report_lines(path: Path) -> tuple[ReportLine, ...]:
+def report_lines(path: Path, agents: frozenset[str]) -> tuple[ReportLine, ...]:
     """Compact report references, incrementally read from one transcript."""
-    return tuple(fold(add_report_line, list[ReportLine], path, [path], REPORT_WORDS))
+    return matching_facts(path, agents, add_report_line)
 
 
-def line_ids(line: ReportLine) -> tuple[str, ...]:
-    return line.ids
+def receipt_stamp(sessions: tuple[Path, ...], aid: str | None, call: str | None) -> object:
+    """All receipt transcripts and their ownership metadata, including
+    directory membership through `written`."""
+    return tuple(session_sources(s) for s in sessions) if aid or call else ()
 
 
-@state_cache(DERIVED, kept=Kept.VALUE)
+@state_cache(receipt_stamp, kept=Kept.VALUE)
 def received_entries(sessions: tuple[Path, ...], aid: str | None,
                      call: str | None) -> tuple[AgentEntry, ...]:
     """Report and end entries matched once by agent or launch-call id in
-    `sessions`. Time bounds apply to the decoded entry's timestamp."""
-    ids = tuple(v for v in (aid, call) if v)
-    found = agents_facts(sessions, 0.0, report_lines, line_ids, ids)
+    `sessions`. Time bounds apply to the decoded entry's timestamp.
+    Sources are those of `receipt_stamp`."""
+    ids = frozenset(v for v in (aid, call) if v)
+    found = agents_facts(sessions, 0.0, report_lines, ids)
     return agent_entries((delivery_entry(e) for at in found
                           for e in line_entries(at.path, at.fact.line)),
                          aid, call)

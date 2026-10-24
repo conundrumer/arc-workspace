@@ -13,7 +13,7 @@ from typing import Any
 
 import read_interrupts
 import kept_reads
-from state_reads import canonical
+from state_reads import canonical, state as current_state
 from transcript_entries import selected_lines
 from transcript_ownership import own_range
 from transcript_snapshots import Entry, Snapshot, parse, read_at, snapshot, span_crc
@@ -77,8 +77,11 @@ _folds: dict[Hashable, Kept] = {}
 """The state of each fold held by its step, run and `naming`."""
 
 
+_query_states: dict[Hashable, int] = {}
+
+
 def fold[S](step: Step[S], start: Callable[[], S], run: Hashable, paths: Sequence[Path],
-            naming: frozenset[str] | None = None) -> S:
+            naming: frozenset[str] | None = None, *, selective: bool = False) -> S:
     """The state `step` gives from `start()` over each entry of the run's
     own lines of each transcript of `paths`, in their order, or with
     `naming` each entry `read_entries` gives with it, as the transcripts
@@ -92,7 +95,18 @@ def fold[S](step: Step[S], start: Callable[[], S], run: Hashable, paths: Sequenc
     A state over a line that is not whole is given and not kept. The
     caller changes none of the state it gets, and holds none of it past
     its read, as a later fold adds to it."""
-    key = run, naming
+    key = (run, naming, True) if selective else (run, naming)
+    if selective:
+        now_state = current_state()
+        for unused in [k for k, used in _query_states.items() if used < now_state - 1]:
+            _query_states.pop(unused)
+            _folds.pop(unused, None)
+        _query_states.pop((step, key), None)
+        _query_states[step, key] = now_state
+        while len(_query_states) > 1024:
+            unused = next(iter(_query_states))
+            _query_states.pop(unused)
+            _folds.pop(unused, None)
     held = _folds.pop((step, key), None)
     if held is None:
         held = stored(step, key)
@@ -108,18 +122,18 @@ def fold[S](step: Step[S], start: Callable[[], S], run: Hashable, paths: Sequenc
     for j, (p, snap, own) in enumerate(now):
         done = marks[j].done if j < len(marks) else own.start
         whole = max(own.start, min(own.stop, snap.settled()))
-        fold_lines(state, step, p, snap, range(done, whole), naming)
+        fold_lines(state, step, p, snap, range(done, whole), naming, selective)
         kept.append(folded_at(p, snap, own, whole))
     _folds[step, key] = state, tuple(kept)
     if [m.done for m in kept] != [m.done for m in marks]:
         store(step, key, (state, tuple(kept)))
     if not any(parse(line) for _, snap, own in now
-               for line in snap.lines(selected_lines(snap, range(max(own.start, snap.settled()),
-                                                         own.stop), naming))):
+               for line in snap.lines(fold_selection(snap, range(max(own.start, snap.settled()),
+                                                         own.stop), naming, selective))):
         return state
     state = start()
     for p, snap, own in now:
-        fold_lines(state, step, p, snap, own, naming)
+        fold_lines(state, step, p, snap, own, naming, selective)
     return state
 
 
@@ -173,15 +187,22 @@ def goes_on(marks: tuple[Folded, ...], now: list[tuple[Path, Snapshot, range]]) 
 
 
 def fold_lines[S](state: S, step: Step[S], path: Path, snap: Snapshot, lines: range,
-                  naming: frozenset[str] | None) -> None:
+                  naming: frozenset[str] | None, selective: bool = False) -> None:
     """Fold into `state` the entries of `lines` of `snap`, the snapshot of
     the transcript at `path`, or with `naming` of those lines that hold one
     of its words."""
-    found = selected_lines(snap, lines, naming)
+    found = fold_selection(snap, lines, naming, selective)
     for i, line in zip(found, snap.lines(found)):
         read_interrupts.checkpoint()
         for e in parse(line):
             step(state, path, i, e)
+
+
+def fold_selection(snap: Snapshot, lines: range, naming: frozenset[str] | None,
+                   selective: bool) -> list[int]:
+    if selective and naming is not None:
+        return sorted(i for i in snap.matching(naming) if i in lines)
+    return selected_lines(snap, lines, naming)
 
 
 @dataclass(frozen=True, slots=True)

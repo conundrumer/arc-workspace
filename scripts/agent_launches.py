@@ -22,6 +22,7 @@ from transcript_entries import epoch
 from transcript_folds import Makes, fold
 from transcript_snapshots import Entry
 from agent_resumes import note_latest, resumes, session_resumes
+from session_changes import run_stamp, session_sources, written
 
 
 @state_cache(DERIVED)
@@ -43,12 +44,13 @@ def session_launches(session: Path) -> tuple[dict[str, Path], dict[str, frozense
     return by_call, {k: frozenset(v) for k, v in children.items()}
 
 
-@state_cache(DERIVED, kept=Kept.DISK)
+@state_cache(run_stamp, kept=Kept.DISK)
 def agent_launch(path: Path) -> tuple[str | None, Path, str] | None:
     """The Agent call that launched the run of the subagent whose
     transcript is at `path`, the last transcript of that run, and its
     parent (`meta_parent`), as its `.meta.json` files give them, or None
-    where it has none."""
+    where it has none. Sources are the run and candidate transcript bytes,
+    their metadata, and the directories used to discover them."""
     meta = read_meta(path)
     if meta is None:
         return None
@@ -199,8 +201,13 @@ def session_entries(path: Path, child: Path | None, aid: str | None,
                     call: str) -> tuple[AgentEntry, ...]:
     """`received_entries` over the sessions of the launcher at `path` and of
     its child at `child`."""
-    sessions = tuple(dict.fromkeys(s for p in (path, child) if p for s in run_sessions(p)))
+    sessions = receipt_sessions((path, child))
     return received_entries(sessions, aid, call)
+
+
+def receipt_sessions(runs: Collection[Path | None]) -> tuple[Path, ...]:
+    """Sessions of launching and child runs, in first-seen order."""
+    return tuple(dict.fromkeys(s for p in runs if p is not None for s in run_sessions(p)))
 
 
 def own_entries(path: Path, child: Path | None, aid: str | None,
@@ -209,12 +216,35 @@ def own_entries(path: Path, child: Path | None, aid: str | None,
     from the transcripts at `path` and `child` alone."""
     ids = {v for v in (aid, call) if v}
     return agent_entries((delivery_entry(e) for p in (path, child) if p
-                          for q in chain(p) for r in report_lines(q) if ids & set(r.ids)
+                          for q in chain(p) for r in report_lines(q, frozenset(ids))
                           for e in line_entries(q, r.line)), aid, call)
 
 
-@state_cache(DERIVED, notes="undecided", kept=Kept.DISK)
+def launch_stamp(path: Path, received: Received = session_entries) -> tuple[object, ...]:
+    """Launch transcript bytes, candidate launch metadata, and all receipt
+    sessions of the launcher and its children, including new transcripts."""
+    children = run_launches(path)[0].values()
+    sessions = receipt_sessions((path, *children))
+    return run_stamp(path), tuple(session_sources(s) for s in sessions)
+
+
 def launches(path: Path, undecided: list[str],
+             received: Received = session_entries) -> list[Launch]:
+    """The launches `derived_launches` gives, with complete source stamps
+    for the repository receipt readers. Other readers retain their dependencies."""
+    if received in (session_entries, own_entries):
+        return stamped_launches(path, undecided, received)
+    return derived_launches(path, undecided, received)
+
+
+@state_cache(launch_stamp, notes="undecided", kept=Kept.DISK)
+def stamped_launches(path: Path, undecided: list[str], received: Received) -> list[Launch]:
+    """Launches with the complete sources of `launch_stamp`."""
+    return derived_launches(path, undecided, received)
+
+
+@state_cache(DERIVED, notes="undecided", kept=Kept.DISK)
+def derived_launches(path: Path, undecided: list[str],
              received: Received = session_entries) -> list[Launch]:
     """The agents the run at `path` launched, in the order of their launch.
     Report and end signs are read from the entries `received` gives, by
@@ -226,6 +256,15 @@ def launches(path: Path, undecided: list[str],
     changed since the last read on the same fold. An Agent call that the
     transcripts give more than once is one launch, from its first entry."""
     read = fold(LaunchLines.step, LaunchLines, path, chain(path))
+    if received in (session_entries, own_entries):
+        calls = {b.get("id", "") for _, b in read.calls}
+        children = {c: p for c, p in run_launches(path)[0].items() if c in calls}
+        ids = frozenset(calls | {agent_id(p) for p in children.values()})
+        if ids:
+            sessions = receipt_sessions((path, *children.values()))
+            for session in sessions:
+                for transcript, _ in written(session):
+                    report_lines(transcript, ids)
     making = _made.read(path, read)
     out: list[Launch] = []
     taken: set[str] = set()

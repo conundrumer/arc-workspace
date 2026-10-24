@@ -288,3 +288,97 @@ def test_a_residents_final_line_gives_its_reason_and_read_leaves_it_out(tmp_path
     records = str(tmp_path / script_calls.RECORDS)
     assert [c.reason for c in script_calls.ends(records, 0.0)] == ["lock held"]
     assert [c.reason for c in script_calls.read(records, 0.0)] == [""]
+
+
+def test_owner_stays_exclusive_until_process_exit(tmp_path, monkeypatch):
+    """An owner that completed cleanup excludes replacement until it exits."""
+    import fcntl
+    import json
+    import os
+    import select
+    import subprocess
+
+    monkeypatch.chdir(tmp_path)
+    source = '''
+import os
+import sys
+from pathlib import Path
+import operate_service as service
+import script_calls
+service.endpoint = lambda *_: Path("owner.sock")
+service.checkout.caches = lambda: Path.cwd() / "cache"
+script_calls.RECORDS = str(Path.cwd() / "records")
+service.CARRY_SECONDS = 0
+service.serve()
+print("cleanup complete", flush=True)
+sys.stdin.readline()
+os._exit(0)
+'''
+    process = subprocess.Popen(
+        [sys.executable, "-u", "-c", source], cwd=tmp_path,
+        env={"PATH": os.defpath, "HOME": str(tmp_path), "CLAUDE_CONFIG_DIR": str(tmp_path),
+             "CLAUDE_CODE_SESSION_ID": "owner-test", "PYTHONPATH":
+             os.pathsep.join((str(SCRIPTS), str(SCRIPTS.parent / "src")))},
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        deadline = time.monotonic() + 10
+        while True:
+            connection = socket.socket(socket.AF_UNIX)
+            try:
+                connection.connect("owner.sock")
+                break
+            except (FileNotFoundError, ConnectionRefusedError):
+                connection.close()
+                assert time.monotonic() < deadline
+                time.sleep(0.01)
+        with connection:
+            connection.settimeout(10)
+            connection.sendall((json.dumps({"kind": "next", "subject": "fixture",
+                                            "started": time.time(), "deadline": deadline}) + "\n").encode())
+            with connection.makefile("rb") as stream:
+                assert stream.readline() == service.TAKEN
+                assert json.loads(stream.readline())["status"] == 1
+        assert process.stdout is not None and process.stdin is not None
+        assert select.select([process.stdout], [], [], 10)[0]
+        assert process.stdout.readline() == b"cleanup complete\n"
+        with (tmp_path / "owner.owner").open("a") as owner:
+            with pytest.raises(BlockingIOError):
+                fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            process.stdin.write(b"exit\n")
+            process.stdin.flush()
+            assert process.wait(timeout=10) == 0
+            fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    finally:
+        if process.poll() is None:
+            process.kill()
+        process.wait(timeout=10)
+
+
+def test_journaled_reply_survives_refresh_exclusion(tmp_path):
+    """Refresh preserves a committed reply and refuses uncommitted output."""
+    import io
+    import json
+    refresh_locks = script("refresh_locks")
+    step_journal = script("step_journal")
+    from operations.steps import Send
+
+    a, b = socket.socketpair()
+    c, d = socket.socketpair()
+    with a, b, c, d:
+        current = service.Request("operator", time.time(), time.monotonic() + 10,
+                                  a, c, "code", io.StringIO(), io.StringIO())
+        token = service.CURRENT.set(current)
+        response = {"status": 0, "stdout": "journaled reply", "stderr": "", "retry": False}
+        try:
+            with refresh_locks.hold("isolated-service"):
+                with pytest.raises(service.Replaced):
+                    service.publish_response(current, response)
+            step_journal.give(tmp_path, [Send("recipient", "message", "subject")], "operator", time.time())
+            service.commit()
+            with refresh_locks.hold("isolated-service"):
+                service.publish_response(current, response)
+            b.settimeout(1)
+            assert json.loads(b.recv(65536)) == response
+            assert len(step_journal.records(tmp_path)) == 1
+        finally:
+            service.CURRENT.reset(token)
