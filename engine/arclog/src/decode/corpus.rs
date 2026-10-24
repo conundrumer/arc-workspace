@@ -33,7 +33,7 @@ pub struct CorpusTask {
 /// The solver `id` of `corpus` with its task in `tasks`, or the fault that
 /// stops its read.
 pub fn read_corpus_task(corpus: &Path, tasks: &Path, id: &str) -> Result<CorpusTask, String> {
-    let solver = read_corpus_solver(corpus, id).ok_or("the solver's files do not read")?;
+    let solver = read_corpus_solver(corpus, id).map_err(|e| format!("the solver's files do not read: {e}"))?;
     let (task, judged) = read_task_files(tasks, id)?;
     Ok(CorpusTask { solver, task, judged })
 }

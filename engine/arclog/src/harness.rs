@@ -65,20 +65,53 @@ pub fn corpus_solvers(dir: &Path) -> Result<Vec<CorpusSolver>, CorpusError> {
         .collect())
 }
 
-/// The solver of `task_id` read from its two files in `dir`, each solver a
-/// `representative` line names read the same way. `None` where a file does
-/// not read, or where a diagnostic of the read has
-/// [`crate::diagnostic::Severity::Error`]. So a solver whose
-/// `representative` line names a solver whose read is refused is `None`
-/// too, by the scope diagnostic of [`crate::read::read_solver`].
-pub fn read_corpus_solver(dir: &Path, task_id: &str) -> Option<std::sync::Arc<crate::solver::Solver>> {
-    let arclog = std::fs::read_to_string(dir.join(format!("{task_id}.arclog"))).ok()?;
-    let arcdata = std::fs::read_to_string(dir.join(format!("{task_id}.arcdata"))).ok()?;
-    let read = crate::read::read_solver(task_id, &arclog, &arcdata, &|id| read_corpus_solver(dir, id)).ok()?;
-    if read.diagnostics.iter().any(|d| d.severity == crate::diagnostic::Severity::Error) {
-        return None;
+/// The extension of a solver's file that holds `file`: `None` for a lib file.
+pub fn solver_file_extension(file: crate::layout::SourceFile) -> Option<&'static str> {
+    use crate::layout::SourceFile;
+    match file {
+        SourceFile::Arclog => Some("arclog"),
+        SourceFile::Arcdata => Some("arcdata"),
+        SourceFile::LibRegistry | SourceFile::LibProposers => None,
     }
-    Some(std::sync::Arc::new(read.value))
+}
+
+/// The solver of `task_id` read from its two files in `dir`, each solver a
+/// `representative` line names read the same way. `Err` where a file does
+/// not read, as `<path>: <io error>`, or where the read is refused or has a
+/// diagnostic of [`crate::diagnostic::Severity::Error`]: each such
+/// diagnostic as `<task_id>.<extension>:<line>: <message>` per place, or the
+/// message alone at a path, joined by `; `. A solver whose `representative`
+/// line names a solver that does not read gives the scope diagnostic of
+/// [`crate::read::read_solver`].
+pub fn read_corpus_solver(dir: &Path, task_id: &str) -> Result<std::sync::Arc<crate::solver::Solver>, String> {
+    use crate::diagnostic::{Diagnostic, Location, Severity};
+    let read_file = |extension: &str| {
+        let path = dir.join(format!("{task_id}.{extension}"));
+        std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))
+    };
+    let arclog = read_file("arclog")?;
+    let arcdata = read_file("arcdata")?;
+    let describe = |diagnostics: &[Diagnostic]| {
+        let mut lines = Vec::new();
+        for d in diagnostics.iter().filter(|d| d.severity == Severity::Error) {
+            match &d.location {
+                Location::Places(places) => {
+                    for at in places.iter() {
+                        let extension = solver_file_extension(at.place.file).unwrap_or("lib");
+                        let id = at.task_id.as_deref().unwrap_or(task_id);
+                        lines.push(format!("{id}.{extension}:{}: {}", at.place.line, d.message));
+                    }
+                }
+                Location::Path(_) => lines.push(d.message.to_string()),
+            }
+        }
+        lines.join("; ")
+    };
+    let read = crate::read::read_solver(task_id, &arclog, &arcdata, &|id| read_corpus_solver(dir, id).ok()).map_err(|d| describe(&d))?;
+    if read.diagnostics.iter().any(|d| d.severity == Severity::Error) {
+        return Err(describe(&read.diagnostics));
+    }
+    Ok(std::sync::Arc::new(read.value))
 }
 
 /// The outcome of a check on one solver.

@@ -3932,13 +3932,18 @@ class Solver:
                         to = moves.get(sub_rel, inst.name).split(".")
                         amp = ".".join([c.rel_name(inst.scope.components, to[0]), *to[1:]])
                         wid = was + ("." + sub_rel if sub_rel else "")
+                    elif inst is not None and inst.component == "Parse":
+                        # the solver's own Parse: its relations are written as relations of their own
+                        amp = c.rel_name(("Parse",), sub_rel)
+                        MOVED_RELS[f"{inst.name}.{sub_rel}"] = amp[1:]   # the witness names spell it `parse.<rel>`
+                        wid = inst.name + ("." + sub_rel if sub_rel else "")
                     elif inst is not None:
                         amp = c.rel_name(inst.scope.components, inst.name) + ("." + sub_rel if sub_rel else "")
                         wid = inst.name + ("." + sub_rel if sub_rel else "")
                     else:
                         amp = c.rel_name(rscope, rname)
                         wid = rname
-                    if inst is not None:
+                    if inst is not None and inst.component != "Parse":
                         c.wrote(amp, Written(inst.scope.components, wid, False))
                     self.store_points.append((amp, [":" + more], "Stored", wid))
                     forms.append(Form([f"(RULE_OR_DET {amp}{or_gloss(gloss)})"],

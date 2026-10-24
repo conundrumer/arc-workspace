@@ -25,7 +25,7 @@ use arclog::check::lint::lint;
 use arclog::check::CheckId;
 use arclog::diagnostic::{Diagnostic, DiagnosticKind, Location, Severity};
 use arclog::hash::StableHashMap;
-use arclog::harness::{print_ended, read_corpus_solver, require_optimized_build, run_over_corpus, CorpusSolver, LintCode, LintError, LintReport, SolverResult};
+use arclog::harness::{print_ended, read_corpus_solver, require_optimized_build, solver_file_extension, run_over_corpus, CorpusSolver, LintCode, LintError, LintReport, SolverResult};
 use arclog::layout::SourceFile;
 use arclog::registry::Registry;
 
@@ -123,7 +123,7 @@ fn reported(solver: &CorpusSolver, report: &LintReport) -> std::io::Result<Place
 fn found(dir: &Path, solver: &CorpusSolver) -> Result<Places, String> {
     let text = |path: &Path| std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()));
     let (arclog, arcdata) = (text(&solver.arclog)?, text(&solver.arcdata)?);
-    let read = arclog::read::read_solver(&solver.task_id, &arclog, &arcdata, &|id| read_corpus_solver(dir, id));
+    let read = arclog::read::read_solver(&solver.task_id, &arclog, &arcdata, &|id| read_corpus_solver(dir, id).ok());
     let (diagnostics, solver_value) = match read {
         Err(diagnostics) => (diagnostics, None),
         Ok(read) if read.diagnostics.iter().any(|d| d.severity == Severity::Error) => (read.diagnostics, None),
@@ -153,10 +153,8 @@ fn places_of(dir: &Path, diagnostic: &Diagnostic) -> Result<Vec<Place>, String> 
     places
         .iter()
         .map(|at| {
-            let extension = match at.place.file {
-                SourceFile::Arclog => "arclog",
-                SourceFile::Arcdata => "arcdata",
-                SourceFile::LibRegistry | SourceFile::LibProposers => return Err(format!("{check:?}: an error in a lib file: {}", diagnostic.message)),
+            let Some(extension) = solver_file_extension(at.place.file) else {
+                return Err(format!("{check:?}: an error in a lib file: {}", diagnostic.message));
             };
             let task_id = at.task_id.as_deref().ok_or_else(|| format!("{check:?}: an error in no solver's file: {}", diagnostic.message))?;
             let path = dir.join(format!("{task_id}.{extension}"));

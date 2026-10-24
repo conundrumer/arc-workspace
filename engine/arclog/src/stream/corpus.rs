@@ -41,7 +41,7 @@ pub struct CaseStream {
 /// order of the cases, or the fault that stops the solver: its files do not
 /// read, a wanted case is absent, or the checker refuses a wanted case.
 pub fn solver_streams(corpus: &Path, id: &str, wanted: WantedCases<'_>, vocabulary: &Vocabulary) -> Result<Vec<CaseStream>, String> {
-    let solver = read_corpus_solver(corpus, id).ok_or("the solver's files do not read")?;
+    let solver = read_corpus_solver(corpus, id).map_err(|e| format!("the solver's files do not read: {e}"))?;
     let cases = resolve_cases(&solver, Registry::get());
     let clauses = SolverClauses::of_cases(&cases);
     let names = match wanted {

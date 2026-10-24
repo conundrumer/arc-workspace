@@ -42,8 +42,9 @@ fn check(dir: &Path, solver: &CorpusSolver, report: &LintReport) -> SolverResult
             Err(error) => return SolverResult::Fail(vec![format!("{}: {error}", file.display())]),
         }
     }
-    let Some(read) = read_corpus_solver(dir, &solver.task_id) else {
-        return SolverResult::Fail(vec!["the solver's files do not read".to_owned()]);
+    let read = match read_corpus_solver(dir, &solver.task_id) {
+        Ok(read) => read,
+        Err(e) => return SolverResult::Fail(vec![format!("the solver's files do not read: {e}")]),
     };
     let faults = faults(&read);
     if faults.is_empty() { SolverResult::Pass } else { SolverResult::Fail(faults) }
