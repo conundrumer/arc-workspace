@@ -8,7 +8,13 @@
 //! every example at each assignment of the `DET`s it reads, at each model for
 //! a relation with picks. Where a relation holds more rows on an example than
 //! the projection cap of the decode settings, the table gives its projections in place of
-//! its rows. The recording makes no choice among the points: it keeps each,
+//! its rows. Each table counts the bindings that all its evaluations try, over the
+//! domains of its walk, its examples, assignments and models, and its projections.
+//! The first batch that takes the count past the table work cap of the decode
+//! settings stops the evaluation it is in with [`ReachedBound::TableWork`](crate::eval::ReachedBound::TableWork),
+//! and each later batch of the table stops at once. The table keeps the entries
+//! found before, and records the stop as it records a stop at another bound.
+//! No result-cache entry holds that stop. The recording makes no choice among the points: it keeps each,
 //! and a caller that reads no body in progress asks for [`Points::Relations`],
 //! so that no body table is evaluated.
 //!
@@ -28,7 +34,7 @@ use super::Decoder;
 use crate::check::CheckedProgram;
 use crate::eval::examples::scope_of;
 use crate::eval::join::Budget;
-use crate::eval::{BodyValue, ModelsEnd, Outcome, RelationValue, RunFault};
+use crate::eval::{BodyValue, ModelsEnd, Outcome, RelationValue, RunFault, TableWork};
 use crate::eval::join::each_row;
 use crate::judge::determination::{Assignment, Det, End};
 use crate::program::path::{node_at, NodePath, NodeRef};
@@ -163,8 +169,9 @@ impl Decoder<'_> {
         let contents = sub.map(|sub| {
             let relation = derived_at(&sub.program, &sub.form);
             let slot = self.state.open_slot();
-            let examples = self.examples_of(sub.scope).into_iter().zip(self.values_of(&sub).into_vec()).map(|(example, rows)| ExampleRows { example, rows: rows.map(|rows| models_of_body(&rows)) }).collect();
-            self.contents(&sub.program, &sub.form, &relation, slot, &walked_dets(&sub.program, relation.node), examples)
+            let work = TableWork::new(self.context.settings.table_work_cap);
+            let examples = self.examples_of(sub.scope).into_iter().zip(self.values_of(&sub, Some(&work)).into_vec()).map(|(example, rows)| ExampleRows { example, rows: rows.map(|rows| models_of_body(&rows)) }).collect();
+            self.contents(&sub.program, &sub.form, &relation, slot, &walked_dets(&sub.program, relation.node), examples, &work)
         });
         Some(Table { form, point, contents: contents.and_then(|contents| contents) })
     }
@@ -187,12 +194,13 @@ impl Decoder<'_> {
                 let contents = match graph_relation(checked, registry, &form, declared) {
                     Some(relation) => {
                         let dets = relation_dets(checked, relation.node);
+                        let work = TableWork::new(self.context.settings.table_work_cap);
                         let examples = self
                             .examples_of(scope_of(checked, &relation))
                             .into_iter()
-                            .map(|example| ExampleRows { example, rows: self.assigned(checked, relation.node, &dets, &mut |evaluation| models_at(evaluation, &relation, example)) })
+                            .map(|example| ExampleRows { example, rows: self.assigned(checked, relation.node, &dets, Some(&work), &mut |evaluation| models_at(evaluation, &relation, example)) })
                             .collect();
-                        self.contents(checked, &form, &relation, slot, &dets, examples)
+                        self.contents(checked, &form, &relation, slot, &dets, examples, &work)
                     }
                     None => Err(RunFault { message: "the graph holds no node for a relation the form declares".into(), form: form.clone() }),
                 };
@@ -204,7 +212,7 @@ impl Decoder<'_> {
     /// The contents of the table of `relation` in `program`, from its rows
     /// on each example: its slot, its columns, its `DET`s, and its projections
     /// where a relation holds more rows than the projection cap.
-    fn contents(&self, program: &CheckedProgram, form: &NodePath, relation: &GraphRelation, slot: u32, dets: &[Det], examples: Vec<ExampleRows>) -> Outcome<Contents> {
+    fn contents(&self, program: &CheckedProgram, form: &NodePath, relation: &GraphRelation, slot: u32, dets: &[Det], examples: Vec<ExampleRows>, work: &TableWork) -> Outcome<Contents> {
         let fault = |message: &str| RunFault { message: message.into(), form: form.clone() };
         let types = program.types.columns(relation).ok_or_else(|| fault("the columns of the relation have no types"))?;
         let names = match &relation.output {
@@ -222,15 +230,16 @@ impl Decoder<'_> {
             .collect::<Outcome<Box<[_]>>>()?;
         let cap = self.context.settings.projection_cap;
         let over = examples.iter().any(|example| example.rows.as_ref().is_ok_and(|rows| rows.at.iter().flat_map(|(_, models)| models).any(|model| matches!(model, RelationValue::Rows(rows) if rows.len() > cap))));
-        let projections = over.then(|| self.projections_of(&examples, form)).flatten();
+        let projections = over.then(|| self.projections_of(&examples, form, work)).flatten();
         Ok(Contents { relation: TableRelation::Slot(slot), columns, dets, examples: examples.into(), projections })
     }
 
     /// The projections of the rows of `examples`, none where an example gives a
-    /// fault.
-    fn projections_of(&self, examples: &[ExampleRows], form: &NodePath) -> Option<Projections> {
+    /// fault. Its search counts its bindings in `work`, the count of the
+    /// table.
+    fn projections_of(&self, examples: &[ExampleRows], form: &NodePath, work: &TableWork) -> Option<Projections> {
         let flat: Vec<Assigned<BodyValue>> = examples.iter().map(|example| example.rows.as_ref().ok().map(flatten)).collect::<Option<_>>()?;
-        let limits = self.limits();
+        let limits = self.limits().counted_in(work.clone());
         let mut budget = Budget::new(&limits, self.session);
         let found = projections(&flat, self.context.settings.projection_cap, &mut budget, form);
         budget.record();

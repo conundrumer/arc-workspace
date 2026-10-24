@@ -259,7 +259,7 @@ impl Decoder<'_> {
                 Err(fault) => return Some(Err(fault)),
             }
         }
-        let limits = Limits { deadline: Some(Instant::now() + self.context.settings.deadline), cancellation: self.cancellation.clone() };
+        let limits = Limits::new(Some(Instant::now() + self.context.settings.deadline), self.cancellation.clone());
         let mut budget = Budget::new(&limits, self.session);
         let found = projections(&assigned, self.context.settings.projection_cap, &mut budget, &form);
         budget.record();
@@ -292,7 +292,7 @@ mod tests {
             .map(|relation| Assigned { at: vec![(Vec::new(), BodyValue(RelationValue::Rows(Arc::new(relation))))], stop: None })
             .collect();
         let session = TaskSession::new(SessionBound { bytes: 1 << 26 }, Caps::CORPUS);
-        let limits = Limits { deadline: None, cancellation: Default::default() };
+        let limits = Limits::new(None, Default::default());
         let mut budget = Budget::new(&limits, &session);
         let Projections::Found(found) = projections(&values, cap, &mut budget, &NodePath::top(0)) else { panic!("the search ends") };
         found.iter().map(|projection| projection.columns.iter().map(|column| column.0).collect()).collect()
@@ -345,7 +345,7 @@ mod tests {
     fn a_projection_holds_the_projected_rows_of_the_body() {
         let values = [Assigned { at: vec![(Vec::new(), BodyValue(RelationValue::Rows(Arc::new(pak()))))], stop: None }];
         let session = TaskSession::new(SessionBound { bytes: 1 << 26 }, Caps::CORPUS);
-        let limits = Limits { deadline: None, cancellation: Default::default() };
+        let limits = Limits::new(None, Default::default());
         let mut budget = Budget::new(&limits, &session);
         let Projections::Found(found) = projections(&values, 6, &mut budget, &NodePath::top(0)) else { panic!("the search ends") };
         let [(_, Some(projected))] = &found[0].rows[0].at[..] else { panic!("one projection") };

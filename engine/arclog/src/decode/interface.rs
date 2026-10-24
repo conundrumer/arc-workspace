@@ -12,7 +12,7 @@ use super::Decoder;
 use crate::check::{check_shared_program, CheckCache, CheckedProgram, SolverClauses};
 use crate::eval::examples::{scope_of, ExampleScope};
 use crate::eval::ir::atom_modes;
-use crate::eval::{BodyValue, Limits, Outcome, ParameterValues, RelationValue, RunFault, Stop};
+use crate::eval::{BodyValue, Limits, Outcome, ParameterValues, RelationValue, RunFault, Stop, TableWork};
 use crate::registry::Registry;
 use crate::judge::candidates::PairCandidates;
 use crate::judge::determination::{dets_read, descend_assignments, distinct_values, walk, Assignment, Det, End, EvaluationInputs, Walked};
@@ -63,7 +63,7 @@ pub struct Step {
 pub struct Assigned<T> {
     pub at: Vec<(Vec<Assignment>, T)>,
     /// The bound that ended the walk before its last assignment: the
-    /// assignment cap, a bound of a run, the deadline or a cancellation.
+    /// assignment cap, the table work cap, a bound of a run, the deadline or a cancellation.
     pub stop: Option<Stop>,
 }
 
@@ -140,7 +140,7 @@ impl<'a> Decoder<'a> {
     /// Asking a per-example clause with `None`, or a task-wide clause on an
     /// example, is a fault of the caller, so this panics on one.
     pub fn rows(&self, example: Option<Example>) -> Option<Outcome<Assigned<BodyValue>>> {
-        Some(self.sub_body()?.and_then(|sub| self.assigned_rows(&sub, example)))
+        Some(self.sub_body()?.and_then(|sub| self.assigned_rows(&sub, example, None)))
     }
 
     /// The [`ExampleScope`] of the sub-body that [`Decoder::rows`]
@@ -198,13 +198,14 @@ impl<'a> Decoder<'a> {
             Ok(sub) => sub,
             Err(fault) => return Some(Box::new([Err(fault)])),
         };
-        Some(self.values_of(&sub))
+        Some(self.values_of(&sub, None))
     }
 
     /// The value of `sub` on each example of the task, or once for a
-    /// task-wide clause, at each assignment.
-    pub(super) fn values_of(&self, sub: &SubBody) -> Box<[Outcome<Assigned<BodyValue>>]> {
-        self.examples_of(sub.scope).into_iter().map(|example| self.assigned_rows(sub, example)).collect()
+    /// task-wide clause, at each assignment, counted in `work` where it is
+    /// given.
+    pub(super) fn values_of(&self, sub: &SubBody, work: Option<&TableWork>) -> Box<[Outcome<Assigned<BodyValue>>]> {
+        self.examples_of(sub.scope).into_iter().map(|example| self.assigned_rows(sub, example, work)).collect()
     }
 
     /// The examples a relation of `scope` is evaluated on: each example of
@@ -216,17 +217,23 @@ impl<'a> Decoder<'a> {
         }
     }
 
-    fn assigned_rows(&self, sub: &SubBody, example: Option<Example>) -> Outcome<Assigned<BodyValue>> {
+    fn assigned_rows(&self, sub: &SubBody, example: Option<Example>, work: Option<&TableWork>) -> Outcome<Assigned<BodyValue>> {
         let root = derived_at(&sub.program, &sub.form).node;
-        self.assigned(&sub.program, root, &walked_dets(&sub.program, root), &mut |evaluation| evaluation.body(&sub.form, &sub.kept, example).map_err(End::Fault))
+        self.assigned(&sub.program, root, &walked_dets(&sub.program, root), work, &mut |evaluation| evaluation.body(&sub.form, &sub.kept, example).map_err(End::Fault))
     }
 
     /// What `at` gives at each joint assignment of `dets`, in the order of
     /// the walk, for the relation at `root` of `program`. `dets` is the
     /// list of [`walked_dets`] for a body, as [`Decoder::rows`] gives it, and
-    /// that of [`relation_dets`] for a relation table.
-    pub(super) fn assigned<T>(&self, program: &CheckedProgram, root: GraphNodeIndex, dets: &[Det], at: &mut dyn FnMut(&crate::eval::Evaluation<'_>) -> Result<T, End>) -> Outcome<Assigned<T>> {
-        let limits = self.limits();
+    /// that of [`relation_dets`] for a relation table. Where `work` is given,
+    /// the bindings of each evaluation, the walk's domains included, are
+    /// counted in it, and a batch that takes the count past its cap stops the
+    /// evaluation it is in.
+    pub(super) fn assigned<T>(&self, program: &CheckedProgram, root: GraphNodeIndex, dets: &[Det], work: Option<&TableWork>, at: &mut dyn FnMut(&crate::eval::Evaluation<'_>) -> Result<T, End>) -> Outcome<Assigned<T>> {
+        let limits = match work {
+            Some(work) => self.limits().counted_in(work.clone()),
+            None => self.limits(),
+        };
         let inputs = self.inputs(program, &limits);
         let mut found = Vec::new();
         let mut leaf = |evaluation: &crate::eval::Evaluation<'_>, assigned: &[Assignment]| {
@@ -243,7 +250,7 @@ impl<'a> Decoder<'a> {
     /// The bounds of one request: the deadline of the decode settings from
     /// now, and the decode's cancellation.
     pub(super) fn limits(&self) -> Limits {
-        Limits { deadline: Some(Instant::now() + self.context.settings.deadline), cancellation: self.cancellation.clone() }
+        Limits::new(Some(Instant::now() + self.context.settings.deadline), self.cancellation.clone())
     }
 
     pub(super) fn inputs<'p>(&'p self, program: &'p CheckedProgram, limits: &'p Limits) -> EvaluationInputs<'p> {

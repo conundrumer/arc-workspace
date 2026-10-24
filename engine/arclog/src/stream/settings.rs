@@ -39,6 +39,9 @@ pub struct DecodeSettings {
     /// The rows a projection may hold on one example at one assignment, as
     /// `docs/engine/synthesis.md#decode-settings` gives it.
     pub projection_cap: u64,
+    /// The bindings that all the evaluations of one table may try, as
+    /// `docs/engine/synthesis.md#decode-settings` gives it.
+    pub table_work_cap: u64,
 }
 
 impl Default for DecodeSettings {
@@ -50,6 +53,7 @@ impl Default for DecodeSettings {
             caps: Caps::CORPUS,
             deadline: Duration::from_secs(10),
             projection_cap: 10_000,
+            table_work_cap: 1 << 20,
         }
     }
 }

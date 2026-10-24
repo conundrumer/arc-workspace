@@ -78,7 +78,7 @@ fn a_cell_a_mode_gives_stands_after_the_cell_it_reads_and_the_join_tries_few_bin
     let place = |variable: Variable| order.0.iter().position(|v| *v == variable).expect("in the order");
     assert!(place(cells[0]) < place(cells[1]) && place(cells[0]) < place(cells[2]), "{order:?}");
     let session = TaskSession::new(SessionBound { bytes: 1 << 26 }, Caps::CORPUS);
-    let limits = Limits { deadline: None, cancellation: Cancellation::default() };
+    let limits = Limits::new(None, Cancellation::default());
     join::join(&clause, &order, &inputs, Registry::get(), &mut Budget::new(&limits, &session)).expect("no bound reached");
     let bindings = session.largest_counts().bindings;
     assert!(bindings < 10_000, "{bindings} bindings tried");

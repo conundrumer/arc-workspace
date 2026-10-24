@@ -44,7 +44,7 @@ impl ConceptCase<'_> {
 /// The limits of a run over the corpus: no deadline, and a cancellation
 /// that nothing cancels.
 pub(crate) fn corpus_limits() -> Limits {
-    Limits { deadline: None, cancellation: Cancellation::default() }
+    Limits::new(None, Cancellation::default())
 }
 
 /// What `body` gives on the concept case of the solver `id` of `corpus`,

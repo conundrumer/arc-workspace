@@ -270,6 +270,7 @@ fn stopped(bound: ReachedBound) -> String {
         ReachedBound::Models { cap } => format!("models:{cap}"),
         ReachedBound::Nodes { cap } => format!("nodes:{cap}"),
         ReachedBound::Assignments { cap } => format!("assignments:{cap}"),
+        ReachedBound::TableWork { cap } => format!("table-work:{cap}"),
         ReachedBound::Margin(_) => "margin".to_owned(),
         ReachedBound::SessionBytes(reached) => format!("session-bytes:{}", reached.bound.bytes),
         ReachedBound::Deadline => "deadline".to_owned(),
@@ -344,7 +345,7 @@ mod tests {
         let caps = Caps { bindings: 3, ..Caps::CORPUS };
         let session = TaskSession::new(SessionBound { bytes: 1 << 26 }, caps);
         let parameters = ParameterValues::default();
-        let limits = Limits { deadline: None, cancellation: Cancellation::default() };
+        let limits = Limits::new(None, Cancellation::default());
         let constructions = arclog_constructions::shared().expect("the table of constructions");
         let evaluation = Evaluation { program: &program, concept: None, task: &task, parameters: &parameters, session: &session, registry, constructions, limits: &limits };
         let dir = std::env::temp_dir().join(format!("row-counts-stopped-{}", std::process::id()));

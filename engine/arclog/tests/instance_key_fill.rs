@@ -44,7 +44,7 @@ fn an_unwritten_input_is_filled_from_the_key_only_where_the_registry_marks_it() 
     let task = Task { train: Box::new([TrainPair { input: input.clone(), output: input }]), test: Box::new([]) };
     let parameters = ParameterValues::stored(solver.arcdata.value());
     let session = TaskSession::new(SessionBound { bytes: 1 << 26 }, Caps::CORPUS);
-    let limits = Limits { deadline: None, cancellation: Cancellation::default() };
+    let limits = Limits::new(None, Cancellation::default());
     let constructions = Constructions::new(Vec::new(), registry).expect("an empty table");
     let evaluation = Evaluation { program: &program, concept: None, task: &task, parameters: &parameters, session: &session, registry, constructions: &constructions, limits: &limits };
     let rows = |name: &str| {

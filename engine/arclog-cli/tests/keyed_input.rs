@@ -35,7 +35,7 @@ fn last_clause(text: &str, conjuncts: u32, caps: Caps) -> Result<u64, String> {
     let session = TaskSession::new(SessionBound { bytes: 1 << 26 }, caps);
     let registry = Registry::get();
     let parameters = ParameterValues::default();
-    let limits = Limits { deadline: None, cancellation: Cancellation::default() };
+    let limits = Limits::new(None, Cancellation::default());
     let evaluation = Evaluation { program: &program, concept: None, task: &task, parameters: &parameters, session: &session, registry, constructions: arclog_constructions::shared().expect("the table of constructions"), limits: &limits };
     let path = NodePath(Box::new([PathStep(program.program.program.value().forms.len() as u32 - 1)]));
     let value = evaluation.body(&path, &(0..conjuncts).collect::<Vec<_>>(), Some(Example::at(0))).map_err(|fault| format!("{fault:?}"))?;

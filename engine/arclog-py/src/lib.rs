@@ -143,6 +143,7 @@ struct PyDecodeSettings {
     labels: u32,
     deadline_seconds: f64,
     projection_cap: u64,
+    table_work_cap: u64,
 }
 
 impl PyDecodeSettings {
@@ -155,6 +156,7 @@ impl PyDecodeSettings {
             labels: settings.vocabulary.labels,
             deadline_seconds: settings.deadline.as_secs_f64(),
             projection_cap: settings.projection_cap,
+            table_work_cap: settings.table_work_cap,
         }
     }
 
@@ -166,6 +168,7 @@ impl PyDecodeSettings {
             vocabulary: VocabularyCaps { relations: self.relations, columns: self.columns, labels: self.labels },
             deadline,
             projection_cap: self.projection_cap,
+            table_work_cap: self.table_work_cap,
             ..DecodeSettings::default()
         })
     }
@@ -174,7 +177,7 @@ impl PyDecodeSettings {
 #[pymethods]
 impl PyDecodeSettings {
     #[new]
-    #[pyo3(signature = (*, proposer_tokens=None, type_domain_proposers=None, relations=None, columns=None, labels=None, deadline_seconds=None, projection_cap=None))]
+    #[pyo3(signature = (*, proposer_tokens=None, type_domain_proposers=None, relations=None, columns=None, labels=None, deadline_seconds=None, projection_cap=None, table_work_cap=None))]
     fn new(
         proposer_tokens: Option<bool>,
         type_domain_proposers: Option<bool>,
@@ -183,6 +186,7 @@ impl PyDecodeSettings {
         labels: Option<u32>,
         deadline_seconds: Option<f64>,
         projection_cap: Option<u64>,
+        table_work_cap: Option<u64>,
     ) -> PyResult<PyDecodeSettings> {
         let base = PyDecodeSettings::of(&DecodeSettings::default());
         let settings = PyDecodeSettings {
@@ -193,6 +197,7 @@ impl PyDecodeSettings {
             labels: labels.unwrap_or(base.labels),
             deadline_seconds: deadline_seconds.unwrap_or(base.deadline_seconds),
             projection_cap: projection_cap.unwrap_or(base.projection_cap),
+            table_work_cap: table_work_cap.unwrap_or(base.table_work_cap),
         };
         settings.engine()?;
         Ok(settings)
@@ -330,6 +335,7 @@ enum PyStopKind {
     Models,
     Nodes,
     Assignments,
+    TableWork,
     Margin,
     SessionBytes,
     Deadline,
@@ -344,6 +350,7 @@ impl From<Stop> for PyStopKind {
             Stop::Models => PyStopKind::Models,
             Stop::Nodes => PyStopKind::Nodes,
             Stop::Assignments => PyStopKind::Assignments,
+            Stop::TableWork => PyStopKind::TableWork,
             Stop::Margin => PyStopKind::Margin,
             Stop::SessionBytes => PyStopKind::SessionBytes,
             Stop::Deadline => PyStopKind::Deadline,
@@ -1100,7 +1107,9 @@ struct TableCase {
 /// the evidence tables `ex_input` and `ex_output` of the task, which stand at
 /// token 0 with point 2. The tables are those of a decode under `projection_cap`,
 /// the cap of `DecodeSettings`, the engine's default where it is `None`, and
-/// each `CaseTables` gives it. The relations of the
+/// each `CaseTables` gives it. `table_work_cap` is the cap of the bindings that
+/// all the evaluations of one table try, with the same default and the same
+/// `None`; a table past it ends with a stop whose bound is `TableWork`. The relations of the
 /// finished forms are tabled, and with `bodies` the bodies in progress as well.
 /// The second value holds a line for each case that gives no tables and each
 /// solver that gives none, in the form of `corpus_streams`, in the order of
@@ -1123,13 +1132,14 @@ struct TableCase {
 /// second phase: its `total` is set once the units are cut and its `done`
 /// grows while they replay.
 #[pyfunction]
-#[pyo3(signature = (corpus, tasks, all_cases=false, task_ids=None, bodies=false, projection_cap=None, ended=None, progress=None, step_cap=None))]
-fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, task_ids: Option<Vec<String>>, bodies: bool, projection_cap: Option<u64>, ended: Option<Py<PyAny>>, progress: Option<Py<PyReplayProgress>>, step_cap: Option<usize>) -> PyResult<(Vec<PyCaseTables>, Vec<String>)> {
+#[pyo3(signature = (corpus, tasks, all_cases=false, task_ids=None, bodies=false, projection_cap=None, ended=None, progress=None, step_cap=None, table_work_cap=None))]
+fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, task_ids: Option<Vec<String>>, bodies: bool, projection_cap: Option<u64>, ended: Option<Py<PyAny>>, progress: Option<Py<PyReplayProgress>>, step_cap: Option<usize>, table_work_cap: Option<u64>) -> PyResult<(Vec<PyCaseTables>, Vec<String>)> {
     let points = if bodies { Points::All } else { Points::Relations };
     let wanted = if all_cases { WantedCases::All } else { WantedCases::Concept };
     let constructions = constructions()?;
     let vocabulary = Vocabulary::new(Registry::get(), &DecodeSettings::default());
-    let settings = DecodeSettings { projection_cap: projection_cap.unwrap_or(DecodeSettings::default().projection_cap), ..DecodeSettings::default() };
+    let base = DecodeSettings::default();
+    let settings = DecodeSettings { projection_cap: projection_cap.unwrap_or(base.projection_cap), table_work_cap: table_work_cap.unwrap_or(base.table_work_cap), ..base };
     let reads: Mutex<HashMap<String, (Task, JudgedTask)>> = Mutex::new(HashMap::new());
     let found = walk_corpus(py, corpus, &task_ids, |id| {
         let (mut cases, mut faults) = (Vec::new(), Vec::new());

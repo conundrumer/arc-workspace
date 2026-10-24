@@ -230,7 +230,7 @@ fn evaluating<T>(program: &CheckedProgram, task: &Task, caps: Caps, run: impl Fn
     let registry = Registry::get();
     let parameters = ParameterValues::default();
     let session = TaskSession::new(SessionBound { bytes: 1 << 26 }, caps);
-    let limits = Limits { deadline: None, cancellation: Cancellation::default() };
+    let limits = Limits::new(None, Cancellation::default());
     let constructions = Constructions::new(Vec::new(), registry).expect("an empty table");
     run(&Evaluation { program, concept: None, task, parameters: &parameters, session: &session, registry, constructions: &constructions, limits: &limits })
 }

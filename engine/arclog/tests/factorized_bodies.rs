@@ -61,7 +61,7 @@ fn rows(relation: &arclog::relations::Relation) -> HashSet<Vec<TermId>> {
 fn body_rows(program: &CheckedProgram, task: &Task, session: &TaskSession, kept: &[u32]) -> HashSet<Vec<TermId>> {
     let registry = Registry::get();
     let parameters = ParameterValues::default();
-    let limits = Limits { deadline: None, cancellation: Cancellation::default() };
+    let limits = Limits::new(None, Cancellation::default());
     let constructions = Constructions::new(Vec::new(), registry).expect("an empty table");
     let evaluation = Evaluation { program, concept: None, task, parameters: &parameters, session, registry, constructions: &constructions, limits: &limits };
     match evaluation.body(&clause_path(program), kept, Some(Example::at(0))) {
@@ -105,7 +105,7 @@ fn joined_rows(program: &CheckedProgram, task: &Task, kept: &[u32]) -> Option<Ha
     let inputs = fact_inputs(&clause, task);
     let order = variable_order(&clause, &join::sizes(&inputs), &[]);
     let session = session();
-    let limits = Limits { deadline: None, cancellation: Cancellation::default() };
+    let limits = Limits::new(None, Cancellation::default());
     let relation = join::join(&clause, &order, &inputs, Registry::get(), &mut Budget::new(&limits, &session)).expect("no bound reached");
     Some(rows(&relation))
 }

@@ -91,7 +91,10 @@ impl<'a> Budget<'a> {
         if self.limits.cancellation.is_cancelled() {
             return Err(ReachedBound::Cancelled);
         }
-        Ok(())
+        match &self.limits.table_work {
+            Some(work) => work.charge(bindings),
+            None => Ok(()),
+        }
     }
 
     /// Counts `rows` more rows held, and checks the row cap.
