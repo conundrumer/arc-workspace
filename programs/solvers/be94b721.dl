@@ -1,0 +1,137 @@
+// be94b721
+// @draft
+// @keywords: objects crop rank select color-class
+// @scene colored-shapes: on a field of params.background, the input holds a few
+//  shapes, each a 4-connected group of cells of one color, no two of a color
+//  and no two touching
+// @scene one-biggest: exactly one shape has more cells than every other shape
+// @rule crop-biggest: the output is the bounding box of the shape with the most
+//  cells, its cells in its color and every other cell of the box
+//  params.background
+
+// what counts as one shape
+.type Shape =
+    // @claim colored-shapes
+    Conn4 {}
+    // @scene colored-shapes: shapes are 8-connected groups of cells of one
+    //  color, so cells of one color that touch only at a corner make one shape
+    // @rule crop-biggest: the 8-connected shape with the most cells is cropped;
+    //  undefined on a tie for the most cells or with no shape
+    // @witness diagonal-link: variant $Conn8
+    //     @relaxed colored-shapes
+  | Conn8 {}
+    // @scene colored-shapes: all the cells of one color make one shape,
+    //  wherever they lie
+    // @rule crop-biggest: the color with the most cells is cropped, the box
+    //  spanning all its cells; undefined on a tie for the commonest such color
+    //  or with no non-background cell
+    // @witness two-pieces-one-color: borderline concept
+    //     @relaxed colored-shapes
+  | ColorClass {}
+    // @scene colored-shapes: shapes are 4-connected groups of non-background
+    //  cells of any colors
+    // @rule crop-biggest: the crop keeps each cell of the shape in its own
+    //  color; undefined on a tie for the most cells or with no shape
+    // @witness touching-colors: borderline concept
+    //     @relaxed colored-shapes
+  | AnyColorComponent {}
+
+// what fills the cropped box
+.type Content =
+    // @claim crop-biggest
+    ShapeCells {}
+    // @rule crop-biggest: the output is the input's subgrid over the biggest
+    //  shape's bounding box, other shapes' cells included
+    // @witness cell-in-box: variant concept
+  | BoxRegion {}
+
+.type Choice = [shape: Shape, content: Content]
+
+// A shape, under one reading of what a shape is.
+.type Obj = [shape: Shape, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    .decl background(c: Color) background(0).
+}
+
+.init params = Params
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.background(Col).
+
+// The cells of each shape, under each reading.
+.decl member(sh: Shape, id: Ident, p: Position)
+
+// @claim crop-biggest
+.init size = Tally<Obj, Position>
+size.item([Sh, Id], P) :- member(Sh, Id, P).
+
+// @claim crop-biggest
+.init biggest = ArgExtremes<Shape, Ident>
+biggest.cand(Sh, Id, N) :- size.tally([Sh, Id], N).
+
+// @claim one-biggest
+.init unique = Unanimous<Shape, Ident>
+unique.item(Sh, Id) :- biggest.high(Sh, Id, _).
+
+// The cells of the biggest shape.
+.decl kept(sh: Shape, p: Position)
+kept(Sh, P) :- unique.value(Sh, Id), member(Sh, Id, P).
+
+// @claim crop-biggest
+.init box = Bbox<Shape>
+box.cell(Sh, P) :- kept(Sh, P).
+
+// An input cell P inside the biggest shape's box, at P_inner in the box.
+.decl in_box(sh: Shape, p: Position, p_inner: Position)
+in_box(Sh, P, P_inner) :- box.box(Sh, B), in(P, _), crop(P, B, P_inner).
+
+// --- $Conn4 ---
+// @claim colored-shapes
+.init conn4 = Components<Color>
+conn4.node(Col, P) :- ink(P, Col).
+
+member($Conn4(), Id, P) :- conn4.label(_, P, Id).
+
+// --- $Conn8 ---
+// @claim colored-shapes
+.init conn8 = Components8<Color>
+conn8.node(Col, P) :- ink(P, Col).
+
+member($Conn8(), Id, P) :- conn8.label(_, P, Id).
+
+// --- $ColorClass ---
+// @claim colored-shapes
+.init color_id = IdentOf<Color>
+color_id.value(Col) :- ink(_, Col).
+
+member($ColorClass(), Id, P) :- ink(P, Col), color_id.id(Col, Id).
+
+// --- $AnyColorComponent ---
+// @claim colored-shapes
+.init any_conn = Components<Unit>
+any_conn.node($U(), P) :- ink(P, _).
+
+member($AnyColorComponent(), Id, P) :- any_conn.label($U(), P, Id).
+
+// --- $ShapeCells ---
+out(P_inner, Col, [Sh, $ShapeCells()]) :-
+    in_box(Sh, P, P_inner),
+    ( kept(Sh, P), in(P, Col)
+    ; !kept(Sh, P), params.background(Col) ).
+
+// --- $BoxRegion ---
+out(P_inner, Col, [Sh, $BoxRegion()]) :- in_box(Sh, P, P_inner), in(P, Col).
+
+.comp Determine {
+    // A color some train input lacks: the field is in every input, and the
+    // shapes' colors vary.
+    .decl absent(c: Color)
+    absent(Col) :- ex_in(_, _, Col), ex_out(E, _, _), !ex_in(E, _, Col).
+
+    .decl background(c: Color)
+    background(Col) :- ex_in(_, _, Col), !absent(Col).
+}
