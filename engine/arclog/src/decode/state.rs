@@ -70,6 +70,21 @@ pub(super) struct State {
     /// first read and shared by every clone of the state until a form
     /// finishes.
     checked_last: Arc<std::sync::OnceLock<Outcome<CheckedProgram>>>,
+    /// The atom that the step in progress opened, as [`State::step`] takes
+    /// it: none in every state a step gives.
+    opened: Option<Opened>,
+}
+
+/// An atom that a step opened as its last change, which the form in
+/// progress then ends with: its relation alone, and no site.
+#[derive(Clone, Debug)]
+pub(super) struct Opened {
+    /// The resolution of the program that holds the form in progress as its
+    /// last form, where the atom's token is a slot's relation, which the
+    /// step resolved to test the atom's example column. The column the atom
+    /// takes is no part of the form in progress, so this is the resolution
+    /// of the state the step gives.
+    pub(super) resolved: Option<Arc<ResolvedProgram>>,
 }
 
 /// An open node of the form in progress, with its children so far.
@@ -293,7 +308,7 @@ enum Offer {
 
 impl State {
     pub(super) fn new() -> State {
-        State { program: Node::new(Program { forms: Arc::from([]) }), declared: Arc::from([]), finished_slots: 0, labels: 0, stack: Vec::new(), resolved: Arc::default(), checked_last: Arc::default() }
+        State { program: Node::new(Program { forms: Arc::from([]) }), declared: Arc::from([]), finished_slots: 0, labels: 0, stack: Vec::new(), resolved: Arc::default(), checked_last: Arc::default(), opened: None }
     }
 
     /// The finished forms.
@@ -321,14 +336,21 @@ impl State {
     }
 
     /// The state after `token`, and the tokens the engine emits after it.
-    pub(super) fn step(&self, context: &Context<'_>, token: &Token) -> Result<(State, Vec<Token>), Unexpected> {
+    ///
+    /// The step also gives the atom it opened as its last change, where it
+    /// finished no form: the state then ends with an atom of no site.
+    pub(super) fn step(&self, context: &Context<'_>, token: &Token) -> Result<(State, Vec<Token>, Option<Opened>), Unexpected> {
         let mut next = self.clone();
         let mut forced = Vec::new();
         loop {
             match next.offer(context, token, &mut forced)? {
                 Offer::Taken => break,
-                Offer::Again => continue,
+                Offer::Again => {
+                    next.opened = None;
+                    continue;
+                }
                 Offer::Close { consumed } => {
+                    next.opened = None;
                     let closer = consumed.then_some(token);
                     if let Some(built) = next.close(context, &mut forced)? {
                         next.deliver(context, built, closer, &mut forced)?;
@@ -339,7 +361,8 @@ impl State {
                 }
             }
         }
-        Ok((next, forced))
+        let opened = next.opened.take().filter(|_| next.program.value().forms.len() == self.program.value().forms.len());
+        Ok((next, forced, opened))
     }
 
     /// The program with the form in progress as its last form, and the path
@@ -611,14 +634,18 @@ impl State {
             _ => false,
         };
         self.stack.push(Frame::Atom(AtomFrame { relation, columns, sites: Vec::new(), negated }));
+        let mut resolved = None;
         if let Token::Relation(_) = token {
             let (program, open) = self.partial().expect("a form that shows its atom");
             let at = self.absolute(&open.expect("an open atom"));
-            if reads_example_column(&self.resolved_partial(&program, context.registry), &at) {
+            let partial = Arc::new(self.resolved_partial(&program, context.registry));
+            if reads_example_column(&partial, &at) {
                 let atom = top!(self, Frame::Atom);
                 atom.columns = std::iter::once(example()).chain(atom.columns.iter().cloned()).collect();
             }
+            resolved = Some(partial);
         }
+        self.opened = Some(Opened { resolved });
         Ok(())
     }
 

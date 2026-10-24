@@ -7,7 +7,9 @@ use super::types::result;
 use super::{Check, CheckId, CheckInput, CheckResult, LabelInScope, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::eval::ir::atom_modes;
 use crate::safety::{body_labels, conjunct_labels, each_label_use_at, bound_labels, conjunct_label_set, LabelCounts, list_of, mode_holds, orientation_labels, parts_of};
-use crate::hash::StableHashSet;
+use std::cell::RefCell;
+
+use crate::hash::{StableHashMap, StableHashSet};
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{
@@ -49,7 +51,7 @@ impl Check for SafetyCheck {
         for form_body in form_bodies(input.form) {
             let scope = label_scope(input.scope.labels, &form_body.at);
             let types = |label: LabelId| scope.iter().find(|entry| entry.label == label).and_then(|entry| entry.ty.clone());
-            let walk = Walk { registry, types: &types };
+            let walk = Walk { registry, types: &types, memo: input.scope.bound };
             refused.extend(walk.refusals(&form_body));
         }
         if refused.is_empty() {
@@ -245,9 +247,35 @@ fn list_labels<'c>(list: impl IntoIterator<Item = &'c Conjunct>) -> StableHashSe
     labels
 }
 
+/// The labels that the conjuncts written before a point of a list bind,
+/// by that point's path and the labels given and outside, kept for the
+/// programs whose forms differ from one another in an atom of no site
+/// alone, which stands open at the path `open`: a run of the walk over
+/// such a program reads the bindings of the conjuncts that complete
+/// nodes of all of them hold.
+#[derive(Default, Debug)]
+pub(super) struct BoundCache {
+    bound: RefCell<StableHashMap<(NodePath, Vec<LabelId>, Vec<LabelId>), StableHashSet<LabelId>>>,
+}
+
+/// A [`BoundCache`] with the path of the atom that is open in the programs
+/// that share it.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct BoundMemo<'a> {
+    pub cache: &'a BoundCache,
+    pub open: &'a NodePath,
+}
+
+fn sorted(labels: &StableHashSet<LabelId>) -> Vec<LabelId> {
+    let mut sorted: Vec<LabelId> = labels.iter().copied().collect();
+    sorted.sort_by_key(|label| label.0);
+    sorted
+}
+
 struct Walk<'a> {
     registry: &'a Registry,
     types: &'a dyn Fn(LabelId) -> Option<ValueType>,
+    memo: Option<BoundMemo<'a>>,
 }
 
 impl Walk<'_> {
@@ -282,6 +310,22 @@ impl Walk<'_> {
         bound_labels(list, given, outside, &|atom| atom_modes(self.registry, atom), self.types)
     }
 
+    /// The labels that the first `end` conjuncts of `list`, `conjuncts` in
+    /// order, bind from `given`, with `outside` the labels that stand
+    /// outside them: [`Walk::bind`], kept in the memo where no conjunct of
+    /// them holds the open atom of the memo.
+    fn bind_before(&self, list: &[(NodePath, &Conjunct)], conjuncts: &[&Conjunct], end: usize, given: &StableHashSet<LabelId>, outside: &StableHashSet<LabelId>) -> StableHashSet<LabelId> {
+        let memo = self.memo.filter(|memo| end > 0 && list[..end].iter().all(|(at, _)| !memo.open.0.starts_with(&at.0)));
+        let Some(memo) = memo else { return self.bind(&conjuncts[..end], given, outside) };
+        let key = (list[end - 1].0.clone(), sorted(given), sorted(outside));
+        if let Some(found) = memo.cache.bound.borrow().get(&key) {
+            return found.clone();
+        }
+        let bound = self.bind(&conjuncts[..end], given, outside);
+        memo.cache.bound.borrow_mut().insert(key, bound.clone());
+        bound
+    }
+
     /// Pushes onto `found` each label that `list`, in its written order,
     /// uses before the conjuncts written before it bind it, from `given`,
     /// with `outside` the labels that stand outside `list`, and so for the
@@ -293,7 +337,7 @@ impl Walk<'_> {
         let mut suffix = LabelCounts::of(&sets);
         for (i, (at, conjunct)) in list.iter().enumerate() {
             let from = suffix.around(outside, None);
-            let before = self.bind(&conjuncts[..i], given, &from);
+            let before = self.bind_before(list, &conjuncts, i, given, &from);
             let around = total.around(outside, Some(&sets[i]));
             match conjunct {
                 Conjunct::Atom(atom) if !atom_modes(self.registry, atom.value()).is_empty() => {
@@ -303,7 +347,7 @@ impl Walk<'_> {
                         found.push((None, "no mode of the atom's relation has its columns written and bound by the conjuncts written before it", at.clone()));
                     }
                     let after_outside = suffix.around(outside, Some(&sets[i]));
-                    let after = self.bind(&conjuncts[..=i], given, &after_outside);
+                    let after = self.bind_before(list, &conjuncts, i + 1, given, &after_outside);
                     each_label_use_at(NodeRef::Conjunct(conjunct), at, &mut |path, use_| {
                         if let Some(label) = use_label(use_).filter(|label| !after.contains(label)) {
                             found.push((Some(label), "no mode of the atom's relation has its columns bound by the conjuncts written before it", path.clone()));

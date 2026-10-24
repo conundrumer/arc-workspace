@@ -4,12 +4,12 @@
 use std::sync::Arc;
 
 use super::columns::{Columns, Place};
-use super::GraphNodeIndex;
+use super::{DependencyKind, GraphNodeIndex};
 use crate::hash::StableHashMap;
 use crate::program::canonical::{
     cached_write, canonical_labeling, AsWritten, Canonical, CanonicalForm, CanonicalWriter, LabelScope, NameWriter, SearchBudget,
 };
-use crate::program::path::{NodePath, NodeRef};
+use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{
     Body, Clause, ColumnName, DeclaredName, Demonstrated, Form, LabelId, NameScope, Node, OutputOwner, Program, RelationRef,
 };
@@ -32,6 +32,42 @@ pub(super) fn combined(kind: u8, parts: impl IntoIterator<Item = Arc<[u8]>>, tai
     write_parts(&mut out, &parts);
     out.write(tail);
     out.finish()
+}
+
+/// The content bytes of the form at `path` of `program`, a form of a node
+/// in `scope`, as [`Names::form_content`] gives them.
+pub(super) fn form_bytes(names: &Names, program: &Program, scope: &NameScope, path: &NodePath) -> Arc<[u8]> {
+    let form = node_at(NodeRef::Program(program), path).expect("the path of a form of the case");
+    let own = Own::of(form);
+    let writer = Writer { names, scope, own: own.as_ref() };
+    names.form_content(program, form, path, None, &writer).expect("a form has a canonical form").bytes
+}
+
+/// The content of a node of kind `kind` whose forms have the content bytes
+/// `parts`, in any order.
+pub(super) fn node_form(kind: &DependencyKind, parts: impl IntoIterator<Item = Arc<[u8]>>) -> crate::program::canonical::CanonicalForm {
+    let mut tail = CanonicalWriter::default();
+    match kind {
+        DependencyKind::Fact(fact) => AsWritten.write_name(&RelationRef::Fact(*fact), &mut tail),
+        DependencyKind::InstanceInput { input: port, .. } | DependencyKind::InstanceOutput { output: port, .. } => tail.port_step(port),
+        _ => {}
+    }
+    combined(kind_tag(kind), parts, &tail.finish().bytes)
+}
+
+/// The tag of each kind of node in its content.
+fn kind_tag(kind: &DependencyKind) -> u8 {
+    match kind {
+        DependencyKind::Fact(_) => 1,
+        DependencyKind::Clause(_) => 2,
+        DependencyKind::InstanceInput { .. } => 3,
+        DependencyKind::InstanceOutput { .. } => 4,
+        DependencyKind::Parameter(_) => 5,
+        DependencyKind::Chosen(_) => 6,
+        DependencyKind::RigidAssembly(_) => 7,
+        DependencyKind::Demonstrated(_) => 8,
+        DependencyKind::RecursiveInstance(_) => 9,
+    }
 }
 
 /// Writes the count of `parts`, then each part after its length.
@@ -149,6 +185,11 @@ pub(super) struct Names {
     /// `contents` and `node_columns` then hold the nodes after those of
     /// `earlier`, and a lookup that finds nothing here is made there.
     pub(super) earlier: Option<Arc<super::ResolvedProgram>>,
+    /// For each node of these names that no pass of its resolution reads,
+    /// the slot of its content, written on its first read by
+    /// [`super::ResolvedProgram::node_content`]; its entry of `contents`
+    /// is then empty.
+    pub(super) unwritten: Vec<Option<std::sync::OnceLock<CanonicalForm>>>,
 }
 
 impl Names {

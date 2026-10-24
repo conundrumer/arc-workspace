@@ -214,7 +214,35 @@ pub(super) struct FormInference<'a> {
     given: Vec<LabelId>,
 }
 
+/// The types of one label scope that a [`FormInference`] holds beyond its
+/// owner and its walk, which two forms that differ in an atom of no site
+/// alone have in common.
+#[derive(Clone)]
+pub(super) struct InferredTypes {
+    labels: Vec<(LabelId, Result<Option<ValueType>, LabelFault>)>,
+    bindings: StableHashMap<TypeParameter, ValueType>,
+    zero_typed: Vec<LabelId>,
+    given: Vec<LabelId>,
+}
+
 impl<'a> FormInference<'a> {
+    /// The inference of `form`, a top-level form at `path`, whose types are
+    /// `types`, those of a form that differs from `form` in an atom of no
+    /// site alone.
+    fn of_types(types: InferredTypes, form: &'a Form, path: &NodePath, registry: &'a Registry) -> Self {
+        let component = match form {
+            Form::Instance(instance) => component(registry, &instance.value().component),
+            _ => None,
+        };
+        let InferredTypes { labels, bindings, zero_typed, given } = types;
+        FormInference { owner: ScopeOwner::Form(form), path: path.clone(), labels, bindings, walk: FormWalk::of(form), component, zero_typed, given }
+    }
+
+    /// The types of this inference, see [`InferredTypes`].
+    fn types(&self) -> InferredTypes {
+        InferredTypes { labels: self.labels.clone(), bindings: self.bindings.clone(), zero_typed: self.zero_typed.clone(), given: self.given.clone() }
+    }
+
     /// The types of this inference, of a form of the concept program, given
     /// to `owner`, the same scope at `path` in a case, whose sites `walk`
     /// walks.
@@ -406,6 +434,11 @@ pub(super) struct Inference<'a> {
     /// The signature of each clause of the program read so far, by its
     /// path, as [`super::clause_signature`] gives it.
     signatures: RefCell<StableHashMap<NodePath, Signature>>,
+    /// The types of the last form of a layered inference, where the last
+    /// forms of several programs differ in an atom of no site alone: the
+    /// first inference of the last form leaves its types here, and each
+    /// other takes them.
+    shared: Option<&'a RefCell<Option<InferredTypes>>>,
 }
 
 impl std::fmt::Debug for Inference<'_> {
@@ -430,13 +463,34 @@ impl<'a, 'e: 'a> EarlierForms<'a> for Inference<'e> {
 impl<'a> Inference<'a> {
     pub fn new(program: &'a ResolvedProgram, cases: &'a CaseInferences<'a>) -> Self {
         let concept = program.concept().map(|concept| cases.concept(concept));
-        Inference { program, registry: cases.registry, cases, concept, earlier: None, held: std::cell::OnceCell::new(), forms: RefCell::default(), signatures: RefCell::default() }
+        Inference { program, registry: cases.registry, cases, concept, earlier: None, held: std::cell::OnceCell::new(), forms: RefCell::default(), signatures: RefCell::default(), shared: None }
     }
 
     /// The inference of `program`, a resolution by [`crate::resolver::resolve_last`]
     /// over the forms that `earlier` infers.
     pub fn layered(program: &'a ResolvedProgram, cases: &'a CaseInferences<'a>, earlier: &'a dyn EarlierForms<'a>) -> Self {
         Inference { earlier: Some(earlier), ..Inference::new(program, cases) }
+    }
+
+    /// This inference of a layered program, with the types of its last form
+    /// in `shared`: the programs whose inferences share `shared` differ in
+    /// an atom of no site of their last forms alone, and an atom reads the
+    /// types of a form only through its sites.
+    pub fn sharing_last(self, shared: &'a RefCell<Option<InferredTypes>>) -> Self {
+        Inference { shared: Some(shared), ..self }
+    }
+
+    /// The types of the form `form` at `path`: [`Inference::infer_new`], or
+    /// the types of the last form that the inference shares, where `form`
+    /// is that top-level form.
+    fn infer_form(&self, form: &'a Form, path: &NodePath) -> FormInference<'a> {
+        let Some(shared) = self.shared.filter(|_| path.0.len() == 1) else { return self.infer_new(form, path) };
+        if let Some(types) = shared.borrow().as_ref() {
+            return FormInference::of_types(types.clone(), form, path, self.registry);
+        }
+        let inferred = self.infer_new(form, path);
+        *shared.borrow_mut() = Some(inferred.types());
+        inferred
     }
 
     /// The signature of the clause at `path` of the program.
@@ -481,7 +535,7 @@ impl<'a> Inference<'a> {
         }
         self.forms.borrow_mut().insert(path.clone(), None);
         let inferred = Rc::new(match owner {
-            ScopeOwner::Form(form) => self.infer_new(form, path),
+            ScopeOwner::Form(form) => self.infer_form(form, path),
             ScopeOwner::DemoRule(rule) => self.infer_rule(rule, path),
         });
         self.forms.borrow_mut().insert(path.clone(), Some(Rc::clone(&inferred)));

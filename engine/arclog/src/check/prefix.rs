@@ -2,9 +2,14 @@
 //! prefix, and the rule by which a check's refusals of a partial form stand
 //! as refusals of the prefix.
 
+use std::cell::{OnceCell, RefCell};
 use std::sync::Arc;
 
 use super::{checks, inference, labels_in_scopes, typed_labels, types, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, Scope, SolverClauses};
+use super::safety::{BoundCache, BoundMemo};
+use super::LabelInScope;
+use crate::eval::ir::atom_modes;
+use crate::hash::StableHashMap;
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{node_at, NodePath, NodeRef, PathStep};
 use crate::program::{Atom, Body, Choose, Clause, Conjunct, Form, Instance, InstanceInput, KeyBody, KeyClause, LabelUse, Negated, Node, RigidDet, Site, SiteArg, SiteValue};
@@ -82,7 +87,7 @@ fn partial_path(form: &Form, at: &NodePath) -> NodePath {
 /// complete, and whose open node is at `open`. `clauses` holds the clauses
 /// of `program`'s solver, or of `program` alone for a synthesized program.
 pub fn check_prefix(program: &ResolvedProgram, clauses: &SolverClauses, registry: &Registry, open: Option<&NodePath>) -> Vec<(CheckId, PrefixResult)> {
-    with_prefix(program, clauses, registry, None, open, |prefix| checks().iter().map(|check| (check.id(), check.check_prefix(prefix))).collect())
+    with_prefix(program, clauses, registry, None, None, open, |prefix| checks().iter().map(|check| (check.id(), check.check_prefix(prefix))).collect())
 }
 
 /// The checks of the prefixes of a decode's state, each over a program
@@ -94,6 +99,74 @@ pub struct PrefixChecks<'a> {
     registry: &'a Registry,
     /// The inference of the complete forms.
     inference: &'a inference::Inference<'a>,
+    /// What the prefixes checked as [`Candidate::AtomHead`] share.
+    head: AtomHead,
+}
+
+/// What a prefix is among the candidates of one mask.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Candidate {
+    /// A prefix of any form.
+    Any,
+    /// A prefix whose last token opens an atom of no site yet. The prefixes
+    /// of a [`PrefixChecks`] given this are one program but for the
+    /// relation of that atom, at one open path.
+    AtomHead,
+}
+
+/// What the atom-head candidates of one [`PrefixChecks`] share. They are
+/// one program but for the relation of the open atom, which holds no site.
+/// A label's type reads an atom only through its sites, so the first
+/// candidate infers the types of its last form and the labels of its
+/// scopes, and each other takes them. A check that [`atom_reading`] says
+/// ignores the relation of such an atom gives each candidate the first
+/// candidate's result, and so does the safety check, where the atom's
+/// relation has no mode; and the conjuncts written before the atom bind
+/// the same labels in every candidate.
+#[derive(Default)]
+struct AtomHead {
+    /// The path of the open atom of the first candidate, the path of the
+    /// open atom of each candidate that shares.
+    open: OnceCell<NodePath>,
+    types: RefCell<Option<inference::InferredTypes>>,
+    labels: OnceCell<Vec<LabelInScope>>,
+    results: RefCell<StableHashMap<CheckId, PrefixResult>>,
+    bound: BoundCache,
+}
+
+/// How a check reads the relation of an atom of no site.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum AtomReading {
+    /// Not at all: the check reads an atom through its sites, or reads no
+    /// atom.
+    Ignored,
+    /// Through its modes alone, which a relation of none leaves unread.
+    Modes,
+    /// Through the relation itself.
+    Relation,
+}
+
+fn atom_reading(check: CheckId) -> AtomReading {
+    match check {
+        CheckId::Grammar
+        | CheckId::SiteColumns
+        | CheckId::Types
+        | CheckId::MadeAndExportedLabels
+        | CheckId::EqualityAndZero
+        | CheckId::ConstraintMarks
+        | CheckId::PoseRule
+        | CheckId::OneClause
+        | CheckId::Spelling => AtomReading::Ignored,
+        CheckId::Safety => AtomReading::Modes,
+        CheckId::Scope
+        | CheckId::UnfoldReads
+        | CheckId::Cycles
+        | CheckId::InstanceInputs
+        | CheckId::PooledAndLiftedReads
+        | CheckId::InstanceSites
+        | CheckId::Picks
+        | CheckId::RigidPartsAndProposers => AtomReading::Relation,
+    }
 }
 
 impl PrefixChecks<'_> {
@@ -102,32 +175,62 @@ impl PrefixChecks<'_> {
     pub fn with<R>(complete: &ResolvedProgram, clauses: &SolverClauses, registry: &Registry, body: impl FnOnce(&PrefixChecks<'_>) -> R) -> R {
         let cases = inference::CaseInferences::new(clauses, registry);
         let inference = inference::Inference::new(complete, &cases);
-        body(&PrefixChecks { clauses, registry, inference: &inference })
+        body(&PrefixChecks { clauses, registry, inference: &inference, head: AtomHead::default() })
     }
 
     /// The first check of [`checks`], in their order, that refuses the
     /// prefix whose partial form is the last form of `program`, a
     /// resolution by [`crate::resolver::resolve_last`] over the complete
     /// forms, and whose open node is at `open`, with its refusals; `None`
-    /// where none refuses. No check after it runs.
-    pub fn check(&self, program: &ResolvedProgram, open: Option<&NodePath>) -> Option<(CheckId, Box<[Refusal]>)> {
-        with_prefix(program, self.clauses, self.registry, Some(self.inference), open, |prefix| {
-            checks().iter().find_map(|check| match check.check_prefix(prefix) {
+    /// where none refuses. No check after it runs. Where `candidate` is
+    /// [`Candidate::AtomHead`], a refusal of a check that ignores the open
+    /// atom's relation is the first such candidate's, whatever the
+    /// candidate's own relation; which candidates refuse is the same.
+    pub fn check(&self, program: &ResolvedProgram, open: Option<&NodePath>, candidate: Candidate) -> Option<(CheckId, Box<[Refusal]>)> {
+        let same_open = |open: &NodePath| self.head.open.get_or_init(|| open.clone()) == open;
+        let head = (candidate == Candidate::AtomHead && open.is_some_and(same_open)).then_some(&self.head);
+        with_prefix(program, self.clauses, self.registry, Some(self.inference), head, open, |prefix| {
+            checks().iter().find_map(|check| match self.check_prefix(*check, prefix, head) {
                 PrefixResult::Refuse(refusals) => Some((check.id(), refusals)),
                 PrefixResult::Undecided => None,
             })
         })
     }
+
+    /// The result of `check` on `prefix`, which is the result of the first
+    /// candidate of `head`, where `check` reads nothing of the open atom
+    /// that the candidates differ in.
+    fn check_prefix(&self, check: &dyn Check, prefix: &Prefix<'_>, head: Option<&AtomHead>) -> PrefixResult {
+        let shared = head.filter(|_| match atom_reading(check.id()) {
+            AtomReading::Ignored => true,
+            AtomReading::Modes => open_atom(prefix).is_some_and(|atom| atom_modes(self.registry, atom).is_empty()),
+            AtomReading::Relation => false,
+        });
+        let Some(head) = shared else { return check.check_prefix(prefix) };
+        if let Some(found) = head.results.borrow().get(&check.id()) {
+            return found.clone();
+        }
+        let result = check.check_prefix(prefix);
+        head.results.borrow_mut().insert(check.id(), result.clone());
+        result
+    }
+}
+
+/// The atom open in the partial form of `prefix`.
+fn open_atom<'a>(prefix: &Prefix<'a>) -> Option<&'a Atom> {
+    node_at(NodeRef::from(prefix.partial), prefix.open?)?.atom()
 }
 
 /// Runs `body` over the prefix of `program`, whose types are inferred over
 /// the forms that `earlier` infers, where it is given, and from the start
-/// otherwise.
+/// otherwise; and that shares `head` with the other atom-head candidates,
+/// where it is given.
 fn with_prefix<R>(
     program: &ResolvedProgram,
     clauses: &SolverClauses,
     registry: &Registry,
     earlier: Option<&inference::Inference<'_>>,
+    head: Option<&AtomHead>,
     open: Option<&NodePath>,
     body: impl FnOnce(&Prefix<'_>) -> R,
 ) -> R {
@@ -138,13 +241,28 @@ fn with_prefix<R>(
         Some(earlier) => inference::Inference::layered(program, &cases, earlier),
         None => inference::Inference::new(program, &cases),
     };
+    let inference = match head {
+        Some(head) => inference.sharing_last(&head.types),
+        None => inference,
+    };
     let inference = &inference;
-    let scope = |labels| Scope { program, registry, labels, clauses, inference, files: None };
-    let order = CanonicalOrder::of(partial, &mut SearchBudget::new());
-    let untyped = labels_in_scopes(&order, &|_, _| None);
-    let (_, form_types) = types::infer_form(&CheckInput { form: partial, path: &path, scope: scope(&untyped) }, &order);
-    let labels = typed_labels(&order, &form_types);
-    let prefix = Prefix { complete, partial, path: &path, open, scope: scope(&labels) };
+    let bound = head.zip(open).map(|(head, open)| BoundMemo { cache: &head.bound, open });
+    let scope = |labels| Scope { program, registry, labels, clauses, inference, files: None, bound };
+    let (order, untyped, computed);
+    let labels: &[LabelInScope] = match head.and_then(|head| head.labels.get()) {
+        Some(labels) => labels,
+        None => {
+            order = CanonicalOrder::of(partial, &mut SearchBudget::new());
+            untyped = labels_in_scopes(&order, &|_, _| None);
+            let (_, form_types) = types::infer_form(&CheckInput { form: partial, path: &path, scope: scope(&untyped) }, &order);
+            computed = typed_labels(&order, &form_types);
+            if let Some(head) = head {
+                head.labels.get_or_init(|| computed.clone());
+            }
+            &computed
+        }
+    };
+    let prefix = Prefix { complete, partial, path: &path, open, scope: scope(labels) };
     body(&prefix)
 }
 

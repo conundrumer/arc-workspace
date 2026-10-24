@@ -6,7 +6,11 @@
 //! [`crate::check::checks`] holds, by its prefix form, on the program that
 //! the token gives: one [`PrefixChecks`] per state resolves, and infers the
 //! types of, the finished forms once, and each candidate token costs the
-//! resolution and the checks of its form in progress alone. Its interface
+//! resolution and the checks of its form in progress alone. The candidates
+//! whose step opens an atom are one program but for the atom's relation,
+//! which holds no site yet, so they share the labels and their types, the
+//! bindings of the conjuncts before the atom, and the result of each check
+//! that reads nothing of that relation ([`Candidate::AtomHead`]). Its interface
 //! beside the mask, in `interface`, gives the rows of the body so far and the
 //! consistency test at a `RULE` clause's end, and its batch form, in
 //! `batch`, steps many decodes at once, and its projections of the body so far,
@@ -36,7 +40,7 @@ pub use projections::{Projection, Projections};
 
 use std::sync::Arc;
 
-use crate::check::prefix::PrefixChecks;
+use crate::check::prefix::{Candidate, PrefixChecks};
 use crate::check::{CheckId, SolverClauses};
 use crate::eval::instance::Constructions;
 use crate::eval::Cancellation;
@@ -271,14 +275,18 @@ impl<'a> Decoder<'a> {
         if vocabulary.id(token).is_none() {
             return Err(Refusal::Grammar("the vocabulary holds no such token"));
         }
-        let (state, forced) = self.state.step(&self.context, token).map_err(Refusal::Grammar)?;
+        let (state, forced, opened) = self.state.step(&self.context, token).map_err(Refusal::Grammar)?;
         if forced.iter().any(|token| vocabulary.id(token).is_none()) {
             return Err(Refusal::Grammar("a token the engine emits after it passes a vocabulary cap"));
         }
         if let Some((program, open)) = state.partial() {
             if !program.value().forms.is_empty() {
-                let resolved = resolve_last(&self.state.resolved(self.context.registry), &program, self.context.registry);
-                if let Some((check, refusals)) = checks.check(&resolved, open.as_ref()) {
+                let candidate = if opened.is_some() { Candidate::AtomHead } else { Candidate::Any };
+                let resolved = match opened.and_then(|opened| opened.resolved) {
+                    Some(resolved) => resolved,
+                    None => Arc::new(resolve_last(&self.state.resolved(self.context.registry), &program, self.context.registry)),
+                };
+                if let Some((check, refusals)) = checks.check(&resolved, open.as_ref(), candidate) {
                     return Err(Refusal::Check { check, refusals });
                 }
             }

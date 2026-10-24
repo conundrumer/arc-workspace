@@ -447,8 +447,22 @@ impl ResolvedProgram {
     /// The resolved content of the node `node` of the dependency graph, or
     /// `None` where the program holds none for it.
     pub fn node_content(&self, node: GraphNodeIndex) -> Option<ResolvedContent> {
-        let form = self.names.contents.get(node.0 as usize)?.clone()?;
+        let slot = node.0 as usize;
+        let form = match self.names.contents.get(slot)? {
+            Some(form) => form.clone(),
+            None => self.names.unwritten.get(slot)?.as_ref()?.get_or_init(|| self.unwritten_content(slot)).clone(),
+        };
         Some(ResolvedContent { form })
+    }
+
+    /// The content of the node of the entry `slot` of this resolution's
+    /// per-node lists, which no pass of the resolution read, so that the
+    /// builder left it unwritten.
+    fn unwritten_content(&self, slot: usize) -> crate::program::canonical::CanonicalForm {
+        let node = slot + self.names.first_node();
+        let scope = &self.graph.nodes[node].scope;
+        let parts = self.forms[slot].iter().map(|path| names::form_bytes(&self.names, self.program.value(), scope, path));
+        names::node_form(&self.graph.nodes[node].kind, parts)
     }
 
     /// The resolved content of the part of the body of the clause at

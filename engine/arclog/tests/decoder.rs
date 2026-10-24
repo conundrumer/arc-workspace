@@ -225,3 +225,32 @@ fn a_fork_stepped_apart_leaves_its_source_as_it_was() {
     assert_eq!(decoder.program().value().forms.len(), 1);
     assert_eq!(decoder.admissible(), mask);
 }
+
+/// The mask at a state where the next token may open an atom admits the
+/// tokens that a step of a fork admits, which runs every check on its one
+/// token.
+#[test]
+fn the_mask_where_an_atom_opens_is_what_each_step_admits() {
+    let inputs = inputs();
+    let decoder = decoded(&inputs, BG);
+    let prefixes: [&[Token]; 2] = [
+        &[Token::Control(Control::Rule)],
+        &[Token::Control(Control::Rule), Token::Relation(0), Token::Column(0), Token::Control(Control::Fresh)],
+    ];
+    for prefix in prefixes {
+        let mut at = decoder.fork();
+        for token in prefix {
+            at.step(token.clone()).expect("a clause that reads `&bg`");
+        }
+        let mask = at.admissible();
+        let vocabulary = at.vocabulary();
+        let mut admitted = 0;
+        for id in 0..u32::try_from(vocabulary.len()).expect("fewer than 2^32 tokens") {
+            let token = vocabulary.token(id).expect("an id of the vocabulary");
+            let stepped = at.fork().step(token.clone()).is_ok();
+            assert_eq!(mask.contains(id), stepped, "{token:?} after {prefix:?}");
+            admitted += usize::from(stepped);
+        }
+        assert!(admitted > 1, "the mask admits several tokens after {prefix:?}");
+    }
+}

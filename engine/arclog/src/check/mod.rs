@@ -189,6 +189,10 @@ pub struct Scope<'a> {
     /// The files that `program` was read from, where it was read from
     /// text.
     pub files: Option<&'a CaseFiles<'a>>,
+    /// The bindings of the conjuncts that the safety walk of `program`
+    /// shares with the programs that differ from it in an atom of no site
+    /// alone, where `program` is one of them.
+    bound: Option<safety::BoundMemo<'a>>,
 }
 
 /// The files a case program was read from: the case, and the solver whose
@@ -553,7 +557,7 @@ pub fn check_program_of_files(
     let form_types: Vec<Arc<types::ScopeTypes>> = {
         let cases = inference::CaseInferences::new(clauses, registry);
         let inference = inference::Inference::new(&program, &cases);
-        let scope = |labels| Scope { program: &program, registry, labels, clauses, inference: &inference, files };
+        let scope = |labels| Scope { program: &program, registry, labels, clauses, inference: &inference, files, bound: None };
         let form_types: Vec<Arc<types::ScopeTypes>> = forms
             .iter()
             .zip(&mut refused_by_form)
