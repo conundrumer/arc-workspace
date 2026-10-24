@@ -4,6 +4,10 @@
     "dataset": "arc-agi-2",
     "split": "training"
   }],
+  "patches": [{
+    "level": "canonical",
+    "comment": "Train 1 output row 4 shows the horizontal line's color between the marks, where every other mark row shows the vertical line's color"
+  }],
   "train": [{
     "index": 0,
     "input": [
@@ -53,7 +57,7 @@
       [0,0,0,0,0,0,0,0,0,0],
       [0,0,2,5,2,5,2,0,0,0],
       [0,0,8,8,8,8,8,0,0,0],
-      [0,0,9,8,9,8,9,0,0,0],
+      [0,0,9,5,9,5,9,0,0,0],
       [0,0,8,8,8,8,8,0,0,0],
       [0,0,9,5,9,5,9,0,0,0],
       [0,0,8,8,8,8,8,0,0,0],
