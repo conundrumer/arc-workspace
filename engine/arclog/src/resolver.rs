@@ -450,7 +450,10 @@ impl ResolvedProgram {
     /// The resolved content of the node `node` of the dependency graph, or
     /// `None` where the program holds none for it.
     pub fn node_content(&self, node: GraphNodeIndex) -> Option<ResolvedContent> {
-        let slot = node.0 as usize;
+        if let Some(earlier) = self.earlier_node(node) {
+            return earlier.node_content(node);
+        }
+        let slot = self.own_index(node);
         let form = match self.names.contents.get(slot)? {
             Some(form) => form.clone(),
             None => self.names.unwritten.get(slot)?.as_ref()?.get_or_init(|| self.unwritten_content(slot)).clone(),
