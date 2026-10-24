@@ -1,0 +1,47 @@
+// d4a91cb9
+// @draft
+// @keywords: markers span
+// @rule corner: the path turns at the cell that lies, for each axis, on the
+//  line along that axis through the mark of that axis's leg_mark color.
+// @rule l-path: the output is the input with path_color painted on each leg,
+//  the cells from a mark of an axis's leg_mark color along that axis to the
+//  corner, the corner included; the marks keep their colors.
+
+.decl out(p: Position, col: Color)
+
+.comp Params {
+    // The color of the mark that the leg along each axis leaves.
+    .decl leg_mark(a: Axis, c: Color)
+    leg_mark(AXIS_V, 8).
+    leg_mark(AXIS_H, 2).
+    .decl path_color(c: Color) path_color(4).
+}
+
+.init params = Params
+
+// A leg, by the mark it leaves and the corner it ends at.
+.type Leg = [mark: Position, corner: Position]
+
+.decl corner(p: Position)
+corner(P) :-
+    in(P, _),
+    params.leg_mark(A1, C1), in(P1, C1), same_line(A1, P, P1),
+    params.leg_mark(A2, C2), perp(A1, A2), in(P2, C2), same_line(A2, P, P2).
+
+// A leg is the run between its mark and a corner along its axis; a corner off
+// that line gives nothing between. The mark is outside the domain, so it keeps
+// its color.
+// @claim l-path
+.init leg = Between<Leg>
+leg.axis([P_mark, P_corner], A) :- params.leg_mark(A, C), in(P_mark, C), corner(P_corner).
+leg.cell([P_mark, P_corner], P) :- leg.axis([P_mark, P_corner], _), in(P, _), P != P_mark.
+leg.mark([P_mark, P_corner], P) :- leg.axis([P_mark, P_corner], _), ( P = P_mark ; P = P_corner ).
+
+out(P, Col) :- leg.between(_, P), params.path_color(Col).
+out(P, Col) :- in(P, Col), !leg.between(_, P).
+
+.comp Determine {
+    // The path is the one color the outputs add to the inputs.
+    .decl path_color(c: Color)
+    path_color(C) :- ex_out(_, _, C), !ex_in(_, _, C).
+}
