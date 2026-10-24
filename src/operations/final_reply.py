@@ -36,7 +36,7 @@ FOR_WAIT = mctx("I ended for a wait: nothing is ready. Launch a fresh operator o
                 "unfinished.")
 """The first line of the final reply of an operator that found no step
 ready over its calls of `next` in a row for `constants.WAIT_SECONDS_IDLE`,
-with no agent of its own pending."""
+with no agent of its own pending and no change held (`changes.holds`)."""
 
 FOR_LATER = mctx("Operator {operator} continues the work, and takes up from the state each "
                  "line below that stands unfinished.")

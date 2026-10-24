@@ -119,7 +119,7 @@ PARTS = {
             - The block also ends, and it prints that the operator runs it again, once a message to the operator waits that the harness accepted after the latest `user` entry of the operator's transcript before the call.
             - Once the block has found a step, a later message does not end the call, and `next` prints that step.
         - Where its calls in a row have found no step ready for {idle} seconds or more, from the start of the first of them, it prints, in place of that the operator runs it again:
-            - Where an agent the operator launched is pending, or a call of `wait` by the operator runs, that the operator ends its turn, after a call of `wait` in the background where none runs.
+            - Where an agent the operator launched is pending, the operator holds a change, or a call of `wait` by the operator runs, that the operator ends its turn, after a call of `wait` in the background where none runs.
             - Otherwise the final reply for a wait, which hands the operator's lines to the operator launched after it.
         - Where state read/planning has no result after {limit} seconds:
             - Where the request reached the resident, and the last call of the same action did not end this way or the resident has passed a checkpoint less than 60 seconds ago, it prints that the resident gave no result and that the operator runs the command again, and ends with success. It does not print that no work is ready.

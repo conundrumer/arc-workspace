@@ -1,6 +1,7 @@
 """An operator whose calls of `next` find nothing ready for
 `WAIT_SECONDS_IDLE` waits with its turn ended while an agent of its own is
-pending, and otherwise gives its final reply for a wait. Its launcher then
+pending or it holds a change, and otherwise gives its final reply for a
+wait. Its launcher then
 waits in the background and launches a fresh operator, and launches one at
 once after an operator's end with no final reply, unless two quick ends
 come in a row."""
@@ -27,16 +28,16 @@ def pending(operator: str, agent_id: str = "a0000000000000007"):
                  (), True)
 
 
-def idle_state(tmp_path: Path, first_poll: float, mine: bool):
+def idle_state(tmp_path: Path, first_poll: float, mine: bool, now: float = NOW):
     """The state of `EARLY` at `NOW`, whose calls of `next` from
     `first_poll` on printed that nothing is ready, while an agent of
     `EARLY`, where `mine`, or else of another operator, is pending."""
     from operations.printed_forms import POLL_AGAIN
     calls = (next_call(first_poll - 300.0, "call Agent"), next_call(first_poll, POLL_AGAIN),
-             next_call(first_poll + 150.0, POLL_AGAIN), next_call(NOW, None))
+             next_call(first_poll + 150.0, POLL_AGAIN), next_call(now, None))
     from operations.pacing import Until
     s = operator_state(tmp_path, EARLY, (EARLY,), calls)
-    return replace(s, now=NOW, computed=replace(s.computed, pace=Until(0.0)),
+    return replace(s, now=now, computed=replace(s.computed, pace=Until(0.0)),
                    transcripts=replace(s.transcripts, agents=(pending(EARLY if mine else OTHER),)))
 
 
@@ -65,6 +66,41 @@ def test_an_operator_with_nothing_ready_for_less_than_the_idle_time_runs_the_com
 def test_an_operator_whose_agent_is_pending_waits_with_its_turn_ended(tmp_path: Path) -> None:
     from operations.steps import Wait
     s = idle_state(tmp_path, NOW - 300.0, mine=True)
+    assert step_of(s) == Wait(EARLY, call=True)
+    assert step_of(s, waiting=True) == Wait(EARLY, call=False)
+
+
+def test_an_operator_that_holds_a_change_waits_with_its_turn_ended_while_only_another_operators_agent_is_pending(
+        tmp_path: Path) -> None:
+    """The editor of the held change is an agent of `OTHER`."""
+    from operations import briefs
+    from operations.codex_spend import CodexSpend
+    from operations.monitor import MonitorState
+    from operations.plan import ready_step
+    from operations.roles import Role
+    from operations.state import Agent, Running, Spend, Waits
+    from operations.steps import Poll, Wait
+    from ticketing.times import stamp_time
+    from tests.test_change_overrun import worktree
+    from tests.test_ticket_stall import FILED, state
+    w = worktree(tmp_path)
+    lines = (f"{FILED} assigned [operator {EARLY}]: taking: budget 1 subscription dollars, 100 s\n"
+             f"{FILED} assigned [operator {EARLY}]: worktree {w}\n")
+    held = state(tmp_path / "held", {"assigned/9-1_change_x_ticket-analyst.md": lines},
+                  budgets=("9-1",))
+    now = stamp_time(FILED) + 5000.0
+    editor = Agent("a0000000000000007", OTHER, Role.CODE_EDITOR, "9-1",
+                   briefs.WORK_IN.format(worktree=w), now - 2000.0, now - 100.0,
+                   Running(Waits.AT_WORK), (), True)
+    s = idle_state(tmp_path, now - 300.0, mine=False, now=now)
+    s = replace(s, tracker=held.tracker, operators=(OTHER, EARLY),
+                parents={OTHER: LAUNCHER, EARLY: LAUNCHER}, open_holders=frozenset({EARLY}),
+                session_holders=frozenset({EARLY}),
+                computed=replace(s.computed, budgets=held.computed.budgets,
+                                 spent={"9-1": Spend(0.1, 1.0, {"code-editor": 0.1}, CodexSpend())}),
+                git=replace(s.git, worktrees=frozenset({w})),
+                transcripts=replace(s.transcripts, agents=(editor,)))
+    assert isinstance(ready_step(s, MonitorState((), frozenset(), (), ())), Poll)
     assert step_of(s) == Wait(EARLY, call=True)
     assert step_of(s, waiting=True) == Wait(EARLY, call=False)
 
