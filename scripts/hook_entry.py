@@ -123,9 +123,12 @@ def run_subagent_stop(hook: str, checks: Sequence[Callable[[Hook], str | None]])
     checked = checked_input(hook, checks)
     if checked is None:
         return 0
-    _, reason = checked
+    data, reason = checked
     if reason is not None:
         print(json.dumps({"decision": "block", "reason": reason}), flush=True)
+    else:
+        from attempt_hook import stopped
+        run_part(hook, "failed to record the permitted stop", lambda: stopped(data))
     return 0
 
 

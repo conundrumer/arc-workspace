@@ -12,7 +12,8 @@
 HOOK_STARTED=$(perl -MTime::HiRes=time -le 'print time')
 export HOOK_STARTED
 input=$(cat)
-fields=$(printf '%s' "$input" | jq -r '@sh "transcript=\(.transcript_path // "") agent=\(.agent_id // "") cwd=\(.cwd // "")"' 2>/dev/null) \
+lifecycle=$(printf '%s' "$input" | jq -r 'if (.hook_event_name == "PostToolUse" or .hook_event_name == "PostToolUseFailure") and (.tool_name == "Agent" or .tool_name == "SendMessage" or .tool_name == "SubagentHandback" or .tool_name == "TaskStop") then "yes" else "no" end')
+[ "$lifecycle" != yes ] && fields=$(printf '%s' "$input" | jq -r '@sh "transcript=\(.transcript_path // "") agent=\(.agent_id // "") cwd=\(.cwd // "")"' 2>/dev/null) \
     && eval "$fields" && [ -n "$transcript" ] && {
     case $transcript in
         */subagents/*) session=${transcript%%/subagents/*} ;;

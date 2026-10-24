@@ -6,6 +6,7 @@ gives the caller the update of its documents
 something."""
 
 import sys
+from contextlib import contextmanager
 
 from hook_entry import run_context, run_pre_tool_use
 
@@ -18,9 +19,17 @@ def main() -> int:
 
     from controlled_markdown import mctx
 
+    @contextmanager
+    def updated(data):
+        from attempt_hook import tool
+        from hook_entry import run_part
+        run_part(HOOK, "failed to record the completed action", lambda: tool(data))
+        with reader_update(data) as update:
+            yield update
+
     match sys.argv[1:]:
         case []:
-            return run_context(HOOK, reader_update)
+            return run_context(HOOK, updated)
         case [arg] if arg == PRE_TOOL_USE:
             return run_pre_tool_use(HOOK, [], reader_update)
         case args:

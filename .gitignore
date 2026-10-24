@@ -45,3 +45,4 @@ theory/.lake/
 node_modules/
 
 tools/console/
+/.attempts/

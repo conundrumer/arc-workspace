@@ -81,6 +81,11 @@ def settle(store: Store, agent: str, native: str | None, home: Path) -> dict[str
     if turn.ended is not None:
         status = Terminal.COMPLETED if turn.end_state is codex_rollout.TurnEnd.COMPLETE else Terminal.INTERRUPTED
         store.ended(agent, turn.turn, status)
+    from codex_delivery import reconcile_messages
+    reconcile_messages(store, agent, home)
+    from codex_attempts import publish
+    from attempt_record import observe
+    observe(lambda: publish(store, store.snapshot()))
     return store.snapshot()["agents"][agent]
 
 

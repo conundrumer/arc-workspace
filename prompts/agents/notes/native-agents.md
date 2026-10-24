@@ -5,6 +5,7 @@
         - Reading an assignment, choosing a tool and placing temporary files: [Native tools](#native-tools).
         - Launching an agent: [Launches](#launches).
         - Sending a message or changing a child's assignment: [Messages](#messages).
+        - Acknowledging a delivered message: [Receiving messages](#receiving-messages).
         - Waiting for children and accepting their reports: [Completion](#completion).
         - Returning a call or a decision to the owning operator: [Operator input](#operator-input).
 
@@ -20,6 +21,7 @@
 - Use your assignment's operations agent id in commands that take an agent id, and native agent ids in native tools.
 - For an Agent call your role's documents give, read [Launches](#launches).
 - For a SendMessage your role's documents give, read [Messages](#messages).
+- When you take a message with a delivery id, read [Receiving messages](#receiving-messages).
 - Where you launch a child, read [Completion](#completion) for its result and before ending your turn.
 - Where a call requires Claude or work needs an external decision, read [Operator input](#operator-input).
 
@@ -32,11 +34,16 @@
     + xref: scripts/codex_reports.py:Outcome
 
 ## Messages
-- Resolve an operations agent id with `uv run python scripts/codex_ticket.py target <scratch> <agent>`. Use the returned native id with `send_message` for a running recipient.
-    + xref: scripts/codex_ticket.py:main, scripts/codex_ticket.py:Store.target
+- To message a running recipient, write a JSON object with the full text in its `message` field to a file and run `uv run python scripts/codex_ticket.py message <scratch> <agent> <message-json>`, with your scratch directory, the recipient's operations id and that file. Make the returned native call, then run the returned `reconcile` command.
+    + xref: scripts/codex_ticket.py:main, scripts/codex_delivery.py:message
 - Before changing a child's assignment or following up a finished child, write the revised launch parameters to a JSON file and run `uv run python scripts/codex_ticket.py prepare <scratch> <parameters> --previous <agent>`. Make the returned call and reconcile its execution as [Launches](#launches) gives.
     + xref: scripts/codex_ticket.py:main, scripts/codex_ticket.py:prepare
 - Where the recipient is outside your native tree, use [Operator input](#operator-input).
+
+## Receiving messages
+- When you take a message with a delivery id, run its `received` command.
+    + xref: scripts/codex_ticket.py:main, scripts/codex_delivery.py:received
+    * comment: Change 11-3886, Decision at 2026-10-23T23:12:03Z: "Native tools/Messages must expose the send preparation and each delivered envelope must give the receiving worker its complete acknowledgement command, including workers already running at installation." The envelope repeats the acknowledgement act so those workers receive it with the message.
 
 ## Completion
 - Use `list_agents` to observe your children and `wait_agent` to wait for their updates.
