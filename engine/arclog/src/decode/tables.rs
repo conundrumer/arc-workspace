@@ -20,7 +20,9 @@ use crate::eval::examples::scope_of;
 use crate::eval::join::Budget;
 use crate::eval::{BodyValue, ModelsEnd, Outcome, RelationValue, RunFault};
 use crate::judge::determination::{Assignment, Det, End};
-use crate::program::path::NodePath;
+use crate::program::path::{node_at, NodePath, NodeRef};
+use crate::registry::Registry;
+use crate::resolver::registry_columns::component;
 use crate::program::{Conjunct, OutputOwner, OutputStep, ProgramRelation};
 use crate::resolver::{resolve_last, DependencyKind, GraphNodeIndex};
 use crate::terms::Example;
@@ -144,7 +146,7 @@ impl Decoder<'_> {
         self.state
             .declared_from(before.finished_slots())
             .map(|(slot, declared)| {
-                let contents = match graph_relation(&checked, &form, declared) {
+                let contents = match graph_relation(&checked, registry, &form, declared) {
                     Some(relation) => {
                         let dets = relation_dets(&checked, relation.node);
                         let examples = self
@@ -201,8 +203,10 @@ impl Decoder<'_> {
 /// The relation of the graph that the form at `form` of `program` declares as
 /// `declared`: the node of a clause, a parameter, a chosen relation or an
 /// instance port, and the output of a shared node by its path. A chosen
-/// relation stands before the clause of its `ONE` marks.
-fn graph_relation(program: &CheckedProgram, form: &NodePath, declared: &ProgramRelation) -> Option<GraphRelation> {
+/// relation stands before the clause of its `ONE` marks. A shared node gives
+/// only the outputs it has: for an instance, the outputs of its component
+/// in `registry`, and for an assembly, the relations of its own name.
+fn graph_relation(program: &CheckedProgram, registry: &Registry, form: &NodePath, declared: &ProgramRelation) -> Option<GraphRelation> {
     let nodes = program.program.nodes_of(form);
     let kind = |node: &GraphNodeIndex| &program.program.graph.nodes[node.0 as usize].kind;
     let chosen = nodes.iter().find(|node| matches!(kind(node), DependencyKind::Chosen(name) if ProgramRelation::Declared(name.clone()) == *declared));
@@ -217,7 +221,22 @@ fn graph_relation(program: &CheckedProgram, form: &NodePath, declared: &ProgramR
         return Some(GraphRelation { node, output: None });
     }
     let ProgramRelation::Output(name) = declared else { return None };
-    let shared = nodes.iter().find(|node| matches!(kind(node), DependencyKind::RecursiveInstance(_) | DependencyKind::RigidAssembly(_)))?;
+    let shared = nodes.iter().find(|node| match kind(node) {
+        DependencyKind::RigidAssembly(rigid) => name.of == OutputOwner::RigidDet(rigid.clone()),
+        DependencyKind::RecursiveInstance(instance) => {
+            let root = NodeRef::Program(program.program.program.value());
+            let component = match node_at(root, form) {
+                Some(NodeRef::Instance(written)) => component(registry, &written.component),
+                _ => None,
+            };
+            let port = match &name.path[..] {
+                [OutputStep::Port(port)] => Some(port),
+                _ => None,
+            };
+            name.of == OutputOwner::Instance(instance.clone()) && component.zip(port).is_some_and(|(component, port)| component.outputs.iter().any(|output| output.name == *port))
+        }
+        _ => false,
+    })?;
     Some(GraphRelation { node: *shared, output: Some(Arc::clone(&name.path)) })
 }
 

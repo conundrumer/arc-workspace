@@ -101,17 +101,21 @@ impl Builder<'_> {
 
     /// Records in [`super::super::names::Names::kept`] the columns that the
     /// relation of each clause of `node` keeps, as [`Builder::kept_columns`]
-    /// gives them, where they are fewer than the clause gives and the
-    /// clause does not resolve in the concept program.
+    /// gives them, where they differ, in count or in order, from the
+    /// clause's columns in their canonical positions, and the clause does
+    /// not resolve in the concept program.
     fn record_kept(&mut self, node: usize) {
         let mut kept = Vec::new();
+        let scope = &self.nodes[node].scope;
         for path in &self.forms[node] {
             if self.concept_columns.contains_key(path) {
                 continue;
             }
             let Some(NodeRef::Clause(clause)) = node_at(NodeRef::Program(self.case.value()), path) else { continue };
             if let Some(columns) = self.kept_columns(node, clause) {
-                if columns.names().count() < clause.columns.len() {
+                let own = Own::of(NodeRef::Clause(clause));
+                let writer = Writer { names: &self.names, scope, own: own.as_ref() };
+                if !columns.names().eq(canonical_columns(clause, &writer).names()) {
                     kept.push((path.clone(), columns));
                 }
             }
@@ -141,8 +145,7 @@ impl Builder<'_> {
             return Some(kept);
         }
         if !clause.columns.is_empty() {
-            let labeling = canonical_labeling(LabelScope::Clause(clause), writer, &mut SearchBudget::new());
-            return Some(ordered(&clause.columns, &labeling));
+            return Some(canonical_columns(clause, writer));
         }
         if let Some(proposer) = clause.proposers.first() {
             return registry_columns::proposer_columns(self.registry, proposer).map(|names| Columns::of_names(names.into_vec()));
@@ -169,6 +172,12 @@ fn kind_tag(kind: &DependencyKind) -> u8 {
         DependencyKind::Demonstrated(_) => 8,
         DependencyKind::RecursiveInstance(_) => 9,
     }
+}
+
+/// The columns of `clause` in their canonical positions.
+fn canonical_columns(clause: &Clause, writer: &Writer<'_>) -> Columns {
+    let labeling = canonical_labeling(LabelScope::Clause(clause), writer, &mut SearchBudget::new());
+    ordered(&clause.columns, &labeling)
 }
 
 /// `columns` in the order of their labels' positions in `labeling`.
