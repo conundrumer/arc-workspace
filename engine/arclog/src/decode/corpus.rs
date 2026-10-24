@@ -319,6 +319,13 @@ impl ReplayProgress {
 /// ends, whatever way, its done count is the unit's steps, so a stream that
 /// is refused early or shares a prefix leaves the count exact.
 ///
+/// With `step_cap`, a solver's streams, in the order of [`sorted_streams`],
+/// replay up to the last one at which the model steps of the prefix tree of
+/// the solver's streams so far stay within the cap. Each later stream of the
+/// solver replays nothing: its result is a fault that gives the cap and the
+/// model steps of the solver's streams in all, and `settled` is called for it
+/// before any worker starts.
+///
 /// Gives, for each solver, the result of each of its streams in the order of
 /// `streams`, or the fault of [`replay_panic`] where one of its units
 /// panicked.
@@ -332,13 +339,35 @@ pub fn replay_units<T: Default + Clone, U: Send>(
     started: &(dyn Fn(usize) + Sync),
     ended: &(dyn Fn(usize, T) -> U + Sync),
     settled: &(dyn Fn(usize) + Sync),
+    step_cap: Option<usize>,
 ) -> Vec<Result<Vec<Result<U, String>>, String>> {
-    let sorted: Vec<Vec<usize>> = solvers.iter().map(|solver| sorted_streams(solver.streams)).collect();
+    let mut sorted: Vec<Vec<usize>> = solvers.iter().map(|solver| sorted_streams(solver.streams)).collect();
+    // For each solver: the indices in its streams of the streams past the cap, and the fault each gives.
+    let mut capped: Vec<(Vec<usize>, String)> = solvers.iter().map(|_| (Vec::new(), String::new())).collect();
     let mut units = Vec::new();
-    for (index, (solver, order)) in solvers.iter().zip(&sorted).enumerate() {
+    for (index, (solver, order)) in solvers.iter().zip(&mut sorted).enumerate() {
+        if let Some(cap) = step_cap {
+            let (mut total, mut kept) = (0, None);
+            let mut last: Option<&[(u32, Emitter)]> = None;
+            for (rank, &stream) in order.iter().enumerate() {
+                let ids = solver.streams[stream].as_slice();
+                total += new_model_steps(last, ids);
+                last = Some(ids);
+                if total > cap && kept.is_none() {
+                    kept = Some(rank);
+                }
+            }
+            if let Some(kept) = kept {
+                let line = format!("the replay's cap of {cap} model steps stops the solver's streams at this one: the solver's streams take {total} model steps");
+                capped[index] = (order.split_off(kept), line);
+                for _ in &capped[index].0 {
+                    settled(index);
+                }
+            }
+        }
         let mut unit = ReplayUnit { solver: index, streams: Vec::new(), steps: 0 };
         let mut last: Option<&[(u32, Emitter)]> = None;
-        for &stream in order {
+        for &stream in order.iter() {
             let ids = solver.streams[stream].as_slice();
             unit.streams.push(stream);
             unit.steps += new_model_steps(last, ids);
@@ -382,6 +411,11 @@ pub fn replay_units<T: Default + Clone, U: Send>(
         result
     });
     let mut results: Vec<Vec<Option<Result<U, String>>>> = solvers.iter().map(|solver| solver.streams.iter().map(|_| None).collect()).collect();
+    for (solver, (streams, line)) in capped.iter().enumerate() {
+        for &stream in streams {
+            results[solver][stream] = Some(Err(line.clone()));
+        }
+    }
     let mut faults: Vec<Option<String>> = solvers.iter().map(|_| None).collect();
     for (unit, outcome) in units.iter().zip(outcomes) {
         match outcome {

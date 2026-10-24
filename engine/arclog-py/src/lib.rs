@@ -742,14 +742,20 @@ struct IdStream {
 /// `started` and `ended`, each a callable or `None`, are called with a
 /// solver's task id, holding the GIL, `started` as the first of the solver's
 /// units starts, and `ended` once the last of its streams has ended. A solver
-/// none of whose streams replays, and one whose unit panics, gives no `ended`
-/// call. An exception that a callable raises is printed and dropped.
+/// whose streams all lie past `step_cap` gets `ended` too; one whose task did
+/// not read, and one whose unit panics, gives no `ended` call. An exception
+/// that a callable raises is printed and dropped.
+/// `step_cap`, an integer or `None`, bounds the replay of each solver: its
+/// streams, in the order of their tokens, replay up to the last one at which
+/// the model steps of their prefix tree so far stay within the cap. Each later
+/// stream gives no masks and a `mask_fault` that names the cap and the model
+/// steps of all the solver's streams.
 /// `progress`, a `ReplayProgress` or `None`, gives the model steps of the
 /// second phase: its `total` is set once the groups are cut and its `done`
 /// grows while they replay.
 #[pyfunction]
-#[pyo3(signature = (corpus, all_cases=false, task_ids=None, tasks=None, started=None, ended=None, progress=None))]
-fn corpus_streams(py: Python<'_>, corpus: &str, all_cases: bool, task_ids: Option<Vec<String>>, tasks: Option<&str>, started: Option<Py<PyAny>>, ended: Option<Py<PyAny>>, progress: Option<Py<PyReplayProgress>>) -> PyResult<(Vec<PyCaseStream>, Vec<String>)> {
+#[pyo3(signature = (corpus, all_cases=false, task_ids=None, tasks=None, started=None, ended=None, progress=None, step_cap=None))]
+fn corpus_streams(py: Python<'_>, corpus: &str, all_cases: bool, task_ids: Option<Vec<String>>, tasks: Option<&str>, started: Option<Py<PyAny>>, ended: Option<Py<PyAny>>, progress: Option<Py<PyReplayProgress>>, step_cap: Option<usize>) -> PyResult<(Vec<PyCaseStream>, Vec<String>)> {
     let wanted = if all_cases { WantedCases::All } else { WantedCases::Concept };
     let constructions = constructions()?;
     let vocabulary = Vocabulary::new(Registry::get(), &DecodeSettings::default());
@@ -779,7 +785,7 @@ fn corpus_streams(py: Python<'_>, corpus: &str, all_cases: bool, task_ids: Optio
         let reads = reads.into_inner().unwrap_or_else(|poisoned| poisoned.into_inner());
         let unread = ReplayProgress::default();
         let steps = progress.as_ref().map_or(&unread, |progress| &progress.get().inner);
-        py.detach(|| replay_masks(&mut found, &reads, constructions, steps, started.as_ref(), ended.as_ref()));
+        py.detach(|| replay_masks(&mut found, &reads, constructions, steps, started.as_ref(), ended.as_ref(), step_cap));
     }
     let mut streams = Vec::new();
     let mut faults = Vec::new();
@@ -857,7 +863,7 @@ impl<'a> Progress<'a> {
 /// `Ok(None)`, on the tasks that `reads` holds, as [`replay_units`] does, and
 /// sets each stream's `masks`. A solver whose task did not read, or whose
 /// unit panicked, gives each of its streams that fault.
-fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &HashMap<String, Result<(Task, JudgedTask), String>>, constructions: &'static Constructions, steps: &ReplayProgress, started: Option<&Py<PyAny>>, ended: Option<&Py<PyAny>>) {
+fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &HashMap<String, Result<(Task, JudgedTask), String>>, constructions: &'static Constructions, steps: &ReplayProgress, started: Option<&Py<PyAny>>, ended: Option<&Py<PyAny>>, step_cap: Option<usize>) {
     let mut faults: HashMap<usize, String> = HashMap::new();
     // For each solver whose task read: its index in `found`, the indices in its streams of the due streams, and their ids.
     let mut due: Vec<(usize, Vec<usize>, Vec<Vec<(u32, Emitter)>>)> = Vec::new();
@@ -896,6 +902,7 @@ fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &Hash
         &|solver| progress.start(solver),
         &|_, masks| masks,
         &|solver| progress.settle(solver),
+        step_cap,
     );
     let mut sets = Vec::new();
     for ((solver, wanted, _), result) in due.iter().zip(results) {
@@ -1105,15 +1112,19 @@ struct TableCase {
 /// largest first, and turns the tables of each stream into columns as its
 /// unit ends.
 /// `ended`, a callable or `None`, is called with a solver's task id, holding
-/// the GIL, once the last of that solver's streams has ended. A solver none
-/// of whose streams replays, and one whose unit panics, gives no call. An
+/// the GIL, once the last of that solver's streams has ended. A solver whose
+/// streams all lie past `step_cap` gets the call; one whose task did not read,
+/// and one whose unit panics, gives none. An
 /// exception that `ended` raises is printed and dropped.
+/// `step_cap`, an integer or `None`, bounds the replay of each solver as it
+/// does in `corpus_streams`; a stream past the cap gives its line as the
+/// case's fault.
 /// `progress`, a `ReplayProgress` or `None`, gives the model steps of the
 /// second phase: its `total` is set once the units are cut and its `done`
 /// grows while they replay.
 #[pyfunction]
-#[pyo3(signature = (corpus, tasks, all_cases=false, task_ids=None, bodies=false, projection_cap=None, ended=None, progress=None))]
-fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, task_ids: Option<Vec<String>>, bodies: bool, projection_cap: Option<u64>, ended: Option<Py<PyAny>>, progress: Option<Py<PyReplayProgress>>) -> PyResult<(Vec<PyCaseTables>, Vec<String>)> {
+#[pyo3(signature = (corpus, tasks, all_cases=false, task_ids=None, bodies=false, projection_cap=None, ended=None, progress=None, step_cap=None))]
+fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, task_ids: Option<Vec<String>>, bodies: bool, projection_cap: Option<u64>, ended: Option<Py<PyAny>>, progress: Option<Py<PyReplayProgress>>, step_cap: Option<usize>) -> PyResult<(Vec<PyCaseTables>, Vec<String>)> {
     let points = if bodies { Points::All } else { Points::Relations };
     let wanted = if all_cases { WantedCases::All } else { WantedCases::Concept };
     let constructions = constructions()?;
@@ -1168,6 +1179,7 @@ fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, tas
                 &|solver| progress.start(solver),
                 &|solver, tables| case_columns(&evidence[solver], &tables, trains[solver]),
                 &|solver| progress.settle(solver),
+                step_cap,
             )
         })
         .into_iter();
