@@ -270,6 +270,46 @@ def test_child_retries_a_flush_that_fails_on_a_lock(tmp_path, monkeypatch):
     assert found == "kept"
 
 
+def test_first_state_read_that_does_not_end_is_cut_at_the_carry_bound(tmp_path, monkeypatch):
+    import os
+    kept, assembly = script("kept_reads"), script("state_assembly")
+    monkeypatch.setattr(kept, "_store", None)
+    kept.open_store(tmp_path / "reads.sqlite")
+    monkeypatch.setattr(service, "read_first", True)
+    monkeypatch.setattr(service, "CARRY_SECONDS", 0.3)
+    monkeypatch.setattr(service, "CHILD_POLL_SECONDS", 0.01)
+    pids = tmp_path / "pids"
+
+    def read(operator):
+        pids.write_text(str(os.getpid()))
+        time.sleep(60)
+
+    monkeypatch.setattr(assembly, "read_state", read)
+    current, sockets = request_for_child_read()
+    try:
+        with pytest.raises(service.Unavailable, match="did not finish within"):
+            service.child_read(current)
+    finally:
+        for s in sockets:
+            s.close()
+    child = int(pids.read_text())
+    with pytest.raises(ProcessLookupError):
+        os.kill(child, 0)
+
+
+def test_a_request_check_ends_the_request_past_the_carry_bound(monkeypatch):
+    """The check holds the bound where nothing runs the alarm `arm` sets."""
+    current, sockets = request_for_child_read()
+    try:
+        monkeypatch.setattr(service, "CARRY_SECONDS", 0.05)
+        time.sleep(0.06)
+        with pytest.raises(service.Unavailable, match="did not finish within"):
+            current.check()
+    finally:
+        for s in sockets:
+            s.close()
+
+
 def test_wait_reply_carries_the_cpu_of_its_read():
     import json
     a, b = socket.socketpair()
@@ -288,3 +328,223 @@ def test_a_residents_final_line_gives_its_reason_and_read_leaves_it_out(tmp_path
     records = str(tmp_path / script_calls.RECORDS)
     assert [c.reason for c in script_calls.ends(records, 0.0)] == ["lock held"]
     assert [c.reason for c in script_calls.read(records, 0.0)] == [""]
+
+
+def test_owner_stays_exclusive_until_process_exit(tmp_path, monkeypatch):
+    """An owner that completed cleanup excludes replacement until it exits."""
+    import fcntl
+    import json
+    import os
+    import select
+    import subprocess
+
+    monkeypatch.chdir(tmp_path)
+    source = '''
+import os
+import sys
+from pathlib import Path
+import operate_service as service
+import script_calls
+service.endpoint = lambda *_: Path("owner.sock")
+service.checkout.caches = lambda: Path.cwd() / "cache"
+script_calls.RECORDS = str(Path.cwd() / "records")
+service.CARRY_SECONDS = 0
+service.serve()
+print("cleanup complete", flush=True)
+sys.stdin.readline()
+os._exit(0)
+'''
+    process = subprocess.Popen(
+        [sys.executable, "-u", "-c", source], cwd=tmp_path,
+        env={"PATH": os.defpath, "HOME": str(tmp_path), "CLAUDE_CONFIG_DIR": str(tmp_path),
+             "CLAUDE_CODE_SESSION_ID": "owner-test", "PYTHONPATH":
+             os.pathsep.join((str(SCRIPTS), str(SCRIPTS.parent / "src")))},
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        deadline = time.monotonic() + 10
+        while True:
+            connection = socket.socket(socket.AF_UNIX)
+            try:
+                connection.connect("owner.sock")
+                break
+            except (FileNotFoundError, ConnectionRefusedError):
+                connection.close()
+                assert time.monotonic() < deadline
+                time.sleep(0.01)
+        with connection:
+            connection.settimeout(10)
+            connection.sendall((json.dumps({"kind": "next", "subject": "fixture",
+                                            "started": time.time(), "deadline": deadline}) + "\n").encode())
+            with connection.makefile("rb") as stream:
+                assert stream.readline() == service.TAKEN
+                assert json.loads(stream.readline())["status"] == 1
+        assert process.stdout is not None and process.stdin is not None
+        assert select.select([process.stdout], [], [], 10)[0]
+        assert process.stdout.readline() == b"cleanup complete\n"
+        with (tmp_path / "owner.owner").open("a") as owner:
+            with pytest.raises(BlockingIOError):
+                fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            process.stdin.write(b"exit\n")
+            process.stdin.flush()
+            assert process.wait(timeout=10) == 0
+            fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    finally:
+        if process.poll() is None:
+            process.kill()
+        process.wait(timeout=10)
+
+
+def test_journaled_reply_survives_refresh_exclusion(tmp_path):
+    """Refresh preserves a committed reply and refuses uncommitted output."""
+    import io
+    import json
+    refresh_locks = script("refresh_locks")
+    step_journal = script("step_journal")
+    from operations.steps import Send
+
+    a, b = socket.socketpair()
+    c, d = socket.socketpair()
+    with a, b, c, d:
+        current = service.Request("operator", time.time(), time.monotonic() + 10,
+                                  a, c, "code", io.StringIO(), io.StringIO())
+        token = service.CURRENT.set(current)
+        response = {"status": 0, "stdout": "journaled reply", "stderr": "", "retry": False}
+        try:
+            with refresh_locks.hold("isolated-service"):
+                with pytest.raises(service.Replaced):
+                    service.publish_response(current, response)
+            step_journal.give(tmp_path, [Send("recipient", "message", "subject")], "operator", time.time())
+            service.commit()
+            with refresh_locks.hold("isolated-service"):
+                service.publish_response(current, response)
+            b.settimeout(1)
+            assert json.loads(b.recv(65536)) == response
+            assert len(step_journal.records(tmp_path)) == 1
+        finally:
+            service.CURRENT.reset(token)
+
+
+@pytest.fixture
+def running_request(monkeypatch):
+    """A request that runs, with the directory of the socket of its listener, which
+    holds a queue, and the socket of its waiting client."""
+    import io
+    import tempfile
+    with tempfile.TemporaryDirectory(dir="/tmp") as directory:
+        listener = socket.socket(socket.AF_UNIX)
+        listener.bind(f"{directory}/s.sock")
+        listener.listen()
+        a, b = socket.socketpair()
+        pending = service.Pending(listener)
+        current = service.Request("op", time.time(), time.monotonic() + 60, a, listener, "code",
+                                  io.StringIO(), io.StringIO(), pending=pending)
+        pending.running = current
+        monkeypatch.setattr(service, "_beaten", 0.0)
+        try:
+            yield current, directory, b
+        finally:
+            current.alarm.clear()
+            pending.close()
+            listener.close()
+            a.close()
+            b.close()
+
+
+def queue_call(directory: str, seconds: float) -> socket.socket:
+    """The socket of a call of another subject that queues, with a bound `seconds` away."""
+    import json
+    queued = socket.socket(socket.AF_UNIX)
+    queued.connect(f"{directory}/s.sock")
+    queued.sendall((json.dumps({"kind": "next", "subject": "other", "started": time.time(),
+                                "deadline": time.monotonic() + seconds}) + "\n").encode())
+    return queued
+
+
+def spin_until(condition, seconds: float = 10.0) -> None:
+    end = time.monotonic() + seconds
+    while not condition():
+        assert time.monotonic() < end
+
+
+def test_a_queued_call_is_answered_at_its_bound_and_the_beat_touched_while_the_read_reaches_no_checkpoint(
+        running_request):
+    """The read runs a `bounded` block, as a pace script and the script of a run do."""
+    import json
+    import select
+    current, directory, _ = running_request
+    run_scripts = script("run_scripts")
+    service.arm(current)
+    queued = queue_call(directory, service.FINISH_SECONDS + 0.3)
+    with queued:
+        with run_scripts.bounded(20, "the pace script"):
+            spin_until(lambda: select.select([queued], [], [], 0.01)[0])
+        answer = json.loads(queued.recv(65536))
+    assert answer["stdout"] == service.read_running(current)
+    assert service.beat_path(service.Path(current.listener.getsockname())).exists()
+
+
+def test_the_end_of_a_run_at_the_carry_bound_comes_through_a_bounded_block(running_request, monkeypatch):
+    current, _, _ = running_request
+    run_scripts = script("run_scripts")
+    monkeypatch.setattr(service, "CARRY_SECONDS", 0.3)
+    current.begun = time.monotonic()
+    service.arm(current)
+    with pytest.raises(service.Unavailable, match="did not finish within"):
+        with run_scripts.bounded(20, "the pace script"):
+            spin_until(lambda: False)
+
+
+def test_nothing_ends_a_request_whose_run_ended_past_the_carry_bound(running_request, monkeypatch):
+    """The alarm comes during the flush and the response, and the response goes to the client."""
+    import json
+    current, _, client = running_request
+    monkeypatch.setattr(service, "CARRY_SECONDS", 0.05)
+    monkeypatch.setattr(service, "BEAT_EVERY", 0.05)
+    current.begun = time.monotonic() - 1
+    current.deadline = time.monotonic() + service.FINISH_SECONDS + 0.1
+    with service.run_scope(current):
+        pass
+    service.arm(current)
+    time.sleep(0.3)
+    current.check()
+    response = {"status": 0, "stdout": "done", "stderr": "", "retry": False}
+    service.publish_response(current, response)
+    client.settimeout(1)
+    assert json.loads(client.recv(65536)) == response
+
+
+def test_the_watchdog_of_a_call_with_no_resident_ends_it_though_a_bounded_block_ran(tmp_path):
+    import os
+    import subprocess
+    source = '''
+import time
+import operate_loop
+import run_scripts
+import script_calls
+script_calls.RECORDS = "records"
+operate_loop.LIMIT_SECONDS = 1
+operate_loop.arm_watchdog("fixture", lambda me: 7)
+with run_scripts.bounded(1, "the call"):
+    pass
+time.sleep(30)
+'''
+    done = subprocess.run(
+        [sys.executable, "-u", "-c", source], cwd=tmp_path, timeout=30,
+        env={"PATH": os.defpath, "HOME": str(tmp_path), "CLAUDE_CONFIG_DIR": str(tmp_path),
+             "CLAUDE_CODE_SESSION_ID": "watchdog-test", "PYTHONPATH":
+             os.pathsep.join((str(SCRIPTS), str(SCRIPTS.parent / "src")))})
+    assert done.returncode == 7
+
+
+def test_a_yielding_request_whose_run_ended_still_publishes_with_a_client_call_queued(running_request):
+    import json
+    current, directory, client = running_request
+    current.kind = service.Kind.WAIT
+    with service.run_scope(current):
+        pass
+    queued = queue_call(directory, 30)
+    with queued:
+        response = {"status": 0, "stdout": "done", "stderr": "", "retry": False}
+        service.publish_response(current, response)
+        client.settimeout(1)
+        assert json.loads(client.recv(65536)) == response

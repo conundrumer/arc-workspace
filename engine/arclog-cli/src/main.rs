@@ -13,7 +13,6 @@ mod determine;
 mod determinism;
 mod lib_compare;
 mod renaming;
-mod replay;
 mod row_counts;
 mod select;
 mod speed;

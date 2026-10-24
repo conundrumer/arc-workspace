@@ -141,8 +141,8 @@ pub(super) struct Names {
     /// as [`super::ConceptReads`] gives, by its path.
     pub(super) fixed: StableHashMap<NodePath, CanonicalForm>,
     /// The columns that the relation of each clause keeps, by the
-    /// clause's path, where its node keeps fewer columns than the clause
-    /// gives, as [`super::build`] gives them from the reads of the node.
+    /// clause's path, where they differ, in count or in order, from the
+    /// clause's columns in their canonical positions, as [`super::build`] gives them from the reads of the node.
     pub(super) kept: StableHashMap<NodePath, Columns>,
     /// The resolution of the forms before the last, where these names are
     /// those of the last form alone, as [`super::resolve_last`] gives them:

@@ -38,16 +38,16 @@ ticket (`admission.pace_held`), the pace or its cap holds a step (`order.pace_he
 a step waits after the harness refused it at its limit of concurrent
 subagents (`journal.backing_off`), the agent runs the command again, which blocks in the foreground first,
 until its calls in a row have found no step ready for `WAIT_SECONDS_IDLE`: then, where an
-agent it launched is pending, it waits with its turn ended (`steps.Wait`), and otherwise it
-gives its final reply for a wait (`final_reply.FOR_WAIT`), whose lines a fresh operator takes
-up. Otherwise the
+agent it launched is pending or it holds a change (`changes.holds`), it waits with its turn
+ended (`steps.Wait`), and otherwise it gives its final reply for a wait
+(`final_reply.FOR_WAIT`), whose lines a fresh operator takes up. Otherwise the
 agent gives its final reply, after the message that sends its parent
 its text (`standing.ending`), with each stuck agent or holder it waited on."""
 
 from collections.abc import Iterable, Mapping, Sequence
 
 from controlled_markdown import mctx
-from operations import admission, change_take, decisions, monitor, triage, taking
+from operations import admission, change_take, changes, decisions, monitor, triage, taking
 from operations.state import Call, State, Stuck
 from ticketing.times import utc_stamp
 from ticketing.vocabulary import Status
@@ -96,15 +96,17 @@ def next_step(state: State, watch: monitor.MonitorState, waiting: bool = False) 
     `me` runs: the step `ready_step` gives, other than where it is `Poll`
     and the calls of `next` by `me` in a row have found no step ready for
     `WAIT_SECONDS_IDLE` (`idle_since`). There, where an agent `me`
-    launched is pending or `waiting` holds, the step is `Wait`, with the
-    call where `waiting` does not hold, and otherwise the final reply
+    launched is pending, `me` holds a change (`changes.holds`), or
+    `waiting` holds, the step is `Wait`, with the call where `waiting`
+    does not hold, and otherwise the final reply
     for a wait (`FOR_WAIT`). Each reply gives, after its lines, each line
     `monitor.undecided` gives."""
     step = ready_step(state, watch)
     since = idle_since(state.transcripts.calls, state.me)
     if not isinstance(step, Poll) or since is None or state.now - since < WAIT_SECONDS_IDLE:
         return step
-    if waiting or any(a.pending for a in state.transcripts.agents if a.operator == state.me):
+    if (waiting or any(a.pending for a in state.transcripts.agents if a.operator == state.me)
+            or any(changes.holds(t, state.me) for t in state.tracker.tickets.values())):
         return Wait(state.me, call=not waiting)
     return ending(state, FOR_WAIT + "\n" + "\n".join([*reply_lines(state, holding(state)),
                                                       *unknown_lines(watch)]))

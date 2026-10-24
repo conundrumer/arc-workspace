@@ -1,0 +1,13 @@
+comment: Train 1 output row 4 shows the horizontal line's color between the marks, where every other mark row shows the vertical line's color
+
+@diff train 1 output
+0   0   0   0   0   0   0   0   0   0
+0   0   0   0   0   0   0   0   0   0
+0   0   2   5   2   5   2   0   0   0
+0   0   8   8   8   8   8   0   0   0
+0   0   9   8~5 9   8~5 9   0   0   0
+0   0   8   8   8   8   8   0   0   0
+0   0   9   5   9   5   9   0   0   0
+0   0   8   8   8   8   8   0   0   0
+0   0   9   5   9   5   9   0   0   0
+0   0   0   0   0   0   0   0   0   0

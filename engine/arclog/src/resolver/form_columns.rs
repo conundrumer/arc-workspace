@@ -53,11 +53,12 @@ pub(super) fn bindings(instance: &Instance, component: &Component) -> Bindings {
     Bindings(records.collect())
 }
 
-/// The columns of `port` of an instance whose binding is `bindings`:
+/// The columns of `port` of an instance whose binding is `bindings`, with a
+/// key clause where `keyed` holds and otherwise with no `key` column:
 /// each column's declared type, and below a column of a type
 /// parameter, the sources of the parameter's binding.
-pub(super) fn port_columns(port: &Port, bindings: &Bindings) -> Listing {
-    let listed = port.columns.iter().map(|column| {
+pub(super) fn port_columns(port: &Port, bindings: &Bindings, keyed: bool) -> Listing {
+    let listed = port.columns_at(keyed).map(|column| {
         let binding = match &column.ty {
             ColumnType::Parameter(parameter) => bindings.0.get(parameter),
             _ => None,
@@ -89,7 +90,7 @@ pub(super) fn demonstrated_listing(form: &Demonstrated) -> Listing {
             Listed { slot: Slot::of(&site.column, record.as_deref()), sources }
         })
     });
-    Listing(std::iter::once(key).chain(heads).collect())
+    Listing(key.into_iter().chain(heads).collect())
 }
 
 /// The `value` input of a `DEMONSTRATED` form, whose head names the
@@ -114,7 +115,7 @@ pub(crate) fn part_steps(relation: &RelationRef) -> Option<Vec<OutputStep>> {
 
 /// Each output of a `RIGID_DET` form, by its path after the form's name, with
 /// its columns, as `docs/arclog/rigid.md#semantics` gives. A form with no key
-/// clause has one `key` column, as an instance with no key clause has.
+/// clause has no `key` column.
 pub(crate) fn rigid_outputs(form: &RigidDet) -> Vec<(Arc<[OutputStep]>, Columns)> {
     rigid_listings(form).into_iter().map(|(steps, listing)| (steps, listing.columns())).collect()
 }
@@ -145,14 +146,14 @@ pub(super) fn rigid_listings(form: &RigidDet) -> Vec<(Arc<[OutputStep]>, Listing
             let part = part.value();
             let steps = part_steps(&part.relation)?;
             let sites = part.sites.iter().filter(|site| !at_instance(form, site)).map(|site| Listed { slot: Slot::Column(site.column.clone()), sources: site_sources(site, true, &whole) });
-            Some((steps.into(), Listing([key.clone(), pose.clone()].into_iter().chain(sites).collect())))
+            Some((steps.into(), Listing(key.iter().cloned().chain([pose.clone()]).chain(sites).collect())))
         })
         .collect();
     let instance = form.instance.iter().flat_map(|instance| instance.columns.iter()).map(|column| Listed {
         slot: Slot::Column(column.name.clone()),
         sources: vec![(Box::from([column.name.clone()]), Source::Label { label: column.label, body: whole.clone() })],
     });
-    outputs.push((Arc::from([OutputStep::Pose]), Listing(std::iter::once(key).chain(instance).chain([pose]).collect())));
+    outputs.push((Arc::from([OutputStep::Pose]), Listing(key.into_iter().chain(instance).chain([pose]).collect())));
     outputs
 }
 

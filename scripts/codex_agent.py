@@ -45,7 +45,7 @@ import sys
 import time
 import tomllib
 from collections.abc import Callable
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from dataclasses import asdict
 from functools import partial
 from pathlib import Path
@@ -246,7 +246,9 @@ def daemon_turn(scratch: Path, thread: str | None, prompt: str, item: str,
         events.append({"type": "turn.started", "turn_id": started["turn"]["id"]})
         if admission is not None:
             store, assignment, token = admission
-            store.accepted(assignment.agent, token, thread, str(started["turn"]["id"]))
+            from attempt_record import observe
+            observe(lambda: store.accepted(assignment.agent, token, thread, str(started["turn"]["id"])))
+        publish_accepted(scratch, thread, str(started["turn"]["id"]), prompt)
         message, ok = codex_daemon.collect(client, thread, started["turn"]["id"], emit)
         (scratch / "codex-last.md").write_text(message)
         ok = ok and bool(message.strip())
@@ -274,8 +276,100 @@ def daemon_turn(scratch: Path, thread: str | None, prompt: str, item: str,
                 client.close()
 
 
-def work_lock(scratch: Path) -> Path:
+def legacy_work_lock(scratch: Path) -> Path:
     return scratch.parent / ("." + scratch.name + ".codex-work.lock")
+
+
+def scratch_attempt(scratch: Path) -> str | None:
+    binding = codex_ticket.Binding.read(scratch)
+    if binding is not None:
+        return binding.agent
+    submission = scratch / 'attempt-submission.json'
+    return json.loads(submission.read_text())['agent'] if submission.exists() else None
+
+
+def work_lock(scratch: Path) -> Path:
+    from attempt_record import Record, seat_path
+    from operations.attempts import Launched
+    agent = scratch_attempt(scratch)
+    if agent is None:
+        return legacy_work_lock(scratch)
+    record = Record()
+    launches = [e for e in record.events([agent]) if isinstance(e, Launched) and e.agent == agent]
+    return seat_path(launches[0].seat, record) if launches else legacy_work_lock(scratch)
+
+
+def unresolved_work(scratch: Path) -> bool:
+    from attempt_record import Record
+    from operations.attempts import fold
+    agent = scratch_attempt(scratch)
+    if agent is None:
+        return False
+    attempt = fold(Record().events([agent])).get(agent)
+    return attempt is not None and attempt.held
+
+
+def publish_accepted(scratch: Path, thread: str, turn: str, prompt: str) -> None:
+    from attempt_record import Record, acknowledge_input, observe
+    from operations import attempts as a
+    path = scratch / 'attempt-submission.json'
+    if not path.exists():
+        return
+    submission = json.loads(path.read_text())
+    def publish():
+        record = Record()
+        record.acceptance(submission['agent'], submission['reservation'], submission['at'], thread, turn)
+        acknowledge_input(record, submission['agent'], prompt, thread, turn,
+                          submission['revision'], submission['at'])
+    observe(publish)
+
+
+@contextmanager
+def seat_admission(agent: str, scratch: Path, cwd: Path, assignment, home: Path, agent_id: str | None):
+    import secrets
+    from attempt_record import Record, backfill, resolve_seat, seat_lock, observe
+    from operations import attempts as a
+    record = Record()
+    owner = assignment.agent if assignment else (agent_id or scratch_attempt(scratch))
+    seat = resolve_seat(cwd, Role(agent), owner or "",
+                        assignment, record)
+    if seat is None:
+        yield None
+        return
+    if owner is None:
+        raise ValueError(mctx("work admission requires an operations identity"))
+    revision = assignment.revision if assignment else 0
+    with seat_lock(seat, record):
+        backfill(record, record.path.parent.parent, home, seat, owner, scratch)
+        token = secrets.token_hex(16)
+        at = time.time()
+        previous = next((e for e in record.events([owner]) if isinstance(e, a.Launched)
+                         and e.agent == owner), None)
+        launch = previous or a.Launched(source='work-launch:' + owner, at=at, agent=owner,
+            seat=seat, parent=assignment.operator if assignment else None,
+            agent_type=assignment.actual_type if assignment else Role(agent).agent_type,
+            transport=a.Transport.NATIVE, scratch=str(scratch))
+        record.admission(seat, owner, token, revision, at, launch)
+        submission = dict(agent=owner, reservation=token, revision=revision, at=at)
+        (scratch / 'attempt-submission.json').write_text(json.dumps(submission))
+        try:
+            yield token
+        finally:
+            def reconcile_record():
+                path = scratch / 'codex-session'
+                if path.exists():
+                    thread = path.read_text().strip()
+                    turns = [t for t in codex_rollout.turns(thread, home) if t.started >= at]
+                    if len(turns) == 1:
+                        turn = turns[0]
+                        record.acceptance(owner, token, at, thread, turn.turn)
+                        if turn.ended is not None:
+                            record.append(a.TurnEnded(source='ended:' + token, at=at, agent=owner,
+                                reservation=token, status=a.Terminal.COMPLETED if turn.end_state is codex_rollout.TurnEnd.COMPLETE else a.Terminal.INTERRUPTED))
+                failures = scratch / 'codex-launch-failures.jsonl'
+                if failures.exists() and any(json.loads(line)['started'] >= at for line in failures.read_text().splitlines()):
+                    record.append(a.Refused(source='refused:' + token, at=at, agent=owner, reservation=token))
+            observe(reconcile_record)
 
 
 def work_lock_probe(scratch: Path) -> Path:
@@ -304,7 +398,9 @@ def wait(scratch: Path) -> None:
                         observed_work = True
                     else:
                         fcntl.flock(lock, fcntl.LOCK_UN)
-                        if observed_work or time.monotonic() >= start_deadline:
+                        if unresolved_work(scratch):
+                            observed_work = True
+                        elif observed_work or time.monotonic() >= start_deadline:
                             return
                 finally:
                     fcntl.flock(probe, fcntl.LOCK_UN)
@@ -422,7 +518,7 @@ def work(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: 
         # git dir of a worktree it runs in read-only unless that dir is a root.
         writable = [main / "tickets", main / ".git",
                     *([git_dir] if git_dir != main / ".git" else []), main / ".cache",
-                    home / ".cache" / "uv", home / ".cargo", scratch]
+                    home / ".cache" / "uv", home / ".cargo", main / ".attempts", scratch]
         if admission is not None:
             writable.extend([admission[0].path, admission[1].report.parent])
     except Exception as exc:
@@ -473,6 +569,10 @@ def work(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: 
     with (scratch / "codex-events.jsonl").open("a") as record:
         record.write(json.dumps({"thread": thread, "input": item, "output": done.stdout, "ok": ok,
             **usage_record(thread, events, call_started, time.time(), home)}) + "\n")
+    if thread is not None:
+        accepted = next((e.get('turn_id') for e in events if e.get('turn_id')), None)
+        if accepted is not None:
+            publish_accepted(scratch, thread, accepted, prompt)
     if not ok:
         details = "\n".join([*errors, done.stderr.strip()]).strip()
         raise ValueError(details or
@@ -503,8 +603,8 @@ def execute_native(argv: list[str], admission: tuple[codex_ticket.Store, codex_t
                         turns = codex_rollout.turns(native, home)
                         if turns and turns[-1].ended is None:
                             store.accepted(assignment.agent, token, native, turns[-1].turn)
-                except (OSError, ValueError, KeyError):
-                    pass
+                except (OSError, ValueError, KeyError) as exc:
+                    print(f"attempt_record: exec acceptance publication failed: {exc}", file=sys.stderr)
             result = process.wait()
         errors.seek(0)
         return subprocess.CompletedProcess(argv, result, "".join(output), errors.read())
@@ -537,7 +637,7 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
     if assignment is None:
         codex_ticket.legacy_guard(scratch)
     scratch.parent.mkdir(parents=True, exist_ok=True)
-    with work_lock(scratch).open("a") as lock:
+    with legacy_work_lock(scratch).open("a") as lock:
         with work_lock_probe(scratch).open("a") as probe:
             fcntl.flock(probe, fcntl.LOCK_EX)
             try:
@@ -561,51 +661,53 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
             if previous and previous[-1].ended is None:
                 raise launch_failure(scratch, time.time(), ValueError(
                     "saved turn is active; use show or interrupt, wait for its end, then resume"))
-        done = scratch / DONE
-        done.unlink(missing_ok=True)
-        admission = None
-        if assignment is not None:
-            if (store_path is None or assignment.scratch.resolve() != scratch
-                    or assignment.brief.resolve() != brief.resolve()
-                    or assignment.worktree.resolve() != cwd.resolve()
-                    or assignment.role != Role(agent)):
-                raise codex_ticket.Refused("root execution differs from its assignment")
-            store = codex_ticket.Store(store_path)
-            store.file(assignment)
-            from tree_reads import scratch as session_scratch
-            agents = store.snapshot()["agents"]
-            resumed = agents.get(assignment.agent)
-            if (resumed is not None
-                    and any(item["phase"] != codex_ticket.Phase.ENDED for item in agents.values())
-                    and (scratch / "codex-session").exists()):
-                codex_ticket.reconcile(
-                    scratch, assignment.agent, (scratch / "codex-session").read_text().strip(), home)
-            token = store.reserve(assignment)
+        with seat_admission(agent, scratch, cwd, assignment, home, agent_id) as reservation:
+            done = scratch / DONE
+            done.unlink(missing_ok=True)
+            admission = None
+            if assignment is not None:
+                if (store_path is None or assignment.scratch.resolve() != scratch
+                        or assignment.brief.resolve() != brief.resolve()
+                        or assignment.worktree.resolve() != cwd.resolve()
+                        or assignment.role != Role(agent)):
+                    raise codex_ticket.Refused("root execution differs from its assignment")
+                store = codex_ticket.Store(store_path)
+                store.file(assignment)
+                from tree_reads import scratch as session_scratch
+                agents = store.snapshot()["agents"]
+                resumed = agents.get(assignment.agent)
+                if (resumed is not None
+                        and any(item["phase"] != codex_ticket.Phase.ENDED for item in agents.values())
+                        and (scratch / "codex-session").exists()):
+                    codex_ticket.reconcile(
+                        scratch, assignment.agent, (scratch / "codex-session").read_text().strip(), home)
+                token = store.reserve(assignment, reservation=reservation)
+                try:
+                    codex_ticket.register(store.path, session_scratch(ticket_numbers.session_id()), assignment.agent)
+                    (scratch / "codex-dispatch.json").unlink(missing_ok=True)
+                except Exception:
+                    store.refused(assignment.agent, token)
+                    raise
+                admission = store, assignment, token
             try:
-                codex_ticket.register(store.path, session_scratch(ticket_numbers.session_id()), assignment.agent)
-                (scratch / "codex-dispatch.json").unlink(missing_ok=True)
-            except Exception:
-                store.refused(assignment.agent, token)
-                raise
-            admission = store, assignment, token
-        try:
-            return work(agent, scratch, brief, model, effort, item, root, home, main, cwd,
-                        runner, agent_type, transport, thread, admission, agent_id)
-        finally:
-            try:
-                if admission is not None:
-                    store, enrolled, token = admission
-                    failures = scratch / "codex-launch-failures.jsonl"
-                    reserved = store.snapshot()["agents"][enrolled.agent]["reserved"]
-                    proved_refused = (failures.exists() and any(
-                        json.loads(line)["started"] >= reserved for line in failures.read_text().splitlines()))
-                    if proved_refused and store.snapshot()["agents"][enrolled.agent]["phase"] == codex_ticket.Phase.RESERVED:
-                        store.refused(enrolled.agent, token)
-                    elif (scratch / "codex-session").exists():
-                        native = (scratch / "codex-session").read_text().strip()
-                        codex_ticket.reconcile(scratch, enrolled.agent, native, home)
+                return work(agent, scratch, brief, model, effort, item, root, home, main, cwd,
+                            runner, agent_type, transport, thread, admission, agent_id)
             finally:
-                done.touch()
+                try:
+                    if admission is not None:
+                        store, enrolled, token = admission
+                        failures = scratch / "codex-launch-failures.jsonl"
+                        reserved = store.snapshot()["agents"][enrolled.agent]["reserved"]
+                        proved_refused = (failures.exists() and any(
+                            json.loads(line)["started"] >= reserved for line in failures.read_text().splitlines()))
+                        if proved_refused and store.snapshot()["agents"][enrolled.agent]["phase"] == codex_ticket.Phase.RESERVED:
+                            store.refused(enrolled.agent, token)
+                        elif (scratch / "codex-session").exists():
+                            native = (scratch / "codex-session").read_text().strip()
+                            from attempt_record import observe
+                            observe(lambda: codex_ticket.reconcile(scratch, enrolled.agent, native, home))
+                finally:
+                    done.touch()
 
 
 def input_text() -> str:

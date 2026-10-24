@@ -421,6 +421,30 @@ fn refuse_threads(value: &str) -> ! {
     std::process::exit(2)
 }
 
+/// Runs `work` over every item of `items`, on the threads of
+/// [`corpus_threads`], each thread taking the next item that none has taken,
+/// and gives the results in the order of `items`. `work` does not panic.
+pub fn run_on_workers<I: Sync, R: Send>(items: &[I], work: impl Fn(&I) -> R + Sync) -> Vec<R> {
+    let next = AtomicUsize::new(0);
+    let mut results: Vec<(usize, R)> = std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..corpus_threads())
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut done = Vec::new();
+                    loop {
+                        let index = next.fetch_add(1, Ordering::Relaxed);
+                        let Some(item) = items.get(index) else { break done };
+                        done.push((index, work(item)));
+                    }
+                })
+            })
+            .collect();
+        workers.into_iter().flat_map(|w| w.join().expect("a worker over the items does not panic")).collect()
+    });
+    results.sort_by_key(|(index, _)| *index);
+    results.into_iter().map(|(_, result)| result).collect()
+}
+
 /// Runs `check` over every solver of `dir`, on the threads of
 /// [`corpus_threads`] (`ARCLOG_THREADS`, or as many as the machine has), and
 /// gives the report over them. A panic of `check` on a
@@ -434,29 +458,14 @@ where
     E: Fn(&CorpusSolver, &SolverResult) + Sync,
 {
     let solvers = corpus_solvers(dir)?;
-    let next = AtomicUsize::new(0);
-    let threads = corpus_threads();
-    let mut results: Vec<(usize, SolverResult)> = std::thread::scope(|scope| {
-        let workers: Vec<_> = (0..threads)
-            .map(|_| {
-                scope.spawn(|| {
-                    let mut done = Vec::new();
-                    loop {
-                        let index = next.fetch_add(1, Ordering::Relaxed);
-                        let Some(solver) = solvers.get(index) else { break done };
-                        let result = catch_unwind(AssertUnwindSafe(|| check(solver)))
-                            .unwrap_or_else(|payload| SolverResult::Fail(vec![panic_line(&*payload)]));
-                        ended(solver, &result);
-                        done.push((index, result));
-                    }
-                })
-            })
-            .collect();
-        workers.into_iter().flat_map(|w| w.join().expect("a check over the corpus does not panic")).collect()
+    let results = run_on_workers(&solvers, |solver| {
+        let result = catch_unwind(AssertUnwindSafe(|| check(solver))).unwrap_or_else(|payload| SolverResult::Fail(vec![panic_line(&*payload)]));
+        ended(solver, &result);
+        result
     });
-    results.sort_by_key(|(index, _)| *index);
     let failures = results
         .into_iter()
+        .enumerate()
         .filter_map(|(index, result)| match result {
             SolverResult::Pass => None,
             SolverResult::Fail(report) => Some((solvers[index].clone(), report)),
@@ -481,11 +490,16 @@ pub fn print_ended(solver: &CorpusSolver, result: &SolverResult) {
     eprintln!("{}: ended", solver.task_id);
 }
 
+/// The message of a panic whose payload is `payload`, where the payload is a
+/// `&str` or a `String`.
+pub fn panic_message(payload: &(dyn Any + Send)) -> Option<&str> {
+    payload.downcast_ref::<&str>().copied().or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+}
+
 /// The line that reports a panic whose payload is `payload`: its message,
-/// where the payload is a `&str` or a `String`.
+/// where the payload has one.
 fn panic_line(payload: &(dyn Any + Send)) -> String {
-    let message = payload.downcast_ref::<&str>().copied().or_else(|| payload.downcast_ref::<String>().map(String::as_str));
-    match message {
+    match panic_message(payload) {
         Some(message) => format!("the check panicked: {message}"),
         None => "the check panicked, with a payload that is not a message".to_owned(),
     }

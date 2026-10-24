@@ -5,12 +5,17 @@
     uv run python scripts/codex_ticket.py accept <scratch> <agent> --outcome <outcome>
     uv run python scripts/codex_ticket.py target <scratch> <agent>
     uv run python scripts/codex_ticket.py dispatch <scratch> [--call <call-json>]
+    uv run python scripts/codex_ticket.py message <scratch> <agent> <message-json>
+    uv run python scripts/codex_ticket.py received <scratch> <delivery>
 
 Prepare files and reserves a launch, then returns its native tool arguments.
 Reconcile requires accepted rollout evidence, and settles the unresolved
 descendants of its agent first. Accept validates the report of a
 terminal turn; outcome is finished or needs-operator. Target resolves a native
-recipient. Dispatch records input needed from the owning operator.
+recipient. Dispatch records input needed from the owning operator. Message
+prepares a native message to a running agent and prints its call and the
+reconcile command to run after it. Received acknowledges a delivery id that the
+running recipient took.
 
 Bindings live in the session scratch directory. Each scratch directory has a
 pointer to its ticket store. All mutations use that store's nonblocking lock;
@@ -54,10 +59,7 @@ class Phase(StrEnum):
     ENDED = "ended"
 
 
-class Terminal(StrEnum):
-    COMPLETED = "completed"
-    FAILED = "failed"
-    INTERRUPTED = "interrupted"
+from operations.attempts import Terminal
 
 
 @dataclass(frozen=True)
@@ -99,6 +101,11 @@ class Assignment:
     agent_type: str | None = None
     model: str | None = None
     effort: ReasoningEffort | None = None
+
+    @property
+    def seat(self):
+        from operations.roles import Described
+        return Described(self.role, self.subject or self.ticket)
 
     @property
     def actual_type(self) -> str:
@@ -161,6 +168,8 @@ class Store:
                 temporary.replace(path)
             finally:
                 fcntl.flock(lock, fcntl.LOCK_UN)
+            from codex_attempts import committed
+            committed(self, state)
 
     def file(self, assignment: Assignment) -> Path:
         """File an immutable assignment and its scratch pointer under the lock."""
@@ -189,7 +198,47 @@ class Store:
         """The config file of the Codex agent role `kind` in this store."""
         return self.path / "roles" / f"{kind}.toml"
 
-    def reserve(self, assignment: Assignment, parent: str | None = None, role: bool = False) -> str:
+    def reserve(self, assignment: Assignment, parent: str | None = None, role: bool = False,
+                reservation: str | None = None) -> str:
+        from contextlib import nullcontext
+        import time
+        from attempt_record import Record, backfill, seat_lock
+        from operations.attempts import Launched, Transport, Refused as SubmissionRefused
+        from operations.roles import Described
+
+        record = Record()
+        seat = assignment.seat
+        token = reservation or secrets.token_hex(16)
+        at = time.time()
+        old = self.snapshot()['agents'].get(assignment.agent)
+        launched = old.get('launched', old['reserved']) if old else at
+        existing = next((e for e in record.events([assignment.agent])
+                         if isinstance(e, Launched) and e.agent == assignment.agent), None)
+        launch = existing or Launched(source='native-launch:' + assignment.agent, at=launched,
+            agent=assignment.agent, seat=seat, parent=parent or assignment.operator,
+            agent_type=assignment.actual_type, transport=Transport.NATIVE,
+            scratch=str(assignment.scratch))
+        with (nullcontext() if reservation else seat_lock(seat, record)):
+            if reservation is None:
+                backfill(record, record.path.parent.parent, Path.home(), seat,
+                         change=assignment.ticket)
+                record.admission(seat, assignment.agent, token, assignment.revision, at, launch, assignment.ticket)
+            else:
+                held = [e for e in record.events([assignment.agent])
+                        if getattr(e, 'reservation', None) == token]
+                if not held:
+                    raise Refused('missing durable submission reservation')
+                at = held[0].at
+            try:
+                return self._reserve(assignment, parent, role, token, at, launched)
+            except Exception:
+                from attempt_record import observe
+                observe(lambda: record.append(SubmissionRefused(source='refused:' + token,
+                    at=at, agent=assignment.agent, reservation=token)))
+                raise
+
+    def _reserve(self, assignment: Assignment, parent: str | None, role: bool,
+                 token: str, at: float, launched: float) -> str:
         """Reserve a turn before transport submission, without holding a wait lock."""
         with self.locked() as state:
             filed = Assignment.read(self.path / "assignments" / f"{assignment.agent}-{assignment.revision}.json")
@@ -218,7 +267,6 @@ class Store:
                 raise Refused("resume requires a new assignment revision")
             if parent is not None and old is not None and old["root_turn"] != agents[parent]["root_turn"]:
                 raise Refused("an old child requires a fresh checker identity after root resume")
-            token = secrets.token_hex(16)
             if old is not None:
                 state.setdefault("history", []).append({"agent": assignment.agent, **old})
             agents[assignment.agent] = {"phase": Phase.RESERVED, "token": token,
@@ -229,7 +277,8 @@ class Store:
                 "turn": None, "validated": False,
                 "role": old.get("role", False) if old is not None else role}
             import time
-            agents[assignment.agent]["reserved"] = time.time()
+            agents[assignment.agent]["reserved"] = at
+            agents[assignment.agent]["launched"] = launched
             return token
 
     def receipt(self, agent: str, turn: str, receipt: dict[str, Any]):
@@ -425,77 +474,9 @@ def declare_roles(store: Store) -> None:
 
 def prepare(scratch: Path, parameters: dict[str, Any], home: Path,
             previous: str | None = None) -> dict[str, Any]:
-    """File and reserve a printed launch before returning native tool arguments."""
-    from codex_agent import opening, role_instructions
-    from codex_reports import digest
-    from filed_texts import brief_report_file, unfiled
-    from operations.roles import CLAUDE_TYPES, CODEX_LAUNCHER, Model, agent_type, described, native_parameters
+    from codex_prepare import prepare as prepare_native
 
-    binding, store = bound(scratch)
-    state = store.snapshot()
-    parent = state["agents"][binding.agent]
-    if parent["phase"] == Phase.RESERVED and (scratch / "codex-session").exists():
-        reconcile(scratch, binding.agent, (scratch / "codex-session").read_text().strip(), home)
-        state = store.snapshot()
-        parent = state["agents"][binding.agent]
-    owner = Assignment.read(store.manifest(binding.agent, parent["revision"]))
-    description = described(parameters["description"])
-    if description is None:
-        raise Refused("launch has no operations role and subject")
-    if agent_type(description.role, description.subject) in CLAUDE_TYPES:
-        dispatch = {"outcome": "needs-operator", "call": {"tool": "Agent", "arguments": parameters}}
-        (scratch / "codex-dispatch.json").write_text(json.dumps(dispatch) + "\n")
-        return dispatch
-    override = (Model(parameters["model"]) if "model" in parameters
-                and parameters.get("subagent_type") != CODEX_LAUNCHER else None)
-    model, effort = native_parameters(description.role, description.subject, override)
-    undecided: list[str] = []
-    text = unfiled(parameters["prompt"], "native assignment", undecided)
-    if undecided:
-        raise Refused("; ".join(undecided))
-    report = brief_report_file(text)
-    if report is None:
-        raise Refused("native launch requires a filed report path")
-    predecessor = None
-    if previous is not None and state["agents"][previous]["root_turn"] != parent["root_turn"]:
-        predecessor, previous = previous, None
-        prior = Assignment.read(store.manifest(predecessor, state["agents"][predecessor]["revision"]))
-        text += "\n\n" + NATIVE_FINDINGS.format(predecessor=predecessor) + "\n" + prior.report.read_text()
-    agent = previous or allocate(store.path)
-    revision = state["agents"][agent]["revision"] + 1 if previous else 1
-    directory = store.path / "inputs"
-    directory.mkdir(exist_ok=True)
-    brief = directory / f"{agent}-{revision}.txt"
-    with brief.open("x") as output:
-        output.write(text)
-    assignment = Assignment(binding.ticket, binding.operator, agent, description.role,
-        revision, owner.worktree, brief, store.path / "scratch" / agent, report.resolve(),
-        digest(brief.read_bytes()), predecessor=predecessor, subject=description.subject,
-        agent_type=agent_type(description.role, description.subject))
-    from dataclasses import replace
-    assignment = replace(assignment, model=model, effort=effort)
-    manifest = store.manifest(assignment.agent, assignment.revision)
-    context = role_instructions(checkout.main_worktree(owner.worktree), home, description.role.value, assignment.actual_type)
-    identity = NATIVE_IDENTITY.format(agent=agent, scratch=assignment.scratch, manifest=manifest)
-    kind = assignment.actual_type
-    role = store.role_file(kind)
-    declared = role.exists()
-    roled = state["agents"][agent].get("role", False) if previous else declared
-    if declared:
-        write_atomically(role, "developer_instructions = " + json.dumps(context) + "\n")
-    message = "\n\n".join([*([] if roled else [context]), identity,
-        NATIVE_PARENT.format(parent=parent.get("runtime") or parent["native"]), text,
-        opening(kind)])
-    launch = {"task_name": agent, "fork_turns": "none", "model": model,
-              "reasoning_effort": effort, "message": message}
-    if declared and not previous:
-        launch["agent_type"] = kind
-    if previous:
-        launch = {"target": state["agents"][agent].get("runtime") or state["agents"][agent]["native"], "message": message}
-    store.file(assignment)
-    token = store.reserve(assignment, binding.agent, roled)
-    return {"assignment": str(manifest), "token": token, "call": launch,
-            "tool": "followup_task" if previous else "spawn_agent"}
+    return prepare_native(scratch, parameters, home, previous)
 
 
 NATIVE_IDENTITY = mctx("Your operations agent id is `{agent}`. Your native assignment is "
@@ -542,6 +523,13 @@ def main() -> int:
 
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="action", required=True)
+    send = commands.add_parser("message")
+    send.add_argument("scratch", type=Path)
+    send.add_argument("agent")
+    send.add_argument("parameters", type=Path)
+    receive = commands.add_parser("received")
+    receive.add_argument("scratch", type=Path)
+    receive.add_argument("delivery")
     launch = commands.add_parser("prepare")
     launch.add_argument("scratch", type=Path)
     launch.add_argument("parameters", type=Path)
@@ -566,7 +554,13 @@ def main() -> int:
         print(f"codex_ticket: run in the main tree {main_tree}", file=sys.stderr)
         return 2
     try:
-        if args.action == "prepare":
+        if args.action == "message":
+            from codex_delivery import message
+            out = message(args.scratch, args.agent, json.loads(args.parameters.read_text()))
+        elif args.action == "received":
+            from codex_delivery import received
+            out = received(args.scratch, args.delivery, Path.home())
+        elif args.action == "prepare":
             out = prepare(args.scratch, json.loads(args.parameters.read_text()), Path.home(), args.previous)
         elif args.action == "reconcile":
             out = reconcile(args.scratch, args.agent, args.native, Path.home())

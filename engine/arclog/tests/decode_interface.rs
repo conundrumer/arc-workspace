@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use arclog::check::{check_program, CheckCache, CheckedProgram, SolverClauses};
-use arclog::decode::{step_batch, Consistency, Decoder, Point, Refusal, Views};
+use arclog::decode::{step_batch, Consistency, Decoder, Point, Points, Refusal, Views};
 use arclog::eval::instance::Constructions;
 use arclog::eval::pool::Pool;
 use arclog::eval::{Caps, ReachedBound, RelationValue};
@@ -281,7 +281,7 @@ fn the_table_of_a_det_at_the_end_of_its_form_gives_its_rows_at_each_value() {
     let mut found = None;
     for token in &tokens {
         decoder.step(token.clone()).unwrap_or_else(|refusal| panic!("{token:?}: {refusal:?}"));
-        let tables = decoder.tables();
+        let tables = decoder.tables(Points::All);
         if tables.iter().any(|table| table.point == Point::Relation) {
             found = Some(tables);
             break;

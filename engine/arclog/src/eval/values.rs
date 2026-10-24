@@ -13,7 +13,7 @@ use crate::relations::Relation;
 use crate::session::ReachedSessionBound;
 use crate::solver::CaseName;
 use crate::task::Grid;
-use crate::terms::{Constant, ReachedMarginBound, Term, TermId};
+use crate::terms::ReachedMarginBound;
 
 /// The caps of an evaluation, each a count, so none depends on the
 /// machine.
@@ -267,39 +267,4 @@ impl Cancellation {
 pub struct Limits {
     pub deadline: Option<std::time::Instant>,
     pub cancellation: Cancellation,
-}
-
-/// The key columns of the output rows of a keyed form, an `INIT` or a
-/// `RIGID_DET` form: the key's columns where the form has a key clause, and
-/// otherwise the one `Unit` column.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum OutputKey {
-    /// A key clause of this many columns.
-    Keyed(usize),
-    Unit,
-}
-
-impl OutputKey {
-    /// The key columns of a form with a key clause of `columns` columns, or
-    /// with none where it is `None`.
-    pub(crate) fn of(columns: Option<usize>) -> OutputKey {
-        columns.map_or(OutputKey::Unit, OutputKey::Keyed)
-    }
-
-    /// The count of an output row's key columns.
-    pub(crate) fn width(self) -> usize {
-        match self {
-            OutputKey::Keyed(columns) => columns,
-            OutputKey::Unit => 1,
-        }
-    }
-
-    /// The key columns of an output row at the key `key`, a row of the key
-    /// clause's columns, empty for a form with no key clause.
-    pub(crate) fn columns(self, key: &[TermId]) -> std::borrow::Cow<'_, [TermId]> {
-        match self {
-            OutputKey::Keyed(_) => key.into(),
-            OutputKey::Unit => vec![Term::Constant(Constant::Unit).encode().expect("a Unit has a term id")].into(),
-        }
-    }
 }

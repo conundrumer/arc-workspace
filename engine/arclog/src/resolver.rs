@@ -166,8 +166,9 @@ pub struct Signature(pub crate::program::canonical::CanonicalForm);
 
 /// The resolved content of a node of a case program: its canonical form,
 /// with each name it reads standing for the resolved content of what it
-/// resolves to, and, for a clause whose node keeps fewer columns than the
-/// clause gives, followed by the names of the columns it keeps, in their
+/// resolves to, and, for a clause whose node keeps columns that differ, in
+/// count or in order, from the clause's columns in their canonical
+/// positions, followed by the names of the columns it keeps, in their
 /// order. Two contents are equal when their hashes match and then
 /// their canonical forms do, whatever file or decode they came from.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]

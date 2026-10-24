@@ -44,9 +44,10 @@ use arclog::task::{JudgedTask, Task};
 use arclog::terms::{Example, TermId};
 
 use arclog::stream::corpus::{case_spelled, check_case, check_cases, decoded_cases};
-use crate::concept_case::{corpus_limits, corpus_session, determined_cases, read_corpus_task, CorpusTask};
+use arclog::decode::corpus::{corpus_session, read_corpus_task, CorpusTask};
+use crate::concept_case::{corpus_limits, determined_cases};
 use arclog_constructions::shared as constructions;
-use crate::replay::{holds_demonstrated, replay, Stepped};
+use arclog::decode::replay::{holds_demonstrated, replay, Stepped};
 use crate::select::selected;
 
 /// Whether the rows of each prefix are compared with those of a second
@@ -295,7 +296,7 @@ fn decode_case(program: &CheckedProgram, expected: Result<bool, String>, task: &
     let mut consistency = None;
     let mut rows_found = false;
     let replayed = replay(&mut decoder, &stream, &mut |decoder, stepped| {
-        let Stepped { index, token, consistency: result, mask_seconds, step_seconds } = stepped;
+        let Stepped { index, token, consistency: result, mask_seconds, step_seconds, .. } = stepped;
         gathered.mask.push(mask_seconds);
         gathered.step.push(step_seconds);
         gathered.total.push(mask_seconds + step_seconds);

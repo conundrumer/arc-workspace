@@ -25,7 +25,10 @@ def script(name: str) -> ModuleType:
     package. A script already in `sys.modules` under `name` that was loaded
     from the same path is returned, so a test process holds one module
     object for each script, as a real process does. A test that needs a
-    fresh module reloads it with `importlib.reload`."""
+    fresh module reloads it with `importlib.reload`. `scripts/` is put on
+    `sys.path` first, so the script imports its siblings."""
+    from handbook.paths import scripts_importable
+    scripts_importable()
     path = checkout.scripts() / f"{name}.py"
     loaded = sys.modules.get(name)
     if loaded is not None and getattr(loaded, "__file__", None) == str(path):
@@ -58,3 +61,10 @@ def root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (programs / "witnesses").mkdir()
     monkeypatch.setattr(checkout, "ROOT", tmp_path)
     return tmp_path
+
+
+@pytest.fixture(autouse=True)
+def attempt_journal(tmp_path, monkeypatch):
+    """Keep lifecycle writes in each test's own filesystem."""
+    attempt_record = script("attempt_record")
+    monkeypatch.setattr(attempt_record, 'directory', lambda: tmp_path / '.attempts')

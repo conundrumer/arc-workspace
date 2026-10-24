@@ -159,3 +159,61 @@ def test_next_state_refuses_a_failed_required_flush(tmp_path, monkeypatch):
     kept_reads.store().keep("fixture:read", "key", "completed")
     with pytest.raises(kept_reads.Unavailable, match="before the next state"):
         state_reads.new_state()
+
+
+def codes_of(path: Path) -> dict[str, float]:
+    import sqlite3
+    with sqlite3.connect(path) as db:
+        return dict(db.execute("SELECT code, used FROM codes"))
+
+
+def test_a_write_notes_the_code_of_each_record_it_writes(tmp_path, monkeypatch):
+    """A process that ends after a batch write leaves a `codes` row for the
+    records, so that they are dropped once the code expires."""
+    monkeypatch.setattr(kept_reads, "_store", None)
+    kept_reads.open_store(tmp_path / "store.sqlite")
+    store = kept_reads.store()
+    store.keep("fixture:read", "key", "written")
+    assert store.write(set())
+    assert list(codes_of(store.path)) == [kept_reads.code_of("fixture")]
+
+
+def seeded_store(path: Path, expired: int, blob: bytes = b"x"):
+    """A store with `expired` records of a code last used at time 0."""
+    file = kept_reads.StoreFile(path, kept_reads.SCHEMA)
+    db = file.connect()
+    with db:
+        db.execute("INSERT INTO codes VALUES ('old', 0)")
+        db.executemany("INSERT INTO records VALUES ('old', 'r', ?, ?)",
+                       [(str(i), blob) for i in range(expired)])
+    return file
+
+
+def record_count(file) -> int:
+    return file.connect().execute("SELECT count(*) FROM records").fetchone()[0]
+
+
+def test_a_write_drops_a_bounded_batch_of_expired_records_and_later_writes_go_on(tmp_path, monkeypatch):
+    monkeypatch.setattr(kept_reads, "DROP_BATCH", 3)
+    monkeypatch.setattr(kept_reads, "CLEANUP_SECONDS", 0)
+    file = seeded_store(tmp_path / "store.sqlite", 10)
+    counts = []
+    for _ in range(4):
+        assert file.put([], ["new"], 3600)
+        counts.append(record_count(file))
+    assert counts == [7, 4, 1, 0]
+    assert list(codes_of(file.path)) == ["new"]
+
+
+def test_a_write_gives_back_a_bounded_number_of_free_pages(tmp_path, monkeypatch):
+    monkeypatch.setattr(kept_reads, "VACUUM_BATCH", 4)
+    monkeypatch.setattr(kept_reads, "CLEANUP_SECONDS", 0)
+    file = seeded_store(tmp_path / "store.sqlite", 20, b"x" * 100_000)
+
+    def free_pages() -> int:
+        return file.connect().execute("PRAGMA freelist_count").fetchone()[0]
+
+    assert file.put([], ["new"], 3600)
+    first = free_pages()
+    assert file.put([], ["new"], 3600)
+    assert 0 < free_pages() < first

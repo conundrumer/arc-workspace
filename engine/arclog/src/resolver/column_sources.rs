@@ -92,12 +92,9 @@ pub(super) fn key_sources(key: &KeyBody, body: &NodePath) -> Vec<Sourced> {
 }
 
 /// The `key` slot of the relation of a keyed form: the record of its key
-/// clause's fields, or one column where it has none.
-pub(super) fn key_listed(key: Option<(&KeyBody, NodePath)>) -> Listed {
-    match key {
-        Some((key, body)) => Listed { slot: Slot::of(&columns::key(), Some(&key_fields(key))), sources: below(&columns::key(), key_sources(key, &body)) },
-        None => Listed { slot: Slot::Column(columns::key()), sources: Vec::new() },
-    }
+/// clause's fields, and none where it has no key clause.
+pub(super) fn key_listed(key: Option<(&KeyBody, NodePath)>) -> Option<Listed> {
+    key.map(|(key, body)| Listed { slot: Slot::of(&columns::key(), Some(&key_fields(key))), sources: below(&columns::key(), key_sources(key, &body)) })
 }
 
 /// The path below `form` of the body of `input`, an input of `form`

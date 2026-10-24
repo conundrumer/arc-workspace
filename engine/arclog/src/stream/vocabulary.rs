@@ -5,7 +5,7 @@ use crate::hash::StableHashMap;
 use crate::program::FactRelation;
 use crate::registry::{LibEntry, LibName, Proposer, ProposerKind, Registry};
 
-use super::{Control, DecodeSettings, Token, VocabularyCaps};
+use super::{Control, DecodeSettings, Token, TokenKind, VocabularyCaps};
 
 /// The tokens of one decode by id, and the id of each. The slots stand in
 /// this order: the control tokens, the lib relations, relation macros and
@@ -69,6 +69,25 @@ impl<'r> Vocabulary<'r> {
     /// The token of `id`, where the vocabulary holds one.
     pub fn token(&self, id: u32) -> Option<&Token> {
         self.tokens.get(id as usize)
+    }
+
+    /// The kind of the token of `id`, where the vocabulary holds one. A lib
+    /// name's kind is its registry entry's.
+    pub fn kind(&self, id: u32) -> Option<TokenKind> {
+        Some(match self.token(id)? {
+            Token::Control(_) => TokenKind::Control,
+            Token::Lib(name) => match self.registry.entry(name).expect("a name the registry gives") {
+                LibEntry::Relation(_) => TokenKind::LibRelation,
+                LibEntry::Macro(_) => TokenKind::RelationMacro,
+                LibEntry::Component(_) => TokenKind::Component,
+                LibEntry::Proposer(_) => unreachable!("`Vocabulary::new` puts no proposer in a `Token::Lib`"),
+            },
+            Token::Proposer(_) => TokenKind::Proposer,
+            Token::Fact(_) => TokenKind::Fact,
+            Token::Relation(_) => TokenKind::Relation,
+            Token::Column(_) => TokenKind::Column,
+            Token::Label(_) => TokenKind::Label,
+        })
     }
 
     /// The count of the tokens.

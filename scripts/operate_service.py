@@ -16,6 +16,10 @@ read ends where one arrives (the `wait` client sends its request again). A call
 that waits in the queue waits for its response or its bound. Once the
 resident serves a call, the resident alone decides the output. A run that has
 journaled a give answers with its own output, and no bound or message replaces it.
+The request's alarm (`arm`) is a checkpoint that comes whatever the run executes,
+through its flush and its response: it touches the beat, answers each queued call
+at its bound, and answers the running client at its bound; only the end of the
+run at `CARRY_SECONDS` ends the request, and only while its run runs.
 """
 
 import contextlib
@@ -44,6 +48,7 @@ from typing import TYPE_CHECKING, TextIO
 if TYPE_CHECKING:
     from operations.steps import Launch
 
+import alarms
 import read_interrupts
 import script_calls
 
@@ -187,6 +192,13 @@ class Request:
     """Whether the run journaled a give, after which its output is the response."""
     first: bool = False
     """Whether the queue served this request ahead of the others for a run that ended with no client."""
+    run_ended: bool = False
+    """Whether the run has ended, however it ended: from then on `end_at_carry` ends nothing."""
+    alarm: alarms.Alarm = field(init=False, repr=False, compare=False)
+    """The request's alarm, which runs `arm`."""
+
+    def __post_init__(self) -> None:
+        self.alarm = alarms.Alarm(lambda: arm(self))
 
     def detach(self, stdout: str = "") -> None:
         """Answer the waiting client with a successful `stdout`; the run goes on without it."""
@@ -198,10 +210,18 @@ class Request:
         except OSError:
             pass
 
+    def answer_at_bound(self, now: float) -> None:
+        """Answer the client with what a read that runs prints where the run runs, the client
+        still waits, no give is journaled, and `now` has reached its bound less
+        `FINISH_SECONDS`. Once the run has ended, its response goes to the client."""
+        if (not self.run_ended and self.waiting and not self.committed
+                and now >= self.deadline - FINISH_SECONDS):
+            self.detach(read_running(self))
+
     def check(self, code: bool = False) -> None:
         beat(self.listener)
-        if self.waiting and not self.committed and time.monotonic() >= self.deadline - FINISH_SECONDS:
-            self.detach(read_running(self))
+        end_at_carry(self, time.monotonic())
+        self.answer_at_bound(time.monotonic())
         from refresh_locks import try_shared
         from relay_reads import session_id
         lock = try_shared(session_id())
@@ -210,7 +230,7 @@ class Request:
         lock.close()
         if self.pending is not None:
             self.pending.poll()
-            if self.kind in YIELDING and self.pending.client_queued():
+            if self.kind in YIELDING and not self.run_ended and self.pending.client_queued():
                 raise Detached
         if self.waiting:
             readable, _, _ = select.select([self.connection], [], [], 0)
@@ -228,7 +248,8 @@ _beaten = 0.0
 
 
 def beat_path(endpoint_path: Path) -> Path:
-    """The file whose mtime is the time of the resident's last checkpoint."""
+    """The file whose mtime is the time of the resident's last checkpoint: a
+    checkpoint a read reaches, or the alarm of the request that runs."""
     return endpoint_path.with_suffix(".beat")
 
 
@@ -278,10 +299,13 @@ def read_running(request: Request) -> str:
 @dataclass
 class Pending:
     """Accept queued requests during cooperative reads, without executing them,
-    and answer each at its bound while the run of `running` goes on."""
+    and answer each at its bound while the run of `running` goes on. A poll by
+    the alarm of `running` (`arm`) adopts none; adoption stays at a checkpoint.
+    While a method of this class runs, `inside` holds and `arm` runs no poll."""
     listener: socket.socket
     connections: dict[socket.socket, tuple[float, dict | None]] = field(default_factory=dict)
     running: Request | None = None
+    inside: bool = False
     queued: float = 0.0
     """The seconds the request that `take` gave last waited in the queue."""
     first: bool = False
@@ -290,37 +314,56 @@ class Pending:
     """The end time of each client run that ended with no client, by subject and kind;
     the next request of that subject and kind goes first, once."""
 
-    def poll(self) -> None:
-        while select.select([self.listener], [], [], 0)[0]:
-            connection, _ = self.listener.accept()
-            connection.setblocking(False)
-            self.connections[connection] = time.monotonic(), None
-        for connection, (arrived, message) in list(self.connections.items()):
-            try:
-                if message is None:
-                    if not select.select([connection], [], [], 0)[0]:
-                        if time.monotonic() - arrived < START_SECONDS:
-                            continue
-                        raise ValueError("incomplete queued request")
-                    line = connection.recv(65537, socket.MSG_PEEK)
-                    if not line:
-                        raise ValueError("disconnected queued request")
-                    if b"\n" not in line:
-                        if len(line) <= 65536 and time.monotonic() - arrived < START_SECONDS:
-                            continue
-                        raise ValueError("incomplete queued request")
-                    message = json.loads(line.split(b"\n", 1)[0])
-                    request_message(message)
-                    self.connections[connection] = arrived, message
-                if self.adopt(connection, message):
-                    continue
-                if (self.running is not None
-                        and float(message["deadline"]) - time.monotonic() <= FINISH_SECONDS):
-                    connection.sendall(success(read_running(self.running)))
-                    raise ValueError("queued request answered at its bound")
-            except (OSError, ValueError, KeyError, TypeError):
-                connection.close()
-                self.connections.pop(connection, None)
+    @contextlib.contextmanager
+    def exclusive(self) -> Iterator[None]:
+        """Hold `inside` for the block."""
+        before, self.inside = self.inside, True
+        try:
+            yield
+        finally:
+            self.inside = before
+
+    def poll(self, adopt: bool = True) -> None:
+        """Accept the queued requests, adopt those of the running request's subject and
+        kind where `adopt` holds, and answer those whose bound has come."""
+        with self.exclusive():
+            while select.select([self.listener], [], [], 0)[0]:
+                connection, _ = self.listener.accept()
+                connection.setblocking(False)
+                self.connections[connection] = time.monotonic(), None
+            for connection, (arrived, message) in list(self.connections.items()):
+                try:
+                    if message is None:
+                        if not select.select([connection], [], [], 0)[0]:
+                            if time.monotonic() - arrived < START_SECONDS:
+                                continue
+                            raise ValueError("incomplete queued request")
+                        line = connection.recv(65537, socket.MSG_PEEK)
+                        if not line:
+                            raise ValueError("disconnected queued request")
+                        if b"\n" not in line:
+                            if len(line) <= 65536 and time.monotonic() - arrived < START_SECONDS:
+                                continue
+                            raise ValueError("incomplete queued request")
+                        message = json.loads(line.split(b"\n", 1)[0])
+                        request_message(message)
+                        self.connections[connection] = arrived, message
+                    if adopt and self.adopt(connection, message):
+                        continue
+                    if (self.running is not None
+                            and float(message["deadline"]) - time.monotonic() <= FINISH_SECONDS):
+                        connection.sendall(success(read_running(self.running)))
+                        raise ValueError("queued request answered at its bound")
+                except (OSError, ValueError, KeyError, TypeError):
+                    connection.close()
+                    self.connections.pop(connection, None)
+
+    def answer_due(self) -> float:
+        """The time at which the first complete queued request reaches the bound at which
+        `poll` answers it, or infinity where none is queued."""
+        return min((float(message["deadline"]) - FINISH_SECONDS
+                    for _, message in self.connections.values() if message is not None),
+                   default=math.inf)
 
     def adopt(self, connection: socket.socket, message: dict) -> bool:
         """Give the connection of a complete request to the run of `running` where that run
@@ -344,32 +387,34 @@ class Pending:
 
     def client_queued(self) -> bool:
         """Whether a complete request of a kind that is no yielding kind waits in the queue."""
-        return any(message is not None and Kind(message["kind"]) not in YIELDING
-                   for _, message in self.connections.values())
+        with self.exclusive():
+            return any(message is not None and Kind(message["kind"]) not in YIELDING
+                       for _, message in self.connections.values())
 
     def take(self) -> socket.socket | None:
         """The first complete request of a subject and kind whose run ended with no client,
         within `START_SECONDS` + `LIMIT_SECONDS` of that end; else the first complete request
         of a kind that is no yielding kind, else the first of the others."""
-        self.poll()
-        now = time.monotonic()
-        self.left = {key: end for key, end in self.left.items()
-                     if now - end <= START_SECONDS + LIMIT_SECONDS}
+        with self.exclusive():
+            self.poll()
+            now = time.monotonic()
+            self.left = {key: end for key, end in self.left.items()
+                         if now - end <= START_SECONDS + LIMIT_SECONDS}
 
-        def rank(entry: tuple[socket.socket, float, dict]) -> int:
-            message = entry[2]
-            if (message["subject"], message["kind"]) in self.left:
-                return 0
-            return 2 if Kind(message["kind"]) in YIELDING else 1
+            def rank(entry: tuple[socket.socket, float, dict]) -> int:
+                message = entry[2]
+                if (message["subject"], message["kind"]) in self.left:
+                    return 0
+                return 2 if Kind(message["kind"]) in YIELDING else 1
 
-        complete = [(connection, arrived, message) for connection, (arrived, message)
-                    in self.connections.items() if message is not None]
-        for connection, arrived, message in sorted(complete, key=rank):
-            self.connections.pop(connection)
-            self.queued = now - arrived
-            self.first = self.left.pop((message["subject"], message["kind"]), None) is not None
-            return connection
-        return None
+            complete = [(connection, arrived, message) for connection, (arrived, message)
+                        in self.connections.items() if message is not None]
+            for connection, arrived, message in sorted(complete, key=rank):
+                self.connections.pop(connection)
+                self.queued = now - arrived
+                self.first = self.left.pop((message["subject"], message["kind"]), None) is not None
+                return connection
+            return None
 
     def close(self) -> None:
         for connection in self.connections:
@@ -431,11 +476,8 @@ def side_effect() -> Iterator[None]:
         current.check()
         if not current.waiting:
             raise Detached
-        previous = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGALRM})
-        try:
+        with alarms.blocked():
             yield
-        finally:
-            signal.pthread_sigmask(signal.SIG_SETMASK, previous)
 
 
 @contextlib.contextmanager
@@ -683,6 +725,7 @@ def client(operator: str, kind: Kind = Kind.NEXT) -> int:
     from transcript_snapshots import Refused
     global REQUEST_SENT
     repeated = False
+    watchdog = None
     try:
         if kind == Kind.REVIEW:
             from operate_review import qualification
@@ -694,7 +737,7 @@ def client(operator: str, kind: Kind = Kind.NEXT) -> int:
             single_instance(operator)
         REQUEST_SENT = False
         repeated = kind in (Kind.NEXT, Kind.REVIEW) and silent_before(operator, kind)
-        arm_watchdog(operator, lambda me: expired_output(me, repeated))
+        watchdog = arm_watchdog(operator, lambda me: expired_output(me, repeated))
         started, deadline = time.time(), time.monotonic() + LIMIT_SECONDS
         result = request(checkout.ROOT, session_id(), operator, started, deadline, kind)
         if isinstance(result, ReviewPlan):
@@ -729,7 +772,8 @@ def client(operator: str, kind: Kind = Kind.NEXT) -> int:
         print(cause, end="", file=sys.stderr)
         return 1
     finally:
-        signal.alarm(0)
+        if watchdog is not None:
+            watchdog.clear()
 
 
 def failed_next(operator: str, status: int, stdout: str, stderr: str) -> int:
@@ -812,21 +856,38 @@ def refresh_resident(main: Path, session: str, operator: str) -> None:
         raise RuntimeError("resident refresh failed")
 
 
-def arm(current: Request) -> None:
-    """Answer the client of `current` at its bound, end its run at `CARRY_SECONDS`,
-    and set the alarm for the earlier of those that has not come."""
-    now = time.monotonic()
+def end_at_carry(current: Request, now: float) -> float:
+    """Give the time at which the run of `current` ends, `CARRY_SECONDS` from
+    its start, or infinity once the run has ended; raise `Unavailable` where
+    the run runs and `now` has reached it."""
+    if current.run_ended:
+        return math.inf
     end = current.begun + CARRY_SECONDS
     if now >= end:
         raise Unavailable(f"state read did not finish within {CARRY_SECONDS} s "
                           f"while reading {current.phase}")
-    due = end
-    if current.waiting and not current.committed:
-        if now >= current.deadline - FINISH_SECONDS:
-            current.detach(read_running(current))
-        else:
-            due = min(due, current.deadline - FINISH_SECONDS)
-    signal.setitimer(signal.ITIMER_REAL, max(due - now, 0.001))
+    return end
+
+
+def arm(current: Request) -> None:
+    """The checkpoint of `current` that its alarm runs: touch the beat, answer the
+    client of `current` at its bound, answer the queued requests at theirs
+    (`Pending.poll`, with no adoption), end the run at `CARRY_SECONDS`, and set
+    the alarm for the earliest of those that has not come, and `BEAT_EVERY` from
+    now. Only the end of the run raises, and only while the run runs."""
+    beat(current.listener)
+    now = time.monotonic()
+    due = min(end_at_carry(current, now), now + BEAT_EVERY)
+    current.answer_at_bound(now)
+    pending = current.pending
+    if pending is not None:
+        if not pending.inside:
+            with contextlib.suppress(OSError):
+                pending.poll(adopt=False)
+        due = min(due, pending.answer_due())
+    if current.waiting and not current.committed and not current.run_ended:
+        due = min(due, current.deadline - FINISH_SECONDS)
+    current.alarm.set(due)
 
 
 read_first = True
@@ -841,7 +902,8 @@ def child_read(current: Request) -> None:
     the reads it computed are in the kept-read store, so that the peak memory
     of this resident's first read ends with the child; the resident's own read
     then loads those records. Where the resident's first read has run, do
-    nothing. Cancellation of the request kills the child and propagates. A
+    nothing. Cancellation of the request, or the end of its run at
+    `CARRY_SECONDS`, kills the child and propagates. A
     child that fails gives the request the outcome of any failed read."""
     global read_first
     if not read_first:
@@ -889,6 +951,26 @@ def child_read(current: Request) -> None:
         os.close(errors)
 
 
+def publish_response(current: Request, response: dict[str, object]) -> None:
+    """Publish a successful reply. A journaled reply remains authoritative
+    while replacement holds the refresh lock."""
+    data = (json.dumps(response) + "\n").encode()
+    if current.committed:
+        current.connection.sendall(data)
+    else:
+        with side_effect():
+            current.connection.sendall(data)
+
+
+@contextlib.contextmanager
+def run_scope(current: Request) -> Iterator[None]:
+    """Mark the run of `current` as ended when the block ends, however it ends."""
+    try:
+        yield
+    finally:
+        current.run_ended = True
+
+
 def serve_request(connection: socket.socket, listener: socket.socket, code: str,
                   pending: Pending | None = None) -> script_calls.End | None:
     """Serve one request; gives why this interpreter must end, or `None`
@@ -931,8 +1013,8 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
         if pending is not None:
             pending.running = current
         try:
-            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-                signal.signal(signal.SIGALRM, lambda *_: arm(current))
+            with (contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr),
+                  run_scope(current)):
                 arm(current)
                 current.check(code=True)
                 if current.kind == Kind.REFRESH:
@@ -963,7 +1045,9 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
                             status = operate.main(["next", current.operator])
                 current.check()
         except Replaced:
-            status, retry, ended = 1, True, script_calls.End.REPLACED
+            if not current.committed:
+                status, retry = 1, True
+            ended = script_calls.End.REPLACED
         except Detached:
             retry = kind is Kind.WAIT
         except (Unavailable, kept_reads.Unavailable) as exc:
@@ -977,7 +1061,7 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
             traceback.print_exc(file=stderr)
             status, ended = 1, script_calls.End.EXCEPTION
         finally:
-            signal.setitimer(signal.ITIMER_REAL, 0)
+            arm(current)  # The alarm covers the flush and the response.
             if not kept_reads.flush():
                 store = kept_reads.store()
                 if store is None or not store.locked():
@@ -1001,8 +1085,7 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
                 pass
             elif not retry and response["status"] == 0:
                 try:
-                    with side_effect():
-                        current.connection.sendall((json.dumps(response) + "\n").encode())
+                    publish_response(current, response)
                 except Replaced:
                     ended = script_calls.End.REPLACED
                     current.connection.sendall((json.dumps({"status": 1, "stdout": "", "stderr": "",
@@ -1014,6 +1097,7 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
         except OSError:
             pass
         finally:
+            current.alarm.clear()
             if current.connection is not connection:
                 current.connection.close()
             if pending is not None:
@@ -1039,6 +1123,8 @@ def serve() -> script_calls.End:
             fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return script_calls.End.LOCK_HELD
+        # The duplicate stays open until process exit, including a cleanup failure.
+        os.dup(owner.fileno())
         import kept_reads
         gc.disable()
         kept_reads.open_store(required=True)

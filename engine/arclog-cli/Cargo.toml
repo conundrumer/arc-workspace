@@ -15,6 +15,6 @@ arclog = { path = "../arclog" }
 arclog-constructions = { path = "../arclog-constructions" }
 # The JSON of the Souffle snapshot and of `souffle_parity.py rerun --json`,
 # which `compare`, `speed`, `check-diff` and `select` read, and of the files
-# of `lib-compare`, `row-counts` and `tables`, which a Python program reads
+# of `lib-compare` and `row-counts`, which a Python program reads
 # or a later one will.
 serde_json = "1.0.154"

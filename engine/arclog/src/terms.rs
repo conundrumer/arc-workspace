@@ -144,7 +144,7 @@ impl OrientationConstant {
 
 /// Each orientation type, at the position that the high byte of its
 /// constants' encodings gives.
-const ORIENTATION_TYPES: [OrientationType; 7] = [
+pub const ORIENTATION_TYPES: [OrientationType; 7] = [
     OrientationType::Dir,
     OrientationType::DiagDir,
     OrientationType::Axis,

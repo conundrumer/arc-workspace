@@ -234,16 +234,12 @@ impl_choice([Pc, Ff, $SkipUnmarked(), Dr, $FillDefault(), Fc, Sz]) :-
     tile_piece(K, N, O, P, B) :- corner(K, N, O, P), window(K, N, B), box_corner(P, B, O).
 }
 
-.init parse = Parse<Unit>
-parse.cell($U(), P, Col) :- in(P, Col).
-parse.side($U(), N) :- side(_, N).
-
-// The side of a piece under each reading.
-.decl side(sz: PieceSize, k: number)
+.init parse = Parse<PieceSize>
+parse.cell(Sz, P, Col) :- piece_size_choice(Sz), in(P, Col).
 
 // The squares free of params.bg at each reading's piece side.
 .decl window(sz: PieceSize, b: Box)
-window(Sz, B) :- side(Sz, K), parse.window($U(), K, B).
+window(Sz, B) :- parse.side(Sz, K), parse.window(Sz, K, B).
 
 // The color of a piece's unmarked cells under each reading; undefined when
 // the reading gives two.
@@ -251,7 +247,7 @@ window(Sz, B) :- side(Sz, K), parse.window($U(), K, B).
 .init fill = Unanimous<FillColor, Color>
 
 .decl mark(fc: FillColor, b: Box, p: Position)
-mark(Fc, B, P) :- fill.value(Fc, _), parse.window_color($U(), B, P, Col), !fill.value(Fc, Col).
+mark(Fc, B, P) :- fill.value(Fc, _), parse.window_color(_, B, P, Col), !fill.value(Fc, Col).
 
 // The pieces each parse reads.
 .decl piece(sz: PieceSize, pc: PieceParse, b: Box)
@@ -289,7 +285,7 @@ placed(Sz, Fc, Pc, Ff, Um, Dr, B, S) :- member(Sz, Fc, Pc, Ff, Um, B), points(Fc
 // The cells a vacant block shows.
 .decl empty_cell(e: EmptyBlock, fc: FillColor, sz: PieceSize, p_inner: Position, col: Color)
 empty_cell(E, Fc, Sz, P_inner, Col) :-
-    empty_color(E, Fc, Col), side(Sz, K), parse.frame.cell(K, P_inner).
+    empty_color(E, Fc, Col), parse.side(Sz, K), parse.frame.cell(K, P_inner).
 
 // --- $WindowParse ---
 piece(Sz, $WindowParse(), B) :- window(Sz, B).
@@ -303,19 +299,20 @@ vacant(Sz, Fc, Ff, Um, Dr, S) :-
 
 out(P, Col, [$WindowParse(), Ff, Um, Dr, E, Fc, Sz], [nil]) :-
     impl_choice([$WindowParse(), Ff, Um, Dr, E, Fc, Sz]),
-    ( placed(Sz, Fc, $WindowParse(), Ff, Um, Dr, B, S), parse.window_color($U(), B, P_inner, Col)
+    ( placed(Sz, Fc, $WindowParse(), Ff, Um, Dr, B, S), parse.window_color(Sz, B, P_inner, Col)
     ; vacant(Sz, Fc, Ff, Um, Dr, S), empty_cell(E, Fc, Sz, P_inner, Col) ),
     concat_2d(S, P_inner, 0, P).
 
 // --- $TileParse ---
 // The pieces each open origin cuts.
 .decl tile_piece(sz: PieceSize, o: DiagDir, p: Position, b: Box)
-tile_piece(Sz, O, P, B) :- side(Sz, N), params.tile_origin(O), parse.tile_piece($U(), N, O, P, B).
+tile_piece(Sz, O, P, B) :-
+    parse.side(Sz, N), params.tile_origin(O), parse.tile_piece(Sz, N, O, P, B).
 
 // The cut from origin o is undefined on this input.
 .decl torn(sz: PieceSize, o: DiagDir)
 torn(Sz, O) :-
-    side(Sz, N), params.tile_origin(O), parse.corner($U(), N, O, P),
+    parse.side(Sz, N), params.tile_origin(O), parse.corner(Sz, N, O, P),
     !tile_piece(Sz, O, P, _).
 
 piece(Sz, $TileParse(), B) :- tile_piece(Sz, _, _, B).
@@ -335,7 +332,7 @@ unfilled(Sz, Fc, Ff, Um, Dr, O, S) :-
 
 out(P, Col, [$TileParse(), Ff, Um, Dr, E, Fc, Sz], [[O]]) :-
     impl_choice([$TileParse(), Ff, Um, Dr, E, Fc, Sz]), params.tile_origin(O), !torn(Sz, O),
-    ( filled(Sz, Fc, Ff, Um, Dr, O, B, S), parse.window_color($U(), B, P_inner, Col)
+    ( filled(Sz, Fc, Ff, Um, Dr, O, B, S), parse.window_color(Sz, B, P_inner, Col)
     ; unfilled(Sz, Fc, Ff, Um, Dr, O, S), empty_cell(E, Fc, Sz, P_inner, Col) ),
     concat_2d(S, P_inner, 0, P).
 
@@ -344,7 +341,7 @@ candidate(Sz, Fc, Pc, $FillFreeCenter(), B) :- piece(Sz, Pc, B), fill.value(Fc, 
 
 // --- $NeedsFill ---
 candidate(Sz, Fc, Pc, $NeedsFill(), B) :-
-    piece(Sz, Pc, B), parse.window_color($U(), B, _, Col), fill.value(Fc, Col).
+    piece(Sz, Pc, B), parse.window_color(Sz, B, _, Col), fill.value(Fc, Col).
 
 // --- $UnmarkedCenter ---
 member(Sz, Fc, Pc, Ff, $UnmarkedCenter(), B) :- candidate(Sz, Fc, Pc, Ff, B).
@@ -406,18 +403,18 @@ commonest.item($U(), Col, P) :- in(P, Col), !params.bg(Col).
 fill.item($FillDerived(), Col) :- commonest.mode($U(), Col).
 
 // --- $StoredSize ---
-parse.trial($U(), K) :- params.piece_size(K).
-
-side($StoredSize(), K) :- params.piece_size(K).
+parse.trial($StoredSize(), K) :- params.piece_size(K).
+parse.side($StoredSize(), K) :- parse.trial($StoredSize(), K).
 
 // --- $SizeDerived ---
-parse.trial($U(), K) :- in(P, _), axis_elem(A), ( sub_extent(P, A, K) ; axis_dim(P, A, K) ).
+parse.trial($SizeDerived(), K) :-
+    in(P, _), axis_elem(A), ( sub_extent(P, A, K) ; axis_dim(P, A, K) ).
 
 // @claim pieces
 .init largest = Extremes<Unit>
-largest.cand($U(), K) :- parse.window($U(), K, _).
+largest.cand($U(), K) :- parse.window($SizeDerived(), K, _).
 
-side($SizeDerived(), K) :- largest.high($U(), K).
+parse.side($SizeDerived(), K) :- largest.high($U(), K).
 
 .comp Determine {
     .init parse = Parse<Example>

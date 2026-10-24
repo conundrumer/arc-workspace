@@ -35,10 +35,11 @@ use arclog::resolver::{resolve_cases, DependencyKind, GraphNodeIndex};
 use arclog::session::TaskSession;
 use arclog::solver::{CaseName, Exclusion};
 use arclog::terms::{Ident, Term, TermId};
-use arclog::types::{AssemblyId, GraphRelation, KeyRow, ValueType};
+use arclog::types::{GraphRelation, ValueType};
 
 use arclog::stream::corpus::{case_spelled, check_case, check_cases};
-use crate::concept_case::{corpus_limits, corpus_session, determined_cases, read_corpus_task, CorpusTask};
+use arclog::decode::corpus::{corpus_session, read_corpus_task, CorpusTask};
+use crate::concept_case::{corpus_limits, determined_cases};
 use arclog_constructions::shared as constructions;
 use crate::renaming::{renaming_exists, same_without_idents, term_leaves, EngineLeaf, Leaf};
 use crate::select::selected;
@@ -325,12 +326,10 @@ impl Comparison<'_> {
         }
         // One Pose value for every part: the first that a row holds.
         let pose = engine.iter().find_map(|(_, _, _, pose_column, rows)| rows.first().map(|row| row[*pose_column]));
-        // A part's record holds its columns without the Pose and, for an
-        // assembly with no key, without the key column.
+        // A part's record holds its columns without the Pose.
         let mut sides: Vec<(String, &ParamValue, Vec<ValueType>, Vec<Vec<TermId>>)> = Vec::new();
         for (part, record, types, pose_column, rows) in engine {
-            let unkeyed = matches!(types[pose_column], ValueType::Pose(AssemblyId { key: KeyRow::Unkeyed, .. }));
-            let kept = |column: &usize| *column != pose_column && !(unkeyed && *column < pose_column);
+            let kept = |column: &usize| *column != pose_column;
             let rows = rows.into_iter().filter(|row| Some(row[pose_column]) == pose).map(|row| (0..row.len()).filter(kept).map(|column| row[column]).collect()).collect();
             let types = (0..types.len()).filter(kept).map(|column| types[column].clone()).collect();
             sides.push((part, record, types, rows));

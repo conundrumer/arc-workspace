@@ -53,8 +53,9 @@ def set_aside(main: Path, task: str, role: Role) -> Path:
     work directory other than the claim and the numbered directories, and
     each entry of the task's reports directory. Before a Create pass it
     also takes, from the reports directory, the Create report and each
-    Refine report, with the issue notes of each (`progress-create.md`,
-    `progress-refine-<n>.md`), and leaves the Analyze report and its issue
+    Refine report, with the issue notes of each
+    (`programs/reports/<task_id>/progress-create.md`,
+    `programs/reports/<task_id>/progress-refine-<n>.md`), and leaves the Analyze report and its issue
     notes. Each moved tracked path is marked skip-worktree."""
     work = tasks_work(main) / task
     taken = numbered(work)

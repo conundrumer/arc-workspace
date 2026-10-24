@@ -58,7 +58,7 @@ Inputs: the 953 `.arclog` files of `work/arclog/gen/` and their `.arcdata` files
 
 ## Instances
 
-`INIT` forms per component; a `DEMONSTRATED` form counts as DemonstrationConsistency. The key width is the number of `^` labels in the key clause, 0 for the `Unit` key. Most instances in one file: 27 (a64e4611).
+`INIT` forms per component; a `DEMONSTRATED` form counts as DemonstrationConsistency. The key width is the number of `^` labels in the key clause. Most instances in one file: 27 (a64e4611).
 
 | component | instances | key widths {width: n} | max width (stem) |
 | --- | --- | --- | --- |

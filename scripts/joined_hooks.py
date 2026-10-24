@@ -3,9 +3,10 @@
 caller gets the reason of each check that denies, in the order of the
 list. The argument selects the event or matcher: `stop` for `SubagentStop`,
 `handback` for `SubagentHandback`, `send` for `SendMessage`, `agent` for
-`Agent`, and `bash` for `Bash|Monitor`. PreToolUse runs with the reader
-update (`reader_delivery.reader_update`). Checks that record a denial
-keep their own guards against denying one event twice."""
+`Agent`, and `bash` for `Bash|Monitor`, which also gives advisory context.
+PreToolUse runs with the reader update (`reader_delivery.reader_update`).
+Checks that record a denial keep their own guards against denying one
+event twice."""
 
 import sys
 from typing import Any
@@ -61,6 +62,7 @@ def main() -> int:
             return run_pre_tool_use(HOOK, [context_bound_hook.check, printed_launch_hook.check],
                                     reader_update)
         case [arg] if arg == BASH:
+            import busy_loop_hook
             import codex_bash_hook
             import detached_bash_hook
             import delete_bash_hook
@@ -68,8 +70,9 @@ def main() -> int:
             from reader_delivery import reader_update
 
             return run_pre_tool_use(HOOK, [pending_wait_hook.check, codex_bash_hook.check,
-                                           detached_bash_hook.check, checklist_bash, delete_bash_hook.check],
-                                    reader_update)
+                                           detached_bash_hook.check, checklist_bash,
+                                           delete_bash_hook.check, busy_loop_hook.check],
+                                    reader_update, contexts=[busy_loop_hook.context])
         case args:
             raise SystemExit(f"{HOOK}: usage: joined_hooks.py {HANDBACK}|{SEND}|{AGENT}|{BASH}|{STOP}, "
                              f"given `{' '.join(args)}`")
