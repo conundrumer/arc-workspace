@@ -38,7 +38,8 @@ use arclog::terms::{Ident, Term, TermId};
 use arclog::types::{AssemblyId, GraphRelation, KeyRow, ValueType};
 
 use arclog::stream::corpus::{case_spelled, check_case, check_cases};
-use crate::concept_case::{corpus_limits, corpus_session, determined_cases, read_corpus_task, CorpusTask};
+use arclog::decode::corpus::{corpus_session, read_corpus_task, CorpusTask};
+use crate::concept_case::{corpus_limits, determined_cases};
 use arclog_constructions::shared as constructions;
 use crate::renaming::{renaming_exists, same_without_idents, term_leaves, EngineLeaf, Leaf};
 use crate::select::selected;

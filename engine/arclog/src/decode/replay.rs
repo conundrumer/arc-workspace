@@ -1,5 +1,5 @@
 //! The replay of a case program's token stream through a decoder, which
-//! `decode` and `tables` share: each token the model emits is checked
+//! `arclog-cli decode` and the walk of [`super::corpus`] share: each token the model emits is checked
 //! against the mask and stepped, each token the engine emits is checked
 //! against the tokens the step before forced, and the caller's code runs
 //! after each step of a token the model emits.
@@ -7,10 +7,10 @@
 use std::ops::ControlFlow;
 use std::time::Instant;
 
-use arclog::check::CheckedProgram;
-use arclog::decode::{Consistency, Decoder};
-use arclog::resolver::DependencyKind;
-use arclog::stream::{Emitter, Token};
+use super::{Consistency, Decoder};
+use crate::check::CheckedProgram;
+use crate::resolver::DependencyKind;
+use crate::stream::{Emitter, Token};
 
 /// The step of a token the model emitted.
 pub struct Stepped<'a> {

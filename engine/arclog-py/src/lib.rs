@@ -10,7 +10,9 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
-use arclog::decode::{step_batch, Consistency, Decoder, Views};
+use arclog::decode::columns::{case_columns, CaseColumns, StopColumns};
+use arclog::decode::corpus::solver_tables;
+use arclog::decode::{step_batch, Consistency, Decoder, Points, Views};
 use arclog::eval::instance::Constructions;
 use arclog::eval::pool::Pool;
 use arclog::harness::{run_over_corpus, SolverResult};
@@ -28,7 +30,7 @@ use arclog::trace::{Stop, TopK};
 use pyo3::create_exception;
 use pyo3::exceptions::{PyIndexError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyList};
+use pyo3::types::{PyBytes, PyDict, PyList};
 
 create_exception!(arclog, Refusal, PyValueError, "A decode refuses a token outside its mask.");
 create_exception!(arclog, Fault, PyRuntimeError, "A run of the engine faults.");
@@ -677,6 +679,218 @@ fn corpus_streams(py: Python<'_>, corpus: &str, all_cases: bool, task_ids: Optio
     Ok((streams, faults))
 }
 
+// ------------------------------------------------------------------ tables
+
+/// The tables of one case program of a solver of a corpus, as flat columns
+/// (`arclog::decode::columns` gives the layout and the codes).
+///
+/// `tables`, `entries`, `assigned`, `views` and `view_rows` are dicts of
+/// columns, one for each part of the layout, named as its fields. An integer
+/// column is `bytes` in native byte order, which `numpy.frombuffer` reads at
+/// the dtype that `dtypes` gives for `"<part>.<column>"`; any other column is
+/// a list. `values` is the `int32` cells of every row, which the offsets of the
+/// parts index.
+#[pyclass(name = "CaseTables", frozen, get_all, module = "arclog")]
+struct PyCaseTables {
+    task: String,
+    case: String,
+    concept: bool,
+    tables: Py<PyDict>,
+    entries: Py<PyDict>,
+    assigned: Py<PyDict>,
+    views: Py<PyDict>,
+    view_rows: Py<PyDict>,
+    values: Py<PyBytes>,
+    dtypes: Py<PyDict>,
+}
+
+/// An integer type of a column, with its numpy dtype and its native bytes.
+trait Cell: Copy {
+    const DTYPE: &'static str;
+    fn extend(self, bytes: &mut Vec<u8>);
+}
+
+macro_rules! cell {
+    ($ty:ty, $dtype:literal) => {
+        impl Cell for $ty {
+            const DTYPE: &'static str = $dtype;
+            fn extend(self, bytes: &mut Vec<u8>) {
+                bytes.extend(self.to_ne_bytes());
+            }
+        }
+    };
+}
+cell!(u8, "uint8");
+cell!(u32, "uint32");
+cell!(u64, "uint64");
+cell!(i32, "int32");
+
+fn cell_bytes<T: Cell>(column: &[T]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(column.len() * size_of::<T>());
+    for &cell in column {
+        cell.extend(&mut bytes);
+    }
+    bytes
+}
+
+/// The dict of one part of a case's columns, and the dtype of each of its
+/// integer columns in `dtypes`.
+struct Part<'a, 'py> {
+    dict: Bound<'py, PyDict>,
+    name: &'static str,
+    dtypes: &'a Bound<'py, PyDict>,
+}
+
+impl<'a, 'py> Part<'a, 'py> {
+    fn new(py: Python<'py>, name: &'static str, dtypes: &'a Bound<'py, PyDict>) -> Self {
+        Part { dict: PyDict::new(py), name, dtypes }
+    }
+
+    fn ints<T: Cell>(&self, key: &str, column: &[T]) -> PyResult<()> {
+        self.dict.set_item(key, PyBytes::new(self.dict.py(), &cell_bytes(column)))?;
+        self.dtypes.set_item(format!("{}.{key}", self.name), T::DTYPE)
+    }
+
+    fn list<V: IntoPyObject<'py>>(&self, key: &str, column: V) -> PyResult<()> {
+        self.dict.set_item(key, column)
+    }
+
+    fn stop(&self, key: &str, stop: &StopColumns) -> PyResult<()> {
+        self.list(&format!("{key}_bound"), &stop.bound)?;
+        self.list(&format!("{key}_form"), &stop.form)
+    }
+}
+
+impl PyCaseTables {
+    fn of(py: Python<'_>, task: String, case: String, concept: bool, columns: &CaseColumns) -> PyResult<Self> {
+        let dtypes = PyDict::new(py);
+        let t = Part::new(py, "tables", &dtypes);
+        let c = &columns.tables;
+        t.ints("token", &c.token)?;
+        t.list("form", &c.form)?;
+        t.ints("point", &c.point)?;
+        t.ints("conjuncts", &c.conjuncts)?;
+        t.ints("sites", &c.sites)?;
+        t.ints("relation", &c.relation)?;
+        t.list("column_names", &c.column_names)?;
+        t.list("column_types", &c.column_types)?;
+        t.ints("width", &c.width)?;
+        t.list("det_relations", &c.det_relations)?;
+        t.list("det_types", &c.det_types)?;
+        t.list("det_widths", &c.det_widths)?;
+        t.ints("views", &c.views)?;
+        t.stop("views_stop", &c.views_stop)?;
+        t.list("fault", &c.fault)?;
+        let e = Part::new(py, "entries", &dtypes);
+        let c = &columns.entries;
+        e.ints("table", &c.table)?;
+        e.ints("example_kind", &c.example_kind)?;
+        e.ints("example_index", &c.example_index)?;
+        e.ints("model", &c.model)?;
+        e.ints("kind", &c.kind)?;
+        e.ints("rows", &c.rows)?;
+        e.ints("offset", &c.offset)?;
+        e.stop("stop", &c.stop)?;
+        e.stop("value_stop", &c.value_stop)?;
+        e.list("fault", &c.fault)?;
+        let a = Part::new(py, "assigned", &dtypes);
+        let c = &columns.assigned;
+        a.ints("entry", &c.entry)?;
+        a.ints("det", &c.det)?;
+        a.ints("rows", &c.rows)?;
+        a.ints("offset", &c.offset)?;
+        let v = Part::new(py, "views", &dtypes);
+        let c = &columns.views;
+        v.ints("table", &c.table)?;
+        v.list("columns", &c.columns)?;
+        v.ints("width", &c.width)?;
+        let r = Part::new(py, "view_rows", &dtypes);
+        let c = &columns.view_rows;
+        r.ints("view", &c.view)?;
+        r.ints("entry", &c.entry)?;
+        r.ints("defined", &c.defined)?;
+        r.ints("rows", &c.rows)?;
+        r.ints("offset", &c.offset)?;
+        Ok(PyCaseTables {
+            task,
+            case,
+            concept,
+            tables: t.dict.unbind(),
+            entries: e.dict.unbind(),
+            assigned: a.dict.unbind(),
+            views: v.dict.unbind(),
+            view_rows: r.dict.unbind(),
+            values: PyBytes::new(py, &cell_bytes(&columns.values)).unbind(),
+            dtypes: dtypes.unbind(),
+        })
+    }
+}
+
+/// The tables of each case of each solver of `corpus`, on its task in
+/// `tasks`, the concept case or, with `all_cases`, every case, over the
+/// solvers whose task ids `task_ids` gives, or every solver where it is
+/// `None`, in the order of the task ids and then of the cases. Each table
+/// is at the index of the token whose step gives it. The relations of the
+/// finished forms are tabled, and with `bodies` the bodies in progress as well.
+/// The second value holds a line for each case that gives no tables and each
+/// solver that gives none, in the form of `corpus_streams`, in the order of
+/// the task ids. The walk runs on the threads of the corpus harness with the
+/// GIL released.
+#[pyfunction]
+#[pyo3(signature = (corpus, tasks, all_cases=false, task_ids=None, bodies=false))]
+fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, task_ids: Option<Vec<String>>, bodies: bool) -> PyResult<(Vec<PyCaseTables>, Vec<String>)> {
+    let points = if bodies { Points::All } else { Points::Relations };
+    let constructions = constructions()?;
+    type Found = (String, Vec<(String, bool, CaseColumns)>, Vec<String>);
+    let found: Mutex<Vec<Found>> = Mutex::new(Vec::new());
+    let walked = py.detach(|| {
+        run_over_corpus(
+            Path::new(corpus),
+            |solver| {
+                if task_ids.as_ref().is_some_and(|ids| !ids.contains(&solver.task_id)) {
+                    return SolverResult::Pass;
+                }
+                let id = &solver.task_id;
+                let (mut cases, mut faults) = (Vec::new(), Vec::new());
+                match solver_tables(Path::new(corpus), Path::new(tasks), id, all_cases, points, constructions) {
+                    Ok(solver) => {
+                        for case in solver.cases {
+                            match case.tables {
+                                Ok(tables) => cases.push((case.case, case.concept, case_columns(&tables, solver.train))),
+                                Err(fault) => faults.push(fault_line(id, Some(&case.case), &fault)),
+                            }
+                        }
+                    }
+                    Err(fault) => faults.push(fault_line(id, None, &fault)),
+                }
+                found.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).push((id.clone(), cases, faults));
+                SolverResult::Pass
+            },
+            |_, _| {},
+        )
+    });
+    walked.map_err(|error| Fault::new_err(format!("the corpus does not read: {error:?}")))?;
+    let mut found = found.into_inner().unwrap_or_else(|poisoned| poisoned.into_inner());
+    found.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut tables = Vec::new();
+    let mut faults = Vec::new();
+    for (task, cases, solver_faults) in found {
+        for (case, concept, columns) in cases {
+            tables.push(PyCaseTables::of(py, task.clone(), case, concept, &columns)?);
+        }
+        faults.extend(solver_faults);
+    }
+    Ok((tables, faults))
+}
+
+/// The name of each orientation constant by its encoding, which is the
+/// cell of an orientation value in `CaseTables.values`, in the order of the
+/// encodings.
+#[pyfunction]
+fn orientation_names() -> Vec<(i32, String)> {
+    arclog::decode::columns::orientation_names(Registry::get())
+}
+
 /// Steps each of `decoders` by the token with the id at its index in `ids`,
 /// on the thread pool with the GIL released, and gives what each step
 /// gives, in the order of `decoders`: the pair that `Decoder.step` gives, or,
@@ -728,9 +942,12 @@ fn arclog_module(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyView>()?;
     module.add_class::<PyViews>()?;
     module.add_class::<PyCaseStream>()?;
+    module.add_class::<PyCaseTables>()?;
     module.add("Refusal", module.py().get_type::<Refusal>())?;
     module.add("Fault", module.py().get_type::<Fault>())?;
     module.add_function(wrap_pyfunction!(step_batch_py, module)?)?;
     module.add_function(wrap_pyfunction!(corpus_streams, module)?)?;
+    module.add_function(wrap_pyfunction!(corpus_tables, module)?)?;
+    module.add_function(wrap_pyfunction!(orientation_names, module)?)?;
     Ok(())
 }

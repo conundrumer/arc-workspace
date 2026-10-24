@@ -6,7 +6,9 @@
 //! every example at each assignment of the `DET`s it reads, at each model for
 //! a relation with picks. Where a relation holds more rows on an example than
 //! the view cap of the decode settings, the table gives its views in place of
-//! its rows. The recording makes no choice among the points: it keeps each.
+//! its rows. The recording makes no choice among the points: it keeps each,
+//! and a caller that reads no body in progress asks for [`Points::Relations`],
+//! so that no body table is evaluated.
 
 use std::ops::ControlFlow;
 use std::sync::Arc;
@@ -36,6 +38,15 @@ pub enum Point {
     Body { conjuncts: u32, sites: u32 },
     /// A relation of a form that the step finished.
     Relation,
+}
+
+/// The points whose tables a caller wants.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Points {
+    /// Each point: the body in progress and the relations of a finished form.
+    All,
+    /// The relations of a finished form alone.
+    Relations,
 }
 
 /// A column of a table: its name, `c<position>` where the program gives the
@@ -91,13 +102,17 @@ pub struct Table {
 impl Decoder<'_> {
     /// The tables of the last step: none before the first, none where the
     /// step left the clause in progress as it was, such as a `*` before its
-    /// echo, and none where no clause is in progress and no form finished.
-    pub fn tables(&self) -> Vec<Table> {
+    /// echo, and none where no clause is in progress and no form finished;
+    /// under [`Points::Relations`], none where no form finished, and no body
+    /// table evaluated.
+    pub fn tables(&self, points: Points) -> Vec<Table> {
         let Some(before) = &self.before else { return Vec::new() };
         if self.state.program().value().forms.len() > before.program().value().forms.len() {
             self.relation_tables(before)
-        } else {
+        } else if points == Points::All {
             self.body_table(before).into_iter().collect()
+        } else {
+            Vec::new()
         }
     }
 

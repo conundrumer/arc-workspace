@@ -12,18 +12,25 @@
 //! `batch`, steps many decodes at once, and its views of the body so far, in
 //! `views`, give the largest sets of its columns under the view cap, and its
 //! tables of the last step, in `tables`, give the body of the clause in
-//! progress or the relations of the form finished. The decode keeps a
+//! progress or the relations of the form finished. The replay of a case
+//! program's stream through a decoder, in `replay`, the walk of a solver's
+//! cases that records their tables, in `corpus`, and the flat columns of a
+//! case's tables, in `columns`, serve the commands and the Python package that
+//! read the tables of a corpus. The decode keeps a
 //! [`crate::trace::DecodeTrace`] of one record per accepted token.
 
 mod batch;
+pub mod columns;
+pub mod corpus;
 mod interface;
+pub mod replay;
 mod state;
 mod tables;
 mod views;
 
 pub use batch::step_batch;
 pub use interface::{Consistency, Step};
-pub use tables::{Contents, ExampleRows, Point, Table, TableColumn, TableDet};
+pub use tables::{Contents, ExampleRows, Point, Points, Table, TableColumn, TableDet};
 pub use views::{View, Views};
 
 use std::sync::Arc;
