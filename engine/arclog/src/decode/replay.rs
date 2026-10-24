@@ -7,7 +7,7 @@
 use std::ops::ControlFlow;
 use std::time::Instant;
 
-use super::{Consistency, Decoder};
+use super::{Consistency, Decoder, TokenMask};
 use crate::check::CheckedProgram;
 use crate::resolver::DependencyKind;
 use crate::stream::{Emitter, Token};
@@ -17,6 +17,8 @@ pub struct Stepped<'a> {
     /// The token's index in the stream.
     pub index: usize,
     pub token: &'a Token,
+    /// The tokens that were admissible before the step.
+    pub mask: &'a TokenMask,
     /// The consistency the step gives, if it ends a `RULE` clause.
     pub consistency: Option<Consistency>,
     /// The seconds of the token mask, and of the step.
@@ -69,7 +71,7 @@ pub fn replay(decoder: &mut Decoder<'_>, stream: &[(Token, Emitter)], after: &mu
                     Err(refusal) => return Err(format!("token {index} {token:?}: {refusal:?}")),
                 };
                 forced = step.forced.into();
-                if after(decoder, Stepped { index, token, consistency: step.consistency, mask_seconds, step_seconds }).is_break() {
+                if after(decoder, Stepped { index, token, mask: &mask, consistency: step.consistency, mask_seconds, step_seconds }).is_break() {
                     break;
                 }
             }

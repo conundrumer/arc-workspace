@@ -11,8 +11,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use arclog::decode::columns::{case_columns, CaseColumns, StopColumns};
-use arclog::decode::corpus::solver_tables;
-use arclog::decode::{step_batch, Consistency, Decoder, Points, Views};
+use arclog::decode::corpus::{replay_solver, solver_tables};
+use arclog::decode::{step_batch, Consistency, Decoder, Points, TokenMask, Views};
 use arclog::eval::instance::Constructions;
 use arclog::eval::pool::Pool;
 use arclog::harness::{run_over_corpus, SolverResult};
@@ -470,6 +470,18 @@ impl PyDecoder {
     }
 }
 
+/// The bytes of `mask` over a vocabulary of `len` tokens: bit `id % 8` of
+/// byte `id // 8` is set where the token with that id is admissible.
+fn mask_bytes(mask: &TokenMask, len: usize) -> Vec<u8> {
+    let mut bytes = vec![0u8; len.div_ceil(8)];
+    for id in 0..len as u32 {
+        if mask.contains(id) {
+            bytes[id as usize / 8] |= 1 << (id % 8);
+        }
+    }
+    bytes
+}
+
 #[pymethods]
 impl PyDecoder {
     #[getter]
@@ -487,14 +499,7 @@ impl PyDecoder {
     /// where the token with that id is admissible.
     fn admissible<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
         let decoder = self.decoder();
-        let mask = decoder.admissible();
-        let mut bytes = vec![0u8; decoder.vocabulary().len().div_ceil(8)];
-        for id in 0..decoder.vocabulary().len() as u32 {
-            if mask.contains(id) {
-                bytes[id as usize / 8] |= 1 << (id % 8);
-            }
-        }
-        PyBytes::new(py, &bytes)
+        PyBytes::new(py, &mask_bytes(&decoder.admissible(), decoder.vocabulary().len()))
     }
 
     /// Advances the decode by the token with id `id`, and gives the ids of
@@ -602,11 +607,50 @@ impl PyDecoder {
 
 // ----------------------------------------------------------------- streams
 
+/// The cases and fault lines of each solver of `corpus` that `task_ids`
+/// keeps (every solver where it is `None`), as `solver` gives them for the
+/// solver's task id, in the order of the task ids. The walk runs on the
+/// threads of the corpus harness with the GIL released.
+fn walk_corpus<C: Send>(
+    py: Python<'_>,
+    corpus: &str,
+    task_ids: &Option<Vec<String>>,
+    solver: impl Fn(&str) -> (Vec<C>, Vec<String>) + Sync,
+) -> PyResult<Vec<(String, Vec<C>, Vec<String>)>> {
+    let found: Mutex<Vec<(String, Vec<C>, Vec<String>)>> = Mutex::new(Vec::new());
+    let walked = py.detach(|| {
+        run_over_corpus(
+            Path::new(corpus),
+            |corpus_solver| {
+                if task_ids.as_ref().is_some_and(|ids| !ids.contains(&corpus_solver.task_id)) {
+                    return SolverResult::Pass;
+                }
+                let (cases, faults) = solver(&corpus_solver.task_id);
+                found.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).push((corpus_solver.task_id.clone(), cases, faults));
+                SolverResult::Pass
+            },
+            |_, _| {},
+        )
+    });
+    walked.map_err(|error| Fault::new_err(format!("the corpus does not read: {error:?}")))?;
+    let mut found = found.into_inner().unwrap_or_else(|poisoned| poisoned.into_inner());
+    found.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(found)
+}
+
 /// The token stream of one case of a solver of a corpus.
 ///
 /// `ids` holds the token ids as `uint32` in native byte order, and `model`
 /// one byte for each token, 1 where the model writes the token and 0 where
 /// the engine does, so `numpy.frombuffer` reads each.
+///
+/// `masks` holds, where `corpus_streams` is given `tasks` and the case
+/// replays, the mask `Decoder.admissible` gives before each token with a 1
+/// in `model`, in stream order, each `(len(vocabulary) + 7) // 8` bytes, so
+/// `numpy.frombuffer(masks, numpy.uint8).reshape(-1, (len(vocabulary) + 7) // 8)`
+/// has one row for each token the model writes. Otherwise it is `None`, and
+/// `mask_fault` is `None` where `tasks` is `None` and else the reason the
+/// case gives no masks.
 #[pyclass(name = "CaseStream", frozen, get_all, module = "arclog")]
 struct PyCaseStream {
     task: String,
@@ -614,6 +658,8 @@ struct PyCaseStream {
     concept: bool,
     ids: Py<PyBytes>,
     model: Py<PyBytes>,
+    masks: Option<Py<PyBytes>>,
+    mask_fault: Option<String>,
 }
 
 /// A stream of a case with the ids of its tokens, before it becomes an object.
@@ -622,6 +668,9 @@ struct IdStream {
     case: String,
     concept: bool,
     ids: Vec<(u32, Emitter)>,
+    /// The masks of the model's tokens, or why the case gives none; `Ok`
+    /// with no bytes where the walk replays nothing.
+    masks: Result<Option<Vec<u8>>, String>,
 }
 
 /// The token stream of each case of each solver of `corpus`, the concept
@@ -631,48 +680,67 @@ struct IdStream {
 /// default settings. The second value holds a line for each case that gives no
 /// stream and each solver that gives none, in the form the report of
 /// `arclog-cli stream --corpus` prints it, in the order of the task ids.
+/// Where `tasks`, the directory of the task files, is given, each stream is
+/// also replayed on its task under the default settings, judging the train
+/// pairs in the closed world, and the stream's `masks` are the engine's
+/// masks of that replay; a stream whose replay gives none stays in the list
+/// with its `mask_fault`, and the second value is as it is without `tasks`.
 /// The walk runs on the threads of the corpus harness with the GIL released.
 #[pyfunction]
-#[pyo3(signature = (corpus, all_cases=false, task_ids=None))]
-fn corpus_streams(py: Python<'_>, corpus: &str, all_cases: bool, task_ids: Option<Vec<String>>) -> PyResult<(Vec<PyCaseStream>, Vec<String>)> {
+#[pyo3(signature = (corpus, all_cases=false, task_ids=None, tasks=None))]
+fn corpus_streams(py: Python<'_>, corpus: &str, all_cases: bool, task_ids: Option<Vec<String>>, tasks: Option<&str>) -> PyResult<(Vec<PyCaseStream>, Vec<String>)> {
     let wanted = if all_cases { WantedCases::All } else { WantedCases::Concept };
-    let found: Mutex<Vec<(String, Vec<IdStream>, Vec<String>)>> = Mutex::new(Vec::new());
-    let walked = py.detach(|| {
-        run_over_corpus(
-            Path::new(corpus),
-            |solver| {
-                if task_ids.as_ref().is_some_and(|ids| !ids.contains(&solver.task_id)) {
-                    return SolverResult::Pass;
-                }
-                let vocabulary = Vocabulary::new(Registry::get(), &DecodeSettings::default());
-                let (mut streams, mut faults) = (Vec::new(), Vec::new());
-                match solver_streams(Path::new(corpus), &solver.task_id, wanted, &vocabulary) {
-                    Ok(cases) => {
-                        for case in cases {
-                            match case.stream {
-                                Ok(stream) => streams.push(IdStream { task: solver.task_id.clone(), case: case.case, concept: case.concept, ids: token_ids(&stream, &vocabulary) }),
-                                Err(fault) => faults.push(fault_line(&solver.task_id, Some(&case.case), &fault)),
-                            }
+    let constructions = constructions()?;
+    let vocabulary = Vocabulary::new(Registry::get(), &DecodeSettings::default());
+    let found = walk_corpus(py, corpus, &task_ids, |id| {
+        let (mut streams, mut faults) = (Vec::new(), Vec::new());
+        match solver_streams(Path::new(corpus), id, wanted, &vocabulary) {
+            Ok(cases) => {
+                let mut masked = tasks.map(|tasks| {
+                    replay_solver(Path::new(corpus), Path::new(tasks), id, all_cases, constructions, &|masks: &mut Vec<u8>, decoder, stepped| {
+                        masks.extend(mask_bytes(stepped.mask, decoder.vocabulary().len()));
+                    })
+                });
+                for case in cases {
+                    match case.stream {
+                        Ok(stream) => {
+                            let masks = match &mut masked {
+                                None => Ok(None),
+                                Some(Err(fault)) => Err(fault.clone()),
+                                Some(Ok(replayed)) => match replayed.cases.iter_mut().find(|replayed| replayed.case == case.case) {
+                                    None => Err("the program holds a DEMONSTRATED form".to_string()),
+                                    Some(replayed) => replayed.outcome.as_mut().map(|masks| Some(std::mem::take(masks))).map_err(|fault| fault.clone()),
+                                },
+                            };
+                            streams.push(IdStream { task: id.to_string(), case: case.case, concept: case.concept, ids: token_ids(&stream, &vocabulary), masks });
                         }
+                        Err(fault) => faults.push(fault_line(id, Some(&case.case), &fault)),
                     }
-                    Err(fault) => faults.push(fault_line(&solver.task_id, None, &fault)),
                 }
-                found.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).push((solver.task_id.clone(), streams, faults));
-                SolverResult::Pass
-            },
-            |_, _| {},
-        )
-    });
-    walked.map_err(|error| Fault::new_err(format!("the corpus does not read: {error:?}")))?;
-    let mut found = found.into_inner().unwrap_or_else(|poisoned| poisoned.into_inner());
-    found.sort_by(|a, b| a.0.cmp(&b.0));
+            }
+            Err(fault) => faults.push(fault_line(id, None, &fault)),
+        }
+        (streams, faults)
+    })?;
     let mut streams = Vec::new();
     let mut faults = Vec::new();
     for (_, solver_streams, solver_faults) in found {
         for stream in solver_streams {
             let ids: Vec<u8> = stream.ids.iter().flat_map(|(id, _)| id.to_ne_bytes()).collect();
             let model: Vec<u8> = stream.ids.iter().map(|(_, emitter)| u8::from(*emitter == Emitter::Model)).collect();
-            streams.push(PyCaseStream { task: stream.task, case: stream.case, concept: stream.concept, ids: PyBytes::new(py, &ids).unbind(), model: PyBytes::new(py, &model).unbind() });
+            let (masks, mask_fault) = match stream.masks {
+                Ok(masks) => (masks, None),
+                Err(fault) => (None, Some(fault)),
+            };
+            streams.push(PyCaseStream {
+                task: stream.task,
+                case: stream.case,
+                concept: stream.concept,
+                ids: PyBytes::new(py, &ids).unbind(),
+                model: PyBytes::new(py, &model).unbind(),
+                masks: masks.map(|masks| PyBytes::new(py, &masks).unbind()),
+                mask_fault,
+            });
         }
         faults.extend(solver_faults);
     }
@@ -841,37 +909,21 @@ impl PyCaseTables {
 fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, task_ids: Option<Vec<String>>, bodies: bool) -> PyResult<(Vec<PyCaseTables>, Vec<String>)> {
     let points = if bodies { Points::All } else { Points::Relations };
     let constructions = constructions()?;
-    type Found = (String, Vec<(String, bool, CaseColumns)>, Vec<String>);
-    let found: Mutex<Vec<Found>> = Mutex::new(Vec::new());
-    let walked = py.detach(|| {
-        run_over_corpus(
-            Path::new(corpus),
-            |solver| {
-                if task_ids.as_ref().is_some_and(|ids| !ids.contains(&solver.task_id)) {
-                    return SolverResult::Pass;
-                }
-                let id = &solver.task_id;
-                let (mut cases, mut faults) = (Vec::new(), Vec::new());
-                match solver_tables(Path::new(corpus), Path::new(tasks), id, all_cases, points, constructions) {
-                    Ok(solver) => {
-                        for case in solver.cases {
-                            match case.tables {
-                                Ok(tables) => cases.push((case.case, case.concept, case_columns(&tables, solver.train))),
-                                Err(fault) => faults.push(fault_line(id, Some(&case.case), &fault)),
-                            }
-                        }
+    let found = walk_corpus(py, corpus, &task_ids, |id| {
+        let (mut cases, mut faults) = (Vec::new(), Vec::new());
+        match solver_tables(Path::new(corpus), Path::new(tasks), id, all_cases, points, constructions) {
+            Ok(solver) => {
+                for case in solver.cases {
+                    match case.tables {
+                        Ok(tables) => cases.push((case.case, case.concept, case_columns(&tables, solver.train))),
+                        Err(fault) => faults.push(fault_line(id, Some(&case.case), &fault)),
                     }
-                    Err(fault) => faults.push(fault_line(id, None, &fault)),
                 }
-                found.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).push((id.clone(), cases, faults));
-                SolverResult::Pass
-            },
-            |_, _| {},
-        )
-    });
-    walked.map_err(|error| Fault::new_err(format!("the corpus does not read: {error:?}")))?;
-    let mut found = found.into_inner().unwrap_or_else(|poisoned| poisoned.into_inner());
-    found.sort_by(|a, b| a.0.cmp(&b.0));
+            }
+            Err(fault) => faults.push(fault_line(id, None, &fault)),
+        }
+        (cases, faults)
+    })?;
     let mut tables = Vec::new();
     let mut faults = Vec::new();
     for (task, cases, solver_faults) in found {

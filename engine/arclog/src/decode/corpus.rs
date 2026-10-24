@@ -8,7 +8,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use super::replay::{holds_demonstrated, replay};
+use super::replay::{holds_demonstrated, replay, Stepped};
 use super::{Decoder, Points, Table};
 use crate::check::{CheckCache, SolverClauses};
 use crate::eval::instance::Constructions;
@@ -46,6 +46,70 @@ pub fn corpus_session() -> TaskSession {
     TaskSession::new(SessionBound { bytes: SESSION_BYTES }, Caps::CORPUS)
 }
 
+/// The record of one case of a solver, or the fault that gives none.
+#[derive(Debug)]
+pub struct CaseReplay<T> {
+    /// The case as [`case_spelled`] writes its name.
+    pub case: String,
+    /// Whether the case is the solver's concept case.
+    pub concept: bool,
+    /// What the recorder built over the case's replay, or why the stream
+    /// gives none: the writer gives no stream, or the decoder refuses it.
+    pub outcome: Result<T, String>,
+}
+
+/// The record of each wanted case of a solver, with the count of train
+/// pairs of its task, which names an example.
+#[derive(Debug)]
+pub struct SolverReplay<T> {
+    pub train: usize,
+    pub cases: Vec<CaseReplay<T>>,
+}
+
+/// Replays each wanted case of the solver `id` of `corpus` on its task in
+/// `tasks`, the concept case or, with `all`, every case, in the order of the
+/// cases, through a decoder that judges the train pairs under the default
+/// settings, the lib's constructions `constructions`, and the corpus's
+/// session. `record` runs after each step of a token the model emits, with
+/// the case's record, which starts as `T::default()`. A case that holds a
+/// `DEMONSTRATED` form is left out. Gives the fault that stops the solver.
+pub fn replay_solver<T: Default>(
+    corpus: &Path,
+    tasks: &Path,
+    id: &str,
+    all: bool,
+    constructions: &Constructions,
+    record: &dyn Fn(&mut T, &Decoder<'_>, Stepped<'_>),
+) -> Result<SolverReplay<T>, String> {
+    let CorpusTask { solver, task, judged } = read_corpus_task(corpus, tasks, id)?;
+    let registry = Registry::get();
+    let cases = resolve_cases(&solver, registry);
+    let clauses = SolverClauses::of_cases(&cases);
+    let decoded = decoded_cases(&cases, all);
+    let programs = check_cases(&cases, &clauses, &mut CheckCache::default(), &|name| decoded.contains(name))?;
+    let concept = &cases.concept().case.name;
+    let settings = DecodeSettings::default();
+    let train: Arc<[PairCandidates<'_>]> = judged.train.iter().map(|pair| PairCandidates::of(pair, Section::Train, World::Closed)).collect();
+    let mut recorded = Vec::new();
+    for (name, program) in &programs {
+        if holds_demonstrated(program) {
+            continue;
+        }
+        let session = corpus_session();
+        let mut decoder = Decoder::new(&task, &session, registry, constructions, &settings).judging(Arc::clone(&train));
+        let outcome = token_stream(program, decoder.vocabulary()).map_err(|diagnostic| format!("the writer gives no stream: {}", diagnostic.message)).and_then(|stream| {
+            let mut recording = T::default();
+            let replayed = replay(&mut decoder, &stream, &mut |decoder, stepped| {
+                record(&mut recording, decoder, stepped);
+                std::ops::ControlFlow::Continue(())
+            })?;
+            replayed.unfinished().map_or(Ok(recording), Err)
+        });
+        recorded.push(CaseReplay { case: case_spelled(name), concept: name == concept, outcome });
+    }
+    Ok(SolverReplay { train: task.train.len(), cases: recorded })
+}
+
 /// The tables of one case of a solver, each with the index in the stream of
 /// the token whose step gives it, or the fault that gives none.
 #[derive(Debug)]
@@ -54,8 +118,7 @@ pub struct CaseTables {
     pub case: String,
     /// Whether the case is the solver's concept case.
     pub concept: bool,
-    /// The tables in the order of the stream, or why the stream gives none:
-    /// the writer gives no stream, or the decoder refuses it.
+    /// The tables in the order of the stream, or why the stream gives none.
     pub tables: Result<Vec<(usize, Table)>, String>,
 }
 
@@ -73,31 +136,9 @@ pub struct SolverTables {
 /// fault that stops the solver. A case that holds a `DEMONSTRATED` form is
 /// left out.
 pub fn solver_tables(corpus: &Path, tasks: &Path, id: &str, all: bool, points: Points, constructions: &Constructions) -> Result<SolverTables, String> {
-    let CorpusTask { solver, task, judged } = read_corpus_task(corpus, tasks, id)?;
-    let registry = Registry::get();
-    let cases = resolve_cases(&solver, registry);
-    let clauses = SolverClauses::of_cases(&cases);
-    let decoded = decoded_cases(&cases, all);
-    let programs = check_cases(&cases, &clauses, &mut CheckCache::default(), &|name| decoded.contains(name))?;
-    let concept = &cases.concept().case.name;
-    let settings = DecodeSettings::default();
-    let train: Arc<[PairCandidates<'_>]> = judged.train.iter().map(|pair| PairCandidates::of(pair, Section::Train, World::Closed)).collect();
-    let mut recorded = Vec::new();
-    for (name, program) in &programs {
-        if holds_demonstrated(program) {
-            continue;
-        }
-        let session = corpus_session();
-        let mut decoder = Decoder::new(&task, &session, registry, constructions, &settings).judging(Arc::clone(&train));
-        let tables = token_stream(program, decoder.vocabulary()).map_err(|diagnostic| format!("the writer gives no stream: {}", diagnostic.message)).and_then(|stream| {
-            let mut tables = Vec::new();
-            let replayed = replay(&mut decoder, &stream, &mut |decoder, stepped| {
-                tables.extend(decoder.tables(points).into_iter().map(|table| (stepped.index, table)));
-                std::ops::ControlFlow::Continue(())
-            })?;
-            replayed.unfinished().map_or(Ok(tables), Err)
-        });
-        recorded.push(CaseTables { case: case_spelled(name), concept: name == concept, tables });
-    }
-    Ok(SolverTables { train: task.train.len(), cases: recorded })
+    let replayed = replay_solver(corpus, tasks, id, all, constructions, &|tables: &mut Vec<(usize, Table)>, decoder, stepped| {
+        tables.extend(decoder.tables(points).into_iter().map(|table| (stepped.index, table)));
+    })?;
+    let cases = replayed.cases.into_iter().map(|case| CaseTables { case: case.case, concept: case.concept, tables: case.outcome }).collect();
+    Ok(SolverTables { train: replayed.train, cases })
 }
