@@ -479,3 +479,17 @@ def test_a_call_that_changes_nothing_runs_with_its_update(tmp_path: Path) -> Non
     out = json.loads(run(command("PreToolUse", "Bash|Monitor"),
                          call(main, "Bash", {"command": "ls"})))["hookSpecificOutput"]
     assert out["permissionDecision"] == "deny"
+
+
+def test_busy_advisory_and_document_delivery(tmp_path: Path) -> None:
+    main = session(tmp_path)
+    session_start(main)
+    record(main, 'main').write_text(both(BEFORE))
+    inp = {'command': 'while kill -0 12345; do printf ""; done'}
+    out = json.loads(run(command('PreToolUse', 'Bash|Monitor'),
+                         call(main, 'Bash', inp)))['hookSpecificOutput']
+    advisory = script('busy_loop_hook').context({'tool_name': 'Bash', 'tool_input': inp})
+    assert advisory and advisory in out['additionalContext']
+    assert f'context --update {BEFORE} {BEFORE} coordinator`' in out['additionalContext']
+    assert record(main, 'main').read_text() == both(head())
+    assert delivered(main).exists()

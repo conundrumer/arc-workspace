@@ -6,14 +6,15 @@ and it prints the hook's failure text and the error on stderr. A hook runs
 in a fresh process with `scripts/` on the path, so this module imports only
 the standard library.
 
-A PreToolUse hook runs two parts, each of which fails open alone: its checks,
-each of which gives the reason to deny the call or None, and the update of
-the caller's documents, which gives the text the caller gets in its context or
-None (`reader_delivery.reader_update`). Claude Code reads one output of a
-hook, and puts its `additionalContext` in the caller's context whether or
-not the output denies the call, so the entry prints one output that holds
-both parts. Claude Code puts that text in the caller's context after the
-call has run, so a call whose update gives a reason
+A PreToolUse hook runs checks, advisory context callbacks and the update of
+the caller's documents (`reader_delivery.reader_update`). Each check and
+context callback, and the update, fails open alone. Checks give reasons to
+deny the call; context callbacks give text with no permission decision.
+Claude Code reads one output of a hook, and puts its `additionalContext` in
+the caller's context whether or not the output denies the call. That field
+combines advisory text and the document update. Claude Code puts that text
+in the caller's context after the call has run, so a call whose update gives
+a reason
 (`reader_delivery.reader_update` gives which) is denied, with the update's
 reason after the check's, and the caller makes it again by its updated
 documents.
@@ -24,8 +25,8 @@ Code puts that text in the caller's context with the call's result, or
 with the user's prompt or a task notification. `reader_delivery` gives
 what a PreToolUse hook gives after such a delivery.
 
-The update records the delivery only where its block ends without an
-error, after the output is printed.
+The document update records its delivery only where its block ends without
+an error, after the output is printed. Advisory context has no delivery record.
 
 What the entry runs for every hook stands in this docstring alone, and in no
 hook's docstring."""
@@ -74,6 +75,8 @@ stop goes ahead where its check fails."""
 
 UPDATE_FAILED = "gave no update of the caller's documents"
 """The failure text of a hook whose update fails."""
+
+CONTEXT_FAILED = "gave no advisory context"
 
 
 def not_registered(on: str, kind: str, given: object) -> ValueError:
@@ -126,13 +129,14 @@ def run_subagent_stop(hook: str, checks: Sequence[Callable[[Hook], str | None]])
     return 0
 
 
-def _give(reason: str | None, update: Update | None) -> None:
+def _give(reason: str | None, update: Update | None, context: str | None = None) -> None:
     out: dict[str, str] = {}
     if update is not None:
         if update.reason is not None:
             reason = update.reason if reason is None else f"{reason}\n{update.reason}"
-        if update.text:
-            out["additionalContext"] = update.text
+    text = joined([context, update.text if update is not None and update.text else None])
+    if text:
+        out["additionalContext"] = text
     if reason is not None:
         out |= {"permissionDecision": "deny", "permissionDecisionReason": reason}
     if out:
@@ -153,25 +157,29 @@ def joined(reasons: Iterable[str | None]) -> str | None:
 
 def run_pre_tool_use(
         hook: str, checks: Sequence[Callable[[Hook], str | None]],
-        update: Callable[[Hook], AbstractContextManager[Update | None]] = no_update) -> int:
+        update: Callable[[Hook], AbstractContextManager[Update | None]] = no_update,
+        contexts: Sequence[Callable[[Hook], str | None]] = ()) -> int:
     """Run the PreToolUse hook `hook` on the input on stdin: each of
     `checks`, in order, gives the reason to deny the call or None, and the
     call is denied with the reasons of all that give one, which Claude
     Code shows as one hook's output; `update` gives the caller's update,
-    inside a block that the printed output ends."""
+    inside a block that the printed output ends. Each of `contexts` gives
+    advisory text or None. The module docstring gives failure handling."""
     checked = checked_input(hook, checks)
     if checked is None:
         return 0
     data, reason = checked
+    context = joined(run_part(hook, CONTEXT_FAILED, partial(callback, data))
+                     for callback in contexts)
     given = False
     try:
         with update(data) as given_update:
             given = True
-            _give(reason, given_update)
+            _give(reason, given_update, context)
     except Exception as e:
         _failed(hook, UPDATE_FAILED, e)
         if not given:
-            _give(reason, None)
+            _give(reason, None, context)
     return 0
 
 
