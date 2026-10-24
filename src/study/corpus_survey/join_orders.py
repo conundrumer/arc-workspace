@@ -1,7 +1,9 @@
-"""The Join orders section: the variable order of
-`docs/engine/evaluator.md#joins` simulated on the bodies of Join shapes
-that join on a computed key or are cyclic through stored relations, over
-the rows of Prefix sizes, against the written order and the best order.
+"""The Join orders section: the size order, which
+`docs/engine/evaluator.md#joins` gave when this section was measured
+(variables in order of the smallest relation that binds them), simulated
+on the bodies of Join shapes that join on a computed key or are cyclic
+through stored relations, over the rows of Prefix sizes, against the
+written order and the best order.
 
 The count of a set of variables is the number of its bindings that agree
 with each atom projected onto the set. The work of an order is the sum,

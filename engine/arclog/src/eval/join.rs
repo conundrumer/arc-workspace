@@ -727,7 +727,12 @@ impl<'c> Search<'c> {
         let candidates: Vec<TermId> = if let Some(value) = self.equal_value(variable) {
             vec![value]
         } else if let Some(&smallest) = sources.iter().min_by_key(|&&a| (cursors[a].0.len(), a)) {
-            cursors[smallest].0.entries().map(|(value, _)| value).collect()
+            // A lib atom that a mode satisfies gives the values through the
+            // atoms' indexes where it gives fewer than the smallest atom holds.
+            match self.lib_values(variable)? {
+                Some(values) if values.len() < cursors[smallest].0.len() => values,
+                _ => cursors[smallest].0.entries().map(|(value, _)| value).collect(),
+            }
         } else if let Some(values) = self.lib_values(variable)? {
             values
         } else if let Some(values) = self.union_values(variable, budget)? {
