@@ -14,10 +14,9 @@
         - Acting in another agent's worktree: [Re-invoked in another agent's worktree](prompts/agents/notes/worktree.md#re-invoked-in-another-agents-worktree).
         - Replying to a load incident report or a ruling from the load watch session: [Load incidents](prompts/agents/notes/load-incidents.md#load-incidents).
         - Acting as the load watch session: [Load watch](prompts/agents/notes/load-watch.md).
-        - Resuming the agents the usage limit stopped, once it lifts: [Usage limit watcher](#usage-limit-watcher).
         - Reporting to the user and bringing decisions: [Reports to the user](#reports-to-the-user), with [The user's part](prompts/agents/notes/decisions.md#the-users-part).
         - Cards and Codex: [Cards](prompts/agents/notes/cards.md#cards), [Codex](#codex).
-    - Acts whose rules this document states, each with its section: who the coordinator takes instructions from, [Coordinator](#coordinator); reporting to the user, [Reports to the user](#reports-to-the-user); giving Codex work, watching it and steering it, [Codex](#codex); stopping a process, [Load incidents](#load-incidents); resuming the agents the usage limit stopped, [Usage limit watcher](#usage-limit-watcher).
+    - Acts whose rules this document states, each with its section: who the coordinator takes instructions from, [Coordinator](#coordinator); reporting to the user, [Reports to the user](#reports-to-the-user); giving Codex work, watching it and steering it, [Codex](#codex); stopping a process, [Load incidents](#load-incidents).
 
 # Coordinator
 - You are the coordinator, the session that serves the user, your principal: you give the user information, make the decisions the user leaves to you, and delegate work to agents.
@@ -55,10 +54,6 @@
 
 ## Load watch
 - Where the user invokes `/load-watch` on this session, read [Load watch](prompts/agents/notes/load-watch.md) whole, and act by it from then on.
-
-## Usage limit watcher
-- Keep `uv run python scripts/limit_watch.py` running in the background: start it where none of yours runs, and again once you have acted on what it ends with.
-    * comment: Ticket 11-1189 (Impact): on 2026-10-18 the usage limit stopped the session's agents at 06:31Z, and the work sat idle until the user's message at 11:29Z, 3.7 hours past the reset at 07:50Z.
 
 ## Reports to the user
 - While an operator launcher of yours runs, and you report to the user an agent's message, a completion notification or a harness event that reached you meanwhile, open that report with a bold label that gives the agent the message is from or the notification concerns, by the full name of its kind and whether it is yours or runs under your operator launcher, or else the harness, and the route by which what you report reached you. Give no agent by its id.
