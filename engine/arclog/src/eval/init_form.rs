@@ -352,9 +352,8 @@ impl<'p> InstanceShape<'p> {
     }
 
     /// The rows of `input`, which the form does not write, at each of
-    /// `groups`: its default rows at each, or no row where the input is
-    /// marked [`InputPort::explicit`], or the rows the key fills, or no
-    /// row.
+    /// `groups`: its default rows at each, or, where the input is
+    /// marked [`InputPort::from_key`], the rows the key fills, or no row.
     pub(super) fn unwritten(
         &self,
         input: &InputPort,
@@ -370,7 +369,7 @@ impl<'p> InstanceShape<'p> {
             }
             return Ok(vec![rows; groups.len()]);
         }
-        if input.explicit {
+        if !input.from_key {
             return Ok(vec![rows; groups.len()]);
         }
         let Some(filled) = self.key_filled(input, types)? else { return Ok(vec![rows; groups.len()]) };

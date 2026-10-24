@@ -159,19 +159,19 @@ impl FileReader {
         Some(Port { name, columns: columns?.into() })
     }
 
-    /// An input, `(<input> (<column> <type>) ... [(default <rows>)] [reads-outputs] [explicit])`.
+    /// An input, `(<input> (<column> <type>) ... [(default <rows>)] [reads-outputs] [from-key])`.
     fn input(&mut self, expr: &SExpr, parameters: &[TypeParameter]) -> Option<InputPort> {
         let SExpr::List { items, place, .. } = expr else {
             return self.refuse("an input is a list of its name and its columns", expr.place());
         };
         let name = PortName(self.symbol(items.first(), "the input's name", *place)?.into());
         let mut rest = &items[1..];
-        let explicit = take_mark(&mut rest, EXPLICIT);
+        let from_key = take_mark(&mut rest, FROM_KEY);
         let reads_outputs = take_mark(&mut rest, READS_OUTPUTS);
         let default_rows = rest.last().and_then(|last| headed(last, DEFAULT));
         if default_rows.is_some() {
-            if explicit {
-                return self.refuse("an input with default rows takes no `explicit` mark", *place);
+            if from_key {
+                return self.refuse("an input with default rows takes no `from-key` mark", *place);
             }
             rest = &rest[..rest.len() - 1];
         }
@@ -186,7 +186,7 @@ impl FileReader {
             Some(rows) => Some(DefaultRows { written: self.read(read_param_value(rows, &written))? }),
             None => None,
         };
-        Some(InputPort { port: Port { name, columns: columns.into() }, default, reads_outputs, explicit })
+        Some(InputPort { port: Port { name, columns: columns.into() }, default, reads_outputs, from_key })
     }
 
     /// `(proposer <name> native [domain] (columns ...))` or

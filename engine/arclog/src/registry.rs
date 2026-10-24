@@ -21,15 +21,16 @@
 //!   type's, that must be bound for the relation to bind the others; a
 //!   relation over a finite domain has no `modes` form, and no mode is empty.
 //! - `(component <name> <construction|detector|task-structure> (type-parameters <t> ...)
-//!   (inputs (<input> (<column> <type>) ... [(default <rows>)] [reads-outputs] [explicit]) ...)
+//!   (inputs (<input> (<column> <type>) ... [(default <rows>)] [reads-outputs] [from-key]) ...)
 //!   (outputs (<output> (<column> <type>) ...) ...))`: a construction, a
 //!   detector or a task-structure component, its inputs in the order the component declares them. An
 //!   input's `default` writes its rows as a `param` form writes them after
 //!   its types (`docs/arclog/arcdata.md#params`). An input marked
 //!   `reads-outputs` reads the instance's outputs, as `Unfold`'s `step`,
-//!   `skip` and `take` do. An input marked `explicit`, which writes no
-//!   `default`, holds no row where the instance writes no clause for it,
-//!   and the engine does not fill it from the key, as Order's `probe`. An output may share its name with an input of
+//!   `skip` and `take` do. An input marked `from-key`, which writes no
+//!   `default`, is filled from the key where the instance writes no clause
+//!   for it, as Cardinality's `domain`; an input with neither mark nor
+//!   `default` holds no row there. An output may share its name with an input of
 //!   the same form, as `Unfold`'s `take` does: an instance's output of that
 //!   name, where the instance writes no clause for it, reads the input's
 //!   relation.
@@ -209,10 +210,10 @@ pub struct InputPort {
     /// `skip` and `take` do, through atoms whose every variable another atom
     /// of the clause binds.
     pub reads_outputs: bool,
-    /// Whether the input, which then has no default, holds no row where
-    /// the instance writes no clause for it, so that the engine does not
-    /// fill it from the key, as Order's `probe`.
-    pub explicit: bool,
+    /// Whether the input, which then has no default, is filled from the
+    /// key where the instance writes no clause for it, as Cardinality's
+    /// `domain`.
+    pub from_key: bool,
 }
 
 /// The default rows of an input, as the file writes them, read by

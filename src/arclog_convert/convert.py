@@ -150,6 +150,19 @@ def registry_columns(kind: str, between: str) -> dict[str, list[Col]]:
             for m in re.finditer(form, REGISTRY.read_text(), re.M)}
 
 
+def from_key_inputs() -> dict[str, set[str]]:
+    """The inputs engine/lib/registry.sexpr marks `from-key`, by component:
+    those the engine fills from the key where an instance writes no clause
+    for them."""
+    out: dict[str, set[str]] = {}
+    for m in re.finditer(r"^\(component (\w+) .*?(?=^\(component |^;;|\Z)", REGISTRY.read_text(), re.M | re.S):
+        marked = re.findall(r"\((\w+)(?: \(\w+ \w+\))+ from-key\)", m.group(0))
+        if marked:
+            out[m.group(1)] = set(marked)
+    return out
+
+
+FROM_KEY = from_key_inputs()   # the inputs the engine fills from the key, by component
 PROPOSER_COLS = proposer_columns()   # each proposer's columns
 DOMAIN_PROPOSERS = registry_columns("proposer", r"native domain")   # the type-domain proposers, which give one value per row
 DERIVATION_COLS = registry_columns("derivation", r"\(fields(?: \(\w+ \w+\))*\)")   # each fixed derivation's columns
@@ -4861,12 +4874,16 @@ class Solver:
             return [f"  ;; TODO input-fact: {souffle_term(u.head)}"]
 
         def skipped(u, lr) -> bool:
-            """An input clause the engine fills from the key."""
+            """An input clause the engine fills from the key: the registry marks the
+            input `from-key`."""
             ren = kren(u)
             saved = list(self.todo.pending), Counter(self.todo.kinds)
             labs = [lab_of(t, ren) for _, kept in head_terms(u, lr, ren) for _, t in kept]
             self.todo.pending, self.todo.kinds = saved
-            skip = all(lab in kn for lab in labs)
+            ren_ = libmap.COMP.get(inst.component)
+            target = ren_.name if ren_ else inst.component
+            port = ren_.parts.get(lr.name, lr.name) if ren_ else lr.name
+            skip = port in FROM_KEY.get(target, ()) and all(lab in kn for lab in labs)
             own_read = any(isinstance(l, AtomLiteral) and l.atom.relation.instances[:1] == (inst.name,)
                            for l in u.body)
             return skip and ((own_read and len(u.body) == 1) or not residual.get(id(u), list(u.body)))
