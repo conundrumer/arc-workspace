@@ -1,11 +1,13 @@
 """Write the tables of the corpus's case programs as an index and flat int32 value arrays.
 
-    python engine/arclog-py/tables_export.py <out dir> [--all-cases] [--bodies] [--projection-cap N] [<task id> ...]
+    python engine/arclog-py/tables_export.py <out dir> [--all-cases] [--bodies] [--projection-cap N] [--previous <export dir>] [<task id> ...]
 
 It needs an interpreter with `arclog`, pandas and pyarrow, such as the LM work's venv. A change to this module, or to the engine code that writes the export's files (`engine/arclog/src/eval/flows.rs`, `engine/arclog/src/decode/`), runs `engine/arclog-py/roundtrip_check.py` with an `arclog` built from its tree before its merge.
 
-Runs one `arclog.corpus_tables` call per task id, the largest `.arcdata` file first, on a queue of N Python threads, where N is `ARCLOG_THREADS`
-if set and `os.cpu_count()` otherwise. The script sets `ARCLOG_THREADS=1` for the engine, so each call runs on one
+Runs one `arclog.corpus_tables` call per task id, the longest first, on a queue of N Python threads, where N is `ARCLOG_THREADS`
+if set and `os.cpu_count()` otherwise. The order is that of the seconds each task took in the export `--previous` gives
+(see `parts/<k>.tasks.txt`), then the tasks that export does not give, or all tasks where none is given, by the largest
+`.arcdata` file first. `--previous` changes no output. The script sets `ARCLOG_THREADS=1` for the engine, so each call runs on one
 worker, and each thread starts the next task as its task ends. Every 10 s the tasks ended since the last write are
 written as a part. Writes to <out dir>:
   values/<task>/<case>.i32   raw int32 (np.fromfile), every row of the case: the rows of each entry, of each DET
@@ -13,7 +15,8 @@ written as a part. Writes to <out dir>:
                              column order (see `arclog.decode.columns`)
   parts/<k>.<name>.parquet   the rows of one part
   parts/<k>.report.txt       the fault lines of the part's tasks
-  parts/<k>.tasks.txt        the task ids of the part, one per line, written last: a part is whole where it stands
+  parts/<k>.tasks.txt        one line `<task> <seconds>` per task of the part, the wall seconds of its call to 0.1 s (a bare
+                             task id where the writer gives none), written last: a part is whole where it stands
   index.parquet    one row per (table, example, entry): task, case, concept, the table's columns, the entry's columns
   tables.parquet   one row per table: its columns, and its depth in the dependency graph (0 for an evidence table and each fact
                    relation), its candidate keys (`keys`, a list of lists of column indexes: the columns of each `ONE` mark of
@@ -83,8 +86,8 @@ def frame(case, part):
     return pd.DataFrame(dict(task=[case.task] * n, case=[case.case] * n, concept=[case.concept] * n, **d))
 
 
-def write_part(out, k, results):
-    """Writes the part `k` of the (task id, cases, lines) results, the `tasks.txt` last."""
+def write_part(out, k, results, seconds=None):
+    """Writes the part `k` of the (task id, cases, lines) results, the `tasks.txt` last, with the {task: seconds} given."""
     frames, checks = {p: [] for p in PARTS}, []
     orientation = export_checks.orientation_sets(arclog.orientation_types())
     for task, cases, _ in results:
@@ -105,11 +108,11 @@ def write_part(out, k, results):
     with open(f"{out}/parts/{k:05d}.checks.txt", "w") as sink:
         sink.write("".join(line + "\n" for line in checks))
     with open(f"{out}/parts/{k:05d}.tasks.tmp", "w") as sink:
-        sink.write("".join(t + "\n" for t, _, _ in results))
+        sink.write("".join(t + (f" {seconds[t]:.1f}" if seconds and t in seconds else "") + "\n" for t, _, _ in results))
     os.rename(f"{out}/parts/{k:05d}.tasks.tmp", f"{out}/parts/{k:05d}.tasks.txt")
 
 
-def main(out, task_ids, **options):
+def main(out, task_ids, previous=None, **options):
     workers = int(os.environ.get("ARCLOG_THREADS") or os.cpu_count())
     os.environ["ARCLOG_THREADS"] = "1"
     os.makedirs(f"{out}/parts", exist_ok=True)
@@ -126,17 +129,22 @@ def main(out, task_ids, **options):
         if os.path.exists(f"{out}/parts/{stem}.tasks.txt"):
             k = max(k, int(stem) + 1)
             if f.endswith(".tasks.txt"):
-                done |= set(open(f).read().split())
+                done |= {line.split()[0] for line in open(f) if line.strip()}
         else:
             os.remove(f)
-    # The largest .arcdata files first: the slowest tasks are among them, so they start early.
-    todo = sorted((t for t in task_ids if t not in done), key=lambda t: (-os.path.getsize(f"{CORPUS}/{t}.arcdata"), t))
-    started, progress = {}, {}
+    # Longest processing time first: the tasks the previous export gives, by its seconds, after the tasks it does not give,
+    # which go by the largest .arcdata file, as the slowest tasks are among them.
+    before = {}
+    for f in glob.glob(f"{previous}/parts/*.tasks.txt") if previous else []:
+        before.update({w[0]: float(w[1]) for w in map(str.split, open(f)) if len(w) == 2})
+    todo = sorted((t for t in task_ids if t not in done), key=lambda t: (t in before, -before.get(t, 0), -os.path.getsize(f"{CORPUS}/{t}.arcdata"), t))
+    started, progress, took = {}, {}, {}
 
     def run(task):
         progress[task] = arclog.ReplayProgress()
         started[task] = time.time()
         cases, lines = arclog.corpus_tables(CORPUS, TASKS, task_ids=[task], progress=progress[task], **options)
+        took[task] = time.time() - started[task]
         return task, cases, lines
 
     pool = ThreadPoolExecutor(workers)
@@ -152,7 +160,7 @@ def main(out, task_ids, **options):
                 results.append(f.result())
         if time.time() - last >= 10 or not pending or failure:
             if results:
-                write_part(out, k, results)
+                write_part(out, k, results, took)
                 k, ended, results = k + 1, ended + len(results), []
             now = time.time()
             running = sorted((t for t in started if started[t] < now - 10 and futures[t] in pending), key=lambda t: started[t])
@@ -217,6 +225,7 @@ if __name__ == "__main__":
         a = args.pop(0)
         if a == "--all-cases": options["all_cases"] = True
         elif a == "--bodies": options["bodies"] = True
+        elif a == "--previous": options["previous"] = args.pop(0)
         elif a == "--projection-cap": options["projection_cap"] = int(args.pop(0))
         elif a == "--step-cap": options["step_cap"] = int(args.pop(0)) or None
         else: ids.append(a)
