@@ -2,6 +2,7 @@
 
     work/lm/.venv/bin/python lm/runs/data-study/viability.py index <export> [--out FILE]
     work/lm/.venv/bin/python lm/runs/data-study/viability.py relation <export> [--out FILE]
+    work/lm/.venv/bin/python lm/runs/data-study/viability.py empty-dist <export> [--out FILE]
     work/lm/.venv/bin/python lm/runs/data-study/viability.py restate <export> [--out FILE] [--points N] [--seed S]
 
 <export> is a rollout export (lm/export_rollouts.py) with its labels.jsonl. A branch point is a (task, corpus case,
@@ -27,7 +28,10 @@ Each Table takes the first class that fits, in this order:
 `index` reads index.parquet, tables.parquet and the projection files and writes the counts of the first four classes
 by member kind (gold, sampled), overall and at positions 0 and 1, and the share of members with no table after the
 branch. `relation` writes the first four classes per relation, its Tables pooled (`relation_mode`), with each member
-weighing 1, at every position and at position 0. `restate` reads the values of each Table at position 0 and of the prefix's Tables (once per branch point,
+weighing 1, at every position and at position 0. `empty-dist` takes the relations of class empty somewhere and writes
+the frequency of (train examples with 0 rows, train examples) and of the share of empty examples (under 1/3, 1/3 to
+2/3, over 2/3), gold against sampled, per relation and per member weighing 1, at every position and at position 0.
+`restate` reads the values of each Table at position 0 and of the prefix's Tables (once per branch point,
 from its gold case) and writes the restatement and viable shares at position 0; with --points N it takes N branch
 points drawn uniformly (seed S). --out (default lm/runs/data-study/viability.out) gets the mode's section, and a
 section of the other mode already in the file is kept.
@@ -198,10 +202,9 @@ def index_mode(export):
     return lines
 
 
-def relation_mode(export):
-    """The classes of each relation after the branch, its Tables pooled: faulted where one faults; unseen where one is
-    unseen and none has rows; empty everywhere where no Table has rows at any train example; empty somewhere where,
-    pooled, some train example has no rows and another has."""
+def relation_classes(export):
+    """The kept members and one row per relation after the branch (case, table): its pooled class `cls` among CLASSES
+    ("" for viable), `zero` (train examples with 0 rows, pooled), `n` (train examples, pooled), `position`, `member`."""
     labs, kept, left, after, ix, g, kind = load(export)
     per_ex = ix[ix["example_kind"].isin([TRAIN, TASK])].groupby(["case", "table", "ex"])["train_rows"].sum()
     pooled = per_ex.groupby(["case", "table"]).agg(zero=lambda s: int((s == 0).sum()), n="size")
@@ -213,6 +216,14 @@ def relation_mode(export):
     r["n"] = r["n"].fillna(0)
     no_rows = r["zero"] == r["n"]
     r["cls"] = np.select([r["faulted"], r["unseen"] & no_rows, no_rows, r["zero"] > 0], CLASSES, default="")
+    return kept, r, ix
+
+
+def relation_mode(export):
+    """The classes of each relation after the branch, its Tables pooled: faulted where one faults; unseen where one is
+    unseen and none has rows; empty everywhere where no Table has rows at any train example; empty somewhere where,
+    pooled, some train example has no rows and another has."""
+    kept, r, _ = relation_classes(export)
     lines = ["## relation", "",
              "A relation's Tables pooled; each member weighs 1, shared among its relations. The first relation is at position 0.", ""]
     head = "member".ljust(10) + "members".rjust(9) + "".join(c.rjust(18) for c in CLASSES) + "  viable".rjust(9)
@@ -235,6 +246,65 @@ def relation_mode(export):
         lines.append(f"{m}: {v} of {len(x)} with a relation after the branch ({pct(v, len(x))}); "
                      f"of all {len(ms)} members {pct(v, len(ms))}")
     lines.append("")
+    return lines
+
+
+BUCKETS = ["under 1/3", "1/3 to 2/3", "over 2/3"]
+
+
+def bucket_of(z, n):
+    """The share z/n of empty examples in BUCKETS (integer arithmetic)."""
+    return np.select([3 * z < n, 3 * z <= 2 * n], BUCKETS[:2], default=BUCKETS[2])
+
+
+def empty_dist_mode(export):
+    """For the relations of class "empty somewhere": the frequency of (train examples with 0 rows, train examples) and
+    of the share of empty examples in BUCKETS, gold against sampled, per relation and per member (each member weighs 1,
+    shared among all its relations as in `relation_mode`)."""
+    kept, r, ix = relation_classes(export)
+    tw = ix[(ix["example_kind"] == TASK) & ix["seen"]].groupby(["case", "table"]).size()
+    es = r[r["cls"] == "empty somewhere"]
+    task_wide = int(es.set_index(["case", "table"]).index.isin(tw.index).sum())
+    lines = ["## empty-dist", "",
+             "The relations of class empty somewhere (0 rows in some train examples, rows in others; Tables pooled), "
+             "gold against sampled continuations.",
+             "Each row is (train examples with 0 rows, train examples of the task). "
+             "\"rel\" counts relations; \"/m\" gives each member weight 1, shared among all its relations after the "
+             "branch as in the relation mode (the column is the summed weight, then its share).",
+             f"Relations of this class with a task-wide entry (counted as one example): {task_wide} of {len(es)}.",
+             "A share of empty examples of exactly 1/3 or 2/3 is in the middle bucket.", ""]
+    for name, sel in (("all positions", r), ("position 0", r[r["position"] == 0])):
+        lines.append(f"### {name}")
+        cols = {}
+        sel = sel.assign(w=1 / sel.groupby("case")["cls"].transform("size"))   # as in relation_mode
+        for m in ("gold", "sampled"):
+            x = sel[(sel["member"] == m) & (sel["cls"] == "empty somewhere")]
+            cols[m] = (x, float(x["w"].sum()))
+            lines.append(f"{m}: {len(x)} relations of {int((sel['member'] == m).sum())}, "
+                         f"{x['case'].nunique()} members of {int(sel[sel['member'] == m]['case'].nunique())}; "
+                         f"weight {cols[m][1]:.1f}")
+        lines.append("")
+
+        def cells(hit_of):
+            row = ""
+            for m in ("gold", "sampled"):
+                x, wt = cols[m]
+                hit = hit_of(x)
+                row += str(int(hit.sum())).rjust(12) + pct(int(hit.sum()), len(x)).rjust(8)
+                row += f"{float(x['w'][hit].sum()):.2f}".rjust(12) + pct(float(x["w"][hit].sum()), wt).rjust(8)
+            return row
+
+        head = "".join((m + " rel").rjust(12) + "%".rjust(8) + (m + " /m").rjust(12) + "%".rjust(8) for m in ("gold", "sampled"))
+        lines.append("(zero, n)".ljust(24) + head)
+        pairs = sorted({(int(a), int(b)) for m in cols for a, b in zip(cols[m][0]["zero"], cols[m][0]["n"])},
+                       key=lambda p: (p[1], p[0]))
+        for z, n in pairs:
+            lines.append(f"({z}, {n})".ljust(24) + cells(lambda x: (x["zero"] == z) & (x["n"] == n)))
+        lines.append("")
+        lines.append("share of empty examples".ljust(24) + head)
+        for b in BUCKETS:
+            lines.append(b.ljust(24) + cells(lambda x: pd.Series(bucket_of(x["zero"].to_numpy(), x["n"].to_numpy()) == b, index=x.index)))
+        lines.append("")
     return lines
 
 
@@ -419,12 +489,12 @@ def write(out, mode, lines):
             if cur:
                 sections[cur].append(line)
     sections[mode] = lines
-    out.write_text("\n".join(l for m in ("index", "relation", "restate") if m in sections for l in sections[m]).rstrip() + "\n")
+    out.write_text("\n".join(l for m in ("index", "relation", "empty-dist", "restate") if m in sections for l in sections[m]).rstrip() + "\n")
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("mode", choices=["index", "relation", "restate"])
+    ap.add_argument("mode", choices=["index", "relation", "empty-dist", "restate"])
     ap.add_argument("export")
     ap.add_argument("--out", default=str(ROOT / "lm/runs/data-study/viability.out"))
     ap.add_argument("--points", type=int, default=0)
@@ -432,6 +502,7 @@ def main():
     a = ap.parse_args()
     start = time.time()
     lines = {"index": lambda: index_mode(a.export), "relation": lambda: relation_mode(a.export),
+             "empty-dist": lambda: empty_dist_mode(a.export),
              "restate": lambda: restate_mode(a.export, a.points, a.seed)}[a.mode]()
     write(a.out, a.mode, lines)
     print("\n".join(lines))
