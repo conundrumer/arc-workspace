@@ -34,7 +34,7 @@ wait
 failed=0
 # a line with a machine-specific name fails; the two `getmtime` lines of `table_stamp` in encoder.py are allowed
 portability=0
-for f in encoder train pretrain encoder_check insertion_check regression_check value_check value_eval rollout_labels export_rollouts; do
+for f in encoder train pretrain encoder_check insertion_check regression_check value_check value_eval value_probe rollout_labels export_rollouts; do
     while IFS= read -r hit; do
         [ -z "$hit" ] && continue
         portability=1

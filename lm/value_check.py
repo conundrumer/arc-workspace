@@ -48,6 +48,9 @@ r0 N N, r1 N C, r2 C S.
 - The two evaluation paths: three draws of per-table scores must give pretrain.py's held-out entries
   (`value_heldout_metrics`) and value_eval.py's report the same metrics, those of the draws' mean score, with each
   metric's least and greatest value over the draws taken one at a time.
+- The probe (value_probe.py): on the members of a `$C` branch point and of `$D`, the probe must take the tables that
+  `value_lists` takes, and the head's logit of the probe's vectors must equal `value_scores`' under the same draws;
+  its ridge regression must recover a linear target of six columns of different scales, held-out R^2 over 0.99.
 - With --learn: 100 steps of the ranking loss alone, under the solving label (AdamW, lr 5e-4 or --lr=<lr>, warmup 10, clip 1.0), two `ta`
   branch points a step, at c 32 in float32, through pretrain.py's `value_step`; every 25 steps, the pairwise
   ranking accuracy on the `tb` branch points and the mean training loss of the last 25 steps. The run passes where
@@ -74,6 +77,7 @@ import export_rollouts as XR
 import pretrain as P
 import rollout_labels as RL
 import value_eval as VE
+import value_probe as VP
 from train import fold_of
 
 FOLD = next(k for k in range(4) if k not in {fold_of("ta", 4), fold_of("tb", 4)})   # a fold of 4 with neither task
@@ -385,6 +389,26 @@ verdict(all(shown[k] == mean[k] for k in mean) and shown["draws"] == 3
                 for k in ("pair_acc", "auc")),
         f"the metrics of the draws' mean score, and each draw's range: pair_acc {shown['pair_acc']:.3f}, each draw "
         f"{shown['pair_acc_min']:.3f} to {shown['pair_acc_max']:.3f}")
+
+print("== the probe of the head's input (value_probe.py)")
+t1 = time.time()
+enc, head = encoder()
+enc.eval()
+xs, zs, _ = VP.encode(enc, head, group, 2, 1, 16, torch.Generator().manual_seed(4))
+with torch.no_grad():
+    g4 = torch.Generator().manual_seed(4)   # drawn from in turn, member by member, as the probe draws
+    direct = [E.value_scores(enc, head, [m], g4, 16)[0] if VP.listed(m, 2) else None for m in group]
+x, _, y, _, counts = VP.stack(group, 2, xs)
+listed = E.value_lists(group, logits, 2, label="solving")
+verdict(len(y) == sum(len(l["labels"]) for l in listed)
+        and all(np.allclose(z, d[VP.listed(m, 2)].numpy(), atol=1e-5) for m, z, d in zip(group, zs, direct) if z is not None),
+        f"the probe takes the {len(y)} tables of the lists ({sum(len(l['labels']) for l in listed)}), and the head's logit of its vectors is value_scores' (largest difference {max(float(np.abs(z - d[VP.listed(m, 2)].numpy()).max()) for m, z, d in zip(group, zs, direct) if z is not None):.2e})")
+rng = np.random.default_rng(3)
+xr = rng.normal(size=(300, 6)) * [1, 10, 0.1, 1, 1, 1]
+yr = xr @ rng.normal(size=6) + 0.01 * rng.normal(size=300)
+pred, _ = VP.ridge(xr[:200], yr[:200], [i % 20 for i in range(200)], 0)
+verdict(VP.r2(pred(xr[200:]), yr[200:]) > 0.99, f"the ridge probe recovers a linear target: held-out R2 "
+        f"{VP.r2(pred(xr[200:]), yr[200:]):.4f} ({time.time() - t1:.1f} s)")
 print(f"  {time.time() - t0:.1f} s")
 
 print("== learning: 100 steps of the ranking loss, two ta branch points a step, pairwise ranking accuracy on tb")

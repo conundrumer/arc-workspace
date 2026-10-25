@@ -166,7 +166,8 @@ def losses(by, prior_weight):
             "by_type": {p: by_type(by[p]) for p in PARTS}, **({"by_depth": depth} if depth else {})}
 
 
-def main():
+def parser():
+    """The command line of pretrain.py, whose defaults are the default run's shape."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="Qwen/Qwen3-0.6B", help="the language model whose embedding the encoder shares")
     ap.add_argument("--data", default="work/lm/data")
@@ -246,7 +247,22 @@ def main():
                     help="the most branch points per step, each with all its continuations; their cost counts in "
                          "--step-rows before the masked loss's programs, and at least one is taken")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
-    a = ap.parse_args()
+    return ap
+
+
+def run_config(a, in_names):
+    """The "config" of the saved encoder.pt of a run with the arguments `a`."""
+    return dict(base=a.base, tables=a.tables, enc_k=a.enc_k, enc_layers=a.enc_layers, enc_width=a.enc_width,
+                enc_heads=a.enc_heads, enc_mlp=a.enc_mlp, enc_gram=a.enc_gram, enc_budget=a.enc_budget,
+                id_dim=a.id_dim, mask_frac=a.mask_frac, mask_cap=a.mask_cap, mask_kind=a.mask_kind,
+                mask_remote=a.mask_remote, prior_weight=a.prior_weight, in_names=in_names, enc_equality=a.enc_equality,
+                enc_source_rows=a.enc_source_rows, enc_ptr_equality=a.enc_ptr_equality, enc_max_rows=a.enc_max_rows,
+                value=a.value, value_tables=a.value_tables, value_label=a.value_label, value_weight=a.value_weight,
+                value_positions=a.value_positions, value_groups=a.value_groups)
+
+
+def main():
+    a = parser().parse_args()
     assert a.enc_equality != "flex" or a.device == "cuda", "--enc-equality flex trains on cuda alone"
     if a.enc_checkpoint is None:
         a.enc_checkpoint = a.device == "cuda"
@@ -368,13 +384,7 @@ def main():
 
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
     log = open(out / "log.jsonl", "a")
-    config = dict(base=a.base, tables=a.tables, enc_k=a.enc_k, enc_layers=a.enc_layers, enc_width=a.enc_width,
-                  enc_heads=a.enc_heads, enc_mlp=a.enc_mlp, enc_gram=a.enc_gram, enc_budget=a.enc_budget,
-                  id_dim=a.id_dim, mask_frac=a.mask_frac, mask_cap=a.mask_cap, mask_kind=a.mask_kind,
-                  mask_remote=a.mask_remote, prior_weight=a.prior_weight, in_names=in_names, enc_equality=a.enc_equality,
-                  enc_source_rows=a.enc_source_rows, enc_ptr_equality=a.enc_ptr_equality, enc_max_rows=a.enc_max_rows,
-                  value=a.value, value_tables=a.value_tables, value_label=a.value_label, value_weight=a.value_weight,
-                  value_positions=a.value_positions, value_groups=a.value_groups)
+    config = run_config(a, in_names)
     gen, mask_gen = torch.Generator().manual_seed(10), torch.Generator().manual_seed(11)
     best, start, step_seconds, by = float("inf"), time.time(), [], None
     value_lists, value_sum, value_n = [], 0.0, 0   # the value loss's lists and losses since the last evaluation

@@ -36,6 +36,9 @@ import encoder as E
 import train as T
 
 
+FEATURES = ["log rows", "empty", "unseen", "depth", "log step index", "position"] + [f"{n} columns" for n in E.TYPE_NAMES]
+
+
 def features(t, r):
     """The trivial features of table t with its value record r."""
     bag = [sum(ty == name for ty in t.types) for name in E.TYPE_NAMES]
@@ -58,14 +61,16 @@ def report(name, members, draws, positions, label):
     return r
 
 
-def logistic(train_members, held_members, positions, steps, seed, label):
-    """Per-table scores of the held-out members from a logistic regression on `features`."""
+def logistic(train_members, held_members, positions, steps, seed, label, columns=None):
+    """Per-table scores of the held-out members from a logistic regression on `features`, on those of the indices
+    `columns` where given."""
+    pick = (lambda f: f) if columns is None else (lambda f: [f[i] for i in columns])
     def rows(ms):
         x, y = [], []
         for m in ms:
             for t, r in zip(m["tables"], m["records"]):
                 if 0 <= r["position"] < positions and not E.value_excluded(r) and (label == "solving" or not r["unjudged"]):
-                    x.append(features(t, r)); y.append(float(r[label]))
+                    x.append(pick(features(t, r))); y.append(float(r[label]))
         return torch.tensor(x, dtype=torch.float32), torch.tensor(y)
     x, y = rows(train_members)
     mu, sd = x.mean(0), x.std(0).clamp_min(1e-6)
@@ -77,8 +82,49 @@ def logistic(train_members, held_members, positions, steps, seed, label):
         opt.zero_grad(); loss.backward(); opt.step()
     print(f"logistic regression: {len(y)} training tables, final training loss {loss.item():.3f}")
     with torch.no_grad():
-        return [lin((torch.tensor([features(t, r) for t, r in zip(m["tables"], m["records"])], dtype=torch.float32)
+        return [lin((torch.tensor([pick(features(t, r)) for t, r in zip(m["tables"], m["records"])], dtype=torch.float32)
                      - mu) / sd).squeeze(-1).numpy() for m in held_members]
+
+
+def load(value_tables, data, cfg):
+    """The members of the rollout export (encoder.load_rollouts, with the tables cache at `<data>/<export
+    name>.tables.pkl` and the budgets of the run's `cfg`), those of training tasks and those of held-out tasks as the
+    data marks them, and the data's (names, kinds)."""
+    members, skipped = E.load_rollouts(value_tables, f"{data}/{Path(value_tables).resolve().name}.tables.pkl",
+                                       cfg["enc_budget"], cfg.get("enc_max_rows", 4000))
+    if skipped:
+        print(f"DATA FAULT: {len(skipped)} rollout cases whose tables export cannot be read, left out: {skipped}")
+    cases, held_cases, names, kinds, _ = T.load(data)
+    train_tasks, held_tasks = {c["task"] for c in cases}, {c["task"] for c in held_cases}
+    train_m = [m for m in members.values() if m["group"][0] in train_tasks]
+    held_m = [m for m in members.values() if m["group"][0] in held_tasks]
+    print(f"{len(members)} continuations; {len(train_m)} of training tasks at {len({m['group'] for m in train_m})} "
+          f"branch points, {len(held_m)} of held-out tasks at {len({m['group'] for m in held_m})} branch points")
+    assert held_m, "no continuation of a held-out task"
+    return members, train_m, held_m, (names, kinds)
+
+
+def build_encoder(cfg, value_tables, members, device, state=None):
+    """The encoder of the run's `cfg` for the rollout export, its embedding built from `cfg["base"]` as train.py
+    builds it, with the encoder's `state` where given and its random initialization otherwise; in eval mode."""
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    in_names = cfg["in_names"]
+    tok = AutoTokenizer.from_pretrained(cfg["base"])
+    base = AutoModelForCausalLM.from_pretrained(cfg["base"], dtype=torch.float32)
+    table = base.get_input_embeddings().weight.detach()
+    embed = nn.Embedding(len(in_names), table.shape[1])
+    embed.weight.data = torch.stack([T.name_vector(table, tok, n) for n in in_names])
+    del base, table
+    enc = E.FeatureEncoder(embed, {n: i for i, n in enumerate(in_names)}, cfg["id_dim"],
+                           json.load(open(f"{value_tables}/orientations.json")), K=cfg["enc_k"],
+                           layers=cfg["enc_layers"], c=cfg["enc_width"], heads=cfg["enc_heads"], mlp=cfg["enc_mlp"],
+                           gram=cfg["enc_gram"], examples=E.max_example({m["key"]: m["tables"] for m in members.values()}) + 1,
+                           equality=cfg["enc_equality"], source_rows=cfg["enc_source_rows"],
+                           ptr_equality=cfg["enc_ptr_equality"]).to(device)
+    if state is not None:
+        missing, unexpected = enc.load_state_dict(state, strict=False)
+        assert not unexpected and all(k.startswith("embed.") for k in missing), (missing, unexpected)
+    return enc.eval()
 
 
 def main():
@@ -100,34 +146,8 @@ def main():
     positions = a.positions or cfg.get("value_positions", 1)
     torch.manual_seed(a.seed); random.seed(a.seed)
 
-    members, skipped = E.load_rollouts(a.value_tables, f"{a.data}/{Path(a.value_tables).resolve().name}.tables.pkl",
-                                       cfg["enc_budget"], cfg.get("enc_max_rows", 4000))
-    if skipped:
-        print(f"DATA FAULT: {len(skipped)} rollout cases whose tables export cannot be read, left out: {skipped}")
-    cases, held_cases, names, kinds, _ = T.load(a.data)
-    train_tasks, held_tasks = {c["task"] for c in cases}, {c["task"] for c in held_cases}
-    train_m = [m for m in members.values() if m["group"][0] in train_tasks]
-    held_m = [m for m in members.values() if m["group"][0] in held_tasks]
-    print(f"{len(members)} continuations; {len(train_m)} of training tasks, {len(held_m)} of held-out tasks, at "
-          f"{len({m['group'] for m in held_m})} held-out branch points")
-    assert held_m, "no continuation of a held-out task"
-
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-    in_names = cfg["in_names"]
-    tok = AutoTokenizer.from_pretrained(cfg["base"])
-    base = AutoModelForCausalLM.from_pretrained(cfg["base"], dtype=torch.float32)
-    table = base.get_input_embeddings().weight.detach()
-    embed = nn.Embedding(len(in_names), table.shape[1])
-    embed.weight.data = torch.stack([T.name_vector(table, tok, n) for n in in_names])
-    del base, table
-    enc = E.FeatureEncoder(embed, {n: i for i, n in enumerate(in_names)}, cfg["id_dim"],
-                           json.load(open(f"{a.value_tables}/orientations.json")), K=cfg["enc_k"],
-                           layers=cfg["enc_layers"], c=cfg["enc_width"], heads=cfg["enc_heads"], mlp=cfg["enc_mlp"],
-                           gram=cfg["enc_gram"], examples=E.max_example({m["key"]: m["tables"] for m in members.values()}) + 1,
-                           equality=cfg["enc_equality"], source_rows=cfg["enc_source_rows"],
-                           ptr_equality=cfg["enc_ptr_equality"]).to(a.device)
-    missing, unexpected = enc.load_state_dict(ck["state"], strict=False)
-    assert not unexpected and all(k.startswith("embed.") for k in missing), (missing, unexpected)
+    members, train_m, held_m, _ = load(a.value_tables, a.data, cfg)
+    enc = build_encoder(cfg, a.value_tables, members, a.device, ck["state"])
     head = E.ValueHead(cfg["enc_width"], cfg["enc_gram"], cfg["enc_k"]).to(a.device)
     head.load_state_dict(ck["value_head"])
     enc.eval(); head.eval()
