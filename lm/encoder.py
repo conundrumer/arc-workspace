@@ -2041,7 +2041,10 @@ class FeatureEncoder(nn.Module):
         "edges" [m] on the device (a Box: its margins right, 0 to 4; any other type: -1), which a
         caller reads after the backward pass, so that the forward pass waits on no copy to the host, and with `detail`,
         "out": {head: (field indices, outputs)} for the symmetry check (the pointer's over the rows some masked field
-        may point to, then "no row holds it")."""
+        may point to, then "no row holds it"). "chance_loss" [m] is the loss of the field's head when all its scores
+        are equal: ln of the head's class count, and for a pointer, -log(targets / (candidates + 1)), where targets
+        are the candidate rows that hold the field's value (one, "no row holds it", where none does) and candidates
+        are the candidate rows."""
         hd, dev, dt = self.heads, x.device, x.dtype
         up = lambda v: v.float() if v.dtype in (torch.float16, torch.bfloat16) else v   # the loss in at least float32
         rr, ii = np.nonzero(field_mask)
@@ -2050,7 +2053,7 @@ class FeatureEncoder(nn.Module):
         hx = hd.norm(x)
         z = hd.h2(F.gelu(hd.h1(hx[torch.from_numpy(rr).to(dev)] * bind)))                                    # [m, 21, c]
         types = [table.types[i] for i in ii]
-        losses, correct, edges, order, out = [], [], [], [], {}
+        losses, chances, correct, edges, order, out = [], [], [], [], [], {}
         sel = lambda pred: np.array([k for k, ty in enumerate(types) if pred(ty)], np.int64)
         value = lambda k, j=0: int(table.cells[rr[k], offsets[ii[k]] + j])
         idx = sel(lambda ty: ty == "Number")
@@ -2059,6 +2062,7 @@ class FeatureEncoder(nn.Module):
             tgt = torch.tensor([min(max(value(k), lo), hi) - lo for k in idx], device=dev)
             logits = hd.number(z[idx, 0]) @ self.number.weight.T
             losses.append(F.cross_entropy(up(logits), tgt, reduction="none")); correct.append(logits.argmax(1) == tgt)
+            chances.append(torch.full_like(losses[-1], math.log(logits.shape[1])))
             order.append(idx); out["number"] = (idx, logits)
         idx = sel(lambda ty: ty == "Box")
         if len(idx):
@@ -2068,6 +2072,7 @@ class FeatureEncoder(nn.Module):
             ce = F.cross_entropy(up(logits).reshape(-1, logits.shape[-1]), tgt.reshape(-1), reduction="none")
             right = logits.argmax(-1) == tgt
             losses.append(ce.reshape(-1, 4).mean(1)); correct.append(right.all(1)); edges.append(right.sum(1))
+            chances.append(torch.full_like(losses[-1], math.log(logits.shape[-1])))
             order.append(idx); out["box"] = (idx, logits)
         # each orientation field is scored over the candidates of its column's type, or of the wider type that holds
         # its value (`scored_type`)
@@ -2080,6 +2085,7 @@ class FeatureEncoder(nn.Module):
             scores = (hd.o_edge(zz[:, 1:5])[..., 0] @ f_edge.T + hd.o_pair(zz[:, 5:])[..., 0] @ f_pair.T
                       + hd.o_ref(zz[:, 5:])[..., 0] @ f_ref.T)                                               # [m, C]
             losses.append(F.cross_entropy(up(scores), tgt, reduction="none")); correct.append(scores.argmax(1) == tgt)
+            chances.append(torch.full_like(losses[-1], math.log(scores.shape[1])))
             order.append(idx); out["orientation " + ty + ("" if st == ty else " as " + st)] = (idx, scores)
         idx = sel(lambda ty: ty in POINTER_TYPES)
         if len(idx):
@@ -2105,6 +2111,7 @@ class FeatureEncoder(nn.Module):
             right = torch.cat([target, none[:, None]], 1)
             losses.append(-torch.logsumexp(lp.masked_fill(~right, float("-inf")), 1))
             correct.append(right.gather(1, lp.argmax(1, keepdim=True))[:, 0])
+            chances.append(torch.log((cand.sum(1) + 1).to(losses[-1].dtype) / right.sum(1)))
             order.append(idx); out["pointer"] = (idx, logits)
         perm = torch.from_numpy(np.argsort(np.concatenate(order), kind="stable")).to(dev)
         prefix = "ex_output/" if table.relation == "ex_output" else ""
@@ -2115,6 +2122,7 @@ class FeatureEncoder(nn.Module):
         if "box" in out:
             n_edges[torch.from_numpy(out["box"][0]).to(dev)] = edges[0]
         rec = {"loss": torch.cat(losses)[perm], "correct": torch.cat(correct)[perm], "edges": n_edges,
+               "chance_loss": torch.cat(chances)[perm],
                "label": [prefix + label(ty) for ty in types]}
         if detail:
             rec["out"] = out

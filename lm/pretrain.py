@@ -12,7 +12,9 @@ evaluated every `--eval-every` steps with fixed masks and identifiers, on a samp
 gives the masked loss, each part's loss, and per part the loss and the accuracy per column type, with the fields of
 `ex_output` under "ex_output/<type>", and where the export gives depths, the program part per depth bucket of the
 derived tables (`by_depth`: 1, 2, 3, 4+); a Box or Position field is right when all four margins are, and its type also
-gives the edge accuracy, of single margins.
+gives the edge accuracy, of single margins. Beside each `loss` the log gives `chance_loss` (`program_chance_loss` and `prior_chance_loss` beside the
+parts' losses), the mean loss of a head with equal scores over the same fields (the encoder's `masked_fields` states it
+per field).
 
 The encoder's state, without the language model's embedding that it shares, goes to <out>/encoder.pt at the
 lowest held-out loss, for `train.py --encoder-init`. The embedding is built as train.py builds it, from `--base`,
@@ -69,23 +71,24 @@ def depth_bucket(depth):
 
 
 def summarize(records, by=None):
-    """Per part, per label, over the records of masked_loss: [loss sum, fields right, fields, margins right], the
-    last for a Box or Position, of four per field; and under "depth", the same per depth bucket (`depth_bucket`)
+    """Per part, per label, over the records of masked_loss: [loss sum, fields right, fields, margins right,
+    chance loss sum], the margins for a Box or Position, of four per field; and under "depth", the same per depth bucket (`depth_bucket`)
     over the program part's fields of the derived tables that give a depth; added to `by` where it is given."""
     by = {**{p: {} for p in PARTS}, "depth": {}} if by is None else by
     for _, _, r in records:
         bucket = depth_bucket(r.get("depth")) if r["part"] == "program" else None
-        for lab, l, ok, e in zip(r["label"], r["loss"].tolist(), r["correct"].tolist(), r["edges"].tolist()):
-            for x in [by[r["part"]].setdefault(lab, [0.0, 0, 0, 0])] + (
-                    [by["depth"].setdefault(bucket, [0.0, 0, 0, 0])] if bucket else []):
-                x[0] += l; x[1] += ok; x[2] += 1; x[3] += max(e, 0)
+        for lab, l, ok, e, ch in zip(r["label"], r["loss"].tolist(), r["correct"].tolist(), r["edges"].tolist(),
+                                     r["chance_loss"].tolist()):
+            for x in [by[r["part"]].setdefault(lab, [0.0, 0, 0, 0, 0.0])] + (
+                    [by["depth"].setdefault(bucket, [0.0, 0, 0, 0, 0.0])] if bucket else []):
+                x[0] += l; x[1] += ok; x[2] += 1; x[3] += max(e, 0); x[4] += ch
     return by
 
 
 def by_type(by):
-    """The per-label table of the log: loss and accuracy (a Box or Position: all four margins right), and for a
-    Box or Position, the edge accuracy (a margin right)."""
-    return {k: {"loss": x[0] / x[2], "accuracy": x[1] / x[2], "fields": x[2],
+    """The per-label table of the log: loss and its chance level, and accuracy (a Box or Position: all four margins
+    right), and for a Box or Position, the edge accuracy (a margin right)."""
+    return {k: {"loss": x[0] / x[2], "chance_loss": x[4] / x[2], "accuracy": x[1] / x[2], "fields": x[2],
                 **({"edge_accuracy": x[3] / (4 * x[2])} if k.split("/")[-1] in ("Box", "Position") else {})}
             for k, x in sorted(by.items())}
 
@@ -93,12 +96,15 @@ def by_type(by):
 def losses(by, prior_weight):
     """The log's loss entries of `summarize`'s result: the loss, each part's mean loss, and the fields of each part,
     with the parts per label, and where the tables give depths, the program part per depth bucket (`by_depth`:
-    loss, accuracy and fields)."""
+    loss, chance loss, accuracy and fields)."""
     mean = {p: sum(x[0] for x in by[p].values()) / max(sum(x[2] for x in by[p].values()), 1) for p in PARTS}
-    depth = {k: {"loss": by["depth"][k][0] / by["depth"][k][2], "accuracy": by["depth"][k][1] / by["depth"][k][2],
+    depth = {k: {"loss": by["depth"][k][0] / by["depth"][k][2], "chance_loss": by["depth"][k][4] / by["depth"][k][2],
+                 "accuracy": by["depth"][k][1] / by["depth"][k][2],
                  "fields": by["depth"][k][2]} for k in DEPTHS if k in by["depth"]}
+    chance = {p: sum(x[4] for x in by[p].values()) / max(sum(x[2] for x in by[p].values()), 1) for p in PARTS}
     return {"loss": mean["program"] + prior_weight * mean["prior"], "program_loss": mean["program"],
-            "prior_loss": mean["prior"], **{f"{p}_fields": sum(x[2] for x in by[p].values()) for p in PARTS},
+            "prior_loss": mean["prior"], "program_chance_loss": chance["program"], "prior_chance_loss": chance["prior"],
+            **{f"{p}_fields": sum(x[2] for x in by[p].values()) for p in PARTS},
             "by_type": {p: by_type(by[p]) for p in PARTS}, **({"by_depth": depth} if depth else {})}
 
 
@@ -253,8 +259,9 @@ def main():
         by = summarize(records, by)
         if step <= 3 or step % 10 == 0:
             now = losses(summarize(records), a.prior_weight)
-            print(f"step {step} masked loss {loss.item():.3f} (program {now['program_loss']:.3f} over "
-                  f"{now['program_fields']} fields, prior {now['prior_loss']:.3f} over {now['prior_fields']} fields) "
+            print(f"step {step} masked loss {loss.item():.3f} (program {now['program_loss']:.3f}, chance "
+                  f"{now['program_chance_loss']:.3f}, over {now['program_fields']} fields, prior {now['prior_loss']:.3f}, "
+                  f"chance {now['prior_chance_loss']:.3f}, over {now['prior_fields']} fields) "
                   f"{len(drawn)} programs, cost {cost:.0f} rows "
                   f"{np.mean(step_seconds[-10:]):.2f} s/step", flush=True)
         last = step == a.steps or (a.minutes and time.time() - t0 > a.minutes * 60)

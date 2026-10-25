@@ -349,6 +349,51 @@ for (title, tabs), kind in [(x, k) for x in suites.items() for k in ("program", 
     print(f"  {title[:40]}..., {kind} step: {fields} masked fields; worst change "
           + ", ".join(f"{h} {v:.1e}" for h, v in worst.items()) + f" {'PASS' if ok else 'FAIL'}")
 
+print("== chance loss of the masked heads: each field's chance_loss against its formula (a pointer: -log(targets / "
+      "(candidates + 1)); a Box or Position: ln 320), and the loss of every head with all-zero weights, whose scores "
+      "are all equal, against chance_loss")
+formula = {"Box": math.log(320), "Position": math.log(320), "Number": math.log(1088)}
+saved = {k: v.detach().clone() for k, v in enc.heads.state_dict().items()}
+
+
+def chance_formula(tab, mask, rows_cols, k):
+    """The formula's chance loss of the k-th masked field (in np.nonzero order), or None for an orientation type."""
+    r, i = rows_cols[0][k], rows_cols[1][k]
+    ty = tab.types[i]
+    if ty in E.POINTER_TYPES:
+        off = int(np.cumsum([0] + [E.width(t) for t in tab.types])[i])
+        cand = tab.present[:, i] & ~mask[:, i] & ~tab.marker
+        same_value = cand & (tab.cells[:, off] == tab.cells[r, off])
+        return math.log((cand.sum() + 1) / max(int(same_value.sum()), 1))
+    return formula.get(ty)
+
+
+seen, worst, zero_worst, bad = {}, 0.0, 0.0, []
+for title, tabs in suites.items():
+    masks = enc.draw_masks(tabs, 0.3, 10 ** 6, torch.Generator().manual_seed(3), "program")
+    for zeroed in (False, True):
+        if zeroed:
+            enc.heads.load_state_dict({k: torch.zeros_like(v) for k, v in saved.items()})
+        try:
+            recs = run_masked(tabs, masks)
+        finally:
+            enc.heads.load_state_dict(saved)
+        for _, t, r in recs:
+            ch, loss = r["chance_loss"], r["loss"]
+            if zeroed:
+                zero_worst = max(zero_worst, (loss - ch).abs().max().item())
+                continue
+            for k, lab in enumerate(r["label"]):
+                f = chance_formula(tabs[t], masks[t], np.nonzero(masks[t]), k)
+                if f is None:
+                    continue
+                kind = "pointer" if tabs[t].types[np.nonzero(masks[t])[1][k]] in E.POINTER_TYPES else lab.split("/")[-1]
+                seen[kind] = seen.get(kind, 0) + 1
+                worst = max(worst, abs(ch[k].item() - f))
+ok = worst < 1e-9 and zero_worst < 1e-9 and {"pointer", "Box"} <= set(seen)
+print(f"  fields checked against the formula {seen}; worst |chance_loss - formula| {worst:.1e}; with zeroed heads, worst "
+      f"|loss - chance_loss| {zero_worst:.1e} {'PASS' if ok else 'FAIL'}")
+
 print("== field labels of ex_output Color: by where each value occurs, on a small task")
 small = E.evidence_tables({"train": [{"input": [[1]], "output": [[1, 2, 3]]}, {"input": [[4]], "output": [[2]]}],
                            "test": [{"input": [[3]]}]})
