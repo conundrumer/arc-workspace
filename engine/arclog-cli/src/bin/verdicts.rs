@@ -16,29 +16,32 @@
 //! form of its arcdata file matches. A case that holds a `DEMONSTRATED` form
 //! prints no line, so a solver whose every case holds one prints none.
 
+use std::collections::BTreeSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use arclog::decode::corpus::{solver_verdicts, Verdict};
 use arclog::harness::{require_optimized_build, run_over_corpus, SolverResult};
+use arclog::algebra::tables::OrientationTables;
 use arclog_constructions::shared as constructions;
 
-use crate::select::selected;
+const USAGE: &str = "usage: verdicts <corpus-dir> <tasks-dir> [<task_id> ...]";
 
-const USAGE: &str = "usage: arclog-cli verdicts <corpus-dir> <tasks-dir> [<task_id> ...]";
-
-/// The subcommand on `args`, the arguments after its name.
-pub fn run(args: &[String]) -> ExitCode {
+fn main() -> ExitCode {
+    // Reads and checks the orientation tables: a table that is not
+    // D4-invariant stops the program here.
+    OrientationTables::get();
+    let args: Vec<String> = std::env::args().skip(1).collect();
     if let Err(code) = require_optimized_build() {
         return code;
     }
-    let [corpus, tasks, task_ids @ ..] = args else {
+    let [corpus, tasks, task_ids @ ..] = args.as_slice() else {
         eprintln!("{USAGE}");
         return ExitCode::from(2);
     };
     let (corpus, tasks): (PathBuf, PathBuf) = (corpus.into(), tasks.into());
-    let selected = selected(task_ids, &[], Path::new("")).expect("a selection by task id alone reads no file");
+    let selected: Option<BTreeSet<String>> = (!task_ids.is_empty()).then(|| task_ids.iter().cloned().collect());
     let report = run_over_corpus(&corpus, selected.as_ref(), |solver| verdicts_solver(&corpus, &tasks, &solver.task_id), |solver, _| eprintln!("{}: ended", solver.task_id));
     match report {
         Ok(_) => ExitCode::SUCCESS,

@@ -1,10 +1,11 @@
-"""A task's train replay record is stale when a file its key rests on changes."""
+"""A task's train replay record is fresh where its files and its sources or its binary are equal."""
 import json
 from pathlib import Path
 
 from arclog_convert import train_replay
 
-ENGINE = "engine-digest"
+SOURCES = "sources-digest"
+BINARY = "binary-digest"
 
 
 def setup(tmp_path: Path):
@@ -16,14 +17,15 @@ def setup(tmp_path: Path):
     (gen / "bbbb0002.arclog").write_text("rep log")
     (gen / "bbbb0002.arcdata").write_text("rep data")
     (tasks / "aaaa0001.json").write_text("{}")
-    key = train_replay.record_key("aaaa0001", gen, tasks, ENGINE)
-    (records / "aaaa0001.json").write_text(json.dumps({"key": key, "cases": []}))
+    files = train_replay.files_digest("aaaa0001", gen, tasks)
+    record = {"files": files, "sources": SOURCES, "binary": BINARY, "cases": []}
+    (records / "aaaa0001.json").write_text(json.dumps(record))
     return gen, tasks, records
 
 
-def stale(tmp_path: Path, engine: str = ENGINE) -> list[str]:
+def stale(tmp_path: Path, sources: str = SOURCES, binary: str = BINARY) -> list[str]:
     gen, tasks, records = tmp_path / "gen", tmp_path / "tasks", tmp_path / "train_replay"
-    return train_replay.stale_tasks(["aaaa0001"], gen, tasks, records, engine)
+    return train_replay.stale_tasks(["aaaa0001"], gen, tasks, records, sources, lambda: binary)
 
 
 def test_a_task_whose_files_are_unchanged_is_fresh(tmp_path):
@@ -40,4 +42,21 @@ def test_a_change_to_its_representatives_arcdata_makes_it_stale(tmp_path):
 def test_a_task_with_no_record_is_stale(tmp_path):
     _, _, records = setup(tmp_path)
     (records / "aaaa0001.json").unlink()
+    assert stale(tmp_path) == ["aaaa0001"]
+
+
+def test_a_task_with_equal_files_and_equal_binary_is_fresh_and_gets_its_sources_rewritten(tmp_path):
+    _, _, records = setup(tmp_path)
+    assert stale(tmp_path, sources="other") == []
+    assert json.loads((records / "aaaa0001.json").read_text())["sources"] == "other"
+
+
+def test_a_task_with_equal_files_and_other_sources_and_binary_is_stale(tmp_path):
+    setup(tmp_path)
+    assert stale(tmp_path, sources="other", binary="other") == ["aaaa0001"]
+
+
+def test_a_record_in_the_old_form_is_stale(tmp_path):
+    _, _, records = setup(tmp_path)
+    (records / "aaaa0001.json").write_text(json.dumps({"key": "k", "cases": []}))
     assert stale(tmp_path) == ["aaaa0001"]

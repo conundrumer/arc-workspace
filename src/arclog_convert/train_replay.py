@@ -5,7 +5,7 @@ report of the cases that do not end `Consistent`.
 
 The command replays the files under `gen/` of `arclog_convert.out`, or of
 `--out`, with no conversion; `arclog_convert.convert` runs the same replay on
-the solvers it converted. `arclog-cli verdicts` replays every case closed-world
+the solvers it converted. the `verdicts` binary of `arclog-cli` replays every case closed-world
 and gives each case a verdict: the consistency of the last `RULE` the stream
 ends (`Consistent`, `NotConsistent`, `SeveralValues`, `Fault`, `Stopped`),
 `NoRule` where it ends none, `Refused` where the decoder refuses the stream,
@@ -18,12 +18,18 @@ every train pair consistent. The command needs a Rust toolchain
 and no Python environment with the `arclog` package: cargo finds or builds
 the engine's tool build in the tree the command runs in.
 
-A task's verdicts stand in `train_replay/<stem>.json` beside `gen/`, under a
-key: the sha256 of the task's `.arclog` and `.arcdata`, of the files of each
-solver that a `(representative <id>)` line names, followed to its end, of the
-task file, and of the engine's sources. A task whose record has its key
-replays nothing. A task with a case `Stopped` at the deadline gets no
-record, since that verdict depends on the machine's load.
+A task's verdicts stand in `train_replay/<stem>.json` beside `gen/`, as a
+record with these fields: `files`, the sha256 of the task's `.arclog` and
+`.arcdata`, of the files of each solver that a `(representative <id>)` line
+names, followed to its end, and of the task file; `sources`, the digest of the
+engine's sources; `binary`, the sha256 of the built `verdicts` binary; and
+`cases`. A task is fresh, and replays nothing, where its record's `files`
+equal the current ones and either its `sources` equal the current digest or its
+`binary` equals the current binary's digest; the binary is built and hashed
+only where a task fails the source test, and a task fresh by its binary gets
+its `sources` rewritten. A record in the old form, with a `key`, is stale. A
+task with a case `Stopped` at the deadline gets no record, since that verdict
+depends on the machine's load.
 
 `unreproduced.tsv` is the baseline: a line `<task> <verdict> <count>
 <ticket or ->` (tab-separated) for each task and verdict other than
@@ -44,6 +50,7 @@ import re
 import subprocess
 import sys
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -108,9 +115,25 @@ def engine_digest() -> str:
     return checkout.sources_digest(ENGINE_PATTERNS)
 
 
-def record_key(stem: str, gen: Path, tasks: Path, engine: str) -> str:
-    """The key of the record of `stem`: the digest of its files, its task file and `engine`."""
-    digest = hashlib.sha256(engine.encode())
+def verdicts_binary() -> Path:
+    return checkout.ROOT / "engine" / "target" / "tool" / "verdicts"
+
+
+def hash_binary() -> str:
+    """The sha256 of the `verdicts` binary as it stands."""
+    return hashlib.sha256(verdicts_binary().read_bytes()).hexdigest()
+
+
+def binary_digest() -> str:
+    """The sha256 of the `verdicts` binary, built first."""
+    command = ["cargo", "build", "--profile", "tool", "-q", "-p", "arclog-cli", "--bin", "verdicts"]
+    subprocess.run(command, cwd=checkout.ROOT / "engine", check=True)
+    return hash_binary()
+
+
+def files_digest(stem: str, gen: Path, tasks: Path) -> str:
+    """The digest of the files of `stem` and its representatives, and its task file."""
+    digest = hashlib.sha256()
     for path in [*solver_files(gen, stem), tasks / f"{stem}.json"]:
         digest.update(path.name.encode() + b"\0")
         digest.update((path.read_bytes() if path.exists() else b"") + b"\0")
@@ -122,20 +145,30 @@ def read_record(records: Path, stem: str) -> dict | None:
     return json.loads(path.read_text()) if path.exists() else None
 
 
-def stale_tasks(stems: list[str], gen: Path, tasks: Path, records: Path, engine: str) -> list[str]:
-    """The stems with no record under `records`, or a record with another key."""
-    stale = []
+def stale_tasks(stems: list[str], gen: Path, tasks: Path, records: Path, sources: str,
+                binary: Callable[[], str] = binary_digest) -> list[str]:
+    """The stems whose record is missing, in the old form, or has other files,
+    and neither `sources` nor the digest `binary()` gives. `binary` runs at
+    most once, and only where a task with equal files has other sources. A
+    task fresh by its binary gets its record's `sources` rewritten."""
+    stale, built = [], None
     for stem in stems:
         record = read_record(records, stem)
-        if record is None or record["key"] != record_key(stem, gen, tasks, engine):
+        if record is None or record.get("files") != files_digest(stem, gen, tasks):
             stale.append(stem)
+        elif record["sources"] != sources:
+            built = binary() if built is None else built
+            if record["binary"] != built:
+                stale.append(stem)
+            else:
+                record["sources"] = sources
+                (records / f"{stem}.json").write_text(json.dumps(record, indent=1) + "\n")
     return stale
 
 
 def run_verdicts(stems: list[str], gen: Path, tasks: Path) -> dict[str, list[Case]]:
-    """The cases of each of `stems`, from one `arclog-cli verdicts` run."""
-    command = ["cargo", "run", "--profile", "tool", "-q", "-p", "arclog-cli", "--",
-               "verdicts", str(gen), str(tasks), *stems]
+    """The cases of each of `stems`, from one run of the `verdicts` binary."""
+    command = [str(verdicts_binary()), str(gen), str(tasks), *stems]
     done = subprocess.run(command, cwd=checkout.ROOT / "engine", stdout=subprocess.PIPE, text=True)
     if done.returncode != 0:
         raise RuntimeError(f"{' '.join(command)} exited with {done.returncode}")
@@ -146,13 +179,13 @@ def run_verdicts(stems: list[str], gen: Path, tasks: Path) -> dict[str, list[Cas
     return cases
 
 
-def write_record(records: Path, stem: str, key: str, cases: list[Case]) -> None:
+def write_record(records: Path, stem: str, files: str, sources: str, binary: str, cases: list[Case]) -> None:
     """Write the record of `stem`, unless a case stopped at the deadline."""
     if any(c.verdict == "Stopped" and c.detail == "Deadline" for c in cases):
         (records / f"{stem}.json").unlink(missing_ok=True)
         return
     records.mkdir(parents=True, exist_ok=True)
-    data = {"key": key, "cases": [vars(c) for c in cases]}
+    data = {"files": files, "sources": sources, "binary": binary, "cases": [vars(c) for c in cases]}
     (records / f"{stem}.json").write_text(json.dumps(data, indent=1) + "\n")
 
 
@@ -160,14 +193,23 @@ def replay(stems: list[str], out: Path, accept: bool = False) -> int:
     """Replay the stale tasks of `stems` under `out`, print the report, and
     give the exit status."""
     gen, records, tasks = out / "gen", out / "train_replay", TASKS_DIR
-    engine = engine_digest()
-    stale = stale_tasks(stems, gen, tasks, records, engine)
+    sources = engine_digest()
+    digests: list[str] = []
+
+    def binary() -> str:
+        digests.append(binary_digest())
+        return digests[-1]
+
+    stale = stale_tasks(stems, gen, tasks, records, sources, binary)
     previous = {stem: read_record(records, stem) for stem in stale}
     cases: dict[str, list[Case]] = {}
     if stale:
+        built = digests[0] if digests else binary_digest()
         cases = run_verdicts(stale, gen, tasks)
+        if hash_binary() != built:
+            raise RuntimeError("the verdicts binary was replaced during the run")
         for stem in stale:
-            write_record(records, stem, record_key(stem, gen, tasks, engine), cases[stem])
+            write_record(records, stem, files_digest(stem, gen, tasks), sources, built, cases[stem])
     for stem in stems:
         if stem not in cases:
             cases[stem] = [Case(**c) for c in read_record(records, stem)["cases"]]
