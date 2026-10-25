@@ -33,6 +33,9 @@ It reads only the rows of that case. A render keeps the "What I see" section of 
 - `case-22425bda.md`: crossing lines stacked into a one-row list of colors; a DET with four assignments.
 - `case-3979b1a8.md`: the input grown to twice its size, its diagonal continued with period 3; DETs that read the outputs.
 - `case-2c608aff.md`: markers joined to a block along a row or column; no DET.
+- `case-9565186b.md`: keep the majority color of a 3x3 grid and gray the rest; Mode as counts and an order, with the unread components of its sibling cases.
+- `case-7c008303.md`: a divider cross, a key quadrant and a pattern quadrant; the pattern is recolored block by block from the key.
+- `case-8e5a5113.md`: tiles filled with quarter turns of a pattern tile; five DETs of 16 assignments, most of them empty.
 - `observations.md`: what held across the `case-<task>.md` files about telling from a table that it adds information, and what took the clause text or the later program.
 
 ## Decoding
