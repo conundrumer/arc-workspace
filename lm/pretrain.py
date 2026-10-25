@@ -22,8 +22,8 @@ rollout export, `--value-tables`, read with its labels.jsonl (encoder.py, `load_
 summed cost counts in `--step-rows`, then the masked loss's programs within the cost left. A continuation is encoded
 whole, with no field hidden and one random identifier per relation slot; the value loss is taken over its tables at
 the positions below `--value-positions` after the branch (encoder.py, `value_lists` and `value_loss`), times
-`--value-weight`, beside the masked loss. `--value-label` selects each table's label: `consistent` (the default), the
-engine's verdict on the rule whose evaluation gave the table, or `solving`, the continuation's solving. A branch point
+`--value-weight`, beside the masked loss. `--value-label` selects each table's label: `solving` (the default), the
+continuation's solving, or `consistent`, the engine's verdict on the rule whose evaluation gave the table. A branch point
 is held out where its task is held out. The log gives, under "train" and "heldout", `value_loss`, `value_pair_acc`
 (the pairwise ranking accuracy over each list's pairs of a member of label 1 and one of label 0),
 `value_pair_acc_sampled` (the same over the sampled continuations alone, without the gold one), `value_auc` (the
@@ -229,9 +229,9 @@ def main():
                          "cross-entropy over each branch point's continuations; binary, a sigmoid cross-entropy on "
                          "each continuation's score with its own label; off by default")
     ap.add_argument("--value-tables", help="a rollout export with its labels.jsonl (lm/rollout_labels.py)")
-    ap.add_argument("--value-label", choices=E.VALUE_LABELS, default="consistent",
-                    help="the label of a table: consistent, the engine's verdict on the rule whose evaluation gave it; "
-                         "solving, the continuation's solving")
+    ap.add_argument("--value-label", choices=E.VALUE_LABELS, default="solving",
+                    help="the label of a table: solving, the continuation's solving; "
+                         "consistent, the engine's verdict on the rule whose evaluation gave it")
     ap.add_argument("--value-weight", type=float, default=1.0, help="the weight of the value loss beside the masked loss")
     ap.add_argument("--value-positions", type=int, default=1,
                     help="the value loss takes the tables at the positions after the branch below this, each position "

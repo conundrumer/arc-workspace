@@ -1,7 +1,7 @@
 """Measure a pretrained value head (pretrain.py --value) on a rollout export, against two baselines.
 
     work/lm/.venv/bin/python lm/value_eval.py --encoder <run>/encoder.pt --value-tables work/tables/rollouts-afc44b43 \
-        [--data work/lm/data] [--positions P] [--value-label consistent|solving] [--device cpu]
+        [--data work/lm/data] [--positions P] [--value-label solving|consistent] [--device cpu]
 
 The branch points are split as pretrain.py splits them: a branch point is held out where the data (`--data`, its
 cases.npz) marks its task held out, and is a training one where its task is a training task. On the held-out branch
@@ -84,7 +84,7 @@ def main():
     ap.add_argument("--value-tables", required=True, help="a rollout export with its labels.jsonl")
     ap.add_argument("--data", default="work/lm/data", help="the data whose held-out tasks give the split")
     ap.add_argument("--positions", type=int, default=None, help="default: the run's --value-positions")
-    ap.add_argument("--value-label", choices=E.VALUE_LABELS, default="consistent", help="pretrain.py's flag")
+    ap.add_argument("--value-label", choices=E.VALUE_LABELS, default="solving", help="pretrain.py's flag")
     ap.add_argument("--lr-steps", type=int, default=300, help="the logistic regression's steps")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--device", default="cpu")
