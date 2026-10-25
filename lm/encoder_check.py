@@ -44,11 +44,14 @@ real tables of the dev export, cut to a few dozen rows each.
 - Remote groups: on a fixture whose derived table copies two columns from an earlier derived table, under
   `mask_remote` "groups" each hidden remote field's key group must be hidden with it, so that the group's other
   row, which holds the same value, is no pointer candidate, while a row of another group that holds the value stays
-  visible in some draws; the field hidden alone in some draws with `mask_remote`; a remote column whose flows name
-  no table, or whose source table is unseen, never hidden; a group never hidden past `cap`; the preflight must count
-  the hidden remote fields and refuse a program where none would be hidden. Without groups, the masks must be bitwise
-  those of a reference copy of the rule, and the masked loss bitwise the same with the reference copy's masks and
-  with the attention probe on, which must give shares in [0, 1].
+  visible in some draws, and a group of two rows must be hidden as often as a group of one; the field hidden alone
+  in some draws with `mask_remote`; a remote column whose flows name no table, or whose source table is unseen,
+  never hidden; a group never hidden past `cap`; the preflight must count the hidden remote fields and refuse a
+  program where no pointer-type remote field with a row target would be hidden. Without groups, the masks must be
+  bitwise those of a reference copy of the rule, and the masked loss bitwise the same with the reference copy's
+  masks and with the attention probe on, which must give shares in [0, 1]. The pretrain log's remote entries must
+  sum to the remote labels of `by_type`, a pointer type's target kinds to its fields, and `by_depth` must leave the
+  remote fields out.
 - Loss parts: the masked loss must equal its program part plus the prior weight times its prior part.
 - Autocast: under bf16 autocast, with the encoder in float32, every attention input must be bf16, each equivariant
   matrix must be cast once per call of `prepare`, and the masked loss and its gradients must be finite; on the CPU,
@@ -1628,10 +1631,70 @@ with torch.no_grad():
             if not (torch.equal(l0, l2) and all(torch.equal(x[2]["loss"], y[2]["loss"]) for x, y in zip(r0, r2))):
                 loss_diff.append((remote, "reference masks"))
         if remote == "groups":
-            shares = [(r["parent_attention"], r["parent_chance"]) for _, t, r in r1 if "parent_attention" in r]
-            on = [(pa[~np.isnan(pc)], pc[~np.isnan(pc)]) for pa, pc in shares]
-            n_probed = sum(len(c) for _, c in on)
-            if not n_probed or not all(((0 <= a) & (a <= 1)).all() and ((0 < c) & (c <= 1)).all() for a, c in on):
+            shares = [(r["parent_attention"], r["parent_chance"], r["parent_recent"]) for _, t, r in r1
+                      if "parent_attention" in r]
+            on = [(pa[~np.isnan(pc)], pc[~np.isnan(pc)], pr[~np.isnan(pr).any(1)]) for pa, pc, pr in shares]
+            n_probed = sum(len(c) for _, c, _ in on)
+            n_recent = sum(len(x) for _, _, x in on)
+            if not n_probed or not n_recent or not all(
+                    ((0 <= a) & (a <= 1)).all() and ((0 < c) & (c <= 1)).all() and ((0 <= x) & (x <= 1)).all()
+                    for a, c, x in on):
                 loss_diff.append(("groups", "probe shares", n_probed))
 print(f"  {n_masks} mask draws, differing {diff[:3]}; masked loss differences {loss_diff}; probed remote fields "
-      f"{n_probed} {'PASS' if not diff and not loss_diff else 'FAIL'}")
+      f"{n_probed}, with a recency reference {n_recent} {'PASS' if not diff and not loss_diff else 'FAIL'}")
+
+print("== --mask-remote-groups: one draw per key group, so a group's chance to be hidden does not grow with its size "
+      "(2,000 program steps of the groups fixture, frac 0.3: B's Color groups of 2 rows and of 1 row)")
+g = torch.Generator().manual_seed(51)
+hits, apart = {2: [0, 0], 1: [0, 0]}, 0
+for _ in range(2000):
+    col = enc.draw_masks(grp, 0.3, 10 ** 6, g, "program", "groups")[3][:, 2]
+    for e in (0, 4):
+        apart += bool(col[e] != col[e + 1])
+        hits[2][0] += bool(col[e]); hits[2][1] += 1
+        for r in (e + 2, e + 3):
+            hits[1][0] += bool(col[r]); hits[1][1] += 1
+p_ = {k: h / n for k, (h, n) in hits.items()}
+ok = not apart and 0.8 < p_[2] / p_[1] < 1.25 and p_[1] > 0.05
+print(f"  hiding probability of a group of 2 rows {p_[2]:.3f}, of 1 row {p_[1]:.3f} (one draw per field would give the "
+      f"first about 1.7 times the second); a group's rows hidden apart {apart} {'PASS' if ok else 'FAIL'}")
+
+print("== --mask-remote-groups: the pretrain log's remote split sums to its totals (the groups fixture and the dev "
+      "programs, a program step each)")
+import pretrain as P
+with torch.no_grad():
+    _, recs = enc.masked_loss([(t, [None] * len(t)) for t in [grp, *src_progs.values()]],
+                              torch.Generator().manual_seed(6), 0.5, 10 ** 6, torch.Generator().manual_seed(7),
+                              kind="program", mask_remote="groups")
+log = P.losses(P.summarize(recs), 1.0)
+bad = []
+remote_labels = {k: v for k, v in log["by_type"]["program"].items() if k.startswith("remote/")}
+by_type_fields = sum(v["fields"] for v in remote_labels.values())
+split = [(b, ty, v) for b, tys in log["by_source_rows"].items() for ty, v in tys.items()]
+if sum(v["fields"] for _, _, v in split) != log["remote"]["fields"] or log["remote"]["fields"] != by_type_fields:
+    bad.append(("fields", log["remote"]["fields"], by_type_fields))
+for ty in {ty for _, ty, _ in split}:
+    l_split = sum(v["loss"] * v["fields"] for _, t_, v in split if t_ == ty)
+    l_type = remote_labels["remote/" + ty]["loss"] * remote_labels["remote/" + ty]["fields"]
+    if abs(l_split - l_type) > 1e-6 * max(1.0, abs(l_type)):
+        bad.append(("loss", ty, l_split, l_type))
+for b, ty, v in split:
+    kinds_ = [v[k] for k in P.TARGETS.values() if k in v]
+    if ty in E.POINTER_TYPES and (sum(x["fields"] for x in kinds_) != v["fields"] or abs(
+            sum(x["loss"] * x["fields"] for x in kinds_) - v["loss"] * v["fields"]) > 1e-6 * max(1.0, v["loss"] * v["fields"])):
+        bad.append(("target kinds", b, ty))
+    if ty not in E.POINTER_TYPES and kinds_:
+        bad.append(("a target kind of a type that is not a pointer", b, ty))
+    if not 1 <= v["groups"] <= v["fields"]:
+        bad.append(("groups", b, ty, v["groups"], v["fields"]))
+depth_fields = sum(int(r["loss"].numel()) - int((r["source_rows"] >= 0).sum()) for _, t, r in recs
+                   if P.depth_bucket(r.get("depth")) and "source_rows" in r)
+depth_fields += sum(int(r["loss"].numel()) for _, t, r in recs if P.depth_bucket(r.get("depth")) and "source_rows" not in r)
+if sum(v["fields"] for v in log.get("by_depth", {}).values()) != depth_fields:
+    bad.append(("by_depth without the remote fields", log.get("by_depth"), depth_fields))
+n_pointer_kinds = sum(1 for _, ty, v in split if ty in E.POINTER_TYPES for k in P.TARGETS.values() if k in v)
+if not n_pointer_kinds or not split:
+    bad.append(("nothing split", split))
+print(f"  remote fields {log['remote']['fields']} in {log['remote']['groups']} groups over {len(split)} (bucket, type) "
+      f"entries, {sorted(remote_labels)}; {n_pointer_kinds} pointer target-kind entries "
+      f"{'PASS' if not bad else 'FAIL ' + str(bad)}")
