@@ -11,4 +11,3 @@ data-dev/tables.pkl.stamp.json
 data-dev/encoder-check-fixture.pkl
 __pycache__/
 _pretrain_profile.py
-!runs/data-study/
