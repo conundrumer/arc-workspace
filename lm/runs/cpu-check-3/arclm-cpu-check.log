@@ -1,0 +1,39 @@
+[{"stream_name":"stderr","time":10.251810761,"data":"0.00s - Debugger warning: It seems that frozen modules are being used, which may\n"}
+,{"stream_name":"stderr","time":10.251884671,"data":"0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off\n"}
+,{"stream_name":"stderr","time":10.251889091,"data":"0.00s - to python to disable frozen modules.\n"}
+,{"stream_name":"stderr","time":10.251891381,"data":"0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.\n"}
+,{"stream_name":"stderr","time":10.979698117,"data":"0.00s - Debugger warning: It seems that frozen modules are being used, which may\n"}
+,{"stream_name":"stderr","time":10.979738417,"data":"0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off\n"}
+,{"stream_name":"stderr","time":10.979742837,"data":"0.00s - to python to disable frozen modules.\n"}
+,{"stream_name":"stderr","time":10.979746277,"data":"0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.\n"}
+,{"stream_name":"stdout","time":12.53244608,"data":"cpus 4 affinity 4\n"}
+,{"stream_name":"stdout","time":49.73676332,"data":"  37.4 | [37s] imported; torch threads 2\n"}
+,{"stream_name":"stdout","time":49.86260966,"data":"  37.5 | [37s] data loaded\n"}
+,{"stream_name":"stdout","time":51.110215799,"data":"  38.8 | [39s] tokenizer loaded\n"}
+,{"stream_name":"stdout","time":52.413699337,"data":"  40.1 | \n"}
+,{"stream_name":"stdout","time":53.353635151,"data":"  41.0 | Loading weights:   0%|          | 0/272 [00:00\u003c?, ?it/s]\n"}
+,{"stream_name":"stdout","time":53.477357569,"data":"  41.1 | Loading weights:   0%|          | 1/272 [00:00\u003c04:14,  1.06it/s]\n"}
+,{"stream_name":"stdout","time":53.866551691,"data":"  41.5 | Loading weights:  43%|████▎     | 116/272 [00:01\u003c00:01, 148.03it/s]\n"}
+,{"stream_name":"stdout","time":54.025683178,"data":"  41.7 | Loading weights:  63%|██████▎   | 171/272 [00:01\u003c00:00, 145.23it/s]\n"}
+,{"stream_name":"stdout","time":54.208658367,"data":"  41.9 | Loading weights:  76%|███████▋  | 208/272 [00:01\u003c00:00, 162.30it/s]\n"}
+,{"stream_name":"stdout","time":54.346173606,"data":"  42.0 | Loading weights:  88%|████████▊ | 240/272 [00:01\u003c00:00, 165.35it/s]\n"}
+,{"stream_name":"stdout","time":54.346927544,"data":"  42.0 | Loading weights:  98%|█████████▊| 267/272 [00:01\u003c00:00, 172.26it/s]\n"}
+,{"stream_name":"stdout","time":54.347433232,"data":"  42.0 | Loading weights: 100%|██████████| 272/272 [00:01\u003c00:00, 140.87it/s]\n"}
+,{"stream_name":"stdout","time":54.405459157,"data":"  42.1 | [42s] base model loaded\n"}
+,{"stream_name":"stdout","time":54.522071645,"data":"  42.2 | 4 train tasks (7 cases), 2 held-out; vocab in 231, out 229; 135M parameters on cpu\n"}
+,{"stream_name":"stdout","time":54.522858073,"data":"  42.2 | loaded in 5s\n"}
+,{"stream_name":"stdout","time":57.861898737,"data":"  45.5 | step 1 epoch 1 train loss 4.854 3s\n"}
+,{"stream_name":"stdout","time":59.653856585,"data":"  47.3 | step 2 epoch 1 train loss 4.177 5s\n"}
+,{"stream_name":"stdout","time":61.582155586,"data":"  49.3 | [49s] evaluated\n"}
+,{"stream_name":"stdout","time":61.871709721,"data":"  49.5 | [49s] checkpoint saved\n"}
+,{"stream_name":"stdout","time":61.872516199,"data":"  49.5 | {\"step\": 2, \"epoch\": 1, \"seconds\": 7, \"train_loss\": 4.177042484283447, \"device_gb\": 0.0, \"heldout\": {\"loss\": 3.701814469368227, \"by_class\": {\"column\": 3.220961820334196, \"component\": 8.290249665578207, \"lib relation\": 7.447004547058525, \"read:label\": 4.776365586181186, \"read:rel\": 5.349137639999389, \"structure\": 2.3328259784059227}, \"by_length\": {\"len\u003c600\": 3.7018143845868914}, \"pointer_accuracy\": 0.03260869565217391}}\n"}
+,{"stream_name":"stdout","time":63.454065976,"data":"exit 0 51s\n"}
+,{"stream_name":"stderr","time":66.143108501,"data":"/usr/local/lib/python3.13/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":66.143146481,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":66.337404458,"data":"/usr/local/lib/python3.13/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":66.337429758,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":67.118874123,"data":"[NbConvertApp] Converting notebook __notebook__.ipynb to notebook\n"}
+,{"stream_name":"stderr","time":67.185807632,"data":"[NbConvertApp] Writing 4400 bytes to __notebook__.ipynb\n"}
+,{"stream_name":"stderr","time":69.72284759,"data":"[NbConvertApp] Converting notebook __notebook__.ipynb to html\n"}
+,{"stream_name":"stderr","time":70.198919954,"data":"[NbConvertApp] Writing 281133 bytes to __results__.html\n"}
+]

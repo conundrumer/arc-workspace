@@ -1,0 +1,81 @@
+20:40:44 unseen table, over --enc-max-rows 4000: 2b9ef948 $Core table 4 relation 4: 10242 rows
+20:40:44 unseen table, over --enc-max-rows 4000: 2b9ef948 $Core table 5 relation 5: 18701 rows
+20:40:44 unseen table, over --enc-max-rows 4000: 2b9ef948 $Core table 8 relation 8: 6907 rows
+20:40:44 unseen table, over --enc-max-rows 4000: 2b9ef948 $Core table 9 relation 9: 42052 rows
+20:40:44 unseen table, over --enc-max-rows 4000: 2b9ef948 $Core table 9 relation 9: 4715 rows
+20:40:44 unseen table, over --enc-max-rows 4000: 2b9ef948 $Core table 10 relation 10: 20792 rows
+20:40:44 unseen table, over --enc-max-rows 4000: 2b9ef948 $Core table 11 relation 11: 5198 rows
+20:40:44 unseen table, over --enc-max-rows 4000: 2b9ef948 $Core table 14 relation 14: 4193 rows
+20:40:44 unseen table, over --enc-max-rows 4000: 2b9ef948 $Core table 15 relation 15: 4304 rows
+20:40:44 unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 4 relation 4: 10242 rows
+20:40:44 unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 5 relation 5: 18701 rows
+20:40:44 unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 8 relation 8: 6907 rows
+20:40:44 unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 9 relation 9: 42052 rows
+20:40:44 unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 9 relation 9: 4715 rows
+20:40:44 unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 10 relation 10: 20792 rows
+20:40:44 unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 11 relation 11: 5198 rows
+20:40:44 unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 15 relation 15: 4189 rows
+20:40:44 unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 19 relation 19: 11024 rows
+20:40:44 unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 19 relation 19: 11024 rows
+20:40:44 unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 19 relation 19: 11024 rows
+20:40:44 unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 19 relation 19: 11024 rows
+20:40:44 unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 19 relation 19: 11024 rows
+20:40:44 unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 19 relation 19: 11024 rows
+20:40:44 unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 21 relation 21: 11024 rows
+20:40:44 unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 23 relation 23: 4189 rows
+20:40:44 unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 24 relation 24: 8268 rows
+20:40:44 unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 24 relation 24: 5512 rows
+20:40:44 unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 24 relation 24: 5512 rows
+20:40:44 unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 24 relation 24: 5512 rows
+20:40:44 unseen table, over --enc-max-rows 4000: 40f6cd08 $Repaint table 3 relation 3: 5370 rows
+20:40:44 unseen table, over --enc-max-rows 4000: 40f6cd08 $Overlay table 3 relation 3: 5370 rows
+20:40:44 0 entries over --enc-budget 10000; unseen tables {'more rows than --enc-max-rows': 31}, unseen entries {}
+20:40:53 Loading weights:   0%|          | 0/272 [00:00<?, ?it/s]Loading weights: 100%|██████████| 272/272 [00:00<00:00, 2889.58it/s]
+20:40:55 22 training programs, 4 held-out; 839 training tables; encoder 19.08M parameters on cuda; loaded in 13s
+20:41:07 STEP_SECONDS 1 11.999
+20:41:07 step 1 masked loss 15.129 (program 6.333 over 231 fields, prior 8.796 over 7263 fields) 12.00 s/step
+20:41:12 STEP_SECONDS 2 4.302
+20:41:12 step 2 masked loss 13.615 (program 4.346 over 2867 fields, prior 9.269 over 3869 fields) 8.15 s/step
+20:41:17 STEP_SECONDS 3 5.040 (profiled)
+20:41:50 PROFILE step wall 5.040 s; CUDA self time total 1.867 s; CPU self time total 4.918 s
+20:41:50 PROFILE group attention: 1.208 s (64.7%)
+20:41:50 PROFILE group elementwise/other: 0.470 s (25.2%)
+20:41:50 PROFILE group matmul: 0.189 s (10.1%)
+20:41:50 PROFILE kernel     1013.9 ms  x284    [attention] fmha_cutlassB_bf16_aligned_128x64_k65536_sm80(PyTorchMemEffAttention::AttentionBackwardKernel<cutlass::arch::Sm80, cutlass::bfloat16_t, true, false, f
+20:41:50 PROFILE kernel      194.4 ms  x285    [attention] fmha_cutlassF_bf16_aligned_32x128_gmem_sm80(PyTorchMemEffAttention::AttentionKernel<cutlass::bfloat16_t, cutlass::arch::Sm80, true, 32, 128, 65536, tr
+20:41:50 PROFILE kernel       78.0 ms  x1003   [elementwise/other] void at::native::(anonymous namespace)::CatArrayBatchedCopy<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 4, 64, 64>(at::native::(a
+20:41:50 PROFILE kernel       37.4 ms  x529    [elementwise/other] void at::native::(anonymous namespace)::GammaBetaBackwardCUDAKernelTemplate<float, float, 32u, 32u, 256u, false, false>(long, long, float const*, floa
+20:41:50 PROFILE kernel       32.0 ms  x2785   [elementwise/other] void at::native::vectorized_elementwise_kernel<4, at::native::CUDAFunctor_add<c10::BFloat16>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_ad
+20:41:50 PROFILE kernel       31.0 ms  x416    [matmul] ampere_bf16_s16816gemm_bf16_128x128_ldg8_f2f_stages_32x5_nt
+20:41:50 PROFILE kernel       29.3 ms  x251    [matmul] ampere_bf16_s16816gemm_bf16_128x256_ldg8_relu_f2f_stages_64x3_tn
+20:41:50 PROFILE kernel       25.8 ms  x625    [elementwise/other] void at::native::(anonymous namespace)::vectorized_layer_norm_kernel<float, float>(int, float, float const*, float const*, float const*, float*, float
+20:41:50 PROFILE kernel       23.6 ms  x1073   [elementwise/other] void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()
+20:41:50 PROFILE kernel       22.7 ms  x178    [elementwise/other] void at::native::index_elementwise_kernel<128, 4, at::native::index_copy_kernel_impl<at::native::OpaqueType<2> >(at::TensorIterator&, long, long, long
+20:41:50 PROFILE kernel       19.3 ms  x159    [elementwise/other] void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 4, 128, 1
+20:41:50 PROFILE kernel       18.3 ms  x424    [elementwise/other] void at::native::(anonymous namespace)::embedding_backward_feature_kernel<float, float, long>(long const*, float const*, float*, int, long, int)
+20:41:50 PROFILE kernel       17.4 ms  x1773   [elementwise/other] Memcpy DtoD (Device -> Device)
+20:41:50 PROFILE kernel       17.4 ms  x118    [matmul] ampere_bf16_s16816gemm_bf16_128x256_ldg8_f2f_stages_64x3_nn
+20:41:50 PROFILE kernel       16.6 ms  x623    [elementwise/other] void at::native::(anonymous namespace)::layer_norm_grad_input_kernel_vectorized<float, float>(float const*, float const*, float const*, float const*, 
+20:41:50 PROFILE kernel       16.3 ms  x1351   [elementwise/other] void at::native::reduce_kernel<128, 4, at::native::ReduceOp<c10::BFloat16, at::native::func_wrapper_t<c10::BFloat16, at::native::sum_functor<c10::BFlo
+20:41:50 PROFILE kernel       14.4 ms  x200    [elementwise/other] void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 3, 128, 1
+20:41:50 PROFILE kernel       14.1 ms  x1772   [elementwise/other] void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<c10::BFloat16>, std::array<char*, 1ul> >(int, at::native::FillFunctor<c10::B
+20:41:50 PROFILE kernel       12.4 ms  x915    [elementwise/other] void at::native::vectorized_gather_kernel<16, long>(char*, char*, long*, int, long, long, long, long, bool)
+20:41:50 PROFILE kernel       10.4 ms  x151    [matmul] ampere_bf16_s16816gemm_bf16_256x128_ldg8_relu_f2f_stages_32x3_tn
+20:41:50 PROFILE kernel       10.1 ms  x3097   [elementwise/other] void at::native::vectorized_elementwise_kernel<4, at::native::CUDAFunctor_add<float>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<float>
+20:41:51 PROFILE kernel        8.9 ms  x944    [elementwise/other] void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()
+20:41:51 PROFILE kernel        8.6 ms  x310    [matmul] ampere_bf16_s16816gemm_bf16_256x128_ldg8_f2f_stages_32x3_nt
+20:41:51 PROFILE kernel        7.9 ms  x131    [matmul] ampere_bf16_s16816gemm_bf16_256x128_ldg8_f2f_stages_32x3_nn
+20:41:51 PROFILE kernel        7.8 ms  x206    [matmul] ampere_bf16_s16816gemm_bf16_128x128_ldg8_f2f_stages_64x3_nn
+20:41:51 PROFILE top CPU ops by self time
+20:41:51 PROFILE cpu      902.7 ms  x36401  cudaLaunchKernel
+20:41:51 PROFILE cpu      523.0 ms  x1595   aten::index
+20:41:51 PROFILE cpu      495.9 ms  x245    Command Buffer Full
+20:41:51 PROFILE cpu      336.8 ms  x8159   aten::copy_
+20:41:51 PROFILE cpu      325.7 ms  x37     encoder.host
+20:41:51 PROFILE cpu      303.3 ms  x2316   aten::cat
+20:41:51 PROFILE cpu      186.1 ms  x1833   aten::mul
+20:41:51 PROFILE cpu      157.7 ms  x575    aten::constant_pad_nd
+20:41:51 PROFILE cpu      131.0 ms  x515    cudaStreamSynchronize
+20:41:51 PROFILE cpu      121.3 ms  x10829  aten::slice
+20:41:51 step 3 masked loss 12.865 (program 4.430 over 3026 fields, prior 8.434 over 1813 fields) 7.11 s/step
+20:41:55 {"step": 3, "seconds": 60, "seconds_per_step": 7.113273938496907, "device_gb": 36.88, "train_loss": 12.864715576171875, "train": {"loss": 13.34915564085302, "program_loss": 4.4625718579387295, "prior_loss": 8.886583782914292, "program_fields": 6124, "prior_fields": 12945, "by_type": {"program": {"Axis": {"loss": 0.7504234313964844, "accuracy": 0.25, "fields": 8}, "Box": {"loss": 11.301886809697363, "accuracy": 0.0, "fields": 1777, "edge_accuracy": 0.004783342712436691}, "Color": {"loss": 1.5011031471458371, "accuracy": 0.1949685534591195, "fields": 2862}, "D4": {"loss": 3.377361111342907, "accuracy": 0.0625, "fields": 16}, "Ident": {"loss": 2.382528346405722, "accuracy": 0.07958477508650519, "fields": 1156}, "Number": {"loss": 22.991498947143555, "accuracy": 0.0, "fields": 1}, "ex_output/Color": {"loss": 0.3682386757511842, "accuracy": 0.5888157894736842, "fields": 304}}, "prior": {"Box": {"loss": 10.840404699956625, "accuracy": 0.0, "fields": 8892, "edge_accuracy": 0.0032613585245164192}, "Color": {"loss": 1.5559774115799736, "accuracy": 0.15131022823330514, "fields": 1183}, "Dir8": {"loss": 2.5903427861683164, "accuracy": 0.0, "fields": 713}, "Example": {"loss": 1.3753858019258374, "accuracy": 0.1588785046728972, "fields": 428}, "Ident": {"loss": 2.5943498760461807, "accuracy": 0.125, "fields": 8}, "Number": {"loss": 18.74262384658164, "accuracy": 0.0, "fields": 94}, "Position": {"loss": 11.120397097241563, "accuracy": 0.0, "fields": 452, "edge_accuracy": 0.0}, "ex_output/Example": {"loss": 1.004144810554054, "accuracy": 0.21180555555555555, "fields": 576}, "ex_output/Position": {"loss": 11.653220919416425, "accuracy": 0.0, "fields": 599, "edge_accuracy": 0.0}}}}, "heldout": {"loss": 10.85232705445745, "program_loss": 5.836981240155655, "prior_loss": 5.015345814301796, "program_fields": 3664, "prior_fields": 679, "by_type": {"program": {"Box": {"loss": 8.32796421726285, "accuracy": 0.0, "fields": 2295, "edge_accuracy": 0.024074074074074074}, "Color": {"loss": 0.6367728033002699, "accuracy": 0.6011342155009451, "fields": 1058}, "D4": {"loss": 2.8789208006502975, "accuracy": 0.13432835820895522, "fields": 268}, "Number": {"loss": 26.968619283040365, "accuracy": 0.0, "fields": 30}, "ex_output/Color": {"loss": 1.5158774119157057, "accuracy": 0.07692307692307693, "fields": 13}}, "prior": {"Axis": {"loss": 0.692514157295227, "accuracy": 0.55, "fields": 20}, "Box": {"loss": 9.757608827997426, "accuracy": 0.0, "fields": 122, "edge_accuracy": 0.028688524590163935}, "Color": {"loss": 0.977962100642851, "accuracy": 0.735632183908046, "fields": 174}, "Example": {"loss": 1.379243319547629, "accuracy": 0.2974683544303797, "fields": 158}, "Position": {"loss": 10.033860738349683, "accuracy": 0.0, "fields": 165, "edge_accuracy": 0.0}, "ex_output/Example": {"loss": 1.0951673885186513, "accuracy": 0.2916666666666667, "fields": 24}, "ex_output/Position": {"loss": 8.19902241230011, "accuracy": 0.0, "fields": 16, "edge_accuracy": 0.0}}}}}

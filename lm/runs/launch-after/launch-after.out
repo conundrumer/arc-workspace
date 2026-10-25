@@ -1,0 +1,28 @@
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Core table 4 relation 4: 10354 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Core table 5 relation 5: 19634 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Core table 8 relation 8: 6992 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Core table 9 relation 9: 57230 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Core table 10 relation 10: 24188 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Core table 11 relation 11: 6047 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Core table 14 relation 14: 11861 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Core table 15 relation 15: 20081 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 4 relation 4: 10354 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 5 relation 5: 19634 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 8 relation 8: 6992 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 9 relation 9: 57230 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 10 relation 10: 24188 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 11 relation 11: 6047 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 15 relation 15: 4229 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 19 relation 19: 66144 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 21 relation 21: 11024 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 23 relation 23: 4378 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 24 relation 24: 30320 rows
+unseen table, over --enc-max-rows 4000: 40f6cd08 $Repaint table 3 relation 3: 5370 rows
+unseen table, over --enc-max-rows 4000: 40f6cd08 $Overlay table 3 relation 3: 5370 rows
+0 entries over --enc-budget 10000; unseen tables {'more rows than --enc-max-rows': 21}, unseen entries {}
+Loading weights:   0%|          | 0/272 [00:00<?, ?it/s]Loading weights:   0%|          | 1/272 [00:00<02:22,  1.90it/s]Loading weights:   8%|▊         | 22/272 [00:00<00:05, 45.86it/s]Loading weights:  12%|█▎        | 34/272 [00:00<00:03, 61.37it/s]Loading weights:  18%|█▊        | 49/272 [00:00<00:02, 79.31it/s]Loading weights:  23%|██▎       | 63/272 [00:00<00:02, 93.67it/s]Loading weights:  28%|██▊       | 76/272 [00:01<00:02, 96.59it/s]Loading weights:  34%|███▍      | 93/272 [00:01<00:01, 112.36it/s]Loading weights:  40%|███▉      | 108/272 [00:01<00:01, 114.19it/s]Loading weights:  46%|████▌     | 125/272 [00:01<00:01, 119.97it/s]Loading weights:  51%|█████     | 139/272 [00:01<00:01, 114.18it/s]Loading weights:  57%|█████▋    | 156/272 [00:01<00:01, 112.60it/s]Loading weights:  65%|██████▍   | 176/272 [00:01<00:00, 122.53it/s]Loading weights:  71%|███████   | 193/272 [00:02<00:00, 129.15it/s]Loading weights:  78%|███████▊  | 211/272 [00:02<00:00, 137.60it/s]Loading weights:  83%|████████▎ | 226/272 [00:02<00:00, 137.20it/s]Loading weights:  89%|████████▉ | 242/272 [00:02<00:00, 136.37it/s]Loading weights:  94%|█████████▍| 256/272 [00:02<00:00, 115.00it/s]Loading weights: 100%|██████████| 272/272 [00:02<00:00, 107.26it/s]
+22 training programs, 4 held-out; 481 training tables; encoder 19.08M parameters on cuda; loaded in 13s
+step 1 masked loss 3.216 (2569 cells) 3.73 s/step
+step 2 masked loss 3.418 (8520 cells) 4.53 s/step
+step 3 masked loss 3.639 (5600 cells) 4.61 s/step
+{"step": 3, "seconds": 15, "seconds_per_step": 4.609601418177287, "device_gb": 29.95, "train_loss": 3.639451742172241, "train": {"loss": 3.4611773528485124, "by_type": {"Axis": {"loss": 0.6735875010490417, "accuracy": 0.7777777777777778, "cells": 9}, "Box": {"loss": 11.532985251448181, "accuracy": 0.0, "cells": 3196, "edge_accuracy": 0.001095118898623279}, "Color": {"loss": 1.1965694355782468, "accuracy": 0.24334790755777638, "cells": 8005}, "D4": {"loss": 3.1556054681539534, "accuracy": 0.05, "cells": 20}, "Example": {"loss": 1.5853650050679433, "accuracy": 0.24097938144329897, "cells": 776}, "Ident": {"loss": 2.513317802728682, "accuracy": 0.09217474795967355, "cells": 2083}, "Number": {"loss": 20.4832461530512, "accuracy": 0.0, "cells": 99}, "Position": {"loss": 9.307609558105469, "accuracy": 0.0, "cells": 1, "edge_accuracy": 0.0}, "ex_output/Color": {"loss": 1.0935233496598693, "accuracy": 0.23614609571788414, "cells": 1588}, "ex_output/Example": {"loss": 1.0917652867677057, "accuracy": 0.297029702970297, "cells": 909}, "ex_output/Position": {"loss": 8.297439575195312, "accuracy": 0.0, "cells": 3, "edge_accuracy": 0.0}}}, "heldout": {"loss": 5.124554744903441, "cells": 5634, "by_type": {"Box": {"loss": 8.1803848951242, "accuracy": 0.0, "cells": 3006, "edge_accuracy": 0.0037425149700598802}, "Color": {"loss": 0.8452395725381243, "accuracy": 0.5653846153846154, "cells": 1820}, "D4": {"loss": 2.1506094837188723, "accuracy": 0.22666666666666666, "cells": 75}, "Example": {"loss": 1.3856200250295492, "accuracy": 0.23846153846153847, "cells": 520}, "Number": {"loss": 20.177539676068776, "accuracy": 0.0, "cells": 83}, "Position": {"loss": 6.917557557423909, "accuracy": 0.0, "cells": 3, "edge_accuracy": 0.0}, "ex_output/Color": {"loss": 1.3554953959450793, "accuracy": 0.1791044776119403, "cells": 67}, "ex_output/Example": {"loss": 1.0817476141041722, "accuracy": 0.29310344827586204, "cells": 58}, "ex_output/Position": {"loss": 6.15113639831543, "accuracy": 0.0, "cells": 2, "edge_accuracy": 0.0}}}}

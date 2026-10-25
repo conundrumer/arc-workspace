@@ -1,0 +1,28 @@
+[3s] imported; torch threads 10
+[3s] data loaded
+evaluation tasks dropped as family siblings of training tasks: []
+unseen, over --enc-budget 2000: 2b9ef948 $Core table 4 relation 4: 3420 rows on one entry
+unseen, over --enc-budget 2000: 2b9ef948 $Core table 5 relation 5: 3447 rows on one entry
+unseen, over --enc-budget 2000: 2b9ef948 $Core table 9 relation 9: 6568 rows on one entry
+unseen, over --enc-budget 2000: 2b9ef948 $Core table 10 relation 10: 6564 rows on one entry
+unseen, over --enc-budget 2000: 2b9ef948 $Corner table 4 relation 4: 3420 rows on one entry
+unseen, over --enc-budget 2000: 2b9ef948 $Corner table 5 relation 5: 3447 rows on one entry
+unseen, over --enc-budget 2000: 2b9ef948 $Corner table 9 relation 9: 6568 rows on one entry
+unseen, over --enc-budget 2000: 2b9ef948 $Corner table 10 relation 10: 6564 rows on one entry
+unseen, over --enc-budget 2000: 2b9ef948 $Corner table 19 relation 19: 3600 rows on one entry
+unseen, over --enc-budget 2000: 2b9ef948 $Corner table 21 relation 21: 3600 rows on one entry
+unseen, over --enc-budget 2000: 2b9ef948 $Corner table 24 relation 24: 2700 rows on one entry
+tables: 0 of 22 cases left out (not in the export, or a data fault); {'body tables': 0, 'unseen tables': {'3420 rows on one entry, over the budget': 2, '3447 rows on one entry, over the budget': 2, '6568 rows on one entry, over the budget': 2, '6564 rows on one entry, over the budget': 2, '3600 rows on one entry, over the budget': 2, '2700 rows on one entry, over the budget': 1}, 'tables': 570}
+[4s] tokenizer loaded
+W1024 10:40:44.234000 8263 .venv/lib/python3.12/site-packages/torch/distributed/elastic/multiprocessing/redirects.py:35] NOTE: Redirects are currently not supported in MacOs.
+Loading weights:   0%|          | 0/272 [00:00<?, ?it/s]Loading weights:  66%|██████▌   | 180/272 [00:00<00:00, 1782.39it/s]Loading weights: 100%|██████████| 272/272 [00:00<00:00, 2017.07it/s]
+[4s] base model loaded
+encoder: 4.33M parameters
+6 train tasks (18 cases), 2 in-distribution held-out, 2 evaluation held-out; vocab in 232, out 229; 139M parameters on cpu
+tables by the rule that found their relation's declaration: {'fact': 44, 'after': 433}; 0 of 22 cases drop tables past 2 max-len
+loaded in 1s
+step 1 epoch 1 train loss 2.901 3s
+step 2 epoch 1 train loss 2.798 4s
+[46s] evaluated
+[52s] checkpoint saved
+{"step": 2, "epoch": 1, "seconds": 42, "train_loss": 2.7979421615600586, "device_gb": 0.0, "indist": {"loss": 2.6500535011291504, "by_class": {"column": 1.8048562387771465, "component": 3.130533218383789, "fact": 5.1712256614118814, "lib relation": 8.209075927734375, "proposer": 5.594259738922119, "read:label": 1.8446200331937348, "read:rel": 4.041477731295994, "structure": 2.3569879457471505}, "by_length": {"len<200": 2.8603642898227393, "len<600": 2.569672950278587}, "pointer_accuracy": 0.53125}, "heldout": {"loss": 2.352231025695801, "by_class": {"column": 1.5951444833743862, "component": 3.3641510009765625, "fact": 5.898591801524162, "lib relation": 7.017814354463057, "proposer": 6.253155333655221, "read:label": 1.6864875179477246, "read:rel": 3.848068506486954, "structure": 1.8582454536075228}, "by_length": {"len<200": 3.096766623470317, "len<600": 2.151324622384025}, "pointer_accuracy": 0.5064935064935064}, "batch_splits": {"groups": 3, "splits": 1}, "train": {"loss": 2.3832500387225632, "by_class": {"column": 1.8450796045195896, "component": 4.965859146679149, "fact": 7.557247191667557, "lib relation": 7.150866429011027, "proposer": 5.919971513748169, "read:label": 2.2415307470738663, "read:rel": 5.097096675481552, "structure": 1.4612546556665347}, "by_length": {"len<600": 2.3832500457671775}, "pointer_accuracy": 0.4810810810810811}}

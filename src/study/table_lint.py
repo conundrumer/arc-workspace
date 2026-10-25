@@ -8,7 +8,7 @@ inputs, or that stopped at a bound on some input:
     <task_id> <relation> <rows per input> <test> <rewrite>
 
 The test is the first that derives the relation of the table of
-`work/table-information.md#the-lint`, those that read no rows (the form of
+`docs/table-information.md#the-lint`, those that read no rows (the form of
 the clauses that make the relation, read from the arclog file) before those
 that read the rows of every rows file, and the rewrite is that table's. The
 pairs of a total order or an equivalence are named before the closure that

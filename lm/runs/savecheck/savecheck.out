@@ -1,0 +1,6 @@
+W1023 17:18:34.927000 49586 .venv/lib/python3.12/site-packages/torch/distributed/elastic/multiprocessing/redirects.py:35] NOTE: Redirects are currently not supported in MacOs.
+Loading weights:   0%|          | 0/311 [00:00<?, ?it/s]Loading weights: 100%|██████████| 311/311 [00:00<00:00, 7071.72it/s]
+2 train, 2 held-out; vocab in 176, out 174; 597M parameters on mps
+loaded in 2s
+step 1 epoch 1 train loss 5.557 2s
+{"step": 1, "epoch": 1, "seconds": 2, "train_loss": 5.556821823120117, "device_gb": 4.4, "heldout": {"loss": 4.9544247505981795, "by_class": {"column": 2.1406878190052847, "component": 8.69167693456014, "lib relation": 10.242748333513736, "read:label": 9.664168140697926, "read:rel": 13.198530729426894, "structure": 2.391925819164407}, "by_length": {"len>=600": 4.954424681745908}, "pointer_accuracy": 0.026755852842809364}}

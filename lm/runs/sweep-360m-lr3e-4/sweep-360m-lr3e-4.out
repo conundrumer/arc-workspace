@@ -1,0 +1,409 @@
+[4s] imported; torch threads 128
+[5s] data loaded
+evaluation tasks dropped as family siblings of training tasks: ['1818057f']
+[7s] tokenizer loaded
+Loading weights:   0%|          | 0/290 [00:00<?, ?it/s]Loading weights:   0%|          | 1/290 [00:00<01:10,  4.10it/s]Loading weights:  10%|█         | 30/290 [00:00<00:02, 107.57it/s]Loading weights:  16%|█▌        | 47/290 [00:00<00:02, 120.14it/s]Loading weights:  22%|██▏       | 63/290 [00:00<00:01, 122.79it/s]Loading weights:  27%|██▋       | 78/290 [00:00<00:01, 122.67it/s]Loading weights:  32%|███▏      | 92/290 [00:00<00:01, 122.68it/s]Loading weights:  37%|███▋      | 106/290 [00:00<00:01, 120.63it/s]Loading weights:  41%|████      | 119/290 [00:01<00:01, 95.79it/s] Loading weights:  47%|████▋     | 135/290 [00:01<00:01, 101.56it/s]Loading weights:  53%|█████▎    | 153/290 [00:01<00:01, 111.01it/s]Loading weights:  58%|█████▊    | 167/290 [00:01<00:01, 113.54it/s]Loading weights:  63%|██████▎   | 184/290 [00:01<00:00, 126.06it/s]Loading weights:  68%|██████▊   | 198/290 [00:01<00:00, 125.60it/s]Loading weights:  74%|███████▍  | 215/290 [00:01<00:00, 132.02it/s]Loading weights:  79%|███████▉  | 230/290 [00:01<00:00, 136.61it/s]Loading weights:  84%|████████▍ | 244/290 [00:02<00:00, 128.81it/s]Loading weights:  89%|████████▉ | 258/290 [00:02<00:00, 115.17it/s]Loading weights:  93%|█████████▎| 270/290 [00:02<00:00, 112.61it/s]Loading weights:  99%|█████████▉| 287/290 [00:02<00:00, 122.92it/s]Loading weights: 100%|██████████| 290/290 [00:02<00:00, 116.64it/s]
+[10s] base model loaded
+766 train tasks (16322 cases), 80 in-distribution held-out, 92 evaluation held-out; vocab in 232, out 229; 362M parameters on cuda
+loaded in 10s
+step 1 epoch 1 train loss 3.862 1s
+step 2 epoch 1 train loss 3.883 2s
+step 3 epoch 1 train loss 4.113 2s
+step 10 epoch 1 train loss 2.576 4s
+step 20 epoch 1 train loss 1.981 7s
+step 30 epoch 1 train loss 1.713 9s
+step 40 epoch 1 train loss 1.379 12s
+step 50 epoch 1 train loss 1.493 15s
+step 60 epoch 1 train loss 1.216 18s
+step 70 epoch 1 train loss 1.416 21s
+step 80 epoch 1 train loss 1.411 24s
+step 90 epoch 1 train loss 1.321 27s
+step 100 epoch 1 train loss 1.206 30s
+step 110 epoch 1 train loss 1.110 33s
+step 120 epoch 1 train loss 1.129 36s
+step 130 epoch 1 train loss 1.206 39s
+step 140 epoch 1 train loss 1.157 42s
+step 150 epoch 1 train loss 1.002 45s
+step 160 epoch 1 train loss 1.255 48s
+step 170 epoch 1 train loss 1.287 51s
+step 180 epoch 1 train loss 1.130 54s
+step 190 epoch 1 train loss 1.035 57s
+step 200 epoch 1 train loss 1.284 60s
+[108s] evaluated
+[112s] checkpoint saved
+{"step": 202, "epoch": 1, "seconds": 93, "train_loss": 0.9765591025352478, "device_gb": 9.54, "indist": {"loss": 1.1296079855346737, "by_class": {"column": 0.599404331548284, "component": 2.559668855174728, "fact": 2.766353172290254, "lib relation": 4.013709881120269, "proposer": 2.8813096234898365, "read:label": 1.4508282908066648, "read:rel": 2.3932274952647976, "structure": 0.6538068676449866}, "by_length": {"len<200": 1.0461548675211787, "len<600": 1.1647720458402158, "len>=600": 1.0907592965284711}, "pointer_accuracy": 0.5487292375425256}, "heldout": {"loss": 1.2169692126816753, "by_class": {"column": 0.6841488921005418, "component": 2.3450391540924707, "fact": 2.706498693950683, "lib relation": 3.6843671629899535, "proposer": 2.917557213001135, "read:label": 1.6269477486337853, "read:rel": 2.8443984793521784, "structure": 0.6963463235000918}, "by_length": {"len<200": 1.1263738029714876, "len<600": 1.1297392780059687, "len>=600": 1.2459168854737817}, "pointer_accuracy": 0.4827942696795156}}
+step 210 epoch 1 train loss 1.083 99s
+step 220 epoch 1 train loss 1.062 101s
+step 230 epoch 1 train loss 1.220 104s
+step 240 epoch 1 train loss 0.896 107s
+step 250 epoch 1 train loss 1.227 110s
+step 260 epoch 1 train loss 0.713 112s
+step 270 epoch 1 train loss 1.213 115s
+step 280 epoch 1 train loss 1.069 118s
+step 290 epoch 1 train loss 0.965 120s
+step 300 epoch 1 train loss 1.216 123s
+step 310 epoch 1 train loss 0.841 126s
+step 320 epoch 1 train loss 1.178 129s
+step 330 epoch 1 train loss 1.194 132s
+step 340 epoch 1 train loss 0.884 135s
+step 350 epoch 2 train loss 0.915 138s
+step 360 epoch 2 train loss 0.980 141s
+step 370 epoch 2 train loss 0.720 144s
+step 380 epoch 2 train loss 1.158 148s
+step 390 epoch 2 train loss 1.142 151s
+step 400 epoch 2 train loss 0.871 153s
+step 410 epoch 2 train loss 0.391 156s
+[206s] evaluated
+[210s] checkpoint saved
+{"step": 417, "epoch": 2, "seconds": 192, "train_loss": 0.9330465793609619, "device_gb": 9.54, "indist": {"loss": 0.9325191823083063, "by_class": {"column": 0.5216560573879448, "component": 2.5187653888826786, "fact": 1.6585639249461503, "lib relation": 2.7320105334133924, "proposer": 2.6489351488159087, "read:label": 0.9614955997859159, "read:rel": 2.6457637766658855, "structure": 0.5341105498459187}, "by_length": {"len<200": 0.8495034389843303, "len<600": 0.9819350240244087, "len>=600": 0.8619876636932785}, "pointer_accuracy": 0.6215729437662597}, "heldout": {"loss": 1.0181528719573703, "by_class": {"column": 0.5672935833870274, "component": 2.3850153870403004, "fact": 1.6362819475516233, "lib relation": 2.530707043386806, "proposer": 2.664730282454956, "read:label": 1.207198706623696, "read:rel": 3.0212106750287524, "structure": 0.5619801465760837}, "by_length": {"len<200": 0.9001559618701067, "len<600": 0.9596132236763708, "len>=600": 1.0377542394729162}, "pointer_accuracy": 0.5560478511298184}}
+step 420 epoch 2 train loss 1.121 197s
+step 430 epoch 2 train loss 0.991 199s
+step 440 epoch 2 train loss 0.807 201s
+step 450 epoch 2 train loss 0.950 204s
+step 460 epoch 2 train loss 1.065 207s
+step 470 epoch 2 train loss 0.590 210s
+step 480 epoch 2 train loss 0.916 213s
+step 490 epoch 2 train loss 0.914 216s
+step 500 epoch 2 train loss 0.997 219s
+step 510 epoch 2 train loss 0.892 221s
+step 520 epoch 2 train loss 0.964 225s
+step 530 epoch 2 train loss 0.848 228s
+step 540 epoch 2 train loss 0.609 230s
+step 550 epoch 2 train loss 0.997 233s
+step 560 epoch 2 train loss 1.214 236s
+step 570 epoch 2 train loss 1.054 239s
+step 580 epoch 2 train loss 0.939 242s
+step 590 epoch 2 train loss 0.746 245s
+step 600 epoch 2 train loss 0.899 249s
+step 610 epoch 2 train loss 1.051 251s
+step 620 epoch 2 train loss 0.971 255s
+[305s] evaluated
+[309s] checkpoint saved
+{"step": 625, "epoch": 2, "seconds": 291, "train_loss": 0.7365642189979553, "device_gb": 9.54, "indist": {"loss": 0.8245902325354181, "by_class": {"column": 0.5157653223395428, "component": 2.4732902101524497, "fact": 1.8111482985949443, "lib relation": 2.574521250574162, "proposer": 2.535739329046832, "read:label": 0.7620136882765589, "read:rel": 2.2215978073416864, "structure": 0.4489722166857134}, "by_length": {"len<200": 0.765978810571716, "len<600": 0.8519128590473853, "len>=600": 0.7915056132803974}, "pointer_accuracy": 0.6768060836501901}, "heldout": {"loss": 0.9096899358881664, "by_class": {"column": 0.540217129749426, "component": 2.284798711896516, "fact": 1.742335371813624, "lib relation": 2.4769570721405128, "proposer": 2.624557954145641, "read:label": 1.0204343095347326, "read:rel": 2.6264517905545315, "structure": 0.4796156324482527}, "by_length": {"len<200": 0.7667213776751897, "len<600": 0.8641175663204171, "len>=600": 0.92510544808874}, "pointer_accuracy": 0.6030866932506277}}
+step 630 epoch 2 train loss 0.748 296s
+step 640 epoch 2 train loss 0.795 298s
+step 650 epoch 2 train loss 0.865 300s
+step 660 epoch 2 train loss 0.732 303s
+step 670 epoch 2 train loss 0.871 306s
+step 680 epoch 2 train loss 1.060 309s
+step 690 epoch 2 train loss 1.166 312s
+step 700 epoch 3 train loss 0.837 315s
+step 710 epoch 3 train loss 0.581 319s
+step 720 epoch 3 train loss 1.163 322s
+step 730 epoch 3 train loss 0.375 325s
+step 740 epoch 3 train loss 0.605 328s
+step 750 epoch 3 train loss 0.755 331s
+step 760 epoch 3 train loss 0.539 334s
+step 770 epoch 3 train loss 0.841 337s
+step 780 epoch 3 train loss 0.941 339s
+step 790 epoch 3 train loss 0.574 342s
+step 800 epoch 3 train loss 0.701 345s
+step 810 epoch 3 train loss 0.466 347s
+step 820 epoch 3 train loss 1.075 351s
+step 830 epoch 3 train loss 0.771 354s
+[404s] evaluated
+[408s] checkpoint saved
+{"step": 834, "epoch": 3, "seconds": 389, "train_loss": 0.651689350605011, "device_gb": 9.54, "indist": {"loss": 0.7953289302793589, "by_class": {"column": 0.4966979025588259, "component": 2.2244228746094135, "fact": 1.6665152263024756, "lib relation": 2.437754466360638, "proposer": 2.6423478073881057, "read:label": 0.6885169724731359, "read:rel": 2.182661217296459, "structure": 0.45369214602511787}, "by_length": {"len<200": 0.7302723417803336, "len<600": 0.8204838841959632, "len>=600": 0.7700305833941847}, "pointer_accuracy": 0.683810286171703}, "heldout": {"loss": 0.9143887279783304, "by_class": {"column": 0.5598725429979802, "component": 2.1267691909048994, "fact": 1.6319699233974536, "lib relation": 2.376303951181506, "proposer": 2.7480873403752724, "read:label": 0.9417239809521311, "read:rel": 2.7985893288630836, "structure": 0.48824707708242204}, "by_length": {"len<200": 0.7859855423638291, "len<600": 0.8480347677418025, "len>=600": 0.9365903141212136}, "pointer_accuracy": 0.605080490326392}}
+step 840 epoch 3 train loss 0.769 395s
+step 850 epoch 3 train loss 0.999 397s
+step 860 epoch 3 train loss 0.734 400s
+step 870 epoch 3 train loss 0.975 402s
+step 880 epoch 3 train loss 0.709 405s
+step 890 epoch 3 train loss 0.680 408s
+step 900 epoch 3 train loss 0.951 411s
+step 910 epoch 3 train loss 0.682 414s
+step 920 epoch 3 train loss 0.717 417s
+step 930 epoch 3 train loss 0.757 420s
+step 940 epoch 3 train loss 0.952 423s
+step 950 epoch 3 train loss 0.793 426s
+step 960 epoch 3 train loss 1.285 429s
+step 970 epoch 3 train loss 0.673 432s
+step 980 epoch 3 train loss 0.594 435s
+step 990 epoch 3 train loss 0.857 439s
+step 1000 epoch 3 train loss 0.890 442s
+step 1010 epoch 3 train loss 0.337 444s
+step 1020 epoch 3 train loss 0.769 447s
+step 1030 epoch 3 train loss 0.665 450s
+step 1040 epoch 3 train loss 0.668 453s
+[503s] evaluated
+{"step": 1042, "epoch": 4, "seconds": 489, "train_loss": 0.675895631313324, "device_gb": 9.54, "indist": {"loss": 0.8024625130721879, "by_class": {"column": 0.4685846998984877, "component": 2.234330451162532, "fact": 1.8730687978041272, "lib relation": 2.643361078259275, "proposer": 2.6770626866888856, "read:label": 0.6773625055318421, "read:rel": 2.0283933053291796, "structure": 0.5035691181655172}, "by_length": {"len<200": 0.7660104116461646, "len<600": 0.8262246840836033, "len>=600": 0.7669338043715443}, "pointer_accuracy": 0.6876125675405244}, "heldout": {"loss": 0.8994276151265231, "by_class": {"column": 0.5658676131272282, "component": 2.053828315626537, "fact": 1.9040161955850674, "lib relation": 2.5795732921031935, "proposer": 2.6550222649806883, "read:label": 0.926451193902641, "read:rel": 2.415312760239882, "structure": 0.5179013399326037}, "by_length": {"len<200": 0.7842941263153148, "len<600": 0.81659954865311, "len>=600": 0.9270034188990774}, "pointer_accuracy": 0.5998375424604933}}
+step 1050 epoch 4 train loss 0.566 492s
+step 1060 epoch 4 train loss 0.953 494s
+step 1070 epoch 4 train loss 0.640 496s
+step 1080 epoch 4 train loss 0.594 498s
+step 1090 epoch 4 train loss 0.220 501s
+step 1100 epoch 4 train loss 0.736 504s
+step 1110 epoch 4 train loss 0.882 507s
+step 1120 epoch 4 train loss 0.813 510s
+step 1130 epoch 4 train loss 0.731 513s
+step 1140 epoch 4 train loss 0.896 516s
+step 1150 epoch 4 train loss 0.608 519s
+step 1160 epoch 4 train loss 0.680 522s
+step 1170 epoch 4 train loss 0.660 524s
+step 1180 epoch 4 train loss 0.670 528s
+step 1190 epoch 4 train loss 0.430 531s
+step 1200 epoch 4 train loss 0.641 534s
+step 1210 epoch 4 train loss 0.759 537s
+step 1220 epoch 4 train loss 0.675 540s
+step 1230 epoch 4 train loss 0.868 543s
+step 1240 epoch 4 train loss 0.617 546s
+step 1250 epoch 4 train loss 0.425 549s
+[587s] evaluated
+[597s] checkpoint saved
+{"step": 1250, "epoch": 4, "seconds": 572, "train_loss": 0.4253237247467041, "device_gb": 9.54, "indist": {"loss": 0.7451245022981108, "by_class": {"column": 0.43062543090010347, "component": 2.286243653161775, "fact": 1.5887481946516802, "lib relation": 2.124277112742412, "proposer": 2.6745094317875937, "read:label": 0.6090542446819274, "read:rel": 2.1435576783468493, "structure": 0.44721657583398194}, "by_length": {"len<200": 0.7219616350980093, "len<600": 0.7668649515715616, "len>=600": 0.7078793000366258}, "pointer_accuracy": 0.7194316589953972}, "heldout": {"loss": 0.8327625385103977, "by_class": {"column": 0.4643477567314258, "component": 2.0896236236402705, "fact": 1.6077096761337202, "lib relation": 2.043356926708585, "proposer": 2.6656928389537624, "read:label": 0.8240850501606072, "read:rel": 2.623253889599095, "structure": 0.4800711960074638}, "by_length": {"len<200": 0.8617431117333137, "len<600": 0.7760707030086269, "len>=600": 0.8513076769394597}, "pointer_accuracy": 0.6400827056564762}}
+step 1260 epoch 4 train loss 0.843 585s
+step 1270 epoch 4 train loss 0.854 587s
+step 1280 epoch 4 train loss 0.309 589s
+step 1290 epoch 4 train loss 0.440 592s
+step 1300 epoch 4 train loss 0.847 595s
+step 1310 epoch 4 train loss 0.582 598s
+step 1320 epoch 4 train loss 1.131 602s
+step 1330 epoch 4 train loss 0.667 605s
+step 1340 epoch 4 train loss 0.802 608s
+step 1350 epoch 4 train loss 0.658 611s
+step 1360 epoch 4 train loss 0.529 614s
+step 1370 epoch 4 train loss 0.953 618s
+step 1380 epoch 4 train loss 0.687 621s
+step 1390 epoch 5 train loss 0.885 624s
+step 1400 epoch 5 train loss 0.833 627s
+step 1410 epoch 5 train loss 0.909 630s
+step 1420 epoch 5 train loss 0.560 632s
+step 1430 epoch 5 train loss 0.389 635s
+step 1440 epoch 5 train loss 0.787 638s
+step 1450 epoch 5 train loss 0.478 642s
+[686s] evaluated
+{"step": 1454, "epoch": 5, "seconds": 671, "train_loss": 0.43406933546066284, "device_gb": 9.54, "indist": {"loss": 0.7487736031148046, "by_class": {"column": 0.39915571812255735, "component": 2.1771980059948124, "fact": 1.7111531744905906, "lib relation": 2.1874086726785698, "proposer": 2.6661497008300827, "read:label": 0.6385649108294453, "read:rel": 2.0945619871963146, "structure": 0.4709318369238047}, "by_length": {"len<200": 0.7097337658655984, "len<600": 0.7746726618139795, "len>=600": 0.7097287245794488}, "pointer_accuracy": 0.7176305783470082}, "heldout": {"loss": 0.8416817534575274, "by_class": {"column": 0.42629078551309474, "component": 2.2562306281975815, "fact": 1.8531350190924272, "lib relation": 2.127480028991201, "proposer": 2.7638451798659998, "read:label": 0.8539289593675476, "read:rel": 2.5237780149811853, "structure": 0.522352569273045}, "by_length": {"len<200": 0.7984065395635436, "len<600": 0.7816009799612328, "len>=600": 0.8615614586218253}, "pointer_accuracy": 0.638827351942106}}
+step 1460 epoch 5 train loss 0.521 675s
+step 1470 epoch 5 train loss 0.686 680s
+step 1480 epoch 5 train loss 0.681 684s
+step 1490 epoch 5 train loss 0.576 686s
+step 1500 epoch 5 train loss 0.582 688s
+step 1510 epoch 5 train loss 0.665 691s
+step 1520 epoch 5 train loss 0.584 694s
+step 1530 epoch 5 train loss 0.567 696s
+step 1540 epoch 5 train loss 0.525 700s
+step 1550 epoch 5 train loss 0.278 702s
+step 1560 epoch 5 train loss 0.488 705s
+step 1570 epoch 5 train loss 0.461 708s
+step 1580 epoch 5 train loss 0.676 711s
+step 1590 epoch 5 train loss 0.859 714s
+step 1600 epoch 5 train loss 0.544 717s
+step 1610 epoch 5 train loss 0.567 720s
+step 1620 epoch 5 train loss 0.380 723s
+step 1630 epoch 5 train loss 0.753 726s
+step 1640 epoch 5 train loss 0.507 729s
+[766s] evaluated
+[775s] checkpoint saved
+{"step": 1648, "epoch": 5, "seconds": 752, "train_loss": 0.5803247690200806, "device_gb": 9.54, "indist": {"loss": 0.7446351145090682, "by_class": {"column": 0.3995947245121928, "component": 2.2362506379768172, "fact": 1.3984161646197257, "lib relation": 2.197926090962827, "proposer": 2.4949445524615443, "read:label": 0.6535269969050196, "read:rel": 2.229235133545014, "structure": 0.44011570806073796}, "by_length": {"len<200": 0.7263932893964856, "len<600": 0.7616776749572747, "len>=600": 0.7154773641289434}, "pointer_accuracy": 0.7224334600760456}, "heldout": {"loss": 0.8250442389337633, "by_class": {"column": 0.4224660887697943, "component": 2.2106987542932846, "fact": 1.4535494152131616, "lib relation": 2.068371369039644, "proposer": 2.5926233620905297, "read:label": 0.8564975159586404, "read:rel": 2.604122357525878, "structure": 0.4838388080714998}, "by_length": {"len<200": 0.7529043588038736, "len<600": 0.7790834464269696, "len>=600": 0.8403711000159153}, "pointer_accuracy": 0.6541131295229656}}
+step 1650 epoch 5 train loss 0.844 762s
+step 1660 epoch 5 train loss 0.608 766s
+step 1670 epoch 5 train loss 0.494 770s
+step 1680 epoch 5 train loss 0.477 773s
+step 1690 epoch 5 train loss 0.340 776s
+step 1700 epoch 5 train loss 0.364 778s
+step 1710 epoch 5 train loss 0.560 781s
+step 1720 epoch 5 train loss 1.085 784s
+step 1730 epoch 5 train loss 0.340 787s
+step 1740 epoch 6 train loss 0.495 791s
+step 1750 epoch 6 train loss 0.158 794s
+step 1760 epoch 6 train loss 0.577 797s
+step 1770 epoch 6 train loss 0.319 800s
+step 1780 epoch 6 train loss 0.332 804s
+step 1790 epoch 6 train loss 0.504 807s
+step 1800 epoch 6 train loss 0.492 810s
+step 1810 epoch 6 train loss 0.421 813s
+step 1820 epoch 6 train loss 0.323 816s
+step 1830 epoch 6 train loss 0.487 819s
+[864s] evaluated
+{"step": 1836, "epoch": 6, "seconds": 850, "train_loss": 0.9077549576759338, "device_gb": 9.54, "indist": {"loss": 0.7909351320700867, "by_class": {"column": 0.45721768074455327, "component": 2.5307948001550953, "fact": 1.8832688865299099, "lib relation": 2.5049311695549776, "proposer": 2.7941801933471315, "read:label": 0.6874723715658884, "read:rel": 2.1625453515078332, "structure": 0.4464518051280143}, "by_length": {"len<200": 0.7533076754248017, "len<600": 0.8240564104245006, "len>=600": 0.735280706021671}, "pointer_accuracy": 0.7208324994996999}, "heldout": {"loss": 0.8804134220476251, "by_class": {"column": 0.4669339320006536, "component": 2.404365805877555, "fact": 1.8229670249203498, "lib relation": 2.518560926054151, "proposer": 2.9988073845643823, "read:label": 0.9332534614445611, "read:rel": 2.646017429111923, "structure": 0.4815321206432361}, "by_length": {"len<200": 0.8811740578846587, "len<600": 0.820921542958889, "len>=600": 0.8999650648948877}, "pointer_accuracy": 0.6427411017574952}}
+step 1840 epoch 6 train loss 0.385 852s
+step 1850 epoch 6 train loss 0.180 857s
+step 1860 epoch 6 train loss 0.351 860s
+step 1870 epoch 6 train loss 0.780 864s
+step 1880 epoch 6 train loss 0.603 867s
+step 1890 epoch 6 train loss 0.466 870s
+step 1900 epoch 6 train loss 0.777 873s
+step 1910 epoch 6 train loss 0.507 875s
+step 1920 epoch 6 train loss 0.259 878s
+step 1930 epoch 6 train loss 0.368 881s
+step 1940 epoch 6 train loss 0.742 884s
+step 1950 epoch 6 train loss 0.362 887s
+step 1960 epoch 6 train loss 0.290 890s
+step 1970 epoch 6 train loss 0.621 893s
+step 1980 epoch 6 train loss 0.509 896s
+step 1990 epoch 6 train loss 0.529 899s
+step 2000 epoch 6 train loss 0.477 902s
+step 2010 epoch 6 train loss 0.495 905s
+step 2020 epoch 6 train loss 0.586 908s
+[952s] evaluated
+{"step": 2028, "epoch": 6, "seconds": 937, "train_loss": 0.391943097114563, "device_gb": 9.54, "indist": {"loss": 0.7563080910745121, "by_class": {"column": 0.4519023792852063, "component": 2.092583490888912, "fact": 1.6534615620759805, "lib relation": 2.254171356387082, "proposer": 2.660295405073794, "read:label": 0.7000203517209286, "read:rel": 2.023249880727387, "structure": 0.43984692357745225}, "by_length": {"len<200": 0.7059358526128741, "len<600": 0.7790510373417366, "len>=600": 0.7295062433927069}, "pointer_accuracy": 0.7240344206523914}, "heldout": {"loss": 0.855782536472836, "by_class": {"column": 0.49913715617797305, "component": 2.2475801959683452, "fact": 1.6309685677529284, "lib relation": 2.258209701082312, "proposer": 2.669971111344128, "read:label": 0.9868486090244861, "read:rel": 2.4581034368633445, "structure": 0.45193636899414596}, "by_length": {"len<200": 0.7959337261726253, "len<600": 0.78739310619805, "len>=600": 0.878443758220532}, "pointer_accuracy": 0.64340570078275}}
+step 2030 epoch 6 train loss 0.682 938s
+step 2040 epoch 6 train loss 0.626 944s
+step 2050 epoch 6 train loss 0.825 948s
+step 2060 epoch 6 train loss 0.407 951s
+step 2070 epoch 6 train loss 0.438 954s
+step 2080 epoch 7 train loss 0.232 957s
+step 2090 epoch 7 train loss 0.223 960s
+step 2100 epoch 7 train loss 0.432 962s
+step 2110 epoch 7 train loss 0.599 965s
+step 2120 epoch 7 train loss 0.270 968s
+step 2130 epoch 7 train loss 0.554 971s
+step 2140 epoch 7 train loss 0.334 973s
+step 2150 epoch 7 train loss 0.336 976s
+step 2160 epoch 7 train loss 0.323 979s
+step 2170 epoch 7 train loss 0.436 982s
+step 2180 epoch 7 train loss 0.495 985s
+step 2190 epoch 7 train loss 0.417 988s
+step 2200 epoch 7 train loss 0.437 991s
+step 2210 epoch 7 train loss 0.451 994s
+step 2220 epoch 7 train loss 0.305 997s
+[1039s] evaluated
+{"step": 2221, "epoch": 7, "seconds": 1025, "train_loss": 0.23112119734287262, "device_gb": 9.54, "indist": {"loss": 0.7907292584003582, "by_class": {"column": 0.40891352991180974, "component": 2.2905214832266845, "fact": 1.9157433715964798, "lib relation": 2.4538184032361525, "proposer": 2.8107235276413536, "read:label": 0.7054785361788538, "read:rel": 2.221591719827305, "structure": 0.47189949806027975}, "by_length": {"len<200": 0.7446441578263143, "len<600": 0.8248225732394748, "len>=600": 0.7368622682055038}, "pointer_accuracy": 0.7190314188513108}, "heldout": {"loss": 0.8681461216803207, "by_class": {"column": 0.43894909747170374, "component": 2.2868657768759966, "fact": 1.8189837300830254, "lib relation": 2.3707251335475372, "proposer": 2.9926678511064226, "read:label": 0.8956720406591494, "read:rel": 2.611821642397135, "structure": 0.5163889859785011}, "by_length": {"len<200": 0.8549997750330531, "len<600": 0.8079041030362234, "len>=600": 0.8879868013631096}, "pointer_accuracy": 0.6456210308669325}}
+step 2230 epoch 7 train loss 0.640 1029s
+step 2240 epoch 7 train loss 0.646 1036s
+step 2250 epoch 7 train loss 0.374 1040s
+step 2260 epoch 7 train loss 0.686 1042s
+step 2270 epoch 7 train loss 0.242 1045s
+step 2280 epoch 7 train loss 0.489 1047s
+step 2290 epoch 7 train loss 0.368 1049s
+step 2300 epoch 7 train loss 0.571 1052s
+step 2310 epoch 7 train loss 0.267 1055s
+step 2320 epoch 7 train loss 0.095 1058s
+step 2330 epoch 7 train loss 0.380 1061s
+step 2340 epoch 7 train loss 0.559 1064s
+step 2350 epoch 7 train loss 0.427 1067s
+step 2360 epoch 7 train loss 0.432 1070s
+step 2370 epoch 7 train loss 0.376 1074s
+step 2380 epoch 7 train loss 0.367 1076s
+step 2390 epoch 7 train loss 0.392 1080s
+step 2400 epoch 7 train loss 0.577 1083s
+[1122s] evaluated
+{"step": 2407, "epoch": 7, "seconds": 1108, "train_loss": 0.4809596836566925, "device_gb": 9.54, "indist": {"loss": 0.7883607860899167, "by_class": {"column": 0.4548825692899445, "component": 2.4932521578517957, "fact": 1.9371535691055528, "lib relation": 2.408175280268977, "proposer": 2.96593086466104, "read:label": 0.7524985867419015, "read:rel": 2.130121899823734, "structure": 0.42453168822181675}, "by_length": {"len<200": 0.7268432412962967, "len<600": 0.8300687072374103, "len>=600": 0.724853712749537}, "pointer_accuracy": 0.7376425855513308}, "heldout": {"loss": 0.878833315655031, "by_class": {"column": 0.4985148588793605, "component": 2.381981732438992, "fact": 2.2559426407904195, "lib relation": 2.3635478970922015, "proposer": 3.082921420837321, "read:label": 0.9633060004354798, "read:rel": 2.5883747617371173, "structure": 0.4494394535412466}, "by_length": {"len<200": 0.9161517260733508, "len<600": 0.811181258120069, "len>=600": 0.9009554505927766}, "pointer_accuracy": 0.6548515728843598}}
+step 2410 epoch 7 train loss 0.368 1109s
+step 2420 epoch 8 train loss 0.260 1113s
+step 2430 epoch 8 train loss 0.230 1118s
+step 2440 epoch 8 train loss 0.278 1123s
+step 2450 epoch 8 train loss 0.351 1127s
+step 2460 epoch 8 train loss 0.334 1131s
+step 2470 epoch 8 train loss 0.373 1134s
+step 2480 epoch 8 train loss 0.362 1137s
+step 2490 epoch 8 train loss 0.442 1140s
+step 2500 epoch 8 train loss 0.062 1143s
+step 2510 epoch 8 train loss 0.252 1146s
+step 2520 epoch 8 train loss 0.219 1149s
+step 2530 epoch 8 train loss 0.548 1152s
+step 2540 epoch 8 train loss 0.430 1155s
+step 2550 epoch 8 train loss 0.160 1158s
+step 2560 epoch 8 train loss 0.572 1161s
+step 2570 epoch 8 train loss 0.271 1164s
+step 2580 epoch 8 train loss 0.590 1167s
+[1202s] evaluated
+{"step": 2583, "epoch": 8, "seconds": 1188, "train_loss": 0.26630470156669617, "device_gb": 9.54, "indist": {"loss": 0.8526593517231846, "by_class": {"column": 0.46533376621706946, "component": 2.770489428653669, "fact": 1.7880861580896856, "lib relation": 2.5353207526281074, "proposer": 2.8675357922967413, "read:label": 0.7705054859264726, "read:rel": 2.4875253795873755, "structure": 0.4846087059215875}, "by_length": {"len<200": 0.7862762646517374, "len<600": 0.8951415662392774, "len>=600": 0.7897054137261739}, "pointer_accuracy": 0.7264358615169102}, "heldout": {"loss": 0.94558468318492, "by_class": {"column": 0.5002812671275915, "component": 2.7356197614825035, "fact": 2.0076156314788505, "lib relation": 2.3219479787200448, "proposer": 2.911593091424282, "read:label": 0.9904951880710399, "read:rel": 2.90345232180014, "structure": 0.5422791257291211}, "by_length": {"len<200": 0.8737792352037766, "len<600": 0.8685610374996882, "len>=600": 0.9711203719116445}, "pointer_accuracy": 0.6475409836065574}}
+step 2590 epoch 8 train loss 0.522 1190s
+step 2600 epoch 8 train loss 0.338 1194s
+step 2610 epoch 8 train loss 0.731 1199s
+step 2620 epoch 8 train loss 0.398 1204s
+step 2630 epoch 8 train loss 0.510 1208s
+step 2640 epoch 8 train loss 0.295 1212s
+step 2650 epoch 8 train loss 0.604 1215s
+step 2660 epoch 8 train loss 0.260 1218s
+step 2670 epoch 8 train loss 0.549 1221s
+step 2680 epoch 8 train loss 0.695 1224s
+step 2690 epoch 8 train loss 0.321 1227s
+step 2700 epoch 8 train loss 0.305 1230s
+step 2710 epoch 8 train loss 0.363 1234s
+step 2720 epoch 8 train loss 0.337 1236s
+step 2730 epoch 8 train loss 0.272 1239s
+step 2740 epoch 8 train loss 0.422 1242s
+step 2750 epoch 8 train loss 0.638 1245s
+[1282s] evaluated
+{"step": 2759, "epoch": 8, "seconds": 1268, "train_loss": 0.34429365396499634, "device_gb": 9.54, "indist": {"loss": 0.8086907955214749, "by_class": {"column": 0.47533176860885484, "component": 2.5027955145751783, "fact": 2.05313455548536, "lib relation": 2.4317330913725614, "proposer": 2.917261455319599, "read:label": 0.721641246199988, "read:rel": 2.173193880910591, "structure": 0.4575138353892469}, "by_length": {"len<200": 0.7494443094497746, "len<600": 0.8441716238570249, "len>=600": 0.7578816531832495}, "pointer_accuracy": 0.7314388633179908}, "heldout": {"loss": 0.9050623360280103, "by_class": {"column": 0.49264704879450405, "component": 2.685378571950854, "fact": 2.218979923034628, "lib relation": 2.4290652408180096, "proposer": 3.037722154361446, "read:label": 0.9424593380737438, "read:rel": 2.597603922360289, "structure": 0.5186475559132877}, "by_length": {"len<200": 0.9395097082378767, "len<600": 0.8483997061849439, "len>=600": 0.9235811938532948}, "pointer_accuracy": 0.6518239551026437}}
+step 2760 epoch 8 train loss 0.330 1268s
+step 2770 epoch 9 train loss 0.106 1272s
+step 2780 epoch 9 train loss 0.239 1275s
+step 2790 epoch 9 train loss 0.245 1280s
+step 2800 epoch 9 train loss 0.131 1285s
+step 2810 epoch 9 train loss 0.056 1289s
+step 2820 epoch 9 train loss 0.213 1293s
+step 2830 epoch 9 train loss 0.544 1297s
+step 2840 epoch 9 train loss 0.623 1300s
+step 2850 epoch 9 train loss 0.330 1303s
+step 2860 epoch 9 train loss 0.283 1307s
+step 2870 epoch 9 train loss 0.145 1310s
+step 2880 epoch 9 train loss 0.186 1313s
+step 2890 epoch 9 train loss 0.260 1315s
+step 2900 epoch 9 train loss 0.261 1318s
+step 2910 epoch 9 train loss 0.321 1321s
+step 2920 epoch 9 train loss 0.250 1324s
+step 2930 epoch 9 train loss 0.228 1327s
+[1362s] evaluated
+{"step": 2935, "epoch": 9, "seconds": 1347, "train_loss": 0.41224682331085205, "device_gb": 9.54, "indist": {"loss": 0.9228988468178503, "by_class": {"column": 0.5652610397331503, "component": 2.8715199652787384, "fact": 2.3965935635665128, "lib relation": 2.7555612667350893, "proposer": 2.86328951612918, "read:label": 0.8117132224975041, "read:rel": 2.4670145864603894, "structure": 0.521256846549066}, "by_length": {"len<200": 0.8538085350755504, "len<600": 0.9788884122330649, "len>=600": 0.8313691302418971}, "pointer_accuracy": 0.729037422453472}, "heldout": {"loss": 1.0070299145464248, "by_class": {"column": 0.5663035218885729, "component": 2.946169581524466, "fact": 2.367586288414896, "lib relation": 2.726499014416017, "proposer": 2.8954794355781703, "read:label": 1.0052100595944717, "read:rel": 2.897272971920574, "structure": 0.5878684611334268}, "by_length": {"len<200": 0.9457137365707269, "len<600": 0.9574518034462828, "len>=600": 1.0235126802748964}, "pointer_accuracy": 0.6529316201447349}}
+step 2940 epoch 9 train loss 0.159 1348s
+step 2950 epoch 9 train loss 0.180 1351s
+step 2960 epoch 9 train loss 0.337 1354s
+step 2970 epoch 9 train loss 0.293 1357s
+step 2980 epoch 9 train loss 0.286 1361s
+step 2990 epoch 9 train loss 0.424 1367s
+step 3000 epoch 9 train loss 0.394 1371s
+step 3010 epoch 9 train loss 0.205 1375s
+step 3020 epoch 9 train loss 0.322 1379s
+step 3030 epoch 9 train loss 0.243 1382s
+step 3040 epoch 9 train loss 0.046 1385s
+step 3050 epoch 9 train loss 0.221 1388s
+step 3060 epoch 9 train loss 0.438 1391s
+step 3070 epoch 9 train loss 0.147 1395s
+step 3080 epoch 9 train loss 0.219 1398s
+step 3090 epoch 9 train loss 0.279 1401s
+step 3100 epoch 9 train loss 0.347 1404s
+step 3110 epoch 10 train loss 0.221 1407s
+[1443s] evaluated
+{"step": 3113, "epoch": 10, "seconds": 1428, "train_loss": 0.08870216459035873, "device_gb": 9.54, "indist": {"loss": 0.8749167303411451, "by_class": {"column": 0.4851931011547161, "component": 2.730634465709337, "fact": 1.718896062846329, "lib relation": 2.6839216879942702, "proposer": 2.755609130921835, "read:label": 0.8243097345481225, "read:rel": 2.466931264494485, "structure": 0.503455988182511}, "by_length": {"len<200": 0.8376623856229315, "len<600": 0.9210510784353881, "len>=600": 0.7903453067154471}, "pointer_accuracy": 0.7386431859115469}, "heldout": {"loss": 0.9365763186538467, "by_class": {"column": 0.4902535436371912, "component": 2.6865067838007817, "fact": 1.929239309203729, "lib relation": 2.5995845695425728, "proposer": 2.930880844343181, "read:label": 1.0225942479070866, "read:rel": 2.7810503973432015, "structure": 0.5186227183387883}, "by_length": {"len<200": 0.9236654259198676, "len<600": 0.8934852702069442, "len>=600": 0.9507790480379879}, "pointer_accuracy": 0.6572884359769605}}
+step 3120 epoch 10 train loss 0.133 1430s
+step 3130 epoch 10 train loss 0.196 1432s
+step 3140 epoch 10 train loss 0.552 1436s
+step 3150 epoch 10 train loss 0.175 1439s
+step 3160 epoch 10 train loss 0.256 1444s
+step 3170 epoch 10 train loss 0.220 1450s
+step 3180 epoch 10 train loss 0.080 1453s
+step 3190 epoch 10 train loss 0.158 1457s
+step 3200 epoch 10 train loss 0.196 1460s
+step 3210 epoch 10 train loss 0.390 1464s
+step 3220 epoch 10 train loss 0.127 1468s
+step 3230 epoch 10 train loss 0.307 1470s
+step 3240 epoch 10 train loss 0.126 1474s
+step 3250 epoch 10 train loss 0.180 1476s
+step 3260 epoch 10 train loss 0.450 1479s
+step 3270 epoch 10 train loss 0.241 1482s
+step 3280 epoch 10 train loss 0.437 1485s
+step 3290 epoch 10 train loss 0.149 1488s
+[1522s] evaluated
+{"step": 3294, "epoch": 10, "seconds": 1507, "train_loss": 0.32584187388420105, "device_gb": 9.54, "indist": {"loss": 0.9205458552019178, "by_class": {"column": 0.5252153504865087, "component": 2.8270124293702734, "fact": 2.557486956997413, "lib relation": 2.8759873505417928, "proposer": 2.955897114680199, "read:label": 0.7641053226002543, "read:rel": 2.528373348067289, "structure": 0.5308677909340893}, "by_length": {"len<200": 0.8597371689176544, "len<600": 0.9773448153564505, "len>=600": 0.8233757466973931}, "pointer_accuracy": 0.7376425855513308}, "heldout": {"loss": 1.004724012257265, "by_class": {"column": 0.5359783525886039, "component": 2.8593194550786327, "fact": 2.662873131900752, "lib relation": 2.7533167265272995, "proposer": 3.2409982163822506, "read:label": 1.0126401300892076, "read:rel": 2.930207129650954, "structure": 0.5800945862940702}, "by_length": {"len<200": 1.0154895707115048, "len<600": 0.9661985814431893, "len>=600": 1.017353793823113}, "pointer_accuracy": 0.653300841825432}}
+step 3300 epoch 10 train loss 0.287 1509s
+step 3310 epoch 10 train loss 0.439 1512s
+step 3320 epoch 10 train loss 0.235 1515s
+step 3330 epoch 10 train loss 0.297 1518s
+step 3340 epoch 10 train loss 0.206 1521s
+step 3350 epoch 10 train loss 0.226 1525s
+step 3360 epoch 10 train loss 0.184 1530s
+step 3370 epoch 10 train loss 0.259 1534s
+step 3380 epoch 10 train loss 0.275 1537s
+step 3390 epoch 10 train loss 0.393 1541s
+step 3400 epoch 10 train loss 0.197 1544s
+step 3410 epoch 10 train loss 0.184 1547s
+step 3420 epoch 10 train loss 0.220 1550s
+step 3430 epoch 10 train loss 0.109 1553s
+step 3440 epoch 10 train loss 0.214 1556s
+step 3450 epoch 10 train loss 0.446 1559s
+step 3460 epoch 11 train loss 0.132 1562s
+step 3470 epoch 11 train loss 0.112 1565s
+[1602s] evaluated
+{"step": 3479, "epoch": 11, "seconds": 1588, "train_loss": 0.41482505202293396, "device_gb": 9.54, "indist": {"loss": 0.941216143340003, "by_class": {"column": 0.538619112000159, "component": 2.845744213839043, "fact": 2.4518569839497792, "lib relation": 2.780274713324919, "proposer": 2.967919802031073, "read:label": 0.8397982641100331, "read:rel": 2.6784321950207453, "structure": 0.5213342686012503}, "by_length": {"len<200": 0.8411137878805233, "len<600": 1.0134069210079069, "len>=600": 0.8283277405232187}, "pointer_accuracy": 0.7296377826696018}, "heldout": {"loss": 1.045688869465318, "by_class": {"column": 0.5429068024757437, "component": 2.9975279668996224, "fact": 2.542751274385959, "lib relation": 2.7022277522144704, "proposer": 3.252074348285976, "read:label": 1.072606162299945, "read:rel": 3.2671646727638346, "structure": 0.5786392441220011}, "by_length": {"len<200": 1.1507497776259394, "len<600": 0.9762281520160223, "len>=600": 1.0681985624705275}, "pointer_accuracy": 0.6528577758085955}}
+step 3480 epoch 11 train loss 0.067 1588s
+step 3490 epoch 11 train loss 0.382 1591s
+step 3500 epoch 11 train loss 0.254 1594s
+step 3510 epoch 11 train loss 0.426 1597s
+step 3520 epoch 11 train loss 0.158 1600s
+step 3530 epoch 11 train loss 0.218 1604s
+step 3540 epoch 11 train loss 0.198 1608s
+[1643s] evaluated
+{"step": 3544, "epoch": 11, "seconds": 1628, "train_loss": 0.24527038633823395, "device_gb": 9.54, "indist": {"loss": 0.9603675090678604, "by_class": {"column": 0.5314219738799207, "component": 3.044273415325914, "fact": 2.519755510246373, "lib relation": 2.980107014306119, "proposer": 3.0101512553069942, "read:label": 0.8547460606237841, "read:rel": 2.5738694238813915, "structure": 0.5662551948604712}, "by_length": {"len<200": 0.8601372973252341, "len<600": 1.0201322753000799, "len>=600": 0.8749853034652237}, "pointer_accuracy": 0.7340404242545527}, "heldout": {"loss": 1.0561196442095506, "by_class": {"column": 0.5630662138500072, "component": 3.242904597453983, "fact": 2.714614537258747, "lib relation": 2.8601967622734636, "proposer": 3.3722939953412405, "read:label": 1.0833297828033015, "read:rel": 3.0610972901251, "structure": 0.6053117753630105}, "by_length": {"len<200": 1.0916746345550954, "len<600": 0.9871367815100233, "len>=600": 1.0786845658935356}, "pointer_accuracy": 0.6493870920100429}}

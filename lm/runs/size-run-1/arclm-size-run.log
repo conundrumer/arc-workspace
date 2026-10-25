@@ -1,0 +1,135 @@
+[{"stream_name":"stderr","time":7.666881762,"data":"0.00s - Debugger warning: It seems that frozen modules are being used, which may\n"}
+,{"stream_name":"stderr","time":7.6669248,"data":"0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off\n"}
+,{"stream_name":"stderr","time":7.666931141,"data":"0.00s - to python to disable frozen modules.\n"}
+,{"stream_name":"stderr","time":7.666935189,"data":"0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.\n"}
+,{"stream_name":"stderr","time":8.282695939,"data":"0.00s - Debugger warning: It seems that frozen modules are being used, which may\n"}
+,{"stream_name":"stderr","time":8.282722822,"data":"0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off\n"}
+,{"stream_name":"stderr","time":8.282727517,"data":"0.00s - to python to disable frozen modules.\n"}
+,{"stream_name":"stderr","time":8.282737584,"data":"0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.\n"}
+,{"stream_name":"stdout","time":85.324602929,"data":"===== run-0.6b exit 1\n"}
+,{"stream_name":"stdout","time":85.324668201,"data":"\n"}
+,{"stream_name":"stdout","time":85.324675218,"data":"Loading weights:   0%|          | 0/311 [00:00\u003c?, ?it/s]\n"}
+,{"stream_name":"stdout","time":85.324681015,"data":"Loading weights:  68%|██████▊   | 211/311 [00:00\u003c00:00, 2107.40it/s]\n"}
+,{"stream_name":"stdout","time":85.324687096,"data":"Loading weights: 100%|██████████| 311/311 [00:00\u003c00:00, 2459.60it/s]\n"}
+,{"stream_name":"stdout","time":85.324691813,"data":"844 train, 93 held-out; vocab in 176, out 174; 597M parameters on cuda\n"}
+,{"stream_name":"stdout","time":85.324696026,"data":"loaded in 35s\n"}
+,{"stream_name":"stdout","time":85.324700006,"data":"Traceback (most recent call last):\n"}
+,{"stream_name":"stdout","time":85.324704138,"data":"  File \"/kaggle/input/datasets/conundrumer/arclm-data/train.py\", line 272, in \u003cmodule\u003e\n"}
+,{"stream_name":"stdout","time":85.32470883,"data":"    main()\n"}
+,{"stream_name":"stdout","time":85.324713022,"data":"    ~~~~^^\n"}
+,{"stream_name":"stdout","time":85.324720638,"data":"  File \"/kaggle/input/datasets/conundrumer/arclm-data/train.py\", line 248, in main\n"}
+,{"stream_name":"stdout","time":85.324724303,"data":"    opt.zero_grad(); loss.backward()\n"}
+,{"stream_name":"stdout","time":85.324727141,"data":"                     ~~~~~~~~~~~~~^^\n"}
+,{"stream_name":"stdout","time":85.324729961,"data":"  File \"/usr/local/lib/python3.13/dist-packages/torch/_tensor.py\", line 631, in backward\n"}
+,{"stream_name":"stdout","time":85.324732946,"data":"    torch.autograd.backward(\n"}
+,{"stream_name":"stdout","time":85.324735835,"data":"    ~~~~~~~~~~~~~~~~~~~~~~~^\n"}
+,{"stream_name":"stdout","time":85.324738592,"data":"        self, gradient, retain_graph, create_graph, inputs=inputs\n"}
+,{"stream_name":"stdout","time":85.324741407,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stdout","time":85.324744232,"data":"    )\n"}
+,{"stream_name":"stdout","time":85.324747001,"data":"    ^\n"}
+,{"stream_name":"stdout","time":85.324750391,"data":"  File \"/usr/local/lib/python3.13/dist-packages/torch/autograd/__init__.py\", line 381, in backward\n"}
+,{"stream_name":"stdout","time":85.324767475,"data":"    _engine_run_backward(\n"}
+,{"stream_name":"stdout","time":85.324772424,"data":"    ~~~~~~~~~~~~~~~~~~~~^\n"}
+,{"stream_name":"stdout","time":85.324777075,"data":"        tensors,\n"}
+,{"stream_name":"stdout","time":85.324781828,"data":"        ^^^^^^^^\n"}
+,{"stream_name":"stdout","time":85.324795221,"data":"    ...\u003c5 lines\u003e...\n"}
+,{"stream_name":"stdout","time":85.324798818,"data":"        accumulate_grad=True,\n"}
+,{"stream_name":"stdout","time":85.324802096,"data":"        ^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stdout","time":85.32480524,"data":"    )\n"}
+,{"stream_name":"stdout","time":85.324808361,"data":"    ^\n"}
+,{"stream_name":"stdout","time":85.324811465,"data":"  File \"/usr/local/lib/python3.13/dist-packages/torch/autograd/graph.py\", line 869, in _engine_run_backward\n"}
+,{"stream_name":"stdout","time":85.324814987,"data":"    return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass\n"}
+,{"stream_name":"stdout","time":85.324818435,"data":"           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stdout","time":85.324822082,"data":"        t_outputs, *args, **kwargs\n"}
+,{"stream_name":"stdout","time":85.324825338,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stdout","time":85.324828677,"data":"    )  # Calls into the C++ engine to run the backward pass\n"}
+,{"stream_name":"stdout","time":85.324832006,"data":"    ^\n"}
+,{"stream_name":"stdout","time":85.324843125,"data":"torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 150.00 MiB. GPU 0 has a total capacity of 14.56 GiB of which 112.81 MiB is free. Including non-PyTorch memory, this process has 14.45 GiB memory in use. Of the allocated memory 13.56 GiB is allocated by PyTorch, and 779.33 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://docs.pytorch.org/docs/stable/notes/cuda.html#optimizing-memory-usage-with-pytorch-cuda-alloc-conf)\n"}
+,{"stream_name":"stdout","time":85.324863314,"data":"\n"}
+,{"stream_name":"stdout","time":85.77996764,"data":"===== run-1.7b exit 1\n"}
+,{"stream_name":"stdout","time":85.779997044,"data":"t]\n"}
+,{"stream_name":"stdout","time":85.780001668,"data":"\n"}
+,{"stream_name":"stdout","time":85.780005104,"data":"Loading weights:   0%|          | 0/311 [00:00\u003c?, ?it/s]\n"}
+,{"stream_name":"stdout","time":85.780009325,"data":"Loading weights:  75%|███████▍  | 232/311 [00:00\u003c00:00, 2319.12it/s]\n"}
+,{"stream_name":"stdout","time":85.780014034,"data":"Loading weights: 100%|██████████| 311/311 [00:00\u003c00:00, 2522.06it/s]\n"}
+,{"stream_name":"stdout","time":85.780022697,"data":"844 train, 93 held-out; vocab in 176, out 174; 1722M parameters on cuda\n"}
+,{"stream_name":"stdout","time":85.780025466,"data":"loaded in 36s\n"}
+,{"stream_name":"stdout","time":85.78002795,"data":"step 1 epoch 1 train loss 5.219 5s\n"}
+,{"stream_name":"stdout","time":85.780030452,"data":"Traceback (most recent call last):\n"}
+,{"stream_name":"stdout","time":85.780032816,"data":"  File \"/kaggle/input/datasets/conundrumer/arclm-data/train.py\", line 272, in \u003cmodule\u003e\n"}
+,{"stream_name":"stdout","time":85.780035541,"data":"    main()\n"}
+,{"stream_name":"stdout","time":85.780037903,"data":"    ~~~~^^\n"}
+,{"stream_name":"stdout","time":85.78004015,"data":"  File \"/kaggle/input/datasets/conundrumer/arclm-data/train.py\", line 247, in main\n"}
+,{"stream_name":"stdout","time":85.780079278,"data":"    loss, _ = run_batch(model, train, g, enc_args, a.device)\n"}
+,{"stream_name":"stdout","time":85.78008791,"data":"              ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stdout","time":85.780091796,"data":"  File \"/kaggle/input/datasets/conundrumer/arclm-data/train.py\", line 126, in run_batch\n"}
+,{"stream_name":"stdout","time":85.780106538,"data":"    logits, query, key = model(tokens.to(device), ids.to(device, dtype), mask.to(device))\n"}
+,{"stream_name":"stdout","time":85.78011033,"data":"                         ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stdout","time":85.780114066,"data":"  File \"/usr/local/lib/python3.13/dist-packages/torch/nn/modules/module.py\", line 1779, in _wrapped_call_impl\n"}
+,{"stream_name":"stdout","time":85.780118002,"data":"    return self._call_impl(*args, **kwargs)\n"}
+,{"stream_name":"stdout","time":85.780124915,"data":"           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stdout","time":85.780127593,"data":"  File \"/usr/local/lib/python3.13/dist-packages/torch/nn/modules/module.py\", line 1790, in _call_impl\n"}
+,{"stream_name":"stdout","time":85.780130136,"data":"    return forward_call(*args, **kwargs)\n"}
+,{"stream_name":"stdout","time":85.780132525,"data":"  File \"/kaggle/input/datasets/conundrumer/arclm-data/train.py\", line 66, in forward\n"}
+,{"stream_name":"stdout","time":85.780135029,"data":"    h = self.base(inputs_embeds=x, attention_mask=mask).last_hidden_state\n"}
+,{"stream_name":"stdout","time":85.780142693,"data":"        ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stdout","time":85.78014524,"data":"  File \"/usr/local/lib/python3.13/dist-packages/torch/nn/modules/module.py\", line 1779, in _wrapped_call_impl\n"}
+,{"stream_name":"stdout","time":85.780147761,"data":"    return self._call_impl(*args, **kwargs)\n"}
+,{"stream_name":"stdout","time":85.780150094,"data":"           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stdout","time":85.780152532,"data":"  File \"/usr/local/lib/python3.13/dist-packages/torch/nn/modules/module.py\", line 1790, in _call_impl\n"}
+,{"stream_name":"stdout","time":85.780155032,"data":"    return forward_call(*args, **kwargs)\n"}
+,{"stream_name":"stdout","time":85.780157468,"data":"  File \"/usr/local/lib/python3.13/dist-packages/transformers/utils/generic.py\", line 1068, in wrapper\n"}
+,{"stream_name":"stdout","time":85.78016003,"data":"    output = func(self, *args, **kwargs)\n"}
+,{"stream_name":"stdout","time":85.780164851,"data":"  File \"/usr/local/lib/python3.13/dist-packages/transformers/utils/output_capturing.py\", line 262, in wrapper\n"}
+,{"stream_name":"stdout","time":85.78016773,"data":"    outputs = func(self, *args, **kwargs)\n"}
+,{"stream_name":"stdout","time":85.780170516,"data":"  File \"/usr/local/lib/python3.13/dist-packages/transformers/models/qwen3/modeling_qwen3.py\", line 413, in forward\n"}
+,{"stream_name":"stdout","time":85.780173022,"data":"    hidden_states = decoder_layer(\n"}
+,{"stream_name":"stdout","time":85.780175374,"data":"        hidden_states,\n"}
+,{"stream_name":"stdout","time":85.780177698,"data":"    ...\u003c5 lines\u003e...\n"}
+,{"stream_name":"stdout","time":85.780180172,"data":"        **kwargs,\n"}
+,{"stream_name":"stdout","time":85.780182446,"data":"    )\n"}
+,{"stream_name":"stdout","time":85.78018483,"data":"  File \"/usr/local/lib/python3.13/dist-packages/transformers/modeling_layers.py\", line 114, in __call__\n"}
+,{"stream_name":"stdout","time":85.780187825,"data":"    return super().__call__(*args, **kwargs)\n"}
+,{"stream_name":"stdout","time":85.780207192,"data":"           ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stdout","time":85.780211089,"data":"  File \"/usr/local/lib/python3.13/dist-packages/torch/nn/modules/module.py\", line 1779, in _wrapped_call_impl\n"}
+,{"stream_name":"stdout","time":85.780215812,"data":"    return self._call_impl(*args, **kwargs)\n"}
+,{"stream_name":"stdout","time":85.780224335,"data":"           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stdout","time":85.780228868,"data":"  File \"/usr/local/lib/python3.13/dist-packages/torch/nn/modules/module.py\", line 1790, in _call_impl\n"}
+,{"stream_name":"stdout","time":85.780232084,"data":"    return forward_call(*args, **kwargs)\n"}
+,{"stream_name":"stdout","time":85.780235998,"data":"  File \"/usr/local/lib/python3.13/dist-packages/transformers/models/qwen3/modeling_qwen3.py\", line 307, in forward\n"}
+,{"stream_name":"stdout","time":85.780239281,"data":"    hidden_states, _ = self.self_attn(\n"}
+,{"stream_name":"stdout","time":85.780242506,"data":"                       ~~~~~~~~~~~~~~^\n"}
+,{"stream_name":"stdout","time":85.780246037,"data":"        hidden_states=hidden_states,\n"}
+,{"stream_name":"stdout","time":85.780249974,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stdout","time":85.78025377,"data":"    ...\u003c5 lines\u003e...\n"}
+,{"stream_name":"stdout","time":85.780257724,"data":"        **kwargs,\n"}
+,{"stream_name":"stdout","time":85.78026133,"data":"        ^^^^^^^^^\n"}
+,{"stream_name":"stdout","time":85.780265032,"data":"    )\n"}
+,{"stream_name":"stdout","time":85.780268684,"data":"    ^\n"}
+,{"stream_name":"stdout","time":85.780272308,"data":"  File \"/usr/local/lib/python3.13/dist-packages/torch/nn/modules/module.py\", line 1779, in _wrapped_call_impl\n"}
+,{"stream_name":"stdout","time":85.780276361,"data":"    return self._call_impl(*args, **kwargs)\n"}
+,{"stream_name":"stdout","time":85.780280273,"data":"           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stdout","time":85.780284239,"data":"  File \"/usr/local/lib/python3.13/dist-packages/torch/nn/modules/module.py\", line 1790, in _call_impl\n"}
+,{"stream_name":"stdout","time":85.780288177,"data":"    return forward_call(*args, **kwargs)\n"}
+,{"stream_name":"stdout","time":85.780292219,"data":"  File \"/usr/local/lib/python3.13/dist-packages/transformers/models/qwen3/modeling_qwen3.py\", line 252, in forward\n"}
+,{"stream_name":"stdout","time":85.780296613,"data":"    query_states = self.q_norm(self.q_proj(hidden_states).view(hidden_shape)).transpose(1, 2)\n"}
+,{"stream_name":"stdout","time":85.780300855,"data":"                   ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stdout","time":85.780305202,"data":"  File \"/usr/local/lib/python3.13/dist-packages/torch/nn/modules/module.py\", line 1779, in _wrapped_call_impl\n"}
+,{"stream_name":"stdout","time":85.78030991,"data":"    return self._call_impl(*args, **kwargs)\n"}
+,{"stream_name":"stdout","time":85.780315894,"data":"           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stdout","time":85.780319884,"data":"  File \"/usr/local/lib/python3.13/dist-packages/torch/nn/modules/module.py\", line 1790, in _call_impl\n"}
+,{"stream_name":"stdout","time":85.78032404,"data":"    return forward_call(*args, **kwargs)\n"}
+,{"stream_name":"stdout","time":85.780327428,"data":"  File \"/usr/local/lib/python3.13/dist-packages/transformers/models/qwen3/modeling_qwen3.py\", line 62, in forward\n"}
+,{"stream_name":"stdout","time":85.780330989,"data":"    variance = hidden_states.pow(2).mean(-1, keepdim=True)\n"}
+,{"stream_name":"stdout","time":85.780334736,"data":"               ~~~~~~~~~~~~~~~~~^^^\n"}
+,{"stream_name":"stdout","time":85.780338603,"data":"torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 20.00 MiB. GPU 0 has a total capacity of 14.56 GiB of which 20.81 MiB is free. Including non-PyTorch memory, this process has 14.54 GiB memory in use. Of the allocated memory 14.30 GiB is allocated by PyTorch, and 103.54 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://docs.pytorch.org/docs/stable/notes/cuda.html#optimizing-memory-usage-with-pytorch-cuda-alloc-conf)\n"}
+,{"stream_name":"stdout","time":85.78034852,"data":"\n"}
+,{"stream_name":"stderr","time":88.098968497,"data":"/usr/local/lib/python3.13/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":88.09900372,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":88.2660201,"data":"/usr/local/lib/python3.13/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":88.266043118,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":89.036531067,"data":"[NbConvertApp] Converting notebook __notebook__.ipynb to notebook\n"}
+,{"stream_name":"stderr","time":89.108724538,"data":"[NbConvertApp] Writing 11148 bytes to __notebook__.ipynb\n"}
+,{"stream_name":"stderr","time":91.608820734,"data":"[NbConvertApp] Converting notebook __notebook__.ipynb to html\n"}
+,{"stream_name":"stderr","time":92.106988959,"data":"[NbConvertApp] Writing 286113 bytes to __results__.html\n"}
+]

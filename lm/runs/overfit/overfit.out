@@ -1,0 +1,39 @@
+W1023 17:08:59.625000 20948 .venv/lib/python3.12/site-packages/torch/distributed/elastic/multiprocessing/redirects.py:35] NOTE: Redirects are currently not supported in MacOs.
+Loading weights:   0%|          | 0/311 [00:00<?, ?it/s]Loading weights: 100%|██████████| 311/311 [00:00<00:00, 6236.87it/s]
+6 train, 6 held-out; vocab in 176, out 174; 597M parameters on mps
+loaded in 2s
+step 1 epoch 1 train loss 5.694 3s
+step 2 epoch 1 train loss 5.513 4s
+step 3 epoch 2 train loss 4.400 6s
+step 10 epoch 5 train loss 3.588 16s
+step 20 epoch 10 train loss 1.797 31s
+step 30 epoch 15 train loss 1.821 46s
+{"step": 32, "epoch": 16, "seconds": 49, "train_loss": 1.2749632596969604, "device_gb": 7.52, "heldout": {"loss": 1.5309351740176218, "by_class": {"column": 1.4607034360942994, "component": 1.0351098996276658, "lib relation": 2.4655446711441744, "read:label": 2.167372381547466, "read:rel": 2.8507205634243378, "structure": 0.9745283394063557}, "by_length": {"len<200": 1.2543619724968882, "len<600": 1.6291536408619276}, "pointer_accuracy": 0.46261682242990654}}
+step 40 epoch 20 train loss 1.411 61s
+step 50 epoch 25 train loss 1.040 76s
+step 60 epoch 30 train loss 0.520 90s
+{"step": 66, "epoch": 33, "seconds": 99, "train_loss": 0.5583410859107971, "device_gb": 7.52, "heldout": {"loss": 0.3441585088312103, "by_class": {"column": 0.2822803440753492, "component": 0.24472659279017533, "lib relation": 0.1142044926399372, "read:label": 1.0795449882973074, "read:rel": 0.6803675740477555, "structure": 0.08988365565318558}, "by_length": {"len<200": 0.2182518148590557, "len<600": 0.3888713024533123}, "pointer_accuracy": 0.780373831775701}}
+step 70 epoch 35 train loss 0.688 105s
+step 80 epoch 40 train loss 0.229 119s
+step 90 epoch 45 train loss 0.041 134s
+{"step": 99, "epoch": 50, "seconds": 148, "train_loss": 0.029089711606502533, "device_gb": 7.52, "heldout": {"loss": 0.12315343469667264, "by_class": {"column": 0.013279148690732543, "component": 0.27052606313181493, "lib relation": 0.043874777438096986, "read:label": 0.43798892010866763, "read:rel": 0.28191313890808906, "structure": 0.05017662234126851}, "by_length": {"len<200": 0.015762650386083488, "len<600": 0.1612907254034495}, "pointer_accuracy": 0.9345794392523364}}
+step 100 epoch 50 train loss 0.206 149s
+{"step": 104, "epoch": 52, "seconds": 156, "train_loss": 0.12706589698791504, "device_gb": 7.52, "heldout": {"loss": 0.0891172730939855, "by_class": {"column": 0.04796693239995695, "component": 0.3359046599166959, "lib relation": 0.022571577055576043, "read:label": 0.2065191616655528, "read:rel": 0.17954876550307153, "structure": 0.04376217158255293}, "by_length": {"len<200": 0.025597013683024354, "len<600": 0.1116749893156324}, "pointer_accuracy": 0.9532710280373832}}
+      164.73 real        14.96 user        13.67 sys
+          1136525312  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              194951  page reclaims
+              103861  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                  26  messages sent
+                  74  messages received
+                   1  signals received
+                9070  voluntary context switches
+              259898  involuntary context switches
+            19227780  instructions retired
+            12192485  cycles elapsed
+             1491280  peak memory footprint

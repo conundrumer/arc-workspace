@@ -1,0 +1,138 @@
+# Program language model: working notes
+
+This directory holds the code, the run records and the development data of the experiments on the program language model (LM) and its feature encoder. No ticket covers them. The exports, the venv, the Kaggle kernels and the weights are under `work/lm/` and `work/tables/`, which git ignores. The encoder's design is in [feature-encoder.md](../docs/feature-encoder.md). Read that design in full before you propose encoder work. It settles much that can look open, and its Open section lists what is not settled.
+
+## Purpose
+
+The LM writes arclog programs token by token under the engine's token mask, and the engine verifies each program on the train pairs. The LM alone never sees the task, so it can only learn which programs are plausible, and it solves almost no tasks. The encoder is meant to give it the tables that each clause computes. The LM experiments measure three things:
+- whether the corpus programs teach the language, by held-out loss for each token class;
+- whether the pointer reads work, by pointer accuracy;
+- the smallest base model that works.
+
+## Practice
+
+- Iteration speed comes before GPU cost. Experiments run on a rented GPU with SSH, where a run starts in seconds and a fault shows at once. Kaggle is for what must run on the submission hardware: decode throughput, memory under the 4-L4 layout and the submission itself. The Mac runs code checks, on its CPU.
+- Before a command that is slow or loads a machine the user shares, tell the user what it runs, how long it takes and what it loads. Run it under `/usr/bin/time -l`, and compare the measured time and memory with the estimate. Estimates so far have been low: the 135M run on the Mac peaked at 14.6 GB of driver-allocated memory against an estimate of 7–8 GB, and its steps took 0.82 s against an estimate of 0.6 s, because the first batches of a run are the shortest.
+- Keep each experiment inside its budget. The rented GPU has a cap of $100 until the deadline, and bills while idle, so the user stops the instance when a batch of runs ends. Kaggle runs go through push.py.
+- Run whatever can fail on something free first: the Mac's CPU for a code check, Kaggle's CPU tier before a Kaggle GPU run.
+- Store data as arrays, not JSON, wherever a reader reads it more than once.
+- Keep outputs under `lm/runs/` or `work/`, not `/tmp`, so that a later check needs no rerun.
+- Before an experiment, write down its settings, its expected time and memory, and what its log must show. Have the change reviewed by an independent agent before the run; reviews have found every fault so far, among them pure bf16 weights, a missing start token and a sibling exclusion that excluded nothing.
+
+## Data
+
+- [export.py](export.py) gets every case's token stream from the `arclog` package (`arclog.corpus_streams`) in one call, and writes `work/lm/data/cases.npz` and `work/lm/data/vocab.json`, which holds each token's name and kind. Its docstring gives the layout. `cases.npz` holds the engine's mask at each model-written step, as a table of distinct masks and an index into it for each step.
+    - A stream is dropped when its model reads a relation or label before the engine declares it, or when the engine gives it no masks; the stream report gives the reason. Identical streams of one task are kept once.
+    - A task is marked held out when its id is in `work/lm/data/evaluation.ids`, the public evaluation set.
+- Before you export, rebuild the CLI and the package, or they read a vocabulary that differs from the engine's:
+    - `cargo build --profile tool -p arclog-cli` in `engine/`;
+    - `VIRTUAL_ENV=work/lm/.venv CARGO_TARGET_DIR=work/lm/target uvx maturin develop --release` in `engine/arclog-py`, with absolute paths.
+- Cases are the cross product of a solver's choice points, so a few tasks have thousands of cases and most have one to four. Training draws one case per task each epoch, so each task has the same weight.
+- `train.py` splits the tasks three ways, with a fixed seed, and asserts that the sets share no task and no family:
+    - **training**: the tasks not held out, less the in-distribution set;
+    - **in-distribution**: `--indist` tasks drawn at random from the training tasks, whole families together. It selects the checkpoint.
+    - **evaluation**: the held-out tasks, less any whose family has a task in the other two sets. A family is a solver and the siblings whose `@representative` header names it, read from `programs/solvers/*.dl`.
+    - On the current data: 766 training tasks, 80 in-distribution, 92 evaluation, with 1818057f dropped as the representative of the training task 7e02026e.
+- The evaluation programs are about twice as long as the training programs, and the evaluation tasks are harder. Evaluation loss therefore mixes generalization with the shift to harder tasks; the in-distribution loss separates the two. Use both to compare runs and to see a trend, and neither as an absolute measure.
+
+## Training
+
+- [train.py](train.py) fine-tunes a pretrained decoder. Its docstring gives the model.
+    - Relations and labels take a random identifier for each training example. A read is predicted as a class, then by a pointer over the declarations made so far.
+    - The loss, in training and in evaluation, counts only the choices the solver's decode makes: each model-written step at which the engine's mask leaves more than one option. At such a step the class distribution is over the out tokens the mask admits, and the pointer distribution is over the admitted declarations that are the latest of their identifier. A step with one option adds nothing to the loss, the count or the stats.
+    - Vocabulary embeddings start from the mean of the base model's embeddings of each token's name.
+    - Weights and optimizer state are fp32. The forward pass runs under bf16 autocast on CUDA. `--pure-bf16` gives the setup that size runs 1–3 used: bf16 weights and optimizer state, with no fp32 copy.
+    - Each evaluation logs the in-distribution loss under `indist` and the evaluation loss under `heldout`, each with its loss by token class and pointer accuracy, to `--out/log.jsonl`. `--eval-train` adds the training programs under `train`. The checkpoint of lowest in-distribution loss is saved to `--out` as `model.pt` and `model.json`.
+    - A program longer than `--budget` forms a batch alone, so `--max-len` bounds the peak memory, and `--budget` does not. The longest stream is 3,540 steps; `--max-len 2048` truncates about 4% of the training cases and 2 of the 93 evaluation programs.
+- Code check: `--max-steps 2 --train-limit 8 --eval-limit 4 --eval-train --budget 1024 --max-len 1024 --device cpu`. It runs the split's assertions on the full data.
+- The Mac's GPU (`--device mps`) compiles a kernel for each new tensor shape, so the encoder's varying table shapes make it unusable for runs with `--tables`: the first pretrain step took 175 s. Dev checks stay on the CPU. Without the encoder, SmolLM2-135M in fp32 at `--budget 1024 --max-len 2048` ran at 0.82 s per step, about 5 minutes an epoch, with 14.6 GB of driver-allocated memory at peak.
+
+## Rented GPU
+
+- The provider is RunPod, and the session creates the pod through the RunPod MCP tools: one A100 SXM 80GB on the secure cloud, from the official template `runpod-torch-v280` (torch 2.8, Python 3.12), with `22/tcp` as its only port, `startSsh`, and a CUDA floor of 12.8. The account's registered SSH key must be the user's full public key; the pod reads it only at container start. A pod bills from creation until it is stopped or terminated, and its SSH port changes on each restart, so read it from the pod.
+- Setup on the pod, under `/workspace/arc/`, which mirrors the repo so `train.py`'s default paths hold: rsync `lm/train.py`, `work/lm/data/` (2 MB), `data/tasks/`, which the table loader reads, and `programs/solvers/*.dl` (6 MB), which the family split reads, with `rsync -rltz`, since `/workspace` refuses `chown`; `pip install --break-system-packages transformers==5.20.2 numpy==2.5.4` onto the image's torch; set `HF_HOME=/workspace/hf-cache`; run the 2-step code check with `--device cuda`; run each experiment in its own tmux session with its output redirected to `runs/<name>.out`, and rsync each run's directory back under `runs/`. The tables under `../work/tables/` (670 MB) go up when the encoder needs them.
+- Measured speed on the A100: the 135M baseline at `--budget 1024 --max-len 2048` runs 0.14 s a step and about 65 s an epoch of 460 steps, with 4.1 GB of GPU memory and 36% utilization, so three runs at once share the GPU well, at about 0.26 s a step each. It reaches its in-distribution plateau in 6 minutes.
+- Runs to do there, in order:
+    1. Done: the baseline, SmolLM2-135M, fp32, lr 1e-4, `--budget 1024 --max-len 2048`, in `runs/base-135m-a100/`. It is the comparison point for every encoder run.
+    2. Done: the size question, as the lr sweep in `runs/sweep-*/`. Its result is under Results.
+    3. The comparison, on the paired exports at master afc44b43 (`work/lm/data-full-afc44b43`, `work/tables/full-afc44b43`), whose export carries the column-level provenance the masked loss reads, each run quoted first and the smallest first: the code check with `--device cuda`; the baseline again on this data, SmolLM2-135M at lr 1e-4 for 25 minutes, since the case set changed (the size and lr questions keep the old data's answers); `pretrain.py` on the masked table loss; then `train.py` with the encoder, from that pretrained encoder and from scratch, against `--enc-k 0 --tables` on the same cases. One run of each; a change between runs gets no run of its own.
+- `/workspace` is the network volume `arclm-data` (id `2g4tkiq9qt`, US-KS-2), which persists across pods, with the venv at `/workspace/venv`. Each batch of runs gets a pod on that volume: the stopped pod is started where its host's GPU is free, and otherwise a fresh pod on the same volume takes its place with no copy, and the old pod is terminated. The runpod-worker session holds the current pod's name and id.
+- A pod run sets `OMP_NUM_THREADS` and `MKL_NUM_THREADS` to the pod's vCPU count and runs Python with `-u` under a time bound. Torch otherwise takes 64 threads on the host's 128 cores for a 16-vCPU pod, and the encoder's host-bound step takes twice as long (5 to 6 s against 2 to 3 s a step on the full afc44b43 data at the GPU shape).
+
+## Kaggle
+
+- [push.py](../work/budget/push.py) pushes every kernel. It caps a run at 10 minutes, charges a GPU run at its timeout in `../work/budget/ledger.jsonl`, and refuses past 15 GPU hours in 7 days. CPU runs are charged 0.
+- The 4× L4 shape is given only to a kernel attached to the competition (`arc-prize-2026-arc-agi-2`) with internet off. A kernel that is not attached gets 2× T4.
+- Kernel directories under `work/lm/kaggle/`:
+    - `ds`: the dataset `conundrumer/arclm-data`, which holds `cases.npz`, `vocab.json` and `train.py`. Copy the current files in, then `kaggle datasets version -p work/lm/kaggle/ds -m "<message>"`. Its `train.py` predates the split and the fp32 fixes.
+    - `smol`: the dataset `conundrumer/smollm2-base`, which holds SmolLM2-135M and 360M from Hugging Face.
+    - `gpu-run`: 4× L4. It stops before training unless it finds 4 L4s, and runs one model per GPU.
+    - `cpu-check`: the free CPU tier, with the GPU run's mounts and internet off.
+- Qwen3 weights mount from Kaggle Models at `/kaggle/input/models/qwen-lm/qwen-3/transformers/<size>/1`.
+- Kaggle has Python 3.13, torch 2.11 and transformers 5.16. On the CPU tier, imports take about 37 s.
+- The 4× L4 host has a 24-core Xeon at 2.2 GHz (Cascade Lake, AVX-512), 46 usable threads and 198 GB. The CPU tier has 2 cores of a 2.2 GHz Xeon (Broadwell) and 32 GB. One thread runs at about 0.4× the Mac's speed on the L4 host and 0.3× on the CPU tier; the L4 host's threads together match the Mac's throughput, and the CPU tier's are 15× below it. The `cpu-info` and `gpu-info` kernels under `work/lm/kaggle/` are the probe.
+- Before a GPU run, run the same code with the same mounts on the CPU tier, with the smallest model doing a few steps, and stream each subprocess's output line by line with timestamps. A kernel shows a subprocess's output only when that subprocess ends unless it streams.
+- A 10-minute kernel costs 15–20 minutes around it: the dataset version, the push, scheduling and the log download.
+
+## Results
+
+Every result below, and the logs under `runs/`, were taken over the whole vocabulary and every earlier declaration, and count every model-written step. They are not comparable with a loss that `train.py` logs now.
+
+Size runs 2 and 3 ran on 4× L4, 7.5 minutes of training each, under `--pure-bf16`, before the split: their held-out set was the evaluation tasks with one family leak. The logs are in `runs/size-run-2/` and `runs/size-run-3/`. Losses are nats per model-written token on the held-out concept streams. Later runs use fp32 weights and the three-way split, and are not compared with these.
+
+- Size run 3, every case:
+    - Qwen3-0.6B: 0.674 at epoch 5, pointer accuracy 0.74, then rising;
+    - SmolLM2-360M: 0.944, pointer accuracy 0.59, still falling slowly;
+    - SmolLM2-135M: 1.031, pointer accuracy 0.56, still falling slowly.
+- Size run 3, Qwen3-0.6B on concept cases alone: 0.735 at epoch 4, after which held-out loss rose to 0.98 while training loss fell to 0.12.
+- Size run 2, concept cases alone: Qwen3-0.6B 0.737 and Qwen3-1.7B 0.73.
+- The hard classes at 0.6B are components (2.2), lib relations (1.9) and relation reads (2.1). Columns, structure and label reads are below 0.6.
+- The fp32 baseline on the Mac (`runs/base-135m/`) was stopped after one epoch, 4.4 minutes: in-distribution loss 1.16, evaluation loss 1.24, pointer accuracy 0.50 and 0.44.
+- The fp32 baseline on the A100 (`runs/base-135m-a100/`, evaluated each minute): the in-distribution loss fell to 0.767 at epoch 7, with evaluation loss 0.861 and pointer accuracy 0.72 and 0.63, then rose each epoch, to 0.823 at epoch 10, while the training loss fell to 0.4. The checkpoint is epoch 7's. Its hard classes are proposer (2.75), lib relation (2.38), component (2.27) and relation reads (2.24); columns, structure and label reads are below 0.7.
+- The lr sweep on the A100 (`runs/sweep-*/`), three runs at once on the one GPU, each to its plateau, one seed each. Best in-distribution loss, then evaluation loss, at the best epoch:
+    - SmolLM2-135M: lr 1e-4 0.767 and 0.861 (epoch 7, the baseline above); lr 3e-4 0.741 and 0.852 (epoch 7); lr 1e-3 0.741 and 0.844 (epoch 7).
+    - SmolLM2-360M: lr 1e-4 0.756 and 0.858 (epoch 5); lr 3e-4 0.745 and 0.825 (epoch 5); lr 1e-3 0.765 and 0.869 (epoch 4).
+    - Qwen3-0.6B, fp32, lr 1e-4: 0.654 and 0.730 (epoch 6), pointer accuracy 0.78 and 0.70. Its hard classes are proposer (2.60), component (2.27), lib relation (2.13) and relation reads (1.85).
+    - Every run then overfits: in-distribution loss rises while training loss falls to 0.16–0.55, and the runs at lr 3e-4 and 1e-3 degrade fastest after their best epoch.
+    - The size question, answered for one seed: the six SmolLM2 runs span 0.741–0.767 in-distribution, so 360M gains nothing over 135M, while Qwen3-0.6B is 0.09 nats better on both sets. Of size run 3's gap of 0.36 between SmolLM2-135M and Qwen3-0.6B, the recipe accounts for about three quarters and the family for the rest. The anchor for encoder runs is Qwen3-0.6B at 1e-4, with SmolLM2-135M at 3e-4 as the cheap stand-in, at a third of the time a step.
+- The baseline on the 7ae65ed2 data (`runs/base2-135m-1e-4/`, SmolLM2-135M, fp32, lr 1e-4, `--budget 1024 --max-len 2048`, 25 minutes, evaluated each minute): 758 training tasks with 5,415 cases, 79 in-distribution and 84 evaluation held-out tasks. Best in-distribution loss 0.691 at epoch 5 (step 1,594, 281 s), with evaluation loss 0.699 and pointer accuracy 0.75 and 0.73; then it overfits, to 1.18 in-distribution at epoch 25 while the training loss falls to 0.06. About 340 steps an epoch at 0.165 s a step, 3.7 GB. The comparison then moved to the afc44b43 data, where the baseline runs again with `--enc-k 0 --tables` on the encoder runs' case set; these numbers are not comparable with the old data's or with afc44b43's.
+- The baseline on the afc44b43 data (`runs/base3-135m-1e-4-k0/`, the same recipe with `--tables work/tables/full-afc44b43 --enc-k 0`, so on the encoder runs' case set): 758 training tasks with 5,415 cases, 79 in-distribution and 84 evaluation held-out tasks; no case left out for want of tables. Best in-distribution loss 0.684 at epoch 5 (step 1,584, 209 s), with evaluation loss 0.679 and pointer accuracy 0.75 and 0.72; then it overfits, to 1.20 in-distribution at epoch 31 while the training loss falls to 0.03–0.13. 0.129 s a step, 3.6 GB. It is the comparison point for the encoder runs on this data.
+- The encoder's pretraining on the afc44b43 data (`runs/pretrain-full-3/`, the default shape of 2 layers, width 32, 4 heads, feed-forward 2, K 4, 2.83M parameters; 150 steps of 4 programs under `--step-rows 450000`, `--enc-checkpoint`, 16 threads): 1.2–1.9 s a step, 28.5 GB; the preflight over 6,362 programs 60 s, the load 142 s, an evaluation of 64 programs 68 s. Held-out masked loss 5.60 at step 75 and 4.78 at step 150 (program part 2.48 over 656,850 fields, prior part 2.31 over 12,794), still falling. By type at step 150, the program part sits near its chance floor for Axis, Dir, DiagDir and Sense (0.69, 1.39, 1.39, 0.69), Color 1.02 at accuracy 0.38, Box 3.68 at accuracy 0.000, Number 4.32, and by depth 2.10, 1.73, 3.11 and 2.50 at depths 1, 2, 3 and 4+. The GPU shape (4 layers, width 64, 8 heads, feed-forward 4; 19.08M parameters) ran 10 steps as a smoke test at 2.1–3.1 s a step and 24.1 GB, held-out 8.11 (`runs/pretrain-full-2/`).
+- The profile of that pretraining's step (`runs/profile-full-1/`, step 3 of the same flags): wall 2.20 s, of which CUDA time 0.74 s (33%), so the GPU idles two thirds of the step and the step is host-bound: 61,872 kernel launches (211 ms in `cudaLaunchKernel` alone) over 129 levels and about 111 batches (about one batch a level, since a level holds at most one table per program), about 560 launches a batch, with 29,672 tensor allocations, 4,840 concatenations and 16,306 copies on the host side. Of the CUDA time, attention is 43% (memory-efficient attention forward 92 ms, backward 224 ms), elementwise and copies 48%, matmuls 9%. All attention together is 14% of the wall, so attention over the grid tables is not where the step goes. An op count by phase puts the launches in the row features and equality codes (built once per level, about 110 a batch), the two Blocks and their checkpoint recompute (about 150), the evidence keys' pad and stack per program (about 45), the pooling (about 40) and the masked heads (about 150 per masked table); the cheapest cuts are building the row features once per encoder call, one gathered evidence-key tensor, and skipping the checkpoint on small batches, together about 0.5 s of the 1.6 s step. `--programs` binds before `--step-rows` (step 3 cost 52k rows against 450k), so more programs a step would cut the host time per program, if `BATCH_COST` rises with it.
+
+## Encoder
+
+- [encoder.py](encoder.py) holds the feature encoder of [feature-encoder.md](../docs/feature-encoder.md).
+- `train.py --tables <dir>` reads a tables export and inserts K feature vectors per table after the token whose step gives that table. `--enc-k 0` with `--tables` runs the baseline on the same case set.
+- The encoder flags are `--enc-k`, `--enc-layers`, `--enc-width`, `--enc-heads`, `--enc-mlp`, `--enc-gram`, `--enc-budget` and `--enc-max-rows`.
+- `--enc-checkpoint`, in `train.py` and `pretrain.py`, recomputes the activations of each encoder layer in the backward pass instead of keeping them, which saves device memory and costs time. It is on by default with cuda and off otherwise. A step of full-data programs fits device memory with it alone, since without it each table keeps its evidence rows' keys and values at every layer for the backward pass.
+- `pretrain.py --step-rows <n>` caps a step's programs by their summed cost in rows (`step_cost`), at most `--programs` of them and at least one.
+- `train.py --enc-group <n>` encodes the programs of a batch n at a time, one encoder call per group, and 0 encodes them all in one call. The batches themselves do not change. The default is 0. With n above 0, the encoder's identifiers are drawn in another order than with 0, from the same distribution.
+- `pretrain.py --autocast` runs the encoder under bf16 autocast with fp32 weights, as `train.py` does with cuda. It is on by default with cuda and off otherwise.
+- `--enc-equality`, in `train.py` and `pretrain.py`, chooses how the equality term reaches the attention scores of a table's rows.
+    - `codes`, the default, adds each field's code to the queries and the keys: a one-hot for a Color, an Example, an orientation constant and each margin of a Box, and a random unit vector for a Number and an Ident.
+    - `random` adds a random sign code of 32 places for each value, drawn for each decode as the identifiers are. An equal pair of values scores the learned weight, and an unequal pair about the weight over the square root of 32, of either sign.
+    - `flex` adds the learned weight where two rows' values are equal, exactly and with no extra width, through `flex_attention`. It trains on cuda alone, since `flex_attention` has no backward pass on the CPU.
+- With `--aux-masked`, the backward pass of the masked table loss runs before the clean encoder pass, one program group at a time, so that its graph is freed first.
+- The encoder runs one level at a time, the t-th table of every program of the call, and cuts a level's tables into batches by `encoder.batches`. `BATCH_COST` in [encoder.py](encoder.py) sets how much padding one fewer batch is worth.
+- At each layer, a table's rows attend to the rows of the earlier evidence tables (`ex_input`, `ex_output`) after that layer, as well as to the earlier tables' pooled vectors.
+- An entry the encoder cannot see, or one over `--enc-budget`, enters its table as one marker row. A table enters as unseen only when its projection search stopped, it faults, every entry is unseen, or it holds more rows than `--enc-max-rows`, summed over its entries. That flag is a guard on device memory and on step time, 4000 by default; the evidence tables are exempt. A table whose entries hold several assignments enters as one table per assignment, and the flag applies to each. The unseen marker is a fixed vector, not learned.
+- [pretrain.py](pretrain.py) trains the encoder alone on the masked table loss and saves it for `train.py --encoder-init <file>`. `train.py --aux-masked <weight>` adds the masked table loss beside the next-token loss. `--eval-limit` sets how many held-out programs the evaluation uses, a sample drawn once with `--seed`, and 0 takes all of them. `--mask-frac` and `--mask-cap` set the fields it hides per table. `--mask-kind` sets each program's step kind: a program step hides computed fields, an `output` step hides the computed fields of `ex_output` alone, a prior step hides inferrable fields, and `alternate`, the default, takes the three by turns. `--prior-weight` weighs the prior part of the loss beside its program part. The Training section of the design gives the labels and the rule. The loader reads the labels and sources from the export's `flows.parquet` and the `depth`, `keys`, `output_position` and `output_color` columns of `tables.parquet`. For an export without them, it takes the table-level rule, and its stats line says which it took. A cache build stops with a DataFault where a flow, a key or an output column names a column its table does not hold. Before the model loads, `train.py` and `pretrain.py` run `encoder.preflight`, the labels, the sources and one mask draw per step kind on every program, and stop at the first program it cannot mask; `--no-preflight` skips it. The pretrain log gives the loss of each part, and the loss and the accuracy by type per part. It counts a Box or Position field right when all four margins are, and gives `edge_accuracy`, the fraction of single margins right, beside it.
+- [encoder_check.py](encoder_check.py) is the symmetry check of the encoder and the masked loss heads, and the check of the field labels, the masks and the loss parts; the checks of the flex equality mode run only with `--flex`. [insertion_check.py](insertion_check.py) is the sequence-insertion check. [regression_check.py](regression_check.py) checks that `train.py` without `--tables` trains as a reference copy does. [checks.sh](checks.sh) runs the correctness checks at once, with a portability check of the files that go to the pod, and gives PASS or FAIL for each; run it before a GPU run.
+- `../work/tables/dev/` and `data-dev/` are the development exports of 10 tasks: 00576224 007bbfb7 0520fde7 1b59e163 2b9ef948 40f6cd08 543a7ed5 681b3aeb 7d18a6fb 90347967. A run on them needs `--indist 2`.
+- The evidence tables `ex_input` and `ex_output` are built from the task JSON until the export gives them (request 20-8).
+
+## Known faults in the method
+
+- `--eval-limit` and `--train-limit` take the first tasks in file order, not a random sample. They are for code checks.
+
+## Tables for the encoder
+
+- `arclog.corpus_tables` replays each case's stream and gives the tables of each decode as arrays. [export.py](../engine/arclog-py/tables_export.py) writes them as an index (Parquet) and int32 value files. Its docstring gives the layout. Each table's `token` column is its position in the case's stream, which is how a table joins its stream.
+- `../work/tables/2026-10-23-full/` holds the concept cases of 956 tasks: 21,165 relation tables. The 20-minute run wrote 10 GB of JSON. `../work/tables/2026-10-23/` holds a 10-task sample. Both directories have a superseded layout.
+    - Tables per program: median 19, max 110.
+    - Rows per table, summed over its examples and entries: median 48, p90 1,420, p99 13,453.
+    - 22% of values are empty relations.
+    - `Box` makes up 31% of the columns, `Color` 14%, `Number` 11% and `Unit` 10%.
+- These tables precede 5f77b431, which gives the rows of a `DET`'s own relation at each of its values, so 754 of them carry a fault there. Rerun the corpus with export.py.
+- An instance with no key clause gives its relations a `Unit` column that holds one value. The LM side drops that column when it reads the tables.

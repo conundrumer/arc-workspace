@@ -1,0 +1,68 @@
+0 entries over --enc-budget 10000; unseen tables {}, unseen entries {}
+Loading weights:   0%|          | 0/272 [00:00<?, ?it/s]Loading weights: 100%|██████████| 272/272 [00:00<00:00, 6200.58it/s]
+22 training programs, 4 held-out; 481 training tables; encoder 19.08M parameters on cuda; loaded in 9s
+Traceback (most recent call last):
+  File "/workspace/arc/work/lm/pretrain.py", line 189, in <module>
+    main()
+  File "/workspace/arc/work/lm/pretrain.py", line 153, in main
+    loss, records = enc.masked_loss([program(c, gen) for c in random.sample(train, min(a.programs, len(train)))],
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/arc/work/lm/encoder.py", line 1333, in masked_loss
+    _, recs = self.encode_programs(work, gen, [masks[p] for p in ch], detail)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/arc/work/lm/encoder.py", line 1146, in encode_programs
+    x = checkpoint(self.block_call, blk, Ms, x, row_mask, prev, eq, kvs, use_reentrant=False)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/_compile.py", line 53, in inner
+    return disable_fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/_dynamo/eval_frame.py", line 929, in _fn
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/utils/checkpoint.py", line 495, in checkpoint
+    ret = function(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/arc/work/lm/encoder.py", line 1214, in block_call
+    return blk(x, row_mask, prev, eq, self.evidence_context(kvs))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1773, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1784, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/arc/work/lm/encoder.py", line 691, in forward
+    x = x + self.o(attention(self.q(h), k, v, self.heads, extra, key_mask, flex))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/arc/work/lm/encoder.py", line 611, in attention
+    o = flex_attention(q.device.type)(split(q, nq) / math.sqrt(NPOS * dh), split(k, nk), vh,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/_dynamo/eval_frame.py", line 736, in compile_wrapper
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/attention/flex_attention.py", line 1401, in flex_attention
+    out, lse = flex_attention_hop(
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/_higher_order_ops/flex_attention.py", line 97, in __call__
+    return super().__call__(
+           ^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/_ops.py", line 524, in __call__
+    return wrapper()
+           ^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/_ops.py", line 520, in wrapper
+    return self.dispatch(
+           ^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/_ops.py", line 508, in dispatch
+    return kernel(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/_higher_order_ops/flex_attention.py", line 776, in flex_attention_autograd
+    fw_graph, bw_graph = create_fw_bw_graph(
+                         ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/_higher_order_ops/flex_attention.py", line 532, in create_fw_bw_graph
+    dummy_aot_config = AOTConfig(
+  File "/usr/local/lib/python3.12/dist-packages/torch/_higher_order_ops/flex_attention.py", line 542, in torch_dynamo_resume_in_create_fw_bw_graph_at_532
+    with suspend_functionalization(), disable_functional_mode():
+  File "/usr/local/lib/python3.12/dist-packages/torch/_higher_order_ops/flex_attention.py", line 571, in torch_dynamo_resume_in_create_fw_bw_graph_at_542
+    assert all(
+           ^^^^
+AssertionError
