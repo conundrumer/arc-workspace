@@ -160,10 +160,15 @@ def fold(events: Iterable[Event]) -> dict[str, Attempt]:
         if old != event:
             raise ValueError('conflicting attempt source identity')
     ordered = tuple(sorted(sources.values(), key=lambda e: (e.at, e.source)))
-    ids = {e.agent for e in ordered} | {e.recipient for e in ordered if isinstance(e, Message)}
+    by_agent: dict[str, list[Event]] = {}
+    to_agent: dict[str, list[Message]] = {}
+    for e in ordered:
+        by_agent.setdefault(e.agent, []).append(e)
+        if isinstance(e, Message):
+            to_agent.setdefault(e.recipient, []).append(e)
     out = {}
-    for agent in sorted(ids):
-        own = tuple(e for e in ordered if e.agent == agent)
+    for agent in sorted(by_agent.keys() | to_agent.keys()):
+        own = tuple(by_agent.get(agent, ()))
         launches = [e for e in own if isinstance(e, Launched)]
         if launches and any((e.seat, e.parent, e.transport) != (
                 launches[0].seat, launches[0].parent, launches[0].transport) for e in launches):
@@ -171,11 +176,9 @@ def fold(events: Iterable[Event]) -> dict[str, Attempt]:
         reservations = {e.reservation for e in own if isinstance(e, (Reserved, Accepted))}
         resolved = {e.reservation for e in own if isinstance(e, (TurnEnded, Refused))}
         receipts = tuple(e for e in own if isinstance(e, Received))
-        incoming = tuple(e for e in ordered if isinstance(e, Message) and e.recipient == agent
-                         and e.outcome is Outcome.ACCEPTED and not e.handback)
+        inbound = tuple(e for e in to_agent.get(agent, ()) if not e.handback)
+        incoming = tuple(e for e in inbound if e.outcome is Outcome.ACCEPTED)
         delivered = {e.delivery for e in receipts}
-        inbound = tuple(e for e in ordered if isinstance(e, Message) and e.recipient == agent
-                        and not e.handback)
         coverage = [e for e in own if isinstance(e, Coverage)]
         transitions = [e for e in own if isinstance(e, (Launched, Resumed, Stopped, HandedBack))]
         out[agent] = Attempt(agent, launches[0] if launches else None, own,

@@ -26,7 +26,7 @@ from operations.liveness import (
     AttemptFacts, CodexEnd, CodexRead, Written, attempt_state, unknown_text)
 from operations.monitor import Watched
 from operations.plan import unknown_line
-from operations.roles import Role, analyst_of, subjects
+from operations.roles import Described, Role, analyst_of, subjects
 from operations.state import (
     Agent,
     AttemptState,
@@ -77,12 +77,12 @@ class EndsRead:
     unknown: Mapping[str, str] = field(default_factory=dict)
 
 
-def ticket_numbers(a: Agent) -> list[str]:
-    """The ticket numbers of an agent's subject, with an analyst's purpose removed."""
-    if a.role is Role.TICKET_ANALYST:
-        parsed = analyst_of(a.subject)
+def ticket_numbers(seat: Described) -> list[str]:
+    """The ticket numbers of a seat's subject, with an analyst's purpose removed."""
+    if seat.role is Role.TICKET_ANALYST:
+        parsed = analyst_of(seat.subject)
         return subjects(parsed[1]) if parsed is not None else []
-    return subjects(a.subject)
+    return subjects(seat.subject)
 
 
 def closes_of(tickets: Mapping[str, Ticket]) -> dict[str, float]:
@@ -91,10 +91,11 @@ def closes_of(tickets: Mapping[str, Ticket]) -> dict[str, float]:
             for line in ticket.log if line.status is Status.CLOSED}
 
 
-def outlived(a: Agent, closes: Mapping[str, float]) -> bool:
-    """Whether each ticket of an agent's subject closed after its launch."""
-    numbers = ticket_numbers(a)
-    return bool(numbers) and all(n in closes and closes[n] > a.launched for n in numbers)
+def outlived(seat: Described, launched: float, closes: Mapping[str, float]) -> bool:
+    """Whether each ticket of the subject of `seat` closed after the launch
+    at `launched`."""
+    numbers = ticket_numbers(seat)
+    return bool(numbers) and all(n in closes and closes[n] > launched for n in numbers)
 
 
 def ends_read(agents: Sequence[Agent], listing: list[Listed],
@@ -149,8 +150,8 @@ class AttemptsRead:
 
 def projection(ids: Iterable[str]) -> dict[str, Attempt]:
     """The record of each attempt of `ids`, with the attempts launched under
-    them and the endpoints of their messages, by agent id: the one
-    projection of the lifecycle that every reader of an attempt shares."""
+    them and the messages to them, by agent id: the one projection of the
+    lifecycle that every reader of an attempt shares."""
     return fold(Record().events(ids))
 
 
@@ -239,7 +240,7 @@ class StateReads:
         return AttemptFacts(
             turn, lambda rollout, unknown: self.written(aid, since, rollout, unknown),
             descendants=descendants, working=aid in self.live,
-            outlived=a is not None and outlived(a, self.closes),
+            outlived=a is not None and outlived(Described(a.role, a.subject), a.launched, self.closes),
             limited=a is not None and a.waits is Waits.LIMITED)
 
     def written(self, aid: str, since: float | None, rollout: Path | None, unknown: bool) -> Written:

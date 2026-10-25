@@ -10,14 +10,19 @@ import fcntl
 import hashlib
 import json
 import sqlite3
+import time
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from engine import checkout
 from operations import attempts as a
 from operations.roles import Described, Role
+
+if TYPE_CHECKING:
+    from agent_launches import Launch
 
 
 SEAT_BUSY = mctx('work call refused: seat {role} {subject} is busy; no thread or turn accepted; wait for its owner, then retry')
@@ -82,10 +87,9 @@ class Record:
                 values = ','.join('(?)' for _ in selected)
                 rows = db.execute(f"""WITH RECURSIVE selected(agent) AS (
                     VALUES {values}
-                    UNION SELECT identities.agent FROM identities JOIN selected ON identities.parent=selected.agent
-                    UNION SELECT events.recipient FROM events JOIN selected ON events.agent=selected.agent WHERE events.recipient IS NOT NULL
-                    UNION SELECT events.agent FROM events JOIN selected ON events.recipient=selected.agent)
-                    SELECT kind, data FROM events WHERE agent IN selected ORDER BY at, source""", selected).fetchall()
+                    UNION SELECT identities.agent FROM identities JOIN selected ON identities.parent=selected.agent)
+                    SELECT kind, data FROM events WHERE agent IN selected OR recipient IN selected
+                    ORDER BY at, source""", selected).fetchall()
         kinds = {kind.__name__: kind for kind in a.EVENTS}
         events = []
         for kind, text in rows:
@@ -99,6 +103,16 @@ class Record:
                 value['outcome'] = a.Outcome(value['outcome'])
             events.append(kinds[kind](**value))
         return tuple(events)
+
+    def started(self) -> float | None:
+        """The time the record began: the earliest `at` of a launch the hook
+        wrote (a `Launched` with a `claude:` source), or None where it holds
+        none. An import writes `Launched` events of other sources only."""
+        if not self.path.exists():
+            return None
+        with sqlite3.connect(f'file:{self.path}?mode=ro', uri=True) as db:
+            row = db.execute("SELECT min(at) FROM events WHERE kind='Launched' AND source GLOB 'claude:*'").fetchone()
+        return row[0]
 
     def acceptance(self, agent: str, reservation: str, at: float, thread: str, turn: str) -> a.Accepted:
         """Publish the immutable acceptance once, retaining its admitted identity."""
@@ -197,13 +211,19 @@ def observe(action) -> None:
         print(f'attempt_record: observational write failed: {exc}', file=sys.stderr)
 
 
-def open_changes(main: Path):
+def read_all_tickets(main: Path):
+    """Each ticket of the tracker of `main`, by number; a ticket file that
+    cannot be read raises."""
     from ticket_reads import read_tickets
-    from ticketing.vocabulary import Kind, Status
     tickets, unread = read_tickets(main / 'tickets')
     if unread:
         raise ValueError('ticket history is unreadable: ' + ', '.join(str(x.path) for x in unread))
-    return tuple(t for t in tickets.values() if t.kind is Kind.CHANGE
+    return tickets
+
+
+def open_changes(main: Path):
+    from ticketing.vocabulary import Kind, Status
+    return tuple(t for t in read_all_tickets(main).values() if t.kind is Kind.CHANGE
                  and t.status is not Status.CLOSED)
 
 
@@ -315,12 +335,52 @@ def import_launcher(record: Record, agent: str, path: Path, home: Path,
     return producer, gaps
 
 
+IMPORT_FAULTS = (OSError, ValueError, KeyError, TypeError)
+"""The faults an import of one attempt's history records on that attempt."""
+
+
+def import_failed(record: Record, agent: str, seat: Described | None, parent: str | None, at: float,
+                  reason: str, change: str | None) -> None:
+    """Record that the import of `agent` failed for `reason`: a launch of it
+    where the record holds none and `seat` is known (the description of the
+    Agent call that launched it gives it where its metadata is unreadable),
+    and an incomplete coverage."""
+    held = any(isinstance(e, a.Launched) and e.agent == agent for e in record.events([agent]))
+    checked = time.time()
+    missing = () if held or seat is None else (a.Launched(source='legacy-missing:' + agent, at=at,
+        agent=agent, seat=seat, parent=parent, agent_type=seat.role.agent_type,
+        transport=a.Transport.CLAUDE),)
+    record.append(*missing, a.Coverage(source=f'coverage:{agent}:{checked}', at=checked, agent=agent,
+        complete=False, reason=reason, producer=True, change=change))
+
+
+def import_signs(record: Record, launch: 'Launch') -> None:
+    """The stops and reports that the entries of `launch` give its agent. A
+    report the record already holds under its source stands, whichever
+    launcher's transcript gave it first."""
+    from agent_reports import Sign
+
+    assert launch.agent is not None
+    held = {e.source for e in record.events([launch.agent]) if isinstance(e, a.HandedBack)}
+    for entry in launch.entries:
+        for who, sign in entry.signs:
+            if who not in (launch.agent, launch.call):
+                continue
+            if sign is Sign.STOPPED:
+                record.append(a.Stopped(source=f'legacy-stop:{launch.agent}:{entry.time}',
+                    at=entry.time, agent=launch.agent, text=''))
+        for report in entry.reports:
+            source = f'legacy-report:{launch.agent}:{report.time}'
+            if source not in held:
+                record.append(a.HandedBack(source=source, at=report.time, agent=launch.agent,
+                    text=report.text))
+
+
 def import_claude(record: Record, agent: str, path: Path, seat: Described,
                   parent: str | None, at: float, home: Path,
                   seen: set[str], preparing_agent: str | None = None,
                   preparing_scratch: Path | None = None, change: str | None = None) -> None:
     from agent_launches import launches
-    from agent_reports import Sign
     from attempt_hook import tool
     from run_reads import agent_type, blocks, read_meta, results_by_call, run_entries
     from transcript_entries import epoch
@@ -341,10 +401,13 @@ def import_claude(record: Record, agent: str, path: Path, seat: Described,
     try:
         entries = list(run_entries(path))
         results = results_by_call(entries)
+        asked: dict[str, str] = {}
         for entry in entries:
             if entry.get('type') != 'assistant' or not entry.get('timestamp'):
                 continue
             for block in blocks(entry, 'tool_use'):
+                if block.get('name') == 'Agent':
+                    asked[block['id']] = str((block.get('input') or {}).get('description', ''))
                 if block.get('name') not in ('SendMessage', 'SubagentHandback', 'TaskStop'):
                     continue
                 result = results.get(block['id'])
@@ -354,43 +417,65 @@ def import_claude(record: Record, agent: str, path: Path, seat: Described,
                         'tool_input': block['input'], 'tool_response': result,
                         '_at': epoch(entry['timestamp'])}, record)
         for launch in launches(path, notes):
-            if launch.agent is None or launch.path is None:
+            if launch.agent is None:
                 notes.append('launch has no readable child identity: ' + launch.call)
                 continue
-            meta = read_meta(launch.path)
-            description = described(meta['description']) if meta and 'description' in meta else None
-            if description is None:
-                continue
-            import_claude(record, launch.agent, launch.path, description, agent,
-                          launch.since, home, seen, preparing_agent, preparing_scratch, change)
-            for entry in launch.entries:
-                for who, sign in entry.signs:
-                    if who not in (launch.agent, launch.call):
-                        continue
-                    if sign is Sign.STOPPED:
-                        record.append(a.Stopped(source=f'legacy-stop:{launch.agent}:{entry.time}',
-                            at=entry.time, agent=launch.agent, text=''))
-                for report in entry.reports:
-                    record.append(a.HandedBack(source=f'legacy-report:{launch.agent}:{report.time}',
-                        at=report.time, agent=launch.agent, text=report.text))
+            description = None
+            try:
+                if launch.path is None:
+                    raise ValueError(mctx('launch has no readable child transcript: ') + launch.call)
+                meta = read_meta(launch.path)
+                description = described(meta['description']) if meta and 'description' in meta else None
+                if description is None:
+                    continue
+                import_claude(record, launch.agent, launch.path, description, agent,
+                              launch.since, home, seen, preparing_agent, preparing_scratch, change)
+                import_signs(record, launch)
+            except IMPORT_FAULTS as exc:
+                import_failed(record, launch.agent, description or described(asked.get(launch.call, '')),
+                              agent, launch.since, str(exc), change)
         if agent_type(path) == CODEX_LAUNCHER:
             producer, gaps = import_launcher(record, agent, path, home,
                 preparing_scratch if preparing_agent == agent else None)
             notes.extend(gaps)
-    except (OSError, ValueError, KeyError, TypeError) as exc:
+    except IMPORT_FAULTS as exc:
         notes.append(str(exc))
         producer = True
-    import time
     checked = time.time()
     record.append(a.Coverage(source=f'coverage:{agent}:{checked}', at=checked, agent=agent,
         complete=not notes, reason='; '.join(notes), producer=producer, change=change))
 
 
+def straddling_sessions(start: float) -> list[tuple[str, tuple[tuple[str, float], ...]]]:
+    """Each session that ran on both sides of `start`, with the operators it
+    ran from before `start` and the time of the first entry of each: a
+    session whose main transcript holds an entry at or after `start` and
+    that has an operator (`operator_reads.session_operators`) whose first
+    entry precedes it."""
+    from agent_turns import first_time, latest_time
+    from operator_reads import session_operators
+    from transcripts import main_transcripts
+
+    out = []
+    for session, paths in sorted(main_transcripts().items()):
+        latest = latest_time(paths[-1])
+        if latest is None or latest < start:
+            continue
+        operators = tuple((aid, first) for aid, path in session_operators(session, '')
+                          if (first := first_time(path)) is not None and first < start)
+        if operators:
+            out.append((session, operators))
+    return out
+
+
 def backfill(record: Record, main: Path, home: Path, seat: Described | None = None,
              preparing_agent: str | None = None, preparing_scratch: Path | None = None,
              change: str | None = None) -> None:
-    """Explicitly import available open-attempt history and retain each unresolved source."""
-    import time
+    """Explicitly import available open-attempt history and retain each unresolved source.
+    Where no `seat` is given, the targets are the operators each open change logs and
+    the operators of each session that ran on both sides of the record's start
+    (`Record.started`), whose native assignments are all published, whatever the status
+    of their tickets. A record that holds no launch of the hook has no such session."""
     from transcripts import find
     from run_reads import session_of, read_meta
     from tree_reads import scratch
@@ -402,35 +487,43 @@ def backfill(record: Record, main: Path, home: Path, seat: Described | None = No
     seen: set[str] = set()
     sessions: set[Path] = set()
     available = open_changes(main)
+    began = None if seat is not None else record.started()
+    straddling = [] if began is None else straddling_sessions(began)
     with record.connect() as db:
         for ticket in available:
             db.execute('INSERT OR IGNORE INTO migration VALUES (?, 0)', (ticket.number,))
+        for session, _ in straddling:
+            db.execute('INSERT OR IGNORE INTO migration VALUES (?, 0)', (session,))
+
+    def import_operator(operator: str, fallback: Described, at: float, ticket: str | None) -> None:
+        """Import `operator`, or record that its import failed."""
+        try:
+            path = find(operator)
+            sessions.add(scratch(session_of(path).name))
+            meta = read_meta(path)
+            description = described(meta['description']) if meta and 'description' in meta else None
+            import_claude(record, operator, path, description or fallback, None, at, home, seen,
+                          preparing_agent, preparing_scratch, ticket)
+        except IMPORT_FAULTS as exc:
+            import_failed(record, operator, fallback, None, at, str(exc), ticket)
+
     changes = [t for t in available if seat is None or t.number == (change or seat.subject)]
     for ticket in changes:
         operators = {line.agent_id for line in ticket.log if line.agent_id and line.agent == 'operator'}
         for operator in sorted(operators):
-            try:
-                path = find(operator)
-                sessions.add(scratch(session_of(path).name))
-                meta = read_meta(path)
-                description = described(meta['description']) if meta and 'description' in meta else None
-                import_claude(record, operator, path, description or Described(Role.OPERATOR, ticket.number),
-                              None, ticket.filed, home, seen, preparing_agent, preparing_scratch, ticket.number)
-            except (OSError, ValueError, KeyError) as exc:
-                at = time.time()
-                record.append(a.Launched(source='legacy-missing:' + operator, at=ticket.filed,
-                    agent=operator, seat=Described(Role.OPERATOR, ticket.number), parent=None,
-                    agent_type='operator', transport=a.Transport.CLAUDE),
-                    a.Coverage(source=f'coverage:{operator}:{at}', at=at, agent=operator,
-                        complete=False, reason=str(exc), producer=True, change=ticket.number))
+            import_operator(operator, Described(Role.OPERATOR, ticket.number), ticket.filed, ticket.number)
     with record.connect() as db:
         for ticket in changes:
             db.execute('UPDATE migration SET complete=1 WHERE ticket=?', (ticket.number,))
+    for session, operators in straddling:
+        sessions.add(scratch(session))
+        for operator, first in operators:
+            import_operator(operator, Described(Role.OPERATOR, session), first, None)
     allowed = {t.number for t in changes}
     for session in sorted(sessions):
         for native in native_assignments(session, include_history=True):
             assignment, item = native.assignment, native.state
-            if assignment.ticket not in allowed:
+            if seat is not None and assignment.ticket not in allowed:
                 continue
             notes = []
             try:
@@ -443,24 +536,59 @@ def backfill(record: Record, main: Path, home: Path, seat: Described | None = No
             record.append(a.Coverage(source=f'coverage:{assignment.agent}:{at}', at=at,
                 agent=assignment.agent, complete=not notes, reason='; '.join(notes),
                 producer=item['phase'] != 'ended', change=assignment.ticket))
+    with record.connect() as db:
+        for session, _ in straddling:
+            db.execute('UPDATE migration SET complete=1 WHERE ticket=?', (session,))
 
 
-def check_coverage(record: Record) -> tuple[str, ...]:
-    """Read only: unknown or potentially old producers prevent cutover."""
-    projected = a.fold(record.events())
-    notes = []
+def imported(launch: a.Launched, began: float | None) -> bool:
+    """Whether `launch` is of an imported attempt: an import wrote it
+    (`legacy-launch:`, `legacy-missing:`), or it precedes the start of the
+    record `began`, or the record holds no launch of the hook."""
+    return (launch.source.startswith(('legacy-launch:', 'legacy-missing:'))
+            or began is None or launch.at < began)
+
+
+def check_coverage(record: Record, main: Path | None = None) -> tuple[str, ...]:
+    """Read only: what the migration targets and a state read would hold
+    unknown or running. Each migration row not complete is listed, and each
+    imported attempt (`imported`) with an unresolved reservation, and, other
+    than one whose subject's tickets all closed after its launch
+    (`operator_state.outlived`), one whose coverage is missing or incomplete,
+    whose old producer may still write, or whose record shows no end. An
+    attempt of the hook, and a name that no imported launch gives, is not
+    listed, other than one whose import failed before its description was
+    read, which holds an incomplete coverage and no launch. `main` is the
+    main worktree, which defaults to the checkout's."""
+    from operations.liveness import over, uncertain
+    from operator_state import closes_of, outlived
+
     if not record.path.exists():
         return ('migration has not imported the open attempts',)
+    projected = a.fold(record.events())
+    began = record.started()
+    closes = closes_of(read_all_tickets(main or checkout.main_worktree(checkout.ROOT)))
     with sqlite3.connect(f'file:{record.path}?mode=ro', uri=True) as db:
-        targets = db.execute('SELECT ticket, complete FROM migration').fetchall()
-    notes.extend(ticket + ': history has not been imported' for ticket, complete in targets if not complete)
+        targets = db.execute('SELECT ticket, complete FROM migration ORDER BY ticket').fetchall()
+    notes = [ticket + ': history has not been imported' for ticket, complete in targets if not complete]
     for attempt in projected.values():
-        coverage = attempt.coverage
-        if coverage is None or not coverage.complete or coverage.producer:
-            notes.append(attempt.agent + ': ' + ('history has no coverage evidence' if coverage is None
-                else coverage.reason or 'an old producer may still write'))
-        elif attempt.unresolved:
-            notes.append(attempt.agent + ': unresolved imported reservations or turns')
+        launch = attempt.launch
+        if launch is None:
+            if attempt.coverage is not None and not attempt.coverage.complete:
+                notes.append(attempt.agent + ': ' + mctx('the history imported into the record of its attempt is incomplete ({reason})').format(reason=attempt.coverage.reason))
+            continue
+        if not imported(launch, began):
+            continue
+        if attempt.unresolved:
+            notes.append(attempt.agent + ': ' + mctx('unresolved imported reservations or turns'))
+        elif outlived(launch.seat, launch.at, closes):
+            continue
+        elif attempt.coverage is None:
+            notes.append(attempt.agent + ': ' + mctx('history has no coverage evidence'))
+        elif (why := uncertain(attempt, False)) is not None:
+            notes.append(attempt.agent + ': ' + why)
+        elif not over(attempt):
+            notes.append(attempt.agent + ': ' + mctx('its record shows no end of it'))
     return tuple(notes)
 
 
