@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from dashboard_reads import STALE_RECORD
+from dashboard_operators import STALE_RECORD
 from dashboard_words import clock
 from operations.labels import label, served_request
 from ticketing.vocabulary import Kind

@@ -216,7 +216,6 @@ def connectivity(inst, ex):
                 ".decl {x}_steps(delta: Offset)\n.decl {x}_component(key: {Key}, p: Position, id: Ident)",
                 {"step(S)": ["{x}_steps(S)"]},
                 {"label(Ky, P, I)": "{x}_component(Ky, P, I)",
-                 "conn(Ky, P, Q)": "{x}_component(Ky, P, I), {x}_component(Ky, Q, I)",
                  "node(Ky, P)": "in_node(Ky, P)", "step(S)": "{x}_steps(S)"},
                 _steps() + "\n{x}_component(Ky, P, I) :- {x}.id([Ky, P], I).\n"
                 "{x}.edge([Ky, P], [Ky, P]) :- in_node(Ky, P).\n"

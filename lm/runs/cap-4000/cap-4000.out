@@ -1,0 +1,28 @@
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Core table 4 relation 4: 10354 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Core table 5 relation 5: 19634 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Core table 8 relation 8: 6992 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Core table 9 relation 9: 57230 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Core table 10 relation 10: 24188 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Core table 11 relation 11: 6047 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Core table 14 relation 14: 11861 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Core table 15 relation 15: 20081 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 4 relation 4: 10354 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 5 relation 5: 19634 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 8 relation 8: 6992 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 9 relation 9: 57230 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 10 relation 10: 24188 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 11 relation 11: 6047 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 15 relation 15: 4229 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 19 relation 19: 66144 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 21 relation 21: 11024 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 23 relation 23: 4378 rows
+unseen table, over --enc-max-rows 4000: 2b9ef948 $Corner table 24 relation 24: 30320 rows
+unseen table, over --enc-max-rows 4000: 40f6cd08 $Repaint table 3 relation 3: 5370 rows
+unseen table, over --enc-max-rows 4000: 40f6cd08 $Overlay table 3 relation 3: 5370 rows
+0 entries over --enc-budget 10000; unseen tables {'more rows than --enc-max-rows': 21}, unseen entries {}
+Loading weights:   0%|          | 0/272 [00:00<?, ?it/s]Loading weights:   0%|          | 1/272 [00:00<00:33,  8.15it/s]Loading weights:  11%|█         | 29/272 [00:00<00:01, 150.21it/s]Loading weights:  21%|██        | 57/272 [00:00<00:01, 197.11it/s]Loading weights:  31%|███▏      | 85/272 [00:00<00:00, 227.46it/s]Loading weights:  40%|████      | 109/272 [00:00<00:00, 225.04it/s]Loading weights:  49%|████▊     | 132/272 [00:00<00:00, 225.94it/s]Loading weights:  57%|█████▋    | 155/272 [00:00<00:00, 221.50it/s]Loading weights:  65%|██████▌   | 178/272 [00:00<00:00, 203.94it/s]Loading weights:  75%|███████▍  | 203/272 [00:00<00:00, 216.99it/s]Loading weights:  84%|████████▍ | 229/272 [00:01<00:00, 226.43it/s]Loading weights:  94%|█████████▍| 256/272 [00:01<00:00, 236.67it/s]Loading weights: 100%|██████████| 272/272 [00:01<00:00, 218.01it/s]
+22 training programs, 4 held-out; 481 training tables; encoder 19.08M parameters on cuda; loaded in 11s
+step 1 masked loss 6.696 (4120 cells) 2.27 s/step
+step 2 masked loss 5.898 (13445 cells) 2.85 s/step
+step 3 masked loss 7.954 (10056 cells) 2.81 s/step
+{"step": 3, "seconds": 9, "seconds_per_step": 2.805079936981201, "device_gb": 26.65, "train_loss": 7.953963279724121, "train": {"loss": 6.765679372787896, "by_type": {"Axis": {"loss": 0.717655336856842, "accuracy": 0.6, "cells": 10}, "Box": {"loss": 11.234853916486351, "accuracy": 0.0, "cells": 12890}, "Color": {"loss": 1.2395350407693333, "accuracy": 0.26267899761336516, "cells": 6704}, "D4": {"loss": 1.6170083105564117, "accuracy": 0.55, "cells": 20}, "Dir8": {"loss": 2.3223893642425537, "accuracy": 0.0, "cells": 3}, "Example": {"loss": 1.3076918573237624, "accuracy": 0.206734534064213, "cells": 1277}, "Ident": {"loss": 2.4608249505424893, "accuracy": 0.10165593376264949, "cells": 2174}, "Number": {"loss": 20.725738162086124, "accuracy": 0.0, "cells": 105}, "Position": {"loss": 9.674686766792291, "accuracy": 0.0, "cells": 1233}, "ex_output/Color": {"loss": 1.0321239095380288, "accuracy": 0.26622137404580154, "cells": 1048}, "ex_output/Example": {"loss": 0.951564072794238, "accuracy": 0.26887661141804786, "cells": 1086}, "ex_output/Position": {"loss": 9.767809987179483, "accuracy": 0.0, "cells": 1071}}}, "heldout": {"loss": 4.87254469489655, "cells": 7354, "by_type": {"Axis": {"loss": 0.6932079696107185, "accuracy": 0.5172413793103449, "cells": 87}, "Box": {"loss": 6.475323802704132, "accuracy": 0.09335947071796129, "cells": 4081}, "Color": {"loss": 1.009028852190057, "accuracy": 0.3504566210045662, "cells": 1752}, "D4": {"loss": 2.0693484633057206, "accuracy": 0.20987654320987653, "cells": 81}, "Example": {"loss": 1.3748808167446618, "accuracy": 0.2624521072796935, "cells": 522}, "Number": {"loss": 31.172898087320448, "accuracy": 0.0, "cells": 79}, "Position": {"loss": 7.003785571821738, "accuracy": 0.0, "cells": 497}, "ex_output/Color": {"loss": 1.4548347461514357, "accuracy": 0.13414634146341464, "cells": 82}, "ex_output/Example": {"loss": 1.0738461955209797, "accuracy": 0.30337078651685395, "cells": 89}, "ex_output/Position": {"loss": 6.369707791578202, "accuracy": 0.0, "cells": 84}}}}

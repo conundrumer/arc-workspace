@@ -217,3 +217,30 @@ def test_a_write_gives_back_a_bounded_number_of_free_pages(tmp_path, monkeypatch
     first = free_pages()
     assert file.put([], ["new"], 3600)
     assert 0 < free_pages() < first
+
+
+@state_reads.state_cache(state_reads.DERIVED, kept=state_reads.Kept.DISK,
+                        stable=(True, lambda own, report: file_reads.stat_read(own)))
+def settled(own: Path, report: Path) -> bool:
+    return file_reads.file_text(own) == file_reads.file_text(report)
+
+
+def test_stable_result_changes_only_with_its_stamp(tmp_path, monkeypatch):
+    monkeypatch.setattr(kept_reads, "_store", None)
+    kept_reads.open_store(tmp_path / "stable.sqlite")
+    own, report = tmp_path / "own", tmp_path / "report"
+    write(own, "done", 1)
+    write(report, "pending", 1)
+    new_process()
+    assert settled(own, report) is False
+    write(report, "done", 2)
+    state_reads.new_state()
+    assert settled(own, report) is True
+    write(report, "later report", 3)
+    state_reads.new_state()
+    assert settled(own, report) is True
+    new_process()
+    assert settled(own, report) is True
+    write(own, "new turn", 4)
+    state_reads.new_state()
+    assert settled(own, report) is False

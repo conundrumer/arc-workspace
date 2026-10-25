@@ -10,16 +10,15 @@ from pathlib import Path
 from typing import Any
 
 from agent_launches import children_of, launched
-from agent_resumes import resumes, sent_to
 from agents_pending import turn_signs
 from agent_turns import latest_time
-from agent_reports import ENDED, Sign, last_sign
+from agent_reports import Sign, last_sign
 from controlled_markdown import mctx
 from merge_reads import merge_outcome, merge_subjects
 from filed_texts import brief_report_file, filed_report, unfiled
 from agent_listings import agent_listing
-from agent_ends import ended_with, reply_to
 from operator_reads import MESSAGE_FROM, AgentsRead, from_parent
+from operator_state import projection
 from pass_reads import pass_read
 from run_reads import (BACKGROUND_TASK, MAIN, agent_messages, blocks, is_prompt,
                        notifications, output_file, parent_id, run_sessions, tool_results)
@@ -33,11 +32,10 @@ from transcript_entries import epoch
 from transcript_folds import Makes, fold
 from transcript_snapshots import Entry
 
+from operations import attempt_view
 from operations.merge_outcomes import call_conflicts
 from operations.roles import LAUNCHING_EDITORS, PASSES, Role, described
-from operations.state import (
-    Agent, AttemptState, Call, Ended, Message, PassReport, Report, Running, Tool, Waits,
-)
+from operations.state import Agent, Call, Message, PassReport, Running, Tool, Waits
 from operations.command_words import is_next
 from operations.printing import printed_idle, unfenced
 
@@ -280,7 +278,7 @@ def calls_of(aid: str, path: Path, read: OperatorLines, commits: frozenset[tuple
             merge = merge_outcome(aid, command, t, text, error, subjects, denied, lines)
             held = (text if text is None or error or reads_output(tool, command, aid)
                     or (is_next(command, aid) and printed_idle(text)) else "")
-            return (Call(aid, t, tool, inp, held, error, merge, call_conflicts(merge, text)),
+            return (Call(aid, t, tool, inp, held, error, merge, call_conflicts(merge, text), call),
                     command in denied)
 
         made, last_denied = making.item(call, lambda _: given, make, undecided)
@@ -306,7 +304,11 @@ def launches_of(aid: str, path: Path, main: Path, uses: Uses,
                 undecided: list[str]) -> tuple[AgentsRead, dict[str, PassReport]]:
     """The agents the operator `aid` launched by the calls of `uses`, and,
     for each solver pass it launched with an agent id, the read of its
-    report."""
+    report. The launches and briefs come from the transcript; the time of
+    the last resume, the reports, the operator its notification goes to and
+    the messages it sent come from the record of its attempt
+    (`operations.attempt_view`), and its state from the same record
+    (`operator_state.attempt_reads`)."""
     agents: list[Agent] = []
     passes: dict[str, PassReport] = {}
     messaged: dict[str, frozenset[str]] = {}
@@ -323,7 +325,7 @@ def launches_of(aid: str, path: Path, main: Path, uses: Uses,
         return native, {}
     found = launched(path, undecided)
     signs = turn_signs(path, [launch for launch in found if launch.pending])
-    own = resumes(path, undecided)
+    attempts = projection([launch.agent for launch in found if launch.agent])
     for launch in found:
         use = uses.get(launch.call)
         if use is None:
@@ -331,25 +333,27 @@ def launches_of(aid: str, path: Path, main: Path, uses: Uses,
         d = described(str(use[1].get("description", "")))
         if d is None:
             continue
-        reports = tuple(Report(r.time, r.text, r.file) for r in launch.reports(0.0, undecided))
+        attempt = attempts.get(launch.agent) if launch.agent else None
         signed = (signs.get(launch.agent or "") if launch.pending else
                   last_sign(launch.entries, launch.since, {launch.agent or "", launch.call}))
-        if signed is not None and signed[0] is Sign.LIMITED and ran_since(launch.path, signed[1]):
-            signed = None
+        stopped_by_limit = (signed is not None and signed[0] is Sign.LIMITED
+                            and not ran_since(launch.path, signed[1]))
         prompt = str(use[1].get("prompt", ""))
-        a = Agent(launch.agent, aid, d.role, d.subject, prompt,
-                  use[0], launch.since, sign_state(signed, launch.pending), reports,
-                  notifies=launch.since <= max(use[0], own.get(launch.agent or "", 0.0)),
+        since = attempt_view.since(attempt) if attempt is not None else None
+        a = Agent(launch.agent, aid, d.role, d.subject, prompt, use[0],
+                  launch.since if since is None else since,
+                  Running(Waits.LIMITED if stopped_by_limit else Waits.AT_WORK),
+                  attempt_view.claude_reports(attempt) if attempt is not None else (),
+                  notifies=attempt is not None and attempt_view.notified(attempt) == aid,
                   report_file=brief_report_file(prompt),
                   reviewing=read_anchor(session_scratch, launch.agent)
-                  if d.role in LAUNCHING_EDITORS and launch.pending else None)
-        if d.role in MESSAGING and launch.path and launch.agent is not None:
-            messaged[launch.agent] = sent_to(launch.path)
-        if (signed is not None and signed[0] is Sign.LIMITED and launch.agent is not None
-                and a.notifies):
+                  if d.role in LAUNCHING_EDITORS and launch.pending else None,
+                  reachable=attempt is None or attempt_view.reachable(attempt),
+                  awaited=launch.pending)
+        if d.role in MESSAGING and launch.agent is not None and attempt is not None:
+            messaged[launch.agent] = attempt_view.sent_to(attempt)
+        if stopped_by_limit and launch.agent is not None and a.notifies and signed is not None:
             limited[launch.agent] = signed[1]
-        if a.unreported and launch.agent:
-            a = ended_with(a, reply_to(a, launch.since, undecided))
         a = filed_report(a)
         agents.append(a)
         if d.role in PASSES and launch.agent:
@@ -365,22 +369,6 @@ def ran_since(path: Path | None, at: float) -> bool:
     resumed it. A run whose transcript is not known, `path` None, has
     none."""
     return path is not None and (t := latest_time(path)) is not None and t > at
-
-
-def sign_state(signed: tuple[Sign, float] | None, pending: bool) -> AttemptState:
-    """`Agent.state` of a launch whose latest sign is the first of
-    `signed`, where `pending` gives whether the launch's result has not
-    reached its operator: `Running` with the `Waits` the sign gives, or
-    `Ended`."""
-    match signed:
-        case (Sign.STILL_RUNNING, _):
-            return Running(Waits.STILL_RUNNING)
-        case (Sign.LIMITED, _):
-            return Running(Waits.LIMITED)
-        case (sign, _) if sign in ENDED:
-            return Ended()
-        case _:
-            return Running(Waits.AT_WORK) if pending else Ended()
 
 
 def background_output(aid: str, call: str, task: str, output: Path | None,

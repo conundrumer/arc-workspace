@@ -19,7 +19,8 @@ from dashboard_stages import Stage, stage
 from dashboard_standings import HOLD_WORD, HELD_HEAD, MOVING, Row, Standing, Standings, merged
 from dashboard_usage import codex_bar, usage_bar
 from dashboard_words import clock, hold_text, start_hold_text
-from dashboard_reads import (DAY, OPEN, CodexWindow, OperatorRecords, change_of, hits_full,
+from dashboard_operators import OperatorRecords
+from dashboard_reads import (DAY, OPEN, CodexWindow, change_of, hits_full,
                              journal_work, latest, log_work, spans, users, Span, Work)
 from dashboard_template import CLEAR_ROUTE, EVENTS, FOLD, QUEUED_TAB, SEARCH_ROUTE, TEMPLATE, TICKET_ROUTE
 from shown_state import ScriptAdmits, Shown, ShownAgent, ShownParty, Start

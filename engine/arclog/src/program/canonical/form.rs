@@ -403,7 +403,7 @@ pub(crate) fn scope_labels(scope: LabelScope<'_>) -> Box<[LabelId]> {
 /// The labels of the scope of `form`, as [`form_scope`] gives it, as
 /// [`scope_labels`] gives them.
 pub(crate) fn form_scope_labels(form: &Form) -> &[LabelId] {
-    cache(form).scope_labels.get_or_init(|| form_scope(form).map(scope_labels).unwrap_or_default())
+    cache(form).scope_labels.get_or_init(|| super::order::CanonicalOrder::root_labels(form))
 }
 
 /// What the node of `form` keeps.

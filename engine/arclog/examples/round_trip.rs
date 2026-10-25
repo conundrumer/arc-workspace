@@ -124,7 +124,7 @@ fn round_trip(dir: &Path, solver: &CorpusSolver, report: &LintReport, read_with_
         (Ok(arclog), Ok(arcdata)) => (arclog, arcdata),
         (a, b) => return SolverResult::Fail([a.err(), b.err()].into_iter().flatten().collect()),
     };
-    let (read, diagnostics) = match read_solver(&solver.task_id, &arclog_text, &arcdata_text, &|id| read_corpus_solver(dir, id)) {
+    let (read, diagnostics) = match read_solver(&solver.task_id, &arclog_text, &arcdata_text, &|id| read_corpus_solver(dir, id).ok()) {
         Ok(read) => (Some(read.value), read.diagnostics),
         Err(diagnostics) => (None, diagnostics),
     };
@@ -184,7 +184,7 @@ fn main() -> ExitCode {
         }
     };
     let read_with_diagnostics = Mutex::new(Vec::new());
-    let result = run_over_corpus(Path::new(dir), |solver| round_trip(Path::new(dir), solver, &report, &read_with_diagnostics), |_, _| ());
+    let result = run_over_corpus(Path::new(dir), None, |solver| round_trip(Path::new(dir), solver, &report, &read_with_diagnostics), |_, _| ());
     let corpus = match result {
         Ok(corpus) => corpus,
         Err(error) => {

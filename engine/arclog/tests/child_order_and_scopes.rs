@@ -3,7 +3,8 @@
 //! gives the program it edits, each label scope that the canonical order
 //! of a form gives is one that `opens_scope` gives, and the labels the
 //! reader puts in each scope are the labels the canonical order gives that
-//! scope.
+//! scope. The child of a node at an index is the child that its children
+//! give at that index.
 
 use std::collections::BTreeSet;
 
@@ -84,6 +85,20 @@ fn each_node<'a>(node: NodeRef<'a>, at: &NodePath, visit: &mut dyn FnMut(&NodePa
 fn split_last(path: &NodePath) -> (NodePath, usize) {
     let (last, parent) = path.0.split_last().expect("a path below the root");
     (NodePath(parent.into()), last.0 as usize)
+}
+
+#[test]
+fn the_child_at_an_index_is_the_child_the_children_give() {
+    for program in programs() {
+        each_node(NodeRef::Program(program.value()), &NodePath::default(), &mut |_, node| {
+            let children = node.children();
+            for (index, child) in children.iter().enumerate() {
+                let found = node.child_at(index).expect("a child");
+                assert!(std::mem::discriminant(&found) == std::mem::discriminant(child) && format!("{found:?}") == format!("{child:?}"));
+            }
+            assert!(node.child_at(children.len()).is_none());
+        });
+    }
 }
 
 #[test]

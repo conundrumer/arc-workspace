@@ -7,7 +7,7 @@ use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refus
 use crate::hash::StableHashSet;
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{NodePath, NodeRef};
-use crate::program::{Atom, FactRelation, Form};
+use crate::program::{Atom, ColumnName, FactRelation, Form, Site, SiteArg};
 use crate::resolver::{DependencyKind, GraphNodeIndex, Resolution, ResolvedProgram, Side};
 use crate::types::each_site_label;
 
@@ -39,30 +39,69 @@ impl Check for PooledAndLiftedReadsCheck {
             let Some(side) = program.form_side(&read.form) else { continue };
             let Some(message) = refused_read(program, side, node, read.atom) else { continue };
             let order = order.get_or_insert_with(|| CanonicalOrder::of(input.form, &mut SearchBudget::new()));
-            refusals.push(Refusal { message: message.into(), at: order.canonical_path(&read.at) });
+            refusals.push(Refusal { message: message.text().into(), at: order.canonical_path(&read.at) });
         }
         result(refusals)
     }
 
+    /// Refuses each read of the partial form that [`Self::check`] refuses,
+    /// where its atom is complete, and where it is open, a read that no
+    /// later token undoes: a fact relation that the form's side does not let
+    /// it read, and a site on a column that holds an Example of the relation
+    /// the per-input form reads, at that site, whether or not the site holds
+    /// a label yet. The refusals stand at their paths in the partial form.
     fn check_prefix(&self, prefix: &Prefix<'_>) -> PrefixResult {
-        super::prefix::settled(prefix, self)
+        let program = prefix.scope.program;
+        let mut refusals = Vec::new();
+        for read in form_reads(prefix.partial, prefix.path) {
+            let Some((node, false)) = read.node(program, prefix.path) else { continue };
+            let Some(side) = program.form_side(&read.form) else { continue };
+            let refused = refused_read(program, side, node, read.atom);
+            let early = prefix.is_open(&read.at) && side == Side::PerInput && !matches!(refused, Some(Refused::ExFact));
+            let site = if early { example_site(program, node, read.atom) } else { None };
+            let (message, at) = match (site, refused) {
+                (Some(site), _) => (Refused::ExampleColumn, read.at.join(&site)),
+                (None, Some(message)) => (message, read.at.clone()),
+                (None, None) => continue,
+            };
+            refusals.push(Refusal { message: message.text().into(), at });
+        }
+        super::prefix::refused(refusals)
+    }
+}
+
+/// Why a form may not make a read.
+enum Refused {
+    /// A per-input form reads `ex_input` or `ex_output`.
+    ExFact,
+    /// A task-wide form reads `input`.
+    InputFact,
+    /// A per-input form reads the Example column of a relation.
+    ExampleColumn,
+}
+
+impl Refused {
+    fn text(&self) -> &'static str {
+        match self {
+            Refused::ExFact => "a per-input form reads `ex_input` or `ex_output`, which only a task-wide form reads",
+            Refused::InputFact => "a task-wide form reads `input`, which only a per-input form reads",
+            Refused::ExampleColumn => "a per-input form reads the Example column of a relation, which it reads only pooled, with no site on that column",
+        }
     }
 }
 
 /// Why a form of side `side` may not make `atom`, its read of `node`, or
 /// `None` where it may.
-fn refused_read(program: &ResolvedProgram, side: Side, node: GraphNodeIndex, atom: &Atom) -> Option<&'static str> {
+fn refused_read(program: &ResolvedProgram, side: Side, node: GraphNodeIndex, atom: &Atom) -> Option<Refused> {
     let fact = match program.graph.nodes[node.0 as usize].kind {
         DependencyKind::Fact(fact) => Some(fact),
         _ => None,
     };
     match (side, fact) {
-        (Side::PerInput, Some(FactRelation::ExInput | FactRelation::ExOutput)) => {
-            Some("a per-input form reads `ex_input` or `ex_output`, which only a task-wide form reads")
-        }
-        (Side::TaskWide, Some(FactRelation::Input)) => Some("a task-wide form reads `input`, which only a per-input form reads"),
+        (Side::PerInput, Some(FactRelation::ExInput | FactRelation::ExOutput)) => Some(Refused::ExFact),
+        (Side::TaskWide, Some(FactRelation::Input)) => Some(Refused::InputFact),
         (Side::PerInput, None) if reads_example(program.example_columns(node, crate::resolver::output_of(&atom.relation)), atom) => {
-            Some("a per-input form reads the Example column of a relation, which it reads only pooled, with no site on that column")
+            Some(Refused::ExampleColumn)
         }
         _ => None,
     }
@@ -78,6 +117,29 @@ fn reads_example(examples: &[crate::resolver::ExamplePath], atom: &Atom) -> bool
         });
     }
     found
+}
+
+/// The path, relative to `atom`, of the first site of `atom` whose column
+/// path starts with a column of an Example of the relation the atom reads,
+/// whether or not the site holds a label yet.
+fn example_site(program: &ResolvedProgram, node: GraphNodeIndex, atom: &Atom) -> Option<NodePath> {
+    let examples = program.example_columns(node, crate::resolver::output_of(&atom.relation));
+    fn walk(site: &Site, column: &mut Vec<ColumnName>, at: NodePath, examples: &[crate::resolver::ExamplePath]) -> Option<NodePath> {
+        column.push(site.column.clone());
+        let found = if examples.iter().any(|example| column.starts_with(example)) {
+            Some(at.clone())
+        } else {
+            let mut fields = site.value.args.iter().zip(0u32..);
+            fields.find_map(|(arg, index)| match arg {
+                SiteArg::Field(field) => walk(field, column, at.child(index), examples),
+                _ => None,
+            })
+        };
+        column.pop();
+        found
+    }
+    let mut sites = atom.sites.iter().zip(0u32..);
+    sites.find_map(|(site, index)| walk(site, &mut Vec::new(), NodePath::default().child(index), examples))
 }
 
 /// One read of a form: the atom, its path relative to the form the check

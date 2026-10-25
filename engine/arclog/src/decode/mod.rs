@@ -6,11 +6,24 @@
 //! [`crate::check::checks`] holds, by its prefix form, on the program that
 //! the token gives: one [`PrefixChecks`] per state resolves, and infers the
 //! types of, the finished forms once, and each candidate token costs the
-//! resolution and the checks of its form in progress alone. Its interface
+//! resolution and the checks of its form in progress alone. The candidates
+//! whose step opens an atom are one program but for the atom's relation,
+//! which holds no site yet, so they share the labels and their types, the
+//! bindings of the conjuncts before the atom, and the result of each check
+//! that reads nothing of that relation ([`Candidate::AtomHead`]), and the candidates that open an
+//! atom of a lib relation, a relation macro, a proposer or a relation of the program take one
+//! resolution of the form in progress, retargeted to each one's relation. The mask keeps the state and
+//! forced tokens of each admitted token, which the step of that token takes.
+//! It admits a constraint's operator, or first label, only where some
+//! completion of the constraint passes the checks (`Decoder::completes`), and a
+//! token whose state stands in the projection of an instance input only where
+//! some completion of the projection does (`Decoder::completes_projection`),
+//! or where the search spends its steps. Its interface
 //! beside the mask, in `interface`, gives the rows of the body so far and the
 //! consistency test at a `RULE` clause's end, and its batch form, in
-//! `batch`, steps many decodes at once, and its views of the body so far, in
-//! `views`, give the largest sets of its columns under the view cap, and its
+//! `batch`, steps many decodes at once, and its projections of the body so far,
+//! in `projections`, give the largest sets of its columns under the projection
+//! cap, and its
 //! tables of the last step, in `tables`, give the body of the clause in
 //! progress or the relations of the form finished. The replay of a case
 //! program's stream through a decoder, in `replay`, the walk of a solver's
@@ -26,27 +39,29 @@ mod interface;
 pub mod replay;
 mod state;
 mod tables;
-mod views;
+mod projections;
 
 pub use batch::step_batch;
 pub use interface::{Consistency, Step};
-pub use tables::{Contents, ExampleRows, Point, Points, Table, TableColumn, TableDet};
-pub use views::{View, Views};
+pub use tables::{evidence_tables, gives_no_table, Contents, ExampleRows, Point, Points, Table, TableColumn, TableDet, TableRelation};
+pub use projections::{Projection, Projections};
 
-use std::sync::Arc;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::sync::{Arc, OnceLock};
 
-use crate::check::prefix::PrefixChecks;
-use crate::check::{CheckId, SolverClauses};
+use crate::check::prefix::{Candidate, PrefixChecks};
+use crate::check::CheckId;
 use crate::eval::instance::Constructions;
 use crate::eval::Cancellation;
 use crate::judge::candidates::PairCandidates;
 use crate::program::path::NodePath;
-use crate::program::ProgramRelation;
-use crate::program::{Node, Program};
+use crate::program::{ProgramRelation, RelationRef};
+use crate::program::{ConstraintOp, Node, Program};
 use crate::registry::Registry;
 use crate::resolver::resolve_last;
 use crate::session::TaskSession;
-use crate::stream::{DecodeSettings, Emitter, Token, Vocabulary};
+use crate::stream::{Control, DecodeSettings, Emitter, Token, Vocabulary};
 use crate::task::Task;
 use crate::trace::{DecodeRecord, DecodeTrace, TopK, Verdict};
 
@@ -70,6 +85,27 @@ pub struct Decoder<'a> {
     columns: Option<crate::eval::output::GridColumns>,
     /// One record per accepted token, shared with the forks.
     trace: DecodeTrace,
+    /// The mask of the current state with the step of each token it admits.
+    held: Held,
+}
+
+/// What [`Decoder::admissible`] computes at a state: the mask, and the
+/// state and the forced tokens that each admitted token gives, by the
+/// token's id, which [`Decoder::advance`] takes in place of a second check.
+struct Mask {
+    mask: TokenMask,
+    steps: HashMap<u32, (state::State, Vec<Token>)>,
+}
+
+/// The [`Mask`] of a decoder's state, once computed. A clone holds none, so
+/// a fork, and a checkpoint of a replay, hold no states.
+#[derive(Default)]
+struct Held(OnceLock<Mask>);
+
+impl Clone for Held {
+    fn clone(&self) -> Held {
+        Held::default()
+    }
 }
 
 /// The state after a token and what the step gives, which
@@ -133,7 +169,7 @@ impl<'a> Decoder<'a> {
         assert_eq!(settings.caps, session.caps, "the caps of the decode settings are those of the session");
         let context = Context { registry, settings: *settings, vocabulary: Vocabulary::new(registry, settings) };
         let state = state::State::new();
-        Decoder { task, session, constructions, context: Arc::new(context), state, before: None, train: None, cancellation: Cancellation::default(), output: None, assignments: Vec::new(), columns: None, trace: DecodeTrace::default() }
+        Decoder { task, session, constructions, context: Arc::new(context), state, before: None, train: None, cancellation: Cancellation::default(), output: None, assignments: Vec::new(), columns: None, trace: DecodeTrace::default(), held: Held::default() }
     }
 
     /// The ids of the decode's tokens.
@@ -147,19 +183,28 @@ impl<'a> Decoder<'a> {
         (self.task, self.session, self.constructions)
     }
 
-    /// The tokens that may come next.
+    /// The tokens that may come next. The first call at a state computes the
+    /// mask, and keeps the state and forced tokens of each admitted token for
+    /// [`Decoder::step`]; a later call at that state gives the same mask.
     pub fn admissible(&self) -> TokenMask {
+        self.held.0.get_or_init(|| self.compute_mask()).mask.clone()
+    }
+
+    fn compute_mask(&self) -> Mask {
         let vocabulary = &self.context.vocabulary;
         let mut mask = TokenMask::new(vocabulary.len());
-        self.with_checks(|checks| {
+        let mut steps = HashMap::new();
+        self.with_checks_at_state(|checks| {
+            let order = RefCell::default();
             for id in 0..u32::try_from(vocabulary.len()).expect("fewer than 2^32 tokens") {
                 let token = vocabulary.token(id).expect("an id of the vocabulary");
-                if self.next(token, checks).is_ok() {
+                if let Ok(step) = self.next(token, checks, &order) {
                     mask.insert(id);
+                    steps.insert(id, step);
                 }
             }
         });
-        mask
+        Mask { mask, steps }
     }
 
     /// Runs `body` with the checks over the prefixes that follow the
@@ -168,8 +213,19 @@ impl<'a> Decoder<'a> {
     fn with_checks<R>(&self, body: impl FnOnce(&PrefixChecks<'_>) -> R) -> R {
         let registry = self.context.registry;
         let resolved = self.state.resolved(registry);
-        let clauses = SolverClauses::of_shared_program(Arc::clone(&resolved));
-        PrefixChecks::with(&resolved, &clauses, registry, body)
+        self.state.with_clauses(registry, |clauses| PrefixChecks::with(&resolved, clauses, registry, body))
+    }
+
+    /// [`Decoder::with_checks`], with the form in progress at the state held
+    /// for the candidates, which the mask computes.
+    fn with_checks_at_state<R>(&self, body: impl FnOnce(&PrefixChecks<'_>) -> R) -> R {
+        let earlier = self.state.resolved(self.context.registry);
+        self.with_checks(|checks| {
+            if let Some((program, Some(_))) = self.state.partial() {
+                checks.hold_state(earlier, program);
+            }
+            body(checks)
+        })
     }
 
     /// Advances the decode by `token`, and gives the tokens that the engine
@@ -185,7 +241,11 @@ impl<'a> Decoder<'a> {
     /// The state after `token`, and what the step gives, which
     /// [`Decoder::apply`] makes the decode's.
     fn advance(&self, token: &Token) -> Result<Advanced, Refusal> {
-        let (state, forced) = self.with_checks(|checks| self.next(token, checks))?;
+        let kept = self.held.0.get().and_then(|held| held.steps.get(&self.context.vocabulary.id(token)?));
+        let (state, forced) = match kept {
+            Some((state, forced)) => (state.clone(), forced.clone()),
+            None => self.with_checks(|checks| self.next(token, checks, &RefCell::default()))?,
+        };
         let judged = self.consistency(&self.state, &state);
         let (consistency, columns) = judged.map_or((None, None), |(result, columns)| (Some(result), columns));
         Ok(Advanced { token: token.clone(), state, step: Step { forced: forced.into(), consistency, columns } })
@@ -194,6 +254,7 @@ impl<'a> Decoder<'a> {
     fn apply(&mut self, advanced: Result<Advanced, Refusal>) -> StepResult {
         let Advanced { token, state, step } = advanced?;
         self.before = Some(std::mem::replace(&mut self.state, state));
+        self.held = Held::default();
         self.record(token, &step);
         if let Some(Consistency::Consistent { assignments }) = &step.consistency {
             self.assignments = assignments.clone();
@@ -244,7 +305,7 @@ impl<'a> Decoder<'a> {
     /// A second decode from the same state, which shares this one's caches
     /// and takes a cancellation of its own.
     pub fn fork(&self) -> Decoder<'a> {
-        Decoder { cancellation: Cancellation::default(), ..self.clone() }
+        Decoder { cancellation: Cancellation::default(), held: Held::default(), ..self.clone() }
     }
 
     /// The program so far: its finished forms.
@@ -262,7 +323,7 @@ impl<'a> Decoder<'a> {
 
     /// The state after `token`, and the tokens the engine emits after it,
     /// where `token` is in the mask.
-    fn next(&self, token: &Token, checks: &PrefixChecks<'_>) -> Result<(state::State, Vec<Token>), Refusal> {
+    fn next(&self, token: &Token, checks: &PrefixChecks<'_>, order: &RefCell<Order>) -> Result<(state::State, Vec<Token>), Refusal> {
         let vocabulary = &self.context.vocabulary;
         if self.output.is_some() {
             return Err(Refusal::Grammar("the decode has ended at its `&output`"));
@@ -270,18 +331,156 @@ impl<'a> Decoder<'a> {
         if vocabulary.id(token).is_none() {
             return Err(Refusal::Grammar("the vocabulary holds no such token"));
         }
-        let (state, forced) = self.state.step(&self.context, token).map_err(Refusal::Grammar)?;
+        let earlier = || self.state.resolved(self.context.registry);
+        let reads_example = |program: &Node<Program>, at: &NodePath, relation: &RelationRef| checks.reads_example_column(&earlier(), program, at, relation);
+        let (state, forced, opened) = self.state.step(&self.context, token, &reads_example).map_err(Refusal::Grammar)?;
         if forced.iter().any(|token| vocabulary.id(token).is_none()) {
             return Err(Refusal::Grammar("a token the engine emits after it passes a vocabulary cap"));
         }
         if let Some((program, open)) = state.partial() {
             if !program.value().forms.is_empty() {
-                let resolved = resolve_last(&self.state.resolved(self.context.registry), &program, self.context.registry);
-                if let Some((check, refusals)) = checks.check(&resolved, open.as_ref()) {
-                    return Err(Refusal::Check { check, refusals });
+                if let (Some(open), true, Token::Lib(_) | Token::Proposer(_) | Token::Relation(_)) = (&open, opened.is_some(), token) {
+                    let relation = state.open_relation().expect("an atom stands open");
+                    if let Some((check, refusals)) = checks.check_atom_head(&earlier(), &program, open, &relation) {
+                        return Err(Refusal::Check { check, refusals });
+                    }
+                    return Ok((state, forced));
                 }
+                let candidate = if opened.is_some() { Candidate::AtomHead } else { Candidate::Any };
+                self.check_state(&state, candidate, checks)?;
             }
+        }
+        if state.open_constraint().is_some() {
+            self.completes(&state, checks, &reads_example, order)?;
+        } else if state.head_site_completions(usize::MAX).is_some() {
+            let steps = &mut { PROJECTION_STEPS };
+            // A site of one argument first: the sets of labels it can hold are many, and one label passes where any does.
+            self.completes_projection(&state, checks, &reads_example, 1, steps).or_else(|_| self.completes_projection(&state, checks, &reads_example, usize::MAX, steps))?;
         }
         Ok((state, forced))
     }
+
+    /// Where `state` shows a program with a form in progress, the refusal of
+    /// `checks` on that program, with `candidate`.
+    fn check_state(&self, state: &state::State, candidate: Candidate, checks: &PrefixChecks<'_>) -> Result<(), Refusal> {
+        let Some((program, open)) = state.partial() else { return Ok(()) };
+        if program.value().forms.is_empty() {
+            return Ok(());
+        }
+        let resolved = resolve_last(&self.state.resolved(self.context.registry), &program, self.context.registry);
+        match checks.check(&resolved, open.as_ref(), candidate) {
+            Some((check, refusals)) => Err(Refusal::Check { check, refusals }),
+            None => Ok(()),
+        }
+    }
+
+    /// Whether some completion of the constraint open in `state` passes the
+    /// checks as a completed constraint does, or, where none does, the
+    /// refusal of the last completion tried. The completions are the labels
+    /// the grammar admits next, each stepped from `state`: after an
+    /// operator, the first labels, a fresh one for `=` alone; after the first label of `=`, `0`, the
+    /// labels in scope and a fresh label; after the first label of any other
+    /// operator, the first label itself, which passes exactly where some
+    /// second operand does.
+    fn completes(&self, state: &state::State, checks: &PrefixChecks<'_>, reads_example: state::ReadsExample<'_>, order: &RefCell<Order>) -> Result<(), Refusal> {
+        let Some((op, first)) = state.open_constraint() else {
+            return self.check_state(state, Candidate::Any, checks);
+        };
+
+        let ordering = first.is_none() && matches!(op, ConstraintOp::Lt | ConstraintOp::Le | ConstraintOp::Gt | ConstraintOp::Ge);
+        if ordering {
+            match order.replace(Order::Unknown) {
+                Order::Refused(refusal) => {
+                    *order.borrow_mut() = Order::Refused(refusal.clone());
+                    return Err(refusal);
+                }
+                Order::Passes(first) => {
+                    *order.borrow_mut() = Order::Passes(first.clone());
+                    if self.completes_with(state, &first, checks, reads_example, order).is_ok() {
+                        return Ok(());
+                    }
+                }
+                Order::Unknown => {}
+            }
+        }
+        let labels = (0..state.label_count()).rev().map(Token::Label);
+        let tokens: Vec<Token> = match first {
+            // Only `=` binds a label it makes, so a fresh first label of another operator leaves its label unbound.
+            None => std::iter::once(Token::Control(Control::Fresh)).filter(|_| op == ConstraintOp::Eq).chain(labels).collect(),
+            Some(first) if op != ConstraintOp::Eq => vec![Token::Label(first.label.0)],
+            Some(_) => std::iter::once(Token::Control(Control::Zero)).chain(labels).chain([Token::Control(Control::Fresh)]).collect(),
+        };
+        let mut refusal = Refusal::Grammar("a constraint has no completion");
+        for token in tokens {
+            match self.completes_with(state, &token, checks, reads_example, order) {
+                Ok(()) => {
+                    if ordering {
+                        *order.borrow_mut() = Order::Passes(token);
+                    }
+                    return Ok(());
+                }
+                Err(next) => refusal = next,
+            }
+        }
+        if ordering {
+            *order.borrow_mut() = Order::Refused(refusal.clone());
+        }
+        Err(refusal)
+    }
+
+    /// Whether some completion of the projection of an instance input, or
+    /// of the field of a body site, that stands open in `state` passes the
+    /// checks, or, where none does, the refusal of the last completion
+    /// tried. The completions are the tokens of
+    /// [`state::State::head_site_completions`] with `limit` at each head
+    /// site that stands open or follows, up to the state where the input is
+    /// closed or the field's label stands, which is the one the checks must
+    /// pass. The search is depth-first, and where it has spent `steps` it
+    /// refuses, with a refusal that says the search spent its budget.
+    fn completes_projection(&self, state: &state::State, checks: &PrefixChecks<'_>, reads_example: state::ReadsExample<'_>, limit: usize, steps: &mut usize) -> Result<(), Refusal> {
+        let Some(tokens) = state.head_site_completions(limit) else { return Ok(()) };
+        let mut refusal = Refusal::Grammar("a projection has no completion");
+        for token in tokens {
+            if *steps == 0 {
+                return Err(Refusal::Grammar("the completion search of a projection spent its budget"));
+            }
+            *steps -= 1;
+            let next = match state.step(&self.context, &token, reads_example) {
+                Ok((next, _, _)) => next,
+                Err(unexpected) => {
+                    refusal = Refusal::Grammar(unexpected);
+                    continue;
+                }
+            };
+            match self.check_state(&next, Candidate::Any, checks).and_then(|()| self.completes_projection(&next, checks, reads_example, limit, steps)) {
+                Ok(()) => return Ok(()),
+                Err(next) => refusal = next,
+            }
+        }
+        Err(refusal)
+    }
+
+    /// [`Decoder::completes`] of the state after `token` from `state`.
+    fn completes_with(&self, state: &state::State, token: &Token, checks: &PrefixChecks<'_>, reads_example: state::ReadsExample<'_>, order: &RefCell<Order>) -> Result<(), Refusal> {
+        match state.step(&self.context, token, reads_example) {
+            Ok((next, _, _)) => self.completes(&next, checks, reads_example, order),
+            Err(unexpected) => Err(Refusal::Grammar(unexpected)),
+        }
+    }
+}
+
+/// The steps of the completion search of a projection, per token. A token
+/// whose search spends them is refused.
+const PROJECTION_STEPS: usize = 256;
+
+/// What the mask has found at a state of the order operators `<`, `<=`, `>`
+/// and `>=`, which the checks read alike: their first labels, and the first
+/// label that a completion passes with, are the same for all four.
+
+#[derive(Default)]
+enum Order {
+    #[default]
+    Unknown,
+    Refused(Refusal),
+    Passes(Token),
 }

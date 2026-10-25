@@ -1,0 +1,53 @@
+[{"stream_name":"stderr","time":10.809769163,"data":"0.00s - Debugger warning: It seems that frozen modules are being used, which may\n"}
+,{"stream_name":"stderr","time":10.809885128,"data":"0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off\n"}
+,{"stream_name":"stderr","time":10.809896502,"data":"0.00s - to python to disable frozen modules.\n"}
+,{"stream_name":"stderr","time":10.809900699,"data":"0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.\n"}
+,{"stream_name":"stderr","time":11.733775717,"data":"0.00s - Debugger warning: It seems that frozen modules are being used, which may\n"}
+,{"stream_name":"stderr","time":11.733853275,"data":"0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off\n"}
+,{"stream_name":"stderr","time":11.733860456,"data":"0.00s - to python to disable frozen modules.\n"}
+,{"stream_name":"stderr","time":11.733865145,"data":"0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.\n"}
+,{"stream_name":"stdout","time":13.143092591,"data":"/kaggle/input\n"}
+,{"stream_name":"stdout","time":13.143132134,"data":"/kaggle/input/competitions\n"}
+,{"stream_name":"stdout","time":13.143137739,"data":"/kaggle/input/competitions/arc-prize-2026-arc-agi-2\n"}
+,{"stream_name":"stdout","time":13.143142144,"data":"/kaggle/input/competitions/arc-prize-2026-arc-agi-2/arc-agi_training_solutions.json\n"}
+,{"stream_name":"stdout","time":13.14314642,"data":"/kaggle/input/competitions/arc-prize-2026-arc-agi-2/arc-agi_evaluation_solutions.json\n"}
+,{"stream_name":"stdout","time":13.14315139,"data":"/kaggle/input/competitions/arc-prize-2026-arc-agi-2/arc-agi_evaluation_challenges.json\n"}
+,{"stream_name":"stdout","time":13.143155963,"data":"/kaggle/input/competitions/arc-prize-2026-arc-agi-2/sample_submission.json\n"}
+,{"stream_name":"stdout","time":13.143159807,"data":"/kaggle/input/competitions/arc-prize-2026-arc-agi-2/arc-agi_training_challenges.json\n"}
+,{"stream_name":"stdout","time":13.143164118,"data":"/kaggle/input/competitions/arc-prize-2026-arc-agi-2/arc-agi_test_challenges.json\n"}
+,{"stream_name":"stdout","time":13.143167975,"data":"/kaggle/input/models\n"}
+,{"stream_name":"stdout","time":13.143172164,"data":"/kaggle/input/models/qwen-lm\n"}
+,{"stream_name":"stdout","time":13.143176199,"data":"/kaggle/input/models/qwen-lm/qwen-3\n"}
+,{"stream_name":"stdout","time":13.143180332,"data":"/kaggle/input/models/qwen-lm/qwen-3/transformers\n"}
+,{"stream_name":"stdout","time":13.143184551,"data":"/kaggle/input/models/qwen-lm/qwen-3/transformers/0.6b\n"}
+,{"stream_name":"stdout","time":13.143188873,"data":"/kaggle/input/models/qwen-lm/qwen-3/transformers/0.6b/1\n"}
+,{"stream_name":"stdout","time":13.143193019,"data":"/kaggle/input/models/qwen-lm/qwen-3/transformers/0.6b/1/config.json\n"}
+,{"stream_name":"stdout","time":13.143197427,"data":"/kaggle/input/models/qwen-lm/qwen-3/transformers/0.6b/1/merges.txt\n"}
+,{"stream_name":"stdout","time":13.143201733,"data":"/kaggle/input/models/qwen-lm/qwen-3/transformers/0.6b/1/README.md\n"}
+,{"stream_name":"stdout","time":13.143206156,"data":"/kaggle/input/models/qwen-lm/qwen-3/transformers/0.6b/1/tokenizer.json\n"}
+,{"stream_name":"stdout","time":13.143210419,"data":"/kaggle/input/models/qwen-lm/qwen-3/transformers/0.6b/1/vocab.json\n"}
+,{"stream_name":"stdout","time":13.143221399,"data":"/kaggle/input/models/qwen-lm/qwen-3/transformers/0.6b/1/tokenizer_config.json\n"}
+,{"stream_name":"stdout","time":13.143225341,"data":"/kaggle/input/models/qwen-lm/qwen-3/transformers/0.6b/1/model.safetensors\n"}
+,{"stream_name":"stdout","time":13.143233323,"data":"/kaggle/input/models/qwen-lm/qwen-3/transformers/0.6b/1/generation_config.json\n"}
+,{"stream_name":"stdout","time":13.143253863,"data":"/kaggle/input/models/qwen-lm/qwen-3/transformers/1.7b\n"}
+,{"stream_name":"stdout","time":13.143258701,"data":"/kaggle/input/models/qwen-lm/qwen-3/transformers/1.7b/1\n"}
+,{"stream_name":"stdout","time":13.143262416,"data":"/kaggle/input/models/qwen-lm/qwen-3/transformers/1.7b/1/model.safetensors.index.json\n"}
+,{"stream_name":"stdout","time":13.143266901,"data":"/kaggle/input/models/qwen-lm/qwen-3/transformers/1.7b/1/config.json\n"}
+,{"stream_name":"stdout","time":13.143271045,"data":"/kaggle/input/models/qwen-lm/qwen-3/transformers/1.7b/1/merges.txt\n"}
+,{"stream_name":"stdout","time":13.143275287,"data":"/kaggle/input/models/qwen-lm/qwen-3/transformers/1.7b/1/model-00001-of-00002.safetensors\n"}
+,{"stream_name":"stdout","time":13.143279632,"data":"/kaggle/input/models/qwen-lm/qwen-3/transformers/1.7b/1/model-00002-of-00002.safetensors\n"}
+,{"stream_name":"stdout","time":13.143284156,"data":"/kaggle/input/models/qwen-lm/qwen-3/transformers/1.7b/1/README.md\n"}
+,{"stream_name":"stdout","time":13.143289736,"data":"/kaggle/input/models/qwen-lm/qwen-3/transformers/1.7b/1/tokenizer.json\n"}
+,{"stream_name":"stdout","time":13.143294477,"data":"/kaggle/input/models/qwen-lm/qwen-3/transformers/1.7b/1/vocab.json\n"}
+,{"stream_name":"stdout","time":13.143298185999999,"data":"/kaggle/input/models/qwen-lm/qwen-3/transformers/1.7b/1/tokenizer_config.json\n"}
+,{"stream_name":"stdout","time":13.14330237,"data":"/kaggle/input/models/qwen-lm/qwen-3/transformers/1.7b/1/generation_config.json\n"}
+,{"stream_name":"stdout","time":13.143306056,"data":"\n"}
+,{"stream_name":"stderr","time":17.057297323,"data":"/usr/local/lib/python3.13/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":17.057364587,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":17.284106348999998,"data":"/usr/local/lib/python3.13/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":17.284154853,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":18.362758131,"data":"[NbConvertApp] Converting notebook __notebook__.ipynb to notebook\n"}
+,{"stream_name":"stderr","time":18.470667825,"data":"[NbConvertApp] Writing 4324 bytes to __notebook__.ipynb\n"}
+,{"stream_name":"stderr","time":22.002187539,"data":"[NbConvertApp] Converting notebook __notebook__.ipynb to html\n"}
+,{"stream_name":"stderr","time":22.657529296,"data":"[NbConvertApp] Writing 275717 bytes to __results__.html\n"}
+]

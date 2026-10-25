@@ -1,0 +1,32 @@
+[2s] imported; torch threads 10
+[2s] data loaded
+evaluation tasks dropped as family siblings of training tasks: []
+unseen, over --enc-budget 2000: 2b9ef948 $Core table 4 relation 4: 3420 rows on one entry
+unseen, over --enc-budget 2000: 2b9ef948 $Core table 5 relation 5: 3447 rows on one entry
+unseen, over --enc-budget 2000: 2b9ef948 $Core table 9 relation 9: 6568 rows on one entry
+unseen, over --enc-budget 2000: 2b9ef948 $Core table 10 relation 10: 6564 rows on one entry
+unseen, over --enc-budget 2000: 2b9ef948 $Corner table 4 relation 4: 3420 rows on one entry
+unseen, over --enc-budget 2000: 2b9ef948 $Corner table 5 relation 5: 3447 rows on one entry
+unseen, over --enc-budget 2000: 2b9ef948 $Corner table 9 relation 9: 6568 rows on one entry
+unseen, over --enc-budget 2000: 2b9ef948 $Corner table 10 relation 10: 6564 rows on one entry
+unseen, over --enc-budget 2000: 2b9ef948 $Corner table 19 relation 19: 3600 rows on one entry
+unseen, over --enc-budget 2000: 2b9ef948 $Corner table 21 relation 21: 3600 rows on one entry
+unseen, over --enc-budget 2000: 2b9ef948 $Corner table 24 relation 24: 2700 rows on one entry
+tables: 0 of 22 cases left out (not in the export, or a data fault); {'body tables': 0, 'unseen tables': {'an entry over the budget': 11}, 'tables': 570}
+[3s] tokenizer loaded
+W1024 10:42:18.548000 11099 .venv/lib/python3.12/site-packages/torch/distributed/elastic/multiprocessing/redirects.py:35] NOTE: Redirects are currently not supported in MacOs.
+Loading weights:   0%|          | 0/272 [00:00<?, ?it/s]Loading weights: 100%|██████████| 272/272 [00:00<00:00, 7295.42it/s]
+[3s] base model loaded
+encoder: 4.33M parameters
+6 train tasks (18 cases), 2 in-distribution held-out, 2 evaluation held-out; vocab in 232, out 229; 139M parameters on cpu
+tables by the rule that found their relation's declaration: {'fact': 44, 'after': 433}; 0 of 22 cases drop tables past 2 max-len
+loaded in 1s
+step 1 epoch 1 train loss 2.901 3s
+step 2 epoch 1 train loss 2.798 4s
+step 3 epoch 1 train loss 2.532 5s
+step 10 epoch 3 train loss 1.795 40s
+step 20 epoch 6 train loss 1.352 109s
+step 30 epoch 9 train loss 0.997 166s
+[215s] evaluated
+[221s] checkpoint saved
+{"step": 30, "epoch": 9, "seconds": 213, "train_loss": 0.9972782731056213, "device_gb": 0.0, "indist": {"loss": 1.4344840049743652, "by_class": {"column": 0.9853058245722316, "component": 4.465640306472778, "fact": 2.290661688034351, "lib relation": 6.045403242111206, "proposer": 4.069219350814819, "read:label": 0.4314056177693904, "read:rel": 2.9902280686157092, "structure": 1.1325870818851806}, "by_length": {"len<200": 1.498145292243563, "len<600": 1.4101527490738353}, "pointer_accuracy": 0.546875}, "heldout": {"loss": 1.2374742031097412, "by_class": {"column": 0.7990894570610225, "component": 3.0900059640407562, "fact": 2.6417587846517563, "lib relation": 4.210193829102949, "proposer": 4.464519594396863, "read:label": 0.46556299919282773, "read:rel": 2.8009819330707675, "structure": 0.84856641702164}, "by_length": {"len<200": 1.4928736723831046, "len<600": 1.1685568559092818}, "pointer_accuracy": 0.5844155844155844}, "batch_splits": {"groups": 27, "splits": 4}, "train": {"loss": 0.9983141491399009, "by_class": {"column": 0.8560652197014975, "component": 2.3293197961414562, "fact": 2.5459080301225185, "lib relation": 4.403904957903756, "proposer": 3.542572917540868, "read:label": 0.5228636626375319, "read:rel": 2.354828123862927, "structure": 0.5399138711259441}, "by_length": {"len<600": 0.9983141346348273}, "pointer_accuracy": 0.6432432432432432}}

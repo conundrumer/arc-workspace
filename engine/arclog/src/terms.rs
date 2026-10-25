@@ -616,9 +616,22 @@ pub struct InternTable {
     contents: Vec<Option<Content>>,
     /// The Idents of the contents of each hash.
     by_hash: crate::hash::StableHashMap<StableHash, Vec<Ident>>,
+    /// The bytes of each set in `contents` plus the capacity in bytes of each
+    /// `Vec<Ident>` in `by_hash`, kept in step by `intern` and set again by
+    /// `free_unheld`.
+    held_bytes: usize,
 }
 
 impl InternTable {
+    /// The bytes of `contents` that its entries hold, apart from the
+    /// capacity of `contents` itself.
+    fn content_bytes(content: &Content) -> usize {
+        match content {
+            Content::Set(set) => set.bytes(),
+            Content::FromFile { .. } => 0,
+        }
+    }
+
     /// The Ident of `content`, interned on first use.
     pub fn intern(&mut self, content: Content) -> Ident {
         let hash = {
@@ -634,8 +647,11 @@ impl InternTable {
         }
         let number = u32::try_from(self.contents.len()).expect("fewer than 2^32 Idents in a session");
         let ident = Ident(number);
-        self.contents.push(Some(content));
+        let before = idents.capacity();
         idents.push(ident);
+        let grown = (idents.capacity() - before) * std::mem::size_of::<Ident>();
+        self.held_bytes += grown + Self::content_bytes(&content);
+        self.contents.push(Some(content));
         ident
     }
 
@@ -673,28 +689,25 @@ impl InternTable {
             idents.retain(|ident| contents[ident.0 as usize].is_some());
             !idents.is_empty()
         });
-    }
-
-    /// The bytes the table holds, which count toward the task session's
-    /// bound.
-    pub fn bytes(&self) -> usize {
-        let contents = self.contents.capacity() * std::mem::size_of::<Option<Content>>()
-            + self
-                .contents
-                .iter()
-                .flatten()
-                .map(|content| match content {
-                    Content::Set(set) => set.bytes(),
-                    Content::FromFile { .. } => 0,
-                })
-                .sum::<usize>();
-        let by_hash = self.by_hash.capacity()
-            * (std::mem::size_of::<StableHash>() + std::mem::size_of::<Vec<Ident>>())
+        self.held_bytes = self
+            .contents
+            .iter()
+            .flatten()
+            .map(Self::content_bytes)
+            .sum::<usize>()
             + self
                 .by_hash
                 .values()
                 .map(|idents| idents.capacity() * std::mem::size_of::<Ident>())
                 .sum::<usize>();
-        contents + by_hash
+    }
+
+    /// The bytes the table holds, which count toward the task session's
+    /// bound. It runs in constant time.
+    pub fn bytes(&self) -> usize {
+        self.contents.capacity() * std::mem::size_of::<Option<Content>>()
+            + self.by_hash.capacity()
+                * (std::mem::size_of::<StableHash>() + std::mem::size_of::<Vec<Ident>>())
+            + self.held_bytes
     }
 }

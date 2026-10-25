@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from arclog_convert import libmap, out
-from arclog_convert.convert import ALGEBRA_MODES, DET_COLS, PROPOSER_COLS, SIGNATURE, Lib, pascal, takes_set_mark
+from arclog_convert.lib import ALGEBRA_MODES, DET_COLS, PROPOSER_COLS, SIGNATURE, Lib, pascal, takes_set_mark
 
 GEN = out() / "gen"
 FACTS = {"input": ["P", "Col"], "ex_input": ["E", "P", "Col"], "ex_output": ["E", "P", "Col"]}

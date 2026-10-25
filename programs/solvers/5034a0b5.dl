@@ -68,7 +68,7 @@ blocked(P, $Cell()) :- faces_frame(P).
 .init obj = Components8<Color>
 obj.node(Col, P) :- heading(P, _, Col).
 
-blocked(P, $Object()) :- obj.conn(_, P, P2), faces_frame(P2).
+blocked(P, $Object()) :- obj.label(Col, P, Id), obj.label(Col, P2, Id), faces_frame(P2).
 
 // --- output ---
 

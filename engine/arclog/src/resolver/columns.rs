@@ -53,7 +53,7 @@ pub(super) enum Slot {
 }
 
 impl Slot {
-    fn name(&self) -> &ColumnName {
+    pub(super) fn name(&self) -> &ColumnName {
         match self {
             Slot::Column(name) | Slot::Record { name, .. } => name,
         }
@@ -118,6 +118,20 @@ impl Columns {
             }
         }
         names
+    }
+
+    /// The path of each row position, in row order: a column's name, and a
+    /// record's name then a field's name per field. The path names the
+    /// position in any order of the columns.
+    pub(super) fn row_paths(&self) -> Vec<Box<[ColumnName]>> {
+        let mut paths: Vec<Box<[ColumnName]>> = Vec::new();
+        for slot in self.0.iter() {
+            match slot {
+                Slot::Column(name) => paths.push(Box::new([name.clone()])),
+                Slot::Record { name, fields } => paths.extend(fields.iter().map(|field| Box::from([name.clone(), field.clone()]))),
+            }
+        }
+        paths
     }
 
     /// The place of the column at `path`: a column's name, then, on a

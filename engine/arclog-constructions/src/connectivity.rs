@@ -35,19 +35,10 @@ impl Construction for Connectivity {
     ) -> Result<GroupOutputs, ReachedBound> {
         let [node, step] = group.inputs else { panic!("Connectivity's inputs `node` and `step`") };
         let mut work = Batch::default();
-        let (classes, adjacent) = components(&column(node), &column(step), group.wanted[2], &mut work, context)?;
+        let (classes, adjacent) = components(&column(node), &column(step), group.wanted[1], &mut work, context)?;
         let component = identified(context, &group.types[0], &classes);
-        let mut connected = RowSet::empty(2);
-        for members in classes.iter().filter(|_| group.wanted[1]) {
-            for p in members {
-                for q in members {
-                    connected.insert(p.iter().chain(q.iter()).copied().collect());
-                }
-            }
-            work.count(context.budget, members.len() as u64 * members.len() as u64)?;
-        }
-        rows_held(context, [&component, &connected, &adjacent])?;
-        Ok(GroupOutputs { outputs: Box::new([component, connected, adjacent]) })
+        rows_held(context, [&component, &adjacent])?;
+        Ok(GroupOutputs { outputs: Box::new([component, adjacent]) })
     }
 }
 

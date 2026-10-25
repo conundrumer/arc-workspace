@@ -21,7 +21,8 @@ impl Check for SiteColumnsCheck {
         Some(at.base(self.id()))
     }
 
-    /// Refuses each site of an atom of the form on a column that the
+    /// Refuses each site of an atom of the form on a column that an earlier
+    /// site of the atom names, and each site on a column that the
     /// relation the atom reads does not have, and each field of a site on a
     /// record column that the record does not have, as
     /// [`ResolvedProgram::column_position`] and
@@ -34,12 +35,25 @@ impl Check for SiteColumnsCheck {
         let mut refused: Vec<(&'static str, NodePath)> = Vec::new();
         for read in form_reads(input.form, input.path) {
             let atom_at = input.path.join(&read.at);
+            if reads_unreadable(program, input.scope.registry, &atom_at) {
+                refused.push(("a body atom reads a lib relation or a relation macro, no proposer or component", read.at.clone()));
+                continue;
+            }
             if !has_columns(program, input.scope.registry, &atom_at) {
                 continue;
             }
             for (site, index) in read.atom.sites.iter().zip(0u32..) {
                 let at = atom_at.child(index);
-                if program.column_position(&at).is_some() {
+                let position = program.column_position(&at);
+                let on_column_already = read.atom.sites.iter().zip(0u32..).take(index as usize).any(|(earlier, before)| {
+                    let before_position = program.column_position(&atom_at.child(before));
+                    earlier.column == site.column || (position.is_some() && position == before_position)
+                });
+                if on_column_already {
+                    refused.push(("the atom has a site on the column of this site already", read.at.child(index)));
+                    continue;
+                }
+                if position.is_some() {
                     continue;
                 }
                 if program.column_group(&at).is_none() {
@@ -68,9 +82,18 @@ impl Check for SiteColumnsCheck {
     }
 }
 
+/// Whether the read at `atom`, a path in `program`, resolves to a lib
+/// proposer or a lib component, which no body atom reads.
+fn reads_unreadable(program: &ResolvedProgram, registry: &Registry, atom: &NodePath) -> bool {
+    match program.resolution(atom) {
+        Some(Resolution::Lib(name)) => matches!(registry.entry(name), Some(LibEntry::Proposer(_) | LibEntry::Component(_))),
+        _ => false,
+    }
+}
+
 /// Whether the read at `atom`, a path in `program`, resolves to a relation
 /// whose columns the resolver places its sites on: a node of the graph, or
-/// a lib relation, relation macro or proposer.
+/// a lib relation or relation macro.
 fn has_columns(program: &ResolvedProgram, registry: &Registry, atom: &NodePath) -> bool {
     match program.resolution(atom) {
         Some(Resolution::Node(_)) => true,

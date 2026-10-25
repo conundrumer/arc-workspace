@@ -30,8 +30,8 @@ use crate::domain;
 /// cell that some shift of the coset takes it onto. It is a symmetry where
 /// some cell goes onto another cell and none conflicts with its image.
 ///
-/// Panics where a group breaks its domain of [`crate::domain`]: two
-/// periods on one axis, or a period that is not positive.
+/// A group outside its domain of [`crate::domain`], with two periods on one
+/// axis or a period that is not positive, is undefined.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Wallpaper;
 
@@ -40,13 +40,16 @@ impl Construction for Wallpaper {
         Self::NAME
     }
 
+    fn outside_domain(&self, group: &GroupInputs<'_>) -> bool {
+        domain::check(Self::NAME, group.inputs).is_some()
+    }
+
     fn evaluate(
         &self,
         group: &GroupInputs<'_>,
         context: &mut ConstructionContext<'_, '_>,
     ) -> Result<GroupOutputs, ReachedBound> {
         let [transform, cell, grid, period] = group.inputs else { panic!("Wallpaper's four inputs") };
-        domain::check(Self::NAME, group.inputs);
         let lib = Lib(context.registry);
         let periods = Periods::of(period);
         let grid: StableHashSet<TermId> = grid.rows().map(|row| row[0]).collect();

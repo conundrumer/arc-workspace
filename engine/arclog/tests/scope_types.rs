@@ -3,8 +3,9 @@
 //! path in the program. A constraint gives its two labels each other's
 //! sites only in the list that holds it and in the lists nested in it. A
 //! read of an instance's input port gives its labels the types of that
-//! input's columns, and an `OR` gives a label the join of the types of the
-//! branches that hold it.
+//! input's columns, and an `OR` gives a label that it makes the join of the
+//! types of the branches that hold it. A branch that holds no label equal to
+//! a label made outside the `OR` gives the join no type.
 
 use arclog::check::{check_program, CheckCache, CheckedProgram, SolverClauses};
 use arclog::program::path::{NodePath, PathStep};
@@ -101,6 +102,22 @@ fn a_label_that_one_branch_of_an_or_does_not_hold_takes_the_join_of_the_branches
 }
 
 #[test]
+fn a_label_made_outside_an_or_keeps_its_type_when_one_branch_holds_no_label_equal_to_it() {
+    let checked = checked(
+        "
+(RULE &placed
+  (d4_elem (:D *D))
+  (OR ((c4_elem (:D D)))
+      ((dir_elem (:D *X)))))
+",
+    );
+    let Form::Clause(clause) = &checked.program.program.value().forms[0] else { panic!("the first form is a clause") };
+    let column = clause.value().columns.iter().find(|column| column.name == ColumnName::Written("D".into())).expect("the clause has a column D");
+    let types = checked.types.form(&path(&[0])).expect("the clause is a label scope");
+    assert_eq!(types.label(column.label), Some(&ValueType::D4));
+}
+
+#[test]
 fn an_unfold_key_that_reads_an_order_input_in_one_branch_types_each_label() {
     let checked = checked(
         "
@@ -142,4 +159,36 @@ fn an_or_branch_that_makes_a_label_only_by_zero_adds_no_type() {
     let column = clause.value().columns.iter().find(|column| column.name == ColumnName::Written("K".into())).expect("the clause has a column K");
     let types = checked.types.form(&path(&[0])).expect("the clause is a label scope");
     assert_eq!(types.label(column.label), Some(&ValueType::DiagDir));
+}
+
+/// The type of the column `name` of the first clause of `checked`.
+fn column_type(checked: &CheckedProgram, name: &str) -> Option<ValueType> {
+    let Form::Clause(clause) = &checked.program.program.value().forms[0] else { panic!("the first form is a clause") };
+    let column = clause.value().columns.iter().find(|column| column.name == ColumnName::Written(name.into())).expect("the clause has the column");
+    checked.types.form(&path(&[0])).expect("the clause is a label scope").label(column.label).cloned()
+}
+
+#[test]
+fn labels_made_equal_at_the_top_level_take_the_type_of_the_walk_of_each_label_alone() {
+    // A, B and C are one class; C is also fresh in an OR, so its walk is its own.
+    let together = checked(
+        "
+(RULE &t
+  (diag_dir_elem (:D *A))
+  (= *B A)
+  (= *C B)
+  (OR ((dir_elem (:D *C))) ((diag_dir_elem (:D C)))))
+",
+    );
+    let alone = checked(
+        "
+(RULE &t
+  (diag_dir_elem (:D *A))
+  (= *B A))
+",
+    );
+    assert!(column_type(&together, "A").is_some());
+    assert_eq!(column_type(&together, "A"), column_type(&together, "B"));
+    assert_eq!(column_type(&together, "A"), column_type(&alone, "A"));
+    assert_eq!(column_type(&alone, "A"), column_type(&alone, "B"));
 }

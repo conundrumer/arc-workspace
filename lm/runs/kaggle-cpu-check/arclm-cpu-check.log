@@ -1,0 +1,35 @@
+[{"stream_name":"stderr","time":7.791553227,"data":"0.00s - Debugger warning: It seems that frozen modules are being used, which may\n"}
+,{"stream_name":"stderr","time":7.791600744,"data":"0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off\n"}
+,{"stream_name":"stderr","time":7.791608088,"data":"0.00s - to python to disable frozen modules.\n"}
+,{"stream_name":"stderr","time":7.791613037,"data":"0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.\n"}
+,{"stream_name":"stderr","time":8.560224604,"data":"0.00s - Debugger warning: It seems that frozen modules are being used, which may\n"}
+,{"stream_name":"stderr","time":8.560256811,"data":"0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off\n"}
+,{"stream_name":"stderr","time":8.560262853,"data":"0.00s - to python to disable frozen modules.\n"}
+,{"stream_name":"stderr","time":8.560267855,"data":"0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.\n"}
+,{"stream_name":"stdout","time":26.311602453,"data":"python 3.13.15 torch 2.11.0+cpu transformers 5.16.1 cuda False\n"}
+,{"stream_name":"stdout","time":26.311660881,"data":"script ['/kaggle/input/datasets/conundrumer/arclm-data/train.py']\n"}
+,{"stream_name":"stdout","time":105.768163474,"data":"2 train, 2 held-out; vocab in 176, out 174; 597M parameters on cpu\n"}
+,{"stream_name":"stdout","time":105.768231211,"data":"loaded in 24s\n"}
+,{"stream_name":"stdout","time":105.768238662,"data":"step 1 epoch 1 train loss 5.557 13s\n"}
+,{"stream_name":"stdout","time":105.768244441,"data":"step 2 epoch 2 train loss 4.969 23s\n"}
+,{"stream_name":"stdout","time":105.768251442,"data":"{\"step\": 2, \"epoch\": 2, \"seconds\": 39, \"train_loss\": 4.968778133392334, \"device_gb\": 0.0, \"heldout\": {\"loss\": 3.5155578045486715, \"by_class\": {\"column\": 2.4246134722753783, \"component\": 7.665763346354167, \"lib relation\": 7.969856869056821, \"read:label\": 4.606818426382933, \"read:rel\": 6.693377943926079, \"structure\": 2.347448930604531}, \"by_length\": {\"len\u003e=600\": 3.515557894905803}, \"pointer_accuracy\": 0.056856187290969896}}\n"}
+,{"stream_name":"stdout","time":105.768262862,"data":"\n"}
+,{"stream_name":"stdout","time":105.768268608,"data":"Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n"}
+,{"stream_name":"stdout","time":105.768274132,"data":"\n"}
+,{"stream_name":"stdout","time":105.768279336,"data":"Loading weights:   0%|          | 0/311 [00:00\u003c?, ?it/s]\n"}
+,{"stream_name":"stdout","time":105.768285338,"data":"Loading weights:   0%|          | 1/311 [00:00\u003c02:18,  2.23it/s]\n"}
+,{"stream_name":"stdout","time":105.768291347,"data":"Loading weights:  59%|█████▊    | 182/311 [00:00\u003c00:00, 432.25it/s]\n"}
+,{"stream_name":"stdout","time":105.76829846,"data":"Loading weights:  91%|█████████ | 282/311 [00:00\u003c00:00, 486.00it/s]\n"}
+,{"stream_name":"stdout","time":105.768322594,"data":"Loading weights: 100%|██████████| 311/311 [00:00\u003c00:00, 407.62it/s]\n"}
+,{"stream_name":"stdout","time":105.768328654,"data":"\n"}
+,{"stream_name":"stdout","time":105.768334274,"data":"{\"step\": 2, \"epoch\": 2, \"seconds\": 39, \"train_loss\": 4.968778133392334, \"device_gb\": 0.0, \"heldout\": {\"loss\": 3.5155578045486715, \"by_class\": {\"column\": 2.4246134722753783, \"component\": 7.665763346354167, \"lib relation\": 7.969856869056821, \"read:label\": 4.606818426382933, \"read:rel\": 6.693377943926079, \"structure\": 2.347448930604531}, \"by_length\": {\"len\u003e=600\": 3.515557894905803}, \"pointer_accuracy\": 0.056856187290969896}}\n"}
+,{"stream_name":"stdout","time":105.76835383,"data":"\n"}
+,{"stream_name":"stderr","time":109.371563448,"data":"/usr/local/lib/python3.13/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":109.371599809,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":109.567625351,"data":"/usr/local/lib/python3.13/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":109.567674147,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":110.466591918,"data":"[NbConvertApp] Converting notebook __notebook__.ipynb to notebook\n"}
+,{"stream_name":"stderr","time":110.560710866,"data":"[NbConvertApp] Writing 4387 bytes to __notebook__.ipynb\n"}
+,{"stream_name":"stderr","time":113.864719067,"data":"[NbConvertApp] Converting notebook __notebook__.ipynb to html\n"}
+,{"stream_name":"stderr","time":114.495765607,"data":"[NbConvertApp] Writing 279766 bytes to __results__.html\n"}
+]

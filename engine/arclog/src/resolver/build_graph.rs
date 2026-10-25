@@ -137,6 +137,11 @@ impl<'a> Builder<'a> {
                     self.groups.insert(at, *group);
                 }
             }
+            for at in &concept.lifted {
+                if let Some(at) = rebase(at, concept_path, path) {
+                    self.lifted.insert(at);
+                }
+            }
             for ((at, index), columns) in &concept.proposer_columns {
                 if let Some(at) = rebase(at, concept_path, path) {
                     self.proposer_columns.insert((at, *index), columns.clone());

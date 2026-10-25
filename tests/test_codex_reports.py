@@ -91,7 +91,7 @@ def test_stopped_walk_does_not_approve(tmp_path: Path):
 
 
 @pytest.mark.parametrize("outcome", ["finished", "needs-operator"])
-def test_native_completion_requires_current_receipt(tmp_path: Path, outcome: str):
+def test_native_completion_requires_current_receipt(tmp_path: Path, outcome: str, monkeypatch):
     reads = script("codex_reads")
     item, manifest, _ = prepared(tmp_path)
     store = ticket.Store(manifest.parent.parent)
@@ -110,21 +110,31 @@ def test_native_completion_requires_current_receipt(tmp_path: Path, outcome: str
     opening = row(0, {"type": "task_started", "turn_id": "turn"}) + row(
         1, {"type": "user_message", "message": f"{manifest}\n{item.brief.read_text()}"})
     path.write_text(opening)
-    assert reads.native_agents(item.operator, tmp_path, tmp_path).agents[0].pending
+    state = script("operator_state")
+    monkeypatch.setattr(script("codex_daemon"), "turn_status", lambda thread, turn: "inProgress")
+
+    def native():
+        script("state_reads").new_state()
+        return state.attempt_reads(reads.native_agents(item.operator, tmp_path, tmp_path).agents,
+                                   home=tmp_path).agents[0]
+
+    assert native().pending
     with pytest.raises(ticket.Refused):
         ticket.accept(item.scratch, item.agent, tmp_path, "finished")
     path.write_text(opening + row(2, {"type": "task_complete", "turn_id": "turn",
                                      "last_agent_message": str(item.report)}))
     store.ended(item.agent, "turn", "completed")
     os.utime(item.report, (started + 3, started + 3))
-    script("state_reads").new_state()
-    assert reads.native_agents(item.operator, tmp_path, tmp_path).agents[0].last_report is None
+    assert native().last_report is None
     ticket.accept(item.scratch, item.agent, tmp_path, outcome)
-    script("state_reads").new_state()
-    accepted = reads.native_agents(item.operator, tmp_path, tmp_path).agents[0]
+    accepted = native()
     assert not accepted.pending
     assert accepted.last_report is not None
+    if outcome == "needs-operator":
+        dispatch = item.scratch / "codex-dispatch.json"
+        dispatch.write_text("{")
+        assert native().last_report is None
+        dispatch.unlink()
     item.report.write_text("changed report")
     os.utime(item.report, (started + 4, started + 4))
-    script("state_reads").new_state()
-    assert reads.native_agents(item.operator, tmp_path, tmp_path).agents[0].last_report is None
+    assert native().last_report is None

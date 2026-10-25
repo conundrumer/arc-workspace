@@ -1,0 +1,25 @@
+22:43:30 cache rebuilt: export /workspace/arc/work/tables/dev -> dev
+22:43:32 == random table, every column type and a marker row, an unseen table, then a second random table
+22:43:51 pooled vectors (3, 4, 21, 32), max |entry| 9.099; crossing (3, 4, 48), max |entry| 3.106
+22:44:11   D4_ID: |pooled(g.T) - g.pooled(T)| 0.00e+00   |cross(g.T) - cross(T)| 0.00e+00
+22:44:31   D4_CW: |pooled(g.T) - g.pooled(T)| 2.09e-14   |cross(g.T) - cross(T)| 6.66e-15
+22:44:50   D4_HT: |pooled(g.T) - g.pooled(T)| 1.55e-14   |cross(g.T) - cross(T)| 6.00e-15
+22:45:09   D4_CC: |pooled(g.T) - g.pooled(T)| 1.69e-14   |cross(g.T) - cross(T)| 6.55e-15
+22:45:28   D4_LR: |pooled(g.T) - g.pooled(T)| 1.27e-14   |cross(g.T) - cross(T)| 5.55e-15
+22:45:45   D4_TB: |pooled(g.T) - g.pooled(T)| 1.38e-14   |cross(g.T) - cross(T)| 5.11e-15
+22:46:03   D4_DG: |pooled(g.T) - g.pooled(T)| 1.47e-14   |cross(g.T) - cross(T)| 7.11e-15
+22:46:22   D4_AD: |pooled(g.T) - g.pooled(T)| 2.44e-14   |cross(g.T) - cross(T)| 6.88e-15
+22:46:22   D4 equivariance PASS (worst 2.4e-14, 7.1e-15); for scale, the least |pooled(g.T) - pooled(T)| over g != id is 5.43e-01
+22:46:40   row order: |pooled| change 9.55e-15
+22:47:22   Color permutation, identifiers carried: |pooled| change 0.00e+00 PASS; not carried (so the values are seen): 3.34e-01
+22:48:00   Example permutation, identifiers carried: |pooled| change 0.00e+00 PASS; not carried (so the values are seen): 9.42e-01
+22:48:34   Ident permutation, identifiers carried: |pooled| change 0.00e+00 PASS; not carried (so the values are seen): 3.30e-01
+22:48:34 == fixture, 00576224 $Lookup evidence and the smallest tables of each column type (types ['Axis', 'Box', 'Color', 'D4', 'DiagDir', 'Dir', 'Dir8', 'Example', 'Ident', 'Number']), 40 rows each
+22:49:08 pooled vectors (7, 4, 21, 32), max |entry| 9.753; crossing (7, 4, 48), max |entry| 3.108
+22:49:39   D4_ID: |pooled(g.T) - g.pooled(T)| 0.00e+00   |cross(g.T) - cross(T)| 0.00e+00
+22:50:11   D4_CW: |pooled(g.T) - g.pooled(T)| 2.20e-14   |cross(g.T) - cross(T)| 9.10e-15
+22:50:44   D4_HT: |pooled(g.T) - g.pooled(T)| 1.60e-14   |cross(g.T) - cross(T)| 1.15e-14
+22:51:15   D4_CC: |pooled(g.T) - g.pooled(T)| 2.31e-14   |cross(g.T) - cross(T)| 1.15e-14
+22:51:48   D4_LR: |pooled(g.T) - g.pooled(T)| 1.78e-14   |cross(g.T) - cross(T)| 8.44e-15
+22:52:21   D4_TB: |pooled(g.T) - g.pooled(T)| 1.78e-14   |cross(g.T) - cross(T)| 1.33e-14
+22:52:52   D4_DG: |pooled(g.T) - g.pooled(T)| 2.13e-14   |cross(g.T) - cross(T)| 7.55e-15

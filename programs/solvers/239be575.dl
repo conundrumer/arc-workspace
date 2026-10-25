@@ -72,14 +72,22 @@ joined(A) :- adj_choice(A), !apart(A).
 .init orth = Components<Unit>
 orth.node($U(), P) :- node(P).
 
-apart($Orth()) :- mark_cell(P), mark_cell(Q), !orth.conn($U(), P, Q).
+// Two mark cells in one component.
+.decl orth_linked(p: Position, q: Position)
+orth_linked(P, Q) :- mark_cell(P), mark_cell(Q), orth.label($U(), P, Id), orth.label($U(), Q, Id).
+
+apart($Orth()) :- mark_cell(P), mark_cell(Q), !orth_linked(P, Q).
 
 // --- $Diag ---
 
 .init diag = Components8<Unit>
 diag.node($U(), P) :- node(P).
 
-apart($Diag()) :- mark_cell(P), mark_cell(Q), !diag.conn($U(), P, Q).
+// Two mark cells in one component.
+.decl diag_linked(p: Position, q: Position)
+diag_linked(P, Q) :- mark_cell(P), mark_cell(Q), diag.label($U(), P, Id), diag.label($U(), Q, Id).
+
+apart($Diag()) :- mark_cell(P), mark_cell(Q), !diag_linked(P, Q).
 
 // --- $Wire ---
 out(P, Col, [A, $Wire()]) :- joined(A), params.link(Col), params.out_pos(P).

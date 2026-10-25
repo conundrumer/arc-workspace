@@ -37,13 +37,14 @@ use arclog::judge::determination::{determine, DeterminedCase, Determination};
 use arclog::judge::run::{judged_run, Depth};
 use arclog::registry::Registry;
 use arclog::relations::Relation;
-use arclog::resolver::resolve_cases;
+use arclog::resolver::{resolve_cases, ResolvedCase, ResolvedCases};
 use arclog::solver::Exclusion;
-use arclog::stream::{token_stream, DecodeSettings};
+use arclog::stream::DecodeSettings;
+use arclog::solver::CaseName;
 use arclog::task::{JudgedTask, Task};
 use arclog::terms::{Example, TermId};
 
-use arclog::stream::corpus::{case_spelled, check_case, check_cases, decoded_cases};
+use arclog::stream::corpus::{case_spelled, case_stream, check_case, check_cases, decoded_cases};
 use arclog::decode::corpus::{corpus_session, read_corpus_task, CorpusTask};
 use crate::concept_case::{corpus_limits, determined_cases};
 use arclog_constructions::shared as constructions;
@@ -71,10 +72,7 @@ pub fn run(args: &[String]) -> ExitCode {
     };
     let selected = selected(&task_ids, &[], Path::new("")).expect("a selection by task id alone reads no file");
     let totals: Mutex<Totals> = Mutex::default();
-    let report = run_over_corpus(&corpus, |solver| match &selected {
-        Some(ids) if !ids.contains(&solver.task_id) => SolverResult::Pass,
-        _ => decode_solver(&corpus, &tasks, &solver.task_id, all, rows, &totals),
-    }, print_ended);
+    let report = run_over_corpus(&corpus, selected.as_ref(), |solver| decode_solver(&corpus, &tasks, &solver.task_id, all, rows, &totals), print_ended);
     let report = match report {
         Ok(report) => report,
         Err(error) => {
@@ -249,7 +247,7 @@ fn decode_cases(corpus: &Path, tasks: &Path, id: &str, all: bool, rows: RowsMode
             continue;
         }
         let expected = expected_solves(case, &determination, &judged);
-        let case_run = catch_unwind(AssertUnwindSafe(|| decode_case(case.program, expected, &task, &judged, rows, gathered)))
+        let case_run = catch_unwind(AssertUnwindSafe(|| decode_case(resolved_case(&cases, case.name), cases.concept().case.name == *case.name, case.program, expected, &task, &judged, rows, gathered)))
             .unwrap_or_else(|payload| vec![(Kind::Refused, format!("the decoder panicked: {}", panic_message(&*payload)))]);
         let mut found = BTreeSet::new();
         for (kind, line) in case_run {
@@ -277,9 +275,14 @@ fn expected_solves(case: &DeterminedCase<'_>, determination: &Determination, jud
     Ok(run.pairs[..judged.train.len()].iter().all(|pair| pair.solved))
 }
 
+/// The resolved case of `cases` named `name`.
+fn resolved_case<'a>(cases: &'a ResolvedCases, name: &CaseName) -> &'a ResolvedCase {
+    cases.cases().find(|case| case.case.name == *name).expect("a decoded case is a case of the solver")
+}
+
 /// The findings of the decode of `program`'s token stream, and the time of
 /// each token into `gathered`.
-fn decode_case(program: &CheckedProgram, expected: Result<bool, String>, task: &Task, judged: &JudgedTask, rows: RowsMode, gathered: &mut Totals) -> Vec<(Kind, String)> {
+fn decode_case(case: &ResolvedCase, concept: bool, program: &CheckedProgram, expected: Result<bool, String>, task: &Task, judged: &JudgedTask, rows: RowsMode, gathered: &mut Totals) -> Vec<(Kind, String)> {
     let mut findings: Vec<(Kind, String)> = Vec::new();
     let constructions = constructions().expect("the table of constructions built for the determination");
     let registry = Registry::get();
@@ -289,14 +292,15 @@ fn decode_case(program: &CheckedProgram, expected: Result<bool, String>, task: &
     let train: Arc<[PairCandidates<'_>]> = judged.train.iter().map(|pair| PairCandidates::of(pair, Section::Train, World::Closed)).collect();
     let mut decoder = Decoder::new(task, &session, registry, constructions, &settings).judging(train);
     let mut mirror = mirror_session.as_ref().map(|session| Decoder::new(task, session, registry, constructions, &settings));
-    let stream = match token_stream(program, decoder.vocabulary()) {
+    let stream = match case_stream(case, concept, program, decoder.vocabulary()) {
         Ok(stream) => stream,
-        Err(diagnostic) => return vec![(Kind::Refused, format!("the writer gives no stream: {}", diagnostic.message))],
+        Err(fault) => return vec![(Kind::Refused, fault)],
     };
     let mut consistency = None;
     let mut rows_found = false;
-    let replayed = replay(&mut decoder, &stream, &mut |decoder, stepped| {
-        let Stepped { index, token, consistency: result, mask_seconds, step_seconds, .. } = stepped;
+    let replayed = replay(&mut decoder, &stream, true, &mut |decoder, stepped| {
+        let Stepped { index, token, consistency: result, mask, step_seconds } = stepped;
+        let mask_seconds = mask.expect("the replay computes the mask").seconds;
         gathered.mask.push(mask_seconds);
         gathered.step.push(step_seconds);
         gathered.total.push(mask_seconds + step_seconds);

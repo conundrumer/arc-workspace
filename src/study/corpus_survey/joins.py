@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
-from arclog_convert.convert import ALGEBRA_MODES
+from arclog_convert.lib import ALGEBRA_MODES
 from arclog_convert.libmap.division import ORIENTATION
 from arclog_convert.lint import LIB
 from study.corpus_survey.bodies import (

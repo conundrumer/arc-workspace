@@ -1,0 +1,21 @@
+[33s] imported; torch threads 128
+[33s] data loaded
+evaluation tasks dropped as family siblings of training tasks: []
+tables: 0 of 22 cases left out (not in the export, or a data fault); {'body tables': 0, 'unseen tables': {}, 'unseen entries': {}, 'tables': 570}
+[47s] tokenizer loaded
+Loading weights:   0%|          | 0/272 [00:00<?, ?it/s]Loading weights: 100%|██████████| 272/272 [00:00<00:00, 2925.20it/s]
+[57s] base model loaded
+encoder: 2.83M parameters
+6 train tasks (18 cases), 2 in-distribution held-out, 2 evaluation held-out; vocab in 232, out 229; 138M parameters on cuda
+tables by the rule that found their relation's declaration: {'fact': 44, 'after': 433}; 0 of 22 cases drop tables past 2 max-len
+loaded in 26s
+step 1 epoch 1 train loss 2.855 2s
+step 2 epoch 1 train loss 2.824 2s
+step 3 epoch 1 train loss 2.786 3s
+step 10 epoch 3 train loss 2.067 10s
+step 20 epoch 6 train loss 1.535 19s
+step 30 epoch 9 train loss 1.123 28s
+[89s] evaluated
+[95s] checkpoint saved
+{"step": 30, "epoch": 9, "seconds": 30, "train_loss": 1.122635841369629, "device_gb": 7.91, "indist": {"loss": 1.429931402206421, "by_class": {"column": 0.8272530710487712, "component": 4.763102769851685, "fact": 1.8584585740016057, "lib relation": 6.5052417914072675, "proposer": 3.8117313981056213, "read:label": 0.4617417064140075, "read:rel": 3.2416828785623824, "structure": 1.176582465903283}, "by_length": {"len<200": 1.45463296378088, "len<600": 1.4204905324618051}, "pointer_accuracy": 0.53125}, "heldout": {"loss": 1.31987726688385, "by_class": {"column": 0.7880025751244208, "component": 2.9241186380386353, "fact": 2.1027597412467003, "lib relation": 5.035844456065785, "proposer": 4.605863852160318, "read:label": 0.5409330727314859, "read:rel": 3.1846279002005056, "structure": 0.9006429229932303}, "by_length": {"len<200": 1.4846737051533745, "len<600": 1.27540832078462}, "pointer_accuracy": 0.5844155844155844}, "batch_splits": {"groups": 27, "splits": 4}, "train": {"loss": 1.142678974224971, "by_class": {"column": 0.7350766001349616, "component": 2.438173208166571, "fact": 2.3852988854050636, "lib relation": 5.474816348817614, "proposer": 3.7665525913238525, "read:label": 0.7115445554799892, "read:rel": 2.83205056648988, "structure": 0.7276220377389109}, "by_length": {"len<600": 1.1426790287664963}, "pointer_accuracy": 0.654054054054054}}
+EXIT 0

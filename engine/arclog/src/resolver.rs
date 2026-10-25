@@ -227,6 +227,9 @@ pub struct ResolvedProgram {
     widened: Widened,
     names: names::Names,
     concept: Option<ConceptForms>,
+    /// The depth of each node of the graph, by its index, made on the first
+    /// ask ([`ResolvedProgram::depth`]).
+    depths: std::sync::OnceLock<Box<[u32]>>,
 }
 
 type Widened = Arc<std::sync::Mutex<crate::hash::StableHashMap<Vec<(ProgramRelation, Vec<ColumnName>)>, Arc<ResolvedProgram>>>>;
@@ -388,6 +391,27 @@ impl ResolvedProgram {
         Some(columns.row_names())
     }
 
+    /// The path of each row position of the relation of `node`, in row
+    /// order, as `Columns::row_paths` gives it: a position keeps its path
+    /// where later forms reorder the columns of `node`. `None` where the
+    /// columns of `node` are not known.
+    pub fn row_paths(&self, node: GraphNodeIndex) -> Option<Vec<Box<[ColumnName]>>> {
+        Some(self.names.node_columns_of(node.0 as usize)?.row_paths())
+    }
+
+    /// The position, in the rows of the output `port` of the keyed `INIT`
+    /// form `instance`, of the field `field` of its `key` column, where the
+    /// component declares the output.
+    pub fn key_field_position(instance: &crate::program::Instance, port: &PortName, field: &ColumnName, registry: &Registry) -> Option<ColumnPosition> {
+        let component = registry_columns::component(registry, &instance.component)?;
+        let output = component.outputs.iter().find(|output| output.name == *port)?;
+        let columns = form_columns::port_columns(output, &form_columns::bindings(instance, component), true).columns();
+        match columns.place(&[columns::key(), field.clone()])? {
+            columns::Place::Field(position, _) => Some(position),
+            columns::Place::Column(_) | columns::Place::Group(_) => None,
+        }
+    }
+
     /// The signature of the name read at `path`.
     pub fn signature(&self, path: &NodePath) -> Option<&Signature> {
         match self.earlier_of(path) {
@@ -447,8 +471,25 @@ impl ResolvedProgram {
     /// The resolved content of the node `node` of the dependency graph, or
     /// `None` where the program holds none for it.
     pub fn node_content(&self, node: GraphNodeIndex) -> Option<ResolvedContent> {
-        let form = self.names.contents.get(node.0 as usize)?.clone()?;
+        if let Some(earlier) = self.earlier_node(node) {
+            return earlier.node_content(node);
+        }
+        let slot = self.own_index(node);
+        let form = match self.names.contents.get(slot)? {
+            Some(form) => form.clone(),
+            None => self.names.unwritten.get(slot)?.as_ref()?.get_or_init(|| self.unwritten_content(slot)).clone(),
+        };
         Some(ResolvedContent { form })
+    }
+
+    /// The content of the node of the entry `slot` of this resolution's
+    /// per-node lists, which no pass of the resolution read, so that the
+    /// builder left it unwritten.
+    fn unwritten_content(&self, slot: usize) -> crate::program::canonical::CanonicalForm {
+        let node = slot + self.names.first_node();
+        let scope = &self.graph.nodes[node].scope;
+        let parts = self.forms[slot].iter().map(|path| names::form_bytes(&self.names, self.program.value(), scope, path));
+        names::node_form(&self.graph.nodes[node].kind, parts)
     }
 
     /// The resolved content of the part of the body of the clause at
@@ -668,6 +709,9 @@ pub(crate) mod column_sources;
 pub(crate) mod columns;
 pub(crate) mod form_columns;
 pub(crate) mod registry_columns;
+
+mod flows;
+pub use flows::{ColumnSource, SourceColumn, SourceKind};
 
 mod names;
 

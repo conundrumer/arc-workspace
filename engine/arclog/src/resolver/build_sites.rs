@@ -12,6 +12,7 @@ use crate::hash::StableHashMap;
 use crate::program::canonical::{AsWritten, CanonicalWriter, NameWriter};
 use crate::program::path::NodePath;
 use crate::program::{ColumnName, RelationRef};
+use super::super::names::Names;
 use crate::resolver::{ConceptForms, DependencyGraph, GraphNodeIndex, ResolvedProgram, Resolution, Signature};
 
 impl Builder<'_> {
@@ -30,7 +31,7 @@ impl Builder<'_> {
                     self.place_site(columns, site, path.child(index as u32));
                 }
             }
-            let signature = self.signature(&self.resolutions[path], &atom.relation, columns.as_ref());
+            let signature = signature(&self.names, &self.resolutions[path], &atom.relation, columns.as_ref());
             self.signatures.insert(path.clone(), signature);
         }
     }
@@ -68,35 +69,6 @@ impl Builder<'_> {
             }
             Some(Place::Field(..)) | None => {}
         }
-    }
-
-    /// The signature of a read of `relation` that resolves to
-    /// `resolution`: the content of what it resolves to, and its
-    /// columns.
-    fn signature(&self, resolution: &Resolution, relation: &RelationRef, columns: Option<&Columns>) -> Signature {
-        let mut out = CanonicalWriter::default();
-        match resolution {
-            Resolution::Node(node) => {
-                out.write(&[0]);
-                let content = self.names.node_content(node.0 as usize).and_then(Option::as_ref).expect("the content of each node");
-                out.write(&content.hash.0.to_le_bytes());
-                write_output_path(&mut out, relation);
-            }
-            Resolution::Lib(_) => out.write(&[1]),
-            Resolution::Undefined(_) => out.write(&[2]),
-            Resolution::Unresolved => out.write(&[3]),
-        }
-        if !matches!(resolution, Resolution::Node(_)) {
-            AsWritten.write_name(relation, &mut out);
-        }
-        match columns {
-            Some(columns) => {
-                out.write(&[1]);
-                columns.write(&mut out);
-            }
-            None => out.write(&[0]),
-        }
-        Signature(out.finish())
     }
 
     /// The stored parameter's column that each column of each proposer
@@ -157,8 +129,37 @@ impl Builder<'_> {
                 lifted: self.lifted,
                 names: self.names,
                 concept,
+                depths: Default::default(),
             },
             diagnostics: self.diagnostics,
         }
     }
+}
+
+/// The signature of a read of `relation` that resolves to `resolution`:
+/// the content of what it resolves to, and its columns.
+pub(super) fn signature(names: &Names, resolution: &Resolution, relation: &RelationRef, columns: Option<&Columns>) -> Signature {
+    let mut out = CanonicalWriter::default();
+    match resolution {
+        Resolution::Node(node) => {
+            out.write(&[0]);
+            let content = names.node_content(node.0 as usize).and_then(Option::as_ref).expect("the content of each node");
+            out.write(&content.hash.0.to_le_bytes());
+            write_output_path(&mut out, relation);
+        }
+        Resolution::Lib(_) => out.write(&[1]),
+        Resolution::Undefined(_) => out.write(&[2]),
+        Resolution::Unresolved => out.write(&[3]),
+    }
+    if !matches!(resolution, Resolution::Node(_)) {
+        AsWritten.write_name(relation, &mut out);
+    }
+    match columns {
+        Some(columns) => {
+            out.write(&[1]);
+            columns.write(&mut out);
+        }
+        None => out.write(&[0]),
+    }
+    Signature(out.finish())
 }

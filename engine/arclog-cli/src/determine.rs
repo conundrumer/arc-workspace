@@ -9,6 +9,7 @@
 //! then the task ids of the solvers to run; every solver of the corpus where
 //! it is given none.
 
+use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -58,10 +59,7 @@ pub fn run(args: &[String]) -> ExitCode {
     let (corpus, tasks) = (PathBuf::from(corpus), PathBuf::from(tasks));
     let selected = selected(task_ids, &[], Path::new("")).expect("a selection by task id alone reads no file");
     let differing: Mutex<BTreeSet<String>> = Mutex::default();
-    let report = run_over_corpus(&corpus, |solver| match &selected {
-        Some(ids) if !ids.contains(&solver.task_id) => SolverResult::Pass,
-        _ => determine_solver(&corpus, &tasks, solver, &differing),
-    }, print_ended);
+    let report = run_over_corpus(&corpus, selected.as_ref(), |solver| determine_solver(&corpus, &tasks, solver, &differing), print_ended);
     let report = match report {
         Ok(report) => report,
         Err(error) => {
@@ -70,7 +68,7 @@ pub fn run(args: &[String]) -> ExitCode {
         }
     };
     let differing = differing.into_inner().expect("a set that no panic poisoned").len();
-    let determined = selected.map_or(report.checked, |ids| ids.len());
+    let determined = report.checked;
     let faulted = report.failures.len() - differing;
     println!("{differing} of {determined} solvers differ from their `param` records, and {faulted} others give a fault that keeps a case or a parameter from its comparison");
     if report.failures.is_empty() { ExitCode::SUCCESS } else { ExitCode::FAILURE }
@@ -155,7 +153,7 @@ pub(crate) fn solver_determination(corpus: &Path, tasks: &Path, id: &str) -> Res
         let determination = determine(&base_cases, &judged, World::Closed);
         let mut findings: Vec<Finding> = determination.cases.iter().filter_map(|(name, outcome, _)| case_fault(name, outcome)).collect();
         let records: Vec<(&ProgramRelation, &ParamValue)> = solver.arcdata.value().params.iter().map(|param| (&param.value().name, &param.value().value)).collect();
-        let comparison = Comparison { determined: &base_cases, determination: &determination, records: &records, session: &session, registry };
+        let comparison = Comparison { determined: &base_cases, determination: &determination, records: &records, session: &session, registry, numbers: RefCell::default() };
         findings.extend(comparison.findings());
         (determination, findings)
     };
@@ -194,6 +192,9 @@ struct Comparison<'c> {
     records: &'c [(&'c ProgramRelation, &'c ParamValue)],
     session: &'c TaskSession,
     registry: &'c Registry,
+    /// The number of each Ident of the records, one numbering across every
+    /// relation compared, so that one entity has one number.
+    numbers: RefCell<StableHashMap<Ident, i64>>,
 }
 
 impl Comparison<'_> {
@@ -370,7 +371,7 @@ impl Comparison<'_> {
             let leaves: Result<Vec<Vec<EngineLeaf>>, String> = row.iter().zip(types).map(|(&id, ty)| term_leaves(Term::decode(id, ty), self.registry, &orientation)).collect();
             Ok(leaves?.concat())
         };
-        let mut numbers: StableHashMap<Ident, i64> = StableHashMap::default();
+        let mut numbers = self.numbers.borrow_mut();
         let mut written = BTreeSet::new();
         for row in &encoded {
             let leaves = row_leaves(row)?.into_iter().map(|leaf| match leaf {

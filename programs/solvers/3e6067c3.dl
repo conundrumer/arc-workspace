@@ -66,14 +66,22 @@ bbox.cell(Id, P) :- box_cell(Id, P).
 
 // --- corridors ---
 
+// The lines of each axis that a box's label occupies, axis-only across the
+// axis.
+.decl label_line(id: Ident, a: Axis, l: Position)
+label_line(Id, A, L) :- label_cell(Id, Q), axis_elem(A), split(Q, A, _, L).
+
+// The cells past a box's side toward a direction, on a line of that
+// direction's axis that the box's label occupies.
+.decl facing(id: Ident, d: Dir, p: Position)
+facing(Id, D, P) :-
+    in(P, _), dir_elem(D), axis_of(D, A), split(P, A, _, L),  // a cell, its line
+    label_line(Id, A, L),                                     // a label's line
+    bbox.box(Id, B), nearer(D, P, B).                         // past the box's side
+
 // The cells strictly between two boxes, on the lines both labels occupy.
 .decl corridor(id: Ident, id2: Ident, p: Position)
-corridor(Id, Id2, P) :-
-    in(P, _), axis_of(D, A), opposite(D, D_opp),  // a cell, and a facing axis
-    bbox.box(Id, M), nearer(D, P, M),          // past the near box's side
-    bbox.box(Id2, N), nearer(D_opp, P, N),     // short of the far box's side
-    label_cell(Id, Q), same_line(A, P, Q),        // on the near label's line
-    label_cell(Id2, Q2), same_line(A, P, Q2).     // and on the far one's
+corridor(Id, Id2, P) :- facing(Id, D, P), opposite(D, D_opp), facing(Id2, D_opp, P).
 
 .decl obstructed(id: Ident, id2: Ident)
 obstructed(Id, Id2) :- corridor(Id, Id2, P), ink(P).

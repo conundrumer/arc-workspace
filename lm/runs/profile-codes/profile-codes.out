@@ -1,0 +1,40 @@
+0 entries over --enc-budget 10000; unseen tables {}, unseen entries {}
+Loading weights:   0%|          | 0/272 [00:00<?, ?it/s]Loading weights: 100%|██████████| 272/272 [00:00<00:00, 7700.07it/s]
+22 training programs, 4 held-out; 481 training tables; encoder 19.08M parameters on cuda; loaded in 9s
+STEP_SECONDS 1 38.979
+step 1 masked loss 7.905 (8260 cells) 38.98 s/step
+STEP_SECONDS 2 4.004
+step 2 masked loss 7.041 (14600 cells) 21.49 s/step
+STEP_SECONDS 3 4.328 (profiled)
+PROFILE step wall 4.328 s; CUDA self time total 4.603 s; CPU self time total 4.407 s
+PROFILE group attention: 2.856 s (62.1%)
+PROFILE group elementwise/other: 1.510 s (32.8%)
+PROFILE group matmul: 0.237 s (5.1%)
+PROFILE kernel     1217.8 ms  x471    [attention] aten::_efficient_attention_backward
+PROFILE kernel     1217.8 ms  x471    [attention] fmha_cutlassB_bf16_aligned_128x64_k65536_sm80(PyTorchMemEffAttention::AttentionBackwardKernel<cutlass::arch::Sm80, cutlass::bfloat16_t, true, false, f
+PROFILE kernel      233.9 ms  x10375  [elementwise/other] aten::mm
+PROFILE kernel      210.2 ms  x475    [attention] aten::_efficient_attention_forward
+PROFILE kernel      210.2 ms  x475    [attention] fmha_cutlassF_bf16_aligned_32x128_gmem_sm80(PyTorchMemEffAttention::AttentionKernel<cutlass::bfloat16_t, cutlass::arch::Sm80, true, 32, 128, 65536, tr
+PROFILE kernel      178.8 ms  x35503  [elementwise/other] aten::copy_
+PROFILE kernel       86.7 ms  x9025   [elementwise/other] void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()
+PROFILE kernel       69.5 ms  x16090  [elementwise/other] aten::add_
+PROFILE kernel       57.8 ms  x1500   [elementwise/other] aten::native_layer_norm_backward
+PROFILE kernel       50.2 ms  x4626   [elementwise/other] aten::_index_put_impl_
+PROFILE kernel       47.9 ms  x5535   [elementwise/other] aten::sum
+PROFILE kernel       43.1 ms  x4309   [elementwise/other] void at::native::vectorized_elementwise_kernel<4, at::native::CUDAFunctor_add<c10::BFloat16>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_ad
+PROFILE kernel       38.0 ms  x6097   [elementwise/other] aten::add
+PROFILE kernel       37.4 ms  x7634   [elementwise/other] Memcpy DtoD (Device -> Device)
+PROFILE kernel       35.8 ms  x1019   [elementwise/other] void at::native::(anonymous namespace)::GammaBetaBackwardCUDAKernelTemplate<float, float, 32u, 32u, 256u, false, false>(long, long, float const*, floa
+PROFILE top CPU ops by self time
+PROFILE cpu     1155.0 ms  x132967 cudaLaunchKernel
+PROFILE cpu      763.8 ms  x434    Command Buffer Full
+PROFILE cpu      181.1 ms  x3001   cudaStreamSynchronize
+PROFILE cpu      135.6 ms  x10375  aten::mm
+PROFILE cpu      128.3 ms  x49724  aten::empty
+PROFILE cpu      112.4 ms  x35503  aten::copy_
+PROFILE cpu      108.0 ms  x10635  cudaMemcpyAsync
+PROFILE cpu       92.4 ms  x4626   aten::_index_put_impl_
+PROFILE cpu       64.1 ms  x10430  aten::mul
+PROFILE cpu       62.1 ms  x5855   aten::index
+step 3 masked loss 7.770 (10450 cells) 15.77 s/step
+{"step": 3, "seconds": 115, "seconds_per_step": 15.770294348398844, "device_gb": 59.21, "train_loss": 7.770121097564697, "train": {"loss": 7.483839262583633, "by_type": {"Axis": {"loss": 0.7211964766184489, "accuracy": 0.3333333333333333, "cells": 15}, "Box": {"loss": 11.756288096774586, "accuracy": 0.0, "cells": 17144}, "Color": {"loss": 1.235023967067176, "accuracy": 0.24343707713125845, "cells": 7390}, "D4": {"loss": 1.5554805397987366, "accuracy": 0.6071428571428571, "cells": 28}, "Dir": {"loss": 1.3779183942824602, "accuracy": 0.265625, "cells": 128}, "Dir8": {"loss": 2.7779434988770304, "accuracy": 0.0, "cells": 395}, "Example": {"loss": 1.3078254058921928, "accuracy": 0.1974822974036192, "cells": 1271}, "Ident": {"loss": 2.4246251061996005, "accuracy": 0.10338600451467268, "cells": 2215}, "Number": {"loss": 20.649118558905933, "accuracy": 0.0, "cells": 257}, "Position": {"loss": 9.572012902437885, "accuracy": 0.0, "cells": 1264}, "ex_output/Color": {"loss": 1.0069603214689582, "accuracy": 0.3076923076923077, "cells": 1053}, "ex_output/Example": {"loss": 0.9659449915473278, "accuracy": 0.2548076923076923, "cells": 1040}, "ex_output/Position": {"loss": 9.710335550437103, "accuracy": 0.0, "cells": 1110}}}, "heldout": {"loss": 6.103959090260017, "cells": 7354, "by_type": {"Axis": {"loss": 0.6929791939669642, "accuracy": 0.4942528735632184, "cells": 87}, "Box": {"loss": 8.482730267737841, "accuracy": 0.0, "cells": 4081}, "Color": {"loss": 1.006373481595353, "accuracy": 0.2928082191780822, "cells": 1752}, "D4": {"loss": 2.490499718689624, "accuracy": 0.1111111111111111, "cells": 81}, "Example": {"loss": 1.3781540083245756, "accuracy": 0.24329501915708812, "cells": 522}, "Number": {"loss": 24.69397288938112, "accuracy": 0.0, "cells": 79}, "Position": {"loss": 9.211285686109148, "accuracy": 0.0, "cells": 497}, "ex_output/Color": {"loss": 1.5176315772824172, "accuracy": 0.036585365853658534, "cells": 82}, "ex_output/Example": {"loss": 1.087810888719023, "accuracy": 0.2808988764044944, "cells": 89}, "ex_output/Position": {"loss": 9.235913395881653, "accuracy": 0.0, "cells": 84}}}}

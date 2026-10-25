@@ -75,9 +75,13 @@ pub(super) fn key_rows(
     example: Option<Example>,
 ) -> Outcome<Result<(Vec<Row>, Option<Arc<Relation>>), RelationValue>> {
     let fault = |message: String| RunFault { message: message.into(), form: form.clone() };
-    let Some(clause) = key_clause(evaluation, form, key_body, key_labels).map_err(|compile| fault(format!("the key body does not compile: {compile:?}")))? else {
+    let Some(key_body) = key_body else {
         return Ok(Ok((vec![Row::default()], None)));
     };
+    let (clause, _) = evaluation
+        .program
+        .instance_clause(form, None, || ir::compile_instance_body(evaluation.program, form, std::slice::from_ref(key_body), key_labels).map(|clause| (clause, 0)))
+        .map_err(|compile| fault(format!("the key body does not compile: {compile:?}")))?;
     Ok(rows_read(bodies.relation(form, &clause, example)?, key_labels.len()).map_err(&fault)?.map(|(rows, relation)| (rows, Some(relation))))
 }
 
@@ -124,7 +128,7 @@ enum Binding {
 /// `key` labels where the input stands in the key clause, then the labels
 /// of `head` that are not `None`.
 pub(super) struct InputClause {
-    pub(super) clause: ClauseIr,
+    pub(super) clause: Arc<ClauseIr>,
     key: usize,
     head: Vec<Option<LabelId>>,
 }
@@ -215,7 +219,9 @@ impl<'p> InstanceShape<'p> {
         let head = self.head_labels(written, &input.port.columns)?;
         let body = (written.body.value(), path.child(written.position(InstanceInputPart::Body)));
         let flat: Vec<LabelId> = head.iter().flatten().copied().collect();
-        let (clause, key) = joined_clause(evaluation, form, &self.key_body, &self.key_labels(), *keyed, body, &flat)
+        let (clause, key) = evaluation
+            .program
+            .instance_clause(form, Some(name), || joined_clause(evaluation, form, &self.key_body, &self.key_labels(), *keyed, body, &flat))
             .map_err(|compile| format!("input `{}` does not compile: {compile:?}", name.0))?;
         Ok(Some(InputClause { clause, key, head }))
     }
@@ -352,9 +358,8 @@ impl<'p> InstanceShape<'p> {
     }
 
     /// The rows of `input`, which the form does not write, at each of
-    /// `groups`: its default rows at each, or no row where the input is
-    /// marked [`InputPort::explicit`], or the rows the key fills, or no
-    /// row.
+    /// `groups`: its default rows at each, or, where the input is
+    /// marked [`InputPort::from_key`], the rows the key fills, or no row.
     pub(super) fn unwritten(
         &self,
         input: &InputPort,
@@ -370,7 +375,7 @@ impl<'p> InstanceShape<'p> {
             }
             return Ok(vec![rows; groups.len()]);
         }
-        if input.explicit {
+        if !input.from_key {
             return Ok(vec![rows; groups.len()]);
         }
         let Some(filled) = self.key_filled(input, types)? else { return Ok(vec![rows; groups.len()]) };
@@ -392,15 +397,7 @@ impl<'p> InstanceShape<'p> {
             return Ok(None);
         }
         let key_types: Vec<ValueType> = self.key_labels().into_iter().map(|label| self.label_type(label)).collect::<Result<_, _>>()?;
-        let mut positions = Vec::with_capacity(types.len());
-        for ty in types {
-            let mut matching = key_types.iter().enumerate().filter(|(_, key)| *key == ty).map(|(position, _)| position);
-            match (matching.next(), matching.next()) {
-                (Some(position), None) => positions.push(position),
-                _ => return Ok(None),
-            }
-        }
-        Ok(Some(positions))
+        Ok(crate::registry::key_fill(&key_types, types))
     }
 }
 

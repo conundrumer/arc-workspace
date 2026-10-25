@@ -1,0 +1,17 @@
+[{"stream_name":"stderr","time":9.092804286,"data":"0.00s - Debugger warning: It seems that frozen modules are being used, which may\n"}
+,{"stream_name":"stderr","time":9.092855043,"data":"0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off\n"}
+,{"stream_name":"stderr","time":9.092863452,"data":"0.00s - to python to disable frozen modules.\n"}
+,{"stream_name":"stderr","time":9.092868048,"data":"0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.\n"}
+,{"stream_name":"stderr","time":9.913771496,"data":"0.00s - Debugger warning: It seems that frozen modules are being used, which may\n"}
+,{"stream_name":"stderr","time":9.913807149,"data":"0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off\n"}
+,{"stream_name":"stderr","time":9.913812998000001,"data":"0.00s - to python to disable frozen modules.\n"}
+,{"stream_name":"stderr","time":9.913817449,"data":"0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.\n"}
+,{"stream_name":"stdout","time":30.32211928,"data":"python 3.13.15 torch 2.11.0+cpu transformers 5.16.1\n"}
+,{"stream_name":"stdout","time":31.204382611,"data":"data /kaggle/input/datasets/conundrumer/arclm-data ['cases.npz', 'train.py', 'vocab.json']\n"}
+,{"stream_name":"stdout","time":31.45467528,"data":"smol {'135m': '/kaggle/input/smollm2-base/135m', '360m': '/kaggle/input/smollm2-base/360m'}\n"}
+,{"stream_name":"stdout","time":380.649949843,"data":"===== 135m exit 0 OK\n"}
+,{"stream_name":"stdout","time":380.649985204,"data":"4 train tasks (7 cases), 2 held-out; vocab in 231, out 229; 135M parameters on cpu\n"}
+,{"stream_name":"stdout","time":380.649991466,"data":"step 1 epoch 1 train loss 4.854 4s\n"}
+,{"stream_name":"stdout","time":380.649996472,"data":"\n"}
+,{"stream_name":"stderr","time":611.349964481,"data":"Timeout waiting for execute reply (600s).\n"}
+]

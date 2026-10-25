@@ -17,12 +17,13 @@ handled (`handled.repeated`).
 An alert or a message gives a step only to the operator `me` where it
 reached `me`.
 
-An agent of `TranscriptsRead.stalled`, whose final reply the operator took as its
-report on its `stall` reading (`monitor`), or sends the coordinator once
-where the coordinator launched it, is recorded in one `bug` ticket
-of that kind, which records that its report reached no operator (`stalls`):
-the first such agent's step files it, and each further one's writes a line
-in it while it stands outside `tickets/closed/`.
+An agent of `TranscriptsRead.stalled`, an agent the coordinator launched, whose
+final reply its `stall` reading (`monitor`) gives, is sent to the coordinator once and is
+recorded in one `bug` ticket of that kind, which records that its report
+reached no operator (`stalls`): the first such agent's step files it, and
+each further one's writes a line in it while it stands outside
+`tickets/closed/`. The report of an agent an operator launched is in the
+record of its attempt, which a stall reading does not end.
 
 A resume of an operator of the session after the next operator of the
 session made its first entry (`TranscriptsRead.late_resumes`), as `resumed_at` in
@@ -259,21 +260,15 @@ def stall_step(state: State, agent: str, since: float, reply: Report) -> Step | 
 
 
 def stalls(state: State) -> Step | None:
-    """The first step on an agent of `TranscriptsRead.stalled`: for an agent no
-    operator launched, which the coordinator launched, the message that
-    gives the coordinator its final reply, once after that reply, and then
-    for each, the step `ticket_step` gives, from its launch, or for an
-    agent the coordinator launched, from that reply."""
+    """The first step on an agent of `TranscriptsRead.stalled`, an agent the
+    coordinator launched: the message that gives the coordinator its final
+    reply, once after that reply, and then the step `ticket_step` gives,
+    from that reply."""
     for agent, reply in sorted(state.transcripts.stalled.items()):
-        a = latest(state, agent)
-        if a is not None:
-            since = a.launched
-        else:
-            since = reply.time
-            sent = Send(COORDINATOR, reply.text, f"stall {agent}", since)
-            if not repeated(sent, state):
-                return sent
-        if (s := stall_step(state, agent, since, reply)) is not None:
+        sent = Send(COORDINATOR, reply.text, f"stall {agent}", reply.time)
+        if not repeated(sent, state):
+            return sent
+        if (s := stall_step(state, agent, reply.time, reply)) is not None:
             return s
     return None
 

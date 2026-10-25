@@ -52,7 +52,7 @@ fn last_clause(text: &str, conjuncts: u32, grid: &[&[u8]], caps: Caps) -> Result
     let session = TaskSession::new(SessionBound { bytes: 1 << 26 }, caps);
     let registry = Registry::get();
     let parameters = ParameterValues::default();
-    let limits = Limits { deadline: None, cancellation: Cancellation::default() };
+    let limits = Limits::new(None, Cancellation::default());
     let constructions = Constructions::new(Vec::new(), registry).expect("an empty table");
     let evaluation = Evaluation { program: &program, concept: None, task: &task, parameters: &parameters, session: &session, registry, constructions: &constructions, limits: &limits };
     let path = NodePath(Box::new([PathStep(program.program.program.value().forms.len() as u32 - 1)]));

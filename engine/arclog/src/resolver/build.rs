@@ -338,6 +338,9 @@ mod content;
 #[path = "build_graph.rs"]
 mod graph;
 
+#[path = "build_retarget.rs"]
+mod retarget;
+
 #[path = "build_sides.rs"]
 mod sides;
 

@@ -47,7 +47,7 @@ together($ColorClass(), P, Q) :- ink(P, Col), ink(Q, Col).
 .init shapes = Components8<Color>
 shapes.node(Col, P) :- ink(P, Col).
 
-together($Shape(), P, Q) :- shapes.conn(_, P, Q).
+together($Shape(), P, Q) :- shapes.label(Col, P, Id), shapes.label(Col, Q, Id).
 
 // A cell of Q's container lies toward D from inked cell P.
 .decl sees(ch: Choice, p: Position, q: Position, d: Dir)

@@ -65,7 +65,8 @@ def relations(stem: str, case: str, pair: str
     """The rows of each relation of the program of the case of `stem` whose
     arclog name is `case` (`parity.case_name`), run on the input of the
     pair whose name is `pair` (`arc.task.pair_name`), each keyed by its arclog name
-    (`parity.relation_name`); the case's undefined outcome or the run's
+    (`parity.relation_name`), with the rows that `case_rows` cuts left out;
+    the case's undefined outcome or the run's
     failure where it gives no rows. Raises `NoSuchCase` and `NoSuchPair`."""
     eng = engine()
     solver = load(stem, eng, solver_path(stem))
@@ -83,7 +84,30 @@ def relations(stem: str, case: str, pair: str
     got = relations_at(eng, solver, chosen, as_grid(ex.input), rels, Assignment(()), LIMITS)
     if not isinstance(got, Mapping):
         return got
-    return {relation_name(names, r): rows for r, rows in got.items()}
+    foreign = {c for case in every for c in constructors(case.base)} \
+        - constructors(chosen.base)
+    return {relation_name(names, r): case_rows(rows, foreign) for r, rows in got.items()}
+
+
+def constructors(value: Value | None) -> set[str]:
+    """The constructor of each `AdtValue` at any depth of `value`."""
+    match value:
+        case AdtValue(constructor=name, args=fields):
+            return {name}.union(*(constructors(f) for f in fields))
+        case RecordValue(fields=fields):
+            return set().union(*(constructors(f) for f in fields))
+        case _:
+            return set()
+
+
+def case_rows(rows: Rows, foreign: set[str]) -> Rows:
+    """The rows of one relation that hold, at no depth of a record or ADT
+    value, an `AdtValue` whose constructor is in `foreign`, the
+    constructors that some case's base holds and the chosen case's base
+    does not. Souffle's program derives the rows of every branch of a
+    `Choice` for each relation, and a row of another branch is no row of the
+    case."""
+    return tuple(row for row in rows if not any(constructors(v) & foreign for v in row))
 
 
 def leaves(value: Value) -> list[int | float | str]:

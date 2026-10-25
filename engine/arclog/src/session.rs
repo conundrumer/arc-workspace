@@ -12,9 +12,11 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use crate::eval::pool::InFlight;
 use crate::eval::{Caps, ReachedBound, RelationValue};
-use crate::hash::{StableHash, StableHashMap, StableHasher};
+use crate::hash::{StableHash, StableHashMap};
 use crate::relations::{Relation, RelationPart, SharedRows};
-use crate::terms::InternTable;
+use crate::program::FactRelation;
+use crate::task::Task;
+use crate::terms::{Example, InternTable};
 
 /// What a result-cache entry evaluates: a form's resolved content, for a
 /// clause or a part of a body, the compiled clause of a body of a form
@@ -144,7 +146,7 @@ impl ResultCache {
     /// The id of a relation that the cache holds with the rows of
     /// `relation`, or `None` where it holds none.
     pub fn find_id(&self, relation: &Relation) -> Option<RelationId> {
-        let hash = rows_hash(relation);
+        let hash = relation.rows_hash();
         self.state.lock().expect(UNPOISONED).find(hash, relation)
     }
 
@@ -152,7 +154,7 @@ impl ResultCache {
     /// rows, or a new id, under which the cache holds a copy of it until an
     /// entry holds it or an eviction drops it.
     pub fn relation_id(&self, relation: &Relation) -> RelationId {
-        let hash = rows_hash(relation);
+        let hash = relation.rows_hash();
         let mut state = self.state.lock().expect(UNPOISONED);
         match state.find(hash, relation) {
             Some(id) => id,
@@ -227,7 +229,7 @@ impl CacheState {
         }
         let (value, rows) = match value {
             RelationValue::Rows(relation) => {
-                let hash = rows_hash(&relation);
+                let hash = relation.rows_hash();
                 let id = self.find(hash, &relation).unwrap_or_else(|| self.add(hash, relation));
                 self.hold(id);
                 (RelationValue::Rows(self.relations[&id].relation.clone()), Some(id))
@@ -296,40 +298,6 @@ impl CacheState {
             }
         }
     }
-}
-
-/// The modulus of the rows hash, the Mersenne prime 2^61 - 1.
-const MODULUS: u64 = (1 << 61) - 1;
-
-/// The hash of `relation`'s rows, which depends on its rows alone: no order
-/// of its rows, and no split of its columns into parts. Each row hashes as
-/// the product, modulo [`MODULUS`], of a hash of each of its values at its
-/// column, and the relation as the sum of its rows' hashes. Since a row of
-/// the product of parts hashes as the product of its parts' rows' hashes,
-/// that sum is the product of each part's sum, which reads each part's rows
-/// once.
-fn rows_hash(relation: &Relation) -> StableHash {
-    let sum = relation.parts().iter().fold(1u64, |product, part| {
-        let rows = part.rows.rows().fold(0u64, |sum, row| {
-            let hash = part.columns.iter().zip(row).fold(1u64, |hash, (column, value)| times(hash, value_hash(column.0, value.encoding())));
-            (sum + hash) % MODULUS
-        });
-        times(product, rows)
-    });
-    let mut hasher = StableHasher::new();
-    std::hash::Hash::hash(&(relation.arity(), sum), &mut hasher);
-    hasher.finish128()
-}
-
-/// The hash of `value` at `column`, in `1..MODULUS`.
-fn value_hash(column: u16, value: u32) -> u64 {
-    let mut hasher = StableHasher::new();
-    std::hash::Hash::hash(&(column, value), &mut hasher);
-    1 + (hasher.finish128().0 as u64) % (MODULUS - 1)
-}
-
-fn times(a: u64, b: u64) -> u64 {
-    ((u128::from(a) * u128::from(b)) % u128::from(MODULUS)) as u64
 }
 
 /// Whether `a` and `b` hold the same rows. Where their parts split the
@@ -407,6 +375,9 @@ pub struct TaskSession {
     largest_bindings: AtomicU64,
     /// The largest rows held of any one such evaluation, an atomic maximum.
     largest_rows: AtomicU64,
+    /// The fact relations built so far, one per fact and example, each
+    /// built on its first use. A session serves one task.
+    facts: Mutex<StableHashMap<(FactRelation, Option<Example>), Arc<Relation>>>,
 }
 
 /// A count of bindings tried and a count of rows held.
@@ -437,7 +408,15 @@ impl TaskSession {
     /// A session with an empty intern table and an empty result cache,
     /// whose evaluations run at `caps`.
     pub fn new(bound: SessionBound, caps: Caps) -> Self {
-        TaskSession { intern: RwLock::default(), results: ResultCache::default(), caps, bound, largest_bindings: AtomicU64::new(0), largest_rows: AtomicU64::new(0) }
+        TaskSession { intern: RwLock::default(), results: ResultCache::default(), caps, bound, largest_bindings: AtomicU64::new(0), largest_rows: AtomicU64::new(0), facts: Mutex::default() }
+    }
+
+    /// The rows of `fact` on `example` of `task`, built on the first request
+    /// and shared by each later one, so their rows hash and indexes are built
+    /// once. `task` is the session's task.
+    pub fn fact_relation(&self, task: &Task, fact: FactRelation, example: Option<Example>) -> Arc<Relation> {
+        let mut facts = self.facts.lock().expect(UNPOISONED);
+        facts.entry((fact, example)).or_insert_with(|| Arc::new(task.fact_rows(fact, example))).clone()
     }
 
     /// Whether the session's bytes, the intern table's and the result

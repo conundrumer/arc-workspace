@@ -1,0 +1,104 @@
+04:33:31 [93s] imported; torch threads 16
+04:34:10 [132s] data loaded
+04:34:14 evaluation tasks dropped as family siblings of training tasks: ['1818057f']
+04:34:15 [137s] tokenizer loaded
+04:34:25 Loading weights:   0%|          | 0/272 [00:00<?, ?it/s]Loading weights:   0%|          | 1/272 [00:00<02:34,  1.76it/s]Loading weights:  11%|█▏        | 31/272 [00:00<00:04, 52.62it/s]Loading weights:  15%|█▌        | 41/272 [00:00<00:03, 58.93it/s]Loading weights:  18%|█▊        | 50/272 [00:01<00:03, 60.93it/s]Loading weights:  24%|██▍       | 66/272 [00:01<00:02, 74.13it/s]Loading weights:  28%|██▊       | 75/272 [00:01<00:02, 76.28it/s]Loading weights:  31%|███       | 84/272 [00:01<00:02, 75.09it/s]Loading weights:  35%|███▍      | 94/272 [00:01<00:02, 71.69it/s]Loading weights:  39%|███▉      | 107/272 [00:01<00:01, 85.29it/s]Loading weights:  43%|████▎     | 117/272 [00:01<00:01, 80.11it/s]Loading weights:  46%|████▋     | 126/272 [00:01<00:01, 81.05it/s]Loading weights:  50%|████▉     | 135/272 [00:02<00:01, 72.37it/s]Loading weights:  54%|█████▍    | 147/272 [00:02<00:01, 77.76it/s]Loading weights:  58%|█████▊    | 157/272 [00:02<00:01, 81.66it/s]Loading weights:  61%|██████    | 166/272 [00:02<00:01, 76.80it/s]Loading weights:  65%|██████▍   | 176/272 [00:02<00:01, 81.14it/s]Loading weights:  71%|███████   | 193/272 [00:02<00:00, 79.92it/s]Loading weights:  77%|███████▋  | 210/272 [00:02<00:00, 90.51it/s]Loading weights:  84%|████████▍ | 229/272 [00:03<00:00, 101.15it/s]Loading weights:  88%|████████▊ | 240/272 [00:03<00:00, 98.08it/s] Loading weights:  92%|█████████▏| 250/272 [00:03<00:00, 80.41it/s]Loading weights:  97%|█████████▋| 265/272 [00:03<00:00, 83.36it/s]Loading weights: 100%|██████████| 272/272 [00:03<00:00, 76.42it/s]
+04:34:25 [147s] base model loaded
+04:34:25 396 train tasks (2762 cases, fold 0/2), 79 in-distribution held-out, 84 evaluation held-out; vocab in 232, out 229; 135M parameters on cuda
+04:34:25 loaded in 54s
+04:34:26 step 1 epoch 1 train loss 2.906 1s
+04:34:27 step 2 epoch 1 train loss 2.800 1s
+04:34:27 step 3 epoch 1 train loss 2.713 1s
+04:34:28 step 10 epoch 1 train loss 1.966 2s
+04:34:29 step 20 epoch 1 train loss 1.554 4s
+04:34:31 step 30 epoch 1 train loss 1.228 5s
+04:34:32 step 40 epoch 1 train loss 1.070 7s
+04:34:34 step 50 epoch 1 train loss 1.039 8s
+04:34:35 step 60 epoch 1 train loss 1.085 10s
+04:34:37 step 70 epoch 1 train loss 0.951 11s
+04:34:38 step 80 epoch 1 train loss 1.302 13s
+04:34:40 step 90 epoch 1 train loss 1.036 14s
+04:34:41 step 100 epoch 1 train loss 0.915 16s
+04:34:43 step 110 epoch 1 train loss 0.942 17s
+04:34:44 step 120 epoch 1 train loss 1.119 18s
+04:34:45 step 130 epoch 1 train loss 1.010 20s
+04:34:47 step 140 epoch 1 train loss 0.827 21s
+04:34:48 step 150 epoch 1 train loss 0.980 23s
+04:34:50 step 160 epoch 1 train loss 1.161 24s
+04:34:51 step 170 epoch 1 train loss 0.735 26s
+04:34:53 step 180 epoch 2 train loss 0.914 27s
+04:34:54 step 190 epoch 2 train loss 1.045 29s
+04:34:56 step 200 epoch 2 train loss 0.763 30s
+04:34:57 step 210 epoch 2 train loss 0.711 32s
+04:34:58 step 220 epoch 2 train loss 0.786 33s
+04:35:00 step 230 epoch 2 train loss 1.041 34s
+04:35:01 step 240 epoch 2 train loss 0.902 36s
+04:35:03 step 250 epoch 2 train loss 0.865 37s
+04:35:04 step 260 epoch 2 train loss 0.884 39s
+04:35:06 step 270 epoch 2 train loss 0.924 40s
+04:35:07 step 280 epoch 2 train loss 0.863 41s
+04:35:08 step 290 epoch 2 train loss 0.872 43s
+04:35:10 step 300 epoch 2 train loss 0.932 44s
+04:35:11 step 310 epoch 2 train loss 0.911 46s
+04:35:13 step 320 epoch 2 train loss 0.670 47s
+04:35:14 step 330 epoch 2 train loss 0.759 48s
+04:35:15 step 340 epoch 2 train loss 0.958 50s
+04:35:17 step 350 epoch 2 train loss 0.855 51s
+04:35:18 step 360 epoch 3 train loss 0.880 53s
+04:35:19 step 370 epoch 3 train loss 0.721 54s
+04:35:21 step 380 epoch 3 train loss 0.679 55s
+04:35:22 step 390 epoch 3 train loss 0.634 57s
+04:35:23 step 400 epoch 3 train loss 0.761 58s
+04:35:25 step 410 epoch 3 train loss 0.985 59s
+04:35:31 [213s] evaluated
+04:35:36 [218s] checkpoint saved
+04:35:36 {"step": 415, "epoch": 3, "seconds": 66, "train_loss": 0.6870256066322327, "device_gb": 3.23, "indist": {"loss": 0.7965275482778745, "by_class": {"column": 0.39055818333241316, "component": 2.316791574018342, "fact": 1.8861318550644819, "lib relation": 3.255306140249069, "proposer": 2.9221134607134194, "read:label": 0.43450241740776346, "read:rel": 2.355876221201244, "structure": 0.47571011544424047}, "by_length": {"len<200": 0.7025992217964812, "len<600": 0.8171805802127987, "len>=600": 0.7931190995716699}, "pointer_accuracy": 0.6885856079404467}, "heldout": {"loss": 0.8071631455957414, "by_class": {"column": 0.4053684077465468, "component": 2.240478297822907, "fact": 1.9092147413707161, "lib relation": 2.71517033317701, "proposer": 2.833013050672081, "read:label": 0.5261988198245765, "read:rel": 2.7238211605905573, "structure": 0.4824859413487751}, "by_length": {"len<200": 0.8267530465536631, "len<600": 0.7989005170949631, "len>=600": 0.8101757627000422}, "pointer_accuracy": 0.6629992203066793}}
+04:35:37 step 420 epoch 3 train loss 0.705 71s
+04:35:38 step 430 epoch 3 train loss 0.855 73s
+04:35:40 step 440 epoch 3 train loss 0.596 74s
+04:35:41 step 450 epoch 3 train loss 0.748 75s
+04:35:42 step 460 epoch 3 train loss 0.772 77s
+04:35:44 step 470 epoch 3 train loss 0.737 78s
+04:35:45 step 480 epoch 3 train loss 0.721 80s
+04:35:47 step 490 epoch 3 train loss 0.772 81s
+04:35:48 step 500 epoch 3 train loss 0.844 83s
+04:35:49 step 510 epoch 3 train loss 1.008 84s
+04:35:51 step 520 epoch 3 train loss 0.438 85s
+04:35:52 step 530 epoch 3 train loss 0.703 87s
+04:35:54 step 540 epoch 4 train loss 0.586 88s
+04:35:55 step 550 epoch 4 train loss 0.510 90s
+04:35:57 step 560 epoch 4 train loss 0.837 91s
+04:35:58 step 570 epoch 4 train loss 0.483 93s
+04:35:59 step 580 epoch 4 train loss 0.741 94s
+04:36:01 step 590 epoch 4 train loss 0.250 95s
+04:36:02 step 600 epoch 4 train loss 0.660 97s
+04:36:04 step 610 epoch 4 train loss 0.691 98s
+04:36:05 step 620 epoch 4 train loss 0.589 100s
+04:36:07 step 630 epoch 4 train loss 0.745 101s
+04:36:08 step 640 epoch 4 train loss 0.588 103s
+04:36:09 step 650 epoch 4 train loss 0.673 104s
+04:36:11 step 660 epoch 4 train loss 0.670 105s
+04:36:12 step 670 epoch 4 train loss 0.430 107s
+04:36:14 step 680 epoch 4 train loss 0.781 108s
+04:36:15 step 690 epoch 4 train loss 0.602 109s
+04:36:16 step 700 epoch 4 train loss 0.504 111s
+04:36:18 step 710 epoch 4 train loss 0.630 112s
+04:36:19 step 720 epoch 5 train loss 0.763 114s
+04:36:21 step 730 epoch 5 train loss 0.582 115s
+04:36:22 step 740 epoch 5 train loss 0.893 117s
+04:36:23 step 750 epoch 5 train loss 0.391 118s
+04:36:25 step 760 epoch 5 train loss 0.373 119s
+04:36:26 step 770 epoch 5 train loss 0.592 121s
+04:36:28 step 780 epoch 5 train loss 0.351 122s
+04:36:29 step 790 epoch 5 train loss 0.636 124s
+04:36:31 step 800 epoch 5 train loss 0.307 125s
+04:36:32 step 810 epoch 5 train loss 0.580 126s
+04:36:33 step 820 epoch 5 train loss 0.321 128s
+04:36:35 step 830 epoch 5 train loss 0.535 129s
+04:36:41 [283s] evaluated
+04:36:46 [288s] checkpoint saved
+04:36:46 {"step": 838, "epoch": 5, "seconds": 136, "train_loss": 0.6246448755264282, "device_gb": 3.23, "indist": {"loss": 0.7503166327015668, "by_class": {"column": 0.3525521149562045, "component": 2.2644268284684848, "fact": 1.4796795684080917, "lib relation": 2.8326297038064245, "proposer": 2.8480427117119063, "read:label": 0.38571511041604595, "read:rel": 2.2956705437995115, "structure": 0.4810307697848636}, "by_length": {"len<200": 0.648643147425719, "len<600": 0.7686643445371403, "len>=600": 0.7861310544823946}, "pointer_accuracy": 0.7265508684863523}, "heldout": {"loss": 0.7507569071518675, "by_class": {"column": 0.36142333101658863, "component": 2.117075355341331, "fact": 1.4928260927114059, "lib relation": 2.393040122863982, "proposer": 2.6819916831122503, "read:label": 0.48050193594886237, "read:rel": 2.5531587147365293, "structure": 0.4847278428492646}, "by_length": {"len<200": 0.7399116072769102, "len<600": 0.7442788397918161, "len>=600": 0.7532153527087899}, "pointer_accuracy": 0.6965260330936498}}
+04:36:46 step 840 epoch 5 train loss 0.713 141s
+04:36:48 step 850 epoch 5 train loss 0.515 142s
+04:36:53 [295s] evaluated
+04:36:53 {"step": 850, "epoch": 5, "seconds": 147, "train_loss": 0.5152506232261658, "device_gb": 3.23, "indist": {"loss": 0.7659512997266297, "by_class": {"column": 0.3446459641044633, "component": 2.2773071724766245, "fact": 1.6282613720255468, "lib relation": 3.004450881274209, "proposer": 2.961847452168492, "read:label": 0.37286527667218067, "read:rel": 2.178573086899897, "structure": 0.5346536836820581}, "by_length": {"len<200": 0.6742707415915238, "len<600": 0.7859086586926258, "len>=600": 0.764609634422402}, "pointer_accuracy": 0.7270471464019851}, "heldout": {"loss": 0.7603880841895516, "by_class": {"column": 0.35098339578605686, "component": 2.124024004462199, "fact": 1.5990297426587792, "lib relation": 2.51512460301011, "proposer": 2.9934859391715793, "read:label": 0.4445275153041913, "read:rel": 2.488228114245114, "structure": 0.5326712626577542}, "by_length": {"len<200": 0.7786317502872427, "len<600": 0.7601287638278444, "len>=600": 0.7604177199633176}, "pointer_accuracy": 0.6980854197349042}}

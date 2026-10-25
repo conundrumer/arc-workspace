@@ -572,8 +572,24 @@ def canonical(value: object) -> object:
     raise TypeError(f"{value!r} has no canonical form")
 
 
+def stable_result[**P, R](read: Callable[P, R],
+                          stable: tuple[R, Callable[P, Hashable]]) -> Callable[P, R]:
+    """A computation for `state_cache` whose stable result rests only on
+    the reads its stamp reader makes. The caller opens its dependency
+    frame before this computation runs."""
+    @wraps(read)
+    def compute(*args: P.args, **kwargs: P.kwargs) -> R:
+        value = read(*args, **kwargs)
+        if same(value, stable[0]):
+            _frames[-1].clear()
+            stable[1](*args, **kwargs)
+        return value
+    return compute
+
+
 def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
-                        notes: str | None = None, kept: Kept | None = None) -> Callable[
+                        notes: str | None = None, kept: Kept | None = None,
+                        stable: tuple[R, Callable[P, Hashable]] | None = None) -> Callable[
         [Callable[P, R]], Callable[P, R]]:
     """Hold the result of a read for each of its arguments. Within one state
     the held result stands. At the first call of a new state the read runs
@@ -609,6 +625,12 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
 
     `kept` gives how a `DERIVED` read stands across processes (`Kept`).
 
+    `stable` gives a result and a stamp reader for a `DERIVED` read. Once
+    that result is computed or recalled, the read rests only on the reads
+    that stamp reader makes. A change in those reads runs the read again.
+    The stamp reader must use `state_cache` reads, and only a change in
+    them may invalidate that result.
+
     Each process-life read cache that `state_assembly.read_state` reaches,
     in any module, is a `state_cache`, so the readers of one state see one
     state, and a change between two states reaches the second."""
@@ -616,6 +638,7 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
         at = None if notes is None else list(inspect.signature(read).parameters).index(notes)
         derived = isinstance(stamp, Derived)
         info = ReadInfo(name_of(read), stamp, notes, at, kept)
+        compute = read if stable is None else stable_result(read, stable)
         held = info.held
         _reads[info.name] = info
 
@@ -695,7 +718,7 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
                             kwargs = {**kwargs, notes: lines}
                     _frames.append({})
                     try:
-                        value = read(*args, **kwargs)
+                        value = compute(*args, **kwargs)
                     finally:
                         made = made_of(_frames.pop())
                     kept_lines = tuple(lines)

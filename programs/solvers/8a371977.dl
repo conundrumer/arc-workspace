@@ -77,7 +77,7 @@ hull.cell($U(), P) :- ink(P).
 
 // P shares a tile with a cell on the hull's edge.
 ring_cell(P, $Blobs()) :-
-    blob.conn($U(), P, Q),                   // P and Q in one tile
+    blob.label($U(), P, Id), blob.label($U(), Q, Id),   // P and Q in one tile
     hull.box($U(), B), box_edge(Q, B, _).    // Q on the hull
 
 // --- $Sight ---

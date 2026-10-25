@@ -42,7 +42,7 @@ pub fn run(args: &[String]) -> ExitCode {
         return ExitCode::from(2);
     };
     let not_compared = Mutex::new(Vec::new());
-    let report = run_over_corpus(&arguments.corpus, |solver| {
+    let report = run_over_corpus(&arguments.corpus, None, |solver| {
         if !arguments.task_ids.is_empty() && !arguments.task_ids.contains(&solver.task_id) {
             return SolverResult::Pass;
         }

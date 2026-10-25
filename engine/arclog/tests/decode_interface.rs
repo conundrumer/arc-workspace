@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use arclog::check::{check_program, CheckCache, CheckedProgram, SolverClauses};
-use arclog::decode::{step_batch, Consistency, Decoder, Point, Points, Refusal, Views};
+use arclog::decode::{step_batch, Consistency, Decoder, Point, Points, Refusal, Projections, TableRelation};
 use arclog::eval::instance::Constructions;
 use arclog::eval::pool::Pool;
 use arclog::eval::{Caps, ReachedBound, RelationValue};
@@ -143,7 +143,7 @@ fn a_batch_of_decodes_gives_the_results_of_each_decode_alone() {
     for token in &tokens {
         let results = step_batch(&pool, &mut decoders, &[token.clone(), token.clone()]);
         for (seen, result) in batched.iter_mut().zip(results.iter()) {
-            seen.push(format!("{result:?}"));
+            seen.push(format!("{:?}", result.as_ref().expect("no step panics")));
         }
     }
     let batched: Vec<String> = batched.into_iter().map(|steps| steps.join("\n")).collect();
@@ -255,22 +255,22 @@ fn a_det_clause_in_progress_gives_the_rows_of_its_kept_conjuncts() {
 }
 
 #[test]
-fn a_body_under_the_view_cap_is_its_one_view_with_the_rows_of_the_body() {
+fn a_body_under_the_projection_cap_is_its_one_projection_with_the_rows_of_the_body() {
     let inputs = inputs(&[3, 3], Caps::CORPUS);
     let tokens = model_tokens(COPIES);
     let (_, prefix) = tokens.split_last().expect("a stream");
     let mut decoder = decoder(&inputs);
     walk(&mut decoder, prefix);
-    let Some(Ok(Views::Found(found))) = decoder.views() else { panic!("the views of a clause in progress") };
-    let [view] = &found[..] else { panic!("one view: {found:?}") };
+    let Some(Ok(Projections::Found(found))) = decoder.projections() else { panic!("the projections of a clause in progress") };
+    let [projection] = &found[..] else { panic!("one projection: {found:?}") };
     let rows = decoder.rows(Some(Example::at(0))).expect("a clause in progress").expect("the sub-body checks");
     let [(_, body)] = &rows.at[..] else { panic!("one entry: {rows:?}") };
     let RelationValue::Rows(body) = &body.0 else { panic!("rows: {body:?}") };
-    assert_eq!(view.columns.len(), usize::from(body.arity()));
-    let [viewed] = &view.rows[..] else { panic!("one example: {view:?}") };
-    let [(_, Some(projected))] = &viewed.at[..] else { panic!("one projection: {viewed:?}") };
+    assert_eq!(projection.columns.len(), usize::from(body.arity()));
+    let [projected_example] = &projection.rows[..] else { panic!("one example: {projection:?}") };
+    let [(_, Some(projected))] = &projected_example.at[..] else { panic!("one projection: {projected_example:?}") };
     assert_eq!((projected.arity(), projected.len()), (body.arity(), body.len()));
-    assert!(self::decoder(&inputs).views().is_none(), "no clause is in progress before the first token");
+    assert!(self::decoder(&inputs).projections().is_none(), "no clause is in progress before the first token");
 }
 
 #[test]
@@ -296,4 +296,86 @@ fn the_table_of_a_det_at_the_end_of_its_form_gives_its_rows_at_each_value() {
     assert!(rows.stop.is_none());
     assert!(rows.at.len() > 1, "one entry for each value of `&c`: {rows:?}");
     assert!(rows.at.iter().all(|(assigned, models)| assigned.len() == 1 && !models.is_empty()));
+}
+
+#[test]
+fn the_tables_of_a_connectivity_form_give_component_and_no_adjacent() {
+    let inputs = inputs(&[2, 2], Caps::CORPUS);
+    let tokens = model_tokens("(RULE &fg (input *P *Col))\n(INIT &comps Connectivity (node ((:P P)) (&fg *P)))\n(RULE &output (&comps.component *P *Id))\n");
+    let mut decoder = decoder(&inputs);
+    let mut relation_batches = Vec::new();
+    for token in &tokens {
+        decoder.step(token.clone()).unwrap_or_else(|refusal| panic!("{token:?}: {refusal:?}"));
+        let tables: Vec<_> = decoder.tables(Points::Relations).into_iter().filter(|table| table.point == Point::Relation).collect();
+        if !tables.is_empty() {
+            relation_batches.push(tables);
+        }
+    }
+    let [_, comps, _] = &relation_batches[..] else { panic!("one batch each for `&fg`, the INIT form and `&output`: {}", relation_batches.len()) };
+    let slots: Vec<_> = comps.iter().map(|table| match &table.contents.as_ref().expect("the table has contents").relation {
+        TableRelation::Slot(slot) => *slot,
+        TableRelation::Fact(fact) => panic!("a fact relation {fact:?}"),
+    }).collect();
+    // The slots of the form, in order: `component` 1, `adjacent` 2, and the input `node` 3. The slots of `adjacent`, which no clause reads, and of `node`, whose body is one atom of a declared relation, gives no table.
+    assert_eq!(slots, [1]);
+    assert!(comps.iter().all(|table| table.contents.is_ok()));
+}
+
+/// The slots of the tables of the last form that `arclog` finishes, in order.
+fn slots_of_last_form(arclog: &str) -> Vec<u32> {
+    let inputs = inputs(&[2, 2], Caps::CORPUS);
+    let mut decoder = decoder(&inputs);
+    let mut last = Vec::new();
+    for token in &model_tokens(arclog) {
+        decoder.step(token.clone()).unwrap_or_else(|refusal| panic!("{token:?}: {refusal:?}"));
+        let tables: Vec<_> = decoder.tables(Points::Relations).into_iter().filter(|table| table.point == Point::Relation).collect();
+        if !tables.is_empty() {
+            last = tables;
+        }
+    }
+    last.iter().map(|table| match &table.contents.as_ref().expect("the table has contents").relation {
+        TableRelation::Slot(slot) => *slot,
+        TableRelation::Fact(fact) => panic!("a fact relation {fact:?}"),
+    }).collect()
+}
+
+#[test]
+fn an_input_of_one_atom_of_a_fact_or_declared_relation_gives_no_table() {
+    // `source` reads a declared relation, `node` a fact relation, and `dir` a lib relation.
+    let slots = slots_of_last_form("(RULE &fg (input *P *Col))\n(INIT &rays Ray (source (P) (&fg *P)) (node (P) (input *P *Col)) (dir (D) (dir8_elem *D)))\n");
+    assert_eq!(slots, [1, 2, 5], "`ray`, `end` and `dir`; `source` and `node` give none");
+}
+
+#[test]
+fn an_input_of_two_conjuncts_gives_its_table() {
+    let slots = slots_of_last_form("(RULE &fg (input *P *Col))\n(INIT &comps Connectivity (node (P) (&fg *P) (input *P *Col)))\n");
+    assert_eq!(slots, [1, 3], "`component` and `node`; `adjacent` gives none");
+}
+
+#[test]
+fn an_input_of_one_atom_in_a_key_clause_gives_no_table() {
+    let slots = slots_of_last_form("(RULE &fg (input *P *Col))\n(INIT &rays Ray (key ((&fg *P ^Col)) (source (P) (&fg *P Col))) (node (P) (input *P *Col)) (dir (D) (dir8_elem *D)))\n");
+    assert_eq!(slots, [1, 2, 5], "`source` in the key clause and `node` give none");
+}
+
+#[test]
+fn an_input_of_one_atom_and_not_atoms_gives_no_table() {
+    // `node` reads a fact relation less a declared relation, in the key clause and after it. `dir` is a lib relation, which no table holds.
+    let slots = slots_of_last_form("(RULE &fg (input *P *Col))\n(INIT &rays Ray (key ((&fg *P ^Col)) (source (P) (&fg *P Col) (NOT (&fg P Col)))) (node (P) (input *P) (NOT (&fg (:P P)))) (dir (D) (dir8_elem *D)))\n");
+    assert_eq!(slots, [1, 2, 5], "`source` in the key clause and `node` give none");
+}
+
+#[test]
+fn an_input_whose_not_reads_a_lib_relation_or_that_holds_a_constraint_keeps_its_table() {
+    let lib = slots_of_last_form("(RULE &fg (input *P *Col))\n(INIT &rays Ray (source (P) (&fg *P)) (node (P) (input *P *Col)) (dir (D) (dir8_elem *D) (NOT (dir8_elem D))))\n");
+    assert_eq!(lib, [1, 2, 5], "`ray`, `end` and `dir`");
+    let constraint = slots_of_last_form("(RULE &fg (input *P *Col))\n(INIT &comps Connectivity (node (P) (&fg *P *Col) (!= Col 0)))\n");
+    assert_eq!(constraint, [1, 3], "`component` and `node`");
+}
+
+#[test]
+fn the_tables_of_a_cell_distance_form_give_distance_and_no_predecessor() {
+    let slots = slots_of_last_form("(RULE &fg (input *P *Col))\n(INIT &ring CellDistance (node (P) (&fg *P)) (source (P) (&fg *P)))\n");
+    // The slots of the form, in order: `distance` 1, `predecessor` 2, and the inputs `node` 3 and `source` 4.
+    assert_eq!(slots, [1], "`distance`; `predecessor`, `node` and `source` give none");
 }

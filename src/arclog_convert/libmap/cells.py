@@ -10,25 +10,26 @@ as source and target; and an `OffsetInvariance` that reads its candidates onto `
 from __future__ import annotations
 
 from engine.program import AtomLiteral, Variable
+from souffle.printer import atom as atom_text, term as term_text
 
-from arclog_convert.libmap.instances import Spec
+from arclog_convert.libmap.instances import Spec, term_vars
 
 
 def components8(inst, ex):
     return Spec(".init {x} = Components<{Key}>",
                 {"node(Ky, P)": ["{x}.node(Ky, P)"], "step(S)": ["{x}.step(S)"]},
-                {"label(Ky, P, I)": "{x}.label(Ky, P, I)", "conn(Ky, P, Q)": "{x}.conn(Ky, P, Q)",
+                {"label(Ky, P, I)": "{x}.label(Ky, P, I)",
                  "node(Ky, P)": "{x}.node(Ky, P)", "step(S)": "{x}.step(S)"},
                 "{x}.step(S) :- diag_dir_elem(D), step_offset(D, S).")
 
 
 def reach(inst, ex):
-    if not ex.reads_of(inst) & {"label", "conn"}:
+    if "label" not in ex.reads_of(inst):
         return None
     return Spec(".init {x} = Reach<{Key}>\n.init {x}_label = Components<{Key}>",
                 {"node(Ky, P)": ["{x}.node(Ky, P)", "{x}_label.node(Ky, P)"],
                  "step(S)": ["{x}.step(S)", "{x}_label.step(S)"], "seed(Ky, P)": ["{x}.seed(Ky, P)"]},
-                {"label(Ky, P, I)": "{x}_label.label(Ky, P, I)", "conn(Ky, P, Q)": "{x}_label.conn(Ky, P, Q)",
+                {"label(Ky, P, I)": "{x}_label.label(Ky, P, I)",
                  "reach(Ky, P)": "{x}.reach(Ky, P)", "node(Ky, P)": "{x}.node(Ky, P)",
                  "seed(Ky, P)": "{x}.seed(Ky, P)", "step(S)": "{x}.step(S)"})
 
@@ -51,15 +52,37 @@ def rim(eight: bool):
     return spec
 
 
+def _key_only(u, a) -> bool:
+    """The atom holds a variable, and each variable it holds is one of the
+    head's key column."""
+    vs = term_vars(a.args, [])
+    return bool(vs) and set(vs) <= set(term_vars(u.head.args[:1], []))
+
+
+def _reads(u, a) -> bool:
+    """The clause's body has a positive atom of the relation with the arguments of `a`."""
+    return any(isinstance(l, AtomLiteral) and not l.negated and l.atom.relation == a.relation and l.atom.args == a.args
+               for l in u.body or ())
+
+
 def _frame_alone(ex, inst, name: str, frame_atom: str) -> bool:
-    """The input's one clause has the frame alone for its body."""
+    """Each clause of the input has for its body the frame atom, and atoms
+    over the head's key variable alone that stand with the same arguments in
+    every clause of the instance's `dir` input. `ray`, `end` and `stop` hold
+    only for a key with a dir, so such an atom restricts no ray."""
     cs = ex.inputs(inst, name)
-    if len(cs) != 1 or not cs[0].body or len(cs[0].body) != 1 or not isinstance(cs[0].body[0], AtomLiteral):
+    if len(cs) != 1 or not cs[0].body or not all(isinstance(l, AtomLiteral) and not l.negated for l in cs[0].body):
         return False
-    a, p = cs[0].body[0].atom, cs[0].head.args[-1]
-    if frame_atom.startswith("in("):
-        return a.relation.name == "in" and not a.relation.instances and a.args[0] == p and isinstance(p, Variable)
-    return False
+    if not frame_atom.startswith("in("):
+        return False
+    p = cs[0].head.args[-1]
+    atoms = [l.atom for l in cs[0].body]
+    frame = [a for a in atoms if a.relation.name == "in" and not a.relation.instances and a.args[0] == p
+             and isinstance(p, Variable)]
+    if len(frame) != 1:
+        return False
+    dirs = ex.inputs(inst, "dir")
+    return all(_key_only(cs[0], x) and dirs and all(_reads(d, x) for d in dirs) for x in atoms if x is not frame[0])
 
 
 def ray(inst, ex):
@@ -93,7 +116,7 @@ def ray(inst, ex):
     reads |= {"stop(Ky, P, D, N, S)": f"{{x}}.end(Ky, E, D, _, S), neighbor(E, D, P), {full}.ray(Ky, P, D, N, S)",
               "dir(Ky, D)": "{x}.dir(Ky, D)", "mark(Ky, P)": "{x}.source(Ky, P)",
               "cell(Ky, P)": "in_cell(Ky, P)", "blocked(Ky, P)": "in_blocked(Ky, P)"}
-    return Spec("\n".join(decls), {}, reads, "\n".join(clauses))
+    return Spec("\n".join(decls), {}, reads, "\n".join(clauses), grounded=frozenset({"node"}))
 
 
 def between(inst, ex):
@@ -109,7 +132,25 @@ def between(inst, ex):
                 "{x}.dir(Ky, D) :- in_axis(Ky, A), axis4_of(D, A).\n"
                 f"{{x}}.node({k}, P) :- " + ("" if k == "$U()" else f"in_axis({k}, _), ") + f"{frame}.\n"
                 "{x}_between(Ky, P) :- in_cell(Ky, P), in_axis(Ky, A), axis4_of(D, A), dir8_opposite(D, O),"
-                " {x}.ray(Ky, P, D, _, _), {x}.ray(Ky, P, O, _, _).")
+                " {x}.ray(Ky, P, D, _, _), {x}.ray(Ky, P, O, _, _).", grounded=frozenset({"node"}))
+
+
+def _rim_dir(ex, inst) -> str:
+    """The clauses of the rim's `dir`: one for each clause of the instance's
+    `dir` input, with its atoms over the key column alone left out. Where a
+    clause has no other literal, or a literal other than a positive atom, the
+    rim's `dir` is the rows of the input."""
+    lines = []
+    for u in ex.inputs(inst, "dir"):
+        body = [l for l in u.body or ()]
+        if not body or not all(isinstance(l, AtomLiteral) and not l.negated for l in body):
+            return "{x}_rim.dir(D) :- in_dir(_, D)."
+        kept = [l.atom for l in body if not _key_only(u, l.atom)]
+        if not kept or not set(term_vars(u.head.args[-1:], [])) <= set(term_vars(tuple(a.args for a in kept), [])):
+            return "{x}_rim.dir(D) :- in_dir(_, D)."
+        text = f"({term_text(u.head.args[-1])}) :- {', '.join(map(atom_text, kept))}."
+        lines.append("{x}_rim.dir" + text.replace("{", "{{").replace("}", "}}"))
+    return "\n".join(lines) or "{x}_rim.dir(D) :- in_dir(_, D)."
 
 
 def slide(inst, ex):
@@ -121,7 +162,7 @@ def slide(inst, ex):
                  "node(Ky, P)": "in_node(Ky, P)", "dir(Ky, D)": "in_dir(Ky, D)"},
                 "{x}.source(Ky, P) :- in_node(Ky, P).\n{x}.node(Ky, P) :- in_node(Ky, P).\n"
                 "{x}.dir(Ky, D) :- in_dir(Ky, D)."
-                + ("\n{x}_rim.cell(Ky, P) :- in_node(Ky, P).\n{x}_rim.dir(D) :- in_dir(_, D)." if rim_dir else ""))
+                + ("\n{x}_rim.cell(Ky, P) :- in_node(Ky, P).\n" + _rim_dir(ex, inst) if rim_dir else ""))
 
 
 def diagonal(inst, ex):
@@ -165,14 +206,13 @@ def gravity(inst, ex):
 
 
 def d4_map(inst, ex):
-    return Spec(".init {x} = Agreement<{Key}, D4, Position, {Val}>",
+    return Spec(".init {x} = Agreement<{Key}, {Val}>",
                 {"src(Ky, P, V)": ["{x}.source(Ky, P, V)"], "dst(Ky, P, V)": ["{x}.target(Ky, P, V)"]},
                 {"mismatch(Ky, D)": "{x}.mismatch(Ky, D)", "conflict(Ky, D)": "{x}.conflict(Ky, D)",
                  "map(Ky, D)": "in_src(Ky, _, _), d4_elem(D), !{x}.mismatch(Ky, D)",
                  "compatible(Ky, D)": "in_src(Ky, _, _), d4_elem(D), !{x}.conflict(Ky, D)",
                  "has_sym(Ky)": "in_src(Ky, _, _), d4_elem(D), !d4_identity(D), !{x}.mismatch(Ky, D)",
-                 "src(Ky, P, V)": "in_src(Ky, P, V)", "dst(Ky, P, V)": "in_dst(Ky, P, V)"},
-                "{x}.correspondence(Ky, D, P, Q) :- in_src(Ky, P, _), d4_elem(D), apply(D, P, Q).")
+                 "src(Ky, P, V)": "in_src(Ky, P, V)", "dst(Ky, P, V)": "in_dst(Ky, P, V)"})
 
 
 def offset_invariance(inst, ex):

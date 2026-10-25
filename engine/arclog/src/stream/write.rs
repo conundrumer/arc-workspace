@@ -246,19 +246,32 @@ impl Writer<'_> {
     /// Takes the next relation slot for `relation`, with the columns
     /// `columns`, and emits it.
     fn declare(&mut self, relation: ProgramRelation, columns: Box<[ColumnName]>, path: &NodePath) -> Written {
-        let slot = self.reserve(relation, columns);
+        let slot = self.reserve(relation, columns, path)?;
         self.push(Token::Relation(slot), Emitter::Engine, path)
     }
 
     /// Takes the next relation slot for `relation`, with the columns
-    /// `columns`, and gives it.
-    fn reserve(&mut self, relation: ProgramRelation, columns: Box<[ColumnName]>) -> u32 {
+    /// `columns`, and gives it. A relation already declared is a fault: the
+    /// decoder takes a new slot at each declaration, so a second declaration
+    /// would give a stream whose later slots differ from the decoder's, and a
+    /// parameter that several blocks determine has no stream form.
+    fn reserve(&mut self, relation: ProgramRelation, columns: Box<[ColumnName]>, path: &NodePath) -> Result<u32, Diagnostic> {
+        if self.declared.contains_key(&relation) {
+            return Err(run_fault(format!("the stream declares a relation once for each form that derives it, and {relation:?} has more than one"), path));
+        }
         let slot = u32::try_from(self.declared.len()).expect("fewer than 2^32 relations");
         self.declared.insert(relation, Declared { slot, columns });
-        slot
+        Ok(slot)
     }
 
+    /// Emits the clause. A `DET` with no body and no proposer has no labels, so
+    /// the stream gives it no column, and a decoded program carries no stored
+    /// value for it: it gives no stream, and its fault is the conversion fault
+    /// of [Determination](../../../../docs/engine/determination.md#det).
     fn clause(&mut self, clause: &Clause, path: &NodePath) -> Written {
+        if let Some(fault) = crate::eval::determinations::conversion_fault(clause, path) {
+            return Err(run_fault(fault.message.into(), path));
+        }
         let keyword = match clause.keyword {
             ClauseKeyword::Rule => Control::Rule,
             ClauseKeyword::Det => Control::Det,
@@ -443,7 +456,7 @@ impl Writer<'_> {
         self.push(Token::Lib(instance.component.clone()), Emitter::Model, path)?;
         let component = component(self.registry, &instance.component).ok_or_else(|| run_fault(format!("the lib names no component `{}`", instance.component.0), path))?;
         let keyed: &[_] = instance.key.as_ref().map_or(&[], |key| &key.value().inputs);
-        let outputs: Vec<u32> = instance_outputs(component, instance).into_iter().map(|(relation, columns)| self.reserve(relation, columns)).collect();
+        let outputs: Vec<u32> = instance_outputs(component, instance).into_iter().map(|(relation, columns)| self.reserve(relation, columns, path)).collect::<Result<_, _>>()?;
         self.push(Token::Column(0), Emitter::Engine, path)?;
         match &instance.key {
             None => self.model(Control::Skip, path)?,

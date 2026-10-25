@@ -56,10 +56,10 @@ figure.node($U(), P) :- ink(_, P, _).
 
 .decl sym_cell(t: Position, d: Dir, p: Position)
 sym_cell(T, D, P) :-
-    figure.conn($U(), T, P), dir_elem(D),                      // a cell of T's piece
+    figure.label($U(), T, Id), figure.label($U(), P, Id), dir_elem(D),   // a cell of T's piece
     axis_of(D, A), perp(A, A2), flip_of(A2, G),                // the mirror in T's line
     relative(T, P, V), apply(G, V, V2), compose(T, V2, Q),
-    figure.conn($U(), T, Q).                                   // the image is in the piece too
+    figure.label($U(), Q, Id).                                 // the image is in the piece too
 
 // A cell of the set stands level with T or past it, so T is no tip.
 .decl blunt(t: Position, d: Dir)

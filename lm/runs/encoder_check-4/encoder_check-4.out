@@ -1,0 +1,97 @@
+20:23:27 == random table, every column type and a marker row, an unseen table, then a second random table
+20:23:28 pooled vectors (3, 4, 21, 32), max |entry| 9.099; crossing (3, 4, 48), max |entry| 3.106
+20:23:28   D4_ID: |pooled(g.T) - g.pooled(T)| 0.00e+00   |cross(g.T) - cross(T)| 0.00e+00
+20:23:29   D4_CW: |pooled(g.T) - g.pooled(T)| 2.09e-14   |cross(g.T) - cross(T)| 6.66e-15
+20:23:29   D4_HT: |pooled(g.T) - g.pooled(T)| 1.55e-14   |cross(g.T) - cross(T)| 6.00e-15
+20:23:30   D4_CC: |pooled(g.T) - g.pooled(T)| 1.69e-14   |cross(g.T) - cross(T)| 6.55e-15
+20:23:30   D4_LR: |pooled(g.T) - g.pooled(T)| 1.27e-14   |cross(g.T) - cross(T)| 5.55e-15
+20:23:31   D4_TB: |pooled(g.T) - g.pooled(T)| 1.38e-14   |cross(g.T) - cross(T)| 5.11e-15
+20:23:31   D4_DG: |pooled(g.T) - g.pooled(T)| 1.47e-14   |cross(g.T) - cross(T)| 7.11e-15
+20:23:32   D4_AD: |pooled(g.T) - g.pooled(T)| 2.44e-14   |cross(g.T) - cross(T)| 6.88e-15
+20:23:32   D4 equivariance PASS (worst 2.4e-14, 7.1e-15); for scale, the least |pooled(g.T) - pooled(T)| over g != id is 5.43e-01
+20:23:32   row order: |pooled| change 9.55e-15
+20:23:33   Color permutation, identifiers carried: |pooled| change 0.00e+00 PASS; not carried (so the values are seen): 3.34e-01
+20:23:34   Example permutation, identifiers carried: |pooled| change 0.00e+00 PASS; not carried (so the values are seen): 9.42e-01
+20:23:35   Ident permutation, identifiers carried: |pooled| change 0.00e+00 PASS; not carried (so the values are seen): 3.30e-01
+20:23:35 == fixture, 00576224 $Lookup evidence and the smallest tables of each column type (types ['Axis', 'Box', 'Color', 'D4', 'DiagDir', 'Dir', 'Dir8', 'Example', 'Ident', 'Number']), 40 rows each
+20:23:36 pooled vectors (7, 4, 21, 32), max |entry| 10.818; crossing (7, 4, 48), max |entry| 3.577
+20:23:37   D4_ID: |pooled(g.T) - g.pooled(T)| 0.00e+00   |cross(g.T) - cross(T)| 0.00e+00
+20:23:37   D4_CW: |pooled(g.T) - g.pooled(T)| 2.13e-14   |cross(g.T) - cross(T)| 7.99e-15
+20:23:38   D4_HT: |pooled(g.T) - g.pooled(T)| 1.95e-14   |cross(g.T) - cross(T)| 7.55e-15
+20:23:39   D4_CC: |pooled(g.T) - g.pooled(T)| 2.04e-14   |cross(g.T) - cross(T)| 7.11e-15
+20:23:40   D4_LR: |pooled(g.T) - g.pooled(T)| 2.13e-14   |cross(g.T) - cross(T)| 6.22e-15
+20:23:41   D4_TB: |pooled(g.T) - g.pooled(T)| 1.27e-14   |cross(g.T) - cross(T)| 7.11e-15
+20:23:42   D4_DG: |pooled(g.T) - g.pooled(T)| 1.95e-14   |cross(g.T) - cross(T)| 6.66e-15
+20:23:43   D4_AD: |pooled(g.T) - g.pooled(T)| 1.91e-14   |cross(g.T) - cross(T)| 7.77e-15
+20:23:43   D4 equivariance PASS (worst 2.1e-14, 8.0e-15); for scale, the least |pooled(g.T) - pooled(T)| over g != id is 3.99e-01
+20:23:43   row order: |pooled| change 1.24e-14
+20:23:45   Color permutation, identifiers carried: |pooled| change 1.15e-14 PASS; not carried (so the values are seen): 2.95e+00
+20:23:46   Example permutation, identifiers carried: |pooled| change 1.18e-14 PASS; not carried (so the values are seen): 6.38e-01
+20:23:48   Ident permutation, identifiers carried: |pooled| change 0.00e+00 PASS; not carried (so the values are seen): 5.23e-01
+20:23:48 == masked loss heads under D4, the same cells masked (frac 0.3)
+20:23:52   random table, every column type and a ma...: 93 masked cells; worst change loss 3.9e-14, box 4.4e-14, number 4.8e-14, orientation Axis 4.7e-15, orientation Axis4 5.3e-15, orientation C4 7.3e-15, orientation D4 9.8e-15, orientation DiagAxis 4.7e-15, orientation DiagDir 3.6e-15, orientation Dir 3.4e-15, orientation Dir8 7.5e-15, orientation Sense 7.1e-15, orientation Sym 2.3e-14, pointer 2.1e-14 PASS
+20:23:59   fixture, 00576224 $Lookup evidence and t...: 92 masked cells; worst change loss 6.0e-14, box 4.2e-14, number 7.8e-14, orientation Axis 7.2e-15, orientation D4 9.8e-15, orientation DiagDir 9.3e-15, orientation Dir8 5.3e-15, pointer 2.3e-14 PASS
+20:23:59 == joint evidence block: one ex_output cell's color changed
+20:24:01   |ex_input pooled change| 1.09e-01 PASS (ex_output's own: 1.35e-01)
+20:24:01 == batching: four programs encoded in one call, their tables of one level built together and run in shared batches, against each alone
+20:24:03   |together - alone| 1.38e-14; levels whose one batch holds tables of several programs and row counts: [1, 2, 4] PASS
+20:24:03 == batching: the same four programs with BATCH_COST 0, so that a level's tables of different row counts run in separate batches, each with its own equality layout, narrower than the level's where its tables have fewer columns of a group; against each alone
+20:24:05   |together - alone| 1.20e-14; batches with a narrower layout: 8 PASS
+20:24:05 == batching: two programs of one table each, 300 and 290 rows, together (one batch, padded to 304 rows) against each alone (padded to 304 and 296 rows)
+20:24:07   |together - alone| 6.00e-15 PASS
+20:24:07 == orientation features: distinct within each column type (Dir8 and Axis4 span two encoding ranges)
+20:24:07   pairs of constants with equal features: none PASS
+20:24:07 == the loader's fault test: a tables frame whose fault column reads as the str dtype, one string and nulls
+20:24:07   fault dtype str; unseen tables ['the table faults'] PASS
+20:24:07 == bf16 autocast, the encoder in float32: every attention input is bf16, and each equivariant matrix is cast once per call of prepare, not at each use
+20:24:08   cpu: 18 attention calls, input dtypes ['torch.bfloat16']; 75 saves of a bf16 matrix from 15 storages (30 matrices that prepare builds); pooled finite True PASS
+20:24:13   cpu: masked loss under autocast 5.5908, gradients finite True PASS
+20:24:13   cuda: 18 attention calls, input dtypes ['torch.bfloat16']; 75 saves of a bf16 matrix from 15 storages (30 matrices that prepare builds); pooled finite True PASS
+20:24:14   cuda: masked loss under autocast 5.5870, gradients finite True PASS
+20:24:14 == checkpointing: the masked loss's gradients with and without --enc-checkpoint, and the bytes the Blocks save for the backward pass at each level
+20:24:23   93 parameter gradients, |with - without| 0.00e+00 PASS
+20:24:23   KB saved by the Blocks per level, without: 0: 79459, 2: 12727, 3: 2886, 4: 9505, 5: 4594, 6: 3629; with: none PASS
+20:24:23 == train.py's run_batch with --aux-masked: the gradients when the masked loss's backward runs apart, before the clean pass, against one backward of the summed loss (a stand-in language model, two dev cases)
+20:24:52   loss 5.486179 against 5.486179; 88 parameter gradients, |split - joint| 5.55e-17 PASS
+20:24:52 == identifiers: the vectors drawn and the pooled vectors, bitwise, against a reference copy of the identifiers that draws per value and stacks the vectors (one seed)
+20:24:53   random table, every column type and a ma...: 28 identifiers, the same keys and bitwise the same vectors, and the same pooled vectors: PASS
+20:24:55   fixture, 00576224 $Lookup evidence and t...: 50 identifiers, the same keys and bitwise the same vectors, and the same pooled vectors: PASS
+20:24:55 == --enc-group: programs encoded one per call against all in one call, each program's identifiers drawn from its own generator, so that the draws do not depend on the grouping
+20:24:58   the encoder's output vectors, 4 programs: |grouped - one call| 8.44e-15 PASS
+20:25:03   run_batch with --aux-masked: loss 5.437370 against 5.437370; |grouped - one call| of 88 gradients 4.44e-16 PASS
+20:25:03 == pretrain.py's relation identifiers: train.table_relations against encode's last item, every dev case with tables, one generator through them all
+20:25:03   20 cases, 407 relation identifiers bitwise the same, and the generators after: PASS
+20:25:03 == equality modes: the symmetry and batching checks under --enc-equality random
+20:25:03 == random: random table, every column type and a marker row, an unseen table, then a second random table
+20:25:03 pooled vectors (3, 4, 21, 32), max |entry| 8.252; crossing (3, 4, 48), max |entry| 3.205
+20:25:04   D4_ID: |pooled(g.T) - g.pooled(T)| 0.00e+00   |cross(g.T) - cross(T)| 0.00e+00
+20:25:04   D4_CW: |pooled(g.T) - g.pooled(T)| 1.78e-14   |cross(g.T) - cross(T)| 7.77e-15
+20:25:05   D4_HT: |pooled(g.T) - g.pooled(T)| 1.64e-14   |cross(g.T) - cross(T)| 5.88e-15
+20:25:05   D4_CC: |pooled(g.T) - g.pooled(T)| 1.78e-14   |cross(g.T) - cross(T)| 7.99e-15
+20:25:05   D4_LR: |pooled(g.T) - g.pooled(T)| 1.47e-14   |cross(g.T) - cross(T)| 6.66e-15
+20:25:06   D4_TB: |pooled(g.T) - g.pooled(T)| 1.69e-14   |cross(g.T) - cross(T)| 5.55e-15
+20:25:06   D4_DG: |pooled(g.T) - g.pooled(T)| 1.60e-14   |cross(g.T) - cross(T)| 7.61e-15
+20:25:07   D4_AD: |pooled(g.T) - g.pooled(T)| 1.53e-14   |cross(g.T) - cross(T)| 6.66e-15
+20:25:07   D4 equivariance PASS (worst 1.8e-14, 8.0e-15); for scale, the least |pooled(g.T) - pooled(T)| over g != id is 6.09e-01
+20:25:07   row order: |pooled| change 1.02e-14
+20:25:08   Color permutation, identifiers carried: |pooled| change 0.00e+00 PASS; not carried (so the values are seen): 2.75e-01
+20:25:10   Example permutation, identifiers carried: |pooled| change 0.00e+00 PASS; not carried (so the values are seen): 9.61e-01
+20:25:11   Ident permutation, identifiers carried: |pooled| change 0.00e+00 PASS; not carried (so the values are seen): 4.84e-01
+20:25:11 == random: fixture, 00576224 $Lookup evidence and the smallest tables of each column type (types ['Axis', 'Box', 'Color', 'D4', 'DiagDir', 'Dir', 'Dir8', 'Example', 'Ident', 'Number']), 40 rows each
+20:25:13 pooled vectors (7, 4, 21, 32), max |entry| 10.290; crossing (7, 4, 48), max |entry| 3.582
+20:25:14   D4_ID: |pooled(g.T) - g.pooled(T)| 0.00e+00   |cross(g.T) - cross(T)| 0.00e+00
+20:25:15   D4_CW: |pooled(g.T) - g.pooled(T)| 2.04e-14   |cross(g.T) - cross(T)| 7.99e-15
+20:25:16   D4_HT: |pooled(g.T) - g.pooled(T)| 2.09e-14   |cross(g.T) - cross(T)| 8.44e-15
+20:25:17   D4_CC: |pooled(g.T) - g.pooled(T)| 2.13e-14   |cross(g.T) - cross(T)| 7.55e-15
+20:25:17   D4_LR: |pooled(g.T) - g.pooled(T)| 2.44e-14   |cross(g.T) - cross(T)| 7.11e-15
+20:25:18   D4_TB: |pooled(g.T) - g.pooled(T)| 1.15e-14   |cross(g.T) - cross(T)| 6.66e-15
+20:25:19   D4_DG: |pooled(g.T) - g.pooled(T)| 2.13e-14   |cross(g.T) - cross(T)| 8.22e-15
+20:25:20   D4_AD: |pooled(g.T) - g.pooled(T)| 2.13e-14   |cross(g.T) - cross(T)| 6.66e-15
+20:25:20   D4 equivariance PASS (worst 2.4e-14, 8.4e-15); for scale, the least |pooled(g.T) - pooled(T)| over g != id is 5.50e-01
+20:25:21   row order: |pooled| change 1.15e-14
+20:25:22   Color permutation, identifiers carried: |pooled| change 0.00e+00 PASS; not carried (so the values are seen): 3.01e+00
+20:25:24   Example permutation, identifiers carried: |pooled| change 0.00e+00 PASS; not carried (so the values are seen): 5.75e-01
+20:25:26   Ident permutation, identifiers carried: |pooled| change 0.00e+00 PASS; not carried (so the values are seen): 7.22e-01
+20:25:28   random: batching, 4 programs, |together - alone| 1.20e-14 PASS
+20:25:28 == random: the score of a pair of rows, one column, against the column's learned weight, over 66 values
+20:25:28   equal values: |score - weight| 6.7e-16 PASS; unequal values: score / weight has rms 0.174 (1/sqrt(32) = 0.177)

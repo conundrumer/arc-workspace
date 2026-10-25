@@ -14,6 +14,8 @@
 use std::sync::Arc;
 
 use super::Context;
+use crate::check::{CheckCache, CheckedProgram, SolverClauses};
+use crate::eval::Outcome;
 use crate::program::path::{NodePath, PathStep};
 use crate::program::{
     written_inputs, Atom, Body, Choose, Clause, ClauseKeyword, ColumnName, Conjunct, Constraint, ConstraintLabel, ConstraintOp, DeclaredName, Form, Instance,
@@ -29,7 +31,6 @@ use crate::resolver::{resolve, resolve_last, ResolvedProgram, SolverScope};
 use crate::safety::body_labels;
 use crate::resolver::form_columns::rigid_outputs;
 use crate::resolver::registry_columns::{component, proposer_columns, typed_columns};
-use crate::stream::write::reads_example_column;
 use crate::stream::{Control, Token};
 
 /// Why the grammar refuses a token at a state.
@@ -63,7 +64,30 @@ pub(super) struct State {
     /// The resolution of the finished forms, made on its first read, which
     /// every clone of the state shares until a form finishes.
     resolved: Arc<std::sync::OnceLock<Arc<ResolvedProgram>>>,
+    /// The clauses of the finished forms, which every clone of the state
+    /// shares until a form finishes. A clause set memoizes in cells that
+    /// one thread reads at a time, so the pool lends each to one reader,
+    /// and a reader finding the pool empty makes one.
+    clauses: Arc<std::sync::Mutex<Vec<SolverClauses>>>,
+    /// The checked program of the finished forms, resolved from the
+    /// resolution of the state before the last form finished, with the
+    /// check cache that its check left, made on its first read and shared
+    /// by every clone of the state until a form finishes.
+    checked_last: Arc<std::sync::OnceLock<(Outcome<CheckedProgram>, CheckCache)>>,
+    /// The atom that the step in progress opened, as [`State::step`] takes
+    /// it: none in every state a step gives.
+    opened: Option<Opened>,
 }
+
+/// An atom that a step opened as its last change, which the form in
+/// progress then ends with: its relation alone, and no site.
+#[derive(Clone, Debug)]
+pub(super) struct Opened;
+
+/// Whether the atom of `relation` that a step opened, at the path in the
+/// program, the second argument, of the program with the form in progress
+/// as its last form, the first, reads an Example column.
+pub(super) type ReadsExample<'a> = &'a dyn Fn(&Node<Program>, &NodePath, &RelationRef) -> bool;
 
 /// An open node of the form in progress, with its children so far.
 #[derive(Clone, Debug)]
@@ -218,6 +242,9 @@ struct HeadSiteFrame {
     /// The count of the fields written.
     fields: u32,
     field: Option<u32>,
+    /// The label of the last bare label written, which the next bare label
+    /// follows in the order of the labels.
+    last_bare: Option<u32>,
     /// Whether the `END` of the site's record stands, which the `END` of the
     /// projection's column follows.
     record_ended: bool,
@@ -284,9 +311,12 @@ enum Offer {
     Close { consumed: bool },
 }
 
+/// The most fields of a record that [`State::head_site_completions`] offers.
+const FIELDS_TRIED: u32 = 1;
+
 impl State {
     pub(super) fn new() -> State {
-        State { program: Node::new(Program { forms: Arc::from([]) }), declared: Arc::from([]), finished_slots: 0, labels: 0, stack: Vec::new(), resolved: Arc::default() }
+        State { program: Node::new(Program { forms: Arc::from([]) }), declared: Arc::from([]), finished_slots: 0, labels: 0, stack: Vec::new(), resolved: Arc::default(), clauses: Arc::default(), checked_last: Arc::default(), opened: None }
     }
 
     /// The finished forms.
@@ -301,6 +331,22 @@ impl State {
         Arc::clone(resolved)
     }
 
+    /// Runs `body` with the clauses of the finished forms' resolution, made
+    /// for each reader that finds none lent, and lent again after.
+    pub(super) fn with_clauses<R>(&self, registry: &Registry, body: impl FnOnce(&SolverClauses) -> R) -> R {
+        let lent = self.clauses.lock().expect("the clause pool is not poisoned").pop();
+        let clauses = lent.unwrap_or_else(|| SolverClauses::of_shared_program(self.resolved(registry)));
+        let result = body(&clauses);
+        self.clauses.lock().expect("the clause pool is not poisoned").push(clauses);
+        result
+    }
+
+    /// The checked program of the finished forms and the check cache its
+    /// check left, as [`State::checked_last`] holds them.
+    pub(super) fn checked_last(&self) -> &std::sync::OnceLock<(Outcome<CheckedProgram>, CheckCache)> {
+        &self.checked_last
+    }
+
     /// The resolution of `partial`, the finished forms with the form in
     /// progress as the last form, as [`State::partial`] gives it.
     fn resolved_partial(&self, partial: &Node<Program>, registry: &Registry) -> ResolvedProgram {
@@ -308,14 +354,21 @@ impl State {
     }
 
     /// The state after `token`, and the tokens the engine emits after it.
-    pub(super) fn step(&self, context: &Context<'_>, token: &Token) -> Result<(State, Vec<Token>), Unexpected> {
+    ///
+    /// The step also gives the atom it opened as its last change, where it
+    /// finished no form: the state then ends with an atom of no site.
+    pub(super) fn step(&self, context: &Context<'_>, token: &Token, reads_example: ReadsExample<'_>) -> Result<(State, Vec<Token>, Option<Opened>), Unexpected> {
         let mut next = self.clone();
         let mut forced = Vec::new();
         loop {
             match next.offer(context, token, &mut forced)? {
                 Offer::Taken => break,
-                Offer::Again => continue,
+                Offer::Again => {
+                    next.opened = None;
+                    continue;
+                }
                 Offer::Close { consumed } => {
+                    next.opened = None;
                     let closer = consumed.then_some(token);
                     if let Some(built) = next.close(context, &mut forced)? {
                         next.deliver(context, built, closer, &mut forced)?;
@@ -326,7 +379,64 @@ impl State {
                 }
             }
         }
-        Ok((next, forced))
+        let opened = next.opened.take().filter(|_| next.program.value().forms.len() == self.program.value().forms.len());
+        if let (Some(_), Token::Relation(_)) = (&opened, token) {
+            next.add_example_column(reads_example);
+        }
+        Ok((next, forced, opened))
+    }
+
+    /// The operator, and the first label once it is written, of the
+    /// constraint that stands open on top.
+    pub(super) fn open_constraint(&self) -> Option<(ConstraintOp, Option<ConstraintLabel>)> {
+        match self.stack.last() {
+            Some(Frame::Constraint(constraint)) => Some((constraint.op, constraint.first)),
+            _ => None,
+        }
+    }
+
+    /// Where a head site of an instance input's projection stands on top,
+    /// or a body atom's site stands on top after a field's column token, the
+    /// tokens the grammar admits there that a completion can use, in the
+    /// order a search tries them. After a body site's field token: `*`, `^`
+    /// where the site stands in a key, `0`, and the labels in scope from the
+    /// last made. At a head site: `END`, the
+    /// labels in scope from the last made, and the column token of the next
+    /// field. After a field's column token only the labels, and after the
+    /// record's `END` only `END`. A site that holds `limit` arguments takes
+    /// `END` alone. A column of a type parameter takes the bare labels
+    /// after its last bare label, so a set of them is tried once, and a
+    /// record of at most `FIELDS_TRIED` fields; one of a fixed type takes
+    /// one label.
+    pub(super) fn head_site_completions(&self, limit: usize) -> Option<Vec<Token>> {
+        let labels = |after: Option<u32>| (after.map_or(0, |last| last + 1)..self.labels).rev().map(Token::Label);
+        let site = match self.stack.last() {
+            Some(Frame::HeadSite(site)) => site,
+            Some(Frame::Site(SiteFrame { field: Some(_), .. })) => {
+                let key = self.in_key().then_some(Token::Control(Control::Key));
+                let marks = [Token::Control(Control::Fresh)].into_iter().chain(key).chain([Token::Control(Control::Zero)]);
+                return Some(marks.chain(labels(None)).collect());
+            }
+            _ => return None,
+        };
+        let end = Token::Control(Control::End);
+        if site.field.is_some() {
+            return Some(labels(None).collect());
+        }
+        if site.record_ended || site.args.len() >= limit {
+            return Some(vec![end]);
+        }
+        if !type_parameter(&site.column) {
+            let bare = site.args.is_empty().then(|| labels(None));
+            return Some(std::iter::once(end).chain(bare.into_iter().flatten()).collect());
+        }
+        let field = (site.fields < FIELDS_TRIED).then_some(Token::Column(site.fields));
+        Some(std::iter::once(end).chain(labels(site.last_bare)).chain(field).collect())
+    }
+
+    /// The count of the labels made so far.
+    pub(super) fn label_count(&self) -> u32 {
+        self.labels
     }
 
     /// The program with the form in progress as its last form, and the path
@@ -356,6 +466,8 @@ impl State {
         self.program = self.with_form(form);
         self.finished_slots = self.next_slot();
         self.resolved = Arc::default();
+        self.clauses = Arc::default();
+        self.checked_last = Arc::default();
         self.labels = 0;
     }
 
@@ -597,15 +709,28 @@ impl State {
             _ => false,
         };
         self.stack.push(Frame::Atom(AtomFrame { relation, columns, sites: Vec::new(), negated }));
-        if let Token::Relation(_) = token {
-            let (program, open) = self.partial().expect("a form that shows its atom");
-            let at = self.absolute(&open.expect("an open atom"));
-            if reads_example_column(&self.resolved_partial(&program, context.registry), &at) {
-                let atom = top!(self, Frame::Atom);
-                atom.columns = std::iter::once(example()).chain(atom.columns.iter().cloned()).collect();
-            }
-        }
+        self.opened = Some(Opened);
         Ok(())
+    }
+
+    /// The relation of the atom on top, where one is open.
+    pub(super) fn open_relation(&self) -> Option<RelationRef> {
+        match self.stack.last() {
+            Some(Frame::Atom(atom)) => Some(atom.relation.clone()),
+            _ => None,
+        }
+    }
+
+    /// Adds the Example column to the columns of the atom on top, which a
+    /// step opened as its last change, where `reads_example` says that the
+    /// read of its relation reads one.
+    fn add_example_column(&mut self, reads_example: ReadsExample<'_>) {
+        let (program, open) = self.partial().expect("a form that shows its atom");
+        let at = self.absolute(&open.expect("an open atom"));
+        let atom = top!(self, Frame::Atom);
+        if reads_example(&program, &at, &atom.relation) {
+            atom.columns = std::iter::once(example()).chain(atom.columns.iter().cloned()).collect();
+        }
     }
 
     /// Opens the site on `column` of the atom on top. A site on a column of
@@ -729,6 +854,7 @@ impl State {
             site.fields += 1;
             return Ok(Offer::Taken);
         }
+        let parameter = type_parameter(&site.column);
         match token {
             Token::Control(Control::End) => {
                 let record = site.fields > 0 || site.args.len() > 1;
@@ -739,6 +865,8 @@ impl State {
                 Ok(Offer::Close { consumed: true })
             }
             _ if site.record_ended => Err("a projection's column ends with `END`"),
+            Token::Column(_) if !parameter => Err("a column of a fixed type takes one label"),
+            _ if !parameter && !site.args.is_empty() => Err("a column of a fixed type takes one label"),
             Token::Column(field) if *field == site.fields => {
                 site.field = Some(*field);
                 Ok(Offer::Taken)
@@ -746,6 +874,9 @@ impl State {
             _ => {
                 let label = self.label_token(token, false, forced).ok_or("a projection holds labels, then `END`")?;
                 let site = top!(self, Frame::HeadSite);
+                if let LabelUse::Fresh(id) | LabelUse::Join(id) | LabelUse::Key(id) = label {
+                    site.last_bare = Some(id.0);
+                }
                 site.args.push(bare_arg(&site.column, label));
                 Ok(Offer::Taken)
             }
@@ -1080,7 +1211,7 @@ impl State {
         if let Some(column) = input.columns.get(input.column) {
             forced.push(Token::Column(input.column as u32));
             let column = column.clone();
-            self.stack.push(Frame::HeadSite(HeadSiteFrame { column, args: Vec::new(), fields: 0, field: None, record_ended: false }));
+            self.stack.push(Frame::HeadSite(HeadSiteFrame { column, args: Vec::new(), fields: 0, field: None, last_bare: None, record_ended: false }));
             return None;
         }
         let Some(Frame::Input(input)) = self.stack.pop() else { unreachable!("the input stands on top") };

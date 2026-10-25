@@ -41,7 +41,7 @@ patch.equiv([$ByColor(), P], [$ByColor(), Q]) :- patch_cell(P, Col), patch_cell(
 .init blob = Components<Color>
 blob.node(Col, P) :- patch_cell(P, Col).
 
-patch.equiv([$ByObject(), P], [$ByObject(), Q]) :- blob.conn(_, P, Q).
+patch.equiv([$ByObject(), P], [$ByObject(), Q]) :- blob.label(Col, P, Id), blob.label(Col, Q, Id).
 
 // --- the nest ---
 

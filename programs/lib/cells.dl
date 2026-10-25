@@ -436,9 +436,6 @@
     label(Ky, P, Id) :- node(Ky, P), _ident.id(P, Id).
     label(Ky, Q, Id) :- label(Ky, P, Id), step(D), compose(P, D, Q), node(Ky, Q).
     label(Ky, P, Id) <= label(Ky, P, Id2) :- Id2 < Id.
-
-    .decl conn(key: Key, p: Position, q: Position)
-    conn(Ky, P, Q) :- label(Ky, P, Id), label(Ky, Q, Id).
 }
 
 /// Joins the diagonal neighbors as well, so a corner contact keeps one
@@ -452,7 +449,6 @@
 .comp Reach<Key> : Components<Key> {
     .decl seed(key: Key, p: Position)  // @input
 
-    // reach floods from the seeds and does not derive conn.
     .decl reach(key: Key, p: Position)
     reach(Ky, P) :- seed(Ky, P), node(Ky, P).
     reach(Ky, Q) :- reach(Ky, P), step(D), compose(P, D, Q), node(Ky, Q).

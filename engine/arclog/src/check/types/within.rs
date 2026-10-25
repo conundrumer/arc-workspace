@@ -48,15 +48,17 @@ pub(in crate::check) fn rule_within<'p>(form: &'p Form, path: &NodePath) -> Opti
     demonstrated.value().rule_at(rule.0)
 }
 
-/// Each form that declares names in `scope`, with its path: the top-level
-/// forms for the program, and a `DEMO_RULE`'s forms for its scope.
-pub(in crate::check) fn scope_forms<'p>(program: &'p Program, scope: &NameScope) -> Vec<(NodePath, &'p Form)> {
+/// Each form that declares names in `scope`, with its index among the
+/// scope's forms, and the scope's path: the top-level forms for the program,
+/// and a `DEMO_RULE`'s forms for its scope. A form's path is the scope's
+/// `child` at its index.
+pub(in crate::check) fn scope_forms<'p>(program: &'p Program, scope: &NameScope) -> (NodePath, impl Iterator<Item = (u32, &'p Form)>) {
     let (forms, at) = match scope {
         NameScope::Program => (&program.forms[..], NodePath::default()),
         NameScope::DemoRule(rule) => match demo_rule(program, rule) {
             Some(found) => (&found.forms[..], rule.clone()),
-            None => return Vec::new(),
+            None => (&[][..], rule.clone()),
         },
     };
-    forms.iter().zip(0u32..).map(|(form, index)| (at.child(index), form)).collect()
+    (at, (0u32..).zip(forms.iter()))
 }

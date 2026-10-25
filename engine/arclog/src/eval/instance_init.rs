@@ -40,7 +40,9 @@ use crate::types::GraphRelation;
 /// The key clause's rows are the groups, and an instance with no key
 /// clause has one group, with no key column. A type parameter onto which no
 /// place of the form projects is `Unit`, and each row of an input or an
-/// output holds the one `Unit` term at each column of that parameter. A
+/// output holds the one `Unit` term at each column of that parameter. A key
+/// group whose inputs lie outside the construction's domain makes each
+/// output undefined. A
 /// component whose inputs read its outputs, a task-structure component and
 /// a component the table of constructions lacks give a [`RunFault`] whose
 /// message gives the component.
@@ -101,6 +103,9 @@ pub fn evaluate_instance<'a>(
         let mut context = ConstructionContext { session: evaluation.session, registry: evaluation.registry, budget };
         for (key, inputs) in groups.iter().zip(&group_inputs) {
             let group = GroupInputs { inputs, types: &types, columns: &columns, wanted: &wanted };
+            if construction.outside_domain(&group) {
+                return Ok(each(RelationValue::Undefined));
+            }
             let outputs = match construction.evaluate(&group, &mut context) {
                 Ok(outputs) => outputs,
                 Err(bound) => return Ok(each(RelationValue::Stopped(Stop { bound, form: form.clone() }))),

@@ -5,7 +5,7 @@
 //! share them.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use crate::diagnostic::{Diagnostic, DiagnosticKind, Location, Severity};
 use crate::program::path::NodePath;
@@ -84,6 +84,9 @@ pub enum ReachedBound {
     Models { cap: u64 },
     Nodes { cap: u64 },
     Assignments { cap: u64 },
+    /// The bindings that all the evaluations of one table try, a stop of the
+    /// table's walk.
+    TableWork { cap: u64 },
     /// A Box with a margin outside a signed byte.
     Margin(ReachedMarginBound),
     SessionBytes(ReachedSessionBound),
@@ -97,13 +100,15 @@ impl ReachedBound {
     /// request of its entry. A stop at the session's byte bound, at the
     /// deadline or by a cancellation depends on the machine or the
     /// session's history, and is stored nowhere. A stop at the model cap,
-    /// the node cap or the assignment cap is stored nowhere either.
+    /// the node cap, the assignment cap or the table work cap is stored
+    /// nowhere either.
     pub fn is_stored(self) -> bool {
         match self {
             ReachedBound::Bindings { .. } | ReachedBound::Rows { .. } | ReachedBound::Margin(_) => true,
             ReachedBound::Models { .. }
             | ReachedBound::Nodes { .. }
             | ReachedBound::Assignments { .. }
+            | ReachedBound::TableWork { .. }
             | ReachedBound::SessionBytes(_)
             | ReachedBound::Deadline
             | ReachedBound::Cancelled => false,
@@ -118,6 +123,7 @@ impl ReachedBound {
             ReachedBound::Models { cap } => format!("the model cap of {cap} models"),
             ReachedBound::Nodes { cap } => format!("the node cap of {cap} search nodes"),
             ReachedBound::Assignments { cap } => format!("the assignment cap of {cap} joint assignments"),
+            ReachedBound::TableWork { cap } => format!("the table work cap of {cap} bindings"),
             ReachedBound::Margin(reached) => format!("a Box margin outside a signed byte, {:?}", reached.margins),
             ReachedBound::SessionBytes(reached) => {
                 format!("the session's byte bound of {} bytes, at {} bytes", reached.bound.bytes, reached.bytes)
@@ -260,11 +266,49 @@ impl Cancellation {
     }
 }
 
+/// The bindings that the evaluations of one table try, counted over all its
+/// examples, assignments, models and projections, and the cap on the count.
+/// Clones share one count.
+#[derive(Clone, Debug)]
+pub struct TableWork {
+    count: Arc<AtomicU64>,
+    cap: u64,
+}
+
+impl TableWork {
+    /// A table with no bindings counted, under `cap`.
+    pub fn new(cap: u64) -> Self {
+        TableWork { count: Arc::new(AtomicU64::new(0)), cap }
+    }
+
+    /// Adds `bindings` to the count, and gives the stop once the count is past
+    /// the cap. Each later call gives it too.
+    pub fn charge(&self, bindings: u64) -> Result<(), ReachedBound> {
+        let count = self.count.fetch_add(bindings, Ordering::Relaxed).saturating_add(bindings);
+        if count > self.cap { Err(ReachedBound::TableWork { cap: self.cap }) } else { Ok(()) }
+    }
+}
+
 /// The bounds of one evaluation that differ between the evaluations of a
-/// session: the deadline where it has one, and its cancellation. The caps
-/// stand in the [`crate::session::TaskSession`].
+/// session: the deadline where it has one, its cancellation, and the work
+/// count of its table where it runs for a table. The caps stand in the
+/// [`crate::session::TaskSession`].
 #[derive(Clone, Debug)]
 pub struct Limits {
     pub deadline: Option<std::time::Instant>,
     pub cancellation: Cancellation,
+    /// The count that the evaluation's batches of bindings are added to.
+    pub table_work: Option<TableWork>,
+}
+
+impl Limits {
+    /// The limits of an evaluation outside a table.
+    pub fn new(deadline: Option<std::time::Instant>, cancellation: Cancellation) -> Self {
+        Limits { deadline, cancellation, table_work: None }
+    }
+
+    /// These limits with the evaluation counted in `work`.
+    pub fn counted_in(self, work: TableWork) -> Self {
+        Limits { table_work: Some(work), ..self }
+    }
 }

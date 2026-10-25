@@ -96,10 +96,8 @@ fn run_corpus(args: &[String]) -> ExitCode {
     let faulted = AtomicUsize::new(0);
     let report = run_over_corpus(
         Path::new(&corpus),
+        selected.as_ref(),
         |solver| {
-            if selected.as_ref().is_some_and(|ids| !ids.contains(&solver.task_id)) {
-                return SolverResult::Pass;
-            }
             let lines = match stream_lines(Path::new(&corpus), &solver.task_id, all, &streamed, &faulted) {
                 Ok(lines) => lines,
                 Err(fault) => vec![fault_line(&solver.task_id, None, &fault)],

@@ -8,6 +8,10 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::Arc;
 
+mod state;
+
+pub(super) use state::HeldState;
+
 use super::safety::{bodies, BodyPlace};
 use super::types::{
     column_type, component, declared_type, demo_rule, form_at, pose_of_fault, project, relation_columns, rule_scope_forms, scope_forms, site_value_type, site_value_type_or,
@@ -26,7 +30,7 @@ use crate::resolver::columns;
 use crate::resolver::form_columns;
 use crate::resolver::registry_columns;
 use crate::resolver::{DependencyKind, GraphNodeIndex, Resolution, ResolvedProgram, Signature};
-use crate::types::{label_type_keyed, scope_list, use_label, AssemblyId, KeyRow, LabelFault, ValueType};
+use crate::types::{fresh_in_nested_form, label_type_cached, list_class, WalkCache, scope_lists, use_label, AssemblyId, KeyRow, LabelFault, ValueType};
 
 /// The labels of a form's own scope, with the list each label's sites stand
 /// in: the conjuncts of the form's bodies, each instance input a branch of
@@ -72,13 +76,15 @@ impl<'a> ScopeBody<'a> {
         ScopeBody { body: Body { conjuncts: conjuncts.into() }, heads, component: found_component, instance: found_instance }
     }
 
-    /// The list of the scope of `label`.
-    fn list(&self, label: LabelId) -> &Body {
-        if self.heads.contains(&label) {
-            &self.body
-        } else {
-            scope_list(&self.body, label)
+    /// The list of the scope of each of `labels`, in their order.
+    fn lists(&self, labels: &[LabelId]) -> Vec<&Body> {
+        let mut lists = scope_lists(&self.body, labels);
+        for (label, list) in labels.iter().zip(&mut lists) {
+            if self.heads.contains(label) {
+                *list = &self.body;
+            }
         }
+        lists
     }
 }
 
@@ -212,7 +218,35 @@ pub(super) struct FormInference<'a> {
     given: Vec<LabelId>,
 }
 
+/// The types of one label scope that a [`FormInference`] holds beyond its
+/// owner and its walk, which two forms that differ in an atom of no site
+/// alone have in common.
+#[derive(Clone)]
+pub(super) struct InferredTypes {
+    labels: Vec<(LabelId, Result<Option<ValueType>, LabelFault>)>,
+    bindings: StableHashMap<TypeParameter, ValueType>,
+    zero_typed: Vec<LabelId>,
+    given: Vec<LabelId>,
+}
+
 impl<'a> FormInference<'a> {
+    /// The inference of `form`, a top-level form at `path`, whose types are
+    /// `types`, those of a form that differs from `form` in an atom of no
+    /// site alone.
+    fn of_types(types: InferredTypes, form: &'a Form, path: &NodePath, registry: &'a Registry) -> Self {
+        let component = match form {
+            Form::Instance(instance) => component(registry, &instance.value().component),
+            _ => None,
+        };
+        let InferredTypes { labels, bindings, zero_typed, given } = types;
+        FormInference { owner: ScopeOwner::Form(form), path: path.clone(), labels, bindings, walk: FormWalk::of(form), component, zero_typed, given }
+    }
+
+    /// The types of this inference, see [`InferredTypes`].
+    fn types(&self) -> InferredTypes {
+        InferredTypes { labels: self.labels.clone(), bindings: self.bindings.clone(), zero_typed: self.zero_typed.clone(), given: self.given.clone() }
+    }
+
     /// The types of this inference, of a form of the concept program, given
     /// to `owner`, the same scope at `path` in a case, whose sites `walk`
     /// walks.
@@ -404,6 +438,17 @@ pub(super) struct Inference<'a> {
     /// The signature of each clause of the program read so far, by its
     /// path, as [`super::clause_signature`] gives it.
     signatures: RefCell<StableHashMap<NodePath, Signature>>,
+    /// The types of the last form of a layered inference, where the last
+    /// forms of several programs differ in an atom of no site alone: the
+    /// first inference of the last form leaves its types here, and each
+    /// other takes them.
+    shared: Option<&'a RefCell<Option<InferredTypes>>>,
+    /// The form in progress at the state of the mask whose candidates
+    /// this inference is `earlier` for, once held.
+    state: std::cell::OnceCell<HeldState>,
+    /// Whether a form may take the types of the held state: false for the
+    /// inference of the state itself.
+    splits: bool,
 }
 
 impl std::fmt::Debug for Inference<'_> {
@@ -417,24 +462,52 @@ impl std::fmt::Debug for Inference<'_> {
 pub(super) trait EarlierForms<'a> {
     /// [`Inference::infer`].
     fn infer(&self, path: &NodePath) -> Option<Rc<FormInference<'a>>>;
+
+    /// The form in progress at the mask's state, where it is held.
+    fn held_state(&self) -> Option<&HeldState>;
 }
 
 impl<'a, 'e: 'a> EarlierForms<'a> for Inference<'e> {
     fn infer(&self, path: &NodePath) -> Option<Rc<FormInference<'a>>> {
         Inference::infer(self, path)
     }
+
+    fn held_state(&self) -> Option<&HeldState> {
+        self.state.get()
+    }
 }
 
 impl<'a> Inference<'a> {
     pub fn new(program: &'a ResolvedProgram, cases: &'a CaseInferences<'a>) -> Self {
         let concept = program.concept().map(|concept| cases.concept(concept));
-        Inference { program, registry: cases.registry, cases, concept, earlier: None, held: std::cell::OnceCell::new(), forms: RefCell::default(), signatures: RefCell::default() }
+        Inference { program, registry: cases.registry, cases, concept, earlier: None, held: std::cell::OnceCell::new(), forms: RefCell::default(), signatures: RefCell::default(), shared: None, state: std::cell::OnceCell::new(), splits: true }
     }
 
     /// The inference of `program`, a resolution by [`crate::resolver::resolve_last`]
     /// over the forms that `earlier` infers.
     pub fn layered(program: &'a ResolvedProgram, cases: &'a CaseInferences<'a>, earlier: &'a dyn EarlierForms<'a>) -> Self {
         Inference { earlier: Some(earlier), ..Inference::new(program, cases) }
+    }
+
+    /// This inference of a layered program, with the types of its last form
+    /// in `shared`: the programs whose inferences share `shared` differ in
+    /// an atom of no site of their last forms alone, and an atom reads the
+    /// types of a form only through its sites.
+    pub fn sharing_last(self, shared: &'a RefCell<Option<InferredTypes>>) -> Self {
+        Inference { shared: Some(shared), ..self }
+    }
+
+    /// The types of the form `form` at `path`: [`Inference::infer_new`], or
+    /// the types of the last form that the inference shares, where `form`
+    /// is that top-level form.
+    fn infer_form(&self, form: &'a Form, path: &NodePath) -> FormInference<'a> {
+        let Some(shared) = self.shared.filter(|_| path.0.len() == 1) else { return self.infer_new(form, path) };
+        if let Some(types) = shared.borrow().as_ref() {
+            return FormInference::of_types(types.clone(), form, path, self.registry);
+        }
+        let inferred = self.infer_new(form, path);
+        *shared.borrow_mut() = Some(inferred.types());
+        inferred
     }
 
     /// The signature of the clause at `path` of the program.
@@ -479,7 +552,7 @@ impl<'a> Inference<'a> {
         }
         self.forms.borrow_mut().insert(path.clone(), None);
         let inferred = Rc::new(match owner {
-            ScopeOwner::Form(form) => self.infer_new(form, path),
+            ScopeOwner::Form(form) => self.infer_form(form, path),
             ScopeOwner::DemoRule(rule) => self.infer_rule(rule, path),
         });
         self.forms.borrow_mut().insert(path.clone(), Some(Rc::clone(&inferred)));
@@ -489,13 +562,39 @@ impl<'a> Inference<'a> {
     fn infer_new(&self, form: &'a Form, path: &NodePath) -> FormInference<'a> {
         let scope = ScopeBody::of(form, self.registry);
         let walk = FormWalk::of(form);
-        let labels = form_scope_labels(form);
+        let all_labels = form_scope_labels(form);
+        let split = self.state_split(form, path, &all_labels);
+        let labels = match &split {
+            Some((_, own)) => own.clone(),
+            None => all_labels.to_vec(),
+        };
+        let lists = scope.lists(&labels);
         let key = scope.instance.and_then(|instance| instance.key.as_ref()).map(|key| key.value().key.body.value());
         let no_bindings = StableHashMap::default();
         let type_all = |bindings: &StableHashMap<TypeParameter, ValueType>, pose_or: PoseOr| -> Vec<(LabelId, Result<Option<ValueType>, LabelFault>)> {
             let reading = SiteReading { path, walk: &walk, component: scope.component, bindings, pose_or };
             let site_type = |atom: &Atom, column: &[ColumnName]| self.site_type(reading, atom, column);
-            labels.iter().map(|label| (*label, label_type_keyed(scope.list(*label), *label, &site_type, key))).collect()
+            // With no key clause, the labels of one class in one scope list
+            // that are fresh in no form nested in it take one walk.
+            let cache = WalkCache::default();
+            let mut walked: Vec<(&Body, Vec<LabelId>, Result<Option<ValueType>, LabelFault>)> = Vec::new();
+            let mut types = Vec::with_capacity(labels.len());
+            for (label, list) in labels.iter().zip(&lists) {
+                let shared = key.is_none() && !fresh_in_nested_form(list, *label, &cache);
+                let found = shared.then(|| walked.iter().find(|(l, class, _)| std::ptr::eq(*l, *list) && class.contains(label))).flatten();
+                let ty = match found {
+                    Some((_, _, ty)) => ty.clone(),
+                    None => {
+                        let ty = label_type_cached(list, *label, &site_type, key, &cache);
+                        if shared {
+                            walked.push((list, list_class(list, *label), ty.clone()));
+                        }
+                        ty
+                    }
+                };
+                types.push((*label, ty));
+            }
+            types
         };
         let mut types = type_all(&no_bindings, PoseOr::Open);
         let mut bindings = StableHashMap::default();
@@ -509,14 +608,24 @@ impl<'a> Inference<'a> {
         if types.iter().any(|(_, ty)| matches!(ty, Ok(None))) {
             let given = type_all(&bindings, PoseOr::Given);
             for ((label, ty), (_, given)) in types.iter_mut().zip(given) {
-                if matches!(ty, Ok(None)) {
+                if matches!(ty, Ok(None)) && !matches!(given, Ok(None)) {
                     *ty = given;
                     given_labels.push(*label);
                 }
             }
         }
+        if let Some((state, _)) = &split {
+            let own = std::mem::take(&mut types);
+            types = all_labels
+                .iter()
+                .map(|label| match own.iter().find(|(found, _)| found == label) {
+                    Some(found) => found.clone(),
+                    None => (*label, state.label(*label).expect("a label the split leaves to the state's inference").clone()),
+                })
+                .collect();
+        }
         let mut zero_typed = Vec::new();
-        if let Form::Clause(clause) = form {
+        if let (Form::Clause(clause), None) = (form, &split) {
             let clause = clause.value();
             for label in zero_typed_heads(clause) {
                 let Some((_, ty)) = types.iter_mut().find(|(found, _)| *found == label) else { continue };
@@ -676,12 +785,12 @@ impl<'a> Inference<'a> {
         target: &dyn Fn(&ColumnName) -> Option<LabelId>,
         pose_or: PoseOr,
     ) -> Result<Option<ValueType>, LabelFault> {
-        let forms = scope_forms(self.program.program.value(), scope);
-        let clauses = forms.iter().filter_map(|(at, form)| match form {
-            Form::Clause(clause) if clause.value().derives == *relation => Some((at, clause.value())),
+        let (scope_at, forms) = scope_forms(self.program.program.value(), scope);
+        let clauses = forms.filter_map(|(index, form)| match form {
+            Form::Clause(clause) if clause.value().derives == *relation => Some((index, clause.value())),
             _ => None,
         });
-        join_types(clauses.filter_map(|(at, clause)| self.clause_column(at, clause, scope, path, target, pose_or)))
+        join_types(clauses.filter_map(|(index, clause)| self.clause_column(&scope_at.child(index), clause, scope, path, target, pose_or)))
     }
 
     /// The join of the types that the other clauses of the relation of
@@ -750,9 +859,9 @@ impl<'a> Inference<'a> {
         }
         let ProgramRelation::Output(output) = &clause.derives else { return None };
         let (OutputOwner::Instance(name), [OutputStep::Port(port)]) = (&output.of, &output.path[..]) else { return None };
-        let forms = scope_forms(self.program.program.value(), scope);
-        let instance = forms.into_iter().find(|(_, form)| matches!(form, Form::Instance(instance) if instance.value().name == *name))?;
-        Some(ClauseColumns::InstanceOutput(instance.0, port))
+        let (scope_at, mut forms) = scope_forms(self.program.program.value(), scope);
+        let (index, _) = forms.find(|(_, form)| matches!(form, Form::Instance(instance) if instance.value().name == *name))?;
+        Some(ClauseColumns::InstanceOutput(scope_at.child(index), port))
     }
 
     /// The names of the columns of the relation of `clause`, a clause of

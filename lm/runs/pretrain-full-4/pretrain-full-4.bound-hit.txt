@@ -1,0 +1,72 @@
+02:37:39
+no server running on /tmp/tmux-0/default
+-rw-rw-rw- 1 root root 1098993 2026-10-25 02:36:42.000000000 +0000 /workspace/arc/runs/pretrain-full-4.out
+-rw-rw-rw- 1 root root       4 2026-10-25 02:37:08.000000000 +0000 /workspace/arc/runs/pretrain-full-4.rc
+
+/workspace/arc/runs/pretrain-full-4:
+total 16017
+drwxrwxrwx  2 root root  2001087 2026-10-25 02:06:46.000000000 +0000 .
+drwxrwxrwx 30 root root  3000524 2026-10-25 02:37:09.000000000 +0000 ..
+-rw-rw-rw-  1 root root 11372915 2026-10-25 02:34:38.000000000 +0000 encoder.pt
+-rw-rw-rw-  1 root root    25751 2026-10-25 02:34:38.000000000 +0000 log.jsonl
+0 MiB, 0 %
+02:07:38 step 270 masked loss 4.608 (program 2.779, chance 5.040, over 6603 fields, prior 1.829, chance 2.980, over 632 fields) 4 programs, cost 44818 rows 2.80 s/step
+02:08:06 step 280 masked loss 4.476 (program 2.736, chance 4.524, over 8844 fields, prior 1.741, chance 3.031, over 267 fields) 4 programs, cost 74138 rows 2.85 s/step
+02:08:28 step 290 masked loss 3.563 (program 1.970, chance 3.634, over 1648 fields, prior 1.592, chance 2.700, over 820 fields) 4 programs, cost 54170 rows 2.15 s/step
+02:09:05 step 300 masked loss 4.120 (program 2.271, chance 5.357, over 11115 fields, prior 1.849, chance 2.980, over 598 fields) 4 programs, cost 107135 rows 3.71 s/step
+02:09:26 step 310 masked loss 4.112 (program 2.507, chance 4.471, over 1697 fields, prior 1.605, chance 3.011, over 231 fields) 4 programs, cost 42298 rows 2.08 s/step
+02:09:52 step 320 masked loss 3.593 (program 1.830, chance 2.550, over 1241 fields, prior 1.763, chance 2.796, over 888 fields) 4 programs, cost 56534 rows 2.58 s/step
+02:10:18 step 330 masked loss 1.959 (program 1.959, chance 3.472, over 1444 fields, prior 0.000, chance 0.000, over 0 fields) 2 programs, cost 21071 rows 2.65 s/step
+02:10:40 step 340 masked loss 4.075 (program 1.950, chance 4.077, over 1986 fields, prior 2.125, chance 3.028, over 998 fields) 4 programs, cost 81033 rows 2.19 s/step
+02:11:06 step 350 masked loss 3.006 (program 1.383, chance 2.225, over 643 fields, prior 1.623, chance 2.631, over 784 fields) 4 programs, cost 52658 rows 2.57 s/step
+02:11:32 step 360 masked loss 3.851 (program 2.088, chance 3.584, over 2535 fields, prior 1.763, chance 2.846, over 625 fields) 4 programs, cost 41025 rows 2.56 s/step
+02:12:00 step 370 masked loss 3.182 (program 1.644, chance 4.017, over 1685 fields, prior 1.538, chance 2.924, over 187 fields) 4 programs, cost 31681 rows 2.77 s/step
+02:12:44 step 380 masked loss 3.915 (program 2.174, chance 4.914, over 1731 fields, prior 1.742, chance 2.734, over 739 fields) 4 programs, cost 96187 rows 4.42 s/step
+02:13:10 step 390 masked loss 4.080 (program 2.030, chance 3.910, over 3449 fields, prior 2.051, chance 2.972, over 950 fields) 4 programs, cost 56121 rows 2.55 s/step
+02:14:01 step 400 masked loss 4.518 (program 2.799, chance 3.453, over 6923 fields, prior 1.719, chance 2.747, over 463 fields) 4 programs, cost 91848 rows 5.10 s/step
+02:14:26 step 410 masked loss 3.138 (program 1.525, chance 4.034, over 680 fields, prior 1.613, chance 2.908, over 493 fields) 4 programs, cost 53819 rows 2.54 s/step
+02:15:04 step 420 masked loss 3.928 (program 2.318, chance 3.875, over 4524 fields, prior 1.610, chance 2.724, over 344 fields) 4 programs, cost 38624 rows 3.76 s/step
+02:15:23 step 430 masked loss 2.635 (program 0.870, chance 1.308, over 653 fields, prior 1.765, chance 3.042, over 557 fields) 4 programs, cost 199674 rows 1.85 s/step
+02:15:51 step 440 masked loss 3.477 (program 1.646, chance 6.014, over 5918 fields, prior 1.831, chance 2.950, over 946 fields) 4 programs, cost 233035 rows 2.85 s/step
+02:16:22 step 450 masked loss 4.274 (program 2.146, chance 3.833, over 3280 fields, prior 2.127, chance 3.378, over 635 fields) 4 programs, cost 63048 rows 3.06 s/step
+02:17:15 step 460 masked loss 3.305 (program 1.518, chance 2.524, over 716 fields, prior 1.788, chance 2.987, over 355 fields) 4 programs, cost 75909 rows 5.24 s/step
+02:17:37 step 470 masked loss 3.421 (program 1.738, chance 3.899, over 436 fields, prior 1.683, chance 2.764, over 623 fields) 4 programs, cost 35572 rows 2.20 s/step
+02:18:02 step 480 masked loss 4.042 (program 2.005, chance 3.599, over 6420 fields, prior 2.037, chance 3.338, over 245 fields) 4 programs, cost 47356 rows 2.54 s/step
+02:18:33 step 490 masked loss 4.441 (program 2.627, chance 4.146, over 9829 fields, prior 1.814, chance 2.993, over 789 fields) 4 programs, cost 101671 rows 3.12 s/step
+02:19:21 step 500 masked loss 4.356 (program 2.354, chance 3.145, over 4791 fields, prior 2.002, chance 3.073, over 1363 fields) 4 programs, cost 99288 rows 4.75 s/step
+02:19:21 evaluating 64 held-out programs
+02:20:16   40/64 programs, 54 s
+02:21:08 {"step": 500, "seconds": 1640, "seconds_per_step": 2.842552938938141, "device_gb": 28.71, "train_loss": 4.356025218963623, "eval_programs": 64, "train": {"loss": 3.991259576899683, "program_loss": 2.1325350952129587, "prior_loss": 1.858724481686724, "program_chance_loss": 3.7911096453131665, "prior_chance_loss": 2.922941498208135, "program_fields": 848451, "prior_fields": 154162, "by_type
+02:21:49 step 510 masked loss 3.717 (program 2.113, chance 3.719, over 5113 fields, prior 1.603, chance 3.091, over 279 fields) 4 programs, cost 33674 rows 4.02 s/step
+02:22:16 step 520 masked loss 4.414 (program 1.914, chance 2.729, over 1802 fields, prior 2.499, chance 3.286, over 1025 fields) 4 programs, cost 43689 rows 2.72 s/step
+02:22:36 step 530 masked loss 3.803 (program 2.076, chance 3.523, over 1480 fields, prior 1.727, chance 2.890, over 1182 fields) 4 programs, cost 68451 rows 1.97 s/step
+02:23:10 step 540 masked loss 3.438 (program 1.641, chance 2.761, over 4294 fields, prior 1.797, chance 3.048, over 654 fields) 4 programs, cost 78028 rows 3.42 s/step
+02:23:32 step 550 masked loss 3.347 (program 1.715, chance 3.727, over 305 fields, prior 1.631, chance 2.984, over 276 fields) 4 programs, cost 25939 rows 2.20 s/step
+02:23:58 step 560 masked loss 3.483 (program 1.833, chance 3.729, over 3817 fields, prior 1.650, chance 2.956, over 345 fields) 4 programs, cost 71221 rows 2.57 s/step
+02:24:30 step 570 masked loss 3.344 (program 1.756, chance 3.781, over 1116 fields, prior 1.588, chance 2.925, over 164 fields) 4 programs, cost 26460 rows 3.14 s/step
+02:25:00 step 580 masked loss 4.223 (program 1.875, chance 3.918, over 5316 fields, prior 2.348, chance 3.339, over 962 fields) 4 programs, cost 73174 rows 3.05 s/step
+02:25:16 step 590 masked loss 3.999 (program 2.281, chance 3.781, over 1115 fields, prior 1.718, chance 2.923, over 1129 fields) 4 programs, cost 150337 rows 1.53 s/step
+02:25:44 step 600 masked loss 3.898 (program 2.273, chance 4.231, over 6978 fields, prior 1.625, chance 3.066, over 126 fields) 4 programs, cost 54272 rows 2.88 s/step
+02:26:26 step 610 masked loss 3.648 (program 1.957, chance 3.227, over 1411 fields, prior 1.691, chance 2.851, over 607 fields) 4 programs, cost 48618 rows 4.15 s/step
+02:26:47 step 620 masked loss 3.498 (program 1.873, chance 3.304, over 2132 fields, prior 1.625, chance 3.026, over 699 fields) 4 programs, cost 81295 rows 2.08 s/step
+02:27:09 step 630 masked loss 3.589 (program 2.310, chance 4.468, over 7946 fields, prior 1.279, chance 2.487, over 164 fields) 4 programs, cost 75596 rows 2.14 s/step
+02:27:33 step 640 masked loss 3.491 (program 1.852, chance 4.217, over 1095 fields, prior 1.639, chance 2.752, over 104 fields) 4 programs, cost 16260 rows 2.46 s/step
+02:28:24 step 650 masked loss 3.622 (program 1.774, chance 4.126, over 2492 fields, prior 1.849, chance 2.957, over 1130 fields) 4 programs, cost 21552 rows 5.02 s/step
+02:28:47 step 660 masked loss 3.770 (program 1.964, chance 4.021, over 7717 fields, prior 1.807, chance 2.926, over 380 fields) 4 programs, cost 50337 rows 2.35 s/step
+02:29:14 step 670 masked loss 3.444 (program 1.602, chance 3.591, over 1295 fields, prior 1.841, chance 3.064, over 356 fields) 4 programs, cost 163199 rows 2.65 s/step
+02:29:33 step 680 masked loss 3.713 (program 2.009, chance 3.378, over 1372 fields, prior 1.704, chance 3.050, over 1122 fields) 4 programs, cost 38602 rows 1.88 s/step
+02:29:56 step 690 masked loss 3.656 (program 2.036, chance 5.023, over 1169 fields, prior 1.620, chance 2.677, over 627 fields) 4 programs, cost 39651 rows 2.33 s/step
+02:30:27 step 700 masked loss 3.689 (program 1.926, chance 3.361, over 4821 fields, prior 1.763, chance 2.761, over 721 fields) 4 programs, cost 310299 rows 3.07 s/step
+02:31:03 step 710 masked loss 4.141 (program 2.066, chance 3.482, over 5488 fields, prior 2.075, chance 3.116, over 1445 fields) 4 programs, cost 96079 rows 3.55 s/step
+02:31:20 step 720 masked loss 3.147 (program 1.882, chance 4.069, over 1297 fields, prior 1.265, chance 2.695, over 193 fields) 4 programs, cost 30545 rows 1.77 s/step
+02:31:42 step 730 masked loss 3.947 (program 2.320, chance 3.930, over 1218 fields, prior 1.627, chance 3.048, over 264 fields) 4 programs, cost 19383 rows 2.11 s/step
+02:32:27 step 740 masked loss 4.470 (program 2.565, chance 5.284, over 1122 fields, prior 1.904, chance 3.073, over 793 fields) 3 programs, cost 50550 rows 4.52 s/step
+02:32:52 step 750 masked loss 3.949 (program 2.030, chance 4.165, over 7835 fields, prior 1.918, chance 3.008, over 675 fields) 4 programs, cost 58523 rows 2.51 s/step
+02:32:52 evaluating 64 held-out programs
+02:33:46   40/64 programs, 54 s
+02:34:38 {"step": 750, "seconds": 2450, "seconds_per_step": 2.829721036275228, "device_gb": 28.74, "train_loss": 3.948897361755371, "eval_programs": 64, "train": {"loss": 3.956917099570206, "program_loss": 2.122005643436257, "prior_loss": 1.8349114561339495, "program_chance_loss": 3.847688139704276, "prior_chance_loss": 2.938006462587512, "program_fields": 928707, "prior_fields": 141945, "by_type"
+02:35:01 step 760 masked loss 3.691 (program 2.080, chance 3.564, over 2636 fields, prior 1.611, chance 2.858, over 557 fields) 4 programs, cost 47429 rows 2.27 s/step
+02:35:22 step 770 masked loss 3.800 (program 2.175, chance 4.060, over 2863 fields, prior 1.625, chance 2.893, over 908 fields) 4 programs, cost 42331 rows 2.10 s/step
+02:35:52 step 780 masked loss 4.201 (program 2.205, chance 3.615, over 6113 fields, prior 1.996, chance 2.998, over 533 fields) 4 programs, cost 34473 rows 3.03 s/step
+02:36:15 step 790 masked loss 3.724 (program 1.902, chance 3.852, over 4864 fields, prior 1.822, chance 3.208, over 274 fields) 4 programs, cost 57497 rows 2.22 s/step
+02:36:42 step 800 masked loss 3.805 (program 2.215, chance 3.037, over 9666 fields, prior 1.590, chance 2.690, over 784 fields) 4 programs, cost 65687 rows 2.73 s/step

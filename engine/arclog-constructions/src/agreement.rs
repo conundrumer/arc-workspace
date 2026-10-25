@@ -16,10 +16,10 @@ use arclog::hash::{StableHashMap, StableHashSet};
 use arclog::registry::{LibName, Registry};
 use arclog::relations::{Row, RowSet};
 use arclog::terms::{Term, TermId};
-use arclog::types::ValueType;
 
-/// The mismatches and conflicts of two valued families under each
-/// correspondence of their indices.
+/// The mismatches and conflicts of two valued families under each admitted
+/// D4 element, whose correspondence pairs each source Position with its
+/// image under the element.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Agreement;
 
@@ -33,25 +33,23 @@ impl Construction for Agreement {
         group: &GroupInputs<'_>,
         context: &mut ConstructionContext<'_, '_>,
     ) -> Result<GroupOutputs, ReachedBound> {
-        let [source, target, correspondence] = group.inputs else { panic!("Agreement's three inputs") };
-        let (index, corr) = agreement_widths(group.types);
-        let source = Family::of(source, index);
-        let target = Family::of(target, index);
-        let mut pairs: StableHashMap<&[TermId], Vec<(&[TermId], &[TermId])>> = StableHashMap::default();
-        for row in correspondence.rows() {
-            let (m, rest) = row.split_at(corr);
-            let (i, j) = rest.split_at(index);
-            pairs.entry(m).or_default().push((i, j));
-        }
-        let mut mismatch = RowSet::empty(corr as u16);
-        let mut conflict = RowSet::empty(corr as u16);
-        for (m, pairs) in pairs {
+        let [source, target, transform] = group.inputs else { panic!("Agreement's three inputs") };
+        let lib = Lib(context.registry);
+        let source = Family::of(source, 1);
+        let target = Family::of(target, 1);
+        let (mut mismatch, mut conflict) = (RowSet::empty(1), RowSet::empty(1));
+        for d in transform.rows() {
+            let d = d[0];
+            let mut pairs = Vec::new();
+            for p in source.indices() {
+                pairs.push(([p[0]], [lib.apply(d, p[0])?]));
+            }
             let verdict = compare(&source, &target, pairs, context.budget)?;
             if verdict.mismatch && group.wanted[0] {
-                mismatch.insert(m.into());
+                mismatch.insert([d].into());
             }
             if verdict.conflict && group.wanted[1] {
-                conflict.insert(m.into());
+                conflict.insert([d].into());
             }
         }
         outputs(vec![mismatch, conflict], context.budget)
@@ -250,26 +248,6 @@ impl Family {
     /// Each index of the family.
     fn indices(&self) -> impl Iterator<Item = &[TermId]> + '_ {
         self.by_index.keys().map(|index| &**index)
-    }
-}
-
-/// The widths of Agreement's `Index` and `Corr` from the types of its
-/// inputs, which are the source's `(i, v)`, the target's `(i, v)` and the
-/// correspondence's `(m, i, j)`, each type parameter bound to one or more
-/// columns. Widths that the types do not settle are a fault.
-fn agreement_widths(types: &[Box<[ValueType]>]) -> (usize, usize) {
-    let [source, target, correspondence] = types else { panic!("Agreement's three inputs") };
-    assert_eq!(source, target, "Agreement's source and target of one type");
-    let settled: Vec<(usize, usize)> = (1..source.len())
-        .filter_map(|index| {
-            let corr = correspondence.len().checked_sub(2 * index).filter(|&corr| corr > 0)?;
-            let (i, j) = correspondence[corr..].split_at(index);
-            (i == &source[..index] && j == i).then_some((index, corr))
-        })
-        .collect();
-    match settled[..] {
-        [widths] => widths,
-        _ => panic!("the types of Agreement's inputs settle {} widths of its Index and Corr: {types:?}", settled.len()),
     }
 }
 

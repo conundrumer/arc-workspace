@@ -226,7 +226,8 @@ def launched(launcher: Path, a: Launch, path: Path, under: tuple[Launched, ...] 
                     not settled and turn_open(path, a.done, undecided))
 
 
-@state_cache(DERIVED, kept=Kept.DISK)
+@state_cache(DERIVED, kept=Kept.DISK,
+             stable=(True, lambda launcher, call, path: stat_read(path)))
 def launch_settled(launcher: Path, call: str, path: Path) -> bool:
     """`Node.settled` of the agent whose transcript is at `path`, launched
     by the Agent call `call` of the run at `launcher`."""

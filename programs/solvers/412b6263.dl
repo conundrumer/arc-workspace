@@ -74,11 +74,15 @@ copy_cell(Ch, P_grid, P_intile) :-
 .init frame = Frame2D<Choice>
 frame.extent(Ch, A, N) :- copy_cell(Ch, P_grid, _), axis_elem(A), axis_dim(P_grid, A, N).
 
+// A line along axis a that holds a copy cell, as its position across a.
+.decl copy_axis_line(ch: Choice, a: Axis, l: Position)
+copy_axis_line(Ch, A, L) :- copy_cell(Ch, Q, _), axis_elem(A), split(Q, A, _, L).
+
 // A frame cell sharing a row or a column with a copy.
 .decl copy_line(ch: Choice, p_grid: Position)
 copy_line(Ch, P_grid) :-
-    frame.cell(Ch, P_grid), axis_elem(A),
-    copy_cell(Ch, Q, _), same_line(A, P_grid, Q).
+    frame.cell(Ch, P_grid), axis_elem(A), split(P_grid, A, _, L),
+    copy_axis_line(Ch, A, L).
 
 out(P_grid, Col, Ch) :- copy_cell(Ch, P_grid, P_intile), content(P_intile, Col).
 out(P_grid, Col, Ch) :-

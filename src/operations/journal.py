@@ -4,7 +4,7 @@ entry key (`steps.entry_key`) and its key (`steps.key`), from the time `next` ga
 `scripts/operate.py --help journal` gives (`due`);
 `scripts/step_journal.py` writes it and reads it back."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -224,13 +224,44 @@ def next_call(c: Call, operator: str) -> bool:
 NOT_MADE = mctx("the operator ran `next` again before it made the call")
 ENDED = mctx("the operator can no longer make the call: its work ended, or it ran `next` "
              "again first")
+REFUSED_MESSAGE = mctx("the harness refused the message")
+NOT_TAKEN = mctx("the Codex launcher ended without taking the message")
 
 
-def closing(e: Entry, calls: Sequence[Call], live: bool, now: float) -> Close | None:
+@dataclass(frozen=True)
+class Taken:
+    """A message to a Codex launcher that its worker acknowledged at `time`."""
+    time: float
+
+
+@dataclass(frozen=True)
+class Refusal:
+    """A message to a Codex launcher that the harness refused at `time`."""
+    time: float
+
+
+class Undelivered(StrEnum):
+    """A message to a Codex launcher with no acknowledgement: `OPEN` while
+    the launcher has not ended, `LOST` where it ended without taking it."""
+    OPEN = "open"
+    LOST = "lost"
+
+
+type Acknowledgement = Taken | Refusal | Undelivered
+
+type Acknowledged = Callable[[Entry, Call], Acknowledgement | None]
+"""What the record of attempts gives of the message `Entry`, which the call
+`Call` made: None for a message to an agent that is no Codex launcher, which
+is done at its call."""
+
+
+def closing(e: Entry, calls: Sequence[Call], live: bool, now: float,
+            acknowledged: Acknowledged) -> Close | None:
     """The outcome of `e`, an Agent call or a message in flight, at `now`,
     from `calls`, the operators' calls, where `live` is whether its
     operator may still make its call, as `scripts/operate.py --help journal`
-    gives it, or None, in flight."""
+    gives it, or None, in flight. A message to a Codex launcher made without
+    error is in flight until `acknowledged` gives its delivery."""
     after = sorted((c for c in calls if c.operator == e.operator and c.time > e.given),
                    key=lambda c: c.time)
     nexts = [c for c in after if next_call(c, e.operator)]
@@ -243,7 +274,18 @@ def closing(e: Entry, calls: Sequence[Call], live: bool, now: float) -> Close | 
         if c.error:
             lines = c.result.strip().splitlines()
             return Close(Outcome.FAILED, c.time, lines[0] if lines else "")
-        return Close(Outcome.DONE, c.time, "")
+        ack = acknowledged(e, c) if e.tool is Tool.SEND_MESSAGE else None
+        match ack:
+            case None:
+                return Close(Outcome.DONE, c.time, "")
+            case Taken(time):
+                return Close(Outcome.DONE, time, "")
+            case Refusal(time):
+                return Close(Outcome.FAILED, time, REFUSED_MESSAGE)
+            case Undelivered.LOST:
+                return Close(Outcome.FAILED, now, NOT_TAKEN)
+            case Undelivered.OPEN:
+                return None
     if bound is not None:
         return Close(Outcome.FAILED, bound, NOT_MADE)
     return None if live else Close(Outcome.FAILED, now, ENDED)

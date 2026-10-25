@@ -154,6 +154,14 @@ impl ValueType {
         })
     }
 
+    /// Whether a D4 element moves a value of the type, as
+    /// `docs/arclog/rigid.md#semantics` gives: true for `Box` and for the
+    /// types of directions, axes and senses. A `RIGID_DET` pose leaves a
+    /// value of every other type as it is.
+    pub fn moved_by_d4(&self) -> bool {
+        matches!(self, ValueType::Box | ValueType::Dir | ValueType::DiagDir | ValueType::Dir8 | ValueType::Axis | ValueType::DiagAxis | ValueType::Axis4 | ValueType::Sense)
+    }
+
     /// Whether `<`, `<=`, `>` and `>=` may compare values of the type: true
     /// for `number` alone.
     pub fn admits_order(&self) -> bool {
@@ -181,7 +189,7 @@ pub(crate) fn label_fault_message(fault: LabelFault) -> String {
 
 /// The type that `body` gives `label`, `None` where it gives none, or the
 /// fault of that type. `body` is the list of the label's scope, as
-/// `scope_list` gives it.
+/// `scope_lists` gives it.
 ///
 /// The type is the meet, as [`ValueType::meet`] gives it, of the types of
 /// every site of the label, at any depth, and a join, as [`ValueType::join`]
@@ -194,10 +202,13 @@ pub(crate) fn label_fault_message(fault: LabelFault) -> String {
 /// branches give, and an `ALL` the meet of its domain's and its body's types.
 /// An `IF` gives the meet of its test's type with the join of its then and
 /// else lists' types, or, where the label is fresh in the test, the meet of
-/// its test's and its then's types (`docs/arclog/arclog.md#conditional`). A
-/// branch of an `OR` that holds no label equal to the label takes no part in
-/// the `OR`'s join, and a branch that holds one and gives the label no type
-/// gives that join none. A then or an else list that gives the label no
+/// its test's and its then's types (`docs/arclog/arclog.md#conditional`).
+/// Where a branch of an `OR` makes the label fresh, a branch that holds no
+/// label equal to the label takes no part in the `OR`'s join. Where no branch
+/// does, a branch that holds no such label lets each value of the label
+/// through and gives the join no type, so the label keeps the meet of its
+/// other sites' types. A branch that gives the label no type gives that join
+/// none. A then or an else list that gives the label no
 /// type gives the `IF`'s join none. In a list nested in `body`, a label
 /// that the list's constraints make equal to the label, and that the
 /// constraints of the lists around the list do not, gives the label in the
@@ -230,45 +241,124 @@ pub fn label_type_keyed(
     site_type: &dyn Fn(&crate::program::Atom, &[crate::program::ColumnName]) -> Option<ValueType>,
     key: Option<&crate::program::Body>,
 ) -> Result<Option<ValueType>, LabelFault> {
-    LabelWalk { label, site_type, asked: vec![label], key }.body_type(body, &[], None)
+    label_type_cached(body, label, site_type, key, &WalkCache::default())
 }
 
-/// The list of the scope of `label`, a label of `list` that is no head
+/// [`label_type_keyed`] with the facts of the walk that do not depend on
+/// the label asked taken from `cache`, which holds them for the walks of
+/// every label of one inference that `site_type` types.
+pub(crate) fn label_type_cached(
+    body: &crate::program::Body,
+    label: crate::program::LabelId,
+    site_type: &dyn Fn(&crate::program::Atom, &[crate::program::ColumnName]) -> Option<ValueType>,
+    key: Option<&crate::program::Body>,
+    cache: &WalkCache,
+) -> Result<Option<ValueType>, LabelFault> {
+    LabelWalk { label, site_type, asked: vec![label], key, cache }.body_type(body, &[], None)
+}
+
+/// What the walks of the labels of one inference read of a part of the
+/// program, which does not depend on the label asked: the type that the
+/// sites of an atom give a class of labels, and, for a body, the labels
+/// that stand in it, the labels fresh in it, and what it makes by zero.
+/// A part is identified by its address.
+#[derive(Default)]
+pub(crate) struct WalkCache {
+    atoms: std::cell::RefCell<crate::hash::StableHashMap<(usize, Vec<crate::program::LabelId>), Result<Option<ValueType>, LabelFault>>>,
+    held: std::cell::RefCell<crate::hash::StableHashMap<usize, std::rc::Rc<crate::hash::StableHashSet<crate::program::LabelId>>>>,
+    fresh: std::cell::RefCell<crate::hash::StableHashMap<usize, std::rc::Rc<crate::hash::StableHashSet<crate::program::LabelId>>>>,
+    zero_made: std::cell::RefCell<crate::hash::StableHashMap<usize, std::rc::Rc<ZeroMade>>>,
+}
+
+impl WalkCache {
+    fn held(&self, body: &crate::program::Body) -> std::rc::Rc<crate::hash::StableHashSet<crate::program::LabelId>> {
+        let at = body as *const crate::program::Body as usize;
+        std::rc::Rc::clone(self.held.borrow_mut().entry(at).or_insert_with(|| std::rc::Rc::new(crate::safety::body_labels(body))))
+    }
+
+    fn fresh(&self, body: &crate::program::Body) -> std::rc::Rc<crate::hash::StableHashSet<crate::program::LabelId>> {
+        let at = body as *const crate::program::Body as usize;
+        std::rc::Rc::clone(self.fresh.borrow_mut().entry(at).or_insert_with(|| std::rc::Rc::new(fresh_labels(body))))
+    }
+
+    fn zero_made(&self, body: &crate::program::Body) -> std::rc::Rc<ZeroMade> {
+        let at = body as *const crate::program::Body as usize;
+        std::rc::Rc::clone(self.zero_made.borrow_mut().entry(at).or_insert_with(|| std::rc::Rc::new(ZeroMade::of(body))))
+    }
+}
+
+/// The labels that `list`'s own constraints make equal to `label`, `label`
+/// included.
+pub(crate) fn list_class(list: &crate::program::Body, label: crate::program::LabelId) -> Vec<crate::program::LabelId> {
+    equal_labels(&with_constraints(&[], list), label)
+}
+
+/// The list of the scope of a label of `list` that is no head
 /// label: the innermost list that holds each of its sites, or, where that
 /// list is an `IF`'s test or a list of an `ALL`, or where its sites stand in
 /// both the test and the then of an `IF`, the list that holds that form,
 /// since a label fresh there is local to the form.
-pub(crate) fn scope_list(list: &crate::program::Body, label: crate::program::LabelId) -> &crate::program::Body {
-    let holds = |conjunct: &crate::program::Conjunct| {
-        let mut labels = crate::hash::StableHashSet::default();
-        crate::safety::conjunct_labels(conjunct, &mut labels);
-        labels.contains(&label)
-    };
-    let mut holders = list.conjuncts.iter().filter(|conjunct| holds(conjunct));
-    let (Some(conjunct), None) = (holders.next(), holders.next()) else { return list };
-    let mut own = Vec::new();
-    crate::safety::own_labels(conjunct, &mut own);
-    if own.contains(&label) {
-        return list;
+/// For each of `labels`, in their order, the list of its scope. The labels of each
+/// conjunct of a list are taken once, and a part of a form is entered once
+/// for all the labels that stand in it alone.
+pub(crate) fn scope_lists<'a>(list: &'a crate::program::Body, labels: &[crate::program::LabelId]) -> Vec<&'a crate::program::Body> {
+    use crate::program::{Body, Conjunct, Negated};
+    // The parts of a form, with whether a label that stands only in it takes
+    // it as its scope, and the labels each part holds.
+    struct Parts<'a> {
+        own: Vec<crate::program::LabelId>,
+        parts: Vec<(&'a Body, bool, crate::hash::StableHashSet<crate::program::LabelId>)>,
     }
-    use crate::program::{Conjunct, Negated};
-    let mut form = conjunct;
-    while let Conjunct::Not(Negated::Form(inner)) = form {
-        form = inner;
+    let held: Vec<crate::hash::StableHashSet<crate::program::LabelId>> = list
+        .conjuncts
+        .iter()
+        .map(|conjunct| {
+            let mut labels = crate::hash::StableHashSet::default();
+            crate::safety::conjunct_labels(conjunct, &mut labels);
+            labels
+        })
+        .collect();
+    let mut parts_of: Vec<Option<Parts<'a>>> = list.conjuncts.iter().map(|_| None).collect();
+    let mut result = vec![list; labels.len()];
+    // For each conjunct and part, the positions of the labels that it takes.
+    let mut groups: Vec<((usize, usize), Vec<usize>)> = Vec::new();
+    for (at, label) in labels.iter().enumerate() {
+        let mut holders = held.iter().enumerate().filter(|(_, labels)| labels.contains(label)).map(|(i, _)| i);
+        let (Some(i), None) = (holders.next(), holders.next()) else { continue };
+        let conjunct = &list.conjuncts[i];
+        let parts = parts_of[i].get_or_insert_with(|| {
+            let mut own = Vec::new();
+            crate::safety::own_labels(conjunct, &mut own);
+            let mut form = conjunct;
+            while let Conjunct::Not(Negated::Form(inner)) = form {
+                form = inner;
+            }
+            let parts: Vec<(&Body, bool)> = match form {
+                Conjunct::Or(branches) => branches.iter().map(|branch| (branch.value(), true)).collect(),
+                Conjunct::If { test, then, otherwise } => vec![(test.value(), false), (then.value(), true), (otherwise.value(), true)],
+                Conjunct::All { domain, body } => vec![(domain.value(), false), (body.value(), false)],
+                Conjunct::Atom(_) | Conjunct::Not(_) | Conjunct::Constraint(_) => Vec::new(),
+            };
+            Parts { own, parts: parts.into_iter().map(|(part, takes)| (part, takes, crate::safety::body_labels(part))).collect() }
+        });
+        if parts.own.contains(label) {
+            continue;
+        }
+        let mut holding = parts.parts.iter().enumerate().filter(|(_, (_, _, held))| held.contains(label));
+        let (Some((k, (_, true, _))), None) = (holding.next(), holding.next()) else { continue };
+        match groups.iter_mut().find(|(key, _)| *key == (i, k)) {
+            Some((_, members)) => members.push(at),
+            None => groups.push(((i, k), vec![at])),
+        }
     }
-    // Each part of the form, with whether a label that stands only in it
-    // takes it as its scope.
-    let parts: Vec<(&crate::program::Body, bool)> = match form {
-        Conjunct::Or(branches) => branches.iter().map(|branch| (branch.value(), true)).collect(),
-        Conjunct::If { test, then, otherwise } => vec![(test.value(), false), (then.value(), true), (otherwise.value(), true)],
-        Conjunct::All { domain, body } => vec![(domain.value(), false), (body.value(), false)],
-        Conjunct::Atom(_) | Conjunct::Not(_) | Conjunct::Constraint(_) => Vec::new(),
-    };
-    let mut holding = parts.into_iter().filter(|(part, _)| crate::safety::body_labels(part).contains(&label));
-    match (holding.next(), holding.next()) {
-        (Some((part, true)), None) => scope_list(part, label),
-        _ => list,
+    for ((i, k), members) in groups {
+        let part = parts_of[i].as_ref().expect("a conjunct with a group").parts[k].0;
+        let inner: Vec<_> = members.iter().map(|&at| labels[at]).collect();
+        for (&at, scope) in members.iter().zip(scope_lists(part, &inner)) {
+            result[at] = scope;
+        }
     }
+    result
 }
 
 /// The walk of [`label_type`] for `label`, the label asked. `asked` holds
@@ -281,6 +371,7 @@ struct LabelWalk<'a> {
     /// The body of the key clause of the `INIT` form, a list around every
     /// input's body.
     key: Option<&'a crate::program::Body>,
+    cache: &'a WalkCache,
 }
 
 /// A list around the list a walk is in: the list, the pairs of labels that
@@ -321,7 +412,7 @@ impl LabelWalk<'_> {
     fn key_type(&self, other: crate::program::LabelId) -> Result<Option<ValueType>, LabelFault> {
         let Some(key) = self.key else { return Ok(None) };
         let asked = self.asked.iter().copied().chain(std::iter::once(other)).collect();
-        let walk = LabelWalk { label: other, site_type: self.site_type, asked, key: None };
+        let walk = LabelWalk { label: other, site_type: self.site_type, asked, key: None, cache: self.cache };
         walk.list_type(key, &[], &[other], None, None)
     }
 
@@ -329,7 +420,7 @@ impl LabelWalk<'_> {
     /// around it, outside the conjunct of each that holds the inner list.
     fn around_type(&self, other: crate::program::LabelId, around: &Around<'_>) -> Result<Option<ValueType>, LabelFault> {
         let asked = self.asked.iter().copied().chain(std::iter::once(other)).collect();
-        let walk = LabelWalk { label: other, site_type: self.site_type, asked, key: self.key };
+        let walk = LabelWalk { label: other, site_type: self.site_type, asked, key: self.key, cache: self.cache };
         let mut ty = None;
         let mut frame = Some(around);
         while let Some(list) = frame {
@@ -374,33 +465,21 @@ impl LabelWalk<'_> {
         match conjunct {
             Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => {
                 let atom = atom.value();
-                let mut ty = None;
-                for site in atom.sites.iter() {
-                    let mut path = Vec::new();
-                    let mut fault = None;
-                    each_site_label(site, &mut path, &mut |use_, path| {
-                        if fault.is_some() || !use_label(use_).is_some_and(|l| class.contains(&l)) {
-                            return;
-                        }
-                        match meet(ty.take(), (self.site_type)(atom, path)) {
-                            Ok(met) => ty = met,
-                            Err(err) => fault = Some(err),
-                        }
-                    });
-                    if let Some(err) = fault {
-                        return Err(err);
-                    }
-                }
-                Ok(ty)
+                let mut held = class.to_vec();
+                held.sort_unstable_by_key(|label| label.0);
+                self.cache.atoms.borrow_mut().entry((atom as *const crate::program::Atom as usize, held)).or_insert_with(|| self.atom_type(atom, class)).clone()
             }
             Conjunct::Not(Negated::Form(form)) => self.conjunct_type(form, pairs, class, here),
             Conjunct::Or(branches) => {
                 let holds = |branch: &crate::program::Body| {
-                    let labels = crate::safety::body_labels(branch);
+                    let labels = self.cache.held(branch);
                     class.iter().any(|label| labels.contains(label))
                 };
-                let holding = branches.iter().filter(|branch| holds(branch.value()) && !makes_only_by_zero(branch.value(), class));
-                join_branches(holding.map(|branch| self.body_type(branch.value(), pairs, Some(here))))
+                let made_here = branches.iter().any(|branch| self.fresh_in(branch.value()));
+                let taking = branches
+                    .iter()
+                    .filter(|branch| (!made_here || holds(branch.value())) && !self.makes_only_by_zero(branch.value(), class));
+                join_branches(taking.map(|branch| self.body_type(branch.value(), pairs, Some(here))))
             }
             Conjunct::If { test, then, otherwise } => {
                 let test_type = self.body_type(test.value(), pairs, Some(here))?;
@@ -408,7 +487,7 @@ impl LabelWalk<'_> {
                 if self.fresh_in(test.value()) {
                     return meet(test_type, then_type);
                 }
-                let otherwise_type = (!makes_only_by_zero(otherwise.value(), class)).then(|| self.body_type(otherwise.value(), pairs, Some(here)));
+                let otherwise_type = (!self.makes_only_by_zero(otherwise.value(), class)).then(|| self.body_type(otherwise.value(), pairs, Some(here)));
                 meet(test_type, join_branches([Ok(then_type)].into_iter().chain(otherwise_type))?)
             }
             Conjunct::All { domain, body } => {
@@ -419,32 +498,110 @@ impl LabelWalk<'_> {
         }
     }
 
+    /// The meet of the types that the sites of `atom` give the labels of `class`.
+    fn atom_type(&self, atom: &crate::program::Atom, class: &[crate::program::LabelId]) -> Result<Option<ValueType>, LabelFault> {
+        let mut ty = None;
+        for site in atom.sites.iter() {
+            if !site_holds_class(site, class) {
+                continue;
+            }
+            let mut path = Vec::new();
+            let mut fault = None;
+            each_site_label(site, &mut path, &mut |use_, path| {
+                if fault.is_some() || !use_label(use_).is_some_and(|l| class.contains(&l)) {
+                    return;
+                }
+                match meet(ty.take(), (self.site_type)(atom, path)) {
+                    Ok(met) => ty = met,
+                    Err(err) => fault = Some(err),
+                }
+            });
+            if let Some(err) = fault {
+                return Err(err);
+            }
+        }
+        Ok(ty)
+    }
+
     /// Whether the label asked is fresh at a site or a constraint of
     /// `body`, at any depth.
     fn fresh_in(&self, body: &crate::program::Body) -> bool {
-        use crate::program::{Conjunct, LabelUse, Operand};
-        let mut fresh = false;
-        each_conjunct(body, &mut |conjunct| match conjunct {
-            Conjunct::Constraint(c) => {
-                let second = match c.second {
-                    Operand::Label(label) => Some(label),
-                    Operand::Zero => None,
-                };
-                for label in std::iter::once(c.first).chain(second) {
-                    fresh |= label.fresh && label.label == self.label;
+        self.cache.fresh(body).contains(&self.label)
+    }
+
+    /// Whether `branch` makes the label of `class` only by a `(= X 0)`, with
+    /// the label at no site of an atom in `branch`: such a branch adds no
+    /// type to the label, as a clause whose head label only `(= *X 0)` gives a
+    /// type adds none.
+    fn makes_only_by_zero(&self, branch: &crate::program::Body, class: &[crate::program::LabelId]) -> bool {
+        let ZeroMade { zeroed, at_sites } = &*self.cache.zero_made(branch);
+        zeroed.iter().any(|(label, _)| class.contains(label)) && !at_sites.iter().any(|label| class.contains(label))
+    }
+}
+
+/// The labels that are fresh at a site or a constraint of `body`, at any depth.
+fn fresh_labels(body: &crate::program::Body) -> crate::hash::StableHashSet<crate::program::LabelId> {
+    use crate::program::{Conjunct, LabelUse, Operand};
+    let mut fresh = crate::hash::StableHashSet::default();
+    each_conjunct(body, &mut |conjunct| match conjunct {
+        Conjunct::Constraint(c) => {
+            let second = match c.second {
+                Operand::Label(label) => Some(label),
+                Operand::Zero => None,
+            };
+            fresh.extend(std::iter::once(c.first).chain(second).filter(|used| used.fresh).map(|used| used.label));
+        }
+        _ => {
+            if let Some(atom) = conjunct.atom() {
+                for site in atom.value().sites.iter() {
+                    each_site_use(site, &mut |use_| {
+                        if let LabelUse::Fresh(label) = use_ {
+                            fresh.insert(label);
+                        }
+                    });
                 }
             }
-            _ => {
-                if let Some(atom) = conjunct.atom() {
-                    for site in atom.value().sites.iter() {
-                        each_site_label(site, &mut Vec::new(), &mut |use_, _| {
-                            fresh |= use_ == LabelUse::Fresh(self.label);
-                        });
-                    }
-                }
-            }
-        });
-        fresh
+        }
+    });
+    fresh
+}
+
+/// Whether `label` is fresh inside an `OR`, an `IF` or an `ALL` nested in
+/// `list`, at any depth. Where it is not, and the form has no key clause,
+/// the walk of `list` for `label` reads the label only through its class,
+/// so every label of the class takes the one type.
+pub(crate) fn fresh_in_nested_form(list: &crate::program::Body, label: crate::program::LabelId, cache: &WalkCache) -> bool {
+    use crate::program::{Conjunct, Negated};
+    list.conjuncts.iter().any(|conjunct| {
+        let mut form = conjunct;
+        while let Conjunct::Not(Negated::Form(inner)) = form {
+            form = inner;
+        }
+        match form {
+            Conjunct::Or(branches) => branches.iter().any(|branch| cache.fresh(branch.value()).contains(&label)),
+            Conjunct::If { test, then, otherwise } => [test, then, otherwise].into_iter().any(|part| cache.fresh(part.value()).contains(&label)),
+            Conjunct::All { domain, body } => [domain, body].into_iter().any(|part| cache.fresh(part.value()).contains(&label)),
+            Conjunct::Atom(_) | Conjunct::Not(_) | Conjunct::Constraint(_) => false,
+        }
+    })
+}
+
+/// Whether a label use at `site`, at any depth, is of a label of `class`.
+fn site_holds_class(site: &crate::program::Site, class: &[crate::program::LabelId]) -> bool {
+    let mut holds = false;
+    each_site_use(site, &mut |use_| holds |= use_label(use_).is_some_and(|l| class.contains(&l)));
+    holds
+}
+
+/// Visits each label use at `site`, at any depth, as [`each_site_label`]
+/// does, without building its column path.
+pub fn each_site_use(site: &crate::program::Site, visit: &mut dyn FnMut(crate::program::LabelUse)) {
+    use crate::program::SiteArg;
+    for arg in site.value.args.iter() {
+        match arg {
+            SiteArg::Label(use_) | SiteArg::NamedLabel { label: use_, .. } => visit(*use_),
+            SiteArg::Field(field) => each_site_use(field, visit),
+        }
     }
 }
 
@@ -491,15 +648,6 @@ pub(crate) fn meet(a: Option<ValueType>, b: Option<ValueType>) -> Result<Option<
     }
 }
 
-/// Whether `branch` makes the label of `class` only by a `(= X 0)`, with
-/// the label at no site of an atom in `branch`: such a branch adds no
-/// type to the label, as a clause whose head label only `(= *X 0)` gives a
-/// type adds none.
-fn makes_only_by_zero(branch: &crate::program::Body, class: &[crate::program::LabelId]) -> bool {
-    let ZeroMade { zeroed, at_sites } = ZeroMade::of(branch);
-    zeroed.iter().any(|(label, _)| class.contains(label)) && !at_sites.iter().any(|label| class.contains(label))
-}
-
 /// The labels that a body makes by `(= X 0)`, each with whether the
 /// constraint makes it fresh, and the labels that stand at a site of an
 /// atom of the body, at any depth.
@@ -517,7 +665,7 @@ impl ZeroMade {
             _ => {
                 if let Some(atom) = conjunct.atom() {
                     for site in atom.value().sites.iter() {
-                        each_site_label(site, &mut Vec::new(), &mut |use_, _| made.at_sites.extend(use_label(use_)));
+                        each_site_use(site, &mut |use_| made.at_sites.extend(use_label(use_)));
                     }
                 }
             }
@@ -573,12 +721,12 @@ fn equal_labels(pairs: &[LabelPair], label: crate::program::LabelId) -> Vec<crat
     while grown {
         grown = false;
         for &(a, b) in pairs {
-            for (x, y) in [(a, b), (b, a)] {
-                if class.contains(&x) && !class.contains(&y) {
-                    class.push(y);
-                    grown = true;
-                }
+            match (class.contains(&a), class.contains(&b)) {
+                (true, false) => class.push(b),
+                (false, true) => class.push(a),
+                _ => continue,
             }
+            grown = true;
         }
     }
     class

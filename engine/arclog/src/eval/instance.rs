@@ -93,6 +93,13 @@ pub trait Construction: Send + Sync {
     /// The component's name in the registry, such as `Quotient`.
     fn name(&self) -> &'static str;
 
+    /// Whether the inputs of `group` lie outside the construction's domain,
+    /// where every output of the instance is undefined on the group's
+    /// instance.
+    fn outside_domain(&self, _group: &GroupInputs<'_>) -> bool {
+        false
+    }
+
     /// The outputs of the component on one key group. A bound reached
     /// while it builds them stops it. The rows of an output whose flag in
     /// `group.wanted` is false may be left empty, and the budget is charged

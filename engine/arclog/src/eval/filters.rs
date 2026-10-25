@@ -169,7 +169,7 @@ fn binds(builder: &IrBuilder<'_>, body: &Body, shared: &BTreeSet<u32>, label: u3
     let registry = Registry::get();
     let modes = |atom: &crate::program::Atom| super::ir::atom_modes(registry, atom);
     let types = |label: LabelId| types.label(label).cloned();
-    crate::safety::bound_labels(body, &given, &outside, &modes, &types).contains(&LabelId(label))
+    crate::safety::bound_labels(&body.conjuncts.iter().collect::<Vec<_>>(), &given, &outside, &modes, &types).contains(&LabelId(label))
 }
 
 /// The conjunct kinds this file compiles, for the dispatch of

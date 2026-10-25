@@ -12,11 +12,11 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use arclog::decode::columns::{case_columns, CaseColumns, StopColumns};
-use arclog::decode::corpus::{mask_computations, new_mask_computations, read_task_files, replay_panic, replay_prefix_tree, solver_tables, sorted_streams};
-use arclog::decode::{step_batch, Consistency, Decoder, Points, TokenMask, Views};
+use arclog::decode::corpus::{read_task_files, replay_units, ReplayProgress, UnitSolver};
+use arclog::decode::{evidence_tables, step_batch, Consistency, Decoder, Points, Table, TokenMask, Projections};
 use arclog::eval::instance::Constructions;
 use arclog::eval::pool::Pool;
-use arclog::harness::{corpus_threads, run_on_workers, run_over_corpus, SolverResult};
+use arclog::harness::{panic_message, run_over_corpus, SolverResult};
 use arclog::eval::{Outcome, RelationValue};
 use arclog::judge::attempts::Attempts;
 use arclog::judge::candidates::{PairCandidates, Section, World};
@@ -142,7 +142,8 @@ struct PyDecodeSettings {
     columns: u32,
     labels: u32,
     deadline_seconds: f64,
-    view_cap: u64,
+    projection_cap: u64,
+    table_work_cap: u64,
 }
 
 impl PyDecodeSettings {
@@ -154,7 +155,8 @@ impl PyDecodeSettings {
             columns: settings.vocabulary.columns,
             labels: settings.vocabulary.labels,
             deadline_seconds: settings.deadline.as_secs_f64(),
-            view_cap: settings.view_cap,
+            projection_cap: settings.projection_cap,
+            table_work_cap: settings.table_work_cap,
         }
     }
 
@@ -165,7 +167,8 @@ impl PyDecodeSettings {
             type_domain_proposers: self.type_domain_proposers,
             vocabulary: VocabularyCaps { relations: self.relations, columns: self.columns, labels: self.labels },
             deadline,
-            view_cap: self.view_cap,
+            projection_cap: self.projection_cap,
+            table_work_cap: self.table_work_cap,
             ..DecodeSettings::default()
         })
     }
@@ -174,7 +177,7 @@ impl PyDecodeSettings {
 #[pymethods]
 impl PyDecodeSettings {
     #[new]
-    #[pyo3(signature = (*, proposer_tokens=None, type_domain_proposers=None, relations=None, columns=None, labels=None, deadline_seconds=None, view_cap=None))]
+    #[pyo3(signature = (*, proposer_tokens=None, type_domain_proposers=None, relations=None, columns=None, labels=None, deadline_seconds=None, projection_cap=None, table_work_cap=None))]
     fn new(
         proposer_tokens: Option<bool>,
         type_domain_proposers: Option<bool>,
@@ -182,7 +185,8 @@ impl PyDecodeSettings {
         columns: Option<u32>,
         labels: Option<u32>,
         deadline_seconds: Option<f64>,
-        view_cap: Option<u64>,
+        projection_cap: Option<u64>,
+        table_work_cap: Option<u64>,
     ) -> PyResult<PyDecodeSettings> {
         let base = PyDecodeSettings::of(&DecodeSettings::default());
         let settings = PyDecodeSettings {
@@ -192,7 +196,8 @@ impl PyDecodeSettings {
             columns: columns.unwrap_or(base.columns),
             labels: labels.unwrap_or(base.labels),
             deadline_seconds: deadline_seconds.unwrap_or(base.deadline_seconds),
-            view_cap: view_cap.unwrap_or(base.view_cap),
+            projection_cap: projection_cap.unwrap_or(base.projection_cap),
+            table_work_cap: table_work_cap.unwrap_or(base.table_work_cap),
         };
         settings.engine()?;
         Ok(settings)
@@ -255,6 +260,35 @@ struct SessionData {
     settings: DecodeSettings,
 }
 
+/// The model steps of a replay that `corpus_streams` or `corpus_tables` runs:
+/// `total`, which is 0 until the call has cut its streams into units and then
+/// the model steps of all the units, and `done`, the model steps replayed so
+/// far, which never passes `total`. Both are read at any time, from any
+/// thread, while the call runs.
+#[pyclass(name = "ReplayProgress", frozen, module = "arclog")]
+#[derive(Default)]
+struct PyReplayProgress {
+    inner: ReplayProgress,
+}
+
+#[pymethods]
+impl PyReplayProgress {
+    #[new]
+    fn new() -> PyReplayProgress {
+        PyReplayProgress::default()
+    }
+
+    #[getter]
+    fn total(&self) -> usize {
+        self.inner.total()
+    }
+
+    #[getter]
+    fn done(&self) -> usize {
+        self.inner.done()
+    }
+}
+
 /// A task session: the engine's state for one task, with the settings of its decodes.
 #[pyclass(name = "Session", frozen, module = "arclog")]
 struct PySession {
@@ -301,6 +335,7 @@ enum PyStopKind {
     Models,
     Nodes,
     Assignments,
+    TableWork,
     Margin,
     SessionBytes,
     Deadline,
@@ -315,6 +350,7 @@ impl From<Stop> for PyStopKind {
             Stop::Models => PyStopKind::Models,
             Stop::Nodes => PyStopKind::Nodes,
             Stop::Assignments => PyStopKind::Assignments,
+            Stop::TableWork => PyStopKind::TableWork,
             Stop::Margin => PyStopKind::Margin,
             Stop::SessionBytes => PyStopKind::SessionBytes,
             Stop::Deadline => PyStopKind::Deadline,
@@ -411,18 +447,18 @@ macro_rules! assigned {
     }};
 }
 
-/// One view of a sub-body: the positions of its columns in the body, and the
+/// One projection of a sub-body: the positions of its columns in the body, and the
 /// count of its rows on each example, in the shape of `counts`.
-#[pyclass(name = "View", frozen, get_all, module = "arclog")]
-struct PyView {
+#[pyclass(name = "Projection", frozen, get_all, module = "arclog")]
+struct PyProjection {
     columns: Vec<u16>,
     counts: Vec<Py<PyAssigned>>,
 }
 
-/// The views of a sub-body, or the bound that stopped them.
-#[pyclass(name = "Views", frozen, get_all, module = "arclog")]
-struct PyViews {
-    views: Vec<Py<PyView>>,
+/// The projections of a sub-body, or the bound that stopped them.
+#[pyclass(name = "Projections", frozen, get_all, module = "arclog")]
+struct PyProjections {
+    projections: Vec<Py<PyProjection>>,
     stop: Option<PyStopKind>,
 }
 
@@ -553,28 +589,28 @@ impl PyDecoder {
             .transpose()
     }
 
-    /// The views of the sub-body of the clause in progress, as
+    /// The projections of the sub-body of the clause in progress, as
     /// `docs/engine/synthesis.md#decode-interface` gives them, or `None`
-    /// where no clause is in progress. The views are empty and `stop` is set
-    /// where a bound ended the body or the search. The views give no rows.
+    /// where no clause is in progress. The projections are empty and `stop` is set
+    /// where a bound ended the body or the search. The projections give no rows.
     /// Raises `Fault` where the sub-body does not check or compile.
-    fn views(&self, py: Python<'_>) -> PyResult<Option<PyViews>> {
-        let Some(outcome) = self.decoder().views() else { return Ok(None) };
+    fn projections(&self, py: Python<'_>) -> PyResult<Option<PyProjections>> {
+        let Some(outcome) = self.decoder().projections() else { return Ok(None) };
         let found = match settled(outcome)? {
-            Views::Found(found) => found,
-            Views::Stopped(stop) => return Ok(Some(PyViews { views: Vec::new(), stop: Some(Stop::from(stop.bound).into()) })),
+            Projections::Found(found) => found,
+            Projections::Stopped(stop) => return Ok(Some(PyProjections { projections: Vec::new(), stop: Some(Stop::from(stop.bound).into()) })),
         };
-        let mut views = Vec::new();
-        for view in found {
-            let counts = view
+        let mut projections = Vec::new();
+        for projection in found {
+            let counts = projection
                 .rows
                 .into_vec()
                 .into_iter()
                 .map(|rows| Py::new(py, assigned!(py, rows, |rows| rows.map(|relation| relation.len()).into_pyobject(py)?.into_any().unbind())?))
                 .collect::<PyResult<Vec<_>>>()?;
-            views.push(Py::new(py, PyView { columns: view.columns.iter().map(|column| column.0).collect(), counts })?);
+            projections.push(Py::new(py, PyProjection { columns: projection.columns.iter().map(|column| column.0).collect(), counts })?);
         }
-        Ok(Some(PyViews { views, stop: None }))
+        Ok(Some(PyProjections { projections, stop: None }))
     }
 
     /// The attempts on each test input, as lists of at most two grids, or
@@ -619,8 +655,10 @@ impl PyDecoder {
 
 /// The cases and fault lines of each solver of `corpus` that `task_ids`
 /// keeps (every solver where it is `None`), as `solver` gives them for the
-/// solver's task id, in the order of the task ids. The walk runs on the
-/// threads of the corpus harness with the GIL released.
+/// solver's task id, in the order of the task ids. A solver whose `solver`
+/// panics gives no cases and one fault line, `the walk of the solver
+/// panicked: <message>`. The walk runs on the threads of the corpus harness
+/// with the GIL released.
 fn walk_corpus<C: Send>(
     py: Python<'_>,
     corpus: &str,
@@ -628,14 +666,17 @@ fn walk_corpus<C: Send>(
     solver: impl Fn(&str) -> (Vec<C>, Vec<String>) + Sync,
 ) -> PyResult<Vec<(String, Vec<C>, Vec<String>)>> {
     let found: Mutex<Vec<(String, Vec<C>, Vec<String>)>> = Mutex::new(Vec::new());
+    let selected: Option<std::collections::BTreeSet<String>> = task_ids.as_ref().map(|ids| ids.iter().cloned().collect());
     let walked = py.detach(|| {
         run_over_corpus(
             Path::new(corpus),
+            selected.as_ref(),
             |corpus_solver| {
-                if task_ids.as_ref().is_some_and(|ids| !ids.contains(&corpus_solver.task_id)) {
-                    return SolverResult::Pass;
-                }
-                let (cases, faults) = solver(&corpus_solver.task_id);
+                let id = &corpus_solver.task_id;
+                let (cases, faults) = catch_unwind(AssertUnwindSafe(|| solver(id))).unwrap_or_else(|payload| {
+                    let message = panic_message(&*payload).unwrap_or("a payload that is not a message");
+                    (Vec::new(), vec![fault_line(id, None, &format!("the walk of the solver panicked: {message}"))])
+                });
                 found.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).push((corpus_solver.task_id.clone(), cases, faults));
                 SolverResult::Pass
             },
@@ -660,7 +701,10 @@ fn walk_corpus<C: Send>(
 /// `numpy.frombuffer(masks, numpy.uint8).reshape(-1, (len(vocabulary) + 7) // 8)`
 /// has one row for each token the model writes. Otherwise it is `None`, and
 /// `mask_fault` is `None` where `tasks` is `None` and else the reason the
-/// case gives no masks.
+/// case gives no masks. Where the decode of the case ends at its `&output`
+/// before the stream does, `ids` and `model` hold the tokens before the first
+/// token the model writes after that end, and `masks` has one row for each
+/// model token among them.
 #[pyclass(name = "CaseStream", frozen, get_all, module = "arclog")]
 struct PyCaseStream {
     task: String,
@@ -698,13 +742,27 @@ struct IdStream {
 /// The walk runs on the threads of the corpus harness with the GIL released,
 /// in phases. The first reads each solver, its streams and, with `tasks`, its
 /// task. The second, with `tasks`, cuts the streams of each solver, in the
-/// order of their tokens, into groups of consecutive streams, so that no
-/// group's mask computations pass the share of each thread in those of the
-/// call, but by the last stream's, and replays the groups, the largest
-/// first. A group replays the mask of each prefix its streams share once.
+/// order of their tokens, into groups of consecutive streams of at most
+/// `UNIT_STEPS` model steps but for the last stream's, and replays the groups,
+/// the largest first. A group replays the mask of each prefix its streams
+/// share once.
+/// `started` and `ended`, each a callable or `None`, are called with a
+/// solver's task id, holding the GIL, `started` as the first of the solver's
+/// units starts, and `ended` once the last of its streams has ended. A solver
+/// whose streams all lie past `step_cap` gets `ended` too; one whose task did
+/// not read, and one whose unit panics, gives no `ended` call. An exception
+/// that a callable raises is printed and dropped.
+/// `step_cap`, an integer or `None`, bounds the replay of each solver: its
+/// streams, in the order of their tokens, replay up to the last one at which
+/// the model steps of their prefix tree so far stay within the cap. Each later
+/// stream gives no masks and a `mask_fault` that names the cap and the model
+/// steps of all the solver's streams.
+/// `progress`, a `ReplayProgress` or `None`, gives the model steps of the
+/// second phase: its `total` is set once the groups are cut and its `done`
+/// grows while they replay.
 #[pyfunction]
-#[pyo3(signature = (corpus, all_cases=false, task_ids=None, tasks=None))]
-fn corpus_streams(py: Python<'_>, corpus: &str, all_cases: bool, task_ids: Option<Vec<String>>, tasks: Option<&str>) -> PyResult<(Vec<PyCaseStream>, Vec<String>)> {
+#[pyo3(signature = (corpus, all_cases=false, task_ids=None, tasks=None, started=None, ended=None, progress=None, step_cap=None))]
+fn corpus_streams(py: Python<'_>, corpus: &str, all_cases: bool, task_ids: Option<Vec<String>>, tasks: Option<&str>, started: Option<Py<PyAny>>, ended: Option<Py<PyAny>>, progress: Option<Py<PyReplayProgress>>, step_cap: Option<usize>) -> PyResult<(Vec<PyCaseStream>, Vec<String>)> {
     let wanted = if all_cases { WantedCases::All } else { WantedCases::Concept };
     let constructions = constructions()?;
     let vocabulary = Vocabulary::new(Registry::get(), &DecodeSettings::default());
@@ -732,7 +790,9 @@ fn corpus_streams(py: Python<'_>, corpus: &str, all_cases: bool, task_ids: Optio
     })?;
     if tasks.is_some() {
         let reads = reads.into_inner().unwrap_or_else(|poisoned| poisoned.into_inner());
-        py.detach(|| replay_masks(&mut found, &reads, constructions));
+        let unread = ReplayProgress::default();
+        let steps = progress.as_ref().map_or(&unread, |progress| &progress.get().inner);
+        py.detach(|| replay_masks(&mut found, &reads, constructions, steps, started.as_ref(), ended.as_ref(), step_cap));
     }
     let mut streams = Vec::new();
     let mut faults = Vec::new();
@@ -759,80 +819,111 @@ fn corpus_streams(py: Python<'_>, corpus: &str, all_cases: bool, task_ids: Optio
     Ok((streams, faults))
 }
 
-/// A run of consecutive streams of one solver, in the order of their
-/// tokens, which one thread replays from a new decoder.
-struct ReplayUnit {
-    /// The index in `found` of the solver.
-    solver: usize,
-    /// The indices in the solver's streams of the unit's streams.
-    streams: Vec<usize>,
-    /// The mask computations of the unit's replay.
-    masks: usize,
+/// The progress callbacks of a replay, `started` and `ended`, each a Python
+/// callable or `None`, with, for each solver, the count of its streams left
+/// and whether `started` was called.
+struct Progress<'a> {
+    started: Option<&'a Py<PyAny>>,
+    ended: Option<&'a Py<PyAny>>,
+    tasks: Vec<&'a str>,
+    streams_left: Vec<std::sync::atomic::AtomicUsize>,
+    begun: Vec<std::sync::atomic::AtomicBool>,
+}
+
+impl<'a> Progress<'a> {
+    /// The progress of solvers with the task ids `tasks`, of whom the solver at an index has `streams[index]` streams.
+    fn new(started: Option<&'a Py<PyAny>>, ended: Option<&'a Py<PyAny>>, tasks: Vec<&'a str>, streams: Vec<usize>) -> Self {
+        let streams_left = streams.into_iter().map(std::sync::atomic::AtomicUsize::new).collect();
+        let begun = tasks.iter().map(|_| std::sync::atomic::AtomicBool::new(false)).collect();
+        Self { started, ended, tasks, streams_left, begun }
+    }
+
+    /// Calls `callback`, holding the GIL, with the task id of `solver`; an exception it raises is printed and dropped.
+    fn call(&self, callback: &Py<PyAny>, solver: usize) {
+        Python::attach(|py| {
+            if let Err(error) = callback.call1(py, (self.tasks[solver],)) {
+                error.print(py);
+            }
+        });
+    }
+
+    /// A unit of `solver` starts: calls `started` for the first of its units.
+    fn start(&self, solver: usize) {
+        if let Some(callback) = self.started {
+            if !self.begun[solver].swap(true, std::sync::atomic::Ordering::SeqCst) {
+                self.call(callback, solver);
+            }
+        }
+    }
+
+    /// A stream of `solver` has ended: calls `ended` for the last of its streams.
+    fn settle(&self, solver: usize) {
+        if let Some(callback) = self.ended {
+            if self.streams_left[solver].fetch_sub(1, std::sync::atomic::Ordering::SeqCst) == 1 {
+                self.call(callback, solver);
+            }
+        }
+    }
 }
 
 /// Replays the streams of `found` whose masks are due, which are those with
-/// `Ok(None)`, on the tasks that `reads` holds, in units cut so that no
-/// unit passes its share of the mask computations of the call but by its
-/// last stream's, and sets each stream's `masks`. A solver whose task did not
-/// read, or whose unit panicked, gives each of its streams that fault.
-fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &HashMap<String, Result<(Task, JudgedTask), String>>, constructions: &'static Constructions) {
-    let mut solvers = Vec::new();
-    let mut total = 0;
+/// `Ok(None)`, on the tasks that `reads` holds, as [`replay_units`] does, and
+/// sets each stream's `masks`. A solver whose task did not read, gives each of its streams that fault.
+fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &HashMap<String, Result<(Task, JudgedTask), String>>, constructions: &'static Constructions, steps: &ReplayProgress, started: Option<&Py<PyAny>>, ended: Option<&Py<PyAny>>, step_cap: Option<usize>) {
+    let mut faults: HashMap<usize, String> = HashMap::new();
+    // For each solver whose task read: its index in `found`, the indices in its streams of the due streams, and their ids.
+    let mut due: Vec<(usize, Vec<usize>, Vec<Vec<(u32, Emitter)>>)> = Vec::new();
     for (solver, (id, streams, _)) in found.iter().enumerate() {
-        let Some(read) = reads.get(id) else { continue };
-        if let Err(fault) = read {
-            solvers.push((solver, Vec::new(), Some(fault.clone())));
-            continue;
-        }
-        let due: Vec<usize> = (0..streams.len()).filter(|&stream| matches!(streams[stream].masks, Ok(None))).collect();
-        let ids: Vec<Vec<(u32, Emitter)>> = due.iter().map(|&stream| streams[stream].ids.clone()).collect();
-        let sorted: Vec<usize> = sorted_streams(&ids);
-        total += mask_computations(&sorted.iter().map(|&stream| ids[stream].as_slice()).collect::<Vec<_>>());
-        solvers.push((solver, sorted.into_iter().map(|stream| (due[stream], ids[stream].clone())).collect::<Vec<_>>(), None));
-    }
-    let share = (total / corpus_threads()).max(1);
-    let mut units = Vec::new();
-    for (solver, sorted, _) in &solvers {
-        let mut unit = ReplayUnit { solver: *solver, streams: Vec::new(), masks: 0 };
-        let mut last: Option<&[(u32, Emitter)]> = None;
-        for (stream, ids) in sorted {
-            let masks = new_mask_computations(last, ids);
-            unit.streams.push(*stream);
-            unit.masks += masks;
-            last = Some(ids);
-            if unit.masks >= share {
-                units.push(std::mem::replace(&mut unit, ReplayUnit { solver: *solver, streams: Vec::new(), masks: 0 }));
-                last = None;
+        match reads.get(id) {
+            None => {}
+            Some(Err(fault)) => {
+                faults.insert(solver, fault.clone());
             }
-        }
-        if !unit.streams.is_empty() {
-            units.push(unit);
+            Some(Ok(_)) => {
+                let wanted: Vec<usize> = (0..streams.len()).filter(|&stream| matches!(streams[stream].masks, Ok(None))).collect();
+                let ids = wanted.iter().map(|&stream| streams[stream].ids.clone()).collect();
+                due.push((solver, wanted, ids));
+            }
         }
     }
-    units.sort_by(|a, b| b.masks.cmp(&a.masks));
-    let outcomes = run_on_workers(&units, |unit| {
-        let (_, streams, _) = &found[unit.solver];
-        let Some(Ok((task, judged))) = reads.get(&found[unit.solver].0) else { unreachable!("a unit stands over a task that read") };
-        let ids: Vec<Vec<(u32, Emitter)>> = unit.streams.iter().map(|&stream| streams[stream].ids.clone()).collect();
-        catch_unwind(AssertUnwindSafe(|| {
-            replay_prefix_tree(task, judged, &ids, constructions, &|masks: &mut Vec<u8>, decoder, stepped| {
-                masks.extend(mask_bytes(stepped.mask, decoder.vocabulary().len()));
-            })
-        }))
-        .map_err(|payload| replay_panic(&*payload))
-    });
-    let mut faults: HashMap<usize, String> = solvers.into_iter().filter_map(|(solver, _, fault)| fault.map(|fault| (solver, fault))).collect();
-    for (unit, outcome) in units.iter().zip(outcomes) {
-        match outcome {
-            Ok(masks) => {
-                for (&stream, masks) in unit.streams.iter().zip(masks) {
-                    found[unit.solver].1[stream].masks = masks.map(Some);
-                }
+    let solvers: Vec<UnitSolver<'_>> = due
+        .iter()
+        .map(|(solver, _, ids)| {
+            let Some(Ok((task, judged))) = reads.get(&found[*solver].0) else { unreachable!("a solver of `due` has a task that read") };
+            UnitSolver { task, judged, streams: ids }
+        })
+        .collect();
+    let progress = Progress::new(started, ended, due.iter().map(|(solver, _, _)| found[*solver].0.as_str()).collect(), due.iter().map(|(_, wanted, _)| wanted.len()).collect());
+    let results = replay_units(
+        &solvers,
+        constructions,
+        &DecodeSettings::default(),
+        true,
+        steps,
+        &|(rows, masks): &mut (usize, Vec<u8>), decoder, stepped| {
+            let masked = stepped.mask.expect("the replay computes the mask");
+            *rows += 1;
+            masks.extend(mask_bytes(masked.mask, decoder.vocabulary().len()));
+        },
+        &|solver| progress.start(solver),
+        &|_, replay| replay.into_result(),
+        &|solver| progress.settle(solver),
+        step_cap,
+    );
+    let mut sets = Vec::new();
+    for ((solver, wanted, _), outs) in due.iter().zip(results) {
+        sets.extend(wanted.iter().zip(outs).map(|(&stream, out)| (*solver, stream, out)));
+    }
+    for (solver, stream, out) in sets {
+        let stream = &mut found[solver].1[stream];
+        stream.masks = out.and_then(|out| out).map(|(rows, masks)| {
+            // The tokens from the first one the model emits after the decode's end are no part of the program the decode reads.
+            let end = stream.ids.iter().enumerate().filter(|(_, (_, emitter))| *emitter == Emitter::Model).nth(rows).map(|(index, _)| index);
+            if let Some(end) = end {
+                stream.ids.truncate(end);
             }
-            Err(fault) => {
-                faults.entry(unit.solver).or_insert(fault);
-            }
-        }
+            Some(masks)
+        });
     }
     for (solver, fault) in faults {
         for stream in &mut found[solver].1 {
@@ -846,22 +937,31 @@ fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &Hash
 /// The tables of one case program of a solver of a corpus, as flat columns
 /// (`arclog::decode::columns` gives the layout and the codes).
 ///
-/// `tables`, `entries`, `assigned`, `views` and `view_rows` are dicts of
+/// `tables`, `entries`, `assigned`, `projections`, `projection_rows` and `flows` are dicts of
 /// columns, one for each part of the layout, named as its fields. An integer
 /// column is `bytes` in native byte order, which `numpy.frombuffer` reads at
 /// the dtype that `dtypes` gives for `"<part>.<column>"`; any other column is
 /// a list. `values` is the `int32` cells of every row, which the offsets of the
-/// parts index.
+/// parts index. The first two tables are the evidence tables of the task,
+/// `ex_input` and `ex_output`, at token 0, with point 2 and the relation's
+/// name in `fact`. `tables` also gives each table's `depth` in the dependency graph, its
+/// candidate `keys` (lists of column indexes), and `output_position` and `output_color`,
+/// the grid columns of the relation at which the replay's consistency test found them, -1
+/// for each other table; `flows` gives one row for each source of each column of a table.
+/// `projection_cap` is the cap of the projection rows that the tables ran
+/// under.
 #[pyclass(name = "CaseTables", frozen, get_all, module = "arclog")]
 struct PyCaseTables {
     task: String,
     case: String,
     concept: bool,
+    projection_cap: u64,
     tables: Py<PyDict>,
     entries: Py<PyDict>,
     assigned: Py<PyDict>,
-    views: Py<PyDict>,
-    view_rows: Py<PyDict>,
+    projections: Py<PyDict>,
+    projection_rows: Py<PyDict>,
+    flows: Py<PyDict>,
     values: Py<PyBytes>,
     dtypes: Py<PyDict>,
 }
@@ -924,7 +1024,7 @@ impl<'a, 'py> Part<'a, 'py> {
 }
 
 impl PyCaseTables {
-    fn of(py: Python<'_>, task: String, case: String, concept: bool, columns: &CaseColumns) -> PyResult<Self> {
+    fn of(py: Python<'_>, task: String, case: String, concept: bool, projection_cap: u64, columns: &CaseColumns) -> PyResult<Self> {
         let dtypes = PyDict::new(py);
         let t = Part::new(py, "tables", &dtypes);
         let c = &columns.tables;
@@ -934,15 +1034,20 @@ impl PyCaseTables {
         t.ints("conjuncts", &c.conjuncts)?;
         t.ints("sites", &c.sites)?;
         t.ints("relation", &c.relation)?;
+        t.list("fact", &c.fact)?;
         t.list("column_names", &c.column_names)?;
         t.list("column_types", &c.column_types)?;
         t.ints("width", &c.width)?;
         t.list("det_relations", &c.det_relations)?;
         t.list("det_types", &c.det_types)?;
         t.list("det_widths", &c.det_widths)?;
-        t.ints("views", &c.views)?;
-        t.stop("views_stop", &c.views_stop)?;
+        t.ints("projections", &c.projections)?;
+        t.stop("projections_stop", &c.projections_stop)?;
         t.list("fault", &c.fault)?;
+        t.ints("depth", &c.depth)?;
+        t.list("keys", &c.keys)?;
+        t.ints("output_position", &c.output_position)?;
+        t.ints("output_color", &c.output_color)?;
         let e = Part::new(py, "entries", &dtypes);
         let c = &columns.entries;
         e.ints("table", &c.table)?;
@@ -961,72 +1066,313 @@ impl PyCaseTables {
         a.ints("det", &c.det)?;
         a.ints("rows", &c.rows)?;
         a.ints("offset", &c.offset)?;
-        let v = Part::new(py, "views", &dtypes);
-        let c = &columns.views;
+        let v = Part::new(py, "projections", &dtypes);
+        let c = &columns.projections;
         v.ints("table", &c.table)?;
         v.list("columns", &c.columns)?;
         v.ints("width", &c.width)?;
-        let r = Part::new(py, "view_rows", &dtypes);
-        let c = &columns.view_rows;
-        r.ints("view", &c.view)?;
+        let r = Part::new(py, "projection_rows", &dtypes);
+        let c = &columns.projection_rows;
+        r.ints("projection", &c.projection)?;
         r.ints("entry", &c.entry)?;
         r.ints("defined", &c.defined)?;
         r.ints("rows", &c.rows)?;
         r.ints("offset", &c.offset)?;
+        let f = Part::new(py, "flows", &dtypes);
+        let c = &columns.flows;
+        f.ints("table", &c.table)?;
+        f.ints("column", &c.column)?;
+        f.ints("kind", &c.kind)?;
+        f.ints("source_table", &c.source_table)?;
+        f.list("source_relation", &c.source_relation)?;
+        f.ints("source_column", &c.source_column)?;
+        f.ints("det", &c.det)?;
+        f.list("atom", &c.atom)?;
         Ok(PyCaseTables {
             task,
             case,
             concept,
+            projection_cap,
             tables: t.dict.unbind(),
             entries: e.dict.unbind(),
             assigned: a.dict.unbind(),
-            views: v.dict.unbind(),
-            view_rows: r.dict.unbind(),
+            projections: v.dict.unbind(),
+            projection_rows: r.dict.unbind(),
+            flows: f.dict.unbind(),
             values: PyBytes::new(py, &cell_bytes(&columns.values)).unbind(),
             dtypes: dtypes.unbind(),
         })
     }
 }
 
+/// A case of a solver whose tables `corpus_tables` builds: its stream's
+/// token ids, or the writer's fault.
+struct TableCase {
+    case: String,
+    concept: bool,
+    ids: Result<Vec<(u32, Emitter)>, String>,
+}
+
 /// The tables of each case of each solver of `corpus`, on its task in
 /// `tasks`, the concept case or, with `all_cases`, every case, over the
 /// solvers whose task ids `task_ids` gives, or every solver where it is
 /// `None`, in the order of the task ids and then of the cases. Each table
-/// is at the index of the token whose step gives it. The relations of the
+/// is at the index of the token whose step gives it, but for the first two,
+/// the evidence tables `ex_input` and `ex_output` of the task, which stand at
+/// token 0 with point 2. The tables are those of a decode under `projection_cap`,
+/// the cap of `DecodeSettings`, the engine's default where it is `None`, and
+/// each `CaseTables` gives it. `table_work_cap` is the cap of the bindings that
+/// all the evaluations of one table try, with the same default and the same
+/// `None`; a table past it ends with a stop whose bound is `TableWork`. The relations of the
 /// finished forms are tabled, and with `bodies` the bodies in progress as well.
 /// The second value holds a line for each case that gives no tables and each
 /// solver that gives none, in the form of `corpus_streams`, in the order of
-/// the task ids. The walk runs on the threads of the corpus harness with the
-/// GIL released.
+/// the task ids. The replay computes no token mask.
+/// The call runs on the threads of the corpus harness with the GIL released,
+/// but for the build of each `CaseTables`, in phases. The first reads each
+/// solver, its streams and its task. The second cuts the streams of each
+/// solver into units, as `corpus_streams` does, replays the units, the
+/// largest first, and turns the tables of each stream into columns as its
+/// unit ends.
+/// `ended`, a callable or `None`, is called with a solver's task id, holding
+/// the GIL, once the last of that solver's streams has ended. A solver whose
+/// streams all lie past `step_cap` gets the call; one whose task did not read,
+/// and one whose unit panics, gives none. An
+/// exception that `ended` raises is printed and dropped.
+/// `step_cap`, an integer or `None`, bounds the replay of each solver as it
+/// does in `corpus_streams`; a stream past the cap gives its line as the
+/// case's fault.
+/// `progress`, a `ReplayProgress` or `None`, gives the model steps of the
+/// second phase: its `total` is set once the units are cut and its `done`
+/// grows while they replay.
 #[pyfunction]
-#[pyo3(signature = (corpus, tasks, all_cases=false, task_ids=None, bodies=false))]
-fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, task_ids: Option<Vec<String>>, bodies: bool) -> PyResult<(Vec<PyCaseTables>, Vec<String>)> {
+#[pyo3(signature = (corpus, tasks, all_cases=false, task_ids=None, bodies=false, projection_cap=None, ended=None, progress=None, step_cap=None, table_work_cap=None))]
+fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, task_ids: Option<Vec<String>>, bodies: bool, projection_cap: Option<u64>, ended: Option<Py<PyAny>>, progress: Option<Py<PyReplayProgress>>, step_cap: Option<usize>, table_work_cap: Option<u64>) -> PyResult<(Vec<PyCaseTables>, Vec<String>)> {
     let points = if bodies { Points::All } else { Points::Relations };
+    let wanted = if all_cases { WantedCases::All } else { WantedCases::Concept };
     let constructions = constructions()?;
+    let vocabulary = Vocabulary::new(Registry::get(), &DecodeSettings::default());
+    let base = DecodeSettings::default();
+    let settings = DecodeSettings { projection_cap: projection_cap.unwrap_or(base.projection_cap), table_work_cap: table_work_cap.unwrap_or(base.table_work_cap), ..base };
+    let reads: Mutex<HashMap<String, (Task, JudgedTask)>> = Mutex::new(HashMap::new());
     let found = walk_corpus(py, corpus, &task_ids, |id| {
         let (mut cases, mut faults) = (Vec::new(), Vec::new());
-        match solver_tables(Path::new(corpus), Path::new(tasks), id, all_cases, points, constructions) {
-            Ok(solver) => {
-                for case in solver.cases {
-                    match case.tables {
-                        Ok(tables) => cases.push((case.case, case.concept, case_columns(&tables, solver.train))),
-                        Err(fault) => faults.push(fault_line(id, Some(&case.case), &fault)),
+        match solver_streams(Path::new(corpus), id, wanted, &vocabulary) {
+            Ok(streams) => match read_task_files(Path::new(tasks), id) {
+                Ok(read) => {
+                    for case in streams.into_iter().filter(|case| !case.demonstrated) {
+                        let ids = case.stream.map(|stream| token_ids(&stream, &vocabulary));
+                        cases.push(TableCase { case: case.case, concept: case.concept, ids });
                     }
+                    reads.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).insert(id.to_string(), read);
                 }
-            }
+                Err(fault) => faults.push(fault_line(id, None, &fault)),
+            },
             Err(fault) => faults.push(fault_line(id, None, &fault)),
         }
         (cases, faults)
     })?;
+    let reads = reads.into_inner().unwrap_or_else(|poisoned| poisoned.into_inner());
+    // For each solver that has cases: the ids of the streams its writer gives.
+    let streamed: Vec<(&str, Vec<Vec<(u32, Emitter)>>)> = found
+        .iter()
+        .filter(|(id, cases, _)| !cases.is_empty() && reads.contains_key(id))
+        .map(|(id, cases, _)| (id.as_str(), cases.iter().filter_map(|case| case.ids.as_ref().ok().cloned()).collect()))
+        .collect();
+    let solvers: Vec<UnitSolver<'_>> = streamed
+        .iter()
+        .map(|(id, ids)| {
+            let (task, judged) = &reads[*id];
+            UnitSolver { task, judged, streams: ids }
+        })
+        .collect();
+    let trains: Vec<usize> = streamed.iter().map(|(id, _)| reads[*id].0.train.len()).collect();
+    let evidence: Vec<Vec<Table>> = solvers.iter().map(|solver| evidence_tables(solver.task, Registry::get())).collect();
+    let unread = ReplayProgress::default();
+    let steps = progress.as_ref().map_or(&unread, |progress| &progress.get().inner);
+    let progress = Progress::new(None, ended.as_ref(), streamed.iter().map(|(id, _)| *id).collect(), streamed.iter().map(|(_, ids)| ids.len()).collect());
+    let mut replayed = py
+        .detach(|| {
+            replay_units(
+                &solvers,
+                constructions,
+                &settings,
+                false,
+                steps,
+                &|tables: &mut Vec<(usize, Table)>, decoder, stepped| tables.extend(decoder.tables(points).into_iter().map(|table| (stepped.index, table))),
+                &|solver| progress.start(solver),
+                &|solver, replay| replay.into_result().map(|tables| case_columns(&evidence[solver], &tables, trains[solver])),
+                &|solver| progress.settle(solver),
+                step_cap,
+            )
+        })
+        .into_iter();
     let mut tables = Vec::new();
     let mut faults = Vec::new();
-    for (task, cases, solver_faults) in found {
-        for (case, concept, columns) in cases {
-            tables.push(PyCaseTables::of(py, task.clone(), case, concept, &columns)?);
+    for (task, cases, solver_faults) in &found {
+        faults.extend(solver_faults.iter().cloned());
+        if cases.is_empty() || !reads.contains_key(task) {
+            continue;
         }
-        faults.extend(solver_faults);
+        let mut outs = replayed.next().expect("a result for each solver that has cases").into_iter();
+        for case in cases {
+            let outcome = match &case.ids {
+                Ok(_) => outs.next().expect("a result for each stream").and_then(|out| out),
+                Err(fault) => Err(fault.clone()),
+            };
+            match outcome {
+                Ok(columns) => tables.push(PyCaseTables::of(py, task.clone(), case.case.clone(), case.concept, settings.projection_cap, &columns)?),
+                Err(fault) => faults.push(fault_line(task, Some(&case.case), &fault)),
+            }
+        }
     }
     Ok((tables, faults))
+}
+
+/// The consistency kind that the last step of a stream gave, with the index
+/// of its token.
+#[derive(Clone, Copy)]
+struct EndedAt {
+    token: usize,
+    kind: PyConsistencyKind,
+}
+
+impl PyConsistencyKind {
+    fn name(self) -> &'static str {
+        match self {
+            PyConsistencyKind::Consistent => "Consistent",
+            PyConsistencyKind::NotConsistent => "NotConsistent",
+            PyConsistencyKind::SeveralValues => "SeveralValues",
+            PyConsistencyKind::Fault => "Fault",
+            PyConsistencyKind::Stopped => "Stopped",
+        }
+    }
+}
+
+/// What the replay of one stream of `stream_tables` records: the tables of
+/// each step, and the last consistency a step gave.
+#[derive(Clone, Default)]
+struct StreamRecord {
+    tables: Vec<(usize, Table)>,
+    ended: Option<EndedAt>,
+}
+
+/// The tables of the token streams of one task, for a sampler that holds the
+/// streams of the programs it generates, as `corpus_tables` gives those of the
+/// corpus's.
+///
+/// `task` is the task id and `tasks` the directory of the task files; the
+/// replay judges the train pairs in the closed world, as `corpus_tables` does.
+/// `streams` is a list of pairs `(ids, model)`: `ids` the token ids of a
+/// stream, the engine's forced ids included, and `model` one flag for each id,
+/// 1 (or `True`) where the model wrote the token and 0 where the engine did,
+/// a list or `bytes`, as a sampler holds them from `Decoder.step`. The step
+/// cap and the replay's units count the model's steps.
+/// `settings`, a `DecodeSettings` or `None` for the default, is that of the
+/// sampler's `Session`: the vocabulary that gives the ids is built from it, and
+/// the replay's decodes run under it, so each `RULE` end is judged as the
+/// sampler's decode judged it. Its `projection_cap` and `table_work_cap` are
+/// the tables' caps. `bodies` and `step_cap` are as in `corpus_tables`; the
+/// replay computes no token mask.
+/// `names` gives the case of each stream, or is `None` for the index of the
+/// stream as text. `ValueError` is raised, before any replay, for a `model`
+/// of another length than its `ids`, a flag other than 0 and 1, an id outside
+/// the vocabulary of `settings`, a `names` of another length than `streams`,
+/// and a name that is empty, `.` or `..`, holds `/`, or stands twice.
+/// The first value holds the `CaseTables` of the streams that were replayed, in
+/// the order of the streams. A stream whose replay faults keeps the tables
+/// recorded before the fault. The second value holds, in the order of the
+/// streams, for each stream replayed the line
+/// `<task> <case>: ended <kind> at token <index>`, the verdict at the last
+/// `RULE` end before the stream's end or cut, not at the stream's end, and `<kind>` one of `Consistent`, `NotConsistent`,
+/// `SeveralValues`, `Fault` and `Stopped`, or `<task> <case>: ended none`;
+/// then the fault line of each stream that faults or lies past `step_cap`,
+/// which gives no tables, in the form of `corpus_streams`. A unit that panics
+/// gives the one line `<task> <case>: the replay panicked: <message>` and no tables. The call runs with the
+/// GIL released, but for the build of each `CaseTables`.
+#[pyfunction]
+#[pyo3(signature = (task, tasks, streams, names=None, settings=None, bodies=false, step_cap=None))]
+fn stream_tables(py: Python<'_>, task: &str, tasks: &str, streams: Vec<(Vec<u32>, Vec<u8>)>, names: Option<Vec<String>>, settings: Option<PyDecodeSettings>, bodies: bool, step_cap: Option<usize>) -> PyResult<(Vec<PyCaseTables>, Vec<String>)> {
+    let settings = match settings {
+        Some(settings) => settings.engine()?,
+        None => DecodeSettings::default(),
+    };
+    let vocabulary = Vocabulary::new(Registry::get(), &settings);
+    let names = match names {
+        Some(names) if names.len() != streams.len() => return Err(PyValueError::new_err(format!("{} names for {} streams", names.len(), streams.len()))),
+        Some(names) => names,
+        None => (0..streams.len()).map(|index| index.to_string()).collect(),
+    };
+    let mut seen = std::collections::HashSet::new();
+    for name in &names {
+        if name.is_empty() || name == "." || name == ".." || name.contains('/') {
+            return Err(PyValueError::new_err(format!("the name {name:?} is no file name")));
+        }
+        if !seen.insert(name) {
+            return Err(PyValueError::new_err(format!("the name {name:?} stands twice")));
+        }
+    }
+    let mut ids: Vec<Vec<(u32, Emitter)>> = Vec::new();
+    for (index, (stream, model)) in streams.iter().enumerate() {
+        if stream.len() != model.len() {
+            return Err(PyValueError::new_err(format!("stream {index}: {} ids and {} model flags", stream.len(), model.len())));
+        }
+        let mut tokens = Vec::with_capacity(stream.len());
+        for (&id, &flag) in stream.iter().zip(model) {
+            if id as usize >= vocabulary.len() {
+                return Err(PyValueError::new_err(format!("stream {index}: the id {id} is outside the vocabulary of {} tokens", vocabulary.len())));
+            }
+            tokens.push((id, match flag {
+                1 => Emitter::Model,
+                0 => Emitter::Engine,
+                _ => return Err(PyValueError::new_err(format!("stream {index}: the model flag {flag} is neither 0 nor 1"))),
+            }));
+        }
+        ids.push(tokens);
+    }
+    let constructions = constructions()?;
+    let (read, judged) = read_task_files(Path::new(tasks), task).map_err(PyRuntimeError::new_err)?;
+    let points = if bodies { Points::All } else { Points::Relations };
+    let evidence = evidence_tables(&read, Registry::get());
+    let train = read.train.len();
+    let solvers = [UnitSolver { task: &read, judged: &judged, streams: &ids }];
+    let steps = ReplayProgress::default();
+    let mut replayed = py.detach(|| {
+        replay_units(
+            &solvers,
+            constructions,
+            &settings,
+            false,
+            &steps,
+            &|record: &mut StreamRecord, decoder, stepped| {
+                record.tables.extend(decoder.tables(points).into_iter().map(|table| (stepped.index, table)));
+                if let Some(consistency) = &stepped.consistency {
+                    record.ended = Some(EndedAt { token: stepped.index, kind: PyConsistency::of(consistency).kind });
+                }
+            },
+            &|_| {},
+            &|_, replay| (case_columns(&evidence, &replay.record.tables, train), replay.record.ended, replay.fault),
+            &|_| {},
+            step_cap,
+        )
+    });
+    let outs = replayed.pop().expect("a result for the one solver");
+    let (mut tables, mut ended, mut faults) = (Vec::new(), Vec::new(), Vec::new());
+    for (case, out) in names.iter().zip(outs) {
+        match out {
+            Ok((columns, at, fault)) => {
+                tables.push(PyCaseTables::of(py, task.to_string(), case.clone(), false, settings.projection_cap, &columns)?);
+                ended.push(match at {
+                    Some(at) => format!("{task} {case}: ended {} at token {}", at.kind.name(), at.token),
+                    None => format!("{task} {case}: ended none"),
+                });
+                faults.extend(fault.map(|fault| fault_line(task, Some(case), &fault)));
+            }
+            Err(fault) => faults.push(fault_line(task, Some(case), &fault)),
+        }
+    }
+    ended.extend(faults);
+    Ok((tables, ended))
 }
 
 /// The name of each orientation constant by its encoding, which is the
@@ -1037,10 +1383,19 @@ fn orientation_names() -> Vec<(i32, String)> {
     arclog::decode::columns::orientation_names(Registry::get())
 }
 
+/// The cells of the constants that each orientation type without a
+/// parameter admits, by the type's name.
+#[pyfunction]
+fn orientation_types() -> Vec<(String, Vec<i32>)> {
+    arclog::decode::columns::orientation_types(Registry::get())
+}
+
 /// Steps each of `decoders` by the token with the id at its index in `ids`,
 /// on the thread pool with the GIL released, and gives what each step
 /// gives, in the order of `decoders`: the pair that `Decoder.step` gives, or,
-/// for a decode that refuses its token, the `Refusal` it would raise.
+/// for a decode that refuses its token, the `Refusal` it would raise, or, for
+/// a decode whose step panicked, a `Fault` whose message is the panic's. That
+/// decode stays at its state before the step.
 #[pyfunction]
 #[pyo3(name = "step_batch")]
 fn step_batch_py(py: Python<'_>, decoders: Vec<Bound<'_, PyDecoder>>, ids: Vec<u32>) -> PyResult<Vec<Py<PyAny>>> {
@@ -1063,9 +1418,12 @@ fn step_batch_py(py: Python<'_>, decoders: Vec<Bound<'_, PyDecoder>>, ids: Vec<u
     }
     held.iter()
         .zip(results.into_vec())
-        .map(|(decoder, result)| match decoder.step_result(result) {
-            Ok(step) => Ok(step.into_pyobject(py)?.into_any().unbind()),
-            Err(refusal) => Ok(refusal.into_value(py).into_any()),
+        .map(|(decoder, result)| match result {
+            Err(panic) => Ok(Fault::new_err(panic).into_value(py).into_any()),
+            Ok(result) => match decoder.step_result(result) {
+                Ok(step) => Ok(step.into_pyobject(py)?.into_any().unbind()),
+                Err(refusal) => Ok(refusal.into_value(py).into_any()),
+            },
         })
         .collect()
 }
@@ -1085,15 +1443,18 @@ fn arclog_module(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyValueKind>()?;
     module.add_class::<PyRowsView>()?;
     module.add_class::<PyAssigned>()?;
-    module.add_class::<PyView>()?;
-    module.add_class::<PyViews>()?;
+    module.add_class::<PyProjection>()?;
+    module.add_class::<PyProjections>()?;
     module.add_class::<PyCaseStream>()?;
     module.add_class::<PyCaseTables>()?;
     module.add("Refusal", module.py().get_type::<Refusal>())?;
     module.add("Fault", module.py().get_type::<Fault>())?;
     module.add_function(wrap_pyfunction!(step_batch_py, module)?)?;
+    module.add_class::<PyReplayProgress>()?;
     module.add_function(wrap_pyfunction!(corpus_streams, module)?)?;
     module.add_function(wrap_pyfunction!(corpus_tables, module)?)?;
+    module.add_function(wrap_pyfunction!(stream_tables, module)?)?;
     module.add_function(wrap_pyfunction!(orientation_names, module)?)?;
+    module.add_function(wrap_pyfunction!(orientation_types, module)?)?;
     Ok(())
 }

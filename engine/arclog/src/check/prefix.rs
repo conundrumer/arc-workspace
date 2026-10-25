@@ -2,14 +2,21 @@
 //! prefix, and the rule by which a check's refusals of a partial form stand
 //! as refusals of the prefix.
 
+use std::cell::{OnceCell, RefCell};
 use std::sync::Arc;
 
 use super::{checks, inference, labels_in_scopes, typed_labels, types, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, Scope, SolverClauses};
+use super::safety::{BoundCache, BoundMemo};
+use super::LabelInScope;
+use crate::eval::ir::atom_modes;
+use crate::hash::StableHashMap;
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{node_at, NodePath, NodeRef, PathStep};
-use crate::program::{Atom, Body, Choose, Clause, Conjunct, Form, Instance, InstanceInput, KeyBody, KeyClause, LabelUse, Negated, Node, RigidDet, Site, SiteArg, SiteValue};
-use crate::registry::Registry;
-use crate::resolver::ResolvedProgram;
+use crate::program::{Atom, Body, Choose, Clause, Conjunct, Form, Instance, InstanceInput, KeyBody, KeyClause, LabelUse, Negated, Node, Program, RigidDet, Site, SiteArg, SiteValue};
+use crate::registry::{Mode, Registry};
+use crate::program::RelationRef;
+use crate::resolver::{resolve_last, ResolvedProgram};
+use crate::stream::write::reads_example_column;
 use crate::types::each_site_label;
 
 /// A prefix of a form: its partial form, as [`Prefix`] gives it, and the
@@ -82,7 +89,7 @@ fn partial_path(form: &Form, at: &NodePath) -> NodePath {
 /// complete, and whose open node is at `open`. `clauses` holds the clauses
 /// of `program`'s solver, or of `program` alone for a synthesized program.
 pub fn check_prefix(program: &ResolvedProgram, clauses: &SolverClauses, registry: &Registry, open: Option<&NodePath>) -> Vec<(CheckId, PrefixResult)> {
-    with_prefix(program, clauses, registry, None, open, |prefix| checks().iter().map(|check| (check.id(), check.check_prefix(prefix))).collect())
+    with_prefix(program, clauses, registry, None, None, None, open, |prefix| checks().iter().map(|check| (check.id(), check.check_prefix(prefix))).collect())
 }
 
 /// The checks of the prefixes of a decode's state, each over a program
@@ -94,6 +101,88 @@ pub struct PrefixChecks<'a> {
     registry: &'a Registry,
     /// The inference of the complete forms.
     inference: &'a inference::Inference<'a>,
+    /// What the prefixes checked as [`Candidate::AtomHead`] share.
+    head: AtomHead,
+    /// The labels that the prefixes of a list bind, for the candidates of
+    /// the mask.
+    bound: BoundCache,
+}
+
+/// What a prefix is among the candidates of one mask.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Candidate {
+    /// A prefix of any form.
+    Any,
+    /// A prefix whose last token opens an atom of no site yet. The prefixes
+    /// of a [`PrefixChecks`] given this are one program but for the
+    /// relation of that atom, at one open path.
+    AtomHead,
+}
+
+/// What the atom-head candidates of one [`PrefixChecks`] share. They are
+/// one program but for the relation of the open atom, which holds no site.
+/// A label's type reads an atom only through its sites, so the first
+/// candidate infers the types of its last form and the labels of its
+/// scopes, and each other takes them. A check that [`atom_reading`] says
+/// ignores the relation of such an atom gives each candidate the first
+/// candidate's result, and so does the safety check, where the atoms'
+/// relations have equal modes; and the conjuncts written before the atom bind
+/// the same labels in every candidate.
+#[derive(Default)]
+struct AtomHead {
+    /// The path of the open atom of the first candidate, the path of the
+    /// open atom of each candidate that shares.
+    open: OnceCell<NodePath>,
+    types: RefCell<Option<inference::InferredTypes>>,
+    labels: OnceCell<Vec<LabelInScope>>,
+    results: RefCell<StableHashMap<(CheckId, Box<[Mode]>), PrefixResult>>,
+    /// The resolution of the candidates that open an atom of a relation
+    /// ([`PrefixChecks::check_atom_head`]): the one of the candidate
+    /// checked last, retargeted to the next.
+    resolution: RefCell<Option<HeldResolution>>,
+}
+
+/// The resolution of the form in progress for a candidate that opens, at
+/// `at`, an atom of `relation`.
+struct HeldResolution {
+    at: NodePath,
+    relation: RelationRef,
+    resolved: ResolvedProgram,
+}
+
+/// How a check reads the relation of an atom of no site.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum AtomReading {
+    /// Not at all: the check reads an atom through its sites, or reads no
+    /// atom.
+    Ignored,
+    /// Through its modes alone, which a relation of none leaves unread.
+    Modes,
+    /// Through the relation itself.
+    Relation,
+}
+
+fn atom_reading(check: CheckId) -> AtomReading {
+    match check {
+        CheckId::Grammar
+        | CheckId::Types
+        | CheckId::MadeAndExportedLabels
+        | CheckId::EqualityAndZero
+        | CheckId::ConstraintMarks
+        | CheckId::PoseRule
+        | CheckId::OneClause
+        | CheckId::Spelling => AtomReading::Ignored,
+        CheckId::Safety => AtomReading::Modes,
+        CheckId::SiteColumns
+        | CheckId::Scope
+        | CheckId::UnfoldReads
+        | CheckId::Cycles
+        | CheckId::InstanceInputs
+        | CheckId::PooledAndLiftedReads
+        | CheckId::InstanceSites
+        | CheckId::Picks
+        | CheckId::RigidPartsAndProposers => AtomReading::Relation,
+    }
 }
 
 impl PrefixChecks<'_> {
@@ -102,32 +191,118 @@ impl PrefixChecks<'_> {
     pub fn with<R>(complete: &ResolvedProgram, clauses: &SolverClauses, registry: &Registry, body: impl FnOnce(&PrefixChecks<'_>) -> R) -> R {
         let cases = inference::CaseInferences::new(clauses, registry);
         let inference = inference::Inference::new(complete, &cases);
-        body(&PrefixChecks { clauses, registry, inference: &inference })
+        body(&PrefixChecks { clauses, registry, inference: &inference, head: AtomHead::default(), bound: BoundCache::default() })
+    }
+
+    /// Holds the form in progress at the mask's state, `program` with that
+    /// form as its last, over `earlier`, the resolution of the forms before
+    /// it: a candidate that differs from it by what its token adds to the
+    /// sites of some atoms takes the types of the other labels from the
+    /// state's inference.
+    pub fn hold_state(&self, earlier: Arc<ResolvedProgram>, program: Node<Program>) {
+        self.inference.hold_state(earlier, program);
     }
 
     /// The first check of [`checks`], in their order, that refuses the
     /// prefix whose partial form is the last form of `program`, a
     /// resolution by [`crate::resolver::resolve_last`] over the complete
     /// forms, and whose open node is at `open`, with its refusals; `None`
-    /// where none refuses. No check after it runs.
-    pub fn check(&self, program: &ResolvedProgram, open: Option<&NodePath>) -> Option<(CheckId, Box<[Refusal]>)> {
-        with_prefix(program, self.clauses, self.registry, Some(self.inference), open, |prefix| {
-            checks().iter().find_map(|check| match check.check_prefix(prefix) {
+    /// where none refuses. No check after it runs. Where `candidate` is
+    /// [`Candidate::AtomHead`], a refusal of a check that ignores the open
+    /// atom's relation is the first such candidate's, whatever the
+    /// candidate's own relation; which candidates refuse is the same.
+    pub fn check(&self, program: &ResolvedProgram, open: Option<&NodePath>, candidate: Candidate) -> Option<(CheckId, Box<[Refusal]>)> {
+        let same_open = |open: &NodePath| self.head.open.get_or_init(|| open.clone()) == open;
+        let head = (candidate == Candidate::AtomHead && open.is_some_and(same_open)).then_some(&self.head);
+        with_prefix(program, self.clauses, self.registry, Some(self.inference), head, Some(&self.bound), open, |prefix| {
+            checks().iter().find_map(|check| match self.check_prefix(*check, prefix, head) {
                 PrefixResult::Refuse(refusals) => Some((check.id(), refusals)),
                 PrefixResult::Undecided => None,
             })
         })
     }
+
+    /// [`PrefixChecks::check`] with [`Candidate::AtomHead`] for the prefix
+    /// whose last token opens, at `open`, an atom of `relation`, a lib
+    /// relation, relation macro or proposer, or a relation declared or
+    /// output by a form of `program`, where `earlier` is the resolution of
+    /// the forms before the last of `program`. The candidates of one mask
+    /// at one open path share one resolution of the form in progress,
+    /// retargeted to each one's relation
+    /// ([`ResolvedProgram::retarget_atom`]); where that gives no retarget,
+    /// the resolution is [`resolve_last`]'s.
+    pub fn check_atom_head(&self, earlier: &Arc<ResolvedProgram>, program: &Node<Program>, open: &NodePath, relation: &RelationRef) -> Option<(CheckId, Box<[Refusal]>)> {
+        let last = program.value().forms.len() as u32 - 1;
+        let full = NodePath(std::iter::once(PathStep(last)).chain(open.0.iter().copied()).collect());
+        self.hold_atom_head(earlier, program, &full, relation);
+        let held = self.head.resolution.borrow();
+        let resolved = &held.as_ref().expect("the resolution is set").resolved;
+        self.check(resolved, Some(open), Candidate::AtomHead)
+    }
+
+    /// Whether the read at `at`, the path in `program` of an atom of
+    /// `relation` that a candidate opens, reads an Example column, as
+    /// `reads_example_column` gives it on the resolution that
+    /// [`PrefixChecks::check_atom_head`] holds for that candidate.
+    pub fn reads_example_column(&self, earlier: &Arc<ResolvedProgram>, program: &Node<Program>, at: &NodePath, relation: &RelationRef) -> bool {
+        self.hold_atom_head(earlier, program, at, relation);
+        let held = self.head.resolution.borrow();
+        reads_example_column(&held.as_ref().expect("the resolution is set").resolved, at)
+    }
+
+    /// Holds the resolution of `program` for the candidate that opens, at
+    /// `at`, an atom of `relation`: the held one retargeted, or
+    /// [`resolve_last`]'s. A resolution already held for that candidate
+    /// stays.
+    fn hold_atom_head(&self, earlier: &Arc<ResolvedProgram>, program: &Node<Program>, at: &NodePath, relation: &RelationRef) {
+        let mut held = self.head.resolution.borrow_mut();
+        if held.as_ref().is_some_and(|held| held.at == *at && held.relation == *relation) {
+            return;
+        }
+        let retargeted = held.as_mut().is_some_and(|held| held.at == *at && held.resolved.retarget_atom(program, at, relation, self.registry));
+        match held.as_mut().filter(|_| retargeted) {
+            Some(held) => held.relation = relation.clone(),
+            None => *held = Some(HeldResolution { at: at.clone(), relation: relation.clone(), resolved: resolve_last(earlier, program, self.registry) }),
+        }
+    }
+
+    /// The result of `check` on `prefix`, which is the result of the first
+    /// candidate of `head`, where `check` reads nothing of the open atom
+    /// that the candidates differ in.
+    fn check_prefix(&self, check: &dyn Check, prefix: &Prefix<'_>, head: Option<&AtomHead>) -> PrefixResult {
+        let shared = head.zip(match atom_reading(check.id()) {
+            AtomReading::Ignored => Some(&[][..]),
+            AtomReading::Modes => open_atom(prefix).map(|atom| atom_modes(self.registry, atom)),
+            AtomReading::Relation => None,
+        });
+        let Some((head, modes)) = shared else { return check.check_prefix(prefix) };
+        let key = (check.id(), Box::<[Mode]>::from(modes));
+        if let Some(found) = head.results.borrow().get(&key) {
+            return found.clone();
+        }
+        let result = check.check_prefix(prefix);
+        head.results.borrow_mut().insert(key, result.clone());
+        result
+    }
+}
+
+/// The atom open in the partial form of `prefix`.
+fn open_atom<'a>(prefix: &Prefix<'a>) -> Option<&'a Atom> {
+    node_at(NodeRef::from(prefix.partial), prefix.open?)?.atom()
 }
 
 /// Runs `body` over the prefix of `program`, whose types are inferred over
 /// the forms that `earlier` infers, where it is given, and from the start
-/// otherwise.
+/// otherwise; and that shares `head` with the other atom-head candidates,
+/// where it is given, and whose safety check keeps in `cache` the labels
+/// that the prefixes of a list bind.
 fn with_prefix<R>(
     program: &ResolvedProgram,
     clauses: &SolverClauses,
     registry: &Registry,
     earlier: Option<&inference::Inference<'_>>,
+    head: Option<&AtomHead>,
+    cache: Option<&BoundCache>,
     open: Option<&NodePath>,
     body: impl FnOnce(&Prefix<'_>) -> R,
 ) -> R {
@@ -138,13 +313,28 @@ fn with_prefix<R>(
         Some(earlier) => inference::Inference::layered(program, &cases, earlier),
         None => inference::Inference::new(program, &cases),
     };
+    let inference = match head {
+        Some(head) => inference.sharing_last(&head.types),
+        None => inference,
+    };
     let inference = &inference;
-    let scope = |labels| Scope { program, registry, labels, clauses, inference, files: None };
-    let order = CanonicalOrder::of(partial, &mut SearchBudget::new());
-    let untyped = labels_in_scopes(&order, &|_, _| None);
-    let (_, form_types) = types::infer_form(&CheckInput { form: partial, path: &path, scope: scope(&untyped) }, &order);
-    let labels = typed_labels(&order, &form_types);
-    let prefix = Prefix { complete, partial, path: &path, open, scope: scope(&labels) };
+    let bound = cache.zip(earlier.and_then(|earlier| earlier.state_form())).map(|(cache, state)| BoundMemo { cache, state });
+    let scope = |labels| Scope { program, registry, labels, clauses, inference, files: None, bound };
+    let (order, untyped, computed);
+    let labels: &[LabelInScope] = match head.and_then(|head| head.labels.get()) {
+        Some(labels) => labels,
+        None => {
+            order = CanonicalOrder::of(partial, &mut SearchBudget::new());
+            untyped = labels_in_scopes(&order, &|_, _| None);
+            let (_, form_types) = types::infer_form(&CheckInput { form: partial, path: &path, scope: scope(&untyped) }, &order);
+            computed = typed_labels(&order, &form_types);
+            if let Some(head) = head {
+                head.labels.get_or_init(|| computed.clone());
+            }
+            &computed
+        }
+    };
+    let prefix = Prefix { complete, partial, path: &path, open, scope: scope(labels) };
     body(&prefix)
 }
 

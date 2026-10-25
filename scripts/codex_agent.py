@@ -374,7 +374,8 @@ def seat_admission(agent: str, scratch: Path, cwd: Path, assignment, home: Path,
 
 def work_lock_probe(scratch: Path) -> Path:
     """Serialize lock probes with work admission so probes cannot refuse work."""
-    return work_lock(scratch).with_suffix(".probe.lock")
+    from attempt_record import probe_path
+    return probe_path(work_lock(scratch))
 
 
 def wait(scratch: Path) -> None:
@@ -632,14 +633,14 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
         agent_id: str | None = None) -> str:
     """Hold exclusive ownership from validation through completion publication."""
     import codex_ticket
+    from attempt_record import probe_lock
 
     scratch = scratch.resolve()
     if assignment is None:
         codex_ticket.legacy_guard(scratch)
     scratch.parent.mkdir(parents=True, exist_ok=True)
     with legacy_work_lock(scratch).open("a") as lock:
-        with work_lock_probe(scratch).open("a") as probe:
-            fcntl.flock(probe, fcntl.LOCK_EX)
+        with probe_lock(work_lock(scratch)):
             try:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError as exc:

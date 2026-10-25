@@ -634,7 +634,7 @@ fn solver_files(corpus: &Path, task_id: &str) -> Files {
             let named = RefCell::new(Vec::new());
             let _ = read_solver(&id, arclog, arcdata, &|other| {
                 named.borrow_mut().push(other.to_owned());
-                read_corpus_solver(corpus, other)
+                read_corpus_solver(corpus, other).ok()
             });
             pending.extend(named.into_inner());
         }

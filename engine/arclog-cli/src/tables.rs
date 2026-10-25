@@ -17,6 +17,7 @@ use std::process::ExitCode;
 use arclog::decode::corpus::solver_tables;
 use arclog::decode::Points;
 use arclog::harness::{print_ended, require_optimized_build, run_over_corpus, SolverResult};
+use arclog::stream::DecodeSettings;
 use arclog_constructions::shared as constructions;
 
 use crate::select::selected;
@@ -42,10 +43,7 @@ pub fn run(args: &[String]) -> ExitCode {
         return ExitCode::from(2);
     };
     let selected = selected(&arguments.task_ids, &[], Path::new("")).expect("a selection by task id alone reads no file");
-    let report = run_over_corpus(&arguments.corpus, |solver| match &selected {
-        Some(ids) if !ids.contains(&solver.task_id) => SolverResult::Pass,
-        _ => tables_solver(&arguments, &solver.task_id),
-    }, print_ended);
+    let report = run_over_corpus(&arguments.corpus, selected.as_ref(), |solver| tables_solver(&arguments, &solver.task_id), print_ended);
     match report {
         Ok(report) if report.failures.is_empty() => ExitCode::SUCCESS,
         Ok(_) => ExitCode::FAILURE,
@@ -86,7 +84,7 @@ fn tables_solver(arguments: &Arguments, id: &str) -> SolverResult {
         Ok(constructions) => constructions,
         Err(fault) => return SolverResult::Fail(vec![format!("a fault that stops the tables: {fault}")]),
     };
-    match solver_tables(&arguments.corpus, &arguments.tasks, id, arguments.all, arguments.points, constructions) {
+    match solver_tables(&arguments.corpus, &arguments.tasks, id, arguments.all, arguments.points, constructions, &DecodeSettings::default()) {
         Ok(solver) => {
             let mut failures = Vec::new();
             for case in solver.cases {

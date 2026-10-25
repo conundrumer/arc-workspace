@@ -3,12 +3,18 @@
 //!
 //! Each of its parts holds one row for each item, in a column of its own:
 //!
-//! - [`TableColumns`]: a table, in the order of the stream;
+//! - [`TableColumns`]: a table, in the order of the stream, after the
+//!   evidence tables;
 //! - [`EntryColumns`]: a table, an example and an entry of its rows, which
 //!   is a model at an assignment of the `DET`s;
 //! - [`AssignedColumns`]: a `DET` at an entry's assignment;
-//! - [`ViewColumns`] and [`ViewRowColumns`]: a view of a table, and the
-//!   view's rows at an entry.
+//! - [`ProjectionColumns`] and [`ProjectionRowColumns`]: a projection of a table, and the
+//!   projection's rows at an entry;
+//! - [`FlowColumns`]: a source of a column of a table.
+//!
+//! The first tables of a case are the evidence tables of its task, `ex_input`
+//! then `ex_output`, with point 2, token 0, the relation's name in `fact`,
+//! and one entry for each example whose grid the relation holds.
 //!
 //! Every row of every table is a run of cells in `values`, each cell an
 //! `i32` by the type of its column: a Box its four margins (top, bottom,
@@ -18,14 +24,17 @@
 //! depends on the order of interning, so it is equal to another Ident of the
 //! same run and to no Ident of another. A run is an offset in `values` and a
 //! count of rows, and its width in cells is the table's, or the `DET`'s, or
-//! the view's. The rows of a run are in the order of their cells.
+//! the projection's. The rows of a run are in the order of their cells.
 
-use super::{Contents, Point, Table, Views};
+use super::{Contents, Point, Table, TableRelation, Projections};
+use crate::read::spelling::{spelling, FACT_RELATIONS};
 use crate::eval::determinations::relation_spelled;
 use crate::eval::join::each_row;
 use crate::eval::{RelationValue, Stop};
 use crate::program::path::NodePath;
+use crate::program::{ColumnName, ProgramRelation, RelationRef};
 use crate::registry::Registry;
+use crate::resolver::{ColumnSource, SourceColumn, SourceKind};
 use crate::relations::Relation;
 use crate::terms::{Constant, OrientationConstant, Term, TermId, ORIENTATION_TYPES};
 use crate::types::ValueType;
@@ -36,17 +45,18 @@ use crate::types::ValueType;
 pub enum PointKind {
     Relation = 0,
     Body = 1,
+    Evidence = 2,
 }
 
-/// What the views of a table are, as the code in [`TableColumns::views`].
+/// What the projections of a table are, as the code in [`TableColumns::projections`].
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(u8)]
-pub enum ViewsKind {
-    /// The table gives its rows, and no views.
+pub enum ProjectionsKind {
+    /// The table gives its rows, and no projections.
     None = 0,
     /// The search stopped at a bound.
     Stopped = 1,
-    /// The views, possibly none.
+    /// The projections, possibly none.
     Found = 2,
 }
 
@@ -56,7 +66,7 @@ pub enum ViewsKind {
 pub enum ValueKind {
     /// Rows, in the run of the entry.
     Rows = 0,
-    /// The count of rows alone, since the table gives views.
+    /// The count of rows alone, since the table gives projections.
     Count = 1,
     Undefined = 2,
     /// The bound that stopped the enumeration of models, in `value_stop`.
@@ -96,8 +106,11 @@ pub struct TableColumns {
     /// relation.
     pub conjuncts: Vec<u32>,
     pub sites: Vec<u32>,
-    /// The relation's slot.
+    /// The relation's slot, and -1 for an evidence table.
     pub relation: Vec<i32>,
+    /// The name of the fact relation of an evidence table, as the program
+    /// spells it, and `None` for each other table.
+    pub fact: Vec<Option<String>>,
     pub column_names: Vec<Vec<String>>,
     /// The name of each column's type, as `ValueType` spells it.
     pub column_types: Vec<Vec<String>>,
@@ -108,11 +121,23 @@ pub struct TableColumns {
     pub det_relations: Vec<Vec<String>>,
     pub det_types: Vec<Vec<Vec<String>>>,
     pub det_widths: Vec<Vec<u32>>,
-    /// The [`ViewsKind`] code.
-    pub views: Vec<u8>,
-    /// The bound that stopped the views, and its form.
-    pub views_stop: StopColumns,
+    /// The [`ProjectionsKind`] code.
+    pub projections: Vec<u8>,
+    /// The bound that stopped the projections, and its form.
+    pub projections_stop: StopColumns,
     pub fault: Vec<Option<String>>,
+    /// The table's depth in the dependency graph: 0 for an evidence table.
+    pub depth: Vec<u32>,
+    /// The candidate keys the program text or the task's grids give, each a
+    /// list of column indexes: the columns of a `ONE` mark, none for `(ONE)`,
+    /// the row's columns of a `CHOOSE`, and `E` with `P` of an evidence table.
+    /// The registry declares no key of a component's output.
+    pub keys: Vec<Vec<Vec<u32>>>,
+    /// The index of the Position and of the Color grid column of the table
+    /// of the relation at which the replay's consistency test found them,
+    /// which map to `P` and `Col` of `ex_output`; -1 for each other table.
+    pub output_position: Vec<i32>,
+    pub output_color: Vec<i32>,
 }
 
 /// One row for each entry of a table on an example, in the order of the
@@ -155,21 +180,21 @@ pub struct AssignedColumns {
     pub offset: Vec<u64>,
 }
 
-/// One row for each view of a table whose views are found.
+/// One row for each projection of a table whose projections are found.
 #[derive(Clone, Debug, Default)]
-pub struct ViewColumns {
+pub struct ProjectionColumns {
     pub table: Vec<u32>,
-    /// The columns of the table that the view projects, in increasing order.
+    /// The columns of the table that the projection projects, in increasing order.
     pub columns: Vec<Vec<u32>>,
-    /// The width in cells of a view row.
+    /// The width in cells of a projection row.
     pub width: Vec<u32>,
 }
 
-/// One row for each view at each entry of its table.
+/// One row for each projection at each entry of its table.
 #[derive(Clone, Debug, Default)]
-pub struct ViewRowColumns {
-    /// The row of the view in [`ViewColumns`].
-    pub view: Vec<u32>,
+pub struct ProjectionRowColumns {
+    /// The row of the projection in [`ProjectionColumns`].
+    pub projection: Vec<u32>,
     /// The row of the entry in [`EntryColumns`].
     pub entry: Vec<u32>,
     /// 0 where the entry holds no rows, and 1 where it gives its projection.
@@ -178,23 +203,54 @@ pub struct ViewRowColumns {
     pub offset: Vec<u64>,
 }
 
+/// One row for each source of each column of a table, in the order of the
+/// tables, the columns and the sources.
+#[derive(Clone, Debug, Default)]
+pub struct FlowColumns {
+    /// The row of the table in [`TableColumns`].
+    pub table: Vec<u32>,
+    /// The column's index in the table.
+    pub column: Vec<u32>,
+    /// The [`SourceKind`] code.
+    pub kind: Vec<u8>,
+    /// The row in [`TableColumns`] of the source's table in the case, the
+    /// latest table of the relation before this one; -1 where the case holds
+    /// none: a lib relation, a constant, or a lib name.
+    pub source_table: Vec<i32>,
+    /// The relation read as `relation_spelled` spells it, a fact relation's
+    /// name, or the lib name; empty for a constant.
+    pub source_relation: Vec<String>,
+    /// The source's column index in its relation, -1 for a constant or a lib
+    /// name, and -2 for the example of the source's entry.
+    pub source_column: Vec<i32>,
+    /// The source's place in the table's `det_relations`, -1 where it is
+    /// none of them.
+    pub det: Vec<i32>,
+    /// The path of the atom that reads the source as `form` spells a path,
+    /// empty where no atom does.
+    pub atom: Vec<String>,
+}
+
 /// The tables of one case program as columns.
 #[derive(Clone, Debug, Default)]
 pub struct CaseColumns {
     pub tables: TableColumns,
     pub entries: EntryColumns,
     pub assigned: AssignedColumns,
-    pub views: ViewColumns,
-    pub view_rows: ViewRowColumns,
+    pub projections: ProjectionColumns,
+    pub projection_rows: ProjectionRowColumns,
+    pub flows: FlowColumns,
     pub values: Vec<i32>,
 }
 
-/// The columns of `tables`, each with the index of its token, on a task of
-/// `train` train pairs, which names the examples.
-pub fn case_columns(tables: &[(usize, Table)], train: usize) -> CaseColumns {
+/// The columns of `evidence`, each at token 0, then of `tables`, each with
+/// the index of its token, on a task of `train` train pairs, which names the
+/// examples.
+pub fn case_columns(evidence: &[Table], tables: &[(usize, Table)], train: usize) -> CaseColumns {
     let mut columns = CaseColumns::default();
-    for (token, table) in tables {
-        push_table(&mut columns, *token, table, train);
+    let mut names = Vec::new();
+    for (token, table) in evidence.iter().map(|table| (0, table)).chain(tables.iter().map(|(token, table)| (*token, table))) {
+        push_table(&mut columns, &mut names, token, table, train);
     }
     columns
 }
@@ -205,6 +261,25 @@ pub fn orientation_names(registry: &Registry) -> Vec<(i32, String)> {
     let mut names: Vec<(i32, String)> = ORIENTATION_TYPES.iter().flat_map(|&ty| registry.constants_of(ty).each()).map(|constant| (orientation_cell(constant), registry.constant_name(constant).to_owned())).collect();
     names.sort();
     names
+}
+
+/// The cells of the constants that each orientation type without a parameter
+/// admits as a value, by the type's name, as `encode_data_value` admits them:
+/// C4 the registry's C4 constants, each other type the constants of its
+/// orientation types.
+pub fn orientation_types(registry: &Registry) -> Vec<(String, Vec<i32>)> {
+    use ValueType::*;
+    [Dir, DiagDir, Dir8, Axis, DiagAxis, Axis4, D4, C4, Sym, Sense]
+        .into_iter()
+        .map(|ty| {
+            let mut cells: Vec<i32> = match ty {
+                C4 => registry.c4_constants().each().map(orientation_cell).collect(),
+                _ => ty.orientation_types().expect("an orientation type").iter().flat_map(|&of| registry.constants_of(of).each()).map(orientation_cell).collect(),
+            };
+            cells.sort();
+            (format!("{ty:?}"), cells)
+        })
+        .collect()
 }
 
 fn orientation_cell(constant: OrientationConstant) -> i32 {
@@ -260,7 +335,12 @@ fn push_rows(values: &mut Vec<i32>, rows: &Relation, types: &[ValueType]) -> (u6
     (count, offset)
 }
 
-fn push_table(out: &mut CaseColumns, token: usize, table: &Table, train: usize) {
+/// The name of the relation that the tables of `names` stand for, each with
+/// its row, in the order of the rows: the relation as the program spells it,
+/// or the fact relation's name.
+type TableNames = Vec<(String, u32, Option<Vec<Box<[ColumnName]>>>)>;
+
+fn push_table(out: &mut CaseColumns, names: &mut TableNames, token: usize, table: &Table, train: usize) {
     let row = u32::try_from(out.tables.token.len()).expect("fewer than 2^32 tables");
     let tables = &mut out.tables;
     tables.token.push(u32::try_from(token).expect("fewer than 2^32 tokens"));
@@ -268,6 +348,7 @@ fn push_table(out: &mut CaseColumns, token: usize, table: &Table, train: usize) 
     let (kind, conjuncts, sites) = match table.point {
         Point::Body { conjuncts, sites } => (PointKind::Body, conjuncts, sites),
         Point::Relation => (PointKind::Relation, 0, 0),
+        Point::Evidence => (PointKind::Evidence, 0, 0),
     };
     tables.point.push(kind as u8);
     tables.conjuncts.push(conjuncts);
@@ -275,41 +356,118 @@ fn push_table(out: &mut CaseColumns, token: usize, table: &Table, train: usize) 
     match &table.contents {
         Err(fault) => {
             tables.relation.push(-1);
+            tables.fact.push(None);
             tables.column_names.push(Vec::new());
             tables.column_types.push(Vec::new());
             tables.width.push(0);
             tables.det_relations.push(Vec::new());
             tables.det_types.push(Vec::new());
             tables.det_widths.push(Vec::new());
-            tables.views.push(ViewsKind::None as u8);
-            tables.views_stop.push(None);
+            tables.projections.push(ProjectionsKind::None as u8);
+            tables.projections_stop.push(None);
             tables.fault.push(Some(format!("{} at {}", fault.message, form_path(&fault.form))));
+            tables.depth.push(0);
+            tables.keys.push(Vec::new());
+            tables.output_position.push(-1);
+            tables.output_color.push(-1);
         }
         Ok(contents) => {
             let types: Vec<ValueType> = contents.columns.iter().map(|column| column.ty.clone()).collect();
-            tables.relation.push(i32::try_from(contents.relation).expect("a slot within an i32"));
+            let (slot, fact) = match contents.relation {
+                TableRelation::Slot(slot) => (i32::try_from(slot).expect("a slot within an i32"), None),
+                TableRelation::Fact(fact) => (-1, Some(spelling(FACT_RELATIONS, &fact).to_owned())),
+            };
+            tables.relation.push(slot);
+            tables.fact.push(fact);
             tables.column_names.push(contents.columns.iter().map(|column| column.name.clone()).collect());
             tables.column_types.push(type_names(&types));
             tables.width.push(row_width(&types));
             tables.det_relations.push(contents.dets.iter().map(|det| relation_spelled(&det.relation)).collect());
             tables.det_types.push(contents.dets.iter().map(|det| type_names(&det.types)).collect());
             tables.det_widths.push(contents.dets.iter().map(|det| row_width(&det.types)).collect());
-            let (views, stop) = match &contents.views {
-                None => (ViewsKind::None, None),
-                Some(Views::Stopped(stop)) => (ViewsKind::Stopped, Some(stop)),
-                Some(Views::Found(_)) => (ViewsKind::Found, None),
+            let (projections, stop) = match &contents.projections {
+                None => (ProjectionsKind::None, None),
+                Some(Projections::Stopped(stop)) => (ProjectionsKind::Stopped, Some(stop)),
+                Some(Projections::Found(_)) => (ProjectionsKind::Found, None),
             };
-            tables.views.push(views as u8);
-            tables.views_stop.push(stop);
+            tables.projections.push(projections as u8);
+            tables.projections_stop.push(stop);
             tables.fault.push(None);
+            tables.depth.push(contents.depth);
+            tables.keys.push(contents.keys.iter().map(|key| key.iter().map(|&column| u32::from(column)).collect()).collect());
+            tables.output_position.push(contents.grid.map_or(-1, |grid| i32::from(grid.position.0)));
+            tables.output_color.push(contents.grid.map_or(-1, |grid| i32::from(grid.color.0)));
+            push_flows(out, names, row, contents);
+            if !matches!(table.point, Point::Body { .. }) {
+                let name = match contents.relation {
+                    TableRelation::Slot(_) => contents.name.clone(),
+                    TableRelation::Fact(fact) => spelling(FACT_RELATIONS, &fact).to_owned(),
+                };
+                names.push((name, row, contents.rows.clone()));
+            }
             push_contents(out, row, contents, &types, train);
         }
     }
 }
 
-/// The entries of `contents`, the table at `row`, and its views.
+/// The relation `relation` as the program spells it, a fact relation's name,
+/// or the lib name.
+fn source_spelled(relation: &RelationRef) -> String {
+    match relation {
+        RelationRef::Fact(fact) => spelling(FACT_RELATIONS, fact).to_owned(),
+        RelationRef::Lib(name) => name.0.to_string(),
+        RelationRef::Declared(name) => relation_spelled(&ProgramRelation::Declared(name.clone())),
+        RelationRef::Output(name) => relation_spelled(&ProgramRelation::Output(name.clone())),
+        RelationRef::DefinedPort(port) => port.0.to_string(),
+    }
+}
+
+/// The sources of each column of `contents`, the table at `row`. A source's
+/// table is the latest of `names` that stands for its relation.
+fn push_flows(out: &mut CaseColumns, names: &TableNames, row: u32, contents: &Contents) {
+    let dets: Vec<String> = contents.dets.iter().map(|det| relation_spelled(&det.relation)).collect();
+    for (column, sources) in contents.flows.iter().enumerate() {
+        for ColumnSource { kind, relation, column: source_column, row: source_row, atom } in sources {
+            let spelled = relation.as_ref().map(source_spelled).unwrap_or_default();
+            let source = match kind {
+                SourceKind::Copy | SourceKind::Computed => names.iter().rev().find(|(name, ..)| *name == spelled),
+                SourceKind::Constant | SourceKind::LibName => None,
+            };
+            let table = source.map_or(-1, |&(_, table, _)| table as i32);
+            let det = match kind {
+                SourceKind::Copy | SourceKind::Computed => dets.iter().position(|det| *det == spelled).map_or(-1, |place| place as i32),
+                SourceKind::Constant | SourceKind::LibName => -1,
+            };
+            // The source's table was exported with the order its columns had
+            // then; a later form may have reordered them. A `DET` source's
+            // column indexes the reading table's own `DET` columns.
+            let exported = match (source.and_then(|(_, _, rows)| rows.as_ref()), source_row) {
+                (Some(rows), Some(path)) if det < 0 => Some(rows.iter().position(|row| row == path)),
+                _ => None,
+            };
+            let flows = &mut out.flows;
+            flows.table.push(row);
+            flows.column.push(column as u32);
+            flows.kind.push(*kind as u8);
+            flows.source_table.push(table);
+            flows.det.push(det);
+            flows.source_relation.push(spelled);
+            flows.source_column.push(match source_column {
+                SourceColumn::None => -1,
+                SourceColumn::Position(position) => match exported {
+                    Some(found) => found.map_or(-1, |index| index as i32),
+                    None => i32::from(*position),
+                },
+                SourceColumn::Example => -2,
+            });
+            flows.atom.push(form_path(atom));
+        }
+    }
+}
+
+/// The entries of `contents`, the table at `row`, and its projections.
 fn push_contents(out: &mut CaseColumns, row: u32, contents: &Contents, types: &[ValueType], train: usize) {
-    let count_only = contents.views.is_some();
+    let count_only = contents.projections.is_some();
     let mut starts = Vec::with_capacity(contents.examples.len());
     for example in contents.examples.iter() {
         starts.push(out.entries.table.len());
@@ -375,27 +533,27 @@ fn push_contents(out: &mut CaseColumns, row: u32, contents: &Contents, types: &[
             }
         }
     }
-    if let Some(Views::Found(found)) = &contents.views {
-        for view in found {
-            let view_row = out.views.table.len() as u32;
-            let view_types: Vec<ValueType> = view.columns.iter().map(|column| types[column.0 as usize].clone()).collect();
-            out.views.table.push(row);
-            out.views.columns.push(view.columns.iter().map(|column| u32::from(column.0)).collect());
-            out.views.width.push(row_width(&view_types));
-            for (example, assigned) in view.rows.iter().enumerate() {
+    if let Some(Projections::Found(found)) = &contents.projections {
+        for projection in found {
+            let projection_row = out.projections.table.len() as u32;
+            let projection_types: Vec<ValueType> = projection.columns.iter().map(|column| types[column.0 as usize].clone()).collect();
+            out.projections.table.push(row);
+            out.projections.columns.push(projection.columns.iter().map(|column| u32::from(column.0)).collect());
+            out.projections.width.push(row_width(&projection_types));
+            for (example, assigned) in projection.rows.iter().enumerate() {
                 for (at, (_, projection)) in assigned.at.iter().enumerate() {
                     let (defined, count, offset) = match projection {
                         None => (0, 0, 0),
                         Some(rows) => {
-                            let (count, offset) = push_rows(&mut out.values, rows, &view_types);
+                            let (count, offset) = push_rows(&mut out.values, rows, &projection_types);
                             (1, count, offset)
                         }
                     };
-                    out.view_rows.view.push(view_row);
-                    out.view_rows.entry.push((starts[example] + at) as u32);
-                    out.view_rows.defined.push(defined);
-                    out.view_rows.rows.push(count);
-                    out.view_rows.offset.push(offset);
+                    out.projection_rows.projection.push(projection_row);
+                    out.projection_rows.entry.push((starts[example] + at) as u32);
+                    out.projection_rows.defined.push(defined);
+                    out.projection_rows.rows.push(count);
+                    out.projection_rows.offset.push(offset);
                 }
             }
         }

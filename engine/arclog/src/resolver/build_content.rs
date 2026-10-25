@@ -8,42 +8,72 @@ use std::sync::Arc;
 use super::super::columns::{Columns, Place};
 use super::super::form_columns::{form_columns, row_columns};
 use super::super::registry_columns;
-use super::super::names::{combined, Own, Writer};
+use super::super::names::{form_bytes, node_form, Own, Writer};
 use super::Builder;
-use crate::program::canonical::{canonical_labeling, AsWritten, CanonicalWriter, LabelScope, NameWriter, SearchBudget};
-use crate::program::path::{node_at, NodeRef};
-use crate::program::{Choose, Clause, ColumnName, NameScope, OutputName, OutputOwner, OutputStep, ProgramRelation, RelationRef};
-use crate::resolver::{DependencyKind, DependencyNode};
+use crate::program::canonical::{canonical_labeling, LabelScope, SearchBudget};
+use crate::program::path::{node_at, NodePath, NodeRef};
+use crate::program::{Choose, Clause, ColumnName, NameScope, OutputName, OutputOwner, OutputStep, ProgramRelation};
+use crate::resolver::{DependencyNode, Resolution};
 
 impl Builder<'_> {
     /// The content and the columns of each node, each node after the
-    /// nodes it reads, where no cycle holds it.
+    /// nodes it reads, where no cycle holds it. The content of a node of a
+    /// layered resolution that no read of the last form resolves to is
+    /// left to [`ResolvedProgram::node_content`], which writes it on its
+    /// first read: no pass of the resolution reads it, and it gives the
+    /// bytes that writing it here would.
     pub(super) fn contents(&mut self) {
         let offset = self.offset();
+        let unread = self.unread_nodes();
         self.names.contents = vec![None; self.nodes.len() - offset];
         self.names.node_columns = vec![None; self.nodes.len() - offset];
+        self.names.unwritten = (offset..self.nodes.len()).map(|node| unread[node].then(std::sync::OnceLock::new)).collect();
         let mut visited = vec![false; self.nodes.len()];
         visited[..offset].fill(true);
         for node in offset..self.nodes.len() {
-            self.content_of(node, &mut visited);
+            self.content_of(node, &mut visited, &unread);
         }
     }
 
-    fn content_of(&mut self, node: usize, visited: &mut Vec<bool>) {
+    /// Whether no read of the case resolves to each node, for a node of a
+    /// layered resolution of one form, and `false` for every node of
+    /// another resolution.
+    fn unread_nodes(&self) -> Vec<bool> {
+        let mut unread = vec![self.earlier.is_some(); self.nodes.len()];
+        for node in self.reads.iter().flatten() {
+            unread[*node as usize] = false;
+        }
+        for resolution in self.resolutions.values() {
+            if let Resolution::Node(node) = resolution {
+                unread[node.0 as usize] = false;
+            }
+        }
+        for (node, forms) in self.forms.iter().enumerate() {
+            unread[node] &= forms.len() == 1;
+        }
+        unread
+    }
+
+    fn content_of(&mut self, node: usize, visited: &mut Vec<bool>, unread: &[bool]) {
         if std::mem::replace(&mut visited[node], true) {
             return;
         }
         let reads: Vec<u32> = self.reads[node].iter().copied().collect();
         for read in reads {
-            self.content_of(read as usize, visited);
+            self.content_of(read as usize, visited, unread);
         }
         self.record_kept(node);
-        let (content, columns) = self.node_content(node);
+        let local = node - self.offset();
+        let (content, columns) = if unread[node] {
+            (None, self.node_columns(node))
+        } else {
+            let (content, columns) = self.node_content(node);
+            (Some(content), columns)
+        };
         if let Some(columns) = &columns {
             self.label_positions(node, columns);
         }
-        let local = node - self.offset();
-        self.names.contents[local] = Some(content);
+        self.names.contents[local] = content;
         self.names.node_columns[local] = columns;
     }
 
@@ -69,34 +99,35 @@ impl Builder<'_> {
     /// come from its form.
     fn node_content(&self, node: usize) -> (crate::program::canonical::CanonicalForm, Option<Columns>) {
         let DependencyNode { kind, scope } = &self.nodes[node];
-        let mut tail = CanonicalWriter::default();
-        match kind {
-            DependencyKind::Fact(fact) => AsWritten.write_name(&RelationRef::Fact(*fact), &mut tail),
-            DependencyKind::InstanceInput { input: port, .. } | DependencyKind::InstanceOutput { output: port, .. } => {
-                tail.port_step(port)
-            }
-            _ => {}
-        }
-        let tail = tail.finish().bytes;
         let mut parts: Vec<(Arc<[u8]>, Option<Columns>)> = Vec::new();
         for path in &self.forms[node] {
-            let form = node_at(NodeRef::Program(self.case.value()), path).expect("the path of a form of the case");
-            let own = Own::of(form);
-            let writer = Writer { names: &self.names, scope, own: own.as_ref() };
-            let bytes = self.names.form_content(self.case.value(), form, path, None, &writer).expect("a form has a canonical form").bytes;
-            let columns = match form {
-                NodeRef::Clause(clause) => match self.concept_columns.get(path) {
-                    Some(columns) => columns.clone(),
-                    None => self.clause_columns(node, clause, scope, &writer),
-                },
-                NodeRef::Choose(choose) => Some(choose_columns(choose, &writer)),
-                _ => None,
-            };
-            parts.push((bytes, columns));
+            parts.push((form_bytes(&self.names, self.case.value(), scope, path), self.form_columns(node, path)));
         }
         parts.sort_by(|a, b| a.0.cmp(&b.0));
         let columns = parts.iter().find_map(|(_, columns)| columns.clone());
-        (combined(kind_tag(kind), parts.into_iter().map(|(bytes, _)| bytes), &tail), columns)
+        (node_form(kind, parts.into_iter().map(|(bytes, _)| bytes)), columns)
+    }
+
+    /// The columns of `node`, a node of one form, as [`Builder::node_content`]
+    /// gives them.
+    fn node_columns(&self, node: usize) -> Option<Columns> {
+        self.form_columns(node, &self.forms[node][0])
+    }
+
+    /// The columns of the relation the form of `node` at `path` gives.
+    fn form_columns(&self, node: usize, path: &NodePath) -> Option<Columns> {
+        let scope = &self.nodes[node].scope;
+        let form = node_at(NodeRef::Program(self.case.value()), path).expect("the path of a form of the case");
+        let own = Own::of(form);
+        let writer = Writer { names: &self.names, scope, own: own.as_ref() };
+        match form {
+            NodeRef::Clause(clause) => match self.concept_columns.get(path) {
+                Some(columns) => columns.clone(),
+                None => self.clause_columns(node, clause, scope, &writer),
+            },
+            NodeRef::Choose(choose) => Some(choose_columns(choose, &writer)),
+            _ => None,
+        }
     }
 
     /// Records in [`super::super::names::Names::kept`] the columns that the
@@ -156,21 +187,6 @@ impl Builder<'_> {
             }
         }
         Some(Columns::default())
-    }
-}
-
-/// The tag of each kind of node in its content.
-fn kind_tag(kind: &DependencyKind) -> u8 {
-    match kind {
-        DependencyKind::Fact(_) => 1,
-        DependencyKind::Clause(_) => 2,
-        DependencyKind::InstanceInput { .. } => 3,
-        DependencyKind::InstanceOutput { .. } => 4,
-        DependencyKind::Parameter(_) => 5,
-        DependencyKind::Chosen(_) => 6,
-        DependencyKind::RigidAssembly(_) => 7,
-        DependencyKind::Demonstrated(_) => 8,
-        DependencyKind::RecursiveInstance(_) => 9,
     }
 }
 

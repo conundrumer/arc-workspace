@@ -8,7 +8,9 @@ The first read of a session's journal with every operator's calls read
 starts it, seeded with each SendMessage call the operators made with no
 error before then, as a message done, so that no message sent before the
 journal is sent again. Each read gives the outcome of each step in flight
-that the operators' calls, or a run's files, now give, and writes it."""
+that the operators' calls, a run's files, or, for a message to a Codex
+launcher, the record of attempts (`acknowledgement`), now give, and writes
+it."""
 
 import fcntl
 import json
@@ -28,8 +30,11 @@ from merge_reads import merge_outcome
 from controlled_markdown import mctx
 from operations.constants import RUN_SECONDS
 from operations.merge_outcomes import call_conflicts
-from operations.journal import Close, Entry, Journal, Outcome, closing
-from operations.roles import description
+from operations import attempts as events
+from operations.journal import (
+    Acknowledged, Acknowledgement, Close, Entry, Journal, Outcome, Refusal, Taken, Undelivered,
+    closing)
+from operations.roles import CODEX_LAUNCHER, description
 from operations.state import Call, Tool
 from operations.steps import Bash, Journaled, Launch, Send, digest, entry_key, key
 
@@ -229,13 +234,46 @@ def output(run: Run) -> str:
     return run.output.read_text(errors="replace") if run.output.exists() else ""
 
 
+def acknowledgement(ended: Callable[[str], bool]) -> Acknowledged:
+    """What the record of attempts gives of a message to a Codex launcher,
+    where `ended` gives whether the launcher with an agent id has ended, as
+    `operator_state` decides it. The message event that the operator's call
+    made names the call (`state.Call.id`); the launcher's worker
+    acknowledges it with a `Received` event that names that event, once its
+    Codex turn takes the message. A launcher that ended with no
+    acknowledgement, or a call that left no message event while the
+    launcher still runs, is not a delivery. None is for a message to an
+    agent that is no Codex launcher."""
+    from attempt_record import Record
+
+    def acknowledged(e: Entry, c: Call) -> Acknowledgement | None:
+        if e.to is None:
+            return None
+        attempts = events.fold(Record().events([e.operator, e.to]))
+        recipient, mine = attempts.get(e.to), attempts.get(e.operator)
+        if recipient is None or recipient.launch is None or recipient.launch.agent_type != CODEX_LAUNCHER:
+            return None
+        sent = None if mine is None else next(
+            (m for m in mine.events if isinstance(m, events.Message) and m.call == c.id
+             and not m.handback), None)
+        if sent is not None and sent.outcome is events.Outcome.REFUSED:
+            return Refusal(sent.at)
+        taken = next((r for r in recipient.receipts
+                      if sent is not None and r.delivery == sent.delivery), None)
+        if taken is not None:
+            return Taken(taken.at)
+        return Undelivered.LOST if ended(e.to) else Undelivered.OPEN
+
+    return acknowledged
+
+
 @read_interrupts.deferred
 def read(scratch: Path, calls: Sequence[Call], live: Callable[[Entry], bool], now: float,
-         start: bool) -> tuple[Journal, list[Record]]:
+         start: bool, acknowledged: Acknowledged) -> tuple[Journal, list[Record]]:
     """The journal of `scratch`, with the outcome of each step in flight
-    that `calls`, the operators' calls, or its run's files now give,
-    written, where `live` gives whether the work of the operator of an
-    entry may still make its call, and
+    that `calls`, the operators' calls, its run's files, or, for a message to
+    a Codex launcher, `acknowledged` now give, written, where `live` gives
+    whether the work of the operator of an entry may still make its call, and
     its records. Where `start` holds and the journal is not started, it is
     seeded from `calls` first (`seed`)."""
     if start and not journal_path(scratch).exists():
@@ -246,7 +284,7 @@ def read(scratch: Path, calls: Sequence[Call], live: Callable[[Entry], bool], no
     for r in found:
         if r.entry.close is None:
             close = (run_close(r, now) if r.entry.tool is Tool.BASH
-                     else closing(r.entry, calls, live(r.entry), now))
+                     else closing(r.entry, calls, live(r.entry), now, acknowledged))
             if close is not None:
                 closes.append(closed_record(r.ident, close))
                 r = Record(r.ident, replace(r.entry, close=close), r.run)

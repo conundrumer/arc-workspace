@@ -31,7 +31,7 @@ use arclog::trace::{DecodeTrace, RunTrace, Stop, TopK};
 const BG: &str = "(RULE &bg (input (:Col *C)))\n";
 const FG: &str = "(RULE &fg (input *P *Col) (&bg (:C *V)) (!= Col V))\n";
 const COMPS: &str = "(INIT &comps Connectivity (node ((:P P)) (&fg *P)))\n";
-const CONNECTED: &str = "(INIT &c2 Connectivity (node ((:P Q)) (&comps.connected *P *Q)))\n";
+const ADJACENT: &str = "(INIT &c2 Connectivity (node ((:P Q)) (&comps.adjacent *P *Q)))\n";
 const AXIS: &str = "(RULE &axis_len (input (:P *B)) (frame_extent (:P B) (:N *N)))\n(RULE &larger (&axis_len *B) (&axis_len (:B *B2)))\n";
 const PRIOR: &str = "(RULE &prior (&axis_len *B *N) (&axis_len (:B *B2) (:N *N2)) (OR ((> N N2)) ((= N N2) (&larger B B2))))\n";
 
@@ -134,7 +134,7 @@ fn a_decode_renders_the_trace_form_of_a_disjunction() {
 
 #[test]
 fn a_decode_renders_the_trace_form_of_an_instance() {
-    let names = ["&bg", "&fg", "&comps.component", "&comps.connected", "&comps.adjacent", "&comps.node", "&comps.step"];
+    let names = ["&bg", "&fg", "&comps.component", "&comps.adjacent", "&comps.node", "&comps.step"];
     let text = rendered(&format!("{BG}{FG}{COMPS}"), &names, false);
     let instance: Vec<&str> = text.lines().skip(8).collect();
     let expected = "\
@@ -145,7 +145,7 @@ fn a_decode_renders_the_trace_form_of_an_instance() {
    [node key] (END)
    [node P] (P END))
   [step] SKIP
-  [&comps.component &comps.connected &comps.adjacent &comps.node &comps.step])";
+  [&comps.component &comps.adjacent &comps.node &comps.step])";
     assert_eq!(instance.join("\n"), expected);
 }
 
@@ -230,7 +230,7 @@ fn evaluating<T>(program: &CheckedProgram, task: &Task, caps: Caps, run: impl Fn
     let registry = Registry::get();
     let parameters = ParameterValues::default();
     let session = TaskSession::new(SessionBound { bytes: 1 << 26 }, caps);
-    let limits = Limits { deadline: None, cancellation: Cancellation::default() };
+    let limits = Limits::new(None, Cancellation::default());
     let constructions = Constructions::new(Vec::new(), registry).expect("an empty table");
     run(&Evaluation { program, concept: None, task, parameters: &parameters, session: &session, registry, constructions: &constructions, limits: &limits })
 }
@@ -314,9 +314,39 @@ fn the_program_form_of_a_decode_reads_back_to_its_content() {
 
 #[test]
 fn the_program_form_of_a_decode_names_each_label_as_its_trace_form_does() {
-    let arclog = format!("{BG}{FG}{COMPS}{CONNECTED}");
-    let trace = rendered(&arclog, &["&comps.connected"], false);
+    let arclog = format!("{BG}{FG}{COMPS}{ADJACENT}");
+    let trace = rendered(&arclog, &["&comps.adjacent"], false);
     assert!(trace.contains("((&r3 (:P *[P]) (:Q *[Q])) END\n   [node key] (END)\n   [node P] (Q END))"), "{trace}");
     let program = reads_back(&arclog);
-    assert!(program.ends_with("(INIT &r7 Connectivity (node ((:P Q)) (&r2.connected (:P *P) (:Q *Q))))\n"), "{program}");
+    assert!(program.ends_with("(INIT &r6 Connectivity (node ((:P Q)) (&r2.adjacent (:P *P) (:Q *Q))))\n"), "{program}");
+}
+
+/// Asserts that the program form of the decode of `arclog` reads, passes the
+/// checks, and is written again as it stands. A `^` column of a `for` or
+/// `instance` clause reads as a written name where the decode holds its slot,
+/// and the content of a key body gives the two names apart, so this compares
+/// the text.
+fn reads_back_as_written(arclog: &str) -> String {
+    let inputs = inputs(&[3, 3], Caps::CORPUS);
+    let mut decoder = decoder(&inputs);
+    walk(&mut decoder, &model_tokens(arclog));
+    let text = write_synthesized(decoder.program(), Registry::get());
+    checked(&text);
+    let solver = read_solver("trace", &text, "", &|_| None).expect("the file reads").value;
+    assert_eq!(write_synthesized(&solver.concept_case().program, Registry::get()), text);
+    text
+}
+
+#[test]
+fn the_program_form_of_a_decode_with_a_choose_form_reads_back() {
+    let choose = "(CHOOSE &pick (for ((&fg ^Col))\n    (from (&fg Col *P)))\n  (never (&fg *Col *P) (&fg (:Col *Col2) (:P *P2)) (&fg Col (:P P2))))\n";
+    let text = reads_back_as_written(&format!("{BG}{FG}{choose}"));
+    assert!(text.contains("(CHOOSE &r2"), "{text}");
+}
+
+#[test]
+fn the_program_form_of_a_decode_with_a_rigid_det_form_reads_back() {
+    let rigid = "(RIGID_DET &piece (instance ((&fg ^P ^Col)) (&fg P Col)))\n";
+    let text = reads_back_as_written(&format!("{BG}{FG}{rigid}"));
+    assert!(text.contains("(RIGID_DET &r2"), "{text}");
 }

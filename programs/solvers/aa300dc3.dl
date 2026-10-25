@@ -263,7 +263,8 @@ region.node(H, P) :- hole(H, P).
 
 .init arena = Canon<ArenaCell>
 arena.equiv([H, $WholeGrid(), P], [H, $WholeGrid(), Q]) :- hole(H, P), hole(H, Q).
-arena.equiv([H, $PerRegion(), P], [H, $PerRegion(), Q]) :- region.conn(H, P, Q).
+arena.equiv([H, $PerRegion(), P], [H, $PerRegion(), Q]) :-
+    region.label(H, P, Id), region.label(H, Q, Id).
 
 .decl arena_cell(h: HoleColor, s: Scope, a: Ident, p: Position)
 arena_cell(H, S, A, P) :- arena.id([H, S, P], A).

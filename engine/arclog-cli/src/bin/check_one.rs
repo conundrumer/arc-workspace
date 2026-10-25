@@ -46,7 +46,7 @@ fn check(corpus: &Path, task_id: &str) -> Vec<String> {
         (Ok(arclog), Ok(arcdata)) => (arclog, arcdata),
         (Err(line), _) | (_, Err(line)) => return vec![line],
     };
-    let read = match read_solver(task_id, &arclog, &arcdata, &|id| read_corpus_solver(corpus, id)) {
+    let read = match read_solver(task_id, &arclog, &arcdata, &|id| read_corpus_solver(corpus, id).ok()) {
         Ok(read) => read,
         Err(refusal) => return refusal.iter().map(|d| format!("refused: {}", line(d))).collect(),
     };

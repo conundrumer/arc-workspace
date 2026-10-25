@@ -38,14 +38,55 @@ use crate::types::{each_site_label, use_label, ValueType};
 /// form of `body` where it stands, so a form binds it for the body only by
 /// the rule above for that form, and never as a label local to a part.
 pub fn bound_labels<'m>(
-    body: &Body,
+    list: &[&Conjunct],
     bound: &StableHashSet<LabelId>,
     outside: &StableHashSet<LabelId>,
     modes: &dyn Fn(&Atom) -> &'m [Mode],
     types: &dyn Fn(LabelId) -> Option<ValueType>,
 ) -> StableHashSet<LabelId> {
-    let list: Vec<&Conjunct> = body.conjuncts.iter().collect();
-    Walk { modes, types }.bound_in(&list, bound, outside)
+    Walk { modes, types }.bound_in(list, bound, outside)
+}
+
+/// The labels that stand in `conjunct`, at any depth.
+pub(crate) fn conjunct_label_set(conjunct: &Conjunct) -> StableHashSet<LabelId> {
+    let mut labels = StableHashSet::default();
+    conjunct_labels(conjunct, &mut labels);
+    labels
+}
+
+/// For each label, the number of the conjuncts of a list that hold it, so
+/// the labels of the other conjuncts of the list come from the labels of
+/// each conjunct taken once.
+pub(crate) struct LabelCounts(crate::hash::StableHashMap<LabelId, usize>);
+
+impl LabelCounts {
+    pub(crate) fn of<'s>(sets: impl IntoIterator<Item = &'s StableHashSet<LabelId>>) -> Self {
+        let mut counts = Self(crate::hash::StableHashMap::default());
+        sets.into_iter().for_each(|set| counts.add(set));
+        counts
+    }
+
+    pub(crate) fn add(&mut self, set: &StableHashSet<LabelId>) {
+        for label in set {
+            *self.0.entry(*label).or_insert(0) += 1;
+        }
+    }
+
+    pub(crate) fn remove(&mut self, set: &StableHashSet<LabelId>) {
+        for label in set {
+            if let Some(count) = self.0.get_mut(label) {
+                *count -= 1;
+            }
+        }
+    }
+
+    /// `outside` with each label that a conjunct holds other than the one
+    /// whose labels are `except`.
+    pub(crate) fn around(&self, outside: &StableHashSet<LabelId>, except: Option<&StableHashSet<LabelId>>) -> StableHashSet<LabelId> {
+        let mut around = outside.clone();
+        around.extend(self.0.iter().filter(|&(label, &count)| count > usize::from(except.is_some_and(|set| set.contains(label)))).map(|(label, _)| *label));
+        around
+    }
 }
 
 /// Each label that stands in `body`, at any depth.
@@ -109,9 +150,10 @@ impl Walk<'_, '_> {
     fn bound_in(&self, list: &[&Conjunct], outer: &StableHashSet<LabelId>, outside: &StableHashSet<LabelId>) -> StableHashSet<LabelId> {
         let mut bound = self.exported(list, outer);
         let mut local = Vec::new();
+        let sets: Vec<StableHashSet<LabelId>> = list.iter().map(|conjunct| conjunct_label_set(conjunct)).collect();
+        let counts = LabelCounts::of(&sets);
         for (i, conjunct) in list.iter().enumerate() {
-            let mut around = outside.clone();
-            list.iter().enumerate().filter(|&(k, _)| k != i).for_each(|(_, other)| conjunct_labels(other, &mut around));
+            let around = counts.around(outside, Some(&sets[i]));
             let per_part: Vec<(StableHashSet<LabelId>, StableHashSet<LabelId>)> = parts(conjunct)
                 .iter()
                 .map(|part| {
@@ -282,7 +324,7 @@ mod tests {
         let (body, _) = read_body(&exprs).expect("the body reads");
         let body = body.value();
         let none = StableHashSet::default();
-        let bound = bound_labels(body, &none, &none, &|_| &[], &|_| None);
+        let bound = bound_labels(&body.conjuncts.iter().collect::<Vec<_>>(), &none, &none, &|_| &[], &|_| None);
         body_labels(body).iter().filter(|label| !bound.contains(label)).count()
     }
 

@@ -1,25 +1,36 @@
-"""Whether an attempt runs, has ended with or without a result, or is
-unknown: one function (`attempt_state`) over the facts the reads gather on
-the attempt (`AttemptFacts`), for the attempts of every operator alike.
+"""Whether an attempt runs, has ended or is unknown: one function
+(`attempt_state`) over the record of the attempt (`attempts.Attempt`) and
+the facts the reads gather outside it (`AttemptFacts`), for the attempts of
+every operator and session alike, Claude and native Codex.
 
-Stage 1, liveness, with the first condition that holds deciding:
+With the first condition that holds deciding:
 
-1. The listing gives its work running: `Running`, with the `Waits` its sign
-   gives where the sign is pending and `Waits.STILL_RUNNING` where it is not.
-2. Each ticket of its subject closed after its launch: `Ended`.
-3. It is an end candidate: its sign is not pending, a stall alert fired on
-   it, it is of another operator and its work is no longer open, or its
-   turn ended idle while its sign is at work or still running. Where its
-   Codex read is `LIVE` it is `Running` with `Waits.STILL_RUNNING`, where
-   that is `UNKNOWN` it is `Unknown`, and where it is `DONE` or `DEAD`, or
-   the attempt is no Codex attempt, it is `Ended`. No other attempt is read
-   for Codex.
-4. Otherwise `Running` with the `Waits` its sign gives, which includes
-   `Waits.LIMITED` for an attempt the usage limit stopped.
+1. The record holds no launch, its coverage is incomplete or an old
+   producer may still write (`attempts.Coverage`), a native attempt has no
+   work reservation, or a work reservation has no recorded acceptance or
+   refusal, so that the submission is uncertain: `Unknown`, held.
+2. A work reservation was accepted and has no recorded end. Where its turn
+   read (`AttemptFacts.turn`) gives `LIVE`, the attempt is `Running` with
+   `Waits.STILL_RUNNING`; where it gives `UNKNOWN`, it is `Unknown`, held;
+   where it gives terminal evidence, the turn is over.
+3. A descendant of the attempt runs or is unknown, or its own work is
+   running (`AttemptFacts.working`): `Running` with `Waits.STILL_RUNNING`.
+4. Each ticket of its subject closed after its launch: `Ended`.
+5. A Claude attempt whose latest launch, resume, work reservation, stop or
+   handback is a stop or handback, and a native attempt, are `Ended`: a
+   native attempt's work reservations are all resolved or over by terminal
+   evidence.
+6. Otherwise `Running`, with `Waits.LIMITED` where the usage limit stopped
+   it and `Waits.AT_WORK` where it did not.
 
-Stage 2, the refusal, for an `Ended` attempt alone: `Ended.refused` is the
-time of the SendMessage to it that the harness refused, where
-`completion.refusal_of` gives one.
+A record without a stop or a terminal turn event never ends an attempt, a
+stall alert and a lost observer do not, and no read appends one. The
+transcript supplies only the lease write times and the usage-limit fact,
+and the listing the work of the attempt's own that runs
+(`AttemptFacts.working`).
+
+`Ended.refused` is the time of the message to an ended attempt that the
+harness refused (`attempt_view.refused_at`).
 
 A `Running` or `Unknown` attempt has a lease (`Running.until`): the latest
 write of its transcript, of its descendants' transcripts and of its Codex
@@ -33,8 +44,9 @@ from enum import StrEnum
 from pathlib import Path
 
 from controlled_markdown import mctx
+from operations import attempts as a
 from operations.constants import STUCK_SECONDS
-from operations.state import Ended, Report, Running, Unknown, Waits, AttemptState
+from operations.state import Ended, Running, Unknown, Waits, AttemptState
 
 
 class CodexEnd(StrEnum):
@@ -46,10 +58,12 @@ class CodexEnd(StrEnum):
 
 @dataclass(frozen=True)
 class CodexRead:
-    """An attempt's completion or thread state, with the failed walk's reason.
-    Where its state is unknown, `scratch` and `rollout`, its scratch
-    directory and its Codex rollout, are as far as they were recovered
-    before the read failed, and `limits` gives what could not be."""
+    """The read of an attempt's accepted turn: `LIVE` where the turn runs,
+    `DEAD` where terminal evidence ends it, `UNKNOWN` where it cannot be
+    read, with the failed read's reason. Where its state is unknown,
+    `scratch` and `rollout`, its scratch directory and its Codex rollout, are
+    as far as they were recovered before the read failed, and `limits` gives
+    what could not be."""
     end: CodexEnd
     why: str = ""
     scratch: Path | None = None
@@ -67,29 +81,21 @@ class Written:
 
 @dataclass(frozen=True)
 class AttemptFacts:
-    """What the reads know of one attempt, for `attempt_state`.
-    `waits` is what its sign gives (`agent_reports.last_sign`): None where
-    the sign is not pending. `report` gives the report an end adds, and
-    `codex` its Codex read, each read on use; `written` gives the latest
-    write time of its sources, with its Codex rollout `rollout` among them
-    where given, and, where `unknown` holds, floored at the time of its
-    launch or last resume. `listed` holds where the listing gives its work
-    running, `idle` where its own transcript shows its turn ended idle,
-    `stalled` where a stall alert fired on it and its final reply ended
-    it, `outlived` where each ticket of its subject closed after its
-    launch, and `elsewhere` where it is of another operator and its work
-    is no longer open. `refused` is the time of its latest refused
-    SendMessage (`completion.refusal_of`)."""
-    waits: Waits | None
-    report: Callable[[], Report | None]
-    codex: Callable[[], CodexRead]
+    """What the reads know of one attempt beside its record, for
+    `attempt_state`. `turn` gives the read of its accepted turn with no
+    recorded end, called only where there is one; `written` gives the latest
+    write time of its sources, with its Codex rollout among them where
+    given, and, where `unknown` holds, floored at the time of its launch or
+    last resume. `descendants` holds where an agent it launched runs or is
+    unknown, `working` where the listing gives work of its own running,
+    `outlived` where each ticket of its subject closed after its launch, and
+    `limited` where the usage limit stopped it and it has not run since."""
+    turn: Callable[[], CodexRead]
     written: Callable[[Path | None, bool], Written]
-    refused: float | None = None
-    listed: bool = False
-    idle: bool = False
-    stalled: bool = False
+    descendants: bool = False
+    working: bool = False
     outlived: bool = False
-    elsewhere: bool = False
+    limited: bool = False
 
 
 def lease(w: Written) -> float | None:
@@ -97,45 +103,87 @@ def lease(w: Written) -> float | None:
     return None if w.time is None else w.time + STUCK_SECONDS
 
 
-def attempt_state(f: AttemptFacts) -> AttemptState:
-    """The state of the attempt `f` gives, by the two stages above."""
-    def running() -> Running:
-        return Running(f.waits or Waits.STILL_RUNNING, lease(f.written(None, False)))
-
-    if f.listed:
-        return running()
-    if f.outlived:
-        return ended(f)
-    candidate = (f.waits is None or f.stalled or f.elsewhere
-                 or (f.idle and f.waits in (Waits.AT_WORK, Waits.STILL_RUNNING)))
-    if not candidate:
-        return running()
-    read = f.codex()
-    match read.end:
-        case CodexEnd.LIVE:
-            return Running(Waits.STILL_RUNNING, lease(f.written(read.rollout, False)))
-        case CodexEnd.UNKNOWN:
-            w = f.written(read.rollout, True)
-            return Unknown(unknown_diagnostic(read, (*read.limits, *w.limits)), lease(w))
-        case CodexEnd.DONE | CodexEnd.DEAD:
-            return ended(f)
+def uncertain(attempt: a.Attempt) -> str | None:
+    """Why the record of `attempt` does not show whether it ran to an end,
+    or None where it shows it."""
+    if attempt.launch is None:
+        return mctx("the record of its attempt shows no launch of it")
+    coverage = attempt.coverage
+    if coverage is not None and not coverage.complete:
+        return mctx("the history imported into the record of its attempt is incomplete ({reason})").format(reason=coverage.reason)
+    if coverage is not None and coverage.producer:
+        return mctx("an older version of the tool may still be writing the record of its attempt")
+    reserved = {e.reservation for e in attempt.events if isinstance(e, a.Reserved)}
+    if attempt.launch.transport is a.Transport.NATIVE and not reserved:
+        return mctx("the record of its attempt shows no Codex work started for it")
+    accepted = {e.reservation for e in attempt.events if isinstance(e, a.Accepted)}
+    if reserved & attempt.unresolved - accepted:
+        return mctx("the record of its attempt shows neither that Codex took up the work sent for it nor that it refused it")
+    return None
 
 
-def ended(f: AttemptFacts) -> Ended:
-    """`Ended` for the attempt `f` gives, with the refusal of stage 2."""
-    return Ended(f.report(), f.refused)
+def accepted_open(attempt: a.Attempt) -> bool:
+    """Whether `attempt` has a work reservation accepted and not recorded as
+    ended."""
+    return any(isinstance(e, a.Accepted) and e.reservation in attempt.unresolved for e in attempt.events)
 
 
-def unknown_diagnostic(read: CodexRead, limits: tuple[str, ...]) -> str:
-    """The text on a held attempt of unknown state (`unknown_text`), with
-    each source of activity that could not be read, where the time
-    of its activity then rests on the others and on its launch or last
-    resume."""
+def over(attempt: a.Attempt) -> bool:
+    """Whether the record of `attempt`, which holds a launch, shows its work
+    over: a native attempt has only resolved work reservations or reservations
+    over by terminal evidence, and a Claude attempt's latest launch, resume,
+    work reservation, stop or handback is a stop or handback."""
+    assert attempt.launch is not None
+    if attempt.launch.transport is a.Transport.NATIVE:
+        return True
+    marks = [e for e in attempt.events
+             if isinstance(e, (a.Launched, a.Resumed, a.Reserved, a.Stopped, a.HandedBack))]
+    return bool(marks) and isinstance(marks[-1], (a.Stopped, a.HandedBack))
+
+
+def attempt_state(attempt: a.Attempt | None, f: AttemptFacts) -> AttemptState:
+    """The state of `attempt`, where it has a record, by the conditions
+    above. An attempt with no record is held as unknown."""
+    def running(waits: Waits, rollout: Path | None = None) -> Running:
+        return Running(waits, lease(f.written(rollout, False)))
+
+    def unknown(why: str, rollout: Path | None = None, limits: tuple[str, ...] = ()) -> Unknown:
+        w = f.written(rollout, True)
+        return Unknown(unknown_diagnostic(why, (*limits, *w.limits)), lease(w))
+
+    why = mctx("it has no record") if attempt is None else uncertain(attempt)
+    if attempt is None or why is not None:
+        return unknown(record_text(why or ""))
+    if accepted_open(attempt):
+        read = f.turn()
+        match read.end:
+            case CodexEnd.LIVE:
+                return running(Waits.STILL_RUNNING, read.rollout)
+            case CodexEnd.UNKNOWN:
+                return unknown(unknown_text(read), read.rollout, read.limits)
+            case CodexEnd.DONE | CodexEnd.DEAD:
+                pass
+    if f.descendants or f.working:
+        return running(Waits.STILL_RUNNING)
+    if f.outlived or over(attempt):
+        return Ended()
+    return running(Waits.LIMITED if f.limited else Waits.AT_WORK)
+
+
+def unknown_diagnostic(text: str, limits: tuple[str, ...]) -> str:
+    """The text `text` on a held attempt of unknown state, with each source
+    of activity that could not be read, where the time of its activity then
+    rests on the others and on its launch or last resume."""
     if not limits:
-        return unknown_text(read)
-    return unknown_text(read) + " " + mctx(
+        return text
+    return text + " " + mctx(
         "Its activity time leaves out what could not be read: {limits}.").format(
             limits="; ".join(limits))
+
+
+def record_text(why: str) -> str:
+    """Why an attempt whose record does not show an end counts as running."""
+    return mctx("whether it runs is unknown ({why}), so the attempt counts as running").format(why=why)
 
 
 def unknown_text(read: CodexRead) -> str:

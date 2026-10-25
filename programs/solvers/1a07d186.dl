@@ -17,7 +17,7 @@
 
 .init params = Params
 
-.decl cell_line(p: Position, a: Axis, l: Position)
+.decl cell_line(p: Position, a: Axis, l: Position) inline
 cell_line(P, A, L) :- in(P, _), axis_elem(A), split(P, A, L, _).
 
 .init line_color = Unanimous<Line, Color>

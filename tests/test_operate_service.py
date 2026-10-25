@@ -240,36 +240,6 @@ def test_failed_first_state_read_in_the_child_fails_the_request(tmp_path, monkey
             s.close()
 
 
-def test_child_retries_a_flush_that_fails_on_a_lock(tmp_path, monkeypatch):
-    kept, assembly = script("kept_reads"), script("state_assembly")
-    monkeypatch.setattr(kept, "_store", None)
-    kept.open_store(tmp_path / "reads.sqlite")
-    monkeypatch.setattr(service, "read_first", True)
-    monkeypatch.setattr(service, "CHILD_POLL_SECONDS", 0.01)
-    real = kept.Store.flush
-    failed = []
-
-    def flush(self):
-        if not failed and self.new:
-            failed.append(True)
-            return False
-        return real(self)
-
-    monkeypatch.setattr(kept.Store, "flush", flush)
-    monkeypatch.setattr(assembly, "read_state",
-                        lambda operator: kept.store().keep("fixture:read", operator, "kept"))
-    current, sockets = request_for_child_read()
-    try:
-        service.child_read(current)
-    finally:
-        for s in sockets:
-            s.close()
-    other = kept.Store(kept.store().path)
-    found = other.held("fixture:read", "op")
-    other.close()
-    assert found == "kept"
-
-
 def test_first_state_read_that_does_not_end_is_cut_at_the_carry_bound(tmp_path, monkeypatch):
     import os
     kept, assembly = script("kept_reads"), script("state_assembly")
