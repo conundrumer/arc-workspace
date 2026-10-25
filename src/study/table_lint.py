@@ -237,10 +237,10 @@ class Written:
     over_cap: frozenset[str]
     """The relations with a file over `WORK_CAP`."""
     peers: Mapping[tuple[str, int], Sequence[Signature]]
-    """The files within the cap, by input and model."""
+    """The files within the cap of the relations the decode gives a table, by input and model."""
 
 
-def written(rows_dir: Path, solver: str) -> Written:
+def written(rows_dir: Path, solver: str, untabled: frozenset[str] = frozenset()) -> Written:
     paths: dict[str, list[Path]] = defaultdict(list)
     over_cap: set[str] = set()
     peers: dict[tuple[str, int], list[Signature]] = defaultdict(list)
@@ -249,7 +249,7 @@ def written(rows_dir: Path, solver: str) -> Written:
         paths[file.relation].append(path)
         if work(file) > WORK_CAP:
             over_cap.add(file.relation)
-        else:
+        elif file.relation not in untabled:
             names = tuple(name for name, _ in file.columns)
             types = tuple(ty for _, ty in file.columns)
             peers[file.input, file.model].append(Signature(file.relation, path, len(file.rows), names, types, column_values(file)))
@@ -560,11 +560,13 @@ def derive(subject: Subject) -> Finding:
     return Finding(Derivation.NONE, residual(subject))
 
 
-def solver_lines(corpus: Path, rows_dir: Path, solver: str, flagged: Sequence[Relation], fault: str | None = None) -> list[str]:
+def solver_lines(corpus: Path, rows_dir: Path, solver: str, flagged: Sequence[Relation], fault: str | None = None,
+                 untabled: frozenset[str] = frozenset()) -> list[str]:
     """The lines of one solver's flagged relations; `fault` is the fault of
-    the run that wrote its rows, where it had one."""
+    the run that wrote its rows, where it had one, and `untabled` the
+    relations the decode gives no table, which no relation restates."""
     concept = [body for body in bodies(solver, arclog(corpus, solver)) if not body.in_alt()]
-    files = written(rows_dir, solver)
+    files = written(rows_dir, solver, untabled)
     lines = []
     for relation in flagged:
         if relation.stopped is not None:
@@ -598,7 +600,8 @@ def lint(corpus: Path, tasks: Path, ids: Sequence[str]) -> list[str]:
             _, dumped = read_counts(row_counts(corpus, tasks, solvers, (max(min(counted) - 1, 0), Path(rows_dir))))
             dump_faults = {fault.split()[0]: fault.split(" ", 1)[1] for fault in dumped}
         for solver in solvers:
-            lines[solver] = solver_lines(corpus, Path(rows_dir), solver, [r for r in flagged if r.solver == solver], dump_faults.get(solver))
+            untabled = frozenset(r.name for r in relations if r.solver == solver and not r.tabled)
+            lines[solver] = solver_lines(corpus, Path(rows_dir), solver, [r for r in flagged if r.solver == solver], dump_faults.get(solver), untabled)
     return [line for solver in sorted(lines) for line in lines[solver]]
 
 
