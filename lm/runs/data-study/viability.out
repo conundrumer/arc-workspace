@@ -1,0 +1,63 @@
+## index
+
+labels: 2396; kept 2384 members of 796 branch points (796 gold, 1588 sampled)
+left out: 221dfab4__concept__b1__r3 (sampled): the export holds no tables of it; fault: 221dfab4 221dfab4__concept__b1__r3: the replay panicked: a variable of the order that a node of the clause binds
+left out: 4a21e3da__concept__b5__r6 (sampled): the export holds no tables of it; fault: 4a21e3da 4a21e3da__concept__b5__r6: the replay panicked: a variable of the order that a node of the clause binds
+left out: 5b37cb25__concept__b3__r3 (sampled): the export holds no tables of it; fault: 5b37cb25 5b37cb25__concept__b3__r3: the replay panicked: a column of the mode the bound columns satisfy
+left out: 880c1354__$ByColor__b2__r3 (sampled): the export holds no tables of it; fault: 880c1354 880c1354__$ByColor__b2__r3: the replay panicked: a variable of the order that a node of the clause binds
+left out: 8a371977__$Blobs__b1__r2 (sampled): the export holds no tables of it; fault: 8a371977 8a371977__$Blobs__b1__r2: the replay panicked: a variable of the order that a node of the clause binds
+left out: 8a6d367c__$Enclose $Color__b12__r0 (sampled): the export holds no tables of it; fault: 8a6d367c 8a6d367c__$Enclose $Color__b12__r0: the replay panicked: a variable of the order that a node of the clause binds
+left out: 9385bd28__$Open__b4__r0 (sampled): the export holds no tables of it; fault: 9385bd28 9385bd28__$Open__b4__r0: the replay panicked: a column of the mode the bound columns satisfy
+left out: aedd82e4__$Passthrough__b1__r1 (sampled): the export holds no tables of it; fault: aedd82e4 aedd82e4__$Passthrough__b1__r1: the replay panicked: a variable of the order that a node of the clause binds
+left out: b7249182__&background=$Derived $Meet $EachPair__b9__r0 (sampled): the export holds no tables of it; fault: b7249182 b7249182__&background=$Derived $Meet $EachPair__b9__r0: the replay panicked: index out of bounds: the len is 1 but the index is 18446744073709551615
+left out: c64f1187__&background=$Derived &tile_dim=$Derived $ByOrder $DerivedCorner $AnyInk $CodeAtCorner $StoredTileColor $Pieces__b26__r5 (sampled): the export holds no tables of it; fault: c64f1187 c64f1187__&background=$Derived &tile_dim=$Derived $ByOrder $DerivedCorner $AnyInk $CodeAtCorner $StoredTileColor $Pieces__b26__r5: the replay panicked: a variable of the order that a node of the clause binds
+left out: c64f1187__&background=$Derived &tile_dim=$Derived $ByOrder $DerivedCorner $AnyInk $CodeAtCorner $StoredTileColor $Pieces__b21__r7 (sampled): the export holds no tables of it; fault: c64f1187 c64f1187__&background=$Derived &tile_dim=$Derived $ByOrder $DerivedCorner $AnyInk $CodeAtCorner $StoredTileColor $Pieces__b21__r7: the replay panicked: a column of the mode the bound columns satisfy
+left out: d364b489__$Arms__b1__r4 (sampled): the export holds no tables of it; fault: d364b489 d364b489__$Arms__b1__r4: the replay panicked: index out of bounds: the len is 3 but the index is 18446744073709551615
+
+### gold: 796 members, 9828 export tables after the branch, 51867 Tables
+members with no table after the branch: 0 (  0.0%), 0 of them with a fault line
+export tables after the branch per member: mean 12.3
+rows "/m": each member weighs 1, shared among its Tables; the count is of members
+where         Tables           faulted            unseen  empty everywhere   empty somewhere    rest
+all            51867              0.0%              0.4%             28.8%             12.2%   58.6%
+all /m           796              0.0%              1.0%             10.8%              4.3%   83.9%
+position 0      3016              0.0%              0.3%             19.2%              6.9%   73.6%
+position 0 /m     796              0.0%              1.1%              8.5%              4.1%   86.2%
+position 1      2563              0.0%              0.4%             24.9%              8.9%   65.7%
+position 1 /m     688              0.0%              1.2%             10.5%              4.9%   83.4%
+members with a table at position 0: 796; Tables there per member: mean 3.79, most 96
+  position 0 faulted: every Table 0 (  0.0% of members), some Table 0 (  0.0%)
+  position 0 unseen: every Table 9 (  1.1% of members), some Table 9 (  1.1%)
+  position 0 empty everywhere: every Table 37 (  4.6% of members), some Table 94 ( 11.8%)
+  position 0 every Table faulted, unseen or empty everywhere: 46 (  5.8% of members)
+
+### sampled: 1588 members, 7972 export tables after the branch, 33905 Tables
+members with no table after the branch: 265 ( 16.7%), 0 of them with a fault line
+export tables after the branch per member: mean 5.0
+rows "/m": each member weighs 1, shared among its Tables; the count is of members
+where         Tables           faulted            unseen  empty everywhere   empty somewhere    rest
+all            33905              5.1%              2.4%             46.5%              2.5%   43.6%
+all /m          1323             11.3%              5.4%             35.7%              2.1%   45.5%
+position 0      6660              1.5%              1.3%             27.5%              3.0%   66.7%
+position 0 /m    1323              7.4%              5.6%             31.8%              2.1%   53.0%
+position 1      3495              3.8%              1.7%             40.6%              1.9%   52.0%
+position 1 /m    1062             12.4%              5.3%             32.2%              1.7%   48.3%
+members with a table at position 0: 1323; Tables there per member: mean 5.03, most 2300
+  position 0 faulted: every Table 98 (  6.2% of members), some Table 98 (  6.2%)
+  position 0 unseen: every Table 73 (  4.6% of members), some Table 77 (  4.8%)
+  position 0 empty everywhere: every Table 389 ( 24.5% of members), some Table 451 ( 28.4%)
+  position 0 every Table faulted, unseen or empty everywhere: 561 ( 35.3% of members)
+## restate
+
+branch points: 796; members with a table at position 0: 2119
+position-0 tables whose rank-based assignments disagree with their DET values: 3 of 2119
+
+member      Tables                   faulted                    unseen          empty everywhere           empty somewhere               restatement  not tested (Count entry)                    viable
+gold          3016                      0.0%                      0.3%                     19.2%                      6.9%                      9.1%                      0.1%                     64.5%
+sampled       6660                      1.5%                      1.3%                     27.5%                      3.0%                     10.3%                      0.6%                     55.9%
+rows "/m": each member weighs 1, shared among its Tables at position 0; the count is of members
+gold /m        796                      0.0%                      1.1%                      8.5%                      4.1%                     13.5%                      0.3%                     72.5%
+sampled /m    1323                      7.4%                      5.6%                     31.8%                      2.1%                     15.9%                      0.6%                     36.6%
+
+gold: of the position-0 Tables in none of the first four classes (2221), restatements  12.3%
+sampled: of the position-0 Tables in none of the first four classes (4443), restatements  15.4%
