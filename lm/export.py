@@ -37,7 +37,7 @@ started over 10 s ago and has not ended, longest first: the first 10, then "and 
 `--previous <dir>` takes, for each task whose key equals the key in <dir>/keys.json, that task's rows of <dir>/cases.npz
 and its lines of <dir>/stream-report-all.txt, and streams only the other tasks; the files written are those a run with
 no `--previous` writes. A task's key is the sha256 of its work/arclog/gen `.arclog` and `.arcdata`, its task file, the files
-of the installed `arclog` package, `tables_export.py`, `export_checks.py`, this file and the step cap
+of the installed `arclog` package, the versions of Python, numpy, pandas and pyarrow, `export_rows.py`, this file and the step cap
 (`tables_export.task_key` computes it). A <dir> with no keys.json gives no reuse. With a <out>/streams.pkl, `--previous`
 exits with a message.
 

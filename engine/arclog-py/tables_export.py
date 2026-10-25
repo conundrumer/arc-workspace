@@ -2,15 +2,17 @@
 
     python engine/arclog-py/tables_export.py <out dir> [--all-cases] [--bodies] [--projection-cap N] [--previous <export dir>] [<task id> ...]
 
-It needs an interpreter with `arclog`, pandas and pyarrow, such as the LM work's venv. A change to this module, or to the engine code that writes the export's files (`engine/arclog/src/eval/flows.rs`, `engine/arclog/src/decode/`), runs `engine/arclog-py/roundtrip_check.py` with an `arclog` built from its tree before its merge.
+It needs an interpreter with `arclog`, pandas and pyarrow, such as the LM work's venv. The code that decides a part's rows, values and fault lines is in `export_rows.py`. A change to that module, or to the engine code that writes the export's files (`engine/arclog/src/eval/flows.rs`, `engine/arclog/src/decode/`), runs `engine/arclog-py/roundtrip_check.py` with an `arclog` built from its tree before its merge.
 
 Runs one `arclog.corpus_tables` call per task id, the longest first, on a queue of N Python threads, where N is `ARCLOG_THREADS`
 if set and `os.cpu_count()` otherwise. The order is that of the seconds each task took in the export `--previous` gives
 (see `parts/<k>.tasks.txt`), then the tasks that export does not give, or all tasks where none is given, by the largest
 `.arcdata` file first. With `--previous`, each task whose key (the sha256 of its `work/arclog/gen` `.arclog` and `.arcdata`, its task file, every file of
-the installed `arclog` package, this module, `export_checks.py` and the text of `settings.json`) equals the key in that export's
-`tasks.txt` lines is not replayed: its rows, values (hard-linked), fault lines, check lines and `tasks.txt` lines are those of that export,
-written as parts of the out dir, and the run prints the counts reused and to replay first. An export with no key in its lines gives no reuse.
+the installed `arclog` package, the versions of Python, numpy, pandas and pyarrow, `export_rows.py` and the text of `settings.json`) equals the key in that export's
+`tasks.txt` lines is not replayed: its rows, values (hard-linked) and fault lines are those of that export,
+written as parts of the out dir. Its check lines are those of that export where the sha256 of `export_checks.py` (the checks digest) equals the one in its `tasks.txt` line,
+and otherwise the part is checked again in the check processes. The run prints the counts reused, of them to check again, and to replay first.
+An export with no key in its lines gives no reuse.
 `--previous` changes no output file. The script sets `ARCLOG_THREADS=1` for the engine, so each call runs on one
 worker, and each thread starts the next task as its task ends. Every 10 s the tasks ended since the last write are
 written as a part. Writes to <out dir>:
@@ -19,8 +21,8 @@ written as a part. Writes to <out dir>:
                              column order (see `arclog.decode.columns`)
   parts/<k>.<name>.parquet   the rows of one part
   parts/<k>.report.txt       the fault lines of the part's tasks
-  parts/<k>.tasks.txt        one line `<task> <seconds> <key>` per task of the part, the wall seconds of its call to 0.1 s and
-                             the task's reuse key (see `--previous`; a bare task id where the writer gives none), written last: a part is whole where it stands
+  parts/<k>.tasks.txt        one line `<task> <seconds> <key> <checks digest>` per task of the part, the wall seconds of its call to 0.1 s,
+                             the task's reuse key and the checks digest (see `--previous`; a bare task id where the writer gives none), written last: a part is whole where it stands
   index.parquet    one row per (table, example, entry): task, case, concept, the table's columns, the entry's columns
   tables.parquet   one row per table: its columns, and its depth in the dependency graph (0 for an evidence table and each fact
                    relation), its candidate keys (`keys`, a list of lists of column indexes: the columns of each `ONE` mark of
@@ -76,44 +78,23 @@ import multiprocessing, traceback
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, wait, FIRST_COMPLETED
 import numpy as np
 import pandas as pd
+import pyarrow
 import arclog
 import export_checks
+import export_rows
+from export_rows import PARTS
 
 ROOT = os.path.dirname(os.path.abspath(__file__)) + "/../.."
 CORPUS, TASKS = f"{ROOT}/work/arclog/gen", f"{ROOT}/data/tasks"
-PARTS = ("tables", "entries", "assigned", "projections", "projection_rows", "flows")
-
-
-def frame(case, part):
-    d = {k: (np.frombuffer(v, dtype=case.dtypes[f"{part}.{k}"]) if f"{part}.{k}" in case.dtypes else v)
-         for k, v in getattr(case, part).items()}
-    n = len(next(iter(d.values()))) if d else 0
-    return pd.DataFrame(dict(task=[case.task] * n, case=[case.case] * n, concept=[case.concept] * n, **d))
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROWS, CHECKER = f"{HERE}/export_rows.py", f"{HERE}/export_checks.py"
 
 
 def write_files(out, k, results, seconds=None, keys=None):
-    """Writes the files of the part `k` of the (task id, cases, lines) results but its `checks.txt` and `tasks.txt`, with the {task: seconds} and {task: key} given.
+    """Writes the files of the part `k` of the (task id, cases, lines) results but its `checks.txt` and `tasks.txt`, with the {task: seconds} and {task: key} given
+    (a key is the text after the seconds in a `tasks.txt` line: the task key and the checks digest).
     Returns the part's (task, case) pairs."""
-    frames, pairs = {p: [] for p in PARTS}, []
-    for task, cases, _ in results:
-        for case in cases:
-            os.makedirs(f"{out}/values/{case.task}", exist_ok=True)
-            if os.path.lexists(f"{out}/values/{case.task}/{case.case}.i32"):
-                os.remove(f"{out}/values/{case.task}/{case.case}.i32")  # may be a link to a file of another export
-            with open(f"{out}/values/{case.task}/{case.case}.i32", "wb") as sink:
-                sink.write(case.values)
-            of_case = {p: frame(case, p) for p in PARTS}
-            for p in PARTS:
-                frames[p].append(of_case[p])
-            pairs.append((task, case.case))
-    for p, fs in frames.items():
-        if fs:
-            rows = pd.concat(fs)
-            if not len(rows):       # an empty frame would write `task` and `case` as a null type, which a filter on strings refuses
-                rows = rows.astype({"task": "string", "case": "string", "concept": bool})
-            rows.to_parquet(f"{out}/parts/{k:05d}.{p}.parquet")
-    with open(f"{out}/parts/{k:05d}.report.txt", "w") as sink:
-        sink.write("".join(line + "\n" for _, _, lines in results for line in lines))
+    pairs = export_rows.write_rows(out, k, results)
     with open(f"{out}/parts/{k:05d}.tasks.tmp", "w") as sink:
         sink.write("".join(t + (f" {seconds[t]:.1f}" if seconds and t in seconds else "") + (f" {keys[t]}" if keys and t in keys else "") + "\n" for t, _, _ in results))
     return pairs
@@ -142,21 +123,31 @@ def submit_checks(pool, out, k, pairs):
     return [pool.submit(export_checks.check_part, out, k, share) for share in cut]
 
 
-def engine_digest():
-    """The sha256 of the files of the installed `arclog` package (its compiled library holds the lib's registry and constructions) and of this module and `export_checks.py`."""
-    digest, here = hashlib.sha256(), os.path.dirname(os.path.abspath(__file__))
-    package = os.path.dirname(arclog.__file__)
-    files = [(os.path.relpath(f, package), f) for f in glob.glob(f"{package}/**", recursive=True) if os.path.isfile(f) and "__pycache__" not in f]
-    files += [(name, f"{here}/{name}") for name in ("tables_export.py", "export_checks.py")]
+def digest_files(files):
+    """The sha256 of the (name, path) pairs `files`, in the order of the names: each name and the bytes of its file."""
+    digest = hashlib.sha256()
     for name, f in sorted(files):
         digest.update(name.encode() + b"\0" + open(f, "rb").read() + b"\0")
     return digest.hexdigest()
 
 
+def engine_digest():
+    """The sha256 of the files of the installed `arclog` package (its compiled library holds the lib's registry and constructions) and of one line of the versions of Python, numpy, pandas and pyarrow."""
+    package = os.path.dirname(arclog.__file__)
+    files = [(os.path.relpath(f, package), f) for f in glob.glob(f"{package}/**", recursive=True) if os.path.isfile(f) and "__pycache__" not in f]
+    versions = f"{sys.version} {np.__version__} {pd.__version__} {pyarrow.__version__}"
+    return hashlib.sha256((digest_files(files) + versions).encode()).hexdigest()
+
+
+def checks_digest():
+    """The sha256 of `export_checks.py` (the file `CHECKER` gives)."""
+    return digest_files([("export_checks.py", CHECKER)])
+
+
 def task_key(engine, task, settings):
-    """The sha256 of the task's generated program and data, its task file, the `engine_digest` and the settings text."""
+    """The sha256 of the task's generated program and data, its task file, the `engine_digest`, `export_rows.py` (the file `ROWS` gives) and the settings text."""
     digest = hashlib.sha256()
-    for f in (f"{CORPUS}/{task}.arclog", f"{CORPUS}/{task}.arcdata", f"{TASKS}/{task}.json"):
+    for f in (f"{CORPUS}/{task}.arclog", f"{CORPUS}/{task}.arcdata", f"{TASKS}/{task}.json", ROWS):
         digest.update(open(f, "rb").read() + b"\0")
     digest.update(engine.encode() + b"\0" + settings.encode())
     return digest.hexdigest()
@@ -167,26 +158,30 @@ def line_task(line):
     return line.split()[0].rstrip(":") if line.split() else ""
 
 
-def reuse_parts(out, previous, keys, k, skip):
-    """Writes parts from `previous`, from its `k`-th on, for each task of `keys` ({task: key}, not in `skip`) whose key the previous export's `tasks.txt` lines give equal.
+def reuse_parts(out, previous, keys, k, skip, checks, pool):
+    """Writes parts from `previous`, from its `k`-th on, for each task of `keys` ({task: key}, not in `skip`) whose task key the previous export's `tasks.txt` lines give equal.
 
-    A part takes the rows, fault lines, check lines and `tasks.txt` lines of the tasks of one previous part, and the values files of
-    the tasks are hard-linked. Returns the set of tasks reused and the next part number.
+    A part takes the rows, fault lines and values (hard-linked) of the tasks of one previous part. Where every such line gives the
+    checks digest `checks`, the part takes their check lines and `tasks.txt` lines as well. Otherwise its check is submitted to `pool`
+    and its `tasks.txt` lines are given `checks`, for `main` to finish as it finishes a replayed part.
+    Returns the set of tasks reused, the next part number and {part: [the (task, case) pairs, the check futures, []]} of the parts to check again (`main`'s `open_parts`).
     """
-    reused = set()
+    reused, again = set(), {}
     for tasks_file in sorted(glob.glob(f"{previous}/parts/*.tasks.txt")):
         stem = os.path.basename(tasks_file).split(".")[0]
-        lines = [l for l in open(tasks_file).read().splitlines() if l.split() and l.split()[0] not in skip and len(l.split()) == 3 and keys.get(l.split()[0]) == l.split()[2]]
+        lines = [l.split() for l in open(tasks_file).read().splitlines()]
+        lines = [w for w in lines if len(w) == 4 and w[0] not in skip and keys.get(w[0]) == w[2]]
         if not lines:
             continue
-        tasks = [l.split()[0] for l in lines]
+        tasks = [w[0] for w in lines]
         for p in PARTS:
             f = f"{previous}/parts/{stem}.{p}.parquet"
             if os.path.exists(f):
                 rows = pd.read_parquet(f)
                 rows = rows[rows["task"].isin(tasks)]
                 rows.to_parquet(f"{out}/parts/{k:05d}.{p}.parquet")
-        for kind in ("report", "checks"):
+        kinds = ("report", "checks") if all(w[3] == checks for w in lines) else ("report",)
+        for kind in kinds:
             with open(f"{out}/parts/{k:05d}.{kind}.txt", "w") as sink:
                 sink.write("".join(l + "\n" for l in open(f"{previous}/parts/{stem}.{kind}.txt").read().splitlines() if line_task(l) in tasks))
         for task in tasks:
@@ -196,11 +191,29 @@ def reuse_parts(out, previous, keys, k, skip):
                     os.remove(f"{out}/values/{task}/{name}")
                 os.link(f"{previous}/values/{task}/{name}", f"{out}/values/{task}/{name}")
         with open(f"{out}/parts/{k:05d}.tasks.tmp", "w") as sink:
-            sink.write("".join(l + "\n" for l in lines))
-        os.rename(f"{out}/parts/{k:05d}.tasks.tmp", f"{out}/parts/{k:05d}.tasks.txt")
+            sink.write("".join(" ".join(w[:3] + [checks]) + "\n" for w in lines))
+        if len(kinds) == 2:
+            os.rename(f"{out}/parts/{k:05d}.tasks.tmp", f"{out}/parts/{k:05d}.tasks.txt")
+        else:
+            pairs = part_cases(out, k, tasks)
+            if pairs:
+                again[k] = [pairs, set(submit_checks(pool, out, k, pairs)), []]
+            else:
+                finish_part(out, k, [])
         reused |= set(tasks)
         k += 1
-    return reused, k
+    return reused, k, again
+
+
+def part_cases(out, k, tasks):
+    """The (task, case) pairs of the `tasks` in part `k` of `out`: the cases of its `tables` rows in their order, then the other cases with a values file."""
+    f = f"{out}/parts/{k:05d}.tables.parquet"
+    pairs = list(dict.fromkeys(map(tuple, pd.read_parquet(f, columns=["task", "case"]).values.tolist()))) if os.path.exists(f) else []
+    seen = set(pairs)
+    for task in tasks:
+        extra = sorted(n[:-len(".i32")] for n in os.listdir(f"{out}/values/{task}") if n.endswith(".i32"))
+        pairs += [(task, c) for c in extra if (task, c) not in seen]
+    return pairs
 
 
 def main(out, task_ids, previous=None, **options):
@@ -224,9 +237,12 @@ def main(out, task_ids, previous=None, **options):
                 done |= {line.split()[0] for line in open(f) if line.strip()}
         else:
             os.remove(f)
-    engine = engine_digest()
+    engine, checks = engine_digest(), checks_digest()
     keys = {t: task_key(engine, t, settings_text) for t in task_ids}
-    reused, k = reuse_parts(out, previous, keys, k, done) if previous else (set(), k)
+    tagged = {t: f"{key} {checks}" for t, key in keys.items()}
+    check_pool = ProcessPoolExecutor(os.cpu_count(), mp_context=multiprocessing.get_context("spawn"))
+    reused, k, open_parts = reuse_parts(out, previous, keys, k, done, checks, check_pool) if previous else (set(), k, {})
+    checking = {f: part for part, (_, futures, _) in open_parts.items() for f in futures}   # check future -> its part
     done |= reused
     # Longest processing time first: the tasks the previous export gives, by its seconds, after the tasks it does not give,
     # which go by the largest .arcdata file, as the slowest tasks are among them.
@@ -234,22 +250,19 @@ def main(out, task_ids, previous=None, **options):
     for f in glob.glob(f"{previous}/parts/*.tasks.txt") if previous else []:
         before.update({w[0]: float(w[1]) for w in map(str.split, open(f)) if len(w) >= 2})
     todo = sorted((t for t in task_ids if t not in done), key=lambda t: (t in before, -before.get(t, 0), -os.path.getsize(f"{CORPUS}/{t}.arcdata"), t))
-    print(f"{len(reused)} tasks reused, {len(todo)} to replay", flush=True)
+    print(f"{len(reused)} tasks reused, {len({t for pairs, _, _ in open_parts.values() for t, _ in pairs})} of them to check again, {len(todo)} to replay", flush=True)
     started, progress, took = {}, {}, {}
 
     def run(task):
         progress[task] = arclog.ReplayProgress()
         started[task] = time.time()
-        cases, lines = arclog.corpus_tables(CORPUS, TASKS, task_ids=[task], progress=progress[task], **options)
+        cases, lines = export_rows.replay(CORPUS, TASKS, task, progress[task], options)
         took[task] = time.time() - started[task]
         return task, cases, lines
 
     pool = ThreadPoolExecutor(workers)
     futures = {t: pool.submit(run, t) for t in todo}
-    check_pool = ProcessPoolExecutor(os.cpu_count(), mp_context=multiprocessing.get_context("spawn"))
-    checking = {}         # check future -> its part
-    open_parts = {}       # part -> [the (task, case) pairs, the check futures not ended, the lines of the ended ones]
-    pending, results, ended, begin, last = set(futures.values()), [], len(done), time.time(), time.time()
+    pending, results, ended, begin, last = set(futures.values()) | set(checking), [], len(done), time.time(), time.time()
     failure = None
     while pending and not failure:
         got, pending = wait(pending, timeout=max(0.0, last + 10 - time.time()), return_when=FIRST_COMPLETED)
@@ -269,7 +282,7 @@ def main(out, task_ids, previous=None, **options):
         replaying = pending & set(futures.values())
         if time.time() - last >= 10 or not replaying or failure:
             if results and not failure:
-                pairs = write_files(out, k, results, took, keys)
+                pairs = write_files(out, k, results, took, tagged)
                 new = submit_checks(check_pool, out, k, pairs) if pairs else []
                 if new:
                     open_parts[k] = [pairs, set(new), []]
