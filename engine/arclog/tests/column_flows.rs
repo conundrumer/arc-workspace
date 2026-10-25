@@ -15,7 +15,8 @@ use arclog::layout::SourceFile;
 use arclog::program::path::NodePath;
 use arclog::program::{DeclaredName, OutputStep};
 use arclog::read::read_arclog;
-use arclog::resolver::{resolve, GraphNodeIndex, SourceKind};
+use arclog::eval::flows::SourceKind;
+use arclog::resolver::{resolve, GraphNodeIndex};
 use arclog::types::ValueType;
 use arclog::session::{SessionBound, TaskSession};
 use arclog::stream::{token_stream, DecodeSettings, Emitter, Vocabulary};
@@ -48,6 +49,14 @@ fn columns_of(arclog: &str, output: &[u8]) -> CaseColumns {
         tables.extend(decoder.tables(Points::Relations).into_iter().map(|table| (index, table)));
     }
     case_columns(&evidence_tables(&task, registry), &tables, 1)
+}
+
+/// The checked program of the arclog file `arclog`.
+fn checked_program(arclog: &str) -> arclog::check::CheckedProgram {
+    let registry = Registry::get();
+    let read = read_arclog(arclog, SourceFile::Arclog).expect("the program reads");
+    let program = resolve(&read.value.0, None, &Default::default(), registry).value;
+    check_program(program, &SolverClauses::default(), registry, &mut CheckCache::default()).expect("every check passes")
 }
 
 /// A source of a column: its kind, the relation read, the column of it, its
@@ -329,12 +338,11 @@ fn a_label_bound_in_one_branch_of_an_or_gets_the_sources_of_the_other_branch() {
 
 #[test]
 fn a_part_column_of_a_rigid_det_is_computed_where_a_pose_moves_its_type_and_a_copy_otherwise() {
-    let read = read_arclog("(DET &glyph (ex_input *E *B *Col))\n(RIGID_DET &piece (&glyph *B *Col))\n", SourceFile::Arclog).expect("the program reads");
     let registry = Registry::get();
-    let program = resolve(&read.value.0, None, &Default::default(), registry).value;
+    let program = checked_program("(RULE &cell (input *P *Col))\n(RIGID_DET &piece (&cell *P *Col))\n");
     let form = NodePath::default().child(1);
-    let node = (0..program.graph.nodes.len() as u32).map(GraphNodeIndex).find(|node| *program.form_of(*node) == form).expect("the node of the `RIGID_DET` form");
-    let part = [OutputStep::Part(DeclaredName::Written("&glyph".into()))];
+    let node = (0..program.program.graph.nodes.len() as u32).map(GraphNodeIndex).find(|node| *program.program.form_of(*node) == form).expect("the node of the `RIGID_DET` form");
+    let part = [OutputStep::Part(DeclaredName::Written("&cell".into()))];
     let flows = program.column_flows(node, Some(&part), &[ValueType::Number, ValueType::Box, ValueType::Color], registry);
     let kinds = |column: usize| flows[column].iter().map(|source| source.kind).collect::<Vec<_>>();
     assert_eq!(kinds(1), [SourceKind::Computed], "{flows:?}");
@@ -378,4 +386,33 @@ fn an_output_of_an_instance_that_reads_its_own_outputs_has_no_flow_from_them() {
     for &table in &outputs {
         assert!(!sources(&columns, table, 0).is_empty(), "table {table}");
     }
+}
+
+#[test]
+fn a_label_that_the_test_of_an_if_binds_gets_the_copy_of_the_test_atom() {
+    let columns = columns_of(
+        "(DET &fill ColorDomain)
+(RULE &marked (input *P))
+(RULE &output
+  (input *P (:Col *C_in))
+  (IF ((&marked P))
+      ((&fill (:C *Col)))
+      ((= Col C_in))))
+",
+        &[1, 2],
+    );
+    let output = table_of(&columns, 2);
+    let atoms: Vec<String> = sources(&columns, output, 0).into_iter().map(|source| source.5).collect();
+    assert!(atoms.contains(&"2.0.1.0.0".to_owned()), "the atom in the test of the `IF`: {atoms:?}");
+}
+
+#[test]
+fn the_pose_output_of_a_rigid_det_reads_the_atoms_of_its_instance_clause_and_no_part() {
+    let program = checked_program("(RULE &seed (input *P))\n(RULE &cell (input *P *Col))\n(RIGID_DET &piece (instance ((&seed ^P)) (&cell P *Col)))\n");
+    let registry = Registry::get();
+    let form = NodePath::default().child(2);
+    let node = (0..program.program.graph.nodes.len() as u32).map(GraphNodeIndex).find(|node| *program.program.form_of(*node) == form).expect("the node of the `RIGID_DET` form");
+    let flows = program.column_flows(node, Some(&[OutputStep::Pose]), &[ValueType::Number, ValueType::D4], registry);
+    let atoms: Vec<&NodePath> = flows[0].iter().map(|source| &source.atom).collect();
+    assert_eq!(atoms, [&form.child(0).child(0)], "the instance clause's atom, where the part's atom is at 2.1: {flows:?}");
 }

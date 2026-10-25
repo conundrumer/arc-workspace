@@ -28,9 +28,11 @@ use std::sync::Arc;
 
 use self::renaming::{renaming_between, IdentRowsBuilder};
 use super::join::{self, Budget};
+use super::ir::{ClauseIr, IrPaths};
 use super::{ir, Evaluation, FormBodies, Outcome, RelationValue, RunFault, Stop};
 use crate::algebra::boxes::apply;
 use crate::algebra::geometry::{D4Element, Geometry};
+use crate::check::CheckedProgram;
 use crate::hash::{StableHashMap, StableHashSet};
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{Atom, Body, Conjunct, LabelId, Node, OutputStep, RigidDet};
@@ -59,7 +61,7 @@ pub fn evaluate_assembly(
 ) -> Outcome<RelationValue> {
     let root = NodeRef::Program(evaluation.program.program.program.value());
     let Some(NodeRef::RigidDet(rigid)) = node_at(root, form) else { panic!("a `RIGID_DET` form at the form of an assembly output") };
-    let assembly = Assembly::of(evaluation, form, rigid)?;
+    let assembly = Assembly::of(evaluation.program, form, rigid)?;
     let rows = match output {
         OutputStep::Pose => assembly.poses(bodies, example, budget)?,
         step => assembly.placements(assembly.part(step)?, bodies, example, budget)?,
@@ -67,10 +69,24 @@ pub fn evaluate_assembly(
     Ok(rows.map_or_else(|value| value, |rows| RelationValue::Rows(Arc::new(join::one_part(rows)))))
 }
 
+/// The clause that the evaluation joins for the output `step` of the
+/// `RIGID_DET` form `rigid` at `form`, with the paths of its nodes: the key
+/// and instance bodies, and the atom of the part that `step` begins the path
+/// of, or none for [`OutputStep::Pose`]. The error is the fault of the
+/// form or of the compile.
+pub(crate) fn output_clause(program: &CheckedProgram, form: &NodePath, rigid: &RigidDet, step: &OutputStep) -> Result<(ClauseIr, IrPaths), String> {
+    let assembly = Assembly::of(program, form, rigid).map_err(|fault| fault.message.to_string())?;
+    let part = match step {
+        OutputStep::Pose => None,
+        step => Some(&assembly.parts[assembly.part(step).map_err(|fault| fault.message.to_string())?]),
+    };
+    assembly.clause(part).map_err(|compile| format!("a body of the form does not compile: {compile:?}"))
+}
+
 /// One part of an assembly: its atom with its path, the labels of its
 /// sites that give it a column, in the order of its columns, their types,
 /// and whether each column holds the assembly's own Idents.
-struct Part<'p> {
+pub(crate) struct Part<'p> {
     atom: &'p Node<Atom>,
     path: NodePath,
     labels: Vec<LabelId>,
@@ -95,7 +111,7 @@ struct Solution {
 /// What a `RIGID_DET` form gives the evaluation of its assembly: its key
 /// and instance clauses with their paths and labels, and its parts.
 struct Assembly<'e, 'p> {
-    evaluation: &'e Evaluation<'p>,
+    program: &'e CheckedProgram,
     form: &'e NodePath,
     key: Option<(&'p Body, NodePath)>,
     key_labels: Vec<LabelId>,
@@ -106,9 +122,9 @@ struct Assembly<'e, 'p> {
 
 impl<'e, 'p> Assembly<'e, 'p> {
     /// The assembly of `rigid`, the `RIGID_DET` form at `form`.
-    fn of(evaluation: &'e Evaluation<'p>, form: &'e NodePath, rigid: &'p RigidDet) -> Outcome<Self> {
+    pub(crate) fn of(program: &'e CheckedProgram, form: &'e NodePath, rigid: &'p RigidDet) -> Outcome<Self> {
         let fault = |message: String| fault(form, message);
-        let types_of = ir::label_types(evaluation.program, form);
+        let types_of = ir::label_types(program, form);
         let types = types_of;
         let typed = |labels: &[LabelId]| -> Outcome<Vec<ValueType>> {
             labels.iter().map(|&label| label_type(types, label).map_err(&fault)).collect()
@@ -137,7 +153,7 @@ impl<'e, 'p> Assembly<'e, 'p> {
             let own = labels.iter().zip(&types).map(|(&label, ty)| *ty == ValueType::Ident && types_of.is_own_ident(label)).collect();
             parts.push(Part { atom, path: form.child(index), labels, types, own });
         }
-        Ok(Assembly { evaluation, form, key, key_labels, instance, instance_labels, parts })
+        Ok(Assembly { program, form, key, key_labels, instance, instance_labels, parts })
     }
 
     fn fault(&self, message: String) -> RunFault {
@@ -175,19 +191,17 @@ impl<'e, 'p> Assembly<'e, 'p> {
     /// in the order of the parts, or the value of a body of the form that
     /// is `undefined` or stopped.
     fn readings(&self, bodies: &FormBodies<'_>, example: Option<Example>) -> Outcome<Result<Vec<Instance>, RelationValue>> {
-        let prefix: Vec<LabelId> = self.key_labels.iter().chain(&self.instance_labels).copied().collect();
-        let clauses: Vec<&(&Body, NodePath)> = self.key.iter().chain(&self.instance).collect();
-        let rows = match clauses.is_empty() {
+        let prefix = self.columns(None);
+        let rows = match self.key.is_none() && self.instance.is_none() {
             true => vec![Row::default()],
-            false => match self.rows(bodies, &clauses, None, &prefix, example)? {
+            false => match self.rows(bodies, None, example)? {
                 Ok(rows) => rows,
                 Err(value) => return Ok(Err(value)),
             },
         };
         let mut by_part: Vec<StableHashMap<Row, RowSet>> = Vec::with_capacity(self.parts.len());
         for part in &self.parts {
-            let columns: Vec<LabelId> = prefix.iter().chain(&part.labels).copied().collect();
-            let rows = match self.rows(bodies, &clauses, Some(part), &columns, example)? {
+            let rows = match self.rows(bodies, Some(part), example)? {
                 Ok(rows) => rows,
                 Err(value) => return Ok(Err(value)),
             };
@@ -269,7 +283,7 @@ impl<'e, 'p> Assembly<'e, 'p> {
         };
         let mut frames: StableHashMap<Row, Vec<RowSet>> = StableHashMap::default();
         {
-            let table = self.evaluation.session.intern.read().expect("an intern table that no panic poisoned");
+            let table = bodies.driver.evaluation.session.intern.read().expect("an intern table that no panic poisoned");
             let mut least: StableHashMap<&[TermId], &Instance> = StableHashMap::default();
             for instance in &instances {
                 let key = &instance.row[..self.key_labels.len()];
@@ -360,25 +374,33 @@ impl<'e, 'p> Assembly<'e, 'p> {
         Ok(Ok(rows))
     }
 
-    /// The rows of `clauses`, the key and instance bodies, joined with the
-    /// atom of `part` where it is given, at the labels `columns`, or the
-    /// value of the join where it is `undefined` or stopped.
-    fn rows(
-        &self,
-        bodies: &FormBodies<'_>,
-        clauses: &[&(&Body, NodePath)],
-        part: Option<&Part<'_>>,
-        columns: &[LabelId],
-        example: Option<Example>,
-    ) -> Outcome<Result<Vec<Row>, RelationValue>> {
+    /// The columns of the clause that joins the key and instance bodies with
+    /// the atom of `part` where it is given: the key's labels, the
+    /// instance's, and the part's.
+    fn columns(&self, part: Option<&Part<'_>>) -> Vec<LabelId> {
+        self.key_labels.iter().chain(&self.instance_labels).chain(part.into_iter().flat_map(|part| &part.labels)).copied().collect()
+    }
+
+    /// The clause that joins the key and instance bodies with the atom of
+    /// `part` where it is given, at [`Self::columns`], with the paths of its
+    /// nodes: what the form's output reads, and its column flows read.
+    pub(crate) fn clause(&self, part: Option<&Part<'_>>) -> Result<(ClauseIr, IrPaths), ir::CompileFault> {
         let atom = part.map(|part| (Conjunct::Atom(part.atom.clone()), part.path.clone()));
-        let conjuncts = clauses
+        let conjuncts = self
+            .key
             .iter()
+            .chain(&self.instance)
             .flat_map(|(body, path)| body.conjuncts.iter().zip(0u32..).map(move |(conjunct, index)| (conjunct, path.child(index))))
             .chain(atom.iter().map(|(conjunct, path)| (conjunct, path.clone())))
             .collect();
-        let clause = ir::compile_safe(self.evaluation.program, self.form, conjuncts, columns)
-            .map_err(|compile| self.fault(format!("a body of the form does not compile: {compile:?}")))?;
+        ir::compile_safe(self.program, self.form, conjuncts, &self.columns(part))
+    }
+
+    /// The rows of [`Self::clause`] of `part`, or the value of the join
+    /// where it is `undefined` or stopped.
+    fn rows(&self, bodies: &FormBodies<'_>, part: Option<&Part<'_>>, example: Option<Example>) -> Outcome<Result<Vec<Row>, RelationValue>> {
+        let columns = self.columns(part);
+        let (clause, _) = self.clause(part).map_err(|compile| self.fault(format!("a body of the form does not compile: {compile:?}")))?;
         let relation = match bodies.relation(self.form, &clause, example)? {
             RelationValue::Rows(relation) => relation,
             value => return Ok(Err(value)),

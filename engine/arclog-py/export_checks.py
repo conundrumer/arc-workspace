@@ -6,7 +6,7 @@ It needs numpy and pandas (and pyarrow for the command), and no `arclog`. `table
 `check_case` on each case it writes, with `copies=False`. The command checks an existing export: the files of every case, and the
 values of a sample of N cases (100 by default; `--all` takes every case; `--seed` picks the sample). It prints
 one line per violated invariant, with the count of its violations, the number of its cases and three examples,
-then a total, and exits with status 1 where any violation stands. A change to this module, or to the engine code that writes the export's files (`engine/arclog/src/resolver/flows.rs`, `engine/arclog/src/decode/`), runs `engine/arclog-py/roundtrip_check.py` with an `arclog` built from its tree before its merge.
+then a total, and exits with status 1 where any violation stands. A change to this module, or to the engine code that writes the export's files (`engine/arclog/src/eval/flows.rs`, `engine/arclog/src/decode/`), runs `engine/arclog-py/roundtrip_check.py` with an `arclog` built from its tree before its merge.
 
 `--streams <dir>` also reads `cases.npz` of the streams export (`lm/export.py`) in that directory and checks
 that each table of the export other than an evidence table has a token inside its case's stream at a step the

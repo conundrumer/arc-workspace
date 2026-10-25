@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use crate::diagnostic::WithDiagnostics;
 use crate::hash::StableHash;
-use crate::program::path::NodePath;
+use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{
     ColumnName, InstanceName, LabelId, Node, OutputStep, PortName, RelationRef, Program, ProgramRelation, RelationName, RigidDetName,
 };
@@ -710,9 +710,74 @@ pub(crate) mod columns;
 pub(crate) mod form_columns;
 pub(crate) mod registry_columns;
 
-mod flows;
-pub use flows::{ColumnSource, SourceColumn, SourceKind};
+pub(crate) mod given;
 
 mod names;
 
 mod build;
+
+impl ResolvedProgram {
+    /// The depth of `node` in the dependency graph: 0 for a fact relation,
+    /// and otherwise one more than the largest depth among the nodes it
+    /// reads, 1 for a node that reads none. A lib relation is no node and
+    /// adds nothing.
+    pub fn depth(&self, node: GraphNodeIndex) -> u32 {
+        let depths = self.depths.get_or_init(|| {
+            let mut depths: Vec<Option<u32>> = vec![None; self.graph.nodes.len()];
+            let mut open = vec![false; depths.len()];
+            for start in 0..depths.len() {
+                self.depth_of(start, &mut depths, &mut open);
+            }
+            depths.into_iter().map(|depth| depth.unwrap_or(0)).collect()
+        });
+        depths[node.0 as usize]
+    }
+
+    fn depth_of(&self, node: usize, depths: &mut [Option<u32>], open: &mut [bool]) -> u32 {
+        if let Some(depth) = depths[node] {
+            return depth;
+        }
+        if matches!(self.graph.nodes[node].kind, DependencyKind::Fact(_)) {
+            depths[node] = Some(0);
+            return 0;
+        }
+        open[node] = true;
+        let mut deepest = 0;
+        for &read in self.graph.reads[node].iter() {
+            let read = read.0 as usize;
+            if !open[read] {
+                deepest = deepest.max(self.depth_of(read, depths, open));
+            }
+        }
+        open[node] = false;
+        depths[node] = Some(deepest + 1);
+        deepest + 1
+    }
+
+    /// The candidate keys of the relation of `node` that the program text
+    /// gives, each as the row positions of its columns in increasing order:
+    /// the columns of each `ONE` mark of a clause, none for `(ONE)`, and
+    /// the row's columns of a `CHOOSE` form.
+    pub fn column_keys(&self, node: GraphNodeIndex) -> Vec<Vec<u16>> {
+        let root = NodeRef::Program(self.program.value());
+        let mut keys: Vec<Vec<u16>> = Vec::new();
+        for form in self.forms_of(node) {
+            let positions = |labels: &mut dyn Iterator<Item = LabelId>| {
+                let mut key: Vec<u16> = labels.filter_map(|label| self.label_position(form, label)).map(|position| position.0).collect();
+                key.sort_unstable();
+                key
+            };
+            let found: Vec<Vec<u16>> = match node_at(root, form) {
+                Some(NodeRef::Clause(clause)) => clause.ones.iter().map(|mark| positions(&mut mark.key.iter().copied())).collect(),
+                Some(NodeRef::Choose(choose)) => choose.rows.iter().map(|rows| positions(&mut rows.columns.iter().map(|column| column.label))).collect(),
+                _ => Vec::new(),
+            };
+            for key in found {
+                if !keys.contains(&key) {
+                    keys.push(key);
+                }
+            }
+        }
+        keys
+    }
+}

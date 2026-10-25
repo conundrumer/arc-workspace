@@ -8,7 +8,8 @@
 use std::sync::Arc;
 
 use crate::check::instance_inputs::inputs_at;
-use crate::eval::ir::{self, ClauseIr};
+use crate::check::{CheckedProgram, InstanceClause};
+use crate::eval::ir::{self, ClauseIr, IrPaths};
 use crate::eval::join;
 use crate::eval::{Evaluation, FormBodies, Outcome, RelationValue, RunFault};
 use crate::terms::{Constant, Term};
@@ -78,41 +79,52 @@ pub(super) fn key_rows(
     let Some(key_body) = key_body else {
         return Ok(Ok((vec![Row::default()], None)));
     };
-    let (clause, _) = evaluation
-        .program
-        .instance_clause(form, None, || ir::compile_instance_body(evaluation.program, form, std::slice::from_ref(key_body), key_labels).map(|clause| (clause, 0)))
+    let (clause, _, _) = key_clause_memo(evaluation.program, form, key_body, key_labels)
         .map_err(|compile| fault(format!("the key body does not compile: {compile:?}")))?;
     Ok(rows_read(bodies.relation(form, &clause, example)?, key_labels.len()).map_err(&fault)?.map(|(rows, relation)| (rows, Some(relation))))
 }
 
 /// The clause of the key body `key_body` of the form at `form`, whose
-/// columns are the key's labels `key_labels`, or `None` where the form has
-/// no key clause.
-fn key_clause(evaluation: &Evaluation<'_>, form: &NodePath, key_body: &Option<(&Body, NodePath)>, key_labels: &[LabelId]) -> Result<Option<ClauseIr>, ir::CompileFault> {
-    key_body.as_ref().map(|key_body| ir::compile_instance_body(evaluation.program, form, std::slice::from_ref(key_body), key_labels)).transpose()
+/// columns are the key's labels `key_labels`, with the paths of its nodes:
+/// the one compile of a key body, which the evaluation of the key and the
+/// column flows of the form's relations read.
+pub(crate) fn key_clause_memo(program: &CheckedProgram, form: &NodePath, key_body: &(&Body, NodePath), key_labels: &[LabelId]) -> Result<InstanceClause, ir::CompileFault> {
+    program.instance_clause(form, None, || key_clause(program, form, key_body, key_labels).map(|(clause, paths)| (clause, paths, 0)))
+}
+
+/// The clause of the key body `key_body` of the form at `form`, whose
+/// columns are the key's labels `key_labels`, with the paths of its nodes.
+fn key_clause(program: &CheckedProgram, form: &NodePath, key_body: &(&Body, NodePath), key_labels: &[LabelId]) -> Result<(ClauseIr, IrPaths), ir::CompileFault> {
+    ir::compile_instance_pathed(program, form, std::slice::from_ref(key_body), key_labels)
 }
 
 /// The clause of an input whose body is `body` and whose head holds the
 /// labels `head`, in a form whose key body is `key_body`: a keyed input is
 /// its body joined with the rows of the key clause at the key's labels,
-/// its columns the key's labels first, and the number of those columns.
+/// its columns the key's labels first, with the paths of its nodes and the
+/// number of those columns.
 /// The error is the fault of the compile.
-pub(super) fn joined_clause(
-    evaluation: &Evaluation<'_>,
+pub(crate) fn joined_clause(
+    program: &CheckedProgram,
     form: &NodePath,
     key_body: &Option<(&Body, NodePath)>,
     key_labels: &[LabelId],
     keyed: bool,
     body: (&Body, NodePath),
     head: &[LabelId],
-) -> Result<(ClauseIr, usize), ir::CompileFault> {
-    let key = if keyed { key_clause(evaluation, form, key_body, key_labels)? } else { None };
-    let Some(clause) = key else {
-        return Ok((ir::compile_instance_body(evaluation.program, form, &[body], head)?, 0));
+) -> Result<(ClauseIr, IrPaths, usize), ir::CompileFault> {
+    let key = match key_body {
+        Some(key_body) if keyed => Some(key_clause(program, form, key_body, key_labels)?),
+        _ => None,
+    };
+    let Some((clause, key_paths)) = key else {
+        let (clause, paths) = ir::compile_instance_pathed(program, form, &[body], head)?;
+        return Ok((clause, paths, 0));
     };
     let columns: Vec<LabelId> = key_labels.iter().chain(head).copied().collect();
     let read = ir::KeyRead { form: form.clone(), clause };
-    Ok((ir::compile_keyed_body(evaluation.program, form, (read, key_labels), body, &columns)?, key_labels.len()))
+    let (clause, paths) = ir::compile_keyed_body(program, form, (read, key_paths, key_labels), body, &columns)?;
+    Ok((clause, paths, key_labels.len()))
 }
 
 /// What an `INIT` form binds a type parameter of its component to: the
@@ -129,6 +141,8 @@ enum Binding {
 /// of `head` that are not `None`.
 pub(super) struct InputClause {
     pub(super) clause: Arc<ClauseIr>,
+    /// The paths of the nodes of `clause`.
+    pub(crate) paths: Arc<IrPaths>,
     key: usize,
     head: Vec<Option<LabelId>>,
 }
@@ -170,7 +184,7 @@ pub(super) struct InstanceShape<'p> {
 impl<'p> InstanceShape<'p> {
     /// The shape of `instance`, the `INIT` form at `form`, of `component`.
     pub(super) fn of(
-        evaluation: &Evaluation<'p>,
+        program: &'p CheckedProgram,
         form: &NodePath,
         instance: &'p Instance,
         component: &'p Component,
@@ -197,7 +211,7 @@ impl<'p> InstanceShape<'p> {
             };
             bindings.insert(sites.parameter, binding);
         }
-        let types = ir::label_types(evaluation.program, form);
+        let types = ir::label_types(program, form);
         InstanceShape { key_body, key_columns, written, types, bindings }
     }
 
@@ -213,17 +227,33 @@ impl<'p> InstanceShape<'p> {
 
     /// The clause of `input` where the form at `form` writes it. A keyed
     /// input is its body joined with the key body.
-    pub(super) fn input_clause(&self, evaluation: &Evaluation<'_>, form: &NodePath, input: &InputPort) -> Result<Option<InputClause>, String> {
+    pub(crate) fn input_clause(&self, program: &CheckedProgram, form: &NodePath, input: &InputPort) -> Result<Option<InputClause>, String> {
         let name = &input.port.name;
         let Some((path, keyed, written)) = self.written.iter().find(|(_, _, written)| written.name == *name) else { return Ok(None) };
         let head = self.head_labels(written, &input.port.columns)?;
         let body = (written.body.value(), path.child(written.position(InstanceInputPart::Body)));
         let flat: Vec<LabelId> = head.iter().flatten().copied().collect();
-        let (clause, key) = evaluation
-            .program
-            .instance_clause(form, Some(name), || joined_clause(evaluation, form, &self.key_body, &self.key_labels(), *keyed, body, &flat))
+        let (clause, paths, key) = program
+            .instance_clause(form, Some(name), || joined_clause(program, form, &self.key_body, &self.key_labels(), *keyed, body, &flat))
             .map_err(|compile| format!("input `{}` does not compile: {compile:?}", name.0))?;
-        Ok(Some(InputClause { clause, key, head }))
+        Ok(Some(InputClause { clause, paths, key, head }))
+    }
+
+    /// The clause that the evaluation joins for the body at `at`, a path
+    /// after the form's own, of the `INIT` form at `form` of `component`:
+    /// its key body, or the body of a written input. `None` where `at` is
+    /// neither, the error where the clause does not compile.
+    pub(crate) fn clause_at(&self, program: &CheckedProgram, form: &NodePath, component: &Component, at: &NodePath) -> Option<Result<(Arc<ClauseIr>, Arc<IrPaths>), String>> {
+        if let Some(key_body) = self.key_body.as_ref().filter(|(_, path)| path == at) {
+            let found = key_clause_memo(program, form, key_body, &self.key_labels());
+            return Some(found.map(|(clause, paths, _)| (clause, paths)).map_err(|compile| format!("the key body does not compile: {compile:?}")));
+        }
+        let (_, _, written) = self.written.iter().find(|(path, _, input)| &path.child(input.position(InstanceInputPart::Body)) == at)?;
+        let port = component.inputs.iter().find(|own| own.port.name == written.name)?;
+        match self.input_clause(program, form, port) {
+            Ok(found) => found.map(|input| Ok((input.clause, input.paths))),
+            Err(message) => Some(Err(message)),
+        }
     }
 
     /// The type of `label`.

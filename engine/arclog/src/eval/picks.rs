@@ -13,10 +13,12 @@
 //! of `crate::terms::content_order`, so a stop at a cap does not depend
 //! on an encoding order.
 
+use super::ir::{ClauseIr, IrPaths};
 use super::{ir, FormBodies, Outcome, ParameterSource, RelationValue, RunFault, Stop};
+use crate::check::CheckedProgram;
 use crate::hash::StableHashMap;
 use crate::program::path::{node_at, NodePath, NodeRef};
-use crate::program::{Choose, ClauseKeyword, LabelId, ProgramRelation};
+use crate::program::{Body, Choose, ClauseKeyword, LabelId, ProgramRelation};
 use crate::relations::Row;
 use crate::resolver::{DependencyKind, GraphNodeIndex};
 use crate::terms::{Example, TermId};
@@ -126,6 +128,57 @@ pub fn pick_options(bodies: &FormBodies<'_>, node: GraphNodeIndex, example: Opti
     Ok(Pick::Options(PickOptions { rows, groups, never }))
 }
 
+/// The `for` body of the `CHOOSE` form at `form`, with its path, where the
+/// form has one.
+fn for_body<'c>(choose: &'c Choose, form: &NodePath) -> Option<(&'c Body, NodePath)> {
+    choose.rows.as_ref().map(|rows| (rows.body.value(), form.child(0)))
+}
+
+/// The labels of the columns of the `for` body of `choose`.
+fn row_labels(choose: &Choose) -> Vec<LabelId> {
+    choose.rows.iter().flat_map(|rows| rows.columns.iter().map(|column| column.label)).collect()
+}
+
+/// The labels of the candidate columns of `choose`.
+fn candidate_labels(choose: &Choose) -> Vec<LabelId> {
+    choose.candidate_columns.iter().map(|column| column.label).collect()
+}
+
+/// The clause of the `for` body of the `CHOOSE` form `choose` at `form`, with
+/// the paths of its nodes: the one compile of the body, which the options of
+/// the form and the column flows of its relation read. `None` where the form
+/// has no `for` body.
+pub(crate) fn for_pathed(program: &CheckedProgram, form: &NodePath, choose: &Choose) -> Result<Option<(ClauseIr, IrPaths)>, ir::CompileFault> {
+    for_body(choose, form).map(|body| ir::compile_instance_pathed(program, form, &[body], &row_labels(choose))).transpose()
+}
+
+/// What the `from` clause of a `CHOOSE` form joins: its parts, the `from`
+/// body alone, or the `for` body then the `from` body where the `from` reads
+/// inside the `for`, and the labels of the clause's columns.
+struct FromBody<'c> {
+    parts: Vec<(&'c Body, NodePath)>,
+    columns: Vec<LabelId>,
+    joined: bool,
+}
+
+/// The `from` clause's parts of `choose` at `form`.
+fn from_body<'c>(choose: &'c Choose, form: &NodePath) -> FromBody<'c> {
+    let from = (choose.from.value(), form.child(u32::from(choose.rows.is_some())));
+    match for_body(choose, form) {
+        Some(key_body) if choose.from_inside_for => {
+            FromBody { parts: vec![key_body, from], columns: [&row_labels(choose)[..], &candidate_labels(choose)].concat(), joined: true }
+        }
+        _ => FromBody { parts: vec![from], columns: candidate_labels(choose), joined: false },
+    }
+}
+
+/// The clause of the `from` body of `choose` at `form`, joined with the `for`
+/// body where the `from` reads inside the `for`, with the paths of its nodes.
+pub(crate) fn from_pathed(program: &CheckedProgram, form: &NodePath, choose: &Choose) -> Result<(ClauseIr, IrPaths), ir::CompileFault> {
+    let FromBody { parts, columns, .. } = from_body(choose, form);
+    ir::compile_instance_pathed(program, form, &parts, &columns)
+}
+
 /// What the groups and the `never` bodies of a `CHOOSE` form read of its
 /// other bodies.
 struct ChooseShape {
@@ -151,18 +204,18 @@ fn choose_rows(
     let checked = driver.evaluation.program;
     let fault = |message: String| RunFault { message: message.into(), form: form.clone() };
     let shape = NodeRef::Choose(choose);
-    let row_labels: Vec<LabelId> = choose.rows.iter().flat_map(|rows| rows.columns.iter().map(|column| column.label)).collect();
-    let candidate_labels: Vec<LabelId> = choose.candidate_columns.iter().map(|column| column.label).collect();
+    let (row_labels, candidate_labels) = (row_labels(choose), candidate_labels(choose));
     let position = |label: &LabelId| column_index(driver, form, shape, *label).ok_or_else(|| fault("a column of the form is no column of its relation".into()));
     let row_positions: Vec<usize> = row_labels.iter().map(position).collect::<Outcome<_>>()?;
     let candidate_positions: Vec<usize> = candidate_labels.iter().map(position).collect::<Outcome<_>>()?;
     let arity = row_positions.len() + candidate_positions.len();
 
-    let key_body = choose.rows.as_ref().map(|rows| (rows.body.value(), form.child(0)));
+    let key_body = for_body(choose, form);
     let (key_rows, key_nodes) = match &key_body {
-        Some(key_body) => {
-            let clause = ir::compile_instance_body(checked, form, &[key_body.clone()], &row_labels)
-                .map_err(|compile| fault(format!("the `for` body does not compile: {compile:?}")))?;
+        Some(_) => {
+            let (clause, _) = for_pathed(checked, form, choose)
+                .map_err(|compile| fault(format!("the `for` body does not compile: {compile:?}")))?
+                .expect("a `for` clause where the form has a `for` body");
             match rows_of(bodies.relation(form, &clause, example)?, row_labels.len(), &fault)? {
                 Ok(rows) => (rows, clause.nodes.len()),
                 Err(pick) => return Ok(Err(pick)),
@@ -170,14 +223,9 @@ fn choose_rows(
         }
         None => (vec![Row::default()], 0),
     };
-    let from_body = (choose.from.value(), form.child(u32::from(choose.rows.is_some())));
-    let joined = choose.from_inside_for && key_body.is_some();
-    let (parts, columns, offset) = match &key_body {
-        Some(key_body) if joined => (vec![key_body.clone(), from_body], [&row_labels[..], &candidate_labels].concat(), key_nodes),
-        _ => (vec![from_body], candidate_labels.clone(), 0),
-    };
-    let from = ir::compile_instance_body(checked, form, &parts, &columns)
-        .map_err(|compile| fault(format!("the `from` body does not compile: {compile:?}")))?;
+    let FromBody { columns, joined, .. } = from_body(choose, form);
+    let offset = if joined { key_nodes } else { 0 };
+    let (from, _) = from_pathed(checked, form, choose).map_err(|compile| fault(format!("the `from` body does not compile: {compile:?}")))?;
     let from_rows = match rows_of(bodies.relation(form, &from, example)?, columns.len(), &fault)? {
         Ok(rows) => rows,
         Err(pick) => return Ok(Err(pick)),

@@ -20,7 +20,7 @@
 use std::collections::BTreeSet;
 
 use super::ReachedBound;
-use super::ir::{CompileFault, Filter, IrBuilder, IrNode, Union, Variable};
+use super::ir::{CompileFault, Filter, IrBuilder, IrNode, IrPaths, NodePaths, Union, Variable};
 use super::join::{Budget, JoinInputs};
 use super::plan::VariableOrder;
 use crate::hash::StableHashSet;
@@ -38,7 +38,7 @@ pub fn compile_not(builder: &mut IrBuilder<'_>, negated: &Negated, path: &NodePa
         Negated::Form(form) => inner.conjunct(form, &path.child(0))?,
     }
     let outer = variables_of(builder, &outer_labels(builder, path));
-    builder.push(IrNode::Not(filter(outer, inner)));
+    builder.push(IrNode::Not(filter(outer, inner)), NodePaths::None);
     Ok(())
 }
 
@@ -60,15 +60,15 @@ pub fn compile_all(
     let fails = filter(variables_of(builder, &outer_labels(builder, &body_path)), fails);
     let mut counterexample = nested(builder)?;
     counterexample.body(domain.value(), &domain_path)?;
-    counterexample.push(IrNode::Not(fails));
+    counterexample.push(IrNode::Not(fails), NodePaths::None);
     let mut members = nested(builder)?;
     members.body(domain.value(), &domain_path)?;
     let domain_outer = variables_of(builder, &outer_of(domain.value(), &around));
     let mut empty = nested(builder)?;
-    empty.push(IrNode::Not(filter(domain_outer.clone(), members)));
-    builder.push(IrNode::Not(filter(domain_outer, empty)));
+    empty.push(IrNode::Not(filter(domain_outer.clone(), members)), NodePaths::None);
+    builder.push(IrNode::Not(filter(domain_outer, empty)), NodePaths::None);
     let outer = variables_of(builder, &around);
-    builder.push(IrNode::Counterexample(filter(outer, counterexample)));
+    builder.push(IrNode::Counterexample(filter(outer, counterexample)), NodePaths::None);
     Ok(())
 }
 
@@ -143,19 +143,22 @@ fn compile_union(
     }
     let exported: BTreeSet<u32> = crate::safety::common_to_all(per_branch).into_iter().map(|label| label.0).collect();
     let mut clauses = Vec::with_capacity(branches.len());
+    let mut branch_paths: Vec<IrPaths> = Vec::with_capacity(branches.len());
     for (branch, labels) in branches.iter().zip(&held) {
         let mut clause = nested(builder)?;
         for (list, path) in &branch.lists {
             clause.body(list.value(), path)?;
         }
         if let Some((test, _)) = &branch.negated {
-            clause.push(IrNode::Not(test.clone()));
+            clause.push(IrNode::Not(test.clone()), NodePaths::None);
         }
         let columns = variables_of(builder, &labels.intersection(&shared).copied().collect());
-        clauses.push(clause.finish(columns));
+        let (clause, paths) = clause.finish(columns);
+        clauses.push(clause);
+        branch_paths.push(paths);
     }
     let exported = variables_of(builder, &exported);
-    builder.push(IrNode::Or(Union { exported, branches: clauses.into() }));
+    builder.push(IrNode::Or(Union { exported, branches: clauses.into() }), NodePaths::Branches(branch_paths.into()));
     Ok(())
 }
 
@@ -206,7 +209,7 @@ fn nested<'a>(builder: &IrBuilder<'a>) -> Result<IrBuilder<'a>, CompileFault> {
 /// The filter over `outer` whose body is the clause of `body`, a relation
 /// with no column.
 fn filter(outer: Box<[Variable]>, body: IrBuilder<'_>) -> Filter {
-    Filter { outer, body: Box::new(body.finish(Box::new([]))) }
+    Filter { outer, body: Box::new(body.finish(Box::new([])).0) }
 }
 
 /// The labels that stand at `path` and also outside it, in the conjuncts

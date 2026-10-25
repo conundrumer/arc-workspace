@@ -10,9 +10,12 @@
 //! rule per value that its `&prediction` clauses bind for the fields.
 
 use super::driver::{Driver, FormBodies};
-use super::init_form::{grouped, joined_clause, key_rows, rows_of, site_labels};
-use super::ir;
+use super::init_form::{grouped, joined_clause, key_clause_memo, key_rows, rows_of, site_labels};
+use std::sync::Arc;
+
+use super::ir::{self, ClauseIr, IrPaths};
 use super::{Evaluation, Outcome, RelationValue, RunFault};
+use crate::check::CheckedProgram;
 use crate::hash::StableHashMap;
 use crate::program::canonical::{prediction, relation_of};
 use crate::program::path::{node_at, NodePath, NodeRef};
@@ -37,6 +40,26 @@ const OBJECT: &str = "o";
 const OBJECT_2: &str = "o2";
 /// The head site of the `value` input that gives the index of a row.
 const INDEX: &str = "i";
+
+/// The clause that the evaluation joins for the body at `at`, a path after
+/// the path `form` of the `DEMONSTRATED` form `demonstrated`: its key body,
+/// or the body of its `value` input. `None` where `at` is neither, the
+/// error where the clause does not compile.
+pub(crate) fn clause_at(program: &CheckedProgram, demonstrated: &Demonstrated, form: &NodePath, at: &NodePath) -> Option<Result<(Arc<ClauseIr>, Arc<IrPaths>), String>> {
+    let shape = Shape::of(demonstrated, form);
+    if let Some(key_body) = shape.key_body.as_ref().filter(|(_, path)| path == at) {
+        let found = key_clause_memo(program, form, key_body, &shape.key_labels());
+        return Some(found.map(|(clause, paths, _)| (clause, paths)).map_err(|compile| format!("the key body does not compile: {compile:?}")));
+    }
+    let value = shape.inputs.iter().find(|input| *input.input.name.0 == *VALUE)?;
+    if &value.path.child(value.input.position(InstanceInputPart::Body)) != at {
+        return None;
+    }
+    let found = Head::of(value.input).and_then(|head| {
+        shape.input_clause(program, form, value, &head.labels()).map(|(clause, paths, _)| (Arc::new(clause), Arc::new(paths))).map_err(|compile| format!("the input does not compile: {compile:?}"))
+    });
+    Some(found)
+}
 
 /// For each key of the `DEMONSTRATED` form of `relation` on `example` that
 /// holds a demonstration and a confirmed rule, the distinct predictions of
@@ -194,6 +217,14 @@ impl<'p> Shape<'p> {
         Ok(Heads { value_input, demonstration_input, value, demonstration })
     }
 
+    /// The clause of `input`, whose head holds `labels`, with the paths of
+    /// its nodes and the count of its key columns: its body, joined with the
+    /// key clause where `input` is keyed.
+    fn input_clause(&self, program: &CheckedProgram, form: &NodePath, input: &Input<'_>, labels: &[LabelId]) -> Result<(ClauseIr, IrPaths, usize), ir::CompileFault> {
+        let body = (input.input.body.value(), input.path.child(input.input.position(InstanceInputPart::Body)));
+        joined_clause(program, form, &self.key_body, &self.key_labels(), input.keyed, body, labels)
+    }
+
     /// The rows of `input`, whose head holds `labels`, at each of `groups`.
     /// A keyed input is its body joined with the key body.
     #[allow(clippy::too_many_arguments)]
@@ -208,8 +239,8 @@ impl<'p> Shape<'p> {
         example: Option<Example>,
     ) -> Outcome<Result<Vec<RowSet>, RelationValue>> {
         let fault = |message: String| RunFault { message: message.into(), form: form.clone() };
-        let body = (input.input.body.value(), input.path.child(input.input.position(InstanceInputPart::Body)));
-        let (clause, prefix) = joined_clause(evaluation, form, &self.key_body, &self.key_labels(), input.keyed, body, labels)
+        let (clause, _, prefix) = self
+            .input_clause(evaluation.program, form, input, labels)
             .map_err(|compile| fault(format!("the input `{}` does not compile: {compile:?}", input.input.name.0)))?;
         let rows = rows_of(bodies.relation(form, &clause, example)?, prefix + labels.len()).map_err(&fault)?;
         Ok(rows.map(|rows| grouped(groups, prefix, labels.len(), rows)))
@@ -341,7 +372,7 @@ fn predictions(
         }
         let labels: Vec<LabelId> = named.iter().map(|(_, label)| *label).collect();
         let conjuncts = body.conjuncts.iter().zip(0u32..).map(|(conjunct, at)| (conjunct, path.child(0).child(at))).collect();
-        let compiled = ir::compile_safe(evaluation.program, &path, conjuncts, &labels).map_err(|compile| fault(format!("the prediction does not compile: {compile:?}")))?;
+        let (compiled, _) = ir::compile_safe(evaluation.program, &path, conjuncts, &labels).map_err(|compile| fault(format!("the prediction does not compile: {compile:?}")))?;
         let rows = match rows_of(bodies.relation(&path, &compiled, example)?, labels.len()).map_err(&fault)? {
             Ok(rows) => rows,
             Err(value) => return Ok(Err(value)),

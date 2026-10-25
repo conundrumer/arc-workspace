@@ -34,7 +34,7 @@ use crate::eval::{RelationValue, Stop};
 use crate::program::path::NodePath;
 use crate::program::{ColumnName, ProgramRelation, RelationRef};
 use crate::registry::Registry;
-use crate::resolver::{ColumnSource, SourceColumn, SourceKind};
+use crate::eval::flows::{ColumnSource, SourceColumn, SourceKind};
 use crate::relations::Relation;
 use crate::terms::{Constant, OrientationConstant, Term, TermId, ORIENTATION_TYPES};
 use crate::types::ValueType;
