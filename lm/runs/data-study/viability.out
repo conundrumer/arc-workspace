@@ -47,6 +47,25 @@ members with a table at position 0: 1323; Tables there per member: mean 5.03, mo
   position 0 unseen: every Table 73 (  4.6% of members), some Table 77 (  4.8%)
   position 0 empty everywhere: every Table 389 ( 24.5% of members), some Table 451 ( 28.4%)
   position 0 every Table faulted, unseen or empty everywhere: 561 ( 35.3% of members)
+
+## relation
+
+A relation's Tables pooled; each member weighs 1, shared among its relations. The first relation is at position 0.
+
+### all positions
+member      members           faulted            unseen  empty everywhere   empty somewhere   viable
+gold            796              0.0%              1.1%              5.8%              3.1%    90.0%
+sampled        1323             13.6%              6.1%             32.1%              1.9%    46.3%
+
+### position 0
+member      members           faulted            unseen  empty everywhere   empty somewhere   viable
+gold            796              0.0%              1.1%              4.6%              2.9%    91.3%
+sampled        1323              7.4%              5.6%             29.4%              2.0%    55.6%
+
+### members whose first relation after the branch is viable
+gold: 727 of 796 with a relation after the branch ( 91.3%); of all 796 members  91.3%
+sampled: 735 of 1323 with a relation after the branch ( 55.6%); of all 1588 members  46.3%
+
 ## restate
 
 branch points: 796; members with a table at position 0: 2119

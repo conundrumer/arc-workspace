@@ -1,6 +1,7 @@
 """Count how many tables after the branch of a rollout export's continuations are nonviable, gold against sampled.
 
     work/lm/.venv/bin/python lm/runs/data-study/viability.py index <export> [--out FILE]
+    work/lm/.venv/bin/python lm/runs/data-study/viability.py relation <export> [--out FILE]
     work/lm/.venv/bin/python lm/runs/data-study/viability.py restate <export> [--out FILE] [--points N] [--seed S]
 
 <export> is a rollout export (lm/export_rollouts.py) with its labels.jsonl. A branch point is a (task, corpus case,
@@ -25,7 +26,8 @@ Each Table takes the first class that fits, in this order:
 
 `index` reads index.parquet, tables.parquet and the projection files and writes the counts of the first four classes
 by member kind (gold, sampled), overall and at positions 0 and 1, and the share of members with no table after the
-branch. `restate` reads the values of each Table at position 0 and of the prefix's Tables (once per branch point,
+branch. `relation` writes the first four classes per relation, its Tables pooled (`relation_mode`), with each member
+weighing 1, at every position and at position 0. `restate` reads the values of each Table at position 0 and of the prefix's Tables (once per branch point,
 from its gold case) and writes the restatement and viable shares at position 0; with --points N it takes N branch
 points drawn uniformly (seed S). --out (default lm/runs/data-study/viability.out) gets the mode's section, and a
 section of the other mode already in the file is kept.
@@ -82,8 +84,9 @@ def entries(export, cases):
     return ix
 
 
-def classify(ix, tables, proj_of, proj_at):
-    """One row per Table (case, table, asg): its class among CLASSES, or None, and whether it has a Count entry."""
+def mark_seen(ix, proj_of, proj_at):
+    """ix with `seen` (a Rows entry, or a Count entry with the rows of each projection), `fault` (an example's fault)
+    and `train_rows` (a seen entry's rows at a train example or task-wide, else 0)."""
     count_seen = []
     for r in ix.itertuples():
         if r.kind != COUNT:
@@ -94,6 +97,12 @@ def classify(ix, tables, proj_of, proj_at):
     ix = ix.assign(seen=np.where(ix["kind"].isin([ROWS, COUNT]), np.array(count_seen), False),
                    fault=ix["kind"] == FAULT)
     ix["train_rows"] = np.where(ix["seen"] & ix["example_kind"].isin([TRAIN, TASK]), ix["rows"], 0)
+    return ix
+
+
+def classify(ix, tables, proj_of, proj_at):
+    """One row per Table (case, table, asg): its class among CLASSES, or None, and whether it has a Count entry."""
+    ix = mark_seen(ix, proj_of, proj_at)
     per_ex = ix[ix["example_kind"].isin([TRAIN, TASK])].groupby(["case", "table", "asg", "ex"])["train_rows"].sum()
     per_ex = per_ex.groupby(["case", "table", "asg"]).agg(zero=lambda s: int((s == 0).sum()), n="size")
     g = ix.groupby(["case", "table", "asg"]).agg(fault=("fault", "any"), seen=("seen", "any"),
@@ -112,7 +121,9 @@ def pct(a, b):
     return f"{100 * a / b:5.1f}%" if b else "    -"
 
 
-def index_mode(export):
+def load(export):
+    """The labels, the kept and left-out members, the relation tables after the branch with their positions, their
+    entries (`mark_seen`), and their Tables (`classify`), each with its position and member kind."""
     labs = read_labels(export)
     t = pd.read_parquet(Path(export) / "tables.parquet", columns=["case", "table", "token", "point", "fault", "projections"])
     held = set(t["case"])
@@ -135,6 +146,11 @@ def index_mode(export):
     g = g.merge(after[["case", "table", "position"]], on=["case", "table"])
     kind = {l["case"]: l["kind"] for l in kept}
     g["member"] = g["case"].map(kind)
+    return labs, kept, left, after, mark_seen(ix, proj_of, proj_at), g, kind
+
+
+def index_mode(export):
+    labs, kept, left, after, ix, g, kind = load(export)
     lines = ["## index", ""]
     points = {l["point"] for l in kept}
     lines.append(f"labels: {len(labs)}; kept {len(kept)} members of {len(points)} branch points "
@@ -179,6 +195,46 @@ def index_mode(export):
         excl = int(by.apply(lambda s: s.isin(CLASSES[:3]).all()).sum())
         lines.append(f"  position 0 every Table faulted, unseen or empty everywhere: {excl} ({pct(excl, len(ms))} of members)")
         lines.append("")
+    return lines
+
+
+def relation_mode(export):
+    """The classes of each relation after the branch, its Tables pooled: faulted where one faults; unseen where one is
+    unseen and none has rows; empty everywhere where no Table has rows at any train example; empty somewhere where,
+    pooled, some train example has no rows and another has."""
+    labs, kept, left, after, ix, g, kind = load(export)
+    per_ex = ix[ix["example_kind"].isin([TRAIN, TASK])].groupby(["case", "table", "ex"])["train_rows"].sum()
+    pooled = per_ex.groupby(["case", "table"]).agg(zero=lambda s: int((s == 0).sum()), n="size")
+    r = g.groupby(["case", "table"]).agg(faulted=("cls", lambda s: bool((s == "faulted").any())),
+                                         unseen=("cls", lambda s: bool((s == "unseen").any())),
+                                         position=("position", "first"), member=("member", "first"))
+    r = r.join(pooled).reset_index()
+    r["zero"] = r["zero"].fillna(0)
+    r["n"] = r["n"].fillna(0)
+    no_rows = r["zero"] == r["n"]
+    r["cls"] = np.select([r["faulted"], r["unseen"] & no_rows, no_rows, r["zero"] > 0], CLASSES, default="")
+    lines = ["## relation", "",
+             "A relation's Tables pooled; each member weighs 1, shared among its relations. The first relation is at position 0.", ""]
+    head = "member".ljust(10) + "members".rjust(9) + "".join(c.rjust(18) for c in CLASSES) + "  viable".rjust(9)
+    for name, sel in (("all positions", r), ("position 0", r[r["position"] == 0])):
+        lines.append(f"### {name}")
+        lines.append(head)
+        for m in ("gold", "sampled"):
+            x = sel[sel["member"] == m]
+            w = 1 / x.groupby("case")["cls"].transform("size")
+            row = m.ljust(10) + str(x["case"].nunique()).rjust(9)
+            row += "".join(pct(float(w[x["cls"] == c].sum()), float(w.sum())).rjust(18) for c in CLASSES)
+            row += pct(float(w[x["cls"] == ""].sum()), float(w.sum())).rjust(9)
+            lines.append(row)
+        lines.append("")
+    lines.append("### members whose first relation after the branch is viable")
+    for m in ("gold", "sampled"):
+        ms = [l for l in kept if l["kind"] == m]
+        x = r[(r["member"] == m) & (r["position"] == 0)]
+        v = int((x["cls"] == "").sum())
+        lines.append(f"{m}: {v} of {len(x)} with a relation after the branch ({pct(v, len(x))}); "
+                     f"of all {len(ms)} members {pct(v, len(ms))}")
+    lines.append("")
     return lines
 
 
@@ -363,19 +419,20 @@ def write(out, mode, lines):
             if cur:
                 sections[cur].append(line)
     sections[mode] = lines
-    out.write_text("\n".join(l for m in ("index", "restate") if m in sections for l in sections[m]).rstrip() + "\n")
+    out.write_text("\n".join(l for m in ("index", "relation", "restate") if m in sections for l in sections[m]).rstrip() + "\n")
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("mode", choices=["index", "restate"])
+    ap.add_argument("mode", choices=["index", "relation", "restate"])
     ap.add_argument("export")
     ap.add_argument("--out", default=str(ROOT / "lm/runs/data-study/viability.out"))
     ap.add_argument("--points", type=int, default=0)
     ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args()
     start = time.time()
-    lines = index_mode(a.export) if a.mode == "index" else restate_mode(a.export, a.points, a.seed)
+    lines = {"index": lambda: index_mode(a.export), "relation": lambda: relation_mode(a.export),
+             "restate": lambda: restate_mode(a.export, a.points, a.seed)}[a.mode]()
     write(a.out, a.mode, lines)
     print("\n".join(lines))
     print(f"{time.time() - start:.0f} s", file=sys.stderr)
