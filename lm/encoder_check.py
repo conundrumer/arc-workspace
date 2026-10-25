@@ -51,7 +51,9 @@ real tables of the dev export, cut to a few dozen rows each.
   bitwise those of a reference copy of the rule, and the masked loss bitwise the same with the reference copy's
   masks and with the attention probe on, which must give shares in [0, 1]. The pretrain log's remote entries must
   sum to the remote labels of `by_type`, a pointer type's target kinds to its fields, and `by_depth` must leave the
-  remote fields out.
+  remote fields out. Each remote pointer field's target kind must be the one a direct test of the visible rows gives,
+  a row of another entry with the same key a cross-entry target; `group_chance_loss` must equal `chance_loss` where
+  every group holds one field; and the matched recency reference must be given over at most the probed fields.
 - Loss parts: the masked loss must equal its program part plus the prior weight times its prior part.
 - Autocast: under bf16 autocast, with the encoder in float32, every attention input must be bf16, each equivariant
   matrix must be cast once per call of `prepare`, and the masked loss and its gradients must be finite; on the CPU,
@@ -1478,15 +1480,18 @@ print("== --mask-remote-groups: on a fixture whose derived table B (Ident, Numbe
       "from table A, the key group of a hidden remote field is hidden with it (300 program steps, frac 0.5)")
 
 
-def group_fixture():
+def group_fixture(shift=0):
     """ex_input and ex_output of the provenance export's $Free, then A (Ident, Color; key Ident, both columns from
     ex_input's Color) and B (Ident, Number, Color), whose Ident and Color are copied from A and whose Number is
     computed from ex_input's Position; per example's entry, B's rows (1, 5, 3), (1, 6, 3), (2, 7, 3), (3, 8, 4): the
-    rows of Ident 1 are one key group of the Color column, and both hold Color 3, which the row of Ident 2 holds too."""
+    rows of Ident 1 are one key group of the Color column, and both hold Color 3, which the row of Ident 2 holds too.
+    The second example's entry adds `shift` to each Ident, so that with a shift no row of one entry agrees with a
+    row of the other on the Ident."""
     def table(i, types, rows, keys, flows):
         n = 2 * len(rows)
+        second = [[x + shift if k == 0 else x for k, x in enumerate(row)] for row in rows]
         return E.Table(step=i, relation=i, evidence=False, unseen=None, largest=len(rows), export_table=i,
-                       positions=list(range(len(types))), types=types, cells=np.array(rows * 2, np.int32),
+                       positions=list(range(len(types))), types=types, cells=np.array(rows + second, np.int32),
                        present=np.ones((n, len(types)), bool), example=np.repeat([0, 1], len(rows)).astype(np.int16),
                        example_kind=np.ones(n, np.int8), assignment=np.full((n, 0), -1, np.int32),
                        model=np.zeros(n, np.int32), entry=np.repeat([0, 1], len(rows)).astype(np.int32),
@@ -1545,14 +1550,22 @@ print(f"  B labels {labels}, Color key groups {groups_of}; {seen}; never hidden 
 
 print("== --mask-remote-groups preflight: the fixture's hidden remote fields by type, and a refusal where no remote "
       "field would be hidden ($Unseen)")
-counted = E.preflight([("groups", grp)], 0.5, 10 ** 6, mask_remote="groups")
+grp2 = group_fixture(10)
+counted = E.preflight([("groups", grp2)] * 8, 0.5, 10 ** 6, mask_remote="groups")   # eight draws
 try:
     E.preflight([("unseen", unseen_t)], 1.0, 10 ** 6, mask_remote="groups")
     refused = "no fault"
 except E.DataFault as x:
     refused = str(x)
-ok = sum(n for n, _ in counted["hidden remote"].values()) > 0 and "hide no remote field" in refused
-print(f"  {counted['hidden remote']}; $Unseen: {refused!r} {'PASS' if ok else 'FAIL'}")
+try:   # the fixture without the shift: every row target of B's Ident is a row of the other entry
+    E.preflight([("groups", grp)], 1.0, 10 ** 6, mask_remote="groups", seed=3)
+    refused_cross = "no fault"
+except E.DataFault as x:
+    refused_cross = str(x)
+ok = (sum(x[0] - x[1] - x[2] for x in counted["hidden remote"].values()) > 0 and "hide no remote field" in refused
+      and "another entry" in refused_cross)
+print(f"  shifted fixture {counted['hidden remote']}; $Unseen: {refused!r}; unshifted fixture at frac 1: "
+      f"{refused_cross[:90]!r} {'PASS' if ok else 'FAIL'}")
 
 
 def reference_masks(tables, frac, cap, gen, kind, mask_remote=False):
@@ -1698,3 +1711,54 @@ if not n_pointer_kinds or not split:
 print(f"  remote fields {log['remote']['fields']} in {log['remote']['groups']} groups over {len(split)} (bucket, type) "
       f"entries, {sorted(remote_labels)}; {n_pointer_kinds} pointer target-kind entries "
       f"{'PASS' if not bad else 'FAIL ' + str(bad)}")
+
+print("== --mask-remote-groups: the target kinds of remote pointer fields, the group chance loss and the matched "
+      "recency reference (200 program steps of the groups fixture, with and without the shift of the second entry's "
+      "Idents)")
+bad, kinds_seen = [], {}
+g = torch.Generator().manual_seed(61)
+for name, tabs in (("unshifted", grp), ("shifted", grp2)):
+    for _ in range(200):
+        ms = enc.draw_masks(tabs, 0.5, 10 ** 6, g, "program", "groups")
+        m, t = ms[3], tabs[3]
+        rf, (rr, ii) = E.remote_fields(tabs, 3, m), np.nonzero(m)
+        for f, (r, c) in enumerate(zip(rr, ii)):
+            if rf["remote_target"][f] < 0:
+                continue
+            v = t.cells[:, c]   # B's columns are one place wide
+            vis = t.present[:, c] & ~m[:, c]
+            row = (vis & (v == v[r])).any()
+            cross = (vis & (v == v[r]) & (t.entry != t.entry[r]) & (E.key_groups(tabs, 3, c, False) ==
+                                                                       E.key_groups(tabs, 3, c, False)[r])).any()
+            want = 0 if not row else 2 if cross else 1
+            kinds_seen[(name, int(want))] = kinds_seen.get((name, int(want)), 0) + 1
+            if rf["remote_target"][f] != want:
+                bad.append((name, r, c, rf["remote_target"][f], want))
+if not kinds_seen.get(("unshifted", 2)) or not kinds_seen.get(("shifted", 1)) or kinds_seen.get(("shifted", 2)):
+    bad.append(("kinds", kinds_seen))
+# group_chance_loss is the per-field chance where every group holds one field, and the two row kinds add to the rows
+with torch.no_grad():
+    _, recs = enc.masked_loss([(t, [None] * len(t)) for t in [grp, grp2, *src_progs.values()]],
+                              torch.Generator().manual_seed(6), 0.5, 10 ** 6, torch.Generator().manual_seed(7),
+                              kind="program", mask_remote="groups", probe=True)
+log = P.losses(P.summarize(recs), 1.0)
+entries = [v for tys in log["by_source_rows"].values() for v in tys.values()]
+entries += [v[k] for v in list(entries) for k in P.TARGETS.values() if k in v] + [log["remote"]]
+singles = [v for v in entries if v["groups"] == v["fields"]]
+if not singles or any(abs(v["group_chance_loss"] - v["chance_loss"]) > 1e-9 for v in singles):
+    bad.append(("group chance where groups are single fields", [(v["group_chance_loss"], v["chance_loss"]) for v in singles]))
+if any("group_chance_loss" not in v for v in entries):
+    bad.append(("group_chance_loss missing",))
+rows_direct = sum(int((r["remote_target"] >= 1).sum()) for _, _, r in recs if "remote_target" in r)
+rows_log = sum(v.get(k, {}).get("fields", 0) for tys in log["by_source_rows"].values() for v in tys.values()
+               for k in ("row_target", "row_target_cross_entry"))
+if rows_direct != rows_log or not rows_log:
+    bad.append(("row targets", rows_direct, rows_log))
+pa = log.get("parent_attention", {})
+if not pa.get("matched_fields") or not pa["matched_fields"] <= pa["fields"] or not all(
+        0 <= x <= 1 for x in [pa["matched_parent"], pa["matched_recent"]] + pa["matched_parent_layers"]
+        + pa["matched_recent_layers"]):
+    bad.append(("matched recency reference", pa))
+print(f"  target kinds (fixture, kind) {dict(sorted(kinds_seen.items()))}; entries whose groups are single fields "
+      f"{len(singles)}; row targets {rows_log} of the log against {rows_direct} of the records; matched fields "
+      f"{pa.get('matched_fields')} of {pa.get('fields')} {'PASS' if not bad else 'FAIL ' + str(bad)}")
