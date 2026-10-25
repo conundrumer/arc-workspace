@@ -881,6 +881,20 @@ def attend(q, k, v, mask, flex=None):
     return o.transpose(1, 2).reshape(B, nq, -1)
 
 
+def prev_attention(q, k, mask, rows, P):
+    """The attention of the rows `rows` [s] (places among the B N rows of q [B, N, H, w]) over the P pooled vectors
+    that follow the N rows among the keys k [B, N + P + ..., H, w], under the key mask [B, 1, 1, keys], as a softmax
+    over those keys alone: [s, H, P] float. It reads the scores that `attend` takes and changes nothing; the share of
+    a pooled vector here is its share of the row's attention over the pooled vectors."""
+    B, N, H = q.shape[:3]
+    b = torch.div(rows, N, rounding_mode="floor")
+    qs = q.reshape(B * N, H, -1).index_select(0, rows).float()                       # [s, H, w]
+    kp = k[:, N:N + P].index_select(0, b).float()                                    # [s, P, H, w]
+    scores = torch.einsum("shw,sphw->shp", qs, kp)
+    keep = mask[:, 0, 0, N:N + P].index_select(0, b)                                 # [s, P]
+    return torch.softmax(scores.masked_fill(~keep[:, None], float("-inf")), -1)
+
+
 def placed(src, at, n):
     """n rows of zeros with the rows of src [k, ...] at the distinct places at [k]: a copy, whose backward pass is a
     gather."""
@@ -957,6 +971,8 @@ class Block(nn.Module):
             o, acc = o[..., :Wv].reshape(B, N, H * Wv), o[..., Wv:]
         else:
             o = attend(q, k, v, ctx.mask, flex)
+        if ctx.probe is not None and ctx.prev is not None:
+            ctx.probe["out"].append(prev_attention(q, k, ctx.mask, ctx.probe["rows"], ctx.prev.shape[1]))
         x = x + F.linear(o, mats["o"], mats["bo"]).view(x.shape)
         f = F.gelu(F.linear(self.n2(x).reshape(B, N, -1), mats["f1"], mats["bf1"]))
         x = x + F.linear(f, mats["f2"], mats["bf2"]).view(x.shape)
@@ -1230,6 +1246,41 @@ def column_labels(tables, j):
     return hit[2]
 
 
+def group_columns(tables, j):
+    """[columns] bool: the remote columns of derived table j of a program (`column_labels`) that a program step hides
+    under `mask_remote` "groups": those with a source pair in `column_sources`, none of whose source tables is unseen
+    (`mark_over_rows` makes unseen a table over the table cap). A remote column without a source pair, whose flows
+    name no table, holds values that no earlier table's pooled vectors carry."""
+    lab, src = column_labels(tables, j), column_sources(tables)[j]
+    return np.array([lab[c] == REMOTE and bool(s) and all(tables[i].unseen is None for i, _ in s)
+                     for c, s in enumerate(src)], bool)
+
+
+def source_size(tables, j, c):
+    """The most rows of a source table of column c of derived table j of a program (`column_sources`), 0 without one."""
+    return max((tables[i].n for i in {i for i, _ in column_sources(tables)[j][c]}), default=0)
+
+
+def key_groups(tables, j, c):
+    """The key group of each row of derived table j of a program for its column c, [n] int64, equal for the rows of
+    one group: the rows of one entry that agree, in presence and value, on every other column that has a source
+    table in common with c (`column_sources`). Such rows joined the same rows of c's source tables, so they hold
+    c's value as a group. Kept on the table while its cells are the same array."""
+    t = tables[j]
+    memo = t.__dict__.setdefault("_unique", {})
+    hit = memo.get(("key groups", c))
+    if hit is None or hit[0] is not t.cells:
+        src = column_sources(tables)[j]
+        st = {i for i, _ in src[c]}
+        off = np.cumsum([0] + [width(ty) for ty in t.types])
+        keys = [k for k in range(len(t.types)) if k != c and any(i in st for i, _ in src[k])]
+        parts = [t.entry[:, None]] + [np.concatenate([t.present[:, k:k + 1], t.cells[:, off[k]:off[k + 1]]], 1)
+                                      for k in keys]
+        g = np.unique(np.concatenate(parts, 1).astype(np.int64), axis=0, return_inverse=True)[1].reshape(-1)
+        hit = memo[("key groups", c)] = (t.cells, g)
+    return hit[1]
+
+
 def field_labels(tables):
     """The label of each field of each table of a program, [n, columns] int8, read-only (None for a table without
     rows). In
@@ -1356,9 +1407,16 @@ def preflight(programs, frac, cap, seed=0, mask_remote=False):
     fields of rows that are not markers and of the step kind's label (a program step also hides remote fields
     with `mask_remote`), hides ex_output fields alone in an output step, and in a program step hides no field
     whose source (column-level with the export's provenance, table-level without) hides fields and, without
-    `mask_remote`, hides no field whose column has sources, all in other derived tables. Gives the number of fields of each label, by label name, over the programs."""
+    `mask_remote`, hides no field whose column has sources, all in other derived tables. Gives the number of fields of each label, by label name, over the programs.
+
+    With `mask_remote` "groups", a program step must also hide remote fields only in the columns of `group_columns`
+    and, in each column, the present fields of every key group (`key_groups`) that holds a hidden field; the result
+    then gains "hidden remote", per value type, [the remote fields the program steps hide, those of them whose
+    pointer target is "no row holds it"] (a pointer type alone has the second count, and 0 for the others), and the
+    preflight raises DataFault where the program steps hide no remote field."""
     gen = torch.Generator().manual_seed(seed)
     count = {x: 0 for x in FIELD_LABELS}
+    remote = {}   # per value type, [hidden remote fields, those whose pointer target is no row]
     for name, ts in programs:
         fail = lambda j, what: DataFault(f"preflight: {name} table {j} relation {ts[j].relation} export table "
                                          f"{ts[j].export_table} types {ts[j].types}: {what}")
@@ -1398,7 +1456,37 @@ def preflight(programs, frac, cap, seed=0, mask_remote=False):
                 if kind == "program" and (any(sources[j][c] & hidden for c in np.flatnonzero(m.any(0))) if prov
                                           else sources[j] & held):
                     raise fail(j, "a program step hides a field whose source hides fields")
+                if kind == "program" and mask_remote == "groups" and prov and not t.evidence and t.flows is not None:
+                    lab_c, ok = column_labels(ts, j), group_columns(ts, j)
+                    off = np.cumsum([0] + [width(ty) for ty in t.types])
+                    for c in np.flatnonzero(m.any(0) & (lab_c == REMOTE)):
+                        if not ok[c]:
+                            raise fail(j, f"a program step hides remote column {c}, which has no source pair or an "
+                                          f"unseen source table")
+                        g, rows = key_groups(ts, j, c), np.flatnonzero(m[:, c])
+                        if (np.isin(g, g[rows]) & t.present[:, c] & ~m[:, c]).any():
+                            raise fail(j, f"a program step leaves visible a field of a key group of remote column {c} "
+                                          f"that hides a field")
+                        ty, x = t.types[c], remote.setdefault(t.types[c], [0, 0])
+                        x[0] += len(rows)
+                        if ty in POINTER_TYPES:
+                            v = t.cells[:, off[c]]
+                            cand = v[t.present[:, c] & ~m[:, c] & ~t.marker]
+                            x[1] += int((~np.isin(v[rows], cand)).sum())
+    if mask_remote == "groups":
+        if not sum(x[0] for x in remote.values()):
+            raise DataFault("preflight: with --mask-remote-groups, the program steps of one draw per program hide "
+                            "no remote field; a remote column is hidden only where it has a source pair and its source "
+                            "tables are all seen")
+        count["hidden remote"] = dict(sorted(remote.items()))
     return count
+
+
+def hidden_remote_line(hidden):
+    """The preflight line of `preflight`'s "hidden remote" entry."""
+    return (f"hidden remote fields by type, one draw per program { {ty: n for ty, (n, _) in hidden.items()} }; share "
+            f"whose pointer target is no row "
+            f"{ {ty: round(z / n, 3) for ty, (n, z) in hidden.items() if ty in POINTER_TYPES} }")
 
 
 GROUPS = {"Number": "number", "Color": "color", "Example": "example", "Ident": "ident", "Box": "box"}
@@ -1472,12 +1560,14 @@ class Batch:
     keys each table's rows attend to (its rows, its pooled vectors, its evidence rows); `prev` [B, P, 21, c], the
     earlier pooled vectors with their recency; `eq_q` [B, N, 1, D] and `eq_k` (per layer, [B, N + P, H, D]), the
     equality term's query and key channels with the zeros that pad q and k; `ev`, the `EvidenceKeys` of the batch's
-    evidence rows; `flex`, the groups of the flex equality term. The per-layer
+    evidence rows; `flex`, the groups of the flex equality term; `probe`, where it is set, a dict whose "rows" [s]
+    are places among the batch's B N rows, to whose "out" each Block adds those rows' attention over the pooled vectors
+    alone. The per-layer
     parts are views that `unbind` gives of one tensor of every layer, whose backward pass builds that tensor's
     gradient once, where a view per layer by indexing builds a gradient of every layer's size at each layer."""
     def __init__(self, level, mask, prev):
         self.level, self.mask, self.prev = level, mask, prev
-        self.eq_q = self.eq_k = self.ev = self.flex = self.src = self.code_v = self.code_layer = None
+        self.eq_q = self.eq_k = self.ev = self.flex = self.src = self.code_v = self.code_layer = self.probe = None
 
 
 class Evidence:
@@ -2103,7 +2193,7 @@ class FeatureEncoder(nn.Module):
         inv = s[None, :, 0] + (rel + unseen[:, None] * self.unseen)[:, None]
         return torch.cat([inv[:, :, None], s[None, :, 1:].expand(len(rel), -1, -1, -1)], 2)
 
-    def encode_programs(self, programs, gen, masks=None, detail=False):
+    def encode_programs(self, programs, gen, masks=None, detail=False, probe=False):
         """programs: [(tables, relation vectors [n, c] or a list of them, Identifiers)] -> the pooled vectors
         [n, K, 21, c] of each program's tables. Level t holds the t-th table of every program, whose rows attend to
         that program's pooled vectors of levels 0..t-1 outside its own group of `table_groups` (the tables of the
@@ -2119,7 +2209,10 @@ class FeatureEncoder(nn.Module):
         name; and with `ptr_equality` too, the last layer's attention also gathers the source keys' pointer codes for
         the masked heads. Call `prepare` first. With `masks` (per
         program, per table, a field mask [n, columns] or None), the masked fields are hidden and the result is (pooled
-        vectors, records): a record (program, table index, masked_fields' result) per table with a masked field."""
+        vectors, records): a record (program, table index, masked_fields' result) per table with a masked field.
+        With `probe` too, a record of a table with hidden remote fields gains "parent_attention" [m, layers] and
+        "parent_chance" [m] (`parent_shares`), NaN for its other fields; the probe reads the attention scores and
+        changes no computed value."""
         dev, dt, c, K = self.cross.weight.device, self.cross.weight.dtype, self.c, self.K
         act = torch.get_autocast_dtype(dev.type) if torch.is_autocast_enabled(dev.type) else dt
         L, flex = len(self.blocks), self.equality == "flex"
@@ -2130,6 +2223,12 @@ class FeatureEncoder(nn.Module):
         rel_start = np.cumsum([0] + [len(r) for r in rels])
         rel_all = torch.cat(rels) if len(rels) > 1 else rels[0]
         records = []
+
+        def remote_rows(it):   # the rows of an item's table that hold a hidden remote field
+            tb, cm = it["parts"][0][:2]
+            if it["evidence"] or cm is None or tb.flows is None or len(it["parts"]) != 1:
+                return np.zeros(0, np.int64)
+            return np.flatnonzero((cm & (column_labels(programs[it["p"]][0], it["t"]) == REMOTE)).any(1))
         pool_row, n_pooled = {}, 0   # the row of (program, table) among every pooled vector
         ev = Evidence(len(programs), L)
         joint = {p for p, (tables, _, _) in enumerate(programs) if len(tables) > 1 and tables[0].evidence
@@ -2345,6 +2444,10 @@ class FeatureEncoder(nn.Module):
                                          eq_w - sp["F"], self.src_eq_all, self.blocks[0].heads, mats0["W"], mats0["Wv"])
                     if self.ptr_codes:
                         ctx.code_v, ctx.code_layer = pack[sp["codes"]], L - 1
+                if probe and masks is not None and t:
+                    rows_ = [b * N + r for b, it in enumerate(plan["its"]) for r in remote_rows(it)]
+                    if rows_:
+                        ctx.probe = dict(rows=torch.tensor(rows_, device=dev), out=[])
                 keep_layers = plan["its_ev"] or plan.get("src_sel") is not None
                 layers, acc = [], None
                 for l, blk in enumerate(self.blocks):
@@ -2361,12 +2464,19 @@ class FeatureEncoder(nn.Module):
                 if plan.get("src_sel") is not None:
                     store.add(layers, pack[plan["src_sel"]])
                 outs.append(self.pool(x, pack[plan["pool_mask"]], self.pool_mats).view(B * J, K, NPOS, c))
+                probed = 0   # the probed rows of the batch's earlier tables
                 for b, it in enumerate(plan["its"]):
                     for j, (tbj, cmj, lo, hi) in enumerate(it["parts"]):
                         if cmj is not None and cmj.any():
                             records.append((it["p"], t + j, self.masked_fields(
                                 tbj, x[b, lo:hi], cmj, detail, None if acc is None else acc[b, lo:hi],
                                 programs[it["p"]][2])))
+                            if ctx.probe is not None and len(it["parts"]) == 1:
+                                n_rows = len(remote_rows(it))
+                                attn = [o[probed:probed + n_rows] for o in ctx.probe["out"]]
+                                probed += n_rows
+                                records[-1][2].update(self.parent_shares(
+                                    programs[it["p"]][0], t, cmj, attn, pack[plan["key_mask"]][b, 0, 0, N:N + t * K]))
             if empties:
                 outs.append(self.empty_vectors(rel_all.index_select(0, pack[lv["e_rel"]]), pack[lv["e_unseen"]]))
             ev.join_level()
@@ -2485,6 +2595,33 @@ class FeatureEncoder(nn.Module):
             rec["out"] = out
         return rec
 
+    def parent_shares(self, tables, t, field_mask, attn, keep):
+        """The probe's entries of the record of derived table t of a program (`encode_programs`): for each hidden
+        field, in the order of `masked_fields`, "parent_attention" [m, layers], the mean over heads of the share of
+        its row's attention over the earlier tables' pooled vectors (`attn`, per layer [rows, H, t K], one row per row
+        of the table with a hidden remote field, in order) that lands on the pooled vectors of its column's source
+        tables (`column_sources`), and "parent_chance" [m], the share of those vectors among the vectors the row
+        attends to (`keep` [t K]), the share under equal scores. NaN for a field that is not remote, or whose source
+        tables give no vector the row attends to."""
+        rr, ii = np.nonzero(field_mask)
+        lab, src = column_labels(tables, t), column_sources(tables)[t]
+        place = {r: k for k, r in enumerate(np.flatnonzero((field_mask & (lab == REMOTE)).any(1)))}
+        keep = keep.cpu().numpy()
+        share = np.full((len(rr), len(attn)), np.nan)
+        chance = np.full(len(rr), np.nan)
+        a = [x.cpu().numpy() for x in attn]
+        for f, (r, c) in enumerate(zip(rr, ii)):
+            if lab[c] != REMOTE:
+                continue
+            slots = np.array([i * self.K + k for i in sorted({i for i, _ in src[c] if i < t}) for k in range(self.K)],
+                             np.int64)
+            slots = slots[keep[slots]] if len(slots) else slots
+            if not len(slots):
+                continue
+            share[f] = [x[place[r]][:, slots].sum(-1).mean() for x in a]
+            chance[f] = len(slots) / keep.sum()
+        return {"parent_attention": share, "parent_chance": chance}
+
     def pointer_equality(self, table, field_mask, rows, cols, kept, acc, ids, dev):
         """The equality terms of the pointer scores (`masked_fields`) of the hidden fields at (rows, cols) against the
         candidate rows `kept`: [m, n']."""
@@ -2555,21 +2692,44 @@ class FeatureEncoder(nn.Module):
         an order drawn from `gen`, and a table keeps its candidates only where no table among its sources
         (`table_sources`) and no table that it is a source of holds hidden fields already. Last, in a program step
         and in an output step, each hidden dependent field of ex_output stays visible where no other train
-        example's output shows its value in a visible field (`keep_occurrence`)."""
+        example's output shows its value in a visible field (`keep_occurrence`).
+
+        With `mask_remote` "groups", in a program step whose tables hold the provenance, a remote field is a candidate
+        only in a column of `group_columns`, and each remote candidate, visited in an order drawn from `gen` after the
+        cut to `cap`, hides its column in every row of its key group (`key_groups`) too, so that no visible row of the
+        group shows the value; a candidate whose group would take the table's hidden fields past `cap` stays visible
+        with its group."""
         assert kind in STEP_KINDS, kind
+        assert mask_remote in (False, True, "groups"), mask_remote
         want = INFERRABLE if kind == "prior" else COMPUTED
+        groups = mask_remote == "groups" and kind == "program" and provenance(tables)
         out = []
-        for t, lab in zip(tables, field_labels(tables)):
+        for j, (t, lab) in enumerate(zip(tables, field_labels(tables))):
             if not t.n or not len(t.types):
                 out.append(None); continue
             m = (torch.rand(t.n, len(t.types), generator=gen).numpy() < frac) & t.present & ~t.marker[:, None]
-            m &= (lab == want) | ((lab == REMOTE) & (mask_remote and kind == "program"))
+            grouped = groups and not t.evidence and t.flows is not None
+            if grouped:
+                m &= (lab == want) | ((lab == REMOTE) & group_columns(tables, j))
+            else:
+                m &= (lab == want) | ((lab == REMOTE) & (mask_remote and kind == "program"))
             if kind == "output" and t.relation != "ex_output":
                 m[:] = False
             r, i = np.nonzero(m)
             if len(r) > cap:
                 drop = torch.randperm(len(r), generator=gen).numpy()[cap:]
                 m[r[drop], i[drop]] = False
+            if grouped:
+                rr, cc = np.nonzero(m & (lab == REMOTE))
+                n_hidden = int(m.sum())
+                for k in (torch.randperm(len(rr), generator=gen).tolist() if len(rr) else ()):
+                    r_, c_ = rr[k], cc[k]
+                    g = key_groups(tables, j, c_)
+                    add = (g == g[r_]) & t.present[:, c_] & ~m[:, c_]
+                    if n_hidden + int(add.sum()) > cap:
+                        m[r_, c_] = False; n_hidden -= 1
+                    else:
+                        m[add, c_] = True; n_hidden += int(add.sum())
             out.append(m)
         if kind == "program" and provenance(tables):
             sources, held, blocked = column_sources(tables), set(), set()   # blocked: the sources of held columns
@@ -2601,14 +2761,17 @@ class FeatureEncoder(nn.Module):
         return [range(i, min(i + g, n)) for i in range(0, n, g)] if g else [range(n)]
 
     def masked_loss(self, programs, gen=None, frac=0.15, cap=512, mask_gen=None, detail=False, backward=None,
-                    kind="alternate", step=0, prior_weight=1.0, mask_remote=False):
+                    kind="alternate", step=0, prior_weight=1.0, mask_remote=False, probe=False):
         """programs: [(tables, declaration identifiers)] -> the masked loss, and the records of encode_programs, each
         with "kind", its program's step kind, "part", the part of the loss it falls in, and "depth", its table's
         `depth`. The step kind of program
         p is `kind` ("program", "output" or "prior"), or with "alternate", STEP_KINDS[(step + p) % 3]. The loss is
         the program part, the mean loss over the hidden fields of the program and output steps, which are computed
         fields, plus `prior_weight` times the prior part, the mean over those of the prior steps; a part without
-        fields is 0. A program step hides remote fields too with `mask_remote` (`draw_masks`). The masks are drawn
+        fields is 0. A program step hides remote fields too with `mask_remote`, True or "groups" (`draw_masks`), and
+        then a record of a derived table that holds the provenance gains "source_rows" [m], per hidden field the
+        most rows of a source table of its column (`source_size`) where the field is remote, and -1 elsewhere. With
+        `probe`, the records gain the attention probe of `encode_programs`. The masks are drawn
         from `mask_gen`, all before
         any encoding, and the identifiers from `gen`. The programs are encoded in the groups of `chunks`. With
         `backward`, a weight, where gradients are on, the backward pass of the weight times the loss runs group by
@@ -2630,12 +2793,16 @@ class FeatureEncoder(nn.Module):
                 rels = self.relation_vectors([t for p in ch for t in programs[p][0]], [d for p in ch for d in programs[p][1]])
                 rels = rels.split([len(programs[p][0]) for p in ch])
                 work = [(programs[p][0], r, Identifiers(self.c, self.code_dim, gen, dev, dt)) for p, r in zip(ch, rels)]
-                _, recs = self.encode_programs(work, gen, [masks[p] for p in ch], detail)
+                _, recs = self.encode_programs(work, gen, [masks[p] for p in ch], detail, probe)
             finally:
                 self.release()
             recs = [(ch[0] + p, t, r) for p, t, r in recs]
             for p, t, r in recs:
                 r["kind"], r["part"], r["depth"] = kinds[p], LOSS_PART[kinds[p]], programs[p][0][t].depth
+                tables = programs[p][0]
+                if mask_remote and not tables[t].evidence and tables[t].flows is not None:
+                    lab, ii = column_labels(tables, t), np.nonzero(masks[p][t])[1]
+                    r["source_rows"] = np.array([source_size(tables, t, c) if lab[c] == REMOTE else -1 for c in ii])
             records += recs
             if not recs:
                 continue

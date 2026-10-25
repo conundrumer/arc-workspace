@@ -12,7 +12,13 @@ evaluated every `--eval-every` steps with fixed masks and identifiers, on a samp
 gives the masked loss, each part's loss, and per part the loss and the accuracy per column type, with the fields of
 `ex_output` under "ex_output/<type>", and where the export gives depths, the program part per depth bucket of the
 derived tables (`by_depth`: 1, 2, 3, 4+); a Box or Position field is right when all four margins are, and its type also
-gives the edge accuracy, of single margins. Beside each `loss` the log gives `chance_loss` (`program_chance_loss` and `prior_chance_loss` beside the
+gives the edge accuracy, of single margins. With `--mask-remote` or `--mask-remote-groups`, the log gives the program part
+over the remote fields by the most rows of a source table of the field's column (`by_source_rows`: 1-50, 51-200,
+201-1000, 1001-4000, then 4001+ and none where they occur), and with `--mask-remote-groups`, the held-out entry
+`parent_attention`: over the hidden remote fields, per layer (`layers`) and its mean over the layers (`mean`), the
+mean over heads of the share of the field's row's attention over the earlier tables' pooled vectors that lands on
+the pooled vectors of its column's source tables, beside `chance`, that share under equal scores, and `fields`
+(encoder.py, `parent_shares`). Beside each `loss` the log gives `chance_loss` (`program_chance_loss` and `prior_chance_loss` beside the
 parts' losses), the mean loss of a head with equal scores over the same fields (the encoder's `masked_fields` states it
 per field).
 
@@ -121,6 +127,15 @@ def value_heldout_metrics(members, draws, positions, label, loss_sum=0.0, losses
 
 
 DEPTHS = ("1", "2", "3", "4+")
+SOURCE_BUCKETS = ((50, "1-50"), (200, "51-200"), (1000, "201-1000"), (4000, "1001-4000"), (float("inf"), "4001+"))
+
+
+def source_bucket(rows):
+    """The `by_source_rows` bucket of a remote field's most source-table rows, "none" for 0 (no source table, or
+    only unseen or empty ones), or None for a field that is not remote (-1)."""
+    if rows < 0:
+        return None
+    return "none" if rows == 0 else next(name for hi, name in SOURCE_BUCKETS if rows <= hi)
 
 
 def depth_bucket(depth):
@@ -131,15 +146,29 @@ def depth_bucket(depth):
 def summarize(records, by=None):
     """Per part, per label, over the records of masked_loss: [loss sum, fields right, fields, margins right,
     chance loss sum], the margins for a Box or Position, of four per field; and under "depth", the same per depth bucket (`depth_bucket`)
-    over the program part's fields of the derived tables that give a depth; added to `by` where it is given."""
-    by = {**{p: {} for p in PARTS}, "depth": {}} if by is None else by
+    over the program part's fields of the derived tables that give a depth; under "source rows", the same per
+    `source_bucket` over the program part's remote fields of the records that give "source_rows"; under "parents",
+    [per layer the sum of "parent_attention", the sum of "parent_chance", fields] over the fields that give them;
+    added to `by` where it is given."""
+    by = {**{p: {} for p in PARTS}, "depth": {}, "source rows": {}, "parents": []} if by is None else by
     for _, _, r in records:
         bucket = depth_bucket(r.get("depth")) if r["part"] == "program" else None
-        for lab, l, ok, e, ch in zip(r["label"], r["loss"].tolist(), r["correct"].tolist(), r["edges"].tolist(),
-                                     r["chance_loss"].tolist()):
+        src = r.get("source_rows") if r["part"] == "program" else None
+        src = [None] * len(r["label"]) if src is None else [source_bucket(int(n)) for n in src]
+        for lab, l, ok, e, ch, sb in zip(r["label"], r["loss"].tolist(), r["correct"].tolist(), r["edges"].tolist(),
+                                         r["chance_loss"].tolist(), src):
             for x in [by[r["part"]].setdefault(lab, [0.0, 0, 0, 0, 0.0])] + (
-                    [by["depth"].setdefault(bucket, [0.0, 0, 0, 0, 0.0])] if bucket else []):
+                    [by["depth"].setdefault(bucket, [0.0, 0, 0, 0, 0.0])] if bucket else []) + (
+                    [by["source rows"].setdefault(sb, [0.0, 0, 0, 0, 0.0])] if sb else []):
                 x[0] += l; x[1] += ok; x[2] += 1; x[3] += max(e, 0); x[4] += ch
+        if "parent_attention" in r:
+            pa, pc = r["parent_attention"], r["parent_chance"]
+            on = ~np.isnan(pc)
+            if on.any():
+                if not by["parents"]:
+                    by["parents"] = [np.zeros(pa.shape[1]), 0.0, 0]
+                x = by["parents"]
+                x[0] = x[0] + pa[on].sum(0); x[1] += float(pc[on].sum()); x[2] += int(on.sum())
     return by
 
 
@@ -154,16 +183,23 @@ def by_type(by):
 def losses(by, prior_weight):
     """The log's loss entries of `summarize`'s result: the loss, each part's mean loss, and the fields of each part,
     with the parts per label, and where the tables give depths, the program part per depth bucket (`by_depth`:
-    loss, chance loss, accuracy and fields)."""
+    loss, chance loss, accuracy and fields); where the records give them, the program part's remote fields per
+    `source_bucket` (`by_source_rows`, the same entries), and the attention probe's means (`parent_attention`)."""
     mean = {p: sum(x[0] for x in by[p].values()) / max(sum(x[2] for x in by[p].values()), 1) for p in PARTS}
-    depth = {k: {"loss": by["depth"][k][0] / by["depth"][k][2], "chance_loss": by["depth"][k][4] / by["depth"][k][2],
-                 "accuracy": by["depth"][k][1] / by["depth"][k][2],
-                 "fields": by["depth"][k][2]} for k in DEPTHS if k in by["depth"]}
+    bucketed = lambda d, ks: {k: {"loss": d[k][0] / d[k][2], "chance_loss": d[k][4] / d[k][2],
+                                  "accuracy": d[k][1] / d[k][2], "fields": d[k][2]} for k in ks if k in d}
+    depth = bucketed(by["depth"], DEPTHS)
+    sources = bucketed(by["source rows"], [name for _, name in SOURCE_BUCKETS] + ["none"])
+    parents = by["parents"]
     chance = {p: sum(x[4] for x in by[p].values()) / max(sum(x[2] for x in by[p].values()), 1) for p in PARTS}
     return {"loss": mean["program"] + prior_weight * mean["prior"], "program_loss": mean["program"],
             "prior_loss": mean["prior"], "program_chance_loss": chance["program"], "prior_chance_loss": chance["prior"],
             **{f"{p}_fields": sum(x[2] for x in by[p].values()) for p in PARTS},
-            "by_type": {p: by_type(by[p]) for p in PARTS}, **({"by_depth": depth} if depth else {})}
+            "by_type": {p: by_type(by[p]) for p in PARTS}, **({"by_depth": depth} if depth else {}),
+            **({"by_source_rows": sources} if sources else {}),
+            **({"parent_attention": {"layers": (parents[0] / parents[2]).tolist(),
+                                     "mean": float(parents[0].mean() / parents[2]), "chance": parents[1] / parents[2],
+                                     "fields": parents[2]}} if parents else {})}
 
 
 def parser():
@@ -200,6 +236,11 @@ def parser():
                     help="a program step also hides the computed fields whose sources are all in other derived "
                          "tables (label remote), which a row sees only as those tables' pooled vectors; off by "
                          "default")
+    ap.add_argument("--mask-remote-groups", action="store_true",
+                    help="a program step hides remote fields in the columns that have a source pair whose source "
+                         "tables are all seen, each with its column in every row of its key group, the rows of its "
+                         "entry that agree on the columns that share a source table with it (encoder.py, "
+                         "draw_masks); the held-out log gains the attention probe; not with --mask-remote")
     ap.add_argument("--id-dim", type=int, default=64)
     ap.add_argument("--enc-k", type=int, default=4)
     ap.add_argument("--enc-layers", type=int, default=2)
@@ -255,7 +296,7 @@ def run_config(a, in_names):
     return dict(base=a.base, tables=a.tables, enc_k=a.enc_k, enc_layers=a.enc_layers, enc_width=a.enc_width,
                 enc_heads=a.enc_heads, enc_mlp=a.enc_mlp, enc_gram=a.enc_gram, enc_budget=a.enc_budget,
                 id_dim=a.id_dim, mask_frac=a.mask_frac, mask_cap=a.mask_cap, mask_kind=a.mask_kind,
-                mask_remote=a.mask_remote, prior_weight=a.prior_weight, in_names=in_names, enc_equality=a.enc_equality,
+                mask_remote=a.mask_remote, mask_remote_groups=a.mask_remote_groups, prior_weight=a.prior_weight, in_names=in_names, enc_equality=a.enc_equality,
                 enc_source_rows=a.enc_source_rows, enc_ptr_equality=a.enc_ptr_equality, enc_max_rows=a.enc_max_rows,
                 value=a.value, value_tables=a.value_tables, value_label=a.value_label, value_weight=a.value_weight,
                 value_positions=a.value_positions, value_groups=a.value_groups)
@@ -263,6 +304,8 @@ def run_config(a, in_names):
 
 def main():
     a = parser().parse_args()
+    assert not (a.mask_remote and a.mask_remote_groups), "--mask-remote-groups replaces --mask-remote; give one"
+    remote = "groups" if a.mask_remote_groups else a.mask_remote   # masked_loss's mask_remote
     assert a.enc_equality != "flex" or a.device == "cuda", "--enc-equality flex trains on cuda alone"
     if a.enc_checkpoint is None:
         a.enc_checkpoint = a.device == "cuda"
@@ -315,9 +358,12 @@ def main():
     if a.preflight:
         t_pre = time.time()
         labelled = E.preflight([((c["task"], c["case"]), c["tables"]) for c in train + held], a.mask_frac, a.mask_cap,
-                               mask_remote=a.mask_remote)
+                               mask_remote=remote)
+        hidden_remote = labelled.pop("hidden remote", None)
         print(f"preflight: {len(train) + len(held)} programs, {time.time() - t_pre:.0f} s; fields by label {labelled}",
               flush=True)
+        if hidden_remote is not None:
+            print(f"preflight: {E.hidden_remote_line(hidden_remote)}", flush=True)
     if 0 < a.eval_limit < len(held):
         held = random.Random(a.seed).sample(held, a.eval_limit)
 
@@ -359,7 +405,7 @@ def main():
             for i in range(0, len(held), a.programs):
                 _, r = enc.masked_loss([program(c, gen) for c in held[i:i + a.programs]], gen, a.mask_frac,
                                        a.mask_cap, mask_gen, kind=a.mask_kind, prior_weight=a.prior_weight,
-                                       mask_remote=a.mask_remote)
+                                       mask_remote=remote, probe=a.mask_remote_groups)
                 records += r
                 if (i // a.programs + 1) % 10 == 0:
                     print(f"  {min(i + a.programs, len(held))}/{len(held)} programs, {time.time() - t_eval:.0f} s", flush=True)
@@ -397,7 +443,7 @@ def main():
             if drawn:
                 loss, records = enc.masked_loss([program(c, gen) for c in drawn],
                                                 gen, a.mask_frac, a.mask_cap, mask_gen, kind=a.mask_kind, step=step,
-                                                prior_weight=a.prior_weight, mask_remote=a.mask_remote)
+                                                prior_weight=a.prior_weight, mask_remote=remote)
             else:
                 loss, records = sum(p.sum() * 0.0 for p in params), []
             masked, total = loss, loss
