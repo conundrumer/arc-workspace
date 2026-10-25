@@ -3,7 +3,9 @@
 `uv run python -m study.table_lint [--corpus <dir>] [<task_id> ...]`
 prints, for every solver of the corpus where no task id is given, one line
 for each relation that holds more than 1,000 rows summed over the solver's
-inputs, or that stopped at a bound on some input:
+inputs, or that stopped at a bound on some input, other than `&output`, which
+no rewrite removes, and a relation that the decode gives no table, which
+`row-counts` marks:
 
     <task_id> <relation> <rows per input> <test> <rewrite>
 
@@ -20,6 +22,9 @@ stopped at a bound, which `row-counts` writes no rows for; or it has a rows
 file of more than `WORK_CAP` rows × 2^columns, which the tests that read
 rows skip; or the run that writes the rows of its solver faulted; or it has
 no rows file.
+
+The rows of a relation whose columns the type check gives no types are not
+written, so its line says no rows file was written.
 
 The corpus is the arclog files of `gen/` of `arclog_convert.out`, which
 reflect a solver's `.dl` file once `uv run python -m arclog_convert.convert
@@ -66,6 +71,9 @@ WORK_CAP = 1 << 22
 of the tests on one file is about that product."""
 
 STOPPED = "stopped:"
+OUTPUT = "&output"
+NO_TABLE = ("no", "table")
+"""The fields after a relation's name on the line of `row-counts` that marks a relation the decode gives no table."""
 LIB_PAIRS = frozenset({"same_line", "neighbor", "apply"})
 ORDERINGS = frozenset({"<", "<=", ">", ">="})
 
@@ -81,7 +89,7 @@ class Derivation(StrEnum):
 
 
 REWRITES = {
-    Derivation.RESTATEMENT: "read the relation where the table was read; an input of one atom",
+    Derivation.RESTATEMENT: "read the relation where the table was read",
     Derivation.CELL_INSTANCE: "CellDistance or Flood",
     Derivation.PRODUCT: "the factors; for a guard, the input it binds or nothing",
     Derivation.CLOSURE: "Flood or Connectivity",
@@ -111,6 +119,8 @@ class Relation:
     solver: str
     name: str
     counts: tuple[Count, ...]
+    tabled: bool = True
+    """Whether the decode gives the relation a table."""
 
     @property
     def stopped(self) -> Stopped | None:
@@ -126,8 +136,8 @@ class Relation:
 
     @property
     def flagged(self) -> bool:
-        """Whether the relation is one of the solver's, not a fact of the task, and large or stopped."""
-        return self.name not in FACTS and (self.total > THRESHOLD or self.stopped is not None)
+        """Whether the relation is one of the solver's that has a table, not a fact of the task or the output, and large or stopped."""
+        return self.tabled and self.name not in FACTS | {OUTPUT} and (self.total > THRESHOLD or self.stopped is not None)
 
 
 def input_count(field: str) -> Count:
@@ -145,6 +155,7 @@ def read_counts(text: str) -> tuple[list[Relation], list[str]]:
     """The relations of a `row-counts` output, and its fault lines. The
     `clause` lines of the output are not read."""
     counts: dict[tuple[str, str], list[Count]] = defaultdict(list)
+    untabled = set()
     faults = []
     for line in text.splitlines():
         fields = line.split()
@@ -152,9 +163,11 @@ def read_counts(text: str) -> tuple[list[Relation], list[str]]:
             faults.append(line)
         elif len(fields) == 4:
             counts[fields[0], fields[2]].append(input_count(fields[3]))
+        elif tuple(fields[3:]) == NO_TABLE:
+            untabled.add((fields[0], fields[2]))
         elif len(fields) != 7 or fields[3] != "clause":
             raise ValueError(f"{line!r} is no line of `row-counts`")
-    return [Relation(solver, name, tuple(c)) for (solver, name), c in counts.items()], faults
+    return [Relation(solver, name, tuple(c), (solver, name) not in untabled) for (solver, name), c in counts.items()], faults
 
 
 def row_counts(corpus: Path, tasks: Path, ids: Sequence[str], rows: tuple[int, Path] | None = None) -> str:
@@ -337,14 +350,7 @@ def reads_apply_per_pair(body: Body) -> bool:
     return of_port(body, ("Agreement",), "correspondence") and any(atom[0] == "apply" for atom in deep_atoms(body.items))
 
 
-def is_one_atom_input(body: Body) -> bool:
-    """An instance input whose body is one atom of a derived relation."""
-    items = conjunction(body)
-    return body.kind is Kind.INPUT and items is not None and len(items) == 1 and item_kind(items[0]) is Item.ATOM and str(items[0][0]).startswith("&")
-
-
 FORMS: tuple[tuple[Derivation, Callable[[Body], bool]], ...] = (
-    (Derivation.RESTATEMENT, is_one_atom_input),
     (Derivation.CELL_INSTANCE, is_cell_instance),
     (Derivation.PRODUCT, is_product),
     (Derivation.ORDER_OR_CLASS, is_comparison_edge),

@@ -37,7 +37,7 @@ mod projections;
 
 pub use batch::step_batch;
 pub use interface::{Consistency, Step};
-pub use tables::{evidence_tables, Contents, ExampleRows, Point, Points, Table, TableColumn, TableDet, TableRelation};
+pub use tables::{evidence_tables, gives_no_table, Contents, ExampleRows, Point, Points, Table, TableColumn, TableDet, TableRelation};
 pub use projections::{Projection, Projections};
 
 use std::sync::Arc;

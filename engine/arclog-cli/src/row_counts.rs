@@ -5,13 +5,17 @@
 //! Lines are `<task_id> <example> <relation> <counts>`, ordered by task id,
 //! relation name, then train and test example. Task-wide relations use
 //! `task`; counts are comma-separated model values, `undefined`, or
-//! `stopped:<bound>`. A solver that faults gets one fault line instead.
+//! `stopped:<bound>`. A relation that the decode gives no table
+//! ([`arclog::decode::gives_no_table`]) has, after its lines for an example,
+//! the line `<task_id> <example> <relation> no table`. A solver that faults
+//! gets one fault line instead.
 //!
 //! With `--over <n> --rows <dir>`, each model of a relation and example that
 //! holds more than `n` rows also has its rows written, each model's apart, to `<dir>/<task_id>/<example>/<relation>.<model>.json` (the `/` of an example written `-`), a JSON
 //! object of `solver`, `input`, `relation`, `model`, `columns` (each
 //! `{"name", "type"}`, the name the solver's program gives the column, a record's field `<record>.<field>`, or `c<i>` for a column of an output of a shared node) and `rows` (each row an array of values as
-//! `value_json` gives them, in the order of the rows' JSON text). Where a
+//! `value_json` gives them, in the order of the rows' JSON text). A relation
+//! whose columns the type check gives no types gets no file. Where a
 //! clause makes the relation, one line per form of the clause follows the
 //! relation's line, where a model holds more than `n` rows or stopped at a
 //! bound:
@@ -31,6 +35,7 @@ use std::sync::{Arc, Mutex};
 
 use arclog::eval::determinations::relation_spelled;
 use arclog::eval::examples::{scope_of, ExampleScope};
+use arclog::decode::gives_no_table;
 use arclog::eval::join::each_row;
 use arclog::eval::{Evaluation, ModelsEnd, ReachedBound, RelationValue};
 use arclog::harness::{require_optimized_build, run_over_corpus, SolverResult};
@@ -44,6 +49,10 @@ use serde_json::{json, Value};
 
 use crate::concept_case::with_concept_case;
 use crate::lib_compare::evaluation::value_json;
+
+/// The fields after a relation's name on the line that says the decode gives
+/// the relation no table.
+const NO_TABLE: &str = "no table";
 
 /// Where `--over` and `--rows` have the rows of the relations over a size
 /// written.
@@ -106,13 +115,15 @@ fn counts(evaluation: &Evaluation<'_>, solver: &str, dump: Option<&RowDump>) -> 
     let mut relations = Vec::new();
     for (index, node) in evaluation.program.program.graph.nodes.iter().enumerate() {
         let node_index = GraphNodeIndex(index as u32);
-        for (name, output) in names(evaluation, node_index, &node.kind)? {
-            relations.push((name, GraphRelation { node: node_index, output }));
+        for Named { name, output, declared } in names(evaluation, node_index, &node.kind)? {
+            relations.push((name, GraphRelation { node: node_index, output }, declared));
         }
     }
     relations.sort_by(|a, b| a.0.cmp(&b.0));
     let mut lines = Vec::new();
-    for (name, relation) in relations {
+    for (name, relation, declared) in relations {
+        let program = &evaluation.program.program;
+        let tableless = declared.is_some_and(|declared| gives_no_table(program.program.value(), program.form_of(relation.node), &declared));
         let kind = &evaluation.program.program.graph.nodes[relation.node.0 as usize].kind;
         let per_example = match kind {
             DependencyKind::Fact(fact) => *fact == FactRelation::Input,
@@ -131,6 +142,9 @@ fn counts(evaluation: &Evaluation<'_>, solver: &str, dump: Option<&RowDump>) -> 
                 for form in evaluation.program.program.forms_of(relation.node) {
                     lines.push(clause_line(evaluation, &input, &name, relation.node, form, example)?);
                 }
+            }
+            if tableless {
+                lines.push(format!("{input} {name} {NO_TABLE}"));
             }
         }
     }
@@ -157,9 +171,11 @@ struct Dump<'a> {
 }
 
 impl Dump<'_> {
-    /// Writes the rows of the model `model` to its file.
+    /// Writes the rows of the model `model` to its file, or nothing where the
+    /// type check gives a column of the relation no type, since `value_json`
+    /// reads a row's ids at the column types.
     fn write(&self, evaluation: &Evaluation<'_>, relation: &GraphRelation, model: usize, rows: &arclog::relations::Relation) -> Result<(), String> {
-        let types = evaluation.program.types.columns(relation).ok_or("rows whose columns have no types")?;
+        let Some(types) = evaluation.program.types.columns(relation) else { return Ok(()) };
         let mut written: Vec<(String, Value)> = Vec::new();
         each_row(rows, &mut |row| {
             let value = Value::Array(row.iter().zip(types).map(|(&id, ty)| value_json(id, ty)).collect());
@@ -221,8 +237,8 @@ fn clause_line(evaluation: &Evaluation<'_>, input: &str, name: &str, node: Graph
     };
     let mut reads = Vec::new();
     for &read in &program.graph.reads[node.0 as usize] {
-        for (read_name, _) in names(evaluation, read, &program.graph.nodes[read.0 as usize].kind)? {
-            reads.push(read_name);
+        for read in names(evaluation, read, &program.graph.nodes[read.0 as usize].kind)? {
+            reads.push(read.name);
         }
     }
     let reads = if reads.is_empty() { "-".to_owned() } else { reads.join(",") };
@@ -279,16 +295,23 @@ fn stopped(bound: ReachedBound) -> String {
     format!("stopped:{bound}")
 }
 
-type NamedOutput = (String, Option<Arc<[OutputStep]>>);
+/// A relation of a node as the output names it: its name, its path where it
+/// is one of several outputs of a shared node, and the relation the program
+/// declares, none for a fact.
+struct Named {
+    name: String,
+    output: Option<Arc<[OutputStep]>>,
+    declared: Option<ProgramRelation>,
+}
 
 /// Each relation of a node, including each output of a shared node.
-fn names(evaluation: &Evaluation<'_>, node: GraphNodeIndex, kind: &DependencyKind) -> Result<Vec<NamedOutput>, String> {
-    let single = |name| Ok(vec![(name, None)]);
+fn names(evaluation: &Evaluation<'_>, node: GraphNodeIndex, kind: &DependencyKind) -> Result<Vec<Named>, String> {
+    let declared = |declared: ProgramRelation| Ok(vec![Named { name: relation_spelled(&declared), output: None, declared: Some(declared) }]);
     match kind {
-        DependencyKind::Fact(fact) => single(match fact { FactRelation::Input => "input", FactRelation::ExInput => "ex_input", FactRelation::ExOutput => "ex_output" }.to_owned()),
-        DependencyKind::Clause(name) | DependencyKind::Parameter(name) => single(relation_spelled(name)),
-        DependencyKind::Chosen(name) | DependencyKind::Demonstrated(name) => single(relation_spelled(&ProgramRelation::Declared(name.clone()))),
-        DependencyKind::InstanceInput { instance, input: port } | DependencyKind::InstanceOutput { instance, output: port } => single(relation_spelled(&ProgramRelation::Output(OutputName { of: OutputOwner::Instance(instance.clone()), path: Arc::from([OutputStep::Port(port.clone())]) }))),
+        DependencyKind::Fact(fact) => Ok(vec![Named { name: match fact { FactRelation::Input => "input", FactRelation::ExInput => "ex_input", FactRelation::ExOutput => "ex_output" }.to_owned(), output: None, declared: None }]),
+        DependencyKind::Clause(name) | DependencyKind::Parameter(name) => declared(name.clone()),
+        DependencyKind::Chosen(name) | DependencyKind::Demonstrated(name) => declared(ProgramRelation::Declared(name.clone())),
+        DependencyKind::InstanceInput { instance, input: port } | DependencyKind::InstanceOutput { instance, output: port } => declared(ProgramRelation::Output(OutputName { of: OutputOwner::Instance(instance.clone()), path: Arc::from([OutputStep::Port(port.clone())]) })),
         DependencyKind::RecursiveInstance(_) | DependencyKind::RigidAssembly(_) => {
             let program = &evaluation.program.program;
             let form = node_at(NodeRef::Program(program.program.value()), program.form_of(node)).ok_or("the graph node has no form")?;
@@ -314,7 +337,13 @@ fn names(evaluation: &Evaluation<'_>, node: GraphNodeIndex, kind: &DependencyKin
                 }
                 _ => return Err("a shared node has no output form".to_owned()),
             };
-            paths.into_iter().map(|path| Ok((relation_spelled(&ProgramRelation::Output(OutputName { of: owner.clone(), path: path.clone() })), Some(path)))).collect()
+            paths
+                .into_iter()
+                .map(|path| {
+                    let declared = ProgramRelation::Output(OutputName { of: owner.clone(), path: path.clone() });
+                    Ok(Named { name: relation_spelled(&declared), output: Some(path), declared: Some(declared) })
+                })
+                .collect()
         }
     }
 }
@@ -331,10 +360,10 @@ mod tests {
     use arclog::task::{Grid, Task, TrainPair};
     use arclog::terms::Color;
 
-    #[test]
-    fn a_relation_that_stops_at_a_bound_is_followed_by_its_clause_lines() {
-        let text = "(RULE &big (input *P) (input (:P *Q)) (input (:P *R)))\n";
-        let solver = read_solver("stops", text, "", &|_| None).expect("a solver").value;
+    /// The lines of `counts` for the concept case of the solver `text` on a
+    /// one-pair task, under `caps`, with every relation's rows dumped.
+    fn lines_of(text: &str, caps: Caps) -> Vec<String> {
+        let solver = read_solver("t", text, "", &|_| None).expect("a solver").value;
         let registry = Registry::get();
         let case = solver.concept_case();
         let program = resolve(&case.program, None, &solver.derived_relations(), registry).value;
@@ -342,16 +371,32 @@ mod tests {
         let rows = [[1, 2, 0], [2, 2, 1], [0, 3, 3]].iter().map(|row| row.iter().map(|&digit| Color::from_digit(digit).expect("a color")).collect()).collect();
         let input = Grid::from_rows(rows).expect("a grid");
         let task = Task { train: Box::new([TrainPair { input: input.clone(), output: input }]), test: Box::new([]) };
-        let caps = Caps { bindings: 3, ..Caps::CORPUS };
         let session = TaskSession::new(SessionBound { bytes: 1 << 26 }, caps);
         let parameters = ParameterValues::default();
         let limits = Limits::new(None, Cancellation::default());
         let constructions = arclog_constructions::shared().expect("the table of constructions");
         let evaluation = Evaluation { program: &program, concept: None, task: &task, parameters: &parameters, session: &session, registry, constructions, limits: &limits };
-        let dir = std::env::temp_dir().join(format!("row-counts-stopped-{}", std::process::id()));
-        let lines = counts(&evaluation, "stops", Some(&RowDump { over: u64::MAX, dir: dir.clone() })).expect("counts");
+        let dir = std::env::temp_dir().join(format!("row-counts-{}-{}", std::process::id(), text.len()));
+        let lines = counts(&evaluation, "t", Some(&RowDump { over: u64::MAX, dir: dir.clone() })).expect("counts");
         let _ = std::fs::remove_dir_all(&dir);
+        lines
+    }
+
+    #[test]
+    fn a_relation_that_stops_at_a_bound_is_followed_by_its_clause_lines() {
+        let lines = lines_of("(RULE &big (input *P) (input (:P *Q)) (input (:P *R)))\n", Caps { bindings: 3, ..Caps::CORPUS });
         assert!(lines.iter().any(|line| line.starts_with("train/0 &big stopped:bindings:3")), "{lines:?}");
         assert!(lines.iter().any(|line| line.starts_with("train/0 &big clause ") && line.contains(" stopped:bindings:3 ")), "{lines:?}");
+    }
+
+    #[test]
+    fn a_relation_the_decode_gives_no_table_is_marked() {
+        let lines = lines_of("(INIT &c Connectivity (node (P) (input *P)))\n(RULE &r (&c.component (:P *P) *Id))\n", Caps::CORPUS);
+        for marked in ["&c.node", "&c.adjacent"] {
+            assert!(lines.contains(&format!("train/0 {marked} no table")), "{marked}: {lines:?}");
+        }
+        assert!(lines.iter().any(|line| line.starts_with("train/0 &c.component ")), "{lines:?}");
+        assert!(!lines.iter().any(|line| line.starts_with("train/0 &c.component") && line.ends_with("no table")), "{lines:?}");
+        assert!(!lines.iter().any(|line| line.starts_with("train/0 &r") && line.ends_with("no table")), "{lines:?}");
     }
 }

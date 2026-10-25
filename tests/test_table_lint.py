@@ -142,3 +142,13 @@ def test_a_relation_with_no_rows_file_or_a_faulted_run_gets_a_line(tmp_path: Pat
 def test_a_zero_variable_conjunct_makes_a_product_only_for_a_ray_node(tmp_path: Path):
     got = lint(tmp_path, "(RULE &p (&x *A) (&y *B) (&flag))", {"&p": "stopped:rows:5"})
     assert got["&p"] == "stopped:rows:5 none - - rows not read: stopped:rows:5"
+
+
+def test_the_output_and_a_relation_the_decode_gives_no_table_are_not_flagged():
+    text = "".join(
+        f"{SOLVER} train/0 {name} 5000\n"
+        for name in ["&output", "&big", "&c.node"]
+    ) + f"{SOLVER} train/0 &c.node no table\n"
+    relations, faults = read_counts(text)
+    assert faults == []
+    assert [r.name for r in relations if r.flagged] == ["&big"]

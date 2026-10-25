@@ -357,7 +357,7 @@ fn graph_relation(program: &CheckedProgram, registry: &Registry, form: &NodePath
 /// an output, whose table holds those rows with its columns renamed, dropped
 /// or joined; the `adjacent` output of a Connectivity instance and the
 /// `predecessor` output of a CellDistance instance, which no clause reads.
-fn gives_no_table(program: &crate::program::Program, form: &NodePath, declared: &ProgramRelation) -> bool {
+pub fn gives_no_table(program: &crate::program::Program, form: &NodePath, declared: &ProgramRelation) -> bool {
     let ProgramRelation::Output(name) = declared else { return false };
     let [OutputStep::Port(port)] = &name.path[..] else { return false };
     let Some(NodeRef::Instance(written)) = node_at(NodeRef::Program(program), form) else { return false };
