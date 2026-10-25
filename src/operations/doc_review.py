@@ -13,7 +13,8 @@ reply that precedes the last report of any other editor is read for no
 finding, and that reviewer is asked once to review the change again, and
 the review is held where it has not replied since, or, where that
 reviewer is of another session (`TranscriptsRead.elsewhere`), which no
-message reaches, a new doc reviewer is launched on the worktree, unless
+message reaches, or is a native Codex child that no message of an operator
+reaches (`state.Agent.reachable`), a new doc reviewer is launched on the worktree, unless
 that reply opens with `no finding stands` and its `reports.WORKTREE` line gives the
 `worktrees.fingerprint` the worktree has now, as then the worktree is in
 the state that reply read. `steps.Undecided.reread` gives why the
@@ -113,11 +114,13 @@ def review_stale(state: State, t: Ticket, w: Path, here: list[Agent], r: Agent, 
     launch of theirs, since its reply reaches its launcher, or where it
     opens so and gives the change's worktree `w` in the state it is in,
     and otherwise, where `r` is of `TranscriptsRead.elsewhere`, which no
-    message reaches, or the harness refused a message to it
-    (`Agent.refused`), the launch of a new doc reviewer on `w`
-    (`review_launch`), and where it is not, the message that asks `r` to
-    review the change again, or, where `r` has no agent id or was sent
-    that message, the step `unreplied` gives."""
+    message reaches, the harness refused a message to it (`Agent.refused`),
+    or no message of an operator reaches it (`Agent.reachable`: a native
+    Codex child, which takes a message only from its sender in its native
+    tree), the launch of a new doc reviewer on `w` (`review_launch`), and
+    where none holds, the message that asks `r` to review the change again,
+    or, where `r` has no agent id or was sent that message, the step
+    `unreplied` gives."""
     if no_finding(r):
         if shows_current(r, w):
             return Pause.CLEAR
@@ -130,7 +133,7 @@ def review_stale(state: State, t: Ticket, w: Path, here: list[Agent], r: Agent, 
             return ids
         if all(i in messaged or i == r.operator for i in ids):
             return Pause.CLEAR
-    if r in state.transcripts.elsewhere or r.refused is not None:
+    if r in state.transcripts.elsewhere or r.refused is not None or not r.reachable:
         return review_launch(state, t, w, here, launcher, since)
     message = messages.review_again(since)
     if r.agent_id is not None and not sent(state, r.agent_id, message):

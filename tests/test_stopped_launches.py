@@ -364,3 +364,25 @@ def test_a_report_after_a_decision_is_checked_though_the_worktree_is_unchanged(
     s = with_agents(tmp_path, agents, [t])
     step = changes.leftover(s, t, tmp_path, [editor], agents, "op")
     assert (isinstance(step, Launch) and step.role is Role.ITEM_CHECKER) is launches
+
+
+@pytest.mark.parametrize(("reachable", "launches"), [(False, True), (True, False)])
+def test_a_stale_reviewer_no_operator_message_reaches_gets_a_replacement(
+        tmp_path: Path, reachable: bool, launches: bool) -> None:
+    from operations import briefs
+    from operations.doc_review import doc_review
+    from operations.steps import Send
+    from tests.test_unreported_agents import ME, agent, change
+    from tests.test_change_overrun import worktree
+    w = worktree(tmp_path)
+    t = change(tmp_path, w, "doc-editor")
+    launched = t.last_time + 10
+    editor = agent("a00000000000000e1", Role.DOC_EDITOR, t.number,
+                   briefs.WORK_IN.format(worktree=w), launched, launched, [launched + 50])
+    reviewer = replace(agent("a0000000000000002", Role.DOC_REVIEWER, t.number,
+                             briefs.fingerprint_line(w), launched + 20, launched + 20, [launched + 30]),
+                       reachable=reachable)
+    agents = [editor, reviewer]
+    from tests.test_unreported_agents import state as unreported_state
+    step = doc_review(unreported_state(tmp_path, [t], agents, w), t, w, [editor], agents, ME)
+    assert isinstance(step, Launch if launches else Send)

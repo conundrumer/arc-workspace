@@ -144,6 +144,7 @@ class Attempt:
     receipts: tuple[Received, ...]
     coverage: Coverage | None
     stopped: bool
+    inbound: tuple[Message, ...] = ()
 
     @property
     def held(self) -> bool:
@@ -173,10 +174,12 @@ def fold(events: Iterable[Event]) -> dict[str, Attempt]:
         incoming = tuple(e for e in ordered if isinstance(e, Message) and e.recipient == agent
                          and e.outcome is Outcome.ACCEPTED and not e.handback)
         delivered = {e.delivery for e in receipts}
+        inbound = tuple(e for e in ordered if isinstance(e, Message) and e.recipient == agent
+                        and not e.handback)
         coverage = [e for e in own if isinstance(e, Coverage)]
         transitions = [e for e in own if isinstance(e, (Launched, Resumed, Stopped, HandedBack))]
         out[agent] = Attempt(agent, launches[0] if launches else None, own,
             frozenset(reservations - resolved), tuple(e for e in incoming if e.delivery not in delivered),
             receipts, coverage[-1] if coverage else None,
-            bool(transitions and isinstance(transitions[-1], (Stopped, HandedBack))))
+            bool(transitions and isinstance(transitions[-1], (Stopped, HandedBack))), inbound)
     return out

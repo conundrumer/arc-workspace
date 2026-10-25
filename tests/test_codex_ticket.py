@@ -13,6 +13,7 @@ from tests.conftest import script
 scripts_importable()
 
 from operations.roles import Role
+from operations.state import Ended, Running
 
 codex_agent = script("codex_agent")
 ticket = script("codex_ticket")
@@ -44,7 +45,7 @@ def test_lock_refuses_without_queue_or_state_change(tmp_path: Path):
     assert (store.path / "state.json").read_bytes() == before
 
 
-def test_root_cannot_resume_until_interrupted_child_ends(tmp_path: Path):
+def test_root_cannot_resume_until_interrupted_child_ends(tmp_path: Path, monkeypatch):
     store = Store(tmp_path / "ticket")
     root = assignment(tmp_path, store)
     token = store.reserve(root)
@@ -56,11 +57,16 @@ def test_root_cannot_resume_until_interrupted_child_ends(tmp_path: Path):
     store.ended(root.agent, "root-turn", "interrupted")
     ticket.register(store.path, tmp_path, root.agent)
     reads = script("codex_reads")
-    assert not reads.native_agents(root.operator, tmp_path, tmp_path).agents[0].pending
     state = script("operator_state")
-    ended = state.codex_end(root.agent, tmp_path)
-    assert ended.end is state.CodexEnd.DEAD
-    assert ended.why == "interrupted" and ended.scratch == root.scratch
+    monkeypatch.setattr(script("codex_daemon"), "turn_status", lambda thread, turn: "inProgress")
+
+    def root_state():
+        read = state.attempt_reads(reads.native_agents(root.operator, tmp_path, tmp_path).agents,
+                                   home=tmp_path)
+        assert not read.agents[0].reachable
+        return read.agents[0].state
+
+    assert isinstance(root_state(), Running)
     later = replace(root, revision=2)
     store.file(later)
     with pytest.raises(Refused):
@@ -69,6 +75,8 @@ def test_root_cannot_resume_until_interrupted_child_ends(tmp_path: Path):
         store.reserve(assignment(tmp_path, store, Role.ITEM_CHECKER), child.agent)
     store.ended(child.agent, "child-turn", "completed")
     store.ended(child.agent, "child-turn", "completed")
+    monkeypatch.setattr(script("codex_daemon"), "turn_status", lambda thread, turn: None)
+    assert isinstance(root_state(), Ended)
     resumed = store.reserve(later)
     with pytest.raises(Refused):
         store.accepted(root.agent, resumed, "replacement-root", "next-turn")

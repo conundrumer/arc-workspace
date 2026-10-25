@@ -71,7 +71,7 @@ from operations.state import (
     TranscriptsRead,
 )
 from holder_reads import holders_read, read_held, with_quiet_holders
-from operator_state import (EndsRead, closes_of, ends_read, not_given, stuck_read, undecided_lines, watched_read,
+from operator_state import (EndsRead, closes_of, ends_read, launcher_ended, not_given, stuck_read, undecided_lines, watched_read,
                             work_of)
 
 
@@ -137,7 +137,7 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
         scratch(session), ops.calls,
         lambda e: may_still_call(e, REQUEST_CUTOFF.get(), lambda: e.operator in paths
                                  and work_open(paths[e.operator], undecided)),
-        time.time(), since is None)
+        time.time(), since is None, step_journal.acknowledgement(launcher_ended))
     ops = replace(ops, calls=(*ops.calls, *step_journal.run_calls(
         journaled, commit_subjects(tree), undecided)))
     late = late_resumes(read, undecided)
@@ -150,13 +150,13 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     now = time.time()
     operate_service.read_phase("tickets")
     tickets, unread = read_tickets(tickets_dir)
-    ends = ends_read(ops.agents, me, listing, now_watched, now, undecided,
-                     closes=closes_of(tickets), calls=ops.calls)
+    ends = ends_read(ops.agents, listing, now_watched, now, undecided,
+                     closes=closes_of(tickets))
     running_work = work_of(listing)
     stuck = stuck_read(session, ends.quiet,
                        [w for w in now_watched if w.agent_id not in ends.held], running_work,
                        ends.unknown)
-    others = elsewhere_agents(tickets, me, frozenset(runs.operators), main, undecided, ops.calls)
+    others = elsewhere_agents(tickets, me, frozenset(runs.operators), main, undecided)
     transcripts = transcripts_read(ops, ends, late, stuck, others)
     took_up = taken_up(me, runs.operators, transcripts.calls, runs.parents)
     given = given_lines(runs.runs, me, list(ops.calls))

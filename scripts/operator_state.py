@@ -1,24 +1,26 @@
 """The reads the assembly of the operator's state (`state_assembly`) takes
-beside the reads of the tracker, git and the transcripts: the ends of the
-operators' agents, with the quiet and the stuck ones."""
+beside the reads of the tracker, git and the transcripts: the states of the
+operators' agents, which `operations.liveness.attempt_state` decides from the
+record of each attempt (`operations.attempts`) with the facts these reads
+gather beside it, and the quiet and the stuck ones."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any
 
-from filed_texts import filed_report, gone_line
+from attempt_record import Record
 from monitor_reads import watched
 from open_agents import Listed, latest_write, turn_ended_idle
-from agent_ends import elsewhere_ended, ended_with, reply_to, stalled_reports
-from file_reads import names_in, stat_of
-from state_reads import DERIVED, Kept, state_cache
+from agent_ends import stalled_reports
 from transcripts import launched_find
 from transcript_snapshots import SUBJECT_FAULTS
 
 from controlled_markdown import mctx
 
-from operations.completion import latest_sends, refusal_of
+from operations import attempt_view
+from operations import attempts as events
+from operations.attempt_view import refused_at
+from operations.attempts import Attempt, fold
 from operations.constants import STUCK_SECONDS, stuck_reached
 from operations.liveness import (
     AttemptFacts, CodexEnd, CodexRead, Written, attempt_state, unknown_text)
@@ -27,7 +29,7 @@ from operations.plan import unknown_line
 from operations.roles import Role, analyst_of, subjects
 from operations.state import (
     Agent,
-    Call,
+    AttemptState,
     Ended,
     Report,
     Running,
@@ -37,6 +39,8 @@ from operations.state import (
     Stuck,
 )
 from ticketing.vocabulary import Status
+
+from filed_texts import gone_line
 
 
 def watched_read(listing: list[Listed], agents: Sequence[Agent], undecided: list[str],
@@ -55,8 +59,9 @@ def work_of(listing: list[Listed]) -> dict[str, tuple[str, ...]]:
 @dataclass(frozen=True)
 class EndsRead:
     """The operators' agents with their states read (`ends_read`), the
-    reports that end those whose sign was pending, by agent id, or None
-    where an end adds none (`ended`), the part of those of stalled agents
+    reports that end those this read ends whose result had not reached
+    their operator (`Agent.awaited`), by agent id, or None where an end adds
+    none (`ended`), the part of those of stalled agents
     (`TranscriptsRead.stalled`), `TranscriptsRead.quiet`, the attempts held
     while their Codex turn runs or is unknown (`held`), which raise no
     stall alert, and `unknown`, the diagnostic (`Unknown.reason`) of each
@@ -92,32 +97,29 @@ def outlived(a: Agent, closes: Mapping[str, float]) -> bool:
     return bool(numbers) and all(n in closes and closes[n] > a.launched for n in numbers)
 
 
-def ends_read(agents: Sequence[Agent], me: str, listing: list[Listed],
+def ends_read(agents: Sequence[Agent], listing: list[Listed],
               now_watched: Sequence[Watched], now: float, undecided: list[str],
-              *, closes: Mapping[str, float], calls: Sequence[Call] = ()) -> EndsRead:
+              *, closes: Mapping[str, float]) -> EndsRead:
     """`agents` with each one's state decided (`attempt_reads`), where the
-    stall alerts of `now_watched` and the listing give its facts. A watched
-    agent that no operator launched, and that the coordinator launched, has
-    its stall read too: `stalled` gives it with the stalled attempts. An
+    listing gives the work of its own that runs. A watched agent that no
+    operator launched, and that the coordinator launched, has no record, so
+    its stall read stands in its place: `stalled` gives its final reply. An
     attempt that ends is left out of the `quiet` it returns, so no stuck
     alert names it."""
     idle = turn_ended_idle(listing)
     live = frozenset(x.launch.agent for x in listing if x.launch.agent is not None
                      and x.launch.agent not in idle)
-    waiting = [replace(a, state=Running(Waits.STILL_RUNNING))
-               if a.agent_id in live and not a.pending else a for a in agents]
     launched = {a.agent_id for a in agents if a.agent_id}
     watched_ids = {w.agent_id for w in now_watched}
     coordinators = {aid: x.launch.since for x in listing
                     if (aid := x.launch.agent) in watched_ids and aid not in launched}
-    stalls = stalled_reports(waiting, coordinators,
+    stalls = stalled_reports(coordinators,
                              [w.agent_id for w in now_watched
                               if w.stalled is not None and w.agent_id not in live], undecided)
-    read = attempt_reads(agents, me, calls, undecided, listing=listing, closes=closes,
-                         stalls=stalls, idle=idle, live=live)
-    signed = {a.agent_id for a in waiting if a.pending}
-    ended = {a.agent_id: a.state.report for a in read.agents
-             if isinstance(a.state, Ended) and a.agent_id in signed and a.agent_id is not None}
+    read = attempt_reads(agents, listing=listing, closes=closes, live=live, undecided=undecided)
+    awaited = {a.agent_id for a in agents if a.awaited}
+    ended = {a.agent_id: a.last_report for a in read.agents
+             if isinstance(a.state, Ended) and a.agent_id in awaited and a.agent_id is not None}
     quiet: dict[str, float] = {}
     unknown: dict[str, str] = {}
     for a in read.agents:
@@ -140,246 +142,175 @@ def ends_read(agents: Sequence[Agent], me: str, listing: list[Listed],
 @dataclass(frozen=True)
 class AttemptsRead:
     """`agents` with each state decided, and the attempts `held` while their
-    Codex turn runs or is unknown."""
+    Codex turn runs or their record does not show whether they ended."""
     agents: tuple[Agent, ...]
     held: frozenset[str]
 
 
-def attempt_reads(agents: Sequence[Agent], me: str, calls: Sequence[Call], undecided: list[str],
-                  *, listing: list[Listed] | None = None, closes: Mapping[str, float] | None = None,
-                  stalls: Mapping[str, Report] | None = None,
-                  idle: frozenset[str] = frozenset(),
-                  live: frozenset[str] = frozenset()) -> AttemptsRead:
-    """`agents`, each with its `state` decided by `attempt_state` from the
-    facts the reads gather on it: the `listing` of the running agents, of
-    which `live` are those with work running and `idle` those whose turn
-    ended idle; `closes` (`closes_of`), the `stalls` the stall alerts gave
-    reports for, whether each is of an operator other than `me` whose work
-    is no longer open (`elsewhere_ended`), its Codex read (`codex_end`),
-    its write times (`latest_write`), and the SendMessage `calls`
-    (`completion.refusal_of`). An attempt that ends with a sign that was
-    pending takes the report its end gives (`Ended.report`)."""
-    held: set[str] = set()
+def projection(ids: Iterable[str]) -> dict[str, Attempt]:
+    """The record of each attempt of `ids`, with the attempts launched under
+    them and the endpoints of their messages, by agent id: the one
+    projection of the lifecycle that every reader of an attempt shares."""
+    return fold(Record().events(ids))
+
+
+def attempt_reads(agents: Sequence[Agent], *, listing: list[Listed] | None = None,
+                  closes: Mapping[str, float] | None = None,
+                  live: frozenset[str] = frozenset(), home: Path | None = None,
+                  undecided: list[str] | None = None) -> AttemptsRead:
+    """`agents`, each with its `state` decided by `attempt_state` from its
+    record and from the facts the reads gather beside it: the `listing` of
+    the running agents, of which `live` are those with work of their own
+    running, `closes` (`closes_of`), its accepted turn (`turn_read`), its
+    write times (`latest_write`), and whether the usage limit stopped it
+    (`Waits.LIMITED` of the state it was built with). The state of an
+    agent the harness refused a message to has that refusal in its `Ended`
+    (`attempt_view.refused_at`), where its reports do not follow it."""
+    reads = StateReads(projection([a.agent_id for a in agents if a.agent_id]),
+                       listing or [], live, home, [] if undecided is None else undecided,
+                       {a.agent_id: a for a in agents if a.agent_id}, closes or {})
     out: list[Agent] = []
-    sends = latest_sends(calls)
     for a in agents:
-        state = attempt_state(attempt_facts(a, me, sends, undecided, listing or [], closes or {},
-                                            stalls or {}, idle, live, held))
-        if isinstance(state, Ended) and a.pending:
-            ending = filed_report(ended_with(a, state.report))
-            out.append(replace(ending, state=state))
-        else:
-            out.append(replace(a, state=state))
-    return AttemptsRead(tuple(out), frozenset(held))
+        if a.agent_id is None:
+            out.append(a)
+            continue
+        state = reads.state(a.agent_id)
+        if isinstance(state, Ended):
+            attempt = reads.attempts.get(a.agent_id)
+            refused = None if attempt is None else refused_at(attempt, a.since, a.reports)
+            state = Ended(refused=refused)
+        out.append(replace(a, state=state))
+    return AttemptsRead(tuple(out), frozenset(reads.held))
 
 
-def attempt_facts(a: Agent, me: str, sends: Mapping[str, Call], undecided: list[str],
-                  listing: list[Listed], closes: Mapping[str, float],
-                  stalls: Mapping[str, Report], idle: frozenset[str], live: frozenset[str],
-                  held: set[str]) -> AttemptFacts:
-    """`AttemptFacts` of `a`, for `attempt_reads`, with the latest SendMessage
-    calls `sends` (`completion.latest_sends`), which `held` gets the
-    agent id of where its Codex read is `LIVE` or `UNKNOWN`."""
-    aid = a.agent_id
-    listed = aid is not None and aid in live
-    sign = a.waits
-    elsewhere = (not listed and sign is not None and a.operator != me
-                 and elsewhere_ended(a, me, undecided))
-    stalled = aid is not None and aid in stalls
+@dataclass
+class StateReads:
+    """The states `attempt_state` decides for the attempts of `attempts`,
+    each once (`state`), with the facts of each attempt: whether a
+    descendant of it runs, the `listing` and its `live` agents, the `agents`
+    that were read for it, and the `closes` of tickets. `held` gets the agent
+    id of an attempt whose Codex turn runs or whose state is unknown."""
+    attempts: dict[str, Attempt]
+    listing: list[Listed]
+    live: frozenset[str]
+    home: Path | None
+    undecided: list[str]
+    agents: dict[str, Agent] = field(default_factory=dict)
+    closes: Mapping[str, float] = field(default_factory=dict)
+    held: set[str] = field(default_factory=set)
+    states: dict[str, AttemptState] = field(default_factory=dict)
+    deciding: set[str] = field(default_factory=set)
 
-    def report() -> Report | None:
-        if aid is not None and aid in stalls:
-            return stalls[aid]
-        if sign is None:
-            return None
-        return reply_to(ended_with(a, None), a.launched if elsewhere else a.since, undecided)
+    def state(self, aid: str) -> AttemptState:
+        """The state of the attempt `aid`, decided once."""
+        if aid in self.states:
+            return self.states[aid]
+        if aid in self.deciding:
+            raise ValueError(f"the launches of attempt {aid} form a cycle")
+        self.deciding.add(aid)
+        attempt = self.attempts.get(aid)
+        descendants = any(
+            not isinstance(self.state(child.agent), Ended) for child in self.attempts.values()
+            if child.launch is not None and child.launch.parent == aid)
+        state = attempt_state(attempt, self.facts(aid, attempt, descendants))
+        if isinstance(state, Unknown):
+            self.held.add(aid)
+        self.deciding.discard(aid)
+        self.states[aid] = state
+        return state
 
-    cached: list[CodexRead] = []
+    def facts(self, aid: str, attempt: Attempt | None, descendants: bool) -> AttemptFacts:
+        """`AttemptFacts` of the attempt `aid`, whose record is `attempt`."""
+        a = self.agents.get(aid)
+        since = a.since if a is not None else (attempt_view.since(attempt) if attempt else None)
+        cached: list[CodexRead] = []
 
-    def codex() -> CodexRead:
-        if cached:
-            return cached[0]
-        read = codex_end(aid) if aid is not None else CodexRead(CodexEnd.DONE)
-        if aid is not None and read.end is not CodexEnd.DONE:
-            undecided.append(codex_line(aid, read))
-        if read.end in (CodexEnd.LIVE, CodexEnd.UNKNOWN) and aid is not None:
-            held.add(aid)
-        cached.append(read)
-        return read
+        def turn() -> CodexRead:
+            if cached:
+                return cached[0]
+            assert attempt is not None
+            read = turn_read(attempt, self.home)
+            self.undecided.append(codex_line(aid, read))
+            if read.end in (CodexEnd.LIVE, CodexEnd.UNKNOWN):
+                self.held.add(aid)
+            cached.append(read)
+            return read
 
-    def written(rollout: Path | None, unknown: bool) -> Written:
+        return AttemptFacts(
+            turn, lambda rollout, unknown: self.written(aid, since, rollout, unknown),
+            descendants=descendants, working=aid in self.live,
+            outlived=a is not None and outlived(a, self.closes),
+            limited=a is not None and a.waits is Waits.LIMITED)
+
+    def written(self, aid: str, since: float | None, rollout: Path | None, unknown: bool) -> Written:
+        """The latest write of the sources of the attempt `aid`, floored at
+        `since` where it is unknown or native."""
         fault = None
         try:
-            path = launched_find(aid) if aid is not None else None
+            path = launched_find(aid)
         except SUBJECT_FAULTS as exc:
             path, fault = None, exc
         native = None
-        if path is None and fault is None and aid is not None:
+        if path is None and fault is None:
             import codex_reads
             native = codex_reads.native_find(aid)
         if rollout is None and native is not None and native.state.get("native"):
-            rollout = rollout_of(native.state["native"], None)
-        w = latest_write(aid or "", path, listing, rollout,
-                         a.since if unknown or native is not None else None)
+            rollout = rollout_of(native.state["native"], self.home)
+        w = latest_write(aid, path, self.listing, rollout,
+                         since if unknown or native is not None else None)
         if fault is None:
             return w
         if not unknown:
-            undecided.append(mctx("{run}: its quiet time cannot be read ({error}), "
-                                  "so it is left out of quiet agents").format(run=aid, error=fault))
+            self.undecided.append(mctx("{run}: its quiet time cannot be read ({error}), "
+                                       "so it is left out of quiet agents").format(run=aid, error=fault))
         missing = mctx("its transcript was not found")
         return Written(w.time, (mctx("its transcript cannot be read ({error})").format(error=fault),
                                 *(x for x in w.limits if x != missing)))
 
-    refused = refusal_of(aid, a.since, a.reports, sends) if aid is not None else None
-    if aid is not None and refused is not None and (ending := report()) is not None:
-        refused = refusal_of(aid, a.since, (*a.reports, ending), sends)
-    return AttemptFacts(sign, report, codex, written, refused, listed,
-                        idle=aid is not None and aid in idle, stalled=stalled,
-                        outlived=aid is not None and outlived(a, closes), elsewhere=elsewhere)
+
+def launcher_ended(aid: str, home: Path | None = None) -> bool:
+    """Whether the record of the attempt `aid` shows it ended, by the state
+    `attempt_state` decides with no transcript fact beside it."""
+    return isinstance(StateReads(projection([aid]), [], frozenset(), home, []).state(aid), Ended)
 
 
-class Unheld(Exception):
-    """A walk that binds a native assignment, which reads the store of its
-    Codex tickets as well, so no read of the launcher's files stands for it."""
-
-
-@state_cache(DERIVED, kept=Kept.DISK)
-def walk_fault(path: Path) -> tuple[bool, str] | None:
-    """Why the walk of the saved Codex turns of the legacy launcher whose
-    transcript is at `path` (`codex_reads.walk_entries`) faults, as a pair
-    of whether it is the transcript that cannot be read, and the reason, or
-    None where the walk completes. It rests on the transcript and on the files of each
-    scratch directory of the launcher's Codex calls, so a launcher whose
-    walk completed gives that again, with no read of its transcript, while
-    those files are as they were. `Unheld` where a call binds a native
-    assignment."""
-    import codex_reads
-    from codex_ticket import Binding
-    from entry_reads import entries_forward
-    from run_reads import role_type
-
-    try:
-        entries = list(entries_forward(path))
-    except SUBJECT_FAULTS as exc:
-        return True, str(exc)
-    try:
-        kind = role_type(path)
-    except SUBJECT_FAULTS as exc:
-        return False, str(exc)
-    if kind is None:
-        return False, "the Codex role is unknown"
-    dirs = dict.fromkeys(d for e in entries for _, _, d in codex_reads.commands(e))
-    if any(Binding.read(d) is not None for d in dirs):
-        raise Unheld
-    for d in dirs:
-        stat_of(d)
-        for name in names_in(d):
-            stat_of(d / name)
-    try:
-        codex_reads.walk_entries(entries, kind)
-    except SUBJECT_FAULTS as exc:
-        return False, str(exc)
-    return None
-
-
-def codex_end(agent: str, home: Path | None = None) -> CodexRead:
-    """An enrolled attempt ends with a current receipt or a terminal store state.
-
-    A completed walk ends a legacy attempt, and a validated receipt ends a
-    native one; otherwise its thread decides whether
-    it can end: a turn its rollout gives as open runs only where the shared
-    Codex daemon gives it in progress (`codex_daemon.turn_status`). A thread
-    or a daemon that cannot be read holds the attempt. Where a successful daemon
-    read omits that turn, another turn in progress holds the attempt; otherwise
-    the attempt ends. A native attempt with no accepted turn ends only once
-    its reservation is `STUCK_SECONDS` old."""
+def turn_read(attempt: Attempt, home: Path | None = None) -> CodexRead:
+    """The read of the accepted turns of `attempt` that its record gives no
+    end. A held work lock of its seat, or a turn in progress that the shared
+    Codex daemon gives (`codex_daemon.turn_status`), is `LIVE`; a thread or a
+    daemon that cannot be read, or a lock that cannot be probed, is `UNKNOWN`;
+    and a daemon that gives each turn done, or omits it with no other turn in
+    progress, is terminal evidence, `DEAD`. A turn in progress holds it over
+    an unreadable turn, which holds it over terminal evidence."""
     import codex_daemon
-    import codex_reads
-    import codex_rollout
-    from codex_ticket import Phase
-    from entry_reads import entries_forward
-    from operations.roles import CODEX_LAUNCHER
-    from run_reads import agent_type, role_type
+    from attempt_record import lock_held, seat_path
 
+    assert attempt.launch is not None
+    scratch = Path(attempt.launch.scratch) if attempt.launch.scratch else None
+    open_turns = [e for e in attempt.events
+                  if isinstance(e, events.Accepted) and e.reservation in attempt.unresolved]
     try:
-        native = codex_reads.native_find(agent)
-        if native is not None:
-            try:
-                receipt = codex_reads.native_receipt(native, home)
-            except SUBJECT_FAULTS:
-                receipt = None
-            if receipt is None and native.state["phase"] == Phase.ENDED:
-                return CodexRead(CodexEnd.DEAD, native.state["status"], native.assignment.scratch)
-            if receipt is not None:
-                return CodexRead(CodexEnd.DONE)
-            scratch = native.assignment.scratch
-            thread, turn = native.state["native"], native.state["turn"]
-            if thread is None or turn is None:
-                import time
-                from operations.constants import stuck_reached
-                why = "native assignment has no accepted turn"
-                reserved = native.state.get("reserved")
-                dead = reserved is not None and stuck_reached(reserved, time.time())
-                if dead:
-                    return CodexRead(CodexEnd.DEAD, why, scratch)
-                return unknown_read(why, scratch, None, home)
-            try:
-                status = codex_daemon.turn_status(thread, turn)
-            except SUBJECT_FAULTS as exc:
-                return unknown_read(
-                    f"native assignment has no current validated result; {exc}", scratch, thread,
-                    home)
-            live = status == "inProgress"
-            return CodexRead(CodexEnd.LIVE if live else CodexEnd.DEAD,
-                             "native assignment has no current validated result", scratch,
-                             rollout_of(thread, home) if live else None)
+        if lock_held(seat_path(attempt.launch.seat)):
+            return CodexRead(CodexEnd.LIVE, mctx("its work lock is held"), scratch,
+                             rollout_of(open_turns[-1].thread, home))
     except SUBJECT_FAULTS as exc:
-        return unknown_read(str(exc), None, None, home)
-
-    path = launched_find(agent)
-    if path is None:
-        return CodexRead(CodexEnd.DONE)
-    walked: list[dict[str, Any]] | None = None
-    try:
-        if agent_type(path) != CODEX_LAUNCHER:
-            return CodexRead(CodexEnd.DONE)
+        return unknown_read(mctx("its work lock cannot be read; {error}").format(error=exc), scratch,
+                            open_turns[-1].thread, home)
+    unreadable: CodexRead | None = None
+    for turn in open_turns:
         try:
-            fault = walk_fault(path)
-        except Unheld:
-            fault, walked = None, list(entries_forward(path))
-    except SUBJECT_FAULTS as exc:
-        return unknown_read(str(exc), None, None, home)
-    if fault is not None and fault[0]:
-        return unknown_read(fault[1], None, None, home)
-    try:
-        if fault is not None:
-            raise ValueError(fault[1])
-        if walked is not None:
-            kind = role_type(path)
-            if kind is None:
-                raise ValueError("the Codex role is unknown")
-            codex_reads.walk_entries(walked, kind)
-        return CodexRead(CodexEnd.DONE)
-    except SUBJECT_FAULTS as exc:
-        why = str(exc)
-    scratch = None
-    try:
-        entries = list(entries_forward(path))
-        dirs = [d for e in entries for _, _, d in codex_reads.commands(e)]
-        if not dirs:
-            return CodexRead(CodexEnd.DEAD, why)
-        scratch = dirs[-1]
-        if not (scratch / "codex-session").exists():
-            return CodexRead(CodexEnd.DEAD, why, scratch)
-        rollout = codex_rollout.read(scratch, home or Path.home())
-        if rollout.turn is None:
-            return CodexRead(CodexEnd.DEAD, why, scratch)
-        status = codex_daemon.turn_status(rollout.thread, rollout.turn)
-        live = status == "inProgress"
-        return CodexRead(CodexEnd.LIVE if live else CodexEnd.DEAD, why, scratch,
-                         rollout_of(rollout.thread, home) if live else None)
-    except SUBJECT_FAULTS as exc:
-        return unknown_read(f"{why}; {exc}", scratch, None, home)
+            status = codex_daemon.turn_status(turn.thread, turn.turn)
+        except SUBJECT_FAULTS as exc:
+            unreadable = unreadable or unknown_read(
+                mctx("its record shows no end of its turn; {error}").format(error=exc),
+                scratch, turn.thread, home)
+            continue
+        if status == "inProgress":
+            return CodexRead(CodexEnd.LIVE, mctx("the Codex daemon gives its turn in progress"),
+                             scratch, rollout_of(turn.thread, home))
+    return unreadable or CodexRead(
+        CodexEnd.DEAD, mctx("the Codex daemon gives each turn its record shows open as over, "
+                            "or does not list it"), scratch)
 
 
 def rollout_of(thread: str, home: Path | None) -> Path | None:
@@ -417,16 +348,15 @@ def unknown_read(why: str, scratch: Path | None, thread: str | None,
 
 
 def codex_line(agent: str, read: CodexRead) -> str:
-    """The stable undecided line for an attempt without a completed walk."""
+    """The stable undecided line for an attempt whose accepted turn has no
+    recorded end."""
     match read.end:
         case CodexEnd.DEAD:
-            return mctx("{run}: its Codex launch has no completed turn record ({why}), "
-                        "and no Codex turn runs on its thread, so the attempt counts as ended"
+            return mctx("{run}: {why}, so the attempt counts as ended"
                         ).format(run=agent, why=read.why)
         case CodexEnd.LIVE:
-            return mctx("{run}: the Codex daemon gives a turn in progress on its thread "
-                        "in {scratch} after its launcher ended, so the attempt counts as running"
-                        ).format(run=agent, scratch=read.scratch)
+            return mctx("{run}: its Codex turn runs ({why}), so the attempt counts as running"
+                        ).format(run=agent, why=read.why)
         case CodexEnd.UNKNOWN:
             return f"{agent}: {unknown_text(read)}"
         case CodexEnd.DONE:

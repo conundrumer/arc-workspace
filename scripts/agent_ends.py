@@ -1,20 +1,13 @@
-"""The ends of agents: the final replies their transcripts give, to the
-operator that launched them or in a report file, and the agents read as
-ended with them."""
+"""The final replies of agents no record covers: the agents the coordinator
+launched, which the stall reading reads."""
 
-from dataclasses import replace
-
-import codex_reads
-from file_reads import stat_read
 from final_replies import final_reply
-from filed_texts import report_file, report_text, written_report
-from open_agents import work_open
-from transcripts import find, launched_find
+from transcripts import find
 from transcript_snapshots import SUBJECT_FAULTS
 
 from controlled_markdown import mctx
 
-from operations.state import Agent, Ended, Report
+from operations.state import Report
 
 
 def reply_since(agent: str, since: float, undecided: list[str]) -> Report | None:
@@ -29,78 +22,20 @@ def reply_since(agent: str, since: float, undecided: list[str]) -> Report | None
     return r if r is not None and r.time > since else None
 
 
-def written_reply(a: Agent, since: float) -> Report | None:
-    """The report of `a`, which no longer waits, that its report file
-    gives where that file was last written after `since`: the file's
-    text, at its write time, whatever its last turn ended with."""
-    if a.pending or a.report_file is None:
-        return None
-    found = stat_read(a.report_file)
-    if found is None or not found.is_file or found.mtime <= since:
-        return None
-    text = written_report(a.report_file)
-    return None if text is None else Report(found.mtime, text, a.report_file)
-
-
-def reply_to(a: Agent, since: float, undecided: list[str]) -> Report | None:
-    """The report of `a` that its report file gives where it was last
-    written after `since` and `a` no longer waits (`written_reply`), else
-    the final reply in the transcript of `a` after `since`, where its
-    operator launched or last resumed it itself, so that reply went to
-    that operator, or where it is the path of a report file alone
-    (`filed_texts.report_file`), whichever agent it went to, read from
-    that file, or None. A reply whose file is gone keeps the path as its
-    text."""
-    written = written_reply(a, since)
-    if written is not None:
-        return written
-    r = reply_since(a.agent_id, since, undecided) if a.agent_id else None
-    path = report_file(r.text) if r is not None else None
-    if r is None or path is None:
-        return r if a.notifies else None
-    text = report_text(path, a.agent_id or "", undecided)
-    return r if text is None else replace(r, text=text, file=path)
-
-
-def stalled_reports(agents: list[Agent], coordinators: dict[str, float],
-                    stalls: list[str], undecided: list[str]) -> dict[str, Report]:
+def stalled_reports(coordinators: dict[str, float], stalls: list[str],
+                    undecided: list[str]) -> dict[str, Report]:
     """The final reply in the transcript of each agent of `stalls`, the
-    agents whose `stall` reading fired (`operations.monitor`), that is
-    pending, or that the coordinator launched, by `coordinators`, their
-    launch times, given after its launch."""
+    agents whose `stall` reading fired (`operations.monitor`), that the
+    coordinator launched, by `coordinators`, their launch times, given after
+    its launch. An agent of an operator has its reports in the record of its
+    attempt (`operations.attempt_view`), so no stall report stands in their
+    place."""
     out: dict[str, Report] = {}
-    launched = {a.agent_id: a.launched for a in agents if a.pending and a.agent_id}
     for agent in stalls:
-        since = launched[agent] if agent in launched else coordinators.get(agent)
+        since = coordinators.get(agent)
         if since is None or agent in out:
             continue
         r = reply_since(agent, since, undecided)
         if r is not None:
             out[agent] = r
     return out
-
-
-def ended_with(a: Agent, reply: Report | None) -> Agent:
-    """`a` as ended (`Ended`), with `reply` as its last report."""
-    return replace(a, state=Ended(reply), reports=a.reports if reply is None else (*a.reports, reply))
-
-
-def elsewhere_ended(a: Agent, me: str, undecided: list[str]) -> bool:
-    """Whether `a`, a pending agent of an operator other than `me`, has no
-    work open: its transcript is written (`transcripts.launched_find`) or it
-    is an enrolled native Codex attempt, and its work is no longer open
-    (`open_agents.work_open`). Where that cannot be read, or where neither
-    is so, an agent whose report reaches no running operator cannot be told
-    from one that runs, and an `undecided` line names a read that failed."""
-    if not a.pending or a.operator == me or a.agent_id is None:
-        return False
-    try:
-        path = launched_find(a.agent_id)
-        if path is None:
-            return codex_reads.native_find(a.agent_id) is not None
-        return not work_open(path, [])
-    except SUBJECT_FAULTS as exc:
-        undecided.append(mctx("{run}: whether its work is open cannot be read ({error}), "
-                              "so the agent counts as running"
-                              ).format(run=a.agent_id, error=exc))
-        return False

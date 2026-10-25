@@ -156,50 +156,66 @@ def native_receipt(item: Native, home: Path | None = None):
 
 def native_agents(owner: str, session_scratch: Path | None = None,
                   home: Path | None = None):
-    """Assemble launches and validated reports for the existing operations joins."""
+    """Assemble launches and validated reports for the existing operations joins.
+
+    Each agent's launch time, last resume, reports and messages sent come
+    from the record of its attempt (`operations.attempt_view`), as a Claude
+    agent's do; its state is decided from that record
+    (`operator_state.attempt_reads`). A current report counts where its
+    recorded digest is that of the report file, and the file's write time
+    gives its time. A report whose dispatch file or report file cannot be
+    read is no current report."""
     from operator_reads import AgentsRead
-    from operations.state import Agent, Ended, Report, Running, Waits
-    from codex_reports import Outcome
-    from codex_ticket import Phase
+    from operator_state import projection
+    from operations import attempt_view
+    from operations.state import Agent, Report, Running, Waits
+    from codex_reports import Outcome, digest
     from review_anchor import read_anchor
 
     agents = []
     messaged: dict[str, frozenset[str]] = {}
     items = native_assignments(session_scratch)
-    by_native = {item.state["native"]: item.assignment.agent for item in items if item.state["native"]}
-    by_native.update({item.state["runtime"]: item.assignment.agent for item in items if item.state.get("runtime")})
     launched: dict[str, float] = {}
     for item in native_assignments(session_scratch, include_history=True):
         launched[item.assignment.agent] = min(item.state["reserved"],
                                               launched.get(item.assignment.agent, item.state["reserved"]))
-    for item in items:
+    ours = [item for item in items if (item.state["parent"] or item.assignment.operator) == owner]
+    attempts = projection([item.assignment.agent for item in ours])
+    for item in ours:
         assignment, state = item.assignment, item.state
-        parent = state["parent"] or assignment.operator
-        if parent != owner:
-            continue
-        reports = ()
-        try:
-            receipt = native_receipt(item, home)
+        attempt = attempts.get(assignment.agent)
+        reports = []
+        showing = False
+        for reported, current in (attempt_view.recorded_reports(attempt) if attempt is not None else ()):
+            if reported.text is None:
+                continue
+            if not current:
+                reports.append(Report(reported.at, reported.text))
+                continue
             dispatch = assignment.scratch / "codex-dispatch.json"
-            if (receipt is not None and receipt.outcome is not Outcome.FINISHED
-                    and dispatch.exists() and json.loads(dispatch.read_text()).get("call")):
-                receipt = None
-            if receipt is not None:
-                reports = (Report(assignment.report.stat().st_mtime, assignment.report.read_text(), assignment.report),)
-        except (OSError, ValueError, KeyError, StopIteration):
-            receipt = None
+            try:
+                pending = (state.get("receipt", {}).get("outcome") != Outcome.FINISHED
+                           and dispatch.exists() and json.loads(dispatch.read_text()).get("call"))
+                if (not pending and assignment.report.exists()
+                        and digest(assignment.report.read_bytes()) == reported.digest
+                        and reported.revision == assignment.revision):
+                    reports.append(Report(assignment.report.stat().st_mtime, reported.text,
+                                          assignment.report))
+                    showing = True
+            except (OSError, ValueError):
+                continue
         reviewing = (read_anchor(session_scratch, assignment.agent)
                      if assignment.role in (Role.CODE_EDITOR, Role.DOC_EDITOR) else None)
-        agents.append(Agent(assignment.agent, parent, assignment.role,
+        since = attempt_view.since(attempt) if attempt is not None else None
+        agents.append(Agent(assignment.agent, owner, assignment.role,
             assignment.subject or assignment.ticket, assignment.brief.read_text(),
-            launched[assignment.agent], state["reserved"],
-            Ended() if receipt or state["phase"] == Phase.ENDED else Running(Waits.AT_WORK),
-            reports, True, report_file=(assignment.report if receipt is not None
-                or assignment.role in (Role.CODE_EDITOR, Role.DOC_EDITOR) else None), reviewing=reviewing))
-        try:
-            messaged[assignment.agent] = native_sent(item, by_native, home)
-        except (OSError, ValueError, KeyError):
-            messaged[assignment.agent] = frozenset()
+            launched[assignment.agent], state["reserved"] if since is None else since,
+            Running(Waits.AT_WORK), tuple(reports), True,
+            report_file=(assignment.report if showing
+                or assignment.role in (Role.CODE_EDITOR, Role.DOC_EDITOR) else None),
+            reviewing=reviewing, reachable=False, awaited=not showing))
+        if attempt is not None:
+            messaged[assignment.agent] = attempt_view.sent_to(attempt)
     return AgentsRead(tuple(agents), messaged, {})
 
 
@@ -234,10 +250,3 @@ def native_sends(rows):
                 and not result.get('isError') and (result.get('status') in (
                     'sent', 'delivered', 'queued', 'accepted', 'running') or isinstance(result.get('message_id'), str)))
             yield NativeSend(payload['call_id'], args, at, accepted)
-
-
-def native_sent(item: Native, identities: dict[str, str], home: Path | None = None) -> frozenset[str]:
-    """Recipients of successful native messages in the sender's own rollout."""
-    return frozenset(identities[send.arguments['target']]
-                     for send in native_sends(native_turn(item, home).activity)
-                     if send.accepted and send.arguments['target'] in identities)

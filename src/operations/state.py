@@ -166,13 +166,12 @@ class LateResume:
 
 
 class Waits(Enum):
-    """How a pending agent waits. `AT_WORK`: no sign in a transcript of
-    the session gives its turn ended; where its own
-    transcript shows its turn ended with no work of its own still running,
-    it no longer waits, as `Agent` gives. `STILL_RUNNING`: it stopped
-    with work of its own still running, has not reported yet, and the
-    operator's turn may end while it waits on that work. `LIMITED`: the
-    usage limit stopped it, it has not ended its work, it has not run since, and it waits for a resume (`limit_resume`)."""
+    """How a pending agent waits. `AT_WORK`: its record gives no stop of
+    its latest activation. `STILL_RUNNING`: it stopped with work of its own
+    still running (a Codex turn, an agent it launched, or a command), has
+    not reported yet, and the operator's turn may end while it waits on
+    that work. `LIMITED`: the usage limit stopped it, it has not ended its
+    work, it has not run since, and it waits for a resume (`limit_resume`)."""
     AT_WORK = "at work"
     STILL_RUNNING = "still running"
     LIMITED = "limited"
@@ -190,9 +189,9 @@ class Running:
 
 @dataclass(frozen=True)
 class Unknown:
-    """An attempt that counts as running while whether its Codex turn runs
-    is unknown, with `reason`, the diagnostic that gives why, and its lease
-    `until`, which is as `Running.until` gives it."""
+    """An attempt that counts as running while its record does not show
+    whether it ran to an end, with `reason`, the diagnostic that gives why,
+    and its lease `until`, which is as `Running.until` gives it."""
     reason: str
     until: float | None
 
@@ -202,14 +201,15 @@ class Ended:
     """An attempt that no longer runs, with `report`, the report that its
     end adds to `Agent.reports`, or None where it adds none, and
     `refused`, the time of the latest SendMessage to it that the harness
-    refused (`completion.refusal_of`), where it takes no further
+    refused (`attempt_view.refused_at`), where it takes no further
     message."""
     report: Report | None = None
     refused: float | None = None
 
 
 type AttemptState = Running | Unknown | Ended
-"""The state of an attempt, which `liveness.attempt_state` decides."""
+"""The state of an attempt, which `liveness.attempt_state` decides from its
+record."""
 
 
 SETTLED = mctx("What is already settled on change {number} follows.")
@@ -240,14 +240,14 @@ class Agent:
     command gave, or a check that an editor an operator launched
     launched (`changes.editor_step`), which is read as a launch of that
     editor's, with the editor as its `operator`. `state` is whether it
-    runs, has ended, or is unknown, as `liveness.attempt_state` decides it,
-    and `reports` are the reports that reached that operator, with the one
-    its end adds (`Ended.report`). `notifies` holds where that operator
-    launched or last resumed it itself, so the notification of its end and
-    its final reply reach that operator. Where `Agent` is built, `state`
-    holds what its sign gives: `Running` with the `Waits` the sign gives,
-    or `Ended`, and `scripts/operator_state.attempt_reads` then sets it
-    from `liveness.attempt_state`.
+    runs, has ended, or is unknown, as `liveness.attempt_state` decides it
+    from the attempt's record, and `reports` are the reports its record
+    gives. `notifies` holds where that operator launched or last resumed it
+    itself, so the notification of its end and its final reply reach that
+    operator. Where `Agent` is built, `state` is `Running` with `Waits.LIMITED`
+    where the usage limit stopped it and otherwise with `Waits.AT_WORK`, and
+    `scripts/operator_state.attempt_reads` then sets it from
+    `liveness.attempt_state`.
     `report_file` is the report file the brief it was launched with gives
     (`briefs.REPORT_FILE`, `briefs.REPORT_RULE`), or None where it gives
     none. Where that file is there, its last report, whatever its last
@@ -266,7 +266,12 @@ class Agent:
     has reported (`change_agents.reported_at`); otherwise it has not.
     `refused` gives `Ended.refused`: an agent the harness refused a message
     to takes no further message, so it holds no place on its work
-    (`completion.occupies`)."""
+    (`completion.occupies`). `reachable` holds where the operator can
+    send it a message: a Claude agent, a Codex launcher included. A native
+    Codex child takes a message only from its sender in its native tree
+    (`codex_ticket.Store.target`), which an operator's SendMessage is not.
+    `awaited` holds where its result had not reached its operator when it
+    was read, so that its end adds the report `EndsRead.ended` gives."""
     agent_id: str | None
     operator: str
     role: Role
@@ -279,6 +284,8 @@ class Agent:
     notifies: bool
     report_file: Path | None = None
     reviewing: Anchor | None = None
+    reachable: bool = True
+    awaited: bool = True
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "brief", own(self.brief))
@@ -362,7 +369,9 @@ class Call:
     notification of its end reached the operator, and it is an error
     where that notification gives a status other than `completed`. The
     result of a call that is not an error is empty where `reads_output` of
-    `scripts/operator_transcript.py` does not hold."""
+    `scripts/operator_transcript.py` does not hold. `id` is the id of the
+    tool use, empty for a call with none, which the message event of a
+    SendMessage call in the record of attempts gives as its `call`."""
     operator: str
     time: float
     tool: str
@@ -371,6 +380,7 @@ class Call:
     error: bool
     merge: Merge | None = None
     conflicts: tuple[str, ...] = ()
+    id: str = ""
 
     @property
     def message(self) -> str:
@@ -637,8 +647,9 @@ class TranscriptsRead:
     gives them, after
     the next operator of `State.operators` made its first entry, in the
     order of their time. `stalled` gives the final reply in the transcript
-    of each agent a stall alert names that reached no operator as a
-    report. `quiet` gives the time of the latest write of each agent of
+    of each agent the coordinator launched that a stall alert names and that
+    reached no operator as a report; an agent an operator launched has its
+    reports in the record of its attempt, which a stall does not end. `quiet` gives the time of the latest write of each agent of
     `agents` whose state is `Running` or `Unknown` and whose lease
     (`Running.until`) has run out, as `latest_write` in
     `scripts/open_agents.py` gives it, by agent id, other than an agent the
@@ -648,8 +659,8 @@ class TranscriptsRead:
     operator of `plan.earlier_open` that is quiet, and each watched agent
     whose `Watched.stuck` holds.
     `messaged` gives, for each doc reviewer and item checker of `agents`
-    and of `elsewhere` whose transcript is known, the agent ids its
-    SendMessage calls went to. `limited` gives, by agent id, the time of
+    and of `elsewhere` whose attempt is recorded, the agent ids its
+    messages that the harness took went to. `limited` gives, by agent id, the time of
     the usage-limit stop of each agent of `agents` and of `elsewhere` whose
     latest sign is that stop and whose own transcript, where it is known,
     holds no entry later than that stop, and, of an agent of `agents`,

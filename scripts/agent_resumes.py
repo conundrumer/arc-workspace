@@ -1,7 +1,6 @@
 """The SendMessage calls that resumed agents: the agent each call resumed,
 as its result gives it, the latest call that resumed each agent among
-the calls of a run or of the other runs of its sessions, and the agents a
-run's calls went to."""
+the calls of a run or of the other runs of its sessions."""
 
 from collections.abc import Collection, Iterable
 from dataclasses import dataclass
@@ -15,7 +14,6 @@ from state_reads import DERIVED, Kept, state_cache
 from transcripts import chain
 from entry_reads import read_entries
 from transcript_entries import epoch
-from transcript_folds import fold
 from transcript_snapshots import Entry
 from agent_deliveries import Delivery, delivery
 from session_changes import agents_facts
@@ -149,16 +147,3 @@ def send_agents(send: Send) -> tuple[str, ...]:
     """The agent id `send` resumed and the `pin` id of its result, those it
     gives."""
     return tuple(v for v in (send.agent, send.pin) if v)
-
-
-def sent_to(path: Path) -> frozenset[str]:
-    """The agent ids the SendMessage calls of the run at `path` went to."""
-    return frozenset(fold(add_sent, set[str], path, chain(path), frozenset({"SendMessage"})))
-
-
-def add_sent(to: set[str], _path: Path, _line: int, e: Entry) -> None:
-    """Add to `to` the agent ids the SendMessage calls of the entry `e`
-    went to."""
-    if e.get("type") == "assistant":
-        to.update(str(b["input"]["to"]) for b in blocks(e, "tool_use")
-                  if b.get("name") == "SendMessage" and (b.get("input") or {}).get("to"))

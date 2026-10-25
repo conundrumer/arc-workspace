@@ -5,11 +5,12 @@ their editors launched."""
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+from open_agents import work_open
 from operator_reads import AgentsRead, kept
 from operator_state import attempt_reads, closes_of
 from operator_transcript import read_launches
 from transcripts import find, launched_find
-from transcript_snapshots import Refused
+from transcript_snapshots import SUBJECT_FAULTS, Refused
 
 from controlled_markdown import mctx
 from operations.change_agents import on_change
@@ -17,7 +18,7 @@ from operations.change_budget import left_draft
 from operations.changes import holds
 from operations.log_commands import AGENT
 from operations.roles import CHECKS, LAUNCHING_EDITORS
-from operations.state import Agent, Call, Ticket
+from operations.state import Agent, Ticket
 
 
 def editor_checks(agents: Sequence[Agent], main: Path, undecided: list[str]) -> AgentsRead:
@@ -54,15 +55,34 @@ def editor_checks(agents: Sequence[Agent], main: Path, undecided: list[str]) -> 
     return kept(out, reads)
 
 
+def working(agents: Sequence[Agent], undecided: list[str]) -> frozenset[str]:
+    """The agent ids of `agents` whose transcript is written
+    (`transcripts.launched_find`) and shows their work open
+    (`open_agents.work_open`). Where that cannot be read, the agent counts as
+    working, and an `undecided` line names the read that failed."""
+    out: set[str] = set()
+    for a in agents:
+        if a.agent_id is None:
+            continue
+        try:
+            path = launched_find(a.agent_id)
+            if path is not None and work_open(path, []):
+                out.add(a.agent_id)
+        except SUBJECT_FAULTS as exc:
+            undecided.append(mctx("{run}: whether its work is open cannot be read ({error}), "
+                                  "so the agent counts as running").format(run=a.agent_id, error=exc))
+            out.add(a.agent_id)
+    return frozenset(out)
+
+
 def elsewhere_agents(tickets: Mapping[str, Ticket], me: str, operators: frozenset[str],
-                     main: Path, undecided: list[str],
-                     calls: Sequence[Call] = ()) -> AgentsRead:
+                     main: Path, undecided: list[str]) -> AgentsRead:
     """`TranscriptsRead.elsewhere` over the changes of `tickets` `me` holds, where
     `operators` gives the operators of the session, with the state of each
-    agent decided as for the session's own (`operator_state.attempt_reads`),
-    where `calls` gives the SendMessage calls of the session. Where the
-    transcript of an operator of another session is not found, an
-    `undecided` line names it."""
+    agent decided from its record as for the session's own
+    (`operator_state.attempt_reads`), where `working` gives the agents whose
+    work is open. Where the transcript of an operator of
+    another session is not found, an `undecided` line names it."""
     out: list[Agent] = []
     reads: list[AgentsRead] = []
     for t in (t for t in tickets.values() if holds(t, me)):
@@ -87,6 +107,6 @@ def elsewhere_agents(tickets: Mapping[str, Ticket], me: str, operators: frozense
             reviewers = editor_checks(theirs, main, undecided)
             reads += [one.launched, reviewers]
             theirs += [r for r in reviewers.agents if kept_on(r)]
-            out += attempt_reads(theirs, me, calls, undecided,
-                                 closes=closes_of(tickets)).agents
+            out += attempt_reads(theirs, closes=closes_of(tickets), live=working(theirs, undecided),
+                                 undecided=undecided).agents
     return kept(sorted(out, key=lambda a: a.launched), reads)

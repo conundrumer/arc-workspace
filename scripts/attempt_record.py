@@ -153,13 +153,32 @@ def seat_path(seat: Described, record: Record | None = None) -> Path:
     return base / name
 
 
+def probe_path(lock: Path) -> Path:
+    """The probe lock of the lock at `lock`."""
+    return lock.with_suffix('.probe.lock')
+
+
+@contextmanager
+def probe_lock(lock: Path) -> Iterator[None]:
+    """Hold the probe lock of the lock at `lock` (`probe_path`) exclusively.
+    A test of the lock and the taking of it each hold it, so a test cannot
+    make the taking refuse as busy."""
+    with probe_path(lock).open('a') as probe:
+        fcntl.flock(probe, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(probe, fcntl.LOCK_UN)
+
+
 @contextmanager
 def seat_lock(seat: Described, record: Record | None = None) -> Iterator[None]:
     path = seat_path(seat, record)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open('a') as lock:
         try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with probe_lock(path):
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
             from codex_ticket import Refused
             raise busy(seat) from exc
@@ -219,7 +238,7 @@ def lock_held(path: Path) -> bool:
     """A missing legacy lock is free; unreadable evidence raises."""
     if not path.exists():
         return False
-    with path.open('r') as lock:
+    with path.open('r') as lock, probe_lock(path):
         try:
             fcntl.flock(lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
         except BlockingIOError:
