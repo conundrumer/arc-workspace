@@ -1,0 +1,4 @@
+building cache for work/tables/full-5529bd39
+copy flows of work/tables/full-5529bd39: 743568 checked, 0 with another type than their source column, 0 columns with values outside their sources, in 0 cases; 21883 columns not checked for values
+6872 programs 0 skipped 546 s
+{'checked': 743568, 'values unchecked': 21883, 'type': 0, 'value': 0, 'cases': 0, 'by case': {}, 'first': [], 'orientation subtypes': True}
