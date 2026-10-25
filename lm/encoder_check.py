@@ -39,8 +39,13 @@ real tables of the dev export, cut to a few dozen rows each.
   whose checks.txt reports a violation, or gives no count line, and build it with `allow_violations`, and build one
   whose counts are all 0, or that has no checks.txt, which it must print; with `strict`, it must refuse an export
   with a copy flow from a column of another type, and one with a copy flow whose values are not the source's, from
-  the build and from the cache, and without `strict` count each; a pickle without the totals must print that it is
-  unchecked. `parse_tables` must count an Undefined entry, and refuse where the loader's count of unseen entries
+  the build and from the cache, and without `strict` count each; it must build, with `strict`, an export with a copy
+  flow from a DET whose `det_types` give the column's type, where the source table's column has another type, and
+  check its values against the DET's rows at each assignment, and refuse one where a row holds a value of another
+  entry's assignment of the DET only; it must build, with `strict`, an export with a Dir
+  column copied from a Dir8 column where the export's orientation_types.json gives Dir as a subtype of Dir8, and
+  refuse it where the export has no orientation_types.json, with a line that says the orientation subtypes were not
+  known; a pickle without the totals must print that it is unchecked. `parse_tables` must count an Undefined entry, and refuse where the loader's count of unseen entries
   differs from the export's; `entry_runs` must read a Rows entry's run and refuse an Undefined entry, naming the
   case, the table and the entry.
 - Masks: in a program step, no table with hidden fields may have a source table with hidden fields (no hidden
@@ -442,7 +447,8 @@ print("== provenance: a small export with flows, keys and depths through parse_t
 def provenance_export(d, bad=False):
     """A small export in `d` and its task file: two cases of one task. Table 2 (Color, Number, Color, Color) has the
     key [1], a Color copied from ex_input, a constant and a Color whose flow names no table (source_table -1); table 3, the output relation (Box, Color), flows from ex_input
-    and, in $Free, from table 2's Color, and in $Dep, from table 4's DET value, which flows from ex_output. $Unseen is
+    and, in $Free, from table 2's Color, and in $Dep, from its DET (slot 5, which no table of the case holds) and from
+    table 4's Color, which is computed from ex_input. $Unseen is
     $Dep with table 4 faulted, so that it is unseen and its flows and those that read it name its columns. With
     `bad`, a flow of table 2 names a column past its four."""
     import pandas as pd
@@ -456,7 +462,7 @@ def provenance_export(d, bad=False):
     t2 = rel(0, ["Color", "Number", "Color", "Color"], 4, depth=1, keys=[[1]])
     t3 = rel(1, ["Box", "Color"], 5, depth=2, output_position=0, output_color=1)
     t4 = rel(2, ["Color"], 1, depth=1)
-    t3_dep = {**t3, "det_relations": ["slot 2"], "det_widths": [1]}
+    t3_dep = {**t3, "det_relations": ["slot 5"], "det_types": [["Color"]], "det_widths": [1]}
     cases = {"$Free": [grid, grid, t2, t3], "$Dep": [grid, grid, t2, t3_dep, t4],
              "$Unseen": [grid, grid, t2, t3_dep, {**t4, "fault": "a check"}]}
     rows = {2: lambda e: [[1 + e, 0, 5, 7], [2, 1, 5, 7]], 3: lambda e: [[0, 0, 0, 0, 3]], 4: lambda e: [[3]]}
@@ -465,7 +471,7 @@ def provenance_export(d, bad=False):
     flows = {"$Free": [flow(2, 0, 0, 0, 2), flow(2, 1, 1, 0, 1), flow(2, 2, 2, -1, -1), flow(2, 3, 0, -1, -1),
                        flow(3, 0, 0, 0, 1), flow(3, 1, 0, 2, 0)],
              "$Dep": [flow(2, 0, 0, 0, 2), flow(2, 1, 1, 0, 1), flow(2, 2, 2, -1, -1), flow(2, 3, 0, -1, -1),
-                      flow(3, 0, 0, 0, 1), flow(3, 1, 0, 4, 0, 0), flow(4, 0, 1, 1, 2)]}
+                      flow(3, 0, 0, 0, 1), flow(3, 1, 0, -1, 0, 0), flow(3, 1, 0, 4, 0), flow(4, 0, 1, 0, 2)]}
     flows["$Unseen"] = flows["$Dep"]
     if bad:
         flows["$Free"].append(flow(2, 4, 0, 0, 2))
@@ -567,25 +573,40 @@ def checked_export(d, variant="clean"):
     """A small export in `d` and its task file: one case, whose table 2 (Color, Number) copies its Color from ex_input
     and table 3 (Color) its Color from table 2's. With `variant` "type", table 3's flow names table 2's Number
     instead; "value", table 3 holds a Color that table 2 does not; "undefined", table 3 has a third entry, of the
-    kind Undefined."""
+    kind Undefined; "det", table 3 copies its Color from column 1 of its DET of types (Number, Color), whose row at
+    each entry's assignment holds table 3's Color, by a flow whose source table is table 2, whose column 1 is a
+    Number; "det per row", the same with the DET's Color 1 at the first entry's assignment and 2 at the second's, and
+    table 3's Color 1 and 2 at those entries; "det other row", the same with table 3's Color 2 at both entries, so
+    that the first entry's row holds a value of the second entry's assignment only; "dir8", table 2 is (Dir8, Number), with a constant flow, and table 3 (Dir), and the export has an
+    orientation_types.json that gives Dir's cells as a subset of Dir8's; "dir8 unknown", the same without the
+    file."""
     import pandas as pd
     task = {"train": [{"input": [[1]], "output": [[3]]}, {"input": [[2]], "output": [[3]]}], "test": [{"input": [[1]]}]}
     (d / "tasks").mkdir(); json.dump(task, open(d / "tasks/t.json", "w"))
     grid = dict(point=2, relation=-1, column_types=["Example", "Box", "Color"], width=6)
-    tabs = [grid, grid, dict(point=0, relation=0, column_types=["Color", "Number"], width=2),
-            dict(point=0, relation=1, column_types=["Color"], width=1)]
+    dir8 = variant.startswith("dir8")
+    is_det = variant.startswith("det")
+    det = dict(det_relations=["slot 0"], det_types=[["Number", "Color"]], det_widths=[2]) if is_det else {}
+    row3 = {"det per row": [1, 2], "det other row": [2, 2]}.get(variant)   # table 3's Color at each entry
+    tabs = [grid, grid, dict(point=0, relation=0, column_types=["Dir8" if dir8 else "Color", "Number"], width=2),
+            dict(point=0, relation=1, column_types=["Dir" if dir8 else "Color"], width=1, **det)]
     rows = {2: [[1, 5], [2, 6]], 3: [[4 if variant == "value" else 1]]}
-    flow = lambda tab, st, sc: dict(task="t", case="$C", concept=False, table=tab, column=0, kind=0, source_table=st,
-                                    source_relation="", source_column=sc, det=-1, atom="")
-    tables, index, values = [], [], []
+    flow = lambda tab, st, sc, det=-1, kind=0: dict(task="t", case="$C", concept=False, table=tab, column=0,
+                                                    kind=kind, source_table=st, source_relation="", source_column=sc,
+                                                    det=det, atom="")
+    tables, index, values, assigned = [], [], [], []
     for i, t in enumerate(tabs):
         tables.append(dict(task="t", case="$C", concept=False, table=i, token=i, projections=0, fault=None,
-                           det_relations=[], det_widths=[], depth=min(i, 2), keys=[], output_position=-1,
-                           output_color=-1, **t))
+                           **{"det_relations": [], "det_types": [], "det_widths": [], **t}, depth=min(i, 2), keys=[],
+                           output_position=-1, output_color=-1))
         for e in range(2 if i in rows else 0):
-            index.append(dict(task="t", case="$C", table=i, entry=len(index), kind=0, rows=len(rows[i]),
+            rs = [[row3[e]]] if i == 3 and row3 else rows[i]
+            index.append(dict(task="t", case="$C", table=i, entry=len(index), kind=0, rows=len(rs),
                               offset=len(values), example_kind=1, example_index=e, model=0))
-            values += [x for r in rows[i] for x in r]
+            values += [x for r in rs for x in r]
+            if t.get("det_relations"):
+                assigned.append(dict(task="t", case="$C", entry=index[-1]["entry"], det=0, rows=1, offset=len(values)))
+                values += [5, 1 + e if row3 else rs[0][0]]
     if variant == "undefined":
         index.append(dict(task="t", case="$C", table=3, entry=len(index), kind=2, rows=0, offset=0, example_kind=2,
                           example_index=0, model=0))
@@ -593,8 +614,13 @@ def checked_export(d, variant="clean"):
     np.array(values, np.int32).tofile(d / "values/t/$C.i32")
     pd.DataFrame(tables).to_parquet(d / "tables.parquet")
     pd.DataFrame(index).to_parquet(d / "index.parquet")
-    pd.DataFrame([flow(2, 0, 2), flow(3, 2, 1 if variant == "type" else 0)]).to_parquet(d / "flows.parquet")
-    pd.DataFrame(columns=["task", "case", "entry", "det", "rows", "offset"]).to_parquet(d / "assigned.parquet")
+    flows = [flow(2, -1, -1, kind=2) if dir8 else flow(2, 0, 2),
+             flow(3, 2, 1, det=0) if is_det else flow(3, 2, 1 if variant == "type" else 0)]
+    pd.DataFrame(flows).to_parquet(d / "flows.parquet")
+    pd.DataFrame(assigned, columns=["task", "case", "entry", "det", "rows", "offset"]).to_parquet(
+        d / "assigned.parquet")
+    if variant == "dir8":
+        json.dump([["Dir", [1, 2]], ["Dir8", [1, 2, 3, 4]], ["Axis", [7, 8]]], open(d / "orientation_types.json", "w"))
     pd.DataFrame(columns=["task", "case", "table", "columns", "width"]).to_parquet(d / "projections.parquet")
     pd.DataFrame(columns=["task", "case", "projection", "entry", "defined", "rows", "offset"]).to_parquet(
         d / "projection_rows.parquet")
@@ -650,6 +676,25 @@ for variant, kind in (("type", "type"), ("value", "value")):
             and loose["copy flows"][kind] == 1 and loose["copy flows"]["cases"] == 1
             and ("1 with" if kind == "type" else "1 columns with") in printed):
         bad.append((variant, strict, strict_cached, loose))
+not_known = "orientation subtypes were not known"
+for variant, want in (("det", "passes"), ("det per row", "passes"), ("det other row", "refused"), ("dir8", "passes"),
+                      ("dir8 unknown", "refused")):
+    strict, printed, strict_cached, _ = checked_load(variant)
+    loose, _, _, _ = checked_load(variant, strict=False)
+    c = loose["copy flows"] if isinstance(loose, dict) else {}
+    got = "passes" if isinstance(strict, dict) else "refused" if "copy flows" in strict else strict
+    seen[variant] = (got, {k: c.get(k) for k in ("checked", "type", "value", "values unchecked")})
+    is_det = variant.startswith("det")
+    ok = (got == want and c.get("checked") == (2 if is_det else 1) and isinstance(strict_cached, type(strict))
+          and c.get("value") == (variant == "det other row"))
+    if want == "passes":
+        ok = ok and c["type"] == 0 and c["values unchecked"] == 0 and (not_known in printed) == (variant != "dir8")
+    elif is_det:
+        ok = ok and c["type"] == 0 and "1 columns with values outside" in strict and "flow [3, 0, 0, 2, 1, 0]" in strict
+    else:
+        ok = ok and c["type"] == 1 and not_known in strict and "type Dir from a column of type Dir8" in strict
+    if not ok:
+        bad.append((variant, strict, strict_cached, loose, printed))
 import contextlib, io
 text = io.StringIO()
 with contextlib.redirect_stdout(text):
