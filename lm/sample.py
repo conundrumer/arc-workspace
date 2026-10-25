@@ -8,8 +8,16 @@ the latest declaration of it. The sampler draws a class, and for REF_<kind> a de
 distributions at `--temperature` (or takes the argmax with `--greedy`), steps the decoder by the token's id, and
 feeds the token and the ids the engine emits after it to the model. A program stops when the decode ends at a
 consistent relation, at `--max-steps` model-written tokens, at `--max-tokens` positions of context, at
-`--max-seconds` of wall time for its lockstep group, where the mask admits no token ("empty-mask"), or where it
-admits no token the head can write ("stuck": only identifiers that the stream has not declared).
+`--max-seconds` of wall time for its task, where the mask admits no token ("empty-mask"), where it admits no token
+the head can write ("stuck": only identifiers that the stream has not declared), or where the engine panics at its
+token ("panic"). The `--max-seconds` deadline counts from the task's start and covers the prefix replays; a program
+whose prefix replay has not finished at it is dropped: it gets no line, and the summary counts it as "deadline".
+
+A panic in `arclog.step_batch` takes the decode from every decoder of the batch. The sampler then rebuilds each
+program's decoder from the task's root decoder by its model-written ids, and steps each by its token alone; a
+program whose step panics ends "panic", its token in its stream, and one whose rebuild fails ends
+"panic-aborted"; the others go on. Each "panic" program also gets `<out dir>/panic-<task>-<index>.json`: task, ids,
+model, end, panic, settings, world and its record, for a replay of the stream.
 
 Two caps count model-written tokens. A clause is a top-level form of the program (a RULE, DET, INIT, CHOOSE or
 other form): it starts at the first model-written token of the stream and at the first one after the engine
@@ -46,7 +54,8 @@ the streams under the same settings. Then one JSON line per program:
   case               the corpus case that gave the prefix, or null
   branch             the RULE ends in the prefix, which is the branch point's rule index; 0 without a prefix
   rollout            the program's index among the task's programs, or "gold" for the case's own stream, written
-                     once for each branch point that a sampled program of the task took
+                     once for each branch point that a sampled program of the task took; the sampler does not
+                     replay a gold line, so its ended, consistency, solved_test, attempts and program_form are null
   ids, model         the stream's token ids as the engine saw them, in order, the engine's emitted ids included,
                      and for each a 1 where the decoder was stepped by it and a 0 where step() emitted it
   prefix_tokens      the stream's first prefix_tokens ids are the prefix
@@ -59,7 +68,8 @@ the streams under the same settings. Then one JSON line per program:
   program_form       program_form() of the decode where it stopped: the finished clauses, a whole program where
                      ended
   end                "ended", "max-steps", "max-clause", "max-tokens", "max-seconds", "empty-mask", "stuck",
-                     "refused", or "gold" for the gold line
+                     "refused", "panic", "panic-aborted", or "gold" for the gold line
+  panic              the engine's panic message for "panic" and "panic-aborted"; else null
   max_steps_used     the program's cap on sampled tokens: `--max-steps` or its lower value under
                      `--max-steps-factor`
   max_clause_used    the program's cap on the model-written tokens of a clause; 0 for none
@@ -134,6 +144,7 @@ class Program:
         self.max_steps = self.max_clause = 0
         self.logits = self.query = None
         self.prefix_case, self.prefix_tokens, self.prefix_rules = None, 0, 0
+        self.panic = None                         # the message of an engine panic at the program's last step
 
     def push(self, i, by_model, names, kind):
         """Append the token with id i to the stream and to the inputs to feed."""
@@ -153,6 +164,11 @@ class Program:
             self.pending.append((self.in_index["REF_" + k], self.decl_vecs[k][j], None))
         else:
             self.pending.append((self.in_index[names[i]], torch.zeros(self.id_dim), None))
+
+
+def is_panic(e):
+    """Whether e is the engine's Rust panic, which pyo3 raises as pyo3_runtime.PanicException (a BaseException)."""
+    return type(e).__name__ == "PanicException"
 
 
 def hash_seed(seed, task, index):
@@ -177,7 +193,7 @@ class Sampler:
         self.temperature, self.greedy = temperature, greedy
         self.max_steps, self.max_tokens, self.seed = max_steps, max_tokens, seed
         self.max_clause, self.steps_factor, self.median = max_clause, steps_factor, None   # median: the task's, for the factor
-        self.progress, self.max_seconds, self.tests = 0, 0.0, None
+        self.progress, self.tests = 0, None
         self.time = {"model": 0.0, "admissible": 0.0, "mask": 0.0, "engine": 0.0}
         self.n_vocab = len(self.names)
 
@@ -203,13 +219,13 @@ class Sampler:
         outs = np.concatenate([outs, [self.out_index["REF_" + k] for k in KINDS if len(cands[k])]]).astype(np.int64)
         if not len(outs):
             return None
-        logits = p.logits.float()
+        logits = p.logits.float().cpu()   # the draws take a CPU generator; .cpu() is a no-op on the CPU
         admit = torch.zeros_like(logits, dtype=torch.bool); admit[torch.from_numpy(outs)] = True
         cls = self.draw(logits.masked_fill(~admit, float("-inf")), p.gen)
         if cls in self.ref:
             k = self.ref[cls]
             keys = torch.stack(p.keys[k]).float()
-            pl = p.query.float() @ keys.T / math.sqrt(keys.shape[1])
+            pl = (p.query.float() @ keys.T / math.sqrt(keys.shape[1])).cpu()
             cand = torch.zeros(len(keys), dtype=torch.bool); cand[torch.from_numpy(cands[k])] = True
             j = self.draw(pl.masked_fill(~cand, float("-inf")), p.gen)
             return p.decl_ids[k][j]
@@ -243,14 +259,17 @@ class Sampler:
             p.fed += m; p.pending = []
         return attention
 
-    def boundaries(self, decoder, ids, model):
+    def boundaries(self, decoder, ids, model, deadline=None):
         """Step a fork of the decoder through a case's stream: the token boundaries and the rule boundaries at
-        which the decode has not ended, as counts of the stream's tokens before them."""
+        which the decode has not ended, as counts of the stream's tokens before them; None where the time passes
+        the deadline first."""
         d = decoder.fork()
         tokens, rules = [0], []
         for j, (i, w) in enumerate(zip(ids, model)):
             if not w:
                 continue
+            if deadline and time.time() > deadline:
+                return None
             forced, cons = d.step(i)
             end = j + 1 + len(forced)
             if d.ended or end >= len(ids):
@@ -260,11 +279,14 @@ class Sampler:
                 rules.append(end)
         return tokens, rules
 
-    def replay(self, p, case, ids, model, m):
-        """Step program p's decoder through the first m tokens of a case's stream, and feed them."""
+    def replay(self, p, case, ids, model, m, deadline=None):
+        """Step program p's decoder through the first m tokens of a case's stream, and feed them; False where the
+        time passes the deadline first."""
         p.prefix_case, p.prefix_tokens = case, m
         j = 0
         while j < m:
+            if deadline and time.time() > deadline:
+                return False
             i = ids[j]
             assert model[j], f"{p.task} {case}: the prefix's token {j} is the engine's"
             mask = p.decoder.admissible()
@@ -279,11 +301,51 @@ class Sampler:
             p.prefix_rules += cons is not None
             j += 1 + len(forced)
         assert j == m and not p.decoder.ended
+        return True
 
-    def run(self, task, decoders, indices, prefixes=None):
-        """Sample one program from each decoder of the task, in lockstep; prefixes gives, for each, None or
-        (case, ids, model, m), the first m tokens of a case's stream to replay first."""
-        progs = [Program(task, i, d, self.seed, self.id_dim, self.in_index) for d, i in zip(decoders, indices)]
+    def rebuild(self, root, p):
+        """A new decoder in program p's state: a fork of the task's root decoder stepped by p's model-written ids."""
+        d, j = root.fork(), 0
+        while j < len(p.ids):
+            assert p.model[j]
+            forced = list(d.step(p.ids[j])[0])
+            assert forced == p.ids[j + 1:j + 1 + len(forced)], f"{p.task} #{p.index}: the rebuilt decode emits other ids"
+            j += 1 + len(forced)
+        return d
+
+    def after_panic(self, root, chosen, e):
+        """The step results of the chosen (program, id) pairs after arclog.step_batch panics over them. The panic
+        leaves every decoder of the batch without its decode, so each program gets a decoder rebuilt from the
+        root and steps its id alone. A program whose step panics ends "panic", with its decoder before the step
+        and the id in its stream; one whose rebuild fails ends "panic-aborted". Its result is None for both."""
+        results = []
+        for p, i in chosen:
+            try:
+                p.decoder = self.rebuild(root, p)
+            except BaseException as err:
+                if not (is_panic(err) or isinstance(err, Exception)):
+                    raise
+                p.end, p.panic = "panic-aborted", f"{e}; rebuild: {err}"
+                results.append(None); continue
+            d = p.decoder.fork()
+            try:
+                results.append(d.step(i))
+                p.decoder = d
+            except arclog.Refusal as r:
+                results.append(r)
+            except BaseException as err:
+                if not is_panic(err):
+                    raise
+                p.end, p.panic = "panic", str(err)
+                p.push(i, True, self.names, self.kind)
+                results.append(None)
+        return results
+
+    def run(self, task, root, indices, prefixes=None, deadline=None):
+        """Sample one program from each of the indices on a fork of the task's root decoder, in lockstep; prefixes
+        gives, for each, None or (case, ids, model, m), the first m tokens of a case's stream to replay first. A
+        program whose replay passes the deadline ends "deadline"; the lockstep sampling ends "max-seconds" at it."""
+        progs = [Program(task, i, root.fork(), self.seed, self.id_dim, self.in_index) for i in indices]
         for p, pre in zip(progs, prefixes or [None] * len(progs)):
             p.max_clause = self.max_clause
             p.max_steps = self.max_steps
@@ -292,15 +354,16 @@ class Sampler:
                 p.max_steps = min(self.max_steps, max(1, math.ceil(self.steps_factor * source)))
             if pre is not None:   # an empty prefix keeps its case, as branch point 0 of that case
                 p.prefix_case = pre[0]
-            if pre is not None and pre[3]:
-                self.replay(p, *pre)
-        active, cache, attention = list(progs), DynamicCache(), None
-        rounds, slowest, t0 = 0, (0.0, None), time.time()
+            if pre is not None and pre[3] and not self.replay(p, *pre, deadline=deadline):
+                p.end = "deadline"
+        active = [p for p in progs if p.end is None]
+        cache, attention = DynamicCache(), None
+        rounds, slowest = 0, (0.0, None)
         while active:
             for p in active:
                 if p.fed + len(p.pending) > self.max_tokens:
                     p.end = "max-tokens"
-                elif self.max_seconds and time.time() - t0 > self.max_seconds:
+                elif deadline and time.time() > deadline:
                     p.end = "max-seconds"
             keep = [b for b, p in enumerate(active) if p.end is None]
             if len(keep) < len(active) and keep and attention is not None:
@@ -328,12 +391,20 @@ class Sampler:
             if chosen:
                 self.time["mask"] += time.time() - t
                 t = time.time()
-                results = arclog.step_batch([p.decoder for p, _ in chosen], [i for _, i in chosen])
+                try:
+                    results = arclog.step_batch([p.decoder for p, _ in chosen], [i for _, i in chosen])
+                except BaseException as e:
+                    if not is_panic(e):
+                        raise
+                    print(f"  {task}: the engine panics in a batch step: {e}", flush=True)
+                    results = self.after_panic(root, chosen, e)
                 dt = time.time() - t
                 self.time["engine"] += dt
                 if dt > slowest[0]:
                     slowest = (dt, f"token {len(chosen[0][0].ids)} ({self.names[chosen[0][1]]})")
                 for (p, i), r in zip(chosen, results):
+                    if r is None:   # a panic ended the program
+                        continue
                     if isinstance(r, Exception):
                         p.refusals += 1; p.end = "refused"; continue
                     forced, cons = r
@@ -355,19 +426,20 @@ class Sampler:
                 cache.batch_select_indices(torch.tensor(keep, device=self.device))
                 attention = attention[keep]
             active = [active[b] for b in keep]
-        return [record(p.task, p.prefix_case, p.prefix_rules, p.index, p.ids, p.model, p.prefix_tokens,
+        return [{"task": p.task, "rollout": p.index, "end": p.end} if p.end == "deadline" else
+                record(p.task, p.prefix_case, p.prefix_rules, p.index, p.ids, p.model, p.prefix_tokens,
                        p.decoder, p.consistency, self.tests, end=p.end, rules=p.rules, model_steps=p.steps,
-                       refusals=p.refusals, max_steps_used=p.max_steps, max_clause_used=p.max_clause) for p in progs]
+                       refusals=p.refusals, max_steps_used=p.max_steps, max_clause_used=p.max_clause, panic=p.panic)
+                for p in progs]
 
-    def gold(self, task, root, case, ids, model, prefix_tokens, prefix_rules):
-        """The line of a case's own stream, replayed on a fork of the task's root decoder."""
-        d, cons = root.fork(), None
-        for i, w in zip(ids, model):
-            if w:
-                cons = d.step(i)[1]
-        return record(task, case, prefix_rules, "gold", list(ids), list(model), prefix_tokens, d, cons, self.tests,
-                      end="gold", rules=None, model_steps=0, refusals=0, max_steps_used=None,
-                      max_clause_used=None)
+
+def gold(task, case, ids, model, prefix_tokens, prefix_rules):
+    """The line of a case's own stream, from the corpus without a replay: the fields of a decode are null."""
+    return {"task": task, "case": case, "branch": prefix_rules, "rollout": "gold", "ids": list(ids),
+            "model": list(model), "prefix_tokens": prefix_tokens, "prefix_rules": prefix_rules, "ended": None,
+            "consistency": None, "solved_test": None, "attempts": None, "tokens": len(ids), "program_form": None,
+            "end": "gold", "rules": None, "model_steps": 0, "refusals": 0, "max_steps_used": None,
+            "max_clause_used": None, "panic": None}
 
 
 def record(task, case, branch, rollout, ids, model, prefix_tokens, decoder, consistency, tests, **rest):
@@ -451,7 +523,7 @@ def main():
                          "the median of the task's cases in --data; 0 for off")
     ap.add_argument("--max-tokens", type=int, default=MAX_TOKENS, help="the most context positions, the start token included")
     ap.add_argument("--max-seconds", type=float, default=0.0,
-                    help="the most wall seconds of a lockstep group of programs, its prefixes included; 0 for none")
+                    help="the most wall seconds of a task, its prefix replays included; 0 for none")
     ap.add_argument("--batch", type=int, default=1, help="programs of one task sampled in lockstep")
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--progress", type=int, default=0, help="print a progress line every n lockstep rounds; 0 for none")
@@ -470,7 +542,7 @@ def main():
     model, meta, dtype = load_model(a.model, a.device)
     use_autocast = a.device == "cuda" and dtype == torch.float32
     out = Path(a.out); out.parent.mkdir(parents=True, exist_ok=True)
-    sampler, records, t0, corpus = None, [], time.time(), None
+    sampler, records, dropped, t0, corpus = None, [], {}, time.time(), None
     with open(out, "w") as f, torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16, enabled=use_autocast):
         for task in task_ids(a.tasks):
             session = arclog.Session(arclog.Task.from_json(open(f"{a.task_dir}/{task}.json").read(), getattr(arclog.World, a.world)))
@@ -486,9 +558,10 @@ def main():
                           f"clause in {a.data}", flush=True)
                 else:
                     sampler.max_clause = a.max_clause
-                sampler.progress, sampler.max_seconds = a.progress, a.max_seconds
+                sampler.progress = a.progress
                 s = session.settings
-                f.write(json.dumps({"settings": {k: getattr(s, k) for k in SETTINGS}, "world": a.world, "args": vars(a),
+                settings = {k: getattr(s, k) for k in SETTINGS}
+                f.write(json.dumps({"settings": settings, "world": a.world, "args": vars(a),
                                     "max_clause": sampler.max_clause,
                                     "model_meta": {k: v for k, v in meta.items() if not k.endswith("_names")}}) + "\n")
             task_json = json.load(open(f"{a.task_dir}/{task}.json"))
@@ -500,8 +573,9 @@ def main():
                 cap = min(a.max_steps, max(1, math.ceil(a.max_steps_factor * medians[task])))
                 print(f"{task}: median {medians[task]:g} model-written tokens; max-steps {cap} from nothing"
                       + (", and from a prefix, the factor times the source case's" if a.prefix != "0" else ""), flush=True)
+            deadline = time.time() + a.max_seconds if a.max_seconds else None
             root = session.decoder()
-            golds = set()
+            golds, bounds = set(), {}
             prefix_of = lambda i: None
             if a.prefix != "0":
                 if corpus is None:
@@ -513,7 +587,10 @@ def main():
                     names = a.prefix_cases.split(",")
                     cases = [c for c in cases if c[0] in names]
                 assert cases, f"{task}: no case of {a.data} gives a prefix"
-                bounds = {c[0]: sampler.boundaries(root, c[1], c[2]) for c in cases}
+                for c in cases:
+                    bounds[c[0]] = sampler.boundaries(root, c[1], c[2], deadline)
+                    if bounds[c[0]] is None:
+                        break
 
                 def prefix_of(i):
                     case, ids, model = cases[i % len(cases)]
@@ -522,20 +599,34 @@ def main():
             for start in range(0, a.n, a.batch):
                 idx = list(range(start, min(a.n, start + a.batch)))
                 t = time.time()
-                prefixes = [prefix_of(i) for i in idx]
-                for pre in prefixes:   # the gold line of each branch point, once
-                    if pre is not None and (pre[0], pre[3]) not in golds:
-                        golds.add((pre[0], pre[3]))
-                        n_rules = sum(1 for e in bounds[pre[0]][1] if e <= pre[3])
-                        g = sampler.gold(task, root, pre[0], pre[1], pre[2], pre[3], n_rules)
-                        f.write(json.dumps(g) + "\n")
-                        print(f"{task} gold {pre[0]} at {pre[3]} tokens: ended {g['ended']}, solved_test {g['solved_test']}", flush=True)
-                for r in sampler.run(task, [root.fork() for _ in idx], idx, prefixes):
+                if None in bounds.values():   # the deadline passed before the prefixes' boundaries were found
+                    for i in idx:
+                        dropped[f"{task} #{i}"] = "deadline"
+                    print(f"{task} #{idx[0]}-{idx[-1]}: dropped, the prefixes' boundaries passed the deadline", flush=True)
+                    continue
+                for r in sampler.run(task, root, idx, [prefix_of(i) for i in idx], deadline):
+                    if r["end"] == "deadline":
+                        dropped[f"{task} #{r['rollout']}"] = "deadline"
+                        print(f"{task} #{r['rollout']}: dropped, its prefix replay passed the deadline", flush=True)
+                        continue
+                    if r["case"] is not None and (r["case"], r["prefix_tokens"]) not in golds:   # once per branch point
+                        golds.add((r["case"], r["prefix_tokens"]))
+                        c = next(c for c in cases if c[0] == r["case"])
+                        f.write(json.dumps(gold(task, c[0], c[1], c[2], r["prefix_tokens"], r["prefix_rules"])) + "\n")
                     r["seconds"] = round(time.time() - t, 2)
                     records.append(r); f.write(json.dumps(r) + "\n"); f.flush()
                     print(f"{task} #{r['rollout']}: {r['end']}, {r['tokens']} tokens, {r['model_steps']} model steps (cap {r['max_steps_used']}), "
                           f"rules {r['rules']}, solved_test {r['solved_test']}, prefix {r['prefix_tokens']} tokens "
-                          f"({r['prefix_rules']} rules) of {r['case']}", flush=True)
+                          f"({r['prefix_rules']} rules) of {r['case']}"
+                          + (f", panic: {r['panic']}" if r["panic"] else ""), flush=True)
+                    if r["end"] == "panic":
+                        repro = out.parent / f"panic-{task}-{r['rollout']}.json"
+                        repro.write_text(json.dumps({
+                            "note": f"sampler repro, {task}, checkpoint {Path(a.model).name}, T={a.temperature:g}, "
+                                    f"seed {a.seed}, rollout {r['rollout']}, panic",
+                            "task": task, "ids": r["ids"], "model": r["model"], "end": "panic", "panic": r["panic"],
+                            "settings": settings, "world": a.world, "record": r}))
+                        print(f"{task} #{r['rollout']}: repro {repro}", flush=True)
     seconds = time.time() - t0
     tokens = sum(len(r["ids"]) for r in records)
     by_cons = {}
@@ -543,8 +634,8 @@ def main():
         k = r["consistency"]["kind"] if r["consistency"] else None
         by_cons[str(k)] = by_cons.get(str(k), 0) + 1
     by_end = {}
-    for r in records:
-        by_end[r["end"]] = by_end.get(r["end"], 0) + 1
+    for e in [r["end"] for r in records] + list(dropped.values()):
+        by_end[e] = by_end.get(e, 0) + 1
     print(json.dumps({"programs": len(records), "ended": by_end.get("ended", 0), "by_end": by_end,
                       "by_consistency": by_cons, "mean_tokens": tokens / max(1, len(records)),
                       "seconds_per_token": seconds / max(1, tokens),
