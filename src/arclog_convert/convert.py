@@ -3,10 +3,17 @@ files under gen/, and, with the expansion config `libmap.macros`, under
 gen_macros/, of `arclog_convert.out`: `work/arclog/` of the main
 worktree, or the directory `--out` gives.
 
-    uv run python -m arclog_convert.convert [--out <dir>] [<stem> ...]
+    uv run python -m arclog_convert.convert [--out <dir>] [--no-train-replay] [<stem> ...]
 
 Each run writes both outputs for the same solvers, every solver where no
 stem is given, and prints the summary of each.
+Then, once both outputs are written, it replays each case of the solvers
+that `gen/` converted on the train pairs of its task, records the verdicts
+under `train_replay/`, and reports against the baseline
+`unreproduced.tsv`; the run exits with status 1 where the report finds a
+case beyond the baseline or one that was `Consistent` and is not.
+`--no-train-replay` skips it. The replay runs `cargo` in `engine/`, so it
+needs a Rust toolchain; `arclog_convert.train_replay` gives the details.
 A solver's plan file under plan/ records the hash of the solver
 file it was written from, and the runner and lib stamp of the run; where it
 is missing or records another hash or stamp, the script first reruns
@@ -235,11 +242,12 @@ def convert_one(stem: str) -> tuple[str, str | None, str | None, Counter, Counte
     return stem, arclog, arcdata, todo.kinds, Counter(MERGES), list(MERGES_UNMERGED), s.c.col_mismatch, None
 
 
-def main(argv: list[str]) -> None:
+def main(argv: list[str]) -> int:
     global OUT_DIR, MACROS_DIR, PLANS, NAMES_DIR
     import argparse
     parser = argparse.ArgumentParser(prog="python -m arclog_convert.convert")
     parser.add_argument("--out", type=Path, help="the directory to write under, in place of `arclog_out`")
+    parser.add_argument("--no-train-replay", action="store_true", help="convert with no replay on the train pairs")
     parser.add_argument("stems", nargs="*", help="the solvers to convert; every solver where none is given")
     args = parser.parse_args(argv)
     if args.out is not None:
@@ -249,16 +257,20 @@ def main(argv: list[str]) -> None:
     stems = args.stems or sorted(p.stem for p in paths.SOLVERS.glob("*.dl"))
     refresh_plans(stems)
     print(f"{paths.OUT_DIR}:")
-    convert_into(stems, paths.OUT_DIR)
+    converted = convert_into(stems, paths.OUT_DIR)
     # set before the second pool starts, so that its workers read it
     os.environ[paths.MACROS_ENV] = "1"
     print(f"{paths.MACROS_DIR}:")
     convert_into(stems, paths.MACROS_DIR)
+    if args.no_train_replay:
+        return 0
+    from arclog_convert import train_replay
+    return train_replay.replay(converted, paths.OUT_DIR.parent)
 
 
-def convert_into(stems: list[str], out: Path) -> None:
-    """Convert `stems` into `out` over a process pool, and print the
-    summary."""
+def convert_into(stems: list[str], out: Path) -> list[str]:
+    """Convert `stems` into `out` over a process pool, print the
+    summary, and give the stems it converted."""
     from concurrent.futures import ProcessPoolExecutor
     out.mkdir(parents=True, exist_ok=True)
     total = Counter()
@@ -267,6 +279,7 @@ def convert_into(stems: list[str], out: Path) -> None:
     unmerged: list[str] = []
     mismatched: list[tuple[str, str, list[Col], list[Col]]] = []
     failed = []
+    converted = []
     clean = 0
     workers = min(len(stems), os.cpu_count() or 4)
     if workers > 1:
@@ -280,6 +293,7 @@ def convert_into(stems: list[str], out: Path) -> None:
         if err is not None:
             failed.append((stem, err))
             continue
+        converted.append(stem)
         (out / f"{stem}.arclog").write_text(arclog)
         (out / f"{stem}.arcdata").write_text(arcdata)
         merges += m
@@ -311,5 +325,8 @@ def convert_into(stems: list[str], out: Path) -> None:
         for e, n in errs.most_common(10):
             print(f"  {n:4} {e}")
 
+    return converted
+
+
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    sys.exit(main(sys.argv[1:]))

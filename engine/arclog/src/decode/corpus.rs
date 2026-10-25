@@ -12,7 +12,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use super::replay::{replay_from, Stepped};
-use super::{Decoder, Points, Table};
+use super::{Consistency, Decoder, Points, Table};
+use crate::eval::ReachedBound;
 use crate::eval::instance::Constructions;
 use crate::eval::Caps;
 use crate::harness::{panic_message, read_corpus_solver, run_on_workers};
@@ -101,6 +102,14 @@ pub fn replay_panic(payload: &(dyn std::any::Any + Send)) -> String {
     format!("the replay panicked: {}", panic_message(payload).unwrap_or("a payload that is not a message"))
 }
 
+/// A wanted case of a solver with what its replay gave: the replay of its
+/// stream, or the writer's fault.
+struct ReplayedCase<T> {
+    case: String,
+    concept: bool,
+    replay: Result<StreamReplay<T>, String>,
+}
+
 fn replay_cases<T: Default + Clone>(
     corpus: &Path,
     tasks: &Path,
@@ -111,24 +120,102 @@ fn replay_cases<T: Default + Clone>(
     masked: bool,
     record: &dyn Fn(&mut T, &Decoder<'_>, Stepped<'_>),
 ) -> Result<SolverReplay<T>, String> {
+    let (train, replayed) = replay_streams(corpus, tasks, id, all, constructions, settings, masked, record)?;
+    let cases = replayed.into_iter().map(|case| CaseReplay { case: case.case, concept: case.concept, outcome: case.replay.and_then(StreamReplay::into_result) }).collect();
+    Ok(SolverReplay { train, cases })
+}
+
+/// The count of train pairs of the task `id` and, for each wanted case of the
+/// solver that holds no `DEMONSTRATED` form, the replay of its stream, as
+/// [`replay_prefix_tree`] gives it.
+fn replay_streams<T: Default + Clone>(
+    corpus: &Path,
+    tasks: &Path,
+    id: &str,
+    all: bool,
+    constructions: &Constructions,
+    settings: &DecodeSettings,
+    masked: bool,
+    record: &dyn Fn(&mut T, &Decoder<'_>, Stepped<'_>),
+) -> Result<(usize, Vec<ReplayedCase<T>>), String> {
     let vocabulary = Vocabulary::new(Registry::get(), &DecodeSettings::default());
     let cases = solver_streams(corpus, id, if all { WantedCases::All } else { WantedCases::Concept }, &vocabulary)?;
     let (task, judged) = read_task_files(tasks, id)?;
     let cases: Vec<CaseStream> = cases.into_iter().filter(|case| !case.demonstrated).collect();
     let ids: Vec<Vec<(u32, Emitter)>> = cases.iter().filter_map(|case| case.stream.as_ref().ok()).map(|stream| token_ids(stream, &vocabulary)).collect();
     let mut outcomes = replay_prefix_tree(&task, &judged, &ids, constructions, settings, masked, record).into_iter();
-    let recorded = cases
+    let replayed = cases
         .into_iter()
-        .map(|case| CaseReplay {
+        .map(|case| ReplayedCase {
             case: case.case,
             concept: case.concept,
-            outcome: match case.stream {
-                Ok(_) => outcomes.next().expect("an outcome for each stream").into_result(),
+            replay: match case.stream {
+                Ok(_) => Ok(outcomes.next().expect("an outcome for each stream")),
                 Err(fault) => Err(fault),
             },
         })
         .collect();
-    Ok(SolverReplay { train: task.train.len(), cases: recorded })
+    Ok((task.train.len(), replayed))
+}
+
+/// What a case's replay ends on, from the consistency of the last `RULE`
+/// clause its stream ends.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Verdict {
+    Consistent,
+    NotConsistent,
+    SeveralValues,
+    /// The message of the run fault.
+    Fault(String),
+    Stopped(ReachedBound),
+    /// The stream ends no `RULE` clause.
+    NoRule,
+    /// The decoder refuses the stream, or it ends while the engine forces tokens.
+    Refused(String),
+    /// The writer gives the case no stream.
+    NoStream(String),
+}
+
+/// The verdict of one case, with the index of the token that ends the last
+/// `RULE` clause the replay reached.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CaseVerdict {
+    pub case: String,
+    pub concept: bool,
+    pub verdict: Verdict,
+    pub token: Option<usize>,
+}
+
+/// The verdict of each case of the solver `id` of `corpus` on its task in
+/// `tasks`, every case that holds no `DEMONSTRATED` form, replayed with the
+/// default settings and no token mask; or the fault that stops the solver.
+pub fn solver_verdicts(corpus: &Path, tasks: &Path, id: &str, constructions: &Constructions) -> Result<Vec<CaseVerdict>, String> {
+    let record = |last: &mut Option<(usize, Verdict)>, _: &Decoder<'_>, stepped: Stepped<'_>| {
+        let verdict = match &stepped.consistency {
+            None => return,
+            Some(Consistency::Consistent { .. }) => Verdict::Consistent,
+            Some(Consistency::NotConsistent) => Verdict::NotConsistent,
+            Some(Consistency::SeveralValues { .. }) => Verdict::SeveralValues,
+            Some(Consistency::Fault(fault)) => Verdict::Fault(fault.message.to_string()),
+            Some(Consistency::Stopped(stop)) => Verdict::Stopped(stop.bound),
+        };
+        *last = Some((stepped.index, verdict));
+    };
+    let settings = DecodeSettings::default();
+    let run = || replay_streams(corpus, tasks, id, true, constructions, &settings, false, &record);
+    let (_, replayed) = catch_unwind(AssertUnwindSafe(run)).unwrap_or_else(|payload| Err(replay_panic(&*payload)))?;
+    Ok(replayed
+        .into_iter()
+        .map(|case| {
+            let (verdict, token) = match case.replay {
+                Err(fault) => (Verdict::NoStream(fault), None),
+                Ok(StreamReplay { fault: Some(message), record }) => (Verdict::Refused(message), record.map(|(index, _)| index)),
+                Ok(StreamReplay { fault: None, record: None }) => (Verdict::NoRule, None),
+                Ok(StreamReplay { fault: None, record: Some((index, verdict)) }) => (verdict, Some(index)),
+            };
+            CaseVerdict { case: case.case, concept: case.concept, verdict, token }
+        })
+        .collect())
 }
 
 /// The streams of `streams`, as indices, in the order of their
