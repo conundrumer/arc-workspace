@@ -388,7 +388,7 @@ def run_batch(model, progs, group, enc_args, device, stats=None, gen=None, K=0, 
     """The mean loss of a group of programs, and the count of its targets. `gen` draws the identifiers of the
     language model, and `enc_gen` the encoder's (by default the model's own generator), so that the language
     model's draws are the same with and without the encoder. With `aux`, a dict of "weight", "frac", "cap", "kind",
-    "prior_weight", "step" and "mask_remote" (masked_loss's arguments), the loss adds weight times the masked table loss over the
+    "prior_weight", "step" and "mask_remote" (masked_loss's arguments: False, True or "groups"), the loss adds weight times the masked table loss over the
     tables of the group's programs, from a second encoder pass whose masks and identifiers come from
     model.mask_gen, and aux gains "loss", the masked loss, and "program" and "prior", the mean loss of each part.
     aux gains "lm", the language model loss alone, as a tensor. Where aux has "measure" set, aux gains
@@ -577,10 +577,17 @@ def main():
                     help="a program step also hides the computed fields whose sources are all in other derived "
                          "tables (label remote), which a row sees only as those tables' pooled vectors; off by "
                          "default")
+    ap.add_argument("--mask-remote-groups", action="store_true",
+                    help="a program step hides remote fields in the columns that have a source pair whose source "
+                         "tables are all seen, each with its column in every row of its key group, the rows of its "
+                         "entry that agree on the columns that share a source table with it (encoder.py, "
+                         "draw_masks); not with --mask-remote")
     ap.add_argument("--tiny-base", action="store_true",
                     help="a 2-layer, 64-wide model of --base's architecture and tokenizer, initialized at random, for the regression check")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
     a = ap.parse_args()
+    assert not (a.mask_remote and a.mask_remote_groups), "--mask-remote-groups replaces --mask-remote; give one"
+    a.mask_remote = "groups" if a.mask_remote_groups else a.mask_remote   # masked_loss's mask_remote
     if a.enc_checkpoint is None:
         a.enc_checkpoint = a.device == "cuda"
     torch.manual_seed(0); random.seed(0)
@@ -634,8 +641,11 @@ def main():
             t_pre = time.time()
             labelled = encoder.preflight([((c["task"], c["case"]), c["tables"]) for c in [c for cs in train_tasks for c in cs]
                                + indist + held], a.mask_frac, a.mask_cap, mask_remote=a.mask_remote)
+            hidden_remote = labelled.pop("hidden remote", None)
             print(f"preflight: {sum(map(len, train_tasks)) + len(indist) + len(held)} programs, "
                   f"{time.time() - t_pre:.0f} s; fields by label {labelled}", flush=True)
+            if hidden_remote is not None:
+                print(f"preflight: {encoder.hidden_remote_line(hidden_remote)}", flush=True)
     if a.eval_limit:
         indist, held, eval_train = indist[:a.eval_limit], held[:a.eval_limit], eval_train[:a.eval_limit]
     assert train_tasks and indist and held, "empty split"

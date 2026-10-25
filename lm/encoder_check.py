@@ -41,6 +41,14 @@ real tables of the dev export, cut to a few dozen rows each.
   without `mask_remote`, each hidden field of a derived column that has sources must keep one visible source in its
   own table or in a grid table, and no remote field is hidden; an output step does so too; a program step hides computed fields only, an output step computed ex_output fields
   only, and a prior step inferrable fields only.
+- Remote groups: on a fixture whose derived table copies two columns from an earlier derived table, under
+  `mask_remote` "groups" each hidden remote field's key group must be hidden with it, so that the group's other
+  row, which holds the same value, is no pointer candidate, while a row of another group that holds the value stays
+  visible in some draws; the field hidden alone in some draws with `mask_remote`; a remote column whose flows name
+  no table, or whose source table is unseen, never hidden; a group never hidden past `cap`; the preflight must count
+  the hidden remote fields and refuse a program where none would be hidden. Without groups, the masks must be bitwise
+  those of a reference copy of the rule, and the masked loss bitwise the same with the reference copy's masks and
+  with the attention probe on, which must give shares in [0, 1].
 - Loss parts: the masked loss must equal its program part plus the prior weight times its prior part.
 - Autocast: under bf16 autocast, with the encoder in float32, every attention input must be bf16, each equivariant
   matrix must be cast once per call of `prepare`, and the masked loss and its gradients must be finite; on the CPU,
@@ -1462,3 +1470,168 @@ for title, (draw, hidden, on, off) in cases_.items() if LEARN else []:
               + f" {'PASS' if want(ratio) else 'FAIL'}")
 if not LEARN:
     print("  skipped: run with --learn")
+
+print("== --mask-remote-groups: on a fixture whose derived table B (Ident, Number, Color) copies its Ident and Color "
+      "from table A, the key group of a hidden remote field is hidden with it (300 program steps, frac 0.5)")
+
+
+def group_fixture():
+    """ex_input and ex_output of the provenance export's $Free, then A (Ident, Color; key Ident, both columns from
+    ex_input's Color) and B (Ident, Number, Color), whose Ident and Color are copied from A and whose Number is
+    computed from ex_input's Position; per example's entry, B's rows (1, 5, 3), (1, 6, 3), (2, 7, 3), (3, 8, 4): the
+    rows of Ident 1 are one key group of the Color column, and both hold Color 3, which the row of Ident 2 holds too."""
+    def table(i, types, rows, keys, flows):
+        n = 2 * len(rows)
+        return E.Table(step=i, relation=i, evidence=False, unseen=None, largest=len(rows), export_table=i,
+                       positions=list(range(len(types))), types=types, cells=np.array(rows * 2, np.int32),
+                       present=np.ones((n, len(types)), bool), example=np.repeat([0, 1], len(rows)).astype(np.int16),
+                       example_kind=np.ones(n, np.int8), assignment=np.full((n, 0), -1, np.int32),
+                       model=np.zeros(n, np.int32), entry=np.repeat([0, 1], len(rows)).astype(np.int32),
+                       part=np.zeros(n, np.int32), marker=np.zeros(n, bool), unseen_entries={}, det_relations=[],
+                       depth=i - 1, keys=keys, output_position=-1, output_color=-1,
+                       flows=np.array([f + [-1] for f in flows], np.int32))
+    a = table(2, ["Ident", "Color"], [[1, 3], [2, 3], [3, 4]], [[0]], [[0, 1, 0, 2], [1, 0, 0, 2]])
+    b = table(3, ["Ident", "Number", "Color"], [[1, 5, 3], [1, 6, 3], [2, 7, 3], [3, 8, 4]], [],
+              [[0, 0, 2, 0], [1, 1, 0, 1], [2, 0, 2, 1]])
+    return [free[0], free[1], a, b]
+
+
+grp = group_fixture()
+bad, seen = [], {"r0 hidden": 0, "r0 hidden, r2 visible": 0, "leak under --mask-remote": 0, "B Ident hidden": 0}
+g = torch.Generator().manual_seed(31)
+for _ in range(300):
+    for remote in (True, "groups"):
+        ms = enc.draw_masks(grp, 0.5, 10 ** 6, g, "program", mask_remote=remote)
+        col = ms[3][:, 2]
+        for e in (0, 4):   # the first row of each entry
+            if remote is True:
+                seen["leak under --mask-remote"] += bool(col[e] != col[e + 1])
+                continue
+            if col[e] != col[e + 1]:
+                bad.append(("a key group's Color hidden apart", col.tolist()))
+            seen["r0 hidden"] += bool(col[e]); seen["r0 hidden, r2 visible"] += bool(col[e] and not col[e + 2])
+        if remote == "groups":
+            seen["B Ident hidden"] += bool(ms[3][:, 0].any())
+            if ms[3][:, 2].any() and ms[2][:, 1].any():
+                bad.append(("B's Color and its source A's Color hidden together",))
+labels = [E.FIELD_LABELS[x] for x in E.column_labels(grp, 3)]
+groups_of = E.key_groups(grp, 3, 2).tolist()
+if labels != ["remote", "computed", "remote"] or len(set(groups_of)) != 6 or groups_of[0] != groups_of[1]:
+    bad.append(("labels or key groups", labels, groups_of))
+if not all(seen.values()):
+    bad.append(("draws", seen))
+# a remote column whose flows name no table (table 2 column 3 of $Free) and one whose source table is unseen
+# (table 3 column 1 of $Unseen) are never hidden; one whose source is seen (table 3 column 1 of $Dep) is
+never = {"$Free table 2 column 3": 0, "$Unseen table 3 column 1": 0, "$Dep table 3 column 1": 0}
+for _ in range(200):
+    never["$Free table 2 column 3"] += bool(enc.draw_masks(free, 1.0, 10 ** 6, g, "program", "groups")[2][:, 3].any())
+    never["$Unseen table 3 column 1"] += bool(enc.draw_masks(unseen_t, 1.0, 10 ** 6, g, "program", "groups")[3][:, 1].any())
+    never["$Dep table 3 column 1"] += bool(enc.draw_masks(dep, 1.0, 10 ** 6, g, "program", "groups")[3][:, 1].any())
+if never["$Free table 2 column 3"] or never["$Unseen table 3 column 1"] or not never["$Dep table 3 column 1"]:
+    bad.append(("columns without a seen source pair", never))
+# a group counts toward --mask-cap: at cap 1, the two rows of Ident 1 are never hidden, the row of Ident 3 is
+capped = [0, 0]
+for _ in range(200):
+    col = enc.draw_masks(grp, 1.0, 1, g, "program", "groups")[3][:, 2]
+    capped[0] += bool(col[[0, 1, 4, 5]].any()); capped[1] += bool(col[[3, 7]].any())
+if capped[0] or not capped[1]:
+    bad.append(("the cap", capped))
+print(f"  B labels {labels}, Color key groups {groups_of}; {seen}; never hidden or hidden {never}; at cap 1, the group "
+      f"of two rows hidden in {capped[0]} and the row of Ident 3 in {capped[1]} of 200 draws "
+      f"{'PASS' if not bad else 'FAIL ' + str(bad)}")
+
+print("== --mask-remote-groups preflight: the fixture's hidden remote fields by type, and a refusal where no remote "
+      "field would be hidden ($Unseen)")
+counted = E.preflight([("groups", grp)], 0.5, 10 ** 6, mask_remote="groups")
+try:
+    E.preflight([("unseen", unseen_t)], 1.0, 10 ** 6, mask_remote="groups")
+    refused = "no fault"
+except E.DataFault as x:
+    refused = str(x)
+ok = sum(n for n, _ in counted["hidden remote"].values()) > 0 and "hide no remote field" in refused
+print(f"  {counted['hidden remote']}; $Unseen: {refused!r} {'PASS' if ok else 'FAIL'}")
+
+
+def reference_masks(tables, frac, cap, gen, kind, mask_remote=False):
+    """A reference copy of `draw_masks` with `mask_remote` False or True."""
+    want = E.INFERRABLE if kind == "prior" else E.COMPUTED
+    out = []
+    for t, lab in zip(tables, E.field_labels(tables)):
+        if not t.n or not len(t.types):
+            out.append(None); continue
+        m = (torch.rand(t.n, len(t.types), generator=gen).numpy() < frac) & t.present & ~t.marker[:, None]
+        m &= (lab == want) | ((lab == E.REMOTE) & (mask_remote and kind == "program"))
+        if kind == "output" and t.relation != "ex_output":
+            m[:] = False
+        r, i = np.nonzero(m)
+        if len(r) > cap:
+            drop = torch.randperm(len(r), generator=gen).numpy()[cap:]
+            m[r[drop], i[drop]] = False
+        out.append(m)
+    if kind == "program" and E.provenance(tables):
+        sources, held, blocked = E.column_sources(tables), set(), set()
+        pairs = [(j, c) for j, m in enumerate(out) if m is not None for c in np.flatnonzero(m.any(0)).tolist()]
+        for p in torch.randperm(len(pairs), generator=gen).tolist():
+            j, c = pairs[p]
+            if sources[j][c] & held or (j, c) in blocked:
+                out[j][:, c] = False
+            else:
+                held.add((j, c)); blocked |= sources[j][c]
+    elif kind == "program":
+        sources, held = E.table_sources(tables), set()
+        for j in torch.randperm(len(tables), generator=gen).tolist():
+            if out[j] is None or not out[j].any():
+                continue
+            if sources[j] & held or any(j in sources[k] for k in held):
+                out[j][:] = False
+            else:
+                held.add(j)
+    if kind in ("program", "output"):
+        for j, t in enumerate(tables):
+            if t.relation == "ex_output" and out[j] is not None:
+                E.keep_occurrence(t, out[j], E.output_labels(E.evidence_input(tables), t)[1])
+    return out
+
+
+print("== without --mask-remote-groups: the masks bitwise those of a reference copy of the rule (20 draws per step "
+      "kind, frac 0.3, cap 64, with and without --mask-remote), and the masked loss bitwise the same with the reference "
+      "masks and with the attention probe on")
+ref_progs = {**mask_progs, "groups fixture": grp, **{f"dev {k[0]} {k[1]}": v for k, v in src_progs.items()}}
+diff, n_masks = [], 0
+for remote in (False, True):
+    g1, g2 = torch.Generator().manual_seed(41), torch.Generator().manual_seed(41)
+    for kind in E.STEP_KINDS:
+        for name, tabs in ref_progs.items():
+            for _ in range(20):
+                a_, b_ = enc.draw_masks(tabs, 0.3, 64, g1, kind, remote), reference_masks(tabs, 0.3, 64, g2, kind, remote)
+                n_masks += 1
+                if not all((x is None and y is None) or (x is not None and y is not None and np.array_equal(x, y))
+                           for x, y in zip(a_, b_)):
+                    diff.append((remote, kind, name))
+progs_ = [(t, [None] * len(t)) for t in [real, grp, *src_progs.values()]]
+loss_diff = []
+with torch.no_grad():
+    for remote in (False, True, "groups"):
+        run_loss = lambda probe: enc.masked_loss(progs_, torch.Generator().manual_seed(4), 0.3, 64,
+                                                 torch.Generator().manual_seed(5), mask_remote=remote, probe=probe)
+        l0, r0 = run_loss(False)
+        l1, r1 = run_loss(True)
+        if not (torch.equal(l0, l1) and all(torch.equal(x[2]["loss"], y[2]["loss"]) for x, y in zip(r0, r1))):
+            loss_diff.append((remote, "probe"))
+        if remote != "groups":
+            enc.draw_masks = lambda tables, frac, cap, gen, kind, mask_remote=False: reference_masks(
+                tables, frac, cap, gen, kind, mask_remote)
+            try:
+                l2, r2 = run_loss(False)
+            finally:
+                del enc.draw_masks
+            if not (torch.equal(l0, l2) and all(torch.equal(x[2]["loss"], y[2]["loss"]) for x, y in zip(r0, r2))):
+                loss_diff.append((remote, "reference masks"))
+        if remote == "groups":
+            shares = [(r["parent_attention"], r["parent_chance"]) for _, t, r in r1 if "parent_attention" in r]
+            on = [(pa[~np.isnan(pc)], pc[~np.isnan(pc)]) for pa, pc in shares]
+            n_probed = sum(len(c) for _, c in on)
+            if not n_probed or not all(((0 <= a) & (a <= 1)).all() and ((0 < c) & (c <= 1)).all() for a, c in on):
+                loss_diff.append(("groups", "probe shares", n_probed))
+print(f"  {n_masks} mask draws, differing {diff[:3]}; masked loss differences {loss_diff}; probed remote fields "
+      f"{n_probed} {'PASS' if not diff and not loss_diff else 'FAIL'}")
