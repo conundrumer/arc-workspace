@@ -249,3 +249,64 @@ def test_the_checks_refuse_an_engine_whose_doc_links_a_private_item(trees, monke
     base = git(worktree, "rev-parse", "HEAD").strip()
     failed = steps.checks(worktree, base, str(worktree / "out"))
     assert len(failed) == 1 and "private item" in failed[0] and "cargo doc" in failed[0]
+
+
+class MovingMaster:
+    """A stand-in for `check` that records, for each round, whether the
+    engine checks run (`merge_steps.engine_runs`), and makes in the main tree
+    the commit of a path, as another writer of `master` does, for each of the
+    first `moves` rounds."""
+
+    def __init__(self, merge_change, main: Path, path: str, moves: int) -> None:
+        self.merge_change, self.main, self.path, self.moves = merge_change, main, path, moves
+        self.engine: list[bool] = []
+
+    def __call__(self, tree, main, base, touched, engine_passed=None) -> Path:
+        self.engine.append(self.merge_change.engine_runs(tree, base, engine_passed))
+        if len(self.engine) <= self.moves:
+            name = f"{self.path}{len(self.engine)}"
+            (self.main / name).parent.mkdir(exist_ok=True)
+            commit_file(self.main, name)
+        return tree
+
+
+def moving(merge_change, trees, monkeypatch, path: str, moves: int):
+    """The main tree, the change of an engine file in the worktree, and
+    the stand-in for `check` that moves `master` by a commit of `path`, with
+    each step in the main tree a success."""
+    main, worktree = trees
+    (worktree / "engine").mkdir()
+    commit_file(worktree, "engine/x")
+    change = merge_change.Change(worktree, "change", frozenset({"engine/x"}),
+                                 "", None, git(worktree, "rev-parse", "HEAD").strip())
+    stand_in = MovingMaster(merge_change, main, path, moves)
+    monkeypatch.setattr(merge_change, "check", stand_in)
+    monkeypatch.setattr(merge_change, "run_step", lambda main, argv: subprocess.CompletedProcess(
+        argv, 0, "", ""))
+    return main, change, stand_in
+
+
+def test_a_master_moved_outside_engine_lands_with_no_second_engine_run(
+        merge_change, trees, monkeypatch, capsys):
+    main, change, stand_in = moving(merge_change, trees, monkeypatch, "lm/a", 1)
+    merge_change.merge_alone(main, change, merge_change.MergeLocks(main, None))
+    assert stand_in.engine == [True, False]
+    assert git(main, "log", "-2", "--format=%s", "master").split() == ["engine/x", "lm/a1"]
+    assert "master moved from" in capsys.readouterr().out
+    assert not change.worktree.exists()
+
+
+def test_a_master_moved_in_engine_runs_the_engine_checks_again(
+        merge_change, trees, monkeypatch, capsys):
+    main, change, stand_in = moving(merge_change, trees, monkeypatch, "engine/y", 1)
+    merge_change.merge_alone(main, change, merge_change.MergeLocks(main, None))
+    assert stand_in.engine == [True, True]
+    assert "the engine checks run again" in capsys.readouterr().out
+
+
+def test_a_master_that_moves_past_the_bound_fails(merge_change, trees, monkeypatch):
+    main, change, stand_in = moving(merge_change, trees, monkeypatch, "lm/a", 99)
+    with pytest.raises(merge_change.Failed, match="fast-forwarding master failed"):
+        merge_change.merge_alone(main, change, merge_change.MergeLocks(main, None))
+    assert len(stand_in.engine) == merge_change.RECHECKS + 1
+    assert change.worktree.exists()

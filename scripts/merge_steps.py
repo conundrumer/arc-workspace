@@ -2,14 +2,19 @@
 it runs in the main tree after the fast-forward, run in the tree this
 script is run in.
 
-    uv run python scripts/merge_steps.py checks <base> <gate-out>
+    uv run python scripts/merge_steps.py checks [--engine-passed <commit>] <base> <gate-out>
     uv run python scripts/merge_steps.py after <gate-out>
 
 The `--help` of `merge_change.py` says which checks and steps these are,
 when it runs each form, which copy of this script it runs, and what
 `<base>` and `<gate-out>` are.
 
-`checks` runs the checks concurrently. Each line that shows a check's
+`checks` runs the checks concurrently. The engine checks run where the
+changes touch a path under `engine/`. With `--engine-passed <commit>`, the
+commit on which they last passed, they run again only where the `engine/`
+tree of `<commit>` differs from that of the tree checked: equal trees build
+and test the same, as no engine source or test reads a file outside
+`engine/`. Each line that shows a check's
 name as it starts, and each step line (`engine.duration.STEP`) a check
 writes, goes on stderr as it comes, and the output of each check that
 fails goes on stdout.
@@ -56,12 +61,26 @@ rustdoc warning, such as a link from a public item's doc to a private
 item."""
 
 
-def checks(tree: Path, base: str, gate_out: str) -> list[str]:
+def engine_runs(tree: Path, base: str, passed: str | None) -> bool:
+    """Whether the engine checks run in `tree` for changes from the commit
+    `base`: the changes touch a path under `ENGINE`, and, where `passed` is
+    the commit on which they last passed, its `ENGINE` tree differs from
+    that of `tree`'s `HEAD`."""
+    if not any(p.startswith(ENGINE) for p in changed_outside_work(tree, base)):
+        return False
+    if passed is None:
+        return True
+    directory = ENGINE.rstrip("/")
+    return (checkout.git_out(tree, "rev-parse", f"{passed}:{directory}")
+            != checkout.git_out(tree, "rev-parse", f"HEAD:{directory}"))
+
+
+def checks(tree: Path, base: str, gate_out: str, engine_passed: str | None = None) -> list[str]:
     """Run in `tree` the checks of changes from the commit `base`: the
     output of each that fails. The compile and the tests of the engine
     (`ENGINE_CHECK`) and its documentation build (`ENGINE_DOC_CHECK`) are
-    among them where the changes touch a path under `ENGINE`."""
-    engine = any(p.startswith(ENGINE) for p in changed_outside_work(tree, base))
+    among them where `engine_runs` holds for `engine_passed`."""
+    engine = engine_runs(tree, base, engine_passed)
     with contextlib.redirect_stdout(sys.stderr):
         return failures(tree, [*map(Check, DOCUMENT_CHECKS),
                                Check(("uv", "run", "python", "scripts/gate.py", "--affected", base, gate_out)),
@@ -86,6 +105,8 @@ def main(argv: Sequence[str]) -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     forms = ap.add_subparsers(dest="form", required=True)
     on_checks = forms.add_parser("checks", help="run the checks on the changes")
+    on_checks.add_argument("--engine-passed", metavar="COMMIT",
+                           help="the commit on which the engine checks last passed")
     on_checks.add_argument("base", help="the commit the changes stand on")
     on_checks.add_argument("gate_out", help="the gate's out-dir")
     on_after = forms.add_parser("after", help="run the steps after the fast-forward")
@@ -94,7 +115,7 @@ def main(argv: Sequence[str]) -> int:
     tree = Path(checkout.git_out(Path.cwd(), "rev-parse", "--show-toplevel").strip())
     if a.form == "after":
         return 0 if after(tree, a.gate_out) else 1
-    failed = checks(tree, a.base, a.gate_out)
+    failed = checks(tree, a.base, a.gate_out, a.engine_passed)
     print("\n".join(failed), end="\n" if failed else "")
     return 1 if failed else 0
 
