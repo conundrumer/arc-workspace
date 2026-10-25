@@ -254,7 +254,7 @@ def fixture():
         f = pickle.load(open(FIXTURE, "rb"))
         if f.get("stamp") == stamp:
             return f["tables"]
-    tables, _, _ = E.load_tables(TABLES, CACHE, strict=False)
+    tables, _, _ = E.load_tables(TABLES, CACHE)
     chosen = tables[case][:2]
     assert all(t.evidence for t in chosen)
     no_provenance = lambda t: E.Table(**{k: v for k, v in t.__dict__.items() if k not in PROVENANCE})
@@ -273,7 +273,7 @@ def fixture():
 rng = np.random.default_rng(0)
 case = ("00576224", "$Lookup")
 if FULL:
-    tables, _, _ = E.load_tables(TABLES, CACHE, strict=False)
+    tables, _, _ = E.load_tables(TABLES, CACHE)
     source, source_title = tables[case][:8], f"{case[0]} {case[1]}, first 8 tables"
 else:
     source = fixture()
@@ -1150,7 +1150,7 @@ print("== train.py's run_batch with --aux-masked: the gradients when the masked 
 import train as T
 
 cases, _, names, kinds, mask_table = T.load("lm/data-dev")
-lm_tables, _, _ = E.load_tables(TABLES, CACHE, strict=False)
+lm_tables, _, _ = E.load_tables(TABLES, CACHE)
 in_names_, out_names_, in_index_, out_index_ = T.vocabularies(names, kinds)
 lm_cases = [c for c in cases if (c["task"], c["case"]) in lm_tables][:2]
 for c in lm_cases:
