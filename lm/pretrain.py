@@ -44,11 +44,21 @@ PARTS = ("program", "prior")
 # pair. A table's evidence rows cost no memory per table that reads them, since the Block call builds them again in
 # the backward pass.
 TABLE_COST, PAIR_COST = 15, 0.6
+# With --enc-source-rows, a source table's rows are kept after each layer, with their keys and values, about 32 KB a row
+# at that shape (SOURCE_ROW_COST rows), and each source key that a table reads keeps its index, its place in the key
+# mask, its equality codes and its pointer codes, about 0.3 KB (SOURCE_KEY_COST rows); estimated from the tensors'
+# sizes, not measured.
+SOURCE_ROW_COST, SOURCE_KEY_COST = 0.3, 0.003
 
 
-def step_cost(tables):
+def step_cost(tables, source_rows=False):
     n = len(tables)
-    return sum(t.n for t in tables) + TABLE_COST * n + PAIR_COST * n * (n - 1) / 2
+    cost = sum(t.n for t in tables) + TABLE_COST * n + PAIR_COST * n * (n - 1) / 2
+    if source_rows:
+        src = E.source_tables(tables)[0]
+        cost += SOURCE_ROW_COST * sum(tables[j].n for j in {j for s in src for j in s})
+        cost += SOURCE_KEY_COST * sum(tables[j].n for s in src for j in s)
+    return cost
 
 
 def draw(train, programs, cap):
@@ -152,6 +162,13 @@ def main():
     ap.add_argument("--enc-equality", choices=["codes", "random", "flex"], default="codes",
                     help="the means of the encoder's equality term: one-hot codes added to the attention's queries and "
                          "keys, random sign codes of fixed width, or flex_attention (cuda alone)")
+    ap.add_argument("--enc-source-rows", action="store_true",
+                    help="each derived table's rows attend also to the rows of its source tables, the earlier derived "
+                         "tables that its columns' flows name, with an equality term across the two tables")
+    ap.add_argument("--enc-ptr-equality", action="store_true",
+                    help="the masked loss's pointer heads take equality terms: a candidate row's value against the "
+                         "hidden row's visible fields of the same type, and with --enc-source-rows, against the codes "
+                         "that the hidden row's last layer gathers from its source rows")
     ap.add_argument("--enc-checkpoint", action=argparse.BooleanOptionalAction, default=None,
                     help="recompute the encoder's Block activations in the backward pass to save memory (default: on "
                          "with cuda, off otherwise); without it, each table keeps its evidence rows' keys and values "
@@ -184,7 +201,7 @@ def main():
         train, held = [c for c in train if not big(c)], [c for c in held if not big(c)]
     for c in train + held:
         c["tables"] = tables[(c["task"], c["case"])]
-        c["cost"] = step_cost(c["tables"])
+        c["cost"] = step_cost(c["tables"], a.enc_source_rows)
     assert train and held, "no training or held-out programs with tables"
     if a.preflight:
         t_pre = time.time()
@@ -203,7 +220,8 @@ def main():
     del base, table
     enc = E.FeatureEncoder(embed, in_index, a.id_dim, json.load(open(f"{a.tables}/orientations.json")), K=a.enc_k,
                            layers=a.enc_layers, c=a.enc_width, heads=a.enc_heads, mlp=a.enc_mlp, gram=a.enc_gram,
-                           examples=E.max_example(tables) + 1, equality=a.enc_equality).to(a.device)
+                           examples=E.max_example(tables) + 1, equality=a.enc_equality,
+                           source_rows=a.enc_source_rows, ptr_equality=a.enc_ptr_equality).to(a.device)
     rel_token = {int(n[2:]): i for i, n in enumerate(names) if re.fullmatch(r"&r\d+", n)}
     enc.checkpoint = a.enc_checkpoint
     use_autocast = a.device == "cuda" if a.autocast is None else a.autocast
@@ -240,7 +258,8 @@ def main():
     config = dict(base=a.base, tables=a.tables, enc_k=a.enc_k, enc_layers=a.enc_layers, enc_width=a.enc_width,
                   enc_heads=a.enc_heads, enc_mlp=a.enc_mlp, enc_gram=a.enc_gram, enc_budget=a.enc_budget,
                   id_dim=a.id_dim, mask_frac=a.mask_frac, mask_cap=a.mask_cap, mask_kind=a.mask_kind,
-                  prior_weight=a.prior_weight, in_names=in_names, enc_equality=a.enc_equality)
+                  prior_weight=a.prior_weight, in_names=in_names, enc_equality=a.enc_equality,
+                  enc_source_rows=a.enc_source_rows, enc_ptr_equality=a.enc_ptr_equality)
     gen, mask_gen = torch.Generator().manual_seed(10), torch.Generator().manual_seed(11)
     best, start, step_seconds, by = float("inf"), time.time(), [], None
     for step in range(1, a.steps + 1):
