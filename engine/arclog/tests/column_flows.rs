@@ -124,3 +124,35 @@ fn a_one_mark_and_a_choose_give_keys_and_the_evidence_tables_give_e_and_p() {
     assert_eq!(choose.tables.keys[table_of(&choose, 2) as usize], [vec![0]]);
     assert!(choose.tables.keys[table_of(&choose, 1) as usize].is_empty(), "a clause with no mark has no key");
 }
+
+const TILING: &str = "(INIT &tiling Tiling
+  (outer ((:P P_tile))
+    (input (:P *P_tile)))
+  (inner ((:P P_intile))
+    (input (:P *P_intile))))
+(RULE &cell
+  (&tiling.cell (:P_outer *P_tile) (:P_inner *P_intile) (:P *P_grid)))
+(RULE &output (input *P *Col))
+";
+
+#[test]
+fn an_instance_output_is_computed_from_the_sources_of_its_input_ports() {
+    let columns = columns_of(TILING, &[1, 2]);
+    let cell = table_of(&columns, 0);
+    for column in 0..3 {
+        let found = sources(&columns, cell, column);
+        assert!(!found.is_empty(), "column {column}");
+        assert!(found.iter().all(|source| source.0 == COMPUTED && source.1 == "ex_input" && source.3 == 0), "column {column}: {found:?}");
+        assert!(found.iter().any(|source| source.2 == 1), "column {column}: {found:?}");
+    }
+}
+
+#[test]
+fn a_read_of_an_input_port_copies_the_sources_of_the_ports_column() {
+    let arclog = OPENING.replace("(RULE &output (input *P *Col))", "(RULE &seen (&box.cell *P))\n(RULE &output (input *P *Col))");
+    let columns = columns_of(&arclog, &[1, 2]);
+    let seen = table_of(&columns, 4);
+    let found = sources(&columns, seen, 0);
+    assert!(found.iter().any(|source| source.1 == "ex_input" && source.2 == 1 && source.3 == 0), "{found:?}");
+    assert!(found.iter().all(|source| source.3 != -1), "{found:?}");
+}

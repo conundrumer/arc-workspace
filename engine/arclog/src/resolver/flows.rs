@@ -152,6 +152,8 @@ struct BodyFlows<'p> {
     program: &'p ResolvedProgram,
     registry: &'p Registry,
     gathered: &'p Gathered<'p>,
+    /// The nodes whose flows are being resolved above this body.
+    visiting: &'p [GraphNodeIndex],
 }
 
 impl<'p> BodyFlows<'p> {
@@ -185,8 +187,22 @@ impl<'p> BodyFlows<'p> {
         hits
     }
 
-    /// The source that the read of `hit` gives.
-    fn read(&self, kind: SourceKind, hit: &Hit<'_>) -> ColumnSource {
+    /// The sources that the read of `hit` gives: one source, or, where the
+    /// atom reads an input port of an instance, the sources of the port's
+    /// column, computed where `kind` is.
+    fn read(&self, kind: SourceKind, hit: &Hit<'_>) -> Vec<ColumnSource> {
+        let source = self.read_one(kind, hit);
+        if let (Some(Resolution::Node(port)), SourceColumn::Position(position)) = (self.program.resolution(hit.path), source.column) {
+            if matches!(self.program.graph.nodes[port.0 as usize].kind, DependencyKind::InstanceInput { .. }) {
+                let found = self.program.port_sources(*port, position, self.registry, &mut self.visiting.to_vec());
+                return if kind == SourceKind::Computed { found.into_iter().map(ColumnSource::computed).collect() } else { found };
+            }
+        }
+        vec![source]
+    }
+
+    /// The source that names the column that the read of `hit` stands on.
+    fn read_one(&self, kind: SourceKind, hit: &Hit<'_>) -> ColumnSource {
         let lifted = self.program.reads_lifted(hit.path);
         let (relation, column) = match (&hit.atom.relation, hit.position) {
             (relation, None) => (relation.clone(), SourceColumn::None),
@@ -216,7 +232,7 @@ impl<'p> BodyFlows<'p> {
         if zero {
             found.push(ColumnSource::without_atom(SourceKind::Constant, None));
         }
-        found.extend(program.iter().map(|hit| self.read(SourceKind::Copy, hit)));
+        found.extend(program.iter().flat_map(|hit| self.read(SourceKind::Copy, hit)));
         if !zero && program.is_empty() {
             let before = visiting.len();
             visiting.extend(class.iter().copied());
@@ -263,7 +279,7 @@ impl<'p> BodyFlows<'p> {
         if holds {
             computed
         } else {
-            vec![self.read(SourceKind::Copy, hit)]
+            self.read(SourceKind::Copy, hit)
         }
     }
 }
@@ -313,10 +329,23 @@ impl ResolvedProgram {
     /// - a column of a type parameter that an `INIT` form binds: the sources
     ///   of the labels the form binds it to;
     /// - another declared column of an instance or a `RIGID_DET` assembly:
-    ///   every row position of each relation the node reads, computed;
+    ///   every row position of each relation the node reads, computed, where
+    ///   the column of an input port of an instance is replaced by its
+    ///   sources;
     /// - a column with no source above and a proposer or a component to give
     ///   it: the lib name.
+    ///
+    /// A source that names a column of an input port of an instance is
+    /// replaced by the sources of that port's column, through each chain of
+    /// input ports, because the export makes no table for a port.
     pub fn column_flows(&self, node: GraphNodeIndex, output: Option<&[OutputStep]>, width: usize, registry: &Registry) -> Vec<Vec<ColumnSource>> {
+        self.flows_visiting(node, output, width, registry, &mut Vec::new())
+    }
+
+    /// [`Self::column_flows`], where `visiting` holds the nodes being
+    /// resolved above `node`.
+    fn flows_visiting(&self, node: GraphNodeIndex, output: Option<&[OutputStep]>, width: usize, registry: &Registry, visiting: &mut Vec<GraphNodeIndex>) -> Vec<Vec<ColumnSource>> {
+        visiting.push(node);
         let mut flows: Vec<Vec<ColumnSource>> = vec![Vec::new(); width];
         let given: Vec<Given> = self.given(node, registry).into_iter().filter(|relation| output.zip(relation.output.as_deref()).is_none_or(|(read, own)| read == own)).collect();
         let root = NodeRef::Program(self.program.value());
@@ -357,7 +386,7 @@ impl ResolvedProgram {
                         Source::Label { label, body } => {
                             let Some(position) = place(&columns, path) else { continue };
                             let at = relation.form.join(body);
-                            let flow = BodyFlows { program: self, registry, gathered: &gathered[&at] };
+                            let flow = BodyFlows { program: self, registry, gathered: &gathered[&at], visiting };
                             let found = flow.sources(*label, &mut Vec::new());
                             if let Some(held) = flows.get_mut(position) {
                                 add_distinct(held, found);
@@ -366,7 +395,7 @@ impl ResolvedProgram {
                         Source::Declared(_) if !labeled => {
                             for position in start..start + slot_width {
                                 if let Some(held) = flows.get_mut(position) {
-                                    add_distinct(held, self.declared_sources(node));
+                                    add_distinct(held, self.declared_sources(node, registry, visiting));
                                 }
                             }
                         }
@@ -380,17 +409,37 @@ impl ResolvedProgram {
             let lib = given.iter().flat_map(|relation| relation.lib.iter());
             sources.extend(lib.map(|name| ColumnSource::without_atom(SourceKind::LibName, Some(RelationRef::Lib(name.clone())))));
         }
+        visiting.pop();
         flows
     }
 
+    /// The sources of row position `position` of the input port `port`; none
+    /// where `visiting` holds the port.
+    fn port_sources(&self, port: GraphNodeIndex, position: u16, registry: &Registry, visiting: &mut Vec<GraphNodeIndex>) -> Vec<ColumnSource> {
+        if visiting.contains(&port) {
+            return Vec::new();
+        }
+        let node = &self.graph.nodes[port.0 as usize];
+        let Some(relation) = node_relation(&node.kind) else { return Vec::new() };
+        let Some(columns) = self.names.columns(&node.scope, &relation) else { return Vec::new() };
+        let mut flows = self.flows_visiting(port, None, columns.row_names().len(), registry, visiting);
+        if usize::from(position) < flows.len() { flows.swap_remove(usize::from(position)) } else { Vec::new() }
+    }
+
     /// Every row position of each relation that `node` reads, computed:
-    /// the sources of a declared column of an instance or an assembly.
-    fn declared_sources(&self, node: GraphNodeIndex) -> Vec<ColumnSource> {
+    /// the sources of a declared column of an instance or an assembly. A
+    /// read of an input port of an instance gives the sources of the port's
+    /// columns, computed, in place of the port.
+    fn declared_sources(&self, node: GraphNodeIndex, registry: &Registry, visiting: &mut Vec<GraphNodeIndex>) -> Vec<ColumnSource> {
         let mut found = Vec::new();
         for &read in self.graph.reads[node.0 as usize].iter().filter(|&&read| read != node) {
             let Some(relation) = node_relation(&self.graph.nodes[read.0 as usize].kind) else { continue };
             let Some(columns) = self.names.columns(&self.graph.nodes[read.0 as usize].scope, &relation) else { continue };
             for position in 0..columns.row_names().len() {
+                if matches!(self.graph.nodes[read.0 as usize].kind, DependencyKind::InstanceInput { .. }) {
+                    found.extend(self.port_sources(read, position as u16, registry, visiting).into_iter().map(ColumnSource::computed));
+                    continue;
+                }
                 let (relation, position) = match relation {
                     RelationRef::Fact(FactRelation::Input) => (RelationRef::Fact(FactRelation::ExInput), position + 1),
                     ref other => (other.clone(), position),
