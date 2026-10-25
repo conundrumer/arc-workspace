@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import os
 from collections import Counter, defaultdict
-from dataclasses import dataclass, fields as dc_fields, is_dataclass, replace as dc_replace
+from dataclasses import dataclass, field as dc_field, fields as dc_fields, is_dataclass, replace as dc_replace
 from engine.program import (
     AdtType,
     Aggregate,
@@ -20,6 +20,7 @@ from engine.program import (
     RecordTerm,
     RecordType,
     RelationName,
+    UnionType,
     Unit,
     Variable,
     Wildcard,
@@ -62,6 +63,7 @@ class Leaf:
     tparam: bool
     path: tuple[int, ...] = ()
     field: tuple[str, ...] = ()   # the record field names along the path
+    type: str = dc_field(default="", compare=False)   # the Souffle type of a keep leaf, `Example` for an example leaf; "" if unknown
 
 
 @dataclass(frozen=True)
@@ -232,6 +234,18 @@ class Converter:
         while isinstance(t, AliasType):
             name = t.target.name
             t = self.find_type(name, scope)
+        return name
+
+    def type_root(self, name: str, scope: tuple[str, ...]) -> str:
+        """The type `name` stands for once each alias `.type A = B` and each
+        union `.type A = B | C` it names is followed to its end (a union to
+        its first member), so that a type and the union over it, such as
+        `Dir` and `Dir8`, are one type. A subtype `.type A <: B` stays
+        apart from `B`: `Ident` and `Dir` are both subtypes of `number`."""
+        t = self.find_type(name, scope) or self.lib.types.get(name)
+        while isinstance(t, (AliasType, UnionType)):
+            name = (t.target if isinstance(t, AliasType) else t.members[0]).name
+            t = self.find_type(name, scope) or self.lib.types.get(name)
         return name
 
     def find_type(self, name: str, scope: tuple[str, ...]):
@@ -1750,17 +1764,17 @@ class Converter:
         if t == "@lift":
             return [Leaf(name, "drop", tparam)]
         if t == "@example":
-            return [Leaf("E", "example", False)]
+            return [Leaf("E", "example", False, type="Example")]
         if t.startswith("@cand:"):
             # a candidate parse's key: its example, and the candidate, which
             # the parameter the read binds stands for
             decl = self.find_type(t[len("@cand:"):], ("Determine",))
             cand = self.cand_key_fields.get(t[len("@cand:"):], set())
             if isinstance(decl, RecordType):
-                return [Leaf("E", "example", False, (i,), (f.name,)) if f.type.name == "Example"
-                        else Leaf(f.name, "drop" if i in cand else "keep", tparam, (i,), (f.name,))
+                return [Leaf("E", "example", False, (i,), (f.name,), "Example") if f.type.name == "Example"
+                        else Leaf(f.name, "drop" if i in cand else "keep", tparam, (i,), (f.name,), f.type.name)
                         for i, f in enumerate(decl.fields)]
-            return [Leaf("E", "example", False)]
+            return [Leaf("E", "example", False, type="Example")]
         decl = self.find_type(t, scope)
         if isinstance(decl, RecordType):
             fsub = sub if outer is None else outer
@@ -1770,13 +1784,13 @@ class Converter:
             out = []
             for i, f in enumerate(decl.fields):
                 if lifted and f.type.name == "Example":
-                    out.append(Leaf("E", "example", False, (i,), (f.name,)))
+                    out.append(Leaf("E", "example", False, (i,), (f.name,), "Example"))
                     continue   # an example field: the lifted read's Example column
                 for leaf in self.leaves(f.name, f.type.name, tparam, decl.scope.components, fsub, lift_ex=lifted):
                     out.append(Leaf(leaf.name, leaf.kind, leaf.tparam, (i,) + leaf.path,
-                                    (f.name,) + leaf.field))
+                                    (f.name,) + leaf.field, leaf.type))
             return out
-        return [Leaf(name, "keep", tparam)]
+        return [Leaf(name, "keep", tparam, type=t)]
 
     # ---- names
 
@@ -1822,9 +1836,9 @@ class Converter:
         if not parts:
             if name in FACTS:
                 cols = self.lib.top[name]
-                out = [(Col(pascal(n), t, False), [Leaf(pascal(n), "keep", False)]) for n, t in cols]
+                out = [(Col(pascal(n), t, False), [Leaf(pascal(n), "keep", False, type=t)]) for n, t in cols]
                 if name != "in":
-                    out[0] = (out[0][0], [Leaf("E", "example", False)])
+                    out[0] = (out[0][0], [Leaf("E", "example", False, type="Example")])
                 return self.wrote(name, Written((), name, False)), out, "fact", None
             for i in range(len(scope), -1, -1):
                 r = self.rels.get((scope[:i], name))
@@ -1834,14 +1848,14 @@ class Converter:
                 self.wrote(name, Written((), name, False))
             if name in self.lib.top or name in self.sig.top:
                 cols = self.lib.top.get(name) or self.sig.top[name]
-                return name, [(Col(pascal(n), t, False), [Leaf(pascal(n), "keep", False)]) for n, t in cols], "lib", None
+                return name, [(Col(pascal(n), t, False), [Leaf(pascal(n), "keep", False, type=t)]) for n, t in cols], "lib", None
             return name, None, "unknown", None
         head, rest = parts[0], parts[1:]
         if head == "@lib" and not rest:   # a lib relation an expansion wrote, whose name the solver takes
             cols = self.lib.top.get(name) or self.sig.top.get(name)
             if cols is None:
                 return name, None, "unknown", None
-            return name, [(Col(pascal(n), t, False), [Leaf(pascal(n), "keep", False)]) for n, t in cols], "lib", None
+            return name, [(Col(pascal(n), t, False), [Leaf(pascal(n), "keep", False, type=t)]) for n, t in cols], "lib", None
         if head == "params" and not rest:
             r = self.rels.get((("Params",), name))
             if r is None:
@@ -1853,7 +1867,7 @@ class Converter:
             lr = next((r for r in hrels if r.name == name), None)
             if lr is None:
                 return name, None, "unknown", None
-            return name, [(Col(pascal(c.name), c.type, False), [Leaf(pascal(c.name), "keep", False)]) for c in lr.cols], "lib", None
+            return name, [(Col(pascal(c.name), c.type, False), [Leaf(pascal(c.name), "keep", False, type=c.type)]) for c in lr.cols], "lib", None
         inst = None
         for i in range(len(scope), -1, -1):
             inst = self.insts.get((scope[:i], head))

@@ -492,15 +492,24 @@ class InstancesMixin:
 
         def skipped(u, lr) -> bool:
             """An input clause the engine fills from the key: the registry marks the
-            input `from-key`."""
+            input `from-key`, and for each kept leaf of the head the key has exactly
+            one label of the leaf's type, which is the head's label at that leaf (the
+            engine's `key_fill`). Two type names are one type where each alias and
+            subtype they name, followed to its end, gives one name. A leaf or a key
+            label with no type keeps the clause."""
             ren = kren(u)
             saved = list(self.todo.pending), Counter(self.todo.kinds)
-            labs = [lab_of(t, ren) for _, kept in head_terms(u, lr, ren) for _, t in kept]
+            leaf_labs = [(l, lab_of(t, ren)) for _, kept in head_terms(u, lr, ren) for l, t in kept]
             self.todo.pending, self.todo.kinds = saved
             ren_ = libmap.COMP.get(inst.component)
             target = ren_.name if ren_ else inst.component
             port = ren_.parts.get(lr.name, lr.name) if ren_ else lr.name
-            skip = port in FROM_KEY.get(target, ()) and all(lab in kn for lab in labs)
+            key_ls = [l for l in key_leaves if l.kind in ("keep", "example")]
+            root = lambda l: c.type_root(l.type, scope)
+            filled = len(key_ls) == len(knames) and all(l.type for l in key_ls) and all(
+                leaf.type and [n for n, k in zip(knames, key_ls) if root(k) == root(leaf)] == [lab]
+                for leaf, lab in leaf_labs)
+            skip = port in FROM_KEY.get(target, ()) and filled
             own_read = any(isinstance(l, AtomLiteral) and l.atom.relation.instances[:1] == (inst.name,)
                            for l in u.body)
             return skip and ((own_read and len(u.body) == 1) or not residual.get(id(u), list(u.body)))

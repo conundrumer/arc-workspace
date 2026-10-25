@@ -228,6 +228,7 @@ class Lib:
         prog = parse(path.read_text(), path.parent)
         assert not hasattr(prog, "line"), prog
         self.comps = {c.name: c for c in prog.components}
+        self.types = {t.name: t for t in prog.types if not t.scope.components}   # the top-level type declarations
         inputs = {(c.file, c.line) for c in prog.comments
                   if not c.own_line and ("@input" in c.text or "@extensional" in c.text)}
         self.comp_rels: dict[str, list[tuple[str, list[tuple[str, str]], bool]]] = defaultdict(list)
