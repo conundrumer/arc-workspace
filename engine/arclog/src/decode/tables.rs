@@ -3,8 +3,9 @@
 //! clause in progress, the table of that body; where the step finished a
 //! form, the table of each relation the form declares, except a relation that
 //! gets no table: an input
-//! written with a body of one positive atom of a fact relation, a declared
-//! relation or an output, which the table of that relation holds, the `adjacent`
+//! written with a body of one positive atom and any number of `NOT` atoms, each
+//! of a fact relation, a declared relation or an output, whose rows the tables
+//! of those relations hold, the `adjacent`
 //! output of a Connectivity instance and the `predecessor` output of a
 //! CellDistance instance, which no clause reads. Each table gives its
 //! point, its relation's slot, its columns' names and types, and its rows on
@@ -49,7 +50,7 @@ use crate::judge::determination::{Assignment, Det, End};
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::registry::Registry;
 use crate::resolver::registry_columns::component;
-use crate::program::{ColumnName, Conjunct, FactRelation, OutputOwner, OutputStep, ProgramRelation, RelationRef};
+use crate::program::{ColumnName, Conjunct, FactRelation, Negated, OutputOwner, OutputStep, ProgramRelation, RelationRef};
 use crate::resolver::{ColumnSource, DependencyKind, GraphNodeIndex};
 use crate::relations::RowSet;
 use crate::task::Task;
@@ -358,9 +359,10 @@ fn graph_relation(program: &CheckedProgram, registry: &Registry, form: &NodePath
 
 /// Whether `declared`, a relation of the form at `form` of `program`, gets no
 /// table: an input that the form writes, in its key clause or after it,
-/// with a body of one positive atom of a fact relation, a declared relation or
-/// an output, whose table holds those rows with its columns renamed, dropped
-/// or joined; the `adjacent` output of a Connectivity instance and the
+/// with a body of one positive atom and any number of `NOT` atoms, each of a
+/// fact relation, a declared relation or an output, whose rows are those of
+/// the positive atom with its columns renamed, dropped or joined, less the rows
+/// that a negated atom matches; the `adjacent` output of a Connectivity instance and the
 /// `predecessor` output of a CellDistance instance, which no clause reads.
 pub fn gives_no_table(program: &crate::program::Program, form: &NodePath, declared: &ProgramRelation) -> bool {
     let ProgramRelation::Output(name) = declared else { return false };
@@ -372,17 +374,27 @@ pub fn gives_no_table(program: &crate::program::Program, form: &NodePath, declar
     let keyed = written.key.iter().flat_map(|key| key.value().inputs.iter());
     keyed.chain(written.inputs.iter()).any(|input| {
         let input = input.value();
-        input.name == *port && reads_one_held_atom(input.body.value())
+        input.name == *port && reads_one_positive_atom_and_not_atoms(input.body.value())
     })
 }
 
-/// Whether `body` is one positive atom whose relation is a fact relation, a
-/// relation the program declares, or an output.
-fn reads_one_held_atom(body: &crate::program::Body) -> bool {
-    matches!(
-        &body.conjuncts[..],
-        [Conjunct::Atom(atom)] if matches!(atom.value().relation, RelationRef::Fact(_) | RelationRef::Declared(_) | RelationRef::Output(_))
-    )
+/// Whether `body` is exactly one positive atom and any number of `NOT` atoms,
+/// each of those atoms reading a fact relation, a relation the program
+/// declares, or an output. Any other conjunct (a constraint, an `OR`, an `IF`,
+/// an `ALL`, a `NOT` before a form) makes it false.
+fn reads_one_positive_atom_and_not_atoms(body: &crate::program::Body) -> bool {
+    fn held(atom: &crate::program::Node<crate::program::Atom>) -> bool {
+        matches!(atom.value().relation, RelationRef::Fact(_) | RelationRef::Declared(_) | RelationRef::Output(_))
+    }
+    let mut positive = 0;
+    body.conjuncts.iter().all(|conjunct| match conjunct {
+        Conjunct::Atom(atom) => {
+            positive += 1;
+            held(atom)
+        }
+        Conjunct::Not(Negated::Atom(atom)) => held(atom),
+        _ => false,
+    }) && positive == 1
 }
 
 /// A body's value at each assignment as the one model of that assignment.

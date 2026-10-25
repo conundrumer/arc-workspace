@@ -359,6 +359,21 @@ fn an_input_of_one_atom_in_a_key_clause_gives_no_table() {
 }
 
 #[test]
+fn an_input_of_one_atom_and_not_atoms_gives_no_table() {
+    // `node` reads a fact relation less a declared relation, in the key clause and after it. `dir` is a lib relation, which no table holds.
+    let slots = slots_of_last_form("(RULE &fg (input *P *Col))\n(INIT &rays Ray (key ((&fg *P ^Col)) (source (P) (&fg *P Col) (NOT (&fg P Col)))) (node (P) (input *P) (NOT (&fg (:P P)))) (dir (D) (dir8_elem *D)))\n");
+    assert_eq!(slots, [1, 2, 5], "`source` in the key clause and `node` give none");
+}
+
+#[test]
+fn an_input_whose_not_reads_a_lib_relation_or_that_holds_a_constraint_keeps_its_table() {
+    let lib = slots_of_last_form("(RULE &fg (input *P *Col))\n(INIT &rays Ray (source (P) (&fg *P)) (node (P) (input *P *Col)) (dir (D) (dir8_elem *D) (NOT (dir8_elem D))))\n");
+    assert_eq!(lib, [1, 2, 5], "`ray`, `end` and `dir`");
+    let constraint = slots_of_last_form("(RULE &fg (input *P *Col))\n(INIT &comps Connectivity (node (P) (&fg *P *Col) (!= Col 0)))\n");
+    assert_eq!(constraint, [1, 3], "`component` and `node`");
+}
+
+#[test]
 fn the_tables_of_a_cell_distance_form_give_distance_and_no_predecessor() {
     let slots = slots_of_last_form("(RULE &fg (input *P *Col))\n(INIT &ring CellDistance (node (P) (&fg *P)) (source (P) (&fg *P)))\n");
     // The slots of the form, in order: `distance` 1, `predecessor` 2, and the inputs `node` 3 and `source` 4.
