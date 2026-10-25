@@ -1,8 +1,8 @@
-# Observations: telling from a table that it adds information
+# Observations: telling from a table that it adds signal
 
 From reading the tables of three gold solvers along their programs: [1fad071e](case-1fad071e.md) (count the 2x2 blocks, draw the count as a bar), [0ca9ddb6](case-0ca9ddb6.md) (stamp a star around each marked dot) and [3ac3eb23](case-3ac3eb23.md) (a period-2 trail down from each marker). Each mark below is one I used, with one example.
 
-## Marks that a table adds nothing
+## Marks that a table adds no signal
 
 - **Rows equal to an earlier table's, or a projection of them.** 0ca9ddb6 &r25, &r27, &r41 and &r43 hold equal rows, 1215 each. 1fad071e &r4 equals &r2 at every assignment.
 - **The same count at every cell of the drawing.** 0ca9ddb6 &r25 draws 2, 5, 3 and 5 at every cell, the count of dots of each example: a product of the dots with the grid.
@@ -11,7 +11,7 @@ From reading the tables of three gold solvers along their programs: [1fad071e](c
 - **Constant columns, or the same rows in every example.** 3ac3eb23 &r5 is &r1 with DIR_T and DIR_B added. 0ca9ddb6 &r30 is the same 4 rows in each example. 1fad071e &r27 is one task-wide color, copied per example.
 - **An assignment empty at every example.** Seven of the nine assignments of 1fad071e &r17, &r18 and &r33 are empty.
 
-## Marks that a table adds information
+## Marks that a table adds signal
 
 - **A selection much smaller than its parent, of cells that stand out in the drawing.** 0ca9ddb6 &r14 is 15 dots in place of 324 cells. 1fad071e &r15 is one box per component, with the 2x2 blocks as single rows.
 - **A first table read from the outputs.** 0ca9ddb6 &r15, the cells where output and input differ, and 3ac3eb23 &r7, the output's cells as offsets from the markers.
