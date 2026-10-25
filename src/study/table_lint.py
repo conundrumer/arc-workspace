@@ -697,9 +697,9 @@ def measure(solver: str, before: str, after: str, texts: tuple[str, str] = ("", 
     if removed:
         verdict = f"worse: the edit removes an instance of {', '.join(f'`{c}`' for c in removed)}; keep each lib component instance, and where its encoding makes a table large, report it"
     elif b[0] > a[0] or b[1] > a[1]:
-        verdict = "worse: a table is larger, or more tables are over the cap"
+        verdict = f"worse: the largest table is larger, or more tables are over {CAP} rows"
     elif b[3] < a[3] or b[0] < a[0]:
-        verdict = "better: no table is larger, and the large tables hold fewer rows"
+        verdict = f"better: the largest table is no larger, no more tables are over {CAP} rows, and the largest table or the tables over {THRESHOLD} rows hold fewer rows"
     else:
         verdict = "no change"
     lines.append(f"{solver} {verdict}")
