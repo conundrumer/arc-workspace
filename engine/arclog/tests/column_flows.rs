@@ -289,6 +289,32 @@ fn a_column_the_key_fills_into_an_unwritten_input_takes_the_key_position_that_th
     assert_eq!(two, ["2.1.2.0"], "the edge's atom alone");
 }
 
+/// A keyed `Propagation` whose `edge` body is an `OR` of a branch that binds
+/// `N2` at a program atom and a branch that gives it `second`.
+fn equated(second: &str) -> String {
+    format!(
+        "(RULE &seed (dir_elem (:D *Delta)))
+(RULE &halt (dir_elem (:D *Delta)) (dir_elem (:D *Delta2)))
+(INIT &journey Propagation
+  (key ((&seed (:Delta ^K)))
+    (edge ((:a N) (:b N2))
+      (&halt (:Delta *N) (:Delta2 *Other))
+      (OR ((&halt (:Delta2 *N2)) (&seed (:Delta K))) (({second})))))
+  (source ((:n S)) (&halt (:Delta *S) (:Delta2 *Z))))
+(RULE &output (input *P *Col))
+"
+    )
+}
+
+#[test]
+fn a_label_equal_to_a_key_label_takes_the_key_sources_where_the_alternative_binds_it_at_no_program_atom() {
+    let seed = |atoms: Vec<String>| atoms.iter().any(|atom| atom == "2.0.0.0");
+    let program = reached_atoms(&equated("= N2 K"), 1);
+    assert!(seed(program.clone()), "the key's atom beside the branch's: {program:?}");
+    let lib = reached_atoms(&equated("dir8_elem (:D N2)"), 1);
+    assert!(!seed(lib.clone()), "no key source where a lib atom binds the label: {lib:?}");
+}
+
 #[test]
 fn a_label_bound_in_one_branch_of_an_or_gets_the_sources_of_the_other_branch() {
     let columns = columns_of(FEED, &[1, 2]);

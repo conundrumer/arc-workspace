@@ -10,14 +10,14 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use super::column_sources::{Listing, Source};
+use super::column_sources::{key_clause, Listing, Source};
 use super::columns::{Columns, Place, Slot};
 use super::registry_columns;
 use super::{form_columns, ColumnPosition, DependencyKind, GraphNodeIndex, ResolvedProgram, Resolution};
 use crate::eval::ir::atom_modes;
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{
-    written_inputs, Atom, Body, ColumnName, Conjunct, ConstraintOp, FactRelation, LabelId, LabelUse, OutputName, OutputOwner, OutputStep, Operand, ProgramRelation,
+    written_inputs, Atom, Body, ColumnName, Conjunct, ConstraintOp, FactRelation, KeyBody, LabelId, LabelUse, OutputName, OutputOwner, OutputStep, Operand, ProgramRelation,
     RelationRef, RigidDetPart, Site, SiteArg,
 };
 use crate::registry::{is_key, key_fill, ColumnType, LibName, Registry};
@@ -222,6 +222,9 @@ struct BodyFlows<'p> {
     registry: &'p Registry,
     /// The nodes whose flows are being resolved above this body.
     visiting: &'p [GraphNodeIndex],
+    /// The key clause of the keyed form whose body this is, and the atoms
+    /// of its body; none for an unkeyed form and for the key's own body.
+    key: Option<(&'p KeyBody, &'p Gathered<'p>)>,
 }
 
 impl<'p> BodyFlows<'p> {
@@ -315,7 +318,16 @@ impl<'p> BodyFlows<'p> {
             found.push(ColumnSource::without_atom(SourceKind::Constant, None));
         }
         found.extend(program.iter().flat_map(|hit| self.read(SourceKind::Copy, hit)));
-        if !zero && program.is_empty() {
+        let mut keyed = false;
+        if let (false, true, Some((key, gathered))) = (zero, program.is_empty(), self.key) {
+            let own = BodyFlows { key: None, ..*self };
+            for column in key.columns.iter().filter(|column| class.contains(&column.label)) {
+                let sources = own.sources(column.label, &Alt::of(gathered), visiting);
+                keyed |= !sources.is_empty();
+                found.extend(sources);
+            }
+        }
+        if !zero && program.is_empty() && !keyed {
             let before = visiting.len();
             visiting.extend(class.iter().copied());
             for hit in lib {
@@ -416,6 +428,9 @@ impl ResolvedProgram {
     ///   body that binds it, each site of a positive atom on it a copy of
     ///   that atom's column, `0` a constant, and, where only lib atoms bind
     ///   it, the sources of the labels of a mode of the lib atom, computed;
+    ///   a key label in the class, in a body of a keyed form that binds the
+    ///   class at no site of a positive atom, gives the sources that the
+    ///   key's body gives that label, as copies;
     /// - a part-site column of a `RIGID_DET` part output whose type a D4
     ///   element moves ([`ValueType::moved_by_d4`]): the sources of its
     ///   label, computed, since the column holds the part's values at each
@@ -450,26 +465,27 @@ impl ResolvedProgram {
         let mut flows: Vec<Vec<ColumnSource>> = vec![Vec::new(); width];
         let given: Vec<Given> = self.given(node, registry).into_iter().filter(|relation| output.zip(relation.output.as_deref()).is_none_or(|(read, own)| read == own)).collect();
         let root = NodeRef::Program(self.program.value());
+        let key_of = |form: &NodePath| node_at(root, form).and_then(key_clause).map(|(key, body)| (key, form.join(&body)));
         let mut gathered: BTreeMap<NodePath, Gathered<'_>> = BTreeMap::new();
         for relation in &given {
-            for listed in &relation.listing.0 {
-                for (_, source) in &listed.sources {
-                    if let Source::Label { body, .. } = source {
-                        let at = relation.form.join(body);
-                        if !gathered.contains_key(&at) {
-                            let mut found = Gathered::default();
-                            match node_at(root, &at) {
-                                Some(NodeRef::Body(body)) => found.of_body(body, &at),
-                                Some(NodeRef::RigidDet(rigid)) => {
-                                    for (index, part) in rigid.parts.iter().enumerate() {
-                                        found.atoms.push((at.child(rigid.position(RigidDetPart::Part(index))), part.value()));
-                                    }
-                                }
-                                _ => {}
+            let key = key_of(&relation.form).map(|(_, body)| body);
+            let labeled = relation.listing.0.iter().flat_map(|listed| &listed.sources).filter_map(|(_, source)| match source {
+                Source::Label { body, .. } => Some(relation.form.join(body)),
+                _ => None,
+            });
+            for at in labeled.chain(key) {
+                if !gathered.contains_key(&at) {
+                    let mut found = Gathered::default();
+                    match node_at(root, &at) {
+                        Some(NodeRef::Body(body)) => found.of_body(body, &at),
+                        Some(NodeRef::RigidDet(rigid)) => {
+                            for (index, part) in rigid.parts.iter().enumerate() {
+                                found.atoms.push((at.child(rigid.position(RigidDetPart::Part(index))), part.value()));
                             }
-                            gathered.insert(at, found);
                         }
+                        _ => {}
                     }
+                    gathered.insert(at, found);
                 }
             }
         }
@@ -485,7 +501,8 @@ impl ResolvedProgram {
                             let own = self.label_position(&relation.form, *label).map(|position| usize::from(position.0));
                             let Some(position) = own.or_else(|| place(&columns, path)) else { continue };
                             let at = relation.form.join(body);
-                            let flow = BodyFlows { program: self, registry, visiting };
+                            let key = key_of(&relation.form).filter(|(_, body)| *body != at).map(|(key, body)| (key, &gathered[&body]));
+                            let flow = BodyFlows { program: self, registry, visiting, key };
                             let found = flow.sources(*label, &Alt::of(&gathered[&at]), &mut Vec::new());
                             let moved = index >= relation.sites_from && types.get(position).is_some_and(ValueType::moved_by_d4);
                             if let Some(held) = flows.get_mut(position) {
