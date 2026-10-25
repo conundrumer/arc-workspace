@@ -21,7 +21,8 @@ impl Check for SiteColumnsCheck {
         Some(at.base(self.id()))
     }
 
-    /// Refuses each site of an atom of the form on a column that the
+    /// Refuses each site of an atom of the form on a column that an earlier
+    /// site of the atom names, and each site on a column that the
     /// relation the atom reads does not have, and each field of a site on a
     /// record column that the record does not have, as
     /// [`ResolvedProgram::column_position`] and
@@ -43,7 +44,16 @@ impl Check for SiteColumnsCheck {
             }
             for (site, index) in read.atom.sites.iter().zip(0u32..) {
                 let at = atom_at.child(index);
-                if program.column_position(&at).is_some() {
+                let position = program.column_position(&at);
+                let on_column_already = read.atom.sites.iter().zip(0u32..).take(index as usize).any(|(earlier, before)| {
+                    let before_position = program.column_position(&atom_at.child(before));
+                    earlier.column == site.column || (position.is_some() && position == before_position)
+                });
+                if on_column_already {
+                    refused.push(("the atom has a site on the column of this site already", read.at.child(index)));
+                    continue;
+                }
+                if position.is_some() {
                     continue;
                 }
                 if program.column_group(&at).is_none() {
