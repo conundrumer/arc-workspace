@@ -1383,6 +1383,13 @@ fn orientation_names() -> Vec<(i32, String)> {
     arclog::decode::columns::orientation_names(Registry::get())
 }
 
+/// The cells of the constants that each orientation type without a
+/// parameter admits, by the type's name.
+#[pyfunction]
+fn orientation_types() -> Vec<(String, Vec<i32>)> {
+    arclog::decode::columns::orientation_types(Registry::get())
+}
+
 /// Steps each of `decoders` by the token with the id at its index in `ids`,
 /// on the thread pool with the GIL released, and gives what each step
 /// gives, in the order of `decoders`: the pair that `Decoder.step` gives, or,
@@ -1448,5 +1455,6 @@ fn arclog_module(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(corpus_tables, module)?)?;
     module.add_function(wrap_pyfunction!(stream_tables, module)?)?;
     module.add_function(wrap_pyfunction!(orientation_names, module)?)?;
+    module.add_function(wrap_pyfunction!(orientation_types, module)?)?;
     Ok(())
 }

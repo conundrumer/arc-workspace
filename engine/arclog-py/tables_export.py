@@ -25,7 +25,7 @@ written as a part. Writes to <out dir>:
                    other table
   flows.parquet    one row per source of a column of a table, keyed by task, case, `table` and `column`: `kind` (copy 0,
                    computed 1, constant 2, lib name 3), `source_table` (the row of the source's table in the case, -1 where
-                   the case gives none: a lib relation, a constant, a lib name, a relation with no table), `source_relation`
+                   the case gives none: a lib relation, a constant, a lib name), `source_relation`
                    (the relation as the program spells it, `ex_input` for a read of `input`, or the lib name), `source_column`
                    (its column index, -1 for a constant or a lib name, -2 for the example of the source's entry), `det` (the
                    source's place in the table's `det_relations`, -1 where it is none) and `atom` (the path of the atom that
@@ -36,6 +36,13 @@ written as a part. Writes to <out dir>:
   assigned.parquet one row per DET at an entry's assignment: task, case, entry, det, rows, offset
   projections.parquet    one row per projection (columns) and projection_rows.parquet one row per projection at an entry
   orientations.json  [encoding, name] of each orientation constant; an orientation cell is its encoding
+  orientation_types.json  [type name, cells] of each orientation type without a parameter (Dir, DiagDir, Dir8, Axis, DiagAxis,
+                   Axis4, D4, C4, Sym, Sense): the cells its columns admit; a Pose type admits D4's
+  parts/<k>.checks.txt, checks.txt  one line `<task> <case>: <invariant>: <detail>` per violation of an invariant of this layout
+                   that `export_checks.check_case` checks on each case (tables, entries and runs, flows, the cells against their
+                   column types, keys, the evidence tables against the task file);
+                   `python engine/arclog-py/export_checks.py <out dir>` checks an existing export, and the copy flows' values
+                   against their source columns, which the export does not check
   settings.json    the options the calls run under, written before the first task: {"projection_cap": N, "step_cap": N, "parts": [...]} with 10000 and 10000 (null for --step-cap 0, no cap)
                    where no --projection-cap is given, each other option given, and the names of the parts the run writes
   report.txt       the fault lines, by task id
@@ -56,11 +63,12 @@ pairs as `arclog.stream_tables` takes them. `out` must not exist or be empty (el
 consistency of the last `RULE` clause the stream ends, or `ended none`), then the fault line of each stream that
 faults (its tables up to the fault are kept) or lies past the cap. It writes no `settings.json`.
 """
-import json, os, sys, glob, time
+import collections, json, os, sys, glob, time
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 import numpy as np
 import pandas as pd
 import arclog
+import export_checks
 
 ROOT = os.path.dirname(os.path.abspath(__file__)) + "/../.."
 CORPUS, TASKS = f"{ROOT}/work/arclog/gen", f"{ROOT}/data/tasks"
@@ -76,19 +84,25 @@ def frame(case, part):
 
 def write_part(out, k, results):
     """Writes the part `k` of the (task id, cases, lines) results, the `tasks.txt` last."""
-    frames = {p: [] for p in PARTS}
-    for _, cases, _ in results:
+    frames, checks = {p: [] for p in PARTS}, []
+    orientation = export_checks.orientation_sets(arclog.orientation_types())
+    for task, cases, _ in results:
+        task_json = json.load(open(f"{TASKS}/{task}.json")) if cases else None
         for case in cases:
             os.makedirs(f"{out}/values/{case.task}", exist_ok=True)
             with open(f"{out}/values/{case.task}/{case.case}.i32", "wb") as sink:
                 sink.write(case.values)
+            of_case = {p: frame(case, p) for p in PARTS}
             for p in PARTS:
-                frames[p].append(frame(case, p))
+                frames[p].append(of_case[p])
+            checks += [f"{task} {case.case}: {line}" for line in export_checks.check_case(of_case, np.frombuffer(case.values, np.int32), task_json, orientation, copies=False)]
     for p, fs in frames.items():
         if fs:
             pd.concat(fs).to_parquet(f"{out}/parts/{k:05d}.{p}.parquet")
     with open(f"{out}/parts/{k:05d}.report.txt", "w") as sink:
         sink.write("".join(line + "\n" for _, _, lines in results for line in lines))
+    with open(f"{out}/parts/{k:05d}.checks.txt", "w") as sink:
+        sink.write("".join(line + "\n" for line in checks))
     with open(f"{out}/parts/{k:05d}.tasks.tmp", "w") as sink:
         sink.write("".join(t + "\n" for t, _, _ in results))
     os.rename(f"{out}/parts/{k:05d}.tasks.tmp", f"{out}/parts/{k:05d}.tasks.txt")
@@ -160,9 +174,15 @@ def merge(out):
     lines = [l for f in sorted(glob.glob(f"{out}/parts/*.report.txt")) for l in open(f).read().splitlines()]
     lines.sort(key=lambda l: l.split()[0])
     json.dump(sorted(arclog.orientation_names()), open(f"{out}/orientations.json", "w"))
+    json.dump(arclog.orientation_types(), open(f"{out}/orientation_types.json", "w"))
     open(f"{out}/report.txt", "w").write("\n".join(lines) + "\n")
+    checks = [l for f in sorted(glob.glob(f"{out}/parts/*.checks.txt")) for l in open(f).read().splitlines()]
+    checks.sort(key=lambda l: l.split()[0])
+    open(f"{out}/checks.txt", "w").write("".join(l + "\n" for l in checks))
+    by_invariant = collections.Counter(l.split(": ", 1)[1].split(": ", 1)[0] for l in checks)
+    summary = f", {len(checks)} check lines" + (": " + ", ".join(f"{inv} {n}" for inv, n in sorted(by_invariant.items())) if checks else "")
     if not parts("tables"):
-        print(f"0 index rows, {len(lines)} fault lines")
+        print(f"0 index rows, {len(lines)} fault lines{summary}")
         return
     whole = {p: pd.concat([pd.read_parquet(f) for f in parts(p)]).astype({"concept": bool}).sort_values("task", kind="stable") for p in PARTS}
     tables, entries = whole["tables"], whole["entries"]
@@ -171,7 +191,7 @@ def merge(out):
     entries.merge(tables, on=["task", "case", "table"], suffixes=("", "_table")).to_parquet(f"{out}/index.parquet")
     for p in ("tables", "assigned", "projections", "projection_rows", "flows"):
         whole[p].to_parquet(f"{out}/{p}.parquet")
-    print(f"{len(entries)} index rows, {len(lines)} fault lines")
+    print(f"{len(entries)} index rows, {len(lines)} fault lines{summary}")
 
 
 def export_streams(out, task, streams, names=None, settings=None, bodies=False, step_cap=10000):

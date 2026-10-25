@@ -215,8 +215,7 @@ pub struct FlowColumns {
     pub kind: Vec<u8>,
     /// The row in [`TableColumns`] of the source's table in the case, the
     /// latest table of the relation before this one; -1 where the case holds
-    /// none: a lib relation, a constant, a lib name, or a relation whose
-    /// rows another table holds.
+    /// none: a lib relation, a constant, or a lib name.
     pub source_table: Vec<i32>,
     /// The relation read as `relation_spelled` spells it, a fact relation's
     /// name, or the lib name; empty for a constant.
@@ -262,6 +261,25 @@ pub fn orientation_names(registry: &Registry) -> Vec<(i32, String)> {
     let mut names: Vec<(i32, String)> = ORIENTATION_TYPES.iter().flat_map(|&ty| registry.constants_of(ty).each()).map(|constant| (orientation_cell(constant), registry.constant_name(constant).to_owned())).collect();
     names.sort();
     names
+}
+
+/// The cells of the constants that each orientation type without a parameter
+/// admits as a value, by the type's name, as `encode_data_value` admits them:
+/// C4 the registry's C4 constants, each other type the constants of its
+/// orientation types.
+pub fn orientation_types(registry: &Registry) -> Vec<(String, Vec<i32>)> {
+    use ValueType::*;
+    [Dir, DiagDir, Dir8, Axis, DiagAxis, Axis4, D4, C4, Sym, Sense]
+        .into_iter()
+        .map(|ty| {
+            let mut cells: Vec<i32> = match ty {
+                C4 => registry.c4_constants().each().map(orientation_cell).collect(),
+                _ => ty.orientation_types().expect("an orientation type").iter().flat_map(|&of| registry.constants_of(of).each()).map(orientation_cell).collect(),
+            };
+            cells.sort();
+            (format!("{ty:?}"), cells)
+        })
+        .collect()
 }
 
 fn orientation_cell(constant: OrientationConstant) -> i32 {
