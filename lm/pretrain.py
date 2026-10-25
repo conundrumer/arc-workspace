@@ -29,7 +29,9 @@ is held out where its task is held out. The log gives, under "train" and "heldou
 `value_pair_acc_sampled` (the same over the sampled continuations alone, without the gold one), `value_auc` (the
 mean over the lists with members of both labels of the AUC within the list) and `value_auc_sampled` (the same over
 the sampled continuations alone), the held-out ones
-over a sample of `--eval-limit` branch points drawn once with `--seed`.
+over a sample of `--eval-limit` branch points drawn once with `--seed`. A table's score depends on the draw of its
+identifiers; the held-out metrics take each table's mean score over `--value-draws` draws (default 1), and give each
+metric's min and max over the draws under `<metric>_min` and `<metric>_max`.
 
 The encoder's state, without the language model's embedding that it shares, goes to <out>/encoder.pt at the
 lowest held-out masked loss, for `train.py --encoder-init`, with the value head's state under "value_head". The embedding is built as train.py builds it, from `--base`,
@@ -93,28 +95,29 @@ def value_members(groups, members):
 
 
 def value_step(enc, head, members, gen, mode, positions, id_dim, label):
-    """The value loss of `members` (encoder.load_rollouts), each encoded whole as a program with no field hidden,
-    and the lists it is taken over (encoder.value_lists under `label`); the loss is None where no list counts."""
-    pooled = E.pooled_vectors(enc, [(m["tables"], E.value_relations(m["tables"], id_dim, gen)) for m in members], gen)
-    counts = [len(s) for s in pooled]
-    logits = head(enc.readout, torch.cat(pooled)).float().split(counts)
-    lists = E.value_lists(members, logits, positions, label=label)
+    """The value loss of `members` (encoder.load_rollouts), each encoded whole as a program with no field hidden
+    (encoder.value_scores), and the lists it is taken over (encoder.value_lists under `label`); the loss is None where
+    no list counts."""
+    lists = E.value_lists(members, E.value_scores(enc, head, members, gen, id_dim), positions, label=label)
     return E.value_loss(mode, lists), lists
 
 
 def value_metrics(lists, loss_sum=0.0, losses=0):
-    """The log's value entries over `value_lists`' lists: `value_loss` (where given), `value_pair_acc` (the share of
-    pairs of a member of label 1 and one of label 0 of a list in which the first scores higher, a tie one half),
-    `value_pair_acc_sampled` (the same over the pairs of sampled continuations alone, without the gold one),
-    `value_auc` (the mean over the lists with members of both labels of the AUC within the list),
-    `value_auc_sampled` (the same over the sampled continuations alone) and the counts."""
-    right, pairs = E.value_pairs(lists)
-    right_s, pairs_s = E.value_pairs(lists, sampled=True)
+    """The log's value entries over `value_lists`' lists: `value_loss` (where given) and encoder.value_metrics's
+    entries, each under "value_" and its name: `value_pair_acc` (the share of pairs of a member of label 1 and one of
+    label 0 of a list in which the first scores higher, a tie one half), `value_pair_acc_sampled` (the same over the
+    pairs of sampled continuations alone, without the gold one), `value_auc` (the mean over the lists with members of
+    both labels of the AUC within the list), `value_auc_sampled` (the same over the sampled continuations alone) and
+    the counts."""
     return {**({"value_loss": loss_sum / losses} if losses else {}),
-            "value_pair_acc": right / pairs if pairs else None,
-            "value_pair_acc_sampled": right_s / pairs_s if pairs_s else None, "value_auc": E.value_auc(lists),
-            "value_auc_sampled": E.value_auc(lists, sampled=True),
-            "value_lists": len(lists), "value_ranked_lists": sum(l["ranked"] for l in lists), "value_pairs": pairs}
+            **{f"value_{k}": v for k, v in E.value_metrics(lists).items()}}
+
+
+def value_heldout_metrics(members, draws, positions, label, loss_sum=0.0, losses=0):
+    """The log's held-out value entries: `value_loss` (where given) and encoder.value_draw_metrics's entries of the
+    per-draw scores `draws`, each under "value_" and its name; `value_eval.py` reports the same entries."""
+    return {**({"value_loss": loss_sum / losses} if losses else {}),
+            **{f"value_{k}": v for k, v in E.value_draw_metrics(members, draws, positions, label=label).items()}}
 
 
 DEPTHS = ("1", "2", "3", "4+")
@@ -236,6 +239,9 @@ def main():
     ap.add_argument("--value-positions", type=int, default=1,
                     help="the value loss takes the tables at the positions after the branch below this, each position "
                          "its own list")
+    ap.add_argument("--value-draws", type=int, default=1,
+                    help="the held-out value metrics take each table's mean score over this many draws of identifiers, "
+                         "and give each metric's min and max over the draws")
     ap.add_argument("--value-groups", type=int, default=1,
                     help="the most branch points per step, each with all its continuations; their cost counts in "
                          "--step-rows before the masked loss's programs, and at least one is taken")
@@ -344,15 +350,18 @@ def main():
         out = losses(summarize(records), a.prior_weight)
         if head is not None:   # the held-out branch points, one at a time, with fixed identifiers
             head.eval()
-            lists, loss_sum, n = [], 0.0, 0
+            held_m, draws, loss_sum, n = [], [[] for _ in range(a.value_draws)], 0.0, 0
             with torch.no_grad(), autocast():
                 for g in value_held:
-                    l, ls = value_step(enc, head, value_members([g], members), gen, a.value, a.value_positions, a.id_dim,
-                                       a.value_label)
-                    lists += ls
-                    if l is not None:
-                        loss_sum += l.item(); n += 1
-            out.update(value_metrics(lists, loss_sum, n))
+                    ms = value_members([g], members)
+                    for d in draws:
+                        z = E.value_scores(enc, head, ms, gen, a.id_dim)
+                        l = E.value_loss(a.value, E.value_lists(ms, z, a.value_positions, label=a.value_label))
+                        d += z
+                        if l is not None:
+                            loss_sum += l.item(); n += 1
+                    held_m += ms
+            out.update(value_heldout_metrics(held_m, draws, a.value_positions, a.value_label, loss_sum, n))
             head.train()
         enc.train()
         return out

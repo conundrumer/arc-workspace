@@ -45,6 +45,9 @@ r0 N N, r1 N C, r2 C S.
   consistent label and change the binary loss under the solving label, where the table is listed.
 - AUC (pretrain.py's `value_metrics`): two lists with 3 of 4 and 1 of 4 solving and a constant score within each
   must give `value_auc` and `value_auc_sampled` 0.5.
+- The two evaluation paths: three draws of per-table scores must give pretrain.py's held-out entries
+  (`value_heldout_metrics`) and value_eval.py's report the same metrics, those of the draws' mean score, with each
+  metric's least and greatest value over the draws taken one at a time.
 - With --learn: 100 steps of the ranking loss alone, under the solving label (AdamW, lr 5e-4 or --lr=<lr>, warmup 10, clip 1.0), two `ta`
   branch points a step, at c 32 in float32, through pretrain.py's `value_step`; every 25 steps, the pairwise
   ranking accuracy on the `tb` branch points and the mean training loss of the last 25 steps. The run passes where
@@ -70,6 +73,7 @@ import encoder as E
 import export_rollouts as XR
 import pretrain as P
 import rollout_labels as RL
+import value_eval as VE
 from train import fold_of
 
 FOLD = next(k for k in range(4) if k not in {fold_of("ta", 4), fold_of("tb", 4)})   # a fold of 4 with neither task
@@ -366,6 +370,21 @@ pooled = E.auc([float(x) for l in two for x in l["scores"]], [bool(y) for l in t
 verdict(got["value_auc"] == 0.5 and got["value_auc_sampled"] == 0.5 and pooled != 0.5,
         f"two lists of rates 0.75 and 0.25, a constant score within each: value_auc {got['value_auc']}, "
         f"value_auc_sampled {got['value_auc_sampled']} (pooled across lists {pooled:.3f})")
+
+print("== the two evaluation paths (pretrain.py's held-out log, value_eval.py's report)")
+noise = [torch.randn(len(m["tables"]), generator=gen) for m in group]
+draws = [[z + e for z, e in zip(logits, noise)], [z - e for z, e in zip(logits, noise)], [z.clone() for z in logits]]
+held = P.value_heldout_metrics(group, draws, 2, "solving")
+shown = VE.report("  value_eval.py's report", group, [[z.numpy() for z in d] for d in draws], 2, "solving")
+verdict({k[len("value_"):]: v for k, v in held.items()} == shown and set(shown) >= set(E.value_metrics([])),
+        "identical scores give pretrain.py's held-out entries and value_eval.py's report identical metrics")
+each = [E.value_metrics(E.value_lists(group, d, 2, label="solving")) for d in draws]
+mean = E.value_metrics(E.value_lists(group, logits, 2, label="solving"))
+verdict(all(shown[k] == mean[k] for k in mean) and shown["draws"] == 3
+        and all(shown[f"{k}_min"] == min(e[k] for e in each) and shown[f"{k}_max"] == max(e[k] for e in each)
+                for k in ("pair_acc", "auc")),
+        f"the metrics of the draws' mean score, and each draw's range: pair_acc {shown['pair_acc']:.3f}, each draw "
+        f"{shown['pair_acc_min']:.3f} to {shown['pair_acc_max']:.3f}")
 print(f"  {time.time() - t0:.1f} s")
 
 print("== learning: 100 steps of the ranking loss, two ta branch points a step, pairwise ranking accuracy on tb")
