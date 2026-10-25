@@ -52,6 +52,7 @@ from arclog_convert.lib import (
     plan_proposer,
 )
 from arclog_convert.solver_cases import CasesMixin
+from arclog_convert.stored_columns import key_labels, keyed_value_columns, stored_mark
 from arclog_convert.solver_instances import InstancesMixin
 from arclog_convert.solver_params import ParamsMixin
 from arclog_convert.solver_render import RenderMixin
@@ -172,6 +173,7 @@ class Claim:
 class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
     def __init__(self, stem: str, lib: Lib, sig: Lib, todo: Todo, inline: frozenset[str] = frozenset()) -> None:
         self.stem = stem
+        self._keyed: dict[str, tuple[tuple[int, ...], int]] | None = None   # the keyed `@store` relations' value columns, on first use
         self.todo = todo
         self.c = Converter(stem, lib, sig, todo, inline)
         self.lines = self.c.src_lines
@@ -246,6 +248,23 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
         return " ".join(rest for d, rest, _ in directives(self.comments_above(line)) if d == "")
 
     # ---- main
+
+    def stored_mark(self, inst, port: str, spelled: str, amp: str, forms: list[Form]) -> str:
+        """The ` (STORED ...)` mark of the `@store` line on the port
+        `port` of the instance `inst`, which `amp` writes, or nothing where
+        Souffle's stored value is keyed by the case alone (`stored_columns`)."""
+        if self._keyed is None:
+            self._keyed = keyed_value_columns(self.stem)
+        c = self.c
+        if spelled not in self._keyed or inst.component not in c.lib.comps:
+            return ""
+        columns, arity = self._keyed[spelled]
+        lr = next((r for r in c.lib.relations(inst.component)[1] if r.name == port), None)
+        if lr is None or len(lr.cols) != arity:
+            return ""
+        init = f"(INIT {amp.split('.')[0]} "
+        key = key_labels([line for f in forms for line in f.lines if f.lines[0].startswith(init)])
+        return stored_mark(columns, [col.name for col in lr.cols], key)
 
     def run(self) -> tuple[str, str]:
         c = self.c
@@ -799,10 +818,12 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
                     m = re.match(r"(?:(\w+)\s*:)?\s*(.*)", rest)
                     sub_rel, more = m.groups()
                     sub_rel = sub_rel or ""
+                    port = ""   # the relation is this port of the instance, with the columns of its component
                     if inst is not None and inst.name in c.lib_moved:
                         # an expanded instance's directive: the relation of the shape that stands for its relation
                         was, moves = c.lib_moved[inst.name]
                         to = moves.get(sub_rel, inst.name).split(".")
+                        port = to[1] if to[0] == inst.name and len(to) > 1 else ""
                         amp = ".".join([c.rel_name(inst.scope.components, to[0]), *to[1:]])
                         wid = was + ("." + sub_rel if sub_rel else "")
                     elif inst is not None and inst.component == "Parse":
@@ -811,6 +832,7 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
                         MOVED_RELS[f"{inst.name}.{sub_rel}"] = amp[1:]   # the witness names spell it `parse.<rel>`
                         wid = inst.name + ("." + sub_rel if sub_rel else "")
                     elif inst is not None:
+                        port = sub_rel
                         amp = c.rel_name(inst.scope.components, inst.name) + ("." + sub_rel if sub_rel else "")
                         wid = inst.name + ("." + sub_rel if sub_rel else "")
                     else:
@@ -819,7 +841,8 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
                     if inst is not None and inst.component != "Parse":
                         c.wrote(amp, Written(inst.scope.components, wid, False))
                     self.store_points.append((amp, [":" + more], "Stored", wid))
-                    forms.append(Form([f"(RULE_OR_DET {amp}{or_gloss(gloss)})"],
+                    mark = self.stored_mark(inst, port, wid, amp, forms) if port else ""
+                    forms.append(Form([f"(RULE_OR_DET {amp}{or_gloss(gloss)}{mark})"],
                                       amp.split(".")[0] if inst else amp, set(), line=line))
                 elif d == "ignore" and re.match(r"\w*\s*:?\s*(store|derive)\b", rest):
                     m = re.match(r"(?:(\w+)\s*:)?\s*(.*)", rest)

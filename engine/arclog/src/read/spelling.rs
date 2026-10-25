@@ -42,6 +42,7 @@ pub(crate) const IF: &str = "IF";
 pub(crate) const ALL: &str = "ALL";
 pub(crate) const ONE: &str = "ONE";
 pub(crate) const SET: &str = "SET";
+pub(crate) const STORED: &str = "STORED";
 pub(crate) const KEY: &str = "key";
 pub(crate) const FOR: &str = "for";
 pub(crate) const FROM: &str = "from";

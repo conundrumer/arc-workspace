@@ -305,3 +305,31 @@ fn the_stored_det_has_the_columns_that_forms_of_the_block_that_holds_the_line_na
     assert_eq!(sites, vec![1, 3], "`E`, `P` and `Col`: {det:?}");
     assert_eq!(stream, Ok(()));
 }
+
+const KEYED_PORT: &str = "
+(INPUT boxes \"the boxes\"
+  (INIT &bbox BoundingBox
+    (key ((input *P ^Col))
+      (cell (P)
+        (input *P Col))))
+
+  (RULE_OR_DET &bbox.box \"The boxes.\" (STORED (:key Col)))
+
+  (RULE &output
+    (&bbox.box (:key *Col) *B)))
+";
+
+#[test]
+fn the_stored_reading_of_a_line_with_a_stored_mark_is_a_det_of_the_value_columns_and_a_rule_that_joins_the_other_columns() {
+    let (case, stream) = stored_case(KEYED_PORT, "&bbox.box");
+    assert_eq!(clauses_of(&case, "&bbox_box_value"), vec![ClauseKeyword::Det]);
+    assert_eq!(clauses_of(&case, "&bbox_box_stored"), vec![ClauseKeyword::Rule]);
+    let declared = ProgramRelation::Declared(RelationName(DeclaredName::Written("&bbox_box_stored".into())));
+    let rule = case.program.value().forms.iter().find_map(|form| match form {
+        Form::Clause(clause) if clause.value().derives == declared => Some(clause.value().clone()),
+        _ => None,
+    });
+    let columns: Vec<String> = rule.expect("the joining RULE").columns.iter().map(|column| format!("{:?}", column.name)).collect();
+    assert_eq!(columns, vec!["Written(\"KeyCol\")", "Written(\"B\")"]);
+    assert_eq!(stream, Ok(()));
+}
