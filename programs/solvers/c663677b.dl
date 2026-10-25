@@ -209,16 +209,19 @@ line_class.edge([A, K, L], [A, K, L]) :- line(A, L), sub_extent(L, A, K).
 line_class.edge([A, K, L], [A, K, L2]) :-
     line(A, L), sub_extent(L, A, K), axis_of(D, A), jump(L, D, K, L2), line(A, L2).
 
-// Each cell in its class under shift k on axis a: the class of its line on
-// that axis, and its line on the other axis.
+// The class of cell p under shift k on axis a: the class of its line on that
+// axis, and its line on the other axis.
+.decl shift_place(k: ShiftClass, p: Position)
+shift_place([A, K, Id, L2], P) :-
+    in(P, _), split(P, A, L1, L2), line_class.id([A, K, L1], Id).
+
 // @claim periodic-pattern
 .init shift_mode = Mode<ShiftClass, Color, Position>
-shift_mode.item([A, K, Id, L2], Col, P) :-
-    in(P, Col), split(P, A, L1, L2), line_class.id([A, K, L1], Id).
+shift_mode.item(K, Col, P) :- shift_place(K, P), in(P, Col).
 
-// A cell p of class k whose color differs from a commonest color of k.
-.decl shift_miss(k: ShiftClass, p: Position)
-shift_miss(K, P) :- shift_mode.mode(K, Col), shift_mode.item(K, Col2, P), Col2 != Col.
+// A cell p of color col2 in class k, whose commonest color is col.
+.decl shift_vote(k: ShiftClass, col: Color, p: Position, col2: Color)
+shift_vote(K, Col, P, Col2) :- shift_mode.mode(K, Col), shift_place(K, P), in(P, Col2).
 
 // The cells of a frame of extent k on axis a, and of the grid's extent on the
 // other axis, one for each class under the shift.
@@ -236,7 +239,8 @@ shift_frame.extent([A, K], A2, N) :-
 // @claim periodic-pattern
 .init shift_things = Tally<PeriodShift, Position>
 shift_things.item(S, P_frame) :- shift_frame.cell(S, P_frame).
-shift_things.item([A, K], P_grid) :- shift_miss([A, K, _, _], P_grid).
+shift_things.item([A, K], P_grid) :-
+    shift_vote([A, K, _, _], Col, P_grid, Col2), Col2 != Col.          // lacks its class's color
 
 // @claim periodic-pattern
 .init least_shift = ArgExtremes<Axis, number>
