@@ -1,0 +1,321 @@
+//! The types of a mask's state, which the candidates of the mask extend: a
+//! candidate whose form differs from the form in progress at the state only
+//! by what its token adds to the sites of some atoms takes the type of each
+//! label the token leaves alone from the state's inference, and infers the
+//! rest.
+//!
+//! A label's type is the meet of the types of its sites and of those of the
+//! labels that constraints make equal to it, so it changes only when a site
+//! or a constraint of its class changes. The state's types stand for a
+//! candidate's label where no site or constraint of the label's class
+//! differs, and the candidate has the shape of the state's form.
+
+use std::cell::OnceCell;
+use std::sync::Arc;
+
+use super::Inference;
+use crate::hash::StableHashMap;
+use crate::program::path::NodePath;
+use crate::program::{Atom, Body, Conjunct, Form, LabelId, Negated, Node, Operand, Program};
+use crate::resolver::{resolve_last, ResolvedProgram};
+use crate::types::{each_conjunct, each_site_label, use_label, LabelFault, ValueType};
+
+type LabelTypes = Result<Option<ValueType>, LabelFault>;
+
+/// The form in progress at a mask's state, which `earlier` resolves the
+/// forms before.
+pub(in crate::check) struct HeldState {
+    earlier: Arc<ResolvedProgram>,
+    program: Node<Program>,
+    resolved: OnceCell<ResolvedProgram>,
+    types: OnceCell<Option<StateTypes>>,
+}
+
+impl HeldState {
+    pub(in crate::check) fn new(earlier: Arc<ResolvedProgram>, program: Node<Program>) -> Self {
+        HeldState { earlier, program, resolved: OnceCell::new(), types: OnceCell::new() }
+    }
+}
+
+/// The inference of the form in progress at a mask's state, where it is a
+/// clause that gives no label a type by anything but its sites and
+/// constraints.
+pub(super) struct StateTypes {
+    path: NodePath,
+    body: Node<Body>,
+    labels: StableHashMap<LabelId, LabelTypes>,
+    pairs: Vec<(LabelId, LabelId)>,
+}
+
+/// The labels whose sites or constraints differ between two forms of one
+/// shape.
+#[derive(Default)]
+struct Touched {
+    labels: Vec<LabelId>,
+}
+
+impl Touched {
+    fn site_labels(&mut self, site: &crate::program::Site) {
+        each_site_label(site, &mut Vec::new(), &mut |use_, _| self.labels.extend(use_label(use_)));
+    }
+
+    /// Notes the labels of the sites of `old` and of `new`, atoms of one
+    /// relation, that differ. Gives `None` where the relations differ.
+    fn atom(&mut self, old: &Atom, new: &Atom) -> Option<()> {
+        if old.relation != new.relation {
+            return None;
+        }
+        let common = old.sites.len().min(new.sites.len());
+        for (a, b) in old.sites.iter().zip(new.sites.iter()) {
+            if a != b {
+                self.site_labels(a);
+                self.site_labels(b);
+            }
+        }
+        for site in old.sites[common..].iter().chain(&new.sites[common..]) {
+            self.site_labels(site);
+        }
+        Some(())
+    }
+
+    fn constraint(&mut self, conjunct: &Conjunct) {
+        if let Conjunct::Constraint(constraint) = conjunct {
+            self.labels.push(constraint.first.label);
+            if let Operand::Label(second) = constraint.second {
+                self.labels.push(second.label);
+            }
+        }
+    }
+
+    /// Notes what differs between `old` and `new`, bodies of one shape: the
+    /// same conjuncts but for the sites of atoms, and, at the end of a body,
+    /// a constraint that `new` adds. Gives `None` where the shapes differ.
+    fn body(&mut self, old: &Node<Body>, new: &Node<Body>) -> Option<()> {
+        if std::ptr::eq(old.value(), new.value()) {
+            return Some(());
+        }
+        let (old, new) = (&old.value().conjuncts, &new.value().conjuncts);
+        let added = match new.len().checked_sub(old.len())? {
+            0 => None,
+            1 => Some(new.last().filter(|conjunct| matches!(conjunct, Conjunct::Constraint(_)))?),
+            _ => return None,
+        };
+        for (a, b) in old.iter().zip(new.iter()) {
+            self.conjunct(a, b)?;
+        }
+        added.inspect(|constraint| self.constraint(constraint));
+        Some(())
+    }
+
+    fn conjunct(&mut self, old: &Conjunct, new: &Conjunct) -> Option<()> {
+        match (old, new) {
+            (Conjunct::Atom(a), Conjunct::Atom(b)) | (Conjunct::Not(Negated::Atom(a)), Conjunct::Not(Negated::Atom(b))) => {
+                if std::ptr::eq(a.value(), b.value()) {
+                    return Some(());
+                }
+                self.atom(a.value(), b.value())
+            }
+            (Conjunct::Constraint(a), Conjunct::Constraint(b)) => (a == b).then_some(()),
+            (Conjunct::Not(Negated::Form(a)), Conjunct::Not(Negated::Form(b))) => self.conjunct(a, b),
+            (Conjunct::Or(a), Conjunct::Or(b)) if a.len() == b.len() => a.iter().zip(b.iter()).try_for_each(|(a, b)| self.body(a, b)),
+            (Conjunct::If { test: t, then: n, otherwise: o }, Conjunct::If { test: t2, then: n2, otherwise: o2 }) => {
+                self.body(t, t2)?;
+                self.body(n, n2)?;
+                self.body(o, o2)
+            }
+            (Conjunct::All { domain: d, body: b }, Conjunct::All { domain: d2, body: b2 }) => {
+                self.body(d, d2)?;
+                self.body(b, b2)
+            }
+            _ => None,
+        }
+    }
+
+    /// The labels noted and each label that the constraints of `old` or of
+    /// the new form make equal to one of them, directly or through others.
+    fn closed(mut self, old: &[(LabelId, LabelId)], new: &Body) -> Vec<LabelId> {
+        let mut pairs = old.to_vec();
+        pairs.extend(constraint_pairs(new));
+        let mut grown = true;
+        while grown {
+            grown = false;
+            for &(a, b) in &pairs {
+                for (x, y) in [(a, b), (b, a)] {
+                    if self.labels.contains(&x) && !self.labels.contains(&y) {
+                        self.labels.push(y);
+                        grown = true;
+                    }
+                }
+            }
+        }
+        self.labels
+    }
+}
+
+/// The pairs of labels that the constraints of `body`, at any depth, make
+/// equal.
+fn constraint_pairs(body: &Body) -> Vec<(LabelId, LabelId)> {
+    let mut pairs = Vec::new();
+    each_conjunct(body, &mut |conjunct| {
+        if let Conjunct::Constraint(constraint) = conjunct {
+            if let Some(second) = crate::program::constraint_second(constraint) {
+                pairs.push((constraint.first.label, second.label));
+            }
+        }
+    });
+    pairs
+}
+
+impl<'a> Inference<'a> {
+    /// Holds the form in progress at the mask's state, `program` with that
+    /// form as its last, over `earlier`, the resolution of the forms before it,
+    /// for the candidates of the mask.
+    pub(in crate::check) fn hold_state(&self, earlier: Arc<ResolvedProgram>, program: Node<Program>) {
+        let _ = self.state.set(HeldState::new(earlier, program));
+    }
+
+    /// The types of the state's form, made on the first read.
+    fn state_types(&self) -> Option<&'a StateTypes> {
+        let earlier = self.earlier?;
+        let held = earlier.held_state()?;
+        held.types
+            .get_or_init(|| {
+                let resolved = held.resolved.get_or_init(|| resolve_last(&held.earlier, &held.program, self.registry));
+                let Some(Form::Clause(clause)) = resolved.program.value().forms.last() else { return None };
+                let path = NodePath::top(resolved.program.value().forms.len() as u32 - 1);
+                let inference = Inference { splits: false, ..Inference::layered(resolved, self.cases, earlier) };
+                let inferred = inference.infer(&path)?;
+                let plain = inferred.given.is_empty() && inferred.zero_typed.is_empty() && inferred.bindings.is_empty() && clause.value().columns.is_empty();
+                plain.then(|| StateTypes {
+                    path,
+                    body: clause.value().body.clone(),
+                    labels: inferred.labels.iter().cloned().collect(),
+                    pairs: constraint_pairs(clause.value().body.value()),
+                })
+            })
+            .as_ref()
+    }
+
+    /// The labels of `form`, at `path`, whose types the state's inference
+    /// does not give, with that inference: `None` where `form` is not the
+    /// state's clause with what its token adds.
+    pub(super) fn state_split(&self, form: &Form, path: &NodePath, labels: &[LabelId]) -> Option<(&'a StateTypes, Vec<LabelId>)> {
+        let Form::Clause(clause) = form else { return None };
+        let clause = clause.value();
+        if !self.splits || !(clause.columns.is_empty() && clause.ones.is_empty() && !clause.set) {
+            return None;
+        }
+        let state = self.state_types()?;
+        if state.path != *path {
+            return None;
+        }
+        let mut touched = Touched::default();
+        touched.body(&state.body, &clause.body)?;
+        let touched = touched.closed(&state.pairs, clause.body.value());
+        #[cfg(test)]
+        FAST.with(|fast| fast.set(fast.get() + 1));
+        let own = labels.iter().copied().filter(|label| touched.contains(label) || !state.labels.contains_key(label));
+        Some((state, own.collect()))
+    }
+}
+
+impl StateTypes {
+    /// The type the state's inference gives `label`.
+    pub(super) fn label(&self, label: LabelId) -> Option<&LabelTypes> {
+        self.labels.get(&label)
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// The number of candidates so far that took the state's types.
+    static FAST: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::check::inference::CaseInferences;
+    use crate::check::{check_program, CheckCache, SolverClauses};
+    use crate::decode::Decoder;
+    use crate::eval::instance::Constructions;
+    use crate::eval::values::Caps;
+    use crate::read::read_solver;
+    use crate::registry::Registry;
+    use crate::resolver::resolve;
+    use crate::session::{SessionBound, TaskSession};
+    use crate::stream::{token_stream, DecodeSettings, Emitter, Vocabulary};
+    use crate::task::Task;
+
+    const SOURCE: &str = "(RULE &bg (input (:Col *C)))\n\
+        (RULE &fg (input *P *Col) (&bg (:C *V)) (!= Col V))\n\
+        (RULE &axis_len (input (:P *B)) (frame_extent (:P B) (:N *N)))\n\
+        (RULE &larger (&axis_len *B) (&axis_len (:B *B2)))\n\
+        (RULE &prior (&axis_len *B *N) (&axis_len (:B *B2) (:N *N2)) (OR ((> N N2)) ((= N N2) (&larger B B2))))\n\
+        (RULE &lists (input *P *Col) (NOT (&fg P)) (IF ((&bg (:C Col))) ((= *K 0)) ((input P (:Col *D)) (= *K 0))) (ALL ((input (:P *Q) (:Col Col))) ((&fg (:P Q)))))\n";
+
+    /// The types of the labels of the last form of `program`, where `state`,
+    /// when given, is the form in progress at the mask's state.
+    fn last_form_types(program: &Node<Program>, state: Option<&Node<Program>>, registry: &Registry) -> Vec<(LabelId, LabelTypes)> {
+        let (_, complete) = program.value().forms.split_last().expect("a partial form");
+        let earlier = Arc::new(resolve(&Node::new(Program { forms: complete.into() }), None, &Default::default(), registry).value);
+        let resolved = resolve_last(&earlier, program, registry);
+        let clauses = SolverClauses::of_program(resolved.clone());
+        let cases = CaseInferences::new(&clauses, registry);
+        let before = Inference::new(&earlier, &cases);
+        if let Some(state) = state {
+            before.hold_state(Arc::clone(&earlier), state.clone());
+        }
+        let inference = Inference::layered(&resolved, &cases, &before);
+        let inferred = inference.infer(&NodePath::top(complete.len() as u32)).expect("the last form is inferred");
+        inferred.labels.clone()
+    }
+
+    /// Along a stream, each candidate of a mask has the label types with the
+    /// state's types that it has with the whole inference.
+    #[test]
+    fn the_state_types_give_the_types_the_whole_inference_gives() {
+        let registry = Registry::get();
+        let solver = read_solver("decode", SOURCE, "", &|_| None).expect("the file reads").value;
+        let concept = resolve(&solver.concept_case().program, None, &solver.derived_relations(), registry).value;
+        let checked = check_program(concept, &SolverClauses::of(&solver, registry), registry, &mut CheckCache::default()).expect("every check passes");
+        let vocabulary = Vocabulary::new(registry, &DecodeSettings::default());
+        let stream = token_stream(&checked, &vocabulary).expect("the program has a stream");
+        let constructions = Constructions::new(Vec::new(), registry).expect("an empty table");
+        let task = Task { train: Box::new([]), test: Box::new([]) };
+        let session = TaskSession::new(SessionBound { bytes: 1 << 26 }, Caps::CORPUS);
+        let mut decoder = Decoder::new(&task, &session, registry, &constructions, &DecodeSettings::default());
+        let (mut compared, before) = (0, FAST.with(|fast| fast.get()));
+        for (token, emitter) in &stream {
+            if matches!(emitter, Emitter::Engine) {
+                continue;
+            }
+            let state = decoder.partial().filter(|(_, open)| open.is_some()).map(|(program, _)| program);
+            let mask = decoder.admissible();
+            for id in 0..u32::try_from(vocabulary.len()).expect("fewer than 2^32 tokens") {
+                if !mask.contains(id) {
+                    continue;
+                }
+                let mut fork = decoder.fork();
+                if fork.step(vocabulary.token(id).expect("an id of the vocabulary").clone()).is_err() {
+                    continue;
+                }
+                let Some((program, _)) = fork.partial() else { continue };
+                if program.value().forms.len() < 2 || state.is_none() {
+                    continue;
+                }
+                assert_eq!(
+                    last_form_types(&program, state.as_ref(), registry),
+                    last_form_types(&program, None, registry),
+                    "{:?} before {token:?}",
+                    vocabulary.token(id)
+                );
+                compared += 1;
+            }
+            decoder.step(token.clone()).expect("a token of the stream");
+        }
+        let fast = FAST.with(|fast| fast.get()) - before;
+        assert!(compared > 0 && fast > 0, "{fast} candidates of {compared} took the state's types");
+        eprintln!("fast {fast} of {compared}");
+    }
+}

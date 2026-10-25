@@ -188,7 +188,7 @@ impl<'a> Decoder<'a> {
         let vocabulary = &self.context.vocabulary;
         let mut mask = TokenMask::new(vocabulary.len());
         let mut steps = HashMap::new();
-        self.with_checks(|checks| {
+        self.with_checks_at_state(|checks| {
             for id in 0..u32::try_from(vocabulary.len()).expect("fewer than 2^32 tokens") {
                 let token = vocabulary.token(id).expect("an id of the vocabulary");
                 if let Ok(step) = self.next(token, checks) {
@@ -208,6 +208,18 @@ impl<'a> Decoder<'a> {
         let resolved = self.state.resolved(registry);
         let clauses = SolverClauses::of_shared_program(Arc::clone(&resolved));
         PrefixChecks::with(&resolved, &clauses, registry, body)
+    }
+
+    /// [`Decoder::with_checks`], with the form in progress at the state held
+    /// for the candidates, which the mask computes.
+    fn with_checks_at_state<R>(&self, body: impl FnOnce(&PrefixChecks<'_>) -> R) -> R {
+        let earlier = self.state.resolved(self.context.registry);
+        self.with_checks(|checks| {
+            if let Some((program, Some(_))) = self.state.partial() {
+                checks.hold_state(earlier, program);
+            }
+            body(checks)
+        })
     }
 
     /// Advances the decode by `token`, and gives the tokens that the engine

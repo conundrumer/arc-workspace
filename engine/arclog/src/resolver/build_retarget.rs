@@ -30,7 +30,9 @@ impl ResolvedProgram {
     /// whose columns are empty, or an instance whose key columns are empty
     /// where `at` is in its key body; and each node that holds the atom,
     /// and each node that reads such a node, has its content written
-    /// again, on its first read where no node reads it. A read of a node
+    /// again, on its first read: no write of a content reads the content of
+    /// a node of the last form, as the form's own relations are written
+    /// by a mark and no other read resolves to such a node. A read of a node
     /// changes the graph's reads, and the retarget handles it where the
     /// last form is a clause that derives a declared relation. It gives
     /// `false` where another read of the last form resolves to a node of
@@ -122,15 +124,8 @@ impl ResolvedProgram {
         self.depths = std::sync::OnceLock::new();
         self.program = program.clone();
         for &slot in &nodes {
-            if self.names.unwritten[slot].is_some() {
-                continue;
-            }
-            if self.is_read_by(slot, &nodes) {
-                self.names.contents[slot] = Some(self.unwritten_content(slot));
-            } else {
-                self.names.contents[slot] = None;
-                self.names.unwritten[slot] = Some(std::sync::OnceLock::new());
-            }
+            self.names.contents[slot] = None;
+            self.names.unwritten[slot] = Some(std::sync::OnceLock::new());
         }
         true
     }
@@ -191,13 +186,6 @@ impl ResolvedProgram {
         } else {
             Side::TaskWide
         }
-    }
-
-    /// Whether a node of `nodes`, slots of the last form's nodes, other
-    /// than `slot`, reads the node of `slot`.
-    fn is_read_by(&self, slot: usize, nodes: &[usize]) -> bool {
-        let first = self.names.first_node();
-        nodes.iter().any(|&other| other != slot && self.graph.reads[first + other].iter().any(|read| read.0 as usize == first + slot))
     }
 
     /// What the name read by the atom at `at` of this program resolves to,

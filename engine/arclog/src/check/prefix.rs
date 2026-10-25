@@ -13,7 +13,7 @@ use crate::hash::StableHashMap;
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{node_at, NodePath, NodeRef, PathStep};
 use crate::program::{Atom, Body, Choose, Clause, Conjunct, Form, Instance, InstanceInput, KeyBody, KeyClause, LabelUse, Negated, Node, Program, RigidDet, Site, SiteArg, SiteValue};
-use crate::registry::Registry;
+use crate::registry::{Mode, Registry};
 use crate::program::RelationRef;
 use crate::resolver::{resolve_last, ResolvedProgram};
 use crate::stream::write::reads_example_column;
@@ -122,8 +122,8 @@ pub enum Candidate {
 /// candidate infers the types of its last form and the labels of its
 /// scopes, and each other takes them. A check that [`atom_reading`] says
 /// ignores the relation of such an atom gives each candidate the first
-/// candidate's result, and so does the safety check, where the atom's
-/// relation has no mode; and the conjuncts written before the atom bind
+/// candidate's result, and so does the safety check, where the atoms'
+/// relations have equal modes; and the conjuncts written before the atom bind
 /// the same labels in every candidate.
 #[derive(Default)]
 struct AtomHead {
@@ -132,7 +132,7 @@ struct AtomHead {
     open: OnceCell<NodePath>,
     types: RefCell<Option<inference::InferredTypes>>,
     labels: OnceCell<Vec<LabelInScope>>,
-    results: RefCell<StableHashMap<CheckId, PrefixResult>>,
+    results: RefCell<StableHashMap<(CheckId, Box<[Mode]>), PrefixResult>>,
     bound: BoundCache,
     /// The resolution of the candidates that open an atom of a relation
     /// ([`PrefixChecks::check_atom_head`]): the one of the candidate
@@ -190,6 +190,15 @@ impl PrefixChecks<'_> {
         let cases = inference::CaseInferences::new(clauses, registry);
         let inference = inference::Inference::new(complete, &cases);
         body(&PrefixChecks { clauses, registry, inference: &inference, head: AtomHead::default() })
+    }
+
+    /// Holds the form in progress at the mask's state, `program` with that
+    /// form as its last, over `earlier`, the resolution of the forms before
+    /// it: a candidate that differs from it by what its token adds to the
+    /// sites of some atoms takes the types of the other labels from the
+    /// state's inference.
+    pub fn hold_state(&self, earlier: Arc<ResolvedProgram>, program: Node<Program>) {
+        self.inference.hold_state(earlier, program);
     }
 
     /// The first check of [`checks`], in their order, that refuses the
@@ -259,17 +268,18 @@ impl PrefixChecks<'_> {
     /// candidate of `head`, where `check` reads nothing of the open atom
     /// that the candidates differ in.
     fn check_prefix(&self, check: &dyn Check, prefix: &Prefix<'_>, head: Option<&AtomHead>) -> PrefixResult {
-        let shared = head.filter(|_| match atom_reading(check.id()) {
-            AtomReading::Ignored => true,
-            AtomReading::Modes => open_atom(prefix).is_some_and(|atom| atom_modes(self.registry, atom).is_empty()),
-            AtomReading::Relation => false,
+        let shared = head.zip(match atom_reading(check.id()) {
+            AtomReading::Ignored => Some(&[][..]),
+            AtomReading::Modes => open_atom(prefix).map(|atom| atom_modes(self.registry, atom)),
+            AtomReading::Relation => None,
         });
-        let Some(head) = shared else { return check.check_prefix(prefix) };
-        if let Some(found) = head.results.borrow().get(&check.id()) {
+        let Some((head, modes)) = shared else { return check.check_prefix(prefix) };
+        let key = (check.id(), Box::<[Mode]>::from(modes));
+        if let Some(found) = head.results.borrow().get(&key) {
             return found.clone();
         }
         let result = check.check_prefix(prefix);
-        head.results.borrow_mut().insert(check.id(), result.clone());
+        head.results.borrow_mut().insert(key, result.clone());
         result
     }
 }

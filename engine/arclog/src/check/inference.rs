@@ -8,6 +8,10 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::Arc;
 
+mod state;
+
+pub(super) use state::HeldState;
+
 use super::safety::{bodies, BodyPlace};
 use super::types::{
     column_type, component, declared_type, demo_rule, form_at, pose_of_fault, project, relation_columns, rule_scope_forms, scope_forms, site_value_type, site_value_type_or,
@@ -439,6 +443,12 @@ pub(super) struct Inference<'a> {
     /// first inference of the last form leaves its types here, and each
     /// other takes them.
     shared: Option<&'a RefCell<Option<InferredTypes>>>,
+    /// The form in progress at the state of the mask whose candidates
+    /// this inference is `earlier` for, once held.
+    state: std::cell::OnceCell<HeldState>,
+    /// Whether a form may take the types of the held state: false for the
+    /// inference of the state itself.
+    splits: bool,
 }
 
 impl std::fmt::Debug for Inference<'_> {
@@ -452,18 +462,25 @@ impl std::fmt::Debug for Inference<'_> {
 pub(super) trait EarlierForms<'a> {
     /// [`Inference::infer`].
     fn infer(&self, path: &NodePath) -> Option<Rc<FormInference<'a>>>;
+
+    /// The form in progress at the mask's state, where it is held.
+    fn held_state(&self) -> Option<&HeldState>;
 }
 
 impl<'a, 'e: 'a> EarlierForms<'a> for Inference<'e> {
     fn infer(&self, path: &NodePath) -> Option<Rc<FormInference<'a>>> {
         Inference::infer(self, path)
     }
+
+    fn held_state(&self) -> Option<&HeldState> {
+        self.state.get()
+    }
 }
 
 impl<'a> Inference<'a> {
     pub fn new(program: &'a ResolvedProgram, cases: &'a CaseInferences<'a>) -> Self {
         let concept = program.concept().map(|concept| cases.concept(concept));
-        Inference { program, registry: cases.registry, cases, concept, earlier: None, held: std::cell::OnceCell::new(), forms: RefCell::default(), signatures: RefCell::default(), shared: None }
+        Inference { program, registry: cases.registry, cases, concept, earlier: None, held: std::cell::OnceCell::new(), forms: RefCell::default(), signatures: RefCell::default(), shared: None, state: std::cell::OnceCell::new(), splits: true }
     }
 
     /// The inference of `program`, a resolution by [`crate::resolver::resolve_last`]
@@ -545,7 +562,12 @@ impl<'a> Inference<'a> {
     fn infer_new(&self, form: &'a Form, path: &NodePath) -> FormInference<'a> {
         let scope = ScopeBody::of(form, self.registry);
         let walk = FormWalk::of(form);
-        let labels = form_scope_labels(form);
+        let all_labels = form_scope_labels(form);
+        let split = self.state_split(form, path, &all_labels);
+        let labels = match &split {
+            Some((_, own)) => own.clone(),
+            None => all_labels.to_vec(),
+        };
         let lists = scope.lists(&labels);
         let key = scope.instance.and_then(|instance| instance.key.as_ref()).map(|key| key.value().key.body.value());
         let no_bindings = StableHashMap::default();
@@ -572,8 +594,18 @@ impl<'a> Inference<'a> {
                 }
             }
         }
+        if let Some((state, _)) = &split {
+            let own = std::mem::take(&mut types);
+            types = all_labels
+                .iter()
+                .map(|label| match own.iter().find(|(found, _)| found == label) {
+                    Some(found) => found.clone(),
+                    None => (*label, state.label(*label).expect("a label the split leaves to the state's inference").clone()),
+                })
+                .collect();
+        }
         let mut zero_typed = Vec::new();
-        if let Form::Clause(clause) = form {
+        if let (Form::Clause(clause), None) = (form, &split) {
             let clause = clause.value();
             for label in zero_typed_heads(clause) {
                 let Some((_, ty)) = types.iter_mut().find(|(found, _)| *found == label) else { continue };
