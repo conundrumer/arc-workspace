@@ -5,7 +5,11 @@ incomplete response is discarded and a retry computes from the journal.
 Only the serving thread accesses held reads. Idle expiry does no state read.
 The resident's first state read runs in a child that exits once the reads are
 in the kept-read store (`child_read`), so that the memory its peak maps ends
-with it; the resident then loads those reads from the store.
+with it; the resident then loads those reads from the store. The first read
+flushes the store once before the fork, and the child retries its write on
+another process's write lock only while that retry's wait on the lock ends
+within `CHILD_WRITE_SECONDS` of its read's end; the resident computes the
+reads the store then lacks.
 A state read belongs to the resident: a request whose bound arrives first gets
 a response that says the read runs, and the run goes on; the same agent's next
 call of the same kind takes over its result. Where a run ends with no client,
@@ -895,24 +899,33 @@ read_first = True
 
 CHILD_POLL_SECONDS = 0.05
 CHILD_ERROR_BYTES = 8192
+CHILD_WRITE_SECONDS = 30
+"""How long the child of a first read retries its write of the kept-read store
+on a lock another process holds, counted from the end of its read; the child
+exits once it has passed, its records written or not."""
 
 
 def child_read(current: Request) -> None:
-    """Read the state of `current.operator` in a forked child that exits once
+    """Reads the state of `current.operator` in a forked child that exits once
     the reads it computed are in the kept-read store, so that the peak memory
     of this resident's first read ends with the child; the resident's own read
-    then loads those records. Where the resident's first read has run, do
-    nothing. Cancellation of the request, or the end of its run at
-    `CARRY_SECONDS`, kills the child and propagates. A
+    then loads those records. Where the resident's first read has run, does
+    nothing. Before the fork it flushes the store once, whatever the flush
+    gives, so the wait on another process's write lock before the fork is that
+    of one flush. After its read the child retries its flush every
+    `CHILD_POLL_SECONDS` while the flush fails on a lock and the wait of
+    another flush on the lock, `kept_reads.LOCK_WAIT_SECONDS`, ends within
+    `CHILD_WRITE_SECONDS` of the read's end, then exits, its records written
+    or not; the resident's own read computes the reads the
+    store lacks, whatever process holds the lock. Cancellation of the request,
+    or the end of its run at `CARRY_SECONDS`, kills the child and propagates. A
     child that fails gives the request the outcome of any failed read."""
     global read_first
     if not read_first:
         return
     import kept_reads
     import state_assembly
-    while not kept_reads.flush():  # A lock is transient.
-        current.check()
-        time.sleep(CHILD_POLL_SECONDS)
+    kept_reads.flush()
     read_first = False
     errors, written = os.pipe()
     pid = os.fork()
@@ -923,7 +936,12 @@ def child_read(current: Request) -> None:
             CURRENT.set(None)
             with read_interrupts.request_scope(lambda: None):
                 state_assembly.read_state(current.operator)
+            retry_until = time.monotonic() + CHILD_WRITE_SECONDS
             while not kept_reads.flush():
+                store = kept_reads.store()
+                if (store is None or not store.locked()
+                        or time.monotonic() + kept_reads.LOCK_WAIT_SECONDS >= retry_until):
+                    break
                 time.sleep(CHILD_POLL_SECONDS)
             code = 0
         except BaseException:
