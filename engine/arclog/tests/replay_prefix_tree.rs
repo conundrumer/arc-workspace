@@ -155,30 +155,28 @@ fn a_prefix_tree_replay_steps_each_model_token_of_the_tree_once() {
     let train: Arc<[PairCandidates<'_>]> = judged.train.iter().map(|pair| PairCandidates::of(pair, Section::Train, World::Closed)).collect();
     let tokens = |ids: &[(u32, Emitter)]| -> Vec<_> { ids.iter().map(|(id, emitter)| (vocabulary.token(*id).expect("a token").clone(), *emitter)).collect() };
 
-    // The positions where the model writes with no token forced, each with the ids the mask refuses there.
-    let mut cuts = Vec::new();
-    for cut in 2..whole.len() {
+    // A position where the model writes with no token forced, with the ids the mask refuses there that sort before and after the whole stream's token.
+    let refusing_at = |cut: usize| -> Option<(usize, Vec<u32>)> {
         if whole[cut].1 != Emitter::Model {
-            continue;
+            return None;
         }
         let mut decoder = Decoder::new(&task, &session, registry, &constructions, &settings).judging(Arc::clone(&train));
-        let Ok(replayed) = replay(&mut decoder, &tokens(&whole[..cut]), true, &mut |_, _| ControlFlow::Continue(())) else { continue };
+        let replayed = replay(&mut decoder, &tokens(&whole[..cut]), true, &mut |_, _| ControlFlow::Continue(())).ok()?;
         if !replayed.forced().is_empty() {
-            continue;
+            return None;
         }
         let mask = decoder.admissible();
         let refusing: Vec<u32> = (0..vocabulary.len() as u32).filter(|id| !mask.contains(*id)).collect();
-        // Ids that sort before and after the whole stream's token.
         let refused: Vec<u32> = refusing.iter().copied().filter(|id| *id < whole[cut].0).take(1).chain(refusing.iter().copied().filter(|id| *id > whole[cut].0).take(1)).collect();
-        if refused.len() == 2 {
-            cuts.push((cut, refused));
-        }
-    }
-    assert!(cuts.len() >= 2, "two positions of the stream refuse a token");
+        (refused.len() == 2).then_some((cut, refused))
+    };
+    let first = (2..whole.len()).find_map(refusing_at).expect("a position of the stream refuses a token");
+    let last = (2..whole.len()).rev().find_map(refusing_at).expect("a position of the stream refuses a token");
+    assert!(first.0 < last.0, "two positions of the stream refuse a token");
     // Streams that each continue a prefix of the whole stream with a refused token, at two cuts.
     let mut streams = vec![whole.clone()];
     let mut expected: Vec<Vec<(u32, Emitter)>> = vec![whole.clone()];
-    for (cut, refused) in [cuts[0].clone(), cuts[cuts.len() - 1].clone()] {
+    for (cut, refused) in [first, last] {
         expected.push(whole[..cut].to_vec());
         for id in refused {
             let mut stream = whole[..cut].to_vec();
