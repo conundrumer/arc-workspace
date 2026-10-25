@@ -7,7 +7,7 @@ case (the corpus case, or null for a sample from nothing), branch (the rule inde
 sample's index k, or "gold"), ids, model, prefix_tokens (the stream's tokens before the branch), prefix_rules,
 ended, consistency, solved_test, attempts, tokens, program_form and rules. The settings line gives each line its
 `sampler_meta`: the prefix mode, the sampling LM's run and fold, and the data export of its prefixes. In the merged
-file of lm/export_rollouts.py, each line carries the `sampler_meta` of its own sampler file in its fields of
+file of lm/export_rollouts.py, each line has the `sampler_meta` of its own sampler file in its fields of
 `SAMPLER_FIELDS`, and a line's own field takes the place of the settings line's. The export is the tables export of those
 streams (engine/arclog-py/tables_export.py, `export_streams`), whose case names are `<task>__<case>__b<j>__r<k>`,
 `<task>__<case>__b<j>__gold` and `<task>__none__b0__r<k>`.
