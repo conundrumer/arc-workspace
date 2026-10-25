@@ -40,6 +40,7 @@ mod panic_isolation;
 mod program_edits;
 mod proposer_column_types;
 mod reader;
+mod record_sites;
 mod registry_file;
 mod replay_panic;
 mod replay_prefix_tree;
