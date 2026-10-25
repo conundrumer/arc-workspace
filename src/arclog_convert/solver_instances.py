@@ -22,6 +22,7 @@ from dataclasses import replace as dc_replace
 from souffle.printer import term as souffle_term
 from arclog_convert.literals import collect_vars
 from arclog_convert import libmap
+from arclog_convert.libmap.instances import GROUNDED, term_vars
 
 from arclog_convert.clauses import ClauseWriter
 from arclog_convert.forms import (
@@ -45,6 +46,9 @@ from arclog_convert.forms import (
 from arclog_convert.leaves import Written
 from arclog_convert.lib import ALGEBRA_MODES, FROM_KEY, field_names, field_sites, pascal
 from arclog_convert.terms import ctor_names, subst_terms
+
+LABEL = re.compile(r"(?<![(:\w&.])[*^]?([A-Z]\w*)")
+"""A label of a written form, as it stands in a form line."""
 
 
 class InstancesMixin:
@@ -356,7 +360,7 @@ class InstancesMixin:
                     saved = list(self.todo.pending), Counter(self.todo.kinds)
                     text = " ".join(probe.lits([l], set()))
                     self.todo.pending, self.todo.kinds = saved
-                    vs = set(re.findall(r"(?<![(:\w&.])[*^]?([A-Z]\w*)", text))
+                    vs = set(LABEL.findall(text))
                     if vs and vs <= kset:
                         idx.append(i)
                 # an algebra atom whose labels the other key atoms do not all
@@ -369,7 +373,7 @@ class InstancesMixin:
                     self.todo.pending, self.todo.kinds = saved
 
                 def labels(t: str) -> set[str]:
-                    return set(re.findall(r"(?<![(:\w&.])[*^]?([A-Z]\w*)", t))
+                    return set(LABEL.findall(t))
                 algebra = {i for i in idx if (m := re.match(r"\((\w+)", texts[i])) and m.group(1) in ALGEBRA_MODES}
                 bound_by_members = set().union(set(), *(labels(texts[i]) for i in idx if i not in algebra))
                 idx = [i for i in idx if i not in algebra or labels(texts[i]) <= bound_by_members]
@@ -501,11 +505,42 @@ class InstancesMixin:
                            for l in u.body)
             return skip and ((own_read and len(u.body) == 1) or not residual.get(id(u), list(u.body)))
 
+        def without_grounding(u, lr, ren) -> list:
+            """The clause's body, less each positive atom that shares no variable
+            but the key's with the head's non-key columns or another literal, and
+            is no read of the instance, where the shape wrote the input to bind
+            the key and the body reads no key label. Such an atom restricts no
+            output."""
+            lits = residual.get(id(u), list(u.body))
+            if (scope, inst.name, lr.name) not in GROUNDED:
+                return lits
+            keyed = bool(lr.cols) and lr.cols[0].name == "key"
+            key_vars = set(term_vars(u.head.args[:1], [])) if keyed else set()
+            head_vars = term_vars(u.head.args[1:] if keyed else u.head.args, [])
+            drop = set()
+            for i, l in enumerate(lits):
+                if not isinstance(l, AtomLiteral) or l.negated or l.atom.relation.instances[:1] == (inst.name,):
+                    continue
+                vs = set(term_vars(l.atom.args, [])) - key_vars
+                others: set[str] = set(head_vars)
+                collect_vars(lits[:i] + lits[i + 1:], others)
+                if not vs & (others - key_vars):
+                    drop.add(i)
+            if not drop:
+                return lits
+            probe = ClauseWriter(c, scope, lsub, dict(ren), own_inst=key)
+            saved = list(self.todo.pending), Counter(self.todo.kinds)
+            text = " ".join(probe.lits(lits, set()))
+            self.todo.pending, self.todo.kinds = saved
+            if set(kn) & set(LABEL.findall(text)):
+                return lits
+            return [l for i, l in enumerate(lits) if i not in drop]
+
         def single(u, lr) -> list[str]:
             ren = kren(u)
             hts = head_terms(u, lr, ren)
             w = ClauseWriter(c, scope, lsub, ren, own_inst=key)
-            body = w.lits(residual.get(id(u), list(u.body)), set(kn))
+            body = w.lits(without_grounding(u, lr, ren), set(kn))
             taken = set(kn) | label_names(body) | {
                 ren.get(t.name, t.name) for _, kept in hts for _, t in kept if isinstance(t, Variable)}
             head_sites, eqs = zero_sites(hts, ren, taken)
@@ -600,7 +635,7 @@ class InstancesMixin:
                 lines_ = []
                 if u.body is not None:
                     w = ClauseWriter(c, scope, lsub, ren, own_inst=key)
-                    lines_ = w.lits(residual.get(id(u), list(u.body)), set(kn))
+                    lines_ = w.lits(without_grounding(u, lr, ren), set(kn))
                     reads.update(w.reads)
                     branches.update(w.branches)
                 bodies.append((self.todo.take(), lines_ + extras))

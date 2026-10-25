@@ -18,6 +18,10 @@ its name, `{Key}`, `{T}`, as the instance's type arguments:
   once, the atom is that body, unified with the clause's head; otherwise it
   reads `{x}_<input>`, a relation derived from the input's clauses, as
   the rules of `work/arclog/lib-map.md` give for a body repeated.
+- `grounded`: the inputs whose shape clause reads the key's `dir` or `axis`
+  rows only to bind the key in Souffle. The lowering leaves out of such an
+  input, where it reads no key label, each atom that shares no variable with
+  the rest of the clause.
 
 A pattern's variables are distinct, so a site always matches it, and the
 replacement takes each pattern variable's term at the site. A read of a
@@ -38,6 +42,12 @@ from engine.program import (AliasType, AdtType, Atom, AtomLiteral, Comparison, C
 
 ROOT = Path(__file__).resolve().parents[3]
 
+GROUNDED: set[tuple[tuple[str, ...], str, str]] = set()
+"""Each input, as its instance's scope, the instance's name and its name,
+that a shape's clause writes with a grounding read: the clause's atoms that
+share no variable with the rest of it restrict nothing the shape's relations
+hold. `expand` gives the inputs of its latest run."""
+
 
 @dataclass
 class Spec:
@@ -47,6 +57,7 @@ class Spec:
     clauses: str = ""
     derive: frozenset[str] = frozenset()   # inputs the shape reads through `{x}_<input>` even where one atom would do
     moved: dict[str, str] = field(default_factory=dict)   # each relation of the instance, by the shape's relation
+    grounded: frozenset[str] = frozenset()   # inputs whose shape clause reads the key's `dir` or `axis` rows only to bind the key
 
 
 def _parse(text: str) -> SouffleProgram:
@@ -273,6 +284,7 @@ class Expander:
     def run(self):
         prog = self.prog
         own = lambda x: x.span is None or x.span.file is None  # noqa: E731
+        GROUNDED.clear()
         targets = [i for i in prog.instances if own(i) and i.component in self.specs]
         if not targets:
             return prog, {}
@@ -336,6 +348,8 @@ class Expander:
             for u in extra:
                 for v in self.instantiate(u, inst, ins, extra, rels):
                     self.own[v.id] = key
+                    if v.head.relation.name in spec.grounded and len(v.head.relation.instances) == 1:
+                        GROUNDED.add((inst.scope.components, v.head.relation.instances[0], v.head.relation.name))
                     new_units.append(v)
             for name, us in ins.items():
                 if name not in heads:
