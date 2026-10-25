@@ -1,4 +1,4 @@
-"""Compute the marks of marks.md as detectors of the first table after the branch, and measure how each ranks the
+"""Compute the marks of lm/runs/data-study/marks.md as detectors of the first table after the branch, and measure how each ranks the
 gold continuation's table against the sampled ones.
 
     work/lm/.venv/bin/python lm/runs/data-study/detectors.py compute <export> [--parts DIR] [--seconds S] [--tasks T ...]
@@ -56,7 +56,7 @@ Graded signals (a number each), over the train examples (e):
   sizes differ); out_color: of the rows that name such a cell in some Box column, the share in which some Color
   column holds the output's color at a cell that some Box column names.
 
-Signals added from marks.md:
+Signals added from lm/runs/data-study/marks.md:
 - off_grid: share of rows with some Box column that is one cell in the input grid's terms and lies off the grid
   (b5bb5719 &r16);
 - one_row_diff: an earlier Table of the same column types differs from it by one row over all e (9565186b &r7);
@@ -798,10 +798,10 @@ def measure_mode(data, out):
             f"flows are read, which accounts for the difference. At positions 1, the lists the detectors are measured "
             f"on, it scores {show(g['trivial@1']['pair_acc'])}.", ""]
     lines[5:5] = qual
-    lines.append("A signal marked * is one of the signals added from marks.md (detectors.py's docstring). A graded signal's sign (+ or -) "
+    lines.append("A signal marked * is one of the signals added from lm/runs/data-study/marks.md (detectors.py's docstring). A graded signal's sign (+ or -) "
                  "is the one that ranks better on the training branch points. f_product is tested on Tables of at "
                  f"most {PRODUCT_ROWS} rows at each train example and {PRODUCT_COLUMNS} columns other than Example.")
-    lines += ["", "## Marks of marks.md with no detector", ""] + [f"- {x}" for x in NOT_COMPUTED]
+    lines += ["", "## Marks of lm/runs/data-study/marks.md with no detector", ""] + [f"- {x}" for x in NOT_COMPUTED]
     Path(out).write_text("\n".join(lines) + "\n")
     print("\n".join(lines))
     print(f"{time.time() - start:.0f} s", file=sys.stderr)
