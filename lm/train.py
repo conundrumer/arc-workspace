@@ -581,12 +581,15 @@ def main():
                     help="a program step hides remote fields in the columns that have a source pair whose source "
                          "tables are all seen, each with its column in every row of its key group, the rows of its "
                          "entry that agree on the columns that share a source table with it (encoder.py, "
-                         "draw_masks); not with --mask-remote")
+                         "draw_masks); not with --mask-remote or --enc-source-rows")
     ap.add_argument("--tiny-base", action="store_true",
                     help="a 2-layer, 64-wide model of --base's architecture and tokenizer, initialized at random, for the regression check")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
     a = ap.parse_args()
     assert not (a.mask_remote and a.mask_remote_groups), "--mask-remote-groups replaces --mask-remote; give one"
+    assert not (a.mask_remote_groups and a.enc_source_rows), (
+        "--mask-remote-groups with --enc-source-rows: a hidden remote field's row would attend to its source tables' "
+        "rows, so the loss would not need the pooled vectors; give one")
     a.mask_remote = "groups" if a.mask_remote_groups else a.mask_remote   # masked_loss's mask_remote
     if a.enc_checkpoint is None:
         a.enc_checkpoint = a.device == "cuda"

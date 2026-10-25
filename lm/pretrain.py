@@ -12,13 +12,18 @@ evaluated every `--eval-every` steps with fixed masks and identifiers, on a samp
 gives the masked loss, each part's loss, and per part the loss and the accuracy per column type, with the fields of
 `ex_output` under "ex_output/<type>", and where the export gives depths, the program part per depth bucket of the
 derived tables (`by_depth`: 1, 2, 3, 4+); a Box or Position field is right when all four margins are, and its type also
-gives the edge accuracy, of single margins. With `--mask-remote` or `--mask-remote-groups`, the log gives the program part
-over the remote fields by the most rows of a source table of the field's column (`by_source_rows`: 1-50, 51-200,
-201-1000, 1001-4000, then 4001+ and none where they occur), and with `--mask-remote-groups`, the held-out entry
-`parent_attention`: over the hidden remote fields, per layer (`layers`) and its mean over the layers (`mean`), the
-mean over heads of the share of the field's row's attention over the earlier tables' pooled vectors that lands on
-the pooled vectors of its column's source tables, beside `chance`, that share under equal scores, and `fields`
-(encoder.py, `parent_shares`). Beside each `loss` the log gives `chance_loss` (`program_chance_loss` and `prior_chance_loss` beside the
+gives the edge accuracy, of single margins. With `--mask-remote` or `--mask-remote-groups`, a remote field is
+labelled "remote/<type>" in `by_type`, `by_depth` leaves remote fields out, and the log gives the program part over
+the remote fields (`remote_entries`): `by_source_rows`, by the most rows of a source table of the field's column
+(1-50, 51-200, 201-1000, 1001-4000, then 4001+ and none where they occur) and by type, with a pointer type's fields
+split by target kind into `row_target` and `no_row_target`, and `remote` over them all; each with `group_loss`, the
+mean over key groups of each group's mean loss, beside the per-field `loss`. A "no row" target of a column hidden in
+every row of its entry can be learnt from the mask pattern alone, so the row targets are the evidence that the
+pooled vectors carry table contents. With `--mask-remote-groups`, the held-out entry `parent_attention` gives, over
+the hidden remote fields, per layer (`layers`) and over the layers (`mean`), the mean over heads of the share of the
+field's row's attention over the earlier tables' pooled vectors that lands on the pooled vectors of its column's
+source tables, beside `chance`, that share under equal scores, `recent` (and `recent_layers`), the share on as many
+of the latest other earlier tables, and the fields of each (encoder.py, `parent_shares`). Beside each `loss` the log gives `chance_loss` (`program_chance_loss` and `prior_chance_loss` beside the
 parts' losses), the mean loss of a head with equal scores over the same fields (the encoder's `masked_fields` states it
 per field).
 
@@ -143,32 +148,52 @@ def depth_bucket(depth):
     return None if depth is None or depth < 1 else DEPTHS[min(depth, 4) - 1]
 
 
+TARGETS = {1: "row_target", 0: "no_row_target"}   # a remote pointer field's target kind (encoder.remote_fields)
+
+
 def summarize(records, by=None):
     """Per part, per label, over the records of masked_loss: [loss sum, fields right, fields, margins right,
-    chance loss sum], the margins for a Box or Position, of four per field; and under "depth", the same per depth bucket (`depth_bucket`)
-    over the program part's fields of the derived tables that give a depth; under "source rows", the same per
-    `source_bucket` over the program part's remote fields of the records that give "source_rows"; under "parents",
-    [per layer the sum of "parent_attention", the sum of "parent_chance", fields] over the fields that give them;
+    chance loss sum], the margins for a Box or Position, of four per field; under "depth", the same per depth bucket
+    (`depth_bucket`) over the program part's fields of the derived tables that give a depth, remote fields left out;
+    under "source rows", per (`source_bucket`, type, "all" or a `TARGETS` kind), the same and then the sum over the
+    key groups of each group's mean loss and the groups, over the program part's remote fields (records that give
+    "source_rows"), a group counted once per record; under "parents", [per layer the sum of "parent_attention", the
+    sum of "parent_chance", fields, per layer the sum of "parent_recent", its fields] over the fields that give them;
     added to `by` where it is given."""
     by = {**{p: {} for p in PARTS}, "depth": {}, "source rows": {}, "parents": []} if by is None else by
     for _, _, r in records:
         bucket = depth_bucket(r.get("depth")) if r["part"] == "program" else None
-        src = r.get("source_rows") if r["part"] == "program" else None
-        src = [None] * len(r["label"]) if src is None else [source_bucket(int(n)) for n in src]
-        for lab, l, ok, e, ch, sb in zip(r["label"], r["loss"].tolist(), r["correct"].tolist(), r["edges"].tolist(),
-                                         r["chance_loss"].tolist(), src):
-            for x in [by[r["part"]].setdefault(lab, [0.0, 0, 0, 0, 0.0])] + (
-                    [by["depth"].setdefault(bucket, [0.0, 0, 0, 0, 0.0])] if bucket else []) + (
-                    [by["source rows"].setdefault(sb, [0.0, 0, 0, 0, 0.0])] if sb else []):
-                x[0] += l; x[1] += ok; x[2] += 1; x[3] += max(e, 0); x[4] += ch
+        loss, right, chance = r["loss"].tolist(), r["correct"].tolist(), r["chance_loss"].tolist()
+        for k, (lab, e) in enumerate(zip(r["label"], r["edges"].tolist())):
+            keys = [by[r["part"]].setdefault(lab, [0.0, 0, 0, 0, 0.0])]
+            if bucket and not lab.startswith("remote/"):
+                keys.append(by["depth"].setdefault(bucket, [0.0, 0, 0, 0, 0.0]))
+            for x in keys:
+                x[0] += loss[k]; x[1] += right[k]; x[2] += 1; x[3] += max(e, 0); x[4] += chance[k]
+        if r["part"] == "program" and "source_rows" in r:
+            groups = {}   # per key of "source rows", per group, [loss sum, fields]
+            for k, (lab, n, tg, g, e) in enumerate(zip(r["label"], r["source_rows"].tolist(), r["remote_target"].tolist(),
+                                                       r["remote_group"].tolist(), r["edges"].tolist())):
+                if n < 0:
+                    continue
+                ty = lab.split("/")[-1]
+                for key in [(source_bucket(n), ty, "all")] + ([(source_bucket(n), ty, TARGETS[tg])] if tg >= 0 else []):
+                    x = by["source rows"].setdefault(key, [0.0, 0, 0, 0, 0.0, 0.0, 0])
+                    x[0] += loss[k]; x[1] += right[k]; x[2] += 1; x[3] += max(e, 0); x[4] += chance[k]
+                    y = groups.setdefault(key, {}).setdefault(g, [0.0, 0])
+                    y[0] += loss[k]; y[1] += 1
+            for key, gs in groups.items():
+                x = by["source rows"][key]
+                x[5] += sum(l / n for l, n in gs.values()); x[6] += len(gs)
         if "parent_attention" in r:
-            pa, pc = r["parent_attention"], r["parent_chance"]
-            on = ~np.isnan(pc)
+            pa, pc, pr = r["parent_attention"], r["parent_chance"], r["parent_recent"]
+            on, on_r = ~np.isnan(pc), ~np.isnan(pr).any(1)
             if on.any():
                 if not by["parents"]:
-                    by["parents"] = [np.zeros(pa.shape[1]), 0.0, 0]
+                    by["parents"] = [np.zeros(pa.shape[1]), 0.0, 0, np.zeros(pa.shape[1]), 0]
                 x = by["parents"]
                 x[0] = x[0] + pa[on].sum(0); x[1] += float(pc[on].sum()); x[2] += int(on.sum())
+                x[3] = x[3] + pr[on_r].sum(0); x[4] += int(on_r.sum())
     return by
 
 
@@ -180,26 +205,48 @@ def by_type(by):
             for k, x in sorted(by.items())}
 
 
+def entry(x):
+    """The log's entry of a "source rows" accumulator of `summarize`: loss, chance loss, accuracy, fields, and the
+    mean over key groups of each group's mean loss (`group_loss`) and the groups."""
+    return {"loss": x[0] / x[2], "chance_loss": x[4] / x[2], "accuracy": x[1] / x[2], "fields": x[2],
+            "group_loss": x[5] / x[6], "groups": x[6]}
+
+
+def remote_entries(src):
+    """`by_source_rows`: per `source_bucket`, per type, the `entry` of its remote fields, and for a pointer type the
+    `entry` of its fields of each target kind under "row_target" and "no_row_target"; and `remote`, the `entry` over
+    every remote field. Empty where no remote field is hidden."""
+    out = {}
+    for b in [name for _, name in SOURCE_BUCKETS] + ["none"]:
+        for (b_, ty, kind), x in sorted(src.items()):
+            if b_ == b and kind == "all":
+                out.setdefault(b, {})[ty] = {**entry(x), **{t: entry(src[(b, ty, t)]) for t in TARGETS.values()
+                                                            if (b, ty, t) in src}}
+    total = [sum(x[i] for (_, _, kind), x in src.items() if kind == "all") for i in range(7)]
+    return {"by_source_rows": out, "remote": entry(total)} if out else {}
+
+
 def losses(by, prior_weight):
     """The log's loss entries of `summarize`'s result: the loss, each part's mean loss, and the fields of each part,
-    with the parts per label, and where the tables give depths, the program part per depth bucket (`by_depth`:
-    loss, chance loss, accuracy and fields); where the records give them, the program part's remote fields per
-    `source_bucket` (`by_source_rows`, the same entries), and the attention probe's means (`parent_attention`)."""
+    with the parts per label (a remote field under "remote/" and its type), and where the tables give depths, the
+    program part per depth bucket (`by_depth`: loss, chance loss, accuracy and fields, remote fields left out); where
+    the records give them, the remote fields of `remote_entries`, and the attention probe's means
+    (`parent_attention`)."""
     mean = {p: sum(x[0] for x in by[p].values()) / max(sum(x[2] for x in by[p].values()), 1) for p in PARTS}
-    bucketed = lambda d, ks: {k: {"loss": d[k][0] / d[k][2], "chance_loss": d[k][4] / d[k][2],
-                                  "accuracy": d[k][1] / d[k][2], "fields": d[k][2]} for k in ks if k in d}
-    depth = bucketed(by["depth"], DEPTHS)
-    sources = bucketed(by["source rows"], [name for _, name in SOURCE_BUCKETS] + ["none"])
-    parents = by["parents"]
+    depth = {k: {"loss": by["depth"][k][0] / by["depth"][k][2], "chance_loss": by["depth"][k][4] / by["depth"][k][2],
+                 "accuracy": by["depth"][k][1] / by["depth"][k][2],
+                 "fields": by["depth"][k][2]} for k in DEPTHS if k in by["depth"]}
+    pa = by["parents"]
     chance = {p: sum(x[4] for x in by[p].values()) / max(sum(x[2] for x in by[p].values()), 1) for p in PARTS}
     return {"loss": mean["program"] + prior_weight * mean["prior"], "program_loss": mean["program"],
             "prior_loss": mean["prior"], "program_chance_loss": chance["program"], "prior_chance_loss": chance["prior"],
             **{f"{p}_fields": sum(x[2] for x in by[p].values()) for p in PARTS},
             "by_type": {p: by_type(by[p]) for p in PARTS}, **({"by_depth": depth} if depth else {}),
-            **({"by_source_rows": sources} if sources else {}),
-            **({"parent_attention": {"layers": (parents[0] / parents[2]).tolist(),
-                                     "mean": float(parents[0].mean() / parents[2]), "chance": parents[1] / parents[2],
-                                     "fields": parents[2]}} if parents else {})}
+            **remote_entries(by["source rows"]),
+            **({"parent_attention": {"layers": (pa[0] / pa[2]).tolist(), "mean": float(pa[0].mean() / pa[2]),
+                                     "chance": pa[1] / pa[2], "fields": pa[2],
+                                     **({"recent_layers": (pa[3] / pa[4]).tolist(), "recent": float(pa[3].mean() / pa[4]),
+                                         "recent_fields": pa[4]} if pa[4] else {})}} if pa else {})}
 
 
 def parser():
@@ -240,7 +287,8 @@ def parser():
                     help="a program step hides remote fields in the columns that have a source pair whose source "
                          "tables are all seen, each with its column in every row of its key group, the rows of its "
                          "entry that agree on the columns that share a source table with it (encoder.py, "
-                         "draw_masks); the held-out log gains the attention probe; not with --mask-remote")
+                         "draw_masks); the held-out log gains the attention probe; not with --mask-remote or "
+                         "--enc-source-rows")
     ap.add_argument("--id-dim", type=int, default=64)
     ap.add_argument("--enc-k", type=int, default=4)
     ap.add_argument("--enc-layers", type=int, default=2)
@@ -305,6 +353,9 @@ def run_config(a, in_names):
 def main():
     a = parser().parse_args()
     assert not (a.mask_remote and a.mask_remote_groups), "--mask-remote-groups replaces --mask-remote; give one"
+    assert not (a.mask_remote_groups and a.enc_source_rows), (
+        "--mask-remote-groups with --enc-source-rows: a hidden remote field's row would attend to its source tables' "
+        "rows, so the loss would not need the pooled vectors that the flag measures; give one")
     remote = "groups" if a.mask_remote_groups else a.mask_remote   # masked_loss's mask_remote
     assert a.enc_equality != "flex" or a.device == "cuda", "--enc-equality flex trains on cuda alone"
     if a.enc_checkpoint is None:
