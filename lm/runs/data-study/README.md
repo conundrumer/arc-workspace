@@ -36,6 +36,9 @@ It reads only the rows of that case. A render keeps the "What I see" section of 
 - `case-9565186b.md`: keep the majority color of a 3x3 grid and gray the rest; Mode as counts and an order, with the unread components of its sibling cases.
 - `case-7c008303.md`: a divider cross, a key quadrant and a pattern quadrant; the pattern is recolored block by block from the key.
 - `case-8e5a5113.md`: tiles filled with quarter turns of a pattern tile; five DETs of 16 assignments, most of them empty.
+- `case-e633a9e5.md`: a scale-up of each cell to a tile, with seven DETs, three of which read the outputs for the cell correspondence.
+- `case-b5bb5719.md`: a pyramid grown under seed pairs with a color swap, at 8 assignments of two lib DETs.
+- `case-bda2d7a6.md`: a cycle of the colors of nested rings, beside the tables of three other cases' clauses.
 - `observations.md`: what held across the `case-<task>.md` files about telling from a table that it adds information, and what took the clause text or the later program.
 
 ## Decoding
