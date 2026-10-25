@@ -33,7 +33,7 @@ written as a part. Writes to <out dir>:
                    reads it, empty where none does). A reader labels a column of `ex_output` as computed from the input where
                    every source it reaches through the flows is `ex_input` or a constant, as computed from the train outputs
                    where one is `ex_output` or a `DET` (a determination keeps the values at which the program solves every
-                   train pair), and as neither where it reaches no source
+                   train pair), and as neither where it reaches no source. An output of an instance that reads its own outputs has no flow from them
   assigned.parquet one row per DET at an entry's assignment: task, case, entry, det, rows, offset
   projections.parquet    one row per projection (columns) and projection_rows.parquet one row per projection at an entry
   orientations.json  [encoding, name] of each orientation constant; an orientation cell is its encoding

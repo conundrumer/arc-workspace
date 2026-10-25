@@ -423,6 +423,9 @@ impl ResolvedProgram {
     /// - a column with no source above and a proposer or a component to give
     ///   it: the lib name.
     ///
+    /// An output of an instance that reads its own outputs has no flow from
+    /// them.
+    ///
     /// A source that names a column of an input port of an instance is
     /// replaced by the sources of that port's column, through each chain of
     /// input ports, because the export makes no table for a port.
@@ -495,6 +498,12 @@ impl ResolvedProgram {
         }
         for relation in &given {
             self.add_key_fill(relation, types, &mut flows);
+        }
+        if let DependencyKind::RecursiveInstance(instance) = &self.graph.nodes[node.0 as usize].kind {
+            let own = |source: &ColumnSource| matches!(&source.relation, Some(RelationRef::Output(name)) if name.of == OutputOwner::Instance(instance.clone()));
+            for sources in &mut flows {
+                sources.retain(|source| !own(source));
+            }
         }
         for sources in flows.iter_mut().filter(|sources| sources.is_empty()) {
             let lib = given.iter().flat_map(|relation| relation.lib.iter());

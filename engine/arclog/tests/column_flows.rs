@@ -290,3 +290,41 @@ fn a_part_column_of_a_rigid_det_is_computed_where_a_pose_moves_its_type_and_a_co
     assert_eq!(kinds(2), [SourceKind::Copy], "{flows:?}");
     assert!(flows[1..].iter().all(|sources| sources.iter().all(|source| source.relation.is_some())), "{flows:?}");
 }
+
+const UNFOLD: &str = "\
+(DET &seed RarestColor)
+(RULE &seed_cell
+  (input *P *Col)
+  (&seed (:C Col)))
+(INIT &state Unfold
+  (start ((:t P))
+    (&seed_cell *P))
+  (initial_untaken ((:item P))
+    (input *P)
+    (NOT (&seed_cell P)))
+  (score ((:t P) (:item X) (:S K))
+    (&seed_cell *P)
+    (input (:P *X))
+    (NOT (&seed_cell (:P X)))
+    (= *K 0))
+  (step ((:t P) (:t2 P2))
+    (&seed_cell *P)
+    (input (:P *P2))
+    (&state.untaken (:t P) (:item P2))))
+(RULE &taken
+  (&state.take (:item *P)))
+(RULE &output (input *P *Col))
+";
+
+#[test]
+fn an_output_of_an_instance_that_reads_its_own_outputs_has_no_flow_from_them() {
+    let columns = columns_of(UNFOLD, &[1, 2]);
+    let flows = &columns.flows;
+    let outputs: Vec<u32> = (2..=5).map(|slot| table_of(&columns, slot)).collect();
+    for row in (0..flows.table.len()).filter(|&row| outputs.contains(&flows.table[row])) {
+        assert!(!flows.source_relation[row].starts_with("slot 2."), "table {}: {:?}", flows.table[row], flows.source_relation[row]);
+    }
+    for &table in &outputs {
+        assert!(!sources(&columns, table, 0).is_empty(), "table {table}");
+    }
+}
