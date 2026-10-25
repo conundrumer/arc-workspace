@@ -449,11 +449,14 @@ def color_dependence(flows, output_table, output_color):
 def copy_flow_check(fl, column_types, kept, tables):
     """The copy flows of one case that break their join, from the case's rows of flows.parquet (export column
     indexes): a copy flow whose source table the case holds, from a column of it, must give its column the type of
-    the source column, as tables.parquet gives the types, and the values of its column over the present rows of its
-    Tables must be values of the source column over the rows of the source's Tables. `column_types` and `kept`
-    (`kept_columns`) are per export table, and `tables` are the case's Tables. Gives the count of copy flows
-    checked, the count whose values go unchecked (a dropped column, a table with no Tables, or a source with unseen
-    entries), and [(kind, flow row, detail)] of each violation, kind "type" or "value"."""
+    the source column, as tables.parquet gives the types; and where every source of a column is such a copy flow, the
+    column's values over the present rows of its Tables must be values of one of its source columns over the rows of
+    the source's Tables. A column's flows are its sources over every rule that derives it, so its values are in the
+    union of theirs, not in each. `column_types` and `kept` (`kept_columns`) are per export table, and `tables` are
+    the case's Tables. Gives the count of copy flows checked for their type, the count of columns whose values go
+    unchecked (a source other than a column of a table that the case holds, a dropped column, a table with no
+    Tables, or a source with unseen entries; a column with a type violation is left out), and [(kind, flow row,
+    detail)] of each violation, kind "type" for a flow or "value" for a column, given by its first copy flow."""
     of = {}
     for i, t in enumerate(tables):
         e = GRID_TABLES.get(t.relation) if t.evidence else t.export_table
@@ -476,25 +479,32 @@ def copy_flow_check(fl, column_types, kept, tables):
 
     checked, unchecked, bad = 0, 0, []
     a = fl[FLOW_COLUMNS].to_numpy(np.int64)
-    for row in a[a[:, 2] == FLOW_COPY].tolist():
-        tab, col, _, st, sc, _ = row
-        if st < 0 or sc < 0:
+    columns = {}   # (table, column) -> its flows
+    for row in a.tolist():
+        columns.setdefault((row[0], row[1]), []).append(row)
+    for (tab, col), rows in columns.items():
+        copies = [r for r in rows if r[2] == FLOW_COPY and r[3] >= 0 and r[4] >= 0]
+        if not copies:
             continue
-        checked += 1
-        ty, sty = column_types[tab][col], column_types[st][sc]
-        if ty != sty:
-            bad.append(("type", row, f"type {ty} from a column of type {sty}"))
+        checked += len(copies)
+        ty = column_types[tab][col]
+        typed = [r for r in copies if column_types[r[3]][r[4]] != ty]
+        for r in typed:
+            bad.append(("type", r, f"type {ty} from a column of type {column_types[r[3]][r[4]]}"))
+        if typed:
             continue
-        c, s = kept[tab][col], kept[st][sc]
-        src = values_of(st, s, True) if c >= 0 else None
-        own = values_of(tab, c, False) if src is not None else None
+        c = kept[tab][col]
+        whole = c >= 0 and len(copies) == len(rows)
+        srcs = [values_of(r[3], kept[r[3]][r[4]], True) for r in copies] if whole else [None]
+        own = values_of(tab, c, False) if all(x is not None for x in srcs) else None
         if own is None:
             unchecked += 1
             continue
+        src = set().union(*srcs)
         outside = own - src
         if outside:
-            bad.append(("value", row, f"{len(outside)} of its {len(own)} values outside the source column's "
-                                      f"{len(src)}, such as {min(outside)}"))
+            bad.append(("value", copies[0], f"{len(outside)} of its {len(own)} values outside the {len(src)} of its "
+                                            f"{len(copies)} source columns, such as {min(outside)}"))
     return checked, unchecked, bad
 
 
@@ -777,8 +787,8 @@ def copy_flow_rule(stats, strict, where):
               f"checks them", flush=True)
         return
     line = (f"copy flows of {where}: {c['checked']} checked, {c['type']} with another type than their source column, "
-            f"{c['value']} with values outside it, in {c['cases']} cases; {c['values unchecked']} not checked for "
-            f"values")
+            f"{c['value']} columns with values outside their sources, in {c['cases']} cases; "
+            f"{c['values unchecked']} columns not checked for values")
     if strict and c["type"] + c["value"]:
         raise DataFault(f"{line}; first: {'; '.join(c['first'])}; strict=False (--allow-check-violations) reads it")
     print(line, flush=True)

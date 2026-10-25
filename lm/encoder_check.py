@@ -647,7 +647,8 @@ for variant, kind in (("type", "type"), ("value", "value")):
                                          if isinstance(loose, dict) else loose)
     if not (isinstance(strict, str) and "copy flows" in strict and "flow [3, 0, 0, 2" in strict
             and isinstance(strict_cached, str) and "copy flows" in strict_cached and isinstance(loose, dict)
-            and loose["copy flows"][kind] == 1 and loose["copy flows"]["cases"] == 1 and "1 with" in printed):
+            and loose["copy flows"][kind] == 1 and loose["copy flows"]["cases"] == 1
+            and ("1 with" if kind == "type" else "1 columns with") in printed):
         bad.append((variant, strict, strict_cached, loose))
 import contextlib, io
 text = io.StringIO()
