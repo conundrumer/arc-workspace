@@ -10,8 +10,11 @@
 //! `Unread` (case `-`) for a solver whose files or task do not read. The
 //! token index is that of the last `RULE` clause's end. The detail is the
 //! bound for `Stopped`, the message for `Fault`, `Refused`, `NoStream` and
-//! `Unread`, and empty otherwise. A case that holds a `DEMONSTRATED` form
-//! prints no line.
+//! `Unread`, the relation (`&x`) whose several values keep every train pair
+//! consistent for `SeveralValues`, and empty otherwise. The cases are the
+//! solver's cases, which leave out each combination of alts that an `exclude`
+//! form of its arcdata file matches. A case that holds a `DEMONSTRATED` form
+//! prints no line, so a solver whose every case holds one prints none.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -55,7 +58,7 @@ fn verdicts_solver(corpus: &Path, tasks: &Path, id: &str) -> SolverResult {
                 let (verdict, detail) = match case.verdict {
                     Verdict::Consistent => ("Consistent", String::new()),
                     Verdict::NotConsistent => ("NotConsistent", String::new()),
-                    Verdict::SeveralValues => ("SeveralValues", String::new()),
+                    Verdict::SeveralValues(relation) => ("SeveralValues", relation),
                     Verdict::Fault(message) => ("Fault", message),
                     Verdict::Stopped(stop) => ("Stopped", format!("{stop:?}")),
                     Verdict::NoRule => ("NoRule", String::new()),

@@ -9,7 +9,7 @@ use crate::decode::replay::holds_demonstrated;
 use crate::harness::read_corpus_solver;
 use crate::registry::Registry;
 use crate::resolver::{resolve, resolve_cases, ResolvedCase, ResolvedCases, SolverScope};
-use crate::solver::CaseName;
+use crate::solver::{CaseName, Exclusion};
 use crate::stream::{token_stream, Emitter, Token, Vocabulary};
 
 /// The cases of a solver whose streams are wanted.
@@ -17,7 +17,10 @@ use crate::stream::{token_stream, Emitter, Token, Vocabulary};
 pub enum WantedCases<'a> {
     /// The concept case.
     Concept,
-    /// Each case.
+    /// Each case of the solver, the combinations that its `exclude` forms
+    /// leave out not included.
+    Cases,
+    /// Each combination of alts, the excluded ones included.
     All,
     /// The case that [`case_spelled`] spells as given.
     Named(&'a str),
@@ -46,6 +49,7 @@ pub fn solver_streams(corpus: &Path, id: &str, wanted: WantedCases<'_>, vocabula
     let clauses = SolverClauses::of_cases(&cases);
     let names = match wanted {
         WantedCases::Concept => decoded_cases(&cases, false),
+        WantedCases::Cases => solver.case_names(Exclusion::WithoutExcluded),
         WantedCases::All => decoded_cases(&cases, true),
         WantedCases::Named(spelled) => {
             let found = cases.cases().find(|case| case_spelled(&case.case.name) == spelled).ok_or_else(|| format!("the solver has no case {spelled}"))?;

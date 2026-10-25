@@ -13,6 +13,7 @@ use std::sync::Arc;
 
 use super::replay::{replay_from, Stepped};
 use super::{Consistency, Decoder, Points, Table};
+use crate::eval::determinations::relation_spelled;
 use crate::eval::ReachedBound;
 use crate::eval::instance::Constructions;
 use crate::eval::Caps;
@@ -120,7 +121,8 @@ fn replay_cases<T: Default + Clone>(
     masked: bool,
     record: &dyn Fn(&mut T, &Decoder<'_>, Stepped<'_>),
 ) -> Result<SolverReplay<T>, String> {
-    let (train, replayed) = replay_streams(corpus, tasks, id, all, constructions, settings, masked, record)?;
+    let wanted = if all { WantedCases::All } else { WantedCases::Concept };
+    let (train, replayed) = replay_streams(corpus, tasks, id, wanted, constructions, settings, masked, record)?;
     let cases = replayed.into_iter().map(|case| CaseReplay { case: case.case, concept: case.concept, outcome: case.replay.and_then(StreamReplay::into_result) }).collect();
     Ok(SolverReplay { train, cases })
 }
@@ -132,14 +134,14 @@ fn replay_streams<T: Default + Clone>(
     corpus: &Path,
     tasks: &Path,
     id: &str,
-    all: bool,
+    wanted: WantedCases<'_>,
     constructions: &Constructions,
     settings: &DecodeSettings,
     masked: bool,
     record: &dyn Fn(&mut T, &Decoder<'_>, Stepped<'_>),
 ) -> Result<(usize, Vec<ReplayedCase<T>>), String> {
     let vocabulary = Vocabulary::new(Registry::get(), &DecodeSettings::default());
-    let cases = solver_streams(corpus, id, if all { WantedCases::All } else { WantedCases::Concept }, &vocabulary)?;
+    let cases = solver_streams(corpus, id, wanted, &vocabulary)?;
     let (task, judged) = read_task_files(tasks, id)?;
     let cases: Vec<CaseStream> = cases.into_iter().filter(|case| !case.demonstrated).collect();
     let ids: Vec<Vec<(u32, Emitter)>> = cases.iter().filter_map(|case| case.stream.as_ref().ok()).map(|stream| token_ids(stream, &vocabulary)).collect();
@@ -164,7 +166,9 @@ fn replay_streams<T: Default + Clone>(
 pub enum Verdict {
     Consistent,
     NotConsistent,
-    SeveralValues,
+    /// The relation, as `relation_spelled` spells it, whose several values
+    /// keep every train pair consistent.
+    SeveralValues(String),
     /// The message of the run fault.
     Fault(String),
     Stopped(ReachedBound),
@@ -187,7 +191,8 @@ pub struct CaseVerdict {
 }
 
 /// The verdict of each case of the solver `id` of `corpus` on its task in
-/// `tasks`, every case that holds no `DEMONSTRATED` form, replayed with the
+/// `tasks`, every case of the solver that holds no `DEMONSTRATED` form (the
+/// combinations its `exclude` forms leave out are no cases), replayed with the
 /// default settings and no token mask; or the fault that stops the solver.
 pub fn solver_verdicts(corpus: &Path, tasks: &Path, id: &str, constructions: &Constructions) -> Result<Vec<CaseVerdict>, String> {
     let record = |last: &mut Option<(usize, Verdict)>, _: &Decoder<'_>, stepped: Stepped<'_>| {
@@ -195,14 +200,14 @@ pub fn solver_verdicts(corpus: &Path, tasks: &Path, id: &str, constructions: &Co
             None => return,
             Some(Consistency::Consistent { .. }) => Verdict::Consistent,
             Some(Consistency::NotConsistent) => Verdict::NotConsistent,
-            Some(Consistency::SeveralValues { .. }) => Verdict::SeveralValues,
+            Some(Consistency::SeveralValues { relation, .. }) => Verdict::SeveralValues(relation_spelled(relation)),
             Some(Consistency::Fault(fault)) => Verdict::Fault(fault.message.to_string()),
             Some(Consistency::Stopped(stop)) => Verdict::Stopped(stop.bound),
         };
         *last = Some((stepped.index, verdict));
     };
     let settings = DecodeSettings::default();
-    let run = || replay_streams(corpus, tasks, id, true, constructions, &settings, false, &record);
+    let run = || replay_streams(corpus, tasks, id, WantedCases::Cases, constructions, &settings, false, &record);
     let (_, replayed) = catch_unwind(AssertUnwindSafe(run)).unwrap_or_else(|payload| Err(replay_panic(&*payload)))?;
     Ok(replayed
         .into_iter()

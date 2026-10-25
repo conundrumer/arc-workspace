@@ -10,7 +10,11 @@ and gives each case a verdict: the consistency of the last `RULE` the stream
 ends (`Consistent`, `NotConsistent`, `SeveralValues`, `Fault`, `Stopped`),
 `NoRule` where it ends none, `Refused` where the decoder refuses the stream,
 `NoStream` where the writer gives the case no stream, and `Unread` for a
-solver whose files or task do not read. The command needs a Rust toolchain
+solver whose files or task do not read. The cases are the solver's cases,
+without the combinations that its `exclude` forms leave out. A task whose
+every case holds a `DEMONSTRATED` form gets no line, so its record holds no
+case. A `SeveralValues` detail is the relation (`&x`) whose several values keep
+every train pair consistent. The command needs a Rust toolchain
 and no Python environment with the `arclog` package: cargo finds or builds
 the engine's tool build in the tree the command runs in.
 
@@ -139,9 +143,6 @@ def run_verdicts(stems: list[str], gen: Path, tasks: Path) -> dict[str, list[Cas
     for line in done.stdout.splitlines():
         task, case, concept, verdict, token, detail = line.split("\t", 5)
         cases[task].append(Case(case, concept == "1", verdict, token, detail))
-    for stem, found in cases.items():
-        if not found:
-            found.append(Case("-", False, "Unread", "-", "the corpus has no files for the solver"))
     return cases
 
 
