@@ -163,7 +163,6 @@ enum AtomReading {
 fn atom_reading(check: CheckId) -> AtomReading {
     match check {
         CheckId::Grammar
-        | CheckId::SiteColumns
         | CheckId::Types
         | CheckId::MadeAndExportedLabels
         | CheckId::EqualityAndZero
@@ -172,7 +171,8 @@ fn atom_reading(check: CheckId) -> AtomReading {
         | CheckId::OneClause
         | CheckId::Spelling => AtomReading::Ignored,
         CheckId::Safety => AtomReading::Modes,
-        CheckId::Scope
+        CheckId::SiteColumns
+        | CheckId::Scope
         | CheckId::UnfoldReads
         | CheckId::Cycles
         | CheckId::InstanceInputs

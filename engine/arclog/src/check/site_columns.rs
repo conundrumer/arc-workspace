@@ -34,6 +34,10 @@ impl Check for SiteColumnsCheck {
         let mut refused: Vec<(&'static str, NodePath)> = Vec::new();
         for read in form_reads(input.form, input.path) {
             let atom_at = input.path.join(&read.at);
+            if reads_unreadable(program, input.scope.registry, &atom_at) {
+                refused.push(("a body atom reads a lib relation or a relation macro, no proposer or component", read.at.clone()));
+                continue;
+            }
             if !has_columns(program, input.scope.registry, &atom_at) {
                 continue;
             }
@@ -68,9 +72,18 @@ impl Check for SiteColumnsCheck {
     }
 }
 
+/// Whether the read at `atom`, a path in `program`, resolves to a lib
+/// proposer or a lib component, which no body atom reads.
+fn reads_unreadable(program: &ResolvedProgram, registry: &Registry, atom: &NodePath) -> bool {
+    match program.resolution(atom) {
+        Some(Resolution::Lib(name)) => matches!(registry.entry(name), Some(LibEntry::Proposer(_) | LibEntry::Component(_))),
+        _ => false,
+    }
+}
+
 /// Whether the read at `atom`, a path in `program`, resolves to a relation
 /// whose columns the resolver places its sites on: a node of the graph, or
-/// a lib relation, relation macro or proposer.
+/// a lib relation or relation macro.
 fn has_columns(program: &ResolvedProgram, registry: &Registry, atom: &NodePath) -> bool {
     match program.resolution(atom) {
         Some(Resolution::Node(_)) => true,

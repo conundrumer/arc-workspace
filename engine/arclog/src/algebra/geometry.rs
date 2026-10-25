@@ -315,11 +315,13 @@ impl Geometry {
         self.domains.get(ty).unwrap_or_else(|| panic!("{ty:?} is no orientation type"))
     }
 
-    /// The values of a column of type `ty`: `bound` where it is given, and
-    /// otherwise each constant of `ty`.
+    /// The values of a column of type `ty`: `bound` where it is a constant
+    /// of `ty`, nothing where it is given and is not, and otherwise each
+    /// constant of `ty`.
     pub fn each(&self, bound: Option<TermId>, ty: &ValueType) -> impl Iterator<Item = TermId> + '_ {
-        let all = if bound.is_some() { &[][..] } else { self.domain(ty) };
-        bound.into_iter().chain(all.iter().copied())
+        let domain = self.domain(ty);
+        let all = if bound.is_some() { &[][..] } else { domain };
+        bound.filter(|bound| domain.contains(bound)).into_iter().chain(all.iter().copied())
     }
 
     pub(super) fn meaning(&self, value: TermId) -> (OrientationType, Meaning) {
