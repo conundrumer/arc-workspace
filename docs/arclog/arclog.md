@@ -488,7 +488,7 @@ Two spellings of one body are equivalent by syntax alone in these cases, and the
 - `NOT` over a form: the domain with a negated body spells it, as "some member fails".
 - Sites out of the relation's column order.
 
-Two spellings equivalent by meaning alone are left to the training data: a `NOT` on a derived relation whose own clause negates, against an `ALL`; an else that re-reads an outer atom to carry a label, against `=`; the order of atoms; and a body written twice against a relation derived once.
+Two spellings equivalent by meaning alone are left to the training data: a `NOT` on a derived relation whose own clause negates, against an `ALL`, which are the same only where the domain has a member at every binding of the clause that reads it, as each domain atom of the defect clause matching a positive atom of the reading clause, or being an element relation of the lib, gives, since an `ALL` over an empty domain fails, and otherwise the `NOT` is the only spelling; an else that re-reads an outer atom to carry a label, against `=`; the order of atoms; and a body written twice against a relation derived once.
 
 ## Names
 

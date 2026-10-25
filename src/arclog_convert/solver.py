@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, fields as dc_fields, is_dataclass, replace as dc_replace
 from engine.program import (
     Aggregate,
     AtomLiteral,
@@ -18,6 +18,7 @@ from engine.program import (
     RecordTerm,
     Unit,
     Variable,
+    Wildcard,
 )
 from arclog_convert.frame_reads import FieldPlan, field_plan
 from arclog_convert import libmap
@@ -54,7 +55,109 @@ from arclog_convert.solver_cases import CasesMixin
 from arclog_convert.solver_instances import InstancesMixin
 from arclog_convert.solver_params import ParamsMixin
 from arclog_convert.solver_render import RenderMixin
-from arclog_convert.terms import MOVED_RELS, NEG_OP, ctor_names
+from arclog_convert.terms import MOVED_RELS, NEG_OP, ctor_names, subst, subst_terms, var_uses
+
+
+# the lib relations that list the members of a closed set: a literal of one
+# of them has a member at each binding
+ELEM_RELATIONS = frozenset({
+    "dir_elem", "axis_elem", "diag_dir_elem", "diag_axis_elem", "d4_elem",
+    "c4_elem", "sense_elem", "sym_elem", "dir8_elem", "axis4_elem"})
+
+
+def negative_reads(lits, outer: tuple, scope: tuple[str, ...], out: dict) -> None:
+    """Add to `out`, for each relation, the negated reads in `lits`, each with
+    the literals of its reading clause that hold at the read: those of the
+    conjunction it stands in and of each conjunction around it."""
+    here = outer + tuple(lits)
+    for l in lits:
+        if isinstance(l, AtomLiteral) and l.negated and not l.atom.relation.instances:
+            out[l.atom.relation.name].append((l.atom, here, scope))
+        elif isinstance(l, Disjunction):
+            for b in l.branches:
+                negative_reads(b, here, scope, out)
+        elif isinstance(l, Comparison):
+            for t in (l.lhs, l.rhs):
+                if isinstance(t, Aggregate):
+                    negative_reads(t.body, here, scope, out)
+
+
+def term_matches(t, s, free: set[str], once: set[str], sigma: dict) -> bool:
+    """The domain term `t` stands for the term `s` of the reading clause, under
+    `sigma`, which it extends: a variable of `free` takes the term it meets,
+    and takes a `_` only where it stands once in the defect clause."""
+    if isinstance(t, Variable) and t.name in free:
+        if t.name in sigma:
+            return sigma[t.name] == s and not isinstance(s, Wildcard)
+        if isinstance(s, Wildcard) and t.name not in once:
+            return False
+        sigma[t.name] = s
+        return True
+    if isinstance(t, Wildcard):
+        return True
+    if isinstance(t, (ConstructorTerm, RecordTerm)):
+        return (type(s) is type(t) and getattr(s, "name", None) == getattr(t, "name", None)
+                and len(s.args) == len(t.args)
+                and all(term_matches(a, b, free, once, sigma) for a, b in zip(t.args, s.args)))
+    return t == s
+
+
+def domain_has_member(u: Unit, test_i: int, atom, context: tuple) -> bool:
+    """The clause `u` of a defect relation, read as `!R(args)` with `atom` in a
+    clause whose literals at the read are `context`, has a member of its domain
+    at each binding of the reading clause: each literal of `u` but its test
+    maps onto a positive atom of `context`, or onto an equal literal of it,
+    under one substitution of the variables that `u` does not take from the
+    head, or is a literal of a lib element relation."""
+    heads = [h.name for h in u.head.args]
+    if len(set(heads)) != len(heads) or len(heads) != len(atom.args):
+        return False
+    if not all(isinstance(a, Variable) for a in atom.args):
+        return False
+    uses: Counter = Counter()
+    var_uses(u.body, uses)
+    once = {v for v, n in uses.items() if n == 1}
+    free = {v for v in uses if v not in heads}
+    key = {h: a for h, a in zip(heads, atom.args)}
+    dom = [subst_terms(l, key) for i, l in enumerate(u.body) if i != test_i]
+    # the variables of `u` that its head does not name get names no reading clause holds
+    rename = {v: "?" + v for v in free}
+    dom = [subst(l, rename) for l in dom]
+    free = set(rename.values())
+    once = {rename.get(v, v) for v in once}
+    atoms = [l for l in dom if isinstance(l, AtomLiteral) and not l.negated
+             and l.atom.relation.name not in ELEM_RELATIONS]
+    others = [l for l in dom if not (isinstance(l, AtomLiteral) and not l.negated)]
+    elems = [l for l in dom if isinstance(l, AtomLiteral) and not l.negated
+             and l.atom.relation.name in ELEM_RELATIONS]
+    if any(not all(isinstance(a, Variable) for a in l.atom.args) for l in elems):
+        return False
+    partners = [l.atom for l in context if isinstance(l, AtomLiteral) and not l.negated]
+
+    def place(i: int, sigma: dict) -> bool:
+        if i == len(atoms):
+            held = [unlined(l) for l in context]
+            return all(unlined(subst_terms(l, sigma)) in held for l in others)
+        a = atoms[i].atom
+        for p in partners:
+            if p.relation != a.relation or len(p.args) != len(a.args):
+                continue
+            trial = dict(sigma)
+            if all(term_matches(x, y, free, once, trial) for x, y in zip(a.args, p.args)) \
+                    and place(i + 1, trial):
+                return True
+        return False
+    return place(0, {})
+
+
+def unlined(x):
+    """`x` with the line number of each atom and comparison in it set to 0."""
+    if isinstance(x, tuple):
+        return tuple(unlined(y) for y in x)
+    if is_dataclass(x) and not isinstance(x, type):
+        return dc_replace(x, **{f.name: (0 if f.name == "line" else unlined(getattr(x, f.name)))
+                                for f in dc_fields(x)})
+    return x
 
 
 @dataclass
@@ -313,6 +416,15 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
             t = u.body[i]
             if isinstance(t, AtomLiteral) and not t.atom.relation.instances:
                 c.all_inline.pop(t.atom.relation.name, None)
+        # an `ALL` with no member fails where the negation of the relation holds,
+        # so a relation stays inlined only where each read gives its domain a member
+        sites: dict[str, list] = defaultdict(list)
+        for u in prog.units:
+            negative_reads(u.body or (), (), u.scope.components, sites)
+        for name, (u, i) in list(c.all_inline.items()):
+            if not all(scope == u.scope.components and domain_has_member(u, i, atom, ctx)
+                       for atom, ctx, scope in sites[name]):
+                del c.all_inline[name]
         self.all_count = len(c.all_inline)
 
         # params and determine
