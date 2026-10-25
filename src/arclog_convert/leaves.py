@@ -901,10 +901,11 @@ class Converter:
                 return RecordTerm(tuple(args))
             return t
 
-        def fix(a: Atom, scope, m: dict) -> Atom:
+        def fix(a: Atom, scope, m: dict, shared: set[str]) -> Atom:
             """The read with each dropped column's variable at the column it
             repeats, where the read leaves that column out; the renames of
-            the variables it names at both columns go to `m`."""
+            the variables it names at both columns go to `m`. `shared` holds
+            the variables that stand at more than one site of atoms."""
             key = find(a.relation, scope)
             if key is None or key not in self.alias:
                 return a
@@ -915,20 +916,33 @@ class Converter:
             for k, j in self.alias[key].items():
                 tk, tj = r[k], r[j]
                 ck, lk = pos[k]
-                if isinstance(tk, Variable) and isinstance(tj, Variable) and tk != tj:
-                    whole = a.args[ck]
-                    if isinstance(whole, Variable) and lk.path:
-                        # the record variable spelled out, with the repeated
-                        # column's variable at the dropped leaf
-                        cls = [l for i_, l in pos if i_ == ck]
-                        ts = [t_ if t_ is not None else Wildcard() for (i_, _), t_ in zip(pos, r) if i_ == ck]
-                        rec = None
-                        for l, t_ in zip(cls, ts):
-                            rec = put(rec if rec is not None else build(cls), l.path, tj if l is lk else t_)
-                        m.setdefault(whole.name, rec)
-                    else:
-                        m.setdefault(tk.name, tj)
-                elif isinstance(tk, Variable) and isinstance(tj, Wildcard):
+                if not isinstance(tk, Variable) or not isinstance(tj, (Variable, Wildcard)) or tk == tj:
+                    continue
+                whole, depth = a.args[ck], 0
+                while isinstance(whole, RecordTerm) and depth < len(lk.path):
+                    whole, depth = whole.args[lk.path[depth]], depth + 1
+                one_kept = sum(1 for n_, (i_, l) in enumerate(pos) if i_ == ck and l.path[:depth] == lk.path[:depth]
+                               and l.kind == "keep" and n_ not in self.alias[key]) == 1
+                if isinstance(whole, Variable) and depth < len(lk.path) and (
+                        depth == 0 and isinstance(tj, Variable) or one_kept and whole.name in shared):
+                    # the record variable, which stands whole at the dropped
+                    # leaf's record, spelled out: the repeated column's
+                    # variable is at the dropped leaf, so each other read of
+                    # the variable reads the same leaves; the read here keeps
+                    # one leaf of a record variable, which a clause's other
+                    # read would give a name per leaf
+                    prefix = lk.path[:depth]
+                    cls = [dc_replace(l, path=l.path[depth:]) for i_, l in pos if i_ == ck and l.path[:depth] == prefix]
+                    ts = [t_ if t_ is not None else Wildcard()
+                          for (i_, l), t_ in zip(pos, r) if i_ == ck and l.path[:depth] == prefix]
+                    rec = None
+                    for l, t_ in zip(cls, ts):
+                        rec = put(rec if rec is not None else build(cls), l.path,
+                                  tj if l.path == lk.path[depth:] and isinstance(tj, Variable) else t_)
+                    m.setdefault(whole.name, rec)
+                elif isinstance(tj, Variable):
+                    m.setdefault(tk.name, tj)
+                if isinstance(tj, Wildcard):
                     ci, leaf = pos[j]
                     args[ci] = put(args[ci], leaf.path, tk)
             return dc_replace(a, args=tuple(args))
@@ -976,13 +990,36 @@ class Converter:
                     and [c_.type for c_ in self.rels[ck].columns] == [c_.type for c_ in rel.columns]:
                 self.alias[key] = dict(self.alias[ck])
 
-        def lits_fix(lits, scope, m):
+        def shared_vars(lits, head=None) -> set[str]:
+            """The variables that stand at more than one site of the atoms of
+            `lits` and `head`."""
+            seen: Counter = Counter()
+
+            def walk(t) -> None:
+                if isinstance(t, Variable):
+                    seen[t.name] += 1
+                for x in getattr(t, "args", ()) or ():
+                    walk(x)
+
+            def scan(ls) -> None:
+                for l in ls:
+                    if isinstance(l, AtomLiteral):
+                        walk(l.atom)
+                    elif isinstance(l, Disjunction):
+                        for b in l.branches:
+                            scan(b)
+            scan(lits)
+            if head is not None:
+                walk(head)
+            return {v for v, n in seen.items() if n > 1}
+
+        def lits_fix(lits, scope, m, shared):
             out = []
             for l in lits:
                 if isinstance(l, AtomLiteral):
-                    out.append(dc_replace(l, atom=fix(l.atom, scope, m)))
+                    out.append(dc_replace(l, atom=fix(l.atom, scope, m, shared)))
                 elif isinstance(l, Disjunction):
-                    out.append(dc_replace(l, branches=tuple(tuple(lits_fix(b, scope, m)) for b in l.branches)))
+                    out.append(dc_replace(l, branches=tuple(tuple(lits_fix(b, scope, m, shared)) for b in l.branches)))
                 else:
                     out.append(l)
             return out
@@ -992,7 +1029,7 @@ class Converter:
                 units.append(u)
                 continue
             m: dict[str, object] = {}
-            body = lits_fix(list(u.body), u.scope.components, m)
+            body = lits_fix(list(u.body), u.scope.components, m, shared_vars(u.body, u.head))
             head = u.head
             if m:
                 head = subst_terms(head, m)
@@ -1002,7 +1039,7 @@ class Converter:
             parts = []
             for b in p_.aparts:
                 m = {}
-                b2 = lits_fix(list(b), p_.scope, m)
+                b2 = lits_fix(list(b), p_.scope, m, shared_vars(b))
                 parts.append(tuple(subst_terms(x, m) for x in b2) if m else tuple(b2))
             p_.aparts = parts
         return dc_replace(prog, units=tuple(units))
