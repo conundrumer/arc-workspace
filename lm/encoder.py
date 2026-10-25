@@ -446,17 +446,43 @@ def color_dependence(flows, output_table, output_color):
     return False
 
 
-def copy_flow_check(fl, column_types, kept, tables):
+def orientation_subtypes(tables_dir):
+    """The pairs (subtype, supertype) of the orientation types that `<tables_dir>/orientation_types.json` gives,
+    [type name, cells] per type: a type is a subtype of another where every cell it admits the other admits. None
+    where the export has no orientation_types.json."""
+    path = Path(tables_dir) / "orientation_types.json"
+    if not path.exists():
+        return None
+    cells = {name: set(c) for name, c in json.load(open(path))}
+    return {(a, b) for a in cells for b in cells if a != b and cells[a] <= cells[b]}
+
+
+def case_dets(t):
+    """[(relation, column types)] of each DET of the export table t (a row of tables.parquet), in `det_relations`
+    order; the types are empty where the export gives no `det_types`."""
+    types = t.get("det_types")
+    types = [list(x) for x in types] if isinstance(types, (list, np.ndarray)) else []
+    return [(rel, types[i] if i < len(types) else []) for i, rel in enumerate(t["det_relations"])]
+
+
+def copy_flow_check(fl, column_types, kept, tables, dets=None, det_values=None, subtypes=None):
     """The copy flows of one case that break their join, from the case's rows of flows.parquet (export column
-    indexes): a copy flow whose source table the case holds, from a column of it, must give its column the type of
-    the source column, as tables.parquet gives the types; and where every source of a column is such a copy flow, the
-    column's values over the present rows of its Tables must be values of one of its source columns over the rows of
-    the source's Tables. A column's flows are its sources over every rule that derives it, so its values are in the
-    union of theirs, not in each. `column_types` and `kept` (`kept_columns`) are per export table, and `tables` are
-    the case's Tables. Gives the count of copy flows checked for their type, the count of columns whose values go
-    unchecked (a source other than a column of a table that the case holds, a dropped column, a table with no
-    Tables, or a source with unseen entries; a column with a type violation is left out), and [(kind, flow row,
-    detail)] of each violation, kind "type" for a flow or "value" for a column, given by its first copy flow."""
+    indexes). A copy flow's source column is a column of its source table, or, where its `det` is not -1, a column of
+    that DET of the table that holds the flow, whose types are that table's `det_types[det]` in tables.parquet. A copy
+    flow from a column of a table that the case holds, or from a DET, must give its column the type of the source
+    column, or a subtype of it that `subtypes` gives ((subtype, supertype) pairs, `orientation_subtypes`; where None
+    or empty, the type must be the same). Where every source of a column is such a copy flow, the column's values
+    over the present rows of its Tables must be values of one of its source columns: over the rows of the source
+    table's Tables, or over the rows of the DET's relation at each of its values that the case's entries are assigned
+    (`det_values`, the loader's {(DET relation, run bytes): index}). A column's flows are its sources over every rule
+    that derives it, so its values are in the union of theirs, not in each. `column_types`, `kept` (`kept_columns`)
+    and `dets` ([(relation, column types)] of each DET, `case_dets`) are per export table, and `tables` are the case's
+    Tables. Gives the count of copy flows checked for their type, the count of columns whose values go unchecked (a
+    source other than a column of a table that the case holds or of a DET, a dropped column, a table with no Tables,
+    a source with unseen entries, or a DET with no assigned value; a column with a type violation is left out), and
+    [(kind, flow row, detail)] of each violation, kind "type" for a flow or "value" for a column, given by its first
+    copy flow."""
+    dets, det_values, subtypes = dets or {}, det_values or {}, subtypes or set()
     of = {}
     for i, t in enumerate(tables):
         e = GRID_TABLES.get(t.relation) if t.evidence else t.export_table
@@ -477,25 +503,46 @@ def copy_flow_check(fl, column_types, kept, tables):
                                        np.unique(t.cells[t.present[:, c] & ~t.marker, o:o + w], axis=0).tolist()}
         return memo[(e, c, whole)]
 
+    def det_values_of(relation, types, c):
+        """The values of column c of the DET relation `relation`, of column types `types`, over its rows at each of
+        its assigned values, as a set of tuples; None where it has no assigned value."""
+        names = [type_name(x) for x in types]
+        n, o, w = sum(width(x) for x in names), sum(width(x) for x in names[:c]), width(names[c])
+        runs = [np.frombuffer(b, np.int32).reshape(-1, n) for rel, b in det_values if rel == relation]
+        return {tuple(r) for run in runs for r in run[:, o:o + w].tolist()} if runs else None
+
+    def source_type(r):
+        if r[5] < 0:
+            return column_types[r[3]][r[4]]
+        ds = dets.get(r[0], [])
+        return ds[r[5]][1][r[4]] if r[5] < len(ds) and r[4] < len(ds[r[5]][1]) else None
+
+    def source_values(r):
+        if r[5] < 0:
+            return values_of(r[3], kept[r[3]][r[4]], True)
+        return det_values_of(*dets[r[0]][r[5]], r[4])
+
     checked, unchecked, bad = 0, 0, []
     a = fl[FLOW_COLUMNS].to_numpy(np.int64)
     columns = {}   # (table, column) -> its flows
     for row in a.tolist():
         columns.setdefault((row[0], row[1]), []).append(row)
     for (tab, col), rows in columns.items():
-        copies = [r for r in rows if r[2] == FLOW_COPY and r[3] >= 0 and r[4] >= 0]
+        copies = [r for r in rows if r[2] == FLOW_COPY and (r[3] >= 0 or r[5] >= 0) and r[4] >= 0]
         if not copies:
             continue
         checked += len(copies)
         ty = column_types[tab][col]
-        typed = [r for r in copies if column_types[r[3]][r[4]] != ty]
-        for r in typed:
-            bad.append(("type", r, f"type {ty} from a column of type {column_types[r[3]][r[4]]}"))
+        typed = [(r, source_type(r)) for r in copies]
+        typed = [(r, st) for r, st in typed if st != ty and (ty, st) not in subtypes]
+        for r, st in typed:
+            bad.append(("type", r, f"type {ty} from a column of type {st}" if st is not None else
+                        f"type {ty} from column {r[4]} of DET {r[5]}, which the det_types of table {tab} do not give"))
         if typed:
             continue
         c = kept[tab][col]
         whole = c >= 0 and len(copies) == len(rows)
-        srcs = [values_of(r[3], kept[r[3]][r[4]], True) for r in copies] if whole else [None]
+        srcs = [source_values(r) for r in copies] if whole else [None]
         own = values_of(tab, c, False) if all(x is not None for x in srcs) else None
         if own is None:
             unchecked += 1
@@ -551,7 +598,8 @@ def parse_tables(tables_dir, tasks_dir=Path(__file__).resolve().parents[1] / "da
     Raises DataFault where the unseen tables and entries by reason differ from the counts that the export's files give
     (`reconcile_unseen`). Each copy flow is checked against its source (`copy_flow_check`), and the stats keep the
     totals under "copy flows": the flows checked, those whose values go unchecked, the violations of each kind, the
-    count of cases with one, the count of each such case and the first few violations."""
+    count of cases with one, the count of each such case, the first few violations, and whether the export's
+    orientation_types.json gave the orientation subtypes (`orientation_subtypes`)."""
     d = Path(tables_dir)
     tables = with_names(pd.read_parquet(d / "tables.parquet"), TABLE_PROJECTIONS)
     index = pd.read_parquet(d / "index.parquet")
@@ -566,7 +614,9 @@ def parse_tables(tables_dir, tasks_dir=Path(__file__).resolve().parents[1] / "da
     out, faults = {}, {}
     stats = {"body tables": 0, "provenance": "column flows of the export" if provenance else
              "table-level: the export gives no flows, keys or depths"}
-    copies = {"checked": 0, "values unchecked": 0, "type": 0, "value": 0, "cases": 0, "by case": {}, "first": []}
+    subtypes = orientation_subtypes(d)
+    copies = {"checked": 0, "values unchecked": 0, "type": 0, "value": 0, "cases": 0, "by case": {}, "first": [],
+              "orientation subtypes": subtypes is not None}
     for (task, case), tabs in tables.groupby(["task", "case"], sort=False):
         task_json = json.load(open(f"{tasks_dir}/{task}.json"))
         n_train = len(task_json["train"])
@@ -613,8 +663,9 @@ def parse_tables(tables_dir, tasks_dir=Path(__file__).resolve().parents[1] / "da
         if provenance:
             check_provenance(task, case, result)   # a fault of the export's provenance fails the whole build
             if fl is not None:
-                n, unchecked, bad = copy_flow_check(fl, {int(t["table"]): list(t["column_types"]) for t in records},
-                                                    kept, result)
+                n, unchecked, bad = copy_flow_check(
+                    fl, {int(t["table"]): list(t["column_types"]) for t in records}, kept, result,
+                    {int(t["table"]): case_dets(t) for t in records}, det_values, subtypes)
                 copies["checked"] += n; copies["values unchecked"] += unchecked
                 for kind, row, detail in bad:
                     copies[kind] += 1
@@ -750,7 +801,7 @@ def table_groups(tables):
     return out
 
 
-LOADER_VERSION = 15  # raise on any change to parse_tables or Table
+LOADER_VERSION = 16  # raise on any change to parse_tables or Table
 
 
 def table_stamp(tables_dir):
@@ -788,7 +839,9 @@ def copy_flow_rule(stats, strict, where):
         return
     line = (f"copy flows of {where}: {c['checked']} checked, {c['type']} with another type than their source column, "
             f"{c['value']} columns with values outside their sources, in {c['cases']} cases; "
-            f"{c['values unchecked']} columns not checked for values")
+            f"{c['values unchecked']} columns not checked for values"
+            + ("" if c.get("orientation subtypes") else "; orientation subtypes were not known (no "
+               "orientation_types.json), so each copy flow's type had to equal its source column's"))
     if strict and c["type"] + c["value"]:
         raise DataFault(f"{line}; first: {'; '.join(c['first'])}; strict=False (--allow-check-violations) reads it")
     print(line, flush=True)
