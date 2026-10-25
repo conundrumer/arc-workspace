@@ -151,7 +151,7 @@ Inputs: the 953 `.arclog` files of `work/arclog/gen/`, with the lib's columns fr
 - Param column-type tuples: 48 kinds under 5 uses, such as `Color Dir`, `Color Offset`, `DiagDir DiagDir`, `Position Position`, `number Position`.
 - Constraint operators: `=` 746, `!=` 668, `<` 256, `>` 114, `<=` 80, `>=` 67.
 
-Inputs: the 953 `.arclog` files of `work/arclog/gen/` and `.arcdata` files, with the proposers of `src/arclog_convert/convert.py`. Computed on 2026-10-19.
+Inputs: the 953 `.arclog` files of `work/arclog/gen/` and `.arcdata` files, with the proposers of `src/arclog_convert/lib.py`. Computed on 2026-10-19.
 
 ## Tasks
 

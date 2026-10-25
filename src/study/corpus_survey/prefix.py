@@ -7,7 +7,7 @@ import time
 from multiprocessing import Pool
 from typing import Any
 
-from arclog_convert.convert import ALGEBRA_MODES
+from arclog_convert.lib import ALGEBRA_MODES
 from controlled_markdown import mctx
 from parity import name_map
 from study.corpus_survey import kept

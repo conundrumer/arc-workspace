@@ -5,7 +5,7 @@ import re
 from collections import Counter, defaultdict
 from functools import cache
 
-from arclog_convert.convert import PROPOSER_COLS
+from arclog_convert.lib import PROPOSER_COLS
 from arclog_convert.lint import LIB
 from controlled_markdown import mctx
 from study.corpus_survey.bodies import (
@@ -320,7 +320,7 @@ def rare_section() -> str:
         mctx("Param column-type tuples: {n} kinds under 5 uses, such as {some}.")
         .format(n=len(rare_types), some=", ".join(f"`{t}`" for t in rare_types[-5:])),
         mctx("Constraint operators: {ops}.").format(ops=named((f"`{k}`", v) for k, v in ops.most_common())),
-    ]), ran(c.files() + " and `.arcdata` files, with the proposers of `src/arclog_convert/convert.py`"))
+    ]), ran(c.files() + " and `.arcdata` files, with the proposers of `src/arclog_convert/lib.py`"))
 
 
 FORMS = Section("Forms", 2, False, forms)
