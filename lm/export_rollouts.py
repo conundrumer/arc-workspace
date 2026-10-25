@@ -8,7 +8,8 @@ streams of each task are replayed by `arclog.stream_tables` under those settings
 lm/rollout_labels.py (`case_name`), and written as engine/arclog-py/tables_export.py writes a part; the whole files
 and `report.txt` follow, as that script's `merge` writes them. `<out dir>` must not exist or be empty. Where more than
 one file is given, `<out dir>/samples.jsonl` gets the first file's settings line and every continuation line, for
-lm/rollout_labels.py; each continuation line gets the field `prefix_mode`, the `args.prefix` of its own file.
+lm/rollout_labels.py; each continuation line gets the fields of `rollout_labels.sampler_meta` of its own file's
+settings line: the prefix mode, the sampling LM's run and fold, and the data export of the prefixes.
 
 Each case holds the tables of its stream's steps; a stream cut at the sampler's step cap or at an empty mask holds
 the tables up to its cut, and one that faults those up to the fault. For each branch point whose gold line is given,
@@ -26,7 +27,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "engine" / "arclog-py"))
 import arclog
 import tables_export as X
-from rollout_labels import POINT_EVIDENCE, case_name
+from rollout_labels import POINT_EVIDENCE, case_name, sampler_meta
 
 TABLE_FIELDS = ["form", "point", "relation", "fact", "column_names", "column_types", "width", "det_relations", "depth",
                 "keys", "fault"]   # the tables.parquet columns compared across a branch point's cases
@@ -34,7 +35,7 @@ TABLE_FIELDS = ["form", "point", "relation", "fact", "column_names", "column_typ
 
 def read_lines(paths):
     """The settings line of the first file (the files must agree in `settings` and `world`) and every continuation line,
-    each with `prefix_mode`, the `args.prefix` of its own file."""
+    each with the `sampler_meta` of its own file."""
     head, lines = None, []
     for p in paths:
         rows = [json.loads(l) for l in open(p) if l.strip()]
@@ -43,10 +44,16 @@ def read_lines(paths):
             head, first = h, rows[0]
         elif h != head:
             raise ValueError(f"{p}: settings {h} differ from {paths[0]}'s {head}")
-        lines += [dict(r, prefix_mode=rows[0]["args"]["prefix"]) for r in rows[1:]]
+        meta = sampler_meta(rows[0])
+        lines += [dict(r, **meta) for r in rows[1:]]
     if head["world"] != "Closed":
         raise ValueError(f"world {head['world']}: the replay judges the train pairs in the closed world")
     return first, lines
+
+
+def merged_text(first, lines):
+    """The text of `<out dir>/samples.jsonl`: the first file's settings line, then every continuation line."""
+    return "".join(json.dumps(r) + "\n" for r in [first] + lines)
 
 
 def prefix_values(out, index, task, case, n):
@@ -125,7 +132,7 @@ def main():
     X.merge(out)
     if len(paths) > 1:
         with open(f"{out}/samples.jsonl", "w") as f:
-            f.write("".join(json.dumps(r) + "\n" for r in [first] + lines))
+            f.write(merged_text(first, lines))
     if os.path.exists(f"{out}/tables.parquet"):
         check_prefix(out, pd.read_parquet(f"{out}/tables.parquet"), pd.read_parquet(f"{out}/index.parquet"), lines)
         print("prefix check: passed")

@@ -5,9 +5,10 @@
 The sampler lines are JSON lines: the first a settings object, then one line per continuation with the fields task,
 case (the corpus case, or null for a sample from nothing), branch (the rule index of the branch point), rollout (the
 sample's index k, or "gold"), ids, model, prefix_tokens (the stream's tokens before the branch), prefix_rules,
-ended, consistency, solved_test, attempts, tokens, program_form and rules, and, in the merged file of
-lm/export_rollouts.py, prefix_mode (the `--prefix` of the line's own sampler file; else the settings line's `--prefix`
-gives the mode of every line). The export is the tables export of those
+ended, consistency, solved_test, attempts, tokens, program_form and rules. The settings line gives each line its
+`sampler_meta`: the prefix mode, the sampling LM's run and fold, and the data export of its prefixes. In the merged
+file of lm/export_rollouts.py, each line carries the `sampler_meta` of its own sampler file in its fields of
+`SAMPLER_FIELDS`, and a line's own field takes the place of the settings line's. The export is the tables export of those
 streams (engine/arclog-py/tables_export.py, `export_streams`), whose case names are `<task>__<case>__b<j>__r<k>`,
 `<task>__<case>__b<j>__gold` and `<task>__none__b0__r<k>`.
 
@@ -17,7 +18,9 @@ streams (engine/arclog-py/tables_export.py, `export_streams`), whose case names 
 "solved_test", "fault" (the report's fault line for the case, or null; a stream that faults or lies past the
 export's step cap has one), "sampler_run" (the sampling LM's run directory, the settings line's `--model`) and
 "sampler_fold" (that LM's `--fold`, k/n, from the settings line's `model_meta`, else from the run's model.json; null
-for an LM trained without one); both are null for a gold continuation; "rules" (the sampler's, the engine's
+for an LM trained without one); both are null for a gold continuation; "heldout" (whether the sampler's data export,
+the settings line's `--data`, marks the task held out in its cases.npz; null where the line gives no `--data` or the
+export holds no case of the task); "rules" (the sampler's, the engine's
 verdict on each RULE clause of the continuation, in order, or null for a gold line of a sampler that gave none) and
 "rule_ends" (the stream index of the end of each RULE clause of the continuation that ends)}. `prefix_tables` is
 the count of the case's export tables that the prefix gives: the evidence tables, and each table whose `token`, the
@@ -72,14 +75,16 @@ def case_name(task, case, branch, rollout):
 
 
 def read_report(path):
-    """{(task, case): verdict} and {(task, case): fault line} of a report.txt."""
+    """{(task, case): verdict} and {(task, case): fault line} of a report.txt. A case's line is `<task> <case>: <rest>`:
+    the task ends at the first space, and the case, which can hold spaces, at the first `: ` after it. A task's own
+    line, `<task>: <fault>`, names no case and is left out."""
     verdicts, faults = {}, {}
     for line in open(path).read().splitlines():
-        head, sep, rest = line.partition(": ")
-        parts = head.split(" ")
-        if not sep or len(parts) != 2:
+        task, _, after = line.partition(" ")
+        case, sep, rest = after.partition(": ")
+        if not sep or not case or task.endswith(":"):
             continue
-        key = tuple(parts)
+        key = (task, case)
         if rest.startswith("ended "):
             verdicts[key] = rest.split(" ")[1]
         else:
@@ -100,16 +105,43 @@ def prefix_tables(tables, prefix_tokens):
     return out
 
 
+SAMPLER_FIELDS = ("prefix_mode", "sampler_run", "sampler_fold", "sampler_data")   # the fields of `sampler_meta`
+
+
+def sampler_meta(settings):
+    """The fields of SAMPLER_FIELDS that a sampler file's settings line gives each of its lines: `--prefix`, `--model`,
+    the LM's `--fold` (from `model_meta`, else from the run's model.json) and `--data` (null where not given)."""
+    run = settings["args"]["model"]
+    fold = (settings.get("model_meta") or json.load(open(Path(run) / "model.json"))).get("fold")
+    return dict(prefix_mode=settings["args"]["prefix"], sampler_run=run, sampler_fold=fold,
+                sampler_data=settings["args"].get("data"))
+
+
+def heldout_tasks(data):
+    """{task: whether the data export's cases.npz marks it held out} for the export at `data`."""
+    import numpy as np
+    z = np.load(Path(data) / "cases.npz")
+    out = {}
+    for task, h in zip(z["task"].tolist(), z["heldout"].tolist()):
+        out[task] = out.get(task, False) or bool(h)
+    return out
+
+
 def labels(sampler_path, export):
     settings, *lines = [json.loads(l) for l in open(sampler_path) if l.strip()]
-    run = settings["args"]["model"]
-    modes = [s.get("prefix_mode", settings["args"]["prefix"]) for s in lines] or [settings["args"]["prefix"]]
+    head = {}
+    if any(k not in s for s in lines for k in SAMPLER_FIELDS) or not lines:
+        head = sampler_meta(settings)
+    metas = [{k: s.get(k, head.get(k)) for k in SAMPLER_FIELDS} for s in lines]
+    modes = [m["prefix_mode"] for m in metas] or [settings["args"]["prefix"]]
+    heldout_of = {}
+    for d in {m["sampler_data"] for m in metas if m["sampler_data"] is not None}:
+        heldout_of[d] = heldout_tasks(d)
     for prefix in modes:
         if prefix not in ("0", "random"):
             raise ValueError(f"{sampler_path}: sample.py --prefix {prefix} can end a prefix off a rule boundary, which is "
                              f"no branch point; labels take --prefix random or 0")
     spellings, kinds = vocabulary(settings["settings"])
-    fold = (settings.get("model_meta") or json.load(open(Path(run) / "model.json"))).get("fold")
     export = Path(export)
     verdicts, faults = read_report(export / "report.txt")
     names = [case_name(s["task"], s["case"], s["branch"], s["rollout"]) for s in lines]
@@ -129,7 +161,7 @@ def labels(sampler_path, export):
             raise ValueError(f"{task} {case} b{b}: the members do not share one prefix and one gold continuation: "
                              f"prefix_tokens {sorted(tokens)}, prefix_tables {sorted(held)}, {golds} gold lines")
     out = []
-    for s, n in zip(lines, names):
+    for s, n, m in zip(lines, names, metas):
         key = (s["task"], n)
         if key not in verdicts and key not in faults:
             raise ValueError(f"{s['task']} {n}: the export's report.txt gives no verdict and no fault line")
@@ -142,7 +174,9 @@ def labels(sampler_path, export):
                     "rollout": s["rollout"], "prefix_tokens": int(s["prefix_tokens"]), "prefix_rules": s["prefix_rules"],
                     "prefix_tables": counts.get(key), "ended": s["ended"], "consistency": verdicts.get(key),
                     "solved_test": s["solved_test"], "fault": faults.get(key),
-                    "sampler_run": run if sampled else None, "sampler_fold": fold if sampled else None,
+                    "sampler_run": m["sampler_run"] if sampled else None,
+                    "sampler_fold": m["sampler_fold"] if sampled else None,
+                    "heldout": heldout_of[m["sampler_data"]].get(s["task"]) if m["sampler_data"] is not None else None,
                     "rules": s.get("rules"), "rule_ends": ends})
     return out
 

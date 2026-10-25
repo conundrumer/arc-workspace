@@ -2809,10 +2809,11 @@ def load_rollouts(rollout_dir, cache=None, budget=None, max_rows=None, tasks_dir
     `cache` is None, from `parse_tables` with `tasks_dir`; `budget` and `max_rows` mark tables as
     `mark_over_budget` and `mark_over_rows` do, before the flags are read. A case that the labels do not give is
     left out. Raises DataFault, naming the task, where a sampled continuation's LM was trained on its task's fold
-    (`sampler_fold` k/n with `train.fold_of(task, n) == k`)."""
+    (`sampler_fold` k/n with `train.fold_of(task, n) == k`) and the labels do not mark the task held out (`heldout`):
+    a fold LM trains on its fold's tasks less the held-out ones."""
     labels = read_value_labels(Path(rollout_dir) / "labels.jsonl")
     for (task, case), lab in labels.items():
-        if lab.get("sampler_fold"):
+        if lab.get("sampler_fold") and not lab.get("heldout"):
             from train import fold_of
             k, n = map(int, lab["sampler_fold"].split("/"))
             if fold_of(task, n) == k:
