@@ -39,6 +39,9 @@ It reads only the rows of that case. A render keeps the "What I see" section of 
 - `case-e633a9e5.md`: a scale-up of each cell to a tile, with seven DETs, three of which read the outputs for the cell correspondence.
 - `case-b5bb5719.md`: a pyramid grown under seed pairs with a color swap, at 8 assignments of two lib DETs.
 - `case-bda2d7a6.md`: a cycle of the colors of nested rings, beside the tables of three other cases' clauses.
+- `case-44f52bb0.md`: the case `$Direct`, a 3x3 input classed by its mirror symmetry into the 1x1 output 1 or 7.
+- `case-5ad8a7c0.md`: the case `$Shortest`, the pairs of marks at the least gap fill their spans, at two DET assignments of the axis.
+- `case-6d1d5c90.md`: the case `$Marked`, a band is dropped and the rows rotate by the marker's row, at 16 DET assignments of two directions.
 - `observations.md`: what held across the `case-<task>.md` files about telling from a table that it adds information, and what took the clause text or the later program.
 
 ## Decoding
