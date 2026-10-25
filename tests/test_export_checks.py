@@ -96,3 +96,13 @@ def test_column_with_rows_where_its_source_holds_none_is_reported():
     frames["flows"] = frames["flows"].drop(4).reset_index(drop=True)
     found = [l for l in lines(frames, np.delete(values, range(36, 40))) if l.startswith("values-copy")]
     assert len(found) == 1
+
+
+def test_column_whose_source_entry_is_stopped_is_not_checked():
+    frames, values = case()
+    frames["entries"].loc[3, ["kind", "rows"]] = [3, 0]
+    frames["entries"].loc[4:, "offset"] -= 4
+    frames["assigned"].loc[:, "offset"] -= 4
+    frames["flows"] = frames["flows"].drop(4).reset_index(drop=True)
+    found = [l for l in lines(frames, np.delete(values, range(36, 40))) if l.startswith("values-copy")]
+    assert found == []

@@ -88,7 +88,8 @@ def check_case(frames, values, task, orientation_types, size=None, copies=True):
     (a table's index is its row, an entry's index is its row), `values` the case's int32 array or None, which skips
     the value checks, `task` the task's JSON, `orientation_types` {type name: set of cells} or None, which skips the
     orientation part of the domain check, and `size` the length of `values` where `values` is None and the runs are
-    to be checked against it. `copies` False skips the check of the copy flows' values, the costliest of the value checks.
+    to be checked against it. `copies` False skips the check of the copy flows' values, the costliest of the value checks. A copy from a source table whose entries at an example are not all `Rows` entries is
+    not checked at that example.
     """
     out = []
     bad = lambda inv, detail: out.append(f"{inv}: {detail}")
@@ -224,7 +225,10 @@ def check_case(frames, values, task, orientation_types, size=None, copies=True):
 def _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest, bad, copies_too):
     blocks = collections.defaultdict(list)       # table -> [(entry, example, block)] of its Rows entries
     held_none = collections.defaultdict(set)     # table -> the examples of its Rows entries that hold no row
+    unseen = collections.defaultdict(set)        # table -> the examples of its entries other than Rows entries
     for r in en:
+        if r.kind != ROWS:
+            unseen[r.table].add((r.example_kind, r.example_index))
         if r.kind == ROWS and r.table < len(tl) and not _faulted(tl[r.table]):
             w = tl[r.table].width
             if r.rows and w:
@@ -356,7 +360,12 @@ def _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest
                 elif f.det >= 0:
                     pool.extend([by[ex]] if ex in by else [])
                 else:
+                    if unseen[f.source_table] and (ex == (0, 0) or unseen[f.source_table] & {ex, shared}):
+                        pool = None
+                        break
                     pool.extend(by.values() if ex == (0, 0) else [x for x in (by.get(ex), by.get(shared)) if x is not None])
+            if pool is None:
+                continue
             src = np.concatenate(pool) if pool else mine[:0]
             if src.shape[1:] != mine.shape[1:]:
                 continue
