@@ -32,7 +32,7 @@ real tables of the dev export, cut to a few dozen rows each.
   from ex_input computed, ex_output's Color must be free where the output relation's Color column flows from
   ex_input alone and dependent where it flows from a DET, and in a program step a hidden source column must keep
   the column that flows from it visible, each of the two hidden in some draws with `mask_remote`; a column whose
-  only source is another derived table must be remote, and never hidden without `mask_remote`; an unseen table must keep its
+  only source is another derived table, or whose flows name no table, must be remote, and never hidden without `mask_remote`; an unseen table must keep its
   columns, so that its flows and the flows that read it name columns it holds; and `parse_tables` must refuse an
   export whose flow names a column past its table's columns.
 - Masks: in a program step, no table with hidden fields may have a source table with hidden fields (no hidden
@@ -419,11 +419,11 @@ print("== provenance: a small export with flows, keys and depths through parse_t
 
 
 def provenance_export(d, bad=False):
-    """A small export in `d` and its task file: two cases of one task. Table 2 (Color, Number, Color) has the key
-    [1], a Color copied from ex_input and a constant; table 3, the output relation (Box, Color), flows from ex_input
+    """A small export in `d` and its task file: two cases of one task. Table 2 (Color, Number, Color, Color) has the
+    key [1], a Color copied from ex_input, a constant and a Color whose flow names no table (source_table -1); table 3, the output relation (Box, Color), flows from ex_input
     and, in $Free, from table 2's Color, and in $Dep, from table 4's DET value, which flows from ex_output. $Unseen is
     $Dep with table 4 faulted, so that it is unseen and its flows and those that read it name its columns. With
-    `bad`, a flow of table 2 names a column past its three."""
+    `bad`, a flow of table 2 names a column past its four."""
     import pandas as pd
     task = {"train": [{"input": [[1]], "output": [[3]]}, {"input": [[2]], "output": [[3]]}], "test": [{"input": [[1]]}]}
     (d / "tasks").mkdir(); json.dump(task, open(d / "tasks/t.json", "w"))
@@ -432,22 +432,22 @@ def provenance_export(d, bad=False):
     rel = lambda r, types, w, **k: dict(point=0, relation=r, column_types=types, width=w,
                                         **{"det_relations": [], "det_widths": [], "keys": [], "output_position": -1,
                                            "output_color": -1, **k})
-    t2 = rel(0, ["Color", "Number", "Color"], 3, depth=1, keys=[[1]])
+    t2 = rel(0, ["Color", "Number", "Color", "Color"], 4, depth=1, keys=[[1]])
     t3 = rel(1, ["Box", "Color"], 5, depth=2, output_position=0, output_color=1)
     t4 = rel(2, ["Color"], 1, depth=1)
     t3_dep = {**t3, "det_relations": ["slot 2"], "det_widths": [1]}
     cases = {"$Free": [grid, grid, t2, t3], "$Dep": [grid, grid, t2, t3_dep, t4],
              "$Unseen": [grid, grid, t2, t3_dep, {**t4, "fault": "a check"}]}
-    rows = {2: lambda e: [[1 + e, 0, 5], [2, 1, 5]], 3: lambda e: [[0, 0, 0, 0, 3]], 4: lambda e: [[3]]}
+    rows = {2: lambda e: [[1 + e, 0, 5, 7], [2, 1, 5, 7]], 3: lambda e: [[0, 0, 0, 0, 3]], 4: lambda e: [[3]]}
     flow = lambda tab, col, kind, st, sc, det=-1: dict(table=tab, column=col, kind=kind, source_table=st,
                                                        source_relation="", source_column=sc, det=det, atom="")
-    flows = {"$Free": [flow(2, 0, 0, 0, 2), flow(2, 1, 1, 0, 1), flow(2, 2, 2, -1, -1), flow(3, 0, 0, 0, 1),
-                       flow(3, 1, 0, 2, 0)],
-             "$Dep": [flow(2, 0, 0, 0, 2), flow(2, 1, 1, 0, 1), flow(2, 2, 2, -1, -1), flow(3, 0, 0, 0, 1),
-                      flow(3, 1, 0, 4, 0, 0), flow(4, 0, 1, 1, 2)]}
+    flows = {"$Free": [flow(2, 0, 0, 0, 2), flow(2, 1, 1, 0, 1), flow(2, 2, 2, -1, -1), flow(2, 3, 0, -1, -1),
+                       flow(3, 0, 0, 0, 1), flow(3, 1, 0, 2, 0)],
+             "$Dep": [flow(2, 0, 0, 0, 2), flow(2, 1, 1, 0, 1), flow(2, 2, 2, -1, -1), flow(2, 3, 0, -1, -1),
+                      flow(3, 0, 0, 0, 1), flow(3, 1, 0, 4, 0, 0), flow(4, 0, 1, 1, 2)]}
     flows["$Unseen"] = flows["$Dep"]
     if bad:
-        flows["$Free"].append(flow(2, 3, 0, 0, 2))
+        flows["$Free"].append(flow(2, 4, 0, 0, 2))
     tables, index, flow_rows = [], [], []
     (d / "values/t").mkdir(parents=True)
     for case, tabs in cases.items():
@@ -479,8 +479,8 @@ with tempfile.TemporaryDirectory() as tmp:
 free, dep = ptabs[("t", "$Free")], ptabs[("t", "$Dep")]
 bad = [] if not pfaults and pstats["provenance"].startswith("column") else [("faults or stats", pfaults, pstats)]
 labels = [E.FIELD_LABELS[x] for x in E.field_labels(free)[2][0]]
-if labels != ["computed", "inferrable", "inferrable"]:
-    bad.append(("table 2 labels", labels))
+if labels != ["computed", "inferrable", "inferrable", "remote"]:
+    bad.append(("table 2 labels (Color 3, whose flow names no table, is remote)", labels))
 if [t.depth for t in free[2:]] != [1, 2] or free[2].keys != [[1]] or (free[3].output_position, free[3].output_color) != (0, 1):
     bad.append(("depths, keys or output columns", [t.depth for t in free[2:]], free[2].keys))
 deps = {}
@@ -506,10 +506,10 @@ remote_default, others_default = 0, 0
 for tabs in (free, dep):
     for _ in range(100):   # the default: a column whose only source is a derived table is never hidden
         ms = enc.draw_masks(tabs, 1.0, 10 ** 6, g, "program")
-        remote_default += int(ms[3][:, 1].any())
+        remote_default += int(ms[3][:, 1].any()) + int(ms[2][:, 3].any())
         others_default += int(ms[3][:, 0].any())
 counted = {flag: E.preflight([("dep", dep)], 1.0, 10 ** 6, mask_remote=flag) for flag in (False, True)}
-if remote_default or not others_default or counted[False] != counted[True] or counted[False]["remote"] != dep[3].n:
+if remote_default or not others_default or counted[False] != counted[True] or counted[False]["remote"] != dep[3].n + dep[2].n:
     bad.append(("remote fields by default", remote_default, others_default, counted))
 unseen_t = ptabs[("t", "$Unseen")]
 try:
@@ -528,11 +528,11 @@ with tempfile.TemporaryDirectory() as tmp:
         refused = "no fault"
     except E.DataFault as x:
         refused = str(x)
-if "flow [2, 3, 0, 0, 2, -1]" not in refused:
+if "flow [2, 4, 0, 0, 2, -1]" not in refused:
     bad.append(("a flow past the columns", refused))
 print(f"  table 2 labels {labels}; ex_output Color (color_dependent, labels, dependent) {deps}; hidden in 200 "
       f"program steps with --mask-remote: the source column and the column that flows from it together {both}, "
-      f"each alone {alone}; table 3 Color, labelled remote, hidden in {remote_default} of 200 program steps by "
+      f"each alone {alone}; table 3 Color and table 2 column 3 (a flow without a source table), labelled remote, hidden in {remote_default} of 200 program steps by "
       f"default; "
       f"an unseen source table keeps its columns for the flows: {unseen_ok}; a flow past its table's columns: "
       f"{refused!r}; "
@@ -1196,14 +1196,14 @@ assert not unexpected and all(k.endswith(".src_eq") for k in missing), (missing,
 src_enc.eval()
 
 
-def masked_grads(e, progs, ckpt=True):
+def masked_grads(e, progs, ckpt=True, remote=False):
     """The masked loss of `progs` under `e`, and its gradients, every batch checkpointed where `ckpt`."""
     e.checkpoint, ckpt_min = ckpt, E.CHECKPOINT_MIN
     E.CHECKPOINT_MIN = 0
     try:
         e.zero_grad()
         loss, _ = e.masked_loss([(t, [None] * len(t)) for t in progs], torch.Generator().manual_seed(8), 0.3, 10 ** 6,
-                                torch.Generator().manual_seed(9))
+                                torch.Generator().manual_seed(9), mask_remote=remote)
         loss.backward()
     finally:
         e.checkpoint, E.CHECKPOINT_MIN = False, ckpt_min
@@ -1277,8 +1277,8 @@ for cost in (E.BATCH_COST, 0):
         E.BATCH_COST = saved_cost
     e = max((a - b).abs().max().item() for a, b in zip(together, alone))
     print(f"  batching, BATCH_COST {cost}: {len(plist)} programs, |together - alone| {e:.2e} {'PASS' if e < TOL else 'FAIL'}")
-l1, g1 = masked_grads(src_enc, [some])
-l0, g0 = masked_grads(src_enc, [some], ckpt=False)
+l1, g1 = masked_grads(src_enc, [some], remote=True)   # the source rows serve the remote columns
+l0, g0 = masked_grads(src_enc, [some], ckpt=False, remote=True)
 e = max((g0[n] - g1[n]).abs().max().item() for n in g0)
 ok = g0.keys() == g1.keys() and e < 1e-12 and any(n.endswith("src_eq") for n in g0) and abs(l0 - l1).item() < 1e-12
 print(f"  checkpointing: {len(g0)} gradients, the source equality weights' among them, |with - without| {e:.2e} "

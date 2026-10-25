@@ -35,7 +35,7 @@ out of every set; `--enc-k 0` with `--tables` leaves out the same cases and buil
 
     work/lm/.venv/bin/python -u lm/train.py --base Qwen/Qwen3-0.6B --minutes 5 --out lm/runs/smoke
 """
-import argparse, json, math, random, re, time
+import argparse, hashlib, json, math, random, re, time
 T_START = time.time()
 from pathlib import Path
 
@@ -172,6 +172,19 @@ class Target:
     admitted declarations of each kind, by index among the declarations of that kind."""
     def __init__(self, pos, cls, kind, ptr, outs, cands):
         self.pos, self.cls, self.kind, self.ptr, self.outs, self.cands = pos, cls, kind, ptr, outs, cands
+
+
+def fold_of(task, n):
+    """The fold of a task id among n: the first 8 hex digits of its SHA-1, modulo n."""
+    return int(hashlib.sha1(task.encode()).hexdigest()[:8], 16) % n
+
+
+def parse_fold(text):
+    """`k/n` as (k, n), with 0 <= k < n."""
+    m = re.fullmatch(r"(\d+)/(\d+)", text)
+    if not m or not 0 <= int(m.group(1)) < int(m.group(2)):
+        raise argparse.ArgumentTypeError(f"--fold takes k/n with 0 <= k < n, not {text!r}")
+    return int(m.group(1)), int(m.group(2))
 
 
 def by_task(cases):
@@ -508,6 +521,8 @@ def main():
     ap.add_argument("--eval-train", action="store_true", help="evaluate on the training programs (overfit check)")
     ap.add_argument("--eval-limit", type=int, default=0, help="evaluate on the first n held-out programs only")
     ap.add_argument("--indist", type=int, default=80, help="training tasks held out as the in-distribution split")
+    ap.add_argument("--fold", type=parse_fold, help="k/n: train on the training tasks whose id hashes into fold k of n; "
+                    "the held-out sets do not change")
     ap.add_argument("--solvers", default="programs/solvers", help="the solvers, for their family headers")
     ap.add_argument("--max-steps", type=int, default=0, help="stop after n steps")
     ap.add_argument("--pure-bf16", action="store_true", help="keep the weights and optimizer state in bf16 (no fp32 copy)")
@@ -581,6 +596,8 @@ def main():
         train = [c for c in train if c["concept"]]
     train, indist, held, dropped = split(train, held, families(a.solvers), a.indist, seed=0)
     print(f"evaluation tasks dropped as family siblings of training tasks: {dropped}")
+    if a.fold:
+        train = [c for c in train if fold_of(c["task"], a.fold[1]) == a.fold[0]]
     train_tasks = by_task(train)
     indist = [c for c in indist if c["concept"]]
     held = [c for c in held if c["concept"]]
@@ -672,13 +689,16 @@ def main():
 
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
     log = open(out / "log.jsonl", "a")
-    print(f"{len(train_tasks)} train tasks ({sum(map(len, train_tasks))} cases), {len(indist)} in-distribution held-out, "
+    print(f"{len(train_tasks)} train tasks ({sum(map(len, train_tasks))} cases{f', fold {a.fold[0]}/{a.fold[1]}' if a.fold else ''}), "
+          f"{len(indist)} in-distribution held-out, "
           f"{len(held)} evaluation held-out; vocab in {len(in_names)}, out {len(out_names)}; "
           f"{sum(p.numel() for p in model.parameters()) / 1e6:.0f}M parameters on {a.device}")
 
     # --minutes bounds the whole process, loading included, so the final evaluation lands inside it
     best = float("inf")
     meta = {"base": a.base, "pure_bf16": a.pure_bf16, "in_names": in_names, "out_names": out_names, "id_dim": a.id_dim}
+    if a.fold:
+        meta.update(fold=f"{a.fold[0]}/{a.fold[1]}")
     if a.tables:
         meta.update(tables=a.tables, enc_k=K, enc_layers=a.enc_layers, enc_width=a.enc_width, enc_heads=a.enc_heads,
                     enc_mlp=a.enc_mlp, enc_gram=a.enc_gram, enc_budget=a.enc_budget, enc_max_rows=a.enc_max_rows,
