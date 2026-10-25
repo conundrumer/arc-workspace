@@ -24,6 +24,15 @@ work/lm/.venv/bin/python lm/runs/data-study/render_case.py work/tables/full-9a98
 
 It reads only the rows of that case. A render keeps the "What I see" section of an existing file.
 
+Compute the detectors of `marks.md` over the first table after the branch of every continuation, then measure how each ranks the gold continuation's table against the sampled ones:
+
+```
+work/lm/.venv/bin/python lm/runs/data-study/detectors.py compute work/lm/rollouts-s2/export [--seconds 840]
+work/lm/.venv/bin/python lm/runs/data-study/detectors.py measure work/lm/data-full-09be8c8b
+```
+
+`compute` writes one parquet per task under `work/lm/data-study-detectors`, skips the tasks already written, and stops starting tasks after `--seconds`; run it again to go on. Once every task is written, it joins them into `detectors.parquet`. The second argument of `measure` is the data export whose held-out tasks give the split.
+
 ## Files
 
 - `render_branch.py`: the script.
@@ -42,6 +51,9 @@ It reads only the rows of that case. A render keeps the "What I see" section of 
 - `case-44f52bb0.md`: the case `$Direct`, a 3x3 input classed by its mirror symmetry into the 1x1 output 1 or 7.
 - `case-5ad8a7c0.md`: the case `$Shortest`, the pairs of marks at the least gap fill their spans, at two DET assignments of the axis.
 - `case-6d1d5c90.md`: the case `$Marked`, a band is dropped and the rows rotate by the marker's row, at 16 DET assignments of two directions.
+- `detectors.py`: the script that computes and measures the detectors. Its docstring defines each detector and the measurement.
+- `detectors.parquet`: one row per Table at positions 0 to 3 after the branch, with its member, label and flags, the inputs of `value_eval.features`, and the detector values at position 0.
+- `detectors.out`: the measurement: counts of lists, pairs and Tables, the Tables each filter fires on, and the ranking accuracy and AUC of each detector, of the trivial baseline and of a logistic regression on every detector, on the held-out branch points and in 5-fold cross-validation by task.
 - `observations.md`: what held across the `case-<task>.md` files about telling from a table that it adds information, and what took the clause text or the later program.
 
 ## Decoding
