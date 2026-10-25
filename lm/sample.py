@@ -28,7 +28,8 @@ model-written tokens that one clause of any case in `--data`'s cases.npz holds, 
 to f times the model-written tokens of its source case in prefix mode, and from nothing to f times the median
 of those counts over the task's cases in `--data`; the task's line prints the cap. Both count the tokens that the
 sampler writes after the prefix, as `--max-steps` does, except that `--max-clause` counts the prefix's tokens of
-the clause the prefix ends in.
+the clause the prefix ends in. `--max-cont-factor <f>` (default 0, off) ends a prefix-mode program ("max-cont") at
+ceil(f x G) sampled tokens, G being the model-written tokens of its source case after the prefix; with no prefix it has no effect.
 
 Each declaration takes a random identifier, as in training. The identifiers and the draws of each program come
 from a generator seeded by `--seed`, the task and the program's index, so a program's draws do not depend on
@@ -66,11 +67,12 @@ the streams under the same settings. Then one JSON line per program:
   tokens             len(ids)
   program_form       program_form() of the decode where it stopped: the finished clauses, a whole program where
                      ended
-  end                "ended", "max-steps", "max-clause", "max-tokens", "max-seconds", "empty-mask", "stuck",
+  end                "ended", "max-steps", "max-clause", "max-cont", "max-tokens", "max-seconds", "empty-mask", "stuck",
                      "refused", "panic", or "gold" for the gold line
   panic              the engine's panic message for "panic"; else null
   max_steps_used     the program's cap on sampled tokens: `--max-steps` or its lower value under
                      `--max-steps-factor`
+  max_cont_used      the program's cap on sampled tokens under `--max-cont-factor`; 0 for none
   max_clause_used    the program's cap on the model-written tokens of a clause; 0 for none
   rules              the consistency kind of each sampled RULE clause's END, in order; for a gold line, that of
                      each RULE clause of the case's stream after the prefix, from the one replay of the whole
@@ -142,7 +144,7 @@ class Program:
         self.fed = 0
         self.consistency, self.rules, self.end, self.steps, self.refusals = None, [], None, 0, 0
         self.clause = 0                           # the model-written tokens of the current clause
-        self.max_steps = self.max_clause = 0
+        self.max_steps = self.max_clause = self.max_cont = 0
         self.logits = self.query = None
         self.prefix_case, self.prefix_tokens, self.prefix_rules = None, 0, 0
         self.panic = None                         # the message of an engine panic at the program's last step
@@ -188,7 +190,8 @@ class Sampler:
         self.id_dim = meta["id_dim"]
         self.temperature, self.greedy = temperature, greedy
         self.max_steps, self.max_tokens, self.seed = max_steps, max_tokens, seed
-        self.max_clause, self.steps_factor, self.median = max_clause, steps_factor, None   # median: the task's, for the factor
+        self.max_clause, self.steps_factor, self.median = max_clause, steps_factor, None
+        self.cont_factor = 0.0   # median: the task's, for the factor
         self.progress, self.tests = 0, None
         self.time = {"model": 0.0, "admissible": 0.0, "mask": 0.0, "engine": 0.0}
         self.n_vocab = len(self.names)
@@ -312,6 +315,8 @@ class Sampler:
             if self.steps_factor:
                 source = sum(pre[2]) if pre is not None else self.median
                 p.max_steps = min(self.max_steps, max(1, math.ceil(self.steps_factor * source)))
+            if self.cont_factor and pre is not None:   # G: the model-written tokens of the case after the prefix
+                p.max_cont = max(1, math.ceil(self.cont_factor * sum(pre[2][pre[3]:])))
             if pre is not None:   # an empty prefix keeps its case, as branch point 0 of that case
                 p.prefix_case = pre[0]
             if pre is not None and pre[3] and not self.replay(p, *pre, deadline=deadline):
@@ -375,6 +380,8 @@ class Sampler:
                         p.end = "ended"
                     elif p.max_clause and p.clause > p.max_clause:
                         p.end = "max-clause"
+                    elif p.max_cont and p.steps >= p.max_cont and p.max_cont < p.max_steps:
+                        p.end = "max-cont"
                     elif p.steps >= p.max_steps:
                         p.end = "max-steps"
             keep = [b for b, p in enumerate(active) if p.end is None]
@@ -385,7 +392,8 @@ class Sampler:
         return [{"task": p.task, "rollout": p.index, "end": p.end} if p.end == "deadline" else
                 record(p.task, p.prefix_case, p.prefix_rules, p.index, p.ids, p.model, p.prefix_tokens,
                        p.decoder, p.consistency, self.tests, end=p.end, rules=p.rules, model_steps=p.steps,
-                       refusals=p.refusals, max_steps_used=p.max_steps, max_clause_used=p.max_clause, panic=p.panic)
+                       refusals=p.refusals, max_steps_used=p.max_steps, max_cont_used=p.max_cont,
+                       max_clause_used=p.max_clause, panic=p.panic)
                 for p in progs]
 
 
@@ -400,7 +408,7 @@ def gold(task, case, ids, model, prefix_tokens, prefix_rules, rules):
             "model": list(model), "prefix_tokens": prefix_tokens, "prefix_rules": prefix_rules, "ended": None,
             "consistency": None, "solved_test": None, "attempts": None, "tokens": len(ids), "program_form": None,
             "end": "gold", "rules": rules, "model_steps": 0, "refusals": 0, "max_steps_used": None,
-            "max_clause_used": None, "panic": None}
+            "max_cont_used": None, "max_clause_used": None, "panic": None}
 
 
 def record(task, case, branch, rollout, ids, model, prefix_tokens, decoder, consistency, tests, **rest):
@@ -482,6 +490,9 @@ def main():
     ap.add_argument("--max-steps-factor", type=float, default=0.0,
                     help="lowers --max-steps to this times the source case's model-written tokens (prefix mode), or "
                          "the median of the task's cases in --data; 0 for off")
+    ap.add_argument("--max-cont-factor", type=float, default=0.0,
+                    help="ends a program at this times the model-written tokens that its source case has after the "
+                         "prefix (prefix mode); no effect with --prefix 0; 0 for off")
     ap.add_argument("--max-tokens", type=int, default=MAX_TOKENS, help="the most context positions, the start token included")
     ap.add_argument("--max-seconds", type=float, default=0.0,
                     help="the most wall seconds of a task, its prefix replays included; 0 for none")
@@ -513,6 +524,7 @@ def main():
                 if a.max_clause is None or a.max_steps_factor:
                     most, medians = corpus_stats(a.data, sampler.names, sampler.kinds)
                 sampler.steps_factor = a.max_steps_factor
+                sampler.cont_factor = a.max_cont_factor
                 if a.max_clause is None:
                     sampler.max_clause = math.ceil(1.5 * most)
                     print(f"max-clause {sampler.max_clause}: 1.5 times {most}, the most model-written tokens of one "
