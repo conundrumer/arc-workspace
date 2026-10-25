@@ -48,6 +48,13 @@ the ended tasks (done ones of an earlier run included), the seconds since the st
 task has ended in this run), then the tasks running past 10 s, longest first (the first 10 and a count of the rest
 where more), each with the seconds since its call started and the share of its model steps done, as
 arclog.ReplayProgress gives them.
+
+`export_streams(out, task, streams, names=None, settings=None, bodies=False, step_cap=10000)` writes the same layout
+for the token streams of one task, for a caller that imports the module: `streams` is a list of `(ids, model)`
+pairs as `arclog.stream_tables` takes them. `out` must not exist or be empty (else `FileExistsError`). Its
+`report.txt` holds, for each stream replayed, `<task> <case>: ended <kind> at token <index>` (`<kind>` the
+consistency of the last `RULE` clause the stream ends, or `ended none`), then the fault line of each stream that
+faults (its tables up to the fault are kept) or lies past the cap. It writes no `settings.json`.
 """
 import json, os, sys, glob, time
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
@@ -109,7 +116,6 @@ def main(out, task_ids, **options):
             os.remove(f)
     # The largest .arcdata files first: the slowest tasks are among them, so they start early.
     todo = sorted((t for t in task_ids if t not in done), key=lambda t: (-os.path.getsize(f"{CORPUS}/{t}.arcdata"), t))
-    names = dict(arclog.orientation_names())
     started, progress = {}, {}
 
     def run(task):
@@ -145,7 +151,19 @@ def main(out, task_ids, **options):
         pool.shutdown(wait=False, cancel_futures=True)
         raise failure
     pool.shutdown()
+    merge(out)
+
+
+def merge(out):
+    """Writes the whole files, `orientations.json` and `report.txt` from the parts of `out`, and prints the counts."""
     parts = lambda p: sorted(glob.glob(f"{out}/parts/*.{p}.parquet"))
+    lines = [l for f in sorted(glob.glob(f"{out}/parts/*.report.txt")) for l in open(f).read().splitlines()]
+    lines.sort(key=lambda l: l.split()[0])
+    json.dump(sorted(arclog.orientation_names()), open(f"{out}/orientations.json", "w"))
+    open(f"{out}/report.txt", "w").write("\n".join(lines) + "\n")
+    if not parts("tables"):
+        print(f"0 index rows, {len(lines)} fault lines")
+        return
     whole = {p: pd.concat([pd.read_parquet(f) for f in parts(p)]).astype({"concept": bool}).sort_values("task", kind="stable") for p in PARTS}
     tables, entries = whole["tables"], whole["entries"]
     tables["table"] = tables.groupby(["task", "case"]).cumcount()
@@ -153,11 +171,23 @@ def main(out, task_ids, **options):
     entries.merge(tables, on=["task", "case", "table"], suffixes=("", "_table")).to_parquet(f"{out}/index.parquet")
     for p in ("tables", "assigned", "projections", "projection_rows", "flows"):
         whole[p].to_parquet(f"{out}/{p}.parquet")
-    json.dump(sorted(names.items()), open(f"{out}/orientations.json", "w"))
-    lines = [l for f in sorted(glob.glob(f"{out}/parts/*.report.txt")) for l in open(f).read().splitlines()]
-    lines.sort(key=lambda l: l.split()[0])
-    open(f"{out}/report.txt", "w").write("\n".join(lines) + "\n")
     print(f"{len(entries)} index rows, {len(lines)} fault lines")
+
+
+def export_streams(out, task, streams, names=None, settings=None, bodies=False, step_cap=10000):
+    """Writes the tables export of the token `streams` of `task` to the new or empty directory `out`.
+
+    `streams`, `names`, `settings` and `bodies` are those of `arclog.stream_tables`, and `step_cap` is its
+    cap, 10000 as in the corpus export. The layout is that of `main`, with one part and no `settings.json`; its
+    `report.txt` holds, for each stream replayed, the line `<task> <case>: ended <kind> at token <index>` (or
+    `ended none`) and then the fault lines of the streams that fault or lie past the cap.
+    """
+    if os.path.exists(out) and os.listdir(out):
+        raise FileExistsError(f"{out} exists and is not empty")
+    os.makedirs(f"{out}/parts", exist_ok=True)
+    cases, lines = arclog.stream_tables(task, TASKS, streams, names=names, settings=settings, bodies=bodies, step_cap=step_cap)
+    write_part(out, 0, [(task, cases, lines)])
+    merge(out)
 
 
 if __name__ == "__main__":

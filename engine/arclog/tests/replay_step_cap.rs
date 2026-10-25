@@ -113,7 +113,7 @@ fn a_step_cap_cuts_a_solvers_streams_at_the_stream_that_passes_it() {
             &ReplayProgress::default(),
             &|record: &mut Vec<usize>, _: &Decoder<'_>, stepped| record.push(stepped.index),
             &|_| {},
-            &|_, record| record,
+            &|_, replay| replay.record,
             &|_| {
                 settled.fetch_add(1, Ordering::SeqCst);
             },

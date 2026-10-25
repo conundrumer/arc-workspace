@@ -123,7 +123,7 @@ fn replay_cases<T: Default + Clone>(
             case: case.case,
             concept: case.concept,
             outcome: match case.stream {
-                Ok(_) => outcomes.next().expect("an outcome for each stream"),
+                Ok(_) => outcomes.next().expect("an outcome for each stream").into_result(),
                 Err(fault) => Err(fault),
             },
         })
@@ -171,12 +171,15 @@ struct Checkpoint<'a, T> {
     record: T,
 }
 
-/// The outcome of the replay of each of `streams`, token ids with their
+/// The [`StreamReplay`] of each of `streams`, token ids with their
 /// emitters, in the order of `streams`, as `replay` gives it on a decoder
 /// that judges the train pairs of `judged` under `settings`, the
 /// constructions `constructions`, and a corpus session of this call's own.
 /// `record` runs after each step of a token the model emits, with the
-/// stream's record, which starts as `T::default()`. The replay computes the
+/// stream's record, which starts as `T::default()`. A stream whose replay is
+/// refused keeps the record of the model steps before the refused token, with
+/// the refusal's message as its fault; a stream that ends while the engine
+/// forces tokens keeps its whole record. The replay computes the
 /// token mask before each step where `masked` holds. The streams are
 /// replayed in the order of [`sorted_streams`] as a prefix tree: the token
 /// mask and the step of a prefix that streams share run once: a replay
@@ -196,13 +199,13 @@ pub fn replay_prefix_tree<T: Default + Clone>(
     settings: &DecodeSettings,
     masked: bool,
     record: &dyn Fn(&mut T, &Decoder<'_>, Stepped<'_>),
-) -> Vec<Result<T, String>> {
+) -> Vec<StreamReplay<T>> {
     let registry = Registry::get();
     let session = corpus_session();
     let train: Arc<[PairCandidates<'_>]> = judged.train.iter().map(|pair| PairCandidates::of(pair, Section::Train, World::Closed)).collect();
     let root = Decoder::new(task, &session, registry, constructions, settings).judging(train);
     let order = sorted_streams(streams);
-    let mut outcomes: Vec<Option<Result<T, String>>> = streams.iter().map(|_| None).collect();
+    let mut outcomes: Vec<Option<StreamReplay<T>>> = streams.iter().map(|_| None).collect();
     // The index in a stream of the token at which its replay was refused.
     let mut refused_at: Vec<Option<usize>> = vec![None; streams.len()];
     // The prefix that each stream shares with the stream before it.
@@ -268,14 +271,34 @@ pub fn replay_prefix_tree<T: Default + Clone>(
         }
         let result = result.and_then(|()| run(&mut decoder, &tokens, position, forced, &mut recording));
         match result {
-            Ok(replayed) => outcomes[index] = Some(replayed.unfinished().map_or(Ok(recording), Err)),
+            Ok(replayed) => outcomes[index] = Some(StreamReplay { fault: replayed.unfinished(), record: recording }),
             Err(refused) => {
                 refused_at[index] = Some(refused.index);
-                outcomes[index] = Some(Err(refused.message));
+                outcomes[index] = Some(StreamReplay { record: recording, fault: Some(refused.message) });
             }
         }
     }
     outcomes.into_iter().map(|outcome| outcome.expect("each stream has an outcome")).collect()
+}
+
+/// What the replay of one stream gives: the record it built, and the line of
+/// the refusal, or of the unfinished end, that stopped it where one did.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StreamReplay<T> {
+    /// The record of each model step the replay took. Where the replay was
+    /// refused at a token, it holds the steps before that token; where the
+    /// stream ended while the engine forces tokens, it holds the whole stream.
+    pub record: T,
+    /// The refusal of a token, or [`Replayed::unfinished`](super::replay::Replayed::unfinished), that stopped the replay.
+    pub fault: Option<String>,
+}
+
+impl<T> StreamReplay<T> {
+    /// The record where the replay had no fault, and the fault, with its
+    /// record dropped, where it had one.
+    pub fn into_result(self) -> Result<T, String> {
+        self.fault.map_or(Ok(self.record), Err)
+    }
 }
 
 /// A solver whose streams a call of [`replay_units`] replays: its task, the
@@ -332,8 +355,8 @@ impl ReplayProgress {
 /// and the units run largest first, each in a session of its
 /// own and under `catch_unwind`. As a unit starts, its worker calls
 /// `started` with the solver's index in `solvers`. As a unit ends, its worker calls `ended`
-/// with the solver's index in `solvers` and the record of each of the unit's
-/// streams that the replay takes, and the stream's result is what `ended`
+/// with the solver's index in `solvers` and the [`StreamReplay`] of each of the
+/// unit's streams, refused or not, and the stream's result is what `ended`
 /// gives. Once a stream's replay ends, whether it gives a record or a fault,
 /// its worker calls `settled` with the solver's index.
 ///
@@ -360,7 +383,7 @@ pub fn replay_units<T: Default + Clone, U: Send>(
     progress: &ReplayProgress,
     record: &(dyn Fn(&mut T, &Decoder<'_>, Stepped<'_>) + Sync),
     started: &(dyn Fn(usize) + Sync),
-    ended: &(dyn Fn(usize, T) -> U + Sync),
+    ended: &(dyn Fn(usize, StreamReplay<T>) -> U + Sync),
     settled: &(dyn Fn(usize) + Sync),
     step_cap: Option<usize>,
 ) -> Vec<Result<Vec<Result<U, String>>, String>> {
@@ -423,7 +446,7 @@ pub fn replay_units<T: Default + Clone, U: Send>(
             replay_prefix_tree(solver.task, solver.judged, &ids, constructions, settings, masked, &counting)
                 .into_iter()
                 .map(|outcome| {
-                    let out = outcome.map(|recorded| ended(unit.solver, recorded));
+                    let out = Ok(ended(unit.solver, outcome));
                     settled(unit.solver);
                     out
                 })

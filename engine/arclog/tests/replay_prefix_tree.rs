@@ -1,7 +1,7 @@
 //! The replay of streams as a prefix tree gives, for each stream, the record
 //! and the outcome that a replay of that stream from a new decoder gives.
 
-use arclog::decode::corpus::{read_task_files, replay_prefix_tree, corpus_session, sorted_streams, model_steps};
+use arclog::decode::corpus::{read_task_files, replay_prefix_tree, corpus_session, StreamReplay, sorted_streams, model_steps};
 use arclog::decode::replay::replay;
 use arclog::decode::{Decoder, TokenMask};
 use arclog::eval::instance::Constructions;
@@ -101,15 +101,17 @@ fn a_prefix_tree_replay_gives_what_a_replay_from_a_new_decoder_gives() {
     for (stream, outcome) in streams.iter().zip(&tree) {
         let mut decoder = fresh();
         let mut recorded = Record::new();
-        let alone = replay(&mut decoder, &tokens(stream), true, &mut |decoder, stepped| {
+        let result = replay(&mut decoder, &tokens(stream), true, &mut |decoder, stepped| {
             record(&mut recorded, decoder, stepped);
             ControlFlow::Continue(())
-        })
-        .and_then(|replayed| replayed.unfinished().map_or(Ok(recorded), Err));
+        });
+        let alone = StreamReplay { fault: result.map_or_else(Some, |replayed| replayed.unfinished()), record: recorded };
         assert_eq!(*outcome, alone);
     }
-    assert!(tree[1].is_err(), "the refused stream fails: {:?}", tree[1]);
-    assert!(tree[0].is_ok(), "{:?}", tree[0]);
+    // The refused stream keeps the steps before its refused token.
+    assert!(tree[1].fault.is_some(), "the refused stream fails: {:?}", tree[1]);
+    assert!(!tree[1].record.is_empty(), "the refused stream keeps the record before its refused token");
+    assert!(tree[0].fault.is_none(), "{:?}", tree[0].fault);
 
     // A replay with no mask records the same steps and ends the same way, refusal lines included.
     let indices = |record: &mut Vec<usize>, _: &Decoder<'_>, stepped: arclog::decode::replay::Stepped<'_>| {
@@ -117,7 +119,7 @@ fn a_prefix_tree_replay_gives_what_a_replay_from_a_new_decoder_gives() {
         record.push(stepped.index);
     };
     let unmasked = replay_prefix_tree(&task, &judged, &streams, &constructions, &settings, false, &indices);
-    let masked_indices: Vec<Result<Vec<usize>, String>> = tree.iter().map(|outcome| outcome.as_ref().map(|record| record.iter().map(|(index, _)| *index).collect()).map_err(Clone::clone)).collect();
+    let masked_indices: Vec<StreamReplay<Vec<usize>>> = tree.iter().map(|outcome| StreamReplay { record: outcome.record.iter().map(|(index, _)| *index).collect(), fault: outcome.fault.clone() }).collect();
     assert_eq!(unmasked, masked_indices);
 
     let order = sorted_streams(&streams);
