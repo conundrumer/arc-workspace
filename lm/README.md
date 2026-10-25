@@ -147,6 +147,7 @@ Size runs 2 and 3 ran on 4× L4, 7.5 minutes of training each, under `--pure-bf1
 ## Known faults in the method
 
 - `--eval-limit` and `--train-limit` take the first tasks in file order, not a random sample. They are for code checks.
+- In the exports up to 2812f3f5, `flows.parquet` numbers a relation's columns in another order than `tables.parquet` does (bug 20-134), and the loader joins the two by number. The field labels (computed, inferrable, remote, sole) and the column sources of every run that read the provenance (`pretrain-full-3` and `-4`, `value-s1` and `-s2`, `runs/remote-count/`) land on wrong columns in most cases, so their by-label and by-source numbers are not to be read until they are re-made on an export with the fix. The current files hold no column names that would let the loader remap.
 
 ## Tables for the encoder
 
