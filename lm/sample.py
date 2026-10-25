@@ -66,8 +66,9 @@ the streams under the same settings. Then one JSON line per program:
   attempts           for an ended decode, the count of attempt grids over the test inputs; else null
   tokens             len(ids)
   program_form       program_form() of the decode where it stopped: the finished clauses, a whole program where
-                     ended
-  end                "ended", "max-steps", "max-clause", "max-cont", "max-tokens", "max-seconds", "empty-mask", "stuck",
+                     ended; null where the engine panics in program_form(), and the line then gets
+                     program_form_panic, the panic's message, and keeps its end
+  end               "ended", "max-steps", "max-clause", "max-cont", "max-tokens", "max-seconds", "empty-mask", "stuck",
                      "refused", "panic", or "gold" for the gold line
   panic              the engine's panic message for "panic"; else null
   max_steps_used     the program's cap on sampled tokens: `--max-steps` or its lower value under
@@ -423,7 +424,18 @@ def record(task, case, branch, rollout, ids, model, prefix_tokens, decoder, cons
     return {"task": task, "case": case, "branch": branch, "rollout": rollout, "ids": ids, "model": model,
             "prefix_tokens": prefix_tokens, "prefix_rules": branch, "ended": ended,
             "consistency": consistency_json(consistency), "solved_test": solved, "attempts": n_attempts,
-            "tokens": len(ids), "program_form": decoder.program_form(), **rest}
+            "tokens": len(ids), **program_form(decoder), **rest}
+
+
+def program_form(decoder):
+    """{"program_form": decoder.program_form()}, or {"program_form": None, "program_form_panic": the message} where
+    the engine panics in it."""
+    try:
+        return {"program_form": decoder.program_form()}
+    except BaseException as e:   # pyo3's PanicException derives from BaseException and no module exports it
+        if type(e).__name__ != "PanicException":
+            raise
+        return {"program_form": None, "program_form_panic": str(e)}
 
 
 def corpus_cases(data, names):

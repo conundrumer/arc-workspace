@@ -1,14 +1,14 @@
 """Checks the value head's data path and loss on a synthetic rollout export written to a temporary directory.
 
 The export holds two tasks, `ta` and `tb`, each with branch points of the corpus case `$C`, and the branch point of
-the empty prefix of the corpus case `$D`, which has no gold line and whose continuations all fail. A branch point of
+the empty prefix of the corpus case `$D $E` (`$D` below; its name holds a space, as corpus case names can), which has no gold line and whose continuations all fail. A branch point of
 `$C` has six continuations: the gold one and r0, which solve, r1 and r2, which do not, r3, whose first table after the
 branch is empty, and r4, whose first table after the branch faults and which the sampler and the report's verdict
 mark solved. Every case holds the evidence tables, one prefix table (none for `$D`) and two tables after the branch,
 each table (Number, Color) of 8 rows on each of two train examples; the first table after the branch of a solving
 continuation has one Color on all its rows, and every other table random Colors. The labels file comes from
-lm/rollout_labels.py, on sampler lines, whose settings line gives an LM of a fold that holds neither task, and a report
-written beside the export.
+lm/rollout_labels.py, on sampler lines, whose settings line gives an LM of a fold that holds neither task and a data
+export that marks `tb` held out, and a report written beside the export.
 
 Each continuation's stream holds a DET clause and two RULE clauses after the branch, the first table after the branch
 in the first rule and the second in the second, where the DET clause stands; r2's stream stops before the second
@@ -17,7 +17,10 @@ NotConsistent, F for Fault, S for SeveralValues: gold C N, r0 N C, r1 C N, r2 N 
 r0 N N, r1 N C, r2 C S.
 
 - Labels: `prefix_tables` must be 3 for a `$C` case and 2 for `$D`, the consistency must be the report's, r4 must
-  have its fault line, and a sampled case must give the sampler's run and fold. `rules` must be the sampler's and
+  have its fault line, and a sampled case must give the sampler's run and fold. A `$D` case must get the report's
+  verdict, its name's space read as part of the case. `heldout` must be true for each case of `tb` alone. Where
+  lm/export_rollouts.py merges two sampler files of different runs, each sampled case must give its own file's run.
+  `rules` must be the sampler's and
   `rule_ends` the two RULE clause ends (one for r2), the DET clause's end not among them; rollout_labels.py must
   refuse a line whose `rules` count another number of RULE clause ends. A case whose report gives a fault line
   and no verdict, as a stream past the export's step cap, must give no consistency. rollout_labels.py must refuse
@@ -28,7 +31,7 @@ r0 N N, r1 N C, r2 C S.
   the flags: r3's first table after the branch empty, r4's faulted, and no other flag; r4 is not solving. Each table
   after the branch has the consistent label of its rule's verdict, and r2's second table, of the open clause, and
   every table of the prefix none, flagged unjudged. The load must raise a DataFault where a sampled case's LM has a
-  fold that holds its task.
+  fold that holds its task, and load where that task is held out (`tb`).
 - Lists and losses, under the solving label: a list of a `$C` branch point holds the gold continuation, r0, r1 and
   r2; a change to the logits
   of the excluded tables must leave the ranking and the binary loss unchanged; the list of `$D` is not ranked,
@@ -64,6 +67,7 @@ import torch.nn as nn
 
 sys.path.insert(0, str(Path(__file__).parent))
 import encoder as E
+import export_rollouts as XR
 import pretrain as P
 import rollout_labels as RL
 from train import fold_of
@@ -79,7 +83,7 @@ ID = {n: i for i, n in enumerate(NAMES)}
 REL = next(i for i, k in enumerate(KINDS) if k == "relation")
 VERDICT = dict(C="Consistent", N="NotConsistent", F="Fault", S="SeveralValues")
 RULES = {("$C", "gold"): "CN", ("$C", 0): "NC", ("$C", 1): "CN", ("$C", 2): "N", ("$C", 3): "CC", ("$C", 4): "CF",
-         ("$D", 0): "NN", ("$D", 1): "NC", ("$D", 2): "CS"}   # the verdict of each rule of the continuation
+         ("$D $E", 0): "NN", ("$D $E", 1): "NC", ("$D $E", 2): "CS"}   # the verdict of each rule of the continuation
 
 
 def stream(case, m):
@@ -101,9 +105,12 @@ def verdict(ok, what):
         failed.append(what)
 
 
-def write_export(d, rng, tasks=("ta", "tb"), branches=BRANCHES, tasks_dir=None):
-    """A rollout export in `d`, its sampler lines at `d/sampler.jsonl` and, where `tasks_dir` is given, a task file
-    per task there (2 by 2 grids, two train pairs, one test pair)."""
+def write_export(d, rng, tasks=("ta", "tb"), branches=BRANCHES, tasks_dir=None, data_dir=None):
+    """A rollout export in `d`, its sampler lines at `d/sampler.jsonl`, where `tasks_dir` is given, a task file
+    per task there (2 by 2 grids, two train pairs, one test pair), and, where `data_dir` is given, the sampler's data
+    export there: a cases.npz of one case per task that marks the last task held out."""
+    if data_dir is not None:
+        np.savez(Path(data_dir) / "cases.npz", task=np.array(tasks), heldout=np.array([t == tasks[-1] for t in tasks]))
     if tasks_dir is not None:
         for task in tasks:
             g = lambda: rng.integers(0, 10, (2, 2)).tolist()
@@ -114,13 +121,14 @@ def write_export(d, rng, tasks=("ta", "tb"), branches=BRANCHES, tasks_dir=None):
     rel = lambda r, token, fault=None: dict(point=0, relation=r, column_types=["Number", "Color"], width=2,
                                             det_relations=[], det_widths=[], token=token, fault=fault)
     random_rows = lambda: [[i, int(rng.integers(0, 10))] for i in range(N_ROWS)]
-    settings = {"settings": {}, "args": {"model": "runs/synthetic", "prefix": "random"},
+    settings = {"settings": {}, "world": "Closed", "args": {"model": "runs/synthetic", "prefix": "random",
+                                                           "data": None if data_dir is None else str(data_dir)},
                 "model_meta": {"fold": f"{FOLD}/4"}}
     tables, index, sampler, report = [], [], [settings], []
     for task in tasks:
         (d / "values" / task).mkdir(parents=True)
         members = [(("$C", b), m) for b in range(1, branches + 1) for m in ("gold", 0, 1, 2, 3, 4)]
-        members += [(("$D", 0), m) for m in (0, 1, 2)]
+        members += [(("$D $E", 0), m) for m in (0, 1, 2)]
         prefix = {}
         for (case, b), m in members:
             name = RL.case_name(task, case, b, m)
@@ -176,9 +184,9 @@ def encoder(seed=0):
 
 t0 = time.time()
 tmp = tempfile.TemporaryDirectory()
-d, tasks_dir = Path(tmp.name) / "rollouts", Path(tmp.name) / "tasks"
-d.mkdir(); tasks_dir.mkdir()
-write_export(d, np.random.default_rng(0), tasks_dir=tasks_dir)
+d, tasks_dir, data_dir = Path(tmp.name) / "rollouts", Path(tmp.name) / "tasks", Path(tmp.name) / "data"
+d.mkdir(); tasks_dir.mkdir(); data_dir.mkdir()
+write_export(d, np.random.default_rng(0), tasks_dir=tasks_dir, data_dir=data_dir)
 RL.main(d / "sampler.jsonl", d)
 
 print("== labels (rollout_labels.py)")
@@ -192,8 +200,24 @@ verdict(lab("gold")["consistency"] == "Consistent" and lab(1)["consistency"] == 
 verdict(lab(1)["sampler_run"] == "runs/synthetic" and lab(1)["sampler_fold"] == f"{FOLD}/4"
         and lab("gold")["sampler_run"] is None and lab("gold")["sampler_fold"] is None,
         "a sampled case gives the sampler's run and fold, the gold one neither")
+verdict(lab(0, case="$D $E", b=0)["consistency"] == "NotConsistent"
+        and lab(0, case="$D $E", b=0)["case"] == "ta__$D $E__b0__r0",
+        "the report's verdict of a case whose name holds a space")
+verdict(lab(1)["heldout"] is False and lab("gold")["heldout"] is False and lab(1, task="tb")["heldout"] is True,
+        "heldout per task from the sampler's data export: ta not, tb held out")
+two = Path(tmp.name) / "two-files"
+two.mkdir()
+whole = [json.loads(l) for l in open(d / "sampler.jsonl")]
+for name, run, task in (("a", "runs/synthetic", "ta"), ("b", "runs/other", "tb")):
+    head = dict(whole[0], args=dict(whole[0]["args"], model=run))
+    (two / f"{name}.jsonl").write_text("".join(json.dumps(s) + "\n" for s in [head] + [s for s in whole[1:] if s["task"] == task]))
+first, merged = XR.read_lines([two / "a.jsonl", two / "b.jsonl"])
+(two / "samples.jsonl").write_text(XR.merged_text(first, merged))
+by_run = {(l["task"], l["sampler_run"]) for l in RL.labels(two / "samples.jsonl", d) if l["rollout"] != "gold"}
+verdict(by_run == {("ta", "runs/synthetic"), ("tb", "runs/other")},
+        f"the merged file of two sampler files of different runs gives each line its own file's run: {sorted(by_run)}")
 verdict(lab("gold")["rules"] == ["Consistent", "NotConsistent"] and lab("gold")["rule_ends"] == [11, 21]
-        and lab(2)["rule_ends"] == [11] and lab(2, case="$D", b=0)["rule_ends"] == [11, 21],
+        and lab(2)["rule_ends"] == [11] and lab(2, case="$D $E", b=0)["rule_ends"] == [11, 21],
         "rules are the sampler's; rule_ends the RULE clause ends, the DET clause's not, one for r2's open clause")
 sampler = [json.loads(l) for l in open(d / "sampler.jsonl")]
 r1 = next(i for i, s in enumerate(sampler) if s.get("case") == "$C" and s["branch"] == 1 and s["rollout"] == 1)
@@ -242,15 +266,15 @@ mem = lambda m, case="$C", b=1, task="ta": members[(task, RL.case_name(task, cas
 flags = lambda m, **k: [(r["position"], r["empty"], r["unseen"], r["faulted"]) for r in mem(m, **k)["records"]]
 verdict(not skipped and len(members) == len(labels), f"{len(members)} members, none skipped")
 verdict(mem("gold")["group"] == ("ta", "$C", 5) and mem("gold")["records"][0]["member"] == "gold"
-        and mem(2, b=3)["records"][0]["member"] == 2 and mem(0, case="$D", b=0)["group"] == ("ta", "$D", 0),
+        and mem(2, b=3)["records"][0]["member"] == 2 and mem(0, case="$D $E", b=0)["group"] == ("ta", "$D $E", 0),
         "groups and members")
 clean = lambda ps: [(p, False, False, False) for p in ps]
-verdict(flags("gold") == clean([-3, -2, -1, 0, 1]) and flags(0, case="$D", b=0) == clean([-2, -1, 0, 1]),
-        f"positions: gold {[f[0] for f in flags('gold')]}, $D {[f[0] for f in flags(0, case='$D', b=0)]}")
+verdict(flags("gold") == clean([-3, -2, -1, 0, 1]) and flags(0, case="$D $E", b=0) == clean([-2, -1, 0, 1]),
+        f"positions: gold {[f[0] for f in flags('gold')]}, $D {[f[0] for f in flags(0, case='$D $E', b=0)]}")
 verdict(flags(3)[3] == (0, True, False, False) and flags(4)[3] == (0, False, False, True)
         and flags(3)[4] == flags(4)[4] == (1, False, False, False), "r3 empty and r4 faulted at position 0 alone")
 verdict(mem("gold")["solving"] and mem(0)["solving"] and not any(mem(m)["solving"] for m in (1, 2, 3, 4))
-        and mem(1)["rate"] == 2 / 6 and mem(0, case="$D", b=0)["rate"] == 0,
+        and mem(1)["rate"] == 2 / 6 and mem(0, case="$D $E", b=0)["rate"] == 0,
         "solving members and rates; r4, faulted, is not solving though the sampler and the verdict mark it solved")
 want = lambda case, m: [None if p < 0 else
                         (VERDICT[RULES[(case, m)][p]] == "Consistent" if p < len(RULES[(case, m)]) else None)
@@ -272,15 +296,26 @@ try:
 except E.DataFault as e:
     leaked = str(e)
 verdict(leaked is not None and leaked.startswith("ta "), f"a case sampled by an LM whose fold holds its task: {leaked}")
+held_fold = Path(tmp.name) / "held-fold"
+shutil.copytree(d, held_fold)
+(held_fold / "labels.jsonl").write_text("".join(json.dumps(dict(l, sampler_fold=f"{fold_of('tb', 2)}/2")
+                                                           if l["sampler_fold"] and l["task"] == "tb" else l) + "\n"
+                                                for l in labels.values()))
+try:
+    E.load_rollouts(held_fold, tasks_dir=tasks_dir)
+    raised = None
+except E.DataFault as e:
+    raised = str(e)
+verdict(raised is None, f"a held-out task sampled by the LM of the fold its hash falls in loads: {raised}")
 
 print("== lists and losses")
-group = [mem(m) for m in ("gold", 0, 1, 2, 3, 4)] + [mem(m, case="$D", b=0) for m in (0, 1, 2)]
+group = [mem(m) for m in ("gold", 0, 1, 2, 3, 4)] + [mem(m, case="$D $E", b=0) for m in (0, 1, 2)]
 gen = torch.Generator().manual_seed(0)
 logits = [torch.randn(len(m["tables"]), generator=gen) for m in group]
 lists = E.value_lists(group, logits, label="solving")
 c_list = next(l for l in lists if l["group"] == ("ta", "$C", 5))
 verdict(len(lists) == 2 and c_list["labels"].tolist() == [True, True, False, False] and c_list["ranked"]
-        and not next(l for l in lists if l["group"][1] == "$D")["ranked"],
+        and not next(l for l in lists if l["group"][1] == "$D $E")["ranked"],
         "one list per branch point: $C's gold, r0, r1, r2, ranked; the one of $D not ranked")
 moved = [z.clone() for z in logits]
 moved[4][3] += 7.0; moved[5][3] -= 5.0
