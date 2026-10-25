@@ -113,7 +113,7 @@ An architecture that only large tables take would be learned from the rarest tab
 
 Each table adds K vectors to the language model's input, so the input length grows with the table count, and a relation with several assignments gives several tables. A sequence whose vectors would take it past twice `--max-len` drops its latest tables.
 
-The encoder runs one level at a time: the t-th table of every program of a batch. The row tokens of a level's tables are built together, and the level's tables are cut into a few batches, each padded to its largest table. The cut weighs the attention scores that padding adds against the fixed cost of one more batch, since a step of many small tables is bound by the count of operations it issues, not by its arithmetic.
+The encoder runs one level at a time: the t-th table of every program of a batch. The row tokens and equality codes of every table of a call are built together before the first level, and each level's tables are cut into a few batches, each padded to its largest table. The cut weighs the attention scores that padding adds against the fixed cost of one more batch, since a step of many small tables is bound by the count of operations it issues, not by its arithmetic.
 
 ## Training
 
