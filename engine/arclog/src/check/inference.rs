@@ -566,7 +566,7 @@ impl<'a> Inference<'a> {
         if types.iter().any(|(_, ty)| matches!(ty, Ok(None))) {
             let given = type_all(&bindings, PoseOr::Given);
             for ((label, ty), (_, given)) in types.iter_mut().zip(given) {
-                if matches!(ty, Ok(None)) {
+                if matches!(ty, Ok(None)) && !matches!(given, Ok(None)) {
                     *ty = given;
                     given_labels.push(*label);
                 }
