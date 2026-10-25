@@ -73,9 +73,9 @@ fn a_label_no_mode_binds_is_refused_at_its_site() {
 }
 
 #[test]
-fn a_per_input_read_of_ex_input_is_refused_at_its_atom() {
+fn a_per_input_read_of_ex_input_is_refused_once_its_atom_opens() {
     let found = first_refused("(RULE &x (ex_input *E *P (:Col *C)))", CheckId::PooledAndLiftedReads);
-    assert_eq!(found, Some((path(&[0, 0]), vec![path(&[0, 0])])));
+    assert_eq!(found, Some((path(&[0, 0, 0, 0]), vec![path(&[0, 0])])));
 }
 
 #[test]
