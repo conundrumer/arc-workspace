@@ -429,20 +429,21 @@ impl<'a> Decoder<'a> {
         Err(refusal)
     }
 
-    /// Whether some completion of the projection of an instance input that
-    /// stands open in `state` passes the checks, or, where none does, the
-    /// refusal of the last completion tried. The completions are the tokens
-    /// of [`state::State::head_site_completions`] with `limit` at each head
+    /// Whether some completion of the projection of an instance input, or
+    /// of the field of a body site, that stands open in `state` passes the
+    /// checks, or, where none does, the refusal of the last completion
+    /// tried. The completions are the tokens of
+    /// [`state::State::head_site_completions`] with `limit` at each head
     /// site that stands open or follows, up to the state where the input is
-    /// closed, which is the one the checks must pass. The search is
-    /// depth-first, and where it has spent `steps` it passes, as the mask
-    /// passed a state before the search.
+    /// closed or the field's label stands, which is the one the checks must
+    /// pass. The search is depth-first, and where it has spent `steps` it
+    /// refuses, with a refusal that says the search spent its budget.
     fn completes_projection(&self, state: &state::State, checks: &PrefixChecks<'_>, reads_example: state::ReadsExample<'_>, limit: usize, steps: &mut usize) -> Result<(), Refusal> {
         let Some(tokens) = state.head_site_completions(limit) else { return Ok(()) };
         let mut refusal = Refusal::Grammar("a projection has no completion");
         for token in tokens {
             if *steps == 0 {
-                return Ok(());
+                return Err(Refusal::Grammar("the completion search of a projection spent its budget"));
             }
             *steps -= 1;
             let next = match state.step(&self.context, &token, reads_example) {
@@ -469,7 +470,8 @@ impl<'a> Decoder<'a> {
     }
 }
 
-/// The steps of the completion search of a projection, per token.
+/// The steps of the completion search of a projection, per token. A token
+/// whose search spends them is refused.
 const PROJECTION_STEPS: usize = 256;
 
 /// What the mask has found at a state of the order operators `<`, `<=`, `>`

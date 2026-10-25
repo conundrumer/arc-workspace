@@ -1,7 +1,9 @@
 //! The mask admits a constraint's operator, or its first label, only where
 //! some completion of the constraint passes every check, and a projection of
 //! an instance input takes one label on a column of a fixed type, and a token
-//! in a projection only where some completion of the projection passes.
+//! in a projection only where some completion of the projection passes, and
+//! a field's column token on a body site only where some label after it
+//! passes.
 
 use arclog::decode::{Decoder, Refusal};
 use arclog::eval::instance::Constructions;
@@ -194,4 +196,48 @@ fn each_admitted_token_in_a_projection_has_an_admitted_continuation() {
         }
     }
     assert!(walked > 0, "a projection with admitted tokens");
+}
+
+/// Steps the tokens that `text` names, which the model writes, and skips each one the engine emitted.
+fn step_text(decoder: &mut Decoder<'_>, text: &str) {
+    let vocabulary = decoder.vocabulary();
+    let by_name: std::collections::HashMap<String, Token> = (0..u32::try_from(vocabulary.len()).unwrap()).map(|id| vocabulary.token(id).unwrap().clone()).map(|token| (token.to_string(), token)).collect();
+    let mut queue: Vec<Token> = vec![];
+    for name in text.split_whitespace() {
+        let token = by_name.get(name).unwrap_or_else(|| panic!("no token {name}")).clone();
+        if queue.first() == Some(&token) {
+            queue.remove(0);
+            continue;
+        }
+        let step = decoder.step(token.clone()).unwrap_or_else(|refusal| panic!("{name}: {refusal:?}"));
+        queue = step.forced.to_vec();
+    }
+}
+
+const CARDINALITY: &str = "INIT Cardinality :0 input :0 * L0 :1 ^ L1 END :1 input :0 * L2 :1 L1 END :0 END :1 L2 END :2 SKIP :2 SKIP &r0 &r1 &r2";
+
+/// A field's column token on the site of a body atom is admitted only where
+/// some label after it passes. `&r0` is an output of `Cardinality` whose
+/// first column holds a record, and a rule's head site there takes the
+/// field `:0` with `*`.
+#[test]
+fn a_field_token_whose_label_passes_is_admitted() {
+    let inputs = inputs();
+    let mut decoder = decoder(&inputs);
+    step_text(&mut decoder, CARDINALITY);
+    step_text(&mut decoder, "RULE &r0 :0");
+    assert!(admits(&decoder, &Token::Column(0)));
+}
+
+/// `&r6` is an output of `BoundingBox`, a relation that a `RULE` over
+/// `input` reads on its Example column, which the rule may read only pooled:
+/// no label follows the field `:0`, so the field token is refused.
+#[test]
+fn a_field_token_whose_every_label_is_refused_is_refused() {
+    let inputs = inputs();
+    let mut decoder = decoder(&inputs);
+    step_text(&mut decoder, CARDINALITY);
+    step_text(&mut decoder, "DET RarestColor END &r3 DET AnyOutNewColor END &r4 RULE &r3 :0 * L0 input :0 * L1 :1 L0 END &r5 INIT Connectivity :0 OR &r5 :0 ^ L0 :1 * L1 ALSO &r5 :0 L0 :1 L1 NOT &r5 :0 L0 END END :1 &r5 :0 L0 :1 * L2 END :0 END :1 END :2 SKIP :2 SKIP &r6 &r7 &r8 &r9 INIT BoundingBox :0 &r6 :2 * L0 :1 ^ L1 END :1 &r6 :2 * L2 :1 L1 END :0 END :1 L1 END &r10 &r11 RULE &r6 :0");
+    assert!(!admits(&decoder, &Token::Column(0)));
+    assert!(matches!(decoder.fork().step(Token::Column(0)), Err(Refusal::Check { .. })));
 }

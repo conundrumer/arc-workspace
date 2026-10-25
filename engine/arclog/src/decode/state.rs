@@ -381,8 +381,11 @@ impl State {
     }
 
     /// Where a head site of an instance input's projection stands on top,
-    /// the tokens the grammar admits there that a completion of the
-    /// projection can use, in the order a search tries them: `END`, the
+    /// or a body atom's site stands on top after a field's column token, the
+    /// tokens the grammar admits there that a completion can use, in the
+    /// order a search tries them. After a body site's field token: `*`, `^`
+    /// where the site stands in a key, `0`, and the labels in scope from the
+    /// last made. At a head site: `END`, the
     /// labels in scope from the last made, and the column token of the next
     /// field. After a field's column token only the labels, and after the
     /// record's `END` only `END`. A site that holds `limit` arguments takes
@@ -391,8 +394,16 @@ impl State {
     /// record of at most `FIELDS_TRIED` fields; one of a fixed type takes
     /// one label.
     pub(super) fn head_site_completions(&self, limit: usize) -> Option<Vec<Token>> {
-        let Some(Frame::HeadSite(site)) = self.stack.last() else { return None };
         let labels = |after: Option<u32>| (after.map_or(0, |last| last + 1)..self.labels).rev().map(Token::Label);
+        let site = match self.stack.last() {
+            Some(Frame::HeadSite(site)) => site,
+            Some(Frame::Site(SiteFrame { field: Some(_), .. })) => {
+                let key = self.in_key().then_some(Token::Control(Control::Key));
+                let marks = [Token::Control(Control::Fresh)].into_iter().chain(key).chain([Token::Control(Control::Zero)]);
+                return Some(marks.chain(labels(None)).collect());
+            }
+            _ => return None,
+        };
         let end = Token::Control(Control::End);
         if site.field.is_some() {
             return Some(labels(None).collect());
