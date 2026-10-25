@@ -202,6 +202,31 @@ fn a_column_flow_indexes_the_tables_columns_where_the_clause_writes_them_in_anot
     assert!(copies > 0);
 }
 
+/// A solver whose `&mark` takes the column order [Color, Box] where it is the
+/// last form and [Box, Color] once the `DET`s it reads are widened by the
+/// forms after it.
+const REORDERED: &str = include_str!("column_flows/reordered_columns.arclog");
+
+#[test]
+fn a_copy_flow_names_the_column_of_its_source_table_in_the_order_the_table_was_exported_with() {
+    let columns = columns_of(REORDERED, &[3, 3]);
+    let mut copies = 0;
+    for table in 0..columns.tables.relation.len() as u32 {
+        let types = &columns.tables.column_types[table as usize];
+        for column in 0..types.len() as u32 {
+            for (kind, _, source_column, source_table, det, _) in sources(&columns, table, column) {
+                if kind != COPY || source_column < 0 || source_table < 0 || det >= 0 {
+                    continue;
+                }
+                copies += 1;
+                let source = &columns.tables.column_types[source_table as usize];
+                assert_eq!(types[column as usize], source[source_column as usize], "column {column} of table {table} copies column {source_column} of table {source_table}");
+            }
+        }
+    }
+    assert!(copies > 0);
+}
+
 const PROPAGATION: &str = "(RULE &seed (dir_elem (:D *Delta)))
 (RULE &halt (dir_elem (:D *Delta)) (dir_elem (:D *Delta2)))
 (INIT &journey Propagation

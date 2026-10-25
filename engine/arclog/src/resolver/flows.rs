@@ -17,7 +17,7 @@ use super::{form_columns, ColumnPosition, DependencyKind, GraphNodeIndex, Resolv
 use crate::eval::ir::atom_modes;
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{
-    written_inputs, Atom, Body, Conjunct, ConstraintOp, FactRelation, LabelId, LabelUse, OutputName, OutputOwner, OutputStep, Operand, ProgramRelation,
+    written_inputs, Atom, Body, ColumnName, Conjunct, ConstraintOp, FactRelation, LabelId, LabelUse, OutputName, OutputOwner, OutputStep, Operand, ProgramRelation,
     RelationRef, RigidDetPart, Site, SiteArg,
 };
 use crate::registry::{is_key, key_fill, ColumnType, LibName, Registry};
@@ -59,13 +59,18 @@ pub struct ColumnSource {
     /// of a [`SourceKind::LibName`] source, and `None` for a constant.
     pub relation: Option<RelationRef>,
     pub column: SourceColumn,
+    /// The path of the source's row position in the columns of the relation
+    /// read, as [`ResolvedProgram::row_paths`] gives it, where that relation
+    /// is a program node: the position in the order the table of the
+    /// relation was exported with, where a later form reordered its columns.
+    pub row: Option<Box<[ColumnName]>>,
     /// The path of the atom that reads the source, empty where none does.
     pub atom: NodePath,
 }
 
 impl ColumnSource {
     fn without_atom(kind: SourceKind, relation: Option<RelationRef>) -> Self {
-        ColumnSource { kind, relation, column: SourceColumn::None, atom: NodePath::default() }
+        ColumnSource { kind, relation, column: SourceColumn::None, row: None, atom: NodePath::default() }
     }
 
     fn computed(mut self) -> Self {
@@ -274,7 +279,11 @@ impl<'p> BodyFlows<'p> {
             (relation, Some(position)) if lifted => (relation.clone(), SourceColumn::Position(position.0 - 1)),
             (relation, Some(position)) => (relation.clone(), SourceColumn::Position(position.0)),
         };
-        ColumnSource { kind, relation: Some(relation), column, atom: hit.path.clone() }
+        let row = match (self.program.resolution(hit.path), column) {
+            (Some(Resolution::Node(node)), SourceColumn::Position(position)) => self.program.row_paths(*node).and_then(|paths| paths.into_iter().nth(usize::from(position))),
+            _ => None,
+        };
+        ColumnSource { kind, relation: Some(relation), column, row, atom: hit.path.clone() }
     }
 
     /// The sources of `label` in `alt`, which `visiting` holds the labels
@@ -588,7 +597,7 @@ impl ResolvedProgram {
                     RelationRef::Fact(FactRelation::Input) => (RelationRef::Fact(FactRelation::ExInput), position + 1),
                     ref other => (other.clone(), position),
                 };
-                found.push(ColumnSource { kind: SourceKind::Computed, relation: Some(relation), column: SourceColumn::Position(position as u16), atom: NodePath::default() });
+                found.push(ColumnSource { kind: SourceKind::Computed, relation: Some(relation), column: SourceColumn::Position(position as u16), row: None, atom: NodePath::default() });
             }
         }
         found

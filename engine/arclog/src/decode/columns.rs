@@ -32,7 +32,7 @@ use crate::eval::determinations::relation_spelled;
 use crate::eval::join::each_row;
 use crate::eval::{RelationValue, Stop};
 use crate::program::path::NodePath;
-use crate::program::{ProgramRelation, RelationRef};
+use crate::program::{ColumnName, ProgramRelation, RelationRef};
 use crate::registry::Registry;
 use crate::resolver::{ColumnSource, SourceColumn, SourceKind};
 use crate::relations::Relation;
@@ -338,7 +338,7 @@ fn push_rows(values: &mut Vec<i32>, rows: &Relation, types: &[ValueType]) -> (u6
 /// The name of the relation that the tables of `names` stand for, each with
 /// its row, in the order of the rows: the relation as the program spells it,
 /// or the fact relation's name.
-type TableNames = Vec<(String, u32)>;
+type TableNames = Vec<(String, u32, Option<Vec<Box<[ColumnName]>>>)>;
 
 fn push_table(out: &mut CaseColumns, names: &mut TableNames, token: usize, table: &Table, train: usize) {
     let row = u32::try_from(out.tables.token.len()).expect("fewer than 2^32 tables");
@@ -403,7 +403,7 @@ fn push_table(out: &mut CaseColumns, names: &mut TableNames, token: usize, table
                     TableRelation::Slot(_) => contents.name.clone(),
                     TableRelation::Fact(fact) => spelling(FACT_RELATIONS, &fact).to_owned(),
                 };
-                names.push((name, row));
+                names.push((name, row, contents.rows.clone()));
             }
             push_contents(out, row, contents, &types, train);
         }
@@ -427,25 +427,37 @@ fn source_spelled(relation: &RelationRef) -> String {
 fn push_flows(out: &mut CaseColumns, names: &TableNames, row: u32, contents: &Contents) {
     let dets: Vec<String> = contents.dets.iter().map(|det| relation_spelled(&det.relation)).collect();
     for (column, sources) in contents.flows.iter().enumerate() {
-        for ColumnSource { kind, relation, column: source_column, atom } in sources {
+        for ColumnSource { kind, relation, column: source_column, row: source_row, atom } in sources {
             let spelled = relation.as_ref().map(source_spelled).unwrap_or_default();
-            let table = match kind {
-                SourceKind::Copy | SourceKind::Computed => names.iter().rev().find(|(name, _)| *name == spelled).map_or(-1, |&(_, table)| table as i32),
+            let source = match kind {
+                SourceKind::Copy | SourceKind::Computed => names.iter().rev().find(|(name, ..)| *name == spelled),
+                SourceKind::Constant | SourceKind::LibName => None,
+            };
+            let table = source.map_or(-1, |&(_, table, _)| table as i32);
+            let det = match kind {
+                SourceKind::Copy | SourceKind::Computed => dets.iter().position(|det| *det == spelled).map_or(-1, |place| place as i32),
                 SourceKind::Constant | SourceKind::LibName => -1,
+            };
+            // The source's table was exported with the order its columns had
+            // then; a later form may have reordered them. A `DET` source's
+            // column indexes the reading table's own `DET` columns.
+            let exported = match (source.and_then(|(_, _, rows)| rows.as_ref()), source_row) {
+                (Some(rows), Some(path)) if det < 0 => Some(rows.iter().position(|row| row == path)),
+                _ => None,
             };
             let flows = &mut out.flows;
             flows.table.push(row);
             flows.column.push(column as u32);
             flows.kind.push(*kind as u8);
             flows.source_table.push(table);
-            flows.det.push(match kind {
-                SourceKind::Copy | SourceKind::Computed => dets.iter().position(|det| *det == spelled).map_or(-1, |place| place as i32),
-                SourceKind::Constant | SourceKind::LibName => -1,
-            });
+            flows.det.push(det);
             flows.source_relation.push(spelled);
             flows.source_column.push(match source_column {
                 SourceColumn::None => -1,
-                SourceColumn::Position(position) => i32::from(*position),
+                SourceColumn::Position(position) => match exported {
+                    Some(found) => found.map_or(-1, |index| index as i32),
+                    None => i32::from(*position),
+                },
                 SourceColumn::Example => -2,
             });
             flows.atom.push(form_path(atom));

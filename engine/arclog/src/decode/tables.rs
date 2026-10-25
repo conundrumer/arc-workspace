@@ -130,6 +130,10 @@ pub struct Contents {
     /// The sources of each column's values ([`crate::resolver::ResolvedProgram::column_flows`]),
     /// none for an evidence table.
     pub flows: Box<[Vec<ColumnSource>]>,
+    /// The path of each row position of the relation's columns
+    /// ([`crate::resolver::ResolvedProgram::row_paths`]), where the relation
+    /// is a program node whose columns have as many positions as `columns`.
+    pub rows: Option<Vec<Box<[ColumnName]>>>,
     /// The depth of the relation in the dependency graph ([`crate::resolver::ResolvedProgram::depth`]).
     pub depth: u32,
     /// The candidate keys the program text gives, each as column positions.
@@ -255,7 +259,8 @@ impl Decoder<'_> {
         let projections = over.then(|| self.projections_of(&examples, form, work)).flatten();
         let flows = program.program.column_flows(relation.node, relation.output.as_deref(), &types, self.context.registry).into();
         let depth = program.program.depth(relation.node);
-        Ok(Contents { relation: TableRelation::Slot(slot), columns, dets, examples: examples.into(), projections, name: String::new(), flows, depth, keys: Vec::new(), grid: None })
+        let rows = program.program.row_paths(relation.node).filter(|rows| relation.output.is_none() && rows.len() == types.len());
+        Ok(Contents { relation: TableRelation::Slot(slot), columns, dets, examples: examples.into(), projections, name: String::new(), flows, rows, depth, keys: Vec::new(), grid: None })
     }
 
     /// The projections of the rows of `examples`, none where an example gives a
@@ -308,7 +313,7 @@ fn evidence_table(task: &Task, registry: &Registry, fact: FactRelation) -> Table
         .zip(held)
         .map(|(example, rows)| ExampleRows { example: Some(example), rows: Ok(Assigned { at: vec![(Vec::new(), vec![RelationValue::Rows(Arc::new(crate::eval::join::one_part(rows)))])], stop: None }) })
         .collect();
-    Table { form: NodePath::default(), point: Point::Evidence, contents: Ok(Contents { relation: TableRelation::Fact(fact), columns, dets: Box::new([]), examples, projections: None, name: String::new(), flows: Box::new([]), depth: 0, keys: vec![vec![0, 1]], grid: None }) }
+    Table { form: NodePath::default(), point: Point::Evidence, contents: Ok(Contents { relation: TableRelation::Fact(fact), columns, dets: Box::new([]), examples, projections: None, name: String::new(), flows: Box::new([]), rows: None, depth: 0, keys: vec![vec![0, 1]], grid: None }) }
 }
 
 /// The relation of the graph that the form at `form` of `program` declares as

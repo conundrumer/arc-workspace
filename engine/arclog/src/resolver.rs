@@ -391,6 +391,14 @@ impl ResolvedProgram {
         Some(columns.row_names())
     }
 
+    /// The path of each row position of the relation of `node`, in row
+    /// order, as `Columns::row_paths` gives it: a position keeps its path
+    /// where later forms reorder the columns of `node`. `None` where the
+    /// columns of `node` are not known.
+    pub fn row_paths(&self, node: GraphNodeIndex) -> Option<Vec<Box<[ColumnName]>>> {
+        Some(self.names.node_columns_of(node.0 as usize)?.row_paths())
+    }
+
     /// The position, in the rows of the output `port` of the keyed `INIT`
     /// form `instance`, of the field `field` of its `key` column, where the
     /// component declares the output.
