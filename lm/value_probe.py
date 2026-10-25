@@ -154,6 +154,7 @@ def r2(pred, y):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--encoder", help="an encoder.pt that pretrain.py saved; default: a random initialization")
+    ap.add_argument("--base", default="HuggingFaceTB/SmolLM2-135M", help="the base LM of a random-init encoder; ignored with --encoder")
     ap.add_argument("--value-tables", required=True, help="a rollout export with its labels.jsonl")
     ap.add_argument("--data", default="work/lm/data", help="the data whose held-out tasks give the split")
     ap.add_argument("--positions", type=int, default=4)
@@ -168,7 +169,7 @@ def main():
     start = time.time()
     torch.manual_seed(a.seed); random.seed(a.seed)
     ck = torch.load(a.encoder, map_location=a.device) if a.encoder else None
-    cfg = dict(ck["config"]) if ck else P.run_config(P.parser().parse_args(["--tables", "", "--out", ""]), None)
+    cfg = dict(ck["config"]) if ck else P.run_config(P.parser().parse_args(["--tables", "", "--out", "", "--base", a.base]), None)
     members, train_m, held_m, (names, kinds) = VE.load(a.value_tables, a.data, cfg)
     if cfg["in_names"] is None:
         cfg["in_names"] = T.vocabularies(names, kinds)[0]
