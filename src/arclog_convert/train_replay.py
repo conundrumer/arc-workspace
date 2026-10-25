@@ -27,9 +27,7 @@ engine's sources; `binary`, the sha256 of the built `verdicts` binary; and
 equal the current ones and either its `sources` equal the current digest or its
 `binary` equals the current binary's digest; the binary is built and hashed
 only where a task fails the source test, and a task fresh by its binary gets
-its `sources` rewritten. A record in the old form, with a `key`, is stale. A
-task with a case `Stopped` at the deadline gets no record, since that verdict
-depends on the machine's load.
+its `sources` rewritten. A record in the old form, with a `key`, is stale.
 
 `unreproduced.tsv` is the baseline: a line `<task> <verdict> <count>
 <ticket or ->` (tab-separated) for each task and verdict other than
@@ -180,10 +178,7 @@ def run_verdicts(stems: list[str], gen: Path, tasks: Path) -> dict[str, list[Cas
 
 
 def write_record(records: Path, stem: str, files: str, sources: str, binary: str, cases: list[Case]) -> None:
-    """Write the record of `stem`, unless a case stopped at the deadline."""
-    if any(c.verdict == "Stopped" and c.detail == "Deadline" for c in cases):
-        (records / f"{stem}.json").unlink(missing_ok=True)
-        return
+    """Write the record of `stem`."""
     records.mkdir(parents=True, exist_ok=True)
     data = {"files": files, "sources": sources, "binary": binary, "cases": [vars(c) for c in cases]}
     (records / f"{stem}.json").write_text(json.dumps(data, indent=1) + "\n")

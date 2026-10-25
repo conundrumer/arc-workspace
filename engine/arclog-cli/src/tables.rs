@@ -84,7 +84,7 @@ fn tables_solver(arguments: &Arguments, id: &str) -> SolverResult {
         Ok(constructions) => constructions,
         Err(fault) => return SolverResult::Fail(vec![format!("a fault that stops the tables: {fault}")]),
     };
-    match solver_tables(&arguments.corpus, &arguments.tasks, id, arguments.all, arguments.points, constructions, &DecodeSettings::default()) {
+    match solver_tables(&arguments.corpus, &arguments.tasks, id, arguments.all, arguments.points, constructions, &DecodeSettings::corpus()) {
         Ok(solver) => {
             let mut failures = Vec::new();
             for case in solver.cases {

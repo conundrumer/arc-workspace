@@ -259,7 +259,7 @@ impl Decoder<'_> {
                 Err(fault) => return Some(Err(fault)),
             }
         }
-        let limits = Limits::new(Some(Instant::now() + self.context.settings.deadline), self.cancellation.clone());
+        let limits = Limits::new(self.context.settings.deadline.map(|deadline| Instant::now() + deadline), self.cancellation.clone());
         let mut budget = Budget::new(&limits, self.session);
         let found = projections(&assigned, self.context.settings.projection_cap, &mut budget, &form);
         budget.record();

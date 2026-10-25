@@ -13,6 +13,7 @@ use std::time::Duration;
 
 use arclog::decode::columns::{case_columns, CaseColumns, StopColumns};
 use arclog::decode::corpus::{read_task_files, replay_units, ReplayProgress, UnitSolver};
+use arclog::decode::replay::Stepped;
 use arclog::decode::{evidence_tables, step_batch, Consistency, Decoder, Points, Table, TokenMask, Projections};
 use arclog::eval::instance::Constructions;
 use arclog::eval::pool::Pool;
@@ -141,7 +142,7 @@ struct PyDecodeSettings {
     relations: u32,
     columns: u32,
     labels: u32,
-    deadline_seconds: f64,
+    deadline_seconds: Option<f64>,
     projection_cap: u64,
     table_work_cap: u64,
 }
@@ -154,14 +155,14 @@ impl PyDecodeSettings {
             relations: settings.vocabulary.relations,
             columns: settings.vocabulary.columns,
             labels: settings.vocabulary.labels,
-            deadline_seconds: settings.deadline.as_secs_f64(),
+            deadline_seconds: settings.deadline.map(|deadline| deadline.as_secs_f64()),
             projection_cap: settings.projection_cap,
             table_work_cap: settings.table_work_cap,
         }
     }
 
     fn engine(&self) -> PyResult<DecodeSettings> {
-        let deadline = Duration::try_from_secs_f64(self.deadline_seconds).map_err(|error| PyValueError::new_err(format!("deadline_seconds: {error}")))?;
+        let deadline = self.deadline_seconds.map(|seconds| Duration::try_from_secs_f64(seconds).map_err(|error| PyValueError::new_err(format!("deadline_seconds: {error}")))).transpose()?;
         Ok(DecodeSettings {
             proposer_tokens: self.proposer_tokens,
             type_domain_proposers: self.type_domain_proposers,
@@ -195,7 +196,7 @@ impl PyDecodeSettings {
             relations: relations.unwrap_or(base.relations),
             columns: columns.unwrap_or(base.columns),
             labels: labels.unwrap_or(base.labels),
-            deadline_seconds: deadline_seconds.unwrap_or(base.deadline_seconds),
+            deadline_seconds: deadline_seconds.or(base.deadline_seconds),
             projection_cap: projection_cap.unwrap_or(base.projection_cap),
             table_work_cap: table_work_cap.unwrap_or(base.table_work_cap),
         };
@@ -897,7 +898,7 @@ fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &Hash
     let results = replay_units(
         &solvers,
         constructions,
-        &DecodeSettings::default(),
+        &DecodeSettings::corpus(),
         true,
         steps,
         &|(rows, masks): &mut (usize, Vec<u8>), decoder, stepped| {
@@ -1127,7 +1128,10 @@ struct TableCase {
 /// finished forms are tabled, and with `bodies` the bodies in progress as well.
 /// The second value holds a line for each case that gives no tables and each
 /// solver that gives none, in the form of `corpus_streams`, in the order of
-/// the task ids. The replay computes no token mask.
+/// the task ids, and for each case whose last `RULE` end before the stream's
+/// end gives `Stopped` the line `<task> <case>: ended Stopped at token <index>`
+/// of `stream_tables`, with that case's tables kept. The replay runs under no
+/// deadline and computes no token mask.
 /// The call runs on the threads of the corpus harness with the GIL released,
 /// but for the build of each `CaseTables`, in phases. The first reads each
 /// solver, its streams and its task. The second cuts the streams of each
@@ -1152,7 +1156,7 @@ fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, tas
     let wanted = if all_cases { WantedCases::All } else { WantedCases::Concept };
     let constructions = constructions()?;
     let vocabulary = Vocabulary::new(Registry::get(), &DecodeSettings::default());
-    let base = DecodeSettings::default();
+    let base = DecodeSettings::corpus();
     let settings = DecodeSettings { projection_cap: projection_cap.unwrap_or(base.projection_cap), table_work_cap: table_work_cap.unwrap_or(base.table_work_cap), ..base };
     let reads: Mutex<HashMap<String, (Task, JudgedTask)>> = Mutex::new(HashMap::new());
     let found = walk_corpus(py, corpus, &task_ids, |id| {
@@ -1199,9 +1203,9 @@ fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, tas
                 &settings,
                 false,
                 steps,
-                &|tables: &mut Vec<(usize, Table)>, decoder, stepped| tables.extend(decoder.tables(points).into_iter().map(|table| (stepped.index, table))),
+                &|record: &mut StreamRecord, decoder, stepped| record.step(decoder, stepped, points),
                 &|solver| progress.start(solver),
-                &|solver, replay| replay.into_result().map(|tables| case_columns(&evidence[solver], &tables, trains[solver])),
+                &|solver, replay| replay.into_result().map(|record| (case_columns(&evidence[solver], &record.tables, trains[solver]), record.ended)),
                 &|solver| progress.settle(solver),
                 step_cap,
             )
@@ -1221,7 +1225,12 @@ fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, tas
                 Err(fault) => Err(fault.clone()),
             };
             match outcome {
-                Ok(columns) => tables.push(PyCaseTables::of(py, task.clone(), case.case.clone(), case.concept, settings.projection_cap, &columns)?),
+                Ok((columns, ended)) => {
+                    tables.push(PyCaseTables::of(py, task.clone(), case.case.clone(), case.concept, settings.projection_cap, &columns)?);
+                    if let Some(at) = ended.filter(|at| matches!(at.kind, PyConsistencyKind::Stopped)) {
+                        faults.push(at.line(task, &case.case));
+                    }
+                }
                 Err(fault) => faults.push(fault_line(task, Some(&case.case), &fault)),
             }
         }
@@ -1235,6 +1244,13 @@ fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, tas
 struct EndedAt {
     token: usize,
     kind: PyConsistencyKind,
+}
+
+impl EndedAt {
+    /// The line `<task> <case>: ended <kind> at token <index>`.
+    fn line(&self, task: &str, case: &str) -> String {
+        format!("{task} {case}: ended {} at token {}", self.kind.name(), self.token)
+    }
 }
 
 impl PyConsistencyKind {
@@ -1255,6 +1271,16 @@ impl PyConsistencyKind {
 struct StreamRecord {
     tables: Vec<(usize, Table)>,
     ended: Option<EndedAt>,
+}
+
+impl StreamRecord {
+    /// Records the tables of a step and, where the step judged, its consistency.
+    fn step(&mut self, decoder: &Decoder<'_>, stepped: Stepped<'_>, points: Points) {
+        self.tables.extend(decoder.tables(points).into_iter().map(|table| (stepped.index, table)));
+        if let Some(consistency) = &stepped.consistency {
+            self.ended = Some(EndedAt { token: stepped.index, kind: PyConsistency::of(consistency).kind });
+        }
+    }
 }
 
 /// The tables of the token streams of one task, for a sampler that holds the
@@ -1344,12 +1370,7 @@ fn stream_tables(py: Python<'_>, task: &str, tasks: &str, streams: Vec<(Vec<u32>
             &settings,
             false,
             &steps,
-            &|record: &mut StreamRecord, decoder, stepped| {
-                record.tables.extend(decoder.tables(points).into_iter().map(|table| (stepped.index, table)));
-                if let Some(consistency) = &stepped.consistency {
-                    record.ended = Some(EndedAt { token: stepped.index, kind: PyConsistency::of(consistency).kind });
-                }
-            },
+            &|record: &mut StreamRecord, decoder, stepped| record.step(decoder, stepped, points),
             &|_| {},
             &|_, replay| (case_columns(&evidence, &replay.record.tables, train), replay.record.ended, replay.fault),
             &|_| {},
@@ -1363,7 +1384,7 @@ fn stream_tables(py: Python<'_>, task: &str, tasks: &str, streams: Vec<(Vec<u32>
             Ok((columns, at, fault)) => {
                 tables.push(PyCaseTables::of(py, task.to_string(), case.clone(), false, settings.projection_cap, &columns)?);
                 ended.push(match at {
-                    Some(at) => format!("{task} {case}: ended {} at token {}", at.kind.name(), at.token),
+                    Some(at) => at.line(task, case),
                     None => format!("{task} {case}: ended none"),
                 });
                 faults.extend(fault.map(|fault| fault_line(task, Some(case), &fault)));

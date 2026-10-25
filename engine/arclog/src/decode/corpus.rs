@@ -212,7 +212,7 @@ pub fn solver_verdicts(corpus: &Path, tasks: &Path, id: &str, constructions: &Co
         };
         *last = Some((stepped.index, verdict));
     };
-    let settings = DecodeSettings::default();
+    let settings = DecodeSettings::corpus();
     let run = || replay_streams(corpus, tasks, id, WantedCases::Cases, constructions, &settings, false, &record);
     // The spelling of a slot runs inside `catch_unwind` as well, so a slot outside the table is the solver's fault.
     let verdicts = || {

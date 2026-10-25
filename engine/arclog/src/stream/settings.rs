@@ -34,14 +34,22 @@ pub struct DecodeSettings {
     pub vocabulary: VocabularyCaps,
     /// The caps a prefix runs under.
     pub caps: Caps,
-    /// The deadline per candidate program.
-    pub deadline: Duration,
+    /// The deadline per request, from the request's start, or `None` for no
+    /// deadline.
+    pub deadline: Option<Duration>,
     /// The rows a projection may hold on one example at one assignment, as
     /// `docs/engine/synthesis.md#decode-settings` gives it.
     pub projection_cap: u64,
     /// The bindings that all the evaluations of one table may try, as
     /// `docs/engine/synthesis.md#decode-settings` gives it.
     pub table_work_cap: u64,
+}
+
+impl DecodeSettings {
+    /// The default settings with no deadline, those of a replay of the corpus.
+    pub fn corpus() -> DecodeSettings {
+        DecodeSettings { deadline: None, ..DecodeSettings::default() }
+    }
 }
 
 impl Default for DecodeSettings {
@@ -51,7 +59,7 @@ impl Default for DecodeSettings {
             type_domain_proposers: true,
             vocabulary: VocabularyCaps::CORPUS,
             caps: Caps::CORPUS,
-            deadline: Duration::from_secs(10),
+            deadline: Some(Duration::from_secs(10)),
             projection_cap: 10_000,
             table_work_cap: 1 << 20,
         }
