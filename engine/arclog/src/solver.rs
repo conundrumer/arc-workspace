@@ -267,7 +267,7 @@ impl Solver {
         let mut helpers = Vec::new();
         if !stored.is_empty() {
             let mut used = self.declared_names();
-            let read_columns = self.read_columns();
+            let read_columns = self.columns_read_in_any_block();
             for (index, line, port) in stored {
                 let original = walk.placed[index].clone();
                 // The instance's `INIT` form as it stood before `without_input`.
@@ -438,6 +438,30 @@ impl Solver {
         let claims = self.representative_claims().map(|(_, form)| form);
         for form in self.program.value().forms.iter().chain(claims) {
             form_reads(form, &[], &mut named);
+        }
+        named
+    }
+
+    /// The column names that the sites of the reads of each relation name,
+    /// across the solver's forms and the claims of the solver its
+    /// `representative` line names, through every `ALT` block, an `ALT` block
+    /// that derives the relation included. A stored reading of a `RULE_OR_DET`
+    /// line has a column for each one of these that the line holds, since each
+    /// read in any case names columns of the `DET`.
+    fn columns_read_in_any_block(&self) -> StableHashMap<ProgramRelation, Vec<ColumnName>> {
+        let mut named = StableHashMap::default();
+        let claims = self.representative_claims().map(|(_, form)| form);
+        for form in self.program.value().forms.iter().chain(claims) {
+            each_form(form, false, &mut |form, _| {
+                each_atom(NodeRef::from(form), &mut |atom| {
+                    let relation = match &atom.relation {
+                        RelationRef::Declared(name) => ProgramRelation::Declared(name.clone()),
+                        RelationRef::Output(output) => ProgramRelation::Output(output.clone()),
+                        _ => return,
+                    };
+                    crate::resolver::add_columns(named.entry(relation).or_default(), atom.sites.iter().map(|site| &site.column));
+                });
+            });
         }
         named
     }

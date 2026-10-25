@@ -275,3 +275,33 @@ fn the_stored_det_of_a_line_has_the_columns_that_a_read_names() {
     assert_eq!(sites_of_derivation(det.body.value()), vec![1, 2], "{det:?}");
     assert_eq!(stream, Ok(()));
 }
+
+const READS_IN_THE_BLOCK_THAT_HOLDS_THE_LINE: &str = "
+(ALTS $a \"which block\" $Plain
+  (ALT $Own
+    (INPUT cells \"the cells\"
+      (RULE_OR_DET &cell \"The cells.\"
+        (input *P *Col))
+
+      (RULE &other
+        (&cell (:P *P)))
+
+      (RULE &output
+        (input *P *Col)
+        (&cell (:Col Col))
+        (&other P)))))
+";
+
+#[test]
+fn the_stored_det_has_the_columns_that_forms_of_the_block_that_holds_the_line_name() {
+    let (case, stream) = stored_case(READS_IN_THE_BLOCK_THAT_HOLDS_THE_LINE, "&cell");
+    let declared = ProgramRelation::Declared(RelationName(DeclaredName::Written("&cell".into())));
+    let det = case.program.value().forms.iter().find_map(|form| match form {
+        Form::Clause(clause) if clause.value().derives == declared => Some(clause.value().clone()),
+        _ => None,
+    });
+    let det = det.expect("the stored DET");
+    let sites: Vec<usize> = det.body.value().conjuncts.iter().filter_map(|c| c.atom().map(|atom| atom.value().sites.len())).collect();
+    assert_eq!(sites, vec![1, 3], "`E`, `P` and `Col`: {det:?}");
+    assert_eq!(stream, Ok(()));
+}
