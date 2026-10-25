@@ -7,9 +7,9 @@ The branch points are split as pretrain.py splits them: a branch point is held o
 cases.npz) marks its task held out, and is a training one where its task is a training task. On the held-out branch
 points, each score below is measured over the lists of encoder.py's `value_lists` (the tables at the positions below
 `--positions` after the branch, the empty, unseen and faulted ones left out), as the pairwise ranking accuracy (over
-each list's pairs of a solving and a non-solving continuation, a tie one half) and the AUC (over every listed
-continuation's score, across lists), and the pairwise ranking accuracy once more over the sampled continuations
-alone, without the gold one, whose author differs:
+each list's pairs of a solving and a non-solving continuation, a tie one half) and the AUC (within each list that
+holds both a solving and a non-solving continuation, and the mean over those lists), and both once more over the
+sampled continuations alone, without the gold one, whose author differs:
 
 - the value head: its logit;
 - a logistic regression on trivial features of a table, trained by full-batch Adam for `--lr-steps` steps on the
@@ -42,15 +42,16 @@ def report(name, members, scores, positions):
     lists = E.value_lists(members, [torch.as_tensor(s, dtype=torch.float32) for s in scores], positions)
     right, pairs = E.value_pairs(lists)
     right_s, pairs_s = E.value_pairs(lists, sampled=True)
-    auc = E.auc([float(x) for l in lists for x in l["scores"]], [bool(y) for l in lists for y in l["labels"]])
+    auc, auc_s = E.value_auc(lists), E.value_auc(lists, sampled=True)
     acc = f"{right / pairs:.3f}" if pairs else "none"
     acc_s = f"{right_s / pairs_s:.3f}" if pairs_s else "none"
+    show = lambda x: "none" if x is None else f"{x:.3f}"
     print(f"{name}: pairwise ranking accuracy {acc} over {pairs} pairs of {sum(l['ranked'] for l in lists)} ranked "
-          f"lists ({acc_s} over the {pairs_s} pairs of sampled continuations alone), AUC "
-          f"{'none' if auc is None else f'{auc:.3f}'} over {sum(len(l['labels']) for l in lists)} continuations of "
-          f"{len(lists)} lists", flush=True)
+          f"lists ({acc_s} over the {pairs_s} pairs of sampled continuations alone), AUC within a list {show(auc)} "
+          f"({show(auc_s)} over sampled continuations alone), the mean over the ranked lists of {len(lists)} lists",
+          flush=True)
     return dict(pair_acc=right / pairs if pairs else None, pair_acc_sampled=right_s / pairs_s if pairs_s else None,
-                auc=auc, pairs=pairs, lists=len(lists))
+                auc=auc, auc_sampled=auc_s, pairs=pairs, lists=len(lists))
 
 
 def logistic(train_members, held_members, positions, steps, seed):

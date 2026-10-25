@@ -10,12 +10,20 @@ streams (engine/arclog-py/tables_export.py, `export_streams`), whose case names 
 `<task>__<case>__b<j>__gold` and `<task>__none__b0__r<k>`.
 
 <out> (default `<rollout export>/labels.jsonl`) gets, per sampler line, {"case": the export's case name, "task",
-"corpus_case", "branch", "rollout", "prefix_rules", "prefix_tables", "ended" (the sampler's), "consistency" (the
-verdict of the export's `report.txt` at the last RULE end, `ended <kind> at token <i>`, else the sampler's),
-"solved_test", "fault" (the report's fault line for the case, or null)}. `prefix_tables` is the count of the case's
+"corpus_case", "branch", "rollout", "prefix_tokens", "prefix_rules", "prefix_tables", "ended" (the sampler's),
+"consistency" (the verdict of the export's `report.txt` at the last RULE end, `ended <kind> at token <i>`, or null),
+"solved_test", "fault" (the report's fault line for the case, or null; a stream that faults or lies past the
+export's step cap has one), "sampler_run" (the sampling LM's run directory, the settings line's `--model`) and
+"sampler_fold" (that LM's `--fold`, k/n, from the settings line's `model_meta`, else from the run's model.json; null
+for an LM trained without one); both are null for a gold continuation}. `prefix_tables` is the count of the case's
 export tables that the prefix gives: the evidence tables, and each table whose `token`, the stream index of the step
 that gives it, is below prefix_tokens. The export numbers a case's tables in the order of their steps, so the first
 table after the branch is export table `prefix_tables`. It is null for a case that the export does not hold.
+
+A ValueError stops the run in each of these cases: the sampler ran with a `--prefix` other than `random` or `0`, so a
+prefix can end off a rule boundary; a line under `--prefix random` gives no corpus case; the lines of one task,
+corpus case and branch differ in `prefix_tokens` or `prefix_tables`, or hold more than one gold continuation; the
+report gives a case neither a verdict nor a fault line.
 """
 import json, sys
 from pathlib import Path
@@ -60,19 +68,41 @@ def prefix_tables(tables, prefix_tokens):
 
 
 def labels(sampler_path, export):
-    lines = [json.loads(l) for l in open(sampler_path) if l.strip()][1:]   # the first line is the settings
+    settings, *lines = [json.loads(l) for l in open(sampler_path) if l.strip()]
+    prefix, run = settings["args"]["prefix"], settings["args"]["model"]
+    if prefix not in ("0", "random"):
+        raise ValueError(f"{sampler_path}: sample.py --prefix {prefix} can end a prefix off a rule boundary, which is no "
+                         f"branch point; labels take --prefix random or 0")
+    fold = (settings.get("model_meta") or json.load(open(Path(run) / "model.json"))).get("fold")
     export = Path(export)
     verdicts, faults = read_report(export / "report.txt")
     names = [case_name(s["task"], s["case"], s["branch"], s["rollout"]) for s in lines]
     tables = pd.read_parquet(export / "tables.parquet", columns=["task", "case", "table", "token", "point"])
     counts = prefix_tables(tables, {(s["task"], n): int(s["prefix_tokens"]) for s, n in zip(lines, names)})
+    groups = {}
+    for s, n in zip(lines, names):
+        if s["case"] is None and prefix != "0":
+            raise ValueError(f"{s['task']} {n}: no corpus case under sample.py --prefix {prefix}; an empty prefix "
+                             f"must name its case")
+        groups.setdefault((s["task"], s["case"], int(s["branch"])), []).append((s, n))
+    for (task, case, b), g in groups.items():
+        tokens = {int(s["prefix_tokens"]) for s, _ in g}
+        held = {counts[(task, n)] for _, n in g if counts.get((task, n)) is not None}
+        golds = sum(s["rollout"] == "gold" for s, _ in g)
+        if len(tokens) > 1 or len(held) > 1 or golds > 1:
+            raise ValueError(f"{task} {case} b{b}: the members do not share one prefix and one gold continuation: "
+                             f"prefix_tokens {sorted(tokens)}, prefix_tables {sorted(held)}, {golds} gold lines")
     out = []
     for s, n in zip(lines, names):
         key = (s["task"], n)
+        if key not in verdicts and key not in faults:
+            raise ValueError(f"{s['task']} {n}: the export's report.txt gives no verdict and no fault line")
+        sampled = s["rollout"] != "gold"
         out.append({"case": n, "task": s["task"], "corpus_case": s["case"], "branch": int(s["branch"]),
-                    "rollout": s["rollout"], "prefix_rules": s["prefix_rules"], "prefix_tables": counts.get(key),
-                    "ended": s["ended"], "consistency": verdicts.get(key, s["consistency"]),
-                    "solved_test": s["solved_test"], "fault": faults.get(key)})
+                    "rollout": s["rollout"], "prefix_tokens": int(s["prefix_tokens"]), "prefix_rules": s["prefix_rules"],
+                    "prefix_tables": counts.get(key), "ended": s["ended"], "consistency": verdicts.get(key),
+                    "solved_test": s["solved_test"], "fault": faults.get(key),
+                    "sampler_run": run if sampled else None, "sampler_fold": fold if sampled else None})
     return out
 
 
