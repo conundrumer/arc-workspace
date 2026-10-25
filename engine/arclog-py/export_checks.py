@@ -223,11 +223,14 @@ def check_case(frames, values, task, orientation_types, size=None, copies=True):
 
 def _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest, bad, copies_too):
     blocks = collections.defaultdict(list)       # table -> [(entry, example, block)] of its Rows entries
+    held_none = collections.defaultdict(set)     # table -> the examples of its Rows entries that hold no row
     for r in en:
         if r.kind == ROWS and r.table < len(tl) and not _faulted(tl[r.table]):
             w = tl[r.table].width
             if r.rows and w:
                 blocks[r.table].append((r.Index, (r.example_kind, r.example_index), values[int(r.offset):int(r.offset) + int(r.rows) * w].reshape(int(r.rows), w)))
+            elif not r.rows and w:
+                held_none[r.table].add((r.example_kind, r.example_index))
             elif r.rows > 1:
                 for k in tl[r.table].keys:
                     if not len(k):
@@ -240,8 +243,14 @@ def _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest
         f.kind == COPY and (f.source_column == -2 or f.source_column >= 0 and 0 <= f.source_table < min(f.table, len(tl))) for f in fs)}
     needed = {(f.source_table, f.source_column) for fs in copies.values() for f in fs if f.det < 0 and f.source_column >= 0} | set(copies)
     column_values = {}           # (table, column) -> {example: rows}
-    for ti, bl in blocks.items():
-        t = tl[ti]
+    for ti in sorted(set(blocks) | set(held_none)):
+        bl, t = blocks[ti], tl[ti]
+        if not bl:
+            # every Rows entry holds no row: each column holds none at each example
+            for c, ty in enumerate(t.column_types):
+                if (ti, c) in needed:
+                    column_values[(ti, c)] = {ex: np.zeros((0, width_of(ty)), np.int32) for ex in held_none[ti]}
+            continue
         stack = np.concatenate([b for _, _, b in bl])
         entry = np.repeat([e for e, _, _ in bl], [len(b) for _, _, b in bl])
         if len(stack) > 1:
@@ -277,6 +286,8 @@ def _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest
                 for (_, ex, _), lo, hi in zip(bl, bounds, bounds[1:]):
                     by_example[ex].append(col[lo:hi])
                 column_values[(ti, c)] = {ex: np.concatenate(v) for ex, v in by_example.items()}
+                for ex in held_none[ti] - set(by_example):
+                    column_values[(ti, c)][ex] = col[:0]
         for k in t.keys:
             cells = [i for c in k if 0 <= c < len(t.column_types) for i in range(offs[c], offs[c + 1])]
             if not cells:

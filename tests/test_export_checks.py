@@ -75,3 +75,13 @@ def test_column_with_a_value_in_neither_of_its_sources_is_reported():
     values = values.copy()
     values[43] = 8
     assert any(l.startswith("values-copy") for l in lines(frames, values))
+
+
+def test_column_with_rows_where_its_source_holds_none_is_reported():
+    frames, values = case()
+    frames["entries"].loc[3, "rows"] = 0
+    frames["entries"].loc[4:, "offset"] -= 4
+    frames["assigned"].loc[:, "offset"] -= 4
+    frames["flows"] = frames["flows"].drop(4).reset_index(drop=True)
+    found = [l for l in lines(frames, np.delete(values, range(36, 40))) if l.startswith("values-copy")]
+    assert len(found) == 1

@@ -74,3 +74,20 @@ fn parameter_column<'p>(port: &'p InputPort, column: &ColumnName) -> Option<&'p 
     }
 }
 
+
+/// The position in the key of each of `types`, the row-position types of a
+/// `from-key` input other than the key's, where each takes the one key
+/// position among `key_types` of its type; none where one has none or
+/// several.
+pub(crate) fn key_fill(key_types: &[ValueType], types: &[ValueType]) -> Option<Vec<usize>> {
+    types
+        .iter()
+        .map(|ty| {
+            let mut matching = key_types.iter().enumerate().filter(|(_, key)| *key == ty).map(|(position, _)| position);
+            match (matching.next(), matching.next()) {
+                (Some(position), None) => Some(position),
+                _ => None,
+            }
+        })
+        .collect()
+}

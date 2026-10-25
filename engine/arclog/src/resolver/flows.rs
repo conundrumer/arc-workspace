@@ -20,7 +20,7 @@ use crate::program::{
     written_inputs, Atom, Body, Conjunct, ConstraintOp, FactRelation, LabelId, LabelUse, OutputName, OutputOwner, OutputStep, Operand, ProgramRelation,
     RelationRef, RigidDetPart, Site, SiteArg,
 };
-use crate::registry::{ColumnType, LibName, Registry};
+use crate::registry::{is_key, key_fill, ColumnType, LibName, Registry};
 use crate::safety::list_of;
 use crate::types::{each_site_label, use_label, ValueType};
 
@@ -390,6 +390,10 @@ struct Given {
     /// `RIGID_DET` assembly gives; the entries before are the key's and
     /// `:Pose`. Beyond the listing for any other relation.
     sites_from: usize,
+    /// For an output port of a keyed instance, the declared types of the
+    /// columns other than `key` of each `from-key` input that the instance
+    /// writes no clause for, which the engine fills from the key.
+    filled: Vec<Vec<ColumnType>>,
 }
 
 impl ResolvedProgram {
@@ -408,7 +412,10 @@ impl ResolvedProgram {
     ///   label, computed, since the column holds the part's values at each
     ///   pose;
     /// - a column of a type parameter that an `INIT` form binds: the sources
-    ///   of the labels the form binds it to;
+    ///   of the labels the form binds it to, and, on an output port of a
+    ///   keyed instance, where a `from-key` input the instance leaves
+    ///   unwritten stands on the parameter, the sources of the key position
+    ///   that the engine's fill gives each row position;
     /// - another declared column of an instance or a `RIGID_DET` assembly:
     ///   every row position of each relation the node reads, computed, where
     ///   the column of an input port of an instance is replaced by its
@@ -458,10 +465,7 @@ impl ResolvedProgram {
             let columns = relation.listing.columns();
             let mut start = 0usize;
             for (index, listed) in relation.listing.0.iter().enumerate() {
-                let slot_width = match &listed.slot {
-                    Slot::Column(_) => 1,
-                    Slot::Record { fields, .. } => fields.len(),
-                };
+                let slot_width = slot_width(&listed.slot);
                 let labeled = listed.sources.iter().any(|(_, source)| matches!(source, Source::Label { .. }));
                 for (path, source) in &listed.sources {
                     match source {
@@ -489,12 +493,59 @@ impl ResolvedProgram {
                 start += slot_width;
             }
         }
+        for relation in &given {
+            self.add_key_fill(relation, types, &mut flows);
+        }
         for sources in flows.iter_mut().filter(|sources| sources.is_empty()) {
             let lib = given.iter().flat_map(|relation| relation.lib.iter());
             sources.extend(lib.map(|name| ColumnSource::without_atom(SourceKind::LibName, Some(RelationRef::Lib(name.clone())))));
         }
         visiting.pop();
         flows
+    }
+
+    /// Adds to each row position of a column of `relation`, on a type
+    /// parameter that a `from-key` input the instance leaves unwritten stands
+    /// on, the flows at the key position that the fill gives it
+    /// ([`key_fill`]). `types` are the row-position types of the relation;
+    /// nothing is added where they are not all known.
+    fn add_key_fill(&self, relation: &Given, types: &[ValueType], flows: &mut [Vec<ColumnSource>]) {
+        if relation.filled.is_empty() || types.len() != flows.len() {
+            return;
+        }
+        // The first row position and the width of each column of the port.
+        let mut at = Vec::new();
+        let mut start = 0usize;
+        for listed in &relation.listing.0 {
+            let width = slot_width(&listed.slot);
+            let declared = listed.sources.iter().find_map(|(_, source)| match source {
+                Source::Declared(ty) => Some(ty),
+                _ => None,
+            });
+            at.push((listed.slot.name() == &super::columns::key(), declared, start..start + width));
+            start += width;
+        }
+        let Some((_, _, key)) = at.iter().find(|(is_key, ..)| *is_key) else { return };
+        for input in &relation.filled {
+            let mut input_types = Vec::new();
+            let mut targets = Vec::new();
+            for ty in input {
+                match ty {
+                    ColumnType::Fixed(fixed) => input_types.push(fixed.clone()),
+                    ColumnType::Parameter(_) => {
+                        let Some((_, _, own)) = at.iter().find(|(is_key, declared, _)| !is_key && *declared == Some(ty)) else { return };
+                        targets.extend(own.clone().map(|position| (position, input_types.len() + position - own.start)));
+                        input_types.extend(types[own.clone()].iter().cloned());
+                    }
+                    _ => return,
+                }
+            }
+            let Some(positions) = key_fill(&types[key.clone()], &input_types) else { continue };
+            for (position, row) in targets {
+                let found = flows[positions[row]].clone();
+                add_distinct(&mut flows[position], found);
+            }
+        }
     }
 
     /// The sources of row position `position` of the input port `port`; none
@@ -540,7 +591,7 @@ impl ResolvedProgram {
         let mut given = Vec::new();
         for form in self.forms_of(node) {
             let Some(shape) = node_at(root, form) else { continue };
-            let whole = |listing: Listing, lib: Vec<LibName>| Given { form: form.clone(), output: None, listing, lib, sites_from: usize::MAX };
+            let whole = |listing: Listing, lib: Vec<LibName>| Given { form: form.clone(), output: None, listing, lib, sites_from: usize::MAX, filled: Vec::new() };
             match shape {
                 NodeRef::Clause(clause) => given.push(whole(form_columns::form_listing(shape), clause.proposers.to_vec())),
                 NodeRef::Choose(_) => given.push(whole(form_columns::form_listing(shape), Vec::new())),
@@ -549,7 +600,7 @@ impl ResolvedProgram {
                     for (steps, listing) in form_columns::rigid_listings(rigid) {
                         let pose = listing.0.iter().position(|listed| listed.sources.iter().any(|(_, source)| matches!(source, Source::Declared(ColumnType::Pose))));
                         let sites_from = if steps.as_ref() == [OutputStep::Pose] { usize::MAX } else { pose.map_or(usize::MAX, |pose| pose + 1) };
-                        given.push(Given { form: form.clone(), output: Some(steps), listing, lib: Vec::new(), sites_from });
+                        given.push(Given { form: form.clone(), output: Some(steps), listing, lib: Vec::new(), sites_from, filled: Vec::new() });
                     }
                 }
                 NodeRef::Instance(instance) => {
@@ -558,16 +609,23 @@ impl ResolvedProgram {
                     let keyed = instance.key.is_some();
                     let written: Vec<_> = written_inputs(instance.key.as_ref(), &instance.inputs).collect();
                     let lib = vec![instance.component.clone()];
+                    let filled: Vec<Vec<ColumnType>> = component
+                        .inputs
+                        .iter()
+                        .filter(|own| keyed && own.from_key && own.port.columns.iter().any(is_key) && written.iter().all(|written| written.name != own.port.name))
+                        .map(|own| own.port.columns.iter().filter(|column| !is_key(column)).map(|column| column.ty.clone()).collect())
+                        .collect();
                     let mut port = |port: &crate::registry::Port, output: bool| {
+                        let filled = if output { filled.clone() } else { Vec::new() };
                         let output = output.then(|| Arc::from([OutputStep::Port(port.name.clone())]));
-                        given.push(Given { form: form.clone(), output, listing: form_columns::port_columns(port, &bindings, keyed), lib: lib.clone(), sites_from: usize::MAX });
+                        given.push(Given { form: form.clone(), output, listing: form_columns::port_columns(port, &bindings, keyed), lib: lib.clone(), sites_from: usize::MAX, filled });
                     };
                     match &self.graph.nodes[node.0 as usize].kind {
                         DependencyKind::InstanceInput { input, .. } => {
                             for own in component.inputs.iter().filter(|own| own.port.name == *input) {
                                 for written in written.iter().filter(|written| written.name == *input) {
                                     let listing = form_columns::input_columns(&own.port, &bindings, keyed, instance, written);
-                                    given.push(Given { form: form.clone(), output: None, listing, lib: lib.clone(), sites_from: usize::MAX });
+                                    given.push(Given { form: form.clone(), output: None, listing, lib: lib.clone(), sites_from: usize::MAX, filled: Vec::new() });
                                 }
                             }
                         }
@@ -652,6 +710,14 @@ impl ResolvedProgram {
             }
         }
         keys
+    }
+}
+
+/// The number of row positions that `slot` takes.
+fn slot_width(slot: &Slot) -> usize {
+    match slot {
+        Slot::Column(_) => 1,
+        Slot::Record { fields, .. } => fields.len(),
     }
 }
 

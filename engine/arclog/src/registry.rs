@@ -464,6 +464,6 @@ mod reads;
 mod records;
 mod spellings;
 
-pub(crate) use bindings::{binding_sites, unbound, ParameterSite};
+pub(crate) use bindings::{binding_sites, key_fill, unbound, ParameterSite};
 pub use column_types::{macro_column_types, MacroDeclarations, RelationMacro};
 use reader::FileReader;

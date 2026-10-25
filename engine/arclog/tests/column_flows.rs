@@ -234,6 +234,36 @@ fn an_input_port_takes_the_sources_of_its_own_head_sites_and_an_output_those_of_
     }
 }
 
+/// A keyed `Propagation` that writes no `source`, whose key is `key`.
+fn unsourced(key: &str) -> String {
+    format!(
+        "(RULE &seed (dir_elem (:D *Delta)))
+(RULE &halt (dir_elem (:D *Delta)) (dir_elem (:D *Delta2)))
+(INIT &journey Propagation
+  (key (({key})))
+  (edge ((:a N) (:b N2)) (&halt (:Delta *N) (:Delta2 *N2))))
+(RULE &output (input *P *Col))
+"
+    )
+}
+
+/// The atoms that the sources of column `column` of `reached` name.
+fn reached_atoms(arclog: &str, column: u32) -> Vec<String> {
+    let columns = columns_of(arclog, &[1, 2]);
+    let mut atoms: Vec<String> = sources(&columns, table_of(&columns, 2), column).into_iter().map(|source| source.5).collect();
+    atoms.sort_unstable();
+    atoms.dedup();
+    atoms
+}
+
+#[test]
+fn a_column_the_key_fills_into_an_unwritten_input_takes_the_key_position_that_the_fill_gives() {
+    let one = reached_atoms(&unsourced("&seed (:Delta ^K)"), 1);
+    let two = reached_atoms(&unsourced("&halt (:Delta ^K) (:Delta2 ^K2)"), 2);
+    assert_eq!(one, ["2.0.0.0", "2.1.2.0"], "the key's atom beside the edge's");
+    assert_eq!(two, ["2.1.2.0"], "the edge's atom alone");
+}
+
 #[test]
 fn a_label_bound_in_one_branch_of_an_or_gets_the_sources_of_the_other_branch() {
     let columns = columns_of(FEED, &[1, 2]);

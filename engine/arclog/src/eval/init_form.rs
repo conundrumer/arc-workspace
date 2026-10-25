@@ -397,15 +397,7 @@ impl<'p> InstanceShape<'p> {
             return Ok(None);
         }
         let key_types: Vec<ValueType> = self.key_labels().into_iter().map(|label| self.label_type(label)).collect::<Result<_, _>>()?;
-        let mut positions = Vec::with_capacity(types.len());
-        for ty in types {
-            let mut matching = key_types.iter().enumerate().filter(|(_, key)| *key == ty).map(|(position, _)| position);
-            match (matching.next(), matching.next()) {
-                (Some(position), None) => positions.push(position),
-                _ => return Ok(None),
-            }
-        }
-        Ok(Some(positions))
+        Ok(crate::registry::key_fill(&key_types, types))
     }
 }
 
