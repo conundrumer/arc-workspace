@@ -75,13 +75,15 @@ impl ColumnSource {
 }
 
 /// The positive atoms of a body, with the label pairs its `=` constraints
-/// join, `None` for a pair with `0`. The atoms are those of the body, of the
-/// branches of its `OR`s, and of the then and the else of its `IF`s; an atom
-/// under `NOT`, in the test of an `IF` or in an `ALL` binds nothing.
+/// join, `None` for a pair with `0`. The atoms are those of the body itself;
+/// each `OR` and each `IF` of the body is a split, with one `Gathered` for
+/// each branch of the `OR` and for the then and the else of the `IF`. An
+/// atom under `NOT`, in the test of an `IF` or in an `ALL` binds nothing.
 #[derive(Default)]
 struct Gathered<'p> {
     atoms: Vec<(NodePath, &'p Atom)>,
     equal: Vec<(LabelId, Option<LabelId>)>,
+    splits: Vec<Vec<Gathered<'p>>>,
 }
 
 impl<'p> Gathered<'p> {
@@ -97,17 +99,79 @@ impl<'p> Gathered<'p> {
                     self.equal.push((constraint.first.label, second));
                 }
                 Conjunct::Or(branches) => {
+                    let mut split = Vec::new();
                     for (index, branch) in branches.iter().enumerate() {
-                        self.of_body(branch.value(), &path.child(index as u32));
+                        let mut found = Gathered::default();
+                        found.of_body(branch.value(), &path.child(index as u32));
+                        split.push(found);
                     }
+                    self.splits.push(split);
                 }
                 Conjunct::If { then, otherwise, .. } => {
-                    self.of_body(then.value(), &path.child(1));
-                    self.of_body(otherwise.value(), &path.child(2));
+                    let mut then_part = Gathered::default();
+                    then_part.of_body(then.value(), &path.child(1));
+                    let mut else_part = Gathered::default();
+                    else_part.of_body(otherwise.value(), &path.child(2));
+                    self.splits.push(vec![then_part, else_part]);
                 }
                 Conjunct::Not(_) | Conjunct::Constraint(_) | Conjunct::All { .. } => {}
             }
         }
+    }
+
+    /// Whether this part, or a split in it, has a site of a positive atom
+    /// on a label of `class`, or an `=` pair of one.
+    fn touches(&self, class: &[LabelId]) -> bool {
+        let pair = self.equal.iter().any(|&(first, second)| class.contains(&first) || second.is_some_and(|second| class.contains(&second)));
+        let atom = self.atoms.iter().any(|(_, atom)| {
+            let mut found = false;
+            for site in atom.sites.iter() {
+                each_site_label(site, &mut Vec::new(), &mut |use_, _| found |= use_label(use_).is_some_and(|label| class.contains(&label)));
+            }
+            found
+        });
+        pair || atom || self.splits.iter().flatten().any(|part| part.touches(class))
+    }
+}
+
+/// One alternative of a body: the atoms and `=` pairs that hold together
+/// in it, and the splits it has not yet chosen a branch of.
+#[derive(Clone)]
+struct Alt<'p> {
+    atoms: Vec<&'p (NodePath, &'p Atom)>,
+    equal: Vec<(LabelId, Option<LabelId>)>,
+    pending: Vec<&'p [Gathered<'p>]>,
+}
+
+impl<'p> Alt<'p> {
+    fn of(body: &'p Gathered<'p>) -> Self {
+        let mut alt = Alt { atoms: Vec::new(), equal: Vec::new(), pending: Vec::new() };
+        alt.add(body);
+        alt
+    }
+
+    fn add(&mut self, part: &'p Gathered<'p>) {
+        self.atoms.extend(part.atoms.iter());
+        self.equal.extend(part.equal.iter().copied());
+        self.pending.extend(part.splits.iter().map(Vec::as_slice));
+    }
+
+    /// The alternatives of this one that choose a branch of each pending
+    /// split that touches the class of `label`, as it grows.
+    fn expand(&self, label: LabelId) -> Vec<Alt<'p>> {
+        let (class, _) = self.class_of(label);
+        let Some(index) = self.pending.iter().position(|split| split.iter().any(|part| part.touches(&class))) else {
+            return vec![self.clone()];
+        };
+        let mut rest = self.clone();
+        let split = rest.pending.remove(index);
+        let mut alternatives = Vec::new();
+        for part in split {
+            let mut chosen = rest.clone();
+            chosen.add(part);
+            alternatives.extend(chosen.expand(label));
+        }
+        alternatives
     }
 
     /// The labels that `=` constraints join to `label`, `label` included,
@@ -151,7 +215,6 @@ struct Hit<'p> {
 struct BodyFlows<'p> {
     program: &'p ResolvedProgram,
     registry: &'p Registry,
-    gathered: &'p Gathered<'p>,
     /// The nodes whose flows are being resolved above this body.
     visiting: &'p [GraphNodeIndex],
 }
@@ -170,9 +233,9 @@ impl<'p> BodyFlows<'p> {
         }
     }
 
-    fn hits(&self, class: &[LabelId]) -> Vec<Hit<'p>> {
+    fn hits<'a>(&self, alt: &'a Alt<'p>, class: &[LabelId]) -> Vec<Hit<'a>> {
         let mut hits = Vec::new();
-        for (path, atom) in &self.gathered.atoms {
+        for (path, atom) in alt.atoms.iter().map(|entry| (&entry.0, entry.1)) {
             if !matches!(self.program.resolution(path), Some(Resolution::Node(_) | Resolution::Lib(_) | Resolution::Undefined(_))) {
                 continue;
             }
@@ -214,19 +277,29 @@ impl<'p> BodyFlows<'p> {
         ColumnSource { kind, relation: Some(relation), column, atom: hit.path.clone() }
     }
 
-    /// The sources of `label`, which `visiting` holds the labels being
-    /// resolved above. A label that stands at a site of a positive atom of a
+    /// The sources of `label` in `alt`, which `visiting` holds the labels
+    /// being resolved above: the union over the alternatives of `alt` that
+    /// choose a branch of each `OR` and `IF` that binds the label's class.
+    /// In each, a label that stands at a site of a positive atom of a
     /// program relation or a fact gets a copy of each such column, and a
     /// label bound to `0` is a constant. A label that only lib atoms bind
     /// is computed from the labels at the columns of a mode of the atom
-    /// that the body binds elsewhere, and otherwise copies the lib
+    /// that the alternative binds elsewhere, and otherwise copies the lib
     /// relation's column.
-    fn sources(&self, label: LabelId, visiting: &mut Vec<LabelId>) -> Vec<ColumnSource> {
+    fn sources(&self, label: LabelId, alt: &Alt<'p>, visiting: &mut Vec<LabelId>) -> Vec<ColumnSource> {
         if visiting.contains(&label) {
             return Vec::new();
         }
-        let (class, zero) = self.gathered.class_of(label);
-        let hits = self.hits(&class);
+        let mut found: Vec<ColumnSource> = Vec::new();
+        for chosen in alt.expand(label) {
+            add_distinct(&mut found, self.sources_in(label, &chosen, visiting));
+        }
+        found
+    }
+
+    fn sources_in(&self, label: LabelId, alt: &Alt<'p>, visiting: &mut Vec<LabelId>) -> Vec<ColumnSource> {
+        let (class, zero) = alt.class_of(label);
+        let hits = self.hits(alt, &class);
         let (lib, program): (Vec<&Hit<'_>>, Vec<&Hit<'_>>) = hits.iter().partition(|hit| matches!(hit.atom.relation, RelationRef::Lib(_)));
         let mut found: Vec<ColumnSource> = Vec::new();
         if zero {
@@ -237,7 +310,7 @@ impl<'p> BodyFlows<'p> {
             let before = visiting.len();
             visiting.extend(class.iter().copied());
             for hit in lib {
-                found.extend(self.lib_sources(hit, visiting));
+                found.extend(self.lib_sources(hit, alt, visiting));
             }
             visiting.truncate(before);
         }
@@ -249,7 +322,7 @@ impl<'p> BodyFlows<'p> {
     /// The sources that the lib atom of `hit` gives the label at its site:
     /// computed from the labels of each mode that holds and does not bind
     /// the site's column, and otherwise a copy of the lib relation's column.
-    fn lib_sources(&self, hit: &Hit<'_>, visiting: &mut Vec<LabelId>) -> Vec<ColumnSource> {
+    fn lib_sources(&self, hit: &Hit<'_>, alt: &Alt<'p>, visiting: &mut Vec<LabelId>) -> Vec<ColumnSource> {
         let mut computed = Vec::new();
         let mut holds = false;
         for mode in atom_modes(self.registry, hit.atom) {
@@ -266,7 +339,7 @@ impl<'p> BodyFlows<'p> {
                 let mut labels = Vec::new();
                 each_site_label(site, &mut Vec::new(), &mut |use_, _| labels.extend(use_label(use_)));
                 for label in labels {
-                    let sources = self.sources(label, visiting);
+                    let sources = self.sources(label, alt, visiting);
                     bound &= !sources.is_empty();
                     from.extend(sources);
                 }
@@ -387,8 +460,8 @@ impl ResolvedProgram {
                             let own = self.label_position(&relation.form, *label).map(|position| usize::from(position.0));
                             let Some(position) = own.or_else(|| place(&columns, path)) else { continue };
                             let at = relation.form.join(body);
-                            let flow = BodyFlows { program: self, registry, gathered: &gathered[&at], visiting };
-                            let found = flow.sources(*label, &mut Vec::new());
+                            let flow = BodyFlows { program: self, registry, visiting };
+                            let found = flow.sources(*label, &Alt::of(&gathered[&at]), &mut Vec::new());
                             if let Some(held) = flows.get_mut(position) {
                                 add_distinct(held, found);
                             }

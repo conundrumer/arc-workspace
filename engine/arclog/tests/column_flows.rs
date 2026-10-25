@@ -164,6 +164,19 @@ const ANCHOR: &str = "(DET &band_axis AxisDomain)
 (RULE &output (input *P *Col))
 ";
 
+const FEED: &str = "(RULE &wall (input (:P *Q)))
+(RULE &between (input (:P *X)))
+(RULE &feed
+  (input (:P *X))
+  (neighbor (:P X) (:D *D) (:Q *B))
+  (OR
+    ((&wall *Q)
+     (neighbor (:P Q) (:D D) (:Q *F)))
+    ((&between (:X B))
+     (= F B))))
+(RULE &output (input *P *Col))
+";
+
 #[test]
 fn a_column_flow_indexes_the_tables_columns_where_the_clause_writes_them_in_another_order() {
     let columns = columns_of(ANCHOR, &[1, 2]);
@@ -214,4 +227,16 @@ fn an_input_port_takes_the_sources_of_its_own_head_sites_and_an_output_those_of_
             }
         }
     }
+}
+
+#[test]
+fn a_label_bound_in_one_branch_of_an_or_gets_the_sources_of_the_other_branch() {
+    let columns = columns_of(FEED, &[1, 2]);
+    let (between, feed) = (table_of(&columns, 1), table_of(&columns, 2));
+    let has_copy = |found: &[Found]| found.iter().any(|source| source.0 == COPY && source.3 == between as i32);
+    let has_computed = |found: &[Found]| found.iter().any(|source| source.0 == COMPUTED);
+    let bound = sources(&columns, feed, 2);
+    assert!(has_copy(&bound) && has_computed(&bound), "{bound:?}");
+    let fed = sources(&columns, feed, 3);
+    assert!(has_copy(&fed) && has_computed(&fed), "{fed:?}");
 }
