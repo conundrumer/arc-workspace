@@ -509,9 +509,9 @@ class Rewriter:
         for u in confs:
             k, a, b = u.head.args
             vs = term_vars((u.head.args, u.body), set())
-            m1, s1, _ = self.unify([(key_s, k), (item_s, a)] if keyed else [(item_s, a)], vs, "")
-            m2, s2, _ = self.unify([(key_s, k), (item_s, b)] if keyed else [(item_s, b)], vs, "2")
-            body = fix_cmps(tsubst(tuple(u.body), {**s1, **s2}))
+            m1, m2, s = self.unify_apart([(key_s, k), (item_s, a)] if keyed else [(item_s, a)],
+                                         [(key_s, k), (item_s, b)] if keyed else [(item_s, b)], vs)
+            body = fix_cmps(tsubst(tuple(u.body), s))
             first = [at(fill(m1, pat_s)), at(fill(m2, pat_s))]
             rest = list(body)
             for j, t in enumerate(first):
@@ -537,10 +537,12 @@ class Rewriter:
         if comp == "TiebreakResolutions" and only_slot:
             m2 = {**ident, **{v: Variable(v + "2") for v in only_slot}}
             pick.aparts.append((at(ident), at(m2), ne(slot_s, two(slot_s, only_slot))))
-        def item_at(k, sl, x, taken: set[str], suffix: str):
-            pairs = ([(key_s, k)] if keyed else []) + [(slot_s, sl), (item_s, x)]
-            m, s_, _ = self.unify(pairs, taken, suffix)
-            return at(fill(m, pat_s)), s_
+        def item_at(ka, kb, taken: set[str]):
+            """The item atoms of two assignments (key, slot, item), and the split."""
+            def pairs(k, sl, x):
+                return ([(key_s, k)] if keyed else []) + [(slot_s, sl), (item_s, x)]
+            m1, m2, s_ = self.unify_apart(pairs(*ka), pairs(*kb), taken)
+            return at(fill(m1, pat_s)), at(fill(m2, pat_s)), s_
         self.key_plain = not keyed or (self.record(ktype) is not None and self.plain(self.record(ktype))) \
             or not isinstance(self.types.get(((), ktype)), (AdtType, RecordType))
         reads = (comp, keyed, pat_s, cvars, spread, item_at)
@@ -587,9 +589,8 @@ class Rewriter:
                 if len(assigns) != 2 or R.name in term_vars(tuple(rest), set()):
                     break
                 taken = term_vars(u.body, set())
-                (a1, s1), (a2, s2) = [item_at(a.atom.args[0], a.atom.args[2], a.atom.args[3], taken, sfx)
-                                      for a, sfx in zip(assigns, ("", "2"))]
-                bodies.append(fix_cmps(tsubst(tuple([a1, a2] + rest), {**s1, **s2})))
+                a1, a2, s = item_at(*[(a.atom.args[0], a.atom.args[2], a.atom.args[3]) for a in assigns], taken)
+                bodies.append(fix_cmps(tsubst(tuple([a1, a2] + rest), s)))
             else:
                 pick.aparts.extend(bodies)
                 units = [u for u in units if u not in mine]
@@ -599,6 +600,15 @@ class Rewriter:
                                                     and l.atom.relation == RelationName((), name))]
                 units = [dc_replace(u, body=tuple(map_lits(u.body, fn))) if u.body else u for u in units]
         return units
+
+    def unify_apart(self, pairs_a, pairs_b, taken: set[str]):
+        """The bindings of the two sides of an apart, and one substitution for
+        both. A variable that both sides read is split once, at the first
+        side, and the second side reads its parts; each side's own variables
+        get the side's suffix."""
+        m1, s1, _ = self.unify(pairs_a, taken, "")
+        m2, s2, _ = self.unify([(p, tsubst(t, s1)) for p, t in pairs_b], taken, "2")
+        return m1, m2, {**s1, **s2}
 
     def unify(self, pairs, taken: set[str], suffix: str):
         """The binding of pattern variables by actual terms, the
