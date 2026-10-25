@@ -338,9 +338,10 @@ print("== learning: 100 steps of the ranking loss, two ta branch points a step, 
 
 def learn(shuffle):
     import pretrain as P
-    groups = {}
+    groups = {}   # per branch point: the fixture gives every branch point of a corpus case one prefix_tokens, one group
     for m in members.values():
-        groups.setdefault(m["group"], []).append(m)
+        k = (*m["group"], labels[m["key"]]["branch"])
+        groups.setdefault(k, []).append(dict(m, group=k))
     train = [g for k, g in groups.items() if k[0] == "ta"]
     held = [g for k, g in groups.items() if k[0] == "tb"]
     r = np.random.default_rng(5)
