@@ -2860,9 +2860,14 @@ def pooled_vectors(enc, programs, gen=None):
         enc.release()
 
 
+def value_input(readout, s):
+    """The value head's input: the frame-free readout (the encoder's `Readout`, before `cross_norm` and `cross`) of
+    each table's K pooled vectors s [n, K, 21, c], flattened over K: [n, K (5c + 4 gram^2)]."""
+    return readout(s.reshape(-1, NPOS, s.shape[-1])).reshape(len(s), -1)
+
+
 class ValueHead(nn.Module):
-    """One logit per table: a linear map of the frame-free readout of its K pooled vectors (the encoder's `Readout`,
-    before `cross_norm` and `cross`), [n, K (5c + 4 gram^2)], after a LayerNorm."""
+    """One logit per table: a linear map of its `value_input` after a LayerNorm."""
     def __init__(self, c, gram, K):
         super().__init__()
         w = K * readout_width(c, gram)
@@ -2870,7 +2875,11 @@ class ValueHead(nn.Module):
 
     def forward(self, readout, s):
         """readout: the encoder's `Readout`; s [n, K, 21, c] -> [n]."""
-        return self.out(self.norm(readout(s.reshape(-1, NPOS, s.shape[-1])).reshape(len(s), -1))).squeeze(-1)
+        return self.score(value_input(readout, s))
+
+    def score(self, x):
+        """x: `value_input` [n, w] -> [n]."""
+        return self.out(self.norm(x)).squeeze(-1)
 
 
 VALUE_MODES = ("off", "ranking", "binary")
@@ -2980,11 +2989,18 @@ def value_metrics(lists):
 VALUE_DRAW_METRICS = ("pair_acc", "pair_acc_sampled", "auc", "auc_sampled")
 
 
-def value_scores(enc, head, members, gen, id_dim):
-    """The value head's logits, [n_tables] per member of `members` (`load_rollouts`), each member encoded whole as a
-    program with no field hidden, under one draw of identifiers from `gen` (`value_relations`, `pooled_vectors`)."""
+def value_inputs(enc, members, gen, id_dim):
+    """The value head's input (`value_input`), [n_tables, w] per member of `members` (`load_rollouts`), each member
+    encoded whole as a program with no field hidden, under one draw of identifiers from `gen` (`value_relations`,
+    `pooled_vectors`)."""
     pooled = pooled_vectors(enc, [(m["tables"], value_relations(m["tables"], id_dim, gen)) for m in members], gen)
-    return list(head(enc.readout, torch.cat(pooled)).float().split([len(s) for s in pooled]))
+    return list(value_input(enc.readout, torch.cat(pooled)).split([len(s) for s in pooled]))
+
+
+def value_scores(enc, head, members, gen, id_dim):
+    """The value head's logits, [n_tables] per member of `members`, from `value_inputs`."""
+    xs = value_inputs(enc, members, gen, id_dim)
+    return list(head.score(torch.cat(xs)).float().split([len(x) for x in xs]))
 
 
 def value_draw_metrics(members, draws, positions, *, label):
