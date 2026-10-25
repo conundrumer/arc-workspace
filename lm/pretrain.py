@@ -16,8 +16,20 @@ gives the edge accuracy, of single margins. Beside each `loss` the log gives `ch
 parts' losses), the mean loss of a head with equal scores over the same fields (the encoder's `masked_fields` states it
 per field).
 
+With `--value ranking` or `--value binary`, the encoder also trains a value head (encoder.py, `ValueHead`) on a
+rollout export, `--value-tables`, read with its labels.jsonl (encoder.py, `load_rollouts`). Each step first takes up to
+`--value-groups` branch points of the training tasks, at least one, each with every one of its continuations, whose
+summed cost counts in `--step-rows`, then the masked loss's programs within the cost left. A continuation is encoded
+whole, with no field hidden and one random identifier per relation slot; the value loss is taken over its tables at
+the positions below `--value-positions` after the branch (encoder.py, `value_lists` and `value_loss`), times
+`--value-weight`, beside the masked loss. A branch point is held out where its task is held out. The log gives, under
+"train" and "heldout", `value_loss`, `value_pair_acc` (the pairwise ranking accuracy over each list's pairs of a
+solving and a non-solving continuation), `value_pair_acc_sampled` (the same over the sampled continuations alone,
+without the gold one) and `value_auc` (over every listed continuation's score), the held-out ones
+over a sample of `--eval-limit` branch points drawn once with `--seed`.
+
 The encoder's state, without the language model's embedding that it shares, goes to <out>/encoder.pt at the
-lowest held-out loss, for `train.py --encoder-init`. The embedding is built as train.py builds it, from `--base`,
+lowest held-out masked loss, for `train.py --encoder-init`, with the value head's state under "value_head". The embedding is built as train.py builds it, from `--base`,
 and stays fixed here.
 
     work/lm/.venv/bin/python -u lm/pretrain.py --base HuggingFaceTB/SmolLM2-135M --data lm/data-dev \
@@ -61,15 +73,45 @@ def step_cost(tables, source_rows=False):
     return cost
 
 
-def draw(train, programs, cap):
+def draw(train, programs, cap, at_least=1):
     """The step's programs: a random order of up to `programs` of `train`, cut before the first whose cost would
-    take the sum past `cap`, and at least the first; and their summed cost."""
+    take the sum past `cap`, and at least `at_least` of them; and their summed cost."""
     out, cost = [], 0.0
     for c in random.sample(train, min(programs, len(train))):
-        if out and cost + c["cost"] > cap:
+        if len(out) >= at_least and cost + c["cost"] > cap:
             break
         out.append(c); cost += c["cost"]
     return out, cost
+
+
+def value_members(groups, members):
+    """The members of the drawn branch points' groups, each group's members together."""
+    return [members[k] for g in groups for k in g["members"]]
+
+
+def value_step(enc, head, members, gen, mode, positions, id_dim):
+    """The value loss of `members` (encoder.load_rollouts), each encoded whole as a program with no field hidden,
+    and the lists it is taken over (encoder.value_lists); the loss is None where no list counts."""
+    pooled = E.pooled_vectors(enc, [(m["tables"], E.value_relations(m["tables"], id_dim, gen)) for m in members], gen)
+    counts = [len(s) for s in pooled]
+    logits = head(enc.readout, torch.cat(pooled)).float().split(counts)
+    lists = E.value_lists(members, logits, positions)
+    return E.value_loss(mode, lists), lists
+
+
+def value_metrics(lists, loss_sum=0.0, losses=0):
+    """The log's value entries over `value_lists`' lists: `value_loss` (where given), `value_pair_acc` (the share of
+    pairs of a solving and a non-solving member of a list in which the solving one scores higher, a tie one half),
+    `value_pair_acc_sampled` (the same over the pairs of sampled continuations alone, without the gold one),
+    `value_auc` (over every listed member's score) and the counts."""
+    right, pairs = E.value_pairs(lists)
+    right_s, pairs_s = E.value_pairs(lists, sampled=True)
+    scores = [float(s) for l in lists for s in l["scores"].detach().float().cpu()]
+    labels = [bool(y) for l in lists for y in l["labels"]]
+    return {**({"value_loss": loss_sum / losses} if losses else {}),
+            "value_pair_acc": right / pairs if pairs else None,
+            "value_pair_acc_sampled": right_s / pairs_s if pairs_s else None, "value_auc": E.auc(scores, labels),
+            "value_lists": len(lists), "value_ranked_lists": sum(l["ranked"] for l in lists), "value_pairs": pairs}
 
 
 DEPTHS = ("1", "2", "3", "4+")
@@ -179,6 +221,18 @@ def main():
                          "at every layer for the backward pass, which does not fit a step of full-data programs")
     ap.add_argument("--max-rows", type=int, default=0,
                     help="leave out each program with a table of more rows than this, summed over its entries (a CPU check)")
+    ap.add_argument("--value", choices=E.VALUE_MODES, default="off",
+                    help="the value head's loss on a rollout export (--value-tables): ranking, a listwise softmax "
+                         "cross-entropy over each branch point's continuations; binary, a sigmoid cross-entropy on "
+                         "each table with its branch point's share of solving continuations; off by default")
+    ap.add_argument("--value-tables", help="a rollout export with its labels.jsonl (lm/rollout_labels.py)")
+    ap.add_argument("--value-weight", type=float, default=1.0, help="the weight of the value loss beside the masked loss")
+    ap.add_argument("--value-positions", type=int, default=1,
+                    help="the value loss takes the tables at the positions after the branch below this, each position "
+                         "its own list")
+    ap.add_argument("--value-groups", type=int, default=1,
+                    help="the most branch points per step, each with all its continuations; their cost counts in "
+                         "--step-rows before the masked loss's programs, and at least one is taken")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
     a = ap.parse_args()
     assert a.enc_equality != "flex" or a.device == "cuda", "--enc-equality flex trains on cuda alone"
@@ -207,6 +261,29 @@ def main():
         c["tables"] = tables[(c["task"], c["case"])]
         c["cost"] = step_cost(c["tables"], a.enc_source_rows)
     assert train and held, "no training or held-out programs with tables"
+    value_train, value_held, members = [], [], {}
+    if a.value != "off":
+        assert a.value_tables, "--value needs --value-tables"
+        members, vskipped = E.load_rollouts(a.value_tables, f"{a.data}/{Path(a.value_tables).resolve().name}.tables.pkl",
+                                            a.enc_budget, a.enc_max_rows)
+        if vskipped:
+            print(f"DATA FAULT: {len(vskipped)} rollout cases whose tables export cannot be read, left out: {vskipped}")
+        for m in members.values():
+            m["cost"] = step_cost(m["tables"], a.enc_source_rows)
+        # the split of the masked loss: a branch point is held out where its task is
+        train_tasks, held_tasks = {c["task"] for c in cases}, {c["task"] for c in held_cases}
+        groups = {}
+        for m in members.values():
+            groups.setdefault(m["group"], {"group": m["group"], "members": [], "cost": 0.0})
+            groups[m["group"]]["members"].append(m["key"]); groups[m["group"]]["cost"] += m["cost"]
+        value_train = [g for g in groups.values() if g["group"][0] in train_tasks]
+        value_held = [g for g in groups.values() if g["group"][0] in held_tasks]
+        print(f"value: {len(members)} continuations at {len(groups)} branch points, {len(value_train)} training and "
+              f"{len(value_held)} held out; {len(groups) - len(value_train) - len(value_held)} of tasks in neither set "
+              f"left out", flush=True)
+        assert value_train and value_held, "no training or held-out branch points"
+        if 0 < a.eval_limit < len(value_held):
+            value_held = random.Random(a.seed).sample(value_held, a.eval_limit)
     if a.preflight:
         t_pre = time.time()
         labelled = E.preflight([((c["task"], c["case"]), c["tables"]) for c in train + held], a.mask_frac, a.mask_cap,
@@ -232,7 +309,8 @@ def main():
     enc.checkpoint = a.enc_checkpoint
     use_autocast = a.device == "cuda" if a.autocast is None else a.autocast
     autocast = lambda: torch.autocast(torch.device(a.device).type, dtype=torch.bfloat16, enabled=use_autocast)
-    params = [p for p in enc.parameters() if p.requires_grad]
+    head = E.ValueHead(a.enc_width, a.enc_gram, a.enc_k).to(a.device) if a.value != "off" else None
+    params = [p for p in enc.parameters() if p.requires_grad] + (list(head.parameters()) if head else [])
     opt = torch.optim.AdamW(params, lr=a.lr, weight_decay=0.0)
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda i: min(1.0, (i + 1) / a.warmup))
     print(f"{len(train)} training programs, {len(held)} held-out; {sum(map(len, (c['tables'] for c in train)))} "
@@ -257,8 +335,20 @@ def main():
                 records += r
                 if (i // a.programs + 1) % 10 == 0:
                     print(f"  {min(i + a.programs, len(held))}/{len(held)} programs, {time.time() - t_eval:.0f} s", flush=True)
+        out = losses(summarize(records), a.prior_weight)
+        if head is not None:   # the held-out branch points, one at a time, with fixed identifiers
+            head.eval()
+            lists, loss_sum, n = [], 0.0, 0
+            with torch.no_grad(), autocast():
+                for g in value_held:
+                    l, ls = value_step(enc, head, value_members([g], members), gen, a.value, a.value_positions, a.id_dim)
+                    lists += ls
+                    if l is not None:
+                        loss_sum += l.item(); n += 1
+            out.update(value_metrics(lists, loss_sum, n))
+            head.train()
         enc.train()
-        return losses(summarize(records), a.prior_weight)
+        return out
 
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
     log = open(out / "log.jsonl", "a")
@@ -266,17 +356,34 @@ def main():
                   enc_heads=a.enc_heads, enc_mlp=a.enc_mlp, enc_gram=a.enc_gram, enc_budget=a.enc_budget,
                   id_dim=a.id_dim, mask_frac=a.mask_frac, mask_cap=a.mask_cap, mask_kind=a.mask_kind,
                   mask_remote=a.mask_remote, prior_weight=a.prior_weight, in_names=in_names, enc_equality=a.enc_equality,
-                  enc_source_rows=a.enc_source_rows, enc_ptr_equality=a.enc_ptr_equality)
+                  enc_source_rows=a.enc_source_rows, enc_ptr_equality=a.enc_ptr_equality, enc_max_rows=a.enc_max_rows,
+                  value=a.value, value_tables=a.value_tables, value_weight=a.value_weight,
+                  value_positions=a.value_positions, value_groups=a.value_groups)
     gen, mask_gen = torch.Generator().manual_seed(10), torch.Generator().manual_seed(11)
     best, start, step_seconds, by = float("inf"), time.time(), [], None
+    value_lists, value_sum, value_n = [], 0.0, 0   # the value loss's lists and losses since the last evaluation
     for step in range(1, a.steps + 1):
         t = time.time()
-        drawn, cost = draw(train, a.programs, a.step_rows)
+        vdrawn, vcost = draw(value_train, a.value_groups, a.step_rows) if head is not None else ([], 0.0)
+        drawn, cost = draw(train, a.programs, a.step_rows - vcost, at_least=0 if vdrawn else 1)
+        cost += vcost
         with autocast():
-            loss, records = enc.masked_loss([program(c, gen) for c in drawn],
-                                            gen, a.mask_frac, a.mask_cap, mask_gen, kind=a.mask_kind, step=step,
-                                            prior_weight=a.prior_weight, mask_remote=a.mask_remote)
-        assert torch.isfinite(loss), f"step {step}: masked loss {loss.item()}"
+            if drawn:
+                loss, records = enc.masked_loss([program(c, gen) for c in drawn],
+                                                gen, a.mask_frac, a.mask_cap, mask_gen, kind=a.mask_kind, step=step,
+                                                prior_weight=a.prior_weight, mask_remote=a.mask_remote)
+            else:
+                loss, records = sum(p.sum() * 0.0 for p in params), []
+            masked, total = loss, loss
+            if vdrawn:
+                vloss, vlists = value_step(enc, head, value_members(vdrawn, members), gen, a.value, a.value_positions,
+                                           a.id_dim)
+                value_lists += vlists
+                if vloss is not None:
+                    total = loss + a.value_weight * vloss
+                    value_sum += vloss.item(); value_n += 1
+        assert torch.isfinite(total), f"step {step}: loss {total.item()}"
+        loss = total
         opt.zero_grad(); loss.backward()
         torch.nn.utils.clip_grad_norm_(params, 1.0)
         opt.step(); sched.step()
@@ -285,7 +392,10 @@ def main():
         by = summarize(records, by)
         if step <= 3 or step % 10 == 0:
             now = losses(summarize(records), a.prior_weight)
-            print(f"step {step} masked loss {loss.item():.3f} (program {now['program_loss']:.3f}, chance "
+            vnow = (f"value_loss {vloss.item():.3f} over {sum(l['ranked'] for l in vlists)} ranked lists of "
+                    f"{len(vlists)}, {sum(len(g['members']) for g in vdrawn)} continuations at {len(vdrawn)} branch "
+                    f"points; " if vdrawn and vloss is not None else "")
+            print(f"step {step} {vnow}masked loss {masked.item():.3f} (program {now['program_loss']:.3f}, chance "
                   f"{now['program_chance_loss']:.3f}, over {now['program_fields']} fields, prior {now['prior_loss']:.3f}, "
                   f"chance {now['prior_chance_loss']:.3f}, over {now['prior_fields']} fields) "
                   f"{len(drawn)} programs, cost {cost:.0f} rows "
@@ -296,15 +406,17 @@ def main():
             row = {"step": step, "seconds": round(time.time() - start), "seconds_per_step": float(np.mean(step_seconds)),
                    "device_gb": round(T.device_memory(a.device), 2),
                    "train_loss": loss.item(), "eval_programs": len(held),
-                   "train": losses(by, a.prior_weight),
+                   "train": {**losses(by, a.prior_weight),
+                             **(value_metrics(value_lists, value_sum, value_n) if head is not None else {})},
                    "heldout": ev}
-            by = None
+            by, value_lists, value_sum, value_n = None, [], 0.0, 0
             log.write(json.dumps(row) + "\n"); log.flush()
             print(json.dumps(row), flush=True)
             if ev["loss"] < best:
                 best = ev["loss"]
                 state = {k: v for k, v in enc.state_dict().items() if not k.startswith("embed.")}
-                torch.save({"config": {**config, "step": step, "heldout_loss": best}, "state": state}, out / "encoder.pt")
+                torch.save({"config": {**config, "step": step, "heldout_loss": best}, "state": state,
+                            **({"value_head": head.state_dict()} if head is not None else {})}, out / "encoder.pt")
         if last:
             break
 
