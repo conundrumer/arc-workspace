@@ -20,9 +20,9 @@ use crate::program::{
     written_inputs, Atom, Body, Conjunct, ConstraintOp, FactRelation, LabelId, LabelUse, OutputName, OutputOwner, OutputStep, Operand, ProgramRelation,
     RelationRef, RigidDetPart, Site, SiteArg,
 };
-use crate::registry::{LibName, Registry};
+use crate::registry::{ColumnType, LibName, Registry};
 use crate::safety::list_of;
-use crate::types::{each_site_label, use_label};
+use crate::types::{each_site_label, use_label, ValueType};
 
 /// How a source gives the column's values.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -386,11 +386,15 @@ struct Given {
     /// program relation: the proposers of a clause, or the component of an
     /// instance.
     lib: Vec<LibName>,
+    /// The index in the listing of its first entry that a part site of a
+    /// `RIGID_DET` assembly gives; the entries before are the key's and
+    /// `:Pose`. Beyond the listing for any other relation.
+    sites_from: usize,
 }
 
 impl ResolvedProgram {
-    /// The sources of each of the `width` row positions of the relation of
-    /// `node` that a read at `output` after the owner's name reads, in row
+    /// The sources of each row position of the relation of
+    /// `node`, whose columns take `types`, that a read at `output` after the owner's name reads, in row
     /// order. Each is the
     /// union over the forms that give the node and, in each, over every
     /// clause and branch:
@@ -399,6 +403,10 @@ impl ResolvedProgram {
     ///   body that binds it, each site of a positive atom on it a copy of
     ///   that atom's column, `0` a constant, and, where only lib atoms bind
     ///   it, the sources of the labels of a mode of the lib atom, computed;
+    /// - a part-site column of a `RIGID_DET` part output whose type a D4
+    ///   element moves ([`ValueType::moved_by_d4`]): the sources of its
+    ///   label, computed, since the column holds the part's values at each
+    ///   pose;
     /// - a column of a type parameter that an `INIT` form binds: the sources
     ///   of the labels the form binds it to;
     /// - another declared column of an instance or a `RIGID_DET` assembly:
@@ -411,13 +419,14 @@ impl ResolvedProgram {
     /// A source that names a column of an input port of an instance is
     /// replaced by the sources of that port's column, through each chain of
     /// input ports, because the export makes no table for a port.
-    pub fn column_flows(&self, node: GraphNodeIndex, output: Option<&[OutputStep]>, width: usize, registry: &Registry) -> Vec<Vec<ColumnSource>> {
-        self.flows_visiting(node, output, width, registry, &mut Vec::new())
+    pub fn column_flows(&self, node: GraphNodeIndex, output: Option<&[OutputStep]>, types: &[ValueType], registry: &Registry) -> Vec<Vec<ColumnSource>> {
+        self.flows_visiting(node, output, types.len(), types, registry, &mut Vec::new())
     }
 
     /// [`Self::column_flows`], where `visiting` holds the nodes being
-    /// resolved above `node`.
-    fn flows_visiting(&self, node: GraphNodeIndex, output: Option<&[OutputStep]>, width: usize, registry: &Registry, visiting: &mut Vec<GraphNodeIndex>) -> Vec<Vec<ColumnSource>> {
+    /// resolved above `node`. A column of a position that `types` leaves
+    /// out has a type no D4 element moves.
+    fn flows_visiting(&self, node: GraphNodeIndex, output: Option<&[OutputStep]>, width: usize, types: &[ValueType], registry: &Registry, visiting: &mut Vec<GraphNodeIndex>) -> Vec<Vec<ColumnSource>> {
         visiting.push(node);
         let mut flows: Vec<Vec<ColumnSource>> = vec![Vec::new(); width];
         let given: Vec<Given> = self.given(node, registry).into_iter().filter(|relation| output.zip(relation.output.as_deref()).is_none_or(|(read, own)| read == own)).collect();
@@ -448,7 +457,7 @@ impl ResolvedProgram {
         for relation in &given {
             let columns = relation.listing.columns();
             let mut start = 0usize;
-            for listed in &relation.listing.0 {
+            for (index, listed) in relation.listing.0.iter().enumerate() {
                 let slot_width = match &listed.slot {
                     Slot::Column(_) => 1,
                     Slot::Record { fields, .. } => fields.len(),
@@ -462,8 +471,9 @@ impl ResolvedProgram {
                             let at = relation.form.join(body);
                             let flow = BodyFlows { program: self, registry, visiting };
                             let found = flow.sources(*label, &Alt::of(&gathered[&at]), &mut Vec::new());
+                            let moved = index >= relation.sites_from && types.get(position).is_some_and(ValueType::moved_by_d4);
                             if let Some(held) = flows.get_mut(position) {
-                                add_distinct(held, found);
+                                add_distinct(held, if moved { found.into_iter().map(ColumnSource::computed).collect() } else { found });
                             }
                         }
                         Source::Declared(_) if !labeled => {
@@ -496,7 +506,7 @@ impl ResolvedProgram {
         let node = &self.graph.nodes[port.0 as usize];
         let Some(relation) = node_relation(&node.kind) else { return Vec::new() };
         let Some(columns) = self.names.columns(&node.scope, &relation) else { return Vec::new() };
-        let mut flows = self.flows_visiting(port, None, columns.row_names().len(), registry, visiting);
+        let mut flows = self.flows_visiting(port, None, columns.row_names().len(), &[], registry, visiting);
         if usize::from(position) < flows.len() { flows.swap_remove(usize::from(position)) } else { Vec::new() }
     }
 
@@ -530,14 +540,16 @@ impl ResolvedProgram {
         let mut given = Vec::new();
         for form in self.forms_of(node) {
             let Some(shape) = node_at(root, form) else { continue };
-            let whole = |listing: Listing, lib: Vec<LibName>| Given { form: form.clone(), output: None, listing, lib };
+            let whole = |listing: Listing, lib: Vec<LibName>| Given { form: form.clone(), output: None, listing, lib, sites_from: usize::MAX };
             match shape {
                 NodeRef::Clause(clause) => given.push(whole(form_columns::form_listing(shape), clause.proposers.to_vec())),
                 NodeRef::Choose(_) => given.push(whole(form_columns::form_listing(shape), Vec::new())),
                 NodeRef::Demonstrated(demonstrated) => given.push(whole(form_columns::demonstrated_listing(demonstrated), Vec::new())),
                 NodeRef::RigidDet(rigid) => {
                     for (steps, listing) in form_columns::rigid_listings(rigid) {
-                        given.push(Given { form: form.clone(), output: Some(steps), listing, lib: Vec::new() });
+                        let pose = listing.0.iter().position(|listed| listed.sources.iter().any(|(_, source)| matches!(source, Source::Declared(ColumnType::Pose))));
+                        let sites_from = if steps.as_ref() == [OutputStep::Pose] { usize::MAX } else { pose.map_or(usize::MAX, |pose| pose + 1) };
+                        given.push(Given { form: form.clone(), output: Some(steps), listing, lib: Vec::new(), sites_from });
                     }
                 }
                 NodeRef::Instance(instance) => {
@@ -548,14 +560,14 @@ impl ResolvedProgram {
                     let lib = vec![instance.component.clone()];
                     let mut port = |port: &crate::registry::Port, output: bool| {
                         let output = output.then(|| Arc::from([OutputStep::Port(port.name.clone())]));
-                        given.push(Given { form: form.clone(), output, listing: form_columns::port_columns(port, &bindings, keyed), lib: lib.clone() });
+                        given.push(Given { form: form.clone(), output, listing: form_columns::port_columns(port, &bindings, keyed), lib: lib.clone(), sites_from: usize::MAX });
                     };
                     match &self.graph.nodes[node.0 as usize].kind {
                         DependencyKind::InstanceInput { input, .. } => {
                             for own in component.inputs.iter().filter(|own| own.port.name == *input) {
                                 for written in written.iter().filter(|written| written.name == *input) {
                                     let listing = form_columns::input_columns(&own.port, &bindings, keyed, instance, written);
-                                    given.push(Given { form: form.clone(), output: None, listing, lib: lib.clone() });
+                                    given.push(Given { form: form.clone(), output: None, listing, lib: lib.clone(), sites_from: usize::MAX });
                                 }
                             }
                         }

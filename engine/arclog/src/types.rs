@@ -154,6 +154,14 @@ impl ValueType {
         })
     }
 
+    /// Whether a D4 element moves a value of the type, as
+    /// `docs/arclog/rigid.md#semantics` gives: true for `Box` and for the
+    /// types of directions, axes and senses. A `RIGID_DET` pose leaves a
+    /// value of every other type as it is.
+    pub fn moved_by_d4(&self) -> bool {
+        matches!(self, ValueType::Box | ValueType::Dir | ValueType::DiagDir | ValueType::Dir8 | ValueType::Axis | ValueType::DiagAxis | ValueType::Axis4 | ValueType::Sense)
+    }
+
     /// Whether `<`, `<=`, `>` and `>=` may compare values of the type: true
     /// for `number` alone.
     pub fn admits_order(&self) -> bool {

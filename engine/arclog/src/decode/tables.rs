@@ -253,7 +253,7 @@ impl Decoder<'_> {
         let cap = self.context.settings.projection_cap;
         let over = examples.iter().any(|example| example.rows.as_ref().is_ok_and(|rows| rows.at.iter().flat_map(|(_, models)| models).any(|model| matches!(model, RelationValue::Rows(rows) if rows.len() > cap))));
         let projections = over.then(|| self.projections_of(&examples, form, work)).flatten();
-        let flows = program.program.column_flows(relation.node, relation.output.as_deref(), types.len(), self.context.registry).into();
+        let flows = program.program.column_flows(relation.node, relation.output.as_deref(), &types, self.context.registry).into();
         let depth = program.program.depth(relation.node);
         Ok(Contents { relation: TableRelation::Slot(slot), columns, dets, examples: examples.into(), projections, name: String::new(), flows, depth, keys: Vec::new(), grid: None })
     }

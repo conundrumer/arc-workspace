@@ -11,7 +11,12 @@ use arclog::eval::Caps;
 use arclog::judge::candidates::{PairCandidates, Section, World};
 use arclog::read::read_solver;
 use arclog::registry::Registry;
-use arclog::resolver::{resolve, SourceKind};
+use arclog::layout::SourceFile;
+use arclog::program::path::NodePath;
+use arclog::program::{DeclaredName, OutputStep};
+use arclog::read::read_arclog;
+use arclog::resolver::{resolve, GraphNodeIndex, SourceKind};
+use arclog::types::ValueType;
 use arclog::session::{SessionBound, TaskSession};
 use arclog::stream::{token_stream, DecodeSettings, Emitter, Vocabulary};
 use arclog::task::{Grid, JudgedPair, JudgedTask, Task, TrainPair};
@@ -239,4 +244,19 @@ fn a_label_bound_in_one_branch_of_an_or_gets_the_sources_of_the_other_branch() {
     assert!(has_copy(&bound) && has_computed(&bound), "{bound:?}");
     let fed = sources(&columns, feed, 3);
     assert!(has_copy(&fed) && has_computed(&fed), "{fed:?}");
+}
+
+#[test]
+fn a_part_column_of_a_rigid_det_is_computed_where_a_pose_moves_its_type_and_a_copy_otherwise() {
+    let read = read_arclog("(DET &glyph (ex_input *E *B *Col))\n(RIGID_DET &piece (&glyph *B *Col))\n", SourceFile::Arclog).expect("the program reads");
+    let registry = Registry::get();
+    let program = resolve(&read.value.0, None, &Default::default(), registry).value;
+    let form = NodePath::default().child(1);
+    let node = (0..program.graph.nodes.len() as u32).map(GraphNodeIndex).find(|node| *program.form_of(*node) == form).expect("the node of the `RIGID_DET` form");
+    let part = [OutputStep::Part(DeclaredName::Written("&glyph".into()))];
+    let flows = program.column_flows(node, Some(&part), &[ValueType::Number, ValueType::Box, ValueType::Color], registry);
+    let kinds = |column: usize| flows[column].iter().map(|source| source.kind).collect::<Vec<_>>();
+    assert_eq!(kinds(1), [SourceKind::Computed], "{flows:?}");
+    assert_eq!(kinds(2), [SourceKind::Copy], "{flows:?}");
+    assert!(flows[1..].iter().all(|sources| sources.iter().all(|source| source.relation.is_some())), "{flows:?}");
 }
