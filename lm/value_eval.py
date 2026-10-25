@@ -1,19 +1,20 @@
 """Measure a pretrained value head (pretrain.py --value) on a rollout export, against two baselines.
 
     work/lm/.venv/bin/python lm/value_eval.py --encoder <run>/encoder.pt --value-tables work/tables/rollouts-afc44b43 \
-        [--data work/lm/data] [--positions P] [--device cpu]
+        [--data work/lm/data] [--positions P] [--value-label consistent|solving] [--device cpu]
 
 The branch points are split as pretrain.py splits them: a branch point is held out where the data (`--data`, its
 cases.npz) marks its task held out, and is a training one where its task is a training task. On the held-out branch
 points, each score below is measured over the lists of encoder.py's `value_lists` (the tables at the positions below
-`--positions` after the branch, the empty, unseen and faulted ones left out), as the pairwise ranking accuracy (over
-each list's pairs of a solving and a non-solving continuation, a tie one half) and the AUC (within each list that
-holds both a solving and a non-solving continuation, and the mean over those lists), and both once more over the
-sampled continuations alone, without the gold one, whose author differs:
+`--positions` after the branch, the empty, unseen and faulted ones left out, with each table's label as
+`--value-label` selects it, pretrain.py's flag), as the pairwise ranking accuracy (over each list's pairs of a member
+of label 1 and one of label 0, a tie one half) and the AUC (within each list that holds members of both labels, and
+the mean over those lists), and both once more over the sampled continuations alone, without the gold one, whose
+author differs:
 
 - the value head: its logit;
 - a logistic regression on trivial features of a table, trained by full-batch Adam for `--lr-steps` steps on the
-  training branch points' listed tables with each continuation's label: the log of its row count, whether it is
+  training branch points' listed tables with each table's label: the log of its row count, whether it is
   empty, whether it is unseen, its depth, the log of its step index, its position after the branch, and the count of
   its columns of each type;
 - compressibility: minus the encoder's masked loss per hidden field of the table, over one program step and one prior
@@ -37,9 +38,9 @@ def features(t, r):
             np.log1p(t.step), float(r["position"])] + bag
 
 
-def report(name, members, scores, positions):
+def report(name, members, scores, positions, label):
     """The pairwise ranking accuracy and the AUC of per-table `scores` (one array per member) over the lists."""
-    lists = E.value_lists(members, [torch.as_tensor(s, dtype=torch.float32) for s in scores], positions)
+    lists = E.value_lists(members, [torch.as_tensor(s, dtype=torch.float32) for s in scores], positions, label=label)
     right, pairs = E.value_pairs(lists)
     right_s, pairs_s = E.value_pairs(lists, sampled=True)
     auc, auc_s = E.value_auc(lists), E.value_auc(lists, sampled=True)
@@ -54,14 +55,14 @@ def report(name, members, scores, positions):
                 auc=auc, auc_sampled=auc_s, pairs=pairs, lists=len(lists))
 
 
-def logistic(train_members, held_members, positions, steps, seed):
+def logistic(train_members, held_members, positions, steps, seed, label):
     """Per-table scores of the held-out members from a logistic regression on `features`."""
     def rows(ms):
         x, y = [], []
         for m in ms:
             for t, r in zip(m["tables"], m["records"]):
-                if 0 <= r["position"] < positions and not E.value_excluded(r):
-                    x.append(features(t, r)); y.append(float(m["solving"]))
+                if 0 <= r["position"] < positions and not E.value_excluded(r) and (label == "solving" or not r["unjudged"]):
+                    x.append(features(t, r)); y.append(float(r[label]))
         return torch.tensor(x, dtype=torch.float32), torch.tensor(y)
     x, y = rows(train_members)
     mu, sd = x.mean(0), x.std(0).clamp_min(1e-6)
@@ -83,6 +84,7 @@ def main():
     ap.add_argument("--value-tables", required=True, help="a rollout export with its labels.jsonl")
     ap.add_argument("--data", default="work/lm/data", help="the data whose held-out tasks give the split")
     ap.add_argument("--positions", type=int, default=None, help="default: the run's --value-positions")
+    ap.add_argument("--value-label", choices=E.VALUE_LABELS, default="consistent", help="pretrain.py's flag")
     ap.add_argument("--lr-steps", type=int, default=300, help="the logistic regression's steps")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--device", default="cpu")
@@ -145,10 +147,11 @@ def main():
     print(f"compressibility: {int(np.isnan(listed).sum())} of {len(listed)} listed tables have no hidden field and "
           f"take the mean score")
     compress = [np.nan_to_num(c, nan=mean) for c in compress]
-    out = {"value_head": report("value head", held_m, value, positions),
+    lab = a.value_label
+    out = {"value_head": report("value head", held_m, value, positions, lab),
            "logistic": report("logistic regression on trivial features", held_m,
-                              logistic(train_m, held_m, positions, a.lr_steps, a.seed), positions),
-           "compressibility": report("compressibility", held_m, compress, positions)}
+                              logistic(train_m, held_m, positions, a.lr_steps, a.seed, lab), positions, lab),
+           "compressibility": report("compressibility", held_m, compress, positions, lab)}
     print(json.dumps(out))
 
 

@@ -22,11 +22,13 @@ rollout export, `--value-tables`, read with its labels.jsonl (encoder.py, `load_
 summed cost counts in `--step-rows`, then the masked loss's programs within the cost left. A continuation is encoded
 whole, with no field hidden and one random identifier per relation slot; the value loss is taken over its tables at
 the positions below `--value-positions` after the branch (encoder.py, `value_lists` and `value_loss`), times
-`--value-weight`, beside the masked loss. A branch point is held out where its task is held out. The log gives, under
-"train" and "heldout", `value_loss`, `value_pair_acc` (the pairwise ranking accuracy over each list's pairs of a
-solving and a non-solving continuation), `value_pair_acc_sampled` (the same over the sampled continuations alone,
-without the gold one), `value_auc` (the mean over the lists with both a solving and a non-solving continuation of the
-AUC within the list) and `value_auc_sampled` (the same over the sampled continuations alone), the held-out ones
+`--value-weight`, beside the masked loss. `--value-label` selects each table's label: `consistent` (the default), the
+engine's verdict on the rule whose evaluation gave the table, or `solving`, the continuation's solving. A branch point
+is held out where its task is held out. The log gives, under "train" and "heldout", `value_loss`, `value_pair_acc`
+(the pairwise ranking accuracy over each list's pairs of a member of label 1 and one of label 0),
+`value_pair_acc_sampled` (the same over the sampled continuations alone, without the gold one), `value_auc` (the
+mean over the lists with members of both labels of the AUC within the list) and `value_auc_sampled` (the same over
+the sampled continuations alone), the held-out ones
 over a sample of `--eval-limit` branch points drawn once with `--seed`.
 
 The encoder's state, without the language model's embedding that it shares, goes to <out>/encoder.pt at the
@@ -90,21 +92,21 @@ def value_members(groups, members):
     return [members[k] for g in groups for k in g["members"]]
 
 
-def value_step(enc, head, members, gen, mode, positions, id_dim):
+def value_step(enc, head, members, gen, mode, positions, id_dim, label):
     """The value loss of `members` (encoder.load_rollouts), each encoded whole as a program with no field hidden,
-    and the lists it is taken over (encoder.value_lists); the loss is None where no list counts."""
+    and the lists it is taken over (encoder.value_lists under `label`); the loss is None where no list counts."""
     pooled = E.pooled_vectors(enc, [(m["tables"], E.value_relations(m["tables"], id_dim, gen)) for m in members], gen)
     counts = [len(s) for s in pooled]
     logits = head(enc.readout, torch.cat(pooled)).float().split(counts)
-    lists = E.value_lists(members, logits, positions)
+    lists = E.value_lists(members, logits, positions, label=label)
     return E.value_loss(mode, lists), lists
 
 
 def value_metrics(lists, loss_sum=0.0, losses=0):
     """The log's value entries over `value_lists`' lists: `value_loss` (where given), `value_pair_acc` (the share of
-    pairs of a solving and a non-solving member of a list in which the solving one scores higher, a tie one half),
+    pairs of a member of label 1 and one of label 0 of a list in which the first scores higher, a tie one half),
     `value_pair_acc_sampled` (the same over the pairs of sampled continuations alone, without the gold one),
-    `value_auc` (the mean over the lists with both a solving and a non-solving member of the AUC within the list),
+    `value_auc` (the mean over the lists with members of both labels of the AUC within the list),
     `value_auc_sampled` (the same over the sampled continuations alone) and the counts."""
     right, pairs = E.value_pairs(lists)
     right_s, pairs_s = E.value_pairs(lists, sampled=True)
@@ -227,6 +229,9 @@ def main():
                          "cross-entropy over each branch point's continuations; binary, a sigmoid cross-entropy on "
                          "each continuation's score with its own label; off by default")
     ap.add_argument("--value-tables", help="a rollout export with its labels.jsonl (lm/rollout_labels.py)")
+    ap.add_argument("--value-label", choices=E.VALUE_LABELS, default="consistent",
+                    help="the label of a table: consistent, the engine's verdict on the rule whose evaluation gave it; "
+                         "solving, the continuation's solving")
     ap.add_argument("--value-weight", type=float, default=1.0, help="the weight of the value loss beside the masked loss")
     ap.add_argument("--value-positions", type=int, default=1,
                     help="the value loss takes the tables at the positions after the branch below this, each position "
@@ -342,7 +347,8 @@ def main():
             lists, loss_sum, n = [], 0.0, 0
             with torch.no_grad(), autocast():
                 for g in value_held:
-                    l, ls = value_step(enc, head, value_members([g], members), gen, a.value, a.value_positions, a.id_dim)
+                    l, ls = value_step(enc, head, value_members([g], members), gen, a.value, a.value_positions, a.id_dim,
+                                       a.value_label)
                     lists += ls
                     if l is not None:
                         loss_sum += l.item(); n += 1
@@ -358,7 +364,7 @@ def main():
                   id_dim=a.id_dim, mask_frac=a.mask_frac, mask_cap=a.mask_cap, mask_kind=a.mask_kind,
                   mask_remote=a.mask_remote, prior_weight=a.prior_weight, in_names=in_names, enc_equality=a.enc_equality,
                   enc_source_rows=a.enc_source_rows, enc_ptr_equality=a.enc_ptr_equality, enc_max_rows=a.enc_max_rows,
-                  value=a.value, value_tables=a.value_tables, value_weight=a.value_weight,
+                  value=a.value, value_tables=a.value_tables, value_label=a.value_label, value_weight=a.value_weight,
                   value_positions=a.value_positions, value_groups=a.value_groups)
     gen, mask_gen = torch.Generator().manual_seed(10), torch.Generator().manual_seed(11)
     best, start, step_seconds, by = float("inf"), time.time(), [], None
@@ -378,7 +384,7 @@ def main():
             masked, total = loss, loss
             if vdrawn:
                 vloss, vlists = value_step(enc, head, value_members(vdrawn, members), gen, a.value, a.value_positions,
-                                           a.id_dim)
+                                           a.id_dim, a.value_label)
                 value_lists += [dict(scores=l["scores"].detach(), labels=l["labels"], gold=l["gold"],
                                      ranked=l["ranked"]) for l in vlists]
                 if vloss is not None:

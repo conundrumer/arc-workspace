@@ -5,7 +5,7 @@
 The sampler lines are JSON lines: the first a settings object, then one line per continuation with the fields task,
 case (the corpus case, or null for a sample from nothing), branch (the rule index of the branch point), rollout (the
 sample's index k, or "gold"), ids, model, prefix_tokens (the stream's tokens before the branch), prefix_rules,
-ended, consistency, solved_test, attempts, tokens and program_form, and, in the merged file of
+ended, consistency, solved_test, attempts, tokens, program_form and rules, and, in the merged file of
 lm/export_rollouts.py, prefix_mode (the `--prefix` of the line's own sampler file; else the settings line's `--prefix`
 gives the mode of every line). The export is the tables export of those
 streams (engine/arclog-py/tables_export.py, `export_streams`), whose case names are `<task>__<case>__b<j>__r<k>`,
@@ -17,15 +17,24 @@ streams (engine/arclog-py/tables_export.py, `export_streams`), whose case names 
 "solved_test", "fault" (the report's fault line for the case, or null; a stream that faults or lies past the
 export's step cap has one), "sampler_run" (the sampling LM's run directory, the settings line's `--model`) and
 "sampler_fold" (that LM's `--fold`, k/n, from the settings line's `model_meta`, else from the run's model.json; null
-for an LM trained without one); both are null for a gold continuation}. `prefix_tables` is the count of the case's
-export tables that the prefix gives: the evidence tables, and each table whose `token`, the stream index of the step
-that gives it, is below prefix_tokens. The export numbers a case's tables in the order of their steps, so the first
+for an LM trained without one); both are null for a gold continuation; "rules" (the sampler's, the engine's
+verdict on each RULE clause of the continuation, in order, or null for a gold line of a sampler that gave none) and
+"rule_ends" (the stream index of the end of each RULE clause of the continuation that ends)}. `prefix_tables` is
+the count of the case's export tables that the prefix gives: the evidence tables, and each table whose `token`, the
+stream index of the step that gives it, is below prefix_tokens. The export numbers a case's tables in the order of their steps, so the first
 table after the branch is export table `prefix_tables`. It is null for a case that the export does not hold.
+
+A clause ends where the engine declares a relation (an id that the model did not write, of the kind "relation"), as
+lm/sample.py's `--max-clause` counts clauses; the ids the engine emits after one model-written token end at most one
+clause. A clause is a RULE clause where its first model-written token is RULE, and its end is the index of the
+first such declaration. A continuation's last clause can be open (a stream cut at the sampler's step cap or at an
+empty mask), with no end and no verdict.
 
 A ValueError stops the run in each of these cases: a line's prefix mode is other than `random` or `0`, so a
 prefix can end off a rule boundary; a line under `--prefix random` gives no corpus case; the lines of one task,
 corpus case and branch differ in `prefix_tokens` or `prefix_tables`, or hold more than one gold continuation; the
-report gives a case neither a verdict nor a fault line.
+report gives a case neither a verdict nor a fault line; a line's `rules` count other RULE clause ends than
+`rule_ends`.
 """
 import json, sys
 from pathlib import Path
@@ -33,6 +42,28 @@ from pathlib import Path
 import pandas as pd
 
 POINT_EVIDENCE = 2   # the point code of an evidence table in tables.parquet
+ONE_CELL = '{"train": [{"input": [[0]], "output": [[0]]}], "test": [{"input": [[0]]}]}'   # a task to open a session
+
+
+def vocabulary(settings):
+    """The names and kinds of the engine's ids under the decode settings; the vocabulary does not depend on the task."""
+    import arclog
+    task = arclog.Task.from_json(ONE_CELL, arclog.World.Closed)
+    v = arclog.Session(task, arclog.DecodeSettings(**settings)).vocabulary
+    return [v.name(i) for i in range(len(v))], [v.kind(i) for i in range(len(v))]
+
+
+def rule_ends(ids, model, names, kinds, start):
+    """The stream index of the end of each RULE clause from index `start` on (the module docstring)."""
+    ends, first = [], None   # first: the name of the first model-written token of the open clause
+    for j in range(start, len(ids)):
+        if model[j]:
+            first = names[ids[j]] if first is None else first
+        elif kinds[ids[j]] == "relation" and first is not None:
+            if first == "RULE":
+                ends.append(j)
+            first = None
+    return ends
 
 
 def case_name(task, case, branch, rollout):
@@ -77,6 +108,7 @@ def labels(sampler_path, export):
         if prefix not in ("0", "random"):
             raise ValueError(f"{sampler_path}: sample.py --prefix {prefix} can end a prefix off a rule boundary, which is "
                              f"no branch point; labels take --prefix random or 0")
+    spellings, kinds = vocabulary(settings["settings"])
     fold = (settings.get("model_meta") or json.load(open(Path(run) / "model.json"))).get("fold")
     export = Path(export)
     verdicts, faults = read_report(export / "report.txt")
@@ -102,11 +134,16 @@ def labels(sampler_path, export):
         if key not in verdicts and key not in faults:
             raise ValueError(f"{s['task']} {n}: the export's report.txt gives no verdict and no fault line")
         sampled = s["rollout"] != "gold"
+        ends = rule_ends(s["ids"], s["model"], spellings, kinds, int(s["prefix_tokens"]))
+        if s.get("rules") is not None and len(s["rules"]) != len(ends):
+            raise ValueError(f"{s['task']} {n}: {len(s['rules'])} verdicts in `rules` and {len(ends)} RULE clause ends "
+                             f"in the continuation")
         out.append({"case": n, "task": s["task"], "corpus_case": s["case"], "branch": int(s["branch"]),
                     "rollout": s["rollout"], "prefix_tokens": int(s["prefix_tokens"]), "prefix_rules": s["prefix_rules"],
                     "prefix_tables": counts.get(key), "ended": s["ended"], "consistency": verdicts.get(key),
                     "solved_test": s["solved_test"], "fault": faults.get(key),
-                    "sampler_run": run if sampled else None, "sampler_fold": fold if sampled else None})
+                    "sampler_run": run if sampled else None, "sampler_fold": fold if sampled else None,
+                    "rules": s.get("rules"), "rule_ends": ends})
     return out
 
 

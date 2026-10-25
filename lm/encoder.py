@@ -13,7 +13,7 @@ Tables. `load_tables` reads a tables export (engine/arclog-py/tables_export.py) 
 tables in stream order, and caches them in a pickle. The evidence tables `ex_input` and `ex_output` are built from
 the task file where the export holds none, and stand first, after the start token.
 """
-import json, math, os, pickle, re
+import bisect, json, math, os, pickle, re
 from pathlib import Path
 
 import numpy as np
@@ -2709,8 +2709,11 @@ class FeatureEncoder(nn.Module):
 # A rollout export holds, per branch point of a gold program, the gold continuation and the continuations that the
 # baseline language model samples from the gold prefix; its `labels.jsonl` (lm/rollout_labels.py) gives each case's
 # branch point, continuation and outcome. The value head scores a table by one logit, trained to rank, among one
-# branch point's continuations, the first tables after the branch of the solving continuations above those of the
-# non-solving ones.
+# branch point's continuations, the tables after the branch whose label is 1 above those whose label is 0. A table
+# has two labels: `solving`, the continuation's solving (`value_solving`), and `consistent`, the engine's verdict on
+# the rule whose evaluation gave the table, 1 for Consistent; the second is a process label, given per rule.
+
+VALUE_LABELS = ("solving", "consistent")
 
 def read_value_labels(path):
     """{(task, case): label} from a labels.jsonl, one JSON object per line (lm/rollout_labels.py)."""
@@ -2742,11 +2745,23 @@ def value_excluded(r):
     return r["empty"] or r["unseen"] or r["faulted"]
 
 
+def value_consistent(token, lab):
+    """The consistent label of a table after the branch whose step is at stream index `token`: 1 where the verdict of
+    its rule is Consistent, 0 where it is another verdict, None where no verdict gives one. Rule k covers the tokens
+    from the end of rule k-1 (`rule_ends`, lm/rollout_labels.py) to its own end, and has the verdict `rules[k]`."""
+    rules = lab.get("rules")
+    if rules is None:
+        return None
+    k = bisect.bisect_right(lab["rule_ends"], token)
+    return int(rules[k] == "Consistent") if k < len(rules) else None
+
+
 def value_records(tables, labels):
     """{(task, case): [record per table]} for each case of `tables` ({(task, case): [Table]}, after `mark_over_budget`
     and `mark_over_rows`) that `labels` gives with its prefix's table count. A record holds `group` (task, corpus
-    case, prefix_tokens), `member` (the rollout index or "gold"), `solving` (`value_solving`), `position` and the flags of
-    `value_flags`. The position counts the export tables from the first after the branch, export table
+    case, prefix_tokens), `member` (the rollout index or "gold"), `solving` (`value_solving`), `consistent`
+    (`value_consistent`, None for a table of the prefix), `unjudged` (whether `consistent` is None), `position` and the
+    flags of `value_flags`. The position counts the export tables from the first after the branch, export table
     `prefix_tables`, at 0; the Tables of one export table share it; the prefix's tables, the evidence tables first,
     take the positions before 0, the last of them -1."""
     out = {}
@@ -2762,13 +2777,16 @@ def value_records(tables, labels):
         group, solving = (lab["task"], lab["corpus_case"], int(lab["prefix_tokens"])), value_solving(lab)
         recs, ev_i = [], 0
         for t in ts:
+            consistent = None
             if t.evidence:
                 pos, ev_i = ev_i - n_ev - len(before), ev_i + 1
             elif t.export_table >= p:
                 pos = after.index(t.export_table)
+                consistent = value_consistent(t.step - 1, lab)
             else:
                 pos = before.index(t.export_table) - len(before)
-            recs.append(dict(group=group, member=lab["rollout"], solving=solving, position=pos, **value_flags(t)))
+            recs.append(dict(group=group, member=lab["rollout"], solving=solving, consistent=consistent,
+                             unjudged=consistent is None, position=pos, **value_flags(t)))
         out[key] = recs
     return out
 
@@ -2856,19 +2874,24 @@ class ValueHead(nn.Module):
 VALUE_MODES = ("off", "ranking", "binary")
 
 
-def value_lists(members, logits, positions=1):
-    """The lists of the value loss. `members`: [{"group", "records", "solving"}]; `logits`: [tensor
-    [n_tables]] per member. For each group and each position below `positions`, one list over the members that hold
-    a table at that position that no flag excludes (`value_excluded`): "labels" (bool [m]), "scores" (each member's
-    mean logit over its Tables at that position, [m]), "gold" (bool [m], whether it is the gold continuation) and
-    "ranked" (whether the list holds both a solving and a non-solving member)."""
+def value_lists(members, logits, positions=1, *, label):
+    """The lists of the value loss under the label `label` (`VALUE_LABELS`). `members`: [{"group", "records",
+    "solving"}]; `logits`: [tensor [n_tables]] per member. For each group and each position below `positions`, one
+    list over the members that hold a table at that position that no flag excludes (`value_excluded`) and, under
+    `consistent`, that is not unjudged: "labels" (bool [m], the member's `solving` or its table's `consistent`; the
+    gold continuation takes its own), "scores" (each member's mean logit over its Tables at that position, [m]),
+    "gold" (bool [m], whether it is the gold continuation) and "ranked" (whether the labels of the list differ)."""
+    assert label in VALUE_LABELS, label
     by = {}
     for m, z in zip(members, logits):
         for p in range(positions):
-            sel = [i for i, r in enumerate(m["records"]) if r["position"] == p and not value_excluded(r)]
+            sel = [i for i, r in enumerate(m["records"]) if r["position"] == p and not value_excluded(r)
+                   and (label == "solving" or not r["unjudged"])]
             if sel:
+                ys = {bool(m["records"][i][label]) for i in sel}
+                assert len(ys) == 1, f"{m['records'][0]['member']}: the Tables of position {p} differ in {label}"
                 zs = z[torch.tensor(sel, device=z.device)]
-                by.setdefault((m["group"], p), []).append((m["solving"], zs, m["records"][0]["member"] == "gold"))
+                by.setdefault((m["group"], p), []).append((ys.pop(), zs, m["records"][0]["member"] == "gold"))
     out = []
     for (g, p), xs in by.items():
         labels = torch.tensor([x[0] for x in xs])
@@ -2880,9 +2903,9 @@ def value_lists(members, logits, positions=1):
 
 def value_loss(mode, lists):
     """The value loss over the lists of `value_lists`, or None where no list counts. `ranking`: the mean over the
-    ranked lists of a listwise softmax cross-entropy, whose soft target puts weight 1 on each solving member and 0 on
-    each non-solving one, normalized over the list. `binary`: the mean over every list's members of a sigmoid
-    cross-entropy of the member's score with its own label, 1 for solving and 0 for not, as the target."""
+    ranked lists of a listwise softmax cross-entropy, whose soft target puts weight 1 on each member of label 1 and 0
+    on each of label 0, normalized over the list. `binary`: the mean over every list's members of a sigmoid
+    cross-entropy of the member's score with its own label as the target."""
     if mode == "ranking":
         terms = []
         for l in lists:
@@ -2900,8 +2923,9 @@ def value_loss(mode, lists):
 
 
 def value_pairs(lists, sampled=False):
-    """Over each ranked list, the pairs of a solving and a non-solving member, and with `sampled` those of sampled
-    continuations alone: (the pairs in which the solving member scores higher, a tie counting one half; the pairs)."""
+    """Over each ranked list, the pairs of a member of label 1 and one of label 0, and with `sampled` those of sampled
+    continuations alone: (the pairs in which the member of label 1 scores higher, a tie counting one half; the
+    pairs)."""
     right, n = 0.0, 0
     for l in lists:
         if l["ranked"]:
@@ -2925,7 +2949,7 @@ def auc(scores, labels):
 
 
 def value_auc(lists, sampled=False):
-    """The mean, over the lists that hold both a solving and a non-solving member, of the AUC (`auc`) of the list's
+    """The mean, over the lists that hold members of both labels, of the AUC (`auc`) of the list's
     scores, and with `sampled` over those of sampled continuations alone, without the gold one; None without such a
     list."""
     aucs = []

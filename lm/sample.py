@@ -72,7 +72,9 @@ the streams under the same settings. Then one JSON line per program:
   max_steps_used     the program's cap on sampled tokens: `--max-steps` or its lower value under
                      `--max-steps-factor`
   max_clause_used    the program's cap on the model-written tokens of a clause; 0 for none
-  rules              the consistency kind of each sampled RULE clause's END, in order
+  rules              the consistency kind of each sampled RULE clause's END, in order; for a gold line, that of
+                     each RULE clause of the case's stream after the prefix, from the one replay of the whole
+                     stream that finds the case's rule boundaries
   model_steps        the sampled tokens
   refusals, seconds
 The run's summary is printed as one JSON line at the end. The sampler does not run the feature encoder; a run
@@ -121,7 +123,7 @@ def forward(model, tokens, ids, attention, positions, cache):
 def consistency_json(c):
     if c is None:
         return None
-    return {"kind": str(c.kind).split(".")[-1], "assignments": c.assignments,
+    return {"kind": kind_name(c), "assignments": c.assignments,
             "stop": None if c.stop is None else str(c.stop).split(".")[-1], "message": c.message}
 
 
@@ -255,23 +257,25 @@ class Sampler:
 
     def boundaries(self, decoder, ids, model, deadline=None):
         """Step a fork of the decoder through a case's stream: the token boundaries and the rule boundaries at
-        which the decode has not ended, as counts of the stream's tokens before them; None where the time passes
-        the deadline first."""
+        which the decode has not ended, as counts of the stream's tokens before them, and the consistency kind of
+        each RULE clause's END, in order; None where the time passes the deadline first."""
         d = decoder.fork()
-        tokens, rules = [0], []
+        tokens, rules, kinds = [0], [], []
         for j, (i, w) in enumerate(zip(ids, model)):
             if not w:
                 continue
             if deadline and time.time() > deadline:
                 return None
             forced, cons = d.step(i)
+            if cons is not None:
+                kinds.append(kind_name(cons))
             end = j + 1 + len(forced)
             if d.ended or end >= len(ids):
                 break
             tokens.append(end)
             if cons is not None:
                 rules.append(end)
-        return tokens, rules
+        return tokens, rules, kinds
 
     def replay(self, p, case, ids, model, m, deadline=None):
         """Step program p's decoder through the first m tokens of a case's stream, and feed them; False where the
@@ -366,7 +370,7 @@ class Sampler:
                         p.push(f, False, self.names, self.kind)
                     p.consistency = cons
                     if cons is not None:
-                        p.rules.append(str(cons.kind).split(".")[-1])
+                        p.rules.append(kind_name(cons))
                     if p.decoder.ended:
                         p.end = "ended"
                     elif p.max_clause and p.clause > p.max_clause:
@@ -385,12 +389,17 @@ class Sampler:
                 for p in progs]
 
 
-def gold(task, case, ids, model, prefix_tokens, prefix_rules):
-    """The line of a case's own stream, from the corpus without a replay: the fields of a decode are null."""
+def kind_name(c):
+    return str(c.kind).split(".")[-1]
+
+
+def gold(task, case, ids, model, prefix_tokens, prefix_rules, rules):
+    """The line of a case's own stream, from the corpus without a replay: the fields of a decode are null; `rules`
+    are the consistency kinds of its RULE clauses after the prefix."""
     return {"task": task, "case": case, "branch": prefix_rules, "rollout": "gold", "ids": list(ids),
             "model": list(model), "prefix_tokens": prefix_tokens, "prefix_rules": prefix_rules, "ended": None,
             "consistency": None, "solved_test": None, "attempts": None, "tokens": len(ids), "program_form": None,
-            "end": "gold", "rules": None, "model_steps": 0, "refusals": 0, "max_steps_used": None,
+            "end": "gold", "rules": rules, "model_steps": 0, "refusals": 0, "max_steps_used": None,
             "max_clause_used": None, "panic": None}
 
 
@@ -547,7 +556,7 @@ def main():
                 def prefix_of(i):
                     case, ids, model = cases[i % len(cases)]
                     rng = random.Random(hash_seed(a.seed, task, i) + 1)
-                    return case, ids, model, prefix_length(a.prefix, rng, *bounds[case], len(ids))
+                    return case, ids, model, prefix_length(a.prefix, rng, *bounds[case][:2], len(ids))
             for start in range(0, a.n, a.batch):
                 idx = list(range(start, min(a.n, start + a.batch)))
                 t = time.time()
@@ -564,7 +573,8 @@ def main():
                     if r["case"] is not None and (r["case"], r["prefix_tokens"]) not in golds:   # once per branch point
                         golds.add((r["case"], r["prefix_tokens"]))
                         c = next(c for c in cases if c[0] == r["case"])
-                        f.write(json.dumps(gold(task, c[0], c[1], c[2], r["prefix_tokens"], r["prefix_rules"])) + "\n")
+                        f.write(json.dumps(gold(task, c[0], c[1], c[2], r["prefix_tokens"], r["prefix_rules"],
+                                                bounds[c[0]][2][r["prefix_rules"]:])) + "\n")
                     r["seconds"] = round(time.time() - t, 2)
                     records.append(r); f.write(json.dumps(r) + "\n"); f.flush()
                     print(f"{task} #{r['rollout']}: {r['end']}, {r['tokens']} tokens, {r['model_steps']} model steps (cap {r['max_steps_used']}), "

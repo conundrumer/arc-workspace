@@ -10,24 +10,39 @@ continuation has one Color on all its rows, and every other table random Colors.
 lm/rollout_labels.py, on sampler lines, whose settings line gives an LM of a fold that holds neither task, and a report
 written beside the export.
 
+Each continuation's stream holds a DET clause and two RULE clauses after the branch, the first table after the branch
+in the first rule and the second in the second, where the DET clause stands; r2's stream stops before the second
+rule's end, an open last clause. The members' verdicts per rule (`rules`) are mixed: C for Consistent, N for
+NotConsistent, F for Fault, S for SeveralValues: gold C N, r0 N C, r1 C N, r2 N (open), r3 C C, r4 C F, and for `$D`
+r0 N N, r1 N C, r2 C S.
+
 - Labels: `prefix_tables` must be 3 for a `$C` case and 2 for `$D`, the consistency must be the report's, r4 must
-  have its fault line, and a sampled case must give the sampler's run and fold. A case whose report gives a fault line
+  have its fault line, and a sampled case must give the sampler's run and fold. `rules` must be the sampler's and
+  `rule_ends` the two RULE clause ends (one for r2), the DET clause's end not among them; rollout_labels.py must
+  refuse a line whose `rules` count another number of RULE clause ends. A case whose report gives a fault line
   and no verdict, as a stream past the export's step cap, must give no consistency. rollout_labels.py must refuse
   `--prefix random-token`, a line with no corpus case under `--prefix random`, two members of one branch point with
   different prefix_tokens, and a case the report gives neither a verdict nor a fault line. A line's `prefix_mode` takes
   the place of the settings line's `--prefix`: `0` lets a line with no corpus case pass that check, `random` refuses it.
 - Records (`encoder.load_rollouts`): the group, the member, the positions (-3 to 1, and -2 to 2 for `$D`), and
-  the flags: r3's first table after the branch empty, r4's faulted, and no other flag; r4 is not solving. The load
-  must raise a DataFault where a sampled case's LM has a fold that holds its task.
-- Lists and losses: a list of a `$C` branch point holds the gold continuation, r0, r1 and r2; a change to the logits
+  the flags: r3's first table after the branch empty, r4's faulted, and no other flag; r4 is not solving. Each table
+  after the branch has the consistent label of its rule's verdict, and r2's second table, of the open clause, and
+  every table of the prefix none, flagged unjudged. The load must raise a DataFault where a sampled case's LM has a
+  fold that holds its task.
+- Lists and losses, under the solving label: a list of a `$C` branch point holds the gold continuation, r0, r1 and
+  r2; a change to the logits
   of the excluded tables must leave the ranking and the binary loss unchanged; the list of `$D` is not ranked,
   and the ranking loss and the pairwise ranking accuracy must be the same without its members; a list of `$C` must
   give 4 pairs, 2 of them of sampled continuations alone; the ranking loss must equal its formula on one list, and
   the binary loss must take each member's own label as its target, so that it changes when r0's and r1's scores
   swap.
+- The consistent label, over positions 0 and 1: the lists of `$C` take each member's verdict of the table's rule, the
+  gold continuation's its own, and leave out r2's unjudged table; their pairs count 4 and 6, and 2 and 4 of sampled
+  continuations alone. A change to the logit of r2's unjudged table must leave both losses unchanged under the
+  consistent label and change the binary loss under the solving label, where the table is listed.
 - AUC (pretrain.py's `value_metrics`): two lists with 3 of 4 and 1 of 4 solving and a constant score within each
   must give `value_auc` and `value_auc_sampled` 0.5.
-- With --learn: 100 steps of the ranking loss alone (AdamW, lr 5e-4 or --lr=<lr>, warmup 10, clip 1.0), two `ta`
+- With --learn: 100 steps of the ranking loss alone, under the solving label (AdamW, lr 5e-4 or --lr=<lr>, warmup 10, clip 1.0), two `ta`
   branch points a step, at c 32 in float32, through pretrain.py's `value_step`; every 25 steps, the pairwise
   ranking accuracy on the `tb` branch points and the mean training loss of the last 25 steps. The run passes where
   its last accuracy is over 0.9 and its last loss is more than 0.3 under ln 4, the loss of equal scores on a list
@@ -59,6 +74,24 @@ ORIENT = [tuple(x) for x in json.load(open("work/tables/dev/orientations.json"))
 N_ROWS, BRANCHES = 8, 16
 LR = float(next((x.split("=")[1] for x in sys.argv if x.startswith("--lr=")), 5e-4))
 UNIFORM = float(np.log(4))   # the ranking loss of equal scores on a list of 4 with 2 solving
+NAMES, KINDS = RL.vocabulary({})
+ID = {n: i for i, n in enumerate(NAMES)}
+REL = next(i for i, k in enumerate(KINDS) if k == "relation")
+VERDICT = dict(C="Consistent", N="NotConsistent", F="Fault", S="SeveralValues")
+RULES = {("$C", "gold"): "CN", ("$C", 0): "NC", ("$C", 1): "CN", ("$C", 2): "N", ("$C", 3): "CC", ("$C", 4): "CF",
+         ("$D", 0): "NN", ("$D", 1): "NC", ("$D", 2): "CS"}   # the verdict of each rule of the continuation
+
+
+def stream(case, m):
+    """(ids, model) of a continuation: a RULE clause ($C) or a DET clause ($D) in tokens 0 to 4, then a RULE clause
+    whose END is token 10, a DET clause, and a RULE clause whose END is token 20 (r2's stream stops there), then an
+    open RULE clause. An engine-emitted relation declaration ends each clause."""
+    w = lambda n: (ID[n], 1)
+    e = (REL, 0)
+    toks = [w("RULE" if case == "$C" else "DET"), w("input"), w("END"), e, e,
+            w("RULE")] + [w("input")] * 4 + [w("END"), e, w("DET"), w("END"), e, w("RULE")] + [w("input")] * 4 + [w("END")]
+    toks += [] if (case, m) == ("$C", 2) else [e, w("RULE")] + [w("input")] * 7
+    return [i for i, _ in toks], [b for _, b in toks]
 failed = []
 
 
@@ -112,10 +145,12 @@ def write_export(d, rng, tasks=("ta", "tb"), branches=BRANCHES, tasks_dir=None):
                     values += [x for row in r for x in row]
                     entry += 1
             np.array(values, np.int32).tofile(d / "values" / task / f"{name}.i32")
-            sampler.append(dict(task=task, case=case, branch=b, rollout=m, ids=[], model=[],
+            ids, model = stream(case, m)
+            sampler.append(dict(task=task, case=case, branch=b, rollout=m, ids=ids, model=model,
+                                rules=[VERDICT[v] for v in RULES[(case, m)]],
                                 prefix_tokens=5 if case == "$C" else 0, prefix_rules=b, ended=True,
                                 consistency={"kind": "Consistent", "assignments": 1, "stop": None, "message": None},
-                                solved_test=None if m == "gold" else solving or m == 4, attempts=1, tokens=30,
+                                solved_test=None if m == "gold" else solving or m == 4, attempts=1, tokens=len(ids),
                                 program_form=None))
             report.append(f"{task} {name}: ended {'Consistent' if solving or m == 4 else 'NotConsistent'} at token 20")
             if m == 4:
@@ -157,6 +192,9 @@ verdict(lab("gold")["consistency"] == "Consistent" and lab(1)["consistency"] == 
 verdict(lab(1)["sampler_run"] == "runs/synthetic" and lab(1)["sampler_fold"] == f"{FOLD}/4"
         and lab("gold")["sampler_run"] is None and lab("gold")["sampler_fold"] is None,
         "a sampled case gives the sampler's run and fold, the gold one neither")
+verdict(lab("gold")["rules"] == ["Consistent", "NotConsistent"] and lab("gold")["rule_ends"] == [11, 21]
+        and lab(2)["rule_ends"] == [11] and lab(2, case="$D", b=0)["rule_ends"] == [11, 21],
+        "rules are the sampler's; rule_ends the RULE clause ends, the DET clause's not, one for r2's open clause")
 sampler = [json.loads(l) for l in open(d / "sampler.jsonl")]
 r1 = next(i for i, s in enumerate(sampler) if s.get("case") == "$C" and s["branch"] == 1 and s["rollout"] == 1)
 
@@ -184,6 +222,8 @@ verdict(refused("mode-random", [dict(sampler[0], args=dict(sampler[0]["args"], p
         "labels take a line's prefix_mode random over the settings line's --prefix 0")
 verdict(refused("two-prefixes", sampler[:r1] + [dict(sampler[r1], prefix_tokens=6)] + sampler[r1 + 1:],
                 "do not share one prefix"), "labels refuse two members of one branch point with different prefix_tokens")
+verdict(refused("rules-count", sampler[:r1] + [dict(sampler[r1], rules=["Consistent"])] + sampler[r1 + 1:],
+                "verdicts in `rules`"), "labels refuse a line whose rules count another number of RULE clause ends")
 verdict(refused("no-verdict", sampler + [dict(sampler[r1], rollout=9)], "no verdict and no fault line"),
         "labels refuse a case the report gives neither a verdict nor a fault line")
 capped = Path(tmp.name) / "capped"
@@ -212,6 +252,16 @@ verdict(flags(3)[3] == (0, True, False, False) and flags(4)[3] == (0, False, Fal
 verdict(mem("gold")["solving"] and mem(0)["solving"] and not any(mem(m)["solving"] for m in (1, 2, 3, 4))
         and mem(1)["rate"] == 2 / 6 and mem(0, case="$D", b=0)["rate"] == 0,
         "solving members and rates; r4, faulted, is not solving though the sampler and the verdict mark it solved")
+want = lambda case, m: [None if p < 0 else
+                        (VERDICT[RULES[(case, m)][p]] == "Consistent" if p < len(RULES[(case, m)]) else None)
+                        for p in [r["position"] for r in mem(m, case=case, b=1 if case == "$C" else 0)["records"]]]
+got = lambda case, m: [None if r["consistent"] is None else bool(r["consistent"])
+                       for r in mem(m, case=case, b=1 if case == "$C" else 0)["records"]]
+verdict(all(got(c, m) == want(c, m) for c, m in RULES)
+        and all(r["unjudged"] == (r["consistent"] is None) for ms in members.values() for r in ms["records"])
+        and got("$C", 2)[4] is None and got("$C", 4)[4] is False,
+        f"consistent labels follow each rule's verdict: gold {got('$C', 'gold')}, r2 {got('$C', 2)}, "
+        f"r4 {got('$C', 4)}; r2's open clause and the prefix unjudged")
 leaky = Path(tmp.name) / "leaky"
 shutil.copytree(d, leaky)
 (leaky / "labels.jsonl").write_text("".join(json.dumps(dict(l, sampler_fold=f"{fold_of('ta', 2)}/2")
@@ -227,16 +277,16 @@ print("== lists and losses")
 group = [mem(m) for m in ("gold", 0, 1, 2, 3, 4)] + [mem(m, case="$D", b=0) for m in (0, 1, 2)]
 gen = torch.Generator().manual_seed(0)
 logits = [torch.randn(len(m["tables"]), generator=gen) for m in group]
-lists = E.value_lists(group, logits)
+lists = E.value_lists(group, logits, label="solving")
 c_list = next(l for l in lists if l["group"] == ("ta", "$C", 5))
 verdict(len(lists) == 2 and c_list["labels"].tolist() == [True, True, False, False] and c_list["ranked"]
         and not next(l for l in lists if l["group"][1] == "$D")["ranked"],
         "one list per branch point: $C's gold, r0, r1, r2, ranked; the one of $D not ranked")
 moved = [z.clone() for z in logits]
 moved[4][3] += 7.0; moved[5][3] -= 5.0
-same = all(torch.equal(E.value_loss(k, lists), E.value_loss(k, E.value_lists(group, moved))) for k in ("ranking", "binary"))
+same = all(torch.equal(E.value_loss(k, lists), E.value_loss(k, E.value_lists(group, moved, label="solving"))) for k in ("ranking", "binary"))
 verdict(same, "the excluded tables' logits move neither loss")
-alone = E.value_lists(group[:6], logits)
+alone = E.value_lists(group[:6], logits, label="solving")
 verdict(torch.equal(E.value_loss("ranking", lists), E.value_loss("ranking", alone))
         and E.value_pairs(lists) == E.value_pairs(alone) and E.value_pairs(lists)[1] == 4
         and E.value_pairs(lists, sampled=True)[1] == 2,
@@ -249,8 +299,27 @@ verdict(torch.allclose(E.value_loss("ranking", alone), want) and torch.allclose(
         "the ranking loss is the listwise softmax cross-entropy, the binary loss takes each member's own label")
 swapped = [z.clone() for z in logits]
 swapped[1][3], swapped[2][3] = logits[2][3], logits[1][3]
-verdict(not torch.allclose(E.value_loss("binary", lists), E.value_loss("binary", E.value_lists(group, swapped))),
+verdict(not torch.allclose(E.value_loss("binary", lists), E.value_loss("binary", E.value_lists(group, swapped, label="solving"))),
         "the binary loss changes when r0's and r1's scores swap")
+
+print("== the consistent label")
+cl = E.value_lists(group, logits, 2, label="consistent")
+at = lambda ls, p: next(l for l in ls if l["group"] == ("ta", "$C", 5) and l["position"] == p)
+sl = E.value_lists(group, logits, 2, label="solving")
+verdict(at(cl, 0)["labels"].tolist() == [True, False, True, False] and at(sl, 0)["labels"].tolist() == [True, True, False, False]
+        and at(cl, 1)["labels"].tolist() == [False, True, False, True, False] and len(at(sl, 1)["labels"]) == 6,
+        "the flag selects the label: position 0 consistent gold, r1 against solving gold, r0; position 1 the gold's "
+        "own verdict, r2's unjudged table left out")
+verdict(E.value_pairs([at(cl, 0)])[1] == 4 and E.value_pairs([at(cl, 1)])[1] == 6
+        and E.value_pairs([at(cl, 0)], sampled=True)[1] == 2 and E.value_pairs([at(cl, 1)], sampled=True)[1] == 4,
+        "consistent pairs 4 and 6, of sampled continuations alone 2 and 4")
+unjudged = [z.clone() for z in logits]
+unjudged[3][4] += 9.0   # r2's second table after the branch, of its open clause
+verdict(all(torch.equal(E.value_loss(k, cl), E.value_loss(k, E.value_lists(group, unjudged, 2, label="consistent")))
+            for k in ("ranking", "binary"))
+        and not torch.equal(E.value_loss("binary", sl), E.value_loss("binary", E.value_lists(group, unjudged, 2,
+                                                                                               label="solving"))),
+        "r2's unjudged table moves neither consistent loss, and moves the solving binary loss")
 
 print("== AUC (pretrain.py, value_metrics)")
 one = lambda solving, score, gold: dict(labels=torch.tensor(solving), scores=torch.full((4,), score),
@@ -289,7 +358,7 @@ def learn(shuffle):
     rng, gen, curve, hist = np.random.default_rng(1), torch.Generator().manual_seed(0), [], []
     for step in range(1, 101):
         drawn = [m for i in rng.choice(len(train), 2, replace=False) for m in (permuted(train[i]) if shuffle else train[i])]
-        loss, _ = P.value_step(enc, head, drawn, gen, "ranking", 1, 16)
+        loss, _ = P.value_step(enc, head, drawn, gen, "ranking", 1, 16, "solving")
         opt.zero_grad(); loss.backward()
         torch.nn.utils.clip_grad_norm_(params, 1.0)
         opt.step(); sched.step()
@@ -297,7 +366,7 @@ def learn(shuffle):
         if step % 25 == 0:
             with torch.no_grad():
                 ls = [l for g in held for l in P.value_step(enc, head, g, torch.Generator().manual_seed(1), "ranking",
-                                                            1, 16)[1]]
+                                                            1, 16, "solving")[1]]
             curve.append((P.value_metrics(ls)["value_pair_acc"], float(np.mean(hist[-25:]))))
     return curve
 
