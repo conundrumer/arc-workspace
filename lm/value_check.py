@@ -350,6 +350,7 @@ def learn(shuffle):
         idx = [i for i, m in enumerate(g) if not any(E.value_excluded(x) for x in m["records"] if x["position"] == 0)]
         for i, y in zip(idx, r.permutation([g[i]["solving"] for i in idx])):
             g[i]["solving"] = bool(y)
+            g[i]["records"] = [dict(x, solving=bool(y)) for x in g[i]["records"]]
         return g
     enc, head = encoder()
     params = [p for p in enc.parameters() if p.requires_grad] + list(head.parameters())
