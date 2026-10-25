@@ -124,9 +124,9 @@ fn score_ranking<'r>(members: &StableHashSet<Element<'r>>, probes: &[Element<'r>
 /// the group's members under `before` or `score`, tied members sharing a
 /// rank and each tied member minimal or maximal.
 ///
-/// Panics where a group breaks its domain of [`crate::domain`]: both
-/// `before` and `score` rows, or an element with several scores, which
-/// `docs/lib-spec.md#the-constructions` does not cover.
+/// A group outside its domain of [`crate::domain`], with both `before` and
+/// `score` rows or an element with several scores, which
+/// `docs/lib-spec.md#the-constructions` does not cover, is undefined.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Order;
 
@@ -135,13 +135,16 @@ impl Construction for Order {
         Self::NAME
     }
 
+    fn outside_domain(&self, group: &GroupInputs<'_>) -> bool {
+        domain::check(Self::NAME, group.inputs).is_some()
+    }
+
     fn evaluate(
         &self,
         group: &GroupInputs<'_>,
         context: &mut ConstructionContext<'_, '_>,
     ) -> Result<GroupOutputs, ReachedBound> {
         let [member, before, score, probe] = group.inputs else { panic!("Order's four inputs") };
-        domain::check(Self::NAME, group.inputs);
         let width = usize::from(member.arity());
         let members: StableHashSet<Element<'_>> = member.rows().collect();
         let probes: Vec<Element<'_>> = probe.rows().filter(|t| !members.contains(t)).collect();

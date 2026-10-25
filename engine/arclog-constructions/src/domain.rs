@@ -81,26 +81,43 @@ fn meets(constraint: &Constraint, inputs: &[RowSet]) -> bool {
 /// Checks the inputs `inputs` of one key group of the construction `name`
 /// against its constraints.
 ///
-/// Panics with the first constraint they break.
-pub fn check(name: &str, inputs: &[RowSet]) {
-    if let Some(broken) = constraints(name).iter().find(|c| !meets(c, inputs)) {
-        panic!("{name}'s inputs break its domain: {broken}");
-    }
+/// Gives the first constraint they break, or `None`.
+pub fn check(name: &str, inputs: &[RowSet]) -> Option<&'static Constraint> {
+    constraints(name).iter().find(|c| !meets(c, inputs))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Order's check refuses a `before` row that pairs an element with
-    /// itself.
+    /// Order's check gives the constraint that a `before` row pairing an
+    /// element with itself breaks.
     #[test]
-    #[should_panic(expected = "no row of input 1 pairs an element with itself")]
     fn order_refuses_a_reflexive_before() {
         let t = Term::encode_number(1);
         let mut before = RowSet::empty(2);
         before.insert([t, t].into());
         let inputs = [RowSet::empty(1), before, RowSet::empty(2), RowSet::empty(1)];
-        check(Order::NAME, &inputs);
+        let broken = check(Order::NAME, &inputs).expect("a broken constraint");
+        assert_eq!(broken.to_string(), "no row of input 1 pairs an element with itself");
+        let t2 = Term::encode_number(2);
+        let mut fine = RowSet::empty(2);
+        fine.insert([t, t2].into());
+        assert!(check(Order::NAME, &[RowSet::empty(1), fine, RowSet::empty(2), RowSet::empty(1)]).is_none());
+    }
+
+    /// A group in which an element has two scores is outside Order's domain,
+    /// as the `Construction` method reports.
+    #[test]
+    fn order_is_outside_its_domain_where_an_element_has_two_scores() {
+        use arclog::eval::instance::{Construction, GroupInputs};
+        let (t, one, two) = (Term::encode_number(1), Term::encode_number(1), Term::encode_number(2));
+        let mut score = RowSet::empty(2);
+        score.insert([t, one].into());
+        let group = |score: RowSet| [RowSet::empty(1), RowSet::empty(2), score, RowSet::empty(1)];
+        let outside = |inputs: &[RowSet]| Order.outside_domain(&GroupInputs { inputs, types: &[], columns: &[], wanted: &[] });
+        assert!(!outside(&group(score.clone())));
+        score.insert([t, two].into());
+        assert!(outside(&group(score)));
     }
 }
