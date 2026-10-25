@@ -60,6 +60,8 @@
 //! A `param` form, an `exclude` form, a `representative` line, an `assign`
 //! form, a grid and an `output` form have no children.
 
+use std::ops::ControlFlow;
+
 use super::{
     Alt, AltItem, AltRecord, Alts, Arcdata, Atom, Block, Body, Choose, ChoosePart, Claim, Clause, Conjunct, DemoRule, Demonstrated, DemonstratedPart,
     Exclude, Form, Grid, Instance, InstanceInput, InstanceInputPart, InstancePart, KeyClause, KeyClausePart, LabelUse, Negated, Node, Param, ParamValue, Program,
@@ -170,96 +172,138 @@ impl<'a> NodeRef<'a> {
     /// The node's children, each by the handle the node holds it by, in the
     /// order of the module comment's table.
     pub fn handles(self) -> Vec<Handle<'a>> {
-        fn forms(forms: &[Form]) -> Vec<Handle<'_>> {
-            forms.iter().map(Handle::Form).collect()
+        let mut handles = Vec::new();
+        self.each_handle(|handle| {
+            handles.push(handle);
+            ControlFlow::Continue(())
+        });
+        handles
+    }
+
+    /// The child at `index`, or `None` where the node has fewer children,
+    /// reached without collecting the children.
+    pub fn child_at(self, index: usize) -> Option<NodeRef<'a>> {
+        nth_visited(index, |visit| self.each_handle(visit)).map(Handle::node)
+    }
+
+    /// Calls `visit` on each child's handle, in the order of the module
+    /// comment's table, until it breaks.
+    pub fn each_handle(self, mut visit: impl FnMut(Handle<'a>) -> ControlFlow<()>) {
+        fn run<'b>(handles: impl Iterator<Item = Handle<'b>>, visit: &mut impl FnMut(Handle<'b>) -> ControlFlow<()>) {
+            for handle in handles {
+                if visit(handle).is_break() {
+                    return;
+                }
+            }
         }
-        fn sites(sites: &[Site]) -> Vec<Handle<'_>> {
-            sites.iter().map(Handle::Site).collect()
+        fn forms<'b>(forms: &'b [Form], visit: &mut impl FnMut(Handle<'b>) -> ControlFlow<()>) {
+            run(forms.iter().map(Handle::Form), visit);
         }
-        fn bodies<'b>(bodies: impl IntoIterator<Item = &'b Node<Body>>) -> Vec<Handle<'b>> {
-            bodies.into_iter().map(Handle::Body).collect()
+        fn sites<'b>(sites: &'b [Site], visit: &mut impl FnMut(Handle<'b>) -> ControlFlow<()>) {
+            run(sites.iter().map(Handle::Site), visit);
         }
+        fn bodies<'b>(bodies: impl IntoIterator<Item = &'b Node<Body>>, visit: &mut impl FnMut(Handle<'b>) -> ControlFlow<()>) {
+            run(bodies.into_iter().map(Handle::Body), visit);
+        }
+        let visit = &mut visit;
         match self {
-            NodeRef::Program(program) => forms(&program.forms),
-            NodeRef::Claim(claim) => forms(&claim.forms),
-            NodeRef::DemoRule(rule) => forms(&rule.forms),
-            NodeRef::Alts(alts) => alts.alts.iter().map(Handle::Alt).collect(),
-            NodeRef::Alt(alt) => alt
-                .items
-                .iter()
-                .map(|item| match item {
+            NodeRef::Program(program) => forms(&program.forms, visit),
+            NodeRef::Claim(claim) => forms(&claim.forms, visit),
+            NodeRef::DemoRule(rule) => forms(&rule.forms, visit),
+            NodeRef::Alts(alts) => run(alts.alts.iter().map(Handle::Alt), visit),
+            NodeRef::Alt(alt) => run(
+                alt.items.iter().map(|item| match item {
                     AltItem::Form(form) => Handle::Form(form),
                     AltItem::Alt(alt) => Handle::Alt(alt),
-                })
-                .collect(),
-            NodeRef::Clause(clause) => bodies([&clause.body]),
-            NodeRef::Body(body) => body.conjuncts.iter().map(Handle::Conjunct).collect(),
+                }),
+                visit,
+            ),
+            NodeRef::Clause(clause) => bodies([&clause.body], visit),
+            NodeRef::Body(body) => run(body.conjuncts.iter().map(Handle::Conjunct), visit),
             NodeRef::Conjunct(conjunct) => match conjunct {
-                Conjunct::Not(Negated::Form(form)) => vec![Handle::Conjunct(form)],
-                Conjunct::Constraint(_) => Vec::new(),
-                Conjunct::Or(branches) => bodies(branches.iter()),
-                Conjunct::If { test, then, otherwise } => bodies([test, then, otherwise]),
-                Conjunct::All { domain, body } => bodies([domain, body]),
-                _ => conjunct.atom().map_or_else(Vec::new, |atom| sites(&atom.value().sites)),
+                Conjunct::Not(Negated::Form(form)) => run([Handle::Conjunct(form)].into_iter(), visit),
+                Conjunct::Constraint(_) => {}
+                Conjunct::Or(branches) => bodies(branches.iter(), visit),
+                Conjunct::If { test, then, otherwise } => bodies([test, then, otherwise], visit),
+                Conjunct::All { domain, body } => bodies([domain, body], visit),
+                _ => {
+                    if let Some(atom) = conjunct.atom() {
+                        sites(&atom.value().sites, visit)
+                    }
+                }
             },
-            NodeRef::Atom(atom) => sites(&atom.sites),
-            NodeRef::Site(site) => site
-                .value
-                .args
-                .iter()
-                .map(|arg| match arg {
+            NodeRef::Atom(atom) => sites(&atom.sites, visit),
+            NodeRef::Site(site) => run(
+                site.value.args.iter().map(|arg| match arg {
                     SiteArg::Label(_) | SiteArg::NamedLabel { .. } => Handle::Arg(arg),
                     SiteArg::Field(field) => Handle::Site(field),
-                })
-                .collect(),
-            NodeRef::Label(_) => Vec::new(),
-            NodeRef::Instance(instance) => instance
-                .parts()
-                .map(|part| match part {
+                }),
+                visit,
+            ),
+            NodeRef::Label(_) => {}
+            NodeRef::Instance(instance) => run(
+                instance.parts().map(|part| match part {
                     InstancePart::Key => Handle::KeyClause(instance.key.as_ref().expect("the key clause of a part")),
                     InstancePart::Input(index) => Handle::Input(&instance.inputs[index]),
-                })
-                .collect(),
-            NodeRef::KeyClause(clause) => clause
-                .parts()
-                .map(|part| match part {
+                }),
+                visit,
+            ),
+            NodeRef::KeyClause(clause) => run(
+                clause.parts().map(|part| match part {
                     KeyClausePart::Body => Handle::Body(&clause.key.body),
                     KeyClausePart::Input(index) => Handle::Input(&clause.inputs[index]),
-                })
-                .collect(),
-            NodeRef::InstanceInput(input) => input
-                .parts()
-                .map(|part| match part {
+                }),
+                visit,
+            ),
+            NodeRef::InstanceInput(input) => run(
+                input.parts().map(|part| match part {
                     InstanceInputPart::Head(index) => Handle::Site(&input.head[index]),
                     InstanceInputPart::Body => Handle::Body(&input.body),
-                })
-                .collect(),
-            NodeRef::Choose(choose) => choose
-                .parts()
-                .map(|part| match part {
+                }),
+                visit,
+            ),
+            NodeRef::Choose(choose) => run(
+                choose.parts().map(|part| match part {
                     ChoosePart::For => Handle::Body(&choose.rows.as_ref().expect("the `for` clause of a part").body),
                     ChoosePart::From => Handle::Body(&choose.from),
                     ChoosePart::Never(index) => Handle::Body(&choose.never[index]),
-                })
-                .collect(),
-            NodeRef::RigidDet(rigid) => rigid
-                .children()
-                .map(|part| match part {
+                }),
+                visit,
+            ),
+            NodeRef::RigidDet(rigid) => run(
+                rigid.children().map(|part| match part {
                     RigidDetPart::Key => Handle::Body(&rigid.key.as_ref().expect("the `key` clause of a part").body),
                     RigidDetPart::Instance => Handle::Body(&rigid.instance.as_ref().expect("the `instance` clause of a part").body),
                     RigidDetPart::Part(index) => Handle::Atom(&rigid.parts[index]),
-                })
-                .collect(),
-            NodeRef::Demonstrated(demonstrated) => demonstrated
-                .parts()
-                .map(|part| match part {
+                }),
+                visit,
+            ),
+            NodeRef::Demonstrated(demonstrated) => run(
+                demonstrated.parts().map(|part| match part {
                     DemonstratedPart::Key => Handle::KeyClause(demonstrated.key.as_ref().expect("the key clause of a part")),
                     DemonstratedPart::Input(index) => Handle::Input(&demonstrated.inputs[index]),
                     DemonstratedPart::Rule(index) => Handle::DemoRule(&demonstrated.rules[index]),
-                })
-                .collect(),
+                }),
+                visit,
+            ),
         }
     }
+}
+
+/// The item at `index` of the items that `each` gives to its visitor, where
+/// `each` stops once the visitor breaks.
+fn nth_visited<T>(index: usize, each: impl FnOnce(&mut dyn FnMut(T) -> ControlFlow<()>)) -> Option<T> {
+    let mut remaining = index;
+    let mut found = None;
+    each(&mut |item| {
+        if remaining == 0 {
+            found = Some(item);
+            return ControlFlow::Break(());
+        }
+        remaining -= 1;
+        ControlFlow::Continue(())
+    });
+    found
 }
 
 /// A child of an arclog node, borrowed as the handle its parent holds it
@@ -307,13 +351,15 @@ pub fn node_at<'a>(root: NodeRef<'a>, path: &NodePath) -> Option<NodeRef<'a>> {
 /// The node at `path` below `root` of either file, by the children
 /// [`PathNode::children`] gives, or `None` where `path` names no node.
 fn descend<N: PathNode>(root: N, path: &NodePath) -> Option<N> {
-    path.0.iter().try_fold(root, |node, step| node.children().get(step.0 as usize).copied())
+    path.0.iter().try_fold(root, |node, step| node.child_at(step.0 as usize))
 }
 
 /// A node kind a path walks: its children, as the tables of the module
 /// comment give them, and the address of the value it borrows.
 pub(crate) trait PathNode: Copy {
     fn children(self) -> Vec<Self>;
+    /// The child at `index`, or `None` where there are fewer children.
+    fn child_at(self, index: usize) -> Option<Self>;
     fn address(self) -> *const ();
 }
 
@@ -342,6 +388,10 @@ impl PathNode for NodeRef<'_> {
         NodeRef::children(self)
     }
 
+    fn child_at(self, index: usize) -> Option<Self> {
+        NodeRef::child_at(self, index)
+    }
+
     fn address(self) -> *const () {
         match self {
             NodeRef::Program(node) => address_of(node),
@@ -368,6 +418,10 @@ impl PathNode for NodeRef<'_> {
 impl PathNode for DataNodeRef<'_> {
     fn children(self) -> Vec<Self> {
         DataNodeRef::children(self)
+    }
+
+    fn child_at(self, index: usize) -> Option<Self> {
+        DataNodeRef::child_at(self, index)
     }
 
     fn address(self) -> *const () {
@@ -406,6 +460,27 @@ pub enum DataNodeRef<'a> {
 impl<'a> DataNodeRef<'a> {
     /// The node's children, in the order of the module comment's table.
     pub fn children(self) -> Vec<DataNodeRef<'a>> {
+        let mut children = Vec::new();
+        self.each_child(|child| {
+            children.push(child);
+            ControlFlow::Continue(())
+        });
+        children
+    }
+
+    /// The child at `index`, or `None` where the node has fewer children,
+    /// reached without collecting the children.
+    pub fn child_at(self, index: usize) -> Option<DataNodeRef<'a>> {
+        nth_visited(index, |visit| self.each_child(visit))
+    }
+
+    /// Calls `visit` on each child, in the order of the module comment's
+    /// table, until it breaks.
+    pub fn each_child(self, mut visit: impl FnMut(DataNodeRef<'a>) -> ControlFlow<()>) {
+        let _ = self.children_while(&mut visit);
+    }
+
+    fn children_while(self, visit: &mut impl FnMut(DataNodeRef<'a>) -> ControlFlow<()>) -> ControlFlow<()> {
         fn witnesses(witnesses: &[Witness]) -> impl Iterator<Item = DataNodeRef<'_>> {
             witnesses.iter().map(DataNodeRef::Witness)
         }
@@ -415,16 +490,16 @@ impl<'a> DataNodeRef<'a> {
                 let params = arcdata.params.iter().map(DataNodeRef::Param);
                 let excludes = arcdata.excludes.iter().map(DataNodeRef::Exclude);
                 let records = arcdata.witness_records.iter().map(DataNodeRef::WitnessRecord);
-                representative.chain(params).chain(excludes).chain(records).collect()
+                representative.chain(params).chain(excludes).chain(records).try_for_each(visit)
             }
-            DataNodeRef::WitnessRecord(WitnessRecord::Alts { alts, .. }) => alts.iter().map(DataNodeRef::AltRecord).collect(),
-            DataNodeRef::WitnessRecord(WitnessRecord::Approximated { witnesses: list, .. }) => witnesses(list).collect(),
-            DataNodeRef::AltRecord(alt) => witnesses(&alt.witnesses).chain(alt.nested.iter().map(DataNodeRef::AltRecord)).collect(),
+            DataNodeRef::WitnessRecord(WitnessRecord::Alts { alts, .. }) => alts.iter().map(DataNodeRef::AltRecord).try_for_each(visit),
+            DataNodeRef::WitnessRecord(WitnessRecord::Approximated { witnesses: list, .. }) => witnesses(list).try_for_each(visit),
+            DataNodeRef::AltRecord(alt) => witnesses(&alt.witnesses).chain(alt.nested.iter().map(DataNodeRef::AltRecord)).try_for_each(visit),
             DataNodeRef::Witness(Witness { body: Some(body), .. }) => {
                 let relaxed = body.relaxed.iter().map(DataNodeRef::Relaxed);
                 let assigns = body.assigns.iter().map(DataNodeRef::Assign);
                 let outputs = body.outputs.iter().map(DataNodeRef::WitnessOutput);
-                relaxed.chain(assigns).chain([DataNodeRef::Grid(&body.input)]).chain(outputs).collect()
+                relaxed.chain(assigns).chain([DataNodeRef::Grid(&body.input)]).chain(outputs).try_for_each(visit)
             }
             DataNodeRef::Witness(Witness { body: None, .. })
             | DataNodeRef::Representative(_)
@@ -433,7 +508,7 @@ impl<'a> DataNodeRef<'a> {
             | DataNodeRef::Relaxed(_)
             | DataNodeRef::Assign(_)
             | DataNodeRef::Grid(_)
-            | DataNodeRef::WitnessOutput(_) => Vec::new(),
+            | DataNodeRef::WitnessOutput(_) => ControlFlow::Continue(()),
         }
     }
 }

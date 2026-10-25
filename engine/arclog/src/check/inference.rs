@@ -785,12 +785,12 @@ impl<'a> Inference<'a> {
         target: &dyn Fn(&ColumnName) -> Option<LabelId>,
         pose_or: PoseOr,
     ) -> Result<Option<ValueType>, LabelFault> {
-        let forms = scope_forms(self.program.program.value(), scope);
-        let clauses = forms.iter().filter_map(|(at, form)| match form {
-            Form::Clause(clause) if clause.value().derives == *relation => Some((at, clause.value())),
+        let (scope_at, forms) = scope_forms(self.program.program.value(), scope);
+        let clauses = forms.filter_map(|(index, form)| match form {
+            Form::Clause(clause) if clause.value().derives == *relation => Some((index, clause.value())),
             _ => None,
         });
-        join_types(clauses.filter_map(|(at, clause)| self.clause_column(at, clause, scope, path, target, pose_or)))
+        join_types(clauses.filter_map(|(index, clause)| self.clause_column(&scope_at.child(index), clause, scope, path, target, pose_or)))
     }
 
     /// The join of the types that the other clauses of the relation of
@@ -859,9 +859,9 @@ impl<'a> Inference<'a> {
         }
         let ProgramRelation::Output(output) = &clause.derives else { return None };
         let (OutputOwner::Instance(name), [OutputStep::Port(port)]) = (&output.of, &output.path[..]) else { return None };
-        let forms = scope_forms(self.program.program.value(), scope);
-        let instance = forms.into_iter().find(|(_, form)| matches!(form, Form::Instance(instance) if instance.value().name == *name))?;
-        Some(ClauseColumns::InstanceOutput(instance.0, port))
+        let (scope_at, mut forms) = scope_forms(self.program.program.value(), scope);
+        let (index, _) = forms.find(|(_, form)| matches!(form, Form::Instance(instance) if instance.value().name == *name))?;
+        Some(ClauseColumns::InstanceOutput(scope_at.child(index), port))
     }
 
     /// The names of the columns of the relation of `clause`, a clause of
