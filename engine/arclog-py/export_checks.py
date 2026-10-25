@@ -1,19 +1,19 @@
 """Checks of the invariants that the layout of a tables export states (see `tables_export.py`).
 
-    python engine/arclog-py/export_checks.py <export dir> [--sample N | --all] [--seed S] [--streams <dir>]
+    python engine/arclog-py/export_checks.py <export dir> [--sample N | --all] [--seed S] [--streams <dir>] [--jobs N]
 
 It needs numpy and pandas (and pyarrow for the command), and no `arclog`. `tables_export.write_part` calls
 `check_case` on each case it writes, with `copies=False`. The command checks an existing export: the files of every case, and the
 values of a sample of N cases (100 by default; `--all` takes every case; `--seed` picks the sample). It prints
 one line per violated invariant, with the count of its violations, the number of its cases and three examples,
-then a total, and exits with status 1 where any violation stands. A change to this module, or to the engine code that writes the export's files (`engine/arclog/src/eval/flows.rs`, `engine/arclog/src/decode/`), runs `engine/arclog-py/roundtrip_check.py` with an `arclog` built from its tree before its merge.
+then a total, and exits with status 1 where any violation stands. `--jobs N` sets the number of worker processes that check the cases (every core by default; 1 runs in the one process); the report is the same at every N. A change to this module, or to the engine code that writes the export's files (`engine/arclog/src/eval/flows.rs`, `engine/arclog/src/decode/`), runs `engine/arclog-py/roundtrip_check.py` with an `arclog` built from its tree before its merge.
 
 `--streams <dir>` also reads `cases.npz` of the streams export (`lm/export.py`) in that directory and checks
 that each table of the export other than an evidence table has a token inside its case's stream at a step the
 model writes, that the stream's mask admits each model-written token, and that each case of the streams export
 has tables. The number of cases with tables and no stream is printed and is no violation.
 """
-import collections, json, os, random, sys
+import collections, concurrent.futures, heapq, json, multiprocessing, os, random, sys
 import numpy as np
 import pandas as pd
 
@@ -417,29 +417,19 @@ def check_streams(dir, tables):
     return found, int((keys.get_indexer(have) < 0).sum())
 
 
-def check_export(dir, sample=100, seed=0, streams=None, out=sys.stdout):
-    """Checks the export in `dir` and prints a report; `sample` is the number of cases whose values are checked, None for every case.
-    Returns the Counter of violations by invariant."""
-    read = lambda name, columns=None: pd.read_parquet(f"{dir}/{name}.parquet", columns=columns)
-    tables = read("tables")
-    split = {"tables": _by_case(tables, "table"),
+def _check_cases(dir, cases, chosen, orientation):
+    """[(case, invariant, detail)] of the violations of the cases in the list `cases` of (task, case) pairs, in the order of `cases`.
+    It reads the export's parts for the tasks of `cases` alone, and the values of the cases in the set `chosen`."""
+    tasks = sorted({t for t, _ in cases})
+    wanted = set(cases)
+    def read(name, columns=None):
+        df = pd.read_parquet(f"{dir}/{name}.parquet", columns=columns, filters=[("task", "in", tasks)])
+        return df[pd.MultiIndex.from_frame(df[["task", "case"]]).isin(wanted)] if len(df) else df
+    split = {"tables": _by_case(read("tables"), "table"),
              "entries": _by_case(read("index", ["task", "case", "entry", "table", "example_kind", "example_index", "kind", "rows", "offset"]), "entry")}
     for part in ("flows", "assigned", "projections", "projection_rows"):
         split[part] = _by_case(read(part), None)
-    cases = list(split["tables"])
-    chosen = cases[:]
-    random.Random(seed).shuffle(chosen)
-    chosen = set(chosen if sample is None else chosen[:sample])
-    task_json, found = {}, collections.defaultdict(list)
-    orientation = None
-    if os.path.exists(f"{dir}/orientation_types.json"):
-        orientation = orientation_sets(json.load(open(f"{dir}/orientation_types.json")))
-    else:
-        try:
-            import arclog
-            orientation = orientation_sets(arclog.orientation_types())
-        except ImportError:
-            print(f"{dir} holds no orientation_types.json and arclog is not installed: the orientation domains are not checked", file=sys.stderr)
+    task_json, found = {}, []
     for key in cases:
         task, case = key
         if task not in task_json:
@@ -449,14 +439,63 @@ def check_export(dir, sample=100, seed=0, streams=None, out=sys.stdout):
         frames.setdefault("entries", pd.DataFrame())
         size = os.path.getsize(path) // 4 if os.path.exists(path) else None
         if size is None:
-            found["values-file"].append((f"{task} {case}", "no values file"))
+            found.append((key, "values-file", "no values file"))
         values = np.fromfile(path, np.int32) if key in chosen and size is not None else None
         for line in check_case(frames, values, task_json[task], orientation, size=size):
             inv, detail = line.split(": ", 1)
-            found[inv].append((f"{task} {case}", detail))
+            found.append((key, inv, detail))
+    return found
+
+
+def _shares(dir, cases, chosen, jobs):
+    """`cases` cut into at most `jobs` lists of whole cases, each in the order of `cases`, by greedy longest-processing-time assignment.
+    A case weighs the size of its values file, a tenth of it where its values are not checked."""
+    def weight(key):
+        path = f"{dir}/values/{key[0]}/{key[1]}.i32"
+        size = os.path.getsize(path) if os.path.exists(path) else 0
+        return size if key in chosen else size / 10
+    heap = [(0, i) for i in range(min(jobs, len(cases)))]
+    shares = [[] for _ in heap]
+    for pos, key in sorted(enumerate(cases), key=lambda pk: -weight(pk[1])):
+        load, i = heapq.heappop(heap)
+        shares[i].append(pos)
+        heapq.heappush(heap, (load + weight(key), i))
+    return [[cases[pos] for pos in sorted(share)] for share in shares if share]
+
+
+def check_export(dir, sample=100, seed=0, streams=None, out=sys.stdout, jobs=None):
+    """Checks the export in `dir` and prints a report; `sample` is the number of cases whose values are checked, None for every case.
+    `jobs` is the number of worker processes, `os.cpu_count()` where it is None; the report does not depend on it.
+    Returns the Counter of violations by invariant."""
+    keys = pd.read_parquet(f"{dir}/tables.parquet", columns=["task", "case"]).drop_duplicates().sort_values(["task", "case"])
+    cases = list(zip(keys.task, keys.case))
+    chosen = cases[:]
+    random.Random(seed).shuffle(chosen)
+    chosen = set(chosen if sample is None else chosen[:sample])
+    orientation = None
+    if os.path.exists(f"{dir}/orientation_types.json"):
+        orientation = orientation_sets(json.load(open(f"{dir}/orientation_types.json")))
+    else:
+        try:
+            import arclog
+            orientation = orientation_sets(arclog.orientation_types())
+        except ImportError:
+            print(f"{dir} holds no orientation_types.json and arclog is not installed: the orientation domains are not checked", file=sys.stderr)
+    jobs = jobs or os.cpu_count() or 1
+    if jobs == 1 or len(cases) < 2:
+        results = [_check_cases(dir, cases, chosen, orientation)]
+    else:
+        shares = _shares(dir, cases, chosen, jobs)
+        with concurrent.futures.ProcessPoolExecutor(len(shares), mp_context=multiprocessing.get_context("spawn")) as pool:
+            futures = [pool.submit(_check_cases, dir, share, chosen & set(share), orientation) for share in shares]
+            results = [f.result() for f in futures]
+    position = {key: i for i, key in enumerate(cases)}
+    found = collections.defaultdict(list)
+    for key, inv, detail in sorted((item for r in results for item in r), key=lambda item: position[item[0]]):
+        found[inv].append((f"{key[0]} {key[1]}", detail))
     unmatched = None
     if streams:
-        more, unmatched = check_streams(streams, tables)
+        more, unmatched = check_streams(streams, pd.read_parquet(f"{dir}/tables.parquet"))
         for inv, items in more.items():
             found[inv] += items
     counts = collections.Counter({inv: len(items) for inv, items in found.items()})
@@ -470,14 +509,15 @@ def check_export(dir, sample=100, seed=0, streams=None, out=sys.stdout):
 
 
 if __name__ == "__main__":
-    args, dir, sample, seed, streams = sys.argv[1:], None, 100, 0, None
+    args, dir, sample, seed, streams, jobs = sys.argv[1:], None, 100, 0, None, None
     while args:
         a = args.pop(0)
         if a == "--sample": sample = int(args.pop(0))
         elif a == "--all": sample = None
         elif a == "--seed": seed = int(args.pop(0))
         elif a == "--streams": streams = args.pop(0)
+        elif a == "--jobs": jobs = int(args.pop(0))
         else: dir = a
     if dir is None:
         sys.exit(__doc__)
-    sys.exit(1 if check_export(dir, sample, seed, streams) else 0)
+    sys.exit(1 if check_export(dir, sample, seed, streams, jobs=jobs) else 0)
