@@ -1,29 +1,30 @@
 # da515329
 
 ## Departures
-- The `background=DominantColor` (@derive) and `wall_color=stored` (@store) branches have no directive line in the solver. The witness file still uses their Analyze names, and the run reports that those names "denote no case of the solver": I did not reach Develop step 5 (`derive`, `store`) before the coordinator's override stopped the pass.
-- The other non-concept branches of `analyze.md` (`$OneArmAtATime`, `$Lane4`, `$SquareRings`, `$LengthTable`, `$EndAtEdge`, `$EdgeIsWall`) have no constructor: each fails Fit in `analyze.md`, and none has a witness.
+- The solver has the concept case alone. `$TakeTurns`, `background=DominantColor` and `wall_color=stored` have no case: Develop reached its budget before they were added. Their entries are under Unsettled.
+- The witness file holds no witness. Each Analyze witness separates the concept from a branch that has no case, so it separates nothing in this solver.
+- The walk grows one arm, and each cell it takes also takes the cell's three images under the quarter turns about the center (`walk.conflict`). The concept grows four arms in lockstep. The two agree wherever `one-plus` holds, because the plus and the lane rule both turn onto themselves under a quarter turn. On `stray-cell-contest` (foreign: it breaks `one-plus`), the solver gives rows 5–7 as `8 0 0 0 8 0 8 0`, `8 8 8 8 8 0 8 0` and `0 0 0 8 0 0 8 0`, which differ from the concept output of `witnesses.json`. This rests on the recursion ban: a `Take` state can only be a value that a static atom grounds, so the state cannot hold four arm tips.
+- The walk runs in a square around the center with two extra rings, not on an unbounded plane. Its half-width is the center's distance to the farthest grid edge. Without the two rings, train0 (21,21) is lost, because there a spiral comes back into the grid from outside the square.
+- `corridor_width` is no parameter: the lane is the five cells at one step from the new cell, through `neighbor`. A width read from a parameter would need a universal over a variable set of cells inside the walk's recursion, and that needs negation through the recursion.
+- In the first version, the output on an input with no plus was an all-background grid. A `center(_)` atom now makes that output undefined, which agrees with the concept output of `witnesses.json` on `background=DominantColor`.
 
 ## Judgments
-- The parse finds the plus with lib relations. The center is the background cell with every side on the figure. Each arm is a `Ray` from the center, and its tip is the cell before the ray's `stop`. The plus color is the tip's color: the concept reads the color from the input.
-- The unbounded plane is cut to a square around the center that reaches one cell past the grid's farthest edge (`Extremes` over the edge distances, then `Bbox`, then `Frame2D`). A lap that leaves this square lies past every grid edge, so the clip is exact. The square is a construction of the plane, not a task number.
-- The lane of `hug-the-spiral` is the cells within `corridor_width` of the entered cell, apart from those behind it. For width 1 these are the 5 cells ahead and beside, the diagonals ahead included, as `analyze.md` gives for the concept's `lane neighborhood`.
-- `$AtOnce`: the four arms' cells at one step are C4 rotations of one another about the center. So an arm grows against the rotations of its own trail, and one `Take` walk from all four tips encodes simultaneous growth. This relies on the plus being symmetric (`one-plus`). On an input that breaks `one-plus` (the `stray-cell-contest` witness), the reading may differ from a literal simultaneous growth. I did not check this, because the witness run never happened.
-- `$TakeTurns`: one chain of moves in which the arm that moves next is the one that moved three states back, starting from `first_arm` = up in `sense` order. `first_arm` is a parameter of that branch alone.
-- Hints from the last clean lint run (on the version before the final rewrite): `single-consumer` on `plus_color` (I would keep it with `@ignore`, since it is the color `clip` names), `head-repeat` on `cands` (D appears as both the head and the straight move's heading; I would keep it, since the straight move's heading is the head's), and `common-subexpr` across the `turns` clauses (the final rewrite removed those clauses). I did not apply any of these judgments in the file.
+- The `domain-enumerator` hint on `walk.step`'s `dir_elem(H)` is ignored, with an `@ignore` line. `dir_elem(H)` grounds the state, and the recursion rule for `Take` needs that.
+- The `take` clause leads with `walk.taken($U(), [P, H], P)`, because the tip of a state is always taken. With the static atoms first, each iteration enumerated the domain, and train0 and test0 reached the 20 s limit. With this atom first, the pairs run takes 7 s.
+- A blocked lane is read as `walk.taken ; walk.excluded`. Taken, untaken and excluded together partition the cells, so this is the positive form of "not free" that the recursion allows.
 
 ## Unsettled
-- The solver does not pass. The file as it stands (the last rewrite: `Take` with a static `take`, each walk driven by `step`) has not been run through the runner. By hand, `souffle` on test0 was terminated at 200 s. The last runner result, `uv run python scripts/run_dl.py da515329` on the previous version (state = a `Window` record of four heads, a `take` with `excluded` tests): train1 and train2 PASS (2 witnessed cases), train0 and test0 FAIL ("the run exits with -9"). The `$AtOnce` walk alone (scratch variant /tmp/claude-0/-home-user-arc-workspace/95a9e697-9cd5-54be-be82-90365100c496/scratchpad/da515329_once.dl) passes all four pairs in 16 s. The `$TakeTurns` walk alone fails train0 and test0 the same way. What would settle it: a `$TakeTurns` encoding, or a lib walk component, whose state set does not cross every move with every state. Otherwise, a `@workaround` that bounds the walk.
-- That previous version also had a lint finding: banned type `Window`. The final rewrite removes `Window`, but no lint has run on it.
-- Develop steps 3 to 6 were not done: `derive`, `store` and `audit` were not run. Determine was not done: `sweep` and `determination-plan` were not run, and `.comp Determine {}` is empty. Witness, Simplify (`deletions`) and Prune were not done either. No witness has been recorded, and `uv run python scripts/run_dl.py witness da515329 --file programs/reports/da515329/witnesses.json` has not been run.
-- Whether `$TakeTurns` fits every pair in this encoding: in the previous version it fit train1 and train2. It is unknown on train0 and test0.
+- `walk_arm` is a `@workaround`: the principled form starts a walk from every arm, and the relabelings audit reports that `walk_arm` changes no output. The four-walk form ran into the 20 s per-pair limit when the domain was smaller. A run of the four-walk form inside the limit would settle it.
+- `$TakeTurns` has no case. It cannot use the quarter-turn reduction, because its order breaks the symmetry. It would need a lib construction for a walk whose state holds several tips.
+- `background=DominantColor`: the audit reports that `bg=DominantColor` fits and has no `@derive` line. A `// @derive DominantColor: variant derived` line on `bg`, with its witness recorded, would settle it.
+- `wall_color=stored`: the audit's store check reports the plus color as 8 on every input. A `@store` line with verdict `concept` (plausibility `variant`) would settle it.
+- `deletions` stopped at its timeout, so the Simplify check stays open. A `deletions` run that completes would settle it.
 
 ## Concept faults
 - none
 
 ## Fixes elsewhere
-- `scripts/run_dl.py`, the "exits with -9" report: say whether a time limit or a memory limit ended the run, and give that limit.
-- `scripts/run_dl.py run --help`, the profiling recipe: the PreToolUse hook blocks its `{ ... } > file` group, so the recipe needs a form an agent can run.
+- none
 
 ## Tickets filed
 - none

@@ -1,199 +1,131 @@
 // da515329
 // @draft
-// @keywords: walk markers
-// @scene one-plus: on a field of params.bg, one plus of one color: four
-//  straight arms of one length, which leave the center cell params.bg and point
-//  toward the four cardinal directions
+// @keywords: walk objects symmetry
+// @scene one-plus: on a field of 0, one plus of one color: four straight arms
+//  of one length, which leave the center cell 0 and point toward the four
+//  cardinal directions.
 // @rule arms-grow: all four arms grow at once, one cell per step, from their
-//  tips, on an unbounded plane
-// @rule hug-the-spiral: a growing arm keeps a lane of params.corridor_width
-//  background cells between its new cell and every wall cell it does not grow
-//  from, by the 8-neighborhood: it turns toward params.sense where it can, goes
-//  straight where it cannot, and turns the other way where straight is blocked
-// @rule clip: the output has the input's size; a cell is the plus's color where
-//  a spiral passes through it, and params.bg elsewhere, the center cell included
+//  tips, on an unbounded plane.
+// @rule hug-the-spiral: a growing arm keeps a lane of one background cell
+//  between its new cell and every wall cell it does not grow from, by the
+//  8-neighborhood: it turns toward `sense` where it can, goes straight where
+//  it cannot, and turns the other way where straight is blocked.
+// @rule clip: the output has the input's size; a cell is the plus's color
+//  where a spiral passes through it, and background elsewhere, the center
+//  cell included.
 
-// how the four arms share a step
-.type Choice =
-    // @claim arms-grow
-    AtOnce {}
-    // @rule arms-grow: the arms move one at a time, each against the cells the
-    //  others have just taken, starting from the arm params.first_arm and going
-    //  on in params.sense order
-  | TakeTurns {}
+// An arm's tip and the heading it grew in.
+.type Tip = [p: Position, h: Dir]
 
-// A move: the cell an arm enters, and the heading it enters it with.
-.type Move = [p: Position, d: Dir]
+// A cell of one example's input.
+.type Cell = [e: Example, p: Position]
 
-.decl out(p: Position, col: Color, ch: Choice)
+.decl out(p: Position, col: Color)
 
 .comp Params {
-    .decl bg(col: Color) bg(0).
+    .decl bg(c: Color) bg(0).
+    // the sense in which each arm curls
     .decl sense(s: Sense) sense(SENSE_CW).
-    // the width of the background lane between two walls
-    .decl corridor_width(n: number) corridor_width(1).
-
-    // --- $TakeTurns ---
-    .decl first_arm(d: Dir) first_arm(DIR_T).
+    // @workaround: every arm starts a walk
+    .decl walk_arm(d: Dir) walk_arm(DIR_T).
 }
 
 .init params = Params
 
-.decl impl_choice(ch: Choice)
-impl_choice($AtOnce()). impl_choice($TakeTurns()).
+.decl plus(p: Position, col: Color)
+plus(P, Col) :- in(P, Col), !params.bg(Col).
 
-.decl fig(p: Position)
-fig(P) :- in(P, Col), !params.bg(Col).
+// A cell some neighbor of which is not a plus cell.
+.decl off_center(p: Position)
+off_center(P) :- in(P, _), dir_elem(D), neighbor(P, D, Q), !plus(Q, _).
 
-// A background cell with a side that no figure cell holds.
-.decl open_side(p: Position)
-open_side(P) :- in(P, Col), params.bg(Col), dir_elem(D), neighbor(P, D, Q), !fig(Q).
-
-// The center: the background cell the four arms meet at.
 .decl center(p: Position)
-center(P) :- in(P, Col), params.bg(Col), !open_side(P).
+center(P) :- in(P, Col), params.bg(Col), !off_center(P).
 
-// Each arm runs from the center to the first background cell past it.
-// @claim one-plus
-.init arm = Ray<Unit>
-arm.dir($U(), D) :- dir_elem(D).
-arm.cell($U(), P) :- in(P, _).
-arm.mark($U(), C) :- center(C).
-arm.blocked($U(), P) :- in(P, Col), params.bg(Col).
-
-// The tip of the arm that points toward d.
-.decl tip(p: Position, d: Dir)
-tip(P, D) :- arm.stop($U(), Q, D, _, _), dir_elem(D), opposite(D, O), neighbor(Q, O, P).
-
-.decl plus_color(col: Color)
-plus_color(Col) :- tip(P, _), in(P, Col).
-
-// The center's distance to its farthest grid edge.
-// @claim arms-grow
+// The distance from the center to the farthest grid edge: every grid cell
+// lies within it of the center on both axes.
+// @claim clip
 .init reach = Extremes<Unit>
 reach.cand($U(), K) :- center(C), dir_elem(D), dist(C, D, K).
 
-// The plane the arms grow on: the square around the center that reaches one
-// cell past the grid's farthest edge. A lap that leaves it lies past every
-// grid edge, and so does every later lap.
-// @claim arms-grow
-.init square = Bbox<Unit>
-square.cell($U(), E2) :-
-    center(C), reach.high($U(), K), dir_elem(D), jump(C, D, K, E), neighbor(E, D, E2).
+.decl within(k: number)
+within(K) :- reach.high($U(), R), in(P, _), dir_elem(D), dist(P, D, K), K <= R.
 
-.init plane_frame = Frame2D<Unit>
-plane_frame.extent($U(), A, N) :-
-    square.box($U(), B), center(C), axis_elem(A), box_extent(B, C, A, N).
+// The tip of the arm that points toward d.
+.decl tip(d: Dir, p: Position)
+tip(D, P) :-
+    center(C), dir_elem(D), within(K), jump(C, D, K, P), plus(P, _),
+    neighbor(P, D, Q), !plus(Q, _).                        // the next cell out is not the plus
 
-.decl plane(p: Position)
-plane(P) :- plane_frame.cell($U(), P_inner), square.box($U(), B), compose(B, P_inner, P).
+// The square around the center that holds the grid.
+.decl square(p: Position)
+square(Q) :-
+    center(C), diag_dirs(_, _, D1, D2),
+    within(K1), jump(C, D1, K1, Q1), within(K2), jump(Q1, D2, K2, Q).
 
-// The three moves open to an arm that stands on p of the plane, heading d, in
-// the order the arm prefers them: the turn toward params.sense, straight on,
-// the other turn.
-.decl cands(t: Move, m1: Move, m2: Move, m3: Move)
-cands([P, D], [Q1, D1], [Q2, D], [Q3, D3]) :-
-    plane(P), dir_elem(D), params.sense(S),
-    turn(S, D, D1), neighbor(P, D1, Q1),     // the turn toward the sense
-    neighbor(P, D, Q2),                      // straight on
-    turn(S, D3, D), neighbor(P, D3, Q3).     // the other turn
+// The part of the plane the arms grow in: the square and two rings around
+// it, where a spiral that leaves the square turns back into it.
+.decl domain(p: Position)
+domain(Q) :- square(P), dir8_elem(D1), neighbor(P, D1, Q1), dir8_elem(D2), neighbor(Q1, D2, Q).
 
-.decl move_dom(m: Move)
-move_dom(M) :- ( cands(_, M, _, _) ; cands(_, _, M, _) ; cands(_, _, _, M) ).
+// The cells that must be free for an arm in the domain to grow into n
+// heading g: n, the cell ahead, and the cells beside both.
+.decl lane(n: Position, g: Dir, q2: Position, q3: Position, q4: Position, q5: Position, q6: Position)
+lane(N, G, A, B1, B2, C1, C2) :-
+    domain(P), dir_elem(G), neighbor(P, G, N),
+    neighbor(N, G, A), perp_dir(G, E1), opposite(E1, E2),
+    neighbor(N, E1, B1), neighbor(N, E2, B2), neighbor(A, E1, C1), neighbor(A, E2, C2).
 
-// The lane a move keeps clear, as offsets from the cell it enters: the cells
-// within params.corridor_width of it, apart from those behind it.
-.decl lane_offset(d: Dir, v: Offset)
-lane_offset(D, V) :-
-    center(C), params.corridor_width(W), uniform_outset(W, O), compose(C, O, B_w),
-    plane(X), inside(X, B_w), dir_elem(D), opposite(D, Back), !nearer(Back, X, C),
-    relative(C, X, V).
+.decl lane_cell(n: Position, g: Dir, q: Position)
+lane_cell(N, G, Q) :-
+    lane(N, G, Q2, Q3, Q4, Q5, Q6),
+    ( Q = N ; Q = Q2 ; Q = Q3 ; Q = Q4 ; Q = Q5 ; Q = Q6 ).
 
-.decl lane(m: Move, x: Position)
-lane(M, X) :- move_dom(M), M = [Q, D], lane_offset(D, V), compose(Q, V, X).
-
-// A move whose lane holds a cell of the input figure.
-.decl fig_blocked(m: Move)
-fig_blocked(M) :- lane(M, X), fig(X).
-
-.decl trail(p: Position, ch: Choice)
-
-// --- $AtOnce ---
-
-// The cells the arms take at one step are rotations of one another about the
-// center, so an arm grows against the rotations of its own cells.
-.decl image(p: Position, p2: Position)
-image(P, P2) :-
-    plane(P), square.box($U(), B), crop(P, B, P_rel),
-    c4_elem(R), apply(R, P_rel, P_rel2), compose(B, P_rel2, P2).
-
-// A move whose lane holds a rotation of cell p.
-.decl near_image(m: Move, p: Position)
-near_image(M, P) :- lane(M, X), image(P, X).
-
-// Each arm grows from its tip, one move per state. Leaving a state takes the
-// move that entered it, which closes every move whose lane holds its cell or a
-// rotation of it; the cells the arms stand on are tested apart.
+// The plus turns onto itself under each quarter turn about its center, and
+// so does the rule, so the four spirals do too: the walk grows one arm, and
+// each cell it takes takes its three images under those turns for the other
+// arms in the same step.
 // @claim arms-grow hug-the-spiral
-.init grow = Take<Unit, Move, Move>
-grow.start($U(), [P, D]) :- tip(P, D).
-grow.init_untaken($U(), M) :- move_dom(M), !fig_blocked(M).
-grow.conflict($U(), Y, X) :- move_dom(Y), Y = [P, _], image(P, P2), lane(X, P2).
-grow.take($U(), T, T) :- move_dom(T).
-// A move off the plane ends the arm.
-grow.step($U(), T, M) :-
-    ( grow.start($U(), T) ; grow.step($U(), _, T) ), T = [P, _], cands(T, M1, M2, M3),
-    ( M = M1, grow.untaken($U(), T, M1), !near_image(M1, P)
-    ; M = M2, grow.untaken($U(), T, M2), !near_image(M2, P),
-      ( grow.taken($U(), T, M1) ; grow.excluded($U(), T, M1) ; fig_blocked(M1)
-      ; near_image(M1, P) )
-    ; M = M3, grow.untaken($U(), T, M3), !near_image(M3, P),
-      ( grow.taken($U(), T, M1) ; grow.excluded($U(), T, M1) ; fig_blocked(M1)
-      ; near_image(M1, P) ),
-      ( grow.taken($U(), T, M2) ; grow.excluded($U(), T, M2) ; fig_blocked(M2)
-      ; near_image(M2, P) )
+// @ignore step: domain-enumerator — `dir_elem(H)` grounds the state the walk reads
+.init walk = Take<Unit, Tip, Position>
+walk.start($U(), [P, D]) :- tip(D, P), params.walk_arm(D).
+walk.init_taken($U(), P) :- plus(P, _).
+walk.init_untaken($U(), Q) :- lane_cell(_, _, Q), !plus(Q, _).
+walk.conflict($U(), Q, Q2) :-
+    lane_cell(_, _, Q), center(C), relative(C, Q, V),
+    c4_elem(M), apply(M, V, V2), compose(C, V2, Q2).
+
+// The arm grows into the first of the turn toward `sense`, straight on, and
+// the other turn whose lane is free. A cell that is neither free nor wall
+// lies past the domain, so the arm ends there.
+walk.take($U(), [P, H], N) :-
+    walk.taken($U(), [P, H], P), domain(P), params.sense(Sn), turn(Sn, H, G1), sense_elem(Sn2), !params.sense(Sn2), turn(Sn2, H, G3),
+    neighbor(P, G1, N1), neighbor(P, H, N2), neighbor(P, G3, N3),
+    ( N = N1, G = G1
+    ; N = N2, G = H,
+      lane_cell(N1, G1, B1), ( walk.taken($U(), [P, H], B1) ; walk.excluded($U(), [P, H], B1) )
+    ; N = N3, G = G3,
+      lane_cell(N1, G1, B1), ( walk.taken($U(), [P, H], B1) ; walk.excluded($U(), [P, H], B1) ),
+      lane_cell(N2, H, B2), ( walk.taken($U(), [P, H], B2) ; walk.excluded($U(), [P, H], B2) )
     ),
-    M = [Q, _], plane(Q).
+    lane(N, G, Q2, Q3, Q4, Q5, Q6),
+    walk.untaken($U(), [P, H], N), walk.untaken($U(), [P, H], Q2), walk.untaken($U(), [P, H], Q3),
+    walk.untaken($U(), [P, H], Q4), walk.untaken($U(), [P, H], Q5), walk.untaken($U(), [P, H], Q6).
+walk.step($U(), [P, H], [N, G]) :-
+    walk.take($U(), [P, H], N), domain(P), dir_elem(H), dir_elem(G), neighbor(P, G, N).
 
-trail(P, $AtOnce()) :- grow.step($U(), _, [P, _]).
+// A wall cell: taken by the arm the walk grows, or by another arm.
+.decl wall(p: Position)
+wall(P) :- in(P, _), ( walk.taken($U(), _, P) ; walk.excluded($U(), _, P) ).
 
-// --- $TakeTurns ---
+out(P, Col) :- wall(P), plus(_, Col).
+out(P, Col) :- in(P, _), !wall(P), params.bg(Col), center(_).   // a plus was found
 
-// The arms move in turn, each against every cell taken so far: a state is the
-// move just made, and the arm to move next made the move three states back.
-// Leaving a state takes the move that entered it, which closes every move
-// whose lane holds its cell; the cell just entered is tested apart. The tips
-// open the chain in turn order.
-// @claim arms-grow hug-the-spiral
-.init turns = Take<Unit, Move, Move>
-turns.start($U(), [P, D]) :- params.first_arm(D), tip(P, D).
-turns.init_untaken($U(), M) :- move_dom(M), !fig_blocked(M).
-turns.conflict($U(), Y, X) :- move_dom(Y), Y = [P, _], lane(X, P).
-turns.take($U(), T, T) :- move_dom(T).
-turns.step($U(), [P, D], [P2, D2]) :-
-    tip(P, D), tip(P2, D2), params.sense(S), turn(S, D, D2), !params.first_arm(D2).
-turns.step($U(), T, M) :-
-    turns.step($U(), C, T), turns.step($U(), B, C), turns.step($U(), A, B),
-    move_dom(B), move_dom(C), T = [P, _], cands(A, M1, M2, M3),
-    ( M = M1, turns.untaken($U(), T, M1), !lane(M1, P)
-    ; M = M2, turns.untaken($U(), T, M2), !lane(M2, P),
-      ( turns.taken($U(), T, M1) ; turns.excluded($U(), T, M1) ; fig_blocked(M1)
-      ; lane(M1, P) )
-    ; M = M3, turns.untaken($U(), T, M3), !lane(M3, P),
-      ( turns.taken($U(), T, M1) ; turns.excluded($U(), T, M1) ; fig_blocked(M1)
-      ; lane(M1, P) ),
-      ( turns.taken($U(), T, M2) ; turns.excluded($U(), T, M2) ; fig_blocked(M2)
-      ; lane(M2, P) )
-    ).
+.comp Determine {
+    // The color with the most cells over the inputs: the field.
+    .init field = Mode<Unit, Color, Cell>
+    field.item($U(), Col, [E, P]) :- ex_in(E, P, Col).
 
-trail(P, $TakeTurns()) :- turns.step($U(), _, [P, _]).
-
-// --- $AtOnce, $TakeTurns ---
-
-out(P, Col_out, Ch) :-
-    impl_choice(Ch), in(P, _),
-    ( ( fig(P) ; trail(P, Ch) ), plus_color(Col_out)       // on a spiral
-    ; !fig(P), !trail(P, Ch), params.bg(Col_out)           // off every spiral
-    ).
-
-.comp Determine {}
+    .decl bg(c: Color)
+    bg(Col) :- field.mode($U(), Col).
+}
