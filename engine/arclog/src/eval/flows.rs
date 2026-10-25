@@ -15,7 +15,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use super::ir::{atom_modes, Argument, AtomSource, ClauseIr, CompiledBody, IrNode, IrPaths, NodePaths, Operand, Union, Variable};
+use super::ir::{atom_modes, Argument, AtomSource, ClauseIr, CompiledBody, IrNode, IrPaths, NodePaths, Operand, Union, Variable, VariableInfo};
 use super::{demonstrated, driver, picks, rigid};
 use crate::check::CheckedProgram;
 use crate::program::path::{node_at, NodePath, NodeRef};
@@ -108,13 +108,15 @@ impl Held {
 /// together in it, and the `OR` nodes it has not yet chosen a branch of.
 #[derive(Clone)]
 struct Alt<'c> {
+    /// The type of each variable of the clause.
+    variables: &'c [VariableInfo],
     nodes: Vec<(&'c IrNode, &'c NodePaths)>,
     pending: Vec<(&'c Union, &'c [IrPaths])>,
 }
 
 impl<'c> Alt<'c> {
     fn of(clause: &'c ClauseIr, paths: &'c IrPaths) -> Self {
-        let mut alt = Alt { nodes: Vec::new(), pending: Vec::new() };
+        let mut alt = Alt { variables: &clause.variables, nodes: Vec::new(), pending: Vec::new() };
         alt.add(clause, paths);
         alt
     }
@@ -193,7 +195,8 @@ impl<'c> Alt<'c> {
             };
             for (column, argument) in arguments.0.iter() {
                 if matches!(argument, Argument::Variable(variable) if class.contains(variable)) {
-                    hits.push(Hit { node, paths, column: column.0 });
+                    let Argument::Variable(variable) = argument else { continue };
+                    hits.push(Hit { node, paths, column: column.0, variable: *variable });
                 }
             }
         }
@@ -222,6 +225,8 @@ struct Hit<'c> {
     node: &'c IrNode,
     paths: &'c NodePaths,
     column: u16,
+    /// The variable that stands there.
+    variable: Variable,
 }
 
 /// The walk over a body's IR for the sources of a variable, with the nodes
@@ -241,6 +246,23 @@ impl<'p> Walk<'p> {
             NodeRef::Atom(atom) => Some((path, atom)),
             _ => None,
         }
+    }
+
+    /// Whether the column that `hit` reads holds values of the type of the
+    /// variable that stands there, or of an orientation type that its cells
+    /// lie within. The IR can join a variable to a column of another type,
+    /// such as the key fields of a keyed input's read of another `INIT`
+    /// form's output, which names a copy of no value.
+    fn keeps_type(&self, alt: &Alt<'_>, hit: &Hit<'_>) -> bool {
+        let (IrNode::Atom(atom), Some((path, _))) = (hit.node, self.atom_of(hit.paths)) else { return true };
+        let AtomSource::Relation(relation) = &atom.source else { return true };
+        if self.flows.program.reads_lifted(path) {
+            return true;
+        }
+        let Some(column) = self.flows.checked.types.columns(relation).and_then(|columns| columns.get(usize::from(hit.column))) else { return true };
+        let Some(info) = alt.variables.get(usize::from(hit.variable.0)) else { return true };
+        let orientation = |ty: &ValueType| ty.moved_by_d4() && *ty != ValueType::Box;
+        info.ty == *column || (orientation(&info.ty) && orientation(column))
     }
 
     /// The sources that the read of `hit`, an `Atom` or a `Lib` node, gives:
@@ -300,7 +322,8 @@ impl<'p> Walk<'p> {
             match hit.node {
                 IrNode::Lib(_) => libs.push(hit),
                 IrNode::Atom(atom) if matches!(atom.source, AtomSource::Key(_)) => keys.push(hit),
-                _ => program.push(hit),
+                _ if self.keeps_type(alt, hit) => program.push(hit),
+                _ => {}
             }
         }
         let mut found: Vec<ColumnSource> = Vec::new();
