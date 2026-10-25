@@ -2702,3 +2702,216 @@ class FeatureEncoder(nn.Module):
             return [o if n else None for o, n in zip(out, counts)]
         finally:
             self.release()
+
+
+# ---------------------------------------------------------------- value head
+
+# A rollout export holds, per branch point of a gold program, the gold continuation and the continuations that the
+# baseline language model samples from the gold prefix; its `labels.jsonl` (lm/rollout_labels.py) gives each case's
+# branch point, continuation and outcome. The value head scores a table by one logit, trained to rank, among one
+# branch point's continuations, the first tables after the branch of the solving continuations above those of the
+# non-solving ones.
+
+def read_value_labels(path):
+    """{(task, case): label} from a labels.jsonl, one JSON object per line (lm/rollout_labels.py)."""
+    out = {}
+    with open(path) as f:
+        for line in f:
+            if line.strip():
+                lab = json.loads(line)
+                out[(lab["task"], lab["case"])] = lab
+    return out
+
+
+def value_solving(label):
+    """Whether a case's continuation is solving: the gold continuation, or one that ends consistent with the train
+    pairs and solves the test pairs."""
+    return label["rollout"] == "gold" or (label["solved_test"] is True and label["consistency"] == "Consistent")
+
+
+def value_flags(t):
+    """The flags that exclude a table from the value targets: `faulted` (the table or an example of it faults),
+    `unseen` (any other reason the encoder cannot see it) and `empty` (seen, with no rows)."""
+    faulted = t.unseen == "the table faults" or "an example's fault" in (t.unseen_entries or {})
+    return dict(empty=bool(t.unseen is None and not (~t.marker).any()),
+                unseen=bool(t.unseen is not None and not faulted), faulted=bool(faulted))
+
+
+def value_excluded(r):
+    return r["empty"] or r["unseen"] or r["faulted"]
+
+
+def value_records(tables, labels):
+    """{(task, case): [record per table]} for each case of `tables` ({(task, case): [Table]}, after `mark_over_budget`
+    and `mark_over_rows`) that `labels` gives with its prefix's table count. A record holds `group` (task, corpus
+    case, branch), `member` (the rollout index or "gold"), `solving` (`value_solving`), `position` and the flags of
+    `value_flags`. The position counts the export tables from the first after the branch, export table
+    `prefix_tables`, at 0; the Tables of one export table share it; the prefix's tables, the evidence tables first,
+    take the positions before 0, the last of them -1."""
+    out = {}
+    for key, ts in tables.items():
+        lab = labels.get(key)
+        if lab is None or lab.get("prefix_tables") is None:
+            continue
+        p = int(lab["prefix_tables"])
+        exported = [t.export_table for t in ts if not t.evidence]
+        after = sorted({x for x in exported if x >= p})
+        before = sorted({x for x in exported if x < p})
+        n_ev = sum(t.evidence for t in ts)
+        group, solving = (lab["task"], lab["corpus_case"], int(lab["branch"])), value_solving(lab)
+        recs, ev_i = [], 0
+        for t in ts:
+            if t.evidence:
+                pos, ev_i = ev_i - n_ev - len(before), ev_i + 1
+            elif t.export_table >= p:
+                pos = after.index(t.export_table)
+            else:
+                pos = before.index(t.export_table) - len(before)
+            recs.append(dict(group=group, member=lab["rollout"], solving=solving, position=pos, **value_flags(t)))
+        out[key] = recs
+    return out
+
+
+def value_groups(records):
+    """{group: {"members": [(task, case)], "rate": the share of solving members}} of `value_records`' result, the
+    members in the order of the records."""
+    out = {}
+    for key, recs in records.items():
+        g = out.setdefault(recs[0]["group"], {"members": [], "solving": 0})
+        g["members"].append(key)
+        g["solving"] += recs[0]["solving"]
+    return {g: {"members": v["members"], "rate": v["solving"] / len(v["members"])} for g, v in out.items()}
+
+
+def load_rollouts(rollout_dir, cache=None, budget=None, max_rows=None, tasks_dir=None):
+    """A rollout export and the labels.jsonl in its directory, as {(task, case): member}, a member a dict of
+    "tables", "records" (`value_records`), "group", "solving" and "rate" (its group's share of solving members),
+    and the faults of the cases left out. The tables come through `load_tables` and its cache at `cache`, or, where
+    `cache` is None, from `parse_tables` with `tasks_dir`; `budget` and `max_rows` mark tables as
+    `mark_over_budget` and `mark_over_rows` do, before the flags are read. A case that the labels do not give is
+    left out."""
+    if cache is None:
+        tables, skipped, _ = parse_tables(rollout_dir, *([tasks_dir] if tasks_dir else []))
+    else:
+        tables, skipped, _ = load_tables(rollout_dir, cache)
+    if budget:
+        mark_over_budget(tables, budget)
+    if max_rows:
+        mark_over_rows(tables, max_rows)
+    records = value_records(tables, read_value_labels(Path(rollout_dir) / "labels.jsonl"))
+    groups = value_groups(records)
+    members = {}
+    for g, v in groups.items():
+        for key in v["members"]:
+            members[key] = dict(key=key, tables=tables[key], records=records[key], group=g,
+                                solving=records[key][0]["solving"], rate=v["rate"])
+    return members, skipped
+
+
+def value_relations(tables, id_dim, gen):
+    """The identifier of each table's relation for a program without its stream: one random identifier per relation
+    slot, drawn from `gen` as a declaration's is, and None for a fact relation."""
+    ids = {}
+    return [None if isinstance(t.relation, str) else
+            ids.setdefault(t.relation, torch.randn(id_dim, generator=gen) / math.sqrt(id_dim)) for t in tables]
+
+
+def pooled_vectors(enc, programs, gen=None):
+    """programs: [(tables, declaration identifiers)] -> the pooled vectors [n_tables, K, 21, c] of each program, which
+    `FeatureEncoder.forward` passes to the crossing, encoded in the groups of `chunks`."""
+    enc.prepare()
+    try:
+        dev, dt = enc.cross.weight.device, enc.cross.weight.dtype
+        rels = enc.relation_vectors([t for tables, _ in programs for t in tables], [d for _, ds in programs for d in ds])
+        rels = rels.split([len(tables) for tables, _ in programs])
+        work = [(tables, r, Identifiers(enc.c, enc.code_dim, gen, dev, dt)) for (tables, _), r in zip(programs, rels)]
+        return [s for ch in enc.chunks(len(work)) for s in enc.encode_programs([work[p] for p in ch], gen)]
+    finally:
+        enc.release()
+
+
+class ValueHead(nn.Module):
+    """One logit per table: a linear map of the frame-free readout of its K pooled vectors (the encoder's `Readout`,
+    before `cross_norm` and `cross`), [n, K (5c + 4 gram^2)], after a LayerNorm."""
+    def __init__(self, c, gram, K):
+        super().__init__()
+        w = K * readout_width(c, gram)
+        self.norm, self.out = nn.LayerNorm(w), nn.Linear(w, 1)
+
+    def forward(self, readout, s):
+        """readout: the encoder's `Readout`; s [n, K, 21, c] -> [n]."""
+        return self.out(self.norm(readout(s.reshape(-1, NPOS, s.shape[-1])).reshape(len(s), -1))).squeeze(-1)
+
+
+VALUE_MODES = ("off", "ranking", "binary")
+
+
+def value_lists(members, logits, positions=1):
+    """The lists of the value loss. `members`: [{"group", "records", "solving", "rate"}]; `logits`: [tensor
+    [n_tables]] per member. For each group and each position below `positions`, one list over the members that hold
+    a table at that position that no flag excludes (`value_excluded`): "labels" (bool [m]), "scores" (each member's
+    mean logit over its Tables at that position, [m]), "gold" (bool [m], whether it is the gold continuation),
+    "logits" and "rates" (each such Table's logit and its group's rate) and "ranked" (whether the list holds both a
+    solving and a non-solving member)."""
+    by = {}
+    for m, z in zip(members, logits):
+        for p in range(positions):
+            sel = [i for i, r in enumerate(m["records"]) if r["position"] == p and not value_excluded(r)]
+            if sel:
+                zs = z[torch.tensor(sel, device=z.device)]
+                by.setdefault((m["group"], p), []).append((m["solving"], zs, m["rate"], m["records"][0]["member"] == "gold"))
+    out = []
+    for (g, p), xs in by.items():
+        labels = torch.tensor([x[0] for x in xs])
+        out.append(dict(group=g, position=p, labels=labels, gold=torch.tensor([x[3] for x in xs]),
+                        scores=torch.stack([x[1].mean() for x in xs]),
+                        logits=torch.cat([x[1] for x in xs]),
+                        rates=torch.cat([torch.full((len(x[1]),), float(x[2])) for x in xs]),
+                        ranked=bool(labels.any() and not labels.all())))
+    return out
+
+
+def value_loss(mode, lists):
+    """The value loss over the lists of `value_lists`, or None where no list counts. `ranking`: the mean over the
+    ranked lists of a listwise softmax cross-entropy, whose soft target puts weight 1 on each solving member and 0 on
+    each non-solving one, normalized over the list. `binary`: the mean over every listed Table of a sigmoid
+    cross-entropy with its group's rate as the target."""
+    if mode == "ranking":
+        terms = []
+        for l in lists:
+            if l["ranked"]:
+                s = l["scores"].float()
+                q = l["labels"].to(s.device, s.dtype)
+                terms.append(-(q / q.sum() * F.log_softmax(s, 0)).sum())
+        return torch.stack(terms).mean() if terms else None
+    if mode == "binary":
+        if not lists:
+            return None
+        z = torch.cat([l["logits"] for l in lists]).float()
+        return F.binary_cross_entropy_with_logits(z, torch.cat([l["rates"] for l in lists]).to(z.device))
+    raise ValueError(mode)
+
+
+def value_pairs(lists, sampled=False):
+    """Over each ranked list, the pairs of a solving and a non-solving member, and with `sampled` those of sampled
+    continuations alone: (the pairs in which the solving member scores higher, a tie counting one half; the pairs)."""
+    right, n = 0.0, 0
+    for l in lists:
+        if l["ranked"]:
+            s, y = l["scores"].detach().float().cpu(), l["labels"]
+            if sampled:
+                s, y = s[~l["gold"]], y[~l["gold"]]
+            d = s[y][:, None] - s[~y][None, :]
+            right += float((d > 0).sum() + 0.5 * (d == 0).sum())
+            n += d.numel()
+    return right, n
+
+
+def auc(scores, labels):
+    """The area under the ROC curve of `scores` for the bool `labels`, a tie counting one half; None without both
+    classes."""
+    s, y = np.asarray(scores, float), np.asarray(labels, bool)
+    if y.all() or not y.any():
+        return None
+    d = s[y][:, None] - s[~y][None, :]
+    return float(((d > 0).sum() + 0.5 * (d == 0).sum()) / d.size)
