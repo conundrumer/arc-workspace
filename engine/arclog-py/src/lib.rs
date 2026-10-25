@@ -868,8 +868,7 @@ impl<'a> Progress<'a> {
 
 /// Replays the streams of `found` whose masks are due, which are those with
 /// `Ok(None)`, on the tasks that `reads` holds, as [`replay_units`] does, and
-/// sets each stream's `masks`. A solver whose task did not read, or whose
-/// unit panicked, gives each of its streams that fault.
+/// sets each stream's `masks`. A solver whose task did not read, gives each of its streams that fault.
 fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &HashMap<String, Result<(Task, JudgedTask), String>>, constructions: &'static Constructions, steps: &ReplayProgress, started: Option<&Py<PyAny>>, ended: Option<&Py<PyAny>>, step_cap: Option<usize>) {
     let mut faults: HashMap<usize, String> = HashMap::new();
     // For each solver whose task read: its index in `found`, the indices in its streams of the due streams, and their ids.
@@ -912,13 +911,8 @@ fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &Hash
         step_cap,
     );
     let mut sets = Vec::new();
-    for ((solver, wanted, _), result) in due.iter().zip(results) {
-        match result {
-            Ok(outs) => sets.extend(wanted.iter().zip(outs).map(|(&stream, out)| (*solver, stream, out))),
-            Err(fault) => {
-                faults.insert(*solver, fault);
-            }
-        }
+    for ((solver, wanted, _), outs) in due.iter().zip(results) {
+        sets.extend(wanted.iter().zip(outs).map(|(&stream, out)| (*solver, stream, out)));
     }
     for (solver, stream, out) in sets {
         let stream = &mut found[solver].1[stream];
@@ -1220,20 +1214,15 @@ fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, tas
         if cases.is_empty() || !reads.contains_key(task) {
             continue;
         }
-        match replayed.next().expect("a result for each solver that has cases") {
-            Err(fault) => faults.push(fault_line(task, None, &fault)),
-            Ok(outs) => {
-                let mut outs = outs.into_iter();
-                for case in cases {
-                    let outcome = match &case.ids {
-                        Ok(_) => outs.next().expect("a result for each stream").and_then(|out| out),
-                        Err(fault) => Err(fault.clone()),
-                    };
-                    match outcome {
-                        Ok(columns) => tables.push(PyCaseTables::of(py, task.clone(), case.case.clone(), case.concept, settings.projection_cap, &columns)?),
-                        Err(fault) => faults.push(fault_line(task, Some(&case.case), &fault)),
-                    }
-                }
+        let mut outs = replayed.next().expect("a result for each solver that has cases").into_iter();
+        for case in cases {
+            let outcome = match &case.ids {
+                Ok(_) => outs.next().expect("a result for each stream").and_then(|out| out),
+                Err(fault) => Err(fault.clone()),
+            };
+            match outcome {
+                Ok(columns) => tables.push(PyCaseTables::of(py, task.clone(), case.case.clone(), case.concept, settings.projection_cap, &columns)?),
+                Err(fault) => faults.push(fault_line(task, Some(&case.case), &fault)),
             }
         }
     }
@@ -1367,10 +1356,7 @@ fn stream_tables(py: Python<'_>, task: &str, tasks: &str, streams: Vec<(Vec<u32>
             step_cap,
         )
     });
-    let outs = match replayed.pop().expect("a result for the one solver") {
-        Ok(outs) => outs,
-        Err(fault) => return Ok((Vec::new(), vec![fault_line(task, None, &fault)])),
-    };
+    let outs = replayed.pop().expect("a result for the one solver");
     let (mut tables, mut ended, mut faults) = (Vec::new(), Vec::new(), Vec::new());
     for (case, out) in names.iter().zip(outs) {
         match out {
@@ -1400,7 +1386,9 @@ fn orientation_names() -> Vec<(i32, String)> {
 /// Steps each of `decoders` by the token with the id at its index in `ids`,
 /// on the thread pool with the GIL released, and gives what each step
 /// gives, in the order of `decoders`: the pair that `Decoder.step` gives, or,
-/// for a decode that refuses its token, the `Refusal` it would raise.
+/// for a decode that refuses its token, the `Refusal` it would raise, or, for
+/// a decode whose step panicked, a `Fault` whose message is the panic's. That
+/// decode stays at its state before the step.
 #[pyfunction]
 #[pyo3(name = "step_batch")]
 fn step_batch_py(py: Python<'_>, decoders: Vec<Bound<'_, PyDecoder>>, ids: Vec<u32>) -> PyResult<Vec<Py<PyAny>>> {
@@ -1423,9 +1411,12 @@ fn step_batch_py(py: Python<'_>, decoders: Vec<Bound<'_, PyDecoder>>, ids: Vec<u
     }
     held.iter()
         .zip(results.into_vec())
-        .map(|(decoder, result)| match decoder.step_result(result) {
-            Ok(step) => Ok(step.into_pyobject(py)?.into_any().unbind()),
-            Err(refusal) => Ok(refusal.into_value(py).into_any()),
+        .map(|(decoder, result)| match result {
+            Err(panic) => Ok(Fault::new_err(panic).into_value(py).into_any()),
+            Ok(result) => match decoder.step_result(result) {
+                Ok(step) => Ok(step.into_pyobject(py)?.into_any().unbind()),
+                Err(refusal) => Ok(refusal.into_value(py).into_any()),
+            },
         })
         .collect()
 }

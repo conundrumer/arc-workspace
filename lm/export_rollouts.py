@@ -11,9 +11,7 @@ one file is given, `<out dir>/samples.jsonl` gets the first file's settings line
 lm/rollout_labels.py; each continuation line gets the field `prefix_mode`, the `args.prefix` of its own file.
 
 Each case holds the tables of its stream's steps; a stream cut at the sampler's step cap or at an empty mask holds
-the tables up to its cut, and one that faults those up to the fault. Where the replay of a task panics,
-`arclog.stream_tables` gives no tables of any of its streams; the run then replays each stream alone, and a stream
-whose replay panics gives no tables and a fault line. For each branch point whose gold line is given,
+the tables up to its cut, and one that faults those up to the fault. For each branch point whose gold line is given,
 the run checks that the export's `token` of a table is an index into the stream as the sampler writes it (the
 engine's emitted ids included), the index that `prefix_tokens` counts: each table's token indexes an id that the
 model wrote (an evidence table's token is 0), the tables before `prefix_tokens`, with their entries' rows, are the same in the gold case and in each continuation of the branch
@@ -95,23 +93,8 @@ def check_prefix(out, tables, index, lines):
 
 
 def replay(task, streams, names, settings, step_cap):
-    """`arclog.stream_tables` of the task's streams. Where a unit panics, the call gives no tables of any stream;
-    then each stream is replayed alone, and a stream whose replay panics gives no tables and the fault line
-    `<task> <case>: <the panic's line>`."""
-    cases, report = arclog.stream_tables(task, X.TASKS, streams, names=names, settings=settings, step_cap=step_cap)
-    if not (len(report) == 1 and report[0].startswith(f"{task}: ")):
-        return cases, report
-    cases, verdicts, faults = [], [], []
-    for stream, name in zip(streams, names):
-        c, r = arclog.stream_tables(task, X.TASKS, [stream], names=[name], settings=settings, step_cap=step_cap)
-        if len(r) == 1 and r[0].startswith(f"{task}: "):
-            faults.append(f"{task} {name}: {r[0][len(task) + 2:]}")
-            continue
-        cases += c
-        verdicts += [l for l in r if ": ended " in l]
-        faults += [l for l in r if ": ended " not in l]
-    print(f"{report[0]}; replayed each stream alone, {len(faults)} fault lines", flush=True)
-    return cases, verdicts + faults
+    """`arclog.stream_tables` of the task's streams."""
+    return arclog.stream_tables(task, X.TASKS, streams, names=names, settings=settings, step_cap=step_cap)
 
 
 def main():

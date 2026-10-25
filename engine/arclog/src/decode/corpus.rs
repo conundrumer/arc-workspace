@@ -372,9 +372,13 @@ impl ReplayProgress {
 /// model steps of the solver's streams in all, and `settled` is called for it
 /// before any worker starts.
 ///
+/// Where a unit's replay panics, each of its streams replays alone, in a
+/// session of its own and under `catch_unwind`: `started` is not called again,
+/// `ended` is called for each stream that gives an outcome, and a stream whose
+/// replay alone panics has as its result the fault of [`replay_panic`].
+///
 /// Gives, for each solver, the result of each of its streams in the order of
-/// `streams`, or the fault of [`replay_panic`] where one of its units
-/// panicked.
+/// `streams`.
 pub fn replay_units<T: Default + Clone, U: Send>(
     solvers: &[UnitSolver<'_>],
     constructions: &Constructions,
@@ -386,7 +390,7 @@ pub fn replay_units<T: Default + Clone, U: Send>(
     ended: &(dyn Fn(usize, StreamReplay<T>) -> U + Sync),
     settled: &(dyn Fn(usize) + Sync),
     step_cap: Option<usize>,
-) -> Vec<Result<Vec<Result<U, String>>, String>> {
+) -> Vec<Vec<Result<U, String>>> {
     let mut sorted: Vec<Vec<usize>> = solvers.iter().map(|solver| sorted_streams(solver.streams)).collect();
     // For each solver: the indices in its streams of the streams past the cap, and the fault each gives.
     let mut capped: Vec<(Vec<usize>, String)> = solvers.iter().map(|_| (Vec::new(), String::new())).collect();
@@ -442,19 +446,28 @@ pub fn replay_units<T: Default + Clone, U: Send>(
                 progress.done.fetch_add(1, Ordering::Relaxed);
             }
         };
-        let result = catch_unwind(AssertUnwindSafe(|| {
-            replay_prefix_tree(solver.task, solver.judged, &ids, constructions, settings, masked, &counting)
-                .into_iter()
-                .map(|outcome| {
-                    let out = Ok(ended(unit.solver, outcome));
-                    settled(unit.solver);
-                    out
+        let finish = |outcome: StreamReplay<T>| {
+            let out = catch_unwind(AssertUnwindSafe(|| ended(unit.solver, outcome))).map_err(|payload| replay_panic(&*payload));
+            settled(unit.solver);
+            out
+        };
+        let replayed = catch_unwind(AssertUnwindSafe(|| replay_prefix_tree(solver.task, solver.judged, &ids, constructions, settings, masked, &counting)));
+        let outs: Vec<Result<U, String>> = match replayed {
+            Ok(outcomes) => outcomes.into_iter().map(finish).collect(),
+            // The unit's replay panicked: each stream replays alone, so a panic faults the stream that causes it.
+            Err(_) => ids
+                .iter()
+                .map(|stream| match catch_unwind(AssertUnwindSafe(|| replay_prefix_tree(solver.task, solver.judged, std::slice::from_ref(stream), constructions, settings, masked, &counting))) {
+                    Ok(outcomes) => finish(outcomes.into_iter().next().expect("an outcome for the one stream")),
+                    Err(payload) => {
+                        settled(unit.solver);
+                        Err(replay_panic(&*payload))
+                    }
                 })
-                .collect::<Vec<_>>()
-        }))
-        .map_err(|payload| replay_panic(&*payload));
+                .collect(),
+        };
         progress.done.fetch_add(unit.steps - counted.get(), Ordering::Relaxed);
-        result
+        outs
     });
     let mut results: Vec<Vec<Option<Result<U, String>>>> = solvers.iter().map(|solver| solver.streams.iter().map(|_| None).collect()).collect();
     for (solver, (streams, line)) in capped.iter().enumerate() {
@@ -462,27 +475,12 @@ pub fn replay_units<T: Default + Clone, U: Send>(
             results[solver][stream] = Some(Err(line.clone()));
         }
     }
-    let mut faults: Vec<Option<String>> = solvers.iter().map(|_| None).collect();
-    for (unit, outcome) in units.iter().zip(outcomes) {
-        match outcome {
-            Ok(outs) => {
-                for (&stream, out) in unit.streams.iter().zip(outs) {
-                    results[unit.solver][stream] = Some(out);
-                }
-            }
-            Err(fault) => {
-                faults[unit.solver].get_or_insert(fault);
-            }
+    for (unit, outs) in units.iter().zip(outcomes) {
+        for (&stream, out) in unit.streams.iter().zip(outs) {
+            results[unit.solver][stream] = Some(out);
         }
     }
-    results
-        .into_iter()
-        .zip(faults)
-        .map(|(results, fault)| match fault {
-            Some(fault) => Err(fault),
-            None => Ok(results.into_iter().map(|result| result.expect("a result for each stream")).collect()),
-        })
-        .collect()
+    results.into_iter().map(|results| results.into_iter().map(|result| result.expect("a result for each stream")).collect()).collect()
 }
 
 /// The tables of one case of a solver, each with the index in the stream of

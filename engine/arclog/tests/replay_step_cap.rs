@@ -120,7 +120,7 @@ fn a_step_cap_cuts_a_solvers_streams_at_the_stream_that_passes_it() {
             step_cap,
         );
         assert_eq!(settled.load(Ordering::SeqCst), streams.len());
-        results.into_iter().next().expect("a result for the solver").expect("no unit panics")
+        results.into_iter().next().expect("a result for the solver")
     };
     let uncapped = run(None);
     let capped = run(Some(cap));

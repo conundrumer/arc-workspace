@@ -143,7 +143,7 @@ fn a_batch_of_decodes_gives_the_results_of_each_decode_alone() {
     for token in &tokens {
         let results = step_batch(&pool, &mut decoders, &[token.clone(), token.clone()]);
         for (seen, result) in batched.iter_mut().zip(results.iter()) {
-            seen.push(format!("{result:?}"));
+            seen.push(format!("{:?}", result.as_ref().expect("no step panics")));
         }
     }
     let batched: Vec<String> = batched.into_iter().map(|steps| steps.join("\n")).collect();
