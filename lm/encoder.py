@@ -2710,8 +2710,9 @@ class FeatureEncoder(nn.Module):
 # baseline language model samples from the gold prefix; its `labels.jsonl` (lm/rollout_labels.py) gives each case's
 # branch point, continuation and outcome. The value head scores a table by one logit, trained to rank, among one
 # branch point's continuations, the tables after the branch whose label is 1 above those whose label is 0. A table
-# has two labels: `solving`, the continuation's solving (`value_solving`), and `consistent`, the engine's verdict on
-# the rule whose evaluation gave the table, 1 for Consistent; the second is a process label, given per rule.
+# has two labels: `solving`, the continuation's solving (`value_solving`), and `consistent`, the verdict of the
+# RULE clause whose evaluation gave the table: 1 where the relation that its END finishes, read as the output, solves
+# every train pair. The second label is given per rule.
 
 VALUE_LABELS = ("solving", "consistent")
 

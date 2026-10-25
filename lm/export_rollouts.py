@@ -56,16 +56,49 @@ def merged_text(first, lines):
     return "".join(json.dumps(r) + "\n" for r in [first] + lines)
 
 
-def prefix_values(out, index, task, case, n):
-    """The entries of the case's tables before token n, each as (table, example kind, example index, rows, values);
-    `index` is {case: its index.parquet rows}."""
+def prefix_values(out, index, parts, task, case, n):
+    """What the entries of the case's tables before token n hold, each as (table, example kind, example index, kind,
+    rows, content); `index` is {case: its index.parquet rows}, and `parts` is {case: (the width of each table's
+    projections, in order, the first row of each projection at each entry)} as `projection_parts` gives. The content
+    of a Rows entry (kind 0) is its values; of a Count entry (kind 1), which has no values of its own, it is the
+    projections' rows at that entry, each as (projection, defined, rows, values); of any other kind, nothing."""
     v = np.fromfile(f"{out}/values/{task}/{case}.i32", np.int32)
+    widths, at = parts.get(case, ({}, {}))
     e = index[case][index[case]["token"] < n]
-    return [(int(r.table), int(r.example_kind), int(r.example_index), int(r.rows),
-             v[int(r.offset):int(r.offset) + int(r.rows) * int(r.width)].tobytes()) for r in e.itertuples()]
+    res = []
+    for r in e.itertuples():
+        kind, rows = int(r.kind), int(r.rows)
+        if kind == 0:
+            content = v[int(r.offset):int(r.offset) + rows * int(r.width)].tobytes()
+        elif kind == 1:
+            content = []
+            for j, w in widths.get(int(r.table), []):
+                defined, k, off = at.get((j, int(r.entry)), (0, 0, 0))
+                content.append((j, defined, k, v[off:off + k * w].tobytes() if defined else b""))
+        else:
+            content = None
+        res.append((int(r.table), int(r.example_kind), int(r.example_index), kind, rows, content))
+    return res
 
 
-def check_prefix(out, tables, index, lines):
+def projection_parts(projections, projection_rows):
+    """{case: ({table: [(projection, width)]}, {(projection, entry): (defined, rows, offset)})} from the frames of
+    projections.parquet and projection_rows.parquet; a projection is numbered by its order among its case's."""
+    projections = projections.reset_index(drop=True)
+    projections["projection"] = projections.groupby(["task", "case"]).cumcount()
+    parts = {}
+    for (_, c), p in projections.groupby(["task", "case"], sort=False):
+        widths = {}
+        for r in p.itertuples():
+            widths.setdefault(int(r.table), []).append((int(r.projection), int(r.width)))
+        parts[c] = (widths, {})
+    for r in projection_rows.itertuples():
+        if r.case in parts:
+            parts[r.case][1][(int(r.projection), int(r.entry))] = (int(r.defined), int(r.rows), int(r.offset))
+    return parts
+
+
+def check_prefix(out, tables, index, projections, projection_rows, lines):
     """The checks of the module docstring on the export's tables.parquet frame and the sampler lines."""
     names = {case_name(s["task"], s["case"], s["branch"], s["rollout"]): s for s in lines}
     for (task, case), t in tables.groupby(["task", "case"], sort=False):
@@ -75,6 +108,7 @@ def check_prefix(out, tables, index, lines):
         assert not bad, f"{case}: tables at tokens {bad[:5]} that index an id the engine emitted"
     fields = [c for c in TABLE_FIELDS if c in tables.columns]
     index = {c: e for (_, c), e in index.groupby(["task", "case"], sort=False)}
+    parts = projection_parts(projections, projection_rows)
     by_case = {c: t.sort_values("table") for (_, c), t in tables.groupby(["task", "case"], sort=False)}
     for gold in (s for s in lines if s["rollout"] == "gold"):
         g = case_name(gold["task"], gold["case"], gold["branch"], "gold")
@@ -95,7 +129,7 @@ def check_prefix(out, tables, index, lines):
                     rt = by_case[c]
                     rpre = rt[rt["token"] < n][["token"] + fields].reset_index(drop=True)
                     assert pre.astype(str).equals(rpre.astype(str)), f"{c}: its tables before token {n} differ from {g}'s"
-                    assert prefix_values(out, index, s["task"], c, n) == prefix_values(out, index, gold["task"], g, n), \
+                    assert prefix_values(out, index, parts, s["task"], c, n) == prefix_values(out, index, parts, gold["task"], g, n), \
                         f"{c}: the rows of its tables before token {n} differ from {g}'s"
 
 
@@ -134,7 +168,9 @@ def main():
         with open(f"{out}/samples.jsonl", "w") as f:
             f.write(merged_text(first, lines))
     if os.path.exists(f"{out}/tables.parquet"):
-        check_prefix(out, pd.read_parquet(f"{out}/tables.parquet"), pd.read_parquet(f"{out}/index.parquet"), lines)
+        check_prefix(out, pd.read_parquet(f"{out}/tables.parquet"), pd.read_parquet(f"{out}/index.parquet"),
+                     pd.read_parquet(f"{out}/projections.parquet"), pd.read_parquet(f"{out}/projection_rows.parquet"),
+                     lines)
         print("prefix check: passed")
 
 
