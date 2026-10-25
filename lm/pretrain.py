@@ -25,7 +25,8 @@ the positions below `--value-positions` after the branch (encoder.py, `value_lis
 `--value-weight`, beside the masked loss. A branch point is held out where its task is held out. The log gives, under
 "train" and "heldout", `value_loss`, `value_pair_acc` (the pairwise ranking accuracy over each list's pairs of a
 solving and a non-solving continuation), `value_pair_acc_sampled` (the same over the sampled continuations alone,
-without the gold one) and `value_auc` (over every listed continuation's score), the held-out ones
+without the gold one), `value_auc` (the mean over the lists with both a solving and a non-solving continuation of the
+AUC within the list) and `value_auc_sampled` (the same over the sampled continuations alone), the held-out ones
 over a sample of `--eval-limit` branch points drawn once with `--seed`.
 
 The encoder's state, without the language model's embedding that it shares, goes to <out>/encoder.pt at the
@@ -103,14 +104,14 @@ def value_metrics(lists, loss_sum=0.0, losses=0):
     """The log's value entries over `value_lists`' lists: `value_loss` (where given), `value_pair_acc` (the share of
     pairs of a solving and a non-solving member of a list in which the solving one scores higher, a tie one half),
     `value_pair_acc_sampled` (the same over the pairs of sampled continuations alone, without the gold one),
-    `value_auc` (over every listed member's score) and the counts."""
+    `value_auc` (the mean over the lists with both a solving and a non-solving member of the AUC within the list),
+    `value_auc_sampled` (the same over the sampled continuations alone) and the counts."""
     right, pairs = E.value_pairs(lists)
     right_s, pairs_s = E.value_pairs(lists, sampled=True)
-    scores = [float(s) for l in lists for s in l["scores"].detach().float().cpu()]
-    labels = [bool(y) for l in lists for y in l["labels"]]
     return {**({"value_loss": loss_sum / losses} if losses else {}),
             "value_pair_acc": right / pairs if pairs else None,
-            "value_pair_acc_sampled": right_s / pairs_s if pairs_s else None, "value_auc": E.auc(scores, labels),
+            "value_pair_acc_sampled": right_s / pairs_s if pairs_s else None, "value_auc": E.value_auc(lists),
+            "value_auc_sampled": E.value_auc(lists, sampled=True),
             "value_lists": len(lists), "value_ranked_lists": sum(l["ranked"] for l in lists), "value_pairs": pairs}
 
 
@@ -224,7 +225,7 @@ def main():
     ap.add_argument("--value", choices=E.VALUE_MODES, default="off",
                     help="the value head's loss on a rollout export (--value-tables): ranking, a listwise softmax "
                          "cross-entropy over each branch point's continuations; binary, a sigmoid cross-entropy on "
-                         "each table with its branch point's share of solving continuations; off by default")
+                         "each continuation's score with its own label; off by default")
     ap.add_argument("--value-tables", help="a rollout export with its labels.jsonl (lm/rollout_labels.py)")
     ap.add_argument("--value-weight", type=float, default=1.0, help="the weight of the value loss beside the masked loss")
     ap.add_argument("--value-positions", type=int, default=1,
@@ -378,7 +379,8 @@ def main():
             if vdrawn:
                 vloss, vlists = value_step(enc, head, value_members(vdrawn, members), gen, a.value, a.value_positions,
                                            a.id_dim)
-                value_lists += vlists
+                value_lists += [dict(scores=l["scores"].detach(), labels=l["labels"], gold=l["gold"],
+                                     ranked=l["ranked"]) for l in vlists]
                 if vloss is not None:
                     total = loss + a.value_weight * vloss
                     value_sum += vloss.item(); value_n += 1

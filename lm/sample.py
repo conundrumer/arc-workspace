@@ -290,6 +290,8 @@ class Sampler:
             if self.steps_factor:
                 source = sum(pre[2]) if pre is not None else self.median
                 p.max_steps = min(self.max_steps, max(1, math.ceil(self.steps_factor * source)))
+            if pre is not None:   # an empty prefix keeps its case, as branch point 0 of that case
+                p.prefix_case = pre[0]
             if pre is not None and pre[3]:
                 self.replay(p, *pre)
         active, cache, attention = list(progs), DynamicCache(), None
