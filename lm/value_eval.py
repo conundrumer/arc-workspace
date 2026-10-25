@@ -1,7 +1,7 @@
 """Measure a pretrained value head (pretrain.py --value) on a rollout export, against two baselines.
 
     work/lm/.venv/bin/python lm/value_eval.py --encoder <run>/encoder.pt --value-tables work/tables/rollouts-afc44b43 \
-        [--data work/lm/data] [--positions P] [--value-label solving|consistent] [--device cpu]
+        [--data work/lm/data] [--positions P] [--value-label solving|consistent] [--draws 4] [--device cpu]
 
 The branch points are split as pretrain.py splits them: a branch point is held out where the data (`--data`, its
 cases.npz) marks its task held out, and is a training one where its task is a training task. On the held-out branch
@@ -12,13 +12,18 @@ of label 1 and one of label 0, a tie one half) and the AUC (within each list tha
 the mean over those lists), and both once more over the sampled continuations alone, without the gold one, whose
 author differs:
 
-- the value head: its logit;
+- the value head: its logit, the mean over `--draws` draws of the random identifiers of the table's relations and
+  values (encoder.py, `value_scores`), since the logit depends on that draw; beside the metrics of the mean, the
+  report gives each metric's least and greatest value over the draws taken one at a time;
 - a logistic regression on trivial features of a table, trained by full-batch Adam for `--lr-steps` steps on the
   training branch points' listed tables with each table's label: the log of its row count, whether it is
   empty, whether it is unseen, its depth, the log of its step index, its position after the branch, and the count of
   its columns of each type;
 - compressibility: minus the encoder's masked loss per hidden field of the table, over one program step and one prior
-  step's mask (`masked_loss`); a table with no hidden field takes the mean score.
+  step's mask (`masked_loss`), under one draw of identifiers, on which it depends as the value head's logit does; a
+  table with no hidden field takes the mean score.
+
+The metrics come from encoder.py's `value_draw_metrics`, which pretrain.py's held-out log takes too.
 """
 import argparse, json, random
 from pathlib import Path
@@ -38,21 +43,19 @@ def features(t, r):
             np.log1p(t.step), float(r["position"])] + bag
 
 
-def report(name, members, scores, positions, label):
-    """The pairwise ranking accuracy and the AUC of per-table `scores` (one array per member) over the lists."""
-    lists = E.value_lists(members, [torch.as_tensor(s, dtype=torch.float32) for s in scores], positions, label=label)
-    right, pairs = E.value_pairs(lists)
-    right_s, pairs_s = E.value_pairs(lists, sampled=True)
-    auc, auc_s = E.value_auc(lists), E.value_auc(lists, sampled=True)
-    acc = f"{right / pairs:.3f}" if pairs else "none"
-    acc_s = f"{right_s / pairs_s:.3f}" if pairs_s else "none"
+def report(name, members, draws, positions, label):
+    """encoder.value_draw_metrics of per-table scores `draws` (per draw, one array per member) over the lists, which
+    pretrain.py's held-out log gives under "value_" and the same names."""
+    r = E.value_draw_metrics(members, draws, positions, label=label)
     show = lambda x: "none" if x is None else f"{x:.3f}"
-    print(f"{name}: pairwise ranking accuracy {acc} over {pairs} pairs of {sum(l['ranked'] for l in lists)} ranked "
-          f"lists ({acc_s} over the {pairs_s} pairs of sampled continuations alone), AUC within a list {show(auc)} "
-          f"({show(auc_s)} over sampled continuations alone), the mean over the ranked lists of {len(lists)} lists",
-          flush=True)
-    return dict(pair_acc=right / pairs if pairs else None, pair_acc_sampled=right_s / pairs_s if pairs_s else None,
-                auc=auc, auc_sampled=auc_s, pairs=pairs, lists=len(lists))
+    spread = lambda k: (f" (each draw alone {show(r[k + '_min'])} to {show(r[k + '_max'])})" if r["draws"] > 1 else "")
+    mean = f"of the mean score over {r['draws']} draws of identifiers " if r["draws"] > 1 else ""
+    print(f"{name}: pairwise ranking accuracy {mean}{show(r['pair_acc'])}{spread('pair_acc')} over {r['pairs']} pairs "
+          f"of {r['ranked_lists']} ranked lists ({show(r['pair_acc_sampled'])} over the {r['pairs_sampled']} pairs of "
+          f"sampled continuations alone), AUC within a list {show(r['auc'])}{spread('auc')} "
+          f"({show(r['auc_sampled'])} over sampled continuations alone), the mean over the ranked lists of "
+          f"{r['lists']} lists", flush=True)
+    return r
 
 
 def logistic(train_members, held_members, positions, steps, seed, label):
@@ -86,6 +89,8 @@ def main():
     ap.add_argument("--positions", type=int, default=None, help="default: the run's --value-positions")
     ap.add_argument("--value-label", choices=E.VALUE_LABELS, default="solving", help="pretrain.py's flag")
     ap.add_argument("--lr-steps", type=int, default=300, help="the logistic regression's steps")
+    ap.add_argument("--draws", type=int, default=4,
+                    help="the draws of identifiers that the value head's score of a table is the mean over")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--device", default="cpu")
     a = ap.parse_args()
@@ -127,16 +132,16 @@ def main():
     head.load_state_dict(ck["value_head"])
     enc.eval(); head.eval()
 
-    gen = torch.Generator().manual_seed(1)
-    value, compress = [], []
+    value, compress = [[] for _ in range(a.draws)], []
+    gen, cgen = torch.Generator().manual_seed(1), torch.Generator().manual_seed(1)
     with torch.no_grad():
         for m in held_m:
-            decls = E.value_relations(m["tables"], cfg["id_dim"], gen)
-            s = E.pooled_vectors(enc, [(m["tables"], decls)], gen)[0]
-            value.append(head(enc.readout, s).float().cpu().numpy())
+            for d in value:
+                d.append(E.value_scores(enc, head, [m], gen, cfg["id_dim"])[0].cpu().numpy())
+            decls = E.value_relations(m["tables"], cfg["id_dim"], cgen)
             loss_sum, fields = np.zeros(len(m["tables"])), np.zeros(len(m["tables"]))
             for kind in ("program", "prior"):
-                _, recs = enc.masked_loss([(m["tables"], decls)], gen, cfg["mask_frac"], cfg["mask_cap"],
+                _, recs = enc.masked_loss([(m["tables"], decls)], cgen, cfg["mask_frac"], cfg["mask_cap"],
                                           torch.Generator().manual_seed(2), kind=kind)
                 for _, t, r in recs:
                     loss_sum[t] += r["loss"].sum().item(); fields[t] += len(r["loss"])
@@ -150,8 +155,8 @@ def main():
     lab = a.value_label
     out = {"value_head": report("value head", held_m, value, positions, lab),
            "logistic": report("logistic regression on trivial features", held_m,
-                              logistic(train_m, held_m, positions, a.lr_steps, a.seed, lab), positions, lab),
-           "compressibility": report("compressibility", held_m, compress, positions, lab)}
+                              [logistic(train_m, held_m, positions, a.lr_steps, a.seed, lab)], positions, lab),
+           "compressibility": report("compressibility", held_m, [compress], positions, lab)}
     print(json.dumps(out))
 
 

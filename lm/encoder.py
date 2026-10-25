@@ -2963,3 +2963,43 @@ def value_auc(lists, sampled=False):
         if a is not None:
             aucs.append(a)
     return float(np.mean(aucs)) if aucs else None
+
+
+def value_metrics(lists):
+    """The metrics of the lists of `value_lists`: `pair_acc` (the share of the pairs of `value_pairs` in which the
+    member of label 1 scores higher, a tie one half), `pair_acc_sampled` (the same over the pairs of sampled
+    continuations alone, without the gold one), `auc` and `auc_sampled` (`value_auc`), and the counts `lists`,
+    `ranked_lists`, `pairs` and `pairs_sampled`. A metric without a pair or a list to take it over is None."""
+    right, pairs = value_pairs(lists)
+    right_s, pairs_s = value_pairs(lists, sampled=True)
+    return dict(pair_acc=right / pairs if pairs else None, pair_acc_sampled=right_s / pairs_s if pairs_s else None,
+                auc=value_auc(lists), auc_sampled=value_auc(lists, sampled=True), lists=len(lists),
+                ranked_lists=sum(l["ranked"] for l in lists), pairs=pairs, pairs_sampled=pairs_s)
+
+
+VALUE_DRAW_METRICS = ("pair_acc", "pair_acc_sampled", "auc", "auc_sampled")
+
+
+def value_scores(enc, head, members, gen, id_dim):
+    """The value head's logits, [n_tables] per member of `members` (`load_rollouts`), each member encoded whole as a
+    program with no field hidden, under one draw of identifiers from `gen` (`value_relations`, `pooled_vectors`)."""
+    pooled = pooled_vectors(enc, [(m["tables"], value_relations(m["tables"], id_dim, gen)) for m in members], gen)
+    return list(head(enc.readout, torch.cat(pooled)).float().split([len(s) for s in pooled]))
+
+
+def value_draw_metrics(members, draws, positions, *, label):
+    """The metrics of a score that depends on the draw of identifiers. `draws`: per draw, a score per table of each
+    member of `members` ([tensor or array [n_tables]] per member). `value_metrics` of the lists of `value_lists` over
+    each table's mean score over the draws, beside "draws" (their count) and, for each metric of
+    `VALUE_DRAW_METRICS`, "<metric>_min" and "<metric>_max", over the draws taken one at a time (None where no draw
+    gives the metric)."""
+    lists = lambda scores: value_lists(members, [torch.as_tensor(s, dtype=torch.float32) for s in scores], positions,
+                                       label=label)
+    mean = [torch.stack([torch.as_tensor(d[i], dtype=torch.float32).cpu() for d in draws]).mean(0)
+            for i in range(len(members))]
+    out = dict(value_metrics(lists(mean)), draws=len(draws))
+    each = [value_metrics(lists(d)) for d in draws]
+    for k in VALUE_DRAW_METRICS:
+        xs = [e[k] for e in each if e[k] is not None]
+        out[f"{k}_min"], out[f"{k}_max"] = (min(xs), max(xs)) if xs else (None, None)
+    return out
