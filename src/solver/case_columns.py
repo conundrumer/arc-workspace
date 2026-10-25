@@ -49,8 +49,8 @@ def base_values(choice: Choice, reading: CaseTypes, base: Base, type: str
     """What `base` holds at a case column of `type`: the base itself at a
     `Choice` column, and at a column of a point's type the base's value at
     each point of that type it reaches (`value_at`). Raises `ValueError`
-    where `type` is neither: a place of a record case type that holds no
-    record of its fields, which no value of the column's type is."""
+    where `type` is neither: a place of a record case type that holds
+    neither `nil` nor a record of its fields."""
     if type == CHOICE:
         return [base]
     points = reading.at(choice, type)
