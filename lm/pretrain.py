@@ -21,7 +21,7 @@ each with `group_loss` and `group_chance_loss`, the means over key groups of eac
 loss, beside the per-field `loss` and `chance_loss`. A "no row" target of a column hidden in every row of its entry
 can be learnt from the mask pattern alone, and a cross-entry row target, a visible row of another entry that agrees
 with the hidden row on the group's key columns and holds the value, can be read from that row, so `row_target` is
-the evidence that the pooled vectors carry table contents. With `--mask-remote-groups`, the held-out entry `parent_attention` gives, over
+the evidence that the pooled vectors hold table contents. With `--mask-remote-groups`, the held-out entry `parent_attention` gives, over
 the hidden remote fields, per layer (`layers`) and over the layers (`mean`), the mean over heads of the share of the
 field's row's attention over the earlier tables' pooled vectors that lands on the pooled vectors of its column's
 source tables, beside `chance`, that share under equal scores, and `fields`; and over the fields that attend to at

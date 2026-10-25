@@ -1250,7 +1250,7 @@ def group_columns(tables, j):
     """[columns] bool: the remote columns of derived table j of a program (`column_labels`) that a program step hides
     under `mask_remote` "groups": those with a source pair in `column_sources`, none of whose source tables is unseen
     (`mark_over_rows` makes unseen a table over the table cap). A remote column without a source pair, whose flows
-    name no table, holds values that no earlier table's pooled vectors carry."""
+    name no table, holds values that are in no earlier table's pooled vectors."""
     lab, src = column_labels(tables, j), column_sources(tables)[j]
     return np.array([lab[c] == REMOTE and bool(s) and all(tables[i].unseen is None for i, _ in s)
                      for c, s in enumerate(src)], bool)
