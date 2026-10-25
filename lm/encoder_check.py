@@ -35,6 +35,14 @@ real tables of the dev export, cut to a few dozen rows each.
   only source is another derived table, or whose flows name no table, must be remote, and never hidden without `mask_remote`; an unseen table must keep its
   columns, so that its flows and the flows that read it name columns it holds; and `parse_tables` must refuse an
   export whose flow names a column past its table's columns.
+- The loader's checks of an export, on small exports of one case: `load_tables` must refuse to build an export
+  whose checks.txt reports a violation, or gives no count line, and build it with `allow_violations`, and build one
+  whose counts are all 0, or that has no checks.txt, which it must print; with `strict`, it must refuse an export
+  with a copy flow from a column of another type, and one with a copy flow whose values are not the source's, from
+  the build and from the cache, and without `strict` count each; a pickle without the totals must print that it is
+  unchecked. `parse_tables` must count an Undefined entry, and refuse where the loader's count of unseen entries
+  differs from the export's; `entry_runs` must read a Rows entry's run and refuse an Undefined entry, naming the
+  case, the table and the entry.
 - Masks: in a program step, no table with hidden fields may have a source table with hidden fields (no hidden
   field a source column with hidden fields, where the tables hold the column-level provenance), and each
   hidden dependent ex_output field must keep a visible occurrence of its value in another train example's output;
@@ -240,7 +248,7 @@ def fixture():
         f = pickle.load(open(FIXTURE, "rb"))
         if f.get("stamp") == stamp:
             return f["tables"]
-    tables, _, _ = E.load_tables(TABLES, CACHE)
+    tables, _, _ = E.load_tables(TABLES, CACHE, strict=False)
     chosen = tables[case][:2]
     assert all(t.evidence for t in chosen)
     no_provenance = lambda t: E.Table(**{k: v for k, v in t.__dict__.items() if k not in PROVENANCE})
@@ -259,7 +267,7 @@ def fixture():
 rng = np.random.default_rng(0)
 case = ("00576224", "$Lookup")
 if FULL:
-    tables, _, _ = E.load_tables(TABLES, CACHE)
+    tables, _, _ = E.load_tables(TABLES, CACHE, strict=False)
     source, source_title = tables[case][:8], f"{case[0]} {case[1]}, first 8 tables"
 else:
     source = fixture()
@@ -549,6 +557,132 @@ print(f"  table 2 labels {labels}; ex_output Color (color_dependent, labels, dep
       f"default; "
       f"an unseen source table keeps its columns for the flows: {unseen_ok}; a flow past its table's columns: "
       f"{refused!r}; "
+      f"{'PASS' if not bad else 'FAIL ' + str(bad)}")
+
+print("== the loader's checks of an export: checks.txt, the unseen counts, the entry reader and the copy flows, on small "
+      "exports")
+
+
+def checked_export(d, variant="clean"):
+    """A small export in `d` and its task file: one case, whose table 2 (Color, Number) copies its Color from ex_input
+    and table 3 (Color) its Color from table 2's. With `variant` "type", table 3's flow names table 2's Number
+    instead; "value", table 3 holds a Color that table 2 does not; "undefined", table 3 has a third entry, of the
+    kind Undefined."""
+    import pandas as pd
+    task = {"train": [{"input": [[1]], "output": [[3]]}, {"input": [[2]], "output": [[3]]}], "test": [{"input": [[1]]}]}
+    (d / "tasks").mkdir(); json.dump(task, open(d / "tasks/t.json", "w"))
+    grid = dict(point=2, relation=-1, column_types=["Example", "Box", "Color"], width=6)
+    tabs = [grid, grid, dict(point=0, relation=0, column_types=["Color", "Number"], width=2),
+            dict(point=0, relation=1, column_types=["Color"], width=1)]
+    rows = {2: [[1, 5], [2, 6]], 3: [[4 if variant == "value" else 1]]}
+    flow = lambda tab, st, sc: dict(task="t", case="$C", concept=False, table=tab, column=0, kind=0, source_table=st,
+                                    source_relation="", source_column=sc, det=-1, atom="")
+    tables, index, values = [], [], []
+    for i, t in enumerate(tabs):
+        tables.append(dict(task="t", case="$C", concept=False, table=i, token=i, projections=0, fault=None,
+                           det_relations=[], det_widths=[], depth=min(i, 2), keys=[], output_position=-1,
+                           output_color=-1, **t))
+        for e in range(2 if i in rows else 0):
+            index.append(dict(task="t", case="$C", table=i, entry=len(index), kind=0, rows=len(rows[i]),
+                              offset=len(values), example_kind=1, example_index=e, model=0))
+            values += [x for r in rows[i] for x in r]
+    if variant == "undefined":
+        index.append(dict(task="t", case="$C", table=3, entry=len(index), kind=2, rows=0, offset=0, example_kind=2,
+                          example_index=0, model=0))
+    (d / "values/t").mkdir(parents=True)
+    np.array(values, np.int32).tofile(d / "values/t/$C.i32")
+    pd.DataFrame(tables).to_parquet(d / "tables.parquet")
+    pd.DataFrame(index).to_parquet(d / "index.parquet")
+    pd.DataFrame([flow(2, 0, 2), flow(3, 2, 1 if variant == "type" else 0)]).to_parquet(d / "flows.parquet")
+    pd.DataFrame(columns=["task", "case", "entry", "det", "rows", "offset"]).to_parquet(d / "assigned.parquet")
+    pd.DataFrame(columns=["task", "case", "table", "columns", "width"]).to_parquet(d / "projections.parquet")
+    pd.DataFrame(columns=["task", "case", "projection", "entry", "defined", "rows", "offset"]).to_parquet(
+        d / "projection_rows.parquet")
+
+
+def checked_load(variant, checks=None, **kw):
+    """load_tables on a fresh `checked_export` with `checks` as its checks.txt (none where None), and a fresh cache:
+    (the stats or the DataFault's text, what it printed, then the same of a second load, from the cache)."""
+    import contextlib, io
+    with tempfile.TemporaryDirectory() as tmp:
+        checked_export(Path(tmp), variant)
+        if checks is not None:
+            open(Path(tmp) / "checks.txt", "w").write(checks)
+        out = []
+        for _ in range(2):
+            text = io.StringIO()
+            with contextlib.redirect_stdout(text):
+                try:
+                    got = E.load_tables(tmp, Path(tmp) / "tables.pkl", tasks_dir=Path(tmp) / "tasks", **kw)[2]
+                except E.DataFault as x:
+                    got = str(x)
+            out += [got, text.getvalue()]
+        return out
+
+
+bad, seen = [], {}
+violated = "copy types: 3 tables\ncopy types: 3, depths: 0\n"
+s, printed, _, _ = checked_load("clean", "copy types: 0, depths: 0\n")
+seen["clean, a clean checks.txt"] = s["copy flows"]["checked"] if isinstance(s, dict) else s
+if not isinstance(s, dict) or s["copy flows"]["type"] + s["copy flows"]["value"] or s["copy flows"]["checked"] != 2:
+    bad.append(("a clean export", s))
+s, printed, _, _ = checked_load("clean")
+if not isinstance(s, dict) or "carries no checks.txt" not in printed:
+    bad.append(("no checks.txt", s, printed))
+for checks, want in ((violated, "refused"), ("copy types: 0, depths: 2\n", "refused"), ("copy types: 0\n\n", "built"),
+                     ("a line that gives no count\n", "refused"), ("", "refused")):
+    s, _, _, _ = checked_load("clean", checks)
+    got = "refused" if isinstance(s, str) and "checks.txt reports" in s else "built" if isinstance(s, dict) else s
+    seen[f"checks.txt {checks!r}"] = got
+    if got != want:
+        bad.append(("checks.txt", checks, s))
+s, printed, _, _ = checked_load("clean", violated, allow_violations=True)
+if not isinstance(s, dict) or "built under allow_violations" not in printed:
+    bad.append(("allow_violations", s))
+for variant, kind in (("type", "type"), ("value", "value")):
+    strict, _, strict_cached, _ = checked_load(variant)
+    loose, printed, _, _ = checked_load(variant, strict=False)
+    seen[f"{variant}: strict, loose"] = ("refused" if isinstance(strict, str) else "built",
+                                         {k: loose["copy flows"][k] for k in ("checked", "type", "value")}
+                                         if isinstance(loose, dict) else loose)
+    if not (isinstance(strict, str) and "copy flows" in strict and "flow [3, 0, 0, 2" in strict
+            and isinstance(strict_cached, str) and "copy flows" in strict_cached and isinstance(loose, dict)
+            and loose["copy flows"][kind] == 1 and loose["copy flows"]["cases"] == 1
+            and ("1 with" if kind == "type" else "1 columns with") in printed):
+        bad.append((variant, strict, strict_cached, loose))
+import contextlib, io
+text = io.StringIO()
+with contextlib.redirect_stdout(text):
+    E.copy_flow_rule({"provenance": "a pickle built before the check"}, True, "an old cache")
+if "unchecked" not in text.getvalue():
+    bad.append(("a pickle without the totals", text.getvalue()))
+with tempfile.TemporaryDirectory() as tmp:
+    checked_export(Path(tmp), "undefined")
+    utabs, _, _ = E.parse_tables(tmp, Path(tmp) / "tasks")
+    seen["undefined entry"] = E.unseen_counts(utabs)[1]
+    parse_table = E.parse_table   # a loader that loses its count of unseen entries
+    E.parse_table = lambda *a, **k: [E.Table(**{**t.__dict__, "unseen_entries": {}}) for t in parse_table(*a, **k)]
+    try:
+        E.parse_tables(tmp, Path(tmp) / "tasks")
+        mismatch = "no fault"
+    except E.DataFault as x:
+        mismatch = str(x)
+    finally:
+        E.parse_table = parse_table
+if seen["undefined entry"] != {"an entry is undefined": 1} or "the loader's {}" not in mismatch \
+        or "{'an entry is undefined': 1}" not in mismatch:
+    bad.append(("a count mismatch", seen["undefined entry"], mismatch))
+t3 = {"table": 3, "column_types": ["Color"], "width": 1}
+runs = [E.entry_runs(t3, {"kind": 0, "entry": 4, "rows": 2, "offset": 8}, {}, {}, "t $C"),
+        E.entry_runs(t3, {"kind": 1, "entry": 4, "rows": 2, "offset": 8}, {}, {}, "t $C")]
+try:
+    E.entry_runs(t3, {"kind": 2, "entry": 4, "rows": 0, "offset": 0}, {}, {}, "t $C")
+    refused = "no fault"
+except E.DataFault as x:
+    refused = str(x)
+if runs != [[([0], 1, 2, 8)], "a count with no projections"] or not refused.startswith("t $C table 3 entry 4"):
+    bad.append(("the entry reader", runs, refused))
+print(f"  {seen}; a count mismatch: {mismatch!r}; an Undefined entry's read: {refused!r} "
       f"{'PASS' if not bad else 'FAIL ' + str(bad)}")
 
 print("== masks: the sources stay visible in a program and an output step, and each step kind hides its label alone "
@@ -967,7 +1101,7 @@ print("== train.py's run_batch with --aux-masked: the gradients when the masked 
 import train as T
 
 cases, _, names, kinds, mask_table = T.load("lm/data-dev")
-lm_tables, _, _ = E.load_tables(TABLES, CACHE)
+lm_tables, _, _ = E.load_tables(TABLES, CACHE, strict=False)
 in_names_, out_names_, in_index_, out_index_ = T.vocabularies(names, kinds)
 lm_cases = [c for c in cases if (c["task"], c["case"]) in lm_tables][:2]
 for c in lm_cases:

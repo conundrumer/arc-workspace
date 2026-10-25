@@ -152,6 +152,12 @@ Size runs 2 and 3 ran on 4× L4, 7.5 minutes of training each, under `--pure-bf1
 ## Tables for the encoder
 
 - `arclog.corpus_tables` replays each case's stream and gives the tables of each decode as arrays. [export.py](../engine/arclog-py/tables_export.py) writes them as an index (Parquet) and int32 value files. Its docstring gives the layout. Each table's `token` column is its position in the case's stream, which is how a table joins its stream.
+- The loader (`encoder.load_tables`) checks an export as it reads it:
+    - Before it builds a cache, it reads the export's `checks.txt`. Where a line reports a violation, or the last line, the count per invariant, holds a count that is not 0 or no count, it refuses the build. Where the export has no `checks.txt`, it prints that and builds.
+    - It compares its unseen tables and unseen entries by reason with the counts that the export's files give: tables with a fault, tables whose search for projections stopped, and entries of the kinds Undefined, Stopped, Fault and NoEntries. A difference fails the build.
+    - It reads an entry's run of values only for a Rows entry, and the runs of its projections only for a Count entry. An entry of any other kind fails its case.
+    - For each copy flow from a column of a table that the case holds, the column must have the source column's type. Where every source of a column is such a copy flow, the column's values must be values of one of its sources, since its flows are its sources over every rule that derives it. A source with unseen entries leaves the values unchecked. The cache keeps the counts, and each load prints them. A violation fails the load, from a build or from the cache. A cache built before this check prints that its copy flows are unchecked.
+    - `--allow-check-violations` (train.py, pretrain.py and value_eval.py, off by default) reads an export through a violation of `checks.txt` or of the copy flows. The checks (`checks.sh`) read the dev export with the copy-flow check off and print its counts, since the dev export has copy-flow violations (bug 20-134).
 - `../work/tables/2026-10-23-full/` holds the concept cases of 956 tasks: 21,165 relation tables. The 20-minute run wrote 10 GB of JSON. `../work/tables/2026-10-23/` holds a 10-task sample. Both directories have a superseded layout.
     - Tables per program: median 19, max 110.
     - Rows per table, summed over its examples and entries: median 48, p90 1,420, p99 13,453.

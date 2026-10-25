@@ -308,6 +308,7 @@ def evidence_for(task_json, case_tables):
 
 
 UNSEEN_KINDS = {2: "an entry is undefined", 3: "an entry stopped", 4: "an example's fault", 5: "an example has no entries"}
+ENTRY_ROWS, ENTRY_COUNT = 0, 1   # an entry's kind code: its rows in its own run; its count alone, its rows in its projections'
 
 
 def unseen_table(t, reason, unseen_entries=None, prov=None):
@@ -335,8 +336,23 @@ class DataFault(Exception):
     pass
 
 
+def entry_runs(t, e, projections, projection_rows, where=""):
+    """The runs of values that hold the rows of the entry e of the export table t, as [(columns, width, count,
+    offset)]: a Rows entry's own run, over every column of t, or a Count entry's runs of its projections
+    (`entry_projection_rows`, which may give the reason that the entry is unseen instead). It is the one reader of an
+    entry's offset and count. Raises DataFault, naming `where` (the case), the table and the entry, for an entry of
+    any other kind, which holds no run."""
+    k = int(e["kind"])
+    if k == ENTRY_ROWS:
+        return [(list(range(len(t["column_types"]))), int(t["width"]), int(e["rows"]), int(e["offset"]))]
+    if k == ENTRY_COUNT:
+        return entry_projection_rows(projections, projection_rows, t["table"], e["entry"])
+    raise DataFault(f"{where} table {t['table']} entry {e['entry']}: an entry of kind {k} holds no run of values; "
+                    f"only a Rows ({ENTRY_ROWS}) or a Count ({ENTRY_COUNT}) entry does")
+
+
 FLOW_KINDS = ("copy", "computed", "constant", "lib name")   # a flow's kind, by its code
-FLOW_CONSTANT, FLOW_LIB_NAME = 2, 3
+FLOW_COPY, FLOW_CONSTANT, FLOW_LIB_NAME = 0, 2, 3
 FLOW_COLUMNS = ["table", "column", "kind", "source_table", "source_column", "det"]
 GRID_TABLES = {"ex_input": 0, "ex_output": 1}   # the export table of each grid table, in every case
 
@@ -430,11 +446,112 @@ def color_dependence(flows, output_table, output_color):
     return False
 
 
+def copy_flow_check(fl, column_types, kept, tables):
+    """The copy flows of one case that break their join, from the case's rows of flows.parquet (export column
+    indexes): a copy flow whose source table the case holds, from a column of it, must give its column the type of
+    the source column, as tables.parquet gives the types; and where every source of a column is such a copy flow, the
+    column's values over the present rows of its Tables must be values of one of its source columns over the rows of
+    the source's Tables. A column's flows are its sources over every rule that derives it, so its values are in the
+    union of theirs, not in each. `column_types` and `kept` (`kept_columns`) are per export table, and `tables` are
+    the case's Tables. Gives the count of copy flows checked for their type, the count of columns whose values go
+    unchecked (a source other than a column of a table that the case holds, a dropped column, a table with no
+    Tables, or a source with unseen entries; a column with a type violation is left out), and [(kind, flow row,
+    detail)] of each violation, kind "type" for a flow or "value" for a column, given by its first copy flow."""
+    of = {}
+    for i, t in enumerate(tables):
+        e = GRID_TABLES.get(t.relation) if t.evidence else t.export_table
+        if e is not None:
+            of.setdefault(e, []).append(i)
+    memo = {}
+
+    def values_of(e, c, whole):
+        """The values of the loader's column c over the rows of export table e's Tables, as a set of tuples; None
+        where e has no Tables, or, with `whole`, where one of them has unseen entries."""
+        if (e, c, whole) not in memo:
+            ts = [tables[i] for i in of.get(e, [])]
+            if not ts or whole and any(t.unseen is not None or t.unseen_entries for t in ts):
+                memo[(e, c, whole)] = None
+            else:
+                o, w = sum(width(ty) for ty in ts[0].types[:c]), width(ts[0].types[c])
+                memo[(e, c, whole)] = {tuple(r) for t in ts for r in
+                                       np.unique(t.cells[t.present[:, c] & ~t.marker, o:o + w], axis=0).tolist()}
+        return memo[(e, c, whole)]
+
+    checked, unchecked, bad = 0, 0, []
+    a = fl[FLOW_COLUMNS].to_numpy(np.int64)
+    columns = {}   # (table, column) -> its flows
+    for row in a.tolist():
+        columns.setdefault((row[0], row[1]), []).append(row)
+    for (tab, col), rows in columns.items():
+        copies = [r for r in rows if r[2] == FLOW_COPY and r[3] >= 0 and r[4] >= 0]
+        if not copies:
+            continue
+        checked += len(copies)
+        ty = column_types[tab][col]
+        typed = [r for r in copies if column_types[r[3]][r[4]] != ty]
+        for r in typed:
+            bad.append(("type", r, f"type {ty} from a column of type {column_types[r[3]][r[4]]}"))
+        if typed:
+            continue
+        c = kept[tab][col]
+        whole = c >= 0 and len(copies) == len(rows)
+        srcs = [values_of(r[3], kept[r[3]][r[4]], True) for r in copies] if whole else [None]
+        own = values_of(tab, c, False) if all(x is not None for x in srcs) else None
+        if own is None:
+            unchecked += 1
+            continue
+        src = set().union(*srcs)
+        outside = own - src
+        if outside:
+            bad.append(("value", copies[0], f"{len(outside)} of its {len(own)} values outside the {len(src)} of its "
+                                            f"{len(copies)} source columns, such as {min(outside)}"))
+    return checked, unchecked, bad
+
+
+UNSEEN_TABLE_REASONS = ("the table faults", "the search for its projections stopped")   # those the export's files give
+
+
+def export_unseen_counts(tables, index, cases):
+    """The unseen tables and the unseen entries by reason, as the export's own files give them, over the relation
+    tables of `cases`: a table whose fault is not null, a table whose search for its projections stopped, and an
+    entry of an `UNSEEN_KINDS` kind in a table of neither."""
+    keys = pd.DataFrame(list(cases), columns=["task", "case"])
+    rel = tables[tables["point"] == POINT_RELATION].merge(keys, on=["task", "case"])
+    faulted = ~pd.isna(rel["fault"])
+    stopped = ~faulted & (rel[TABLE_PROJECTIONS] == PROJECTIONS_STOPPED)
+    counts = dict(zip(UNSEEN_TABLE_REASONS, (int(faulted.sum()), int(stopped.sum()))))
+    seen = rel[~faulted & ~stopped][["task", "case", "table"]]
+    ix = index[index["kind"].isin(list(UNSEEN_KINDS))][["task", "case", "table", "kind"]]
+    if len(ix):
+        ix = ix.astype({"table": seen["table"].dtype}).merge(seen, on=["task", "case", "table"])
+    entries = {UNSEEN_KINDS[int(k)]: int(n) for k, n in ix["kind"].value_counts().items()}
+    return {r: n for r, n in counts.items() if n}, entries
+
+
+def reconcile_unseen(out, tables, index):
+    """Raises DataFault, with both counts, where the unseen tables and entries of the loader's `out` differ by reason
+    from those that the export's own files give (`export_unseen_counts`). The loader's other reasons, such as an
+    entry over the budget, are its own and left out."""
+    export_t, export_e = export_unseen_counts(tables, index, out)
+    loader_t, loader_e = unseen_counts(out)
+    loader_t = {r: n for r, n in loader_t.items() if r in UNSEEN_TABLE_REASONS}
+    loader_e = {r: n for r, n in loader_e.items() if r in UNSEEN_KINDS.values()}
+    if (loader_t, loader_e) != (export_t, export_e):
+        raise DataFault(f"the loader's unseen counts differ from the export's: tables by reason, the loader's "
+                        f"{loader_t}, the export's {export_t}; entries by reason, the loader's {loader_e}, the "
+                        f"export's {export_e}")
+
+
 def parse_tables(tables_dir, tasks_dir=Path(__file__).resolve().parents[1] / "data/tasks"):
     """{(task, case): [Table]} for every case of the export, and {(task, case): fault} for each case whose export
     cannot be read (no values file, rows past its end), which is left out. A relation table the encoder cannot see
     (it faults, the search for its projections stopped, or an entry is not rows) stays, as an unseen table. A
-    relation table whose entries hold several assignments gives one Table per assignment (`parse_table`)."""
+    relation table whose entries hold several assignments gives one Table per assignment (`parse_table`).
+
+    Raises DataFault where the unseen tables and entries by reason differ from the counts that the export's files give
+    (`reconcile_unseen`). Each copy flow is checked against its source (`copy_flow_check`), and the stats keep the
+    totals under "copy flows": the flows checked, those whose values go unchecked, the violations of each kind, the
+    count of cases with one, the count of each such case and the first few violations."""
     d = Path(tables_dir)
     tables = with_names(pd.read_parquet(d / "tables.parquet"), TABLE_PROJECTIONS)
     index = pd.read_parquet(d / "index.parquet")
@@ -449,6 +566,7 @@ def parse_tables(tables_dir, tasks_dir=Path(__file__).resolve().parents[1] / "da
     out, faults = {}, {}
     stats = {"body tables": 0, "provenance": "column flows of the export" if provenance else
              "table-level: the export gives no flows, keys or depths"}
+    copies = {"checked": 0, "values unchecked": 0, "type": 0, "value": 0, "cases": 0, "by case": {}, "first": []}
     for (task, case), tabs in tables.groupby(["task", "case"], sort=False):
         task_json = json.load(open(f"{tasks_dir}/{task}.json"))
         n_train = len(task_json["train"])
@@ -489,12 +607,25 @@ def parse_tables(tables_dir, tasks_dir=Path(__file__).resolve().parents[1] / "da
                                 output_position=at(int(t["output_position"])), output_color=at(int(t["output_color"])),
                                 flows=flows.get(int(t["table"]), np.zeros((0, 5), np.int32)))
                 result += parse_table(t, ents_of.get(t["table"], []), values, asg_of, projs, prows, det_values,
-                                      n_train, prov)
+                                      n_train, prov, f"{task} {case}")
         except DataFault as f:
             faults[(task, case)] = str(f); continue
         if provenance:
             check_provenance(task, case, result)   # a fault of the export's provenance fails the whole build
+            if fl is not None:
+                n, unchecked, bad = copy_flow_check(fl, {int(t["table"]): list(t["column_types"]) for t in records},
+                                                    kept, result)
+                copies["checked"] += n; copies["values unchecked"] += unchecked
+                for kind, row, detail in bad:
+                    copies[kind] += 1
+                    if len(copies["first"]) < 5:
+                        copies["first"].append(f"{task} {case} flow {row} (table, column, kind, source table, source "
+                                               f"column, det): {detail}")
+                if bad:
+                    copies["cases"] += 1; copies["by case"][f"{task} {case}"] = len(bad)
         out[(task, case)] = result
+    stats["copy flows"] = copies
+    reconcile_unseen(out, tables, index)
     relation_tables = [t for ts in out.values() for t in ts if not t.evidence]
     unseen, _ = unseen_counts(out)
     if sum(unseen.values()) * 2 > len(relation_tables):
@@ -511,12 +642,13 @@ def records_by(df, key):
     return out
 
 
-def parse_table(t, ents, values, asg_of, projs, prows, det_values, n_train, prov=None):
+def parse_table(t, ents, values, asg_of, projs, prows, det_values, n_train, prov=None, where=""):
     """The Tables of the export's table t, from its entries `ents` (rows of the index, as dicts): one per
     assignment that its entries hold, in the order of each assignment's first entry, or one where they hold one
     assignment or none; or its unseen table. Raises DataFault where the values cannot be read. An entry the
     encoder cannot see gives one marker row; a Table whose every entry is unseen is unseen. `prov` gives the
-    table's provenance attributes (`Table`), which every Table of t shares, or None."""
+    table's provenance attributes (`Table`), which every Table of t shares, or None. An entry's rows are read
+    through `entry_runs`; `where` names the case in its faults."""
     prov = prov or {}
     if not pd.isna(t["fault"]):   # a null reads as None or as nan, by the column's dtype
         return [unseen_table(t, "the table faults", prov=prov)]
@@ -582,13 +714,8 @@ def parse_table(t, ents, values, asg_of, projs, prows, det_values, n_train, prov
         k = int(e["kind"])
         if k in UNSEEN_KINDS:
             unseen_entry(e, UNSEEN_KINDS[k]); continue
-        if k == 0:
-            n = int(e["rows"])
-            add(rows_at(int(e["offset"]), n, int(t["width"])), range(len(types)), e)
-            note_largest(e, n)
-            continue
-        # Count: the table gives its projections, and each projection's rows at this entry are rows of the table
-        parts = entry_projection_rows(projs, prows, t["table"], e["entry"])
+        # a Rows entry's own run; or a Count entry's projections, each projection's rows at this entry rows of the table
+        parts = entry_runs(t, e, projs, prows, where)
         if isinstance(parts, str):
             unseen_entry(e, parts); continue
         for j, (cols, w, n, off) in enumerate(parts):
@@ -634,10 +761,48 @@ def table_stamp(tables_dir):
             int(max(os.path.getmtime(f) for f in tasks.glob("*.json"))))
 
 
-def load_tables(tables_dir, cache):
+def export_violations(tables_dir):
+    """The lines of the export's checks.txt that report a violation, or None where the export has no checks.txt.
+    Its last line is the count of each invariant, and each line before it a violated invariant: so every line
+    before the last reports a violation, and the last does where a count on it is not 0, or where it gives no
+    count, which also covers an empty file."""
+    path = Path(tables_dir) / "checks.txt"
+    if not path.exists():
+        return None
+    lines = [x.strip() for x in open(path).read().splitlines() if x.strip()]
+    if not lines:
+        return ["checks.txt holds no line"]
+    last = lines[-1]
+    counts = re.findall(r"[:=]\s*(\d+)\b", last) or re.findall(r"(?<![\w.])(\d+)(?![\w.])", last)
+    return lines[:-1] + ([last] if not counts or any(int(n) for n in counts) else [])
+
+
+def copy_flow_rule(stats, strict, where):
+    """Prints the copy-flow totals of `stats` (`parse_tables`), and raises DataFault with the first violations
+    where `strict` and there is one. A cache built before the check holds no totals, and prints that it is
+    unchecked."""
+    c = stats.get("copy flows")
+    if c is None:
+        print(f"{where}: the cache holds no copy-flow totals, so its copy flows are unchecked; a rebuild of the cache "
+              f"checks them", flush=True)
+        return
+    line = (f"copy flows of {where}: {c['checked']} checked, {c['type']} with another type than their source column, "
+            f"{c['value']} columns with values outside their sources, in {c['cases']} cases; "
+            f"{c['values unchecked']} columns not checked for values")
+    if strict and c["type"] + c["value"]:
+        raise DataFault(f"{line}; first: {'; '.join(c['first'])}; strict=False (--allow-check-violations) reads it")
+    print(line, flush=True)
+
+
+def load_tables(tables_dir, cache, strict=True, allow_violations=False, tasks_dir=None):
     """parse_tables, through a pickle at `cache` keyed by the export, the task files and the loader version. The
-    stamp is also in the file `<cache>.stamp.json`, which is read first, so that a stale pickle is not loaded."""
-    tasks = Path(__file__).resolve().parents[1] / "data/tasks"
+    stamp is also in the file `<cache>.stamp.json`, which is read first, so that a stale pickle is not loaded.
+    Before a build, an export whose checks.txt reports a violation (`export_violations`) is refused with a
+    DataFault, unless `allow_violations`; an export without one is built with a line that says so. With `strict`,
+    a copy flow that breaks its join (`copy_flow_check`) is a DataFault, from a build or from the pickle's totals
+    (`copy_flow_rule`). `tasks_dir` is the task files' directory, by default the repo's, which the stamp reads
+    whatever it is."""
+    tasks = Path(tasks_dir) if tasks_dir else Path(__file__).resolve().parents[1] / "data/tasks"
     stamp = table_stamp(tables_dir)
     sidecar = f"{cache}.stamp.json"
     cached, cached_stamp = None, None
@@ -651,17 +816,27 @@ def load_tables(tables_dir, cache):
         if cached_stamp == list_or_tuple(stamp):
             if cached is None:
                 cached = pickle.load(open(cache, "rb"))
+            copy_flow_rule(cached["stats"], strict, tables_dir)
             return cached["tables"], cached["skipped"], cached["stats"]
         print(f"cache rebuilt: {stamp_difference(cached_stamp, stamp)}", flush=True)
     else:
         print(f"building cache for {tables_dir}", flush=True)
     cached = None   # frees a stale pickle before the rebuild
+    violations = export_violations(tables_dir)
+    if violations is None:
+        print(f"{tables_dir} carries no checks.txt: the export's own checks are not known", flush=True)
+    elif violations:
+        line = f"{tables_dir}/checks.txt reports violations: {' | '.join(violations[-6:])}"
+        if not allow_violations:
+            raise DataFault(f"{line}; allow_violations (--allow-check-violations) builds the cache anyway")
+        print(f"{line}; built under allow_violations", flush=True)
     tables, skipped, stats = parse_tables(tables_dir, tasks)
     if os.path.exists(sidecar):
         os.remove(sidecar)   # the sidecar stays only beside a pickle that was written whole
     pickle.dump({"stamp": stamp, "tables": tables, "skipped": skipped,
                  "stats": stats}, open(cache, "wb"))
     write_sidecar(sidecar, stamp)
+    copy_flow_rule(stats, strict, tables_dir)
     return tables, skipped, stats
 
 
@@ -3030,11 +3205,13 @@ def value_groups(records):
     return {g: {"members": v["members"], "rate": v["solving"] / len(v["members"])} for g, v in out.items()}
 
 
-def load_rollouts(rollout_dir, cache=None, budget=None, max_rows=None, tasks_dir=None):
+def load_rollouts(rollout_dir, cache=None, budget=None, max_rows=None, tasks_dir=None, strict=True,
+                  allow_violations=False):
     """A rollout export and the labels.jsonl in its directory, as {(task, case): member}, a member a dict of
     "tables", "records" (`value_records`), "group", "solving" and "rate" (its group's share of solving members),
     and the faults of the cases left out. The tables come through `load_tables` and its cache at `cache`, or, where
-    `cache` is None, from `parse_tables` with `tasks_dir`; `budget` and `max_rows` mark tables as
+    `cache` is None, from `parse_tables` with `tasks_dir`, under `strict` and `allow_violations` as `load_tables`
+    takes them (without a cache, checks.txt is not read); `budget` and `max_rows` mark tables as
     `mark_over_budget` and `mark_over_rows` do, before the flags are read. A case that the labels do not give is
     left out. Raises DataFault, naming the task, where a sampled continuation's LM was trained on its task's fold
     (`sampler_fold` k/n with `train.fold_of(task, n) == k`) and the labels do not mark the task held out (`heldout`):
@@ -3048,9 +3225,10 @@ def load_rollouts(rollout_dir, cache=None, budget=None, max_rows=None, tasks_dir
                 raise DataFault(f"{task} {case}: sampled by {lab['sampler_run']}, an LM trained on fold {k}/{n}, "
                                 f"which holds the task")
     if cache is None:
-        tables, skipped, _ = parse_tables(rollout_dir, *([tasks_dir] if tasks_dir else []))
+        tables, skipped, stats = parse_tables(rollout_dir, *([tasks_dir] if tasks_dir else []))
+        copy_flow_rule(stats, strict, rollout_dir)
     else:
-        tables, skipped, _ = load_tables(rollout_dir, cache)
+        tables, skipped, _ = load_tables(rollout_dir, cache, strict, allow_violations)
     if budget:
         mark_over_budget(tables, budget)
     if max_rows:

@@ -530,6 +530,9 @@ def main():
     ap.add_argument("--id-dim", type=int, default=64)
     ap.add_argument("--eval-every", type=float, default=2.0, help="minutes")
     ap.add_argument("--tables", help="a tables export (engine/arclog-py/tables_export.py): train with the feature encoder on it")
+    ap.add_argument("--allow-check-violations", action="store_true",
+                    help="read a tables export whose checks.txt reports violations, and one whose copy flows break "
+                         "their join (encoder.load_tables, strict and allow_violations); off by default")
     ap.add_argument("--enc-k", type=int, default=4, help="the encoder's vectors per table")
     ap.add_argument("--enc-layers", type=int, default=2)
     ap.add_argument("--enc-width", type=int, default=32, help="the encoder's channels c per position")
@@ -620,7 +623,8 @@ def main():
     assert not K or a.enc_equality != "flex" or a.device == "cuda", "--enc-equality flex trains on cuda alone"
     if a.tables:   # each case takes its tables; a case without readable tables leaves every set
         import encoder
-        tables, skipped, tstats = encoder.load_tables(a.tables, f"{a.data}/tables.pkl")
+        tables, skipped, tstats = encoder.load_tables(a.tables, f"{a.data}/tables.pkl", not a.allow_check_violations,
+                                                      a.allow_check_violations)
         if skipped:
             print(f"DATA FAULT: {len(skipped)} cases whose tables export cannot be read, left out: {skipped}")
         over = encoder.mark_over_budget(tables, a.enc_budget)

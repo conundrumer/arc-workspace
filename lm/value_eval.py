@@ -86,12 +86,13 @@ def logistic(train_members, held_members, positions, steps, seed, label, columns
                      - mu) / sd).squeeze(-1).numpy() for m in held_members]
 
 
-def load(value_tables, data, cfg):
+def load(value_tables, data, cfg, allow_violations=False):
     """The members of the rollout export (encoder.load_rollouts, with the tables cache at `<data>/<export
-    name>.tables.pkl` and the budgets of the run's `cfg`), those of training tasks and those of held-out tasks as the
-    data marks them, and the data's (names, kinds)."""
+    name>.tables.pkl` and the budgets of the run's `cfg`, strict unless `allow_violations`), those of training tasks
+    and those of held-out tasks as the data marks them, and the data's (names, kinds)."""
     members, skipped = E.load_rollouts(value_tables, f"{data}/{Path(value_tables).resolve().name}.tables.pkl",
-                                       cfg["enc_budget"], cfg.get("enc_max_rows", 4000))
+                                       cfg["enc_budget"], cfg.get("enc_max_rows", 4000), strict=not allow_violations,
+                                       allow_violations=allow_violations)
     if skipped:
         print(f"DATA FAULT: {len(skipped)} rollout cases whose tables export cannot be read, left out: {skipped}")
     cases, held_cases, names, kinds, _ = T.load(data)
@@ -139,6 +140,9 @@ def main():
                     help="the draws of identifiers that the value head's score of a table is the mean over")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--device", default="cpu")
+    ap.add_argument("--allow-check-violations", action="store_true",
+                    help="read a rollout export whose checks.txt reports violations, and one whose copy flows break "
+                         "their join (encoder.load_tables, strict and allow_violations); off by default")
     a = ap.parse_args()
     ck = torch.load(a.encoder, map_location=a.device)
     cfg = ck["config"]
@@ -146,7 +150,7 @@ def main():
     positions = a.positions or cfg.get("value_positions", 1)
     torch.manual_seed(a.seed); random.seed(a.seed)
 
-    members, train_m, held_m, _ = load(a.value_tables, a.data, cfg)
+    members, train_m, held_m, _ = load(a.value_tables, a.data, cfg, a.allow_check_violations)
     enc = build_encoder(cfg, a.value_tables, members, a.device, ck["state"])
     head = E.ValueHead(cfg["enc_width"], cfg["enc_gram"], cfg["enc_k"]).to(a.device)
     head.load_state_dict(ck["value_head"])
