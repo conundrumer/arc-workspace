@@ -298,7 +298,7 @@ fn decode_case(case: &ResolvedCase, concept: bool, program: &CheckedProgram, exp
     };
     let mut consistency = None;
     let mut rows_found = false;
-    let replayed = replay(&mut decoder, &stream, true, &mut |decoder, stepped| {
+    let replayed = replay(&mut decoder, &stream.tokens, true, &mut |decoder, stepped| {
         let Stepped { index, token, consistency: result, mask, step_seconds } = stepped;
         let mask_seconds = mask.expect("the replay computes the mask").seconds;
         gathered.mask.push(mask_seconds);

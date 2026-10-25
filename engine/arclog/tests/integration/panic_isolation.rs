@@ -61,7 +61,7 @@ fn a_panic_in_one_stream_faults_that_stream_alone() {
     let cases = solver_streams(&dir, "tie", WantedCases::Concept, &vocabulary).expect("the solver's streams");
     let (task, judged) = read_task_files(&dir, "tie").expect("the task reads");
     std::fs::remove_dir_all(&dir).ok();
-    let whole = token_ids(cases[0].stream.as_ref().expect("a stream"), &vocabulary);
+    let whole = token_ids(&cases[0].stream.as_ref().expect("a stream").tokens, &vocabulary);
     let constructions = Constructions::new(Vec::new(), registry).expect("an empty table");
 
     // The short stream is a prefix of the whole one, so one unit holds both; only the whole stream steps past `cut`.

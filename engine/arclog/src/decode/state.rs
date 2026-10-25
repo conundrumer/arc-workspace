@@ -475,6 +475,11 @@ impl State {
         u32::try_from(self.declared.len()).expect("fewer than 2^32 relations")
     }
 
+    /// The slot at which `relation` is declared.
+    pub(super) fn slot_of(&self, relation: &ProgramRelation) -> Option<u32> {
+        self.declared.iter().position(|declared| declared.relation == *relation).map(|slot| u32::try_from(slot).expect("fewer than 2^32 relations"))
+    }
+
     /// The readable relations of the finished forms declared from `first` on,
     /// each with its slot.
     pub(super) fn declared_from(&self, first: u32) -> impl Iterator<Item = (u32, &ProgramRelation)> {

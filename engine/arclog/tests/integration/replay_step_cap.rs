@@ -64,7 +64,7 @@ fn a_step_cap_cuts_a_solvers_streams_at_the_stream_that_passes_it() {
     let cases = solver_streams(&dir, "tie", WantedCases::Concept, &vocabulary).expect("the solver's streams");
     let (task, judged) = read_task_files(&dir, "tie").expect("the task reads");
     std::fs::remove_dir_all(&dir).ok();
-    let whole = token_ids(cases[0].stream.as_ref().expect("a stream"), &vocabulary);
+    let whole = token_ids(&cases[0].stream.as_ref().expect("a stream").tokens, &vocabulary);
     let constructions = Constructions::new(Vec::new(), registry).expect("an empty table");
 
     // A position where the model writes, and an id the mask refuses there: a second branch of the prefix tree.

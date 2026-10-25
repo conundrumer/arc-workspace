@@ -177,6 +177,13 @@ impl<'a> Decoder<'a> {
         &self.context.vocabulary
     }
 
+    /// The slot at which the decode declared `relation`, a declared relation
+    /// or an output as the decode names it, `None` for a relation it has not
+    /// declared.
+    pub fn relation_slot(&self, relation: &ProgramRelation) -> Option<u32> {
+        self.state.slot_of(relation)
+    }
+
     /// The task, the session and the constructions that the decode's
     /// prefixes are evaluated on.
     pub fn evaluation_inputs(&self) -> (&'a Task, &'a TaskSession, &'a Constructions) {

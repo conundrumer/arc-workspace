@@ -775,7 +775,7 @@ fn corpus_streams(py: Python<'_>, corpus: &str, all_cases: bool, task_ids: Optio
                     match case.stream {
                         Ok(stream) => {
                             let masks = if tasks.is_some() && case.demonstrated { Err("the program holds a DEMONSTRATED form".to_string()) } else { Ok(None) };
-                            streams.push(IdStream { task: id.to_string(), case: case.case, concept: case.concept, ids: token_ids(&stream, &vocabulary), masks });
+                            streams.push(IdStream { task: id.to_string(), case: case.case, concept: case.concept, ids: token_ids(&stream.tokens, &vocabulary), masks });
                         }
                         Err(fault) => faults.push(fault_line(id, Some(&case.case), &fault)),
                     }
@@ -1161,7 +1161,7 @@ fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, tas
             Ok(streams) => match read_task_files(Path::new(tasks), id) {
                 Ok(read) => {
                     for case in streams.into_iter().filter(|case| !case.demonstrated) {
-                        let ids = case.stream.map(|stream| token_ids(&stream, &vocabulary));
+                        let ids = case.stream.map(|stream| token_ids(&stream.tokens, &vocabulary));
                         cases.push(TableCase { case: case.case, concept: case.concept, ids });
                     }
                     reads.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).insert(id.to_string(), read);

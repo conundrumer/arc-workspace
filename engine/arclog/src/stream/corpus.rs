@@ -10,7 +10,7 @@ use crate::harness::read_corpus_solver;
 use crate::registry::Registry;
 use crate::resolver::{resolve, resolve_cases, ResolvedCase, ResolvedCases, SolverScope};
 use crate::solver::{CaseName, Exclusion};
-use crate::stream::{token_stream, Emitter, Token, Vocabulary};
+use crate::stream::{written_stream, Emitter, Token, Vocabulary, WrittenStream};
 
 /// The cases of a solver whose streams are wanted.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -36,8 +36,8 @@ pub struct CaseStream {
     /// Whether the case program holds a `DEMONSTRATED` form, whose stream
     /// the commands that replay do not decode.
     pub demonstrated: bool,
-    /// The case's token stream, or the writer's fault.
-    pub stream: Result<Vec<(Token, Emitter)>, String>,
+    /// The case's token stream with the relation at each slot, or the writer's fault.
+    pub stream: Result<WrittenStream, String>,
 }
 
 /// The stream of each wanted case of the solver `id` of `corpus`, in the
@@ -85,8 +85,8 @@ pub fn solver_streams(corpus: &Path, id: &str, wanted: WantedCases<'_>, vocabula
 /// a `DET` of the concept program reads in the case is no part of the
 /// stream. A case that takes no `DET` of the concept program copies nothing
 /// from it, so its checked program is written as it is.
-pub fn case_stream(case: &ResolvedCase, concept: bool, checked: &CheckedProgram, vocabulary: &Vocabulary) -> Result<Vec<(Token, Emitter)>, String> {
-    let written = |program: &CheckedProgram| token_stream(program, vocabulary).map_err(|diagnostic| format!("the writer gives no stream: {}", diagnostic.message));
+pub fn case_stream(case: &ResolvedCase, concept: bool, checked: &CheckedProgram, vocabulary: &Vocabulary) -> Result<WrittenStream, String> {
+    let written = |program: &CheckedProgram| written_stream(program, vocabulary).map_err(|diagnostic| format!("the writer gives no stream: {}", diagnostic.message));
     if concept || case.case.concept_determinations().is_empty() {
         return written(checked);
     }

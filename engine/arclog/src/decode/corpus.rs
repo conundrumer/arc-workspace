@@ -19,6 +19,7 @@ use crate::eval::instance::Constructions;
 use crate::eval::Caps;
 use crate::harness::{panic_message, read_corpus_solver, run_on_workers};
 use crate::judge::candidates::{PairCandidates, Section, World};
+use crate::program::ProgramRelation;
 use crate::registry::Registry;
 use crate::session::{SessionBound, TaskSession, SESSION_BYTES};
 use crate::solver::Solver;
@@ -108,7 +109,8 @@ pub fn replay_panic(payload: &(dyn std::any::Any + Send)) -> String {
 struct ReplayedCase<T> {
     case: String,
     concept: bool,
-    replay: Result<StreamReplay<T>, String>,
+    /// The replay with the relation declared at each slot of the stream.
+    replay: Result<(StreamReplay<T>, Vec<ProgramRelation>), String>,
 }
 
 fn replay_cases<T: Default + Clone>(
@@ -123,7 +125,7 @@ fn replay_cases<T: Default + Clone>(
 ) -> Result<SolverReplay<T>, String> {
     let wanted = if all { WantedCases::All } else { WantedCases::Concept };
     let (train, replayed) = replay_streams(corpus, tasks, id, wanted, constructions, settings, masked, record)?;
-    let cases = replayed.into_iter().map(|case| CaseReplay { case: case.case, concept: case.concept, outcome: case.replay.and_then(StreamReplay::into_result) }).collect();
+    let cases = replayed.into_iter().map(|case| CaseReplay { case: case.case, concept: case.concept, outcome: case.replay.and_then(|(replay, _)| replay.into_result()) }).collect();
     Ok(SolverReplay { train, cases })
 }
 
@@ -144,7 +146,7 @@ fn replay_streams<T: Default + Clone>(
     let cases = solver_streams(corpus, id, wanted, &vocabulary)?;
     let (task, judged) = read_task_files(tasks, id)?;
     let cases: Vec<CaseStream> = cases.into_iter().filter(|case| !case.demonstrated).collect();
-    let ids: Vec<Vec<(u32, Emitter)>> = cases.iter().filter_map(|case| case.stream.as_ref().ok()).map(|stream| token_ids(stream, &vocabulary)).collect();
+    let ids: Vec<Vec<(u32, Emitter)>> = cases.iter().filter_map(|case| case.stream.as_ref().ok()).map(|stream| token_ids(&stream.tokens, &vocabulary)).collect();
     let mut outcomes = replay_prefix_tree(&task, &judged, &ids, constructions, settings, masked, record).into_iter();
     let replayed = cases
         .into_iter()
@@ -152,7 +154,7 @@ fn replay_streams<T: Default + Clone>(
             case: case.case,
             concept: case.concept,
             replay: match case.stream {
-                Ok(_) => Ok(outcomes.next().expect("an outcome for each stream")),
+                Ok(stream) => Ok((outcomes.next().expect("an outcome for each stream"), stream.relations)),
                 Err(fault) => Err(fault),
             },
         })
@@ -166,8 +168,10 @@ fn replay_streams<T: Default + Clone>(
 pub enum Verdict {
     Consistent,
     NotConsistent,
-    /// The relation, as `relation_spelled` spells it, whose several values
-    /// keep every train pair consistent.
+    /// The relation whose several values keep every train pair consistent,
+    /// spelled by `relation_spelled` as the case program the stream is
+    /// written from names it: `&x` for a declared relation, `&owner.port` for
+    /// an output.
     SeveralValues(String),
     /// The message of the run fault.
     Fault(String),
@@ -195,32 +199,53 @@ pub struct CaseVerdict {
 /// combinations its `exclude` forms leave out are no cases), replayed with the
 /// default settings and no token mask; or the fault that stops the solver.
 pub fn solver_verdicts(corpus: &Path, tasks: &Path, id: &str, constructions: &Constructions) -> Result<Vec<CaseVerdict>, String> {
-    let record = |last: &mut Option<(usize, Verdict)>, _: &Decoder<'_>, stepped: Stepped<'_>| {
+    let record = |last: &mut Option<(usize, Recorded)>, decoder: &Decoder<'_>, stepped: Stepped<'_>| {
         let verdict = match &stepped.consistency {
             None => return,
-            Some(Consistency::Consistent { .. }) => Verdict::Consistent,
-            Some(Consistency::NotConsistent) => Verdict::NotConsistent,
-            Some(Consistency::SeveralValues { relation, .. }) => Verdict::SeveralValues(relation_spelled(relation)),
-            Some(Consistency::Fault(fault)) => Verdict::Fault(fault.message.to_string()),
-            Some(Consistency::Stopped(stop)) => Verdict::Stopped(stop.bound),
+            Some(Consistency::Consistent { .. }) => Recorded::Ended(Verdict::Consistent),
+            Some(Consistency::NotConsistent) => Recorded::Ended(Verdict::NotConsistent),
+            Some(Consistency::SeveralValues { relation, .. }) => Recorded::Slot(
+                decoder.relation_slot(relation).expect("the writer takes the decoder's slots, so a relation the decoder tests stands at a slot of the stream's table"),
+            ),
+            Some(Consistency::Fault(fault)) => Recorded::Ended(Verdict::Fault(fault.message.to_string())),
+            Some(Consistency::Stopped(stop)) => Recorded::Ended(Verdict::Stopped(stop.bound)),
         };
         *last = Some((stepped.index, verdict));
     };
     let settings = DecodeSettings::default();
     let run = || replay_streams(corpus, tasks, id, WantedCases::Cases, constructions, &settings, false, &record);
-    let (_, replayed) = catch_unwind(AssertUnwindSafe(run)).unwrap_or_else(|payload| Err(replay_panic(&*payload)))?;
-    Ok(replayed
-        .into_iter()
-        .map(|case| {
-            let (verdict, token) = match case.replay {
-                Err(fault) => (Verdict::NoStream(fault), None),
-                Ok(StreamReplay { fault: Some(message), record }) => (Verdict::Refused(message), record.map(|(index, _)| index)),
-                Ok(StreamReplay { fault: None, record: None }) => (Verdict::NoRule, None),
-                Ok(StreamReplay { fault: None, record: Some((index, verdict)) }) => (verdict, Some(index)),
-            };
-            CaseVerdict { case: case.case, concept: case.concept, verdict, token }
-        })
-        .collect())
+    // The spelling of a slot runs inside `catch_unwind` as well, so a slot outside the table is the solver's fault.
+    let verdicts = || {
+        let (_, replayed) = run()?;
+        Ok(replayed
+            .into_iter()
+            .map(|case| {
+                let (verdict, token) = match case.replay {
+                    Err(fault) => (Verdict::NoStream(fault), None),
+                    Ok((StreamReplay { fault: Some(message), record }, _)) => (Verdict::Refused(message), record.map(|(index, _)| index)),
+                    Ok((StreamReplay { fault: None, record: None }, _)) => (Verdict::NoRule, None),
+                    Ok((StreamReplay { fault: None, record: Some((index, recorded)) }, relations)) => {
+                        let verdict = match recorded {
+                            Recorded::Ended(verdict) => verdict,
+                            Recorded::Slot(slot) => Verdict::SeveralValues(relation_spelled(relations.get(slot as usize).expect("the slot of a relation the decoder tests stands in the stream's table"))),
+                        };
+                        (verdict, Some(index))
+                    }
+                };
+                CaseVerdict { case: case.case, concept: case.concept, verdict, token }
+            })
+            .collect())
+    };
+    catch_unwind(AssertUnwindSafe(verdicts)).unwrap_or_else(|payload| Err(replay_panic(&*payload)))
+}
+
+/// What a step of a case records: a verdict that needs nothing more, or the
+/// slot of the relation whose several values keep every pair consistent,
+/// which the case's slot table spells.
+#[derive(Clone, Debug, PartialEq)]
+enum Recorded {
+    Ended(Verdict),
+    Slot(u32),
 }
 
 /// The streams of `streams`, as indices, in the order of their
