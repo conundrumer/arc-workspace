@@ -11,6 +11,7 @@ The LM writes arclog programs token by token under the engine's token mask, and 
 
 ## Practice
 
+* comment: The user's words, session 0c50cd8a, 2026-10-25T12:16:54Z: "basically nothing will solve a task so don’t treat it as possible in the near term".
 - No program that the LM writes solves a task, and none will in the near term: of 1,600 continuations sampled from prefixes of correct programs, one solved. Design no label, measurement or decision that needs a sampled program to solve.
 - Iteration speed comes before GPU cost. Experiments run on a rented GPU with SSH, where a run starts in seconds and a fault shows at once. Kaggle is for what must run on the submission hardware: decode throughput, memory under the 4-L4 layout and the submission itself. The Mac runs code checks, on its CPU.
 - Before a command that is slow or loads a machine the user shares, tell the user what it runs, how long it takes and what it loads. Run it under `/usr/bin/time -l`, and compare the measured time and memory with the estimate. Estimates so far have been low: the 135M run on the Mac peaked at 14.6 GB of driver-allocated memory against an estimate of 7–8 GB, and its steps took 0.82 s against an estimate of 0.6 s, because the first batches of a run are the shortest.
