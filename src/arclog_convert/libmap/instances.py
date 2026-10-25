@@ -246,7 +246,9 @@ class Expander:
         input grid at the top level, the example's input under an Example
         field of the key, and Parse's `cell` under a field of Parse's key
         type; None where the key holds no such field. A Unit key at the top
-        level is `$U()`, which a clause need not ground."""
+        level is `$U()`, which a clause need not ground. A Ray or Between
+        takes this frame as its `node` where `places` holds for its marks,
+        and the cells of a `Frame` over the marks' extents otherwise."""
         scope = inst.scope.components
         if inst.type_args[0].text == "Unit" and not scope:
             return "$U()", "in(P, _)"
@@ -273,6 +275,65 @@ class Expander:
             return f"Kx{next(n)}", None
         pat, atom = walk(inst.type_args[0].text)
         return (pat, atom) if atom else None
+
+    def places(self, inst: Instance) -> bool:
+        """Each mark of the instance lies in the frame `frame` gives: each
+        clause of its `mark` input has for its position term a variable that
+        a positive atom of the clause's body binds at a placing column.
+
+        - The position column of the frame's relation (`in`, `ex_in`, or
+          Parse's `cell`); for the keyed ones, the atom reads an example or
+          a Parse key that a variable of the head's key columns gives.
+        - The result column of `compose`, `neighbor` or `jump`, where the
+          atom's first argument is placed in the same body.
+        - A column of a relation the solver declares at the top level, for
+          the unkeyed frame, where every clause of the relation has for its
+          term at that column a variable placed in its body; a relation met
+          again on the walk places nothing.
+
+        Anything else places nothing: a constant, a record, `ex_out`, an
+        output of an instance, and any other lib relation or functor. A
+        mark outside that frame takes the cells of a `Frame` over its
+        extents for its `node`."""
+        f = self.frame(inst)
+        if f is None:
+            return False
+        frame_name = f[1].split("(")[0]
+        frame_col = 0 if frame_name == "in" else 1
+        translate = {"compose": (0, 2), "neighbor": (0, 2), "jump": (0, 3)}
+
+        def var_placed(v, body, keys: set[str], scope: tuple[str, ...], seen: frozenset) -> bool:
+            if not isinstance(v, Variable):
+                return False
+            return any(col_placed(l.atom, j, body, keys, scope, seen)
+                       for l in body or () if isinstance(l, AtomLiteral) and not l.negated
+                       for j, t in enumerate(l.atom.args) if t == v)
+
+        def col_placed(a: Atom, j: int, body, keys: set[str], scope, seen: frozenset) -> bool:
+            r = a.relation
+            if r.instances:
+                return False
+            if r.name == frame_name and not r.instances and j == frame_col:
+                if frame_name == "in":
+                    return True
+                k = a.args[0]
+                return isinstance(k, Variable) and k.name in keys
+            if r.name in translate and j == translate[r.name][1] and len(a.args) > j:
+                return var_placed(a.args[translate[r.name][0]], body, keys, scope, seen)
+            if frame_name != "in" or scope or (r.name, j) in seen:
+                return False
+            if not any(d.name == r.name and not d.scope.components and (d.span is None or d.span.file is None)
+                       for d in self.prog.relations):
+                return False
+            us = [u for u in self.prog.units if u.head.relation.name == r.name and not u.head.relation.instances
+                  and not u.scope.components]
+            return bool(us) and all(
+                u.body is not None and len(u.head.args) > j
+                and var_placed(u.head.args[j], u.body, set(), (), seen | {(r.name, j)}) for u in us)
+
+        return all(u.body is not None and var_placed(
+            u.head.args[-1], u.body, set(term_vars(u.head.args[:-1], [])), u.scope.components, frozenset())
+            for u in self.inputs(inst, "mark"))
 
     def did(self) -> DeclId:
         self.next_decl += 1

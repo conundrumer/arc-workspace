@@ -85,7 +85,15 @@ def _frame_alone(ex, inst, name: str, frame_atom: str) -> bool:
     return all(_key_only(cs[0], x) and dirs and all(_reads(d, x) for d in dirs) for x in atoms if x is not frame[0])
 
 
+_FRAME_DECL = ".init {x}_frame = Frame<{Key}>"
+_FRAME_EXTENT = "{x}_frame.extent(Ky, A, N) :- in_mark(Ky, P), axis_elem(A), axis_dim(P, A, N)."
+
+
 def ray(inst, ex):
+    """A Ray's `node` is the frame of the instance's key (`Expander.frame`)
+    where `Expander.places` places each mark in it, and the cells of a
+    `Frame` keyed by the instance's key, whose extent is the frame extent of
+    each mark, otherwise."""
     f = ex.frame(inst)
     if f is None:
         return None
@@ -97,12 +105,17 @@ def ray(inst, ex):
     full_needed = bool(names & {"cast", "ray"}) or stop_k or not clear
     full = "{x}_full" if clear and full_needed else "{x}"
     blocked = bool(ex.inputs(inst, "blocked"))
-    cell = "" if _frame_alone(ex, inst, "cell", frame) else ", in_cell(Ky, P)"
+    placed = ex.places(inst)
+    cell = "" if placed and _frame_alone(ex, inst, "cell", frame) else ", in_cell(Ky, P)"
     decls = [".init {x} = Ray<{Key}>"] + ([".init {x}_full = Ray<{Key}>"] if clear and full_needed else [])
     clauses = []
     for i in (["{x}"] if not (clear and full_needed) else ["{x}", "{x}_full"]):
         clauses += [f"{i}.source(Ky, P) :- in_mark(Ky, P).", f"{i}.dir(Ky, D) :- in_dir(Ky, D)."]
     ground = "" if k == "$U()" else f"in_dir({k}, _), "
+    if not placed:
+        frame, ground = f"{{x}}_frame.cell({k}, P)", ""
+        decls.append(_FRAME_DECL)
+        clauses.append(_FRAME_EXTENT)
     if full_needed:
         clauses.append(f"{full}.node({k}, P) :- {ground}{frame}.")
     if clear:
@@ -124,13 +137,21 @@ def between(inst, ex):
     if f is None:
         return None
     k, frame = f
-    cell = "" if _frame_alone(ex, inst, "cell", frame) else ", in_cell(Ky, P)"
-    return Spec(".init {x} = Ray<{Key}>\n.decl {x}_between(key: {Key}, p: Position)", {},
+    placed = ex.places(inst)
+    cell = "" if placed and _frame_alone(ex, inst, "cell", frame) else ", in_cell(Ky, P)"
+    decls = ".init {x} = Ray<{Key}>\n.decl {x}_between(key: {Key}, p: Position)"
+    extent = ""
+    if placed:
+        node = f"{{x}}.node({k}, P) :- " + ("" if k == "$U()" else f"in_axis({k}, _), ") + f"{frame}.\n"
+    else:
+        node = f"{{x}}.node({k}, P) :- {{x}}_frame.cell({k}, P).\n"
+        decls += "\n" + _FRAME_DECL
+        extent = _FRAME_EXTENT + "\n"
+    return Spec(decls, {},
                 {"between(Ky, P)": "{x}_between(Ky, P)", "ray(Ky, P, D, N, S)": "{x}.ray(Ky, P, D, N, S)" + cell,
                  "mark(Ky, P)": "{x}.source(Ky, P)", "axis(Ky, A)": "in_axis(Ky, A)", "cell(Ky, P)": "in_cell(Ky, P)"},
                 "{x}.source(Ky, P) :- in_mark(Ky, P).\n"
-                "{x}.dir(Ky, D) :- in_axis(Ky, A), axis4_of(D, A).\n"
-                f"{{x}}.node({k}, P) :- " + ("" if k == "$U()" else f"in_axis({k}, _), ") + f"{frame}.\n"
+                "{x}.dir(Ky, D) :- in_axis(Ky, A), axis4_of(D, A).\n" + node + extent +
                 "{x}_between(Ky, P) :- in_cell(Ky, P), in_axis(Ky, A), axis4_of(D, A), dir8_opposite(D, O),"
                 " {x}.ray(Ky, P, D, _, _), {x}.ray(Ky, P, O, _, _).", grounded=frozenset({"node"}))
 
