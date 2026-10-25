@@ -54,6 +54,7 @@ work/lm/.venv/bin/python lm/runs/data-study/detectors.py measure work/lm/data-fu
 - `detectors.py`: the script that computes and measures the detectors. Its docstring defines each detector and the measurement.
 - `detectors.parquet`: one row per Table at positions 0 to 3 after the branch, with its member, label and flags, the inputs of `value_eval.features`, and the detector values at position 0.
 - `detectors.out`: the measurement: counts of lists, pairs and Tables, the Tables each filter fires on, and the ranking accuracy and AUC of each detector, of the trivial baseline and of a logistic regression on every detector, on the held-out branch points and in 5-fold cross-validation by task.
+    - No held-out sampled continuation solves, so each pair is gold against sampled and the metric tells the gold writer's table from the LM's; gold tables have more columns, which part of each score reads (the file gives the score over pairs of one column count); and the trivial baseline's 0.651 is at positions 4, where the detectors are measured at positions 1.
 - `observations.md`: what held across the `case-<task>.md` files about telling from a table that it adds information, and what took the clause text or the later program.
 
 ## Decoding

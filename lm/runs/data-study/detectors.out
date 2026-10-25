@@ -3,6 +3,12 @@
 Rollout export work/lm/rollouts-s2/export; split by work/lm/data-full-09be8c8b: 40 held-out tasks, 160 training tasks.
 Columns: pairwise ranking accuracy and AUC within a list (encoder.value_draw_metrics), the same over sampled continuations alone ("s", none where no sampled continuation of a list solves), and the counts of pairs, ranked lists and lists.
 
+## Qualifications
+
+- No sampled continuation of a held-out task solves, so every held-out pair is the gold continuation's table against a sampled one's: the metric measures how well a score tells the gold writer's table from the LM's, not a solving step from a failing one.
+- Gold tables have more columns than sampled ones (2.80 against 2.50, variant graded, every task). The column count alone scores 0.678 held out and 0.634 in the 5-fold run; the logistic on every detector scores 0.711 in the 5-fold run over its 190 pairs of one column count. Without the column-structure detectors (fd_pairs, one_to_one, const_share, fill, lack, jaccard) it scores 0.748 held out and 0.767 in the 5-fold run.
+- The trivial baseline at positions 4 scores 0.648 over 348 pairs, the lists of the value run's 0.651; every depth is 0 here, since no flows are read, which accounts for the difference. At positions 1, the lists the detectors are measured on, it scores 0.579.
+
 ## Counts at position 0
 members with a Table at position 0: 2119; solving sampled continuations among them: 1, of held-out tasks 0
 Tables whose rows come from a Count entry's projections, with no row detectors: 39
@@ -58,20 +64,27 @@ score                          pairs     AUC  pairs s    AUC s n pair ranked  li
 +splits_like_outputs *         0.500   0.500        -        -    121    100    196
 -number_out_size *             0.500   0.500        -        -    121    100    196
 +cell_count_cv *               0.550   0.560        -        -    121    100    196
++untested *                    0.504   0.505        -        -    121    100    196
 trivial features, positions 1   0.579   0.580        -        -    121    100    196  logistic regression: 3469 training tables, final training loss 0.597
 trivial features, positions 4   0.648   0.643        -        -    348    294    741  logistic regression: 9961 training tables, final training loss 0.627
 logistic on every detector     0.802   0.790        -        -    121    100    196  (3469 training Tables, final training loss 0.475)
+  its pairs of one column count   0.571                                      28
+logistic on column count       0.678   0.692        -        -    121    100    196
+logistic, less col. structure   0.748   0.734        -        -    121    100    196
 
-the 12 largest weights of the logistic on every detector, per standard deviation of the detector on the training Tables (a detector constant there has none): f_product -1.24, f_restate -0.73, asg_n +0.69, out_color +0.57, off_grid -0.45, eq_out_cells +0.40, jaccard -0.32, same_rows -0.31, asg_equal -0.30, eq_out_h +0.25, const_share -0.20, same_all +0.19
+the 12 largest weights of the logistic on every detector, per standard deviation of the detector on the training Tables (a detector constant there has none): f_product -1.24, f_restate -0.72, asg_n +0.69, out_color +0.57, eq_out_cells +0.40, off_grid -0.34, jaccard -0.32, same_rows -0.31, asg_equal -0.30, eq_out_h +0.25, const_share -0.21, lack -0.19
 
 ### 5-fold cross-validation by task over 200 tasks, variant graded
 fold                           pairs     AUC  pairs s    AUC s n pair ranked  lists  trivial pairs  trivial AUC
 fold 0 (40 tasks)              0.870   0.832        -        -    138     91    155          0.692        0.666
-fold 1 (40 tasks)              0.738   0.770        -        -    145     91    152          0.610        0.628
+fold 1 (40 tasks)              0.745   0.776        -        -    145     91    152          0.610        0.628
 fold 2 (40 tasks)              0.800   0.781        -        -    140     78    138          0.493        0.504
 fold 3 (40 tasks)              0.730   0.725        -        -    141     98    161          0.677        0.665
 fold 4 (40 tasks)              0.832   0.822    1.000    1.000    131     96    151          0.595        0.589
-mean over folds                0.794   0.786    1.000    1.000                               0.614        0.610
+mean over folds                0.795   0.787    1.000    1.000                               0.614        0.610
+mean, column count alone       0.634   0.636
+mean, less col. structure      0.767   0.757
+pooled, one column count       0.711                                     190
 
 ## Held-out branch points, variant all
 score                          pairs     AUC  pairs s    AUC s n pair ranked  lists
@@ -111,19 +124,26 @@ score                          pairs     AUC  pairs s    AUC s n pair ranked  li
 +splits_like_outputs *         0.500   0.500        -        -    273    192    216
 +number_out_size *             0.502   0.503        -        -    273    192    216
 +cell_count_cv *               0.551   0.560        -        -    273    192    216
+-untested *                    0.496   0.497        -        -    273    192    216
 trivial features, positions 1   0.683   0.671        -        -    273    192    216  (4983 training Tables, final training loss 0.544)
-logistic on every detector     0.786   0.760        -        -    273    192    216  (4983 training Tables, final training loss 0.452)
+logistic on every detector     0.789   0.766        -        -    273    192    216  (4983 training Tables, final training loss 0.453)
+  its pairs of one column count   0.683                                      52
+logistic on column count       0.436   0.434        -        -    273    192    216
+logistic, less col. structure   0.795   0.773        -        -    273    192    216
 
-the 12 largest weights of the logistic on every detector, per standard deviation of the detector on the training Tables (a detector constant there has none): f_product -1.13, lack -0.71, n_zero -0.65, f_restate -0.59, f_unseen -0.56, asg_n +0.54, off_grid -0.52, out_color +0.47, asg_empty -0.43, rows_per_cell -0.40, eq_out_cells +0.37, rows_cv +0.29
+the 12 largest weights of the logistic on every detector, per standard deviation of the detector on the training Tables (a detector constant there has none): f_product -1.13, lack -0.71, n_zero -0.65, f_restate -0.59, f_unseen -0.56, asg_n +0.54, out_color +0.46, asg_empty -0.43, rows_per_cell -0.40, off_grid -0.38, eq_out_cells +0.37, rows_cv +0.29
 
 ### 5-fold cross-validation by task over 200 tasks, variant all
 fold                           pairs     AUC  pairs s    AUC s n pair ranked  lists  trivial pairs  trivial AUC
-fold 0 (40 tasks)              0.865   0.819        -        -    266    150    169          0.750        0.709
-fold 1 (40 tasks)              0.743   0.767        -        -    269    141    157          0.697        0.717
+fold 0 (40 tasks)              0.861   0.818        -        -    266    150    169          0.750        0.709
+fold 1 (40 tasks)              0.743   0.770        -        -    269    141    157          0.697        0.717
 fold 2 (40 tasks)              0.841   0.816        -        -    273    134    142          0.628        0.671
 fold 3 (40 tasks)              0.782   0.756        -        -    264    157    174          0.731        0.730
 fold 4 (40 tasks)              0.858   0.832    0.750    0.750    254    134    154          0.642        0.692
-mean over folds                0.818   0.798    0.750    0.750                               0.690        0.704
+mean over folds                0.817   0.798    0.750    0.750                               0.690        0.704
+mean, column count alone       0.486   0.487
+mean, less col. structure      0.808   0.790
+pooled, one column count       0.776                                     333
 
 A signal marked * is one of the signals added from marks.md (detectors.py's docstring). A graded signal's sign (+ or -) is the one that ranks better on the training branch points. f_product is tested on Tables of at most 3000 rows at each train example and 8 columns other than Example.
 

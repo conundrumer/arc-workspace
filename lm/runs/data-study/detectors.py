@@ -8,8 +8,8 @@ gold continuation's table against the sampled ones.
 allow_violations=True) on a copy of the task's rows that holds no flows.parquet, so a table's parents are unknown
 and its earlier tables are the tables of the same case with a smaller token (export table < prefix_tables, and the
 grid tables ex_input and ex_output). The loader's guard against more than half of the relation tables unseen is
-lifted for a task whose own tables are so, since it holds over the whole export. It writes one parquet per task under --parts (default
-work/lm/data-study-detectors), skips a task whose parquet is there, stops starting tasks after --seconds, and, once
+lifted for a task whose own tables are so, since it holds over the whole export. It writes one parquet per task
+under --parts (default work/lm/data-study-detectors), skips a task whose parquet is there, stops starting tasks after --seconds, and, once
 every task is done, joins the parts into lm/runs/data-study/detectors.parquet. A row of that parquet is one Table
 (one DET assignment of an export table) at positions 0 to 3 after the branch: its member and label, its flags as
 lm/value_eval.py reads them (after the budgets of the value run: an entry over 10000 rows, a table over 4000 rows),
@@ -27,7 +27,8 @@ Filters (0/1):
   its columns (Example columns left out), with both sides of 2 or more values at some example; tested where no
   example has over PRODUCT_ROWS rows and the Table has at most PRODUCT_COLUMNS such columns;
 - f_symmetric: the rows at every example are closed under the swap of two columns of one type, and some row differs
-  between the two;
+  between the two. It, f_restate and one_row_diff are tested where no example has over SET_ROWS (20000) rows, and
+  an earlier Table over that bound is not compared;
 - f_grid: at every train example one row per input cell, with a Box column and a Color column whose pairs are the
   input's cells and colors.
 
@@ -40,8 +41,8 @@ Graded signals (a number each), over the train examples (e):
 - fd_pairs: ordered column pairs (a, b) where a's value gives b's at every e with rows, and at some e a is not a key
   and b has 2 or more values; one_to_one: whether some pair of distinct columns gives each other so, with 2 or more
   values at some e;
-- fill: mean over e with rows of rows_e / the product of the columns' distinct counts; lack: the mean over e of that
-  product less rows_e where fill_e is above 0.8 and below 1, else 0;
+- fill: mean over e with rows of rows_e / the product of the columns' distinct counts; lack: the mean over the same e (those
+  with rows) of that product less rows_e where fill_e is above 0.8 and below 1, else 0;
 - same_rows: share of e whose rows (Example columns left out) equal another e's, beside same_all (every e the same
   rows, not empty);
 - jaccard: mean over columns and pairs of e with rows of the Jaccard index of the column's value sets;
@@ -52,11 +53,12 @@ Graded signals (a number each), over the train examples (e):
 - eq_earlier: rows_e equals an earlier relation Table's at every e, and some rows_e is above 1;
 - out_cover: mean over e where the output differs from the input of the share of those differing output cells that
   a Box column of the Table names (a box of one cell of the output grid; every output cell differs where the
-  sizes differ); out_color: of the rows that name such a cell, the share whose Color column (any) holds the output's
-  color there.
+  sizes differ); out_color: of the rows that name such a cell in some Box column, the share in which some Color
+  column holds the output's color at a cell that some Box column names.
 
 Signals added from marks.md:
-- off_grid: share of rows with a Box of one cell in the input grid's terms that lies off the grid (b5bb5719 &r16);
+- off_grid: share of rows with some Box column that is one cell in the input grid's terms and lies off the grid
+  (b5bb5719 &r16);
 - one_row_diff: an earlier Table of the same column types differs from it by one row over all e (9565186b &r7);
 - asg_n, asg_empty, asg_equal: the DET assignments of the Table's export table: log of their count, the share empty
   in every e, the share of those with rows whose rows at every e equal another assignment's (22425bda &r24, 8e5a5113 &r6);
@@ -65,7 +67,9 @@ Signals added from marks.md:
 - number_out_size: a Number column whose greatest value at every e is the output's height, or its width, where that
   size varies over e (22425bda &r20);
 - cell_count_cv: mean over e of the coefficient of variation of the rows per value of the first Box column
-  (2c608aff &r14; a product has the same count at every cell).
+  (2c608aff &r14; a product has the same count at every cell);
+- untested: 1 where a bound skipped f_product, f_symmetric, f_restate or one_row_diff, or skipped an earlier Table
+  that f_restate did not match, so a 0 of those filters is not a clean pass.
 
 `measure` reads detectors.parquet and splits the branch points as lm/value_eval.py does, by the held-out tasks of
 <data> (its cases.npz). The lists are those of encoder.value_lists at position 0 (positions=1) with the label
@@ -76,7 +80,10 @@ training branch points, a missing value taking the training median. The logistic
 trained as value_eval.logistic is (full-batch Adam, 300 steps, lr 0.05, standardized, seed 0), a missing value
 taking the training mean; it is measured on the held-out branch points and in 5-fold cross-validation by task over
 every task. value_eval.logistic on value_eval.features is measured at positions 1 and 4 in the variant "graded"; in
-the variant "all", the same features are fit as the detectors are, over every Table at position 0. --out (default
+the variant "all", the same features are fit as the detectors are, over every Table at position 0. Beside them:
+the logistic on every detector over its pairs whose position-0 Tables have one column count (held out, and pooled
+over the folds), the logistic on the column count alone, and the logistic on every detector less COLUMN_STRUCTURE.
+--out (default
 lm/runs/data-study/detectors.out) gets the tables.
 """
 import argparse, itertools, json, math, os, random, sys, tempfile, time
@@ -102,10 +109,11 @@ GRADED = ["log_rows", "rows_per_cell", "rows_vs_parent", "rows_cv", "const_share
           "lack", "same_rows", "same_all", "jaccard", "n_zero", "zero_identity", "eq_in_cells", "eq_out_cells",
           "eq_out_h", "eq_out_w", "eq_earlier", "out_cover", "out_color"]
 ADDED = ["off_grid", "one_row_diff", "asg_n", "asg_empty", "asg_equal", "splits_like_outputs", "number_out_size",
-         "cell_count_cv"]
+         "cell_count_cv", "untested"]
 DETECTORS = FILTERS + GRADED + ADDED
 
 
+COLUMN_STRUCTURE = ["fd_pairs", "one_to_one", "const_share", "fill", "lack", "jaccard"]
 NOT_COMPUTED = [
     "A rank or order equal to its score: it needs the score's table, which only the flows give; f_restate covers the "
     "case where the rows equal the score's rows.",
@@ -204,6 +212,7 @@ def detectors(t, flags, earlier, asg, pairs, n_train, rows_of):
     for k in FILTERS:
         v[k] = 0.0
     v["f_unseen"] = float(flags["unseen"] or flags["faulted"])
+    v["untested"] = 0.0
     if t.unseen is not None:
         return v
     rows = rows_of(t)
@@ -263,7 +272,9 @@ def detectors(t, flags, earlier, asg, pairs, n_train, rows_of):
         v["lack"] = float(np.mean([math.exp(lp) - n[e] if 0.8 < f < 1 else 0.0
                                    for e, lp, f in zip(ex_nz, logprod, fills)]))
         # product of the two sides of a split
-        if len(cols) >= 2 and len(cols) <= PRODUCT_COLUMNS and n.max() <= PRODUCT_ROWS:
+        if len(cols) > PRODUCT_COLUMNS or n.max() > PRODUCT_ROWS:
+            v["untested"] = 1.0
+        elif len(cols) >= 2:
             for mask in range(1, 2 ** (len(cols) - 1)):
                 A = [cols[i] for i in range(len(cols)) if mask >> i & 1]
                 B = [c for c in cols if c not in A]
@@ -287,7 +298,9 @@ def detectors(t, flags, earlier, asg, pairs, n_train, rows_of):
                     js.append(len(sets[a] & sets[b]) / len(sets[a] | sets[b]))
             v["jaccard"] = float(np.mean(js))
     # rows with the Example columns left out, per example
-    if not big_set:
+    if big_set:
+        v["untested"] = 1.0
+    else:
         noex = [frozenset(map(tuple, (np.concatenate([r[:, sp[j][0]:sp[j][1]] for j in cols], 1) if cols
                                      else r[:, :0]).tolist())) if len(r) else frozenset() for r in rows]
         same = [nz[e] and any(noex[e] == noex[f] for f in range(n_train) if f != e) for e in range(n_train)]
@@ -311,6 +324,8 @@ def detectors(t, flags, earlier, asg, pairs, n_train, rows_of):
         # restatement of an earlier Table
         kx = keyed_rows(rows)
         v["f_restate"] = float(any(V.restates(types, kx, ty, k) for ty, _, _, k, _ in earlier if k is not None))
+        if not v["f_restate"] and any(k is None for _, _, _, k, _ in earlier):
+            v["untested"] = 1.0
         # one row from an earlier Table of the same column types
         v["one_row_diff"] = float(any(
             ty == types and k is not None and sum(len(kx[e] ^ k[e]) for e in range(n_train)) == 1
@@ -333,20 +348,21 @@ def detectors(t, flags, earlier, asg, pairs, n_train, rows_of):
                 for b in boxes for c in colors)
         diff = np.ones((ho, wo), bool) if g.shape != o.shape else (g != o)
         named = np.zeros((ho, wo), bool)
+        row_hit, row_match, row_off = (np.zeros(len(r), bool) for _ in range(3))
         for b in boxes:
             x = r[:, sp[b][0]:sp[b][1]]
             if len(x) == 0:
                 continue
             cell = (x >= 0).all(1) & (x[:, 0] + x[:, 1] == ho - 1) & (x[:, 2] + x[:, 3] == wo - 1)
-            rr, cc = x[cell, 0], x[cell, 2]
-            named[rr, cc] = True
-            dmask = diff[rr, cc]
-            hits += int(dmask.sum())
-            if colors:
-                oc = o[rr[dmask], cc[dmask]]
-                matches += int(np.any([r[cell][dmask][:, sp[c][0]] == oc for c in colors], 0).sum())
+            rr, cc = np.where(cell, x[:, 0], 0), np.where(cell, x[:, 2], 0)
+            named[rr[cell], cc[cell]] = True
+            hit = cell & diff[rr, cc]
+            row_hit |= hit
+            for c in colors:
+                row_match |= hit & (r[:, sp[c][0]] == o[rr, cc])
             one = (h - x[:, 0] - x[:, 1] == 1) & (w - x[:, 2] - x[:, 3] == 1)
-            off += int((one & (x < 0).any(1)).sum())
+            row_off |= one & (x < 0).any(1)
+        hits += int(row_hit.sum()); matches += int(row_match.sum()); off += int(row_off.sum())
         nrows += len(r)
         if diff.any() and boxes:
             covers.append(float((named & diff).sum() / diff.sum()))
@@ -567,6 +583,35 @@ def fit_logistic(x, y, steps=300, seed=0):
     return predict, float(loss.item()), np.where(sd.numpy() > 1e-6, w, np.nan)
 
 
+def fit_score(df, X, train_members):
+    """The scores of every Table of df from fit_logistic on the rows X, trained on the listed Tables of
+    `train_members`, a missing value taking the training mean; with the training loss, weights and Table count."""
+    ti = tr_idx_pos(df, listed(df, train_members))
+    mu = np.nanmean(X[ti], 0)
+    mu = np.where(np.isnan(mu), 0.0, mu)
+    Xf = np.where(np.isnan(X), mu, X)
+    pred, loss, w = fit_logistic(Xf[ti], df["solving"].to_numpy(float)[ti])
+    return pd.Series(pred(Xf), index=df.index), loss, w, len(ti)
+
+
+def same_key_pairs(df, score, members, key):
+    """Over the lists of `members`, the pairs of a solving and a non-solving member whose position-0 Tables have the
+    same value of the column `key`: (the pairs in which the solving one scores higher, a tie one half; the pairs)."""
+    by = {}
+    for m in members:
+        idx = listed(df, [m])
+        if idx:
+            by.setdefault(m["group"], []).append((m["solving"], float(score.loc[idx].mean()), df.loc[idx[0], key]))
+    right, n = 0.0, 0
+    for xs in by.values():
+        for a in xs:
+            for b in xs:
+                if a[0] and not b[0] and a[2] == b[2]:
+                    n += 1
+                    right += (a[1] > b[1]) + 0.5 * (a[1] == b[1])
+    return right, n
+
+
 def show(x):
     return "   -" if x is None else f"{x:.3f}"
 
@@ -597,6 +642,7 @@ def measure_mode(data, out):
              "of pairs, ranked lists and lists.", ""]
     for col in DETECTORS:
         df[col] = df[col].astype(float)
+    df["n_columns"] = df["types"].map(lambda t: len(t.split(",")) if t else 0).astype(float)
     partial = int(df.loc[p0, "partial"].fillna(False).astype(bool).sum()) if "partial" in df else 0
     variants = {}
     for name, keep_all in (("graded", False), ("all", True)):
@@ -665,16 +711,22 @@ def measure_mode(data, out):
             res["trivial@1"] = metrics(v["held"], pd.Series(pred(TF), index=df.index))
             lines.append(row_line("trivial features, positions 1", res["trivial@1"]) +
                          f"  ({len(tr_idx)} training Tables, final training loss {loss:.3f})")
-        # the logistic on every detector
-        feats = FILTERS + GRADED + ADDED
+        # the logistic on every detector, on the column count alone, and on every detector less COLUMN_STRUCTURE
+        feats = DETECTORS
         X = df[feats].to_numpy(float)
-        mu = np.nanmean(X[tr_idx_pos(df, tr_idx)], 0)
-        mu = np.where(np.isnan(mu), 0.0, mu)
-        Xf = np.where(np.isnan(X), mu, X)
-        pred, loss, w = fit_logistic(Xf[tr_idx_pos(df, tr_idx)], df.loc[tr_idx, "solving"].to_numpy(float))
-        res["logistic"] = metrics(v["held"], pd.Series(pred(Xf), index=df.index))
+        Xc = df[["n_columns"]].to_numpy(float)
+        Xs = df[[f for f in feats if f not in COLUMN_STRUCTURE]].to_numpy(float)
+        score, loss, w, n_tr = fit_score(df, X, v["train"])
+        res["logistic"] = metrics(v["held"], score)
         lines.append(row_line("logistic on every detector", res["logistic"]) +
-                     f"  ({len(tr_idx)} training Tables, final training loss {loss:.3f})")
+                     f"  ({n_tr} training Tables, final training loss {loss:.3f})")
+        right, n = same_key_pairs(df, score, v["held"], "n_columns")
+        res["same columns"] = (right / n if n else None, n)
+        lines.append(f"{'  its pairs of one column count':<28}{show(res['same columns'][0]):>8}{'':>33}{n:>7}")
+        res["columns"] = metrics(v["held"], fit_score(df, Xc, v["train"])[0])
+        lines.append(row_line("logistic on column count", res["columns"]))
+        res["less structure"] = metrics(v["held"], fit_score(df, Xs, v["train"])[0])
+        lines.append(row_line("logistic, less col. structure", res["less structure"]))
         lines.append("")
         lines.append("the 12 largest weights of the logistic on every detector, per standard deviation of the detector "
                      "on the training Tables (a detector constant there has none): " +
@@ -689,15 +741,20 @@ def measure_mode(data, out):
         lines.append(f"{'fold':<28}{'pairs':>8}{'AUC':>8}{'pairs s':>9}{'AUC s':>9}{'n pair':>7}{'ranked':>7}{'lists':>7}"
                      f"{'trivial pairs':>15}{'trivial AUC':>13}")
         accs = defaultdict(list)
+        same_r, same_n = 0.0, 0
         for k, fold in enumerate(folds):
             trm = [m for m in v["all"] if m["task"] not in fold]
             tem = [m for m in v["all"] if m["task"] in fold]
             ti = listed(df, trm)
-            mu = np.nanmean(X[tr_idx_pos(df, ti)], 0)
-            mu = np.where(np.isnan(mu), 0.0, mu)
-            Xk = np.where(np.isnan(X), mu, X)
-            pred, _, _ = fit_logistic(Xk[tr_idx_pos(df, ti)], df.loc[ti, "solving"].to_numpy(float))
-            r = metrics(tem, pd.Series(pred(Xk), index=df.index))
+            score = fit_score(df, X, trm)[0]
+            r = metrics(tem, score)
+            sr, sn = same_key_pairs(df, score, tem, "n_columns")
+            same_r += sr; same_n += sn
+            for key, Xo in (("columns", Xc), ("less structure", Xs)):
+                ro = metrics(tem, fit_score(df, Xo, trm)[0])
+                for m_ in ("pair_acc", "auc"):
+                    if ro[m_] is not None:
+                        accs[f"{key} {m_}"].append(ro[m_])
             if name == "graded":
                 smk = [m for m in sm if m["task"] not in fold], [m for m in sm if m["task"] in fold]
                 with contextlib.redirect_stdout(io.StringIO()):
@@ -716,8 +773,31 @@ def measure_mode(data, out):
         mean = lambda k: show(float(np.mean(accs[k])) if accs[k] else None)
         lines.append(f"{'mean over folds':<28}{mean('pair_acc'):>8}{mean('auc'):>8}{mean('pair_acc_sampled'):>9}"
                      f"{mean('auc_sampled'):>9}{'':>21}{mean('trivial pair_acc'):>15}{mean('trivial auc'):>13}")
+        lines.append(f"{'mean, column count alone':<28}{mean('columns pair_acc'):>8}{mean('columns auc'):>8}")
+        lines.append(f"{'mean, less col. structure':<28}{mean('less structure pair_acc'):>8}{mean('less structure auc'):>8}")
+        res["cv same columns"] = (same_r / same_n if same_n else None, same_n)
+        res["cv"] = {k: float(np.mean(x)) for k, x in accs.items() if x}
+        lines.append(f"{'pooled, one column count':<28}{show(res['cv same columns'][0]):>8}{'':>33}{same_n:>7}")
         lines.append("")
         results[name] = res
+    gl = df.loc[listed(df, variants["graded"]["all"])]
+    g = results["graded"]
+    qual = ["## Qualifications", "",
+            "- No sampled continuation of a held-out task solves, so every held-out pair is the gold continuation's "
+            "table against a sampled one's: the metric measures how well a score tells the gold writer's table from "
+            "the LM's, not a solving step from a failing one.",
+            f"- Gold tables have more columns than sampled ones ({gl[gl['gold']]['n_columns'].mean():.2f} against "
+            f"{gl[~gl['gold']]['n_columns'].mean():.2f}, variant graded, every task). The column count alone scores "
+            f"{show(g['columns']['pair_acc'])} held out and {show(g['cv'].get('columns pair_acc'))} in the 5-fold run; "
+            f"the logistic on every detector scores {show(g['cv same columns'][0])} in the 5-fold run over its "
+            f"{g['cv same columns'][1]} pairs of one column count. Without the column-structure detectors "
+            f"({', '.join(COLUMN_STRUCTURE)}) it scores {show(g['less structure']['pair_acc'])} held out and "
+            f"{show(g['cv'].get('less structure pair_acc'))} in the 5-fold run.",
+            f"- The trivial baseline at positions 4 scores {show(g['trivial@4']['pair_acc'])} over "
+            f"{g['trivial@4']['pairs']} pairs, the lists of the value run's 0.651; every depth is 0 here, since no "
+            f"flows are read, which accounts for the difference. At positions 1, the lists the detectors are measured "
+            f"on, it scores {show(g['trivial@1']['pair_acc'])}.", ""]
+    lines[5:5] = qual
     lines.append("A signal marked * is one of the signals added from marks.md (detectors.py's docstring). A graded signal's sign (+ or -) "
                  "is the one that ranks better on the training branch points. f_product is tested on Tables of at "
                  f"most {PRODUCT_ROWS} rows at each train example and {PRODUCT_COLUMNS} columns other than Example.")
