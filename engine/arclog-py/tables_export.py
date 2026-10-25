@@ -1,6 +1,8 @@
 """Write the tables of the corpus's case programs as an index and flat int32 value arrays.
 
-    work/lm/.venv/bin/python engine/arclog-py/tables_export.py <out dir> [--all-cases] [--bodies] [--projection-cap N] [<task id> ...]
+    python engine/arclog-py/tables_export.py <out dir> [--all-cases] [--bodies] [--projection-cap N] [<task id> ...]
+
+It needs an interpreter with `arclog`, pandas and pyarrow, such as the LM work's venv.
 
 Runs one `arclog.corpus_tables` call per task id, the largest `.arcdata` file first, on a queue of N Python threads, where N is `ARCLOG_THREADS`
 if set and `os.cpu_count()` otherwise. The script sets `ARCLOG_THREADS=1` for the engine, so each call runs on one

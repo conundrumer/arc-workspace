@@ -364,6 +364,13 @@ def batches(progs, budget, max_len, shuffle, K=0, counts=None):
     return groups
 
 
+def grad_norm(params):
+    """The global 2-norm of the gradients, by the formula of torch.nn.utils.clip_grad_norm_: the 2-norm of the
+    per-tensor 2-norms."""
+    norms = [torch.linalg.vector_norm(p.grad.detach().float()) for p in params if p.grad is not None]
+    return torch.linalg.vector_norm(torch.stack(norms)).item() if norms else 0.0
+
+
 def run_batch(model, progs, group, enc_args, device, stats=None, gen=None, K=0, enc_gen=None, aux=None):
     """The mean loss of a group of programs, and the count of its targets. `gen` draws the identifiers of the
     language model, and `enc_gen` the encoder's (by default the model's own generator), so that the language
@@ -371,6 +378,11 @@ def run_batch(model, progs, group, enc_args, device, stats=None, gen=None, K=0, 
     "prior_weight" and "step" (masked_loss's arguments), the loss adds weight times the masked table loss over the
     tables of the group's programs, from a second encoder pass whose masks and identifiers come from
     model.mask_gen, and aux gains "loss", the masked loss, and "program" and "prior", the mean loss of each part.
+    aux gains "lm", the language model loss alone, as a tensor. Where aux has "measure" set, aux gains
+    "norm_masked", the global gradient norm right after the masked loss's backward. Where aux has "clip" set, the
+    gradients scale after that backward so that their global norm is at most "clip" (the formula of
+    torch.nn.utils.clip_grad_norm_), and where "measure" is set and the scaling applied, aux gains
+    "norm_masked_clipped", the norm after the scaling.
     Where gradients are on, that pass runs first and its backward runs at once, so that its graph is freed before
     the clean pass builds its own: the gradients add to those of the returned loss's backward, so the caller zeroes
     the gradients before the call."""
@@ -389,6 +401,12 @@ def run_batch(model, progs, group, enc_args, device, stats=None, gen=None, K=0, 
                                                     aux["cap"], model.mask_gen, backward=aux["weight"], kind=aux["kind"],
                                                     step=aux["step"], prior_weight=aux["prior_weight"])
         aux["loss"] = masked.item()
+        if aux.get("measure"):
+            aux["norm_masked"] = grad_norm(model.parameters())
+        if aux.get("clip"):
+            before = torch.nn.utils.clip_grad_norm_(model.parameters(), aux["clip"])
+            if aux.get("measure") and before.item() > aux["clip"]:
+                aux["norm_masked_clipped"] = grad_norm(model.parameters())
         for part in ("program", "prior"):
             ls = [r["loss"] for _, _, r in records if r["part"] == part]
             aux[part] = torch.cat(ls).mean().item() if ls else 0.0
@@ -436,6 +454,8 @@ def run_batch(model, progs, group, enc_args, device, stats=None, gen=None, K=0, 
                 bin_ = "len<200" if n < 200 else "len<600" if n < 600 else "len>=600"
                 stats["len"].setdefault(bin_, [0.0, 0]); stats["len"][bin_][0] += v; stats["len"][bin_][1] += 1
     loss = total / max(count, 1)
+    if aux is not None:
+        aux["lm"] = loss.detach()
     if masked is not None:
         loss = loss + aux["weight"] * masked
     return loss, count
@@ -516,6 +536,9 @@ def main():
                          "at every layer for the backward pass, which does not fit a step of full-data programs")
     ap.add_argument("--encoder-init", help="an encoder state that pretrain.py saved, loaded before the fine-tune")
     ap.add_argument("--aux-masked", type=float, default=0.0, help="the weight of the masked table loss beside the LM loss")
+    ap.add_argument("--aux-clip", type=float, default=1.0,
+                    help="the most the global gradient norm of the masked table loss may be, scaled down to it before "
+                         "the LM loss's backward adds its gradient; the clip at 1.0 over the sum still follows")
     ap.add_argument("--mask-frac", type=float, default=0.15, help="the fraction of fields the masked loss hides per table")
     ap.add_argument("--mask-cap", type=int, default=512, help="the most fields the masked loss hides per table")
     ap.add_argument("--preflight", action=argparse.BooleanOptionalAction, default=True,
@@ -667,18 +690,30 @@ def main():
         epoch += 1
         train = [random.choice(cs) for cs in train_tasks]
         for g in batches(train, a.budget, a.max_len, True, K, split_counts):
+            logged = step + 1 <= 3 or (step + 1) % 10 == 0
             aux = (dict(weight=a.aux_masked, frac=a.mask_frac, cap=a.mask_cap, kind=a.mask_kind,
-                        prior_weight=a.prior_weight, step=step) if K and a.aux_masked else None)
+                        prior_weight=a.prior_weight, step=step, measure=logged, clip=a.aux_clip) if K and a.aux_masked else None)
             opt.zero_grad()
             with autocast():
                 loss, _ = run_batch(model, train, g, enc_args, a.device, K=K, aux=aux)
             loss.backward()
+            parts = {}
+            if aux:
+                parts = {"lm_loss": aux["lm"].item(), "masked_loss": aux["loss"]}
+                if logged:
+                    parts["grad_norm_masked"] = aux["norm_masked"]
+                    parts["grad_norm_total"] = grad_norm(model.parameters())
+                    if "norm_masked_clipped" in aux:
+                        parts["grad_norm_masked_clipped"] = aux["norm_masked_clipped"]
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             opt.step(); sched.step(); step += 1
             device_memory(a.device)
-            if step <= 3 or step % 10 == 0:
-                masked = (f" (masked table loss {aux['loss']:.3f}: program {aux['program']:.3f}, prior "
-                          f"{aux['prior']:.3f})" if aux else "")
+            if logged:
+                masked = (f" (lm loss {parts['lm_loss']:.3f}, masked table loss {aux['loss']:.3f}: program "
+                          f"{aux['program']:.3f}, prior {aux['prior']:.3f}) grad norm masked "
+                          f"{parts['grad_norm_masked']:.3f}, total {parts['grad_norm_total']:.3f}" if aux else "")
+                if "grad_norm_masked_clipped" in parts:
+                    masked += f", masked clipped {parts['grad_norm_masked_clipped']:.3f}"
                 print(f"step {step} epoch {epoch} train loss {loss.item():.3f}{masked} {time.time() - start:.0f}s", flush=True)
             if a.max_steps and step >= a.max_steps:
                 deadline = 0
@@ -687,7 +722,7 @@ def main():
                 ev = evaluate(model, held, enc_args, a.device, a.budget, out_names, classes, autocast, K)
                 stage("evaluated")
                 row = {"step": step, "epoch": epoch, "seconds": round(time.time() - start), "train_loss": loss.item(),
-                       "device_gb": round(device_memory(a.device), 2), "indist": ev_in, "heldout": ev}
+                       **parts, "device_gb": round(device_memory(a.device), 2), "indist": ev_in, "heldout": ev}
                 if K:
                     row["batch_splits"] = dict(split_counts)
                 if eval_train:

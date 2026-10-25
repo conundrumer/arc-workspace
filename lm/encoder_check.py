@@ -10,10 +10,10 @@ real tables of the dev export, cut to a few dozen rows each.
 - D4: each of the eight elements acts on the cells (a Box's margins move to their edges' images, an orientation
   constant to the constant of its image under the engine's action); each pooled vector must move by the
   element's permutation of positions, and the crossing output must not change.
-- Colors, examples and Idents: a permutation of the values, with each value's identifier carried to its image,
-  must leave the pooled vectors unchanged, since the identifiers are drawn independently, so that a fresh draw
-  is such a permutation. The change when the identifiers are not carried is printed beside it, to show that
-  the values reach the vectors.
+- Colors, examples and Idents: a permutation of the values, with each value's identifier moving with the value to
+  its image, must leave the pooled vectors unchanged, since the identifiers are drawn independently, so that a
+  fresh draw is such a permutation. The change when the identifiers stay with the old values is printed beside
+  it, to show that the values reach the vectors.
 - Row order: a shuffle of the rows must leave the pooled vectors unchanged.
 - Joint evidence: a change to one ex_output cell must change ex_input's pooled vectors, since the two evidence
   tables are encoded as one block of rows.
@@ -43,11 +43,13 @@ real tables of the dev export, cut to a few dozen rows each.
 - Autocast: under bf16 autocast, with the encoder in float32, every attention input must be bf16, each equivariant
   matrix must be cast once per call of `prepare`, and the masked loss and its gradients must be finite; on the CPU,
   and on CUDA where the machine has it.
-- Checkpointing: the masked loss's gradients must be the same with and without it; the bytes the Blocks save for
-  the backward pass are printed per level.
-- Checkpointing over many levels: on two programs of the fixture's evidence tables and 30 small tables each, the
-  bytes that a checkpointed Block call keeps per level must not grow with the evidence rows beyond the key mask's
-  places, and the gradients must be those without checkpointing.
+- Checkpointing: the masked loss's gradients must be the same with and without it, with every batch checkpointed and
+  with CHECKPOINT_MIN between the batches' sizes, where exactly the batches of at least CHECKPOINT_MIN keys must be
+  checkpointed; the bytes the Blocks save for the backward pass are printed per level.
+- Checkpointing over many levels: with every batch checkpointed, on two programs of the fixture's evidence tables
+  and 30 small tables each, the bytes that a checkpointed Block call keeps per level must not grow with the evidence
+  rows beyond the places of the key mask and of the evidence keys' index, and the gradients must be those without
+  checkpointing.
 - Split backward: `train.run_batch` with the masked loss, whose backward runs before the clean pass, must give the
   gradients of one backward of the summed loss, on a stand-in language model.
 - Identifiers: the vectors drawn and the pooled vectors must be bitwise those of a reference copy of the
@@ -254,7 +256,8 @@ def orientation_images(g):
 
 def symmetry(title, tabs, elements=E.ELEMENTS):
     """The D4, row order and value permutation checks of `enc` on tabs. Under the "random" equality term, an
-    orientation constant's sign code is carried to its image, as the identifiers are in the permutation checks."""
+    orientation constant's sign code moves with the constant to its image, as the identifiers do in the permutation
+    checks."""
     print(f"== {title}")
     s0, c0, ids0 = run(tabs)
     scale = s0.abs().max().item()
@@ -294,8 +297,8 @@ def symmetry(title, tabs, elements=E.ELEMENTS):
         s1, c1, _ = run(moved_tabs, ids0, perm_full, codes)
         s2, _, _ = run(moved_tabs, ids0, {}, ())
         e = (s1 - s0).abs().max().item()
-        print(f"  {ty} permutation, identifiers carried: |pooled| change {e:.2e} {'PASS' if e < TOL else 'FAIL'}; "
-              f"not carried (so the values are seen): {(s2 - s0).abs().max().item():.2e}")
+        print(f"  {ty} permutation, identifiers move with the values: |pooled| change {e:.2e} {'PASS' if e < TOL else 'FAIL'}; "
+              f"identifiers stay with the old values (so the values are seen): {(s2 - s0).abs().max().item():.2e}")
 
 
 for title, tabs in suites.items():
@@ -716,15 +719,23 @@ print("== checkpointing: the masked loss's gradients with and without --enc-chec
       "for the backward pass at each level")
 
 
-def grads_and_saved(ckpt):
-    """The gradients of the masked loss over both suites as one batch of programs, and the bytes of the new storages
-    that the Block calls save for the backward pass, per level."""
-    enc.checkpoint = ckpt
-    level, saved, seen = [None], {}, set()
-    block_forward = E.Block.forward
+def grads_and_saved(ckpt, minimum=0):
+    """The gradients of the masked loss over both suites as one batch of programs, the bytes of the new storages
+    that the Block calls save for the backward pass, per level, and the keys B (N + P + E) of each Block call of the
+    forward pass and of each that the checkpoint takes, with CHECKPOINT_MIN at `minimum`."""
+    enc.checkpoint, ckpt_min = ckpt, E.CHECKPOINT_MIN
+    E.CHECKPOINT_MIN = minimum
+    level, saved, seen, calls, taken = [None], {}, set(), [], []
+    block_forward, ckpt_fn = E.Block.forward, E.checkpoint
+
+    def ckpt_spy(fn, x, ctx, *rest, **kw):
+        taken.append(x.shape[0] * ctx.mask.shape[-1])
+        return ckpt_fn(fn, x, ctx, *rest, **kw)
 
     def spy(self, x, ctx, *rest):
         level[0] = ctx.level
+        if torch.is_grad_enabled() and not backward[0]:
+            calls.append(x.shape[0] * ctx.mask.shape[-1])
         try:
             return block_forward(self, x, ctx, *rest)
         finally:
@@ -737,23 +748,33 @@ def grads_and_saved(ckpt):
             saved[level[0]] = saved.get(level[0], 0) + t.untyped_storage().nbytes()
         return t
 
-    E.Block.forward = spy
+    backward = [False]
+    E.Block.forward, E.checkpoint = spy, ckpt_spy
     try:
         enc.zero_grad()
         with torch.autograd.graph.saved_tensors_hooks(pack, lambda t: t):
             loss, _ = enc.masked_loss([(t, [None] * len(t)) for t in suites.values()], torch.Generator().manual_seed(8),
                                       0.3, 10 ** 6, torch.Generator().manual_seed(9))
+        backward[0] = True
         loss.backward()
     finally:
-        E.Block.forward = block_forward
+        E.Block.forward, E.checkpoint, E.CHECKPOINT_MIN = block_forward, ckpt_fn, ckpt_min
         enc.checkpoint = False
-    return {n: p.grad.clone() for n, p in enc.named_parameters() if p.grad is not None}, saved
+    return {n: p.grad.clone() for n, p in enc.named_parameters() if p.grad is not None}, saved, calls, taken
 
 
-g0, b0 = grads_and_saved(False)
-g1, b1 = grads_and_saved(True)
+g0, b0, calls, _ = grads_and_saved(False)
+g1, b1, _, taken = grads_and_saved(True)
 e = max((g0[n] - g1[n]).abs().max().item() for n in g0)
-print(f"  {len(g0)} parameter gradients, |with - without| {e:.2e} {'PASS' if g0.keys() == g1.keys() and e < 1e-12 else 'FAIL'}")
+print(f"  {len(g0)} parameter gradients, |with - without| {e:.2e}, {len(taken)} of {len(calls)} Block calls "
+      f"checkpointed {'PASS' if g0.keys() == g1.keys() and e < 1e-12 and len(taken) == len(calls) else 'FAIL'}")
+# CHECKPOINT_MIN between the calls' sizes: the calls under it run without the checkpoint, the rest with it
+mid = sorted(set(calls))[len(set(calls)) // 2]
+g2, _, _, taken2 = grads_and_saved(True, mid)
+e = max((g0[n] - g2[n]).abs().max().item() for n in g0)
+ok = sorted(taken2) == sorted(k for k in calls if k >= mid) and 0 < len(taken2) < len(calls)
+print(f"  CHECKPOINT_MIN {mid}: {len(taken2)} of {len(calls)} Block calls checkpointed, those of at least "
+      f"{mid} keys; |with - without| {e:.2e} {'PASS' if ok and g0.keys() == g2.keys() and e < 1e-12 else 'FAIL'}")
 print("  KB saved by the Blocks per level, without: " + ", ".join(f"{k}: {v / 1e3:.0f}" for k, v in sorted(b0.items()))
       + "; with: " + (", ".join(f"{k}: {v / 1e3:.0f}" for k, v in sorted(b1.items())) or "none")
       + f" {'PASS' if sum(b1.values()) < sum(b0.values()) / 10 else 'FAIL'}")
@@ -772,7 +793,8 @@ def kept_per_level(evidence, ckpt=True):
     """The gradients of the masked loss of two programs of the evidence tables then LEVELS copies of `body`, and the
     bytes of the new storages, per level, that the Block calls save and that the checkpoint keeps of their inputs."""
     progs = [list(evidence) + [body] * LEVELS for _ in range(2)]
-    enc.checkpoint = ckpt
+    enc.checkpoint, ckpt_min = ckpt, E.CHECKPOINT_MIN
+    E.CHECKPOINT_MIN = 0   # every batch checkpointed, though the fixture's are small
     level, kept, seen = [None], {}, set()
     block_forward, ckpt_fn = E.Block.forward, E.checkpoint
 
@@ -817,7 +839,7 @@ def kept_per_level(evidence, ckpt=True):
                                       10 ** 6, torch.Generator().manual_seed(9))
         loss.backward()
     finally:
-        E.Block.forward, E.checkpoint = block_forward, ckpt_fn
+        E.Block.forward, E.checkpoint, E.CHECKPOINT_MIN = block_forward, ckpt_fn, ckpt_min
         enc.checkpoint = False
     return {n: p.grad.clone() for n, p in enc.named_parameters() if p.grad is not None}, kept
 
@@ -829,10 +851,10 @@ e = max((g_plain[n] - g_big[n]).abs().max().item() for n in g_plain)
 print(f"  {len(g_plain)} parameter gradients over {LEVELS + 2} levels, |with - without| {e:.2e} "
       f"{'PASS' if g_plain.keys() == g_big.keys() and e < 1e-12 else 'FAIL'}")
 # from level 3 on, past the levels that first see the shared tensors (the evidence block, and the evidence keys and
-# values that the first table after it reads), a level's bytes may differ only by the key mask's evidence places: at
-# most 8 bytes per place, of each program's table
+# values that the first table after it reads), a level's bytes may differ only by the evidence places of the key mask
+# and of the evidence keys' index: at most 8 bytes per place in each, of each program's table
 d_rows = sum(t.n for t in ev_big) - sum(t.n for t in ev_small)
-bound = 2 * 8 * d_rows
+bound = 2 * 2 * 8 * d_rows
 late = [k for k in k_big if k >= 3]
 diff = max(abs(k_big[k] - k_small.get(k, 0)) for k in late)
 copy_bytes = 2 * d_rows * len(enc.blocks) * kv_width[0] * 8

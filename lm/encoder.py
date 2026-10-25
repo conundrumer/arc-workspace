@@ -1379,6 +1379,8 @@ class Pack:
 # split into the batches of least total cost (`batches`).
 BATCH_COST = 2_000_000   # in attention scores
 ROW_COST = 100           # a row's maps, in attention scores
+# A batch of fewer keys B (N + P + E) skips the checkpoint, and keeps at most 0.1 GB more at c 32, 2 layers, bf16.
+CHECKPOINT_MIN = 2048
 
 
 def batches(rows, keys):
@@ -1450,34 +1452,44 @@ class Evidence:
     def all_rows(self):
         return np.concatenate([r for rs in self.of for r in rs])
 
+    def key_index(self, programs, E):
+        """The places in `kv` of the evidence rows of each of `programs`, in `all_rows` order, each padded to E
+        with the place of kv's zero row: [len(programs), E]."""
+        sizes = [self.rows(p) for p in range(len(self.of))]
+        start = np.cumsum([0] + sizes)
+        idx = np.full((len(programs), E), start[-1], np.int64)
+        for b, p in enumerate(programs):
+            idx[b, :sizes[p]] = start[p] + np.arange(sizes[p])
+        return idx
+
     def compute(self, enc, sel):
-        """The keys and values of the rows `sel` (`all_rows`) at each layer, `kv`, and `parts`: per program, per
-        layer, the view of kv that holds the program's rows [rows, H (w + wv)]."""
+        """The keys and values of the rows `sel` (`all_rows`) at each layer, then one row of zeros, `kv`, and
+        `layer_kv`: per layer, the view of kv [rows + 1, H (w + wv)]."""
         kv, self.done = [], self.version
         for l, (blk, mats) in enumerate(zip(enc.blocks, enc.mats)):
             rows = torch.cat(self.layers[l]) if len(self.layers[l]) > 1 else self.layers[l][0]
             h = blk.n1(rows.index_select(0, sel))
             kv.append(F.linear(h.reshape(len(h), -1), mats["kv"], mats["bkv"]))
-        self.kv = torch.stack(kv, 1)                                                  # [rows, L, H (w + wv)]
-        self.parts = [x.unbind(1) for x in self.kv.split([self.rows(p) for p in range(len(self.of))])]
+        self.kv = F.pad(torch.stack(kv, 1), (0, 0, 0, 0, 0, 1))                       # [rows + 1, L, H (w + wv)]
+        self.layer_kv = self.kv.unbind(1)
         self.H, self.W, self.Wv = enc.blocks[0].heads, enc.mats[0]["W"], enc.mats[0]["Wv"]
 
 
 class EvidenceKeys:
-    """A batch's evidence keys and values, built at each layer, inside the Block call, from `Evidence.parts` of the
-    program of each of its tables, each padded with zero rows to E. A checkpointed Block call thus keeps the shared
-    keys and values of `Evidence.kv` for its backward pass, and builds the batch's padded copy again there."""
-    def __init__(self, ev, programs, E, pad):
-        self.parts, self.E, self.pad = [ev.parts[p] for p in programs], E, pad
+    """A batch's evidence keys and values, built at each layer, inside the Block call, by one index_select of
+    `Evidence.layer_kv` at `index` [B E] (`Evidence.key_index`), whose padding places take kv's zero row. A
+    checkpointed Block call thus keeps the index and the shared keys and values of `Evidence.kv` for its backward
+    pass, and builds the batch's padded copy again there."""
+    def __init__(self, ev, index, B, E, pad):
+        self.layer_kv, self.index, self.B, self.E, self.pad = ev.layer_kv, index, B, E, pad
         self.H, self.W, self.Wv = ev.H, ev.W, ev.Wv
 
     def layer(self, l):
         """The keys [B, E, H, w] with `pad` zero channels and the values [B, E, H, wv] at layer l."""
-        H, W, Wv, E = self.H, self.W, self.Wv, self.E
-        kv = torch.stack([F.pad(part[l], (0, 0, 0, E - len(part[l]))) for part in self.parts])
-        k, v = kv.split([H * W, H * Wv], -1)
-        k = k.reshape(len(kv), E, H, W)
-        return (F.pad(k, (0, self.pad)) if self.pad else k), v.reshape(len(kv), E, H, Wv)
+        H, W, Wv, B, E = self.H, self.W, self.Wv, self.B, self.E
+        k, v = self.layer_kv[l].index_select(0, self.index).split([H * W, H * Wv], -1)
+        k = k.reshape(B, E, H, W)
+        return (F.pad(k, (0, self.pad)) if self.pad else k), v.reshape(B, E, H, Wv)
 
 
 class FeatureEncoder(nn.Module):
@@ -1540,8 +1552,8 @@ class FeatureEncoder(nn.Module):
             self.mask_pair = nn.Parameter(torch.randn(len(PAIR_ORBITS), c))  # per orbit of edge pairs
             self.heads = MaskedHeads(c)
         self.cand_feats = {}
-        # with gradients on, recompute each Block's activations in the backward pass rather than keep them: the
-        # Block draws no random numbers, so the recomputation gives the same values
+        # with gradients on, recompute each Block's activations in the backward pass rather than keep them, in a batch
+        # of at least CHECKPOINT_MIN keys: the Block draws no random numbers, so the recomputation gives the same values
         self.checkpoint = False
         self.group = 0   # the programs each encoder call takes, all where 0 (see `chunks`)
 
@@ -1926,6 +1938,8 @@ class FeatureEncoder(nn.Module):
                                 key_mask=pack.add(km[:, None, None], torch.bool),
                                 pool_mask=pack.add(np.repeat(pm, K, 1)[:, None], torch.bool),
                                 item=pack.add(np.array(grp), torch.long))
+                    if E:
+                        plan["ev_index"] = pack.add(ev.key_index([it["p"] for it in its], E).reshape(-1), torch.long)
                     if t:
                         plan["prev"] = pack.add(np.array([[pool_row[(it["p"], i)] * K + k for i in range(t) for k in range(K)]
                                                           for it in its]).reshape(-1), torch.long)
@@ -1983,12 +1997,12 @@ class FeatureEncoder(nn.Module):
                     ctx.eq_q = x.new_zeros(B, N, 1, pad).to(self.mats[0]["qkv"].dtype)
                     ctx.eq_k = x.new_zeros(B, N + t * K, L, self.blocks[0].heads, pad).to(self.mats[0]["qkv"].dtype).unbind(2)
                 if E:
-                    ctx.ev = EvidenceKeys(ev, [it["p"] for it in plan["its"]], E,
+                    ctx.ev = EvidenceKeys(ev, pack[plan["ev_index"]], B, E,
                                           ctx.eq_q.shape[-1] if ctx.eq_q is not None else 0)
                 its_ev = [b for b, it in enumerate(plan["its"]) if it["evidence"]]
                 layers = []
                 for l, blk in enumerate(self.blocks):
-                    if self.checkpoint and torch.is_grad_enabled():
+                    if self.checkpoint and torch.is_grad_enabled() and B * (N + t * K + E) >= CHECKPOINT_MIN:
                         x = checkpoint(blk, x, ctx, l, self.mats[l], use_reentrant=False)
                     else:
                         x = blk(x, ctx, l, self.mats[l])
