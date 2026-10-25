@@ -162,6 +162,11 @@ def task_key(engine, task, settings):
     return digest.hexdigest()
 
 
+def line_task(line):
+    """The task id a report or check line starts with: its first word without a trailing colon (a fault line may be `<task>: <text>`)."""
+    return line.split()[0].rstrip(":") if line.split() else ""
+
+
 def reuse_parts(out, previous, keys, k, skip):
     """Writes parts from `previous`, from its `k`-th on, for each task of `keys` ({task: key}, not in `skip`) whose key the previous export's `tasks.txt` lines give equal.
 
@@ -180,11 +185,10 @@ def reuse_parts(out, previous, keys, k, skip):
             if os.path.exists(f):
                 rows = pd.read_parquet(f)
                 rows = rows[rows["task"].isin(tasks)]
-                if len(rows):
-                    rows.to_parquet(f"{out}/parts/{k:05d}.{p}.parquet")
+                rows.to_parquet(f"{out}/parts/{k:05d}.{p}.parquet")
         for kind in ("report", "checks"):
             with open(f"{out}/parts/{k:05d}.{kind}.txt", "w") as sink:
-                sink.write("".join(l + "\n" for l in open(f"{previous}/parts/{stem}.{kind}.txt").read().splitlines() if l.split()[0] in tasks))
+                sink.write("".join(l + "\n" for l in open(f"{previous}/parts/{stem}.{kind}.txt").read().splitlines() if line_task(l) in tasks))
         for task in tasks:
             os.makedirs(f"{out}/values/{task}", exist_ok=True)
             for name in os.listdir(f"{previous}/values/{task}") if os.path.isdir(f"{previous}/values/{task}") else []:
