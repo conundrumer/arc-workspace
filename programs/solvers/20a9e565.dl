@@ -167,7 +167,6 @@ gap_size.item($U(), N) :- gap.tally(_, N).
 
 // The count of lines between consecutive terms.
 // @store: ordinary concept
-// @ignore: single-consumer — the @store branch stores this relation
 .decl term_gap(g: number)
 term_gap(G) :- gap_size.value($U(), G).
 
@@ -239,18 +238,19 @@ term_band(D, I0, A, B_a) :-
 
 // --- Stretch ---
 
-// How far a cell of the term at i0 stretches toward e by index i: as far as
-// the count of steps on the term's e edge, and not at all elsewhere.
-// @ignore: head-zero — a cell off the term's e edge does not stretch
-.decl stretch(d: Dir, e: Dir, i0: Position, i: Position, p: Position, k: number)
-stretch(D, E, I0, I, P, 0) :- target(D, I0, I), cell_at(D, I0, P, _), ( E = D ; perp_dir(D, E) ).
-stretch(D, E, I0, I, P, K) :-
-    steps(D, I0, I, M), term_at(D, I0, T), ( E = D ; perp_dir(D, E) ), edge_cell(T, E, P),
-    span(K), K <= M.
+// A count of lines an edge line of the term at i0 stretches by index i: one
+// up to the count of steps.
+.decl stretch_by(d: Dir, i0: Position, i: Position, k: number)
+stretch_by(D, I0, I, K) :- steps(D, I0, I, M), span(K), K <= M.
 
-// Each cell of the stretched term takes the color of the term at index i.
+// Each cell of the term at i0 stretches toward d and toward e: by none, and,
+// where it lies on the term's edge on that side, by each count `stretch_by`
+// gives. Each cell of the stretched term takes the color of the term at
+// index i.
 catalog.prediction(D, $Stretch(E), [I0, I], P_h, Col) :-
-    stretch(D, D, I0, I, P, K), perp_dir(D, E), stretch(D, E, I0, I, P, K2),
+    target(D, I0, I), term_at(D, I0, T), term_cell(T, P, _), perp_dir(D, E),
+    ( K = 0 ; edge_cell(T, D, P), stretch_by(D, I0, I, K) ),
+    ( K2 = 0 ; edge_cell(T, E, P), stretch_by(D, I0, I, K2) ),
     jump(P, D, K, Q1), jump(Q1, E, K2, Q),
     grown_frame(D, I0, I, L, Col), relative(L, Q, P_h).
 

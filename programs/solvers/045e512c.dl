@@ -47,7 +47,9 @@ shape(P) :- biggest.mode($U(), Id), object(Id, _, P).
 
 // Step lengths the grid admits.
 .decl span(k: number)
-span(K) :- in(P, _), axis_elem(A), sub_extent(P, A, K).
+span(K) :-
+    in(P, _), diag_dir_elem(C), corner_dist(P, C, 0),  // a corner cell stands for the frame
+    axis_elem(A), sub_extent(P, A, K).
 
 .decl toward(d: Dir8, k: number, delta: Offset)
 toward(D, K, Delta) :- span(K), dir8_elem(D), jump_offset(D, K, Delta).
