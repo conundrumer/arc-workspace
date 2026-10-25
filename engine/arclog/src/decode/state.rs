@@ -365,6 +365,20 @@ impl State {
         Ok((next, forced, opened))
     }
 
+    /// The operator, and the first label once it is written, of the
+    /// constraint that stands open on top.
+    pub(super) fn open_constraint(&self) -> Option<(ConstraintOp, Option<ConstraintLabel>)> {
+        match self.stack.last() {
+            Some(Frame::Constraint(constraint)) => Some((constraint.op, constraint.first)),
+            _ => None,
+        }
+    }
+
+    /// The count of the labels made so far.
+    pub(super) fn label_count(&self) -> u32 {
+        self.labels
+    }
+
     /// The program with the form in progress as its last form, and the path
     /// in that form of the innermost open node, or none where the last form
     /// is complete; or none where the form in progress shows no node yet.
@@ -779,6 +793,7 @@ impl State {
             site.fields += 1;
             return Ok(Offer::Taken);
         }
+        let parameter = type_parameter(&site.column);
         match token {
             Token::Control(Control::End) => {
                 let record = site.fields > 0 || site.args.len() > 1;
@@ -789,6 +804,8 @@ impl State {
                 Ok(Offer::Close { consumed: true })
             }
             _ if site.record_ended => Err("a projection's column ends with `END`"),
+            Token::Column(_) if !parameter => Err("a column of a fixed type takes one label"),
+            _ if !parameter && !site.args.is_empty() => Err("a column of a fixed type takes one label"),
             Token::Column(field) if *field == site.fields => {
                 site.field = Some(*field);
                 Ok(Offer::Taken)

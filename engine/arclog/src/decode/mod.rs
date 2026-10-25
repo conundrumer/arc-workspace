@@ -13,7 +13,9 @@
 //! that reads nothing of that relation ([`Candidate::AtomHead`]), and the candidates that open an
 //! atom of a lib relation, a relation macro, a proposer or a relation of the program take one
 //! resolution of the form in progress, retargeted to each one's relation. The mask keeps the state and
-//! forced tokens of each admitted token, which the step of that token takes. Its interface
+//! forced tokens of each admitted token, which the step of that token takes.
+//! It admits a constraint's operator, or first label, only where some
+//! completion of the constraint passes the checks (`Decoder::completes`). Its interface
 //! beside the mask, in `interface`, gives the rows of the body so far and the
 //! consistency test at a `RULE` clause's end, and its batch form, in
 //! `batch`, steps many decodes at once, and its projections of the body so far,
@@ -41,6 +43,7 @@ pub use interface::{Consistency, Step};
 pub use tables::{evidence_tables, gives_no_table, Contents, ExampleRows, Point, Points, Table, TableColumn, TableDet, TableRelation};
 pub use projections::{Projection, Projections};
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
@@ -51,11 +54,11 @@ use crate::eval::Cancellation;
 use crate::judge::candidates::PairCandidates;
 use crate::program::path::NodePath;
 use crate::program::{ProgramRelation, RelationRef};
-use crate::program::{Node, Program};
+use crate::program::{ConstraintOp, Node, Program};
 use crate::registry::Registry;
 use crate::resolver::resolve_last;
 use crate::session::TaskSession;
-use crate::stream::{DecodeSettings, Emitter, Token, Vocabulary};
+use crate::stream::{Control, DecodeSettings, Emitter, Token, Vocabulary};
 use crate::task::Task;
 use crate::trace::{DecodeRecord, DecodeTrace, TopK, Verdict};
 
@@ -189,9 +192,10 @@ impl<'a> Decoder<'a> {
         let mut mask = TokenMask::new(vocabulary.len());
         let mut steps = HashMap::new();
         self.with_checks_at_state(|checks| {
+            let order = RefCell::default();
             for id in 0..u32::try_from(vocabulary.len()).expect("fewer than 2^32 tokens") {
                 let token = vocabulary.token(id).expect("an id of the vocabulary");
-                if let Ok(step) = self.next(token, checks) {
+                if let Ok(step) = self.next(token, checks, &order) {
                     mask.insert(id);
                     steps.insert(id, step);
                 }
@@ -238,7 +242,7 @@ impl<'a> Decoder<'a> {
         let kept = self.held.0.get().and_then(|held| held.steps.get(&self.context.vocabulary.id(token)?));
         let (state, forced) = match kept {
             Some((state, forced)) => (state.clone(), forced.clone()),
-            None => self.with_checks(|checks| self.next(token, checks))?,
+            None => self.with_checks(|checks| self.next(token, checks, &RefCell::default()))?,
         };
         let judged = self.consistency(&self.state, &state);
         let (consistency, columns) = judged.map_or((None, None), |(result, columns)| (Some(result), columns));
@@ -317,7 +321,7 @@ impl<'a> Decoder<'a> {
 
     /// The state after `token`, and the tokens the engine emits after it,
     /// where `token` is in the mask.
-    fn next(&self, token: &Token, checks: &PrefixChecks<'_>) -> Result<(state::State, Vec<Token>), Refusal> {
+    fn next(&self, token: &Token, checks: &PrefixChecks<'_>, order: &RefCell<Order>) -> Result<(state::State, Vec<Token>), Refusal> {
         let vocabulary = &self.context.vocabulary;
         if self.output.is_some() {
             return Err(Refusal::Grammar("the decode has ended at its `&output`"));
@@ -341,12 +345,100 @@ impl<'a> Decoder<'a> {
                     return Ok((state, forced));
                 }
                 let candidate = if opened.is_some() { Candidate::AtomHead } else { Candidate::Any };
-                let resolved = resolve_last(&earlier(), &program, self.context.registry);
-                if let Some((check, refusals)) = checks.check(&resolved, open.as_ref(), candidate) {
-                    return Err(Refusal::Check { check, refusals });
-                }
+                self.check_state(&state, candidate, checks)?;
             }
+        }
+        if state.open_constraint().is_some() {
+            self.completes(&state, checks, &reads_example, order)?;
         }
         Ok((state, forced))
     }
+
+    /// Where `state` shows a program with a form in progress, the refusal of
+    /// `checks` on that program, with `candidate`.
+    fn check_state(&self, state: &state::State, candidate: Candidate, checks: &PrefixChecks<'_>) -> Result<(), Refusal> {
+        let Some((program, open)) = state.partial() else { return Ok(()) };
+        if program.value().forms.is_empty() {
+            return Ok(());
+        }
+        let resolved = resolve_last(&self.state.resolved(self.context.registry), &program, self.context.registry);
+        match checks.check(&resolved, open.as_ref(), candidate) {
+            Some((check, refusals)) => Err(Refusal::Check { check, refusals }),
+            None => Ok(()),
+        }
+    }
+
+    /// Whether some completion of the constraint open in `state` passes the
+    /// checks as a completed constraint does, or, where none does, the
+    /// refusal of the last completion tried. The completions are the labels
+    /// the grammar admits next, each stepped from `state`: after an
+    /// operator, the first labels, a fresh one for `=` alone; after the first label of `=`, `0`, the
+    /// labels in scope and a fresh label; after the first label of any other
+    /// operator, the first label itself, which passes exactly where some
+    /// second operand does.
+    fn completes(&self, state: &state::State, checks: &PrefixChecks<'_>, reads_example: state::ReadsExample<'_>, order: &RefCell<Order>) -> Result<(), Refusal> {
+        let Some((op, first)) = state.open_constraint() else {
+            return self.check_state(state, Candidate::Any, checks);
+        };
+
+        let ordering = first.is_none() && matches!(op, ConstraintOp::Lt | ConstraintOp::Le | ConstraintOp::Gt | ConstraintOp::Ge);
+        if ordering {
+            match order.replace(Order::Unknown) {
+                Order::Refused(refusal) => {
+                    *order.borrow_mut() = Order::Refused(refusal.clone());
+                    return Err(refusal);
+                }
+                Order::Passes(first) => {
+                    *order.borrow_mut() = Order::Passes(first.clone());
+                    if self.completes_with(state, &first, checks, reads_example, order).is_ok() {
+                        return Ok(());
+                    }
+                }
+                Order::Unknown => {}
+            }
+        }
+        let labels = (0..state.label_count()).rev().map(Token::Label);
+        let tokens: Vec<Token> = match first {
+            // Only `=` binds a label it makes, so a fresh first label of another operator leaves its label unbound.
+            None => std::iter::once(Token::Control(Control::Fresh)).filter(|_| op == ConstraintOp::Eq).chain(labels).collect(),
+            Some(first) if op != ConstraintOp::Eq => vec![Token::Label(first.label.0)],
+            Some(_) => std::iter::once(Token::Control(Control::Zero)).chain(labels).chain([Token::Control(Control::Fresh)]).collect(),
+        };
+        let mut refusal = Refusal::Grammar("a constraint has no completion");
+        for token in tokens {
+            match self.completes_with(state, &token, checks, reads_example, order) {
+                Ok(()) => {
+                    if ordering {
+                        *order.borrow_mut() = Order::Passes(token);
+                    }
+                    return Ok(());
+                }
+                Err(next) => refusal = next,
+            }
+        }
+        if ordering {
+            *order.borrow_mut() = Order::Refused(refusal.clone());
+        }
+        Err(refusal)
+    }
+
+    /// [`Decoder::completes`] of the state after `token` from `state`.
+    fn completes_with(&self, state: &state::State, token: &Token, checks: &PrefixChecks<'_>, reads_example: state::ReadsExample<'_>, order: &RefCell<Order>) -> Result<(), Refusal> {
+        match state.step(&self.context, token, reads_example) {
+            Ok((next, _, _)) => self.completes(&next, checks, reads_example, order),
+            Err(unexpected) => Err(Refusal::Grammar(unexpected)),
+        }
+    }
+}
+
+/// What the mask has found at a state of the order operators `<`, `<=`, `>`
+/// and `>=`, which the checks read alike: their first labels, and the first
+/// label that a completion passes with, are the same for all four.
+
+#[derive(Default)]
+enum Order {
+    #[default]
+    Unknown,
+    Refused(Refusal),
+    Passes(Token),
 }
