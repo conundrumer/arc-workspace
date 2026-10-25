@@ -94,7 +94,7 @@ real tables of the dev export, cut to a few dozen rows each.
   hidden Color pointer must learn, from a same-row copy of its value and from the lookup's source rows, where its run without the
   flags stays at its chance level.
 - Parent bias: `parent_types` must type a synthetic program's direct sources, ancestors and unrelated tables, the
-  grid tables among them, and type every table unrelated in a program without the column-level provenance; at
+  grid tables among them, a later source table of a column as neither, and type every table unrelated in a program without the column-level provenance; at
   initialization, on the dev export's first program, a derived row's attention mass on its direct source tables'
   pooled vectors must be larger with `--enc-parent-bias 4` than with 0, and 0 must give bitwise what the flag absent
   gives; the attention probe must give a larger parent share with the bias, and the logged values must be three per
@@ -1952,14 +1952,15 @@ print(f"  target kinds (fixture, kind) {dict(sorted(kinds_seen.items()))}; entri
       f"{len(singles)}; row targets {rows_log} of the log against {rows_direct} of the records; matched fields "
       f"{pa.get('matched_fields')} of {pa.get('fields')} {'PASS' if not bad else 'FAIL ' + str(bad)}")
 
-print("== --enc-parent-bias: the parent types of a synthetic program (ex_input, ex_output, A from ex_input, B from A, "
-      "C from ex_input, D from B and from ex_output), and of a program without the column-level provenance")
+print("== --enc-parent-bias: the parent types of a synthetic program (ex_input, ex_output, A from ex_input and from "
+      "the later G, B from A, C from ex_input, D from B and from ex_output, G from ex_input), and of a program without "
+      "the column-level provenance")
 
 
 def parent_fixture():
-    """The evidence tables of the provenance export's $Free, then A, B, C and D, one Ident column and one row each, A's
-    and C's Ident from ex_input's first column, B's from A's, and D's two Idents, from B's and from ex_output's first
-    column."""
+    """The evidence tables of the provenance export's $Free, then A, B, C, D and G, one Ident column and one row each,
+    A's Ident from ex_input's first column and from G's, C's and G's from ex_input's, B's from A's, and D's two Idents,
+    from B's and from ex_output's first column. G stands after A, so it is no source of A and no ancestor of B."""
     def table(i, flows):
         cols = max(f[0] for f in flows) + 1
         return E.Table(step=i, relation=i, evidence=False, unseen=None, largest=1, export_table=i,
@@ -1969,16 +1970,17 @@ def parent_fixture():
                        model=np.zeros(1, np.int32), entry=np.zeros(1, np.int32), part=np.zeros(1, np.int32),
                        marker=np.zeros(1, bool), unseen_entries={}, det_relations=[], depth=i - 1, keys=[],
                        output_position=-1, output_color=-1, flows=np.array([f + [-1] for f in flows], np.int32))
-    return [free[0], free[1], table(2, [[0, 0, 0, 0]]), table(3, [[0, 0, 2, 0]]), table(4, [[0, 0, 0, 0]]),
-            table(5, [[0, 0, 3, 0], [1, 0, 1, 0]])]
+    return [free[0], free[1], table(2, [[0, 0, 0, 0], [0, 0, 6, 0]]), table(3, [[0, 0, 2, 0]]),
+            table(4, [[0, 0, 0, 0]]), table(5, [[0, 0, 3, 0], [1, 0, 1, 0]]), table(6, [[0, 0, 0, 0]])]
 
 
 D_, A_, U_ = E.PARENT_DIRECT, E.PARENT_ANCESTOR, E.PARENT_UNRELATED
-want = np.full((6, 6), U_, np.int8)
+want = np.full((7, 7), U_, np.int8)
 want[2, 0] = D_                                     # A: ex_input
 want[3, 2], want[3, 0] = D_, A_                     # B: A, and ex_input through A
 want[4, 0] = D_                                     # C: ex_input
 want[5, 3], want[5, 1], want[5, 2], want[5, 0] = D_, D_, A_, A_   # D: B and ex_output, A and ex_input through B
+want[6, 0] = D_                                     # G: ex_input
 got = E.parent_types(parent_fixture())
 no_prov = E.parent_types(real)
 ok = np.array_equal(got, want) and got.dtype == np.int8 and (no_prov == U_).all()

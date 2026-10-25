@@ -27,7 +27,10 @@ field's row's attention over the earlier tables' pooled vectors that lands on th
 source tables, beside `chance`, that share under equal scores, and `fields`; and over the fields that attend to at
 least as many other earlier tables as source tables, `matched_parent` and `matched_recent` (per layer
 `matched_parent_layers` and `matched_recent_layers`), the parent share and the share on as many of the latest other
-earlier tables, over the same `matched_fields` (encoder.py, `parent_shares`). Beside each `loss` the log gives `chance_loss` (`program_chance_loss` and `prior_chance_loss` beside the
+earlier tables, over the same `matched_fields`; and over the fields that attend to at least as many earlier tables
+that are no source table of any column of the field's table, `matched_recent_nondirect`, the share on as many of the
+latest of those, beside `matched_parent_nondirect`, the parent share over the same `matched_nondirect_fields`
+(encoder.py, `parent_shares`). Beside each `loss` the log gives `chance_loss` (`program_chance_loss` and `prior_chance_loss` beside the
 parts' losses), the mean loss of a head with equal scores over the same fields (the encoder's `masked_fields` states it
 per field).
 
@@ -164,8 +167,8 @@ def summarize(records, by=None):
     key groups of each group's mean loss, the groups, and the sum over the key groups of each group's mean chance
     loss, over the program part's remote fields (records that give "source_rows"), a group counted once per record;
     under "parents", [per layer the sum of "parent_attention", the sum of "parent_chance", fields, per layer the sum
-    of "parent_attention" and of "parent_recent" over the fields that give "parent_recent", those fields] over the
-    fields that give them; added to `by` where it is given."""
+    of "parent_attention" and of "parent_recent" over the fields that give "parent_recent", those fields, and the same
+    three for "parent_recent_nondirect"] over the fields that give them; added to `by` where it is given."""
     by = {**{p: {} for p in PARTS}, "depth": {}, "source rows": {}, "parents": []} if by is None else by
     for _, _, r in records:
         bucket = depth_bucket(r.get("depth")) if r["part"] == "program" else None
@@ -193,14 +196,16 @@ def summarize(records, by=None):
                 x[5] += sum(l / n for l, n, _ in gs.values()); x[6] += len(gs)
                 x[7] += sum(ch / n for _, n, ch in gs.values())
         if "parent_attention" in r:
-            pa, pc, pr = r["parent_attention"], r["parent_chance"], r["parent_recent"]
-            on, on_r = ~np.isnan(pc), ~np.isnan(pr).any(1)
+            pa, pc, pr, pn = r["parent_attention"], r["parent_chance"], r["parent_recent"], r["parent_recent_nondirect"]
+            on, on_r, on_n = ~np.isnan(pc), ~np.isnan(pr).any(1), ~np.isnan(pn).any(1)
             if on.any():
                 if not by["parents"]:
-                    by["parents"] = [np.zeros(pa.shape[1]), 0.0, 0, np.zeros(pa.shape[1]), np.zeros(pa.shape[1]), 0]
+                    by["parents"] = [np.zeros(pa.shape[1]), 0.0, 0, np.zeros(pa.shape[1]), np.zeros(pa.shape[1]), 0,
+                                     np.zeros(pa.shape[1]), np.zeros(pa.shape[1]), 0]
                 x = by["parents"]
                 x[0] = x[0] + pa[on].sum(0); x[1] += float(pc[on].sum()); x[2] += int(on.sum())
                 x[3] = x[3] + pa[on_r].sum(0); x[4] = x[4] + pr[on_r].sum(0); x[5] += int(on_r.sum())
+                x[6] = x[6] + pa[on_n].sum(0); x[7] = x[7] + pn[on_n].sum(0); x[8] += int(on_n.sum())
     return by
 
 
@@ -258,7 +263,10 @@ def losses(by, prior_weight):
                                          "matched_recent_layers": (pa[4] / pa[5]).tolist(),
                                          "matched_parent": float(pa[3].mean() / pa[5]),
                                          "matched_recent": float(pa[4].mean() / pa[5]),
-                                         "matched_fields": pa[5]} if pa[5] else {})}} if pa else {})}
+                                         "matched_fields": pa[5]} if pa[5] else {}),
+                                     **({"matched_recent_nondirect": float(pa[7].mean() / pa[8]),
+                                         "matched_parent_nondirect": float(pa[6].mean() / pa[8]),
+                                         "matched_nondirect_fields": pa[8]} if pa[8] else {})}} if pa else {})}
 
 
 def parser():

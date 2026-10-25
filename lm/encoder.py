@@ -1130,19 +1130,17 @@ def attend(q, k, v, mask, flex=None):
     return o.transpose(1, 2).reshape(B, nq, -1)
 
 
-def prev_attention(q, k, mask, rows, P, bias=None):
+def prev_attention(q, k, mask, rows, P):
     """The attention of the rows `rows` [s] (places among the B N rows of q [B, N, H, w]) over the P pooled vectors
     that follow the N rows among the keys k [B, N + P + ..., H, w], under the key mask [B, 1, 1, keys], as a softmax
-    over those keys alone: [s, H, P] float. With `bias` [B, P], the parent bias of each pooled vector (`Block`) is
-    added to its scores. It reads the scores that `attend` takes and changes nothing; the share of a pooled vector
-    here is its share of the row's attention over the pooled vectors."""
+    over those keys alone: [s, H, P] float. It reads the scores that `attend` takes, the parent bias's channel
+    (`Block`) among them, and changes nothing; the share of a pooled vector here is its share of the row's attention
+    over the pooled vectors."""
     B, N, H = q.shape[:3]
     b = torch.div(rows, N, rounding_mode="floor")
     qs = q.reshape(B * N, H, -1).index_select(0, rows).float()                       # [s, H, w]
     kp = k[:, N:N + P].index_select(0, b).float()                                    # [s, P, H, w]
     scores = torch.einsum("shw,sphw->shp", qs, kp)
-    if bias is not None:
-        scores = scores + bias.index_select(0, b).float()[:, None]
     keep = mask[:, 0, 0, N:N + P].index_select(0, b)                                 # [s, P]
     return torch.softmax(scores.masked_fill(~keep[:, None], float("-inf")), -1)
 
@@ -1180,7 +1178,10 @@ class Block(nn.Module):
     equality term compares each column with the source columns its flows name, under the weights `src_eq`. With
     `parent_bias` B (not 0), every head's score of a row against an earlier table's pooled vector gains the learned
     `parent_bias` [3] at the parent type of that table to the row's table (`parent_types`: direct source, ancestor,
-    unrelated), which starts at [B, 0, 0]. `ctx` (a `Batch`) holds those, the key mask, the parent types and the
+    unrelated), which starts at [B, 0, 0]. The bias enters as PARENT_CHANNELS more channels of q and k: on every query
+    1 then zeros, on a pooled vector's key its bias then zeros, and zeros on every other key; the scores are unscaled
+    inner products (the q map holds the 1 / sqrt(w) of the other channels), so the channel adds the bias alone, and
+    the width stays a multiple of 8. `ctx` (a `Batch`) holds those, the key mask, the parent types and the
     equality term's query and key channels; `mats` the maps that `FeatureEncoder.prepare` gives in head layout."""
     def __init__(self, c, heads, slots, mlp, source_rows=False, parent_bias=0.0):
         super().__init__()
@@ -1215,11 +1216,12 @@ class Block(nn.Module):
         if ctx.src is not None:
             sk, sv = ctx.src.layer(l)
             k, v = torch.cat([k, sk], 1), torch.cat([v, sv], 1)
-        mask, pb = ctx.mask, None
-        if ctx.parent is not None:   # the parent bias on the pooled vectors' keys, as an additive mask
+        if ctx.parent is not None:   # the parent bias, as a channel of q and k
             pb = self.parent_bias[ctx.parent]                                        # [B, P]
-            add = F.pad(pb, (N, k.shape[1] - N - pb.shape[1]))[:, None, None]
-            mask = add.to(q.dtype).masked_fill(~ctx.mask, float("-inf"))
+            kc = F.pad(pb, (N, k.shape[1] - N - pb.shape[1])).to(k.dtype)           # [B, keys]
+            k = torch.cat([k, F.pad(kc[:, :, None, None].expand(-1, -1, H, 1), (0, PARENT_CHANNELS - 1))], -1)
+            q = torch.cat([q, F.pad(q.new_ones(1, 1, 1, 1), (0, PARENT_CHANNELS - 1)).expand(B, N, H, -1)], -1)
+        mask = ctx.mask
         flex = None
         if ctx.flex is not None:   # each group's values, presence and weights, for the rows, the first N keys
             flex = ([(vals, pres, self.weights(pos)) for vals, pres, pos in ctx.flex], N)
@@ -1233,7 +1235,7 @@ class Block(nn.Module):
         else:
             o = attend(q, k, v, mask, flex)
         if ctx.probe is not None and ctx.prev is not None:
-            ctx.probe["out"].append(prev_attention(q, k, ctx.mask, ctx.probe["rows"], ctx.prev.shape[1], pb))
+            ctx.probe["out"].append(prev_attention(q, k, ctx.mask, ctx.probe["rows"], ctx.prev.shape[1]))
         x = x + F.linear(o, mats["o"], mats["bo"]).view(x.shape)
         f = F.gelu(F.linear(self.n2(x).reshape(B, N, -1), mats["f1"], mats["bf1"]))
         x = x + F.linear(f, mats["f2"], mats["bf2"]).view(x.shape)
@@ -1651,20 +1653,22 @@ def source_tables(tables):
 
 
 PARENT_DIRECT, PARENT_ANCESTOR, PARENT_UNRELATED = 0, 1, 2   # the parent types of `parent_types`
+PARENT_CHANNELS = 8   # the channels of q and k that carry the parent bias (`Block`): the bias, then zeros to keep 8s
 
 
 def parent_types(tables):
     """The parent type of each table of a program to each table, [tables, tables] int8, row i the type of each table
-    j to table i: PARENT_DIRECT where j is a source table of a column of table i (`column_sources`), PARENT_ANCESTOR
-    where j is not that but a source table of a column of a direct or ancestor table of i, and PARENT_UNRELATED
-    otherwise. A grid table (ex_input, ex_output) that a column's flows name is a source table like any other; its own
+    j to table i: PARENT_DIRECT where j < i is a source table of a column of table i (`column_sources`),
+    PARENT_ANCESTOR where j is not that but a direct source of a direct or ancestor table of i, and PARENT_UNRELATED
+    otherwise. Only earlier tables are sources here, so a table that feeds only a later Table of i's export table is
+    no ancestor of i. A grid table (ex_input, ex_output) that a column's flows name is a source table like any other; its own
     columns have no sources, so no table is an ancestor through it. Every type is PARENT_UNRELATED in a program
     without the export's column-level provenance. Kept on the first table while the program holds the same Tables."""
     memo = tables[0].__dict__.setdefault("_unique", {}) if tables else {}
     hit = memo.get(("parent types",))
     if hit is not None and len(hit[0]) == len(tables) and all(x is y for x, y in zip(hit[0], tables)):
         return hit[1]
-    direct = [{j for col in cols for j, _ in col if j != i} for i, cols in enumerate(column_sources(tables))]
+    direct = [{j for col in cols for j, _ in col if j < i} for i, cols in enumerate(column_sources(tables))]
     out = np.full((len(tables), len(tables)), PARENT_UNRELATED, np.int8)
     for i in range(len(tables)):
         reach, todo = set(), list(direct[i])
@@ -1673,7 +1677,7 @@ def parent_types(tables):
             if j not in reach:
                 reach.add(j)
                 todo += direct[j]
-        out[i, sorted(reach - direct[i] - {i})] = PARENT_ANCESTOR
+        out[i, sorted(reach - direct[i])] = PARENT_ANCESTOR
         out[i, sorted(direct[i])] = PARENT_DIRECT
     if tables:
         memo[("parent types",)] = (list(tables), out)
@@ -2954,15 +2958,19 @@ class FeatureEncoder(nn.Module):
         tables (`column_sources`), and "parent_chance" [m], the share of those vectors among the vectors the row
         attends to (`keep` [t K]), the share under equal scores, and "parent_recent" [m, layers], the same share on
         the vectors of the k latest earlier tables that the row attends to and that are not source tables of the
-        column, k the number of its source tables that it attends to, a reference with the sources' recency. NaN for a
-        field that is not remote, or whose source tables give no vector the row attends to; "parent_recent" NaN also
-        where fewer than k other earlier tables give one."""
+        column, k the number of its source tables that it attends to, a reference with the sources' recency, and
+        "parent_recent_nondirect" [m, layers], the same on the k latest earlier tables that are no source table of any
+        column of the table, which no parent bias on direct sources reaches. NaN for a field that is not remote, or
+        whose source tables give no vector the row attends to; "parent_recent" and "parent_recent_nondirect" NaN also
+        where fewer than k such earlier tables give one."""
         rr, ii = np.nonzero(field_mask)
         lab, src = column_labels(tables, t), column_sources(tables)[t]
         place = {r: k for k, r in enumerate(np.flatnonzero((field_mask & (lab == REMOTE)).any(1)))}
         keep = keep.cpu().numpy()
         share = np.full((len(rr), len(attn)), np.nan)
         chance, recent = np.full(len(rr), np.nan), np.full((len(rr), len(attn)), np.nan)
+        recent_nd = np.full((len(rr), len(attn)), np.nan)
+        direct = {i for col in src for i, _ in col}
         a = [x.cpu().numpy() for x in attn]
         slots_of = lambda tabs: np.array([i * self.K + k for i in tabs for k in range(self.K)], np.int64)
         for f, (r, c) in enumerate(zip(rr, ii)):
@@ -2977,7 +2985,11 @@ class FeatureEncoder(nn.Module):
             others = [i for i in range(t - 1, -1, -1) if keep[i * self.K] and i not in parents][:len(parents)]
             if len(others) == len(parents):
                 recent[f] = [x[place[r]][:, slots_of(others)].sum(-1).mean() for x in a]
-        return {"parent_attention": share, "parent_chance": chance, "parent_recent": recent}
+            others = [i for i in range(t - 1, -1, -1) if keep[i * self.K] and i not in direct][:len(parents)]
+            if len(others) == len(parents):
+                recent_nd[f] = [x[place[r]][:, slots_of(others)].sum(-1).mean() for x in a]
+        return {"parent_attention": share, "parent_chance": chance, "parent_recent": recent,
+                "parent_recent_nondirect": recent_nd}
 
     def pointer_equality(self, table, field_mask, rows, cols, kept, acc, ids, dev):
         """The equality terms of the pointer scores (`masked_fields`) of the hidden fields at (rows, cols) against the
