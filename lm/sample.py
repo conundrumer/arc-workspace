@@ -10,14 +10,13 @@ feeds the token and the ids the engine emits after it to the model. A program st
 consistent relation, at `--max-steps` model-written tokens, at `--max-tokens` positions of context, at
 `--max-seconds` of wall time for its task, where the mask admits no token ("empty-mask"), where it admits no token
 the head can write ("stuck": only identifiers that the stream has not declared), or where the engine panics at its
-token ("panic"). The `--max-seconds` deadline counts from the task's start and covers the prefix replays; a program
-whose prefix replay has not finished at it is dropped: it gets no line, and the summary counts it as "deadline".
+token ("panic": `arclog.step_batch` gives an `arclog.Fault` in the place of that decoder). The `--max-seconds`
+deadline counts from the task's start and covers the prefix replays; a program whose prefix replay has not
+finished at it is dropped: it gets no line, and the summary counts it as "deadline".
 
-A panic in `arclog.step_batch` takes the decode from every decoder of the batch. The sampler then rebuilds each
-program's decoder from the task's root decoder by its model-written ids, and steps each by its token alone; a
-program whose step panics ends "panic", its token in its stream, and one whose rebuild fails ends
-"panic-aborted"; the others go on. Each "panic" program also gets `<out dir>/panic-<task>-<index>.json`: task, ids,
-model, end, panic, settings, world and its record, for a replay of the stream.
+A "panic" program keeps the token it panicked at in its stream; the other programs of the batch step as they would
+without the panic. Each "panic" program also gets `<out dir>/panic-<task>-<index>.json`: task, ids, model, end,
+panic, settings, world and its record, for a replay of the stream.
 
 Two caps count model-written tokens. A clause is a top-level form of the program (a RULE, DET, INIT, CHOOSE or
 other form): it starts at the first model-written token of the stream and at the first one after the engine
@@ -68,8 +67,8 @@ the streams under the same settings. Then one JSON line per program:
   program_form       program_form() of the decode where it stopped: the finished clauses, a whole program where
                      ended
   end                "ended", "max-steps", "max-clause", "max-tokens", "max-seconds", "empty-mask", "stuck",
-                     "refused", "panic", "panic-aborted", or "gold" for the gold line
-  panic              the engine's panic message for "panic" and "panic-aborted"; else null
+                     "refused", "panic", or "gold" for the gold line
+  panic              the engine's panic message for "panic"; else null
   max_steps_used     the program's cap on sampled tokens: `--max-steps` or its lower value under
                      `--max-steps-factor`
   max_clause_used    the program's cap on the model-written tokens of a clause; 0 for none
@@ -164,11 +163,6 @@ class Program:
             self.pending.append((self.in_index["REF_" + k], self.decl_vecs[k][j], None))
         else:
             self.pending.append((self.in_index[names[i]], torch.zeros(self.id_dim), None))
-
-
-def is_panic(e):
-    """Whether e is the engine's Rust panic, which pyo3 raises as pyo3_runtime.PanicException (a BaseException)."""
-    return type(e).__name__ == "PanicException"
 
 
 def hash_seed(seed, task, index):
@@ -303,44 +297,6 @@ class Sampler:
         assert j == m and not p.decoder.ended
         return True
 
-    def rebuild(self, root, p):
-        """A new decoder in program p's state: a fork of the task's root decoder stepped by p's model-written ids."""
-        d, j = root.fork(), 0
-        while j < len(p.ids):
-            assert p.model[j]
-            forced = list(d.step(p.ids[j])[0])
-            assert forced == p.ids[j + 1:j + 1 + len(forced)], f"{p.task} #{p.index}: the rebuilt decode emits other ids"
-            j += 1 + len(forced)
-        return d
-
-    def after_panic(self, root, chosen, e):
-        """The step results of the chosen (program, id) pairs after arclog.step_batch panics over them. The panic
-        leaves every decoder of the batch without its decode, so each program gets a decoder rebuilt from the
-        root and steps its id alone. A program whose step panics ends "panic", with its decoder before the step
-        and the id in its stream; one whose rebuild fails ends "panic-aborted". Its result is None for both."""
-        results = []
-        for p, i in chosen:
-            try:
-                p.decoder = self.rebuild(root, p)
-            except BaseException as err:
-                if not (is_panic(err) or isinstance(err, Exception)):
-                    raise
-                p.end, p.panic = "panic-aborted", f"{e}; rebuild: {err}"
-                results.append(None); continue
-            d = p.decoder.fork()
-            try:
-                results.append(d.step(i))
-                p.decoder = d
-            except arclog.Refusal as r:
-                results.append(r)
-            except BaseException as err:
-                if not is_panic(err):
-                    raise
-                p.end, p.panic = "panic", str(err)
-                p.push(i, True, self.names, self.kind)
-                results.append(None)
-        return results
-
     def run(self, task, root, indices, prefixes=None, deadline=None):
         """Sample one program from each of the indices on a fork of the task's root decoder, in lockstep; prefixes
         gives, for each, None or (case, ids, model, m), the first m tokens of a case's stream to replay first. A
@@ -391,19 +347,15 @@ class Sampler:
             if chosen:
                 self.time["mask"] += time.time() - t
                 t = time.time()
-                try:
-                    results = arclog.step_batch([p.decoder for p, _ in chosen], [i for _, i in chosen])
-                except BaseException as e:
-                    if not is_panic(e):
-                        raise
-                    print(f"  {task}: the engine panics in a batch step: {e}", flush=True)
-                    results = self.after_panic(root, chosen, e)
+                results = arclog.step_batch([p.decoder for p, _ in chosen], [i for _, i in chosen])
                 dt = time.time() - t
                 self.time["engine"] += dt
                 if dt > slowest[0]:
                     slowest = (dt, f"token {len(chosen[0][0].ids)} ({self.names[chosen[0][1]]})")
                 for (p, i), r in zip(chosen, results):
-                    if r is None:   # a panic ended the program
+                    if isinstance(r, arclog.Fault):   # the step panicked; the decoder keeps its state before it
+                        p.end, p.panic = "panic", str(r)
+                        p.push(i, True, self.names, self.kind)
                         continue
                     if isinstance(r, Exception):
                         p.refusals += 1; p.end = "refused"; continue
