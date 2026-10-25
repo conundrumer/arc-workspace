@@ -225,10 +225,32 @@ def test_check_lists_only_what_the_migration_targets_and_a_state_read_would_hold
         a.Message(source='m', at=START + 6, agent='main', recipient='old-open', text='x',
                   outcome=a.Outcome.ACCEPTED, delivery='d', call='c'),
         a.Stopped(source='stop:socket', at=START + 7, agent='socket', text=''),
-        covered('no-launch', complete=False))
+        covered('no-launch', complete=False),
+        *(a.Resumed(source=f'resume:{agent}', at=START + 8, agent=agent, parent='op')
+          for agent in ('old-open', 'no-coverage', 'producer', 'running', 'native-old')))
     lines = journal.check_coverage(record, main)
     assert sorted(line.split(':')[0] for line in lines) == sorted(
         ['old-open', 'no-coverage', 'producer', 'running', 'pending', 'native-old', 'no-launch'])
+
+
+def test_check_lists_no_imported_attempt_whose_record_shows_nothing_since_the_record_began(tmp_path):
+    seat = Described(Role.DOC_REVIEWER, 'doc-review/x')
+    record = journal.Record()
+    record.append(
+        launched('hook', seat, 'claude:op:call', START),
+        launched('gap', seat, 'legacy-launch:gap', LAUNCH_TIME), covered('gap', at=START + 1, complete=False),
+        launched('open', seat, 'legacy-launch:open', LAUNCH_TIME), covered('open'))
+    assert journal.check_coverage(record, tmp_path / 'main') == ()
+    record.append(a.Stopped(source='stop:gap', at=START + 2, agent='gap', text=''),
+                  a.Resumed(source='resume:open', at=START + 2, agent='open', parent='op'))
+    assert sorted(line.split(':')[0] for line in journal.check_coverage(record, tmp_path / 'main')) == ['gap', 'open']
+
+
+def test_check_lists_an_incomplete_import_where_the_record_holds_no_launch_of_the_hook(tmp_path):
+    seat = Described(Role.DOC_REVIEWER, 'doc-review/x')
+    record = journal.Record()
+    record.append(launched('gap', seat, 'legacy-launch:gap', LAUNCH_TIME), covered('gap', complete=False))
+    assert [line.split(':')[0] for line in journal.check_coverage(record, tmp_path / 'main')] == ['gap']
 
 
 def test_check_lists_each_migration_row_not_complete(tmp_path):
@@ -401,8 +423,8 @@ def test_a_child_of_a_closed_change_reads_ended_with_its_scratch_directory_gone(
     assert not complete(a.fold(record.events())['c3'])
     assert isinstance(claude.state(record, 'c2', seat), Ended)
     assert isinstance(claude.state(record, 'c3', seat), Ended)
-    assert isinstance(claude.state(record, 'c1', Described(Role.CODE_EDITOR, '9-2')), Unknown)
-    assert [line.split(':')[0] for line in journal.check_coverage(record, claude.main)] == ['c1']
+    assert isinstance(claude.state(record, 'c1', Described(Role.CODE_EDITOR, '9-2')), Ended)
+    assert journal.check_coverage(record, claude.main) == ()
 
 
 @pytest.mark.parametrize('seat', [None, Described(Role.OPERATOR, '9-9')])

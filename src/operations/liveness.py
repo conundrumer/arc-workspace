@@ -6,8 +6,8 @@ every operator and session alike, Claude and native Codex.
 With the first condition that holds deciding:
 
 1. The record holds no launch, its coverage is incomplete or an old
-   producer may still write (`attempts.Coverage`) where not each ticket of
-   its subject closed after its launch (condition 4), a native attempt has
+   producer may still write (`attempts.Coverage`) where the attempt has not
+   outlived (condition 4), a native attempt has
    no work reservation, or a work reservation has no recorded acceptance or
    refusal, so that the submission is uncertain: `Unknown`, held.
 2. A work reservation was accepted and has no recorded end. Where its turn
@@ -16,9 +16,11 @@ With the first condition that holds deciding:
    where it gives terminal evidence, the turn is over.
 3. A descendant of the attempt runs or is unknown, or its own work is
    running (`AttemptFacts.working`): `Running` with `Waits.STILL_RUNNING`.
-4. Each ticket of its subject closed after its launch: `Ended`, whether
-   the coverage of its record is incomplete or an old producer may still
-   write or not.
+4. The attempt outlived: each ticket of its subject closed after its
+   launch, or it launched before the record began and its record holds no
+   event of its own since then other than an imported coverage. It is
+   `Ended`, whether the coverage of its record is incomplete or an old
+   producer may still write or not.
 5. A Claude attempt whose latest launch, resume, work reservation, stop or
    handback is a stop or handback, and a native attempt, are `Ended`: a
    native attempt's work reservations are all resolved or over by terminal
@@ -91,7 +93,9 @@ class AttemptFacts:
     given, and, where `unknown` holds, floored at the time of its launch or
     last resume. `descendants` holds where an agent it launched runs or is
     unknown, `working` where the listing gives work of its own running,
-    `outlived` where each ticket of its subject closed after its launch, and
+    `outlived` where each ticket of its subject closed after its launch, or it
+    launched before the record began and its record holds no event of its
+    own since then other than an imported coverage, and
     `limited` where the usage limit stopped it and it has not run since."""
     turn: Callable[[], CodexRead]
     written: Callable[[Path | None, bool], Written]
@@ -109,8 +113,10 @@ def lease(w: Written) -> float | None:
 def uncertain(attempt: a.Attempt, outlived: bool) -> str | None:
     """Why the record of `attempt` does not show whether it ran to an end,
     or None where it shows it. Where `outlived` holds (each ticket of its
-    subject closed after its launch), an incomplete coverage and an old
-    producer give no reason."""
+    subject closed after its launch, or it launched before the record began
+    and its record holds no event of its own since then other than an
+    imported coverage), an incomplete coverage and an old producer give no
+    reason."""
     if attempt.launch is None:
         return mctx("the record of its attempt shows no launch of it")
     coverage = attempt.coverage

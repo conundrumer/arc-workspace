@@ -8,7 +8,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from attempt_record import Record
+from attempt_record import Record, dormant
 from monitor_reads import watched
 from open_agents import Listed, latest_write, turn_ended_idle
 from agent_ends import stalled_reports
@@ -91,11 +91,16 @@ def closes_of(tickets: Mapping[str, Ticket]) -> dict[str, float]:
             for line in ticket.log if line.status is Status.CLOSED}
 
 
-def outlived(seat: Described, launched: float, closes: Mapping[str, float]) -> bool:
-    """Whether each ticket of the subject of `seat` closed after the launch
-    at `launched`."""
-    numbers = ticket_numbers(seat)
-    return bool(numbers) and all(n in closes and closes[n] > launched for n in numbers)
+def outlived(attempt: Attempt, closes: Mapping[str, float], began: float | None) -> bool:
+    """Whether each ticket of the subject of the launch of `attempt` closed
+    after that launch, or `attempt` is dormant at the record's start `began`
+    (`attempt_record.dormant`). False where its record holds no launch."""
+    launch = attempt.launch
+    if launch is None:
+        return False
+    numbers = ticket_numbers(launch.seat)
+    return (bool(numbers) and all(n in closes and closes[n] > launch.at for n in numbers)
+            or dormant(attempt, began))
 
 
 def ends_read(agents: Sequence[Agent], listing: list[Listed],
@@ -169,7 +174,7 @@ def attempt_reads(agents: Sequence[Agent], *, listing: list[Listed] | None = Non
     (`attempt_view.refused_at`), where its reports do not follow it."""
     reads = StateReads(projection([a.agent_id for a in agents if a.agent_id]),
                        listing or [], live, home, [] if undecided is None else undecided,
-                       {a.agent_id: a for a in agents if a.agent_id}, closes or {})
+                       {a.agent_id: a for a in agents if a.agent_id}, closes or {}, Record().started())
     out: list[Agent] = []
     for a in agents:
         if a.agent_id is None:
@@ -189,8 +194,9 @@ class StateReads:
     """The states `attempt_state` decides for the attempts of `attempts`,
     each once (`state`), with the facts of each attempt: whether a
     descendant of it runs, the `listing` and its `live` agents, the `agents`
-    that were read for it, and the `closes` of tickets. `held` gets the agent
-    id of an attempt whose Codex turn runs or whose state is unknown."""
+    that were read for it, the `closes` of tickets, and the time the record
+    `began` (`Record.started`). `held` gets the agent id of an attempt whose
+    Codex turn runs or whose state is unknown."""
     attempts: dict[str, Attempt]
     listing: list[Listed]
     live: frozenset[str]
@@ -198,6 +204,7 @@ class StateReads:
     undecided: list[str]
     agents: dict[str, Agent] = field(default_factory=dict)
     closes: Mapping[str, float] = field(default_factory=dict)
+    began: float | None = None
     held: set[str] = field(default_factory=set)
     states: dict[str, AttemptState] = field(default_factory=dict)
     deciding: set[str] = field(default_factory=set)
@@ -240,7 +247,7 @@ class StateReads:
         return AttemptFacts(
             turn, lambda rollout, unknown: self.written(aid, since, rollout, unknown),
             descendants=descendants, working=aid in self.live,
-            outlived=a is not None and outlived(Described(a.role, a.subject), a.launched, self.closes),
+            outlived=attempt is not None and outlived(attempt, self.closes, self.began),
             limited=a is not None and a.waits is Waits.LIMITED)
 
     def written(self, aid: str, since: float | None, rollout: Path | None, unknown: bool) -> Written:
@@ -272,7 +279,7 @@ class StateReads:
 def launcher_ended(aid: str, home: Path | None = None) -> bool:
     """Whether the record of the attempt `aid` shows it ended, by the state
     `attempt_state` decides with no transcript fact beside it."""
-    return isinstance(StateReads(projection([aid]), [], frozenset(), home, []).state(aid), Ended)
+    return isinstance(StateReads(projection([aid]), [], frozenset(), home, [], began=Record().started()).state(aid), Ended)
 
 
 def turn_read(attempt: Attempt, home: Path | None = None) -> CodexRead:

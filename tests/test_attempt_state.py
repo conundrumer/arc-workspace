@@ -79,6 +79,23 @@ def test_a_launch_with_a_stop_after_it_is_ended_and_one_with_no_stop_runs(reader
     assert isinstance(reader.state(stop()).state, Ended)
 
 
+def hook_launch(at: float) -> a.Launched:
+    return a.Launched(source="claude:op:call", at=at, agent="hook", seat=SEAT, parent=OP,
+                      agent_type=CODEX_LAUNCHER, transport=a.Transport.CLAUDE)
+
+
+def incomplete(at: float) -> a.Coverage:
+    return a.Coverage(source="coverage", at=at, agent=LAUNCHER, complete=False, reason="a gap", producer=False)
+
+
+def test_an_attempt_launched_before_the_record_began_with_nothing_since_is_ended(reader: Reader) -> None:
+    events = [hook_launch(10.0), launch(), incomplete(11.0)]
+    assert isinstance(reader.state(*events).state, Ended)
+    assert isinstance(reader.state(live=frozenset({LAUNCHER})).state, Running)
+    resumed = a.Resumed(source="resume", at=12.0, agent=LAUNCHER, parent=OP)
+    assert isinstance(reader.state(resumed).state, Unknown)
+
+
 def test_a_resume_after_the_stop_runs_again(reader: Reader) -> None:
     resumed = a.Resumed(source="resume", at=4.0, agent=LAUNCHER, parent=OP)
     assert isinstance(reader.state(launch(), stop(), resumed).state, Running)

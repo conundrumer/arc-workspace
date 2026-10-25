@@ -33,6 +33,9 @@ def busy(seat: Described):
     return Refused(SEAT_BUSY.format(role=seat.role, subject=seat.subject))
 
 
+STARTS: dict[Path, float] = {}
+
+
 def directory() -> Path:
     return checkout.main_worktree(checkout.ROOT) / '.attempts'
 
@@ -107,11 +110,17 @@ class Record:
     def started(self) -> float | None:
         """The time the record began: the earliest `at` of a launch the hook
         wrote (a `Launched` with a `claude:` source), or None where it holds
-        none. An import writes `Launched` events of other sources only."""
+        none. An import writes `Launched` events of other sources only, so
+        once the value is not None it does not change, and it is read once
+        per process for a record path."""
+        if self.path in STARTS:
+            return STARTS[self.path]
         if not self.path.exists():
             return None
         with sqlite3.connect(f'file:{self.path}?mode=ro', uri=True) as db:
             row = db.execute("SELECT min(at) FROM events WHERE kind='Launched' AND source GLOB 'claude:*'").fetchone()
+        if row[0] is not None:
+            STARTS[self.path] = row[0]
         return row[0]
 
     def acceptance(self, agent: str, reservation: str, at: float, thread: str, turn: str) -> a.Accepted:
@@ -549,15 +558,26 @@ def imported(launch: a.Launched, began: float | None) -> bool:
             or began is None or launch.at < began)
 
 
+def dormant(attempt: a.Attempt, began: float | None) -> bool:
+    """Whether `attempt` launched before the record began (`imported`, with
+    a record that began) and its record holds no event of its own at or after
+    `began`, other than a `Coverage`. The hook writes a `Stopped` at each turn
+    end of a Claude agent and a `Resumed` at each resume, and an import writes
+    each replayed event at the time of its source, so no hook has recorded
+    such an attempt since the record began."""
+    return (began is not None and attempt.launch is not None and imported(attempt.launch, began)
+            and not any(e.at >= began and not isinstance(e, a.Coverage) for e in attempt.events))
+
+
 def check_coverage(record: Record, main: Path | None = None) -> tuple[str, ...]:
     """Read only: what the migration targets and a state read would hold
     unknown or running. Each migration row not complete is listed, and each
     imported attempt (`imported`) with an unresolved reservation, and, other
-    than one whose subject's tickets all closed after its launch
-    (`operator_state.outlived`), one whose coverage is missing or incomplete,
-    whose old producer may still write, or whose record shows no end. An
-    attempt of the hook, and a name that no imported launch gives, is not
-    listed, other than one whose import failed before its description was
+    than one whose subject's tickets all closed after its launch or that is
+    dormant (`operator_state.outlived`), one whose coverage is missing or
+    incomplete, whose old producer may still write, or whose record shows no
+    end. An attempt of the hook, and a name that no imported launch gives, is
+    not listed, other than one whose import failed before its description was
     read, which holds an incomplete coverage and no launch. `main` is the
     main worktree, which defaults to the checkout's."""
     from operations.liveness import over, uncertain
@@ -581,7 +601,7 @@ def check_coverage(record: Record, main: Path | None = None) -> tuple[str, ...]:
             continue
         if attempt.unresolved:
             notes.append(attempt.agent + ': ' + mctx('unresolved imported reservations or turns'))
-        elif outlived(launch.seat, launch.at, closes):
+        elif outlived(attempt, closes, began):
             continue
         elif attempt.coverage is None:
             notes.append(attempt.agent + ': ' + mctx('history has no coverage evidence'))
