@@ -20,6 +20,8 @@ The LM writes arclog programs token by token under the engine's token mask, and 
 - Store data as arrays, not JSON, wherever a reader reads it more than once.
 - Keep outputs under `lm/runs/` or `work/`, not `/tmp`, so that a later check needs no rerun.
 - Before an experiment, write down its settings, its expected time and memory, and what its log must show. Have the change reviewed by an independent agent before the run; reviews have found every fault so far, among them pure bf16 weights, a missing start token and a sibling exclusion that excluded nothing.
+* comment: The user's words, session 0c50cd8a, 2026-10-25T15:03:08Z: "it looks like the files we own have come a long way from experiments to maintained software. engine worker is running ops so what if we launched ticket-analyst to write the ticket and send it to engine-worker to take care of the rest of the ops. the cost is it will take longer to make changes and iterate. thats why i initially said no tickets or ops", choosing the split below.
+- The loader, the part of `encoder.py` that reads an export, checks it and caches it, is maintained software with the engine, and a change to it goes through a ticket to the engine-worker session, whose editors and reviewers make it. The model, the masking, the losses, the trainers and what a run logs change directly: one builder in its own worktree, one reviewer, and this session merges.
 
 ## Data
 
