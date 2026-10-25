@@ -2,12 +2,14 @@
 
     python count_remote.py <tables dir> <cache pickle> [max rows, default 4000]
 
+ALLOW_CHECK_VIOLATIONS=1 in the environment builds the cache through a violation of the export's checks.txt.
+
 For each remote column of each derived table (tables over the row cap left out, as the run leaves them unseen):
 the key group of a row is the rows of the same entry that agree with it on every other column that shares a
 source table with the column. Per value type and per source-table size: the fields; the fields whose value a
 visible row of the same group also holds (the leak a field mask leaves open); and, for pointer types, the fields
 whose value a row outside the group holds (a target that remains once the group is hidden)."""
-import sys, time, collections
+import os, sys, time, collections
 import numpy as np
 sys.path.insert(0, "lm")
 import encoder as E
@@ -15,7 +17,7 @@ import encoder as E
 tables_dir, cache = sys.argv[1], sys.argv[2]
 max_rows = int(sys.argv[3]) if len(sys.argv) > 3 else 4000
 t0 = time.time()
-tables, skipped, _ = E.load_tables(tables_dir, cache)
+tables, skipped, _ = E.load_tables(tables_dir, cache, allow_violations=bool(os.environ.get("ALLOW_CHECK_VIOLATIONS")))
 print(f"{len(tables)} programs loaded in {time.time() - t0:.0f} s; {len(skipped)} skipped", flush=True)
 
 BUCKETS = [(0, "no table source"), (50, "1-50"), (200, "51-200"), (1000, "201-1000"), (max_rows, f"1001-{max_rows}"),
