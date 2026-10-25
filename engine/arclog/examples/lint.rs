@@ -46,7 +46,7 @@ fn check_of(code: LintCode) -> Option<CheckId> {
         HeadZero | ZeroSite | EqOrder | EqSite | EqSameList => CheckId::EqualityAndZero,
         FreshHere => CheckId::ConstraintMarks,
         ClauseTwice => CheckId::OneClause,
-        BroadcastInside | KeySite => CheckId::InstanceSites,
+        BroadcastInside => CheckId::InstanceSites,
         Remade | LabelClash | Elide | FieldCase => CheckId::Spelling,
         One | OnePlace | ChooseNoNever | ChooseOne | NeverReads => CheckId::Picks,
         RigidPart | Proposer => CheckId::RigidPartsAndProposers,

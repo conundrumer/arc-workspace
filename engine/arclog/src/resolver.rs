@@ -399,19 +399,6 @@ impl ResolvedProgram {
         Some(self.names.node_columns_of(node.0 as usize)?.row_paths())
     }
 
-    /// The position, in the rows of the output `port` of the keyed `INIT`
-    /// form `instance`, of the field `field` of its `key` column, where the
-    /// component declares the output.
-    pub fn key_field_position(instance: &crate::program::Instance, port: &PortName, field: &ColumnName, registry: &Registry) -> Option<ColumnPosition> {
-        let component = registry_columns::component(registry, &instance.component)?;
-        let output = component.outputs.iter().find(|output| output.name == *port)?;
-        let columns = form_columns::port_columns(output, &form_columns::bindings(instance, component), true).columns();
-        match columns.place(&[columns::key(), field.clone()])? {
-            columns::Place::Field(position, _) => Some(position),
-            columns::Place::Column(_) | columns::Place::Group(_) => None,
-        }
-    }
-
     /// The signature of the name read at `path`.
     pub fn signature(&self, path: &NodePath) -> Option<&Signature> {
         match self.earlier_of(path) {

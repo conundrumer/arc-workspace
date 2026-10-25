@@ -259,7 +259,7 @@ An input is a list whose head is the input's name, then one list of its head sit
     (&corner_cell *P)))
 ```
 
-A read of a relation keyed by labels that are in scope joins on them without a key site: inside `&claim`, keyed by `C` and `A`, `(&claim_order.minimal (:t *B))` reads `&claim_order` at the same key. A key site on such a read is written only where the read is at another key.
+A read at the key in scope writes the key site, as the key site of an `&obj2.component` read above does: a read of a relation keyed by `C` and `A` writes `(:key C A)`, and a read with no key site is not at that key. Inside `&claim`, keyed by `C` and `A`, `(&claim_order.minimal (:key C A) (:t *B))` reads `&claim_order` at that key.
 
 The first projection onto a type parameter binds it. A projection of one label binds the parameter to that label's type, and every site on the parameter takes one label. A projection of several sites binds it to a record with one field per site, named by the site's head, or by its label where the site is elided, and typed by its label. Every later site on the parameter names the fields it reads by projection, as [Sites](#sites) gives. `Key` is a type parameter like the others, bound by the key clause, whose `^` labels name its fields. An instance with no key clause binds `Key` to no column. A type parameter other than `Key` that no site binds is `Unit`, and a head writes no site on its columns.
 
@@ -275,17 +275,17 @@ The instance's outputs are read as `<name>.<output>`, with the key's columns fir
     (start ((:t B))
       (&claim_order.minimal (:t *B)))
     (initial_untaken ((:item B))
-      (&claim_order.member (:t *B)))
+      (&claim_order.member (:key C A) (:t *B)))
     (conflict ((:item B) (:item2 B2))
       (&blocks C A (:B_last *B) (:B *B2)))
     (step ((:t B) (:t2 B2))
-      (&claim_order.successor (:a *B) (:b *B2))
+      (&claim_order.successor (:key C A) (:a *B) (:b *B2))
       (&claim.untaken (:t B) (:item B)))
     (skip ((:t B) (:t2 B2))
-      (&claim_order.successor (:a *B) (:b *B2))
+      (&claim_order.successor (:key C A) (:a *B) (:b *B2))
       (&claim.excluded (:t B) (:item B)))
     (take ((:t B) (:item B))
-      (&claim_order.member (:t *B))
+      (&claim_order.member (:key C A) (:t *B))
       (&claim.untaken (:t B) (:item B)))))
 ```
 

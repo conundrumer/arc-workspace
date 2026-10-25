@@ -225,7 +225,6 @@ lint_codes! {
     Instance => "instance",
     KeyForm => "key-form",
     KeyLocal => "key-local",
-    KeySite => "key-site",
     Label => "label",
     LabelClash => "label-clash",
     Mark => "mark",

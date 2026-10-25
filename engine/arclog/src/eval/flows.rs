@@ -250,9 +250,7 @@ impl<'p> Walk<'p> {
 
     /// Whether the column that `hit` reads holds values of the type of the
     /// variable that stands there, or of a type that the variable's type
-    /// lies below, such as a C4 label that reads a D4 column. The IR can join a variable to a column of another type,
-    /// such as the key fields of a keyed input's read of another `INIT`
-    /// form's output, which names a copy of no value.
+    /// lies below, such as a C4 label that reads a D4 column.
     fn keeps_type(&self, alt: &Alt<'_>, hit: &Hit<'_>) -> bool {
         let (IrNode::Atom(atom), Some((path, _))) = (hit.node, self.atom_of(hit.paths)) else { return true };
         let AtomSource::Relation(relation) = &atom.source else { return true };

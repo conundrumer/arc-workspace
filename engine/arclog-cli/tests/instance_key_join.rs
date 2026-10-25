@@ -1,5 +1,5 @@
 //! A keyed input's read of an output of another `INIT` form keyed by the
-//! same labels, written with no key site, joins on the key in scope
+//! same labels joins on the key in scope by a key site that it writes
 //! (`docs/arclog/arclog.md#instance`).
 
 use arclog::check::{check_program, CheckCache, CheckedProgram, SolverClauses};
@@ -16,7 +16,7 @@ use arclog::terms::{Color, Example};
 const GRID: &[&[u8]] = &[&[1, 2, 0, 3], &[2, 2, 1, 0], &[0, 1, 1, 2], &[3, 0, 2, 1]];
 
 /// A `Frame` and a `Cardinality` keyed by a side `N`, whose members are the
-/// cells of the frame, read with no key site.
+/// cells of the frame, read at the key by a key site.
 const SOLVER: &str = "(RULE &trial\n\
   (input *P)\n\
   (axis_elem *A)\n\
@@ -29,7 +29,7 @@ const SOLVER: &str = "(RULE &trial\n\
 (INIT &card Cardinality\n\
   (key ((&trial ^N))\n\
     (member ((:m P))\n\
-      (&frame.cell *P))))\n";
+      (&frame.cell (:key N) *P))))\n";
 
 fn checked(text: &str) -> CheckedProgram {
     let solver = read_solver("join", text, "", &|_| None).unwrap_or_else(|error| panic!("{text}: {error:?}")).value;
@@ -60,7 +60,7 @@ fn rule_rows(rule: &str, conjuncts: u32) -> u64 {
 }
 
 #[test]
-fn a_read_with_no_key_site_of_an_instance_keyed_by_the_same_labels_joins_on_the_key() {
+fn a_read_by_a_key_site_of_an_instance_keyed_by_the_same_labels_joins_on_the_key() {
     let keys = rule_rows("(RULE &keys (&card.size (:key *N) (:N *S)))\n", 1);
     assert!(keys > 1, "the grid gives several keys");
     let equal = rule_rows("(RULE &equal (&card.size (:key (:N *N1)) (:N *S)) (&card.size (:key (:N *N2)) (:N S)))\n", 2);

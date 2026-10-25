@@ -16,11 +16,11 @@ use crate::hash::StableHashSet;
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{
-    Atom, Body, ColumnName, Conjunct, ConstraintOp, FactRelation, LabelId, LabelUse, OutputName, OutputStep, ProgramRelation, RelationRef, Site, SiteArg,
+    Atom, Body, Conjunct, ConstraintOp, FactRelation, LabelId, LabelUse, ProgramRelation, RelationRef, Site, SiteArg,
 };
 use crate::registry::{LibName, Mode, Registry};
 use crate::relations::ColumnIndex;
-use crate::resolver::{DependencyKind, Resolution, ResolvedProgram};
+use crate::resolver::{DependencyKind, Resolution};
 use crate::terms::TermId;
 use crate::types::{FormTypes, GraphRelation, ValueType};
 
@@ -195,17 +195,6 @@ pub enum CompileFault {
 pub struct Compiled {
     pub conjuncts: Box<[NodePath]>,
     pub columns: Box<[LabelId]>,
-    /// The key in scope, where the compile is of a keyed input's body.
-    pub key: Option<KeyScope>,
-}
-
-/// The key in scope in a keyed input's body: the path of the form that
-/// holds the key clause, and the name and the label of each of its
-/// columns.
-#[derive(Debug)]
-pub struct KeyScope {
-    pub form: NodePath,
-    pub fields: Box<[(ColumnName, LabelId)]>,
 }
 
 /// The state of a compilation of one body: the variables given so far and
@@ -299,18 +288,12 @@ impl<'a> IrBuilder<'a> {
     }
 
     /// The node of the positive atom at `path`, by what its relation
-    /// resolves to. In a keyed input's body, an atom that writes no site on
-    /// the `key` column and reads an output of another `INIT` form, keyed
-    /// by columns among the key in scope, joins on the key: each field of
-    /// the read's key stands at the variable of the label of the key in
-    /// scope with that column's name, as `docs/arclog/arclog.md#instance`
-    /// gives.
+    /// resolves to.
     fn atom(&mut self, atom: &Atom, path: &NodePath) -> IrNode {
         let mut arguments = Vec::new();
         for (site, index) in atom.sites.iter().zip(0u32..) {
             self.site(site, &path.child(index), &mut arguments);
         }
-        self.join_key(atom, path, &mut arguments);
         let arguments = Arguments(arguments.into());
         if let RelationRef::Fact(fact) = &atom.relation {
             return IrNode::Atom(RelationAtom { source: AtomSource::Fact(*fact), arguments });
@@ -332,37 +315,6 @@ impl<'a> IrBuilder<'a> {
             Resolution::Unresolved => unreachable!("a checked form resolves each name it reads"),
         };
         IrNode::Atom(RelationAtom { source, arguments })
-    }
-
-    /// Adds to `arguments` the key field columns of the atom at `path` that
-    /// join on the key in scope, as `IrBuilder::atom` gives.
-    fn join_key(&self, atom: &Atom, path: &NodePath, arguments: &mut Vec<(ColumnIndex, Argument)>) {
-        let resolved = &self.program.program;
-        let Some(scope) = &self.compiled.key else { return };
-        let Some(Resolution::Node(node)) = resolved.resolution(path) else { return };
-        if atom.sites.iter().any(|site| site.column == crate::resolver::columns::key())
-            || resolved.reads_lifted(path)
-            || resolved.forms_of(*node).contains(&scope.form)
-        {
-            return;
-        }
-        let root = NodeRef::Program(resolved.program.value());
-        let Some(NodeRef::Instance(read)) = resolved.forms_of(*node).first().and_then(|form| node_at(root, form)) else { return };
-        let Some((read_key, _)) = crate::resolver::column_sources::key_clause(NodeRef::Instance(read)) else { return };
-        let RelationRef::Output(OutputName { path: steps, .. }) = &atom.relation else { return };
-        let [OutputStep::Port(port)] = &steps[..] else { return };
-        let fields: Option<Vec<_>> = read_key
-            .columns
-            .iter()
-            .map(|column| {
-                let (_, label) = scope.fields.iter().find(|(name, _)| *name == column.name)?;
-                Some((ResolvedProgram::key_field_position(read, port, &column.name, Registry::get())?, *label))
-            })
-            .collect();
-        for (position, label) in fields.into_iter().flatten() {
-            let variable = self.variable(label);
-            arguments.push((ColumnIndex(position.0), Argument::Variable(variable)));
-        }
     }
 
     /// Adds to `arguments` the column and the argument of each label of the
@@ -532,10 +484,7 @@ pub fn compile_instance_pathed(
 /// The IR of a keyed input's body at `instance`: the clause
 /// [`compile_instance_body`] gives, joined with `key`, the rows of the key
 /// clause with its paths at the key's labels `key_labels`, which are bound in the body, and
-/// are columns of the relation where `columns` holds them. A read in the body
-/// of an output of another `INIT` form keyed by columns among the key's, with
-/// no key site, joins on the key's labels, as `docs/arclog/arclog.md#instance`
-/// gives; see `IrBuilder::atom`.
+/// are columns of the relation where `columns` holds them.
 pub fn compile_keyed_body(
     program: &CheckedProgram,
     instance: &NodePath,
@@ -620,16 +569,9 @@ fn compile_mapped(
         unbound_labels.sort_by_key(|label| label.0);
         return Err(CompileFault::Unbound { labels: unbound_labels.into() });
     }
-    let key_scope = key.as_ref().and_then(|(_, _, labels)| {
-        let root = NodeRef::Program(program.program.program.value());
-        let (read_key, _) = crate::resolver::column_sources::key_clause(node_at(root, form)?)?;
-        let fields = read_key.columns.iter().filter(|column| labels.contains(&column.label)).map(|column| (column.name.clone(), column.label));
-        Some(KeyScope { form: form.clone(), fields: fields.collect() })
-    });
     let compiled = Compiled {
         conjuncts: conjuncts.iter().map(|(_, path)| path.clone()).collect(),
         columns: columns.into(),
-        key: key_scope,
     };
     let mut builder = IrBuilder::new(program, scope, Rc::new(compiled))?;
     let mut of_node = Vec::new();

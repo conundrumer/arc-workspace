@@ -138,8 +138,7 @@ pub enum CheckId {
     /// so its result is cached under no [`CheckCacheKey`].
     OneClause,
     /// The sites of an instance's keyed inputs: an input that reads no key
-    /// label stands after the key clause, and a read at the key in scope
-    /// writes no key site.
+    /// label stands after the key clause.
     InstanceSites,
     /// The spelling of the program form: the names of labels and fields,
     /// and the elision of sites. The check reads the text of the files that

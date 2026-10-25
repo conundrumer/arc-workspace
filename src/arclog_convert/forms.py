@@ -777,51 +777,6 @@ def fold_or_lines(text: str) -> str:
     return text
 
 
-def drop_key_sites(text: str) -> str:
-    """Each key site, inside an instance's keyed inputs, on a read of an
-    instance keyed by the same labels at those labels, dropped: such a read
-    joins on the key in scope."""
-    from arclog_convert.lint import L, Sym, read, walk
-    try:
-        items = read(text)
-    except SyntaxError:
-        return text
-    keys: dict[str, list[str]] = {}
-    inits = [a for f in items for a in walk(f) if isinstance(a, L) and a.head == "INIT" and len(a.items) > 2
-             and isinstance(a.items[1], Sym)]
-    for a in inits:
-        for c in a.items[3:]:
-            if isinstance(c, L) and c.head == "key" and len(c.items) > 1:
-                ks: list[str] = []
-                for t in walk(c.items[1]):
-                    if isinstance(t, Sym) and t.text[:1] == "^" and t.text[1:] not in ks:
-                        ks.append(t.text[1:])
-                keys[a.items[1].text] = ks
-    cuts: list[tuple[int, int]] = []
-    for a in inits:
-        ks = keys.get(a.items[1].text)
-        if not ks:
-            continue
-        for c in a.items[3:]:
-            if not (isinstance(c, L) and c.head == "key"):
-                continue
-            for x in c.items[2:]:
-                for at in walk(x):
-                    if not (isinstance(at, L) and at.head and at.head.startswith("&") and "." in at.head):
-                        continue
-                    if keys.get(at.head.partition(".")[0]) != ks:
-                        continue
-                    for site in at.items[1:]:
-                        if isinstance(site, L) and site.head == ":key" and site.start >= 0 and \
-                                [t.text if isinstance(t, Sym) else None for t in site.items[1:]] == ks:
-                            cuts.append((site.start, site.end))
-    for a, b in sorted(set(cuts), reverse=True):
-        while a > 0 and text[a - 1] == " ":
-            a -= 1
-        text = text[:a] + text[b:]
-    return text
-
-
 def share_labels(branches: list[list[str]]) -> list[list[str]]:
     """OR branches with the labels the first branch makes named, not made,
     in each later branch that makes them, so they are exported."""

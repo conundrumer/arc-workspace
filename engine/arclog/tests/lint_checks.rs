@@ -121,9 +121,14 @@ const KEY_SITE: &str = "(INIT &a BoundingBox\n  (key ((input *P ^Col))\n    (cel
 (INIT &b BoundingBox\n  (key ((input *P ^Col))\n    (cell (P)\n      (&a.cell (:key Col) *P))))";
 
 #[test]
-fn a_key_site_at_the_key_in_scope_is_refused() {
-    assert_eq!(refused_lines(KEY_SITE, CheckId::InstanceSites), vec![8]);
-    assert_eq!(first_refused(KEY_SITE, CheckId::InstanceSites), Some((path(&[0, 1, 0, 0, 0]), vec![path(&[0, 1, 0, 0, 0])])));
+fn a_key_site_at_the_key_in_scope_is_accepted() {
+    assert_eq!(first_refused(KEY_SITE, CheckId::InstanceSites), None);
+}
+
+#[test]
+fn a_read_of_a_form_keyed_by_the_same_labels_with_no_key_site_is_a_broadcast() {
+    let no_site = KEY_SITE.replace(" (:key Col)", "");
+    assert_eq!(refused_lines(&no_site, CheckId::InstanceSites), vec![7]);
 }
 
 #[test]

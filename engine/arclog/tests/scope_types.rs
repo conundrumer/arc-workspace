@@ -132,14 +132,14 @@ fn an_unfold_key_that_reads_an_order_input_in_one_branch_types_each_label() {
             ((&order.member (:key C) (:t D)))
             ((&corners C))))
     (start ((:t D))
-      (&order.minimal (:t *D)))
+      (&order.minimal (:key C) (:t *D)))
     (initial_untaken ((:item D))
-      (&order.member (:t *D)))
+      (&order.member (:key C) (:t *D)))
     (step ((:t D) (:t2 D2))
-      (&order.successor (:a *D) (:b *D2))
+      (&order.successor (:key C) (:a *D) (:b *D2))
       (&walk.untaken (:t D) (:item D)))
     (take ((:t D) (:item D))
-      (&order.member (:t *D))
+      (&order.member (:key C) (:t *D))
       (&walk.untaken (:t D) (:item D)))))
 ",
     );

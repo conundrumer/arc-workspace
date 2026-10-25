@@ -32,7 +32,6 @@ from arclog_convert.forms import (
     MERGES,
     MERGES_UNMERGED,
     Todo,
-    drop_key_sites,
     fold_or_lines,
     hoist_shared,
     renamed,
@@ -222,7 +221,7 @@ def convert_one(stem: str) -> tuple[str, str | None, str | None, Counter, Counte
             todo = Todo()
             s = Solver(stem, lib, sig, todo, stuck)
             arclog, arcdata = s.run()
-        arclog = drop_key_sites(fold_or_lines(renamed(arclog)))
+        arclog = fold_or_lines(renamed(arclog))
         insts = libmap_rename.renamed_instances(libmap_rename.instances(arclog),
                                                 libmap_rename.reads(arclog + arcdata))
         arclog = hoist_shared(fix_labels(libmap_rename.rename(arclog, insts)))
