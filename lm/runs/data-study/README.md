@@ -30,6 +30,9 @@ It reads only the rows of that case. A render keeps the "What I see" section of 
 - `<task>-<prefix_tokens>.md`: one branch point each. Each holds the task's train pairs, the prefix program, then the gold continuation and up to `--samples` sampled continuations in the export's order. For each continuation, the file gives its labels, its text up to the clause of its last shown table, the first `--tables` tables after the branch with their rows for each train example, and a list of every table after the branch. It ends with a "What I see" section, written by hand.
 - `render_case.py`: the script that renders one case.
 - `case-<task>.md`: one concept case each. Each holds the task's train and test grids, then each clause of the case's token stream followed by the tables of the relations it declares: columns, depth, candidate keys, the DETs its entries are assigned, and the rows of each train example and of task-wide entries, those with an Example column grouped by it. A table with several DET assignments is given once per assignment, marked with the values of the DETs that differ between them. A drawing shows a Color, an Ident (as a letter) or a Number where each cell has one row, else the count. It ends with a "What I see" section, written by hand.
+- `case-22425bda.md`: crossing lines stacked into a one-row list of colors; a DET with four assignments.
+- `case-3979b1a8.md`: the input grown to twice its size, its diagonal continued with period 3; DETs that read the outputs.
+- `case-2c608aff.md`: markers joined to a block along a row or column; no DET.
 - `observations.md`: what held across the `case-<task>.md` files about telling from a table that it adds information, and what took the clause text or the later program.
 
 ## Decoding
