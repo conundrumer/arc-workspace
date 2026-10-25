@@ -12,7 +12,8 @@
 //! bindings of the conjuncts before the atom, and the result of each check
 //! that reads nothing of that relation ([`Candidate::AtomHead`]), and the candidates that open an
 //! atom of a lib relation, a relation macro or a proposer take one resolution of the form in
-//! progress, retargeted to each one's relation. Its interface
+//! progress, retargeted to each one's relation. The mask keeps the state and
+//! forced tokens of each admitted token, which the step of that token takes. Its interface
 //! beside the mask, in `interface`, gives the rows of the body so far and the
 //! consistency test at a `RULE` clause's end, and its batch form, in
 //! `batch`, steps many decodes at once, and its projections of the body so far,
@@ -40,7 +41,8 @@ pub use interface::{Consistency, Step};
 pub use tables::{evidence_tables, gives_no_table, Contents, ExampleRows, Point, Points, Table, TableColumn, TableDet, TableRelation};
 pub use projections::{Projection, Projections};
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, OnceLock};
 
 use crate::check::prefix::{Candidate, PrefixChecks};
 use crate::check::{CheckId, SolverClauses};
@@ -77,6 +79,27 @@ pub struct Decoder<'a> {
     columns: Option<crate::eval::output::GridColumns>,
     /// One record per accepted token, shared with the forks.
     trace: DecodeTrace,
+    /// The mask of the current state with the step of each token it admits.
+    held: Held,
+}
+
+/// What [`Decoder::admissible`] computes at a state: the mask, and the
+/// state and the forced tokens that each admitted token gives, by the
+/// token's id, which [`Decoder::advance`] takes in place of a second check.
+struct Mask {
+    mask: TokenMask,
+    steps: HashMap<u32, (state::State, Vec<Token>)>,
+}
+
+/// The [`Mask`] of a decoder's state, once computed. A clone holds none, so
+/// a fork, and a checkpoint of a replay, hold no states.
+#[derive(Default)]
+struct Held(OnceLock<Mask>);
+
+impl Clone for Held {
+    fn clone(&self) -> Held {
+        Held::default()
+    }
 }
 
 /// The state after a token and what the step gives, which
@@ -140,7 +163,7 @@ impl<'a> Decoder<'a> {
         assert_eq!(settings.caps, session.caps, "the caps of the decode settings are those of the session");
         let context = Context { registry, settings: *settings, vocabulary: Vocabulary::new(registry, settings) };
         let state = state::State::new();
-        Decoder { task, session, constructions, context: Arc::new(context), state, before: None, train: None, cancellation: Cancellation::default(), output: None, assignments: Vec::new(), columns: None, trace: DecodeTrace::default() }
+        Decoder { task, session, constructions, context: Arc::new(context), state, before: None, train: None, cancellation: Cancellation::default(), output: None, assignments: Vec::new(), columns: None, trace: DecodeTrace::default(), held: Held::default() }
     }
 
     /// The ids of the decode's tokens.
@@ -154,19 +177,27 @@ impl<'a> Decoder<'a> {
         (self.task, self.session, self.constructions)
     }
 
-    /// The tokens that may come next.
+    /// The tokens that may come next. The first call at a state computes the
+    /// mask, and keeps the state and forced tokens of each admitted token for
+    /// [`Decoder::step`]; a later call at that state gives the same mask.
     pub fn admissible(&self) -> TokenMask {
+        self.held.0.get_or_init(|| self.compute_mask()).mask.clone()
+    }
+
+    fn compute_mask(&self) -> Mask {
         let vocabulary = &self.context.vocabulary;
         let mut mask = TokenMask::new(vocabulary.len());
+        let mut steps = HashMap::new();
         self.with_checks(|checks| {
             for id in 0..u32::try_from(vocabulary.len()).expect("fewer than 2^32 tokens") {
                 let token = vocabulary.token(id).expect("an id of the vocabulary");
-                if self.next(token, checks).is_ok() {
+                if let Ok(step) = self.next(token, checks) {
                     mask.insert(id);
+                    steps.insert(id, step);
                 }
             }
         });
-        mask
+        Mask { mask, steps }
     }
 
     /// Runs `body` with the checks over the prefixes that follow the
@@ -192,7 +223,11 @@ impl<'a> Decoder<'a> {
     /// The state after `token`, and what the step gives, which
     /// [`Decoder::apply`] makes the decode's.
     fn advance(&self, token: &Token) -> Result<Advanced, Refusal> {
-        let (state, forced) = self.with_checks(|checks| self.next(token, checks))?;
+        let kept = self.held.0.get().and_then(|held| held.steps.get(&self.context.vocabulary.id(token)?));
+        let (state, forced) = match kept {
+            Some((state, forced)) => (state.clone(), forced.clone()),
+            None => self.with_checks(|checks| self.next(token, checks))?,
+        };
         let judged = self.consistency(&self.state, &state);
         let (consistency, columns) = judged.map_or((None, None), |(result, columns)| (Some(result), columns));
         Ok(Advanced { token: token.clone(), state, step: Step { forced: forced.into(), consistency, columns } })
@@ -201,6 +236,7 @@ impl<'a> Decoder<'a> {
     fn apply(&mut self, advanced: Result<Advanced, Refusal>) -> StepResult {
         let Advanced { token, state, step } = advanced?;
         self.before = Some(std::mem::replace(&mut self.state, state));
+        self.held = Held::default();
         self.record(token, &step);
         if let Some(Consistency::Consistent { assignments }) = &step.consistency {
             self.assignments = assignments.clone();
@@ -251,7 +287,7 @@ impl<'a> Decoder<'a> {
     /// A second decode from the same state, which shares this one's caches
     /// and takes a cancellation of its own.
     pub fn fork(&self) -> Decoder<'a> {
-        Decoder { cancellation: Cancellation::default(), ..self.clone() }
+        Decoder { cancellation: Cancellation::default(), held: Held::default(), ..self.clone() }
     }
 
     /// The program so far: its finished forms.

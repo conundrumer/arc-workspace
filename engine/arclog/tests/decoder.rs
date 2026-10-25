@@ -277,7 +277,7 @@ fn a_retargeted_resolution_is_what_resolve_last_gives() {
     let stream = token_stream(&written, &vocabulary).expect("the program has a stream");
     let inputs = inputs();
     let mut decoder = decoder(&inputs);
-    let (mut retargeted, mut compared) = (0, 0);
+    let (mut retargeted, mut compared, mut in_instance, mut after_key_body) = (0, 0, 0, 0);
     for (token, emitter) in &stream {
         if matches!(emitter, Emitter::Engine) {
             continue;
@@ -303,6 +303,9 @@ fn a_retargeted_resolution_is_what_resolve_last_gives() {
                         compared += 1;
                         if held.retarget_lib_atom(&program, &at, &RelationRef::Lib(name.clone()), registry) {
                             retargeted += 1;
+                            let in_form = matches!(program.value().forms.last(), Some(Form::Instance(_)));
+                            in_instance += usize::from(in_form);
+                            after_key_body += usize::from(in_form && at.0.get(1..3) != Some(&[PathStep(0), PathStep(0)][..]));
                             assert_eq!(resolution_of_last(held, &form, &at, nodes), resolution_of_last(&expected, &form, &at, nodes), "{candidate:?} after {token:?}");
                         }
                     }
@@ -313,4 +316,33 @@ fn a_retargeted_resolution_is_what_resolve_last_gives() {
         decoder.step(token.clone()).expect("a token of the stream");
     }
     assert!(compared > 0 && retargeted > 0, "{retargeted} retargets of {compared} candidates");
+    assert!(in_instance > 0, "no retarget inside the instance form, {retargeted} retargets of {compared} candidates");
+    assert!(after_key_body > 0, "no retarget outside the key body of the instance form, {in_instance} inside it");
+}
+
+/// Along a stream, a step after `admissible` gives the step and the program
+/// that a step on a fork with no mask computed gives, and a second
+/// `admissible` gives the first mask.
+#[test]
+fn a_step_after_the_mask_is_the_step_with_no_mask() {
+    let registry = Registry::get();
+    let vocabulary = Vocabulary::new(registry, &DecodeSettings::default());
+    let boxes = "(INIT &boxes BoundingBox (key ((&comps.component ^Id)) (cell (P) (&comps.component *P Id))))\n";
+    let written = checked(&format!("{BG}{FG}{COMPS}{AXIS}{PRIOR}{boxes}"));
+    let stream = token_stream(&written, &vocabulary).expect("the program has a stream");
+    let inputs = inputs();
+    let mut decoder = decoder(&inputs);
+    for (token, emitter) in &stream {
+        if matches!(emitter, Emitter::Engine) {
+            continue;
+        }
+        let mut bare = decoder.fork();
+        let mask = decoder.admissible();
+        assert_eq!(decoder.admissible(), mask);
+        let expected = bare.step(token.clone());
+        let stepped = decoder.step(token.clone());
+        assert_eq!(format!("{stepped:?}"), format!("{expected:?}"), "{token:?}");
+        assert_eq!(format!("{:?}", decoder.partial()), format!("{:?}", bare.partial()), "{token:?}");
+        assert_eq!(decoder.program(), bare.program(), "{token:?}");
+    }
 }
