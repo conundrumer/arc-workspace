@@ -64,27 +64,27 @@ The lower and upper bounds above are deterministic and cheap, about rows × 2^co
 - the table is the closure of a step relation inside a node set;
 - the table is a rank or a class membership written as pairs.
 
-A table's information is the cost of the cheapest test that derives it plus its exceptions. The tests are the same forms as the compact representations, so a test that passes names the rewrite.
+A table's information is the cost of the cheapest test that derives it plus its exceptions. The tests are the same forms as the compact representations, so a test that passes names what the table can be derived from.
 
 Uses, beside the lint below: a feature for the encoder, key size, fill and bits per row per table, attached before the model attends over the rows; and a prior for synthesis, since the gold programs keep a table's information roughly proportional to its size, and a decode that produces a zero-bit table of 50,000 rows has taken a step a gold author would not.
 
 ### The lint
 
-`uv run python -m study.table_lint [task_ids ...]` runs the tests on solvers' relations, every solver by default, and prints, for each relation over a row threshold, the test that derives it and the rewrite that test names. It prints no line for `&output` or for a relation the decode gives no table, which `row-counts` marks with a `no table` line. Its input is the solver's rows at the stored parameters of the concept case, which `arclog-cli row-counts --rows` dumps per relation and input, and the solver's source. Each line is a row count with a reason, and the reason is the instruction an agent acts on.
+`uv run python -m study.table_lint [task_ids ...]` runs the tests on solvers' relations, every solver by default, and prints, for each relation over a row threshold, the test that derives it and what the test found. The principle each line states is that a table should hold something the relations it is derived from do not. It prints no line for `&output` or for a relation the decode gives no table, which `row-counts` marks with a `no table` line. Its input is the solver's rows at the stored parameters of the concept case, which `arclog-cli row-counts --rows` dumps per relation and input, and the solver's source. Each line is a row count with a finding, and the agent that rewrites the solver decides how to act on it.
 
-| test | what passes it | the rewrite it names |
+| test | what passes it | what the table holds nothing beyond |
 | --- | --- | --- |
-| restatement | the rows equal another relation's, or a projection of one | read the relation where the table was read |
-| cell instance | an `edge` of Distance or Propagation whose body is the grid's adjacency inside a node set | CellDistance or Flood |
-| product | the rows are the product of the projections onto a partition of the columns; for an input, a guard with no variable times a domain | each factor as a relation of its own, joined where the table was read; for a guard, the input it binds alone or nothing |
-| closure | the rows are the closure of a step relation inside a node set | Flood or Connectivity |
-| order or class as pairs | the key is a pair, and the rows are the pairs some column orders, or an equivalence's pairs | Order's score form; Quotient's `edge` |
-| lib relation per pair | the rows are a lib relation, `same_line`, `neighbor`, `apply`, restricted to a cell set | the lib relation at the reading site; for Agreement, its `transform` form once the lib has it |
-| none | | a residual: the rewrite is the solver's, and the line gives the rows, the key and the bits per row |
+| restatement | the rows equal another relation's, or a projection of one | the other relation |
+| cell instance | an `edge` of Distance or Propagation whose body is the grid's adjacency inside a node set | the node set, which CellDistance or Flood takes alone |
+| product | the rows are the product of the projections onto a partition of the columns; for an input, a guard with no variable times a domain | the factors; for a guard, the conjuncts that bind the columns |
+| closure | the rows are the closure of a step relation inside a node set | the steps |
+| order or class as pairs | the key is a pair, and the rows are the pairs some column orders, or an equivalence's pairs | a score per member; the classes |
+| lib relation per pair | the rows are a lib relation, `same_line`, `neighbor`, `apply`, restricted to a cell set | the lib relation and the cell set; for Agreement's `correspondence`, the D4 elements |
+| none | | a residual: the line gives the rows, the key and the bits per row |
 
-A line names the solver, the relation, its rows per input, the test and the rewrite. An agent's brief is the solver's lines; its acceptance is that the solver still passes its pairs, that each line's relation has fewer rows or no table, and that no new line over the threshold appears. The row counts before and after are the measure, from the same `row-counts` call.
+A line names the solver, the relation, its rows per input, the test and the finding. The lines are hints. An edit of a solver is judged by its tables: `uv run python -m study.table_lint --baseline <task_id>` records the solver's row counts as committed, and `--measure <task_id>` prints each table's rows, summed over the inputs, against that record, with the largest table, the tables over the cap and over the threshold, and whether the solver's tables got smaller. An edit is kept where the solver still passes its pairs and its tables got smaller.
 
-Where no test passes, the line is the residual class, and the rewrite takes a reading of the task; those are the briefs that need a solver session rather than an editor.
+Where no test passes, the line is the residual class, and rewriting it takes a reading of the task; those are the briefs that need a solver session rather than an editor.
 
 ## Settled
 

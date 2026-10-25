@@ -72,6 +72,9 @@ from study.relation_shapes import BOX, RowsFile, Value, best_factoring, distinct
 THRESHOLD = 1000
 """A relation is listed when its rows summed over the solver's inputs exceed this."""
 
+CAP = 4000
+"""The rows of a table the feature encoder sees whole (`--enc-max-rows`)."""
+
 WORK_CAP = 1 << 22
 """The most rows × 2^columns of a rows file the value tests read: the cost
 of the tests on one file is about that product."""
@@ -108,6 +111,14 @@ class Finding:
 
 def quoted(names: Iterable[str]) -> str:
     return ", ".join(f"`{name}`" for name in names)
+
+
+def reconvert(ids: Sequence[str]) -> None:
+    """Convert the solvers `ids` into the default corpus, with the converter's summary on stderr."""
+    command = [sys.executable, "-m", "arclog_convert.convert", *ids]
+    done = subprocess.run(command, cwd=checkout.ROOT, stdout=sys.stderr)
+    if done.returncode != 0:
+        raise RuntimeError(f"{' '.join(command)} exited with {done.returncode}")
 
 
 @dataclass(frozen=True)
@@ -344,8 +355,8 @@ def cell_instance(body: Body) -> str | None:
     if not all(len(variables := names(atom_labels(item))) == 1 and variables <= set(labels) for item in items if item is not steps[0]):
         return None
     return (
-        f"The `edge` is the grid's `neighbor` steps between cells of a node set. Replace this {body.component} instance by a "
-        f"{CELL_FORMS[body.component]} instance whose `node` is that node set, and drop its `edge`."
+        f"The `edge` is the grid's `neighbor` steps between cells of a node set, which {CELL_FORMS[body.component]} "
+        "takes from the node set alone: the table holds nothing the node set does not."
     )
 
 
@@ -359,8 +370,8 @@ def comparison_edge(body: Body) -> str | None:
         if item_kind(item) is Item.OP and item[0] in ORDERINGS and len(operands := names(item_labels(item))) == 2 and operands <= cells:
             first, second = (strip(label) for label in item_labels(item))
             return (
-                f"The `edge` holds every pair of cells with `{first} {item[0]} {second}`, an order. "
-                "Give Order a `score` for each cell in place of the pairs."
+                f"The `edge` holds every pair of cells with `{first} {item[0]} {second}`, an order: "
+                "the table holds nothing a score per cell does not."
             )
     return None
 
@@ -389,12 +400,12 @@ def product_body(body: Body) -> str | None:
     if guards:
         guard = quoted(sorted({str(head(item)) for part in guards for item in part.items}))
         return (
-            f"The body times a guard ({guard}), conjuncts that bind no column, by the conjuncts that bind {columns_of(bound, columns)}. "
-            "Drop the guard and write the input that binds those columns alone, or nothing."
+            f"The body is a guard ({guard}), conjuncts that bind no column, times the conjuncts that bind {columns_of(bound, columns)}: "
+            "the guard tests once and adds nothing to the rows."
         )
     return (
-        f"The body is the product of {len(bound)} groups of conjuncts that share no variable, which bind {columns_of(bound, columns)}. "
-        "Write each group as a relation of its own and join them where this relation is read."
+        f"The body is {len(bound)} groups of conjuncts that share no variable, which bind {columns_of(bound, columns)}: "
+        "the table is their product and holds nothing the groups do not."
     )
 
 
@@ -402,8 +413,8 @@ def apply_per_pair(body: Body) -> str | None:
     """The rewrite of an `Agreement`'s `correspondence` that applies a D4 element to each cell pair."""
     if of_port(body, ("Agreement",), "correspondence") and any(atom[0] == "apply" for atom in deep_atoms(body.items)):
         return (
-            "The `correspondence` applies a D4 element with `apply` to each pair of cells. "
-            "Give Agreement a `transform` input that holds the D4 element, once the lib has that form."
+            "The `correspondence` applies a D4 element with `apply` to each pair of cells: "
+            "the table holds nothing the D4 elements do not. Agreement has no form that takes them yet."
         )
     return None
 
@@ -436,8 +447,8 @@ def restatement(file: RowsFile, peers: Mapping[tuple[str, int], Sequence[Signatu
                     theirs = quoted(peer.names[j] for j in selection)
                     return Finding(
                         Derivation.RESTATEMENT,
-                        f"The columns {mine} are the columns {theirs} of `{peer.relation}`. "
-                        f"Delete this relation and read `{peer.relation}` where it is read.",
+                        f"The columns {mine} are the columns {theirs} of `{peer.relation}`: "
+                        f"the table holds nothing `{peer.relation}` does not.",
                     )
     return None
 
@@ -462,17 +473,17 @@ def pair_kind(file: RowsFile) -> Finding | None:
     if shape.equivalence:
         return Finding(
             Derivation.ORDER_OR_CLASS,
-            f"The pairs ({pair_names}) are an equivalence of {shape.classes} classes. Give Quotient the generating `edge` in place of the pairs.",
+            f"The pairs ({pair_names}) are an equivalence of {shape.classes} classes: the table holds nothing the classes do not.",
         )
     if shape.order == "total":
         return Finding(
             Derivation.ORDER_OR_CLASS,
-            f"The pairs ({pair_names}) are a total order. Give Order a `score` for each cell in place of the pairs.",
+            f"The pairs ({pair_names}) are a total order: the table holds nothing a score per cell does not.",
         )
     return Finding(
         Derivation.CLOSURE,
-        f"The pairs ({pair_names}) are the closure of a step relation of {shape.reduction} pairs. "
-        "Give those steps to Flood or Connectivity inside the node set, and drop the closure.",
+        f"The pairs ({pair_names}) are the closure of a step relation of {shape.reduction} pairs: "
+        "the table holds nothing the steps do not.",
     )
 
 
@@ -485,8 +496,8 @@ def factored(file: RowsFile) -> Finding | None:
     offsets = f", where {quoted(found.relative)} are offsets from `{found.base}`" if found.base and found.relative else ""
     return Finding(
         Derivation.PRODUCT,
-        f"The rows are the join of the projections onto the columns {factors}{offsets}. "
-        "Write each projection as a relation of its own and join them where this relation is read.",
+        f"The rows are the join of their projections onto the columns {factors}{offsets}: "
+        "the table holds nothing those parts do not.",
     )
 
 
@@ -505,8 +516,8 @@ def rows_tests(subject: Subject) -> list[Callable[[RowsFile], Finding | None]]:
         a, b = (file.columns[j][0] for j in pair)
         return Finding(
             Derivation.LIB_RELATION,
-            f"The pairs (`{a}`, `{b}`) of cells are what {quoted(read)} gives, restricted to a cell set. "
-            f"Read {quoted(read)} at the site that reads this relation, and delete the relation.",
+            f"The pairs (`{a}`, `{b}`) of cells are what {quoted(read)} gives, restricted to a cell set: "
+            f"the table holds nothing {quoted(read)} and that cell set do not.",
         )
 
     return [restated, factored, pair_kind, lib_pair]
@@ -598,11 +609,70 @@ def lint(corpus: Path, tasks: Path, ids: Sequence[str]) -> list[str]:
     return [line for solver in sorted(lines) for line in lines[solver]]
 
 
+BASELINES = checkout.ROOT / "work" / "table-information" / "baselines"
+"""The `row-counts` output of each solver as committed, one file per solver, which `--measure` compares against."""
+
+
+def tables(text: str) -> dict[str, Relation]:
+    """The relations of one solver's `row-counts` output that the decode gives a table, other than the task's facts and `&output`."""
+    relations, _ = read_counts(text)
+    return {r.name: r for r in relations if r.tabled and r.name not in FACTS | {OUTPUT}}
+
+
+def summary(relations: Mapping[str, Relation]) -> tuple[int, int, int, int]:
+    """The largest table, the tables over 4,000 rows and over `THRESHOLD` rows, and the rows of those over `THRESHOLD`, each table's rows summed over the inputs."""
+    totals = [r.total for r in relations.values()]
+    return max(totals, default=0), sum(t > CAP for t in totals), sum(t > THRESHOLD for t in totals), sum(t for t in totals if t > THRESHOLD)
+
+
+def measure(solver: str, before: str, after: str) -> list[str]:
+    """Each table of the solver whose rows, summed over the inputs, exceed 100 before or after, then the summary of both and whether the solver's tables got smaller."""
+    old, new = tables(before), tables(after)
+    shown = sorted((name for name in old.keys() | new.keys() if max(old[name].total if name in old else 0, new[name].total if name in new else 0) > 100),
+                   key=lambda name: -max(old[name].total if name in old else 0, new[name].total if name in new else 0))
+    lines = [f"{solver} {name} {old[name].total if name in old else '-'} -> {new[name].total if name in new else '-'}" for name in shown]
+    a, b = summary(old), summary(new)
+    lines.append(f"{solver} largest table {a[0]} -> {b[0]}; tables over {CAP} {a[1]} -> {b[1]}; tables over {THRESHOLD} {a[2]} -> {b[2]}, with {a[3]} -> {b[3]} rows")
+    if b[0] > a[0] or b[1] > a[1]:
+        verdict = "worse: a table is larger, or more tables are over the cap"
+    elif b[3] < a[3] or b[0] < a[0]:
+        verdict = "better: no table is larger, and the large tables hold fewer rows"
+    else:
+        verdict = "no change"
+    lines.append(f"{solver} {verdict}")
+    return lines
+
+
 def main(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(prog="python -m study.table_lint", description=(__doc__ or "").split("\n\n")[0])
     parser.add_argument("--corpus", type=Path, default=gen_dir(), help="the directory of the arclog files, `gen/` of `arclog_convert.out` by default")
+    parser.add_argument("--baseline", action="store_true", help="record each given solver's row counts as the baseline `--measure` compares against")
+    parser.add_argument("--measure", action="store_true", help="print each given solver's tables against its baseline, then its lint lines")
     parser.add_argument("task_ids", nargs="*", help="the solvers to lint, every solver of the corpus by default")
     args = parser.parse_args(argv)
+    if args.task_ids and args.corpus == gen_dir():
+        reconvert(args.task_ids)
+    if args.baseline or args.measure:
+        if not args.task_ids:
+            parser.error("--baseline and --measure take task ids")
+        by_solver: dict[str, list[str]] = defaultdict(list)
+        for line in row_counts(args.corpus, TASKS_DIR, args.task_ids).splitlines():
+            if line.strip():
+                by_solver[line.split()[0]].append(line)
+        for solver in args.task_ids:
+            text = "\n".join(by_solver[solver]) + "\n"
+            path = BASELINES / f"{solver}.txt"
+            if args.baseline:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(text)
+            elif not path.exists():
+                print(f"{solver} has no baseline at {path}", file=sys.stderr)
+                return 2
+            else:
+                for line in measure(solver, path.read_text(), text):
+                    print(line, flush=True)
+        if args.baseline:
+            return 0
     for line in lint(args.corpus, TASKS_DIR, args.task_ids):
         print(line, flush=True)
     return 0

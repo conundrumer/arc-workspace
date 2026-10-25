@@ -17,17 +17,17 @@
 
 .init params = Params
 
-.decl cell_line(p: Position, a: Axis, l: Position)
-cell_line(P, A, L) :- in(P, _), axis_elem(A), split(P, A, L, _).
-
 .init line_color = Unanimous<Line, Color>
-line_color.item([A, L], Col) :- cell_line(P, A, L), in(P, Col).
+line_color.item([A, L], Col) :-
+    in(P, Col), axis_elem(A), split(P, A, L, _).   // cell on its line of axis A
 
 .decl line(a: Axis, l: Position, col: Color)
 line(A, L, Col) :- line_color.value([A, L], Col), !params.bg(Col).
 
 .decl line_cell(p: Position, col: Color)
-line_cell(P, Col) :- line(A, L, Col), cell_line(P, A, L).
+line_cell(P, Col) :-
+    line(A, L, Col),
+    in(P, _), split(P, A, L, _).                   // cell on that line
 
 .decl loose(p: Position, col: Color)
 loose(P, Col) :- in(P, Col), !params.bg(Col), !line_cell(P, _).
