@@ -1,5 +1,6 @@
 """`export_checks.check_case` gives no line on a consistent case and reports each of four changes to it."""
 import importlib.util
+import json
 from pathlib import Path
 
 import numpy as np
@@ -106,3 +107,27 @@ def test_column_whose_source_entry_is_stopped_is_not_checked():
     frames["flows"] = frames["flows"].drop(4).reset_index(drop=True)
     found = [l for l in lines(frames, np.delete(values, range(36, 40))) if l.startswith("values-copy")]
     assert found == []
+
+
+def test_check_part_reports_a_copy_whose_values_lie_outside_its_source(tmp_path, monkeypatch):
+    frames, values = case()
+    values = values.copy()
+    values[43] = 8
+    (tmp_path / "tasks").mkdir()
+    (tmp_path / "tasks/t.json").write_text(json.dumps(TASK))
+    monkeypatch.setattr(checks, "TASKS", str(tmp_path / "tasks"))
+    def read_pickle(path, columns=None, filters=(("task", "in", []),)):         # the venv has no pyarrow: the part files are pickles
+        df = pd.read_pickle(path)
+        return df[df.task.isin(filters[0][2])]
+    monkeypatch.setattr(checks.pd, "read_parquet", read_pickle)
+    out = tmp_path / "export"
+    (out / "parts").mkdir(parents=True)
+    (out / "values/t").mkdir(parents=True)
+    values.tofile(out / "values/t/0.i32")
+    (out / "orientation_types.json").write_text(json.dumps([[k, sorted(v)] for k, v in ORIENTATION.items()]))
+    for name, part in (("tables", "tables"), ("entries", "entries"), ("assigned", "assigned"), ("flows", "flows")):
+        frames[part].assign(task="t", case=0).to_pickle(out / f"parts/00000.{name}.parquet")
+    for name in ("projections", "projection_rows"):
+        pd.DataFrame(dict(task=[], case=[])).to_pickle(out / f"parts/00000.{name}.parquet")
+    found = checks.check_part(str(out), 0, [("t", 0)])
+    assert [l for l in found if "values-copy" in l] and all(l.startswith("t 0: ") for l in found)

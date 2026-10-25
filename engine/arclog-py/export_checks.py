@@ -2,8 +2,8 @@
 
     python engine/arclog-py/export_checks.py <export dir> [--sample N | --all] [--seed S] [--streams <dir>] [--jobs N]
 
-It needs numpy and pandas (and pyarrow for the command), and no `arclog`. `tables_export.write_part` calls
-`check_case` on each case it writes, with `copies=False`. The command checks an existing export: the files of every case, and the
+It needs numpy and pandas (and pyarrow for the command), and no `arclog`. `tables_export` calls `check_part` on each part
+it writes, which checks every case, the copy flows' values included. The command checks an existing export: the files of every case, and the
 values of a sample of N cases (100 by default; `--all` takes every case; `--seed` picks the sample). It prints
 one line per violated invariant, with the count of its violations, the number of its cases and three examples,
 then a total, and exits with status 1 where any violation stands. `--jobs N` sets the number of worker processes that check the cases (every core by default; 1 runs in the one process); the report is the same at every N. A change to this module, or to the engine code that writes the export's files (`engine/arclog/src/eval/flows.rs`, `engine/arclog/src/decode/`), runs `engine/arclog-py/roundtrip_check.py` with an `arclog` built from its tree before its merge.
@@ -81,14 +81,14 @@ def _evidence_cells(task, fact):
     return cache[fact]
 
 
-def check_case(frames, values, task, orientation_types, size=None, copies=True):
+def check_case(frames, values, task, orientation_types, size=None):
     """The violations of one case, one line `<invariant>: <detail>` each.
 
     `frames` is {part: DataFrame} of the case in the layout `tables_export.write_part` builds with `frame(case, part)`
     (a table's index is its row, an entry's index is its row), `values` the case's int32 array or None, which skips
     the value checks, `task` the task's JSON, `orientation_types` {type name: set of cells} or None, which skips the
     orientation part of the domain check, and `size` the length of `values` where `values` is None and the runs are
-    to be checked against it. `copies` False skips the check of the copy flows' values, the costliest of the value checks. A copy from a source table whose entries at an example are not all `Rows` entries is
+    to be checked against it. A copy from a source table whose entries at an example are not all `Rows` entries is
     not checked at that example.
     """
     out = []
@@ -218,11 +218,11 @@ def check_case(frames, values, task, orientation_types, size=None, copies=True):
             bad("runs-tile", f"the runs end at {pos}, the values at {size}")
     if values is None or any(l.startswith("runs-tile") for l in out):
         return out
-    _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest, bad, copies)
+    _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest, bad)
     return out
 
 
-def _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest, bad, copies_too):
+def _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest, bad):
     blocks = collections.defaultdict(list)       # table -> [(entry, example, block)] of its Rows entries
     held_none = collections.defaultdict(set)     # table -> the examples of its Rows entries that hold no row
     unseen = collections.defaultdict(set)        # table -> the examples of its entries other than Rows entries
@@ -241,7 +241,7 @@ def _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest
                         bad("values-key", f"table {r.table} entry {r.Index} has {r.rows} rows and a key with no columns")
     # column -> its flows, for each column whose every flow is a copy of a column of an earlier table or of the example
     flows_of = collections.defaultdict(list)
-    for f in rows_of(frames.get("flows") if copies_too else None):
+    for f in rows_of(frames.get("flows")):
         flows_of[(f.table, f.column)].append(f)
     def source_type(f):
         """The type of the column flow `f` copies, or None where the flow names none."""
@@ -320,7 +320,7 @@ def _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest
                 bad("values-evidence", f"ex_{fact} has {len(got)} distinct rows, the task file {len(want)}; differing: {diff[:3]}")
     # copy flows
     assigned = collections.defaultdict(list)       # entry -> [(det, rows, offset)]
-    for r in rows_of(frames.get("assigned") if copies else None):
+    for r in rows_of(frames.get("assigned")):
         assigned[r.entry].append((int(r.det), int(r.rows), int(r.offset)))
 
     def det_values(ti, det, sc):
@@ -381,6 +381,12 @@ def _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest
                 break
 
 
+def number_rows(tables, entries):
+    """Sets the `table` column of `tables` and the `entry` column of `entries`: each row's place among its case's rows, in the frames' order."""
+    tables["table"] = tables.groupby(["task", "case"]).cumcount()
+    entries["entry"] = entries.groupby(["task", "case"]).cumcount()
+
+
 def _by_case(df, order):
     """{(task, case): the case's rows sorted by `order`, with a fresh index}."""
     df = df.sort_values(["task", "case", order], kind="stable") if order else df
@@ -417,18 +423,24 @@ def check_streams(dir, tables):
     return found, int((keys.get_indexer(have) < 0).sum())
 
 
-def _check_cases(dir, cases, chosen, orientation):
+def _check_cases(dir, cases, chosen, orientation, part=None):
     """[(case, invariant, detail)] of the violations of the cases in the list `cases` of (task, case) pairs, in the order of `cases`.
-    It reads the export's parts for the tasks of `cases` alone, and the values of the cases in the set `chosen`."""
+    It reads the whole files of the export for the tasks of `cases` alone, or the files of part `part` where that is given, and the values of the cases in the set `chosen`."""
     tasks = sorted({t for t, _ in cases})
     wanted = set(cases)
     def read(name, columns=None):
-        df = pd.read_parquet(f"{dir}/{name}.parquet", columns=columns, filters=[("task", "in", tasks)])
+        path = f"{dir}/{name}.parquet" if part is None else f"{dir}/parts/{part:05d}.{name}.parquet"
+        df = pd.read_parquet(path, columns=columns, filters=[("task", "in", tasks)])
         return df[pd.MultiIndex.from_frame(df[["task", "case"]]).isin(wanted)] if len(df) else df
-    split = {"tables": _by_case(read("tables"), "table"),
-             "entries": _by_case(read("index", ["task", "case", "entry", "table", "example_kind", "example_index", "kind", "rows", "offset"]), "entry")}
-    for part in ("flows", "assigned", "projections", "projection_rows"):
-        split[part] = _by_case(read(part), None)
+    if part is None:
+        tables = read("tables")
+        entries = read("index", ["task", "case", "entry", "table", "example_kind", "example_index", "kind", "rows", "offset"])
+    else:
+        tables, entries = read("tables"), read("entries")
+        number_rows(tables, entries)
+    split = {"tables": _by_case(tables, "table"), "entries": _by_case(entries, "entry")}
+    for name in ("flows", "assigned", "projections", "projection_rows"):
+        split[name] = _by_case(read(name), None)
     task_json, found = {}, []
     for key in cases:
         task, case = key
@@ -447,7 +459,7 @@ def _check_cases(dir, cases, chosen, orientation):
     return found
 
 
-def _shares(dir, cases, chosen, jobs):
+def shares(dir, cases, chosen, jobs):
     """`cases` cut into at most `jobs` lists of whole cases, each in the order of `cases`, by greedy longest-processing-time assignment.
     A case weighs the size of its values file, a tenth of it where its values are not checked."""
     def weight(key):
@@ -461,6 +473,19 @@ def _shares(dir, cases, chosen, jobs):
         shares[i].append(pos)
         heapq.heappush(heap, (load + weight(key), i))
     return [[cases[pos] for pos in sorted(share)] for share in shares if share]
+
+
+def check_part(out, k, cases):
+    """The violations of the cases in the list `cases` of (task, case) pairs, all in part `k` of the export in `out`, with every case's values checked:
+    one line `<task> <case>: <invariant>: <detail>` each, in the order of `cases`. It reads `orientation_types.json` of `out` where it stands,
+    and `arclog.orientation_types()` otherwise."""
+    if os.path.exists(f"{out}/orientation_types.json"):
+        types = json.load(open(f"{out}/orientation_types.json"))
+    else:
+        import arclog
+        types = arclog.orientation_types()
+    found = _check_cases(out, cases, set(cases), orientation_sets(types), part=k)
+    return [f"{task} {case}: {inv}: {detail}" for (task, case), inv, detail in found]
 
 
 def check_export(dir, sample=100, seed=0, streams=None, out=sys.stdout, jobs=None):
@@ -485,9 +510,9 @@ def check_export(dir, sample=100, seed=0, streams=None, out=sys.stdout, jobs=Non
     if jobs == 1 or len(cases) < 2:
         results = [_check_cases(dir, cases, chosen, orientation)]
     else:
-        shares = _shares(dir, cases, chosen, jobs)
-        with concurrent.futures.ProcessPoolExecutor(len(shares), mp_context=multiprocessing.get_context("spawn")) as pool:
-            futures = [pool.submit(_check_cases, dir, share, chosen & set(share), orientation) for share in shares]
+        cut = shares(dir, cases, chosen, jobs)
+        with concurrent.futures.ProcessPoolExecutor(len(cut), mp_context=multiprocessing.get_context("spawn")) as pool:
+            futures = [pool.submit(_check_cases, dir, share, chosen & set(share), orientation) for share in cut]
             results = [f.result() for f in futures]
     position = {key: i for i, key in enumerate(cases)}
     found = collections.defaultdict(list)

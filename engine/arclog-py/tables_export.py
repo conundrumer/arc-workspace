@@ -47,10 +47,10 @@ written as a part. Writes to <out dir>:
   orientation_types.json  [type name, cells] of each orientation type without a parameter (Dir, DiagDir, Dir8, Axis, DiagAxis,
                    Axis4, D4, C4, Sym, Sense): the cells its columns admit; a Pose type admits D4's
   parts/<k>.checks.txt, checks.txt  one line `<task> <case>: <invariant>: <detail>` per violation of an invariant of this layout
-                   that `export_checks.check_case` checks on each case (tables, entries and runs, flows, the cells against their
-                   column types, keys, the evidence tables against the task file);
-                   `python engine/arclog-py/export_checks.py <out dir>` checks an existing export, and the copy flows' values
-                   against their source columns, which the export does not check
+                   that `export_checks.check_part` checks on each case of a part, in worker processes while later tasks replay
+                   (tables, entries and runs, flows, the cells against their column types, keys, the evidence tables against the
+                   task file, the copy flows' values against their source columns); a part is whole, with its `tasks.txt`, once its
+                   checks are written; `python engine/arclog-py/export_checks.py <out dir> --all` checks an existing export the same way
   settings.json    the options the calls run under, written before the first task: {"projection_cap": N, "step_cap": N, "parts": [...]} with 10000 and 10000 (null for --step-cap 0, no cap)
                    where no --projection-cap is given, each other option given, and the names of the parts the run writes
   report.txt       the fault lines, by task id
@@ -72,7 +72,8 @@ consistency of the last `RULE` clause the stream ends, or `ended none`), then th
 faults (its tables up to the fault are kept) or lies past the cap. It writes no `settings.json`.
 """
 import collections, hashlib, json, os, sys, glob, time
-from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
+import multiprocessing
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, wait, FIRST_COMPLETED
 import numpy as np
 import pandas as pd
 import arclog
@@ -90,12 +91,11 @@ def frame(case, part):
     return pd.DataFrame(dict(task=[case.task] * n, case=[case.case] * n, concept=[case.concept] * n, **d))
 
 
-def write_part(out, k, results, seconds=None, keys=None):
-    """Writes the part `k` of the (task id, cases, lines) results, the `tasks.txt` last, with the {task: seconds} and {task: key} given."""
-    frames, checks = {p: [] for p in PARTS}, []
-    orientation = export_checks.orientation_sets(arclog.orientation_types())
+def write_files(out, k, results, seconds=None, keys=None):
+    """Writes the files of the part `k` of the (task id, cases, lines) results but its `checks.txt` and `tasks.txt`, with the {task: seconds} and {task: key} given.
+    Returns the part's (task, case) pairs."""
+    frames, pairs = {p: [] for p in PARTS}, []
     for task, cases, _ in results:
-        task_json = json.load(open(f"{TASKS}/{task}.json")) if cases else None
         for case in cases:
             os.makedirs(f"{out}/values/{case.task}", exist_ok=True)
             if os.path.lexists(f"{out}/values/{case.task}/{case.case}.i32"):
@@ -105,17 +105,38 @@ def write_part(out, k, results, seconds=None, keys=None):
             of_case = {p: frame(case, p) for p in PARTS}
             for p in PARTS:
                 frames[p].append(of_case[p])
-            checks += [f"{task} {case.case}: {line}" for line in export_checks.check_case(of_case, np.frombuffer(case.values, np.int32), task_json, orientation, copies=False)]
+            pairs.append((task, case.case))
     for p, fs in frames.items():
         if fs:
             pd.concat(fs).to_parquet(f"{out}/parts/{k:05d}.{p}.parquet")
     with open(f"{out}/parts/{k:05d}.report.txt", "w") as sink:
         sink.write("".join(line + "\n" for _, _, lines in results for line in lines))
-    with open(f"{out}/parts/{k:05d}.checks.txt", "w") as sink:
-        sink.write("".join(line + "\n" for line in checks))
     with open(f"{out}/parts/{k:05d}.tasks.tmp", "w") as sink:
         sink.write("".join(t + (f" {seconds[t]:.1f}" if seconds and t in seconds else "") + (f" {keys[t]}" if keys and t in keys else "") + "\n" for t, _, _ in results))
+    return pairs
+
+
+def finish_part(out, k, lines):
+    """Writes `parts/<k>.checks.txt` from the check `lines`, then makes the part whole: `parts/<k>.tasks.tmp` becomes `tasks.txt`."""
+    with open(f"{out}/parts/{k:05d}.checks.txt", "w") as sink:
+        sink.write("".join(line + "\n" for line in lines))
     os.rename(f"{out}/parts/{k:05d}.tasks.tmp", f"{out}/parts/{k:05d}.tasks.txt")
+
+
+def write_part(out, k, results, seconds=None, keys=None):
+    """Writes the part `k` of the (task id, cases, lines) results, checks its cases in this process, and writes the `tasks.txt` last, with the {task: seconds} given."""
+    pairs = write_files(out, k, results, seconds, keys)
+    finish_part(out, k, export_checks.check_part(out, k, pairs))
+
+
+MIN_SHARE_BYTES = 50_000_000     # a share of values under this costs more to start than it saves, where the part has more
+
+
+def submit_checks(pool, out, k, pairs):
+    """Submits the check of part `k` of the (task, case) pairs, cut into shares, to `pool`. Returns the futures."""
+    size = sum(os.path.getsize(f"{out}/values/{t}/{c}.i32") for t, c in pairs)
+    cut = export_checks.shares(out, pairs, set(pairs), max(1, min(os.cpu_count() or 1, size // MIN_SHARE_BYTES)))
+    return [pool.submit(export_checks.check_part, out, k, share) for share in cut]
 
 
 def engine_digest():
@@ -218,6 +239,9 @@ def main(out, task_ids, previous=None, **options):
 
     pool = ThreadPoolExecutor(workers)
     futures = {t: pool.submit(run, t) for t in todo}
+    check_pool = ProcessPoolExecutor(os.cpu_count(), mp_context=multiprocessing.get_context("spawn"))
+    checking = {}         # check future -> its part
+    open_parts = {}       # part -> [the (task, case) pairs, the check futures not ended, the lines of the ended ones]
     pending, results, ended, begin, last = set(futures.values()), [], len(done), time.time(), time.time()
     failure = None
     while pending and not failure:
@@ -225,11 +249,27 @@ def main(out, task_ids, previous=None, **options):
         for f in got:
             if f.exception():
                 failure = failure or f.exception()
+            elif f in checking:
+                pairs, waiting, lines = open_parts[checking[f]]
+                waiting.remove(f)
+                lines += f.result()
+                if not waiting:
+                    position = {f"{t} {c}": i for i, (t, c) in enumerate(pairs)}
+                    finish_part(out, checking[f], sorted(lines, key=lambda l: position[l.split(": ", 1)[0]]))
+                    del open_parts[checking[f]]
             else:
                 results.append(f.result())
-        if time.time() - last >= 10 or not pending or failure:
-            if results:
-                write_part(out, k, results, took, keys)
+        replaying = pending & set(futures.values())
+        if time.time() - last >= 10 or not replaying or failure:
+            if results and not failure:
+                pairs = write_files(out, k, results, took, keys)
+                new = submit_checks(check_pool, out, k, pairs) if pairs else []
+                if new:
+                    open_parts[k] = [pairs, set(new), []]
+                    checking.update({f: k for f in new})
+                    pending |= set(new)
+                else:
+                    finish_part(out, k, [])
                 k, ended, results = k + 1, ended + len(results), []
             now = time.time()
             running = sorted((t for t in started if started[t] < now - 10 and futures[t] in pending), key=lambda t: started[t])
@@ -241,8 +281,10 @@ def main(out, task_ids, previous=None, **options):
             last = now
     if failure:
         pool.shutdown(wait=False, cancel_futures=True)
+        check_pool.shutdown(wait=False, cancel_futures=True)
         raise failure
     pool.shutdown()
+    check_pool.shutdown()
     merge(out)
 
 
@@ -264,8 +306,7 @@ def merge(out):
         return
     whole = {p: pd.concat([pd.read_parquet(f) for f in parts(p)]).astype({"concept": bool}).sort_values("task", kind="stable") for p in PARTS}
     tables, entries = whole["tables"], whole["entries"]
-    tables["table"] = tables.groupby(["task", "case"]).cumcount()
-    entries["entry"] = entries.groupby(["task", "case"]).cumcount()
+    export_checks.number_rows(tables, entries)
     entries.merge(tables, on=["task", "case", "table"], suffixes=("", "_table")).to_parquet(f"{out}/index.parquet")
     for p in ("tables", "assigned", "projections", "projection_rows", "flows"):
         whole[p].to_parquet(f"{out}/{p}.parquet")
