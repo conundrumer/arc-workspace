@@ -1653,7 +1653,7 @@ def source_tables(tables):
 
 
 PARENT_DIRECT, PARENT_ANCESTOR, PARENT_UNRELATED = 0, 1, 2   # the parent types of `parent_types`
-PARENT_CHANNELS = 8   # the channels of q and k that carry the parent bias (`Block`): the bias, then zeros to keep 8s
+PARENT_CHANNELS = 8   # the channels added to q and k for the parent bias (`Block`): the bias, then zeros, so the width stays a multiple of 8
 
 
 def parent_types(tables):
