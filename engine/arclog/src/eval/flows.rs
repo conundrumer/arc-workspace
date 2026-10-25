@@ -24,7 +24,7 @@ use crate::registry::{key_fill, ColumnType, Registry};
 use crate::resolver::given::{node_relation, Given, GivenLabel};
 use crate::resolver::registry_columns;
 use crate::resolver::{DependencyKind, GraphNodeIndex, ResolvedProgram, Resolution};
-use crate::types::ValueType;
+use crate::types::{Meet, ValueType};
 
 /// How a source gives the column's values.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -249,8 +249,8 @@ impl<'p> Walk<'p> {
     }
 
     /// Whether the column that `hit` reads holds values of the type of the
-    /// variable that stands there, or of an orientation type that its cells
-    /// lie within. The IR can join a variable to a column of another type,
+    /// variable that stands there, or of a type that the variable's type
+    /// lies below, such as a C4 label that reads a D4 column. The IR can join a variable to a column of another type,
     /// such as the key fields of a keyed input's read of another `INIT`
     /// form's output, which names a copy of no value.
     fn keeps_type(&self, alt: &Alt<'_>, hit: &Hit<'_>) -> bool {
@@ -261,8 +261,7 @@ impl<'p> Walk<'p> {
         }
         let Some(column) = self.flows.checked.types.columns(relation).and_then(|columns| columns.get(usize::from(hit.column))) else { return true };
         let Some(info) = alt.variables.get(usize::from(hit.variable.0)) else { return true };
-        let orientation = |ty: &ValueType| ty.moved_by_d4() && *ty != ValueType::Box;
-        info.ty == *column || (orientation(&info.ty) && orientation(column))
+        matches!(info.ty.meet(column), Meet::Type(_))
     }
 
     /// The sources that the read of `hit`, an `Atom` or a `Lib` node, gives:

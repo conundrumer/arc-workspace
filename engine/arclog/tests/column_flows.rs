@@ -416,3 +416,16 @@ fn the_pose_output_of_a_rigid_det_reads_the_atoms_of_its_instance_clause_and_no_
     let atoms: Vec<&NodePath> = flows[0].iter().map(|source| &source.atom).collect();
     assert_eq!(atoms, [&form.child(0).child(0)], "the instance clause's atom, where the part's atom is at 2.1: {flows:?}");
 }
+
+#[test]
+fn a_c4_label_that_reads_a_d4_column_copies_that_column() {
+    let columns = columns_of(
+        "(RULE &f (input *P) (d4_elem (:D *D)))
+(RULE &r (&f *P *D) (c4_elem D))
+",
+        &[1, 2],
+    );
+    let (fit, rotated) = (table_of(&columns, 0), table_of(&columns, 1));
+    let from_fit = sources(&columns, rotated, 1).into_iter().any(|source| source.0 == COPY && source.3 == fit as i32);
+    assert!(from_fit, "{:?}", sources(&columns, rotated, 1));
+}
