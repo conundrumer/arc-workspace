@@ -1288,7 +1288,7 @@ struct StreamRecord {
 /// `SeveralValues`, `Fault` and `Stopped`, or `<task> <case>: ended none`;
 /// then the fault line of each stream that faults or lies past `step_cap`,
 /// which gives no tables, in the form of `corpus_streams`. A unit that panics
-/// gives the one line `<task>: <fault>` and no tables. The call runs with the
+/// gives the one line `<task> <case>: the replay panicked: <message>` and no tables. The call runs with the
 /// GIL released, but for the build of each `CaseTables`.
 #[pyfunction]
 #[pyo3(signature = (task, tasks, streams, names=None, settings=None, bodies=false, step_cap=None))]

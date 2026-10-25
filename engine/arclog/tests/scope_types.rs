@@ -160,3 +160,35 @@ fn an_or_branch_that_makes_a_label_only_by_zero_adds_no_type() {
     let types = checked.types.form(&path(&[0])).expect("the clause is a label scope");
     assert_eq!(types.label(column.label), Some(&ValueType::DiagDir));
 }
+
+/// The type of the column `name` of the first clause of `checked`.
+fn column_type(checked: &CheckedProgram, name: &str) -> Option<ValueType> {
+    let Form::Clause(clause) = &checked.program.program.value().forms[0] else { panic!("the first form is a clause") };
+    let column = clause.value().columns.iter().find(|column| column.name == ColumnName::Written(name.into())).expect("the clause has the column");
+    checked.types.form(&path(&[0])).expect("the clause is a label scope").label(column.label).cloned()
+}
+
+#[test]
+fn labels_made_equal_at_the_top_level_take_the_type_of_the_walk_of_each_label_alone() {
+    // A, B and C are one class; C is also fresh in an OR, so its walk is its own.
+    let together = checked(
+        "
+(RULE &t
+  (diag_dir_elem (:D *A))
+  (= *B A)
+  (= *C B)
+  (OR ((dir_elem (:D *C))) ((diag_dir_elem (:D C)))))
+",
+    );
+    let alone = checked(
+        "
+(RULE &t
+  (diag_dir_elem (:D *A))
+  (= *B A))
+",
+    );
+    assert!(column_type(&together, "A").is_some());
+    assert_eq!(column_type(&together, "A"), column_type(&together, "B"));
+    assert_eq!(column_type(&together, "A"), column_type(&alone, "A"));
+    assert_eq!(column_type(&alone, "A"), column_type(&alone, "B"));
+}

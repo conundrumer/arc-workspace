@@ -30,7 +30,7 @@ use crate::resolver::columns;
 use crate::resolver::form_columns;
 use crate::resolver::registry_columns;
 use crate::resolver::{DependencyKind, GraphNodeIndex, Resolution, ResolvedProgram, Signature};
-use crate::types::{label_type_keyed, scope_lists, use_label, AssemblyId, KeyRow, LabelFault, ValueType};
+use crate::types::{fresh_in_nested_form, label_type_cached, list_class, WalkCache, scope_lists, use_label, AssemblyId, KeyRow, LabelFault, ValueType};
 
 /// The labels of a form's own scope, with the list each label's sites stand
 /// in: the conjuncts of the form's bodies, each instance input a branch of
@@ -574,7 +574,27 @@ impl<'a> Inference<'a> {
         let type_all = |bindings: &StableHashMap<TypeParameter, ValueType>, pose_or: PoseOr| -> Vec<(LabelId, Result<Option<ValueType>, LabelFault>)> {
             let reading = SiteReading { path, walk: &walk, component: scope.component, bindings, pose_or };
             let site_type = |atom: &Atom, column: &[ColumnName]| self.site_type(reading, atom, column);
-            labels.iter().zip(&lists).map(|(label, list)| (*label, label_type_keyed(list, *label, &site_type, key))).collect()
+            // With no key clause, the labels of one class in one scope list
+            // that are fresh in no form nested in it take one walk.
+            let cache = WalkCache::default();
+            let mut walked: Vec<(&Body, Vec<LabelId>, Result<Option<ValueType>, LabelFault>)> = Vec::new();
+            let mut types = Vec::with_capacity(labels.len());
+            for (label, list) in labels.iter().zip(&lists) {
+                let shared = key.is_none() && !fresh_in_nested_form(list, *label, &cache);
+                let found = shared.then(|| walked.iter().find(|(l, class, _)| std::ptr::eq(*l, *list) && class.contains(label))).flatten();
+                let ty = match found {
+                    Some((_, _, ty)) => ty.clone(),
+                    None => {
+                        let ty = label_type_cached(list, *label, &site_type, key, &cache);
+                        if shared {
+                            walked.push((list, list_class(list, *label), ty.clone()));
+                        }
+                        ty
+                    }
+                };
+                types.push((*label, ty));
+            }
+            types
         };
         let mut types = type_all(&no_bindings, PoseOr::Open);
         let mut bindings = StableHashMap::default();
