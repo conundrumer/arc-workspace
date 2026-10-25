@@ -7,8 +7,8 @@ must give the same `settings` and the world `Closed`, the world in which the rep
 streams of each task are replayed by `arclog.stream_tables` under those settings, with the case names of
 lm/rollout_labels.py (`case_name`), and written as engine/arclog-py/tables_export.py writes a part; the whole files
 and `report.txt` follow, as that script's `merge` writes them. `<out dir>` must not exist or be empty. Where more than
-one file is given, `<out dir>/samples.jsonl` gets the first settings line and every continuation line, for
-lm/rollout_labels.py.
+one file is given, `<out dir>/samples.jsonl` gets the first file's settings line and every continuation line, for
+lm/rollout_labels.py; each continuation line gets the field `prefix_mode`, the `args.prefix` of its own file.
 
 Each case holds the tables of its stream's steps; a stream cut at the sampler's step cap or at an empty mask holds
 the tables up to its cut, and one that faults those up to the fault. Where the replay of a task panics,
@@ -35,7 +35,8 @@ TABLE_FIELDS = ["form", "point", "relation", "fact", "column_names", "column_typ
 
 
 def read_lines(paths):
-    """The settings line of the files (which must agree) and every continuation line."""
+    """The settings line of the first file (the files must agree in `settings` and `world`) and every continuation line,
+    each with `prefix_mode`, the `args.prefix` of its own file."""
     head, lines = None, []
     for p in paths:
         rows = [json.loads(l) for l in open(p) if l.strip()]
@@ -44,7 +45,7 @@ def read_lines(paths):
             head, first = h, rows[0]
         elif h != head:
             raise ValueError(f"{p}: settings {h} differ from {paths[0]}'s {head}")
-        lines += rows[1:]
+        lines += [dict(r, prefix_mode=rows[0]["args"]["prefix"]) for r in rows[1:]]
     if head["world"] != "Closed":
         raise ValueError(f"world {head['world']}: the replay judges the train pairs in the closed world")
     return first, lines

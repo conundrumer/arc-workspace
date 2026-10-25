@@ -5,7 +5,9 @@
 The sampler lines are JSON lines: the first a settings object, then one line per continuation with the fields task,
 case (the corpus case, or null for a sample from nothing), branch (the rule index of the branch point), rollout (the
 sample's index k, or "gold"), ids, model, prefix_tokens (the stream's tokens before the branch), prefix_rules,
-ended, consistency, solved_test, attempts, tokens and program_form. The export is the tables export of those
+ended, consistency, solved_test, attempts, tokens and program_form, and, in the merged file of
+lm/export_rollouts.py, prefix_mode (the `--prefix` of the line's own sampler file; else the settings line's `--prefix`
+gives the mode of every line). The export is the tables export of those
 streams (engine/arclog-py/tables_export.py, `export_streams`), whose case names are `<task>__<case>__b<j>__r<k>`,
 `<task>__<case>__b<j>__gold` and `<task>__none__b0__r<k>`.
 
@@ -20,7 +22,7 @@ export tables that the prefix gives: the evidence tables, and each table whose `
 that gives it, is below prefix_tokens. The export numbers a case's tables in the order of their steps, so the first
 table after the branch is export table `prefix_tables`. It is null for a case that the export does not hold.
 
-A ValueError stops the run in each of these cases: the sampler ran with a `--prefix` other than `random` or `0`, so a
+A ValueError stops the run in each of these cases: a line's prefix mode is other than `random` or `0`, so a
 prefix can end off a rule boundary; a line under `--prefix random` gives no corpus case; the lines of one task,
 corpus case and branch differ in `prefix_tokens` or `prefix_tables`, or hold more than one gold continuation; the
 report gives a case neither a verdict nor a fault line.
@@ -69,10 +71,12 @@ def prefix_tables(tables, prefix_tokens):
 
 def labels(sampler_path, export):
     settings, *lines = [json.loads(l) for l in open(sampler_path) if l.strip()]
-    prefix, run = settings["args"]["prefix"], settings["args"]["model"]
-    if prefix not in ("0", "random"):
-        raise ValueError(f"{sampler_path}: sample.py --prefix {prefix} can end a prefix off a rule boundary, which is no "
-                         f"branch point; labels take --prefix random or 0")
+    run = settings["args"]["model"]
+    modes = [s.get("prefix_mode", settings["args"]["prefix"]) for s in lines] or [settings["args"]["prefix"]]
+    for prefix in modes:
+        if prefix not in ("0", "random"):
+            raise ValueError(f"{sampler_path}: sample.py --prefix {prefix} can end a prefix off a rule boundary, which is "
+                             f"no branch point; labels take --prefix random or 0")
     fold = (settings.get("model_meta") or json.load(open(Path(run) / "model.json"))).get("fold")
     export = Path(export)
     verdicts, faults = read_report(export / "report.txt")
@@ -80,7 +84,7 @@ def labels(sampler_path, export):
     tables = pd.read_parquet(export / "tables.parquet", columns=["task", "case", "table", "token", "point"])
     counts = prefix_tables(tables, {(s["task"], n): int(s["prefix_tokens"]) for s, n in zip(lines, names)})
     groups = {}
-    for s, n in zip(lines, names):
+    for s, n, prefix in zip(lines, names, modes):
         if s["case"] is None and prefix != "0":
             raise ValueError(f"{s['task']} {n}: no corpus case under sample.py --prefix {prefix}; an empty prefix "
                              f"must name its case")

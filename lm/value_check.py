@@ -14,7 +14,8 @@ written beside the export.
   have its fault line, and a sampled case must give the sampler's run and fold. A case whose report gives a fault line
   and no verdict, as a stream past the export's step cap, must give no consistency. rollout_labels.py must refuse
   `--prefix random-token`, a line with no corpus case under `--prefix random`, two members of one branch point with
-  different prefix_tokens, and a case the report gives neither a verdict nor a fault line.
+  different prefix_tokens, and a case the report gives neither a verdict nor a fault line. A line's `prefix_mode` takes
+  the place of the settings line's `--prefix`: `0` lets a line with no corpus case pass that check, `random` refuses it.
 - Records (`encoder.load_rollouts`): the group, the member, the positions (-3 to 1, and -2 to 2 for `$D`), and
   the flags: r3's first table after the branch empty, r4's faulted, and no other flag; r4 is not solving. The load
   must raise a DataFault where a sampled case's LM has a fold that holds its task.
@@ -175,6 +176,12 @@ verdict(refused("random-token", [dict(sampler[0], args=dict(sampler[0]["args"], 
                 "--prefix random-token"), "labels refuse --prefix random-token")
 verdict(refused("no-case", sampler + [dict(sampler[r1], case=None, branch=0, prefix_tokens=0)], "no corpus case"),
         "labels refuse a line with no corpus case under --prefix random")
+none_line = dict(sampler[r1], case=None, branch=0, prefix_tokens=0)   # its case is not in the export: the next refusal
+verdict(refused("mode-0", sampler + [dict(none_line, prefix_mode="0")], "no verdict and no fault line"),
+        "labels take a line's prefix_mode 0 over the settings line's --prefix random: no refusal for its missing case")
+verdict(refused("mode-random", [dict(sampler[0], args=dict(sampler[0]["args"], prefix="0"))] + sampler[1:]
+                + [dict(none_line, prefix_mode="random")], "no corpus case"),
+        "labels take a line's prefix_mode random over the settings line's --prefix 0")
 verdict(refused("two-prefixes", sampler[:r1] + [dict(sampler[r1], prefix_tokens=6)] + sampler[r1 + 1:],
                 "do not share one prefix"), "labels refuse two members of one branch point with different prefix_tokens")
 verdict(refused("no-verdict", sampler + [dict(sampler[r1], rollout=9)], "no verdict and no fault line"),
