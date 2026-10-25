@@ -41,7 +41,8 @@ real tables of the dev export, cut to a few dozen rows each.
   with a copy flow from a column of another type, and one with a copy flow whose values are not the source's, from
   the build and from the cache, and without `strict` count each; it must build, with `strict`, an export with a copy
   flow from a DET whose `det_types` give the column's type, where the source table's column has another type, and
-  check its values against the DET's rows at each assignment; it must build, with `strict`, an export with a Dir
+  check its values against the DET's rows at each assignment, and refuse one where a row holds a value of another
+  entry's assignment of the DET only; it must build, with `strict`, an export with a Dir
   column copied from a Dir8 column where the export's orientation_types.json gives Dir as a subtype of Dir8, and
   refuse it where the export has no orientation_types.json, with a line that says the orientation subtypes were not
   known; a pickle without the totals must print that it is unchecked. `parse_tables` must count an Undefined entry, and refuse where the loader's count of unseen entries
@@ -574,7 +575,9 @@ def checked_export(d, variant="clean"):
     instead; "value", table 3 holds a Color that table 2 does not; "undefined", table 3 has a third entry, of the
     kind Undefined; "det", table 3 copies its Color from column 1 of its DET of types (Number, Color), whose row at
     each entry's assignment holds table 3's Color, by a flow whose source table is table 2, whose column 1 is a
-    Number; "dir8", table 2 is (Dir8, Number), with a constant flow, and table 3 (Dir), and the export has an
+    Number; "det per row", the same with the DET's Color 1 at the first entry's assignment and 2 at the second's, and
+    table 3's Color 1 and 2 at those entries; "det other row", the same with table 3's Color 2 at both entries, so
+    that the first entry's row holds a value of the second entry's assignment only; "dir8", table 2 is (Dir8, Number), with a constant flow, and table 3 (Dir), and the export has an
     orientation_types.json that gives Dir's cells as a subset of Dir8's; "dir8 unknown", the same without the
     file."""
     import pandas as pd
@@ -582,7 +585,9 @@ def checked_export(d, variant="clean"):
     (d / "tasks").mkdir(); json.dump(task, open(d / "tasks/t.json", "w"))
     grid = dict(point=2, relation=-1, column_types=["Example", "Box", "Color"], width=6)
     dir8 = variant.startswith("dir8")
-    det = dict(det_relations=["slot 0"], det_types=[["Number", "Color"]], det_widths=[2]) if variant == "det" else {}
+    is_det = variant.startswith("det")
+    det = dict(det_relations=["slot 0"], det_types=[["Number", "Color"]], det_widths=[2]) if is_det else {}
+    row3 = {"det per row": [1, 2], "det other row": [2, 2]}.get(variant)   # table 3's Color at each entry
     tabs = [grid, grid, dict(point=0, relation=0, column_types=["Dir8" if dir8 else "Color", "Number"], width=2),
             dict(point=0, relation=1, column_types=["Dir" if dir8 else "Color"], width=1, **det)]
     rows = {2: [[1, 5], [2, 6]], 3: [[4 if variant == "value" else 1]]}
@@ -595,12 +600,13 @@ def checked_export(d, variant="clean"):
                            **{"det_relations": [], "det_types": [], "det_widths": [], **t}, depth=min(i, 2), keys=[],
                            output_position=-1, output_color=-1))
         for e in range(2 if i in rows else 0):
-            index.append(dict(task="t", case="$C", table=i, entry=len(index), kind=0, rows=len(rows[i]),
+            rs = [[row3[e]]] if i == 3 and row3 else rows[i]
+            index.append(dict(task="t", case="$C", table=i, entry=len(index), kind=0, rows=len(rs),
                               offset=len(values), example_kind=1, example_index=e, model=0))
-            values += [x for r in rows[i] for x in r]
+            values += [x for r in rs for x in r]
             if t.get("det_relations"):
                 assigned.append(dict(task="t", case="$C", entry=index[-1]["entry"], det=0, rows=1, offset=len(values)))
-                values += [5, rows[i][0][0]]
+                values += [5, 1 + e if row3 else rs[0][0]]
     if variant == "undefined":
         index.append(dict(task="t", case="$C", table=3, entry=len(index), kind=2, rows=0, offset=0, example_kind=2,
                           example_index=0, model=0))
@@ -609,7 +615,7 @@ def checked_export(d, variant="clean"):
     pd.DataFrame(tables).to_parquet(d / "tables.parquet")
     pd.DataFrame(index).to_parquet(d / "index.parquet")
     flows = [flow(2, -1, -1, kind=2) if dir8 else flow(2, 0, 2),
-             flow(3, 2, 1, det=0) if variant == "det" else flow(3, 2, 1 if variant == "type" else 0)]
+             flow(3, 2, 1, det=0) if is_det else flow(3, 2, 1 if variant == "type" else 0)]
     pd.DataFrame(flows).to_parquet(d / "flows.parquet")
     pd.DataFrame(assigned, columns=["task", "case", "entry", "det", "rows", "offset"]).to_parquet(
         d / "assigned.parquet")
@@ -671,15 +677,20 @@ for variant, kind in (("type", "type"), ("value", "value")):
             and ("1 with" if kind == "type" else "1 columns with") in printed):
         bad.append((variant, strict, strict_cached, loose))
 not_known = "orientation subtypes were not known"
-for variant, want in (("det", "passes"), ("dir8", "passes"), ("dir8 unknown", "refused")):
+for variant, want in (("det", "passes"), ("det per row", "passes"), ("det other row", "refused"), ("dir8", "passes"),
+                      ("dir8 unknown", "refused")):
     strict, printed, strict_cached, _ = checked_load(variant)
     loose, _, _, _ = checked_load(variant, strict=False)
     c = loose["copy flows"] if isinstance(loose, dict) else {}
     got = "passes" if isinstance(strict, dict) else "refused" if "copy flows" in strict else strict
     seen[variant] = (got, {k: c.get(k) for k in ("checked", "type", "value", "values unchecked")})
-    ok = got == want and c.get("checked") == (2 if variant == "det" else 1) and c.get("value") == 0 and isinstance(strict_cached, type(strict))
+    is_det = variant.startswith("det")
+    ok = (got == want and c.get("checked") == (2 if is_det else 1) and isinstance(strict_cached, type(strict))
+          and c.get("value") == (variant == "det other row"))
     if want == "passes":
         ok = ok and c["type"] == 0 and c["values unchecked"] == 0 and (not_known in printed) == (variant != "dir8")
+    elif is_det:
+        ok = ok and c["type"] == 0 and "1 columns with values outside" in strict and "flow [3, 0, 0, 2, 1, 0]" in strict
     else:
         ok = ok and c["type"] == 1 and not_known in strict and "type Dir from a column of type Dir8" in strict
     if not ok:
