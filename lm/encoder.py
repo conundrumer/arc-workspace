@@ -910,15 +910,19 @@ class Block(nn.Module):
     """A pre-norm transformer block over the rows of a batch of tables [B, N, 21, c]. A score is the sum over
     positions of the inner products of a head's channels, scaled, plus the equality term within the table. The keys
     and values also hold each table's earlier pooled vectors and the rows of its program's earlier evidence tables
-    after this layer. `ctx` (a `Batch`) holds those, the key mask and the equality term's query and key channels;
-    `mats` the maps that `FeatureEncoder.prepare` gives in head layout."""
-    def __init__(self, c, heads, slots, mlp):
+    after this layer, and, with `source_rows`, the rows of each derived table's source tables after this layer, whose
+    equality term compares each column with the source columns its flows name, under the weights `src_eq`. `ctx` (a
+    `Batch`) holds those, the key mask and the equality term's query and key channels; `mats` the maps that
+    `FeatureEncoder.prepare` gives in head layout."""
+    def __init__(self, c, heads, slots, mlp, source_rows=False):
         super().__init__()
         self.heads = heads
         self.n1, self.n2 = nn.LayerNorm(c), nn.LayerNorm(c)
         self.q, self.k, self.v, self.o = (EqLinear(c, c) for _ in range(4))
         self.f1, self.f2 = EqLinear(c, mlp * c), EqLinear(mlp * c, c)
         self.eq = nn.Parameter(torch.zeros(heads, slots, slots))   # per head and column-position pair
+        if source_rows:   # per head, and per pair of a column's position and its source column's position
+            self.src_eq = nn.Parameter(torch.zeros(heads, slots, slots))
 
     def weights(self, pos):
         """The learned weight of each pair of the columns at positions pos [B, m], per head: [B, H, m, m]."""
@@ -938,13 +942,25 @@ class Block(nn.Module):
         if ctx.ev is not None:
             ek, evl = ctx.ev.layer(l)
             k, v = torch.cat([k, ek], 1), torch.cat([v, evl], 1)
+        if ctx.src is not None:
+            sk, sv = ctx.src.layer(l)
+            k, v = torch.cat([k, sk], 1), torch.cat([v, sv], 1)
         flex = None
         if ctx.flex is not None:   # each group's values, presence and weights, for the rows, the first N keys
             flex = ([(vals, pres, self.weights(pos)) for vals, pres, pos in ctx.flex], N)
-        o = attend(q, k, v, ctx.mask, flex)
+        acc = None
+        if ctx.code_v is not None and l == ctx.code_layer:   # the source keys' codes as extra value channels
+            cv = F.pad(ctx.code_v, (0, 0, v.shape[1] - ctx.code_v.shape[1], 0)).to(v.dtype)
+            Wv = v.shape[-1]
+            v = torch.cat([v, cv[:, :, None].expand(-1, -1, H, -1)], -1)
+            o = attend(q, k, v, ctx.mask, flex).view(B, N, H, -1)
+            o, acc = o[..., :Wv].reshape(B, N, H * Wv), o[..., Wv:]
+        else:
+            o = attend(q, k, v, ctx.mask, flex)
         x = x + F.linear(o, mats["o"], mats["bo"]).view(x.shape)
         f = F.gelu(F.linear(self.n2(x).reshape(B, N, -1), mats["f1"], mats["bf1"]))
-        return x + F.linear(f, mats["f2"], mats["bf2"]).view(x.shape)
+        x = x + F.linear(f, mats["f2"], mats["bf2"]).view(x.shape)
+        return x if acc is None else (x, acc)
 
 
 class Pool(nn.Module):
@@ -1043,7 +1059,7 @@ class MaskedHeads(nn.Module):
       (other than the row, with that field present and not masked), scored by the inner product over every
       position of the bound query with each row's key, or the class "no row holds it" from z's invariant channels.
     """
-    def __init__(self, c):
+    def __init__(self, c, slots=0, heads=0, ptr_equality=False, source_rows=False):
         super().__init__()
         self.norm = nn.LayerNorm(c)
         self.h1, self.h2 = EqLinear(c, c), EqLinear(c, c)
@@ -1052,6 +1068,10 @@ class MaskedHeads(nn.Module):
         self.o_edge, self.o_pair, self.o_ref = (nn.Linear(c, 1, bias=False) for _ in range(3))
         self.ptr_q, self.ptr_k = EqLinear(c, c), EqLinear(c, c)
         self.none = nn.Linear(c, 1)
+        if ptr_equality:   # the pointer's equality terms: per pair of the hidden column's and a visible column's position
+            self.ptr_eq = nn.Parameter(torch.zeros(slots, slots))
+            if source_rows:   # and per head and hidden column position, on the codes the last layer's attention gathers
+                self.ptr_src = nn.Parameter(torch.zeros(heads, slots))
 
 
 def bound_slots(S):
@@ -1289,6 +1309,24 @@ def column_sources(tables):
     return out
 
 
+def source_tables(tables):
+    """The source tables whose rows each derived table of a program attends to with `--enc-source-rows`: per table,
+    per column, the (table index, column) pairs of `column_sources` whose table is a derived table with rows that
+    stands earlier in the program; [] per column for an evidence table and for a program without the export's
+    column-level provenance. The evidence tables are keys of every table already. Gives (per table, its source
+    tables' indices in order; per table, per column, its pairs)."""
+    if not provenance(tables):
+        return [[] for _ in tables], [[[] for _ in t.types] for t in tables]
+    cs = column_sources(tables)
+    tabs, pairs = [], []
+    for t, (tb, cols) in enumerate(zip(tables, cs)):
+        keep = lambda j: j < t and not tables[j].evidence and tables[j].n > 0
+        pc = [[] if tb.evidence else sorted((j, sc) for j, sc in col if keep(j)) for col in cols]
+        pairs.append(pc)
+        tabs.append(sorted({j for col in pc for j, _ in col}))
+    return tabs, pairs
+
+
 def keep_occurrence(ex_output, mask, dependent):
     """Makes visible, in place, each hidden dependent Color field of ex_output (`dependent` [n]) whose value no
     other example's output shows in a visible field, one field at a time in row order, so that each hidden
@@ -1379,6 +1417,9 @@ class Pack:
 # split into the batches of least total cost (`batches`).
 BATCH_COST = 2_000_000   # in attention scores
 ROW_COST = 100           # a row's maps, in attention scores
+# The equality weights of the source keys and of the pointer heads (`--enc-source-rows`, `--enc-ptr-equality`) enter
+# times these gains, so that a step of the optimizer moves the term by that many times the learning rate.
+SOURCE_EQ_GAIN, POINTER_EQ_GAIN = 30.0, 30.0
 # A batch of fewer keys B (N + P + E) skips the checkpoint, and keeps at most 0.1 GB more at c 32, 2 layers, bf16.
 CHECKPOINT_MIN = 2048
 
@@ -1415,7 +1456,7 @@ class Batch:
     gradient once, where a view per layer by indexing builds a gradient of every layer's size at each layer."""
     def __init__(self, level, mask, prev):
         self.level, self.mask, self.prev = level, mask, prev
-        self.eq_q = self.eq_k = self.ev = self.flex = None
+        self.eq_q = self.eq_k = self.ev = self.flex = self.src = self.code_v = self.code_layer = None
 
 
 class Evidence:
@@ -1508,15 +1549,93 @@ class EvidenceKeys:
         return (F.pad(k, (0, self.pad)) if self.pad else k), v.reshape(B, E, H, Wv)
 
 
+class SourceRows:
+    """With `--enc-source-rows`, the rows of the derived tables that are sources of a later table of their program
+    (`source_tables`), after each layer, as their keys and values at each layer: one chunk [rows, L, H (w + wv)] per
+    level that holds such tables, computed once when that level's batches have run. `place` gives each source table's
+    (chunk, first row, rows), planned on the host for every level first; `sizes` each chunk's rows."""
+    def __init__(self):
+        self.place, self.sizes, self.chunks, self.ran, self.codes = {}, [], [], [], {}
+
+    def plan_level(self, tables):
+        """The level's source tables, [(program, table, rows)] in the order their batches run, as one chunk."""
+        if not tables:
+            return
+        o = 0
+        for p, t, n in tables:
+            self.place[(p, t)] = (len(self.sizes), o, n)
+            o += n
+        self.sizes.append(o)
+
+    def add(self, layers, sel):
+        """A batch's rows after each layer [B, N, 21, c], of which the rows `sel` [r] of B N are of source tables."""
+        self.ran.append([x.reshape(-1, *x.shape[2:]).index_select(0, sel) for x in layers])
+
+    def join_level(self, enc):
+        if not self.ran:
+            return
+        kv = []
+        for l, (blk, mats) in enumerate(zip(enc.blocks, enc.mats)):
+            rows = torch.cat([r[l] for r in self.ran]) if len(self.ran) > 1 else self.ran[0][l]
+            h = blk.n1(rows)
+            kv.append(F.linear(h.reshape(len(h), -1), mats["kv"], mats["bkv"]))
+        self.chunks.append(torch.stack(kv, 1))
+        self.ran = []
+
+    def key_index(self, sources, Es):
+        """The chunks a batch's source keys come from, and the place of each key in their concatenation, then a zero
+        row: per table of the batch, its source tables' rows in order, padded to Es with the zero row's place."""
+        involved = sorted({self.place[s][0] for src in sources for s in src})
+        base = dict(zip(involved, np.cumsum([0] + [self.sizes[k] for k in involved])))
+        zero = sum(self.sizes[k] for k in involved)
+        idx = np.full((len(sources), Es), zero, np.int64)
+        for b, src in enumerate(sources):
+            o = 0
+            for s in src:
+                k, first, n = self.place[s]
+                idx[b, o:o + n] = base[k] + first + np.arange(n)
+                o += n
+        return involved, idx
+
+
+class SourceKeys:
+    """A batch's source keys and values at each layer, built inside the Block call, as `EvidenceKeys` builds the
+    evidence keys: by one index_select of the involved chunks of `SourceRows` and a zero row, at `index` [B Es]. The
+    equality channels of the keys are built there too, from `eq` (the places in [B, Es, F] of the codes, the place of
+    each one's weight among the slot pairs, and its value; or None) under the weights `w` [L, H, slots, slots], F the
+    batch's equality places, then `pad` zeros."""
+    def __init__(self, store, involved, index, B, Es, eq, F_, pad, w, H, W, Wv):
+        self.chunks = [store.chunks[k] for k in involved]
+        self.index, self.B, self.Es, self.eq, self.F, self.pad, self.w = index, B, Es, eq, F_, pad, w
+        self.H, self.W, self.Wv = H, W, Wv
+
+    def layer(self, l):
+        H, W, Wv, B, Es = self.H, self.W, self.Wv, self.B, self.Es
+        kv = torch.cat([c[:, l] for c in self.chunks] + [self.chunks[0].new_zeros(1, H * (W + Wv))])
+        k, v = kv.index_select(0, self.index).split([H * W, H * Wv], -1)
+        k, v = k.reshape(B, Es, H, W), v.reshape(B, Es, H, Wv)
+        if self.F:
+            place, widx, val = self.eq
+            contrib = self.w[l].reshape(H, -1).index_select(1, widx) * val                     # [H, entries]
+            eqk = contrib.new_zeros(H, B * Es * self.F).index_add_(1, place, contrib)
+            k = torch.cat([k, eqk.view(H, B, Es, self.F).permute(1, 2, 0, 3).to(k.dtype)], -1)
+        return (F.pad(k, (0, self.pad)) if self.pad else k), v
+
+
 class FeatureEncoder(nn.Module):
     def __init__(self, embed, in_index, id_dim, orientations, K=4, layers=2, c=32, heads=4, mlp=2, examples=16,
-                 code_dim=32, number_range=(-64, 1023), margin_range=(-64, 255), recency=16, gram=16, equality="codes"):
+                 code_dim=32, number_range=(-64, 1023), margin_range=(-64, 255), recency=16, gram=16, equality="codes", source_rows=False, ptr_equality=False):
         """`examples` is the width of an Example's one-hot equality code, more than any example index; `mlp` the
         width of the feed-forward layers, in multiples of c; `gram` the channels each Gram matrix of the readout
-        projects to; `equality` the means of the equality term, one of EQUALITY_MODES."""
+        projects to; `equality` the means of the equality term, one of EQUALITY_MODES; `source_rows`, whether each
+        derived table's rows attend also to the rows of its source tables (`source_tables`); `ptr_equality`, whether the
+        pointer heads take equality terms (`masked_fields`)."""
         super().__init__()
         assert equality in EQUALITY_MODES, equality
-        self.equality = equality
+        assert not (source_rows and equality == "flex"), "the source rows' equality term takes codes or random"
+        self.equality, self.source_rows, self.ptr_equality = equality, source_rows, ptr_equality
+        # the width of a row's pointer codes: a Color's one-hot, an Example's, an Ident's random code, padded to 8
+        self.ptr_codes = up8(10 + examples + code_dim) if ptr_equality and source_rows else 0
         hidden = embed.weight.shape[1]
         self.embed, self.in_index = embed, in_index   # the LM's embedding, shared, and its index
         self.K, self.c, self.code_dim, self.examples = K, c, code_dim, examples
@@ -1537,7 +1656,7 @@ class FeatureEncoder(nn.Module):
         self.example_kind = nn.Embedding(3, c)
         self.bind_example, self.bind_assignment, self.bind_model = (nn.Parameter(torch.randn(c)) for _ in range(3))
         self.recency = nn.Embedding(recency + 1, c)              # an earlier table's distance back, on its invariant channels
-        self.blocks = nn.ModuleList(Block(c, heads, self.slots, mlp) for _ in range(layers))
+        self.blocks = nn.ModuleList(Block(c, heads, self.slots, mlp, source_rows) for _ in range(layers))
         self.pool = Pool(c, heads, K, mlp)
         # an unseen entry's marker row, or a table the encoder cannot see, on its invariant channels: a fixed vector,
         # not learned, drawn from its own generator
@@ -1566,7 +1685,7 @@ class FeatureEncoder(nn.Module):
             self.mask_inv = nn.Parameter(torch.randn(len(TYPE_NAMES), c))   # a masked value, on the invariant channels
             self.mask_edge = nn.Parameter(torch.randn(c))                   # on every edge
             self.mask_pair = nn.Parameter(torch.randn(len(PAIR_ORBITS), c))  # per orbit of edge pairs
-            self.heads = MaskedHeads(c)
+            self.heads = MaskedHeads(c, self.slots, heads, ptr_equality, source_rows)
         self.cand_feats = {}
         # with gradients on, recompute each Block's activations in the backward pass rather than keep them, in a batch
         # of at least CHECKPOINT_MIN keys: the Block draws no random numbers, so the recomputation gives the same values
@@ -1626,6 +1745,8 @@ class FeatureEncoder(nn.Module):
         ids = torch.tensor([self.in_index[n] for n in self.slot_names], device=dev)
         self.S = self.slot_norm(self.slot_proj(self.embed(ids)).reshape(self.slots, 3, self.c))
         self.eq_all = torch.stack([blk.eq for blk in self.blocks]) if len(self.blocks) else None   # [L, H, slots, slots]
+        if self.source_rows:
+            self.src_eq_all = torch.stack([blk.src_eq for blk in self.blocks]) * SOURCE_EQ_GAIN
 
     def prepared(self):
         """The matrices `prepare` built: each equivariant map's and the head layout maps."""
@@ -1637,7 +1758,7 @@ class FeatureEncoder(nn.Module):
     def release(self):
         for m in self.eq_linears():
             m.M = m.b = None
-        self.S = self.eq_all = None
+        self.S = self.eq_all = self.src_eq_all = None
         self.mats, self.pool_mats = [], {}
 
     def plan(self, tb, ids, field_mask, rel_index):
@@ -1715,11 +1836,12 @@ class FeatureEncoder(nn.Module):
                 code = ("flex", (v if ty == "Box" else v[:, :1]).astype(np.int64))
             A.append((rows, pos, ty_i, pidx))
             groups.setdefault(g, []).append((i, code))
-        eq = {}
+        eq, eq_cols, box_u = {}, {g: [i for i, _ in cols] for g, cols in groups.items()}, None
         for g, cols in groups.items():
             out = []
             if g == "box" and one_hot:   # a one-hot per margin over the margin values the table holds
                 u, inv_ = np.unique(np.stack([cd[1] for _, cd in cols]), return_inverse=True)
+                box_u = u
                 inv_ = inv_.reshape(len(cols), n, 4)
                 cols = [(i, ("hot", inv_[k] + np.arange(4) * len(u), 4 * len(u))) for k, (i, _) in enumerate(cols)]
             for i, cd in cols:
@@ -1731,7 +1853,8 @@ class FeatureEncoder(nn.Module):
                 else:
                     out.append((tb.positions[i], "flex", cd[1].shape[1], code_present[:, i], cd[1]))
             eq[g] = out
-        return dict(n=n, rel=rel_index, ek=tb.example_kind.astype(np.int64), hv=hv, A=A, B=Bc, E=Ed, P=Pr, eq=eq)
+        return dict(n=n, rel=rel_index, ek=tb.example_kind.astype(np.int64), hv=hv, A=A, B=Bc, E=Ed, P=Pr, eq=eq,
+                    eq_cols=eq_cols, box_u=box_u)
 
     def row_tokens(self, plans, pack, rel_all):
         """The row tokens of tables, [R, 21, c] for the R rows of `plans` in order. Host arrays go through `pack`,
@@ -1837,22 +1960,111 @@ class FeatureEncoder(nn.Module):
             fl[g] = (pack.add(vals, torch.long), pack.add(pres, torch.bool), pack.add(pos, torch.long))
         return fl
 
-    def batch_layout(self, layout, plans, pack):
-        """The places of a batch's equality term among those of its level's `layout` (`equality_layout`): each
-        group's columns at the most columns and code places of any of the batch's tables. Gives (a permutation of the
-        level's places that takes them to the first, in order, added to `pack`, and their count, or None where they
-        are all the level's places in order; the zeros that pad q and k to a multiple of 8), or None where no table of
-        the batch has a column."""
-        idx, F_ = [], sum(m * D for _, m, D in layout.values())
+    @staticmethod
+    def batch_places(layout, plans):
+        """The level's places of `layout` that a batch of `plans` holds, in the batch's order, or None where no table
+        of the batch has a column (`batch_layout`)."""
+        idx = []
         for g, (off, m, D) in layout.items():
             cols = [p["eq"].get(g, []) for p in plans]
             mb = max(len(cs) for cs in cols)
             if mb:
                 Db = max(col[2] for cs in cols for col in cs)
                 idx.append((off + np.arange(mb)[:, None] * D + np.arange(Db)).reshape(-1))
-        if not idx:
+        return np.concatenate(idx) if idx else None
+
+    def pointer_codes(self, tb, mask, ids, rows=None):
+        """The pointer codes of a table's rows (all, or `rows`), [r, ptr_codes] on the host: per row, the sum over its
+        visible Color, Example and Ident fields of the field's code, a one-hot of 10 places for a Color, of `examples`
+        for an Example, and the Ident's random code ("ident code"), each in its own places."""
+        rows = np.arange(tb.n) if rows is None else rows
+        out = torch.zeros(len(rows), self.ptr_codes, dtype=ids.dtype)
+        o = 0
+        for i, ty in enumerate(tb.types):
+            v = tb.cells[rows, o]; o += width(ty)
+            if ty not in POINTER_TYPES:
+                continue
+            vis = torch.from_numpy(tb.present[rows, i] & ~mask[rows, i] if mask is not None else tb.present[rows, i])
+            if ty == "Ident":
+                out[:, 10 + self.examples:10 + self.examples + self.code_dim] += (
+                    ids.host("ident code", v, self.code_dim) * vis[:, None] if len(rows) else 0)
+            else:
+                at = torch.from_numpy(v.astype(np.int64)) + (0 if ty == "Color" else 10)
+                out[torch.arange(len(rows))[vis], at[vis]] += 1
+        return out
+
+    def source_codes(self, src, sc, rows, ids, g, plan):
+        """The equality codes of column sc of the source table `src` at its rows `rows`, in the code places of the
+        derived table whose `plan` reads it, for the group g: (places [r, k], values [r, k]). A Box margin value that
+        the derived table does not hold has no place there, and no code."""
+        o = int(np.sum([width(x) for x in src.types[:sc]]))
+        ty = src.types[sc]
+        v = src.cells[rows, o:o + width(ty)]
+        r = len(rows)
+        dense = lambda vec: (np.broadcast_to(np.arange(vec.shape[1]), vec.shape), vec.numpy())
+        if self.equality == "random":
+            return dense(torch.cat([ids.host("sign " + g, v[:, j], RANDOM_CODE_WIDTH) for j in range(v.shape[1])], 1)
+                         if r else torch.zeros(0, RANDOM_CODE_WIDTH * v.shape[1]))
+        if ty in ("Number", "Ident"):
+            return dense(ids.host(ty.lower() + " code", v[:, 0], self.code_dim) if r else torch.zeros(0, self.code_dim))
+        if ty in ("Color", "Example"):
+            return v[:, :1].astype(np.int64), np.ones((r, 1))
+        if ty == "Box":
+            u = plan["box_u"]
+            at = np.minimum(np.searchsorted(u, v), len(u) - 1)
+            ok = u[at] == v
+            return np.where(ok, at + np.arange(4) * len(u), -1), ok.astype(np.float64)
+        x_ = v[:, 0].astype(np.int64)
+        known = (x_ >= 0) & (x_ < len(self.orient_lut))
+        return np.where(known, self.orient_lut[np.where(known, x_, 0)], 0)[:, None], np.ones((r, 1))
+
+    def source_entries(self, its, tables_of, ids_of, masks, layout, places, F_b, Es, slots):
+        """The codes of a batch's source keys in the batch's equality places `places` (the level's places of the
+        batch, in order; None where they are all the level's places), as entries of a [B, Es, F_b] grid: the place
+        of each, the place of its weight among the [slots, slots] slot pairs, and its value. For each column of a
+        table of the batch and each source column of its flows of the same equality group, the source rows' codes
+        at the column's places, under the weight of the two columns' positions."""
+        at = None
+        if places is not None:
+            at = np.full(sum(m * D for _, m, D in layout.values()), -1, np.int64)
+            at[places] = np.arange(len(places))
+        place, widx, val = [], [], []
+        scale = 1 / RANDOM_CODE_WIDTH if self.equality == "random" else 1
+        for b, it in enumerate(its):
+            if not it["src"]:
+                continue
+            p, plan = it["p"], it["plan"]
+            tables, tb = tables_of[p], tables_of[p][it["t"]]
+            first = dict(zip(it["src"], np.cumsum([0] + [tables[j].n for j in it["src"]])))
+            for g, (off, m, D) in layout.items():
+                for s, c in enumerate(plan["eq_cols"].get(g, [])):
+                    for j, sc in it["pairs"][c]:
+                        src = tables[j]
+                        if GROUPS.get(src.types[sc], "orientation") != g:
+                            continue
+                        hidden = masks[p][j][:, sc] if masks is not None and masks[p][j] is not None else False
+                        rows = np.flatnonzero(src.present[:, sc] & ~hidden)
+                        d, x = self.source_codes(src, sc, rows, ids_of[p], g, plan)
+                        keep = (d >= 0) & (x != 0)
+                        f = off + s * D + d
+                        if at is not None:
+                            f = at[np.where(keep, f, 0)]
+                            keep &= f >= 0
+                        cell = (b * Es + first[j] + rows)[:, None] * F_b + f
+                        place.append(cell[keep]); val.append(x[keep] * scale)
+                        widx.append(np.full(int(keep.sum()), tb.positions[c] * slots + src.positions[sc]))
+        cat = lambda xs, dt: np.concatenate(xs).astype(dt) if xs else np.zeros(0, dt)
+        return cat(place, np.int64), cat(widx, np.int64), cat(val, np.float64)
+
+    def batch_layout(self, layout, plans, pack):
+        """The places of a batch's equality term among those of its level's `layout` (`equality_layout`): each
+        group's columns at the most columns and code places of any of the batch's tables. Gives (a permutation of the
+        level's places that takes them to the first, in order, added to `pack`, and their count, or None where they
+        are all the level's places in order; the zeros that pad q and k to a multiple of 8), or None where no table of
+        the batch has a column."""
+        idx, F_ = self.batch_places(layout, plans), sum(m * D for _, m, D in layout.values())
+        if idx is None:
             return None
-        idx = np.concatenate(idx)
         W = self.mats[0]["W"]
         pad = up8(W + len(idx)) - W - len(idx)
         if len(idx) == F_:
@@ -1880,7 +2092,11 @@ class FeatureEncoder(nn.Module):
         every level's tables are then built together and placed in the batches' rows by one copy, and the equality
         codes of every level by one write, each level's in its own layout. The two evidence tables, where a program
         starts with both, are encoded jointly at level 0, as one block of rows that attend to each other with the
-        equality term across the block, and each is pooled on its own rows. Call `prepare` first. With `masks` (per
+        equality term across the block, and each is pooled on its own rows. With `source_rows`, a derived table's
+        rows also attend, at each layer, to the rows of its source tables (`source_tables`) after that layer, kept by
+        `SourceRows` from their own level, with the equality term of each column against the source columns its flows
+        name; and with `ptr_equality` too, the last layer's attention also gathers the source keys' pointer codes for
+        the masked heads. Call `prepare` first. With `masks` (per
         program, per table, a field mask [n, columns] or None), the masked fields are hidden and the result is (pooled
         vectors, records): a record (program, table index, masked_fields' result) per table with a masked field."""
         dev, dt, c, K = self.cross.weight.device, self.cross.weight.dtype, self.c, self.K
@@ -1898,6 +2114,9 @@ class FeatureEncoder(nn.Module):
         joint = {p for p, (tables, _, _) in enumerate(programs) if len(tables) > 1 and tables[0].evidence
                  and tables[1].evidence and tables[0].n and tables[1].n}
         group = [np.array(table_groups(tables)) for tables, _, _ in programs]
+        srcs = [source_tables(tables) if self.source_rows else None for tables, _, _ in programs]
+        is_source = [{j for src in s[0] for j in src} if s is not None else set() for s in srcs]
+        store = SourceRows()
         pack = Pack()
         levels, row_plans = [], []
         to_batch, n_placed = [], 0   # each row's place in the rows of every level's batches, one batch after another
@@ -1923,7 +2142,10 @@ class FeatureEncoder(nn.Module):
                         items.append(dict(p=p, parts=[(tb, cm, 0, tb.n)], evidence=tb.evidence,
                                           plan=self.plan(tb, ids, cm, np.full(tb.n, rel_start[p] + t))))
                 for it in items:
-                    it["n"], it["E"] = it["plan"]["n"], ev.rows(it["p"])
+                    it["n"], it["E"], it["t"] = it["plan"]["n"], ev.rows(it["p"]), t
+                    it["src"] = [] if srcs[it["p"]] is None or it["evidence"] else srcs[it["p"]][0][t]
+                    it["pairs"] = None if not it["src"] else srcs[it["p"]][1][t]
+                    it["Es"] = sum(programs[it["p"]][0][j].n for j in it["src"])
                 row_plans += [it["plan"] for it in items]
                 layout = self.equality_layout([it["plan"] for it in items])
                 starts = np.cumsum([0] + [it["n"] for it in items])
@@ -1932,24 +2154,26 @@ class FeatureEncoder(nn.Module):
                     lv["e_rel"] = pack.add(np.array([rel_start[p] + i for p, i in empties]), torch.long)
                     lv["e_unseen"] = pack.add(np.array([programs[p][0][i].unseen is not None for p, i in empties]), dt)
                 P = t * K
-                groups = batches([it["n"] for it in items], [P + it["E"] for it in items])
+                groups = batches([it["n"] for it in items], [P + it["E"] + it["Es"] for it in items])
                 plans = []
                 for grp in groups:
                     its = [items[i] for i in grp]
                     B, N, E = len(its), up8(max(it["n"] for it in its)), max(it["E"] for it in its)
                     J = 2 if any(len(it["parts"]) == 2 for it in its) else 1
+                    Es = max(it["Es"] for it in its)
                     rows = np.stack([np.r_[starts[i] + np.arange(items[i]["n"]), np.full(N - items[i]["n"], starts[i])]
                                      for i in grp])
-                    km = np.zeros((B, N + P + E), bool)
+                    km = np.zeros((B, N + P + E + Es), bool)
                     pm = np.zeros((B, J, N), bool)
                     for b, it in enumerate(its):
                         km[b, :it["n"]] = True
                         km[b, N:N + P] = np.repeat(group[it["p"]][:t] != group[it["p"]][t], K)   # not its own group
                         km[b, N + P:N + P + it["E"]] = True
+                        km[b, N + P + E:N + P + E + it["Es"]] = True
                         for j in range(J):
                             lo, hi = it["parts"][j][2:] if len(it["parts"]) == 2 else (0, it["n"])
                             pm[b, j, lo:hi] = True
-                    plan = dict(grp=grp, its=its, B=B, N=N, E=E, J=J, rows=pack.add(rows.reshape(-1), torch.long),
+                    plan = dict(grp=grp, its=its, B=B, N=N, E=E, J=J, Es=Es, rows=pack.add(rows.reshape(-1), torch.long),
                                 key_mask=pack.add(km[:, None, None], torch.bool),
                                 pool_mask=pack.add(np.repeat(pm, K, 1)[:, None], torch.bool),
                                 item=pack.add(np.array(grp), torch.long),
@@ -1965,6 +2189,30 @@ class FeatureEncoder(nn.Module):
                                                 torch.long)
                     if layout and not flex:   # the batch's own layout, with the zeros that pad q and k to a multiple of 8
                         plan["eq"] = self.batch_layout(layout, [it["plan"] for it in its], pack)
+                    # the rows of the batch's tables that are sources of a later table, and the batch's source keys
+                    src_b = [b for b, it in enumerate(its) if it["t"] in is_source[it["p"]] and not it["evidence"]]
+                    plan["src_sel"] = None if not src_b else pack.add(
+                        np.concatenate([b * N + np.arange(its[b]["n"]) for b in src_b]), torch.long)
+                    plan["src_of"] = [(its[b]["p"], its[b]["t"], its[b]["n"]) for b in src_b]
+                    if Es:
+                        involved, sidx = store.key_index([[(it["p"], j) for j in it["src"]] for it in its], Es)
+                        plan["src"] = dict(involved=involved, index=pack.add(sidx.reshape(-1), torch.long), F=0, eq=None)
+                        if self.ptr_codes:
+                            cv = torch.zeros(B, Es, self.ptr_codes, dtype=dt)
+                            for b, it in enumerate(its):
+                                if it["src"]:
+                                    cat_ = torch.cat([store.codes[(it["p"], j)] for j in it["src"]])
+                                    cv[b, :len(cat_)] = cat_
+                            plan["src"]["codes"] = pack.add(cv, act)
+                        if layout and not flex and plan["eq"] is not None:
+                            places = self.batch_places(layout, [it["plan"] for it in its])
+                            F_ = sum(m * D for _, m, D in layout.values())
+                            F_b = F_ if plan["eq"][0] is None else plan["eq"][0][1]
+                            ent = self.source_entries(its, [w[0] for w in programs], [w[2] for w in programs], masks,
+                                                      layout, None if plan["eq"][0] is None else places, F_b, Es,
+                                                      self.slots)
+                            plan["src"].update(F=F_b, eq=(pack.add(ent[0], torch.long), pack.add(ent[1], torch.long),
+                                                          pack.add(ent[2], act)))
                     plans.append(plan)
                 # each row's place in the rows of the level's batches, one batch after another, each [B N], and the
                 # place of each table's first row
@@ -1992,6 +2240,12 @@ class FeatureEncoder(nn.Module):
                 if ev.stale() and any(it["E"] for it in items):
                     lv["ev_sel"] = pack.add(ev.load(), torch.long)
                 # the level's pooled vectors and evidence rows, in the order its batches run
+                store.plan_level([s for pl in plans for s in pl["src_of"]])
+                if self.ptr_codes:   # the pointer codes of the level's source tables, for the later tables' values
+                    for pl in plans:
+                        for p_, t_, _ in pl["src_of"]:
+                            store.codes[(p_, t_)] = self.pointer_codes(
+                                programs[p_][0][t_], masks[p_][t_] if masks is not None else None, programs[p_][2])
                 for pl in plans:
                     if pl["its_ev"]:
                         ev.plan([(pl["its"][b]["p"], b, pl["its"][b]["n"]) for b in pl["its_ev"]], pl["B"], pl["N"])
@@ -2061,24 +2315,41 @@ class FeatureEncoder(nn.Module):
                 if E:
                     ctx.ev = EvidenceKeys(ev, pack[plan["ev_index"]], B, E,
                                           ctx.eq_q.shape[-1] if ctx.eq_q is not None else 0)
-                layers = []
+                Es = plan.get("Es", 0)
+                if Es:
+                    sp, mats0 = plan["src"], self.mats[0]
+                    eq_w = ctx.eq_q.shape[-1] if ctx.eq_q is not None else 0
+                    ctx.src = SourceKeys(store, sp["involved"], pack[sp["index"]], B, Es,
+                                         None if sp["eq"] is None else tuple(pack[h] for h in sp["eq"]), sp["F"],
+                                         eq_w - sp["F"], self.src_eq_all, self.blocks[0].heads, mats0["W"], mats0["Wv"])
+                    if self.ptr_codes:
+                        ctx.code_v, ctx.code_layer = pack[sp["codes"]], L - 1
+                keep_layers = plan["its_ev"] or plan.get("src_sel") is not None
+                layers, acc = [], None
                 for l, blk in enumerate(self.blocks):
-                    if self.checkpoint and torch.is_grad_enabled() and B * (N + t * K + E) >= CHECKPOINT_MIN:
+                    if self.checkpoint and torch.is_grad_enabled() and B * (N + t * K + E + Es) >= CHECKPOINT_MIN:
                         x = checkpoint(blk, x, ctx, l, self.mats[l], use_reentrant=False)
                     else:
                         x = blk(x, ctx, l, self.mats[l])
-                    if plan["its_ev"]:
+                    if isinstance(x, tuple):
+                        x, acc = x
+                    if keep_layers:
                         layers.append(x)
                 if plan["its_ev"]:
                     ev.add(layers)
+                if plan.get("src_sel") is not None:
+                    store.add(layers, pack[plan["src_sel"]])
                 outs.append(self.pool(x, pack[plan["pool_mask"]], self.pool_mats).view(B * J, K, NPOS, c))
                 for b, it in enumerate(plan["its"]):
                     for j, (tbj, cmj, lo, hi) in enumerate(it["parts"]):
                         if cmj is not None and cmj.any():
-                            records.append((it["p"], t + j, self.masked_fields(tbj, x[b, lo:hi], cmj, detail)))
+                            records.append((it["p"], t + j, self.masked_fields(
+                                tbj, x[b, lo:hi], cmj, detail, None if acc is None else acc[b, lo:hi],
+                                programs[it["p"]][2])))
             if empties:
                 outs.append(self.empty_vectors(rel_all.index_select(0, pack[lv["e_rel"]]), pack[lv["e_unseen"]]))
             ev.join_level()
+            store.join_level(self)
             parts = ([pooled] if pooled is not None else []) + outs
             if parts:
                 pooled = torch.cat(parts) if len(parts) > 1 else parts[0]
@@ -2090,7 +2361,7 @@ class FeatureEncoder(nn.Module):
             out = list(pooled.index_select(0, order).split(counts))
         return out if masks is None else (out, records)
 
-    def masked_fields(self, table, x, field_mask, detail=False):
+    def masked_fields(self, table, x, field_mask, detail=False, acc=None, ids=None):
         """The masked loss of a table's masked fields, from its row tokens after the layers x [n, 21, c]: a dict of
         "loss" [m] (a field's cross-entropy; a Box's, the mean over its edges), "label" (the column type, under
         "ex_output/" for the evidence output), "correct" [m] bool on the device (a Box: all four margins) and
@@ -2100,7 +2371,14 @@ class FeatureEncoder(nn.Module):
         may point to, then "no row holds it"). "chance_loss" [m] is the loss of the field's head when all its scores
         are equal: ln of the head's class count, and for a pointer, -log(targets / (candidates + 1)), where targets
         are the candidate rows that hold the field's value (one, "no row holds it", where none does) and candidates
-        are the candidate rows."""
+        are the candidate rows.
+
+        With `ptr_equality`, a pointer's score of a candidate row adds, for each visible field of the hidden field's row
+        whose column has the hidden column's type, the weight of the two columns' positions (`ptr_eq`) where the
+        candidate's value in the hidden column equals that field's value; and with `source_rows`, per head, the weight
+        of the hidden column's position (`ptr_src`) times the inner product of the candidate's code in the hidden
+        column (`pointer_codes`) with the codes `acc` [n, H, ptr_codes] that the row's last-layer attention gathered
+        from its source keys. Both weights enter times POINTER_EQ_GAIN."""
         hd, dev, dt = self.heads, x.device, x.dtype
         up = lambda v: v.float() if v.dtype in (torch.float16, torch.bfloat16) else v   # the loss in at least float32
         rr, ii = np.nonzero(field_mask)
@@ -2161,6 +2439,8 @@ class FeatureEncoder(nn.Module):
             q = hd.ptr_q(z[idx]) * bind[idx]
             y = hd.ptr_k(hx[torch.from_numpy(kept).to(dev)])
             scores = q.flatten(1) @ y.flatten(1).T / math.sqrt(NPOS * self.c)                                   # [m, n']
+            if self.ptr_equality:
+                scores = scores + self.pointer_equality(table, field_mask, rr[idx], ii[idx], kept, acc, ids, dev)
             logits = torch.cat([scores.masked_fill(~cand, float("-inf")), hd.none(z[idx, 0])], 1)
             logits = up(logits)
             lp = F.log_softmax(logits, 1)
@@ -2183,6 +2463,39 @@ class FeatureEncoder(nn.Module):
         if detail:
             rec["out"] = out
         return rec
+
+    def pointer_equality(self, table, field_mask, rows, cols, kept, acc, ids, dev):
+        """The equality terms of the pointer scores (`masked_fields`) of the hidden fields at (rows, cols) against the
+        candidate rows `kept`: [m, n']."""
+        hd = self.heads
+        offsets = np.cumsum([0] + [width(ty) for ty in table.types])
+        vis = table.present & ~field_mask
+        m, C = len(rows), len(table.types)
+        same = np.zeros((m, len(kept), C), bool)   # the candidate's value in the hidden column equals the row's in c
+        wi = np.zeros((m, C), np.int64)            # the place of the pair's weight
+        on = np.zeros((m, C), bool)
+        for f, (r, i) in enumerate(zip(rows, cols)):
+            for c in range(C):
+                if c != i and table.types[c] == table.types[i] and vis[r, c]:
+                    on[f, c] = True
+                    wi[f, c] = table.positions[i] * self.slots + table.positions[c]
+                    same[f, :, c] = table.cells[kept, offsets[i]] == table.cells[r, offsets[c]]
+        w = hd.ptr_eq.reshape(-1)[torch.from_numpy(wi).to(dev)] * POINTER_EQ_GAIN * torch.from_numpy(on).to(dev)
+        out = (torch.from_numpy(same).to(dev, w.dtype) * w[:, None]).sum(-1)
+        if acc is not None:
+            pos = torch.tensor([table.positions[i] for i in cols], device=dev)
+            u = hd.ptr_src[:, pos].T * POINTER_EQ_GAIN                                           # [m, H]
+            gathered = (acc[torch.from_numpy(rows).to(dev)].to(u.dtype) * u[:, :, None]).sum(1)  # [m, D]
+            parts = []
+            for i in np.unique(cols):
+                at = torch.from_numpy(np.flatnonzero(cols == i)).to(dev)
+                one = Table(**{**table.__dict__, "types": [table.types[i]], "positions": [table.positions[i]],
+                               "cells": table.cells[:, offsets[i]:offsets[i] + 1], "present": table.present[:, i:i + 1]})
+                code = self.pointer_codes(one, None, ids, kept).to(dev, u.dtype)                 # [n', D]
+                parts.append((at, gathered.index_select(0, at) @ code.T))
+            out = out + torch.cat([v for _, v in parts]).index_select(
+                0, torch.argsort(torch.cat([a for a, _ in parts])))
+        return out
 
     @staticmethod
     def identifiable(table):

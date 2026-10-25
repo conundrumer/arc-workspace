@@ -530,6 +530,13 @@ def main():
     ap.add_argument("--enc-equality", choices=["codes", "random", "flex"], default="codes",
                     help="the means of the encoder's equality term: one-hot codes added to the attention's queries and "
                          "keys, random sign codes of fixed width, or flex_attention (cuda alone)")
+    ap.add_argument("--enc-source-rows", action="store_true",
+                    help="each derived table's rows attend also to the rows of its source tables, the earlier derived "
+                         "tables that its columns' flows name, with an equality term across the two tables")
+    ap.add_argument("--enc-ptr-equality", action="store_true",
+                    help="the masked loss's pointer heads take equality terms: a candidate row's value against the "
+                         "hidden row's visible fields of the same type, and with --enc-source-rows, against the codes "
+                         "that the hidden row's last layer gathers from its source rows")
     ap.add_argument("--enc-checkpoint", action=argparse.BooleanOptionalAction, default=None,
                     help="recompute the encoder's Block activations in the backward pass to save memory (default: on "
                          "with cuda, off otherwise); without it, each table keeps its evidence rows' keys and values "
@@ -634,7 +641,9 @@ def main():
     if K:
         model.encoder = encoder.FeatureEncoder(model.embed, in_index, a.id_dim, json.load(open(f"{a.tables}/orientations.json")),
                                                K=K, layers=a.enc_layers, c=a.enc_width, heads=a.enc_heads, mlp=a.enc_mlp, gram=a.enc_gram,
-                                               examples=encoder.max_example(tables) + 1, equality=a.enc_equality).to(a.device, dtype)
+                                               examples=encoder.max_example(tables) + 1, equality=a.enc_equality,
+                                               source_rows=a.enc_source_rows,
+                                               ptr_equality=a.enc_ptr_equality).to(a.device, dtype)
         model.enc_gen = torch.Generator().manual_seed(0)   # the encoder's identifiers, apart from the model's
         model.encoder.checkpoint = a.enc_checkpoint
         model.encoder.group = a.enc_group
@@ -646,7 +655,9 @@ def main():
                         enc_gram=a.enc_gram, in_names=in_names)
             assert all(init["config"][k] == v for k, v in mine.items()), f"--encoder-init {a.encoder_init}: another encoder shape"
             missing, unexpected = model.encoder.load_state_dict(init["state"], strict=False)
-            assert not unexpected and all(k.startswith("embed.") for k in missing), (missing, unexpected)
+            # an encoder pretrained without --enc-source-rows or --enc-ptr-equality leaves their weights at 0
+            new = (".src_eq", "heads.ptr_eq", "heads.ptr_src")
+            assert not unexpected and all(k.startswith("embed.") or k.endswith(new) for k in missing), (missing, unexpected)
             print(f"encoder loaded from {a.encoder_init} (pretrained {init['config'].get('step')} steps)")
         if a.aux_masked:
             model.mask_gen = torch.Generator().manual_seed(3)   # the masked loss's masks and identifiers
@@ -666,7 +677,8 @@ def main():
     if a.tables:
         meta.update(tables=a.tables, enc_k=K, enc_layers=a.enc_layers, enc_width=a.enc_width, enc_heads=a.enc_heads,
                     enc_mlp=a.enc_mlp, enc_gram=a.enc_gram, enc_budget=a.enc_budget, enc_max_rows=a.enc_max_rows,
-                    enc_equality=a.enc_equality)
+                    enc_equality=a.enc_equality, enc_source_rows=a.enc_source_rows,
+                    enc_ptr_equality=a.enc_ptr_equality)
         if a.encoder_init or a.aux_masked:
             meta.update(encoder_init=a.encoder_init, aux_masked=a.aux_masked, mask_frac=a.mask_frac, mask_cap=a.mask_cap,
                         mask_kind=a.mask_kind, prior_weight=a.prior_weight)

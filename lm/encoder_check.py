@@ -57,6 +57,13 @@ real tables of the dev export, cut to a few dozen rows each.
 - Grouping: programs encoded one per call must give what one call gives, where each program's identifiers come
   from its own generator.
 - Relation identifiers: `train.table_relations` must draw and give bitwise what `train.encode` gives.
+- Source rows and pointer equality: with `--enc-source-rows`, a program without source rows must give bitwise what it
+  gives without the flag; on two dev programs whose derived tables have source tables, the D4, row order, permutation,
+  batching and checkpointing checks must hold, and the source rows must change the vectors; on a two-table lookup
+  export, equal Idents across the tables must score the source equality weight, and a source table over the table
+  cap must give no keys. With `--enc-ptr-equality` too, the masked heads' D4 check must hold, and a hidden Color
+  pointer must learn, from a same-row copy of its value and from the lookup's source rows, where its run without the
+  flags stays at its chance level.
 - Equality modes: the D4, permutation and batching checks under `--enc-equality random` and, with --flex, `flex` (on
   small tables and D4's generators, as flex_attention runs eagerly on the CPU); with --flex, flex must give what codes
   gives where the codes are orthonormal; random must score an equal pair at the learned weight.
@@ -1147,3 +1154,277 @@ unequal = (score[:, 2:, 2:] / w[:, None, None])[:, off]
 ok = max(equal, diag) <= 1e-12 * w.abs().max().item()
 print(f"  equal values: |score - weight| {max(equal, diag):.1e} {'PASS' if ok else 'FAIL'}; "
       f"unequal values: score / weight has rms {unequal.pow(2).mean().sqrt().item():.3f} (1/sqrt(32) = {32 ** -0.5:.3f})")
+
+print("== --enc-source-rows: a program without source rows, flag on against flag off, bitwise (the pooled vectors, the "
+      "masked loss and its gradients, with every batch checkpointed)")
+torch.manual_seed(0)
+src_enc = E.FeatureEncoder(embed, in_index, id_dim=16, orientations=orient, K=4, layers=2, c=32, heads=4, source_rows=True)
+missing, unexpected = src_enc.load_state_dict(enc.state_dict(), strict=False)
+assert not unexpected and all(k.endswith(".src_eq") for k in missing), (missing, unexpected)
+src_enc.eval()
+
+
+def masked_grads(e, progs, ckpt=True):
+    """The masked loss of `progs` under `e`, and its gradients, every batch checkpointed where `ckpt`."""
+    e.checkpoint, ckpt_min = ckpt, E.CHECKPOINT_MIN
+    E.CHECKPOINT_MIN = 0
+    try:
+        e.zero_grad()
+        loss, _ = e.masked_loss([(t, [None] * len(t)) for t in progs], torch.Generator().manual_seed(8), 0.3, 10 ** 6,
+                                torch.Generator().manual_seed(9))
+        loss.backward()
+    finally:
+        e.checkpoint, E.CHECKPOINT_MIN = False, ckpt_min
+    grads = {n: p.grad.clone() for n, p in e.named_parameters() if p.grad is not None}
+    e.zero_grad()
+    return loss.detach(), grads
+
+
+def run_with(e, tables):
+    """`run` under the encoder e."""
+    global enc
+    kept, enc = enc, e
+    try:
+        return run(tables)
+    finally:
+        enc = kept
+
+
+no_src = list(suites.values())
+s_off = [run_with(base_enc, t)[0] for t in no_src]
+s_on = [run_with(src_enc, t)[0] for t in no_src]
+l_off, g_off = masked_grads(base_enc, no_src)
+l_on, g_on = masked_grads(src_enc, no_src)
+ok = (all(torch.equal(a, b) for a, b in zip(s_off, s_on)) and torch.equal(l_off, l_on) and g_off.keys() == g_on.keys()
+      and all(torch.equal(g_off[n], g_on[n]) for n in g_off))
+print(f"  {len(no_src)} programs without column-level provenance: pooled vectors, loss {l_on.item():.6f} and "
+      f"{len(g_on)} gradients bitwise the same {'PASS' if ok else 'FAIL'}")
+
+print("== --enc-source-rows: D4, row order and identifier permutations, batching and checkpointing on two dev programs "
+      "whose derived tables have source tables, 30 rows each, the source equality weights drawn at random")
+with torch.no_grad():
+    for blk in src_enc.blocks:
+        blk.src_eq.copy_(torch.randn(blk.src_eq.shape, generator=eq_gen))
+cut_rng = np.random.default_rng(7)
+src_progs = {k: [cut(t, 30, cut_rng) for t in lm_tables[k]] for k in [case, ("0520fde7", "$Table $Lookup")]}
+for k, ts in src_progs.items():
+    srcs, pairs = E.source_tables(ts)
+    print(f"  {k[0]} {k[1]}: {sum(map(bool, srcs))} of {len(ts)} tables read source rows, of the column types "
+          f"{sorted({ts[j].types[c] for p in pairs for col in p for j, c in col})}")
+    enc = src_enc
+    try:
+        symmetry(f"source rows: {k[0]} {k[1]}", ts)
+    finally:
+        enc = base_enc
+some = src_progs[("0520fde7", "$Table $Lookup")]
+s_on = run_with(src_enc, some)[0]
+with torch.no_grad():
+    w_saved = [blk.src_eq.clone() for blk in src_enc.blocks]
+    for blk in src_enc.blocks:
+        blk.src_eq.zero_()
+    s_zero = run_with(src_enc, some)[0]
+    for blk, w in zip(src_enc.blocks, w_saved):
+        blk.src_eq.copy_(w)
+s_off = run_with(base_enc, some)[0]
+e_off, e_zero = (s_on - s_off).abs().max().item(), (s_on - s_zero).abs().max().item()
+print(f"  the source rows reach the vectors: |on - off| {e_off:.2e}, |on - on with the source equality weights at 0| "
+      f"{e_zero:.2e} {'PASS' if e_off > 1e-3 and e_zero > 1e-3 else 'FAIL'}")
+plist = list(src_progs.values()) + [[cut(t, 13, rng) for t in some] for _ in range(2)]
+for cost in (E.BATCH_COST, 0):
+    saved_cost, E.BATCH_COST = E.BATCH_COST, cost
+    try:
+        with torch.no_grad():
+            src_enc.prepare()
+            work = lambda seed: [(t, [src_enc.relation_vector(x, None) for x in t],
+                                  E.Identifiers(src_enc.c, src_enc.code_dim, torch.Generator().manual_seed(seed), "cpu",
+                                                torch.float64)) for t in plist]
+            together = src_enc.encode_programs(work(5), None)
+            alone = [src_enc.encode_programs([w], None)[0] for w in work(5)]
+            src_enc.release()
+    finally:
+        E.BATCH_COST = saved_cost
+    e = max((a - b).abs().max().item() for a, b in zip(together, alone))
+    print(f"  batching, BATCH_COST {cost}: {len(plist)} programs, |together - alone| {e:.2e} {'PASS' if e < TOL else 'FAIL'}")
+l1, g1 = masked_grads(src_enc, [some])
+l0, g0 = masked_grads(src_enc, [some], ckpt=False)
+e = max((g0[n] - g1[n]).abs().max().item() for n in g0)
+ok = g0.keys() == g1.keys() and e < 1e-12 and any(n.endswith("src_eq") for n in g0) and abs(l0 - l1).item() < 1e-12
+print(f"  checkpointing: {len(g0)} gradients, the source equality weights' among them, |with - without| {e:.2e} "
+      f"{'PASS' if ok else 'FAIL'}")
+
+print("== --enc-source-rows: a two-table lookup export, table B's Ident and Color copied from table A's, keyed by the "
+      "Ident")
+
+
+def lookup_export(d, rng, cases=32, n=16):
+    """An export of `cases` cases of one task, in `d`: tables A (Ident, Color) and B (Ident, Color), each with the key
+    Ident; B holds A's rows in another order, and its columns flow from A's."""
+    import pandas as pd
+    task = {"train": [{"input": [[0]], "output": [[0]]}], "test": [{"input": [[0]]}]}
+    (d / "tasks").mkdir(); json.dump(task, open(d / "tasks/t.json", "w"))
+    grid = dict(point=2, relation=-1, column_types=["Example", "Box", "Color"], width=6, det_relations=[], det_widths=[],
+                depth=0, keys=[[0, 1]], output_position=-1, output_color=-1)
+    rel = lambda r, depth: dict(point=0, relation=r, column_types=["Ident", "Color"], width=2, det_relations=[],
+                                det_widths=[], depth=depth, keys=[[0]], output_position=-1, output_color=-1)
+    flow = lambda case, col: dict(task="t", case=case, concept=False, table=3, column=col, kind=0, source_table=2,
+                                  source_relation="", source_column=col, det=-1, atom="")
+    tables, index, flows = [], [], []
+    (d / "values/t").mkdir(parents=True)
+    for k in range(cases):
+        case, color, order = f"$C{k}", rng.integers(0, 4, n), rng.permutation(n)
+        rows, values = {2: [[100 + i, color[i]] for i in range(n)], 3: [[100 + i, color[i]] for i in order]}, []
+        for i, t in enumerate([grid, grid, rel(0, 1), rel(1, 2)]):
+            tables.append(dict(task="t", case=case, concept=False, table=i, token=i, projections=0, fault=None, **t))
+            if i in rows:
+                index.append(dict(task="t", case=case, table=i, entry=i, kind=0, rows=n, offset=len(values),
+                                  example_kind=1, example_index=0, model=0))
+                values += [x for r in rows[i] for x in r]
+        np.array(values, np.int32).tofile(d / f"values/t/{case}.i32")
+        flows += [flow(case, 0), flow(case, 1)]
+    pd.DataFrame(tables).to_parquet(d / "tables.parquet")
+    pd.DataFrame(index).to_parquet(d / "index.parquet")
+    pd.DataFrame(flows).to_parquet(d / "flows.parquet")
+    pd.DataFrame(columns=["task", "case", "entry", "det", "rows", "offset"]).to_parquet(d / "assigned.parquet")
+    pd.DataFrame(columns=["task", "case", "table", "columns", "width"]).to_parquet(d / "projections.parquet")
+    pd.DataFrame(columns=["task", "case", "projection", "entry", "defined", "rows", "offset"]).to_parquet(
+        d / "projection_rows.parquet")
+
+
+with tempfile.TemporaryDirectory() as tmp:
+    lookup_export(Path(tmp), np.random.default_rng(0))
+    lk, lk_faults, _ = E.parse_tables(tmp, Path(tmp) / "tasks")
+lookups = list(lk.values())
+A_, B_ = lookups[0][2], lookups[0][3]
+srcs, pairs = E.source_tables(lookups[0])
+ok_src = not lk_faults and srcs == [[], [], [], [2]] and pairs[3] == [[(2, 0)], [(2, 1)]]
+# the equality part of B's scores against A's rows at the first layer, with the Ident pair's weight at 5 and the rest 0
+with torch.no_grad():
+    for blk in src_enc.blocks:
+        blk.src_eq.zero_(); blk.src_eq[:, 0, 0] = 5.0 / E.SOURCE_EQ_GAIN
+spied, attend_fn = [], E.attend
+E.attend = lambda q, k, v, mask, flex=None: (spied.append((q, k, mask)), attend_fn(q, k, v, mask, flex))[1]
+try:
+    run_with(src_enc, lookups[0])
+finally:
+    E.attend = attend_fn
+q, k, mask = spied[-len(src_enc.blocks)]   # B's level, the first layer
+W0 = src_enc.c // src_enc.blocks[0].heads * E.NPOS
+eq_s = q[0, :B_.n, :, W0:].transpose(0, 1) @ k[0, -A_.n:, :, W0:].permute(1, 2, 0)          # [H, B rows, A rows]
+match = torch.from_numpy(B_.cells[:, :1] == A_.cells[:, 0][None])
+e_match = (eq_s[:, match] - 5.0).abs().max().item()
+off = eq_s[:, ~match].abs().max().item()
+ok = ok_src and e_match < 1e-9 and off < 5.0 and bool(mask[0, 0, 0, -A_.n:].all())
+print(f"  B's source tables {srcs[3]}, its columns' pairs {pairs[3]}; at the first layer, B's scores against A's rows "
+      f"in the equality channels, Ident weight 5: equal Idents |score - 5| {e_match:.1e}, unequal Idents at most "
+      f"{off:.2f} (random codes); A's {A_.n} rows unmasked keys {'PASS' if ok else 'FAIL'}")
+capped = {("t", "c"): [copy.copy(t) for t in lookups[0][:3]]}
+over = E.mark_over_rows(capped, A_.n - 1)
+capped = capped[("t", "c")] + [B_]
+s_capped_on, s_capped_off = run_with(src_enc, capped)[0], run_with(base_enc, capped)[0]
+ok = E.source_tables(capped)[0][3] == [] and len(over) == 1 and torch.equal(s_capped_on, s_capped_off)
+print(f"  table A over --enc-max-rows: B has no source rows, and flag on gives bitwise what flag off gives "
+      f"{'PASS' if ok else 'FAIL'}")
+
+print("== --enc-source-rows --enc-ptr-equality: the masked loss heads under D4, the same fields masked (frac 0.3), in a "
+      "program step, on the two dev programs; the pointer logits and every field's loss must not change")
+torch.manual_seed(0)
+ptr_enc = E.FeatureEncoder(embed, in_index, id_dim=16, orientations=orient, K=4, layers=2, c=32, heads=4,
+                           source_rows=True, ptr_equality=True)
+ptr_enc.load_state_dict(src_enc.state_dict(), strict=False)
+ptr_enc.eval()
+with torch.no_grad():
+    for blk in ptr_enc.blocks:
+        blk.src_eq.copy_(torch.randn(blk.src_eq.shape, generator=eq_gen))
+    ptr_enc.heads.ptr_eq.copy_(torch.randn(ptr_enc.heads.ptr_eq.shape, generator=eq_gen) / E.POINTER_EQ_GAIN)
+    ptr_enc.heads.ptr_src.copy_(torch.randn(ptr_enc.heads.ptr_src.shape, generator=eq_gen) / E.POINTER_EQ_GAIN)
+for k, tabs in src_progs.items():
+    masks = ptr_enc.draw_masks(tabs, 0.3, 10 ** 6, torch.Generator().manual_seed(3), "program")
+    enc = ptr_enc
+    try:
+        r0 = run_masked(tabs, masks)
+        worst, fields = {"loss": 0.0, "pointer": 0.0}, sum(len(r["label"]) for _, _, r in r0)
+        for name, g in E.ELEMENTS.items():
+            r1 = run_masked([transform(t, g) for t in tabs], masks)
+            for (_, _, a), (_, _, b) in zip(r0, r1):
+                worst["loss"] = max(worst["loss"], (a["loss"] - b["loss"]).abs().max().item())
+                if "pointer" in a["out"]:
+                    pa, pb = a["out"]["pointer"][1], b["out"]["pointer"][1]
+                    fa = torch.isfinite(pa)
+                    worst["pointer"] = max(worst["pointer"], (pa[fa] - pb[fa]).abs().max().item()
+                                           if torch.equal(fa, torch.isfinite(pb)) else float("inf"))
+    finally:
+        enc = base_enc
+    pointers = sum(len(r["out"]["pointer"][0]) for _, _, r in r0 if "pointer" in r["out"])
+    print(f"  {k[0]} {k[1]}: {fields} masked fields, {pointers} pointers; worst change loss {worst['loss']:.1e}, "
+          f"pointer {worst['pointer']:.1e} {'PASS' if pointers and max(worst.values()) < TOL else 'FAIL'}")
+
+print("== --enc-ptr-equality and --enc-source-rows: learnability of a hidden Color pointer, 200 steps of AdamW (lr 1e-3, "
+      "warmup 20, clip 1.0) at c 32 in float32, four programs a step, 30% of the Color fields hidden; the mean pointer "
+      "loss / its chance level (ratio) over each 50 steps. A run with the flags passes where its last 50 steps' ratio "
+      "is under 0.3, and the run without them where it is over 0.8")
+
+
+def same_row_table(rng, n=16):
+    """A table (Ident, Color, Color) whose second Color column copies the first."""
+    color = rng.integers(0, 4, n)
+    return E.Table(step=1, relation=7, evidence=False, unseen=None, largest=n, export_table=None,
+                   entry=np.zeros(n, np.int32), positions=[0, 1, 2], types=["Ident", "Color", "Color"],
+                   cells=np.stack([100 + np.arange(n), color, color], 1).astype(np.int32),
+                   present=np.ones((n, 3), bool), example=np.full(n, -1, np.int16), example_kind=np.zeros(n, np.int8),
+                   assignment=np.zeros((n, 0), np.int32), model=np.zeros(n, np.int32), part=np.zeros(n, np.int32),
+                   marker=np.zeros(n, bool), unseen_entries={})
+
+
+def learn(draw, hidden, flags, steps=200):
+    """The pointer curve of an encoder with `flags`, trained on the programs `draw(rng)` gives, with 30% of the
+    Color fields of the table `hidden` hidden."""
+    torch.set_default_dtype(torch.float32)
+    try:
+        torch.manual_seed(0)
+        e = E.FeatureEncoder(nn.Embedding(len(in_names), 48), in_index, id_dim=16, orientations=orient, K=4, layers=2,
+                             c=32, heads=4, **flags)
+        params = [p for p in e.parameters() if p.requires_grad]
+        opt = torch.optim.AdamW(params, lr=1e-3, weight_decay=0.0)
+        sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda i: min(1.0, (i + 1) / 20))
+        r_, hist, curve = np.random.default_rng(1), [], []
+        for step in range(steps):
+            drawn = draw(r_)
+            masks = []
+            for ts in drawn:
+                m = [None if not t.n else np.zeros((t.n, len(t.types)), bool) for t in ts]
+                m[hidden][:, 1] = r_.random(ts[hidden].n) < 0.3
+                m[hidden][0, 1] = True
+                masks.append(m)
+            gen = torch.Generator().manual_seed(step)
+            e.prepare()
+            try:
+                work = [(ts, [e.relation_vector(t, None) for t in ts], E.Identifiers(e.c, e.code_dim, gen, "cpu"))
+                        for ts in drawn]
+                _, recs = e.encode_programs(work, gen, masks)
+            finally:
+                e.release()
+            loss = torch.cat([r["loss"] for _, _, r in recs])
+            opt.zero_grad(); loss.mean().backward()
+            torch.nn.utils.clip_grad_norm_(params, 1.0)
+            opt.step(); sched.step()
+            hist.append((loss.mean().item(), torch.cat([r["chance_loss"] for _, _, r in recs]).mean().item()))
+            if step % 50 == 49:
+                curve.append(tuple(np.mean(hist[-50:], 0)))
+        return curve
+    finally:
+        torch.set_default_dtype(torch.float64)
+
+
+cases_ = {"a same-row cue: one table (Ident, Color, a copy of Color), the first Color hidden":
+              (lambda r: [[same_row_table(r)] for _ in range(4)], 0, dict(ptr_equality=True), {}),
+          "the lookup export, B's Color hidden":
+              (lambda r: [lookups[i] for i in r.choice(len(lookups), 4, replace=False)], 3,
+               dict(source_rows=True, ptr_equality=True), {})}
+for title, (draw, hidden, on, off) in cases_.items():
+    print(f"  {title}")
+    for flags, want in ((on, lambda x: x < 0.3), (off, lambda x: x > 0.8)):
+        curve = learn(draw, hidden, flags)
+        ratio = curve[-1][0] / curve[-1][1]
+        print(f"    {' '.join('--enc-' + k.replace('_', '-') for k in flags) or 'no flags'}: "
+              + ", ".join(f"steps {50 * i + 1}-{50 * i + 50} {l:.3f}/{c:.3f} ({l / c:.2f})" for i, (l, c) in enumerate(curve))
+              + f" {'PASS' if want(ratio) else 'FAIL'}")
