@@ -11,7 +11,7 @@ action; norms and nonlinearities act per position.
 
 Tables. `load_tables` reads a tables export (engine/arclog-py/tables_export.py) into per-case lists of `Table`, the relation
 tables in stream order, and caches them in a pickle. The evidence tables `ex_input` and `ex_output` are built from
-the task file where the export holds none, and stand first, after the start token.
+the task file where the export holds none, and stand first, after the start token. A change to this module, or to the engine code that writes the export's files (`engine/arclog/src/resolver/flows.rs`, `engine/arclog/src/decode/`), runs `engine/arclog-py/roundtrip_check.py` with an `arclog` built from its tree before its merge.
 """
 import bisect, json, math, os, pickle, re
 from pathlib import Path
