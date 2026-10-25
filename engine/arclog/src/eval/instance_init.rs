@@ -69,7 +69,7 @@ pub fn evaluate_instance<'a>(
         record_whole(budget, [&value]);
         Ok(value)
     };
-    let shape = InstanceShape::of(evaluation, form, instance, component);
+    let shape = InstanceShape::of(evaluation.program, form, instance, component);
     let (groups, key) = match key_read(evaluation, bodies, form, &shape, example)? {
         Ok(read) => read,
         Err(value) => return whole(budget, value),
@@ -163,7 +163,7 @@ pub fn evaluate_input(
     let fault = |message: String| RunFault { message: message.into(), form: form.clone() };
     let (instance, component) = instance_at(evaluation, form)?;
     let input = component.inputs.iter().find(|input| input.port.name == *port).expect("an input of the component at each instance input node");
-    let shape = InstanceShape::of(evaluation, form, instance, component);
+    let shape = InstanceShape::of(evaluation.program, form, instance, component);
     let groups = match key_groups(evaluation, bodies, form, &shape, example)? {
         Ok(groups) => groups,
         Err(value) => return Ok(value),
@@ -211,7 +211,7 @@ fn input_groups(
 ) -> Outcome<Result<(Vec<RowSet>, InputRead), RelationValue>> {
     let fault = |message: String| RunFault { message: message.into(), form: form.clone() };
     let input_types = shape.port_types(&input.port.columns).map_err(&fault)?;
-    match shape.input_clause(evaluation, form, input).map_err(&fault)? {
+    match shape.input_clause(evaluation.program, form, input).map_err(&fault)? {
         Some(written) => Ok(rows_read(bodies.relation(form, &written.clause, example)?, written.arity())
             .map_err(&fault)?
             .map(|(rows, relation)| (written.grouped(groups, rows), InputRead::Clause(relation)))),

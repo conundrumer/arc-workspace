@@ -182,7 +182,7 @@ pub fn unfold<'a>(
     budget: &mut Budget<'a>,
 ) -> Outcome<Result<Vec<(Row, StateGraph)>, RelationValue>> {
     let (instance, component) = instance_at(evaluation, form)?;
-    let shape = InstanceShape::of(evaluation, form, instance, component);
+    let shape = InstanceShape::of(evaluation.program, form, instance, component);
     let run = Run { evaluation, bodies, form, shape: &shape, component, example, own: own_outputs(evaluation, output, example) };
     run.graphs(budget)
 }
@@ -496,7 +496,7 @@ impl<'r, 'a> Run<'r, 'a> {
     /// label.
     fn compile(&self, input: UnfoldInput) -> Outcome<Option<InputClause>> {
         let declared = self.declared(input)?;
-        let Some(clause) = self.shape.input_clause(self.evaluation, self.form, declared).map_err(|message| self.fault(message))? else { return Ok(None) };
+        let Some(clause) = self.shape.input_clause(self.evaluation.program, self.form, declared).map_err(|message| self.fault(message))? else { return Ok(None) };
         if clause.width() != declared.port.columns.iter().filter(|column| !is_key(column)).count() {
             return Err(self.fault(format!("a head site of input `{}` of `Unfold` holds other than one label", declared.port.name.0)));
         }

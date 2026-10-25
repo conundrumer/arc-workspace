@@ -33,7 +33,7 @@ pub mod zero;
 
 use std::sync::{Arc, Mutex};
 
-use crate::eval::ir::{compile_body, ClauseIr, CompileFault, CompiledBody};
+use crate::eval::ir::{compile_body, ClauseIr, CompileFault, CompiledBody, IrPaths};
 use crate::diagnostic::{Diagnostic, DiagnosticKind, Location, Severity};
 use crate::hash::StableHashMap;
 use crate::program::canonical::{canonical_form, CanonicalForm, CanonicalOrder, CanonicalWriter, SearchBudget};
@@ -436,6 +436,10 @@ pub struct CheckedProgram {
     derived: Arc<Derived>,
 }
 
+/// The clause of an `INIT` form's input or key, with the paths of its nodes
+/// and the count of its key columns.
+pub type InstanceClause = (Arc<ClauseIr>, Arc<IrPaths>, usize);
+
 /// What a function of a checked program, a path and its arguments alone
 /// gives, kept per argument on the first ask.
 #[derive(Debug, Default)]
@@ -444,9 +448,9 @@ struct Derived {
     /// and kept conjuncts.
     bodies: Mutex<StableHashMap<(NodePath, Box<[u32]>), Result<Arc<CompiledBody>, CompileFault>>>,
     /// The clause of an `INIT` form's input, or of its key where the name
-    /// is `None`, with the count of its key columns, as the evaluator
-    /// compiles it.
-    instance_clauses: Mutex<StableHashMap<(NodePath, Option<PortName>), Result<(Arc<ClauseIr>, usize), CompileFault>>>,
+    /// is `None`, with the paths of its nodes and the count of its key
+    /// columns, as the evaluator compiles it.
+    instance_clauses: Mutex<StableHashMap<(NodePath, Option<PortName>), Result<InstanceClause, CompileFault>>>,
     /// The resolved content of the clause at each path.
     contents: Mutex<StableHashMap<NodePath, Option<ResolvedContent>>>,
     /// The resolved content of the part of the clause at a path that its
@@ -464,17 +468,17 @@ impl CheckedProgram {
     }
 
     /// The clause of the input `input` of the `INIT` form at `form`, or of
-    /// its key where `input` is `None`, with the count of its key columns,
-    /// from `compile` on the first ask.
+    /// its key where `input` is `None`, with the paths of its nodes and the
+    /// count of its key columns, from `compile` on the first ask.
     pub fn instance_clause(
         &self,
         form: &NodePath,
         input: Option<&PortName>,
-        compile: impl FnOnce() -> Result<(ClauseIr, usize), CompileFault>,
-    ) -> Result<(Arc<ClauseIr>, usize), CompileFault> {
+        compile: impl FnOnce() -> Result<(ClauseIr, IrPaths, usize), CompileFault>,
+    ) -> Result<InstanceClause, CompileFault> {
         let key = (form.clone(), input.cloned());
         let mut memo = self.derived.instance_clauses.lock().expect("a memo that no panic poisoned");
-        memo.entry(key).or_insert_with(|| compile().map(|(clause, key)| (Arc::new(clause), key))).clone()
+        memo.entry(key).or_insert_with(|| compile().map(|(clause, paths, key)| (Arc::new(clause), Arc::new(paths), key))).clone()
     }
 
     /// The resolved content of the clause at `path`, as

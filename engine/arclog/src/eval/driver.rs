@@ -184,8 +184,7 @@ impl<'e, 'a> Driver<'e, 'a> {
             let request = cache::EntryRequest { clause: cache::EntryContent::Form(&content), reads: &[], example, parameters: &[] };
             return self.cached(form, &request, || self.proposed(form, written, index, example));
         }
-        let kept: Vec<u32> = (0..written.body.value().conjuncts.len() as u32).collect();
-        let (body, inputs) = match self.compiled(form, &kept, example)? {
+        let (body, inputs) = match self.compiled(form, &every_conjunct(written), example)? {
             Ok(compiled) => compiled,
             Err(value) => return Ok(value),
         };
@@ -673,4 +672,16 @@ pub(super) fn record_whole<'v>(budget: &Budget<'_>, values: impl IntoIterator<It
     if values.into_iter().all(|value| matches!(value, RelationValue::Rows(_) | RelationValue::Undefined)) {
         budget.record();
     }
+}
+
+/// The indexes of each conjunct of the body of `clause`.
+fn every_conjunct(clause: &crate::program::Clause) -> Vec<u32> {
+    (0..clause.body.value().conjuncts.len() as u32).collect()
+}
+
+/// The IR that the evaluation joins for the whole body of `clause`, the
+/// clause at `form`: the one compile of the body, which the clause's rows and
+/// its column flows read.
+pub(crate) fn clause_body(program: &crate::check::CheckedProgram, form: &NodePath, clause: &crate::program::Clause) -> Result<Arc<CompiledBody>, ir::CompileFault> {
+    program.compiled_body(form, &every_conjunct(clause))
 }

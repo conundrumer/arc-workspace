@@ -36,13 +36,14 @@ real tables of the dev export, cut to a few dozen rows each.
   columns, so that its flows and the flows that read it name columns it holds; and `parse_tables` must refuse an
   export whose flow names a column past its table's columns.
 - The loader's checks of an export, on small exports of one case: `load_tables` must refuse to build an export
-  whose checks.txt reports a violation, or gives no count line, and build it with `allow_violations`, and build one
-  whose counts are all 0, or that has no checks.txt, which it must print; with `strict`, it must refuse an export
+  whose checks.txt has a line (one line per violation), and build it with `allow_violations`, and build one
+  whose checks.txt is empty or holds only blank lines, or that has no checks.txt, which it must print; with `strict`, it must refuse an export
   with a copy flow from a column of another type, and one with a copy flow whose values are not the source's, from
   the build and from the cache, and without `strict` count each; it must build, with `strict`, an export with a copy
   flow from a DET whose `det_types` give the column's type, where the source table's column has another type, and
   check its values against the DET's rows at each assignment, and refuse one where a row holds a value of another
-  entry's assignment of the DET only; it must build, with `strict`, an export with a Dir
+  entry's assignment of the DET only; it must build, with `strict`, an export whose table with a DET-sourced copy flow has an entry with no assigned
+  row, so that its split is unseen at an assignment of no column, with its copy flows checked; it must build, with `strict`, an export with a Dir
   column copied from a Dir8 column where the export's orientation_types.json gives Dir as a subtype of Dir8, and
   refuse it where the export has no orientation_types.json, with a line that says the orientation subtypes were not
   known; a pickle without the totals must print that it is unchecked. `parse_tables` must count an Undefined entry, and refuse where the loader's count of unseen entries
@@ -253,7 +254,7 @@ def fixture():
         f = pickle.load(open(FIXTURE, "rb"))
         if f.get("stamp") == stamp:
             return f["tables"]
-    tables, _, _ = E.load_tables(TABLES, CACHE, strict=False)
+    tables, _, _ = E.load_tables(TABLES, CACHE)
     chosen = tables[case][:2]
     assert all(t.evidence for t in chosen)
     no_provenance = lambda t: E.Table(**{k: v for k, v in t.__dict__.items() if k not in PROVENANCE})
@@ -272,7 +273,7 @@ def fixture():
 rng = np.random.default_rng(0)
 case = ("00576224", "$Lookup")
 if FULL:
-    tables, _, _ = E.load_tables(TABLES, CACHE, strict=False)
+    tables, _, _ = E.load_tables(TABLES, CACHE)
     source, source_title = tables[case][:8], f"{case[0]} {case[1]}, first 8 tables"
 else:
     source = fixture()
@@ -573,7 +574,8 @@ def checked_export(d, variant="clean"):
     """A small export in `d` and its task file: one case, whose table 2 (Color, Number) copies its Color from ex_input
     and table 3 (Color) its Color from table 2's. With `variant` "type", table 3's flow names table 2's Number
     instead; "value", table 3 holds a Color that table 2 does not; "undefined", table 3 has a third entry, of the
-    kind Undefined; "det", table 3 copies its Color from column 1 of its DET of types (Number, Color), whose row at
+    kind Undefined; "det unseen", the "det" variant with that third entry, which has no assigned row, so that its
+    assignment is its own and its split is wholly unseen; "det", table 3 copies its Color from column 1 of its DET of types (Number, Color), whose row at
     each entry's assignment holds table 3's Color, by a flow whose source table is table 2, whose column 1 is a
     Number; "det per row", the same with the DET's Color 1 at the first entry's assignment and 2 at the second's, and
     table 3's Color 1 and 2 at those entries; "det other row", the same with table 3's Color 2 at both entries, so
@@ -608,7 +610,7 @@ def checked_export(d, variant="clean"):
             if t.get("det_relations"):
                 assigned.append(dict(task="t", case="$C", entry=index[-1]["entry"], det=0, rows=1, offset=len(values)))
                 values += [5, 1 + e if row3 else rs[0][0]]
-    if variant == "undefined":
+    if variant in ("undefined", "det unseen"):
         index.append(dict(task="t", case="$C", table=3, entry=len(index), kind=2, rows=0, offset=0, example_kind=2,
                           example_index=0, model=0))
     (d / "values/t").mkdir(parents=True)
@@ -650,16 +652,15 @@ def checked_load(variant, checks=None, **kw):
 
 
 bad, seen = [], {}
-violated = "copy types: 3 tables\ncopy types: 3, depths: 0\n"
-s, printed, _, _ = checked_load("clean", "copy types: 0, depths: 0\n")
+violated = "t $C: copy types: 3 tables\n"
+s, printed, _, _ = checked_load("clean", "")
 seen["clean, a clean checks.txt"] = s["copy flows"]["checked"] if isinstance(s, dict) else s
 if not isinstance(s, dict) or s["copy flows"]["type"] + s["copy flows"]["value"] or s["copy flows"]["checked"] != 2:
     bad.append(("a clean export", s))
 s, printed, _, _ = checked_load("clean")
 if not isinstance(s, dict) or "carries no checks.txt" not in printed:
     bad.append(("no checks.txt", s, printed))
-for checks, want in ((violated, "refused"), ("copy types: 0, depths: 2\n", "refused"), ("copy types: 0\n\n", "built"),
-                     ("a line that gives no count\n", "refused"), ("", "refused")):
+for checks, want in ((violated, "refused"), (violated + "t $C: depths: 2\n", "refused"), ("\n\n", "built"), ("", "built")):
     s, _, _, _ = checked_load("clean", checks)
     got = "refused" if isinstance(s, str) and "checks.txt reports" in s else "built" if isinstance(s, dict) else s
     seen[f"checks.txt {checks!r}"] = got
@@ -680,7 +681,7 @@ for variant, kind in (("type", "type"), ("value", "value")):
             and ("1 with" if kind == "type" else "1 columns with") in printed):
         bad.append((variant, strict, strict_cached, loose))
 not_known = "orientation subtypes were not known"
-for variant, want in (("det", "passes"), ("det per row", "passes"), ("det other row", "refused"), ("dir8", "passes"),
+for variant, want in (("det", "passes"), ("det unseen", "passes"), ("det per row", "passes"), ("det other row", "refused"), ("dir8", "passes"),
                       ("dir8 unknown", "refused")):
     strict, printed, strict_cached, _ = checked_load(variant)
     loose, _, _, _ = checked_load(variant, strict=False)
@@ -1149,7 +1150,7 @@ print("== train.py's run_batch with --aux-masked: the gradients when the masked 
 import train as T
 
 cases, _, names, kinds, mask_table = T.load("lm/data-dev")
-lm_tables, _, _ = E.load_tables(TABLES, CACHE, strict=False)
+lm_tables, _, _ = E.load_tables(TABLES, CACHE)
 in_names_, out_names_, in_index_, out_index_ = T.vocabularies(names, kinds)
 lm_cases = [c for c in cases if (c["task"], c["case"]) in lm_tables][:2]
 for c in lm_cases:

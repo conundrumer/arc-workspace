@@ -73,8 +73,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write, TaskStop
     * comment: Create passes have no clock. On branch `origin/claude/practical-gauss-b8f57v`, task d8e07eb2's solver passed all 7 pairs early and the pass went on to about 110 minutes, and task da515329's went on to about 60 minutes. The user's words, session 9f8cdc6e-5ae4-4a4e-bf60-4a372229a6e6, 2026-10-25T16:48:38Z: "approve", of a script that "a create agent runs at the start of each step".
 - In the same Bash command as each `run_dl.py` command, right after it, run `uv run python scripts/create_pace.py <task_id> <step> --status $?` with the step in progress, and do what it prints: `timeout 120 uv run python scripts/run_dl.py ...; uv run python scripts/create_pace.py <task_id> <step> --status $?`.
     * comment: Design review decision 23-4 of request 23-1: a command that outlasts its `timeout` or is killed ends the step's work before the next step's start call, so the script is called after the command.
-- After each run that passes every pair, copy the solver and the witness file: `cp programs/solvers/<task_id>.dl work/task/<task_id>/last-pass.dl` and `cp programs/witnesses/<task_id>.wit.json work/task/<task_id>/last-pass.wit.json`.
-    * comment: Task da515329's pass had a variant that passed all four pairs in 16 s, kept it in a scratch file, and ended with no passing solver. The user's approval, session 9f8cdc6e-5ae4-4a4e-bf60-4a372229a6e6, 2026-10-25T16:48:38Z, of "saving the last passing solver".
+- In the Bash command of each pairs run, `run_dl.py <task_id>`, join to it by `&&` a copy of the solver and the witness file, before the `create_pace.py` call, so that the copy runs only where the run exits 0: `timeout 120 uv run python scripts/run_dl.py <task_id> && cp programs/solvers/<task_id>.dl work/task/<task_id>/last-pass.dl && cp programs/witnesses/<task_id>.wit.json work/task/<task_id>/last-pass.wit.json; uv run python scripts/create_pace.py <task_id> <step> --status $?`.
+    * comment: Task da515329's pass had a variant that passed all four pairs in 16 s, kept it in a scratch file, and ended with no passing solver. The user's approval, session 9f8cdc6e-5ae4-4a4e-bf60-4a372229a6e6, 2026-10-25T16:48:38Z, of "saving the last passing solver". The Create pass on d8e07eb2 (transcript agent-a0a2ca391eddabb1f, session 9f8cdc6e-5ae4-4a4e-bf60-4a372229a6e6, 2026-10-25) copied the solver at 17:52:28Z before any pairs run checked it, which overwrote the last checked copy, and left a passing run at 17:43:14Z unsaved. `run_dl.py <task_id>` exits 1 where a pair or the determination fails, and otherwise with the lint's code (`src/cli/check.py:89`). The user's approval, same session, 2026-10-25T18:04:12Z.
 
 ## Write
 * inline: ../../docs/handbook/procedure.md#write
@@ -108,13 +108,18 @@ tools: Read, Grep, Glob, Bash, Edit, Write, TaskStop
 ## Prune
 * inline: ../../docs/handbook/procedure.md#prune
 
+- The last pairs run of the pass comes after the last solver edit, before the report.
+    * comment: The Create pass on d8e07eb2 (transcript agent-a0a2ca391eddabb1f, session 9f8cdc6e-5ae4-4a4e-bf60-4a372229a6e6) edited the solver at 17:52:28Z and ran no pairs run after it, and its report says every pair passes. The user's approval, same session, 2026-10-25T18:04:12Z.
+
 ## Commands
 * inline: notes/commands.md#commands
 
 ## Rules for one long command
 - Run each `uv run python scripts/run_dl.py` command under `timeout 120`.
     * comment: One audit in the pass on d8e07eb2 took 2000 s, and the pass on da515329 spent about 30 minutes profiling a `-9` kill. The user's approval, session 9f8cdc6e-5ae4-4a4e-bf60-4a372229a6e6, 2026-10-25T16:48:38Z, of "a timeout on long commands".
-- Where a command is stopped by that timeout (exit 124) or is killed with `-9` (exit 137), copy `work/task/<task_id>/last-pass.dl` and `work/task/<task_id>/last-pass.wit.json` back to the solver and the witness file; where `last-pass.dl` does not exist, keep the current solver. Do not profile the command. Add no `@store` line, `@derive` line or choice point afterwards, and write each branch you leave out under Unsettled.
+- Where a pairs run is stopped by that timeout (exit 124) or is killed with `-9` (exit 137), copy `work/task/<task_id>/last-pass.dl` and `work/task/<task_id>/last-pass.wit.json` back to the solver and the witness file; where `last-pass.dl` does not exist, keep the current solver. Do not profile the command. Add no `@store` line, `@derive` line or choice point afterwards, and write each branch you leave out under Unsettled.
+- Where an `audit` or a `deletions` run is stopped by that timeout or is killed, keep the solver and the witness file, write that check under Unsettled, and go on.
+    * comment: The `audit` in the Create pass on d8e07eb2 (transcript agent-a0a2ca391eddabb1f, session 9f8cdc6e-5ae4-4a4e-bf60-4a372229a6e6) timed out at 17:55:10Z while its solver passed every pair; a restore would have put back an older or unchecked solver. The user's approval, same session, 2026-10-25T18:04:12Z.
 - Where the pairs run takes 60 s or more, this rule takes precedence over [Develop](#develop) steps 3 and 4: add no `@derive` line or choice point, hold at most 2 `@store` lines, for the stored interpretations the concept needs, mark each other store point `@workaround`, and write each under Unsettled.
     * comment: Request 23-1, step-budget analysis: the usable V5 to V7 solvers hold 0 or 1 `@store` lines, and d8e07eb2 reached 13 and then fell back to 3.
 - Where the pairs run takes 30 s or more, or another `run_dl.py` command takes 60 s or more, run that command at most once more in the run, after the last edit that concerns it. Redirect the output of an `audit` or `deletions` of that length to a file, and read the file whole.

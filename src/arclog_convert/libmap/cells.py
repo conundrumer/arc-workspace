@@ -225,7 +225,9 @@ def offset_invariance(inst, ex):
                  "mismatch(Ky, A, K)": "in_cell(Ky, P, _), frame_offset(P, A, K, _), !{x}.period(Ky, A, K)",
                  "pair(Ky, A, K, P, Q)": "in_cell(Ky, P, _), frame_offset(P, A, K, V), compose(P, V, Q),"
                                          " in_cell(Ky, Q, _)",
-                 "cell(Ky, P, V)": "{x}.cell(Ky, P, V)"})
+                 "cell(Ky, P, V)": "{x}.cell(Ky, P, V)"},
+                pairs=(("cand(Ky, A, K, V)", "mismatch(Ky, A, K)",
+                        "{x}.period(Ky, A, K), axis_of(D, A), jump_offset(D, K, V)"),))
 
 
 SPECS = {"Components8": components8, "Reach": reach, "Rim": rim(False), "Rim8": rim(True), "Ray": ray,

@@ -51,7 +51,8 @@ use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::registry::Registry;
 use crate::resolver::registry_columns::component;
 use crate::program::{ColumnName, Conjunct, FactRelation, Negated, OutputOwner, OutputStep, ProgramRelation, RelationRef};
-use crate::resolver::{ColumnSource, DependencyKind, GraphNodeIndex};
+use crate::eval::flows::ColumnSource;
+use crate::resolver::{DependencyKind, GraphNodeIndex};
 use crate::relations::RowSet;
 use crate::task::Task;
 use crate::terms::{Constant, Example, Term};
@@ -128,7 +129,7 @@ pub struct Contents {
     /// The relation's name as the program spells it, empty for a body and
     /// for an evidence table, whose [`TableRelation::Fact`] names it.
     pub name: String,
-    /// The sources of each column's values ([`crate::resolver::ResolvedProgram::column_flows`]),
+    /// The sources of each column's values ([`crate::check::CheckedProgram::column_flows`]),
     /// none for an evidence table.
     pub flows: Box<[Vec<ColumnSource>]>,
     /// The path of each row position of the relation's columns
@@ -258,7 +259,7 @@ impl Decoder<'_> {
         let cap = self.context.settings.projection_cap;
         let over = examples.iter().any(|example| example.rows.as_ref().is_ok_and(|rows| rows.at.iter().flat_map(|(_, models)| models).any(|model| matches!(model, RelationValue::Rows(rows) if rows.len() > cap))));
         let projections = over.then(|| self.projections_of(&examples, form, work)).flatten();
-        let flows = program.program.column_flows(relation.node, relation.output.as_deref(), &types, self.context.registry).into();
+        let flows = program.column_flows(relation.node, relation.output.as_deref(), &types, self.context.registry).into();
         let depth = program.program.depth(relation.node);
         let rows = program.program.row_paths(relation.node).filter(|rows| relation.output.is_none() && rows.len() == types.len());
         Ok(Contents { relation: TableRelation::Slot(slot), columns, dets, examples: examples.into(), projections, name: String::new(), flows, rows, depth, keys: Vec::new(), grid: None })

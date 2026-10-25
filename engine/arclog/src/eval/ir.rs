@@ -153,6 +153,32 @@ pub struct ClauseIr {
     pub columns: Box<[Variable]>,
 }
 
+/// What a node of a clause stands on in the program text.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum NodePaths {
+    /// The path of the atom that an `Atom` or a `Lib` node compiles.
+    Atom(NodePath),
+    /// The paths of the key clause of an `Atom` node whose source is
+    /// [`AtomSource::Key`].
+    Key(Box<IrPaths>),
+    /// The paths of each branch of an `Or` node.
+    Branches(Box<[IrPaths]>),
+    /// A comparison, a `NOT` or a counterexample: no atom of the program
+    /// text to read from.
+    None,
+}
+
+/// Where the nodes of a [`ClauseIr`] stand in the program text, beside the
+/// clause: the IR holds no path, since the result cache keys a body by the
+/// IR's content, which equal bodies at different paths share.
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+pub struct IrPaths {
+    /// The label of each variable of the clause, by the variable's index.
+    pub labels: Box<[LabelId]>,
+    /// The paths of each node of the clause, by the node's index.
+    pub nodes: Box<[NodePaths]>,
+}
+
 /// A body that the IR cannot hold: a safe subset of a body is
 /// required, and a subset that leaves a label unbound is refused with
 /// those labels; a form whose scope holds a label that the checked program
@@ -197,6 +223,10 @@ pub struct IrBuilder<'a> {
     order: CanonicalOrder,
     variables: Vec<VariableInfo>,
     nodes: Vec<IrNode>,
+    /// The label of each variable.
+    labels: Vec<LabelId>,
+    /// The paths of each node of `nodes`.
+    paths: Vec<NodePaths>,
 }
 
 impl<'a> IrBuilder<'a> {
@@ -211,12 +241,15 @@ impl<'a> IrBuilder<'a> {
         let types = form_types(program, &form);
         let labels = order.label_scopes().into_iter().find(|(path, _)| *path == scope).map(|(_, labels)| labels.to_vec());
         let mut variables = vec![None; labels.as_ref().map_or(0, Vec::len)];
+        let mut held = vec![None; variables.len()];
         for (label, position) in labels.into_iter().flatten() {
             let ty = types.label(label).ok_or(CompileFault::Untyped { label })?.clone();
             variables[position as usize] = Some(VariableInfo { ty });
+            held[position as usize] = Some(label);
         }
         let variables = variables.into_iter().map(|info| info.expect("a label at each canonical position")).collect();
-        Ok(IrBuilder { program, form, compiled, order, variables, nodes: Vec::new() })
+        let labels = held.into_iter().map(|label| label.expect("a label at each canonical position")).collect();
+        Ok(IrBuilder { program, form, compiled, order, variables, nodes: Vec::new(), labels, paths: Vec::new() })
     }
 
     /// The variable of `label`: its canonical position in the form's scope.
@@ -225,9 +258,11 @@ impl<'a> IrBuilder<'a> {
         Variable(u16::try_from(self.order.canonical_label(&scope, label)).expect("fewer than 2^16 labels in a scope"))
     }
 
-    /// Adds `node` to the clause.
-    pub fn push(&mut self, node: IrNode) {
+    /// Adds `node` to the clause, which stands on `paths` in the program
+    /// text.
+    pub fn push(&mut self, node: IrNode, paths: NodePaths) {
         self.nodes.push(node);
+        self.paths.push(paths);
     }
 
     /// Compiles the conjuncts of `body` at `path` into the clause: its atoms
@@ -245,7 +280,7 @@ impl<'a> IrBuilder<'a> {
         match conjunct {
             Conjunct::Atom(atom) => {
                 let node = self.atom(atom.value(), path);
-                self.push(node);
+                self.push(node, NodePaths::Atom(path.clone()));
             }
             Conjunct::Constraint(constraint) => {
                 let first = self.variable(constraint.first.label);
@@ -253,7 +288,7 @@ impl<'a> IrBuilder<'a> {
                     crate::program::Operand::Label(label) => Operand::Variable(self.variable(label.label)),
                     crate::program::Operand::Zero => Operand::Zero,
                 };
-                self.push(IrNode::Comparison(Comparison { op: constraint.op, first, second, binds_first: constraint.first.fresh }));
+                self.push(IrNode::Comparison(Comparison { op: constraint.op, first, second, binds_first: constraint.first.fresh }), NodePaths::None);
             }
             Conjunct::Not(negated) => super::filters::compile_not(self, negated, path)?,
             Conjunct::All { domain, body } => super::filters::compile_all(self, domain, body, path)?,
@@ -369,9 +404,11 @@ impl<'a> IrBuilder<'a> {
         }
     }
 
-    /// The clause, whose relation holds `columns`.
-    pub fn finish(self, columns: Box<[Variable]>) -> ClauseIr {
-        ClauseIr { variables: self.variables.into(), nodes: self.nodes.into(), columns }
+    /// The clause, whose relation holds `columns`, with the paths of its
+    /// nodes.
+    pub fn finish(self, columns: Box<[Variable]>) -> (ClauseIr, IrPaths) {
+        let paths = IrPaths { labels: self.labels.into(), nodes: self.paths.into() };
+        (ClauseIr { variables: self.variables.into(), nodes: self.nodes.into(), columns }, paths)
     }
 }
 
@@ -448,6 +485,8 @@ pub fn compile_conjuncts(program: &CheckedProgram, clause: &NodePath, kept: &[u3
 #[derive(Debug)]
 pub struct CompiledBody {
     pub clause: ClauseIr,
+    /// The paths of the nodes of `clause`.
+    pub paths: IrPaths,
     /// The index in the form's body of the conjunct that each node of
     /// `clause` compiles, by the node's index.
     pub conjuncts: Box<[u32]>,
@@ -460,8 +499,8 @@ pub struct CompiledBody {
 pub fn compile_body(program: &CheckedProgram, clause: &NodePath, kept: &[u32]) -> Result<CompiledBody, CompileFault> {
     let (body, body_path, columns) = form_body(program, clause);
     let conjuncts = kept.iter().map(|&index| (&body.conjuncts[index as usize], body_path.child(index))).collect();
-    let (compiled, of_node, columns) = compile_mapped(program, clause, None, conjuncts, &columns)?;
-    Ok(CompiledBody { clause: compiled, conjuncts: of_node.into_iter().map(|at| kept[at]).collect(), columns })
+    let mapped = compile_mapped(program, clause, None, conjuncts, &columns)?;
+    Ok(CompiledBody { clause: mapped.clause, paths: mapped.paths, conjuncts: mapped.of_node.into_iter().map(|at| kept[at]).collect(), columns: mapped.columns })
 }
 
 /// The IR of the bodies `bodies` of the `INIT` form at `instance`, each with
@@ -477,12 +516,22 @@ pub fn compile_instance_body(
     bodies: &[(&Body, NodePath)],
     columns: &[LabelId],
 ) -> Result<ClauseIr, CompileFault> {
+    compile_instance_pathed(program, instance, bodies, columns).map(|(clause, _)| clause)
+}
+
+/// [`compile_instance_body`], with the paths of the clause's nodes.
+pub fn compile_instance_pathed(
+    program: &CheckedProgram,
+    instance: &NodePath,
+    bodies: &[(&Body, NodePath)],
+    columns: &[LabelId],
+) -> Result<(ClauseIr, IrPaths), CompileFault> {
     compile_instance_conjuncts(program, instance, None, bodies, columns)
 }
 
 /// The IR of a keyed input's body at `instance`: the clause
 /// [`compile_instance_body`] gives, joined with `key`, the rows of the key
-/// clause at the key's labels `key_labels`, which are bound in the body, and
+/// clause with its paths at the key's labels `key_labels`, which are bound in the body, and
 /// are columns of the relation where `columns` holds them. A read in the body
 /// of an output of another `INIT` form keyed by columns among the key's, with
 /// no key site, joins on the key's labels, as `docs/arclog/arclog.md#instance`
@@ -490,10 +539,10 @@ pub fn compile_instance_body(
 pub fn compile_keyed_body(
     program: &CheckedProgram,
     instance: &NodePath,
-    key: (KeyRead, &[LabelId]),
+    key: (KeyRead, IrPaths, &[LabelId]),
     body: (&Body, NodePath),
     columns: &[LabelId],
-) -> Result<ClauseIr, CompileFault> {
+) -> Result<(ClauseIr, IrPaths), CompileFault> {
     compile_instance_conjuncts(program, instance, Some(key), &[body], columns)
 }
 
@@ -502,15 +551,15 @@ pub fn compile_keyed_body(
 fn compile_instance_conjuncts(
     program: &CheckedProgram,
     instance: &NodePath,
-    key: Option<(KeyRead, &[LabelId])>,
+    key: Option<(KeyRead, IrPaths, &[LabelId])>,
     bodies: &[(&Body, NodePath)],
     columns: &[LabelId],
-) -> Result<ClauseIr, CompileFault> {
+) -> Result<(ClauseIr, IrPaths), CompileFault> {
     let conjuncts = bodies
         .iter()
         .flat_map(|(body, path)| body.conjuncts.iter().zip(0u32..).map(|(conjunct, index)| (conjunct, path.child(index))))
         .collect();
-    compile_mapped(program, instance, key, conjuncts, columns).map(|(clause, _, _)| clause)
+    compile_mapped(program, instance, key, conjuncts, columns).map(|mapped| (mapped.clause, mapped.paths))
 }
 
 /// The types of the labels of the scope that holds the labels of the form
@@ -527,8 +576,18 @@ pub fn compile_safe(
     form: &NodePath,
     conjuncts: Vec<(&Conjunct, NodePath)>,
     columns: &[LabelId],
-) -> Result<ClauseIr, CompileFault> {
-    compile_mapped(program, form, None, conjuncts, columns).map(|(clause, _, _)| clause)
+) -> Result<(ClauseIr, IrPaths), CompileFault> {
+    compile_mapped(program, form, None, conjuncts, columns).map(|mapped| (mapped.clause, mapped.paths))
+}
+
+/// What [`compile_mapped`] gives.
+struct Mapped {
+    clause: ClauseIr,
+    paths: IrPaths,
+    /// The index in the conjuncts of the one that each node compiles.
+    of_node: Vec<usize>,
+    /// The label of each column of the clause.
+    columns: Box<[LabelId]>,
 }
 
 /// The IR of `conjuncts`, as [`compile_safe`] gives it, with the index in
@@ -538,15 +597,15 @@ pub fn compile_safe(
 fn compile_mapped(
     program: &CheckedProgram,
     form: &NodePath,
-    key: Option<(KeyRead, &[LabelId])>,
+    key: Option<(KeyRead, IrPaths, &[LabelId])>,
     conjuncts: Vec<(&Conjunct, NodePath)>,
     columns: &[LabelId],
-) -> Result<(ClauseIr, Vec<usize>, Box<[LabelId]>), CompileFault> {
+) -> Result<Mapped, CompileFault> {
     let scope = scope_of(program, form);
     let types = form_types(program, &scope);
     let subset = Body { conjuncts: conjuncts.iter().map(|(conjunct, _)| (*conjunct).clone()).collect() };
     let registry = Registry::get();
-    let key_labels: &[LabelId] = key.as_ref().map_or(&[], |(_, labels)| labels);
+    let key_labels: &[LabelId] = key.as_ref().map_or(&[], |(_, _, labels)| labels);
     let bound = crate::safety::bound_labels(
         &subset.conjuncts.iter().collect::<Vec<_>>(),
         &key_labels.iter().copied().collect(),
@@ -561,7 +620,7 @@ fn compile_mapped(
         unbound_labels.sort_by_key(|label| label.0);
         return Err(CompileFault::Unbound { labels: unbound_labels.into() });
     }
-    let key_scope = key.as_ref().and_then(|(_, labels)| {
+    let key_scope = key.as_ref().and_then(|(_, _, labels)| {
         let root = NodeRef::Program(program.program.program.value());
         let (read_key, _) = crate::resolver::column_sources::key_clause(node_at(root, form)?)?;
         let fields = read_key.columns.iter().filter(|column| labels.contains(&column.label)).map(|column| (column.name.clone(), column.label));
@@ -574,9 +633,9 @@ fn compile_mapped(
     };
     let mut builder = IrBuilder::new(program, scope, Rc::new(compiled))?;
     let mut of_node = Vec::new();
-    if let Some((read, labels)) = key {
+    if let Some((read, key_paths, labels)) = key {
         let arguments = labels.iter().zip(0u16..).map(|(&label, column)| (ColumnIndex(column), Argument::Variable(builder.variable(label)))).collect();
-        builder.push(IrNode::Atom(RelationAtom { source: AtomSource::Key(Box::new(read)), arguments: Arguments(arguments) }));
+        builder.push(IrNode::Atom(RelationAtom { source: AtomSource::Key(Box::new(read)), arguments: Arguments(arguments) }), NodePaths::Key(Box::new(key_paths)));
         of_node.push(0);
     }
     for (at, (conjunct, path)) in conjuncts.iter().enumerate() {
@@ -584,8 +643,9 @@ fn compile_mapped(
         of_node.resize(builder.nodes.len(), at);
     }
     let labels: Box<[LabelId]> = columns.iter().copied().filter(|label| held.contains(label)).collect();
-    let columns = labels.iter().map(|&label| builder.variable(label)).collect();
-    Ok((builder.finish(columns), of_node, labels))
+    let column_variables = labels.iter().map(|&label| builder.variable(label)).collect();
+    let (clause, paths) = builder.finish(column_variables);
+    Ok(Mapped { clause, paths, of_node, columns: labels })
 }
 
 /// The IR of the clause at `clause`, a form of `program`: the clause's body,

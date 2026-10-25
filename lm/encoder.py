@@ -11,7 +11,7 @@ action; norms and nonlinearities act per position.
 
 Tables. `load_tables` reads a tables export (engine/arclog-py/tables_export.py) into per-case lists of `Table`, the relation
 tables in stream order, and caches them in a pickle. The evidence tables `ex_input` and `ex_output` are built from
-the task file where the export holds none, and stand first, after the start token.
+the task file where the export holds none, and stand first, after the start token. A change to this module, or to the engine code that writes the export's files (`engine/arclog/src/eval/flows.rs`, `engine/arclog/src/decode/`), runs `engine/arclog-py/roundtrip_check.py` with an `arclog` built from its tree before its merge.
 """
 import bisect, json, math, os, pickle, re
 from pathlib import Path
@@ -322,7 +322,7 @@ def unseen_table(t, reason, unseen_entries=None, prov=None):
                  positions=keep, types=[types[i] for i in keep],
                  cells=np.zeros((0, sum(width(types[i]) for i in keep)), np.int32),
                  present=np.zeros((0, len(keep)), bool), example=np.zeros(0, np.int16),
-                 example_kind=np.zeros(0, np.int8), assignment=np.zeros((0, 0), np.int32), model=np.zeros(0, np.int32),
+                 example_kind=np.zeros(0, np.int8), assignment=np.zeros((0, len(t["det_relations"])), np.int32), model=np.zeros(0, np.int32),
                  entry=np.zeros(0, np.int32), part=np.zeros(0, np.int32), marker=np.zeros(0, bool),
                  unseen_entries=unseen_entries or {}, largest=0, export_table=int(t["table"]),
                  det_relations=list(t["det_relations"]))
@@ -826,7 +826,7 @@ def table_groups(tables):
     return out
 
 
-LOADER_VERSION = 17  # raise on any change to parse_tables or Table
+LOADER_VERSION = 18  # raise on any change to parse_tables or Table
 
 
 def table_stamp(tables_dir):
@@ -841,19 +841,12 @@ def table_stamp(tables_dir):
 
 
 def export_violations(tables_dir):
-    """The lines of the export's checks.txt that report a violation, or None where the export has no checks.txt.
-    Its last line is the count of each invariant, and each line before it a violated invariant: so every line
-    before the last reports a violation, and the last does where a count on it is not 0, or where it gives no
-    count, which also covers an empty file."""
+    """The lines of the export's checks.txt, or None where the export has no checks.txt. The export writes one line
+    per violation and nothing else, so each non-empty line reports a violation, and an empty file reports none."""
     path = Path(tables_dir) / "checks.txt"
     if not path.exists():
         return None
-    lines = [x.strip() for x in open(path).read().splitlines() if x.strip()]
-    if not lines:
-        return ["checks.txt holds no line"]
-    last = lines[-1]
-    counts = re.findall(r"[:=]\s*(\d+)\b", last) or re.findall(r"(?<![\w.])(\d+)(?![\w.])", last)
-    return lines[:-1] + ([last] if not counts or any(int(n) for n in counts) else [])
+    return [x.strip() for x in open(path).read().splitlines() if x.strip()]
 
 
 def copy_flow_rule(stats, strict, where):

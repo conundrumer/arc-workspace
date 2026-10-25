@@ -22,6 +22,11 @@ its name, `{Key}`, `{T}`, as the instance's type arguments:
   rows only to bind the key in Souffle. The lowering leaves out of such an
   input, where it reads no key label, each atom that shares no variable with
   the rest of the clause.
+- `pairs`: each positive and negated pattern atom, with the text that takes
+  the place of both where a conjunction reads both of one instance with
+  equal terms at the variables the patterns share, or with any key terms
+  where the instance's key type is `Unit`. The text is formatted and
+  lowered as a `reads` entry is.
 
 A pattern's variables are distinct, so a site always matches it, and the
 replacement takes each pattern variable's term at the site. A read of a
@@ -58,6 +63,7 @@ class Spec:
     derive: frozenset[str] = frozenset()   # inputs the shape reads through `{x}_<input>` even where one atom would do
     moved: dict[str, str] = field(default_factory=dict)   # each relation of the instance, by the shape's relation
     grounded: frozenset[str] = frozenset()   # inputs whose shape clause reads the key's `dir` or `axis` rows only to bind the key
+    pairs: tuple[tuple[str, str, str], ...] = ()   # each pair of reads, a positive pattern, a negated pattern and the text that replaces both
 
 
 def _parse(text: str) -> SouffleProgram:
@@ -603,49 +609,94 @@ class Expander:
             m = match(pat, a)
             if m is None:
                 continue
-            body = self.lib_names(_parse(f"x__(0) :- {self.fmt(r, inst)}.").units[0].body or (), inst)
-            taken = set(term_vars((u.head, u.body), []))
-            for v in term_vars(body, []):
-                if v not in m:
-                    n, w = 2, v
-                    while w in taken:
-                        w, n = f"{v}_{n}", n + 1
-                    taken.add(w)
-                    m[v] = Variable(w)
-            path = a.relation.instances
-            uses: dict[str, int] = {}
-            for v in term_vars(body, []):
-                uses[v] = sum(1 for x in _vars_all(body) if x == v)
-            for v, t in list(m.items()):
-                if isinstance(t, Wildcard) and uses.get(v, 0) > 1 and len(body) > 1:
-                    # one unread column the shape's literals join on
-                    n, w = 2, v
-                    while w in taken:
-                        w, n = f"{v}_{n}", n + 1
-                    taken.add(w)
-                    m[v] = Variable(w)
-
-            def fix(b: Atom) -> Atom:
-                name = b.relation.name
-                if name.startswith("in_") and not b.relation.instances:
-                    cs = self.inputs_of[key].get(name[3:], [])
-                    if _one_atom(cs):   # the input's one atom, at the read
-                        c = cs[0]
-                        mm = {x.name: subst(y, m, False) for x, y in zip(c.head.args, b.args)
-                              if isinstance(x, Variable)}
-                        inner = _body_atom(c)
-                        rel = inner.relation
-                        if path[:-1] and (rel.instances or not (rel.name in self.lib.top or rel.name in self.sig_top)):
-                            rel = RelationName(path[:-1] + rel.instances, rel.name)   # read from outside its scope
-                        return Atom(rel, subst(inner.args, mm, False), a.line)
-                    name = self.derived(inst, name[3:], cs, self.rels)
-                    return Atom(RelationName(path[:-1], name), subst(b.args, m, False), a.line)
-                if b.relation.instances or name.startswith(f"{inst.name}_"):
-                    return Atom(RelationName(path[:-1] + b.relation.instances, name), subst(b.args, m, False), a.line)
-                return Atom(b.relation, subst(b.args, m, False), a.line)
-            return tuple(subst(lit, m, False) if not isinstance(lit, AtomLiteral) else
-                         AtomLiteral(fix(lit.atom), lit.negated) for lit in body)
+            return self.lowered(u, a, inst, m, r)
         return None
+
+    def lowered(self, u: Unit, a: Atom, inst, m: dict, r: str) -> tuple:
+        """The literals of the reading text `r` at the read `a`, with `m` the
+        term at the site of each pattern variable, extended by a fresh
+        variable for each other variable of `r`."""
+        key = (inst.scope.components, inst.name)
+        body = self.lib_names(_parse(f"x__(0) :- {self.fmt(r, inst)}.").units[0].body or (), inst)
+        taken = set(term_vars((u.head, u.body), []))
+        for v in term_vars(body, []):
+            if v not in m:
+                n, w = 2, v
+                while w in taken:
+                    w, n = f"{v}_{n}", n + 1
+                taken.add(w)
+                m[v] = Variable(w)
+        path = a.relation.instances
+        uses: dict[str, int] = {}
+        for v in term_vars(body, []):
+            uses[v] = sum(1 for x in _vars_all(body) if x == v)
+        for v, t in list(m.items()):
+            if isinstance(t, Wildcard) and uses.get(v, 0) > 1 and len(body) > 1:
+                # one unread column the shape's literals join on
+                n, w = 2, v
+                while w in taken:
+                    w, n = f"{v}_{n}", n + 1
+                taken.add(w)
+                m[v] = Variable(w)
+
+        def fix(b: Atom) -> Atom:
+            name = b.relation.name
+            if name.startswith("in_") and not b.relation.instances:
+                cs = self.inputs_of[key].get(name[3:], [])
+                if _one_atom(cs):   # the input's one atom, at the read
+                    c = cs[0]
+                    mm = {x.name: subst(y, m, False) for x, y in zip(c.head.args, b.args)
+                          if isinstance(x, Variable)}
+                    inner = _body_atom(c)
+                    rel = inner.relation
+                    if path[:-1] and (rel.instances or not (rel.name in self.lib.top or rel.name in self.sig_top)):
+                        rel = RelationName(path[:-1] + rel.instances, rel.name)   # read from outside its scope
+                    return Atom(rel, subst(inner.args, mm, False), a.line)
+                name = self.derived(inst, name[3:], cs, self.rels)
+                return Atom(RelationName(path[:-1], name), subst(b.args, m, False), a.line)
+            if b.relation.instances or name.startswith(f"{inst.name}_"):
+                return Atom(RelationName(path[:-1] + b.relation.instances, name), subst(b.args, m, False), a.line)
+            return Atom(b.relation, subst(b.args, m, False), a.line)
+        return tuple(subst(lit, m, False) if not isinstance(lit, AtomLiteral) else
+                     AtomLiteral(fix(lit.atom), lit.negated) for lit in body)
+
+    def paired(self, u: Unit, body: tuple, plans) -> dict[int, tuple[int, tuple]]:
+        """For each positive read in `body` that a spec's pair covers, the
+        index of the pair's literal to leave out and the literals that take
+        both places; the pair is a positive and a negated read of one
+        instance whose terms at the pair's shared variables are equal, with
+        any key terms where the instance's key type is `Unit`."""
+        out: dict[int, tuple[int, tuple]] = {}
+        gone: set[int] = set()
+        for i, lit in enumerate(body):
+            if not isinstance(lit, AtomLiteral) or lit.negated:
+                continue
+            t = self.target(u, lit.atom, plans)
+            if t is None:
+                continue
+            inst, spec = t
+            for pos, neg, r in spec.pairs:
+                ppat, npat = _atom(self.fmt(pos, inst)), _atom(self.fmt(neg, inst))
+                m = match(ppat, lit.atom) if ppat.relation.name == lit.atom.relation.name else None
+                if m is None:
+                    continue
+                for j, other in enumerate(body):
+                    if j in gone or not isinstance(other, AtomLiteral) or not other.negated \
+                            or other.atom.relation.instances != lit.atom.relation.instances \
+                            or other.atom.relation.name != npat.relation.name:
+                        continue
+                    n = match(npat, other.atom)
+                    if n is None:
+                        continue
+                    unit_key = inst.type_args[0].text == "Unit"
+                    shared = [v for v in n if v in m and not (v == "Ky" and unit_key)]
+                    if all(n[v] == m[v] and not isinstance(m[v], Wildcard) for v in shared):
+                        out[i] = (j, self.lowered(u, lit.atom, inst, m, r))
+                        gone.add(j)
+                        break
+                if i in out:
+                    break
+        return out
 
     def output(self, inst, spec, a: Atom, u: Unit) -> Atom:
         """The atom of a relation derived in place of an output whose read
@@ -733,7 +784,14 @@ class Expander:
 
         def lits(body: tuple) -> tuple:
             out = []
-            for lit in body:
+            pairs = self.paired(u, body, plans)
+            dropped = {j for j, _ in pairs.values()}
+            for i, lit in enumerate(body):
+                if i in dropped:
+                    continue
+                if i in pairs:
+                    out.extend(pairs[i][1])
+                    continue
                 if isinstance(lit, Disjunction):
                     out.append(Disjunction(tuple(lits(b) for b in lit.branches), lit.line))
                     continue
