@@ -16,6 +16,7 @@
 //! relations alone. Each export of a union that no atom or comparison binds
 //! stands after the columns its branches read.
 
+use super::join::node_variables;
 use super::ir::{Argument, Arguments, ClauseIr, IrNode, Operand, Variable};
 use crate::program::ConstraintOp;
 use crate::registry::{AlgebraRelation, LibName, Registry};
@@ -44,10 +45,12 @@ pub struct RelationSizes(pub Box<[Option<u64>]>);
 /// from `clause`, so the order binds every variable that the clause
 /// binds.
 ///
-/// The variables ordered are those the clause's atoms, comparisons and
-/// unions bind; a variable that stands only in a filter's body is the
-/// filter's own. A variable that an `=` binds from another stands directly
-/// after that other, as an algebra relation's output does.
+/// The order holds each variable that a node of the clause holds
+/// ([`node_variables`]), other than `outer`'s, and a variable that no node
+/// binds stands after the ones that nodes bind; a variable that stands only
+/// in a filter's body is the filter's own. A variable that an `=` binds from
+/// another stands directly after that other, as an algebra relation's output
+/// does.
 ///
 /// `outer` holds the variables of `clause` that its caller binds before the
 /// join. They count as bound, so the inputs of a mode they satisfy are
@@ -136,6 +139,14 @@ pub fn variable_order(clause: &ClauseIr, sizes: &RelationSizes, outer: &[Variabl
         follow(&mut placed, &mut order, &mut place);
     }
     for variable in (0..count).filter(|&v| bound[v]).map(|v| Variable(v as u16)) {
+        place(variable, &mut placed, &mut order);
+        follow(&mut placed, &mut order, &mut place);
+    }
+    let mut held = vec![false; count];
+    for variable in clause.nodes.iter().flat_map(node_variables) {
+        held[usize::from(variable.0)] = true;
+    }
+    for variable in (0..count).filter(|&v| held[v]).map(|v| Variable(v as u16)) {
         place(variable, &mut placed, &mut order);
         follow(&mut placed, &mut order, &mut place);
     }
