@@ -43,7 +43,7 @@ The step ends when the concept case of each solver, at the stored `param` record
 
 ### Per-example relations
 
-- A `RULE` relation is evaluated per example, and its entry reads that example's `input`. Its lifted form, as [Program](../../docs/arclog/arclog.md#program) gives, is an entry that unions the per-example entries, with the Example column first. Where a per-example entry is `undefined` or stopped, the lifted form is too.
+- A `RULE` relation is evaluated per example, and its entry reads that example's `input`. Its lifted form, as [Program](../../docs/arclog/arclog.md#program) gives, is an entry that unions the per-example entries, with the Example column first. Where a per-example entry on an example the read reads is `undefined` or stopped, the lifted form is too. A read reads all the examples, or the train examples alone at a read that [Program](../../docs/arclog/arclog.md#program) gives.
 - A `DET` relation reads what [Program](../../docs/arclog/arclog.md#program) lets it read, and its entry's key holds the ids of `ex_input` and `ex_output` where it reads them.
 - The checker decides for each relation whether it has an Example column, from its reads and its key.
 

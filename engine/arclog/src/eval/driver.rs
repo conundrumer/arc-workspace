@@ -514,7 +514,7 @@ impl<'e, 'a> Driver<'e, 'a> {
                             RelationValue::Rows(relation) => relation,
                             other => return Ok(Err(other)),
                         },
-                        AtomSource::Relation(read) => match self.read(read, scope, example)? {
+                        AtomSource::Relation(read) => match self.read(read, scope, example, atom.train_only)? {
                             RelationValue::Rows(relation) => relation,
                             other => return Ok(Err(other)),
                         },
@@ -544,13 +544,18 @@ impl<'e, 'a> Driver<'e, 'a> {
     /// The value of `relation` as a clause of `scope` on `example` reads it:
     /// a task-wide relation once, a relation per example on the clause's
     /// own example, or, from a task-wide clause, in its lifted form.
-    fn read(&self, relation: &GraphRelation, scope: ExampleScope, example: Option<Example>) -> Outcome<RelationValue> {
+    ///
+    /// A lifted read with `train_only` lifts over the train examples alone,
+    /// so its value is defined wherever the relation is defined on each of
+    /// them, whatever its entry on a test example.
+    fn read(&self, relation: &GraphRelation, scope: ExampleScope, example: Option<Example>, train_only: bool) -> Outcome<RelationValue> {
         match (examples::scope_of(self.evaluation.program, relation), scope) {
             (ExampleScope::TaskWide, _) => self.value(relation, None),
             (ExampleScope::PerExample, ExampleScope::PerExample) => self.value(relation, example),
             (ExampleScope::PerExample, ExampleScope::TaskWide) => {
-                let per_example: Outcome<Vec<(Example, RelationValue)>> =
-                    self.evaluation.task.examples().map(|e| Ok((e, self.value(relation, Some(e))?))).collect();
+                let task = &self.evaluation.task;
+                let lifted_over: Vec<Example> = if train_only { task.train_examples().collect() } else { task.examples().collect() };
+                let per_example: Outcome<Vec<(Example, RelationValue)>> = lifted_over.into_iter().map(|e| Ok((e, self.value(relation, Some(e))?))).collect();
                 Ok(examples::lift(&per_example?))
             }
         }

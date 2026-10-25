@@ -122,6 +122,8 @@ struct Builder<'a> {
     proposer_columns: StableHashMap<(NodePath, usize), Box<[ColumnName]>>,
     /// The path of each read that its form reads in its lifted form.
     lifted: StableHashSet<NodePath>,
+    /// The path of each lifted read that reads the train examples alone.
+    train_lifted: StableHashSet<NodePath>,
     diagnostics: Vec<Diagnostic>,
     /// For a layered resolution, the resolution of the forms before the
     /// last, whose nodes come first in every per-node list below, with
@@ -169,6 +171,7 @@ impl<'a> Builder<'a> {
             groups: StableHashMap::default(),
             proposer_columns: StableHashMap::default(),
             lifted: StableHashSet::default(),
+            train_lifted: StableHashSet::default(),
             diagnostics: Vec::new(),
             earlier: None,
             shared_node: false,

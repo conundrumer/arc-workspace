@@ -90,7 +90,7 @@ pub fn case_stream(case: &ResolvedCase, concept: bool, checked: &CheckedProgram,
     if concept || case.case.concept_determinations().is_empty() {
         return written(checked);
     }
-    let resolved = std::sync::Arc::new(resolve(&case.case.program, None, &SolverScope::default(), Registry::get()).value);
+    let resolved = std::sync::Arc::new(resolve(case.case.program_alone(), None, &SolverScope::default(), Registry::get()).value);
     let clauses = SolverClauses::of_shared_program(std::sync::Arc::clone(&resolved));
     let alone = check_shared_program(resolved, &clauses, Registry::get(), &mut CheckCache::default()).map_err(|refusals| {
         let messages: Vec<&str> = refusals.iter().map(|d| &*d.message).collect();

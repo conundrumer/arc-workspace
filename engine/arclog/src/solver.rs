@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use crate::program::{
     written_inputs, Alt, Alts, AltsName, Block, Arcdata, Body, Clause, ClauseKeyword, ColumnName, DeclaredName, DemoRule, Demonstrated, DemonstratedPart, Form, Instance,
-    InstanceInput, InstanceName, KeyClause, Node, OutputOwner, OutputStep, PortName, Program, ProgramRelation, RelationName, RelationRef, RigidDetName,
+    InstanceInput, InstanceName, KeyBody, KeyClause, LabelId, LabelUse, Atom, Choose, Conjunct, FactRelation, Negated, Node, OutputOwner, OutputStep, PortName, Program, ProgramRelation, RelationColumn, RelationName, RelationRef, RigidDet, RigidDetName, RuleForms, Site, SiteArg, SiteValue,
 };
 
 /// A solver read from its two files: the claims, the tree of alts, the
@@ -86,6 +86,10 @@ pub struct Case {
     /// the form's path in the file.
     origins: StableHashMap<NodePath, (FileOwner, NodePath)>,
     concept_determinations: Box<[NodePath]>,
+    /// The program with each concept determination that reads the relation of
+    /// a stored `RULE_OR_DET` line that has a body reading that line's helper
+    /// (`stored_reading`), where the case has one.
+    alone: Option<Node<Program>>,
 }
 
 impl Case {
@@ -95,6 +99,15 @@ impl Case {
     /// program's derivation in every case.
     pub fn concept_determinations(&self) -> &[NodePath] {
         &self.concept_determinations
+    }
+
+    /// The case program as it reads when it stands alone, with no concept
+    /// program to take a `DET` from: a `DET` of the concept program that reads
+    /// the relation of a `RULE_OR_DET` line at its stored reading reads the
+    /// derivation of the line's body, the line's helper, as the concept program
+    /// reads it. It is the case program where no such `DET` stands.
+    pub fn program_alone(&self) -> &Node<Program> {
+        self.alone.as_ref().unwrap_or(&self.program)
     }
 
     /// The arclog file that holds the node at `path` of the case program,
@@ -228,7 +241,8 @@ impl Solver {
             return Err(UnknownCase { name });
         }
         let mut other_readings = StableHashSet::default();
-        let mut placed: Vec<Option<Placed>> = walk.placed.iter().cloned().map(Some).collect();
+        let mut placed: Vec<Vec<Placed>> = walk.placed.iter().cloned().map(|p| vec![p]).collect();
+        let mut stored = Vec::new();
         for (index, p) in walk.placed.iter().enumerate() {
             let Some(line) = line_of(&p.form) else { continue };
             let all = readings(line);
@@ -238,13 +252,59 @@ impl Solver {
             }
             let port = port_of(line, &walk.placed);
             placed[index] = match (port, reading) {
-                (Some(_), Reading::Derived(_)) if line.proposers.is_empty() => None,
-                _ => Some(Placed { form: Form::Clause(Node::new(read_as(line, *reading))), ..p.clone() }),
+                (Some(_), Reading::Derived(_)) if line.proposers.is_empty() => Vec::new(),
+                _ => vec![Placed { form: Form::Clause(Node::new(read_as(line, *reading))), ..p.clone() }],
             };
-            if let (Some(Port { instance, name, input: true }), Reading::Stored) = (port, reading) {
-                if let Some(Placed { form: Form::Instance(form), .. }) = &mut placed[instance] {
+            if line.keyword == ClauseKeyword::RuleOrDet && *reading == Reading::Stored {
+                stored.push((index, line, port));
+            } else if let (Some(Port { instance, name, input: true }), Reading::Stored) = (port, reading) {
+                if let Some(Placed { form: Form::Instance(form), .. }) = placed[instance].first_mut() {
                     *form = Node::new(without_input(form.value(), name));
                 }
+            }
+        }
+        let concept_determination = |p: &Placed| p.depth == 0 && is_det(&p.form) && !other_readings.contains(&p.step);
+        let mut helpers = Vec::new();
+        if !stored.is_empty() {
+            let mut used = self.declared_names();
+            let read_columns = self.read_columns();
+            for (index, line, port) in stored {
+                let original = walk.placed[index].clone();
+                // The instance's `INIT` form as it stood before `without_input`.
+                let instance = port.and_then(|port| match &walk.placed[port.instance].form {
+                    Form::Instance(instance) => Some(instance.value()),
+                    _ => None,
+                });
+                let others: Vec<&Placed> = placed.iter().flatten().filter(|p| !concept_determination(p)).collect();
+                let reading = stored_reading(line, port, instance, &others, read_columns.get(&line.derives).map_or(&[], |columns| columns), &mut used);
+                let Some(reading) = reading else {
+                    if let Some(Port { instance, name, input: true }) = port {
+                        if let Some(Placed { form: Form::Instance(form), .. }) = placed[instance].first_mut() {
+                            *form = Node::new(without_input(form.value(), name));
+                        }
+                    }
+                    continue;
+                };
+                if let (Some(Port { instance, name, .. }), Some(body)) = (port, &reading.input) {
+                    if let Some(Placed { form: Form::Instance(form), .. }) = placed[instance].first_mut() {
+                        *form = Node::new(with_input_body(form.value(), name, body));
+                    }
+                }
+                if let Some(rename) = &reading.rename {
+                    for forms in placed.iter_mut() {
+                        for p in forms.iter_mut() {
+                            if !concept_determination(p) {
+                                if let Some(form) = map_atoms(&p.form, &|atom| rename.of(atom)) {
+                                    p.form = form;
+                                }
+                            }
+                        }
+                    }
+                }
+                if let Some(helper) = reading.helper {
+                    helpers.push(helper);
+                }
+                placed[index] = reading.forms.into_iter().map(|form| Placed { form, ..original.clone() }).collect();
             }
         }
         let placed: Vec<Placed> = placed.into_iter().flatten().collect();
@@ -255,7 +315,7 @@ impl Solver {
         for taken in taken {
             let p = taken.placed;
             let path = NodePath::top(forms.len() as u32);
-            if p.depth == 0 && is_det(&p.form) && !other_readings.contains(&p.step) {
+            if concept_determination(p) {
                 concept_determinations.push(path.clone());
             }
             let (form, below) = taken.form();
@@ -263,12 +323,49 @@ impl Solver {
             origins.insert(path, (p.owner, p.path.clone()));
             forms.push(form);
         }
+        let alone = if helpers.is_empty() {
+            None
+        } else {
+            let mut alone = forms.clone();
+            let mut changed = false;
+            for path in &concept_determinations {
+                let at = path.0[0].0 as usize;
+                for helper in &helpers {
+                    if let Some(form) = map_atoms(&alone[at], &|atom| helper.of(atom)) {
+                        alone[at] = form;
+                        changed = true;
+                    }
+                }
+            }
+            changed.then(|| Node::new(Program { forms: alone.into() }))
+        };
         Ok(Case {
             name,
             program: Node::new(Program { forms: forms.into() }),
             origins,
             concept_determinations: concept_determinations.into(),
+            alone,
         })
+    }
+
+    /// The names of the relations that any form of the solver declares or
+    /// reads, which a name made fresh avoids.
+    fn declared_names(&self) -> StableHashSet<Box<str>> {
+        let mut names = StableHashSet::default();
+        let claims = self.representative_claims().map(|(_, form)| form);
+        for form in self.program.value().forms.iter().chain(claims) {
+            each_form(form, false, &mut |form, _| {
+                if let Some(Derives::Relation(ProgramRelation::Declared(RelationName(DeclaredName::Written(name))))) = derives(form) {
+                    names.insert(name);
+                }
+                each_read(NodeRef::from(form), &mut |read| {
+                    if let RelationRef::Declared(RelationName(DeclaredName::Written(name))) = read {
+                        names.insert(name.clone());
+                    }
+                });
+            });
+        }
+        names
     }
 
     /// What every case of the solver resolves against, as
@@ -560,6 +657,19 @@ fn without_input(instance: &Instance, port: &PortName) -> Instance {
     Instance { key, inputs: kept(&instance.inputs), ..instance.clone() }
 }
 
+/// `instance` with the body of its input `port` replaced by `body`, of its
+/// key clause's inputs or of its own.
+fn with_input_body(instance: &Instance, port: &PortName, body: &Node<Body>) -> Instance {
+    let replaced = |inputs: &Arc<[Node<InstanceInput>]>| -> Arc<[Node<InstanceInput>]> {
+        inputs
+            .iter()
+            .map(|input| if input.value().name == *port { Node::new(InstanceInput { body: body.clone(), ..input.value().clone() }) } else { input.clone() })
+            .collect()
+    };
+    let key = instance.key.as_ref().map(|key| Node::new(KeyClause { inputs: replaced(&key.value().inputs), ..key.value().clone() }));
+    Instance { key, inputs: replaced(&instance.inputs), ..instance.clone() }
+}
+
 /// The alt names of an `ALTS` form: the concept case's, then each alt's
 /// that is another.
 fn alt_names(alts: &Alts) -> impl Iterator<Item = &AltsName> {
@@ -668,6 +778,385 @@ fn read_as(line: &Clause, reading: Reading) -> Clause {
     // proposer declares the columns.
     let columns = if body.value().conjuncts.is_empty() && !proposers.is_empty() { Arc::from([]) } else { line.columns.clone() };
     Clause { keyword, proposers, body, columns, set: line.set && reading == Reading::Stored, ..line.clone() }
+}
+
+/// A read of one relation that a form reads as another, with its sites as
+/// they stand.
+struct Rename {
+    from: RelationRef,
+    to: RelationRef,
+    /// Whether an atom with a site on the Example column keeps reading
+    /// `from`.
+    keep_lifted: bool,
+}
+
+impl Rename {
+    /// The atom read as `to`, or `None` where `atom` reads other than `from`
+    /// or is kept.
+    fn of(&self, atom: &Atom) -> Option<Atom> {
+        let lifted = atom.sites.iter().any(|site| site.column == crate::resolver::columns::example());
+        (atom.relation == self.from && !(self.keep_lifted && lifted)).then(|| Atom { relation: self.to.clone(), sites: atom.sites.clone() })
+    }
+}
+
+/// The stored reading of a `RULE_OR_DET` line: its forms in place of the
+/// line's one clause, as `docs/arclog/arclog.md#the-alts-form` gives.
+struct StoredReading {
+    /// The helper `RULE` where the reading has one, then the `DET`.
+    forms: Vec<Form>,
+    /// The reads of the line's port, which the forms of the case other than
+    /// the concept determinations read as the `DET`.
+    rename: Option<Rename>,
+    /// The reads of the line's relation, which a concept determination reads
+    /// as the helper when the case program stands alone.
+    helper: Option<Rename>,
+    /// On an input port, the body that replaces the input's clause in the
+    /// instance: a read of the `DET`.
+    input: Option<Node<Body>>,
+}
+
+/// One column of the relation a stored reading's `DET` determines: its name,
+/// and the argument that stands at a site on it, whose label the site takes.
+struct StoredColumn {
+    name: ColumnName,
+    arg: SiteArg,
+}
+
+impl StoredColumn {
+    fn site(&self, label: LabelUse) -> Site {
+        let arg = match &self.arg {
+            SiteArg::NamedLabel { name, .. } => SiteArg::NamedLabel { name: name.clone(), label },
+            _ => SiteArg::Label(label),
+        };
+        Site { column: self.name.clone(), value: SiteValue { args: Arc::new([arg]) } }
+    }
+}
+
+/// The argument of a site that is one bare label, a fresh or joined one.
+fn single_label(site: &Site) -> Option<(&SiteArg, LabelId)> {
+    match &site.value.args[..] {
+        [arg @ (SiteArg::Label(LabelUse::Fresh(id) | LabelUse::Join(id)) | SiteArg::NamedLabel { label: LabelUse::Fresh(id) | LabelUse::Join(id), .. })] => Some((arg, *id)),
+        _ => None,
+    }
+}
+
+/// The stored reading of the `RULE_OR_DET` line `line`, which stands on
+/// `port` of `instance` where it has a port, or `None` where it holds no
+/// body and stands on no port, or where its derivation cannot stand by
+/// itself. `others` are the forms of the case that read the line's port. With
+/// `D` the derivation, a relation read with a site on each of its columns:
+///
+/// ```text
+/// (DET &r
+///   (ex_output (:E *Ex))
+///   (D (:E Ex) (:c *c) ...)
+///   (ALL ((ex_output (:E *Ex2)))
+///        ((D (:E Ex2) (:c c) ...))))
+/// ```
+///
+/// A line with a body has the helper `RULE` as `D`; a line on an input has a
+/// helper over the `INIT` form's clause of that input; a line on an output has
+/// the port as `D`, and the `DET` takes a name of its own. The `DET` of a line
+/// with a body has the columns of the line that a read of its relation names,
+/// `read`, the Example column left out (`docs/arclog/arclog.md#sites`); the
+/// helper has all of the line's.
+fn stored_reading(
+    line: &Clause,
+    port: Option<Port<'_>>,
+    instance: Option<&Instance>,
+    others: &[&Placed],
+    read: &[ColumnName],
+    used: &mut StableHashSet<Box<str>>,
+) -> Option<StoredReading> {
+    let relation = relation_of(&line.derives);
+    let text = relation_ref(&relation, crate::write::declared);
+    let fresh = |suffix: &str, used: &mut StableHashSet<Box<str>>| {
+        let base = format!("{}{suffix}", text.replace('.', "_"));
+        let mut name = base.clone();
+        let mut count = 1;
+        while used.contains(name.as_str()) {
+            count += 1;
+            name = format!("{base}{count}");
+        }
+        used.insert(name.as_str().into());
+        RelationName(DeclaredName::Written(name.into()))
+    };
+    let helper = |name: &RelationName, body: Node<Body>, columns: Arc<[RelationColumn]>| {
+        Form::Clause(Node::new(Clause {
+            keyword: ClauseKeyword::Rule,
+            derives: ProgramRelation::Declared(name.clone()),
+            gloss: None,
+            proposers: Arc::from([]),
+            body,
+            ones: Arc::from([]),
+            set: false,
+            columns,
+        }))
+    };
+    if !line.body.value().conjuncts.is_empty() {
+        let name = fresh("_derived", used);
+        let named = line.columns.iter().filter(|column| column.name != crate::resolver::columns::example() && read.contains(&column.name));
+        let columns = named.map(|column| StoredColumn { name: column.name.clone(), arg: SiteArg::Label(LabelUse::Zero) }).collect::<Vec<_>>();
+        let derivation = RelationRef::Declared(name.clone());
+        let forms = vec![helper(&name, line.body.clone(), line.columns.clone()), Form::Clause(Node::new(determination(line, &derivation, &columns)))];
+        return Some(StoredReading { forms, rename: None, helper: Some(Rename { from: relation, to: derivation, keep_lifted: false }), input: None });
+    }
+    let port = port?;
+    if port.input {
+        let instance = instance?;
+        let input = written_inputs(instance.key.as_ref(), &instance.inputs).find(|input| input.name == *port.name)?;
+        let mut heads = Vec::new();
+        for site in input.head.iter() {
+            let (arg, label) = single_label(site)?;
+            heads.push((label, StoredColumn { name: site.column.clone(), arg: arg.clone() }));
+        }
+        // The helper's columns are the labels its body makes, in order, and
+        // the `DET` reads the ones the head names, in that order.
+        let mut columns = Vec::new();
+        let mut labels = Vec::new();
+        let mut made = Vec::new();
+        let input_body = input.body.clone();
+        for (position, label) in crate::read::columns::made_labels(input.body.value()).into_iter().enumerate() {
+            match heads.iter().position(|(head, _)| *head == label) {
+                Some(at) => {
+                    let (_, column) = heads.remove(at);
+                    made.push(RelationColumn { name: column.name.clone(), label });
+                    columns.push(column);
+                    labels.push(label);
+                }
+                None => made.push(RelationColumn { name: ColumnName::Slot(position as u32), label }),
+            }
+        }
+        if !heads.is_empty() {
+            return None;
+        }
+        let name = fresh("_derived", used);
+        let derivation = RelationRef::Declared(name.clone());
+        let mut det = determination(line, &derivation, &columns);
+        let stored = fresh("_stored", used);
+        det.derives = ProgramRelation::Declared(stored.clone());
+        // The input then holds the rows of the `DET`: its clause reads it at
+        // the labels its head names.
+        let read = Atom {
+            relation: RelationRef::Declared(stored),
+            sites: columns.iter().zip(&labels).map(|(column, label)| column.site(LabelUse::Fresh(*label))).collect(),
+        };
+        let input = Node::new(Body { conjuncts: Arc::from([Conjunct::Atom(Node::new(read))]) });
+        let forms = vec![helper(&name, input_body, made.into()), Form::Clause(Node::new(det))];
+        return Some(StoredReading { forms, rename: None, helper: None, input: Some(input) });
+    }
+    let ProgramRelation::Output(_) = &line.derives else { return None };
+    let mut columns: Vec<StoredColumn> = Vec::new();
+    for placed in others {
+        let mut shapes_ok = true;
+        each_atom(NodeRef::from(&placed.form), &mut |atom| {
+            if atom.relation != relation || atom.sites.iter().any(|site| site.column == crate::resolver::columns::example()) {
+                return;
+            }
+            // A column new to `columns` stands after the column that precedes it
+            // in this read, so the columns keep the order of the port's.
+            let mut after: Option<ColumnName> = None;
+            for site in atom.sites.iter() {
+                let Some((arg, _)) = single_label(site) else {
+                    shapes_ok = false;
+                    continue;
+                };
+                if !columns.iter().any(|column| column.name == site.column) {
+                    let at = after.as_ref().and_then(|previous| columns.iter().position(|column| column.name == *previous)).map_or(0, |at| at + 1);
+                    columns.insert(at, StoredColumn { name: site.column.clone(), arg: arg.clone() });
+                }
+                after = Some(site.column.clone());
+            }
+        });
+        if !shapes_ok {
+            return None;
+        }
+    }
+    let name = fresh("_stored", used);
+    let det = RelationRef::Declared(name.clone());
+    let mut clause = determination(line, &relation, &columns);
+    clause.derives = ProgramRelation::Declared(name);
+    Some(StoredReading { forms: vec![Form::Clause(Node::new(clause))], rename: Some(Rename { from: relation, to: det, keep_lifted: true }), helper: None, input: None })
+}
+
+/// The `DET` of the line `line` that derives `line.derives` from the train
+/// examples' rows of `derivation`, read with a site on each of `columns`:
+/// the rows that `derivation` gives at every train example.
+fn determination(line: &Clause, derivation: &RelationRef, columns: &[StoredColumn]) -> Clause {
+    let count = columns.len() as u32;
+    let (ex, ex2) = (LabelId(count), LabelId(count + 1));
+    let example = |label: LabelUse| Site { column: crate::resolver::columns::example(), value: SiteValue { args: Arc::new([SiteArg::Label(label)]) } };
+    let ex_output = |label: LabelUse| Conjunct::Atom(Node::new(Atom { relation: RelationRef::Fact(FactRelation::ExOutput), sites: Arc::from([example(label)]) }));
+    let derivation_of = |at: LabelUse, make: &dyn Fn(u32) -> LabelUse| {
+        let sites = std::iter::once(example(at)).chain(columns.iter().zip(0u32..).map(|(column, index)| column.site(make(index))));
+        Conjunct::Atom(Node::new(Atom { relation: derivation.clone(), sites: sites.collect() }))
+    };
+    let body = |conjuncts: Vec<Conjunct>| Node::new(Body { conjuncts: conjuncts.into() });
+    let conjuncts = vec![
+        ex_output(LabelUse::Fresh(ex)),
+        derivation_of(LabelUse::Join(ex), &|index| LabelUse::Fresh(LabelId(index))),
+        Conjunct::All {
+            domain: body(vec![ex_output(LabelUse::Fresh(ex2))]),
+            body: body(vec![derivation_of(LabelUse::Join(ex2), &|index| LabelUse::Join(LabelId(index)))]),
+        },
+    ];
+    // The labels the body makes at its top level, in order, as the reader
+    // takes them: the Example label first. The columns a read names are the
+    // relation's; each other is existential.
+    let own = std::iter::once(RelationColumn { name: ColumnName::Written("Ex".into()), label: ex });
+    let made = own.chain(columns.iter().zip(0u32..).map(|(column, index)| RelationColumn { name: column.name.clone(), label: LabelId(index) }));
+    Clause {
+        keyword: ClauseKeyword::Det,
+        derives: line.derives.clone(),
+        gloss: line.gloss.clone(),
+        proposers: Arc::from([]),
+        body: body(conjuncts),
+        ones: Arc::from([]),
+        set: false,
+        columns: made.collect(),
+    }
+}
+
+/// `form` with each atom below it that `map` gives another atom for read as
+/// that atom, or `None` where `map` changes none. The columns of each clause
+/// and form stay as they are.
+fn map_atoms(form: &Form, map: &dyn Fn(&Atom) -> Option<Atom>) -> Option<Form> {
+    fn atom(node: &Node<Atom>, map: &dyn Fn(&Atom) -> Option<Atom>) -> Option<Node<Atom>> {
+        map(node.value()).map(Node::new)
+    }
+    fn conjunct(c: &Conjunct, map: &dyn Fn(&Atom) -> Option<Atom>) -> Option<Conjunct> {
+        match c {
+            Conjunct::Atom(a) => atom(a, map).map(Conjunct::Atom),
+            Conjunct::Not(Negated::Atom(a)) => atom(a, map).map(|a| Conjunct::Not(Negated::Atom(a))),
+            Conjunct::Not(Negated::Form(inner)) => conjunct(inner, map).map(|inner| Conjunct::Not(Negated::Form(Arc::new(inner)))),
+            Conjunct::Constraint(_) => None,
+            Conjunct::Or(branches) => bodies(branches, map).map(Conjunct::Or),
+            Conjunct::If { test, then, otherwise } => {
+                let parts = bodies(&[test.clone(), then.clone(), otherwise.clone()], map)?;
+                Some(Conjunct::If { test: parts[0].clone(), then: parts[1].clone(), otherwise: parts[2].clone() })
+            }
+            Conjunct::All { domain, body: inner } => {
+                let parts = bodies(&[domain.clone(), inner.clone()], map)?;
+                Some(Conjunct::All { domain: parts[0].clone(), body: parts[1].clone() })
+            }
+        }
+    }
+    fn body(node: &Node<Body>, map: &dyn Fn(&Atom) -> Option<Atom>) -> Option<Node<Body>> {
+        let changed: Vec<Option<Conjunct>> = node.value().conjuncts.iter().map(|c| conjunct(c, map)).collect();
+        if changed.iter().all(Option::is_none) {
+            return None;
+        }
+        let conjuncts = node.value().conjuncts.iter().zip(changed).map(|(old, new)| new.unwrap_or_else(|| old.clone())).collect();
+        Some(Node::new(Body { conjuncts }))
+    }
+    /// Each of `nodes`, the changed ones as changed, or `None` where none is.
+    fn bodies(nodes: &[Node<Body>], map: &dyn Fn(&Atom) -> Option<Atom>) -> Option<Arc<[Node<Body>]>> {
+        let changed: Vec<Option<Node<Body>>> = nodes.iter().map(|n| body(n, map)).collect();
+        if changed.iter().all(Option::is_none) {
+            return None;
+        }
+        Some(nodes.iter().zip(changed).map(|(old, new)| new.unwrap_or_else(|| old.clone())).collect())
+    }
+    fn key_body(key: &KeyBody, map: &dyn Fn(&Atom) -> Option<Atom>) -> Option<KeyBody> {
+        body(&key.body, map).map(|b| KeyBody { body: b, columns: key.columns.clone() })
+    }
+    fn input(node: &Node<InstanceInput>, map: &dyn Fn(&Atom) -> Option<Atom>) -> Option<Node<InstanceInput>> {
+        body(&node.value().body, map).map(|b| Node::new(InstanceInput { body: b, ..node.value().clone() }))
+    }
+    fn inputs(nodes: &Arc<[Node<InstanceInput>]>, map: &dyn Fn(&Atom) -> Option<Atom>) -> Option<Arc<[Node<InstanceInput>]>> {
+        let changed: Vec<Option<Node<InstanceInput>>> = nodes.iter().map(|n| input(n, map)).collect();
+        if changed.iter().all(Option::is_none) {
+            return None;
+        }
+        Some(nodes.iter().zip(changed).map(|(old, new)| new.unwrap_or_else(|| old.clone())).collect())
+    }
+    fn key_clause(key: &Option<Node<KeyClause>>, map: &dyn Fn(&Atom) -> Option<Atom>) -> Option<Option<Node<KeyClause>>> {
+        let node = key.as_ref()?;
+        let changed_body = key_body(&node.value().key, map);
+        let changed_inputs = inputs(&node.value().inputs, map);
+        if changed_body.is_none() && changed_inputs.is_none() {
+            return None;
+        }
+        Some(Some(Node::new(KeyClause {
+            key: changed_body.unwrap_or_else(|| node.value().key.clone()),
+            inputs: changed_inputs.unwrap_or_else(|| node.value().inputs.clone()),
+        })))
+    }
+    match form {
+        Form::Clause(clause) => body(&clause.value().body, map).map(|b| Form::Clause(Node::new(Clause { body: b, ..clause.value().clone() }))),
+        Form::Instance(instance) => {
+            let instance = instance.value();
+            let key = key_clause(&instance.key, map);
+            let own = inputs(&instance.inputs, map);
+            if key.is_none() && own.is_none() {
+                return None;
+            }
+            Some(Form::Instance(Node::new(Instance {
+                key: key.unwrap_or_else(|| instance.key.clone()),
+                inputs: own.unwrap_or_else(|| instance.inputs.clone()),
+                ..instance.clone()
+            })))
+        }
+        Form::Choose(choose) => {
+            let choose = choose.value();
+            let rows = choose.rows.as_ref().and_then(|rows| key_body(rows, map));
+            let from = body(&choose.from, map);
+            let never = bodies(&choose.never, map);
+            if rows.is_none() && from.is_none() && never.is_none() {
+                return None;
+            }
+            Some(Form::Choose(Node::new(Choose {
+                rows: rows.or_else(|| choose.rows.clone()),
+                from: from.unwrap_or_else(|| choose.from.clone()),
+                never: never.unwrap_or_else(|| choose.never.clone()),
+                ..choose.clone()
+            })))
+        }
+        Form::RigidDet(rigid) => {
+            let rigid = rigid.value();
+            let key = rigid.key.as_ref().and_then(|key| key_body(key, map));
+            let instance = rigid.instance.as_ref().and_then(|instance| key_body(instance, map));
+            let changed: Vec<Option<Node<Atom>>> = rigid.parts.iter().map(|part| atom(part, map)).collect();
+            if key.is_none() && instance.is_none() && changed.iter().all(Option::is_none) {
+                return None;
+            }
+            let parts = rigid.parts.iter().zip(changed).map(|(old, new)| new.unwrap_or_else(|| old.clone())).collect();
+            Some(Form::RigidDet(Node::new(RigidDet {
+                name: rigid.name.clone(),
+                key: key.or_else(|| rigid.key.clone()),
+                instance: instance.or_else(|| rigid.instance.clone()),
+                parts,
+            })))
+        }
+        Form::Demonstrated(demonstrated) => {
+            let demonstrated = demonstrated.value();
+            let key = key_clause(&demonstrated.key, map);
+            let own = inputs(&demonstrated.inputs, map);
+            let rules: Vec<Option<Node<DemoRule>>> = demonstrated
+                .rules
+                .iter()
+                .map(|rule| {
+                    let rule = rule.value();
+                    let forms: Vec<Option<Form>> = rule.forms.iter().map(|form| map_atoms(form, map)).collect();
+                    if forms.iter().all(Option::is_none) {
+                        return None;
+                    }
+                    let forms: RuleForms = rule.forms.iter().zip(forms).enumerate().map(|(index, (old, new))| (new.unwrap_or_else(|| old.clone()), rule.forms.from_alt(index))).collect();
+                    Some(Node::new(DemoRule { forms, ..rule.clone() }))
+                })
+                .collect();
+            if key.is_none() && own.is_none() && rules.iter().all(Option::is_none) {
+                return None;
+            }
+            Some(Form::Demonstrated(Node::new(Demonstrated {
+                name: demonstrated.name.clone(),
+                key: key.unwrap_or_else(|| demonstrated.key.clone()),
+                inputs: own.unwrap_or_else(|| demonstrated.inputs.clone()),
+                rules: demonstrated.rules.iter().zip(rules).map(|(old, new)| new.unwrap_or_else(|| old.clone())).collect(),
+            })))
+        }
+        Form::Claim(_) | Form::Alts(_) => None,
+    }
 }
 
 /// The relation, instance or rigid `DET` that a form derives. A case keeps,

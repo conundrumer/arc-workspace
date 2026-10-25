@@ -220,6 +220,11 @@ impl Task {
         (0..count).map(|index| Example::at(u16::try_from(index).expect("fewer than 2^16 examples in a task")))
     }
 
+    /// Each train example, in the file's order.
+    pub fn train_examples(&self) -> impl Iterator<Item = Example> + '_ {
+        (0..self.train.len()).map(|index| Example::at(u16::try_from(index).expect("fewer than 2^16 examples in a task")))
+    }
+
     /// The input grid of `example`.
     pub fn input(&self, example: Example) -> &Grid {
         let index = Term::Constant(Constant::Example(example)).encode().expect("an Example's term id").encoding() as usize;

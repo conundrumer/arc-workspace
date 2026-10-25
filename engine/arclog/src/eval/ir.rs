@@ -78,6 +78,9 @@ pub struct KeyRead {
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct RelationAtom {
     pub source: AtomSource,
+    /// Whether the atom is a lifted read of the train examples alone
+    /// ([`crate::resolver::ResolvedProgram::reads_train_examples`]).
+    pub train_only: bool,
     pub arguments: Arguments,
 }
 
@@ -296,7 +299,7 @@ impl<'a> IrBuilder<'a> {
         }
         let arguments = Arguments(arguments.into());
         if let RelationRef::Fact(fact) = &atom.relation {
-            return IrNode::Atom(RelationAtom { source: AtomSource::Fact(*fact), arguments });
+            return IrNode::Atom(RelationAtom { source: AtomSource::Fact(*fact), train_only: false, arguments });
         }
         let resolved = self.program.program.resolution(path).expect("a resolution of each atom of a checked form");
         let source = match resolved {
@@ -314,7 +317,7 @@ impl<'a> IrBuilder<'a> {
             Resolution::Undefined(relation) => AtomSource::Undefined(relation.clone()),
             Resolution::Unresolved => unreachable!("a checked form resolves each name it reads"),
         };
-        IrNode::Atom(RelationAtom { source, arguments })
+        IrNode::Atom(RelationAtom { source, train_only: self.program.program.reads_train_examples(path), arguments })
     }
 
     /// Adds to `arguments` the column and the argument of each label of the
@@ -577,7 +580,7 @@ fn compile_mapped(
     let mut of_node = Vec::new();
     if let Some((read, key_paths, labels)) = key {
         let arguments = labels.iter().zip(0u16..).map(|(&label, column)| (ColumnIndex(column), Argument::Variable(builder.variable(label)))).collect();
-        builder.push(IrNode::Atom(RelationAtom { source: AtomSource::Key(Box::new(read)), arguments: Arguments(arguments) }), NodePaths::Key(Box::new(key_paths)));
+        builder.push(IrNode::Atom(RelationAtom { source: AtomSource::Key(Box::new(read)), train_only: false, arguments: Arguments(arguments) }), NodePaths::Key(Box::new(key_paths)));
         of_node.push(0);
     }
     for (at, (conjunct, path)) in conjuncts.iter().enumerate() {

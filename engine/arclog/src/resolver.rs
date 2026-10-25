@@ -216,6 +216,10 @@ pub struct ResolvedProgram {
     proposer_columns: crate::hash::StableHashMap<(NodePath, usize), Box<[ColumnName]>>,
     /// The path of each read that its form reads in its lifted form.
     lifted: crate::hash::StableHashSet<NodePath>,
+    /// The path of each lifted read whose site on the Example column holds a
+    /// label that a positive `ex_output` atom binds, which reads the train
+    /// examples alone (`docs/arclog/arclog.md#program`).
+    train_lifted: crate::hash::StableHashSet<NodePath>,
     /// For each node of the graph this resolution gives, the column names
     /// that the sites of the reads of its relation name, for a `DET`
     /// parameter node that an atom reads, as [`build`] gives them.
@@ -442,6 +446,17 @@ impl ResolvedProgram {
         match self.earlier_of(read) {
             Some(earlier) => earlier.reads_lifted(read),
             None => self.lifted.contains(read),
+        }
+    }
+
+    /// Whether the read at `read` is a lifted read of the train examples
+    /// alone: its site on the Example column holds a label that a positive
+    /// `ex_output` atom of the read's conjunction, or of the guard of the
+    /// `ALL` form it stands in, binds.
+    pub fn reads_train_examples(&self, read: &NodePath) -> bool {
+        match self.earlier_of(read) {
+            Some(earlier) => earlier.reads_train_examples(read),
+            None => self.train_lifted.contains(read),
         }
     }
 
