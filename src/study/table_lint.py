@@ -413,21 +413,10 @@ def product_body(body: Body) -> str | None:
     )
 
 
-def apply_per_pair(body: Body) -> str | None:
-    """The rewrite of an `Agreement`'s `correspondence` that applies a D4 element to each cell pair."""
-    if of_port(body, ("Agreement",), "correspondence") and any(atom[0] == "apply" for atom in deep_atoms(body.items)):
-        return (
-            "The `correspondence` applies a D4 element with `apply` to each pair of cells: "
-            "the table holds nothing the D4 elements do not. Agreement has no form that takes them yet."
-        )
-    return None
-
-
 FORMS: tuple[tuple[Derivation, Callable[[Body], str | None]], ...] = (
     (Derivation.CELL_INSTANCE, cell_instance),
     (Derivation.PRODUCT, product_body),
     (Derivation.ORDER_OR_CLASS, comparison_edge),
-    (Derivation.LIB_RELATION, apply_per_pair),
 )
 """The tests that read no rows, in the table's order, each by the form of the
 clauses that make the relation, and each giving the rewrite of a body that has it."""

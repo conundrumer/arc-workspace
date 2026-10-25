@@ -88,12 +88,6 @@ def test_pairs_of_cells_that_a_lib_relation_reads_are_a_lib_relation(tmp_path: P
     assert got["&s"].startswith("50 lib relation per pair ")
 
 
-def test_an_agreement_correspondence_that_applies_a_d4_element_is_a_lib_relation(tmp_path: Path):
-    arclog = "(INIT &m Agreement (correspondence ((:m D) (:i P) (:j Q)) (&cell *P) (d4_elem *D) (apply D (:P P) (:P_out *Q))))"
-    got = lint(tmp_path, arclog, {"&m.correspondence": "stopped:rows:5"})
-    assert got["&m.correspondence"].startswith("stopped:rows:5 lib relation per pair ")
-
-
 def test_the_output_and_a_relation_the_decode_gives_no_table_are_not_flagged():
     text = "".join(
         f"{SOLVER} train/0 {name} 5000\n"

@@ -206,14 +206,13 @@ def gravity(inst, ex):
 
 
 def d4_map(inst, ex):
-    return Spec(".init {x} = Agreement<{Key}, D4, Position, {Val}>",
+    return Spec(".init {x} = Agreement<{Key}, {Val}>",
                 {"src(Ky, P, V)": ["{x}.source(Ky, P, V)"], "dst(Ky, P, V)": ["{x}.target(Ky, P, V)"]},
                 {"mismatch(Ky, D)": "{x}.mismatch(Ky, D)", "conflict(Ky, D)": "{x}.conflict(Ky, D)",
                  "map(Ky, D)": "in_src(Ky, _, _), d4_elem(D), !{x}.mismatch(Ky, D)",
                  "compatible(Ky, D)": "in_src(Ky, _, _), d4_elem(D), !{x}.conflict(Ky, D)",
                  "has_sym(Ky)": "in_src(Ky, _, _), d4_elem(D), !d4_identity(D), !{x}.mismatch(Ky, D)",
-                 "src(Ky, P, V)": "in_src(Ky, P, V)", "dst(Ky, P, V)": "in_dst(Ky, P, V)"},
-                "{x}.correspondence(Ky, D, P, Q) :- in_src(Ky, P, _), d4_elem(D), apply(D, P, Q).")
+                 "src(Ky, P, V)": "in_src(Ky, P, V)", "dst(Ky, P, V)": "in_dst(Ky, P, V)"})
 
 
 def offset_invariance(inst, ex):

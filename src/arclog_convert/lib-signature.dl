@@ -282,12 +282,12 @@
     .decl exposed(key: Key, p: Position, d: Dir8)
 }
 
-.comp Agreement<Key, Corr, Index, Val> {
-    .decl source(key: Key, i: Index, v: Val)  // @extensional
-    .decl target(key: Key, i: Index, v: Val)  // @extensional
-    .decl correspondence(key: Key, m: Corr, i: Index, j: Index)  // @extensional
-    .decl mismatch(key: Key, m: Corr)
-    .decl conflict(key: Key, m: Corr)
+.comp Agreement<Key, Val> {
+    .decl source(key: Key, p: Position, v: Val)  // @extensional
+    .decl target(key: Key, p: Position, v: Val)  // @extensional
+    .decl transform(d: D4)  // @extensional
+    .decl mismatch(key: Key, d: D4)
+    .decl conflict(key: Key, d: D4)
 }
 
 .comp Enclosure<Key> {

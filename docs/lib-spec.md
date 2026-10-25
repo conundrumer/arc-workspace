@@ -277,7 +277,7 @@ Order takes the order in either of two forms:
 | Boundary | `cell`, `dir` | `boundary`, `exposed` | `exposed(p, d)`, nothing of the set one step from p toward d, off-frame counting as nothing; boundary, exposed toward some direction; the directions are the cardinals by default |
 | BoundingBox | `cell` | `box` | the least box containing the set |
 | Ray | `source`, `node`, `dir` | `ray`, `end` | a straight path from a source, its origin, toward a direction, each step onto a node, with the step count and the origin; a source need not be a node, and is on its own ray at step 0; end, its last cell, the one exposed toward the direction in Boundary's sense |
-| Agreement | `source`, `target`, `correspondence` | `mismatch`, `conflict` | two valued families under a family of correspondences of their indices; mismatch where an image lacks the value; conflict where both exist and differ |
+| Agreement | `source`, `target`, `transform` | `mismatch`, `conflict` | two valued families, keyed by Position, under the D4 elements in `transform`, the eight by default; mismatch where an image lacks the value; conflict where both exist and differ |
 | Division | `cell`, `parts`, `side`, `gap` | `tile` | equal parts per axis, by count or by side, with a gap; an axis given neither passes through; an axis with no `gap` row has gap 0; the cell instance, per axis, of `divide` |
 | `divide(t, side, gap, part, remainder)` | | | division of a count with remainder, the remainders past the side dropped by the gap; an inline relation, in `stride`'s place |
 | Tiling | `outer`, `inner`, `gap` | `cell` | the frame tiled by the inner frame at the outer positions, one cell per pair, with a gap per axis |

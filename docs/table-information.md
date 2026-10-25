@@ -49,11 +49,10 @@ Ways a solver spells out a structure whose every row the grid or another table i
 | Propagation.edge | every pair with `N2 < N`, then closed | Order's score form, which materializes no pairs |
 | Propagation.edge | Distance's `predecessor` joined to a key | the composition as written; a one-atom `edge` has no table since 20-73, and a path output on Distance would name a composition, which [lib-spec.md](lib-spec.md) forbids |
 | Ray.node | a guard with no variable, times `input` | `input` alone, which 20-73 cuts: when the guard fails, `dir` is empty and the ray casts nothing |
-| Agreement.correspondence | `apply` of a D4 element over cell pairs | a `transform` input holding the D4 element, as Occurrences has |
 
 The lib-spec principle that covers these: Order takes a score in place of the pairs it induces, Quotient takes a generating `edge` beside `equivalent`, and Flood and CellDistance are Propagation and Distance over the grid's own steps. In each, the construction takes the generator of a pair relation rather than its expansion, and the generator is the lower level, so the spec's rule against naming compositions holds. The generalization: a construction that takes a relation over pairs of its members offers a form that takes the generator, where the generator is a value the solver already has, a score, a step, or a transform. A frame default for Ray's `node` is not one: the spec's defaults are steps, directions and the D4 identity, and the default would hide a claim.
 
-All but the Agreement row are sites not using a form the lib has, which the spec's lint rule already names: a site that writes out a cell instance the lib holds is a reimplementation.
+Each row is a site not using a form the lib has, which the spec's lint rule already names: a site that writes out a cell instance the lib holds is a reimplementation.
 
 ## Derivability tests
 
@@ -79,7 +78,7 @@ Uses, beside the lint below: a feature for the encoder, key size, fill and bits 
 | product | the rows are the product of the projections onto a partition of the columns; for an input, a guard with no variable times a domain | the factors; for a guard, the conjuncts that bind the columns |
 | closure | the rows are the closure of a step relation inside a node set | the steps |
 | order or class as pairs | the key is a pair, and the rows are the pairs some column orders, or an equivalence's pairs | a score per member; the classes |
-| lib relation per pair | the rows are a lib relation, `same_line`, `neighbor`, `apply`, restricted to a cell set | the lib relation and the cell set; for Agreement's `correspondence`, the D4 elements |
+| lib relation per pair | the rows are a lib relation, `same_line`, `neighbor`, `apply`, restricted to a cell set | the lib relation and the cell set |
 | none | | a residual: the line gives the rows, the key and the bits per row |
 
 The lines are hints. An edit of a solver is judged by its tables: `uv run python -m study.table_lint --measure <task_id>` converts the solver as committed and as its file now holds it, each apart from the corpus and cached by the solver's text, and prints each table's rows, summed over the inputs, on both sides, with the largest table, the tables over the cap and over the threshold, and whether the solver's tables got smaller. It marks a table that no relation of the solver is the source of, by the converter's name map, and it judges an edit that removes an instance of a lib component worse. An edit is kept where the solver still passes its pairs and its tables got smaller.
