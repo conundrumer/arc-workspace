@@ -446,7 +446,8 @@ print("== provenance: a small export with flows, keys and depths through parse_t
 def provenance_export(d, bad=False):
     """A small export in `d` and its task file: two cases of one task. Table 2 (Color, Number, Color, Color) has the
     key [1], a Color copied from ex_input, a constant and a Color whose flow names no table (source_table -1); table 3, the output relation (Box, Color), flows from ex_input
-    and, in $Free, from table 2's Color, and in $Dep, from table 4's DET value, which flows from ex_output. $Unseen is
+    and, in $Free, from table 2's Color, and in $Dep, from its DET (slot 5, which no table of the case holds) and from
+    table 4's Color, which is computed from ex_input. $Unseen is
     $Dep with table 4 faulted, so that it is unseen and its flows and those that read it name its columns. With
     `bad`, a flow of table 2 names a column past its four."""
     import pandas as pd
@@ -460,7 +461,7 @@ def provenance_export(d, bad=False):
     t2 = rel(0, ["Color", "Number", "Color", "Color"], 4, depth=1, keys=[[1]])
     t3 = rel(1, ["Box", "Color"], 5, depth=2, output_position=0, output_color=1)
     t4 = rel(2, ["Color"], 1, depth=1)
-    t3_dep = {**t3, "det_relations": ["slot 2"], "det_types": [["Color"]], "det_widths": [1]}
+    t3_dep = {**t3, "det_relations": ["slot 5"], "det_types": [["Color"]], "det_widths": [1]}
     cases = {"$Free": [grid, grid, t2, t3], "$Dep": [grid, grid, t2, t3_dep, t4],
              "$Unseen": [grid, grid, t2, t3_dep, {**t4, "fault": "a check"}]}
     rows = {2: lambda e: [[1 + e, 0, 5, 7], [2, 1, 5, 7]], 3: lambda e: [[0, 0, 0, 0, 3]], 4: lambda e: [[3]]}
@@ -469,7 +470,7 @@ def provenance_export(d, bad=False):
     flows = {"$Free": [flow(2, 0, 0, 0, 2), flow(2, 1, 1, 0, 1), flow(2, 2, 2, -1, -1), flow(2, 3, 0, -1, -1),
                        flow(3, 0, 0, 0, 1), flow(3, 1, 0, 2, 0)],
              "$Dep": [flow(2, 0, 0, 0, 2), flow(2, 1, 1, 0, 1), flow(2, 2, 2, -1, -1), flow(2, 3, 0, -1, -1),
-                      flow(3, 0, 0, 0, 1), flow(3, 1, 0, 4, 0, 0), flow(4, 0, 1, 1, 2)]}
+                      flow(3, 0, 0, 0, 1), flow(3, 1, 0, -1, 0, 0), flow(3, 1, 0, 4, 0), flow(4, 0, 1, 0, 2)]}
     flows["$Unseen"] = flows["$Dep"]
     if bad:
         flows["$Free"].append(flow(2, 4, 0, 0, 2))
