@@ -91,7 +91,12 @@ from solver.per_case import (
     parameter_reading,
 )
 from solver.restricted import restricted
-from solver.stored_value import StoredValue, stored_value
+from solver.stored_value import (
+    NoStoredValue,
+    StoredValue,
+    no_value_error,
+    stored_value,
+)
 from solver.open_values import field_readings, open_fields
 from solver.out_grids import (
     FieldValues,
@@ -119,13 +124,13 @@ class StoredValues:
 
     def __init__(self) -> None:
         self.values: dict[tuple[tuple[Base, ...], RelationName],
-                          StoredValue | RunFailure] = {}
+                          StoredValue | NoStoredValue | RunFailure] = {}
         self.once: Once[tuple[tuple[Base, ...], RelationName],
-                        StoredValue | RunFailure] = Once(self.values)
+                        StoredValue | NoStoredValue | RunFailure] = Once(self.values)
 
     def get(self, key: tuple[tuple[Base, ...], RelationName],
-            compute: Callable[[], "StoredValue | RunFailure"]
-            ) -> "StoredValue | RunFailure":
+            compute: Callable[[], "StoredValue | NoStoredValue | RunFailure"]
+            ) -> "StoredValue | NoStoredValue | RunFailure":
         """The value under `key`, computed once however many threads ask
         for it."""
         return self.once.get(
@@ -536,7 +541,9 @@ def group_program(engine: Engine, solver: Solver, bases: tuple[Base, ...],
     """The program the cases of `bases` that take `branches` run on
     `input`, the empty input where it is None, at `assign` (`outcomes`),
     with `proposals` the proposer probe of the input, and without the
-    units of `drop`."""
+    units of `drop`. Where a `@store` branch's relation has no value at
+    the case values of `bases` (`NoStoredValue`), the result is a
+    `CompileError` at the branch's line: the solver's line is at fault."""
     held_program = restricted(engine, solver, bases)
     run = _without(engine, held_program, drop)
     derived = derived_parameters(branches)
@@ -560,7 +567,9 @@ def group_program(engine: Engine, solver: Solver, bases: tuple[Base, ...],
             value = assigned.get(b.spelled)
             if value is None:
                 got = stored.get((bases, b.relation), lambda b=b: stored_value(
-                    engine, solver, held_program, b, limits))
+                    engine, solver, held_program, b, bases, limits))
+                if isinstance(got, NoStoredValue):
+                    return no_value_error(b, got)
                 if not isinstance(got, StoredValue):
                     return got
                 if got.keyed_by_case:

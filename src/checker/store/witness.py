@@ -10,6 +10,7 @@ from checker.branches.cases import (
     branch_models,
     counterpart,
     ordered,
+    pair_runs,
     with_line,
 )
 from checker.branches.witnesses import (
@@ -36,6 +37,7 @@ from solver.model import Case
 from solver.outcome import Assignment, Grids
 from engine.program import as_grid
 from solver.per_case import case_reading
+from solver.stored_value import NoValueError
 from solver.witness import Entry
 
 
@@ -195,8 +197,14 @@ def find_witness(runs: Runs, solver: Solver, f: Found,
         models = witness_targets(runs, lined, taking, branch)
         swap_from = taking
         if not models:
-            f.ended = NoFit.NO_FIT if fitting(runs, lined, taking) \
-                else SearchEnd.UNFIT
+            if fitting(runs, lined, taking):
+                f.ended = NoFit.NO_FIT
+            else:
+                f.ended = SearchEnd.UNFIT
+                f.no_value = next(
+                    (c.outcome for p in pair_runs(runs, lined, taking)
+                     for c in p.cases
+                     if isinstance(c.outcome, NoValueError)), None)
             return None
     model = models[0]
     other = counterpart(model, branch)

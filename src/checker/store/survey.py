@@ -47,7 +47,7 @@ from solver.model import (
 )
 from solver.names import branch_text
 from solver.per_case import case_reading
-from solver.stored_value import relation_decl
+from solver.stored_value import NoValueError, relation_decl
 from solver.value_order import row_key, value_key
 from solver.out_grids import position
 from solver.vocabulary import (
@@ -323,6 +323,10 @@ class Found:
     witness needs (`witness_divergence`): the first case it looks with
     and that case's counterpart (`find_witness`)."""
     failed: "FailedRun | None" = None
+    no_value: NoValueError | None = None
+    """Where no case that takes the value fits the pairs
+    (`SearchEnd.UNFIT`) because the relation has no value to store at the
+    case values the cases that take its branch hold, that failure."""
     entry: bool = False
     built: Entry | None = None
     built_by: BuiltBy | None = None

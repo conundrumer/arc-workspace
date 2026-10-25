@@ -19,6 +19,7 @@ the survey asks for a `@store` line are `Found.asks_line`'s."""
 
 from collections.abc import Mapping, Sequence
 
+from checker.branches.cases import taking
 from checker.branches.ignores import bare_ignored
 from checker.finding import AtFile, AtPair, Finding, Kind, RunKind, WholeFile
 from checker.judged import (
@@ -50,6 +51,7 @@ from solver.graph import Graph
 from solver.model import Base, Case, StoreBranch, bases_of, every_base
 from engine.program import as_grid
 from solver.pair_runs import PairId, examples
+from solver.stored_value import differs_on
 from solver.group_runs import at_once
 
 
@@ -113,9 +115,18 @@ def survey_store(runs: Runs) -> StoreSurvey:
     if failed:
         return StoreSurvey((), (), tuple(failed), tuple(failed), True)
     found, capped = analyze(solver, runs, rels, per_input, bases, rd)
-    differs = {p: next((labels[i] for i, g in enumerate(per_input)
-                        if set(g.get(p, ())) != set(per_input[0].get(p, ()))),
-                       None) for p in rels}
+    differs: dict[RelationName, PairId] = {}
+    for b in solver.branches:
+        if not isinstance(b, StoreBranch) or b.relation in differs:
+            continue
+        taking_it = taking(solver, solver_cases, b)
+        if not taking_it:
+            continue
+        pair = differs_on(solver, b.relation,
+                          [g.get(b.relation, ()) for g in per_input], labels,
+                          [c.base for c in taking_it])
+        if pair is not None:
+            differs[b.relation] = pair
     lines = {b.relation: b for b in solver.branches
              if isinstance(b, StoreBranch)}
     ignored = {t for t, _p in bare_ignored(solver, IgnoreForm.STORE)}
