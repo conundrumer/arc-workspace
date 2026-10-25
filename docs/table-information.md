@@ -76,7 +76,7 @@ Uses, beside the lint below: a feature for the encoder, key size, fill and bits 
 | --- | --- | --- |
 | restatement | the rows equal another relation's, or a projection of one | read the relation where the table was read |
 | cell instance | an `edge` of Distance or Propagation whose body is the grid's adjacency inside a node set | CellDistance or Flood |
-| product | the rows are the product of the projections onto a partition of the columns; for an input, a guard with no variable times a domain | the factors; for a guard, the input it binds or nothing |
+| product | the rows are the product of the projections onto a partition of the columns; for an input, a guard with no variable times a domain | each factor as a relation of its own, joined where the table was read; for a guard, the input it binds alone or nothing |
 | closure | the rows are the closure of a step relation inside a node set | Flood or Connectivity |
 | order or class as pairs | the key is a pair, and the rows are the pairs some column orders, or an equivalence's pairs | Order's score form; Quotient's `edge` |
 | lib relation per pair | the rows are a lib relation, `same_line`, `neighbor`, `apply`, restricted to a cell set | the lib relation at the reading site; for Agreement, its `transform` form once the lib has it |

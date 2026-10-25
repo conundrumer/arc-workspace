@@ -12,25 +12,31 @@ no rewrite removes, and a relation that the decode gives no table, which
 The test is the first that derives the relation of the table of
 `docs/table-information.md#the-lint`, those that read no rows (the form of
 the clauses that make the relation, read from the arclog file) before those
-that read the rows of every rows file, and the rewrite is that table's. The
-pairs of a total order or an equivalence are named before the closure that
-they are, and the pairs of a partial order are a closure. Where no test
-derives the relation, the test is `none` and the rewrite is the relation's
-key and its bits per row, `log2(domain of the key / rows)`. Where the rows
-were not read, the rewrite is `- - rows not read: <reason>`: the relation
-stopped at a bound, which `row-counts` writes no rows for; or it has a rows
-file of more than `WORK_CAP` rows × 2^columns, which the tests that read
-rows skip; or the run that writes the rows of its solver faulted; or it has
-no rows file.
+that read the rows of every rows file. The rewrite is a sentence that says
+what to change, from what the test found: the relation the table restates,
+the columns of each factor, the step relation of a closure, or the lib
+relation per pair, each column by the name the solver gives it in the rows
+file (`c<i>` for an output of a shared node, which the file names so). Where
+the rows files differ, the rewrite is that of the largest. The pairs of a
+total order or an equivalence are named before the closure that they are, and
+the pairs of a partial order are a closure. Where no test derives the
+relation, the test is `none` and the rewrite gives the relation's least key
+and its bits per row, `log2(domain of the key / rows)`. Where the rows were
+not read, the rewrite says so and gives the reason: the relation stopped at a
+bound, which `row-counts` writes no rows for; or it has a rows file of more
+than `WORK_CAP` rows × 2^columns, which the tests that read rows skip; or the
+run that writes the rows of its solver faulted; or it has no rows file.
 
 The rows of a relation whose columns the type check gives no types are not
 written, so its line says no rows file was written.
 
 The corpus is the arclog files of `gen/` of `arclog_convert.out`, which
 reflect a solver's `.dl` file once `uv run python -m arclog_convert.convert
-<stem>` has run on it. The rows are `arclog-cli row-counts`'s, which a
-corpus run needs built with the `tool` profile; the checker calls nothing of
-this module.
+<stem>` has run on it. A run of the default corpus on given task ids runs that
+command on them first, and prints its summary on stderr; a run on every
+solver, or on another corpus, reads the files as they stand. The rows are
+`arclog-cli row-counts`'s, which a corpus run needs built with the `tool`
+profile; the checker calls nothing of this module.
 """
 
 import argparse
@@ -40,7 +46,7 @@ import subprocess
 import sys
 import tempfile
 from collections import defaultdict
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
@@ -60,7 +66,7 @@ from study.corpus_survey.bodies import (
     names,
     strip,
 )
-from study.corpus_survey.trees import Node, arclog, gen_dir
+from study.corpus_survey.trees import Node, arclog, gen_dir, head
 from study.relation_shapes import BOX, RowsFile, Value, best_factoring, distinct_values, pair_shapes, read_rows_file
 
 THRESHOLD = 1000
@@ -88,15 +94,20 @@ class Derivation(StrEnum):
     NONE = "none"
 
 
-REWRITES = {
-    Derivation.RESTATEMENT: "read the relation where the table was read",
-    Derivation.CELL_INSTANCE: "CellDistance or Flood",
-    Derivation.PRODUCT: "the factors; for a guard, the input it binds or nothing",
-    Derivation.CLOSURE: "Flood or Connectivity",
-    Derivation.ORDER_OR_CLASS: "Order's score form; Quotient's `edge`",
-    Derivation.LIB_RELATION: "the lib relation at the reading site; for Agreement, its `transform` form once the lib has it",
-}
-"""The rewrite each test names; `none` names none."""
+CELL_FORMS = {"Distance": "CellDistance", "Propagation": "Flood"}
+"""The lib instance that takes the grid's adjacency in place of the `edge` of each instance."""
+
+
+@dataclass(frozen=True)
+class Finding:
+    """A test that derives a relation, and the rewrite it names, as a sentence that says what to change."""
+
+    test: Derivation
+    rewrite: str
+
+
+def quoted(names: Iterable[str]) -> str:
+    return ", ".join(f"`{name}`" for name in names)
 
 
 @dataclass(frozen=True)
@@ -189,6 +200,7 @@ class Signature:
     relation: str
     path: Path
     rows: int
+    names: tuple[str, ...]
     types: tuple[str, ...]
     values: tuple[frozenset[Value], ...]
 
@@ -223,8 +235,9 @@ def written(rows_dir: Path, solver: str) -> Written:
         if work(file) > WORK_CAP:
             over_cap.add(file.relation)
         else:
+            names = tuple(name for name, _ in file.columns)
             types = tuple(ty for _, ty in file.columns)
-            peers[file.input, file.model].append(Signature(file.relation, path, len(file.rows), types, column_values(file)))
+            peers[file.input, file.model].append(Signature(file.relation, path, len(file.rows), names, types, column_values(file)))
     return Written(paths, frozenset(over_cap), peers)
 
 
@@ -275,16 +288,24 @@ def conjunction(body: Body) -> list[list[Node]] | None:
     return items if all(item_kind(item) in (Item.ATOM, Item.OP) for item in items) else None
 
 
-def groups(items: Sequence[list[Node]]) -> list[set[str]]:
-    """The variables of each group of conjuncts that share variables; a
-    conjunct with no variable is a group of none."""
-    parts: list[set[str]] = []
+@dataclass(frozen=True)
+class Group:
+    """Conjuncts of a body that share variables, and the variables they hold."""
+
+    variables: set[str]
+    items: list[list[Node]]
+
+
+def groups(items: Sequence[list[Node]]) -> list[Group]:
+    """The groups of conjuncts that share variables; a conjunct with no
+    variable is a group of none."""
+    parts: list[Group] = []
     for item in items:
-        mine = set(names(item_labels(item)))
+        mine = Group(set(names(item_labels(item))), [item])
         apart = []
         for part in parts:
-            if part & mine:
-                mine |= part
+            if part.variables & mine.variables:
+                mine = Group(mine.variables | part.variables, [*part.items, *mine.items])
             else:
                 apart.append(part)
         parts = [*apart, mine]
@@ -305,63 +326,101 @@ def is_cell_edge(body: Body) -> bool:
     return of_port(body, ("Distance", "Propagation"), "edge")
 
 
-def is_cell_instance(body: Body) -> bool:
-    """An `edge` of a `Distance` or `Propagation` instance that is one
-    `neighbor` step between its two cells, with atoms of one variable each, on a cell or on the direction."""
+def cell_instance(body: Body) -> str | None:
+    """The rewrite of an `edge` of a `Distance` or `Propagation` instance that
+    is one `neighbor` step between its two cells, with atoms of one variable
+    each, on a cell or on the direction."""
     items = conjunction(body)
     if items is None or not is_cell_edge(body):
-        return False
+        return None
+    assert body.component is not None  # an edge input has its instance
     steps = [item for item in items if item[0] == "neighbor"]
     if len(steps) != 1 or any(item_kind(item) is not Item.ATOM for item in items):
-        return False
+        return None
     labels = [strip(label) for label in atom_labels(steps[0])]
     cells = head_variables(body, [])
     if len(labels) != 3 or labels[0] == labels[2] or {labels[0], labels[2]} != cells or labels[1] in cells:
-        return False
-    return all(len(variables := names(atom_labels(item))) == 1 and variables <= set(labels) for item in items if item is not steps[0])
+        return None
+    if not all(len(variables := names(atom_labels(item))) == 1 and variables <= set(labels) for item in items if item is not steps[0]):
+        return None
+    return (
+        f"The `edge` is the grid's `neighbor` steps between cells of a node set. Replace this {body.component} instance by a "
+        f"{CELL_FORMS[body.component]} instance whose `node` is that node set, and drop its `edge`."
+    )
 
 
-def is_comparison_edge(body: Body) -> bool:
-    """An `edge` whose body orders two of its columns."""
+def comparison_edge(body: Body) -> str | None:
+    """The rewrite of an `edge` whose body orders two of its columns."""
     items = conjunction(body)
     if items is None or not is_cell_edge(body):
-        return False
+        return None
     cells = head_variables(body, [])
-    return any(item_kind(item) is Item.OP and item[0] in ORDERINGS and len(operands := names(item_labels(item))) == 2 and operands <= cells for item in items)
+    for item in items:
+        if item_kind(item) is Item.OP and item[0] in ORDERINGS and len(operands := names(item_labels(item))) == 2 and operands <= cells:
+            first, second = (strip(label) for label in item_labels(item))
+            return (
+                f"The `edge` holds every pair of cells with `{first} {item[0]} {second}`, an order. "
+                "Give Order a `score` for each cell in place of the pairs."
+            )
+    return None
 
 
-def is_product(body: Body) -> bool:
-    """Two or more groups of conjuncts that share no variable, each binding a
-    column; for a `Ray`'s `node`, also one group that binds a column beside a
-    group that binds none, a guard."""
+def columns_of(parts: Sequence[Group], columns: set[str]) -> str:
+    """The columns that each group binds, one parenthesis for each."""
+    return " and ".join(f"({quoted(sorted(part.variables & columns))})" for part in parts)
+
+
+def product_body(body: Body) -> str | None:
+    """The rewrite of a body that is two or more groups of conjuncts that
+    share no variable, each binding a column; for a `Ray`'s `node`, also one
+    group that binds a column beside a group that binds none, a guard."""
     items = conjunction(body)
     if items is None:
-        return False
+        return None
     parts = groups(items)
-    head = head_variables(body, parts)
-    bound = [part for part in parts if part & head]
-    guarded = len(bound) < len(parts)
+    columns = head_variables(body, [part.variables for part in parts])
+    bound = [part for part in parts if part.variables & columns]
+    guards = [part for part in parts if not part.variables & columns]
     if of_port(body, ("Ray",), "node"):
-        return bool(bound) and (len(bound) > 1 or guarded)
-    return len(bound) > 1 and not guarded
+        if not bound or not (len(bound) > 1 or guards):
+            return None
+    elif len(bound) < 2 or guards:
+        return None
+    if guards:
+        guard = quoted(sorted({str(head(item)) for part in guards for item in part.items}))
+        return (
+            f"The body times a guard ({guard}), conjuncts that bind no column, by the conjuncts that bind {columns_of(bound, columns)}. "
+            "Drop the guard and write the input that binds those columns alone, or nothing."
+        )
+    return (
+        f"The body is the product of {len(bound)} groups of conjuncts that share no variable, which bind {columns_of(bound, columns)}. "
+        "Write each group as a relation of its own and join them where this relation is read."
+    )
 
 
-def reads_apply_per_pair(body: Body) -> bool:
-    return of_port(body, ("Agreement",), "correspondence") and any(atom[0] == "apply" for atom in deep_atoms(body.items))
+def apply_per_pair(body: Body) -> str | None:
+    """The rewrite of an `Agreement`'s `correspondence` that applies a D4 element to each cell pair."""
+    if of_port(body, ("Agreement",), "correspondence") and any(atom[0] == "apply" for atom in deep_atoms(body.items)):
+        return (
+            "The `correspondence` applies a D4 element with `apply` to each pair of cells. "
+            "Give Agreement a `transform` input that holds the D4 element, once the lib has that form."
+        )
+    return None
 
 
-FORMS: tuple[tuple[Derivation, Callable[[Body], bool]], ...] = (
-    (Derivation.CELL_INSTANCE, is_cell_instance),
-    (Derivation.PRODUCT, is_product),
-    (Derivation.ORDER_OR_CLASS, is_comparison_edge),
-    (Derivation.LIB_RELATION, reads_apply_per_pair),
+FORMS: tuple[tuple[Derivation, Callable[[Body], str | None]], ...] = (
+    (Derivation.CELL_INSTANCE, cell_instance),
+    (Derivation.PRODUCT, product_body),
+    (Derivation.ORDER_OR_CLASS, comparison_edge),
+    (Derivation.LIB_RELATION, apply_per_pair),
 )
-"""The tests that read no rows, in the table's order, each by the form of the clauses that make the relation."""
+"""The tests that read no rows, in the table's order, each by the form of the
+clauses that make the relation, and each giving the rewrite of a body that has it."""
 
 
-def restates(file: RowsFile, peers: Mapping[tuple[str, int], Sequence[Signature]]) -> bool:
-    """Whether the rows are those of another relation of the same input and
-    model, or a projection of them onto columns of equal values."""
+def restatement(file: RowsFile, peers: Mapping[tuple[str, int], Sequence[Signature]]) -> Finding | None:
+    """The restatement the rows are, where they are those of another relation
+    of the same input and model, or a projection of them onto columns of equal values."""
     types = [ty for _, ty in file.columns]
     values = column_values(file)
     for peer in peers[file.input, file.model]:
@@ -371,9 +430,16 @@ def restates(file: RowsFile, peers: Mapping[tuple[str, int], Sequence[Signature]
         selections = [s for s in itertools.product(*options) if len(set(s)) == len(s)]
         if selections:
             rows = read_rows_file(peer.path).rows
-            if any({tuple(row[j] for j in s) for row in rows} == file.rows for s in selections):
-                return True
-    return False
+            for selection in selections:
+                if {tuple(row[j] for j in selection) for row in rows} == file.rows:
+                    mine = quoted(name for name, _ in file.columns)
+                    theirs = quoted(peer.names[j] for j in selection)
+                    return Finding(
+                        Derivation.RESTATEMENT,
+                        f"The columns {mine} are the columns {theirs} of `{peer.relation}`. "
+                        f"Delete this relation and read `{peer.relation}` where it is read.",
+                    )
+    return None
 
 
 def box_pair(file: RowsFile) -> tuple[int, int] | None:
@@ -382,7 +448,7 @@ def box_pair(file: RowsFile) -> tuple[int, int] | None:
     return (columns[0], columns[1]) if len(columns) == 2 and all(file.columns[j][1] == BOX for j in columns) else None
 
 
-def pair_kind(file: RowsFile) -> Derivation | None:
+def pair_kind(file: RowsFile) -> Finding | None:
     """What the pairs of the `Box` columns of the key are: the pairs of a
     total order or an equivalence, or a closure, where a smaller subrelation generates them."""
     pair = box_pair(file)
@@ -392,43 +458,80 @@ def pair_kind(file: RowsFile) -> Derivation | None:
     (shape,) = pair_shapes(replace(file, columns=[file.columns[a], file.columns[b]], rows={(row[a], row[b]) for row in file.rows}))
     if not shape.transitive or shape.reduction is None or shape.reduction >= len(file.rows):
         return None
-    return Derivation.ORDER_OR_CLASS if shape.order == "total" or shape.equivalence else Derivation.CLOSURE
+    pair_names = quoted(shape.columns)
+    if shape.equivalence:
+        return Finding(
+            Derivation.ORDER_OR_CLASS,
+            f"The pairs ({pair_names}) are an equivalence of {shape.classes} classes. Give Quotient the generating `edge` in place of the pairs.",
+        )
+    if shape.order == "total":
+        return Finding(
+            Derivation.ORDER_OR_CLASS,
+            f"The pairs ({pair_names}) are a total order. Give Order a `score` for each cell in place of the pairs.",
+        )
+    return Finding(
+        Derivation.CLOSURE,
+        f"The pairs ({pair_names}) are the closure of a step relation of {shape.reduction} pairs. "
+        "Give those steps to Flood or Connectivity inside the node set, and drop the closure.",
+    )
 
 
-def factored(file: RowsFile) -> Derivation | None:
+def factored(file: RowsFile) -> Finding | None:
     found = best_factoring(file)
-    return Derivation.PRODUCT if found is not None and len(found.factors) > 1 else None
+    if found is None or len(found.factors) < 2:
+        return None
+    relative = {name + ".rel": name for name in found.relative or []}
+    factors = " and ".join(f"({quoted(relative.get(name, name) for name in names)})" for names, _ in found.factors)
+    offsets = f", where {quoted(found.relative)} are offsets from `{found.base}`" if found.base and found.relative else ""
+    return Finding(
+        Derivation.PRODUCT,
+        f"The rows are the join of the projections onto the columns {factors}{offsets}. "
+        "Write each projection as a relation of its own and join them where this relation is read.",
+    )
 
 
-def rows_tests(subject: Subject) -> list[Callable[[RowsFile], Derivation | None]]:
+def rows_tests(subject: Subject) -> list[Callable[[RowsFile], Finding | None]]:
     """The tests that read the rows of one file, in the table's order. A total
     order or an equivalence is named before the closure that it is."""
 
-    def restated(file: RowsFile) -> Derivation | None:
-        return Derivation.RESTATEMENT if restates(file, subject.peers) else None
+    def restated(file: RowsFile) -> Finding | None:
+        return restatement(file, subject.peers)
 
-    def lib_pair(file: RowsFile) -> Derivation | None:
-        reads_lib = any(atom[0] in LIB_PAIRS for body in subject.bodies for atom in deep_atoms(body.items))
-        return Derivation.LIB_RELATION if reads_lib and box_pair(file) is not None else None
+    def lib_pair(file: RowsFile) -> Finding | None:
+        read = sorted({str(atom[0]) for body in subject.bodies for atom in deep_atoms(body.items) if atom[0] in LIB_PAIRS})
+        pair = box_pair(file)
+        if not read or pair is None:
+            return None
+        a, b = (file.columns[j][0] for j in pair)
+        return Finding(
+            Derivation.LIB_RELATION,
+            f"The pairs (`{a}`, `{b}`) of cells are what {quoted(read)} gives, restricted to a cell set. "
+            f"Read {quoted(read)} at the site that reads this relation, and delete the relation.",
+        )
 
     return [restated, factored, pair_kind, lib_pair]
 
 
-def on_every_file(paths: Sequence[Path], test: Callable[[RowsFile], Derivation | None]) -> Derivation | None:
-    """What `test` derives on every rows file, read one at a time; a closure where it derives an order on some and a closure on others."""
-    found = set()
+def on_every_file(paths: Sequence[Path], test: Callable[[RowsFile], Finding | None]) -> Finding | None:
+    """What `test` derives on every rows file, read one at a time, with the
+    rewrite of the largest file that gives that test; a closure where it
+    derives an order on some and a closure on others."""
+    found: list[tuple[int, Finding]] = []
     for path in paths:
-        derived = test(read_rows_file(path))
+        file = read_rows_file(path)
+        derived = test(file)
         if derived is None:
             return None
-        found.add(derived)
-    return found.pop() if len(found) == 1 else Derivation.CLOSURE
+        found.append((len(file.rows), derived))
+    tests = {finding.test for _, finding in found}
+    chosen = tests.pop() if len(tests) == 1 else Derivation.CLOSURE
+    return max(((size, finding) for size, finding in found if finding.test is chosen), key=lambda sized: sized[0])[1]
 
 
 def residual(subject: Subject) -> str:
     """The key and bits per row of the largest rows file, or the reason the rows were not read."""
     if subject.paths is None:
-        return f"- - rows not read: {subject.unread}"
+        return f"Its rows were not read ({subject.unread}), so only the tests on the clauses ran, and none derives it."
     largest = ""
     best = -1
     for path in subject.paths:
@@ -436,20 +539,21 @@ def residual(subject: Subject) -> str:
         if len(file.rows) > best:
             key = least_key(file)
             best = len(file.rows)
-            largest = f"{','.join(file.columns[j][0] for j in key.columns)} {bits_per_row(key, best):.1f}"
-    return largest
+            largest = f"Its least key is {quoted(file.columns[j][0] for j in key.columns)}, at {bits_per_row(key, best):.1f} bits per row."
+    return f"No test derives it. {largest} Rewriting it takes a reading of the task."
 
 
-def derive(subject: Subject) -> tuple[Derivation, str]:
+def derive(subject: Subject) -> Finding:
     """The first test that derives the relation, and its rewrite, or `none` and its residual. The tests that read no rows come first."""
     for test, form in FORMS:
-        if subject.bodies and all(form(body) for body in subject.bodies):
-            return test, REWRITES[test]
+        rewrites = [form(body) for body in subject.bodies]
+        if rewrites and all(rewrites):
+            return Finding(test, " ".join(dict.fromkeys(rewrite for rewrite in rewrites if rewrite)))
     if subject.paths is not None:
         for rows_test in rows_tests(subject):
-            if (test := on_every_file(subject.paths, rows_test)) is not None:
-                return test, REWRITES[test]
-    return Derivation.NONE, residual(subject)
+            if (found := on_every_file(subject.paths, rows_test)) is not None:
+                return found
+    return Finding(Derivation.NONE, residual(subject))
 
 
 def solver_lines(corpus: Path, rows_dir: Path, solver: str, flagged: Sequence[Relation], fault: str | None = None) -> list[str]:
@@ -471,8 +575,8 @@ def solver_lines(corpus: Path, rows_dir: Path, solver: str, flagged: Sequence[Re
             unread = ""
         paths = None if unread else files.paths[relation.name]
         subject = Subject(relation, [b for b in concept if b.name == relation.name], paths, unread, files.peers)
-        test, rewrite = derive(subject)
-        lines.append(f"{solver} {relation.name} {','.join(map(str, relation.counts))} {test} {rewrite}")
+        found = derive(subject)
+        lines.append(f"{solver} {relation.name} {','.join(map(str, relation.counts))} {found.test} {found.rewrite}")
     return lines
 
 
