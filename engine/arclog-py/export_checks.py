@@ -33,6 +33,23 @@ def orientation_sets(types):
     return {name: set(cells) for name, cells in types}
 
 
+def cells_of(ty, types):
+    """The cells that orientation type `ty` admits, a Pose type taking D4's, or None where `ty` is no orientation type or `types` is None."""
+    if types is None:
+        return None
+    if ty.startswith("Pose"):
+        return types.get("D4")
+    return types.get(ty)
+
+
+def copy_keeps_type(ty, source, types):
+    """Whether a column of type `ty` may copy a column of type `source`: equal types, or an orientation type whose cells lie within the source's."""
+    if ty == source:
+        return True
+    mine, theirs = cells_of(ty, types), cells_of(source, types)
+    return mine is not None and theirs is not None and mine <= theirs
+
+
 def rows_of(df):
     return df.itertuples() if df is not None and len(df) else ()
 
@@ -130,14 +147,15 @@ def check_case(frames, values, task, orientation_types, size=None, copies=True):
             bad("flows-earlier-table", f"{where} names table {st}")
             continue
         s = tl[st]
-        if not (r.source_column == -2 or 0 <= r.source_column < len(s.column_types)):
-            bad("flows-source-column", f"{where} names column {r.source_column} of table {st} with {len(s.column_types)}")
+        held = list(t.det_types[r.det]) if 0 <= r.det < len(t.det_types) else list(s.column_types)
+        if not (r.source_column == -2 or 0 <= r.source_column < len(held)):
+            bad("flows-source-column", f"{where} names column {r.source_column} of table {st} with {len(held)}")
             continue
         if st != r.table and not t.depth > s.depth:
             bad("flows-depth", f"{where} has depth {t.depth} and its source table {st} depth {s.depth}")
         if r.kind == COPY:
-            sty = "Example" if r.source_column == -2 else s.column_types[r.source_column]
-            if sty != t.column_types[r.column]:
+            sty = "Example" if r.source_column == -2 else held[r.source_column]
+            if not copy_keeps_type(t.column_types[r.column], sty, orientation_types):
                 bad("flows-copy-type", f"{where} of type {t.column_types[r.column]} copies column {r.source_column} of table {st} of type {sty}")
     for t in tl:
         if t.point != EVIDENCE and not _faulted(t):
@@ -214,11 +232,13 @@ def _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest
                 for k in tl[r.table].keys:
                     if not len(k):
                         bad("values-key", f"table {r.table} entry {r.Index} has {r.rows} rows and a key with no columns")
-    copies = {}
+    # column -> its flows, for each column whose every flow is a copy of a column of an earlier table or of the example
+    flows_of = collections.defaultdict(list)
     for f in rows_of(frames.get("flows") if copies_too else None):
-        if f.kind == COPY and f.source_table >= 0 and f.source_column >= 0 and f.source_table != f.table and f.table < len(tl) and f.source_table < len(tl):
-            copies[(f.table, f.column, f.source_table, f.source_column)] = f
-    needed = {(a, b) for a, b, _, _ in copies} | {(c, d) for _, _, c, d in copies}
+        flows_of[(f.table, f.column)].append(f)
+    copies = {key: fs for key, fs in flows_of.items() if key[0] < len(tl) and all(
+        f.kind == COPY and (f.source_column == -2 or f.source_column >= 0 and 0 <= f.source_table < min(f.table, len(tl))) for f in fs)}
+    needed = {(f.source_table, f.source_column) for fs in copies.values() for f in fs if f.det < 0 and f.source_column >= 0} | set(copies)
     column_values = {}           # (table, column) -> {example: rows}
     for ti, bl in blocks.items():
         t = tl[ti]
@@ -276,15 +296,51 @@ def _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest
                 diff = sorted(set(map(tuple, got.tolist())) ^ set(map(tuple, want.tolist())))
                 bad("values-evidence", f"ex_{fact} has {len(got)} distinct rows, the task file {len(want)}; differing: {diff[:3]}")
     # copy flows
-    for (ti, c, si, sc), f in copies.items():
-        a, b = column_values.get((ti, c)), column_values.get((si, sc))
-        if a is None or b is None:
+    assigned = collections.defaultdict(list)       # entry -> [(det, rows, offset)]
+    for r in rows_of(frames.get("assigned") if copies else None):
+        assigned[r.entry].append((int(r.det), int(r.rows), int(r.offset)))
+
+    def det_values(ti, det, sc):
+        """{example: rows} of column `sc` of `det`'s assigned rows at the entries of table `ti`."""
+        t = tl[ti]
+        if not 0 <= det < len(t.det_types) or not 0 <= sc < len(t.det_types[det]):
+            return None
+        offs = np.cumsum([0] + [width_of(x) for x in t.det_types[det]])
+        found = collections.defaultdict(list)
+        for entry, ex, _ in blocks[ti]:
+            for d, rows, offset in assigned[entry]:
+                if d == det and rows:
+                    block = values[offset:offset + rows * int(offs[-1])].reshape(rows, int(offs[-1]))
+                    found[ex].append(block[:, offs[sc]:offs[sc + 1]])
+        return {ex: np.concatenate(v) for ex, v in found.items()}
+
+    for (ti, c), fs in copies.items():
+        mine_by = column_values.get((ti, c))
+        if mine_by is None:
             continue
-        if width_of(tl[ti].column_types[c]) != width_of(tl[si].column_types[sc]):
+        width = width_of(tl[ti].column_types[c])
+        parts = []         # per flow: (label, a function from an example to its source rows or None)
+        for f in fs:
+            if f.source_column == -2:
+                parts.append((f, {ex: np.arange(ntrain + ntest, dtype=np.int32)[:, None] if ex == (0, 0) else np.array([[ex[1] if ex[0] == 1 else ntrain + ex[1]]], np.int32) for ex in mine_by}, None))
+            elif f.det >= 0:
+                parts.append((f, det_values(ti, int(f.det), int(f.source_column)), None))
+            else:
+                parts.append((f, column_values.get((f.source_table, f.source_column)), (0, 0)))
+        if any(p[1] is None for p in parts):
             continue
-        pool = list(b.values())
-        for ex, mine in a.items():
-            src = np.concatenate(pool if ex == (0, 0) else [x for x in (b.get(ex), b.get((0, 0))) if x is not None] or [mine[:0]])
+        for ex, mine in mine_by.items():
+            pool = []
+            for f, by, shared in parts:
+                if f.source_column == -2:
+                    pool.append(by[ex])
+                elif f.det >= 0:
+                    pool.extend([by[ex]] if ex in by else [])
+                else:
+                    pool.extend(by.values() if ex == (0, 0) else [x for x in (by.get(ex), by.get(shared)) if x is not None])
+            src = np.concatenate(pool) if pool else mine[:0]
+            if src.shape[1:] != mine.shape[1:]:
+                continue
             if mine.shape[1] == 1:
                 missing = mine[~np.isin(mine[:, 0], src[:, 0])]
             else:
@@ -292,7 +348,8 @@ def _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest
                 inverse = inverse.ravel()
                 missing = mine[~np.isin(inverse[:len(mine)], inverse[len(mine):])]
             if len(missing):
-                bad("values-copy", f"table {ti} column {c} copies column {sc} of table {si}: at example {ex}, {len(missing)} of {len(mine)} rows absent from the source, e.g. {missing[:2].tolist()}")
+                sources = ", ".join(f"column {f.source_column} of table {f.source_table}" + (f" det {f.det}" if f.det >= 0 else "") for f in fs)
+                bad("values-copy", f"table {ti} column {c} copies {sources}: at example {ex}, {len(missing)} of {len(mine)} rows absent from the sources, e.g. {missing[:2].tolist()}")
                 break
 
 

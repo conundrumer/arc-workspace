@@ -384,7 +384,8 @@ impl ResolvedProgram {
                 for (path, source) in &listed.sources {
                     match source {
                         Source::Label { label, body } => {
-                            let Some(position) = place(&columns, path) else { continue };
+                            let own = self.label_position(&relation.form, *label).map(|position| usize::from(position.0));
+                            let Some(position) = own.or_else(|| place(&columns, path)) else { continue };
                             let at = relation.form.join(body);
                             let flow = BodyFlows { program: self, registry, gathered: &gathered[&at], visiting };
                             let found = flow.sources(*label, &mut Vec::new());
@@ -478,8 +479,11 @@ impl ResolvedProgram {
                     };
                     match &self.graph.nodes[node.0 as usize].kind {
                         DependencyKind::InstanceInput { input, .. } => {
-                            for own in component.inputs.iter().filter(|own| own.port.name == *input && written.iter().any(|written| written.name == *input)) {
-                                port(&own.port, false);
+                            for own in component.inputs.iter().filter(|own| own.port.name == *input) {
+                                for written in written.iter().filter(|written| written.name == *input) {
+                                    let listing = form_columns::input_columns(&own.port, &bindings, keyed, instance, written);
+                                    given.push(Given { form: form.clone(), output: None, listing, lib: lib.clone() });
+                                }
                             }
                         }
                         DependencyKind::InstanceOutput { output, .. } => {

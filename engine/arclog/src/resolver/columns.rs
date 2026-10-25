@@ -53,7 +53,7 @@ pub(super) enum Slot {
 }
 
 impl Slot {
-    fn name(&self) -> &ColumnName {
+    pub(super) fn name(&self) -> &ColumnName {
         match self {
             Slot::Column(name) | Slot::Record { name, .. } => name,
         }

@@ -27,7 +27,8 @@ written as a part. Writes to <out dir>:
                    computed 1, constant 2, lib name 3), `source_table` (the row of the source's table in the case, -1 where
                    the case gives none: a lib relation, a constant, a lib name), `source_relation`
                    (the relation as the program spells it, `ex_input` for a read of `input`, or the lib name), `source_column`
-                   (its column index, -1 for a constant or a lib name, -2 for the example of the source's entry), `det` (the
+                   (its column index, -1 for a constant or a lib name, -2 for the example of the source's entry; with `det` >= 0 the index
+                   is into the table's `det_types[det]`, the `DET`'s relation as the reading table holds it in assigned.parquet), `det` (the
                    source's place in the table's `det_relations`, -1 where it is none) and `atom` (the path of the atom that
                    reads it, empty where none does). A reader labels a column of `ex_output` as computed from the input where
                    every source it reaches through the flows is `ex_input` or a constant, as computed from the train outputs

@@ -48,6 +48,11 @@ pub(super) fn bindings(instance: &Instance, component: &Component) -> Bindings {
                 Binding { record, sources: sources.into_iter().map(|(path, source)| (path[1..].into(), source)).collect() }
             }
         };
+        let mut binding = binding;
+        for (input, site) in &sites.later {
+            let later = site_sources(site, binding.record.is_none(), &input_body(form, input));
+            binding.sources.extend(later.into_iter().map(|(path, source)| (path[1..].into(), source)));
+        }
         (sites.parameter.clone(), binding)
     });
     Bindings(records.collect())
@@ -68,6 +73,22 @@ pub(super) fn port_columns(port: &Port, bindings: &Bindings, keyed: bool) -> Lis
         Listed { slot: Slot::of(&column.name, binding.and_then(|binding| binding.record.as_deref())), sources }
     });
     Listing(listed.collect())
+}
+
+/// The listing of `input`, an input of `instance` on `port`: the columns
+/// [`port_columns`] gives, each column on which a head site of the input
+/// stands with the labels the site writes, which the input's body binds,
+/// in place of the binding's.
+pub(super) fn input_columns(port: &Port, bindings: &Bindings, keyed: bool, instance: &Instance, input: &crate::program::InstanceInput) -> Listing {
+    let body = input_body(NodeRef::Instance(instance), input);
+    let mut listing = port_columns(port, bindings, keyed);
+    for listed in listing.0.iter_mut() {
+        let Some(site) = input.head.iter().find(|site| site.column == *listed.slot.name()) else { continue };
+        let whole = matches!(listed.slot, Slot::Column(_));
+        listed.sources.retain(|(_, source)| matches!(source, Source::Declared(_)));
+        listed.sources.extend(site_sources(site, whole, &body));
+    }
+    listing
 }
 
 /// The columns of a `DEMONSTRATED` form's relation,

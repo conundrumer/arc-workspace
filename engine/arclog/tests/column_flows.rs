@@ -85,14 +85,14 @@ fn a_column_gives_each_source_with_its_atom_and_its_det() {
     let columns = columns_of(OPENING, &[1, 2]);
     let (background, boxes, opening, output) = (table_of(&columns, 0), table_of(&columns, 1), table_of(&columns, 3), table_of(&columns, 4));
     assert_eq!(columns.tables.det_relations[opening as usize], ["slot 0"]);
-    let box_ = sources(&columns, opening, 0);
-    assert_eq!(box_, [(COPY, "slot 1.box".to_owned(), 0, boxes as i32, -1, "2.0.0".to_owned())]);
-    assert_eq!(sources(&columns, opening, 1), [(COPY, "ex_input".to_owned(), 1, 0, -1, "2.0.1".to_owned())]);
+    assert_eq!(columns.tables.column_types[opening as usize], ["Box", "Dir", "Box", "Color"]);
+    assert_eq!(sources(&columns, opening, 0), [(COPY, "ex_input".to_owned(), 1, 0, -1, "2.0.1".to_owned())]);
+    assert_eq!(sources(&columns, opening, 2), [(COPY, "slot 1.box".to_owned(), 0, boxes as i32, -1, "2.0.0".to_owned())]);
     assert_eq!(
-        sources(&columns, opening, 2),
+        sources(&columns, opening, 3),
         [(COPY, "ex_input".to_owned(), 2, 0, -1, "2.0.1".to_owned()), (COPY, "slot 0".to_owned(), 0, background as i32, 0, "2.0.2".to_owned())]
     );
-    let distance = sources(&columns, opening, 3);
+    let distance = sources(&columns, opening, 1);
     assert!(distance.iter().all(|source| source.0 == COMPUTED), "{distance:?}");
     assert!(distance.iter().any(|source| source.1 == "ex_input" && source.2 == 1), "{distance:?}");
     assert!(distance.iter().any(|source| source.1 == "slot 1.box" && source.2 == 0 && source.3 == boxes as i32), "{distance:?}");
@@ -155,4 +155,63 @@ fn a_read_of_an_input_port_copies_the_sources_of_the_ports_column() {
     let found = sources(&columns, seen, 0);
     assert!(found.iter().any(|source| source.1 == "ex_input" && source.2 == 1 && source.3 == 0), "{found:?}");
     assert!(found.iter().all(|source| source.3 != -1), "{found:?}");
+}
+
+const ANCHOR: &str = "(DET &band_axis AxisDomain)
+(RULE &anchor
+  (&band_axis *A)
+  (axis_of *D A))
+(RULE &output (input *P *Col))
+";
+
+#[test]
+fn a_column_flow_indexes_the_tables_columns_where_the_clause_writes_them_in_another_order() {
+    let columns = columns_of(ANCHOR, &[1, 2]);
+    let anchor = table_of(&columns, 1);
+    let types = &columns.tables.column_types[anchor as usize];
+    assert_eq!(types.len(), 2, "{types:?}");
+    let mut copies = 0;
+    for column in 0..2 {
+        for (kind, _, source_column, source_table, det, _) in sources(&columns, anchor, column) {
+            if kind != COPY || source_column < 0 || source_table < 0 {
+                continue;
+            }
+            copies += 1;
+            let source = if det >= 0 { &columns.tables.det_types[anchor as usize][det as usize] } else { &columns.tables.column_types[source_table as usize] };
+            assert_eq!(types[column as usize], source[source_column as usize], "column {column} copies column {source_column} of table {source_table}");
+        }
+    }
+    assert!(copies > 0);
+}
+
+const PROPAGATION: &str = "(RULE &seed (dir_elem (:D *Delta)))
+(RULE &halt (dir_elem (:D *Delta)) (dir_elem (:D *Delta2)))
+(INIT &journey Propagation
+  (source ((:n N)) (&seed (:Delta *N)))
+  (edge ((:a N) (:b N2)) (&halt (:Delta *N) (:Delta2 *N2))))
+(RULE &seen (&journey.edge (:a *A) (:b *B)))
+(RULE &output (input *P *Col))
+";
+
+#[test]
+fn an_input_port_takes_the_sources_of_its_own_head_sites_and_an_output_those_of_every_site() {
+    let columns = columns_of(PROPAGATION, &[1, 2]);
+    let (seen, reached) = (table_of(&columns, 6), table_of(&columns, 2));
+    let atom_in = |found: &[Found], prefix: &str| found.iter().all(|source| source.5.starts_with(prefix));
+    for column in 0..2 {
+        let found = sources(&columns, seen, column);
+        assert!(!found.is_empty() && atom_in(&found, "2.1."), "column {column}: {found:?}");
+    }
+    let edge = table_of(&columns, 1) as i32;
+    let found = sources(&columns, reached, 0);
+    assert!(found.iter().any(|source| source.5.starts_with("2.1.")), "{found:?}");
+    assert!(found.iter().any(|source| source.3 == edge), "{found:?}");
+    let depth = |table: u32| columns.tables.depth[table as usize];
+    for table in [seen, reached] {
+        for column in 0..2 {
+            for source in sources(&columns, table, column) {
+                assert!(source.3 < 0 || source.3 as u32 == table || depth(table) > depth(source.3 as u32), "table {table}: {source:?}");
+            }
+        }
+    }
 }
