@@ -151,6 +151,7 @@ Size runs 2 and 3 ran on 4× L4, 7.5 minutes of training each, under `--pure-bf1
 - `--eval-limit` and `--train-limit` take the first tasks in file order, not a random sample. They are for code checks.
 - In the exports up to 2812f3f5, `flows.parquet` numbers a relation's columns in another order than `tables.parquet` does (bug 20-134), and the loader joins the two by number. The field labels (computed, inferrable, remote, sole) and the column sources of every run that read the provenance (`pretrain-full-3` and `-4`, `value-s1` and `-s2`, `runs/remote-count/`) land on wrong columns in most cases, so their by-label and by-source numbers are not to be read until they are re-made on an export with the fix. The current files hold no column names that would let the loader remap.
 - A streams export `data-full-<sha>` reads the converted solvers in `work/arclog/gen`, which a converter older than `<sha>` may have written: `data-full-9ccd4952` held a3f84088 in a form from before 4c962f62. A byte check of two streams exports therefore shows changes that no commit between their shas explains, until the stems are reconverted.
+- In the exports up to 2a25e0c3, 1,180 of 6,720 cases (99 of 895 concept cases) do not reproduce their train outputs, with no fault line: the converter gives a wrong program (bugs 20-173, the Ray's node domain, and 20-174, a from-key input's clauses dropped), and the corpus_tables report dropped the replay's verdict (change 20-175 writes it). Their streams are in the training data as gold.
 
 ## Tables for the encoder
 
