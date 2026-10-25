@@ -304,6 +304,11 @@ def parser():
                          "entry that agree on the columns that share a source table with it (encoder.py, "
                          "draw_masks); the held-out log gains the attention probe; not with --mask-remote or "
                          "--enc-source-rows")
+    ap.add_argument("--enc-parent-bias", type=float, default=0.0,
+                    help="each layer adds to a row's attention scores against an earlier table's pooled vectors a "
+                         "learned value per parent type of that table to the row's table (direct source, ancestor, "
+                         "unrelated; encoder.py, parent_types), which starts at [B, 0, 0]; the held-out log gives the "
+                         "values under parent_bias; 0, the default, for none")
     ap.add_argument("--id-dim", type=int, default=64)
     ap.add_argument("--enc-k", type=int, default=4)
     ap.add_argument("--enc-layers", type=int, default=2)
@@ -361,6 +366,7 @@ def run_config(a, in_names):
                 id_dim=a.id_dim, mask_frac=a.mask_frac, mask_cap=a.mask_cap, mask_kind=a.mask_kind,
                 mask_remote=a.mask_remote, mask_remote_groups=a.mask_remote_groups, prior_weight=a.prior_weight, in_names=in_names, enc_equality=a.enc_equality,
                 enc_source_rows=a.enc_source_rows, enc_ptr_equality=a.enc_ptr_equality, enc_max_rows=a.enc_max_rows,
+                enc_parent_bias=a.enc_parent_bias,
                 value=a.value, value_tables=a.value_tables, value_label=a.value_label, value_weight=a.value_weight,
                 value_positions=a.value_positions, value_groups=a.value_groups)
 
@@ -446,7 +452,8 @@ def main():
     enc = E.FeatureEncoder(embed, in_index, a.id_dim, json.load(open(f"{a.tables}/orientations.json")), K=a.enc_k,
                            layers=a.enc_layers, c=a.enc_width, heads=a.enc_heads, mlp=a.enc_mlp, gram=a.enc_gram,
                            examples=E.max_example(tables) + 1, equality=a.enc_equality,
-                           source_rows=a.enc_source_rows, ptr_equality=a.enc_ptr_equality).to(a.device)
+                           source_rows=a.enc_source_rows, ptr_equality=a.enc_ptr_equality,
+                           parent_bias=a.enc_parent_bias).to(a.device)
     rel_token = {int(n[2:]): i for i, n in enumerate(names) if re.fullmatch(r"&r\d+", n)}
     enc.checkpoint = a.enc_checkpoint
     use_autocast = a.device == "cuda" if a.autocast is None else a.autocast
@@ -478,6 +485,8 @@ def main():
                 if (i // a.programs + 1) % 10 == 0:
                     print(f"  {min(i + a.programs, len(held))}/{len(held)} programs, {time.time() - t_eval:.0f} s", flush=True)
         out = losses(summarize(records), a.prior_weight)
+        if enc.parent_init:
+            out["parent_bias"] = enc.parent_bias_values()
         if head is not None:   # the held-out branch points, one at a time, with fixed identifiers
             head.eval()
             held_m, draws, loss_sum, n = [], [[] for _ in range(a.value_draws)], 0.0, 0

@@ -121,7 +121,8 @@ def build_encoder(cfg, value_tables, members, device, state=None):
                            layers=cfg["enc_layers"], c=cfg["enc_width"], heads=cfg["enc_heads"], mlp=cfg["enc_mlp"],
                            gram=cfg["enc_gram"], examples=E.max_example({m["key"]: m["tables"] for m in members.values()}) + 1,
                            equality=cfg["enc_equality"], source_rows=cfg["enc_source_rows"],
-                           ptr_equality=cfg["enc_ptr_equality"]).to(device)
+                           ptr_equality=cfg["enc_ptr_equality"],
+                           parent_bias=cfg.get("enc_parent_bias", 0.0)).to(device)
     if state is not None:
         missing, unexpected = enc.load_state_dict(state, strict=False)
         assert not unexpected and all(k.startswith("embed.") for k in missing), (missing, unexpected)

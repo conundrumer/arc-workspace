@@ -93,6 +93,12 @@ real tables of the dev export, cut to a few dozen rows each.
   cap must give no keys. With `--enc-ptr-equality` too, the masked heads' D4 check must hold, and, with `--learn`, a
   hidden Color pointer must learn, from a same-row copy of its value and from the lookup's source rows, where its run without the
   flags stays at its chance level.
+- Parent bias: `parent_types` must type a synthetic program's direct sources, ancestors and unrelated tables, the
+  grid tables among them, and type every table unrelated in a program without the column-level provenance; at
+  initialization, on the dev export's first program, a derived row's attention mass on its direct source tables'
+  pooled vectors must be larger with `--enc-parent-bias 4` than with 0, and 0 must give bitwise what the flag absent
+  gives; the attention probe must give a larger parent share with the bias, and the logged values must be three per
+  layer, [4, 0, 0] at initialization, which a training step moves.
 - Equality modes: the D4, permutation and batching checks under `--enc-equality random` and, with --flex, `flex` (on
   small tables and D4's generators, as flex_attention runs eagerly on the CPU); with --flex, flex must give what codes
   gives where the codes are orthonormal; random must score an equal pair at the learned weight.
@@ -1945,3 +1951,126 @@ if not pa.get("matched_fields") or not pa["matched_fields"] <= pa["fields"] or n
 print(f"  target kinds (fixture, kind) {dict(sorted(kinds_seen.items()))}; entries whose groups are single fields "
       f"{len(singles)}; row targets {rows_log} of the log against {rows_direct} of the records; matched fields "
       f"{pa.get('matched_fields')} of {pa.get('fields')} {'PASS' if not bad else 'FAIL ' + str(bad)}")
+
+print("== --enc-parent-bias: the parent types of a synthetic program (ex_input, ex_output, A from ex_input, B from A, "
+      "C from ex_input, D from B and from ex_output), and of a program without the column-level provenance")
+
+
+def parent_fixture():
+    """The evidence tables of the provenance export's $Free, then A, B, C and D, one Ident column and one row each, A's
+    and C's Ident from ex_input's first column, B's from A's, and D's two Idents, from B's and from ex_output's first
+    column."""
+    def table(i, flows):
+        cols = max(f[0] for f in flows) + 1
+        return E.Table(step=i, relation=i, evidence=False, unseen=None, largest=1, export_table=i,
+                       positions=list(range(cols)), types=["Ident"] * cols, cells=np.ones((1, cols), np.int32),
+                       present=np.ones((1, cols), bool), example=np.zeros(1, np.int16),
+                       example_kind=np.ones(1, np.int8), assignment=np.full((1, 0), -1, np.int32),
+                       model=np.zeros(1, np.int32), entry=np.zeros(1, np.int32), part=np.zeros(1, np.int32),
+                       marker=np.zeros(1, bool), unseen_entries={}, det_relations=[], depth=i - 1, keys=[],
+                       output_position=-1, output_color=-1, flows=np.array([f + [-1] for f in flows], np.int32))
+    return [free[0], free[1], table(2, [[0, 0, 0, 0]]), table(3, [[0, 0, 2, 0]]), table(4, [[0, 0, 0, 0]]),
+            table(5, [[0, 0, 3, 0], [1, 0, 1, 0]])]
+
+
+D_, A_, U_ = E.PARENT_DIRECT, E.PARENT_ANCESTOR, E.PARENT_UNRELATED
+want = np.full((6, 6), U_, np.int8)
+want[2, 0] = D_                                     # A: ex_input
+want[3, 2], want[3, 0] = D_, A_                     # B: A, and ex_input through A
+want[4, 0] = D_                                     # C: ex_input
+want[5, 3], want[5, 1], want[5, 2], want[5, 0] = D_, D_, A_, A_   # D: B and ex_output, A and ex_input through B
+got = E.parent_types(parent_fixture())
+no_prov = E.parent_types(real)
+ok = np.array_equal(got, want) and got.dtype == np.int8 and (no_prov == U_).all()
+print(f"  the synthetic program's types {'equal' if np.array_equal(got, want) else 'differ: ' + str(got.tolist())}; "
+      f"a program without provenance all unrelated {(no_prov == U_).all()} {'PASS' if ok else 'FAIL'}")
+
+print("== --enc-parent-bias: at initialization, on the dev export's first program (30 rows a table), B 4 against B 0: "
+      "a derived row's attention mass on its direct source tables' pooled vectors, and B 0 bitwise the flag absent")
+first = sorted(lm_tables)[0]
+pb_prog = [cut(t, 30, np.random.default_rng(11)) for t in lm_tables[first]]
+pt, grp_of = E.parent_types(pb_prog), E.table_groups(pb_prog)
+# the derived table with rows whose direct source tables, in other groups, give the most earlier tables
+direct_of = {t: [j for j in range(t) if pt[t, j] == D_ and grp_of[j] != grp_of[t] and pb_prog[j].n]
+             for t, tb in enumerate(pb_prog) if not tb.evidence and tb.n}
+pb_t = max(direct_of, key=lambda t: (len(direct_of[t]), -t))
+torch.manual_seed(0)
+pb_absent = E.FeatureEncoder(embed, in_index, id_dim=16, orientations=orient, K=4, layers=2, c=32, heads=4)
+torch.manual_seed(0)
+pb_zero = E.FeatureEncoder(embed, in_index, id_dim=16, orientations=orient, K=4, layers=2, c=32, heads=4,
+                           parent_bias=0.0)
+torch.manual_seed(0)
+pb_four = E.FeatureEncoder(embed, in_index, id_dim=16, orientations=orient, K=4, layers=2, c=32, heads=4,
+                           parent_bias=4.0)
+missing, unexpected = pb_four.load_state_dict(pb_absent.state_dict(), strict=False)
+assert not unexpected and all(k.endswith(".parent_bias") for k in missing), (missing, unexpected)
+for e in (pb_absent, pb_zero, pb_four):
+    e.eval()
+
+
+def source_mass(e, tables, t, sources):
+    """The mean over the rows of table t and the heads of each layer's attention mass, over all its keys, on the
+    pooled vectors of the tables `sources`: per layer."""
+    seen, cur = [], {}
+    fwd, att = E.Block.forward, E.attend
+
+    def forward(self, x, ctx, l, mats):
+        cur.update(t=ctx.level, N=x.shape[1])
+        return fwd(self, x, ctx, l, mats)
+
+    def attend(q, k, v, mask, flex=None):
+        if mask.shape[2] == 1 and cur.get("t") == t:   # a Block's call, not the pooling's
+            s = torch.einsum("bqhw,bkhw->bhqk", q.float(), k.float())
+            s = s.masked_fill(~mask, float("-inf")) if mask.dtype == torch.bool else s + mask.float()
+            a = torch.softmax(s, -1)[0, :, :tables[t].n]                               # [H, n, keys]
+            slots = [cur["N"] + j * e.K + kk for j in sources for kk in range(e.K)]
+            seen.append(a[..., slots].sum(-1).mean().item())
+        return att(q, k, v, mask, flex)
+    E.Block.forward, E.attend = forward, attend
+    try:
+        with torch.no_grad():
+            e.prepare()
+            gen = torch.Generator().manual_seed(1)
+            ids = E.Identifiers(e.c, e.code_dim, gen, "cpu", torch.float64)
+            s = e.encode_programs([(tables, [e.relation_vector(x, None) for x in tables], ids)], gen)[0]
+    finally:
+        E.Block.forward, E.attend = fwd, att
+    return seen, s
+
+
+m0, s_zero = source_mass(pb_zero, pb_prog, pb_t, direct_of[pb_t])
+m4, _ = source_mass(pb_four, pb_prog, pb_t, direct_of[pb_t])
+_, s_absent = source_mass(pb_absent, pb_prog, pb_t, direct_of[pb_t])
+with torch.no_grad():   # the masked loss with B 0 against the flag absent
+    l_zero, _ = pb_zero.masked_loss([(pb_prog, [None] * len(pb_prog))], torch.Generator().manual_seed(4), 0.3, 64,
+                                    torch.Generator().manual_seed(5))
+    l_absent, _ = pb_absent.masked_loss([(pb_prog, [None] * len(pb_prog))], torch.Generator().manual_seed(4), 0.3, 64,
+                                        torch.Generator().manual_seed(5))
+same = torch.equal(s_zero, s_absent) and torch.equal(l_zero, l_absent) and not hasattr(pb_zero.blocks[0], "parent_bias")
+ok = len(m0) == len(m4) == 2 and all(b > a for a, b in zip(m0, m4)) and same
+print(f"  {first[0]} {first[1]}: table {pb_t} ({pb_prog[pb_t].n} rows), direct source tables {direct_of[pb_t]}; mass per "
+      f"layer B 0 {[round(x, 4) for x in m0]}, B 4 {[round(x, 4) for x in m4]}; B 0 against the flag absent: pooled "
+      f"vectors and masked loss bitwise the same {same} {'PASS' if ok else 'FAIL'}")
+
+print("== --enc-parent-bias: the probe measures with the bias (the groups fixture, whose B copies from A, under "
+      "--mask-remote-groups), and the log's three values per layer, which a training step moves")
+with torch.no_grad():
+    probed = {}
+    for name, e in (("B 0", pb_absent), ("B 4", pb_four)):
+        _, recs = e.masked_loss([(grp, [None] * len(grp))], torch.Generator().manual_seed(6), 0.5, 10 ** 6,
+                                torch.Generator().manual_seed(7), kind="program", mask_remote="groups", probe=True)
+        probed[name] = P.losses(P.summarize(recs), 1.0)["parent_attention"]["mean"]
+vals0 = pb_four.parent_bias_values()
+ok_log = (sorted(vals0) == ["ancestor", "direct", "unrelated"] and all(len(v) == len(pb_four.blocks) for v in vals0.values())
+          and vals0["direct"] == [4.0] * 2 and vals0["ancestor"] == vals0["unrelated"] == [0.0] * 2
+          and pb_absent.parent_bias_values() is None)
+pb_four.train()
+opt_ = torch.optim.SGD([blk.parent_bias for blk in pb_four.blocks], lr=0.1)
+loss_, _ = pb_four.masked_loss([(grp, [None] * len(grp))], torch.Generator().manual_seed(6), 0.5, 10 ** 6,
+                               torch.Generator().manual_seed(7), kind="program", mask_remote="groups")
+loss_.backward(); opt_.step(); pb_four.zero_grad(); pb_four.eval()
+vals1 = pb_four.parent_bias_values()
+moved = vals1 != vals0
+ok = probed["B 4"] > probed["B 0"] and ok_log and moved
+print(f"  probe parent share B 0 {probed['B 0']:.4f}, B 4 {probed['B 4']:.4f}; values at initialization {vals0}, after "
+      f"one step {({k: [round(x, 4) for x in v] for k, v in vals1.items()})} {'PASS' if ok else 'FAIL'}")
