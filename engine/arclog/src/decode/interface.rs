@@ -297,9 +297,14 @@ impl<'a> Decoder<'a> {
     /// The program that `resolved` resolves, checked, or a fault at `form`
     /// where a check refuses it.
     pub(super) fn checked(&self, resolved: Arc<ResolvedProgram>, form: &NodePath) -> Outcome<CheckedProgram> {
+        self.checked_with(resolved, form, &mut CheckCache::default())
+    }
+
+    /// [`Decoder::checked`] with `cache`, which the check fills.
+    fn checked_with(&self, resolved: Arc<ResolvedProgram>, form: &NodePath, cache: &mut CheckCache) -> Outcome<CheckedProgram> {
         let registry = self.context.registry;
         let clauses = SolverClauses::of_shared_program(Arc::clone(&resolved));
-        check_shared_program(resolved, &clauses, registry, &mut CheckCache::default()).map_err(|refusals| {
+        check_shared_program(resolved, &clauses, registry, cache).map_err(|refusals| {
             let messages: Vec<&str> = refusals.iter().map(|refusal| &*refusal.message).collect();
             RunFault { message: format!("a check refuses the program: {}", messages.join("; ")).into(), form: form.clone() }
         })
@@ -307,14 +312,20 @@ impl<'a> Decoder<'a> {
 
     /// The program of `after`, whose last form just finished, checked: it
     /// resolves from `before`, the state before the step, and is checked on
-    /// the first ask, then shared by each clone of `after`.
+    /// the first ask, then shared by each clone of `after`. The check starts
+    /// from a copy of the cache that the check of `before`'s program left,
+    /// where that check has run, and the cell keeps the cache that this
+    /// check leaves.
     pub(super) fn finished_checked<'s>(&self, before: &State, after: &'s State) -> &'s Outcome<CheckedProgram> {
-        after.checked_last().get_or_init(|| {
+        let (checked, _) = after.checked_last().get_or_init(|| {
             let program = after.program();
             let form = NodePath::top(program.value().forms.len() as u32 - 1);
             let registry = self.context.registry;
-            self.checked(Arc::new(resolve_last(&before.resolved(registry), program, registry)), &form)
-        })
+            let mut cache = before.checked_last().get().map(|(_, cache)| cache.clone()).unwrap_or_default();
+            let checked = self.checked_with(Arc::new(resolve_last(&before.resolved(registry), program, registry)), &form, &mut cache);
+            (checked, cache)
+        });
+        checked
     }
 
     /// The consistency of the relation of the `RULE` clause that ends the

@@ -14,7 +14,7 @@
 use std::sync::Arc;
 
 use super::Context;
-use crate::check::CheckedProgram;
+use crate::check::{CheckCache, CheckedProgram, SolverClauses};
 use crate::eval::Outcome;
 use crate::program::path::{NodePath, PathStep};
 use crate::program::{
@@ -64,11 +64,16 @@ pub(super) struct State {
     /// The resolution of the finished forms, made on its first read, which
     /// every clone of the state shares until a form finishes.
     resolved: Arc<std::sync::OnceLock<Arc<ResolvedProgram>>>,
+    /// The clauses of the finished forms, which every clone of the state
+    /// shares until a form finishes. A clause set memoizes in cells that
+    /// one thread reads at a time, so the pool lends each to one reader,
+    /// and a reader finding the pool empty makes one.
+    clauses: Arc<std::sync::Mutex<Vec<SolverClauses>>>,
     /// The checked program of the finished forms, resolved from the
-    /// resolution of the state before the last form finished, made on its
-    /// first read and shared by every clone of the state until a form
-    /// finishes.
-    checked_last: Arc<std::sync::OnceLock<Outcome<CheckedProgram>>>,
+    /// resolution of the state before the last form finished, with the
+    /// check cache that its check left, made on its first read and shared
+    /// by every clone of the state until a form finishes.
+    checked_last: Arc<std::sync::OnceLock<(Outcome<CheckedProgram>, CheckCache)>>,
     /// The atom that the step in progress opened, as [`State::step`] takes
     /// it: none in every state a step gives.
     opened: Option<Opened>,
@@ -311,7 +316,7 @@ const FIELDS_TRIED: u32 = 1;
 
 impl State {
     pub(super) fn new() -> State {
-        State { program: Node::new(Program { forms: Arc::from([]) }), declared: Arc::from([]), finished_slots: 0, labels: 0, stack: Vec::new(), resolved: Arc::default(), checked_last: Arc::default(), opened: None }
+        State { program: Node::new(Program { forms: Arc::from([]) }), declared: Arc::from([]), finished_slots: 0, labels: 0, stack: Vec::new(), resolved: Arc::default(), clauses: Arc::default(), checked_last: Arc::default(), opened: None }
     }
 
     /// The finished forms.
@@ -326,9 +331,19 @@ impl State {
         Arc::clone(resolved)
     }
 
-    /// The checked program of the finished forms, as [`State::checked_last`]
-    /// holds it.
-    pub(super) fn checked_last(&self) -> &std::sync::OnceLock<Outcome<CheckedProgram>> {
+    /// Runs `body` with the clauses of the finished forms' resolution, made
+    /// for each reader that finds none lent, and lent again after.
+    pub(super) fn with_clauses<R>(&self, registry: &Registry, body: impl FnOnce(&SolverClauses) -> R) -> R {
+        let lent = self.clauses.lock().expect("the clause pool is not poisoned").pop();
+        let clauses = lent.unwrap_or_else(|| SolverClauses::of_shared_program(self.resolved(registry)));
+        let result = body(&clauses);
+        self.clauses.lock().expect("the clause pool is not poisoned").push(clauses);
+        result
+    }
+
+    /// The checked program of the finished forms and the check cache its
+    /// check left, as [`State::checked_last`] holds them.
+    pub(super) fn checked_last(&self) -> &std::sync::OnceLock<(Outcome<CheckedProgram>, CheckCache)> {
         &self.checked_last
     }
 
@@ -451,6 +466,7 @@ impl State {
         self.program = self.with_form(form);
         self.finished_slots = self.next_slot();
         self.resolved = Arc::default();
+        self.clauses = Arc::default();
         self.checked_last = Arc::default();
         self.labels = 0;
     }

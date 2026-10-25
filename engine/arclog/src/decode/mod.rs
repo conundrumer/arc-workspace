@@ -51,7 +51,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
 use crate::check::prefix::{Candidate, PrefixChecks};
-use crate::check::{CheckId, SolverClauses};
+use crate::check::CheckId;
 use crate::eval::instance::Constructions;
 use crate::eval::Cancellation;
 use crate::judge::candidates::PairCandidates;
@@ -213,8 +213,7 @@ impl<'a> Decoder<'a> {
     fn with_checks<R>(&self, body: impl FnOnce(&PrefixChecks<'_>) -> R) -> R {
         let registry = self.context.registry;
         let resolved = self.state.resolved(registry);
-        let clauses = SolverClauses::of_shared_program(Arc::clone(&resolved));
-        PrefixChecks::with(&resolved, &clauses, registry, body)
+        self.state.with_clauses(registry, |clauses| PrefixChecks::with(&resolved, clauses, registry, body))
     }
 
     /// [`Decoder::with_checks`], with the form in progress at the state held

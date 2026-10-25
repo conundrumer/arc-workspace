@@ -388,7 +388,7 @@ pub struct CheckCacheKey {
 
 /// The check results of the forms checked so far, by
 /// [`CheckCacheKey`], so that the cases that share a form share its check.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct CheckCache {
     entries: crate::hash::StableHashMap<CheckCacheKey, CheckResult>,
     /// The types the type check inferred for each label scope of a form, by
