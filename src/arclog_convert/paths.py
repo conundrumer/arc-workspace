@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from arclog_convert import out as arclog_out
@@ -13,7 +14,9 @@ from arclog_convert import out as arclog_out
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-SOLVERS = ROOT / "programs" / "solvers"
+SOLVERS_ENV = "ARCLOG_SOLVERS"
+"""Set, the directory the converter reads solver files from, in place of `programs/solvers`."""
+SOLVERS = Path(os.environ[SOLVERS_ENV]) if os.environ.get(SOLVERS_ENV) else ROOT / "programs" / "solvers"
 WITNESSES = ROOT / "programs" / "witnesses"
 
 

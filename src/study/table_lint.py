@@ -40,12 +40,16 @@ profile; the checker calls nothing of this module.
 """
 
 import argparse
+import hashlib
 import itertools
+import json
 import math
+import os
+import re
 import subprocess
 import sys
 import tempfile
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from enum import StrEnum
@@ -609,8 +613,63 @@ def lint(corpus: Path, tasks: Path, ids: Sequence[str]) -> list[str]:
     return [line for solver in sorted(lines) for line in lines[solver]]
 
 
-BASELINES = checkout.ROOT / "work" / "table-information" / "baselines"
-"""The `row-counts` output of each solver as committed, one file per solver, which `--measure` compares against."""
+MEASURES = checkout.ROOT / "work" / "table-information" / "measures"
+"""The cached `row-counts` output of each solver text, one file per solver and hash of the text and the tools."""
+
+
+def tools_key() -> str:
+    """The committed trees of the engine, the converter and the lib, which the row counts of a solver text depend on."""
+    trees = ["HEAD:engine", "HEAD:src/arclog_convert", "HEAD:programs/lib", "HEAD:programs/lib.dl"]
+    return subprocess.run(["git", "rev-parse", *trees], cwd=checkout.ROOT, capture_output=True, text=True, check=True).stdout
+
+
+def committed(solver: str) -> str:
+    """The solver's text as committed."""
+    return subprocess.run(["git", "show", f"HEAD:programs/solvers/{solver}.dl"], cwd=checkout.ROOT, capture_output=True, text=True, check=True).stdout
+
+
+def counts_of(solver: str, text: str) -> str:
+    """The `row-counts` output of the solver whose file holds `text`: converted and counted apart from the corpus, and cached by the hash of the text and the tools."""
+    key = hashlib.sha256((tools_key() + text).encode()).hexdigest()[:20]
+    cached = MEASURES / f"{solver}-{key}.txt"
+    if cached.exists():
+        return cached.read_text()
+    with tempfile.TemporaryDirectory() as scratch:
+        programs, out = Path(scratch) / "programs", Path(scratch) / "out"
+        solvers = programs / "solvers"
+        solvers.mkdir(parents=True)
+        for entry in (checkout.ROOT / "programs").iterdir():  # what a solver's includes reach
+            if entry.name != "solvers":
+                (programs / entry.name).symlink_to(entry)
+        (solvers / f"{solver}.dl").write_text(text)
+        plan = gen_dir().parent / "plan" / f"{solver}.txt"
+        digest = hashlib.sha256(text.encode()).hexdigest()
+        if plan.exists() and f"solver file sha256: {digest}" in plan.read_text():
+            (out / "plan").mkdir(parents=True)
+            (out / "plan" / plan.name).write_text(plan.read_text())
+        done = subprocess.run([sys.executable, "-m", "arclog_convert.convert", "--out", str(out), solver], cwd=checkout.ROOT,
+                              env={**os.environ, "ARCLOG_SOLVERS": str(solvers)}, capture_output=True, text=True)
+        if done.returncode != 0 or done.stdout.count("converted 1 of 1") != 2:
+            raise RuntimeError(f"the conversion of {solver} failed:\n{done.stdout}{done.stderr}")
+        got = row_counts(out / "gen", TASKS_DIR, [solver])
+        names = json.loads((out / "names" / f"{solver}.json").read_text())
+    MEASURES.mkdir(parents=True, exist_ok=True)
+    cached.with_suffix(".names.json").write_text(json.dumps(names))
+    cached.write_text(got)
+    return got
+
+
+def sourced(solver: str, text: str) -> set[str]:
+    """The arclog relation names whose source is a relation of the solver whose file holds `text`: each the converter's name map traces to one, and each input of an instance that the text writes under the instance's own name, from the cache `counts_of` writes."""
+    key = hashlib.sha256((tools_key() + text).encode()).hexdigest()[:20]
+    names = json.loads((MEASURES / f"{solver}-{key}.names.json").read_text())
+    got = set(names.get("relations", {}))
+    for instance, sources in names.get("instances", {}).items():
+        for source in sources:
+            if source.get("path"):
+                for port in re.findall(rf"^\s*{re.escape(source['path'])}\.(\w+)\(", text, re.M):
+                    got.add(f"{instance}.{port}")
+    return got
 
 
 def tables(text: str) -> dict[str, Relation]:
@@ -625,15 +684,27 @@ def summary(relations: Mapping[str, Relation]) -> tuple[int, int, int, int]:
     return max(totals, default=0), sum(t > CAP for t in totals), sum(t > THRESHOLD for t in totals), sum(t for t in totals if t > THRESHOLD)
 
 
-def measure(solver: str, before: str, after: str) -> list[str]:
-    """Each table of the solver whose rows, summed over the inputs, exceed 100 before or after, then the summary of both and whether the solver's tables got smaller."""
+def lib_instances(text: str) -> Counter[str]:
+    """The instances of the lib's components in a solver's text, by component: each `.init` of a component the file does not define."""
+    own = set(re.findall(r"^\s*\.comp\s+(\w+)", text, re.M))
+    return Counter(c for c in re.findall(r"^\s*\.init\s+\w+\s*=\s*(\w+)", text, re.M) if c not in own)
+
+
+def measure(solver: str, before: str, after: str, texts: tuple[str, str] = ("", ""), sources: set[str] | None = None) -> list[str]:
+    """Each table of the solver whose rows, summed over the inputs, exceed 100 before or after, then the summary of both and whether the solver's tables got smaller.
+    An edit that removes an instance of a lib component is worse whatever its tables: the instance states a claim of the task, and an edit keeps it."""
     old, new = tables(before), tables(after)
     shown = sorted((name for name in old.keys() | new.keys() if max(old[name].total if name in old else 0, new[name].total if name in new else 0) > 100),
                    key=lambda name: -max(old[name].total if name in old else 0, new[name].total if name in new else 0))
-    lines = [f"{solver} {name} {old[name].total if name in old else '-'} -> {new[name].total if name in new else '-'}" for name in shown]
+    def origin(name: str) -> str:
+        return "" if sources is None or name in sources else "  (no relation of the solver is its source: report it, do not rewrite around it)"
+    lines = [f"{solver} {name} {old[name].total if name in old else '-'} -> {new[name].total if name in new else '-'}{origin(name)}" for name in shown]
     a, b = summary(old), summary(new)
     lines.append(f"{solver} largest table {a[0]} -> {b[0]}; tables over {CAP} {a[1]} -> {b[1]}; tables over {THRESHOLD} {a[2]} -> {b[2]}, with {a[3]} -> {b[3]} rows")
-    if b[0] > a[0] or b[1] > a[1]:
+    removed = sorted((lib_instances(texts[0]) - lib_instances(texts[1])).elements())
+    if removed:
+        verdict = f"worse: the edit removes an instance of {', '.join(f'`{c}`' for c in removed)}; keep each lib component instance, and where its encoding makes a table large, report it"
+    elif b[0] > a[0] or b[1] > a[1]:
         verdict = "worse: a table is larger, or more tables are over the cap"
     elif b[3] < a[3] or b[0] < a[0]:
         verdict = "better: no table is larger, and the large tables hold fewer rows"
@@ -646,33 +717,20 @@ def measure(solver: str, before: str, after: str) -> list[str]:
 def main(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(prog="python -m study.table_lint", description=(__doc__ or "").split("\n\n")[0])
     parser.add_argument("--corpus", type=Path, default=gen_dir(), help="the directory of the arclog files, `gen/` of `arclog_convert.out` by default")
-    parser.add_argument("--baseline", action="store_true", help="record each given solver's row counts as the baseline `--measure` compares against")
-    parser.add_argument("--measure", action="store_true", help="print each given solver's tables against its baseline, then its lint lines")
+    parser.add_argument("--measure", action="store_true", help="print each given solver's tables as committed and as its file now holds them, then its lint lines")
     parser.add_argument("task_ids", nargs="*", help="the solvers to lint, every solver of the corpus by default")
     args = parser.parse_args(argv)
+    if args.measure:
+        if not args.task_ids:
+            parser.error("--measure takes task ids")
+        for solver in args.task_ids:
+            now = checkout.ROOT / "programs" / "solvers" / f"{solver}.dl"
+            old, new = committed(solver), now.read_text()
+            before, after = counts_of(solver, old), counts_of(solver, new)
+            for line in measure(solver, before, after, (old, new), sourced(solver, old) | sourced(solver, new)):
+                print(line, flush=True)
     if args.task_ids and args.corpus == gen_dir():
         reconvert(args.task_ids)
-    if args.baseline or args.measure:
-        if not args.task_ids:
-            parser.error("--baseline and --measure take task ids")
-        by_solver: dict[str, list[str]] = defaultdict(list)
-        for line in row_counts(args.corpus, TASKS_DIR, args.task_ids).splitlines():
-            if line.strip():
-                by_solver[line.split()[0]].append(line)
-        for solver in args.task_ids:
-            text = "\n".join(by_solver[solver]) + "\n"
-            path = BASELINES / f"{solver}.txt"
-            if args.baseline:
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(text)
-            elif not path.exists():
-                print(f"{solver} has no baseline at {path}", file=sys.stderr)
-                return 2
-            else:
-                for line in measure(solver, path.read_text(), text):
-                    print(line, flush=True)
-        if args.baseline:
-            return 0
     for line in lint(args.corpus, TASKS_DIR, args.task_ids):
         print(line, flush=True)
     return 0

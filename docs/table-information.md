@@ -82,7 +82,7 @@ Uses, beside the lint below: a feature for the encoder, key size, fill and bits 
 | lib relation per pair | the rows are a lib relation, `same_line`, `neighbor`, `apply`, restricted to a cell set | the lib relation and the cell set; for Agreement's `correspondence`, the D4 elements |
 | none | | a residual: the line gives the rows, the key and the bits per row |
 
-A line names the solver, the relation, its rows per input, the test and the finding. The lines are hints. An edit of a solver is judged by its tables: `uv run python -m study.table_lint --baseline <task_id>` records the solver's row counts as committed, and `--measure <task_id>` prints each table's rows, summed over the inputs, against that record, with the largest table, the tables over the cap and over the threshold, and whether the solver's tables got smaller. An edit is kept where the solver still passes its pairs and its tables got smaller.
+The lines are hints. An edit of a solver is judged by its tables: `uv run python -m study.table_lint --measure <task_id>` converts the solver as committed and as its file now holds it, each apart from the corpus and cached by the solver's text, and prints each table's rows, summed over the inputs, on both sides, with the largest table, the tables over the cap and over the threshold, and whether the solver's tables got smaller. It marks a table that no relation of the solver is the source of, by the converter's name map, and it judges an edit that removes an instance of a lib component worse. An edit is kept where the solver still passes its pairs and its tables got smaller.
 
 Where no test passes, the line is the residual class, and rewriting it takes a reading of the task; those are the briefs that need a solver session rather than an editor.
 
