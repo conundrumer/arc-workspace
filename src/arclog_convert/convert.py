@@ -5521,7 +5521,7 @@ class Solver:
         """The text with a nested ALT for each combination of alts of
         different points that each rederive a relation: the nested ALT
         states the relation as the combination's case derives it."""
-        from arclog_convert.lint import L as LintL, Sym as LintSym, alt_points, placements, read as lint_read, \
+        from arclog_convert.lint import L as LintL, Sym as LintSym, alt_points, flat, placements, read as lint_read, \
             unstated_combinations
         branch_forms, concept, _, main = self.render_args
         main_text: dict[str, list] = defaultdict(list)
@@ -5580,11 +5580,21 @@ class Solver:
             new += [f for f in main if f.name in rels - {g.name for g in fs} and not f.concept_dead]
             if not new:
                 continue
-            # a form of the case that the new forms read, and that no block
-            # the case sees states, joins them
-            seen = {p.name.partition(".")[0] for p in placements(forms) if p.name and set(p.alts) <= case}
+            # a form of the case that the new forms read, directly or through
+            # other such forms, joins them where no block the case sees states
+            # it, or the deepest such block states it in other text
+            visible = [p for p in placements(forms) if p.name and set(p.alts) <= case]
+            seen: dict[str, set[str]] = {}
+            for p in visible:
+                name = p.name.partition(".")[0]
+                deepest = max(len(q.alts) for q in visible if q.name.partition(".")[0] == name)
+                if len(p.alts) == deepest:
+                    seen.setdefault(name, set()).add(flat(p.form))
+
+            def stated_otherwise(g: Form) -> bool:
+                return g.name not in seen or flat(lint_read("\n".join(g.lines))[0]) not in seen[g.name]
             want = set().union(*(f.reads for f in new))
-            while more := [g for g in fs if g.name in want and g.name not in seen and not any(g is h for h in new)]:
+            while more := [g for g in fs if g.name in want and stated_otherwise(g) and not any(g is h for h in new)]:
                 new += more
                 want |= set().union(*(g.reads for g in more))
             # the deepest block of the chain that the file holds

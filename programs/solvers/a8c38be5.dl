@@ -436,7 +436,7 @@ parse.side($SizeDerived(), K) :- largest.high($U(), K).
     // An origin whose cut misses a window, or reads a corner with no window.
     .decl origin_contradicted(o: DiagDir)
     origin_contradicted(O) :-
-        diag_dir_elem(O), ex_out(E, _, _), parse.window(E, N, B),
+        diag_dir_elem(O), ex_out(E, _, _), parse.side(E, N), parse.window(E, N, B),
         !parse.tile_piece(E, N, O, _, B).
     origin_contradicted(O) :-
         parse.corner(E, N, O, P), ex_out(E, _, _), !parse.tile_piece(E, N, O, P, _).
