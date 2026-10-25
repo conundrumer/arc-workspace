@@ -24,7 +24,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from collections import Counter
 from pathlib import Path
-from engine.program import Qualifier
+from engine.program import Qualifier, Variable
 from arclog_convert.libmap import rename as libmap_rename
 from arclog_convert import OUT_ENV, paths
 
@@ -177,6 +177,25 @@ def name_map(s: "Solver", insts: dict[str, str], arclog: str, arcdata: str) -> d
             "unmapped": unmapped}
 
 
+def _written_inline(s: "Solver", arclog: str) -> frozenset[str]:
+    """Each relation of the solver declared `inline` that `arclog`, the pass's
+    text, still writes as a `RULE` or `DET`, and whose clauses `terms.inlined`
+    can inline: each has a body and a head of distinct variables. A relation
+    the pass's merge removed is not in `arclog`, and one of another head
+    stays as the pass wrote it."""
+    c = s.c
+    names = {r.name for r in c.prog.relations if Qualifier.INLINE in r.qualifiers}
+    names = {n for n in names if n in c.unsafe or re.search(r"\((?:RULE|DET) &" + re.escape(n) + r"(?![\w-])", arclog)}
+
+    def inlinable(n: str) -> bool:
+        units = [u for u in c.prog.units if u.head.relation.name == n and not u.head.relation.instances]
+        return n not in c.lib.top and any(u.body is not None for u in units) and all(
+            u.body is None or (all(isinstance(a, Variable) for a in u.head.args)
+                               and len({a.name for a in u.head.args}) == len(u.head.args))
+            for u in units)
+    return frozenset(n for n in names if inlinable(n))
+
+
 def convert_one(stem: str) -> tuple[str, str | None, str | None, Counter, Counter, list[str], ColMismatch, str | None]:
     """One solver's arclog and arcdata, its TODO kinds, its merge counts and
     its parameters whose columns do not map onto their proposer's, or the
@@ -194,9 +213,9 @@ def convert_one(stem: str) -> tuple[str, str | None, str | None, Counter, Counte
     try:
         s = Solver(stem, lib, sig, todo)
         arclog, arcdata = s.run()
-        # an `inline` helper whose body no order makes safe is no relation: its
-        # body stands at each call
-        stuck = frozenset(r.name for r in s.c.prog.relations if Qualifier.INLINE in r.qualifiers) & s.c.unsafe
+        # an `inline` relation that the pass writes as an arclog relation is no
+        # relation: its body stands at each call
+        stuck = _written_inline(s, arclog)
         if stuck:
             MERGES.clear()
             MERGES_UNMERGED.clear()

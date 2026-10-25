@@ -306,7 +306,8 @@ def inlined(prog, names: frozenset[str], lib: Lib):
     """`prog` with each relation of `names` written no relation: its clauses'
     bodies stand at each call, the head's variables replaced by the call's
     terms and the other variables by fresh ones, an `OR` of the bodies where
-    it has several clauses."""
+    it has several clauses. The converter passes the `inline` relations that
+    its first pass writes as arclog relations."""
     if not names:
         return prog
     defs: dict[str, list[Unit]] = defaultdict(list)
