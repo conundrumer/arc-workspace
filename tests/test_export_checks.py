@@ -21,23 +21,25 @@ def evidence(fact, depth=0):
 
 def case():
     """ex_input, ex_output, a table `R` of columns Example and Color that copy ex_input's, and a table `S` of one
-    Dir column that copies the Dir8 column of its `DET` `D` and one Color column that copies `R`'s and `D`'s, with their values."""
+    Dir column that copies the Dir8 column of its `DET` `D`, one Color column that copies `R`'s and `D`'s, and one Dir8 column
+    that copies the Dir column of `D`, with their values."""
     tables = pd.DataFrame([evidence("ex_input"), evidence("ex_output"),
                            dict(token=5, point=0, fact="R", column_types=["Example", "Color"], width=2, det_relations=[], det_types=[], det_widths=[],
                                 projections=0, fault=None, depth=1, keys=[[0, 1]], output_position=-1, output_color=-1),
-                           dict(token=6, point=0, fact="S", column_types=["Dir", "Color"], width=2, det_relations=["D"], det_types=[["Dir8", "Color"]],
-                                det_widths=[2], projections=0, fault=None, depth=2, keys=[[0, 1]], output_position=-1, output_color=-1)])
+                           dict(token=6, point=0, fact="S", column_types=["Dir", "Color", "Dir8"], width=3, det_relations=["D"], det_types=[["Dir8", "Color", "Dir"]],
+                                det_widths=[3], projections=0, fault=None, depth=2, keys=[[0, 1]], output_position=-1, output_color=-1)])
     entries = pd.DataFrame(dict(table=[0, 0, 1, 2, 3], example_kind=[1, 2, 1, 1, 1], example_index=[0, 0, 0, 0, 0], kind=[0] * 5,
                                 rows=[2, 2, 2, 2, 2], offset=[0, 12, 24, 36, 40]))
-    assigned = pd.DataFrame(dict(entry=[4], det=[0], rows=[1], offset=[44]))
-    flows = pd.DataFrame(dict(table=[2, 2, 3, 3, 3], column=[0, 1, 0, 1, 1], kind=[0] * 5, source_table=[0, 0, 2, 2, 2],
-                              source_relation=["ex_input", "ex_input", "D", "R", "D"], source_column=[-2, 2, 0, 1, 1], det=[-1, -1, 0, -1, 0]))
+    assigned = pd.DataFrame(dict(entry=[4], det=[0], rows=[1], offset=[46]))
+    flows = pd.DataFrame(dict(table=[2, 2, 3, 3, 3, 3], column=[0, 1, 0, 1, 1, 2], kind=[0] * 6, source_table=[0, 0, 2, 2, 2, 2],
+                              source_relation=["ex_input", "ex_input", "D", "R", "D", "D"], source_column=[-2, 2, 0, 1, 1, 2],
+                              det=[-1, -1, 0, -1, 0, 0]))
     values = np.array([0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 2,
                        1, 0, 0, 0, 1, 5, 1, 0, 0, 1, 0, 6,
                        0, 0, 0, 0, 1, 3, 0, 0, 0, 1, 0, 4,
                        0, 1, 0, 2,
-                       1, 2, 1, 7,
-                       1, 7], np.int32)
+                       1, 2, 2, 1, 7, 2,
+                       1, 7, 2], np.int32)
     return dict(tables=tables, entries=entries, assigned=assigned, flows=flows), values
 
 
@@ -54,6 +56,15 @@ def test_copy_between_two_types_is_reported():
     frames, values = case()
     frames["flows"].loc[1, "source_column"] = 1
     assert any(l.startswith("flows-copy-type") for l in lines(frames, values))
+
+
+def test_color_column_with_copy_flows_of_two_other_types_is_reported_and_stops_nothing():
+    frames, values = case()
+    flows = frames["flows"]
+    flows.loc[len(flows)] = [3, 1, 0, 1, "R", 0, -1]       # S's Color column also copies an Example column of R
+    flows.loc[len(flows)] = [3, 1, 0, 1, "R", 1, -1]       # and a Color column of D through no det, of another width
+    found = lines(frames, values)
+    assert any(l.startswith("flows-copy-type") for l in found)
 
 
 def test_count_entry_with_an_offset_is_reported():

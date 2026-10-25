@@ -577,8 +577,9 @@ def checked_export(d, variant="clean"):
     each entry's assignment holds table 3's Color, by a flow whose source table is table 2, whose column 1 is a
     Number; "det per row", the same with the DET's Color 1 at the first entry's assignment and 2 at the second's, and
     table 3's Color 1 and 2 at those entries; "det other row", the same with table 3's Color 2 at both entries, so
-    that the first entry's row holds a value of the second entry's assignment only; "dir8", table 2 is (Dir8, Number), with a constant flow, and table 3 (Dir), and the export has an
-    orientation_types.json that gives Dir's cells as a subset of Dir8's; "dir8 unknown", the same without the
+    that the first entry's row holds a value of the second entry's assignment only; "dir8", table 2 is (Dir8, Number, Dir), with a constant flow, and table 3 (Dir, Dir8), whose Dir copies table 2's
+    Dir8 and whose Dir8 copies table 2's Dir, and the export has an orientation_types.json that gives Dir's cells as a
+    subset of Dir8's; "dir8 unknown", the same without the
     file."""
     import pandas as pd
     task = {"train": [{"input": [[1]], "output": [[3]]}, {"input": [[2]], "output": [[3]]}], "test": [{"input": [[1]]}]}
@@ -588,10 +589,10 @@ def checked_export(d, variant="clean"):
     is_det = variant.startswith("det")
     det = dict(det_relations=["slot 0"], det_types=[["Number", "Color"]], det_widths=[2]) if is_det else {}
     row3 = {"det per row": [1, 2], "det other row": [2, 2]}.get(variant)   # table 3's Color at each entry
-    tabs = [grid, grid, dict(point=0, relation=0, column_types=["Dir8" if dir8 else "Color", "Number"], width=2),
-            dict(point=0, relation=1, column_types=["Dir" if dir8 else "Color"], width=1, **det)]
-    rows = {2: [[1, 5], [2, 6]], 3: [[4 if variant == "value" else 1]]}
-    flow = lambda tab, st, sc, det=-1, kind=0: dict(task="t", case="$C", concept=False, table=tab, column=0,
+    tabs = [grid, grid, dict(point=0, relation=0, column_types=["Dir8", "Number", "Dir"] if dir8 else ["Color", "Number"], width=3 if dir8 else 2),
+            dict(point=0, relation=1, column_types=["Dir", "Dir8"] if dir8 else ["Color"], width=2 if dir8 else 1, **det)]
+    rows = {2: [[1, 5, 1], [2, 6, 2]] if dir8 else [[1, 5], [2, 6]], 3: [[1, 1]] if dir8 else [[4 if variant == "value" else 1]]}
+    flow = lambda tab, st, sc, det=-1, kind=0, column=0: dict(task="t", case="$C", concept=False, table=tab, column=column,
                                                     kind=kind, source_table=st, source_relation="", source_column=sc,
                                                     det=det, atom="")
     tables, index, values, assigned = [], [], [], []
@@ -616,6 +617,8 @@ def checked_export(d, variant="clean"):
     pd.DataFrame(index).to_parquet(d / "index.parquet")
     flows = [flow(2, -1, -1, kind=2) if dir8 else flow(2, 0, 2),
              flow(3, 2, 1, det=0) if is_det else flow(3, 2, 1 if variant == "type" else 0)]
+    if dir8:
+        flows.append(flow(3, 2, 2, column=1))
     pd.DataFrame(flows).to_parquet(d / "flows.parquet")
     pd.DataFrame(assigned, columns=["task", "case", "entry", "det", "rows", "offset"]).to_parquet(
         d / "assigned.parquet")
@@ -685,14 +688,14 @@ for variant, want in (("det", "passes"), ("det per row", "passes"), ("det other 
     got = "passes" if isinstance(strict, dict) else "refused" if "copy flows" in strict else strict
     seen[variant] = (got, {k: c.get(k) for k in ("checked", "type", "value", "values unchecked")})
     is_det = variant.startswith("det")
-    ok = (got == want and c.get("checked") == (2 if is_det else 1) and isinstance(strict_cached, type(strict))
+    ok = (got == want and c.get("checked") == (2 if is_det or variant.startswith("dir8") else 1) and isinstance(strict_cached, type(strict))
           and c.get("value") == (variant == "det other row"))
     if want == "passes":
         ok = ok and c["type"] == 0 and c["values unchecked"] == 0 and (not_known in printed) == (variant != "dir8")
     elif is_det:
         ok = ok and c["type"] == 0 and "1 columns with values outside" in strict and "flow [3, 0, 0, 2, 1, 0]" in strict
     else:
-        ok = ok and c["type"] == 1 and not_known in strict and "type Dir from a column of type Dir8" in strict
+        ok = ok and c["type"] == 2 and not_known in strict and "type Dir from a column of type Dir8" in strict and "type Dir8 from a column of type Dir" in strict
     if not ok:
         bad.append((variant, strict, strict_cached, loose, printed))
 import contextlib, io

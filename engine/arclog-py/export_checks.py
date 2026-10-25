@@ -43,11 +43,11 @@ def cells_of(ty, types):
 
 
 def copy_keeps_type(ty, source, types):
-    """Whether a column of type `ty` may copy a column of type `source`: equal types, or an orientation type whose cells lie within the source's."""
+    """Whether a column of type `ty` may copy a column of type `source`: equal types, or orientation types whose cells of either lie within the other's."""
     if ty == source:
         return True
     mine, theirs = cells_of(ty, types), cells_of(source, types)
-    return mine is not None and theirs is not None and mine <= theirs
+    return mine is not None and theirs is not None and (mine <= theirs or theirs <= mine)
 
 
 def rows_of(df):
@@ -239,8 +239,16 @@ def _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest
     flows_of = collections.defaultdict(list)
     for f in rows_of(frames.get("flows") if copies_too else None):
         flows_of[(f.table, f.column)].append(f)
+    def source_type(f):
+        """The type of the column flow `f` copies, or None where the flow names none."""
+        if f.source_column == -2:
+            return "Example"
+        held = tl[f.table].det_types[f.det] if 0 <= f.det < len(tl[f.table].det_types) else tl[f.source_table].column_types
+        return held[f.source_column] if f.source_column < len(held) else None
+
     copies = {key: fs for key, fs in flows_of.items() if key[0] < len(tl) and all(
-        f.kind == COPY and (f.source_column == -2 or f.source_column >= 0 and 0 <= f.source_table < min(f.table, len(tl))) for f in fs)}
+        f.kind == COPY and (f.source_column == -2 or f.source_column >= 0 and 0 <= f.source_table < min(f.table, len(tl)))
+        and source_type(f) is not None and copy_keeps_type(tl[f.table].column_types[f.column], source_type(f), orientation_types) for f in fs)}
     needed = {(f.source_table, f.source_column) for fs in copies.values() for f in fs if f.det < 0 and f.source_column >= 0} | set(copies)
     column_values = {}           # (table, column) -> {example: rows}
     for ti in sorted(set(blocks) | set(held_none)):

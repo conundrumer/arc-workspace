@@ -481,8 +481,8 @@ def copy_flow_check(fl, column_types, kept, tables, dets=None, det_values=None, 
     indexes). A copy flow's source column is a column of its source table, or, where its `det` is not -1, a column of
     that DET of the table that holds the flow, whose types are that table's `det_types[det]` in tables.parquet. A copy
     flow from a column of a table that the case holds, or from a DET, must give its column the type of the source
-    column, or a subtype of it that `subtypes` gives ((subtype, supertype) pairs, `orientation_subtypes`; where None
-    or empty, the type must be the same). Where every source of a column is such a copy flow, the column's value in
+    column, or a subtype or a supertype of it that `subtypes` gives ((subtype, supertype) pairs, `orientation_subtypes`;
+    where None or empty, the type must be the same). Where every source of a column is such a copy flow, the column's value in
     each present row of its Tables must be a value of one of its source columns: over the rows of a source table's
     Tables, or over the rows of a DET's relation at the row's own assignment of that DET (the row's `assignment`,
     which indexes `det_values`, the loader's {(DET relation, run bytes): index}). A column's flows are its sources
@@ -547,7 +547,7 @@ def copy_flow_check(fl, column_types, kept, tables, dets=None, det_values=None, 
         checked += len(copies)
         ty = column_types[tab][col]
         typed = [(r, source_type(r)) for r in copies]
-        typed = [(r, st) for r, st in typed if st != ty and (ty, st) not in subtypes]
+        typed = [(r, st) for r, st in typed if st != ty and (ty, st) not in subtypes and (st, ty) not in subtypes]
         for r, st in typed:
             bad.append(("type", r, f"type {ty} from a column of type {st}" if st is not None else
                         f"type {ty} from column {r[4]} of DET {r[5]}, which the det_types of table {tab} do not give"))
@@ -826,7 +826,7 @@ def table_groups(tables):
     return out
 
 
-LOADER_VERSION = 16  # raise on any change to parse_tables or Table
+LOADER_VERSION = 17  # raise on any change to parse_tables or Table
 
 
 def table_stamp(tables_dir):
