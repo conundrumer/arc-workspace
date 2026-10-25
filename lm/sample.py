@@ -11,6 +11,18 @@ consistent relation, at `--max-steps` model-written tokens, at `--max-tokens` po
 `--max-seconds` of wall time for its lockstep group, where the mask admits no token ("empty-mask"), or where it
 admits no token the head can write ("stuck": only identifiers that the stream has not declared).
 
+Two caps count model-written tokens. A clause is a top-level form of the program (a RULE, DET, INIT, CHOOSE or
+other form): it starts at the first model-written token of the stream and at the first one after the engine
+declares a relation, which it does when the clause ends, and it holds the model-written tokens up to the next
+such declaration. `--max-clause <n>` ends a program ("max-clause") when its current clause holds more than n
+model-written tokens, a prefix's tokens of that clause included. Without the flag, n is 1.5 times the most
+model-written tokens that one clause of any case in `--data`'s cases.npz holds, computed at start and printed;
+`--max-clause 0` turns the cap off. `--max-steps-factor <f>` (default 0, off) lowers a program's `--max-steps`
+to f times the model-written tokens of its source case in prefix mode, and from nothing to f times the median
+of those counts over the task's cases in `--data`; the task's line prints the cap. Both count the tokens that the
+sampler writes after the prefix, as `--max-steps` does, except that `--max-clause` counts the prefix's tokens of
+the clause the prefix ends in.
+
 Each declaration takes a random identifier, as in training. The identifiers and the draws of each program come
 from a generator seeded by `--seed`, the task and the program's index, so a program's draws do not depend on
 `--batch`. With `--batch b`, b programs of one task step in lockstep: the decoders are forks of one decoder,
@@ -46,8 +58,11 @@ the streams under the same settings. Then one JSON line per program:
   tokens             len(ids)
   program_form       program_form() of the decode where it stopped: the finished clauses, a whole program where
                      ended
-  end                "ended", "max-steps", "max-tokens", "max-seconds", "empty-mask", "stuck", "refused", or
-                     "gold" for the gold line
+  end                "ended", "max-steps", "max-clause", "max-tokens", "max-seconds", "empty-mask", "stuck",
+                     "refused", or "gold" for the gold line
+  max_steps_used     the program's cap on sampled tokens: `--max-steps` or its lower value under
+                     `--max-steps-factor`
+  max_clause_used    the program's cap on the model-written tokens of a clause; 0 for none
   rules              the consistency kind of each sampled RULE clause's END, in order
   model_steps        the sampled tokens
   refusals, seconds
@@ -115,6 +130,8 @@ class Program:
         self.pending = [(in_index[BOS], torch.zeros(id_dim), None)]   # (input index, identifier vector, kind of a declaration)
         self.fed = 0
         self.consistency, self.rules, self.end, self.steps, self.refusals = None, [], None, 0, 0
+        self.clause = 0                           # the model-written tokens of the current clause
+        self.max_steps = self.max_clause = 0
         self.logits = self.query = None
         self.prefix_case, self.prefix_tokens, self.prefix_rules = None, 0, 0
 
@@ -122,6 +139,10 @@ class Program:
         """Append the token with id i to the stream and to the inputs to feed."""
         self.ids.append(i); self.model.append(int(by_model))
         k = kind[i]
+        if by_model:
+            self.clause += 1
+        elif k == "rel":   # the engine declares the relation of a clause that ends
+            self.clause = 0
         if k and not by_model:   # the engine declares a relation or a label
             v = torch.randn(self.id_dim, generator=self.gen) / math.sqrt(self.id_dim)
             self.latest[i] = (k, len(self.decl_ids[k]))
@@ -139,7 +160,8 @@ def hash_seed(seed, task, index):
 
 
 class Sampler:
-    def __init__(self, model, meta, dtype, vocab, device, temperature, greedy, max_steps, max_tokens, seed):
+    def __init__(self, model, meta, dtype, vocab, device, temperature, greedy, max_steps, max_tokens, seed,
+                 max_clause=0, steps_factor=0.0):
         self.model, self.dtype, self.device = model, dtype, device
         self.names = [vocab.name(i) for i in range(len(vocab))]
         self.kinds = [vocab.kind(i) for i in range(len(vocab))]
@@ -154,6 +176,7 @@ class Sampler:
         self.id_dim = meta["id_dim"]
         self.temperature, self.greedy = temperature, greedy
         self.max_steps, self.max_tokens, self.seed = max_steps, max_tokens, seed
+        self.max_clause, self.steps_factor, self.median = max_clause, steps_factor, None   # median: the task's, for the factor
         self.progress, self.max_seconds, self.tests = 0, 0.0, None
         self.time = {"model": 0.0, "admissible": 0.0, "mask": 0.0, "engine": 0.0}
         self.n_vocab = len(self.names)
@@ -262,6 +285,11 @@ class Sampler:
         (case, ids, model, m), the first m tokens of a case's stream to replay first."""
         progs = [Program(task, i, d, self.seed, self.id_dim, self.in_index) for d, i in zip(decoders, indices)]
         for p, pre in zip(progs, prefixes or [None] * len(progs)):
+            p.max_clause = self.max_clause
+            p.max_steps = self.max_steps
+            if self.steps_factor:
+                source = sum(pre[2]) if pre is not None else self.median
+                p.max_steps = min(self.max_steps, max(1, math.ceil(self.steps_factor * source)))
             if pre is not None and pre[3]:
                 self.replay(p, *pre)
         active, cache, attention = list(progs), DynamicCache(), None
@@ -316,7 +344,9 @@ class Sampler:
                         p.rules.append(str(cons.kind).split(".")[-1])
                     if p.decoder.ended:
                         p.end = "ended"
-                    elif p.steps >= self.max_steps:
+                    elif p.max_clause and p.clause > p.max_clause:
+                        p.end = "max-clause"
+                    elif p.steps >= p.max_steps:
                         p.end = "max-steps"
             keep = [b for b, p in enumerate(active) if p.end is None]
             if len(keep) < len(active) and keep:
@@ -325,7 +355,7 @@ class Sampler:
             active = [active[b] for b in keep]
         return [record(p.task, p.prefix_case, p.prefix_rules, p.index, p.ids, p.model, p.prefix_tokens,
                        p.decoder, p.consistency, self.tests, end=p.end, rules=p.rules, model_steps=p.steps,
-                       refusals=p.refusals) for p in progs]
+                       refusals=p.refusals, max_steps_used=p.max_steps, max_clause_used=p.max_clause) for p in progs]
 
     def gold(self, task, root, case, ids, model, prefix_tokens, prefix_rules):
         """The line of a case's own stream, replayed on a fork of the task's root decoder."""
@@ -334,7 +364,8 @@ class Sampler:
             if w:
                 cons = d.step(i)[1]
         return record(task, case, prefix_rules, "gold", list(ids), list(model), prefix_tokens, d, cons, self.tests,
-                      end="gold", rules=None, model_steps=0, refusals=0)
+                      end="gold", rules=None, model_steps=0, refusals=0, max_steps_used=None,
+                      max_clause_used=None)
 
 
 def record(task, case, branch, rollout, ids, model, prefix_tokens, decoder, consistency, tests, **rest):
@@ -355,13 +386,32 @@ def record(task, case, branch, rollout, ids, model, prefix_tokens, decoder, cons
 def corpus_cases(data, names):
     """The streams of each task's cases in a data export, as {task: [(case, ids, model)]}, in file order."""
     vocab = json.load(open(f"{data}/vocab.json"))
-    assert vocab["names"] == names, f"{data}: the export's vocabulary differs from the engine's"
+    assert (vocab["names"] if isinstance(vocab, dict) else vocab) == names, f"{data}: the export's vocabulary differs from the engine's"
     z = np.load(f"{data}/cases.npz")
     ids, model, off = z["ids"], z["model"], z["offsets"]
     cases = {}
     for c, (task, case) in enumerate(zip(z["task"].tolist(), z["case"].tolist())):
         cases.setdefault(task, []).append((str(case), ids[off[c]:off[c + 1]].tolist(), model[off[c]:off[c + 1]].tolist()))
     return cases
+
+
+def corpus_stats(data, names, kinds):
+    """From a data export's cases.npz: the most model-written tokens that one clause of any case holds, and for each
+    task the median model-written token count of its cases."""
+    vocab = json.load(open(f"{data}/vocab.json"))
+    assert (vocab["names"] if isinstance(vocab, dict) else vocab) == names, f"{data}: the export's vocabulary differs from the engine's"
+    z = np.load(f"{data}/cases.npz")
+    ids, model, off = z["ids"], z["model"].astype(bool), z["offsets"]
+    rel = np.array([k == "relation" for k in kinds])
+    most, counts = 0, {}
+    for c, task in enumerate(z["task"].tolist()):
+        i, m = ids[off[c]:off[c + 1]], model[off[c]:off[c + 1]]
+        end = (~m) & rel[i]                  # the engine declares a relation: the clause before it ends
+        clause = np.cumsum(end) - end        # the clause index of each position; a declaration belongs to its clause's end
+        per = np.bincount(clause[m]) if m.any() else np.zeros(1, int)
+        most = max(most, int(per.max()))
+        counts.setdefault(task, []).append(int(m.sum()))
+    return most, {t: float(np.median(v)) for t, v in counts.items()}
 
 
 def prefix_length(mode, rng, tokens, rules, n):
@@ -391,6 +441,12 @@ def main():
     ap.add_argument("--greedy", action="store_true", help="take the argmax at each choice")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--max-steps", type=int, default=MAX_STEPS, help="the most model-written tokens of a program")
+    ap.add_argument("--max-clause", type=int, default=None,
+                    help="the most model-written tokens inside one clause; default 1.5 times the most that one clause "
+                         "of a case in --data holds; 0 for none")
+    ap.add_argument("--max-steps-factor", type=float, default=0.0,
+                    help="lowers --max-steps to this times the source case's model-written tokens (prefix mode), or "
+                         "the median of the task's cases in --data; 0 for off")
     ap.add_argument("--max-tokens", type=int, default=MAX_TOKENS, help="the most context positions, the start token included")
     ap.add_argument("--max-seconds", type=float, default=0.0,
                     help="the most wall seconds of a lockstep group of programs, its prefixes included; 0 for none")
@@ -419,13 +475,29 @@ def main():
             if sampler is None:
                 sampler = Sampler(model, meta, dtype, session.vocabulary, a.device, a.temperature, a.greedy,
                                   a.max_steps, a.max_tokens, a.seed)
+                if a.max_clause is None or a.max_steps_factor:
+                    most, medians = corpus_stats(a.data, sampler.names, sampler.kinds)
+                sampler.steps_factor = a.max_steps_factor
+                if a.max_clause is None:
+                    sampler.max_clause = math.ceil(1.5 * most)
+                    print(f"max-clause {sampler.max_clause}: 1.5 times {most}, the most model-written tokens of one "
+                          f"clause in {a.data}", flush=True)
+                else:
+                    sampler.max_clause = a.max_clause
                 sampler.progress, sampler.max_seconds = a.progress, a.max_seconds
                 s = session.settings
                 f.write(json.dumps({"settings": {k: getattr(s, k) for k in SETTINGS}, "world": a.world, "args": vars(a),
+                                    "max_clause": sampler.max_clause,
                                     "model_meta": {k: v for k, v in meta.items() if not k.endswith("_names")}}) + "\n")
             task_json = json.load(open(f"{a.task_dir}/{task}.json"))
             tests = [t["output"] for t in task_json["test"]] if all("output" in t for t in task_json["test"]) else None
             sampler.tests = tests
+            if a.max_steps_factor:
+                assert task in medians, f"{task}: no case in {a.data}"
+                sampler.median = medians[task]
+                cap = min(a.max_steps, max(1, math.ceil(a.max_steps_factor * medians[task])))
+                print(f"{task}: median {medians[task]:g} model-written tokens; max-steps {cap} from nothing"
+                      + (", and from a prefix, the factor times the source case's" if a.prefix != "0" else ""), flush=True)
             root = session.decoder()
             golds = set()
             prefix_of = lambda i: None
@@ -459,7 +531,7 @@ def main():
                 for r in sampler.run(task, [root.fork() for _ in idx], idx, prefixes):
                     r["seconds"] = round(time.time() - t, 2)
                     records.append(r); f.write(json.dumps(r) + "\n"); f.flush()
-                    print(f"{task} #{r['rollout']}: {r['end']}, {r['tokens']} tokens, {r['model_steps']} model steps, "
+                    print(f"{task} #{r['rollout']}: {r['end']}, {r['tokens']} tokens, {r['model_steps']} model steps (cap {r['max_steps_used']}), "
                           f"rules {r['rules']}, solved_test {r['solved_test']}, prefix {r['prefix_tokens']} tokens "
                           f"({r['prefix_rules']} rules) of {r['case']}", flush=True)
     seconds = time.time() - t0
