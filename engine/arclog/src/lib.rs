@@ -23,7 +23,7 @@
 //! - programs as values: [`program`] and its submodules
 //! - checker: [`types`], [`diagnostic`], [`check`] and its submodules,
 //!   [`safety`], which its safety check applies, the
-//!   example `lint`, and the tests under `engine/arclog/tests/` that feed a
+//!   example `lint`, and the tests under `engine/arclog/tests/integration/` that feed a
 //!   check a file that breaks it, such as the comparison typing rule's and the pose
 //!   rule's
 //!

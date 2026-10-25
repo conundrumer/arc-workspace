@@ -10,7 +10,7 @@
 //! reader of [`crate::read::read_sexprs`], so the engine has one reader for
 //! every s-expression file. `include_str!` puts its text into the compiled
 //! crate, and [`Registry::get`] reads that text once, on first use. The test
-//! `registry_file` under `engine/arclog/tests/` parses both lib files, so a
+//! `registry_file` under `engine/arclog/tests/integration/` parses both lib files, so a
 //! fault of either fails `cargo test`.
 //!
 //! Each top-level form declares one lib element, by its head:

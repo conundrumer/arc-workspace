@@ -1,0 +1,55 @@
+//! The integration tests of `arclog`, built as the one test binary `integration`.
+//! A new test goes in as a file `<name>.rs` beside this one and a line `mod <name>;` below,
+//! not as a file at the top of `tests/`, which would build as a binary of its own.
+
+mod body_reads_and_pose_or;
+mod box_margins;
+mod check_prefixes;
+mod child_order_and_scopes;
+mod column_flows;
+mod column_names;
+mod comparison_typing;
+mod corpus_panic;
+mod cycle_check;
+mod decode_interface;
+mod decoder;
+mod det_proposer_names;
+mod det_read_columns;
+mod determination;
+mod evaluation_bounds;
+mod evidence_tables;
+mod factorized_bodies;
+mod filter_body_order;
+mod filter_in_a_key_body;
+mod form_side_reads;
+mod instance_input_reads;
+mod instance_key_fill;
+mod instance_label_types;
+mod join_order_cost;
+mod judge;
+mod judge_unfold;
+mod line_readings;
+mod lint_checks;
+mod mask_constraint_completion;
+mod negated_atom_modes;
+mod no_key_columns;
+mod open_parameters;
+mod open_read_refusals;
+mod orientation_tables;
+mod panic_isolation;
+mod program_edits;
+mod proposer_column_types;
+mod reader;
+mod registry_file;
+mod replay_panic;
+mod replay_prefix_tree;
+mod replay_step_cap;
+mod resolver;
+mod scope_checks;
+mod scope_types;
+mod shared_form_content;
+mod site_column_once;
+mod token_stream;
+mod traces;
+mod zero_typed_key_column;
+mod zero_typed_labels;
