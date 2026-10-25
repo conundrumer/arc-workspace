@@ -31,7 +31,6 @@ use crate::resolver::{resolve, resolve_last, ResolvedProgram, SolverScope};
 use crate::safety::body_labels;
 use crate::resolver::form_columns::rigid_outputs;
 use crate::resolver::registry_columns::{component, proposer_columns, typed_columns};
-use crate::stream::write::reads_example_column;
 use crate::stream::{Control, Token};
 
 /// Why the grammar refuses a token at a state.
@@ -78,14 +77,12 @@ pub(super) struct State {
 /// An atom that a step opened as its last change, which the form in
 /// progress then ends with: its relation alone, and no site.
 #[derive(Clone, Debug)]
-pub(super) struct Opened {
-    /// The resolution of the program that holds the form in progress as its
-    /// last form, where the atom's token is a slot's relation, which the
-    /// step resolved to test the atom's example column. The column the atom
-    /// takes is no part of the form in progress, so this is the resolution
-    /// of the state the step gives.
-    pub(super) resolved: Option<Arc<ResolvedProgram>>,
-}
+pub(super) struct Opened;
+
+/// Whether the atom of `relation` that a step opened, at the path in the
+/// program, the second argument, of the program with the form in progress
+/// as its last form, the first, reads an Example column.
+pub(super) type ReadsExample<'a> = &'a dyn Fn(&Node<Program>, &NodePath, &RelationRef) -> bool;
 
 /// An open node of the form in progress, with its children so far.
 #[derive(Clone, Debug)]
@@ -339,7 +336,7 @@ impl State {
     ///
     /// The step also gives the atom it opened as its last change, where it
     /// finished no form: the state then ends with an atom of no site.
-    pub(super) fn step(&self, context: &Context<'_>, token: &Token) -> Result<(State, Vec<Token>, Option<Opened>), Unexpected> {
+    pub(super) fn step(&self, context: &Context<'_>, token: &Token, reads_example: ReadsExample<'_>) -> Result<(State, Vec<Token>, Option<Opened>), Unexpected> {
         let mut next = self.clone();
         let mut forced = Vec::new();
         loop {
@@ -362,6 +359,9 @@ impl State {
             }
         }
         let opened = next.opened.take().filter(|_| next.program.value().forms.len() == self.program.value().forms.len());
+        if let (Some(_), Token::Relation(_)) = (&opened, token) {
+            next.add_example_column(reads_example);
+        }
         Ok((next, forced, opened))
     }
 
@@ -634,19 +634,28 @@ impl State {
             _ => false,
         };
         self.stack.push(Frame::Atom(AtomFrame { relation, columns, sites: Vec::new(), negated }));
-        let mut resolved = None;
-        if let Token::Relation(_) = token {
-            let (program, open) = self.partial().expect("a form that shows its atom");
-            let at = self.absolute(&open.expect("an open atom"));
-            let partial = Arc::new(self.resolved_partial(&program, context.registry));
-            if reads_example_column(&partial, &at) {
-                let atom = top!(self, Frame::Atom);
-                atom.columns = std::iter::once(example()).chain(atom.columns.iter().cloned()).collect();
-            }
-            resolved = Some(partial);
-        }
-        self.opened = Some(Opened { resolved });
+        self.opened = Some(Opened);
         Ok(())
+    }
+
+    /// The relation of the atom on top, where one is open.
+    pub(super) fn open_relation(&self) -> Option<RelationRef> {
+        match self.stack.last() {
+            Some(Frame::Atom(atom)) => Some(atom.relation.clone()),
+            _ => None,
+        }
+    }
+
+    /// Adds the Example column to the columns of the atom on top, which a
+    /// step opened as its last change, where `reads_example` says that the
+    /// read of its relation reads one.
+    fn add_example_column(&mut self, reads_example: ReadsExample<'_>) {
+        let (program, open) = self.partial().expect("a form that shows its atom");
+        let at = self.absolute(&open.expect("an open atom"));
+        let atom = top!(self, Frame::Atom);
+        if reads_example(&program, &at, &atom.relation) {
+            atom.columns = std::iter::once(example()).chain(atom.columns.iter().cloned()).collect();
+        }
     }
 
     /// Opens the site on `column` of the atom on top. A site on a column of

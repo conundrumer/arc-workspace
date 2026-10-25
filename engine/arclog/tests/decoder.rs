@@ -12,7 +12,7 @@ use arclog::decode::{Decoder, Refusal};
 use arclog::eval::instance::Constructions;
 use arclog::eval::values::Caps;
 use arclog::program::path::{node_at, NodePath, NodeRef, PathStep};
-use arclog::program::{FactRelation, Form, Node, Program, RelationRef};
+use arclog::program::{FactRelation, Form, Node, Program};
 use arclog::read::read_solver;
 use arclog::registry::{LibName, Registry};
 use arclog::resolver::{resolve, resolve_last, GraphNodeIndex, ResolvedProgram, SolverScope};
@@ -256,28 +256,61 @@ fn the_mask_where_an_atom_opens_is_what_each_step_admits() {
 }
 
 /// What a resolution gives at `at` and for the nodes of the last form
-/// after the first `nodes`: the resolution and the signature at `at`, and
-/// the content of the last form at `form` and the hash of the content of
-/// each of its nodes.
+/// after the first `nodes`: the resolution, the signature and the lifting
+/// at `at`; the content of the last form at `form` and its side; and, of
+/// each of its nodes, the hash of its content, its reads, its side, its
+/// Example columns, its forms and its depth.
 fn resolution_of_last(resolved: &ResolvedProgram, form: &NodePath, at: &NodePath, nodes: usize) -> String {
-    let hashes: Vec<_> = (nodes..resolved.graph.nodes.len()).map(|node| resolved.node_content(GraphNodeIndex(node as u32)).map(|content| content.content_hash())).collect();
-    format!("{:?} {:?} {:?} {:?}", resolved.resolution(at), resolved.signature(at), resolved.content(form).map(|content| content.content_hash()), hashes)
+    let each = |node: usize| {
+        let index = GraphNodeIndex(node as u32);
+        format!(
+            "{:?} {:?} {:?} {:?} {:?} {:?} {:?}",
+            resolved.node_content(index).map(|content| content.content_hash()),
+            resolved.graph.reads[node],
+            resolved.side(index),
+            resolved.example_columns(index, None),
+            resolved.forms_of(index),
+            resolved.depth(index),
+            resolved.column_names(index),
+        )
+    };
+    let per_node: Vec<_> = (nodes..resolved.graph.nodes.len()).map(each).collect();
+    format!(
+        "{:?} {:?} {:?} {:?} {:?} {:?} {:?}",
+        resolved.resolution(at),
+        resolved.signature(at),
+        resolved.reads_lifted(at),
+        resolved.content(form).map(|content| content.content_hash()),
+        resolved.form_side(form),
+        resolved.nodes_of(form),
+        per_node
+    )
 }
 
-/// At each state of a decode where the next token may open an atom, the
-/// resolution of the form in progress for one lib relation, a relation
-/// macro or a proposer, retargeted to another's relation, gives what
-/// `resolve_last` gives for that other's program.
-#[test]
-fn a_retargeted_resolution_is_what_resolve_last_gives() {
+/// What `compare_retargets` counted.
+#[derive(Default)]
+struct Retargets {
+    compared: usize,
+    retargeted: usize,
+    to_node: usize,
+    from_node: usize,
+    in_instance: usize,
+    after_key_body: usize,
+}
+
+/// At each state of the decode of the stream of `arclog` where the next
+/// token may open an atom, the resolution of the form in progress for one
+/// candidate that opens an atom of a lib relation, a relation macro, a
+/// proposer or a program's relation, retargeted to another's relation,
+/// gives what `resolve_last` gives for that other's program.
+fn compare_retargets(arclog: &str) -> Retargets {
     let registry = Registry::get();
     let vocabulary = Vocabulary::new(registry, &DecodeSettings::default());
-    let boxes = "(INIT &boxes BoundingBox (key ((&comps.component ^Id)) (cell (P) (&comps.component *P Id))))\n";
-    let written = checked(&format!("{BG}{FG}{COMPS}{AXIS}{PRIOR}{boxes}"));
+    let written = checked(arclog);
     let stream = token_stream(&written, &vocabulary).expect("the program has a stream");
     let inputs = inputs();
     let mut decoder = decoder(&inputs);
-    let (mut retargeted, mut compared, mut in_instance, mut after_key_body) = (0, 0, 0, 0);
+    let mut counts = Retargets::default();
     for (token, emitter) in &stream {
         if matches!(emitter, Emitter::Engine) {
             continue;
@@ -286,7 +319,9 @@ fn a_retargeted_resolution_is_what_resolve_last_gives() {
             let mut resolved: Option<ResolvedProgram> = None;
             for id in 0..u32::try_from(vocabulary.len()).expect("fewer than 2^32 tokens") {
                 let candidate = vocabulary.token(id).expect("an id of the vocabulary");
-                let (Token::Lib(name) | Token::Proposer(name)) = candidate else { continue };
+                if !matches!(candidate, Token::Lib(_) | Token::Proposer(_) | Token::Relation(_)) {
+                    continue;
+                }
                 let mut fork = decoder.fork();
                 if fork.step(candidate.clone()).is_err() {
                     continue;
@@ -296,16 +331,23 @@ fn a_retargeted_resolution_is_what_resolve_last_gives() {
                 let earlier = std::sync::Arc::new(resolve(&Node::new(Program { forms: complete.into() }), None, &SolverScope::default(), registry).value);
                 let form = NodePath::top(complete.len() as u32);
                 let at = form.join(&open);
+                let Some(atom) = node_at(NodeRef::Program(program.value()), &at).and_then(NodeRef::atom) else { continue };
+                if !atom.sites.is_empty() {
+                    continue;
+                }
                 let expected = resolve_last(&earlier, &program, registry);
                 let nodes = earlier.graph.nodes.len();
                 match resolved.as_mut() {
                     Some(held) => {
-                        compared += 1;
-                        if held.retarget_lib_atom(&program, &at, &RelationRef::Lib(name.clone()), registry) {
-                            retargeted += 1;
+                        counts.compared += 1;
+                        let before_node = matches!(held.resolution(&at), Some(arclog::resolver::Resolution::Node(_)));
+                        if held.retarget_atom(&program, &at, &atom.relation, registry) {
+                            counts.retargeted += 1;
+                            counts.from_node += usize::from(before_node);
+                            counts.to_node += usize::from(matches!(held.resolution(&at), Some(arclog::resolver::Resolution::Node(_))));
                             let in_form = matches!(program.value().forms.last(), Some(Form::Instance(_)));
-                            in_instance += usize::from(in_form);
-                            after_key_body += usize::from(in_form && at.0.get(1..3) != Some(&[PathStep(0), PathStep(0)][..]));
+                            counts.in_instance += usize::from(in_form);
+                            counts.after_key_body += usize::from(in_form && at.0.get(1..3) != Some(&[PathStep(0), PathStep(0)][..]));
                             assert_eq!(resolution_of_last(held, &form, &at, nodes), resolution_of_last(&expected, &form, &at, nodes), "{candidate:?} after {token:?}");
                         }
                     }
@@ -315,9 +357,30 @@ fn a_retargeted_resolution_is_what_resolve_last_gives() {
         }
         decoder.step(token.clone()).expect("a token of the stream");
     }
+    counts
+}
+
+#[test]
+fn a_retargeted_resolution_is_what_resolve_last_gives() {
+    let boxes = "(INIT &boxes BoundingBox (key ((&comps.component ^Id)) (cell (P) (&comps.component *P Id))))\n";
+    let counts = compare_retargets(&format!("{BG}{FG}{COMPS}{AXIS}{PRIOR}{boxes}"));
+    let Retargets { compared, retargeted, in_instance, after_key_body, to_node, .. } = counts;
+    assert!(to_node > 0, "no retarget to a node, {retargeted} retargets of {compared} candidates");
     assert!(compared > 0 && retargeted > 0, "{retargeted} retargets of {compared} candidates");
     assert!(in_instance > 0, "no retarget inside the instance form, {retargeted} retargets of {compared} candidates");
     assert!(after_key_body > 0, "no retarget outside the key body of the instance form, {in_instance} inside it");
+}
+
+/// The same for the atoms of a clause, which read the relations of the
+/// forms before it as well.
+#[test]
+fn a_retargeted_resolution_of_a_clause_is_what_resolve_last_gives() {
+    let lists = "(RULE &lists (input *P *Col) (NOT (&fg P)) (IF ((&bg (:C Col))) ((= *K 0)) ((input P (:Col *D)) (= *K 0))) (ALL ((input (:P *Q) (:Col Col))) ((&fg (:P Q)))))\n";
+    let det = "(DET &arr_dim ScaleRatio)\n";
+    for program in [format!("{BG}{FG}{lists}"), format!("{BG}{FG}{AXIS}{PRIOR}"), format!("{BG}{FG}{det}(RULE &cell (input *P *Col) (&fg P) (&bg (:C Col)) (&arr_dim))\n")] {
+        let counts = compare_retargets(&program);
+        assert!(counts.to_node > 0 && counts.from_node > 0, "{} retargets to a node, {} from one, of {} candidates", counts.to_node, counts.from_node, counts.compared);
+    }
 }
 
 /// Along a stream, a step after `admissible` gives the step and the program

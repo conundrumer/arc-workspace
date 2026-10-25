@@ -11,8 +11,8 @@
 //! which holds no site yet, so they share the labels and their types, the
 //! bindings of the conjuncts before the atom, and the result of each check
 //! that reads nothing of that relation ([`Candidate::AtomHead`]), and the candidates that open an
-//! atom of a lib relation, a relation macro or a proposer take one resolution of the form in
-//! progress, retargeted to each one's relation. The mask keeps the state and
+//! atom of a lib relation, a relation macro, a proposer or a relation of the program take one
+//! resolution of the form in progress, retargeted to each one's relation. The mask keeps the state and
 //! forced tokens of each admitted token, which the step of that token takes. Its interface
 //! beside the mask, in `interface`, gives the rows of the body so far and the
 //! consistency test at a `RULE` clause's end, and its batch form, in
@@ -313,24 +313,23 @@ impl<'a> Decoder<'a> {
         if vocabulary.id(token).is_none() {
             return Err(Refusal::Grammar("the vocabulary holds no such token"));
         }
-        let (state, forced, opened) = self.state.step(&self.context, token).map_err(Refusal::Grammar)?;
+        let earlier = || self.state.resolved(self.context.registry);
+        let reads_example = |program: &Node<Program>, at: &NodePath, relation: &RelationRef| checks.reads_example_column(&earlier(), program, at, relation);
+        let (state, forced, opened) = self.state.step(&self.context, token, &reads_example).map_err(Refusal::Grammar)?;
         if forced.iter().any(|token| vocabulary.id(token).is_none()) {
             return Err(Refusal::Grammar("a token the engine emits after it passes a vocabulary cap"));
         }
         if let Some((program, open)) = state.partial() {
             if !program.value().forms.is_empty() {
-                if let (Some(open), Token::Lib(name) | Token::Proposer(name), None) = (&open, token, opened.as_ref().and_then(|opened| opened.resolved.as_ref())) {
-                    let earlier = self.state.resolved(self.context.registry);
-                    if let Some((check, refusals)) = checks.check_lib_head(&earlier, &program, open, &RelationRef::Lib(name.clone())) {
+                if let (Some(open), true, Token::Lib(_) | Token::Proposer(_) | Token::Relation(_)) = (&open, opened.is_some(), token) {
+                    let relation = state.open_relation().expect("an atom stands open");
+                    if let Some((check, refusals)) = checks.check_atom_head(&earlier(), &program, open, &relation) {
                         return Err(Refusal::Check { check, refusals });
                     }
                     return Ok((state, forced));
                 }
                 let candidate = if opened.is_some() { Candidate::AtomHead } else { Candidate::Any };
-                let resolved = match opened.and_then(|opened| opened.resolved) {
-                    Some(resolved) => resolved,
-                    None => Arc::new(resolve_last(&self.state.resolved(self.context.registry), &program, self.context.registry)),
-                };
+                let resolved = resolve_last(&earlier(), &program, self.context.registry);
                 if let Some((check, refusals)) = checks.check(&resolved, open.as_ref(), candidate) {
                     return Err(Refusal::Check { check, refusals });
                 }

@@ -16,6 +16,7 @@ use crate::program::{Atom, Body, Choose, Clause, Conjunct, Form, Instance, Insta
 use crate::registry::Registry;
 use crate::program::RelationRef;
 use crate::resolver::{resolve_last, ResolvedProgram};
+use crate::stream::write::reads_example_column;
 use crate::types::each_site_label;
 
 /// A prefix of a form: its partial form, as [`Prefix`] gives it, and the
@@ -133,9 +134,18 @@ struct AtomHead {
     labels: OnceCell<Vec<LabelInScope>>,
     results: RefCell<StableHashMap<CheckId, PrefixResult>>,
     bound: BoundCache,
-    /// The resolution of the lib-atom candidates ([`PrefixChecks::check_lib_head`]):
-    /// the one of the candidate checked last, retargeted to the next.
-    resolution: RefCell<Option<ResolvedProgram>>,
+    /// The resolution of the candidates that open an atom of a relation
+    /// ([`PrefixChecks::check_atom_head`]): the one of the candidate
+    /// checked last, retargeted to the next.
+    resolution: RefCell<Option<HeldResolution>>,
+}
+
+/// The resolution of the form in progress for a candidate that opens, at
+/// `at`, an atom of `relation`.
+struct HeldResolution {
+    at: NodePath,
+    relation: RelationRef,
+    resolved: ResolvedProgram,
 }
 
 /// How a check reads the relation of an atom of no site.
@@ -203,22 +213,46 @@ impl PrefixChecks<'_> {
 
     /// [`PrefixChecks::check`] with [`Candidate::AtomHead`] for the prefix
     /// whose last token opens, at `open`, an atom of `relation`, a lib
-    /// relation, relation macro or proposer, where `earlier` is the
-    /// resolution of the forms before the last of `program`. The
-    /// candidates of one mask at one open path share one resolution of
-    /// the form in progress, retargeted to each one's relation
-    /// ([`ResolvedProgram::retarget_lib_atom`]); where that gives no
-    /// retarget, the resolution is [`resolve_last`]'s.
-    pub fn check_lib_head(&self, earlier: &Arc<ResolvedProgram>, program: &Node<Program>, open: &NodePath, relation: &RelationRef) -> Option<(CheckId, Box<[Refusal]>)> {
-        let mut held = self.head.resolution.borrow_mut();
+    /// relation, relation macro or proposer, or a relation declared or
+    /// output by a form of `program`, where `earlier` is the resolution of
+    /// the forms before the last of `program`. The candidates of one mask
+    /// at one open path share one resolution of the form in progress,
+    /// retargeted to each one's relation
+    /// ([`ResolvedProgram::retarget_atom`]); where that gives no retarget,
+    /// the resolution is [`resolve_last`]'s.
+    pub fn check_atom_head(&self, earlier: &Arc<ResolvedProgram>, program: &Node<Program>, open: &NodePath, relation: &RelationRef) -> Option<(CheckId, Box<[Refusal]>)> {
         let last = program.value().forms.len() as u32 - 1;
         let full = NodePath(std::iter::once(PathStep(last)).chain(open.0.iter().copied()).collect());
-        let retargeted = held.as_mut().is_some_and(|resolved| resolved.retarget_lib_atom(program, &full, relation, self.registry));
-        if !retargeted {
-            *held = Some(resolve_last(earlier, program, self.registry));
-        }
-        let resolved = held.as_ref().expect("the resolution is set");
+        self.hold_atom_head(earlier, program, &full, relation);
+        let held = self.head.resolution.borrow();
+        let resolved = &held.as_ref().expect("the resolution is set").resolved;
         self.check(resolved, Some(open), Candidate::AtomHead)
+    }
+
+    /// Whether the read at `at`, the path in `program` of an atom of
+    /// `relation` that a candidate opens, reads an Example column, as
+    /// `reads_example_column` gives it on the resolution that
+    /// [`PrefixChecks::check_atom_head`] holds for that candidate.
+    pub fn reads_example_column(&self, earlier: &Arc<ResolvedProgram>, program: &Node<Program>, at: &NodePath, relation: &RelationRef) -> bool {
+        self.hold_atom_head(earlier, program, at, relation);
+        let held = self.head.resolution.borrow();
+        reads_example_column(&held.as_ref().expect("the resolution is set").resolved, at)
+    }
+
+    /// Holds the resolution of `program` for the candidate that opens, at
+    /// `at`, an atom of `relation`: the held one retargeted, or
+    /// [`resolve_last`]'s. A resolution already held for that candidate
+    /// stays.
+    fn hold_atom_head(&self, earlier: &Arc<ResolvedProgram>, program: &Node<Program>, at: &NodePath, relation: &RelationRef) {
+        let mut held = self.head.resolution.borrow_mut();
+        if held.as_ref().is_some_and(|held| held.at == *at && held.relation == *relation) {
+            return;
+        }
+        let retargeted = held.as_mut().is_some_and(|held| held.at == *at && held.resolved.retarget_atom(program, at, relation, self.registry));
+        match held.as_mut().filter(|_| retargeted) {
+            Some(held) => held.relation = relation.clone(),
+            None => *held = Some(HeldResolution { at: at.clone(), relation: relation.clone(), resolved: resolve_last(earlier, program, self.registry) }),
+        }
     }
 
     /// The result of `check` on `prefix`, which is the result of the first
