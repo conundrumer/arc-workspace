@@ -89,7 +89,7 @@ fn partial_path(form: &Form, at: &NodePath) -> NodePath {
 /// complete, and whose open node is at `open`. `clauses` holds the clauses
 /// of `program`'s solver, or of `program` alone for a synthesized program.
 pub fn check_prefix(program: &ResolvedProgram, clauses: &SolverClauses, registry: &Registry, open: Option<&NodePath>) -> Vec<(CheckId, PrefixResult)> {
-    with_prefix(program, clauses, registry, None, None, open, |prefix| checks().iter().map(|check| (check.id(), check.check_prefix(prefix))).collect())
+    with_prefix(program, clauses, registry, None, None, None, open, |prefix| checks().iter().map(|check| (check.id(), check.check_prefix(prefix))).collect())
 }
 
 /// The checks of the prefixes of a decode's state, each over a program
@@ -103,6 +103,9 @@ pub struct PrefixChecks<'a> {
     inference: &'a inference::Inference<'a>,
     /// What the prefixes checked as [`Candidate::AtomHead`] share.
     head: AtomHead,
+    /// The labels that the prefixes of a list bind, for the candidates of
+    /// the mask.
+    bound: BoundCache,
 }
 
 /// What a prefix is among the candidates of one mask.
@@ -133,7 +136,6 @@ struct AtomHead {
     types: RefCell<Option<inference::InferredTypes>>,
     labels: OnceCell<Vec<LabelInScope>>,
     results: RefCell<StableHashMap<(CheckId, Box<[Mode]>), PrefixResult>>,
-    bound: BoundCache,
     /// The resolution of the candidates that open an atom of a relation
     /// ([`PrefixChecks::check_atom_head`]): the one of the candidate
     /// checked last, retargeted to the next.
@@ -189,7 +191,7 @@ impl PrefixChecks<'_> {
     pub fn with<R>(complete: &ResolvedProgram, clauses: &SolverClauses, registry: &Registry, body: impl FnOnce(&PrefixChecks<'_>) -> R) -> R {
         let cases = inference::CaseInferences::new(clauses, registry);
         let inference = inference::Inference::new(complete, &cases);
-        body(&PrefixChecks { clauses, registry, inference: &inference, head: AtomHead::default() })
+        body(&PrefixChecks { clauses, registry, inference: &inference, head: AtomHead::default(), bound: BoundCache::default() })
     }
 
     /// Holds the form in progress at the mask's state, `program` with that
@@ -212,7 +214,7 @@ impl PrefixChecks<'_> {
     pub fn check(&self, program: &ResolvedProgram, open: Option<&NodePath>, candidate: Candidate) -> Option<(CheckId, Box<[Refusal]>)> {
         let same_open = |open: &NodePath| self.head.open.get_or_init(|| open.clone()) == open;
         let head = (candidate == Candidate::AtomHead && open.is_some_and(same_open)).then_some(&self.head);
-        with_prefix(program, self.clauses, self.registry, Some(self.inference), head, open, |prefix| {
+        with_prefix(program, self.clauses, self.registry, Some(self.inference), head, Some(&self.bound), open, |prefix| {
             checks().iter().find_map(|check| match self.check_prefix(*check, prefix, head) {
                 PrefixResult::Refuse(refusals) => Some((check.id(), refusals)),
                 PrefixResult::Undecided => None,
@@ -292,13 +294,15 @@ fn open_atom<'a>(prefix: &Prefix<'a>) -> Option<&'a Atom> {
 /// Runs `body` over the prefix of `program`, whose types are inferred over
 /// the forms that `earlier` infers, where it is given, and from the start
 /// otherwise; and that shares `head` with the other atom-head candidates,
-/// where it is given.
+/// where it is given, and whose safety check keeps in `cache` the labels
+/// that the prefixes of a list bind.
 fn with_prefix<R>(
     program: &ResolvedProgram,
     clauses: &SolverClauses,
     registry: &Registry,
     earlier: Option<&inference::Inference<'_>>,
     head: Option<&AtomHead>,
+    cache: Option<&BoundCache>,
     open: Option<&NodePath>,
     body: impl FnOnce(&Prefix<'_>) -> R,
 ) -> R {
@@ -314,7 +318,7 @@ fn with_prefix<R>(
         None => inference,
     };
     let inference = &inference;
-    let bound = head.zip(open).map(|(head, open)| BoundMemo { cache: &head.bound, open });
+    let bound = cache.zip(earlier.and_then(|earlier| earlier.state_form())).map(|(cache, state)| BoundMemo { cache, state });
     let scope = |labels| Scope { program, registry, labels, clauses, inference, files: None, bound };
     let (order, untyped, computed);
     let labels: &[LabelInScope] = match head.and_then(|head| head.labels.get()) {

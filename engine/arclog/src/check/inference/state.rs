@@ -174,6 +174,11 @@ impl<'a> Inference<'a> {
         let _ = self.state.set(HeldState::new(earlier, program));
     }
 
+    /// The form in progress at the mask's state, where it is held.
+    pub(in crate::check) fn state_form(&self) -> Option<&Form> {
+        self.state.get()?.program.value().forms.last()
+    }
+
     /// The types of the state's form, made on the first read.
     fn state_types(&self) -> Option<&'a StateTypes> {
         let earlier = self.earlier?;
