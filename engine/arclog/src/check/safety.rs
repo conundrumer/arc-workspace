@@ -38,8 +38,8 @@ impl Check for SafetyCheck {
     }
 
     /// Refuses each label of a body of the form that the body leaves
-    /// unbound, and each positive atom of an algebra relation with modes at
-    /// which no mode holds from the conjuncts written before it: one pass over each list in its written order, each prefix
+    /// unbound, and each positive atom and each negated atom of an algebra
+    /// relation with modes at which no mode holds from the conjuncts written before it: one pass over each list in its written order, each prefix
     /// bound by [`crate::safety::bound_labels`], with the modes of
     /// the algebra relations and relation macros. A label is refused at its first use
     /// in the body, or at the site of an atom that no mode of its relation
@@ -412,13 +412,19 @@ impl Walk<'_> {
             let from = suffix.around(outside, None);
             let before = self.bind_before(&mut prefixes, &conjuncts, i, given, &from);
             let around = total.around(outside, Some(&sets[i]));
+            let moded = match conjunct {
+                Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => Some(atom).filter(|atom| !atom_modes(self.registry, atom.value()).is_empty()),
+                _ => None,
+            };
+            if let Some(atom) = moded {
+                let mut written = before.clone();
+                written.extend(orientation_labels(atom.value(), self.types));
+                if !mode_holds(atom.value(), &written, atom_modes(self.registry, atom.value())) {
+                    found.push((None, "no mode of the atom's relation has its columns written and bound by the conjuncts written before it", at.clone()));
+                }
+            }
             match conjunct {
-                Conjunct::Atom(atom) if !atom_modes(self.registry, atom.value()).is_empty() => {
-                    let mut written = before.clone();
-                    written.extend(orientation_labels(atom.value(), self.types));
-                    if !mode_holds(atom.value(), &written, atom_modes(self.registry, atom.value())) {
-                        found.push((None, "no mode of the atom's relation has its columns written and bound by the conjuncts written before it", at.clone()));
-                    }
+                Conjunct::Atom(atom) if moded.is_some() => {
                     let after_outside = suffix.around(outside, Some(&sets[i]));
                     let after = self.bind_before(&mut prefixes, &conjuncts, i + 1, given, &after_outside);
                     each_label_use_at(NodeRef::Conjunct(conjunct), at, &mut |path, use_| {
