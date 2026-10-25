@@ -4,7 +4,7 @@ report of the cases that do not end `Consistent`.
     uv run python -m arclog_convert.train_replay [--out <dir>] [--accept] [<stem> ...]
 
 The command replays the files under `gen/` of `arclog_convert.out`, or of
-`--out`, with no conversion; `arclog_convert.convert` runs the same replay on
+`--out`, with no conversion; in a linked worktree it writes no record without `--out` or `ARCLOG_OUT`; `arclog_convert.convert` runs the same replay on
 the solvers it converted. the `verdicts` binary of `arclog-cli` replays every case closed-world
 and gives each case a verdict: the consistency of the last `RULE` the stream
 ends (`Consistent`, `NotConsistent`, `SeveralValues`, `Fault`, `Stopped`),
@@ -242,12 +242,12 @@ def replay(stems: list[str], out: Path, accept: bool = False) -> int:
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="python -m arclog_convert.train_replay")
-    parser.add_argument("--out", type=Path, help="the directory that holds gen/, in place of `arclog_convert.out`")
+    parser.add_argument("--out", type=Path, help="the directory that holds gen/, in place of `arclog_convert.out`; required in a linked worktree unless `ARCLOG_OUT` is set")
     parser.add_argument("--accept", action="store_true", help="rewrite the baseline lines of the tasks the run covers")
     parser.add_argument("stems", nargs="*", help="the solvers to replay; every solver of gen/ where none is given")
     args = parser.parse_args(argv)
-    from arclog_convert import out
-    root = args.out.resolve() if args.out else out()
+    from arclog_convert import writable_out
+    root = args.out.resolve() if args.out else writable_out()
     stems = args.stems or sorted(p.stem for p in (root / "gen").glob("*.arclog"))
     return replay(stems, root, args.accept)
 

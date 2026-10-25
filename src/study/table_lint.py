@@ -30,7 +30,8 @@ run that writes the rows of its solver faulted; or it has no rows file.
 The rows of a relation whose columns the type check gives no types are not
 written, so its line says no rows file was written.
 
-The corpus is the arclog files of `gen/` of `arclog_convert.out`, which
+The corpus is the arclog files of `gen/` of `corpus_out()`: `arclog_convert.out`
+in the main worktree, `work/arclog/` of the worktree in a linked one. They
 reflect a solver's `.dl` file once `uv run python -m arclog_convert.convert
 <stem>` has run on it. A run of the default corpus on given task ids runs that
 command on them first, and prints its summary on stderr; a run on every
@@ -56,6 +57,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from arc.task import TASKS_DIR
+import arclog_convert
 from engine import checkout
 from study.corpus_survey.bodies import (
     FACTS,
@@ -117,9 +119,19 @@ def quoted(names: Iterable[str]) -> str:
     return ", ".join(f"`{name}`" for name in names)
 
 
+def in_linked_worktree() -> bool:
+    return checkout.main_worktree(checkout.ROOT).resolve() != checkout.ROOT.resolve()
+
+
+def corpus_out() -> Path:
+    """The directory whose `gen/` is the default corpus: `work/arclog/` of this linked worktree, or `arclog_convert.out()` in the main worktree."""
+    return checkout.ROOT / "work" / "arclog" if in_linked_worktree() else arclog_convert.out()
+
+
 def reconvert(ids: Sequence[str]) -> None:
     """Convert the solvers `ids` into the default corpus, with the converter's summary on stderr."""
-    command = [sys.executable, "-m", "arclog_convert.convert", "--no-train-replay", *ids]
+    over = ["--out", str(corpus_out())] if in_linked_worktree() else []
+    command = [sys.executable, "-m", "arclog_convert.convert", "--no-train-replay", *over, *ids]
     done = subprocess.run(command, cwd=checkout.ROOT, stdout=sys.stderr)
     if done.returncode != 0:
         raise RuntimeError(f"{' '.join(command)} exited with {done.returncode}")
@@ -708,7 +720,7 @@ def measure(solver: str, before: str, after: str, texts: tuple[str, str] = ("", 
 
 def main(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(prog="python -m study.table_lint", description=(__doc__ or "").split("\n\n")[0])
-    parser.add_argument("--corpus", type=Path, default=gen_dir(), help="the directory of the arclog files, `gen/` of `arclog_convert.out` by default")
+    parser.add_argument("--corpus", type=Path, default=corpus_out() / "gen", help="the directory of the arclog files, `gen/` of `corpus_out()` by default: `arclog_convert.out` in the main worktree, `work/arclog/` in a linked one")
     parser.add_argument("--measure", action="store_true", help="print each given solver's tables as committed and as its file now holds them, then its lint lines")
     parser.add_argument("task_ids", nargs="*", help="the solvers to lint, every solver of the corpus by default")
     args = parser.parse_args(argv)
@@ -721,7 +733,7 @@ def main(argv: Sequence[str]) -> int:
             before, after = counts_of(solver, old), counts_of(solver, new)
             for line in measure(solver, before, after, (old, new), sourced(solver, old) | sourced(solver, new)):
                 print(line, flush=True)
-    if args.task_ids and args.corpus == gen_dir():
+    if args.task_ids and args.corpus == corpus_out() / "gen":
         reconvert(args.task_ids)
     for line in lint(args.corpus, TASKS_DIR, args.task_ids):
         print(line, flush=True)

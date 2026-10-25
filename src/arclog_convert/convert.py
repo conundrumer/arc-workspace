@@ -1,7 +1,8 @@
 """Convert the Souffle solvers under programs/solvers/ to arclog and arcdata
 files under gen/, and, with the expansion config `libmap.macros`, under
 gen_macros/, of `arclog_convert.out`: `work/arclog/` of the main
-worktree, or the directory `--out` gives.
+worktree, or the directory `--out` gives; in a linked worktree, `--out` is
+required (or `ARCLOG_OUT`).
 
     uv run python -m arclog_convert.convert [--out <dir>] [--no-train-replay] [<stem> ...]
 
@@ -33,7 +34,7 @@ from collections import Counter
 from pathlib import Path
 from engine.program import Qualifier, Variable
 from arclog_convert.libmap import rename as libmap_rename
-from arclog_convert import OUT_ENV, paths
+from arclog_convert import OUT_ENV, paths, writable_out
 
 from arclog_convert.forms import (
     MERGES,
@@ -46,12 +47,6 @@ from arclog_convert.forms import (
 from arclog_convert.leaves import Converter, FACTS, Written
 from arclog_convert.lib import Col, ColMismatch, LIB_DL, Lib, SIGNATURE
 from arclog_convert.solver import Solver
-
-
-ELEM = {"Dir": ("dir_elem", "D"), "Axis": ("axis_elem", "A"), "DiagDir": ("diag_dir_elem", "D"),
-        "DiagAxis": ("diag_axis_elem", "Da"), "D4": ("d4_elem", "D"), "C4": ("c4_elem", "D"),
-        "Sense": ("sense_elem", "S"), "Sym": ("sym_elem", "S"), "Dir8": ("dir8_elem", "D"),
-        "Axis4": ("axis4_elem", "A")}
 
 
 PLAN_HASH = "solver file sha256: "
@@ -246,7 +241,7 @@ def main(argv: list[str]) -> int:
     global OUT_DIR, MACROS_DIR, PLANS, NAMES_DIR
     import argparse
     parser = argparse.ArgumentParser(prog="python -m arclog_convert.convert")
-    parser.add_argument("--out", type=Path, help="the directory to write under, in place of `arclog_out`")
+    parser.add_argument("--out", type=Path, help="the directory to write under, in place of `arclog_convert.out`; required in a linked worktree unless `ARCLOG_OUT` is set")
     parser.add_argument("--no-train-replay", action="store_true", help="convert with no replay on the train pairs")
     parser.add_argument("stems", nargs="*", help="the solvers to convert; every solver where none is given")
     args = parser.parse_args(argv)
@@ -254,6 +249,8 @@ def main(argv: list[str]) -> int:
         # set before the pools start, so that their workers read it
         os.environ[OUT_ENV] = str(args.out.resolve())
         paths.OUT_DIR, paths.MACROS_DIR, paths.PLANS, paths.NAMES_DIR = paths.out_dirs()
+    else:
+        writable_out()
     stems = args.stems or sorted(p.stem for p in paths.SOLVERS.glob("*.dl"))
     refresh_plans(stems)
     print(f"{paths.OUT_DIR}:")
