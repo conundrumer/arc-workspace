@@ -31,13 +31,15 @@ real tables of the dev export, cut to a few dozen rows each.
   keys and depths to the Tables, a key column and a column of constants must be inferrable and a column that flows
   from ex_input computed, ex_output's Color must be free where the output relation's Color column flows from
   ex_input alone and dependent where it flows from a DET, and in a program step a hidden source column must keep
-  the column that flows from it visible, each of the two hidden in some draws; an unseen table must keep its
+  the column that flows from it visible, each of the two hidden in some draws with `mask_remote`; a column whose
+  only source is another derived table must be remote, and never hidden without `mask_remote`; an unseen table must keep its
   columns, so that its flows and the flows that read it name columns it holds; and `parse_tables` must refuse an
   export whose flow names a column past its table's columns.
 - Masks: in a program step, no table with hidden fields may have a source table with hidden fields (no hidden
   field a source column with hidden fields, where the tables hold the column-level provenance), and each
   hidden dependent ex_output field must keep a visible occurrence of its value in another train example's output;
-  an output step does so too; a program step hides computed fields only, an output step computed ex_output fields
+  without `mask_remote`, each hidden field of a derived column that has sources must keep one visible source in its
+  own table or in a grid table, and no remote field is hidden; an output step does so too; a program step hides computed fields only, an output step computed ex_output fields
   only, and a prior step inferrable fields only.
 - Loss parts: the masked loss must equal its program part plus the prior weight times its prior part.
 - Autocast: under bf16 autocast, with the encoder in float32, every attention input must be bf16, each equivariant
@@ -61,8 +63,8 @@ real tables of the dev export, cut to a few dozen rows each.
   gives without the flag; on two dev programs whose derived tables have source tables, the D4, row order, permutation,
   batching and checkpointing checks must hold, and the source rows must change the vectors; on a two-table lookup
   export, equal Idents across the tables must score the source equality weight, and a source table over the table
-  cap must give no keys. With `--enc-ptr-equality` too, the masked heads' D4 check must hold, and a hidden Color
-  pointer must learn, from a same-row copy of its value and from the lookup's source rows, where its run without the
+  cap must give no keys. With `--enc-ptr-equality` too, the masked heads' D4 check must hold, and, with `--learn`, a
+  hidden Color pointer must learn, from a same-row copy of its value and from the lookup's source rows, where its run without the
   flags stays at its chance level.
 - Equality modes: the D4, permutation and batching checks under `--enc-equality random` and, with --flex, `flex` (on
   small tables and D4's generators, as flex_attention runs eagerly on the CPU); with --flex, flex must give what codes
@@ -70,9 +72,10 @@ real tables of the dev export, cut to a few dozen rows each.
 
 The equality term's weights, which start at 0, are drawn at random, so that every check sees the term.
 
-    work/lm/.venv/bin/python lm/encoder_check.py [--full] [--flex] [tables dir]
+    work/lm/.venv/bin/python lm/encoder_check.py [--full] [--flex] [--learn] [tables dir]
 
-The checks of the flex equality mode run only with --flex.
+The checks of the flex equality mode run only with --flex, and the two learnability runs of the pointer (200 training
+steps each, about 45 s together) only with --learn.
 """
 import copy, json, math, os, pickle, sys
 from pathlib import Path
@@ -86,7 +89,8 @@ import encoder as E
 
 FULL = "--full" in sys.argv[1:]
 FLEX = "--flex" in sys.argv[1:]
-ARGS = [x for x in sys.argv[1:] if x not in ("--full", "--flex")]
+LEARN = "--learn" in sys.argv[1:]
+ARGS = [x for x in sys.argv[1:] if x not in ("--full", "--flex", "--learn")]
 TABLES = ARGS[0] if ARGS else "work/tables/dev"
 CACHE = "lm/data-dev/tables.pkl"
 FIXTURE = "lm/data-dev/encoder-check-fixture.pkl"
@@ -486,14 +490,27 @@ for name, tabs in (("$Free", free), ("$Dep", dep)):
 if deps != {"$Free": (False, ["computed", "computed"], [False, False]),
             "$Dep": (True, ["computed", "computed"], [True, True])}:
     bad.append(("ex_output Color", deps))
+remote_labels = {name: [[E.FIELD_LABELS[x] for x in lab[0]] for lab in E.field_labels(tabs)[3:] if lab is not None]
+                 for name, tabs in (("$Free", free), ("$Dep", dep))}
+if remote_labels != {"$Free": [["computed", "remote"]], "$Dep": [["computed", "remote"], ["computed"]]}:
+    bad.append(("remote labels (tables 3 and 4: Box from ex_input, Color from a derived table)", remote_labels))
 g, both, alone = torch.Generator().manual_seed(23), 0, {"table 4": 0, "table 3 Color": 0}
-for _ in range(200):
-    ms = enc.draw_masks(dep, 1.0, 10 ** 6, g, "program")
+for _ in range(200):   # the old rule, --mask-remote: table 3's Color is hidden in some draws
+    ms = enc.draw_masks(dep, 1.0, 10 ** 6, g, "program", mask_remote=True)
     src, out_ = bool(ms[4][:, 0].any()), bool(ms[3][:, 1].any())
     both += src and out_
     alone["table 4"] += src and not out_; alone["table 3 Color"] += out_ and not src
 if both or not all(alone.values()):
     bad.append(("coordination", both, alone))
+remote_default, others_default = 0, 0
+for tabs in (free, dep):
+    for _ in range(100):   # the default: a column whose only source is a derived table is never hidden
+        ms = enc.draw_masks(tabs, 1.0, 10 ** 6, g, "program")
+        remote_default += int(ms[3][:, 1].any())
+        others_default += int(ms[3][:, 0].any())
+counted = {flag: E.preflight([("dep", dep)], 1.0, 10 ** 6, mask_remote=flag) for flag in (False, True)}
+if remote_default or not others_default or counted[False] != counted[True] or counted[False]["remote"] != dep[3].n:
+    bad.append(("remote fields by default", remote_default, others_default, counted))
 unseen_t = ptabs[("t", "$Unseen")]
 try:
     for kind in E.STEP_KINDS:
@@ -514,45 +531,60 @@ with tempfile.TemporaryDirectory() as tmp:
 if "flow [2, 3, 0, 0, 2, -1]" not in refused:
     bad.append(("a flow past the columns", refused))
 print(f"  table 2 labels {labels}; ex_output Color (color_dependent, labels, dependent) {deps}; hidden in 200 "
-      f"program steps: the source column and the column that flows from it together {both}, each alone {alone}; "
+      f"program steps with --mask-remote: the source column and the column that flows from it together {both}, "
+      f"each alone {alone}; table 3 Color, labelled remote, hidden in {remote_default} of 200 program steps by "
+      f"default; "
       f"an unseen source table keeps its columns for the flows: {unseen_ok}; a flow past its table's columns: "
       f"{refused!r}; "
       f"{'PASS' if not bad else 'FAIL ' + str(bad)}")
 
 print("== masks: the sources stay visible in a program and an output step, and each step kind hides its label alone "
-      "(200 draws per kind, frac 0.5)")
-mask_progs = {"fixture": real, "small task": small, "random tables": suites[next(iter(suites))]}
+      "(200 draws per kind, frac 0.5, without and with --mask-remote)")
+mask_progs = {"fixture": real, "small task": small, "random tables": suites[next(iter(suites))],
+              "provenance $Free": free, "provenance $Dep": dep}
 bad, seen = [], {}
-for kind in E.STEP_KINDS:
+for kind, remote in [(k, r) for k in E.STEP_KINDS for r in (False, True)]:
     g = torch.Generator().manual_seed(21)
     for name, tabs in mask_progs.items():
         labs, srcs, cols = E.field_labels(tabs), E.table_sources(tabs), E.provenance(tabs) and E.column_sources(tabs)
         for _ in range(200):
-            ms = enc.draw_masks(tabs, 0.5, 10 ** 6, g, kind)
+            ms = enc.draw_masks(tabs, 0.5, 10 ** 6, g, kind, mask_remote=remote)
             held = {j for j, m in enumerate(ms) if m is not None and m.any()}
             for j in held:
                 lab = labs[j][ms[j]]
-                key = (kind, E.FIELD_LABELS[lab[0]], "evidence" if tabs[j].evidence else "derived")
-                seen[key] = seen.get(key, 0) + int(ms[j].sum())
-                if (lab != (E.INFERRABLE if kind == "prior" else E.COMPUTED)).any():
-                    bad.append((kind, name, j, "label"))
+                for x in np.unique(lab):
+                    key = (kind, E.FIELD_LABELS[x], "evidence" if tabs[j].evidence else "derived")
+                    seen[key] = seen.get(key, 0) + int((lab == x).sum())
+                if (~np.isin(lab, (E.INFERRABLE,) if kind == "prior" else
+                             (E.COMPUTED, E.REMOTE) if remote and kind == "program" else (E.COMPUTED,))).any():
+                    bad.append((kind, remote, name, j, "label"))
                 if kind == "output" and tabs[j].relation != "ex_output":
-                    bad.append((kind, name, j, "a table other than ex_output"))
+                    bad.append((kind, remote, name, j, "a table other than ex_output"))
                 if kind == "program" and not cols and srcs[j] & held:
-                    bad.append((kind, name, j, "a source table holds hidden fields"))
+                    bad.append((kind, remote, name, j, "a source table holds hidden fields"))
                 hidden = {(k, c) for k in held for c in np.flatnonzero(ms[k].any(0)).tolist()}
                 if kind == "program" and cols and any(cols[j][c] & hidden for c in np.flatnonzero(ms[j].any(0))):
-                    bad.append((kind, name, j, "a source column holds hidden fields"))
+                    bad.append((kind, remote, name, j, "a source column holds hidden fields"))
+                if kind == "program" and cols and not remote and not tabs[j].evidence:
+                    for c in np.flatnonzero(ms[j].any(0)):   # a source in the field's own table or a grid table
+                        near = {(i, d) for i, d in cols[j][c] if i == j or tabs[i].evidence}
+                        seen["program: hidden derived column with sources"] = seen.get(
+                            "program: hidden derived column with sources", 0) + bool(cols[j][c])
+                        if cols[j][c] and (not near or near & hidden):
+                            bad.append((kind, remote, name, j, "no visible source in its own table or a grid table"))
                 if kind in ("program", "output") and tabs[j].relation == "ex_output":
                     col, t = tabs[j].types.index("Color"), tabs[j]
                     ex, color = t.cells[:, 0], t.cells[:, E.EVIDENCE_COLOR]
-                    dep = E.output_labels(E.evidence_input(tabs), t)[1]
-                    for r in np.flatnonzero(ms[j][:, col] & dep):
+                    dep_ = E.output_labels(E.evidence_input(tabs), t)[1]
+                    for r in np.flatnonzero(ms[j][:, col] & dep_):
                         seen[f"{kind}: hidden dependent"] = seen.get(f"{kind}: hidden dependent", 0) + 1
                         if not (~ms[j][:, col] & (color == color[r]) & (ex != ex[r])).any():
-                            bad.append((kind, name, j, "a dependent field's occurrences all hidden"))
+                            bad.append((kind, remote, name, j, "a dependent field's occurrences all hidden"))
+                if not remote and (lab == E.REMOTE).any():
+                    bad.append((kind, remote, name, j, "a remote field hidden by default"))
 ok = not bad and all(seen.get(f"{k}: hidden dependent", 0) > 0 for k in ("program", "output")) and all(
     seen.get(k, 0) > 0 for k in [("program", "computed", "evidence"), ("program", "computed", "derived"),
+                                 ("program", "remote", "derived"), "program: hidden derived column with sources",
                                  ("output", "computed", "evidence"),
                                  ("prior", "inferrable", "evidence"), ("prior", "inferrable", "derived")])
 print(f"  hidden fields by step kind, label and table kind: {dict(sorted((str(k), v) for k, v in seen.items()))}; "
@@ -1420,7 +1452,7 @@ cases_ = {"a same-row cue: one table (Ident, Color, a copy of Color), the first 
           "the lookup export, B's Color hidden":
               (lambda r: [lookups[i] for i in r.choice(len(lookups), 4, replace=False)], 3,
                dict(source_rows=True, ptr_equality=True), {})}
-for title, (draw, hidden, on, off) in cases_.items():
+for title, (draw, hidden, on, off) in cases_.items() if LEARN else []:
     print(f"  {title}")
     for flags, want in ((on, lambda x: x < 0.3), (off, lambda x: x > 0.8)):
         curve = learn(draw, hidden, flags)
@@ -1428,3 +1460,5 @@ for title, (draw, hidden, on, off) in cases_.items():
         print(f"    {' '.join('--enc-' + k.replace('_', '-') for k in flags) or 'no flags'}: "
               + ", ".join(f"steps {50 * i + 1}-{50 * i + 50} {l:.3f}/{c:.3f} ({l / c:.2f})" for i, (l, c) in enumerate(curve))
               + f" {'PASS' if want(ratio) else 'FAIL'}")
+if not LEARN:
+    print("  skipped: run with --learn")

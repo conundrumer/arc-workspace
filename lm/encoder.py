@@ -1162,8 +1162,9 @@ def joint_table(a, b):
 
 # ---------------------------------------------------------------- field labels and sources, for the masked loss
 
-COMPUTED, INFERRABLE, SOLE = 0, 1, 2   # a field's label: computed from its sources; inferrable as a distribution; neither
-FIELD_LABELS = ("computed", "inferrable", "sole")
+COMPUTED, INFERRABLE, SOLE, REMOTE = 0, 1, 2, 3   # a field's label: computed from its sources; inferrable as a
+# distribution; neither; computed from sources that all stand in other derived tables
+FIELD_LABELS = ("computed", "inferrable", "sole", "remote")
 STEP_KINDS = ("program", "output", "prior")   # the order in which "alternate" cycles them
 LOSS_PART = {"program": "program", "output": "program", "prior": "prior"}   # an output step hides computed fields
 EVIDENCE_COLOR = 5                     # the Color field of an evidence row, after Example (1) and Position (4)
@@ -1204,13 +1205,16 @@ def provenance(tables):
     return any(t.flows is not None for t in tables if not t.evidence)
 
 
-def column_labels(t):
-    """The label of each column of a derived table, from the export's provenance: inferrable in a candidate key
-    (`keys`), and where every flow of the column is a constant or a lib name, or the column has none; computed
-    elsewhere."""
+def column_labels(tables, j):
+    """The label of each column of derived table j of a program, from the export's provenance: inferrable in a
+    candidate key (`keys`), and where every flow of the column is a constant or a lib name, or the column has none;
+    remote where the column is computed and the (table, column) pairs of `column_sources` name sources, all in
+    derived tables other than j, which j's rows see only as those tables' K pooled vectors; computed elsewhere,
+    which includes a column with no source pair (a flow without a source table)."""
+    t, src = tables[j], column_sources(tables)[j]
     memo = t.__dict__.setdefault("_unique", {})
     hit = memo.get(("column labels",))
-    if hit is None or hit[0] is not t.flows:
+    if hit is None or hit[0] is not t.flows or hit[1] is not src:
         lab = np.full(len(t.types), COMPUTED, np.int8)
         for key in t.keys:
             lab[key] = INFERRABLE
@@ -1218,8 +1222,11 @@ def column_labels(t):
         sourced = np.zeros(len(t.types), bool)
         sourced[t.flows[(t.flows[:, 1] != FLOW_CONSTANT) & (t.flows[:, 1] != FLOW_LIB_NAME), 0]] = True
         lab[~sourced] = INFERRABLE
-        hit = memo[("column labels",)] = (t.flows, lab)
-    return hit[1]
+        for c, s in enumerate(src):
+            if lab[c] == COMPUTED and s and not any(i == j or tables[i].evidence for i, _ in s):
+                lab[c] = REMOTE
+        hit = memo[("column labels",)] = (t.flows, src, lab)
+    return hit[2]
 
 
 def field_labels(tables):
@@ -1227,10 +1234,12 @@ def field_labels(tables):
     rows). In
     the evidence tables, Example and Position fields and ex_input's Color fields are inferrable, and ex_output's
     Color fields are labelled by `output_labels`. In a derived table that holds the export's provenance, a field
-    takes its column's label (`column_labels`); in one that does not, a field is computed where it is
-    `identifiable`, and inferrable elsewhere, as a key-like field whose target is a set."""
+    takes its column's label (`column_labels`: computed where a source is in its own table or in a grid table,
+    remote where its sources are all in other derived tables); in one that does not, a field is computed where it
+    is `identifiable`, and inferrable elsewhere, as a key-like field whose target is a set. A program step hides
+    remote fields only with `mask_remote` (`draw_masks`)."""
     out = []
-    for t in tables:
+    for j, t in enumerate(tables):
         if not t.n or not len(t.types):
             out.append(None)
         elif t.evidence:
@@ -1242,7 +1251,7 @@ def field_labels(tables):
                 lab[:, t.types.index("Color")] = output_labels(evidence_input(tables), t)[0]
             out.append(lab)
         elif t.flows is not None:
-            out.append(np.broadcast_to(column_labels(t), (t.n, len(t.types))))   # a read-only view
+            out.append(np.broadcast_to(column_labels(tables, j), (t.n, len(t.types))))   # a read-only view
         else:
             out.append(np.where(FeatureEncoder.identifiable(t), COMPUTED, INFERRABLE).astype(np.int8))
     return out
@@ -1338,15 +1347,17 @@ def keep_occurrence(ex_output, mask, dependent):
             mask[r, col] = False
 
 
-def preflight(programs, frac, cap, seed=0):
+def preflight(programs, frac, cap, seed=0, mask_remote=False):
     """Runs the masked loss's data path on each program of `programs` ([(name, tables)]) with no model, and raises
     DataFault on the first offender, with the program, the table, its relation and types: `field_labels` gives
     one label per field, every source of `column_sources` is a column of its table, and `draw_masks` at `frac` and
-    `cap`, once per step kind, gives each table a mask of its shape that hides only present fields of rows that
-    are not markers and of the step kind's label, hides ex_output fields alone in an output step, and in a
-    program step hides no field whose source (column-level with the export's provenance, table-level without)
-    hides fields."""
+    `cap` and with `mask_remote`, once per step kind, gives each table a mask of its shape that hides only present
+    fields of rows that are not markers and of the step kind's label (a program step also hides remote fields
+    with `mask_remote`), hides ex_output fields alone in an output step, and in a program step hides no field
+    whose source (column-level with the export's provenance, table-level without) hides fields and, without
+    `mask_remote`, hides no field whose column has sources, all in other derived tables. Gives the number of fields of each label, by label name, over the programs."""
     gen = torch.Generator().manual_seed(seed)
+    count = {x: 0 for x in FIELD_LABELS}
     for name, ts in programs:
         fail = lambda j, what: DataFault(f"preflight: {name} table {j} relation {ts[j].relation} export table "
                                          f"{ts[j].export_table} types {ts[j].types}: {what}")
@@ -1356,14 +1367,18 @@ def preflight(programs, frac, cap, seed=0):
         for j, (t, lab) in enumerate(zip(ts, labs)):
             if lab is not None and lab.shape != (t.n, len(t.types)):
                 raise fail(j, f"labels of shape {lab.shape}")
+            if lab is not None:
+                for x, n in zip(*np.unique(lab, return_counts=True)):
+                    count[FIELD_LABELS[x]] += int(n)
             if prov and id(sources[j]) not in seen:
                 seen.add(id(sources[j]))
                 for c, src in enumerate(sources[j]):
                     if any(not 0 <= d < len(ts[i].types) for i, d in src):
                         raise fail(j, f"column {c} has sources {sorted(src)} outside their tables' columns")
         for kind in STEP_KINDS:
-            ms = FeatureEncoder.draw_masks(None, ts, frac, cap, gen, kind)
+            ms = FeatureEncoder.draw_masks(None, ts, frac, cap, gen, kind, mask_remote)
             want = INFERRABLE if kind == "prior" else COMPUTED
+            allowed = (want, REMOTE) if mask_remote and kind == "program" else (want,)
             hidden = {(j, c) for j, m in enumerate(ms) if m is not None for c in np.flatnonzero(m.any(0)).tolist()}
             held = {j for j, _ in hidden}
             for j, (t, m, lab) in enumerate(zip(ts, ms, labs)):
@@ -1371,13 +1386,18 @@ def preflight(programs, frac, cap, seed=0):
                     continue
                 if m.shape != (t.n, len(t.types)):
                     raise fail(j, f"{kind} mask of shape {m.shape}")
-                if (m & ~(t.present & ~t.marker[:, None])).any() or (lab[m] != want).any():
+                if (m & ~(t.present & ~t.marker[:, None])).any() or not np.isin(lab[m], allowed).all():
                     raise fail(j, f"a {kind} step hides a field it may not")
+                if kind == "program" and prov and not t.evidence and not mask_remote and any(
+                        sources[j][c] and not any(i == j or ts[i].evidence for i, _ in sources[j][c])
+                        for c in np.flatnonzero(m.any(0))):
+                    raise fail(j, "a program step hides a field whose sources are all in other derived tables")
                 if kind == "output" and t.relation != "ex_output":
                     raise fail(j, "an output step hides a field outside ex_output")
                 if kind == "program" and (any(sources[j][c] & hidden for c in np.flatnonzero(m.any(0))) if prov
                                           else sources[j] & held):
                     raise fail(j, "a program step hides a field whose source hides fields")
+    return count
 
 
 GROUPS = {"Number": "number", "Color": "color", "Example": "example", "Ident": "ident", "Box": "box"}
@@ -2520,12 +2540,13 @@ class FeatureEncoder(nn.Module):
             hit = memo[("identifiable",)] = (table.cells, ok)
         return hit[1]
 
-    def draw_masks(self, tables, frac, cap, gen, kind):
+    def draw_masks(self, tables, frac, cap, gen, kind, mask_remote=False):
         """A field mask [n, columns] per table of one program, for a step of `kind` ("program", "output" or
         "prior"), drawn from `gen`; None for a table without rows. A field is a candidate with probability `frac`
         where it is present, its row is not a marker, and its label (`field_labels`) is `computed` in a program
         step, `computed` in ex_output alone in an output step, or `inferrable` in a prior step; a table keeps at
-        most `cap` candidates. In a program step whose tables hold the export's provenance (`provenance`), the
+        most `cap` candidates. A `remote` field, whose sources are all in other derived tables, is a candidate in a
+        program step only with `mask_remote`. In a program step whose tables hold the export's provenance (`provenance`), the
         (table, column) pairs that hold candidates are then visited in an order drawn from `gen`, and a column keeps
         its candidates only where none of its sources (`column_sources`) holds hidden fields already, and it is a
         source of no column that holds hidden fields already; so ex_output's computed fields can be hidden beside
@@ -2541,7 +2562,7 @@ class FeatureEncoder(nn.Module):
             if not t.n or not len(t.types):
                 out.append(None); continue
             m = (torch.rand(t.n, len(t.types), generator=gen).numpy() < frac) & t.present & ~t.marker[:, None]
-            m &= lab == want
+            m &= (lab == want) | ((lab == REMOTE) & (mask_remote and kind == "program"))
             if kind == "output" and t.relation != "ex_output":
                 m[:] = False
             r, i = np.nonzero(m)
@@ -2579,14 +2600,15 @@ class FeatureEncoder(nn.Module):
         return [range(i, min(i + g, n)) for i in range(0, n, g)] if g else [range(n)]
 
     def masked_loss(self, programs, gen=None, frac=0.15, cap=512, mask_gen=None, detail=False, backward=None,
-                    kind="alternate", step=0, prior_weight=1.0):
+                    kind="alternate", step=0, prior_weight=1.0, mask_remote=False):
         """programs: [(tables, declaration identifiers)] -> the masked loss, and the records of encode_programs, each
         with "kind", its program's step kind, "part", the part of the loss it falls in, and "depth", its table's
         `depth`. The step kind of program
         p is `kind` ("program", "output" or "prior"), or with "alternate", STEP_KINDS[(step + p) % 3]. The loss is
         the program part, the mean loss over the hidden fields of the program and output steps, which are computed
         fields, plus `prior_weight` times the prior part, the mean over those of the prior steps; a part without
-        fields is 0. The masks are drawn from `mask_gen`, all before
+        fields is 0. A program step hides remote fields too with `mask_remote` (`draw_masks`). The masks are drawn
+        from `mask_gen`, all before
         any encoding, and the identifiers from `gen`. The programs are encoded in the groups of `chunks`. With
         `backward`, a weight, where gradients are on, the backward pass of the weight times the loss runs group by
         group, so that each group's graph is freed before the next is built, and the loss and the records' losses
@@ -2594,7 +2616,7 @@ class FeatureEncoder(nn.Module):
         assert kind == "alternate" or kind in STEP_KINDS, kind
         dev, dt = self.cross.weight.device, self.cross.weight.dtype
         kinds = [kind if kind != "alternate" else STEP_KINDS[(step + p) % 3] for p in range(len(programs))]
-        masks = [self.draw_masks(tables, frac, cap, mask_gen, k) for (tables, _), k in zip(programs, kinds)]
+        masks = [self.draw_masks(tables, frac, cap, mask_gen, k, mask_remote) for (tables, _), k in zip(programs, kinds)]
         n_fields = {part: sum(int(m.sum()) for ms, k in zip(masks, kinds) if LOSS_PART[k] == part for m in ms
                               if m is not None) for part in ("program", "prior")}
         scale = {k: w / n_fields[k] if n_fields[k] else 0.0 for k, w in (("program", 1.0), ("prior", prior_weight))}

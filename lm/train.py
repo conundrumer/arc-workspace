@@ -375,7 +375,7 @@ def run_batch(model, progs, group, enc_args, device, stats=None, gen=None, K=0, 
     """The mean loss of a group of programs, and the count of its targets. `gen` draws the identifiers of the
     language model, and `enc_gen` the encoder's (by default the model's own generator), so that the language
     model's draws are the same with and without the encoder. With `aux`, a dict of "weight", "frac", "cap", "kind",
-    "prior_weight" and "step" (masked_loss's arguments), the loss adds weight times the masked table loss over the
+    "prior_weight", "step" and "mask_remote" (masked_loss's arguments), the loss adds weight times the masked table loss over the
     tables of the group's programs, from a second encoder pass whose masks and identifiers come from
     model.mask_gen, and aux gains "loss", the masked loss, and "program" and "prior", the mean loss of each part.
     aux gains "lm", the language model loss alone, as a tensor. Where aux has "measure" set, aux gains
@@ -399,7 +399,8 @@ def run_batch(model, progs, group, enc_args, device, stats=None, gen=None, K=0, 
     if aux is not None and aux["weight"]:
         masked, records = model.encoder.masked_loss([(e[5][0], e[5][2]) for e in encs], model.mask_gen, aux["frac"],
                                                     aux["cap"], model.mask_gen, backward=aux["weight"], kind=aux["kind"],
-                                                    step=aux["step"], prior_weight=aux["prior_weight"])
+                                                    step=aux["step"], prior_weight=aux["prior_weight"],
+                                                    mask_remote=aux.get("mask_remote", False))
         aux["loss"] = masked.item()
         if aux.get("measure"):
             aux["norm_masked"] = grad_norm(model.parameters())
@@ -557,6 +558,10 @@ def main():
                          "alternate takes the three by turns, by the step and the program's place in the batch")
     ap.add_argument("--prior-weight", type=float, default=1.0,
                     help="the weight of the prior part of the masked loss beside its program part")
+    ap.add_argument("--mask-remote", action="store_true",
+                    help="a program step also hides the computed fields whose sources are all in other derived "
+                         "tables (label remote), which a row sees only as those tables' pooled vectors; off by "
+                         "default")
     ap.add_argument("--tiny-base", action="store_true",
                     help="a 2-layer, 64-wide model of --base's architecture and tokenizer, initialized at random, for the regression check")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
@@ -610,10 +615,10 @@ def main():
               f"(not in the export, or a data fault); {tstats}")
         if a.preflight:
             t_pre = time.time()
-            encoder.preflight([((c["task"], c["case"]), c["tables"]) for c in [c for cs in train_tasks for c in cs]
-                               + indist + held], a.mask_frac, a.mask_cap)
+            labelled = encoder.preflight([((c["task"], c["case"]), c["tables"]) for c in [c for cs in train_tasks for c in cs]
+                               + indist + held], a.mask_frac, a.mask_cap, mask_remote=a.mask_remote)
             print(f"preflight: {sum(map(len, train_tasks)) + len(indist) + len(held)} programs, "
-                  f"{time.time() - t_pre:.0f} s", flush=True)
+                  f"{time.time() - t_pre:.0f} s; fields by label {labelled}", flush=True)
     if a.eval_limit:
         indist, held, eval_train = indist[:a.eval_limit], held[:a.eval_limit], eval_train[:a.eval_limit]
     assert train_tasks and indist and held, "empty split"
@@ -681,7 +686,7 @@ def main():
                     enc_ptr_equality=a.enc_ptr_equality)
         if a.encoder_init or a.aux_masked:
             meta.update(encoder_init=a.encoder_init, aux_masked=a.aux_masked, mask_frac=a.mask_frac, mask_cap=a.mask_cap,
-                        mask_kind=a.mask_kind, prior_weight=a.prior_weight)
+                        mask_kind=a.mask_kind, mask_remote=a.mask_remote, prior_weight=a.prior_weight)
     split_counts = {}
     if K:   # how each table's relation finds its declaration, and how many sequences drop tables at 2 max_len
         rules, dropped, cases = {}, 0, [c for cs in train_tasks for c in cs] + indist + held
@@ -704,7 +709,7 @@ def main():
         for g in batches(train, a.budget, a.max_len, True, K, split_counts):
             logged = step + 1 <= 3 or (step + 1) % 10 == 0
             aux = (dict(weight=a.aux_masked, frac=a.mask_frac, cap=a.mask_cap, kind=a.mask_kind,
-                        prior_weight=a.prior_weight, step=step, measure=logged, clip=a.aux_clip) if K and a.aux_masked else None)
+                        prior_weight=a.prior_weight, mask_remote=a.mask_remote, step=step, measure=logged, clip=a.aux_clip) if K and a.aux_masked else None)
             opt.zero_grad()
             with autocast():
                 loss, _ = run_batch(model, train, g, enc_args, a.device, K=K, aux=aux)

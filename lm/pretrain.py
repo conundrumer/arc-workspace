@@ -147,6 +147,10 @@ def main():
                          "three by turns, by the step and the program's place in the step")
     ap.add_argument("--prior-weight", type=float, default=1.0,
                     help="the weight of the prior part of the masked loss beside its program part")
+    ap.add_argument("--mask-remote", action="store_true",
+                    help="a program step also hides the computed fields whose sources are all in other derived "
+                         "tables (label remote), which a row sees only as those tables' pooled vectors; off by "
+                         "default")
     ap.add_argument("--id-dim", type=int, default=64)
     ap.add_argument("--enc-k", type=int, default=4)
     ap.add_argument("--enc-layers", type=int, default=2)
@@ -205,8 +209,10 @@ def main():
     assert train and held, "no training or held-out programs with tables"
     if a.preflight:
         t_pre = time.time()
-        E.preflight([((c["task"], c["case"]), c["tables"]) for c in train + held], a.mask_frac, a.mask_cap)
-        print(f"preflight: {len(train) + len(held)} programs, {time.time() - t_pre:.0f} s", flush=True)
+        labelled = E.preflight([((c["task"], c["case"]), c["tables"]) for c in train + held], a.mask_frac, a.mask_cap,
+                               mask_remote=a.mask_remote)
+        print(f"preflight: {len(train) + len(held)} programs, {time.time() - t_pre:.0f} s; fields by label {labelled}",
+              flush=True)
     if 0 < a.eval_limit < len(held):
         held = random.Random(a.seed).sample(held, a.eval_limit)
 
@@ -246,7 +252,8 @@ def main():
         with torch.no_grad(), autocast():
             for i in range(0, len(held), a.programs):
                 _, r = enc.masked_loss([program(c, gen) for c in held[i:i + a.programs]], gen, a.mask_frac,
-                                       a.mask_cap, mask_gen, kind=a.mask_kind, prior_weight=a.prior_weight)
+                                       a.mask_cap, mask_gen, kind=a.mask_kind, prior_weight=a.prior_weight,
+                                       mask_remote=a.mask_remote)
                 records += r
                 if (i // a.programs + 1) % 10 == 0:
                     print(f"  {min(i + a.programs, len(held))}/{len(held)} programs, {time.time() - t_eval:.0f} s", flush=True)
@@ -258,7 +265,7 @@ def main():
     config = dict(base=a.base, tables=a.tables, enc_k=a.enc_k, enc_layers=a.enc_layers, enc_width=a.enc_width,
                   enc_heads=a.enc_heads, enc_mlp=a.enc_mlp, enc_gram=a.enc_gram, enc_budget=a.enc_budget,
                   id_dim=a.id_dim, mask_frac=a.mask_frac, mask_cap=a.mask_cap, mask_kind=a.mask_kind,
-                  prior_weight=a.prior_weight, in_names=in_names, enc_equality=a.enc_equality,
+                  mask_remote=a.mask_remote, prior_weight=a.prior_weight, in_names=in_names, enc_equality=a.enc_equality,
                   enc_source_rows=a.enc_source_rows, enc_ptr_equality=a.enc_ptr_equality)
     gen, mask_gen = torch.Generator().manual_seed(10), torch.Generator().manual_seed(11)
     best, start, step_seconds, by = float("inf"), time.time(), [], None
@@ -268,7 +275,7 @@ def main():
         with autocast():
             loss, records = enc.masked_loss([program(c, gen) for c in drawn],
                                             gen, a.mask_frac, a.mask_cap, mask_gen, kind=a.mask_kind, step=step,
-                                            prior_weight=a.prior_weight)
+                                            prior_weight=a.prior_weight, mask_remote=a.mask_remote)
         assert torch.isfinite(loss), f"step {step}: masked loss {loss.item()}"
         opt.zero_grad(); loss.backward()
         torch.nn.utils.clip_grad_norm_(params, 1.0)
