@@ -1420,34 +1420,50 @@ class Batch:
 
 class Evidence:
     """The rows of each program's evidence tables after each layer, kept for the later tables of the program, and
-    their keys and values at each layer, computed once for every program each time evidence is added."""
+    their keys and values at each layer, computed once for every program each time evidence is added. The places of
+    the rows in the store are planned on the host for every level first (`plan`, `close_level`, `load`); the rows
+    themselves join it as each level's batches run (`add`, `join_level`)."""
     def __init__(self, n_programs, layers):
         self.layers = [[] for _ in range(layers)]   # per layer, each batch's rows after it that hold evidence
         self.size = 0                                # the rows of the store, those batches' rows flat
         self.of = [[] for _ in range(n_programs)]    # per program, its evidence rows' places in the store
         self.pending, self.version, self.done = [], 0, 0
-        self.kv = None
+        self.ran, self.kv = [], None
 
     def rows(self, p):
         return sum(len(r) for r in self.of[p])
 
-    def add(self, layers, members, N):
-        """A batch's rows after each layer [B, N, 21, c], and its evidence tables (program, batch index, rows); they
-        join the store when the level closes, so that no table of the level sees them."""
-        self.pending.append((layers, members, N))
+    def plan(self, members, B, N):
+        """A batch of B tables of N rows, with its evidence tables (program, batch index, rows); they join the store
+        when the level closes, so that no table of the level sees them."""
+        self.pending.append((members, B, N))
 
     def close_level(self):
-        for layers, members, N in self.pending:
-            for l, x in enumerate(layers):
-                self.layers[l].append(x.reshape(-1, *x.shape[2:]))
+        for members, B, N in self.pending:
             for p, b, n in members:
                 self.of[p].append(self.size + b * N + np.arange(n))
-            self.size += len(layers[0]) * N
+            self.size += B * N
             self.version += 1
         self.pending = []
 
     def stale(self):
         return self.done != self.version
+
+    def load(self):
+        """The rows that `compute` takes at this point of the plan (`all_rows`)."""
+        self.done = self.version
+        return self.all_rows()
+
+    def add(self, layers):
+        """A planned batch's rows after each layer [B, N, 21, c], in the order of `plan`; they join the store when
+        the level's batches have run (`join_level`)."""
+        self.ran.append(layers)
+
+    def join_level(self):
+        for layers in self.ran:
+            for l, x in enumerate(layers):
+                self.layers[l].append(x.reshape(-1, *x.shape[2:]))
+        self.ran = []
 
     def all_rows(self):
         return np.concatenate([r for rs in self.of for r in rs])
@@ -1463,9 +1479,9 @@ class Evidence:
         return idx
 
     def compute(self, enc, sel):
-        """The keys and values of the rows `sel` (`all_rows`) at each layer, then one row of zeros, `kv`, and
+        """The keys and values of the rows `sel` (`load`) at each layer, then one row of zeros, `kv`, and
         `layer_kv`: per layer, the view of kv [rows + 1, H (w + wv)]."""
-        kv, self.done = [], self.version
+        kv = []
         for l, (blk, mats) in enumerate(zip(enc.blocks, enc.mats)):
             rows = torch.cat(self.layers[l]) if len(self.layers[l]) > 1 else self.layers[l][0]
             h = blk.n1(rows.index_select(0, sel))
@@ -1625,7 +1641,7 @@ class FeatureEncoder(nn.Module):
         self.mats, self.pool_mats = [], {}
 
     def plan(self, tb, ids, field_mask, rel_index):
-        """The host side of the row tokens of a table's rows, and of its equality groups, for `level_features`: the
+        """The host side of the row tokens of a table's rows, and of its equality groups, for `row_tokens` and the equality term: the
         identifiers its values take, drawn from `ids` in a fixed order, and the indices that place each part. A field
         that `field_mask` [n, columns] marks is hidden: its features are the learned mask vector of its channel group,
         bound to its column slot, and its equality code is zero. `rel_index` [n] is each row's relation vector."""
@@ -1717,15 +1733,11 @@ class FeatureEncoder(nn.Module):
             eq[g] = out
         return dict(n=n, rel=rel_index, ek=tb.example_kind.astype(np.int64), hv=hv, A=A, B=Bc, E=Ed, P=Pr, eq=eq)
 
-    def level_features(self, plans, pack, rel_all):
-        """The row tokens of a level's tables, [R, 21, c] for the R rows of `plans` in order, and the equality term:
-        a query [R, D] and the keys of every layer [R, L, H, D], whose D places hold each group's columns at the most
-        columns and code places of any of the level's tables (the layout), or with `equality` "flex", per group
-        (values [R, m, S], present [R, m], column positions [I, m]); or None where no table has a column. Host arrays
-        go through `pack`, which the caller loads before the second call of the generator: it yields once, with the
-        arrays added, the layout {group: (offset, columns, code places)}, then gives the tensors."""
+    def row_tokens(self, plans, pack, rel_all):
+        """The row tokens of tables, [R, 21, c] for the R rows of `plans` in order. Host arrays go through `pack`,
+        which the caller loads before the second call of the generator: it yields once, with the arrays added, then
+        gives the tensor."""
         dev, dt, c = self.cross.weight.device, self.cross.weight.dtype, self.c
-        act = torch.get_autocast_dtype(dev.type) if torch.is_autocast_enabled(dev.type) else dt
         starts = np.cumsum([0] + [p["n"] for p in plans])
         R = int(starts[-1])
         cat = lambda xs, empty: np.concatenate(xs) if xs else empty
@@ -1756,44 +1768,7 @@ class FeatureEncoder(nn.Module):
             p_h=pack.add(cat([x[5] for x in Pr], np.zeros(0)), dt))
         for part, parts in zip("ABEP", (A, Bc, Ed, Pr)):
             h["at " + part] = pack.add(at(parts, M[part]), torch.long)
-        # the equality term: the groups in a fixed order, each with the most columns and code places of any table
-        names = sorted({g for p in plans for g in p["eq"]})
-        flex = self.equality == "flex"
-        layout, F_ = {}, 0
-        for g in names:
-            m = max(len(p["eq"].get(g, [])) for p in plans)
-            D = max(col[2] for p in plans for col in p["eq"].get(g, []))
-            layout[g] = (F_, m, D)
-            F_ += m * D
-        if names and not flex:
-            idx, val = [], []
-            for k, p in enumerate(plans):
-                for g, cols in p["eq"].items():
-                    off, m, D = layout[g]
-                    for s, (_, kind, _, rows, x) in enumerate(cols):
-                        base = (starts[k] + rows) * F_ + off + s * D
-                        if kind == "hot":
-                            idx.append((base[:, None] + x).reshape(-1)); val.append(np.ones(x.size))
-                        else:
-                            idx.append((base[:, None] + np.arange(x.shape[1])).reshape(-1)); val.append(x.reshape(-1).numpy())
-            h["c_idx"] = pack.add(cat(idx, i64([])), torch.long)
-            h["c_val"] = pack.add(cat(val, np.zeros(0)), act)
-            h["c_pos"] = {g: pack.add(i64([[col[0] for col in p["eq"].get(g, [])] + [0] * (layout[g][1] - len(p["eq"].get(g, [])))
-                                           for p in plans]), torch.long) for g in names}
-            h["item"] = pack.add(np.repeat(np.arange(len(plans)), [p["n"] for p in plans]), torch.long)
-        if names and flex:
-            fl = {}
-            for g in names:
-                off, m, S = layout[g]
-                vals, pres = np.zeros((R, m, S), np.int64), np.zeros((R, m), bool)
-                for k, p in enumerate(plans):
-                    for s, (_, _, _, pr, x) in enumerate(p["eq"].get(g, [])):
-                        vals[starts[k]:starts[k + 1], s] = x
-                        pres[starts[k]:starts[k + 1], s] = pr
-                pos = i64([[col[0] for col in p["eq"].get(g, [])] + [0] * (m - len(p["eq"].get(g, []))) for p in plans])
-                fl[g] = (pack.add(vals, torch.long), pack.add(pres, torch.bool), pack.add(pos, torch.long))
-            h["flex"] = fl
-        yield layout
+        yield
         # the device side
         g_ = lambda k: pack[h[k]]
         zero = self.mask_inv.new_zeros(1, c)
@@ -1812,24 +1787,58 @@ class FeatureEncoder(nn.Module):
                 + g_("p_b")[..., None] * F.embedding(p_ty, self.type_pair_ref)[:, None]
                 + g_("p_h")[:, None, None] * mask16) * F.embedding(g_("p_pos"), S2)[:, None]
         summed = lambda src, part: placed(src, g_("at " + part), R * M[part]).view(R, M[part], *src.shape[1:]).sum(1)
-        x = torch.cat([(base + summed(inv_a, "A") + summed(inv_b, "B"))[:, None], summed(edge, "E"), summed(pair, "P")], 1)
-        eq = None
-        if names and not flex:
-            codes = torch.zeros(R * F_, dtype=act, device=dev).index_put_((g_("c_idx"),), g_("c_val")).view(R, F_)
-            item, keys = g_("item"), []
-            L, H = self.eq_all.shape[:2]
-            for g in names:
+        yield torch.cat([(base + summed(inv_a, "A") + summed(inv_b, "B"))[:, None], summed(edge, "E"), summed(pair, "P")], 1)
+
+    @staticmethod
+    def equality_layout(plans):
+        """The places of the equality term of a level's tables `plans`: {group: (offset, columns, code places)}, the
+        groups in a fixed order, each with the most columns and code places of any of the tables."""
+        layout, F_ = {}, 0
+        for g in sorted({g for p in plans for g in p["eq"]}):
+            m = max(len(p["eq"].get(g, [])) for p in plans)
+            D = max(col[2] for p in plans for col in p["eq"].get(g, []))
+            layout[g] = (F_, m, D)
+            F_ += m * D
+        return layout
+
+    @staticmethod
+    def equality_codes(plans, layout, at, base):
+        """The codes of the equality term of a level's tables `plans` under `layout`, for a flat buffer that holds a
+        [rows, F] grid from place `base`, F the places of the layout, where row r of table k is grid row at[k] + r:
+        the places and the values of the codes that are not zero."""
+        F_ = sum(m * D for _, m, D in layout.values())
+        idx, val = [], []
+        for k, p in enumerate(plans):
+            for g, cols in p["eq"].items():
                 off, m, D = layout[g]
-                # a sign code's key is scaled so that an equal pair scores the weight
-                scale = 1 / RANDOM_CODE_WIDTH if self.equality == "random" else 1
-                keys.append(equality_keys(self.eq_all, pack[h["c_pos"][g]], item, codes[:, off:off + m * D].view(R, m, D), scale))
-            eq = (codes, torch.cat(keys, -1) if len(keys) > 1 else keys[0])
-        elif names:
-            eq = [(pack[v], pack[p], pack[pos]) for v, p, pos in (h["flex"][g] for g in names)]
-        yield x, eq
+                for s, (_, kind, _, rows, x) in enumerate(cols):
+                    first = base + (at[k] + rows) * F_ + off + s * D
+                    if kind == "hot":
+                        idx.append((first[:, None] + x).reshape(-1)); val.append(np.ones(x.size))
+                    else:
+                        idx.append((first[:, None] + np.arange(x.shape[1])).reshape(-1)); val.append(x.reshape(-1).numpy())
+        return idx, val
+
+    @staticmethod
+    def equality_flex(plans, layout, pack):
+        """The equality term of a level's tables `plans` with `equality` "flex", per group of `layout`: the handles in
+        `pack` of the values [R, m, S], the presence [R, m] and the column positions [I, m], for the R rows of `plans`
+        in order."""
+        starts = np.cumsum([0] + [p["n"] for p in plans])
+        R, fl = int(starts[-1]), {}
+        for g, (_, m, S) in layout.items():
+            vals, pres = np.zeros((R, m, S), np.int64), np.zeros((R, m), bool)
+            for k, p in enumerate(plans):
+                for s, (_, _, _, pr, x) in enumerate(p["eq"].get(g, [])):
+                    vals[starts[k]:starts[k + 1], s] = x
+                    pres[starts[k]:starts[k + 1], s] = pr
+            pos = np.asarray([[col[0] for col in p["eq"].get(g, [])] + [0] * (m - len(p["eq"].get(g, []))) for p in plans],
+                             np.int64)
+            fl[g] = (pack.add(vals, torch.long), pack.add(pres, torch.bool), pack.add(pos, torch.long))
+        return fl
 
     def batch_layout(self, layout, plans, pack):
-        """The places of a batch's equality term among those of its level's `layout` (`level_features`): each
+        """The places of a batch's equality term among those of its level's `layout` (`equality_layout`): each
         group's columns at the most columns and code places of any of the batch's tables. Gives (a permutation of the
         level's places that takes them to the first, in order, added to `pack`, and their count, or None where they
         are all the level's places in order; the zeros that pad q and k to a multiple of 8), or None where no table of
@@ -1866,14 +1875,16 @@ class FeatureEncoder(nn.Module):
         [n, K, 21, c] of each program's tables. Level t holds the t-th table of every program, whose rows attend to
         that program's pooled vectors of levels 0..t-1 outside its own group of `table_groups` (the tables of the
         other assignments of its export table), each with the embedding of its distance back in groups, and, at each
-        layer, to the rows of the program's earlier evidence tables after that layer, which stay in row form. The row
-        tokens of a level's tables are built together, and its tables run in the batches of `batches`, each padded to
-        its most rows. The two evidence tables, where a program starts with both, are encoded jointly at level 0, as
-        one block of rows that attend to each other with the equality term across the block, and each is pooled on
-        its own rows. Call `prepare` first. With `masks` (per program, per table, a field mask [n, columns] or None),
-        the masked fields are hidden and the result is (pooled vectors, records): a record (program, table index,
-        masked_fields' result) per table with a masked field."""
+        layer, to the rows of the program's earlier evidence tables after that layer, which stay in row form. The host
+        plans every level first: each level's batches of `batches`, each padded to its most rows. The row tokens of
+        every level's tables are then built together and placed in the batches' rows by one copy, and the equality
+        codes of every level by one write, each level's in its own layout. The two evidence tables, where a program
+        starts with both, are encoded jointly at level 0, as one block of rows that attend to each other with the
+        equality term across the block, and each is pooled on its own rows. Call `prepare` first. With `masks` (per
+        program, per table, a field mask [n, columns] or None), the masked fields are hidden and the result is (pooled
+        vectors, records): a record (program, table index, masked_fields' result) per table with a masked field."""
         dev, dt, c, K = self.cross.weight.device, self.cross.weight.dtype, self.c, self.K
+        act = torch.get_autocast_dtype(dev.type) if torch.is_autocast_enabled(dev.type) else dt
         L, flex = len(self.blocks), self.equality == "flex"
         if not programs:
             return [] if masks is None else ([], [])
@@ -1882,14 +1893,17 @@ class FeatureEncoder(nn.Module):
         rel_start = np.cumsum([0] + [len(r) for r in rels])
         rel_all = torch.cat(rels) if len(rels) > 1 else rels[0]
         records = []
-        pooled, pool_row, n_pooled = None, {}, 0   # every pooled vector so far, and the row of (program, table)
+        pool_row, n_pooled = {}, 0   # the row of (program, table) among every pooled vector
         ev = Evidence(len(programs), L)
         joint = {p for p, (tables, _, _) in enumerate(programs) if len(tables) > 1 and tables[0].evidence
                  and tables[1].evidence and tables[0].n and tables[1].n}
         group = [np.array(table_groups(tables)) for tables, _, _ in programs]
-        for t in range(max((len(p[0]) for p in programs), default=0)):
-            pack = Pack()
-            with torch.profiler.record_function("encoder.host"):
+        pack = Pack()
+        levels, row_plans = [], []
+        to_batch, n_placed = [], 0   # each row's place in the rows of every level's batches, one batch after another
+        eq_idx, eq_val, eq_size = [], [], 0   # the equality codes of every level, flat
+        with torch.profiler.record_function("encoder.host"):
+            for t in range(max((len(p[0]) for p in programs), default=0)):
                 items, empties = [], []
                 for p, (tables, _, ids) in enumerate(programs):
                     if t >= len(tables) or (t == 1 and p in joint):
@@ -1910,12 +1924,13 @@ class FeatureEncoder(nn.Module):
                                           plan=self.plan(tb, ids, cm, np.full(tb.n, rel_start[p] + t))))
                 for it in items:
                     it["n"], it["E"] = it["plan"]["n"], ev.rows(it["p"])
-                feats = self.level_features([it["plan"] for it in items], pack, rel_all) if items else None
-                layout = next(feats) if feats is not None else {}
+                row_plans += [it["plan"] for it in items]
+                layout = self.equality_layout([it["plan"] for it in items])
                 starts = np.cumsum([0] + [it["n"] for it in items])
+                lv = dict(t=t, empties=empties, eq=None, flex=None, ev_sel=None)
                 if empties:
-                    e_rel = pack.add(np.array([rel_start[p] + i for p, i in empties]), torch.long)
-                    e_unseen = pack.add(np.array([programs[p][0][i].unseen is not None for p, i in empties]), dt)
+                    lv["e_rel"] = pack.add(np.array([rel_start[p] + i for p, i in empties]), torch.long)
+                    lv["e_unseen"] = pack.add(np.array([programs[p][0][i].unseen is not None for p, i in empties]), dt)
                 P = t * K
                 groups = batches([it["n"] for it in items], [P + it["E"] for it in items])
                 plans = []
@@ -1937,7 +1952,8 @@ class FeatureEncoder(nn.Module):
                     plan = dict(grp=grp, its=its, B=B, N=N, E=E, J=J, rows=pack.add(rows.reshape(-1), torch.long),
                                 key_mask=pack.add(km[:, None, None], torch.bool),
                                 pool_mask=pack.add(np.repeat(pm, K, 1)[:, None], torch.bool),
-                                item=pack.add(np.array(grp), torch.long))
+                                item=pack.add(np.array(grp), torch.long),
+                                its_ev=[b for b, it in enumerate(its) if it["evidence"]])
                     if E:
                         plan["ev_index"] = pack.add(ev.key_index([it["p"] for it in its], E).reshape(-1), torch.long)
                     if t:
@@ -1950,37 +1966,83 @@ class FeatureEncoder(nn.Module):
                     if layout and not flex:   # the batch's own layout, with the zeros that pad q and k to a multiple of 8
                         plan["eq"] = self.batch_layout(layout, [it["plan"] for it in its], pack)
                     plans.append(plan)
-                # each row's place in the rows of the level's batches, one batch after another, each [B N]
-                sizes = [pl["B"] * pl["N"] for pl in plans]
-                to_batch, o = np.empty(int(starts[-1]), np.int64), 0
-                for pl, size in zip(plans, sizes):
+                # each row's place in the rows of the level's batches, one batch after another, each [B N], and the
+                # place of each table's first row
+                lv["plans"], lv["sizes"] = plans, [pl["B"] * pl["N"] for pl in plans]
+                S = sum(lv["sizes"])
+                level_at, first, item, o = np.empty(int(starts[-1]), np.int64), np.empty(len(items), np.int64), np.empty(S, np.int64), 0
+                for pl, size in zip(plans, lv["sizes"]):
                     for b, i in enumerate(pl["grp"]):
-                        to_batch[starts[i]:starts[i + 1]] = o + b * pl["N"] + np.arange(items[i]["n"])
+                        first[i] = o + b * pl["N"]
+                        level_at[starts[i]:starts[i + 1]] = first[i] + np.arange(items[i]["n"])
+                        item[first[i]:first[i] + pl["N"]] = i
                     o += size
-                batch_at = pack.add(to_batch, torch.long)
-                ev_load = ev.stale() and any(it["E"] for it in items)
-                if ev_load:
-                    ev_sel = pack.add(ev.all_rows(), torch.long)
-            pack.load(dev)
-            x_level, eq_level = next(feats) if feats is not None else (None, None)
-            if ev_load:
-                ev.compute(self, pack[ev_sel])
-            # the level's rows and equality channels in the batches' row order, padded with zeros, by one copy each
+                to_batch.append(n_placed + level_at)
+                n_placed += S
+                if layout and not flex:   # the level's codes in the batches' rows, padded with zeros
+                    F_ = sum(m * D for _, m, D in layout.values())
+                    idx, val = self.equality_codes([it["plan"] for it in items], layout, first, eq_size)
+                    eq_idx += idx; eq_val += val
+                    lv["eq"] = dict(layout=layout, base=eq_size, F=F_, item=pack.add(item, torch.long), pos={
+                        g: pack.add(np.asarray([[col[0] for col in it["plan"]["eq"].get(g, [])] + [0] * (m - len(it["plan"]["eq"].get(g, [])))
+                                                for it in items], np.int64), torch.long) for g, (_, m, _) in layout.items()})
+                    eq_size += S * F_
+                elif layout:
+                    lv["flex"] = self.equality_flex([it["plan"] for it in items], layout, pack)
+                if ev.stale() and any(it["E"] for it in items):
+                    lv["ev_sel"] = pack.add(ev.load(), torch.long)
+                # the level's pooled vectors and evidence rows, in the order its batches run
+                for pl in plans:
+                    if pl["its_ev"]:
+                        ev.plan([(pl["its"][b]["p"], b, pl["its"][b]["n"]) for b in pl["its_ev"]], pl["B"], pl["N"])
+                    for b, it in enumerate(pl["its"]):
+                        for j in range(len(it["parts"])):
+                            pool_row[(it["p"], t + j)] = n_pooled + b * pl["J"] + j
+                    n_pooled += pl["B"] * pl["J"]
+                for k, key in enumerate(empties):
+                    pool_row[key] = n_pooled + k
+                n_pooled += len(empties)
+                ev.close_level()
+                levels.append(lv)
+            feats = self.row_tokens(row_plans, pack, rel_all) if row_plans else None
             if feats is not None:
-                xs = placed(x_level, pack[batch_at], sum(sizes)).split(sizes)
-                if eq_level is not None and not flex:
-                    qs, ks = (placed(a, pack[batch_at], sum(sizes)).split(sizes) for a in eq_level)
+                next(feats)
+                batch_at = pack.add(np.concatenate(to_batch), torch.long)
+            if eq_idx:
+                c_idx, c_val = pack.add(np.concatenate(eq_idx), torch.long), pack.add(np.concatenate(eq_val), act)
+        pack.load(dev)
+        # every level's rows in the batches' row order, padded with zeros, by one copy, and its codes by one write
+        if feats is not None:
+            xs_all = placed(next(feats), pack[batch_at], n_placed).split([s for lv in levels for s in lv["sizes"]])
+        codes_all = torch.zeros(eq_size, dtype=act, device=dev).index_put_((pack[c_idx],), pack[c_val]) if eq_idx else None
+        # a sign code's key is scaled so that an equal pair scores the weight
+        scale = 1 / RANDOM_CODE_WIDTH if self.equality == "random" else 1
+        pooled, n_batches = None, 0
+        for lv in levels:
+            t, plans, empties = lv["t"], lv["plans"], lv["empties"]
+            xs = xs_all[n_batches:n_batches + len(plans)] if plans else ()
+            n_batches += len(plans)
+            if lv["ev_sel"] is not None:
+                ev.compute(self, pack[lv["ev_sel"]])
+            eq = lv["eq"]
+            if eq is not None:
+                S, F_ = sum(lv["sizes"]), eq["F"]
+                codes, item = codes_all[eq["base"]:eq["base"] + S * F_].view(S, F_), pack[eq["item"]]
+                keys = [equality_keys(self.eq_all, pack[eq["pos"][g]], item, codes[:, off:off + m * D].view(S, m, D), scale)
+                        for g, (off, m, D) in eq["layout"].items()]
+                qs, ks = codes.split(lv["sizes"]), (torch.cat(keys, -1) if len(keys) > 1 else keys[0]).split(lv["sizes"])
+            if lv["flex"] is not None:
+                eq_flex = [(pack[v], pack[p], pack[pos]) for v, p, pos in lv["flex"].values()]
             outs = []
             for j_, plan in enumerate(plans):
                 B, N, E, J = plan["B"], plan["N"], plan["E"], plan["J"]
-                rows = pack[plan["rows"]]
                 x = xs[j_].view(B, N, NPOS, c)
                 prev = None
                 if t:   # with the recency embedding on the invariant channels
                     rec = F.pad(self.recency(pack[plan["back"]])[:, None], (0, 0, 0, NPOS - 1)).view(B, t * K, NPOS, c)
                     prev = pooled.view(-1, NPOS, c).index_select(0, pack[plan["prev"]]).view(B, t * K, NPOS, c) + rec
                 ctx = Batch(level=t, mask=pack[plan["key_mask"]], prev=prev)
-                if eq_level is not None and not flex and plan["eq"] is not None:
+                if eq is not None and plan["eq"] is not None:
                     q_, k_, (sel, pad) = qs[j_], ks[j_], plan["eq"]
                     if sel is not None:
                         perm, width = pack[sel[0]], sel[1]
@@ -1988,10 +2050,10 @@ class FeatureEncoder(nn.Module):
                     ctx.eq_q = (F.pad(q_, (0, pad)) if pad else q_).view(B, N, 1, -1)
                     k_ = k_.view(B, N, L, k_.shape[2], -1)
                     ctx.eq_k = (F.pad(k_, (0, pad, 0, 0, 0, 0, 0, t * K)) if t or pad else k_).unbind(2)
-                elif eq_level is not None and flex:
-                    item = pack[plan["item"]]
+                elif lv["flex"] is not None:
+                    rows, item = pack[plan["rows"]], pack[plan["item"]]
                     ctx.flex = [(v.index_select(0, rows).view(B, N, *v.shape[1:]), pr.index_select(0, rows).view(B, N, -1),
-                                 pos.index_select(0, item)) for v, pr, pos in eq_level]
+                                 pos.index_select(0, item)) for v, pr, pos in eq_flex]
                 elif self.mats[0]["W"] % 8 and not flex:   # q and k padded to a multiple of 8, which the kernel needs
                     pad = up8(self.mats[0]["W"]) - self.mats[0]["W"]
                     ctx.eq_q = x.new_zeros(B, N, 1, pad).to(self.mats[0]["qkv"].dtype)
@@ -1999,30 +2061,24 @@ class FeatureEncoder(nn.Module):
                 if E:
                     ctx.ev = EvidenceKeys(ev, pack[plan["ev_index"]], B, E,
                                           ctx.eq_q.shape[-1] if ctx.eq_q is not None else 0)
-                its_ev = [b for b, it in enumerate(plan["its"]) if it["evidence"]]
                 layers = []
                 for l, blk in enumerate(self.blocks):
                     if self.checkpoint and torch.is_grad_enabled() and B * (N + t * K + E) >= CHECKPOINT_MIN:
                         x = checkpoint(blk, x, ctx, l, self.mats[l], use_reentrant=False)
                     else:
                         x = blk(x, ctx, l, self.mats[l])
-                    if its_ev:
+                    if plan["its_ev"]:
                         layers.append(x)
-                if its_ev:
-                    ev.add(layers, [(plan["its"][b]["p"], b, plan["its"][b]["n"]) for b in its_ev], N)
+                if plan["its_ev"]:
+                    ev.add(layers)
                 outs.append(self.pool(x, pack[plan["pool_mask"]], self.pool_mats).view(B * J, K, NPOS, c))
                 for b, it in enumerate(plan["its"]):
                     for j, (tbj, cmj, lo, hi) in enumerate(it["parts"]):
-                        pool_row[(it["p"], t + j)] = n_pooled + b * J + j
                         if cmj is not None and cmj.any():
                             records.append((it["p"], t + j, self.masked_fields(tbj, x[b, lo:hi], cmj, detail)))
-                n_pooled += B * J
             if empties:
-                outs.append(self.empty_vectors(rel_all.index_select(0, pack[e_rel]), pack[e_unseen]))
-                for k, key in enumerate(empties):
-                    pool_row[key] = n_pooled + k
-                n_pooled += len(empties)
-            ev.close_level()
+                outs.append(self.empty_vectors(rel_all.index_select(0, pack[lv["e_rel"]]), pack[lv["e_unseen"]]))
+            ev.join_level()
             parts = ([pooled] if pooled is not None else []) + outs
             if parts:
                 pooled = torch.cat(parts) if len(parts) > 1 else parts[0]
