@@ -267,6 +267,9 @@ def parser():
     ap.add_argument("--base", default="Qwen/Qwen3-0.6B", help="the language model whose embedding the encoder shares")
     ap.add_argument("--data", default="work/lm/data")
     ap.add_argument("--tables", required=True, help="a tables export (engine/arclog-py/tables_export.py)")
+    ap.add_argument("--allow-check-violations", action="store_true",
+                    help="read a tables or rollout export whose checks.txt reports violations, and one whose copy flows break "
+                         "their join (encoder.load_tables, strict and allow_violations); off by default")
     ap.add_argument("--out", required=True)
     ap.add_argument("--steps", type=int, default=1000)
     ap.add_argument("--minutes", type=float, default=0, help="stop after this long, if given")
@@ -376,7 +379,8 @@ def main():
     t0 = time.time()
 
     cases, held_cases, names, kinds, mask_table = T.load(a.data)
-    tables, skipped, _ = E.load_tables(a.tables, f"{a.data}/tables.pkl")
+    tables, skipped, _ = E.load_tables(a.tables, f"{a.data}/tables.pkl", not a.allow_check_violations,
+                                       a.allow_check_violations)
     if skipped:
         print(f"DATA FAULT: {len(skipped)} cases whose tables export cannot be read, left out: {skipped}")
     over = E.mark_over_budget(tables, a.enc_budget)
@@ -399,7 +403,8 @@ def main():
     if a.value != "off":
         assert a.value_tables, "--value needs --value-tables"
         members, vskipped = E.load_rollouts(a.value_tables, f"{a.data}/{Path(a.value_tables).resolve().name}.tables.pkl",
-                                            a.enc_budget, a.enc_max_rows)
+                                            a.enc_budget, a.enc_max_rows, strict=not a.allow_check_violations,
+                                            allow_violations=a.allow_check_violations)
         if vskipped:
             print(f"DATA FAULT: {len(vskipped)} rollout cases whose tables export cannot be read, left out: {vskipped}")
         for m in members.values():

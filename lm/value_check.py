@@ -269,7 +269,7 @@ verdict(r2["consistency"] is None and r2["fault"].startswith(f"ta {r2_name}: the
         and not E.value_solving(r2), "a case past the export's step cap: no consistency, its fault line, not solving")
 
 print("== records (encoder.load_rollouts)")
-members, skipped = E.load_rollouts(d, tasks_dir=tasks_dir)
+members, skipped = E.load_rollouts(d, tasks_dir=tasks_dir, strict=False)
 mem = lambda m, case="$C", b=1, task="ta": members[(task, RL.case_name(task, case, b, m))]
 flags = lambda m, **k: [(r["position"], r["empty"], r["unseen"], r["faulted"]) for r in mem(m, **k)["records"]]
 verdict(not skipped and len(members) == len(labels), f"{len(members)} members, none skipped")
