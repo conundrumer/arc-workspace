@@ -430,7 +430,11 @@ def _check_cases(dir, cases, chosen, orientation, part=None):
     wanted = set(cases)
     def read(name, columns=None):
         path = f"{dir}/{name}.parquet" if part is None else f"{dir}/parts/{part:05d}.{name}.parquet"
-        df = pd.read_parquet(path, columns=columns, filters=[("task", "in", tasks)])
+        if part is None:
+            df = pd.read_parquet(path, columns=columns, filters=[("task", "in", tasks)])
+        else:       # a part file is small, and a filter on the `task` of an empty one, whatever its type, can fail
+            df = pd.read_parquet(path, columns=columns)
+            df = df[df.task.isin(tasks)] if len(df) else df
         return df[pd.MultiIndex.from_frame(df[["task", "case"]]).isin(wanted)] if len(df) else df
     if part is None:
         tables = read("tables")

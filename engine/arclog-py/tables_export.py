@@ -72,7 +72,7 @@ consistency of the last `RULE` clause the stream ends, or `ended none`), then th
 faults (its tables up to the fault are kept) or lies past the cap. It writes no `settings.json`.
 """
 import collections, hashlib, json, os, sys, glob, time
-import multiprocessing
+import multiprocessing, traceback
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, wait, FIRST_COMPLETED
 import numpy as np
 import pandas as pd
@@ -108,7 +108,10 @@ def write_files(out, k, results, seconds=None, keys=None):
             pairs.append((task, case.case))
     for p, fs in frames.items():
         if fs:
-            pd.concat(fs).to_parquet(f"{out}/parts/{k:05d}.{p}.parquet")
+            rows = pd.concat(fs)
+            if not len(rows):       # an empty frame would write `task` and `case` as a null type, which a filter on strings refuses
+                rows = rows.astype({"task": "string", "case": "string", "concept": bool})
+            rows.to_parquet(f"{out}/parts/{k:05d}.{p}.parquet")
     with open(f"{out}/parts/{k:05d}.report.txt", "w") as sink:
         sink.write("".join(line + "\n" for _, _, lines in results for line in lines))
     with open(f"{out}/parts/{k:05d}.tasks.tmp", "w") as sink:
@@ -281,7 +284,10 @@ def main(out, task_ids, previous=None, **options):
             last = now
     if failure:
         pool.shutdown(wait=False, cancel_futures=True)
+        workers_running = list((check_pool._processes or {}).values())
         check_pool.shutdown(wait=False, cancel_futures=True)
+        for process in workers_running:
+            process.kill()
         raise failure
     pool.shutdown()
     check_pool.shutdown()
@@ -340,4 +346,9 @@ if __name__ == "__main__":
         elif a == "--step-cap": options["step_cap"] = int(args.pop(0)) or None
         else: ids.append(a)
     ids = ids or sorted(os.path.basename(f)[:-len(".arcdata")] for f in glob.glob(f"{CORPUS}/*.arcdata"))
-    main(sys.argv[1], ids, **options)
+    try:
+        main(sys.argv[1], ids, **options)
+    except Exception:       # a failed task or check ends the run at once: the replay threads of the other tasks do not delay the exit
+        traceback.print_exc()
+        sys.stderr.flush()
+        os._exit(1)

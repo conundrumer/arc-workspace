@@ -116,9 +116,8 @@ def test_check_part_reports_a_copy_whose_values_lie_outside_its_source(tmp_path,
     (tmp_path / "tasks").mkdir()
     (tmp_path / "tasks/t.json").write_text(json.dumps(TASK))
     monkeypatch.setattr(checks, "TASKS", str(tmp_path / "tasks"))
-    def read_pickle(path, columns=None, filters=(("task", "in", []),)):         # the venv has no pyarrow: the part files are pickles
-        df = pd.read_pickle(path)
-        return df[df.task.isin(filters[0][2])]
+    def read_pickle(path, columns=None, filters=None):         # the venv has no pyarrow: the part files are pickles
+        return pd.read_pickle(path)
     monkeypatch.setattr(checks.pd, "read_parquet", read_pickle)
     out = tmp_path / "export"
     (out / "parts").mkdir(parents=True)
@@ -131,3 +130,21 @@ def test_check_part_reports_a_copy_whose_values_lie_outside_its_source(tmp_path,
         pd.DataFrame(dict(task=[], case=[])).to_pickle(out / f"parts/00000.{name}.parquet")
     found = checks.check_part(str(out), 0, [("t", 0)])
     assert [l for l in found if "values-copy" in l] and all(l.startswith("t 0: ") for l in found)
+
+
+def test_check_part_accepts_a_part_whose_projection_files_are_empty(tmp_path, monkeypatch):
+    frames, values = case()
+    (tmp_path / "tasks").mkdir()
+    (tmp_path / "tasks/t.json").write_text(json.dumps(TASK))
+    monkeypatch.setattr(checks, "TASKS", str(tmp_path / "tasks"))
+    monkeypatch.setattr(checks.pd, "read_parquet", lambda path, columns=None, filters=None: pd.read_pickle(path) if filters is None else 1 / 0)
+    out = tmp_path / "export"
+    (out / "parts").mkdir(parents=True)
+    (out / "values/t").mkdir(parents=True)
+    values.tofile(out / "values/t/0.i32")
+    (out / "orientation_types.json").write_text(json.dumps([[k, sorted(v)] for k, v in ORIENTATION.items()]))
+    for name in ("tables", "entries", "assigned", "flows"):
+        frames[name].assign(task="t", case=0).to_pickle(out / f"parts/00000.{name}.parquet")
+    for name in ("projections", "projection_rows"):
+        pd.DataFrame(dict(task=[], case=[])).to_pickle(out / f"parts/00000.{name}.parquet")      # an empty frame's `task` is not a string
+    assert checks.check_part(str(out), 0, [("t", 0)]) == []
