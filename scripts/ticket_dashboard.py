@@ -30,9 +30,10 @@ for those it serves other than streams, and runs itself again in its own
 process with the same arguments; the open page's `EventSource` connects
 again by its own retry.
 
-This module holds the server; `dashboard_reads` the reads the page is
-rendered from, `dashboard_html` the HTML of its sections, `dashboard_search`
-the search, and `dashboard_template` the page around its sections."""
+This module holds the server; `dashboard_reads` and `dashboard_operators`
+the reads the page is rendered from, `dashboard_html` the HTML of its
+sections, `dashboard_search` the search, and `dashboard_template` the page
+around its sections."""
 
 import argparse
 import gzip
@@ -52,7 +53,8 @@ from urllib.parse import parse_qs, urlsplit
 import kept_reads
 import script_calls
 from dashboard_html import Rendered, filled, page
-from dashboard_reads import CodexLimits, CodexWindow, clear, cleared, operator_records
+from dashboard_operators import operator_records
+from dashboard_reads import CodexLimits, CodexWindow, clear, cleared
 from dashboard_search import results, sheet, words
 from dashboard_template import CLEAR_ROUTE, EVENTS, FOLD, SEARCH_ROUTE, TEMPLATE, TICKET_ROUTE
 from dashboard_words import clock

@@ -18,6 +18,7 @@ from tests.conftest import script
 scripts_importable()
 dashboard = script("dashboard_html")
 reads = script("dashboard_reads")
+operators = script("dashboard_operators")
 shown = script("shown_state")
 standings = script("dashboard_standings")
 
@@ -40,7 +41,7 @@ def ticket(n: int, **kwargs) -> Ticket:
 def view(tickets, *, agents=(), starts=(), paused=False, own_scope=False, in_scope=None):
     record = shown.Shown(1000, None, shown.ScriptAdmits(True), paused, own_scope,
                          in_scope, (), tuple(agents), {}, None, tuple(starts))
-    records = reads.OperatorRecords((reads.SessionRecord(1, record),), None)
+    records = operators.OperatorRecords((operators.SessionRecord(1, record),), None)
     return dashboard.View({t.number: t for t in tickets}, records, Usage(1000, {}),
                           1000, records.expedited(), records.agents(), records.starts(),
                           {s.number: s.held for s in starts if s.held is not None}, {})
