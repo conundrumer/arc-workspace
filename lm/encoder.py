@@ -750,7 +750,7 @@ def table_groups(tables):
     return out
 
 
-LOADER_VERSION = 14  # raise on any change to parse_tables or Table
+LOADER_VERSION = 15  # raise on any change to parse_tables or Table
 
 
 def table_stamp(tables_dir):
