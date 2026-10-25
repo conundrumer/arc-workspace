@@ -15,7 +15,10 @@
 //! resolution of the form in progress, retargeted to each one's relation. The mask keeps the state and
 //! forced tokens of each admitted token, which the step of that token takes.
 //! It admits a constraint's operator, or first label, only where some
-//! completion of the constraint passes the checks (`Decoder::completes`). Its interface
+//! completion of the constraint passes the checks (`Decoder::completes`), and a
+//! token whose state stands in the projection of an instance input only where
+//! some completion of the projection does (`Decoder::completes_projection`),
+//! or where the search spends its steps. Its interface
 //! beside the mask, in `interface`, gives the rows of the body so far and the
 //! consistency test at a `RULE` clause's end, and its batch form, in
 //! `batch`, steps many decodes at once, and its projections of the body so far,
@@ -350,6 +353,10 @@ impl<'a> Decoder<'a> {
         }
         if state.open_constraint().is_some() {
             self.completes(&state, checks, &reads_example, order)?;
+        } else if state.head_site_completions(usize::MAX).is_some() {
+            let steps = &mut { PROJECTION_STEPS };
+            // A site of one argument first: the sets of labels it can hold are many, and one label passes where any does.
+            self.completes_projection(&state, checks, &reads_example, 1, steps).or_else(|_| self.completes_projection(&state, checks, &reads_example, usize::MAX, steps))?;
         }
         Ok((state, forced))
     }
@@ -422,6 +429,37 @@ impl<'a> Decoder<'a> {
         Err(refusal)
     }
 
+    /// Whether some completion of the projection of an instance input that
+    /// stands open in `state` passes the checks, or, where none does, the
+    /// refusal of the last completion tried. The completions are the tokens
+    /// of [`state::State::head_site_completions`] with `limit` at each head
+    /// site that stands open or follows, up to the state where the input is
+    /// closed, which is the one the checks must pass. The search is
+    /// depth-first, and where it has spent `steps` it passes, as the mask
+    /// passed a state before the search.
+    fn completes_projection(&self, state: &state::State, checks: &PrefixChecks<'_>, reads_example: state::ReadsExample<'_>, limit: usize, steps: &mut usize) -> Result<(), Refusal> {
+        let Some(tokens) = state.head_site_completions(limit) else { return Ok(()) };
+        let mut refusal = Refusal::Grammar("a projection has no completion");
+        for token in tokens {
+            if *steps == 0 {
+                return Ok(());
+            }
+            *steps -= 1;
+            let next = match state.step(&self.context, &token, reads_example) {
+                Ok((next, _, _)) => next,
+                Err(unexpected) => {
+                    refusal = Refusal::Grammar(unexpected);
+                    continue;
+                }
+            };
+            match self.check_state(&next, Candidate::Any, checks).and_then(|()| self.completes_projection(&next, checks, reads_example, limit, steps)) {
+                Ok(()) => return Ok(()),
+                Err(next) => refusal = next,
+            }
+        }
+        Err(refusal)
+    }
+
     /// [`Decoder::completes`] of the state after `token` from `state`.
     fn completes_with(&self, state: &state::State, token: &Token, checks: &PrefixChecks<'_>, reads_example: state::ReadsExample<'_>, order: &RefCell<Order>) -> Result<(), Refusal> {
         match state.step(&self.context, token, reads_example) {
@@ -430,6 +468,9 @@ impl<'a> Decoder<'a> {
         }
     }
 }
+
+/// The steps of the completion search of a projection, per token.
+const PROJECTION_STEPS: usize = 256;
 
 /// What the mask has found at a state of the order operators `<`, `<=`, `>`
 /// and `>=`, which the checks read alike: their first labels, and the first

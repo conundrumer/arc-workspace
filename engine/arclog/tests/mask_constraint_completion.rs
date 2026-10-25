@@ -1,6 +1,7 @@
 //! The mask admits a constraint's operator, or its first label, only where
 //! some completion of the constraint passes every check, and a projection of
-//! an instance input takes one label on a column of a fixed type.
+//! an instance input takes one label on a column of a fixed type, and a token
+//! in a projection only where some completion of the projection passes.
 
 use arclog::decode::{Decoder, Refusal};
 use arclog::eval::instance::Constructions;
@@ -123,4 +124,74 @@ fn a_projection_on_a_column_of_a_fixed_type_takes_one_label() {
     assert!(!admits(&decoder, &Token::Label(0)), "no second label");
     assert!(!admits(&decoder, &Token::Column(0)));
     assert!(admits(&decoder, &Token::Control(Control::End)));
+}
+
+
+fn lib(name: &str) -> Token {
+    Token::Lib(LibName(name.into()))
+}
+
+/// The tokens of `(dir_elem <label>)`, which makes one label, of the type `Dir`.
+fn dir_label(label: Control) -> Vec<Token> {
+    vec![lib("dir_elem"), Token::Column(0), Token::Control(label)]
+}
+
+/// The decode after an `INIT` of `component` whose key is `(dir_elem
+/// <key>)`, and the body `(dir_elem *D)` of its first input, without its
+/// `END`; or none where the mask refuses one of them.
+fn instance_with_body<'a>(inputs: &'a Inputs, component: &str, key: Control) -> Option<Decoder<'a>> {
+    let mut decoder = decoder(inputs);
+    let tokens = [Token::Control(Control::Init), lib(component)].into_iter().chain(dir_label(key)).chain([Token::Control(Control::End)]).chain(dir_label(Control::Fresh));
+    for token in tokens {
+        decoder.step(token).ok()?;
+    }
+    Some(decoder)
+}
+
+/// The `cell` input of a `BoundingBox` instance reads a key label or an
+/// output of the instance in its projection. With a key that makes a key
+/// label, the key column can hold it, and the body's `END` is admitted;
+/// with a key that makes none, the body makes no label of the projection
+/// that can, and its `END` is refused.
+#[test]
+fn a_body_end_is_admitted_only_where_a_completion_of_the_projection_passes() {
+    let inputs = inputs();
+    let end = Token::Control(Control::End);
+    let without = instance_with_body(&inputs, "BoundingBox", Control::Fresh).expect("a body of one atom");
+    assert!(!admits(&without, &end), "no key label to read");
+    assert!(matches!(without.fork().step(end.clone()), Err(Refusal::Check { .. })));
+    let with = instance_with_body(&inputs, "BoundingBox", Control::Key).expect("a body of one atom");
+    assert!(admits(&with, &end), "the key column can hold the key label");
+}
+
+/// Every token that the mask admits in the projection of an input has an
+/// admitted token after it, down to four tokens, whether the key makes a key
+/// label or not: a field's column token on a column of a type parameter
+/// is admitted only where some label follows it.
+#[test]
+fn each_admitted_token_in_a_projection_has_an_admitted_continuation() {
+    fn walk(decoder: &Decoder<'_>, path: &mut Vec<Token>, depth: usize, walked: &mut usize) {
+        for token in admitted(decoder) {
+            let mut next = decoder.fork();
+            next.step(token.clone()).expect("an admitted token");
+            path.push(token.clone());
+            assert!(!admitted(&next).is_empty(), "the mask is empty after {path:?}");
+            *walked += 1;
+            if depth > 0 {
+                walk(&next, path, depth - 1, walked);
+            }
+            path.pop();
+        }
+    }
+    let inputs = inputs();
+    let mut walked = 0;
+    for component in ["BoundingBox", "Order"] {
+        for key in [Control::Fresh, Control::Key] {
+            let Some(mut decoder) = instance_with_body(&inputs, component, key) else { continue };
+            if decoder.step(Token::Control(Control::End)).is_ok() {
+                walk(&decoder, &mut vec![], 3, &mut walked);
+            }
+        }
+    }
+    assert!(walked > 0, "a projection with admitted tokens");
 }

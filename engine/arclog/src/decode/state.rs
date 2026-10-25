@@ -237,6 +237,9 @@ struct HeadSiteFrame {
     /// The count of the fields written.
     fields: u32,
     field: Option<u32>,
+    /// The label of the last bare label written, which the next bare label
+    /// follows in the order of the labels.
+    last_bare: Option<u32>,
     /// Whether the `END` of the site's record stands, which the `END` of the
     /// projection's column follows.
     record_ended: bool,
@@ -302,6 +305,9 @@ enum Offer {
     /// it, and the token stands where `consumed` does not hold.
     Close { consumed: bool },
 }
+
+/// The most fields of a record that [`State::head_site_completions`] offers.
+const FIELDS_TRIED: u32 = 1;
 
 impl State {
     pub(super) fn new() -> State {
@@ -372,6 +378,34 @@ impl State {
             Some(Frame::Constraint(constraint)) => Some((constraint.op, constraint.first)),
             _ => None,
         }
+    }
+
+    /// Where a head site of an instance input's projection stands on top,
+    /// the tokens the grammar admits there that a completion of the
+    /// projection can use, in the order a search tries them: `END`, the
+    /// labels in scope from the last made, and the column token of the next
+    /// field. After a field's column token only the labels, and after the
+    /// record's `END` only `END`. A site that holds `limit` arguments takes
+    /// `END` alone. A column of a type parameter takes the bare labels
+    /// after its last bare label, so a set of them is tried once, and a
+    /// record of at most `FIELDS_TRIED` fields; one of a fixed type takes
+    /// one label.
+    pub(super) fn head_site_completions(&self, limit: usize) -> Option<Vec<Token>> {
+        let Some(Frame::HeadSite(site)) = self.stack.last() else { return None };
+        let labels = |after: Option<u32>| (after.map_or(0, |last| last + 1)..self.labels).rev().map(Token::Label);
+        let end = Token::Control(Control::End);
+        if site.field.is_some() {
+            return Some(labels(None).collect());
+        }
+        if site.record_ended || site.args.len() >= limit {
+            return Some(vec![end]);
+        }
+        if !type_parameter(&site.column) {
+            let bare = site.args.is_empty().then(|| labels(None));
+            return Some(std::iter::once(end).chain(bare.into_iter().flatten()).collect());
+        }
+        let field = (site.fields < FIELDS_TRIED).then_some(Token::Column(site.fields));
+        Some(std::iter::once(end).chain(labels(site.last_bare)).chain(field).collect())
     }
 
     /// The count of the labels made so far.
@@ -813,6 +847,9 @@ impl State {
             _ => {
                 let label = self.label_token(token, false, forced).ok_or("a projection holds labels, then `END`")?;
                 let site = top!(self, Frame::HeadSite);
+                if let LabelUse::Fresh(id) | LabelUse::Join(id) | LabelUse::Key(id) = label {
+                    site.last_bare = Some(id.0);
+                }
                 site.args.push(bare_arg(&site.column, label));
                 Ok(Offer::Taken)
             }
@@ -1147,7 +1184,7 @@ impl State {
         if let Some(column) = input.columns.get(input.column) {
             forced.push(Token::Column(input.column as u32));
             let column = column.clone();
-            self.stack.push(Frame::HeadSite(HeadSiteFrame { column, args: Vec::new(), fields: 0, field: None, record_ended: false }));
+            self.stack.push(Frame::HeadSite(HeadSiteFrame { column, args: Vec::new(), fields: 0, field: None, last_bare: None, record_ended: false }));
             return None;
         }
         let Some(Frame::Input(input)) = self.stack.pop() else { unreachable!("the input stands on top") };
