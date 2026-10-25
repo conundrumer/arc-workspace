@@ -2,7 +2,8 @@
 # Runs the encoder's correctness checks at once, as separate processes, and prints PASS or FAIL for each with its
 # wall time, and the output of each that fails. A check passes when it exits 0 and prints no FAIL. Exits 1 if any
 # check fails. --full runs encoder_check.py on the whole dev export. A portability check of the files that go to the
-# pod runs first: it prints PASS portability, or FAIL portability and the line, for each machine-specific name.
+# pod runs first: it prints PASS portability, or FAIL portability and the line, for each machine-specific name. The
+# repo's document check (`controlled_markdown check`), which refuses a merge when it fails, runs with the rest.
 #
 #     lm/checks.sh [--full]
 set -u
@@ -29,6 +30,7 @@ run encoder_check "$PY" lm/encoder_check.py ${ENC_ARGS[@]+"${ENC_ARGS[@]}"} &
 run insertion_check "$PY" lm/insertion_check.py &
 run regression_check "$PY" lm/regression_check.py &
 run value_check "$PY" lm/value_check.py &
+run documents uv run python -m controlled_markdown check &
 wait
 
 failed=0
@@ -43,7 +45,7 @@ for f in encoder train pretrain encoder_check insertion_check regression_check v
              | grep -vF -e 'int(os.path.getmtime' -e 'int(max(os.path.getmtime(f) for f in tasks.glob')
 done
 [ "$portability" = 0 ] && echo "PASS portability" || failed=1
-for name in encoder_check insertion_check regression_check value_check; do
+for name in encoder_check insertion_check regression_check value_check documents; do
     code=$(cat "$tmp/$name.code")
     if [ "$code" = 0 ] && ! grep -q FAIL "$tmp/$name.out"; then
         echo "PASS $name ($(cat "$tmp/$name.time")s)"
