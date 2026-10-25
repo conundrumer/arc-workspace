@@ -1163,7 +1163,7 @@ def joint_table(a, b):
 # ---------------------------------------------------------------- field labels and sources, for the masked loss
 
 COMPUTED, INFERRABLE, SOLE, REMOTE = 0, 1, 2, 3   # a field's label: computed from its sources; inferrable as a
-# distribution; neither; computed from sources that all stand in other derived tables
+# distribution; neither; computed with no source in its own table or a grid table
 FIELD_LABELS = ("computed", "inferrable", "sole", "remote")
 STEP_KINDS = ("program", "output", "prior")   # the order in which "alternate" cycles them
 LOSS_PART = {"program": "program", "output": "program", "prior": "prior"}   # an output step hides computed fields
@@ -1208,9 +1208,10 @@ def provenance(tables):
 def column_labels(tables, j):
     """The label of each column of derived table j of a program, from the export's provenance: inferrable in a
     candidate key (`keys`), and where every flow of the column is a constant or a lib name, or the column has none;
-    remote where the column is computed and the (table, column) pairs of `column_sources` name sources, all in
-    derived tables other than j, which j's rows see only as those tables' K pooled vectors; computed elsewhere,
-    which includes a column with no source pair (a flow without a source table)."""
+    remote where the column is computed and none of the (table, column) pairs of `column_sources` is in table j or
+    in an evidence table: its sources are all in derived tables other than j, which j's rows see only as those
+    tables' K pooled vectors, or it has no source pair (its flows name no table, or only j's own export table);
+    computed elsewhere."""
     t, src = tables[j], column_sources(tables)[j]
     memo = t.__dict__.setdefault("_unique", {})
     hit = memo.get(("column labels",))
@@ -1223,7 +1224,7 @@ def column_labels(tables, j):
         sourced[t.flows[(t.flows[:, 1] != FLOW_CONSTANT) & (t.flows[:, 1] != FLOW_LIB_NAME), 0]] = True
         lab[~sourced] = INFERRABLE
         for c, s in enumerate(src):
-            if lab[c] == COMPUTED and s and not any(i == j or tables[i].evidence for i, _ in s):
+            if lab[c] == COMPUTED and not any(i == j or tables[i].evidence for i, _ in s):
                 lab[c] = REMOTE
         hit = memo[("column labels",)] = (t.flows, src, lab)
     return hit[2]
@@ -1235,7 +1236,7 @@ def field_labels(tables):
     the evidence tables, Example and Position fields and ex_input's Color fields are inferrable, and ex_output's
     Color fields are labelled by `output_labels`. In a derived table that holds the export's provenance, a field
     takes its column's label (`column_labels`: computed where a source is in its own table or in a grid table,
-    remote where its sources are all in other derived tables); in one that does not, a field is computed where it
+    remote where it has no such source); in one that does not, a field is computed where it
     is `identifiable`, and inferrable elsewhere, as a key-like field whose target is a set. A program step hides
     remote fields only with `mask_remote` (`draw_masks`)."""
     out = []
@@ -2545,7 +2546,7 @@ class FeatureEncoder(nn.Module):
         "prior"), drawn from `gen`; None for a table without rows. A field is a candidate with probability `frac`
         where it is present, its row is not a marker, and its label (`field_labels`) is `computed` in a program
         step, `computed` in ex_output alone in an output step, or `inferrable` in a prior step; a table keeps at
-        most `cap` candidates. A `remote` field, whose sources are all in other derived tables, is a candidate in a
+        most `cap` candidates. A `remote` field, which has no source in its own table or in a grid table, is a candidate in a
         program step only with `mask_remote`. In a program step whose tables hold the export's provenance (`provenance`), the
         (table, column) pairs that hold candidates are then visited in an order drawn from `gen`, and a column keeps
         its candidates only where none of its sources (`column_sources`) holds hidden fields already, and it is a
