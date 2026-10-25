@@ -320,3 +320,33 @@ fn the_program_form_of_a_decode_names_each_label_as_its_trace_form_does() {
     let program = reads_back(&arclog);
     assert!(program.ends_with("(INIT &r6 Connectivity (node ((:P Q)) (&r2.adjacent (:P *P) (:Q *Q))))\n"), "{program}");
 }
+
+/// Asserts that the program form of the decode of `arclog` reads, passes the
+/// checks, and is written again as it stands. A `^` column of a `for` or
+/// `instance` clause reads as a written name where the decode holds its slot,
+/// and the content of a key body gives the two names apart, so this compares
+/// the text.
+fn reads_back_as_written(arclog: &str) -> String {
+    let inputs = inputs(&[3, 3], Caps::CORPUS);
+    let mut decoder = decoder(&inputs);
+    walk(&mut decoder, &model_tokens(arclog));
+    let text = write_synthesized(decoder.program(), Registry::get());
+    checked(&text);
+    let solver = read_solver("trace", &text, "", &|_| None).expect("the file reads").value;
+    assert_eq!(write_synthesized(&solver.concept_case().program, Registry::get()), text);
+    text
+}
+
+#[test]
+fn the_program_form_of_a_decode_with_a_choose_form_reads_back() {
+    let choose = "(CHOOSE &pick (for ((&fg ^Col))\n    (from (&fg Col *P)))\n  (never (&fg *Col *P) (&fg (:Col *Col2) (:P *P2)) (&fg Col (:P P2))))\n";
+    let text = reads_back_as_written(&format!("{BG}{FG}{choose}"));
+    assert!(text.contains("(CHOOSE &r2"), "{text}");
+}
+
+#[test]
+fn the_program_form_of_a_decode_with_a_rigid_det_form_reads_back() {
+    let rigid = "(RIGID_DET &piece (instance ((&fg ^P ^Col)) (&fg P Col)))\n";
+    let text = reads_back_as_written(&format!("{BG}{FG}{rigid}"));
+    assert!(text.contains("(RIGID_DET &r2"), "{text}");
+}

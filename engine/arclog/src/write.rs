@@ -76,8 +76,9 @@ pub fn write_solver(solver: &Solver) -> SolverText {
 /// `(OR ((r (:key *X))) ((s (:key *X))))` is written with `X` at each site,
 /// and reads back as two labels.
 ///
-/// A relation slot `n` is written `&rn`. The writer prints a form of the kinds
-/// a decode builds, `RULE`, `DET` and `INIT`, and refuses a record site.
+/// A relation slot `n` is written `&rn`. The writer prints each form a decode
+/// builds, `RULE`, `DET`, `INIT`, `CHOOSE` and `RIGID_DET`, and refuses a
+/// record site.
 pub fn write_synthesized(program: &Node<Program>, registry: &Registry) -> String {
     synthesized::write(program, registry)
 }
@@ -116,6 +117,7 @@ mod synthesized {
     use crate::program::path::NodePath;
     use crate::program::*;
     use crate::registry::Registry;
+    use crate::resolver::form_columns::rigid_outputs;
     use crate::resolver::registry_columns::{component, proposer_columns};
     use crate::trace::render::label_name;
 
@@ -196,6 +198,11 @@ mod synthesized {
         }
     }
 
+    /// `columns`, each named as its label is in the form.
+    fn named_columns(columns: &[RelationColumn], names: &Names) -> Arc<[RelationColumn]> {
+        columns.iter().map(|column| RelationColumn { name: ColumnName::Written(names.get(column.label).into()), label: column.label }).collect()
+    }
+
     fn written(column: &ColumnName) -> Option<&str> {
         match column {
             ColumnName::Written(text) => Some(text),
@@ -210,7 +217,7 @@ mod synthesized {
                 ColumnName::Written(text) => text.to_string(),
                 ColumnName::Slot(slot) => {
                     let names = relation.and_then(read_relation).and_then(|relation| self.columns.get(&relation));
-                    names.and_then(|names| names.get(*slot as usize)).cloned().unwrap_or_else(|| panic!("a column slot {slot} of a relation whose columns no form before declares, or of a record"))
+                    names.and_then(|names| names.get(*slot as usize)).cloned().unwrap_or_else(|| panic!("a column slot {slot} of a relation whose columns no form before declares, or of a record: {relation:?} {:?}", relation.and_then(read_relation).and_then(|r| self.columns.get(&r))))
                 }
             }
         }
@@ -245,7 +252,21 @@ mod synthesized {
                     }
                     instance.inputs.iter().for_each(|input| self.input_uses(input.value(), uses));
                 }
-                _ => panic!("write_synthesized writes the forms a decode builds: RULE, DET and INIT"),
+                Form::Choose(choose) => {
+                    let choose = choose.value();
+                    choose.rows.iter().for_each(|rows| self.body_uses(rows.body.value(), uses));
+                    self.body_uses(choose.from.value(), uses);
+                    choose.never.iter().for_each(|never| self.body_uses(never.value(), uses));
+                }
+                Form::RigidDet(rigid) => {
+                    let rigid = rigid.value();
+                    rigid.key.iter().chain(rigid.instance.iter()).for_each(|clause| self.body_uses(clause.body.value(), uses));
+                    for part in rigid.parts.iter() {
+                        let part = part.value();
+                        part.sites.iter().for_each(|site| self.site_uses(Some(&part.relation), site, uses));
+                    }
+                }
+                _ => panic!("write_synthesized writes the forms a decode builds: RULE, DET, INIT, CHOOSE and RIGID_DET"),
             }
         }
 
@@ -297,12 +318,14 @@ mod synthesized {
             match form {
                 Form::Clause(clause) => Form::Clause(Node::new(self.clause(clause.value(), names))),
                 Form::Instance(instance) => Form::Instance(Node::new(self.instance(instance.value(), names))),
-                _ => panic!("write_synthesized writes the forms a decode builds: RULE, DET and INIT"),
+                Form::Choose(choose) => Form::Choose(Node::new(self.choose(choose.value(), names))),
+                Form::RigidDet(rigid) => Form::RigidDet(Node::new(self.rigid_det(rigid.value(), names))),
+                _ => panic!("write_synthesized writes the forms a decode builds: RULE, DET, INIT, CHOOSE and RIGID_DET"),
             }
         }
 
         fn clause(&mut self, clause: &Clause, names: &Names) -> Clause {
-            let columns: Arc<[RelationColumn]> = clause.columns.iter().map(|column| RelationColumn { name: ColumnName::Written(names.get(column.label).into()), label: column.label }).collect();
+            let columns = named_columns(&clause.columns, names);
             let derived: Vec<String> = match (columns.is_empty(), clause.proposers.first()) {
                 (true, Some(proposer)) => proposer_columns(self.registry, proposer).map_or_else(Vec::new, |columns| columns.iter().filter_map(|column| written(column).map(str::to_owned)).collect()),
                 _ => columns.iter().filter_map(|column| written(&column.name).map(str::to_owned)).collect(),
@@ -320,12 +343,48 @@ mod synthesized {
             }
             let key = instance.key.as_ref().map(|key| {
                 let value = key.value();
-                let columns = value.key.columns.iter().map(|column| RelationColumn { name: ColumnName::Written(names.get(column.label).into()), label: column.label }).collect();
                 let inputs = value.inputs.iter().map(|input| Node::new(self.input(input.value(), names))).collect();
-                Node::new(KeyClause { key: KeyBody { body: self.body(&value.key.body, names), columns }, inputs })
+                Node::new(KeyClause { key: self.key_body(&value.key, names), inputs })
             });
             let inputs = instance.inputs.iter().map(|input| Node::new(self.input(input.value(), names))).collect();
             Instance { name: InstanceName(declared(&instance.name.0)), component: instance.component.clone(), key, inputs }
+        }
+
+        fn choose(&mut self, choose: &Choose, names: &Names) -> Choose {
+            let rows = choose.rows.as_ref().map(|rows| self.key_body(rows, names));
+            let candidate_columns = named_columns(&choose.candidate_columns, names);
+            let row_columns = rows.iter().flat_map(|rows| rows.columns.iter());
+            let written_columns = row_columns.chain(candidate_columns.iter()).filter_map(|column| written(&column.name).map(str::to_owned)).collect();
+            self.columns.insert(ProgramRelation::Declared(choose.name.clone()), written_columns);
+            let never = choose.never.iter().map(|never| self.body(never, names)).collect();
+            Choose { name: RelationName(declared(&choose.name.0)), rows, candidate_columns, from: self.body(&choose.from, names), from_inside_for: choose.from_inside_for, never }
+        }
+
+        fn rigid_det(&mut self, rigid: &RigidDet, names: &Names) -> RigidDet {
+            let name = RigidDetName(declared(&rigid.name.0));
+            let key = rigid.key.as_ref().map(|key| self.key_body(key, names));
+            let instance = rigid.instance.as_ref().map(|instance| self.key_body(instance, names));
+            let parts = rigid.parts.iter().map(|part| self.atom(part, names)).collect();
+            let value = RigidDet { name, key, instance, parts };
+            // The outputs of `rigid` hold the paths as the later sites name
+            // them, and those of `value` the columns as written. A later site
+            // names an output column by the slot that the decoder named it
+            // with, which is not its position.
+            for ((path, columns), (_, written_columns)) in rigid_outputs(rigid).into_iter().zip(rigid_outputs(&value)) {
+                let output = OutputName { of: OutputOwner::RigidDet(rigid.name.clone()), path };
+                let mut texts: Vec<String> = Vec::new();
+                for (column, text) in columns.names().zip(written_columns.names()) {
+                    let ColumnName::Slot(slot) = column else { continue };
+                    texts.resize(texts.len().max(*slot as usize + 1), String::new());
+                    texts[*slot as usize] = written(text).map(str::to_owned).unwrap_or_default();
+                }
+                self.columns.insert(ProgramRelation::Output(output), texts);
+            }
+            value
+        }
+
+        fn key_body(&self, key: &KeyBody, names: &Names) -> KeyBody {
+            KeyBody { body: self.body(&key.body, names), columns: named_columns(&key.columns, names) }
         }
 
         fn input(&self, input: &InstanceInput, names: &Names) -> InstanceInput {
