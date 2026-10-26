@@ -471,9 +471,9 @@ class _Lift:
         """The relation or instance of the rewrite's program that the name `key` of `Converter.names` stands for, as the text's program holds it."""
         scope, name = key
         c = self.c
-        if key in c.det_copy_via:   # a copy of a node of the parse, which the determination's instance of the parse holds
+        if key in c.det_copy_via:   # a copy of a node of the parse, which the instance of the parse in the copy's scope holds
+            home = self.home_of(scope)
             scope, name = c.det_copies[key][0], c.det_copies[key][1]
-            home = self.home_of((DETERMINE,))
             path = None if home is None else (*home.path, c.det_copy_via[key])
         else:
             home = self.home_of(scope)

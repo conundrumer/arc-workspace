@@ -18,8 +18,8 @@ column map entry of each check relation, or the reason it has none.
 
 An arclog relation the converter adds that holds no Souffle relation of the
 solver's program, such as an output of an instance the lib rewrite hoists, or a
-copy of a relation of `Parse` that the determination takes, has its path in the
-Souffle text that `parity_text` writes (`parity`, `placed`), and its entry in
+copy of a relation of `Parse` that the determination or another instance of
+`Parse` takes, has its path in the Souffle text that `parity_text` writes (`parity`, `placed`), and its entry in
 the column map (`_parity_columns`); a relation of the text that the determination
 run adds is given the component `Determine`. An `equal` line of such a
 relation proves that the converter's arclog relation holds the rows that the

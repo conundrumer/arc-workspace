@@ -5,7 +5,7 @@ and clauses their arclog forms."""
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from collections.abc import Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field as dc_field, fields as dc_fields, is_dataclass, replace as dc_replace
 from engine.program import (
     AdtType,
@@ -83,6 +83,94 @@ class Written:
     relation: str
     instance: bool
     columns: tuple[Placement, ...] | None = None
+
+
+def rel_map(x, fn):
+    """`x`, a term, literal or clause, with each relation name inside it replaced by `fn` of it."""
+    if isinstance(x, RelationName):
+        return fn(x)
+    if isinstance(x, tuple):
+        return tuple(rel_map(y, fn) for y in x)
+    if is_dataclass(x) and not isinstance(x, type):
+        ch = {f_.name: rel_map(getattr(x, f_.name), fn) for f_ in dc_fields(x)
+              if isinstance(getattr(x, f_.name), (tuple, RelationName))
+              or (is_dataclass(getattr(x, f_.name)) and not isinstance(getattr(x, f_.name), type))}
+        return dc_replace(x, **ch) if ch else x
+    return x
+
+
+def walk_vars(x, out: list[str]) -> None:
+    """Append to `out` each variable name inside the term, literal or clause `x`, once, in order."""
+    if isinstance(x, Variable):
+        if x.name not in out:
+            out.append(x.name)
+    elif isinstance(x, tuple):
+        for y in x:
+            walk_vars(y, out)
+    elif is_dataclass(x) and not isinstance(x, type):
+        for f_ in dc_fields(x):
+            walk_vars(getattr(x, f_.name), out)
+
+
+class ParseNodes:
+    """The relations, the instances and the clauses of the solver's `Parse` component in `prog`. A
+    node is a relation or an instance of the component, named as the component declares it."""
+
+    def __init__(self, prog, lib: Lib) -> None:
+        self.lib = lib
+        self.rels = {r.name: r for r in prog.relations if r.scope.components == ("Parse",)}
+        self.insts = {i.name: i for i in prog.instances if i.scope.components == ("Parse",)}
+        self.units = [u for u in prog.units if u.scope.components == ("Parse",)]
+        self.deps: dict[str, set[str]] = defaultdict(set)
+        """The nodes whose relations the clauses of each node read."""
+        for u in self.units:
+            h = self.node(u.head.relation)
+            if h is not None:
+                self.deps[h] |= {x for a in Converter._atoms(u.body or ()) if (x := self.node(a.relation)) is not None}
+
+    def node(self, rn: RelationName) -> str | None:
+        """The node that `rn`, read in the component, names: the relation, or the instance its path starts with."""
+        if rn.instances:
+            return rn.instances[0] if rn.instances[0] in self.insts else None
+        return rn.name if rn.name in self.rels else None
+
+    def key_at(self, rn: RelationName) -> int | None:
+        """The column of the relation `rn` of the component whose type is its `Key`."""
+        r = self.rels.get(rn.name) if not rn.instances else None
+        return next((i for i, c_ in enumerate(r.columns) if c_.type.name == "Key"), None) if r else None
+
+    def instance_key_at(self, rn: RelationName) -> int | None:
+        """The key column of a relation of an instance of the component: for an
+        instance of a lib component, the first column typed by the parameter
+        that the component's Key stands for (an input such as `dir(D)` has
+        none); for another, the first column."""
+        inst = self.insts.get(rn.instances[0])
+        if inst is None or len(rn.instances) > 1 or inst.component not in self.lib.comps:
+            return 0
+        tparams, rels = self.lib.relations(inst.component)
+        lr = next((r for r in rels if r.name == rn.name), None)
+        keyed = {p for p, a in zip(tparams, inst.type_args) if a.name == "Key"}
+        return next((i for i, c_ in enumerate(lr.cols) if c_.type in keyed), None) if lr else None
+
+    def read_through(self, units: Iterable[Unit], instance: str) -> Iterator[str]:
+        """The node of each relation that a body of `units` reads through the
+        instance `instance` of the component."""
+        for u in units:
+            for a in Converter._atoms(u.body or ()):
+                if a.relation.instances[:1] == (instance,) and (
+                        x := self.node(RelationName(a.relation.instances[1:], a.relation.name))) is not None:
+                    yield x
+
+    def closure(self, roots: Iterable[str]) -> set[str]:
+        """`roots` and each node whose relation a clause of a node in the set reads."""
+        read: set[str] = set()
+        todo = list(roots)
+        while todo:
+            x = todo.pop()
+            if x not in read:
+                read.add(x)
+                todo += self.deps.get(x, ())
+        return read
 
 
 class Converter:
@@ -176,6 +264,9 @@ class Converter:
         self.prog = prog = dc_replace(prog, units=tuple(u2 for u in prog.units for u2 in self.case_tested(u)))
         self.prog = prog = dc_replace(prog, units=tuple(record_eqs(u, self.record_fields) for u in prog.units))
         self.prog = prog = self.split_read_inputs(prog)
+        self.det_copies: dict[ScopedName, ScopedName] = {}   # a copy -> the relation it is a copy of
+        self.det_copy_via: dict[ScopedName, str] = {}   # a copy of a relation of the parse -> the instance of the parse, in the copy's scope, that holds the relation
+        self.prog = prog = self.parse_instance_copies(prog)
         self.prog = prog = self.split_det_parse(prog)
         self.prog = prog = self.det_program_copies(prog)
         self.rels = {(r.scope.components, r.name): r for r in prog.relations}
@@ -1329,8 +1420,6 @@ class Converter:
         determination's feed of it reads no relation an alt rederives."""
         from engine.program import Column, DeclId, Scope, Span, TypeName, UnitId
         det = ("Determine",)
-        self.det_copies: dict[ScopedName, ScopedName] = {}   # a copy -> the relation it is a copy of
-        self.det_copy_via: dict[ScopedName, str] = {}   # a copy of a relation of the parse -> the determination's instance of the parse
         concept = set(self.concept_of().values())
         other_ctors = self.other_ctors()
         concept_program, program_rederived = self.program_concept(prog)
@@ -1339,60 +1428,15 @@ class Converter:
         copied_program = self.tainted_program(concept_program, program_rederived)
 
         prog_inst = {i.component: i.name for i in prog.instances if i.scope.components == () and i.component in self.comps}
-        parse_rels = {r.name: r for r in prog.relations if r.scope.components == ("Parse",)}
-        parse_insts = {i.name: i for i in prog.instances if i.scope.components == ("Parse",)}
-        parse_units = [u for u in prog.units if u.scope.components == ("Parse",)]
+        nodes = ParseNodes(prog, self.lib)
+        parse_rels, parse_insts, parse_units = nodes.rels, nodes.insts, nodes.units
+        node, key_at, instance_key_at = nodes.node, nodes.key_at, nodes.instance_key_at
         E = Variable("@E")
-
-        def node(rn: RelationName):
-            if rn.instances:
-                return rn.instances[0] if rn.instances[0] in parse_insts else None
-            return rn.name if rn.name in parse_rels else None
-
-        def walk_vars(x, out: list[str]) -> None:
-            if isinstance(x, Variable):
-                if x.name not in out:
-                    out.append(x.name)
-            elif isinstance(x, tuple):
-                for y in x:
-                    walk_vars(y, out)
-            elif is_dataclass(x) and not isinstance(x, type):
-                for f_ in dc_fields(x):
-                    walk_vars(getattr(x, f_.name), out)
 
         def canon(u: Unit) -> str:
             names: list[str] = []
             walk_vars((u.head, u.body), names)
             return souffle_unit(subst(dc_replace(u, scope=Scope(det)), {n: f"V{i}" for i, n in enumerate(names)}))
-
-        def rel_map(x, fn):
-            if isinstance(x, RelationName):
-                return fn(x)
-            if isinstance(x, tuple):
-                return tuple(rel_map(y, fn) for y in x)
-            if is_dataclass(x) and not isinstance(x, type):
-                ch = {f_.name: rel_map(getattr(x, f_.name), fn) for f_ in dc_fields(x)
-                      if isinstance(getattr(x, f_.name), (tuple, RelationName))
-                      or (is_dataclass(getattr(x, f_.name)) and not isinstance(getattr(x, f_.name), type))}
-                return dc_replace(x, **ch) if ch else x
-            return x
-
-        def key_at(rn: RelationName) -> int | None:
-            r = parse_rels.get(rn.name) if not rn.instances else None
-            return next((i for i, c_ in enumerate(r.columns) if c_.type.name == "Key"), None) if r else None
-
-        def instance_key_at(rn: RelationName) -> int | None:
-            # the key column of a relation of an instance of the parse: for an
-            # instance of a lib component, the first column typed by the
-            # parameter that the parse's Key stands for (an input such as
-            # `dir(D)` has none); for another, the first column
-            inst = parse_insts.get(rn.instances[0])
-            if inst is None or len(rn.instances) > 1 or inst.component not in self.lib.comps:
-                return 0
-            tparams, rels = self.lib.relations(inst.component)
-            lr = next((r for r in rels if r.name == rn.name), None)
-            keyed = {p for p, a in zip(tparams, inst.type_args) if a.name == "Key"}
-            return next((i for i, c_ in enumerate(lr.cols) if c_.type in keyed), None) if lr else None
 
         case_rels = {r.name for r in prog.relations if r.scope.components == () and r.columns
                      and all(c_.type.name in self.case_types for c_ in r.columns)} | {"impl_choice"}
@@ -1660,148 +1704,187 @@ class Converter:
                         tainted.add(h)
                         grew = True
             # those the determination reads
-            deps: dict[str, set[str]] = defaultdict(set)
-            for u in parse_units:
-                h = node(u.head.relation)
-                if h is not None:
-                    deps[h] |= {x for a in self._atoms(u.body or ()) if (x := node(a.relation)) is not None}
-            todo = [x for u in prog.units if u.scope.components == det
-                    and not (u.head.relation.instances == (n,) and u.head.relation.name not in differ)
-                    for a in self._atoms(u.body or ()) if a.relation.instances[:1] == (n,)
-                    and (x := node(RelationName(a.relation.instances[1:], a.relation.name))) is not None]
-            read: set[str] = set()
-            while todo:
-                x = todo.pop()
-                if x not in read:
-                    read.add(x)
-                    todo += deps.get(x, ())
+            read = nodes.closure(nodes.read_through(
+                (u for u in prog.units if u.scope.components == det
+                 and not (u.head.relation.instances == (n,) and u.head.relation.name not in differ)), n))
             copy = tainted & read
             if not copy:
                 continue
-            taken = {r.name for r in prog.relations if r.scope.components == det} | \
-                    {i.name for i in prog.instances if i.scope.components == det}
-            own: dict[str, str] = {}
-            for x in sorted(copy):
-                cand, k = f"{n}__{x}", 2
-                while cand in taken:
-                    cand, k = f"{n}__{x}{k}", k + 1
-                taken.add(cand)
-                own[x] = cand
-                self.det_copies[(det, cand)] = (("Parse",), x)
-                self.det_copy_via[(det, cand)] = n
+            prog = self.copy_parse(prog, nodes, det, n, tsub, copy,
+                                   [u for u in parse_units if node(u.head.relation) in copy and not (
+                                       alternate_ctors[id(u)] and (("Parse",), node(u.head.relation)) in self.own_copies)])
+        return prog
 
-            def to_det(rn: RelationName, from_parse: bool):
-                if from_parse:
-                    if rn.instances and rn.instances[0] in parse_insts:
-                        i0 = rn.instances[0]
-                        return RelationName((own[i0],) + rn.instances[1:], rn.name) if i0 in own \
-                            else RelationName((n,) + rn.instances, rn.name)
-                    if not rn.instances and rn.name in parse_rels:
-                        return RelationName((), own[rn.name]) if rn.name in own else RelationName((n,), rn.name)
-                    return rn
-                if rn.instances[:1] == (n,):
-                    return to_det(RelationName(rn.instances[1:], rn.name), True)
+    def parse_instance_copies(self, prog):
+        """Each top-level instance of the solver's `Parse` after the first
+        (the solver's own, which `parse_sub` takes) is written as copies of
+        the nodes of the parse that the program reads through it
+        (`copy_parse`), each keyed on the instance's key type, with the
+        instance's input clauses (`chart.cell`) as the copies' input; the
+        program's parse relations hold the clauses of the solver's own
+        instance alone. The instance is dropped. An instance that a clause
+        outside the top level names is not written so: the clause would
+        still read it, and it gets a `TODO` line, with no clause of the
+        instance in the parse relations."""
+        top = [i for i in prog.instances if i.scope.components == () and i.component == "Parse"]
+        nodes = ParseNodes(prog, self.lib)
+        for inst in top[1:]:
+            n = inst.name
+            named_in = {u.scope.components for u in prog.units
+                        for a in (u.head, *self._atoms(u.body or ())) if a.relation.instances[:1] == (n,)}
+            if named_in <= {()}:
+                copy = nodes.closure(nodes.read_through((u for u in prog.units if u.scope.components == ()), n))
+                prog = self.copy_parse(prog, nodes, (), n, {p: a.name for p, a in zip(self.comps["Parse"].type_params, inst.type_args)},
+                                       copy, [u for u in nodes.units if nodes.node(u.head.relation) in copy])
+            else:
+                self.todo.add("parse-instance", f"{n}: a clause outside the top level names the instance of the "
+                              f"{inst.component} component, which is written as copies in the top level")
+            prog = dc_replace(prog, instances=tuple(i for i in prog.instances if (i.scope.components, i.name) != ((), n)),
+                              units=tuple(u for u in prog.units
+                                          if not (u.scope.components == () and u.head.relation.instances[:1] == (n,))))
+            self.insts.pop(((), n), None)
+        return prog
+
+    def copy_parse(self, prog, nodes: ParseNodes, scope: tuple[str, ...], n: str, tsub: dict[str, str],
+                   copy: set[str], clauses: list[Unit]):
+        """`prog` with a copy, in `scope`, of each node of `copy` of the
+        solver's parse that the instance `n` of `scope` holds, and of each
+        type the copies read, under names of their own (`<n>__<name>`).
+        `tsub` gives the type each parameter of the parse has for `n`, and the
+        copies are keyed on the type `Key` has there. The copies' clauses are
+        `clauses`, those of the parse, and read the copies. The clauses of
+        `scope` that head or read a copied node of `n` head or read the copy.
+        A copy that no clause derives is dropped (`without_empty`). Each copy
+        is a copy through `n` of its node (`det_copies`, `det_copy_via`). A
+        parse keyed on Example has the key variable of each clause `E`, and
+        its key column `e`."""
+        from engine.program import Column, DeclId, Scope, Span, TypeName, UnitId
+        example = tsub.get("Key") == "Example"
+        taken = {r.name for r in prog.relations if r.scope.components == scope} | \
+                {i.name for i in prog.instances if i.scope.components == scope}
+        own: dict[str, str] = {}
+        for x in sorted(copy):
+            cand, k = f"{n}__{x}", 2
+            while cand in taken:
+                cand, k = f"{n}__{x}{k}", k + 1
+            taken.add(cand)
+            own[x] = cand
+            self.det_copies[(scope, cand)] = (("Parse",), x)
+            self.det_copy_via[(scope, cand)] = n
+
+        def to_copy(rn: RelationName, from_parse: bool):
+            if from_parse:
+                if rn.instances and rn.instances[0] in nodes.insts:
+                    i0 = rn.instances[0]
+                    return RelationName((own[i0],) + rn.instances[1:], rn.name) if i0 in own \
+                        else RelationName((n,) + rn.instances, rn.name)
+                if not rn.instances and rn.name in nodes.rels:
+                    return RelationName((), own[rn.name]) if rn.name in own else RelationName((n,), rn.name)
                 return rn
-            # the parse's types the copies read, each a copy keyed on Example
-            parse_types = {t.name: t for t in prog.types if t.scope.components == ("Parse",)}
-            det_types = {t.name for t in prog.types if t.scope.components == det}
+            if rn.instances[:1] == (n,):
+                return to_copy(RelationName(rn.instances[1:], rn.name), True)
+            return rn
+        # the parse's types the copies read, each a copy keyed as the instance is
+        parse_types = {t.name: t for t in prog.types if t.scope.components == ("Parse",)}
+        scope_types = {t.name for t in prog.types if t.scope.components == scope}
 
-            def type_refs(x, out: set[str]) -> None:
-                if isinstance(x, TypeName):
-                    if not x.instances and x.name in parse_types and x.name not in out:
-                        out.add(x.name)
-                        type_refs(parse_types[x.name], out)
-                elif isinstance(x, tuple):
-                    for y in x:
-                        type_refs(y, out)
-                elif is_dataclass(x) and not isinstance(x, type):
-                    for f_ in dc_fields(x):
-                        type_refs(getattr(x, f_.name), out)
-            refs: set[str] = set()
-            type_refs(tuple(parse_rels[x] for x in copy if x in parse_rels), refs)
-            type_refs(tuple(parse_insts[x] for x in copy if x in parse_insts), refs)
-            type_refs(tuple(u for u in parse_units if node(u.head.relation) in copy), refs)
-            tmap = dict(tsub)
-            for t in sorted(refs):
-                cand, k = f"{n}__{t}", 2
-                while cand in det_types:
-                    cand, k = f"{n}__{t}{k}", k + 1
-                det_types.add(cand)
-                tmap[t] = cand
+        def type_refs(x, out: set[str]) -> None:
+            if isinstance(x, TypeName):
+                if not x.instances and x.name in parse_types and x.name not in out:
+                    out.add(x.name)
+                    type_refs(parse_types[x.name], out)
+            elif isinstance(x, tuple):
+                for y in x:
+                    type_refs(y, out)
+            elif is_dataclass(x) and not isinstance(x, type):
+                for f_ in dc_fields(x):
+                    type_refs(getattr(x, f_.name), out)
+        refs: set[str] = set()
+        type_refs(tuple(nodes.rels[x] for x in copy if x in nodes.rels), refs)
+        type_refs(tuple(nodes.insts[x] for x in copy if x in nodes.insts), refs)
+        type_refs(tuple(u for u in nodes.units if nodes.node(u.head.relation) in copy), refs)
+        tmap = dict(tsub)
+        for t in sorted(refs):
+            cand, k = f"{n}__{t}", 2
+            while cand in scope_types:
+                cand, k = f"{n}__{t}{k}", k + 1
+            scope_types.add(cand)
+            tmap[t] = cand
 
-            def retype(x):
-                if isinstance(x, TypeName):
-                    return TypeName((), tmap[x.name]) if not x.instances and x.name in tmap else x
-                if isinstance(x, tuple):
-                    return tuple(retype(y) for y in x)
-                if is_dataclass(x) and not isinstance(x, type) and not isinstance(x, (RelationName, Span)):
-                    ch = {f_.name: retype(getattr(x, f_.name)) for f_ in dc_fields(x)
-                          if isinstance(getattr(x, f_.name), tuple) or
-                          (is_dataclass(getattr(x, f_.name)) and not isinstance(getattr(x, f_.name), type))}
-                    return dc_replace(x, **ch) if ch else x
-                return x
-            new_rels, new_insts, new_types, new_units = [], [], [], []
+        def retype(x):
+            if isinstance(x, TypeName):
+                return TypeName((), tmap[x.name]) if not x.instances and x.name in tmap else x
+            if isinstance(x, tuple):
+                return tuple(retype(y) for y in x)
+            if is_dataclass(x) and not isinstance(x, type) and not isinstance(x, (RelationName, Span)):
+                ch = {f_.name: retype(getattr(x, f_.name)) for f_ in dc_fields(x)
+                      if isinstance(getattr(x, f_.name), tuple) or
+                      (is_dataclass(getattr(x, f_.name)) and not isinstance(getattr(x, f_.name), type))}
+                return dc_replace(x, **ch) if ch else x
+            return x
+        new_rels, new_insts, new_types, new_units = [], [], [], []
 
-            def next_id() -> DeclId:
-                return DeclId(prog.next_decl_index() + len(new_rels) + len(new_insts) + len(new_types))
-            for t in sorted(refs):
-                new_types.append(dc_replace(retype(parse_types[t]), id=next_id(), name=tmap[t], scope=Scope(det)))
-            for x in sorted(copy):
-                if x in parse_rels:
-                    r = parse_rels[x]
-                    names = [c_.name for c_ in r.columns]
-                    cols = tuple(Column("e" if c_.type.name == "Key" and "e" not in names else c_.name, retype(c_.type))
-                                 for c_ in r.columns)
-                    new_rels.append(dc_replace(r, id=next_id(), name=own[x], scope=Scope(det), columns=cols))
-                else:
-                    i = parse_insts[x]
-                    new_insts.append(dc_replace(i, id=next_id(), name=own[x], scope=Scope(det),
-                                                type_args=retype(i.type_args)))
-            base = prog.next_unit_index()
-            for u in parse_units:
-                if node(u.head.relation) in copy and not (alternate_ctors[id(u)] and (("Parse",), node(u.head.relation)) in self.own_copies):
-                    # the key is the example, E
-                    hk = instance_key_at(u.head.relation) if u.head.relation.instances else key_at(u.head.relation)
-                    k0 = u.head.args[hk] if hk is not None and hk < len(u.head.args) else None
-                    used: list[str] = []
-                    walk_vars((u.head, u.body), used)
-                    m: dict[str, str] = {}
-                    if "E" in used and k0 != Variable("E"):
-                        # another E: a lifted read's Example column takes that name
-                        j = 1
-                        while f"E{j}" in used:
-                            j += 1
-                        m["E"] = f"E{j}"
-                    if isinstance(k0, Variable) and k0.name != "E":
-                        m[k0.name] = "E"
-                    new_units.append(subst(retype(Unit(UnitId(base + len(new_units)), Scope(det),
-                                                       rel_map(u.head, lambda rn: to_det(rn, True)),
-                                                       rel_map(u.body, lambda rn: to_det(rn, True)), u.plan, u.span)), m))
-            units = []
-            for u in prog.units:
-                if u.scope.components == det:
-                    rn = u.head.relation
-                    if rn.instances == (n,) and rn.name in copy:
-                        u = dc_replace(u, head=dc_replace(u.head, relation=RelationName((), own[rn.name])))
-                    u = dc_replace(u, body=rel_map(u.body, lambda rn: to_det(rn, False)))
-                units.append(u)
-                if parse_units and u is parse_units[-1]:
-                    units += new_units
-            if not parse_units:
+        def next_id() -> DeclId:
+            return DeclId(prog.next_decl_index() + len(new_rels) + len(new_insts) + len(new_types))
+        for t in sorted(refs):
+            new_types.append(dc_replace(retype(parse_types[t]), id=next_id(), name=tmap[t], scope=Scope(scope)))
+        for x in sorted(copy):
+            if x in nodes.rels:
+                r = nodes.rels[x]
+                names = [c_.name for c_ in r.columns]
+                cols = tuple(Column("e" if example and c_.type.name == "Key" and "e" not in names else c_.name,
+                                    retype(c_.type))
+                             for c_ in r.columns)
+                new_rels.append(dc_replace(r, id=next_id(), name=own[x], scope=Scope(scope), columns=cols))
+            else:
+                i = nodes.insts[x]
+                new_insts.append(dc_replace(i, id=next_id(), name=own[x], scope=Scope(scope),
+                                            type_args=retype(i.type_args)))
+        base = prog.next_unit_index()
+        for u in clauses:
+            m: dict[str, str] = {}
+            if example:
+                # the key is the example, E
+                hk = nodes.instance_key_at(u.head.relation) if u.head.relation.instances else nodes.key_at(u.head.relation)
+                k0 = u.head.args[hk] if hk is not None and hk < len(u.head.args) else None
+                used: list[str] = []
+                walk_vars((u.head, u.body), used)
+                if "E" in used and k0 != Variable("E"):
+                    # another E: a lifted read's Example column takes that name
+                    j = 1
+                    while f"E{j}" in used:
+                        j += 1
+                    m["E"] = f"E{j}"
+                if isinstance(k0, Variable) and k0.name != "E":
+                    m[k0.name] = "E"
+            new_units.append(subst(retype(Unit(UnitId(base + len(new_units)), Scope(scope),
+                                               rel_map(u.head, lambda rn: to_copy(rn, True)),
+                                               rel_map(u.body, lambda rn: to_copy(rn, True)), u.plan, u.span)), m))
+        units = []
+        for u in prog.units:
+            if u.scope.components == scope:
+                rn = u.head.relation
+                if rn.instances == (n,) and rn.name in copy:
+                    u = dc_replace(u, head=dc_replace(u.head, relation=RelationName((), own[rn.name])))
+                u = dc_replace(u, body=rel_map(u.body, lambda rn: to_copy(rn, False)))
+            units.append(u)
+            if nodes.units and u is nodes.units[-1]:
                 units += new_units
-            units, empty = self.without_empty(units, det, {r.name for r in new_rels} | {i.name for i in new_insts})
-            new_rels = [r for r in new_rels if r.name not in empty]
-            new_insts = [i for i in new_insts if i.name not in empty]
-            for key_ in [k_ for k_ in self.det_copies if k_[1] in empty]:
-                del self.det_copies[key_]
-                self.det_copy_via.pop(key_, None)
-            prog = dc_replace(prog, types=prog.types + tuple(new_types), relations=prog.relations + tuple(new_rels),
-                              instances=prog.instances + tuple(new_insts), units=tuple(units))
-            for i in new_insts:
-                self.insts[(det, i.name)] = i
-            for t in new_types:
-                self.types[(det, t.name)] = t
-            self.rels = {(r.scope.components, r.name): r for r in prog.relations}
+        if not nodes.units:
+            units += new_units
+        units, empty = self.without_empty(units, scope, {r.name for r in new_rels} | {i.name for i in new_insts})
+        new_rels = [r for r in new_rels if r.name not in empty]
+        new_insts = [i for i in new_insts if i.name not in empty]
+        for key_ in [k_ for k_ in self.det_copies if k_[1] in empty]:
+            del self.det_copies[key_]
+            self.det_copy_via.pop(key_, None)
+        prog = dc_replace(prog, types=prog.types + tuple(new_types), relations=prog.relations + tuple(new_rels),
+                          instances=prog.instances + tuple(new_insts), units=tuple(units))
+        for i in new_insts:
+            self.insts[(scope, i.name)] = i
+        for t in new_types:
+            self.types[(scope, t.name)] = t
+        self.rels = {(r.scope.components, r.name): r for r in prog.relations}
         return prog
 
     @staticmethod
