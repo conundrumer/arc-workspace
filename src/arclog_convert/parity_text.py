@@ -24,7 +24,8 @@ a Souffle run derives the rows of each such relation from the solver's own:
   of `lib-forms.dl` that `RELATION_PREFIX` leads (`top_forms`).
 - The relations and instances of the text stand at the top level. A root that
   reads an instance of no such component, or that stands in a component of the
-  solver, has no place.
+  solver, has no place. A root relation that no clause of the rewrite's ground
+  program heads has none either, such as a `CHOOSE` relation.
 """
 
 from __future__ import annotations
@@ -241,6 +242,8 @@ def parity_text(c: Converter, renamed: Callable[[str], str], roots: Iterable[str
     for arc, (node, relation) in places.items():
         needed = closure(node)
         if needed is None or node not in needed:
+            continue
+        if relation is None and not ground.units.get(node):
             continue
         if relation is not None:
             comp = component(node.name)
