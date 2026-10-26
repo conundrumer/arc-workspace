@@ -193,6 +193,7 @@ class Core:
         self.thrash_since: Optional[float] = None
         self.reading_logged: Optional[float] = None
         self.level = 1
+        self.hot = False
 
     def available(self) -> Amount:
         """The budget that admission and expected starts use: the CPUs of `total`, and
@@ -315,6 +316,7 @@ class Core:
 
     def pressure(self, sample: Sample, now: float) -> List[Effect]:
         self.level = sample.level
+        self.hot = sample.swap_in is not None and sample.swap_in > SWAP_IN_RATE
         if sample.swap_in is not None and sample.swap_in > THRASH_RATE:
             self.thrash_since = self.thrash_since if self.thrash_since is not None else now
         else:
@@ -492,6 +494,7 @@ class Core:
             out.append(Signal(pid, start, signal.SIGTERM))
             self.pending[(pid, start)] = now
         self.last_kill = now
+        self.thrash_since = None
         self.tell(job, Reason.KILLED, heavy_notices.killed(job.pid, job.command, max(job.amount.cpus, math.ceil(job.cpu)),
                                                  gib_up(job.footprint_kib), reason))
         return out

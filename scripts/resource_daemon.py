@@ -23,7 +23,7 @@ waits in the socket's queue and no call starts another daemon. A call that waits
 close and connects again (`heavy_client.acquire`), with its place in the queue.
 
 It reads the machine every `SAMPLE_SECONDS` (`FAST_SAMPLE_SECONDS` while the
-memory pressure is over normal): `ps` for the processes, the sessions' files
+memory pressure is over normal or the swap-ins are over the load monitor's alert rate): `ps` for the processes, the sessions' files
 for the sessions, and `proc_pid_rusage` for the footprint and CPU time of the
 processes of sessions and jobs, and for the footprint of each other process, read
 again each `OUTSIDE_SECONDS`. A job's pid is polled each `LOOP_SECONDS`, so
@@ -432,7 +432,7 @@ class Daemon:
                 self.dirty = False
 
     def sample_seconds(self) -> float:
-        return FAST_SAMPLE_SECONDS if self.core.level in PRESSURE_LEVELS else SAMPLE_SECONDS
+        return FAST_SAMPLE_SECONDS if self.core.level in PRESSURE_LEVELS or self.core.hot else SAMPLE_SECONDS
 
     def should_exit(self, now: float) -> bool:
         """Whether no session runs, no job holds a share, no request waits, and none has for

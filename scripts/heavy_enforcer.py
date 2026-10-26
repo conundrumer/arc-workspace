@@ -12,8 +12,10 @@ the jobs left out, runs at `ADOPT_CPUS` CPUs for `ADOPT_CPU_SECONDS`, or
 holds `ADOPT_GIB` GiB for `ADOPT_GIB_SECONDS`.
 
 While the swap-ins a second stay over `THRASH_RATE` for `THRASH_SECONDS`, the
-daemon kills the jobs of sessions one at a time, each with `SIGTERM` and then,
-`KILL_GRACE` seconds later, `SIGKILL`, the largest footprint first.
+daemon kills the jobs of sessions that hold at least `VICTIM_GIB` GiB one at a time, each with
+`SIGTERM` and then, `KILL_GRACE` seconds later, `SIGKILL`, the largest footprint first. Each kill
+starts the `THRASH_SECONDS` again, so the swap-ins of the processes that read their pages back
+after a kill do not count toward the next.
 
 Standard library only, Python 3.9."""
 
@@ -34,6 +36,7 @@ THRASH_RATE = 5000
 """Swap-ins a second at which the machine thrashes: the rates of the thrash episodes of
 2026-10-22 and 23 ran from 5,000 to 36,000."""
 THRASH_SECONDS = 15
+VICTIM_GIB = 1
 KILL_GRACE = 5
 KILL_SETTLE = 10
 """The seconds after one kill starts before the next may."""
@@ -85,7 +88,7 @@ def command_roots(commands: Dict[int, str], parents: Dict[int, int], sessions: L
 
 
 def victims(jobs: List[Job]) -> List[Job]:
-    """The jobs of sessions in the order they are killed, the largest footprint first. A job of
-    no session never goes."""
-    owned = [job for job in jobs if job.owner != NO_SESSION]
+    """The jobs of sessions that hold at least `VICTIM_GIB` GiB, in the order they are killed,
+    the largest footprint first. A job of no session never goes."""
+    owned = [job for job in jobs if job.owner != NO_SESSION and job.footprint_kib * KIB >= VICTIM_GIB * GIB]
     return sorted(owned, key=lambda job: (-job.footprint_kib, job.pid))
