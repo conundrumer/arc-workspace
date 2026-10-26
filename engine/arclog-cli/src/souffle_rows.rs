@@ -9,12 +9,12 @@ use std::ops::ControlFlow;
 use arclog::eval::join::each_row;
 use arclog::eval::models::ModelsEnd;
 use arclog::eval::{relation_of, Evaluation, RelationValue};
-use arclog::program::{DeclaredName, ProgramRelation, RelationName};
+use arclog::program::{DeclaredName, InstanceName, OutputName, OutputOwner, OutputStep, PortName, ProgramRelation, RelationName};
 use arclog::relations::Relation;
 use arclog::resolver::Side;
 use arclog::task::Task;
 use arclog::terms::{Example, Term};
-use arclog::types::ValueType;
+use arclog::types::{GraphRelation, ValueType};
 use serde_json::Value;
 
 use crate::renaming::{term_leaves, EngineLeaf, Leaf};
@@ -71,14 +71,28 @@ pub(crate) enum Projection<'a> {
     Positions(&'a [usize]),
 }
 
+/// The relation that `name` gives in `program`: a relation a clause derives
+/// or a parameter stores, or, for `&<instance>.<port>`, an output of that
+/// instance.
+fn named_relation(program: &arclog::check::CheckedProgram, name: &str) -> Option<GraphRelation> {
+    let declared = ProgramRelation::Declared(RelationName(DeclaredName::Written(name.into())));
+    relation_of(program, &declared).or_else(|| {
+        let (instance, port) = name.split_once('.')?;
+        let output = OutputName {
+            of: OutputOwner::Instance(InstanceName(DeclaredName::Written(instance.into()))),
+            path: [OutputStep::Port(PortName(port.into()))].into(),
+        };
+        relation_of(program, &ProgramRelation::Output(output))
+    })
+}
+
 /// The names of the row positions of the relation that `name` declares in
 /// the program of `evaluation` (`column_names`); `None` where the program
 /// derives no relation of that name, and a text where its columns have no
 /// types.
 pub(crate) fn engine_columns(evaluation: &Evaluation<'_>, name: &str) -> Option<Result<Vec<String>, String>> {
     let program = evaluation.program;
-    let declared = ProgramRelation::Declared(RelationName(DeclaredName::Written(name.into())));
-    let relation = relation_of(program, &declared)?;
+    let relation = named_relation(program, name)?;
     Some(match program.types.columns(&relation) {
         Some(types) => Ok(column_names(evaluation, &relation, types.len())),
         None => Err("rows whose columns have no types".to_owned()),
@@ -93,8 +107,7 @@ pub(crate) fn engine_columns(evaluation: &Evaluation<'_>, name: &str) -> Option<
 /// result is [`EngineRows::DifferBetweenModels`].
 pub(crate) fn engine_rows(evaluation: &Evaluation<'_>, name: &str, example: Example, constants: &BTreeMap<String, i64>, projection: Projection<'_>) -> Option<EngineRows> {
     let program = evaluation.program;
-    let declared = ProgramRelation::Declared(RelationName(DeclaredName::Written(name.into())));
-    let relation = relation_of(program, &declared)?;
+    let relation = named_relation(program, name)?;
     let on = (program.program.side(relation.node) == Side::PerInput).then_some(example);
     let Some(types) = program.types.columns(&relation) else { return Some(EngineRows::Fault("rows whose columns have no types".to_owned())) };
     let mut first: Option<Vec<Vec<EngineLeaf>>> = None;

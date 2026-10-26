@@ -1,0 +1,227 @@
+"""The comparison of each converted task's relations with Souffle's rows, and
+the report of the relations that differ.
+
+    uv run python -m arclog_convert.row_parity [--out <dir>] [<stem> ...]
+
+The command checks the files under `gen/` of `arclog_convert.out`, or of
+`--out`, with no conversion; in a linked worktree it writes no record without
+`--out` or `ARCLOG_OUT`, and it rewrites no baseline. `arclog_convert.convert` runs the same check on the
+solvers it converted. For each task, `arclog-cli row-parity` compares the rows
+of each relation of the concept case with the rows of Souffle's run of the
+solver (`parity.rerun.concept_rows`), as `engine/arclog-cli/src/row_parity.rs`
+gives; its lines are `<task> <relation> <verdict> <detail>`, with the verdict
+`equal`, `differ`, `fault` or `skip`. The tables export runs none of it.
+
+A task's lines stand in `row_parity/<stem>.json` beside `gen/`, as a record
+with these fields: `files`, the sha256 of the task's files as
+`train_replay.files_digest` gives them, of its name map and column map, of the
+Souffle solver file the conversion read, of the Souffle-side code and lib
+(`cli.common.stamp`), of the Souffle binary, of the `parity` package, and of
+the form of the record (`VERSION`); `sources`, the digest of the engine's
+sources; `binary`, the sha256 of the built `arclog-cli` binary; and `lines`,
+each `[relation, verdict, detail]`. A task is fresh, and runs nothing, by the
+rule of `train_replay.stale_tasks`.
+
+The stale tasks run on at most `parity.snapshot.RECORDS_WORKERS` processes,
+each taking chunks of `CHUNK` tasks: for a chunk, the Souffle side of each
+task, then one `arclog-cli row-parity` call on the chunk with
+`ARCLOG_THREADS=1`. The Souffle runs go through the run cache.
+
+`row_parity.tsv` is the baseline: a line `<task> <relation> <verdict>
+<ticket or ->` (tab-separated) for each task and relation whose verdict is
+`differ` or `fault`, and for each task whose Souffle side gives no rows, with
+`*` as the relation. The report covers the tasks the run covers. It prints a
+line for each task and relation beyond the baseline, with its detail; a line
+for each relation that the task's previous record gives `equal` and that is
+not `equal` now; a line for each baseline line that is now `equal`; and a
+final line with the counts. The exit status is 1 where a line is beyond the
+baseline or a relation was `equal` and is not now, and 0 otherwise.
+`arclog_convert.convert --accept` rewrites the baseline lines of the solvers
+it converted, keeping the ticket field of each line that stays."""
+
+import argparse
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from collections import Counter
+from concurrent.futures import ProcessPoolExecutor
+from pathlib import Path
+
+from arc.task import TASKS_DIR
+from arclog_convert import OUT_ENV, paths, train_replay
+from engine import checkout
+
+BASELINE = Path(__file__).with_name("row_parity.tsv")
+
+VERSION = 1
+"""The form of a record."""
+
+CHUNK = 8
+"""The tasks one call of `arclog-cli row-parity` takes."""
+
+BINARY = "arclog-cli"
+
+type Line = tuple[str, str, str]
+"""A relation, its verdict and its detail."""
+
+
+def read_baseline(path: Path = BASELINE) -> dict[tuple[str, str], tuple[str, str]]:
+    """The verdict and the ticket of each task and relation of the baseline."""
+    baseline = {}
+    for line in path.read_text().splitlines() if path.exists() else []:
+        task, relation, verdict, ticket = line.split("\t")
+        baseline[task, relation] = (verdict, ticket)
+    return baseline
+
+
+def write_baseline(baseline: dict[tuple[str, str], tuple[str, str]], path: Path = BASELINE) -> None:
+    path.write_text("".join(f"{task}\t{relation}\t{verdict}\t{ticket}\n"
+                            for (task, relation), (verdict, ticket) in sorted(baseline.items())))
+
+
+def files_digest(stem: str, gen: Path, tasks: Path, solvers: Path) -> str:
+    """The digest of everything but the engine that decides the lines of `stem`."""
+    from cli.common import stamp
+    from parity import rerun
+    from souffle.install import binary_identity
+    digest = hashlib.sha256()
+    digest.update(f"{VERSION}\0{train_replay.files_digest(stem, gen, tasks)}\0".encode())
+    for path in (gen.parent / "names" / f"{stem}.json", gen.parent / "columns" / f"{stem}.json", solvers / f"{stem}.dl"):
+        digest.update((path.read_bytes() if path.exists() else b"") + b"\0")
+    digest.update(f"{stamp()}\0{rerun.code_digest()}\0".encode() + binary_identity())
+    return digest.hexdigest()
+
+
+def write_record(records: Path, stem: str, files: str, sources: str, binary: str, lines: list[Line]) -> None:
+    records.mkdir(parents=True, exist_ok=True)
+    data = {"files": files, "sources": sources, "binary": binary, "lines": [list(line) for line in lines]}
+    (records / f"{stem}.json").write_text(json.dumps(data, indent=1) + "\n")
+
+
+def check_chunk(stems: list[str], gen: Path, tasks: Path, records: Path, solvers: Path,
+                files: dict[str, str], sources: str, binary: str) -> None:
+    """Write the record of each of `stems`: the Souffle side of each, then
+    one `arclog-cli row-parity` call on those that gave rows."""
+    from parity import rerun
+    work = Path(tempfile.mkdtemp(dir=records))
+    try:
+        lines: dict[str, list[Line]] = {}
+        rows = []
+        for stem in stems:
+            try:
+                got = rerun.concept_rows(stem, solvers / f"{stem}.dl")
+            except (rerun.NoSuchCase, FileNotFoundError) as e:
+                lines[stem] = [("*", "fault", f"no Souffle rows: {type(e).__name__}: {e}")]
+                continue
+            if not isinstance(got, dict):
+                lines[stem] = [("*", "fault", f"no Souffle rows: {got}")]
+                continue
+            (work / f"{stem}.json").write_text(json.dumps(got))
+            rows.append(stem)
+        if rows:
+            command = [str(train_replay.tool_binary(BINARY)), "row-parity", str(gen), str(tasks), str(work), *rows]
+            done = subprocess.run(command, cwd=checkout.ROOT / "engine", stdout=subprocess.PIPE, text=True,
+                                  env={**os.environ, "ARCLOG_THREADS": "1"})
+            if done.returncode not in (0, 1):
+                raise RuntimeError(f"{' '.join(command)} exited with {done.returncode}")
+            for stem in rows:
+                lines[stem] = []
+            for line in done.stdout.splitlines():
+                task, relation, verdict, detail = line.split("\t", 3)
+                lines[task].append((relation, verdict, detail))
+        for stem in stems:
+            write_record(records, stem, files[stem], sources, binary, lines[stem])
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def chunks(stems: list[str], solvers: Path) -> list[list[str]]:
+    """`stems` in chunks of `CHUNK`, the largest solver files first, so that
+    no long task starts last."""
+    order = sorted(stems, key=lambda stem: -(solvers / f"{stem}.dl").stat().st_size)
+    return [order[i:i + CHUNK] for i in range(0, len(order), CHUNK)]
+
+
+def check(stems: list[str], out: Path, accept: bool = False) -> int:
+    """Check the stale tasks of `stems` under `out`, print the report, and
+    give the exit status."""
+    from parity.snapshot import RECORDS_WORKERS
+    os.environ[OUT_ENV] = str(out)
+    gen, records, tasks, solvers = out / "gen", out / "row_parity", TASKS_DIR, paths.SOLVERS
+    sources = train_replay.engine_digest()
+    digests: list[str] = []
+
+    def binary() -> str:
+        digests.append(train_replay.binary_digest(BINARY))
+        return digests[-1]
+
+    files = {stem: files_digest(stem, gen, tasks, solvers) for stem in stems}
+    stale = train_replay.stale_tasks(stems, files.__getitem__, records, sources, binary)
+    previous = {stem: train_replay.read_record(records, stem) for stem in stale}
+    if stale:
+        built = digests[0] if digests else train_replay.binary_digest(BINARY)
+        records.mkdir(parents=True, exist_ok=True)
+        with ProcessPoolExecutor(RECORDS_WORKERS) as pool:
+            futures = [pool.submit(check_chunk, chunk, gen, tasks, records, solvers, files, sources, built)
+                       for chunk in chunks(stale, solvers)]
+            for future in futures:
+                future.result()
+        if train_replay.hash_binary(BINARY) != built:
+            raise RuntimeError("the arclog-cli binary was replaced during the run")
+    lines: dict[str, list[Line]] = {}
+    for stem in stems:
+        record = train_replay.read_record(records, stem)
+        assert record is not None
+        lines[stem] = [(relation, verdict, detail) for relation, verdict, detail in record["lines"]]
+    baseline = read_baseline()
+    beyond = regressed = 0
+    for stem in stems:
+        for relation, verdict, detail in lines[stem]:
+            if verdict in ("differ", "fault") and baseline.get((stem, relation), ("", ""))[0] != verdict:
+                beyond += 1
+                print(f"{stem}\t{relation}\t{verdict}\t{detail}")
+    for stem in stale:
+        old = previous[stem]
+        if old is None:
+            continue
+        was = {relation for relation, verdict, _ in old.get("lines", []) if verdict == "equal"}
+        for relation, verdict, detail in lines[stem]:
+            if relation in was and verdict != "equal":
+                regressed += 1
+                print(f"{stem}\t{relation}\twas equal and is {verdict}\t{detail}")
+    for (stem, relation), (verdict, _) in sorted(baseline.items()):
+        if stem in lines and any(r == relation and v == "equal" for r, v, _ in lines[stem]):
+            print(f"{stem}\t{relation}\tnow equal; the baseline gives {verdict}")
+    verdicts = Counter(verdict for stem in stems for _, verdict, _ in lines[stem])
+    reasons = Counter(detail.split(":")[0] for stem in stems for _, verdict, detail in lines[stem] if verdict == "skip")
+    print(f"row parity: {len(stale)} tasks checked, {len(stems) - len(stale)} taken from their record; "
+          f"{', '.join(f'{n} {v}' for v, n in sorted(verdicts.items()))}; "
+          f"skipped: {', '.join(f'{n} {r}' for r, n in sorted(reasons.items()))}; "
+          f"{beyond} beyond the baseline, {regressed} no longer equal")
+    if accept:
+        kept = {k: v for k, v in baseline.items() if k[0] not in lines}
+        for stem in stems:
+            for relation, verdict, _ in lines[stem]:
+                if verdict in ("differ", "fault"):
+                    kept[stem, relation] = (verdict, baseline.get((stem, relation), ("", "-"))[1])
+        write_baseline(kept)
+    return 1 if beyond or regressed else 0
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="python -m arclog_convert.row_parity")
+    parser.add_argument("--out", type=Path, help="the directory that holds gen/, in place of `arclog_convert.out`; required in a linked worktree unless `ARCLOG_OUT` is set")
+    parser.add_argument("stems", nargs="*", help="the solvers to check; every solver of gen/ where none is given")
+    args = parser.parse_args(argv)
+    from arclog_convert import writable_out
+    root = args.out.resolve() if args.out else writable_out()
+    stems = args.stems or sorted(p.stem for p in (root / "gen").glob("*.arclog"))
+    return check(stems, root)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

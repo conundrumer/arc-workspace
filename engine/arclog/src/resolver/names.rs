@@ -226,6 +226,16 @@ impl Names {
         }
     }
 
+    /// The columns a name of any scope declares for `node` as fixed, as for
+    /// an output of an instance, which has no columns of its own node.
+    pub(super) fn fixed_columns_of(&self, node: usize) -> Option<&Columns> {
+        let own = self.scopes.values().flat_map(|names| names.values()).find_map(|target| match &target.columns {
+            ColumnsOf::Fixed(columns) if target.node.0 as usize == node => Some(columns),
+            _ => None,
+        });
+        own.or_else(|| self.earlier.as_ref()?.names.fixed_columns_of(node))
+    }
+
     /// The columns that the relation of the clause at `path` keeps.
     fn kept_at(&self, path: &NodePath) -> Option<&Columns> {
         self.kept.get(path).or_else(|| self.earlier.as_ref()?.names.kept_at(path))

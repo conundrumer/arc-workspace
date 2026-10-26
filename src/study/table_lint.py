@@ -131,7 +131,7 @@ def corpus_out() -> Path:
 def reconvert(ids: Sequence[str]) -> None:
     """Convert the solvers `ids` into the default corpus, with the converter's summary on stderr."""
     over = ["--out", str(corpus_out())] if in_linked_worktree() else []
-    command = [sys.executable, "-m", "arclog_convert.convert", "--no-train-replay", *over, *ids]
+    command = [sys.executable, "-m", "arclog_convert.convert", "--no-train-replay", "--no-row-parity", *over, *ids]
     done = subprocess.run(command, cwd=checkout.ROOT, stdout=sys.stderr)
     if done.returncode != 0:
         raise RuntimeError(f"{' '.join(command)} exited with {done.returncode}")
@@ -651,7 +651,7 @@ def counts_of(solver: str, text: str) -> str:
         if plan.exists() and f"solver file sha256: {digest}" in plan.read_text():
             (out / "plan").mkdir(parents=True)
             (out / "plan" / plan.name).write_text(plan.read_text())
-        done = subprocess.run([sys.executable, "-m", "arclog_convert.convert", "--no-train-replay", "--out", str(out), solver], cwd=checkout.ROOT,
+        done = subprocess.run([sys.executable, "-m", "arclog_convert.convert", "--no-train-replay", "--no-row-parity", "--out", str(out), solver], cwd=checkout.ROOT,
                               env={**os.environ, "ARCLOG_SOLVERS": str(solvers)}, capture_output=True, text=True)
         if done.returncode != 0 or done.stdout.count("converted 1 of 1") != 2:
             raise RuntimeError(f"the conversion of {solver} failed:\n{done.stdout}{done.stderr}")

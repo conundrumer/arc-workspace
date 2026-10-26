@@ -243,7 +243,7 @@ def rerun_json(stem: str, got: Mapping[str, Rows]) -> str:
     })
 
 
-def _code_digest() -> str:
+def code_digest() -> str:
     """The sha256 of the files of this package, which `cli.common.stamp`
     leaves out."""
     h = hashlib.sha256()
@@ -268,7 +268,7 @@ def kept_json(stem: str, case: str, pair: str) -> str | Undefined | RunFailure:
     case, the pair and the digest of this package's files. Raises
     `NoSuchCase` and `NoSuchPair`."""
     key: dict[str, Any] = {**snapshot.record_key(stem), "case": case, "pair": pair,
-                           "parity": _code_digest()}
+                           "parity": code_digest()}
 
     def decode(data: bytes) -> str | None:
         try:

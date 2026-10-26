@@ -26,7 +26,7 @@ def setup(tmp_path: Path):
 
 def stale(tmp_path: Path, sources: str = SOURCES, binary: str = BINARY) -> list[str]:
     gen, tasks, records = tmp_path / "gen", tmp_path / "tasks", tmp_path / "train_replay"
-    return train_replay.stale_tasks(["aaaa0001"], gen, tasks, records, sources, lambda: binary)
+    return train_replay.stale_tasks(["aaaa0001"], lambda stem: train_replay.files_digest(stem, gen, tasks), records, sources, lambda: binary)
 
 
 def test_a_task_whose_files_are_unchanged_is_fresh(tmp_path):

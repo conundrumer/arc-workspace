@@ -112,20 +112,21 @@ def engine_digest() -> str:
     return checkout.sources_digest(ENGINE_PATTERNS)
 
 
-def verdicts_binary() -> Path:
-    return checkout.ROOT / "engine" / "target" / "tool" / "verdicts"
+def tool_binary(name: str) -> Path:
+    """The built `name` binary of `arclog-cli` (`verdicts`, `arclog-cli`)."""
+    return checkout.ROOT / "engine" / "target" / "tool" / name
 
 
-def hash_binary() -> str:
-    """The sha256 of the `verdicts` binary as it stands."""
-    return hashlib.sha256(verdicts_binary().read_bytes()).hexdigest()
+def hash_binary(name: str = "verdicts") -> str:
+    """The sha256 of the `name` binary as it stands."""
+    return hashlib.sha256(tool_binary(name).read_bytes()).hexdigest()
 
 
-def binary_digest() -> str:
-    """The sha256 of the `verdicts` binary, built first."""
-    command = ["cargo", "build", "--profile", "tool", "-q", "-p", "arclog-cli", "--bin", "verdicts"]
+def binary_digest(name: str = "verdicts") -> str:
+    """The sha256 of the `name` binary, built first."""
+    command = ["cargo", "build", "--profile", "tool", "-q", "-p", "arclog-cli", "--bin", name]
     subprocess.run(command, cwd=checkout.ROOT / "engine", check=True)
-    return hash_binary()
+    return hash_binary(name)
 
 
 def files_digest(stem: str, gen: Path, tasks: Path) -> str:
@@ -142,16 +143,17 @@ def read_record(records: Path, stem: str) -> dict | None:
     return json.loads(path.read_text()) if path.exists() else None
 
 
-def stale_tasks(stems: list[str], gen: Path, tasks: Path, records: Path, sources: str,
+def stale_tasks(stems: list[str], files: Callable[[str], str], records: Path, sources: str,
                 binary: Callable[[], str] = binary_digest) -> list[str]:
-    """The stems whose record is missing, in the old form, or has other files,
+    """The stems whose record is missing, in the old form, or has other files
+    than `files(stem)` gives,
     and neither `sources` nor the digest `binary()` gives. `binary` runs at
     most once, and only where a task with equal files has other sources. A
     task fresh by its binary gets its record's `sources` rewritten."""
     stale, built = [], None
     for stem in stems:
         record = read_record(records, stem)
-        if record is None or record.get("files") != files_digest(stem, gen, tasks):
+        if record is None or record.get("files") != files(stem):
             stale.append(stem)
         elif record["sources"] != sources:
             built = binary() if built is None else built
@@ -165,7 +167,7 @@ def stale_tasks(stems: list[str], gen: Path, tasks: Path, records: Path, sources
 
 def run_verdicts(stems: list[str], gen: Path, tasks: Path) -> dict[str, list[Case]]:
     """The cases of each of `stems`, from one run of the `verdicts` binary."""
-    command = [str(verdicts_binary()), str(gen), str(tasks), *stems]
+    command = [str(tool_binary("verdicts")), str(gen), str(tasks), *stems]
     done = subprocess.run(command, cwd=checkout.ROOT / "engine", stdout=subprocess.PIPE, text=True)
     if done.returncode != 0:
         raise RuntimeError(f"{' '.join(command)} exited with {done.returncode}")
@@ -194,7 +196,7 @@ def replay(stems: list[str], out: Path, accept: bool = False) -> int:
         digests.append(binary_digest())
         return digests[-1]
 
-    stale = stale_tasks(stems, gen, tasks, records, sources, binary)
+    stale = stale_tasks(stems, lambda stem: files_digest(stem, gen, tasks), records, sources, binary)
     previous = {stem: read_record(records, stem) for stem in stale}
     cases: dict[str, list[Case]] = {}
     if stale:

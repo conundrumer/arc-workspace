@@ -20,7 +20,7 @@ def covers_rule(tmp_path: Path, clause: str) -> str:
         if entry.name != "solvers":
             (programs / entry.name).symlink_to(entry)
     (programs / "solvers" / f"{STEM}.dl").write_text(source.replace(WHOLE, clause))
-    subprocess.run([sys.executable, "-m", "arclog_convert.convert", "--no-train-replay", "--out", str(tmp_path / "out"), STEM],
+    subprocess.run([sys.executable, "-m", "arclog_convert.convert", "--no-train-replay", "--no-row-parity", "--out", str(tmp_path / "out"), STEM],
                    cwd=ROOT, check=True, capture_output=True, env={**os.environ, "ARCLOG_SOLVERS": str(programs / "solvers")})
     text = (tmp_path / "out" / "gen" / f"{STEM}.arclog").read_text()
     return text[text.index("(RULE &covers"):].split("\n\n")[0]

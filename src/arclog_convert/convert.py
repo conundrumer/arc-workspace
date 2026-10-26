@@ -4,7 +4,7 @@ gen_macros/, of `arclog_convert.out`: `work/arclog/` of the main
 worktree, or the directory `--out` gives; in a linked worktree, `--out` is
 required (or `ARCLOG_OUT`).
 
-    uv run python -m arclog_convert.convert [--out <dir>] [--no-train-replay | --accept] [<stem> ...]
+    uv run python -m arclog_convert.convert [--out <dir>] [--no-train-replay | --accept] [--no-row-parity] [<stem> ...]
 
 Each run writes both outputs for the same solvers, every solver where no
 stem is given, and prints the summary of each.
@@ -19,6 +19,13 @@ line whose task and verdict stay: the lines it rewrites are those of the
 solvers it converted, from the files it wrote; it is refused with
 `--no-train-replay`. The replay runs `cargo` in `engine/`, so it
 needs a Rust toolchain; `arclog_convert.train_replay` gives the details.
+After the replay it compares each relation of those solvers with Souffle's rows,
+records the lines under `row_parity/`, and reports against the baseline
+`row_parity.tsv`; the run exits with status 1 where either report does.
+`--no-row-parity` skips it. `--accept` also rewrites the lines of
+`row_parity.tsv` of the solvers it converted, from the files it wrote, after
+the check; with `--no-row-parity` it leaves `row_parity.tsv` untouched.
+`arclog_convert.row_parity` gives the details.
 A solver's plan file under plan/ records the hash of the solver
 file it was written from, and the runner and lib stamp of the run; where it
 is missing or records another hash or stamp, the script first reruns
@@ -275,7 +282,8 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="python -m arclog_convert.convert")
     parser.add_argument("--out", type=Path, help="the directory to write under, in place of `arclog_convert.out`; required in a linked worktree unless `ARCLOG_OUT` is set")
     parser.add_argument("--no-train-replay", action="store_true", help="convert with no replay on the train pairs")
-    parser.add_argument("--accept", action="store_true", help="rewrite the baseline lines of the solvers this run converted to its counts")
+    parser.add_argument("--accept", action="store_true", help="rewrite the baseline lines of the solvers this run converted to its counts, and the row-parity baseline lines of those solvers unless --no-row-parity")
+    parser.add_argument("--no-row-parity", action="store_true", help="convert with no comparison of the relations with Souffle's rows")
     parser.add_argument("stems", nargs="*", help="the solvers to convert; every solver where none is given")
     args = parser.parse_args(argv)
     if args.accept and args.no_train_replay:
@@ -294,10 +302,11 @@ def main(argv: list[str]) -> int:
     os.environ[paths.MACROS_ENV] = "1"
     print(f"{paths.MACROS_DIR}:")
     convert_into(stems, paths.MACROS_DIR)
-    if args.no_train_replay:
-        return 0
-    from arclog_convert import train_replay
-    return train_replay.replay(converted, paths.OUT_DIR.parent, args.accept)
+    from arclog_convert import row_parity, train_replay
+    status = 0 if args.no_train_replay else train_replay.replay(converted, paths.OUT_DIR.parent, args.accept)
+    if args.no_row_parity:
+        return status
+    return row_parity.check(converted, paths.OUT_DIR.parent, args.accept) or status
 
 
 def convert_into(stems: list[str], out: Path) -> list[str]:

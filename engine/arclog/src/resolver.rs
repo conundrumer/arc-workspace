@@ -389,9 +389,11 @@ impl ResolvedProgram {
     /// order: a column's name, and, for a record, `<record>.<field>` once
     /// per field. A name that has no text (`ColumnName::Slot`) is `c<position>`,
     /// its row position. `None` where the columns of `node`
-    /// are not known.
+    /// are not known; for an output of an instance, those its port declares.
     pub fn column_names(&self, node: GraphNodeIndex) -> Option<Vec<String>> {
-        let columns = self.names.node_columns_of(node.0 as usize)?;
+        let index = node.0 as usize;
+        let output = || matches!(self.graph.nodes[index].kind, DependencyKind::InstanceOutput { .. });
+        let columns = self.names.node_columns_of(index).or_else(|| self.names.fixed_columns_of(index).filter(|_| output()))?;
         Some(columns.row_names())
     }
 
