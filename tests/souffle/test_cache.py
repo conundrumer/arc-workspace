@@ -3,7 +3,9 @@ stored result for a different run, and nothing in the output shows it."""
 
 from pathlib import Path
 
-from engine import Engine, InputValue, Limits, Program, RelationName, Tuples
+import pytest
+
+from engine import Engine, InputValue, Limits, Program, RelationName, Tuples, checkout
 from souffle import SouffleEngine
 
 LIMITS = Limits(5, 20)
@@ -28,6 +30,28 @@ def test_an_included_file_and_the_input_facts_are_in_the_key(tmp_path: Path):
     assert _rows(engine, text, tmp_path, {IN: ((20,),)}) == ((21,),)
     (tmp_path / "inc.dl").write_text(".decl k(x: number)\nk(2).\n")
     assert _rows(engine, text, tmp_path, {IN: ((20,),)}) == ((22,),)
+
+
+def test_a_run_in_another_checkout_root_reads_the_stored_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    text = ('#include "inc.dl"\n.decl i(x: number)\n.decl o(x: number)\n'
+            "o(X + Y) :- k(X), i(Y).\n")
+    inc = ".decl k(x: number)\nk(1).\n"
+    cache = tmp_path / "cache"
+    for name in ("a", "b"):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "inc.dl").write_text(inc)
+
+    def stored_in(root: Path, inc_text: str) -> list[Path]:
+        (root / "inc.dl").write_text(inc_text)
+        monkeypatch.setattr(checkout, "ROOT", root)
+        engine = SouffleEngine(functor_dir=None, cache_dir=cache)
+        _rows(engine, text, root, {IN: ((10,),)})
+        return sorted(cache.glob("*/*.json.z"))
+
+    first = stored_in(tmp_path / "a", inc)
+    assert len(first) == 1
+    assert stored_in(tmp_path / "b", inc) == first
+    assert len(stored_in(tmp_path / "b", inc.replace("k(1)", "k(2)"))) == 2
 
 
 def test_a_clause_is_in_the_key_and_a_comment_is_not(tmp_path: Path):

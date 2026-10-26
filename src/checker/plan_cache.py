@@ -54,9 +54,12 @@ def _key(runs: Runs, source: Path, stamp: str, verdicts: bool) -> str:
 def hash_solver_files(h: "hashlib._Hash", source: Path, task_id: str
                       ) -> None:
     """Adds to `h` the solver file `source`, and the task file and the
-    witness file of its task `task_id`."""
-    hash_files(h, ((str(p), p) for p in (source.resolve(), task_file(task_id),
-                                         witness.path(task_id))))
+    witness file of its task `task_id`, each by its path from the
+    checkout's root where it stands under it (`checkout.shown`), so that
+    two checkouts with the same files by content give the same hash."""
+    hash_files(h, ((str(checkout.shown(p, checkout.ROOT)), p)
+                   for p in (source.resolve(), task_file(task_id),
+                             witness.path(task_id))))
 
 
 def reaches_wall(x: object) -> bool:

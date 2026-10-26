@@ -40,7 +40,7 @@ from solver.vocabulary import OUTPUT
 from solver.witness import AssignValue, read_assign
 from souffle import SouffleEngine
 from souffle.engine import FUNCTOR_DIR
-from souffle.run import FUNCTOR_SOURCE
+from souffle.functors import FUNCTOR_SOURCE
 
 WALL_LIMIT_ENV = "ARC_WALL_LIMIT_SECONDS"
 """The environment variable that gives the wall limit of `LIMITS` in

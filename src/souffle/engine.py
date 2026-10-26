@@ -32,7 +32,7 @@ from souffle.install import binary_identity
 from souffle.run import Runner
 
 FUNCTOR_DIR = checkout.programs()
-"""Where the functor library (`run.FUNCTOR_LIB`) and its source stand, in
+"""Where the functor library (`functors.FUNCTOR_LIB`) and its source stand, in
 the checkout at import."""
 CACHE_DIR = checkout.cache() / "engine-souffle"
 """Where each run is stored under the hash of all it reads, in the
