@@ -20,10 +20,18 @@ holds one row in each case that clause is written for. The column map gives an
 empty list for each of its Souffle columns (`arclog_convert.names.check_maps`),
 so the row-parity check compares, in each case it runs, whether the relation
 has a row. `Converter.open_carriers_dropped` drops the clauses of every
-relation of such columns but a check relation."""
+relation of such columns but a check relation.
+
+A check relation is a copy for the row-parity check alone, so one that the
+copy cannot hold is left out. Where the converter writes a clause of a check
+relation with a `TODO` line, which the reader refuses, the converter leaves
+that check relation out of the check copy, and the column map gives the folded
+relation's path as untranslated, with a reason that names the `TODO` kinds
+(`todo_kinds`, `arclog_convert.names.dropped`). The other check relations stay."""
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
@@ -62,6 +70,31 @@ def clauses_of(prog: Program) -> dict[Fold, list[Unit]]:
         if u.scope.components in CHECKED_SCOPES:
             out.setdefault(Fold(u.scope.components, u.head.relation.instances, u.head.relation.name), []).append(u)
     return out
+
+
+_TODO_KIND = re.compile(r"^\s*;; TODO ([\w-]+):", re.MULTILINE)
+
+
+def todo_kinds(arclog: str, name: str) -> list[str]:
+    """The kinds of the `TODO` lines in the text of the declaration of the
+    relation `name` in the arclog `arclog`: its comment lines before it, and
+    the lines of its form. Empty where `arclog` declares no such relation."""
+    from arclog_convert.lint import DECL_HEADS, L, Sym, read
+
+    def region(forms: list, start: int) -> str | None:
+        before = start
+        for f in forms:
+            if not isinstance(f, L):
+                continue
+            if f.head in DECL_HEADS and len(f.items) > 1 and isinstance(f.items[1], Sym) and f.items[1].text == name:
+                return arclog[before:f.end]
+            if (got := region(f.items, f.start)) is not None:
+                return got
+            before = f.end
+        return None
+
+    text = region(read(arclog), 0)
+    return [] if text is None else sorted(set(_TODO_KIND.findall(text)))
 
 
 def check_name(fold: Fold, taken: set[str]) -> str:

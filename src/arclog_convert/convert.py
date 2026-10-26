@@ -51,9 +51,10 @@ from arclog_convert.forms import (
     hoist_shared,
     renamed,
 )
+from arclog_convert.checks import Fold
 from arclog_convert.leaves import ScopedName
 from arclog_convert.lib import Col, ColMismatch, LIB_DL, Lib, SIGNATURE
-from arclog_convert.names import check_maps, column_map, folded, name_map, parity, placed, unchecked
+from arclog_convert.names import Checks, check_maps, column_map, dropped, folded, name_map, parity, placed, unchecked, untranslated
 from arclog_convert.plans import refresh_plans
 from arclog_convert.solver import Solver
 
@@ -101,13 +102,28 @@ def _with_checks(s: "Solver", lib: Lib, sig: Lib, names: dict, columns: dict, in
     folds = folded(s, names)
     if not folds:
         return None
-    MERGES.clear()
-    MERGES_UNMERGED.clear()
+    arclog = arcdata = None
+    left: dict[Fold, str] = {}
     try:
-        again = Solver(s.stem, lib, sig, Todo(), inline, copies, folds)
-        arclog, arcdata = again.run()
-        arclog, arcdata, insts = _finished(arclog, arcdata)
-        got = check_maps(again, folds, insts, arclog)
+        # a check relation with a clause the converter cannot write is left out, and the
+        # conversion runs again without it
+        keep = folds
+        while keep:
+            MERGES.clear()
+            MERGES_UNMERGED.clear()
+            again = Solver(s.stem, lib, sig, Todo(), inline, copies, keep)
+            arclog, arcdata = again.run()
+            arclog, arcdata, insts = _finished(arclog, arcdata)
+            more = dropped(again, keep, insts, arclog)
+            if not more:
+                break
+            left |= more
+            keep = [f for f in keep if f not in more]
+        if keep:
+            got = check_maps(again, keep, insts, arclog)
+        else:
+            got, arclog, arcdata = Checks(), None, None
+        got = Checks(got.relations, got.columns, {**got.untranslated, **untranslated(s, left).untranslated})
     except Exception as e:  # noqa: BLE001
         reason = f"{type(e).__name__}: {e}".splitlines()[0].replace("\t", " ")
         got = unchecked(s, folds, f"the conversion with the check relations failed, {reason}")

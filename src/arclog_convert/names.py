@@ -38,7 +38,7 @@ from arclog_convert import libmap
 from arclog_convert.libmap import rename as libmap_rename
 from arclog_convert.libmap.instances import Placement
 
-from arclog_convert.checks import Fold, clauses_of
+from arclog_convert.checks import Fold, clauses_of, todo_kinds
 from arclog_convert.clauses import Site, site_columns
 from arclog_convert.forms import Source, renamed
 from arclog_convert.leaves import Converter, FACTS, Written
@@ -424,8 +424,35 @@ class Checks:
 def unchecked(s: "Solver", folds: list[Fold], reason: str) -> Checks:
     """The maps of a solver whose conversion with the check relations of
     `folds` failed for `reason`: no entry, and `reason` for each."""
-    at = (_fold_source(s.c, f)["path"] for f in folds)
-    return Checks(untranslated={p: reason for p in at if p is not None})
+    return untranslated(s, dict.fromkeys(folds, reason))
+
+
+def untranslated(s: "Solver", reasons: dict[Fold, str]) -> Checks:
+    """The maps of a solver with no check relation of each fold of `reasons`:
+    no entry, and the fold's reason, under its path from the top level."""
+    at = ((_fold_source(s.c, f)["path"], why) for f, why in reasons.items())
+    return Checks(untranslated={p: why for p, why in at if p is not None})
+
+
+def _check_arclog_name(c: "Converter", fold: Fold, insts: dict[str, str]) -> str | None:
+    """The arclog name of the check relation of `fold`, as the files read it
+    after the renames `convert_one` applies (`insts`), or None where the
+    converter wrote none."""
+    check = c.checks.get(fold)
+    arc = None if check is None else c.names.get((fold.scope, check))
+    return None if arc is None else _renamed_name("&" + arc, insts)
+
+
+def dropped(s: "Solver", folds: list[Fold], insts: dict[str, str], arclog: str) -> dict[Fold, str]:
+    """Each of `folds` whose check relation the converter wrote with a clause
+    with a `TODO` line into the text `arclog` (`check_maps` gives the
+    arguments), with the reason its path is untranslated: the `TODO` kinds."""
+    out: dict[Fold, str] = {}
+    for fold in folds:
+        name = _check_arclog_name(s.c, fold, insts)
+        if name is not None and (kinds := todo_kinds(arclog, name)):
+            out[fold] = "the converter cannot write a clause of the relation: " + ", ".join(f"TODO {k}" for k in kinds)
+    return out
 
 
 def check_maps(s: "Solver", folds: list[Fold], insts: dict[str, str], arclog: str) -> Checks:
@@ -445,8 +472,7 @@ def check_maps(s: "Solver", folds: list[Fold], insts: dict[str, str], arclog: st
         if check is None:
             out.untranslated[path] = "the converter has no declaration of the relation's columns"
             continue
-        arc = c.names.get((fold.scope, check))
-        name = None if arc is None else _renamed_name("&" + arc, insts)
+        name = _check_arclog_name(c, fold, insts)
         if name is None or name not in read:
             out.untranslated[path] = "the converter wrote no clause of the relation"
             continue

@@ -724,9 +724,8 @@ b10624e5	&lone_side	differ	9-2339
 b10624e5	&output	differ	9-2339
 b10624e5	&paint	differ	9-2339
 b10624e5	&scaled	differ	9-2339
-b25e450b	&run.ray	differ	20-232
-b25e450b	&run_blocked	differ	20-232
-b25e450b	*	fault	20-407
+b25e450b	&nearest.maximal	uncompared	-
+b25e450b	souffle:impl_choice	uncompared	-
 b27ca6d3	&shape2.equal	fault	9-2092
 b457fec5	&cell2	uncompared	-
 b457fec5	&end_corner2	uncompared	-
