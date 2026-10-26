@@ -196,10 +196,14 @@ class Table:
     `unseen` gives the reason the encoder cannot see the whole table (its projection search stopped, it faults, or
     every entry is unseen), which then has no rows; `largest` is the most rows of one entry, or of one projection
     at an entry. `det_relations` gives the relation of each DET that the table's entries are assigned, as the
-    export spells it ("slot <relation>"), and is empty for an evidence table. An export table whose entries hold
-    several assignments gives one Table per assignment, each with that assignment's entries over every example and
-    model; the Tables of one export table share `step`, `relation` and `export_table`, and stand next to each other
-    (`table_groups`).
+    export spells it ("slot <relation>"), and is empty for an evidence table. `det_types` gives, per DET in that
+    order, the type name of each column of its value, and `det_cells` its value at the Table's assignment, int32
+    [rows, width] as the export's assigned run gives it, or None where the Table's entries hold no value of that
+    DET or the Table is unseen; both are empty for an evidence table and for a Table built with neither. The Tables
+    of a case whose values for a DET are equal share one array, which a reader does not write. An export table whose
+    entries hold several assignments gives one Table per assignment, each with that assignment's entries over every
+    example and model; the Tables of one export table share `step`, `relation` and `export_table`, and stand next to
+    each other (`table_groups`).
 
     From an export that gives the column-level provenance (`flows.parquet`), a relation table also holds `depth`, its
     stratum; `keys`, its candidate keys as lists of column indexes; `output_position` and `output_color`, the columns
@@ -213,6 +217,7 @@ class Table:
     through the flows (`color_dependence`), None where the case gives no output relation. Without the export's
     provenance, each of these holds its class default."""
     depth, keys, flows, output_position, output_color, color_dependent = None, None, None, -1, -1, None
+    det_types = det_cells = ()
 
     def __init__(self, **kw):
         kw.pop("_unique", None)   # what `unique` keeps, which a copy builds again
@@ -325,7 +330,8 @@ def unseen_table(t, reason, unseen_entries=None, prov=None):
                  example_kind=np.zeros(0, np.int8), assignment=np.zeros((0, len(t["det_relations"])), np.int32), model=np.zeros(0, np.int32),
                  entry=np.zeros(0, np.int32), part=np.zeros(0, np.int32), marker=np.zeros(0, bool),
                  unseen_entries=unseen_entries or {}, largest=0, export_table=int(t["table"]),
-                 det_relations=list(t["det_relations"]))
+                 det_relations=list(t["det_relations"]), det_types=det_type_names(t),
+                 det_cells=[None] * len(t["det_relations"]))
 
 
 def wholly_unseen_reason(unseen_entries):
@@ -476,7 +482,12 @@ def case_dets(t):
     return [(rel, types[i] if i < len(types) else [], int(widths[i])) for i, rel in enumerate(t["det_relations"])]
 
 
-def copy_flow_check(fl, column_types, kept, tables, dets=None, det_values=None, subtypes=None, where=""):
+def det_type_names(t):
+    """The type name of each column of each DET of the export table t, in `det_relations` order."""
+    return [[type_name(x) for x in types] for _, types, _ in case_dets(t)]
+
+
+def copy_flow_check(fl, column_types, kept, tables, dets=None, subtypes=None, where=""):
     """The copy flows of one case that break their join, from the case's rows of flows.parquet (export column
     indexes). A copy flow's source column is a column of its source table, or, where its `det` is not -1, a column of
     that DET of the table that holds the flow, whose types are that table's `det_types[det]` in tables.parquet. A copy
@@ -484,9 +495,9 @@ def copy_flow_check(fl, column_types, kept, tables, dets=None, det_values=None, 
     column, or a subtype or a supertype of it that `subtypes` gives ((subtype, supertype) pairs, `orientation_subtypes`;
     where None or empty, the type must be the same). Where every source of a column is such a copy flow, the column's value in
     each present row of its Tables must be a value of one of its source columns: over the rows of a source table's
-    Tables, or over the rows of a DET's relation at the row's own assignment of that DET (the row's `assignment`,
-    which indexes `det_values`, the loader's {(DET relation, run bytes): index}). A column's flows are its sources
-    over every rule that derives it, so its values are in the union of theirs, not in each. `column_types`, `kept`
+    Tables, or over the rows of a DET's relation at the Table's own assignment of that DET (the Table's
+    `det_cells`). A column's flows are its sources over every rule that derives it, so its values are in the union of
+    theirs, not in each. `column_types`, `kept`
     (`kept_columns`) and `dets` (`case_dets`) are per export table, and `tables` are the case's Tables. Gives the
     count of copy flows checked for their type, the count of columns whose values go unchecked (a source other than a
     column of a table that the case holds or of a DET, a dropped column, a table with no Tables, or a source with
@@ -494,7 +505,6 @@ def copy_flow_check(fl, column_types, kept, tables, dets=None, det_values=None, 
     kind "type" for a flow or "value" for a column, given by its first copy flow. Raises DataFault, naming `where`
     (the case), where the widths of a DET's `det_types` differ from its `det_widths`."""
     dets, subtypes = dets or {}, subtypes or set()
-    runs = {i: (rel, b) for (rel, b), i in (det_values or {}).items()}   # a DET value's index -> its run
     of = {}
     for i, t in enumerate(tables):
         e = GRID_TABLES.get(t.relation) if t.evidence else t.export_table
@@ -515,19 +525,19 @@ def copy_flow_check(fl, column_types, kept, tables, dets=None, det_values=None, 
                                 np.unique(t.cells[t.present[:, c] & ~t.marker, o:o + w], axis=0).tolist()}
         return memo[(e, c)]
 
-    def det_values_at(tab, det, c, index):
-        """The values of column c of DET `det` of export table `tab` over the rows of its relation at the DET value
-        `index`, as a set of tuples; empty where the index is -1."""
-        if (tab, det, c, index) not in memo:
+    def det_values_at(tab, det, c, cells):
+        """The values of column c of DET `det` of export table `tab` over the rows of its relation, `cells` (a Table's
+        `det_cells[det]`), as a set of tuples; empty where `cells` is None."""
+        if (tab, det, c, id(cells)) not in memo:   # a Table's arrays are the case's shared ones, alive in `tables`
             rel, types, w_all = dets[tab][det]
             names = [type_name(x) for x in types]
             if sum(width(x) for x in names) != w_all:
                 raise DataFault(f"{where} table {tab} DET {det} ({rel}): its det_types {names} have width "
                                 f"{sum(width(x) for x in names)}, its det_widths {w_all}")
             o, w = sum(width(x) for x in names[:c]), width(names[c])
-            run = np.frombuffer(runs[index][1], np.int32).reshape(-1, w_all) if index >= 0 else np.zeros((0, w_all))
-            memo[(tab, det, c, index)] = {tuple(r) for r in run[:, o:o + w].astype(np.int64).tolist()}
-        return memo[(tab, det, c, index)]
+            run = cells if cells is not None else np.zeros((0, w_all), np.int32)
+            memo[(tab, det, c, id(cells))] = {tuple(r) for r in run[:, o:o + w].astype(np.int64).tolist()}
+        return memo[(tab, det, c, id(cells))]
 
     def source_type(r):
         if r[5] < 0:
@@ -565,14 +575,9 @@ def copy_flow_check(fl, column_types, kept, tables, dets=None, det_values=None, 
         own, outside = set(), set()
         for t in own_tables:
             m = t.present[:, c] & ~t.marker
-            cells, asg = t.cells[m, o:o + w], t.assignment[m][:, [r[5] for r in det_copies]]
-            for key in np.unique(asg, axis=0) if len(det_copies) else [None]:
-                at = cells if key is None else cells[(asg == key).all(1)]
-                vals = {tuple(x) for x in np.unique(at, axis=0).tolist()}
-                own |= vals
-                allowed = src.union(*[det_values_at(tab, r[5], r[4], int(k)) for r, k in zip(det_copies, key)]) \
-                    if key is not None else src
-                outside |= vals - allowed
+            vals = {tuple(x) for x in np.unique(t.cells[m, o:o + w], axis=0).tolist()}
+            own |= vals
+            outside |= vals - src.union(*[det_values_at(tab, r[5], r[4], t.det_cells[r[5]]) for r in det_copies])
         if outside:
             bad.append(("value", copies[0], f"{len(outside)} of its {len(own)} values outside its {len(copies)} "
                                             f"source columns at their rows' assignments, such as {min(outside)}"))
@@ -657,6 +662,7 @@ def parse_tables(tables_dir, tasks_dir=Path(__file__).resolve().parents[1] / "da
         # the first row of each projection at each entry
         prows = {} if prows is None else {k: rs[0] for k, rs in records_by(prows, [PROJECTION_ID, "entry"]).items()}
         det_values = {}   # (det relation, cells) -> index
+        det_runs = {}     # (det relation, width, cells) -> the cells, int32 [rows, width]
         result = evidence_for(task_json, tabs)
         records = tabs.sort_values("table").to_dict("records")
         if provenance:
@@ -682,7 +688,7 @@ def parse_tables(tables_dir, tasks_dir=Path(__file__).resolve().parents[1] / "da
                                 output_position=at(int(t["output_position"])), output_color=at(int(t["output_color"])),
                                 flows=flows.get(int(t["table"]), np.zeros((0, 5), np.int32)))
                 result += parse_table(t, ents_of.get(t["table"], []), values, asg_of, projs, prows, det_values,
-                                      n_train, prov, f"{task} {case}")
+                                      n_train, prov, f"{task} {case}", det_runs)
         except DataFault as f:
             faults[(task, case)] = str(f); continue
         if provenance:
@@ -690,7 +696,7 @@ def parse_tables(tables_dir, tasks_dir=Path(__file__).resolve().parents[1] / "da
             if fl is not None:
                 n, unchecked, bad = copy_flow_check(
                     fl, {int(t["table"]): list(t["column_types"]) for t in records}, kept, result,
-                    dets, det_values, subtypes, f"{task} {case}")
+                    dets, subtypes, f"{task} {case}")
                 copies["checked"] += n; copies["values unchecked"] += unchecked
                 for kind, row, detail in bad:
                     copies[kind] += 1
@@ -718,14 +724,16 @@ def records_by(df, key):
     return out
 
 
-def parse_table(t, ents, values, asg_of, projs, prows, det_values, n_train, prov=None, where=""):
+def parse_table(t, ents, values, asg_of, projs, prows, det_values, n_train, prov=None, where="", det_runs=None):
     """The Tables of the export's table t, from its entries `ents` (rows of the index, as dicts): one per
     assignment that its entries hold, in the order of each assignment's first entry, or one where they hold one
     assignment or none; or its unseen table. Raises DataFault where the values cannot be read. An entry the
     encoder cannot see gives one marker row; a Table whose every entry is unseen is unseen. `prov` gives the
     table's provenance attributes (`Table`), which every Table of t shares, or None. An entry's rows are read
-    through `entry_runs`; `where` names the case in its faults."""
+    through `entry_runs`; `where` names the case in its faults. `det_runs` is the case's {(DET relation, width, run
+    bytes): cells}, which the Tables of a case share their `det_cells` arrays through; None gives a fresh one."""
     prov = prov or {}
+    det_runs = {} if det_runs is None else det_runs
     if not pd.isna(t["fault"]):   # a null reads as None or as nan, by the column's dtype
         return [unseen_table(t, "the table faults", prov=prov)]
     if t[TABLE_PROJECTIONS] == PROJECTIONS_STOPPED:
@@ -738,18 +746,27 @@ def parse_table(t, ents, values, asg_of, projs, prows, det_values, n_train, prov
     # part, marker), the most rows of one entry or of one projection at an entry, and its unseen entries by reason
     splits = {}
     assignment = {}   # entry -> the index of each DET's value at the entry's assignment
+    cells_at = {}     # entry -> the cells of each DET's value at the entry's assignment, None where it has none
+    det_types = det_type_names(t)
 
     def assignment_of(e):
         if e["entry"] not in assignment:
             a = np.full(len(det_rel), -1, np.int32)
+            cells_at[e["entry"]] = [None] * len(det_rel)
             for r in asg_of.get(e["entry"], []):
                 run = rows_at(int(r["offset"]), int(r["rows"]), det_w[r["det"]])
-                a[r["det"]] = det_values.setdefault((det_rel[r["det"]], run.tobytes()), len(det_values))
+                b = run.tobytes()
+                a[r["det"]] = det_values.setdefault((det_rel[r["det"]], b), len(det_values))
+                key = (det_rel[r["det"]], run.shape[1], b)
+                if key not in det_runs:
+                    det_runs[key] = np.frombuffer(b, np.int32).reshape(run.shape)
+                cells_at[e["entry"]][r["det"]] = det_runs[key]
             assignment[e["entry"]] = a
         return assignment[e["entry"]]
 
     def split_of(e):
-        return splits.setdefault(assignment_of(e).tobytes(), {"groups": [], "largest": 0, "unseen": {}})
+        return splits.setdefault(assignment_of(e).tobytes(), {"groups": [], "largest": 0, "unseen": {},
+                                                              "det_cells": cells_at[e["entry"]]})
 
     def rows_at(off, n, w):
         if off + n * w > len(values):
@@ -798,7 +815,7 @@ def parse_table(t, ents, values, asg_of, projs, prows, det_values, n_train, prov
             note_largest(e, n)
             add(rows_at(off, n, w), cols, e, part=j)
 
-    def table(groups, largest, unseen_entries):
+    def table(groups, largest, unseen_entries, det_cells):
         if unseen_entries and all(g[8].all() for g in groups):
             return unseen_table(t, wholly_unseen_reason(unseen_entries), unseen_entries, prov)
         cat = lambda i, empty: np.concatenate([g[i] for g in groups]) if groups else empty
@@ -809,8 +826,10 @@ def parse_table(t, ents, values, asg_of, projs, prows, det_values, n_train, prov
                      assignment=cat(4, np.zeros((0, len(det_rel)), np.int32)), model=cat(5, np.zeros(0, np.int32)),
                      entry=cat(6, np.zeros(0, np.int32)), part=cat(7, np.zeros(0, np.int32)),
                      marker=cat(8, np.zeros(0, bool)), unseen_entries=unseen_entries, largest=largest,
-                     export_table=int(t["table"]), det_relations=det_rel)
-    return [table(sp["groups"], sp["largest"], sp["unseen"]) for sp in splits.values()] or [table([], 0, {})]
+                     export_table=int(t["table"]), det_relations=det_rel,
+                     det_types=det_types, det_cells=det_cells)
+    return [table(sp["groups"], sp["largest"], sp["unseen"], sp["det_cells"]) for sp in splits.values()] or \
+        [table([], 0, {}, [None] * len(det_rel))]
 
 
 def table_groups(tables):
@@ -826,7 +845,7 @@ def table_groups(tables):
     return out
 
 
-LOADER_VERSION = 18  # raise on any change to parse_tables or Table
+LOADER_VERSION = 19  # raise on any change to parse_tables or Table
 
 
 def table_stamp(tables_dir):
