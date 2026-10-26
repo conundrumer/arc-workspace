@@ -1,100 +1,106 @@
 #!/usr/bin/python3
 """Run a command that uses much CPU or memory, within the machine's budget.
 
-Usage: <checkout>/scripts/run_heavy.py [--cpus <n>] [--gib <g>] <command> [<arg> ...]
+Usage: <checkout>/scripts/run_heavy.py [--cpus <n>] [--gib <g>] [--need now|soon|idle] [--minutes <m>]
+                                       [--wait <seconds>] <command> [<arg> ...]
        <checkout>/scripts/run_heavy.py --cpus <n> bash -c '<simple command>; ...'
+       <checkout>/scripts/run_heavy.py queue
+       <checkout>/scripts/run_heavy.py need <pid> now|soon|idle
 
 `--cpus` is the processes or threads the command runs at once (default 1),
-and `--gib` the memory in GiB it may reach (default `1 + <n>`). The heavy
-commands that run through this script at one time, in every session and
-checkout of the machine, together hold at most the machine's CPU budget, the
-logical CPUs (`hw.logicalcpu`), and its memory budget, the physical memory
-(`hw.memsize`) less 4 GiB for the system and the terminal. A request over a
-budget is cut to it, with one line on stderr.
+and `--gib` the memory in GiB it may reach (default `1 + <n>`). `--minutes`
+is the time it is to run (default 5), and `--need` who waits on its result
+(default `soon`): `now` where someone waits before the next step can start,
+`soon` where the result feeds the next step and nothing sits idle for it,
+`idle` where nothing waits on it. `--wait` is the seconds the call waits for
+its share before it gives up with the expected start.
 
-A call takes the turnstile, then one share of the CPU budget for each CPU it
-asks for and one of the memory budget for each GiB, then waits while the
-kernel's memory pressure level is warn or critical or the swap-ins a second
-are over the load monitor's alert rate (`scripts/machine_readings.py`, read
-as `scripts/load_monitor.py` reads them, the swap-ins between two reads one
-second apart), then frees the turnstile and replaces itself with the command
-by `exec` of `taskpolicy -c utility <command>`. The calls so start in the
-order they came, and no two calls hold part of a budget while both wait. A
-call that asks for more than a budget holds starts once the whole budget is
-free, and runs alone.
+The heavy commands that run through this script at one time, in every session
+and checkout of the machine, together hold at most the machine's CPU budget,
+the logical CPUs (`hw.logicalcpu`), and its memory budget, the physical memory
+(`hw.memsize`) less 4 GiB for the system and the terminal. A request over the
+budget its need allows is cut to it, with one line on stderr. The memory budget is less the
+footprint of every readable process outside the jobs, which the daemon reads again at each
+sample; a job that holds more stays.
 
-The command runs below the user's interactive applications, as does each
-process it starts, as the call's own process in the call's process group,
-with the caller's environment as it stands, plus `ARC_HEAVY_CPUS` set to
-the CPUs granted, and `ARCLOG_THREADS`, `CARGO_BUILD_JOBS` and
-`RAYON_NUM_THREADS` set to that number, each at most the value the caller
-set. So a `timeout` around the call, the end of the Bash call and
-`TaskStop` reach it as they reach the command run without this script. The
-call exits with the command's status.
+A call asks the resource daemon (`scripts/resource_daemon.py`) for a share of
+the budget, and starts the daemon where none runs. The daemon starts a call
+when it is first of its queue and fits, as `scripts/heavy_scheduler.py` gives
+the rule: a job of at most 5 minutes draws on a reserve that no longer job
+takes, and the others are ordered, and capped in what they hold together, by
+need. The daemon starts none while the kernel's memory pressure level is warn
+or critical or the swap-ins a second are over the load monitor's alert rate
+(`scripts/machine_readings.py`). `queue` prints each job that holds a share,
+each ungated process of a session that the daemon counts against the budget,
+and each waiting call with its expected start.
 
-A share is a file under `~/.cache/arc-workspace/heavy-shares/` (`cpu-<i>`,
-`gib-<i>`) that the call locks with `flock`. The open descriptors stay in the
-command and in each process that inherits them, so the shares stay taken
-until every one of them has ended, `SIGKILL` included, and no file needs to
-be cleaned up. A call killed while it waits frees the turnstile and its
-shares. A command that runs in this form and itself calls it starts at once:
+The call replaces itself with the command by `exec` of `taskpolicy -c utility
+<command>`, once the daemon grants the share. The command runs below the
+user's interactive applications, as does each process it starts, as the call's
+own process in the call's process group, with the caller's environment as it
+stands, plus `ARC_HEAVY_CPUS` set to the CPUs granted, and `ARCLOG_THREADS`,
+`CARGO_BUILD_JOBS` and `RAYON_NUM_THREADS` set to that number, each at most
+the value the caller set. So a `timeout` around the call, the end of the Bash
+call and `TaskStop` reach it as they reach the command run without this
+script. The call exits with the command's status. The daemon holds the share
+until that process ends, and kills the processes the command leaves behind.
+
+A command that runs in this form and itself calls it starts at once:
 `ARC_HEAVY_CPUS` is set, so the call takes no share, waits for nothing, and
 cuts `--cpus` to the share it runs under.
 
+`queue` and `need` are reserved as the first argument. `need <pid> <tier>` gives the waiting
+call of that pid, which `queue` prints, the need `<tier>`, and the daemon orders the queues
+again at once. It exits 125 where no call of that pid waits or `<tier>` is none of the three.
+
 A call that waits says on stderr what it waits for, once, when the wait
-starts.
+starts. A call killed while it waits leaves the queue.
 
 A failure before the command starts prints `run_heavy.py: <reason>` on
-stderr and exits 125: no command given, a bad option, the share directory,
-`sysctl`, `vm_stat` or `taskpolicy`. A command that is not found exits 127,
-and one that cannot be executed 126, as `env` does. A signal before the
-command starts ends the call, and the command has not run.
+stderr and exits 125: no command given, a bad option, the daemon (it cannot be
+reached or started, speaks another protocol, or reads no machine load), the
+wait that ran out, `sysctl`, `vm_stat` or `taskpolicy`. A command that is not
+found exits 127, and one that cannot be executed 126, as `env` does. A signal
+before the command starts ends the call, and the command has not run.
 
-`ARC_HEAVY_DIR` sets the share directory, for the tests."""
+`ARC_HEAVY_DIR` sets the directory of the daemon's files, for the tests."""
 
 from __future__ import annotations
 
-import fcntl
+import math
 import os
+import shlex
 import shutil
 import signal
-import subprocess
 import sys
 import time
-from typing import Callable, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import List, Optional
 
-from machine_readings import PRESSURE_LEVELS, SWAP_IN_RATE, counters, output, pressure_level
+import heavy_client
+import heavy_protocol
+from heavy_model import Need
+from heavy_protocol import Refusal
 
-POLL_SECONDS = 1.0
-GIB = 1 << 30
-SYSTEM_GIB = 4
 SHARE_ENV = "ARC_HEAVY_CPUS"
-DIR_ENV = "ARC_HEAVY_DIR"
 POOL_ENVS = ("ARCLOG_THREADS", "CARGO_BUILD_JOBS", "RAYON_NUM_THREADS")
-TURNSTILE = "turnstile"
 NOT_RUN = 125
 NOT_EXECUTABLE = 126
 NOT_FOUND = 127
+DEFAULT_MINUTES = 5.0
+DEFAULT_NEED = Need.SOON
+QUEUE = "queue"
+NEED = "need"
 
 
-class Refusal(Exception):
-    """A failure before the command starts."""
-
-
-def share_dir() -> str:
-    return os.environ.get(DIR_ENV) or os.path.expanduser("~/.cache/arc-workspace/heavy-shares")
-
-
-def budget() -> Tuple[int, int]:
-    """The CPU shares and the GiB shares of the machine."""
-    try:
-        cpus, memory = output("sysctl", "-n", "hw.logicalcpu", "hw.memsize").split()
-        shares = int(cpus), int(memory) // GIB - SYSTEM_GIB
-    except (OSError, ValueError, subprocess.CalledProcessError) as error:
-        raise Refusal(f"cannot read the budget from sysctl: {error!r}")
-    if min(shares) < 1:
-        raise Refusal(f"the machine's budget is {shares[0]} CPUs and {shares[1]} GiB")
-    return shares
+@dataclass(frozen=True)
+class Options:
+    cpus: Optional[int]
+    gib: Optional[int]
+    need: Need
+    minutes: float
+    wait: Optional[int]
+    command: List[str]
 
 
 def count(option: str, text: str) -> int:
@@ -103,106 +109,41 @@ def count(option: str, text: str) -> int:
     return int(text)
 
 
-def parse(argv: List[str]) -> Tuple[Optional[int], Optional[int], List[str]]:
-    """The `--cpus` and `--gib` given, and the command."""
-    given: dict[str, Optional[int]] = {"--cpus": None, "--gib": None}
+def minutes(text: str) -> float:
+    try:
+        value = float(text)
+    except ValueError:
+        value = math.nan
+    if not (math.isfinite(value) and value > 0):
+        raise Refusal(f"--minutes takes a number over 0, not {text!r}")
+    return value
+
+
+def need(text: str) -> Need:
+    try:
+        return Need(text)
+    except ValueError:
+        raise Refusal(f"--need takes now, soon or idle, not {text!r}")
+
+
+def parse(argv: List[str]) -> Options:
+    """The options given, and the command."""
+    given: dict[str, str] = {}
     rest = list(argv)
-    while rest and rest[0].partition("=")[0] in given:
+    while rest and rest[0].partition("=")[0] in ("--cpus", "--gib", "--need", "--minutes", "--wait"):
         option, equals, value = rest.pop(0).partition("=")
         if not equals:
             if not rest:
                 raise Refusal(f"{option} takes a value")
             value = rest.pop(0)
-        given[option] = count(option, value)
-    return given["--cpus"], given["--gib"], rest
-
-
-def lock(directory: str, name: str, wait: bool) -> Optional[int]:
-    """The descriptor of the file `name` under `directory`, locked: after
-    the wait for the lock where `wait` is set, and at once or None where
-    another process holds it and `wait` is not set."""
-    fd = os.open(os.path.join(directory, name), os.O_RDWR | os.O_CREAT, 0o600)
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX if wait else fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        os.close(fd)
-        return None
-    except OSError:
-        os.close(fd)
-        raise
-    return fd
-
-
-def take_shares(directory: str, prefix: str, wanted: int, total: int, sleep: Callable[[float], None]) -> None:
-    """Lock `wanted` of the `total` files `<prefix>-<i>`, leaving their
-    descriptors open and inheritable, and wait while too few are free."""
-    pending = [f"{prefix}-{i}" for i in range(total)]
-    held = 0
-    said = False
-    while True:
-        for name in list(pending):
-            fd = lock(directory, name, wait=False)
-            if fd is None:
-                continue
-            os.set_inheritable(fd, True)
-            pending.remove(name)
-            held += 1
-            if held == wanted:
-                return
-        if not said:
-            print(f"run_heavy.py: waiting for {wanted} {prefix} shares of {total}", file=sys.stderr)
-            said = True
-        sleep(POLL_SECONDS)
-
-
-def swap_in_rate_blocks(previous: Tuple[int, float]) -> Tuple[Optional[str], Tuple[int, float]]:
-    """The reason the swap-ins since the reading `previous` hold a call, or
-    None, and the reading now."""
-    swapins = counters()[0]
-    now = time.monotonic()
-    rate = (swapins - previous[0]) / (now - previous[1])
-    reason = f"swap-ins: {rate:.0f} pages a second, over {SWAP_IN_RATE}" if rate > SWAP_IN_RATE else None
-    return reason, (swapins, now)
-
-
-def wait_for_machine(sleep: Callable[[float], None] = time.sleep) -> None:
-    """Return once the memory pressure level is normal and the swap-in rate
-    over one poll is at most `SWAP_IN_RATE`."""
-    try:
-        reading = (counters()[0], time.monotonic())
-        said = False
-        while True:
-            sleep(POLL_SECONDS)
-            level = pressure_level()
-            reason, reading = swap_in_rate_blocks(reading)
-            if level in PRESSURE_LEVELS:
-                reason = f"memory pressure: level {level}"
-            if reason is None:
-                return
-            if not said:
-                print(f"run_heavy.py: waiting for {reason}", file=sys.stderr)
-                said = True
-    except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
-        raise Refusal(f"cannot read the memory load from vm_stat and sysctl: {error!r}")
-
-
-def acquire(cpus: int, gib: int, cpu_total: int, gib_total: int) -> None:
-    """Hold `cpus` CPU shares and `gib` memory shares, once the memory load
-    allows, with the descriptors left open for the command to inherit."""
-    directory = share_dir()
-    try:
-        os.makedirs(directory, exist_ok=True)
-        turnstile = lock(directory, TURNSTILE, wait=False)
-        if turnstile is None:
-            print("run_heavy.py: waiting for the calls before this one", file=sys.stderr)
-            turnstile = lock(directory, TURNSTILE, wait=True)
-        assert turnstile is not None
-        take_shares(directory, "cpu", cpus, cpu_total, time.sleep)
-        take_shares(directory, "gib", gib, gib_total, time.sleep)
-    except OSError as error:
-        raise Refusal(f"share directory {directory}: {error}")
-    wait_for_machine()
-    os.close(turnstile)
+        given[option] = value
+    return Options(
+        count("--cpus", given["--cpus"]) if "--cpus" in given else None,
+        count("--gib", given["--gib"]) if "--gib" in given else None,
+        need(given["--need"]) if "--need" in given else DEFAULT_NEED,
+        minutes(given["--minutes"]) if "--minutes" in given else DEFAULT_MINUTES,
+        count("--wait", given["--wait"]) if "--wait" in given else None,
+        rest)
 
 
 def granted(request: Optional[int], parent: str) -> int:
@@ -228,29 +169,52 @@ def not_started(program: str) -> Optional[int]:
     return NOT_EXECUTABLE if os.sep in program and os.path.exists(program) else NOT_FOUND
 
 
+def say(line: str) -> None:
+    print(f"run_heavy.py: {line}", file=sys.stderr)
+
+
+def show_queue(args: List[str]) -> int:
+    if args:
+        raise Refusal(f"{QUEUE} takes no argument, not {args[0]!r}")
+    registry = heavy_client.queue(heavy_protocol.heavy_dir())
+    if registry is None:
+        print("no daemon runs, so no job holds a share")
+    else:
+        print(heavy_client.queue_text(registry, time.time()))
+    return 0
+
+
+def change_need(args: List[str]) -> int:
+    if len(args) != 2 or not args[0].isdigit() or int(args[0]) < 1:
+        raise Refusal(f"{NEED} takes a pid and a need: {NEED} <pid> now|soon|idle")
+    print(heavy_client.change_need(heavy_protocol.heavy_dir(), int(args[0]), need(args[1]).value))
+    return 0
+
+
 def run(argv: List[str]) -> int:
     """Replace this process with the command; return the exit status of a
     call that did not start it."""
-    asked_cpus, asked_gib, command = parse(argv)
+    if argv[:1] == [QUEUE]:
+        return show_queue(argv[1:])
+    if argv[:1] == [NEED]:
+        return change_need(argv[1:])
+    options = parse(argv)
+    command = options.command
     if not command:
         raise Refusal("no command given")
     if (status := not_started(command[0])) is not None:
-        print(f"run_heavy.py: {command[0]}: " + ("not found" if status == NOT_FOUND else "not executable"),
-              file=sys.stderr)
+        say(f"{command[0]}: " + ("not found" if status == NOT_FOUND else "not executable"))
         return status
     if shutil.which("taskpolicy") is None:
         raise Refusal("taskpolicy is not found")
     parent = os.environ.get(SHARE_ENV)
     if parent is not None:
-        cpus = granted(asked_cpus, parent)
+        cpus = granted(options.cpus, parent)
     else:
-        cpu_total, gib_total = budget()
-        cpus = min(asked_cpus or 1, cpu_total)
-        gib = min(asked_gib or 1 + cpus, gib_total)
-        if (cpus, gib) != (asked_cpus or 1, asked_gib or 1 + cpus):
-            print(f"run_heavy.py: cut to the budget: {cpus} CPUs and {gib} GiB of {cpu_total} and {gib_total}",
-                  file=sys.stderr)
-        acquire(cpus, gib, cpu_total, gib_total)
+        cpus = heavy_client.acquire(heavy_protocol.heavy_dir(), {
+            "op": "acquire", "version": heavy_protocol.VERSION, "pid": os.getpid(), "cpus": options.cpus,
+            "gib": options.gib, "need": options.need.value, "minutes": options.minutes, "wait": options.wait,
+            "command": shlex.join(command)}, say)
     os.environ[SHARE_ENV] = str(cpus)
     for name in POOL_ENVS:
         os.environ[name] = str(bounded(os.environ.get(name), cpus))
@@ -270,7 +234,7 @@ def main(argv: List[str]) -> int:
     try:
         return run(argv)
     except Refusal as refusal:
-        print(f"run_heavy.py: {refusal}", file=sys.stderr)
+        say(str(refusal))
         return NOT_RUN
     except KeyboardInterrupt:
         return 130

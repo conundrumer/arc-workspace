@@ -1,0 +1,438 @@
+#!/usr/bin/python3
+"""The resource daemon: one process on the machine that grants the CPUs and
+memory of the machine to the heavy commands of `scripts/run_heavy.py`, counts
+what the sessions run outside it, kills under memory pressure, and tells the
+owning session what it did.
+
+`run_heavy.py` starts it where none runs. It runs while a Claude Code session
+runs or a job holds a share, and exits `IDLE_EXIT_SECONDS` after neither does.
+`scripts/heavy_protocol.py` gives its files, its socket and the registry,
+`scripts/heavy_core.py` what it decides, and `scripts/heavy_scheduler.py` and
+`scripts/heavy_enforcer.py` the rules it applies. This module reads the
+machine, performs each effect, and serves the socket.
+
+It reads the machine every `SAMPLE_SECONDS` (`FAST_SAMPLE_SECONDS` while the
+memory pressure is over normal): `ps` for the processes, the sessions' files
+for the sessions, and `proc_pid_rusage` for the footprint and CPU time of the
+processes of sessions and jobs, and for the footprint of each other process, read
+again each `OUTSIDE_SECONDS`. A job's pid is polled each `LOOP_SECONDS`, so
+a share is free as soon as its command ends.
+
+Each grant, adoption, overrun, kill, reap, message and refusal is a line of
+JSON in `daemon.log` under the directory, with its reason, owner and figures.
+A kill signals only a process that still has the start the daemon recorded for
+it. A message is one line, `{"type":"user","message":{"role":"user","content":<text>}}`,
+written to the socket `<claude pid>.sock` of the owning session in
+`/tmp/cc-socks` (`ARC_HEAVY_SOCKS` sets that directory, for the tests).
+
+A restarted daemon reads the registry, and keeps each job whose process runs
+with the recorded start, whatever the budget."""
+
+from __future__ import annotations
+
+import contextlib
+import fcntl
+import json
+import os
+import selectors
+import signal
+import socket
+import subprocess
+import sys
+import time
+from typing import Any, Dict, List, Optional, Tuple
+
+import heavy_protocol
+from heavy_core import (Accepted, Core, Effect, GiveUp, Grant, Log, Proc, Refuse, Sample, SetClass,
+                        Signal as SendSignal)
+from heavy_model import Amount, Kind, Need, Waiter, lane_of
+from heavy_notices import message_line
+from heavy_protocol import VERSION, Refusal
+from heavy_scheduler import resolve
+from machine_readings import PRESSURE_LEVELS, budget, counters, pressure_level
+from process_readings import NO_SESSION, harness_sessions, owners, process_started, rows, usage
+
+SAMPLE_SECONDS = 5
+FAST_SAMPLE_SECONDS = 1
+LOOP_SECONDS = 0.25
+IDLE_EXIT_SECONDS = 60
+SOCKET_TIMEOUT = 2.0
+OUTSIDE_SECONDS = 15
+LOG_ROTATE_BYTES = 5 << 20
+TASKPOLICY_CLASS = "utility"
+READ_ERRORS = (OSError, ValueError, KeyError, IndexError, subprocess.CalledProcessError)
+
+
+class Client:
+    """A connection of a client, which has at most one waiting request."""
+
+    def __init__(self, conn: socket.socket) -> None:
+        self.conn = conn
+        self.buffer = b""
+        self.waiter: Optional[Waiter] = None
+
+    def send(self, message: Dict[str, Any]) -> None:
+        try:
+            self.conn.sendall(heavy_protocol.line(message))
+        except OSError:
+            pass
+
+
+class Daemon:
+    def __init__(self, directory: str) -> None:
+        self.directory = directory
+        self.core = Core(Amount(1, 1))
+        self.clients: Dict[int, Client] = {}
+        self.next_id = 1
+        self.claude: Dict[int, str] = {}
+        self.swap_before: Optional[Tuple[int, float]] = None
+        self.others: Dict[int, Tuple[float, Optional[int]]] = {}
+        self.others_at = 0.0
+        self.dirty = True
+        self.last_active = time.time()
+        self.selector = selectors.DefaultSelector()
+
+    def log(self, event: str, fields: Dict[str, Any]) -> None:
+        record = {"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "event": event, **fields}
+        with open(os.path.join(self.directory, heavy_protocol.LOG), "a") as f:
+            f.write(json.dumps(record) + "\n")
+
+    def rotate_log(self) -> None:
+        path = os.path.join(self.directory, heavy_protocol.LOG)
+        if os.path.exists(path) and os.path.getsize(path) > LOG_ROTATE_BYTES:
+            os.replace(path, path + ".1")
+
+    def apply(self, effects: List[Effect]) -> None:
+        for effect in effects:
+            if isinstance(effect, Log):
+                self.log(effect.event, effect.fields)
+            elif isinstance(effect, Accepted):
+                self.say(effect.waiter, {"status": "accepted", "cpus": effect.waiter.ask.cpus,
+                                         "gib": effect.waiter.ask.gib, "cut": effect.cut,
+                                         "limit_cpus": effect.cap.cpus, "limit_gib": effect.cap.gib})
+            elif isinstance(effect, Grant):
+                self.say(effect.waiter, {"status": "granted"})
+                self.dirty = True
+            elif isinstance(effect, Refuse):
+                self.say(effect.waiter, {"status": "refused", "reason": effect.reason})
+            elif isinstance(effect, GiveUp):
+                self.say(effect.waiter, {"status": "timeout", "eta": effect.eta,
+                                         "reason": "no share was free within the wait"})
+            elif isinstance(effect, SendSignal):
+                self.send_signal(effect)
+            elif isinstance(effect, SetClass):
+                self.set_class(effect.pid)
+
+    def say(self, waiter: Waiter, message: Dict[str, Any]) -> None:
+        client = self.clients.get(waiter.id)
+        if client is not None:
+            client.send(message)
+
+    def send_signal(self, effect: SendSignal) -> None:
+        """Send the signal where the process still has the recorded start."""
+        try:
+            started = process_started(effect.pid)
+            if effect.pid == os.getpid() or started is None or abs(started - effect.start) > 1:
+                self.log("signal-skipped", {"pid": effect.pid, "signal": effect.number})
+                return
+            os.kill(effect.pid, effect.number)
+        except OSError as error:
+            self.log("signal-failed", {"pid": effect.pid, "signal": effect.number, "error": repr(error)})
+
+    def set_class(self, pid: int) -> None:
+        try:
+            subprocess.run(["taskpolicy", "-c", TASKPOLICY_CLASS, "-p", str(pid)], capture_output=True, timeout=5)
+        except (OSError, subprocess.SubprocessError) as error:
+            self.log("class-failed", {"pid": pid, "error": repr(error)})
+
+    def post(self, claude: int, text: str) -> None:
+        path = os.path.join(heavy_protocol.socks_dir(), f"{claude}.sock")
+        try:
+            with socket.socket(socket.AF_UNIX) as conn:
+                conn.settimeout(SOCKET_TIMEOUT)
+                conn.connect(path)
+                conn.sendall(message_line(text).encode())
+        except OSError as error:
+            self.log("message-failed", {"claude": claude, "error": repr(error)})
+        else:
+            self.log("message", {"claude": claude, "text": text})
+
+    def read_budget(self) -> Amount:
+        try:
+            cpus, gib = budget()
+        except (OSError, ValueError, subprocess.CalledProcessError) as error:
+            raise Refusal(f"cannot read the budget from sysctl: {error!r}")
+        if min(cpus, gib) < 1:
+            raise Refusal(f"the machine's budget is {cpus} CPUs and {gib} GiB")
+        return Amount(cpus, gib)
+
+    def sample(self, now: float) -> Sample:
+        """Read the machine."""
+        table = rows()
+        found = harness_sessions()
+        if found is not None:
+            self.claude = found
+        owner = owners(table, self.claude)
+        wanted = {pid for pid, session in owner.items() if session != NO_SESSION}
+        for job in self.core.jobs.values():
+            wanted |= set(job.members) | {job.pid}
+        refresh = now - self.others_at >= OUTSIDE_SECONDS
+        procs: Dict[int, Proc] = {}
+        for row in table:
+            if row.pid in wanted:
+                read = usage(row.pid)
+                procs[row.pid] = Proc(row.pid, row.ppid, row.start, row.command, owner[row.pid],
+                                      read[0] if read else None, read[1] if read else None)
+                continue
+            cached = self.others.get(row.pid)
+            if refresh or cached is None or cached[0] != row.start:
+                read = usage(row.pid)
+                cached = self.others[row.pid] = (row.start, read[0] if read else None)
+            procs[row.pid] = Proc(row.pid, row.ppid, row.start, row.command, owner[row.pid], cached[1], None)
+        if refresh:
+            self.others_at = now
+            self.others = {pid: found for pid, found in self.others.items() if pid in procs}
+        alive = set()
+        for job in self.core.jobs.values():
+            if job.kind is not Kind.GATED:
+                continue
+            started = process_started(job.pid)
+            if started is None or started != int(job.start):
+                continue
+            alive.add(job.pid)
+            if job.pid not in procs:
+                read = usage(job.pid)
+                procs[job.pid] = Proc(job.pid, 0, float(started), job.command, job.owner,
+                                      read[0] if read else None, read[1] if read else None)
+        swapins = counters()[0]
+        swap_rate = None
+        if self.swap_before is not None:
+            swap_rate = (swapins - self.swap_before[0]) / max(now - self.swap_before[1], 1e-3)
+        self.swap_before = (swapins, now)
+        return Sample(now, procs, dict(self.claude), frozenset(alive), pressure_level(), swap_rate)
+
+    def tick(self, now: float) -> None:
+        try:
+            self.core.total = self.read_budget()
+            sample = self.sample(now)
+        except Refusal as refusal:
+            self.fail(str(refusal))
+            return
+        except READ_ERRORS as error:
+            self.fail(f"cannot read the memory load from vm_stat, sysctl and ps: {error!r}")
+            return
+        self.core.fault = None
+        self.apply(self.core.tick(sample, now))
+        self.dirty = True
+
+    def fail(self, reason: str) -> None:
+        """Refuse each waiting request, and every request until a reading succeeds."""
+        if self.core.fault is None:
+            self.log("fault", {"reason": reason})
+        self.core.fault = reason
+        self.apply(self.core.refuse_all(reason))
+
+    def owner_of(self, pid: int) -> str:
+        table = rows()
+        found = harness_sessions() or self.claude
+        return owners(table, found).get(pid, NO_SESSION)
+
+    def acquire(self, client: Client, request: Dict[str, Any], now: float) -> None:
+        pid = request["pid"]
+        started = process_started(pid)
+        if started is None:
+            raise Refusal(f"pid {pid} does not run")
+        need = Need(request["need"])
+        minutes = float(request["minutes"])
+        owner = self.owner_of(pid)
+        ask, cap, cut = resolve(request["cpus"], request["gib"], lane_of(minutes), need, self.core.available())
+        arrived = min(float(request.get("since", now)), now)
+        wait = request["wait"]
+        waiter = Waiter(self.next_id, pid, started, owner, need, ask, minutes, request["command"], arrived,
+                        None if wait is None else arrived + float(wait), request["cpus"], request["gib"])
+        self.next_id += 1
+        client.waiter = waiter
+        self.clients[waiter.id] = client
+        self.last_active = now
+        self.apply(self.core.submit(waiter, cut, cap))
+        self.apply(self.core.admit(now))
+        if waiter.id in self.core.waiters:
+            client.send({"status": "waiting", **self.core.wait_info(waiter, now)})
+        self.dirty = True
+
+    def change_need(self, client: Client, request: Dict[str, Any], now: float) -> None:
+        waiter = self.core.set_need(request["pid"], Need(request["need"]), now)
+        if waiter is None:
+            raise Refusal(f"no request of pid {request['pid']} waits")
+        self.log("need", {"pid": waiter.pid, "owner": waiter.owner, "need": waiter.need.value})
+        self.apply(self.core.admit(now))
+        waiting = waiter.id in self.core.waiters
+        client.send({"status": "changed", "need": waiter.need.value, "waiting": waiting,
+                     **(self.core.wait_info(waiter, now) if waiting else {})})
+        self.dirty = True
+
+    def handle(self, client: Client, text: str, now: float) -> None:
+        try:
+            request = json.loads(text)
+            if request.get("version") != VERSION:
+                raise Refusal(f"the daemon speaks protocol {VERSION}, this call {request.get('version')}")
+            if request.get("op") == "queue":
+                client.send({"status": "queue", "registry": self.registry(now)})
+            elif request.get("op") == "acquire":
+                self.acquire(client, request, now)
+            elif request.get("op") == "need":
+                self.change_need(client, request, now)
+            else:
+                raise Refusal(f"no operation {request.get('op')!r}")
+        except Refusal as refusal:
+            self.refuse(client, text, str(refusal))
+        except (ValueError, KeyError, TypeError) as error:
+            self.refuse(client, text, f"bad request: {error!r}")
+        except READ_ERRORS as error:
+            self.refuse(client, text, f"cannot read the machine: {error!r}")
+
+    def refuse(self, client: Client, text: str, reason: str) -> None:
+        """Log a refusal with its reason, the owner of the request's pid (`-` where the request
+        gives none or the table cannot be read), and the figures it asks, and tell the client."""
+        figures: Dict[str, Any] = {}
+        owner = NO_SESSION
+        try:
+            asked = json.loads(text)
+            figures = {key: asked.get(key) for key in ("op", "pid", "cpus", "gib", "need", "minutes")}
+            owner = self.owner_of(asked["pid"])
+        except (ValueError, KeyError, TypeError, AttributeError, *READ_ERRORS):
+            pass
+        self.log("refusal", {"reason": reason, "owner": owner, **figures, "request": text[:300]})
+        client.send({"status": "refused", "reason": reason})
+
+    def registry(self, now: float) -> Dict[str, Any]:
+        return {**self.core.snapshot(now), "daemon": os.getpid(), "protocol": VERSION}
+
+    def close(self, client: Client) -> None:
+        if client.waiter is not None:
+            self.clients.pop(client.waiter.id, None)
+            if client.waiter.id in self.core.waiters:
+                self.core.withdraw(client.waiter.id)
+                self.dirty = True
+        try:
+            self.selector.unregister(client.conn)
+        except (KeyError, ValueError):
+            pass
+        client.conn.close()
+
+    def read(self, client: Client, now: float) -> None:
+        try:
+            data = client.conn.recv(65536)
+        except OSError:
+            data = b""
+        if not data:
+            self.close(client)
+            return
+        client.buffer += data
+        while b"\n" in client.buffer:
+            text, _, client.buffer = client.buffer.partition(b"\n")
+            self.handle(client, text.decode(errors="replace"), now)
+
+    def accept(self, server: socket.socket) -> None:
+        conn, _ = server.accept()
+        conn.settimeout(SOCKET_TIMEOUT)
+        self.selector.register(conn, selectors.EVENT_READ, Client(conn))
+
+    def restore(self) -> None:
+        try:
+            with open(os.path.join(self.directory, heavy_protocol.REGISTRY)) as f:
+                self.core.restore(json.load(f))
+        except FileNotFoundError:
+            return
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            self.log("registry-unreadable", {"error": repr(error)})
+
+    def run(self, server: socket.socket) -> None:
+        server.setblocking(False)
+        self.selector.register(server, selectors.EVENT_READ, None)
+        self.restore()
+        self.tick(time.time())
+        next_sample = time.time() + self.sample_seconds()
+        while True:
+            for key, _ in self.selector.select(LOOP_SECONDS):
+                if key.data is None:
+                    self.accept(server)
+                else:
+                    self.read(key.data, time.time())
+            now = time.time()
+            gone = [pid for pid, job in self.core.jobs.items() if job.kind is Kind.GATED and not runs(pid)]
+            if gone:
+                self.apply(self.core.reap(gone, now))
+                self.dirty = True
+            if now >= next_sample:
+                self.tick(now)
+                next_sample = now + self.sample_seconds()
+                if self.should_exit(now):
+                    return
+            self.apply(self.core.expire(now))
+            self.apply(self.core.admit(now))
+            for claude, text in self.core.messages(now):
+                self.post(claude, text)
+            if self.dirty:
+                heavy_protocol.write_registry(self.directory, self.registry(now))
+                self.dirty = False
+
+    def sample_seconds(self) -> float:
+        return FAST_SAMPLE_SECONDS if self.core.level in PRESSURE_LEVELS else SAMPLE_SECONDS
+
+    def should_exit(self, now: float) -> bool:
+        """Whether no session runs, no job holds a share, no request waits, and none has for
+        `IDLE_EXIT_SECONDS`."""
+        if self.core.jobs or self.core.waiters or self.clients or self.claude:
+            self.last_active = now
+        return now - self.last_active >= IDLE_EXIT_SECONDS
+
+
+def runs(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def listen(directory: str) -> socket.socket:
+    path = heavy_protocol.socket_path(directory)
+    if os.path.exists(path):
+        os.unlink(path)
+    server = socket.socket(socket.AF_UNIX)
+    server.bind(path)
+    os.chmod(path, 0o600)
+    server.listen(64)
+    return server
+
+
+def main() -> int:
+    directory = heavy_protocol.heavy_dir()
+    os.makedirs(directory, exist_ok=True)
+    lock = os.open(os.path.join(directory, heavy_protocol.LOCK), os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return 0
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    daemon = Daemon(directory)
+    daemon.rotate_log()
+    server = listen(directory)
+    ended = False
+    try:
+        daemon.run(server)
+        ended = True
+    finally:
+        server.close()
+        for path in [heavy_protocol.socket_path(directory)] + (
+                [] if not ended or daemon.core.jobs else [os.path.join(directory, heavy_protocol.REGISTRY)]):
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(path)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

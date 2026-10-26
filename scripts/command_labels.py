@@ -33,7 +33,8 @@ WRAPPER_OPTIONS = {"timeout": frozenset({"-s", "-k"}),
                    "env": frozenset({"-u", "--unset", "-C", "--chdir", "-S",
                                      "--split-string"}),
                    "uv": UV_OPTIONS, "run": UV_OPTIONS,
-                   "run_heavy.py": frozenset({"--cpus", "--gib"})}
+                   "run_heavy.py": frozenset({"--cpus", "--gib", "--need", "--minutes",
+                                             "--wait"})}
 OPENERS = {"do", "then", "else", "elif", "if", "while", "until", "!", "{"}
 CLOSERS = {"for", "case", "done", "fi", "esac", "}"}
 POLL = "poll"

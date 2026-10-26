@@ -54,6 +54,7 @@ def test_a_heavy_command_outside_its_gate_or_over_its_cpus_is_refused(command):
     "bash -c 'echo hi; ls'",
     f"{GATE} cargo build",
     f"{GATE} --cpus 4 cargo build -j 4",
+    f"{GATE} --need now --minutes 10 --wait 60 --cpus 4 cargo build -j 4",
     f"timeout 60 {GATE} --cpus 8 --gib 12 uv run python -m arclog_convert.convert --workers 8",
     f"{GATE} --cpus 3 bash -c 'cd x; python detectors.py cache --workers 3; cargo test'",
     f"{GATE} bash -c 'cargo test --jobs=1'",

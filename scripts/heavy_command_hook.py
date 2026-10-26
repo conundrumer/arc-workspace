@@ -38,8 +38,8 @@ HEAVY: dict[str, frozenset[str] | None] = {
 """For each heavy program, the subcommands that make a call heavy, or `ANY`."""
 WORKER_OPTIONS = frozenset({"--workers", "--jobs", "--threads"})
 NOT_RUNS = frozenset({"--help", "--version"})
-GATE_OPTIONS = frozenset({"--cpus", "--gib"})
-FORM = "<checkout>/scripts/run_heavy.py [--cpus <n>] [--gib <g>] <command>"
+GATE_OPTIONS = frozenset({"--cpus", "--gib", "--need", "--minutes", "--wait"})
+FORM = "<checkout>/scripts/run_heavy.py [--cpus <n>] [--gib <g>] [--need now|soon|idle] [--minutes <m>] [--wait <seconds>] <command>"
 
 
 @dataclass(frozen=True)
