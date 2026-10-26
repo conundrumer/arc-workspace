@@ -114,20 +114,24 @@ impl<'e, 'a> Driver<'e, 'a> {
         }
     }
 
-    /// The rows of the `DET` relation `name`: the stored rows of its record,
-    /// typed by its columns, or the rows the assignment gives it. A `DET` that
-    /// no record and no assignment gives takes its one value, as
-    /// [`Driver::one_value`] gives it.
+    /// The rows of the `DET` relation `name`: the stored rows of its `assign`
+    /// or of its record, typed by its columns, or the rows the assignment
+    /// gives it. A `DET` that none of these gives takes its one value, as
+    /// [`Driver::one_value`] gives it. A `DET` by its clauses
+    /// ([`Driver::is_by_clauses`]) reads no record at stored records.
     pub(super) fn parameter(&self, relation: &GraphRelation, name: &ProgramRelation) -> Outcome<RelationValue> {
         self.determined.set(self.determined.get() + 1);
         let evaluation = self.evaluation;
         let form = self.program().form_of(relation.node);
         let fault = |message: String| RunFault { message: message.into(), form: form.clone() };
         let value = match evaluation.parameters.source() {
-            ParameterSource::Stored(stored) => match stored.get(name) {
-                Some(value) => value,
-                None => return self.one_value(relation),
-            },
+            ParameterSource::Stored { records, assigns } => {
+                let record = if self.is_by_clauses(relation) { None } else { records.get(name) };
+                match assigns.get(name).or(record) {
+                    Some(value) => value,
+                    None => return self.one_value(relation),
+                }
+            }
             ParameterSource::Determined(assigned) => {
                 return match assigned.get(name) {
                     Some(rows) => Ok(RelationValue::Rows(rows.clone())),
@@ -146,8 +150,24 @@ impl<'e, 'a> Driver<'e, 'a> {
         Ok(RelationValue::Rows(Arc::new(join::one_part(set))))
     }
 
+    /// Whether the node of `relation` is a `DET` by its clauses: each of its
+    /// forms is a `DET` clause with a body, no proposer and no `ONE` mark, so
+    /// that its rows are its clause's, as [`Evaluation::domain`] gives them.
+    fn is_by_clauses(&self, relation: &GraphRelation) -> bool {
+        let root = NodeRef::Program(self.program().program.value());
+        let forms = self.program().forms_of(relation.node);
+        !forms.is_empty()
+            && forms.iter().all(|at| {
+                let Some(NodeRef::Clause(clause)) = node_at(root, at) else { return false };
+                clause.keyword == ClauseKeyword::Det
+                    && !clause.body.value().conjuncts.is_empty()
+                    && clause.proposers.is_empty()
+                    && clause.ones.is_empty()
+            })
+    }
+
     /// The one value in the domain of the `DET` relation `relation`, for a
-    /// `DET` that neither a stored record nor an assignment gives.
+    /// `DET` that no stored value and no assignment gives.
     fn one_value(&self, relation: &GraphRelation) -> Outcome<RelationValue> {
         let form = self.program().form_of(relation.node);
         let fault = |message: &str| RunFault { message: message.into(), form: form.clone() };

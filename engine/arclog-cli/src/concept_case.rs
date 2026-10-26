@@ -1,5 +1,6 @@
 //! The concept case of a solver of the corpus, checked and set up for its
-//! run on its task at its stored `param` records, which `lib-compare`,
+//! run on its task at its stored `param` records, with each `DET` by its
+//! clauses read from its clause, which `lib-compare`,
 //! `speed` and `determinism` run, and the parts of that
 //! setup that `determine` shares for each base case: the limits of a run.
 
@@ -23,8 +24,9 @@ use arclog::stream::corpus::check_case;
 use arclog_constructions::shared as constructions;
 
 /// The concept case of a solver, set up for its run at its stored `param`
-/// records, over the table of the lib's constructions, with the task's pairs
-/// as the judge reads them.
+/// records, with each `DET` by its clauses read from its clause, over the
+/// table of the lib's constructions, with the task's pairs as the judge reads
+/// them.
 pub(crate) struct ConceptCase<'a> {
     pub(crate) evaluation: Evaluation<'a>,
     pub(crate) judged: &'a JudgedTask,

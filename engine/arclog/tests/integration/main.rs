@@ -50,6 +50,7 @@ mod scope_checks;
 mod scope_types;
 mod shared_form_content;
 mod site_column_once;
+mod stored_det_reading;
 mod token_stream;
 mod traces;
 mod verdicts_exclude;
