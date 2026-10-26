@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 use super::ir::{Argument, Arguments, ClauseIr, Comparison, Filter, IrNode, Operand, Variable};
 use super::plan::{
-    algebra_relation, bound_variables, mode_holds, variable_order, NodeSize, RelationSizes,
+    algebra_relation, bound_variables, kept_nodes, mode_holds, variable_order, NodeSize, RelationSizes,
     VariableOrder,
 };
 use super::{Caps, Limits, ReachedBound};
@@ -234,16 +234,19 @@ pub fn join_in(
     bound: &[(Variable, TermId)],
     budget: &mut Budget<'_>,
 ) -> Result<Relation, ReachedBound> {
-    join_ordered(memo, clause, &|_| order.clone(), inputs, registry, bound, budget)
+    join_ordered(memo, clause, &|_| (order.clone(), (0..clause.nodes.len()).collect()), inputs, registry, bound, budget)
 }
 
-/// The relation of `clause` as [`join_in`] gives it, in the order that
-/// `order_at` gives at the variables `bound` binds, which is called when the
-/// memo holds no plan for those variables.
+/// The relation of `clause` as [`join_in`] gives it, in the order and over
+/// the nodes that `order_at` gives at the variables `bound` binds, which is
+/// called when the memo holds no plan for those variables. A column that no
+/// node joined holds stands as a part of its own, whose values are the
+/// column's type's constants where the type has them, and otherwise the zero
+/// term.
 fn join_ordered(
     memo: &SearchMemo,
     clause: &ClauseIr,
-    order_at: &dyn Fn(&[Variable]) -> VariableOrder,
+    order_at: &dyn Fn(&[Variable]) -> (VariableOrder, Vec<usize>),
     inputs: &JoinInputs,
     registry: &crate::registry::Registry,
     bound: &[(Variable, TermId)],
@@ -255,7 +258,25 @@ fn join_ordered(
         let rows = Search::new(clause, &part.plan, inputs, registry, memo, bound).run(&part.projected, budget)?;
         found.push(RelationPart { columns: part.columns.clone().into(), rows });
     }
+    found.extend(unheld_parts(clause, &plan, registry));
     Ok(product(clause, found))
+}
+
+/// A part of one column for each column of `clause` that no part of `plan`
+/// holds, as [`join_ordered`] gives.
+fn unheld_parts(clause: &ClauseIr, plan: &ClausePlan, registry: &Registry) -> Vec<RelationPart> {
+    let held: Vec<ColumnIndex> = plan.parts.iter().flat_map(|part| part.columns.iter().copied()).collect();
+    let unheld = (0..clause.columns.len()).map(|c| ColumnIndex(c as u16)).filter(|column| !held.contains(column));
+    unheld
+        .map(|column| {
+            let ty = &clause.variables[usize::from(clause.columns[usize::from(column.0)].0)].ty;
+            let mut rows = RowSet::empty(1);
+            for value in domain(registry, ty).unwrap_or_else(|| vec![TermId::from_encoding(0)]) {
+                rows.insert([value].into());
+            }
+            RelationPart { columns: [column].into(), rows }
+        })
+        .collect()
 }
 
 /// The relation of `clause` whose parts are `parts`: their product. A part
@@ -591,17 +612,16 @@ pub struct SearchMemo {
 
 impl SearchMemo {
     /// The plan of `clause` with `bound` bound before its search, made at
-    /// its first use in the order that `order_at` gives at the sorted
-    /// variables of `bound`.
-    fn plan(&self, clause: &ClauseIr, order_at: &dyn Fn(&[Variable]) -> VariableOrder, inputs: &JoinInputs, bound: &[(Variable, TermId)]) -> Rc<ClausePlan> {
+    /// its first use in the order, over the nodes, that `order_at` gives at
+    /// the sorted variables of `bound`.
+    fn plan(&self, clause: &ClauseIr, order_at: &dyn Fn(&[Variable]) -> (VariableOrder, Vec<usize>), inputs: &JoinInputs, bound: &[(Variable, TermId)]) -> Rc<ClausePlan> {
         let mut variables: Vec<Variable> = bound.iter().map(|&(variable, _)| variable).collect();
         variables.sort_by_key(|variable| variable.0);
         let key = (std::ptr::from_ref(clause) as usize, variables);
         if let Some(plan) = self.tables.borrow().plans.get(&key) {
             return plan.clone();
         }
-        let order = order_at(&key.1);
-        let nodes: Vec<usize> = (0..clause.nodes.len()).collect();
+        let (order, nodes) = order_at(&key.1);
         let parts = parts(clause, &nodes, &|node| node)
             .into_iter()
             .map(|part| PartPlan {
@@ -839,8 +859,13 @@ impl<'c> Search<'c> {
 
     /// The node and the values of the first union that exports `variable`,
     /// each branch joined at the bound values of its columns, or `None`
-    /// where no union exports it. Each value is a row of a branch, so the
-    /// union holds at it.
+    /// where no union exports it. Where a column of a branch is unbound, the
+    /// branch is joined without the nodes that hold a column it does not
+    /// ground, so the values are those of the branches at the bound columns:
+    /// a superset of the union's values at a binding of its columns, which the
+    /// union's check at the rank of the last of its columns holds to the whole
+    /// branches. Where no column is unbound, each value is a row of a branch,
+    /// so the union holds at it.
     fn union_values(&self, variable: Variable, budget: &mut Budget<'_>) -> Result<Option<(usize, Vec<TermId>)>, ReachedBound> {
         let found = self.plan.unions.iter().find_map(|&node| match &self.clause.nodes[node] {
             IrNode::Or(union) if union.exported.contains(&variable) => Some((node, union)),
@@ -849,12 +874,6 @@ impl<'c> Search<'c> {
         let Some((node, union)) = found else { return Ok(None) };
         let mut values = Vec::new();
         for (index, branch) in union.branches.iter().enumerate() {
-            for column in branch.columns.iter() {
-                assert!(
-                    union.exported.contains(column) || self.binding[usize::from(column.0)].is_some(),
-                    "a union binds its exports once the variables it reads from its clause are bound"
-                );
-            }
             let at = branch.columns.iter().position(|column| *column == variable).expect("each branch holds each export");
             each_row(&*self.branch(node, index, branch, budget)?, &mut |row| values.push(row[at]));
         }
@@ -875,9 +894,9 @@ impl<'c> Search<'c> {
     }
 
     /// The relation of `branch`, the branch at `index` of the union of the
-    /// node at `node`, at the bound values of its columns. The memo serves
-    /// a branch joined at those values before, and counts what its join
-    /// counted.
+    /// node at `node`, at the bound values of its columns, without the nodes
+    /// that [`kept_nodes`] leaves out. The memo serves a branch joined at
+    /// those values before, and counts what its join counted.
     fn branch(&self, node: usize, index: usize, branch: &ClauseIr, budget: &mut Budget<'_>) -> Result<Arc<Relation>, ReachedBound> {
         let NodeInput::Clauses(bodies) = &self.inputs.0[node] else { unreachable!("the inputs of a union's branches") };
         let bound: Vec<(Variable, TermId)> =
@@ -887,7 +906,7 @@ impl<'c> Search<'c> {
             budget.replay(&charges)?;
             return Ok(relation);
         }
-        let order_at = |bound: &[Variable]| variable_order(branch, &sizes(&bodies[index]), bound);
+        let order_at = |bound: &[Variable]| (variable_order(branch, &sizes(&bodies[index]), bound), kept_nodes(branch, bound));
         let (relation, charges) = budget.logged(|budget| join_ordered(self.memo, branch, &order_at, &bodies[index], self.registry, &key.1, budget))?;
         let relation = Arc::new(relation);
         self.memo.keep_branch(key, (relation.clone(), charges));

@@ -19,7 +19,13 @@
 //! sequence of the smaller estimates, then of the canonical positions. A
 //! clause with more than 12 choices takes its choices in order of estimate
 //! then canonical position, each export of a union that no atom or
-//! comparison binds once its union grounds.
+//! comparison binds once its union grounds. Where no variable left meets
+//! that rule, as where a union's branch reads a variable that only another
+//! union's exports ground, the order places the first export of a union that
+//! grounds with the nodes it leaves out: each export of the union, and each variable
+//! that a kept node holds, is grounded in every branch, and a node is left out
+//! where it holds a column that is neither placed, grounded nor of an
+//! orientation type.
 
 use super::join::node_variables;
 use super::ir::{Argument, Arguments, ClauseIr, IrNode, Operand, Union, Variable};
@@ -168,12 +174,20 @@ fn follow(clause: &ClauseIr, placed: &mut [bool], order: &mut Vec<Variable>) {
 
 /// The first variable of `wanted` that is not placed, in index order, other
 /// than one that a union binds and does not yet [`grounds`]; where every
-/// variable left is of that kind, the first of them, so the order holds every
+/// variable left is of that kind, the first whose union [`grounds_leaving`],
+/// the case of a clause whose unions ground one another's columns; and
+/// where none is, the first variable left. The last case is one that no
+/// clause which passes the whole-form check reaches. The order holds every
 /// variable of `wanted`.
 fn next_left(wanted: &[bool], placed: &[bool], binders: &[Option<(usize, &Union)>]) -> Option<Variable> {
     let left = |v: &usize| wanted[*v] && !placed[*v];
-    let ready = |v: &usize| binders[*v].is_none_or(|(_, union)| grounds(union, placed));
-    (0..wanted.len()).filter(left).find(ready).or_else(|| (0..wanted.len()).find(left)).map(|v| Variable(v as u16))
+    let ready = |v: &usize, holds: fn(&Union, &[bool]) -> bool| binders[*v].is_none_or(|(_, union)| holds(union, placed));
+    (0..wanted.len())
+        .filter(left)
+        .find(|v| ready(v, grounds))
+        .or_else(|| (0..wanted.len()).filter(left).find(|v| ready(v, grounds_leaving)))
+        .or_else(|| (0..wanted.len()).find(left))
+        .map(|v| Variable(v as u16))
 }
 
 /// Whether `union` can give its exports at `placed`, the placed variables of
@@ -185,40 +199,85 @@ fn next_left(wanted: &[bool], placed: &[bool], binders: &[Option<(usize, &Union)
 /// where that union grounds at the variables grounded so far, and a variable
 /// of an orientation type, whose values are finite.
 fn grounds(union: &Union, placed: &[bool]) -> bool {
+    let reads_placed = |branch: &ClauseIr| branch.columns.iter().all(|column| union.exported.contains(column) || placed[usize::from(column.0)]);
+    union.branches.iter().all(reads_placed) && grounds_leaving(union, placed)
+}
+
+/// Whether `union` can give its exports at `placed` from its branches with
+/// the nodes that [`kept_nodes`] leaves out: each branch, with its columns
+/// among the placed variables bound, grounds every export of the union and
+/// every variable that a kept node holds, as [`grounds`] gives. It holds
+/// wherever `grounds` does, since a branch that has each column placed or
+/// grounded leaves out no node. Where a branch reads a column that is neither
+/// placed nor grounded, the union's check, at the rank of the last of its
+/// columns, holds a binding of the exports to the whole branch.
+fn grounds_leaving(union: &Union, placed: &[bool]) -> bool {
     union.branches.iter().all(|branch| {
-        let reads_placed = branch.columns.iter().all(|column| union.exported.contains(column) || placed[usize::from(column.0)]);
-        reads_placed && branch_grounds(branch, placed)
+        let grounding = Grounding::new(branch, placed);
+        let kept = grounding.kept_nodes();
+        union.exported.iter().copied().chain(kept.iter().flat_map(|&node| node_variables(&branch.nodes[node]))).all(|v| grounding.covers(v))
     })
 }
 
-/// Whether `branch`, with its columns among the `placed` variables bound,
-/// grounds every variable it holds, as [`grounds`] gives.
-fn branch_grounds(branch: &ClauseIr, placed: &[bool]) -> bool {
-    let mut grounded = vec![false; branch.variables.len()];
-    for column in branch.columns.iter() {
-        grounded[usize::from(column.0)] = placed[usize::from(column.0)];
+/// The nodes of `branch`, a branch of a union, that a join of it keeps at
+/// `bound`, the variables bound before the join: each node that holds no
+/// column which is neither bound, nor grounded by the branch, nor of an
+/// orientation type, as [`grounds_leaving`] gives.
+pub(super) fn kept_nodes(branch: &ClauseIr, bound: &[Variable]) -> Vec<usize> {
+    let mut placed = vec![false; branch.variables.len()];
+    for variable in bound {
+        placed[usize::from(variable.0)] = true;
     }
-    for variable in branch.nodes.iter().filter(|node| matches!(node, IrNode::Atom(_))).flat_map(bound_variables) {
-        grounded[usize::from(variable.0)] = true;
-    }
-    loop {
-        follow(branch, &mut grounded, &mut Vec::new());
-        let ready: Vec<&Union> = branch
-            .nodes
-            .iter()
-            .filter_map(|node| if let IrNode::Or(inner) = node { Some(inner) } else { None })
-            .filter(|inner| grounds(inner, &grounded))
-            .collect();
-        let mut changed = false;
-        for &export in ready.iter().flat_map(|inner| inner.exported.iter()) {
-            changed |= !std::mem::replace(&mut grounded[usize::from(export.0)], true);
+    Grounding::new(branch, &placed).kept_nodes()
+}
+
+/// The variables a branch grounds, with its columns among the placed
+/// variables bound: the atoms of the branch, then the closure over the lib
+/// modes, `=` and the inner unions that ground at the variables grounded so
+/// far.
+struct Grounding<'b> {
+    branch: &'b ClauseIr,
+    grounded: Vec<bool>,
+}
+
+impl<'b> Grounding<'b> {
+    fn new(branch: &'b ClauseIr, placed: &[bool]) -> Self {
+        let mut grounded = vec![false; branch.variables.len()];
+        for column in branch.columns.iter() {
+            grounded[usize::from(column.0)] = placed[usize::from(column.0)];
         }
-        if !changed {
-            break;
+        for variable in branch.nodes.iter().filter(|node| matches!(node, IrNode::Atom(_))).flat_map(bound_variables) {
+            grounded[usize::from(variable.0)] = true;
         }
+        loop {
+            follow(branch, &mut grounded, &mut Vec::new());
+            let ready: Vec<&Union> = branch
+                .nodes
+                .iter()
+                .filter_map(|node| if let IrNode::Or(inner) = node { Some(inner) } else { None })
+                .filter(|inner| grounds(inner, &grounded))
+                .collect();
+            let mut changed = false;
+            for &export in ready.iter().flat_map(|inner| inner.exported.iter()) {
+                changed |= !std::mem::replace(&mut grounded[usize::from(export.0)], true);
+            }
+            if !changed {
+                break;
+            }
+        }
+        Grounding { branch, grounded }
     }
-    let mut held = branch.columns.iter().copied().chain(branch.nodes.iter().flat_map(node_variables));
-    held.all(|v| grounded[usize::from(v.0)] || orientation_domain(&branch.variables[usize::from(v.0)].ty).is_some())
+
+    /// Whether `variable` is grounded or of an orientation type.
+    fn covers(&self, variable: Variable) -> bool {
+        self.grounded[usize::from(variable.0)] || orientation_domain(&self.branch.variables[usize::from(variable.0)].ty).is_some()
+    }
+
+    /// The nodes that hold no column the branch does not cover.
+    fn kept_nodes(&self) -> Vec<usize> {
+        let kept = |node: &IrNode| node_variables(node).iter().all(|v| self.covers(*v) || !self.branch.columns.contains(v));
+        (0..self.branch.nodes.len()).filter(|&node| kept(&self.branch.nodes[node])).collect()
+    }
 }
 
 /// A variable the order places by a choice of its own, with its estimate.

@@ -154,3 +154,60 @@ fn a_union_export_stands_after_the_variable_its_equal_branch_reads_and_the_join_
     // Each of the 9 cells as `Corner` with `Piece` the same cell and each of the 9 cells as `Cell`.
     assert_eq!(relation.len(), 81);
 }
+
+/// A body of two unions and a lib atom, shaped like the `&probe` clause of a
+/// solver for 11e1fe23: the first union exports `X` and `Y`, and binds `Y`
+/// only by `(= X Y)` in its second branch. The second union exports `W` and
+/// reads `Y` in its first branch alone, so `Y` is a column of that branch that
+/// the union does not export, and only the first union's exports ground it.
+/// `neighbor` gives `X` from `W`. `{read}` is what the first branch of the
+/// second union holds besides its atom, and `{second}` is its second branch.
+fn probe_body(read: &str, second: &str) -> String {
+    format!("(OR ((input (:P *X)) (input (:P *Y)))\n      ((= X Y)))\n  (OR ((input (:P *W)) {read})\n      ({second}))\n  (neighbor (:P W) *D (:Q X))")
+}
+
+/// The number of rows of `body`, the `&probe` shape, over the cells of a grid
+/// of side 3. Checks that the order holds every variable and places `W`, then
+/// `X`, then `Y`.
+fn probe_rows(body: &str) -> usize {
+    let program = checked(body);
+    let task = square_task(3);
+    let path = NodePath(Box::new([PathStep(program.program.program.value().forms.len() as u32 - 1)]));
+    let clause = compile_conjuncts(&program, &path, &[0, 1, 2]).expect("the body compiles");
+    let inputs = fact_inputs(&clause, &task);
+    let order = variable_order(&clause, &join::sizes(&inputs), &[]);
+    let (IrNode::Or(first), IrNode::Or(second)) = (&clause.nodes[0], &clause.nodes[1]) else { panic!("two union nodes") };
+    let w = second.exported[0];
+    let y = *second.branches[0].columns.iter().find(|column| !second.exported.contains(column)).expect("a column the second union does not export");
+    let x = *first.exported.iter().find(|export| **export != y).expect("two exports");
+    let place = |variable: Variable| order.0.iter().position(|v| *v == variable).expect("in the order");
+    assert!(place(w) < place(x) && place(x) < place(y), "{order:?}");
+    assert_eq!(order.0.len(), clause.variables.len(), "{order:?}");
+    let session = TaskSession::new(SessionBound { bytes: 1 << 26 }, Caps::CORPUS);
+    let limits = Limits::new(None, Cancellation::default());
+    let relation = join::join(&clause, &order, &inputs, Registry::get(), &mut Budget::new(&limits, &session)).expect("no bound reached");
+    relation.len() as usize
+}
+
+// The rows of the `&probe` shape over a grid of side 3: `neighbor` gives `X`
+// from `W` and `D` for each of 9 cells and 8 directions, 40 of them in the
+// grid and 32 outside it. The first union gives an `X` in the grid every `Y`
+// in the grid, and an `X` outside the grid only `Y` equal to `X`.
+
+#[test]
+fn a_union_that_reads_a_variable_another_unions_exports_ground_is_ordered_and_joined() {
+    // The second union holds every `W`, whatever `Y` is: 40 * 9 + 32.
+    assert_eq!(probe_rows(&probe_body("(input (:P Y))", "(input (:P W))")), 392);
+}
+
+#[test]
+fn a_union_whose_branch_reads_the_variable_only_in_a_comparison_is_ordered_and_joined() {
+    // The second branch holds every `W`, so the rows are those of the atom alone.
+    assert_eq!(probe_rows(&probe_body("(!= W Y)", "(input (:P W))")), 392);
+}
+
+#[test]
+fn the_check_of_a_union_holds_the_left_out_comparison_of_each_branch() {
+    // Both branches hold `(!= W Y)`: `Y` is one of the 8 cells other than `W`, or `X` outside the grid: 40 * 8 + 32.
+    assert_eq!(probe_rows(&probe_body("(!= W Y)", "(input (:P W)) (!= W Y)")), 352);
+}
