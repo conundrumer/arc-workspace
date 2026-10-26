@@ -73,7 +73,7 @@ from engine import checkout
 
 BASELINE = Path(__file__).with_name("row_parity.tsv")
 
-VERSION = 2
+VERSION = 3
 """The form of a record."""
 
 FAILING = ("differ", "fault", "uncompared")

@@ -62,13 +62,14 @@ from typing import Any
 
 from arc.task import Example
 from cli.common import LIMITS, engine, solver_path
-from engine import (AdtValue, Engine, Program, RecordValue, RelationName, Rows,
+from engine import (AdtValue, Engine, NilValue, Program, RecordValue, RelationName, Rows,
                     RunFailure, Scope, Tuples, TypeName)
 from engine.memo import hash_files, read_or_make
 from engine.program import (AtomLiteral, BodyLiteral, Comparison, ComparisonOperator,
                             ConstructorTerm, Disjunction, Qualifier, Term, Unit, Value, as_grid,
                             own, subterms)
-from parity import NameMap, case_name, columns_path, name_map, names_path, relation_names, snapshot
+from parity import (PARAMS_COMPONENT, NameMap, case_name, columns_path, name_map, relation_names,
+                    snapshot)
 from parity.idents import (Ambiguous, IdentSources, Minted, NoMembers, Source, Unresolved, Writer, ident_sources,
                            kind_of, leaves)
 from solver.aggregate import Solver
@@ -77,7 +78,9 @@ from solver.determine import RunProgram, run_program
 from solver.graph import Graph
 from solver.load import load
 from solver.model import Base, Case, Lib, concept_branch
+from solver.open_values import FieldOff, field_readings
 from solver.outcome import Assignment
+from solver.per_case import parameter_reading
 from solver.pair_runs import examples
 from solver.probe import example_inputs
 from solver.solve import output_rows, relations_at
@@ -254,17 +257,6 @@ def cases_to_run(loaded: Loaded) -> list[Case]:
     return out
 
 
-def read_by_converted(stem: str) -> list[str]:
-    """The name of each arclog relation with `&` the converted program reads
-    or the name map gives a Souffle relation of an instance (`relations` and
-    `unmapped`); none where the converter wrote no name map."""
-    path = names_path(stem)
-    if not path.is_file():
-        return []
-    data = json.loads(path.read_text())
-    return [name for name in (*data["relations"], *data["unmapped"]) if name.startswith("&")]
-
-
 @dataclass(frozen=True)
 class Pairing:
     """A relation of the Souffle run, the arclog relation that holds its
@@ -282,8 +274,8 @@ def classify(loaded: Loaded, columns: Mapping[str, Mapping[str, Any]], read: Seq
     name that holds its rows, and a `{"name", "verdict", "reason"}` for each
     relation it does not compare, by the rules in the module docstring: one for
     each relation of the run, then one for each arclog relation in `read`, the
-    names the converted program reads (`read_by_converted`), that no relation
-    of the run maps to. An arclog relation that some relation of the run is
+    names the converted program reads (`NameMap.read`), that no relation of
+    the run maps to. An arclog relation that some relation of the run is
     compared with has no such line."""
     program = loaded.eng.expand(loaded.solver.program)
     graph = Graph(program, loaded.eng)
@@ -338,7 +330,7 @@ def case_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | RunF
     "relations": [{"name": "&x", "columns": [[label, field], ...],
     "idents": [kind, ...], "unread": [[label, field], ...],
     "unresolved": [[label, field, reason], ...], "rows": [[[leaves of column 1], ...], ...],
-    "by_open": [rows, ...], "fault": text}]}]}], "not_compared": [{"name",
+    "by_open": {...}, "fault": text}]}]}], "not_compared": [{"name",
     "verdict", "reason"}], "determination": {"pairs": [{"pair": "train 0" or
     "task", "relations": [...]}]}}`; a case whose run gives no rows has `"failure":
     text` in place of `pairs`, and so has `determination`; the entries of its
@@ -360,8 +352,13 @@ def case_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | RunF
     id that the minting relation's rows on the pair do not hold at the
     row's key. `by_open`, which an entry holds only where the Souffle
     relation has a column of type `OpenValue` that the column map gives no
-    arclog column, holds the rows of each distinct value of that column
-    (each a list as `rows` is), whose union is `rows`. The concept case's undefined outcome or a run's failure
+    arclog column, is `{"picks": {<arclog name of an open parameter>:
+    [[label, field], ...]}, "values": [{"rows": rows, "picks": {<name>:
+    [[leaves of column 1], ...]}}]}`: for each distinct value of that column,
+    the relation's rows under it (a list as `rows` is, the union of them all
+    being `rows`) and, for each open parameter whose field of that value is
+    not `nil`, the rows of the parameter's arclog relation that the value
+    gives, over the columns that `picks` lists for it. The concept case's undefined outcome or a run's failure
     where it gives no rows. Raises `NoSuchCase` where the solver has no concept case,
     and `FileNotFoundError` where the column map is missing."""
     loaded = load_once(stem, solver_file)
@@ -371,7 +368,8 @@ def case_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | RunF
     columns: dict[str, dict[str, list[list[dict[str, Any]]]]] = json.loads(columns_path(stem).read_text())
     run = run_program(loaded.solver)
     determined = determined_relations(loaded, columns, run)
-    mapped, not_compared = classify(loaded, columns, [n for n in read_by_converted(stem) if n not in {at.name for at in determined}])
+    read = [] if loaded.names is None else loaded.names.read
+    mapped, not_compared = classify(loaded, columns, [n for n in read if n not in {at.name for at in determined}])
     entries = []
     for i, case in enumerate(chosen):
         name = case_name(loaded.solver, case, loaded.names)
@@ -395,7 +393,7 @@ def case_entry(loaded: Loaded, chosen: Case, columns: Mapping[str, Mapping[str, 
     case's undefined outcome or a run's failure. A relation of the run that
     several arclog relations hold has an entry for each."""
     taken = loaded.taking(chosen)
-    projection = Projection.of(ident_sources(loaded.eng, taken.program), columns, mapped)
+    projection = Projection.of(ident_sources(loaded.eng, taken.program), columns, mapped, open_picks(loaded, columns))
     runs = []
     for p, ex in examples(loaded.solver.given_task):
         got = loaded.run(taken, chosen, ex, projection.asked)
@@ -476,6 +474,80 @@ def open_valued(graph: Graph, relation: RelationName, column: int) -> bool:
 
 
 @dataclass(frozen=True)
+class OpenPick:
+    """An open parameter whose arclog relation `name` the converter maps, at
+    field `field` of `OpenValue`: the parameter's stored `values` (rows of
+    the columns outside its case part), the `places` among them of the
+    columns the field's record names, and the leaves of its columns that the
+    column map gives an arclog column, each as the arclog column's `label`
+    and `field`, the column's place and the leaf's path in that column."""
+
+    field: int
+    name: str
+    values: Rows
+    places: tuple[int, ...]
+    leaves: tuple[tuple[str, str | None, int, tuple[int, ...]], ...]
+
+    def rows_of(self, field: Value) -> list[list[list[int | float | str]]]:
+        """The rows of the parameter's arclog relation that `field`, the
+        value of the field of `OpenValue`, gives: each stored row whose columns
+        at the record's places are `field`, as the leaves at each leaf of the
+        pick, each once, in order by their text; a row with a leaf its columns
+        lack is left out."""
+        rows = {}
+        for stored in self.values:
+            if RecordValue(tuple(stored[i] for i in self.places)) != field:
+                continue
+            got = [leaves_at(stored[c], path) for _, _, c, path in self.leaves]
+            if None not in got:
+                rows[json.dumps(got)] = got
+        return [rows[key] for key in sorted(rows)]
+
+
+def open_picks(loaded: Loaded, columns: Mapping[str, Mapping[str, list[list[dict[str, Any]]]]]) -> list[OpenPick]:
+    """The `OpenPick` of each field of the solver's `OpenValue` whose
+    parameter the name map maps to an arclog relation with a column map entry
+    and whose rows the program stores. Raises ValueError where a field is off
+    its form, which the lint reports (`checker.lint.form.open_value_fields`)."""
+    picks = []
+    for index, reading in enumerate(field_readings(loaded.solver)):
+        if isinstance(reading, FieldOff):
+            raise ValueError(f"the `{OPEN_VALUE}` field `{reading.field}` is off its form: {reading.fault.value}")
+        parameter = reading.parameter
+        if loaded.names is None or not isinstance(parameter.stored, tuple):
+            continue
+        found = next(((arc, s) for arc, ss in loaded.names.relations.items() for s in ss
+                      if s.component == PARAMS_COMPONENT and s.relation == parameter.name), None)
+        if found is None or found[1].column_key not in columns.get(found[0], {}):
+            continue
+        name, entry = found[0], columns[found[0]][found[1].column_key]
+        pc = parameter_reading(loaded.solver, parameter.name)
+        leaves = tuple((e["label"], e["field"], place, tuple(e["leaf"]))
+                       for place, column in enumerate(pc.given) for e in entry[column]
+                       if not e["example"])
+        if leaves:
+            picks.append(OpenPick(index, name, pc.values(parameter.stored), reading.places, leaves))
+    return picks
+
+
+def pick_rows(values: Sequence[Value], picks: Sequence[OpenPick]) -> dict[str, list[list[list[int | float | str]]]]:
+    """For each of `picks` whose field some value of `values`, the values of
+    `OpenValue` of a row, holds other than `nil`, the rows of the parameter's
+    arclog relation that the field's value gives (`OpenPick.rows_of`); the
+    first such value gives them."""
+    out: dict[str, list[list[list[int | float | str]]]] = {}
+    for value in values:
+        if not isinstance(value, RecordValue):
+            continue
+        for pick in picks:
+            field = value.fields[pick.field]
+            if pick.name not in out and not isinstance(field, NilValue):
+                if rows := pick.rows_of(field):
+                    out[pick.name] = rows
+    return out
+
+
+@dataclass(frozen=True)
 class MappedLeaf:
     """A leaf of a Souffle column that the column map gives an arclog column
     (`label`, and `field` where the column is a record's field): the Souffle
@@ -493,15 +565,17 @@ class MappedLeaf:
 class Projection:
     """The pairings `mapped` of one program, each with its mapped leaves
     (`MappedLeaf`) and the columns of type `OpenValue` that it holds, for
-    their rows to be written out as `relation_entry` does."""
+    their rows to be written out as `relation_entry` does, with the open
+    parameters `picks` that the open values of a relation name."""
 
     sources: IdentSources
     leaves_of: Mapping[Pairing, list[MappedLeaf]]
     opens: Mapping[Pairing, list[int]]
+    picks: Sequence[OpenPick]
 
     @staticmethod
     def of(sources: IdentSources, columns: Mapping[str, Mapping[str, list[list[dict[str, Any]]]]],
-           mapped: Sequence[Pairing]) -> "Projection":
+           mapped: Sequence[Pairing], picks: Sequence[OpenPick] = ()) -> "Projection":
         entries = {at: columns[at.name][at.key] for at in mapped}
         leaves_of = {at: [MappedLeaf(j, e["label"], e["field"], tuple(e["leaf"]), sources.of(at.relation, j, tuple(e["leaf"])))
                           for j, column in enumerate(entry) for e in column if not e["example"]]
@@ -509,7 +583,7 @@ class Projection:
         opens = {at: [j for j, column in enumerate(entry) if not any(not e["example"] for e in column)
                       and open_valued(sources.graph, at.relation, j)]
                  for at, entry in entries.items()}
-        return Projection(sources, leaves_of, opens)
+        return Projection(sources, leaves_of, opens, picks)
 
     @property
     def asked(self) -> list[RelationName]:
@@ -532,19 +606,19 @@ class Projection:
         """The entry (`relation_entry`) of the pairing `at`, from its
         `rows`, with the rows `got` of a run for the minted ids."""
         return relation_entry(at.name, rows, self.leaves_of[at], unread[at], self.opens[at],
-                              Writer(self.sources, got))
+                              self.picks, Writer(self.sources, got))
 
 
 def relation_entry(name: str, rows: Rows, mapped: list[MappedLeaf], unread: list[MappedLeaf],
-                   opens: list[int], writer: Writer) -> dict[str, Any]:
+                   opens: list[int], picks: Sequence[OpenPick], writer: Writer) -> dict[str, Any]:
     """The entry of the relation `name` for one pair in `case_rows`' form,
     from its `rows` on the pair, its `mapped` leaves, those of them that are
-    `unread`, the columns of type `OpenValue` that it holds (`opens`), and
-    the `writer` of the minted ids."""
+    `unread`, the columns of type `OpenValue` that it holds (`opens`), the
+    open `picks` of the solver, and the `writer` of the minted ids."""
     unresolved = {leaf: leaf.source.reason for leaf in mapped
                   if leaf not in unread and isinstance(leaf.source, Unresolved)}
     read = [leaf for leaf in mapped if leaf not in unread and leaf not in unresolved]
-    table: list[tuple[str, list[list[int | float | str]]]] = []
+    table: list[tuple[str, tuple[Value, ...], list[list[int | float | str]]]] = []
     faults: list[tuple[int, str]] = []
     ambiguous: dict[int, str] = {}
     for row in rows:
@@ -560,7 +634,8 @@ def relation_entry(name: str, rows: Rows, mapped: list[MappedLeaf], unread: list
                 except Ambiguous as other:
                     ambiguous[i] = min(ambiguous.get(i, str(other)), str(other))
             cell.append(value)
-        table.append((json.dumps([leaf for j in opens for leaf in leaves(row[j])]), cell))
+        table.append((json.dumps([leaf for j in opens for leaf in leaves(row[j])]),
+                      tuple(row[j] for j in opens), cell))
     kept = [i for i in range(len(read)) if i not in ambiguous]
     unresolved.update((read[i], reason) for i, reason in ambiguous.items())
     fault = [text for i, text in faults if i in kept]
@@ -573,10 +648,15 @@ def relation_entry(name: str, rows: Rows, mapped: list[MappedLeaf], unread: list
         "idents": [kind_of(read[i].source) for i in kept],
         "unread": [[leaf.label, leaf.field] for leaf in unread],
         "unresolved": [[leaf.label, leaf.field, unresolved[leaf]] for leaf in mapped if leaf in unresolved],
-        "rows": distinct([cell for _, cell in table])}
+        "rows": distinct([cell for _, _, cell in table])}
     if opens:
-        groups = sorted({value for value, _ in table})
-        entry["by_open"] = [distinct([cell for value, cell in table if value == group]) for group in groups]
+        held = {key: values for key, values, _ in table}
+        values = [{"rows": distinct([cell for k, _, cell in table if k == key]),
+                   "picks": pick_rows(held[key], picks)} for key in sorted(held)]
+        given = {pick_name for value in values for pick_name in value["picks"]}
+        entry["by_open"] = {"picks": {pick.name: [[label, field] for label, field, _, _ in pick.leaves]
+                                      for pick in picks if pick.name in given},
+                            "values": values}
     if fault:
         entry["fault"] = min(fault)
     return entry

@@ -47,11 +47,13 @@ class SouffleRelation:
 @dataclass(frozen=True)
 class NameMap:
     """One solver's name map: each arclog relation name with each Souffle
-    relation it was written from, and each arclog `ALT` name with its
-    Souffle `Choice` constructor."""
+    relation it was written from, each arclog `ALT` name with its Souffle
+    `Choice` constructor, and the names of the arclog relations the
+    converted program reads that no Souffle relation was written into."""
 
     relations: Mapping[str, tuple[SouffleRelation, ...]]
     constructors: Mapping[str, str]
+    unmapped: tuple[str, ...]
 
     @staticmethod
     def of(data: Mapping) -> "NameMap":
@@ -59,7 +61,14 @@ class NameMap:
         return NameMap(
             {a: tuple(SouffleRelation(tuple(s["component"]), s["relation"], s["path"]) for s in ss)
              for a, ss in data["relations"].items()},
-            dict(data["constructors"]))
+            dict(data["constructors"]), tuple(data["unmapped"]))
+
+    @property
+    def read(self) -> list[str]:
+        """The name of each arclog relation with `&` that the converted
+        program reads or the map gives a Souffle relation of an instance
+        (`relations` and `unmapped`)."""
+        return [name for name in (*self.relations, *self.unmapped) if name.startswith("&")]
 
     def arclog_names_at(self, path: str) -> list[str]:
         """The arclog name of each relation that holds the rows of the

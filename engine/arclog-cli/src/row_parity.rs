@@ -47,8 +47,13 @@
 //! at the concept case's stored parameters; where the map gives no column to compare, the relation is present in
 //! both or absent in both. Where the relation's rows differ between the
 //! case's models, and Souffle's relation holds the open value in a column,
-//! the rows of the models are the rows of the open values, as sets of sets;
-//! elsewhere the union of the models' rows is Souffle's rows, since Souffle's
+//! each model's rows are Souffle's rows of that model's open value, the
+//! values that the model's picks give the open parameters, and each open
+//! value of Souffle's rows is some model's. A parameter whose pick a model
+//! does not hold, as the relation does not read it, does not tell open
+//! values apart, and Souffle's rows of open values that only it tells apart
+//! are equal.
+//! Elsewhere the union of the models' rows is Souffle's rows, since Souffle's
 //! run states every open value at once. An Ident that a lib relation mints is
 //! compared by its members: each side writes it as the text of the set of
 //! its members, and the texts are compared as written values. An Ident that a
@@ -72,7 +77,7 @@ use serde_json::Value;
 use crate::concept_case::{with_case, with_concept_case, ConceptCase};
 use crate::renaming::{renaming_exists, same_without_idents, EngineLeaf, Leaf};
 use crate::select::read_json;
-use crate::souffle_rows::{engine_columns, engine_models, pair_name, Column, EngineModels, Projection};
+use crate::souffle_rows::{engine_columns, engine_models, pair_name, same_rows, Column, EngineModel, EngineModels, PickRequest, Projection};
 
 const USAGE: &str = "usage: arclog-cli row-parity <corpus-dir> <tasks-dir> <rows-dir> <task_id> [<task_id> ...]";
 
@@ -120,19 +125,52 @@ impl Verdict {
     }
 }
 
-/// One relation on one pair: Souffle's projected rows, the rows of each of
-/// its open values where it holds the open value in a column, the engine's
-/// rows at each model projected onto the same columns, `None` where the
-/// case's program has no relation of the name, the columns of the file that
-/// a pair's rows lack and its unresolved leaves with their reasons, and the
-/// text of a minted id that Souffle's rows of the pair do not account for.
+/// One relation on one pair: Souffle's projected rows, its open values where
+/// it holds the open value in a column, the engine's rows at each model
+/// projected onto the same columns, `None` where the case's program has no
+/// relation of the name, the columns of the file that a pair's rows lack and
+/// its unresolved leaves with their reasons, and the text of a minted id that
+/// Souffle's rows of the pair do not account for.
 pub(crate) struct Checked {
     pub(crate) name: String,
     pub(crate) souffle: BTreeSet<Vec<Leaf>>,
-    pub(crate) by_open: Vec<BTreeSet<Vec<Leaf>>>,
+    pub(crate) by_open: OpenValues,
     pub(crate) engine: Option<EngineModels>,
     pub(crate) left_out: Vec<String>,
     pub(crate) fault: Option<String>,
+}
+
+/// The open values of a relation of Souffle's: the arclog relations of the
+/// open parameters that the open values name, in the order the picks of an
+/// open value and of an engine model are given in, and the open values. None
+/// where the relation holds no open value in a column.
+#[derive(Default)]
+pub(crate) struct OpenValues {
+    pub(crate) picks: Vec<String>,
+    pub(crate) values: Vec<OpenValue>,
+}
+
+/// One open value of a relation of Souffle's: the relation's rows under it
+/// and, for each open parameter, the rows of the parameter's relation that
+/// the value gives it, `None` where the value gives it none (`nil`), which
+/// holds at every value of it.
+pub(crate) struct OpenValue {
+    pub(crate) rows: BTreeSet<Vec<Leaf>>,
+    pub(crate) picks: Vec<Option<BTreeSet<Vec<Leaf>>>>,
+}
+
+/// An open parameter of the rows file: its arclog relation and the names of
+/// the columns of the pick that the file gives.
+struct FilePick {
+    name: String,
+    columns: Vec<String>,
+}
+
+/// One open value of a relation in the rows file: its rows, and the rows it
+/// gives each pick, in the order of the picks.
+struct FileOpenValue {
+    rows: Vec<Vec<Vec<Leaf>>>,
+    picks: Vec<Option<Vec<Vec<Vec<Leaf>>>>>,
 }
 
 /// One relation of the rows file on one pair, as `column_names_of` and
@@ -142,7 +180,8 @@ struct FileRelation {
     minted: Vec<bool>,
     left_out: Vec<String>,
     rows: Vec<Vec<Vec<Leaf>>>,
-    by_open: Vec<Vec<Vec<Vec<Leaf>>>>,
+    picks: Vec<FilePick>,
+    by_open: Vec<FileOpenValue>,
 }
 
 /// The subcommand on `args`, the arguments after its name.
@@ -301,12 +340,14 @@ fn entry_verdicts(evaluation: &Evaluation<'_>, scope: &str, example: Example, en
         if minted.len() != columns.len() {
             return Err(format!("the relation `{relation_name}` of the rows file has {} columns and {} `idents`", columns.len(), minted.len()));
         }
+        let (picks, by_open) = by_open_of(relation)?;
         let file_relation = FileRelation {
             columns,
             minted,
             left_out: [column_names_of(relation, "unread")?, unresolved_of(relation)?].concat(),
             rows: souffle_rows_of(relation.get("rows"))?,
-            by_open: by_open_of(relation)?,
+            picks,
+            by_open,
         };
         let fault = relation.get("fault").map(|text| text.as_str().map(str::to_owned).ok_or("a fault of the rows file is no text")).transpose()?;
         checked.push(engine_side(evaluation, relation_name, example, constants, file_relation, fault));
@@ -321,9 +362,11 @@ fn entry_verdicts(evaluation: &Evaluation<'_>, scope: &str, example: Example, en
 }
 
 /// One relation on one pair: the engine's rows at each model, over the
-/// columns of the map, Souffle's rows projected onto them, and the rows of
-/// each open value of Souffle's relation projected onto them. A column of
-/// the map that the engine's relation lacks gives a fault.
+/// columns of the map, with the rows of each open parameter's relation at the
+/// model, Souffle's rows projected onto the columns, and each open value of
+/// Souffle's relation projected onto them. A column of the map that the
+/// engine's relation lacks, or that the relation of an open parameter lacks,
+/// gives a fault.
 fn engine_side(
     evaluation: &Evaluation<'_>,
     name: &str,
@@ -334,11 +377,11 @@ fn engine_side(
 ) -> Checked {
     let checked = |engine, left_out, souffle, by_open| Checked { name: name.to_owned(), souffle, by_open, engine, left_out, fault: fault.clone() };
     let names = match engine_columns(evaluation, name) {
-        None => return checked(None, Vec::new(), BTreeSet::new(), Vec::new()),
-        Some(Err(unread)) => return checked(Some(unread), Vec::new(), BTreeSet::new(), Vec::new()),
+        None => return checked(None, Vec::new(), BTreeSet::new(), OpenValues::default()),
+        Some(Err(unread)) => return checked(Some(unread), Vec::new(), BTreeSet::new(), OpenValues::default()),
         Some(Ok(names)) => names,
     };
-    let FileRelation { columns, minted, mut left_out, rows, by_open } = file;
+    let FileRelation { columns, minted, mut left_out, rows, picks, by_open } = file;
     let mut kept = Vec::new();
     let mut lacking = Vec::new();
     for (entry, column) in columns.iter().enumerate() {
@@ -354,16 +397,49 @@ fn engine_side(
         } else {
             format!("the engine's relation lacks the columns of the map: {}", lacking.join(", "))
         };
-        return checked(Some(EngineModels::Fault(text)), left_out, BTreeSet::new(), Vec::new());
+        return checked(Some(EngineModels::Fault(text)), left_out, BTreeSet::new(), OpenValues::default());
     }
+    let pick_columns = match pick_columns(evaluation, &picks) {
+        Ok(columns) => columns,
+        Err(text) => return checked(Some(EngineModels::Fault(text)), left_out, BTreeSet::new(), OpenValues::default()),
+    };
     let project = |rows: &[Vec<Vec<Leaf>>]| -> BTreeSet<Vec<Leaf>> { rows.iter().map(|row| kept.iter().flat_map(|&(entry, _)| row[entry].clone()).collect()).collect() };
     let columns: Vec<Column> = kept.iter().map(|&(_, column)| column).collect();
-    let engine = match engine_models(evaluation, name, example, constants, Projection::Positions(&columns)) {
+    let requests: Vec<PickRequest<'_>> = picks.iter().zip(&pick_columns).map(|(pick, columns)| PickRequest { name: &pick.name, projection: Projection::Positions(columns) }).collect();
+    let engine = match engine_models(evaluation, name, example, constants, Projection::Positions(&columns), &requests) {
         None => EngineModels::Fault("the relation has no rows to read".to_owned()),
-        Some(EngineModels::Models(models)) => EngineModels::Models(models.into_iter().map(distinct).collect()),
+        Some(EngineModels::Models(models)) => {
+            EngineModels::Models(models.into_iter().map(|model| EngineModel { rows: distinct(model.rows), picks: model.picks.into_iter().map(|pick| pick.map(distinct)).collect() }).collect())
+        }
         Some(fault) => fault,
     };
-    checked(Some(engine), left_out, project(&rows), by_open.iter().map(|group| project(group)).collect())
+    let values = by_open
+        .iter()
+        .map(|value| OpenValue { rows: project(&value.rows), picks: value.picks.iter().map(|pick| pick.as_deref().map(|rows| rows.iter().map(|row| row.concat()).collect())).collect() })
+        .collect();
+    let by_open = OpenValues { picks: picks.into_iter().map(|pick| pick.name).collect(), values };
+    checked(Some(engine), left_out, project(&rows), by_open)
+}
+
+/// The columns of the engine's relation of each of `picks` that the file
+/// names, or a text where a pick's relation or one of its columns is not in
+/// the engine's program.
+fn pick_columns(evaluation: &Evaluation<'_>, picks: &[FilePick]) -> Result<Vec<Vec<Column>>, String> {
+    picks
+        .iter()
+        .map(|pick| {
+            let names = match engine_columns(evaluation, &pick.name) {
+                None => return Err(format!("the open parameter {} has no relation in the engine's program", pick.name)),
+                Some(Err(EngineModels::Skip(reason) | EngineModels::Fault(reason))) => return Err(format!("the open parameter {}: {reason}", pick.name)),
+                Some(Err(EngineModels::Models(_))) => unreachable!("engine_columns gives no models"),
+                Some(Ok(names)) => names,
+            };
+            pick.columns
+                .iter()
+                .map(|column| names.iter().position(|n| n.name == *column).map(|position| Column { position, minted: false }).ok_or_else(|| format!("the engine's relation {} lacks the column {column}, which the map gives the open parameter", pick.name)))
+                .collect()
+        })
+        .collect()
 }
 
 /// The constants of the rows file, by name.
@@ -375,7 +451,13 @@ fn constants_of(file: &Value) -> Result<BTreeMap<String, i64>, String> {
 /// The name of each column of `relation` under `key`, as the engine names a row
 /// position: the label, and, for a field, `<label>.<field>`.
 fn column_names_of(relation: &Value, key: &str) -> Result<Vec<String>, String> {
-    let columns = relation.get(key).and_then(Value::as_array).ok_or_else(|| format!("a relation of the rows file has no `{key}`"))?;
+    column_names(relation.get(key).ok_or_else(|| format!("a relation of the rows file has no `{key}`"))?)
+}
+
+/// The name of each column in `columns`, a list of pairs of a label and a
+/// field or null.
+fn column_names(columns: &Value) -> Result<Vec<String>, String> {
+    let columns = columns.as_array().ok_or("a list of columns is no array")?;
     columns
         .iter()
         .map(|column| {
@@ -420,23 +502,38 @@ fn unresolved_of(relation: &Value) -> Result<Vec<String>, String> {
 /// of each mapped column.
 fn souffle_rows_of(rows: Option<&Value>) -> Result<Vec<Vec<Vec<Leaf>>>, String> {
     let rows = rows.and_then(Value::as_array).ok_or("a relation of the rows file has no `rows`")?;
-    rows.iter()
-        .map(|row| {
-            row.as_array()
-                .ok_or("a row is no array")?
-                .iter()
-                .map(|entry| entry.as_array().ok_or("a row's column is no array")?.iter().map(|leaf| Leaf::of(leaf).ok_or("a leaf is no number and no string")).collect::<Result<Vec<_>, _>>())
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(str::to_owned)
-        })
-        .collect()
+    rows.iter().map(souffle_row_of).collect()
 }
 
-/// The rows of each open value of `relation` in the rows file, none where
-/// the relation holds no open value in a column.
-fn by_open_of(relation: &Value) -> Result<Vec<Vec<Vec<Vec<Leaf>>>>, String> {
-    let Some(groups) = relation.get("by_open") else { return Ok(Vec::new()) };
-    groups.as_array().ok_or("`by_open` is no array")?.iter().map(|group| souffle_rows_of(Some(group))).collect()
+/// The leaves of each mapped column in the row `row` of the rows file.
+fn souffle_row_of(row: &Value) -> Result<Vec<Vec<Leaf>>, String> {
+    row.as_array()
+        .ok_or("a row is no array")?
+        .iter()
+        .map(|entry| entry.as_array().ok_or("a row's column is no array")?.iter().map(|leaf| Leaf::of(leaf).ok_or("a leaf is no number and no string")).collect::<Result<Vec<_>, _>>())
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(str::to_owned)
+}
+
+/// The open parameters of `relation` in the rows file and its open values,
+/// none where the relation holds no open value in a column.
+fn by_open_of(relation: &Value) -> Result<(Vec<FilePick>, Vec<FileOpenValue>), String> {
+    let Some(by_open) = relation.get("by_open") else { return Ok((Vec::new(), Vec::new())) };
+    let picks = by_open.get("picks").and_then(Value::as_object).ok_or("`by_open` has no `picks`")?;
+    let picks = picks
+        .iter()
+        .map(|(name, columns)| Ok(FilePick { name: name.clone(), columns: column_names(columns)? }))
+        .collect::<Result<Vec<_>, String>>()?;
+    let values = by_open.get("values").and_then(Value::as_array).ok_or("`by_open` has no `values`")?;
+    let values = values
+        .iter()
+        .map(|value| {
+            let given = value.get("picks").and_then(Value::as_object).ok_or("an open value has no `picks`")?;
+            let picks = picks.iter().map(|pick| given.get(&pick.name).map(|rows| souffle_rows_of(Some(rows))).transpose()).collect::<Result<_, String>>()?;
+            Ok(FileOpenValue { rows: souffle_rows_of(value.get("rows"))?, picks })
+        })
+        .collect::<Result<_, String>>()?;
+    Ok((picks, values))
 }
 
 /// `rows` with each row once, in order.
@@ -462,31 +559,90 @@ fn merge(merged: &mut Vec<(String, Verdict)>, name: String, verdict: Verdict) {
     }
 }
 
+/// One comparison of a relation: the Souffle rows an engine model's rows
+/// stand for, those rows, and, where the models give different rows, the
+/// open value the model takes, written for the line's detail.
+struct Comparison {
+    souffle: BTreeSet<Vec<Leaf>>,
+    engine: Vec<Vec<EngineLeaf>>,
+    open: String,
+}
+
 /// The engine's rows of a relation, each compared with the Souffle rows it
-/// stands for: the one set of rows where the models give one, the rows of
-/// each model with the rows of the open value it matches where Souffle's
-/// relation holds the open value in a column, else the union of the models'
-/// rows with Souffle's rows. A text for what does not match.
-fn comparisons<'a>(models: &[Vec<Vec<EngineLeaf>>], souffle: &'a BTreeSet<Vec<Leaf>>, by_open: &'a [BTreeSet<Vec<Leaf>>]) -> Result<Vec<(&'a BTreeSet<Vec<Leaf>>, Vec<Vec<EngineLeaf>>)>, String> {
-    if let [only] = models {
-        return Ok(vec![(souffle, only.clone())]);
+/// stands for: the one set of rows where the models give one, else, where
+/// Souffle's relation holds the open value in a column, the rows of each
+/// model with Souffle's rows of the open value that model takes (`taken`),
+/// else the union of the models' rows with Souffle's rows. A text for what
+/// does not match.
+fn comparisons(models: &[EngineModel], souffle: &BTreeSet<Vec<Leaf>>, by_open: &OpenValues) -> Result<Vec<Comparison>, String> {
+    let one = |engine: Vec<Vec<EngineLeaf>>| Ok(vec![Comparison { souffle: souffle.clone(), engine, open: String::new() }]);
+    if models.iter().all(|model| same_rows(&model.rows, &models[0].rows)) {
+        return one(models[0].rows.clone());
     }
-    if by_open.is_empty() {
-        return Ok(vec![(souffle, distinct(models.concat()))]);
+    if by_open.values.is_empty() {
+        return one(distinct(models.iter().flat_map(|model| model.rows.clone()).collect()));
     }
-    let mut used = vec![false; by_open.len()];
+    let mut used = vec![false; by_open.values.len()];
     let mut pairs = Vec::new();
     for (index, model) in models.iter().enumerate() {
-        let Some(open) = by_open.iter().position(|rows| same_without_idents(model, rows)) else {
-            return Err(format!("{} models; the rows of model {} are the rows of none of Souffle's {} open values", models.len(), index + 1, by_open.len()));
-        };
-        used[open] = true;
-        pairs.push((&by_open[open], model.clone()));
+        let (expected, taken) = taken(model, by_open).map_err(|text| format!("{} models; model {} takes {}: {text}", models.len(), index + 1, show_picks(&by_open.picks, &model.picks)))?;
+        taken.into_iter().for_each(|open| used[open] = true);
+        pairs.push(Comparison { souffle: expected, engine: model.rows.clone(), open: show_picks(&by_open.picks, &model.picks) });
     }
     match used.iter().position(|used| !used) {
-        Some(open) => Err(format!("{} models; the rows of open value {} of Souffle's {} are the rows of no model", models.len(), open + 1, by_open.len())),
+        Some(open) => Err(format!("{} models; open value {} of Souffle's {} is the open value of no model", models.len(), open + 1, by_open.values.len())),
         None => Ok(pairs),
     }
+}
+
+/// Souffle's rows under the open value that `model` takes, and the open
+/// values they are of: those whose picks the model's picks hold, with the
+/// open values that a pick of the model does not tell apart (they give the
+/// same picks, or differ only at a pick the model holds none of) counted one
+/// open value, whose rows must be equal. An open value gives no row to a pick
+/// it is `nil` at, so its rows hold at every value of that pick, and its rows
+/// are added to those of the open value the model's picks give.
+fn taken(model: &EngineModel, by_open: &OpenValues) -> Result<(BTreeSet<Vec<Leaf>>, Vec<usize>), String> {
+    let holds = |open: &OpenValue| {
+        open.picks.iter().zip(&model.picks).all(|(souffle, engine)| match (souffle, engine) {
+            (Some(souffle), Some(engine)) => same_without_idents(engine, souffle),
+            _ => true,
+        })
+    };
+    let held: Vec<usize> = (0..by_open.values.len()).filter(|&open| holds(&by_open.values[open])).collect();
+    if held.is_empty() {
+        return Err(format!("none of Souffle's {} open values is that open value", by_open.values.len()));
+    }
+    let mut classes: BTreeMap<Vec<bool>, &BTreeSet<Vec<Leaf>>> = BTreeMap::new();
+    for &open in &held {
+        let value = &by_open.values[open];
+        let given: Vec<bool> = value.picks.iter().map(Option::is_some).collect();
+        match classes.insert(given, &value.rows) {
+            Some(other) if other != &value.rows => return Err("open values that its picks do not tell apart have different rows".to_owned()),
+            _ => {}
+        }
+    }
+    Ok((classes.into_values().flatten().cloned().collect(), held))
+}
+
+/// The picks of a model as `name=row` for the line's detail, each row's
+/// leaves separated by spaces and an Ident place written `_`; a pick the
+/// model holds none of is left out.
+fn show_picks(names: &[String], picks: &[Option<Vec<Vec<EngineLeaf>>>]) -> String {
+    let show = |leaf: &EngineLeaf| match leaf {
+        EngineLeaf::Written(Leaf::Number(n)) => n.to_string(),
+        EngineLeaf::Written(Leaf::Other(text)) => text.to_string(),
+        EngineLeaf::Ident(_) => "_".to_owned(),
+    };
+    let held: Vec<String> = names
+        .iter()
+        .zip(picks)
+        .filter_map(|(name, rows)| {
+            let rows = rows.as_ref()?;
+            Some(format!("{name}={}", rows.iter().map(|row| format!("[{}]", row.iter().map(show).collect::<Vec<_>>().join(" "))).collect::<Vec<_>>().join(" ")))
+        })
+        .collect();
+    format!("the open value {}", held.join(" "))
 }
 
 /// The verdict of each relation of `relations` on `scope`, a case and a
@@ -498,7 +654,7 @@ fn comparisons<'a>(models: &[Vec<Vec<EngineLeaf>>], souffle: &'a BTreeSet<Vec<Le
 /// Souffle, whose numbers denote the objects of that input alone.
 pub(crate) fn compare_pair(scope: &str, relations: &[Checked]) -> Vec<(String, Verdict)> {
     let mut verdicts = Vec::new();
-    let mut compared: Vec<(&BTreeSet<Vec<Leaf>>, Vec<Vec<EngineLeaf>>)> = Vec::new();
+    let mut compared: Vec<(BTreeSet<Vec<Leaf>>, Vec<Vec<EngineLeaf>>)> = Vec::new();
     'relations: for Checked { name, souffle, by_open, engine, left_out, fault } in relations {
         let note = if left_out.is_empty() { String::new() } else { format!("; columns left out of both sides: {}", left_out.join(", ")) };
         let verdict = match engine {
@@ -514,15 +670,16 @@ pub(crate) fn compare_pair(scope: &str, relations: &[Checked]) -> Vec<(String, V
                         continue;
                     }
                 };
-                for (theirs, rows) in &pairs {
-                    if !same_without_idents(rows, theirs) {
-                        verdicts.push((name.clone(), Verdict::Differ(format!("{scope}: {}{note}", describe_difference(rows, theirs)))));
+                for Comparison { souffle, engine, open } in &pairs {
+                    if !same_without_idents(engine, souffle) {
+                        let at = if open.is_empty() { String::new() } else { format!("at {open}: ") };
+                        verdicts.push((name.clone(), Verdict::Differ(format!("{scope}: {at}{}{note}", describe_difference(engine, souffle)))));
                         continue 'relations;
                     }
                 }
                 let before = compared.len();
-                compared.extend(pairs.into_iter().filter(|(_, rows)| rows.iter().flatten().any(|leaf| matches!(leaf, EngineLeaf::Ident(_)))));
-                if compared.len() > before && !renaming_exists(&compared) {
+                compared.extend(pairs.into_iter().map(|pair| (pair.souffle, pair.engine)).filter(|(_, rows)| rows.iter().flatten().any(|leaf| matches!(leaf, EngineLeaf::Ident(_)))));
+                if compared.len() > before && !renaming_exists(&compared.iter().map(|(souffle, engine)| (souffle, engine.clone())).collect::<Vec<_>>()) {
                     compared.truncate(before);
                     verdicts.push((name.clone(), Verdict::Differ(format!("{scope}: no one renaming of Idents makes its rows and those of the relations before it agree{note}"))));
                     continue;
@@ -592,7 +749,8 @@ mod tests {
     }
 
     fn models(name: &str, souffle: BTreeSet<Vec<Leaf>>, models: Vec<Vec<Vec<EngineLeaf>>>) -> Checked {
-        Checked { name: name.to_owned(), souffle, by_open: Vec::new(), engine: Some(EngineModels::Models(models)), left_out: Vec::new(), fault: None }
+        let models = models.into_iter().map(|rows| EngineModel { rows, picks: Vec::new() }).collect();
+        Checked { name: name.to_owned(), souffle, by_open: OpenValues::default(), engine: Some(EngineModels::Models(models)), left_out: Vec::new(), fault: None }
     }
 
     fn idents(count: u32) -> Vec<Ident> {
@@ -630,6 +788,47 @@ mod tests {
         let relations = [models("&order", souffle(&[&[1, 2], &[3, 4]]), vec![vec![written(&[1, 2])], vec![written(&[5, 6])]])];
         let [(_, verdict)] = &compare_pair("concept, train 0", &relations)[..] else { panic!("one verdict") };
         assert!(matches!(verdict, Verdict::Differ(_)), "{verdict:?}");
+    }
+
+    /// A relation of two open values of the parameter `&p`: the rows `[1 2]`
+    /// at `&p` = `[1]`, the rows `[3 4]` at `&p` = `[2]`, and the rows `[9 9]`
+    /// at `nil`, which hold at both. `at` gives the engine's rows and its
+    /// pick at each of two models.
+    fn open_relation(at: [(&[i64], i64); 2]) -> Checked {
+        let open = |rows: &[&[i64]], pick: Option<i64>| OpenValue { rows: souffle(rows), picks: vec![pick.map(|p| souffle(&[&[p]]))] };
+        let values = vec![open(&[&[1, 2]], Some(1)), open(&[&[3, 4]], Some(2)), open(&[&[9, 9]], None)];
+        let model = |(rows, pick): (&[i64], i64)| EngineModel { rows: vec![written(rows), written(&[9, 9])], picks: vec![Some(vec![written(&[pick])])] };
+        Checked {
+            name: "&out".to_owned(),
+            souffle: souffle(&[&[1, 2], &[3, 4], &[9, 9]]),
+            by_open: OpenValues { picks: vec!["&p".to_owned()], values },
+            engine: Some(EngineModels::Models(at.into_iter().map(model).collect())),
+            left_out: Vec::new(),
+            fault: None,
+        }
+    }
+
+    #[test]
+    fn equals_where_each_model_holds_the_rows_of_its_own_open_value() {
+        let relations = [open_relation([(&[1, 2], 1), (&[3, 4], 2)])];
+        let [(_, verdict)] = &compare_pair("concept, train 0", &relations)[..] else { panic!("one verdict") };
+        assert!(matches!(verdict, Verdict::Equal(_)), "{verdict:?}");
+    }
+
+    #[test]
+    fn differs_where_the_models_hold_the_rows_of_the_open_values_swapped() {
+        let relations = [open_relation([(&[1, 2], 2), (&[3, 4], 1)])];
+        let [(_, verdict)] = &compare_pair("concept, train 0", &relations)[..] else { panic!("one verdict") };
+        let Verdict::Differ(text) = verdict else { panic!("{verdict:?}") };
+        assert!(text.contains("&p=[2]") && text.contains("only the engine holds [1 2]"), "{text}");
+    }
+
+    #[test]
+    fn differs_where_a_model_takes_no_open_value_of_souffles() {
+        let relations = [open_relation([(&[1, 2], 1), (&[3, 4], 3)])];
+        let [(_, verdict)] = &compare_pair("concept, train 0", &relations)[..] else { panic!("one verdict") };
+        let Verdict::Differ(text) = verdict else { panic!("{verdict:?}") };
+        assert!(text.contains("open value 2 of Souffle's 3 is the open value of no model"), "{text}");
     }
 
     #[test]

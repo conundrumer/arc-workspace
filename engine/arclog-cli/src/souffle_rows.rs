@@ -69,15 +69,46 @@ pub(crate) enum EngineRows {
 
 /// What the engine gives for a relation on a pair, at each model of the case.
 pub(crate) enum EngineModels {
-    /// The relation's rows at each model, each the leaves Souffle's rerun
-    /// writes for it, with the models that give the same rows once; one
-    /// entry where every model gives the same rows.
-    Models(Vec<Vec<Vec<EngineLeaf>>>),
+    /// The relation at each model, with the models that give the same rows
+    /// and the same picks once; one entry where every model gives the same.
+    Models(Vec<EngineModel>),
     /// The reason that the name gives no one relation of the engine to
     /// compare.
     Skip(String),
     /// A text for rows the engine cannot give.
     Fault(String),
+}
+
+/// One model of the case: the relation's rows there, each the leaves
+/// Souffle's rerun writes for it, and the rows there of each pick asked for
+/// (`PickRequest`), in the order asked, `None` where the model holds no
+/// choice at it.
+#[derive(Clone)]
+pub(crate) struct EngineModel {
+    pub(crate) rows: Vec<Vec<EngineLeaf>>,
+    pub(crate) picks: Vec<Option<Vec<Vec<EngineLeaf>>>>,
+}
+
+impl EngineModel {
+    /// Whether `self` and `other` hold the same rows and the same rows at
+    /// each pick.
+    fn same_as(&self, other: &EngineModel) -> bool {
+        same_rows(&self.rows, &other.rows)
+            && self.picks.len() == other.picks.len()
+            && self.picks.iter().zip(&other.picks).all(|(a, b)| match (a, b) {
+                (Some(a), Some(b)) => same_rows(a, b),
+                (None, None) => true,
+                _ => false,
+            })
+    }
+}
+
+/// A chosen relation whose rows at each model of the case a comparison
+/// reads: the name of the relation and the columns of its rows that it reads.
+#[derive(Clone, Copy)]
+pub(crate) struct PickRequest<'a> {
+    pub(crate) name: &'a str,
+    pub(crate) projection: Projection<'a>,
 }
 
 /// One row position that a comparison reads, and whether its Idents are
@@ -131,6 +162,12 @@ pub(crate) struct EngineColumn {
     pub(crate) pose: bool,
 }
 
+/// The example `relation` is read on at the pair of `example`: that example
+/// for a relation per input, else none.
+fn read_on(program: &arclog::check::CheckedProgram, relation: &GraphRelation, example: Example) -> Option<Example> {
+    (program.program.side(relation.node) == Side::PerInput).then_some(example)
+}
+
 /// The row positions of the relation that `name` declares in the program of
 /// `evaluation`, each by its name (`column_names`); `None` where the program
 /// derives no relation of that name, [`EngineModels::Skip`] where several
@@ -159,28 +196,37 @@ pub(crate) fn engine_columns(evaluation: &Evaluation<'_>, name: &str) -> Option<
 /// model of the case: where two models give different rows as sets, the
 /// result is [`EngineRows::DifferBetweenModels`].
 pub(crate) fn engine_rows(evaluation: &Evaluation<'_>, name: &str, example: Example, constants: &BTreeMap<String, i64>, projection: Projection<'_>) -> Option<EngineRows> {
-    Some(match models_of(evaluation, name, example, constants, projection, 2)? {
+    Some(match models_of(evaluation, name, example, constants, projection, &[], 2)? {
         EngineModels::Skip(reason) => EngineRows::Skip(reason),
         EngineModels::Fault(text) => EngineRows::Fault(text),
-        EngineModels::Models(mut models) if models.len() == 1 => EngineRows::Rows(models.remove(0)),
+        EngineModels::Models(mut models) if models.len() == 1 => EngineRows::Rows(models.remove(0).rows),
         EngineModels::Models(_) => EngineRows::DifferBetweenModels,
     })
 }
 
 /// The engine's rows of the relation that `name` declares on `example` at
-/// each model of the case, as `projection` gives them; `None` where the
-/// program derives no relation of that name.
-pub(crate) fn engine_models(evaluation: &Evaluation<'_>, name: &str, example: Example, constants: &BTreeMap<String, i64>, projection: Projection<'_>) -> Option<EngineModels> {
-    models_of(evaluation, name, example, constants, projection, usize::MAX)
+/// each model of the case, as `projection` gives them, with the rows at the
+/// model of each of `picks`; `None` where the program derives no relation of
+/// that name.
+pub(crate) fn engine_models(
+    evaluation: &Evaluation<'_>,
+    name: &str,
+    example: Example,
+    constants: &BTreeMap<String, i64>,
+    projection: Projection<'_>,
+    picks: &[PickRequest<'_>],
+) -> Option<EngineModels> {
+    models_of(evaluation, name, example, constants, projection, picks, usize::MAX)
 }
 
-/// [`engine_models`], stopping at the `at_most`th distinct set of rows.
+/// [`engine_models`], stopping at the `at_most`th distinct model.
 fn models_of(
     evaluation: &Evaluation<'_>,
     name: &str,
     example: Example,
     constants: &BTreeMap<String, i64>,
     projection: Projection<'_>,
+    picks: &[PickRequest<'_>],
     at_most: usize,
 ) -> Option<EngineModels> {
     let program = evaluation.program;
@@ -188,24 +234,48 @@ fn models_of(
         Ok(relation) => relation,
         Err(reason) => return Some(EngineModels::Skip(reason)),
     };
-    let on = (program.program.side(relation.node) == Side::PerInput).then_some(example);
+    let on = read_on(program, &relation, example);
     let Some(types) = program.types.columns(&relation) else { return Some(EngineModels::Fault("rows whose columns have no types".to_owned())) };
-    let mut models: Vec<Vec<Vec<EngineLeaf>>> = Vec::new();
+    let mut chosen = Vec::new();
+    for pick in picks {
+        let relation = match named_relation(program, pick.name) {
+            Some(Ok(relation)) => relation,
+            Some(Err(reason)) => return Some(EngineModels::Fault(format!("the open parameter {}: {reason}", pick.name))),
+            None => return Some(EngineModels::Fault(format!("the program has no relation {}, a pick of the open value", pick.name))),
+        };
+        let Some(types) = program.types.columns(&relation) else { return Some(EngineModels::Fault(format!("the rows of {} have no column types", pick.name))) };
+        let on = read_on(program, &relation, example);
+        chosen.push(((relation, on), types));
+    }
+    let asked: Vec<_> = chosen.iter().map(|(asked, _)| asked.clone()).collect();
+    let mut models: Vec<EngineModel> = Vec::new();
     let mut fault = None;
-    let end = evaluation.models(&relation, on, &mut |value| {
+    let end = evaluation.models_with_picks(&relation, on, &asked, &mut |value, at_model| {
         let RelationValue::Rows(rows) = value else {
             fault = Some(format!("{value:?}"));
             return ControlFlow::Break(());
         };
-        let rows = match model_leaves(evaluation, rows, types, constants, projection) {
-            Ok(rows) => rows,
+        let read = || -> Result<EngineModel, String> {
+            let rows = model_leaves(evaluation, rows, types, constants, projection)?;
+            let mut held = Vec::new();
+            for ((pick, (_, types)), value) in picks.iter().zip(&chosen).zip(at_model) {
+                held.push(match value {
+                    None => None,
+                    Some(RelationValue::Rows(rows)) => Some(model_leaves(evaluation, rows, types, constants, pick.projection)?),
+                    Some(other) => return Err(format!("{}: {other:?}", pick.name)),
+                });
+            }
+            Ok(EngineModel { rows, picks: held })
+        };
+        let model = match read() {
+            Ok(model) => model,
             Err(text) => {
                 fault = Some(text);
                 return ControlFlow::Break(());
             }
         };
-        if !models.iter().any(|kept| same_rows(kept, &rows)) {
-            models.push(rows);
+        if !models.iter().any(|kept| kept.same_as(&model)) {
+            models.push(model);
         }
         if models.len() >= at_most { ControlFlow::Break(()) } else { ControlFlow::Continue(()) }
     });
@@ -216,7 +286,7 @@ fn models_of(
     }
     Some(match fault {
         Some(text) => EngineModels::Fault(text),
-        None if models.is_empty() => EngineModels::Models(vec![Vec::new()]),
+        None if models.is_empty() => EngineModels::Models(vec![EngineModel { rows: Vec::new(), picks: vec![None; picks.len()] }]),
         None => EngineModels::Models(models),
     })
 }
