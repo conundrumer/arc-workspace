@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from engine import AdtValue, RecordValue, Rows, RunFailure
+from engine import Rows, RunFailure
 from parity import rerun, snapshot
 from solver.undefined import Undefined
 
@@ -61,13 +61,3 @@ def test_no_rows_are_not_kept(stub: Stub) -> None:
     assert isinstance(rerun.kept_json("s", "c", "train 0"), Undefined)
     assert stub.calls == 2
 
-
-def test_case_rows_cut_another_cases_constructor() -> None:
-    other = AdtValue("Other", ())
-    mine = AdtValue("Mine", ())
-    rows: Rows = (
-        (1, RecordValue((2, RecordValue((3, AdtValue("Wrap", (other,))))))),
-        (1, mine),
-        (1, 2),
-    )
-    assert rerun.case_rows(rows, {"Other"}) == rows[1:]

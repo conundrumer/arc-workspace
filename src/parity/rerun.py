@@ -1,6 +1,8 @@
 """One Souffle case run again on one pair with every relation of its
 program written out, each by its arclog name, so that a mismatch report can
-give the first relation whose rows differ; the JSON form of that rerun; and
+give the first relation whose rows differ, on a program from which each
+clause of a branch the case does not take is dropped (`taken_program`), so
+that the rows are the case's own; the JSON form of that rerun; and
 the kept JSON of a rerun that gave rows, which stands while each input of
 the rerun is unchanged (`kept_json`); and the rows of the concept case on
 each pair projected onto the columns the converter maps (`concept_rows`)."""
@@ -8,7 +10,7 @@ each pair projected onto the columns the converter maps (`concept_rows`)."""
 import hashlib
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -17,12 +19,14 @@ from cli.common import LIMITS, engine, solver_path
 from engine import (AdtValue, Engine, NilValue, Program, RecordValue, RelationName, Rows,
                     RunFailure, Scope)
 from engine.memo import hash_files, read_or_make
-from engine.program import Qualifier, Value, as_grid
+from engine.program import (AtomLiteral, BodyLiteral, Comparison, ComparisonOperator,
+                            ConstructorTerm, Disjunction, Qualifier, Term, Unit, Value, as_grid,
+                            subterms)
 from parity import NameMap, case_name, columns_path, name_map, relation_name, snapshot
 from solver.aggregate import Solver
 from solver.cases import cases as cases_of
 from solver.load import load
-from solver.model import Case, Lib
+from solver.model import Base, Case, Lib, concept_branch
 from solver.outcome import Assignment
 from solver.pair_runs import examples
 from solver.solve import relations_at
@@ -82,15 +86,18 @@ class Loaded:
             raise NoSuchPair(pair)
         return ex
 
-    def run(self, chosen: Case, ex: Example, rels: list[RelationName]
+    def taking(self, chosen: Case) -> Solver:
+        """The solver with the program of `taken_program` for `chosen`, to
+        run `chosen` on each pair (`run`); the program is built once, so that
+        the caches keyed by it serve every pair."""
+        return replace(self.solver, program=taken_program(self.solver, chosen.base))
+
+    def run(self, taken: Solver, chosen: Case, ex: Example, rels: list[RelationName]
             ) -> Mapping[RelationName, Rows] | Undefined | RunFailure:
-        """The rows of `rels` of the case `chosen` run on the input of `ex`,
-        with the rows that `case_rows` cuts left out."""
-        got = relations_at(self.eng, self.solver, chosen, as_grid(ex.input), rels, Assignment(()), LIMITS)
-        if not isinstance(got, Mapping):
-            return got
-        foreign = {c for case in self.every for c in constructors(case.base)} - constructors(chosen.base)
-        return {r: case_rows(rows, foreign) for r, rows in got.items()}
+        """The rows of `rels` of the case `chosen` run on the input of `ex`
+        on `taken`, which `taking(chosen)` gave, so that they are the case's
+        own."""
+        return relations_at(self.eng, taken, chosen, as_grid(ex.input), rels, Assignment(()), LIMITS)
 
 
 def load_once(stem: str, solver_file: Path) -> Loaded | Undefined | RunFailure:
@@ -109,8 +116,8 @@ def relations(stem: str, case: str, pair: str
     """The rows of each relation of the program of the case of `stem` whose
     arclog name is `case` (`parity.case_name`), run on the input of the
     pair whose name is `pair` (`arc.task.pair_name`), each keyed by its arclog name
-    (`parity.relation_name`), with the rows that `case_rows` cuts left out;
-    the case's undefined outcome or the run's
+    (`parity.relation_name`), the rows of a run of the program of
+    `taken_program`; the case's undefined outcome or the run's
     failure where it gives no rows. Raises `NoSuchCase` and `NoSuchPair`."""
     loaded = load_once(stem, solver_path(stem))
     if not isinstance(loaded, Loaded):
@@ -119,7 +126,7 @@ def relations(stem: str, case: str, pair: str
     if chosen is None:
         raise NoSuchCase(case)
     ex = loaded.pair(pair)
-    got = loaded.run(chosen, ex, every_relation(loaded.eng, loaded.solver.program))
+    got = loaded.run(loaded.taking(chosen), chosen, ex, every_relation(loaded.eng, loaded.solver.program))
     if not isinstance(got, Mapping):
         return got
     return {relation_name(loaded.names, r): rows for r, rows in got.items()}
@@ -170,8 +177,9 @@ def concept_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | R
         else:
             mapped[r] = name
     runs = []
+    taken = loaded.taking(chosen)
     for p, ex in examples(loaded.solver.given_task):
-        got = loaded.run(chosen, ex, list(mapped))
+        got = loaded.run(taken, chosen, ex, list(mapped))
         if not isinstance(got, Mapping):
             return got
         runs.append((p.text, got))
@@ -211,14 +219,75 @@ def constructors(value: Value | None) -> set[str]:
             return set()
 
 
-def case_rows(rows: Rows, foreign: set[str]) -> Rows:
-    """The rows of one relation that hold, at no depth of a record or ADT
-    value, an `AdtValue` whose constructor is in `foreign`, the
-    constructors that some case's base holds and the chosen case's base
-    does not. Souffle's program derives the rows of every branch of a
-    `Choice` for each relation, and a row of another branch is no row of the
+def untaken(solver: Solver, base: Base | None) -> frozenset[str]:
+    """The constructors of the branches the case of `base` does not take: those of
+    each choice point of `solver` other than the constructors `base` holds,
+    and, at a point none of whose constructors `base` holds, other than the
+    point's concept branch (`concept_branch`). None are, for a solver with one
     case."""
-    return tuple(row for row in rows if not any(constructors(v) & foreign for v in row))
+    choice = solver.choice
+    if choice is None:
+        return frozenset()
+    held = constructors(base)
+    taken = held.union(concept_branch(p).name for p in choice.points
+                       if not held.intersection(c.name for c in p.constructors))
+    return frozenset(c.name for p in choice.points for c in p.constructors) - taken
+
+
+def taken_program(solver: Solver, base: Base | None) -> Program:
+    """The program of `solver` with each clause of a branch the case of `base`
+    does not take (`untaken`) dropped. A clause is of such a branch where one of
+    its constructors stands in its head, or in a positive atom or a `=`
+    comparison of its body, outside a negation and an aggregate: a disjunct of the
+    body that holds one is dropped from its disjunction, and the clause with
+    it where no disjunct is left. A fact is dropped by its head alone."""
+    names = untaken(solver, base)
+    if not names:
+        return solver.program
+    units = tuple(u for u in (_taken_unit(u, names) for u in solver.program.units) if u is not None)
+    return replace(solver.program, units=units)
+
+
+def _taken_unit(unit: Unit, names: frozenset[str]) -> Unit | None:
+    """`unit` without the disjuncts of branches in `names`; None where the
+    unit is of such a branch."""
+    if any(_holds(t, names) for t in unit.head.args):
+        return None
+    if unit.body is None:
+        return unit
+    body = _taken_body(unit.body, names)
+    return None if body is None else replace(unit, body=body)
+
+
+def _taken_body(body: tuple[BodyLiteral, ...], names: frozenset[str]
+                ) -> tuple[BodyLiteral, ...] | None:
+    """`body` without the disjuncts of branches in `names`; None where a
+    literal is of such a branch, or a disjunction has no disjunct left."""
+    out: list[BodyLiteral] = []
+    for lit in body:
+        if isinstance(lit, AtomLiteral) and not lit.negated and any(_holds(t, names) for t in lit.atom.args):
+            return None
+        if isinstance(lit, Comparison) and lit.op == ComparisonOperator.EQ \
+                and any(_holds(t, names) for t in (lit.lhs, lit.rhs)):
+            return None
+        if isinstance(lit, Disjunction):
+            kept = [b for branch in lit.branches if (b := _taken_body(branch, names)) is not None]
+            if not kept:
+                return None
+            if len(kept) == 1:
+                out.extend(kept[0])
+            else:
+                out.append(replace(lit, branches=tuple(kept)))
+        else:
+            out.append(lit)
+    return tuple(out)
+
+
+def _holds(term: Term, names: frozenset[str]) -> bool:
+    """Whether a constructor named in `names` stands in `term`, outside an
+    aggregate."""
+    return (isinstance(term, ConstructorTerm) and term.name in names) \
+        or any(_holds(t, names) for t in subterms(term))
 
 
 def leaves(value: Value) -> list[int | float | str]:
