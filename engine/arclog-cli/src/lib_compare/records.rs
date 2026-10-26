@@ -23,6 +23,9 @@ pub(super) enum Record {
     Failed(String),
     /// The inputs of the element that its Souffle form does not declare.
     Undeclared(Vec<String>),
+    /// The record is of the element's present inputs and sources, and its
+    /// rows do not read.
+    Unreadable,
     /// No record of the element's present inputs.
     Missing,
     /// A record made from other Souffle sources than the present ones.
@@ -33,9 +36,9 @@ pub(super) enum Record {
 }
 
 /// The inputs the Souffle side of an element runs on.
-pub(super) enum SouffleInputs<'i> {
+pub(super) enum SouffleInputs {
     /// The element's inputs.
-    Given(&'i Value),
+    Given(Value),
     /// The element's inputs with each input its Souffle form does not
     /// declare holding no row, the inputs of its second inputs file.
     Emptied(Emptied),
@@ -79,7 +82,7 @@ impl Emptied {
     }
 }
 
-impl SouffleInputs<'_> {
+impl SouffleInputs {
     pub(super) fn inputs(&self) -> &Value {
         match self {
             SouffleInputs::Given(inputs) => inputs,
@@ -87,11 +90,11 @@ impl SouffleInputs<'_> {
         }
     }
 
-    /// The engine's walks of `subject` on these inputs, given `walks`, its
-    /// walks on the element's inputs, or the stop of its run.
-    pub(super) fn engine_walks(&self, subject: &Subject<'_>, walks: &Walks) -> Result<Walks, String> {
+    /// The engine's walks of `subject` on these inputs, or the stop of its
+    /// run.
+    pub(super) fn engine_walks(&self, subject: &Subject<'_>) -> Result<Walks, String> {
         match self {
-            SouffleInputs::Given(_) => Ok(walks.clone()),
+            SouffleInputs::Given(inputs) => subject.evaluated(inputs),
             SouffleInputs::Emptied(emptied) => match subject {
                 Subject::Component { component, .. } | Subject::Unfold { component, .. } => subject.evaluated(&emptied.defaulted(component)?),
                 Subject::Relation { .. } => subject.evaluated(emptied),
@@ -105,15 +108,10 @@ impl SouffleInputs<'_> {
 /// record of `inputs`, or, where that record gives undeclared inputs, the
 /// emptied inputs of its second inputs file, with their record where the
 /// second file has one.
-pub(super) fn read_record<'i>(
-    snapshot: &Path,
-    element: &Element<'_>,
-    inputs: &'i Value,
-    sources: &Result<String, String>,
-) -> (Record, SouffleInputs<'i>) {
+pub(super) fn read_record(snapshot: &Path, element: &Element<'_>, inputs: &Value, sources: &Result<String, String>) -> (Record, SouffleInputs) {
     let name = element.name();
     let record = record_of(&snapshot.join(format!("{name}.json")), element, inputs, sources);
-    let Record::Undeclared(ports) = &record else { return (record, SouffleInputs::Given(inputs)) };
+    let Record::Undeclared(ports) = &record else { return (record, SouffleInputs::Given(inputs.clone())) };
     let emptied = Emptied { inputs: emptied_inputs(inputs, ports), ports: ports.clone() };
     let record = match record_of(&snapshot.join(format!("{name}.souffle.json")), element, &emptied, sources) {
         Record::Missing => record,
@@ -142,7 +140,7 @@ pub(super) fn record_of(path: &Path, element: &Element<'_>, inputs: &Value, sour
     if let Some(failure) = record.get("failure").and_then(Value::as_str) {
         return Record::Failed(failure.to_owned());
     }
-    souffle(&record, element, inputs).map_or(Record::Missing, Record::Rows)
+    souffle(&record, element, inputs).map_or(Record::Unreadable, Record::Rows)
 }
 
 /// The rows of the record `record` of `element`, made from `inputs`, and
@@ -204,8 +202,7 @@ mod tests {
                 input["rows"] = serde_json::json!([["DIR_T"], ["DIR_B"], ["DIR_L"], ["DIR_R"]]);
             }
         }
-        let walks = subject.evaluated(&inputs).expect("the engine's run on Boundary's inputs");
-        let engine = SouffleInputs::Emptied(emptied).engine_walks(&subject, &walks).expect("the engine's run on the emptied inputs");
+        let engine = SouffleInputs::Emptied(emptied).engine_walks(&subject).expect("the engine's run on the emptied inputs");
         assert_eq!(engine, subject.evaluated(&cardinals).expect("the engine's run on the cardinals"));
     }
 }

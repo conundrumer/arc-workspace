@@ -4,7 +4,6 @@ and clauses their arclog forms."""
 
 from __future__ import annotations
 
-import os
 from collections import Counter, defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, field as dc_field, fields as dc_fields, is_dataclass, replace as dc_replace
@@ -134,11 +133,10 @@ class Converter:
         prog, self.tile_frames = tile_frames_split(prog)
         prog, self.picks, self.dropped = rewrite_picks(prog)
         prog, self.lib_judgment = libmap_box.typed(prog, lib)
-        macros = paths.MACROS_ENV in os.environ
         # the rewrite in its ground form, whose clauses the Souffle engine can run, which
         # `parity_text` reads; it runs first, as `instances.GROUNDED` holds the latest run's inputs
-        self.ground_prog = None if macros else libmap_rewrite(prog, lib, ground=True)[0]
-        prog, judgment, self.lib_moved, lib_held = libmap_rewrite(prog, lib, macros=macros)
+        self.ground_prog = libmap_rewrite(prog, lib, ground=True)[0]
+        prog, judgment, self.lib_moved, lib_held = libmap_rewrite(prog, lib)
         MOVED_RELS.clear()
         MOVED_RELS.update({f"{was}.{r}": new for was, moves in self.lib_moved.values() for r, new in moves.items()})
         self.lib_judgment |= judgment

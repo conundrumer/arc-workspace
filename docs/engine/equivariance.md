@@ -51,7 +51,6 @@ So equivariance follows from the checker's rules and the lib's definitions, and 
 - **Rule.** Each lib element is defined as a function of the rows of its inputs. Where an element's operation has more than one answer, it exports every answer, or the answers are the models of a chosen relation. No definition breaks a tie by an order of encodings: term ids, reading order, Example order or color numbers.
 - **Enforced by:** the admission test of [lib-spec.md](../../docs/lib-spec.md), which each new element passes, and the startup check of the orientation tables, as [Lib](evaluator.md#lib) gives. The tables hold no color, so their invariance under D4, with the action above, is their invariance under Γ.
 - **Cost:** nothing at run time. A review at each admission.
-- **Mechanical support:** the [lib comparison](verification.md#lib-comparison) also runs each of its small inputs in its eight D4 images and under one color permutation, and compares each element's rows with the image of its rows. So it finds a definitional choice that a review misses, such as the choices of `Canon` and `Wallpaper` below. It costs nine runs of each small input, in a command that no run calls.
 
 ### Each native implementation matches its definition
 

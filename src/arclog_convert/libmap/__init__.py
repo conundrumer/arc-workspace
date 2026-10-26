@@ -13,8 +13,7 @@
 
 `rename.rename` applies `REL`, `COMP` and `DERIVATIONS` to arclog,
 arcdata and arcscene text, and `rewrite` replaces each expansion's site in
-a parsed Souffle solver by its shape, and with its `macros` config, each
-lib name the expansion config of `macros` defines by its definition.
+a parsed Souffle solver by its shape.
 """
 from dataclasses import dataclass, field
 
@@ -67,7 +66,7 @@ in place of their own, since the expansions write every instance anew."""
 DERIVATIONS: dict[str, str] = {"Frame2D": "Frame", "SepTiles": "Division"}
 
 
-def rewrite(prog, lib, ground: bool = False, only: set[str] | None = None, macros: bool = False):
+def rewrite(prog, lib, ground: bool = False, only: set[str] | None = None):
     """The program with each expansion's site replaced by its shape; each
     site left in place, with the reason; and each instance that stands for
     an expanded one under another name and what each relation of its shape
@@ -75,11 +74,8 @@ def rewrite(prog, lib, ground: bool = False, only: set[str] | None = None, macro
     `lib` is the present lib's `Lib`. With `ground`, the shape holds the
     atoms the Souffle engine needs to ground it. With `only`, only the
     expansions of those names apply: a component's name, or a relation's,
-    `crop`, `box_edge`, `box_corner` and the division relations. With
-    `macros`, the expansion config `macros.expand` applies last, and each
-    site it leaves in place is given with the reason."""
+    `crop`, `box_edge`, `box_corner` and the division relations."""
     from arclog_convert.libmap import box, cells, division, instances, orders
-    from arclog_convert.libmap import macros as config
     specs = {k: v for k, v in (orders.SPECS | cells.SPECS | division.SPECS).items() if only is None or k in only}
     prog, judgment, moved, held = instances.expand(prog, lib, specs)
     if only is None or only & box.IDIOMS:
@@ -88,7 +84,4 @@ def rewrite(prog, lib, ground: bool = False, only: set[str] | None = None, macro
     if only is None or only & division.HOISTED:
         prog, j3 = division.hoist(prog, lib, ground)
         judgment |= j3
-    if macros:
-        prog, j4 = config.expand(prog, lib)
-        judgment |= j4
     return prog, judgment, moved, held

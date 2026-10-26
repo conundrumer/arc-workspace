@@ -20,11 +20,10 @@ How each step of the [build order](overview.md#build-order) is checked against t
 
 ## Lib comparison
 
-- Each solver of `gen/` and its expanded form in `work/arclog/gen_macros/` give the same outcomes. This compares each lib name that has a definition with that definition, inside every solver that uses it.
 - Each lib relation and component is compared with its Souffle version on small generated inputs, outside any solver.
+- After a change, the comparison runs on each lib element the change touches, and on every element only where what the change touches reaches every element.
 - This comparison is a command, not a test of the test suite.
 - Agreement with Souffle does not show that a lib element is equivariant, as [Equivalence and subsumption](../../docs/handbook/principles.md#equivalence-and-subsumption) gives for agreement on some inputs. How the lib keeps equivariance is in [equivariance.md](equivariance.md).
-- The comparison also runs each small input in its eight D4 images and under one color permutation, and compares each element's rows with the image of its rows, as [equivariance.md](equivariance.md#each-lib-element-has-no-free-choice-or-its-choice-is-a-model) gives.
 
 ## Build speed
 

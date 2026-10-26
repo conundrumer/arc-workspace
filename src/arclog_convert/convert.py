@@ -1,14 +1,13 @@
 """Convert the Souffle solvers under programs/solvers/ to arclog and arcdata
-files under gen/, and, with the expansion config `libmap.macros`, under
-gen_macros/, of `arclog_convert.out`: `work/arclog/` of the main
+files under gen/ of `arclog_convert.out`: `work/arclog/` of the main
 worktree, or the directory `--out` gives; in a linked worktree, `--out` is
 required (or `ARCLOG_OUT`).
 
     uv run python -m arclog_convert.convert [--out <dir>] [--no-train-replay | --accept] [--no-row-parity] [<stem> ...]
 
-Each run writes both outputs for the same solvers, every solver where no
-stem is given, and prints the summary of each.
-Then, once both outputs are written, it replays each case of the solvers
+Each run writes the output for the solvers, every solver where no
+stem is given, and prints its summary.
+Then, once the output is written, it replays each case of the solvers
 that `gen/` converted on the train pairs of its task, records the verdicts
 under `train_replay/`, and reports against the baseline
 `unreproduced.tsv`; the run exits with status 1 where the report finds a
@@ -131,9 +130,8 @@ def convert_one(stem: str) -> tuple[str, str | None, str | None, Counter, Counte
                                     tuple[str, str] | None]:
     """One solver's arclog and arcdata, its TODO kinds, its merge counts and
     its parameters whose columns do not map onto their proposer's, or the
-    error that stopped it, and, unless the expansion config is on, the arclog
-    and the arcdata of its program with the check relations: a pool worker's
-    unit of work."""
+    error that stopped it, and the arclog and the arcdata of its program with
+    the check relations: a pool worker's unit of work."""
     global _LIBS
     if _LIBS is None:
         lib, sig = Lib(LIB_DL), Lib(SIGNATURE)
@@ -161,24 +159,23 @@ def convert_one(stem: str) -> tuple[str, str | None, str | None, Counter, Counte
             arclog, arcdata = s.run()
         arclog, arcdata, insts = _finished(arclog, arcdata)
         merges, unmerged = Counter(MERGES), list(MERGES_UNMERGED)
-        if paths.MACROS_ENV not in os.environ:
-            names = name_map(s, insts, arclog, arcdata)
-            text = parity(s, names, insts)
-            names = placed(names, text)
-            columns = column_map(s, names, insts, text)
-            checked = _with_checks(s, lib, sig, names, columns, stuck, copies)
-            for directory, data in ((paths.NAMES_DIR, names), (paths.COLUMNS_DIR, columns)):
-                directory.mkdir(parents=True, exist_ok=True)
-                (directory / f"{stem}.json").write_text(json.dumps(data, indent=1, sort_keys=True) + "\n")
-            (paths.NAMES_DIR / f"{stem}.dl").write_text(text.text)
-            checked = checked or (arclog, arcdata)
+        names = name_map(s, insts, arclog, arcdata)
+        text = parity(s, names, insts)
+        names = placed(names, text)
+        columns = column_map(s, names, insts, text)
+        checked = _with_checks(s, lib, sig, names, columns, stuck, copies)
+        for directory, data in ((paths.NAMES_DIR, names), (paths.COLUMNS_DIR, columns)):
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / f"{stem}.json").write_text(json.dumps(data, indent=1, sort_keys=True) + "\n")
+        (paths.NAMES_DIR / f"{stem}.dl").write_text(text.text)
+        checked = checked or (arclog, arcdata)
     except Exception as e:  # noqa: BLE001
         return stem, None, None, Counter(), Counter(), [], {}, f"{type(e).__name__}: {e}", None
     return stem, arclog, arcdata, todo.kinds, merges, unmerged, s.c.col_mismatch, None, checked
 
 
 def main(argv: list[str]) -> int:
-    global OUT_DIR, MACROS_DIR, PLANS, NAMES_DIR, COLUMNS_DIR
+    global OUT_DIR, PLANS, NAMES_DIR, COLUMNS_DIR
     import argparse
     parser = argparse.ArgumentParser(prog="python -m arclog_convert.convert")
     parser.add_argument("--out", type=Path, help="the directory to write under, in place of `arclog_convert.out`; required in a linked worktree unless `ARCLOG_OUT` is set")
@@ -192,17 +189,13 @@ def main(argv: list[str]) -> int:
     if args.out is not None:
         # set before the pools start, so that their workers read it
         os.environ[OUT_ENV] = str(args.out.resolve())
-        paths.OUT_DIR, paths.MACROS_DIR, paths.PLANS, paths.NAMES_DIR, paths.COLUMNS_DIR = paths.out_dirs()
+        paths.OUT_DIR, paths.PLANS, paths.NAMES_DIR, paths.COLUMNS_DIR = paths.out_dirs()
     else:
         writable_out()
     stems = args.stems or sorted(p.stem for p in paths.SOLVERS.glob("*.dl"))
     refresh_plans(stems)
     print(f"{paths.OUT_DIR}:")
     converted = convert_into(stems, paths.OUT_DIR)
-    # set before the second pool starts, so that its workers read it
-    os.environ[paths.MACROS_ENV] = "1"
-    print(f"{paths.MACROS_DIR}:")
-    convert_into(stems, paths.MACROS_DIR)
     from arclog_convert import row_parity, train_replay
     status = 0 if args.no_train_replay else train_replay.replay(converted, paths.OUT_DIR.parent, args.accept)
     if args.no_row_parity:

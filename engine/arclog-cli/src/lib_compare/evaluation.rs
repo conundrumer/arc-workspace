@@ -1,11 +1,10 @@
 //! The engine's rows of a lib element, and their comparison with the
-//! Souffle record and with the rows of the inputs' images.
+//! Souffle record.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 
-use arclog::algebra::geometry::{D4Element, Edge, Geometry};
 use arclog::algebra::{algebra, Algebra};
 use arclog::eval::instance::Construction;
 use arclog::eval::unfold::UnfoldOutput;
@@ -18,7 +17,7 @@ use arclog_constructions::shared as constructions;
 use crate::renaming::{renaming_exists, EngineLeaf, Leaf};
 
 use super::components::{constructed, unfolded, WALKS};
-use super::inputs::{column_text, component_type, constant_name, is_orientation, relation_type, Element};
+use super::inputs::{column_text, is_orientation, relation_type, Element};
 use super::last_panic;
 
 impl Element<'_> {
@@ -126,39 +125,6 @@ impl Subject<'_> {
         }));
         run.unwrap_or_else(|_| Err(format!("a panic at {}", last_panic())))
     }
-
-    /// The inputs under `image`.
-    pub(super) fn moved(&self, image: &Image, inputs: &Value) -> Value {
-        let mut moved = inputs.clone();
-        match self {
-            Subject::Relation { relation, .. } => {
-                let types: Vec<ValueType> = relation.columns.iter().map(relation_type).collect();
-                for mode in moved["modes"].as_array_mut().into_iter().flatten() {
-                    let mode_types: Vec<ValueType> = mode_columns(relation, mode).into_iter().map(|i| types[i].clone()).collect();
-                    let probes: Vec<Value> = mode["rows"].as_array().into_iter().flatten().map(|row| image.row(row, &mode_types)).collect();
-                    mode["rows"] = Value::from(probes);
-                }
-            }
-            Subject::Component { component, .. } | Subject::Unfold { component, .. } => {
-                for (input, port) in moved["inputs"].as_array_mut().into_iter().flatten().zip(&component.inputs) {
-                    let types: Vec<ValueType> = port.port.columns.iter().map(component_type).collect();
-                    let rows: Vec<Value> = input["rows"].as_array().into_iter().flatten().map(|row| image.row(row, &types)).collect();
-                    input["rows"] = Value::from(rows);
-                }
-            }
-        }
-        moved
-    }
-
-    /// The types of the columns of the rows of the part at `index`.
-    pub(super) fn part_types(&self, index: usize) -> Vec<ValueType> {
-        match self {
-            Subject::Relation { relation, .. } => relation.columns.iter().map(relation_type).collect(),
-            Subject::Component { component, .. } | Subject::Unfold { component, .. } => {
-                component.outputs[index].columns.iter().map(component_type).collect()
-            }
-        }
-    }
 }
 
 /// The engine's rows of each mode of the relation's inputs, or the stop of
@@ -256,8 +222,8 @@ pub(super) fn differences(subject: &Subject<'_>, other: &str, engine: &[Rows], e
 }
 
 /// The line on rows that hold Idents where no one renaming of the engine's
-/// Idents makes them agree with `expected`'s. An Ident of `expected`, the
-/// image of the engine's rows, takes a number of its own.
+/// Idents makes them agree with `expected`'s. An Ident of `expected`, a
+/// Souffle record's, takes a number of its own.
 fn renamed_differences(subject: &Subject<'_>, other: &str, engine: &[Rows], expected: &[Rows]) -> Vec<String> {
     let mut numbered: Vec<Ident> = Vec::new();
     let mut theirs: Vec<BTreeSet<Vec<Leaf>>> = Vec::new();
@@ -304,108 +270,6 @@ fn renamed_differences(subject: &Subject<'_>, other: &str, engine: &[Rows], expe
         counts(engine),
         counts(expected)
     )]
-}
-
-/// The images the comparison runs the inputs under: each D4 element by its
-/// constant's name, and one color permutation.
-pub(super) enum Image {
-    D4(&'static str, D4Element),
-    Colors,
-}
-
-impl Image {
-    pub(super) fn each() -> Vec<Image> {
-        let geometry = Geometry::get();
-        let elements: BTreeMap<&str, D4Element> = geometry.domain(&ValueType::D4).iter().map(|&id| (constant_name(id), geometry.element(id))).collect();
-        elements.into_iter().map(|(name, g)| Image::D4(name, g)).chain([Image::Colors]).collect()
-    }
-
-    pub(super) fn name(&self) -> String {
-        match self {
-            Image::D4(name, _) => format!("the D4 image {name}"),
-            Image::Colors => "the color permutation".to_owned(),
-        }
-    }
-
-    /// The image of `value`, a value of `ty` as this command writes it.
-    pub(super) fn of(&self, value: &Value, ty: &ValueType) -> Value {
-        let id = term_id(value, ty).expect("a value this command wrote");
-        let image = match (self, Term::decode(id, ty)) {
-            (Image::D4(_, g), Term::Box(m)) => {
-                // The margin at each edge goes to that edge's image.
-                let mut out = [0; 4];
-                for (margin, edge) in [m.top, m.bottom, m.left, m.right].into_iter().zip(Edge::ALL) {
-                    out[g.image(edge) as usize] = margin;
-                }
-                let [top, bottom, left, right] = out;
-                Term::Box(Margins { top, bottom, left, right }).encode().expect("a Box's image has its margins")
-            }
-            (Image::D4(_, g), Term::Constant(Constant::Orientation(_))) => Geometry::get().under(*g, id),
-            (Image::Colors, Term::Constant(Constant::Color(color))) => {
-                Term::Constant(Constant::Color(Color::from_digit((color.digit() * 3 + 1) % 10).expect("a digit is a color"))).encode().expect("a color's id")
-            }
-            _ => id,
-        };
-        value_json(image, ty)
-    }
-
-    pub(super) fn row(&self, row: &Value, types: &[ValueType]) -> Value {
-        Value::from(row.as_array().into_iter().flatten().zip(types).map(|(v, ty)| self.of(v, ty)).collect::<Vec<_>>())
-    }
-
-    /// The image of a row of the engine's, each Ident left as it is.
-    fn cells(&self, row: &[Cell], types: &[ValueType]) -> Vec<Cell> {
-        let image = |(cell, ty): (&Cell, &ValueType)| match cell {
-            Cell::Value(value) => Cell::Value(self.of(value, ty)),
-            Cell::Ident(ident) => Cell::Ident(*ident),
-        };
-        row.iter().zip(types).map(image).collect()
-    }
-}
-
-/// Each line on an image of the inputs whose rows are not the image of the
-/// rows of the inputs. Where the inputs fork, the walks of the image are
-/// the images of the walks, each once, in any order, and the comparison
-/// leaves out inputs whose walks reach [`WALKS`], since which walks the
-/// limit keeps follows the order of term ids, which an image changes.
-pub(super) fn image_differences(subject: &Subject<'_>, inputs: &Value, walks: &[Vec<Rows>]) -> Vec<String> {
-    let name = subject.name();
-    let mut lines = Vec::new();
-    if walks.len() >= WALKS {
-        return lines;
-    }
-    for image in Image::each() {
-        let other = format!("the rows' image under {}", image.name());
-        let expected: Vec<Vec<Rows>> = walks
-            .iter()
-            .map(|rows| {
-                rows.iter()
-                    .enumerate()
-                    .map(|(index, part)| {
-                        let types = subject.part_types(index);
-                        part.iter().map(|row| image.cells(row, &types)).collect()
-                    })
-                    .collect()
-            })
-            .collect();
-        match subject.evaluated(&subject.moved(&image, inputs)) {
-            Ok(got) => match (&got[..], &expected[..]) {
-                ([got], [expected]) => lines.extend(differences(subject, &other, got, expected)),
-                _ => {
-                    let unmatched = expected.iter().filter(|want| !got.iter().any(|got| differences(subject, &other, got, want).is_empty())).count();
-                    if got.len() != expected.len() || unmatched > 0 {
-                        lines.push(format!(
-                            "{name}: against {other}, the engine gives {} walks, the image {}, of which {unmatched} are no walk the engine gives",
-                            got.len(),
-                            expected.len()
-                        ));
-                    }
-                }
-            },
-            Err(message) => lines.push(format!("{name}: under {}, the engine's run stops: {message}", image.name())),
-        }
-    }
-    lines
 }
 
 /// Each line on a difference between the engine's rows and the Souffle

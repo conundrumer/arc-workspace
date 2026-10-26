@@ -128,13 +128,32 @@ def sources_digest() -> str:
                             for shown, path in sources))
 
 
-def write_all() -> list[Path]:
-    """Writes the record of each inputs file whose record's key or sources
-    digest differs from its own, and gives the path of each record
-    written."""
+class NoInputsFile(Exception):
+    """An element name that has no inputs file."""
+
+
+def inputs_files(elements: Sequence[str]) -> list[Path]:
+    """The inputs files of the elements `elements` name, each element's
+    `<name>.json` and, where it has one, `<name>.souffle.json`; every inputs
+    file where none is named. Raises `NoInputsFile` for a name with no
+    `<name>.json`."""
+    if not elements:
+        return sorted(inputs_dir().glob("*.json"))
+    files = []
+    for name in elements:
+        if not (inputs_dir() / f"{name}.json").exists():
+            raise NoInputsFile(name)
+        files += [p for p in (inputs_dir() / f"{name}.json", inputs_dir() / f"{name}.souffle.json") if p.exists()]
+    return files
+
+
+def write_all(elements: Sequence[str] = ()) -> list[Path]:
+    """Writes the record of each inputs file of `inputs_files(elements)`
+    whose record's key or sources digest differs from its own, and gives the
+    path of each record written."""
     written = []
     sources = sources_digest()
-    for path in sorted(inputs_dir().glob("*.json")):
+    for path in inputs_files(elements):
         data = path.read_bytes()
         key = lib_key(data)
         out = lib_dir() / path.name

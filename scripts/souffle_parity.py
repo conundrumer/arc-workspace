@@ -35,11 +35,14 @@ def parser() -> argparse.ArgumentParser:
         "Write each lib name, each proposer and each form keyword that a file of "
         "`work/arclog/gen/` uses, with the stems of the files that use it, to "
         "`.cache/parity/uses.json` of the main worktree, and print its path."))
-    sub.add_parser("lib", help=mctx(
-        "Write the Souffle rows of each lib element's inputs file under "
+    lib_cmd = sub.add_parser("lib", help=mctx(
+        "Write the Souffle rows of each inputs file of the lib elements under "
         "`.cache/parity/lib/inputs/` of the main worktree whose record is not fresh, to "
         "`.cache/parity/lib/`, and print the path of each record written. "
         "`arclog-cli lib-compare` writes the inputs files."))
+    lib_cmd.add_argument("elements", nargs="*", metavar="element", help=mctx(
+        "The lib elements, each by its name; every element with an inputs file where none "
+        "is given."))
     again = sub.add_parser("rerun", help=mctx(
         "Run one case of a solver again on one pair with every relation written out, and "
         "print the rows of each relation under its arclog name. With `--json`, a rerun that gives "
@@ -100,7 +103,12 @@ def main(argv: list[str]) -> int:
                 print(stem)
         return 0
     if args.cmd == "lib":
-        for path in lib.write_all():
+        try:
+            written = lib.write_all(args.elements)
+        except lib.NoInputsFile as missing:
+            print(mctx("No inputs file of the lib element {name}.").format(name=missing), file=sys.stderr)
+            return 2
+        for path in written:
             print(path)
         return 0
     if args.cmd == "uses":
