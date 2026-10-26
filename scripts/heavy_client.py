@@ -56,24 +56,35 @@ def last_errors(directory: str) -> str:
         return ""
 
 
-def spawn(directory: str) -> "subprocess.Popen[bytes]":
+LAUNCH = ("import subprocess, sys; subprocess.Popen([sys.executable, sys.argv[1]], "
+          "stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, start_new_session=True)")
+"""The program of the process that starts the daemon and exits, so that the daemon is no child of
+the call, which execs into its command and never reaps a child."""
+
+
+def spawn(directory: str) -> None:
+    """Start the daemon, which outlives this call and is the child of no process of it."""
     try:
         with open(os.path.join(directory, heavy_protocol.ERRORS), "ab") as errors:
-            return subprocess.Popen([sys.executable, daemon_script()], stdin=subprocess.DEVNULL,
-                                    stdout=subprocess.DEVNULL, stderr=errors, start_new_session=True)
-    except OSError as error:
+            launcher = subprocess.Popen([sys.executable, "-c", LAUNCH, daemon_script()], stdin=subprocess.DEVNULL,
+                                        stdout=subprocess.DEVNULL, stderr=errors, start_new_session=True)
+            status = launcher.wait(timeout=START_SECONDS)
+    except (OSError, subprocess.SubprocessError) as error:
         raise Refusal(f"cannot start the daemon: {error}")
+    if status:
+        raise Refusal(f"cannot start the daemon, status {status}: {last_errors(directory)}")
 
 
 def connect(directory: str, start: bool) -> Optional[socket.socket]:
     """A connection to the daemon, which this call starts where none runs and `start` is set;
-    None where none runs and `start` is not set."""
+    None where none runs and `start` is not set. A daemon that holds the lock but has no socket
+    to connect to is restarting or stopping, and is waited for, not replaced."""
     try:
         os.makedirs(directory, exist_ok=True)
     except OSError as error:
         raise Refusal(f"daemon directory {directory}: {error}")
     path = heavy_protocol.socket_path(directory)
-    process = None
+    started = False
     deadline = time.monotonic() + START_SECONDS
     while True:
         conn = socket.socket(socket.AF_UNIX)
@@ -87,10 +98,9 @@ def connect(directory: str, start: bool) -> Optional[socket.socket]:
             raise Refusal(f"cannot reach the daemon at {path}: {error}")
         if not start:
             return None
-        if process is None:
-            process = spawn(directory)
-        elif process.poll() not in (None, 0):
-            raise Refusal(f"the daemon exited with status {process.returncode}: {last_errors(directory)}")
+        if not started and not heavy_protocol.lock_held(directory):
+            spawn(directory)
+            started = True
         if time.monotonic() >= deadline:
             raise Refusal(f"the daemon did not start within {START_SECONDS} s: {last_errors(directory)}")
         time.sleep(0.05)

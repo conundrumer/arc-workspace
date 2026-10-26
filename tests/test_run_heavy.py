@@ -324,6 +324,7 @@ def test_a_daemon_that_takes_up_a_changed_source_keeps_its_job_and_its_waiting_c
     shutil.copytree(checkout.scripts(), scripts, ignore=shutil.ignore_patterns("__pycache__"))
     machine.run_heavy = str(scripts / "run_heavy.py")
     holder = machine.holder("--cpus", "4")
+    daemon = json.loads((machine.daemon / "registry.json").read_text())["daemon"]
     marker = tmp_path / "ran"
     call = machine.start("touch", str(marker))
     assert "waiting for" in first_stderr_line(call)
@@ -333,11 +334,28 @@ def test_a_daemon_that_takes_up_a_changed_source_keeps_its_job_and_its_waiting_c
     assert until(lambda: "restart" in (machine.daemon / "daemon.log").read_text(), 20)
     assert until(lambda: f"  {call.pid} " in machine.queue().split("waiting:", 1)[-1], 20)
     assert f"  {holder.pid} " in machine.queue().split("waiting:", 1)[0]
+    assert json.loads((machine.daemon / "registry.json").read_text())["daemon"] == daemon
     assert call.poll() is None and not marker.exists()
     machine.set(PRESSURE, 1)
     release(holder)
     assert call.wait() == 0
     assert marker.exists()
+
+
+def test_a_daemon_that_stops_is_no_zombie_of_the_call_that_started_it(machine):
+    holder = machine.holder()
+    daemon = json.loads((machine.daemon / "registry.json").read_text())["daemon"]
+    os.kill(daemon, signal.SIGTERM)
+
+    def gone() -> bool:
+        try:
+            os.kill(daemon, 0)
+        except ProcessLookupError:
+            return True
+        return False
+
+    assert until(gone, 20)
+    release(holder)
 
 
 def test_the_daemon_is_no_member_of_the_job_of_the_call_that_started_it(machine):

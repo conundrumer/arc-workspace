@@ -17,9 +17,10 @@ machine, performs each effect, and serves the socket.
 
 Once a source file it runs (this script, and each module that lies beside it)
 has changed and the next sample reads the file the same, it writes the registry,
-closes its socket, and replaces its process, by `os.execv`, with a run of the
-changed script. A call that waits sees its connection close and connects again
-(`heavy_client.acquire`), with its place in the queue.
+replaces its process, by `os.execv`, with a run of the changed script, which keeps
+the lock and the listening socket open (`heavy_protocol`), so that a call that connects meanwhile
+waits in the socket's queue and no call starts another daemon. A call that waits sees its connection
+close and connects again (`heavy_client.acquire`), with its place in the queue.
 
 It reads the machine every `SAMPLE_SECONDS` (`FAST_SAMPLE_SECONDS` while the
 memory pressure is over normal): `ps` for the processes, the sessions' files
@@ -451,7 +452,18 @@ def runs(pid: int) -> bool:
     return True
 
 
-def listen(directory: str) -> socket.socket:
+def inherited(name: str) -> Optional[int]:
+    """The descriptor that a daemon which replaced its process passed on in the environment
+    variable `name`, taken out of the environment, or None where this process is a new start."""
+    value = os.environ.pop(name, None)
+    return None if value is None else int(value)
+
+
+def listen(directory: str, inherited_fd: Optional[int]) -> socket.socket:
+    if inherited_fd is not None:
+        server = socket.socket(fileno=inherited_fd)
+        server.set_inheritable(False)
+        return server
     path = heavy_protocol.socket_path(directory)
     if os.path.exists(path):
         os.unlink(path)
@@ -465,7 +477,9 @@ def listen(directory: str) -> socket.socket:
 def main() -> int:
     directory = heavy_protocol.heavy_dir()
     os.makedirs(directory, exist_ok=True)
-    lock = os.open(os.path.join(directory, heavy_protocol.LOCK), os.O_RDWR | os.O_CREAT, 0o600)
+    lock = inherited(heavy_protocol.LOCK_FD_ENV)
+    if lock is None:
+        lock = os.open(os.path.join(directory, heavy_protocol.LOCK), os.O_RDWR | os.O_CREAT, 0o600)
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
@@ -473,18 +487,23 @@ def main() -> int:
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     daemon = Daemon(directory)
     daemon.rotate_log()
-    server = listen(directory)
+    server = listen(directory, inherited(heavy_protocol.SOCKET_FD_ENV))
+    changed: List[str] = []
     ended = False
     try:
         changed = daemon.run(server)
         ended = not changed
     finally:
-        server.close()
-        for path in [heavy_protocol.socket_path(directory)] + (
-                [] if not ended or daemon.core.jobs else [os.path.join(directory, heavy_protocol.REGISTRY)]):
-            with contextlib.suppress(FileNotFoundError):
-                os.unlink(path)
+        if not changed:
+            server.close()
+            for path in [heavy_protocol.socket_path(directory)] + (
+                    [] if not ended or daemon.core.jobs else [os.path.join(directory, heavy_protocol.REGISTRY)]):
+                with contextlib.suppress(FileNotFoundError):
+                    os.unlink(path)
     if changed:
+        for fd, name in ((lock, heavy_protocol.LOCK_FD_ENV), (server.fileno(), heavy_protocol.SOCKET_FD_ENV)):
+            os.set_inheritable(fd, True)
+            os.environ[name] = str(fd)
         os.execv(sys.executable, [sys.executable, os.path.abspath(__file__)])
     return 0
 

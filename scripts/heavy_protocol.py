@@ -19,6 +19,11 @@ socket. A client sends one line of JSON and reads lines of JSON.
         answered with `{"status": "changed", "need", "waiting", ...}`, or `{"status": "refused", "reason"}`
         where no request of that pid waits.
 
+The daemon holds a `flock` on `daemon.lock` under the directory for as long as it runs. A daemon
+that replaces its process by `os.execv` passes the open lock and the listening socket to the new
+image in the descriptors that the environment variables `ARC_HEAVY_LOCK_FD` and `ARC_HEAVY_SOCKET_FD`
+give, so the lock is held and the socket listens without a break.
+
 The registry, `registry.json` under the directory, is the daemon's record of the jobs that hold a
 share and the requests that wait, as `heavy_core.Core.snapshot` gives it, with `daemon` the daemon's
 pid. The daemon rewrites it at each change, and a reader takes it as stale where `daemon` does not
@@ -28,6 +33,7 @@ Standard library only, Python 3.9."""
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import os
@@ -40,6 +46,8 @@ SOCKS_ENV = "ARC_HEAVY_SOCKS"
 SOCKS = "/tmp/cc-socks"
 SOCKET = "daemon.sock"
 LOCK = "daemon.lock"
+LOCK_FD_ENV = "ARC_HEAVY_LOCK_FD"
+SOCKET_FD_ENV = "ARC_HEAVY_SOCKET_FD"
 REGISTRY = "registry.json"
 LOG = "daemon.log"
 ERRORS = "daemon.err"
@@ -66,6 +74,18 @@ def socket_path(directory: str) -> str:
     if len(path) <= SOCKET_PATH_CHARS:
         return path
     return f"/tmp/arc-heavy-{hashlib.sha1(directory.encode()).hexdigest()[:16]}.sock"
+
+
+def lock_held(directory: str) -> bool:
+    """Whether a daemon holds the lock under `directory`: one that runs, restarts or stops."""
+    fd = os.open(os.path.join(directory, LOCK), os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return True
+    finally:
+        os.close(fd)
+    return False
 
 
 def line(message: Dict[str, Any]) -> bytes:
