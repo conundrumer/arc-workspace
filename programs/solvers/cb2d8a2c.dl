@@ -98,38 +98,54 @@ impl_choice([M, G]) :- meet_choice(M), gap_choice(G).
 
 // --- shared: source, walls, wall order, lanes ---
 
-.decl source(p: Position)
-source(P) :- in(P, Col), params.path_color(Col), dir_elem(D), dist(P, D, 0).
+// The source, the walls, and each wall's marks, edge, free end and mark count.
+.comp Parse<Key> {
+    .type Wall = [k: Key, w: Ident]
 
-// The edge the source stands on.
-.decl back(d: Dir)
-back(D) :- source(P), dir_elem(D), dist(P, D, 0).
+    .decl cell(key: Key, p: Position, col: Color)  // @input
+
+    .decl source(key: Key, p: Position)
+    source(K, P) :- cell(K, P, Col), params.path_color(Col), dir_elem(D), dist(P, D, 0).
+
+    // The edge the source stands on.
+    .decl back(key: Key, d: Dir)
+    back(K, D) :- source(K, P), dir_elem(D), dist(P, D, 0).
+
+    // @claim walls
+    .init wall = Components<Key>
+    wall.node(K, P) :- cell(K, P, Col), ( params.wall_color(Col) ; params.mark_color(Col) ).
+
+    .decl mark(key: Key, w: Ident, p: Position)
+    mark(K, W, P) :- wall.label(K, P, W), cell(K, P, Col), params.mark_color(Col).
+
+    // The edge each wall touches.
+    .decl wall_edge(key: Key, w: Ident, d: Dir)
+    wall_edge(K, W, D) :- wall.label(K, P, W), back(K, D0), perp_dir(D0, D), dist(P, D, 0).
+
+    // The wall cell farthest from that edge.
+    .decl free_end(key: Key, w: Ident, p: Position)
+    free_end(K, W, P) :-
+        wall.label(K, P, W), wall_edge(K, W, D), opposite(D, D2),
+        neighbor(P, D2, Q), !wall.label(K, Q, W).
+
+    // @claim clearance
+    .init marks = Tally<Wall, Position>
+    marks.domain([K, W]) :- free_end(K, W, _).
+    marks.item([K, W], P) :- mark(K, W, P).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
 
 .decl travel_axis(a: Axis)
-travel_axis(A) :- back(D), axis_of(D, A).
-
-// @claim walls
-.init wall = Components<Unit>
-wall.node($U(), P) :- in(P, Col), ( params.wall_color(Col) ; params.mark_color(Col) ).
-
-.decl mark(w: Ident, p: Position)
-mark(W, P) :- wall.label($U(), P, W), in(P, Col), params.mark_color(Col).
-
-// The edge each wall touches.
-.decl wall_edge(w: Ident, d: Dir)
-wall_edge(W, D) :- wall.label($U(), P, W), back(D0), perp_dir(D0, D), dist(P, D, 0).
-
-// The wall cell farthest from that edge.
-.decl free_end(w: Ident, p: Position)
-free_end(W, P) :-
-    wall.label($U(), P, W), wall_edge(W, D), opposite(D, D2),
-    neighbor(P, D2, Q), !wall.label($U(), Q, W).
+travel_axis(A) :- parse.back($U(), D), axis_of(D, A).
 
 // @claim walls-in-order
 .init order = Order<Unit, Ident>
-order.elem($U(), W) :- free_end(W, _).
+order.elem($U(), W) :- parse.free_end($U(), W, _).
 order.before($U(), W1, W2) :-
-    free_end(W1, P1), free_end(W2, P2), back(D), dist(P1, D, K1), dist(P2, D, K2), K1 < K2.
+    parse.free_end($U(), W1, P1), parse.free_end($U(), W2, P2),
+    parse.back($U(), D), dist(P1, D, K1), dist(P2, D, K2), K1 < K2.
 
 .decl clearance(g: Gap, w: Ident, k: number)
 
@@ -138,9 +154,9 @@ order.before($U(), W1, W2) :-
 // the wall, clearance cells beyond its free end.
 .decl detour(g: Gap, w: Ident, row: Position, lane: Position)
 detour(G, W, Row, L) :-
-    clearance(G, W, K), free_end(W, P), travel_axis(A),
-    back(D), jump(P, D, K, Q), neighbor(Q, D, R), split(R, A, Row, _),
-    wall_edge(W, D2), opposite(D2, D3), jump(P, D3, K, Q2), neighbor(Q2, D3, R2),
+    clearance(G, W, K), parse.free_end($U(), W, P), travel_axis(A),
+    parse.back($U(), D), jump(P, D, K, Q), neighbor(Q, D, R), split(R, A, Row, _),
+    parse.wall_edge($U(), W, D2), opposite(D2, D3), jump(P, D3, K, Q2), neighbor(Q2, D3, R2),
     split(R2, A, _, L).
 
 // The lines along the direction of travel.
@@ -150,7 +166,8 @@ lane(L) :- in(P, _), travel_axis(A), split(P, A, _, L).
 // The cell of lane l on the edge opposite the source.
 .decl far_end(lane: Position, p: Position)
 far_end(L, P) :-
-    in(P, _), back(D), opposite(D, D2), dist(P, D2, 0), travel_axis(A), split(P, A, _, L).
+    in(P, _), parse.back($U(), D), opposite(D, D2), dist(P, D2, 0),
+    travel_axis(A), split(P, A, _, L).
 
 // The lane the path leaves wall w's turn row in, when it arrives in lane l.
 .decl lane_out(ch: Choice, w: Ident, lane: Position, lane2: Position)
@@ -162,9 +179,9 @@ turn_cell(G, W, L, P) :- detour(G, W, Row, _), lane(L), compose(Row, L, P).
 // The corners of the path: the source, the cells where it arrives at and
 // leaves each wall's turn row, and its end on the far edge.
 .init walk = Propagation<Choice, Position>
-walk.source(Ch, P) :- impl_choice(Ch), source(P).
+walk.source(Ch, P) :- impl_choice(Ch), parse.source($U(), P).
 walk.edge([M, G], P, Q) :-
-    impl_choice([M, G]), source(P), travel_axis(A), split(P, A, _, L),
+    impl_choice([M, G]), parse.source($U(), P), travel_axis(A), split(P, A, _, L),
     order.first($U(), W), turn_cell(G, W, L, Q).               // arrives at the first wall
 walk.edge([M, G], P, Q) :-
     lane_out([M, G], W, L, L2), turn_cell(G, W, L2, P_leave),
@@ -194,7 +211,7 @@ lane_out([$DetourEach(), G], W, L, L2) :-
 // --- $KeepClearance ---
 lane_out([$KeepClearance(), G], W, L, L2) :-
     lane(L), detour(G, W, _, L_past),
-    wall_edge(W, D), dist(L, D, K), dist(L_past, D, K_past),
+    parse.wall_edge($U(), W, D), dist(L, D, K), dist(L_past, D, K_past),
     ( K < K_past, L2 = L_past     // short of the lane past the free end
     ; K >= K_past, L2 = L         // clear of the wall
     ).
@@ -203,24 +220,17 @@ lane_out([$KeepClearance(), G], W, L, L2) :-
 
 // A lane that meets wall w.
 .decl crosses(w: Ident, lane: Position)
-crosses(W, L) :- wall.label($U(), P, W), travel_axis(A), split(P, A, _, L).
+crosses(W, L) :- parse.wall.label($U(), P, W), travel_axis(A), split(P, A, _, L).
 
 lane_out([$PassClearWall(), G], W, L, L2) :-
     lane(L), detour(G, W, _, L_past),
     ( crosses(W, L), L2 = L_past ; !crosses(W, L), L2 = L ).
 
-// --- $MarkCount, $StoredClearance ---
-
-// @claim clearance
-.init marks = Tally<Ident, Position>
-marks.domain(W) :- free_end(W, _).
-marks.item(W, P) :- mark(W, P).
-
 // --- $MarkCount ---
-clearance($MarkCount(), W, K) :- marks.tally(W, K).
+clearance($MarkCount(), W, K) :- parse.marks.tally([$U(), W], K).
 
 // --- $StoredClearance ---
-clearance($StoredClearance(), W, K) :- marks.tally(W, N), params.clearance_of(N, K).
+clearance($StoredClearance(), W, K) :- parse.marks.tally([$U(), W], N), params.clearance_of(N, K).
 
 // --- $MarkedRunClearance ---
 
@@ -228,10 +238,10 @@ clearance($StoredClearance(), W, K) :- marks.tally(W, N), params.clearance_of(N,
 // farthest mark covers.
 // @claim clearance
 .init run = Tally<Ident, number>
-run.domain(W) :- free_end(W, _).
+run.domain(W) :- parse.free_end($U(), W, _).
 run.item(W, N) :-
-    mark(W, M), wall_edge(W, D), dist(M, D, K_m),
-    wall.label($U(), P, W), dist(P, D, K), K <= K_m,         // a wall cell up to the mark
+    parse.mark($U(), W, M), parse.wall_edge($U(), W, D), dist(M, D, K_m),
+    parse.wall.label($U(), P, W), dist(P, D, K), K <= K_m,   // a wall cell up to the mark
     params.mark_period(K_p), stride(K, K_p, 0, N, _).        // the pair it falls in
 
 clearance($MarkedRunClearance(), W, K) :- run.tally(W, K).
@@ -258,4 +268,23 @@ clearance($MarkedRunClearance(), W, K) :- run.tally(W, K).
 
     .decl mark_period(k: number)
     mark_period(K) :- gap.stop(E, Q, _, K, _), gap.mark(E, Q).   // the next mark
+
+    .init ex = Parse<Example>
+    ex.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // The cell past wall w's free end, one step away from the wall's edge
+    // toward d.
+    .decl past_end(e: Example, w: Ident, d: Dir, p: Position)
+    past_end(E, W, D, P) :-
+        ex.free_end(E, W, Q), ex.wall_edge(E, W, D0), opposite(D0, D), neighbor(Q, D, P).
+
+    // The steps from each such cell to the path a train output paints there.
+    .init past = Ray<Example>
+    past.dir(E, D) :- past_end(E, _, D, _).
+    past.mark(E, P) :- past_end(E, _, _, P).
+    past.blocked(E, P) :- ex_out(E, P, Col), path_color(Col).
+
+    // The clearance a train output shows past a wall of n marks.
+    .decl clearance_of(n: number, k: number)
+    clearance_of(N, K) :- past_end(E, W, D, P), past.stop(E, _, D, K, P), ex.marks.tally([E, W], N).
 }
