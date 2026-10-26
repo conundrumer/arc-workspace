@@ -95,3 +95,48 @@ fn a_det_has_the_columns_that_its_reads_name_and_its_stored_rows_read_at_them() 
     let rows = encode_param_value(&param.value().value, types, registry, &mut InternTable::default());
     assert_eq!(rows.expect("the stored rows read at the columns' types").len(), 3);
 }
+
+/// A `DET` that ends in a mark, with the labels `Diag` and `D4`, read by
+/// `&output` at `Diag` alone.
+const MARKED: &str = "
+(RULE &cell
+  (input *P *Col))
+
+(DET &pick
+  (diag_dir_elem (:D *Diag))
+  (d4_elem (:D *D4))
+  MARK)
+
+(RULE &output
+  (&cell *P *Col)
+  (&pick *Diag))
+";
+
+/// The column types of `&pick` for `MARKED` with `mark` in place of `MARK`,
+/// and whether its stored record `data` reads at them.
+fn pick_types(mark: &str, data: &str) -> (usize, bool) {
+    let arclog = MARKED.replace("MARK", mark);
+    let solver = read_solver("0000aaaa", &arclog, data, &|_| None).expect("the files read").value;
+    let registry = Registry::get();
+    let program = resolve(&solver.concept_case().program, None, &solver.derived_relations(), registry).value;
+    let clauses = SolverClauses::of(&solver, registry);
+    let checked = check_program(program, &clauses, registry, &mut CheckCache::default()).expect("the program checks");
+    let pick = ProgramRelation::Declared(RelationName(DeclaredName::Written("&pick".into())));
+    let relation = relation_of(&checked, &pick).expect("the program derives `&pick`");
+    let types = checked.types.columns(&relation).expect("the columns have types");
+    let param = solver.arcdata.value().params.iter().find(|param| param.value().name == pick).expect("the stored record");
+    let rows = encode_param_value(&param.value().value, types, registry, &mut InternTable::default());
+    (types.len(), rows.is_ok())
+}
+
+#[test]
+fn a_det_that_ends_in_one_has_the_columns_that_its_reads_name() {
+    let (columns, reads) = pick_types("(ONE)", "(param &pick DiagDir (DIAG_TL))\n");
+    assert_eq!((columns, reads), (1, true));
+}
+
+#[test]
+fn a_det_has_the_columns_that_a_one_mark_names_besides_those_its_reads_name() {
+    let (columns, reads) = pick_types("(ONE D4)", "(param &pick (DiagDir D4) (DIAG_TL D4_CC))\n");
+    assert_eq!((columns, reads), (2, true));
+}

@@ -58,7 +58,9 @@ pub enum DependencyKind {
     /// a `DET` with `(ONE)` included, which is a chosen relation at the task
     /// level. An open parameter, a `DET` that ends in `(ONE)`, that several
     /// blocks of the case determine is one node, as a
-    /// [`DependencyKind::Parameter`] is.
+    /// [`DependencyKind::Parameter`] is, and the relation of a `DET` has as
+    /// its columns the labels of its clause that its reads name and the
+    /// labels its marks name, as a parameter's has those its reads name.
     Chosen(RelationName),
     /// A `RIGID_DET` form: one node for its assemblies
     /// (`docs/arclog/rigid.md#form`).
@@ -221,8 +223,9 @@ pub struct ResolvedProgram {
     /// examples alone (`docs/arclog/arclog.md#program`).
     train_lifted: crate::hash::StableHashSet<NodePath>,
     /// For each node of the graph this resolution gives, the column names
-    /// that the sites of the reads of its relation name, for a `DET`
-    /// parameter node that an atom reads, as [`build`] gives them.
+    /// that the sites of the reads of its relation name, with the columns
+    /// that its marks name, for a `DET` node that an atom reads, as [`build`]
+    /// gives them.
     read_columns: Box<[Option<Vec<ColumnName>>]>,
     /// The resolutions of this program with more columns of some `DET`
     /// parameters kept, by the relation and the columns that its reads
@@ -339,7 +342,8 @@ impl ResolvedProgram {
     }
 
     /// The column names that the sites of the reads of the relation of
-    /// `node` name, for a `DET` parameter node that an atom reads.
+    /// `node` name, with the columns that its marks name, for a `DET` node
+    /// that an atom reads.
     fn read_columns_of(&self, node: GraphNodeIndex) -> Option<&[ColumnName]> {
         match self.earlier_node(node) {
             Some(earlier) => earlier.read_columns_of(node),

@@ -2,7 +2,8 @@
 //! the graph, the content and the columns of each node, then the columns of
 //! each site. The declarations and the reads are in `graph`, the sides and
 //! the Example columns in `sides`, the content and the columns of each
-//! node in `content`, and the columns of each site, the signatures, the
+//! node in `content`, the columns that the reads of a `DET` decide in
+//! `read_columns`, and the columns of each site, the signatures, the
 //! proposers' columns and the resolved program in `sites`; each pass is a
 //! method of one builder, whose state this module holds.
 
@@ -98,8 +99,9 @@ struct Builder<'a> {
     concept_examples: StableHashMap<NodePath, Arc<[ExamplePath]>>,
     atoms: Vec<AtomRead<'a>>,
     /// The column names that the sites of the reads of each node's
-    /// relation name, by the node's index, for a `DET` parameter node
-    /// that an atom reads; `None` for every other node.
+    /// relation name, by the node's index, with the columns that its marks
+    /// name, for a read-named node that an atom reads
+    /// ([`Builder::read_named`]); `None` for every other node.
     read_columns: Vec<Option<Vec<ColumnName>>>,
     /// The side of each node, by its index.
     sides: Vec<Side>,
@@ -133,7 +135,7 @@ struct Builder<'a> {
     /// Whether the last form of a layered resolution gave a node that an
     /// earlier form gives, which this resolution does not handle.
     shared_node: bool,
-    /// The columns, by earlier `DET` parameter node, that the last form of a
+    /// The columns, by earlier read-named node, that the last form of a
     /// layered resolution reads and no earlier read names, which change the
     /// earlier node's entries.
     widenings: Vec<(GraphNodeIndex, Vec<ColumnName>)>,
@@ -230,10 +232,10 @@ fn layered(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &R
             .widenings
             .iter()
             .filter_map(|(node, extra)| {
-                let DependencyKind::Parameter(relation) = &earlier.graph.nodes[node.0 as usize].kind else { return None };
+                let relation = builder.read_named(node.0 as usize)?.relation;
                 let mut columns = earlier.read_columns_of(*node).map(<[ColumnName]>::to_vec).unwrap_or_default();
                 super::add_columns(&mut columns, extra);
-                Some((relation.clone(), columns))
+                Some((relation, columns))
             })
             .collect();
         let widened = earlier.widened(widening, registry);
@@ -289,46 +291,6 @@ pub(super) fn resolve(
 }
 
 impl<'a> Builder<'a> {
-    /// The column names that the sites of the reads of each `DET`
-    /// parameter node name: the reads of the case, then the reads across
-    /// the solver's cases that [`SolverScope::read_columns`] gives.
-    fn read_columns(&mut self) {
-        let mut named: Vec<Option<Vec<ColumnName>>> = vec![None; self.nodes.len()];
-        for read in &self.atoms {
-            let Resolution::Node(node) = self.resolutions[&read.path] else { continue };
-            if matches!(self.nodes[node.0 as usize].kind, DependencyKind::Parameter(_)) {
-                if let Some(earlier) = self.earlier.as_ref().filter(|_| (node.0 as usize) < self.offset()) {
-                    let held = earlier.read_columns_of(node);
-                    let extra: Vec<ColumnName> = read.atom.sites.iter().map(|site| site.column.clone()).filter(|column| !held.is_some_and(|names| names.contains(column))).collect();
-                    if !extra.is_empty() {
-                        match self.widenings.iter_mut().find(|(widened, _)| *widened == node) {
-                            Some((_, columns)) => super::add_columns(columns, &extra),
-                            None => self.widenings.push((node, extra)),
-                        }
-                    }
-                    continue;
-                }
-                let names = named[node.0 as usize].get_or_insert_with(Vec::new);
-                super::add_columns(names, read.atom.sites.iter().map(|site| &site.column));
-            }
-        }
-        for (index, node) in self.nodes.iter().enumerate().skip(self.offset()) {
-            let DependencyKind::Parameter(relation) = &node.kind else { continue };
-            if let Some(columns) = self.solver_reads.get(relation) {
-                super::add_columns(named[index].get_or_insert_with(Vec::new), columns);
-            }
-        }
-        self.read_columns = named;
-    }
-
-    /// Whether the relation of `node` keeps the column `column` of its
-    /// clause: a column of a `DET` parameter node that an atom reads is
-    /// kept where a site of a read of the relation names it, and every
-    /// column of every other node is kept.
-    fn keeps(&self, node: usize, column: &ColumnName) -> bool {
-        self.read_columns[node].as_ref().is_none_or(|names| names.contains(column))
-    }
-
     fn is_fact(&self, node: GraphNodeIndex) -> bool {
         matches!(self.nodes[node.0 as usize].kind, DependencyKind::Fact(_))
     }
@@ -340,6 +302,9 @@ mod content;
 
 #[path = "build_graph.rs"]
 mod graph;
+
+#[path = "build_read_columns.rs"]
+mod read_columns;
 
 #[path = "build_retarget.rs"]
 mod retarget;
