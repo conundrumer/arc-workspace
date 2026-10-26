@@ -17,12 +17,10 @@ its share before it gives up with the expected start.
 
 The heavy commands that run through this script at one time, in every session
 and checkout of the machine, together hold at most the machine's CPU budget,
-the logical CPUs (`hw.logicalcpu`), and its memory budget, the physical memory
-(`hw.memsize`) less 4 GiB for the system and the terminal. A request over the
-budget its need allows is cut to it, with one line on stderr. The memory budget is less the
-footprint of every readable process outside the jobs, which the daemon reads again at each
-sample; a job that holds more stays. A job holds its `--gib` for its first minute, and after that its
-measured peak and 1 GiB more.
+the logical CPUs (`hw.logicalcpu`). A request over the CPUs its need allows is cut
+to them, with one line on stderr. Memory has no budget: the daemon starts no call
+while the kernel's memory pressure is high, and at most one call between two of
+its readings of the machine.
 
 A call asks the resource daemon (`scripts/resource_daemon.py`) for a share of
 the budget, and starts the daemon where none runs. The daemon starts a call

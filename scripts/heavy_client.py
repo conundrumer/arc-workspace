@@ -211,9 +211,9 @@ def queue_text(registry: Dict[str, Any], now: float) -> str:
     """The queue view: the budget, each job that holds a share, and each waiting request in the
     order it starts, with its expected start."""
     budget = registry["budget"]
-    lines: List[str] = [f"budget: {budget['cpus']} CPUs and {budget['gib']} GiB, which is {budget['fixed_gib']} GiB "
-                        f"less {budget['outside_gib']} GiB held outside the jobs, of which "
-                        f"{budget['reserve_cpus']} CPUs and {budget['reserve_gib']} GiB are the short jobs' reserve"]
+    lines: List[str] = [f"budget: {budget['cpus']} CPUs, of which {budget['reserve_cpus']} are the short jobs' "
+                        f"reserve; memory admits by pressure alone, one start a reading; "
+                        f"{budget['outside_gib']} GiB readable outside the jobs"]
     if registry["hold"]:
         lines.append(f"hold: {registry['hold']}")
     lines.append("running: pid owner kind need cpus gib minutes elapsed peak-gib command")

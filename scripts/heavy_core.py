@@ -4,14 +4,14 @@ machine changes in them. It reads and writes nothing: each call returns the
 effects, a log line, a signal to send, a grant, that the daemon applies.
 
 The budget that admission and the expected starts use is `available`: the machine's
-CPUs and its GiB (`scripts/machine_readings.py`, which leaves `SYSTEM_GIB` for the system) less
-the footprint of the readable processes that are in no job, taken again at each reading. A job
-that holds more stays, and no job is signalled because the budget shrank.
+CPUs, and `UNBOUNDED_GIB`, so that no request waits for GiB. Memory gates admission through
+the hold alone, since the daemon cannot read every process's memory.
 
 A request waits, as `scripts/heavy_scheduler.py` orders it, and starts where
 no hold stands: the kernel's memory pressure level is normal, the swap-ins a
 second are at most the load monitor's alert rate (`scripts/machine_readings.py`),
-and the daemon reads the machine. A job ends where its pid does, and the
+and the daemon reads the machine. At most one request starts between two readings, so
+that the pressure a start brings shows before the next. A job ends where its pid does, and the
 processes it left behind are killed, if it belongs to a session. A gated job holds its
 declared CPUs, and, for its first `DECLARED_SECONDS`, its declared GiB, or the GiB it
 measures where that is more. After that it holds its measured peak, rounded up to a GiB, and
@@ -57,6 +57,8 @@ DECLARED_SECONDS = 60
 """A gated job holds its declared GiB for this long after its grant."""
 HEADROOM_GIB = 1
 """What a gated job holds beyond its measured peak, once its declared GiB no longer counts."""
+UNBOUNDED_GIB = 1 << 20
+"""The GiB of the budget: more than any request asks."""
 
 
 @dataclass(frozen=True)
@@ -200,13 +202,12 @@ class Core:
         self.critical_since: Optional[float] = None
         self.swap_hot = 0
         self.level = 1
+        self.started_since_reading = False
 
     def available(self) -> Amount:
-        """The budget that admission and expected starts use: the CPUs of `total`, and its GiB
-        less the footprint of the readable processes that are in no job, adopted or granted, and
-        at least 1. `total` already leaves `SYSTEM_GIB` for wired memory and the processes the
-        daemon cannot read. A job that holds more stays, whatever the budget."""
-        return Amount(self.total.cpus, max(1, self.total.gib - ceil_gib(self.outside_kib)))
+        """The budget that admission and expected starts use: the CPUs of `total`, and
+        `UNBOUNDED_GIB`."""
+        return Amount(self.total.cpus, UNBOUNDED_GIB)
 
     def set_need(self, pid: int, need: Need, now: float) -> Optional[Waiter]:
         """Give the waiting request of client `pid` the need `need`, with its ask cut again to
@@ -250,11 +251,13 @@ class Core:
         self.waiters.pop(waiter_id, None)
 
     def admit(self, now: float) -> List[Effect]:
-        """Start each waiter that is first of its queue and fits, where no hold stands."""
-        if self.hold is not None or self.fault is not None:
+        """Start the first waiter that is first of its queue and fits, where no hold stands and
+        none started since the last reading."""
+        if self.hold is not None or self.fault is not None or self.started_since_reading:
             return []
         out: List[Effect] = []
-        for w in next_waiters(self.waiters.values(), self.holdings(now), self.available(), now):
+        for w in next_waiters(self.waiters.values(), self.holdings(now), self.available(), now)[:1]:
+            self.started_since_reading = True
             del self.waiters[w.id]
             job = Job(w.pid, w.start, w.owner, Kind.GATED, w.need, w.ask, w.minutes, w.command, now,
                       members={w.pid: float(w.start)})
@@ -307,6 +310,7 @@ class Core:
         """Take a reading of the machine in: the hold, the end of jobs, the measure of each job,
         the adoption of ungated commands, the overruns, and the kills."""
         out: List[Effect] = []
+        self.started_since_reading = False
         self.claude = {session: pid for pid, session in sample.claude.items()}
         elapsed = None if self.last_at is None else max(now - self.last_at, 1e-3)
         out += self.pressure(sample, now)
