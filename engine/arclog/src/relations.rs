@@ -165,9 +165,10 @@ impl Relation {
         &self.parts
     }
 
-    /// The count of rows, the product of the parts' counts.
+    /// The count of rows, the product of the parts' counts, `u64::MAX` where
+    /// the product passes it.
     pub fn len(&self) -> u64 {
-        self.parts.iter().map(|part| part.rows.len() as u64).product()
+        self.parts.iter().fold(1, |count: u64, part| count.saturating_mul(part.rows.len() as u64))
     }
 
     /// Whether the relation holds no row: some part is empty.

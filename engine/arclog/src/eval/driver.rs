@@ -181,13 +181,23 @@ impl<'e, 'a> Driver<'e, 'a> {
     }
 
     /// The relation of `node`, the union of the relations of its forms, each
-    /// a clause evaluated by generic join.
+    /// a clause evaluated by generic join. Where it has several forms, the
+    /// walk of each form's product is counted as [`join::charge_walk`]
+    /// gives, and the first stop is the value.
     fn clauses(&self, node: GraphNodeIndex, example: Option<Example>) -> Outcome<RelationValue> {
+        let forms = self.program().forms_of(node);
         let mut relations = Vec::new();
-        for form in self.program().forms_of(node) {
+        for form in forms {
             match self.clause(form, example)? {
                 RelationValue::Rows(relation) => relations.push(relation),
                 other => return Ok(other),
+            }
+        }
+        if relations.len() > 1 {
+            for (form, relation) in forms.iter().zip(&relations) {
+                if let Err(stop) = join::charge_walk(self.evaluation, relation, form) {
+                    return Ok(RelationValue::Stopped(stop));
+                }
             }
         }
         Ok(RelationValue::Rows(join::union(relations)))
@@ -567,7 +577,9 @@ impl<'e, 'a> Driver<'e, 'a> {
     ///
     /// A lifted read with `train_only` lifts over the train examples alone,
     /// so its value is defined wherever the relation is defined on each of
-    /// them, whatever its entry on a test example.
+    /// them, whatever its entry on a test example. The lift's walk of each
+    /// example's product is counted as [`join::charge_walk`] gives, at the
+    /// relation's form, and the first stop is the value.
     fn read(&self, relation: &GraphRelation, scope: ExampleScope, example: Option<Example>, train_only: bool) -> Outcome<RelationValue> {
         match (examples::scope_of(self.evaluation.program, relation), scope) {
             (ExampleScope::TaskWide, _) => self.value(relation, None),
@@ -575,8 +587,16 @@ impl<'e, 'a> Driver<'e, 'a> {
             (ExampleScope::PerExample, ExampleScope::TaskWide) => {
                 let task = &self.evaluation.task;
                 let lifted_over: Vec<Example> = if train_only { task.train_examples().collect() } else { task.examples().collect() };
-                let per_example: Outcome<Vec<(Example, RelationValue)>> = lifted_over.into_iter().map(|e| Ok((e, self.value(relation, Some(e))?))).collect();
-                Ok(examples::lift(&per_example?))
+                let per_example: Vec<(Example, RelationValue)> = lifted_over.into_iter().map(|e| Ok((e, self.value(relation, Some(e))?))).collect::<Outcome<_>>()?;
+                let form = self.program().form_of(relation.node);
+                for (_, value) in &per_example {
+                    if let RelationValue::Rows(rows) = value
+                        && let Err(stop) = join::charge_walk(self.evaluation, rows, form)
+                    {
+                        return Ok(RelationValue::Stopped(stop));
+                    }
+                }
+                Ok(examples::lift(&per_example))
             }
         }
     }

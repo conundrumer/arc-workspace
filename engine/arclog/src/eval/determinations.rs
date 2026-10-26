@@ -157,7 +157,7 @@ impl Evaluation<'_> {
             };
             let mut found: Vec<Vec<Row>> = Vec::new();
             for (value, domain) in sources {
-                let mut rows = match super::init_form::rows_of(value?, types.len()).map_err(fault)? {
+                let mut rows = match super::init_form::rows_of(self, at, value?, types.len()).map_err(fault)? {
                     Ok(rows) => rows,
                     Err(RelationValue::Undefined) => return Ok(Domain::Undefined),
                     Err(RelationValue::Stopped(stop)) => return Ok(Domain::Stopped(stop)),

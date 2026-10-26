@@ -225,14 +225,14 @@ fn input_groups(
     let fault = |message: String| RunFault { message: message.into(), form: form.clone() };
     let input_types = shape.port_types(&input.port.columns).map_err(&fault)?;
     match shape.input_clause(evaluation.program, form, input).map_err(&fault)? {
-        Some(written) => Ok(rows_read(bodies.relation(form, &written.clause, example)?, written.arity())
+        Some(written) => Ok(rows_read(evaluation, form, bodies.relation(form, &written.clause, example)?, written.arity())
             .map_err(&fault)?
             .map(|(rows, relation)| (written.grouped(groups, rows), InputRead::Clause(relation)))),
         None => match stored_input(evaluation, form, instance, &input.port.name) {
             Some(parameter) => {
                 let widths = shape.widths(&input.port.columns).map_err(&fault)?;
                 let prefix = if shape.key_body.is_some() { shape.key_labels().len() } else { 0 };
-                Ok(rows_read(evaluation.relation(&parameter, None)?, shape.arity(&widths))
+                Ok(rows_read(evaluation, form, evaluation.relation(&parameter, None)?, shape.arity(&widths))
                     .map_err(&fault)?
                     .map(|(rows, relation)| {
                         let per_group = grouped(groups, prefix, input_types.len(), rows.iter().map(|row| shape.key_first(&widths, row)).collect());

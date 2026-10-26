@@ -81,7 +81,7 @@ pub(super) fn key_rows(
     };
     let (clause, _, _) = key_clause_memo(evaluation.program, form, key_body, key_labels)
         .map_err(|compile| fault(format!("the key body does not compile: {compile:?}")))?;
-    Ok(rows_read(bodies.relation(form, &clause, example)?, key_labels.len()).map_err(&fault)?.map(|(rows, relation)| (rows, Some(relation))))
+    Ok(rows_read(evaluation, form, bodies.relation(form, &clause, example)?, key_labels.len()).map_err(&fault)?.map(|(rows, relation)| (rows, Some(relation))))
 }
 
 /// The clause of the key body `key_body` of the form at `form`, whose
@@ -456,17 +456,21 @@ fn with_unit(prefix: usize, head: &[Option<LabelId>], row: &Row) -> Row {
 }
 
 /// The rows of `value`, of `arity` columns, or the value where it holds no
-/// rows.
-pub(super) fn rows_of(value: RelationValue, arity: usize) -> Result<Result<Vec<Row>, RelationValue>, String> {
-    Ok(rows_read(value, arity)?.map(|(rows, _)| rows))
+/// rows, read in `evaluation` at `form` as [`rows_read`] gives.
+pub(super) fn rows_of(evaluation: &Evaluation<'_>, form: &NodePath, value: RelationValue, arity: usize) -> Result<Result<Vec<Row>, RelationValue>, String> {
+    Ok(rows_read(evaluation, form, value, arity)?.map(|(rows, _)| rows))
 }
 
 /// The rows of `value` as [`rows_of`] gives them, with the relation that
-/// holds them.
-pub(super) fn rows_read(value: RelationValue, arity: usize) -> Result<Result<(Vec<Row>, Arc<Relation>), RelationValue>, String> {
+/// holds them. The walk of the relation's product is counted as
+/// [`join::charge_walk`] gives, and its stop is the value.
+pub(super) fn rows_read(evaluation: &Evaluation<'_>, form: &NodePath, value: RelationValue, arity: usize) -> Result<Result<(Vec<Row>, Arc<Relation>), RelationValue>, String> {
     let RelationValue::Rows(relation) = value else { return Ok(Err(value)) };
     if relation.arity() as usize != arity {
         return Err(format!("a body gives {} columns, where {arity} are read", relation.arity()));
+    }
+    if let Err(stop) = join::charge_walk(evaluation, &relation, form) {
+        return Ok(Err(RelationValue::Stopped(stop)));
     }
     let mut rows = Vec::new();
     join::each_row(&relation, &mut |row| rows.push(row.into()));

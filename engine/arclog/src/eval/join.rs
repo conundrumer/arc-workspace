@@ -2,7 +2,8 @@
 //! clause's variable order, by intersecting the atoms that hold it, and
 //! counts its work and its rows against the caps per batch of bindings. A
 //! body is joined part by part, as [`parts`] gives its parts, and its
-//! relation is their product.
+//! relation is their product, which no join counts: a reader that indexes
+//! or walks that product counts it as [`Budget::charge_product`] gives.
 //!
 //! An algebra relation is evaluated at the point in the order where one of
 //! its modes is satisfied, and its outputs are variables that later atoms
@@ -22,9 +23,10 @@ use super::plan::{
     algebra_relation, bound_variables, kept_nodes, mode_holds, variable_order, NodeSize, RelationSizes,
     VariableOrder,
 };
-use super::{Caps, Limits, ReachedBound};
+use super::{Caps, Evaluation, Limits, ReachedBound, Stop};
 use crate::algebra::geometry::domain;
 use crate::hash::StableHashMap;
+use crate::program::path::NodePath;
 use crate::program::ConstraintOp;
 use crate::registry::{LibName, Registry};
 use crate::relations::{ColumnIndex, ColumnOrder, Index, Relation, RelationPart, Row, RowSet};
@@ -72,11 +74,11 @@ impl<'a> Budget<'a> {
     pub fn charge_work(&mut self, bindings: u64) -> Result<(), ReachedBound> {
         if let Some(log) = &mut self.log {
             match log.last_mut() {
-                Some(Charge::Work(last)) => *last += bindings,
+                Some(Charge::Work(last)) => *last = last.saturating_add(bindings),
                 _ => log.push(Charge::Work(bindings)),
             }
         }
-        self.bindings += bindings;
+        self.bindings = self.bindings.saturating_add(bindings);
         let caps = self.session.caps;
         if self.bindings > caps.bindings {
             return Err(ReachedBound::Bindings { cap: caps.bindings });
@@ -94,6 +96,18 @@ impl<'a> Budget<'a> {
         match &self.limits.table_work {
             Some(work) => work.charge(bindings),
             None => Ok(()),
+        }
+    }
+
+    /// Counts the rows of the product of the parts of `relation` as bindings
+    /// tried, where it holds more than one part, before a walk of its rows
+    /// or an index builds them: the join of each part counted that part's
+    /// rows, and no join counts their product. The count is one charge, so
+    /// a product past a cap stops before any of its rows is built.
+    pub fn charge_product(&mut self, relation: &Relation) -> Result<(), ReachedBound> {
+        match relation.parts() {
+            [] | [_] => Ok(()),
+            _ => self.charge_work(relation.len()),
         }
     }
 
@@ -145,6 +159,14 @@ impl<'a> Budget<'a> {
     pub fn record(&self) {
         self.session.record_counts(Counts { bindings: self.bindings, rows: self.rows });
     }
+}
+
+/// Counts the walk of the product of `relation`, read at `form` in
+/// `evaluation`, in a budget of its own under the evaluation's limits, as
+/// [`Budget::charge_product`] gives, and gives the stop where the count
+/// passes a bound.
+pub fn charge_walk(evaluation: &Evaluation<'_>, relation: &Relation, form: &NodePath) -> Result<(), Stop> {
+    Budget::new(evaluation.limits, evaluation.session).charge_product(relation).map_err(|bound| Stop { bound, form: form.clone() })
 }
 
 /// The bindings one search has tried and not yet charged to its budget.
@@ -252,7 +274,7 @@ fn join_ordered(
     bound: &[(Variable, TermId)],
     budget: &mut Budget<'_>,
 ) -> Result<Relation, ReachedBound> {
-    let plan = memo.plan(clause, order_at, inputs, bound);
+    let plan = memo.plan(clause, order_at, inputs, bound, budget)?;
     let mut found = Vec::new();
     for part in &plan.parts {
         let rows = Search::new(clause, &part.plan, inputs, registry, memo, bound).run(&part.projected, budget)?;
@@ -306,7 +328,7 @@ pub fn search(
 ) -> Result<RowSet, ReachedBound> {
     let projected: Vec<Variable> = columns.iter().map(|c| clause.columns[usize::from(c.0)]).collect();
     let variables: Vec<Variable> = bound.iter().map(|&(variable, _)| variable).collect();
-    let plan = Plan::new(clause, nodes, tries, order, &variables, inputs);
+    let plan = Plan::new(clause, nodes, tries, order, &variables, inputs, budget)?;
     Search::new(clause, &plan, inputs, registry, &SearchMemo::default(), bound).run(&projected, budget)
 }
 
@@ -480,6 +502,9 @@ struct Plan {
 }
 
 impl Plan {
+    /// The plan of the search of `nodes` and `tries` in `order`, with `bound`
+    /// bound before it. Each relation an atom reads is counted in `budget`
+    /// as [`Budget::charge_product`] gives, before its trie is built.
     fn new(
         clause: &ClauseIr,
         nodes: &[usize],
@@ -487,7 +512,8 @@ impl Plan {
         order: Vec<Variable>,
         bound: &[Variable],
         inputs: &JoinInputs,
-    ) -> Self {
+        budget: &mut Budget<'_>,
+    ) -> Result<Self, ReachedBound> {
         let mut rank = vec![usize::MAX; clause.variables.len()];
         for (r, v) in order.iter().enumerate() {
             rank[usize::from(v.0)] = r;
@@ -501,7 +527,11 @@ impl Plan {
             let index = relation.index(&ColumnOrder(columns.iter().map(|(c, _)| *c).collect()));
             AtomTrie { index, levels: columns.into_iter().map(|(_, a)| a).collect(), empty: relation.is_empty() }
         };
-        let mut atoms: Vec<AtomTrie> = tries.iter().map(|(relation, arguments)| trie(relation, arguments)).collect();
+        let mut atoms: Vec<AtomTrie> = Vec::with_capacity(tries.len());
+        for (relation, arguments) in tries {
+            budget.charge_product(relation)?;
+            atoms.push(trie(relation, arguments));
+        }
         let mut checks = vec![Vec::new(); order.len() + 1];
         let mut libs = vec![Vec::new(); clause.variables.len()];
         let mut filter_orders = StableHashMap::default();
@@ -512,6 +542,7 @@ impl Plan {
             match &clause.nodes[node] {
                 IrNode::Atom(atom) => {
                     let NodeInput::Relation(relation) = &inputs.0[node] else { panic!("the relation of each atom") };
+                    budget.charge_product(relation)?;
                     atoms.push(trie(relation, &atom.arguments));
                 }
                 IrNode::Lib(atom) => {
@@ -536,7 +567,7 @@ impl Plan {
             slot.sort_by_key(|&node| (check_cost(&clause.nodes[node]), node));
         }
         let stop_from = order.len() - order.iter().rev().take_while(|v| !clause.columns.contains(v)).count();
-        Plan { order, atoms, checks, libs, filter_orders, unions, stop_from }
+        Ok(Plan { order, atoms, checks, libs, filter_orders, unions, stop_from })
     }
 }
 
@@ -613,26 +644,36 @@ pub struct SearchMemo {
 impl SearchMemo {
     /// The plan of `clause` with `bound` bound before its search, made at
     /// its first use in the order, over the nodes, that `order_at` gives at
-    /// the sorted variables of `bound`.
-    fn plan(&self, clause: &ClauseIr, order_at: &dyn Fn(&[Variable]) -> (VariableOrder, Vec<usize>), inputs: &JoinInputs, bound: &[(Variable, TermId)]) -> Rc<ClausePlan> {
+    /// the sorted variables of `bound`, and counted in `budget` as
+    /// [`Plan::new`] gives.
+    fn plan(
+        &self,
+        clause: &ClauseIr,
+        order_at: &dyn Fn(&[Variable]) -> (VariableOrder, Vec<usize>),
+        inputs: &JoinInputs,
+        bound: &[(Variable, TermId)],
+        budget: &mut Budget<'_>,
+    ) -> Result<Rc<ClausePlan>, ReachedBound> {
         let mut variables: Vec<Variable> = bound.iter().map(|&(variable, _)| variable).collect();
         variables.sort_by_key(|variable| variable.0);
         let key = (std::ptr::from_ref(clause) as usize, variables);
         if let Some(plan) = self.tables.borrow().plans.get(&key) {
-            return plan.clone();
+            return Ok(plan.clone());
         }
         let (order, nodes) = order_at(&key.1);
         let parts = parts(clause, &nodes, &|node| node)
             .into_iter()
-            .map(|part| PartPlan {
-                columns: part.columns(clause),
-                projected: clause.columns.iter().copied().filter(|v| part.variables.contains(v)).collect(),
-                plan: Plan::new(clause, &part.nodes, &[], part.order(&order, &key.1), &key.1, inputs),
+            .map(|part| {
+                Ok(PartPlan {
+                    columns: part.columns(clause),
+                    projected: clause.columns.iter().copied().filter(|v| part.variables.contains(v)).collect(),
+                    plan: Plan::new(clause, &part.nodes, &[], part.order(&order, &key.1), &key.1, inputs, budget)?,
+                })
             })
-            .collect();
+            .collect::<Result<_, ReachedBound>>()?;
         let plan = Rc::new(ClausePlan { parts });
         self.tables.borrow_mut().plans.insert(key, plan.clone());
-        plan
+        Ok(plan)
     }
 
     /// The rows of the algebra relation `relation` at `bound`, if held.

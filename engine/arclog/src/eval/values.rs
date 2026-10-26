@@ -19,8 +19,8 @@ use crate::terms::ReachedMarginBound;
 /// machine.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Caps {
-    /// The bindings the join of one part of a body, or a native
-    /// construction, may try.
+    /// The bindings the join of one part of a body, a native construction,
+    /// or a read's walk of a product of parts may try.
     pub bindings: u64,
     /// The rows one part of a body, or a native construction, may hold.
     pub rows: u64,
@@ -284,7 +284,10 @@ impl TableWork {
     /// Adds `bindings` to the count, and gives the stop once the count is past
     /// the cap. Each later call gives it too.
     pub fn charge(&self, bindings: u64) -> Result<(), ReachedBound> {
-        let count = self.count.fetch_add(bindings, Ordering::Relaxed).saturating_add(bindings);
+        let Ok(before) = self.count.try_update(Ordering::Relaxed, Ordering::Relaxed, |count| Some(count.saturating_add(bindings))) else {
+            unreachable!("an update that always gives a count")
+        };
+        let count = before.saturating_add(bindings);
         if count > self.cap { Err(ReachedBound::TableWork { cap: self.cap }) } else { Ok(()) }
     }
 }

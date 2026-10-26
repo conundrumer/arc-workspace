@@ -506,7 +506,7 @@ impl<'r, 'a> Run<'r, 'a> {
     /// The rows of `clause`, of `arity` columns, through the driver, or the
     /// value where it holds no rows.
     fn rows(&self, clause: &ClauseIr, arity: usize) -> Outcome<Result<Vec<Row>, RelationValue>> {
-        rows_of(self.bodies.relation(self.form, clause, self.example)?, arity).map_err(|message| self.fault(message))
+        rows_of(self.evaluation, self.form, self.bodies.relation(self.form, clause, self.example)?, arity).map_err(|message| self.fault(message))
     }
 
     /// The rows of `input`, an input that reads no output, at each of

@@ -242,7 +242,7 @@ impl<'p> Shape<'p> {
         let (clause, _, prefix) = self
             .input_clause(evaluation.program, form, input, labels)
             .map_err(|compile| fault(format!("the input `{}` does not compile: {compile:?}", input.input.name.0)))?;
-        let rows = rows_of(bodies.relation(form, &clause, example)?, prefix + labels.len()).map_err(&fault)?;
+        let rows = rows_of(evaluation, form, bodies.relation(form, &clause, example)?, prefix + labels.len()).map_err(&fault)?;
         Ok(rows.map(|rows| grouped(groups, prefix, labels.len(), rows)))
     }
 }
@@ -373,7 +373,7 @@ fn predictions(
         let labels: Vec<LabelId> = named.iter().map(|(_, label)| *label).collect();
         let conjuncts = body.conjuncts.iter().zip(0u32..).map(|(conjunct, at)| (conjunct, path.child(0).child(at))).collect();
         let (compiled, _) = ir::compile_safe(evaluation.program, &path, conjuncts, &labels).map_err(|compile| fault(format!("the prediction does not compile: {compile:?}")))?;
-        let rows = match rows_of(bodies.relation(&path, &compiled, example)?, labels.len()).map_err(&fault)? {
+        let rows = match rows_of(evaluation, &path, bodies.relation(&path, &compiled, example)?, labels.len()).map_err(&fault)? {
             Ok(rows) => rows,
             Err(value) => return Ok(Err(value)),
         };
