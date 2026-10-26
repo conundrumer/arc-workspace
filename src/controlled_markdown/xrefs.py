@@ -35,8 +35,7 @@ from controlled_markdown import (
 XREF = "xref"
 
 # The directories a backticked path token names code or documents under.
-PATH_ROOTS = ("scripts/", "src/", "programs/", "tests/", "tools/", "docs/",
-              "prompts/")
+PATH_ROOTS = ("scripts/", "src/", "programs/", "tools/", "docs/", "prompts/")
 PATH_TOKEN_RE = re.compile(r"[\w./-]+")
 MODULE_RE = re.compile(r"[\w.]+")
 # A target: its path, then a `Mark` and the name after it.

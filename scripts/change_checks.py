@@ -12,7 +12,7 @@ the change calls for:
 It takes as touched the paths outside `work` whose content differs from
 the merge base of `master` and `HEAD`, committed or not. The check runs
 where the change touches a path whose content its result can depend on:
-a path under src/, scripts/ or tests/, pyproject.toml or uv.lock, apart
+a path under src/ or scripts/, pyproject.toml or uv.lock, apart
 from each Python file that stands at the merge base and whose edits change
 nothing but bare string statements, blank lines, comments that hold no
 type-checker directive, and argparse help values that are plain strings
@@ -54,7 +54,7 @@ from engine import checkout, duration
 from operations.merging import CHECK_FAILED, PREFIX, TOOL, check_name
 from operations.worktrees import BASE
 
-CODE_DIRS = ("src", "scripts", "tests")
+CODE_DIRS = ("src", "scripts")
 """The directories a change under which calls for the pyright check."""
 
 CODE_FILES = ("pyproject.toml", "uv.lock")
