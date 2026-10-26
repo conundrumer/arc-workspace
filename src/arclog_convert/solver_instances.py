@@ -13,6 +13,7 @@ from engine.program import (
     ConstructorTerm,
     DefinedName,
     NumberTerm,
+    RecordTerm,
     RelationName,
     Scope,
     Unit,
@@ -795,7 +796,8 @@ class InstancesMixin:
         key_leaves = c.leaves("key", "Key", True, scope, sub, outer=lsub)
 
         def head_labels(input_name: str) -> list[list[str]]:
-            """The labels of each head site of the input, as the lines give them."""
+            """The labels of each head site of the input, as the lines give them: at a
+            site of fields, the name of each field, and at another, each label."""
             for line in f.lines:
                 s = line.strip()
                 if s.startswith(f"({input_name} (("):
@@ -810,7 +812,8 @@ class InstancesMixin:
                         elif ch == ")":
                             depth -= 1
                             if depth == 0:
-                                out.append(cur.split()[1:])
+                                _, _, args = cur.partition(" ")
+                                out.append([m[1] or m[2] for m in re.finditer(r"\(:([^\s()]+)[^()]*\)|([^\s()]+)", args)])
                                 continue
                             if depth < 0:
                                 break
@@ -841,8 +844,9 @@ class InstancesMixin:
                 ren = self.key_rename(u, key_leaves, knames)
                 targets = []
                 for t, labs in zip(u.head.args[2:], vlabs):
-                    if isinstance(t, Variable) and len(labs) == 1:
-                        targets.append((t.name, labs[0]))
+                    leaves = t.args if isinstance(t, RecordTerm) else (t,)
+                    if len(leaves) == len(labs) and all(isinstance(x, Variable) for x in leaves):
+                        targets.extend((x.name, lab) for x, lab in zip(leaves, labs))
                 vs: set[str] = set()
                 collect_vars(list(u.body or ()), vs)
                 given = {tl for _, tl in targets}
@@ -865,7 +869,7 @@ class InstancesMixin:
                 rule_reads |= w.reads
                 pred_branches |= w.branches | {x for x in ctor_names(u.head.args[0]) if x in case_ctors}
                 todos = self.todo.take()
-                if len(targets) != len(vlabs):
+                if len(targets) != len(flat_v):
                     self.todo.add("head-term", f"{rule}: a prediction head site that is no label")
                     todos += self.todo.take()
                 texts += self.plain_comments(u.span.first if u.span else 0)
