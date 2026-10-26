@@ -9,7 +9,7 @@ use arclog::stream::corpus::{solver_streams, token_ids, WantedCases};
 use arclog::stream::{DecodeSettings, Vocabulary};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-const ARCLOG: &str = "\
+pub(crate) const ARCLOG: &str = "\
 ;; tie
 
 (DET &seed RarestColor)
@@ -40,7 +40,7 @@ const ARCLOG: &str = "\
        (&seed (:C Col)))))
 ";
 
-const ARCDATA: &str = "\
+pub(crate) const ARCDATA: &str = "\
 ;; tie
 
 (param &seed Color (2))
@@ -67,7 +67,7 @@ fn a_panic_in_one_stream_faults_that_stream_alone() {
     // The short stream is a prefix of the whole one, so one unit holds both; only the whole stream steps past `cut`.
     let cut = whole.len() / 2;
     let streams = vec![whole.clone(), whole[..cut].to_vec()];
-    let solvers = [UnitSolver { task: &task, judged: &judged, streams: &streams }];
+    let solvers = [UnitSolver { task: &task, judged: &judged, streams: &streams, units: None }];
     let (started, ended, settled) = (AtomicUsize::new(0), AtomicUsize::new(0), AtomicUsize::new(0));
     let progress = ReplayProgress::default();
     let results = replay_units(
@@ -75,6 +75,7 @@ fn a_panic_in_one_stream_faults_that_stream_alone() {
         &constructions,
         &settings,
         false,
+        1,
         &progress,
         &|record: &mut Vec<usize>, _, stepped| {
             assert!(stepped.index < cut, "boom");

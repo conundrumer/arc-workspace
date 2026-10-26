@@ -45,6 +45,7 @@ mod registry_file;
 mod replay_panic;
 mod replay_prefix_tree;
 mod replay_step_cap;
+mod replay_unit_count;
 mod resolver;
 mod scope_checks;
 mod scope_types;

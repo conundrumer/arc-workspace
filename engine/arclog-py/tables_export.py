@@ -5,24 +5,28 @@
 It needs an interpreter with `arclog`, pandas and pyarrow, such as the LM work's venv. The code that decides a part's rows, values and fault lines is in `export_rows.py`. A change to that module, or to the engine code that writes the export's files (`engine/arclog/src/eval/flows.rs`, `engine/arclog/src/decode/`), runs `engine/arclog-py/roundtrip_check.py` with an `arclog` built from its tree before its merge.
 
 Runs one `arclog.corpus_tables` call per task id, the longest first, on a queue of N Python threads, where N is `ARCLOG_THREADS`
-if set and `os.cpu_count()` otherwise. The order is that of the seconds each task took in the export `--previous` gives
-(see `parts/<k>.tasks.txt`), then the tasks that export does not give, or all tasks where none is given, by the largest
-`.arcdata` file first. With `--previous`, each task whose key (the sha256 of its `work/arclog/gen` `.arclog` and `.arcdata`, its task file, every file of
+if set and `os.cpu_count()` otherwise. The order is that of the one-thread seconds each task took in the export `--previous` gives
+(see `parts/<k>.tasks.txt`: the line's seconds times its units), then the tasks that export does not give, or all tasks where none is given, by the largest
+`.arcdata` file first. A task whose one-thread seconds would end past half the mean load of a worker (the summed one-thread seconds of the
+tasks to replay over N) is replayed in `units` units on `units` engine threads, the least count (at most N and at most the cases the previous export
+holds for the task) at which its expected unit time, `1 + (units - 1) / 14` times its seconds over `units`, is under that bound; any other
+task is replayed in one unit. The cut of a task into units is a function of the task and its count (see `arclog.corpus_tables`). With `--previous`, each task whose key (the sha256 of its `work/arclog/gen` `.arclog` and `.arcdata`, its task file, every file of
 the installed `arclog` package, the versions of Python, numpy, pandas and pyarrow, `export_rows.py` and the text of `settings.json`) equals the key in that export's
 `tasks.txt` lines is not replayed: its rows, values (hard-linked) and fault lines are those of that export,
 written as parts of the out dir. Its check lines are those of that export where the sha256 of `export_checks.py` (the checks digest) equals the one in its `tasks.txt` line,
 and otherwise the part is checked again in the check processes. The run prints the counts reused, of them to check again, and to replay first.
 An export with no key in its lines gives no reuse.
-`--previous` changes no output file. The script sets `ARCLOG_THREADS=1` for the engine, so each call runs on one
-worker, and each thread starts the next task as its task ends. Every 10 s the tasks ended since the last write are
+`--previous` changes no output file but the Ident numbers of a task it gives more than one unit. The script sets `ARCLOG_THREADS=1` for the engine, so a call
+of a task of one unit runs on one worker, and each thread starts the next task as its task ends. Every 10 s the tasks ended since the last write are
 written as a part. Writes to <out dir>:
   values/<task>/<case>.i32   raw int32 (np.fromfile), every row of the case: the rows of each entry, of each DET
                              at each entry's assignment, and of each projection at each entry, each row's cells in
                              column order, equal runs of a case sharing one offset (see `arclog.decode.columns`)
   parts/<k>.<name>.parquet   the rows of one part
   parts/<k>.report.txt       the fault lines of the part's tasks
-  parts/<k>.tasks.txt        one line `<task> <seconds> <key> <checks digest>` per task of the part, the wall seconds of its call to 0.1 s,
-                             the task's reuse key and the checks digest (see `--previous`; a bare task id where the writer gives none), written last: a part is whole where it stands
+  parts/<k>.tasks.txt        one line `<task> <seconds> <units> <key> <checks digest>` per task of the part, the wall seconds of its call to 0.1 s,
+                             the count of units it ran in, the task's reuse key and the checks digest (see `--previous`; a bare task id where the writer gives none), written last: a part is whole where it stands.
+                             A line of an older export, `<task> <seconds> <key> <checks digest>`, gives its seconds with 1 unit and no reuse
   index.parquet    one row per (table, example, entry): task, case, concept, the table's columns, the entry's columns
   tables.parquet   one row per table: its columns, its `relation_name` (the relation as the case program writes it: `&x` for a
                    declared relation, `&<instance>.<port>` for an output or input of an instance; the fact relation's name for an
@@ -77,6 +81,7 @@ consistency of the last `RULE` clause the stream ends, or `ended none`), then th
 faults (its tables up to the fault are kept) or lies past the cap. It writes no `settings.json`.
 """
 import collections, hashlib, json, os, sys, glob, time
+from typing import NamedTuple
 import multiprocessing, traceback
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, wait, FIRST_COMPLETED
 import numpy as np
@@ -93,13 +98,49 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROWS, CHECKER = f"{HERE}/export_rows.py", f"{HERE}/export_checks.py"
 
 
-def write_files(out, k, results, seconds=None, keys=None):
-    """Writes the files of the part `k` of the (task id, cases, lines) results but its `checks.txt` and `tasks.txt`, with the {task: seconds} and {task: key} given
-    (a key is the text after the seconds in a `tasks.txt` line: the task key and the checks digest).
+class TaskLine(NamedTuple):
+    """A line of a `tasks.txt`: the task, its wall seconds and unit count where the writer gives them, and its key and checks digest where it gives them."""
+    task: str
+    seconds: float | None = None
+    units: int = 1
+    key: str | None = None
+    checks: str | None = None
+
+    @classmethod
+    def parse(cls, line):
+        """The line `<task>`, `<task> <seconds> <units>` or `<task> <seconds> <units> <key> <checks digest>`; the older `<task> <seconds>` and `<task> <seconds> <key> <checks digest>` give their seconds with 1 unit and no key."""
+        w = line.split()
+        if len(w) == 5:
+            return cls(w[0], float(w[1]), int(w[2]), w[3], w[4])
+        if len(w) == 3:
+            return cls(w[0], float(w[1]), int(w[2]))
+        return cls(w[0], float(w[1]) if len(w) > 1 else None)
+
+    def text(self):
+        return self.task + (f" {self.seconds:.1f} {self.units}" if self.seconds is not None else "") + (f" {self.key} {self.checks}" if self.key else "")
+
+    @property
+    def one_thread_seconds(self):
+        return self.seconds * self.units
+
+
+def read_task_lines(tasks_file):
+    """The `TaskLine`s of a `tasks.txt`."""
+    return [TaskLine.parse(line) for line in open(tasks_file).read().splitlines() if line.strip()]
+
+
+def write_files(out, k, results, ran=None, keys=None):
+    """Writes the files of the part `k` of the (task id, cases, lines) results but its `checks.txt` and `tasks.txt`, with the {task: (seconds, units)} and {task: (key, checks digest)} given.
     Returns the part's (task, case) pairs."""
     pairs = export_rows.write_rows(out, k, results)
+    ran, keys = ran or {}, keys or {}
+    lines = []
+    for t, _, _ in results:
+        seconds, units = ran.get(t, (None, 1))
+        key, checks = keys.get(t, (None, None))
+        lines.append(TaskLine(t, seconds, units, key, checks).text() + "\n")
     with open(f"{out}/parts/{k:05d}.tasks.tmp", "w") as sink:
-        sink.write("".join(t + (f" {seconds[t]:.1f}" if seconds and t in seconds else "") + (f" {keys[t]}" if keys and t in keys else "") + "\n" for t, _, _ in results))
+        sink.write("".join(lines))
     return pairs
 
 
@@ -110,9 +151,9 @@ def finish_part(out, k, lines):
     os.rename(f"{out}/parts/{k:05d}.tasks.tmp", f"{out}/parts/{k:05d}.tasks.txt")
 
 
-def write_part(out, k, results, seconds=None, keys=None):
-    """Writes the part `k` of the (task id, cases, lines) results, checks its cases in this process, and writes the `tasks.txt` last, with the {task: seconds} given."""
-    pairs = write_files(out, k, results, seconds, keys)
+def write_part(out, k, results, ran=None, keys=None):
+    """Writes the part `k` of the (task id, cases, lines) results, checks its cases in this process, and writes the `tasks.txt` last, with the {task: (seconds, units)} and {task: (key, checks digest)} given."""
+    pairs = write_files(out, k, results, ran, keys)
     finish_part(out, k, export_checks.check_part(out, k, pairs))
 
 
@@ -172,18 +213,17 @@ def reuse_parts(out, previous, keys, k, skip, checks, pool):
     reused, again = set(), {}
     for tasks_file in sorted(glob.glob(f"{previous}/parts/*.tasks.txt")):
         stem = os.path.basename(tasks_file).split(".")[0]
-        lines = [l.split() for l in open(tasks_file).read().splitlines()]
-        lines = [w for w in lines if len(w) == 4 and w[0] not in skip and keys.get(w[0]) == w[2]]
+        lines = [l for l in read_task_lines(tasks_file) if l.key and l.task not in skip and keys.get(l.task) == l.key]
         if not lines:
             continue
-        tasks = [w[0] for w in lines]
+        tasks = [l.task for l in lines]
         for p in PARTS:
             f = f"{previous}/parts/{stem}.{p}.parquet"
             if os.path.exists(f):
                 rows = pd.read_parquet(f)
                 rows = rows[rows["task"].isin(tasks)]
                 rows.to_parquet(f"{out}/parts/{k:05d}.{p}.parquet")
-        kinds = ("report", "checks") if all(w[3] == checks for w in lines) else ("report",)
+        kinds = ("report", "checks") if all(l.checks == checks for l in lines) else ("report",)
         for kind in kinds:
             with open(f"{out}/parts/{k:05d}.{kind}.txt", "w") as sink:
                 sink.write("".join(l + "\n" for l in open(f"{previous}/parts/{stem}.{kind}.txt").read().splitlines() if line_task(l) in tasks))
@@ -194,7 +234,7 @@ def reuse_parts(out, previous, keys, k, skip, checks, pool):
                     os.remove(f"{out}/values/{task}/{name}")
                 os.link(f"{previous}/values/{task}/{name}", f"{out}/values/{task}/{name}")
         with open(f"{out}/parts/{k:05d}.tasks.tmp", "w") as sink:
-            sink.write("".join(" ".join(w[:3] + [checks]) + "\n" for w in lines))
+            sink.write("".join(l._replace(checks=checks).text() + "\n" for l in lines))
         if len(kinds) == 2:
             os.rename(f"{out}/parts/{k:05d}.tasks.tmp", f"{out}/parts/{k:05d}.tasks.txt")
         else:
@@ -217,6 +257,25 @@ def part_cases(out, k, tasks):
         extra = sorted(n[:-len(".i32")] for n in os.listdir(f"{out}/values/{task}") if n.endswith(".i32"))
         pairs += [(task, c) for c in extra if (task, c) not in seen]
     return pairs
+
+
+SPLIT_SHARE = 0.5   # a task is split where its one-thread seconds pass this share of the mean load of a worker
+
+
+def cut_cost(units):
+    """How many times the one-thread seconds of a task the replay of its `units` units takes in all: the cut breaks the prefix sharing of the streams (1.5 at 8 units for a251c730)."""
+    return 1 + (units - 1) / 14
+
+
+def unit_count(seconds, bound, cap):
+    """The least count of units, at most `cap`, at which a task of `seconds` one-thread seconds takes under `bound` seconds a unit, and `cap` where none does."""
+    return next((k for k in range(1, cap) if seconds * cut_cost(k) / k <= bound), cap)
+
+
+def previous_cases(previous, task):
+    """The count of cases the export `previous` holds for `task`, at least 1: the units of a task do not pass it."""
+    directory = f"{previous}/values/{task}"
+    return max(1, sum(n.endswith(".i32") for n in os.listdir(directory)) if os.path.isdir(directory) else 0)
 
 
 def main(out, task_ids, previous=None, **options):
@@ -242,25 +301,27 @@ def main(out, task_ids, previous=None, **options):
             os.remove(f)
     engine, checks = engine_digest(), checks_digest()
     keys = {t: task_key(engine, t, settings_text) for t in task_ids}
-    tagged = {t: f"{key} {checks}" for t, key in keys.items()}
+    tagged = {t: (key, checks) for t, key in keys.items()}
     check_pool = ProcessPoolExecutor(os.cpu_count(), mp_context=multiprocessing.get_context("spawn"))
     reused, k, open_parts = reuse_parts(out, previous, keys, k, done, checks, check_pool) if previous else (set(), k, {})
     checking = {f: part for part, (_, futures, _) in open_parts.items() for f in futures}   # check future -> its part
     done |= reused
-    # Longest processing time first: the tasks the previous export gives, by its seconds, after the tasks it does not give,
+    # Longest processing time first: the tasks the previous export gives, by its one-thread seconds, after the tasks it does not give,
     # which go by the largest .arcdata file, as the slowest tasks are among them.
     before = {}
     for f in glob.glob(f"{previous}/parts/*.tasks.txt") if previous else []:
-        before.update({w[0]: float(w[1]) for w in map(str.split, open(f)) if len(w) >= 2})
+        before.update({l.task: l.one_thread_seconds for l in read_task_lines(f) if l.seconds is not None})
     todo = sorted((t for t in task_ids if t not in done), key=lambda t: (t in before, -before.get(t, 0), -os.path.getsize(f"{CORPUS}/{t}.arcdata"), t))
+    bound = SPLIT_SHARE * sum(before.get(t, 0) for t in todo) / workers
+    units = {t: unit_count(before[t], bound, min(workers, previous_cases(previous, t))) if t in before else 1 for t in todo}
     print(f"{len(reused)} tasks reused, {len({t for pairs, _, _ in open_parts.values() for t, _ in pairs})} of them to check again, {len(todo)} to replay", flush=True)
     started, progress, took = {}, {}, {}
 
     def run(task):
         progress[task] = arclog.ReplayProgress()
         started[task] = time.time()
-        cases, lines = export_rows.replay(CORPUS, TASKS, task, progress[task], options)
-        took[task] = time.time() - started[task]
+        cases, lines = export_rows.replay(CORPUS, TASKS, task, progress[task], options, units[task] if units[task] > 1 else None)
+        took[task] = (time.time() - started[task], units[task])
         return task, cases, lines
 
     pool = ThreadPoolExecutor(workers)

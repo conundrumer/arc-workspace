@@ -102,7 +102,7 @@ fn a_step_cap_cuts_a_solvers_streams_at_the_stream_that_passes_it() {
     let cap = steps(2);
     assert!(cap < total, "the third stream in order adds steps");
 
-    let solvers = [UnitSolver { task: &task, judged: &judged, streams: &streams }];
+    let solvers = [UnitSolver { task: &task, judged: &judged, streams: &streams, units: None }];
     let run = |step_cap: Option<usize>| {
         let settled = AtomicUsize::new(0);
         let results = replay_units(
@@ -110,6 +110,7 @@ fn a_step_cap_cuts_a_solvers_streams_at_the_stream_that_passes_it() {
             &constructions,
             &settings,
             false,
+            1,
             &ReplayProgress::default(),
             &|record: &mut Vec<usize>, _: &Decoder<'_>, stepped| record.push(stepped.index),
             &|_| {},

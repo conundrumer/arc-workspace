@@ -21,9 +21,9 @@ def frame(case, part):
     return pd.DataFrame(dict(task=[case.task] * n, case=[case.case] * n, concept=[case.concept] * n, **d))
 
 
-def replay(corpus, tasks, task, progress, options):
-    """The (cases, lines) of the replay of `task`, with the `options` of `arclog.corpus_tables`."""
-    return arclog.corpus_tables(corpus, tasks, task_ids=[task], progress=progress, **options)
+def replay(corpus, tasks, task, progress, options, units=None):
+    """The (cases, lines) of the replay of `task`, with the `options` of `arclog.corpus_tables` and its `units`."""
+    return arclog.corpus_tables(corpus, tasks, task_ids=[task], progress=progress, units=units, **options)
 
 
 def write_rows(out, k, results):

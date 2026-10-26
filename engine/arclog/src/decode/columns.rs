@@ -21,7 +21,9 @@
 //! left, right), a Color its digit, a Number itself, an Example its index, a
 //! Unit 0, and an orientation constant, a `Pose` by its D4 constant, its
 //! encoding, which [`orientation_names`] names. An Ident is its number, which
-//! depends on the order of interning, so it is equal to another Ident of the
+//! depends on the order of interning in the session of the unit of streams
+//! that interned it, so on the cut of the solver's streams into units, which
+//! the solver's unit count sets, and it is equal to another Ident of the
 //! same run and to no Ident of another. A run is an offset in `values` and a
 //! count of rows, and its width in cells is the table's, or the `DET`'s, or
 //! the projection's. The rows of a run are in the order of their cells. Two

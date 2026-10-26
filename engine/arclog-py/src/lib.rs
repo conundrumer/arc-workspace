@@ -6,6 +6,7 @@
 //! holds the session's data beside the decode.
 
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -18,7 +19,7 @@ use arclog::decode::{evidence_tables, step_batch, Consistency, Decoder, Points, 
 use arclog::eval::determinations::relation_spelled;
 use arclog::eval::instance::Constructions;
 use arclog::eval::pool::Pool;
-use arclog::harness::{panic_message, run_over_corpus, SolverResult};
+use arclog::harness::{corpus_threads, panic_message, run_over_corpus, SolverResult};
 use arclog::eval::{Outcome, RelationValue};
 use arclog::judge::attempts::Attempts;
 use arclog::judge::candidates::{PairCandidates, Section, World};
@@ -892,7 +893,7 @@ fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &Hash
         .iter()
         .map(|(solver, _, ids)| {
             let Some(Ok((task, judged))) = reads.get(&found[*solver].0) else { unreachable!("a solver of `due` has a task that read") };
-            UnitSolver { task, judged, streams: ids }
+            UnitSolver { task, judged, streams: ids, units: None }
         })
         .collect();
     let progress = Progress::new(started, ended, due.iter().map(|(solver, _, _)| found[*solver].0.as_str()).collect(), due.iter().map(|(_, wanted, _)| wanted.len()).collect());
@@ -901,6 +902,7 @@ fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &Hash
         constructions,
         &DecodeSettings::corpus(),
         true,
+        corpus_threads(),
         steps,
         &|(rows, masks): &mut (usize, Vec<u8>), decoder, stepped| {
             let masked = stepped.mask.expect("the replay computes the mask");
@@ -1160,9 +1162,21 @@ struct TableCase {
 /// The call runs on the threads of the corpus harness with the GIL released,
 /// but for the build of each `CaseTables`, in phases. The first reads each
 /// solver, its streams and its task. The second cuts the streams of each
-/// solver into units, as `corpus_streams` does, replays the units, the
+/// solver into units, replays the units, the
 /// largest first, and turns the tables of each stream into columns as its
 /// unit ends.
+/// `units`, a positive integer or `None`, sets the cut and the threads of
+/// the second phase. With `None`, the streams of each solver, in the order of
+/// their tokens, are cut into groups of consecutive streams of at most
+/// `UNIT_STEPS` model steps but for the last stream's, as `corpus_streams`
+/// does, and the threads are those of the corpus harness. With an integer
+/// `k`, they are cut into at most `k` units of consecutive streams with about
+/// equal new model steps, each cut at the stream that passes the next
+/// `k`-th of the solver's model steps, and the call replays on `k` threads,
+/// whatever `ARCLOG_THREADS` holds. An Ident's number depends on the unit
+/// that interned it, so the same call with another `units` gives the same
+/// tables but for the numbers of its Idents, and each equality of two Idents
+/// within a case holds in both. `ValueError` is raised for 0.
 /// `ended`, a callable or `None`, is called with a solver's task id, holding
 /// the GIL, once the last of that solver's streams has ended. A solver whose
 /// streams all lie past `step_cap` gets the call; one whose task did not read,
@@ -1175,8 +1189,9 @@ struct TableCase {
 /// second phase: its `total` is set once the units are cut and its `done`
 /// grows while they replay.
 #[pyfunction]
-#[pyo3(signature = (corpus, tasks, all_cases=false, task_ids=None, bodies=false, projection_cap=None, ended=None, progress=None, step_cap=None, table_work_cap=None))]
-fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, task_ids: Option<Vec<String>>, bodies: bool, projection_cap: Option<u64>, ended: Option<Py<PyAny>>, progress: Option<Py<PyReplayProgress>>, step_cap: Option<usize>, table_work_cap: Option<u64>) -> PyResult<(Vec<PyCaseTables>, Vec<String>)> {
+#[pyo3(signature = (corpus, tasks, all_cases=false, task_ids=None, bodies=false, projection_cap=None, ended=None, progress=None, step_cap=None, table_work_cap=None, units=None))]
+fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, task_ids: Option<Vec<String>>, bodies: bool, projection_cap: Option<u64>, ended: Option<Py<PyAny>>, progress: Option<Py<PyReplayProgress>>, step_cap: Option<usize>, table_work_cap: Option<u64>, units: Option<usize>) -> PyResult<(Vec<PyCaseTables>, Vec<String>)> {
+    let units = units.map(|count| NonZeroUsize::new(count).ok_or_else(|| PyValueError::new_err("units must be a positive integer"))).transpose()?;
     let points = if bodies { Points::All } else { Points::Relations };
     let wanted = if all_cases { WantedCases::All } else { WantedCases::Concept };
     let constructions = constructions()?;
@@ -1212,7 +1227,7 @@ fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, tas
         .iter()
         .map(|(id, ids)| {
             let (task, judged) = &reads[*id];
-            UnitSolver { task, judged, streams: ids }
+            UnitSolver { task, judged, streams: ids, units }
         })
         .collect();
     let trains: Vec<usize> = streamed.iter().map(|(id, _)| reads[*id].0.train.len()).collect();
@@ -1227,6 +1242,7 @@ fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, tas
                 constructions,
                 &settings,
                 false,
+                units.map_or_else(corpus_threads, NonZeroUsize::get),
                 steps,
                 &|record: &mut StreamRecord, decoder, stepped| record.step(decoder, stepped, points),
                 &|solver| progress.start(solver),
@@ -1386,7 +1402,7 @@ fn stream_tables(py: Python<'_>, task: &str, tasks: &str, streams: Vec<(Vec<u32>
     let points = if bodies { Points::All } else { Points::Relations };
     let evidence = evidence_tables(&read, Registry::get());
     let train = read.train.len();
-    let solvers = [UnitSolver { task: &read, judged: &judged, streams: &ids }];
+    let solvers = [UnitSolver { task: &read, judged: &judged, streams: &ids, units: None }];
     let steps = ReplayProgress::default();
     let mut replayed = py.detach(|| {
         replay_units(
@@ -1394,6 +1410,7 @@ fn stream_tables(py: Python<'_>, task: &str, tasks: &str, streams: Vec<(Vec<u32>
             constructions,
             &settings,
             false,
+            corpus_threads(),
             &steps,
             &|record: &mut StreamRecord, decoder, stepped| record.step(decoder, stepped, points),
             &|_| {},

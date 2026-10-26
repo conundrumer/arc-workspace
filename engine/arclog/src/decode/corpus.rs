@@ -8,6 +8,7 @@
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 use std::cell::Cell;
+use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -419,11 +420,16 @@ impl<T> StreamReplay<T> {
 }
 
 /// A solver whose streams a call of [`replay_units`] replays: its task, the
-/// task as the judge reads its pairs, and the token ids of its streams.
+/// task as the judge reads its pairs, the token ids of its streams, and the
+/// count of units to cut them into, where the caller gives one.
 pub struct UnitSolver<'a> {
     pub task: &'a Task,
     pub judged: &'a JudgedTask,
     pub streams: &'a [Vec<(u32, Emitter)>],
+    /// With a count `k`, [`replay_units`] cuts the streams into at most `k`
+    /// units of about equal new model steps. With `None`, it cuts at
+    /// [`UNIT_STEPS`].
+    pub units: Option<NonZeroUsize>,
 }
 
 /// A run of consecutive streams of one solver, in the order of
@@ -437,11 +443,66 @@ struct ReplayUnit {
     steps: usize,
 }
 
-/// The model's steps at which [`replay_units`] ends a unit. It is a fixed
-/// count, so the cut of a solver's streams into units depends on the solver
-/// alone, and so does the numbering of the Idents that a unit's session
-/// interns, whatever the thread count and whatever else the call holds.
+/// The model's steps at which [`replay_units`] ends a unit of a solver that
+/// gives no unit count. It is a fixed count, so the cut of a solver's streams
+/// into units depends on the solver and its unit count alone, and so does the
+/// numbering of the Idents that a unit's session interns, whatever the thread
+/// count and whatever else the call holds.
 pub const UNIT_STEPS: usize = 50_000;
+
+/// The new model steps of each stream of `streams` taken in `order`, each
+/// counted after the stream before it in `order`.
+fn stream_steps<'a>(streams: &'a [Vec<(u32, Emitter)>], order: &'a [usize]) -> impl Iterator<Item = usize> + 'a {
+    let mut previous: Option<&'a [(u32, Emitter)]> = None;
+    order.iter().map(move |&stream| {
+        let ids = streams[stream].as_slice();
+        let added = new_model_steps(previous, ids);
+        previous = Some(ids);
+        added
+    })
+}
+
+/// The units of the streams of `solver` in `order`, which is that of
+/// [`sorted_streams`] less the streams past a cap, as [`replay_units`] cuts
+/// them. With no unit count, a unit ends at the stream that takes it to
+/// [`UNIT_STEPS`] model steps. With a count `k`, the running sum of the new
+/// model steps of the streams, each counted after the stream before it in
+/// `order`, is cut into `k` parts of equal sum, and a unit ends at each stream
+/// that passes the end of a part (several parts' ends at one stream give one
+/// unit), so the solver has at most `k` units.
+fn cut_units(index: usize, solver: &UnitSolver<'_>, order: &[usize]) -> Vec<ReplayUnit> {
+    let new_unit = || ReplayUnit { solver: index, streams: Vec::new(), steps: 0 };
+    let all_added: Vec<usize> = stream_steps(solver.streams, order).collect();
+    let total: usize = all_added.iter().sum();
+    let (mut units, mut unit) = (Vec::new(), new_unit());
+    // The unit's last stream so far, from which the next one's new model steps count.
+    let mut last: Option<&[(u32, Emitter)]> = None;
+    let (mut running, mut parts_ended) = (0, 0);
+    for (&stream, &added) in order.iter().zip(&all_added) {
+        let ids = solver.streams[stream].as_slice();
+        unit.streams.push(stream);
+        unit.steps += new_model_steps(last, ids);
+        last = Some(ids);
+        let ends = match solver.units {
+            None => unit.steps >= UNIT_STEPS,
+            Some(count) => {
+                running += added;
+                let parts_passed = if total == 0 { 0 } else { running * count.get() / total };
+                let ends = parts_passed > parts_ended;
+                parts_ended = parts_passed;
+                ends
+            }
+        };
+        if ends {
+            units.push(std::mem::replace(&mut unit, new_unit()));
+            last = None;
+        }
+    }
+    if !unit.streams.is_empty() {
+        units.push(unit);
+    }
+    units
+}
 
 /// The model steps of a call of [`replay_units`]: how many its units hold in
 /// all, and how many its workers have done. Another thread may read both while
@@ -466,10 +527,11 @@ impl ReplayProgress {
 
 /// Replays the streams of `solvers`, as [`replay_prefix_tree`] does under
 /// `settings`, on the
-/// workers of [`run_on_workers`]. The streams of each solver are cut, in
-/// the order of [`sorted_streams`], into units of consecutive streams, so
-/// that no unit passes [`UNIT_STEPS`] model steps but by its last stream's,
-/// and the units run largest first, each in a session of its
+/// `threads` workers of [`run_on_workers`]. The streams of each solver are cut, in
+/// the order of [`sorted_streams`], into units of consecutive streams: at
+/// [`UNIT_STEPS`] model steps, so that no unit passes them but by its last
+/// stream's, or, where the solver gives a unit count, into at most that many
+/// units of about equal new model steps. The units run largest first, each in a session of its
 /// own and under `catch_unwind`. As a unit starts, its worker calls
 /// `started` with the solver's index in `solvers`. As a unit ends, its worker calls `ended`
 /// with the solver's index in `solvers` and the [`StreamReplay`] of each of the
@@ -501,6 +563,7 @@ pub fn replay_units<T: Default + Clone, U: Send>(
     constructions: &Constructions,
     settings: &DecodeSettings,
     masked: bool,
+    threads: usize,
     progress: &ReplayProgress,
     record: &(dyn Fn(&mut T, &Decoder<'_>, Stepped<'_>) + Sync),
     started: &(dyn Fn(usize) + Sync),
@@ -515,11 +578,8 @@ pub fn replay_units<T: Default + Clone, U: Send>(
     for (index, (solver, order)) in solvers.iter().zip(&mut sorted).enumerate() {
         if let Some(cap) = step_cap {
             let (mut total, mut kept) = (0, None);
-            let mut last: Option<&[(u32, Emitter)]> = None;
-            for (rank, &stream) in order.iter().enumerate() {
-                let ids = solver.streams[stream].as_slice();
-                total += new_model_steps(last, ids);
-                last = Some(ids);
+            for (rank, added) in stream_steps(solver.streams, order).enumerate() {
+                total += added;
                 if total > cap && kept.is_none() {
                     kept = Some(rank);
                 }
@@ -532,25 +592,11 @@ pub fn replay_units<T: Default + Clone, U: Send>(
                 }
             }
         }
-        let mut unit = ReplayUnit { solver: index, streams: Vec::new(), steps: 0 };
-        let mut last: Option<&[(u32, Emitter)]> = None;
-        for &stream in order.iter() {
-            let ids = solver.streams[stream].as_slice();
-            unit.streams.push(stream);
-            unit.steps += new_model_steps(last, ids);
-            last = Some(ids);
-            if unit.steps >= UNIT_STEPS {
-                units.push(std::mem::replace(&mut unit, ReplayUnit { solver: index, streams: Vec::new(), steps: 0 }));
-                last = None;
-            }
-        }
-        if !unit.streams.is_empty() {
-            units.push(unit);
-        }
+        units.extend(cut_units(index, solver, order));
     }
     units.sort_by(|a, b| b.steps.cmp(&a.steps));
     progress.total.store(units.iter().map(|unit| unit.steps).sum(), Ordering::Relaxed);
-    let outcomes = run_on_workers(&units, |unit| {
+    let outcomes = run_on_workers(&units, threads, |unit| {
         let solver = &solvers[unit.solver];
         started(unit.solver);
         let ids: Vec<Vec<(u32, Emitter)>> = unit.streams.iter().map(|&stream| solver.streams[stream].clone()).collect();
