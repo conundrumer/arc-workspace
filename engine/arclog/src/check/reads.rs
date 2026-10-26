@@ -5,8 +5,8 @@
 use super::types::result;
 use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::hash::StableHashSet;
-use crate::program::canonical::{CanonicalOrder, SearchBudget};
-use crate::program::path::{NodePath, NodeRef};
+use crate::program::canonical::{prediction, relation_of, CanonicalOrder, SearchBudget};
+use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{Atom, ColumnName, FactRelation, Form, Site, SiteArg};
 use crate::resolver::{DependencyKind, GraphNodeIndex, Resolution, ResolvedProgram, Side};
 use crate::types::each_site_label;
@@ -49,13 +49,23 @@ impl Check for PooledAndLiftedReadsCheck {
     /// later token undoes: a fact relation that the form's side does not let
     /// it read, and a site on a column that holds an Example of the relation
     /// the per-input form reads, at that site, whether or not the site holds
-    /// a label yet. The refusals stand at their paths in the partial form.
+    /// a label yet. A refusal that rests on the per-input side, a read of
+    /// `ex_input` or `ex_output`, a read at a site on such a column, stands
+    /// only where `side_is_final` says that side is final, since a later
+    /// token can still make the form task-wide. A refusal that rests on the
+    /// task-wide side, a read of `input`, stands whatever the form is: that
+    /// read is a per-input read, so the form is task-wide only by what no
+    /// later token removes. The refusals stand at their paths in the partial
+    /// form.
     fn check_prefix(&self, prefix: &Prefix<'_>) -> PrefixResult {
         let program = prefix.scope.program;
         let mut refusals = Vec::new();
         for read in form_reads(prefix.partial, prefix.path) {
             let Some((node, false)) = read.node(program, prefix.path) else { continue };
             let Some(side) = program.form_side(&read.form) else { continue };
+            if side == Side::PerInput && !side_is_final(prefix, &read.form) {
+                continue;
+            }
             let refused = refused_read(program, side, node, read.atom);
             let early = prefix.is_open(&read.at) && side == Side::PerInput && !matches!(refused, Some(Refused::ExFact));
             let site = if early { example_site(program, node, read.atom) } else { None };
@@ -105,6 +115,30 @@ fn refused_read(program: &ResolvedProgram, side: Side, node: GraphNodeIndex, ato
         }
         _ => None,
     }
+}
+
+/// Whether no later token of the prefix can change the side of the form at
+/// `form`, a path in the program: a clause takes the side of its keyword,
+/// and every other form, as `Sides::form` of the resolver gives, takes
+/// the side its deciding form gives, which is complete once the prefix does
+/// not hold it open. The deciding form is the form itself, but for the
+/// `&prediction` clause of a `DEMO_RULE`, whose deciding form is the
+/// `DEMONSTRATED` form that holds the rule.
+fn side_is_final(prefix: &Prefix<'_>, form: &NodePath) -> bool {
+    let within = NodePath(form.0[prefix.path.0.len()..].into());
+    let deciding = match node_at(NodeRef::from(prefix.partial), &within) {
+        Some(NodeRef::Clause(clause)) => {
+            let rule = within.0.len().checked_sub(1).and_then(|len| node_at(NodeRef::from(prefix.partial), &NodePath(within.0[..len].into())));
+            if relation_of(&clause.derives) == prediction() && matches!(rule, Some(NodeRef::DemoRule(_))) {
+                NodePath(within.0[..within.0.len() - 2].into())
+            } else {
+                return true;
+            }
+        }
+        Some(NodeRef::RigidDet(_)) => return true,
+        _ => within,
+    };
+    !prefix.is_open(&deciding)
 }
 
 /// Whether a site of `atom` stands on a column of `examples`, at any depth
