@@ -30,6 +30,7 @@ class Reason(enum.Enum):
     ADOPTED = "adopted"
     CPU = "cpu"
     TIME = "time"
+    GROWTH = "growth"
     KILLED = "killed"
 
 
@@ -78,11 +79,16 @@ def time_overrun(pid: int, command: str, minutes: float, declared: float) -> str
     ).format(pid=pid, command=short(command), minutes=minutes, declared=declared)
 
 
-def killed(pid: int, command: str, cpus: int, gib: int, reason: str) -> str:
+def passed_soft(pid: int, command: str, soft_gib: int) -> str:
+    return mctx("pid {pid} (`{command}`) passed {soft} GiB. Fix its memory use.").format(
+        pid=pid, command=short(command), soft=soft_gib)
+
+
+def killed(pid: int, command: str, gib: int, reason: str) -> str:
     return mctx(
-        "pid {pid} (`{command}`) and its children were killed: {reason}. It held {gib} GiB. Run "
-        "it again as `{form}` once the swap-ins are down."
-    ).format(pid=pid, command=short(command), gib=gib, reason=reason, form=gated_form(command, cpus, gib))
+        "pid {pid} (`{command}`) and its children were killed: {reason}. The job held {gib} GiB. Fix the "
+        "program's memory use before you run it again."
+    ).format(pid=pid, command=short(command), gib=gib, reason=reason)
 
 
 def message_line(text: str) -> str:

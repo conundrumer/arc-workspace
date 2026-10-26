@@ -5,8 +5,8 @@ effects, a log line, a signal to send, a grant, that the daemon applies.
 
 The budget that admission and the expected starts use is `available`: the machine's
 CPUs, and `UNBOUNDED_GIB`, so that no request waits for GiB. Memory gates no start: idle
-memory moves to swap at little cost, and the thrash that active memory brings is met by the
-kill below.
+memory moves to swap at little cost, and a job is kept from the thrash that active memory brings
+by the caps of `scripts/heavy_enforcer.py`.
 
 A request waits, as `scripts/heavy_scheduler.py` orders it, and starts where the daemon
 reads the machine. A job ends where its pid does, and the
@@ -21,7 +21,11 @@ A gated job that runs at more than twice its
 CPUs for a minute, or runs past twice its minutes gets one log line and one
 message to its session. An ungated process that is a call of `run_heavy.py`,
 of a gate older than the daemon, is counted and is sent no message that says it runs
-outside the gate. Where the swap-ins stay high, a kill follows, as `scripts/heavy_enforcer.py` gives it.
+outside the gate. A job whose footprint passes `SOFT_GIB` gets one log line and one message to its
+session, and one that passes `HARD_GIB` is killed with its processes, and its session is told. Where the
+memory pressure stays critical, the largest job of a session is killed, as `scripts/heavy_enforcer.py` gives it.
+Each reading is logged, each minute and at each reading whose swap-ins are over the load monitor's alert
+rate, with the seconds the daemon took to read the machine.
 
 Standard library only, Python 3.9."""
 
@@ -35,11 +39,11 @@ from typing import Any, Dict, FrozenSet, List, Optional, Tuple, Union
 import heavy_notices
 from heavy_notices import Reason
 from heavy_enforcer import (ADOPT_CPU_SECONDS, ADOPT_CPUS, ADOPT_GIB, ADOPT_GIB_SECONDS, CPU_OVERRUN_FACTOR,
-                            CPU_OVERRUN_SECONDS, KILL_GRACE, KILL_SETTLE, THRASH_RATE, THRASH_SECONDS,
+                            CPU_OVERRUN_SECONDS, CRITICAL_SECONDS, HARD_GIB, KILL_GRACE, SOFT_GIB,
                             TIME_OVERRUN_FACTOR, command_roots, victims)
 from heavy_model import Amount, Job, Kind, Lane, Need, Waiter
 from heavy_scheduler import Holding, estimates, next_waiters, queues, reserve, resolve
-from machine_readings import GIB, KIB, PRESSURE_LEVELS, SWAP_IN_RATE
+from machine_readings import CRITICAL_PRESSURE, GIB, KIB, PRESSURE_LEVELS, SWAP_IN_RATE
 from process_readings import NO_SESSION
 
 OUTSIDE_THE_GATE = frozenset({Reason.ADOPTED})
@@ -68,13 +72,14 @@ class Proc:
 class Sample:
     """One reading of the machine at wall-clock time `at`. `claude` maps the pid of each
     session's `claude` process to the session id. `alive` holds the pid of each gated job that
-    runs with the start its job gives."""
+    runs with the start its job gives. `read_seconds` is the time the reading took."""
     at: float
     procs: Dict[int, Proc]
     claude: Dict[int, str]
     alive: FrozenSet[int]
     level: int
     swap_in: Optional[float]
+    read_seconds: float
 
 
 @dataclass(frozen=True)
@@ -189,8 +194,7 @@ class Core:
         self.cpu_over: Dict[int, float] = {}
         self.cpu_seen: Dict[int, float] = {}
         self.last_at: Optional[float] = None
-        self.last_kill: Optional[float] = None
-        self.thrash_since: Optional[float] = None
+        self.critical_since: Optional[float] = None
         self.reading_logged: Optional[float] = None
         self.level = 1
         self.hot = False
@@ -297,7 +301,7 @@ class Core:
 
     def tick(self, sample: Sample, now: float) -> List[Effect]:
         """Take a reading of the machine in: the hold, the end of jobs, the measure of each job,
-        the adoption of ungated commands, the overruns, and the kills."""
+        the adoption of ungated commands, the overruns, the jobs past the soft cap, and the kills."""
         out: List[Effect] = []
         self.claude = {session: pid for pid, session in sample.claude.items()}
         elapsed = None if self.last_at is None else max(now - self.last_at, 1e-3)
@@ -308,6 +312,7 @@ class Core:
         held = {pid for job in self.jobs.values() for pid in job.members}
         self.outside_kib = sum(p.footprint_kib or 0 for pid, p in sample.procs.items() if pid not in held)
         out += self.overruns(now)
+        out += self.growth()
         out += self.kills(sample, now)
         out += self.reading(sample, now)
         self.cpu_seen = {p.pid: p.cpu_seconds for p in sample.procs.values() if p.cpu_seconds is not None}
@@ -317,21 +322,22 @@ class Core:
     def pressure(self, sample: Sample, now: float) -> List[Effect]:
         self.level = sample.level
         self.hot = sample.swap_in is not None and sample.swap_in > SWAP_IN_RATE
-        if sample.swap_in is not None and sample.swap_in > THRASH_RATE:
-            self.thrash_since = self.thrash_since if self.thrash_since is not None else now
+        if sample.level == CRITICAL_PRESSURE:
+            self.critical_since = self.critical_since if self.critical_since is not None else now
         else:
-            self.thrash_since = None
+            self.critical_since = None
         return []
 
     def reading(self, sample: Sample, now: float) -> List[Effect]:
-        """A log line of the reading, each minute and at each reading whose swap-ins are over the
-        load monitor's alert rate, for the evidence of what thrashes the machine."""
+        """A log line of the reading, with the seconds it took, each minute and at each reading whose
+        swap-ins are over the load monitor's alert rate, for the evidence of what slows the machine."""
         hot = sample.swap_in is not None and sample.swap_in > SWAP_IN_RATE
         if not hot and self.reading_logged is not None and now - self.reading_logged < 60:
             return []
         self.reading_logged = now
         return [Log("reading", {
             "swap_in": None if sample.swap_in is None else round(sample.swap_in), "level": sample.level,
+            "read_seconds": round(sample.read_seconds, 3),
             "jobs": [[job.pid, round(job.footprint_kib * KIB / GIB, 2), job.command[:60]]
                      for job in sorted(self.jobs.values(), key=lambda j: -j.footprint_kib)]})]
 
@@ -464,7 +470,19 @@ class Core:
         return out
 
     def kills(self, sample: Sample, now: float) -> List[Effect]:
+        """Kill each job whose footprint passes `HARD_GIB`, and, where the pressure has stayed critical
+        for `CRITICAL_SECONDS`, the first of `victims`, each unless its processes are already sent
+        `SIGTERM`; and send `SIGKILL` to each process that outlives `KILL_GRACE` seconds after it."""
         out: List[Effect] = []
+        for job in self.jobs.values():
+            if job.footprint_kib * KIB > HARD_GIB * GIB and not self.terming(job):
+                out += self.kill(job, sample, now, f"the job held more than the {HARD_GIB} GiB that no job may hold")
+        if self.critical_since is not None and now - self.critical_since >= CRITICAL_SECONDS:
+            for job in victims(list(self.jobs.values())):
+                if not self.terming(job):
+                    out += self.kill(job, sample, now, f"the memory pressure stayed critical for {CRITICAL_SECONDS} s, "
+                                                       "and it was the largest job")
+                    break
         for key, since in list(self.pending.items()):
             found = sample.procs.get(key[0])
             if found is None or found.start != key[1]:
@@ -472,18 +490,25 @@ class Core:
             elif now - since >= KILL_GRACE:
                 out.append(Signal(key[0], key[1], signal.SIGKILL))
                 del self.pending[key]
-        severe = self.thrash_since is not None and now - self.thrash_since >= THRASH_SECONDS
-        if not severe or (self.last_kill is not None and now - self.last_kill < KILL_SETTLE):
-            return out
-        for job in victims(list(self.jobs.values())):
-            if any((pid, start) in self.pending for pid, start in job.members.items()):
-                continue
-            out += self.kill(job, sample, now)
-            break
         return out
 
-    def kill(self, job: Job, sample: Sample, now: float) -> List[Effect]:
-        reason = f"swap-ins over {THRASH_RATE} pages a second for {THRASH_SECONDS} s"
+    def terming(self, job: Job) -> bool:
+        """Whether a process of `job` has been sent `SIGTERM` and waits for `SIGKILL`."""
+        return any((pid, start) in self.pending for pid, start in job.members.items())
+
+    def growth(self) -> List[Effect]:
+        """Log each job whose footprint passes `SOFT_GIB` once, and queue one message for it."""
+        out: List[Effect] = []
+        for job in self.jobs.values():
+            if job.footprint_kib * KIB > SOFT_GIB * GIB and self.tell(
+                    job, Reason.GROWTH, heavy_notices.passed_soft(job.pid, job.command, SOFT_GIB)):
+                out.append(Log("soft", {"pid": job.pid, "owner": job.owner, "kind": job.kind.value,
+                                        "gib": gib_up(job.footprint_kib), "command": job.command[:COMMAND_CHARS]}))
+        return out
+
+    def kill(self, job: Job, sample: Sample, now: float, reason: str) -> List[Effect]:
+        """Kill the processes of `job` for `reason`, tell its session, and start the wait for critical
+        pressure again."""
         out: List[Effect] = [Log("kill", {"pid": job.pid, "owner": job.owner, "kind": job.kind.value,
                                           "need": job.need.value if job.need else None,
                                           "gib": gib_up(job.footprint_kib), "reason": reason,
@@ -493,10 +518,8 @@ class Core:
                 continue
             out.append(Signal(pid, start, signal.SIGTERM))
             self.pending[(pid, start)] = now
-        self.last_kill = now
-        self.thrash_since = None
-        self.tell(job, Reason.KILLED, heavy_notices.killed(job.pid, job.command, max(job.amount.cpus, math.ceil(job.cpu)),
-                                                 gib_up(job.footprint_kib), reason))
+        self.critical_since = None
+        self.tell(job, Reason.KILLED, heavy_notices.killed(job.pid, job.command, gib_up(job.footprint_kib), reason))
         return out
 
     def messages(self, now: float) -> List[Tuple[int, str]]:

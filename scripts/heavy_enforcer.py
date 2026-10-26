@@ -1,6 +1,6 @@
 """The rules by which the resource daemon (`scripts/resource_daemon.py`)
-finds the processes of a session that run without a grant, and picks the
-jobs to kill under memory pressure.
+finds the processes of a session that run without a grant, and limits what
+a job holds.
 
 A command of a session is a process below one of the shells that run a Bash
 call, the children of the session's `claude` process whose command line
@@ -11,11 +11,15 @@ A command is adopted as an ungated job where its tree, with the trees of
 the jobs left out, runs at `ADOPT_CPUS` CPUs for `ADOPT_CPU_SECONDS`, or
 holds `ADOPT_GIB` GiB for `ADOPT_GIB_SECONDS`.
 
-While the swap-ins a second stay over `THRASH_RATE` for `THRASH_SECONDS`, the
-daemon kills the jobs of sessions that hold at least `VICTIM_GIB` GiB one at a time, each with
-`SIGTERM` and then, `KILL_GRACE` seconds later, `SIGKILL`, the largest footprint first. Each kill
-starts the `THRASH_SECONDS` again, so the swap-ins of the processes that read their pages back
-after a kill do not count toward the next.
+A job whose footprint passes `HARD_GIB` GiB is killed at once, each of its processes with
+`SIGTERM` and then, `KILL_GRACE` seconds later, `SIGKILL`; nothing overrides that.
+
+While the kernel's memory pressure level stays critical for `CRITICAL_SECONDS`, the daemon kills the
+job of a session that holds at least `VICTIM_GIB` GiB, the largest footprint first, as it kills a
+job past `HARD_GIB`. The next kill waits until the pressure drops below critical and has stayed
+critical for `CRITICAL_SECONDS` again. A job of no session never goes for this.
+
+A job whose footprint passes `SOFT_GIB` GiB is told once to fix its memory use, and runs on.
 
 Standard library only, Python 3.9."""
 
@@ -24,7 +28,7 @@ from __future__ import annotations
 import os
 from typing import Dict, List
 
-from heavy_model import Job, Kind, Need
+from heavy_model import Job
 from machine_readings import GIB, KIB
 from process_readings import NO_SESSION
 
@@ -32,14 +36,15 @@ ADOPT_CPUS = 1.5
 ADOPT_CPU_SECONDS = 60
 ADOPT_GIB = 2
 ADOPT_GIB_SECONDS = 30
-THRASH_RATE = 5000
-"""Swap-ins a second at which the machine thrashes: the rates of the thrash episodes of
-2026-10-22 and 23 ran from 5,000 to 36,000."""
-THRASH_SECONDS = 15
+HARD_GIB = 32
+"""The footprint in GiB past which a job is killed. On the machine's 24 GiB, a decode that held at
+44 GiB thrashed it for 39 minutes (2026-10-26), and a run that grew to 96 GiB; the largest run that
+finished well held 20.6 GiB."""
+SOFT_GIB = 8
+"""The footprint in GiB past which a job's session is told to fix its memory use."""
+CRITICAL_SECONDS = 10
 VICTIM_GIB = 1
 KILL_GRACE = 5
-KILL_SETTLE = 10
-"""The seconds after one kill starts before the next may."""
 SNAPSHOTS = "/shell-snapshots/"
 SHELLS = frozenset({"bash", "sh", "zsh", "dash", "fish"})
 CPU_OVERRUN_FACTOR = 2
@@ -88,7 +93,7 @@ def command_roots(commands: Dict[int, str], parents: Dict[int, int], sessions: L
 
 
 def victims(jobs: List[Job]) -> List[Job]:
-    """The jobs of sessions that hold at least `VICTIM_GIB` GiB, in the order they are killed,
-    the largest footprint first. A job of no session never goes."""
+    """The jobs of sessions that hold at least `VICTIM_GIB` GiB, in the order they are killed
+    at critical pressure, the largest footprint first. A job of no session never goes."""
     owned = [job for job in jobs if job.owner != NO_SESSION and job.footprint_kib * KIB >= VICTIM_GIB * GIB]
     return sorted(owned, key=lambda job: (-job.footprint_kib, job.pid))

@@ -15,6 +15,7 @@ import time
 from typing import Any, Callable, Dict, List, Optional
 
 import heavy_protocol
+from heavy_enforcer import HARD_GIB
 from heavy_protocol import Refusal
 
 START_SECONDS = 15
@@ -212,7 +213,7 @@ def queue_text(registry: Dict[str, Any], now: float) -> str:
     order it starts, with its expected start."""
     budget = registry["budget"]
     lines: List[str] = [f"budget: {budget['cpus']} CPUs, of which {budget['reserve_cpus']} are the short jobs' "
-                        f"reserve; memory gates no start, and the largest job is killed at sustained thrash; "
+                        f"reserve; memory gates no start, and a job is killed over {HARD_GIB} GiB or at sustained critical pressure; "
                         f"{budget['outside_gib']} GiB readable outside the jobs"]
     if registry["hold"]:
         lines.append(f"hold: {registry['hold']}")

@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 """The resource daemon: one process on the machine that grants the CPUs and
 memory of the machine to the heavy commands of `scripts/run_heavy.py`, counts
-what the sessions run outside it, kills under memory pressure, and tells the
+what the sessions run outside it, kills a job that holds too much memory, and tells the
 owning session what it did.
 
 `run_heavy.py` starts it where none runs, from the main tree's copy of this
@@ -29,7 +29,7 @@ processes of sessions and jobs, and for the footprint of each other process, rea
 again each `OUTSIDE_SECONDS`. A job's pid is polled each `LOOP_SECONDS`, so
 a share is free as soon as its command ends.
 
-Each grant, adoption, overrun, kill, reap, message, refusal and restart is a line of
+Each grant, adoption, overrun, soft-cap message, kill, reap, message, refusal and restart is a line of
 JSON in `daemon.log` under the directory, with its reason, owner and figures.
 A kill signals only a process that still has the start the daemon recorded for
 it. A message is one line, `{"type":"user","message":{"role":"user","content":<text>}}`,
@@ -215,6 +215,7 @@ class Daemon:
 
     def sample(self, now: float) -> Sample:
         """Read the machine."""
+        began = time.monotonic()
         table = [row for row in rows() if row.pid != os.getpid()]
         found = harness_sessions()
         if found is not None:
@@ -256,7 +257,8 @@ class Daemon:
         if self.swap_before is not None:
             swap_rate = (swapins - self.swap_before[0]) / max(now - self.swap_before[1], 1e-3)
         self.swap_before = (swapins, now)
-        return Sample(now, procs, dict(self.claude), frozenset(alive), pressure_level(), swap_rate)
+        return Sample(now, procs, dict(self.claude), frozenset(alive), pressure_level(), swap_rate,
+                      time.monotonic() - began)
 
     def tick(self, now: float) -> None:
         try:

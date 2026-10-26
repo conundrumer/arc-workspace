@@ -15,7 +15,10 @@ import subprocess
 SWAP_IN_RATE = 1000
 """Swap-ins a second above which the machine is under load."""
 
-PRESSURE_LEVELS = frozenset({2, 4})
+CRITICAL_PRESSURE = 4
+"""The kernel's critical pressure level."""
+
+PRESSURE_LEVELS = frozenset({2, CRITICAL_PRESSURE})
 """The pressure levels, warn and critical, at which the machine is under
 load."""
 
