@@ -20,7 +20,7 @@ and checkout of the machine, together hold at most the machine's CPU budget,
 the logical CPUs (`hw.logicalcpu`). A request over the CPUs its need allows is cut
 to them, with one line on stderr. Memory gates no start: the daemon tells a job's session to fix its memory
 use when the job passes `SOFT_GIB`, and kills the job when it passes `HARD_GIB`; and it kills the largest
-job where the memory pressure stays critical, as `scripts/heavy_enforcer.py` gives them.
+job where the memory pressure is critical, as `scripts/heavy_enforcer.py` gives them.
 
 A call asks the resource daemon (`scripts/resource_daemon.py`) for a share of
 the budget, and starts the daemon where none runs. The daemon starts a call

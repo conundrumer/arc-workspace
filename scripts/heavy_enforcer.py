@@ -14,10 +14,11 @@ holds `ADOPT_GIB` GiB for `ADOPT_GIB_SECONDS`.
 A job whose footprint passes `HARD_GIB` GiB is killed at once, each of its processes with
 `SIGTERM` and then, `KILL_GRACE` seconds later, `SIGKILL`; nothing overrides that.
 
-While the kernel's memory pressure level stays critical for `CRITICAL_SECONDS`, the daemon kills the
-job of a session that holds at least `VICTIM_GIB` GiB, the largest footprint first, as it kills a
-job past `HARD_GIB`. The next kill waits until the pressure drops below critical and has stayed
-critical for `CRITICAL_SECONDS` again. A job of no session never goes for this.
+At a reading of critical memory pressure level, the daemon kills the job of a session that holds
+at least `VICTIM_GIB` GiB, the largest footprint first, as it kills a job past `HARD_GIB`. After a
+kill, the next kill at critical pressure waits until a reading below critical, or until
+`CRITICAL_PAUSE_SECONDS` more seconds of critical readings have passed. A job of no session never
+goes for this.
 
 A job whose footprint passes `SOFT_GIB` GiB is told once to fix its memory use, and runs on.
 
@@ -42,7 +43,7 @@ HARD_GIB = 32
 finished well held 20.6 GiB."""
 SOFT_GIB = 8
 """The footprint in GiB past which a job's session is told to fix its memory use."""
-CRITICAL_SECONDS = 10
+CRITICAL_PAUSE_SECONDS = 10
 VICTIM_GIB = 1
 KILL_GRACE = 5
 SNAPSHOTS = "/shell-snapshots/"

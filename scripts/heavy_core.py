@@ -23,7 +23,7 @@ message to its session. An ungated process that is a call of `run_heavy.py`,
 of a gate older than the daemon, is counted and is sent no message that says it runs
 outside the gate. A job whose footprint passes `SOFT_GIB` gets one log line and one message to its
 session, and one that passes `HARD_GIB` is killed with its processes, and its session is told. Where the
-memory pressure stays critical, the largest job of a session is killed, as `scripts/heavy_enforcer.py` gives it.
+memory pressure is critical, the largest job of a session is killed, as `scripts/heavy_enforcer.py` gives it.
 Each reading is logged, each minute and at each reading whose swap-ins are over the load monitor's alert
 rate, with the seconds the daemon took to read the machine.
 
@@ -39,7 +39,7 @@ from typing import Any, Dict, FrozenSet, List, Optional, Tuple, Union
 import heavy_notices
 from heavy_notices import Reason
 from heavy_enforcer import (ADOPT_CPU_SECONDS, ADOPT_CPUS, ADOPT_GIB, ADOPT_GIB_SECONDS, CPU_OVERRUN_FACTOR,
-                            CPU_OVERRUN_SECONDS, CRITICAL_SECONDS, HARD_GIB, KILL_GRACE, SOFT_GIB,
+                            CPU_OVERRUN_SECONDS, CRITICAL_PAUSE_SECONDS, HARD_GIB, KILL_GRACE, SOFT_GIB,
                             TIME_OVERRUN_FACTOR, command_roots, victims)
 from heavy_model import Amount, Job, Kind, Lane, Need, Waiter
 from heavy_scheduler import Holding, estimates, next_waiters, queues, reserve, resolve
@@ -194,7 +194,7 @@ class Core:
         self.cpu_over: Dict[int, float] = {}
         self.cpu_seen: Dict[int, float] = {}
         self.last_at: Optional[float] = None
-        self.critical_since: Optional[float] = None
+        self.critical_kill_after: Optional[float] = None
         self.reading_logged: Optional[float] = None
         self.level = 1
         self.hot = False
@@ -322,10 +322,8 @@ class Core:
     def pressure(self, sample: Sample, now: float) -> List[Effect]:
         self.level = sample.level
         self.hot = sample.swap_in is not None and sample.swap_in > SWAP_IN_RATE
-        if sample.level == CRITICAL_PRESSURE:
-            self.critical_since = self.critical_since if self.critical_since is not None else now
-        else:
-            self.critical_since = None
+        if sample.level != CRITICAL_PRESSURE:
+            self.critical_kill_after = None
         return []
 
     def reading(self, sample: Sample, now: float) -> List[Effect]:
@@ -470,18 +468,18 @@ class Core:
         return out
 
     def kills(self, sample: Sample, now: float) -> List[Effect]:
-        """Kill each job whose footprint passes `HARD_GIB`, and, where the pressure has stayed critical
-        for `CRITICAL_SECONDS`, the first of `victims`, each unless its processes are already sent
+        """Kill each job whose footprint passes `HARD_GIB`, and, where the pressure is critical and no
+        kill waits (`critical_kill_after`), the first of `victims`, each unless its processes are already sent
         `SIGTERM`; and send `SIGKILL` to each process that outlives `KILL_GRACE` seconds after it."""
         out: List[Effect] = []
         for job in self.jobs.values():
             if job.footprint_kib * KIB > HARD_GIB * GIB and not self.terming(job):
                 out += self.kill(job, sample, now, f"the job held more than the {HARD_GIB} GiB that no job may hold")
-        if self.critical_since is not None and now - self.critical_since >= CRITICAL_SECONDS:
+        if sample.level == CRITICAL_PRESSURE and (self.critical_kill_after is None
+                                                  or now >= self.critical_kill_after):
             for job in victims(list(self.jobs.values())):
                 if not self.terming(job):
-                    out += self.kill(job, sample, now, f"the memory pressure stayed critical for {CRITICAL_SECONDS} s, "
-                                                       "and it was the largest job")
+                    out += self.kill(job, sample, now, "the memory pressure was critical, and it was the largest job")
                     break
         for key, since in list(self.pending.items()):
             found = sample.procs.get(key[0])
@@ -507,8 +505,8 @@ class Core:
         return out
 
     def kill(self, job: Job, sample: Sample, now: float, reason: str) -> List[Effect]:
-        """Kill the processes of `job` for `reason`, tell its session, and start the wait for critical
-        pressure again."""
+        """Kill the processes of `job` for `reason`, tell its session, and hold the next kill at critical
+        pressure back until a reading below critical or `CRITICAL_PAUSE_SECONDS` seconds from now."""
         out: List[Effect] = [Log("kill", {"pid": job.pid, "owner": job.owner, "kind": job.kind.value,
                                           "need": job.need.value if job.need else None,
                                           "gib": gib_up(job.footprint_kib), "reason": reason,
@@ -518,7 +516,7 @@ class Core:
                 continue
             out.append(Signal(pid, start, signal.SIGTERM))
             self.pending[(pid, start)] = now
-        self.critical_since = None
+        self.critical_kill_after = now + CRITICAL_PAUSE_SECONDS
         self.tell(job, Reason.KILLED, heavy_notices.killed(job.pid, job.command, gib_up(job.footprint_kib), reason))
         return out
 
