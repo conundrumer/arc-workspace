@@ -234,6 +234,7 @@ class Lib:
         self.comp_rels: dict[str, list[tuple[str, list[tuple[str, str]], bool]]] = defaultdict(list)
         self.order: dict[str, list[str]] = {}   # a component's inputs in the order its target declares them
         self.replaced: dict[str, tuple] = {}   # a component of `libmap.REPLACED`: its present relations
+        self.extension: dict[str, set[str]] = defaultdict(set)   # each component, by the relations `extend` added to it
         self.top: dict[str, list[tuple[str, str]]] = {}
         self.clauses: dict[str, list[Unit]] = defaultdict(list)   # a component's own clauses
         for u in prog.units:
@@ -277,6 +278,7 @@ class Lib:
             for name, cols, is_in in sig.comp_rels.get(target, []):
                 if name not in have:
                     self.comp_rels[comp].append((name, [(n, sub.get(t, t)) for n, t in cols], is_in))
+                    self.extension[comp].add(name)
 
     def input_clauses(self, comp: str) -> list[Unit]:
         """The clauses of the component's body, and of the bases it extends,

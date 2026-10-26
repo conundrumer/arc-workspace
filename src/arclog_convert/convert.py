@@ -29,23 +29,21 @@ the check; with `--no-row-parity` it leaves `row_parity.tsv` untouched.
 A solver's plan file under plan/ records the hash of the solver
 file it was written from, and the runner and lib stamp of the run; where it
 is missing or records another hash or stamp, the script first reruns
-`scripts/run_dl.py determination-plan <stem>`.
+`scripts/run_dl.py determination-plan <stem>` (`arclog_convert.plans`). The
+name map and the column map of each solver it converts, written under names/
+and columns/, are those of `arclog_convert.names`.
 A form the script cannot translate is written literally, under a
 `;; TODO <kind>: ...` comment.
 """
 
-import hashlib
 import json
 import os
 import re
-import subprocess
 import sys
-from concurrent.futures import ThreadPoolExecutor
 from collections import Counter
 from pathlib import Path
-from engine.program import Qualifier, RelationName, Variable
+from engine.program import Qualifier, Variable
 from arclog_convert.libmap import rename as libmap_rename
-from arclog_convert.libmap.instances import Placement
 from arclog_convert import OUT_ENV, paths, writable_out
 
 from arclog_convert.forms import (
@@ -56,214 +54,14 @@ from arclog_convert.forms import (
     hoist_shared,
     renamed,
 )
-from arclog_convert.clauses import Site, site_columns
-from arclog_convert.leaves import Converter, FACTS, Written
 from arclog_convert.lib import Col, ColMismatch, LIB_DL, Lib, SIGNATURE
+from arclog_convert.names import column_map, name_map
+from arclog_convert.plans import refresh_plans
 from arclog_convert.solver import Solver
-
-
-PLAN_HASH = "solver file sha256: "
-
-
-def solver_hash(stem: str) -> str:
-    return hashlib.sha256((paths.SOLVERS / f"{stem}.dl").read_bytes()).hexdigest()
-
-
-def stale_plans(stems: list[str]) -> list[str]:
-    """The solvers whose plan file is missing, or records a hash other than
-    their solver file's, or a runner and lib stamp other than the current
-    one."""
-    from cli.common import stamp
-    lib_line = f"runner and lib: {stamp()}"
-    out = []
-    for stem in stems:
-        p = paths.PLANS / f"{stem}.txt"
-        lines = p.read_text().splitlines() if p.exists() else []
-        if PLAN_HASH + solver_hash(stem) not in lines or lib_line not in lines:
-            out.append(stem)
-    return out
-
-
-def write_plan(stem: str) -> str | None:
-    """Run the determination plan of one solver and write its output, with
-    the solver file's hash, to its plan file; None, or the error."""
-    digest = solver_hash(stem)
-    r = subprocess.run([sys.executable, str(paths.ROOT / "scripts" / "run_dl.py"), "determination-plan", stem],
-                       cwd=paths.ROOT, capture_output=True, text=True)
-    if r.returncode != 0:
-        lines = (r.stderr or r.stdout).strip().splitlines()
-        return lines[-1] if lines else f"exit {r.returncode}"
-    text = r.stdout + r.stderr
-    paths.PLANS.mkdir(parents=True, exist_ok=True)
-    (paths.PLANS / f"{stem}.txt").write_text(text + ("" if text.endswith("\n") else "\n") + PLAN_HASH + digest + "\n")
-    return None
-
-
-def refresh_plans(stems: list[str]) -> None:
-    stale = stale_plans(stems)
-    if not stale:
-        return
-    print(f"rerunning the determination plan of {len(stale)} solvers")
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        for stem, err in zip(stale, pool.map(write_plan, stale)):
-            if err is not None:
-                print(f"  {stem}: the plan failed: {err}")
 
 
 _LIBS: tuple[Lib, Lib] | None = None
 
-
-
-_ARC_TOKEN = re.compile(r"[&$]?[A-Za-z_][\w]*(?:\.[\w]+)*")
-_ALTS_CONCEPT = re.compile(r'\(ALTS \$\w+ "(?:[^"\\]|\\.)*" \$(\w+)')
-"""The constructor an `ALTS` form gives as its concept alt."""
-
-
-def _souffle_relation(c: "Converter", w: Written) -> dict:
-    """The Souffle relation, or instance, `w`: the component path, its name
-    there, and its name from the top level of the solver's program, null
-    where no instance at the top level is of the scope's component."""
-    path: str | None = w.relation
-    if w.scope:
-        at = [n for (sc, n), i in c.insts.items() if sc == () and i.component == w.scope[-1]]
-        path = f"{at[0]}.{w.relation}" if len(w.scope) == 1 and len(at) == 1 else None
-    return {"component": list(w.scope), "relation": w.relation, "path": path}
-
-
-def _renamed_name(name: str, insts: dict[str, str]) -> str:
-    """The arclog name `name` the converter writes, as the renames
-    `convert_one` applies after it leave it: `renamed`, then
-    `libmap_rename.rename` with `insts`."""
-    return libmap_rename.rename(renamed(f"({name})"), insts)[1:-1]
-
-
-def _relations_read(text: str) -> set[str]:
-    """Each name the arclog or arcdata `text` reads as a relation or an
-    instance: a name with `&` outside a quoted text, and the head of a
-    form."""
-    from arclog_convert.lint import L, Sym, read
-    out: set[str] = set()
-
-    def scan(xs: list) -> None:
-        for x in xs:
-            if not isinstance(x, L):
-                continue
-            for i, it in enumerate(x.items):
-                if isinstance(it, Sym):
-                    t = it.text.lstrip("^*")
-                    if _ARC_TOKEN.fullmatch(t) and (t.startswith("&") or i == 0):
-                        out.add(t)
-            scan(x.items)
-    scan(read(text))
-    return out
-
-
-def name_map(s: "Solver", insts: dict[str, str], arclog: str, arcdata: str) -> dict:
-    """Each arclog relation name the written files read, with each Souffle
-    relation it was written from, in the order the pass wrote them; each
-    instance they read, with each Souffle instance; each `ALT` name, with the Souffle `Choice` constructor; and
-    each arclog name with `&` the files read that the renames of this pass
-    give no Souffle relation, under `unmapped`. Each name is the one the
-    converter recorded as it wrote it (`Converter.wrote`), or a top-level
-    lib relation it writes under its own name that the solver declares no
-    relation of, under the renames
-    `convert_one` applies after it (`_renamed_name`)."""
-    c = s.c
-    named = dict(c.written)
-    for own in (*sorted(FACTS), *c.lib.top, *c.sig.top):
-        if ((), own) not in c.rels:   # else the Souffle name is the solver's own relation
-            named.setdefault(own, [Written((), own, False)])
-    rels: dict[str, list[dict]] = {}
-    instances: dict[str, list[dict]] = {}
-    for arc, ws in named.items():
-        for w in ws:
-            got = (instances if w.instance else rels).setdefault(_renamed_name(arc, insts), [])
-            if (r := _souffle_relation(c, w)) not in got:
-                got.append(r)
-    read = _relations_read(arclog + "\n" + arcdata)
-    relations = {n: rels[n] for n in sorted(read) if n in rels}
-    ctors = {f"${m}": m for m in sorted(set(re.findall(r"\(ALT \$(\w+)", arclog))
-                                        | set(_ALTS_CONCEPT.findall(arclog)))}
-    insts_read = {n: instances[n] for n in sorted(read) if n in instances}
-    unmapped = sorted(n for n in read if n.startswith("&") and n not in relations
-                      and n not in insts_read)
-    return {"relations": relations, "instances": insts_read, "constructors": ctors,
-            "unmapped": unmapped}
-
-
-def column_map(s: "Solver", names: dict, insts: dict[str, str]) -> dict:
-    """For each arclog relation of the name map `names` with one Souffle
-    relation that has a path from the top level, or is declared in
-    `Determine` (its path under the instance that `solver.determine.run_program`
-    adds is `determine.<relation>`), one entry per column of the Souffle
-    relation, in its order: the list of the kept leaves of that
-    Souffle column that the arclog relation holds, each as
-    `{"leaf": <path into the Souffle column's record>, "label": <the arclog
-    column>, "field": <the field within the arclog column, or null>,
-    "example": <whether the leaf is an Example leaf>}`; the list is empty
-    where no arclog column holds a leaf of the Souffle column. The arclog
-    columns stand for the Souffle relation's columns by the `Written.columns`
-    of the relation of an expansion's shape (`Converter.made`); for a relation
-    that lost `TiebreakResolution` columns, by the columns it kept; otherwise
-    one to one. A relation whose arclog columns and Souffle columns differ in
-    number and whose correspondence the converter does not hold gets no entry.
-    The relation is resolved as a read sees it (`Converter.resolve`): from the
-    top level by the Souffle relation's path, a relation of `Determine` with no
-    path from within `Determine`, and a relation of an expansion's
-    shape by its own name; the labels are those `site_columns` gives, the ones
-    every read the converter writes of the relation names. `insts` are the
-    instance renames `convert_one` applies to the names."""
-    c = s.c
-    out: dict[str, list[list[dict]]] = {}
-    shaped: set[str] = set()
-    for (scope, shape), w in c.made.items():
-        if w is None or w.columns is None:
-            continue
-        *chain, rel = shape.split(".")
-        name, cols, _, inst = c.resolve(RelationName(tuple(chain), rel), scope, {})
-        arc = _renamed_name(name, insts)
-        shaped.add(arc)
-        width = c.souffle_arity(w.scope, w.relation)
-        if cols is None or width is None or len(cols) != len(w.columns) \
-                or names["relations"].get(arc) != [_souffle_relation(c, w)]:
-            continue
-        out[arc] = _souffle_columns(site_columns(c, cols, inst), w.columns, width)
-    for arc, souffle in names["relations"].items():
-        if arc in shaped or len(souffle) != 1:
-            continue
-        scope, relation, path = tuple(souffle[0]["component"]), souffle[0]["relation"], souffle[0]["path"]
-        if path is not None:
-            *chain, rel = path.split(".")
-            _, cols, _, inst = c.resolve(RelationName(tuple(chain), rel), (), {})
-        elif scope == ("Determine",):   # the instance a run adds (`solver.determine.run_program`) has no path in the solver's text
-            *chain, rel = relation.split(".")
-            _, cols, _, inst = c.resolve(RelationName(tuple(chain), rel), scope, {})
-        else:
-            continue
-        width = c.souffle_arity(scope, relation)
-        if cols is None or width is None:
-            continue
-        kept = tuple(j for j in range(width) if j not in c.dropped.get((scope, relation), ()))
-        if len(kept) == len(cols):
-            out[arc] = _souffle_columns(site_columns(c, cols, inst), kept, width)
-    return out
-
-
-def _souffle_columns(columns: list[list[Site]], placement: tuple[Placement, ...], width: int) -> list[list[dict]]:
-    """The sites of the arclog columns `columns`, as the entries of the
-    `width` columns of the Souffle relation they are placed in by
-    `placement` (`Written.columns`): each site under the Souffle column that
-    holds its leaf, with the leaf's path into that column."""
-    out: list[list[dict]] = [[] for _ in range(width)]
-    for sites, where in zip(columns, placement):
-        for site in sites:
-            at, path = where, tuple(site.leaf.path)
-            if isinstance(where, tuple):   # a record term: its field holds the leaf
-                at, path = where[path[0]], path[1:]
-            if at is not None:
-                out[at].append({"leaf": list(path), "label": site.label, "field": site.field,
-                                "example": site.leaf.kind == "example"})
-    return out
 
 
 def _written_inline(s: "Solver", arclog: str) -> frozenset[str]:

@@ -1,8 +1,9 @@
 """The arclog names of a solver's Souffle relations and cases, which the
 stored Souffle outcomes are keyed by (`parity.snapshot`) and a rerun prints
-by (`parity.rerun`): the name map `arclog_convert.convert` writes for each
-solver it converts, under `names/` of `arclog_convert.out`."""
+by (`parity.rerun`): the name map `arclog_convert.names` makes for each
+solver `arclog_convert.convert` converts, under `names/` of `arclog_convert.out`."""
 
+import hashlib
 import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -35,6 +36,13 @@ class SouffleRelation:
     relation: str
     path: str | None
 
+    @property
+    def column_key(self) -> str:
+        """The key of this relation's entry in the column map of its arclog
+        name: its path, and for a relation of `Determine` with no path, its
+        name there."""
+        return self.relation if self.path is None else self.path
+
 
 @dataclass(frozen=True)
 class NameMap:
@@ -45,11 +53,22 @@ class NameMap:
     relations: Mapping[str, tuple[SouffleRelation, ...]]
     constructors: Mapping[str, str]
 
+    @staticmethod
+    def of(data: Mapping) -> "NameMap":
+        """The name map that `data`, the JSON the converter writes, holds."""
+        return NameMap(
+            {a: tuple(SouffleRelation(tuple(s["component"]), s["relation"], s["path"]) for s in ss)
+             for a, ss in data["relations"].items()},
+            dict(data["constructors"]))
+
+    def arclog_names_at(self, path: str) -> list[str]:
+        """The arclog name of each relation that holds the rows of the
+        relation at `path` from the top level of the Souffle program."""
+        return [a for a, ss in self.relations.items() if any(s.path == path for s in ss)]
+
     def arclog_at(self, path: str) -> str | None:
-        """The arclog name of the relation at `path` from the top level of
-        the Souffle program; None where the map gives it none."""
-        return next((a for a, ss in self.relations.items()
-                     if any(s.path == path for s in ss)), None)
+        """The first of `arclog_names_at`; None where the map gives it none."""
+        return next(iter(self.arclog_names_at(path)), None)
 
     def arclog_of(self, component: tuple[str, ...], relation: str) -> str | None:
         """The arclog name of `relation` declared under `component`; None
@@ -71,11 +90,11 @@ def names_dir() -> Path:
 
 def columns_path(stem: str) -> Path:
     """Where the converter writes the column map of the solver `stem`, beside
-    `names/`: for each arclog relation of the name map with one Souffle
-    relation that has a path, one entry per column of the Souffle relation,
-    in its order: the arclog column at which each kept leaf of that Souffle
-    column is read, empty where no arclog column holds a leaf of it
-    (`arclog_convert.convert.column_map`)."""
+    `names/`: for each arclog relation of the name map, for each of its
+    Souffle relations that has a path, one entry per column of the Souffle
+    relation, in its order: the arclog column at which each kept leaf of that
+    Souffle column is read, empty where no arclog column holds a leaf of it
+    (`arclog_convert.names.column_map`)."""
     return names_dir().parent / "columns" / f"{stem}.json"
 
 
@@ -90,11 +109,7 @@ def name_map(stem: str) -> NameMap | None:
     path = names_path(stem)
     if not path.is_file():
         return None
-    data = json.loads(path.read_text())
-    return NameMap(
-        {a: tuple(SouffleRelation(tuple(s["component"]), s["relation"], s["path"]) for s in ss)
-         for a, ss in data["relations"].items()},
-        dict(data["constructors"]))
+    return NameMap.of(json.loads(path.read_text()))
 
 
 def marked(souffle: str) -> str:
@@ -102,10 +117,12 @@ def marked(souffle: str) -> str:
     return SOUFFLE_MARK + souffle
 
 
-def relation_name(names: NameMap | None, relation: RelationName) -> str:
-    """The arclog name of the Souffle relation `relation`, read from the
-    top level, else its Souffle name under `SOUFFLE_MARK`."""
-    return _arclog_or_marked(names, lambda n: n.arclog_at(relation.text), relation.text)
+def relation_names(names: NameMap | None, relation: RelationName) -> list[str]:
+    """The arclog name of each relation that holds the rows of the Souffle
+    relation `relation`, read from the top level; its Souffle name under
+    `SOUFFLE_MARK` where the map gives none."""
+    got = [] if names is None else names.arclog_names_at(relation.text)
+    return got or [marked(relation.text)]
 
 
 def case_name(solver: Solver, case: Case, names: NameMap | None) -> str:
@@ -139,3 +156,22 @@ def _arclog_or_marked(names: NameMap | None, arclog: Callable[[NameMap], str | N
     under `SOUFFLE_MARK`."""
     got = None if names is None else arclog(names)
     return marked(souffle) if got is None else got
+
+
+def case_names_digest(data: Mapping | None) -> str | None:
+    """The sha256 of what `case_name` can read in the name map `data` (the
+    JSON the converter writes; None where it wrote none): every constructor,
+    the arclog name of each parameter, and, where the solver has a `@store`
+    line (`stores` of the map), the arclog name at each path. A change to
+    any other part of the map leaves it as it was."""
+    if data is None:
+        return None
+    names = NameMap.of(data)
+    sources = [s for ss in names.relations.values() for s in ss]
+    stores = data.get("stores")   # a map of the earlier form has none: its records are stale
+    read = {"stores": stores, "constructors": dict(names.constructors),
+            "parameters": {s.relation: names.arclog_of(PARAMS_COMPONENT, s.relation)
+                           for s in sources if s.component == PARAMS_COMPONENT},
+            "stored": {s.path: names.arclog_at(s.path)
+                       for s in sources if stores and s.path is not None}}
+    return hashlib.sha256(json.dumps(read, sort_keys=True).encode()).hexdigest()

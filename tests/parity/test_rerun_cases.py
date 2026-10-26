@@ -48,7 +48,7 @@ def test_the_cases_take_each_alt_of_two_groups(loaded: rerun.Loaded) -> None:
 
 def test_a_relation_is_skipped_or_uncompared_by_its_kind(loaded: rerun.Loaded) -> None:
     mapped, left = rerun.classify(loaded, {}, [])
-    assert mapped == {}
+    assert mapped == []
     verdicts = {entry["name"]: (entry["verdict"], rerun.Reason(entry["reason"])) for entry in left}
     assert verdicts["souffle:in"] == ("skip", rerun.Reason.INPUT)
     assert verdicts["souffle:dir_elem"] == ("skip", rerun.Reason.LIB)

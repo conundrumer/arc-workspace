@@ -23,7 +23,7 @@ from engine import (Limits, Program, RelationName, RunResult, Tuples, WallLimit,
                     checkout)
 from engine.engine import InputValue
 from gating.run import TIME_LIMIT
-from parity import NameMap, case_name, name_map, names_path
+from parity import NameMap, case_name, case_names_digest, name_map, names_path
 from solver.aggregate import Solver
 from solver.cases import cases as cases_of
 from solver.load import load, task_id_of
@@ -91,17 +91,30 @@ def _digest(path: Path) -> str | None:
     return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
 
 
+def names_digest(stem: str) -> str | None:
+    """The sha256 of the whole name map file of `stem`; None where the
+    converter wrote none."""
+    return _digest(names_path(stem))
+
+
+def _names(stem: str) -> Any:
+    """The name map file of `stem` as JSON; None where the converter wrote none."""
+    path = names_path(stem)
+    return json.loads(path.read_text()) if path.is_file() else None
+
+
 def record_key(stem: str) -> dict[str, Any]:
     """What the record of `stem` depends on: the form of the record, the
     solver file, the code and Souffle sources of a run (`stamp`), the
     Souffle binary (`souffle.install.binary_identity`), the task file, the
-    witness file, and the name map the cases are keyed through."""
+    witness file, and the part of the name map the cases are keyed through
+    (`parity.case_names_digest`)."""
     task_id = task_id_of(stem)
     return {"version": VERSION, "solver": _digest(solver_path(stem)),
             "stamp": stamp(), "souffle": hashlib.sha256(binary_identity()).hexdigest(),
             "task": _digest(task_file(task_id)),
             "witnesses": _digest(witness_path(task_id)),
-            "names": _digest(names_path(stem))}
+            "names": case_names_digest(_names(stem))}
 
 
 def stored(stem: str) -> dict[str, Any] | None:

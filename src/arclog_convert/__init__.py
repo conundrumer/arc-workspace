@@ -8,8 +8,9 @@ under `work/arclog/` of the main worktree, or under the directory
 `OUT_ENV` names; a command that writes there refuses to run in a linked
 worktree unless `--out` or `OUT_ENV` gives the directory. The lint (`arclog_convert.lint`) reads the files there.
 
-The command, the name map and the plan files stand in `convert`. Its other
-subjects stand in modules of their own: `lib` (the lib's declarations),
+The command stands in `convert`. Its other subjects stand in modules of
+their own: `plans` (the determination plan files), `names` (the name map and
+the column map), `lib` (the lib's declarations),
 `forms` (the output forms and the text passes on them), `terms` (the helpers
 on terms and clauses), `leaves` (`Converter`), `clauses` (`ClauseWriter`),
 `solver` (`Solver`, composed of the mixins of `solver_params`,

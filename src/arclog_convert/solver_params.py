@@ -126,7 +126,7 @@ class ParamsMixin:
         comp, units, axis_col = plan
         amp = c.rel_name(("Params",), r.name)
         # the frame stands for the `helpers` instance whose `frame_pos` the clauses read
-        c.made[(("Params",), r.name + "_frame")] = Written(("Params",), "helpers", True)
+        c.made[(("Params",), r.name + "_frame")] = (Written(("Params",), "helpers", True),)
         inst = c.rel_name(("Params",), r.name + "_frame")
         c.wrote(f"{inst}.cell", Written(("Params",), "helpers.frame_pos", False))
         u, n, p, bs, rest = units[0][:5]
@@ -176,7 +176,7 @@ class ParamsMixin:
 
         def instance(suffix: str) -> str:
             # each instance stands for the `helpers` instance the clause reads
-            c.made[(("Params",), r.name + suffix)] = Written(("Params",), "helpers", True)
+            c.made[(("Params",), r.name + suffix)] = (Written(("Params",), "helpers", True),)
             return c.rel_name(("Params",), r.name + suffix)
 
         def extent(ext: Extent, value: str) -> tuple[list[str], set[str]]:

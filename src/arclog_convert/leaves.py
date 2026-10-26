@@ -90,10 +90,10 @@ class Converter:
         self.rederived_in_parse: set[str] = set()
         self.own_copies = own_copies
         # each relation or instance this pass makes that the Souffle program
-        # does not declare, by its scope and name, with what it stands for:
-        # none for a relation of an expansion's shape that no Souffle relation
-        # stands behind
-        self.made: dict[tuple[tuple[str, ...], str], Written | None] = {}
+        # does not declare, by its scope and name, with each thing it stands
+        # for: none for a relation of an expansion's shape that no Souffle
+        # relation stands behind
+        self.made: dict[tuple[tuple[str, ...], str], tuple[Written, ...]] = {}
         # each arclog name this pass writes, with each thing it was written from
         self.written: dict[str, list[Written]] = {}
         self.unsafe: set[str] = set()   # the relations with a clause whose body no order makes safe
@@ -133,14 +133,15 @@ class Converter:
             (t.scope.components, t.name): t for t in prog.types}
         self.rels = {(r.scope.components, r.name): r for r in prog.relations}
         self.insts = {(i.scope.components, i.name): i for i in prog.instances}
-        # each relation the lib rewrite moves an instance's relation to, with
-        # the Souffle relation it holds where one read of the instance reaches
-        # it with that relation alone
-        for (sc, inst), (was, moves) in self.lib_moved.items():
-            for new in sorted(set(moves.values())):
-                held = lib_held[(sc, inst)].get(new)
-                self.made[(sc, new)] = None if held is None else Written(
-                    sc, f"{was}.{held.relation}", False, held.columns)
+        # each relation of a shape the lib rewrite makes, with each Souffle
+        # relation it holds
+        for (sc, rel), helds in lib_held.items():
+            if (sc, rel) not in self.souffle_columns:
+                self.made[(sc, rel)] = tuple(Written(sc, f"{h.instance}.{h.relation}", False, h.columns) for h in helds)
+        for (sc, _), (_, moves) in self.lib_moved.items():
+            for new in moves.values():
+                if (sc, new) not in self.souffle_columns:
+                    self.made.setdefault((sc, new), ())
         self.comps = {c.name: c for c in prog.components}
         self.case_types = self._case_types()
         self.open_params = self._open_params()
@@ -1228,9 +1229,9 @@ class Converter:
             cols.append(Column(cn, TypeName((), t)))
             args.append(Variable(pascal(cn)))
         decl = RelationDecl(DeclId(prog.next_decl_index()), name, Scope(sc), tuple(cols), (), (), None)
-        self.made[(sc, name)] = Written(sc, f"{inst.name}.{lr.name}", False)
         new_rn = RelationName((), name)
         kept_idx = [i for i in range(len(lr.cols)) if i not in dup]
+        self.made[(sc, name)] = (Written(sc, f"{inst.name}.{lr.name}", False, tuple(kept_idx)),)
         full = [args[kept_idx.index(dup.get(i, i))] for i in range(len(lr.cols))]
 
         def rename(x):
@@ -1884,16 +1885,16 @@ class Converter:
             self.names[key] = cand
         inst = self.insts.get(key)
         souffle = self.souffle_of(key[0], key[1], inst is not None and inst.component in self.lib.comps)
-        return self.wrote("in" if self.names[key] == "__in__" else "&" + self.names[key], souffle)
+        return self.wrote("in" if self.names[key] == "__in__" else "&" + self.names[key], *souffle)
 
-    def souffle_of(self, scope: tuple[str, ...], name: str, instance: bool) -> Written | None:
+    def souffle_of(self, scope: tuple[str, ...], name: str, instance: bool) -> tuple[Written, ...]:
         """What the relation, or instance, `name` of `scope` in the program
         this pass converts stands for in the Souffle program: itself, where
-        the pass did not make it, and none where it made it for no Souffle
-        relation."""
+        the pass did not make it, and what it made it for otherwise (none,
+        where it made it for no Souffle relation)."""
         if (scope, name) in self.made:
             return self.made[(scope, name)]
-        return Written(scope, name, instance)
+        return (Written(scope, name, instance),)
 
     def souffle_arity(self, scope: tuple[str, ...], relation: str) -> int | None:
         """The number of columns of the Souffle relation `relation` declared
@@ -1910,13 +1911,12 @@ class Converter:
             return None
         return next((len(r.cols) for r in self.lib.present(component)[1] if r.name == name), None)
 
-    def wrote(self, arc: str, souffle: Written | None) -> str:
+    def wrote(self, arc: str, *souffle: Written) -> str:
         """`arc`, an arclog name this pass writes, recorded with what it was
         written from, once each (`name_map`); with none, recorded as written
         from no Souffle relation."""
         got = self.written.setdefault(arc, [])
-        if souffle is not None and souffle not in got:
-            got.append(souffle)
+        got.extend(w for w in dict.fromkeys(souffle) if w not in got)
         return arc
 
     # ---- resolving an atom's relation
@@ -2006,7 +2006,7 @@ class Converter:
         for c in lr.cols:
             cols.append((c, self.leaves(c.name, c.type, c.tparam, inst.scope.components, isub, outer=sub)))
         iname = self.rel_name(inst.scope.components, inst.name)
-        return (self.wrote(f"{iname}.{name}", self.souffle_of(inst.scope.components, f"{inst.name}.{name}", False)),
+        return (self.wrote(f"{iname}.{name}", *self.souffle_of(inst.scope.components, f"{inst.name}.{name}", False)),
                 cols, "inst", (inst.scope.components, inst.name))
 
     def leaf_type(self, type_name: str, path: tuple[int, ...], scope: tuple[str, ...], sub: dict[str, str]) -> str:

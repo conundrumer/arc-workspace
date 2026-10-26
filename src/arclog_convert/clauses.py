@@ -56,7 +56,7 @@ def kept_leaf(leaf: "Leaf") -> bool:
 def site_columns(c: "Converter", cols: list, inst) -> list[list[Site]]:
     """For each Souffle column of `cols` (`Converter.resolve`), the `Site`
     of each of its leaves that `kept_leaf` keeps, in order. `ClauseWriter.sites`
-    writes its sites with these labels, and `convert.column_map` writes
+    writes its sites with these labels, and `names.column_map` writes
     them, so a label is chosen here alone."""
     out: list[list[Site]] = []
     for i, (col, leaves) in enumerate(cols):

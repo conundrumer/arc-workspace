@@ -62,14 +62,17 @@ for a record term, the index for each field; none for `_`."""
 
 @dataclass(frozen=True)
 class Held:
-    """The Souffle relation a relation of an expansion's shape holds, and
-    the `Placement` of each argument of the shape's atom in the Souffle
+    """A Souffle relation that a relation of an expansion's shape holds: the
+    Souffle instance's name and the relation's name in it, and the
+    `Placement` of each argument of the shape's atom in the Souffle
     relation's."""
+    instance: str
     relation: str
     columns: tuple[Placement, ...]
 
 
 type HeirKey = tuple[tuple[str, ...], str]   # an heir instance: its scope and its name
+type ShapeKey = tuple[tuple[str, ...], str]   # a relation of a shape: its scope and its name
 
 
 @dataclass
@@ -234,7 +237,7 @@ class Expander:
         self.sig_top = set(getattr(lib, "sig_top", ()))   # the lib relations only the signature holds
         self.own: dict[UnitId, tuple] = {}   # a shape's clause: its instance, whose new relations it reads
         self.moved: dict[HeirKey, tuple[str, dict[str, str]]] = {}   # an heir instance, by its scope and name: the name it stands for, and its moves
-        self.held: dict[HeirKey, dict[str, Held]] = {}   # an heir instance, by its scope and name: what each relation of its shape that a pure read reaches holds
+        self.held: dict[ShapeKey, list[Held]] = {}   # a relation of a shape, by its scope and name: each Souffle relation it holds
         self.from_input: set[UnitId] = set()   # a clause of a relation derived from an input: the solver's reads
         self.plans: dict = {}
         self.outputs_only = False
@@ -390,6 +393,13 @@ class Expander:
         self.next_unit += 1
         return UnitId(self.next_unit)
 
+    def hold(self, scope: tuple[str, ...], relation: str, held: Held) -> None:
+        """Record that the relation of a shape `relation` in `scope` holds
+        the Souffle relation `held`."""
+        got = self.held.setdefault((scope, relation), [])
+        if held not in got:
+            got.append(held)
+
     def fmt(self, text: str, inst: Instance) -> str:
         tparams = list(self.lib.comps[inst.component].type_params)
         sub = {p: a.text for p, a in zip(tparams, inst.type_args)}
@@ -445,19 +455,17 @@ class Expander:
                 if heir is not None:
                     # a directive's relation of the instance: the relation of the shape that stands for it
                     moves = {}
-                    holds: dict[str, set[Held]] = {}   # each relation of the shape, by the pure patterns that reach it
                     for p_, r_ in spec.reads.items():
                         pattern = _atom(self.fmt(p_, inst))
                         body = _parse(f"x__(0) :- {self.fmt(r_, inst)}.").units[0].body or ()
                         rep = next(l.atom for l in body if isinstance(l, AtomLiteral)).relation
-                        name = f"{inst.name}_{rep.name[3:]}" if rep.name.startswith("in_") and not rep.instances \
-                            else ".".join((*rep.instances, rep.name))
+                        placeholder = rep.name.startswith("in_") and not rep.instances
+                        name = f"{inst.name}_{rep.name[3:]}" if placeholder else ".".join((*rep.instances, rep.name))
                         moves[pattern.relation.name] = name
-                        if (columns := _pure_columns(pattern, body)) is not None:
-                            holds.setdefault(name, set()).add(Held(pattern.relation.name, columns))
+                        if not placeholder and (columns := _pure_columns(pattern, body)) is not None:
+                            self.hold(inst.scope.components, name, Held(inst.name, pattern.relation.name, columns))
                     moves |= {r: self.fmt(t, inst) for r, t in spec.moved.items()}
                     self.moved[(inst.scope.components, heir)] = (inst.name, moves)
-                    self.held[(inst.scope.components, heir)] = {n: next(iter(hs)) for n, hs in holds.items() if len(hs) == 1}
             heads = {_atom(self.fmt(p, inst)).relation.name: (_atom(self.fmt(p, inst)),
                                                                [_atom(self.fmt(h, inst)) for h in hs])
                      for p, hs in spec.inputs.items()}
@@ -677,6 +685,7 @@ class Expander:
         made[name] = rname
         tparams, lrels = self.lib.present(inst.component)
         lr = next(r for r in lrels if r.name == name)
+        self.hold(inst.scope.components, rname, Held(inst.name, name, tuple(range(len(lr.cols)))))
         sub = {p: a.text for p, a in zip(tparams, inst.type_args)}
         cols = ", ".join(f"{c.name.lower()}: {sub.get(c.type, c.type)}" for c in lr.cols)
         rels.append(replace(_parse(f".decl {rname}({cols})").relations[0], id=self.did(),
@@ -818,6 +827,7 @@ class Expander:
         lr = next(r for r in lrels if r.name == a.relation.name)
         rname = f"{inst.name}_{lr.name}"
         if not any(r.name == rname and r.scope == inst.scope for r in self.rels):
+            self.hold(inst.scope.components, rname, Held(inst.name, lr.name, tuple(range(len(lr.cols)))))
             sub = {p: t.text for p, t in zip(tparams, inst.type_args)}
             cols = ", ".join(f"{c.name.lower()}: {sub.get(c.type, c.type)}" for c in lr.cols)
             self.rels.append(replace(_parse(f".decl {rname}({cols})").relations[0], id=self.did(),
@@ -1002,12 +1012,14 @@ def _atoms(x):
 
 def expand(prog, lib, specs):
     """The program with each instance of a component `specs` maps expanded;
-    each read left in place, with the reason; and each instance that stands
+    each read left in place, with the reason; each instance that stands
     for an expanded one under another name, by its scope and name, with that name and the relation
-    of the shape that stands for each relation of the expanded one; and, for
-    each such instance, the Souffle relation and columns that each relation
-    of its shape holds, where a read of the component whose replacement is
-    that relation's atom alone reaches it (`Held`)."""
+    of the shape that stands for each relation of the expanded one; and
+    each relation of a shape, by its scope and name, with each Souffle
+    relation it holds and the columns (`Held`): the relation a read of the
+    component replaces by that relation's atom alone, the relation derived
+    from an input of the instance, and the relation derived for a read that
+    takes several literals."""
     e = Expander(prog, lib, specs)
     out, judgment = e.run()
     return out, judgment, e.moved, e.held

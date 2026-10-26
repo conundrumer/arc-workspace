@@ -35,7 +35,8 @@ def converted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def test_a_relation_of_determine_is_in_the_column_map_and_the_determination(converted: Path) -> None:
     columns = json.loads((converted.parents[2] / "out" / "columns" / f"{STEM}.json").read_text())
-    assert [[(e["label"], e["field"]) for e in column] for column in columns["&entry.class"]] == [[("a", None)], [("Id", None)]]
+    [entry_columns] = columns["&entry.class"].values()
+    assert [[(e["label"], e["field"]) for e in column] for column in entry_columns] == [[("a", None)], [("Id", None)]]
     got = rerun.case_rows(STEM, converted)
     assert isinstance(got, dict)
     [pair] = got["determination"]["pairs"]
