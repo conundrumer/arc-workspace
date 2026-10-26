@@ -34,6 +34,11 @@ HEAVY: dict[str, frozenset[str] | None] = {
     "arclog_convert.lint": ANY,
     "tables_export.py": ANY,
     "export_checks.py": ANY,
+    "change_checks.py": ANY,
+    "encoder_check.py": ANY,
+    "pretrain.py": ANY,
+    "allpoints.py": ANY,
+    "run_dl.py": ANY,
 }
 """For each heavy program, the subcommands that make a call heavy, or `ANY`."""
 WORKER_OPTIONS = frozenset({"--workers", "--jobs", "--threads"})
