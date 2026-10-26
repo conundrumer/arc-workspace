@@ -1,8 +1,8 @@
 //! `decode`: steps the decoder through the token stream of each case
 //! program of the corpus that holds no `DEMONSTRATED` form, as
 //! `docs/engine/synthesis.md#synthesis` gives the end checks of the step: the
-//! decoder admits the stream in full, closed-world; the consistency result
-//! at the stream's last `END` equals the case's solves outcome at the values
+//! decoder admits the stream, closed-world; the consistency result at the
+//! `END` of its `&output` equals the case's solves outcome at the values
 //! the determination determines; and the rows of each prefix equal the rows
 //! of a decode in a task session of its own. A difference prints by solver,
 //! with the first of each kind. With `--no-rows` the decode builds no second
@@ -149,7 +149,7 @@ impl Kind {
     }
 }
 
-/// The counts of cases: those decoded in full, those skipped for a
+/// The counts of cases: those decoded, those skipped for a
 /// `DEMONSTRATED` form, and those with a finding of each kind.
 #[derive(Default)]
 struct Counts {
@@ -174,7 +174,7 @@ impl Counts {
             .iter()
             .map(|kind| if *kind == Kind::Rows && rows == RowsMode::NotChecked { "rows not checked".to_owned() } else { format!("{} {}", found(*kind), kind.label()) })
             .collect();
-        format!("{} cases decoded in full, {} skipped for a `DEMONSTRATED` form, {}", self.decoded, self.demonstrated, others.join(", "))
+        format!("{} cases decoded, {} skipped for a `DEMONSTRATED` form, {}", self.decoded, self.demonstrated, others.join(", "))
     }
 }
 
