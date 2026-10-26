@@ -11,19 +11,15 @@ kill below.
 A request waits, as `scripts/heavy_scheduler.py` orders it, and starts where the daemon
 reads the machine. A job ends where its pid does, and the
 processes it left behind are killed, if it belongs to a session. A gated job holds its
-declared CPUs, and, for its first `DECLARED_SECONDS`, its declared GiB, or the GiB it
-measures where that is more. After that it holds its measured peak, rounded up to a GiB, and
-`HEADROOM_GIB` more, so a job that declares more than it uses frees the rest for the waiting
-requests. An
-ungated process, which `scripts/heavy_enforcer.py` finds, holds what it measures.
+declared CPUs, and an ungated process, which `scripts/heavy_enforcer.py` finds, the CPUs it
+measures.
 
 A short gated job that runs past its declared minutes holds from then on as a long job of
 its need, with its CPUs and GiB unchanged; no process is signalled for it.
 
 A gated job that runs at more than twice its
 CPUs for a minute, or runs past twice its minutes gets one log line and one
-message to its session. Memory pressure at warn gets each session that has
-an ungated process one message. An ungated process that is a call of `run_heavy.py`,
+message to its session. An ungated process that is a call of `run_heavy.py`,
 of a gate older than the daemon, is counted and is sent no message that says it runs
 outside the gate. Where the swap-ins stay high, a kill follows, as `scripts/heavy_enforcer.py` gives it.
 
@@ -46,7 +42,7 @@ from heavy_scheduler import Holding, estimates, next_waiters, queues, reserve, r
 from machine_readings import GIB, KIB, PRESSURE_LEVELS, SWAP_IN_RATE
 from process_readings import NO_SESSION
 
-OUTSIDE_THE_GATE = frozenset({Reason.ADOPTED, Reason.WARN})
+OUTSIDE_THE_GATE = frozenset({Reason.ADOPTED})
 COMMAND_CHARS = 300
 DECLARED_SECONDS = 60
 """A gated job holds its declared GiB for this long after its grant."""
@@ -474,10 +470,6 @@ class Core:
             elif now - since >= KILL_GRACE:
                 out.append(Signal(key[0], key[1], signal.SIGKILL))
                 del self.pending[key]
-        if self.level in PRESSURE_LEVELS:
-            for job in self.jobs.values():
-                if job.kind is Kind.UNGATED:
-                    self.tell(job, Reason.WARN, heavy_notices.warned(job.pid, job.command, gib_up(job.footprint_kib)))
         severe = self.thrash_since is not None and now - self.thrash_since >= THRASH_SECONDS
         if not severe or (self.last_kill is not None and now - self.last_kill < KILL_SETTLE):
             return out

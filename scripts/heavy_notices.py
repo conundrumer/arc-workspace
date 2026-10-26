@@ -28,8 +28,6 @@ GATE_FORM = f"<checkout>/scripts/{GATE_PROGRAM}"
 class Reason(enum.Enum):
     """Why the daemon acts on a process, at most once for each process."""
     ADOPTED = "adopted"
-    WARN = "warn"
-    MEMORY = "memory"
     CPU = "cpu"
     TIME = "time"
     KILLED = "killed"
@@ -54,7 +52,7 @@ def gated_form(command: str, cpus: int, gib: int) -> str:
     where it is a call of the gate."""
     if is_gate_call(command):
         return command
-    return f"{GATE_FORM} --cpus {cpus} --gib {gib} --minutes <m> --need <need> {command}"
+    return f"{GATE_FORM} --cpus {cpus} --minutes <m> --need <need> {command}"
 
 
 def adopted(pid: int, command: str, cpus: int, gib: int) -> str:
@@ -63,22 +61,6 @@ def adopted(pid: int, command: str, cpus: int, gib: int) -> str:
         "GiB, and now counts against the machine's budget. It keeps running. Run it as `{form}` "
         "the next time, and add its program to `HEAVY` in scripts/heavy_command_hook.py."
     ).format(pid=pid, command=short(command), cpus=cpus, gib=gib, form=gated_form(command, cpus, gib))
-
-
-def warned(pid: int, command: str, gib: int) -> str:
-    return mctx(
-        "The machine's memory pressure is at warn, and nothing new starts. pid {pid} "
-        "(`{command}`) runs in this session outside the gate and holds {gib} GiB, and is the "
-        "first to be killed if the pressure turns critical."
-    ).format(pid=pid, command=short(command), gib=gib)
-
-
-def memory_overrun(pid: int, command: str, held: int, declared: int) -> str:
-    return mctx(
-        "pid {pid} (`{command}`) holds {held} GiB, over the {declared} GiB its gate call "
-        "declares. If the memory pressure turns critical, it is killed before the jobs within their "
-        "declarations. Declare at least {held} with `--gib` the next time."
-    ).format(pid=pid, command=short(command), held=held, declared=declared)
 
 
 def cpu_overrun(pid: int, command: str, used: float, declared: int) -> str:
@@ -99,7 +81,7 @@ def time_overrun(pid: int, command: str, minutes: float, declared: float) -> str
 def killed(pid: int, command: str, cpus: int, gib: int, reason: str) -> str:
     return mctx(
         "pid {pid} (`{command}`) and its children were killed: {reason}. It held {gib} GiB. Run "
-        "it again as `{form}` once the pressure is gone."
+        "it again as `{form}` once the swap-ins are down."
     ).format(pid=pid, command=short(command), gib=gib, reason=reason, form=gated_form(command, cpus, gib))
 
 

@@ -1,14 +1,14 @@
 #!/usr/bin/python3
 """Run a command that uses much CPU or memory, within the machine's budget.
 
-Usage: <checkout>/scripts/run_heavy.py [--cpus <n>] [--gib <g>] [--need now|soon|idle] [--minutes <m>]
+Usage: <checkout>/scripts/run_heavy.py [--cpus <n>] [--need now|soon|idle] [--minutes <m>]
                                        [--wait <seconds>] <command> [<arg> ...]
        <checkout>/scripts/run_heavy.py --cpus <n> bash -c '<simple command>; ...'
        <checkout>/scripts/run_heavy.py queue
        <checkout>/scripts/run_heavy.py need <pid> now|soon|idle
 
 `--cpus` is the processes or threads the command runs at once (default 1),
-and `--gib` the peak memory in GiB it is expected to reach (default `1 + <n>`). `--minutes`
+and `--gib`, which older calls give, has no effect. `--minutes`
 is the time it is to run (default 5), and `--need` who waits on its result
 (default `soon`): `now` where someone waits before the next step can start,
 `soon` where the result feeds the next step and nothing sits idle for it,
