@@ -31,6 +31,11 @@ if TYPE_CHECKING:
     from arclog_convert.solver import Claim
 
 
+PROPOSED = re.compile(r'\((?:DET|DET_OR_RULE|RULE_OR_DET) (&\w+)(?: "(?:[^"\\]|\\.)*")? [A-Z]')
+"""The line of a relation that a proposer determines: its name, then the
+proposer's, after a gloss where the line has one."""
+
+
 class RenderMixin:
     """The rendering of a solver's forms, its state combinations, sinks and choices."""
 
@@ -95,6 +100,7 @@ class RenderMixin:
         # with that relation empty: a positive read kills its list, a NOT of
         # it is dropped, and a form left with nothing holds no concept row.
         # The emptiness spreads to the relations whose every form is dead.
+        bare: set[int] = set()   # the forms whose concept form is a stored `DET` with no body
         changed = True
         while changed:
             changed = False
@@ -116,11 +122,13 @@ class RenderMixin:
                     g = self.clause(u, side, scope, sub, ns, drop_neg=dr)
                 g = self.settled(g)
                 self.todo.pending, self.todo.kinds = saved
+                bare.discard(id(f))
                 if g is None and f.name in stored_names and f.side == "DET":
                     # the concept's values are the stored ones, which no determination derives
                     one = " (ONE)" if f.name in self.open_amps() else ""
                     g = Form([f"(DET {f.name}{one})"], f.name, set(), line=f.line)
                     g.marks = ["(ONE)"] if one else []
+                    bare.add(id(f))
                 if g is None:
                     f.concept_dead, f.concept_form = True, None
                     continue
@@ -130,6 +138,16 @@ class RenderMixin:
             if gone:
                 alt_only |= gone
                 changed = True
+        # a `DET` with no body and no proposer, on no port, is a fault of the conversion
+        proposed = {m.group(1) for g in forms if g.src is None and g.src_inst is None and g.lines
+                    and (m := PROPOSED.match(g.lines[0]))}
+        for f in main:
+            if id(f) in bare and f.name not in proposed:
+                pending, self.todo.pending = self.todo.pending, []
+                self.todo.add("det-no-body", f"{f.name}: the relation has no body and no proposer")
+                target = f.concept_form or f
+                target.comments = target.comments + self.todo.take()
+                self.todo.pending = pending
         self.concept_empty = alt_only
         self.drop_concept_repeats(main)
         self.render_main = main
