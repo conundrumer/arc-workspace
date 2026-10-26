@@ -4,7 +4,7 @@ gen_macros/, of `arclog_convert.out`: `work/arclog/` of the main
 worktree, or the directory `--out` gives; in a linked worktree, `--out` is
 required (or `ARCLOG_OUT`).
 
-    uv run python -m arclog_convert.convert [--out <dir>] [--no-train-replay] [<stem> ...]
+    uv run python -m arclog_convert.convert [--out <dir>] [--no-train-replay | --accept] [<stem> ...]
 
 Each run writes both outputs for the same solvers, every solver where no
 stem is given, and prints the summary of each.
@@ -13,7 +13,11 @@ that `gen/` converted on the train pairs of its task, records the verdicts
 under `train_replay/`, and reports against the baseline
 `unreproduced.tsv`; the run exits with status 1 where the report finds a
 case beyond the baseline or one that was `Consistent` and is not.
-`--no-train-replay` skips it. The replay runs `cargo` in `engine/`, so it
+`--no-train-replay` skips it. `--accept` also rewrites the baseline lines
+of the covered tasks to the run's counts, keeping the ticket field of each
+line whose task and verdict stay: the lines it rewrites are those of the
+solvers it converted, from the files it wrote; it is refused with
+`--no-train-replay`. The replay runs `cargo` in `engine/`, so it
 needs a Rust toolchain; `arclog_convert.train_replay` gives the details.
 A solver's plan file under plan/ records the hash of the solver
 file it was written from, and the runner and lib stamp of the run; where it
@@ -271,8 +275,11 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="python -m arclog_convert.convert")
     parser.add_argument("--out", type=Path, help="the directory to write under, in place of `arclog_convert.out`; required in a linked worktree unless `ARCLOG_OUT` is set")
     parser.add_argument("--no-train-replay", action="store_true", help="convert with no replay on the train pairs")
+    parser.add_argument("--accept", action="store_true", help="rewrite the baseline lines of the solvers this run converted to its counts")
     parser.add_argument("stems", nargs="*", help="the solvers to convert; every solver where none is given")
     args = parser.parse_args(argv)
+    if args.accept and args.no_train_replay:
+        parser.error("--accept needs the train replay; drop --no-train-replay")
     if args.out is not None:
         # set before the pools start, so that their workers read it
         os.environ[OUT_ENV] = str(args.out.resolve())
@@ -290,7 +297,7 @@ def main(argv: list[str]) -> int:
     if args.no_train_replay:
         return 0
     from arclog_convert import train_replay
-    return train_replay.replay(converted, paths.OUT_DIR.parent)
+    return train_replay.replay(converted, paths.OUT_DIR.parent, args.accept)
 
 
 def convert_into(stems: list[str], out: Path) -> list[str]:

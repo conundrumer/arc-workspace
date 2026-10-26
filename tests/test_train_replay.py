@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 
+import pytest
 from arclog_convert import train_replay
 
 SOURCES = "sources-digest"
@@ -60,3 +61,18 @@ def test_a_record_in_the_old_form_is_stale(tmp_path):
     _, _, records = setup(tmp_path)
     (records / "aaaa0001.json").write_text(json.dumps({"key": "k", "cases": []}))
     assert stale(tmp_path) == ["aaaa0001"]
+
+
+def test_train_replay_takes_no_accept():
+    with pytest.raises(SystemExit) as e:
+        train_replay.main(["--accept"])
+    assert e.value.code == 2
+
+
+def test_convert_accept_with_no_train_replay_is_refused_before_any_conversion(tmp_path, monkeypatch):
+    from arclog_convert import convert
+    monkeypatch.setenv("ARCLOG_OUT", str(tmp_path))
+    with pytest.raises(SystemExit) as e:
+        convert.main(["--accept", "--no-train-replay"])
+    assert e.value.code == 2
+    assert list(tmp_path.iterdir()) == []

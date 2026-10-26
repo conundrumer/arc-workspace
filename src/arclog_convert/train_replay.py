@@ -1,7 +1,7 @@
 """The replay of each converted case on the train pairs of its task, and the
 report of the cases that do not end `Consistent`.
 
-    uv run python -m arclog_convert.train_replay [--out <dir>] [--accept] [<stem> ...]
+    uv run python -m arclog_convert.train_replay [--out <dir>] [<stem> ...]
 
 The command replays the files under `gen/` of `arclog_convert.out`, or of
 `--out`, with no conversion; in a linked worktree it writes no record without `--out` or `ARCLOG_OUT`; `arclog_convert.convert` runs the same replay on
@@ -37,9 +37,8 @@ baseline's, with the first such case; a line for each case that the task's
 previous record gives as `Consistent` and that is not now; a line for each
 task and verdict whose count fell below the baseline's; and a final line
 with the counts. The exit status is 1 where a count exceeds the baseline or
-a case that was `Consistent` is not now, and 0 otherwise. `--accept`
-rewrites the baseline lines of the covered tasks to the run's counts, keeping
-the ticket field of each line whose task and verdict stay."""
+a case that was `Consistent` is not now, and 0 otherwise. Only
+`arclog_convert.convert --accept` rewrites the baseline."""
 
 import argparse
 import hashlib
@@ -243,13 +242,12 @@ def replay(stems: list[str], out: Path, accept: bool = False) -> int:
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="python -m arclog_convert.train_replay")
     parser.add_argument("--out", type=Path, help="the directory that holds gen/, in place of `arclog_convert.out`; required in a linked worktree unless `ARCLOG_OUT` is set")
-    parser.add_argument("--accept", action="store_true", help="rewrite the baseline lines of the tasks the run covers")
     parser.add_argument("stems", nargs="*", help="the solvers to replay; every solver of gen/ where none is given")
     args = parser.parse_args(argv)
     from arclog_convert import writable_out
     root = args.out.resolve() if args.out else writable_out()
     stems = args.stems or sorted(p.stem for p in (root / "gen").glob("*.arclog"))
-    return replay(stems, root, args.accept)
+    return replay(stems, root)
 
 
 if __name__ == "__main__":
