@@ -290,8 +290,9 @@ impl TableWork {
 }
 
 /// The bounds of one evaluation that differ between the evaluations of a
-/// session: the deadline where it has one, its cancellation, and the work
-/// count of its table where it runs for a table. The caps stand in the
+/// session: the deadline where it has one, its cancellation, the work
+/// count of its table where it runs for a table, and whether it checks the
+/// declared rows of the outputs it builds. The caps stand in the
 /// [`crate::session::TaskSession`].
 #[derive(Clone, Debug)]
 pub struct Limits {
@@ -299,12 +300,22 @@ pub struct Limits {
     pub cancellation: Cancellation,
     /// The count that the evaluation's batches of bindings are added to.
     pub table_work: Option<TableWork>,
+    /// Where the evaluation reports the declared rows that a construction's
+    /// outputs break ([`crate::eval::copies`]); the evaluation checks none
+    /// where this is `None`.
+    pub copies: Option<super::copies::CopyViolations>,
 }
 
 impl Limits {
     /// The limits of an evaluation outside a table.
     pub fn new(deadline: Option<std::time::Instant>, cancellation: Cancellation) -> Self {
-        Limits { deadline, cancellation, table_work: None }
+        Limits { deadline, cancellation, table_work: None, copies: None }
+    }
+
+    /// These limits with the evaluation checking the declared rows of the
+    /// outputs it builds, and reporting each violation to `violations`.
+    pub fn checking_copies(self, violations: super::copies::CopyViolations) -> Self {
+        Limits { copies: Some(violations), ..self }
     }
 
     /// These limits with the evaluation counted in `work`.

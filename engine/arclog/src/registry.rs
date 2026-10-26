@@ -22,7 +22,7 @@
 //!   relation over a finite domain has no `modes` form, and no mode is empty.
 //! - `(component <name> <construction|detector|task-structure> (type-parameters <t> ...)
 //!   (inputs (<input> (<column> <type>) ... [(default <rows>)] [reads-outputs] [from-key]) ...)
-//!   (outputs (<output> (<column> <type>) ...) ...))`: a construction, a
+//!   (outputs (<output> (<column> <type>) ... [(copies <row> ...)]) ...))`: a construction, a
 //!   detector or a task-structure component, its inputs in the order the component declares them. An
 //!   input's `default` writes its rows as a `param` form writes them after
 //!   its types (`docs/arclog/arcdata.md#params`). An input marked
@@ -33,7 +33,25 @@
 //!   `default` holds no row there. An output may share its name with an input of
 //!   the same form, as `Unfold`'s `take` does: an instance's output of that
 //!   name, where the instance writes no clause for it, reads the input's
-//!   relation.
+//!   relation. An output's `(copies <row> ...)` form declares the rows of the
+//!   inputs of a group that the output's rows copy. A `<row>` is
+//!   `(<input> (<input column> <output column>) ...)` or `(either <row> ...)`,
+//!   whose rows are the alternatives of one row, each on an input, mapping the
+//!   same output columns. A row names the output columns it copies and the
+//!   input columns it copies them from, which have one type each, and names
+//!   no `key` column: where the input and the output both have a `key`
+//!   column, the output's copies the input's, since a group's rows share its
+//!   key. Two rows on one input are two rows of it, which may differ, as
+//!   `Order`'s `successor` takes `a` and `b` from two members. An output
+//!   column that no row names claims no row, and an output with no
+//!   `copies` form claims none. A declaration holds only what the
+//!   construction guarantees in every group: each output row's values at the
+//!   columns a row names are, at the input columns they are copied from,
+//!   those of a row of that input in the group, or of an alternative's. A
+//!   row that names an input or a column the component does not declare, a
+//!   `key` column, an output column twice in an alternative, columns of
+//!   different types, or alternatives that name different output columns is
+//!   a fault of the file.
 //! - `(proposer <name> native [domain] (columns (<Column> <type>) ...))`: a
 //!   native proposer, marked `domain` where it is a type-domain proposer, as
 //!   `docs/arclog/arclog.md#program` gives one.
@@ -190,6 +208,40 @@ pub enum ComponentKind {
 pub struct Port {
     pub name: PortName,
     pub columns: Box<[Column]>,
+    /// The rows of the group's inputs that the rows of an output copy, in the
+    /// order the file declares them; empty for an input and for an output
+    /// that claims no row.
+    pub copies: Box<[CopiedRow]>,
+}
+
+/// A declared row of an output: the row of an input of its group that the
+/// output's rows copy, or one of several alternatives. Two declared rows on
+/// one input are two rows of it, which may differ.
+#[derive(Clone, Debug)]
+pub struct CopiedRow {
+    pub alternatives: Box<[CopiedFrom]>,
+}
+
+/// An alternative of a declared row: the input, as its index among the
+/// component's inputs, and the pairs of a column of the input and the
+/// column of the output that copies it, as indexes into the ports' columns.
+/// The pairs hold no `key` column: the output's `key` copies the input's
+/// where both ports have one, as [`CopiedFrom::column_pairs`] gives.
+#[derive(Clone, Debug)]
+pub struct CopiedFrom {
+    pub input: usize,
+    pub columns: Box<[(usize, usize)]>,
+}
+
+impl CopiedFrom {
+    /// The pairs of a column of `input`, the port of the input this
+    /// alternative names, and the column of `output` that copies it: the
+    /// declared pairs, and the pair of the two `key` columns where both ports
+    /// have one, since a group's rows share its key.
+    pub fn column_pairs(&self, input: &Port, output: &Port) -> Vec<(usize, usize)> {
+        let key = input.columns.iter().position(is_key).zip(output.columns.iter().position(is_key));
+        key.into_iter().chain(self.columns.iter().copied()).collect()
+    }
 }
 
 impl Port {
@@ -197,6 +249,24 @@ impl Port {
     /// `keyed` holds, and otherwise those other than `key`.
     pub fn columns_at(&self, keyed: bool) -> impl Iterator<Item = &Column> + '_ {
         self.columns.iter().filter(move |column| keyed || !is_key(column))
+    }
+
+    /// The row positions that each column of the port takes, given the width
+    /// of each column that `columns_at(keyed)` gives, in order: none for the
+    /// `key` column where `keyed` does not hold.
+    pub fn row_ranges(&self, keyed: bool, mut widths: impl Iterator<Item = usize>) -> Vec<Option<std::ops::Range<usize>>> {
+        let mut start = 0usize;
+        self.columns
+            .iter()
+            .map(|column| {
+                if !keyed && is_key(column) {
+                    return None;
+                }
+                let taken = widths.next().expect("a width for each column that the port has at the instance");
+                start += taken;
+                Some(start - taken..start)
+            })
+            .collect()
     }
 }
 

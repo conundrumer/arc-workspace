@@ -47,11 +47,18 @@ written as a part. Writes to <out dir>:
                    (the relation as the program spells it, `ex_input` for a read of `input`, or the lib name), `source_column`
                    (its column index, -1 for a constant or a lib name, -2 for the example of the source's entry; with `det` >= 0 the index
                    is into the table's `det_types[det]`, the `DET`'s relation as the reading table holds it in assigned.parquet), `det` (the
-                   source's place in the table's `det_relations`, -1 where it is none) and `atom` (the path of the atom that
-                   reads it, empty where none does). A reader labels a column of `ex_output` as computed from the input where
+                   source's place in the table's `det_relations`, -1 where it is none), `atom` (the path of the atom that
+                   reads it, empty where none does) and `occurrence` (which row of the atom's relation the value comes from in one
+                   derivation of the table's row: 0 for an atom of a clause, a computed flow included; for a column of an instance's
+                   output that a row of the registry's `copies` maps, the index of that row among the output's; -1 for a flow of no atom
+                   and for a column of an instance's output that no row maps). Two copy flows into one table with the same `atom`
+                   and the same `occurrence` read one row of their source. A reader labels a column of `ex_output` as computed from the input where
                    every source it reaches through the flows is `ex_input` or a constant, as computed from the train outputs
                    where one is `ex_output` or a `DET` (a determination keeps the values at which the program solves every
                    train pair), and as neither where it reaches no source. An output of an instance that reads its own outputs has no flow from them
+  copies           one row per declared row of the registry's `copies` that a component's output breaks, keyed by task and case:
+                   `detail`, a sentence (the engine checks each declaration at each group of each instance it runs in the replay;
+                   `export_checks.check_part` writes each row as a `copies` line of `checks.txt`)
   assigned.parquet one row per DET at an entry's assignment: task, case, entry, det, rows, offset
   projections.parquet    one row per projection (columns) and projection_rows.parquet one row per projection at an entry
   orientations.json  [encoding, name] of each orientation constant; an orientation cell is its encoding
@@ -60,7 +67,7 @@ written as a part. Writes to <out dir>:
   parts/<k>.checks.txt, checks.txt  one line `<task> <case>: <invariant>: <detail>` per violation of an invariant of this layout
                    that `export_checks.check_part` checks on each case of a part, in worker processes while later tasks replay
                    (tables, entries and runs, flows, the cells against their column types, keys, the evidence tables against the
-                   task file, the copy flows' values against their source columns); a part is whole, with its `tasks.txt`, once its
+                   task file, the copy flows' values against their source columns, the engine's rows against the declared rows of the registry's `copies`); a part is whole, with its `tasks.txt`, once its
                    checks are written; `python engine/arclog-py/export_checks.py <out dir> --all` checks an existing export the same way
   settings.json    the options the calls run under, written before the first task: {"projection_cap": N, "step_cap": N, "parts": [...]} with 10000 and 10000 (null for --step-cap 0, no cap)
                    where no --projection-cap is given, each other option given, and the names of the parts the run writes
@@ -397,7 +404,7 @@ def merge(out):
     tables, entries = whole["tables"], whole["entries"]
     export_checks.number_rows(tables, entries)
     entries.merge(tables, on=["task", "case", "table"], suffixes=("", "_table")).to_parquet(f"{out}/index.parquet")
-    for p in ("tables", "assigned", "projections", "projection_rows", "flows"):
+    for p in ("tables", "assigned", "projections", "projection_rows", "flows", "copies"):
         whole[p].to_parquet(f"{out}/{p}.parquet")
     print(f"{len(entries)} index rows, {len(lines)} fault lines{summary}")
 

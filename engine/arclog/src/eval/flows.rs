@@ -19,8 +19,8 @@ use super::ir::{atom_modes, Argument, AtomSource, ClauseIr, CompiledBody, IrNode
 use super::{demonstrated, driver, picks, rigid};
 use crate::check::CheckedProgram;
 use crate::program::path::{node_at, NodePath, NodeRef};
-use crate::program::{Atom, ColumnName, Conjunct, ConstraintOp, FactRelation, OutputOwner, OutputStep, RelationRef};
-use crate::registry::{key_fill, ColumnType, Registry};
+use crate::program::{Atom, ColumnName, Conjunct, ConstraintOp, FactRelation, LabelId, OutputOwner, OutputStep, RelationRef};
+use crate::registry::{is_key, key_fill, ColumnType, Registry};
 use crate::resolver::given::{node_relation, Given, GivenLabel};
 use crate::resolver::registry_columns;
 use crate::resolver::{DependencyKind, GraphNodeIndex, ResolvedProgram, Resolution};
@@ -68,15 +68,31 @@ pub struct ColumnSource {
     pub row: Option<Box<[ColumnName]>>,
     /// The path of the atom that reads the source, empty where none does.
     pub atom: NodePath,
+    /// For a source that an atom reads, which row of that atom's relation the
+    /// value comes from in one derivation of the table's row: 0 for the atom
+    /// of a clause, whose value comes from that atom's one row, and the index
+    /// of the declared row for a column of an instance's output that the
+    /// registry's `copies` maps. Two copy flows into one table with the same
+    /// atom and the same occurrence read one row of their source. `None`
+    /// claims no row: a source of no atom, and a source of a column of an
+    /// instance's output that no declared row maps.
+    pub occurrence: Option<u16>,
 }
 
 impl ColumnSource {
     fn without_atom(kind: SourceKind, relation: Option<RelationRef>) -> Self {
-        ColumnSource { kind, relation, column: SourceColumn::None, row: None, atom: NodePath::default() }
+        ColumnSource { kind, relation, column: SourceColumn::None, row: None, atom: NodePath::default(), occurrence: None }
     }
 
     fn computed(mut self) -> Self {
         self.kind = SourceKind::Computed;
+        self
+    }
+
+    /// This source as a declared row reads it: the row's index as the
+    /// occurrence where an atom reads it, and none otherwise.
+    fn in_row(mut self, row: usize) -> Self {
+        self.occurrence = if self.atom.0.is_empty() { None } else { Some(u16::try_from(row).expect("fewer than 2^16 declared rows")) };
         self
     }
 }
@@ -286,7 +302,7 @@ impl<'p> Walk<'p> {
                 return self.flows.port_sources(*port, position, &mut self.visiting.to_vec());
             }
         }
-        vec![ColumnSource { kind: SourceKind::Copy, relation: Some(relation), column, row, atom: path.clone() }]
+        vec![ColumnSource { kind: SourceKind::Copy, relation: Some(relation), column, row, atom: path.clone(), occurrence: Some(0) }]
     }
 
     /// The sources of `variable` in `alt`, which `visiting` holds the
@@ -424,6 +440,15 @@ impl CheckedProgram {
     ///   keyed instance, where a `from-key` input the instance leaves
     ///   unwritten stands on the parameter, the sources of the key position
     ///   that the engine's fill gives each row position;
+    /// - a column of an instance's output that a declared row of the
+    ///   registry's `copies` maps: in place of the sources above, the sources
+    ///   of the input column that the row maps it from, as the instance's
+    ///   written body for that input gives them (a computed source staying
+    ///   computed), the lib name where the input has a default, and the
+    ///   fill's sources where it is `from-key` and unwritten. The output's
+    ///   `key`, where a declared row is on an input with a `key` column, keeps
+    ///   its sources and takes beside them the sources of the key's labels in
+    ///   the bodies the instance writes for that input;
     /// - another declared column of an instance or a `RIGID_DET` assembly:
     ///   every row position of each relation the node reads, computed, where
     ///   the column of an input port of an instance is replaced by its
@@ -435,6 +460,12 @@ impl CheckedProgram {
     /// `OR` and `IF`, its `=` and its key reads, are those of the IR that the
     /// evaluator joins for it, so a body that does not compile gives no
     /// source.
+    ///
+    /// The occurrence of a source ([`ColumnSource::occurrence`]) is 0 for a
+    /// source that an atom of a body reads, a computed one included. A source
+    /// that a declared row maps into a column of an instance's output has the
+    /// index of that row among the output's where an atom reads it. Each other
+    /// source of a column of an instance's output has none.
     ///
     /// An output of an instance that reads its own outputs has no flow from
     /// them.
@@ -464,13 +495,7 @@ impl<'p> Flows<'p> {
                     let own = self.program.label_position(&relation.form, *label).map(|position| usize::from(position.0));
                     let Some(position) = own.or(*place) else { continue };
                     let body = held.entry((which, body.clone())).or_insert_with(|| self.held(relation, body));
-                    let found = body.as_ref().map_or_else(Vec::new, |body| {
-                        let (clause, paths) = body.parts();
-                        let walk = Walk { flows: self, visiting };
-                        paths.labels.iter().position(|held| held == label).map_or_else(Vec::new, |variable| {
-                            walk.sources(Variable(variable as u16), &Alt::of(clause, paths), &mut Vec::new())
-                        })
-                    });
+                    let found = self.label_sources(body.as_ref(), *label, visiting);
                     let moved = index >= relation.sites_from && types.get(position).is_some_and(ValueType::moved_by_d4);
                     if let Some(sources) = flows.get_mut(position) {
                         add_distinct(sources, if moved { found.into_iter().map(ColumnSource::computed).collect() } else { found });
@@ -489,10 +514,21 @@ impl<'p> Flows<'p> {
         for relation in &given {
             self.add_key_fill(relation, types, &mut flows);
         }
-        if let DependencyKind::RecursiveInstance(instance) = &self.program.graph.nodes[node.0 as usize].kind {
+        let mut copied = vec![false; width];
+        for relation in &given {
+            self.add_copied_rows(relation, types, &mut flows, &mut copied, visiting);
+        }
+        let kind = &self.program.graph.nodes[node.0 as usize].kind;
+        if let DependencyKind::RecursiveInstance(instance) = kind {
             let own = |source: &ColumnSource| matches!(&source.relation, Some(RelationRef::Output(name)) if name.of == OutputOwner::Instance(instance.clone()));
             for sources in &mut flows {
                 sources.retain(|source| !own(source));
+            }
+        }
+        if matches!(kind, DependencyKind::InstanceOutput { .. } | DependencyKind::RecursiveInstance(_)) {
+            for (sources, _) in flows.iter_mut().zip(&copied).filter(|(_, copied)| !**copied) {
+                let held = std::mem::take(sources);
+                add_distinct(sources, held.into_iter().map(|source| ColumnSource { occurrence: None, ..source }).collect());
             }
         }
         for sources in flows.iter_mut().filter(|sources| sources.is_empty()) {
@@ -501,6 +537,15 @@ impl<'p> Flows<'p> {
         }
         visiting.pop();
         flows
+    }
+
+    /// The sources of `label` in the IR of a body `held`, none where the body
+    /// does not compile or binds no such label.
+    fn label_sources(&self, held: Option<&Held>, label: LabelId, visiting: &[GraphNodeIndex]) -> Vec<ColumnSource> {
+        let Some(held) = held else { return Vec::new() };
+        let (clause, paths) = held.parts();
+        let walk = Walk { flows: self, visiting };
+        paths.labels.iter().position(|bound| *bound == label).map_or_else(Vec::new, |variable| walk.sources(Variable(variable as u16), &Alt::of(clause, paths), &mut Vec::new()))
     }
 
     /// The IR that the evaluator joins for the body at `body`, a path below
@@ -537,14 +582,14 @@ impl<'p> Flows<'p> {
         }
     }
 
-    /// Adds to each row position of a column of `relation`, on a type
-    /// parameter that a `from-key` input the instance leaves unwritten stands
-    /// on, the flows at the key position that the fill gives it
+    /// The fill of each `from-key` input that the instance of `relation`
+    /// leaves unwritten ([`Given::filled`]): for each, where its columns' types
+    /// are all known, the key position each of its row positions takes
     /// ([`key_fill`]). `types` are the row-position types of the relation;
-    /// nothing is added where they are not all known.
-    fn add_key_fill(&self, relation: &Given, types: &[ValueType], flows: &mut [Vec<ColumnSource>]) {
-        if relation.filled.is_empty() || types.len() != flows.len() {
-            return;
+    /// nothing is given where they are not all known.
+    fn fills(&self, relation: &Given, types: &[ValueType], width: usize) -> Vec<Fill> {
+        if relation.filled.is_empty() || types.len() != width {
+            return Vec::new();
         }
         // The first row position and the width of each column of the port.
         let mut at = Vec::new();
@@ -553,26 +598,136 @@ impl<'p> Flows<'p> {
             at.push((slot.is_key, slot.declared.as_ref(), start..start + slot.width));
             start += slot.width;
         }
-        let Some((_, _, key)) = at.iter().find(|(is_key, ..)| *is_key) else { return };
-        for input in &relation.filled {
+        let Some((_, _, key)) = at.iter().find(|(is_key, ..)| *is_key) else { return Vec::new() };
+        let mut fills = Vec::new();
+        for (input, columns) in &relation.filled {
             let mut input_types = Vec::new();
             let mut targets = Vec::new();
-            for ty in input {
+            let mut known = true;
+            for ty in columns {
                 match ty {
                     ColumnType::Fixed(fixed) => input_types.push(fixed.clone()),
                     ColumnType::Parameter(_) => {
-                        let Some((_, _, own)) = at.iter().find(|(is_key, declared, _)| !is_key && *declared == Some(ty)) else { return };
+                        let Some((_, _, own)) = at.iter().find(|(is_key, declared, _)| !is_key && *declared == Some(ty)) else {
+                            known = false;
+                            break;
+                        };
                         targets.extend(own.clone().map(|position| (position, input_types.len() + position - own.start)));
                         input_types.extend(types[own.clone()].iter().cloned());
                     }
-                    _ => return,
+                    _ => {
+                        known = false;
+                        break;
+                    }
                 }
             }
+            if !known {
+                continue;
+            }
             let Some(positions) = key_fill(&types[key.clone()], &input_types) else { continue };
-            for (position, row) in targets {
-                let found = flows[positions[row]].clone();
+            fills.push(Fill { input: *input, key_start: key.start, positions, targets });
+        }
+        fills
+    }
+
+    /// Adds to each row position of a column of `relation`, on a type
+    /// parameter that a `from-key` input the instance leaves unwritten stands
+    /// on, the flows at the key position that the fill gives it
+    /// ([`Flows::fills`]).
+    fn add_key_fill(&self, relation: &Given, types: &[ValueType], flows: &mut [Vec<ColumnSource>]) {
+        for fill in self.fills(relation, types, flows.len()) {
+            for &(position, row) in &fill.targets {
+                let found = flows[fill.key_start + fill.positions[row]].clone();
                 add_distinct(&mut flows[position], found);
             }
+        }
+    }
+
+    /// For the output of an instance that `relation` gives, replaces the
+    /// sources of each column that a declared row of the registry's `copies`
+    /// maps by the sources of the input's column that the row maps it from,
+    /// each with the declared row's index as its occurrence, and adds those
+    /// of an input's `key` to the sources of the output's `key`. `copied` marks the
+    /// row positions of the columns that a declared row maps, the `key`
+    /// included. The input's sources are those of its node where the instance
+    /// writes the input, the lib name where the input has a default, and the
+    /// flows of the key position that the fill gives it where it is
+    /// `from-key`, an unwritten input giving none for its `key`.
+    fn add_copied_rows(&self, relation: &Given, types: &[ValueType], flows: &mut [Vec<ColumnSource>], copied: &mut [bool], visiting: &mut Vec<GraphNodeIndex>) {
+        let Some([OutputStep::Port(port)]) = relation.output.as_deref() else { return };
+        let root = NodeRef::Program(self.program.program.value());
+        let Some(NodeRef::Instance(instance)) = node_at(root, &relation.form) else { return };
+        let Some(component) = registry_columns::component(self.registry, &instance.component) else { return };
+        let Some(output) = component.outputs.iter().find(|output| output.name == *port) else { return };
+        let keyed = instance.key.is_some();
+        let fills = self.fills(relation, types, flows.len());
+        let to_ranges = output.row_ranges(keyed, relation.slots.iter().map(|slot| slot.width));
+        let mut found: Vec<Vec<ColumnSource>> = vec![Vec::new(); flows.len()];
+        for (row, declared) in output.copies.iter().enumerate() {
+            for from in declared.alternatives.iter() {
+                let input = &component.inputs[from.input];
+                let Some(slots) = self.program.instance_port_slots(&relation.form, &input.port, self.registry) else { continue };
+                let from_ranges = input.port.row_ranges(keyed, slots.iter().map(|slot| slot.width));
+                let node = self.program.nodes_of(&relation.form).iter().copied().find(|node| {
+                    matches!(&self.program.graph.nodes[node.0 as usize].kind, DependencyKind::InstanceInput { instance: name, input: written } if *name == instance.name && *written == input.port.name)
+                });
+                // The first row position of each column among those other than the `key`'s.
+                let mut others = Vec::new();
+                let mut count = 0usize;
+                for (column, range) in input.port.columns.iter().zip(&from_ranges) {
+                    others.push(count);
+                    count += range.as_ref().filter(|_| !is_key(column)).map_or(0, |range| range.len());
+                }
+                for (from_column, to_column) in from.column_pairs(&input.port, output) {
+                    let (Some(from_range), Some(to_range)) = (from_ranges[from_column].clone(), to_ranges[to_column].clone()) else { continue };
+                    if is_key(&input.port.columns[from_column]) {
+                        // The key's labels as the input's written bodies bind them.
+                        for body in self.program.input_bodies(&relation.form, &input.port.name) {
+                            let bound = self.held(relation, &body);
+                            for slot in relation.slots.iter().filter(|slot| slot.is_key) {
+                                for GivenLabel { label, place, .. } in &slot.labels {
+                                    let Some(position) = self.program.label_position(&relation.form, *label).map(|position| usize::from(position.0)).or(*place) else { continue };
+                                    let sources = self.label_sources(bound.as_ref(), *label, visiting);
+                                    copied[position] = true;
+                                    add_distinct(&mut found[position], sources.into_iter().map(|source| source.in_row(row)).collect());
+                                }
+                            }
+                        }
+                        for position in to_range {
+                            copied[position] = true;
+                        }
+                        continue;
+                    }
+                    for (offset, position) in to_range.enumerate() {
+                        copied[position] = true;
+                        let sources = match node {
+                            Some(node) => self.port_sources(node, (from_range.start + offset) as u16, visiting),
+                            None if input.default.is_some() => relation.lib.iter().map(|name| ColumnSource::without_atom(SourceKind::LibName, Some(RelationRef::Lib(name.clone())))).collect(),
+                            None => fills
+                                .iter()
+                                .find(|fill| fill.input == from.input)
+                                .and_then(|fill| flows.get(fill.key_start + *fill.positions.get(others[from_column] + offset)?))
+                                .cloned()
+                                .unwrap_or_default(),
+                        };
+                        add_distinct(&mut found[position], sources.into_iter().map(|source| source.in_row(row)).collect());
+                    }
+                }
+            }
+        }
+        let mut start = 0usize;
+        for slot in &relation.slots {
+            for position in start..start + slot.width {
+                if copied[position] {
+                    let sources = std::mem::take(&mut found[position]);
+                    if slot.is_key {
+                        add_distinct(&mut flows[position], sources);
+                    } else {
+                        flows[position] = sources;
+                    }
+                }
+            }
+            start += slot.width;
         }
     }
 
@@ -606,7 +761,7 @@ impl<'p> Flows<'p> {
                     RelationRef::Fact(FactRelation::Input) => (RelationRef::Fact(FactRelation::ExInput), position + 1),
                     ref other => (other.clone(), position),
                 };
-                found.push(ColumnSource { kind: SourceKind::Computed, relation: Some(relation), column: SourceColumn::Position(position as u16), row: None, atom: NodePath::default() });
+                found.push(ColumnSource { kind: SourceKind::Computed, relation: Some(relation), column: SourceColumn::Position(position as u16), row: None, atom: NodePath::default(), occurrence: None });
             }
         }
         found
@@ -620,4 +775,16 @@ fn add_distinct(held: &mut Vec<ColumnSource>, sources: Vec<ColumnSource>) {
             held.push(source);
         }
     }
+}
+
+/// The fill of one `from-key` input an instance leaves unwritten: the index of
+/// the input among the component's, the first row position of the `key` in
+/// the output, the key position of each row position of the input other than
+/// the key's, and, for each row position of the output on a type parameter of
+/// the input, the pair of that position and the input's row position it takes.
+struct Fill {
+    input: usize,
+    key_start: usize,
+    positions: Vec<usize>,
+    targets: Vec<(usize, usize)>,
 }

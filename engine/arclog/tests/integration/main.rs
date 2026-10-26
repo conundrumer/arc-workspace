@@ -9,6 +9,7 @@ mod child_order_and_scopes;
 mod column_flows;
 mod column_names;
 mod comparison_typing;
+mod copies_check;
 mod corpus_panic;
 mod cycle_check;
 mod decode_interface;

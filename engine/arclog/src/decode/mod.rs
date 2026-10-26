@@ -53,6 +53,7 @@ use std::sync::{Arc, OnceLock};
 use crate::check::prefix::{Candidate, PrefixChecks};
 use crate::check::CheckId;
 use crate::eval::instance::Constructions;
+use crate::eval::copies::{CopyViolation, CopyViolations};
 use crate::eval::Cancellation;
 use crate::judge::candidates::PairCandidates;
 use crate::program::path::NodePath;
@@ -87,6 +88,9 @@ pub struct Decoder<'a> {
     trace: DecodeTrace,
     /// The mask of the current state with the step of each token it admits.
     held: Held,
+    /// Where the evaluations report the declared rows that a construction's
+    /// outputs break, where the settings check them.
+    copies: Option<CopyViolations>,
 }
 
 /// What [`Decoder::admissible`] computes at a state: the mask, and the
@@ -169,7 +173,7 @@ impl<'a> Decoder<'a> {
         assert_eq!(settings.caps, session.caps, "the caps of the decode settings are those of the session");
         let context = Context { registry, settings: *settings, vocabulary: Vocabulary::new(registry, settings) };
         let state = state::State::new();
-        Decoder { task, session, constructions, context: Arc::new(context), state, before: None, train: None, cancellation: Cancellation::default(), output: None, assignments: Vec::new(), columns: None, trace: DecodeTrace::default(), held: Held::default() }
+        Decoder { task, session, constructions, context: Arc::new(context), state, before: None, train: None, cancellation: Cancellation::default(), output: None, assignments: Vec::new(), columns: None, trace: DecodeTrace::default(), held: Held::default(), copies: settings.check_copies.then(CopyViolations::default) }
     }
 
     /// The ids of the decode's tokens.
@@ -312,7 +316,15 @@ impl<'a> Decoder<'a> {
     /// A second decode from the same state, which shares this one's caches
     /// and takes a cancellation of its own.
     pub fn fork(&self) -> Decoder<'a> {
-        Decoder { cancellation: Cancellation::default(), held: Held::default(), ..self.clone() }
+        Decoder { cancellation: Cancellation::default(), held: Held::default(), copies: self.copies.as_ref().map(|_| CopyViolations::default()), ..self.clone() }
+    }
+
+    /// The declared rows that the constructions' outputs broke in the
+    /// evaluations of this decode since the last call, each once, where the
+    /// settings check them ([`DecodeSettings::check_copies`]), and none
+    /// otherwise.
+    pub fn take_copy_violations(&self) -> Vec<CopyViolation> {
+        self.copies.as_ref().map(CopyViolations::take).unwrap_or_default()
     }
 
     /// The program so far: its finished forms.

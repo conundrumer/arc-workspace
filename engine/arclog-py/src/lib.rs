@@ -16,6 +16,7 @@ use arclog::decode::columns::{case_columns, CaseColumns, StopColumns, TableColum
 use arclog::decode::corpus::{read_task_files, replay_units, ReplayProgress, UnitSolver};
 use arclog::decode::replay::Stepped;
 use arclog::decode::{evidence_tables, step_batch, Consistency, Decoder, Points, Table, TokenMask, Projections};
+use arclog::eval::copies::CopyViolation;
 use arclog::eval::determinations::relation_spelled;
 use arclog::eval::instance::Constructions;
 use arclog::eval::pool::Pool;
@@ -941,7 +942,7 @@ fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &Hash
 /// The tables of one case program of a solver of a corpus, as flat columns
 /// (`arclog::decode::columns` gives the layout and the codes).
 ///
-/// `tables`, `entries`, `assigned`, `projections`, `projection_rows` and `flows` are dicts of
+/// `tables`, `entries`, `assigned`, `projections`, `projection_rows`, `flows` and `copies` are dicts of
 /// columns, one for each part of the layout, named as its fields. An integer
 /// column is `bytes` in native byte order, which `numpy.frombuffer` reads at
 /// the dtype that `dtypes` gives for `"<part>.<column>"`; any other column is
@@ -955,7 +956,11 @@ fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &Hash
 /// table at a slot; it also gives each table's `depth` in the dependency graph, its
 /// candidate `keys` (lists of column indexes), and `output_position` and `output_color`,
 /// the grid columns of the relation at which the replay's consistency test found them, -1
-/// for each other table; `flows` gives one row for each source of each column of a table.
+/// for each other table; `flows` gives one row for each source of each column of a table,
+/// with its `occurrence`, the row of the source atom's relation that the value comes from, -1 where
+/// it claims none; `copies` gives one row, its `detail` a sentence, for each declared row of a
+/// component's output that the replay found the output's rows break, and none for a call without
+/// `copies`.
 /// `projection_cap` is the cap of the projection rows that the tables ran
 /// under.
 #[pyclass(name = "CaseTables", frozen, get_all, module = "arclog")]
@@ -970,6 +975,7 @@ struct PyCaseTables {
     projections: Py<PyDict>,
     projection_rows: Py<PyDict>,
     flows: Py<PyDict>,
+    copies: Py<PyDict>,
     values: Py<PyBytes>,
     dtypes: Py<PyDict>,
 }
@@ -1116,6 +1122,9 @@ impl PyCaseTables {
         f.ints("source_column", &c.source_column)?;
         f.ints("det", &c.det)?;
         f.list("atom", &c.atom)?;
+        f.ints("occurrence", &c.occurrence)?;
+        let k = Part::new(py, "copies", &dtypes);
+        k.list("detail", &columns.copies.detail)?;
         Ok(PyCaseTables {
             task,
             case,
@@ -1127,6 +1136,7 @@ impl PyCaseTables {
             projections: v.dict.unbind(),
             projection_rows: r.dict.unbind(),
             flows: f.dict.unbind(),
+            copies: k.dict.unbind(),
             values: PyBytes::new(py, &cell_bytes(&columns.values)).unbind(),
             dtypes: dtypes.unbind(),
         })
@@ -1189,16 +1199,19 @@ struct TableCase {
 /// `progress`, a `ReplayProgress` or `None`, gives the model steps of the
 /// second phase: its `total` is set once the units are cut and its `done`
 /// grows while they replay.
+/// With `copies`, the replay checks the rows that the outputs of the constructions declare they copy
+/// (`arclog::eval::copies`), and each `CaseTables.copies` gives the violations it found; a
+/// construction's run that an earlier run of the call cached is not checked again.
 #[pyfunction]
-#[pyo3(signature = (corpus, tasks, all_cases=false, task_ids=None, bodies=false, projection_cap=None, ended=None, progress=None, step_cap=None, table_work_cap=None, units=None))]
-fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, task_ids: Option<Vec<String>>, bodies: bool, projection_cap: Option<u64>, ended: Option<Py<PyAny>>, progress: Option<Py<PyReplayProgress>>, step_cap: Option<usize>, table_work_cap: Option<u64>, units: Option<usize>) -> PyResult<(Vec<PyCaseTables>, Vec<String>)> {
+#[pyo3(signature = (corpus, tasks, all_cases=false, task_ids=None, bodies=false, projection_cap=None, ended=None, progress=None, step_cap=None, table_work_cap=None, units=None, copies=false))]
+fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, task_ids: Option<Vec<String>>, bodies: bool, projection_cap: Option<u64>, ended: Option<Py<PyAny>>, progress: Option<Py<PyReplayProgress>>, step_cap: Option<usize>, table_work_cap: Option<u64>, units: Option<usize>, copies: bool) -> PyResult<(Vec<PyCaseTables>, Vec<String>)> {
     let units = units.map(|count| NonZeroUsize::new(count).ok_or_else(|| PyValueError::new_err("units must be a positive integer"))).transpose()?;
     let points = if bodies { Points::All } else { Points::Relations };
     let wanted = if all_cases { WantedCases::All } else { WantedCases::Concept };
     let constructions = constructions()?;
     let vocabulary = Vocabulary::new(Registry::get(), &DecodeSettings::default());
     let base = DecodeSettings::corpus();
-    let settings = DecodeSettings { projection_cap: projection_cap.unwrap_or(base.projection_cap), table_work_cap: table_work_cap.unwrap_or(base.table_work_cap), ..base };
+    let settings = DecodeSettings { projection_cap: projection_cap.unwrap_or(base.projection_cap), table_work_cap: table_work_cap.unwrap_or(base.table_work_cap), check_copies: copies, ..base };
     let reads: Mutex<HashMap<String, (Task, JudgedTask)>> = Mutex::new(HashMap::new());
     let found = walk_corpus(py, corpus, &task_ids, |id| {
         let (mut cases, mut faults) = (Vec::new(), Vec::new());
@@ -1247,7 +1260,7 @@ fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, tas
                 steps,
                 &|record: &mut StreamRecord, decoder, stepped| record.step(decoder, stepped, points),
                 &|solver| progress.start(solver),
-                &|solver, replay| replay.into_result().map(|record| (case_columns(&evidence[solver], &record.tables, trains[solver]), record.ended)),
+                &|solver, replay| replay.into_result().map(|record| (case_columns(&evidence[solver], &record.tables, trains[solver]).with_copies(&record.copies), record.ended)),
                 &|solver| progress.settle(solver),
                 step_cap,
             )
@@ -1308,10 +1321,12 @@ impl PyConsistencyKind {
 }
 
 /// What the replay of one stream of `stream_tables` records: the tables of
-/// each step, and the last consistency a step gave.
+/// each step, the violations the steps found, and the last consistency a step gave.
 #[derive(Clone, Default)]
 struct StreamRecord {
     tables: Vec<(usize, Table)>,
+    /// The declared rows that the constructions' outputs broke, where the replay checks them.
+    copies: Vec<CopyViolation>,
     ended: Option<EndedAt>,
 }
 
@@ -1319,6 +1334,11 @@ impl StreamRecord {
     /// Records the tables of a step and, where the step judged, its consistency.
     fn step(&mut self, decoder: &Decoder<'_>, stepped: Stepped<'_>, points: Points) {
         self.tables.extend(decoder.tables(points).into_iter().map(|table| (stepped.index, table)));
+        for violation in decoder.take_copy_violations() {
+            if !self.copies.contains(&violation) {
+                self.copies.push(violation);
+            }
+        }
         if let Some(consistency) = &stepped.consistency {
             self.ended = Some(EndedAt { token: stepped.index, kind: PyConsistency::of(consistency).kind });
         }
@@ -1341,7 +1361,7 @@ impl StreamRecord {
 /// the replay's decodes run under it, so each `RULE` end is judged as the
 /// sampler's decode judged it. Its `projection_cap` and `table_work_cap` are
 /// the tables' caps. `bodies` and `step_cap` are as in `corpus_tables`; the
-/// replay computes no token mask.
+/// replay computes no token mask. `copies` is as in `corpus_tables`.
 /// `names` gives the case of each stream, or is `None` for the index of the
 /// stream as text. `ValueError` is raised, before any replay, for a `model`
 /// of another length than its `ids`, a flag other than 0 and 1, an id outside
@@ -1359,12 +1379,13 @@ impl StreamRecord {
 /// gives the one line `<task> <case>: the replay panicked: <message>` and no tables. The call runs with the
 /// GIL released, but for the build of each `CaseTables`.
 #[pyfunction]
-#[pyo3(signature = (task, tasks, streams, names=None, settings=None, bodies=false, step_cap=None))]
-fn stream_tables(py: Python<'_>, task: &str, tasks: &str, streams: Vec<(Vec<u32>, Vec<u8>)>, names: Option<Vec<String>>, settings: Option<PyDecodeSettings>, bodies: bool, step_cap: Option<usize>) -> PyResult<(Vec<PyCaseTables>, Vec<String>)> {
+#[pyo3(signature = (task, tasks, streams, names=None, settings=None, bodies=false, step_cap=None, copies=false))]
+fn stream_tables(py: Python<'_>, task: &str, tasks: &str, streams: Vec<(Vec<u32>, Vec<u8>)>, names: Option<Vec<String>>, settings: Option<PyDecodeSettings>, bodies: bool, step_cap: Option<usize>, copies: bool) -> PyResult<(Vec<PyCaseTables>, Vec<String>)> {
     let settings = match settings {
         Some(settings) => settings.engine()?,
         None => DecodeSettings::default(),
     };
+    let settings = DecodeSettings { check_copies: copies, ..settings };
     let vocabulary = Vocabulary::new(Registry::get(), &settings);
     let names = match names {
         Some(names) if names.len() != streams.len() => return Err(PyValueError::new_err(format!("{} names for {} streams", names.len(), streams.len()))),
@@ -1415,7 +1436,7 @@ fn stream_tables(py: Python<'_>, task: &str, tasks: &str, streams: Vec<(Vec<u32>
             &steps,
             &|record: &mut StreamRecord, decoder, stepped| record.step(decoder, stepped, points),
             &|_| {},
-            &|_, replay| (case_columns(&evidence, &replay.record.tables, train), replay.record.ended, replay.fault),
+            &|_, replay| (case_columns(&evidence, &replay.record.tables, train).with_copies(&replay.record.copies), replay.record.ended, replay.fault),
             &|_| {},
             step_cap,
         )

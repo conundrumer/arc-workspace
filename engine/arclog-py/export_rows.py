@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import arclog
 
-PARTS = ("tables", "entries", "assigned", "projections", "projection_rows", "flows")
+PARTS = ("tables", "entries", "assigned", "projections", "projection_rows", "flows", "copies")
 
 
 def frame(case, part):
@@ -22,8 +22,9 @@ def frame(case, part):
 
 
 def replay(corpus, tasks, task, progress, options, units=None):
-    """The (cases, lines) of the replay of `task`, with the `options` of `arclog.corpus_tables` and its `units`."""
-    return arclog.corpus_tables(corpus, tasks, task_ids=[task], progress=progress, units=units, **options)
+    """The (cases, lines) of the replay of `task`, with the `options` of `arclog.corpus_tables` and its `units`. The replay checks the rows that the
+    outputs of the constructions declare they copy (`copies=True`), whose violations each case gives in its `copies` part."""
+    return arclog.corpus_tables(corpus, tasks, task_ids=[task], progress=progress, units=units, copies=True, **options)
 
 
 def write_rows(out, k, results):

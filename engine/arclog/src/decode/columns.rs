@@ -10,7 +10,11 @@
 //! - [`AssignedColumns`]: a `DET` at an entry's assignment;
 //! - [`ProjectionColumns`] and [`ProjectionRowColumns`]: a projection of a table, and the
 //!   projection's rows at an entry;
-//! - [`FlowColumns`]: a source of a column of a table.
+//! - [`FlowColumns`]: a source of a column of a table;
+//! - [`CopyColumns`]: a declared row of a component's output that the
+//!   output's rows break, which a replay under
+//!   [`DecodeSettings::check_copies`](crate::stream::DecodeSettings::check_copies)
+//!   finds.
 //!
 //! The first tables of a case are the evidence tables of its task, `ex_input`
 //! then `ex_output`, with point 2, token 0, the relation's name in `fact`,
@@ -41,6 +45,7 @@ use std::hash::Hash;
 use crate::program::path::NodePath;
 use crate::program::{column_spelled, ColumnName, ProgramRelation, RelationRef};
 use crate::registry::Registry;
+use crate::eval::copies::CopyViolation;
 use crate::eval::flows::{ColumnSource, SourceColumn, SourceKind};
 use crate::relations::Relation;
 use crate::terms::{Constant, OrientationConstant, Term, TermId, ORIENTATION_TYPES};
@@ -241,6 +246,19 @@ pub struct FlowColumns {
     /// The path of the atom that reads the source as `form` spells a path,
     /// empty where no atom does.
     pub atom: Vec<String>,
+    /// The row of the atom's relation that the value comes from in one
+    /// derivation of the table's row ([`ColumnSource::occurrence`]), -1 where
+    /// the source claims none.
+    pub occurrence: Vec<i32>,
+}
+
+/// One row for each declared row of an output that the output's rows break,
+/// as [`crate::eval::copies`] checks it.
+#[derive(Clone, Debug, Default)]
+pub struct CopyColumns {
+    /// The instance, its output, the declared row and the count of rows that
+    /// break it, in a sentence.
+    pub detail: Vec<String>,
 }
 
 /// The tables of one case program as columns.
@@ -252,7 +270,23 @@ pub struct CaseColumns {
     pub projections: ProjectionColumns,
     pub projection_rows: ProjectionRowColumns,
     pub flows: FlowColumns,
+    pub copies: CopyColumns,
     pub values: Vec<i32>,
+}
+
+impl CaseColumns {
+    /// These columns with a row for each of `violations`, the declared rows
+    /// that the replay of the case found its constructions' outputs break.
+    pub fn with_copies(mut self, violations: &[CopyViolation]) -> CaseColumns {
+        self.copies.detail = violations
+            .iter()
+            .map(|violation| {
+                let CopyViolation { form, component, output, row, rows } = violation;
+                format!("{}.{} of the instance at {}: {rows} output rows break the declared row {row} of its copies: at the columns it maps they hold the values of no row of its input", component.0, output.0, form_path(form))
+            })
+            .collect();
+        self
+    }
 }
 
 /// The columns of `evidence`, each at token 0, then of `tables`, each with
@@ -467,7 +501,7 @@ fn source_spelled(relation: &RelationRef) -> String {
 fn push_flows(out: &mut CaseColumns, names: &TableNames, row: u32, contents: &Contents) {
     let dets: Vec<String> = contents.dets.iter().map(|det| relation_spelled(&det.relation)).collect();
     for (column, sources) in contents.flows.iter().enumerate() {
-        for ColumnSource { kind, relation, column: source_column, row: source_row, atom } in sources {
+        for ColumnSource { kind, relation, column: source_column, row: source_row, atom, occurrence } in sources {
             let spelled = relation.as_ref().map(source_spelled).unwrap_or_default();
             let source = match kind {
                 SourceKind::Copy | SourceKind::Computed => names.iter().rev().find(|(name, ..)| *name == spelled),
@@ -501,6 +535,7 @@ fn push_flows(out: &mut CaseColumns, names: &TableNames, row: u32, contents: &Co
                 SourceColumn::Example => -2,
             });
             flows.atom.push(form_path(atom));
+            flows.occurrence.push(occurrence.map_or(-1, i32::from));
         }
     }
 }

@@ -250,7 +250,11 @@ impl<'a> Decoder<'a> {
     /// The bounds of one request: the deadline of the decode settings from
     /// now, and the decode's cancellation.
     pub(super) fn limits(&self) -> Limits {
-        Limits::new(self.context.settings.deadline.map(|deadline| Instant::now() + deadline), self.cancellation.clone())
+        let limits = Limits::new(self.context.settings.deadline.map(|deadline| Instant::now() + deadline), self.cancellation.clone());
+        match &self.copies {
+            Some(violations) => limits.checking_copies(violations.clone()),
+            None => limits,
+        }
     }
 
     pub(super) fn inputs<'p>(&'p self, program: &'p CheckedProgram, limits: &'p Limits) -> EvaluationInputs<'p> {

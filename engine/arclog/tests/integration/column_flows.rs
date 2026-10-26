@@ -139,28 +139,6 @@ fn a_one_mark_and_a_choose_give_keys_and_the_evidence_tables_give_e_and_p() {
     assert!(choose.tables.keys[table_of(&choose, 1) as usize].is_empty(), "a clause with no mark has no key");
 }
 
-const TILING: &str = "(INIT &tiling Tiling
-  (outer ((:P P_tile))
-    (input (:P *P_tile)))
-  (inner ((:P P_intile))
-    (input (:P *P_intile))))
-(RULE &cell
-  (&tiling.cell (:P_outer *P_tile) (:P_inner *P_intile) (:P *P_grid)))
-(RULE &output (input *P *Col))
-";
-
-#[test]
-fn an_instance_output_is_computed_from_the_sources_of_its_input_ports() {
-    let columns = columns_of(TILING, &[1, 2]);
-    let cell = table_of(&columns, 0);
-    for column in 0..3 {
-        let found = sources(&columns, cell, column);
-        assert!(!found.is_empty(), "column {column}");
-        assert!(found.iter().all(|source| source.0 == COMPUTED && source.1 == "ex_input" && source.3 == 0), "column {column}: {found:?}");
-        assert!(found.iter().any(|source| source.2 == 1), "column {column}: {found:?}");
-    }
-}
-
 #[test]
 fn a_read_of_an_input_port_copies_the_sources_of_the_ports_column() {
     let arclog = OPENING.replace("(RULE &output (input *P *Col))", "(RULE &seen (&box.cell *P))\n(RULE &output (input *P *Col))");
@@ -206,31 +184,6 @@ fn a_column_flow_indexes_the_tables_columns_where_the_clause_writes_them_in_anot
             copies += 1;
             let source = if det >= 0 { &columns.tables.det_types[anchor as usize][det as usize] } else { &columns.tables.column_types[source_table as usize] };
             assert_eq!(types[column as usize], source[source_column as usize], "column {column} copies column {source_column} of table {source_table}");
-        }
-    }
-    assert!(copies > 0);
-}
-
-/// A solver whose `&mark` takes the column order [Color, Box] where it is the
-/// last form and [Box, Color] once the `DET`s it reads are widened by the
-/// forms after it.
-const REORDERED: &str = include_str!("column_flows/reordered_columns.arclog");
-
-#[test]
-fn a_copy_flow_names_the_column_of_its_source_table_in_the_order_the_table_was_exported_with() {
-    let columns = columns_of(REORDERED, &[3, 3]);
-    let mut copies = 0;
-    for table in 0..columns.tables.relation.len() as u32 {
-        let types = &columns.tables.column_types[table as usize];
-        for column in 0..types.len() as u32 {
-            for (kind, _, source_column, source_table, det, _) in sources(&columns, table, column) {
-                if kind != COPY || source_column < 0 || source_table < 0 || det >= 0 {
-                    continue;
-                }
-                copies += 1;
-                let source = &columns.tables.column_types[source_table as usize];
-                assert_eq!(types[column as usize], source[source_column as usize], "column {column} of table {table} copies column {source_column} of table {source_table}");
-            }
         }
     }
     assert!(copies > 0);

@@ -43,6 +43,10 @@ pub struct DecodeSettings {
     /// The bindings that all the evaluations of one table may try, as
     /// `docs/engine/synthesis.md#decode-settings` gives it.
     pub table_work_cap: u64,
+    /// Whether the evaluations check the rows that the outputs of a
+    /// construction declare they copy ([`crate::eval::copies`]), and report
+    /// the violations to [`crate::decode::Decoder::take_copy_violations`].
+    pub check_copies: bool,
 }
 
 impl DecodeSettings {
@@ -62,6 +66,7 @@ impl Default for DecodeSettings {
             deadline: Some(Duration::from_secs(10)),
             projection_cap: 10_000,
             table_work_cap: 1 << 20,
+            check_copies: false,
         }
     }
 }

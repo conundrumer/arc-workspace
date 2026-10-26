@@ -67,3 +67,27 @@ fn a_read_of_an_input_port_in_a_macro_refuses() {
     let text = REGISTRY_TEXT.replacen(written, "(self.node *D *K *V)", 1);
     assert!(Registry::parse(&text, PROPOSERS_TEXT).is_err());
 }
+
+/// The kinds of the diagnostics of the lib files with the `copies` form of Order's `minimal` replaced by `form`.
+fn minimal_copies_kinds(form: &str) -> Vec<DiagnosticKind> {
+    let written = "(copies (member (t t))))\n    (maximal";
+    assert!(REGISTRY_TEXT.contains(written));
+    let text = REGISTRY_TEXT.replacen(written, &format!("{form})\n    (maximal"), 1);
+    let error = Registry::parse(&text, PROPOSERS_TEXT).err().expect("the form refuses");
+    error.diagnostics.into_iter().map(|d| d.kind).collect()
+}
+
+#[test]
+fn a_declared_row_that_the_component_does_not_support_refuses() {
+    for form in [
+        "(copies (nope (t t)))",
+        "(copies (member (nope t)))",
+        "(copies (member (t nope)))",
+        "(copies (member (key key)))",
+        "(copies (score (S t)))",
+        "(copies (member (t t) (t t)))",
+        "(copies (either (member (t t)) (probe)))",
+    ] {
+        assert_eq!(minimal_copies_kinds(form), [DiagnosticKind::Check(CheckId::Grammar)], "{form}");
+    }
+}

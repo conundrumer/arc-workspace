@@ -3,7 +3,8 @@
     python engine/arclog-py/export_checks.py <export dir> [--sample N | --all] [--seed S] [--streams <dir>] [--jobs N]
 
 It needs numpy and pandas (and pyarrow for the command), and no `arclog`. `tables_export` calls `check_part` on each part
-it writes, which checks every case, the copy flows' values included. The command checks an existing export: the files of every case, and the
+it writes, which checks every case, the copy flows' values included, and writes a `copies` line for each row of a case's `copies` part: a
+declared row of the registry's `copies` that the engine found a component's output breaks, at a group of an instance it ran in the replay. The command checks an existing export: the files of every case, and the
 values of a sample of N cases (100 by default; `--all` takes every case; `--seed` picks the sample). It prints
 one line per violated invariant, with the count of its violations, the number of its cases and three examples,
 then a total, and exits with status 1 where any violation stands. `--jobs N` sets the number of worker processes that check the cases (every core by default; 1 runs in the one process); the report is the same at every N. A change to this module, or to the engine code that writes the export's files (`engine/arclog/src/eval/flows.rs`, `engine/arclog/src/decode/`), runs `engine/arclog-py/roundtrip_check.py` with an `arclog` built from its tree before its merge.
@@ -122,6 +123,8 @@ def check_case(frames, values, task, orientation_types, size=None):
     if (tabs.output_position >= 0).sum() > 1:
         bad("tables-output-columns", f"tables {list(np.flatnonzero(tabs.output_position >= 0))} give output_position")
     # flows
+    for r in rows_of(frames.get("copies")):
+        bad("copies", r.detail)
     flows = frames.get("flows")
     has_flow = set()
     for r in rows_of(flows):
@@ -435,6 +438,8 @@ def _check_cases(dir, cases, chosen, orientation, part=None):
     wanted = set(cases)
     def read(name, columns=None):
         path = f"{dir}/{name}.parquet" if part is None else f"{dir}/parts/{part:05d}.{name}.parquet"
+        if name == "copies" and not os.path.exists(path):      # an export written before the part existed has none
+            return pd.DataFrame(columns=["task", "case", "detail"])
         if part is None:
             df = pd.read_parquet(path, columns=columns, filters=[("task", "in", tasks)])
         else:       # a part file is small, and a filter on the `task` of an empty one, whatever its type, can fail
@@ -448,7 +453,7 @@ def _check_cases(dir, cases, chosen, orientation, part=None):
         tables, entries = read("tables"), read("entries")
         number_rows(tables, entries)
     split = {"tables": _by_case(tables, "table"), "entries": _by_case(entries, "entry")}
-    for name in ("flows", "assigned", "projections", "projection_rows"):
+    for name in ("flows", "assigned", "projections", "projection_rows", "copies"):
         split[name] = _by_case(read(name), None)
     task_json, found = {}, []
     for key in cases:

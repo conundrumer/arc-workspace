@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use super::column_sources::{Listing, Source};
+use super::column_sources::{input_body, Listing, Source};
 use super::columns::{Columns, Place, Slot};
 use super::registry_columns;
 use super::{form_columns, ColumnPosition, DependencyKind, GraphNodeIndex, ResolvedProgram};
@@ -70,10 +70,11 @@ pub(crate) struct Given {
     /// `RIGID_DET` assembly gives; the entries before are the key's and
     /// `:Pose`. Beyond the columns for any other relation.
     pub(crate) sites_from: usize,
-    /// For an output port of a keyed instance, the declared types of the
-    /// columns other than `key` of each `from-key` input that the instance
-    /// writes no clause for, which the engine fills from the key.
-    pub(crate) filled: Vec<Vec<ColumnType>>,
+    /// For an output port of a keyed instance, each `from-key` input that the
+    /// instance writes no clause for, which the engine fills from the key:
+    /// its index among the component's inputs, and the declared types of its
+    /// columns other than `key`.
+    pub(crate) filled: Vec<(usize, Vec<ColumnType>)>,
 }
 
 /// The columns of `listing`, each with its row positions and labels.
@@ -110,6 +111,24 @@ impl ResolvedProgram {
         Some((relation, columns.row_names().len()))
     }
 
+    /// The columns of `port`, an input of the component of the `INIT` form at
+    /// `form`, as the instance's relation of the input lays them out whether
+    /// the instance writes the input or not: none where `form` is no instance
+    /// of a component of `registry`.
+    pub(crate) fn instance_port_slots(&self, form: &NodePath, port: &crate::registry::Port, registry: &Registry) -> Option<Vec<GivenSlot>> {
+        let NodeRef::Instance(instance) = node_at(NodeRef::Program(self.program.value()), form)? else { return None };
+        let component = registry_columns::component(registry, &instance.component)?;
+        let bindings = form_columns::bindings(instance, component);
+        Some(slots(&form_columns::port_columns(port, &bindings, instance.key.is_some())))
+    }
+
+    /// The path below the `INIT` form at `form` of the body of each clause
+    /// that the instance writes for its input `name`.
+    pub(crate) fn input_bodies(&self, form: &NodePath, name: &crate::program::PortName) -> Vec<NodePath> {
+        let Some(NodeRef::Instance(instance)) = node_at(NodeRef::Program(self.program.value()), form) else { return Vec::new() };
+        written_inputs(instance.key.as_ref(), &instance.inputs).filter(|written| written.name == *name).map(|written| input_body(NodeRef::Instance(instance), written)).collect()
+    }
+
     /// The relations that the forms of `node` give it, with their listings.
     pub(crate) fn given(&self, node: GraphNodeIndex, registry: &Registry) -> Vec<Given> {
         let root = NodeRef::Program(self.program.value());
@@ -134,11 +153,12 @@ impl ResolvedProgram {
                     let keyed = instance.key.is_some();
                     let written: Vec<_> = written_inputs(instance.key.as_ref(), &instance.inputs).collect();
                     let lib = vec![instance.component.clone()];
-                    let filled: Vec<Vec<ColumnType>> = component
+                    let filled: Vec<(usize, Vec<ColumnType>)> = component
                         .inputs
                         .iter()
-                        .filter(|own| keyed && own.from_key && own.port.columns.iter().any(is_key) && written.iter().all(|written| written.name != own.port.name))
-                        .map(|own| own.port.columns.iter().filter(|column| !is_key(column)).map(|column| column.ty.clone()).collect())
+                        .enumerate()
+                        .filter(|(_, own)| keyed && own.from_key && own.port.columns.iter().any(is_key) && written.iter().all(|written| written.name != own.port.name))
+                        .map(|(index, own)| (index, own.port.columns.iter().filter(|column| !is_key(column)).map(|column| column.ty.clone()).collect()))
                         .collect();
                     let mut port = |port: &crate::registry::Port, output: bool| {
                         let filled = if output { filled.clone() } else { Vec::new() };

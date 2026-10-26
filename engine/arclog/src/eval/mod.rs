@@ -28,6 +28,7 @@
 //! driver evaluates.
 
 pub mod cache;
+pub mod copies;
 pub mod determinations;
 mod demonstrated;
 mod driver;
