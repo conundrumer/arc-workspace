@@ -23,19 +23,21 @@ line, on which the command writes that task's record at once, so a replay that
 stops or fails keeps the record of each task that ended. A task whose replay
 panics gets no record, a line in the report, and the exit status 1. The report
 does not depend on the order the tasks end in. Where the `verdicts` binary is
-replaced during the run, the command removes the records the run wrote and
-fails.
+built again in the shared `engine/target` during the run, the run is not
+affected: it runs a private copy of the binary, taken once where the run needs
+it, in a temporary directory that the run removes when it ends or is stopped.
 
 A task's verdicts stand in `train_replay/<stem>.json` beside `gen/`, as a
 record with these fields: `files`, the sha256 of the task's `.arclog` and
 `.arcdata`, of the files of each solver that a `(representative <id>)` line
 names, followed to its end, and of the task file; `sources`, the digest of the
-engine's sources; `binary`, the sha256 of the built `verdicts` binary; and
+engine's sources; `binary`, the sha256 of the `verdicts` binary the run ran; and
 `cases`. A task is fresh, and replays nothing, where its record's `files`
 equal the current ones and either its `sources` equal the current digest or its
-`binary` equals the current binary's digest; the binary is built and hashed
-only where a task fails the source test, and a task fresh by its binary gets
-its `sources` rewritten. A record in the old form, with a `key`, is stale.
+`binary` equals the digest of the current binary's private copy; the binary is
+built, copied and hashed only where a task fails the source test, and a task
+fresh by its binary gets its `sources` rewritten. A record in the old form,
+with a `key`, is stale.
 
 `unreproduced.tsv` is the baseline: a line `<task> <verdict> <count>
 <ticket or ->` (tab-separated) for each task and verdict other than
@@ -52,10 +54,15 @@ import argparse
 import hashlib
 import json
 import re
+import shutil
+import signal
 import subprocess
 import sys
+import tempfile
+import threading
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -121,20 +128,48 @@ def engine_digest() -> str:
 
 
 def tool_binary(name: str) -> Path:
-    """The built `name` binary of `arclog-cli` (`verdicts`, `arclog-cli`)."""
-    return checkout.ROOT / "engine" / "target" / "tool" / name
+    """The built `name` binary of `arclog-cli` (`verdicts`, `arclog-cli`), in the
+    `engine/target` of the main worktree."""
+    return checkout.engine_target() / "tool" / name
 
 
-def hash_binary(name: str = "verdicts") -> str:
-    """The sha256 of the `name` binary as it stands."""
-    return hashlib.sha256(tool_binary(name).read_bytes()).hexdigest()
+def file_digest(path: Path) -> str:
+    """The sha256 of the file `path`."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def binary_digest(name: str = "verdicts") -> str:
-    """The sha256 of the `name` binary, built first."""
-    command = ["cargo", "build", "--profile", "tool", "-q", "-p", "arclog-cli", "--bin", name]
-    subprocess.run(command, cwd=checkout.ROOT / "engine", check=True)
-    return hash_binary(name)
+def stopped_by_exit(signum: int, frame: object) -> None:
+    """The handler of a stop signal: end the run by `SystemExit`, so that `finally` clauses run."""
+    raise SystemExit(128 + signum)
+
+
+@contextmanager
+def private_binaries() -> Iterator[Callable[[str], tuple[Path, str]]]:
+    """Give `copy`, which builds the `name` binary of `arclog-cli` and, on its
+    first call for `name`, copies it to a temporary directory of the run and
+    gives the copy's path and sha256; a later call gives the same pair. A
+    build in `engine/target` after the copy leaves the copy as it was. On
+    leaving, also after a failure, a stop by SIGTERM or an interrupt, the
+    directory is removed."""
+    directory = Path(tempfile.mkdtemp(prefix="arclog-binaries-"))
+    copies: dict[str, tuple[Path, str]] = {}
+
+    def copy(name: str) -> tuple[Path, str]:
+        if name not in copies:
+            command = ["cargo", "build", "--profile", "tool", "-q", "-p", "arclog-cli", "--bin", name]
+            subprocess.run(command, cwd=checkout.ROOT / "engine", env=checkout.cargo_env(), check=True)
+            shutil.copy2(tool_binary(name), directory / name)
+            copies[name] = directory / name, file_digest(directory / name)
+        return copies[name]
+
+    in_main = threading.current_thread() is threading.main_thread()
+    previous = signal.signal(signal.SIGTERM, stopped_by_exit) if in_main else None
+    try:
+        yield copy
+    finally:
+        if in_main:
+            signal.signal(signal.SIGTERM, previous or signal.SIG_DFL)
+        shutil.rmtree(directory, ignore_errors=True)
 
 
 def files_digest(stem: str, gen: Path, tasks: Path) -> str:
@@ -152,7 +187,7 @@ def read_record(records: Path, stem: str) -> dict | None:
 
 
 def stale_tasks(stems: list[str], files: Callable[[str], str], records: Path, sources: str,
-                binary: Callable[[], str] = binary_digest) -> list[str]:
+                binary: Callable[[], str]) -> list[str]:
     """The stems whose record is missing, in the old form, or has other files
     than `files(stem)` gives,
     and neither `sources` nor the digest `binary()` gives. `binary` runs at
@@ -174,13 +209,13 @@ def stale_tasks(stems: list[str], files: Callable[[str], str], records: Path, so
 
 
 def run_verdicts(stems: list[str], gen: Path, tasks: Path,
-                 ended: Callable[[str, list[Case]], None]) -> dict[str, str]:
-    """Run the `verdicts` binary over `stems`. At the end line of a task, call
+                 ended: Callable[[str, list[Case]], None], binary: Path) -> dict[str, str]:
+    """Run the `verdicts` binary at `binary` over `stems`. At the end line of a task, call
     `ended` with the task and its cases, in the order the tasks end in. Give
     the message of each task whose replay panicked, which `ended` does not get.
     Raise where the binary exits nonzero, or exits with a task of `stems`
     neither ended nor panicked; `ended` has run for each task that ended before."""
-    command = [str(tool_binary("verdicts")), str(gen), str(tasks), *stems]
+    command = [str(binary), str(gen), str(tasks), *stems]
     cases: dict[str, list[Case]] = {}
     done: set[str] = set()
     panics: dict[str, str] = {}
@@ -220,35 +255,20 @@ def replay(stems: list[str], out: Path, accept: bool = False) -> int:
     give the exit status."""
     gen, records, tasks = out / "gen", out / "train_replay", TASKS_DIR
     sources = engine_digest()
-    digests: list[str] = []
-
-    def binary() -> str:
-        digests.append(binary_digest())
-        return digests[-1]
-
-    stale = stale_tasks(stems, lambda stem: files_digest(stem, gen, tasks), records, sources, binary)
-    previous = {stem: read_record(records, stem) for stem in stale}
     cases: dict[str, list[Case]] = {}
     panics: dict[str, str] = {}
-    if stale:
-        built = digests[0] if digests else binary_digest()
+    with private_binaries() as copy:
+        stale = stale_tasks(stems, lambda stem: files_digest(stem, gen, tasks), records, sources,
+                            lambda: copy("verdicts")[1])
+        previous = {stem: read_record(records, stem) for stem in stale}
+        if stale:
+            verdicts, built = copy("verdicts")
 
-        def keep(stem: str, stem_cases: list[Case]) -> None:
-            write_record(records, stem, files_digest(stem, gen, tasks), sources, built, stem_cases)
-            cases[stem] = stem_cases
+            def keep(stem: str, stem_cases: list[Case]) -> None:
+                write_record(records, stem, files_digest(stem, gen, tasks), sources, built, stem_cases)
+                cases[stem] = stem_cases
 
-        def drop_if_replaced() -> None:
-            if hash_binary() != built:
-                for stem in cases:
-                    (records / f"{stem}.json").unlink()
-                raise RuntimeError("the verdicts binary was replaced during the run")
-
-        try:
-            panics = run_verdicts(stale, gen, tasks, keep)
-        except BaseException:
-            drop_if_replaced()
-            raise
-        drop_if_replaced()
+            panics = run_verdicts(stale, gen, tasks, keep, verdicts)
     for stem in stems:
         if stem not in cases and stem not in panics:
             cases[stem] = [Case(**c) for c in read_record(records, stem)["cases"]]

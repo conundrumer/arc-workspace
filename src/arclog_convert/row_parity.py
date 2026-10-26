@@ -43,9 +43,11 @@ Souffle solver file the conversion read, of the Souffle texts beside the name ma
 and the forms it instantiates (`lib-forms.dl`), of the Souffle-side code and lib
 (`cli.common.stamp`), of the Souffle binary, of the `parity` package, and of
 the form of the record (`VERSION`); `sources`, the digest of the engine's
-sources; `binary`, the sha256 of the built `arclog-cli` binary; and `lines`,
+sources; `binary`, the sha256 of the `arclog-cli` binary the run ran; and `lines`,
 each `[relation, verdict, detail]`. A task is fresh, and runs nothing, by the
-rule of `train_replay.stale_tasks`.
+rule of `train_replay.stale_tasks`. The run executes a private copy of the
+`arclog-cli` binary (`train_replay.private_binaries`), so a build in the shared
+`engine/target` during the run does not change it.
 
 The stale tasks run on at most `parity.snapshot.RECORDS_WORKERS` processes,
 and at most `engine.pool.pool_size()`, each taking chunks of `CHUNK` tasks:
@@ -146,9 +148,10 @@ def write_record(records: Path, stem: str, files: str, sources: str, binary: str
 
 
 def check_chunk(stems: list[str], corpus: Path, tasks: Path, records: Path, solvers: Path,
-                files: dict[str, str], sources: str, binary: str) -> None:
+                files: dict[str, str], sources: str, binary: str, tool: Path) -> None:
     """Write the record of each of `stems`: the Souffle side of each, then
-    one `arclog-cli row-parity` call on those that gave rows."""
+    one call of the `arclog-cli` binary at `tool`, with the digest `binary`,
+    on those that gave rows."""
     from parity import rerun
     work = Path(tempfile.mkdtemp(dir=records))
     try:
@@ -167,7 +170,7 @@ def check_chunk(stems: list[str], corpus: Path, tasks: Path, records: Path, solv
                 json.dump(got, handle)
             rows.append(stem)
         if rows:
-            command = [str(train_replay.tool_binary(BINARY)), "row-parity", str(corpus), str(tasks), str(work), *rows]
+            command = [str(tool), "row-parity", str(corpus), str(tasks), str(work), *rows]
             done = subprocess.run(command, cwd=checkout.ROOT / "engine", stdout=subprocess.PIPE, text=True,
                                   env=share_env(1))
             if done.returncode not in (0, 1):
@@ -203,26 +206,19 @@ def check(stems: list[str], out: Path, accept: bool = False) -> int:
     os.environ[OUT_ENV] = str(out)
     gen, corpus, records, tasks, solvers = out / "gen", out / CORPUS, out / "row_parity", TASKS_DIR, paths.SOLVERS
     sources = train_replay.engine_digest()
-    digests: list[str] = []
-
-    def binary() -> str:
-        digests.append(train_replay.binary_digest(BINARY))
-        return digests[-1]
-
     files = {stem: files_digest(stem, gen, tasks, solvers) for stem in stems}
-    stale = train_replay.stale_tasks(stems, files.__getitem__, records, sources, binary)
-    previous = {stem: train_replay.read_record(records, stem) for stem in stale}
-    if stale:
-        built = digests[0] if digests else train_replay.binary_digest(BINARY)
-        records.mkdir(parents=True, exist_ok=True)
-        with ProcessPoolExecutor(min(RECORDS_WORKERS, pool_size()), initializer=bound_to_one_cpu,
-                                 max_tasks_per_child=1) as pool:
-            futures = [pool.submit(check_chunk, chunk, corpus, tasks, records, solvers, files, sources, built)
-                       for chunk in chunks(stale, solvers)]
-            for future in futures:
-                future.result()
-        if train_replay.hash_binary(BINARY) != built:
-            raise RuntimeError("the arclog-cli binary was replaced during the run")
+    with train_replay.private_binaries() as copy:
+        stale = train_replay.stale_tasks(stems, files.__getitem__, records, sources, lambda: copy(BINARY)[1])
+        previous = {stem: train_replay.read_record(records, stem) for stem in stale}
+        if stale:
+            tool, built = copy(BINARY)
+            records.mkdir(parents=True, exist_ok=True)
+            with ProcessPoolExecutor(min(RECORDS_WORKERS, pool_size()), initializer=bound_to_one_cpu,
+                                     max_tasks_per_child=1) as pool:
+                futures = [pool.submit(check_chunk, chunk, corpus, tasks, records, solvers, files, sources, built, tool)
+                           for chunk in chunks(stale, solvers)]
+                for future in futures:
+                    future.result()
     lines: dict[str, list[Line]] = {}
     for stem in stems:
         record = train_replay.read_record(records, stem)

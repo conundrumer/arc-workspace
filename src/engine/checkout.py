@@ -1,6 +1,7 @@
 """The checkout's root, the directories under it, and the directories of
 the main worktree that every worktree of the repository shares, which
-every package reads. Each directory is computed from `ROOT` when asked, so
+every package reads (among them `engine_target`, which `cargo_env` gives
+cargo). Each directory is computed from `ROOT` when asked, so
 a checkout that sets `ROOT` moves every one of them. The run cache, the
 solver files and the witness files each move to the directory an
 environment variable names, where it is set. Git runs in a tree through
@@ -368,6 +369,18 @@ def work() -> Path:
     sessions share and cite, a directory per `<domain>/<subject>`, and
     the cards."""
     return _shared(ROOT) / "work"
+
+
+def engine_target() -> Path:
+    """`engine/target/` in the main worktree, which every worktree of the
+    repository builds the engine into and reads its tool binaries from."""
+    return _shared(ROOT) / "engine" / "target"
+
+
+def cargo_env() -> dict[str, str]:
+    """The environment of a cargo command run for the engine: the present
+    environment, with `CARGO_TARGET_DIR` set to `engine_target()`."""
+    return {**os.environ, "CARGO_TARGET_DIR": str(engine_target())}
 
 
 def claude_of(tree: Path) -> Path:

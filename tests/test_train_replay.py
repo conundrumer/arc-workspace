@@ -78,7 +78,7 @@ def test_verify_accept_with_no_train_replay_is_refused_before_any_check(tmp_path
     assert list(tmp_path.iterdir()) == []
 
 
-def test_run_verdicts_hands_over_each_task_that_ended_before_a_failing_exit(tmp_path, monkeypatch):
+def test_run_verdicts_hands_over_each_task_that_ended_before_a_failing_exit(tmp_path):
     script = tmp_path / "verdicts"
     script.write_text("#!/bin/sh\n"
                       "printf 'aaaa0001\\tc1\\t0\\tConsistent\\t-\\t\\n'\n"
@@ -88,10 +88,9 @@ def test_run_verdicts_hands_over_each_task_that_ended_before_a_failing_exit(tmp_
                       "printf 'cccc0003\\tc1\\t0\\tConsistent\\t-\\t\\n'\n"
                       "exit 1\n")
     script.chmod(0o755)
-    monkeypatch.setattr(train_replay, "tool_binary", lambda name: script)
     handed = {}
     with pytest.raises(RuntimeError, match="exited with 1"):
         train_replay.run_verdicts(["aaaa0001", "bbbb0002", "cccc0003"], tmp_path, tmp_path,
-                                  lambda stem, cases: handed.update({stem: cases}))
+                                  lambda stem, cases: handed.update({stem: cases}), script)
     assert {stem: [c.verdict for c in cases] for stem, cases in handed.items()} == {
         "aaaa0001": ["Consistent"], "bbbb0002": ["Fault"]}

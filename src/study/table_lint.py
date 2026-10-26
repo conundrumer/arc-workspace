@@ -214,7 +214,7 @@ def row_counts(corpus: Path, tasks: Path, ids: Sequence[str], rows: tuple[int, P
     over `rows[0]` written under `rows[1]`."""
     over = ["--over", str(rows[0]), "--rows", str(rows[1])] if rows else []
     command = ["cargo", "run", "--profile", "tool", "-q", "-p", "arclog-cli", "--", "row-counts", *over, str(corpus), str(tasks), *ids]
-    done = subprocess.run(command, cwd=checkout.ROOT / "engine", stdout=subprocess.PIPE, text=True)
+    done = subprocess.run(command, cwd=checkout.ROOT / "engine", env=checkout.cargo_env(), stdout=subprocess.PIPE, text=True)
     if done.returncode not in (0, 1):  # 1: a solver faulted, and its line says so
         raise RuntimeError(f"{' '.join(command)} exited with {done.returncode}")
     return done.stdout
