@@ -24,7 +24,10 @@ written as a part. Writes to <out dir>:
   parts/<k>.tasks.txt        one line `<task> <seconds> <key> <checks digest>` per task of the part, the wall seconds of its call to 0.1 s,
                              the task's reuse key and the checks digest (see `--previous`; a bare task id where the writer gives none), written last: a part is whole where it stands
   index.parquet    one row per (table, example, entry): task, case, concept, the table's columns, the entry's columns
-  tables.parquet   one row per table: its columns, and its depth in the dependency graph (0 for an evidence table and each fact
+  tables.parquet   one row per table: its columns, its `relation_name` (the relation as the case program writes it: `&x` for a
+                   declared relation, `&<instance>.<port>` for an output or input of an instance; the fact relation's name for an
+                   evidence table; null for a table that faulted, and, in an export of streams, for each table at a slot), and its
+                   depth in the dependency graph (0 for an evidence table and each fact
                    relation), its candidate keys (`keys`, a list of lists of column indexes: the columns of each `ONE` mark of
                    its clause, none for `(ONE)`, the row's columns of a `CHOOSE`'s chosen relation, and `E` with `P` of
                    `ex_input` and `ex_output`; the registry declares no key of a component's output, so any other table

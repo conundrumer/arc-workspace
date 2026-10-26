@@ -11,10 +11,11 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
-use arclog::decode::columns::{case_columns, CaseColumns, StopColumns};
+use arclog::decode::columns::{case_columns, CaseColumns, StopColumns, TableColumns};
 use arclog::decode::corpus::{read_task_files, replay_units, ReplayProgress, UnitSolver};
 use arclog::decode::replay::Stepped;
 use arclog::decode::{evidence_tables, step_batch, Consistency, Decoder, Points, Table, TokenMask, Projections};
+use arclog::eval::determinations::relation_spelled;
 use arclog::eval::instance::Constructions;
 use arclog::eval::pool::Pool;
 use arclog::harness::{panic_message, run_over_corpus, SolverResult};
@@ -945,7 +946,11 @@ fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &Hash
 /// a list. `values` is the `int32` cells of every row, which the offsets of the
 /// parts index. The first two tables are the evidence tables of the task,
 /// `ex_input` and `ex_output`, at token 0, with point 2 and the relation's
-/// name in `fact`. `tables` also gives each table's `depth` in the dependency graph, its
+/// name in `fact`. `tables` also gives each table's `relation_name`, its relation as the
+/// case program writes it, `&x` for a declared relation and `&<instance>.<port>` for an
+/// output or input of an instance, the fact relation's name for an evidence table, and
+/// `None` for a table that faulted, and, in the `CaseTables` of `stream_tables`, for each
+/// table at a slot; it also gives each table's `depth` in the dependency graph, its
 /// candidate `keys` (lists of column indexes), and `output_position` and `output_color`,
 /// the grid columns of the relation at which the replay's consistency test found them, -1
 /// for each other table; `flows` gives one row for each source of each column of a table.
@@ -1024,8 +1029,26 @@ impl<'a, 'py> Part<'a, 'py> {
     }
 }
 
+/// The `relation_name` of each table: the spelling at the table's slot, the
+/// fact relation's name for an evidence table, and `None` for a table that
+/// faulted, or, where `relations` is `None`, for a table at a slot.
+fn relation_names(tables: &TableColumns, relations: Option<&[String]>) -> Vec<Option<String>> {
+    tables
+        .relation
+        .iter()
+        .zip(&tables.fact)
+        .map(|(&slot, fact)| match (usize::try_from(slot), relations) {
+            (Ok(slot), Some(relations)) => Some(relations.get(slot).unwrap_or_else(|| panic!("the slot {slot} of a table stands in the case program's relations")).clone()),
+            (Ok(_), None) => None,
+            (Err(_), _) => fact.clone(),
+        })
+        .collect()
+}
+
 impl PyCaseTables {
-    fn of(py: Python<'_>, task: String, case: String, concept: bool, projection_cap: u64, columns: &CaseColumns) -> PyResult<Self> {
+    /// `relations` is the spelling of the relation declared at each slot of the
+    /// case program, or `None` for a stream that no case program writes.
+    fn of(py: Python<'_>, task: String, case: String, concept: bool, projection_cap: u64, columns: &CaseColumns, relations: Option<&[String]>) -> PyResult<Self> {
         let dtypes = PyDict::new(py);
         let t = Part::new(py, "tables", &dtypes);
         let c = &columns.tables;
@@ -1036,6 +1059,7 @@ impl PyCaseTables {
         t.ints("sites", &c.sites)?;
         t.ints("relation", &c.relation)?;
         t.list("fact", &c.fact)?;
+        t.list("relation_name", relation_names(c, relations))?;
         t.list("column_names", &c.column_names)?;
         t.list("column_types", &c.column_types)?;
         t.ints("width", &c.width)?;
@@ -1107,11 +1131,12 @@ impl PyCaseTables {
 }
 
 /// A case of a solver whose tables `corpus_tables` builds: its stream's
-/// token ids, or the writer's fault.
+/// token ids and the spelling by `relation_spelled` of the relation declared
+/// at each slot, in slot order, or the writer's fault.
 struct TableCase {
     case: String,
     concept: bool,
-    ids: Result<Vec<(u32, Emitter)>, String>,
+    stream: Result<(Vec<(u32, Emitter)>, Vec<String>), String>,
 }
 
 /// The tables of each case of each solver of `corpus`, on its task in
@@ -1165,8 +1190,8 @@ fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, tas
             Ok(streams) => match read_task_files(Path::new(tasks), id) {
                 Ok(read) => {
                     for case in streams.into_iter().filter(|case| !case.demonstrated) {
-                        let ids = case.stream.map(|stream| token_ids(&stream.tokens, &vocabulary));
-                        cases.push(TableCase { case: case.case, concept: case.concept, ids });
+                        let stream = case.stream.map(|stream| (token_ids(&stream.tokens, &vocabulary), stream.relations.iter().map(relation_spelled).collect()));
+                        cases.push(TableCase { case: case.case, concept: case.concept, stream });
                     }
                     reads.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).insert(id.to_string(), read);
                 }
@@ -1181,7 +1206,7 @@ fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, tas
     let streamed: Vec<(&str, Vec<Vec<(u32, Emitter)>>)> = found
         .iter()
         .filter(|(id, cases, _)| !cases.is_empty() && reads.contains_key(id))
-        .map(|(id, cases, _)| (id.as_str(), cases.iter().filter_map(|case| case.ids.as_ref().ok().cloned()).collect()))
+        .map(|(id, cases, _)| (id.as_str(), cases.iter().filter_map(|case| case.stream.as_ref().ok().map(|(ids, _)| ids.clone())).collect()))
         .collect();
     let solvers: Vec<UnitSolver<'_>> = streamed
         .iter()
@@ -1220,13 +1245,13 @@ fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, tas
         }
         let mut outs = replayed.next().expect("a result for each solver that has cases").into_iter();
         for case in cases {
-            let outcome = match &case.ids {
-                Ok(_) => outs.next().expect("a result for each stream").and_then(|out| out),
+            let outcome = match &case.stream {
+                Ok((_, relations)) => outs.next().expect("a result for each stream").and_then(|out| out).map(|out| (out, relations)),
                 Err(fault) => Err(fault.clone()),
             };
             match outcome {
-                Ok((columns, ended)) => {
-                    tables.push(PyCaseTables::of(py, task.clone(), case.case.clone(), case.concept, settings.projection_cap, &columns)?);
+                Ok(((columns, ended), relations)) => {
+                    tables.push(PyCaseTables::of(py, task.clone(), case.case.clone(), case.concept, settings.projection_cap, &columns, Some(relations))?);
                     if let Some(at) = ended.filter(|at| matches!(at.kind, PyConsistencyKind::Stopped)) {
                         faults.push(at.line(task, &case.case));
                     }
@@ -1382,7 +1407,7 @@ fn stream_tables(py: Python<'_>, task: &str, tasks: &str, streams: Vec<(Vec<u32>
     for (case, out) in names.iter().zip(outs) {
         match out {
             Ok((columns, at, fault)) => {
-                tables.push(PyCaseTables::of(py, task.to_string(), case.clone(), false, settings.projection_cap, &columns)?);
+                tables.push(PyCaseTables::of(py, task.to_string(), case.clone(), false, settings.projection_cap, &columns, None)?);
                 ended.push(match at {
                     Some(at) => at.line(task, case),
                     None => format!("{task} {case}: ended none"),
