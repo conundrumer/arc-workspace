@@ -60,6 +60,9 @@ pub(crate) enum EngineRows {
     /// Two models of the case give the relation different rows, so Souffle's
     /// one set of rows has nothing to compare with.
     DifferBetweenModels,
+    /// The reason that the name gives no one relation of the engine to
+    /// compare.
+    Skip(String),
     /// A text for rows the engine cannot give.
     Fault(String),
 }
@@ -70,6 +73,9 @@ pub(crate) enum EngineModels {
     /// writes for it, with the models that give the same rows once; one
     /// entry where every model gives the same rows.
     Models(Vec<Vec<Vec<EngineLeaf>>>),
+    /// The reason that the name gives no one relation of the engine to
+    /// compare.
+    Skip(String),
     /// A text for rows the engine cannot give.
     Fault(String),
 }
@@ -94,30 +100,55 @@ pub(crate) enum Projection<'a> {
     Positions(&'a [Column]),
 }
 
+/// The reason that a name which several nodes of the graph hold, one per
+/// `DEMO_RULE`, is not compared: Souffle's rows are the union over the
+/// rules, and the engine's are those of one node.
+const SEVERAL_FORMS: &str = "several forms of the program derive the name";
+
 /// The relation that `name` gives in `program`: a relation a clause derives
 /// or a parameter stores, or, for `&<instance>.<port>`, an output of that
-/// instance, else its input of that port.
-fn named_relation(program: &arclog::check::CheckedProgram, name: &str) -> Option<GraphRelation> {
+/// instance, else its input of that port; the reason for a skip where more
+/// than one node holds the name.
+fn named_relation(program: &arclog::check::CheckedProgram, name: &str) -> Option<Result<GraphRelation, String>> {
     let declared = ProgramRelation::Declared(RelationName(DeclaredName::Written(name.into())));
-    relation_of(program, &declared).or_else(|| {
+    let relation = relation_of(program, &declared).or_else(|| {
         let (instance, port) = name.split_once('.')?;
         let instance = InstanceName(DeclaredName::Written(instance.into()));
         let port = PortName(port.into());
         let output = OutputName { of: OutputOwner::Instance(instance.clone()), path: [OutputStep::Port(port.clone())].into() };
         relation_of(program, &ProgramRelation::Output(output)).or_else(|| input_relation(program, &instance, &port))
-    })
+    })?;
+    let nodes = &program.program.graph.nodes;
+    let holders = nodes.iter().filter(|node| node.kind == nodes[relation.node.0 as usize].kind).count();
+    Some(if holders > 1 { Err(SEVERAL_FORMS.to_owned()) } else { Ok(relation) })
 }
 
-/// The names of the row positions of the relation that `name` declares in
-/// the program of `evaluation` (`column_names`); `None` where the program
-/// derives no relation of that name, and a text where its columns have no
+/// One row position of the engine's relation, by its name.
+pub(crate) struct EngineColumn {
+    pub(crate) name: String,
+    /// The column's type is a `Pose`, whose value depends on the frame, which
+    /// no read observes (`docs/arclog/rigid.md`).
+    pub(crate) pose: bool,
+}
+
+/// The row positions of the relation that `name` declares in the program of
+/// `evaluation`, each by its name (`column_names`); `None` where the program
+/// derives no relation of that name, [`EngineModels::Skip`] where several
+/// nodes derive it, and a [`EngineModels::Fault`] where its columns have no
 /// types.
-pub(crate) fn engine_columns(evaluation: &Evaluation<'_>, name: &str) -> Option<Result<Vec<String>, String>> {
+pub(crate) fn engine_columns(evaluation: &Evaluation<'_>, name: &str) -> Option<Result<Vec<EngineColumn>, EngineModels>> {
     let program = evaluation.program;
-    let relation = named_relation(program, name)?;
+    let relation = match named_relation(program, name)? {
+        Ok(relation) => relation,
+        Err(reason) => return Some(Err(EngineModels::Skip(reason))),
+    };
     Some(match program.types.columns(&relation) {
-        Some(types) => Ok(column_names(evaluation, &relation, types.len())),
-        None => Err("rows whose columns have no types".to_owned()),
+        Some(types) => Ok(column_names(evaluation, &relation, types.len())
+            .into_iter()
+            .zip(types)
+            .map(|(name, ty)| EngineColumn { name, pose: matches!(ty, ValueType::Pose(_)) })
+            .collect()),
+        None => Err(EngineModels::Fault("rows whose columns have no types".to_owned())),
     })
 }
 
@@ -129,6 +160,7 @@ pub(crate) fn engine_columns(evaluation: &Evaluation<'_>, name: &str) -> Option<
 /// result is [`EngineRows::DifferBetweenModels`].
 pub(crate) fn engine_rows(evaluation: &Evaluation<'_>, name: &str, example: Example, constants: &BTreeMap<String, i64>, projection: Projection<'_>) -> Option<EngineRows> {
     Some(match models_of(evaluation, name, example, constants, projection, 2)? {
+        EngineModels::Skip(reason) => EngineRows::Skip(reason),
         EngineModels::Fault(text) => EngineRows::Fault(text),
         EngineModels::Models(mut models) if models.len() == 1 => EngineRows::Rows(models.remove(0)),
         EngineModels::Models(_) => EngineRows::DifferBetweenModels,
@@ -152,7 +184,10 @@ fn models_of(
     at_most: usize,
 ) -> Option<EngineModels> {
     let program = evaluation.program;
-    let relation = named_relation(program, name)?;
+    let relation = match named_relation(program, name)? {
+        Ok(relation) => relation,
+        Err(reason) => return Some(EngineModels::Skip(reason)),
+    };
     let on = (program.program.side(relation.node) == Side::PerInput).then_some(example);
     let Some(types) = program.types.columns(&relation) else { return Some(EngineModels::Fault("rows whose columns have no types".to_owned())) };
     let mut models: Vec<Vec<Vec<EngineLeaf>>> = Vec::new();

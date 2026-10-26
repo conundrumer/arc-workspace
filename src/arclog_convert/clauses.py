@@ -420,7 +420,9 @@ class ClauseWriter:
 
     def reorder(self, lits, bound: set[str]):
         """The literals with each test after the literals that bind its
-        labels: a comparison or a negation waits for its last binder."""
+        labels: a comparison or a negation waits for its last binder; a fact
+        atom waits for an algebra atom that makes labels the fact atom reads,
+        so the `*` stands on the algebra atom."""
         def vs(t) -> set[str]:
             out: set[str] = set()
             collect_vars([AtomLiteral(Atom(RelationName((), "_"), (t,), 0), False)], out)
@@ -525,8 +527,27 @@ class ClauseWriter:
         orderable = not any(algebra_modes(x) is not None or isinstance(x, Disjunction) for x in rem)
         if not orderable and self.depth == 0:
             self.stuck = True
-        out, pending = [], []
+        def is_fact(l) -> bool:
+            return isinstance(l, AtomLiteral) and not l.negated and self.c.resolve(l.atom.relation, self.scope, self.sub)[2] == "fact"
+
+        def made_by_waiting(i: int, B: set[str]) -> set[str]:
+            """The labels of the fact atom `lits[i]` that an algebra atom
+            waiting for the other literals makes, which no other literal binds."""
+            made: set[str] = set()
+            for j, m in enumerate(lits):
+                if j == i or algebra_modes(m) is None or ready(m, B):
+                    continue
+                others = B.union(*(binds(k) for n, k in enumerate(lits) if n not in (i, j)))
+                if ready(m, others):
+                    made |= (binds(lits[i]) & binds(m)) - others
+            return made
+
+        out, pending, after = [], [], {}
         for i, l in enumerate(lits):
+            if orderable and is_fact(l) and (waits_for := made_by_waiting(i, B)):
+                after[id(l)] = waits_for
+                pending.append(l)
+                continue
             if orderable and (algebra_modes(l) is not None or isinstance(l, Disjunction)):
                 # an algebra atom or an `OR` waits for the other literals' labels, never its own
                 others = set(bound) | unbound
@@ -546,7 +567,7 @@ class ClauseWriter:
             while moved:
                 moved = False
                 for p_ in list(pending):
-                    if ready(p_, B):
+                    if ready(p_, B) and after.get(id(p_), set()) <= B:
                         out.append(p_)
                         B |= binds(p_)
                         pending.remove(p_)

@@ -482,6 +482,7 @@ class InstancesMixin:
                     if g and g[0] == shared:
                         residual[id(u)] = [l for i, l in enumerate(u.body) if i not in g[1]]
                         reads |= g[2].reads
+                        branches |= g[2].branches
             elif gens:
                 uniq = []
                 for u in gens:

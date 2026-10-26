@@ -316,6 +316,10 @@ fn first_difference(pairs: &[PairRows<'_>]) -> Comparison {
                     comparison.not_compared.push(format!("{name} on {pair} is not compared: its rows differ between the case's models"));
                     continue;
                 }
+                EngineRows::Skip(reason) => {
+                    comparison.not_compared.push(format!("{name} on {pair} is not compared: {reason}"));
+                    continue;
+                }
                 EngineRows::Fault(text) => {
                     comparison.difference = differs(format!("the engine gives {text}"));
                     return comparison;

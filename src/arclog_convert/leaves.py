@@ -527,8 +527,9 @@ class Converter:
             prog = got
             self.demo_insts.add(key)
             self.demo_rule_types.add(inst.type_args[1].name)
+            pair = [a.name for a in inst.type_args[:2]]
             self.demo_rule_records |= {t.name for t in prog.types if isinstance(t, RecordType)
-                                       and any(f.type.name == inst.type_args[1].name for f in t.fields)}
+                                       and [f.type.name for f in t.fields] == pair}
         self.select_ctors = {k.name for sc_, n in self.demo_select
                              for t in [self.find_type(self.insts[(sc_, n)].type_args[1].name, ())]
                              if isinstance(t, AdtType) for k in t.constructors}

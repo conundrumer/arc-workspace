@@ -8,15 +8,18 @@
 //! `differ`, with the first case and pair, both counts of rows and one row
 //! that only one side holds; `fault`, with the engine's text; `skip`, with
 //! the reason the file gives (`parity.rerun`), for a relation that holds no
-//! row the solver derives; or `uncompared`, with the reason the file gives or
+//! row the solver derives, and "several forms of the program derive the
+//! name" for a name that more than one node of the program holds, one per
+//! `DEMO_RULE`; or `uncompared`, with the reason the file gives or
 //! "no case's program has a relation of that name", for any other relation
 //! the check does not compare. A relation that more than one case derives
 //! has one line, the first `differ`, `fault` or `uncompared` of the cases
 //! and pairs, else the first `equal`. A column of the file that the engine's
 //! relation lacks is a `fault` of the relation, which names each such column.
-//! A column that a pair's rows lack, and a leaf of the file that is
-//! `unresolved`, an Ident with no one source, are left out of both sides, and
-//! the line names each, an unresolved leaf with its reason. A `fault` is also
+//! A column that a pair's rows lack, a leaf of the file that is
+//! `unresolved`, an Ident with no one source, and a column of the engine's
+//! relation whose type is a `Pose`, are left out of both sides, and the line
+//! names each, an unresolved leaf with its reason. A `fault` is also
 //! the line of a relation whose Souffle rows hold a minted id that the
 //! minting relation's rows on the pair do not hold at the row's key, and of
 //! one whose engine Ident at a minted leaf is a value read from a file. A
@@ -332,14 +335,15 @@ fn engine_side(
     let checked = |engine, left_out, souffle, by_open| Checked { name: name.to_owned(), souffle, by_open, engine, left_out, fault: fault.clone() };
     let names = match engine_columns(evaluation, name) {
         None => return checked(None, Vec::new(), BTreeSet::new(), Vec::new()),
-        Some(Err(text)) => return checked(Some(EngineModels::Fault(text)), Vec::new(), BTreeSet::new(), Vec::new()),
+        Some(Err(unread)) => return checked(Some(unread), Vec::new(), BTreeSet::new(), Vec::new()),
         Some(Ok(names)) => names,
     };
-    let FileRelation { columns, minted, left_out, rows, by_open } = file;
+    let FileRelation { columns, minted, mut left_out, rows, by_open } = file;
     let mut kept = Vec::new();
     let mut lacking = Vec::new();
     for (entry, column) in columns.iter().enumerate() {
-        match names.iter().position(|n| n == column) {
+        match names.iter().position(|n| n.name == *column) {
+            Some(position) if names[position].pose => left_out.push(format!("{column} (a Pose, whose value depends on the frame)")),
             Some(position) => kept.push((entry, Column { position, minted: minted[entry] })),
             None => lacking.push(column.clone()),
         }
@@ -499,6 +503,7 @@ pub(crate) fn compare_pair(scope: &str, relations: &[Checked]) -> Vec<(String, V
         let note = if left_out.is_empty() { String::new() } else { format!("; columns left out of both sides: {}", left_out.join(", ")) };
         let verdict = match engine {
             None => continue,
+            Some(EngineModels::Skip(reason)) => Verdict::Skip(reason.clone()),
             Some(EngineModels::Fault(text)) => Verdict::Fault(format!("{scope}: {text}")),
             Some(EngineModels::Models(_)) if fault.is_some() => Verdict::Fault(format!("{scope}: {}", fault.as_deref().unwrap_or_default())),
             Some(EngineModels::Models(models)) => {
