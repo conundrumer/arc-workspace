@@ -141,7 +141,7 @@ outline.node([H, Col], P) :- in(P, Col), slide(H, Col, _).
 // An outline as long on one axis as on the other.
 .decl square_box(h: HeadingSource, col: Color, b: Box)
 square_box(H, Col, B) :-
-    outline.box([H, Col], B), in(P, Col),
+    outline.box([H, Col], B), in(P, Col), box_corner(P, B, _),  // a corner cell gives the frame
     axis_elem(A), perp(A, A2), box_extent(B, P, A, N), box_extent(B, P, A2, N).
 
 // The interior color of each square outline.

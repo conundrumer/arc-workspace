@@ -30,7 +30,8 @@ bbox.cell(Col, P) :- in(P, Col), !bg(Col).
 // Candidate sides: the input's extents and every shorter one.
 .decl cand_side(k: number)
 cand_side(K) :-
-    in(P, _), axis_elem(A),
+    in(P, _), diag_dir_elem(C), corner_dist(P, C, 0),  // a corner cell of the input
+    axis_elem(A),
     ( axis_dim(P, A, K)    // an extent of the input
     ; sub_extent(P, A, K)  // a shorter one
     ).

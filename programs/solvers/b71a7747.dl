@@ -70,7 +70,9 @@ part_box.cell([K, Id], P) :- pair_parts.label(K, P, Id).
 
 .decl part_extent(k: ColorPair, n: number)
 part_extent(K, N) :-
-    part_box.box([K, Id], B), pair_parts.label(K, P, Id), axis_elem(A), box_extent(B, P, A, N).
+    part_box.box([K, Id], B), pair_parts.label(K, P, Id),
+    diag_dir_elem(D), box_corner(P, B, D),                                // a corner cell of the part's box
+    axis_elem(A), box_extent(B, P, A, N).
 
 // A pair whose parts are not equal solid squares: a part leaves a cell of its
 // box out, or two extents differ.

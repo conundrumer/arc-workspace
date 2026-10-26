@@ -133,13 +133,14 @@ impl_choice([Sd, F, E, O, C]) :-
 parse.cell(Sd, P, Col) :- side(Sd, _), in(P, Col).
 parse.edge(Sd, S) :- side(Sd, S).
 
-// Cells p and q stand in one column, a line across the palette row.
-.decl same_column(sd: PaletteSide, p: Position, q: Position)
-same_column(Sd, P, Q) :- side(Sd, S), axis_of(S, A), in(P, _), in(Q, _), same_line(A, P, Q).
+// Cell p stands in column l, a line across the palette row, as an axis-only
+// position.
+.decl column_of(sd: PaletteSide, p: Position, l: Position)
+column_of(Sd, P, L) :- side(Sd, S), axis_of(S, A), in(P, _), split(P, A, _, L).
 
-// The palette color of the column cell p stands in.
-.decl column_color(sd: PaletteSide, p: Position, col: Color)
-column_color(Sd, P, Col) :- same_column(Sd, P, Q), side(Sd, S), dist(Q, S, 0), in(Q, Col).
+// The palette color of column l.
+.decl column_color(sd: PaletteSide, l: Position, col: Color)
+column_color(Sd, L, Col) :- column_of(Sd, Q, L), side(Sd, S), dist(Q, S, 0), in(Q, Col).
 
 .decl stalk(st: Stalk, p: Position, col: Color)
 
@@ -152,7 +153,8 @@ stalk_end.item([Sd, F], P) :-
 
 // The cells of the stalk's column.
 .decl stalk_column(st: Stalk, p: Position)
-stalk_column([Sd, F], P) :- stalk_end.value([Sd, F], T), same_column(Sd, P, T).
+stalk_column([Sd, F], P) :-
+    stalk_end.value([Sd, F], T), column_of(Sd, T, L), column_of(Sd, P, L).
 
 // The cell in the stalk's column at the row the mountain's top stands in.
 .decl base(st: Stalk, e: ColumnExtent, t: Position)
@@ -174,9 +176,10 @@ slope([Sd, F], E, O, Q) :-
 // The mountain: each column's cells from its slope cell away from the palette.
 .decl fill(st: Stalk, e: ColumnExtent, o: Origin, p: Position, col: Color)
 fill([Sd, F], E, O, P, Col) :-
-    slope([Sd, F], E, O, Q), same_column(Sd, P, Q), side(Sd, S), !nearer(S, P, Q),
+    slope([Sd, F], E, O, Q), column_of(Sd, Q, L), column_of(Sd, P, L),
+    side(Sd, S), !nearer(S, P, Q),
     !cut([Sd, F], E, P), !stalk_column([Sd, F], P),
-    column_color(Sd, P, Col).
+    column_color(Sd, L, Col).
 
 .decl stalk_paint(st: Stalk, c: StalkPaint, p: Position, col: Color)
 
@@ -249,7 +252,7 @@ stalk_paint(St, $KeepStalkColor(), P, Col) :- stalk(St, P, Col).
 
 // --- $StalkTakesPaletteColor ---
 stalk_paint([Sd, F], $StalkTakesPaletteColor(), P, Col) :-
-    stalk([Sd, F], P, C0), column_color(Sd, P, C1),
+    stalk([Sd, F], P, C0), column_of(Sd, P, L), column_color(Sd, L, C1),
     ( !params.background(C1), Col = C1
     ; params.background(C1), Col = C0
     ).

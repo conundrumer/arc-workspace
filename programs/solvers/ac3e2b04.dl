@@ -186,7 +186,7 @@ impl_choice([Sh, Mk, Cr, Ce, Sz, Ls, Ms]) :-
 
 // @claim marks
 .init ring_color = Unanimous<MarkSite, Color>
-ring_color.item([Sz, P], Col) :- around(Sz, P, Q), in(Q, Col).
+ring_color.item([Sz, P], Col) :- whole(Sz, P), around(Sz, P, Q), in(Q, Col).
 
 // The square around p, inside the grid, is all col.
 .decl ring(sz: MarkSize, p: Position, col: Color)

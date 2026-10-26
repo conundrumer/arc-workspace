@@ -51,7 +51,7 @@ covered(Id, P) :- bbox.box(Id, B), in(P, _), inside(P, B).
 
 // Each square's side.
 .decl side(id: Ident, n: number)
-side(Id, N) :- bbox.box(Id, B), in(P, _), box_extent(B, P, _, N).
+side(Id, N) :- bbox.box(Id, B), squares.label(_, P, Id), box_extent(B, P, _, N).
 
 // The largest squares are the blocks; the rest are the pieces.
 .init size = Extremes<Unit>
@@ -82,16 +82,13 @@ pair(Id_b, Id_p, $Count()) :-
     region_count.tally(Id_b, N), region_count.tally(Id_p, N).
 
 // --- $Rank ---
-.decl fewer(id: Ident, id2: Ident)
-fewer(Id, Id2) :- region_count.tally(Id, N), region_count.tally(Id2, N2), N < N2.
-
 .init block_rank = Order<Unit, Ident>
 block_rank.elem($U(), Id) :- block(Id).
-block_rank.before($U(), Id, Id2) :- fewer(Id, Id2).
+block_rank.score($U(), Id, N) :- block(Id), region_count.tally(Id, N).
 
 .init piece_rank = Order<Unit, Ident>
 piece_rank.elem($U(), Id) :- piece(Id).
-piece_rank.before($U(), Id, Id2) :- fewer(Id, Id2).
+piece_rank.score($U(), Id, N) :- piece(Id), region_count.tally(Id, N).
 
 pair(Id_b, Id_p, $Rank()) :-
     ( block_rank.rank($U(), Id_b, R), piece_rank.rank($U(), Id_p, R)             // from the fewest

@@ -62,47 +62,56 @@ seat_offset(H, O, D, R) :-
     face(H, D, P), O != H,                        // a host face to meet it
     neighbor(P, D, Q), relative(N, Q, R).         // the cell just off the face
 
-// The rests probed: each offered seat and its one-step slides along the
-// contact.
-.decl rest(host: Ident, o: Ident, d: Dir, r: Offset)
-rest(H, O, D, R) :- seat_offset(H, O, D, R).
-rest(H, O, D, R2) :-
-    seat_offset(H, O, D, R), perp_dir(D, D_slide),  // the way along the face
-    neighbor(R, D_slide, R2).
-
-// A facing cell's rest target holding no host cell — where the rest hangs
-// over nothing.
-.decl gap(host: Ident, o: Ident, d: Dir, r: Offset, q: Position)
-gap(H, O, D, R, Q2) :-
-    rest(H, O, D, R),
+// A facing cell's rest target holding no host cell, at an offered seat:
+// the seat hangs over nothing there.
+.decl gap(host: Ident, o: Ident, d: Dir, r: Offset)
+gap(H, O, D, R) :-
+    seat_offset(H, O, D, R),
     opposite(D, Dn), face(O, Dn, N), compose(N, R, Q),  // a facing cell
     neighbor(Q, Dn, Q2), !obj_cell(H, Q2).              // rests on nothing
 
-// The rest catches: some facing cell hangs over a gap inside the host's face.
-.decl catch(host: Ident, o: Ident, d: Dir, r: Offset)
-catch(H, O, D, R) :-
-    gap(H, O, D, R, Q2),
-    axis_of(D, A_stack), face(H, D, P_f),
-    same_line(A_stack, P_f, Q2).  // inside the host's face
-
-// The rest collides: a piece cell lands on a host cell.
+// The seat collides: a piece cell lands on a host cell.
 .decl sunk(host: Ident, o: Ident, d: Dir, r: Offset)
 sunk(H, O, D, R) :-
-    rest(H, O, D, R),
+    seat_offset(H, O, D, R),
     obj_cell(O, P), compose(P, R, Q), obj_cell(H, Q).
 
 // Flush: every facing cell rests on the host, from outside it.
 .decl seat_flush(host: Ident, o: Ident, d: Dir, r: Offset)
 seat_flush(H, O, D, R) :-
-    seat_offset(H, O, D, R), !gap(H, O, D, R, _), !sunk(H, O, D, R).
+    seat_offset(H, O, D, R), !gap(H, O, D, R), !sunk(H, O, D, R).
 
-// A rest pins only when the faces interlock: one step along the contact
-// either catches or collides. A rest whose slide merely runs off the face's
+// A flush seat and its one-step slides along the contact.
+.decl slide(host: Ident, o: Ident, d: Dir, r: Offset, r2: Offset)
+slide(H, O, D, R, R2) :-
+    seat_flush(H, O, D, R), perp_dir(D, D_slide), neighbor(R, D_slide, R2).
+
+// The slide catches: some facing cell hangs over a gap inside the host's
+// face.
+// @ignore: common-subexpr — the gap test runs at the slides of flush seats,
+//  and flushness reads the same test at the seats
+.decl catch(host: Ident, o: Ident, d: Dir, r: Offset)
+catch(H, O, D, R2) :-
+    slide(H, O, D, _, R2),
+    opposite(D, Dn), face(O, Dn, N), compose(N, R2, Q),  // a facing cell
+    neighbor(Q, Dn, Q2), !obj_cell(H, Q2),               // rests on nothing
+    axis_of(D, A_stack), face(H, D, P_f),
+    same_line(A_stack, P_f, Q2).                         // inside the host's face
+
+// The slide collides: a piece cell lands on a host cell.
+// @ignore: common-subexpr — the collision test runs at the slides of flush
+//  seats, and flushness reads the same test at the seats
+.decl slide_sunk(host: Ident, o: Ident, d: Dir, r: Offset)
+slide_sunk(H, O, D, R2) :-
+    slide(H, O, D, _, R2),
+    obj_cell(O, P), compose(P, R2, Q), obj_cell(H, Q).
+
+// A seat pins only when the faces interlock: one step along the contact
+// either catches or collides. A seat whose slide merely runs off the face's
 // end still slides, and is no seat.
 .decl loose(host: Ident, o: Ident, d: Dir, r: Offset)
 loose(H, O, D, R) :-
-    seat_flush(H, O, D, R), perp_dir(D, D_slide),
-    neighbor(R, D_slide, R2), !catch(H, O, D, R2), !sunk(H, O, D, R2).
+    slide(H, O, D, R, R2), !catch(H, O, D, R2), !slide_sunk(H, O, D, R2).
 
 .decl seat(host: Ident, o: Ident, r: Offset)
 seat(H, O, R) :- seat_flush(H, O, D, R), !loose(H, O, D, R).

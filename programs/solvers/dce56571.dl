@@ -28,15 +28,17 @@ center_line(P, K) :-
     perp(A, A2), axis_of(D2, A2), dist_pair(P, D2, Kc, Kc),   // centered across
     axis_of(D, A), dist_pair(P, D, K, K2), K <= K2.           // nearer axis edge
 
-// Centrality order over the line's cells, from the center outward.
+// Order over the line's cells by distance to the nearer axis edge. A cell's
+// rank_desc counts the cells farther from the edges: the cells more central
+// than it.
 .init centrality = Order<Unit, Position>
 centrality.elem($U(), P) :- center_line(P, _).
-centrality.before($U(), Q, P) :- center_line(Q, Kq), center_line(P, K), Kq > K.
+centrality.score($U(), P, K) :- center_line(P, K).
 
 // The cells fewer than the ink count of cells are more central than. They
 // number other than the ink count where no centered band has that extent.
 .decl band_cell(p: Position)
-band_cell(P) :- ink_count.tally($U(), N), centrality.rank($U(), P, M), M < N.
+band_cell(P) :- ink_count.tally($U(), N), centrality.rank_desc($U(), P, M), M < N.
 
 .init band_size = Tally<Unit, Position>
 band_size.item($U(), P) :- band_cell(P).

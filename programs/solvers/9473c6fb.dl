@@ -46,18 +46,14 @@
     .decl cand(key: Key, d: Dir)
     cand(K, D) :- corner(K, Diag), dir_of(Diag, _, D).
 
-    // Two marks to compare by their distance from edge d.
-    .decl pair(key: Key, d: Dir, p: Position, q: Position)
-    pair(K, D, P, Q) :- cand(K, D), mark(K, P), mark(K, Q).
-
     // The marks by distance from edge d, nearest first.
     .init order = Order<DirKey, Position>
     order.elem([K, D], P) :- cand(K, D), mark(K, P).
-    order.before([K, D], P, Q) :- pair(K, D, P, Q), nearer(D, P, Q).
+    order.score([K, D], P, N) :- cand(K, D), mark(K, P), dist(P, D, N).
 
     // Two marks at one distance from edge d: that distance cannot order them.
     .decl tie(key: Key, d: Dir)
-    tie(K, D) :- pair(K, D, P, Q), P != Q, same_dist(D, P, Q).
+    tie(K, D) :- cand(K, D), mark(K, P), mark(K, Q), P != Q, same_dist(D, P, Q).
 
     // A mark on edge d and a mark on the opposite edge.
     .decl spans(key: Key, d: Dir)

@@ -133,17 +133,19 @@ lex.corner([C, A], C) :- scan(C, A).
 lex.axis([C, A], A) :- scan(C, A).
 lex.cell([C, A], P) :- scan(C, A), corner_cell(_, _, P).
 
-// b has the larger area.
-.decl larger(b: Box, b2: Box)
-larger(B, B2) :- area.tally(B, N), area.tally(B2, N2), N > N2.
+// The rectangles in claim order, before the scan breaks a tie: the larger
+// first, by the measures the overlap reading compares.
+// @claim greedy-rect-fill
+.init by_size = Order<Overlap, Box>
 
-// b and b2 have one area.
-.decl same_area(b: Box, b2: Box)
-same_area(B, B2) :- area.tally(B, N), area.tally(B2, N).
-
-// b claims before b2 whatever the scan.
-.decl prior(ov: Overlap, b: Box, b2: Box)
-prior($LargestFirst(), B, B2) :- larger(B, B2).
+// The rectangles in scan order: by the cell at the scan's corner, then by the
+// cell at the opposite corner.
+// @claim greedy-rect-fill
+.init scan_order = Order<ScanKey, Box>
+scan_order.elem([C, A], B) :- scan(C, A), rect(B).
+scan_order.score([C, A], B, R) :- scan(C, A), corner_cell(B, C, P), lex.rank([C, A], P, R).
+scan_order.secondary_score([C, A], B, R) :-
+    scan(C, A), diag_opposite(C, C2), corner_cell(B, C2, Q), lex.rank([C, A], Q, R).
 
 // @claim greedy-rect-fill
 .init claim_order = Order<Run, Box>
@@ -166,6 +168,11 @@ claim.take(Ru, B, B) :- claim_order.elem(Ru, B), claim.untaken(Ru, B, B).
 .decl claimed_cell(ch: Choice, c: DiagDir, a: Axis, p: Position)
 claimed_cell(Ch, C, A, P) :- claim.take([Ch, C, A], B, B), rect_cell(B, P).
 
+// --- $LargestFirst ---
+
+by_size.elem($LargestFirst(), B) :- rect(B).
+by_size.score($LargestFirst(), B, N) :- area.tally(B, N).
+
 // --- concept, $ThicknessTwo, $AxisFirst ---
 
 // The cases whose claim takes out every rectangle it overlaps.
@@ -174,26 +181,12 @@ greedy([$LargestFirst(), $AnyRect()]).
 greedy([$LargestFirst(), $ThicknessTwo()]).
 greedy([$AxisFirst(), $AnyRect()]).
 
-// b scans before b2: its cell at the scan's corner comes first, or the
-// two share that cell and its cell at the opposite corner comes first.
-.decl scan_before(c: DiagDir, a: Axis, b: Box, b2: Box)
-scan_before(C, A, B, B2) :-
-    corner_cell(B, C, P), corner_cell(B2, C, P2),
-    ( lex.before([C, A], P, P2)
-    ; P = P2, diag_opposite(C, C2), corner_cell(B, C2, Q), corner_cell(B2, C2, Q2),
-      lex.before([C, A], Q, Q2)
-    ).
-
-// b and b2 claim in the scan's order.
-.decl level(ov: Overlap, b: Box, b2: Box)
-level($LargestFirst(), B, B2) :- same_area(B, B2).
-
+// The size order claims first, and the scan decides between two of one size.
 claim_order.elem([[Ov, Q], C, A], B) :- greedy([Ov, Q]), scan(C, A), cand(Q, B).
-claim_order.before([[Ov, Q], C, A], B, B2) :-
-    greedy([Ov, Q]), scan(C, A),
-    ( prior(Ov, B, B2)
-    ; level(Ov, B, B2), scan_before(C, A, B, B2)
-    ).
+claim_order.score([[Ov, Q], C, A], B, R) :-
+    greedy([Ov, Q]), claim_order.elem([[Ov, Q], C, A], B), by_size.rank_desc(Ov, B, R).
+claim_order.secondary_score([Ch, C, A], B, R) :-
+    greedy(Ch), claim_order.elem([Ch, C, A], B), scan_order.rank([C, A], B, R).
 
 blocks([Ch, C, A], B, B2) :-
     greedy(Ch), claim_order.elem([Ch, C, A], B), overlap(B, B2).
@@ -203,14 +196,11 @@ blocks([Ch, C, A], B, B2) :-
 .decl axis_len(b: Box, n: number)
 axis_len(B, N) :- params.first_axis(A), rect_cell(B, P), box_extent(B, P, A, N).
 
-// The longer rectangle along the first axis claims first, and area
-// decides between two of one length.
-prior($AxisFirst(), B, B2) :-
-    axis_len(B, N), axis_len(B2, N2),
-    ( N > N2
-    ; N = N2, larger(B, B2)
-    ).
-level($AxisFirst(), B, B2) :- axis_len(B, N), axis_len(B2, N), same_area(B, B2).
+// The longer rectangle along the first axis comes first, and area decides
+// between two of one length.
+by_size.elem($AxisFirst(), B) :- rect(B).
+by_size.score($AxisFirst(), B, N) :- axis_len(B, N).
+by_size.secondary_score($AxisFirst(), B, N) :- area.tally(B, N).
 
 // --- $AxisFirst & $ThicknessTwo ---
 
@@ -225,12 +215,12 @@ along_cell(P) :-
 // cell at c it fills.
 claim_order.elem([[$AxisFirst(), $ThicknessTwo()], C, A], B) :-
     params.first_axis(A), strip(B, A), corner_cell(B, C, P), !along_cell(P).
-claim_order.before([[$AxisFirst(), $ThicknessTwo()], C, A], B, B2) :-
-    params.first_axis(A), strip(B, A), strip(B2, A),
-    corner_cell(B, C, P), corner_cell(B2, C, P2),
-    ( lex.before([C, A], P, P2)
-    ; P = P2, larger(B, B2)
-    ).
+claim_order.score([[$AxisFirst(), $ThicknessTwo()], C, A], B, R) :-
+    claim_order.elem([[$AxisFirst(), $ThicknessTwo()], C, A], B),
+    corner_cell(B, C, P), lex.rank([C, A], P, R).
+claim_order.secondary_score([[$AxisFirst(), $ThicknessTwo()], C, A], B, R) :-
+    claim_order.elem([[$AxisFirst(), $ThicknessTwo()], C, A], B),
+    by_size.rank_desc($AxisFirst(), B, R).    // strips of one length: the larger first
 blocks([[$AxisFirst(), $ThicknessTwo()], C, A], B, B2) :-
     claim_order.elem([[$AxisFirst(), $ThicknessTwo()], C, A], B), rect_cell(B, P),
     corner_cell(B2, C, P).

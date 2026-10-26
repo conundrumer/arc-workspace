@@ -197,11 +197,15 @@ open($Background(), P) :- in(P, Col), params.background(Col).
 open($PassNonWall(), P) :- in(P, Col), !params.wall_color(Col), !params.endpoint_color(Col).
 
 // --- $Steps ---
-// A step to a neighbor, from a cell the walk may cross or from a.
+// A step to a neighbor, from a, or from a cell the walk may cross entered
+// from a or from another such cell, onto a cell the walk may cross or onto b.
 link([[$Steps(), Pa], A, B], [X, D], [Y, D2]) :-
-    way([$Steps(), Pa]), pair(A, B),
-    ( open(Pa, X) ; X = A ), dir_elem(D), dir_elem(D2), neighbor(X, D2, Y),
-    ( open(Pa, Y) ; end(Y) ).
+    way([$Steps(), Pa]), pair(A, B), dir_elem(D),
+    ( X = A
+    ; open(Pa, X), opposite(D, D_back), neighbor(X, D_back, P),   // the cell behind
+      ( open(Pa, P) ; P = A )
+    ),
+    dir_elem(D2), neighbor(X, D2, Y), ( open(Pa, Y) ; Y = B ).
 
 // --- $FewestTurns ---
 // The straight runs a walk may take.

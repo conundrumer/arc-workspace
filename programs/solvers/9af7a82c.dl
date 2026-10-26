@@ -59,9 +59,6 @@
 
 .init params = Params
 
-.decl fill_choice(f: Fill)
-fill_choice($Excluded()). fill_choice($Included()).
-
 // The colors the chart counts.
 .decl counted(f: Fill, col: Color)
 
@@ -81,13 +78,13 @@ counted($Included(), Col) :- in(_, Col).
 .init cover = Tally<Color, Position>
 cover.item(Col, P) :- in(P, Col).
 
-// The counted colors in descending order of their count.
+// The counted colors, ordered by their count, the smallest first.
 // @claim chart distinct
 .init colors = Order<Fill, Color>
 colors.elem(F, Col) :- counted(F, Col).
-colors.before(F, A, B) :- fill_choice(F), cover.tally(A, N1), cover.tally(B, N2), N1 > N2.
+colors.score(F, Col, N) :- counted(F, Col), cover.tally(Col, N).
 
-bars([$PerColor(), F], R, Col, N) :- colors.rank(F, Col, R), cover.tally(Col, N).
+bars([$PerColor(), F], R, Col, N) :- colors.rank_desc(F, Col, R), cover.tally(Col, N).
 
 // --- $PerRegion ---
 
@@ -123,15 +120,15 @@ region($Corner(), Col, P, Id) :- regions8.label(Col, P, Id).
 .init size = Tally<Piece, Position>
 size.item([A, Id], P) :- region(A, _, P, Id).
 
-// The counted regions in descending order of their size.
+// The counted regions, ordered by their size, the smallest first.
 // @claim chart distinct
 .init pieces = Order<Choice, Ident>
 pieces.elem([$PerRegion(A), F], Id) :- counted(F, Col), region(A, Col, _, Id).
-pieces.before([$PerRegion(A), F], Id1, Id2) :-
-    fill_choice(F), size.tally([A, Id1], N1), size.tally([A, Id2], N2), N1 > N2.
+pieces.score([$PerRegion(A), F], Id, N) :-
+    counted(F, Col), region(A, Col, _, Id), size.tally([A, Id], N).
 
 bars([$PerRegion(A), F], R, Col, N) :-
-    pieces.rank([$PerRegion(A), F], Id, R), size.tally([A, Id], N), region(A, Col, _, Id).
+    pieces.rank_desc([$PerRegion(A), F], Id, R), size.tally([A, Id], N), region(A, Col, _, Id).
 
 // --- $PerColor, $PerRegion ---
 

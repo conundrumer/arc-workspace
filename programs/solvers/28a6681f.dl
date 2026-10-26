@@ -44,6 +44,9 @@ up(U) :- params.gravity(D), opposite(D, U).
 // the cell r its water lands on.
 .type Entry = [y: Position, c: Ident, r: Position]
 
+// A level, cup c at row y, under one pour sense.
+.type SenseLevel = [s: Sense, y: Position, c: Ident]
+
 // The direction the water pours in first, per sense.
 .decl pour(s: Sense, d: Dir)
 pour(S, L) :- params.pour_sense(S), params.gravity(D), turn(S, D, L).
@@ -164,17 +167,22 @@ first_cup(S, Yc, C1, C2) :-
     ; L1 = L2, C1 != C2, mouth(Yc, C1, M1), mouth(Yc, C2, M2), nearer(L1, M2, M1)
     ).
 
-// Cell q fills no later than cell p: q lies in p's cup at p's row, or in
-// a cup that fills before p's.
-.decl upto(s: Sense, p: Position, q: Position)
-upto(S, P, Q) :-
-    entry(S, Y, C, _), row(P, Y), cup.label(Y, P, C), cup.label(Y, Q, C).
-upto(S, P, Q) :-
-    first_cup(S, Y, C1, C2), cup.label(Y, Q, C1), cup.label(Y, P, C2).
+// The cup of open cell p at p's own row; the cells of one level fill
+// together.
+.decl level(p: Position, y: Position, c: Ident)
+level(P, Y, C) :- row(P, Y), cup.label(Y, P, C).
+
+// Cell q fills no later than the cells of level c at row y: q lies in
+// that cup, or in a cup that fills before a cup holding it.
+.decl upto(s: Sense, y: Position, c: Ident, q: Position)
+upto(S, Y, C, Q) :- entry(S, Y, C, _), level(_, Y, C), cup.label(Y, Q, C).
+upto(S, Y, C, Q) :-
+    first_cup(S, Yc, C1, C2), cup.label(Yc, Q, C1),
+    cup.label(Yc, P, C2), level(P, Y, C).
 
 // @claim settle
-.init filled = Tally<SenseCell, Position>
-filled.item([S, P], Q) :- upto(S, P, Q).
+.init filled = Tally<SenseLevel, Position>
+filled.item([S, Y, C], Q) :- upto(S, Y, C, Q).
 
 // @claim settle
 .init amount = Tally<Unit, Position>
@@ -184,13 +192,14 @@ amount.domain($U()) :- in(_, _).
 // The settled grid under each pour sense.
 .decl settled(s: Sense, p: Position, col: Color)
 settled(S, P, Col) :-
-    in(P, C), params.pour_sense(S),
-    ( wall(P), Col = C                                              // a wall keeps its color
-    ; filled.tally([S, P], N1), amount.tally($U(), N), N1 <= N,        // within the water's amount
-      params.water(Col)
-    ; upto(S, P, Q), !upto(S, Q, P), filled.tally([S, Q], N1), // a cell before it fills the amount
-      amount.tally($U(), N), N1 >= N, params.bg(Col)
-    ; open(P), !upto(S, P, P), params.bg(Col)                    // out of the water's reach
+    in(P, C0), params.pour_sense(S),
+    ( wall(P), Col = C0                                             // a wall keeps its color
+    ; level(P, Y, C), filled.tally([S, Y, C], N1), amount.tally($U(), N), N1 <= N,
+      params.water(Col)                                             // within the water's amount
+    ; level(P, Y, C), upto(S, Y, C, Q), level(Q, Yq, Cq), !upto(S, Yq, Cq, P),
+      filled.tally([S, Yq, Cq], N1), amount.tally($U(), N), N1 >= N,
+      params.bg(Col)                                                // a cell before it fills the amount
+    ; level(P, Y, C), !upto(S, Y, C, P), params.bg(Col)             // out of the water's reach
     ).
 
 

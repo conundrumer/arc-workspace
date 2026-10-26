@@ -41,8 +41,7 @@ mark(P, Col) :- in(P, Col), !params.bg(Col), !params.frame(Col).
 // The run, ordered from the marker nearest the corner.
 .init marks = Order<Unit, Position>
 marks.elem($U(), P) :- mark(P, _).
-marks.before($U(), P, Q) :-
-    mark(P, _), mark(Q, _), params.corner(D), nearer(D, P, Q).
+marks.score($U(), P, K) :- mark(P, _), params.corner(D), corner_dist(P, D, K).
 
 // The cells the outline holds.
 .decl held(p: Position, ch: Choice)

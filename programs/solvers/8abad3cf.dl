@@ -52,7 +52,7 @@ square_cell(Col, P_inner) :- side(Col, K), square.cell(K, P_inner).
 
 .init row = Order<Unit, Color>
 row.elem($U(), Col) :- side(Col, _).
-row.before($U(), Col, Col2) :- side(Col, K), side(Col2, K2), K < K2.
+row.score($U(), Col, K) :- side(Col, K).  // the smaller side comes first
 
 // --- the places ---
 
@@ -75,8 +75,9 @@ span.extent(Col, A, N) :-
 .init lead = Tally<Side, Line>
 lead.item([D, Col], [Col2, P]) :-
     params.pack_dir(D0), span.cell(Col2, _, P),               // a line of square col2
-    ( D = D0, row.before($U(), Col2, Col)                     // outward toward the pack edge
-    ; opposite(D0, D), row.before($U(), Col, Col2) ).         // outward toward the far edge
+    row.rank($U(), Col2, R2), row.rank($U(), Col, R),         // places in the row
+    ( D = D0, R2 < R                                          // outward toward the pack edge
+    ; opposite(D0, D), R < R2 ).                              // outward toward the far edge
 lead.domain([D, Col]) :- side(Col, _), params.pack_dir(D0), axis_of(D0, A), axis_of(D, A).
 
 // A square's box measured from an edge of the row's axis: inset by the

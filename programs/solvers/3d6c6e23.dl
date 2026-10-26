@@ -36,10 +36,9 @@ line_of(P, L) :- in(P, _), params.gravity(D), axis_of(D, A), split(P, A, _, L).
 .decl pixel(p: Position, l: Position, col: Color)
 pixel(P, L, Col) :- in(P, Col), !params.bg(Col), line_of(P, L).
 
-// One pixel farther from the floor than another of its line.
-.decl above(l: Position, p1: Position, p2: Position)
-above(L, P1, P2) :-
-    pixel(P1, L, _), pixel(P2, L, _), params.gravity(D), nearer(D, P2, P1).
+// A pixel's distance from the top of its line.
+.decl height(p: Position, k: number)
+height(P, K) :- pixel(P, _, _), params.gravity(D), opposite(D, D_up), dist(P, D_up, K).
 
 // Any cell of a line that holds pixels can be the apex.
 .decl cand(l: Position, a: Position)
@@ -87,7 +86,7 @@ fill.elem([L, Ch], P) :- pixel(P, L, _), impl_choice(Ch).
 
 // --- $Fall ---
 
-fill.before([L, $Fall()], P1, P2) :- above(L, P1, P2).
+fill.score([L, $Fall()], P, K) :- pixel(P, L, _), height(P, K).
 
 // --- $Sink ---
 
@@ -96,11 +95,17 @@ fill.before([L, $Fall()], P1, P2) :- above(L, P1, P2).
 .init group = Tally<Group, Position>
 group.item([L, Col], P) :- pixel(P, L, Col).
 
-fill.before([L, $Sink()], P1, P2) :-
-    pixel(P1, L, C1), pixel(P2, L, C2),
-    ( group.tally([L, C1], N1), group.tally([L, C2], N2), N1 < N2  // the smaller group first
-    ; C1 = C2, above(L, P1, P2)                                    // within a group, the fall order
-    ).
+// The smaller group first.
+fill.score([L, $Sink()], P, N) :- pixel(P, L, Col), group.tally([L, Col], N).
+
+// A group whose size another group of its line shares: no order stands
+// between the two groups, nor within either.
+.decl size_tie(g: Group)
+size_tie([L, C1]) :- group.tally([L, C1], N), group.tally([L, C2], N), C1 != C2.
+
+// Within a group alone at its size, the fall order.
+fill.secondary_score([L, $Sink()], P, K) :-
+    pixel(P, L, Col), !size_tie([L, Col]), height(P, K).
 
 // --- $Fall, $Sink ---
 

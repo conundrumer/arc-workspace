@@ -17,17 +17,24 @@ boundary(D, K) :-
     in(P, C1), dir_elem(D), dist(P, D, K),      // cell on line k from d
     neighbor(P, D, P2), in(P2, C2), C1 != C2.   // differs from the cell toward d
 
-.decl edge_dist(p: Position, d: Dir, k: number)
-edge_dist(P, D, K) :- in(P, _), dir_elem(D), dist(P, D, K).
+// A line of the grid along either axis, axis-only.
+.decl line(l: Position)
+line(L) :- in(P, _), axis_elem(A), split(P, A, L, _).
+
+.decl line_dist(l: Position, d: Dir, k: number)
+line_dist(L, D, K) :- line(L), dir_elem(D), dist(L, D, K).
 
 // Band index of a distance from edge d: the boundaries at or inside it.
 .type EdgeDist = [d: Dir, k: number]
 .init bands = Tally<EdgeDist, number>
 bands.item([D, K], K2) :- bands.domain([D, K]), boundary(D, K2), K2 <= K.
-bands.domain([D, K]) :- edge_dist(_, D, K).
+bands.domain([D, K]) :- line_dist(_, D, K).
 
-// A cell's place in the output: its band index from each of the four edges.
+// A line's place in the output: its band index from each of the four edges.
 .init place = DirPack<Position>
-place.edge(P, D, I) :- edge_dist(P, D, K), bands.tally([D, K], I).
+place.edge(L, D, I) :- line_dist(L, D, K), bands.tally([D, K], I).
 
-out(P_out, Col) :- in(P, Col), place.box(P, P_out).
+// A cell's place in the output: the places of its two lines composed.
+out(P_out, Col) :-
+    in(P, Col), axis_elem(A), split(P, A, L1, L2),   // the cell's two lines
+    place.box(L1, B1), place.box(L2, B2), compose(B1, B2, P_out).

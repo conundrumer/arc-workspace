@@ -326,11 +326,16 @@ out(P, Col, [$Laid(O, M), Ri, Li]) :-
     .decl marked(e: Example, p: Position)
     marked(E, P) :- ex_out(E, P, Col), !params.background(Col).
 
-    // The marked cells in the order the outputs show: p comes before q where
-    // an output marks p and not q.
+    // The outputs that leave each marked cell unmarked.
+    .init unmarked = Tally<Position, Example>
+    unmarked.domain(P) :- marked(_, P).
+    unmarked.item(P, E) :- marked(_, P), ex_out(E, P, Col), params.background(Col).
+
+    // The marked cells in the order the outputs show: a cell that fewer
+    // outputs leave unmarked comes earlier.
     .init shown = Order<Unit, Position>
     shown.elem($U(), P) :- marked(_, P).
-    shown.before($U(), P, Q) :- marked(E, P), marked(_, Q), !marked(E, Q).
+    shown.score($U(), P, N) :- unmarked.tally(P, N).
 
     .decl fill_order(p: Position, r: number)
     fill_order(P, R) :- shown.rank($U(), P, R).

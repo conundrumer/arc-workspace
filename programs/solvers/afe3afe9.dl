@@ -139,9 +139,11 @@ impl_choice([S, P, C, A]) :-
 .comp Parse<Key> {
     .decl grid(key: Key, p: Position, col: Color)
 
-    // The grid's lines on each axis.
+    // The grid's lines on each axis, each read off an edge across it.
     .decl line(key: Key, a: Axis, l: Position)
-    line(Ky, A, L) :- grid(Ky, P, _), axis_elem(A), split(P, A, L, _).
+    line(Ky, A, L) :-
+        grid(Ky, P, _), axis_elem(A), perp(A, A2), axis_of(D, A2), dist(P, D, 0),
+        split(P, A, L, _).
 
     // --- $TurnFromLine ---
     // An edge with a cell off the line color.
@@ -288,9 +290,9 @@ axes(Sd, Pc, Ap, Ac) :- pack(Sd, Pc, D), axis_of(D, Ap), perp(Ap, Ac).
 // @claim pack-lines
 .init along_order = Order<LineKey, Box>
 along_order.elem([Sd, Pc, S], B) :- axes(Sd, Pc, _, Ac), unit_line(Pc, B, Ac, S).
-along_order.before(K, B1, B2) :-
-    along_order.elem(K, B1), along_order.elem(K, B2), K = [Sd, Pc, _],
-    pack(Sd, Pc, D), nearer(D, B1, B2).
+along_order.score(K, B, N) :-
+    along_order.elem(K, B), K = [Sd, Pc, _],
+    pack(Sd, Pc, D), dist(B, D, N).                                  // distance to the pack edge
 
 // The slot lines across the pack axis that the output holds.
 .decl cross(k: CrossKey, s: Box)

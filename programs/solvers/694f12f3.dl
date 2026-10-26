@@ -76,7 +76,7 @@ interior_choice($Box()). interior_choice($Erode()).
     // The size order, ascending; each anchor reads it from its own end.
     .init order = Order<Key, Ident>
     order.elem(Ky, Id) :- size.tally([Ky, Id], _).
-    order.before(Ky, Id, Id2) :- size.tally([Ky, Id], N), size.tally([Ky, Id2], N2), N < N2.
+    order.score(Ky, Id, N) :- size.tally([Ky, Id], N).
 }
 
 .init parse = Parse<Unit>

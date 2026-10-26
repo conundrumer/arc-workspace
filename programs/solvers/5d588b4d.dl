@@ -75,10 +75,8 @@ item(Ch, [K, L]) :- run_slots.tally([Ch, K], L), run_cell([Ch, K2], _), K2 > K.
 
 .init seq = Order<Choice, Item>
 seq.elem(Ch, I) :- item(Ch, I).
-seq.before(Ch, [K1, J1], [K2, J2]) :-
-    item(Ch, [K1, J1]), item(Ch, [K2, J2]),
-    ( K1 < K2                 // an earlier run
-    ; K1 = K2, J1 < J2 ).     // an earlier slot of the same run
+seq.score(Ch, [K, J], K) :- item(Ch, [K, J]).              // by run
+seq.secondary_score(Ch, [K, J], J) :- item(Ch, [K, J]).    // then by slot within the run
 
 // --- the wrap ---
 

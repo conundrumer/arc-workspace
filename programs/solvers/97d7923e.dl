@@ -75,6 +75,9 @@ bar_cell(Col, P_cap, P) :-
 .init bar_ord = Order<CaseColor, Position>
 bar_ord.elem([Col, Ch], P_cap) :- bar(Col, P_cap, _, _), impl_choice(Ch).
 
+// The bar a header takes: the one of the rank it reaches.
+.decl taken(key: CaseColor, p_cap: Position)
+
 // --- $Size ---
 
 // A bar: its cap color and the cap nearer the header edge.
@@ -83,22 +86,24 @@ bar_ord.elem([Col, Ch], P_cap) :- bar(Col, P_cap, _, _), impl_choice(Ch).
 .init bar_size = Tally<Bar, Position>
 bar_size.item([Col, P_cap], P) :- bar_cell(Col, P_cap, P).
 
-bar_ord.before([Col, $Size()], P_cap, P_cap2) :-
-    bar_size.tally([Col, P_cap], N), bar_size.tally([Col, P_cap2], N2), N > N2.
+bar_ord.score([Col, $Size()], P_cap, N) :- bar_size.tally([Col, P_cap], N).
+
+// The longest first.
+taken([Col, $Size()], P_cap) :- reach(Col, K), bar_ord.rank_desc([Col, $Size()], P_cap, K).
 
 // --- $Head ---
 
-bar_ord.before([Col, $Head()], P_cap, P_cap2) :-
-    bar(Col, P_cap, _, _), bar(Col, P_cap2, _, _),
-    params.head_dir(D), nearer(D, P_cap, P_cap2).
+bar_ord.score([Col, $Head()], P_cap, K) :-
+    bar(Col, P_cap, _, _), params.head_dir(D), dist(P_cap, D, K).
+
+// The nearest first.
+taken([Col, $Head()], P_cap) :- reach(Col, K), bar_ord.rank([Col, $Head()], P_cap, K).
 
 // --- output ---
 
 // The run a header paints.
 .decl fill(p: Position, col: Color, ch: Choice)
-fill(P, Col, Ch) :-
-    reach(Col, K), bar_ord.rank([Col, Ch], P_cap, K),   // the bar of the rank it reaches
-    bar_cell(Col, P_cap, P).                            // that bar's run
+fill(P, Col, Ch) :- taken([Col, Ch], P_cap), bar_cell(Col, P_cap, P).
 
 out(P, Col, Ch) :- fill(P, Col, Ch).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !fill(P, _, Ch).

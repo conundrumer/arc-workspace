@@ -36,7 +36,7 @@ piece(P_across, P, Col) :-
 // The displacements toward the fall edge that the frame admits.
 .decl shift(v: Offset)
 shift(V) :-
-    in(P, _), params.fall(D),
+    piece(_, P, _), params.fall(D),
     axis_of(D, A), sub_extent(P, A, K), jump_offset(D, K, V).
 
 // A displacement a line cannot take.

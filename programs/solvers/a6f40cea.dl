@@ -105,6 +105,9 @@
 // An outline's perimeter, walked in one sense.
 .type Loop = [o: Piece, s: Sense]
 
+// A perimeter cell of an outline under a period.
+.type Orbit = [o: Piece, n: number, p: Position]
+
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
@@ -229,15 +232,14 @@ checker.edge(P, Q) :-
     ( Q = P
     ; diag_dir_elem(D), neighbor(P, D, Q), in(Q, _) ).
 
-// Cell p shares a checkerboard class with outline o's visible cells of
-// color col.
+// Outline o has a visible cell of color col in checkerboard class c.
 // @claim parity-color
-.decl phase(o: Piece, col: Color, p: Position)
-phase(O, Col, P) :- outline(O, P0), in(P0, Col), checker.id(P0, C), checker.id(P, C).
+.decl phase(o: Piece, col: Color, c: Ident)
+phase(O, Col, C) :- outline(O, P0), in(P0, Col), checker.id(P0, C).
 
 // --- $Parity ---
 paint(B, G, $Complete($Parity()), P, Col) :-
-    perimeter([B, G, Oid], P), phase([B, G, Oid], Col, P).
+    perimeter([B, G, Oid], P), checker.id(P, C), phase([B, G, Oid], Col, C).
 
 // --- $PerimeterPeriod ---
 
@@ -254,27 +256,34 @@ loop.succ([O, S], P, Q) :-
     turn(S, D, D2), neighbor(P, D2, Q), perimeter(O, Q).
 loop.step([O, S], N) :- perimeter_len.tally(O, N), sense_elem(S).
 
-// The class of a visible cell P0 under a period of n steps: the cells a
-// whole number of periods on. A period that fits divides the perimeter
+// The periods outline o may have. A period that fits divides the perimeter
 // length, or the classes of the period and the length's common divisor, a
 // shorter period, would be the same.
-.decl orbit(l: Loop, n: number, p0: Position, p: Position)
-orbit([O, S], N, P0, P) :-
-    outline(O, P0), loop.walk([O, S], P0, N, _), N > 0,     // a period
-    perimeter_len.tally(O, Len), stride(Len, N, 0, _, 0),   // that divides the length
-    loop.walk([O, S], P0, M, P), stride(M, N, 0, _, 0).     // whole periods on
+.decl period_cand(o: Piece, n: number)
+period_cand(O, N) :-
+    loop.walk([O, _], _, N, _), N > 0,                      // a period
+    perimeter_len.tally(O, Len), stride(Len, N, 0, _, 0).   // that divides the length
+
+// The class of each perimeter cell under a period of n steps: the cells a
+// whole number of periods on.
+.init orbit = Canon<Orbit>
+orbit.edge([O, N, P], [O, N, Q]) :- period_cand(O, N), loop.walk([O, _], P, N, Q).
+
+// Outline o has a visible cell of color col in class c under period n.
+.decl orbit_color(o: Piece, n: number, c: Ident, col: Color)
+orbit_color(O, N, C, Col) :- outline(O, P), orbit.id([O, N, P], C), in(P, Col).
 
 // A class under period n holds two colors.
 .decl clash(o: Piece, n: number)
-clash(O, N) :- orbit([O, _], N, P0, P), outline(O, P), in(P0, Col), in(P, Col2), Col != Col2.
+clash(O, N) :- orbit_color(O, N, C, Col), orbit_color(O, N, C, Col2), Col != Col2.
 
 // @claim parity-color
 .init period = Extremes<Piece>
-period.cand(O, N) :- orbit([O, _], N, _, _), !clash(O, N).
+period.cand(O, N) :- period_cand(O, N), !clash(O, N).
 
 paint(B, G, $Complete($PerimeterPeriod()), P, Col) :-
     period.low([B, G, Oid], N),
-    orbit([[B, G, Oid], _], N, P0, P), in(P0, Col).
+    orbit.id([[B, G, Oid], N, P], C), orbit_color([B, G, Oid], N, C, Col).
 
 // --- $ContactCorner ---
 
@@ -309,4 +318,4 @@ contact_cell([B, G, Oid], P) :-
     axis_of(D, A), hole(B, P), same_line(A, P, Q).
 
 paint(B, G, $ContactCorner(), P, Col) :-
-    contact_cell([B, G, Oid], P), phase([B, G, Oid], Col, P).
+    contact_cell([B, G, Oid], P), checker.id(P, C), phase([B, G, Oid], Col, C).

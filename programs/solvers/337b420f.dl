@@ -110,23 +110,26 @@ piece_cell(Dc, Id, P_frame) :-
 .decl slide(dc: DecChoice, d: Dir, k: number)
 slide(Dc, D, K) :- frame(Dc, P), dir_elem(D), dist(P, D, K).
 
-// The frame cells an arrangement covers: piece M slid, every other at rest.
-.decl covered(dc: DecChoice, m: Ident, d: Dir, k: number, id: Ident, p_frame: Position)
-covered(Dc, M, D, K, Id, Q) :-
-    piece(Dc, M, _), slide(Dc, D, K),      // an arrangement
-    piece_cell(Dc, Id, P),                 // a piece's cell
-    ( Id != M, Q = P                       // at rest
-    ; Id = M, jump(P, D, K, Q)             // slid
-    ).
+// The frame cells piece M covers when it slides K cells toward D.
+.decl slid(dc: DecChoice, m: Ident, d: Dir, k: number, p_frame: Position)
+slid(Dc, M, D, K, Q) :-
+    piece(Dc, M, _), slide(Dc, D, K), piece_cell(Dc, M, P), jump(P, D, K, Q).
 
-// The piece holding a frame cell, absent where two pieces meet.
+// The piece holding a frame cell where two pieces may meet, absent where
+// they do: under the slid piece, or under two pieces at rest.
 .init holder = Unanimous<Site, Ident>
-holder.item([Dc, M, D, K, P], Id) :- covered(Dc, M, D, K, Id, P).
+holder.item([Dc, M, D, K, P], M) :- slid(Dc, M, D, K, P).
+holder.item([Dc, M, D, K, P], Id) :-
+    slid(Dc, M, D, K, P), piece_cell(Dc, Id, P), Id != M.     // a piece at rest under the slid one
+holder.item([Dc, M, D, K, P], Id) :-
+    piece(Dc, M, _), slide(Dc, D, K),                         // an arrangement
+    piece_cell(Dc, Id, P), piece_cell(Dc, Id2, P),            // two pieces on one cell
+    Id != Id2, Id != M, Id2 != M.                             // both at rest
 
 // An arrangement fails where two pieces meet, or a piece leaves the frame.
 .decl clash(dc: DecChoice, m: Ident, d: Dir, k: number)
 clash(Dc, M, D, K) :- holder.clash([Dc, M, D, K, _]).
-clash(Dc, M, D, K) :- covered(Dc, M, D, K, _, P), !frame(Dc, P).
+clash(Dc, M, D, K) :- slid(Dc, M, D, K, P), !frame(Dc, P).
 
 .decl fits(dc: DecChoice, m: Ident, d: Dir, k: number)
 fits(Dc, M, D, K) :- piece(Dc, M, _), slide(Dc, D, K), !clash(Dc, M, D, K).
@@ -161,7 +164,11 @@ mover(Dc, M, $Yield()) :- smallest.low(Dc, M, _).   // the fewest cells
 
 .decl paint(p_frame: Position, col: Color, ch: Choice)
 paint(P, Col, [Dc, Mv]) :-
-    chosen(Dc, M, D, K, Mv), holder.value([Dc, M, D, K, P], Id), piece(Dc, Id, Col).
+    chosen(Dc, M, D, K, Mv),
+    ( slid(Dc, M, D, K, P), Id = M                // the slid piece
+    ; piece_cell(Dc, Id, P), Id != M              // a piece at rest
+    ),
+    piece(Dc, Id, Col).
 
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Bg, [Dc, Mv]) :-

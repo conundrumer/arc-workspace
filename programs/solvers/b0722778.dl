@@ -94,8 +94,7 @@ placed(P, Bd, Pc) :-
 // @claim bands
 .init order = Order<Unit, Position>
 order.elem($U(), Pc) :- tile_column(_, Pc).
-order.before($U(), Pc1, Pc2) :-
-    order.elem($U(), Pc1), order.elem($U(), Pc2), params.read_from(D), nearer(D, Pc1, Pc2).
+order.score($U(), Pc, K) :- order.elem($U(), Pc), params.read_from(D), dist(Pc, D, K).
 
 // Each tile, keyed by its band and its column glued.
 // @claim bands

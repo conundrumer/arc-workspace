@@ -99,7 +99,7 @@ out(P, Col, $Recolor($ListCycle(O)), V) :-
 // --- $FirstSeen ---
 
 order.elem([$FirstSeen(), [nil]], Col) :- in(_, Col).
-order.before([$FirstSeen(), [nil]], A, B) :- appear.low(A, I), appear.low(B, I2), I < I2.
+order.score([$FirstSeen(), [nil]], Col, I) :- appear.low(Col, I).
 
 // --- $CountOrder ---
 
@@ -107,8 +107,13 @@ order.before([$FirstSeen(), [nil]], A, B) :- appear.low(A, I), appear.low(B, I2)
 .init size = Tally<Color, Position>
 size.item(Col, P) :- in(P, Col).
 
+// The place of each cell count among the counts, from the highest.
+// @claim cycle-colors
+.init size_rank = Ordinal<Unit>
+size_rank.idx_set($U(), N) :- size.tally(_, N).
+
 order.elem([$CountOrder(), [nil]], Col) :- in(_, Col).
-order.before([$CountOrder(), [nil]], A, B) :- size.tally(A, N), size.tally(B, N2), N > N2.
+order.score([$CountOrder(), [nil]], Col, R) :- size.tally(Col, N), size_rank.rank_desc($U(), N, R).
 
 // --- $ScanOrder ---
 
@@ -124,8 +129,7 @@ scan.axis([D, A], A) :- params.scan(D, A).
 scan_first.cand([S, Col], R) :- in(P, Col), scan.rank(S, P, R).
 
 order.elem([$ScanOrder(), [S]], Col) :- scan_first.low([S, Col], _).
-order.before([$ScanOrder(), [S]], A, B) :-
-    scan_first.low([S, A], R), scan_first.low([S, B], R2), R < R2.
+order.score([$ScanOrder(), [S]], Col, R) :- scan_first.low([S, Col], R).
 
 // --- $EnclosingColor, $RingShift ---
 

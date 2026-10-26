@@ -41,9 +41,11 @@ line_cell(A, L, X, Col, Ch) :- region(P, Col, Ch), axis_elem(A), split(P, A, L, 
 .decl line(a: Axis, p_line: Position, ch: Choice)
 line(A, L, Ch) :- line_cell(A, L, _, _, Ch).
 
-// Two lines that hold different colors at one place across.
+// Neighboring lines that hold different colors at one place across.
 .decl differ(a: Axis, p_line: Position, p_line2: Position, ch: Choice)
-differ(A, L, L2, Ch) :- line_cell(A, L, X, Col, Ch), line_cell(A, L2, X, Col2, Ch), Col != Col2.
+differ(A, L, L2, Ch) :-
+    line_cell(A, L, X, Col, Ch), axis_of(D, A), neighbor(L, D, L2),
+    line_cell(A, L2, X, Col2, Ch), Col != Col2.
 
 // Neighboring lines that agree everywhere: no block boundary between them.
 .decl uncut(ch: Choice, a: Axis, l: Position, l2: Position)

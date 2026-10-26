@@ -49,7 +49,7 @@ inked_line(Line) :- ink(P, _), cell_split(P, _, Line, _).
 
 .init lines = Order<Unit, Position>
 lines.elem($U(), Line) :- inked_line(Line).
-lines.before($U(), L1, L2) :- inked_line(L1), inked_line(L2), anchor_dir(D), nearer(D, L1, L2).
+lines.score($U(), L, K) :- inked_line(L), anchor_dir(D), dist(L, D, K).   // distance to the anchor edge
 
 // The line the others are read against.
 .decl anchor_line(p_line: Position)

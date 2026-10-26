@@ -25,12 +25,17 @@ line_axis(A) :-
     line_cell(P), line_cell(Q), P != Q,         // two distinct cells of the line
     axis_elem(A), same_line(A, P, Q).           // both on one line of A
 
+// The line's place across axis a: a line cell's component on the
+// perpendicular axis, the same for every line cell.
+.decl line_at(a: Axis, l: Position)
+line_at(A, L) :- line_cell(F), line_axis(A), perp(A, A2), split(F, A2, L, _).
+
 // The reflection acts across the line: the flip of the perpendicular axis,
-// about a line cell. The flip fixes the along-axis, so any line cell serves.
+// about the line's place. The flip fixes the along-axis.
 .decl mirror(p: Position, q: Position)
 mirror(P, Q) :-
-    in(P, _), line_axis(A), perp(A, A2), flip_of(A2, F4), line_cell(F),
-    relative(F, P, V), apply(F4, V, V2), compose(F, V2, Q),
+    in(P, _), line_axis(A), perp(A, A2), flip_of(A2, F4), line_at(A, L),
+    relative(L, P, V), apply(F4, V, V2), compose(L, V2, Q),
     in(Q, _).                                   // the image lands on the grid
 
 .decl figure(p: Position, col: Color)

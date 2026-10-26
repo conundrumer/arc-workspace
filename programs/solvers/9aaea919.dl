@@ -82,17 +82,15 @@ spent(Id) :- under(Id, M), shape_color(M, Col), params.spend(Col).
 .decl gaining(id: Ident, m: Ident)
 gaining(Id, M) :- under(Id, M), shape_color(M, Col), params.gain(Col).
 
-// The diamonds of a gaining stack, from the base edge up.
+// The diamonds of a gaining stack, nearest the grow edge first.
 // @claim stacks
 .init stack_order = Order<Ident, Ident>
 stack_order.elem(M, Id) :- gaining(Id, M).
-stack_order.before(M, Id, Id2) :-
-    gaining(Id, M), gaining(Id2, M), bbox.box(Id, B), bbox.box(Id2, B2),
-    grow(D), nearer(D, B2, B).
+stack_order.score(M, Id, K) :- gaining(Id, M), bbox.box(Id, B), grow(D), dist(B, D, K).
 
 // The top diamond of a gaining stack.
 .decl top(id: Ident)
-top(Id) :- stack_order.last(_, Id).
+top(Id) :- stack_order.first(_, Id).
 
 // The diamond height along the stack axis.
 .decl height(t: Ident, n: number)

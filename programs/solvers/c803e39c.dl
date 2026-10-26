@@ -279,31 +279,52 @@ parse.divider_color($DividerByLines(), Col) :- line_ink.value($U(), Col).
     .decl roles(t: number, m: number, f: number, g: number)
     roles(T, M, F, G) :- rank(T), rank(M), rank(F), rank(G).
 
-    // Each train output cell that a tile rank and a map rank give, in an n×n
-    // block of n×n cells: its block, and its cell in the block.
-    .decl product_cell(t: number, m: number, e: Example, p_tile: Position, p_intile: Position, p: Position)
-    product_cell(T, M, E, P_tile, P_intile, P_grid_out) :-
-        rank(T), rank(M), ex_out(E, _, _),
-        frame_cell(E, M, P_tile), frame_cell(E, T, P_intile),
+    // The extents of a panel's square: n1 along the panel axis, n2 across.
+    .decl frame_dims(e: Example, k: number, n1: number, n2: number)
+    frame_dims(E, K, N1, N2) :- frame_cell(E, K, P), panel_axis(A), axis_dims(P, A, N1, N2).
+
+    // A cell of some panel's square, in the square's own coordinates.
+    .decl frame_pos(e: Example, p_inner: Position)
+    frame_pos(E, P_inner) :- frame_cell(E, _, P_inner).
+
+    // Each train output cell that two squares give, as blocks of cells: its
+    // block, and its cell in the block.
+    .decl tiling(e: Example, p_tile: Position, p_intile: Position, p: Position)
+    tiling(E, P_tile, P_intile, P_grid_out) :-
+        ex_out(E, _, _), frame_pos(E, P_tile), frame_pos(E, P_intile),
         concat_2d(P_tile, P_intile, 0, P_grid_out).
+
+    // The cells that a map square of extents (nm1, nm2) and a tile square of
+    // extents (nt1, nt2) give.
+    .decl product_cell(e: Example, nm1: number, nm2: number, nt1: number, nt2: number, p: Position)
+    product_cell(E, Nm1, Nm2, Nt1, Nt2, P) :-
+        tiling(E, P_tile, P_intile, P),
+        panel_axis(A), axis_dims(P_tile, A, Nm1, Nm2), axis_dims(P_intile, A, Nt1, Nt2).
 
     // A train output cell that the product of a tile rank and a map rank
     // leaves out.
     .decl misfit(t: number, m: number)
-    misfit(T, M) :- rank(T), rank(M), ex_out(E, P, _), !product_cell(T, M, E, _, _, P).
+    misfit(T, M) :-
+        rank(T), rank(M), ex_out(E, P, _),
+        ( !frame_dims(E, T, _, _)
+        ; !frame_dims(E, M, _, _)
+        ; frame_dims(E, M, Nm1, Nm2), frame_dims(E, T, Nt1, Nt2),
+          !product_cell(E, Nm1, Nm2, Nt1, Nt2, P)
+        ).
 
     // The colors a train output gives the product's cells where both shapes
     // are set, which the fill panel's shade gives.
     .decl fill_demand(t: number, m: number, e: Example, col: Color)
     fill_demand(T, M, E, Col) :-
-        product_cell(T, M, E, P_tile, P_intile, P),
+        tiling(E, P_tile, P_intile, P),
         frame_ink(E, M, P_tile), frame_ink(E, T, P_intile), ex_out(E, P, Col).
 
     // The colors a train output gives the product's other cells, which the
     // ground panel's shade gives.
     .decl ground_demand(t: number, m: number, e: Example, col: Color)
     ground_demand(T, M, E, Col) :-
-        product_cell(T, M, E, P_tile, P_intile, P), ex_out(E, P, Col),
+        tiling(E, P_tile, P_intile, P), ex_out(E, P, Col),
+        frame_cell(E, M, P_tile), frame_cell(E, T, P_intile),
         ( !frame_ink(E, M, P_tile) ; !frame_ink(E, T, P_intile) ).
 
     // An assignment whose product and some train output differ at a cell.

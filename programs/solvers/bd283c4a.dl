@@ -69,18 +69,19 @@ scan.cell($U(), P) :- in(P, _).
 scan.corner($U(), D) :- params.start_corner(D).
 scan.axis($U(), A) :- step_axis(A).
 
+// A color's first cell has the most cells after it.
 // @claim count-order
 .init first = Extremes<Color>
-first.cand(C, R) :- in(P, C), scan.rank($U(), P, R).
+first.cand(C, R) :- in(P, C), scan.rank_desc($U(), P, R).
 
-// Higher count first; of equal counts, the earlier first cell.
+// Lower count first; of equal counts, the later first cell. A color's place,
+// read as `rank_desc`, is then the count of the colors of higher count or of
+// equal count and an earlier first cell.
 // @claim count-order
 .init ranked = Order<Unit, Color>
 ranked.elem($U(), C) :- in(_, C).
-ranked.before($U(), C1, C2) :- size.tally(C1, N1), size.tally(C2, N2), N1 > N2.
-ranked.before($U(), C1, C2) :-
-    size.tally(C1, N), size.tally(C2, N),
-    first.low(C1, R1), first.low(C2, R2), R1 < R2.
+ranked.score($U(), C, N) :- size.tally(C, N).
+ranked.secondary_score($U(), C, R) :- first.high(C, R).
 
 // The rank R each color takes in each case and resolution.
 .decl place(ch: Choice, res: TiebreakResolution, c: Color, r: number)
@@ -92,11 +93,11 @@ ranked.before($U(), C1, C2) :-
 .init ties = TiebreakResolutions<Unit, Color, Color>
 ties.cand($U(), C2, C) :- size.tally(C2, N), size.tally(C, N).
 
-place($EitherOrder(), Res, C, R) :- ties.assign($U(), Res, C2, C), ranked.rank($U(), C2, R).
+place($EitherOrder(), Res, C, R) :- ties.assign($U(), Res, C2, C), ranked.rank_desc($U(), C2, R).
 
 // --- $TieFirstCell ---
 
-place($TieFirstCell(), $End(), C, R) :- ranked.rank($U(), C, R).
+place($TieFirstCell(), $End(), C, R) :- ranked.rank_desc($U(), C, R).
 
 // --- the fill ---
 

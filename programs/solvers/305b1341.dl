@@ -97,17 +97,21 @@ periodic_dot(Dot, P) :-
 dotted(Dot, P, $Shown()) :- panel_cell(Dot, P).
 dotted(Dot, P, $Periodic()) :- periodic_dot(Dot, P).
 
-// What the panel's ring grows around.
-.decl core(dot: Color, p: Position, ds: Dots, pn: Panel)
-core(Dot, P, Ds, $Box()) :- dots_choice(Ds), in(P, _), bbox.box(Dot, B), inside(P, B).
-core(Dot, P, Ds, $Cells()) :- dotted(Dot, P, Ds).
+// The bounding box of the dots grown by one ring: the box of the cells one
+// diagonal step out from its corners, which every Dots case shares.
+.init grown = Bbox<Color>
+grown.cell(Dot, Q) :- bbox.box(Dot, B), in(P, _), box_corner(P, B, Dc), neighbor(P, Dc, Q).
 
-// The panel: the core grown by one ring.
+.decl box_panel(dot: Color, p: Position)
+box_panel(Dot, Q) :- in(Q, _), grown.box(Dot, B), inside(Q, B).
+
+// The panel: what the panel's ring grows around, grown by one ring.
 .decl panel(dot: Color, p: Position, ds: Dots, pn: Panel)
-panel(Dot, Q, Ds, Pn) :-
-    core(Dot, P, Ds, Pn),
-    ( Q = P                                     // the core
-    ; dir8_elem(D), neighbor(P, D, Q), in(Q, _) // and the ring around it
+panel(Dot, Q, Ds, $Box()) :- dots_choice(Ds), box_panel(Dot, Q).
+panel(Dot, Q, Ds, $Cells()) :-
+    dotted(Dot, P, Ds),
+    ( Q = P                                     // the dots
+    ; dir8_elem(D), neighbor(P, D, Q), in(Q, _) // and the ring around them
     ).
 
 // --- the stack ---

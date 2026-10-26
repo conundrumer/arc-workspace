@@ -106,12 +106,12 @@ out(P, Col) :- in(P, Col_in), ( paint(P, Col) ; !paint(P, _), Col = Col_in ).
         opposite(D, D_back), diag_dirs(Diag, A, D_back, _),        // a corner behind the heading
         diag_dist(P_rel, Diag, A, O, S), O > 0, 0 <= S, S <= O.    // steps out, steps across
 
-    // The arm's path order: every step goes out or across, never back.
+    // The arm's path order: every step goes out or across, never back, so
+    // the cells order by steps out, then by steps across.
     .init step_order = Order<ArmKey, Position>
     step_order.elem([E, D], P) :- place(E, D, P, _, _).
-    step_order.before([E, D], Q, P) :-
-        place(E, D, Q, O1, S1), place(E, D, P, O2, S2),
-        O1 <= O2, S1 <= S2, Q != P.
+    step_order.score([E, D], P, O) :- place(E, D, P, O, _).
+    step_order.secondary_score([E, D], P, S) :- place(E, D, P, _, S).
 
     // The heading that entered each arm cell.
     .decl entered(e: Example, d: Dir, p: Position, r: number, h: Dir)

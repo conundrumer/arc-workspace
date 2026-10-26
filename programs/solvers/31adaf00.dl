@@ -32,7 +32,7 @@ span.cell([P, Q], R) :- bg_cell(P), bg_cell(Q), ( R = P ; R = Q ).
 // squares.
 .decl square(b: Box, n: number)
 square(B, N) :-
-    span.cell(K, P), span.box(K, B),                               // the box a pair spans
+    span.box([P, _], B),                                           // the box a pair spans
     perp(A, A2), box_extent(B, P, A, N), box_extent(B, P, A2, N),  // of equal extents
     params.min_side(M), N >= M.                                    // big enough to draw
 

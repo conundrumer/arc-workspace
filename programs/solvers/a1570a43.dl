@@ -163,10 +163,6 @@ color_box.cell(Col, P) :- in(P, Col), !params.background(Col).
 .decl mover(o: Others, m: MarkerSource, g: Grouping, b: Box)
 mover(O, M, G, B) :- unit(O, M, G, B, _, _).
 
-// Every translation from one grid cell to another.
-.decl shift(v: Offset)
-shift(V) :- in(P, _), in(Q, _), relative(P, Q, V).
-
 // The translation each anchor gives a unit.
 .decl place(a: Anchor, o: Others, m: MarkerSource, g: Grouping, b: Box, v: Offset)
 
@@ -281,14 +277,20 @@ inner.cell([M, K], P) :- marker_color(M, K), color_box.box(K, R), in(P, _), inte
 
 // The unit's box is a translate of the interior.
 place($Fill(), O, M, G, B, V) :-
-    mover(O, M, G, B), marker_color(M, K), inner.box([M, K], I), relative(B, I, V), shift(V).
+    mover(O, M, G, B), marker_color(M, K), inner.box([M, K], I), relative(B, I, V).
 
 // --- $Center ---
-// Where each translation puts a unit's box, in its marker rectangle's frame.
+// Each translation that takes a corner of a unit's box onto a grid cell.
+.decl shift(o: Others, m: MarkerSource, g: Grouping, b: Box, v: Offset)
+shift(O, M, G, B, V) :-
+    mover(O, M, G, B), in(P, _), box_corner(P, B, _), in(Q, _), relative(P, Q, V).
+
+// Where each such translation puts a unit's box, in its marker rectangle's
+// frame.
 .decl lands(o: Others, m: MarkerSource, g: Grouping, b: Box, v: Offset, t: Box)
 lands(O, M, G, B, V, T) :-
-    mover(O, M, G, B), marker_color(M, K), color_box.box(K, R),
-    shift(V), compose(B, V, T_grid), relative(R, T_grid, T).
+    shift(O, M, G, B, V), marker_color(M, K), color_box.box(K, R),
+    compose(B, V, T_grid), relative(R, T_grid, T).
 
 // The box sits at equal margins from the rectangle on each axis.
 place($Center(L), O, M, G, B, V) :-

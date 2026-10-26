@@ -76,6 +76,9 @@
 // One ink color of a case's input.
 .type SiteInk = [k: Site, col: Color]
 
+// One panel of a case's input.
+.type SitePanel = [k: Site, m: Ident]
+
 .decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
 
 .comp Params {
@@ -144,12 +147,18 @@ ink(K, M, Col) :- panel_cell(K, M, P), in(P, Col), K = [_, Bg, X, _], !bg(Bg, X,
 broken(K) :- ink(K, M, Col), ink(K, M, Col2), Col != Col2.
 broken(K) :- panel(K, M, L), panel(K, M2, L), M != M2.
 
+// The lines of each panel, bounded.
+// @claim separator-columns
+.init extent = Bbox<SitePanel>
+extent.cell([K, M], L) :- panel(K, M, L).
+
 // The panels in order toward the fill direction.
 // @claim fill-from-next wrap
 .init order = Order<Site, Ident>
 order.elem(K, M) :- panel(K, M, _).
-order.before(K, M, M2) :-
-    panel(K, M, L), panel(K, M2, L2), M != M2, K = [_, _, _, D], nearer(D, L2, L).
+order.score(K, M, S) :-
+    extent.box([K, M], B), K = [_, _, _, D], opposite(D, D_far),
+    dist(B, D_far, S).                                               // distance from the far edge
 
 // Panel m takes its fill color from panel m2.
 .decl source(w: Wrap, k: Site, m: Ident, m2: Ident)

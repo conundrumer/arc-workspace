@@ -24,13 +24,14 @@
 
 // --- fields and legend ---
 
+// A color with a cell on edge d of the frame.
+.decl edge_color(d: Dir, col: Color)
+edge_color(D, Col) :- in(P, Col), dir_elem(D), dist(P, D, 0).
+
 // A field color reaches more than one edge of the frame; a legend patch sits
 // on at most one.
 .decl field(col: Color)
-field(Col) :-
-    in(P, Col), dir_elem(D), dist(P, D, 0),
-    in(Q, Col), dir_elem(D2), dist(Q, D2, 0),
-    D != D2.
+field(Col) :- edge_color(D, Col), edge_color(D2, Col), D != D2.
 
 .decl legend_cell(p: Position)
 legend_cell(P) :- in(P, Col), !field(Col).

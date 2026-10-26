@@ -160,8 +160,7 @@ panel_roles_choice($RolesByContent()). panel_roles_choice($PanelOrder()).
     // @claim panels
     .init row = Order<KeyDir, Position>
     row.elem([Ky, D], T) :- panels.tile_of(Ky, _, T), panel_axis(Ky, A), axis_of(D, A).
-    row.before([Ky, D], T1, T2) :-
-        row.elem([Ky, D], T1), row.elem([Ky, D], T2), nearer(D, T1, T2).
+    row.score([Ky, D], T, K) :- row.elem([Ky, D], T), dist(T, D, K).
 
     // The shape panel, at the end of the row toward d.
     .decl shape_end(key: Key, r: PanelRoles, d: Dir, t: Position)

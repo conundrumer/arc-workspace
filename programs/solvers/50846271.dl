@@ -41,7 +41,7 @@ mark(P) :- in(P, Col), params.mark(Col).
 // --- the placements ---
 
 .decl arm(k: number)
-arm(K) :- in(P, _), axis_elem(A), sub_extent(P, A, K).
+arm(K) :- in(P, _), diag_dir_elem(D), corner_dist(P, D, 0), axis_elem(A), sub_extent(P, A, K).  // read at a corner cell
 
 // P lies J cells from C along a row or a column.
 .decl axial(c: Position, p: Position, j: number) inline

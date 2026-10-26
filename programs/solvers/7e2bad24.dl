@@ -68,7 +68,8 @@ walk.source(Ch, [P, D]) :-
 .decl step(p: Position, d: DiagDir, q: Position)
 step(P, D, Q) :-
     in(Q, Col), params.passable(Col),
-    diag_opposite(D, D_back), neighbor(Q, D_back, P).   // the cell the beam steps from
+    diag_opposite(D, D_back), neighbor(Q, D_back, P),   // the cell the beam steps from
+    in(P, _).
 
 // --- $Contact ---
 
@@ -76,10 +77,11 @@ step(P, D, Q) :-
 .decl side(p: Position, d: Dir)
 side(P, D) :- in(P, _), dir_elem(D), neighbor(P, D, Q), wall(Q).
 
-// One outgoing component of a heading, inverted where its side blocks.
+// One outgoing component of a heading at a cell beside a wall, inverted
+// where its side blocks.
 .decl leave_dir(p: Position, d: DiagDir, d_out: Dir)
 leave_dir(P, D, D_out) :-
-    in(P, _), diag_dirs(D, _, D_cmp, _),
+    side(P, _), diag_dirs(D, _, D_cmp, _),
     ( side(P, D_cmp), opposite(D_cmp, D_out)
     ; !side(P, D_cmp), D_out = D_cmp
     ).
@@ -91,6 +93,8 @@ bounce(P, D, D_out) :-
     diag_dirs(D_out, _, D1, D2).
 
 walk.edge($Contact(), [P, D], [Q, D_out]) :- bounce(P, D, D_out), step(P, D_out, Q).
+// Away from every wall, the beam keeps its heading.
+walk.edge($Contact(), [P, D], [Q, D]) :- step(P, D, Q), !side(P, _).
 
 // --- $WallAxis ---
 

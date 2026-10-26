@@ -168,10 +168,8 @@ ties.cand([[Pc, $NearEdge()], C], P_line, Id) :-
     view([[Pc, $NearEdge()], C]), lead_end(C, L), line_of(Pc, _, P_line), dist(P_line, L, N),
     order.rank([[Pc, $NearEdge()], C], Id, R), R <= N.
 
-order.before([[Pc, $NearEdge()], C], A, B) :-
-    lead_end(C, L),
-    obox.box([Pc, A], B1), dist(B1, L, K1),
-    obox.box([Pc, B], B2), dist(B2, L, K2), K1 < K2.
+order.score([[Pc, $NearEdge()], C], Id, K) :-
+    lead_end(C, L), obox.box([Pc, Id], B), dist(B, L, K).
 
 // --- $FirstScan ---
 
@@ -189,10 +187,9 @@ head.cell([[Pc, Id], S], P) :-
     obox.box([Pc, Id], B), dist(B, S, K),
     cell(Pc, Id, P), dist(P, S, K).
 
-order.before([[Pc, $FirstScan()], C], A, B) :-
-    view([[Pc, $FirstScan()], C]), params.layout_axis(Ax), diag_dirs(C, Ax, L, S),  // lead end, scan edge
-    head.box([[Pc, A], S], B1), dist(B1, L, K1),
-    head.box([[Pc, B], S], B2), dist(B2, L, K2), K1 < K2.
+order.score([[Pc, $FirstScan()], C], Id, K) :-
+    view([[Pc, $FirstScan()], C]), params.layout_axis(A), diag_dirs(C, A, L, S),  // lead end, scan edge
+    head.box([[Pc, Id], S], B), dist(B, L, K).
 
 .comp Determine {
     // A color's cells in one example's input.

@@ -63,18 +63,12 @@ lane_dist(Id, K) :- lane_dir(D), bbox.box(Id, B), dist(B, D, K).
 // Shapes of one color rank by nearness to the lane edge.
 .init shape_ord = Order<Color, Ident>
 shape_ord.elem(Col, Id) :- shape_color(Id, Col).
-shape_ord.before(Col, Id, Id2) :-
-    shape_color(Id, Col), lane_dist(Id, K),
-    shape_color(Id2, Col), lane_dist(Id2, K2),
-    K < K2.
+shape_ord.score(Col, Id, K) :- shape_color(Id, Col), lane_dist(Id, K).
 
 // A color ranks by its nearest shape.
-.decl color_dist(col: Color, k: number)
-color_dist(Col, K) :- shape_ord.first(Col, Id), lane_dist(Id, K).
-
 .init color_ord = Order<Unit, Color>
 color_ord.elem($U(), Col) :- shape_color(_, Col).
-color_ord.before($U(), Col, Col2) :- color_dist(Col, K), color_dist(Col2, K2), K < K2.
+color_ord.score($U(), Col, K) :- shape_ord.first(Col, Id), lane_dist(Id, K).
 
 // A lane is as wide as its widest shape.
 .init lane_size = Extremes<Color>
@@ -103,8 +97,7 @@ lane_line(Col, K) :- lane_size.high(Col, W), lane_dir(D), claims(D, W, K).
 // included, come before every later lane's.
 .init lane_pile = Order<Unit, ColorLine>
 lane_pile.elem($U(), [Col, K]) :- lane_line(Col, K).
-lane_pile.before($U(), [Col, K], [Col2, K2]) :-
-    lane_line(Col, K), lane_line(Col2, K2), color_ord.before($U(), Col, Col2).
+lane_pile.score($U(), [Col, K], R) :- lane_line(Col, K), color_ord.rank($U(), Col, R).
 
 // The lane's cell at the corner: past the lines the earlier lanes claim.
 .decl lane(col: Color, p: Position)
@@ -119,8 +112,7 @@ shape_line(Id, K) :- shape_size(Id, N, _), stack_dir(D), claims(D, N, K).
 // Within a lane, shapes pile from the stack edge in shape rank.
 .init slot_pile = Order<Color, ShapeLine>
 slot_pile.elem(Col, [Id, K]) :- shape_color(Id, Col), shape_line(Id, K).
-slot_pile.before(Col, [Id, K], [Id2, K2]) :-
-    shape_line(Id, K), shape_line(Id2, K2), shape_ord.before(Col, Id, Id2).
+slot_pile.score(Col, [Id, K], R) :- shape_line(Id, K), shape_ord.rank(Col, Id, R).
 
 // The slot's cell at the corner: past the lines the earlier shapes of its
 // lane claim.

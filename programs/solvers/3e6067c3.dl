@@ -97,8 +97,7 @@ seq_cell(P) :- comps.label($U(), P, Id), !is_box(Id).
 
 .init seq = Order<Unit, Position>
 seq.elem($U(), P) :- seq_cell(P).
-seq.before($U(), P, Q) :-
-    seq_cell(P), seq_cell(Q), params.seq_dir(D), nearer(D, P, Q).
+seq.score($U(), P, K) :- seq_cell(P), params.seq_dir(D), dist(P, D, K).  // distance from the reading edge
 
 // The boxes a slot names.
 .decl names(l: Position, id: Ident)

@@ -143,9 +143,7 @@ travel_axis(A) :- parse.back($U(), D), axis_of(D, A).
 // @claim walls-in-order
 .init order = Order<Unit, Ident>
 order.elem($U(), W) :- parse.free_end($U(), W, _).
-order.before($U(), W1, W2) :-
-    parse.free_end($U(), W1, P1), parse.free_end($U(), W2, P2),
-    parse.back($U(), D), dist(P1, D, K1), dist(P2, D, K2), K1 < K2.
+order.score($U(), W, K) :- parse.free_end($U(), W, P), parse.back($U(), D), dist(P, D, K).   // distance from the source's edge
 
 .decl clearance(g: Gap, w: Ident, k: number)
 
