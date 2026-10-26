@@ -18,7 +18,7 @@ worker, and each thread starts the next task as its task ends. Every 10 s the ta
 written as a part. Writes to <out dir>:
   values/<task>/<case>.i32   raw int32 (np.fromfile), every row of the case: the rows of each entry, of each DET
                              at each entry's assignment, and of each projection at each entry, each row's cells in
-                             column order (see `arclog.decode.columns`)
+                             column order, equal runs of a case sharing one offset (see `arclog.decode.columns`)
   parts/<k>.<name>.parquet   the rows of one part
   parts/<k>.report.txt       the fault lines of the part's tasks
   parts/<k>.tasks.txt        one line `<task> <seconds> <key> <checks digest>` per task of the part, the wall seconds of its call to 0.1 s,

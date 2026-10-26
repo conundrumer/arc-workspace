@@ -166,7 +166,7 @@ def check_case(frames, values, task, orientation_types, size=None):
     # entries and runs
     entries = frames.get("entries")
     en = list(rows_of(entries))
-    runs = []     # (offset, length, what)
+    runs = {}     # (offset, length) -> what: each distinct run once, whatever number of rows point at it
     widths = [t.width for t in tl]
     for r in en:
         t = tl[r.table] if r.table < n else None
@@ -180,7 +180,7 @@ def check_case(frames, values, task, orientation_types, size=None):
             if t.projections != 0:
                 bad("entries-kind", f"entry {r.Index} is a Rows entry of table {r.table}, which has projections")
             if r.rows:
-                runs.append((int(r.offset), int(r.rows) * widths[r.table], "entry"))
+                runs.setdefault((int(r.offset), int(r.rows) * widths[r.table]), "entry")
         elif r.kind == COUNT:
             if t.projections == 0:
                 bad("entries-kind", f"entry {r.Index} is a Count entry of table {r.table}, which has no projections")
@@ -191,24 +191,21 @@ def check_case(frames, values, task, orientation_types, size=None):
     for t in tl:
         if _faulted(t) and any(r.table == t.Index for r in en):
             bad("tables-faulted-empty", f"table {t.Index} has fault and entries")
-    seen = set()
     for r in rows_of(frames.get("assigned")):
         t = tl[en[r.entry].table] if r.entry < len(en) and en[r.entry].table < n else None
         if t is None or not r.det < len(t.det_widths):
             bad("entries-assigned-det", f"assigned of entry {r.entry} names det {r.det}")
-        elif r.rows and (r.offset, r.det) not in seen:
-            seen.add((r.offset, r.det))
-            runs.append((int(r.offset), int(r.rows) * int(t.det_widths[r.det]), "assigned"))
+        elif r.rows:
+            runs.setdefault((int(r.offset), int(r.rows) * int(t.det_widths[r.det])), "assigned")
     projections = frames.get("projections")
     pwidth = list(projections.width) if projections is not None and len(projections) else []
     for r in rows_of(frames.get("projection_rows")):
         if r.projection >= len(pwidth):
             bad("entries-projection", f"projection row of projection {r.projection} of {len(pwidth)}")
         elif r.defined and r.rows:
-            runs.append((int(r.offset), int(r.rows) * int(pwidth[r.projection]), "projection"))
-    runs.sort()
+            runs.setdefault((int(r.offset), int(r.rows) * int(pwidth[r.projection])), "projection")
     pos = 0
-    for off, length, what in runs:
+    for (off, length), what in sorted(runs.items()):
         if off != pos:
             bad("runs-tile", f"a {what} run at {off} follows an end at {pos}: " + ("an overlap" if off < pos else "a gap"))
             break
@@ -223,7 +220,9 @@ def check_case(frames, values, task, orientation_types, size=None):
 
 
 def _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest, bad):
-    blocks = collections.defaultdict(list)       # table -> [(entry, example, block)] of its Rows entries
+    blocks = collections.defaultdict(list)       # table -> [(entry, example, block)] of its Rows entries, each distinct run at an example once, at the first entry that has it
+    block_entries = collections.defaultdict(list)    # table -> [(entry, example)] of its Rows entries that hold rows
+    seen_blocks = set()                          # (table, example, offset, rows)
     held_none = collections.defaultdict(set)     # table -> the examples of its Rows entries that hold no row
     unseen = collections.defaultdict(set)        # table -> the examples of its entries other than Rows entries
     for r in en:
@@ -232,7 +231,11 @@ def _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest
         if r.kind == ROWS and r.table < len(tl) and not _faulted(tl[r.table]):
             w = tl[r.table].width
             if r.rows and w:
-                blocks[r.table].append((r.Index, (r.example_kind, r.example_index), values[int(r.offset):int(r.offset) + int(r.rows) * w].reshape(int(r.rows), w)))
+                ex = (r.example_kind, r.example_index)
+                block_entries[r.table].append((r.Index, ex))
+                if (r.table, ex, int(r.offset), int(r.rows)) not in seen_blocks:
+                    seen_blocks.add((r.table, ex, int(r.offset), int(r.rows)))
+                    blocks[r.table].append((r.Index, ex, values[int(r.offset):int(r.offset) + int(r.rows) * w].reshape(int(r.rows), w)))
             elif not r.rows and w:
                 held_none[r.table].add((r.example_kind, r.example_index))
             elif r.rows > 1:
@@ -330,9 +333,11 @@ def _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest
             return None
         offs = np.cumsum([0] + [width_of(x) for x in t.det_types[det]])
         found = collections.defaultdict(list)
-        for entry, ex, _ in blocks[ti]:
+        read = set()         # (example, rows, offset) of the runs read
+        for entry, ex in block_entries[ti]:
             for d, rows, offset in assigned[entry]:
-                if d == det and rows:
+                if d == det and rows and (ex, rows, offset) not in read:
+                    read.add((ex, rows, offset))
                     block = values[offset:offset + rows * int(offs[-1])].reshape(rows, int(offs[-1]))
                     found[ex].append(block[:, offs[sc]:offs[sc + 1]])
         return {ex: np.concatenate(v) for ex, v in found.items()}

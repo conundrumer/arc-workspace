@@ -24,13 +24,18 @@
 //! depends on the order of interning, so it is equal to another Ident of the
 //! same run and to no Ident of another. A run is an offset in `values` and a
 //! count of rows, and its width in cells is the table's, or the `DET`'s, or
-//! the projection's. The rows of a run are in the order of their cells.
+//! the projection's. The rows of a run are in the order of their cells. Two
+//! runs of a case with the same cells, the same rows of the same width, share
+//! one offset, and the cells stand once in `values`. A run without a cell has
+//! offset 0.
 
 use super::{Contents, Point, Table, TableRelation, Projections};
 use crate::read::spelling::{spelling, FACT_RELATIONS};
 use crate::eval::determinations::relation_spelled;
 use crate::eval::join::each_row;
 use crate::eval::{RelationValue, Stop};
+use crate::hash::{StableHash, StableHashMap, StableHasher};
+use std::hash::Hash;
 use crate::program::path::NodePath;
 use crate::program::{ColumnName, ProgramRelation, RelationRef};
 use crate::registry::Registry;
@@ -249,8 +254,9 @@ pub struct CaseColumns {
 pub fn case_columns(evidence: &[Table], tables: &[(usize, Table)], train: usize) -> CaseColumns {
     let mut columns = CaseColumns::default();
     let mut names = Vec::new();
+    let mut runs = Runs::default();
     for (token, table) in evidence.iter().map(|table| (0, table)).chain(tables.iter().map(|(token, table)| (*token, table))) {
-        push_table(&mut columns, &mut names, token, table, train);
+        push_table(&mut columns, &mut names, &mut runs, token, table, train);
     }
     columns
 }
@@ -316,10 +322,18 @@ fn push_cells(out: &mut Vec<i32>, id: TermId, ty: &ValueType) {
     }
 }
 
-/// Appends the rows of `rows`, of columns of `types`, to `values`, in the
-/// order of their cells, and gives the count of rows and the offset of the
-/// first.
-fn push_rows(values: &mut Vec<i32>, rows: &Relation, types: &[ValueType]) -> (u64, u64) {
+/// The runs written to the `values` of a case, by their count of rows, their
+/// count of cells and the hash of their cells: the offsets of the runs with
+/// those.
+#[derive(Default)]
+struct Runs(StableHashMap<(u64, usize, StableHash), Vec<usize>>);
+
+/// The count of rows and the offset of the run of the rows of `rows`, of
+/// columns of `types`, in the order of their cells: where `values` holds a run
+/// with the same count of rows and the same cells, that run, and otherwise
+/// the run that this call appends to `values`. A run without a cell has
+/// offset 0.
+fn push_rows(values: &mut Vec<i32>, runs: &mut Runs, rows: &Relation, types: &[ValueType]) -> (u64, u64) {
     let mut written: Vec<Vec<i32>> = Vec::new();
     each_row(rows, &mut |row| {
         let mut cells = Vec::new();
@@ -329,10 +343,21 @@ fn push_rows(values: &mut Vec<i32>, rows: &Relation, types: &[ValueType]) -> (u6
         written.push(cells);
     });
     written.sort();
-    let offset = values.len() as u64;
     let count = written.len() as u64;
-    values.extend(written.into_iter().flatten());
-    (count, offset)
+    let cells: Vec<i32> = written.into_iter().flatten().collect();
+    if cells.is_empty() {
+        return (count, 0);
+    }
+    let mut hasher = StableHasher::new();
+    cells.hash(&mut hasher);
+    let offsets = runs.0.entry((count, cells.len(), hasher.finish128())).or_default();
+    if let Some(&offset) = offsets.iter().find(|&&offset| values[offset..offset + cells.len()] == cells[..]) {
+        return (count, offset as u64);
+    }
+    let offset = values.len();
+    offsets.push(offset);
+    values.extend(cells);
+    (count, offset as u64)
 }
 
 /// The name of the relation that the tables of `names` stand for, each with
@@ -340,7 +365,7 @@ fn push_rows(values: &mut Vec<i32>, rows: &Relation, types: &[ValueType]) -> (u6
 /// or the fact relation's name.
 type TableNames = Vec<(String, u32, Option<Vec<Box<[ColumnName]>>>)>;
 
-fn push_table(out: &mut CaseColumns, names: &mut TableNames, token: usize, table: &Table, train: usize) {
+fn push_table(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, token: usize, table: &Table, train: usize) {
     let row = u32::try_from(out.tables.token.len()).expect("fewer than 2^32 tables");
     let tables = &mut out.tables;
     tables.token.push(u32::try_from(token).expect("fewer than 2^32 tokens"));
@@ -405,7 +430,7 @@ fn push_table(out: &mut CaseColumns, names: &mut TableNames, token: usize, table
                 };
                 names.push((name, row, contents.rows.clone()));
             }
-            push_contents(out, row, contents, &types, train);
+            push_contents(out, runs, row, contents, &types, train);
         }
     }
 }
@@ -466,7 +491,7 @@ fn push_flows(out: &mut CaseColumns, names: &TableNames, row: u32, contents: &Co
 }
 
 /// The entries of `contents`, the table at `row`, and its projections.
-fn push_contents(out: &mut CaseColumns, row: u32, contents: &Contents, types: &[ValueType], train: usize) {
+fn push_contents(out: &mut CaseColumns, runs: &mut Runs, row: u32, contents: &Contents, types: &[ValueType], train: usize) {
     let count_only = contents.projections.is_some();
     let mut starts = Vec::with_capacity(contents.examples.len());
     for example in contents.examples.iter() {
@@ -479,7 +504,7 @@ fn push_contents(out: &mut CaseColumns, row: u32, contents: &Contents, types: &[
             }
         };
         let index = u32::try_from(index).expect("fewer than 2^32 examples");
-        let push = |out: &mut CaseColumns, model: u32, value: Option<&RelationValue>, stop: Option<&Stop>, fault: Option<String>| {
+        let push = |out: &mut CaseColumns, runs: &mut Runs, model: u32, value: Option<&RelationValue>, stop: Option<&Stop>, fault: Option<String>| {
             let faulted = fault.is_some();
             let entries = &mut out.entries;
             entries.table.push(row);
@@ -493,7 +518,7 @@ fn push_contents(out: &mut CaseColumns, row: u32, contents: &Contents, types: &[
                 None => (ValueKind::NoEntries, 0, 0, None),
                 Some(RelationValue::Rows(rows)) if count_only => (ValueKind::Count, rows.len() as u64, 0, None),
                 Some(RelationValue::Rows(rows)) => {
-                    let (count, offset) = push_rows(&mut out.values, rows, types);
+                    let (count, offset) = push_rows(&mut out.values, runs, rows, types);
                     (ValueKind::Rows, count, offset, None)
                 }
                 Some(RelationValue::Undefined) => (ValueKind::Undefined, 0, 0, None),
@@ -506,23 +531,23 @@ fn push_contents(out: &mut CaseColumns, row: u32, contents: &Contents, types: &[
             entries.value_stop.push(value_stop);
         };
         match &example.rows {
-            Err(fault) => push(out, 0, None, None, Some(format!("{} at {}", fault.message, form_path(&fault.form)))),
+            Err(fault) => push(out, runs, 0, None, None, Some(format!("{} at {}", fault.message, form_path(&fault.form)))),
             Ok(rows) => {
                 if rows.at.is_empty() {
-                    push(out, 0, None, rows.stop.as_ref(), None);
+                    push(out, runs, 0, None, rows.stop.as_ref(), None);
                 }
                 for (assigned, models) in &rows.at {
                     let first = out.entries.table.len();
                     for (model, value) in models.iter().enumerate() {
-                        push(out, model as u32, Some(value), rows.stop.as_ref(), None);
+                        push(out, runs, model as u32, Some(value), rows.stop.as_ref(), None);
                     }
-                    let mut runs = Vec::new();
+                    let mut assigned_runs = Vec::new();
                     for (position, ((_, det_rows), det)) in assigned.iter().zip(contents.dets.iter()).enumerate() {
-                        let (count, offset) = push_rows(&mut out.values, det_rows, &det.types);
-                        runs.push((position as u32, count, offset));
+                        let (count, offset) = push_rows(&mut out.values, runs, det_rows, &det.types);
+                        assigned_runs.push((position as u32, count, offset));
                     }
                     for entry in first..out.entries.table.len() {
-                        for &(position, count, offset) in &runs {
+                        for &(position, count, offset) in &assigned_runs {
                             out.assigned.entry.push(entry as u32);
                             out.assigned.det.push(position);
                             out.assigned.rows.push(count);
@@ -545,7 +570,7 @@ fn push_contents(out: &mut CaseColumns, row: u32, contents: &Contents, types: &[
                     let (defined, count, offset) = match projection {
                         None => (0, 0, 0),
                         Some(rows) => {
-                            let (count, offset) = push_rows(&mut out.values, rows, &projection_types);
+                            let (count, offset) = push_rows(&mut out.values, runs, rows, &projection_types);
                             (1, count, offset)
                         }
                     };
