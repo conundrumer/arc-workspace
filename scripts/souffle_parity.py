@@ -51,12 +51,13 @@ def parser() -> argparse.ArgumentParser:
     again.add_argument("--json", action="store_true", help=mctx(
         "Print the relations' rows and the number of each orientation constant of the lib "
         "as one JSON object, in place of the text."))
-    rows = sub.add_parser("concept-rows", help=mctx(
-        "Write `<out>/<stem>.json` for each solver: the Souffle rows of its concept case on each train "
-        "and test pair, for each relation that the column map (`columns/<stem>.json` beside "
-        "`names/` of `arclog_convert.out`) gives a column to compare, projected onto those columns, "
-        "with the numbers of the orientation constants; and each relation of the run it leaves out, "
-        "with the reason. Print the path of each file written."))
+    rows = sub.add_parser("case-rows", help=mctx(
+        "Write `<out>/<stem>.json` for each solver: the Souffle rows of its concept case, and of the first case "
+        "that takes each ALT no case before it takes, on each train and test pair, for each relation that "
+        "the column map (`columns/<stem>.json` beside `names/` of `arclog_convert.out`) gives an entry, projected "
+        "onto the columns it gives to compare, with the numbers of the orientation constants; and each relation "
+        "of the run or of the name map it leaves out, with its verdict and reason. Print the path of each file "
+        "written."))
     rows.add_argument("stems", nargs="+", help=mctx("The solvers, each by its stem."))
     rows.add_argument("--out", type=Path, required=True, help=mctx("The directory to write the files under."))
     rows.add_argument("--solvers", type=Path, help=mctx(
@@ -65,14 +66,14 @@ def parser() -> argparse.ArgumentParser:
     return top
 
 
-def concept_rows(stems: list[str], out: Path, solvers: Path | None) -> int:
+def case_rows(stems: list[str], out: Path, solvers: Path | None) -> int:
     """Write the file of each stem; 1 where a solver gives no rows."""
     out.mkdir(parents=True, exist_ok=True)
     status = 0
     for stem in stems:
         file = (solvers / f"{stem}.dl") if solvers else solver_path(stem)
         try:
-            got = rerun.concept_rows(stem, file)
+            got = rerun.case_rows(stem, file)
         except rerun.NoSuchCase:
             print(mctx("No concept case of {stem}.").format(stem=stem), file=sys.stderr)
             status = 1
@@ -105,8 +106,8 @@ def main(argv: list[str]) -> int:
     if args.cmd == "uses":
         print(uses.write_all())
         return 0
-    if args.cmd == "concept-rows":
-        return concept_rows(args.stems, args.out, args.solvers)
+    if args.cmd == "case-rows":
+        return case_rows(args.stems, args.out, args.solvers)
     try:
         got = (rerun.kept_json(args.stem, args.case, args.pair) if args.json
                else rerun.relations(args.stem, args.case, args.pair))

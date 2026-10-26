@@ -8,7 +8,7 @@ use std::ops::ControlFlow;
 
 use arclog::eval::join::each_row;
 use arclog::eval::models::ModelsEnd;
-use arclog::eval::{relation_of, Evaluation, RelationValue};
+use arclog::eval::{input_relation, relation_of, Evaluation, RelationValue};
 use arclog::program::{DeclaredName, InstanceName, OutputName, OutputOwner, OutputStep, PortName, ProgramRelation, RelationName};
 use arclog::relations::Relation;
 use arclog::resolver::Side;
@@ -51,7 +51,8 @@ impl Rerun {
     }
 }
 
-/// What the engine gives for a relation on a pair.
+/// What the engine gives for a relation on a pair, for the comparisons that
+/// need one set of rows (`compare`).
 pub(crate) enum EngineRows {
     /// The relation's rows, each the leaves Souffle's rerun writes for it,
     /// the same at every model of the case.
@@ -59,6 +60,16 @@ pub(crate) enum EngineRows {
     /// Two models of the case give the relation different rows, so Souffle's
     /// one set of rows has nothing to compare with.
     DifferBetweenModels,
+    /// A text for rows the engine cannot give.
+    Fault(String),
+}
+
+/// What the engine gives for a relation on a pair, at each model of the case.
+pub(crate) enum EngineModels {
+    /// The relation's rows at each model, each the leaves Souffle's rerun
+    /// writes for it, with the models that give the same rows once; one
+    /// entry where every model gives the same rows.
+    Models(Vec<Vec<Vec<EngineLeaf>>>),
     /// A text for rows the engine cannot give.
     Fault(String),
 }
@@ -85,16 +96,15 @@ pub(crate) enum Projection<'a> {
 
 /// The relation that `name` gives in `program`: a relation a clause derives
 /// or a parameter stores, or, for `&<instance>.<port>`, an output of that
-/// instance.
+/// instance, else its input of that port.
 fn named_relation(program: &arclog::check::CheckedProgram, name: &str) -> Option<GraphRelation> {
     let declared = ProgramRelation::Declared(RelationName(DeclaredName::Written(name.into())));
     relation_of(program, &declared).or_else(|| {
         let (instance, port) = name.split_once('.')?;
-        let output = OutputName {
-            of: OutputOwner::Instance(InstanceName(DeclaredName::Written(instance.into()))),
-            path: [OutputStep::Port(PortName(port.into()))].into(),
-        };
-        relation_of(program, &ProgramRelation::Output(output))
+        let instance = InstanceName(DeclaredName::Written(instance.into()));
+        let port = PortName(port.into());
+        let output = OutputName { of: OutputOwner::Instance(instance.clone()), path: [OutputStep::Port(port.clone())].into() };
+        relation_of(program, &ProgramRelation::Output(output)).or_else(|| input_relation(program, &instance, &port))
     })
 }
 
@@ -118,13 +128,35 @@ pub(crate) fn engine_columns(evaluation: &Evaluation<'_>, name: &str) -> Option<
 /// model of the case: where two models give different rows as sets, the
 /// result is [`EngineRows::DifferBetweenModels`].
 pub(crate) fn engine_rows(evaluation: &Evaluation<'_>, name: &str, example: Example, constants: &BTreeMap<String, i64>, projection: Projection<'_>) -> Option<EngineRows> {
+    Some(match models_of(evaluation, name, example, constants, projection, 2)? {
+        EngineModels::Fault(text) => EngineRows::Fault(text),
+        EngineModels::Models(mut models) if models.len() == 1 => EngineRows::Rows(models.remove(0)),
+        EngineModels::Models(_) => EngineRows::DifferBetweenModels,
+    })
+}
+
+/// The engine's rows of the relation that `name` declares on `example` at
+/// each model of the case, as `projection` gives them; `None` where the
+/// program derives no relation of that name.
+pub(crate) fn engine_models(evaluation: &Evaluation<'_>, name: &str, example: Example, constants: &BTreeMap<String, i64>, projection: Projection<'_>) -> Option<EngineModels> {
+    models_of(evaluation, name, example, constants, projection, usize::MAX)
+}
+
+/// [`engine_models`], stopping at the `at_most`th distinct set of rows.
+fn models_of(
+    evaluation: &Evaluation<'_>,
+    name: &str,
+    example: Example,
+    constants: &BTreeMap<String, i64>,
+    projection: Projection<'_>,
+    at_most: usize,
+) -> Option<EngineModels> {
     let program = evaluation.program;
     let relation = named_relation(program, name)?;
     let on = (program.program.side(relation.node) == Side::PerInput).then_some(example);
-    let Some(types) = program.types.columns(&relation) else { return Some(EngineRows::Fault("rows whose columns have no types".to_owned())) };
-    let mut first: Option<Vec<Vec<EngineLeaf>>> = None;
+    let Some(types) = program.types.columns(&relation) else { return Some(EngineModels::Fault("rows whose columns have no types".to_owned())) };
+    let mut models: Vec<Vec<Vec<EngineLeaf>>> = Vec::new();
     let mut fault = None;
-    let mut differ = false;
     let end = evaluation.models(&relation, on, &mut |value| {
         let RelationValue::Rows(rows) = value else {
             fault = Some(format!("{value:?}"));
@@ -137,26 +169,20 @@ pub(crate) fn engine_rows(evaluation: &Evaluation<'_>, name: &str, example: Exam
                 return ControlFlow::Break(());
             }
         };
-        match &first {
-            None => first = Some(rows),
-            Some(kept) if same_rows(kept, &rows) => {}
-            Some(_) => {
-                differ = true;
-                return ControlFlow::Break(());
-            }
+        if !models.iter().any(|kept| same_rows(kept, &rows)) {
+            models.push(rows);
         }
-        ControlFlow::Continue(())
+        if models.len() >= at_most { ControlFlow::Break(()) } else { ControlFlow::Continue(()) }
     });
     match end {
-        Err(error) => return Some(EngineRows::Fault(error.message.to_string())),
-        Ok(ModelsEnd::Stopped(stop)) if !differ && fault.is_none() => return Some(EngineRows::Fault(format!("{stop:?}"))),
+        Err(error) => return Some(EngineModels::Fault(error.message.to_string())),
+        Ok(ModelsEnd::Stopped(stop)) if fault.is_none() => return Some(EngineModels::Fault(format!("{stop:?}"))),
         Ok(_) => {}
     }
-    Some(match (fault, differ, first) {
-        (Some(text), _, _) => EngineRows::Fault(text),
-        (None, true, _) => EngineRows::DifferBetweenModels,
-        (None, false, Some(rows)) => EngineRows::Rows(rows),
-        (None, false, None) => EngineRows::Rows(Vec::new()),
+    Some(match fault {
+        Some(text) => EngineModels::Fault(text),
+        None if models.is_empty() => EngineModels::Models(vec![Vec::new()]),
+        None => EngineModels::Models(models),
     })
 }
 

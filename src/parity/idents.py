@@ -131,7 +131,7 @@ type Source = Minted | Stored | Unresolved
 
 
 class Kind(StrEnum):
-    """What a column of a rows file (`parity.rerun.concept_rows`) holds at an
+    """What a column of a rows file (`parity.rerun.case_rows`) holds at an
     Ident leaf: the text of the set of a minted id's members, or the number
     of a stored one."""
 

@@ -4,34 +4,68 @@ give the first relation whose rows differ, on a program from which each
 clause of a branch the case does not take is dropped (`taken_program`), so
 that the rows are the case's own; the JSON form of that rerun; and
 the kept JSON of a rerun that gave rows, which stands while each input of
-the rerun is unchanged (`kept_json`); and the rows of the concept case on
-each pair projected onto the columns the converter maps (`concept_rows`)."""
+the rerun is unchanged (`kept_json`); and the rows of the cases the row
+parity check runs on each pair, projected onto the columns the converter
+maps, with the relations the check leaves out (`case_rows`).
+
+The check (`arclog_convert.row_parity`) runs the concept case and, for each
+`Choice` constructor (an ALT) that no case run before takes, the first case
+of `Loaded.every` that takes it (`cases_to_run`), so that each ALT's
+relations are compared on a case that has them; `Loaded.every` holds no case
+that an `exclude` form leaves out. Each relation of the program that a run
+outputs (`every_relation`) is compared, or has a line of its own, by the
+first of these that holds (`classify`):
+
+- `skip`, "an input of the Souffle program": a top-level lib relation
+  marked `// @input`.
+- `skip`, "a lib relation that no clause of the solver writes and no arclog
+  relation stands for": the lib declares it, at the top level or in a
+  component of the lib, so it holds rows the lib derives; no clause of the
+  solver heads it (it is no input port of an instance that the solver
+  writes); and no `&` name of the name map stands for it.
+- `skip`, "its rows are facts alone and no arclog relation stands for it":
+  no clause with a body heads it.
+- compared, where the column map has an entry for it; a relation whose entry
+  holds no column to compare is compared as present or absent.
+- `uncompared`, "no entry in the column map".
+
+Each arclog relation of the name map (`relations` and `unmapped`) that no
+relation of the run maps to (`relation_name`) is `uncompared`, "no Souffle
+relation of the run stands for it". `arclog-cli row-parity` gives the rest
+of the verdicts, and `uncompared` "no case's program has a relation of that
+name" for a relation that no case it runs has. An `equal` line proves that
+the relation's rows in each case that derives it, at the stored parameters,
+are these rows over the columns the converter maps
+(`engine/arclog-cli/src/row_parity.rs` gives the rest)."""
 
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
 from arc.task import Example
 from cli.common import LIMITS, engine, solver_path
 from engine import (AdtValue, Engine, Program, RecordValue, RelationName, Rows,
-                    RunFailure, Scope)
+                    RunFailure, Scope, TypeName)
 from engine.memo import hash_files, read_or_make
 from engine.program import (AtomLiteral, BodyLiteral, Comparison, ComparisonOperator,
                             ConstructorTerm, Disjunction, Qualifier, Term, Unit, Value, as_grid,
-                            subterms)
-from parity import NameMap, case_name, columns_path, name_map, relation_name, snapshot
+                            own, subterms)
+from parity import NameMap, case_name, columns_path, name_map, names_path, relation_name, snapshot
 from parity.idents import Ambiguous, Minted, NoMembers, Source, Unresolved, Writer, ident_sources, kind_of, leaves
 from solver.aggregate import Solver
 from solver.cases import cases as cases_of
+from solver.graph import Graph
 from solver.load import load
 from solver.model import Base, Case, Lib, concept_branch
 from solver.outcome import Assignment
 from solver.pair_runs import examples
 from solver.solve import relations_at
 from solver.undefined import Undefined
+from solver.vocabulary import OPEN_VALUE
 
 
 class NoSuchCase(LookupError):
@@ -147,17 +181,124 @@ def leaves_at(value: Value, path: Sequence[int]) -> list[int | float | str] | No
     return leaves(value)
 
 
-def concept_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | RunFailure:
-    """The rows of the concept case of the solver of `stem`, read from
-    `solver_file`, on each train and test pair, for each relation the
-    column map (`columns_path`) gives a column to compare, each row
-    projected onto those columns, which leave out each Example leaf: for each, the leaves of the value at its
-    `leaf` in its Souffle column. A relation's rows are a set. The form:
-    `{"orientation_constants": {...}, "pairs": [{"pair": "train 0",
+class LeftOut(StrEnum):
+    """The verdict of a relation that the row parity check does not
+    compare."""
+
+    SKIP = "skip"
+    UNCOMPARED = "uncompared"
+
+
+class Reason(StrEnum):
+    """Why the row parity check does not compare a relation of the run, or
+    an arclog relation, and the verdict that gives."""
+
+    INPUT = "an input of the Souffle program"
+    LIB = "a lib relation that no clause of the solver writes and no arclog relation stands for"
+    FACTS = "its rows are facts alone and no arclog relation stands for it"
+    NO_ENTRY = "no entry in the column map"
+    NO_RELATION = "no Souffle relation of the run stands for it"
+
+    @property
+    def verdict(self) -> LeftOut:
+        """`skip` where the relation holds no row the solver derives,
+        else `uncompared`."""
+        return LeftOut.UNCOMPARED if self in (Reason.NO_ENTRY, Reason.NO_RELATION) else LeftOut.SKIP
+
+
+def lib_inputs(program: Program) -> frozenset[tuple[str | None, int]]:
+    """The file and line of each `// @input` comment that follows a
+    declaration on its line, in the lib the program includes."""
+    return frozenset((c.file, c.line) for c in program.comments if not c.own_line and "@input" in c.text)
+
+
+def cases_to_run(loaded: Loaded) -> list[Case]:
+    """The concept case, then, in the order of `loaded.every`, each case that
+    takes a `Choice` constructor (an ALT) that no case before it takes.
+    Raises `NoSuchCase` where the solver has no concept case."""
+    concept = next((c for c in loaded.every if case_name(loaded.solver, c, loaded.names) == "concept"), None)
+    if concept is None:
+        raise NoSuchCase("concept")
+    choice = loaded.solver.choice
+    every = frozenset() if choice is None else frozenset(c.name for p in choice.points for c in p.constructors)
+
+    def takes(case: Case) -> frozenset[str]:
+        return every - untaken(loaded.solver, case.base)
+
+    covered = takes(concept)
+    out = [concept]
+    for case in loaded.every:
+        if case is not concept and takes(case) - covered:
+            out.append(case)
+            covered |= takes(case)
+    return out
+
+
+def read_by_converted(stem: str) -> list[str]:
+    """The name of each arclog relation the converted program reads, as the
+    name map gives them (`relations` and `unmapped`); none where the
+    converter wrote no name map."""
+    path = names_path(stem)
+    if not path.is_file():
+        return []
+    data = json.loads(path.read_text())
+    return [*data["relations"], *data["unmapped"]]
+
+
+def classify(loaded: Loaded, columns: Mapping[str, Any], read: Sequence[str]
+             ) -> tuple[dict[RelationName, str], list[dict[str, str]]]:
+    """The relations of the run that the check compares, each with its arclog
+    name, and a `{"name", "verdict", "reason"}` for each relation it does not
+    compare, by the rules in the module docstring: one for each relation of
+    the run, then one for each arclog relation in `read`, the names the
+    converted program reads (`read_by_converted`), that no relation of the
+    run maps to."""
+    program = loaded.eng.expand(loaded.solver.program)
+    graph = Graph(program, loaded.eng)
+    marks = lib_inputs(program)
+    written = {graph.place(at, u.head.relation) for u in program.units if u.span is None or own(u.span)
+               for at in graph.paths_of(u)}
+    mapped: dict[RelationName, str] = {}
+    left: dict[str, Reason] = {}
+    run = every_relation(loaded.eng, loaded.solver.program)
+    for r in run:
+        name = relation_name(loaded.names, r)
+        found = graph.decl((), r)
+        if found is None:
+            raise ValueError(f"`{r.text}` of the run has no declaration")
+        span = found[0].span
+        stands = name.startswith("&")
+        if not r.instances and (span.file, span.first) in marks:
+            left[name] = Reason.INPUT
+        elif not own(span) and r not in written and not stands:
+            left[name] = Reason.LIB
+        elif all(u.body is None for u, _ in graph.feeding(r)) and not stands:
+            left[name] = Reason.FACTS
+        elif name in columns:
+            mapped[r] = name
+        else:
+            left[name] = Reason.NO_ENTRY
+    stood = {relation_name(loaded.names, r) for r in run}
+    left.update((n, Reason.NO_RELATION) for n in read if n not in stood)
+    return mapped, [{"name": n, "verdict": why.verdict.value, "reason": why.value} for n, why in left.items()]
+
+
+def case_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | RunFailure:
+    """The rows of the cases `cases_to_run` gives for the solver of `stem`,
+    read from `solver_file`, each on every train and test pair, for each
+    relation `classify` compares, each row projected onto the columns the
+    column map (`columns_path`) gives it, which leave out each Example leaf:
+    for each, the leaves of the value at its `leaf` in its Souffle column. A
+    relation's rows are a set. The form: `{"orientation_constants": {...},
+    "cases": [{"case": <arclog name>, "pairs": [{"pair": "train 0",
     "relations": [{"name": "&x", "columns": [[label, field], ...],
     "idents": [kind, ...], "unread": [[label, field], ...],
     "unresolved": [[label, field, reason], ...], "rows": [[[leaves of column 1], ...], ...],
-    "fault": text}]}], "skipped": [{"name", "reason"}]}`. A column of
+    "by_open": [rows, ...], "fault": text}]}]}], "not_compared": [{"name",
+    "verdict", "reason"}]}`; a case whose run gives no rows has `"failure":
+    text` in place of `pairs`. A relation whose entry has no column to
+    compare has an empty `columns`, and its rows are `[]` where it has a row.
+    A column of
     `unread` is a mapped column whose leaf some row lacks, which every list
     of `columns` and `rows` leaves out; so is a column of `unresolved`, a
     leaf of type `Ident` that has no one source (`parity.idents`), with its
@@ -168,31 +309,45 @@ def concept_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | R
     number a clause writes; and `null` for any other leaf. `fault`, which a
     relation's entry holds only where it applies, is the text of a minted
     id that the minting relation's rows on the pair do not hold at the
-    row's key. The case's undefined outcome or a run's failure where one
-    gives no rows. Raises `NoSuchCase` where the solver has no concept case,
+    row's key. `by_open`, which an entry holds only where the Souffle
+    relation has a column of type `OpenValue` that the column map gives no
+    arclog column, holds the rows of each distinct value of that column
+    (each a list as `rows` is), whose union is `rows`. The concept case's undefined outcome or a run's failure
+    where it gives no rows. Raises `NoSuchCase` where the solver has no concept case,
     and `FileNotFoundError` where the column map is missing."""
     loaded = load_once(stem, solver_file)
     if not isinstance(loaded, Loaded):
         return loaded
-    chosen = next((c for c in loaded.every if case_name(loaded.solver, c, loaded.names) == "concept"), None)
-    if chosen is None:
-        raise NoSuchCase("concept")
+    chosen = cases_to_run(loaded)
     columns: dict[str, list[list[dict[str, Any]]]] = json.loads(columns_path(stem).read_text())
-    mapped: dict[RelationName, str] = {}
-    skipped: list[dict[str, str]] = []
-    for r in every_relation(loaded.eng, loaded.solver.program):
-        name = relation_name(loaded.names, r)
-        if name not in columns:
-            skipped.append({"name": name, "reason": "no entry in the column map"})
-        elif not any(not e["example"] for column in columns[name] for e in column):
-            skipped.append({"name": name, "reason": "no column to compare: every leaf is a case, a drop or an Example leaf"})
+    mapped, not_compared = classify(loaded, columns, read_by_converted(stem))
+    entries = []
+    for i, case in enumerate(chosen):
+        name = case_name(loaded.solver, case, loaded.names)
+        got = case_entry(loaded, case, columns, mapped)
+        if isinstance(got, list):
+            entries.append({"case": name, "pairs": got})
+        elif i == 0:
+            return got
         else:
-            mapped[r] = name
+            entries.append({"case": name, "failure": str(got)})
+    return {"orientation_constants": orientation_constants(loaded.solver.lib), "cases": entries,
+            "not_compared": not_compared}
+
+
+def case_entry(loaded: Loaded, chosen: Case, columns: Mapping[str, list[list[dict[str, Any]]]],
+               mapped: Mapping[RelationName, str]) -> list[dict[str, Any]] | Undefined | RunFailure:
+    """The `pairs` of the entry of `chosen` in `case_rows`' form, or the
+    case's undefined outcome or a run's failure."""
     taken = loaded.taking(chosen)
     sources = ident_sources(loaded.eng, taken.program)
+    graph = sources.graph
     leaves_of = {r: [MappedLeaf(j, e["label"], e["field"], tuple(e["leaf"]), sources.of(r, j, tuple(e["leaf"])))
                      for j, column in enumerate(columns[name]) for e in column if not e["example"]]
                  for r, name in mapped.items()}
+    opens = {r: [j for j, column in enumerate(columns[name]) if not any(not e["example"] for e in column)
+                 and open_valued(graph, r, j)]
+             for r, name in mapped.items()}
     asked = list(dict.fromkeys([*mapped, *(m for ls in leaves_of.values() for leaf in ls
                                            if isinstance(leaf.source, Minted) for m in sources.minting(leaf.source))]))
     runs = []
@@ -204,11 +359,16 @@ def concept_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | R
     unread = {r: [leaf for leaf in ls if any(leaves_at(row[leaf.column], leaf.path) is None
                                              for _, got in runs for row in got[r])]
               for r, ls in leaves_of.items()}
-    pairs = [{"pair": pair, "relations": [relation_entry(name, got[r], leaves_of[r], unread[r], Writer(sources, got))
-                                          for r, name in mapped.items()]}
-             for pair, got in runs]
-    return {"orientation_constants": orientation_constants(loaded.solver.lib), "pairs": pairs,
-            "skipped": skipped}
+    return [{"pair": pair, "relations": [relation_entry(name, got[r], leaves_of[r], unread[r], opens[r],
+                                                        Writer(sources, got))
+                                         for r, name in mapped.items()]}
+            for pair, got in runs]
+
+
+def open_valued(graph: Graph, relation: RelationName, column: int) -> bool:
+    """Whether column `column` of `relation` is of type `OpenValue`."""
+    found = graph.decl((), relation)
+    return found is not None and found[0].columns[column].type == TypeName((), OPEN_VALUE)
 
 
 @dataclass(frozen=True)
@@ -225,15 +385,16 @@ class MappedLeaf:
     source: Source | None
 
 
-def relation_entry(name: str, rows: Rows, leaves: list[MappedLeaf], unread: list[MappedLeaf], writer: Writer
-                   ) -> dict[str, Any]:
-    """The entry of the relation `name` for one pair in `concept_rows`' form,
-    from its `rows` on the pair, its mapped `leaves`, those of them that are
-    `unread`, and the `writer` of the minted ids."""
-    unresolved = {leaf: leaf.source.reason for leaf in leaves
+def relation_entry(name: str, rows: Rows, mapped: list[MappedLeaf], unread: list[MappedLeaf],
+                   opens: list[int], writer: Writer) -> dict[str, Any]:
+    """The entry of the relation `name` for one pair in `case_rows`' form,
+    from its `rows` on the pair, its `mapped` leaves, those of them that are
+    `unread`, the columns of type `OpenValue` that it holds (`opens`), and
+    the `writer` of the minted ids."""
+    unresolved = {leaf: leaf.source.reason for leaf in mapped
                   if leaf not in unread and isinstance(leaf.source, Unresolved)}
-    read = [leaf for leaf in leaves if leaf not in unread and leaf not in unresolved]
-    table: list[list[list[int | float | str]]] = []
+    read = [leaf for leaf in mapped if leaf not in unread and leaf not in unresolved]
+    table: list[tuple[str, list[list[int | float | str]]]] = []
     faults: list[tuple[int, str]] = []
     ambiguous: dict[int, str] = {}
     for row in rows:
@@ -249,16 +410,23 @@ def relation_entry(name: str, rows: Rows, leaves: list[MappedLeaf], unread: list
                 except Ambiguous as other:
                     ambiguous[i] = min(ambiguous.get(i, str(other)), str(other))
             cell.append(value)
-        table.append(cell)
+        table.append((json.dumps([leaf for j in opens for leaf in leaves(row[j])]), cell))
     kept = [i for i in range(len(read)) if i not in ambiguous]
     unresolved.update((read[i], reason) for i, reason in ambiguous.items())
     fault = [text for i, text in faults if i in kept]
+
+    def distinct(cells: list[list[list[int | float | str]]]) -> list[Any]:
+        return [json.loads(cell) for cell in sorted({json.dumps([c[i] for i in kept]) for c in cells})]
+
     entry: dict[str, Any] = {
         "name": name, "columns": [[read[i].label, read[i].field] for i in kept],
         "idents": [kind_of(read[i].source) for i in kept],
         "unread": [[leaf.label, leaf.field] for leaf in unread],
-        "unresolved": [[leaf.label, leaf.field, unresolved[leaf]] for leaf in leaves if leaf in unresolved],
-        "rows": [json.loads(cell) for cell in sorted({json.dumps([c[i] for i in kept]) for c in table})]}
+        "unresolved": [[leaf.label, leaf.field, unresolved[leaf]] for leaf in mapped if leaf in unresolved],
+        "rows": distinct([cell for _, cell in table])}
+    if opens:
+        groups = sorted({value for value, _ in table})
+        entry["by_open"] = [distinct([cell for value, cell in table if value == group]) for group in groups]
     if fault:
         entry["fault"] = min(fault)
     return entry

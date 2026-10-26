@@ -98,7 +98,7 @@ const DERIVED: &str = "=$Derived";
 /// `<relation>=$Stored` as `<relation>=stored` and its derived reading by
 /// its one proposer as `<relation>=<proposer>`, and is `concept` where
 /// there is none.
-fn names_case(key: &str, name: &CaseName, concept: &[AltsName]) -> bool {
+pub(crate) fn names_case(key: &str, name: &CaseName, concept: &[AltsName]) -> bool {
     let mut parts: BTreeSet<&str> = if key == "concept" { BTreeSet::new() } else { key.split(" & ").collect() };
     for alt in name.0.iter().filter(|alt| !concept.contains(alt)) {
         let found = if let Some(relation) = alt.0.strip_suffix(DERIVED) {

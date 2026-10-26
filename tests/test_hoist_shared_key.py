@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_a_tiling_over_two_per_example_inputs_is_keyed_by_the_example(tmp_path):
-    subprocess.run([sys.executable, "-m", "arclog_convert.convert", "--no-train-replay", "--out", str(tmp_path),
+    subprocess.run([sys.executable, "-m", "arclog_convert.convert", "--no-train-replay", "--no-row-parity", "--out", str(tmp_path),
                     "c3e719e8"], cwd=ROOT, check=True, capture_output=True)
     text = (tmp_path / "gen" / "c3e719e8.arclog").read_text()
     found = re.search(r"\(INIT &background_tiling Tiling.*?\n\n", text, re.S)

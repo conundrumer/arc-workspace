@@ -7,10 +7,24 @@ The command checks the files under `gen/` of `arclog_convert.out`, or of
 `--out`, with no conversion; in a linked worktree it writes no record without
 `--out` or `ARCLOG_OUT`, and it rewrites no baseline. `arclog_convert.convert` runs the same check on the
 solvers it converted. For each task, `arclog-cli row-parity` compares the rows
-of each relation of the concept case with the rows of Souffle's run of the
-solver (`parity.rerun.concept_rows`), as `engine/arclog-cli/src/row_parity.rs`
-gives; its lines are `<task> <relation> <verdict> <detail>`, with the verdict
-`equal`, `differ`, `fault` or `skip`. The tables export runs none of it.
+of each relation of the cases the check runs, the concept case and the first
+case that takes each ALT that no case before it takes, with the rows of
+Souffle's run of the solver (`parity.rerun.case_rows`), as
+`engine/arclog-cli/src/row_parity.rs` gives; its lines are `<task>
+<relation> <verdict> <detail>`, with the verdict `equal`, `differ`, `fault`,
+`skip` or `uncompared`. The line of a relation that the solver's program
+outputs, and of each arclog relation of the name map, is one of these. `skip`
+is for a relation that holds no row the solver derives: an input of the
+Souffle program, a lib relation that no clause of the solver writes, or a
+relation of facts alone, where no arclog relation stands for it. `uncompared`
+is for each other relation the check does not compare: one with no entry in
+the column map, an arclog relation that no Souffle relation of the run
+stands for, and a relation that no case it runs has. A line's detail gives
+the reason of a `skip` or an `uncompared`, and the case and the pair of any
+other verdict. An `equal` line proves that the relation's rows in each case
+that derives it, at the stored parameters, are Souffle's rows of it over the
+columns the converter maps (`row_parity.rs` gives the rest). The tables export
+runs none of it.
 
 A task's lines stand in `row_parity/<stem>.json` beside `gen/`, as a record
 with these fields: `files`, the sha256 of the task's files as
@@ -29,13 +43,15 @@ task, then one `arclog-cli row-parity` call on the chunk with
 
 `row_parity.tsv` is the baseline: a line `<task> <relation> <verdict>
 <ticket or ->` (tab-separated) for each task and relation whose verdict is
-`differ` or `fault`, and for each task whose Souffle side gives no rows, with
-`*` as the relation. The report covers the tasks the run covers. It prints a
-line for each task and relation beyond the baseline, with its detail; a line
-for each relation that the task's previous record gives `equal` and that is
-not `equal` now; a line for each baseline line that is now `equal`; and a
-final line with the counts. The exit status is 1 where a line is beyond the
-baseline or a relation was `equal` and is not now, and 0 otherwise.
+`differ`, `fault` or `uncompared`, and for each task whose Souffle side gives
+no rows, with `*` as the relation. The report covers the tasks the run
+covers. It prints a line for each task and relation beyond the baseline, with
+its detail; a line for each relation that the task's previous record gives
+`equal` and that is not `equal` now; a line for each baseline line that is now
+`equal`; and a final line with the count of each verdict, and of each reason
+of `skip` and of `uncompared`, and of the lines beyond the baseline. The
+exit status is 1 where a line is beyond the baseline or a relation was
+`equal` and is not now, and 0 otherwise.
 `arclog_convert.convert --accept` rewrites the baseline lines of the solvers
 it converted, keeping the ticket field of each line that stays."""
 
@@ -57,8 +73,11 @@ from engine import checkout
 
 BASELINE = Path(__file__).with_name("row_parity.tsv")
 
-VERSION = 1
+VERSION = 2
 """The form of a record."""
+
+FAILING = ("differ", "fault", "uncompared")
+"""The verdicts that the baseline holds and that fail the run."""
 
 CHUNK = 8
 """The tasks one call of `arclog-cli row-parity` takes."""
@@ -113,7 +132,7 @@ def check_chunk(stems: list[str], gen: Path, tasks: Path, records: Path, solvers
         rows = []
         for stem in stems:
             try:
-                got = rerun.concept_rows(stem, solvers / f"{stem}.dl")
+                got = rerun.case_rows(stem, solvers / f"{stem}.dl")
             except (rerun.NoSuchCase, FileNotFoundError) as e:
                 lines[stem] = [("*", "fault", f"no Souffle rows: {type(e).__name__}: {e}")]
                 continue
@@ -181,7 +200,7 @@ def check(stems: list[str], out: Path, accept: bool = False) -> int:
     beyond = regressed = 0
     for stem in stems:
         for relation, verdict, detail in lines[stem]:
-            if verdict in ("differ", "fault") and baseline.get((stem, relation), ("", ""))[0] != verdict:
+            if verdict in FAILING and baseline.get((stem, relation), ("", ""))[0] != verdict:
                 beyond += 1
                 print(f"{stem}\t{relation}\t{verdict}\t{detail}")
     for stem in stale:
@@ -197,16 +216,17 @@ def check(stems: list[str], out: Path, accept: bool = False) -> int:
         if stem in lines and any(r == relation and v == "equal" for r, v, _ in lines[stem]):
             print(f"{stem}\t{relation}\tnow equal; the baseline gives {verdict}")
     verdicts = Counter(verdict for stem in stems for _, verdict, _ in lines[stem])
-    reasons = Counter(detail.split(":")[0] for stem in stems for _, verdict, detail in lines[stem] if verdict == "skip")
+    reasons = {left: Counter(detail.split(":")[0] for stem in stems for _, verdict, detail in lines[stem] if verdict == left)
+               for left in ("skip", "uncompared")}
     print(f"row parity: {len(stale)} tasks checked, {len(stems) - len(stale)} taken from their record; "
           f"{', '.join(f'{n} {v}' for v, n in sorted(verdicts.items()))}; "
-          f"skipped: {', '.join(f'{n} {r}' for r, n in sorted(reasons.items()))}; "
-          f"{beyond} beyond the baseline, {regressed} no longer equal")
+          + "; ".join(f"{left}: {', '.join(f'{n} {r}' for r, n in sorted(counts.items()))}" for left, counts in reasons.items())
+          + f"; {beyond} beyond the baseline, {regressed} no longer equal")
     if accept:
         kept = {k: v for k, v in baseline.items() if k[0] not in lines}
         for stem in stems:
             for relation, verdict, _ in lines[stem]:
-                if verdict in ("differ", "fault"):
+                if verdict in FAILING:
                     kept[stem, relation] = (verdict, baseline.get((stem, relation), ("", "-"))[1])
         write_baseline(kept)
     return 1 if beyond or regressed else 0
