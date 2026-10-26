@@ -969,7 +969,7 @@ impl State {
                     _ => columns.iter().map(|column| column.name.clone()).collect(),
                 };
                 let derives = ProgramRelation::Declared(RelationName(DeclaredName::Slot(slot)));
-                let value = Clause { keyword: clause.keyword, derives: derives.clone(), gloss: None, proposers: clause.proposers.into(), body, stored: Arc::from([]), ones: ones.into(), set, columns };
+                let value = Clause { keyword: clause.keyword, derives: derives.clone(), gloss: None, proposers: clause.proposers.into(), body, ones: ones.into(), set, columns };
                 self.declare(derives, names, true);
                 forced.push(Token::Relation(slot));
                 Built::Form(Form::Clause(Node::new(value)))
@@ -1257,7 +1257,7 @@ impl State {
                 };
                 let derives = ProgramRelation::Declared(RelationName(slot));
                 let proposers = clause.proposers.iter().cloned().collect();
-                let value = Clause { keyword: clause.keyword, derives, gloss: None, proposers, body, ones: ones.into(), set, stored: Arc::from([]), columns: Arc::from([]) };
+                let value = Clause { keyword: clause.keyword, derives, gloss: None, proposers, body, ones: ones.into(), set, columns: Arc::from([]) };
                 Built::Form(Form::Clause(Node::new(value)))
             }
             Frame::One(_) | Frame::Constraint(_) => return None,

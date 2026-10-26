@@ -710,7 +710,7 @@ def fold_or_lines(text: str) -> str:
     """Each RULE_OR_DET or DET_OR_RULE line on a relation that a clause of
     the same block derives, folded into that clause: the clause takes the
     line's head, gloss and proposers, and the line goes, so one form
-    derives the relation. A `(SET)` or `(STORED ...)` mark of the line goes with it: a clause
+    derives the relation. A `(SET)` mark of the line goes with it: a clause
     with a body gives one value."""
     from arclog_convert.lint import L, Str, Sym, read, flat
     try:
@@ -727,7 +727,7 @@ def fold_or_lines(text: str) -> str:
                 continue
             named = len(x.items) >= 2 and isinstance(x.items[1], Sym)
             after = x.items[3:] if named and isinstance(x.items[2:3] and x.items[2], Str) else x.items[2:]
-            if x.head in side_of and named and all(isinstance(y, Sym) or y.head in ("ONE", "SET", "STORED") for y in after):
+            if x.head in side_of and named and all(isinstance(y, Sym) or y.head in ("ONE", "SET") for y in after):
                 lines_.append((block, x))
             elif x.head in ("RULE", "DET") and named and any(isinstance(y, L) and y.head != "ONE" for y in x.items[2:]):
                 clauses[(block, x.head, x.items[1].text)].append(x)

@@ -148,16 +148,3 @@ fn a_key_label_at_depth_in_a_key_body_is_read() {
         assert_eq!(diagnostics(text), Vec::new(), "{text}");
     }
 }
-
-#[test]
-fn a_stored_mark_reads_and_writes_back_and_is_refused_outside_a_rule_or_det_line() {
-    use arclog::write::write_arclog;
-    let line = "(RULE_OR_DET &ray \"Each diagonal.\" (STORED (:key D) D))\n";
-    let read = read_arclog(line, SourceFile::Arclog).expect("the line reads as s-expressions");
-    assert_eq!(read.diagnostics.len(), 0, "{:?}", read.diagnostics);
-    let (program, layout) = read.value;
-    assert_eq!(write_arclog(&program, &layout), line);
-    for text in ["(RULE &a (input *P *C) (STORED C))\n", "(RULE_OR_DET &a (STORED))\n", "(RULE_OR_DET &a (STORED (:key)))\n", "(RULE_OR_DET &a (STORED C) (STORED C))\n"] {
-        assert!(!diagnostics(text).is_empty(), "{text}");
-    }
-}

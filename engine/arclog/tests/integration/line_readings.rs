@@ -313,14 +313,14 @@ const KEYED_PORT: &str = "
       (cell (P)
         (input *P Col))))
 
-  (RULE_OR_DET &bbox.box \"The boxes.\" (STORED (:key Col)))
+  (RULE_OR_DET &bbox.box \"The boxes.\")
 
   (RULE &output
     (&bbox.box (:key *Col) *B)))
 ";
 
 #[test]
-fn the_stored_reading_of_a_line_with_a_stored_mark_is_a_det_of_the_value_columns_and_a_rule_that_joins_the_other_columns() {
+fn the_stored_reading_of_a_line_on_a_keyed_port_is_a_det_of_the_value_columns_and_a_rule_that_joins_the_other_columns() {
     let (case, stream) = stored_case(KEYED_PORT, "&bbox.box");
     assert_eq!(clauses_of(&case, "&bbox_box_value"), vec![ClauseKeyword::Det]);
     assert_eq!(clauses_of(&case, "&bbox_box_stored"), vec![ClauseKeyword::Rule]);
@@ -331,5 +331,70 @@ fn the_stored_reading_of_a_line_with_a_stored_mark_is_a_det_of_the_value_columns
     });
     let columns: Vec<String> = rule.expect("the joining RULE").columns.iter().map(|column| format!("{:?}", column.name)).collect();
     assert_eq!(columns, vec!["Written(\"KeyCol\")", "Written(\"B\")"]);
+    assert_eq!(stream, Ok(()));
+}
+
+/// `Col` is a key field of the instance. One read gives the column `v` the
+/// label of the key's field `Col`, and the other gives it a label of its own.
+const KEYED_PORT_WITH_A_JOINED_COLUMN: &str = "
+(INPUT ring \"the ring\"
+  (INIT &ring Singleton
+    (key ((input *P ^Col))
+      (member ((:v Col))
+        (input *P Col))))
+
+  (RULE_OR_DET &ring.value \"The one color.\")
+
+  (RULE &other
+    (&ring.value (:key (:Col *K)) (:v *Col)))
+
+  (RULE &output
+    (input *P *Col)
+    (&ring.value (:key (:Col Col)) (:v Col))
+    (&other)))
+";
+
+/// The sites of the atoms of the body of the clause that derives `relation`.
+fn sites_of_atoms(case: &Case, relation: &str) -> Vec<usize> {
+    let declared = ProgramRelation::Declared(RelationName(DeclaredName::Written(relation.into())));
+    let clause = case.program.value().forms.iter().find_map(|form| match form {
+        Form::Clause(clause) if clause.value().derives == declared => Some(clause.value().clone()),
+        _ => None,
+    });
+    let clause = clause.expect("the clause");
+    clause.body.value().conjuncts.iter().filter_map(|c| c.atom().map(|atom| atom.value().sites.len())).collect()
+}
+
+#[test]
+fn a_column_that_a_read_of_a_keyed_port_names_with_a_label_of_its_own_is_a_column_of_the_join() {
+    let (case, stream) = stored_case(KEYED_PORT_WITH_A_JOINED_COLUMN, "&ring.value");
+    // `ex_output (:E)`, then the read of the port at `E` and the key field `Col`.
+    assert_eq!(sites_of_atoms(&case, "&ring_value_value"), vec![1, 2]);
+    // The value rows at `KeyCol`, then the port's rows at `v`.
+    assert_eq!(sites_of_atoms(&case, "&ring_value_stored"), vec![1, 1]);
+    assert_eq!(stream, Ok(()));
+}
+
+const KEYED_PORT_WITH_A_VALUE_COLUMN: &str = "
+(INPUT ring \"the ring\"
+  (INIT &ring Singleton
+    (key ((input *P ^Col))
+      (member ((:v Col))
+        (input *P Col))))
+
+  (RULE_OR_DET &ring.value \"The one color.\")
+
+  (RULE &output
+    (input *P *Col)
+    (&ring.value (:key (:Col Col)) (:v Col))))
+";
+
+#[test]
+fn a_column_that_each_read_of_a_keyed_port_names_with_a_key_fields_label_is_a_value_column() {
+    let (case, stream) = stored_case(KEYED_PORT_WITH_A_VALUE_COLUMN, "&ring.value");
+    // `ex_output (:E)`, then the read of the port at `E`, the key field `Col` and `v`.
+    assert_eq!(sites_of_atoms(&case, "&ring_value_value"), vec![1, 3]);
+    // The value rows at `KeyCol` and `v`, and no other column to join.
+    assert_eq!(sites_of_atoms(&case, "&ring_value_stored"), vec![2]);
     assert_eq!(stream, Ok(()));
 }

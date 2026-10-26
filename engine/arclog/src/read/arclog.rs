@@ -498,29 +498,12 @@ impl Reader {
             record.token(*place);
             rest = &rest[1..];
         }
-        let marks_at = rest.iter().position(|e| matches!(head_of(e), Some(sp::ONE | sp::SET | sp::STORED))).unwrap_or(rest.len());
+        let marks_at = rest.iter().position(|e| matches!(head_of(e), Some(sp::ONE | sp::SET))).unwrap_or(rest.len());
         let (conjuncts, marks) = rest.split_at(marks_at);
         let body = self.conjuncts(conjuncts, &path.child(0), scope, Record::new(None), None);
         let mut ones = Vec::new();
         let mut set = false;
-        let mut stored = Vec::new();
         for expr in marks {
-            if head_of(expr) == Some(sp::STORED) {
-                if keyword != ClauseKeyword::RuleOrDet || !stored.is_empty() {
-                    return self.refuse("only a `RULE_OR_DET` line holds a `STORED` mark, and at most one", expr.place());
-                }
-                let mark = self.list(expr, "a `STORED` mark")?;
-                if mark.items.len() < 2 {
-                    return self.refuse("a `STORED` mark names a value column", mark.place);
-                }
-                record.token(mark.open);
-                record.token(mark.items[0].place());
-                for item in &mark.items[1..] {
-                    stored.push(self.stored_site(item, record)?);
-                }
-                record.token(mark.close);
-                continue;
-            }
             if head_of(expr) == Some(sp::SET) {
                 let mark = self.list(expr, "a `SET` mark")?;
                 if set || mark.items.len() > 1 {
@@ -533,7 +516,7 @@ impl Reader {
                 continue;
             }
             if head_of(expr) != Some(sp::ONE) {
-                return self.refuse("a clause's `ONE`, `SET` and `STORED` marks stand after its body", expr.place());
+                return self.refuse("a clause's `ONE` and `SET` marks stand after its body", expr.place());
             }
             let mark = self.list(expr, "a `ONE` mark")?;
             record.token(mark.open);
@@ -559,39 +542,8 @@ impl Reader {
             body,
             ones: ones.into(),
             set,
-            stored: stored.into(),
             columns,
         }))
-    }
-
-    /// A value column of a `STORED` mark: a column's name, or `(:<Column> <Field>)`.
-    fn stored_site(&mut self, expr: &SExpr, record: &mut Record) -> R<StoredSite> {
-        match expr {
-            SExpr::Symbol { text, place } => {
-                if !is_name(text) {
-                    return self.refuse(format!("`{text}` is not a column's name"), *place);
-                }
-                record.token(*place);
-                Ok(StoredSite { column: ColumnName::Written(text.clone()), field: None })
-            }
-            _ => {
-                let list = self.list(expr, "a `STORED` mark's record column")?;
-                let (head, place) = self.symbol(list.items.first(), "a record column", list.place)?;
-                let Some(column) = head.strip_prefix(sp::COLUMN_MARK).filter(|c| is_name(c)) else {
-                    return self.refuse(format!("`{head}` is not a column, `:` and a name"), place);
-                };
-                let [_, field] = list.items else { return self.refuse("a record column of a `STORED` mark holds one field's name", list.place) };
-                let (field, field_place) = self.symbol(Some(field), "a field's name", list.place)?;
-                if !is_name(field) {
-                    return self.refuse(format!("`{field}` is not a field's name"), field_place);
-                }
-                record.token(list.open);
-                record.token(place);
-                record.token(field_place);
-                record.token(list.close);
-                Ok(StoredSite { column: ColumnName::Written(column.into()), field: Some(ColumnName::Written(field.into())) })
-            }
-        }
     }
 
     /// The body of the conjuncts `exprs`, at `path`, with `record` as its

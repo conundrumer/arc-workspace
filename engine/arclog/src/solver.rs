@@ -801,7 +801,7 @@ fn read_as(line: &Clause, reading: Reading) -> Clause {
     // A reading with no body has no labels for the body's columns: its
     // proposer declares the columns.
     let columns = if body.value().conjuncts.is_empty() && !proposers.is_empty() { Arc::from([]) } else { line.columns.clone() };
-    Clause { keyword, proposers, body, columns, set: line.set && reading == Reading::Stored, stored: Arc::from([]), ..line.clone() }
+    Clause { keyword, proposers, body, columns, set: line.set && reading == Reading::Stored, ..line.clone() }
 }
 
 /// A read of one relation that a form reads as another, with its sites as
@@ -817,12 +817,16 @@ struct Rename {
     flat: Vec<(ColumnName, ColumnName, ColumnName)>,
 }
 
+/// Whether the read `atom` has a site on the Example column.
+fn lifted(atom: &Atom) -> bool {
+    atom.sites.iter().any(|site| site.column == crate::resolver::columns::example())
+}
+
 impl Rename {
     /// The atom read as `to`, or `None` where `atom` reads other than `from`
     /// or is kept.
     fn of(&self, atom: &Atom) -> Option<Atom> {
-        let lifted = atom.sites.iter().any(|site| site.column == crate::resolver::columns::example());
-        (atom.relation == self.from && !(self.keep_lifted && lifted)).then(|| Atom { relation: self.to.clone(), sites: self.sites(&atom.sites) })
+        (atom.relation == self.from && !(self.keep_lifted && lifted(atom))).then(|| Atom { relation: self.to.clone(), sites: self.sites(&atom.sites) })
     }
 
     /// The sites of a read of `from` as sites of a read of `to`: a site on a
@@ -940,13 +944,13 @@ fn single_label(site: &Site) -> Option<(&SiteArg, LabelId)> {
 /// `read`, the Example column left out (`docs/arclog/arclog.md#sites`); the
 /// helper has all of the line's.
 ///
-/// A line on an output port with a `(STORED ...)` mark states its value
-/// columns: the `DET` determines those columns alone, each field of a record
-/// column as a column of its own (`(:key D)` as `KeyD`), reading the port with
-/// the others existential, and a `RULE` joins its rows with the rows of the
-/// other columns that a read names, which the port gives on the input. A read
-/// of the port in the case reads that `RULE`, a record site expanded to one
-/// site on each field's column.
+/// A line on an output port of an instance with a key clause states its value
+/// columns by [`value_columns`]: the `DET` determines those columns alone, each
+/// field of a record column as a column of its own (`(:key D)` as `KeyD`),
+/// reading the port with the others existential, and a `RULE` joins its rows
+/// with the rows of the other columns that a read names, which the port gives
+/// on the input. A read of the port in the case reads that `RULE`, a record
+/// site expanded to one site on each field's column.
 fn stored_reading(
     line: &Clause,
     port: Option<Port<'_>>,
@@ -977,7 +981,6 @@ fn stored_reading(
             body,
             ones: Arc::from([]),
             set: false,
-            stored: Arc::from([]),
             columns,
         }))
     };
@@ -1034,7 +1037,9 @@ fn stored_reading(
         return Some(StoredReading { forms, rename: None, helper: None, input: Some(input) });
     }
     let ProgramRelation::Output(_) = &line.derives else { return None };
-    let records: Vec<&ColumnName> = line.stored.iter().filter(|site| site.field.is_some()).map(|site| &site.column).collect();
+    let keyed = instance.and_then(|instance| instance.key.as_ref());
+    let key_column = crate::resolver::columns::key();
+    let records: Vec<&ColumnName> = keyed.iter().map(|_| &key_column).collect();
     let mut plain: Vec<ColumnName> = Vec::new();
     let mut flat: Vec<(ColumnName, ColumnName, ColumnName)> = Vec::new();
     for placed in others {
@@ -1068,7 +1073,7 @@ fn stored_reading(
     for placed in others {
         let mut shapes_ok = true;
         each_atom(NodeRef::from(&placed.form), &mut |atom| {
-            if atom.relation != relation || atom.sites.iter().any(|site| site.column == crate::resolver::columns::example()) {
+            if atom.relation != relation || lifted(atom) {
                 return;
             }
             // A column new to `columns` stands after the column that precedes it
@@ -1104,25 +1109,26 @@ fn stored_reading(
             return None;
         }
     }
-    if line.stored.is_empty() {
+    let value_sites = keyed.map_or_else(Vec::new, |key| value_columns(key.value(), &key_column, &columns, others, &relation));
+    if value_sites.is_empty() {
         let name = fresh("_stored", used);
         let det = RelationRef::Declared(name.clone());
         let mut clause = determination(line, &relation, &columns, false);
         clause.derives = ProgramRelation::Declared(name);
         return Some(StoredReading { forms: vec![Form::Clause(Node::new(clause))], rename: Some(Rename { from: relation, to: det, keep_lifted: true, flat: Vec::new() }), helper: None, input: None });
     }
-    // The value columns, in the mark's order, then the other columns read.
+    // The value columns, then the other columns read.
     let mut values = Vec::new();
-    for site in line.stored.iter() {
-        let at = columns.iter().position(|column| match &site.field {
-            None => column.record.is_none() && column.name == site.column,
-            Some(field) => column.record.as_ref() == Some(&(site.column.clone(), field.clone())),
+    for (column, field) in &value_sites {
+        let at = columns.iter().position(|known| match field {
+            None => known.record.is_none() && known.name == *column,
+            Some(field) => known.record.as_ref() == Some(&(column.clone(), field.clone())),
         });
         values.push(match at {
             Some(at) => columns.remove(at),
-            None => match &site.field {
-                None => StoredColumn { name: site.column.clone(), arg: SiteArg::Label(LabelUse::Zero), record: None },
-                Some(field) => StoredColumn { name: flat_column(&site.column, field), arg: SiteArg::Label(LabelUse::Zero), record: Some((site.column.clone(), field.clone())) },
+            None => match field {
+                None => StoredColumn { name: column.clone(), arg: SiteArg::Label(LabelUse::Zero), record: None },
+                Some(field) => StoredColumn { name: flat_column(column, field), arg: SiteArg::Label(LabelUse::Zero), record: Some((column.clone(), field.clone())) },
             },
         });
     }
@@ -1147,6 +1153,33 @@ fn stored_reading(
     let to = RelationRef::Declared(stored);
     let forms = vec![Form::Clause(Node::new(det)), rule];
     Some(StoredReading { forms, rename: Some(Rename { from: relation, to, keep_lifted: true, flat }), helper: None, input: None })
+}
+
+/// The value columns of the stored reading of a line on an output port of an
+/// instance with the key clause `key`, each as the port's column and, for a
+/// field of the key record `key_column`, the field: the key's fields, then
+/// each of `columns` that every read of `relation` among `others` names with
+/// the label that the same read gives a field of the key.
+fn value_columns(key: &KeyClause, key_column: &ColumnName, columns: &[StoredColumn], others: &[&Placed], relation: &RelationRef) -> Vec<(ColumnName, Option<ColumnName>)> {
+    let mut joined: Vec<&ColumnName> = columns.iter().filter(|column| column.record.is_none()).map(|column| &column.name).collect();
+    for placed in others {
+        each_atom(NodeRef::from(&placed.form), &mut |atom| {
+            if atom.relation == *relation && !lifted(atom) {
+                joined.retain(|column| names_key_field(atom, key_column, column));
+            }
+        });
+    }
+    let fields = key.key.columns.iter().map(|field| (key_column.clone(), Some(field.name.clone())));
+    fields.chain(joined.into_iter().map(|column| (column.clone(), None))).collect()
+}
+
+/// Whether the read `atom` names `column` with the label that it gives a
+/// field of its site on `key_column`.
+fn names_key_field(atom: &Atom, key_column: &ColumnName, column: &ColumnName) -> bool {
+    let site_on = |name: &ColumnName| atom.sites.iter().find(|site| site.column == *name);
+    let (Some(key), Some(site)) = (site_on(key_column), site_on(column)) else { return false };
+    let (Some(fields), Some((_, label))) = (record_fields(key), single_label(site)) else { return false };
+    fields.iter().any(|(_, field)| matches!(field, LabelUse::Fresh(id) | LabelUse::Join(id) | LabelUse::Key(id) if *id == label))
 }
 
 /// The `DET` of the line `line` that derives `line.derives` from the train
@@ -1183,7 +1216,6 @@ fn determination(line: &Clause, derivation: &RelationRef, columns: &[StoredColum
         body: body(conjuncts),
         ones: Arc::from([]),
         set: false,
-        stored: Arc::from([]),
         columns: made.collect(),
     }
 }

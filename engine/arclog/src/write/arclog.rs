@@ -354,22 +354,6 @@ impl<'l> Writer<'l> {
             }
             self.put(t, ")");
         }
-        if !clause.stored.is_empty() {
-            self.put(t, "(");
-            self.put(t, sp::STORED);
-            for site in clause.stored.iter() {
-                match &site.field {
-                    None => self.put(t, &column(&site.column)),
-                    Some(field) => {
-                        self.put(t, "(");
-                        self.put(t, &format!("{}{}", sp::COLUMN_MARK, column(&site.column)));
-                        self.put(t, &column(field));
-                        self.put(t, ")");
-                    }
-                }
-            }
-            self.put(t, ")");
-        }
     }
 
     /// The conjuncts of a body that is not a list of its own.

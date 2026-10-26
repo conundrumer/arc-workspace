@@ -927,11 +927,6 @@ impl<'a> ScopeSink<'a> for Context<'_> {
         self.out = out;
     }
 
-    fn stored_site(&mut self, site: &StoredSite, relation: &RelationRef) {
-        let path: Vec<ColumnName> = std::iter::once(site.column.clone()).chain(site.field.clone()).collect();
-        site_column(self.names, Some(relation), &path, &mut self.out);
-    }
-
     fn one_label(&mut self, _at: (), _index: usize, label: LabelId) {
         let mut out = std::mem::take(&mut self.out);
         self.label(&mut out, label);

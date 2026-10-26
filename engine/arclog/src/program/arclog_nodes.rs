@@ -123,10 +123,6 @@ pub struct Clause {
     /// one column each, whose one value is the proposers' whole set of
     /// rows (`docs/arclog/arclog.md#open-values`).
     pub set: bool,
-    /// The value columns a `RULE_OR_DET` line states with its `(STORED ...)`
-    /// mark (`docs/arclog/arclog.md#the-alts-form`), in source order, or none
-    /// where the line has no mark.
-    pub stored: Arc<[StoredSite]>,
     /// The relation's columns, in the order the clause gives them
     /// (`docs/arclog/arclog.md#sites`), which the resolved content replaces
     /// by the canonical positions of their labels. A `DET` with a proposer
@@ -137,14 +133,6 @@ pub struct Clause {
     /// line with no proposer and no body derives a fact, a relation of no
     /// columns. Edits: [`crate::program::Node::apply`].
     pub columns: Arc<[RelationColumn]>,
-}
-
-/// A value column of a `STORED` mark: a column by its name, or a field of a
-/// record column, `(:key D)`, by the column's name and the field's.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct StoredSite {
-    pub column: ColumnName,
-    pub field: Option<ColumnName>,
 }
 
 /// A `ONE` mark: the key columns of the clause's relation

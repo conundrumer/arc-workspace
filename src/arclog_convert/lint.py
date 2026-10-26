@@ -29,7 +29,7 @@ OPS = {"=", "!=", "<", "<=", ">", ">="}
 FORMS = {"OR", "IF", "ALL", "NOT"}
 SCENE_BUILTINS = {"ex": ["E"], "color": ["C"], "number": ["N"], "ident": ["Id"]}
 CLAIMS = {"INPUT", "OUTPUT"}
-MARKS = {"ONE", "SET", "STORED"}   # the marks a clause ends in
+MARKS = {"ONE", "SET"}   # the marks a clause ends in
 
 
 # ---------------------------------------------------------------- reader

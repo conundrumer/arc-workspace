@@ -202,8 +202,6 @@ impl<'a> ScopeSink<'a> for GraphBuilder<'_> {
 
     fn len(&mut self, _len: usize) {}
 
-    fn stored_site(&mut self, _site: &StoredSite, _relation: &RelationRef) {}
-
     fn option(&mut self, _present: bool) {}
 
     fn site(&mut self, _at: usize, _path: &[ColumnName], _args: usize, _relation: Option<&RelationRef>) {}

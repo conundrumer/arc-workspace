@@ -73,10 +73,6 @@ pub(super) trait ScopeSink<'a> {
     /// The label at `index` of a `ONE` mark.
     fn one_label(&mut self, at: Self::At, index: usize, label: LabelId);
 
-    /// A value column of a `STORED` mark, a column or a field of a record
-    /// column, of `relation`.
-    fn stored_site(&mut self, site: &StoredSite, relation: &RelationRef);
-
     /// The labels of `columns`, each column of `relation`, or written as
     /// given where `relation` is `None`.
     fn columns(&mut self, at: Self::At, columns: &'a [RelationColumn], relation: Option<&RelationRef>);
@@ -113,10 +109,6 @@ pub(super) fn clause<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, index: usize
     let body = clause.body.value();
     sink.child(NodeRef::Clause(clause), NodeRef::Body(body), |sink| self::body(sink, at, Tag::Body, 0, body));
     sink.len(usize::from(clause.set));
-    sink.len(clause.stored.len());
-    for site in clause.stored.iter() {
-        sink.stored_site(site, &derives);
-    }
     sink.len(clause.ones.len());
     for (index, one) in clause.ones.iter().enumerate() {
         let mark = sink.open(at, Tag::One, index, Open::One(one));
