@@ -6,7 +6,8 @@ required (or `ARCLOG_OUT`).
     uv run python -m arclog_convert.convert [--out <dir>] [--no-train-replay | --accept] [--no-row-parity] [<stem> ...]
 
 Each run writes the output for the solvers, every solver where no
-stem is given, and prints its summary.
+stem is given, and prints its summary; the run exits with status 1
+where a solver fails to convert.
 Then, once the output is written, it replays each case of the solvers
 that `gen/` converted on the train pairs of its task, records the verdicts
 under `train_replay/`, and reports against the baseline
@@ -197,7 +198,8 @@ def main(argv: list[str]) -> int:
     print(f"{paths.OUT_DIR}:")
     converted = convert_into(stems, paths.OUT_DIR)
     from arclog_convert import row_parity, train_replay
-    status = 0 if args.no_train_replay else train_replay.replay(converted, paths.OUT_DIR.parent, args.accept)
+    failed = int(len(converted) < len(stems))
+    status = (0 if args.no_train_replay else train_replay.replay(converted, paths.OUT_DIR.parent, args.accept)) or failed
     if args.no_row_parity:
         return status
     return row_parity.check(converted, paths.OUT_DIR.parent, args.accept) or status
