@@ -69,6 +69,9 @@ class Held:
     columns: tuple[Placement, ...]
 
 
+type HeirKey = tuple[tuple[str, ...], str]   # an heir instance: its scope and its name
+
+
 @dataclass
 class Spec:
     decls: str = ""
@@ -230,8 +233,8 @@ class Expander:
         self.made: dict[tuple, dict[str, str]] = {}   # an instance's relations derived from inputs, by input
         self.sig_top = set(getattr(lib, "sig_top", ()))   # the lib relations only the signature holds
         self.own: dict[UnitId, tuple] = {}   # a shape's clause: its instance, whose new relations it reads
-        self.moved: dict[str, tuple[str, dict[str, str]]] = {}   # an heir instance: the name it stands for, and its moves
-        self.held: dict[str, dict[str, Held]] = {}   # an heir instance: what each relation of its shape that a pure read reaches holds
+        self.moved: dict[HeirKey, tuple[str, dict[str, str]]] = {}   # an heir instance, by its scope and name: the name it stands for, and its moves
+        self.held: dict[HeirKey, dict[str, Held]] = {}   # an heir instance, by its scope and name: what each relation of its shape that a pure read reaches holds
         self.from_input: set[UnitId] = set()   # a clause of a relation derived from an input: the solver's reads
         self.plans: dict = {}
         self.outputs_only = False
@@ -453,8 +456,8 @@ class Expander:
                         if (columns := _pure_columns(pattern, body)) is not None:
                             holds.setdefault(name, set()).add(Held(pattern.relation.name, columns))
                     moves |= {r: self.fmt(t, inst) for r, t in spec.moved.items()}
-                    self.moved[heir] = (inst.name, moves)
-                    self.held[heir] = {n: next(iter(hs)) for n, hs in holds.items() if len(hs) == 1}
+                    self.moved[(inst.scope.components, heir)] = (inst.name, moves)
+                    self.held[(inst.scope.components, heir)] = {n: next(iter(hs)) for n, hs in holds.items() if len(hs) == 1}
             heads = {_atom(self.fmt(p, inst)).relation.name: (_atom(self.fmt(p, inst)),
                                                                [_atom(self.fmt(h, inst)) for h in hs])
                      for p, hs in spec.inputs.items()}
@@ -1000,7 +1003,7 @@ def _atoms(x):
 def expand(prog, lib, specs):
     """The program with each instance of a component `specs` maps expanded;
     each read left in place, with the reason; and each instance that stands
-    for an expanded one under another name, with that name and the relation
+    for an expanded one under another name, by its scope and name, with that name and the relation
     of the shape that stands for each relation of the expanded one; and, for
     each such instance, the Souffle relation and columns that each relation
     of its shape holds, where a read of the component whose replacement is

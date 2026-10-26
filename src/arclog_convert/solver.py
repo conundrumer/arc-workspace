@@ -799,9 +799,9 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
                     m = re.match(r"(?:(\w+)\s*:)?\s*(.*)", rest)
                     sub_rel, more = m.groups()
                     sub_rel = sub_rel or ""
-                    if inst is not None and inst.name in c.lib_moved:
+                    if inst is not None and (inst.scope.components, inst.name) in c.lib_moved:
                         # an expanded instance's directive: the relation of the shape that stands for its relation
-                        was, moves = c.lib_moved[inst.name]
+                        was, moves = c.lib_moved[(inst.scope.components, inst.name)]
                         to = moves.get(sub_rel, inst.name).split(".")
                         amp = ".".join([c.rel_name(inst.scope.components, to[0]), *to[1:]])
                         wid = was + ("." + sub_rel if sub_rel else "")

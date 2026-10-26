@@ -130,12 +130,11 @@ class Converter:
         # each relation the lib rewrite moves an instance's relation to, with
         # the Souffle relation it holds where one read of the instance reaches
         # it with that relation alone
-        for inst, (was, moves) in self.lib_moved.items():
-            for sc in [sc for sc, n in self.insts if n == inst]:
-                for new in sorted(set(moves.values())):
-                    held = lib_held[inst].get(new)
-                    self.made[(sc, new)] = None if held is None else Written(
-                        sc, f"{was}.{held.relation}", False, held.columns)
+        for (sc, inst), (was, moves) in self.lib_moved.items():
+            for new in sorted(set(moves.values())):
+                held = lib_held[(sc, inst)].get(new)
+                self.made[(sc, new)] = None if held is None else Written(
+                    sc, f"{was}.{held.relation}", False, held.columns)
         self.comps = {c.name: c for c in prog.components}
         self.case_types = self._case_types()
         self.open_params = self._open_params()
