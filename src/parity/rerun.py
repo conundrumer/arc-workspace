@@ -20,6 +20,12 @@ first of these that holds (`classify`):
 
 - `skip`, "an input of the Souffle program": a top-level lib relation
   marked `// @input`.
+- `skip`, "a relation of the converter's Souffle text that no arclog relation
+  stands for": the converter writes, beside the name map, the Souffle text
+  that derives the rows of the relations it adds (`parity.text_path`,
+  `arclog_convert.parity_text`), and `load_once` adds it, with the components
+  it instantiates, to the solver's program; the relations and instances the
+  text declares are in `Loaded.added`.
 - `skip`, "a lib relation that no clause of the solver writes and no arclog
   relation stands for": the lib declares it, at the top level or in a
   component of the lib, so it holds rows the lib derives; no clause of the
@@ -59,7 +65,11 @@ of the verdicts, and `uncompared` "no case's program has a relation of that
 name" for a relation that no case it runs has. An `equal` line proves that
 the relation's rows in each case that derives it, at the stored parameters,
 are these rows over the columns the converter maps
-(`engine/arclog-cli/src/row_parity.rs` gives the rest).
+(`engine/arclog-cli/src/row_parity.rs` gives the rest). Where the relation is
+one of the converter's Souffle text, the rows are those the text's clauses
+derive with the solver's program, which says nothing on whether those clauses
+hold what the solver means; that rests on the lines of the solver's relations
+that read them.
 
 A relation of `Determine` that the name map gives an arclog name and the
 column map an entry is compared as well with Souffle's rows of it at the run
@@ -78,14 +88,15 @@ from typing import Any
 
 from arc.task import Example
 from cli.common import LIMITS, engine, solver_path
-from engine import (AdtValue, Engine, NilValue, Program, RecordValue, RelationName, Rows,
-                    RunFailure, Scope, Tuples, TypeName)
+from engine import (AdtValue, Engine, NilValue, ParseFailure, Program, RecordValue, RelationName, Rows,
+                    RunFailure, Scope, Tuples, TypeName, checkout)
 from engine.memo import hash_files, read_or_make
 from engine.program import (AtomLiteral, BodyLiteral, Comparison, ComparisonOperator,
                             ConstructorTerm, Disjunction, Qualifier, Term, Unit, Value, as_grid,
                             own, subterms)
+from arclog_convert.parity_text import FORMS
 from parity import (PARAMS_COMPONENT, Entry, NameMap, case_name, column_entry, columns_path, name_map,
-                    relation_names, snapshot)
+                    relation_names, snapshot, text_path)
 from parity.idents import (Ambiguous, IdentSources, Minted, NoMembers, Source, Unresolved, Writer, ident_sources,
                            kind_of, leaves)
 from solver.aggregate import Solver
@@ -151,6 +162,9 @@ class Loaded:
     solver: Solver
     names: NameMap | None
     every: tuple[Case, ...]
+    added: frozenset[str] = frozenset()
+    """The relations and instances at the top level that the converter's Souffle
+    text (`load_once`) declares and the solver's file does not."""
 
     def pair(self, pair: str) -> Example:
         """The example of the pair whose name is `pair`. Raises `NoSuchPair`."""
@@ -173,15 +187,38 @@ class Loaded:
         return relations_at(self.eng, taken, chosen, as_grid(ex.input), rels, Assignment(()), LIMITS)
 
 
+def with_text(eng: Engine, solver: Solver, text: str) -> Solver:
+    """`solver` with its program followed by `text`, a Souffle text of the
+    converter (`parity_text`) that reads the program's relations, and the
+    components it instantiates (`FORMS`); `solver` where `text` is empty.
+    Raises `ValueError` where the program with the text does not parse."""
+    if not text:
+        return solver
+    program = "\n".join(line.text for line in eng.render(solver.program).lines)
+    got = eng.parse(f"{program}\n{FORMS.read_text()}\n{text}", checkout.programs())
+    if isinstance(got, ParseFailure):
+        raise ValueError(f"the converter's Souffle text of {solver.stem} does not parse: {got}")
+    return replace(solver, program=got)
+
+
 def load_once(stem: str, solver_file: Path) -> Loaded | Undefined | RunFailure:
     """The solver of `stem` read from `solver_file`, with its name map and
-    its cases; the cases' undefined outcome or failure where they give none."""
+    its cases; the cases' undefined outcome or failure where they give none.
+    The program that `Loaded.solver` holds ends with the converter's Souffle
+    text (`text_path`), where the converter wrote one."""
     eng = engine()
     solver = load(stem, eng, solver_file)
     every = cases_of(solver, eng, LIMITS)
     if not isinstance(every, tuple):
         return every
-    return Loaded(eng, solver, name_map(stem), every)
+    path = text_path(stem)
+    joined = with_text(eng, solver, path.read_text() if path.is_file() else "")
+    return Loaded(eng, joined, name_map(stem), every, top_level(joined.program) - top_level(solver.program))
+
+
+def top_level(program: Program) -> frozenset[str]:
+    """The name of each relation and instance that `program` declares at the top level."""
+    return frozenset(d.name for d in (*program.relations, *program.instances) if not d.scope.components)
 
 
 def relations(stem: str, case: str, pair: str
@@ -235,6 +272,7 @@ class Reason(StrEnum):
     LIB = "a lib relation that no clause of the solver writes and no arclog relation stands for"
     FACTS = "its rows are facts alone and no arclog relation stands for it"
     INLINE = "each Souffle relation it stands for is inline, with no rows of its own"
+    TEXT = "a relation of the converter's Souffle text that no arclog relation stands for"
     NO_ENTRY = "no entry in the column map"
     NO_RELATION = "no Souffle relation of the run stands for it"
 
@@ -322,6 +360,8 @@ def classify(loaded: Loaded, columns: Mapping[str, Mapping[str, Any]], read: Seq
             stands = name.startswith("&")
             if not r.instances and (span.file, span.first) in marks:
                 left[name] = Reason.INPUT
+            elif (r.instances[0] if r.instances else r.name) in loaded.added and not stands:
+                left[name] = Reason.TEXT
             elif not own(span) and r not in written and not stands:
                 left[name] = Reason.LIB
             elif all(u.body is None for u, _ in graph.feeding(r)) and not stands:

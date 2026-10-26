@@ -33,7 +33,7 @@ from arclog_convert.literals import collect_vars
 from arclog_convert.open_orders import keys_retyped as order_keys_retyped, orders as open_orders
 from arclog_convert.picks import rewrite as rewrite_picks
 from arclog_convert.libmap import box as libmap_box, rewrite as libmap_rewrite
-from arclog_convert.libmap.instances import Placement
+from arclog_convert.libmap.instances import LIB_PATH, Placement
 from arclog_convert import paths
 
 from arclog_convert.checks import Fold, with_checks
@@ -134,7 +134,11 @@ class Converter:
         prog, self.tile_frames = tile_frames_split(prog)
         prog, self.picks, self.dropped = rewrite_picks(prog)
         prog, self.lib_judgment = libmap_box.typed(prog, lib)
-        prog, judgment, self.lib_moved, lib_held = libmap_rewrite(prog, lib, macros=paths.MACROS_ENV in os.environ)
+        macros = paths.MACROS_ENV in os.environ
+        # the rewrite in its ground form, whose clauses the Souffle engine can run, which
+        # `parity_text` reads; it runs first, as `instances.GROUNDED` holds the latest run's inputs
+        self.ground_prog = None if macros else libmap_rewrite(prog, lib, ground=True)[0]
+        prog, judgment, self.lib_moved, lib_held = libmap_rewrite(prog, lib, macros=macros)
         MOVED_RELS.clear()
         MOVED_RELS.update({f"{was}.{r}": new for was, moves in self.lib_moved.values() for r, new in moves.items()})
         self.lib_judgment |= judgment
@@ -2105,7 +2109,7 @@ class Converter:
                 return name, [(Col(pascal(n), t, False), [Leaf(pascal(n), "keep", False, type=t)]) for n, t in cols], "lib", None
             return name, None, "unknown", None
         head, rest = parts[0], parts[1:]
-        if head == "@lib" and not rest:   # a lib relation an expansion wrote, whose name the solver takes
+        if head == LIB_PATH and not rest:   # a lib relation an expansion wrote, whose name the solver takes
             cols = self.lib.top.get(name) or self.sig.top.get(name)
             if cols is None:
                 return name, None, "unknown", None

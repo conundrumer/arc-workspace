@@ -14,7 +14,16 @@ A Souffle relation whose clauses the converter folds into other arclog
 relations (`folded`) has no arclog name of its own. For the row-parity check
 alone, the converter converts the solver again with a check relation for each
 (`arclog_convert.checks`), and `check_maps` gives the name map entry and the
-column map entry of each check relation, or the reason it has none."""
+column map entry of each check relation, or the reason it has none.
+
+An arclog relation the converter adds that holds no Souffle relation of the
+solver's program, such as an output of an instance the lib rewrite hoists, has
+its path in the Souffle text that `parity_text` writes (`parity`, `placed`),
+and its entry in the column map (`_parity_columns`). An `equal` line of such a
+relation proves that the converter's arclog relation holds the rows that the
+text's clauses derive with the solver's program, which says nothing on whether
+those clauses hold what the solver means; that rests on the lines of the
+solver's relations that read them."""
 
 import re
 from collections.abc import Callable
@@ -30,6 +39,7 @@ from arclog_convert.checks import Fold, clauses_of
 from arclog_convert.clauses import Site, site_columns
 from arclog_convert.forms import Source, renamed
 from arclog_convert.leaves import Converter, FACTS, Written
+from arclog_convert.parity_text import ParityText, Place, parity_text
 from arclog_convert.solver import Solver
 
 
@@ -207,7 +217,26 @@ def name_map(s: "Solver", insts: dict[str, str], arclog: str, arcdata: str) -> d
             "unmapped": unmapped, "stores": bool(s.store_points)}
 
 
-def column_map(s: "Solver", names: dict, insts: dict[str, str]) -> dict:
+def parity(s: "Solver", names: dict, insts: dict[str, str]) -> ParityText:
+    """The Souffle text (`parity_text`) for each arclog relation of the name
+    map `names` that holds no Souffle relation of the solver's program: each
+    in `unmapped` and each with no Souffle relation."""
+    roots = {n for n, sources in names["relations"].items() if not sources} | set(names["unmapped"])
+    return parity_text(s.c, lambda n: _renamed_name(n, insts), roots)
+
+
+def placed(names: dict, text: ParityText) -> dict:
+    """The name map `names` with each arclog relation that `text` derives
+    given the relation of the text as its one Souffle relation, by its path
+    from the top level of the text."""
+    relations = dict(names["relations"])
+    relations.update({arc: [{"component": [], "relation": at.path, "path": at.path}]
+                      for arc, at in text.places.items()})
+    return {**names, "relations": dict(sorted(relations.items())),
+            "unmapped": [n for n in names["unmapped"] if n not in text.places]}
+
+
+def column_map(s: "Solver", names: dict, insts: dict[str, str], text: ParityText | None = None) -> dict:
     """For each arclog relation of the name map `names`, for each of its
     Souffle relations that has a path from the top level, or is declared in
     `Determine`, by that path, or by its name for a relation of `Determine`: one
@@ -241,7 +270,11 @@ def column_map(s: "Solver", names: dict, insts: dict[str, str]) -> dict:
     out: dict[str, dict[str, list[list[dict]]]] = {}
     for arc, sources in names["relations"].items():
         for source in sources:
-            if arc in shaped:
+            if text is not None and arc in text.places and source["path"] == text.places[arc].path:
+                got = _parity_columns(c, text.places[arc])
+                if got is None:
+                    continue
+            elif arc in shaped:
                 cols, inst, ws = shaped[arc]
                 w = next((w for w in ws if _souffle_relation(c, w) == source), None)
                 width = None if w is None else c.souffle_arity(w.scope, w.relation)
@@ -308,6 +341,20 @@ def _own_columns(c: "Converter", resolved: tuple, scope: tuple[str, ...], relati
         return None
     return _entry(c.writings.get(written, {}), site_columns(c, cols, inst),
                   lambda sites: _souffle_columns(sites, kept, width))
+
+
+def _parity_columns(c: Converter, at: Place) -> list[list[dict]] | dict | None:
+    """The entry (`_entry` gives its form) of the relation of the text at
+    `at`: the sites of the arclog relation as `Converter.resolve` gives them
+    for the relation the rewrite holds, one to one with its columns but those
+    `Converter.dropped` lists; none where their numbers differ."""
+    written, cols, _, inst = c.resolve(at.relation, (), {})
+    dropped = () if at.relation.instances else c.dropped.get(((), at.relation.name), ())
+    kept = tuple(j for j in range(at.width) if j not in dropped)
+    if cols is None or len(kept) != len(cols):
+        return None
+    return _entry(c.writings.get(written, {}), site_columns(c, cols, inst),
+                  lambda sites: _souffle_columns(sites, kept, at.width))
 
 
 def _souffle_columns(columns: list[list[Site]], placement: tuple[Placement, ...], width: int) -> list[list[dict]]:

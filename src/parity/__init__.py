@@ -136,6 +136,13 @@ def names_path(stem: str) -> Path:
     return names_dir() / f"{stem}.json"
 
 
+def text_path(stem: str) -> Path:
+    """Where the converter writes the Souffle text that derives the rows of
+    the relations it adds, beside the name map of the solver `stem`
+    (`arclog_convert.parity_text`)."""
+    return names_path(stem).with_suffix(".dl")
+
+
 def name_map(stem: str) -> NameMap | None:
     """The name map of the solver `stem`; None where the converter wrote
     none, a solver it did not convert."""

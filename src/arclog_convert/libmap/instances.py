@@ -47,6 +47,10 @@ from engine.program import (AliasType, AdtType, Atom, AtomLiteral, Comparison, C
 
 ROOT = Path(__file__).resolve().parents[3]
 
+LIB_PATH = "@lib"
+"""The instance path of a relation of the lib whose name a relation of the solver takes
+(`Expander.lib_names`)."""
+
 GROUNDED: set[tuple[tuple[str, ...], str, str]] = set()
 """Each input, as its instance's scope, the instance's name and its name,
 that a shape's clause writes with a grounding read: the clause's atoms that
@@ -660,7 +664,7 @@ class Expander:
 
     def lib_names(self, body, inst):
         """The body with each lib atom whose name a relation of the solver
-        takes read at the path `@lib`, which `Converter.resolve` reads as
+        takes read at the path `LIB_PATH`, which `Converter.resolve` reads as
         the lib's."""
         from arclog_convert.libmap.box import mapped
         scope = inst.scope.components
@@ -668,7 +672,7 @@ class Expander:
         def fn(a: Atom) -> Atom:
             n = a.relation.name
             if not a.relation.instances and (n in self.lib.top or n in self.sig_top) and self.taken(n, scope):
-                return Atom(RelationName(("@lib",), n), a.args, a.line)
+                return Atom(RelationName((LIB_PATH,), n), a.args, a.line)
             return a
         return mapped(body, fn)
 
@@ -886,7 +890,7 @@ class Expander:
         """The types of the columns of the relation an atom of a clause in
         `scope` reads: a relation of an instance, the lib's, or the solver's."""
         r = a.relation
-        if r.instances and r.instances != ("@lib",):
+        if r.instances and r.instances != (LIB_PATH,):
             shape = _innermost(self.shape_insts, scope, r.instances[0]) if len(r.instances) == 1 else None
             inst = shape or self.resolve(scope, r.instances)
             if shape is None and inst.component in self.comps:

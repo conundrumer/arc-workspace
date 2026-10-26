@@ -18,21 +18,26 @@ Souffle's run of the solver (`parity.rerun.case_rows`), as
 `skip` or `uncompared`. The line of a relation that the solver's program
 outputs, and of each arclog relation of the name map, is one of these. `skip`
 is for a relation that holds no row the solver derives: an input of the
-Souffle program, a lib relation that no clause of the solver writes, or a
-relation of facts alone, where no arclog relation stands for it. `uncompared`
+Souffle program, a lib relation that no clause of the solver writes, a
+relation of facts alone, or a relation of the converter's Souffle text, where
+no arclog relation stands for it. `uncompared`
 is for each other relation the check does not compare: one with no entry in
 the column map, an arclog relation that no Souffle relation of the run
 stands for, and a relation that no case it runs has. A line's detail gives
 the reason of a `skip` or an `uncompared`, and the case and the pair of any
 other verdict. An `equal` line proves that the relation's rows in each case
 that derives it, at the stored parameters, are Souffle's rows of it over the
-columns the converter maps (`row_parity.rs` gives the rest). The tables export
-runs none of it.
+columns the converter maps (`row_parity.rs` gives the rest). For a relation of
+the converter's Souffle text (`arclog_convert.parity_text`) that is the rows of
+the text's clauses with the solver's program, which says nothing on whether the
+clauses hold what the solver means; that rests on the lines of the solver's
+relations that read them. The tables export runs none of it.
 
 A task's lines stand in `row_parity/<stem>.json` beside `gen/`, as a record
 with these fields: `files`, the sha256 of the task's files as
 `train_replay.files_digest` gives them, of its program under `CORPUS`, of its name map and column map, of the
-Souffle solver file the conversion read, of the Souffle-side code and lib
+Souffle solver file the conversion read, of the Souffle text beside the name map
+and the forms it instantiates (`lib-forms.dl`), of the Souffle-side code and lib
 (`cli.common.stamp`), of the Souffle binary, of the `parity` package, and of
 the form of the record (`VERSION`); `sources`, the digest of the engine's
 sources; `binary`, the sha256 of the built `arclog-cli` binary; and `lines`,
@@ -71,12 +76,12 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 from arc.task import TASKS_DIR
-from arclog_convert import OUT_ENV, paths, train_replay
+from arclog_convert import OUT_ENV, parity_text, paths, train_replay
 from engine import checkout
 
 BASELINE = Path(__file__).with_name("row_parity.tsv")
 
-VERSION = 3
+VERSION = 4
 """The form of a record."""
 
 CORPUS = "gen_check"
@@ -118,8 +123,8 @@ def files_digest(stem: str, gen: Path, tasks: Path, solvers: Path) -> str:
     digest = hashlib.sha256()
     digest.update(f"{VERSION}\0{train_replay.files_digest(stem, gen, tasks)}\0".encode())
     corpus, names, columns = gen.parent / CORPUS, gen.parent / "names", gen.parent / "columns"
-    for path in (corpus / f"{stem}.arclog", corpus / f"{stem}.arcdata", names / f"{stem}.json",
-                 columns / f"{stem}.json", solvers / f"{stem}.dl"):
+    for path in (corpus / f"{stem}.arclog", corpus / f"{stem}.arcdata", names / f"{stem}.json", names / f"{stem}.dl",
+                 columns / f"{stem}.json", solvers / f"{stem}.dl", parity_text.FORMS):
         digest.update((path.read_bytes() if path.exists() else b"") + b"\0")
     digest.update(f"{stamp()}\0{rerun.code_digest()}\0".encode() + binary_identity())
     return digest.hexdigest()

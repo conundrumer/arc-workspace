@@ -73,7 +73,7 @@ from engine.program import (
     Wildcard,
 )
 from arclog_convert import signature
-from arclog_convert.libmap.instances import ROOT, Spec, _parse, term_vars
+from arclog_convert.libmap.instances import LIB_PATH, ROOT, Spec, _parse, term_vars
 
 # ---- the instance specs
 
@@ -293,7 +293,7 @@ class Hoist:
     # -- the grounding rule
 
     def table(self, a: Atom) -> bool:
-        return bool(a.relation.instances and a.relation.instances != ("@lib",)) or a.relation.name not in self.inline
+        return bool(a.relation.instances and a.relation.instances != (LIB_PATH,)) or a.relation.name not in self.inline
 
     use_modes = False
     local_banned = False

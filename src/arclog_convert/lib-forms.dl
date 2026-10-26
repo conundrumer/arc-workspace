@@ -1,0 +1,286 @@
+// The components of lib-signature.dl that programs/lib.dl holds no form of,
+// or holds with other relations, as Souffle components over the present lib:
+// each states the relations of its signature component with the semantics of
+// its construction in engine/arclog-constructions/src. The text follows the
+// lib's text and the solver's, and a component stands under the name
+// Sig<signature name>, since the lib's Ray takes its own name.
+
+// The relations of the signature that the lib holds no relation of, each as
+// sig_<name>, since a relation of the solver may take the name: the text
+// reads each by that name.
+
+// The box k in from both edges of a corner.
+.decl sig_corner_inset(diag: DiagDir, k: number, b: Box) inline
+sig_corner_inset(Diag, K, B) :-
+    dir_of(Diag, A, D1), perp(A, A2), dir_of(Diag, A2, D2),
+    edge_inset(D1, K, B1), edge_inset(D2, K, B2), compose(B1, B2, B).
+
+// The box k past both edges of a corner.
+.decl sig_corner_outset(diag: DiagDir, k: number, b: Box) inline
+sig_corner_outset(Diag, K, B) :- sig_corner_inset(Diag, K, I), relative(I, ZERO, B).
+
+// The D4 identity.
+.decl sig_d4_identity(d: D4)
+sig_d4_identity(D4_ID).
+
+// The cells strictly between p and q along d, q ahead: jump at k + 1.
+.decl sig_gap(d: Dir8, p: Position, q: Position, k: number) inline
+sig_gap(D, P, Q, K) :- J = range(1, 128), jump(P, D, J, Q), K = J - 1.
+
+// The gaps of an axis between tiles: the rows of gap, or 0 where the key has
+// none on the axis.
+.comp SigGaps<Key> {
+    .decl gap(key: Key, a: Axis, g: number)
+
+    // The keys that read a gap.
+    .decl _key(key: Key)
+
+    .decl _gapped(key: Key, a: Axis)
+    _gapped(Ky, A) :- gap(Ky, A, _).
+
+    .decl _gap(key: Key, a: Axis, g: number)
+    _gap(Ky, A, G) :- gap(Ky, A, G).
+    _gap(Ky, A, 0) :- _key(Ky), axis_elem(A), !_gapped(Ky, A).
+}
+
+// Equal parts per axis, by count or by side, with a gap. An axis given
+// neither a count nor a side passes through: one part, the whole extent.
+.comp SigDivision<Key> : SigGaps<Key> {
+    .decl cell(key: Key, p: Position)
+    .decl parts(key: Key, a: Axis, n: number)
+    .decl side(key: Key, a: Axis, k: number)
+    .decl tile(key: Key, p: Position, p_outer: Position, p_inner: Position)
+
+    _key(Ky) :- cell(Ky, _).
+
+    .decl _extent(key: Key, a: Axis, e: number)
+    _extent(Ky, A, E) :- cell(Ky, P), axis_elem(A), axis_dim(P, A, E).
+
+    .decl _cut_axis(key: Key, a: Axis)
+    _cut_axis(Ky, A) :- parts(Ky, A, _).
+    _cut_axis(Ky, A) :- side(Ky, A, _).
+
+    // A side k and a gap g that cut an axis: a given side, or the side that
+    // n parts fill an extent of the key's cells with, where n > 1.
+    .decl _cut(key: Key, a: Axis, k: number, g: number)
+    _cut(Ky, A, K, G) :- side(Ky, A, K), _gap(Ky, A, G).
+    _cut(Ky, A, K, G) :-
+        parts(Ky, A, N), N > 1, _gap(Ky, A, G), _extent(Ky, A, E),
+        tile_size(E, N, G, K), G >= 1 - K, G < E.
+
+    // The part of p on an axis, as its outer and inner position, each on the
+    // axis alone.
+    .decl _split(key: Key, p: Position, a: Axis, p_outer: Position, p_inner: Position)
+    _split(Ky, P, A, O, I) :- cell(Ky, P), _cut(Ky, A, K, G), divide_by_size(P, A, K, G, O, I).
+    _split(Ky, P, A, O, I) :-
+        cell(Ky, P), parts(Ky, A, 1), _gap(Ky, A, G), axis_dim(P, A, E),
+        divide_by_size(P, A, E, G, O, I).
+    _split(Ky, P, A, ZERO, I) :- cell(Ky, P), axis_elem(A), !_cut_axis(Ky, A), I = @box_along(P, A).
+
+    tile(Ky, P, O, I) :-
+        cell(Ky, P), _split(Ky, P, AXIS_V, O1, I1), _split(Ky, P, AXIS_H, O2, I2),
+        compose(O1, O2, O), compose(I1, I2, I).
+}
+
+// The cells of a frame tiled by an inner frame at the outer positions, with
+// a gap per axis.
+.comp SigTiling<Key> : SigGaps<Key> {
+    .decl outer(key: Key, p: Position)
+    .decl inner(key: Key, p: Position)
+    .decl cell(key: Key, p_outer: Position, p_inner: Position, p: Position)
+
+    _key(Ky) :- outer(Ky, _), inner(Ky, _).
+
+    cell(Ky, O, I, P) :-
+        outer(Ky, O), inner(Ky, I), _gap(Ky, AXIS_V, G1), _gap(Ky, AXIS_H, G2),
+        concat(O, I, AXIS_V, G1, P1), concat(O, I, AXIS_H, G2, P2), compose(P1, P2, P).
+}
+
+// The divisions that a frame's extent admits on each axis.
+.comp SigExtentDivisions<Key> {
+    .decl frame(key: Key, p: Position)
+    .decl division(key: Key, a: Axis, n: number, k: number, g: number)
+
+    division(Ky, A, N, K, G) :-
+        frame(Ky, P), axis_elem(A), axis_dim(P, A, E), N = range(2, E + 1), G = range(1 - E, E),
+        tile_size(E, N, G, K), G >= 1 - K, G < E.
+}
+
+// The straight path from each source toward each direction, each step onto a
+// node, with its last cell. A source that is no node first crosses the
+// positions off the grid, those with a margin below 0, where each margin a
+// step lowers stays at or above 0.
+.comp SigRay<Key> {
+    .decl source(key: Key, p: Position)
+    .decl node(key: Key, p: Position)
+    .decl dir(key: Key, d: Dir8)
+    .decl ray(key: Key, p: Position, d: Dir8, k: number, origin: Position)
+    .decl end(key: Key, p: Position, d: Dir8, k: number, origin: Position)
+
+    // q enters a position off the grid from p: a margin of q is below 0, and
+    // each margin of q lower than p's is at or above 0.
+    .decl _enters(p: Position, q: Position) inline
+    _enters(P, Q) :-
+        dist(P, DIR_T, Pt), dist(P, DIR_B, Pb), dist(P, DIR_L, Pl), dist(P, DIR_R, Pr),
+        dist(Q, DIR_T, Qt), dist(Q, DIR_B, Qb), dist(Q, DIR_L, Ql), dist(Q, DIR_R, Qr),
+        Qt >= min(Pt, 0), Qb >= min(Pb, 0), Ql >= min(Pl, 0), Qr >= min(Pr, 0),
+        min(min(Qt, Qb), min(Ql, Qr)) < 0.
+
+    // The cell a cast steps to from p.
+    .decl _next(key: Key, p: Position, d: Dir8, q: Position)
+    _next(Ky, P, D, Q) :- ray(Ky, P, D, _, _), step_offset(D, S), compose(P, S, Q), node(Ky, Q).
+    _next(Ky, P, D, Q) :-
+        ray(Ky, P, D, _, _), !node(Ky, P), step_offset(D, S), compose(P, S, Q), _enters(P, Q).
+
+    ray(Ky, P, D, 0, P) :- source(Ky, P), dir(Ky, D).
+    ray(Ky, Q, D, K + 1, O) :- ray(Ky, P, D, K, O), _next(Ky, P, D, Q).
+    end(Ky, P, D, K, O) :- ray(Ky, P, D, K, O), !_next(Ky, P, D, _).
+}
+
+// The least cost from a source to each node, and every predecessor on a
+// least-cost path. The relations stand under the names the lib gives
+// GraphDistance (seed, pred) beside those only the signature's Distance holds
+// (weight, source_distance). Each edge, weight, seed and source_distance row
+// is a candidate cost, and each cost is the least of its candidates.
+.comp SigGraphDistance<Key, Node> {
+    .decl edge(key: Key, a: Node, b: Node)
+    .decl weight(key: Key, a: Node, b: Node, w: number)
+    .decl seed(key: Key, n: Node)
+    .decl source_distance(key: Key, n: Node, k: number)
+    .decl distance(key: Key, n: Node, k: number)
+    .decl pred(key: Key, b: Node, a: Node)
+
+    .decl _edge(key: Key, a: Node, b: Node, w: number)
+    .decl _cost(key: Key, a: Node, b: Node, w: number)
+    _cost(Ky, A, B, 1) :- edge(Ky, A, B).
+    _cost(Ky, A, B, W) :- weight(Ky, A, B, W).
+    _edge(Ky, A, B, W) :- _cost(Ky, A, B, _), W = min C : { _cost(Ky, A, B, C) }.
+
+    .decl _start(key: Key, n: Node, k: number)
+    _start(Ky, N, 0) :- seed(Ky, N).
+    _start(Ky, N, K) :- source_distance(Ky, N, K).
+
+    // A cost some walk from a start reaches n with.
+    .decl _cost_of(key: Key, n: Node, k: number)
+    _cost_of(Ky, N, K) :- _start(Ky, N, K).
+    _cost_of(Ky, B, K + W) :- _least.low([Ky, A], K), _edge(Ky, A, B, W).
+
+    .type _KN = [key: Key, n: Node]
+
+    .init _least = Extremes<_KN>
+    _least.cand([Ky, N], K) :- _cost_of(Ky, N, K).
+
+    // A start cost that a lower cost reaches later stays in low, so the least is taken again.
+    distance(Ky, N, K) :- _least.low([Ky, N], _), K = min S : { _least.low([Ky, N], S) }.
+    pred(Ky, B, A) :- _edge(Ky, A, B, W), distance(Ky, A, K), distance(Ky, B, K + W).
+}
+
+// The rank, dual rank, minimal and maximal members and successors of the
+// members under before or, where the key has a score row, score and then
+// secondary score; tied members share a rank, and a probe, a non-member,
+// ranks against the members. The relations stand under the names the lib
+// gives Order (elem, rank_desc, first, last, next) beside those only the
+// signature's Order holds (probe, cyclic_successor).
+.comp SigOrder<Key, T> {
+    .decl elem(key: Key, t: T)
+    .decl before(key: Key, a: T, b: T)
+    .decl score(key: Key, t: T, s: number)
+    .decl secondary_score(key: Key, t: T, s: number)
+    .decl probe(key: Key, t: T)
+    .decl rank(key: Key, t: T, r: number)
+    .decl rank_desc(key: Key, t: T, r: number)
+    .decl first(key: Key, t: T)
+    .decl last(key: Key, t: T)
+    .decl next(key: Key, a: T, b: T)
+    .decl cyclic_successor(key: Key, a: T, b: T)
+
+    .decl _scored(key: Key)
+    _scored(Ky) :- score(Ky, _, _).
+
+    .decl _subject(key: Key, t: T)
+    _subject(Ky, T) :- elem(Ky, T).
+    _subject(Ky, T) :- probe(Ky, T).
+
+    // A member before t, and a member after t, under before.
+    .decl _below(key: Key, a: T, t: T)
+    _below(Ky, A, T) :- before(Ky, A, T), elem(Ky, A), !_scored(Ky).
+    .decl _above(key: Key, t: T, b: T)
+    _above(Ky, T, B) :- before(Ky, T, B), elem(Ky, B), !_scored(Ky).
+
+    // What a scored element is compared by: its score, then its secondary
+    // score, which an element with none lacks below every other (the least
+    // number stands for that).
+    .decl _by(key: Key, t: T, s: number, s2: number)
+    _by(Ky, T, S, S2) :- score(Ky, T, S), secondary_score(Ky, T, S2).
+    _by(Ky, T, S, -2147483647) :- score(Ky, T, S), !secondary_score(Ky, T, _).
+
+    // A member that precedes t, and a member that follows it, under score.
+    .decl _lower(key: Key, t: T, a: T)
+    _lower(Ky, T, A) :- _by(Ky, T, S, S2), elem(Ky, A), _by(Ky, A, S1, S21), (S1 < S ; S1 = S, S21 < S2).
+    .decl _higher(key: Key, t: T, a: T)
+    _higher(Ky, T, A) :- _by(Ky, T, S, S2), elem(Ky, A), _by(Ky, A, S1, S21), (S1 > S ; S1 = S, S21 > S2).
+
+    rank(Ky, T, R) :- _subject(Ky, T), !_scored(Ky), R = count : { _below(Ky, A, T) }.
+    rank(Ky, T, R) :- _subject(Ky, T), score(Ky, T, _), R = count : { _lower(Ky, T, A) }.
+    rank(Ky, T, 0) :- _subject(Ky, T), _scored(Ky), !score(Ky, T, _).
+    rank_desc(Ky, T, R) :- _subject(Ky, T), !_scored(Ky), R = count : { _above(Ky, T, B) }.
+    rank_desc(Ky, T, R) :- _subject(Ky, T), score(Ky, T, _), R = count : { _higher(Ky, T, A) }.
+    rank_desc(Ky, T, 0) :- _subject(Ky, T), _scored(Ky), !score(Ky, T, _).
+
+    first(Ky, T) :- elem(Ky, T), !_scored(Ky), !_below(Ky, _, T).
+    first(Ky, T) :- elem(Ky, T), _scored(Ky), !score(Ky, T, _).
+    first(Ky, T) :- elem(Ky, T), score(Ky, T, _), !_lower(Ky, T, _).
+    last(Ky, T) :- elem(Ky, T), !_scored(Ky), !_above(Ky, T, _).
+    last(Ky, T) :- elem(Ky, T), _scored(Ky), !score(Ky, T, _).
+    last(Ky, T) :- elem(Ky, T), score(Ky, T, _), !_higher(Ky, T, _).
+
+    // A before edge between members, and one that a member lies between.
+    .decl _edge(key: Key, a: T, b: T)
+    _edge(Ky, A, B) :- _below(Ky, A, B), elem(Ky, B).
+    .decl _skipped(key: Key, a: T, b: T)
+    _skipped(Ky, A, B) :- _edge(Ky, A, X), _edge(Ky, X, B).
+    next(Ky, A, B) :- _edge(Ky, A, B), !_skipped(Ky, A, B).
+
+    // A score step between members, with no member between.
+    .decl _between(key: Key, a: T, b: T)
+    _between(Ky, A, B) :- _lower(Ky, B, X), _lower(Ky, X, A).
+    next(Ky, A, B) :- elem(Ky, B), _lower(Ky, B, A), !_between(Ky, A, B).
+
+    cyclic_successor(Ky, A, B) :- next(Ky, A, B).
+    cyclic_successor(Ky, A, B) :- last(Ky, A), first(Ky, B).
+}
+
+// The cells of the set with nothing of the set one step toward a direction.
+// The relations stand under the names the lib gives Rim (rim, rim_dir) beside
+// the direction input only the signature's Boundary holds.
+.comp SigRim<Key> {
+    .decl cell(key: Key, p: Position)
+    .decl dir(d: Dir8)
+    .decl rim_dir(key: Key, p: Position, d: Dir8)
+    .decl rim(key: Key, p: Position)
+
+    rim_dir(Ky, P, D) :- cell(Ky, P), dir(D), step_offset(D, S), compose(P, S, Q), !cell(Ky, Q).
+    rim(Ky, P) :- rim_dir(Ky, P, _).
+}
+
+// The mismatches and conflicts of two valued families under each admitted D4
+// element, which maps each source position to its image: mismatch where an
+// image lacks the value, conflict where it holds another. The elements are
+// those of transform, the eight by default.
+.comp SigAgreement<Key, Val> {
+    .decl source(key: Key, p: Position, v: Val)
+    .decl target(key: Key, p: Position, v: Val)
+    .decl transform(d: D4)
+    .decl mismatch(key: Key, d: D4)
+    .decl conflict(key: Key, d: D4)
+
+    .decl _given()
+    _given() :- transform(_).
+
+    .decl _admitted(d: D4)
+    _admitted(D) :- transform(D).
+    _admitted(D) :- d4_elem(D), !_given().
+
+    mismatch(Ky, D) :- source(Ky, P, V), _admitted(D), apply(D, P, P2), !target(Ky, P2, V).
+    conflict(Ky, D) :- source(Ky, P, V), _admitted(D), apply(D, P, P2), target(Ky, P2, V2), V2 != V.
+}

@@ -31,7 +31,9 @@ file it was written from, and the runner and lib stamp of the run; where it
 is missing or records another hash or stamp, the script first reruns
 `scripts/run_dl.py determination-plan <stem>` (`arclog_convert.plans`). The
 name map and the column map of each solver it converts, written under names/
-and columns/, are those of `arclog_convert.names`. Beside gen/, the directory
+and columns/, are those of `arclog_convert.names`, and names/ also holds the
+Souffle text, `<stem>.dl`, that derives the rows of the relations the converter
+adds (`arclog_convert.parity_text`). Beside gen/, the directory
 `row_parity.CORPUS` holds, for the row-parity check alone, a copy of each
 converted program with the check relations of the relations it folds
 (`arclog_convert.checks`); nothing else reads it.
@@ -60,7 +62,7 @@ from arclog_convert.forms import (
 )
 from arclog_convert.leaves import ScopedName
 from arclog_convert.lib import Col, ColMismatch, LIB_DL, Lib, SIGNATURE
-from arclog_convert.names import check_maps, column_map, folded, name_map, unchecked
+from arclog_convert.names import check_maps, column_map, folded, name_map, parity, placed, unchecked
 from arclog_convert.plans import refresh_plans
 from arclog_convert.solver import Solver
 
@@ -161,11 +163,14 @@ def convert_one(stem: str) -> tuple[str, str | None, str | None, Counter, Counte
         merges, unmerged = Counter(MERGES), list(MERGES_UNMERGED)
         if paths.MACROS_ENV not in os.environ:
             names = name_map(s, insts, arclog, arcdata)
-            columns = column_map(s, names, insts)
+            text = parity(s, names, insts)
+            names = placed(names, text)
+            columns = column_map(s, names, insts, text)
             checked = _with_checks(s, lib, sig, names, columns, stuck, copies)
             for directory, data in ((paths.NAMES_DIR, names), (paths.COLUMNS_DIR, columns)):
                 directory.mkdir(parents=True, exist_ok=True)
                 (directory / f"{stem}.json").write_text(json.dumps(data, indent=1, sort_keys=True) + "\n")
+            (paths.NAMES_DIR / f"{stem}.dl").write_text(text.text)
             checked = checked or (arclog, arcdata)
     except Exception as e:  # noqa: BLE001
         return stem, None, None, Counter(), Counter(), [], {}, f"{type(e).__name__}: {e}", None

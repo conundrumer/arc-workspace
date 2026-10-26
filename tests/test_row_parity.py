@@ -51,3 +51,9 @@ def test_a_change_to_its_check_copy_makes_it_stale(tmp_path):
     (tmp_path / "gen_check").mkdir()
     (tmp_path / "gen_check" / f"{STEM}.arclog").write_text("log with a check relation")
     assert stale(tmp_path) == [STEM]
+
+
+def test_a_change_to_the_souffle_text_beside_its_name_map_makes_it_stale(tmp_path):
+    setup(tmp_path)
+    (tmp_path / "names" / f"{STEM}.dl").write_text(".init parity_x = SigRay<Unit>\n")
+    assert stale(tmp_path) == [STEM]
