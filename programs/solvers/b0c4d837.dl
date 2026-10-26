@@ -11,10 +11,11 @@
 //  hold no liquid: the rows from the row nearest params.open_dir that holds
 //  params.wall_color down to the nearest row that holds the liquid's color,
 //  that row left out
-// @rule output-frame: the output is the frame that the cells of
-//  params.fill_order cover, all params.background
+// @rule output-frame: the output is a params.out_dim square frame, all
+//  params.background
 // @rule lay-marks: the first count cells of the output, in params.fill_order,
-//  take the liquid's color; every other cell stays params.background
+//  take the liquid's color; every other cell stays params.background;
+//  undefined where the count exceeds the cells params.fill_order ranks
 
 // how the count becomes the output grid
 .type Render =
@@ -29,18 +30,14 @@
 
 // the order of the frame's cells
 .type CellOrder =
-    // @claim output-frame lay-marks
+    // @claim lay-marks
     FillOrder {}
-    // @rule output-frame: the output is a params.out_dim square frame, all
-    //  params.background
     // @rule lay-marks: the first count cells of a walk that starts at
     //  params.order_corner, runs along a line on params.line_axis, and at the
     //  frame's edge steps one line on and runs back, take the liquid's color;
     //  undefined where the count exceeds the frame's cells
     // @witness count-past-four: ordinary $SnakeOrder
   | SnakeOrder {}
-    // @rule output-frame: the output is a params.out_dim square frame, all
-    //  params.background
     // @rule lay-marks: the first count cells of a walk that starts at
     //  params.order_corner, runs along a line on params.line_axis, and turns
     //  inward where the frame's edge or a cell it has passed stops it, take
@@ -86,10 +83,7 @@
 
 .type Choice = [render: Render, rim: RimRow, liquid: Liquid]
 
-.type FillValue = [v: Ident]
-.type OpenValue = [fill_order: FillValue]
-
-.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl wall_color(c: Color) wall_color(5).
@@ -105,23 +99,19 @@
     // @derive DominantColor: ordinary concept
     .decl background(c: Color) background(0).
 
-    // --- $FillOrder ---
-    // Each cell's rank in the order the marks fill, under each open value:
-    // 0 the snake, 1 the clockwise spiral.
-    // @open
-    .decl fill_order(v: Ident, p: Position, r: number)
-    GRID_3x3(fill_order, 0,
-        0, 1, 2,
-        5, 4, 3,
-        6, 7, 8)
-    GRID_3x3(fill_order, 1,
-        0, 1, 2,
-        7, 8, 3,
-        6, 5, 4)
-
-    // --- $SnakeOrder, $SpiralOrder ---
+    // The side of the square output frame.
     .decl out_dim(n: number) out_dim(3).
 
+    // --- $FillOrder ---
+    // Each cell's rank in the order the marks fill; a cell with no rank is
+    // never marked.
+    .decl fill_order(p: Position, r: number)
+    GRID_SPARSE_3x3(fill_order,
+        0, 1, 2,
+        _, _, 3,
+        _, _, _)
+
+    // --- $SnakeOrder, $SpiralOrder ---
     // The corner the walk starts from.
     .decl order_corner(d: DiagDir) order_corner(DIAG_TL).
 
@@ -160,10 +150,6 @@ cell_order_choice($FillOrder()). cell_order_choice($SnakeOrder()). cell_order_ch
 
 // A state of a walk: the cell it stands on and its heading.
 .type Step = [p: Position, d: Dir]
-
-// A cell order at an open value of params.fill_order, nil where the order
-// reads none.
-.type OrderValue = [o: CellOrder, w: FillValue]
 
 .comp Parse<Key> {
     .type KeyLiquid = [key: Key, li: Liquid]
@@ -232,10 +218,11 @@ cell_order_choice($FillOrder()). cell_order_choice($SnakeOrder()). cell_order_ch
         rim(Ky, Ri, B), fluid.box([Ky, Li], B2), relative(B, B2, B_rel),
         params.open_dir(U), dist(B_rel, U, K).
 
-    // --- $FillOrder, $SnakeOrder, $SpiralOrder ---
+    // --- $Laid ---
     .init frame = Frame2D<Key>
     frame.extent(Ky, A, N) :- side(Ky, N), axis_elem(A).
 
+    // --- $SnakeOrder, $SpiralOrder ---
     // The walk's first heading, and the direction it advances between lines.
     .decl heading(key: Key, h: Dir, adv: Dir)
     heading(Ky, H, Adv) :-
@@ -247,7 +234,7 @@ cell_order_choice($FillOrder()). cell_order_choice($SnakeOrder()). cell_order_ch
         cell_order_choice(O), O != $FillOrder(),
         corner(Ky, C), frame.cell(Ky, P), box_corner(P, ZERO, C), heading(Ky, H, _).
 
-    // --- $FillOrder, $SnakeOrder ---
+    // --- $SnakeOrder ---
     // Along the line, and at the frame's edge one line on and back.
     walk.edge([Ky, $SnakeOrder()], [P, H], [Q, H2]) :-
         frame.cell(Ky, P), dir_elem(H),
@@ -256,7 +243,7 @@ cell_order_choice($FillOrder()). cell_order_choice($SnakeOrder()). cell_order_ch
         ),
         frame.cell(Ky, Q).
 
-    // --- $FillOrder, $SpiralOrder ---
+    // --- $SpiralOrder ---
     // @claim lay-marks
     .init ring = Rim<Key>
     ring.cell(Ky, P) :- frame.cell(Ky, P).
@@ -281,7 +268,7 @@ cell_order_choice($FillOrder()). cell_order_choice($SnakeOrder()). cell_order_ch
         ; !spiral_open(Ky, P, H, _), perp_dir(H, H2), spiral_open(Ky, P, H2, Q)
         ).
 
-    // --- $FillOrder, $SnakeOrder, $SpiralOrder ---
+    // --- $SnakeOrder, $SpiralOrder ---
     // Each cell's rank along the walk.
     .decl walk_rank(key: Key, o: CellOrder, p: Position, r: number)
     walk_rank(Ky, O, P, R) :- walk.distance([Ky, O], [P, _], R).
@@ -294,23 +281,23 @@ parse.corner($U(), C) :- params.order_corner(C).
 parse.axis($U(), A) :- params.line_axis(A).
 
 // --- $CountTable ---
-out(P, Col, [$CountTable(), Ri, Li], [nil]) :-
+out(P, Col, [$CountTable(), Ri, Li]) :-
     parse.empty_rows($U(), Ri, Li, K), params.count_table(K, P, Col).
 
 // --- $Laid ---
-// Each cell's rank in the order, at each open value W.
-.decl rank(o: CellOrder, w: FillValue, p: Position, r: number)
+// Each cell's rank in the order.
+.decl rank(o: CellOrder, p: Position, r: number)
 
 // --- $FillOrder ---
-rank($FillOrder(), [V], P, R) :- params.fill_order(V, P, R).
+rank($FillOrder(), P, R) :- params.fill_order(P, R).
 
 // --- $SnakeOrder, $SpiralOrder ---
-rank(O, nil, P, R) :- parse.walk_rank($U(), O, P, R).
+rank(O, P, R) :- parse.walk_rank($U(), O, P, R).
 
 // --- $Laid ---
-// @claim output-frame
-.init cells = Tally<OrderValue, Position>
-cells.item([O, W], P) :- rank(O, W, P, _).
+// @claim lay-marks
+.init cells = Tally<CellOrder, Position>
+cells.item(O, P) :- rank(O, P, _).
 
 .decl mark(m: Mark, li: Liquid, col: Color)
 
@@ -321,11 +308,12 @@ mark($LiquidMark(), Li, Col) :- parse.liquid($U(), Li, Col).
 mark($MarkColor(), Li, Col) :- parse.liquid($U(), Li, _), params.mark_color(Col).
 
 // --- $Laid ---
-out(P, Col, [$Laid(O, M), Ri, Li], [W]) :-
-    parse.empty_rows($U(), Ri, Li, K), cells.tally([O, W], N), K <= N,     // the count fits the frame
-    rank(O, W, P, R), mark(M, Li, C),
-    ( R < K, Col = C
-    ; R >= K, params.background(Col)
+out(P, Col, [$Laid(O, M), Ri, Li]) :-
+    parse.empty_rows($U(), Ri, Li, K), cells.tally(O, N), K <= N,     // the count fits the ranked cells
+    parse.frame.cell($U(), P), mark(M, Li, C),
+    ( rank(O, P, R), R < K, Col = C
+    ; rank(O, P, R), R >= K, params.background(Col)
+    ; !rank(O, P, _), params.background(Col)                          // a cell with no rank
     ).
 
 .comp Determine {
@@ -344,17 +332,6 @@ out(P, Col, [$Laid(O, M), Ri, Li], [W]) :-
     shown.elem($U(), P) :- marked(_, P).
     shown.before($U(), P, Q) :- marked(E, P), marked(_, Q), !marked(E, Q).
 
-    // The snake and the spiral from the corner and along the axis the outputs
-    // show.
-    .init walks = Parse<Unit>
-    walks.side($U(), N) :- ex_out(_, P, _), axis_elem(A), axis_dim(P, A, N).
-    walks.corner($U(), C) :- shown.first($U(), P), box_corner(P, ZERO, C).
-    walks.axis($U(), A) :-
-        shown.first($U(), P), shown.next($U(), P, Q), dir_elem(D), neighbor(P, D, Q), axis_of(D, A).
-
-    .init value = IdentOf<CellOrder>
-    value.value(O) :- walks.walk_rank($U(), O, _, _).
-
-    .decl fill_order(v: Ident, p: Position, r: number)
-    fill_order(V, P, R) :- walks.walk_rank($U(), O, P, R), value.id(O, V).
+    .decl fill_order(p: Position, r: number)
+    fill_order(P, R) :- shown.rank($U(), P, R).
 }
