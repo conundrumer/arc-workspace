@@ -2811,9 +2811,10 @@ def main(argv: list[str]) -> None:
         groups[p.with_suffix(".arclog") if p.suffix == ".arcdata" else p].append(p)
     order = sorted(groups.values(), key=lambda g: -sum(x.stat().st_size for x in g if x.exists()))
     if len(order) > 20:
-        import os
         from concurrent.futures import ProcessPoolExecutor
-        with ProcessPoolExecutor(min(len(order), os.cpu_count() or 4)) as pool:
+
+        from engine.pool import pool_size
+        with ProcessPoolExecutor(min(len(order), pool_size())) as pool:
             found = dict(x for got in pool.map(lint_group, order) for x in got)
     else:
         found = dict(x for g in order for x in lint_group(g))

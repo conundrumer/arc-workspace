@@ -7,7 +7,7 @@ it writes, which checks every case, the copy flows' values included, and writes 
 declared row of the registry's `copies` that the engine found a component's output breaks, at a group of an instance it ran in the replay. The command checks an existing export: the files of every case, and the
 values of a sample of N cases (100 by default; `--all` takes every case; `--seed` picks the sample). It prints
 one line per violated invariant, with the count of its violations, the number of its cases and three examples,
-then a total, and exits with status 1 where any violation stands. `--jobs N` sets the number of worker processes that check the cases (every core by default; 1 runs in the one process); the report is the same at every N. A change to this module, or to the engine code that writes the export's files (`engine/arclog-tables/src/`, `engine/arclog-tables-py/src/`, `engine/arclog/src/decode/`), runs `engine/arclog-py/roundtrip_check.py` with an `arclog` built from its tree before its merge.
+then a total, and exits with status 1 where any violation stands. `--jobs N` sets the number of worker processes that check the cases (`ARCLOG_THREADS` if set and every core otherwise; 1 runs in the one process); the report is the same at every N. A change to this module, or to the engine code that writes the export's files (`engine/arclog-tables/src/`, `engine/arclog-tables-py/src/`, `engine/arclog/src/decode/`), runs `engine/arclog-py/roundtrip_check.py` with an `arclog` built from its tree before its merge.
 
 A case of an export of streams (`tables_export.export_streams` with `bases`) can be cut: its `bases` row (task, case, base, tokens `n`, tables `k`) says that
 the case holds only the tables of the steps at or after token `n`, numbered from `k`, and that its base case's tables numbered below `k` are the case's
@@ -584,7 +584,7 @@ def check_part(out, k, cases):
 
 def check_export(dir, sample=100, seed=0, streams=None, out=sys.stdout, jobs=None):
     """Checks the export in `dir` and prints a report; `sample` is the number of cases whose values are checked, None for every case.
-    `jobs` is the number of worker processes, `os.cpu_count()` where it is None; the report does not depend on it.
+    `jobs` is the number of worker processes, `ARCLOG_THREADS` where it is None and set, and `os.cpu_count()` where it is neither; the report does not depend on it.
     Returns the Counter of violations by invariant."""
     bases = read_bases(dir)
     valued = [tuple(f[len(f"{dir}/values/"):-len(".i32")].split("/", 1)) for f in glob.glob(f"{dir}/values/*/*.i32")]
@@ -602,7 +602,7 @@ def check_export(dir, sample=100, seed=0, streams=None, out=sys.stdout, jobs=Non
             orientation = orientation_sets(arclog.orientation_types())
         except ImportError:
             print(f"{dir} holds no orientation_types.json and arclog is not installed: the orientation domains are not checked", file=sys.stderr)
-    jobs = jobs or os.cpu_count() or 1
+    jobs = jobs or int(os.environ.get("ARCLOG_THREADS") or os.cpu_count())
     if jobs == 1 or len(cases) < 2:
         results = [_check_cases(dir, cases, chosen, orientation)]
     else:

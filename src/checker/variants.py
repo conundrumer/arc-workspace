@@ -2,7 +2,6 @@
 program gives on the task's pairs, and whether the Determine comp still
 reproduces the stored values under it."""
 
-import os
 from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass, replace
 from enum import StrEnum
@@ -23,6 +22,7 @@ from engine import (
 from solver.model import Case
 from solver.aggregate import Solver
 from solver.outcome import Assignment, Grids, Outcome
+from engine.pool import pool_size
 from engine.program import as_grid
 from solver.determine import (
     Determined,
@@ -344,7 +344,7 @@ def reproduces(got: DetermineResult | NoTask,
 
 
 def workers() -> int:
-    return os.cpu_count() or 1
+    return pool_size()
 
 
 class OnTest(StrEnum):

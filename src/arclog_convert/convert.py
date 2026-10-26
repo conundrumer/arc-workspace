@@ -42,6 +42,7 @@ import re
 import sys
 from collections import Counter
 from pathlib import Path
+from engine.pool import pool_size
 from engine.program import Qualifier, Variable
 from arclog_convert.libmap import rename as libmap_rename
 from arclog_convert import OUT_ENV, paths, writable_out
@@ -174,7 +175,7 @@ def convert_into(stems: list[str], out: Path) -> list[str]:
     failed = []
     converted = []
     clean = 0
-    workers = min(len(stems), os.cpu_count() or 4)
+    workers = min(len(stems), pool_size())
     if workers > 1:
         pool = ProcessPoolExecutor(workers)
         # the largest solvers first, so that no long one starts last

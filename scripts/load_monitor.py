@@ -6,7 +6,6 @@ the rules and the alert."""
 import argparse
 import os
 import re
-import subprocess
 import sys
 import time
 from dataclasses import dataclass
@@ -18,12 +17,11 @@ import script_calls
 from idle_sessions import harness_processes, running
 from ticket_numbers import session_id
 from tree_reads import main_tree
+from machine_readings import PRESSURE_LEVELS, SWAP_IN_RATE, counters, output, pressure_level
 from ticketing.times import stamp_time, utc_stamp
 
 SAMPLE_SECONDS = 5
-SWAP_IN_RATE = 1000
 SWAP_IN_SAMPLES = 2
-PRESSURE_LEVELS = frozenset({2, 4})
 PRESSURE_SAMPLES = 2
 BUSY_CPU = 90
 CPU_SAMPLES = 6
@@ -58,7 +56,6 @@ HELP = mctx("""
 SESSION = re.compile(rf"(?:^|\s){script_calls.SESSION_ENV}=(\S+)")
 NO_SESSION = "-"
 SWAP_USED = re.compile(r"used = ([\d.]+)M")
-VM_COUNTER = re.compile(r"^(Pageins|Swapins):\s+(\d+)\.$", re.MULTILINE)
 FOOTPRINT = re.compile(r"(\d+)([BKMG])[+-]?")
 UNIT_KIB = {"B": 1 / 1024, "K": 1, "M": 1024, "G": 1024 ** 2}
 
@@ -91,23 +88,19 @@ class Reading:
                           f"{self.page_in:.0f}", f"{self.swap_used_mb:.0f}"])
 
 
-def _run(*args: str) -> str:
-    return subprocess.run(args, capture_output=True, text=True, check=True).stdout
-
-
 def processes() -> list[Process]:
     """Each process of the machine, with the session id of the nearest of
     itself and its ancestors that is a running Claude Code session's
     process, as the harness's file gives it, or whose environment gives a
     session id; the harness's file wins for a process that has both."""
     sessions: dict[int, str] = {}
-    for text in _run("ps", "-Eww", "-axo", "pid=,command=").splitlines():
+    for text in output("ps", "-Eww", "-axo", "pid=,command=").splitlines():
         pid, _, rest = text.strip().partition(" ")
         if (m := SESSION.search(rest)) is not None:
             sessions[int(pid)] = m.group(1)
     sessions |= harness_processes() or {}
     rows = [text.split(None, 4) for text in
-            _run("ps", "-ww", "-axo", "pid=,ppid=,%cpu=,etime=,command=").splitlines()]
+            output("ps", "-ww", "-axo", "pid=,ppid=,%cpu=,etime=,command=").splitlines()]
     parents = {int(row[0]): int(row[1]) for row in rows}
     return [Process(int(pid), int(ppid), float(cpu), elapsed,
                     nearest_session(int(pid), sessions, parents), command)
@@ -132,7 +125,7 @@ def footprints() -> dict[int, int]:
     """The physical footprint in KiB of each process, as the `MEM` column
     of `top` gives it."""
     out: dict[int, int] = {}
-    for text in _run("top", "-l", "1", "-stats", "pid,mem").splitlines():
+    for text in output("top", "-l", "1", "-stats", "pid,mem").splitlines():
         pid, _, mem = text.partition(" ")
         if not pid.isdigit():
             continue
@@ -143,19 +136,13 @@ def footprints() -> dict[int, int]:
     return out
 
 
-def counters() -> tuple[int, int]:
-    """The swap-in and page-in counts since boot, as `vm_stat` gives them."""
-    found = {name: int(count) for name, count in VM_COUNTER.findall(_run("vm_stat"))}
-    return found["Swapins"], found["Pageins"]
-
-
 def pressure_and_swap() -> tuple[int, float]:
     """The kernel's memory pressure level, and the swap in use in MB."""
-    level, usage = _run("sysctl", "-n", "kern.memorystatus_vm_pressure_level", "vm.swapusage").splitlines()
+    usage = output("sysctl", "-n", "vm.swapusage")
     m = SWAP_USED.search(usage)
     if m is None:
         raise ValueError(f"no swap in use in {usage!r}")
-    return int(level), float(m.group(1))
+    return pressure_level(), float(m.group(1))
 
 
 def cpus() -> int:

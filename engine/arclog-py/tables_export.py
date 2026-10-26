@@ -5,7 +5,7 @@
 It needs an interpreter with `arclog`, pandas and pyarrow, such as the LM work's venv. The code that decides a part's rows, values and fault lines is in `export_rows.py`. A change to that module, or to the engine code that writes the export's files (`engine/arclog-tables/src/`, `engine/arclog-tables-py/src/`, `engine/arclog/src/decode/`), runs `engine/arclog-py/roundtrip_check.py` with an `arclog` built from its tree before its merge.
 
 Runs one `arclog.corpus_tables` call per task id, the longest first, on a queue of N Python threads, where N is `ARCLOG_THREADS`
-if set and `os.cpu_count()` otherwise. `replay_order` gives the order, which `lm/export.py` takes too: the tasks the export `--previous` gives no seconds for, or all tasks where none is given, by the largest
+if set and `os.cpu_count()` otherwise, and checks the parts it writes on N processes. `replay_order` gives the order, which `lm/export.py` takes too: the tasks the export `--previous` gives no seconds for, or all tasks where none is given, by the largest
 `.arcdata` file first, then the others by the one-thread seconds each took in that export (see `parts/<k>.tasks.txt`: the line's seconds times its units), longest first. A task whose one-thread seconds would end past half the mean load of a worker (the summed one-thread seconds of the
 tasks to replay over N) is replayed in `units` units on `units` engine threads, the least count (at most N and at most the cases the previous export
 holds for the task) at which its expected unit time, `1 + (units - 1) / 14` times its seconds over `units`, is under that bound; any other
@@ -175,10 +175,10 @@ def write_part(out, k, results, ran=None, keys=None):
 MIN_SHARE_BYTES = 50_000_000     # a share of values under this costs more to start than it saves, where the part has more
 
 
-def submit_checks(pool, out, k, pairs):
-    """Submits the check of part `k` of the (task, case) pairs, cut into shares, to `pool`. Returns the futures."""
+def submit_checks(pool, workers, out, k, pairs):
+    """Submits the check of part `k` of the (task, case) pairs, cut into at most `workers` shares, to `pool`. Returns the futures."""
     size = sum(os.path.getsize(f"{out}/values/{t}/{c}.i32") for t, c in pairs)
-    cut = export_checks.shares(out, pairs, set(pairs), max(1, min(os.cpu_count() or 1, size // MIN_SHARE_BYTES)))
+    cut = export_checks.shares(out, pairs, set(pairs), max(1, min(workers, size // MIN_SHARE_BYTES)))
     return [pool.submit(export_checks.check_part, out, k, share) for share in cut]
 
 
@@ -222,11 +222,11 @@ def line_task(line):
     return line.split()[0].rstrip(":") if line.split() else ""
 
 
-def reuse_parts(out, previous, keys, k, skip, checks, pool):
+def reuse_parts(out, previous, keys, k, skip, checks, pool, workers):
     """Writes parts from `previous`, from its `k`-th on, for each task of `keys` ({task: key}, not in `skip`) whose task key the previous export's `tasks.txt` lines give equal.
 
     A part takes the rows, fault lines and values (hard-linked) of the tasks of one previous part. Where every such line gives the
-    checks digest `checks`, the part takes their check lines and `tasks.txt` lines as well. Otherwise its check is submitted to `pool`
+    checks digest `checks`, the part takes their check lines and `tasks.txt` lines as well. Otherwise its check is submitted to `pool`, of `workers` processes,
     and its `tasks.txt` lines are given `checks`, for `main` to finish as it finishes a replayed part.
     Returns the set of tasks reused, the next part number and {part: [the (task, case) pairs, the check futures, []]} of the parts to check again (`main`'s `open_parts`).
     """
@@ -260,7 +260,7 @@ def reuse_parts(out, previous, keys, k, skip, checks, pool):
         else:
             pairs = part_cases(out, k, tasks)
             if pairs:
-                again[k] = [pairs, set(submit_checks(pool, out, k, pairs)), []]
+                again[k] = [pairs, set(submit_checks(pool, workers, out, k, pairs)), []]
             else:
                 finish_part(out, k, [])
         reused |= set(tasks)
@@ -346,8 +346,8 @@ def main(out, task_ids, previous=None, **options):
     engine, checks = engine_digest(), checks_digest()
     keys = {t: task_key(engine, t, settings_text, (ROWS,)) for t in task_ids}
     tagged = {t: (key, checks) for t, key in keys.items()}
-    check_pool = ProcessPoolExecutor(os.cpu_count(), mp_context=multiprocessing.get_context("spawn"))
-    reused, k, open_parts = reuse_parts(out, previous, keys, k, done, checks, check_pool) if previous else (set(), k, {})
+    check_pool = ProcessPoolExecutor(workers, mp_context=multiprocessing.get_context("spawn"))
+    reused, k, open_parts = reuse_parts(out, previous, keys, k, done, checks, check_pool, workers) if previous else (set(), k, {})
     checking = {f: part for part, (_, futures, _) in open_parts.items() for f in futures}   # check future -> its part
     done |= reused
     before = {}
@@ -389,7 +389,7 @@ def main(out, task_ids, previous=None, **options):
         if time.time() - last >= 10 or not replaying or failure:
             if results and not failure:
                 pairs = write_files(out, k, results, took, tagged)
-                new = submit_checks(check_pool, out, k, pairs) if pairs else []
+                new = submit_checks(check_pool, workers, out, k, pairs) if pairs else []
                 if new:
                     open_parts[k] = [pairs, set(new), []]
                     checking.update({f: k for f in new})
