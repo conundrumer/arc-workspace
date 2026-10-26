@@ -42,7 +42,7 @@ use serde_json::Value;
 use crate::arguments::Arguments;
 use arclog::stream::corpus::case_spelled;
 use crate::determine::{solver_determination, Finding};
-use crate::renaming::{renaming_exists, same_without_idents, EngineLeaf, Leaf};
+use crate::renaming::same_without_idents;
 use crate::select::{read_json, selected};
 use crate::souffle_rows::{engine_rows, pair_name, EngineRows, Projection, Rerun};
 
@@ -294,16 +294,18 @@ struct Comparison {
 }
 
 /// The first relation whose rows differ, by the order of `pairs` and then
-/// the rerun's order on each pair: the first such that no one renaming of
-/// Idents over every pair makes every relation up to it agree. A relation
-/// whose engine rows and Souffle rows hold different counts of leaves,
+/// the rerun's order on each pair. The rows of a relation compare as sets
+/// with each place that holds an Ident left blank, and no renaming of Idents
+/// is looked for: a Souffle number denotes one object only within its
+/// instance, its key and its pair, so a number is no name for an object
+/// across relations or pairs. A relation whose engine rows and Souffle rows
+/// hold different counts of leaves,
 /// as where the converter left a Souffle column out of the arclog
 /// relation, is not compared, and the comparison gives it with the two
 /// counts. A relation whose rows differ between the case's models is not
 /// compared either, and the comparison gives it with that reason.
 fn first_difference(pairs: &[PairRows<'_>]) -> Comparison {
     let mut comparison = Comparison::default();
-    let mut compared: Vec<(&BTreeSet<Vec<Leaf>>, Vec<Vec<EngineLeaf>>)> = Vec::new();
     for PairRows { pair, rerun, engine } in pairs {
         for (name, souffle) in &rerun.relations {
             let Some(rows) = engine(name) else { continue };
@@ -333,14 +335,6 @@ fn first_difference(pairs: &[PairRows<'_>]) -> Comparison {
                 comparison.difference = differs(format!("{} rows against Souffle's {}", rows.len(), souffle.len()));
                 return comparison;
             }
-            if !rows.iter().flatten().any(|leaf| matches!(leaf, EngineLeaf::Ident(_))) {
-                continue;
-            }
-            compared.push((souffle, rows));
-            if !renaming_exists(&compared) {
-                comparison.difference = differs("no one renaming of Idents makes its rows and those before it agree".to_owned());
-                return comparison;
-            }
         }
     }
     comparison
@@ -351,6 +345,7 @@ mod tests {
     use super::*;
     use std::collections::BTreeMap;
     use arclog::terms::{Content, Ident, InternTable, WrittenIdent};
+    use crate::renaming::{EngineLeaf, Leaf};
 
     fn n(value: i64) -> Leaf {
         Leaf::Number(value)
@@ -390,44 +385,18 @@ mod tests {
     }
 
     #[test]
-    fn compares_idents_up_to_one_renaming_over_the_pairs() {
+    fn compares_the_places_that_hold_idents_as_blanks_with_no_renaming() {
         let [x, y] = idents(2)[..] else { unreachable!() };
         let id = |ident, color: i64| vec![EngineLeaf::Ident(ident), EngineLeaf::Written(n(color))];
         let first = rerun(&[("&color", &[&[7, 1], &[8, 2]]), ("&big", &[&[7]])]);
-        let second = rerun(&[("&big", &[&[7]])]);
-        let agreeing = [("&color", vec![id(x, 1), id(y, 2)]), ("&big", vec![vec![EngineLeaf::Ident(x)]])];
-        let agreeing_second = [("&big", vec![vec![EngineLeaf::Ident(x)]])];
-        let pairs = [on("train 0", &first, &agreeing), on("train 1", &second, &agreeing_second)];
+        let second = rerun(&[("&big", &[&[8]])]);
+        let ours = [("&color", vec![id(x, 1), id(y, 2)]), ("&big", vec![vec![EngineLeaf::Ident(x)]])];
+        let ours_second = [("&big", vec![vec![EngineLeaf::Ident(x)]])];
+        let pairs = [on("train 0", &first, &ours), on("train 1", &second, &ours_second)];
         assert_eq!(first_difference(&pairs).difference, None);
-        let crossed_second = [("&big", vec![vec![EngineLeaf::Ident(y)]])];
-        let pairs = [on("train 0", &first, &agreeing), on("train 1", &second, &crossed_second)];
-        let found = first_difference(&pairs).difference.expect("a difference");
-        assert!(found.contains("is &big on train 1:"), "{found}");
-        assert_eq!(first_difference(&pairs[1..]).difference, None);
-    }
-
-    #[test]
-    fn names_a_relation_that_no_renaming_fits_after_many_alike_rows() {
-        let ours = idents(12);
-        let souffle_rows: Vec<Vec<i64>> = (0..12).map(|i| vec![100 + i, 1]).collect();
-        let souffle_rows: Vec<&[i64]> = souffle_rows.iter().map(Vec::as_slice).collect();
-        let souffle = rerun(&[("&alike", &souffle_rows), ("&pairs", &[&[100, 101], &[102, 103], &[104, 105]])]);
-        let alike: Vec<Vec<EngineLeaf>> = ours.iter().map(|&i| vec![EngineLeaf::Ident(i), EngineLeaf::Written(n(1))]).collect();
-        let fits = vec![
-            vec![EngineLeaf::Ident(ours[3]), EngineLeaf::Ident(ours[7])],
-            vec![EngineLeaf::Ident(ours[0]), EngineLeaf::Ident(ours[11])],
-            vec![EngineLeaf::Ident(ours[5]), EngineLeaf::Ident(ours[2])],
-        ];
-        let relations = [("&alike", alike.clone()), ("&pairs", fits)];
-        assert_eq!(first_difference(&[on("train 0", &souffle, &relations)]).difference, None);
-        let chain = vec![
-            vec![EngineLeaf::Ident(ours[3]), EngineLeaf::Ident(ours[7])],
-            vec![EngineLeaf::Ident(ours[7]), EngineLeaf::Ident(ours[11])],
-            vec![EngineLeaf::Ident(ours[5]), EngineLeaf::Ident(ours[2])],
-        ];
-        let relations = [("&alike", alike), ("&pairs", chain)];
-        let found = first_difference(&[on("train 0", &souffle, &relations)]).difference.expect("a difference");
-        assert!(found.contains("is &pairs on train 0:"), "{found}");
+        let other_color = [("&color", vec![id(x, 1), id(y, 3)]), ("&big", vec![vec![EngineLeaf::Ident(x)]])];
+        let found = first_difference(&[on("train 0", &first, &other_color)]).difference.expect("a difference");
+        assert!(found.contains("is &color on train 0:"), "{found}");
     }
 
     #[test]

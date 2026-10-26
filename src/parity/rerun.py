@@ -9,20 +9,21 @@ each pair projected onto the columns the converter maps (`concept_rows`)."""
 
 import hashlib
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 from arc.task import Example
 from cli.common import LIMITS, engine, solver_path
-from engine import (AdtValue, Engine, NilValue, Program, RecordValue, RelationName, Rows,
+from engine import (AdtValue, Engine, Program, RecordValue, RelationName, Rows,
                     RunFailure, Scope)
 from engine.memo import hash_files, read_or_make
 from engine.program import (AtomLiteral, BodyLiteral, Comparison, ComparisonOperator,
                             ConstructorTerm, Disjunction, Qualifier, Term, Unit, Value, as_grid,
                             subterms)
 from parity import NameMap, case_name, columns_path, name_map, relation_name, snapshot
+from parity.idents import Minted, NoMembers, Source, Unresolved, Writer, ident_sources, kind_of, leaves
 from solver.aggregate import Solver
 from solver.cases import cases as cases_of
 from solver.load import load
@@ -132,7 +133,7 @@ def relations(stem: str, case: str, pair: str
     return {relation_name(loaded.names, r): rows for r, rows in got.items()}
 
 
-def leaves_at(value: Value, path: list[int]) -> list[int | float | str] | None:
+def leaves_at(value: Value, path: Sequence[int]) -> list[int | float | str] | None:
     """The leaves (`leaves`) of the part of `value` at `path`, the index of a
     field of a record or an ADT value at each step; None where `value` has no part there, as where
     the type of the column is a type argument that the run binds to a type
@@ -154,9 +155,19 @@ def concept_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | R
     `leaf` in its Souffle column. A relation's rows are a set. The form:
     `{"orientation_constants": {...}, "pairs": [{"pair": "train 0",
     "relations": [{"name": "&x", "columns": [[label, field], ...],
-    "unread": [[label, field], ...], "rows": [[[leaves of column 1], ...], ...]}]}], "skipped": [{"name",
-    "reason"}]}`. A column of `unread` is a mapped column whose leaf some row
-    lacks, which every list of `columns` and `rows` leaves out. The case's undefined outcome or a run's failure where one
+    "idents": [kind, ...], "unread": [[label, field], ...],
+    "unresolved": [[label, field, reason], ...], "rows": [[[leaves of column 1], ...], ...],
+    "fault": text}]}], "skipped": [{"name", "reason"}]}`. A column of
+    `unread` is a mapped column whose leaf some row lacks, which every list
+    of `columns` and `rows` leaves out; so is a column of `unresolved`, a
+    leaf of type `Ident` that has no one source (`parity.idents`), with its
+    reason. The kind of a column in `idents` is `"minted"`, where the leaf
+    is an id a lib relation mints, and its leaf is the text of the set of
+    the id's members (`parity.idents.Writer`); `"stored"`, where it is a
+    number a clause writes; and `null` for any other leaf. `fault`, which a
+    relation's entry holds only where it applies, is the text of a minted
+    id that the minting relation's rows on the pair do not hold at the
+    row's key. The case's undefined outcome or a run's failure where one
     gives no rows. Raises `NoSuchCase` where the solver has no concept case,
     and `FileNotFoundError` where the column map is missing."""
     loaded = load_once(stem, solver_file)
@@ -176,30 +187,74 @@ def concept_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | R
             skipped.append({"name": name, "reason": "no column to compare: every leaf is a case, a drop or an Example leaf"})
         else:
             mapped[r] = name
-    runs = []
     taken = loaded.taking(chosen)
+    sources = ident_sources(loaded.eng, taken.program)
+    leaves_of = {r: [MappedLeaf(j, e["label"], e["field"], tuple(e["leaf"]), sources.of(r, j, tuple(e["leaf"])))
+                     for j, column in enumerate(columns[name]) for e in column if not e["example"]]
+                 for r, name in mapped.items()}
+    asked = list(dict.fromkeys([*mapped, *(m for ls in leaves_of.values() for leaf in ls
+                                           if isinstance(leaf.source, Minted) for m in sources.minting(leaf.source))]))
+    runs = []
     for p, ex in examples(loaded.solver.given_task):
-        got = loaded.run(taken, chosen, ex, list(mapped))
+        got = loaded.run(taken, chosen, ex, asked)
         if not isinstance(got, Mapping):
             return got
         runs.append((p.text, got))
-    entries = {name: [(j, e) for j, column in enumerate(columns[name]) for e in column if not e["example"]]
-               for name in mapped.values()}
-    unread = {name: [(j, e) for j, e in es if any(leaves_at(row[j], e["leaf"]) is None
-                                                  for _, got in runs for row in got[r])]
-              for r, name in mapped.items() for es in [entries[name]]}
-    pairs = []
-    for pair, got in runs:
-        out = []
-        for r, name in mapped.items():
-            read = [(j, e) for j, e in entries[name] if (j, e) not in unread[name]]
-            rows = {json.dumps([leaves_at(row[j], e["leaf"]) for j, e in read]) for row in got[r]}
-            out.append({"name": name, "columns": [[e["label"], e["field"]] for _, e in read],
-                        "unread": [[e["label"], e["field"]] for _, e in unread[name]],
-                        "rows": [json.loads(row) for row in sorted(rows)]})
-        pairs.append({"pair": pair, "relations": out})
+    unread = {r: [leaf for leaf in ls if any(leaves_at(row[leaf.column], leaf.path) is None
+                                             for _, got in runs for row in got[r])]
+              for r, ls in leaves_of.items()}
+    pairs = [{"pair": pair, "relations": [relation_entry(name, got[r], leaves_of[r], unread[r], Writer(sources, got))
+                                          for r, name in mapped.items()]}
+             for pair, got in runs]
     return {"orientation_constants": orientation_constants(loaded.solver.lib), "pairs": pairs,
             "skipped": skipped}
+
+
+@dataclass(frozen=True)
+class MappedLeaf:
+    """A leaf of a Souffle column that the column map gives an arclog column
+    (`label`, and `field` where the column is a record's field): the Souffle
+    column, the path of the leaf into its value, and the source of the leaf
+    where it is an Ident (`parity.idents`)."""
+
+    column: int
+    label: str
+    field: str | None
+    path: tuple[int, ...]
+    source: Source | None
+
+
+def relation_entry(name: str, rows: Rows, leaves: list[MappedLeaf], unread: list[MappedLeaf], writer: Writer
+                   ) -> dict[str, Any]:
+    """The entry of the relation `name` for one pair in `concept_rows`' form,
+    from its `rows` on the pair, its mapped `leaves`, those of them that are
+    `unread`, and the `writer` of the minted ids."""
+    unresolved = [leaf for leaf in leaves if leaf not in unread and isinstance(leaf.source, Unresolved)]
+    read = [leaf for leaf in leaves if leaf not in unread and leaf not in unresolved]
+    fault: list[str] = []
+    cells = set()
+    for row in rows:
+        cell = []
+        for leaf in read:
+            value = leaves_at(row[leaf.column], leaf.path)
+            assert value is not None
+            if isinstance(leaf.source, Minted):
+                try:
+                    value = [writer.text(leaf.source, value[0], row)]
+                except NoMembers as no:
+                    fault.append(str(no))
+            cell.append(value)
+        cells.add(json.dumps(cell))
+    entry: dict[str, Any] = {
+        "name": name, "columns": [[leaf.label, leaf.field] for leaf in read],
+        "idents": [kind_of(leaf.source) for leaf in read],
+        "unread": [[leaf.label, leaf.field] for leaf in unread],
+        "unresolved": [[leaf.label, leaf.field, leaf.source.reason] for leaf in unresolved
+                       if isinstance(leaf.source, Unresolved)],
+        "rows": [json.loads(cell) for cell in sorted(cells)]}
+    if fault:
+        entry["fault"] = min(fault)
+    return entry
 
 
 def orientation_constants(lib: Lib) -> dict[str, Any]:
@@ -288,17 +343,6 @@ def _holds(term: Term, names: frozenset[str]) -> bool:
     aggregate."""
     return (isinstance(term, ConstructorTerm) and term.name in names) \
         or any(_holds(t, names) for t in subterms(term))
-
-
-def leaves(value: Value) -> list[int | float | str]:
-    """The leaves of `value`, as `rerun --json` writes a row's values."""
-    match value:
-        case RecordValue(fields=fields) | AdtValue(args=fields):
-            return [leaf for field in fields for leaf in leaves(field)]
-        case NilValue():
-            return []
-        case _:
-            return [value]
 
 
 def rerun_json(stem: str, got: Mapping[str, Rows]) -> str:

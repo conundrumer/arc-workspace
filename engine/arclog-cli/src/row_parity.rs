@@ -9,18 +9,27 @@
 //! one side holds; `fault`, with the engine's text; or `skip`, with the
 //! reason: the program derives no relation of that name, its rows differ
 //! between the case's models, or none of the columns the file gives is a
-//! column of the relation. A column of the file that the relation lacks is
-//! left out of both sides, and the line names it. A fault of a whole task
-//! has the relation `*`. It exits 1 where a line is `differ` or `fault`.
+//! column of the relation. A column of the file that the relation lacks, and
+//! a leaf of the file that is `unresolved`, an Ident with no one source, are
+//! left out of both sides, and the line names each, an unresolved leaf with
+//! its reason. A `fault` is also the line of a relation whose Souffle rows
+//! hold a minted id that the minting relation's rows on the pair do not
+//! hold at the row's key, and of one whose engine Ident at a minted leaf is
+//! a value read from a file. A fault of a whole task has the relation `*`.
+//! It exits 1 where a line is `differ` or `fault`.
 //!
 //! An `equal` line proves: for the concept case at the stored parameters, on
 //! each train and test input of the task, the arclog rows of the relation,
 //! projected onto the leaves the converter maps from Souffle's columns, are
-//! Souffle's rows projected onto the same leaves, as a set, up to one
-//! renaming of opaque ids per pair, over all the relations of the pair.
-//! It does not prove anything about other cases, other inputs (witness
-//! inputs among them), the relations and leaves that are skipped, or the
-//! multiplicity of rows.
+//! Souffle's rows projected onto the same leaves, as a set. An Ident that a
+//! lib relation mints is compared by its members: each side writes it as the
+//! text of the set of its members, and the texts are compared as written
+//! values. An Ident that a fact of the solver writes is a number that
+//! denotes one object only within its pair, so those are compared up to one
+//! renaming per pair, over all the relations of the pair. It does not prove
+//! anything about a leaf that the line names as left out, other cases, other
+//! inputs (witness inputs among them), the relations and leaves that are
+//! skipped, or the multiplicity of rows.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -35,7 +44,7 @@ use serde_json::Value;
 use crate::concept_case::{with_concept_case, ConceptCase};
 use crate::renaming::{renaming_exists, same_without_idents, EngineLeaf, Leaf};
 use crate::select::read_json;
-use crate::souffle_rows::{engine_columns, engine_rows, pair_name, EngineRows, Projection};
+use crate::souffle_rows::{engine_columns, engine_rows, pair_name, Column, EngineRows, Projection};
 
 const USAGE: &str = "usage: arclog-cli row-parity <corpus-dir> <tasks-dir> <rows-dir> <task_id> [<task_id> ...]";
 
@@ -84,13 +93,25 @@ pub(crate) enum EngineSide {
 }
 
 /// One relation on one pair: Souffle's projected rows, the engine's rows
-/// projected onto the same columns, and the columns of the file that the
-/// engine's relation lacks.
+/// projected onto the same columns, the columns of the file that the
+/// engine's relation lacks and its unresolved leaves with their reasons, and
+/// the text of a minted id that Souffle's rows of the pair do not account
+/// for.
 pub(crate) struct Checked {
     pub(crate) name: String,
     pub(crate) souffle: BTreeSet<Vec<Leaf>>,
     pub(crate) engine: EngineSide,
     pub(crate) left_out: Vec<String>,
+    pub(crate) fault: Option<String>,
+}
+
+/// One relation of the rows file on one pair, as `column_names_of` and
+/// `souffle_rows_of` read it.
+struct FileRelation {
+    columns: Vec<String>,
+    minted: Vec<bool>,
+    left_out: Vec<String>,
+    rows: Vec<Vec<Vec<Leaf>>>,
 }
 
 /// The subcommand on `args`, the arguments after its name.
@@ -155,10 +176,19 @@ fn task_verdicts(case: &ConceptCase<'_>, file: &Value) -> Result<Vec<(String, Ve
         for relation in relations {
             let name = relation.get("name").and_then(Value::as_str).ok_or("a relation of the rows file has no `name`")?;
             let columns = column_names_of(relation, "columns")?;
-            let unread = column_names_of(relation, "unread")?;
-            let rows = souffle_rows_of(relation)?;
-            let (engine, left_out, souffle) = engine_side(evaluation, name, example, &constants, &columns, unread, &rows);
-            checked.push(Checked { name: name.to_owned(), souffle, engine, left_out });
+            let minted = minted_of(relation)?;
+            if minted.len() != columns.len() {
+                return Err(format!("the relation `{name}` of the rows file has {} columns and {} `idents`", columns.len(), minted.len()));
+            }
+            let file_relation = FileRelation {
+                columns,
+                minted,
+                left_out: [column_names_of(relation, "unread")?, unresolved_of(relation)?].concat(),
+                rows: souffle_rows_of(relation)?,
+            };
+            let fault = relation.get("fault").map(|text| text.as_str().map(str::to_owned).ok_or("a fault of the rows file is no text")).transpose()?;
+            let (engine, left_out, souffle) = engine_side(evaluation, name, example, &constants, file_relation);
+            checked.push(Checked { name: name.to_owned(), souffle, engine, left_out, fault });
         }
         for (name, verdict) in compare_pair(&pair, &checked) {
             merge(&mut merged, name, verdict);
@@ -175,20 +205,18 @@ fn engine_side(
     name: &str,
     example: Example,
     constants: &BTreeMap<String, i64>,
-    columns: &[String],
-    unread: Vec<String>,
-    rows: &[Vec<Vec<Leaf>>],
+    file: FileRelation,
 ) -> (EngineSide, Vec<String>, BTreeSet<Vec<Leaf>>) {
     let names = match engine_columns(evaluation, name) {
         None => return (EngineSide::NoRelation, Vec::new(), BTreeSet::new()),
         Some(Err(text)) => return (EngineSide::Rows(EngineRows::Fault(text)), Vec::new(), BTreeSet::new()),
         Some(Ok(names)) => names,
     };
+    let FileRelation { columns, minted, mut left_out, rows } = file;
     let mut kept = Vec::new();
-    let mut left_out = unread;
     for (entry, column) in columns.iter().enumerate() {
         match names.iter().position(|n| n == column) {
-            Some(position) => kept.push((entry, position)),
+            Some(position) => kept.push((entry, Column { position, minted: minted[entry] })),
             None => left_out.push(column.clone()),
         }
     }
@@ -196,8 +224,8 @@ fn engine_side(
         return (EngineSide::NoColumn, left_out, BTreeSet::new());
     }
     let souffle = rows.iter().map(|row| kept.iter().flat_map(|&(entry, _)| row[entry].clone()).collect()).collect();
-    let positions: Vec<usize> = kept.iter().map(|&(_, position)| position).collect();
-    let engine = match engine_rows(evaluation, name, example, constants, Projection::Positions(&positions)) {
+    let columns: Vec<Column> = kept.iter().map(|&(_, column)| column).collect();
+    let engine = match engine_rows(evaluation, name, example, constants, Projection::Positions(&columns)) {
         None => EngineRows::Fault("the relation has no rows to read".to_owned()),
         Some(EngineRows::Rows(rows)) => EngineRows::Rows(distinct(rows)),
         Some(other) => other,
@@ -221,6 +249,36 @@ fn column_names_of(relation: &Value, key: &str) -> Result<Vec<String>, String> {
             let [label, field] = column.as_array().map(Vec::as_slice).ok_or("a column is no pair")? else { return Err("a column is no pair".to_owned()) };
             let label = label.as_str().ok_or("a column has no label")?;
             Ok(field.as_str().map_or_else(|| label.to_owned(), |field| format!("{label}.{field}")))
+        })
+        .collect()
+}
+
+/// Whether each column of `relation` in the rows file is one whose leaf is
+/// an id that a lib relation mints (`"minted"`), as against a number a clause
+/// writes (`"stored"`) or a leaf that is no Ident (`null`).
+fn minted_of(relation: &Value) -> Result<Vec<bool>, String> {
+    let kinds = relation.get("idents").and_then(Value::as_array).ok_or("a relation of the rows file has no `idents`")?;
+    kinds
+        .iter()
+        .map(|kind| match (kind.as_str(), kind.is_null()) {
+            (Some("minted"), _) => Ok(true),
+            (Some("stored"), _) | (None, true) => Ok(false),
+            _ => Err(format!("an entry of `idents` is neither `minted`, `stored` nor null: {kind}")),
+        })
+        .collect()
+}
+
+/// The leaves of `relation` in the rows file that have no one source, each
+/// as the column's name and the reason.
+fn unresolved_of(relation: &Value) -> Result<Vec<String>, String> {
+    let leaves = relation.get("unresolved").and_then(Value::as_array).ok_or("a relation of the rows file has no `unresolved`")?;
+    leaves
+        .iter()
+        .map(|leaf| {
+            let [label, field, reason] = leaf.as_array().map(Vec::as_slice).ok_or("an unresolved leaf is no triple")? else { return Err("an unresolved leaf is no triple".to_owned()) };
+            let label = label.as_str().ok_or("an unresolved leaf has no label")?;
+            let reason = reason.as_str().ok_or("an unresolved leaf has no reason")?;
+            Ok(format!("{} (unresolved: {reason})", field.as_str().map_or_else(|| label.to_owned(), |field| format!("{label}.{field}"))))
         })
         .collect()
 }
@@ -264,15 +322,20 @@ fn merge(merged: &mut Vec<(String, Verdict)>, name: String, verdict: Verdict) {
 }
 
 /// The verdict of each relation of `relations` on `pair`, in order. Each
-/// relation compares as sets up to the Idents; the relations that hold an
-/// Ident then must agree under one renaming of Idents over all of them, as
-/// each pair is a separate run of Souffle, whose numbers denote the objects
-/// of that input alone.
+/// relation compares as sets, with each Ident that a lib relation mints
+/// written as the text of the set of its members; the relations that hold an
+/// Ident of another kind, a number a fact writes, then must agree under one
+/// renaming of Idents over all of them, as each pair is a separate run of
+/// Souffle, whose numbers denote the objects of that input alone.
 pub(crate) fn compare_pair(pair: &str, relations: &[Checked]) -> Vec<(String, Verdict)> {
     let mut verdicts = Vec::new();
     let mut compared: Vec<(&BTreeSet<Vec<Leaf>>, Vec<Vec<EngineLeaf>>)> = Vec::new();
-    for Checked { name, souffle, engine, left_out } in relations {
+    for Checked { name, souffle, engine, left_out, fault } in relations {
         let note = if left_out.is_empty() { String::new() } else { format!("; columns left out of both sides: {}", left_out.join(", ")) };
+        if let (Some(text), EngineSide::Rows(EngineRows::Rows(_))) = (fault, engine) {
+            verdicts.push((name.clone(), Verdict::Fault(format!("{pair}: {text}"))));
+            continue;
+        }
         let verdict = match engine {
             EngineSide::NoRelation => Verdict::Skip("no arclog relation of that name".to_owned()),
             EngineSide::NoColumn => Verdict::Skip(format!("no column of the map is a column of the relation: {}", left_out.join(", "))),
@@ -349,7 +412,7 @@ mod tests {
     }
 
     fn checked(name: &str, souffle: BTreeSet<Vec<Leaf>>, rows: Vec<Vec<EngineLeaf>>) -> Checked {
-        Checked { name: name.to_owned(), souffle, engine: EngineSide::Rows(EngineRows::Rows(rows)), left_out: Vec::new() }
+        Checked { name: name.to_owned(), souffle, engine: EngineSide::Rows(EngineRows::Rows(rows)), left_out: Vec::new(), fault: None }
     }
 
     fn idents(count: u32) -> Vec<Ident> {
@@ -376,6 +439,40 @@ mod tests {
         let verdicts = compare_pair("train 0", &relations);
         assert!(matches!(verdicts[0].1, Verdict::Equal(_)), "{verdicts:?}");
         assert!(matches!(&verdicts[1].1, Verdict::Differ(text) if text.contains("no one renaming")), "{verdicts:?}");
+    }
+
+    fn text(members: &str) -> Leaf {
+        Leaf::Other(members.into())
+    }
+
+    fn minted(members: &str) -> Vec<EngineLeaf> {
+        vec![EngineLeaf::Written(text(members))]
+    }
+
+    #[test]
+    fn equals_where_minted_ids_that_share_a_number_in_souffle_agree_by_their_members() {
+        // Souffle gives the number 7 to an object of each relation, but two objects; each relation's rows are the sets of the members.
+        let relations = [
+            checked("&comps4.component", BTreeSet::from([vec![text("{[1],[2]}")]]), vec![minted("{[1],[2]}")]),
+            checked("&comps8.component", BTreeSet::from([vec![text("{[3],[4]}")]]), vec![minted("{[3],[4]}")]),
+        ];
+        let verdicts = compare_pair("train 0", &relations);
+        assert!(verdicts.iter().all(|(_, verdict)| matches!(verdict, Verdict::Equal(_))), "{verdicts:?}");
+    }
+
+    #[test]
+    fn differs_where_a_minted_id_has_other_members() {
+        let relations = [checked("&label", BTreeSet::from([vec![text("{[1],[2]}")]]), vec![minted("{[1],[3]}")])];
+        let [(_, verdict)] = &compare_pair("train 0", &relations)[..] else { panic!("one verdict") };
+        assert!(matches!(verdict, Verdict::Differ(_)), "{verdict:?}");
+    }
+
+    #[test]
+    fn faults_where_a_minted_id_has_no_row_of_the_minting_relation() {
+        let mut relation = checked("&label", BTreeSet::from([vec![text("{}")]]), vec![minted("{}")]);
+        relation.fault = Some("the id 5 has no row of comps4.label at the key of the row".to_owned());
+        let [(_, verdict)] = &compare_pair("train 0", &[relation])[..] else { panic!("one verdict") };
+        assert!(matches!(verdict, Verdict::Fault(text) if text.contains("the id 5 has no row")), "{verdict:?}");
     }
 
     #[test]

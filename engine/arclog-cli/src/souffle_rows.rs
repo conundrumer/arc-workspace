@@ -13,7 +13,8 @@ use arclog::program::{DeclaredName, InstanceName, OutputName, OutputOwner, Outpu
 use arclog::relations::Relation;
 use arclog::resolver::Side;
 use arclog::task::Task;
-use arclog::terms::{Example, Term};
+use arclog::registry::Registry;
+use arclog::terms::{Content, Example, Ident, InternTable, Term};
 use arclog::types::{GraphRelation, ValueType};
 use serde_json::Value;
 
@@ -62,13 +63,24 @@ pub(crate) enum EngineRows {
     Fault(String),
 }
 
+/// One row position that a comparison reads, and whether its Idents are
+/// written as the sets of their members.
+#[derive(Clone, Copy)]
+pub(crate) struct Column {
+    pub(crate) position: usize,
+    /// The Ident at the position is one that a lib relation mints, so it is
+    /// written as the text of the set of its members (`ident_text`), not
+    /// left as an Ident for a renaming.
+    pub(crate) minted: bool,
+}
+
 /// The columns of a row of the engine that a comparison reads.
 #[derive(Clone, Copy)]
 pub(crate) enum Projection<'a> {
     /// Every row position, in order.
     All,
-    /// These row positions, in this order.
-    Positions(&'a [usize]),
+    /// These columns, in this order.
+    Positions(&'a [Column]),
 }
 
 /// The relation that `name` gives in `program`: a relation a clause derives
@@ -159,16 +171,74 @@ pub(crate) fn model_leaves(
 ) -> Result<Vec<Vec<EngineLeaf>>, String> {
     let mut written = Vec::new();
     let mut faults = BTreeSet::new();
-    each_row(rows, &mut |row| match row.iter().zip(types).map(|(&id, ty)| term_leaves(Term::decode(id, ty), evaluation.registry, &|name| souffle_number(name, constants))).collect::<Result<Vec<_>, _>>() {
-        Ok(leaves) => written.push(match projection {
-        Projection::All => leaves.concat(),
-        Projection::Positions(positions) => positions.iter().flat_map(|&position| leaves[position].clone()).collect(),
-    }),
-        Err(text) => {
-            faults.insert(text);
+    each_row(rows, &mut |row| {
+        let leaves = row.iter().zip(types).map(|(&id, ty)| term_leaves(Term::decode(id, ty), evaluation.registry, &|name| souffle_number(name, constants))).collect::<Result<Vec<_>, _>>();
+        match leaves.and_then(|leaves| projected(evaluation, leaves, constants, projection)) {
+            Ok(leaves) => written.push(leaves),
+            Err(text) => {
+                faults.insert(text);
+            }
         }
     });
     faults.into_iter().next().map_or(Ok(written), Err)
+}
+
+/// The leaves of one row, whose positions hold `leaves`, as `projection`
+/// reads them.
+fn projected(evaluation: &Evaluation<'_>, leaves: Vec<Vec<EngineLeaf>>, constants: &BTreeMap<String, i64>, projection: Projection<'_>) -> Result<Vec<EngineLeaf>, String> {
+    let Projection::Positions(columns) = projection else { return Ok(leaves.concat()) };
+    let mut row = Vec::new();
+    for column in columns {
+        for leaf in &leaves[column.position] {
+            match leaf {
+                EngineLeaf::Ident(ident) if column.minted => {
+                    let table = evaluation.session.intern.read().expect("an intern table that no panic poisoned");
+                    row.push(EngineLeaf::Written(Leaf::Other(ident_text(&table, evaluation.registry, *ident, constants)?.into())));
+                }
+                other => row.push(other.clone()),
+            }
+        }
+    }
+    Ok(row)
+}
+
+/// The text of the set of members that `ident` labels, as the Souffle side
+/// writes the id a lib relation mints (`parity.idents.Writer`): a member as
+/// `[leaf,leaf,...]` with each Example leaf left out and each Ident leaf as
+/// the text of its own set, and the set as `{member,member,...}` with the
+/// members sorted by their text. A text for an Ident that labels no set.
+fn ident_text(table: &InternTable, registry: &Registry, ident: Ident, constants: &BTreeMap<String, i64>) -> Result<String, String> {
+    let Content::Set(set) = table.content(ident) else { return Err("an Ident that a file writes labels no set of members".to_owned()) };
+    let mut fields = Vec::new();
+    field_types(set.member_type(), &mut fields);
+    let mut members = Vec::new();
+    for member in set.each() {
+        let mut leaves = Vec::new();
+        for (&id, ty) in member.iter().zip(&fields) {
+            if *ty == ValueType::Example {
+                continue;
+            }
+            for leaf in term_leaves(Term::decode(id, ty), registry, &|name| souffle_number(name, constants))? {
+                leaves.push(match leaf {
+                    EngineLeaf::Written(Leaf::Number(n)) => n.to_string(),
+                    EngineLeaf::Written(Leaf::Other(text)) => text.to_string(),
+                    EngineLeaf::Ident(inner) => ident_text(table, registry, inner, constants)?,
+                });
+            }
+        }
+        members.push(format!("[{}]", leaves.join(",")));
+    }
+    members.sort();
+    Ok(format!("{{{}}}", members.join(",")))
+}
+
+/// The types of the columns that a value of type `ty` takes, a record's
+/// fields side by side at every depth.
+fn field_types(ty: &ValueType, out: &mut Vec<ValueType>) {
+    match ty {
+        ValueType::Record(fields) => fields.iter().for_each(|(_, field)| field_types(field, out)),
+        other => out.push(other.clone()),
+    }
 }
 
 /// The leaf of the orientation constant `name` in Souffle's rerun: its
