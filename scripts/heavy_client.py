@@ -212,7 +212,7 @@ def queue_text(registry: Dict[str, Any], now: float) -> str:
     order it starts, with its expected start."""
     budget = registry["budget"]
     lines: List[str] = [f"budget: {budget['cpus']} CPUs, of which {budget['reserve_cpus']} are the short jobs' "
-                        f"reserve; memory admits by pressure alone, one start a reading; "
+                        f"reserve; memory gates no start, and the largest job is killed at sustained thrash; "
                         f"{budget['outside_gib']} GiB readable outside the jobs"]
     if registry["hold"]:
         lines.append(f"hold: {registry['hold']}")

@@ -11,13 +11,9 @@ A command is adopted as an ungated job where its tree, with the trees of
 the jobs left out, runs at `ADOPT_CPUS` CPUs for `ADOPT_CPU_SECONDS`, or
 holds `ADOPT_GIB` GiB for `ADOPT_GIB_SECONDS`.
 
-Under critical memory pressure, or a swap-in rate over the load monitor's
-alert rate for `SWAP_IN_SAMPLES` samples, the daemon kills the jobs of a
-session one at a time, each with `SIGTERM` and then, `KILL_GRACE` seconds
-later, `SIGKILL`, in the order `victims` gives. Where the pressure has been
-critical for `LAST_RESORT_SECONDS`, the order is the ungated processes, then
-every gated job, the largest first, so the largest gated job of any need is
-the next to go.
+While the swap-ins a second stay over `THRASH_RATE` for `THRASH_SECONDS`, the
+daemon kills the jobs of sessions one at a time, each with `SIGTERM` and then,
+`KILL_GRACE` seconds later, `SIGKILL`, the largest footprint first.
 
 Standard library only, Python 3.9."""
 
@@ -34,11 +30,13 @@ ADOPT_CPUS = 1.5
 ADOPT_CPU_SECONDS = 60
 ADOPT_GIB = 2
 ADOPT_GIB_SECONDS = 30
-SWAP_IN_SAMPLES = 2
+THRASH_RATE = 5000
+"""Swap-ins a second at which the machine thrashes: the rates of the thrash episodes of
+2026-10-22 and 23 ran from 5,000 to 36,000."""
+THRASH_SECONDS = 15
 KILL_GRACE = 5
 KILL_SETTLE = 10
 """The seconds after one kill starts before the next may."""
-LAST_RESORT_SECONDS = 30
 SNAPSHOTS = "/shell-snapshots/"
 SHELLS = frozenset({"bash", "sh", "zsh", "dash", "fish"})
 CPU_OVERRUN_FACTOR = 2
@@ -86,27 +84,8 @@ def command_roots(commands: Dict[int, str], parents: Dict[int, int], sessions: L
     return roots
 
 
-def over_declaration(job: Job) -> bool:
-    return job.kind is Kind.GATED and job.footprint_kib * KIB > job.amount.gib * GIB
-
-
-def victims(jobs: List[Job], last_resort: bool) -> List[Job]:
-    """The jobs of sessions in the order they are killed: the ungated ones, a gated job over its
-    declared GiB, then `idle` and `soon` jobs, each group largest footprint first. Where
-    `last_resort` is set, the ungated ones and then every gated job, largest footprint first,
-    whatever its need. A job of no session never goes."""
+def victims(jobs: List[Job]) -> List[Job]:
+    """The jobs of sessions in the order they are killed, the largest footprint first. A job of
+    no session never goes."""
     owned = [job for job in jobs if job.owner != NO_SESSION]
-    by_size = sorted(owned, key=lambda job: (-job.footprint_kib, job.pid))
-    ungated = [job for job in by_size if job.kind is Kind.UNGATED]
-    if last_resort:
-        return ungated + [job for job in by_size if job.kind is Kind.GATED]
-    groups = [
-        ungated,
-        [job for job in by_size if over_declaration(job)],
-        [job for job in by_size if job.need is Need.IDLE],
-        [job for job in by_size if job.need is Need.SOON],
-    ]
-    out: List[Job] = []
-    for group in groups:
-        out += [job for job in group if all(job is not found for found in out)]
-    return out
+    return sorted(owned, key=lambda job: (-job.footprint_kib, job.pid))

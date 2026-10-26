@@ -4,31 +4,28 @@ machine changes in them. It reads and writes nothing: each call returns the
 effects, a log line, a signal to send, a grant, that the daemon applies.
 
 The budget that admission and the expected starts use is `available`: the machine's
-CPUs, and `UNBOUNDED_GIB`, so that no request waits for GiB. Memory gates admission through
-the hold alone, since the daemon cannot read every process's memory.
+CPUs, and `UNBOUNDED_GIB`, so that no request waits for GiB. Memory gates no start: idle
+memory moves to swap at little cost, and the thrash that active memory brings is met by the
+kill below.
 
-A request waits, as `scripts/heavy_scheduler.py` orders it, and starts where
-no hold stands: the kernel's memory pressure level is normal, the swap-ins a
-second are at most the load monitor's alert rate (`scripts/machine_readings.py`),
-and the daemon reads the machine. At most one request starts between two readings, so
-that the pressure a start brings shows before the next. A job ends where its pid does, and the
+A request waits, as `scripts/heavy_scheduler.py` orders it, and starts where the daemon
+reads the machine. A job ends where its pid does, and the
 processes it left behind are killed, if it belongs to a session. A gated job holds its
 declared CPUs, and, for its first `DECLARED_SECONDS`, its declared GiB, or the GiB it
 measures where that is more. After that it holds its measured peak, rounded up to a GiB, and
 `HEADROOM_GIB` more, so a job that declares more than it uses frees the rest for the waiting
-requests. A job that grows past what it holds is left to the memory pressure response. An
+requests. An
 ungated process, which `scripts/heavy_enforcer.py` finds, holds what it measures.
 
 A short gated job that runs past its declared minutes holds from then on as a long job of
 its need, with its CPUs and GiB unchanged; no process is signalled for it.
 
-A gated job that holds more GiB than it declares, runs at more than twice its
+A gated job that runs at more than twice its
 CPUs for a minute, or runs past twice its minutes gets one log line and one
 message to its session. Memory pressure at warn gets each session that has
 an ungated process one message. An ungated process that is a call of `run_heavy.py`,
 of a gate older than the daemon, is counted and is sent no message that says it runs
-outside the gate. At critical pressure, or a high swap-in rate,
-a kill follows, as `scripts/heavy_enforcer.py` gives it.
+outside the gate. Where the swap-ins stay high, a kill follows, as `scripts/heavy_enforcer.py` gives it.
 
 Standard library only, Python 3.9."""
 
@@ -42,15 +39,13 @@ from typing import Any, Dict, FrozenSet, List, Optional, Tuple, Union
 import heavy_notices
 from heavy_notices import Reason
 from heavy_enforcer import (ADOPT_CPU_SECONDS, ADOPT_CPUS, ADOPT_GIB, ADOPT_GIB_SECONDS, CPU_OVERRUN_FACTOR,
-                            CPU_OVERRUN_SECONDS, KILL_GRACE, KILL_SETTLE, LAST_RESORT_SECONDS, SWAP_IN_SAMPLES,
-                            TIME_OVERRUN_FACTOR, command_roots, over_declaration, victims)
+                            CPU_OVERRUN_SECONDS, KILL_GRACE, KILL_SETTLE, THRASH_RATE, THRASH_SECONDS,
+                            TIME_OVERRUN_FACTOR, command_roots, victims)
 from heavy_model import Amount, Job, Kind, Lane, Need, Waiter
 from heavy_scheduler import Holding, estimates, next_waiters, queues, reserve, resolve
 from machine_readings import GIB, KIB, PRESSURE_LEVELS, SWAP_IN_RATE
 from process_readings import NO_SESSION
 
-LEVEL_NAMES = {2: "warn", 4: "critical"}
-CRITICAL = 4
 OUTSIDE_THE_GATE = frozenset({Reason.ADOPTED, Reason.WARN})
 COMMAND_CHARS = 300
 DECLARED_SECONDS = 60
@@ -199,10 +194,9 @@ class Core:
         self.cpu_seen: Dict[int, float] = {}
         self.last_at: Optional[float] = None
         self.last_kill: Optional[float] = None
-        self.critical_since: Optional[float] = None
-        self.swap_hot = 0
+        self.thrash_since: Optional[float] = None
+        self.reading_logged: Optional[float] = None
         self.level = 1
-        self.started_since_reading = False
 
     def available(self) -> Amount:
         """The budget that admission and expected starts use: the CPUs of `total`, and
@@ -251,13 +245,11 @@ class Core:
         self.waiters.pop(waiter_id, None)
 
     def admit(self, now: float) -> List[Effect]:
-        """Start the first waiter that is first of its queue and fits, where no hold stands and
-        none started since the last reading."""
-        if self.hold is not None or self.fault is not None or self.started_since_reading:
+        """Start each waiter that is first of its queue and fits, where no hold stands."""
+        if self.hold is not None or self.fault is not None:
             return []
         out: List[Effect] = []
-        for w in next_waiters(self.waiters.values(), self.holdings(now), self.available(), now)[:1]:
-            self.started_since_reading = True
+        for w in next_waiters(self.waiters.values(), self.holdings(now), self.available(), now):
             del self.waiters[w.id]
             job = Job(w.pid, w.start, w.owner, Kind.GATED, w.need, w.ask, w.minutes, w.command, now,
                       members={w.pid: float(w.start)})
@@ -310,7 +302,6 @@ class Core:
         """Take a reading of the machine in: the hold, the end of jobs, the measure of each job,
         the adoption of ungated commands, the overruns, and the kills."""
         out: List[Effect] = []
-        self.started_since_reading = False
         self.claude = {session: pid for pid, session in sample.claude.items()}
         elapsed = None if self.last_at is None else max(now - self.last_at, 1e-3)
         out += self.pressure(sample, now)
@@ -321,26 +312,30 @@ class Core:
         self.outside_kib = sum(p.footprint_kib or 0 for pid, p in sample.procs.items() if pid not in held)
         out += self.overruns(now)
         out += self.kills(sample, now)
+        out += self.reading(sample, now)
         self.cpu_seen = {p.pid: p.cpu_seconds for p in sample.procs.values() if p.cpu_seconds is not None}
         self.last_at = now
         return out
 
     def pressure(self, sample: Sample, now: float) -> List[Effect]:
         self.level = sample.level
-        reason = None
-        if sample.level in PRESSURE_LEVELS:
-            reason = f"memory pressure: level {sample.level} ({LEVEL_NAMES[sample.level]})"
-        if sample.swap_in is not None and sample.swap_in > SWAP_IN_RATE:
-            self.swap_hot += 1
-            reason = reason or f"swap-ins: {sample.swap_in:.0f} pages a second, over {SWAP_IN_RATE}"
+        if sample.swap_in is not None and sample.swap_in > THRASH_RATE:
+            self.thrash_since = self.thrash_since if self.thrash_since is not None else now
         else:
-            self.swap_hot = 0
-        self.hold = reason
-        if sample.level == CRITICAL:
-            self.critical_since = self.critical_since if self.critical_since is not None else now
-        else:
-            self.critical_since = None
+            self.thrash_since = None
         return []
+
+    def reading(self, sample: Sample, now: float) -> List[Effect]:
+        """A log line of the reading, each minute and at each reading whose swap-ins are over the
+        load monitor's alert rate, for the evidence of what thrashes the machine."""
+        hot = sample.swap_in is not None and sample.swap_in > SWAP_IN_RATE
+        if not hot and self.reading_logged is not None and now - self.reading_logged < 60:
+            return []
+        self.reading_logged = now
+        return [Log("reading", {
+            "swap_in": None if sample.swap_in is None else round(sample.swap_in), "level": sample.level,
+            "jobs": [[job.pid, round(job.footprint_kib * KIB / GIB, 2), job.command[:60]]
+                     for job in sorted(self.jobs.values(), key=lambda j: -j.footprint_kib)]})]
 
     def ended(self, sample: Sample, now: float) -> List[Effect]:
         out: List[Effect] = []
@@ -455,10 +450,6 @@ class Core:
             if job.kind is not Kind.GATED or job.minutes is None:
                 continue
             figures = {"pid": job.pid, "owner": job.owner, "command": job.command[:COMMAND_CHARS]}
-            held = gib_up(job.footprint_kib) if job.footprint_kib else 0
-            if over_declaration(job) and self.tell(
-                    job, Reason.MEMORY, heavy_notices.memory_overrun(job.pid, job.command, held, job.amount.gib)):
-                out.append(Log("overrun", {**figures, "reason": "memory", "gib": held, "declared": job.amount.gib}))
             if job.cpu > CPU_OVERRUN_FACTOR * job.amount.cpus:
                 since = self.cpu_over.setdefault(job.pid, now)
                 if now - since >= CPU_OVERRUN_SECONDS and self.tell(
@@ -487,11 +478,10 @@ class Core:
             for job in self.jobs.values():
                 if job.kind is Kind.UNGATED:
                     self.tell(job, Reason.WARN, heavy_notices.warned(job.pid, job.command, gib_up(job.footprint_kib)))
-        severe = self.level == CRITICAL or self.swap_hot >= SWAP_IN_SAMPLES
+        severe = self.thrash_since is not None and now - self.thrash_since >= THRASH_SECONDS
         if not severe or (self.last_kill is not None and now - self.last_kill < KILL_SETTLE):
             return out
-        last_resort = self.critical_since is not None and now - self.critical_since >= LAST_RESORT_SECONDS
-        for job in victims(list(self.jobs.values()), last_resort):
+        for job in victims(list(self.jobs.values())):
             if any((pid, start) in self.pending for pid, start in job.members.items()):
                 continue
             out += self.kill(job, sample, now)
@@ -499,8 +489,7 @@ class Core:
         return out
 
     def kill(self, job: Job, sample: Sample, now: float) -> List[Effect]:
-        reason = (f"memory pressure at level {self.level}" if self.level == CRITICAL
-                  else f"swap-ins over {SWAP_IN_RATE} pages a second")
+        reason = f"swap-ins over {THRASH_RATE} pages a second for {THRASH_SECONDS} s"
         out: List[Effect] = [Log("kill", {"pid": job.pid, "owner": job.owner, "kind": job.kind.value,
                                           "need": job.need.value if job.need else None,
                                           "gib": gib_up(job.footprint_kib), "reason": reason,

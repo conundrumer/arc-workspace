@@ -18,18 +18,16 @@ its share before it gives up with the expected start.
 The heavy commands that run through this script at one time, in every session
 and checkout of the machine, together hold at most the machine's CPU budget,
 the logical CPUs (`hw.logicalcpu`). A request over the CPUs its need allows is cut
-to them, with one line on stderr. Memory has no budget: the daemon starts no call
-while the kernel's memory pressure is high, and at most one call between two of
-its readings of the machine.
+to them, with one line on stderr. Memory gates no start: where the machine
+thrashes, with swap-ins over 5,000 pages a second for 15 s, the daemon kills the
+largest job.
 
 A call asks the resource daemon (`scripts/resource_daemon.py`) for a share of
 the budget, and starts the daemon where none runs. The daemon starts a call
 when it is first of its queue and fits, as `scripts/heavy_scheduler.py` gives
 the rule: a job of at most 5 minutes draws on a reserve that no longer job
 takes, and the others are ordered, and capped in what they hold together, by
-need. The daemon starts none while the kernel's memory pressure level is warn
-or critical or the swap-ins a second are over the load monitor's alert rate
-(`scripts/machine_readings.py`). `queue` prints each job that holds a share,
+need. `queue` prints each job that holds a share,
 each ungated process of a session that the daemon counts against the budget,
 and each waiting call with its expected start.
 
