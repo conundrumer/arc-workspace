@@ -49,6 +49,30 @@ from arclog_convert.lib import KeyedTable, PROPOSER_COLS, keyed_row, pascal, tak
 from arclog_convert.terms import name_of
 
 
+def column_site(column: str, label: str) -> str:
+    """The site of the column `column` that reads `label`, `label` alone where
+    it is the column's name (`docs/arclog/arclog.md#sites`)."""
+    return label if label.lstrip("*^") == column else f"(:{column} {label})"
+
+
+def atom(relation: str, sites: list[str]) -> str:
+    """The atom of `relation` with `sites`."""
+    return "(" + " ".join([relation, *sites]) + ")"
+
+
+def or_of(bodies: list[str]) -> str:
+    """The body that holds each of `bodies`, a list of atoms, as the branches
+    of an `OR`, or that body alone where there is one."""
+    return bodies[0] if len(bodies) == 1 else "(OR " + " ".join(f"({b})" for b in bodies) + ")"
+
+
+def nest(opening: str, lines: list[str]) -> list[str]:
+    """The form that `opening` opens, with `lines` inside it, closed."""
+    out = [opening, *("  " + x for x in lines)]
+    close(out, ")")
+    return out
+
+
 class ParamsMixin:
     """The plans of a solver's frames and fields, its parameter order and its parameter lines."""
 
@@ -482,7 +506,10 @@ class ParamsMixin:
         plan finds the part's value covered. Where the determination relations
         lead with key columns, the parts stand in an `instance` clause over
         those columns, and a part with a determination relation reads them
-        bare, then the columns of its stored `param` record."""
+        bare, then the columns of its stored `param` record. Where the block
+        is an id-keyed chart (`Converter.rigid_keyed`), a `key` clause over the
+        parts' id holds the rest, each part reads the id bare, and each id is
+        an assembly of its own."""
         c = self.c
         out: list[Form] = []
         for m in c.prog.macros:
@@ -500,22 +527,25 @@ class ParamsMixin:
                 dets = [pascal(col.name) for col in det.columns] if det else stored
                 parts.append((part, dets, len(dets) - len(stored) if det else 0, stored))
                 reads.add(part)
-            key = next((d[:w] for _, d, w, _ in parts if w > 0), None)
-            if key is None:
-                head = [f"(RIGID_DET {amp}"] + [
-                    f"  ({part}" + "".join(f" *{l}" for l in d) + ")" for part, d, _, _ in parts]
-                close(head, ")")
-            else:
-                reads_key = [(part, d[:w]) for part, d, w, _ in parts if w > 0]
-                branches = [f"({part}" + "".join(f" {'^' if i == 0 else ''}{l}" for l in k) + ")"
-                            for i, (part, k) in enumerate(reads_key)]
-                body = branches[0] if len(branches) == 1 else \
-                    "(OR " + " ".join(f"({b})" for b in branches) + ")"
-                head = [f"(RIGID_DET {amp}", f"  (instance ({body})"]
-                for part, d, w, stored in parts:
-                    head.append(f"    ({part}" + "".join(f" {l}" for l in (key if w > 0 else []))
-                                + "".join(f" *{l}" for l in stored) + ")")
-                close(head, "))")
+            keyed = m.block in c.rigid_keyed
+            instance_key = next((d[:w] for _, d, w, _ in parts if w > 0), None)
+            label = parts[0][3][0] if keyed else ""   # the label of the id that the `key` clause makes
+
+            def id_sites(stored: list[str], mark: str = "") -> list[str]:
+                """The site of a part's id at the key's label, in a keyed block."""
+                return [column_site(stored[0], mark + label)] if keyed else []
+
+            atoms = [atom(part, [*(instance_key if w > 0 else []), *id_sites(stored),
+                                 *(f"*{l}" for l in (stored[1:] if keyed else stored))])
+                     for part, _, w, stored in parts]
+            if instance_key is not None:
+                branches = [atom(part, [*(("^" if i == 0 else "") + l for l in d[:w]), *id_sites(stored)])
+                            for i, (part, d, w, stored) in enumerate(p for p in parts if p[2] > 0)]
+                atoms = nest(f"(instance ({or_of(branches)})", atoms)
+            if keyed:
+                ids = [atom(part, id_sites(stored, "^" if i == 0 else "")) for i, (part, _, _, stored) in enumerate(parts)]
+                atoms = nest(f"(key ({or_of(ids)})", atoms)
+            head = nest(f"(RIGID_DET {amp}", atoms)
             f = Form(head, amp, reads, line=m.span.first)
             f.comments = [*(";; " + t for t in self.plain_comments(m.span.first)), *self.todo.take()]
             out.append(f)

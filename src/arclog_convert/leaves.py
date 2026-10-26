@@ -288,6 +288,19 @@ class Converter:
             if isinstance(m, RigidCall) and m.scope.components == ("Params",):
                 for n in m.names:
                     self.rigid[n] = (m.block, n[len(m.block) + 1:])
+        # An id-keyed chart (`docs/handbook/patterns.md`): a block whose parts
+        # each lead their stored columns with an `Ident`. Its form is keyed on
+        # that id, so each id is an assembly of its own, and a part's read gives
+        # the id at its `key` column.
+        by_block: dict[str, list[str]] = {}
+        for n, (block, part) in self.rigid.items():
+            by_block.setdefault(block, []).append(n)
+
+        def leads_with_ident(n: str) -> bool:
+            return [c.type.name for c in self.rels[(("Params",), n)].columns[1:2]] == ["Ident"]
+
+        self.rigid_keyed: frozenset[str] = frozenset(
+            block for block, names in by_block.items() if all(map(leads_with_ident, names)))
         for n, (block, part) in self.rigid.items():
             self.used_names.add(block)
             self.used_names.add("pose")   # `&<block>.pose` is the form's own output
@@ -2282,11 +2295,12 @@ class Converter:
     def _derived(self, r, sub):
         cols = []
         placed = r.scope.components == ("Params",) and r.name in self.rigid
+        keyed = placed and self.rigid[r.name][0] in self.rigid_keyed
         same = getattr(self, "alias", {}).get((r.scope.components, r.name), {})
         n = 0
         for i, c in enumerate(r.columns):
-            col = Col("Pose" if placed and i == 0 else pascal(c.name), c.type.name, False)
-            ls = self.leaves(col.name, c.type.name, False, r.scope.components, sub)
+            col = Col("Pose" if placed and i == 0 else "key" if keyed and i == 1 else pascal(c.name), c.type.name, False)
+            ls = self.leaves(pascal(c.name) if keyed and i == 1 else col.name, c.type.name, False, r.scope.components, sub)
             if len(ls) > 1:
                 ls = [dc_replace(l, name=pascal(l.name)) if l.kind == "keep" else l for l in ls]
             out_ls = []

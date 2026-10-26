@@ -1,5 +1,7 @@
 //! The comparison typing rule of the type check, its rule on the join of a relation's
-//! column types, and the pose rule each refuse a file that breaks them.
+//! column types, and the pose rule each refuse a file that breaks them, and the
+//! Pose type of a keyed assembly's pose at the columns that a derived relation or
+//! an instance holds beside its key.
 
 use std::sync::Arc;
 
@@ -8,7 +10,8 @@ use arclog::diagnostic::{DiagnosticKind, Location};
 use arclog::program::path::{NodePath, PathStep};
 use arclog::read::read_solver;
 use arclog::registry::Registry;
-use arclog::resolver::resolve_cases;
+use arclog::resolver::{resolve_cases, DependencyKind, GraphNodeIndex};
+use arclog::types::{GraphRelation, KeyRow, ValueType};
 
 /// The checks that refuse the program of `arclog`, each with where it
 /// refuses it.
@@ -267,4 +270,83 @@ fn a_clause_that_two_alts_hold_is_refused_only_where_its_sibling_has_no_join() {
     assert_eq!(forms.len(), 2, "{forms:?}");
     assert!(forms[0].is_empty(), "{forms:?}");
     assert_eq!(forms[1].len(), 2, "{forms:?}");
+}
+
+/// A keyed assembly, read at the key `Col`, a `Frame` instance whose key
+/// holds a pose of that assembly and the key label, and a derived relation
+/// that holds both.
+const KEYED_POSE: &str = "
+(RULE &cell
+  (input *P *Col))
+
+(RIGID_DET &piece
+  (key ((&cell ^Col))
+    (&cell Col *P)))
+
+(INIT &frame Frame
+  (key ((&piece.cell (:Pose ^D) (:key ^Col) *P)
+        (axis_elem *A)
+        (frame_extent P A *N))
+    (extent (A N)
+      (&piece.cell (:Pose D) (:key Col) *P)
+      (axis_elem *A)
+      (frame_extent P A *N))))
+
+(RULE &placed
+  (&piece.cell (:Pose *D) (:key *Col) *P))
+";
+
+#[test]
+fn a_pose_of_a_keyed_assembly_at_a_column_of_an_instances_key_takes_the_pose_type_at_the_key_that_the_key_holds() {
+    let read = "
+(RULE &outside
+  (&placed *Col *D *P)
+  (&frame.cell (:key Col D) (:P *Q)))
+";
+    assert_eq!(refusing_checks(&format!("{KEYED_POSE}{read}")), vec![]);
+}
+
+#[test]
+fn a_pose_of_a_keyed_assembly_at_a_column_of_a_derived_relation_takes_the_pose_type_at_the_key_that_the_relation_holds() {
+    let read = "
+(RULE &outside
+  (&placed *Col *D *P)
+  (&piece.cell (:Pose D) (:key Col) (:P *Q)))
+";
+    assert_eq!(refusing_checks(&format!("{KEYED_POSE}{read}")), vec![]);
+}
+
+#[test]
+fn a_pose_of_a_keyed_assembly_joined_at_two_key_labels_is_refused() {
+    let read = "
+(RULE &outside
+  (&placed *Col *D *P)
+  (&piece.cell (:Pose D) (:key *Col2) (:P *Q)))
+";
+    assert!(!refusing_checks(&format!("{KEYED_POSE}{read}")).is_empty());
+}
+
+#[test]
+fn a_read_of_an_instances_key_that_gives_no_label_at_the_pose_key_gives_the_pose_no_pose_type() {
+    let read = "
+(RULE &outside
+  (&placed *Col *D *P)
+  (&frame.cell (:key (:D D)) (:P *Q)))
+";
+    assert!(refusing_checks(&format!("{KEYED_POSE}{read}")).contains(&CheckId::PoseRule));
+}
+
+#[test]
+fn the_columns_of_an_instance_output_that_holds_a_pose_of_a_keyed_assembly_name_its_key_by_position() {
+    let solver = read_solver("rules", KEYED_POSE, "", &|_| None).expect("the file reads").value;
+    let registry = Registry::get();
+    let cases = resolve_cases(&solver, registry);
+    let clauses = SolverClauses::of_cases(&cases);
+    let program = Arc::clone(&cases.concept().resolved.value);
+    let checked = check_shared_program(program, &clauses, registry, &mut CheckCache::default()).expect("every check passes");
+    let outputs = checked.program.graph.nodes.iter().enumerate().filter(|(_, node)| matches!(node.kind, DependencyKind::InstanceOutput { .. }));
+    let columns: Vec<_> = outputs.map(|(node, _)| checked.types.columns(&GraphRelation { node: GraphNodeIndex(node as u32), output: None })).collect();
+    assert!(!columns.is_empty() && columns.iter().all(Option::is_some), "{columns:?}");
+    let keys: Vec<&KeyRow> = columns.iter().flatten().flat_map(|types| types.iter()).filter_map(|ty| if let ValueType::Pose(id) = ty { Some(&id.key) } else { None }).collect();
+    assert_eq!(keys, [&KeyRow::Columns(Box::new([1]))]);
 }

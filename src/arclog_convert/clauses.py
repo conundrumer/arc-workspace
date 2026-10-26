@@ -41,7 +41,8 @@ if TYPE_CHECKING:
 class Site:
     """Where a kept leaf of a Souffle column is read in arclog: the column
     `label` of the arclog relation, and, for a record column of a type
-    parameter or the `key` column of an instance, the `field` within it."""
+    parameter or the `key` column of an instance or of an id-keyed chart's
+    part, the `field` within it."""
 
     leaf: "Leaf"
     label: str
@@ -51,6 +52,13 @@ class Site:
 def kept_leaf(leaf: "Leaf") -> bool:
     """The leaf is read by a site: it is no case, drop or rule leaf."""
     return leaf.kind not in ("case", "drop", "rule")
+
+
+def chart_key(col, inst) -> bool:
+    """Whether `col` is the `key` column of a part of an id-keyed chart: the
+    column of an arclog relation that is no instance's, named `key`, which
+    holds the part's id (`Converter.rigid_keyed`)."""
+    return inst is None and col.name == "key"
 
 
 def site_columns(c: "Converter", cols: list, inst) -> list[list[Site]]:
@@ -75,6 +83,9 @@ def site_columns(c: "Converter", cols: list, inst) -> list[list[Site]]:
                 names = [pascal(l.name) for l in nonex]
             named = iter(names)
             sites = [Site(l, "E", None) if l.kind == "example" else Site(l, "key", next(named)) for l in kept]
+        elif chart_key(col, inst):
+            # the id of a part of an id-keyed chart, read at the form's key
+            sites = [Site(l, "key", l.name) for l in kept]
         else:
             rest = nonex if inst is not None else kept
             nkeep = sum(1 for l in kept if l.kind == "keep")
@@ -208,7 +219,10 @@ class ClauseWriter:
             return name, [souffle_term(a) for a in atom.args]
         out: list[str] = []
         placed = site_columns(self.c, cols, inst)
-        for i, ((col, leaves), arg) in enumerate(zip(cols, atom.args)):
+        # the key of an id-keyed chart's part leads its sites, as the outputs of
+        # the form hold the key's columns first
+        order = sorted(enumerate(zip(cols, atom.args)), key=lambda column: not chart_key(column[1][0][0], inst))
+        for i, ((col, leaves), arg) in order:
             terms = self.split(arg, leaves)
             for leaf, t in zip(leaves, terms):
                 if leaf.kind == "case":
@@ -219,12 +233,12 @@ class ClauseWriter:
                 continue
             self.c.read_sites.setdefault(name, set()).update(
                 (site.label, site.field) for site, t in kept if not isinstance(t, Wildcard))
-            is_key = inst is not None and i == 0 and col.name == "key"
+            is_key = chart_key(col, inst) or inst is not None and i == 0 and col.name == "key"
             if is_key:
                 kept = self.example_sites(kept, bound, out)
                 if not kept:
                     continue
-                if key_join and inst == self.own_inst and all(
+                if key_join and inst is not None and inst == self.own_inst and all(
                         isinstance(t, Variable) and self.label(t.name) == site.field for site, t in kept):
                     continue
                 inner = []
