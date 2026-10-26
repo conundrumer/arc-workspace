@@ -51,7 +51,7 @@ fn a_filter_body_orders_its_outputs_after_the_outer_variables() {
     };
     let filter = filter_of(&clause).and_then(|outer| filter_of(&outer.body)).expect("a filter in a filter");
     let body = &filter.body;
-    let none = vec![None; body.nodes.len()];
+    let none = vec![arclog::eval::plan::NodeSize::Unread; body.nodes.len()];
     let order = variable_order(body, &arclog::eval::plan::RelationSizes(none.into()), &filter.outer);
     let expected: Vec<u16> = vec![0, 5, 6, 1];
     assert_eq!(order.0.iter().map(|v| v.0).collect::<Vec<_>>(), expected, "each output of a lib atom stands after the inputs of its mode, and no outer variable stands in the order");

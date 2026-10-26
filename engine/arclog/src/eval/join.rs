@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 use super::ir::{Argument, Arguments, ClauseIr, Comparison, Filter, IrNode, Operand, Variable};
 use super::plan::{
-    algebra_relation, bound_variables, mode_holds, variable_order, RelationSizes,
+    algebra_relation, bound_variables, mode_holds, variable_order, NodeSize, RelationSizes,
     VariableOrder,
 };
 use super::{Caps, Limits, ReachedBound};
@@ -123,7 +123,10 @@ impl<'a> Budget<'a> {
         Ok((result?, inner.into()))
     }
 
-    /// Charges `charges` in order, as they were made.
+    /// Charges `charges` in order, as they were made. A memo hit charges the
+    /// work and rows of the evaluation it stands for, so the counts of a
+    /// search, and the place where it stops at a cap, are those of the search
+    /// with no memo.
     fn replay(&mut self, charges: &Charges) -> Result<(), ReachedBound> {
         if charges.is_empty() {
             return self.charge_work(0);
@@ -320,8 +323,9 @@ pub fn sizes(inputs: &JoinInputs) -> RelationSizes {
             .0
             .iter()
             .map(|input| match input {
-                NodeInput::Relation(relation) => Some(relation.len()),
-                NodeInput::Unread | NodeInput::Clauses(_) => None,
+                NodeInput::Relation(relation) => NodeSize::Rows(relation.len()),
+                NodeInput::Unread => NodeSize::Unread,
+                NodeInput::Clauses(bodies) => NodeSize::Clauses(bodies.iter().map(sizes).collect()),
             })
             .collect(),
     )

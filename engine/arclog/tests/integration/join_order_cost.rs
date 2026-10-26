@@ -7,7 +7,7 @@ use std::sync::Arc;
 use arclog::check::{check_program, CheckCache, CheckedProgram, SolverClauses};
 use arclog::eval::ir::{compile_conjuncts, Argument, AtomSource, ClauseIr, IrNode, Variable};
 use arclog::eval::join::{self, Budget, JoinInputs, NodeInput};
-use arclog::eval::plan::{variable_order, RelationSizes};
+use arclog::eval::plan::{variable_order, NodeSize, RelationSizes};
 use arclog::eval::{Cancellation, Caps, Limits};
 use arclog::program::path::{NodePath, PathStep};
 use arclog::read::read_solver;
@@ -61,7 +61,13 @@ fn a_cell_a_mode_gives_stands_after_the_cell_it_reads_and_the_join_tries_few_bin
     let inputs = fact_inputs(&clause, &task);
     // The sizes of a door clause: the cells 572, and the wall cells 446 twice.
     let mut atom_sizes = [572u64, 446, 446].into_iter();
-    let sizes = RelationSizes(clause.nodes.iter().map(|node| matches!(node, IrNode::Atom(_)).then(|| atom_sizes.next().expect("three atoms"))).collect());
+    let sizes = RelationSizes(
+        clause
+            .nodes
+            .iter()
+            .map(|node| if matches!(node, IrNode::Atom(_)) { NodeSize::Rows(atom_sizes.next().expect("three atoms")) } else { NodeSize::Unread })
+            .collect(),
+    );
     let order = variable_order(&clause, &sizes, &[]);
     // The variables of the three `input` atoms: P, Q and Q_opp.
     let cells: Vec<Variable> = clause

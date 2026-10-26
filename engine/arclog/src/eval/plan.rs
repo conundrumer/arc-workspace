@@ -3,47 +3,61 @@
 //!
 //! The order is a function of the clause's IR and the sizes of the
 //! relations it reads, so a body of equal content over relations of equal
-//! ids has one plan. It is the order of least estimated bindings: the
-//! estimate of a variable that an atom binds is the row count of the
-//! smallest atom that binds it, a variable that an algebra relation or an
-//! `=` places costs nothing, and the cost of a sequence of choices is the sum
-//! over its choices of the product of the estimates up to that choice.
-//! Each sized variable that the order chooses is followed by the outputs of
+//! ids has one plan. It is the order of least estimated bindings. A choice
+//! of the order is a variable that an atom binds, estimated at the row count
+//! of the smallest atom that binds it, or a variable that a union exports
+//! and no atom or comparison binds, estimated at the sum over the union's
+//! branches of the estimate of the variable in the branch, and chosen only
+//! after the columns that the branches read from the clause. A variable that
+//! an algebra relation or an `=` places costs nothing, and the cost of a
+//! sequence of choices is the sum over its choices of the product of the
+//! estimates up to that choice. Each choice is followed by the outputs of
 //! each algebra relation whose mode the placed variables satisfy, and by each
 //! variable an `=` binds from a placed one. A tie in cost goes to the
-//! sequence of the smaller relations, then of the canonical positions. A
-//! clause with more than 12 sized variables takes that sequence of smaller
-//! relations alone. Each export of a union that no atom or comparison binds
-//! stands after the columns its branches read.
+//! sequence of the smaller estimates, then of the canonical positions. A
+//! clause with more than 12 choices takes the atoms' variables by size
+//! alone, and each export of a union that no atom or comparison binds stands
+//! after the columns its branches read.
 
 use super::join::node_variables;
-use super::ir::{Argument, Arguments, ClauseIr, IrNode, Operand, Variable};
+use super::ir::{Argument, Arguments, ClauseIr, IrNode, Operand, Union, Variable};
 use crate::program::ConstraintOp;
 use crate::registry::{AlgebraRelation, LibName, Registry};
 use crate::algebra::geometry::orientation_domain;
 
-/// The most sized variables whose choices the order searches subsets of;
-/// past it the order places the sized variables by size.
+/// The most choices the order searches subsets of; past it the order places
+/// the variables that atoms bind by size.
 const SUBSET_BOUND: usize = 12;
 
 /// The order the join binds a clause's variables in, each variable once.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct VariableOrder(pub Box<[Variable]>);
 
-/// The count of rows of the relation each node of a clause reads, by the
-/// node's index in [`ClauseIr::nodes`], `None` for a node that reads no
-/// relation with rows, such as a comparison or an algebra relation's atom.
+/// What the order knows of the relations a node of a clause reads.
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct RelationSizes(pub Box<[Option<u64>]>);
+pub enum NodeSize {
+    /// No relation with rows, such as a comparison or an algebra relation's
+    /// atom.
+    Unread,
+    /// The count of rows of an atom's relation.
+    Rows(u64),
+    /// The sizes of the node's own clauses: a filter's body, or a union's
+    /// branches, in the node's order.
+    Clauses(Box<[RelationSizes]>),
+}
+
+/// The sizes of the relations each node of a clause reads, by the node's
+/// index in [`ClauseIr::nodes`].
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct RelationSizes(pub Box<[NodeSize]>);
 
 /// The variable order of `clause` over relations of `sizes`: the sequence of
-/// sized variables of least estimated bindings, each followed by its closure,
-/// as the module doc gives. Each variable
-/// that an algebra relation binds stands after the inputs of the mode that
-/// binds it, and each variable that a union exports, and no atom or
-/// comparison binds, after the columns that the branches of that union read
-/// from `clause`, so the order binds every variable that the clause
-/// binds.
+/// choices of least estimated bindings, each followed by its closure, as the
+/// module doc gives. Each variable that an algebra relation binds stands
+/// after the inputs of the mode that binds it, and each variable that a union
+/// exports, and no atom or comparison binds, after the columns that the
+/// branches of that union read from `clause`, so the order binds every
+/// variable that the clause binds.
 ///
 /// The order holds each variable that a node of the clause holds
 /// ([`node_variables`]), other than `outer`'s, and a variable that no node
@@ -58,19 +72,10 @@ pub struct RelationSizes(pub Box<[Option<u64>]>);
 /// variable from it.
 pub fn variable_order(clause: &ClauseIr, sizes: &RelationSizes, outer: &[Variable]) -> VariableOrder {
     let count = clause.variables.len();
-    let mut size: Vec<Option<u64>> = vec![None; count];
     let mut bound = vec![false; count];
-    for (node, node_size) in clause.nodes.iter().zip(sizes.0.iter()) {
-        for variable in bound_variables(node) {
-            bound[usize::from(variable.0)] = true;
-            if let (IrNode::Atom(_), Some(rows)) = (node, node_size) {
-                let held = &mut size[usize::from(variable.0)];
-                *held = Some(held.map_or(*rows, |held| held.min(*rows)));
-            }
-        }
+    for variable in clause.nodes.iter().flat_map(bound_variables) {
+        bound[usize::from(variable.0)] = true;
     }
-    let mut by_size: Vec<Variable> = (0..count).filter(|&v| size[v].is_some()).map(|v| Variable(v as u16)).collect();
-    by_size.sort_by_key(|v| (size[usize::from(v.0)], v.0));
     let registry = Registry::get();
     let mut placed = vec![false; count];
     let mut order = Vec::new();
@@ -112,16 +117,16 @@ pub fn variable_order(clause: &ClauseIr, sizes: &RelationSizes, outer: &[Variabl
         }
     };
     follow(&mut placed, &mut order, &mut place);
-    let sequence = if (2..=SUBSET_BOUND).contains(&by_size.len()) {
-        let estimates: Vec<u128> = by_size.iter().map(|v| u128::from(size[usize::from(v.0)].expect("a sized variable"))).collect();
-        let extend = |placed: &mut Vec<bool>, chosen: Variable| {
-            let mut order = Vec::new();
-            place(chosen, placed, &mut order);
-            follow(placed, &mut order, &mut place);
-        };
-        cheapest_sequence(&by_size, &estimates, &placed, extend)
+    let mut extend = |placed: &mut Vec<bool>, chosen: Variable| {
+        let mut order = Vec::new();
+        place(chosen, placed, &mut order);
+        follow(placed, &mut order, &mut place);
+    };
+    let choices = choices(clause, sizes, &placed, &mut extend);
+    let sequence = if (2..=SUBSET_BOUND).contains(&choices.len()) {
+        cheapest_sequence(&choices, &placed, &mut extend)
     } else {
-        by_size
+        choices.iter().filter(|choice| choice.reads.is_none()).map(|choice| choice.variable).collect()
     };
     for variable in sequence {
         place(variable, &mut placed, &mut order);
@@ -153,30 +158,72 @@ pub fn variable_order(clause: &ClauseIr, sizes: &RelationSizes, outer: &[Variabl
     VariableOrder(order.into())
 }
 
-/// The sequence of `sized` variables to place, each followed by its closure,
-/// of least cost, where the cost of a sequence is the sum over its choices of
-/// the product of the `estimates` of the choices up to and including that
-/// one. A choice is a variable outside the closure of the earlier choices,
-/// and the sequence ends when that closure holds every sized variable.
-/// `sized` is in the order of size then index, and a tie in cost goes to the
-/// sequence that is least in that order, so the order of that sort is the
-/// order where costs are equal. `extend` adds a variable and its closure to
-/// a set of placed variables, and `placed` holds the variables placed before
-/// any choice.
+/// A variable the order places by a choice of its own, with its estimate.
+struct Choice {
+    variable: Variable,
+    /// The estimated count of the variable's values.
+    estimate: u64,
+    /// For a variable that a union exports and no atom binds, the columns
+    /// that the union's branches read from the clause, which stand before the
+    /// choice; `None` for a variable that an atom binds.
+    reads: Option<Box<[Variable]>>,
+}
+
+/// The choices of `clause` in the order of estimate then variable: each
+/// variable that an atom binds, estimated at the rows of the smallest atom
+/// that binds it, and each variable that a union exports and no atom or
+/// comparison binds, estimated by [`union_estimate`], that the closure of the
+/// choices before it has not placed, and whose union reads columns that the
+/// closure has placed. `placed` holds the variables placed before any choice,
+/// and `extend` adds a variable and its closure to a set of placed variables.
+fn choices(clause: &ClauseIr, sizes: &RelationSizes, placed: &[bool], extend: &mut impl FnMut(&mut Vec<bool>, Variable)) -> Vec<Choice> {
+    let atoms = atom_rows(clause, sizes);
+    let mut choices: Vec<Choice> = (0..clause.variables.len())
+        .filter_map(|v| Some(Choice { variable: Variable(v as u16), estimate: atoms[v]?, reads: None }))
+        .collect();
+    let mut closure = placed.to_vec();
+    for choice in &choices {
+        extend(&mut closure, choice.variable);
+    }
+    let unions = union_binders(clause);
+    loop {
+        let before = choices.len();
+        for v in 0..clause.variables.len() {
+            let (false, Some((_, union))) = (closure[v], unions[v]) else { continue };
+            let variable = Variable(v as u16);
+            let reads = union_reads(union);
+            if let Some(estimate) = union_estimate(clause, sizes, variable).filter(|_| reads.iter().all(|read| closure[usize::from(read.0)])) {
+                extend(&mut closure, variable);
+                choices.push(Choice { variable, estimate, reads: Some(reads) });
+            }
+        }
+        if choices.len() == before {
+            break;
+        }
+    }
+    choices.sort_by_key(|choice| (choice.estimate, choice.variable.0));
+    choices
+}
+
+/// The sequence of `choices` to place, each followed by its closure, of least
+/// cost, where the cost of a sequence is the sum over its choices of the
+/// product of the estimates of the choices up to and including that one. A
+/// choice is a variable outside the closure of the earlier choices, whose
+/// `reads` stand in that closure, and the sequence ends when that closure
+/// holds every choice. `choices` is in the order of estimate then index, and a
+/// tie in cost goes to the sequence that is least in that order, so the order
+/// of that sort is the order where costs are equal. `extend` adds a variable
+/// and its closure to a set of placed variables, and `placed` holds the
+/// variables placed before any choice.
 ///
 /// The closure of a set of choices does not depend on their order, and the
 /// product of their estimates does not either, so the search is a minimum over
-/// subsets of the sized variables.
-fn cheapest_sequence(
-    sized: &[Variable],
-    estimates: &[u128],
-    placed: &[bool],
-    mut extend: impl FnMut(&mut Vec<bool>, Variable),
-) -> Vec<Variable> {
-    let count = sized.len();
+/// subsets of the choices.
+fn cheapest_sequence(choices: &[Choice], placed: &[bool], extend: &mut impl FnMut(&mut Vec<bool>, Variable)) -> Vec<Variable> {
+    let count = choices.len();
     let mut closures: Vec<Vec<bool>> = Vec::with_capacity(1 << count);
     let mut products: Vec<u128> = Vec::with_capacity(1 << count);
-    // The best (cost, choices as indexes into `sized`) to reach each subset.
+    // The best (cost, choices as indexes into `choices`) to reach each subset.
     let mut best: Vec<Option<(u128, Vec<usize>)>> = vec![None; 1 << count];
     let mut finish: Option<(u128, Vec<usize>)> = None;
     for mask in 0..1usize << count {
@@ -187,17 +234,19 @@ fn cheapest_sequence(
         } else {
             let low = mask.trailing_zeros() as usize;
             let mut closure = closures[mask & (mask - 1)].clone();
-            extend(&mut closure, sized[low]);
+            extend(&mut closure, choices[low].variable);
             closures.push(closure);
-            products.push(products[mask & (mask - 1)].saturating_mul(estimates[low]));
+            products.push(products[mask & (mask - 1)].saturating_mul(u128::from(choices[low].estimate)));
             let mut found: Option<(u128, Vec<usize>)> = None;
             for choice in (0..count).filter(|c| mask >> c & 1 == 1) {
                 let before = mask & !(1 << choice);
-                let Some((cost, choices)) = &best[before] else { continue };
-                if closures[before][usize::from(sized[choice].0)] {
+                let Some((cost, earlier)) = &best[before] else { continue };
+                let closure = &closures[before];
+                let reads = choices[choice].reads.as_deref().unwrap_or_default();
+                if closure[usize::from(choices[choice].variable.0)] || !reads.iter().all(|read| closure[usize::from(read.0)]) {
                     continue;
                 }
-                let mut next = choices.clone();
+                let mut next = earlier.clone();
                 next.push(choice);
                 let candidate = (cost.saturating_add(products[mask]), next);
                 if found.as_ref().is_none_or(|found| candidate < *found) {
@@ -207,13 +256,69 @@ fn cheapest_sequence(
             best[mask] = found;
         }
         if let Some(candidate) = &best[mask] {
-            if sized.iter().all(|v| closures[mask][usize::from(v.0)]) && finish.as_ref().is_none_or(|finish| candidate < finish) {
+            if choices.iter().all(|c| closures[mask][usize::from(c.variable.0)]) && finish.as_ref().is_none_or(|finish| candidate < finish) {
                 finish = Some(candidate.clone());
             }
         }
     }
-    let (_, choices) = finish.expect("the sized variables in order reach a set whose closure holds them all");
-    choices.into_iter().map(|c| sized[c]).collect()
+    let (_, sequence) = finish.expect("the choices in order reach a set whose closure holds them all");
+    sequence.into_iter().map(|c| choices[c].variable).collect()
+}
+
+/// The count of rows of the smallest atom of `clause` that binds each
+/// variable, by the variable's index, `None` for a variable that no atom of
+/// known size binds.
+fn atom_rows(clause: &ClauseIr, sizes: &RelationSizes) -> Vec<Option<u64>> {
+    let mut rows: Vec<Option<u64>> = vec![None; clause.variables.len()];
+    for (node, size) in clause.nodes.iter().zip(sizes.0.iter()) {
+        if let (IrNode::Atom(atom), NodeSize::Rows(count)) = (node, size) {
+            for variable in variables_of(&atom.arguments) {
+                let held = &mut rows[usize::from(variable.0)];
+                *held = Some(held.map_or(*count, |held| held.min(*count)));
+            }
+        }
+    }
+    rows
+}
+
+/// The union node of `clause` that binds each variable that no atom or
+/// comparison binds, by the variable's index: the first union that exports
+/// it, since the join takes its values from that union.
+fn union_binders(clause: &ClauseIr) -> Vec<Option<(usize, &Union)>> {
+    let mut binders: Vec<Option<(usize, &Union)>> = vec![None; clause.variables.len()];
+    for (node, union) in clause.nodes.iter().enumerate().filter_map(|(node, n)| if let IrNode::Or(union) = n { Some((node, union)) } else { None }) {
+        for variable in union.exported.iter() {
+            binders[usize::from(variable.0)].get_or_insert((node, union));
+        }
+    }
+    for node in clause.nodes.iter() {
+        if let IrNode::Atom(_) | IrNode::Comparison(_) = node {
+            for variable in bound_variables(node) {
+                binders[usize::from(variable.0)] = None;
+            }
+        }
+    }
+    binders
+}
+
+/// The columns that the branches of `union` read from the clause around it:
+/// those that it does not export.
+fn union_reads(union: &Union) -> Box<[Variable]> {
+    union.branches.iter().flat_map(|branch| branch.columns.iter().copied()).filter(|column| !union.exported.contains(column)).collect()
+}
+
+/// The estimate of the count of values that the union which binds `variable`
+/// in `clause` gives it: the sum over the union's branches of the rows of
+/// the smallest atom of the branch that binds it, or, where a union of the
+/// branch binds it, that union's estimate. `None` where `variable` has no
+/// such union or a branch has no estimate.
+fn union_estimate(clause: &ClauseIr, sizes: &RelationSizes, variable: Variable) -> Option<u64> {
+    let (node, union) = union_binders(clause)[usize::from(variable.0)]?;
+    let NodeSize::Clauses(branch_sizes) = &sizes.0[node] else { return None };
+    union.branches.iter().zip(branch_sizes.iter()).try_fold(0u64, |total, (branch, sizes)| {
+        let rows = atom_rows(branch, sizes)[usize::from(variable.0)].or_else(|| union_estimate(branch, sizes, variable))?;
+        Some(total.saturating_add(rows))
+    })
 }
 
 /// The variables that each variable of `clause` waits on before the order
@@ -232,13 +337,9 @@ fn dependencies(clause: &ClauseIr) -> Vec<Option<Box<[Variable]>>> {
             }
         }
     }
-    for node in clause.nodes.iter() {
-        if let IrNode::Or(union) = node {
-            let reads: Box<[Variable]> =
-                union.branches.iter().flat_map(|branch| branch.columns.iter().copied()).filter(|column| !union.exported.contains(column)).collect();
-            for variable in union.exported.iter() {
-                dependencies[usize::from(variable.0)].get_or_insert_with(|| reads.clone());
-            }
+    for (variable, binder) in union_binders(clause).into_iter().enumerate() {
+        if let Some((_, union)) = binder {
+            dependencies[variable] = Some(union_reads(union));
         }
     }
     dependencies
