@@ -52,5 +52,6 @@ mod site_column_once;
 mod token_stream;
 mod traces;
 mod verdicts_exclude;
+mod zero_columns;
 mod zero_typed_key_column;
 mod zero_typed_labels;

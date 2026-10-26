@@ -10,6 +10,7 @@
 use crate::hash::{StableHashMap, StableHashSet};
 use crate::layout::Layout;
 use crate::program::path::{NodePath, NodeRef};
+use crate::program::zero_columns;
 use crate::program::canonical::relation_of;
 use crate::write::relation_ref;
 use crate::resolver::SolverScope;
@@ -86,9 +87,8 @@ pub struct Case {
     /// the form's path in the file.
     origins: StableHashMap<NodePath, (FileOwner, NodePath)>,
     concept_determinations: Box<[NodePath]>,
-    /// The program with each concept determination that reads the relation of
-    /// a stored `RULE_OR_DET` line that has a body reading that line's helper
-    /// (`stored_reading`), where the case has one.
+    /// The program as [`Case::program_alone`] gives it, where it differs from
+    /// `program`.
     alone: Option<Node<Program>>,
 }
 
@@ -102,10 +102,18 @@ impl Case {
     }
 
     /// The case program as it reads when it stands alone, with no concept
-    /// program to take a `DET` from: a `DET` of the concept program that reads
-    /// the relation of a `RULE_OR_DET` line at its stored reading reads the
-    /// derivation of the line's body, the line's helper, as the concept program
-    /// reads it. It is the case program where no such `DET` stands.
+    /// program to take a `DET` from, and with each column that is `0` in
+    /// every clause of its relation dropped:
+    ///
+    /// - A `DET` of the concept program that reads the relation of a
+    ///   `RULE_OR_DET` line at its stored reading reads the derivation of the
+    ///   line's body, the line's helper, as the concept program reads it.
+    /// - The columns that the zero-column lowering drops, as
+    ///   `docs/arclog/arclog.md#negation-and-constraints` gives, each with the
+    ///   `(= *X 0)` that made it. A form that the drop rewrites keeps its
+    ///   place, so [`Case::file_path`] names its form of the file.
+    ///
+    /// It is the case program where neither applies.
     pub fn program_alone(&self) -> &Node<Program> {
         self.alone.as_ref().unwrap_or(&self.program)
     }
@@ -323,22 +331,22 @@ impl Solver {
             origins.insert(path, (p.owner, p.path.clone()));
             forms.push(form);
         }
-        let alone = if helpers.is_empty() {
-            None
-        } else {
-            let mut alone = forms.clone();
-            let mut changed = false;
-            for path in &concept_determinations {
-                let at = path.0[0].0 as usize;
-                for helper in &helpers {
-                    if let Some(form) = map_atoms(&alone[at], &|atom| helper.of(atom)) {
-                        alone[at] = form;
-                        changed = true;
-                    }
+        let mut alone = forms.clone();
+        let mut changed = false;
+        for path in &concept_determinations {
+            let at = path.0[0].0 as usize;
+            for helper in &helpers {
+                if let Some(form) = map_atoms(&alone[at], &|atom| helper.of(atom)) {
+                    alone[at] = form;
+                    changed = true;
                 }
             }
-            changed.then(|| Node::new(Program { forms: alone.into() }))
-        };
+        }
+        if let Some(lowered) = zero_columns::lower(&alone, crate::registry::Registry::get()) {
+            alone = lowered;
+            changed = true;
+        }
+        let alone = changed.then(|| Node::new(Program { forms: alone.into() }));
         Ok(Case {
             name,
             program: Node::new(Program { forms: forms.into() }),

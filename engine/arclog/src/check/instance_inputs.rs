@@ -31,7 +31,8 @@ impl Check for InstanceInputsCheck {
     /// `docs/arclog/arclog.md#instance` gives. In a keyed instance, it
     /// refuses as well each input that stands in a group other than its
     /// own: an input after the key clause that reads an output of its
-    /// instance, and a broadcast inside the key clause.
+    /// instance, where the key has a column, and a broadcast inside the key
+    /// clause.
     fn check(&self, input: &CheckInput<'_>) -> CheckResult {
         let program = input.scope.program;
         let reads = form_reads(input.form, input.path);
@@ -86,9 +87,10 @@ impl Check for InstanceInputsCheck {
 /// its path relative to the form at `form` in the program, as
 /// `docs/arclog/arclog.md#instance` gives: an input after the key clause
 /// that reads an output of its instance, and an input inside it that reads
-/// no key label and no output of its instance, a broadcast. A label at a head
-/// site of the input is a read of it, and so is a label of its body, a key
-/// site's labels included.
+/// no key label and no output of its instance, a broadcast. A key of no column
+/// has one key, so each of its inputs stands after the key clause, and none
+/// is in the wrong group. A label at a head site of the input is a read of
+/// it, and so is a label of its body, a key site's labels included.
 fn group_fault<'a>(
     program: &ResolvedProgram,
     form: &NodePath,
@@ -108,7 +110,7 @@ fn group_fault<'a>(
         each_site_label(site, &mut Vec::new(), &mut |use_, _| reads_key |= use_label(use_).is_some_and(|label| key_labels.contains(&label)));
     }
     match keyed {
-        false if reads_output => Some("the input reads an output of its instance and stands after the key clause, where only a broadcast stands"),
+        false if reads_output && !key.columns.is_empty() => Some("the input reads an output of its instance and stands after the key clause, where only a broadcast stands"),
         true if !reads_key && !reads_output => {
             Some("the input reads no key label and no output of its instance, a broadcast, and stands inside the key clause, where a broadcast stands after it")
         }
