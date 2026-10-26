@@ -14,7 +14,9 @@ from engine.program import (
     DefinedName,
     NumberTerm,
     RelationName,
+    Scope,
     Unit,
+    UnitId,
     Variable,
     Wildcard,
 )
@@ -51,8 +53,29 @@ LABEL = re.compile(r"(?<![(:\w&.])[*^]?([A-Z]\w*)")
 """A label of a written form, as it stands in a form line."""
 
 
+def set_name(amp: str) -> str:
+    """The relation that holds the set an open parameter's Souffle determination
+    derives, whose `(ONE)` pick the parameter's own name holds."""
+    return amp + "_set"
+
+
+READ = re.compile(r"\((&\w+)(?=[\s)]|$)")
+"""A relation a form line reads, `(&name` up to the end of the name."""
+
+DET_HEAD = re.compile(r"\((?:DET|DET_OR_RULE) (&\w+)(?=[\s)]|$)")
+"""The head of a determination, and the relation it derives."""
+
+
+def line_reads(f: Form) -> set[str]:
+    """The relations a form's lines read."""
+    return {m.group(1) for l in f.lines for m in READ.finditer(l)}
+
+
 class InstancesMixin:
     """The clauses of a solver, their instances and its pick forms."""
+
+    used_sets: frozenset[str] = frozenset()
+    """The open parameters that `settle_sets` writes as a set and a pick."""
 
     def clause(self, u: Unit, side: str, scope, sub, name_scope=None, drop_neg=frozenset()) -> Form:
         c = self.c
@@ -160,7 +183,7 @@ class InstancesMixin:
         branches |= w.branches
         marks = self.one_lines(u, col_names)
         if side == "DET" and hname in self.open_amps() and "(ONE)" not in marks:
-            marks.append("(ONE)")   # an open parameter: each of its values is a model
+            marks.append("(ONE)")   # an open parameter: each of its values is a model; `settle_sets` writes its set
         todos = self.todo.take()
         name = hname
         head_line = f"({side} {name}"
@@ -216,6 +239,57 @@ class InstancesMixin:
                 continue
             out.append("(" + " ".join(["ONE"] + [name[v] for v in key]) + ")")
         return out
+
+    # ---- the set of an open parameter
+
+    @staticmethod
+    def det_side(f: Form) -> bool:
+        return (f.src is not None and f.src[1] == "DET") or (f.src_inst is not None and f.src_inst[2] == "DET")
+
+    def settle_sets(self, forms: list[Form]) -> list[Form]:
+        """`forms`, with each open parameter that a `DET` body reads written in
+        two determinations: the Souffle determination as a `DET` of `set_name`
+        with no `ONE` mark, and a `DET` that picks one row of that set. Each
+        read of the parameter in a `DET` body reads the set."""
+        names = {self.c.rel_name(("Params",), n): n for n in self.c.open_params}
+        determined = {m.group(1) for f in forms if (m := DET_HEAD.match(f.lines[0])) and m.group(1) in names}
+        self.used_sets = frozenset(determined & {r for f in forms if self.det_side(f) for r in line_reads(f)})
+        out = [self.settled(f) for f in forms]
+        for amp in sorted(self.used_sets):
+            n = names[amp]
+            cols = self.c.rels[(("Params",), n)].columns
+            args = tuple(Variable(f"V{i}") for i in range(len(cols)))
+            atom = Atom(RelationName(("params",), n), args, 0)
+            pick = Unit(UnitId(self.c.prog.next_unit_index()), Scope(("Determine",)), atom,
+                        (AtomLiteral(atom, False),), None, None)
+            out.append(self.settled(self.clause(pick, "DET", ("Determine",), {})))
+        return out
+
+    def settled(self, f: Form | None) -> Form | None:
+        """`f` as `settle_sets` writes it."""
+        if f is None or not self.used_sets:
+            return f
+        if self.det_side(f):
+            sets = line_reads(f) & self.used_sets
+
+            def reading(text: str) -> str:
+                return READ.sub(lambda m: "(" + set_name(m.group(1)) if m.group(1) in sets else m.group(0), text)
+            f.lines = [reading(l) for l in f.lines]
+            if f.body is not None:
+                f.body = [reading(l) for l in f.body]
+            for attr in ("reads", "top_pos", "top_neg", "nested"):
+                setattr(f, attr, {set_name(r) if r in sets else r for r in getattr(f, attr)})
+        m = DET_HEAD.match(f.lines[0])
+        if m and m.group(1) in self.used_sets and set_name(m.group(1)) not in f.reads:
+            # the Souffle determination, and not the pick that reads it
+            f.name = set_name(f.name)
+            f.marks = [x for x in f.marks if x != "(ONE)"]
+            if f.body is None:
+                f.lines[0] = f.lines[0].replace(m.group(1), f.name, 1)
+            else:
+                f.lines = [f.lines[0].replace(m.group(1), f.name, 1)] + ["  " + l for l in f.body + f.marks]
+                close(f.lines, ")")
+        return f
 
     def plain_comments(self, line: int) -> list[str]:
         out = []

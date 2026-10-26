@@ -836,7 +836,7 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
                     if d == "claim":
                         f.claim_slugs = rest.split()
 
-        forms = [f for f in forms if f is not None]
+        forms = self.settle_sets([f for f in forms if f is not None])
         # an open parameter's determination by a proposer, or with no body,
         # and its DET_OR_RULE line end in `(ONE)`, as its clauses do
         for f in forms:

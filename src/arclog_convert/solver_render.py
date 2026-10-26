@@ -60,7 +60,7 @@ class RenderMixin:
             gs = self.instance(inst, mine_us, side)
             self.todo.pending, self.todo.kinds = saved
             if gs:
-                g = gs[0]
+                g = self.settled(gs[0])
                 g.comments, g.claim_slugs = f.comments, f.claim_slugs
                 g.branches = tuple(sorted(set(g.branches) & concept))
                 g.src_inst = (inst, mine_us, side)
@@ -114,6 +114,7 @@ class RenderMixin:
                 else:
                     u, side, scope, sub, ns = f.src
                     g = self.clause(u, side, scope, sub, ns, drop_neg=dr)
+                g = self.settled(g)
                 self.todo.pending, self.todo.kinds = saved
                 if g is None and f.name in stored_names and f.side == "DET":
                     # the concept's values are the stored ones, which no determination derives
