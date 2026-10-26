@@ -71,7 +71,7 @@ seconds, against about 0.9 seconds for a batch without the encoder.
 The full tables export, `work/lm/.venv/bin/python engine/arclog-py/tables_export.py <out dir> --all-cases`, gives
 the current layout: `tables.parquet`, `index.parquet` (one row per entry), `projections.parquet`,
 `projection_rows.parquet`, `values/`, with the layout in its docstring and the column meanings in
-`engine/arclog/src/decode/columns.rs`. The export is slow on one solver's step until bug 20-14 lands.
+`engine/arclog-tables/src/columns.rs`. The export is slow on one solver's step until bug 20-14 lands.
 
 1. The distribution of rows per table over the corpus, and the tables over 10,000, 20,000 and 50,000
    rows: their task, relation, column types, form, entry count and rows per entry.

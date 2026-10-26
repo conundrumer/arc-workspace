@@ -31,11 +31,15 @@ The engine also meets these requirements:
 
 ## Crates
 
-- The engine is one Cargo workspace at `engine/`, with four crates:
+- The engine is one Cargo workspace at `engine/`, with these crates:
     - `arclog`, the core: reader, resolver, writer, checker, evaluator, the algebra relations and tables, determination, judge and trace.
     - `arclog-constructions`, the lib's constructions. The core crate changes least, and a change to a construction rebuilds this crate alone.
+    - `arclog-tables`, the tables of a decode step, their columns, the column flows and `solver_tables`.
+    - `arclog-bindings`, a library crate with the pyo3 bindings of the streams export, which are every binding of the `arclog` module other than the tables ones.
+    - `arclog-tables-py`, a library crate with the pyo3 bindings of the tables export: `CaseTables`, `corpus_tables`, `stream_tables`, `orientation_names` and `orientation_types`.
     - `arclog-cli`, a binary for the dev loop and the refine passes, with no Python in the path.
-    - `arclog-py`, the pyo3 extension, built by maturin as an abi3 wheel.
+    - `arclog-py`, the pyo3 extension, built by maturin as an abi3 wheel. It holds the module init, which registers the names of `arclog-bindings` and `arclog-tables-py`, and `streams_digest()`.
+- No crate of the streams path, which is `arclog`, `arclog-constructions` and `arclog-bindings`, depends on `arclog-tables` or `arclog-tables-py`, so the compiler refuses a call from the streams path into the tables code.
 - Rust implements every part from reading a file to judging a run. The Python package `arclog` holds the bindings alone. The Kaggle notebook, the language model's decoding loop and the agents' scripts call it.
 - The engine does not implement the present `Engine` protocol of `src/engine/engine.py`. The present tooling keeps running the Souffle solvers.
 
