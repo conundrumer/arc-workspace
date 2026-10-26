@@ -204,7 +204,7 @@ impl Dump<'_> {
 /// for the one relation of a node, and `c<i>` otherwise: for one of several
 /// outputs of a shared node, whose columns the program records per node, and
 /// where the program's count of columns differs from `count`.
-fn column_names(evaluation: &Evaluation<'_>, relation: &GraphRelation, count: usize) -> Vec<String> {
+pub(crate) fn column_names(evaluation: &Evaluation<'_>, relation: &GraphRelation, count: usize) -> Vec<String> {
     let declared = match relation.output {
         None => evaluation.program.program.column_names(relation.node),
         Some(_) => None,

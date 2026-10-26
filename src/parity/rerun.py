@@ -2,22 +2,27 @@
 program written out, each by its arclog name, so that a mismatch report can
 give the first relation whose rows differ; the JSON form of that rerun; and
 the kept JSON of a rerun that gave rows, which stands while each input of
-the rerun is unchanged (`kept_json`)."""
+the rerun is unchanged (`kept_json`); and the rows of the concept case on
+each pair projected onto the columns the converter maps (`concept_rows`)."""
 
 import hashlib
 import json
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from arc.task import Example
 from cli.common import LIMITS, engine, solver_path
 from engine import (AdtValue, Engine, NilValue, Program, RecordValue, RelationName, Rows,
                     RunFailure, Scope)
 from engine.memo import hash_files, read_or_make
 from engine.program import Qualifier, Value, as_grid
-from parity import case_name, name_map, relation_name, snapshot
+from parity import NameMap, case_name, columns_path, name_map, relation_name, snapshot
+from solver.aggregate import Solver
 from solver.cases import cases as cases_of
 from solver.load import load
+from solver.model import Case, Lib
 from solver.outcome import Assignment
 from solver.pair_runs import examples
 from solver.solve import relations_at
@@ -60,6 +65,45 @@ def every_relation(eng: Engine, program: Program) -> list[RelationName]:
     return list(dict.fromkeys(out))
 
 
+@dataclass(frozen=True)
+class Loaded:
+    """A solver loaded once, with its name map and its cases, for the runs
+    of one or more of its cases on its pairs."""
+
+    eng: Engine
+    solver: Solver
+    names: NameMap | None
+    every: tuple[Case, ...]
+
+    def pair(self, pair: str) -> Example:
+        """The example of the pair whose name is `pair`. Raises `NoSuchPair`."""
+        ex = next((ex for p, ex in examples(self.solver.given_task) if p.text == pair), None)
+        if ex is None:
+            raise NoSuchPair(pair)
+        return ex
+
+    def run(self, chosen: Case, ex: Example, rels: list[RelationName]
+            ) -> Mapping[RelationName, Rows] | Undefined | RunFailure:
+        """The rows of `rels` of the case `chosen` run on the input of `ex`,
+        with the rows that `case_rows` cuts left out."""
+        got = relations_at(self.eng, self.solver, chosen, as_grid(ex.input), rels, Assignment(()), LIMITS)
+        if not isinstance(got, Mapping):
+            return got
+        foreign = {c for case in self.every for c in constructors(case.base)} - constructors(chosen.base)
+        return {r: case_rows(rows, foreign) for r, rows in got.items()}
+
+
+def load_once(stem: str, solver_file: Path) -> Loaded | Undefined | RunFailure:
+    """The solver of `stem` read from `solver_file`, with its name map and
+    its cases; the cases' undefined outcome or failure where they give none."""
+    eng = engine()
+    solver = load(stem, eng, solver_file)
+    every = cases_of(solver, eng, LIMITS)
+    if not isinstance(every, tuple):
+        return every
+    return Loaded(eng, solver, name_map(stem), every)
+
+
 def relations(stem: str, case: str, pair: str
               ) -> Mapping[str, Rows] | Undefined | RunFailure:
     """The rows of each relation of the program of the case of `stem` whose
@@ -68,25 +112,92 @@ def relations(stem: str, case: str, pair: str
     (`parity.relation_name`), with the rows that `case_rows` cuts left out;
     the case's undefined outcome or the run's
     failure where it gives no rows. Raises `NoSuchCase` and `NoSuchPair`."""
-    eng = engine()
-    solver = load(stem, eng, solver_path(stem))
-    names = name_map(stem)
-    every = cases_of(solver, eng, LIMITS)
-    if not isinstance(every, tuple):
-        return every
-    chosen = next((c for c in every if case_name(solver, c, names) == case), None)
+    loaded = load_once(stem, solver_path(stem))
+    if not isinstance(loaded, Loaded):
+        return loaded
+    chosen = next((c for c in loaded.every if case_name(loaded.solver, c, loaded.names) == case), None)
     if chosen is None:
         raise NoSuchCase(case)
-    ex = next((ex for p, ex in examples(solver.given_task) if p.text == pair), None)
-    if ex is None:
-        raise NoSuchPair(pair)
-    rels = every_relation(eng, solver.program)
-    got = relations_at(eng, solver, chosen, as_grid(ex.input), rels, Assignment(()), LIMITS)
+    ex = loaded.pair(pair)
+    got = loaded.run(chosen, ex, every_relation(loaded.eng, loaded.solver.program))
     if not isinstance(got, Mapping):
         return got
-    foreign = {c for case in every for c in constructors(case.base)} \
-        - constructors(chosen.base)
-    return {relation_name(names, r): case_rows(rows, foreign) for r, rows in got.items()}
+    return {relation_name(loaded.names, r): rows for r, rows in got.items()}
+
+
+def leaves_at(value: Value, path: list[int]) -> list[int | float | str] | None:
+    """The leaves (`leaves`) of the part of `value` at `path`, the index of a
+    field of a record or an ADT value at each step; None where `value` has no part there, as where
+    the type of the column is a type argument that the run binds to a type
+    with fewer fields than the converter's leaf."""
+    for index in path:
+        match value:
+            case RecordValue(fields=fields) | AdtValue(args=fields) if index < len(fields):
+                value = fields[index]
+            case _:
+                return None
+    return leaves(value)
+
+
+def concept_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | RunFailure:
+    """The rows of the concept case of the solver of `stem`, read from
+    `solver_file`, on each train and test pair, for each relation the
+    column map (`columns_path`) gives a column to compare, each row
+    projected onto those columns, which leave out each Example leaf: for each, the leaves of the value at its
+    `leaf` in its Souffle column. A relation's rows are a set. The form:
+    `{"orientation_constants": {...}, "pairs": [{"pair": "train 0",
+    "relations": [{"name": "&x", "columns": [[label, field], ...],
+    "unread": [[label, field], ...], "rows": [[[leaves of column 1], ...], ...]}]}], "skipped": [{"name",
+    "reason"}]}`. A column of `unread` is a mapped column whose leaf some row
+    lacks, which every list of `columns` and `rows` leaves out. The case's undefined outcome or a run's failure where one
+    gives no rows. Raises `NoSuchCase` where the solver has no concept case,
+    and `FileNotFoundError` where the column map is missing."""
+    loaded = load_once(stem, solver_file)
+    if not isinstance(loaded, Loaded):
+        return loaded
+    chosen = next((c for c in loaded.every if case_name(loaded.solver, c, loaded.names) == "concept"), None)
+    if chosen is None:
+        raise NoSuchCase("concept")
+    columns: dict[str, list[list[dict[str, Any]]]] = json.loads(columns_path(stem).read_text())
+    mapped: dict[RelationName, str] = {}
+    skipped: list[dict[str, str]] = []
+    for r in every_relation(loaded.eng, loaded.solver.program):
+        name = relation_name(loaded.names, r)
+        if name not in columns:
+            skipped.append({"name": name, "reason": "no entry in the column map"})
+        elif not any(not e["example"] for column in columns[name] for e in column):
+            skipped.append({"name": name, "reason": "no column to compare: every leaf is a case, a drop or an Example leaf"})
+        else:
+            mapped[r] = name
+    runs = []
+    for p, ex in examples(loaded.solver.given_task):
+        got = loaded.run(chosen, ex, list(mapped))
+        if not isinstance(got, Mapping):
+            return got
+        runs.append((p.text, got))
+    entries = {name: [(j, e) for j, column in enumerate(columns[name]) for e in column if not e["example"]]
+               for name in mapped.values()}
+    unread = {name: [(j, e) for j, e in es if any(leaves_at(row[j], e["leaf"]) is None
+                                                  for _, got in runs for row in got[r])]
+              for r, name in mapped.items() for es in [entries[name]]}
+    pairs = []
+    for pair, got in runs:
+        out = []
+        for r, name in mapped.items():
+            read = [(j, e) for j, e in entries[name] if (j, e) not in unread[name]]
+            rows = {json.dumps([leaves_at(row[j], e["leaf"]) for j, e in read]) for row in got[r]}
+            out.append({"name": name, "columns": [[e["label"], e["field"]] for _, e in read],
+                        "unread": [[e["label"], e["field"]] for _, e in unread[name]],
+                        "rows": [json.loads(row) for row in sorted(rows)]})
+        pairs.append({"pair": pair, "relations": out})
+    return {"orientation_constants": orientation_constants(loaded.solver.lib), "pairs": pairs,
+            "skipped": skipped}
+
+
+def orientation_constants(lib: Lib) -> dict[str, Any]:
+    """The number of each orientation constant of `lib`."""
+    members = {name for names in lib.orientation_types.values() for name in names}
+    return {name: value for name, value in lib.constants.items() if name in members}
 
 
 def constructors(value: Value | None) -> set[str]:
@@ -125,12 +236,10 @@ def rerun_json(stem: str, got: Mapping[str, Rows]) -> str:
     """The JSON object `rerun --json` prints for the rows `got` of a case
     of `stem`."""
     lib = load(stem, engine(), solver_path(stem)).lib
-    members = {name for names in lib.orientation_types.values() for name in names}
     return json.dumps({
         "relations": [[name, [[leaf for value in row for leaf in leaves(value)] for row in rows]]
                       for name, rows in got.items()],
-        "orientation_constants": {name: value for name, value in lib.constants.items()
-                                  if name in members},
+        "orientation_constants": orientation_constants(lib),
     })
 
 

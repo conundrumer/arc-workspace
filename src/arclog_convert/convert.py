@@ -32,7 +32,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from collections import Counter
 from pathlib import Path
-from engine.program import Qualifier, Variable
+from engine.program import Qualifier, RelationName, Variable
 from arclog_convert.libmap import rename as libmap_rename
 from arclog_convert import OUT_ENV, paths, writable_out
 
@@ -44,6 +44,7 @@ from arclog_convert.forms import (
     hoist_shared,
     renamed,
 )
+from arclog_convert.clauses import site_columns
 from arclog_convert.leaves import Converter, FACTS, Written
 from arclog_convert.lib import Col, ColMismatch, LIB_DL, Lib, SIGNATURE
 from arclog_convert.solver import Solver
@@ -178,6 +179,31 @@ def name_map(s: "Solver", insts: dict[str, str], arclog: str, arcdata: str) -> d
             "unmapped": unmapped}
 
 
+def column_map(s: "Solver", names: dict) -> dict:
+    """For each arclog relation of the name map `names` with one Souffle
+    relation that has a path from the top level, its columns as the Souffle
+    relation's, in order: for each, the list of its kept leaves, each as
+    `{"leaf": <path into the column's record>, "label": <the arclog column>,
+    "field": <the field within the column, or null>, "example": <whether the
+    leaf is an Example leaf>}`. The relation is
+    resolved from the top level (`Converter.resolve`), as a read from the top
+    level sees it, and the labels are those `site_columns` gives, the ones
+    every read the converter writes of the relation names."""
+    out: dict[str, list[list[dict]]] = {}
+    for arc, souffle in names["relations"].items():
+        if len(souffle) != 1 or souffle[0]["path"] is None:
+            continue
+        *insts, rel = souffle[0]["path"].split(".")
+        resolved = s.c.resolve(RelationName(tuple(insts), rel), (), {})
+        _, cols, _, inst = resolved
+        if cols is None:
+            continue
+        out[arc] = [[{"leaf": list(site.leaf.path), "label": site.label, "field": site.field,
+                      "example": site.leaf.kind == "example"}
+                     for site in column] for column in site_columns(s.c, cols, inst)]
+    return out
+
+
 def _written_inline(s: "Solver", arclog: str) -> frozenset[str]:
     """Each relation of the solver declared `inline` that `arclog`, the pass's
     text, still writes as a `RULE` or `DET`, and whose clauses `terms.inlined`
@@ -229,16 +255,18 @@ def convert_one(stem: str) -> tuple[str, str | None, str | None, Counter, Counte
         arclog = hoist_shared(fix_labels(libmap_rename.rename(arclog, insts)))
         arcdata = libmap_rename.rename(arcdata, insts)
         if paths.MACROS_ENV not in os.environ:
-            paths.NAMES_DIR.mkdir(parents=True, exist_ok=True)
-            (paths.NAMES_DIR / f"{stem}.json").write_text(
-                json.dumps(name_map(s, insts, arclog, arcdata), indent=1, sort_keys=True) + "\n")
+            names = name_map(s, insts, arclog, arcdata)
+            columns = column_map(s, names)
+            for directory, data in ((paths.NAMES_DIR, names), (paths.COLUMNS_DIR, columns)):
+                directory.mkdir(parents=True, exist_ok=True)
+                (directory / f"{stem}.json").write_text(json.dumps(data, indent=1, sort_keys=True) + "\n")
     except Exception as e:  # noqa: BLE001
         return stem, None, None, Counter(), Counter(), [], {}, f"{type(e).__name__}: {e}"
     return stem, arclog, arcdata, todo.kinds, Counter(MERGES), list(MERGES_UNMERGED), s.c.col_mismatch, None
 
 
 def main(argv: list[str]) -> int:
-    global OUT_DIR, MACROS_DIR, PLANS, NAMES_DIR
+    global OUT_DIR, MACROS_DIR, PLANS, NAMES_DIR, COLUMNS_DIR
     import argparse
     parser = argparse.ArgumentParser(prog="python -m arclog_convert.convert")
     parser.add_argument("--out", type=Path, help="the directory to write under, in place of `arclog_convert.out`; required in a linked worktree unless `ARCLOG_OUT` is set")
@@ -248,7 +276,7 @@ def main(argv: list[str]) -> int:
     if args.out is not None:
         # set before the pools start, so that their workers read it
         os.environ[OUT_ENV] = str(args.out.resolve())
-        paths.OUT_DIR, paths.MACROS_DIR, paths.PLANS, paths.NAMES_DIR = paths.out_dirs()
+        paths.OUT_DIR, paths.MACROS_DIR, paths.PLANS, paths.NAMES_DIR, paths.COLUMNS_DIR = paths.out_dirs()
     else:
         writable_out()
     stems = args.stems or sorted(p.stem for p in paths.SOLVERS.glob("*.dl"))

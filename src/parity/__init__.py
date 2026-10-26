@@ -1,14 +1,15 @@
 """The arclog names of a solver's Souffle relations and cases, which the
 stored Souffle outcomes are keyed by (`parity.snapshot`) and a rerun prints
 by (`parity.rerun`): the name map `arclog_convert.convert` writes for each
-solver it converts, under `work/arclog/names/`."""
+solver it converts, under `names/` of `arclog_convert.out`."""
 
 import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from engine import Engine, RelationName, checkout
+import arclog_convert
+from engine import Engine, RelationName
 from solver import names as solver_names
 from solver.aggregate import Solver
 from solver.model import Branch, Case, DeriveBranch, StoreBranch, StoredAtDerive
@@ -63,8 +64,17 @@ class NameMap:
 
 
 def names_dir() -> Path:
-    """`work/arclog/names/` of the main worktree."""
-    return checkout.work() / "arclog" / "names"
+    """`names/` of `arclog_convert.out`: `work/arclog/` of the main worktree,
+    or the directory `ARCLOG_OUT` names."""
+    return arclog_convert.out() / "names"
+
+
+def columns_path(stem: str) -> Path:
+    """Where the converter writes the column map of the solver `stem`, beside
+    `names/`: for each arclog relation of the name map with one Souffle
+    relation that has a path, the arclog column at which each kept leaf of
+    each Souffle column is read (`arclog_convert.convert.column_map`)."""
+    return names_dir().parent / "columns" / f"{stem}.json"
 
 
 def names_path(stem: str) -> Path:

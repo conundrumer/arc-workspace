@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 from engine.program import (
     Aggregate,
     Atom,
@@ -34,6 +35,58 @@ if TYPE_CHECKING:
 
 # --------------------------------------------------------------------------
 # Clause conversion
+
+
+@dataclass(frozen=True)
+class Site:
+    """Where a kept leaf of a Souffle column is read in arclog: the column
+    `label` of the arclog relation, and, for a record column of a type
+    parameter or the `key` column of an instance, the `field` within it."""
+
+    leaf: "Leaf"
+    label: str
+    field: str | None
+
+
+def kept_leaf(leaf: "Leaf") -> bool:
+    """The leaf is read by a site: it is no case, drop or rule leaf."""
+    return leaf.kind not in ("case", "drop", "rule")
+
+
+def site_columns(c: "Converter", cols: list, inst) -> list[list[Site]]:
+    """For each Souffle column of `cols` (`Converter.resolve`), the `Site`
+    of each of its leaves that `kept_leaf` keeps, in order. `ClauseWriter.sites`
+    writes its sites with these labels, and `convert.column_map` writes
+    them, so a label is chosen here alone."""
+    out: list[list[Site]] = []
+    for i, (col, leaves) in enumerate(cols):
+        kept = [l for l in leaves if kept_leaf(l)]
+        sites: list[Site] = []
+        nonex = [l for l in kept if l.kind != "example"]
+        if inst is not None and i == 0 and col.name == "key":
+            kn_all = c.key_names.get(inst) or []
+            by_path = dict(zip(c.key_paths.get(inst, []), kn_all))
+            names_by_leaf = dict(zip(map(id, kept), kn_all)) if len(kn_all) == len(kept) else \
+                dict(zip(map(id, nonex), kn_all)) if len(kn_all) == len(nonex) else \
+                {id(l): by_path[l.path] for l in nonex} if all(l.path in by_path for l in nonex) else {}
+            names = [names_by_leaf[id(l)] for l in nonex] if names_by_leaf else \
+                [n for n in kn_all if n != "E"] or [pascal(l.name) for l in nonex]
+            if len(names) != len(nonex):
+                names = [pascal(l.name) for l in nonex]
+            named = iter(names)
+            sites = [Site(l, "E", None) if l.kind == "example" else Site(l, "key", next(named)) for l in kept]
+        else:
+            rest = nonex if inst is not None else kept
+            nkeep = sum(1 for l in kept if l.kind == "keep")
+            if col.tparam and len(rest) > 1:
+                fields = iter(field_names(rest))
+                sites = [Site(l, "E", None) if l.kind == "example" and inst is not None
+                         else Site(l, col.name, next(fields)) for l in kept]
+            else:
+                sites = [Site(l, "E" if l.kind == "example" else l.name if nkeep > 1 else col.name, None)
+                         for l in kept]
+        out.append(sites)
+    return out
 
 
 class ClauseWriter:
@@ -139,43 +192,31 @@ class ClauseWriter:
             self.c.todo.add("arity", f"{atom.relation.text}")
             return name, [souffle_term(a) for a in atom.args]
         out: list[str] = []
+        placed = site_columns(self.c, cols, inst)
         for i, ((col, leaves), arg) in enumerate(zip(cols, atom.args)):
             terms = self.split(arg, leaves)
-            kept: list[tuple[Leaf, object]] = []
             for leaf, t in zip(leaves, terms):
                 if leaf.kind == "case":
                     self.branches.update(ctor_names(t))
-                    continue
-                if leaf.kind in ("drop", "rule"):
-                    continue
-                kept.append((leaf, t))
+            live = [(leaf, t) for leaf, t in zip(leaves, terms) if kept_leaf(leaf)]
+            kept = [(site, t) for site, (_, t) in zip(placed[i], live)]
             if not kept:
                 continue
             is_key = inst is not None and i == 0 and col.name == "key"
             if is_key:
-                kn_all = self.c.key_names.get(inst) or []
-                nonex = [l for l, _ in kept if l.kind != "example"]
-                by_path = dict(zip(self.c.key_paths.get(inst, []), kn_all))
-                names_by_leaf = dict(zip(map(id, (l for l, _ in kept)), kn_all)) if len(kn_all) == len(kept) else \
-                    dict(zip(map(id, nonex), kn_all)) if len(kn_all) == len(nonex) else \
-                    {id(l): by_path[l.path] for l in nonex} if all(l.path in by_path for l in nonex) else {}
                 kept = self.example_sites(kept, bound, out)
                 if not kept:
                     continue
-                names = [names_by_leaf[id(l)] for l, _ in kept] if names_by_leaf else \
-                    [n for n in kn_all if n != "E"] or [pascal(l.name) for l, _ in kept]
-                if len(names) != len(kept):
-                    names = [pascal(l.name) for l, _ in kept]
                 if key_join and inst == self.own_inst and all(
-                        isinstance(t, Variable) and self.label(t.name) == n for (l, t), n in zip(kept, names)):
+                        isinstance(t, Variable) and self.label(t.name) == site.field for site, t in kept):
                     continue
                 inner = []
-                for (leaf, t), n in zip(kept, names):
+                for site, t in kept:
                     if isinstance(t, Wildcard):
                         continue
                     s = self.one(t, bound)
                     lab = s.lstrip("*^")
-                    inner.append(s if lab == n else f"(:{n} {s})")
+                    inner.append(s if lab == site.field else f"(:{site.field} {s})")
                 if inner:
                     out.append("(:key " + " ".join(inner) + ")")
                 continue
@@ -184,34 +225,31 @@ class ClauseWriter:
                 kept = self.example_sites(kept, bound, out)
                 if not kept:
                     continue
-            if col.tparam and len(kept) > 1:
-                fnames = field_names([l for l, _ in kept])
-                inner = field_sites([n for n, (_, t) in zip(fnames, kept) if not isinstance(t, Wildcard)],
+            if kept[0][0].field is not None:
+                inner = field_sites([site.field for site, t in kept if not isinstance(t, Wildcard)],
                                     [self.one(t, bound) for _, t in kept if not isinstance(t, Wildcard)])
                 if inner:
                     out.append(f"(:{col.name} " + " ".join(inner) + ")")
                 continue
-            nkeep = sum(1 for l, _ in kept if l.kind == "keep")
-            for leaf, t in kept:
+            for site, t in kept:
                 if isinstance(t, Wildcard):
                     continue
                 s = self.one(t, bound)
                 lab = s.lstrip("*^")
-                colname = "E" if leaf.kind == "example" else leaf.name if nkeep > 1 else col.name
-                if not col.tparam and lab == colname:
+                if not col.tparam and lab == site.label:
                     out.append(s)
                 else:
-                    out.append(f"(:{colname} {s})")
+                    out.append(f"(:{site.label} {s})")
         return name, out
 
     def example_sites(self, kept, bound: set[str] | None, out: list[str]):
         """Append to `out` the site of each Example leaf of `kept`, and give
         the other leaves."""
-        for leaf, t in kept:
-            if leaf.kind == "example" and not isinstance(t, Wildcard):
+        for site, t in kept:
+            if site.leaf.kind == "example" and not isinstance(t, Wildcard):
                 s = self.one(t, bound)
                 out.append(s if s.lstrip("*^") == "E" else f"(:E {s})")
-        return [(l, t) for l, t in kept if l.kind != "example"]
+        return [(site, t) for site, t in kept if site.leaf.kind != "example"]
 
     def one(self, t, bound: set[str] | None) -> str:
         if isinstance(t, Variable):

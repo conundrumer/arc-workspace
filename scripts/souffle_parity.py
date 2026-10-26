@@ -8,10 +8,12 @@ A sentence a tool prints stands in an `mctx` call where the tool prints it.
 """
 
 import argparse
+import json
 import sys
 from collections.abc import Mapping
+from pathlib import Path
 
-from cli.common import all_stems, engine
+from cli.common import all_stems, engine, solver_path
 from controlled_markdown import mctx
 from parity import lib, rerun, snapshot, uses
 
@@ -49,7 +51,39 @@ def parser() -> argparse.ArgumentParser:
     again.add_argument("--json", action="store_true", help=mctx(
         "Print the relations' rows and the number of each orientation constant of the lib "
         "as one JSON object, in place of the text."))
+    rows = sub.add_parser("concept-rows", help=mctx(
+        "Write `<out>/<stem>.json` for each solver: the Souffle rows of its concept case on each train "
+        "and test pair, for each relation that the column map (`columns/<stem>.json` beside "
+        "`names/` of `arclog_convert.out`) gives a column to compare, projected onto those columns, "
+        "with the numbers of the orientation constants; and each relation of the run it leaves out, "
+        "with the reason. Print the path of each file written."))
+    rows.add_argument("stems", nargs="+", help=mctx("The solvers, each by its stem."))
+    rows.add_argument("--out", type=Path, required=True, help=mctx("The directory to write the files under."))
+    rows.add_argument("--solvers", type=Path, help=mctx(
+        "The directory to read `<stem>.dl` from, in place of `programs/solvers/`; give the one "
+        "`ARCLOG_SOLVERS` names for a conversion that set it."))
     return top
+
+
+def concept_rows(stems: list[str], out: Path, solvers: Path | None) -> int:
+    """Write the file of each stem; 1 where a solver gives no rows."""
+    out.mkdir(parents=True, exist_ok=True)
+    status = 0
+    for stem in stems:
+        file = (solvers / f"{stem}.dl") if solvers else solver_path(stem)
+        try:
+            got = rerun.concept_rows(stem, file)
+        except rerun.NoSuchCase:
+            print(mctx("No concept case of {stem}.").format(stem=stem), file=sys.stderr)
+            status = 1
+            continue
+        if not isinstance(got, dict):
+            print(mctx("{stem}: the run gives no rows: {got}").format(stem=stem, got=got), file=sys.stderr)
+            status = 1
+            continue
+        (out / f"{stem}.json").write_text(json.dumps(got))
+        print(out / f"{stem}.json")
+    return status
 
 
 def main(argv: list[str]) -> int:
@@ -71,6 +105,8 @@ def main(argv: list[str]) -> int:
     if args.cmd == "uses":
         print(uses.write_all())
         return 0
+    if args.cmd == "concept-rows":
+        return concept_rows(args.stems, args.out, args.solvers)
     try:
         got = (rerun.kept_json(args.stem, args.case, args.pair) if args.json
                else rerun.relations(args.stem, args.case, args.pair))

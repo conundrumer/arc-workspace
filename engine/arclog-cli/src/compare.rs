@@ -23,33 +23,28 @@
 //! it is given none. The rerun is `scripts/souffle_parity.py rerun --json`,
 //! so the command runs from the root of the tree.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::time::Instant;
-use std::ops::ControlFlow;
 use std::process::ExitCode;
 
-use arclog::eval::join::each_row;
-use arclog::eval::models::ModelsEnd;
 use arclog::eval::determinations::{det_node, relation_spelled};
-use arclog::eval::{output_relation, relation_of, Evaluation, RelationValue};
+use arclog::eval::{output_relation, Evaluation};
 use arclog::harness::{print_ended, require_optimized_build, run_over_corpus, CorpusSolver, SolverResult};
 use arclog::judge::candidates::World;
 use arclog::judge::run::{judged_run, Depth, Found, JudgedRun};
 use arclog::judge::solves::OutputSet;
-use arclog::program::{AltsName, DeclaredName, ProgramRelation, RelationName};
-use arclog::relations::Relation;
-use arclog::resolver::Side;
+use arclog::program::AltsName;
 use arclog::solver::CaseName;
-use arclog::task::{Grid, Task};
-use arclog::terms::{Example, Term};
-use arclog::types::ValueType;
+use arclog::task::Grid;
+use arclog::terms::Example;
 use serde_json::Value;
 
 use crate::arguments::Arguments;
 use arclog::stream::corpus::case_spelled;
 use crate::determine::{solver_determination, Finding};
-use crate::renaming::{renaming_exists, same_without_idents, term_leaves, EngineLeaf, Leaf};
+use crate::renaming::{renaming_exists, same_without_idents, EngineLeaf, Leaf};
 use crate::select::{read_json, selected};
+use crate::souffle_rows::{engine_rows, pair_name, EngineRows, Projection, Rerun};
 
 const USAGE: &str = "usage: arclog-cli compare <snapshot-dir> <corpus-dir> <tasks-dir> [<task_id> ...] [--reads <name> ...]";
 
@@ -80,11 +75,6 @@ pub fn run(args: &[String]) -> ExitCode {
     let compared = selected.map_or(report.checked, |ids| ids.len());
     println!("{} of {compared} solvers differ from the snapshot", report.failures.len());
     if report.failures.is_empty() { ExitCode::SUCCESS } else { ExitCode::FAILURE }
-}
-
-/// The pair names of the task's examples, as the snapshot writes them.
-fn pair_name(task: &Task, example: usize) -> String {
-    if example < task.train.len() { format!("train {example}") } else { format!("test {}", example - task.train.len()) }
 }
 
 /// The comparison of the cases of `solver` with its snapshot record.
@@ -222,7 +212,7 @@ fn compare_case(id: &str, key: &str, case_record: &Value, evaluation: &Evaluatio
             .map(|((pair, example), rerun)| {
                 let rerun = rerun.as_ref()?;
                 let example = *example;
-                let engine: Box<dyn Fn(&str) -> Option<EngineRows> + '_> = Box::new(move |name| engine_rows(evaluation, name, example, &rerun.orientation_constants));
+                let engine: Box<dyn Fn(&str) -> Option<EngineRows> + '_> = Box::new(move |name| engine_rows(evaluation, name, example, &rerun.orientation_constants, Projection::All));
                 Some(PairRows { pair, rerun, engine })
             })
             .collect();
@@ -356,125 +346,10 @@ fn first_difference(pairs: &[PairRows<'_>]) -> Comparison {
     comparison
 }
 
-/// The rows of Souffle's rerun of a case on one pair, each relation by its
-/// arclog name, in the rerun's order, and the number Souffle gives each
-/// orientation constant of the lib, by its name.
-struct Rerun {
-    relations: Vec<(String, BTreeSet<Vec<Leaf>>)>,
-    orientation_constants: BTreeMap<String, i64>,
-}
-
-impl Rerun {
-    /// The rerun that `json`, the output of `rerun --json`, gives.
-    fn of(json: &Value) -> Option<Rerun> {
-        let relations = json.get("relations")?.as_array()?.iter().map(|relation| {
-            let [name, rows] = relation.as_array()?.as_slice() else { return None };
-            let rows = rows.as_array()?.iter().map(|row| row.as_array()?.iter().map(Leaf::of).collect()).collect::<Option<_>>()?;
-            Some((name.as_str()?.to_owned(), rows))
-        });
-        let constants = json.get("orientation_constants")?.as_object()?;
-        Some(Rerun {
-            relations: relations.collect::<Option<_>>()?,
-            orientation_constants: constants.iter().map(|(name, n)| Some((name.clone(), n.as_i64()?))).collect::<Option<_>>()?,
-        })
-    }
-}
-
-/// What the engine gives for a relation on a pair.
-enum EngineRows {
-    /// The relation's rows, each the leaves Souffle's rerun writes for it,
-    /// the same at every model of the case.
-    Rows(Vec<Vec<EngineLeaf>>),
-    /// Two models of the case give the relation different rows, so Souffle's
-    /// one set of rows has nothing to compare with.
-    DifferBetweenModels,
-    /// A text for rows the engine cannot give.
-    Fault(String),
-}
-
-/// The engine's rows of the relation that `name` declares on `example`,
-/// each row the leaves Souffle's rerun writes for it, an orientation
-/// constant by the number `constants` gives its name; `None` where the
-/// program derives no relation of that name. The rows are read at each
-/// model of the case: where two models give different rows as sets, the
-/// result is [`EngineRows::DifferBetweenModels`].
-fn engine_rows(evaluation: &Evaluation<'_>, name: &str, example: Example, constants: &BTreeMap<String, i64>) -> Option<EngineRows> {
-    let program = evaluation.program;
-    let declared = ProgramRelation::Declared(RelationName(DeclaredName::Written(name.into())));
-    let relation = relation_of(program, &declared)?;
-    let on = (program.program.side(relation.node) == Side::PerInput).then_some(example);
-    let Some(types) = program.types.columns(&relation) else { return Some(EngineRows::Fault("rows whose columns have no types".to_owned())) };
-    let mut first: Option<Vec<Vec<EngineLeaf>>> = None;
-    let mut fault = None;
-    let mut differ = false;
-    let end = evaluation.models(&relation, on, &mut |value| {
-        let RelationValue::Rows(rows) = value else {
-            fault = Some(format!("{value:?}"));
-            return ControlFlow::Break(());
-        };
-        let rows = match model_leaves(evaluation, rows, types, constants) {
-            Ok(rows) => rows,
-            Err(text) => {
-                fault = Some(text);
-                return ControlFlow::Break(());
-            }
-        };
-        match &first {
-            None => first = Some(rows),
-            Some(kept) if same_rows(kept, &rows) => {}
-            Some(_) => {
-                differ = true;
-                return ControlFlow::Break(());
-            }
-        }
-        ControlFlow::Continue(())
-    });
-    match end {
-        Err(error) => return Some(EngineRows::Fault(error.message.to_string())),
-        Ok(ModelsEnd::Stopped(stop)) if !differ && fault.is_none() => return Some(EngineRows::Fault(format!("{stop:?}"))),
-        Ok(_) => {}
-    }
-    Some(match (fault, differ, first) {
-        (Some(text), _, _) => EngineRows::Fault(text),
-        (None, true, _) => EngineRows::DifferBetweenModels,
-        (None, false, Some(rows)) => EngineRows::Rows(rows),
-        (None, false, None) => EngineRows::Rows(Vec::new()),
-    })
-}
-
-/// The leaves of the rows of one model's value of a relation of column
-/// types `types`.
-fn model_leaves(
-    evaluation: &Evaluation<'_>,
-    rows: &Relation,
-    types: &[ValueType],
-    constants: &BTreeMap<String, i64>,
-) -> Result<Vec<Vec<EngineLeaf>>, String> {
-    let mut written = Vec::new();
-    let mut faults = BTreeSet::new();
-    each_row(rows, &mut |row| match row.iter().zip(types).map(|(&id, ty)| term_leaves(Term::decode(id, ty), evaluation.registry, &|name| souffle_number(name, constants))).collect::<Result<Vec<_>, _>>() {
-        Ok(leaves) => written.push(leaves.concat()),
-        Err(text) => {
-            faults.insert(text);
-        }
-    });
-    faults.into_iter().next().map_or(Ok(written), Err)
-}
-
-/// The leaf of the orientation constant `name` in Souffle's rerun: its
-/// number in `constants`.
-fn souffle_number(name: &str, constants: &BTreeMap<String, i64>) -> Result<Leaf, String> {
-    constants.get(name).map(|&n| Leaf::Number(n)).ok_or_else(|| format!("the orientation constant {name}, which the rerun gives no number"))
-}
-
-/// Whether `a` and `b` hold the same rows, each row once.
-fn same_rows(a: &[Vec<EngineLeaf>], b: &[Vec<EngineLeaf>]) -> bool {
-    a.iter().all(|row| b.contains(row)) && b.iter().all(|row| a.contains(row))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
     use arclog::terms::{Content, Ident, InternTable, WrittenIdent};
 
     fn n(value: i64) -> Leaf {

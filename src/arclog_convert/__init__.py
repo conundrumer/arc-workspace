@@ -30,7 +30,7 @@ read it."""
 
 def out() -> Path:
     """The directory the converter writes `gen/`, `gen_macros/`, `plan/`,
-    `names/` and `helper_rows/` under: `OUT_ENV`'s value, or `work/arclog/`
+    `names/`, `columns/` and `helper_rows/` under: `OUT_ENV`'s value, or `work/arclog/`
     of the main worktree, from every checkout."""
     return checkout.from_env(OUT_ENV, lambda: checkout.work() / "arclog")
 
