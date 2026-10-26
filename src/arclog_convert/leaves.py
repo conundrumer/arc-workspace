@@ -81,8 +81,14 @@ class Written:
 
 
 class Converter:
-    def __init__(self, stem: str, lib: Lib, sig: Lib, todo: Todo, inline: frozenset[str] = frozenset()) -> None:
+    def __init__(self, stem: str, lib: Lib, sig: Lib, todo: Todo, inline: frozenset[str] = frozenset(),
+                 own_copies: frozenset[str] = frozenset()) -> None:
         self.stem = stem
+        # the relations of the solver's parse that an alt rederives and the
+        # determination derives for itself, as `split_det_parse` finds them,
+        # and those of them that the determination gets copies of
+        self.rederived_in_parse: set[str] = set()
+        self.own_copies = own_copies
         # each relation or instance this pass makes that the Souffle program
         # does not declare, by its scope and name, with what it stands for:
         # none for a relation of an expansion's shape that no Souffle relation
@@ -1286,7 +1292,11 @@ class Converter:
         unfed differs, and its dependents are copied only where the
         determination reads them. Each relation and instance of the parse
         that reads an input fed otherwise is the determination's own: a copy
-        keyed on Example, which the determination's readers read."""
+        keyed on Example, which the determination's readers read. So is each
+        relation or instance that an alt rederives, in clauses keyed by a
+        constructor outside the concept case, where a `DET` of the concept
+        program reads it (`own_copies`): the copy has the concept case's
+        clauses alone, so that no alt rederives what such a `DET` reads."""
         from engine.program import Column, DeclId, Scope, Span, TypeName, UnitId
         det = ("Determine",)
         self.det_parse_copies: dict[tuple[tuple[str, ...], str], str] = {}   # a copy -> the name it is a copy of
@@ -1570,11 +1580,18 @@ class Converter:
                     fed = feed(u, n, True)
                     feeds[rn.name][1].append(fed[0])
                     det_feeds[rn.name].append(fed[1])
+            rederived: set[str] = set()
             for x, clauses in prog_clauses.items():
                 dropped = alternates(clauses)
                 feeds[x][0].extend(feed(u, pname, False, case_key)[0] for i, u in enumerate(clauses) if i not in dropped)
+                if dropped and det_feeds[x]:
+                    rederived.add(x)
+            # the parse's own clauses that a constructor outside the concept case keys
+            alternate_ctors = {id(u): {m for t in u.head.args for m in ctor_names(t)} & other_ctors for u in parse_units}
+            rederived |= {h for u in parse_units if alternate_ctors[id(u)] and (h := node(u.head.relation)) is not None}
+            self.rederived_in_parse |= rederived
             differ = {x for x, (a, b) in feeds.items()
-                      if sorted(a) != sorted(b) and not (a and concept_feed(x, det_feeds[x]))}
+                      if sorted(a) != sorted(b) and not (a and concept_feed(x, det_feeds[x]))} | (rederived & self.own_copies)
             if not differ:
                 continue
             # the parse's nodes that read an input fed otherwise
@@ -1687,7 +1704,7 @@ class Converter:
                                                 type_args=retype(i.type_args)))
             base = prog.next_unit_index()
             for u in parse_units:
-                if node(u.head.relation) in copy:
+                if node(u.head.relation) in copy and not (alternate_ctors[id(u)] and node(u.head.relation) in self.own_copies):
                     # the key is the example, E
                     hk = 0 if u.head.relation.instances else key_at(u.head.relation)
                     k0 = u.head.args[hk] if hk is not None and hk < len(u.head.args) else None

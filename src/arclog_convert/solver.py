@@ -170,10 +170,12 @@ class Claim:
 
 
 class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
-    def __init__(self, stem: str, lib: Lib, sig: Lib, todo: Todo, inline: frozenset[str] = frozenset()) -> None:
+    def __init__(self, stem: str, lib: Lib, sig: Lib, todo: Todo, inline: frozenset[str] = frozenset(),
+                 own_copies: frozenset[str] = frozenset()) -> None:
         self.stem = stem
         self.todo = todo
-        self.c = Converter(stem, lib, sig, todo, inline)
+        self.c = Converter(stem, lib, sig, todo, inline, own_copies)
+        self.alt_derived: set[str] = set()   # the relations that some alt's block derives
         self.lines = self.c.src_lines
         self.c.skip_rels = {"impl_choice"}
 
@@ -360,6 +362,8 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
         # a copy of the program's parse in the determination takes the name
         # of what it copies, after the program's parse
         for key, x in c.det_parse_copies.items():
+            if (("Params",), x) in c.rels:
+                c.rel_name(("Params",), x)   # a parameter's name is the one claim texts give it
             c.rel_name(("Parse",), x)
             cand, k = x, 2
             while cand in c.used_names:

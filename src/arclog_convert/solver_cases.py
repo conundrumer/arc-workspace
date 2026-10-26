@@ -32,6 +32,7 @@ from arclog_convert.forms import (
     params_to_amp,
     quote,
     read_without,
+    topo,
     without_repeats,
 )
 from arclog_convert.leaves import Written
@@ -95,7 +96,10 @@ class CasesMixin:
         one positively is dead, a `NOT` of one holds and is dropped, and a
         relation all of whose clauses are dead is empty too. A clause whose
         head fixes one of `others`, the point's other constructors, holds
-        no row in the alt, and its relation is rederived without it."""
+        no row in the alt, and its relation is rederived without it. A `DET`
+        that fixes no constructor and that the concept case derives is one
+        parameter for every case, which the concept's evidence determines, so
+        no alt rederives it."""
         groups: dict[str, list[Form]] = defaultdict(list)
         fixed: set[str] = set()
         for f in main:
@@ -165,6 +169,8 @@ class CasesMixin:
                     changed = True
         redo: list[Form] = []
         for name, fs in groups.items():
+            if all(f.side == "DET" and not f.branches and not f.concept_dead and f.concept_form is None for f in fs):
+                continue    # one parameter for every case: the concept's `DET` stands
             if name in adds and name not in empty:
                 # the case's own clauses of the relation stand beside these
                 for f in fs:
@@ -209,6 +215,47 @@ class CasesMixin:
             out.append("    ;; TODO alt-undefined: every &output clause reads a relation this alt leaves empty")
             self.todo.kinds["alt-undefined"] += 1
         return redo
+
+    def reading_determinations(self, fs: list[Form], main: list[Form]) -> list[Form]:
+        """The concept's `DET` forms that read, directly or through other
+        relations, a relation that `fs`, the forms of one alt's case, derive
+        by a `DET` of their own in the place of the concept's, where the
+        Souffle solver keys that relation by the alt's choice. A `DET` of the
+        concept program reads the concept's derivation in every case, so the
+        alt derives each such `DET` again, as the concept does: it then reads
+        the alt's derivation. A `DET` that `fs` derive already is not one."""
+        concept = [f.concept_form or f for f in main if not f.concept_dead]
+        replaced = {f.name for f in fs if f.side == "DET"} & {f.name for f in concept if f.side == "DET"}
+        derived = {f.name for f in fs}
+        reading = set(replaced)
+        grew = True
+        while grew:
+            grew = False
+            for f in concept:
+                if f.name not in reading and f.reads & reading:
+                    reading.add(f.name)
+                    grew = True
+        return topo([f for f in concept if f.side == "DET" and f.name in reading - derived])
+
+    def own_copies_needed(self) -> frozenset[str]:
+        """The relations of the solver's parse that a `DET` of the concept
+        program reads, directly or through other relations, that an alt
+        rederives, and that the Souffle determination derives for itself:
+        the determination gets its own copies of them (`split_det_parse`), so
+        that no alt rederives what a `DET` of the concept program reads."""
+        forms = [f.concept_form or f for f in self.render_main if not f.concept_dead]
+        by_name: dict[str, list[Form]] = defaultdict(list)
+        for f in forms:
+            by_name[f.name].append(f)
+        reached: set[str] = set()
+        todo = [n for f in forms if f.side == "DET" for n in f.reads]
+        while todo:
+            n = todo.pop()
+            if n not in reached:
+                reached.add(n)
+                todo.extend(m for f in by_name[n] for m in f.reads)
+        parse = {"&" + v: k[1] for k, v in self.c.names.items() if k[0] == ("Parse",)}
+        return frozenset(parse[n] for n in reached & self.alt_derived if parse.get(n) in self.c.rederived_in_parse)
 
     # ---- arcdata
 

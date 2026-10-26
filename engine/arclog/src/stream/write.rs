@@ -276,8 +276,7 @@ impl Writer<'_> {
     /// Takes the next relation slot for `relation`, with the columns
     /// `columns`, and gives it. A relation already declared is a fault: the
     /// decoder takes a new slot at each declaration, so a second declaration
-    /// would give a stream whose later slots differ from the decoder's, and a
-    /// parameter that several blocks determine has no stream form.
+    /// would give a stream whose later slots differ from the decoder's.
     fn reserve(&mut self, relation: ProgramRelation, columns: Box<[ColumnName]>, path: &NodePath) -> Result<u32, Diagnostic> {
         if self.declared.contains_key(&relation) {
             return Err(run_fault(format!("the stream declares a relation once for each form that derives it, and {relation:?} has more than one"), path));

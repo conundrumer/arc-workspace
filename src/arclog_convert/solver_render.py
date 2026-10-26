@@ -763,6 +763,8 @@ class RenderMixin:
                         for g in main if g.name == f.name)}
         redo = self.dead_clauses(main, empty, mine, out, others_k, adds)
         fs = fs + redo
+        reread = self.reading_determinations(fs, main)
+        fs = fs + reread
         # a relation that no form of this case derives is empty in it: a
         # form of the alt that reads one is written again without it
         in_case = concept | ks | anc_ctors
@@ -814,7 +816,9 @@ class RenderMixin:
         MERGES.clear()
         MERGES.update(saved[0])
         MERGES_UNMERGED[:] = saved[1]
+        same -= {f.name for f in reread}
         fs = [f for f in fs if f.name not in same]
+        self.alt_derived |= {f.name for f in fs}
         # each relation as this case derives it
         case_text = defaultdict(list, main_text)
         for name in {f.name for f in fs}:

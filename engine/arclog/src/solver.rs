@@ -87,6 +87,7 @@ pub struct Case {
     /// the form's path in the file.
     origins: StableHashMap<NodePath, (FileOwner, NodePath)>,
     concept_determinations: Box<[NodePath]>,
+    rederived: Box<[NodePath]>,
     /// The program as [`Case::program_alone`] gives it, where it differs from
     /// `program`.
     alone: Option<Node<Program>>,
@@ -99,6 +100,14 @@ impl Case {
     /// program's derivation in every case.
     pub fn concept_determinations(&self) -> &[NodePath] {
         &self.concept_determinations
+    }
+
+    /// The paths in the case program of the forms that a block other than the
+    /// concept program gives: an alt's form that replaces or adds a thing,
+    /// and a `DEMONSTRATED` form of the concept program that holds such a
+    /// form in a `DEMO_RULE` form.
+    pub fn rederived_forms(&self) -> &[NodePath] {
+        &self.rederived
     }
 
     /// The case program as it reads when it stands alone, with no concept
@@ -320,9 +329,13 @@ impl Solver {
         let mut forms = Vec::new();
         let mut origins = StableHashMap::default();
         let mut concept_determinations = Vec::new();
+        let mut rederived = Vec::new();
         for taken in taken {
             let p = taken.placed;
             let path = NodePath::top(forms.len() as u32);
+            if p.depth > 0 || !taken.in_rules.is_empty() {
+                rederived.push(path.clone());
+            }
             if concept_determination(p) {
                 concept_determinations.push(path.clone());
             }
@@ -352,6 +365,7 @@ impl Solver {
             program: Node::new(Program { forms: forms.into() }),
             origins,
             concept_determinations: concept_determinations.into(),
+            rederived: rederived.into(),
             alone,
         })
     }
@@ -1413,8 +1427,7 @@ fn is_det(form: &Form) -> bool {
 
 /// The forms of a case, from the forms its walk reaches: for each thing
 /// derived, the forms of the deepest blocks that derive it, at the place of
-/// the concept program's first form that derives it. A parameter that
-/// several blocks determine keeps each block's `DET`. The place of a thing
+/// the concept program's first form that derives it. The place of a thing
 /// that a `DEMO_RULE` form of the concept program derives is in each such
 /// form, at its first form that derives it, as [`Taken::in_rules`] gives.
 /// Of the kept forms of one thing that are equal, the first in the walk's
@@ -1422,23 +1435,12 @@ fn is_det(form: &Form) -> bool {
 /// combination needs no nested `ALT`, and a relation is derived by one clause.
 fn rederived(placed: &[Placed]) -> Vec<Taken<'_>> {
     let keys: Vec<Derives> = placed.iter().map(|p| derives(&p.form).expect("a reached form derives")).collect();
-    let mut deepest: StableHashMap<&Derives, (u32, bool)> = StableHashMap::default();
+    let mut deepest: StableHashMap<&Derives, u32> = StableHashMap::default();
     for (p, key) in placed.iter().zip(&keys) {
-        let entry = deepest.entry(key).or_insert((p.depth, true));
-        if p.depth > entry.0 {
-            *entry = (p.depth, is_det(&p.form));
-        } else if p.depth == entry.0 {
-            entry.1 &= is_det(&p.form);
-        }
+        let depth = deepest.entry(key).or_insert(p.depth);
+        *depth = (*depth).max(p.depth);
     }
-    let mut keep: Vec<bool> = placed
-        .iter()
-        .zip(&keys)
-        .map(|(p, key)| {
-            let (depth, all_det) = deepest[key];
-            p.depth == depth || (all_det && is_det(&p.form))
-        })
-        .collect();
+    let mut keep: Vec<bool> = placed.iter().zip(&keys).map(|(p, key)| p.depth == deepest[key]).collect();
     for index in 0..placed.len() {
         if keep[index] && (0..index).any(|earlier| keep[earlier] && keys[earlier] == keys[index] && equal_forms(&placed[earlier].form, &placed[index].form)) {
             keep[index] = false;
@@ -1459,7 +1461,7 @@ fn rederived(placed: &[Placed]) -> Vec<Taken<'_>> {
             in_rules.extend(rules);
             emitted[index] = true;
         }
-        if deepest[key].0 > 0 && placed_keys.insert(key) {
+        if deepest[key] > 0 && placed_keys.insert(key) {
             for other in 0..placed.len() {
                 if !emitted[other] && placed[other].depth > 0 && keep[other] && keys[other] == *key {
                     taken.push(Taken { placed: &placed[other], in_rules: Vec::new() });

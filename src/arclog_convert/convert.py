@@ -305,11 +305,14 @@ def convert_one(stem: str) -> tuple[str, str | None, str | None, Counter, Counte
         # an `inline` relation that the pass writes as an arclog relation is no
         # relation: its body stands at each call
         stuck = _written_inline(s, arclog)
-        if stuck:
+        # a relation that an alt rederives and a `DET` of the concept program
+        # reads gets, in the determination, a copy of its own
+        copies = s.own_copies_needed()
+        if stuck or copies:
             MERGES.clear()
             MERGES_UNMERGED.clear()
             todo = Todo()
-            s = Solver(stem, lib, sig, todo, stuck)
+            s = Solver(stem, lib, sig, todo, stuck, copies)
             arclog, arcdata = s.run()
         arclog = fold_or_lines(renamed(arclog))
         insts = libmap_rename.renamed_instances(libmap_rename.instances(arclog),
