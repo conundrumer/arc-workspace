@@ -179,6 +179,8 @@ cell_order_choice($FillOrder()). cell_order_choice($SnakeOrder()). cell_order_ch
     // --- $LiquidAnyColor ---
     // The color of the cells directly above the floor between the walls.
     // @claim liquid-color
+    // @ignore: store — $StoredLiquid stores the liquid's color as
+    //  params.fluid_color, so a stored floor_top is that branch
     .init floor_top = Unanimous<Key, Color>
     floor_top.item(Ky, Col) :-
         cup.box(Ky, B), params.open_dir(U),
