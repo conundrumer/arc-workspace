@@ -17,8 +17,9 @@
 
 ## Launching
 - Where a launch fails with its agent type not found, give the launch as unfinished, with the failure's text as its reason.
-- Give an agent a brief in the form the sections under [Briefs](prompts/agents/notes/launching.md#briefs) for its work give, where any does, and launch it as the agent type whose `description` links those sections: read each of those sections and each section they link. Restate neither a docstring of the code nor the agent's definition.
+- Give an agent a brief in the form the sections under [Briefs](prompts/agents/notes/launching.md#briefs) for its work give, where any does, and launch it as the agent type whose `description` links those sections: read each of those sections and each section they link. Put in the brief only the parts that form gives, and restate in it neither a docstring of the code, nor the agent's definition, nor anything else a file the brief gives holds, such as its transcript brief.
     + xref: prompts/agents/notes/launching.md#briefs
+    * comment: The user's words, session 5954de00-6c0c-49ac-9f0a-ef6956422bd2, 2026-10-26T16:16:07Z, on a brief that gave a transcript brief's path and restated its design, requirements and instructions beside it: "the agents do not need any elaboration, that is the point of the ticket. do not override briefing instructions": ticket 24-5.
 - Where a brief gives a scratch directory, give a new directory under the session's scratchpad directory.
 - Before you write the items or the Intent of an edit, read [An edit's items](prompts/agents/notes/launching.md#an-edits-items).
 - Before you give another agent a draft `change` ticket that you filed or revised, in your reply or otherwise, read [A draft's outcome](prompts/agents/notes/launching.md#a-drafts-outcome).
