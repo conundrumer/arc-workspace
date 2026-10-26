@@ -3,8 +3,11 @@ the report of the relations that differ.
 
     uv run python -m arclog_convert.row_parity [--out <dir>] [<stem> ...]
 
-The command checks the files under `gen/` of `arclog_convert.out`, or of
-`--out`, with no conversion; in a linked worktree it writes no record without
+The command checks the task files of `arclog_convert.out`, or of `--out`,
+with no conversion: the program under `CORPUS`, which is the one under `gen/`
+with the check relations of the relations the converter folds
+(`arclog_convert.checks`), and the name map and the column map; in a linked
+worktree it writes no record without
 `--out` or `ARCLOG_OUT`, and it rewrites no baseline. `arclog_convert.convert` runs the same check on the
 solvers it converted. For each task, `arclog-cli row-parity` compares the rows
 of each relation of the cases the check runs, the concept case and the first
@@ -28,7 +31,7 @@ runs none of it.
 
 A task's lines stand in `row_parity/<stem>.json` beside `gen/`, as a record
 with these fields: `files`, the sha256 of the task's files as
-`train_replay.files_digest` gives them, of its name map and column map, of the
+`train_replay.files_digest` gives them, of its program under `CORPUS`, of its name map and column map, of the
 Souffle solver file the conversion read, of the Souffle-side code and lib
 (`cli.common.stamp`), of the Souffle binary, of the `parity` package, and of
 the form of the record (`VERSION`); `sources`, the digest of the engine's
@@ -76,6 +79,11 @@ BASELINE = Path(__file__).with_name("row_parity.tsv")
 VERSION = 3
 """The form of a record."""
 
+CORPUS = "gen_check"
+"""The directory beside `gen/` that holds, for each converted task, its
+program with the check relations of the relations it folds
+(`arclog_convert.checks`), which `arclog-cli row-parity` reads as its corpus."""
+
 FAILING = ("differ", "fault", "uncompared")
 """The verdicts that the baseline holds and that fail the run."""
 
@@ -109,7 +117,9 @@ def files_digest(stem: str, gen: Path, tasks: Path, solvers: Path) -> str:
     from souffle.install import binary_identity
     digest = hashlib.sha256()
     digest.update(f"{VERSION}\0{train_replay.files_digest(stem, gen, tasks)}\0".encode())
-    for path in (gen.parent / "names" / f"{stem}.json", gen.parent / "columns" / f"{stem}.json", solvers / f"{stem}.dl"):
+    corpus, names, columns = gen.parent / CORPUS, gen.parent / "names", gen.parent / "columns"
+    for path in (corpus / f"{stem}.arclog", corpus / f"{stem}.arcdata", names / f"{stem}.json",
+                 columns / f"{stem}.json", solvers / f"{stem}.dl"):
         digest.update((path.read_bytes() if path.exists() else b"") + b"\0")
     digest.update(f"{stamp()}\0{rerun.code_digest()}\0".encode() + binary_identity())
     return digest.hexdigest()
@@ -121,7 +131,7 @@ def write_record(records: Path, stem: str, files: str, sources: str, binary: str
     (records / f"{stem}.json").write_text(json.dumps(data, indent=1) + "\n")
 
 
-def check_chunk(stems: list[str], gen: Path, tasks: Path, records: Path, solvers: Path,
+def check_chunk(stems: list[str], corpus: Path, tasks: Path, records: Path, solvers: Path,
                 files: dict[str, str], sources: str, binary: str) -> None:
     """Write the record of each of `stems`: the Souffle side of each, then
     one `arclog-cli row-parity` call on those that gave rows."""
@@ -142,7 +152,7 @@ def check_chunk(stems: list[str], gen: Path, tasks: Path, records: Path, solvers
             (work / f"{stem}.json").write_text(json.dumps(got))
             rows.append(stem)
         if rows:
-            command = [str(train_replay.tool_binary(BINARY)), "row-parity", str(gen), str(tasks), str(work), *rows]
+            command = [str(train_replay.tool_binary(BINARY)), "row-parity", str(corpus), str(tasks), str(work), *rows]
             done = subprocess.run(command, cwd=checkout.ROOT / "engine", stdout=subprocess.PIPE, text=True,
                                   env={**os.environ, "ARCLOG_THREADS": "1"})
             if done.returncode not in (0, 1):
@@ -170,7 +180,7 @@ def check(stems: list[str], out: Path, accept: bool = False) -> int:
     give the exit status."""
     from parity.snapshot import RECORDS_WORKERS
     os.environ[OUT_ENV] = str(out)
-    gen, records, tasks, solvers = out / "gen", out / "row_parity", TASKS_DIR, paths.SOLVERS
+    gen, corpus, records, tasks, solvers = out / "gen", out / CORPUS, out / "row_parity", TASKS_DIR, paths.SOLVERS
     sources = train_replay.engine_digest()
     digests: list[str] = []
 
@@ -185,7 +195,7 @@ def check(stems: list[str], out: Path, accept: bool = False) -> int:
         built = digests[0] if digests else train_replay.binary_digest(BINARY)
         records.mkdir(parents=True, exist_ok=True)
         with ProcessPoolExecutor(RECORDS_WORKERS) as pool:
-            futures = [pool.submit(check_chunk, chunk, gen, tasks, records, solvers, files, sources, built)
+            futures = [pool.submit(check_chunk, chunk, corpus, tasks, records, solvers, files, sources, built)
                        for chunk in chunks(stale, solvers)]
             for future in futures:
                 future.result()

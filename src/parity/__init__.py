@@ -6,7 +6,7 @@ solver `arclog_convert.convert` converts, under `names/` of `arclog_convert.out`
 import hashlib
 import json
 from collections.abc import Callable, Collection, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -50,11 +50,14 @@ class NameMap:
     """One solver's name map: each arclog relation name with each Souffle
     relation it was written from, each arclog `ALT` name with its Souffle
     `Choice` constructor, and the names of the arclog relations the
-    converted program reads that no Souffle relation was written into."""
+    converted program reads that no Souffle relation was written into; and,
+    for each Souffle relation by its path that the converter folds and made
+    no check relation of, why not."""
 
     relations: Mapping[str, tuple[SouffleRelation, ...]]
     constructors: Mapping[str, str]
     unmapped: tuple[str, ...]
+    untranslated: Mapping[str, str] = field(default_factory=dict)
 
     @staticmethod
     def of(data: Mapping) -> "NameMap":
@@ -62,7 +65,7 @@ class NameMap:
         return NameMap(
             {a: tuple(SouffleRelation(tuple(s["component"]), s["relation"], s["path"]) for s in ss)
              for a, ss in data["relations"].items()},
-            dict(data["constructors"]), tuple(data["unmapped"]))
+            dict(data["constructors"]), tuple(data["unmapped"]), dict(data.get("untranslated", {})))
 
     @property
     def read(self) -> list[str]:

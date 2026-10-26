@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter, defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass, fields as dc_fields, is_dataclass, replace as dc_replace
 from engine.program import (
     Aggregate,
@@ -24,6 +25,7 @@ from arclog_convert.frame_reads import FieldPlan, field_plan
 from arclog_convert import libmap
 from arclog_convert.helper_rows import helper_rels, rows as helper_rows_of
 
+from arclog_convert.checks import Fold
 from arclog_convert.clauses import ClauseWriter
 from arclog_convert.forms import (
     Form,
@@ -171,10 +173,10 @@ class Claim:
 
 class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
     def __init__(self, stem: str, lib: Lib, sig: Lib, todo: Todo, inline: frozenset[str] = frozenset(),
-                 own_copies: frozenset[ScopedName] = frozenset()) -> None:
+                 own_copies: frozenset[ScopedName] = frozenset(), checks: Sequence[Fold] = ()) -> None:
         self.stem = stem
         self.todo = todo
-        self.c = Converter(stem, lib, sig, todo, inline, own_copies)
+        self.c = Converter(stem, lib, sig, todo, inline, own_copies, checks)
         self.alt_derived: set[str] = set()   # the relations that some alt's block derives
         self.lines = self.c.src_lines
         self.c.skip_rels = {"impl_choice"}

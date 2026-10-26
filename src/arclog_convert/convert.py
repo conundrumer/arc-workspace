@@ -31,7 +31,10 @@ file it was written from, and the runner and lib stamp of the run; where it
 is missing or records another hash or stamp, the script first reruns
 `scripts/run_dl.py determination-plan <stem>` (`arclog_convert.plans`). The
 name map and the column map of each solver it converts, written under names/
-and columns/, are those of `arclog_convert.names`.
+and columns/, are those of `arclog_convert.names`. Beside gen/, the directory
+`row_parity.CORPUS` holds, for the row-parity check alone, a copy of each
+converted program with the check relations of the relations it folds
+(`arclog_convert.checks`); nothing else reads it.
 A form the script cannot translate is written literally, under a
 `;; TODO <kind>: ...` comment.
 """
@@ -55,8 +58,9 @@ from arclog_convert.forms import (
     hoist_shared,
     renamed,
 )
+from arclog_convert.leaves import ScopedName
 from arclog_convert.lib import Col, ColMismatch, LIB_DL, Lib, SIGNATURE
-from arclog_convert.names import column_map, name_map
+from arclog_convert.names import check_maps, column_map, folded, name_map, unchecked
 from arclog_convert.plans import refresh_plans
 from arclog_convert.solver import Solver
 
@@ -84,13 +88,52 @@ def _written_inline(s: "Solver", arclog: str) -> frozenset[str]:
     return frozenset(n for n in names if inlinable(n))
 
 
-def convert_one(stem: str) -> tuple[str, str | None, str | None, Counter, Counter, list[str], ColMismatch, str | None]:
+def _finished(arclog: str, arcdata: str) -> tuple[str, str, dict[str, str]]:
+    """The text of a pass after the renames that every converted program
+    gets, and the instance renames they applied."""
+    from arclog_convert.lint import fix_labels
+    arclog = fold_or_lines(renamed(arclog))
+    insts = libmap_rename.renamed_instances(libmap_rename.instances(arclog),
+                                            libmap_rename.reads(arclog + arcdata))
+    arclog = hoist_shared(fix_labels(libmap_rename.rename(arclog, insts)))
+    return arclog, libmap_rename.rename(arcdata, insts), insts
+
+
+def _with_checks(s: "Solver", lib: Lib, sig: Lib, names: dict, columns: dict, inline: frozenset[str],
+                 copies: frozenset[ScopedName]) -> tuple[str, str] | None:
+    """The arclog and the arcdata of the converted solver with the check
+    relations of the relations it folds (`arclog_convert.checks`), and, in
+    `names` and `columns`, their entries and the reason of each folded
+    relation that has none; none where it folds none."""
+    folds = folded(s, names)
+    if not folds:
+        return None
+    MERGES.clear()
+    MERGES_UNMERGED.clear()
+    try:
+        again = Solver(s.stem, lib, sig, Todo(), inline, copies, folds)
+        arclog, arcdata = again.run()
+        arclog, arcdata, insts = _finished(arclog, arcdata)
+        got = check_maps(again, folds, insts, arclog)
+    except Exception as e:  # noqa: BLE001
+        reason = f"{type(e).__name__}: {e}".splitlines()[0].replace("\t", " ")
+        got = unchecked(s, folds, f"the conversion with the check relations failed, {reason}")
+        arclog = arcdata = None
+    names["relations"] = dict(sorted({**names["relations"], **got.relations}.items()))
+    names["untranslated"] = got.untranslated
+    columns.update(got.columns)
+    return None if arclog is None else (arclog, arcdata)
+
+
+def convert_one(stem: str) -> tuple[str, str | None, str | None, Counter, Counter, list[str], ColMismatch, str | None,
+                                    tuple[str, str] | None]:
     """One solver's arclog and arcdata, its TODO kinds, its merge counts and
     its parameters whose columns do not map onto their proposer's, or the
-    error that stopped it: a pool worker's unit of work."""
-    global _LIBS, fix_labels
+    error that stopped it, and, unless the expansion config is on, the arclog
+    and the arcdata of its program with the check relations: a pool worker's
+    unit of work."""
+    global _LIBS
     if _LIBS is None:
-        from arclog_convert.lint import fix_labels
         lib, sig = Lib(LIB_DL), Lib(SIGNATURE)
         lib.extend(sig)
         _LIBS = lib, sig
@@ -98,6 +141,7 @@ def convert_one(stem: str) -> tuple[str, str | None, str | None, Counter, Counte
     MERGES.clear()
     MERGES_UNMERGED.clear()
     todo = Todo()
+    checked = None
     try:
         s = Solver(stem, lib, sig, todo)
         arclog, arcdata = s.run()
@@ -113,20 +157,19 @@ def convert_one(stem: str) -> tuple[str, str | None, str | None, Counter, Counte
             todo = Todo()
             s = Solver(stem, lib, sig, todo, stuck, copies)
             arclog, arcdata = s.run()
-        arclog = fold_or_lines(renamed(arclog))
-        insts = libmap_rename.renamed_instances(libmap_rename.instances(arclog),
-                                                libmap_rename.reads(arclog + arcdata))
-        arclog = hoist_shared(fix_labels(libmap_rename.rename(arclog, insts)))
-        arcdata = libmap_rename.rename(arcdata, insts)
+        arclog, arcdata, insts = _finished(arclog, arcdata)
+        merges, unmerged = Counter(MERGES), list(MERGES_UNMERGED)
         if paths.MACROS_ENV not in os.environ:
             names = name_map(s, insts, arclog, arcdata)
             columns = column_map(s, names, insts)
+            checked = _with_checks(s, lib, sig, names, columns, stuck, copies)
             for directory, data in ((paths.NAMES_DIR, names), (paths.COLUMNS_DIR, columns)):
                 directory.mkdir(parents=True, exist_ok=True)
                 (directory / f"{stem}.json").write_text(json.dumps(data, indent=1, sort_keys=True) + "\n")
+            checked = checked or (arclog, arcdata)
     except Exception as e:  # noqa: BLE001
-        return stem, None, None, Counter(), Counter(), [], {}, f"{type(e).__name__}: {e}"
-    return stem, arclog, arcdata, todo.kinds, Counter(MERGES), list(MERGES_UNMERGED), s.c.col_mismatch, None
+        return stem, None, None, Counter(), Counter(), [], {}, f"{type(e).__name__}: {e}", None
+    return stem, arclog, arcdata, todo.kinds, merges, unmerged, s.c.col_mismatch, None, checked
 
 
 def main(argv: list[str]) -> int:
@@ -166,7 +209,9 @@ def convert_into(stems: list[str], out: Path) -> list[str]:
     """Convert `stems` into `out` over a process pool, print the
     summary, and give the stems it converted."""
     from concurrent.futures import ProcessPoolExecutor
+    from arclog_convert.row_parity import CORPUS
     out.mkdir(parents=True, exist_ok=True)
+    corpus = out.parent / CORPUS
     total = Counter()
     per_kind_solvers = Counter()
     merges: Counter[str] = Counter()
@@ -183,13 +228,17 @@ def convert_into(stems: list[str], out: Path) -> list[str]:
         results = pool.map(convert_one, order)
     else:
         pool, results = None, map(convert_one, stems)
-    for stem, arclog, arcdata, kinds, m, um, mis, err in results:
+    for stem, arclog, arcdata, kinds, m, um, mis, err, checked in results:
         if err is not None:
             failed.append((stem, err))
             continue
         converted.append(stem)
         (out / f"{stem}.arclog").write_text(arclog)
         (out / f"{stem}.arcdata").write_text(arcdata)
+        if checked is not None:
+            corpus.mkdir(exist_ok=True)
+            (corpus / f"{stem}.arclog").write_text(checked[0])
+            (corpus / f"{stem}.arcdata").write_text(checked[1])
         merges += m
         unmerged += um
         mismatched += [(stem, name, own, prop) for name, (own, prop) in mis.items()]

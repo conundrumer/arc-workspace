@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 from collections import Counter, defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass, field as dc_field, fields as dc_fields, is_dataclass, replace as dc_replace
 from engine.program import (
     AdtType,
@@ -35,6 +36,7 @@ from arclog_convert.libmap import box as libmap_box, rewrite as libmap_rewrite
 from arclog_convert.libmap.instances import Placement
 from arclog_convert import paths
 
+from arclog_convert.checks import Fold, with_checks
 from arclog_convert.clauses import ClauseWriter
 from arclog_convert.forms import Form, Source, Todo, comment_text, label_sources, tile_frames_split
 from arclog_convert.lib import Col, ColMismatch, Lib, pascal
@@ -85,7 +87,7 @@ class Written:
 
 class Converter:
     def __init__(self, stem: str, lib: Lib, sig: Lib, todo: Todo, inline: frozenset[str] = frozenset(),
-                 own_copies: frozenset[ScopedName] = frozenset()) -> None:
+                 own_copies: frozenset[ScopedName] = frozenset(), checks: Sequence[Fold] = ()) -> None:
         self.stem = stem
         # the relations of the solver's parse and of its program that an alt
         # rederives, in clauses keyed by a constructor outside the concept
@@ -126,6 +128,8 @@ class Converter:
         # the column count of each relation and the component of each instance the solver file declares
         self.souffle_columns = {(r.scope.components, r.name): len(r.columns) for r in prog.relations}
         self.souffle_components = {(i.scope.components, i.name): i.component for i in prog.instances}
+        self.source = prog   # the solver's own program, as the file gives it
+        prog, self.checks = with_checks(prog, checks, lib)
         prog = inlined(prog, inline, lib)
         prog, self.tile_frames = tile_frames_split(prog)
         prog, self.picks, self.dropped = rewrite_picks(prog)

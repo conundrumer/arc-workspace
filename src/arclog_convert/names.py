@@ -8,18 +8,25 @@ the Souffle relations whose rows it holds, by their paths from the top level
 of the solver's program. The column map gives, for each of those, the arclog
 column of each kept leaf of the Souffle relation's columns. Both take their
 Souffle side from what the converter recorded as it wrote (`Converter.wrote`,
-`Converter.made`) and the names of the lib (`libmap.COMP`)."""
+`Converter.made`) and the names of the lib (`libmap.COMP`).
+
+A Souffle relation whose clauses the converter folds into other arclog
+relations (`folded`) has no arclog name of its own. For the row-parity check
+alone, the converter converts the solver again with a check relation for each
+(`arclog_convert.checks`), and `check_maps` gives the name map entry and the
+column map entry of each check relation, or the reason it has none."""
 
 import re
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 
-from engine.program import RelationName
+from engine.program import Qualifier, RelationName
 from souffle.parser import relation_name
 from arclog_convert import libmap
 from arclog_convert.libmap import rename as libmap_rename
 from arclog_convert.libmap.instances import Placement
 
+from arclog_convert.checks import Fold, clauses_of
 from arclog_convert.clauses import Site, site_columns
 from arclog_convert.forms import Source, renamed
 from arclog_convert.leaves import Converter, FACTS, Written
@@ -244,19 +251,14 @@ def column_map(s: "Solver", names: dict, insts: dict[str, str]) -> dict:
             else:
                 scope, relation = tuple(source["component"]), source["relation"]
                 if source["path"] is not None:
-                    written, cols, _, inst = c.resolve(relation_name(source["path"]), (), {})
+                    resolved = c.resolve(relation_name(source["path"]), (), {})
                 elif scope == ("Determine",):   # the instance a run adds (`solver.determine.run_program`) has no path in the solver's text
-                    written, cols, _, inst = c.resolve(relation_name(relation), scope, {})
+                    resolved = c.resolve(relation_name(relation), scope, {})
                 else:
                     continue
-                width = c.souffle_arity(scope, relation)
-                if cols is None or width is None:
+                got = _own_columns(c, resolved, scope, relation, (scope, relation))
+                if got is None:
                     continue
-                kept = tuple(j for j in range(width) if j not in c.dropped.get((scope, relation), ()))
-                if len(kept) != len(cols):
-                    continue
-                got = _entry(c.writings.get(written, {}), site_columns(c, cols, inst),
-                             lambda sites: _souffle_columns(sites, kept, width))
             out.setdefault(arc, {})[source["relation"] if source["path"] is None else source["path"]] = got
     return out
 
@@ -290,6 +292,24 @@ def _read_at(sites: list[list[Site]], record: tuple[tuple[Source, ...], ...]) ->
             for column, at in zip(sites, record)]
 
 
+def _own_columns(c: "Converter", resolved: tuple, scope: tuple[str, ...], relation: str,
+                 dropped: tuple[tuple[str, ...], str]) -> list[list[dict]] | dict | None:
+    """The entry of the Souffle relation `relation` declared in `scope`, for
+    the arclog relation `resolved` (`Converter.resolve`) whose columns stand
+    for those of the Souffle relation one to one, but for the columns the
+    converter dropped from `dropped` (`_entry` gives its form); none where
+    the columns differ in number."""
+    written, cols, _, inst = resolved
+    width = c.souffle_arity(scope, relation)
+    if cols is None or width is None:
+        return None
+    kept = tuple(j for j in range(width) if j not in c.dropped.get(dropped, ()))
+    if len(kept) != len(cols):
+        return None
+    return _entry(c.writings.get(written, {}), site_columns(c, cols, inst),
+                  lambda sites: _souffle_columns(sites, kept, width))
+
+
 def _souffle_columns(columns: list[list[Site]], placement: tuple[Placement, ...], width: int) -> list[list[dict]]:
     """The sites of the arclog columns `columns`, as the entries of the
     `width` columns of the Souffle relation they are placed in by
@@ -304,4 +324,82 @@ def _souffle_columns(columns: list[list[Site]], placement: tuple[Placement, ...]
             if at is not None:
                 out[at].append({"leaf": list(path), "label": site.label, "field": site.field,
                                 "example": site.leaf.kind == "example"})
+    return out
+
+
+def _fold_source(c: "Converter", fold: Fold) -> dict:
+    """The Souffle relation `fold`, as `_souffle_relation` gives it."""
+    return _souffle_relation(c, Written(fold.scope, fold.relation, False))
+
+
+def folded(s: "Solver", names: dict) -> list[Fold]:
+    """Each Souffle relation that a clause of the solver with a body heads,
+    in the top level or in the solver's own `Parse` component, that is not
+    declared `inline`, and that no arclog name of the name map `names`
+    stands for: the relations the converter folds into other arclog
+    relations, such as an input of an expanded instance that its shape reads
+    inline, and a relation written as a quantifier."""
+    c = s.c
+    stood = {r["path"] for ss in names["relations"].values() for r in ss}
+    inline = {(r.scope.components, r.name) for r in c.source.relations if Qualifier.INLINE in r.qualifiers}
+    out = []
+    for fold, units in clauses_of(c.source).items():
+        if all(u.body is None for u in units) or (fold.scope, fold.name) in inline and not fold.instances:
+            continue
+        path = _fold_source(c, fold)["path"]
+        if path is not None and path not in stood:
+            out.append(fold)
+    return out
+
+
+@dataclass(frozen=True)
+class Checks:
+    """What the check relations of one converted solver add to its maps."""
+
+    relations: dict[str, list[dict]] = field(default_factory=dict)
+    """The name map entry of each check relation that the converted program
+    writes: its arclog name, with the Souffle relation it holds the clauses of."""
+    columns: dict[str, dict[str, list[list[dict]]]] = field(default_factory=dict)
+    """The column map entry of each of them."""
+    untranslated: dict[str, str] = field(default_factory=dict)
+    """For each other folded relation, by its path from the top level, why
+    the converted program has no check relation of it."""
+
+
+def unchecked(s: "Solver", folds: list[Fold], reason: str) -> Checks:
+    """The maps of a solver whose conversion with the check relations of
+    `folds` failed for `reason`: no entry, and `reason` for each."""
+    at = (_fold_source(s.c, f)["path"] for f in folds)
+    return Checks(untranslated={p: reason for p in at if p is not None})
+
+
+def check_maps(s: "Solver", folds: list[Fold], insts: dict[str, str], arclog: str) -> Checks:
+    """The maps of the check relations of `folds`, for the solver `s` converted
+    with them (`Converter.checks`) into the text `arclog`, after the renames
+    `convert_one` applies (`insts`). A relation whose path from the top level
+    the solver's text lacks is left out."""
+    c = s.c
+    read = _relations_read(arclog)
+    out = Checks()
+    for fold in folds:
+        source = _fold_source(c, fold)
+        path = source["path"]
+        if path is None:
+            continue
+        check = c.checks.get(fold)
+        if check is None:
+            out.untranslated[path] = "the converter has no declaration of the relation's columns"
+            continue
+        arc = c.names.get((fold.scope, check))
+        name = None if arc is None else _renamed_name("&" + arc, insts)
+        if name is None or name not in read:
+            out.untranslated[path] = "the converter wrote no clause of the relation"
+            continue
+        at = path.removesuffix(fold.relation) + check
+        got = _own_columns(c, c.resolve(relation_name(at), (), {}), fold.scope, fold.relation, (fold.scope, check))
+        if got is None:
+            out.untranslated[path] = "the columns of the clauses the converter wrote do not map onto those of the relation"
+            continue
+        out.relations[name] = [source]
+        out.columns[name] = {path: got}
     return out

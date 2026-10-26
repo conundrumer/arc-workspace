@@ -33,7 +33,19 @@ first of these that holds (`classify`):
   columns of the writing the case takes (`parity.column_entry`). Two Souffle
   columns that the entry gives one label hold the engine's one column twice, so
   that a Souffle row whose two columns differ is a row of Souffle's side alone.
-- `uncompared`, "no entry in the column map".
+- `uncompared`, "no entry in the column map", or, for a relation that the
+  converter folds and made no check relation of, the converter's reason
+  (`NameMap.untranslated`).
+
+A Souffle relation that the converter folds into other arclog relations, such
+as an input of an instance that its shape reads inline or a relation written
+as a quantifier, has a check relation in the corpus (`arclog_convert.checks`):
+the converter's translation of the relation's own clauses, under an arclog
+name of its own that no relation reads. The name map gives that name with the
+Souffle relation, so the relation is compared like any other. An `equal` line
+of such a relation proves that the converter's translation of the relation's
+clauses derives Souffle's rows of it; the fold of those clauses into the
+relations that read them is checked by those relations' own lines.
 
 Each arclog relation with `&` of the name map (`relations` and `unmapped`)
 that no relation of the run maps to (`relation_names`), and that is no relation of
@@ -233,6 +245,18 @@ class Reason(StrEnum):
         return LeftOut.UNCOMPARED if self in (Reason.NO_ENTRY, Reason.NO_RELATION) else LeftOut.SKIP
 
 
+@dataclass(frozen=True)
+class Untranslated:
+    """The converter's reason for no check relation of a relation it folds
+    (`NameMap.untranslated`), which stands in place of `Reason.NO_ENTRY`."""
+
+    value: str
+
+    @property
+    def verdict(self) -> LeftOut:
+        return LeftOut.UNCOMPARED
+
+
 def lib_inputs(program: Program) -> frozenset[tuple[str | None, int]]:
     """The file and line of each `// @input` comment that follows a
     declaration on its line, in the lib the program includes."""
@@ -287,7 +311,7 @@ def classify(loaded: Loaded, columns: Mapping[str, Mapping[str, Any]], read: Seq
     written = {graph.place(at, u.head.relation) for u in program.units if u.span is None or own(u.span)
                for at in graph.paths_of(u)}
     mapped: list[Pairing] = []
-    left: dict[str, Reason] = {}
+    left: dict[str, Reason | Untranslated] = {}
     run = every_relation(loaded.eng, loaded.solver.program)
     for r in run:
         found = graph.decl((), r)
@@ -305,7 +329,8 @@ def classify(loaded: Loaded, columns: Mapping[str, Mapping[str, Any]], read: Seq
             elif r.text in columns.get(name, {}):
                 mapped.append(Pairing(r, name, r.text))
             else:
-                left[name] = Reason.NO_ENTRY
+                left[name] = Untranslated(loaded.names.untranslated[r.text]) \
+                    if loaded.names is not None and r.text in loaded.names.untranslated else Reason.NO_ENTRY
     stood = {name for r in run for name in relation_names(loaded.names, r)}
     left.update((n, Reason.INLINE if inline(loaded.names, graph, n) else Reason.NO_RELATION)
                 for n in read if n not in stood)

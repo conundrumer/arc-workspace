@@ -1,10 +1,11 @@
 """The cases the row parity check runs take each ALT of the solver, and the relations it leaves out are `skip` or `uncompared` by the rule of `parity.rerun`."""
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-from parity import case_name, rerun
+from parity import NameMap, case_name, rerun
 
 SOLVER = """// aaaaaaaa
 // @keywords: test
@@ -61,3 +62,18 @@ def test_a_relation_is_skipped_or_uncompared_by_its_kind(loaded: rerun.Loaded) -
 def test_an_arclog_relation_that_no_relation_of_the_run_stands_for_is_uncompared(loaded: rerun.Loaded) -> None:
     _, left = rerun.classify(loaded, {}, ["&ghost"])
     assert {"name": "&ghost", "verdict": "uncompared", "reason": rerun.Reason.NO_RELATION.value} in left
+
+
+def test_a_folded_relation_is_paired_with_the_entry_of_its_check_relation(loaded: rerun.Loaded) -> None:
+    names = NameMap.of({"relations": {"&check_marked": [{"component": [], "relation": "marked", "path": "marked"}]},
+                        "constructors": {}, "unmapped": []})
+    columns = {"&check_marked": {"marked": [[{"leaf": [], "label": "K", "field": None, "example": False}]]}}
+    mapped, left = rerun.classify(replace(loaded, names=names), columns, [])
+    assert [(at.relation.text, at.name, at.key) for at in mapped] == [("marked", "&check_marked", "marked")]
+    assert "souffle:marked" not in {entry["name"] for entry in left}
+
+
+def test_a_folded_relation_with_no_check_relation_is_uncompared_for_the_converters_reason(loaded: rerun.Loaded) -> None:
+    names = NameMap.of({"relations": {}, "constructors": {}, "unmapped": [], "untranslated": {"marked": "the converter wrote no clause of the relation"}})
+    _, left = rerun.classify(replace(loaded, names=names), {}, [])
+    assert {"name": "souffle:marked", "verdict": "uncompared", "reason": "the converter wrote no clause of the relation"} in left

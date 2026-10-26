@@ -44,3 +44,10 @@ def test_a_change_to_its_souffle_solver_file_makes_it_stale(tmp_path):
     setup(tmp_path)
     (tmp_path / "solvers" / f"{STEM}.dl").write_text("changed")
     assert stale(tmp_path) == [STEM]
+
+
+def test_a_change_to_its_check_copy_makes_it_stale(tmp_path):
+    setup(tmp_path)
+    (tmp_path / "gen_check").mkdir()
+    (tmp_path / "gen_check" / f"{STEM}.arclog").write_text("log with a check relation")
+    assert stale(tmp_path) == [STEM]
