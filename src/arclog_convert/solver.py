@@ -37,7 +37,7 @@ from arclog_convert.forms import (
     unplaced_rows,
     wrap_param,
 )
-from arclog_convert.leaves import Converter, Written
+from arclog_convert.leaves import Converter, ScopedName, Written
 from arclog_convert.lib import (
     DET_COLS,
     KeyedTable,
@@ -171,7 +171,7 @@ class Claim:
 
 class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
     def __init__(self, stem: str, lib: Lib, sig: Lib, todo: Todo, inline: frozenset[str] = frozenset(),
-                 own_copies: frozenset[str] = frozenset()) -> None:
+                 own_copies: frozenset[ScopedName] = frozenset()) -> None:
         self.stem = stem
         self.todo = todo
         self.c = Converter(stem, lib, sig, todo, inline, own_copies)
@@ -361,10 +361,10 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
                 c.names[(("Parse",), u.head.relation.name)] = "__in__"
         # a copy of the program's parse in the determination takes the name
         # of what it copies, after the program's parse
-        for key, x in c.det_parse_copies.items():
+        for key, (scope, x) in c.det_copies.items():
             if (("Params",), x) in c.rels:
                 c.rel_name(("Params",), x)   # a parameter's name is the one claim texts give it
-            c.rel_name(("Parse",), x)
+            c.rel_name(scope, x)
             cand, k = x, 2
             while cand in c.used_names:
                 cand, k = f"{x}{k}", k + 1

@@ -35,7 +35,7 @@ from arclog_convert.forms import (
     topo,
     without_repeats,
 )
-from arclog_convert.leaves import Written
+from arclog_convert.leaves import ScopedName, Written
 from arclog_convert.lib import derive_proposer
 from arclog_convert.terms import name_of
 
@@ -237,12 +237,15 @@ class CasesMixin:
                     grew = True
         return topo([f for f in concept if f.side == "DET" and f.name in reading - derived])
 
-    def own_copies_needed(self) -> frozenset[str]:
-        """The relations of the solver's parse that a `DET` of the concept
-        program reads, directly or through other relations, that an alt
-        rederives, and that the Souffle determination derives for itself:
-        the determination gets its own copies of them (`split_det_parse`), so
-        that no alt rederives what a `DET` of the concept program reads."""
+    def own_copies_needed(self) -> frozenset[ScopedName]:
+        """The relations of the solver's program and of its parse that a `DET`
+        of the concept program reads, directly or through other relations,
+        that an alt rederives in clauses keyed by a constructor outside the
+        concept case, and that the Souffle determination derives for itself
+        (a relation of the parse) or reads from the program: the
+        determination gets its own copies of them (`split_det_parse`,
+        `det_program_copies`), so that no alt rederives what a `DET` of the
+        concept program reads."""
         forms = [f.concept_form or f for f in self.render_main if not f.concept_dead]
         by_name: dict[str, list[Form]] = defaultdict(list)
         for f in forms:
@@ -254,8 +257,8 @@ class CasesMixin:
             if n not in reached:
                 reached.add(n)
                 todo.extend(m for f in by_name[n] for m in f.reads)
-        parse = {"&" + v: k[1] for k, v in self.c.names.items() if k[0] == ("Parse",)}
-        return frozenset(parse[n] for n in reached & self.alt_derived if parse.get(n) in self.c.rederived_in_parse)
+        return frozenset(k for k, v in self.c.names.items()
+                         if "&" + v in reached & self.alt_derived and k in self.c.rederived)
 
     # ---- arcdata
 

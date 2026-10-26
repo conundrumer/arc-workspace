@@ -52,6 +52,9 @@ from arclog_convert.terms import (
 
 FACTS = {"in", "ex_in", "ex_out"}
 
+type ScopedName = tuple[tuple[str, ...], str]
+"""A relation or an instance of the solver's program: the component path it is declared under, and its name there."""
+
 
 # --------------------------------------------------------------------------
 # Leaves: a column's term split into the parts arclog keeps
@@ -82,12 +85,13 @@ class Written:
 
 class Converter:
     def __init__(self, stem: str, lib: Lib, sig: Lib, todo: Todo, inline: frozenset[str] = frozenset(),
-                 own_copies: frozenset[str] = frozenset()) -> None:
+                 own_copies: frozenset[ScopedName] = frozenset()) -> None:
         self.stem = stem
-        # the relations of the solver's parse that an alt rederives and the
-        # determination derives for itself, as `split_det_parse` finds them,
-        # and those of them that the determination gets copies of
-        self.rederived_in_parse: set[str] = set()
+        # the relations of the solver's parse and of its program that an alt
+        # rederives, in clauses keyed by a constructor outside the concept
+        # case, as `split_det_parse` finds them, and those of them that the
+        # determination gets copies of
+        self.rederived: set[ScopedName] = set()
         self.own_copies = own_copies
         # each relation or instance this pass makes that the Souffle program
         # does not declare, by its scope and name, with each thing it stands
@@ -155,6 +159,7 @@ class Converter:
         self.prog = prog = dc_replace(prog, units=tuple(record_eqs(u, self.record_fields) for u in prog.units))
         self.prog = prog = self.split_read_inputs(prog)
         self.prog = prog = self.split_det_parse(prog)
+        self.prog = prog = self.det_program_copies(prog)
         self.rels = {(r.scope.components, r.name): r for r in prog.relations}
         self.prog = prog = self.candidate_parse(prog)
         self.prog = prog = self.demonstrated(prog)
@@ -1294,15 +1299,22 @@ class Converter:
         determination reads them. Each relation and instance of the parse
         that reads an input fed otherwise is the determination's own: a copy
         keyed on Example, which the determination's readers read. So is each
-        relation or instance that an alt rederives, in clauses keyed by a
-        constructor outside the concept case, where a `DET` of the concept
-        program reads it (`own_copies`): the copy has the concept case's
-        clauses alone, so that no alt rederives what such a `DET` reads."""
+        relation or instance of the parse that an alt rederives, in clauses
+        keyed by a constructor outside the concept case, where a `DET` of the
+        concept program reads it (`own_copies`): the copy has the concept
+        case's clauses alone, so that no alt rederives what such a `DET`
+        reads. An input whose program feed reads a relation of the program
+        that `det_program_copies` copies is fed otherwise too: the
+        determination's feed of it reads no relation an alt rederives."""
         from engine.program import Column, DeclId, Scope, Span, TypeName, UnitId
         det = ("Determine",)
-        self.det_parse_copies: dict[tuple[tuple[str, ...], str], str] = {}   # a copy -> the name it is a copy of
+        self.det_copies: dict[ScopedName, ScopedName] = {}   # a copy -> the relation it is a copy of
         concept = set(self.concept_of().values())
-        other_ctors = {k.name for _, adt_ in self.point_fields() for k in adt_.constructors} - concept
+        other_ctors = self.other_ctors()
+        concept_program, program_rederived = self.program_concept(prog)
+        self.rederived |= {((), x) for x in program_rederived}
+        # the relations of the program that an alt rederives and a `DET` of the concept program reads, and those that read them
+        copied_program = self.tainted_program(concept_program, program_rederived)
 
         prog_inst = {i.component: i.name for i in prog.instances if i.scope.components == () and i.component in self.comps}
         parse_rels = {r.name: r for r in prog.relations if r.scope.components == ("Parse",)}
@@ -1346,6 +1358,19 @@ class Converter:
         def key_at(rn: RelationName) -> int | None:
             r = parse_rels.get(rn.name) if not rn.instances else None
             return next((i for i, c_ in enumerate(r.columns) if c_.type.name == "Key"), None) if r else None
+
+        def instance_key_at(rn: RelationName) -> int | None:
+            # the key column of a relation of an instance of the parse: for an
+            # instance of a lib component, the first column typed by the
+            # parameter that the parse's Key stands for (an input such as
+            # `dir(D)` has none); for another, the first column
+            inst = parse_insts.get(rn.instances[0])
+            if inst is None or len(rn.instances) > 1 or inst.component not in self.lib.comps:
+                return 0
+            tparams, rels = self.lib.relations(inst.component)
+            lr = next((r for r in rels if r.name == rn.name), None)
+            keyed = {p for p, a in zip(tparams, inst.type_args) if a.name == "Key"}
+            return next((i for i, c_ in enumerate(lr.cols) if c_.type in keyed), None) if lr else None
 
         case_rels = {r.name for r in prog.relations if r.scope.components == () and r.columns
                      and all(c_.type.name in self.case_types for c_ in r.columns)} | {"impl_choice"}
@@ -1590,9 +1615,15 @@ class Converter:
             # the parse's own clauses that a constructor outside the concept case keys
             alternate_ctors = {id(u): {m for t in u.head.args for m in ctor_names(t)} & other_ctors for u in parse_units}
             rederived |= {h for u in parse_units if alternate_ctors[id(u)] and (h := node(u.head.relation)) is not None}
-            self.rederived_in_parse |= rederived
+            self.rederived |= {(("Parse",), x) for x in rederived}
+            # an input whose program feed reads a relation that the determination copies, before the `stand` rewrite or not
+            fed_from_copies = {x for x, clauses in prog_clauses.items()
+                               if any(a.relation.name in copied_program and not a.relation.instances
+                                      for i, u in enumerate(clauses) if i not in alternates(clauses)
+                                      for a in self._atoms(u.body or ()))}
             differ = {x for x, (a, b) in feeds.items()
-                      if sorted(a) != sorted(b) and not (a and concept_feed(x, det_feeds[x]))} | (rederived & self.own_copies)
+                      if sorted(a) != sorted(b) and not (a and concept_feed(x, det_feeds[x]))} \
+                | {x for x in rederived if (("Parse",), x) in self.own_copies} | fed_from_copies
             if not differ:
                 continue
             # the parse's nodes that read an input fed otherwise
@@ -1634,7 +1665,7 @@ class Converter:
                     cand, k = f"{n}__{x}{k}", k + 1
                 taken.add(cand)
                 own[x] = cand
-                self.det_parse_copies[(det, cand)] = x
+                self.det_copies[(det, cand)] = (("Parse",), x)
 
             def to_det(rn: RelationName, from_parse: bool):
                 if from_parse:
@@ -1705,9 +1736,9 @@ class Converter:
                                                 type_args=retype(i.type_args)))
             base = prog.next_unit_index()
             for u in parse_units:
-                if node(u.head.relation) in copy and not (alternate_ctors[id(u)] and node(u.head.relation) in self.own_copies):
+                if node(u.head.relation) in copy and not (alternate_ctors[id(u)] and (("Parse",), node(u.head.relation)) in self.own_copies):
                     # the key is the example, E
-                    hk = 0 if u.head.relation.instances else key_at(u.head.relation)
+                    hk = instance_key_at(u.head.relation) if u.head.relation.instances else key_at(u.head.relation)
                     k0 = u.head.args[hk] if hk is not None and hk < len(u.head.args) else None
                     used: list[str] = []
                     walk_vars((u.head, u.body), used)
@@ -1735,33 +1766,11 @@ class Converter:
                     units += new_units
             if not parse_units:
                 units += new_units
-            # a copy no clause derives is empty, and so is an instance copy
-            # no input clause feeds: a clause that reads it holds nowhere,
-            # and a negation of it holds everywhere
-            copies = {r.name for r in new_rels} | {i.name for i in new_insts}
-
-            def of(a: Atom) -> str:
-                return a.relation.instances[0] if a.relation.instances else a.relation.name
-            while True:
-                heads = {of(u.head) for u in units if u.scope.components == det}
-                empty = copies - heads
-                kept = []
-                for u in units:
-                    if u.scope.components == det and any(
-                            isinstance(l, AtomLiteral) and of(l.atom) in empty and not l.negated for l in u.body or ()):
-                        continue
-                    if u.scope.components == det and u.body:
-                        u = dc_replace(u, body=tuple(l for l in u.body if not (
-                            isinstance(l, AtomLiteral) and l.negated and of(l.atom) in empty)))
-                    kept.append(u)
-                if len(kept) == len(units):
-                    units = kept
-                    break
-                units = kept
+            units, empty = self.without_empty(units, det, {r.name for r in new_rels} | {i.name for i in new_insts})
             new_rels = [r for r in new_rels if r.name not in empty]
             new_insts = [i for i in new_insts if i.name not in empty]
-            for key_ in [k_ for k_ in self.det_parse_copies if k_[1] in empty]:
-                del self.det_parse_copies[key_]
+            for key_ in [k_ for k_ in self.det_copies if k_[1] in empty]:
+                del self.det_copies[key_]
             prog = dc_replace(prog, types=prog.types + tuple(new_types), relations=prog.relations + tuple(new_rels),
                               instances=prog.instances + tuple(new_insts), units=tuple(units))
             for i in new_insts:
@@ -1770,6 +1779,130 @@ class Converter:
                 self.types[(det, t.name)] = t
             self.rels = {(r.scope.components, r.name): r for r in prog.relations}
         return prog
+
+    @staticmethod
+    def without_empty(units, det: tuple[str, ...], copies: set[str]):
+        """`units` and the `copies` that no clause of `det` derives, where a
+        copy no clause derives is empty, and so is an instance copy no input
+        clause feeds: a clause of `det` that reads an empty copy holds
+        nowhere, and a negation of it holds everywhere."""
+        def of(a: Atom) -> str:
+            return a.relation.instances[0] if a.relation.instances else a.relation.name
+        while True:
+            heads = {of(u.head) for u in units if u.scope.components == det}
+            empty = copies - heads
+            kept = []
+            for u in units:
+                if u.scope.components == det and any(
+                        isinstance(l, AtomLiteral) and of(l.atom) in empty and not l.negated for l in u.body or ()):
+                    continue
+                if u.scope.components == det and u.body:
+                    u = dc_replace(u, body=tuple(l for l in u.body if not (
+                        isinstance(l, AtomLiteral) and l.negated and of(l.atom) in empty)))
+                kept.append(u)
+            if len(kept) == len(units):
+                return kept, empty
+            units = kept
+
+    def other_ctors(self) -> set[str]:
+        """The constructors of the points' ADTs outside the concept case."""
+        return {k.name for _, adt_ in self.point_fields() for k in adt_.constructors} - set(self.concept_of().values())
+
+    def program_concept(self, prog) -> tuple[dict[str, list[Unit]], set[str]]:
+        """Each relation of the program, with its clauses that hold in the
+        concept case: those that no constructor outside the concept case
+        keys, in the head, in a positive read of a relation, or by an
+        equation. And the relations with a clause that such a constructor keys:
+        an alt rederives them."""
+        other = self.other_ctors()
+
+        def keyed(u: Unit) -> bool:
+            names = [m for t in u.head.args for m in ctor_names(t)]
+            for l in u.body or ():
+                if isinstance(l, AtomLiteral) and not l.negated:
+                    names += [m for t in l.atom.args for m in ctor_names(t)]
+                elif isinstance(l, Comparison) and l.op == ComparisonOperator.EQ:
+                    names += ctor_names(l.lhs) + ctor_names(l.rhs)
+            return bool(other.intersection(names))
+        concept: dict[str, list[Unit]] = defaultdict(list)
+        rederived: set[str] = set()
+        for u in prog.units:
+            if u.scope.components == () and not u.head.relation.instances:
+                if keyed(u):
+                    rederived.add(u.head.relation.name)
+                else:
+                    concept[u.head.relation.name].append(u)
+        return concept, rederived
+
+    def tainted_program(self, concept: dict[str, list[Unit]], rederived: set[str]) -> set[str]:
+        """The relations of the program that the determination is to copy
+        (`own_copies`) and an alt rederives, and each relation whose clauses
+        of the concept case read one of them, directly or through another."""
+        tainted = {x for x in rederived if ((), x) in self.own_copies}
+        grew = True
+        while grew:
+            grew = False
+            for x, us in concept.items():
+                if x not in tainted and any(a.relation.name in tainted and not a.relation.instances
+                                            for u in us for a in self._atoms(u.body or ())):
+                    tainted.add(x)
+                    grew = True
+        return tainted
+
+    def det_program_copies(self, prog):
+        """Each relation of the program that `tainted_program` finds and the
+        determination reads, directly or through another such relation, gets
+        a copy in the determination under a name of its own, with its clauses
+        of the concept case alone, which reads the copies of the relations it
+        reads; the determination's clauses read the copies. So no alt
+        rederives what a `DET` of the concept program reads. A relation that
+        the determination declares under the same name, or that a clause
+        reads, is left as it is."""
+        from engine.program import DeclId, Scope, UnitId
+        det = ("Determine",)
+        concept, rederived = self.program_concept(prog)
+        det_names = {r.name for r in prog.relations if r.scope.components == det} | \
+                    {i.name for i in prog.instances if i.scope.components == det}
+
+        def reads(us) -> set[str]:
+            return {a.relation.name for u in us for a in self._atoms(u.body or ()) if not a.relation.instances}
+        tainted = self.tainted_program(concept, rederived)
+        tainted -= {x for x in tainted if x in det_names or reads(concept[x]) & det_names}
+        todo = list(reads(u for u in prog.units if u.scope.components == det) & tainted)
+        copy: set[str] = set()
+        while todo:
+            x = todo.pop()
+            if x not in copy:
+                copy.add(x)
+                todo += reads(concept[x]) & tainted
+        if not copy:
+            return prog
+        own: dict[str, str] = {}
+        for x in sorted(copy):
+            cand, k = f"own__{x}", 2
+            while cand in det_names:
+                cand, k = f"own__{x}{k}", k + 1
+            det_names.add(cand)
+            own[x] = cand
+            self.det_copies[(det, cand)] = ((), x)
+
+        def reread(body):
+            for x, cand in own.items():
+                body = rename_rel(body, RelationName((), x), RelationName((), cand))
+            return body
+        decls = {r.name: r for r in prog.relations if r.scope.components == ()}
+        new_rels = [dc_replace(decls[x], id=DeclId(prog.next_decl_index() + i), name=own[x], scope=Scope(det))
+                    for i, x in enumerate(sorted(copy))]
+        base = prog.next_unit_index()
+        new_units = [Unit(UnitId(base + j), Scope(det), dc_replace(u.head, relation=RelationName((), own[x])),
+                          reread(u.body), u.plan, u.span)
+                     for j, (x, u) in enumerate((x, u) for x in sorted(copy) for u in concept[x])]
+        units = [dc_replace(u, body=reread(u.body)) if u.scope.components == det else u for u in prog.units]
+        units, empty = self.without_empty(units + new_units, det, set(own.values()))
+        for key_ in [k_ for k_ in self.det_copies if k_[1] in empty]:
+            del self.det_copies[key_]
+        return dc_replace(prog, relations=prog.relations + tuple(r for r in new_rels if r.name not in empty),
+                          units=tuple(units))
 
     @staticmethod
     def _atoms(lits):
