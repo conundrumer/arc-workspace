@@ -4,9 +4,10 @@
 
 use super::reads::forms_within;
 use super::types::result;
+use super::prefix::{refused, whole};
 use super::{Check, CheckId, CheckInput, CheckResult, LabelInScope, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::eval::ir::atom_modes;
-use crate::safety::{body_labels, conjunct_labels, each_label_use_at, bound_labels, conjunct_label_set, LabelCounts, list_of, mode_holds, orientation_labels, parts_of};
+use crate::safety::{body_labels, conjunct_labels, each_label_use_at, bound_labels, conjunct_label_set, LabelCounts, list_of, mode_holds, mode_may_hold, orientation_labels, parts_of};
 use std::cell::RefCell;
 
 use crate::hash::{StableHashMap, StableHashSet};
@@ -46,23 +47,103 @@ impl Check for SafetyCheck {
     /// binds from the conjuncts written before it, or at that atom itself, or at a `NOT` or an
     /// `ALL` written before the conjuncts that bind its outer label.
     fn check(&self, input: &CheckInput<'_>) -> CheckResult {
-        let registry = input.scope.registry;
-        let mut refused: Vec<(&'static str, NodePath)> = Vec::new();
-        for form_body in form_bodies(input.form) {
-            let scope = label_scope(input.scope.labels, &form_body.at);
-            let types = |label: LabelId| scope.iter().find(|entry| entry.label == label).and_then(|entry| entry.ty.clone());
-            let walk = Walk { registry, types: &types, memo: input.scope.bound };
-            refused.extend(walk.refusals(&form_body));
-        }
+        let refused = self.found(input, &|_, _| true);
         if refused.is_empty() {
             return CheckResult::Pass;
         }
         let order = CanonicalOrder::of(input.form, &mut SearchBudget::new());
-        result(refused.into_iter().map(|(message, at)| Refusal { message: message.into(), at: order.canonical_path(&at) }).collect())
+        result(refused.into_iter().map(|found| Refusal { message: found.fault.message().into(), at: order.canonical_path(&found.at) }).collect())
     }
 
+    /// Refuses at each refusal of [`SafetyCheck::check`] on the partial form
+    /// that no completion of the prefix undoes, as `Fault::stands` gives
+    /// it for each kind of refusal, at the refusal's source path.
+    ///
+    /// The refusal of an atom, and the refusal of a `NOT` or an `ALL`
+    /// written before the conjuncts that bind its label, stand at a complete
+    /// node, as `super::prefix::settled` keeps them: the conjuncts before
+    /// that atom, `NOT` or `ALL` are complete, and a node written later adds
+    /// labels outside them, which makes a label local to the branches of an
+    /// `OR` among them an outer label, and so binds no more labels before it
+    /// (the rule of [`crate::safety::bound_labels`] on labels local to a
+    /// part).
     fn check_prefix(&self, prefix: &Prefix<'_>) -> PrefixResult {
-        super::prefix::settled(prefix, self)
+        let found = self.found(&whole(prefix), &|fault, at| fault.stands(prefix, at));
+        refused(found.into_iter().map(|found| Refusal { message: found.fault.message().into(), at: found.at }).collect())
+    }
+}
+
+impl SafetyCheck {
+    /// The refusals of the safety check on the form of `input`, at their
+    /// source paths, that `keep` keeps, each label refused once at the first
+    /// place of those that `keep` keeps.
+    fn found(&self, input: &CheckInput<'_>, keep: &dyn Fn(&Fault, &NodePath) -> bool) -> Vec<Found> {
+        let registry = input.scope.registry;
+        let mut refused = Vec::new();
+        for form_body in form_bodies(input.form) {
+            let scope = label_scope(input.scope.labels, &form_body.at);
+            let types = |label: LabelId| scope.iter().find(|entry| entry.label == label).and_then(|entry| entry.ty.clone());
+            let walk = Walk { registry, types: &types, memo: input.scope.bound };
+            refused.extend(walk.refusals(&form_body, keep));
+        }
+        refused
+    }
+}
+
+/// A refusal of the safety check at a source path: the label it is about,
+/// where it is about one, why it refuses, and where.
+struct Found {
+    label: Option<LabelId>,
+    fault: Fault,
+    at: NodePath,
+}
+
+/// Why the safety check refuses, with what decides whether a completion of
+/// a prefix undoes it.
+enum Fault {
+    /// A label used in the body at `body` that the body leaves unbound. A
+    /// conjunct written later in the body can bind it.
+    Unbound { body: NodePath },
+    /// The label of a column of the form that the body at `body` leaves
+    /// unbound. A conjunct written later in the body can bind it.
+    ColumnUnbound { body: NodePath },
+    /// A label at a site of the atom at `atom`, which no mode of its relation
+    /// binds from the conjuncts written before it. `completes` is whether
+    /// some mode holds where each column at which the atom has no site yet
+    /// counts as bound, as [`mode_may_hold`] gives it: a site written later
+    /// can bind such a column.
+    NoMode { atom: NodePath, completes: bool },
+    /// The atom, which no mode of its relation holds at, from the conjuncts
+    /// written before it.
+    AtomNoMode,
+    /// A label at a `NOT` or an `ALL` written before the conjuncts that bind
+    /// it.
+    Misordered,
+}
+
+impl Fault {
+    fn message(&self) -> &'static str {
+        match self {
+            Fault::Unbound { .. } => "the body leaves the label unbound",
+            Fault::ColumnUnbound { .. } => "the body leaves the label of a column unbound",
+            Fault::NoMode { .. } => "no mode of the atom's relation has its columns bound by the conjuncts written before it",
+            Fault::AtomNoMode => "no mode of the atom's relation has its columns written and bound by the conjuncts written before it",
+            Fault::Misordered => "the `NOT` or the `ALL` stands before the conjuncts that bind the label",
+        }
+    }
+
+    /// Whether no completion of `prefix` undoes the refusal, found at `at`:
+    /// a refusal that reads the whole body stands once that body is
+    /// complete, and one at a site of an atom stands once the atom is
+    /// complete, or while it is open, where no mode holds even with the
+    /// columns that the atom has no site at bound. The other refusals
+    /// stand where the node at `at` is complete.
+    fn stands(&self, prefix: &Prefix<'_>, at: &NodePath) -> bool {
+        match self {
+            Fault::Unbound { body } | Fault::ColumnUnbound { body } => !prefix.is_open(body),
+            Fault::NoMode { atom, completes } => !prefix.is_open(atom) || !completes,
+            Fault::AtomNoMode | Fault::Misordered => !prefix.is_open(at),
+        }
     }
 }
 
@@ -353,9 +434,9 @@ struct Walk<'a> {
 }
 
 impl Walk<'_> {
-    /// The refusals of `form_body`, each label once, at the first place
-    /// that refuses it.
-    fn refusals(&self, form_body: &FormBody<'_>) -> Vec<(&'static str, NodePath)> {
+    /// The refusals of `form_body` that `keep` keeps, each label once, at
+    /// the first place that refuses it.
+    fn refusals(&self, form_body: &FormBody<'_>, keep: &dyn Fn(&Fault, &NodePath) -> bool) -> Vec<Found> {
         let given: StableHashSet<LabelId> = form_body.given.iter().copied().collect();
         let outside = form_body.outside();
         let mut found = Vec::new();
@@ -363,7 +444,7 @@ impl Walk<'_> {
         let bound = bound_labels(&form_body.body.value().conjuncts.iter().collect::<Vec<_>>(), &given, &outside, &|atom| atom_modes(self.registry, atom), self.types);
         let mut check_use = |at: &NodePath, use_: LabelUse| {
             if let Some(label) = use_label(use_).filter(|label| !bound.contains(label)) {
-                found.push((Some(label), "the body leaves the label unbound", at.clone()));
+                found.push(Found { label: Some(label), fault: Fault::Unbound { body: form_body.at.clone() }, at: at.clone() });
             }
         };
         each_label_use_at(NodeRef::Body(form_body.body.value()), &form_body.at, &mut check_use);
@@ -372,10 +453,10 @@ impl Walk<'_> {
         }
         let held = body_labels(form_body.body.value());
         for &label in form_body.columns.iter().filter(|label| !bound.contains(label) && !held.contains(label)) {
-            found.push((Some(label), "the body leaves the label of a column unbound", form_body.at.clone()));
+            found.push(Found { label: Some(label), fault: Fault::ColumnUnbound { body: form_body.at.clone() }, at: form_body.at.clone() });
         }
         let mut seen = StableHashSet::default();
-        found.into_iter().filter(|(label, _, _)| label.is_none_or(|label| seen.insert(label))).map(|(_, message, at)| (message, at)).collect()
+        found.into_iter().filter(|found| keep(&found.fault, &found.at)).filter(|found| found.label.is_none_or(|label| seen.insert(label))).collect()
     }
 
     /// The labels that the conjuncts of `list` bind from `given`, with
@@ -402,7 +483,7 @@ impl Walk<'_> {
     /// uses before the conjuncts written before it bind it, from `given`,
     /// with `outside` the labels that stand outside `list`, and so for the
     /// parts of each of its forms.
-    fn ordered(&self, list: &[(NodePath, &Conjunct)], given: &StableHashSet<LabelId>, outside: &StableHashSet<LabelId>, found: &mut Vec<(Option<LabelId>, &'static str, NodePath)>) {
+    fn ordered(&self, list: &[(NodePath, &Conjunct)], given: &StableHashSet<LabelId>, outside: &StableHashSet<LabelId>, found: &mut Vec<Found>) {
         let conjuncts: Vec<&Conjunct> = list.iter().map(|(_, conjunct)| *conjunct).collect();
         let sets: Vec<StableHashSet<LabelId>> = conjuncts.iter().map(|conjunct| conjunct_label_set(conjunct)).collect();
         let total = LabelCounts::of(&sets);
@@ -416,27 +497,31 @@ impl Walk<'_> {
                 Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => Some(atom).filter(|atom| !atom_modes(self.registry, atom.value()).is_empty()),
                 _ => None,
             };
-            if let Some(atom) = moded {
+            let written = moded.map(|atom| {
                 let mut written = before.clone();
                 written.extend(orientation_labels(atom.value(), self.types));
-                if !mode_holds(atom.value(), &written, atom_modes(self.registry, atom.value())) {
-                    found.push((None, "no mode of the atom's relation has its columns written and bound by the conjuncts written before it", at.clone()));
+                written
+            });
+            if let (Some(atom), Some(written)) = (moded, &written) {
+                if !mode_holds(atom.value(), written, atom_modes(self.registry, atom.value())) {
+                    found.push(Found { label: None, fault: Fault::AtomNoMode, at: at.clone() });
                 }
             }
-            match conjunct {
-                Conjunct::Atom(atom) if moded.is_some() => {
+            match (conjunct, &written) {
+                (Conjunct::Atom(atom), Some(written)) => {
                     let after_outside = suffix.around(outside, Some(&sets[i]));
                     let after = self.bind_before(&mut prefixes, &conjuncts, i + 1, given, &after_outside);
                     each_label_use_at(NodeRef::Conjunct(conjunct), at, &mut |path, use_| {
                         if let Some(label) = use_label(use_).filter(|label| !after.contains(label)) {
-                            found.push((Some(label), "no mode of the atom's relation has its columns bound by the conjuncts written before it", path.clone()));
+                            let completes = mode_may_hold(atom.value(), written, atom_modes(self.registry, atom.value()));
+                            found.push(Found { label: Some(label), fault: Fault::NoMode { atom: at.clone(), completes }, at: path.clone() });
                         }
                     });
                 }
-                Conjunct::Not(_) | Conjunct::All { .. } => {
+                (Conjunct::Not(_) | Conjunct::All { .. }, _) => {
                     each_label_use_at(NodeRef::Conjunct(conjunct), at, &mut |path, use_| {
                         if let Some(label) = use_label(use_).filter(|label| around.contains(label) && !before.contains(label)) {
-                            found.push((Some(label), "the `NOT` or the `ALL` stands before the conjuncts that bind the label", path.clone()));
+                            found.push(Found { label: Some(label), fault: Fault::Misordered, at: path.clone() });
                         }
                     });
                 }

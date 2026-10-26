@@ -78,6 +78,35 @@ fn a_label_no_mode_binds_is_refused_at_its_site() {
     assert_eq!(found, Some((path(&[0, 1, 0, 0]), vec![path(&[0, 1, 0, 0])])));
 }
 
+/// An `OR` whose branches bind `X` and `Y` only from each other, written
+/// before the conjunct that binds `X`, leaves `X` and `Y` unbound at the
+/// prefix that ends the `OR`, where a conjunct written after the `OR` binds
+/// `X` for the whole clause, so a completion passes.
+#[test]
+fn a_label_an_or_binds_from_a_label_a_later_conjunct_binds_is_refused_at_no_prefix() {
+    let arclog = "(RULE &x (OR ((input *P (:Col *X)) (input P (:Col *Y))) ((= X Y))) (input *Q (:Col X)))";
+    assert_eq!(first_refused(arclog, CheckId::Safety), None);
+}
+
+/// A site of `frame_extent` whose label no mode binds from the conjuncts
+/// before the atom is refused only if no later site of the atom binds the
+/// column that a mode needs: the mode of `frame_extent` needs its `P`
+/// column, which the site written after `*N` gives.
+#[test]
+fn a_site_whose_atom_takes_a_later_site_that_a_mode_needs_is_refused_at_no_prefix() {
+    assert_eq!(first_refused("(RULE &x (input *P) (frame_extent *N P))", CheckId::Safety), None);
+}
+
+/// The mode of `compose` needs its `A` and `B` columns bound. With `A` at
+/// the bound `P`, the atom can still take a bound label at `B`, so the site
+/// `(:A P)` stands unrefused; the site `(:B *U)` makes `U` unbound, and no
+/// site written after it binds it.
+#[test]
+fn a_site_whose_atom_has_no_mode_that_a_later_site_completes_is_refused_at_the_site() {
+    let found = first_refused("(RULE &x (input *P) (compose (:A P) (:B *U) (:C *W)))", CheckId::Safety);
+    assert_eq!(found, Some((path(&[0, 1, 1, 0]), vec![path(&[0, 1, 1, 0])])));
+}
+
 #[test]
 fn a_per_input_read_of_ex_input_is_refused_once_its_atom_opens() {
     let found = first_refused("(RULE &x (ex_input *E *P (:Col *C)))", CheckId::PooledAndLiftedReads);

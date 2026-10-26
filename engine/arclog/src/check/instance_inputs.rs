@@ -77,6 +77,10 @@ impl Check for InstanceInputsCheck {
         result(refusals.into_iter().map(|(message, at)| Refusal { message: message.into(), at: order.canonical_path(&at) }).collect())
     }
 
+    /// Refuses each refusal of [`Check::check`] at a complete input. A
+    /// refusal of an input reads the input itself, the inputs written before
+    /// it, the key clause, which stands before its inputs, and the
+    /// component, so no node written after the input undoes it.
     fn check_prefix(&self, prefix: &Prefix<'_>) -> PrefixResult {
         super::prefix::settled(prefix, self)
     }

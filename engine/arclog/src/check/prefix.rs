@@ -434,14 +434,21 @@ pub(super) fn whole<'a>(prefix: &Prefix<'a>) -> CheckInput<'a> {
 }
 
 /// The refusals of `check` on the whole partial form of `prefix` that stand
-/// at a complete node, as the prefix's refusals: those of a check whose
-/// refusal of a node no node written after it undoes.
+/// at a complete node, as the prefix's refusals.
+///
+/// A caller meets this condition: each refusal of `check`, found at a node,
+/// is one that no node written after that node undoes, so that it stands in
+/// every completion of the prefix. A check with a refusal that a later node
+/// undoes, such as a label that a conjunct written later binds, gives its own
+/// rule of when each refusal stands: [`standing`] keeps the refusals at the
+/// paths of a predicate, and the safety check keeps its own, by kind.
 pub(super) fn settled(prefix: &Prefix<'_>, check: &dyn Check) -> PrefixResult {
     settled_result(prefix, check.check(&whole(prefix)))
 }
 
 /// The refusals of `result`, a check's result on the whole partial form of
-/// `prefix`, that stand at a complete node.
+/// `prefix`, that stand at a complete node: [`settled`], for a caller whose
+/// result is not that of `check`.
 pub(super) fn settled_result(prefix: &Prefix<'_>, result: CheckResult) -> PrefixResult {
     standing(prefix, result, &|at| !prefix.is_open(at))
 }

@@ -36,6 +36,10 @@ impl Check for InstanceSitesCheck {
         result(refused.into_iter().map(|refusal| Refusal { at: order.canonical_path(&refusal.at), ..refusal }).collect())
     }
 
+    /// Refuses each refusal of [`Check::check`] at a complete keyed input.
+    /// A refusal of an input reads the input itself and the key's labels,
+    /// and the key stands before its inputs, so no node written after the
+    /// input undoes it.
     fn check_prefix(&self, prefix: &Prefix<'_>) -> PrefixResult {
         super::prefix::settled(prefix, self)
     }

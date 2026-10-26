@@ -65,6 +65,12 @@ impl Check for PoseRuleCheck {
         result(refusals)
     }
 
+    /// Refuses each refusal of [`Check::check`] at a complete site. A
+    /// refusal of a site reads the Pose type of its label, the type of its
+    /// column, and the relation of its atom, and a node written after the
+    /// site changes none of them: a label's type only narrows, and a
+    /// narrowing that removes a Pose type gives the label a type fault,
+    /// which [`CheckId::Types`] refuses at the node that gives it.
     fn check_prefix(&self, prefix: &Prefix<'_>) -> PrefixResult {
         super::prefix::settled(prefix, self)
     }

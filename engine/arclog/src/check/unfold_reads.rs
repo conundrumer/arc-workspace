@@ -58,6 +58,11 @@ impl Check for UnfoldReadsCheck {
         result(refusals.into_iter().map(|refusal| Refusal { at: order.canonical_path(&refusal.at), ..refusal }).collect())
     }
 
+    /// Refuses each refusal of [`Check::check`] at a complete read. A
+    /// refusal of a read reads the read's sites, which only grow by sites
+    /// that make no fewer labels, the name of the input that holds it, which
+    /// stands in the input's head, and the component of the instance, so no
+    /// node written after the read undoes it.
     fn check_prefix(&self, prefix: &Prefix<'_>) -> PrefixResult {
         super::prefix::settled(prefix, self)
     }

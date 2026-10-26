@@ -40,6 +40,9 @@ impl Check for ConstraintMarksCheck {
         result(refused.into_iter().map(refusal).collect())
     }
 
+    /// Refuses each refusal of [`Check::check`] at a complete constraint. A
+    /// refusal of a constraint reads its operator and the marks of its own
+    /// labels, so no node written after it undoes it.
     fn check_prefix(&self, prefix: &Prefix<'_>) -> PrefixResult {
         super::prefix::settled(prefix, self)
     }
