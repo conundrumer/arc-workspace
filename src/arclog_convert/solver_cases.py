@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections import Counter, defaultdict
+from collections import defaultdict
 from engine.program import (
     AdtType,
     AtomLiteral,
@@ -112,21 +112,11 @@ class CasesMixin:
             return bool((f.top_pos | f.top_neg | f.nested | f.reads) & empty)
 
         def rerender(f: Form):
-            if f.src is None:
-                inst, us, side = f.src_inst
-                saved = list(self.todo.pending), Counter(self.todo.kinds)
-                gs = self.instance(inst, us, side, frozenset(empty))
-                self.todo.pending, self.todo.kinds = saved
-                if gs:
-                    gs[0].comments = f.comments
-                    gs[0].claim_slugs = f.claim_slugs
-                return gs[0] if gs else None
-            u, side, scope, sub, ns = f.src
-            saved = list(self.todo.pending), Counter(self.todo.kinds)
-            g = self.clause(u, side, scope, sub, ns, drop_neg=frozenset(empty))
-            self.todo.pending, self.todo.kinds = saved
+            g = self.written_without(f, frozenset(empty))
             if g is not None:
                 g.comments = f.comments
+                if f.src is None:
+                    g.claim_slugs = f.claim_slugs
             return g
 
         # what this branch derives, with the concept's dead forms it revives;

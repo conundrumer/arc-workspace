@@ -29,7 +29,9 @@ class ReasoningEffort(StrEnum):
 
 class Role(StrEnum):
     """What an agent the operator launches does, by the word its
-    description gives."""
+    description gives. A member stays while `.attempts/attempts.sqlite` holds
+    launches of it: `GATE` is no longer launched, and the stored launches of
+    it stay readable through it."""
     ANALYZE = "analyze"
     CREATE = "create"
     REFINE = "refine"
@@ -46,6 +48,7 @@ class Role(StrEnum):
     CODE_REVIEWER = "code-reviewer"
     LIB_REVIEWER = "lib-reviewer"
     BATCH_PROFILE = "batch-profile"
+    GATE = "gate"
     COST_AUDIT = "cost-audit"
     AFTER_MERGE = "after-merge"
     LISTING_WAIT = "listing-wait"

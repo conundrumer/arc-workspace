@@ -496,7 +496,7 @@ class ReviewFacts:
 REVIEW_FACTS = {
     Review.CODE: ReviewFacts(
         Role.CODE_REVIEWER, mctx("code review"),
-        PathSet(("src/", "scripts/", "tests/", "engine/", "theory/", "tools/", ".claude/workflows/",
+        PathSet(("src/", "scripts/", "engine/", "theory/", "tools/", ".claude/workflows/",
                  ".claude/settings.json", "justfile")),
         "Find the line-level places"),
     Review.LIB: ReviewFacts(

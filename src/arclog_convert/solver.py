@@ -251,6 +251,45 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
 
     # ---- main
 
+    def lift_gated(self, forms: list[Form], concept: set[str], all_ctors: dict[str, str]) -> None:
+        """A form that derives nothing where a relation is empty, and that reads
+        that relation positively, stands under the constructors of the relation's
+        forms when those fix constructors of several points: no other case derives
+        the relation. With one point, the alt's rederivation of the form states it."""
+        changed = True
+        while changed:
+            changed = False
+            by_name: dict[str, list[Form]] = defaultdict(list)
+            for f in forms:
+                by_name[f.name].append(f)
+            for name, fs in by_name.items():
+                gate = frozenset.intersection(*(frozenset(f.branches) - concept for f in fs))
+                if len({all_ctors[b] for b in gate}) < 2:
+                    continue
+                for f in forms:
+                    if f.name != name and name in f.reads and not gate <= set(f.branches) \
+                            and (f.src_inst is not None or f.src is not None) \
+                            and self.written_without(f, frozenset({name})) is None:
+                        f.branches = tuple(sorted(set(f.branches) | gate))
+                        changed = True
+
+    def written_without(self, f: Form, empty: frozenset[str]) -> Form | None:
+        """The form `f` written again with the relations `empty` empty: a positive
+        read of one kills its list, and a NOT of one is dropped. None where `f`
+        derives nothing then, or where it has no source to write again."""
+        saved = list(self.todo.pending), Counter(self.todo.kinds)
+        try:
+            if f.src_inst is not None:
+                inst, us, side = f.src_inst
+                gs = self.instance(inst, us, side, empty)
+                return gs[0] if gs else None
+            if f.src is not None:
+                u, side, scope, sub, ns = f.src
+                return self.clause(u, side, scope, sub, ns, drop_neg=empty)
+            return None
+        finally:
+            self.todo.pending, self.todo.kinds = saved
+
     def run(self) -> tuple[str, str]:
         c = self.c
         prog = c.prog
@@ -851,6 +890,7 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
                 continue
             f.marks.append("(ONE)")
             f.lines[0] = f.lines[0][:-1] + " (ONE))"
+        self.lift_gated(forms, concept, all_ctors)
         arclog = self.render(forms, claims, points, concept, all_ctors)
         arcdata = self.arcdata(rep, arcdata_params, arcdata_excludes, points, concept, derive_points, approx_w)
         return arclog, arcdata
