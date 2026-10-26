@@ -12,10 +12,12 @@ A request waits, as `scripts/heavy_scheduler.py` orders it, and starts where
 no hold stands: the kernel's memory pressure level is normal, the swap-ins a
 second are at most the load monitor's alert rate (`scripts/machine_readings.py`),
 and the daemon reads the machine. A job ends where its pid does, and the
-processes it left behind are killed, if it belongs to a session. A job holds
-its declared CPUs and GiB, or the GiB it measures where that is more, and an
-ungated process, which `scripts/heavy_enforcer.py` finds, holds what it
-measures.
+processes it left behind are killed, if it belongs to a session. A gated job holds its
+declared CPUs, and, for its first `DECLARED_SECONDS`, its declared GiB, or the GiB it
+measures where that is more. After that it holds its measured peak, rounded up to a GiB, and
+`HEADROOM_GIB` more, so a job that declares more than it uses frees the rest for the waiting
+requests. A job that grows past what it holds is left to the memory pressure response. An
+ungated process, which `scripts/heavy_enforcer.py` finds, holds what it measures.
 
 A short gated job that runs past its declared minutes holds from then on as a long job of
 its need, with its CPUs and GiB unchanged; no process is signalled for it.
@@ -51,6 +53,10 @@ LEVEL_NAMES = {2: "warn", 4: "critical"}
 CRITICAL = 4
 OUTSIDE_THE_GATE = frozenset({Reason.ADOPTED, Reason.WARN})
 COMMAND_CHARS = 300
+DECLARED_SECONDS = 60
+"""A gated job holds its declared GiB for this long after its grant."""
+HEADROOM_GIB = 1
+"""What a gated job holds beyond its measured peak, once its declared GiB no longer counts."""
 
 
 @dataclass(frozen=True)
@@ -214,14 +220,21 @@ class Core:
 
     def holdings(self, now: float) -> List[Holding]:
         """What each job takes from the budget at `now`. A short gated job that runs past its
-        declared minutes takes as a long job of its need."""
+        declared minutes takes as a long job of its need. A gated job takes its declared GiB
+        for `DECLARED_SECONDS` after its grant, or the GiB it measures where that is more, and
+        then its measured peak and `HEADROOM_GIB`; a job with no measure takes its declared
+        GiB."""
         out = []
         for job in self.jobs.values():
-            held = gib_up(job.footprint_kib) if job.footprint_kib else 0
             if job.kind is Kind.GATED:
+                held = gib_up(job.footprint_kib) if job.footprint_kib else 0
                 overrun = job.lane is Lane.SHORT and job.ends is not None and now > job.ends
                 lane = Lane.LONG if overrun else job.lane
-                out.append(Holding(lane, job.need, Amount(job.amount.cpus, max(job.amount.gib, held)), job.ends))
+                if now - job.granted < DECLARED_SECONDS or not job.peak_kib:
+                    gib = max(job.amount.gib, held)
+                else:
+                    gib = gib_up(job.peak_kib) + HEADROOM_GIB
+                out.append(Holding(lane, job.need, Amount(job.amount.cpus, gib), job.ends))
             else:
                 out.append(Holding(job.lane, None, job.amount, None))
         return out

@@ -76,8 +76,8 @@ def warned(pid: int, command: str, gib: int) -> str:
 def memory_overrun(pid: int, command: str, held: int, declared: int) -> str:
     return mctx(
         "pid {pid} (`{command}`) holds {held} GiB, over the {declared} GiB its gate call "
-        "declares. It counts as {held} GiB against the budget, and is killed before the jobs "
-        "within their declarations if the memory pressure turns critical. Declare at least {held} "
+        "declares. It counts against the budget by the most it has held, at least {held} GiB, and is "
+        "killed before the jobs within their declarations if the memory pressure turns critical. Declare at least {held} "
         "with `--gib` the next time."
     ).format(pid=pid, command=short(command), held=held, declared=declared)
 

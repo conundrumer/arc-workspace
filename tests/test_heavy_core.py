@@ -328,3 +328,31 @@ def test_a_call_of_a_run_heavy_the_daemon_does_not_see_is_counted_and_its_sessio
     core.tick(sample(50, level=4), 50)
     (_, text), = core.messages(50)
     assert "were killed" in text and "`" + OLD_GATE_CALL + "`" in text.split("Run it again as ")[1]
+
+
+def test_a_gated_job_holds_its_declared_gib_for_a_minute_and_then_its_peak_and_a_gib():
+    core = Core(TOTAL)
+    gated(core, 10, gib=7)
+    core.tick(reading(1, [proc(10, CLAUDE, "convert", gib=1.0)], alive=[10]), 1)
+
+    def held(now):
+        return core.holdings(now)[0].amount
+
+    assert held(59.0) == Amount(2, 7) and held(61.0) == Amount(2, 2)
+    core.tick(reading(70, [proc(10, CLAUDE, "convert", gib=0.2)], alive=[10]), 70)
+    assert held(71.0) == Amount(2, 2)
+    core.tick(reading(80, [proc(10, CLAUDE, "convert", gib=4.5)], alive=[10]), 80)
+    assert held(81.0) == Amount(2, 6)
+
+
+def test_a_request_that_the_declared_gib_of_a_running_job_would_hold_starts_once_the_minute_has_passed():
+    core = Core(TOTAL)
+    core.tick(reading(0, [proc(500, 1, "browser", session="-", gib=8)]), 0)
+    gated(core, 10, gib=7)
+    core.tick(reading(1, [proc(10, CLAUDE, "convert", gib=1.0), proc(500, 1, "browser", session="-", gib=8)],
+                      alive=[10]), 1)
+    assert core.available().gib == 12
+    waiter = Waiter(1, 5, 1000, SESSION, Need.NOW, Amount(1, 6), 5.0, "eval", 0.0, None)
+    core.submit(waiter, False, TOTAL)
+    assert core.admit(30.0) == []
+    assert any(isinstance(e, Grant) for e in core.admit(61.0))

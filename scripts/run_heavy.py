@@ -8,7 +8,7 @@ Usage: <checkout>/scripts/run_heavy.py [--cpus <n>] [--gib <g>] [--need now|soon
        <checkout>/scripts/run_heavy.py need <pid> now|soon|idle
 
 `--cpus` is the processes or threads the command runs at once (default 1),
-and `--gib` the memory in GiB it may reach (default `1 + <n>`). `--minutes`
+and `--gib` the peak memory in GiB it is expected to reach (default `1 + <n>`). `--minutes`
 is the time it is to run (default 5), and `--need` who waits on its result
 (default `soon`): `now` where someone waits before the next step can start,
 `soon` where the result feeds the next step and nothing sits idle for it,
@@ -21,7 +21,8 @@ the logical CPUs (`hw.logicalcpu`), and its memory budget, the physical memory
 (`hw.memsize`) less 4 GiB for the system and the terminal. A request over the
 budget its need allows is cut to it, with one line on stderr. The memory budget is less the
 footprint of every readable process outside the jobs, which the daemon reads again at each
-sample; a job that holds more stays.
+sample; a job that holds more stays. A job holds its `--gib` for its first minute, and after that its
+measured peak and 1 GiB more.
 
 A call asks the resource daemon (`scripts/resource_daemon.py`) for a share of
 the budget, and starts the daemon where none runs. The daemon starts a call
