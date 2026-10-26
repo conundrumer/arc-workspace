@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def convert(out: Path, stem: str) -> str:
-    subprocess.run([sys.executable, "-m", "arclog_convert.convert", "--no-train-replay", "--no-row-parity", "--out", str(out), stem],
+    subprocess.run([sys.executable, "-m", "arclog_convert.convert", "--out", str(out), stem],
                    cwd=ROOT, check=True, capture_output=True)
     return (out / "gen" / f"{stem}.arclog").read_text()
 

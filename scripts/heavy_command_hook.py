@@ -31,6 +31,7 @@ HEAVY: dict[str, frozenset[str] | None] = {
     "arclog-cli": ANY,
     "arclog_convert.convert": ANY,
     "arclog_convert.row_parity": ANY,
+    "arclog_convert.verify": ANY,
     "arclog_convert.lint": ANY,
     "tables_export.py": ANY,
     "export_checks.py": ANY,

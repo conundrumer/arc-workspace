@@ -18,7 +18,7 @@ def convert(tmp_path: Path, stem: str = STEM) -> Path:
         if entry.name != "solvers":
             (programs / entry.name).symlink_to(entry)
     (programs / "solvers" / f"{stem}.dl").write_text((ROOT / "programs" / "solvers" / f"{stem}.dl").read_text())
-    subprocess.run([sys.executable, "-m", "arclog_convert.convert", "--no-train-replay", "--no-row-parity", "--out", str(tmp_path / "out"), stem],
+    subprocess.run([sys.executable, "-m", "arclog_convert.convert", "--out", str(tmp_path / "out"), stem],
                    cwd=ROOT, check=True, capture_output=True, env={**os.environ, "ARCLOG_SOLVERS": str(programs / "solvers")})
     return tmp_path / "out"
 

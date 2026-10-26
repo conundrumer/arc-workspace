@@ -69,11 +69,11 @@ def test_train_replay_takes_no_accept():
     assert e.value.code == 2
 
 
-def test_convert_accept_with_no_train_replay_is_refused_before_any_conversion(tmp_path, monkeypatch):
-    from arclog_convert import convert
+def test_verify_accept_with_no_train_replay_is_refused_before_any_check(tmp_path, monkeypatch):
+    from arclog_convert import verify
     monkeypatch.setenv("ARCLOG_OUT", str(tmp_path))
     with pytest.raises(SystemExit) as e:
-        convert.main(["--accept", "--no-train-replay"])
+        verify.main(["--accept", "--no-train-replay"])
     assert e.value.code == 2
     assert list(tmp_path.iterdir()) == []
 

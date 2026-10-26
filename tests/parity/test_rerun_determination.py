@@ -26,7 +26,7 @@ def converted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
             (programs / entry.name).symlink_to(entry)
     file = programs / "solvers" / f"{STEM}.dl"
     file.write_text((ROOT / "programs" / "solvers" / f"{STEM}.dl").read_text())
-    subprocess.run([sys.executable, "-m", "arclog_convert.convert", "--no-train-replay", "--no-row-parity",
+    subprocess.run([sys.executable, "-m", "arclog_convert.convert", 
                     "--out", str(tmp_path / "out"), STEM],
                    cwd=ROOT, check=True, capture_output=True, env={**os.environ, "ARCLOG_SOLVERS": str(programs / "solvers")})
     monkeypatch.setenv(OUT_ENV, str(tmp_path / "out"))

@@ -81,7 +81,7 @@ def converted(tmp_path_factory: pytest.TempPathFactory) -> Path:
             (programs / entry.name).symlink_to(entry)
     file = programs / "solvers" / f"{STEM}.dl"
     file.write_text(SOLVER)
-    subprocess.run([sys.executable, "-m", "arclog_convert.convert", "--no-train-replay", "--no-row-parity",
+    subprocess.run([sys.executable, "-m", "arclog_convert.convert", 
                     "--out", str(tmp_path / "out"), STEM],
                    cwd=ROOT, check=True, capture_output=True, env={**os.environ, "ARCLOG_SOLVERS": str(programs / "solvers")})
     return file

@@ -3,29 +3,13 @@ files under gen/ of `arclog_convert.out`: `work/arclog/` of the main
 worktree, or the directory `--out` gives; in a linked worktree, `--out` is
 required (or `ARCLOG_OUT`).
 
-    uv run python -m arclog_convert.convert [--out <dir>] [--no-train-replay | --accept] [--no-row-parity] [<stem> ...]
+    uv run python -m arclog_convert.convert [--out <dir>] [<stem> ...]
 
 Each run writes the output for the solvers, every solver where no
 stem is given, and prints its summary; the run exits with status 1
-where a solver fails to convert.
-Then, once the output is written, it replays each case of the solvers
-that `gen/` converted on the train pairs of its task, records the verdicts
-under `train_replay/`, and reports against the baseline
-`unreproduced.tsv`; the run exits with status 1 where the report finds a
-case beyond the baseline or one that was `Consistent` and is not.
-`--no-train-replay` skips it. `--accept` also rewrites the baseline lines
-of the covered tasks to the run's counts, keeping the ticket field of each
-line whose task and verdict stay: the lines it rewrites are those of the
-solvers it converted, from the files it wrote; it is refused with
-`--no-train-replay`. The replay runs `cargo` in `engine/`, so it
-needs a Rust toolchain; `arclog_convert.train_replay` gives the details.
-After the replay it compares each relation of those solvers with Souffle's rows,
-records the lines under `row_parity/`, and reports against the baseline
-`row_parity.tsv`; the run exits with status 1 where either report does.
-`--no-row-parity` skips it. `--accept` also rewrites the lines of
-`row_parity.tsv` of the solvers it converted, from the files it wrote, after
-the check; with `--no-row-parity` it leaves `row_parity.tsv` untouched.
-`arclog_convert.row_parity` gives the details.
+where a solver fails to convert. The checks of the converted programs, the
+replay on the train pairs and the comparison with Souffle's rows, are
+`arclog_convert.verify`, which runs apart from the conversion.
 A solver's plan file under plan/ records the hash of the solver
 file it was written from, and the runner and lib stamp of the run; where it
 is missing or records another hash or stamp, the script first reruns
@@ -41,25 +25,21 @@ converted program with the check relations of the relations it folds
 (`arclog_convert.checks`); nothing else reads it.
 A form the script cannot translate is written literally, under a
 `;; TODO <kind>: ...` comment.
-As each phase it runs ends (`plans`, `conversion`, `train replay`,
-`row parity`), the run prints a line `<phase>: <seconds> s` with that phase's
+As each phase it runs ends (`plans`, `conversion`), the run prints a line `<phase>: <seconds> s` with that phase's
 wall time. Under `scripts/run_heavy.py --cpus <n>`, the processes and threads
 the run has going at once, Souffle processes included, are at most `n`.
 """
 
 import json
-import os
 import re
 import sys
-import time
 from collections import Counter
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
 from engine.pool import pool_size
 from engine.program import Qualifier, Variable
 from arclog_convert.libmap import rename as libmap_rename
-from arclog_convert import OUT_ENV, paths, writable_out
+from arclog_convert import paths
+from arclog_convert.phases import phase, use_out
 
 from arclog_convert.forms import (
     MERGES,
@@ -185,50 +165,20 @@ def convert_one(stem: str) -> tuple[str, str | None, str | None, Counter, Counte
     return stem, arclog, arcdata, todo.kinds, merges, unmerged, s.c.col_mismatch, None, checked
 
 
-@contextmanager
-def phase(name: str) -> Iterator[None]:
-    """Print `<name>: <seconds> s`, the wall time of the block, as it ends."""
-    start = time.monotonic()
-    try:
-        yield
-    finally:
-        print(f"{name}: {time.monotonic() - start:.1f} s", flush=True)
-
-
 def main(argv: list[str]) -> int:
-    global OUT_DIR, PLANS, NAMES_DIR, COLUMNS_DIR
     import argparse
     parser = argparse.ArgumentParser(prog="python -m arclog_convert.convert")
     parser.add_argument("--out", type=Path, help="the directory to write under, in place of `arclog_convert.out`; required in a linked worktree unless `ARCLOG_OUT` is set")
-    parser.add_argument("--no-train-replay", action="store_true", help="convert with no replay on the train pairs")
-    parser.add_argument("--accept", action="store_true", help="rewrite the baseline lines of the solvers this run converted to its counts, and the row-parity baseline lines of those solvers unless --no-row-parity")
-    parser.add_argument("--no-row-parity", action="store_true", help="convert with no comparison of the relations with Souffle's rows")
     parser.add_argument("stems", nargs="*", help="the solvers to convert; every solver where none is given")
     args = parser.parse_args(argv)
-    if args.accept and args.no_train_replay:
-        parser.error("--accept needs the train replay; drop --no-train-replay")
-    if args.out is not None:
-        # set before the pools start, so that their workers read it
-        os.environ[OUT_ENV] = str(args.out.resolve())
-        paths.OUT_DIR, paths.PLANS, paths.NAMES_DIR, paths.COLUMNS_DIR = paths.out_dirs()
-    else:
-        writable_out()
+    use_out(args.out)
     stems = args.stems or sorted(p.stem for p in paths.SOLVERS.glob("*.dl"))
     with phase("plans"):
         refresh_plans(stems)
     print(f"{paths.OUT_DIR}:")
     with phase("conversion"):
         converted = convert_into(stems, paths.OUT_DIR)
-    from arclog_convert import row_parity, train_replay
-    failed = int(len(converted) < len(stems))
-    status = failed
-    if not args.no_train_replay:
-        with phase("train replay"):
-            status = train_replay.replay(converted, paths.OUT_DIR.parent, args.accept) or failed
-    if args.no_row_parity:
-        return status
-    with phase("row parity"):
-        return row_parity.check(converted, paths.OUT_DIR.parent, args.accept) or status
+    return int(len(converted) < len(stems))
 
 
 def convert_into(stems: list[str], out: Path) -> list[str]:

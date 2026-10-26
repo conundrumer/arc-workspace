@@ -27,7 +27,7 @@ def stretch_rule(tmp_path: Path, renamed: bool) -> str:
         if entry.name != "solvers":
             (programs / entry.name).symlink_to(entry)
     (programs / "solvers" / f"{STEM}.dl").write_text(head + head_names + clause + blank + tail)
-    subprocess.run([sys.executable, "-m", "arclog_convert.convert", "--no-train-replay", "--no-row-parity", "--out", str(tmp_path / "out"), STEM],
+    subprocess.run([sys.executable, "-m", "arclog_convert.convert", "--out", str(tmp_path / "out"), STEM],
                    cwd=ROOT, check=True, capture_output=True, env={**os.environ, "ARCLOG_SOLVERS": str(programs / "solvers")})
     text = (tmp_path / "out" / "gen" / f"{STEM}.arclog").read_text()
     return text[text.index("(DEMO_RULE ($Stretch"):].split("\n    (DEMO_RULE")[0]

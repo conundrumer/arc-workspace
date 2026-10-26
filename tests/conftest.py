@@ -107,7 +107,7 @@ def paint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
             (programs / entry.name).symlink_to(entry)
     file = programs / "solvers" / f"{PAINT_STEM}.dl"
     file.write_text(PAINT_SOLVER)
-    subprocess.run([sys.executable, "-m", "arclog_convert.convert", "--no-train-replay", "--no-row-parity",
+    subprocess.run([sys.executable, "-m", "arclog_convert.convert", 
                     "--out", str(tmp_path / "out"), PAINT_STEM],
                    cwd=checkout.ROOT, check=True, capture_output=True,
                    env={**os.environ, "ARCLOG_SOLVERS": str(programs / "solvers")})
