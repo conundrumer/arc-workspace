@@ -11,6 +11,8 @@ Souffle side from what the converter recorded as it wrote (`Converter.wrote`,
 `Converter.made`) and the names of the lib (`libmap.COMP`)."""
 
 import re
+from collections.abc import Callable
+from dataclasses import replace
 
 from engine.program import RelationName
 from souffle.parser import relation_name
@@ -19,7 +21,7 @@ from arclog_convert.libmap import rename as libmap_rename
 from arclog_convert.libmap.instances import Placement
 
 from arclog_convert.clauses import Site, site_columns
-from arclog_convert.forms import renamed
+from arclog_convert.forms import Source, renamed
 from arclog_convert.leaves import Converter, FACTS, Written
 from arclog_convert.solver import Solver
 
@@ -215,9 +217,18 @@ def column_map(s: "Solver", names: dict, insts: dict[str, str]) -> dict:
     number and whose correspondence the converter does not hold gets no entry.
     The relation is resolved as a read sees it (`Converter.resolve`): from the
     top level by the Souffle relation's path, and a relation of an expansion's
-    shape by its own name; the labels are those `site_columns` gives, the ones
-    every read the converter writes of the relation names. `insts` are the
-    instance renames `convert_one` applies to the names."""
+    shape by its own name; the labels are those `site_columns` gives. A
+    relation whose clauses the converter writes at other arclog columns under
+    one ALT than under another, or than at the top level
+    (`Converter.writings`), has for entry `{"writings": [...]}`: one
+    `{"constructors": [...], "columns": <the entry above>}` for the top level,
+    first, with no constructors, and one for each ALT writing whose entry
+    differs, with the constructors of its ALTs. In the entry of a writing, a
+    Souffle column whose head term is a variable that another column of the
+    head holds, and that the writing leaves out of the arclog relation, takes
+    that column's label, so that the engine's relation holds a Souffle row
+    only where the two columns agree. `insts` are the instance renames
+    `convert_one` applies to the names."""
     c = s.c
     shaped = _shaped(c, insts)
     out: dict[str, dict[str, list[list[dict]]]] = {}
@@ -233,9 +244,9 @@ def column_map(s: "Solver", names: dict, insts: dict[str, str]) -> dict:
             else:
                 scope, relation = tuple(source["component"]), source["relation"]
                 if source["path"] is not None:
-                    _, cols, _, inst = c.resolve(relation_name(source["path"]), (), {})
+                    written, cols, _, inst = c.resolve(relation_name(source["path"]), (), {})
                 elif scope == ("Determine",):   # the instance a run adds (`solver.determine.run_program`) has no path in the solver's text
-                    _, cols, _, inst = c.resolve(relation_name(relation), scope, {})
+                    written, cols, _, inst = c.resolve(relation_name(relation), scope, {})
                 else:
                     continue
                 width = c.souffle_arity(scope, relation)
@@ -244,9 +255,39 @@ def column_map(s: "Solver", names: dict, insts: dict[str, str]) -> dict:
                 kept = tuple(j for j in range(width) if j not in c.dropped.get((scope, relation), ()))
                 if len(kept) != len(cols):
                     continue
-                got = _souffle_columns(site_columns(c, cols, inst), kept, width)
+                got = _entry(c.writings.get(written, {}), site_columns(c, cols, inst),
+                             lambda sites: _souffle_columns(sites, kept, width))
             out.setdefault(arc, {})[source["relation"] if source["path"] is None else source["path"]] = got
     return out
+
+
+def _entry(writings: dict[frozenset[str], tuple[tuple[Source, ...], ...]], sites: list[list[Site]],
+           place: Callable[[list[list[Site]]], list[list[dict]]]) -> list[list[dict]] | dict:
+    """The entry of a relation whose arclog columns are `sites` (`site_columns`)
+    in the column map, with the Souffle columns they are `place`d in: the one
+    entry, where the clauses of the relation are written at one set of arclog
+    columns in every writing (`Converter.writings`). Otherwise `{"writings":
+    [...]}`, one `{"constructors": [...], "columns": <entry>}` for the top
+    level, first, and for each ALT writing whose entry differs from it, by
+    the constructors of its ALTs. The entry of a writing reads the label of a
+    leaf that its clauses drop at the column of the leaf they repeat."""
+    fitting = {key: record for key, record in writings.items()
+               if tuple(map(len, record)) == tuple(map(len, sites))}
+    if len(set(fitting.values())) < 2:
+        return place(sites)
+    entries = {key: place(_read_at(sites, record)) for key, record in fitting.items()}
+    top = entries.setdefault(frozenset(), place(sites))
+    written = [{"constructors": sorted(key), "columns": entry}
+               for key, entry in sorted(entries.items(), key=lambda kv: (len(kv[0]), sorted(kv[0])))
+               if not key or entry != top]
+    return {"writings": written} if len(written) > 1 else top
+
+
+def _read_at(sites: list[list[Site]], record: tuple[tuple[Source, ...], ...]) -> list[list[Site]]:
+    """`sites` with the label and field of each leaf `record` places at the
+    column of another leaf (`Converter.note_writing`) those of that leaf."""
+    return [[replace(site, label=sites[i][m].label, field=sites[i][m].field) for site, (i, m) in zip(column, at)]
+            for column, at in zip(sites, record)]
 
 
 def _souffle_columns(columns: list[list[Site]], placement: tuple[Placement, ...], width: int) -> list[list[dict]]:

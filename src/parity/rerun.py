@@ -28,7 +28,11 @@ first of these that holds (`classify`):
 - `skip`, "its rows are facts alone and no arclog relation stands for it":
   no clause with a body heads it.
 - compared, where the column map has an entry for it; a relation whose entry
-  holds no column to compare is compared as present or absent.
+  holds no column to compare is compared as present or absent. A relation
+  with an entry for each of several writings is compared in each case on the
+  columns of the writing the case takes (`parity.column_entry`). Two Souffle
+  columns that the entry gives one label hold the engine's one column twice, so
+  that a Souffle row whose two columns differ is a row of Souffle's side alone.
 - `uncompared`, "no entry in the column map".
 
 Each arclog relation with `&` of the name map (`relations` and `unmapped`)
@@ -54,7 +58,7 @@ map per train pair, and any other once for the task."""
 
 import hashlib
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
@@ -68,8 +72,8 @@ from engine.memo import hash_files, read_or_make
 from engine.program import (AtomLiteral, BodyLiteral, Comparison, ComparisonOperator,
                             ConstructorTerm, Disjunction, Qualifier, Term, Unit, Value, as_grid,
                             own, subterms)
-from parity import (PARAMS_COMPONENT, NameMap, case_name, columns_path, name_map, relation_names,
-                    snapshot)
+from parity import (PARAMS_COMPONENT, Entry, NameMap, case_name, column_entry, columns_path, name_map,
+                    relation_names, snapshot)
 from parity.idents import (Ambiguous, IdentSources, Minted, NoMembers, Source, Unresolved, Writer, ident_sources,
                            kind_of, leaves)
 from solver.aggregate import Solver
@@ -365,7 +369,7 @@ def case_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | RunF
     if not isinstance(loaded, Loaded):
         return loaded
     chosen = cases_to_run(loaded)
-    columns: dict[str, dict[str, list[list[dict[str, Any]]]]] = json.loads(columns_path(stem).read_text())
+    columns: dict[str, dict[str, Entry | dict[str, Any]]] = json.loads(columns_path(stem).read_text())
     run = run_program(loaded.solver)
     determined = determined_relations(loaded, columns, run)
     read = [] if loaded.names is None else loaded.names.read
@@ -387,13 +391,15 @@ def case_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | RunF
     return out
 
 
-def case_entry(loaded: Loaded, chosen: Case, columns: Mapping[str, Mapping[str, list[list[dict[str, Any]]]]],
+def case_entry(loaded: Loaded, chosen: Case, columns: Mapping[str, Mapping[str, Any]],
                mapped: Sequence[Pairing]) -> list[dict[str, Any]] | Undefined | RunFailure:
     """The `pairs` of the entry of `chosen` in `case_rows`' form, or the
     case's undefined outcome or a run's failure. A relation of the run that
-    several arclog relations hold has an entry for each."""
+    several arclog relations hold has an entry for each. Each relation's
+    columns are those of the writing the case takes (`column_entry`)."""
     taken = loaded.taking(chosen)
-    projection = Projection.of(ident_sources(loaded.eng, taken.program), columns, mapped, open_picks(loaded, columns))
+    projection = Projection.of(ident_sources(loaded.eng, taken.program), columns, mapped, constructors(chosen.base),
+                               open_picks(loaded, columns))
     runs = []
     for p, ex in examples(loaded.solver.given_task):
         got = loaded.run(taken, chosen, ex, projection.asked)
@@ -425,7 +431,7 @@ def determined_relations(loaded: Loaded, columns: Mapping[str, Mapping[str, Any]
     return found
 
 
-def determination_entry(loaded: Loaded, run: RunProgram, columns: Mapping[str, Mapping[str, list[list[dict[str, Any]]]]],
+def determination_entry(loaded: Loaded, run: RunProgram, columns: Mapping[str, Mapping[str, Any]],
                         mapped: Sequence[Pairing]) -> dict[str, Any]:
     """The `determination` entry of `case_rows`' form for the relations
     `mapped`: the program of `run` over the task's examples, as
@@ -436,14 +442,15 @@ def determination_entry(loaded: Loaded, run: RunProgram, columns: Mapping[str, M
     pair `task`.
     `{"failure": text}` where the run fails."""
     task = loaded.solver.given_task
-    projection = Projection.of(ident_sources(loaded.eng, run.program), columns, mapped)
+    projection = Projection.of(ident_sources(loaded.eng, run.program), columns, mapped, frozenset())
     got = loaded.eng.run(run.program, {INPUT: (), **example_inputs(task)}, projection.asked,
                          over_examples(LIMITS, task))
     if not isinstance(got, Tuples):
         return {"failure": str(got)}
     rows = output_rows(got, projection.asked)
     unread = projection.unread([rows])
-    per_input = {p: leaf for p in mapped if (leaf := _example_leaf(columns[p.name][p.key])) is not None}
+    per_input = {p: leaf for p in mapped
+                 if (leaf := _example_leaf(column_entry(columns[p.name][p.key], frozenset()))) is not None}
     pairs = []
     for i in range(len(task.train) if per_input else 0):
         pairs.append({"pair": f"train {i}", "relations": [
@@ -504,7 +511,7 @@ class OpenPick:
         return [rows[key] for key in sorted(rows)]
 
 
-def open_picks(loaded: Loaded, columns: Mapping[str, Mapping[str, list[list[dict[str, Any]]]]]) -> list[OpenPick]:
+def open_picks(loaded: Loaded, columns: Mapping[str, Mapping[str, Any]]) -> list[OpenPick]:
     """The `OpenPick` of each field of the solver's `OpenValue` whose
     parameter the name map maps to an arclog relation with a column map entry
     and whose rows the program stores. Raises ValueError where a field is off
@@ -520,7 +527,7 @@ def open_picks(loaded: Loaded, columns: Mapping[str, Mapping[str, list[list[dict
                       if s.component == PARAMS_COMPONENT and s.relation == parameter.name), None)
         if found is None or found[1].column_key not in columns.get(found[0], {}):
             continue
-        name, entry = found[0], columns[found[0]][found[1].column_key]
+        name, entry = found[0], column_entry(columns[found[0]][found[1].column_key], frozenset())
         pc = parameter_reading(loaded.solver, parameter.name)
         leaves = tuple((e["label"], e["field"], place, tuple(e["leaf"]))
                        for place, column in enumerate(pc.given) for e in entry[column]
@@ -574,9 +581,11 @@ class Projection:
     picks: Sequence[OpenPick]
 
     @staticmethod
-    def of(sources: IdentSources, columns: Mapping[str, Mapping[str, list[list[dict[str, Any]]]]],
-           mapped: Sequence[Pairing], picks: Sequence[OpenPick] = ()) -> "Projection":
-        entries = {at: columns[at.name][at.key] for at in mapped}
+    def of(sources: IdentSources, columns: Mapping[str, Mapping[str, Any]],
+           mapped: Sequence[Pairing], taken: Collection[str], picks: Sequence[OpenPick] = ()) -> "Projection":
+        """The projection of `mapped` onto the columns of the writing that a
+        case taking the `ALT` constructors `taken` reads (`column_entry`)."""
+        entries = {at: column_entry(columns[at.name][at.key], taken) for at in mapped}
         leaves_of = {at: [MappedLeaf(j, e["label"], e["field"], tuple(e["leaf"]), sources.of(at.relation, j, tuple(e["leaf"])))
                           for j, column in enumerate(entry) for e in column if not e["example"]]
                      for at, entry in entries.items()}

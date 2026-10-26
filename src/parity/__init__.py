@@ -5,9 +5,10 @@ solver `arclog_convert.convert` converts, under `names/` of `arclog_convert.out`
 
 import hashlib
 import json
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import arclog_convert
 from engine import Engine, RelationName
@@ -103,8 +104,28 @@ def columns_path(stem: str) -> Path:
     Souffle relations that has a path, one entry per column of the Souffle
     relation, in its order: the arclog column at which each kept leaf of that
     Souffle column is read, empty where no arclog column holds a leaf of it
-    (`arclog_convert.names.column_map`)."""
+    (`arclog_convert.names.column_map`). The entry of a relation that the
+    converter writes at other arclog columns under one ALT than under another
+    is `{"writings": [{"constructors": [...], "columns": <entry>}, ...]}`, the
+    top level's writing first, with no constructors; `column_entry` gives the
+    entry a case reads."""
     return names_dir().parent / "columns" / f"{stem}.json"
+
+
+type Entry = list[list[dict[str, Any]]]
+"""The entry of one writing of a relation in the column map: one list per
+Souffle column of the leaves kept, each `{"leaf", "label", "field",
+"example"}`."""
+
+
+def column_entry(entry: Entry | Mapping[str, Any], taken: Collection[str]) -> Entry:
+    """The entry that the case which takes the `ALT` constructors `taken`
+    reads of a relation's `entry` in the column map: the writing of the most
+    constructors that it takes, else the top level's."""
+    if isinstance(entry, list):
+        return entry
+    held = [w for w in entry["writings"] if set(w["constructors"]) <= set(taken)]
+    return max(held, key=lambda w: len(w["constructors"]))["columns"]
 
 
 def names_path(stem: str) -> Path:

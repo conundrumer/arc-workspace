@@ -135,6 +135,7 @@ class RenderMixin:
         self.render_main = main
         main = [f.concept_form or f for f in main if not f.concept_dead]
         main = self.sink_demo(main, branch_forms, claims)
+        self.c.note_writing(main, frozenset())
         # dependency closure: each relation goes under the first claim among its readers' claims
         by_name: dict[str, list[Form]] = defaultdict(list)
         for f in main:
@@ -823,5 +824,7 @@ class RenderMixin:
         case_text = defaultdict(list, main_text)
         for name in {f.name for f in fs}:
             case_text[name] = [f.lines for f in fs if f.name == name]
+        beside = [f.concept_form or f for f in main if f.name in adds and not f.concept_dead]
+        self.c.note_writing(fs + beside, frozenset(in_case - concept))
         return fs, case_text
 

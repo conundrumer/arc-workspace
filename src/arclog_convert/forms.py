@@ -451,6 +451,26 @@ def without_repeats(f: "Form", drop: dict[str, str]) -> "Form":
     return new
 
 
+type Source = tuple[int, int]
+"""A kept leaf of a column of a clause's head: the column, then the leaf's
+place among that column's kept leaves."""
+
+
+def label_sources(f: "Form") -> tuple[tuple[Source, ...], ...]:
+    """For each kept leaf of each column of the head of the clause `f`
+    (`Form.col_labels`), the leaf whose arclog column it is written at: its
+    own, or, where `without_repeats` dropped its column, the leaf of the
+    column its head repeats."""
+    at: dict[str, Source] = {}
+    for j, names in enumerate(f.col_labels):
+        for k, name in enumerate(names):
+            at.setdefault(name, (j, k))
+    repeats = dict(f.head_repeat)
+    return tuple(tuple(at[repeats[name]] if name not in f.cols and repeats.get(name) in at else (j, k)
+                       for k, name in enumerate(names))
+                 for j, names in enumerate(f.col_labels))
+
+
 def read_without(lines: list[str], rel: str, drop: dict[str, str]) -> list[str] | None:
     """The lines with each one-line read of `rel` leaving out the dropped
     columns, and the label each named relabeled to the label at the column

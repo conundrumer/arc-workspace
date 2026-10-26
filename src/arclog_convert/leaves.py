@@ -36,7 +36,7 @@ from arclog_convert.libmap.instances import Placement
 from arclog_convert import paths
 
 from arclog_convert.clauses import ClauseWriter
-from arclog_convert.forms import Todo, comment_text, tile_frames_split
+from arclog_convert.forms import Form, Source, Todo, comment_text, label_sources, tile_frames_split
 from arclog_convert.lib import Col, ColMismatch, Lib, pascal
 from arclog_convert.terms import (
     MOVED_RELS,
@@ -100,6 +100,10 @@ class Converter:
         self.made: dict[tuple[tuple[str, ...], str], tuple[Written, ...]] = {}
         # each arclog name this pass writes, with each thing it was written from
         self.written: dict[str, list[Written]] = {}
+        # for each arclog name whose clauses this pass writes, for each set of
+        # ALT constructors it writes them under (none: the top level), the
+        # `label_sources` of those clauses
+        self.writings: dict[str, dict[frozenset[str], tuple[tuple[Source, ...], ...]]] = {}
         self.unsafe: set[str] = set()   # the relations with a clause whose body no order makes safe
         self.col_mismatch: ColMismatch = {}
         self.lib = lib
@@ -2043,6 +2047,26 @@ class Converter:
         if component is None or component not in self.lib.comps:
             return None
         return next((len(r.cols) for r in self.lib.present(component)[1] if r.name == name), None)
+
+    def note_writing(self, forms: list[Form], within: frozenset[str]) -> None:
+        """Record, for each arclog name that `forms` derive by clauses, the
+        arclog column at which each kept leaf of the clauses' heads stands
+        in `forms`, the writing under the ALTs with the constructors
+        `within` (none: at the top level): a leaf stands at its own column
+        unless the clauses of the name all drop it to the same other."""
+        by_name: dict[str, list[Form]] = {}
+        for f in forms:
+            if f.src is not None and f.col_labels:
+                by_name.setdefault(f.name, []).append(f)
+        for name, fs in by_name.items():
+            records = [label_sources(f) for f in fs]
+            first = records[0]
+            if any(tuple(map(len, r)) != tuple(map(len, first)) for r in records):
+                continue
+            self.writings.setdefault(name, {})[within] = tuple(
+                tuple(first[j][k] if all(r[j][k] == first[j][k] for r in records) else (j, k)
+                      for k in range(len(first[j])))
+                for j in range(len(first)))
 
     def wrote(self, arc: str, *souffle: Written) -> str:
         """`arc`, an arclog name this pass writes, recorded with what it was
