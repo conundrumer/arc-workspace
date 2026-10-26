@@ -704,7 +704,7 @@ impl<'c> Search<'c> {
             cursors.push((at, depth));
         }
         let unbound = plan.checks.len() - 1;
-        if self.passes(unbound, budget)? {
+        if self.passes(unbound, None, budget)? {
             self.step(0, &plan.atoms, &mut cursors, projected, &mut rows, budget)?;
         }
         self.tried.finish(budget)?;
@@ -731,6 +731,7 @@ impl<'c> Search<'c> {
         };
         let at = |atom: &AtomTrie, depth: usize| matches!(atom.levels.get(depth), Some(Argument::Variable(v)) if *v == variable);
         let sources: Vec<usize> = (0..atoms.len()).filter(|&a| at(&atoms[a], cursors[a].1)).collect();
+        let mut held_union = None;
         let candidates: Vec<TermId> = if let Some(value) = self.equal_value(variable) {
             vec![value]
         } else if let Some(&smallest) = sources.iter().min_by_key(|&&a| (cursors[a].0.len(), a)) {
@@ -742,7 +743,8 @@ impl<'c> Search<'c> {
             }
         } else if let Some(values) = self.lib_values(variable)? {
             values
-        } else if let Some(values) = self.union_values(variable, budget)? {
+        } else if let Some((node, values)) = self.union_values(variable, budget)? {
+            held_union = Some(node);
             values
         } else {
             let ty = &self.clause.variables[usize::from(variable.0)].ty;
@@ -768,7 +770,7 @@ impl<'c> Search<'c> {
                 }
             }
             self.binding[usize::from(variable.0)] = Some(value);
-            if held && self.passes(rank, budget)? {
+            if held && self.passes(rank, held_union, budget)? {
                 passed |= self.step(rank + 1, atoms, cursors, projected, rows, budget)?;
             }
             self.binding[usize::from(variable.0)] = None;
@@ -827,10 +829,11 @@ impl<'c> Search<'c> {
         Ok(None)
     }
 
-    /// The values that the first union that exports `variable` gives it,
+    /// The node and the values of the first union that exports `variable`,
     /// each branch joined at the bound values of its columns, or `None`
-    /// where no union exports it.
-    fn union_values(&self, variable: Variable, budget: &mut Budget<'_>) -> Result<Option<Vec<TermId>>, ReachedBound> {
+    /// where no union exports it. Each value is a row of a branch, so the
+    /// union holds at it.
+    fn union_values(&self, variable: Variable, budget: &mut Budget<'_>) -> Result<Option<(usize, Vec<TermId>)>, ReachedBound> {
         let found = self.plan.unions.iter().find_map(|&node| match &self.clause.nodes[node] {
             IrNode::Or(union) if union.exported.contains(&variable) => Some((node, union)),
             _ => None,
@@ -849,7 +852,7 @@ impl<'c> Search<'c> {
         }
         values.sort_by_key(|value| value.encoding());
         values.dedup();
-        Ok(Some(values))
+        Ok(Some((node, values)))
     }
 
     /// Whether a branch of `union`, the union of the node at `node`, holds
@@ -919,9 +922,12 @@ impl<'c> Search<'c> {
         Ok(())
     }
 
-    /// Whether the binding passes each node checked at `rank`.
-    fn passes(&self, rank: usize, budget: &mut Budget<'_>) -> Result<bool, ReachedBound> {
-        for &node in &self.plan.checks[rank] {
+    /// Whether the binding passes each node checked at `rank`, other than
+    /// `held_union`, the node of the union that gave the value of the
+    /// variable at `rank`: that union is the last check of its variables, so
+    /// the value is a row of one of its branches and the union holds.
+    fn passes(&self, rank: usize, held_union: Option<usize>, budget: &mut Budget<'_>) -> Result<bool, ReachedBound> {
+        for &node in self.plan.checks[rank].iter().filter(|&&node| Some(node) != held_union) {
             let holds = match &self.clause.nodes[node] {
                 IrNode::Comparison(comparison) => self.compare(comparison),
                 IrNode::Lib(_) => {
