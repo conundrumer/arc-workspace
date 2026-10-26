@@ -2,7 +2,9 @@
 or the kernel reports memory pressure, starts the calls of a queue in the order
 they came, keeps a short job's reserve out of the long jobs' reach, frees a
 share when its command ends, starts a nested call at once, and refuses with
-status 125 where it cannot reach the daemon.
+status 125 where it cannot reach the daemon. The daemon runs the main tree's
+script, takes up a changed copy of its own source while it runs, and is no
+member of a job.
 
 The machine is a directory of readings that `sysctl`, `vm_stat` and `ps` stubs
 on `PATH` print, so a test sets the budget (2 CPUs and 4 GiB) and the pressure
@@ -11,6 +13,7 @@ that the test ends."""
 
 import json
 import os
+import shutil
 import signal
 import subprocess
 import time
@@ -23,6 +26,7 @@ from handbook.paths import scripts_importable
 
 scripts_importable()
 
+import heavy_client  # pyright: ignore[reportMissingImports]
 import heavy_protocol  # pyright: ignore[reportMissingImports]
 
 RUN_HEAVY = str(checkout.scripts() / "run_heavy.py")
@@ -58,12 +62,13 @@ class Machine:
                     "FAKE_MACHINE": str(self.readings), "CLAUDE_CONFIG_DIR": str(root / "config"),
                     "ARC_HEAVY_SOCKS": str(root / "socks"), "HOME": str(root)}
         self.calls: list[subprocess.Popen[str]] = []
+        self.run_heavy = RUN_HEAVY
 
     def set(self, key: str, value: int) -> None:
         (self.readings / key).write_text(f"{value}\n")
 
     def start(self, *args: str, env: dict[str, str] | None = None) -> subprocess.Popen[str]:
-        call = subprocess.Popen([RUN_HEAVY, *args], text=True, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+        call = subprocess.Popen([self.run_heavy, *args], text=True, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, env={**self.env, **(env or {})})
         self.calls.append(call)
         return call
@@ -76,7 +81,7 @@ class Machine:
         return call
 
     def queue(self) -> str:
-        return subprocess.run([RUN_HEAVY, "queue"], text=True, capture_output=True, env=self.env).stdout
+        return subprocess.run([self.run_heavy, "queue"], text=True, capture_output=True, env=self.env).stdout
 
     def end(self) -> None:
         for call in self.calls:
@@ -112,9 +117,9 @@ def first_stderr_line(call: subprocess.Popen[str]) -> str:
     return call.stderr.readline()
 
 
-def until(condition) -> bool:
-    """Whether `condition` holds within 5 s, polled."""
-    for _ in range(50):
+def until(condition, seconds: int = 5) -> bool:
+    """Whether `condition` holds within `seconds`, polled."""
+    for _ in range(seconds * 10):
         if condition():
             return True
         time.sleep(0.1)
@@ -304,3 +309,53 @@ def test_a_call_that_cannot_reach_or_start_the_daemon_exits_125_with_the_cause(m
     _, errors = call.communicate()
     assert call.returncode == 125
     assert "daemon directory" in errors
+
+
+def test_the_daemon_script_is_the_main_trees_unless_the_daemon_directory_is_set(monkeypatch):
+    monkeypatch.delenv(heavy_protocol.DIR_ENV, raising=False)
+    main = checkout.main_worktree(checkout.ROOT) / "scripts" / "resource_daemon.py"
+    assert Path(heavy_client.daemon_script()).resolve() == main.resolve()
+    monkeypatch.setenv(heavy_protocol.DIR_ENV, "/unused")
+    assert Path(heavy_client.daemon_script()).resolve() == (checkout.scripts() / "resource_daemon.py").resolve()
+
+
+def test_a_daemon_that_takes_up_a_changed_source_keeps_its_job_and_its_waiting_call(machine, tmp_path):
+    scripts = tmp_path / "scripts-copy"
+    shutil.copytree(checkout.scripts(), scripts, ignore=shutil.ignore_patterns("__pycache__"))
+    machine.run_heavy = str(scripts / "run_heavy.py")
+    holder = machine.holder("--cpus", "4")
+    marker = tmp_path / "ran"
+    call = machine.start("touch", str(marker))
+    assert "waiting for" in first_stderr_line(call)
+    machine.set(PRESSURE, 2)  # a sample each second
+    with (scripts / "heavy_core.py").open("a") as source:
+        source.write("\n# changed\n")
+    assert until(lambda: "restart" in (machine.daemon / "daemon.log").read_text(), 20)
+    assert until(lambda: f"  {call.pid} " in machine.queue().split("waiting:", 1)[-1], 20)
+    assert f"  {holder.pid} " in machine.queue().split("waiting:", 1)[0]
+    assert call.poll() is None and not marker.exists()
+    machine.set(PRESSURE, 1)
+    release(holder)
+    assert call.wait() == 0
+    assert marker.exists()
+
+
+def test_the_daemon_is_no_member_of_the_job_of_the_call_that_started_it(machine):
+    holder = machine.holder()
+    daemon = json.loads((machine.daemon / "registry.json").read_text())["daemon"]
+    child = subprocess.Popen(["sleep", "300"])
+    try:
+        row = "{} {} 0.0 00:10 Mon Jan  1 00:00:00 2024 {}\n"
+        (machine.readings / "ps").write_text(row.format(holder.pid, 1, "sleep 300")
+                                             + row.format(daemon, holder.pid, "python resource_daemon.py")
+                                             + row.format(child.pid, holder.pid, "sleep 300"))
+
+        def members() -> list[int]:
+            record = json.loads((machine.daemon / "registry.json").read_text())
+            return [int(pid) for pid in record["jobs"][0]["members"]]
+
+        assert until(lambda: child.pid in members(), 20)
+        assert daemon not in members()
+    finally:
+        child.kill()
+        child.wait()

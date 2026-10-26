@@ -18,17 +18,34 @@ import heavy_protocol
 from heavy_protocol import Refusal
 
 START_SECONDS = 15
+GIT_SECONDS = 5
 ANSWER_SECONDS = 30
 """The seconds the daemon has to answer a request before the first line that says it waits or
 starts."""
 RECONNECTS = 5
+"""The connections in a row that may end with no answer line before `acquire` gives up."""
+RETRY_SECONDS = 0.2
 ERROR_LINES = 5
 OWNER_CHARS = 8
 COMMAND_CHARS = 60
 
 
 def daemon_script() -> str:
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "resource_daemon.py")
+    """The daemon's script: the copy in the main tree, so that the daemon runs the code that master
+    holds whichever checkout starts it, or the copy beside this file where `ARC_HEAVY_DIR` is set
+    (the daemon of that checkout's own tests) or the main tree cannot be found."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    own = os.path.join(here, "resource_daemon.py")
+    if os.environ.get(heavy_protocol.DIR_ENV):
+        return own
+    try:
+        common = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], cwd=here,
+                                stdin=subprocess.DEVNULL, capture_output=True, text=True, check=True,
+                                timeout=GIT_SECONDS).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return own
+    main = os.path.join(os.path.dirname(common), "scripts", "resource_daemon.py")
+    return main if os.path.isfile(main) else own
 
 
 def last_errors(directory: str) -> str:
@@ -89,8 +106,10 @@ def acquire(directory: str, request: Dict[str, Any], say: Callable[[str], None])
     request was cut and the one that tells it waits."""
     since = time.time()
     waited = False
+    cut_said = False
     cpus = 0
-    for _ in range(RECONNECTS):
+    failures = 0
+    while failures < RECONNECTS:
         conn = connect(directory, start=True)
         assert conn is not None
         with conn, conn.makefile("rb") as stream:
@@ -98,12 +117,14 @@ def acquire(directory: str, request: Dict[str, Any], say: Callable[[str], None])
             try:
                 conn.sendall(heavy_protocol.line({**request, "since": since}))
                 for raw in stream:
+                    failures = 0
                     reply = json.loads(raw)
                     status = reply["status"]
                     if status == "accepted":
                         conn.settimeout(None)
                         cpus = reply["cpus"]
-                        if reply["cut"]:
+                        if reply["cut"] and not cut_said:
+                            cut_said = True
                             say(f"cut to the budget: {reply['cpus']} CPUs and {reply['gib']} GiB of "
                                 f"{reply['limit_cpus']} and {reply['limit_gib']}")
                     elif status == "waiting" and not waited:
@@ -120,21 +141,39 @@ def acquire(directory: str, request: Dict[str, Any], say: Callable[[str], None])
                 raise Refusal(f"the daemon did not answer within {ANSWER_SECONDS} s")
             except (ConnectionError, ValueError):
                 pass
+        failures += 1
     raise Refusal("the daemon keeps closing the connection")
+
+
+def ask(directory: str, request: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The daemon's one-line answer to `request`, or None where no daemon runs. A daemon that
+    restarts closes the connection or has no socket for a moment, and its registry still names it,
+    so the request is sent again, for up to `START_SECONDS`."""
+    deadline = time.monotonic() + START_SECONDS
+    while time.monotonic() < deadline:
+        conn = connect(directory, start=False)
+        if conn is None:
+            if heavy_protocol.read_registry(directory) is None:
+                return None
+        else:
+            with conn, conn.makefile("rb") as stream:
+                conn.settimeout(ANSWER_SECONDS)
+                try:
+                    conn.sendall(heavy_protocol.line({**request, "version": heavy_protocol.VERSION}))
+                    answer = stream.readline()
+                    if answer:
+                        return json.loads(answer)
+                except (OSError, ValueError) as error:
+                    raise Refusal(f"cannot reach the daemon: {error!r}")
+        time.sleep(RETRY_SECONDS)
+    raise Refusal(f"the daemon did not answer within {START_SECONDS} s")
 
 
 def queue(directory: str) -> Optional[Dict[str, Any]]:
     """The daemon's registry, or None where no daemon runs."""
-    conn = connect(directory, start=False)
-    if conn is None:
+    reply = ask(directory, {"op": "queue"})
+    if reply is None:
         return None
-    with conn, conn.makefile("rb") as stream:
-        conn.settimeout(ANSWER_SECONDS)
-        try:
-            conn.sendall(heavy_protocol.line({"op": "queue", "version": heavy_protocol.VERSION}))
-            reply = json.loads(stream.readline())
-        except (OSError, ValueError) as error:
-            raise Refusal(f"cannot read the daemon's queue: {error!r}")
     if reply.get("status") != "queue":
         raise Refusal(reply.get("reason", f"unexpected answer {reply!r}"))
     return reply["registry"]
@@ -142,17 +181,9 @@ def queue(directory: str) -> Optional[Dict[str, Any]]:
 
 def change_need(directory: str, pid: int, need: str) -> str:
     """Give the waiting request of client `pid` the need `need`, and say what became of it."""
-    conn = connect(directory, start=False)
-    if conn is None:
+    reply = ask(directory, {"op": "need", "pid": pid, "need": need})
+    if reply is None:
         raise Refusal(f"no request of pid {pid} waits: no daemon runs")
-    with conn, conn.makefile("rb") as stream:
-        conn.settimeout(ANSWER_SECONDS)
-        try:
-            conn.sendall(heavy_protocol.line({"op": "need", "version": heavy_protocol.VERSION, "pid": pid,
-                                              "need": need}))
-            reply = json.loads(stream.readline())
-        except (OSError, ValueError) as error:
-            raise Refusal(f"cannot reach the daemon: {error!r}")
     if reply.get("status") != "changed":
         raise Refusal(reply.get("reason", f"unexpected answer {reply!r}"))
     if not reply["waiting"]:

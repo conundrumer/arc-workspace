@@ -4,12 +4,22 @@ memory of the machine to the heavy commands of `scripts/run_heavy.py`, counts
 what the sessions run outside it, kills under memory pressure, and tells the
 owning session what it did.
 
-`run_heavy.py` starts it where none runs. It runs while a Claude Code session
+`run_heavy.py` starts it where none runs, from the main tree's copy of this
+script (`heavy_client.daemon_script`). It runs while a Claude Code session
 runs or a job holds a share, and exits `IDLE_EXIT_SECONDS` after neither does.
+It is itself no member of a job: the readings leave its own process out, so no
+job's footprint or CPU counts it, and no kill, reap or signal names it.
+
 `scripts/heavy_protocol.py` gives its files, its socket and the registry,
 `scripts/heavy_core.py` what it decides, and `scripts/heavy_scheduler.py` and
 `scripts/heavy_enforcer.py` the rules it applies. This module reads the
 machine, performs each effect, and serves the socket.
+
+Once a source file it runs (this script, and each module that lies beside it)
+has changed and the next sample reads the file the same, it writes the registry,
+closes its socket, and replaces its process, by `os.execv`, with a run of the
+changed script. A call that waits sees its connection close and connects again
+(`heavy_client.acquire`), with its place in the queue.
 
 It reads the machine every `SAMPLE_SECONDS` (`FAST_SAMPLE_SECONDS` while the
 memory pressure is over normal): `ps` for the processes, the sessions' files
@@ -18,15 +28,16 @@ processes of sessions and jobs, and for the footprint of each other process, rea
 again each `OUTSIDE_SECONDS`. A job's pid is polled each `LOOP_SECONDS`, so
 a share is free as soon as its command ends.
 
-Each grant, adoption, overrun, kill, reap, message and refusal is a line of
+Each grant, adoption, overrun, kill, reap, message, refusal and restart is a line of
 JSON in `daemon.log` under the directory, with its reason, owner and figures.
 A kill signals only a process that still has the start the daemon recorded for
 it. A message is one line, `{"type":"user","message":{"role":"user","content":<text>}}`,
 written to the socket `<claude pid>.sock` of the owning session in
 `/tmp/cc-socks` (`ARC_HEAVY_SOCKS` sets that directory, for the tests).
 
-A restarted daemon reads the registry, and keeps each job whose process runs
-with the recorded start, whatever the budget."""
+A restarted daemon, whether it was stopped or replaced itself, reads the
+registry, and keeps each job whose process runs with the recorded start,
+whatever the budget."""
 
 from __future__ import annotations
 
@@ -63,6 +74,40 @@ TASKPOLICY_CLASS = "utility"
 READ_ERRORS = (OSError, ValueError, KeyError, IndexError, subprocess.CalledProcessError)
 
 
+class Sources:
+    """The source files the daemon runs, with each one's `(st_mtime_ns, st_size)` at the start."""
+
+    def __init__(self) -> None:
+        here = os.path.dirname(os.path.abspath(__file__))
+        files = {os.path.abspath(__file__)}
+        for module in list(sys.modules.values()):
+            file = getattr(module, "__file__", None)
+            if file and os.path.dirname(os.path.abspath(file)) == here:
+                files.add(os.path.abspath(file))
+        self.paths = sorted(files)
+        self.started = self.read()
+        self.last = self.started
+
+    def read(self) -> Dict[str, Optional[Tuple[int, int]]]:
+        stamps: Dict[str, Optional[Tuple[int, int]]] = {}
+        for path in self.paths:
+            try:
+                stat = os.stat(path)
+            except OSError:
+                stamps[path] = None
+            else:
+                stamps[path] = (stat.st_mtime_ns, stat.st_size)
+        return stamps
+
+    def changed(self) -> List[str]:
+        """The files that differ from the start, once this reading is the same as the one before
+        it, so that a merge that writes several files has ended; else none."""
+        reading = self.read()
+        settled = reading == self.last
+        self.last = reading
+        return [path for path in self.paths if reading[path] != self.started[path]] if settled else []
+
+
 class Client:
     """A connection of a client, which has at most one waiting request."""
 
@@ -91,6 +136,7 @@ class Daemon:
         self.dirty = True
         self.last_active = time.time()
         self.selector = selectors.DefaultSelector()
+        self.sources = Sources()
 
     def log(self, event: str, fields: Dict[str, Any]) -> None:
         record = {"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "event": event, **fields}
@@ -132,7 +178,7 @@ class Daemon:
         """Send the signal where the process still has the recorded start."""
         try:
             started = process_started(effect.pid)
-            if effect.pid == os.getpid() or started is None or abs(started - effect.start) > 1:
+            if started is None or abs(started - effect.start) > 1:
                 self.log("signal-skipped", {"pid": effect.pid, "signal": effect.number})
                 return
             os.kill(effect.pid, effect.number)
@@ -168,7 +214,7 @@ class Daemon:
 
     def sample(self, now: float) -> Sample:
         """Read the machine."""
-        table = rows()
+        table = [row for row in rows() if row.pid != os.getpid()]
         found = harness_sessions()
         if found is not None:
             self.claude = found
@@ -347,7 +393,9 @@ class Daemon:
         except (OSError, ValueError, KeyError, TypeError) as error:
             self.log("registry-unreadable", {"error": repr(error)})
 
-    def run(self, server: socket.socket) -> None:
+    def run(self, server: socket.socket) -> List[str]:
+        """Serve until no session runs and no job holds a share for `IDLE_EXIT_SECONDS`, and give
+        no files, or until a source file has changed, and give the files that changed."""
         server.setblocking(False)
         self.selector.register(server, selectors.EVENT_READ, None)
         self.restore()
@@ -368,7 +416,12 @@ class Daemon:
                 self.tick(now)
                 next_sample = now + self.sample_seconds()
                 if self.should_exit(now):
-                    return
+                    return []
+                changed = self.sources.changed()
+                if changed:
+                    self.log("restart", {"changed": [os.path.basename(path) for path in changed]})
+                    heavy_protocol.write_registry(self.directory, self.registry(now))
+                    return changed
             self.apply(self.core.expire(now))
             self.apply(self.core.admit(now))
             for claude, text in self.core.messages(now):
@@ -423,14 +476,16 @@ def main() -> int:
     server = listen(directory)
     ended = False
     try:
-        daemon.run(server)
-        ended = True
+        changed = daemon.run(server)
+        ended = not changed
     finally:
         server.close()
         for path in [heavy_protocol.socket_path(directory)] + (
                 [] if not ended or daemon.core.jobs else [os.path.join(directory, heavy_protocol.REGISTRY)]):
             with contextlib.suppress(FileNotFoundError):
                 os.unlink(path)
+    if changed:
+        os.execv(sys.executable, [sys.executable, os.path.abspath(__file__)])
     return 0
 
 
