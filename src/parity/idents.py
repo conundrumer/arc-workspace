@@ -7,7 +7,8 @@ solver writes is a number.
 
 A leaf of a relation has one source (`Source`): `Minted` by a lib relation
 (the id column of a lib relation that mints, or a leaf derived from one by
-clauses that keep the row's key), `Stored` (a number a clause writes), or
+clauses; a key part that the clauses do not keep is found on the pair, from
+the minting relation's rows), `Stored` (a number a clause writes), or
 `Unresolved` with its reason. The sources of a program are the least
 fixpoint over the clauses of the solver's own text, each at the instance
 paths it runs at (`solver.graph.Graph`); a leaf of a lib relation whose
@@ -86,7 +87,13 @@ class Built:
     parts: tuple["KeyValue", ...]
 
 
-type KeyValue = At | Within | Built | int | float | str
+@dataclass(frozen=True)
+class Free:
+    """A key part that the row does not hold: the pair's rows of the minting
+    relation give it, at every key that holds the id."""
+
+
+type KeyValue = At | Within | Built | Free | int | float | str
 
 
 # Sources
@@ -98,7 +105,8 @@ class Minted:
     column of its rows, its key columns, its member columns, and, for each
     key column, how a row of the relation that holds the id holds the key's
     value. The id denotes the set of the members, the values of the member
-    columns over the rows of `relation` that hold the id at that key."""
+    columns over the rows of `relation` that hold the id at that key, where
+    a `Free` key part matches every value."""
 
     relation: RelationName
     id_column: int
@@ -157,8 +165,9 @@ def describe(source: Source) -> str:
 
 def merged(sources: list[Source]) -> Source | None:
     """The one source of a leaf that clauses give `sources`: the first
-    unresolved one, else the one source they all are, else unresolved for
-    two sources; None where they are none."""
+    unresolved one, else the one source they all are, else the minted source
+    they all are but for the key, with each key part they disagree on
+    `Free`, else unresolved for two sources; None where they are none."""
     if not sources:
         return None
     unresolved = next((s for s in sources if isinstance(s, Unresolved)), None)
@@ -167,6 +176,11 @@ def merged(sources: list[Source]) -> Source | None:
     distinct = list(dict.fromkeys(sources))
     if len(distinct) == 1:
         return distinct[0]
+    minted = [s for s in distinct if isinstance(s, Minted)]
+    if len(minted) == len(distinct) and len({replace(m, key=()) for m in minted}) == 1:
+        first = minted[0]
+        return replace(first, key=tuple(part if all(m.key[i] == part for m in minted) else Free()
+                                        for i, part in enumerate(first.key)))
     return Unresolved("two sources: " + "; ".join(describe(s) for s in distinct))
 
 
@@ -368,7 +382,7 @@ nowhere."""
 
 def map_key(key: KeyValue, where: KeyMap) -> KeyValue | None:
     """`key` with each `At` and `Within` as `where` places it; None where
-    `where` places one nowhere."""
+    `where` places one nowhere. A `Free` stays."""
     match key:
         case At() | Within():
             return where(key)
@@ -379,15 +393,12 @@ def map_key(key: KeyValue, where: KeyMap) -> KeyValue | None:
             return key
 
 
-def with_keys(source: Source, where: KeyMap, nowhere: Callable[[Minted], str]) -> Source:
-    """`source` with each key value as `where` places it: the unresolved
-    source with the reason `nowhere` gives for a key it places nowhere."""
+def with_keys(source: Source, where: KeyMap) -> Source:
+    """`source` with each key part as `where` places it, and `Free` for a
+    part it places nowhere."""
     if not isinstance(source, Minted):
         return source
-    keys = tuple(map_key(k, where) for k in source.key)
-    if any(k is None for k in keys):
-        return Unresolved(nowhere(source))
-    return replace(source, key=tuple(k for k in keys if k is not None))
+    return replace(source, key=tuple(Free() if (k := map_key(part, where)) is None else k for part in source.key))
 
 
 class IdentSources:
@@ -477,7 +488,7 @@ class IdentSources:
                         if parameter is None:
                             continue
                         slot: Slot = ParameterSlot(static.head.instances, parameter, path)
-                        source = self._within(source, column, parameter)
+                        source = self._within(source, column)
                     else:
                         slot = LeafSlot(static.head, column, path)
                     held = self._contributions.setdefault(slot, {})
@@ -518,16 +529,16 @@ class IdentSources:
             if not isinstance(key, At) or key.column >= len(atom.args):
                 return None
             return term_key(atom.args[key.column], key.path, static.places)
-        return with_keys(source, hold, lambda m: f"the row leaves out the key of {m.relation.text}")
+        return with_keys(source, hold)
 
     @staticmethod
-    def _within(source: Source, column: int, parameter: str) -> Source:
-        """`source`, of a leaf in `column` of a row of `relation`, with each
-        key value as a place within the value of the type parameter
-        `parameter`."""
+    def _within(source: Source, column: int) -> Source:
+        """`source`, of a leaf in `column` of a row of a lib relation, with
+        each key value as a place within the value of the type parameter of
+        that column."""
         def inside(key: At | Within) -> KeyValue | None:
             return Within(key.path) if isinstance(key, At) and key.column == column else None
-        return with_keys(source, inside, lambda m: f"the key of {m.relation.text} stands outside the value of {parameter}")
+        return with_keys(source, inside)
 
     # The sources
 
@@ -558,7 +569,7 @@ class IdentSources:
 
         def here(key: At | Within) -> KeyValue | None:
             return At(column, key.path) if isinstance(key, Within) else None
-        return with_keys(got, here, lambda m: f"the key of {m.relation.text} stands outside the value")
+        return with_keys(got, here)
 
     def of(self, relation: RelationName, column: int, path: Path) -> Source | None:
         """The source of the leaf at `path` of `column` of `relation`; None
@@ -619,9 +630,14 @@ class NoMembers(LookupError):
     """The minting relation's rows hold no row with the id at the key."""
 
 
-def key_value(key: KeyValue, row: Row) -> Value | None:
-    """The value that `key` gives at `row`; None where the row holds no
-    value there."""
+class Ambiguous(LookupError):
+    """The minting relation's rows give the id two member sets at the keys
+    that agree with the row's key parts."""
+
+
+def key_value(key: KeyValue, row: Row) -> Value | Free | None:
+    """The value that `key` gives at `row`, `Free` for a part the row does
+    not hold; None where the row holds no value there."""
     match key:
         case At(column=column, path=path):
             value: Value = row[column]
@@ -634,9 +650,9 @@ def key_value(key: KeyValue, row: Row) -> Value | None:
             return value
         case Built(constructor=constructor, parts=parts):
             values = tuple(key_value(p, row) for p in parts)
-            if any(v is None for v in values):
+            fields = tuple(v for v in values if v is not None and not isinstance(v, Free))
+            if len(fields) != len(values):
                 return None
-            fields = tuple(v for v in values if v is not None)
             return RecordValue(fields) if constructor is None else AdtValue(constructor, fields)
         case Within():
             return None
@@ -665,29 +681,46 @@ class Writer:
     def __init__(self, sources: IdentSources, rows: Mapping[RelationName, Rows]) -> None:
         self.sources = sources
         self.rows = rows
-        self._held: dict[RelationName, dict[tuple[tuple[Value, ...], Value], list[Row]]] = {}
-        self._texts: dict[tuple[RelationName, tuple[Value, ...], Value], str] = {}
+        self._held: dict[RelationName, dict[Value, dict[tuple[Value, ...], list[Row]]]] = {}
+        self._texts: dict[tuple[RelationName, tuple[Value | Free, ...], Value], str] = {}
 
     def text(self, source: Minted, ident: Value, row: Row) -> str:
         """The text of the id `ident` that `source` gives at the key `row`
-        holds. Raises `NoMembers` where no row holds the id at the key."""
+        holds: the set of the members at the keys of the minting relation's
+        rows that hold the id and agree with each key part that is not
+        `Free`. Raises `NoMembers` where no row holds the id at such a key,
+        and `Ambiguous` where the keys give the id two member sets."""
         keys = tuple(key_value(k, row) for k in source.key)
-        if any(k is None for k in keys):
-            raise NoMembers(f"the row holds no key of {source.relation.text}")
         at = tuple(k for k in keys if k is not None)
+        if len(at) != len(keys):
+            raise NoMembers(f"the row holds no key of {source.relation.text}")
         got = self._texts.get((source.relation, at, ident))
         if got is None:
-            found = self._index(source).get((at, ident))
+            found = self._found(source, at, ident)
             if not found:
                 raise NoMembers(f"the id {ident} has no row of {source.relation.text} at the key of the row")
-            got = self._texts[source.relation, at, ident] = "{" + ",".join(sorted(self._member(source, m) for m in found)) + "}"
+            texts = {"{" + ",".join(sorted(self._member(source, m) for m in members)) + "}" for members in found}
+            if len(texts) > 1:
+                raise Ambiguous(f"the id {ident} of {source.relation.text} has other members at two keys")
+            got = self._texts[source.relation, at, ident] = texts.pop()
         return got
 
-    def _index(self, source: Minted) -> dict[tuple[tuple[Value, ...], Value], list[Row]]:
+    def _found(self, source: Minted, at: tuple[Value | Free, ...], ident: Value) -> list[list[Row]]:
+        """The rows of the minting relation that hold `ident`, grouped by
+        key, at the keys that equal `at` at each part that is not `Free`."""
+        keyed = self._index(source).get(ident, {})
+        if not any(isinstance(part, Free) for part in at):
+            members = keyed.get(tuple(part for part in at if not isinstance(part, Free)))
+            return [members] if members else []
+        return [members for key, members in keyed.items()
+                if all(isinstance(part, Free) or part == value for part, value in zip(at, key, strict=True))]
+
+    def _index(self, source: Minted) -> dict[Value, dict[tuple[Value, ...], list[Row]]]:
+        """The rows of the minting relation by id, then by key."""
         if source.relation not in self._held:
-            index: dict[tuple[tuple[Value, ...], Value], list[Row]] = {}
+            index: dict[Value, dict[tuple[Value, ...], list[Row]]] = {}
             for r in self.rows[source.relation]:
-                index.setdefault((tuple(r[k] for k in source.key_columns), r[source.id_column]), []).append(r)
+                index.setdefault(r[source.id_column], {}).setdefault(tuple(r[k] for k in source.key_columns), []).append(r)
             self._held[source.relation] = index
         return self._held[source.relation]
 

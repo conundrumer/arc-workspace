@@ -23,7 +23,7 @@ from engine.program import (AtomLiteral, BodyLiteral, Comparison, ComparisonOper
                             ConstructorTerm, Disjunction, Qualifier, Term, Unit, Value, as_grid,
                             subterms)
 from parity import NameMap, case_name, columns_path, name_map, relation_name, snapshot
-from parity.idents import Minted, NoMembers, Source, Unresolved, Writer, ident_sources, kind_of, leaves
+from parity.idents import Ambiguous, Minted, NoMembers, Source, Unresolved, Writer, ident_sources, kind_of, leaves
 from solver.aggregate import Solver
 from solver.cases import cases as cases_of
 from solver.load import load
@@ -161,8 +161,9 @@ def concept_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | R
     `unread` is a mapped column whose leaf some row lacks, which every list
     of `columns` and `rows` leaves out; so is a column of `unresolved`, a
     leaf of type `Ident` that has no one source (`parity.idents`), with its
-    reason. The kind of a column in `idents` is `"minted"`, where the leaf
-    is an id a lib relation mints, and its leaf is the text of the set of
+    reason; a leaf whose minted id has two member sets at the keys that
+    agree with the row's, for that reason, is one on that pair alone. The
+    kind of a column in `idents` is `"minted"`, where the leaf is an id a lib relation mints, and its leaf is the text of the set of
     the id's members (`parity.idents.Writer`); `"stored"`, where it is a
     number a clause writes; and `null` for any other leaf. `fault`, which a
     relation's entry holds only where it applies, is the text of a minted
@@ -229,29 +230,35 @@ def relation_entry(name: str, rows: Rows, leaves: list[MappedLeaf], unread: list
     """The entry of the relation `name` for one pair in `concept_rows`' form,
     from its `rows` on the pair, its mapped `leaves`, those of them that are
     `unread`, and the `writer` of the minted ids."""
-    unresolved = [leaf for leaf in leaves if leaf not in unread and isinstance(leaf.source, Unresolved)]
+    unresolved = {leaf: leaf.source.reason for leaf in leaves
+                  if leaf not in unread and isinstance(leaf.source, Unresolved)}
     read = [leaf for leaf in leaves if leaf not in unread and leaf not in unresolved]
-    fault: list[str] = []
-    cells = set()
+    table: list[list[list[int | float | str]]] = []
+    faults: list[tuple[int, str]] = []
+    ambiguous: dict[int, str] = {}
     for row in rows:
         cell = []
-        for leaf in read:
+        for i, leaf in enumerate(read):
             value = leaves_at(row[leaf.column], leaf.path)
             assert value is not None
             if isinstance(leaf.source, Minted):
                 try:
                     value = [writer.text(leaf.source, value[0], row)]
                 except NoMembers as no:
-                    fault.append(str(no))
+                    faults.append((i, str(no)))
+                except Ambiguous as other:
+                    ambiguous[i] = min(ambiguous.get(i, str(other)), str(other))
             cell.append(value)
-        cells.add(json.dumps(cell))
+        table.append(cell)
+    kept = [i for i in range(len(read)) if i not in ambiguous]
+    unresolved.update((read[i], reason) for i, reason in ambiguous.items())
+    fault = [text for i, text in faults if i in kept]
     entry: dict[str, Any] = {
-        "name": name, "columns": [[leaf.label, leaf.field] for leaf in read],
-        "idents": [kind_of(leaf.source) for leaf in read],
+        "name": name, "columns": [[read[i].label, read[i].field] for i in kept],
+        "idents": [kind_of(read[i].source) for i in kept],
         "unread": [[leaf.label, leaf.field] for leaf in unread],
-        "unresolved": [[leaf.label, leaf.field, leaf.source.reason] for leaf in unresolved
-                       if isinstance(leaf.source, Unresolved)],
-        "rows": [json.loads(cell) for cell in sorted(cells)]}
+        "unresolved": [[leaf.label, leaf.field, unresolved[leaf]] for leaf in leaves if leaf in unresolved],
+        "rows": [json.loads(cell) for cell in sorted({json.dumps([c[i] for i in kept]) for c in table})]}
     if fault:
         entry["fault"] = min(fault)
     return entry
