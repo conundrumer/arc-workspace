@@ -45,7 +45,7 @@ HEAVY: dict[str, frozenset[str] | None] = {
 WORKER_OPTIONS = frozenset({"--workers", "--jobs", "--threads"})
 NOT_RUNS = frozenset({"--help", "--version"})
 GATE_OPTIONS = frozenset({"--cpus", "--gib", "--need", "--minutes", "--wait"})
-FORM = "<checkout>/scripts/run_heavy.py [--cpus <n>] [--need now|soon|idle] [--minutes <m>] [--wait <seconds>] <command>"
+FORM = "<checkout>/scripts/run_heavy.py [--cpus <n>] [--need now|soon|idle] <command>"
 
 
 @dataclass(frozen=True)

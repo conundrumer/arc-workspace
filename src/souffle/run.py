@@ -174,7 +174,7 @@ def _running() -> threading.BoundedSemaphore:
     performance core however many threads start them, and at most
     `pool_size()`: a run on an efficiency core spends more CPU seconds for
     the same work, and the CPU limit counts them; under
-    `scripts/run_heavy.py` the grant bounds them."""
+    `scripts/run_heavy.py` its `--cpus` bounds them."""
     with _RUNNING_LOCK:
         if not _RUNNING:
             _RUNNING.append(threading.BoundedSemaphore(

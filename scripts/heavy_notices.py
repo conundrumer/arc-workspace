@@ -29,7 +29,6 @@ class Reason(enum.Enum):
     """Why the daemon acts on a process, at most once for each process."""
     ADOPTED = "adopted"
     CPU = "cpu"
-    TIME = "time"
     GROWTH = "growth"
     KILLED = "killed"
 
@@ -53,7 +52,7 @@ def gated_form(command: str, cpus: int, gib: int) -> str:
     where it is a call of the gate."""
     if is_gate_call(command):
         return command
-    return f"{GATE_FORM} --cpus {cpus} --minutes <m> --need <need> {command}"
+    return f"{GATE_FORM} --cpus {cpus} --need <need> {command}"
 
 
 def adopted(pid: int, command: str, cpus: int, gib: int) -> str:
@@ -69,14 +68,6 @@ def cpu_overrun(pid: int, command: str, used: float, declared: int) -> str:
         "pid {pid} (`{command}`) has run at {used:.1f} CPUs for a minute, over twice the "
         "{declared} its gate call declares, so a child of it does not honor `ARC_HEAVY_CPUS`."
     ).format(pid=pid, command=short(command), used=used, declared=declared)
-
-
-def time_overrun(pid: int, command: str, minutes: float, declared: float) -> str:
-    return mctx(
-        "pid {pid} (`{command}`) has run {minutes:.0f} minutes, over twice the {declared:g} its "
-        "gate call declares. Declare more with `--minutes` the next time, so the queue's expected "
-        "starts hold."
-    ).format(pid=pid, command=short(command), minutes=minutes, declared=declared)
 
 
 def passed_soft(pid: int, command: str, soft_gib: int) -> str:

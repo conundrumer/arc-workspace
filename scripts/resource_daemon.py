@@ -1,44 +1,47 @@
 #!/usr/bin/python3
-"""The resource daemon: one process on the machine that grants the CPUs and
-memory of the machine to the heavy commands of `scripts/run_heavy.py`, counts
-what the sessions run outside it, kills a job that holds too much memory, and tells the
+"""The resource daemon: one process on the machine that records the heavy
+commands of `scripts/run_heavy.py`, counts what the sessions run outside it, sets
+the nice value of a job by its need, kills a job that holds too much memory, and tells the
 owning session what it did.
 
 `run_heavy.py` starts it where none runs, from the main tree's copy of this
 script (`heavy_client.daemon_script`). It runs while a Claude Code session
-runs or a job holds a share, and exits `IDLE_EXIT_SECONDS` after neither does.
+runs or a job runs, and exits `IDLE_EXIT_SECONDS` after neither does.
 It is itself no member of a job: the readings leave its own process out, so no
 job's footprint or CPU counts it, and no kill, reap or signal names it.
 
 `scripts/heavy_protocol.py` gives its files, its socket and the registry,
-`scripts/heavy_core.py` what it decides, and `scripts/heavy_scheduler.py` and
-`scripts/heavy_enforcer.py` the rules it applies. This module reads the
+`scripts/heavy_core.py` what it decides, and `scripts/heavy_enforcer.py` the
+rules it applies. This module reads the
 machine, performs each effect, and serves the socket.
 
 Once a source file it runs (this script, and each module that lies beside it)
 has changed and the next sample reads the file the same, it writes the registry,
 replaces its process, by `os.execv`, with a run of the changed script, which keeps
 the lock and the listening socket open (`heavy_protocol`), so that a call that connects meanwhile
-waits in the socket's queue and no call starts another daemon. A call that waits sees its connection
-close and connects again (`heavy_client.acquire`), with its place in the queue.
+waits in the socket's queue and no call starts another daemon. A call that sees its connection
+close before it is answered connects again (`heavy_client.ask`).
 
 It reads the machine every `SAMPLE_SECONDS` (`FAST_SAMPLE_SECONDS` while the
 memory pressure is over normal or the swap-ins are over the load monitor's alert rate): `ps` for the processes, the sessions' files
 for the sessions, and `proc_pid_rusage` for the footprint and CPU time of the
 processes of sessions and jobs, and for the footprint of each other process, read
 again each `OUTSIDE_SECONDS`. A job's pid is polled each `LOOP_SECONDS`, so
-a share is free as soon as its command ends.
+a job ends as soon as its command does.
 
-Each grant, adoption, overrun, soft-cap message, kill, reap, message, refusal and restart is a line of
+Each grant, need change, adoption, overrun, soft-cap message, kill, reap, message, refusal and restart is a line of
 JSON in `daemon.log` under the directory, with its reason, owner and figures.
 A kill signals only a process that still has the start the daemon recorded for
 it. A message is one line, `{"type":"user","message":{"role":"user","content":<text>}}`,
 written to the socket `<claude pid>.sock` of the owning session in
 `/tmp/cc-socks` (`ARC_HEAVY_SOCKS` sets that directory).
 
+A daemon of a directory that `ARC_HEAVY_DIR` gives (`heavy_protocol.private`) adopts no process, writes
+no message to a session socket but logs it as `message-withheld`, and so signals only the processes of
+its own gated jobs.
+
 A restarted daemon, whether it was stopped or replaced itself, reads the
-registry, and keeps each job whose process runs with the recorded start,
-whatever the budget."""
+registry, and keeps each job whose process runs with the recorded start."""
 
 from __future__ import annotations
 
@@ -55,12 +58,11 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import heavy_protocol
-from heavy_core import (Accepted, Core, Effect, GiveUp, Grant, Log, Proc, Refuse, Sample, SetClass,
-                        Signal as SendSignal)
-from heavy_model import Amount, Kind, Need, Waiter, lane_of
+from heavy_core import Core, Effect, Log, Proc, Sample, SetClass, Signal as SendSignal
+from heavy_model import Job, Kind, Need
+import heavy_legacy
 from heavy_notices import message_line
-from heavy_protocol import VERSION, Refusal
-from heavy_scheduler import resolve
+from heavy_protocol import LEGACY_VERSION, VERSION, Refusal
 from machine_readings import PRESSURE_LEVELS, budget, counters, pressure_level
 from process_readings import NO_SESSION, harness_sessions, owners, process_started, rows, usage
 
@@ -110,12 +112,11 @@ class Sources:
 
 
 class Client:
-    """A connection of a client, which has at most one waiting request."""
+    """A connection of a client."""
 
     def __init__(self, conn: socket.socket) -> None:
         self.conn = conn
         self.buffer = b""
-        self.waiter: Optional[Waiter] = None
 
     def send(self, message: Dict[str, Any]) -> None:
         try:
@@ -127,9 +128,7 @@ class Client:
 class Daemon:
     def __init__(self, directory: str) -> None:
         self.directory = directory
-        self.core = Core(Amount(1, 1))
-        self.clients: Dict[int, Client] = {}
-        self.next_id = 1
+        self.core = Core(1, heavy_protocol.private())
         self.claude: Dict[int, str] = {}
         self.swap_before: Optional[Tuple[int, float]] = None
         self.others: Dict[int, Tuple[float, Optional[int]]] = {}
@@ -153,33 +152,15 @@ class Daemon:
         for effect in effects:
             if isinstance(effect, Log):
                 self.log(effect.event, effect.fields)
-            elif isinstance(effect, Accepted):
-                self.say(effect.waiter, {"status": "accepted", "cpus": effect.waiter.ask.cpus,
-                                         "gib": effect.waiter.ask.gib, "cut": effect.cut,
-                                         "limit_cpus": effect.cap.cpus, "limit_gib": effect.cap.gib})
-            elif isinstance(effect, Grant):
-                self.say(effect.waiter, {"status": "granted"})
-                self.dirty = True
-            elif isinstance(effect, Refuse):
-                self.say(effect.waiter, {"status": "refused", "reason": effect.reason})
-            elif isinstance(effect, GiveUp):
-                self.say(effect.waiter, {"status": "timeout", "eta": effect.eta,
-                                         "reason": "no share was free within the wait"})
             elif isinstance(effect, SendSignal):
                 self.send_signal(effect)
             elif isinstance(effect, SetClass):
                 self.set_class(effect.pid)
 
-    def say(self, waiter: Waiter, message: Dict[str, Any]) -> None:
-        client = self.clients.get(waiter.id)
-        if client is not None:
-            client.send(message)
-
     def send_signal(self, effect: SendSignal) -> None:
         """Send the signal where the process still has the recorded start."""
         try:
-            started = process_started(effect.pid)
-            if started is None or abs(started - effect.start) > 1:
+            if not started_at(effect.pid, effect.start):
                 self.log("signal-skipped", {"pid": effect.pid, "signal": effect.number})
                 return
             os.kill(effect.pid, effect.number)
@@ -193,6 +174,9 @@ class Daemon:
             self.log("class-failed", {"pid": pid, "error": repr(error)})
 
     def post(self, claude: int, text: str) -> None:
+        if heavy_protocol.private():
+            self.log("message-withheld", {"claude": claude, "text": text})
+            return
         path = os.path.join(heavy_protocol.socks_dir(), f"{claude}.sock")
         try:
             with socket.socket(socket.AF_UNIX) as conn:
@@ -204,14 +188,15 @@ class Daemon:
         else:
             self.log("message", {"claude": claude, "text": text})
 
-    def read_budget(self) -> Amount:
+    def read_cpus(self) -> int:
+        """The machine's CPUs."""
         try:
             cpus, gib = budget()
         except (OSError, ValueError, subprocess.CalledProcessError) as error:
             raise Refusal(f"cannot read the budget from sysctl: {error!r}")
         if min(cpus, gib) < 1:
             raise Refusal(f"the machine's budget is {cpus} CPUs and {gib} GiB")
-        return Amount(cpus, gib)
+        return cpus
 
     def sample(self, now: float) -> Sample:
         """Read the machine."""
@@ -262,7 +247,7 @@ class Daemon:
 
     def tick(self, now: float) -> None:
         try:
-            self.core.total = self.read_budget()
+            self.core.cpus = self.read_cpus()
             sample = self.sample(now)
         except Refusal as refusal:
             self.fail(str(refusal))
@@ -275,62 +260,92 @@ class Daemon:
         self.dirty = True
 
     def fail(self, reason: str) -> None:
-        """Refuse each waiting request, and every request until a reading succeeds."""
+        """Refuse each request until a reading succeeds."""
         if self.core.fault is None:
             self.log("fault", {"reason": reason})
         self.core.fault = reason
-        self.apply(self.core.refuse_all(reason))
 
     def owner_of(self, pid: int) -> str:
         table = rows()
         found = harness_sessions() or self.claude
         return owners(table, found).get(pid, NO_SESSION)
 
-    def acquire(self, client: Client, request: Dict[str, Any], now: float) -> None:
+    def acquire(self, request: Dict[str, Any], now: float) -> int:
+        """Record the call of `request` as a gated job, and return the CPUs it declares."""
         pid = request["pid"]
         started = process_started(pid)
         if started is None:
             raise Refusal(f"pid {pid} does not run")
-        need = Need(request["need"])
-        minutes = float(request["minutes"])
-        owner = self.owner_of(pid)
-        ask, cap, cut = resolve(request["cpus"], request["gib"], lane_of(minutes), need, self.core.available())
-        arrived = min(float(request.get("since", now)), now)
-        wait = request["wait"]
-        waiter = Waiter(self.next_id, pid, started, owner, need, ask, minutes, request["command"], arrived,
-                        None if wait is None else arrived + float(wait), request["cpus"], request["gib"])
-        self.next_id += 1
-        client.waiter = waiter
-        self.clients[waiter.id] = client
+        if self.core.fault is not None:
+            raise Refusal(self.core.fault)
+        cpus = int(request["cpus"])
+        if cpus < 1:
+            raise Refusal(f"cpus is {cpus}, not a whole number from 1")
+        self.apply(self.core.grant(pid, float(started), self.owner_of(pid), Need(request["need"]), cpus,
+                                   request["command"], now))
         self.last_active = now
-        self.apply(self.core.submit(waiter, cut, cap))
-        self.apply(self.core.admit(now))
-        if waiter.id in self.core.waiters:
-            client.send({"status": "waiting", **self.core.wait_info(waiter, now)})
         self.dirty = True
+        return cpus
 
-    def change_need(self, client: Client, request: Dict[str, Any], now: float) -> None:
-        waiter = self.core.set_need(request["pid"], Need(request["need"]), now)
-        if waiter is None:
-            raise Refusal(f"no request of pid {request['pid']} waits")
-        self.log("need", {"pid": waiter.pid, "owner": waiter.owner, "need": waiter.need.value})
-        self.apply(self.core.admit(now))
-        waiting = waiter.id in self.core.waiters
-        client.send({"status": "changed", "need": waiter.need.value, "waiting": waiting,
-                     **(self.core.wait_info(waiter, now) if waiting else {})})
+    def renice(self, job: Job, need: Need) -> int:
+        """Give each process of `job` that still has its recorded start the nice value of `need`, or
+        keep its own where that is higher, and return how many processes are left at it. Raise `Refusal`
+        where `need` is under the need of `job`, since a user cannot lower a nice value."""
+        if job.need is not None and need.nice < job.need.nice:
+            raise Refusal(f"pid {job.pid} needs {job.need.value}, and a user cannot lower a nice value to "
+                          f"{need.value}'s {need.nice}")
+        changed = 0
+        for pid, start in sorted(job.members.items()):
+            try:
+                if started_at(pid, start):
+                    raise_nice(pid, need)
+                    changed += 1
+            except ProcessLookupError:
+                continue
+            except OSError as error:
+                self.log("nice-failed", {"pid": pid, "need": need.value, "error": repr(error)})
+        return changed
+
+    def renice_call(self, pid: int, need: Need) -> None:
+        """Give the process of a legacy call, which sets no nice value of its own, the nice value of
+        `need` by the rule `run_heavy.set_nice` applies. Raise `Refusal` where the system refuses it."""
+        try:
+            raise_nice(pid, need)
+        except OSError as error:
+            raise Refusal(f"the system refuses nice value {need.nice} for pid {pid}: {error.strerror}")
+
+    def change_need(self, request: Dict[str, Any]) -> Tuple[Need, int]:
+        """Give the job of `request` its need, and return it with the processes left at its nice value or higher."""
+        pid = request["pid"]
+        job = self.core.gated(pid)
+        if job is None:
+            raise Refusal(f"no job of pid {pid} runs under run_heavy.py")
+        need = Need(request["need"])
+        processes = self.renice(job, need)
+        self.apply(self.core.set_need(job, need, processes))
         self.dirty = True
+        return need, processes
 
     def handle(self, client: Client, text: str, now: float) -> None:
         try:
             request = json.loads(text)
-            if request.get("version") != VERSION:
-                raise Refusal(f"the daemon speaks protocol {VERSION}, this call {request.get('version')}")
+            version = request.get("version")
+            if version not in (VERSION, LEGACY_VERSION):
+                raise Refusal(f"the daemon speaks protocols {LEGACY_VERSION} and {VERSION}, this call {version}")
+            legacy = version == LEGACY_VERSION
             if request.get("op") == "queue":
-                client.send({"status": "queue", "registry": self.registry(now)})
+                registry = self.registry(now)
+                client.send({"status": "queue", "registry": heavy_legacy.registry(registry) if legacy else registry})
             elif request.get("op") == "acquire":
-                self.acquire(client, request, now)
+                cpus = self.acquire(heavy_legacy.current(request) if legacy else request, now)
+                if legacy:
+                    self.renice_call(request["pid"], Need(request["need"]))
+                for reply in heavy_legacy.granted(cpus) if legacy else [{"status": "granted"}]:
+                    client.send(reply)
             elif request.get("op") == "need":
-                self.change_need(client, request, now)
+                need, processes = self.change_need(request)
+                client.send(heavy_legacy.changed(need.value) if legacy else
+                            {"status": "changed", "need": need.value, "processes": processes})
             else:
                 raise Refusal(f"no operation {request.get('op')!r}")
         except Refusal as refusal:
@@ -347,7 +362,7 @@ class Daemon:
         owner = NO_SESSION
         try:
             asked = json.loads(text)
-            figures = {key: asked.get(key) for key in ("op", "pid", "cpus", "gib", "need", "minutes")}
+            figures = {key: asked.get(key) for key in ("op", "pid", "cpus", "need")}
             owner = self.owner_of(asked["pid"])
         except (ValueError, KeyError, TypeError, AttributeError, *READ_ERRORS):
             pass
@@ -358,11 +373,6 @@ class Daemon:
         return {**self.core.snapshot(now), "daemon": os.getpid(), "protocol": VERSION}
 
     def close(self, client: Client) -> None:
-        if client.waiter is not None:
-            self.clients.pop(client.waiter.id, None)
-            if client.waiter.id in self.core.waiters:
-                self.core.withdraw(client.waiter.id)
-                self.dirty = True
         try:
             self.selector.unregister(client.conn)
         except (KeyError, ValueError):
@@ -397,7 +407,7 @@ class Daemon:
             self.log("registry-unreadable", {"error": repr(error)})
 
     def run(self, server: socket.socket) -> List[str]:
-        """Serve until no session runs and no job holds a share for `IDLE_EXIT_SECONDS`, and give
+        """Serve until no session runs and no job runs for `IDLE_EXIT_SECONDS`, and give
         no files, or until a source file has changed, and give the files that changed."""
         server.setblocking(False)
         self.selector.register(server, selectors.EVENT_READ, None)
@@ -425,8 +435,6 @@ class Daemon:
                     self.log("restart", {"changed": [os.path.basename(path) for path in changed]})
                     heavy_protocol.write_registry(self.directory, self.registry(now))
                     return changed
-            self.apply(self.core.expire(now))
-            self.apply(self.core.admit(now))
             for claude, text in self.core.messages(now):
                 self.post(claude, text)
             if self.dirty:
@@ -437,11 +445,21 @@ class Daemon:
         return FAST_SAMPLE_SECONDS if self.core.level in PRESSURE_LEVELS or self.core.hot else SAMPLE_SECONDS
 
     def should_exit(self, now: float) -> bool:
-        """Whether no session runs, no job holds a share, no request waits, and none has for
-        `IDLE_EXIT_SECONDS`."""
-        if self.core.jobs or self.core.waiters or self.clients or self.claude:
+        """Whether no session runs and no job runs, and none has for `IDLE_EXIT_SECONDS`."""
+        if self.core.jobs or self.claude:
             self.last_active = now
         return now - self.last_active >= IDLE_EXIT_SECONDS
+
+
+def started_at(pid: int, start: float) -> bool:
+    """Whether process `pid` runs and has the start `start`, within a second."""
+    started = process_started(pid)
+    return started is not None and abs(started - start) <= 1
+
+
+def raise_nice(pid: int, need: Need) -> None:
+    """Give process `pid` the nice value of `need`, or keep its own where that is higher."""
+    os.setpriority(os.PRIO_PROCESS, pid, need.raised(os.getpriority(os.PRIO_PROCESS, pid)))
 
 
 def runs(pid: int) -> bool:

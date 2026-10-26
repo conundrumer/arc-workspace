@@ -1,5 +1,5 @@
 """The readings of the machine that `scripts/load_monitor.py` alerts on and
-`scripts/resource_daemon.py` holds requests on: the kernel's memory pressure
+`scripts/resource_daemon.py` reads: the kernel's memory pressure
 level (`kern.memorystatus_vm_pressure_level`: 1 normal, 2 warn, 4 critical),
 the counters of `vm_stat`, and the machine's budget of CPUs and GiB. A read
 that fails raises `subprocess.CalledProcessError`, `OSError` or `ValueError`.
@@ -48,7 +48,6 @@ def pressure_level() -> int:
 
 def budget() -> tuple[int, int]:
     """The CPUs (`hw.logicalcpu`) and the GiB of memory (`hw.memsize`, less `SYSTEM_GIB`) of the
-    machine. The daemon takes the footprint of the processes outside its jobs off the GiB
-    (`heavy_core.Core.available`)."""
+    machine."""
     cpus, memory = output("sysctl", "-n", "hw.logicalcpu", "hw.memsize").split()
     return int(cpus), int(memory) // GIB - SYSTEM_GIB

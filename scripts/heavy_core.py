@@ -1,24 +1,19 @@
 """The state of the resource daemon (`scripts/resource_daemon.py`): the
-waiting requests, the jobs that hold a share, and what each reading of the
-machine changes in them. It reads and writes nothing: each call returns the
-effects, a log line, a signal to send, a grant, that the daemon applies.
+jobs that run, and what each reading of the machine changes in them. It reads
+and writes nothing: each call returns the effects, a log line, a signal to
+send, that the daemon applies.
 
-The budget that admission and the expected starts use is `available`: the machine's
-CPUs, and `UNBOUNDED_GIB`, so that no request waits for GiB. Memory gates no start: idle
-memory moves to swap at little cost, and a job is kept from the thrash that active memory brings
-by the caps of `scripts/heavy_enforcer.py`.
+A call of `run_heavy.py` starts its command at once, and the daemon records it
+as a gated job with the CPUs it declares. Memory gates no start: idle memory moves to swap at little cost,
+and a job is kept from the thrash that active memory brings by the caps of
+`scripts/heavy_enforcer.py`.
 
-A request waits, as `scripts/heavy_scheduler.py` orders it, and starts where the daemon
-reads the machine. A job ends where its pid does, and the
-processes it left behind are killed, if it belongs to a session. A gated job holds its
-declared CPUs, and an ungated process, which `scripts/heavy_enforcer.py` finds, the CPUs it
-measures.
-
-A short gated job that runs past its declared minutes holds from then on as a long job of
-its need, with its CPUs and GiB unchanged; no process is signalled for it.
+A job ends where its pid does, and the
+processes it left behind are killed, if it belongs to a session. An ungated process,
+which `scripts/heavy_enforcer.py` finds, is counted with the CPUs it measures.
 
 A gated job that runs at more than twice its
-CPUs for a minute, or runs past twice its minutes gets one log line and one
+CPUs for a minute gets one log line and one
 message to its session. An ungated process that is a call of `run_heavy.py`,
 of a gate older than the daemon, is counted and is sent no message that says it runs
 outside the gate. A job whose footprint passes `SOFT_GIB` gets one log line and one message to its
@@ -40,20 +35,13 @@ import heavy_notices
 from heavy_notices import Reason
 from heavy_enforcer import (ADOPT_CPU_SECONDS, ADOPT_CPUS, ADOPT_GIB, ADOPT_GIB_SECONDS, CPU_OVERRUN_FACTOR,
                             CPU_OVERRUN_SECONDS, CRITICAL_PAUSE_SECONDS, HARD_GIB, KILL_GRACE, SOFT_GIB,
-                            TIME_OVERRUN_FACTOR, command_roots, victims)
-from heavy_model import Amount, Job, Kind, Lane, Need, Waiter
-from heavy_scheduler import Holding, estimates, next_waiters, queues, reserve, resolve
-from machine_readings import CRITICAL_PRESSURE, GIB, KIB, PRESSURE_LEVELS, SWAP_IN_RATE
+                            command_roots, victims)
+from heavy_model import Job, Kind, Need
+from machine_readings import CRITICAL_PRESSURE, GIB, KIB, SWAP_IN_RATE
 from process_readings import NO_SESSION
 
 OUTSIDE_THE_GATE = frozenset({Reason.ADOPTED})
 COMMAND_CHARS = 300
-DECLARED_SECONDS = 60
-"""A gated job holds its declared GiB for this long after its grant."""
-HEADROOM_GIB = 1
-"""What a gated job holds beyond its measured peak, once its declared GiB no longer counts."""
-UNBOUNDED_GIB = 1 << 20
-"""The GiB of the budget: more than any request asks."""
 
 
 @dataclass(frozen=True)
@@ -89,34 +77,6 @@ class Log:
 
 
 @dataclass(frozen=True)
-class Accepted:
-    """A request that waits or starts, cut to `waiter.ask` where `cut` is set, out of the most `cap` a job
-    of its lane and need may ask."""
-    waiter: Waiter
-    cut: bool
-    cap: Amount
-
-
-@dataclass(frozen=True)
-class Grant:
-    waiter: Waiter
-    job: Job
-
-
-@dataclass(frozen=True)
-class Refuse:
-    waiter: Waiter
-    reason: str
-
-
-@dataclass(frozen=True)
-class GiveUp:
-    """A waiter whose `--wait` has run out, with its expected start."""
-    waiter: Waiter
-    eta: Optional[float]
-
-
-@dataclass(frozen=True)
 class Signal:
     """A signal to send process `pid`, where it still has the start `start`."""
     pid: int
@@ -132,7 +92,7 @@ class SetClass:
 
 
 
-Effect = Union[Log, Accepted, Grant, Refuse, GiveUp, Signal, SetClass]
+Effect = Union[Log, Signal, SetClass]
 
 
 @dataclass
@@ -164,12 +124,6 @@ def tree(root: int, children: Dict[int, List[int]], taken: FrozenSet[int] = froz
     return found
 
 
-def refusal_fields(waiter: Waiter, reason: str) -> Dict[str, Any]:
-    """The reason, owner and figures of a refused request."""
-    return {"reason": reason, "owner": waiter.owner, "op": "acquire", "pid": waiter.pid,
-            "cpus": waiter.ask.cpus, "gib": waiter.ask.gib, "need": waiter.need.value, "minutes": waiter.minutes}
-
-
 def ceil_gib(kib: int) -> int:
     return math.ceil(kib * KIB / GIB)
 
@@ -179,12 +133,13 @@ def gib_up(kib: int) -> int:
 
 
 class Core:
-    def __init__(self, total: Amount) -> None:
-        self.total = total
+    def __init__(self, cpus: int, isolated: bool) -> None:
+        """`isolated` is set for a daemon that shares the machine with another (`heavy_protocol.private`):
+        it adopts no process, so it acts on its own gated jobs alone."""
+        self.cpus = cpus
+        self.isolated = isolated
         self.outside_kib = 0
         self.jobs: Dict[int, Job] = {}
-        self.waiters: Dict[int, Waiter] = {}
-        self.hold: Optional[str] = None
         self.fault: Optional[str] = None
         self.notices = heavy_notices.Notices()
         self.claude: Dict[str, int] = {}
@@ -199,86 +154,22 @@ class Core:
         self.level = 1
         self.hot = False
 
-    def available(self) -> Amount:
-        """The budget that admission and expected starts use: the CPUs of `total`, and
-        `UNBOUNDED_GIB`."""
-        return Amount(self.total.cpus, UNBOUNDED_GIB)
+    def gated(self, pid: int) -> Optional[Job]:
+        """The gated job of client `pid`, or None."""
+        job = self.jobs.get(pid)
+        return job if job is not None and job.kind is Kind.GATED else None
 
-    def set_need(self, pid: int, need: Need, now: float) -> Optional[Waiter]:
-        """Give the waiting request of client `pid` the need `need`, with its ask cut again to
-        what the need allows; None where none of that pid waits."""
-        for w in self.waiters.values():
-            if w.pid == pid:
-                w.need = need
-                w.ask, _, _ = resolve(w.asked_cpus, w.asked_gib, w.lane, need, self.available())
-                return w
-        return None
+    def grant(self, pid: int, start: float, owner: str, need: Need, cpus: int, command: str,
+              now: float) -> List[Effect]:
+        """Record the call of client `pid` as a gated job that declares `cpus`."""
+        self.jobs[pid] = Job(pid, start, owner, Kind.GATED, need, cpus, command, now, members={pid: start})
+        return [Log("grant", {"pid": pid, "owner": owner, "need": need.value, "cpus": cpus,
+                              "command": command[:COMMAND_CHARS]})]
 
-    def holdings(self, now: float) -> List[Holding]:
-        """What each job takes from the budget at `now`. A short gated job that runs past its
-        declared minutes takes as a long job of its need. A gated job takes its declared GiB
-        for `DECLARED_SECONDS` after its grant, or the GiB it measures where that is more, and
-        then its measured peak and `HEADROOM_GIB`; a job with no measure takes its declared
-        GiB."""
-        out = []
-        for job in self.jobs.values():
-            if job.kind is Kind.GATED:
-                held = gib_up(job.footprint_kib) if job.footprint_kib else 0
-                overrun = job.lane is Lane.SHORT and job.ends is not None and now > job.ends
-                lane = Lane.LONG if overrun else job.lane
-                if now - job.granted < DECLARED_SECONDS or not job.peak_kib:
-                    gib = max(job.amount.gib, held)
-                else:
-                    gib = gib_up(job.peak_kib) + HEADROOM_GIB
-                out.append(Holding(lane, job.need, Amount(job.amount.cpus, gib), job.ends))
-            else:
-                out.append(Holding(job.lane, None, job.amount, None))
-        return out
-
-    def submit(self, waiter: Waiter, cut: bool, cap: Amount) -> List[Effect]:
-        """Queue `waiter`, whose ask is cut where `cut` is set, to `cap`, or refuse it."""
-        if self.fault is not None:
-            return [Log("refusal", refusal_fields(waiter, self.fault)), Refuse(waiter, self.fault)]
-        self.waiters[waiter.id] = waiter
-        return [Accepted(waiter, cut, cap)]
-
-    def withdraw(self, waiter_id: int) -> None:
-        self.waiters.pop(waiter_id, None)
-
-    def admit(self, now: float) -> List[Effect]:
-        """Start each waiter that is first of its queue and fits, where no hold stands."""
-        if self.hold is not None or self.fault is not None:
-            return []
-        out: List[Effect] = []
-        for w in next_waiters(self.waiters.values(), self.holdings(now), self.available(), now):
-            del self.waiters[w.id]
-            job = Job(w.pid, w.start, w.owner, Kind.GATED, w.need, w.ask, w.minutes, w.command, now,
-                      members={w.pid: float(w.start)})
-            self.jobs[w.pid] = job
-            out += [Log("grant", {"pid": w.pid, "owner": w.owner, "need": w.need.value, "cpus": w.ask.cpus,
-                                  "gib": w.ask.gib, "minutes": w.minutes, "waited": round(now - w.arrived),
-                                  "command": w.command[:COMMAND_CHARS]}),
-                    Grant(w, job)]
-        return out
-
-    def expire(self, now: float) -> List[Effect]:
-        """Give up each waiter whose `--wait` has run out."""
-        out: List[Effect] = []
-        gone = [w for w in self.waiters.values() if w.deadline is not None and w.deadline <= now]
-        if gone:
-            etas = estimates(list(self.waiters.values()), self.holdings(now), self.available(), now)
-            for w in gone:
-                del self.waiters[w.id]
-                out += [Log("timeout", {"pid": w.pid, "owner": w.owner, "need": w.need.value}),
-                        GiveUp(w, etas.get(w.id))]
-        return out
-
-    def refuse_all(self, reason: str) -> List[Effect]:
-        out: List[Effect] = []
-        for w in list(self.waiters.values()):
-            del self.waiters[w.id]
-            out += [Log("refusal", refusal_fields(w, reason)), Refuse(w, reason)]
-        return out
+    def set_need(self, job: Job, need: Need, processes: int) -> List[Effect]:
+        """Give `job` the need `need`, which `processes` of its processes run at."""
+        job.need = need
+        return [Log("need", {"pid": job.pid, "owner": job.owner, "need": need.value, "processes": processes})]
 
     def finish(self, job: Job, now: float) -> List[Effect]:
         """End `job`, and queue the processes it left behind for a kill."""
@@ -300,7 +191,7 @@ class Core:
         return out
 
     def tick(self, sample: Sample, now: float) -> List[Effect]:
-        """Take a reading of the machine in: the hold, the end of jobs, the measure of each job,
+        """Take a reading of the machine in: the pressure level, the end of jobs, the measure of each job,
         the adoption of ungated commands, the overruns, the jobs past the soft cap, and the kills."""
         out: List[Effect] = []
         self.claude = {session: pid for pid, session in sample.claude.items()}
@@ -390,12 +281,15 @@ class Core:
             job.peak_kib = max(job.peak_kib, job.footprint_kib)
             job.cpu = self.rate(members, sample, now, elapsed)
             if job.kind is Kind.UNGATED:
-                job.amount = Amount(max(1, math.ceil(job.cpu)), gib_up(job.footprint_kib))
+                job.cpus = max(1, math.ceil(job.cpu))
             claimed = claimed | frozenset(members)
         return claimed
 
     def adopt(self, sample: Sample, now: float, elapsed: Optional[float], claimed: FrozenSet[int]) -> List[Effect]:
-        """Adopt each command of a session that runs without a grant and over the thresholds."""
+        """Adopt each command of a session that runs without a grant and over the thresholds, unless
+        the core is isolated."""
+        if self.isolated:
+            return []
         procs = sample.procs
         roots = command_roots({pid: p.command for pid, p in procs.items()},
                               {pid: p.ppid for pid, p in procs.items()}, sorted(sample.claude))
@@ -419,18 +313,17 @@ class Core:
                     or (watch.memory_since is not None and now - watch.memory_since >= ADOPT_GIB_SECONDS)):
                 continue
             p = procs[root]
-            job = Job(root, p.start, p.session, Kind.UNGATED, None,
-                      Amount(max(1, math.ceil(cpu)), gib_up(footprint)), None, p.command, now,
+            job = Job(root, p.start, p.session, Kind.UNGATED, None, max(1, math.ceil(cpu)), p.command, now,
                       footprint_kib=footprint, peak_kib=footprint, cpu=cpu,
                       members={pid: procs[pid].start for pid in found})
             self.jobs[root] = job
             claimed = claimed | frozenset(found)
             del self.watch[root]
             reason = "cpu" if watch.cpu_since is not None and now - watch.cpu_since >= ADOPT_CPU_SECONDS else "memory"
-            out += [Log("adopt", {"pid": root, "owner": p.session, "reason": reason, "cpus": job.amount.cpus,
-                                  "gib": job.amount.gib, "command": p.command[:COMMAND_CHARS]}),
+            out += [Log("adopt", {"pid": root, "owner": p.session, "reason": reason, "cpus": job.cpus,
+                                  "gib": gib_up(footprint), "command": p.command[:COMMAND_CHARS]}),
                     SetClass(root)]
-            self.tell(job, Reason.ADOPTED, heavy_notices.adopted(root, p.command, job.amount.cpus, job.amount.gib))
+            self.tell(job, Reason.ADOPTED, heavy_notices.adopted(root, p.command, job.cpus, gib_up(footprint)))
         self.watch = {pid: w for pid, w in self.watch.items() if pid in seen}
         return out
 
@@ -446,25 +339,20 @@ class Core:
         return first
 
     def overruns(self, now: float) -> List[Effect]:
-        """Log each overrun of a gated job once, and queue one message for it."""
+        """Log each CPU overrun of a gated job once, and queue one message for it."""
         out: List[Effect] = []
         for job in self.jobs.values():
-            if job.kind is not Kind.GATED or job.minutes is None:
+            if job.kind is not Kind.GATED:
                 continue
-            figures = {"pid": job.pid, "owner": job.owner, "command": job.command[:COMMAND_CHARS]}
-            if job.cpu > CPU_OVERRUN_FACTOR * job.amount.cpus:
+            if job.cpu > CPU_OVERRUN_FACTOR * job.cpus:
                 since = self.cpu_over.setdefault(job.pid, now)
                 if now - since >= CPU_OVERRUN_SECONDS and self.tell(
-                        job, Reason.CPU, heavy_notices.cpu_overrun(job.pid, job.command, job.cpu, job.amount.cpus)):
-                    out.append(Log("overrun", {**figures, "reason": "cpu", "cpus": round(job.cpu, 1),
-                                               "declared": job.amount.cpus}))
+                        job, Reason.CPU, heavy_notices.cpu_overrun(job.pid, job.command, job.cpu, job.cpus)):
+                    out.append(Log("overrun", {"pid": job.pid, "owner": job.owner,
+                                               "command": job.command[:COMMAND_CHARS], "reason": "cpu",
+                                               "cpus": round(job.cpu, 1), "declared": job.cpus}))
             else:
                 self.cpu_over.pop(job.pid, None)
-            minutes = (now - job.granted) / 60
-            if minutes > TIME_OVERRUN_FACTOR * job.minutes and self.tell(
-                    job, Reason.TIME, heavy_notices.time_overrun(job.pid, job.command, minutes, job.minutes)):
-                out.append(Log("overrun", {**figures, "reason": "time", "minutes": round(minutes),
-                                           "declared": job.minutes}))
         return out
 
     def kills(self, sample: Sample, now: float) -> List[Effect]:
@@ -529,34 +417,11 @@ class Core:
                 out.append((self.claude[session], text))
         return out
 
-    def wait_info(self, waiter: Waiter, now: float) -> Dict[str, Any]:
-        """What a waiting request is told: the reason it waits, its place in its queue, and its
-        expected start."""
-        lanes = queues(self.waiters.values(), now)
-        lane = waiter.lane
-        etas = estimates(list(self.waiters.values()), self.holdings(now), self.available(), now)
-        position = [w.id for w in lanes[lane]].index(waiter.id) + 1
-        return {"reason": self.hold or "the machine's budget", "position": position, "lane": lane.value,
-                "eta": etas.get(waiter.id)}
-
     def snapshot(self, now: float) -> Dict[str, Any]:
-        """The registry: the jobs, the waiting requests with their expected starts, and the
-        budget."""
-        etas = estimates(list(self.waiters.values()), self.holdings(now), self.available(), now)
-        waiting = []
-        for lane, queue in queues(self.waiters.values(), now).items():
-            for position, w in enumerate(queue, 1):
-                waiting.append({"id": w.id, "pid": w.pid, "owner": w.owner, "need": w.need.value,
-                                "cpus": w.ask.cpus, "gib": w.ask.gib, "minutes": w.minutes, "lane": lane.value,
-                                "position": position, "arrived": w.arrived, "eta": etas.get(w.id),
-                                "command": w.command[:COMMAND_CHARS]})
-        reserved = reserve(self.available())
-        return {"at": now, "hold": self.hold or self.fault,
-                "budget": {"cpus": self.total.cpus, "gib": self.available().gib, "fixed_gib": self.total.gib,
-                           "outside_gib": ceil_gib(self.outside_kib),
-                           "reserve_cpus": reserved.cpus, "reserve_gib": reserved.gib},
+        """The registry: the jobs, and the machine's CPUs and the GiB held outside the jobs."""
+        return {"at": now, "fault": self.fault,
+                "machine": {"cpus": self.cpus, "outside_gib": ceil_gib(self.outside_kib)},
                 "jobs": [job_record(job) for job in sorted(self.jobs.values(), key=lambda j: (j.granted, j.pid))],
-                "waiting": waiting,
                 "notified": sorted([pid, start, reason.value] for pid, start, reason in self.notices.seen)}
 
     def restore(self, record: Dict[str, Any]) -> None:
@@ -565,19 +430,21 @@ class Core:
         for item in record.get("jobs", []):
             job = job_from_record(item)
             self.jobs[job.pid] = job
-        self.notices.seen = {(pid, start, Reason(reason)) for pid, start, reason in record.get("notified", [])}
+        reasons = {reason.value: reason for reason in Reason}
+        self.notices.seen = {(pid, start, reasons[reason]) for pid, start, reason in record.get("notified", [])
+                             if reason in reasons}
 
 
 def job_record(job: Job) -> Dict[str, Any]:
     return {"pid": job.pid, "start": job.start, "owner": job.owner, "kind": job.kind.value,
-            "need": job.need.value if job.need else None, "cpus": job.amount.cpus, "gib": job.amount.gib,
-            "minutes": job.minutes, "command": job.command[:COMMAND_CHARS], "granted": job.granted,
+            "need": job.need.value if job.need else None, "cpus": job.cpus,
+            "command": job.command[:COMMAND_CHARS], "granted": job.granted,
             "footprint_kib": job.footprint_kib, "peak_kib": job.peak_kib, "cpu": round(job.cpu, 2),
-            "ends": job.ends, "members": {str(pid): start for pid, start in sorted(job.members.items())}}
+            "members": {str(pid): start for pid, start in sorted(job.members.items())}}
 
 
 def job_from_record(item: Dict[str, Any]) -> Job:
     return Job(item["pid"], item["start"], item["owner"], Kind(item["kind"]),
-               Need(item["need"]) if item["need"] else None, Amount(item["cpus"], item["gib"]), item["minutes"],
-               item["command"], item["granted"], item["footprint_kib"], item["peak_kib"], item["cpu"],
+               Need(item["need"]) if item["need"] else None, item["cpus"], item["command"], item["granted"],
+               item["footprint_kib"], item["peak_kib"], item["cpu"],
                {int(pid): start for pid, start in item["members"].items()})

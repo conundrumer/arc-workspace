@@ -50,7 +50,6 @@ SNAPSHOTS = "/shell-snapshots/"
 SHELLS = frozenset({"bash", "sh", "zsh", "dash", "fish"})
 CPU_OVERRUN_FACTOR = 2
 CPU_OVERRUN_SECONDS = 60
-TIME_OVERRUN_FACTOR = 2
 
 
 def program(command: str) -> str:

@@ -1,6 +1,6 @@
 """The side of `scripts/run_heavy.py` that talks to the resource daemon
 (`scripts/resource_daemon.py`): reaching it, starting it where none runs,
-asking it for a share, reading its queue.
+registering a call with it, changing a job's need, reading its registry.
 
 Standard library only, Python 3.9."""
 
@@ -12,7 +12,7 @@ import socket
 import subprocess
 import sys
 import time
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import heavy_protocol
 from heavy_enforcer import HARD_GIB
@@ -21,10 +21,7 @@ from heavy_protocol import Refusal
 START_SECONDS = 15
 GIT_SECONDS = 5
 ANSWER_SECONDS = 30
-"""The seconds the daemon has to answer a request before the first line that says it waits or
-starts."""
-RECONNECTS = 5
-"""The connections in a row that may end with no answer line before `acquire` gives up."""
+"""The seconds the daemon has to answer a request."""
 RETRY_SECONDS = 0.2
 ERROR_LINES = 5
 OWNER_CHARS = 8
@@ -37,7 +34,7 @@ def daemon_script() -> str:
     (the daemon of that checkout's own tests) or the main tree cannot be found."""
     here = os.path.dirname(os.path.abspath(__file__))
     own = os.path.join(here, "resource_daemon.py")
-    if os.environ.get(heavy_protocol.DIR_ENV):
+    if heavy_protocol.private():
         return own
     try:
         common = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], cwd=here,
@@ -107,62 +104,14 @@ def connect(directory: str, start: bool) -> Optional[socket.socket]:
         time.sleep(0.05)
 
 
-def clock(at: Optional[float]) -> str:
-    return "unknown" if at is None else time.strftime("%H:%M:%S", time.localtime(at))
-
-
-def acquire(directory: str, request: Dict[str, Any], say: Callable[[str], None]) -> int:
-    """Return the CPUs granted, once the daemon grants the share that `request` asks, and raise
-    `Refusal` where it refuses or the wait runs out. `say` takes the one line that tells the
-    request was cut and the one that tells it waits."""
-    since = time.time()
-    waited = False
-    cut_said = False
-    cpus = 0
-    failures = 0
-    while failures < RECONNECTS:
-        conn = connect(directory, start=True)
-        assert conn is not None
-        with conn, conn.makefile("rb") as stream:
-            conn.settimeout(ANSWER_SECONDS)
-            try:
-                conn.sendall(heavy_protocol.line({**request, "since": since}))
-                for raw in stream:
-                    failures = 0
-                    reply = json.loads(raw)
-                    status = reply["status"]
-                    if status == "accepted":
-                        conn.settimeout(None)
-                        cpus = reply["cpus"]
-                        if reply["cut"] and not cut_said:
-                            cut_said = True
-                            say(f"cut to the budget: {reply['cpus']} CPUs and {reply['gib']} GiB of "
-                                f"{reply['limit_cpus']} and {reply['limit_gib']}")
-                    elif status == "waiting" and not waited:
-                        waited = True
-                        say(f"waiting for {reply['reason']}; place {reply['position']} in the "
-                            f"{reply['lane']} queue, expected start {clock(reply['eta'])}")
-                    elif status == "granted":
-                        return cpus
-                    elif status == "refused":
-                        raise Refusal(reply["reason"])
-                    elif status == "timeout":
-                        raise Refusal(f"{reply['reason']}; expected start {clock(reply['eta'])}")
-            except socket.timeout:
-                raise Refusal(f"the daemon did not answer within {ANSWER_SECONDS} s")
-            except (ConnectionError, ValueError):
-                pass
-        failures += 1
-    raise Refusal("the daemon keeps closing the connection")
-
-
-def ask(directory: str, request: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """The daemon's one-line answer to `request`, or None where no daemon runs. A daemon that
-    restarts closes the connection or has no socket for a moment, and its registry still names it,
-    so the request is sent again, for up to `START_SECONDS`."""
+def ask(directory: str, request: Dict[str, Any], start: bool) -> Optional[Dict[str, Any]]:
+    """The daemon's one-line answer to `request`, which this call starts a daemon for where none runs
+    and `start` is set; None where none runs and `start` is not set. A daemon that restarts closes the
+    connection or has no socket for a moment, and its registry still names it, so the request is sent
+    again, for up to `START_SECONDS`."""
     deadline = time.monotonic() + START_SECONDS
     while time.monotonic() < deadline:
-        conn = connect(directory, start=False)
+        conn = connect(directory, start)
         if conn is None:
             if heavy_protocol.read_registry(directory) is None:
                 return None
@@ -180,9 +129,18 @@ def ask(directory: str, request: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     raise Refusal(f"the daemon did not answer within {START_SECONDS} s")
 
 
+def acquire(directory: str, request: Dict[str, Any]) -> None:
+    """Register the call that `request` gives with the daemon, which starts where none runs. Raise
+    `Refusal` where the daemon refuses."""
+    reply = ask(directory, request, start=True)
+    assert reply is not None
+    if reply.get("status") != "granted":
+        raise Refusal(reply.get("reason", f"unexpected answer {reply!r}"))
+
+
 def queue(directory: str) -> Optional[Dict[str, Any]]:
     """The daemon's registry, or None where no daemon runs."""
-    reply = ask(directory, {"op": "queue"})
+    reply = ask(directory, {"op": "queue"}, start=False)
     if reply is None:
         return None
     if reply.get("status") != "queue":
@@ -191,16 +149,13 @@ def queue(directory: str) -> Optional[Dict[str, Any]]:
 
 
 def change_need(directory: str, pid: int, need: str) -> str:
-    """Give the waiting request of client `pid` the need `need`, and say what became of it."""
-    reply = ask(directory, {"op": "need", "pid": pid, "need": need})
+    """Give the job of client `pid` the need `need`, and say what became of it."""
+    reply = ask(directory, {"op": "need", "pid": pid, "need": need}, start=False)
     if reply is None:
-        raise Refusal(f"no request of pid {pid} waits: no daemon runs")
+        raise Refusal(f"no job of pid {pid} runs: no daemon runs")
     if reply.get("status") != "changed":
         raise Refusal(reply.get("reason", f"unexpected answer {reply!r}"))
-    if not reply["waiting"]:
-        return f"pid {pid} needs {reply['need']} and starts now"
-    return (f"pid {pid} needs {reply['need']}: place {reply['position']} in the {reply['lane']} queue, "
-            f"expected start {clock(reply['eta'])}")
+    return f"pid {pid} needs {reply['need']}: {reply['processes']} processes run at its nice value or higher"
 
 
 def duration(seconds: float) -> str:
@@ -209,23 +164,17 @@ def duration(seconds: float) -> str:
 
 
 def queue_text(registry: Dict[str, Any], now: float) -> str:
-    """The queue view: the budget, each job that holds a share, and each waiting request in the
-    order it starts, with its expected start."""
-    budget = registry["budget"]
-    lines: List[str] = [f"budget: {budget['cpus']} CPUs, of which {budget['reserve_cpus']} are the short jobs' "
-                        f"reserve; memory gates no start, and a job is killed over {HARD_GIB} GiB or at critical pressure; "
-                        f"{budget['outside_gib']} GiB readable outside the jobs"]
-    if registry["hold"]:
-        lines.append(f"hold: {registry['hold']}")
-    lines.append("running: pid owner kind need cpus gib minutes elapsed peak-gib command")
+    """The queue view: the machine, and each job with its need."""
+    machine = registry["machine"]
+    lines: List[str] = [f"machine: {machine['cpus']} CPUs; no job waits for a start, and a job is killed over "
+                        f"{HARD_GIB} GiB or at critical pressure; "
+                        f"{machine['outside_gib']} GiB readable outside the jobs"]
+    if registry["fault"]:
+        lines.append(f"fault: {registry['fault']}")
+    lines.append("running: pid owner kind need cpus gib elapsed peak-gib command")
     for job in registry["jobs"]:
         lines.append(" ".join([
-            f"  {job['pid']}", job["owner"][:OWNER_CHARS], job["kind"], job["need"] or "-",
-            str(job["cpus"]), str(job["gib"]), "-" if job["minutes"] is None else f"{job['minutes']:g}",
-            duration(now - job["granted"]), f"{job['peak_kib'] / (1 << 20):.1f}", job["command"][:COMMAND_CHARS]]))
-    lines.append("waiting: pid owner lane need cpus gib minutes waited expected-start command")
-    for w in sorted(registry["waiting"], key=lambda w: (w["lane"] != "short", w["position"])):
-        lines.append(" ".join([
-            f"  {w['pid']}", w["owner"][:OWNER_CHARS], w["lane"], w["need"], str(w["cpus"]), str(w["gib"]),
-            f"{w['minutes']:g}", duration(now - w["arrived"]), clock(w["eta"]), w["command"][:COMMAND_CHARS]]))
+            f"  {job['pid']}", job["owner"][:OWNER_CHARS], job["kind"], job["need"] or "-", str(job["cpus"]),
+            f"{job['footprint_kib'] / (1 << 20):.1f}", duration(now - job["granted"]),
+            f"{job['peak_kib'] / (1 << 20):.1f}", job["command"][:COMMAND_CHARS]]))
     return "\n".join(lines)
