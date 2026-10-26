@@ -61,6 +61,11 @@ def chart_key(col, inst) -> bool:
     return inst is None and col.name == "key"
 
 
+def case_ctors(leaves: list["Leaf"], terms: list) -> set[str]:
+    """The constructors that the `terms` of a column's `leaves` name at its case leaves."""
+    return {x for leaf, t in zip(leaves, terms) if leaf.kind == "case" for x in ctor_names(t)}
+
+
 def site_columns(c: "Converter", cols: list, inst) -> list[list[Site]]:
     """For each Souffle column of `cols` (`Converter.resolve`), the `Site`
     of each of its leaves that `kept_leaf` keeps, in order. `ClauseWriter.sites`
@@ -224,9 +229,7 @@ class ClauseWriter:
         order = sorted(enumerate(zip(cols, atom.args)), key=lambda column: not chart_key(column[1][0][0], inst))
         for i, ((col, leaves), arg) in order:
             terms = self.split(arg, leaves)
-            for leaf, t in zip(leaves, terms):
-                if leaf.kind == "case":
-                    self.branches.update(ctor_names(t))
+            self.branches.update(case_ctors(leaves, terms))
             live = [(leaf, t) for leaf, t in zip(leaves, terms) if kept_leaf(leaf)]
             kept = [(site, t) for site, (_, t) in zip(placed[i], live)]
             if not kept:
@@ -291,6 +294,23 @@ class ClauseWriter:
             return lab
         return self.term_text(t)
 
+    def gate(self, l: AtomLiteral) -> None:
+        """An atom of a `skip_rels` relation, such as `impl_choice`, writes no text:
+        the constructors its arguments name at case leaves are the branches the
+        clause stands in, as `sites` gives them for any other atom. A negated atom
+        that names a constructor is no branch, and gives a TODO."""
+        _, cols, _, _ = self.c.resolve(l.atom.relation, self.scope, self.sub)
+        if cols is None or len(cols) != len(l.atom.args):
+            self.c.todo.add("choice-gate", souffle_term(l.atom))
+            return
+        ctors: set[str] = set()
+        for (_, leaves), arg in zip(cols, l.atom.args):
+            ctors |= case_ctors(leaves, self.split(arg, leaves))
+        if l.negated and ctors:
+            self.c.todo.add("choice-gate", "!" + souffle_term(l.atom))
+        elif not l.negated:
+            self.branches |= ctors
+
     def lit(self, l, bound: set[str]) -> list[str]:
         if isinstance(l, AtomLiteral):
             if l.atom.relation.name in self.c.skip_rels and (not l.atom.relation.instances or
@@ -300,6 +320,8 @@ class ClauseWriter:
                     self.reads.add("%" + l.atom.relation.name)
                     if "%" + l.atom.relation.name in self.drop_neg and not l.negated:
                         raise Dead
+                else:
+                    self.gate(l)
                 return []
             if l.negated and not l.atom.relation.instances and self.defect(l.atom.relation.name):
                 return self.universal(l.atom, bound)

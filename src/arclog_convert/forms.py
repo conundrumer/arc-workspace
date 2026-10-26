@@ -245,7 +245,7 @@ class Form:
     name: str
     reads: set[str]
     comments: list[str] = field(default_factory=list)
-    branches: tuple[str, ...] = ()   # the constructors its head fixes
+    branches: tuple[str, ...] = ()   # the constructors its head, or an `impl_choice` atom of its body, fixes
     line: int = 0
     claim_slugs: list[str] = field(default_factory=list)  # from @claim
     src: tuple | None = None          # (unit, side, scope, sub, name_scope) of a clause
@@ -873,17 +873,19 @@ def renamed(text: str) -> str:
 
 
 
-def hoist_shared(text: str) -> str:
+def hoist_shared(text: str, concept_empty: frozenset[str] | set[str]) -> str:
     """The text with each form that several alts state with one meaning,
     and that only their cases read, stated once in the concept: at the end
     of the concept's block of the slug it stands under, or of a later block
-    that declares a relation it reads."""
+    that declares a relation it reads. A relation of `concept_empty`, which
+    the Souffle solver derives no rows of in the concept case, stays in its
+    alts."""
     from arclog_convert.lint import alt_repeats, placements, read, reads
     forms = read(text)
     pl = placements(forms)
     groups: dict[int, tuple] = {}
     for kind, p, ref, shared in alt_repeats(pl):
-        if kind == "shared" and not shared:
+        if kind == "shared" and not shared and ref.name.partition(".")[0] not in concept_empty:
             groups.setdefault(id(ref), (ref, []))[1].append(p)
     if not groups:
         return text

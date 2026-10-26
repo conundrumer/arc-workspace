@@ -82,14 +82,15 @@ def _written_inline(s: "Solver", arclog: str) -> frozenset[str]:
     return frozenset(n for n in names if inlinable(n))
 
 
-def _finished(arclog: str, arcdata: str) -> tuple[str, str, dict[str, str]]:
+def _finished(arclog: str, arcdata: str, concept_empty: frozenset[str] | set[str]) -> tuple[str, str, dict[str, str]]:
     """The text of a pass after the renames that every converted program
-    gets, and the instance renames they applied."""
+    gets, and the instance renames they applied. `concept_empty` is the
+    relations the solver derives no rows of in the concept case."""
     from arclog_convert.lint import fix_labels
     arclog = fold_or_lines(renamed(arclog))
     insts = libmap_rename.renamed_instances(libmap_rename.instances(arclog),
                                             libmap_rename.reads(arclog + arcdata))
-    arclog = hoist_shared(fix_labels(libmap_rename.rename(arclog, insts)))
+    arclog = hoist_shared(fix_labels(libmap_rename.rename(arclog, insts)), concept_empty)
     return arclog, libmap_rename.rename(arcdata, insts), insts
 
 
@@ -113,7 +114,7 @@ def _with_checks(s: "Solver", lib: Lib, sig: Lib, names: dict, columns: dict, in
             MERGES_UNMERGED.clear()
             again = Solver(s.stem, lib, sig, Todo(), inline, copies, keep)
             arclog, arcdata = again.run()
-            arclog, arcdata, insts = _finished(arclog, arcdata)
+            arclog, arcdata, insts = _finished(arclog, arcdata, again.concept_empty)
             more = dropped(again, keep, insts, arclog)
             if not more:
                 break
@@ -166,7 +167,7 @@ def convert_one(stem: str) -> tuple[str, str | None, str | None, Counter, Counte
             todo = Todo()
             s = Solver(stem, lib, sig, todo, stuck, copies)
             arclog, arcdata = s.run()
-        arclog, arcdata, insts = _finished(arclog, arcdata)
+        arclog, arcdata, insts = _finished(arclog, arcdata, s.concept_empty)
         merges, unmerged = Counter(MERGES), list(MERGES_UNMERGED)
         names = name_map(s, insts, arclog, arcdata)
         text = parity(s, names, insts)

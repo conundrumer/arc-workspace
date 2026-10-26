@@ -112,16 +112,7 @@ class RenderMixin:
                     continue
                 f.dead_reads = dr
                 changed = True
-                saved = list(self.todo.pending), Counter(self.todo.kinds)
-                if f.src_inst is not None:
-                    inst, us, side = f.src_inst
-                    gs = self.instance(inst, us, side, dr)
-                    g = gs[0] if gs else None
-                else:
-                    u, side, scope, sub, ns = f.src
-                    g = self.clause(u, side, scope, sub, ns, drop_neg=dr)
-                g = self.settled(g)
-                self.todo.pending, self.todo.kinds = saved
+                g = self.settled(self.written_without(f, dr))
                 bare.discard(id(f))
                 if g is None and f.name in stored_names and f.side == "DET":
                     # the concept's values are the stored ones, which no determination derives
@@ -513,6 +504,8 @@ class RenderMixin:
                     continue
                 if any(f.claim_slugs for f in fs):
                     continue
+                if any(f.branches for f in fs) and any(g.name == name for g in branch_forms):
+                    continue   # its constructor's case states it, and an alt of that point states it again
                 readers = [f for f in main + branch_forms if name in f.reads and f.name != name]
                 if not readers:
                     continue
@@ -535,7 +528,7 @@ class RenderMixin:
             return main, branch_forms
         # a concept form that the branch derives again is read nowhere
         dead = {n for n, k in moved.items()
-                if any(g.name == n and k <= set(g.branches) - concept for g in branch_forms)}
+                if any(g.name == n and k == set(g.branches) - concept for g in branch_forms)}
         main = [f for f in main if f.name not in dead]
         for f in main:
             if f.name in moved:
