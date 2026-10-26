@@ -202,29 +202,30 @@ edition = "2021"
 
 
 def engine_change(trees, monkeypatch, lib: str):
-    """The module `merge_steps`, with no document check, and the worktree,
-    uncommitted, of a crate under `engine/` whose library is `lib`."""
+    """The module `merge_steps`, with no document check, the worktree of a
+    crate under `engine/` whose library is `lib`, committed, and the commit
+    before it."""
     steps = script("merge_steps")
     monkeypatch.setattr(steps, "DOCUMENT_CHECKS", ())
     _, worktree = trees
+    base = git(worktree, "rev-parse", "HEAD").strip()
     (worktree / "scripts").mkdir()
     (worktree / "scripts" / "gate.py").write_text("")
     (worktree / "engine" / "src").mkdir(parents=True)
     (worktree / "engine" / "Cargo.toml").write_text(CRATE)
     (worktree / "engine" / "src" / "lib.rs").write_text(lib)
-    return steps, worktree
+    git(worktree, "add", "-A")
+    git(worktree, "commit", "-q", "-m", "e")
+    return steps, worktree, base
 
 
 def test_the_checks_refuse_an_engine_that_does_not_compile(trees, monkeypatch):
     """A change under `engine/` whose crate does not compile is refused; a
     change that touches no path under `engine/` is not, though the engine
     it stands on does not compile."""
-    steps, worktree = engine_change(trees, monkeypatch, "pub fn f() -> u8 { \"\" }\n")
-    base = git(worktree, "rev-parse", "HEAD").strip()
+    steps, worktree, base = engine_change(trees, monkeypatch, "pub fn f() -> u8 { \"\" }\n")
     failed = steps.checks(worktree, base, str(worktree / "out"))
     assert len(failed) == 1 and "mismatched types" in failed[0]
-    git(worktree, "add", "-A")
-    git(worktree, "commit", "-q", "-m", "e")
     base = git(worktree, "rev-parse", "HEAD").strip()
     commit_file(worktree, "p")
     assert steps.checks(worktree, base, str(worktree / "out")) == []
@@ -233,9 +234,8 @@ def test_the_checks_refuse_an_engine_that_does_not_compile(trees, monkeypatch):
 def test_the_checks_refuse_an_engine_whose_test_fails(trees, monkeypatch):
     """A change under `engine/` whose crate compiles and holds a test that
     fails is refused, by the name of that test."""
-    steps, worktree = engine_change(
+    steps, worktree, base = engine_change(
         trees, monkeypatch, "#[test]\nfn one_is_two() { assert_eq!(1, 2); }\n")
-    base = git(worktree, "rev-parse", "HEAD").strip()
     failed = steps.checks(worktree, base, str(worktree / "out"))
     assert len(failed) == 1 and "one_is_two" in failed[0]
 
@@ -243,12 +243,50 @@ def test_the_checks_refuse_an_engine_whose_test_fails(trees, monkeypatch):
 def test_the_checks_refuse_an_engine_whose_doc_links_a_private_item(trees, monkeypatch):
     """A change under `engine/` whose crate compiles, passes its tests and
     holds a public doc link to a private item is refused, by the doc build."""
-    steps, worktree = engine_change(
+    steps, worktree, base = engine_change(
         trees, monkeypatch,
         "/// Gives [`hidden`].\npub fn shown() {}\nfn hidden() {}\n")
-    base = git(worktree, "rev-parse", "HEAD").strip()
     failed = steps.checks(worktree, base, str(worktree / "out"))
     assert len(failed) == 1 and "private item" in failed[0] and "cargo doc" in failed[0]
+
+
+def test_the_checks_refuse_an_engine_edit_outside_head(trees, monkeypatch):
+    """A tree that holds an `engine/` edit its `HEAD` lacks, tracked or new,
+    is refused, with no cargo run."""
+    steps, worktree, base = engine_change(trees, monkeypatch, "pub fn f() {}\n")
+    (worktree / "engine" / "src" / "lib.rs").write_text("pub fn g() {}\n")
+    (worktree / "engine" / "src" / "new.rs").write_text("")
+    failed = steps.checks(worktree, base, str(worktree / "out"))
+    assert len(failed) == 1 and "engine/src/lib.rs" in failed[0] and "engine/src/new.rs" in failed[0]
+
+
+FAILING = "#[test]\nfn {name}_fails() {{ assert_eq!(1, 2); }}\n"
+
+
+def test_the_checks_test_the_changed_crates_and_the_crates_that_depend_on_them(trees, monkeypatch):
+    """In a workspace of `b`, which depends on `a`, each with a failing
+    test, a change to `b` is refused by the test of `b` alone, and a change
+    to `a` by the tests of both (cargo ends its output with the failed targets)."""
+    steps, worktree, base = engine_change(trees, monkeypatch, "")
+    engine = worktree / "engine"
+    (engine / "Cargo.toml").write_text('[workspace]\nmembers = ["a", "b"]\nresolver = "2"\n')
+    for name, dependencies in (("a", ""), ("b", '\n[dependencies]\na = { path = "../a" }\n')):
+        (engine / name / "src").mkdir(parents=True)
+        (engine / name / "Cargo.toml").write_text(
+            CRATE.replace('"e"', f'"{name}"') + dependencies)
+        (engine / name / "src" / "lib.rs").write_text(FAILING.format(name=name))
+    (engine / "src" / "lib.rs").unlink()
+    git(worktree, "add", "-A")
+    git(worktree, "commit", "-q", "-m", "workspace")
+    base = git(worktree, "rev-parse", "HEAD").strip()
+    (engine / "b" / "src" / "lib.rs").write_text(FAILING.format(name="b") + "\n")
+    git(worktree, "commit", "-qam", "b")
+    (failed,) = steps.checks(worktree, base, str(worktree / "out"))
+    assert "`-p b --lib`" in failed and "`-p a --lib`" not in failed
+    (engine / "a" / "src" / "lib.rs").write_text(FAILING.format(name="a") + "\n")
+    git(worktree, "commit", "-qam", "a")
+    (failed,) = steps.checks(worktree, base, str(worktree / "out"))
+    assert "`-p b --lib`" in failed and "`-p a --lib`" in failed
 
 
 class MovingMaster:

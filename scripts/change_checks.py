@@ -45,7 +45,7 @@ import subprocess
 import sys
 import threading
 import tomllib
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -83,9 +83,13 @@ TAIL = 40
 
 @dataclass(frozen=True)
 class Check:
-    """A check's command `argv`, with the files it takes after it."""
+    """A check's command `argv`, with the files it takes after it, the
+    directory `cwd` it runs in and the environment `env` it runs in, where
+    they are given: the tree checked and `checkout.tree_env()` where not."""
     argv: tuple[str, ...]
     files: tuple[str, ...] = ()
+    cwd: Path | None = None
+    env: Mapping[str, str] | None = None
 
     @property
     def command(self) -> tuple[str, ...]:
@@ -201,12 +205,14 @@ def timed(step: str) -> contextlib.AbstractContextManager[None]:
     return duration.step(TOOL, step)
 
 
-def run_check(tree: Path, argv: Sequence[str], shown: str) -> subprocess.CompletedProcess[str]:
-    """A check run as `run_in` runs a command, each line it writes on stderr
-    written on this script's stderr as it comes, timed as the step
-    `shown`."""
+def run_check(tree: Path, check: Check, shown: str) -> subprocess.CompletedProcess[str]:
+    """A check run as `run_in` runs a command, in the directory and the
+    environment it gives, each line it writes on stderr written on this
+    script's stderr as it comes, timed as the step `shown`."""
+    argv = check.command
     with timed(shown):
-        proc = subprocess.Popen(list(argv), cwd=tree, env=checkout.tree_env(), stdout=subprocess.PIPE,
+        proc = subprocess.Popen(list(argv), cwd=check.cwd or tree,
+                                env=checkout.tree_env() if check.env is None else check.env, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, text=True)
         assert proc.stdout is not None and proc.stderr is not None
         stdout = proc.stdout
@@ -227,7 +233,7 @@ def failures(tree: Path, checks: Sequence[Check]) -> list[str]:
     for s in shown:
         print(PREFIX + mctx("running {s}").format(s=s), flush=True)
     with ThreadPoolExecutor(max_workers=max(1, len(checks))) as pool:
-        dones = list(pool.map(lambda c, s: run_check(tree, c.command, s), checks, shown))
+        dones = list(pool.map(lambda c, s: run_check(tree, c, s), checks, shown))
     return [CHECK_FAILED.format(s=s) + "\n" + said(done)
             for s, done in zip(shown, dones, strict=True) if done.returncode != 0]
 

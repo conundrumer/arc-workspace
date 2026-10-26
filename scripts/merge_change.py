@@ -54,11 +54,22 @@ the command line of `master`'s copy. The checks are:
     uv run python -m controlled_markdown check
     uv run python scripts/context.py --write
     uv run python scripts/gate.py --affected <base> <out>
-    cargo test --manifest-path engine/Cargo.toml --workspace --offline --no-fail-fast
-    env RUSTDOCFLAGS=-D warnings cargo doc --manifest-path engine/Cargo.toml --workspace --no-deps --offline
+    cargo test --manifest-path engine/Cargo.toml <crates> --offline --no-fail-fast
+    env RUSTDOCFLAGS=-D warnings cargo doc --manifest-path engine/Cargo.toml <crates> --no-deps --offline
 
-The last two run only where the changes touch a path under `engine/`. The
-checks run concurrently. A check passes when it exits 0, and a refusal
+The last two run only where the changes touch a path under `engine/`, in
+the kept tree, `merge-engine` under the `.cache/` of the main tree, which
+each call moves to the `HEAD` of the top of the stack, so that cargo
+compiles again only the crates the commits since the last merge changed.
+`<crates>` is `-p <crate>` for each crate that holds a path the changes
+touch and each crate that depends on one of them, directly or through
+others, and `--workspace` where a touched path under `engine/` lies in no
+crate's directory (`Cargo.toml`, `Cargo.lock`, `lib/`) or those crates are
+all of them. The checks fail where the top of the stack's tree holds an
+`engine/` edit that its `HEAD` lacks. `merge_steps.py --help` gives the
+kept tree and the selection in full.
+
+The checks run concurrently. A check passes when it exits 0, and a refusal
 lists every check that fails. The gate's dependency record decides which
 of its commands a change affects, so the gate runs on every change, with
 `<base>` the `master` commit the stack is rebased onto. It writes into a
