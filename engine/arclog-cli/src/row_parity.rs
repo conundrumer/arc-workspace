@@ -1,7 +1,11 @@
 //! `row-parity <corpus-dir> <tasks-dir> <rows-dir> <task_id> ...`: compares,
 //! for each selected solver, each relation of the cases its rows file gives,
 //! at their stored parameters, with Souffle's rows of it, from
-//! `<rows-dir>/<task_id>.json` (`scripts/souffle_parity.py case-rows`).
+//! `<rows-dir>/<task_id>.json` (`scripts/souffle_parity.py case-rows`). It
+//! reads a file as a stream, one case at a time, so that a case's rows are
+//! dropped once it is compared: `orientation_constants` comes before
+//! `cases` and `determination`, and `cases` before `determination`, as
+//! `parity.rerun.case_rows` writes them.
 //!
 //! It prints a line `<task>\t<relation>\t<verdict>\t<detail>` for each task
 //! and relation, in the rows file's order, ordered by task id: `equal`;
@@ -65,6 +69,9 @@
 //! as `skip` or `uncompared`, or the multiplicity of rows.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
+use std::fs::File;
+use std::io::BufReader;
 use std::path::Path;
 use std::process::ExitCode;
 use std::sync::Mutex;
@@ -72,11 +79,11 @@ use std::sync::Mutex;
 use arclog::eval::Evaluation;
 use arclog::harness::{require_optimized_build, run_over_corpus, SolverResult};
 use arclog::terms::Example;
-use serde_json::Value;
+use serde::de::{DeserializeSeed, IgnoredAny, MapAccess, SeqAccess, Visitor};
+use serde::{Deserialize, Deserializer};
 
 use crate::concept_case::{with_case, with_concept_case, ConceptCase};
 use crate::renaming::{renaming_exists, same_without_idents, EngineLeaf, Leaf};
-use crate::select::read_json;
 use crate::souffle_rows::{engine_columns, engine_models, pair_name, same_rows, Column, EngineModel, EngineModels, PickRequest, Projection};
 
 const USAGE: &str = "usage: arclog-cli row-parity <corpus-dir> <tasks-dir> <rows-dir> <task_id> [<task_id> ...]";
@@ -159,6 +166,57 @@ pub(crate) struct OpenValue {
     pub(crate) picks: Vec<Option<BTreeSet<Vec<Leaf>>>>,
 }
 
+/// A column of the rows file: a label and a field or null.
+#[derive(Deserialize)]
+struct FileColumn(String, Option<String>);
+
+/// A leaf of the rows file that has no one source: a label, a field or null,
+/// and the reason.
+#[derive(Deserialize)]
+struct FileUnresolved(String, Option<String>, String);
+
+/// The kind of an Ident leaf of the rows file (`"idents"`): `null` is any
+/// other leaf.
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum FileIdent {
+    Minted,
+    Stored,
+}
+
+/// The rows of a relation in the rows file: for each row, the leaves of each
+/// mapped column.
+type FileRows = Vec<Vec<Vec<Leaf>>>;
+
+/// One relation of the rows file on one pair.
+#[derive(Deserialize)]
+struct FileRelation {
+    name: String,
+    columns: Vec<FileColumn>,
+    idents: Vec<Option<FileIdent>>,
+    unread: Vec<FileColumn>,
+    unresolved: Vec<FileUnresolved>,
+    rows: FileRows,
+    by_open: Option<FileByOpen>,
+    fault: Option<String>,
+}
+
+/// The open parameters of a relation of the rows file, by arclog name, with
+/// the columns of the pick that the file gives, and its open values.
+#[derive(Deserialize)]
+struct FileByOpen {
+    picks: BTreeMap<String, Vec<FileColumn>>,
+    values: Vec<FileOpenValue>,
+}
+
+/// One open value of a relation in the rows file: its rows, and the rows it
+/// gives each open parameter that it does not give `nil`.
+#[derive(Deserialize)]
+struct FileOpenValue {
+    rows: FileRows,
+    picks: BTreeMap<String, FileRows>,
+}
+
 /// An open parameter of the rows file: its arclog relation and the names of
 /// the columns of the pick that the file gives.
 struct FilePick {
@@ -166,22 +224,44 @@ struct FilePick {
     columns: Vec<String>,
 }
 
-/// One open value of a relation in the rows file: its rows, and the rows it
-/// gives each pick, in the order of the picks.
-struct FileOpenValue {
-    rows: Vec<Vec<Vec<Leaf>>>,
-    picks: Vec<Option<Vec<Vec<Vec<Leaf>>>>>,
+/// A pair of the rows file, a case's or the determination's.
+#[derive(Deserialize)]
+struct FilePair {
+    pair: String,
+    relations: Vec<FileRelation>,
 }
 
-/// One relation of the rows file on one pair, as `column_names_of` and
-/// `souffle_rows_of` read it.
-struct FileRelation {
-    columns: Vec<String>,
-    minted: Vec<bool>,
-    left_out: Vec<String>,
-    rows: Vec<Vec<Vec<Leaf>>>,
-    picks: Vec<FilePick>,
-    by_open: Vec<FileOpenValue>,
+/// An entry of the rows file's `cases`: the pairs, or the failure of its
+/// Souffle run.
+#[derive(Deserialize)]
+struct FileCase {
+    case: String,
+    failure: Option<String>,
+    pairs: Option<Vec<FilePair>>,
+}
+
+/// The rows file's `determination`: the pairs, or the failure of its Souffle
+/// run.
+#[derive(Deserialize)]
+struct FileDetermination {
+    failure: Option<String>,
+    pairs: Option<Vec<FilePair>>,
+}
+
+/// The verdicts that an entry of the rows file's `not_compared` can give.
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum FileLeftOut {
+    Skip,
+    Uncompared,
+}
+
+/// A relation that the rows file leaves out of the comparison.
+#[derive(Deserialize)]
+struct FileNotCompared {
+    name: String,
+    verdict: FileLeftOut,
+    reason: String,
 }
 
 /// The subcommand on `args`, the arguments after its name.
@@ -200,8 +280,7 @@ pub fn run(args: &[String]) -> ExitCode {
     let selected: BTreeSet<String> = ids.iter().cloned().collect();
     let lines: Mutex<BTreeMap<String, Vec<(String, Verdict)>>> = Mutex::new(BTreeMap::new());
     let report = run_over_corpus(Path::new(corpus), Some(&selected), |solver| {
-        let file = read_json(&Path::new(rows).join(format!("{}.json", solver.task_id)));
-        match file.and_then(|file| task_verdicts(Path::new(corpus), Path::new(tasks), &solver.task_id, &file)) {
+        match task_verdicts(Path::new(corpus), Path::new(tasks), &solver.task_id, &Path::new(rows).join(format!("{}.json", solver.task_id))) {
             Ok(verdicts) => {
                 lines.lock().expect("the lines are not poisoned").insert(solver.task_id.clone(), verdicts);
                 SolverResult::Pass
@@ -230,56 +309,173 @@ pub fn run(args: &[String]) -> ExitCode {
     if failed { ExitCode::FAILURE } else { ExitCode::SUCCESS }
 }
 
-/// The verdict of each relation of the rows file `file` of the solver `id`:
-/// the relations that the file leaves out, then each relation of the cases
-/// it gives, merged over the cases and their pairs, in the file's order of
-/// relations. A case that fails to set up, and a case whose Souffle run gave
-/// no rows, give a fault of the whole task.
-fn task_verdicts(corpus: &Path, tasks: &Path, id: &str, file: &Value) -> Result<Vec<(String, Verdict)>, String> {
-    let constants = constants_of(file)?;
-    let cases = file.get("cases").and_then(Value::as_array).ok_or("the rows file has no `cases`")?;
-    let mut merged: Vec<(String, Verdict)> = Vec::new();
-    let mut sent: Vec<String> = Vec::new();
-    for case in cases {
-        let name = case.get("case").and_then(Value::as_str).ok_or("a case of the rows file has no `case`")?;
-        if let Some(failure) = case.get("failure").and_then(Value::as_str) {
-            merged.push((WHOLE_TASK.to_owned(), Verdict::Fault(format!("case {name}: no Souffle rows: {failure}"))));
-            continue;
-        }
-        let pairs = case.get("pairs").and_then(Value::as_array).ok_or("a case of the rows file has no `pairs`")?;
-        match with_case(corpus, tasks, id, name, |case| case_verdicts(case, name, &constants, pairs)) {
-            Ok(found) => absorb(&mut merged, &mut sent, found),
-            Err(fault) => merged.push((WHOLE_TASK.to_owned(), Verdict::Fault(format!("case {name}: {fault}")))),
-        }
+/// The verdict of each relation of the rows file at `path` of the solver `id`:
+/// each relation of the cases it gives, merged over the cases and their pairs,
+/// in the file's order of relations, then the relations that the file leaves
+/// out. A case that fails to set up, and a case whose Souffle run gave no
+/// rows, give a fault of the whole task.
+fn task_verdicts(corpus: &Path, tasks: &Path, id: &str, path: &Path) -> Result<Vec<(String, Verdict)>, String> {
+    let file = File::open(path).map_err(|error| format!("{} does not read: {error}", path.display()))?;
+    let mut deserializer = serde_json::Deserializer::from_reader(BufReader::new(file));
+    let mut verdicts = Verdicts { corpus, tasks, id, constants: None, cases_read: false, merged: Vec::new(), sent: Vec::new(), left_out: None, fault: None };
+    let read = (&mut verdicts).deserialize(&mut deserializer).and_then(|()| deserializer.end());
+    if let Some(fault) = verdicts.fault.take() {
+        return Err(fault);
     }
-    if let Some(determination) = file.get("determination") {
-        if let Some(failure) = determination.get("failure").and_then(Value::as_str) {
-            merged.push((WHOLE_TASK.to_owned(), Verdict::Fault(format!("determination: no Souffle rows: {failure}"))));
-        } else {
-            let pairs = determination.get("pairs").and_then(Value::as_array).ok_or("the `determination` of the rows file has no `pairs`")?;
-            match with_concept_case(corpus, tasks, id, |case| determination_verdicts(case, &constants, pairs)) {
-                Ok(found) => absorb(&mut merged, &mut sent, found),
-                Err(fault) => merged.push((WHOLE_TASK.to_owned(), Verdict::Fault(format!("determination: {fault}")))),
+    read.map_err(|error| format!("{} is no rows file: {error}", path.display()))?;
+    verdicts.finish()
+}
+
+/// What the stream of a rows file has given so far, which `task_verdicts`
+/// reads it into.
+struct Verdicts<'a> {
+    corpus: &'a Path,
+    tasks: &'a Path,
+    id: &'a str,
+    constants: Option<BTreeMap<String, i64>>,
+    cases_read: bool,
+    merged: Vec<(String, Verdict)>,
+    sent: Vec<String>,
+    left_out: Option<Vec<FileNotCompared>>,
+    /// The fault that stopped the stream, as against a file that does not parse.
+    fault: Option<String>,
+}
+
+impl Verdicts<'_> {
+    fn constants(&self) -> Result<&BTreeMap<String, i64>, String> {
+        self.constants.as_ref().ok_or_else(|| "the rows file has no `orientation_constants` before its cases".to_owned())
+    }
+
+    /// Merges the verdicts of `case`, an entry of the rows file's `cases`.
+    fn read_case(&mut self, case: FileCase) -> Result<(), String> {
+        let FileCase { case: name, failure, pairs } = case;
+        if let Some(failure) = failure {
+            self.merged.push((WHOLE_TASK.to_owned(), Verdict::Fault(format!("case {name}: no Souffle rows: {failure}"))));
+            return Ok(());
+        }
+        let pairs = pairs.ok_or("a case of the rows file has no `pairs`")?;
+        let constants = self.constants()?;
+        let found = with_case(self.corpus, self.tasks, self.id, &name, |case| case_verdicts(case, &name, constants, pairs));
+        match found {
+            Ok(found) => absorb(&mut self.merged, &mut self.sent, found),
+            Err(fault) => self.merged.push((WHOLE_TASK.to_owned(), Verdict::Fault(format!("case {name}: {fault}")))),
+        }
+        Ok(())
+    }
+
+    /// Merges the verdicts of the rows file's `determination`.
+    fn read_determination(&mut self, determination: FileDetermination) -> Result<(), String> {
+        if let Some(failure) = determination.failure {
+            self.merged.push((WHOLE_TASK.to_owned(), Verdict::Fault(format!("determination: no Souffle rows: {failure}"))));
+            return Ok(());
+        }
+        let pairs = determination.pairs.ok_or("the `determination` of the rows file has no `pairs`")?;
+        let constants = self.constants()?;
+        let found = with_concept_case(self.corpus, self.tasks, self.id, |case| determination_verdicts(case, constants, pairs));
+        match found {
+            Ok(found) => absorb(&mut self.merged, &mut self.sent, found),
+            Err(fault) => self.merged.push((WHOLE_TASK.to_owned(), Verdict::Fault(format!("determination: {fault}")))),
+        }
+        Ok(())
+    }
+
+    /// The verdicts once the whole file is read: the relations that the pairs
+    /// sent and no case's program has, then the relations the file leaves out.
+    fn finish(self) -> Result<Vec<(String, Verdict)>, String> {
+        let Verdicts { constants, cases_read, mut merged, sent, left_out, .. } = self;
+        constants.ok_or("the rows file has no `orientation_constants`")?;
+        if !cases_read {
+            return Err("the rows file has no `cases`".to_owned());
+        }
+        for relation in sent {
+            if !merged.iter().any(|(held, _)| *held == relation) {
+                merged.push((relation, Verdict::Uncompared(NO_CASE_HAS_IT.to_owned())));
             }
         }
-    }
-    for relation in sent {
-        if !merged.iter().any(|(held, _)| *held == relation) {
-            merged.push((relation, Verdict::Uncompared(NO_CASE_HAS_IT.to_owned())));
+        for FileNotCompared { name, verdict, reason } in left_out.ok_or("the rows file has no `not_compared`")? {
+            merged.push((
+                name,
+                match verdict {
+                    FileLeftOut::Skip => Verdict::Skip(reason),
+                    FileLeftOut::Uncompared => Verdict::Uncompared(reason),
+                },
+            ));
         }
+        Ok(merged)
     }
-    let left_out = file.get("not_compared").and_then(Value::as_array).ok_or("the rows file has no `not_compared`")?;
-    for entry in left_out {
-        let text = |key: &str| entry.get(key).and_then(Value::as_str).map(str::to_owned).ok_or_else(|| format!("an entry of `not_compared` has no `{key}`"));
-        let (name, reason) = (text("name")?, text("reason")?);
-        let verdict = match text("verdict")?.as_str() {
-            "skip" => Verdict::Skip(reason),
-            "uncompared" => Verdict::Uncompared(reason),
-            other => return Err(format!("an entry of `not_compared` has the verdict `{other}`")),
-        };
-        merged.push((name, verdict));
+
+    /// Stops the stream at the fault `result` gives, if it does.
+    fn stop<E: serde::de::Error>(&mut self, result: Result<(), String>) -> Result<(), E> {
+        result.map_err(|fault| {
+            self.fault = Some(fault);
+            E::custom("the verdicts stopped")
+        })
     }
-    Ok(merged)
+}
+
+impl<'de> DeserializeSeed<'de> for &mut Verdicts<'_> {
+    type Value = ();
+
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
+        deserializer.deserialize_map(self)
+    }
+}
+
+impl<'de> Visitor<'de> for &mut Verdicts<'_> {
+    type Value = ();
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a rows file")
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
+        while let Some(key) = map.next_key::<String>()? {
+            match key.as_str() {
+                "orientation_constants" => self.constants = Some(map.next_value()?),
+                "cases" => {
+                    map.next_value_seed(Cases(&mut *self))?;
+                    self.cases_read = true;
+                }
+                "determination" => {
+                    let determination = map.next_value()?;
+                    let read = self.read_determination(determination);
+                    self.stop(read)?;
+                }
+                "not_compared" => self.left_out = Some(map.next_value()?),
+                _ => {
+                    map.next_value::<IgnoredAny>()?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// The rows file's `cases`, read one case at a time into the verdicts.
+struct Cases<'a, 'b>(&'a mut Verdicts<'b>);
+
+impl<'de> DeserializeSeed<'de> for Cases<'_, '_> {
+    type Value = ();
+
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
+        deserializer.deserialize_seq(self)
+    }
+}
+
+impl<'de> Visitor<'de> for Cases<'_, '_> {
+    type Value = ();
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("the cases of a rows file")
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<(), A::Error> {
+        while let Some(case) = seq.next_element::<FileCase>()? {
+            let read = self.0.read_case(case);
+            self.0.stop(read)?;
+        }
+        Ok(())
+    }
 }
 
 /// Merges the `verdicts` of one case or of the determination into `merged`,
@@ -295,15 +491,16 @@ fn absorb(merged: &mut Vec<(String, Verdict)>, sent: &mut Vec<String>, (verdicts
 
 /// The verdict of each relation of the case `name`, one of the `pairs` of
 /// the rows file, over the pairs of the task of `case`, merged over the
-/// pairs, and the name of each relation the pairs send.
-fn case_verdicts(case: &ConceptCase<'_>, name: &str, constants: &BTreeMap<String, i64>, pairs: &[Value]) -> Result<(Vec<(String, Verdict)>, Vec<String>), String> {
+/// pairs, and the name of each relation the pairs send. Each pair is dropped
+/// once it is compared.
+fn case_verdicts(case: &ConceptCase<'_>, name: &str, constants: &BTreeMap<String, i64>, mut pairs: Vec<FilePair>) -> Result<(Vec<(String, Verdict)>, Vec<String>), String> {
     let evaluation = &case.evaluation;
     let mut merged: Vec<(String, Verdict)> = Vec::new();
     let mut sent: Vec<String> = Vec::new();
     for (index, example) in evaluation.task.examples().enumerate() {
         let pair = pair_name(evaluation.task, index);
-        let in_file = pairs.iter().find(|entry| entry.get("pair").and_then(Value::as_str) == Some(pair.as_str())).ok_or_else(|| format!("the rows file has no pair `{pair}`"))?;
-        entry_verdicts(evaluation, &format!("{name}, {pair}"), example, in_file, constants, &mut merged, &mut sent)?;
+        let at = pairs.iter().position(|entry| entry.pair == pair).ok_or_else(|| format!("the rows file has no pair `{pair}`"))?;
+        entry_verdicts(evaluation, &format!("{name}, {pair}"), example, pairs.swap_remove(at), constants, &mut merged, &mut sent)?;
     }
     Ok((merged, sent))
 }
@@ -311,13 +508,13 @@ fn case_verdicts(case: &ConceptCase<'_>, name: &str, constants: &BTreeMap<String
 /// The verdict of each relation of the `pairs` of the rows file's
 /// `determination` entry, merged over the pairs, and the name of each
 /// relation they send: the entry of a train pair at that example, the entry
-/// of the task at the first.
-fn determination_verdicts(case: &ConceptCase<'_>, constants: &BTreeMap<String, i64>, pairs: &[Value]) -> Result<(Vec<(String, Verdict)>, Vec<String>), String> {
+/// of the task at the first. Each pair is dropped once it is compared.
+fn determination_verdicts(case: &ConceptCase<'_>, constants: &BTreeMap<String, i64>, pairs: Vec<FilePair>) -> Result<(Vec<(String, Verdict)>, Vec<String>), String> {
     let evaluation = &case.evaluation;
     let mut merged: Vec<(String, Verdict)> = Vec::new();
     let mut sent: Vec<String> = Vec::new();
     for entry in pairs {
-        let pair = entry.get("pair").and_then(Value::as_str).ok_or("a pair of the `determination` has no `pair`")?;
+        let pair = entry.pair.clone();
         let mut trains = evaluation.task.train_examples().enumerate();
         let example = if pair == TASK_PAIR { trains.next().map(|(_, example)| example) } else { trains.find(|&(index, _)| pair_name(evaluation.task, index) == pair).map(|(_, example)| example) };
         let example = example.ok_or_else(|| format!("the `determination` has the pair `{pair}`, which is no train pair of the task"))?;
@@ -330,30 +527,16 @@ fn determination_verdicts(case: &ConceptCase<'_>, constants: &BTreeMap<String, i
 /// with the engine's rows on `example` and merged into `merged`, under the
 /// scope `scope` that the lines name; the name of each relation it sends is
 /// added to `sent`.
-fn entry_verdicts(evaluation: &Evaluation<'_>, scope: &str, example: Example, entry: &Value, constants: &BTreeMap<String, i64>, merged: &mut Vec<(String, Verdict)>, sent: &mut Vec<String>) -> Result<(), String> {
-    let relations = entry.get("relations").and_then(Value::as_array).ok_or("a pair of the rows file has no `relations`")?;
+fn entry_verdicts(evaluation: &Evaluation<'_>, scope: &str, example: Example, entry: FilePair, constants: &BTreeMap<String, i64>, merged: &mut Vec<(String, Verdict)>, sent: &mut Vec<String>) -> Result<(), String> {
     let mut checked = Vec::new();
-    for relation in relations {
-        let relation_name = relation.get("name").and_then(Value::as_str).ok_or("a relation of the rows file has no `name`")?;
-        let columns = column_names_of(relation, "columns")?;
-        let minted = minted_of(relation)?;
-        if minted.len() != columns.len() {
-            return Err(format!("the relation `{relation_name}` of the rows file has {} columns and {} `idents`", columns.len(), minted.len()));
+    for relation in entry.relations {
+        if relation.idents.len() != relation.columns.len() {
+            return Err(format!("the relation `{}` of the rows file has {} columns and {} `idents`", relation.name, relation.columns.len(), relation.idents.len()));
         }
-        let (picks, by_open) = by_open_of(relation)?;
-        let file_relation = FileRelation {
-            columns,
-            minted,
-            left_out: [column_names_of(relation, "unread")?, unresolved_of(relation)?].concat(),
-            rows: souffle_rows_of(relation.get("rows"))?,
-            picks,
-            by_open,
-        };
-        let fault = relation.get("fault").map(|text| text.as_str().map(str::to_owned).ok_or("a fault of the rows file is no text")).transpose()?;
-        checked.push(engine_side(evaluation, relation_name, example, constants, file_relation, fault));
-        if !sent.iter().any(|held| held == relation_name) {
-            sent.push(relation_name.to_owned());
+        if !sent.contains(&relation.name) {
+            sent.push(relation.name.clone());
         }
+        checked.push(engine_side(evaluation, relation, example, constants));
     }
     for (relation, verdict) in compare_pair(scope, &checked) {
         merge(merged, relation, verdict);
@@ -367,27 +550,22 @@ fn entry_verdicts(evaluation: &Evaluation<'_>, scope: &str, example: Example, en
 /// Souffle's relation projected onto them. A column of the map that the
 /// engine's relation lacks, or that the relation of an open parameter lacks,
 /// gives a fault.
-fn engine_side(
-    evaluation: &Evaluation<'_>,
-    name: &str,
-    example: Example,
-    constants: &BTreeMap<String, i64>,
-    file: FileRelation,
-    fault: Option<String>,
-) -> Checked {
-    let checked = |engine, left_out, souffle, by_open| Checked { name: name.to_owned(), souffle, by_open, engine, left_out, fault: fault.clone() };
-    let names = match engine_columns(evaluation, name) {
+fn engine_side(evaluation: &Evaluation<'_>, file: FileRelation, example: Example, constants: &BTreeMap<String, i64>) -> Checked {
+    let FileRelation { name, columns, idents, unread, unresolved, rows, by_open, fault } = file;
+    let checked = |engine, left_out, souffle, by_open| Checked { name: name.clone(), souffle, by_open, engine, left_out, fault: fault.clone() };
+    let names = match engine_columns(evaluation, &name) {
         None => return checked(None, Vec::new(), BTreeSet::new(), OpenValues::default()),
         Some(Err(unread)) => return checked(Some(unread), Vec::new(), BTreeSet::new(), OpenValues::default()),
         Some(Ok(names)) => names,
     };
-    let FileRelation { columns, minted, mut left_out, rows, picks, by_open } = file;
+    let columns = column_names(&columns);
+    let mut left_out = [column_names(&unread), unresolved.iter().map(unresolved_note).collect()].concat();
     let mut kept = Vec::new();
     let mut lacking = Vec::new();
     for (entry, column) in columns.iter().enumerate() {
         match names.iter().position(|n| n.name == *column) {
             Some(position) if names[position].pose => left_out.push(format!("{column} (a Pose, whose value depends on the frame)")),
-            Some(position) => kept.push((entry, Column { position, minted: minted[entry] })),
+            Some(position) => kept.push((entry, Column { position, minted: matches!(idents[entry], Some(FileIdent::Minted)) })),
             None => lacking.push(column.clone()),
         }
     }
@@ -399,6 +577,10 @@ fn engine_side(
         };
         return checked(Some(EngineModels::Fault(text)), left_out, BTreeSet::new(), OpenValues::default());
     }
+    let (picks, open_values) = match by_open {
+        Some(FileByOpen { picks, values }) => (picks.into_iter().map(|(name, columns)| FilePick { name, columns: column_names(&columns) }).collect(), values),
+        None => (Vec::new(), Vec::new()),
+    };
     let pick_columns = match pick_columns(evaluation, &picks) {
         Ok(columns) => columns,
         Err(text) => return checked(Some(EngineModels::Fault(text)), left_out, BTreeSet::new(), OpenValues::default()),
@@ -406,16 +588,19 @@ fn engine_side(
     let project = |rows: &[Vec<Vec<Leaf>>]| -> BTreeSet<Vec<Leaf>> { rows.iter().map(|row| kept.iter().flat_map(|&(entry, _)| row[entry].clone()).collect()).collect() };
     let columns: Vec<Column> = kept.iter().map(|&(_, column)| column).collect();
     let requests: Vec<PickRequest<'_>> = picks.iter().zip(&pick_columns).map(|(pick, columns)| PickRequest { name: &pick.name, projection: Projection::Positions(columns) }).collect();
-    let engine = match engine_models(evaluation, name, example, constants, Projection::Positions(&columns), &requests) {
+    let engine = match engine_models(evaluation, &name, example, constants, Projection::Positions(&columns), &requests) {
         None => EngineModels::Fault("the relation has no rows to read".to_owned()),
         Some(EngineModels::Models(models)) => {
             EngineModels::Models(models.into_iter().map(|model| EngineModel { rows: distinct(model.rows), picks: model.picks.into_iter().map(|pick| pick.map(distinct)).collect() }).collect())
         }
         Some(fault) => fault,
     };
-    let values = by_open
+    let values = open_values
         .iter()
-        .map(|value| OpenValue { rows: project(&value.rows), picks: value.picks.iter().map(|pick| pick.as_deref().map(|rows| rows.iter().map(|row| row.concat()).collect())).collect() })
+        .map(|value| OpenValue {
+            rows: project(&value.rows),
+            picks: picks.iter().map(|pick| value.picks.get(&pick.name).map(|rows| rows.iter().map(|row| row.concat()).collect())).collect(),
+        })
         .collect();
     let by_open = OpenValues { picks: picks.into_iter().map(|pick| pick.name).collect(), values };
     checked(Some(engine), left_out, project(&rows), by_open)
@@ -442,98 +627,22 @@ fn pick_columns(evaluation: &Evaluation<'_>, picks: &[FilePick]) -> Result<Vec<V
         .collect()
 }
 
-/// The constants of the rows file, by name.
-fn constants_of(file: &Value) -> Result<BTreeMap<String, i64>, String> {
-    let object = file.get("orientation_constants").and_then(Value::as_object).ok_or("the rows file has no `orientation_constants`")?;
-    object.iter().map(|(name, n)| Ok((name.clone(), n.as_i64().ok_or("an orientation constant is no number")?))).collect()
+/// The name of a column as the engine names a row position: the label, and,
+/// for a field, `<label>.<field>`.
+fn column_name(label: &str, field: Option<&str>) -> String {
+    field.map_or_else(|| label.to_owned(), |field| format!("{label}.{field}"))
 }
 
-/// The name of each column of `relation` under `key`, as the engine names a row
-/// position: the label, and, for a field, `<label>.<field>`.
-fn column_names_of(relation: &Value, key: &str) -> Result<Vec<String>, String> {
-    column_names(relation.get(key).ok_or_else(|| format!("a relation of the rows file has no `{key}`"))?)
+/// The name of each column in `columns`.
+fn column_names(columns: &[FileColumn]) -> Vec<String> {
+    columns.iter().map(|FileColumn(label, field)| column_name(label, field.as_deref())).collect()
 }
 
-/// The name of each column in `columns`, a list of pairs of a label and a
-/// field or null.
-fn column_names(columns: &Value) -> Result<Vec<String>, String> {
-    let columns = columns.as_array().ok_or("a list of columns is no array")?;
-    columns
-        .iter()
-        .map(|column| {
-            let [label, field] = column.as_array().map(Vec::as_slice).ok_or("a column is no pair")? else { return Err("a column is no pair".to_owned()) };
-            let label = label.as_str().ok_or("a column has no label")?;
-            Ok(field.as_str().map_or_else(|| label.to_owned(), |field| format!("{label}.{field}")))
-        })
-        .collect()
-}
-
-/// Whether each column of `relation` in the rows file is one whose leaf is
-/// an id that a lib relation mints (`"minted"`), as against a number a clause
-/// writes (`"stored"`) or a leaf that is no Ident (`null`).
-fn minted_of(relation: &Value) -> Result<Vec<bool>, String> {
-    let kinds = relation.get("idents").and_then(Value::as_array).ok_or("a relation of the rows file has no `idents`")?;
-    kinds
-        .iter()
-        .map(|kind| match (kind.as_str(), kind.is_null()) {
-            (Some("minted"), _) => Ok(true),
-            (Some("stored"), _) | (None, true) => Ok(false),
-            _ => Err(format!("an entry of `idents` is neither `minted`, `stored` nor null: {kind}")),
-        })
-        .collect()
-}
-
-/// The leaves of `relation` in the rows file that have no one source, each
-/// as the column's name and the reason.
-fn unresolved_of(relation: &Value) -> Result<Vec<String>, String> {
-    let leaves = relation.get("unresolved").and_then(Value::as_array).ok_or("a relation of the rows file has no `unresolved`")?;
-    leaves
-        .iter()
-        .map(|leaf| {
-            let [label, field, reason] = leaf.as_array().map(Vec::as_slice).ok_or("an unresolved leaf is no triple")? else { return Err("an unresolved leaf is no triple".to_owned()) };
-            let label = label.as_str().ok_or("an unresolved leaf has no label")?;
-            let reason = reason.as_str().ok_or("an unresolved leaf has no reason")?;
-            Ok(format!("{} (unresolved: {reason})", field.as_str().map_or_else(|| label.to_owned(), |field| format!("{label}.{field}"))))
-        })
-        .collect()
-}
-
-/// The rows `rows` of a relation in the rows file: for each row, the leaves
-/// of each mapped column.
-fn souffle_rows_of(rows: Option<&Value>) -> Result<Vec<Vec<Vec<Leaf>>>, String> {
-    let rows = rows.and_then(Value::as_array).ok_or("a relation of the rows file has no `rows`")?;
-    rows.iter().map(souffle_row_of).collect()
-}
-
-/// The leaves of each mapped column in the row `row` of the rows file.
-fn souffle_row_of(row: &Value) -> Result<Vec<Vec<Leaf>>, String> {
-    row.as_array()
-        .ok_or("a row is no array")?
-        .iter()
-        .map(|entry| entry.as_array().ok_or("a row's column is no array")?.iter().map(|leaf| Leaf::of(leaf).ok_or("a leaf is no number and no string")).collect::<Result<Vec<_>, _>>())
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(str::to_owned)
-}
-
-/// The open parameters of `relation` in the rows file and its open values,
-/// none where the relation holds no open value in a column.
-fn by_open_of(relation: &Value) -> Result<(Vec<FilePick>, Vec<FileOpenValue>), String> {
-    let Some(by_open) = relation.get("by_open") else { return Ok((Vec::new(), Vec::new())) };
-    let picks = by_open.get("picks").and_then(Value::as_object).ok_or("`by_open` has no `picks`")?;
-    let picks = picks
-        .iter()
-        .map(|(name, columns)| Ok(FilePick { name: name.clone(), columns: column_names(columns)? }))
-        .collect::<Result<Vec<_>, String>>()?;
-    let values = by_open.get("values").and_then(Value::as_array).ok_or("`by_open` has no `values`")?;
-    let values = values
-        .iter()
-        .map(|value| {
-            let given = value.get("picks").and_then(Value::as_object).ok_or("an open value has no `picks`")?;
-            let picks = picks.iter().map(|pick| given.get(&pick.name).map(|rows| souffle_rows_of(Some(rows))).transpose()).collect::<Result<_, String>>()?;
-            Ok(FileOpenValue { rows: souffle_rows_of(value.get("rows"))?, picks })
-        })
-        .collect::<Result<_, String>>()?;
-    Ok((picks, values))
+/// The column's name and the reason of a leaf of the rows file that has no
+/// one source.
+fn unresolved_note(leaf: &FileUnresolved) -> String {
+    let FileUnresolved(label, field, reason) = leaf;
+    format!("{} (unresolved: {reason})", column_name(label, field.as_deref()))
 }
 
 /// `rows` with each row once, in order.
@@ -731,6 +840,43 @@ fn describe_difference(engine: &[Vec<EngineLeaf>], record: &BTreeSet<Vec<Leaf>>)
 mod tests {
     use super::*;
     use arclog::terms::{Content, Ident, InternTable, WrittenIdent};
+
+    /// What `task_verdicts` gives on a rows file with `text` for its content,
+    /// for a corpus and tasks that no case of the text reaches.
+    fn verdicts_of(name: &str, text: &str) -> Result<Vec<(String, Verdict)>, String> {
+        let path = std::env::temp_dir().join(format!("row_parity_{}_{name}.json", std::process::id()));
+        std::fs::write(&path, text).expect("the rows file writes");
+        let verdicts = task_verdicts(Path::new("corpus"), Path::new("tasks"), "aaaa0001", &path);
+        std::fs::remove_file(&path).expect("the rows file is removed");
+        verdicts
+    }
+
+    #[test]
+    fn reads_the_failures_and_the_left_out_relations_of_a_rows_file() {
+        let text = r#"{"orientation_constants": {}, "cases": [{"case": "concept", "failure": "no rows"}],
+            "not_compared": [{"name": "&b", "verdict": "skip", "reason": "an input"}, {"name": "&c", "verdict": "uncompared", "reason": "no entry"}]}"#;
+        let verdicts = verdicts_of("failures", text).expect("the file reads");
+        let words: Vec<(&str, &str)> = verdicts.iter().map(|(relation, verdict)| (relation.as_str(), verdict.word())).collect();
+        assert_eq!(words, [("*", "fault"), ("&b", "skip"), ("&c", "uncompared")]);
+    }
+
+    #[test]
+    fn refuses_a_leaf_that_is_no_number_and_no_string() {
+        let text = r#"{"orientation_constants": {}, "cases": [{"case": "concept", "pairs": [{"pair": "train 0", "relations": [
+            {"name": "&a", "columns": [], "idents": [], "unread": [], "unresolved": [], "rows": [[[true]]]}]}]}], "not_compared": []}"#;
+        assert!(verdicts_of("leaf", text).is_err());
+    }
+
+    #[test]
+    fn refuses_cases_that_come_before_the_constants() {
+        let text = r#"{"cases": [{"case": "concept", "pairs": []}], "orientation_constants": {}, "not_compared": []}"#;
+        assert!(verdicts_of("order", text).is_err());
+    }
+
+    #[test]
+    fn refuses_a_rows_file_with_no_left_out_relations() {
+        assert!(verdicts_of("not_compared", r#"{"orientation_constants": {}, "cases": []}"#).is_err());
+    }
 
     fn n(value: i64) -> Leaf {
         Leaf::Number(value)

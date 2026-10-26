@@ -420,7 +420,8 @@ def case_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | RunF
     "unresolved": [[label, field, reason], ...], "rows": [[[leaves of column 1], ...], ...],
     "by_open": {...}, "fault": text}]}]}], "not_compared": [{"name",
     "verdict", "reason"}], "determination": {"pairs": [{"pair": "train 0" or
-    "task", "relations": [...]}]}}`; a case whose run gives no rows has `"failure":
+    "task", "relations": [...]}]}}`, with the keys in that order, which `arclog-cli row-parity`
+    reads one case at a time; a case whose run gives no rows has `"failure":
     text` in place of `pairs`, and so has `determination`; the entries of its
     relations are a case's. `determination` is there where the check compares
     a relation of `Determine`; a relation with an Example leaf in its column map has an entry

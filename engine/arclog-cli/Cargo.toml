@@ -21,3 +21,6 @@ arclog-tables = { path = "../arclog-tables" }
 # of `lib-compare` and `row-counts`, which a Python program reads
 # or a later one will.
 serde_json = "1.0.154"
+# The typed form of a rows file (`row_parity`), which is read one case at a
+# time from a stream.
+serde = { version = "1", features = ["derive"] }

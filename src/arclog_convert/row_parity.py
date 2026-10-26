@@ -47,8 +47,11 @@ rule of `train_replay.stale_tasks`.
 The stale tasks run on at most `parity.snapshot.RECORDS_WORKERS` processes,
 and at most `engine.pool.pool_size()`, each taking chunks of `CHUNK` tasks:
 for a chunk, the Souffle side of each task, then one `arclog-cli row-parity`
-call on the chunk. Each process runs bounded to one CPU
-(`engine.pool.share_env`). The Souffle runs go through the run cache.
+call on the chunk. Each process runs one chunk and exits, so that none keeps
+the memory of a chunk for the next, and runs bounded to one CPU
+(`engine.pool.share_env`). The Souffle runs go through the run cache. A
+task's rows file is written to disk as it is serialized, and
+`arclog-cli row-parity` reads it one case at a time.
 
 `row_parity.tsv` is the baseline: a line `<task> <relation> <verdict>
 <ticket or ->` (tab-separated) for each task and relation whose verdict is
@@ -157,7 +160,8 @@ def check_chunk(stems: list[str], corpus: Path, tasks: Path, records: Path, solv
             if not isinstance(got, dict):
                 lines[stem] = [("*", "fault", f"no Souffle rows: {got}")]
                 continue
-            (work / f"{stem}.json").write_text(json.dumps(got))
+            with (work / f"{stem}.json").open("w") as handle:
+                json.dump(got, handle)
             rows.append(stem)
         if rows:
             command = [str(train_replay.tool_binary(BINARY)), "row-parity", str(corpus), str(tasks), str(work), *rows]
@@ -208,7 +212,8 @@ def check(stems: list[str], out: Path, accept: bool = False) -> int:
     if stale:
         built = digests[0] if digests else train_replay.binary_digest(BINARY)
         records.mkdir(parents=True, exist_ok=True)
-        with ProcessPoolExecutor(min(RECORDS_WORKERS, pool_size()), initializer=bound_to_one_cpu) as pool:
+        with ProcessPoolExecutor(min(RECORDS_WORKERS, pool_size()), initializer=bound_to_one_cpu,
+                                 max_tasks_per_child=1) as pool:
             futures = [pool.submit(check_chunk, chunk, corpus, tasks, records, solvers, files, sources, built)
                        for chunk in chunks(stale, solvers)]
             for future in futures:
