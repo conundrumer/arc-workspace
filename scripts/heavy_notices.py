@@ -3,7 +3,10 @@ sends the Claude Code session that owns a process: the texts, and the rule on
 how many go out.
 
 The daemon acts on a process and a reason once (`Notices.once`), and sends the
-messages for one session that fall within `FOLD_SECONDS` as one.
+messages for one session that fall within `FOLD_SECONDS` as one. No message tells
+a session to stop a process that runs. A message that says a process runs outside the gate
+is not sent for a call of `run_heavy.py` (`is_gate_call`), which the daemon finds outside its
+grants where the gate is older than the daemon.
 
 Standard library only, Python 3.9. `mctx` is `controlled_markdown.mctx`,
 which it cannot import: the check of prose in code reads a call by its name."""
@@ -12,12 +15,14 @@ from __future__ import annotations
 
 import enum
 import json
+import os
 import textwrap
 from typing import Dict, List, Set, Tuple
 
 FOLD_SECONDS = 60
 COMMAND_CHARS = 200
-GATE_FORM = "<checkout>/scripts/run_heavy.py"
+GATE_PROGRAM = "run_heavy.py"
+GATE_FORM = f"<checkout>/scripts/{GATE_PROGRAM}"
 
 
 class Reason(enum.Enum):
@@ -39,16 +44,24 @@ def short(command: str) -> str:
     return command if len(command) <= COMMAND_CHARS else command[:COMMAND_CHARS] + "..."
 
 
+def is_gate_call(command: str) -> bool:
+    """Whether a word of the command line is `run_heavy.py`."""
+    return any(os.path.basename(word) == GATE_PROGRAM for word in command.split())
+
+
 def gated_form(command: str, cpus: int, gib: int) -> str:
-    """The call that runs `command` under the gate, at the figures measured."""
+    """The call that runs `command` under the gate, at the figures measured; `command` itself
+    where it is a call of the gate."""
+    if is_gate_call(command):
+        return command
     return f"{GATE_FORM} --cpus {cpus} --gib {gib} --minutes <m> --need <need> {command}"
 
 
 def adopted(pid: int, command: str, cpus: int, gib: int) -> str:
     return mctx(
         "pid {pid} (`{command}`) runs in this session outside the gate, at {cpus} CPUs and {gib} "
-        "GiB, and now counts against the machine's budget. Stop it and run it as `{form}`, and "
-        "add its program to `HEAVY` in scripts/heavy_command_hook.py."
+        "GiB, and now counts against the machine's budget. It keeps running. Run it as `{form}` "
+        "the next time, and add its program to `HEAVY` in scripts/heavy_command_hook.py."
     ).format(pid=pid, command=short(command), cpus=cpus, gib=gib, form=gated_form(command, cpus, gib))
 
 

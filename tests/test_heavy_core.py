@@ -298,3 +298,33 @@ def test_a_grant_is_logged_with_the_owner_and_its_figures():
     log, = [e for e in effects if isinstance(e, Log)]
     assert log.event == "grant" and log.fields["owner"] == SESSION and log.fields["cpus"] == 2
     assert any(isinstance(e, Grant) for e in effects)
+
+
+OLD_GATE_CALL = "timeout 900 scripts/run_heavy.py --cpus 1 uv run python -u -m arclog_convert.convert"
+
+
+def test_the_adoption_notice_does_not_tell_the_session_to_stop_the_process():
+    core = Core(TOTAL)
+    shell = proc(101, CLAUDE, SNAPSHOT_SHELL)
+    for at in (0, ADOPT_GIB_SECONDS):
+        core.tick(reading(at, [shell, proc(102, 101, "python allpoints.py", gib=3)]), at)
+    (_, text), = core.messages(ADOPT_GIB_SECONDS)
+    assert "Stop it" not in text and "keeps running" in text
+
+
+def test_a_call_of_a_run_heavy_the_daemon_does_not_see_is_counted_and_its_session_told_no_outside_the_gate():
+    core = Core(TOTAL)
+    shell = proc(101, CLAUDE, SNAPSHOT_SHELL)
+
+    def sample(at, level=1):
+        return reading(at, [shell, proc(102, 101, OLD_GATE_CALL, gib=3)], level=level)
+
+    for at in (0, ADOPT_GIB_SECONDS):
+        core.tick(sample(at), at)
+    assert core.jobs[102].kind is Kind.UNGATED
+    assert core.messages(ADOPT_GIB_SECONDS) == []
+    core.tick(sample(40, level=2), 40)
+    assert core.messages(40) == []
+    core.tick(sample(50, level=4), 50)
+    (_, text), = core.messages(50)
+    assert "were killed" in text and "`" + OLD_GATE_CALL + "`" in text.split("Run it again as ")[1]

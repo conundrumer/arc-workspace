@@ -23,7 +23,9 @@ its need, with its CPUs and GiB unchanged; no process is signalled for it.
 A gated job that holds more GiB than it declares, runs at more than twice its
 CPUs for a minute, or runs past twice its minutes gets one log line and one
 message to its session. Memory pressure at warn gets each session that has
-an ungated process one message. At critical pressure, or a high swap-in rate,
+an ungated process one message. An ungated process that is a call of `run_heavy.py`,
+of a gate older than the daemon, is counted and is sent no message that says it runs
+outside the gate. At critical pressure, or a high swap-in rate,
 a kill follows, as `scripts/heavy_enforcer.py` gives it.
 
 Standard library only, Python 3.9."""
@@ -47,6 +49,7 @@ from process_readings import NO_SESSION
 
 LEVEL_NAMES = {2: "warn", 4: "critical"}
 CRITICAL = 4
+OUTSIDE_THE_GATE = frozenset({Reason.ADOPTED, Reason.WARN})
 COMMAND_CHARS = 300
 
 
@@ -419,9 +422,12 @@ class Core:
 
     def tell(self, job: Job, reason: Reason, text: str) -> bool:
         """Queue `text` for the session of `job` unless one went out for this job and reason,
-        and say whether this is the first for them."""
+        or the text says the job runs outside the gate and the job is a call of `run_heavy.py`,
+        and say whether this is the first for them. Such a call runs under a gate older than
+        the daemon, so that text is false of it."""
         first = self.notices.once(job.pid, job.start, reason)
-        if first and job.owner != NO_SESSION:
+        false_of_gate_call = reason in OUTSIDE_THE_GATE and heavy_notices.is_gate_call(job.command)
+        if first and job.owner != NO_SESSION and not false_of_gate_call:
             self.notices.add(job.owner, text)
         return first
 
