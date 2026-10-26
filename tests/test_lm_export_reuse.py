@@ -23,13 +23,17 @@ def run(out, *args):
 needs_corpus = pytest.mark.skipif(not all((ROOT / f"work/arclog/gen/{t}.arclog").exists() for t in TASKS), reason="no generated corpus")
 
 
+def keys_without_seconds(directory):
+    return {t: {k: v for k, v in entry.items() if k != "seconds"} for t, entry in json.loads((directory / "keys.json").read_text()).items()}
+
+
 def same(a, b):
     x, y = np.load(a / "cases.npz"), np.load(b / "cases.npz")
     assert sorted(x.files) == sorted(y.files)
     for k in x.files:
         assert x[k].dtype == y[k].dtype and np.array_equal(x[k], y[k]), k
     assert (a / "stream-report-all.txt").read_text() == (b / "stream-report-all.txt").read_text()
-    assert (a / "keys.json").read_text() == (b / "keys.json").read_text()
+    assert keys_without_seconds(a) == keys_without_seconds(b)
 
 
 @needs_corpus
@@ -55,6 +59,9 @@ def test_all_tasks_reused_and_a_fault_line_with_a_colon_after_the_task(tmp_path)
     assert run(tmp_path / "second", "--previous", str(tmp_path / "first")).startswith("2 tasks reused, 0 to stream")
     assert line in (tmp_path / "second/stream-report-all.txt").read_text().splitlines()
     assert len(np.load(tmp_path / "second/cases.npz")["task"]) == len(np.load(tmp_path / "first/cases.npz")["task"])
+    seconds = {t: entry["seconds"] for t, entry in json.loads((tmp_path / "first/keys.json").read_text()).items()}
+    assert all(s > 0 for s in seconds.values())
+    assert seconds == {t: entry["seconds"] for t, entry in json.loads((tmp_path / "second/keys.json").read_text()).items()}
 
 
 @needs_corpus

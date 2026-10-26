@@ -5,9 +5,8 @@
 It needs an interpreter with `arclog`, pandas and pyarrow, such as the LM work's venv. The code that decides a part's rows, values and fault lines is in `export_rows.py`. A change to that module, or to the engine code that writes the export's files (`engine/arclog/src/eval/flows.rs`, `engine/arclog/src/decode/`), runs `engine/arclog-py/roundtrip_check.py` with an `arclog` built from its tree before its merge.
 
 Runs one `arclog.corpus_tables` call per task id, the longest first, on a queue of N Python threads, where N is `ARCLOG_THREADS`
-if set and `os.cpu_count()` otherwise. The order is that of the one-thread seconds each task took in the export `--previous` gives
-(see `parts/<k>.tasks.txt`: the line's seconds times its units), then the tasks that export does not give, or all tasks where none is given, by the largest
-`.arcdata` file first. A task whose one-thread seconds would end past half the mean load of a worker (the summed one-thread seconds of the
+if set and `os.cpu_count()` otherwise. `replay_order` gives the order, which `lm/export.py` takes too: the tasks the export `--previous` gives no seconds for, or all tasks where none is given, by the largest
+`.arcdata` file first, then the others by the one-thread seconds each took in that export (see `parts/<k>.tasks.txt`: the line's seconds times its units), longest first. A task whose one-thread seconds would end past half the mean load of a worker (the summed one-thread seconds of the
 tasks to replay over N) is replayed in `units` units on `units` engine threads, the least count (at most N and at most the cases the previous export
 holds for the task) at which its expected unit time, `1 + (units - 1) / 14` times its seconds over `units`, is under that bound; any other
 task is replayed in one unit. The cut of a task into units is a function of the task and its count (see `arclog.corpus_tables`). With `--previous`, each task whose key (the sha256 of its `work/arclog/gen` `.arclog` and `.arcdata`, its task file, every file of
@@ -80,7 +79,7 @@ Every 10 s a line gives `<k> of <n> tasks ended, <s> s, about <t> s left, runnin
 the ended tasks (done ones of an earlier run included), the seconds since the start, the seconds left (`?` while no
 task has ended in this run), then the tasks running past 10 s, longest first (the first 10 and a count of the rest
 where more), each with the seconds since its call started and the share of its model steps done, as
-arclog.ReplayProgress gives them.
+arclog.ReplayProgress gives them. `print_progress` prints it, and `lm/export.py` calls it too.
 
 `export_streams(out, task, streams, names=None, settings=None, bodies=False, step_cap=10000)` writes the same layout
 for the token streams of one task, for a caller that imports the module: `streams` is a list of `(ids, model)`
@@ -287,9 +286,33 @@ def previous_cases(previous, task):
     return max(1, sum(n.endswith(".i32") for n in os.listdir(directory)) if os.path.isdir(directory) else 0)
 
 
-def main(out, task_ids, previous=None, **options):
+def replay_order(task_ids, seconds):
+    """`task_ids` for the longest processing time first: the tasks `seconds` ({task: seconds}) gives, by those seconds, after the tasks it does not give,
+    which go by the largest .arcdata file, as the slowest tasks are among them."""
+    return sorted(task_ids, key=lambda t: (t in seconds, -seconds.get(t, 0), -os.path.getsize(f"{CORPUS}/{t}.arcdata"), t))
+
+
+def print_progress(begin, ended, count, done, running):
+    """Prints the 10 s line of an export: `ended` of `count` tasks ended (`done` of them before this run), the seconds since `begin`, the seconds left, and the
+    tasks of `running` ({task: (start, arclog.ReplayProgress)}) running past 10 s, longest first (the first 10, and a count of the rest)."""
+    now = time.time()
+    slow = sorted((start, t, progress) for t, (start, progress) in running.items() if start < now - 10)
+    shown = " ".join(f"{t} {now - start:.0f} s {100 * progress.done / progress.total if progress.total else 0:.0f}%" for start, t, progress in slow[:10])
+    more = f" and {len(slow) - 10} more" if len(slow) > 10 else ""
+    left = f"{(now - begin) * (count - ended) / (ended - done):.0f}" if ended > done else "?"
+    print(f"{ended} of {count} tasks ended, {now - begin:.0f} s, about {left} s left, running past 10 s: {shown}{more}", flush=True)
+
+
+def take_workers():
+    """The count of Python threads of an export's queue of calls, `ARCLOG_THREADS` if set and `os.cpu_count()` otherwise, and sets `ARCLOG_THREADS` to 1,
+    so that each call runs on one engine thread, on the Python thread that makes it."""
     workers = int(os.environ.get("ARCLOG_THREADS") or os.cpu_count())
     os.environ["ARCLOG_THREADS"] = "1"
+    return workers
+
+
+def main(out, task_ids, previous=None, **options):
+    workers = take_workers()
     os.makedirs(f"{out}/parts", exist_ok=True)
     settings = {**options, "parts": list(PARTS)}
     if os.path.exists(f"{out}/settings.json"):
@@ -315,12 +338,10 @@ def main(out, task_ids, previous=None, **options):
     reused, k, open_parts = reuse_parts(out, previous, keys, k, done, checks, check_pool) if previous else (set(), k, {})
     checking = {f: part for part, (_, futures, _) in open_parts.items() for f in futures}   # check future -> its part
     done |= reused
-    # Longest processing time first: the tasks the previous export gives, by its one-thread seconds, after the tasks it does not give,
-    # which go by the largest .arcdata file, as the slowest tasks are among them.
     before = {}
     for f in glob.glob(f"{previous}/parts/*.tasks.txt") if previous else []:
         before.update({l.task: l.one_thread_seconds for l in read_task_lines(f) if l.seconds is not None})
-    todo = sorted((t for t in task_ids if t not in done), key=lambda t: (t in before, -before.get(t, 0), -os.path.getsize(f"{CORPUS}/{t}.arcdata"), t))
+    todo = replay_order([t for t in task_ids if t not in done], before)
     bound = SPLIT_SHARE * sum(before.get(t, 0) for t in todo) / workers
     units = {t: unit_count(before[t], bound, min(workers, previous_cases(previous, t))) if t in before else 1 for t in todo}
     print(f"{len(reused)} tasks reused, {len({t for pairs, _, _ in open_parts.values() for t, _ in pairs})} of them to check again, {len(todo)} to replay", flush=True)
@@ -364,14 +385,8 @@ def main(out, task_ids, previous=None, **options):
                 else:
                     finish_part(out, k, [])
                 k, ended, results = k + 1, ended + len(results), []
-            now = time.time()
-            running = sorted((t for t in started if started[t] < now - 10 and futures[t] in pending), key=lambda t: started[t])
-            shown = " ".join(f"{t} {now - started[t]:.0f} s {100 * progress[t].done / progress[t].total if progress[t].total else 0:.0f}%" for t in running[:10])
-            more = f" and {len(running) - 10} more" if len(running) > 10 else ""
-            ran = ended - len(done)
-            left = f"{(now - begin) * (len(task_ids) - ended) / ran:.0f}" if ran else "?"
-            print(f"{ended} of {len(task_ids)} tasks ended, {now - begin:.0f} s, about {left} s left, running past 10 s: {shown}{more}", flush=True)
-            last = now
+            print_progress(begin, ended, len(task_ids), len(done), {t: (started[t], progress[t]) for t in list(started) if futures[t] in pending})
+            last = time.time()
     if failure:
         pool.shutdown(wait=False, cancel_futures=True)
         workers_running = list((check_pool._processes or {}).values())

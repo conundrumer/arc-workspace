@@ -3,7 +3,9 @@
 Writes to work/lm/data/:
   vocab.json      {"names": the engine vocabulary's token names, "kinds": the kind of each token, as
                   arclog.Vocabulary.kind gives it}, both indexed by token id
-  keys.json       {task: {"key": the task's reuse key (see `--previous`), "streamed": the count of its streams that the
+  keys.json       {task: {"key": the task's reuse key (see `--previous`; null where the streams come from streams.pkl),
+                  "seconds": the wall seconds of the task's arclog.corpus_streams call to 0.1 s, or the previous export's
+                  where the task is reused (null where it gives none), "streamed": the count of its streams that the
                   engine gave masks for, "problems": {"duplicate stream": n, "model reads undeclared": n} (the counts
                   that are not 0)}} for each task the run streamed or reused
   cases.npz       the distinct streams of each task, concatenated:
@@ -25,14 +27,15 @@ held-out marks come from work/lm/data/evaluation.ids, or from `--heldout` where 
 the model steps of their prefix tree stay within N, 10000 where it is not given and 0 for no cap; each later stream of the
 solver gets a line in the stream report that gives the cap.
 
-While arclog.corpus_streams runs, a line is printed every 10 s:
+One arclog.corpus_streams call per task id, on a queue of N Python threads, where N is `ARCLOG_THREADS` if set and `os.cpu_count()`
+otherwise, each thread on one engine thread. The tasks go longest first, in the order of `tables_export.replay_order` over the `seconds`
+of the `--previous` keys.json. While the calls run, `tables_export.print_progress` prints a line every 10 s:
 
-    <s> s: <k> tasks ended, running past 10 s: <id> <s> s ..., <p>% of <total> steps, about <s> s left
+    <k> of <n> tasks ended, <s> s, about <t> s left, running past 10 s: <id> <s> s <p>% ...
 
-where the last part is the share of the replay's model steps done, as arclog.ReplayProgress gives them, and
-the seconds since the call started times (total - done) / done ("about ? s left" while done is 0;
-no such part while the total is 0), and with the time the call has run, the count of tasks whose streams have ended, and the tasks whose replay
-started over 10 s ago and has not ended, longest first: the first 10, then "and <n> more" where there are more.
+the tasks ended, the seconds since the start, the seconds left (`?` while no task has ended), then the tasks running past 10 s,
+longest first (the first 10 and a count of the rest where more), each with the seconds since its call started and the share of its
+model steps done, as arclog.ReplayProgress gives them.
 
 `--previous <dir>` takes, for each task whose key equals the key in <dir>/keys.json, that task's rows of <dir>/cases.npz
 and its lines of <dir>/stream-report-all.txt, and streams only the other tasks; the files written are those a run with
@@ -44,7 +47,7 @@ exits with a message.
 Where <out>/streams.pkl exists, written by export_chunks.py, and no task id is given, the streams come from it
 instead.
 """
-import argparse, collections, concurrent.futures, glob, hashlib, json, os, pickle, sys, threading, time, types
+import argparse, collections, concurrent.futures, glob, hashlib, json, os, pickle, sys, time, types
 import arclog, numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "engine", "arclog-py"))
 import tables_export as X
@@ -81,41 +84,41 @@ if args.previous:
     print(f"{len(reused)} tasks reused, {len(to_stream)} to stream", flush=True)
 
 t0 = time.time()
+took = {}      # task id -> the wall seconds of its call, for each task this run streams
 if not to_stream:
     streams, faults = [], []
 elif os.path.exists(f"{DATA}/streams.pkl") and not args.task_ids:     # written by export_chunks.py, one process per chunk of solvers
     cached = pickle.load(open(f"{DATA}/streams.pkl", "rb"))
+    task_keys = dict.fromkeys(task_ids)     # export_chunks.py replays with no step cap, so no later --previous may reuse these rows
     streams, faults = [types.SimpleNamespace(**s) for s in cached["streams"]], cached["faults"]
 else:
-    running, ended, lock = {}, [0], threading.Lock()     # task id -> start time of the tasks running; count of tasks ended
+    workers = X.take_workers()
+    running, results = {}, {}      # task id -> (start, ReplayProgress) of the tasks running; task id -> (streams, faults) of the tasks ended
 
-    def started_task(task):
-        with lock:
-            running[task] = time.time()
+    def stream_task(task):
+        start, progress = time.time(), arclog.ReplayProgress()
+        running[task] = start, progress
+        results[task] = arclog.corpus_streams(CORPUS, all_cases=True, task_ids=[task], tasks="data/tasks", progress=progress, step_cap=args.step_cap or None)
+        took[task] = time.time() - start
+        del running[task]
 
-    def ended_task(task):
-        with lock:
-            running.pop(task, None)
-            ended[0] += 1
-
-    with concurrent.futures.ThreadPoolExecutor(1) as pool:
-        progress, since = arclog.ReplayProgress(), time.time()     # since: when the call is submitted
-        call = pool.submit(arclog.corpus_streams, "work/arclog/gen", all_cases=True, tasks="data/tasks",
-                           started=started_task, ended=ended_task, progress=progress, step_cap=args.step_cap or None, **({"task_ids": to_stream} if args.task_ids or reused else {}))
-        while True:
-            try:
-                streams, faults = call.result(timeout=10)
-                break
-            except concurrent.futures.TimeoutError:
-                now = time.time()
-                with lock:
-                    slow = sorted(((now - t, task) for task, t in running.items() if now - t > 10), reverse=True)
-                    count = ended[0]
-                shown = " ".join(f"{task} {s:.0f} s" for s, task in slow[:10]) + (f" and {len(slow) - 10} more" if len(slow) > 10 else "")
-                done, total = progress.done, progress.total
-                share = f", {100 * done / total:.0f}% of {total} steps, about {(now - since) * (total - done) / done:.0f} s left" if done else \
-                        f", 0% of {total} steps, about ? s left" if total else ""
-                print(f"{now - t0:.0f} s: {count} tasks ended, running past 10 s: {shown}{share}", flush=True)
+    with concurrent.futures.ThreadPoolExecutor(workers) as pool:
+        before = {t: v["seconds"] for t, v in previous.items() if v.get("seconds") is not None}
+        pending = {pool.submit(stream_task, t) for t in X.replay_order(to_stream, before)}
+        last = t0
+        try:
+            while pending:
+                got, pending = concurrent.futures.wait(pending, timeout=max(0.0, last + 10 - time.time()), return_when=concurrent.futures.FIRST_COMPLETED)
+                for f in got:
+                    f.result()
+                if time.time() - last >= 10:
+                    X.print_progress(t0, len(took), len(to_stream), 0, running)
+                    last = time.time()
+        except BaseException:
+            pool.shutdown(wait=False, cancel_futures=True)
+            raise
+    streams = [s for t in sorted(results) for s in results[t][0]]     # the order of the solvers in one call over all the tasks
+    faults = [l for t in sorted(results) for l in results[t][1]]
 mask_faults = [f"{s.task} {s.case}: mask fault: {s.mask_fault}" for s in streams if s.mask_fault is not None]
 streams = [s for s in streams if s.mask_fault is None]
 faults = faults + mask_faults
@@ -188,6 +191,7 @@ np.savez_compressed(f"{DATA}/cases.npz",
          task=np.array([r[0] for r in rows], dtype=str), case=np.array([r[1] for r in rows], dtype=str),
          concept=np.array([r[2] for r in rows]), heldout=np.array([r[0] in held_out for r in rows]))
 counts = collections.Counter("heldout" if r[0] in held_out else "train" for r in rows)
-json.dump({t: {"key": task_keys[t], "streamed": streamed[t], "problems": {k: n for k, n in problems[t].items() if n}} for t in task_ids}, open(f"{DATA}/keys.json", "w"))
+seconds = {t: round(s, 1) for t, s in took.items()} | {t: previous[t].get("seconds") for t in reused}
+json.dump({t: {"key": task_keys[t], "seconds": seconds.get(t), "streamed": streamed[t], "problems": {k: n for k, n in problems[t].items() if n}} for t in task_ids}, open(f"{DATA}/keys.json", "w"))
 json.dump({"names": names, "kinds": kinds}, open(f"{DATA}/vocab.json", "w"))
 print(dict(counts), dict(sum(problems.values(), collections.Counter())), f"{len(mask_table)} distinct masks, {time.time() - t0:.0f}s")
