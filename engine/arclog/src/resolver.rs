@@ -98,6 +98,20 @@ pub struct DependencyGraph {
 }
 
 impl DependencyGraph {
+    /// Whether each node of the graph is read by `root`, at any depth, or is
+    /// `root`.
+    pub fn reached(&self, root: GraphNodeIndex) -> Vec<bool> {
+        let mut seen = vec![false; self.nodes.len()];
+        let mut stack = vec![root];
+        while let Some(node) = stack.pop() {
+            if std::mem::replace(&mut seen[node.0 as usize], true) {
+                continue;
+            }
+            stack.extend(self.reads[node.0 as usize].iter().copied());
+        }
+        seen
+    }
+
     /// A cycle of the graph, as the nodes on it, or `None` where the graph is
     /// acyclic.
     pub fn find_cycle(&self) -> Option<Vec<GraphNodeIndex>> {

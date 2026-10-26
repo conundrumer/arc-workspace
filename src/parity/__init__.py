@@ -53,12 +53,15 @@ class NameMap:
     `Choice` constructor, and the names of the arclog relations the
     converted program reads that no Souffle relation was written into; and,
     for each Souffle relation by its path that the converter folds and made
-    no check relation of, why not."""
+    no check relation of, why not; and the arclog name of each check
+    relation (`arclog_convert.checks`) the converted program has, which is
+    among `relations` too."""
 
     relations: Mapping[str, tuple[SouffleRelation, ...]]
     constructors: Mapping[str, str]
     unmapped: tuple[str, ...]
     untranslated: Mapping[str, str] = field(default_factory=dict)
+    checks: tuple[str, ...] = ()
 
     @staticmethod
     def of(data: Mapping) -> "NameMap":
@@ -66,7 +69,8 @@ class NameMap:
         return NameMap(
             {a: tuple(SouffleRelation(tuple(s["component"]), s["relation"], s["path"]) for s in ss)
              for a, ss in data["relations"].items()},
-            dict(data["constructors"]), tuple(data["unmapped"]), dict(data.get("untranslated", {})))
+            dict(data["constructors"]), tuple(data["unmapped"]), dict(data.get("untranslated", {})),
+            tuple(data.get("checks", ())))
 
     @property
     def read(self) -> list[str]:

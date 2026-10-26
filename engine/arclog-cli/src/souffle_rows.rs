@@ -140,7 +140,7 @@ const SEVERAL_FORMS: &str = "several forms of the program derive the name";
 /// or a parameter stores, or, for `&<instance>.<port>`, an output of that
 /// instance, else its input of that port; the reason for a skip where more
 /// than one node holds the name.
-fn named_relation(program: &arclog::check::CheckedProgram, name: &str) -> Option<Result<GraphRelation, String>> {
+pub(crate) fn named_relation(program: &arclog::check::CheckedProgram, name: &str) -> Option<Result<GraphRelation, String>> {
     let declared = ProgramRelation::Declared(RelationName(DeclaredName::Written(name.into())));
     let relation = relation_of(program, &declared).or_else(|| {
         let (instance, port) = name.split_once('.')?;

@@ -96,8 +96,8 @@ def _with_checks(s: "Solver", lib: Lib, sig: Lib, names: dict, columns: dict, in
                  copies: frozenset[ScopedName]) -> tuple[str, str] | None:
     """The arclog and the arcdata of the converted solver with the check
     relations of the relations it folds (`arclog_convert.checks`), and, in
-    `names` and `columns`, their entries and the reason of each folded
-    relation that has none; none where it folds none."""
+    `names` and `columns`, their entries, their names under `checks`, and the
+    reason of each folded relation that has none; none where it folds none."""
     folds = folded(s, names)
     if not folds:
         return None
@@ -114,6 +114,7 @@ def _with_checks(s: "Solver", lib: Lib, sig: Lib, names: dict, columns: dict, in
         arclog = arcdata = None
     names["relations"] = dict(sorted({**names["relations"], **got.relations}.items()))
     names["untranslated"] = got.untranslated
+    names["checks"] = sorted(got.relations)
     columns.update(got.columns)
     return None if arclog is None else (arclog, arcdata)
 

@@ -65,9 +65,14 @@ relation of the run stands for it", otherwise. A relation of the run that
 several arclog relations hold, and an arclog relation that holds several
 relations of the run, are compared once for each pair. `arclog-cli row-parity` gives the rest
 of the verdicts, and `uncompared` "no case's program has a relation of that
-name" for a relation that no case it runs has. An `equal` line proves that
-the relation's rows in each case that derives it, at the stored parameters,
-are these rows over the columns the converter maps
+name" for a relation that no case it runs has, and "no case the check runs
+reads it from `&output`" for one that a case has and no case's `&output`
+reads, at any depth. In a case the check compares a relation only where the
+case's `&output` reads it or is it, or where it is a check relation
+(`NameMap.checks`), which the case counts as read though nothing reads it
+(`case_rows` gives their names as `check_relations`). An `equal` line proves that
+the relation's rows in each case that derives it and whose `&output` reads
+it, or that is a check relation, at the stored parameters, are these rows over the columns the converter maps
 (`engine/arclog-cli/src/row_parity.rs` gives the rest). Where the relation is
 one of the converter's Souffle text, the rows are those the text's clauses
 derive with the solver's program, which says nothing on whether those clauses
@@ -414,7 +419,7 @@ def case_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | RunF
     column map (`columns_path`) gives it, which leave out each Example leaf:
     for each, the leaves of the value at its `leaf` in its Souffle column. A
     relation's rows are a set. The form: `{"orientation_constants": {...},
-    "cases": [{"case": <arclog name>, "pairs": [{"pair": "train 0",
+    "check_relations": [<arclog name>, ...], "cases": [{"case": <arclog name>, "pairs": [{"pair": "train 0",
     "relations": [{"name": "&x", "columns": [[label, field], ...],
     "idents": [kind, ...], "unread": [[label, field], ...],
     "unresolved": [[label, field, reason], ...], "rows": [[[leaves of column 1], ...], ...],
@@ -469,8 +474,9 @@ def case_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | RunF
             return got
         else:
             entries.append({"case": name, "failure": str(got)})
-    out = {"orientation_constants": orientation_constants(loaded.solver.lib), "cases": entries,
-           "not_compared": not_compared}
+    out = {"orientation_constants": orientation_constants(loaded.solver.lib),
+           "check_relations": [] if loaded.names is None else list(loaded.names.checks),
+           "cases": entries, "not_compared": not_compared}
     if determined:
         out["determination"] = determination_entry(loaded, run, columns, determined)
     return out

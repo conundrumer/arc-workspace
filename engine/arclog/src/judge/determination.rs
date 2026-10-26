@@ -220,7 +220,7 @@ pub struct Det {
 /// in dependency order.
 pub(crate) fn dets_read(program: &CheckedProgram, root: GraphNodeIndex) -> Vec<Det> {
     let resolved = &program.program;
-    let read = reached(resolved, root);
+    let read = resolved.graph.reached(root);
     let nodes = determinations(program).into_iter().filter(|node| read[node.0 as usize]);
     nodes
         .map(|node| {
@@ -530,19 +530,4 @@ fn keyed_one(program: &CheckedProgram, node: GraphNodeIndex) -> Option<RunFault>
         }
         _ => None,
     })
-}
-
-/// Whether each node of `program` is read by `root`, at any depth, or is
-/// `root`.
-fn reached(program: &crate::resolver::ResolvedProgram, root: GraphNodeIndex) -> Vec<bool> {
-    let graph = &program.graph;
-    let mut seen = vec![false; graph.nodes.len()];
-    let mut stack = vec![root];
-    while let Some(node) = stack.pop() {
-        if std::mem::replace(&mut seen[node.0 as usize], true) {
-            continue;
-        }
-        stack.extend(graph.reads[node.0 as usize].iter().copied());
-    }
-    seen
 }
