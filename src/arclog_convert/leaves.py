@@ -16,6 +16,7 @@ from engine.program import (
     Comparison,
     ConstructorTerm,
     Disjunction,
+    Instance,
     RigidCall,
     RecordTerm,
     RecordType,
@@ -136,6 +137,13 @@ class Converter:
         # the rewrite in its ground form, whose clauses the Souffle engine can run, which
         # `parity_text` reads; it runs first, as `instances.GROUNDED` holds the latest run's inputs
         self.ground_prog = libmap_rewrite(prog, lib, ground=True)[0]
+        # the instances in `Params` that a frame-read plan makes (`FieldPlan.souffle`), and their
+        # clauses, as the ground program's units are, which `parity_text` reads beside it
+        self.plan_instances: dict[ScopedName, Instance] = {}
+        self.plan_units: list[Unit] = []
+        # for each arclog name, the label and field of each site that a read of it writes, since a
+        # label of a `DET` that no read names is existential and the relation holds no column for it
+        self.read_sites: dict[str, set[tuple[str, str | None]]] = {}
         prog, judgment, self.lib_moved, lib_held = libmap_rewrite(prog, lib)
         MOVED_RELS.clear()
         MOVED_RELS.update({f"{was}.{r}": new for was, moves in self.lib_moved.values() for r, new in moves.items()})
@@ -1322,6 +1330,7 @@ class Converter:
         from engine.program import Column, DeclId, Scope, Span, TypeName, UnitId
         det = ("Determine",)
         self.det_copies: dict[ScopedName, ScopedName] = {}   # a copy -> the relation it is a copy of
+        self.det_copy_via: dict[ScopedName, str] = {}   # a copy of a relation of the parse -> the determination's instance of the parse
         concept = set(self.concept_of().values())
         other_ctors = self.other_ctors()
         concept_program, program_rederived = self.program_concept(prog)
@@ -1679,6 +1688,7 @@ class Converter:
                 taken.add(cand)
                 own[x] = cand
                 self.det_copies[(det, cand)] = (("Parse",), x)
+                self.det_copy_via[(det, cand)] = n
 
             def to_det(rn: RelationName, from_parse: bool):
                 if from_parse:
@@ -1784,6 +1794,7 @@ class Converter:
             new_insts = [i for i in new_insts if i.name not in empty]
             for key_ in [k_ for k_ in self.det_copies if k_[1] in empty]:
                 del self.det_copies[key_]
+                self.det_copy_via.pop(key_, None)
             prog = dc_replace(prog, types=prog.types + tuple(new_types), relations=prog.relations + tuple(new_rels),
                               instances=prog.instances + tuple(new_insts), units=tuple(units))
             for i in new_insts:
@@ -2129,7 +2140,7 @@ class Converter:
             return name, [(Col(pascal(c.name), c.type, False), [Leaf(pascal(c.name), "keep", False, type=c.type)]) for c in lr.cols], "lib", None
         inst = None
         for i in range(len(scope), -1, -1):
-            inst = self.insts.get((scope[:i], head))
+            inst = self.insts.get((scope[:i], head)) or self.plan_instances.get((scope[:i], head))
             if inst is not None:
                 break
         if inst is None:

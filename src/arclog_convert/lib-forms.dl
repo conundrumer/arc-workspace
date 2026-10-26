@@ -27,6 +27,11 @@ sig_d4_identity(D4_ID).
 .decl sig_gap(d: Dir8, p: Position, q: Position, k: number) inline
 sig_gap(D, P, Q, K) :- J = range(1, 128), jump(P, D, J, Q), K = J - 1.
 
+// An offset of k toward either edge of an axis, at each k of a proper
+// sub-extent of the position's extent.
+.decl sig_frame_offset(p: Position, a: Axis, k: number, v: Offset) inline
+sig_frame_offset(P, A, K, V) :- axis_of(D, A), sub_extent(P, A, K), jump_offset(D, K, V).
+
 // The gaps of an axis between tiles: the rows of gap, or 0 where the key has
 // none on the axis.
 .comp SigGaps<Key> {

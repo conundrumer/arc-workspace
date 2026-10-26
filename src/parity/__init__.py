@@ -31,7 +31,8 @@ class SouffleRelation:
     """The Souffle relation an arclog name was written from: the solver
     component path it is declared under, its name there, and its name from
     the top level of the solver's program, None where no top-level instance
-    reaches it."""
+    reaches it; for a relation of the converter's Souffle text, its name from
+    the top level of the program the text joins."""
 
     component: tuple[str, ...]
     relation: str
@@ -141,6 +142,14 @@ def text_path(stem: str) -> Path:
     the relations it adds, beside the name map of the solver `stem`
     (`arclog_convert.parity_text`)."""
     return names_path(stem).with_suffix(".dl")
+
+
+def determination_text_path(stem: str) -> Path:
+    """Where the converter writes the Souffle text that the determination run
+    adds to the solver's program, beside the name map of the solver `stem`: the
+    text of the relations it adds inside `Determine` (`ParityText.determination`
+    of `arclog_convert.parity_text`)."""
+    return names_path(stem).with_suffix(".determination.dl")
 
 
 def name_map(stem: str) -> NameMap | None:

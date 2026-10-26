@@ -36,7 +36,7 @@ relations that read them. The tables export runs none of it.
 A task's lines stand in `row_parity/<stem>.json` beside `gen/`, as a record
 with these fields: `files`, the sha256 of the task's files as
 `train_replay.files_digest` gives them, of its program under `CORPUS`, of its name map and column map, of the
-Souffle solver file the conversion read, of the Souffle text beside the name map
+Souffle solver file the conversion read, of the Souffle texts beside the name map
 and the forms it instantiates (`lib-forms.dl`), of the Souffle-side code and lib
 (`cli.common.stamp`), of the Souffle binary, of the `parity` package, and of
 the form of the record (`VERSION`); `sources`, the digest of the engine's
@@ -126,7 +126,8 @@ def files_digest(stem: str, gen: Path, tasks: Path, solvers: Path) -> str:
     digest.update(f"{VERSION}\0{train_replay.files_digest(stem, gen, tasks)}\0".encode())
     corpus, names, columns = gen.parent / CORPUS, gen.parent / "names", gen.parent / "columns"
     for path in (corpus / f"{stem}.arclog", corpus / f"{stem}.arcdata", names / f"{stem}.json", names / f"{stem}.dl",
-                 columns / f"{stem}.json", solvers / f"{stem}.dl", parity_text.FORMS):
+                 names / f"{stem}.determination.dl", columns / f"{stem}.json", solvers / f"{stem}.dl",
+                 parity_text.FORMS):
         digest.update((path.read_bytes() if path.exists() else b"") + b"\0")
     digest.update(f"{stamp()}\0{rerun.code_digest()}\0".encode() + binary_identity())
     return digest.hexdigest()

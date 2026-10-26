@@ -25,7 +25,10 @@ first of these that holds (`classify`):
   that derives the rows of the relations it adds (`parity.text_path`,
   `arclog_convert.parity_text`), and `load_once` adds it, with the components
   it instantiates, to the solver's program; the relations and instances the
-  text declares are in `Loaded.added`.
+  text declares are in `Loaded.added`. The converter writes as well the text
+  of the relations it adds inside `Determine` (`parity.determination_text_path`),
+  which `load_once` adds to the program of the determination run alone
+  (`Loaded.determination`).
 - `skip`, "a lib relation that no clause of the solver writes and no arclog
   relation stands for": the lib declares it, at the top level or in a
   component of the lib, so it holds rows the lib derives; no clause of the
@@ -73,10 +76,14 @@ that read them.
 
 A relation of `Determine` that the name map gives an arclog name and the
 column map an entry is compared as well with Souffle's rows of it at the run
-of the `Determine` component, the program of `solver.determine.run_program`,
-over the task's examples, which `solver.determine.determine` makes, once for
-the task (`determination_entry`): a relation with an Example leaf in its column
-map per train pair, and any other once for the task."""
+of the `Determine` component, the program of `solver.determine.run_program`
+over `Loaded.determination`, over the task's examples, which
+`solver.determine.determine` makes, once for the task (`determination_entry`):
+a relation with an Example leaf in its column map per train pair, and any
+other once for the task. So is a relation of the converter's text of the
+determination run: the name map gives it the component `Determine` and its path
+from the top level of that program, and any other relation of `Determine` its
+path under the instance of `Determine`."""
 
 import hashlib
 import json
@@ -95,8 +102,8 @@ from engine.program import (AtomLiteral, BodyLiteral, Comparison, ComparisonOper
                             ConstructorTerm, Disjunction, Qualifier, Term, Unit, Value, as_grid,
                             own, subterms)
 from arclog_convert.parity_text import FORMS
-from parity import (PARAMS_COMPONENT, Entry, NameMap, case_name, column_entry, columns_path, name_map,
-                    relation_names, snapshot, text_path)
+from parity import (PARAMS_COMPONENT, Entry, NameMap, case_name, column_entry, columns_path,
+                    determination_text_path, name_map, relation_names, snapshot, text_path)
 from parity.idents import (Ambiguous, IdentSources, Minted, NoMembers, Source, Unresolved, Writer, ident_sources,
                            kind_of, leaves)
 from solver.aggregate import Solver
@@ -162,6 +169,10 @@ class Loaded:
     solver: Solver
     names: NameMap | None
     every: tuple[Case, ...]
+    determination: Solver
+    """The solver's file with the converter's Souffle text of the determination
+    run (`determination_text_path`), in place of the text of the cases, whose
+    program the determination runs (`run_program`)."""
     added: frozenset[str] = frozenset()
     """The relations and instances at the top level that the converter's Souffle
     text (`load_once`) declares and the solver's file does not."""
@@ -205,15 +216,23 @@ def load_once(stem: str, solver_file: Path) -> Loaded | Undefined | RunFailure:
     """The solver of `stem` read from `solver_file`, with its name map and
     its cases; the cases' undefined outcome or failure where they give none.
     The program that `Loaded.solver` holds ends with the converter's Souffle
-    text (`text_path`), where the converter wrote one."""
+    text (`text_path`), where the converter wrote one, and that of
+    `Loaded.determination` with its text of the determination run
+    (`determination_text_path`)."""
     eng = engine()
     solver = load(stem, eng, solver_file)
     every = cases_of(solver, eng, LIMITS)
     if not isinstance(every, tuple):
         return every
-    path = text_path(stem)
-    joined = with_text(eng, solver, path.read_text() if path.is_file() else "")
-    return Loaded(eng, joined, name_map(stem), every, top_level(joined.program) - top_level(solver.program))
+    joined = with_text(eng, solver, _text_of(text_path(stem)))
+    determination = with_text(eng, solver, _text_of(determination_text_path(stem)))
+    return Loaded(eng, joined, name_map(stem), every, determination,
+                  top_level(joined.program) - top_level(solver.program))
+
+
+def _text_of(path: Path) -> str:
+    """What the Souffle text at `path` holds; nothing where the converter wrote none."""
+    return path.read_text() if path.is_file() else ""
 
 
 def top_level(program: Program) -> frozenset[str]:
@@ -435,7 +454,7 @@ def case_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | RunF
         return loaded
     chosen = cases_to_run(loaded)
     columns: dict[str, dict[str, Entry | dict[str, Any]]] = json.loads(columns_path(stem).read_text())
-    run = run_program(loaded.solver)
+    run = run_program(loaded.determination)
     determined = determined_relations(loaded, columns, run)
     read = [] if loaded.names is None else loaded.names.read
     mapped, not_compared = classify(loaded, columns, [n for n in read if n not in {at.name for at in determined}])
@@ -490,7 +509,8 @@ def determined_relations(loaded: Loaded, columns: Mapping[str, Mapping[str, Any]
         for source in souffle:
             if source.column_key in columns.get(arc, {}) and source.component == DETERMINE_SCOPE.components:
                 *chain, name = source.relation.split(".")
-                relation = RelationName((run.determine.name, *chain), name)
+                relation = relation_at(source.path) if source.path is not None \
+                    else RelationName((run.determine.name, *chain), name)
                 if relation in declared:
                     found.append(Pairing(relation, arc, source.column_key))
     return found

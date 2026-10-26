@@ -217,6 +217,8 @@ class ClauseWriter:
             kept = [(site, t) for site, (_, t) in zip(placed[i], live)]
             if not kept:
                 continue
+            self.c.read_sites.setdefault(name, set()).update(
+                (site.label, site.field) for site, t in kept if not isinstance(t, Wildcard))
             is_key = inst is not None and i == 0 and col.name == "key"
             if is_key:
                 kept = self.example_sites(kept, bound, out)

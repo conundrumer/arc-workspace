@@ -20,6 +20,10 @@ from souffle.printer import term as souffle_term
 from arclog_convert.literals import collect_vars
 from solver.vocabulary import order_pairs
 from arclog_convert.frame_reads import (
+    FRAME_SUFFIX,
+    INNER_SUFFIX,
+    OUTER_SUFFIX,
+    TILING_SUFFIX,
     Extent,
     FieldPlan,
     FrameRead,
@@ -173,6 +177,9 @@ class ParamsMixin:
         line = r.span.first if r.span else 0
         amp = c.rel_name(("Params",), r.name)
         forms: list[Form] = []
+        instances, units = plan.souffle(r.name)
+        c.plan_instances.update({(inst.scope.components, inst.name): inst for inst in instances})
+        c.plan_units.extend(units)
 
         def instance(suffix: str) -> str:
             # each instance stands for the `helpers` instance the clause reads
@@ -201,12 +208,12 @@ class ParamsMixin:
             return inst
 
         if isinstance(plan.read, FrameRead):
-            inst = frame("_frame", plan.read.extent)
+            inst = frame(FRAME_SUFFIX, plan.read.extent)
             c.wrote(f"{inst}.cell", Written(("Params",), "helpers.frame_pos", False))
             read, cells = f"{inst}.cell", [("P", plan.read.cell)]
         else:
-            outer, inner = frame("_outer", plan.read.outer), frame("_inner", plan.read.inner)
-            inst = instance("_tiling")
+            outer, inner = frame(OUTER_SUFFIX, plan.read.outer), frame(INNER_SUFFIX, plan.read.inner)
+            inst = instance(TILING_SUFFIX)
             lines = [f"(INIT {inst} Tiling", "  (outer (P)", f"    ({outer}.cell *P))",
                      "  (inner (P)", f"    ({inner}.cell *P))"]
             reads = {outer, inner}

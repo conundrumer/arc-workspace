@@ -32,8 +32,10 @@ is missing or records another hash or stamp, the script first reruns
 `scripts/run_dl.py determination-plan <stem>` (`arclog_convert.plans`). The
 name map and the column map of each solver it converts, written under names/
 and columns/, are those of `arclog_convert.names`, and names/ also holds the
-Souffle text, `<stem>.dl`, that derives the rows of the relations the converter
-adds (`arclog_convert.parity_text`). Beside gen/, the directory
+Souffle texts that derive the rows of the relations the converter adds
+(`arclog_convert.parity_text`): `<stem>.dl`, which the runs of the cases add to
+the solver's program, and `<stem>.determination.dl`, which the determination's
+run adds. Beside gen/, the directory
 `row_parity.CORPUS` holds, for the row-parity check alone, a copy of each
 converted program with the check relations of the relations it folds
 (`arclog_convert.checks`); nothing else reads it.
@@ -176,6 +178,7 @@ def convert_one(stem: str) -> tuple[str, str | None, str | None, Counter, Counte
             directory.mkdir(parents=True, exist_ok=True)
             (directory / f"{stem}.json").write_text(json.dumps(data, indent=1, sort_keys=True) + "\n")
         (paths.NAMES_DIR / f"{stem}.dl").write_text(text.text)
+        (paths.NAMES_DIR / f"{stem}.determination.dl").write_text(text.determination)
         checked = checked or (arclog, arcdata)
     except Exception as e:  # noqa: BLE001
         return stem, None, None, Counter(), Counter(), [], {}, f"{type(e).__name__}: {e}", None

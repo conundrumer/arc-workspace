@@ -1,20 +1,47 @@
 """The plan of a parameter table that a solver derives by a read of
 `helpers.frame_pos` or `helpers.tile_pos` over extents that parameters
-give, from the table's clauses."""
+give, from the table's clauses, and the Souffle clauses of the instances
+the plan makes (`FieldPlan.souffle`): a Frame for each extent, and, for a
+tiled frame, a Tiling over the outer and the inner frame."""
 
 from dataclasses import dataclass, replace
 
 from engine.program import (
+    Atom,
     AtomLiteral,
+    ConstructorTerm,
+    DeclId,
     DefinedName,
+    Instance,
     NumberTerm,
     RecordTerm,
+    RelationName,
+    Scope,
+    Term,
+    TypeName,
     Unit,
+    UnitId,
     Variable,
     Wildcard,
 )
 
 from arclog_convert.literals import collect_vars
+from arclog_convert.terms import subst
+
+PARAMS = ("Params",)
+"""The scope of the instances a plan makes."""
+FRAME_SUFFIX = "_frame"
+"""What follows the table's name in the name of the Frame of a read of `helpers.frame_pos`."""
+OUTER_SUFFIX = "_outer"
+"""What follows the table's name in the name of the outer Frame of a read of `helpers.tile_pos`."""
+INNER_SUFFIX = "_inner"
+"""What follows the table's name in the name of the inner Frame of a read of `helpers.tile_pos`."""
+TILING_SUFFIX = "_tiling"
+"""What follows the table's name in the name of the Tiling of a read of `helpers.tile_pos`."""
+FRAME = "Frame"
+"""The component of a Frame, in the signature."""
+TILING = "Tiling"
+"""The component of a Tiling, in the signature."""
 
 
 @dataclass(frozen=True)
@@ -79,6 +106,68 @@ class FieldPlan:
     unit: Unit
     read: FrameRead | TilingRead
     rest: tuple
+
+    def souffle(self, table: str) -> tuple[list[Instance], list[Unit]]:
+        """The instances in `Params` that the plan makes for the table
+        `table`, named by `table` and a suffix, each keyed by `$U()`, with the
+        Souffle clauses that give their inputs from the extents' parameters:
+        the clauses of `extent`, and for a gap `gap`, of a Frame, and of
+        `outer`, `inner` and `gap` of a Tiling, in scope `Params`."""
+        instances: list[Instance] = []
+        units: list[Unit] = []
+
+        def instance(suffix: str, component: str) -> str:
+            name = table + suffix
+            instances.append(Instance(DeclId(-1 - len(instances)), name, Scope(PARAMS), component,
+                                      (TypeName((), "Unit"),), None))
+            return name
+
+        def unit(head: RelationName, args: tuple[Term, ...], body: tuple[AtomLiteral, ...]) -> None:
+            units.append(Unit(UnitId(-1 - len(units)), Scope(PARAMS), Atom(head, (_KEY, *args), 0), body, None, None))
+
+        def frame(suffix: str, extent: Extent) -> str:
+            name = instance(suffix, FRAME)
+            for axis, number, body in _extent_rows(extent, "N", 1):
+                unit(RelationName((name,), "extent"), (axis, number), body)
+            return name
+
+        if isinstance(self.read, FrameRead):
+            frame(FRAME_SUFFIX, self.read.extent)
+            return instances, units
+        outer, inner = frame(OUTER_SUFFIX, self.read.outer), frame(INNER_SUFFIX, self.read.inner)
+        tiling = instance(TILING_SUFFIX, TILING)
+        for part, frame_name in (("outer", outer), ("inner", inner)):
+            unit(RelationName((tiling,), part), (Variable("P"),),
+                 (AtomLiteral(Atom(RelationName((frame_name,), "cell"), (_KEY, Variable("P")), 0), False),))
+        if self.read.gap is not None:
+            for axis, number, body in _extent_rows(self.read.gap, "G", None):
+                unit(RelationName((tiling,), "gap"), (axis, number), body)
+        return instances, units
+
+
+_KEY = ConstructorTerm("U", ())
+
+
+def _extent_rows(extent: Extent, value: str, other: int | None) -> list[tuple[Term, Term, tuple[AtomLiteral, ...]]]:
+    """The clauses that give the rows `(axis, number)` of `extent`, an axis
+    and its value on that axis, with the variable `value` for the number:
+    each with the row's two terms and the body. A single axis's extent gives
+    as well the number `other` on the perpendicular axis, where `other` is not None."""
+    axis, perp = Variable("A"), Variable("A2")
+
+    def literal(relation: str | RelationName, *args: Term) -> AtomLiteral:
+        name = relation if isinstance(relation, RelationName) else RelationName((), relation)
+        return AtomLiteral(Atom(name, args, 0), False)
+
+    match extent:
+        case SquareExtent(atoms=atoms, label=label):
+            return [(axis, Variable(value), (literal("axis_elem", axis), *subst(atoms, {label: value})))]
+        case SingleAxisExtent(axis=held, atoms=atoms, label=label):
+            on = literal(held.atom.relation, axis)
+            rows = [(axis, Variable(value), (on, *subst(atoms, {label: value})))]
+            return rows if other is None else [*rows, (perp, NumberTerm(other), (on, literal("perp", axis, perp)))]
+        case AxisExtent(atoms=(held, _)):
+            return [(axis, Variable(value), (literal(held.atom.relation, axis, Variable(value)),))]
 
 
 def helpers_read(u: Unit) -> int | None:

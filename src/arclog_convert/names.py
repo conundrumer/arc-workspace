@@ -17,9 +17,11 @@ alone, the converter converts the solver again with a check relation for each
 column map entry of each check relation, or the reason it has none.
 
 An arclog relation the converter adds that holds no Souffle relation of the
-solver's program, such as an output of an instance the lib rewrite hoists, has
-its path in the Souffle text that `parity_text` writes (`parity`, `placed`),
-and its entry in the column map (`_parity_columns`). An `equal` line of such a
+solver's program, such as an output of an instance the lib rewrite hoists, or a
+copy of a relation of `Parse` that the determination takes, has its path in the
+Souffle text that `parity_text` writes (`parity`, `placed`), and its entry in
+the column map (`_parity_columns`); a relation of the text that the determination
+run adds is given the component `Determine`. An `equal` line of such a
 relation proves that the converter's arclog relation holds the rows that the
 text's clauses derive with the solver's program, which says nothing on whether
 those clauses hold what the solver means; that rests on the lines of the
@@ -30,6 +32,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 
 from engine.program import Qualifier, RelationName
+from solver.vocabulary import DETERMINE
 from souffle.parser import relation_name
 from arclog_convert import libmap
 from arclog_convert.libmap import rename as libmap_rename
@@ -230,7 +233,7 @@ def placed(names: dict, text: ParityText) -> dict:
     given the relation of the text as its one Souffle relation, by its path
     from the top level of the text."""
     relations = dict(names["relations"])
-    relations.update({arc: [{"component": [], "relation": at.path, "path": at.path}]
+    relations.update({arc: [{"component": [DETERMINE] if at.determined else [], "relation": at.path, "path": at.path}]
                       for arc, at in text.places.items()})
     return {**names, "relations": dict(sorted(relations.items())),
             "unmapped": [n for n in names["unmapped"] if n not in text.places]}
@@ -346,15 +349,20 @@ def _own_columns(c: "Converter", resolved: tuple, scope: tuple[str, ...], relati
 def _parity_columns(c: Converter, at: Place) -> list[list[dict]] | dict | None:
     """The entry (`_entry` gives its form) of the relation of the text at
     `at`: the sites of the arclog relation as `Converter.resolve` gives them
-    for the relation the rewrite holds, one to one with its columns but those
-    `Converter.dropped` lists; none where their numbers differ."""
-    written, cols, _, inst = c.resolve(at.relation, (), {})
-    dropped = () if at.relation.instances else c.dropped.get(((), at.relation.name), ())
+    for the relation the converter holds in the scope of `at`, one to one with
+    its columns but those `Converter.dropped` lists; none where their numbers differ."""
+    written, cols, _, inst = c.resolve(at.relation, at.scope, c.parse_sub if at.scope == ("Parse",) else {})
+    dropped = () if at.relation.instances else c.dropped.get((at.scope, at.relation.name), ())
     kept = tuple(j for j in range(at.width) if j not in dropped)
     if cols is None or len(kept) != len(cols):
         return None
-    return _entry(c.writings.get(written, {}), site_columns(c, cols, inst),
-                  lambda sites: _souffle_columns(sites, kept, at.width))
+    # a `DET` has as its columns the labels that a read names: a label no read names is existential
+    named = c.read_sites.get(written) if at.scope == (DETERMINE,) and not at.relation.instances else None
+
+    def placed(sites: list[list[Site]]) -> list[list[dict]]:
+        return _souffle_columns([[s for s in column if named is None or (s.label, s.field) in named]
+                                 for column in sites], kept, at.width)
+    return _entry(c.writings.get(written, {}), site_columns(c, cols, inst), placed)
 
 
 def _souffle_columns(columns: list[list[Site]], placement: tuple[Placement, ...], width: int) -> list[list[dict]]:
