@@ -13,8 +13,9 @@ Tables. `load_tables` reads a tables export (engine/arclog-py/tables_export.py) 
 tables in stream order, and caches them in a pickle. The evidence tables `ex_input` and `ex_output` are built from
 the task file where the export holds none, and stand first, after the start token. A change to this module, or to the engine code that writes the export's files (`engine/arclog-tables/src/`, `engine/arclog-tables-py/src/`, `engine/arclog/src/decode/`), runs `engine/arclog-py/roundtrip_check.py` with an `arclog` built from its tree before its merge.
 """
-import bisect, json, math, os, pickle, re
+import bisect, copy, itertools, json, math, os, pickle, re
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -608,28 +609,52 @@ def copy_flow_check(fl, column_types, kept, tables, dets=None, subtypes=None, wh
 UNSEEN_TABLE_REASONS = ("the table faults", "the search for its projections stopped")   # those the export's files give
 
 
-def export_unseen_counts(tables, index, cases):
+BASES_COLUMNS = ["task", "case", "base", "tokens", "tables"]
+
+
+def read_bases(d):
+    """The export's `bases` frame (task, case, base, tokens, tables), empty where the export cuts no case."""
+    f = Path(d) / "bases.parquet"
+    return pd.read_parquet(f) if f.exists() else pd.DataFrame({c: [] for c in BASES_COLUMNS})
+
+
+def with_base_rows(rows, bases):
+    """`rows`, a frame of table rows or entry rows (with `task`, `case` and `table`), and for each case that `bases` cuts the rows of its base's
+    tables numbered below the cut, as that case's: the rows the case has in an export of the same streams without bases, but for the tables' numbers
+    of its own, which `bases` has begin at the cut."""
+    if not len(bases):
+        return rows
+    cut = bases.rename(columns={"case": "cut", "base": "case", "tables": "below"})[["task", "case", "cut", "below"]]
+    held = rows.merge(cut, on=["task", "case"])
+    held = held[held["table"] < held["below"]]
+    return pd.concat([rows, held.drop(columns=["case", "below"]).rename(columns={"cut": "case"})[list(rows.columns)]], ignore_index=True)
+
+
+def export_unseen_counts(tables, index, cases, bases):
     """The unseen tables and the unseen entries by reason, as the export's own files give them, over the relation
     tables of `cases`: a table whose fault is not null, a table whose search for its projections stopped, and an
-    entry of an `UNSEEN_KINDS` kind in a table of neither."""
+    entry of an `UNSEEN_KINDS` kind in a table of neither. A case that `bases` cuts counts its base's tables
+    numbered below the cut as well."""
     keys = pd.DataFrame(list(cases), columns=["task", "case"])
-    rel = tables[tables["point"] == POINT_RELATION].merge(keys, on=["task", "case"])
+    rel = with_base_rows(tables, bases)
+    rel = rel[rel["point"] == POINT_RELATION].merge(keys, on=["task", "case"])
     faulted = ~pd.isna(rel["fault"])
     stopped = ~faulted & (rel[TABLE_PROJECTIONS] == PROJECTIONS_STOPPED)
     counts = dict(zip(UNSEEN_TABLE_REASONS, (int(faulted.sum()), int(stopped.sum()))))
     seen = rel[~faulted & ~stopped][["task", "case", "table"]]
-    ix = index[index["kind"].isin(list(UNSEEN_KINDS))][["task", "case", "table", "kind"]]
+    ix = with_base_rows(index, bases)
+    ix = ix[ix["kind"].isin(list(UNSEEN_KINDS))][["task", "case", "table", "kind"]]
     if len(ix):
         ix = ix.astype({"table": seen["table"].dtype}).merge(seen, on=["task", "case", "table"])
     entries = {UNSEEN_KINDS[int(k)]: int(n) for k, n in ix["kind"].value_counts().items()}
     return {r: n for r, n in counts.items() if n}, entries
 
 
-def reconcile_unseen(out, tables, index):
+def reconcile_unseen(out, tables, index, bases):
     """Raises DataFault, with both counts, where the unseen tables and entries of the loader's `out` differ by reason
     from those that the export's own files give (`export_unseen_counts`). The loader's other reasons, such as an
     entry over the budget, are its own and left out."""
-    export_t, export_e = export_unseen_counts(tables, index, out)
+    export_t, export_e = export_unseen_counts(tables, index, out, bases)
     loader_t, loader_e = unseen_counts(out)
     loader_t = {r: n for r, n in loader_t.items() if r in UNSEEN_TABLE_REASONS}
     loader_e = {r: n for r, n in loader_e.items() if r in UNSEEN_KINDS.values()}
@@ -639,11 +664,36 @@ def reconcile_unseen(out, tables, index):
                         f"export's {export_e}")
 
 
+class Parsed(NamedTuple):
+    """The parse of one case, as the cases cut from it as their base need it: its rows of tables.parquet (`tabs`) and
+    its table rows in the order of their numbers (`records`), its rows of flows.parquet (`flows`, None where it has
+    none), its Tables (`result`, those before the fault where it has one), its DET values (`det_values`, `det_runs`) with the length of
+    `det_values` after each table (`marks`, by the table's number), and its `fault` with the number of the table whose parse
+    raised it (-1 for a fault of the case's file), or None."""
+    tabs: pd.DataFrame
+    records: list
+    flows: pd.DataFrame | None
+    result: list
+    det_values: dict
+    det_runs: dict
+    marks: dict
+    fault: str | None
+    fault_table: int | None
+
+
 def parse_tables(tables_dir, tasks_dir=Path(__file__).resolve().parents[1] / "data/tasks"):
     """{(task, case): [Table]} for every case of the export, and {(task, case): fault} for each case whose export
     cannot be read (no values file, rows past its end), which is left out. A relation table the encoder cannot see
     (it faults, the search for its projections stopped, or an entry is not rows) stays, as an unseen table. A
     relation table whose entries hold several assignments gives one Table per assignment (`parse_table`).
+
+    A case that the export's `bases.parquet` cuts holds its own tables alone, numbered from the row's `tables`, k. Its
+    Tables are the Tables of the export of the same streams without bases (the entry numbers, DET value numbers and flow
+    reads included): shallow copies of the base's Tables of export tables below k, which share the base's arrays, the
+    case's own evidence Tables, and the Tables of its own tables, parsed after the base's DET values (`Parsed`). The base is
+    parsed before the case. A base that faults at a table below k faults the case, with the base's message; a base that
+    faults at a table from k on does not. The stats count each copy flow of the export once, so those of a cut case's
+    flows, which are its own, leave out the base's flows below k.
 
     Raises DataFault where the unseen tables and entries by reason differ from the counts that the export's files give
     (`reconcile_unseen`). Each copy flow is checked against its source (`copy_flow_check`), and the stats keep the
@@ -654,6 +704,7 @@ def parse_tables(tables_dir, tasks_dir=Path(__file__).resolve().parents[1] / "da
     tables = with_names(pd.read_parquet(d / "tables.parquet"), TABLE_PROJECTIONS)
     index = pd.read_parquet(d / "index.parquet")
     assigned = pd.read_parquet(d / "assigned.parquet")
+    bases = read_bases(d)
     projections, projection_rows = read_projections(d)
     by = lambda df: {k: g for k, g in df.groupby(["task", "case"], sort=False)} if len(df) else {}
     idx_by, asg_by, proj_by, prows_by = by(index), by(assigned), by(projections), by(projection_rows)
@@ -663,63 +714,94 @@ def parse_tables(tables_dir, tasks_dir=Path(__file__).resolve().parents[1] / "da
     if provenance and "occurrence" not in pq.read_schema(d / "flows.parquet").names:
         raise DataFault(f"{d}/flows.parquet has no `occurrence` column: the export was written by an engine older than the loader's, which reads the occurrence of each flow")
     flows_by = by(pd.read_parquet(d / "flows.parquet", columns=["task", "case"] + FLOW_COLUMNS + ["atom", "occurrence"])) if provenance else {}
-    out, faults = {}, {}
     stats = {"body tables": 0, "provenance": "column flows of the export" if provenance else
              "table-level: the export gives no flows, keys or depths"}
     subtypes = orientation_subtypes(d)
     copies = {"checked": 0, "values unchecked": 0, "type": 0, "value": 0, "cases": 0, "by case": {}, "first": [],
               "orientation subtypes": subtypes is not None}
-    for (task, case), tabs in tables.groupby(["task", "case"], sort=False):
+    groups = by(tables)
+    cut_by = {(r.task, r.case): r for r in bases.itertuples()}
+    base_keys = {(r.task, r.base) for r in bases.itertuples()}
+    parsed = {}      # the Parsed of each case that is a base
+
+    def parse_case(task, case, tabs, cut):
+        """The `Parsed` of the case whose rows of tables.parquet are `tabs`, and `cut` its `bases` row where it has one."""
+        key, where = (task, case), f"{task} {case}"
+        base = None
+        if cut is not None:
+            base = parsed.get((task, cut.base))
+            if base is None or (task, cut.base) in cut_by:
+                raise DataFault(f"{where}: its base {cut.base} is no case of the export that holds all its tables")
+        below = 0 if base is None else int(cut.tables)
+        records = tabs.sort_values("table").to_dict("records")
+        failed = lambda fault, at: Parsed(tabs, records, None, [], {}, {}, {}, fault, at)
+        if base is not None and base.fault is not None and base.fault_table < below:
+            return failed(base.fault.replace(f"{task} {cut.base}", where), base.fault_table)
         task_json = json.load(open(f"{tasks_dir}/{task}.json"))
         n_train = len(task_json["train"])
         path = d / "values" / task / f"{case}.i32"
         if not path.exists():
-            faults[(task, case)] = "no values file"; continue
+            return failed("no values file", -1)
         values = np.fromfile(path, np.int32)
-        entries = idx_by.get((task, case))
+        entries = idx_by.get(key)
         ents_of = {} if entries is None else records_by(entries, "table")
-        asg = asg_by.get((task, case))
+        asg = asg_by.get(key)
         asg_of = {} if asg is None else records_by(asg, "entry")
-        projs, prows = proj_by.get((task, case)), prows_by.get((task, case))
+        projs, prows = proj_by.get(key), prows_by.get(key)
         projs = {} if projs is None else records_by(projs, "table")
         # the first row of each projection at each entry
         prows = {} if prows is None else {k: rs[0] for k, rs in records_by(prows, [PROJECTION_ID, "entry"]).items()}
+        result = evidence_for(task_json, tabs if base is None else base.tabs)
         det_values = {}   # (det relation, cells) -> index
         det_runs = {}     # (det relation, width, cells) -> the cells, int32 [rows, width]
-        result = evidence_for(task_json, tabs)
-        records = tabs.sort_values("table").to_dict("records")
+        entry_offset = 0
+        every = records
+        if base is not None:
+            # the base's Tables of export tables below the cut, and its DET values and entries as they stood there
+            result += [copy.copy(t) for t in base.result[len(result):] if t.export_table < below]
+            det_values = dict(itertools.islice(base.det_values.items(), base.marks[below - 1]))
+            det_runs = dict(base.det_runs)
+            entry_offset = 0 if idx_by.get((task, cut.base)) is None else int((idx_by[(task, cut.base)]["table"] < below).sum())
+            every = base.records[:below] + records
+        fl = flows_by.get(key)
         if provenance:
-            kept = {int(t["table"]): kept_columns(t["column_types"]) for t in records}
-            dets = {int(t["table"]): case_dets(t) for t in records}
-            fl = flows_by.get((task, case))
-            flows = {} if fl is None else case_flows(fl, kept, dets, f"{task} {case}")
+            kept = {int(t["table"]): kept_columns(t["column_types"]) for t in every}
+            dets = {int(t["table"]): case_dets(t) for t in every}
+            before = None if base is None or base.flows is None else base.flows[base.flows["table"] < below]
+            whole = [f for f in (before, fl) if f is not None]
+            flows = case_flows(pd.concat(whole, ignore_index=True), kept, dets, where) if whole else {}
             ex_output = result[1]
-            for t in records:
+            for t in every:
                 k = kept[int(t["table"])]
                 if t["point"] == POINT_RELATION and t["output_color"] >= 0 and k[t["output_color"]] >= 0:
                     ex_output.color_dependent = color_dependence(flows, int(t["table"]), k[t["output_color"]])
+        marks, at = {}, None
         try:
             for t in records:
-                if t["point"] != POINT_RELATION:
+                at = int(t["table"])
+                if t["point"] == POINT_RELATION:
+                    prov = None
+                    if provenance:
+                        k = kept[at]
+                        c_at = lambda c: k[c] if c >= 0 else -1
+                        prov = dict(depth=int(t["depth"]), keys=[[k[c] for c in key if k[c] >= 0] for key in t["keys"]],
+                                    output_position=c_at(int(t["output_position"])), output_color=c_at(int(t["output_color"])),
+                                    flows=flows.get(at, np.zeros((0, 6), np.int32)))
+                    result += parse_table(t, ents_of.get(t["table"], []), values, asg_of, projs, prows, det_values,
+                                          n_train, prov, where, det_runs, entry_offset)
+                else:
                     stats["body tables"] += t["point"] == 1
-                    continue
-                prov = None
-                if provenance:
-                    k = kept[int(t["table"])]
-                    at = lambda c: k[c] if c >= 0 else -1
-                    prov = dict(depth=int(t["depth"]), keys=[[k[c] for c in key if k[c] >= 0] for key in t["keys"]],
-                                output_position=at(int(t["output_position"])), output_color=at(int(t["output_color"])),
-                                flows=flows.get(int(t["table"]), np.zeros((0, 6), np.int32)))
-                result += parse_table(t, ents_of.get(t["table"], []), values, asg_of, projs, prows, det_values,
-                                      n_train, prov, f"{task} {case}", det_runs)
+                marks[at] = len(det_values)
         except DataFault as f:
-            faults[(task, case)] = str(f); continue
+            return Parsed(tabs, records, fl, result, det_values, det_runs, marks, str(f), at)
+        if base is not None:
+            stats["body tables"] += int(((base.tabs["point"] == 1) & (base.tabs["table"] < below)).sum())
         if provenance:
             check_provenance(task, case, result)   # a fault of the export's provenance fails the whole build
             if fl is not None:
                 n, unchecked, bad = copy_flow_check(
-                    fl, {int(t["table"]): list(t["column_types"]) for t in records}, kept, result,
-                    dets, subtypes, f"{task} {case}")
+                    fl, {int(t["table"]): list(t["column_types"]) for t in every}, kept, result,
+                    dets, subtypes, where)
                 copies["checked"] += n; copies["values unchecked"] += unchecked
                 for kind, row, detail in bad:
                     copies[kind] += 1
@@ -727,10 +809,22 @@ def parse_tables(tables_dir, tasks_dir=Path(__file__).resolve().parents[1] / "da
                         copies["first"].append(f"{task} {case} flow {row} (table, column, kind, source table, source "
                                                f"column, det): {detail}")
                 if bad:
-                    copies["cases"] += 1; copies["by case"][f"{task} {case}"] = len(bad)
-        out[(task, case)] = result
+                    copies["cases"] += 1; copies["by case"][where] = len(bad)
+        return Parsed(tabs, records, fl, result, det_values, det_runs, marks, None, None)
+
+    order = list(groups) + [key for key in cut_by if key not in groups]      # the order of the export's files
+    out, faults = {}, {}
+    for key in [k for k in order if k not in cut_by] + [k for k in order if k in cut_by]:     # a base before the cases cut from it
+        done = parse_case(*key, groups.get(key, tables.iloc[:0]), cut_by.get(key))
+        if done.fault is None:
+            out[key] = done.result
+        else:
+            faults[key] = done.fault
+        if key in base_keys:
+            parsed[key] = done
+    out = {key: out[key] for key in order if key in out}
     stats["copy flows"] = copies
-    reconcile_unseen(out, tables, index)
+    reconcile_unseen(out, tables, index, bases)
     relation_tables = [t for ts in out.values() for t in ts if not t.evidence]
     unseen, _ = unseen_counts(out)
     if sum(unseen.values()) * 2 > len(relation_tables):
@@ -747,7 +841,7 @@ def records_by(df, key):
     return out
 
 
-def parse_table(t, ents, values, asg_of, projs, prows, det_values, n_train, prov=None, where="", det_runs=None):
+def parse_table(t, ents, values, asg_of, projs, prows, det_values, n_train, prov=None, where="", det_runs=None, entry_offset=0):
     """The Tables of the export's table t, from its entries `ents` (rows of the index, as dicts): one per
     assignment that its entries hold, in the order of each assignment's first entry, or one where they hold one
     assignment or none; or its unseen table. Raises DataFault where the values cannot be read. An entry the
@@ -755,7 +849,9 @@ def parse_table(t, ents, values, asg_of, projs, prows, det_values, n_train, prov
     table's provenance attributes (`Table`), which every Table of t shares, or None. An entry's rows are read
     through `entry_runs`; `where` names the case in its faults, which include a DET whose `det_columns` are not one
     per column of its `det_types`. `det_runs` is the case's {(DET relation, width, run
-    bytes): cells}, which the Tables of a case share their `det_cells` arrays through; None gives a fresh one."""
+    bytes): cells}, which the Tables of a case share their `det_cells` arrays through; None gives a fresh one.
+    `entry_offset` is added to the number of each entry in the Tables' `entry`, for a case that holds the entries of
+    its tables from the cut alone: the count of the entries of the tables before it."""
     prov = prov or {}
     det_runs = {} if det_runs is None else det_runs
     for i, (rel, types, _, paths) in enumerate(case_dets(t)):
@@ -819,7 +915,7 @@ def parse_table(t, ents, values, asg_of, projs, prows, det_values, n_train, prov
         a = assignment_of(e)
         split_of(e)["groups"].append((full, present, np.full(n, ex, np.int16), np.full(n, kind, np.int8),
                                       np.tile(a, (n, 1)), np.full(n, int(e["model"]), np.int32),
-                                      np.full(n, int(e["entry"]), np.int32), np.full(n, part, np.int32),
+                                      np.full(n, int(e["entry"]) + entry_offset, np.int32), np.full(n, part, np.int32),
                                       np.full(n, marker, bool)))
 
     def unseen_entry(e, reason):
@@ -873,7 +969,7 @@ def table_groups(tables):
     return out
 
 
-LOADER_VERSION = 22  # raise on any change to parse_tables or Table
+LOADER_VERSION = 23  # raise on any change to parse_tables or Table
 
 
 def table_stamp(tables_dir):

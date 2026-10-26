@@ -29,12 +29,24 @@ use pyo3::types::{PyBytes, PyDict};
 /// `copies`.
 /// `projection_cap` is the cap of the projection rows that the tables ran
 /// under.
+///
+/// A case of `stream_tables` that has a base holds the tables of the steps
+/// from its token `base_tokens` on alone: `base` is the base's case name,
+/// `base_tokens` the length of the prefix of tokens that the case shares with
+/// it, and `base_tables` the count `k` of the base's tables before that prefix
+/// (the 2 evidence tables and each table whose token is below `base_tokens`).
+/// The case's tables are numbered from `k`, and each table number in its
+/// parts names the base's table of that number where it is below `k`. The
+/// three are `None` for every other case.
 #[pyclass(name = "CaseTables", frozen, get_all, module = "arclog")]
 pub(crate) struct PyCaseTables {
     task: String,
     case: String,
     concept: bool,
     projection_cap: u64,
+    base: Option<String>,
+    base_tokens: Option<usize>,
+    base_tables: Option<u32>,
     tables: Py<PyDict>,
     entries: Py<PyDict>,
     assigned: Py<PyDict>,
@@ -119,10 +131,20 @@ fn relation_names(tables: &TableColumns, relations: Option<&[String]>) -> Vec<Op
         .collect()
 }
 
+/// The base of a case that holds the tables after a prefix alone: the base's
+/// case name, the tokens of the prefix and the count of the base's tables
+/// before it.
+pub(crate) struct Base {
+    pub(crate) case: String,
+    pub(crate) tokens: usize,
+    pub(crate) tables: u32,
+}
+
 impl PyCaseTables {
     /// `relations` is the spelling of the relation declared at each slot of the
-    /// case program, or `None` for a stream that no case program writes.
-    pub(crate) fn of(py: Python<'_>, task: String, case: String, concept: bool, projection_cap: u64, columns: &CaseColumns, relations: Option<&[String]>) -> PyResult<Self> {
+    /// case program, or `None` for a stream that no case program writes. `base`
+    /// is the base of a case whose `columns` are cut.
+    pub(crate) fn of(py: Python<'_>, task: String, case: String, concept: bool, projection_cap: u64, columns: &CaseColumns, relations: Option<&[String]>, base: Option<Base>) -> PyResult<Self> {
         let dtypes = PyDict::new(py);
         let t = Part::new(py, "tables", &dtypes);
         let c = &columns.tables;
@@ -196,6 +218,9 @@ impl PyCaseTables {
             case,
             concept,
             projection_cap,
+            base_tokens: base.as_ref().map(|base| base.tokens),
+            base_tables: base.as_ref().map(|base| base.tables),
+            base: base.map(|base| base.case),
             tables: t.dict.unbind(),
             entries: e.dict.unbind(),
             assigned: a.dict.unbind(),

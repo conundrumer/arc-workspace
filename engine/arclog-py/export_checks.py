@@ -9,12 +9,18 @@ values of a sample of N cases (100 by default; `--all` takes every case; `--seed
 one line per violated invariant, with the count of its violations, the number of its cases and three examples,
 then a total, and exits with status 1 where any violation stands. `--jobs N` sets the number of worker processes that check the cases (every core by default; 1 runs in the one process); the report is the same at every N. A change to this module, or to the engine code that writes the export's files (`engine/arclog-tables/src/`, `engine/arclog-tables-py/src/`, `engine/arclog/src/decode/`), runs `engine/arclog-py/roundtrip_check.py` with an `arclog` built from its tree before its merge.
 
+A case of an export of streams (`tables_export.export_streams` with `bases`) can be cut: its `bases` row (task, case, base, tokens `n`, tables `k`) says that
+the case holds only the tables of the steps at or after token `n`, numbered from `k`, and that its base case's tables numbered below `k` are the case's
+first tables. `check_case` checks the own tables, entries, runs and values of such a case, with the base's tables below `k` as the earlier tables its flow and
+copy checks read, and checks no base table again; a `bases` row whose base is absent, has a base or does not hold `k` tables before token `n`, is a violation.
+
 `--streams <dir>` also reads `cases.npz` of the streams export (`lm/export.py`) in that directory and checks
 that each table of the export other than an evidence table has a token inside its case's stream at a step the
 model writes, that the stream's mask admits each model-written token, and that each case of the streams export
 has tables. The number of cases with tables and no stream is printed and is no violation.
 """
-import collections, concurrent.futures, heapq, json, multiprocessing, os, random, sys
+import collections, concurrent.futures, glob, heapq, json, multiprocessing, os, random, sys
+from typing import NamedTuple
 import numpy as np
 import pandas as pd
 
@@ -82,31 +88,59 @@ def _evidence_cells(task, fact):
     return cache[fact]
 
 
-def check_case(frames, values, task, orientation_types, size=None):
+class Base(NamedTuple):
+    """What a cut case stands on: the `frames` and `values` (None where the values are not checked) of its base case, the `tokens` the two share,
+    and the count `tables` of the base's tables before them, which are the first tables of the cut case."""
+    frames: dict
+    values: np.ndarray | None
+    tokens: int
+    tables: int
+
+
+def tables_before(tables, tokens):
+    """The count of the tables in `tables`, the frame of one case, that stand before token `tokens`: the evidence tables, and each table whose token is below it."""
+    return int(((tables["point"] == EVIDENCE) | (tables["token"] < tokens)).sum())
+
+
+def check_case(frames, values, task, orientation_types, size=None, base=None):
     """The violations of one case, one line `<invariant>: <detail>` each.
 
     `frames` is {part: DataFrame} of the case in the layout `tables_export.write_part` builds with `frame(case, part)`
-    (a table's index is its row, an entry's index is its row), `values` the case's int32 array or None, which skips
+    (an entry's index is its row; the index of `tables` is its rows' order, the first being table `base.tables`
+    where `base` is given), `values` the case's int32 array or None, which skips
     the value checks, `task` the task's JSON, `orientation_types` {type name: set of cells} or None, which skips the
     orientation part of the domain check, and `size` the length of `values` where `values` is None and the runs are
     to be checked against it. A copy from a source table whose entries at an example are not all `Rows` entries is
-    not checked at that example.
+    not checked at that example. `base`, a `Base` where the case is cut, makes the base's tables numbered below
+    `base.tables` the case's first tables, which its flows and copies read; the checks of the tables, entries, runs
+    and values then run on the case's own, and the count `base.tables` is checked against the base's tables before
+    `base.tokens`.
     """
     out = []
     bad = lambda inv, detail: out.append(f"{inv}: {detail}")
     ntrain, ntest = len(task["train"]), len(task["test"])
     if values is not None:
         size = len(values)
-    tabs = frames["tables"].reset_index(drop=True)
+    k = 0 if base is None else base.tables
+    if base is not None:
+        held = tables_before(base.frames["tables"], base.tokens)
+        if held != k:
+            bad("bases-tables", f"the base holds {held} tables before token {base.tokens}, and the case counts {k}")
+            return out
+    own = frames["tables"].reset_index(drop=True)
+    tabs = own if base is None else pd.concat([base.frames["tables"].reset_index(drop=True).iloc[:k], own], ignore_index=True)
     tl = list(rows_of(tabs))
     n = len(tl)
     # tables
     if n < 2 or tl[0].fact != "ex_input" or tl[1].fact != "ex_output" or any(t.point != EVIDENCE or t.token != 0 for t in tl[:2]):
         bad("tables-evidence", "tables 0 and 1 are not ex_input and ex_output at token 0")
     tokens = tabs.token.to_numpy().astype(np.int64)
-    for i in np.flatnonzero(np.diff(tokens) < 0):
+    first = max(k - 1, 0)       # the base's tables are in order, as its own check finds
+    for i in np.flatnonzero(np.diff(tokens[first:]) < 0) + first:
         bad("tables-token-order", f"table {i + 1} has token {tokens[i + 1]} after {tokens[i]}")
-    for t in tl:
+    if base is not None and (tokens[k:] < base.tokens).any():
+        bad("bases-tokens", f"tables {[k + int(i) for i in np.flatnonzero(tokens[k:] < base.tokens)][:5]} have a token before the {base.tokens} the case shares with its base")
+    for t in tl[k:]:
         i = t.Index
         if _faulted(t):
             if len(t.column_types):
@@ -128,7 +162,7 @@ def check_case(frames, values, task, orientation_types, size=None):
     flows = frames.get("flows")
     has_flow = set()
     for r in rows_of(flows):
-        t = tl[r.table] if r.table < n else None
+        t = tl[r.table] if k <= r.table < n else None
         if t is None or _faulted(t) or t.point == EVIDENCE or not 0 <= r.column < len(t.column_types):
             bad("flows-relation-table", f"flow of table {r.table} column {r.column} names no column of a relation table that has not faulted")
             continue
@@ -161,7 +195,7 @@ def check_case(frames, values, task, orientation_types, size=None):
             sty = "Example" if r.source_column == -2 else held[r.source_column]
             if not copy_keeps_type(t.column_types[r.column], sty, orientation_types):
                 bad("flows-copy-type", f"{where} of type {t.column_types[r.column]} copies column {r.source_column} of table {st} of type {sty}")
-    for t in tl:
+    for t in tl[k:]:
         if t.point != EVIDENCE and not _faulted(t):
             for c in range(len(t.column_types)):
                 if (t.Index, c) not in has_flow:
@@ -172,7 +206,7 @@ def check_case(frames, values, task, orientation_types, size=None):
     runs = {}     # (offset, length) -> what: each distinct run once, whatever number of rows point at it
     widths = [t.width for t in tl]
     for r in en:
-        t = tl[r.table] if r.table < n else None
+        t = tl[r.table] if k <= r.table < n else None
         if t is None or _faulted(t):
             bad("entries-table", f"entry {r.Index} names table {r.table}, absent or faulted")
             continue
@@ -191,11 +225,11 @@ def check_case(frames, values, task, orientation_types, size=None):
                 bad("entries-offset", f"entry {r.Index} is a Count entry with offset {r.offset}")
         elif r.rows or r.offset:
             bad("entries-offset", f"entry {r.Index} of kind {r.kind} has rows {r.rows} and offset {r.offset}")
-    for t in tl:
+    for t in tl[k:]:
         if _faulted(t) and any(r.table == t.Index for r in en):
             bad("tables-faulted-empty", f"table {t.Index} has fault and entries")
     for r in rows_of(frames.get("assigned")):
-        t = tl[en[r.entry].table] if r.entry < len(en) and en[r.entry].table < n else None
+        t = tl[en[r.entry].table] if r.entry < len(en) and k <= en[r.entry].table < n else None
         if t is None or not r.det < len(t.det_widths):
             bad("entries-assigned-det", f"assigned of entry {r.entry} names det {r.det}")
         elif r.rows:
@@ -218,17 +252,20 @@ def check_case(frames, values, task, orientation_types, size=None):
             bad("runs-tile", f"the runs end at {pos}, the values at {size}")
     if values is None or any(l.startswith("runs-tile") for l in out):
         return out
-    _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest, bad)
+    _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest, bad, base)
     return out
 
 
-def _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest, bad):
+def _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest, bad, base=None):
+    cut = 0 if base is None else base.tables      # the tables below cut are the base's: only their columns that a copy of the case reads are gathered
     blocks = collections.defaultdict(list)       # table -> [(entry, example, block)] of its Rows entries, each distinct run at an example once, at the first entry that has it
     block_entries = collections.defaultdict(list)    # table -> [(entry, example)] of its Rows entries that hold rows
     seen_blocks = set()                          # (table, example, offset, rows)
     held_none = collections.defaultdict(set)     # table -> the examples of its Rows entries that hold no row
     unseen = collections.defaultdict(set)        # table -> the examples of its entries other than Rows entries
-    for r in en:
+    below = [r for r in rows_of(base.frames.get("entries")) if r.table < cut] if base is not None else []
+    for r in below + en:
+        run = base.values if r.table < cut else values      # the array that the entry's offset indexes
         if r.kind != ROWS:
             unseen[r.table].add((r.example_kind, r.example_index))
         if r.kind == ROWS and r.table < len(tl) and not _faulted(tl[r.table]):
@@ -238,12 +275,12 @@ def _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest
                 block_entries[r.table].append((r.Index, ex))
                 if (r.table, ex, int(r.offset), int(r.rows)) not in seen_blocks:
                     seen_blocks.add((r.table, ex, int(r.offset), int(r.rows)))
-                    blocks[r.table].append((r.Index, ex, values[int(r.offset):int(r.offset) + int(r.rows) * w].reshape(int(r.rows), w)))
+                    blocks[r.table].append((r.Index, ex, run[int(r.offset):int(r.offset) + int(r.rows) * w].reshape(int(r.rows), w)))
             elif not r.rows and w:
                 held_none[r.table].add((r.example_kind, r.example_index))
-            elif r.rows > 1:
-                for k in tl[r.table].keys:
-                    if not len(k):
+            elif r.rows > 1 and r.table >= cut:
+                for key in tl[r.table].keys:
+                    if not len(key):
                         bad("values-key", f"table {r.table} entry {r.Index} has {r.rows} rows and a key with no columns")
     # column -> its flows, for each column whose every flow is a copy of a column of an earlier table or of the example
     flows_of = collections.defaultdict(list)
@@ -261,8 +298,12 @@ def _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest
         and source_type(f) is not None and copy_keeps_type(tl[f.table].column_types[f.column], source_type(f), orientation_types) for f in fs)}
     needed = {(f.source_table, f.source_column) for fs in copies.values() for f in fs if f.det < 0 and f.source_column >= 0} | set(copies)
     column_values = {}           # (table, column) -> {example: rows}
+    read_below = {table for table, _ in needed if table < cut}
     for ti in sorted(set(blocks) | set(held_none)):
         bl, t = blocks[ti], tl[ti]
+        checked = ti >= cut       # a base table is checked by the base's case
+        if not checked and ti not in read_below:
+            continue
         if not bl:
             # every Rows entry holds no row: each column holds none at each example
             for c, ty in enumerate(t.column_types):
@@ -271,7 +312,7 @@ def _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest
             continue
         stack = np.concatenate([b for _, _, b in bl])
         entry = np.repeat([e for e, _, _ in bl], [len(b) for _, _, b in bl])
-        if len(stack) > 1:
+        if checked and len(stack) > 1:
             a, b = stack[1:], stack[:-1]
             neq = a != b
             first = neq.argmax(1)
@@ -296,7 +337,7 @@ def _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest
                 invalid = ~np.isin(col, dom)
             else:
                 invalid = None
-            if invalid is not None and invalid.any():
+            if checked and invalid is not None and invalid.any():
                 bad("values-domain", f"table {ti} column {c} of type {ty} holds {sorted(set(col[invalid].tolist()))[:5]}")
             if (ti, c) in needed:
                 bounds = np.cumsum([0] + [len(b) for _, _, b in bl])
@@ -306,7 +347,7 @@ def _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest
                 column_values[(ti, c)] = {ex: np.concatenate(v) for ex, v in by_example.items()}
                 for ex in held_none[ti] - set(by_example):
                     column_values[(ti, c)][ex] = col[:0]
-        for k in t.keys:
+        for k in t.keys if checked else ():
             cells = [i for c in k if 0 <= c < len(t.column_types) for i in range(offs[c], offs[c + 1])]
             if not cells:
                 continue
@@ -316,9 +357,9 @@ def _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest
             dup = (e[1:] == e[:-1]) & (s[1:] == s[:-1]).all(1)
             if dup.any():
                 bad("values-key", f"table {ti} key {[int(c) for c in k]}: {int(dup.sum())} repeated rows, first in entry {e[1:][dup][0]}")
-    # the evidence tables
+    # the evidence tables, which a cut case's base holds
     for g, fact in ((0, "input"), (1, "output")):
-        if len(tl) > g and tl[g].fact == f"ex_{fact}" and list(tl[g].column_types) == ["Example", "Box", "Color"]:
+        if not cut and len(tl) > g and tl[g].fact == f"ex_{fact}" and list(tl[g].column_types) == ["Example", "Box", "Color"]:
             got = np.concatenate([b for _, _, b in blocks[g]]).astype(np.int64) if blocks[g] else np.zeros((0, 6), np.int64)
             got, want = np.unique(got, axis=0), _evidence_cells(task, fact)
             if got.shape != want.shape or (got != want).any():
@@ -389,9 +430,27 @@ def _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest
                 break
 
 
-def number_rows(tables, entries):
-    """Sets the `table` column of `tables` and the `entry` column of `entries`: each row's place among its case's rows, in the frames' order."""
+BASES_COLUMNS = ["task", "case", "base", "tokens", "tables"]
+
+
+def empty_bases():
+    """The `bases` frame of an export with no cut case."""
+    return pd.DataFrame({"task": pd.Series(dtype="string"), "case": pd.Series(dtype="string"), "base": pd.Series(dtype="string"),
+                         "tokens": pd.Series(dtype="int64"), "tables": pd.Series(dtype="int64")})
+
+
+def read_bases(dir):
+    """The `bases` frame of the export in `dir`: its `bases.parquet`, or `empty_bases()` where the export cuts no case."""
+    return pd.read_parquet(f"{dir}/bases.parquet") if os.path.exists(f"{dir}/bases.parquet") else empty_bases()
+
+
+def number_rows(tables, entries, bases):
+    """Sets the `table` column of `tables` and the `entry` column of `entries`: each row's place among its case's rows, in the frames' order,
+    but for the tables of a case that `bases` (the `bases` frame) cuts, which are numbered from its `tables`."""
     tables["table"] = tables.groupby(["task", "case"]).cumcount()
+    if len(bases):
+        start = tables[["task", "case"]].merge(bases[["task", "case", "tables"]], how="left", on=["task", "case"])["tables"].fillna(0)
+        tables["table"] += start.to_numpy().astype(np.int64)
     entries["entry"] = entries.groupby(["task", "case"]).cumcount()
 
 
@@ -401,9 +460,9 @@ def _by_case(df, order):
     return {k: g.reset_index(drop=True) for k, g in df.groupby(["task", "case"], sort=False)}
 
 
-def check_streams(dir, tables):
-    """The violations of the tables export whose `tables` frame is given against `cases.npz` in `dir`, as (case, detail) lines per invariant,
-    and the number of cases that have tables and no stream."""
+def check_streams(dir, tables, bases):
+    """The violations of the tables export whose `tables` and `bases` frames are given against `cases.npz` in `dir`, as (case, detail) lines per invariant,
+    and the number of cases that have tables and no stream. A case with a `bases` row has tables, those of its base and its own."""
     z = np.load(f"{dir}/cases.npz")
     ids, model, off = z["ids"].astype(np.int64), z["model"].astype(bool), z["offsets"]
     keys = pd.MultiIndex.from_arrays([z["task"].astype(str), z["case"].astype(str)])
@@ -425,7 +484,7 @@ def check_streams(dir, tables):
             found["streams-token"].append((f"{r.task} {r.case}", f"table {r.table} has token {r.token} past the stream of {lengths[c]}"))
         elif not model[off[c] + r.token]:
             found["streams-token"].append((f"{r.task} {r.case}", f"table {r.table} has token {r.token}, which the model did not write"))
-    have = pd.MultiIndex.from_frame(tables[["task", "case"]].drop_duplicates())
+    have = pd.MultiIndex.from_tuples(sorted(set(zip(tables.task, tables.case)) | set(zip(bases.task, bases.case))), names=["task", "case"])
     for k in keys[have.get_indexer(keys) < 0]:
         found["streams-tables"].append((f"{k[0]} {k[1]}", "a stream with no tables"))
     return found, int((keys.get_indexer(have) < 0).sum())
@@ -433,25 +492,29 @@ def check_streams(dir, tables):
 
 def _check_cases(dir, cases, chosen, orientation, part=None):
     """[(case, invariant, detail)] of the violations of the cases in the list `cases` of (task, case) pairs, in the order of `cases`.
-    It reads the whole files of the export for the tasks of `cases` alone, or the files of part `part` where that is given, and the values of the cases in the set `chosen`."""
+    It reads the whole files of the export for the tasks of `cases` alone, or the files of part `part` where that is given, and the values of the cases in the set `chosen`.
+    A case that a `bases` row cuts is checked with its base's tables and values, which are read as well."""
     tasks = sorted({t for t, _ in cases})
     wanted = set(cases)
     def read(name, columns=None):
         path = f"{dir}/{name}.parquet" if part is None else f"{dir}/parts/{part:05d}.{name}.parquet"
-        if name == "copies" and not os.path.exists(path):      # an export written before the part existed has none
-            return pd.DataFrame(columns=["task", "case", "detail"])
+        if name in ("copies", "bases") and not os.path.exists(path):      # an export written before the part existed has none
+            return pd.DataFrame(columns=["task", "case", "detail"] if name == "copies" else BASES_COLUMNS)
         if part is None:
             df = pd.read_parquet(path, columns=columns, filters=[("task", "in", tasks)])
         else:       # a part file is small, and a filter on the `task` of an empty one, whatever its type, can fail
             df = pd.read_parquet(path, columns=columns)
             df = df[df.task.isin(tasks)] if len(df) else df
         return df[pd.MultiIndex.from_frame(df[["task", "case"]]).isin(wanted)] if len(df) else df
+    bases = read("bases")
+    cut = {(r.task, r.case): r for r in bases.itertuples()}
+    wanted |= {(r.task, r.base) for r in bases.itertuples()}        # the base of a cut case is read as well
     if part is None:
         tables = read("tables")
         entries = read("index", ["task", "case", "entry", "table", "example_kind", "example_index", "kind", "rows", "offset"])
     else:
         tables, entries = read("tables"), read("entries")
-        number_rows(tables, entries)
+        number_rows(tables, entries, bases)
     split = {"tables": _by_case(tables, "table"), "entries": _by_case(entries, "entry")}
     for name in ("flows", "assigned", "projections", "projection_rows", "copies"):
         split[name] = _by_case(read(name), None)
@@ -467,7 +530,24 @@ def _check_cases(dir, cases, chosen, orientation, part=None):
         if size is None:
             found.append((key, "values-file", "no values file"))
         values = np.fromfile(path, np.int32) if key in chosen and size is not None else None
-        for line in check_case(frames, values, task_json[task], orientation, size=size):
+        base = None
+        if key in cut:
+            row = cut[key]
+            base_key = (task, row.base)
+            base_path = f"{dir}/values/{task}/{row.base}.i32"
+            if base_key not in split["tables"]:
+                found.append((key, "bases-base", f"the base {row.base} holds no tables"))
+                continue
+            if base_key in cut:
+                found.append((key, "bases-base", f"the base {row.base} has a base of its own, {cut[base_key].base}"))
+                continue
+            base_frames = {p: split[p][base_key] for p in split if base_key in split[p]}
+            if values is not None and not os.path.exists(base_path):
+                found.append((key, "values-file", f"no values file of the base {row.base}"))
+                values = None
+            base = Base(base_frames, np.fromfile(base_path, np.int32) if values is not None else None, int(row.tokens), int(row.tables))
+            frames.setdefault("tables", split["tables"][base_key].iloc[:0])
+        for line in check_case(frames, values, task_json[task], orientation, size=size, base=base):
             inv, detail = line.split(": ", 1)
             found.append((key, inv, detail))
     return found
@@ -506,8 +586,10 @@ def check_export(dir, sample=100, seed=0, streams=None, out=sys.stdout, jobs=Non
     """Checks the export in `dir` and prints a report; `sample` is the number of cases whose values are checked, None for every case.
     `jobs` is the number of worker processes, `os.cpu_count()` where it is None; the report does not depend on it.
     Returns the Counter of violations by invariant."""
-    keys = pd.read_parquet(f"{dir}/tables.parquet", columns=["task", "case"]).drop_duplicates().sort_values(["task", "case"])
-    cases = list(zip(keys.task, keys.case))
+    bases = read_bases(dir)
+    valued = [tuple(f[len(f"{dir}/values/"):-len(".i32")].split("/", 1)) for f in glob.glob(f"{dir}/values/*/*.i32")]
+    held = pd.read_parquet(f"{dir}/tables.parquet", columns=["task", "case"])
+    cases = sorted(set(zip(held.task, held.case)) | set(zip(bases.task, bases.case)) | set(valued))
     chosen = cases[:]
     random.Random(seed).shuffle(chosen)
     chosen = set(chosen if sample is None else chosen[:sample])
@@ -534,7 +616,7 @@ def check_export(dir, sample=100, seed=0, streams=None, out=sys.stdout, jobs=Non
         found[inv].append((f"{key[0]} {key[1]}", detail))
     unmatched = None
     if streams:
-        more, unmatched = check_streams(streams, pd.read_parquet(f"{dir}/tables.parquet"))
+        more, unmatched = check_streams(streams, pd.read_parquet(f"{dir}/tables.parquet"), bases)
         for inv, items in more.items():
             found[inv] += items
     counts = collections.Counter({inv: len(items) for inv, items in found.items()})

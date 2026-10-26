@@ -25,7 +25,10 @@ verdict on each RULE clause of the continuation, in order, or null for a gold li
 "rule_ends" (the stream index of the end of each RULE clause of the continuation that ends)}. `prefix_tables` is
 the count of the case's export tables that the prefix gives: the evidence tables, and each table whose `token`, the
 stream index of the step that gives it, is below prefix_tokens. The export numbers a case's tables in the order of their steps, so the first
-table after the branch is export table `prefix_tables`. It is null for a case that the export does not hold.
+table after the branch is export table `prefix_tables`. A case that the export's `bases.parquet` cuts (see engine/arclog-py/tables_export.py) holds
+only the tables of the steps from its token `tokens` on, after the tables of its base case numbered below its `tables`: it counts the base's tables
+before min(prefix_tokens, `tokens`) with its own tables before prefix_tokens, so the count is the one that the export of the same streams without bases gives.
+It is null for a case that the export does not hold.
 
 A clause ends where the engine declares a relation (an id that the model did not write, of the kind "relation"), as
 lm/sample.py's `--max-clause` counts clauses; the ids the engine emits after one model-written token end at most one
@@ -43,6 +46,9 @@ import json, sys
 from pathlib import Path
 
 import pandas as pd
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "engine" / "arclog-py"))
+import export_checks
 
 POINT_EVIDENCE = 2   # the point code of an evidence table in tables.parquet
 ONE_CELL = '{"train": [{"input": [[0]], "output": [[0]]}], "test": [{"input": [[0]]}]}'   # a task to open a session
@@ -92,16 +98,26 @@ def read_report(path):
     return verdicts, faults
 
 
-def prefix_tables(tables, prefix_tokens):
-    """{(task, case): the count of export tables before the branch}, from tables.parquet's rows of the cases."""
+def prefix_tables(tables, bases, prefix_tokens):
+    """{(task, case): the count of export tables before the branch}, from tables.parquet's rows of the cases and the export's `bases` frame
+    (an empty one where it cuts no case)."""
+    by_case = {key: t.sort_values("table") for key, t in tables.groupby(["task", "case"], sort=False)}
+    cut = {(r.task, r.case): r for r in bases.itertuples()}
     out = {}
-    for (task, case), t in tables.groupby(["task", "case"], sort=False):
-        t = t.sort_values("table")
+    for task, case in list(by_case) + [key for key in cut if key not in by_case]:
+        t = by_case.get((task, case), tables.iloc[:0])
         if (t["token"].diff().dropna() < 0).any():
             raise ValueError(f"{task} {case}: the export's tables are not in the order of their steps")
         n = prefix_tokens.get((task, case))
-        if n is not None:
-            out[(task, case)] = int(((t["point"] == POINT_EVIDENCE) | (t["token"] < n)).sum())
+        if n is None:
+            continue
+        counted = export_checks.tables_before(t, n)
+        if (task, case) in cut:
+            row = cut[(task, case)]
+            if (task, row.base) not in by_case:
+                raise ValueError(f"{task} {case}: its base {row.base} holds no tables")
+            counted += export_checks.tables_before(by_case[(task, row.base)], min(n, int(row.tokens)))
+        out[(task, case)] = counted
     return out
 
 
@@ -146,7 +162,8 @@ def labels(sampler_path, export):
     verdicts, faults = read_report(export / "report.txt")
     names = [case_name(s["task"], s["case"], s["branch"], s["rollout"]) for s in lines]
     tables = pd.read_parquet(export / "tables.parquet", columns=["task", "case", "table", "token", "point"])
-    counts = prefix_tables(tables, {(s["task"], n): int(s["prefix_tokens"]) for s, n in zip(lines, names)})
+    bases = export_checks.read_bases(export)
+    counts = prefix_tables(tables, bases, {(s["task"], n): int(s["prefix_tokens"]) for s, n in zip(lines, names)})
     groups = {}
     for s, n, prefix in zip(lines, names, modes):
         if s["case"] is None and prefix != "0":

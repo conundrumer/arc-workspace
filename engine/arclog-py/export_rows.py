@@ -11,10 +11,15 @@ import numpy as np
 import pandas as pd
 import arclog
 
-PARTS = ("tables", "entries", "assigned", "projections", "projection_rows", "flows", "copies")
+PARTS = ("tables", "entries", "assigned", "projections", "projection_rows", "flows", "copies", "bases")
 
 
 def frame(case, part):
+    """The rows of `part` of `case`, one frame with the case's `task` and `case` in its first columns. The `bases` part holds one row, `base`,
+    `tokens` and `tables` of the case's `base`, `base_tokens` and `base_tables`, for a case with a base, and none for another."""
+    if part == "bases":
+        cut = case.base is not None
+        return pd.DataFrame(dict(task=[case.task] * cut, case=[case.case] * cut, base=[case.base] * cut, tokens=[case.base_tokens] * cut, tables=[case.base_tables] * cut))
     d = {k: (np.frombuffer(v, dtype=case.dtypes[f"{part}.{k}"]) if f"{part}.{k}" in case.dtypes else v)
          for k, v in getattr(case, part).items()}
     n = len(next(iter(d.values()))) if d else 0
@@ -29,7 +34,7 @@ def replay(corpus, tasks, task, progress, options, units=None):
 
 def write_rows(out, k, results):
     """Writes the values files, the parquet files and `report.txt` of the part `k` of the (task id, cases, lines) results.
-    Returns the part's (task, case) pairs."""
+    A part with no case that has a base writes no `bases` file. Returns the part's (task, case) pairs."""
     frames, pairs = {p: [] for p in PARTS}, []
     for task, cases, _ in results:
         for case in cases:
@@ -40,7 +45,8 @@ def write_rows(out, k, results):
                 sink.write(case.values)
             of_case = {p: frame(case, p) for p in PARTS}
             for p in PARTS:
-                frames[p].append(of_case[p])
+                if len(of_case[p]) or p != "bases":
+                    frames[p].append(of_case[p])
             pairs.append((task, case.case))
     for p, fs in frames.items():
         if fs:

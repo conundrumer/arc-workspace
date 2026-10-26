@@ -1,4 +1,5 @@
-"""`export_checks.check_case` gives no line on a consistent case and reports each of four changes to it."""
+"""`export_checks.check_case` gives no line on a consistent case and reports each of four changes to it, and checks a case cut from its base
+with the base's tables as the earlier ones."""
 import importlib.util
 import json
 from pathlib import Path
@@ -160,3 +161,33 @@ def test_check_part_accepts_a_part_whose_projection_files_are_empty(tmp_path, mo
     for name in ("projections", "projection_rows"):
         pd.DataFrame(dict(task=[], case=[])).to_pickle(out / f"parts/00000.{name}.parquet")      # an empty frame's `task` is not a string
     assert checks.check_part(str(out), 0, [("t", 0)]) == []
+
+
+def cut_case():
+    """`case()` cut after its table `R`: the base holds ex_input, ex_output and `R`, and the cut case, which shares the first 6 tokens with it, holds `S` as its table 3 with `S`'s entry,
+    assigned row and flows, and the `values` of those alone."""
+    frames, values = case()
+    base = dict(tables=frames["tables"].iloc[:3], entries=frames["entries"].iloc[:4], flows=frames["flows"].iloc[:2])
+    entries = frames["entries"].iloc[4:].reset_index(drop=True)
+    entries["offset"] -= 40
+    assigned = frames["assigned"].assign(entry=0, offset=frames["assigned"]["offset"] - 40)
+    own = dict(tables=frames["tables"].iloc[3:], entries=entries, assigned=assigned, flows=frames["flows"].iloc[2:].reset_index(drop=True))
+    return base, values[:40], own, values[40:]
+
+
+def test_cut_case_passes_with_its_base_as_the_earlier_tables():
+    base, base_values, own, own_values = cut_case()
+    assert checks.check_case(own, own_values, TASK, ORIENTATION, base=checks.Base(base, base_values, 6, 3)) == []
+
+
+def test_cut_case_whose_base_holds_another_count_of_tables_before_the_cut_is_reported():
+    base, base_values, own, own_values = cut_case()
+    found = checks.check_case(own, own_values, TASK, ORIENTATION, base=checks.Base(base, base_values, 6, 2))
+    assert [l.split(":")[0] for l in found] == ["bases-tables"]
+
+
+def test_cut_case_whose_copy_takes_a_value_its_base_does_not_hold_is_reported():
+    base, base_values, own, own_values = cut_case()
+    own_values = own_values.copy()
+    own_values[3] = 8                 # S's Color column holds 8 in its first row: neither R nor D holds it
+    assert any(l.startswith("values-copy") for l in checks.check_case(own, own_values, TASK, ORIENTATION, base=checks.Base(base, base_values, 6, 3)))

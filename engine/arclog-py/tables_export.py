@@ -21,7 +21,7 @@ written as a part. Writes to <out dir>:
   values/<task>/<case>.i32   raw int32 (np.fromfile), every row of the case: the rows of each entry, of each DET
                              at each entry's assignment, and of each projection at each entry, each row's cells in
                              column order, equal runs of a case sharing one offset (see `arclog.decode.columns`)
-  parts/<k>.<name>.parquet   the rows of one part
+  parts/<k>.<name>.parquet   the rows of one part (`bases` has a file in a part with a cut case alone)
   parts/<k>.report.txt       the fault lines of the part's tasks
   parts/<k>.tasks.txt        one line `<task> <seconds> <units> <key> <checks digest>` per task of the part, the wall seconds of its call to 0.1 s,
                              the count of units it ran in, the task's reuse key and the checks digest (see `--previous`; a bare task id where the writer gives none), written last: a part is whole where it stands.
@@ -58,6 +58,13 @@ written as a part. Writes to <out dir>:
   copies           one row per declared row of the registry's `copies` that a component's output breaks, keyed by task and case:
                    `detail`, a sentence (the engine checks each declaration at each group of each instance it runs in the replay;
                    `export_checks.check_part` writes each row as a `copies` line of `checks.txt`)
+  bases.parquet    written only by an export of streams (`export_streams` with `bases`) that cuts a case, and only for such a case: one row, task, case, `base` (another case of the task,
+                   which has no base), `tokens` (the length `n` of the prefix of its stream's tokens that the two share) and `tables` (the count `k` of the base's tables before token
+                   `n`: the 2 evidence tables and each table whose token is below `n`). The cut case holds only the tables of the steps at or after token `n`, numbered from `k`
+                   in `table`: a `table`, `source_table` of a flow, or `table` of an entry or projection below `k` names the base's table of that number, so the case's whole list of tables is
+                   the base's first `k` then its own. Its entries, assigned rows, projections and projection rows are its own alone (each numbered from 0 within the case), its `values` file holds the runs of its own rows alone, and
+                   its `copies` rows are the stream's. A cut case whose stream equals its base's holds no table, entry or flow of its own. An export of the same streams without `bases` gives, for a cut
+                   case, rows equal to the base's rows for tables below `k` and the case's own, but for the numbers of Idents, which depend on the session that interned them
   assigned.parquet one row per DET at an entry's assignment: task, case, entry, det, rows, offset
   projections.parquet    one row per projection (columns) and projection_rows.parquet one row per projection at an entry
   orientations.json  [encoding, name] of each orientation constant; an orientation cell is its encoding
@@ -81,9 +88,9 @@ task has ended in this run), then the tasks running past 10 s, longest first (th
 where more), each with the seconds since its call started and the share of its model steps done, as
 arclog.ReplayProgress gives them. `print_progress` prints it, and `lm/export.py` calls it too.
 
-`export_streams(out, task, streams, names=None, settings=None, bodies=False, step_cap=10000)` writes the same layout
+`export_streams(out, task, streams, names=None, settings=None, bodies=False, step_cap=10000, bases=None)` writes the same layout
 for the token streams of one task, for a caller that imports the module: `streams` is a list of `(ids, model)`
-pairs as `arclog.stream_tables` takes them. `out` must not exist or be empty (else `FileExistsError`). Its
+pairs and `bases` the list of bases as `arclog.stream_tables` takes them. `out` must not exist or be empty (else `FileExistsError`). Its
 `report.txt` holds, for each stream replayed, `<task> <case>: ended <kind> at token <index>` (`<kind>` the
 consistency of the last `RULE` clause the stream ends, or `ended none`), then the fault line of each stream that
 faults (its tables up to the fault are kept) or lies past the cap. It writes no `settings.json`.
@@ -420,27 +427,32 @@ def merge(out):
     if not parts("tables"):
         print(f"0 index rows, {len(lines)} fault lines{summary}")
         return
-    whole = {p: pd.concat([pd.read_parquet(f) for f in parts(p)]).astype({"concept": bool}).sort_values("task", kind="stable") for p in PARTS}
+    whole = {p: pd.concat([pd.read_parquet(f) for f in parts(p)]).sort_values("task", kind="stable") for p in PARTS if parts(p)}   # no part is written for `bases` where no case is cut
+    for rows in whole.values():
+        if "concept" in rows:
+            rows["concept"] = rows["concept"].astype(bool)
     tables, entries = whole["tables"], whole["entries"]
-    export_checks.number_rows(tables, entries)
+    export_checks.number_rows(tables, entries, whole.get("bases", export_checks.empty_bases()))
     entries.merge(tables, on=["task", "case", "table"], suffixes=("", "_table")).to_parquet(f"{out}/index.parquet")
-    for p in ("tables", "assigned", "projections", "projection_rows", "flows", "copies"):
-        whole[p].to_parquet(f"{out}/{p}.parquet")
+    for p in whole:
+        if p != "entries":      # the entries stand in index.parquet
+            whole[p].to_parquet(f"{out}/{p}.parquet")
     print(f"{len(entries)} index rows, {len(lines)} fault lines{summary}")
 
 
-def export_streams(out, task, streams, names=None, settings=None, bodies=False, step_cap=10000):
+def export_streams(out, task, streams, names=None, settings=None, bodies=False, step_cap=10000, bases=None):
     """Writes the tables export of the token `streams` of `task` to the new or empty directory `out`.
 
-    `streams`, `names`, `settings` and `bodies` are those of `arclog.stream_tables`, and `step_cap` is its
+    `streams`, `names`, `settings`, `bodies` and `bases` are those of `arclog.stream_tables`, and `step_cap` is its
     cap, 10000 as in the corpus export. The layout is that of `main`, with one part and no `settings.json`; its
     `report.txt` holds, for each stream replayed, the line `<task> <case>: ended <kind> at token <index>` (or
-    `ended none`) and then the fault lines of the streams that fault or lie past the cap.
+    `ended none`) and then the fault lines of the streams that fault or lie past the cap. A stream cut from its
+    base (see `bases.parquet` in the module docstring) gives a row of `bases.parquet`.
     """
     if os.path.exists(out) and os.listdir(out):
         raise FileExistsError(f"{out} exists and is not empty")
     os.makedirs(f"{out}/parts", exist_ok=True)
-    cases, lines = arclog.stream_tables(task, TASKS, streams, names=names, settings=settings, bodies=bodies, step_cap=step_cap)
+    cases, lines = arclog.stream_tables(task, TASKS, streams, names=names, settings=settings, bodies=bodies, step_cap=step_cap, bases=bases)
     write_part(out, 0, [(task, cases, lines)])
     merge(out)
 

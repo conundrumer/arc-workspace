@@ -20,6 +20,16 @@
 //! then `ex_output`, with point 2, token 0, the relation's name in `fact`,
 //! and one entry for each example whose grid the relation holds.
 //!
+//! A part that names a table (a row of [`EntryColumns::table`], a flow's table
+//! and source table, a projection's table) names it by its number in the
+//! case's whole list of tables, which [`TableColumns`] numbers in its order. The
+//! columns of a stream that shares a prefix with a base stream can hold the
+//! tables from the first after the prefix alone ([`cut_case_columns`]): the
+//! first row of [`TableColumns`] is then the table numbered `k`, the count of the
+//! tables before it, and a table number below `k` names the base's table of
+//! that number. A part's other row numbers (an entry, a projection) count its
+//! rows in the columns.
+//!
 //! Every row of every table is a run of cells in `values`, each cell an
 //! `i32` by the type of its column: a Box its four margins (top, bottom,
 //! left, right), a Color its digit, a Number itself, an Example its index, a
@@ -107,8 +117,9 @@ impl StopColumns {
     }
 }
 
-/// One row for each table. A table whose contents fault holds `fault`, and
-/// a relation slot of -1, no columns and no `DET`s.
+/// One row for each table, the first the table numbered 0, or, in the columns
+/// of [`cut_case_columns`], the table numbered `k`. A table whose contents
+/// fault holds `fault`, and a relation slot of -1, no columns and no `DET`s.
 #[derive(Clone, Debug, Default)]
 pub struct TableColumns {
     /// The index in the stream of the token whose step gives the table.
@@ -164,7 +175,7 @@ pub struct TableColumns {
 /// tables, the examples, the assignments and the models.
 #[derive(Clone, Debug, Default)]
 pub struct EntryColumns {
-    /// The row of the table in [`TableColumns`].
+    /// The number of the table.
     pub table: Vec<u32>,
     /// 0 for the task, 1 for a train example, 2 for a test example.
     pub example_kind: Vec<u8>,
@@ -227,13 +238,13 @@ pub struct ProjectionRowColumns {
 /// tables, the columns and the sources.
 #[derive(Clone, Debug, Default)]
 pub struct FlowColumns {
-    /// The row of the table in [`TableColumns`].
+    /// The number of the table.
     pub table: Vec<u32>,
     /// The column's index in the table.
     pub column: Vec<u32>,
     /// The [`SourceKind`] code.
     pub kind: Vec<u8>,
-    /// The row in [`TableColumns`] of the source's table in the case, the
+    /// The number of the source's table in the case, the
     /// latest table of the relation before this one; -1 where the case holds
     /// none: a lib relation, a constant, or a lib name.
     pub source_table: Vec<i32>,
@@ -296,13 +307,42 @@ impl CaseColumns {
 /// the index of its token, on a task of `train` train pairs, which names the
 /// examples.
 pub fn case_columns(evidence: &[Table], tables: &[(usize, Table)], train: usize) -> CaseColumns {
+    fold(evidence, tables, None, train).0
+}
+
+/// The columns of the tables of a stream that shares its first `tokens`
+/// tokens with a base stream, whose tables with a token below `tokens` are
+/// the base's own, and the count `k` of those tables: `evidence` and each
+/// table of `tables` whose token is below `tokens`. `tables` stand in the
+/// order of their steps. The columns hold the tables from the first at or
+/// after `tokens` alone, numbered from `k`, so a flow, an entry or a
+/// projection of the columns gives a table by the number it has in the
+/// stream's whole list, and a number below `k` names the base's table of that
+/// number. The `values` hold the runs of those tables alone, and a table's
+/// sources read the tables below `k` as [`case_columns`] reads them.
+pub fn cut_case_columns(evidence: &[Table], tables: &[(usize, Table)], tokens: usize, train: usize) -> (CaseColumns, u32) {
+    fold(evidence, tables, Some(tokens), train)
+}
+
+/// The fold of [`case_columns`] and [`cut_case_columns`]: the only state it
+/// keeps across tables is the `names` of the tables so far and the `Runs`
+/// written, so a table's columns depend on its own step and the tables before
+/// it. With `cut`, the tables before it are folded into `names` alone, and the
+/// count of them is given with the columns.
+fn fold(evidence: &[Table], tables: &[(usize, Table)], cut: Option<usize>, train: usize) -> (CaseColumns, u32) {
+    let skipped = cut.map_or(0, |tokens| evidence.len() + tables.partition_point(|(token, _)| *token < tokens));
     let mut columns = CaseColumns::default();
     let mut names = Vec::new();
     let mut runs = Runs::default();
-    for (token, table) in evidence.iter().map(|table| (0, table)).chain(tables.iter().map(|(token, table)| (*token, table))) {
-        push_table(&mut columns, &mut names, &mut runs, token, table, train);
+    for (place, (token, table)) in evidence.iter().map(|table| (0, table)).chain(tables.iter().map(|(token, table)| (*token, table))).enumerate() {
+        let row = u32::try_from(place).expect("fewer than 2^32 tables");
+        if place < skipped {
+            note_name(&mut names, row, table);
+        } else {
+            push_table(&mut columns, &mut names, &mut runs, row, token, table, train);
+        }
     }
-    columns
+    (columns, u32::try_from(skipped).expect("fewer than 2^32 tables"))
 }
 
 /// The name of each orientation constant by its encoding, the cell of its
@@ -415,8 +455,8 @@ fn push_rows(values: &mut Vec<i32>, runs: &mut Runs, rows: &Relation, types: &[V
 /// or the fact relation's name.
 type TableNames = Vec<(String, u32, Option<Vec<Box<[ColumnName]>>>)>;
 
-fn push_table(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, token: usize, table: &Table, train: usize) {
-    let row = u32::try_from(out.tables.token.len()).expect("fewer than 2^32 tables");
+/// The columns of `table`, the table at `row`, after the tables before it.
+fn push_table(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, row: u32, token: usize, table: &Table, train: usize) {
     let tables = &mut out.tables;
     tables.token.push(u32::try_from(token).expect("fewer than 2^32 tokens"));
     tables.form.push(form_path(&table.form));
@@ -475,16 +515,24 @@ fn push_table(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, to
             tables.output_position.push(contents.grid.map_or(-1, |grid| i32::from(grid.position.0)));
             tables.output_color.push(contents.grid.map_or(-1, |grid| i32::from(grid.color.0)));
             push_flows(out, names, row, contents);
-            if !matches!(table.point, Point::Body { .. }) {
-                let name = match contents.relation {
-                    TableRelation::Slot(_) => contents.name.clone(),
-                    TableRelation::Fact(fact) => spelling(FACT_RELATIONS, &fact).to_owned(),
-                };
-                names.push((name, row, contents.rows.clone()));
-            }
+            note_name(names, row, table);
             push_contents(out, runs, row, contents, &types, train);
         }
     }
+}
+
+/// Adds the relation of `table`, the table at `row`, to `names`, if it stands
+/// for one: a table of a relation that has not faulted.
+fn note_name(names: &mut TableNames, row: u32, table: &Table) {
+    let Ok(contents) = &table.contents else { return };
+    if matches!(table.point, Point::Body { .. }) {
+        return;
+    }
+    let name = match contents.relation {
+        TableRelation::Slot(_) => contents.name.clone(),
+        TableRelation::Fact(fact) => spelling(FACT_RELATIONS, &fact).to_owned(),
+    };
+    names.push((name, row, contents.rows.clone()));
 }
 
 /// The relation `relation` as the program spells it, a fact relation's name,
