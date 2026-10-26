@@ -401,7 +401,8 @@ def classify(results: Sequence[ProbeResult], determined: frozenset[str],
     """A value is exact when a proposer reads it exactly, and settles when a
     candidate set covers it; when neither does, it needs a determination
     relation where its stored value is one fact, and is undecided where
-    that value holds more, since the fit gives it; and it is done when a
+    that value holds more, since the fit determines it only where no
+    clauses read it from the evidence; and it is done when a
     determination relation gives it. A value of a determined parameter
     that its relation gives other than as stored (`differing`) needs the
     relation, a value the parameter does not store among them; where the

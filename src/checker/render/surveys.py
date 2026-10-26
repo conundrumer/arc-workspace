@@ -654,10 +654,12 @@ def _unknown_part(v: _PlanValues) -> list[PlanPart]:
 def _undecided_part(v: _PlanValues) -> list[PlanPart]:
     return _plan_section(mctx("undecided: each value here is one that no proposer "
                               "covers and whose stored value holds more than one fact; "
-                              "its determination is the set of values at which the "
-                              "model fits every train pair, so it needs no "
-                              "determination relation and asks no act"),
-                         [_value_text(p, v.printed) for p in v.classes.undecided])
+                              "the set of values at which the model fits every train "
+                              "pair determines it where no clauses read it from the "
+                              "evidence; where such clauses exist, its parameter needs "
+                              "a determination relation"),
+                         [_value_text(p, v.printed) for p in v.classes.undecided],
+                         action=True)
 
 
 def _covered_part(v: _PlanValues) -> list[PlanPart]:
