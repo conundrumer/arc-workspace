@@ -28,6 +28,7 @@ from checker.variants import (
 from engine import Program, Row, RunFailure, Value
 from engine.program import grid_lists
 from engine.quotes import quotes
+from solver.dependence import dependence
 from solver.model import Base, Case, base_case
 from solver.aggregate import Solver
 from solver.readers import proposers, proposers_program
@@ -276,9 +277,9 @@ class Plan:
     types: tuple[tuple[PlanValue, tuple[str, ...]], ...]
     joint: Joint | TimedOut | None
     moved: "tuple[Moved, ...] | RunFailure"
-    """The witnesses whose pair moves a determined value
-    (`_moved_by_witnesses`); the failure of a determination run where one
-    gives no result."""
+    """The witnesses whose pair moves a determined value that the concept
+    case reads (`_moved_by_witnesses`); the failure of a determination run
+    where one gives no result."""
 
 
 @dataclass(frozen=True)
@@ -543,20 +544,20 @@ def survey_determination_plan(solver: Solver, runs: Runs) -> PlanResult:
 @dataclass(frozen=True)
 class Moved:
     """A witness whose pair, added to the train pairs, gives `parameter`'s
-    determination a value other than the stored one."""
+    determination a value other than the stored one, where the concept
+    case's derivation of `out` depends on `parameter`
+    (`solver.dependence.Dependence.reads_parameter`)."""
 
     witness: str
     parameter: str
 
 
-def _concept_pairs(solver: Solver, runs: Runs) -> list[tuple[str, Example]]:
+def _concept_pairs(solver: Solver, runs: Runs, concept: Case
+                   ) -> list[tuple[str, Example]]:
     """Each witness, once, in the order of its first line, that stands at
     the stored assignment (no `assign`), whose verdict on some line
     denotes the concept case's model or is `any`, and on whose input the
     concept case gives one grid: its id, and its input with that grid."""
-    concept = concept_case(solver, runs.cases_or_none)
-    if concept is None:
-        return []
     out: list[tuple[str, Example]] = []
     for w in solver.annotations.witnesses:
         entry = runs.entry(w.id)
@@ -575,12 +576,24 @@ def _concept_pairs(solver: Solver, runs: Runs) -> list[tuple[str, Example]]:
 def _moved_by_witnesses(solver: Solver, runs: Runs
                         ) -> tuple[Moved, ...] | RunFailure:
     """The determination run with every concept pair (`_concept_pairs`)
-    added to the train pairs; where it moves a determined value, one run
-    per pair, each pair and parameter whose value it moves. Raises
-    `ValueError` where the determination does not run (`KeysOff`), which
-    the command's refusal rules out."""
-    pairs = _concept_pairs(solver, runs)
+    added to the train pairs; where it moves a determined parameter that the
+    concept case reads, one run per pair, each pair and such parameter whose
+    value it moves. A parameter the concept case does not read is not
+    reported: the pair's output says nothing of it. No run is made where
+    the concept case reads no determined parameter. Raises `ValueError`
+    where the determination does not run (`KeysOff`), which the command's
+    refusal rules out."""
+    concept = concept_case(solver, runs.cases_or_none)
+    if concept is None:
+        return ()
+    pairs = _concept_pairs(solver, runs, concept)
     if not pairs:
+        return ()
+    read = dependence(runs.engine, solver, [concept.base])
+    reading = frozenset(p.name for p in solver.params.parameters
+                        if p.determined
+                        and read.reads_parameter(concept.base, p.name))
+    if not reading:
         return ()
 
     def diffs(added: Sequence[Example]) -> list[str] | RunFailure | None:
@@ -593,7 +606,7 @@ def _moved_by_witnesses(solver: Solver, runs: Runs
                              "out")
         if not isinstance(got, Determined):
             return got
-        return [d.parameter for d in got.diffs]
+        return [d.parameter for d in got.diffs if d.parameter in reading]
 
     every = diffs([p for _, p in pairs])
     if not isinstance(every, list):
