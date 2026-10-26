@@ -31,6 +31,11 @@ if TYPE_CHECKING:
     from arclog_convert.solver import Claim
 
 
+PROPOSED = re.compile(r'\((?:DET|DET_OR_RULE|RULE_OR_DET) (&\w+)(?: "(?:[^"\\]|\\.)*")? [A-Z]')
+"""The line of a relation that a proposer determines: its name, then the
+proposer's, after a gloss where the line has one."""
+
+
 class RenderMixin:
     """The rendering of a solver's forms, its state combinations, sinks and choices."""
 
@@ -60,7 +65,7 @@ class RenderMixin:
             gs = self.instance(inst, mine_us, side)
             self.todo.pending, self.todo.kinds = saved
             if gs:
-                g = gs[0]
+                g = self.settled(gs[0])
                 g.comments, g.claim_slugs = f.comments, f.claim_slugs
                 g.branches = tuple(sorted(set(g.branches) & concept))
                 g.src_inst = (inst, mine_us, side)
@@ -95,6 +100,7 @@ class RenderMixin:
         # with that relation empty: a positive read kills its list, a NOT of
         # it is dropped, and a form left with nothing holds no concept row.
         # The emptiness spreads to the relations whose every form is dead.
+        bare: set[int] = set()   # the forms whose concept form is a stored `DET` with no body
         changed = True
         while changed:
             changed = False
@@ -114,12 +120,15 @@ class RenderMixin:
                 else:
                     u, side, scope, sub, ns = f.src
                     g = self.clause(u, side, scope, sub, ns, drop_neg=dr)
+                g = self.settled(g)
                 self.todo.pending, self.todo.kinds = saved
+                bare.discard(id(f))
                 if g is None and f.name in stored_names and f.side == "DET":
                     # the concept's values are the stored ones, which no determination derives
                     one = " (ONE)" if f.name in self.open_amps() else ""
                     g = Form([f"(DET {f.name}{one})"], f.name, set(), line=f.line)
                     g.marks = ["(ONE)"] if one else []
+                    bare.add(id(f))
                 if g is None:
                     f.concept_dead, f.concept_form = True, None
                     continue
@@ -129,11 +138,22 @@ class RenderMixin:
             if gone:
                 alt_only |= gone
                 changed = True
+        # a `DET` with no body and no proposer, on no port, is a fault of the conversion
+        proposed = {m.group(1) for g in forms if g.src is None and g.src_inst is None and g.lines
+                    and (m := PROPOSED.match(g.lines[0]))}
+        for f in main:
+            if id(f) in bare and f.name not in proposed:
+                pending, self.todo.pending = self.todo.pending, []
+                self.todo.add("det-no-body", f"{f.name}: the relation has no body and no proposer")
+                target = f.concept_form or f
+                target.comments = target.comments + self.todo.take()
+                self.todo.pending = pending
         self.concept_empty = alt_only
         self.drop_concept_repeats(main)
         self.render_main = main
         main = [f.concept_form or f for f in main if not f.concept_dead]
         main = self.sink_demo(main, branch_forms, claims)
+        self.c.note_writing(main, frozenset())
         # dependency closure: each relation goes under the first claim among its readers' claims
         by_name: dict[str, list[Form]] = defaultdict(list)
         for f in main:
@@ -762,6 +782,8 @@ class RenderMixin:
                         for g in main if g.name == f.name)}
         redo = self.dead_clauses(main, empty, mine, out, others_k, adds)
         fs = fs + redo
+        reread = self.reading_determinations(fs, main)
+        fs = fs + reread
         # a relation that no form of this case derives is empty in it: a
         # form of the alt that reads one is written again without it
         in_case = concept | ks | anc_ctors
@@ -813,10 +835,14 @@ class RenderMixin:
         MERGES.clear()
         MERGES.update(saved[0])
         MERGES_UNMERGED[:] = saved[1]
+        same -= {f.name for f in reread}
         fs = [f for f in fs if f.name not in same]
+        self.alt_derived |= {f.name for f in fs}
         # each relation as this case derives it
         case_text = defaultdict(list, main_text)
         for name in {f.name for f in fs}:
             case_text[name] = [f.lines for f in fs if f.name == name]
+        beside = [f.concept_form or f for f in main if f.name in adds and not f.concept_dead]
+        self.c.note_writing(fs + beside, frozenset(in_case - concept))
         return fs, case_text
 

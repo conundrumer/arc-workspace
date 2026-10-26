@@ -19,7 +19,6 @@ dev = [
   "pandas-stubs>=3.0.5",
   "pyright>=1.1.409",
   "pytest>=8",
-  "pytest-xdist>=3",
   "ruff>=0.7",
   "tabulate>=0.10.0",
   "typing-extensions>=4.15.0",
@@ -37,18 +36,15 @@ ignore = ["E741"]
 "programs/solvers/*.py" = ["F403", "F405"]
 
 [tool.pytest.ini_options]
+# Only checks that track an in-progress feature live under tests/. They fail
+# on purpose, so no change check or merge runs them and a run names them by
+# path.
 testpaths = ["tests"]
-# Eight workers is where this suite stops gaining: the run is short enough
-# that another worker's startup costs more than the tests it takes. Pass
-# `-n 0` for one process, which a debugger or `-s` needs.
-# A worker takes one test at a time. The default batch hands a worker
-# several at once, and one worker then still holds tests the idle ones
-# could have taken.
-addopts = "-ra -n 8 --maxschedchunk=1"
+addopts = "-ra"
 
 [tool.pyright]
 include = ["src", "scripts", "tests"]
-exclude = ["**/__pycache__", ".venv", "data", "archive", "tests/scratch", "src/arclog_convert"]
+exclude = ["**/__pycache__", ".venv", "data", "archive", "src/arclog_convert"]
 pythonVersion = "3.12"
 typeCheckingMode = "basic"
 venvPath = "."

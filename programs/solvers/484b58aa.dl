@@ -15,6 +15,9 @@
     // with its own such shift
   | Lines {}
 
+// A cell of the grid under one case.
+.type CaseCell = [ch: Choice, p: Position]
+
 .decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
@@ -35,32 +38,28 @@ impl_choice($Periodic()). impl_choice($Lines()).
 // The period a cell's pattern repeats under, per case.
 .decl period_at(ch: Choice, p: Position, a: Axis, k: number)
 
-// A cell's place toward d: its index within the period on d's axis, or its
-// distance from d's edge where the axis has no period.
-.decl place(ch: Choice, p: Position, d: Dir, r: number)
-place(Ch, P, D, R) :-
+// A cell's orbit under the periods: toward each edge d, its index within the
+// period on d's axis, or its distance from d's edge where the axis has no
+// period.
+.init orbit = DirPack<CaseCell>
+orbit.edge([Ch, P], D, R) :-
     impl_choice(Ch), in(P, _), axis_of(D, A), dist(P, D, T),
     ( period_at(Ch, P, A, K), stride(T, K, 0, _, R)                 // within the period
     ; !period_at(Ch, P, A, _), R = T                                // or the line
     ).
 
-// A cell's orbit under the periods: its places toward d and toward d2, on the
-// two axes.
-.decl orbit(ch: Choice, p: Position, d: Dir, r: number, d2: Dir, r2: number)
-orbit(Ch, P, D, R, D2, R2) :-
-    place(Ch, P, D, R), axis_of(D, A), perp(A, A2), axis_of(D2, A2), place(Ch, P, D2, R2).
-
-// The color the intact cells of an orbit hold.
+// The color the intact cells of an orbit hold; b is the orbit's box, its
+// places toward the four edges.
 // @ignore: single-consumer — one row per orbit, where a join in `out` holds one per pair of cells in an orbit
-.decl orbit_color(ch: Choice, d: Dir, r: number, d2: Dir, r2: number, col: Color)
-orbit_color(Ch, D, R, D2, R2, Col) :- orbit(Ch, Q, D, R, D2, R2), intact(Q, Col).
+.decl orbit_color(ch: Choice, b: Box, col: Color)
+orbit_color(Ch, B, Col) :- orbit.box([Ch, Q], B), intact(Q, Col).
 
 // Intact cells pass through under every case.
 out(P, Col, Ch) :- impl_choice(Ch), intact(P, Col).
 
 out(P, Col, Ch) :-
     in(P, Hole), params.hole(Hole),                                 // damaged cell
-    orbit(Ch, P, D, R, D2, R2), orbit_color(Ch, D, R, D2, R2, Col).
+    orbit.box([Ch, P], B), orbit_color(Ch, B, Col).
 
 // --- $Periodic ---
 

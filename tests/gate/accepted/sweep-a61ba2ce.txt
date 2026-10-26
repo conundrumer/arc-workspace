@@ -1,4 +1,0 @@
-bg: unique = (0) ✓
-side: unique = (2) ✓
-corner_quadrant: unique as a set = {(DIAG_TL, DIAG_BR), (DIAG_TR, DIAG_BL), (DIAG_BL, DIAG_TR), (DIAG_BR, DIAG_TL)} ✓ (its value is a set of rows, and a case stores one set; every single-row change swept)
-time limit 300s; elapsed Ns

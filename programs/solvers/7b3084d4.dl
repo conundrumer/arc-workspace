@@ -103,9 +103,6 @@ occ.cell(K, P, $U()) :- image(K, _, _), side(N), square.cell(N, P).
 // A placement: a pose at a spot in the square, named by the spot's margins.
 .type Placement = [k: Pose, b: Position]
 
-.decl covers(pc: Placement, p: Position, col: Color)
-covers([K, B], P, Col) :- occ.occurrence(K, B), image(K, P_inner, Col), compose(B, P_inner, P).
-
 // --- the placements ---
 
 // The marker's piece takes the spot landing its marker on the corner; any
@@ -117,9 +114,16 @@ anchor(Ch, O) :- piece_cell(Ch, O, _, Col), params.marker(Col).
 placement(Ch, O, Pc) :-
     occ.occurrence([Ch, O, D], B), Pc = [[Ch, O, D], B],
     ( !anchor(Ch, O)
-    ; covers(Pc, P, Col), params.marker(Col),  // where the marker lands
-      params.corner(Dg), corner_dist(P, Dg, 0)  // on the corner
+    ; image([Ch, O, D], P_inner, Col), params.marker(Col),  // the marker cell
+      compose(B, P_inner, P),                              // where it lands
+      params.corner(Dg), corner_dist(P, Dg, 0)             // on the corner
     ).
+
+// The cells a placement covers, and their colors.
+.decl covers(pc: Placement, p: Position, col: Color)
+covers(Pc, P, Col) :-
+    placement(Ch, O, Pc), Pc = [[Ch, O, D], B],
+    image([Ch, O, D], P_inner, Col), compose(B, P_inner, P).
 
 // A piece with no placement leaves no packing.
 .decl unplaced(ch: Choice)

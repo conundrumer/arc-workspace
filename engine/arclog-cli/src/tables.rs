@@ -1,7 +1,7 @@
 //! `tables <corpus-dir> <tasks-dir> [--cases concept|all] [--bodies]
 //! [<task_id> ...]`: replays the token stream of each case program of the
 //! corpus that the decoder admits, and prints, for each, one line with its
-//! count of the tables that [`arclog::decode::Decoder::tables`] gives over the
+//! count of the tables that [`arclog_tables::tables::step_tables`] gives over the
 //! steps of the replay, `<task_id>: <case>: <n> tables`. The tables of the
 //! relations of finished forms are counted, and with `--bodies` those of the
 //! bodies in progress as well. The command writes no file: the Python package
@@ -14,11 +14,11 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use arclog::decode::corpus::solver_tables;
-use arclog::decode::Points;
 use arclog::harness::{print_ended, require_optimized_build, run_over_corpus, SolverResult};
 use arclog::stream::DecodeSettings;
 use arclog_constructions::shared as constructions;
+use arclog_tables::corpus::solver_tables;
+use arclog_tables::tables::Points;
 
 use crate::select::selected;
 
@@ -84,7 +84,7 @@ fn tables_solver(arguments: &Arguments, id: &str) -> SolverResult {
         Ok(constructions) => constructions,
         Err(fault) => return SolverResult::Fail(vec![format!("a fault that stops the tables: {fault}")]),
     };
-    match solver_tables(&arguments.corpus, &arguments.tasks, id, arguments.all, arguments.points, constructions, &DecodeSettings::default()) {
+    match solver_tables(&arguments.corpus, &arguments.tasks, id, arguments.all, arguments.points, constructions, &DecodeSettings::corpus()) {
         Ok(solver) => {
             let mut failures = Vec::new();
             for case in solver.cases {

@@ -99,8 +99,9 @@
 
 .type HeadCell = [ptr: Pointer, p: Position]
 
-// A ray cast under a stop reading, a field color, and a pointer.
-.type Cast = [stop: Stop, field: Color, ptr: Pointer]
+// A ray cast under a direction reading, a stop reading, a field color, and a
+// pointer.
+.type Cast = [ds: Direction, stop: Stop, field: Color, ptr: Pointer]
 
 .type TieOrder = [c: DiagDir, a: Axis]
 .type HeadOrder = [c: DiagDir, a: Axis]
@@ -234,9 +235,8 @@ body([H, B], P) :- pointer_of(_, [H, B]), in(P, B).
 // The cast from each head cell toward its step.
 // @claim ray exit
 .init ray = Ray<Cast>
-ray.dir([St, F, Ptr], D) :-
-    stop_choice(St), palette(_, _, F, Ptr), ( heading(_, Ptr, _, D) ; tie_heading(Ptr, _, _, _, D) ).
-ray.mark([St, F, Ptr], P) :- stop_choice(St), palette(_, _, F, Ptr), head(Ptr, P).
+ray.dir([Ds, St, F, Ptr], D) :- stop_choice(St), palette(_, _, F, Ptr), heading(Ds, Ptr, _, D).
+ray.mark([Ds, St, F, Ptr], P) :- stop_choice(St), palette(_, _, F, Ptr), heading(Ds, Ptr, P, _).
 
 // The field the stop reading needs exists.
 .decl framed(st: Stop, f: Color)
@@ -255,7 +255,7 @@ unaimed(Ds, Ptr) :- heading(Ds, Ptr, _, _), head(Ptr, P), !heading(Ds, Ptr, P, _
 .decl exit(ds: Direction, st: Stop, fs: FieldColor, ps: PointerColors, p: Position)
 exit(Ds, St, Fs, Ps, P) :-
     palette(Fs, Ps, F, Ptr), heading(Ds, Ptr, Src, D), head(Ptr, Src),
-    ray.stop([St, F, Ptr], P, D, _, Src).
+    ray.stop([Ds, St, F, Ptr], P, D, _, Src).
 
 // One grid, read at every order.
 out(P, Col, [Ds, $EveryHead(), St, Pt, Fs, Ps], [nil, nil]) :-
@@ -271,7 +271,7 @@ tie_unaimed(Ptr, C, A) :- params.tie_order(C, A), head(Ptr, P), !tie_heading(Ptr
 .decl tie_exit(st: Stop, fs: FieldColor, ps: PointerColors, c: DiagDir, a: Axis, p: Position)
 tie_exit(St, Fs, Ps, C, A, P) :-
     palette(Fs, Ps, F, Ptr), tie_heading(Ptr, C, A, Src, D), head(Ptr, Src),
-    ray.stop([St, F, Ptr], P, D, _, Src).
+    ray.stop([$NearestBody(), St, F, Ptr], P, D, _, Src).
 
 // One grid per tie order, read at every head order.
 out(P, Col, [$NearestBody(), $EveryHead(), St, Pt, Fs, Ps], [[Tc, Ta], nil]) :-
@@ -289,7 +289,7 @@ head_unaimed(Ds, Ptr, C, A) :-
                 p: Position)
 head_exit(Ds, St, Fs, Ps, C, A, P) :-
     palette(Fs, Ps, F, Ptr), scan_source(Ptr, C, A, Src), heading(Ds, Ptr, Src, D),
-    ray.stop([St, F, Ptr], P, D, _, Src).
+    ray.stop([Ds, St, F, Ptr], P, D, _, Src).
 
 // One grid per head order, read at every tie order.
 out(P, Col, [Ds, $ScanHead(), St, Pt, Fs, Ps], [nil, [Hc, Ha]]) :-
@@ -307,7 +307,7 @@ tie_head_unaimed(Ptr, Tc, Ta, Hc, Ha) :-
                     hc: DiagDir, ha: Axis, p: Position)
 tie_head_exit(St, Fs, Ps, Tc, Ta, Hc, Ha, P) :-
     palette(Fs, Ps, F, Ptr), scan_source(Ptr, Hc, Ha, Src), tie_heading(Ptr, Tc, Ta, Src, D),
-    ray.stop([St, F, Ptr], P, D, _, Src).
+    ray.stop([$NearestBody(), St, F, Ptr], P, D, _, Src).
 
 // One grid per pair of orders.
 out(P, Col, [$NearestBody(), $ScanHead(), St, Pt, Fs, Ps], [[Tc, Ta], [Hc, Ha]]) :-
@@ -326,6 +326,11 @@ heading($Adjacent(), Ptr, P, D) :- touch.value([Ptr, P], D).
 
 // --- $NearestBody ---
 tie_heading(Ptr, C, A, P, D) :- parse.tie_step(Ptr, P, C, A, D), params.tie_order(C, A).
+
+ray.dir([$NearestBody(), St, F, Ptr], D) :-
+    stop_choice(St), palette(_, _, F, Ptr), tie_heading(Ptr, _, _, _, D).
+ray.mark([$NearestBody(), St, F, Ptr], P) :-
+    stop_choice(St), palette(_, _, F, Ptr), tie_heading(Ptr, _, _, P, _).
 
 // --- $BodyAxis ---
 // The axis on which body cells touch.
@@ -347,13 +352,14 @@ scan_source(Ptr, C, A, P) :- parse.scan.first([Ptr, C, A], P), params.head_order
 // --- $FieldExit ---
 framed($FieldExit(), F) :- field.box(F, _).
 
-ray.blocked([$FieldExit(), F, Ptr], P) :-
-    palette(_, _, F, Ptr), field.box(F, B), in(P, _), !inside(P, B).
+ray.blocked([Ds, $FieldExit(), F, Ptr], P) :-
+    ray.mark([Ds, $FieldExit(), F, Ptr], _), field.box(F, B), in(P, _), !inside(P, B).
 
 // --- $FirstNonfield ---
 framed($FirstNonfield(), F) :- palette(_, _, F, _).
 
-ray.blocked([$FirstNonfield(), F, Ptr], P) :- palette(_, _, F, Ptr), in(P, Col), Col != F.
+ray.blocked([Ds, $FirstNonfield(), F, Ptr], P) :-
+    ray.mark([Ds, $FirstNonfield(), F, Ptr], _), in(P, Col), Col != F.
 
 // --- $FieldPaint ---
 // The exit cells take the field's color.

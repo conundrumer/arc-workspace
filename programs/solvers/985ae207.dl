@@ -32,9 +32,11 @@ impl_choice($Abut()). impl_choice($Stride()).
 
 // --- marks and blocks ---
 
-// A surrounding cell of p holds non-bg col.
+// A surrounding cell of non-bg p holds non-bg col.
 .decl ring(p: Position, col: Color)
-ring(P, Col) :- in(P, _), dir8_elem(D), neighbor(P, D, Q), in(Q, Col), !params.bg(Col).
+ring(P, Col) :-
+    in(P, Cp), !params.bg(Cp),
+    dir8_elem(D), neighbor(P, D, Q), in(Q, Col), !params.bg(Col).
 
 // Some surrounding cell of p lacks col — off the grid counts as lacking.
 .decl gap(p: Position, col: Color)
@@ -59,11 +61,11 @@ block(Col, P) :- in(P, Col), !params.bg(Col), !mark_cell(_, P).
 
 // --- the march ---
 
-// The mark's footprint carried to a copy centered at q.
+// The mark's footprint carried to a copy centered at q, a step of its march.
 .decl copy_cell(p_mark: Position, q: Position, p: Position, col: Color)
 copy_cell(Pm, Q, P, Col) :-
     mark_cell(Pm, X), in(X, Col), relative(Pm, X, V),   // the mark's cell, as an offset
-    in(Q, _), compose(Q, V, P).                         // carried to q
+    step_copy(Pm, _, Q, _, _), compose(Q, V, P).        // carried to q
 
 // A copy centered at q lands on the block its mark names.
 .decl at_block(p_mark: Position, q: Position)

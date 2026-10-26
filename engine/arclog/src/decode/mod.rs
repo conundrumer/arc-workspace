@@ -10,9 +10,11 @@
 //! whose step opens an atom are one program but for the atom's relation,
 //! which holds no site yet, so they share the labels and their types, the
 //! bindings of the conjuncts before the atom, and the result of each check
-//! that reads nothing of that relation ([`Candidate::AtomHead`]), and the candidates that open an
-//! atom of a lib relation, a relation macro, a proposer or a relation of the program take one
-//! resolution of the form in progress, retargeted to each one's relation. The mask keeps the state and
+//! that reads nothing of that relation ([`Candidate::AtomHead`]); the candidates
+//! that open an atom share as well the result of each check that reads the
+//! relation, by the class of that relation (`RelationClass`), and take one
+//! resolution of the form in progress, retargeted to each one's relation,
+//! where a result is not shared. The mask keeps the state and
 //! forced tokens of each admitted token, which the step of that token takes.
 //! It admits a constraint's operator, or first label, only where some
 //! completion of the constraint passes the checks (`Decoder::completes`), and a
@@ -23,28 +25,28 @@
 //! consistency test at a `RULE` clause's end, and its batch form, in
 //! `batch`, steps many decodes at once, and its projections of the body so far,
 //! in `projections`, give the largest sets of its columns under the projection
-//! cap, and its
-//! tables of the last step, in `tables`, give the body of the clause in
-//! progress or the relations of the form finished. The replay of a case
-//! program's stream through a decoder, in `replay`, the walk of a solver's
-//! cases that records their tables, in `corpus`, and the flat columns of a
-//! case's tables, in `columns`, serve the commands and the Python package that
-//! read the tables of a corpus. The decode keeps a
+//! cap. The replay of a case program's stream through a decoder, in
+//! `replay`, and the walk of a solver's cases that records what a caller
+//! builds of each step, in `corpus`, serve the commands and the Python
+//! packages that read the tables of a corpus. The tables of the last step and
+//! their flat columns are no part of this crate: the crate `arclog-tables`
+//! builds them from the read-only accessors of a decoder ([`Decoder::state`],
+//! [`Decoder::before`], [`Decoder::registry`], [`Decoder::settings`],
+//! [`Decoder::grid_columns`] and the rows of the sub-body in `interface`), so
+//! that no code of this crate calls them. The decode keeps a
 //! [`crate::trace::DecodeTrace`] of one record per accepted token.
 
 mod batch;
-pub mod columns;
 pub mod corpus;
 mod interface;
 pub mod replay;
 mod state;
-mod tables;
 mod projections;
 
 pub use batch::step_batch;
-pub use interface::{Consistency, Step};
-pub use tables::{evidence_tables, gives_no_table, Contents, ExampleRows, Point, Points, Table, TableColumn, TableDet, TableRelation};
-pub use projections::{Projection, Projections};
+pub use interface::{derived_at, open_clause, relation_dets, walked_dets, Assigned, Consistency, OpenClause, Step, SubBody};
+pub use projections::{projections, Projection, Projections};
+pub use state::State;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -53,6 +55,7 @@ use std::sync::{Arc, OnceLock};
 use crate::check::prefix::{Candidate, PrefixChecks};
 use crate::check::CheckId;
 use crate::eval::instance::Constructions;
+use crate::eval::copies::{CopyViolation, CopyViolations};
 use crate::eval::Cancellation;
 use crate::judge::candidates::PairCandidates;
 use crate::program::path::NodePath;
@@ -87,6 +90,9 @@ pub struct Decoder<'a> {
     trace: DecodeTrace,
     /// The mask of the current state with the step of each token it admits.
     held: Held,
+    /// Where the evaluations report the declared rows that a construction's
+    /// outputs break, where the settings check them.
+    copies: Option<CopyViolations>,
 }
 
 /// What [`Decoder::admissible`] computes at a state: the mask, and the
@@ -169,12 +175,50 @@ impl<'a> Decoder<'a> {
         assert_eq!(settings.caps, session.caps, "the caps of the decode settings are those of the session");
         let context = Context { registry, settings: *settings, vocabulary: Vocabulary::new(registry, settings) };
         let state = state::State::new();
-        Decoder { task, session, constructions, context: Arc::new(context), state, before: None, train: None, cancellation: Cancellation::default(), output: None, assignments: Vec::new(), columns: None, trace: DecodeTrace::default(), held: Held::default() }
+        Decoder { task, session, constructions, context: Arc::new(context), state, before: None, train: None, cancellation: Cancellation::default(), output: None, assignments: Vec::new(), columns: None, trace: DecodeTrace::default(), held: Held::default(), copies: settings.check_copies.then(CopyViolations::default) }
     }
 
     /// The ids of the decode's tokens.
     pub fn vocabulary(&self) -> &Vocabulary<'a> {
         &self.context.vocabulary
+    }
+
+    /// The slot at which the decode declared `relation`, a declared relation
+    /// or an output as the decode names it, `None` for a relation it has not
+    /// declared.
+    pub fn relation_slot(&self, relation: &ProgramRelation) -> Option<u32> {
+        self.state.slot_of(relation)
+    }
+
+    /// The registry the decode reads.
+    #[inline]
+    pub fn registry(&self) -> &'a Registry {
+        self.context.registry
+    }
+
+    /// The settings the decode runs under.
+    #[inline]
+    pub fn settings(&self) -> &DecodeSettings {
+        &self.context.settings
+    }
+
+    /// The state of the decode: its finished forms and the form in progress.
+    #[inline]
+    pub fn state(&self) -> &State {
+        &self.state
+    }
+
+    /// The state before the last step, none before the first.
+    #[inline]
+    pub fn before(&self) -> Option<&State> {
+        self.before.as_ref()
+    }
+
+    /// The grid columns that the consistency test found at the relation the
+    /// decode ended at, none until it ends.
+    #[inline]
+    pub fn grid_columns(&self) -> Option<crate::eval::output::GridColumns> {
+        self.columns
     }
 
     /// The task, the session and the constructions that the decode's
@@ -305,7 +349,15 @@ impl<'a> Decoder<'a> {
     /// A second decode from the same state, which shares this one's caches
     /// and takes a cancellation of its own.
     pub fn fork(&self) -> Decoder<'a> {
-        Decoder { cancellation: Cancellation::default(), held: Held::default(), ..self.clone() }
+        Decoder { cancellation: Cancellation::default(), held: Held::default(), copies: self.copies.as_ref().map(|_| CopyViolations::default()), ..self.clone() }
+    }
+
+    /// The declared rows that the constructions' outputs broke in the
+    /// evaluations of this decode since the last call, each once, where the
+    /// settings check them ([`DecodeSettings::check_copies`]), and none
+    /// otherwise.
+    pub fn take_copy_violations(&self) -> Vec<CopyViolation> {
+        self.copies.as_ref().map(CopyViolations::take).unwrap_or_default()
     }
 
     /// The program so far: its finished forms.
@@ -339,7 +391,7 @@ impl<'a> Decoder<'a> {
         }
         if let Some((program, open)) = state.partial() {
             if !program.value().forms.is_empty() {
-                if let (Some(open), true, Token::Lib(_) | Token::Proposer(_) | Token::Relation(_)) = (&open, opened.is_some(), token) {
+                if let (Some(open), true, Token::Lib(_) | Token::Relation(_)) = (&open, opened.is_some(), token) {
                     let relation = state.open_relation().expect("an atom stands open");
                     if let Some((check, refusals)) = checks.check_atom_head(&earlier(), &program, open, &relation) {
                         return Err(Refusal::Check { check, refusals });
@@ -368,7 +420,7 @@ impl<'a> Decoder<'a> {
             return Ok(());
         }
         let resolved = resolve_last(&self.state.resolved(self.context.registry), &program, self.context.registry);
-        match checks.check(&resolved, open.as_ref(), candidate) {
+        match checks.check(&resolved, open.as_ref(), candidate, None) {
             Some((check, refusals)) => Err(Refusal::Check { check, refusals }),
             None => Ok(()),
         }

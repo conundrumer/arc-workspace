@@ -200,11 +200,15 @@ row_color.item(R, Col) :- row_of(P, R), in(P, Col).
 .decl full(l: Position, col: Color)
 full(L, Col) :- row_color.value(L, Col), !params.background(Col).
 
+// Each row's distance from the edge opposite the floor.
+.decl top_dist(r: Position, k: number)
+top_dist(R, K) :- row_color.item(R, _), params.floor_side(D), opposite(D, U), dist(R, U, K).
+
 // The full rows in order from the edge opposite the floor.
 // @claim levels
 .init lines = Order<Unit, Position>
 lines.elem($U(), L) :- full(L, _).
-lines.before($U(), L, L2) :- full(L, _), full(L2, _), params.floor_side(D), nearer(D, L2, L).
+lines.score($U(), L, K) :- full(L, _), top_dist(L, K).
 
 // The floor row each level reading gives.
 // @claim floor
@@ -212,7 +216,7 @@ lines.before($U(), L, L2) :- full(L, _), full(L2, _), params.floor_side(D), near
 
 // The levels under each floor row: the full rows before it.
 .decl level(f: Position, l: Position)
-level(F, L) :- floor.value(_, F), lines.before($U(), L, F).
+level(F, L) :- floor.value(_, F), lines.rank($U(), F, N), lines.rank($U(), L, K), K < N.
 
 // The rows of a level's band: those between it and the next full row.
 .decl band_row(l: Position, r: Position)
@@ -257,6 +261,7 @@ chart.extent([F, W], A2, N) :-
     ).
 
 // The level each chart cell's row stands for.
+// @ignore: common-subexpr — a chart cell lies in the chart's frame, not in a row of the input, and the chart is built from the levels' ranks
 .decl chart_row(c: Chart, p: Position, l: Position)
 chart_row([F, W], P, L) :-
     chart.cell([F, W], P), params.floor_side(D), opposite(D, U), dist(P, U, K),
@@ -343,8 +348,7 @@ bar_len.item([$FullRungs(), L], R) :- rung(L, R).
 // @claim bar
 .init ladder_order = Order<Position, Position>
 ladder_order.elem(L, R) :- ladder_row(L, R).
-ladder_order.before(L, R, R2) :-
-    ladder_row(L, R), ladder_row(L, R2), params.floor_side(D), nearer(D, R2, R).
+ladder_order.score(L, R, K) :- ladder_row(L, R), top_dist(R, K).
 
 // The rows of the ladder's upper half: fewer rows before them than after.
 bar_len.item([$LadderHeight(), L], R) :-

@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use super::{ConstructionContext, GroupInputs};
 use crate::eval::cache::{self, EntryContent, EntryRequest};
+use crate::eval::copies::{self, CopyViolation};
 use crate::eval::driver::record_whole;
 use crate::eval::init_form::{grouped, instance_at, key_groups, key_read, rows_read, unevaluated, InstanceShape};
 use crate::eval::join::{self, Budget};
@@ -101,6 +102,8 @@ pub fn evaluate_instance<'a>(
     let construct = |budget: &mut Budget<'a>| -> Outcome<Vec<(GraphRelation, RelationValue)>> {
         let mut rows: Vec<RowSet> = widths.iter().map(|widths| RowSet::empty(shape.arity(widths) as u16)).collect();
         let mut context = ConstructionContext { session: evaluation.session, registry: evaluation.registry, budget };
+        // The count of output rows that break each declared row, by output and declared row.
+        let mut broken: std::collections::BTreeMap<(usize, usize), usize> = Default::default();
         for (key, inputs) in groups.iter().zip(&group_inputs) {
             let group = GroupInputs { inputs, types: &types, columns: &columns, wanted: &wanted };
             if construction.outside_domain(&group) {
@@ -110,6 +113,11 @@ pub fn evaluate_instance<'a>(
                 Ok(outputs) => outputs,
                 Err(bound) => return Ok(each(RelationValue::Stopped(Stop { bound, form: form.clone() }))),
             };
+            if evaluation.limits.copies.is_some() {
+                for (output, row, rows) in copies::broken_rows(component, &group, &outputs, &widths) {
+                    *broken.entry((output, row)).or_default() += rows;
+                }
+            }
             for (((rows, widths), values), wanted) in rows.iter_mut().zip(&widths).zip(&outputs.outputs).zip(&wanted) {
                 if !wanted {
                     continue;
@@ -117,6 +125,11 @@ pub fn evaluate_instance<'a>(
                 for values in values.rows() {
                     rows.insert(laid_out(widths, key, values));
                 }
+            }
+        }
+        if let Some(violations) = &evaluation.limits.copies {
+            for ((output, row), rows) in broken {
+                violations.report(CopyViolation { form: form.clone(), component: instance.component.clone(), output: component.outputs[output].name.clone(), row, rows });
             }
         }
         let values = rows.into_iter().zip(&wanted).filter(|(_, wanted)| **wanted).map(|(rows, _)| RelationValue::Rows(Arc::new(join::one_part(rows))));
@@ -212,14 +225,14 @@ fn input_groups(
     let fault = |message: String| RunFault { message: message.into(), form: form.clone() };
     let input_types = shape.port_types(&input.port.columns).map_err(&fault)?;
     match shape.input_clause(evaluation.program, form, input).map_err(&fault)? {
-        Some(written) => Ok(rows_read(bodies.relation(form, &written.clause, example)?, written.arity())
+        Some(written) => Ok(rows_read(evaluation, form, bodies.relation(form, &written.clause, example)?, written.arity())
             .map_err(&fault)?
             .map(|(rows, relation)| (written.grouped(groups, rows), InputRead::Clause(relation)))),
         None => match stored_input(evaluation, form, instance, &input.port.name) {
             Some(parameter) => {
                 let widths = shape.widths(&input.port.columns).map_err(&fault)?;
                 let prefix = if shape.key_body.is_some() { shape.key_labels().len() } else { 0 };
-                Ok(rows_read(evaluation.relation(&parameter, None)?, shape.arity(&widths))
+                Ok(rows_read(evaluation, form, evaluation.relation(&parameter, None)?, shape.arity(&widths))
                     .map_err(&fault)?
                     .map(|(rows, relation)| {
                         let per_group = grouped(groups, prefix, input_types.len(), rows.iter().map(|row| shape.key_first(&widths, row)).collect());

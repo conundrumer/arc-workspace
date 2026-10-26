@@ -114,20 +114,24 @@ impl<'e, 'a> Driver<'e, 'a> {
         }
     }
 
-    /// The rows of the `DET` relation `name`: the stored rows of its record,
-    /// typed by its columns, or the rows the assignment gives it. A `DET` that
-    /// no record and no assignment gives takes its one value, as
-    /// [`Driver::one_value`] gives it.
+    /// The rows of the `DET` relation `name`: the stored rows of its `assign`
+    /// or of its record, typed by its columns, or the rows the assignment
+    /// gives it. A `DET` that none of these gives takes its one value, as
+    /// [`Driver::one_value`] gives it. A `DET` by its clauses
+    /// ([`Driver::is_by_clauses`]) reads no record at stored records.
     pub(super) fn parameter(&self, relation: &GraphRelation, name: &ProgramRelation) -> Outcome<RelationValue> {
         self.determined.set(self.determined.get() + 1);
         let evaluation = self.evaluation;
         let form = self.program().form_of(relation.node);
         let fault = |message: String| RunFault { message: message.into(), form: form.clone() };
         let value = match evaluation.parameters.source() {
-            ParameterSource::Stored(stored) => match stored.get(name) {
-                Some(value) => value,
-                None => return self.one_value(relation),
-            },
+            ParameterSource::Stored { records, assigns } => {
+                let record = if self.is_by_clauses(relation) { None } else { records.get(name) };
+                match assigns.get(name).or(record) {
+                    Some(value) => value,
+                    None => return self.one_value(relation),
+                }
+            }
             ParameterSource::Determined(assigned) => {
                 return match assigned.get(name) {
                     Some(rows) => Ok(RelationValue::Rows(rows.clone())),
@@ -146,8 +150,24 @@ impl<'e, 'a> Driver<'e, 'a> {
         Ok(RelationValue::Rows(Arc::new(join::one_part(set))))
     }
 
+    /// Whether the node of `relation` is a `DET` by its clauses: each of its
+    /// forms is a `DET` clause with a body, no proposer and no `ONE` mark, so
+    /// that its rows are its clause's, as [`Evaluation::domain`] gives them.
+    fn is_by_clauses(&self, relation: &GraphRelation) -> bool {
+        let root = NodeRef::Program(self.program().program.value());
+        let forms = self.program().forms_of(relation.node);
+        !forms.is_empty()
+            && forms.iter().all(|at| {
+                let Some(NodeRef::Clause(clause)) = node_at(root, at) else { return false };
+                clause.keyword == ClauseKeyword::Det
+                    && !clause.body.value().conjuncts.is_empty()
+                    && clause.proposers.is_empty()
+                    && clause.ones.is_empty()
+            })
+    }
+
     /// The one value in the domain of the `DET` relation `relation`, for a
-    /// `DET` that neither a stored record nor an assignment gives.
+    /// `DET` that no stored value and no assignment gives.
     fn one_value(&self, relation: &GraphRelation) -> Outcome<RelationValue> {
         let form = self.program().form_of(relation.node);
         let fault = |message: &str| RunFault { message: message.into(), form: form.clone() };
@@ -161,13 +181,23 @@ impl<'e, 'a> Driver<'e, 'a> {
     }
 
     /// The relation of `node`, the union of the relations of its forms, each
-    /// a clause evaluated by generic join.
+    /// a clause evaluated by generic join. Where it has several forms, the
+    /// walk of each form's product is counted as [`join::charge_walk`]
+    /// gives, and the first stop is the value.
     fn clauses(&self, node: GraphNodeIndex, example: Option<Example>) -> Outcome<RelationValue> {
+        let forms = self.program().forms_of(node);
         let mut relations = Vec::new();
-        for form in self.program().forms_of(node) {
+        for form in forms {
             match self.clause(form, example)? {
                 RelationValue::Rows(relation) => relations.push(relation),
                 other => return Ok(other),
+            }
+        }
+        if relations.len() > 1 {
+            for (form, relation) in forms.iter().zip(&relations) {
+                if let Err(stop) = join::charge_walk(self.evaluation, relation, form) {
+                    return Ok(RelationValue::Stopped(stop));
+                }
             }
         }
         Ok(RelationValue::Rows(join::union(relations)))
@@ -514,7 +544,7 @@ impl<'e, 'a> Driver<'e, 'a> {
                             RelationValue::Rows(relation) => relation,
                             other => return Ok(Err(other)),
                         },
-                        AtomSource::Relation(read) => match self.read(read, scope, example)? {
+                        AtomSource::Relation(read) => match self.read(read, scope, example, atom.train_only)? {
                             RelationValue::Rows(relation) => relation,
                             other => return Ok(Err(other)),
                         },
@@ -544,14 +574,29 @@ impl<'e, 'a> Driver<'e, 'a> {
     /// The value of `relation` as a clause of `scope` on `example` reads it:
     /// a task-wide relation once, a relation per example on the clause's
     /// own example, or, from a task-wide clause, in its lifted form.
-    fn read(&self, relation: &GraphRelation, scope: ExampleScope, example: Option<Example>) -> Outcome<RelationValue> {
+    ///
+    /// A lifted read with `train_only` lifts over the train examples alone,
+    /// so its value is defined wherever the relation is defined on each of
+    /// them, whatever its entry on a test example. The lift's walk of each
+    /// example's product is counted as [`join::charge_walk`] gives, at the
+    /// relation's form, and the first stop is the value.
+    fn read(&self, relation: &GraphRelation, scope: ExampleScope, example: Option<Example>, train_only: bool) -> Outcome<RelationValue> {
         match (examples::scope_of(self.evaluation.program, relation), scope) {
             (ExampleScope::TaskWide, _) => self.value(relation, None),
             (ExampleScope::PerExample, ExampleScope::PerExample) => self.value(relation, example),
             (ExampleScope::PerExample, ExampleScope::TaskWide) => {
-                let per_example: Outcome<Vec<(Example, RelationValue)>> =
-                    self.evaluation.task.examples().map(|e| Ok((e, self.value(relation, Some(e))?))).collect();
-                Ok(examples::lift(&per_example?))
+                let task = &self.evaluation.task;
+                let lifted_over: Vec<Example> = if train_only { task.train_examples().collect() } else { task.examples().collect() };
+                let per_example: Vec<(Example, RelationValue)> = lifted_over.into_iter().map(|e| Ok((e, self.value(relation, Some(e))?))).collect::<Outcome<_>>()?;
+                let form = self.program().form_of(relation.node);
+                for (_, value) in &per_example {
+                    if let RelationValue::Rows(rows) = value
+                        && let Err(stop) = join::charge_walk(self.evaluation, rows, form)
+                    {
+                        return Ok(RelationValue::Stopped(stop));
+                    }
+                }
+                Ok(examples::lift(&per_example))
             }
         }
     }

@@ -129,11 +129,10 @@ slot.extent(S, A, N) :- params.axis(A), widest.high(S, N).
 // @claim layout
 .init columns = Order<Unit, Column>
 columns.elem($U(), [S, T]) :- slot.cell(S, _, T).
-columns.before($U(), [S1, T1], [S2, T2]) :-
-    slot.cell(S1, _, T1), slot.cell(S2, _, T2), corner_dirs(D, _),
-    ( nearer(D, S1, S2)              // an earlier stack
-    ; S1 = S2, nearer(D, T1, T2)     // an earlier line of one slot
-    ).
+columns.score($U(), [S, T], K) :-                   // by stack
+    slot.cell(S, _, T), corner_dirs(D, _), dist(S, D, K).
+columns.secondary_score($U(), [S, T], K) :-         // by line within a slot
+    slot.cell(S, _, T), corner_dirs(D, _), dist(T, D, K).
 
 .init lines = DirFrame<Unit>
 lines.dir(D) :- corner_dirs(D, _).

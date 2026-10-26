@@ -1,11 +1,11 @@
 //! The relations that the forms of a node of the dependency graph give it,
 //! each with the labels written at its columns and the body that binds each
-//! label, and the relation that a node stands for. The column flows of
-//! [`crate::eval::flows`] read these.
+//! label, and the relation that a node stands for. The column flows of the
+//! crate `arclog-tables` read these.
 
 use std::sync::Arc;
 
-use super::column_sources::{Listing, Source};
+use super::column_sources::{input_body, Listing, Source};
 use super::columns::{Columns, Place, Slot};
 use super::registry_columns;
 use super::{form_columns, ColumnPosition, DependencyKind, GraphNodeIndex, ResolvedProgram};
@@ -15,31 +15,31 @@ use crate::registry::{is_key, ColumnType, LibName, Registry};
 
 /// A label that a form writes at a column of a relation.
 #[derive(Clone, Debug)]
-pub(crate) struct GivenLabel {
-    pub(crate) label: LabelId,
+pub struct GivenLabel {
+    pub label: LabelId,
     /// The path below the form of the body that binds the label.
-    pub(crate) body: NodePath,
+    pub body: NodePath,
     /// The row position of the column path the label stands at, where the
     /// relation's columns place it.
-    pub(crate) place: Option<usize>,
+    pub place: Option<usize>,
 }
 
 /// One column of a relation that a form gives: the row positions it takes,
 /// whether it is the `key` column, its declared type, and the labels written
 /// at its paths.
 #[derive(Clone, Debug)]
-pub(crate) struct GivenSlot {
-    pub(crate) is_key: bool,
-    pub(crate) width: usize,
-    pub(crate) declared: Option<ColumnType>,
-    pub(crate) labels: Vec<GivenLabel>,
+pub struct GivenSlot {
+    pub is_key: bool,
+    pub width: usize,
+    pub declared: Option<ColumnType>,
+    pub labels: Vec<GivenLabel>,
 }
 
 /// The relation that a node of the graph stands for, where a read names
 /// it.
 /// The relation that a node of the graph stands for, where a read names
 /// it.
-pub(crate) fn node_relation(kind: &DependencyKind) -> Option<RelationRef> {
+pub fn node_relation(kind: &DependencyKind) -> Option<RelationRef> {
     let of = |relation: &ProgramRelation| match relation {
         ProgramRelation::Declared(name) => RelationRef::Declared(name.clone()),
         ProgramRelation::Output(name) => RelationRef::Output(name.clone()),
@@ -58,22 +58,23 @@ pub(crate) fn node_relation(kind: &DependencyKind) -> Option<RelationRef> {
 
 /// A relation that a form gives a node: the form's path, the relation's
 /// path after the form's name where the form gives several, and its columns.
-pub(crate) struct Given {
-    pub(crate) form: NodePath,
-    pub(crate) output: Option<Arc<[OutputStep]>>,
-    pub(crate) slots: Vec<GivenSlot>,
+pub struct Given {
+    pub form: NodePath,
+    pub output: Option<Arc<[OutputStep]>>,
+    pub slots: Vec<GivenSlot>,
     /// The lib name that gives the relation's rows where the form reads no
     /// program relation: the proposers of a clause, or the component of an
     /// instance.
-    pub(crate) lib: Vec<LibName>,
+    pub lib: Vec<LibName>,
     /// The index among the columns of its first one that a part site of a
     /// `RIGID_DET` assembly gives; the entries before are the key's and
     /// `:Pose`. Beyond the columns for any other relation.
-    pub(crate) sites_from: usize,
-    /// For an output port of a keyed instance, the declared types of the
-    /// columns other than `key` of each `from-key` input that the instance
-    /// writes no clause for, which the engine fills from the key.
-    pub(crate) filled: Vec<Vec<ColumnType>>,
+    pub sites_from: usize,
+    /// For an output port of a keyed instance, each `from-key` input that the
+    /// instance writes no clause for, which the engine fills from the key:
+    /// its index among the component's inputs, and the declared types of its
+    /// columns other than `key`.
+    pub filled: Vec<(usize, Vec<ColumnType>)>,
 }
 
 /// The columns of `listing`, each with its row positions and labels.
@@ -103,15 +104,33 @@ fn slots(listing: &Listing) -> Vec<GivenSlot> {
 impl ResolvedProgram {
     /// The width of the columns of `node` in row positions, with the
     /// relation `node` stands for, where the columns are known.
-    pub(crate) fn node_width(&self, node: GraphNodeIndex) -> Option<(RelationRef, usize)> {
+    pub fn node_width(&self, node: GraphNodeIndex) -> Option<(RelationRef, usize)> {
         let graph_node = &self.graph.nodes[node.0 as usize];
         let relation = node_relation(&graph_node.kind)?;
         let columns = self.names.columns(&graph_node.scope, &relation)?;
         Some((relation, columns.row_names().len()))
     }
 
+    /// The columns of `port`, an input of the component of the `INIT` form at
+    /// `form`, as the instance's relation of the input lays them out whether
+    /// the instance writes the input or not: none where `form` is no instance
+    /// of a component of `registry`.
+    pub fn instance_port_slots(&self, form: &NodePath, port: &crate::registry::Port, registry: &Registry) -> Option<Vec<GivenSlot>> {
+        let NodeRef::Instance(instance) = node_at(NodeRef::Program(self.program.value()), form)? else { return None };
+        let component = registry_columns::component(registry, &instance.component)?;
+        let bindings = form_columns::bindings(instance, component);
+        Some(slots(&form_columns::port_columns(port, &bindings, instance.key.is_some())))
+    }
+
+    /// The path below the `INIT` form at `form` of the body of each clause
+    /// that the instance writes for its input `name`.
+    pub fn input_bodies(&self, form: &NodePath, name: &crate::program::PortName) -> Vec<NodePath> {
+        let Some(NodeRef::Instance(instance)) = node_at(NodeRef::Program(self.program.value()), form) else { return Vec::new() };
+        written_inputs(instance.key.as_ref(), &instance.inputs).filter(|written| written.name == *name).map(|written| input_body(NodeRef::Instance(instance), written)).collect()
+    }
+
     /// The relations that the forms of `node` give it, with their listings.
-    pub(crate) fn given(&self, node: GraphNodeIndex, registry: &Registry) -> Vec<Given> {
+    pub fn given(&self, node: GraphNodeIndex, registry: &Registry) -> Vec<Given> {
         let root = NodeRef::Program(self.program.value());
         let mut given = Vec::new();
         for form in self.forms_of(node) {
@@ -134,11 +153,12 @@ impl ResolvedProgram {
                     let keyed = instance.key.is_some();
                     let written: Vec<_> = written_inputs(instance.key.as_ref(), &instance.inputs).collect();
                     let lib = vec![instance.component.clone()];
-                    let filled: Vec<Vec<ColumnType>> = component
+                    let filled: Vec<(usize, Vec<ColumnType>)> = component
                         .inputs
                         .iter()
-                        .filter(|own| keyed && own.from_key && own.port.columns.iter().any(is_key) && written.iter().all(|written| written.name != own.port.name))
-                        .map(|own| own.port.columns.iter().filter(|column| !is_key(column)).map(|column| column.ty.clone()).collect())
+                        .enumerate()
+                        .filter(|(_, own)| keyed && own.from_key && own.port.columns.iter().any(is_key) && written.iter().all(|written| written.name != own.port.name))
+                        .map(|(index, own)| (index, own.port.columns.iter().filter(|column| !is_key(column)).map(|column| column.ty.clone()).collect()))
                         .collect();
                     let mut port = |port: &crate::registry::Port, output: bool| {
                         let filled = if output { filled.clone() } else { Vec::new() };

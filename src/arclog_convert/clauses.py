@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 from engine.program import (
     Aggregate,
     Atom,
@@ -36,6 +37,69 @@ if TYPE_CHECKING:
 # Clause conversion
 
 
+@dataclass(frozen=True)
+class Site:
+    """Where a kept leaf of a Souffle column is read in arclog: the column
+    `label` of the arclog relation, and, for a record column of a type
+    parameter or the `key` column of an instance or of an id-keyed chart's
+    part, the `field` within it."""
+
+    leaf: "Leaf"
+    label: str
+    field: str | None
+
+
+def kept_leaf(leaf: "Leaf") -> bool:
+    """The leaf is read by a site: it is no case, drop or rule leaf."""
+    return leaf.kind not in ("case", "drop", "rule")
+
+
+def chart_key(col, inst) -> bool:
+    """Whether `col` is the `key` column of a part of an id-keyed chart: the
+    column of an arclog relation that is no instance's, named `key`, which
+    holds the part's id (`Converter.rigid_keyed`)."""
+    return inst is None and col.name == "key"
+
+
+def site_columns(c: "Converter", cols: list, inst) -> list[list[Site]]:
+    """For each Souffle column of `cols` (`Converter.resolve`), the `Site`
+    of each of its leaves that `kept_leaf` keeps, in order. `ClauseWriter.sites`
+    writes its sites with these labels, and `names.column_map` writes
+    them, so a label is chosen here alone."""
+    out: list[list[Site]] = []
+    for i, (col, leaves) in enumerate(cols):
+        kept = [l for l in leaves if kept_leaf(l)]
+        sites: list[Site] = []
+        nonex = [l for l in kept if l.kind != "example"]
+        if inst is not None and i == 0 and col.name == "key":
+            kn_all = c.key_names.get(inst) or []
+            by_path = dict(zip(c.key_paths.get(inst, []), kn_all))
+            names_by_leaf = dict(zip(map(id, kept), kn_all)) if len(kn_all) == len(kept) else \
+                dict(zip(map(id, nonex), kn_all)) if len(kn_all) == len(nonex) else \
+                {id(l): by_path[l.path] for l in nonex} if all(l.path in by_path for l in nonex) else {}
+            names = [names_by_leaf[id(l)] for l in nonex] if names_by_leaf else \
+                [n for n in kn_all if n != "E"] or [pascal(l.name) for l in nonex]
+            if len(names) != len(nonex):
+                names = [pascal(l.name) for l in nonex]
+            named = iter(names)
+            sites = [Site(l, "E", None) if l.kind == "example" else Site(l, "key", next(named)) for l in kept]
+        elif chart_key(col, inst):
+            # the id of a part of an id-keyed chart, read at the form's key
+            sites = [Site(l, "key", l.name) for l in kept]
+        else:
+            rest = nonex if inst is not None else kept
+            nkeep = sum(1 for l in kept if l.kind == "keep")
+            if col.tparam and len(rest) > 1:
+                fields = iter(field_names(rest))
+                sites = [Site(l, "E", None) if l.kind == "example" and inst is not None
+                         else Site(l, col.name, next(fields)) for l in kept]
+            else:
+                sites = [Site(l, "E" if l.kind == "example" else l.name if nkeep > 1 else col.name, None)
+                         for l in kept]
+        out.append(sites)
+    return out
+
+
 class ClauseWriter:
     """Writes one clause body as arclog lines."""
 
@@ -54,10 +118,19 @@ class ClauseWriter:
         self.nested: set[str] = set()
         self.drop_neg: frozenset[str] = getattr(conv, "cur_empty", frozenset())
         self.clause_vars: set[str] = set()   # the labels of the lists written so far
+        self.fields: dict[str, dict[str, str]] = {}   # a variable spread into fields: field name -> the field's variable
         self.stuck = False   # a top-level body whose algebra atoms no order makes safe
 
     def label(self, v: str) -> str:
         return self.rename.get(v, v)
+
+    def field_labels(self, v: str, label: str, bound: set[str]) -> dict[str, str]:
+        """The labels of the fields of the record variable `v`, whose own label
+        is `label`, by field name: those the sites made by `split`, and those
+        of `bound` that a record term of variables `<label>_<field>` made."""
+        out = {x[len(label) + 1:]: x for x in bound if x.startswith(label + "_")}
+        out.update({f: self.label(n) for f, n in self.fields.get(v, {}).items()})
+        return out
 
     def term_text(self, t) -> str:
         if isinstance(t, Variable):
@@ -104,8 +177,14 @@ class ClauseWriter:
             last = [f[-1] if f else l.name.lower() for f, l in zip(inner, leaves)]
             tags = last if len(set(last)) == len(last) else \
                 ["_".join(f) if f else l.name.lower() for f, l in zip(inner, leaves)]
-            return [Variable(f"{term.name}_{t}") if l.kind in ("keep", "example") else Wildcard()
-                    for l, t in zip(leaves, tags)]
+            out = []
+            for l, t in zip(leaves, tags):
+                if l.kind in ("keep", "example"):
+                    self.fields.setdefault(term.name, {})[t] = f"{term.name}_{t}"
+                    out.append(Variable(f"{term.name}_{t}"))
+                else:
+                    out.append(Wildcard())
+            return out
         if isinstance(term, RecordTerm):
             groups: dict[int, list[Leaf]] = defaultdict(list)
             for l in leaves:
@@ -139,43 +218,36 @@ class ClauseWriter:
             self.c.todo.add("arity", f"{atom.relation.text}")
             return name, [souffle_term(a) for a in atom.args]
         out: list[str] = []
-        for i, ((col, leaves), arg) in enumerate(zip(cols, atom.args)):
+        placed = site_columns(self.c, cols, inst)
+        # the key of an id-keyed chart's part leads its sites, as the outputs of
+        # the form hold the key's columns first
+        order = sorted(enumerate(zip(cols, atom.args)), key=lambda column: not chart_key(column[1][0][0], inst))
+        for i, ((col, leaves), arg) in order:
             terms = self.split(arg, leaves)
-            kept: list[tuple[Leaf, object]] = []
             for leaf, t in zip(leaves, terms):
                 if leaf.kind == "case":
                     self.branches.update(ctor_names(t))
-                    continue
-                if leaf.kind in ("drop", "rule"):
-                    continue
-                kept.append((leaf, t))
+            live = [(leaf, t) for leaf, t in zip(leaves, terms) if kept_leaf(leaf)]
+            kept = [(site, t) for site, (_, t) in zip(placed[i], live)]
             if not kept:
                 continue
-            is_key = inst is not None and i == 0 and col.name == "key"
+            self.c.read_sites.setdefault(name, set()).update(
+                (site.label, site.field) for site, t in kept if not isinstance(t, Wildcard))
+            is_key = chart_key(col, inst) or inst is not None and i == 0 and col.name == "key"
             if is_key:
-                kn_all = self.c.key_names.get(inst) or []
-                nonex = [l for l, _ in kept if l.kind != "example"]
-                by_path = dict(zip(self.c.key_paths.get(inst, []), kn_all))
-                names_by_leaf = dict(zip(map(id, (l for l, _ in kept)), kn_all)) if len(kn_all) == len(kept) else \
-                    dict(zip(map(id, nonex), kn_all)) if len(kn_all) == len(nonex) else \
-                    {id(l): by_path[l.path] for l in nonex} if all(l.path in by_path for l in nonex) else {}
                 kept = self.example_sites(kept, bound, out)
                 if not kept:
                     continue
-                names = [names_by_leaf[id(l)] for l, _ in kept] if names_by_leaf else \
-                    [n for n in kn_all if n != "E"] or [pascal(l.name) for l, _ in kept]
-                if len(names) != len(kept):
-                    names = [pascal(l.name) for l, _ in kept]
-                if key_join and inst == self.own_inst and all(
-                        isinstance(t, Variable) and self.label(t.name) == n for (l, t), n in zip(kept, names)):
+                if key_join and inst is not None and inst == self.own_inst and all(
+                        isinstance(t, Variable) and self.label(t.name) == site.field for site, t in kept):
                     continue
                 inner = []
-                for (leaf, t), n in zip(kept, names):
+                for site, t in kept:
                     if isinstance(t, Wildcard):
                         continue
                     s = self.one(t, bound)
                     lab = s.lstrip("*^")
-                    inner.append(s if lab == n else f"(:{n} {s})")
+                    inner.append(s if lab == site.field else f"(:{site.field} {s})")
                 if inner:
                     out.append("(:key " + " ".join(inner) + ")")
                 continue
@@ -184,34 +256,31 @@ class ClauseWriter:
                 kept = self.example_sites(kept, bound, out)
                 if not kept:
                     continue
-            if col.tparam and len(kept) > 1:
-                fnames = field_names([l for l, _ in kept])
-                inner = field_sites([n for n, (_, t) in zip(fnames, kept) if not isinstance(t, Wildcard)],
+            if kept[0][0].field is not None:
+                inner = field_sites([site.field for site, t in kept if not isinstance(t, Wildcard)],
                                     [self.one(t, bound) for _, t in kept if not isinstance(t, Wildcard)])
                 if inner:
                     out.append(f"(:{col.name} " + " ".join(inner) + ")")
                 continue
-            nkeep = sum(1 for l, _ in kept if l.kind == "keep")
-            for leaf, t in kept:
+            for site, t in kept:
                 if isinstance(t, Wildcard):
                     continue
                 s = self.one(t, bound)
                 lab = s.lstrip("*^")
-                colname = "E" if leaf.kind == "example" else leaf.name if nkeep > 1 else col.name
-                if not col.tparam and lab == colname:
+                if not col.tparam and lab == site.label:
                     out.append(s)
                 else:
-                    out.append(f"(:{colname} {s})")
+                    out.append(f"(:{site.label} {s})")
         return name, out
 
     def example_sites(self, kept, bound: set[str] | None, out: list[str]):
         """Append to `out` the site of each Example leaf of `kept`, and give
         the other leaves."""
-        for leaf, t in kept:
-            if leaf.kind == "example" and not isinstance(t, Wildcard):
+        for site, t in kept:
+            if site.leaf.kind == "example" and not isinstance(t, Wildcard):
                 s = self.one(t, bound)
                 out.append(s if s.lstrip("*^") == "E" else f"(:E {s})")
-        return [(l, t) for l, t in kept if l.kind != "example"]
+        return [(site, t) for site, t in kept if site.leaf.kind != "example"]
 
     def one(self, t, bound: set[str] | None) -> str:
         if isinstance(t, Variable):
@@ -250,15 +319,14 @@ class ClauseWriter:
             if l.op.value in ("=", "!=") and isinstance(lhs, Variable) and isinstance(rhs, Variable):
                 a, b = self.label(lhs.name), self.label(rhs.name)
                 if a not in bound and b not in bound:
-                    fa = {x[len(a) + 1:] for x in bound if x.startswith(a + "_")}
-                    fb = {x[len(b) + 1:] for x in bound if x.startswith(b + "_")}
-                    common = sorted(fa & fb)
-                    if common and fa == fb:
+                    fa, fb = self.field_labels(lhs.name, a, bound), self.field_labels(rhs.name, b, bound)
+                    common = sorted(fa.keys() & fb.keys())
+                    if common and fa.keys() == fb.keys():
                         if l.op.value == "=":
-                            return [f"(= {a}_{x} {b}_{x})" for x in common]
+                            return [f"(= {fa[x]} {fb[x]})" for x in common]
                         if len(common) == 1:
-                            return [f"(!= {a}_{common[0]} {b}_{common[0]})"]
-                        return wrap("(OR ", [[f"(!= {a}_{x} {b}_{x})"] for x in common])
+                            return [f"(!= {fa[common[0]]} {fb[common[0]]})"]
+                        return wrap("(OR ", [[f"(!= {fa[x]} {fb[x]})"] for x in common])
             if l.op.value == "=" and isinstance(lhs, RecordTerm) and isinstance(rhs, RecordTerm) \
                     and agrees_but_wildcards(lhs, rhs):
                 # two records that differ only where one holds `_`: the test names the
@@ -368,7 +436,9 @@ class ClauseWriter:
 
     def reorder(self, lits, bound: set[str]):
         """The literals with each test after the literals that bind its
-        labels: a comparison or a negation waits for its last binder."""
+        labels: a comparison or a negation waits for its last binder; a fact
+        atom waits for an algebra atom that makes labels the fact atom reads,
+        so the `*` stands on the algebra atom."""
         def vs(t) -> set[str]:
             out: set[str] = set()
             collect_vars([AtomLiteral(Atom(RelationName((), "_"), (t,), 0), False)], out)
@@ -473,8 +543,27 @@ class ClauseWriter:
         orderable = not any(algebra_modes(x) is not None or isinstance(x, Disjunction) for x in rem)
         if not orderable and self.depth == 0:
             self.stuck = True
-        out, pending = [], []
+        def is_fact(l) -> bool:
+            return isinstance(l, AtomLiteral) and not l.negated and self.c.resolve(l.atom.relation, self.scope, self.sub)[2] == "fact"
+
+        def made_by_waiting(i: int, B: set[str]) -> set[str]:
+            """The labels of the fact atom `lits[i]` that an algebra atom
+            waiting for the other literals makes, which no other literal binds."""
+            made: set[str] = set()
+            for j, m in enumerate(lits):
+                if j == i or algebra_modes(m) is None or ready(m, B):
+                    continue
+                others = B.union(*(binds(k) for n, k in enumerate(lits) if n not in (i, j)))
+                if ready(m, others):
+                    made |= (binds(lits[i]) & binds(m)) - others
+            return made
+
+        out, pending, after = [], [], {}
         for i, l in enumerate(lits):
+            if orderable and is_fact(l) and (waits_for := made_by_waiting(i, B)):
+                after[id(l)] = waits_for
+                pending.append(l)
+                continue
             if orderable and (algebra_modes(l) is not None or isinstance(l, Disjunction)):
                 # an algebra atom or an `OR` waits for the other literals' labels, never its own
                 others = set(bound) | unbound
@@ -494,7 +583,7 @@ class ClauseWriter:
             while moved:
                 moved = False
                 for p_ in list(pending):
-                    if ready(p_, B):
+                    if ready(p_, B) and after.get(id(p_), set()) <= B:
                         out.append(p_)
                         B |= binds(p_)
                         pending.remove(p_)

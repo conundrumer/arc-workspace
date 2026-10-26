@@ -22,7 +22,7 @@ idle, and the message on a held change that is overdue
 move of the changes that wait on it; the solver pipelines; the cost
 audit (`cost_audit`); the code review and the lib review (`reviews`);
 the standing doc review and the review on an overdue reader
-(`standing_reviews`); the gate (`gate_launch`); the process assessment
+(`standing_reviews`); the process assessment
 (`assessment`); the sweep and the script check (`after_profile`); After
 a batch (`batches`); the
 messages and the tickets on the stalled tickets of the operators
@@ -57,7 +57,7 @@ from dataclasses import replace
 
 from controlled_markdown import mctx
 from operations import (after_profile, alerts, assessment, batches, changes, concept_faults, cost_audit, decisions, drafts,
-                        gate_launch, idle_changes, limit_resume, lineage, load_notices, merging, monitor, passes, reviews, runs,
+                        idle_changes, limit_resume, lineage, load_notices, merging, monitor, passes, reviews, runs,
                         standing_reviews, start_holds, ticket_stall, triage, taking, unbatched, unwaited)
 from operations.directives import (
     lines,
@@ -344,7 +344,7 @@ LATE: tuple[Callable[[State], Step | None], ...] = (
     taking.release, triage.reopen, triage.later_lines, triage.settle, drafts.step,
     held_changes, idle_changes.overdue, ticket_stall.stall,
     pipelines, cost_audit.audit, *reviews.PROCEDURES, standing_reviews.standing_review,
-    standing_reviews.overdue_review, gate_launch.gate,
+    standing_reviews.overdue_review,
     assessment.assessment, after_profile.validation, after_profile.script_check, batches.step,
     alerts.ticket_stalls, unwaited.step, alerts.stuck_waits)
 PROCEDURES = EARLY + LATE

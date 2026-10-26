@@ -1,7 +1,8 @@
 //! The models of a case on an input, as `docs/engine/cases.md#models` gives
 //! them: [`Evaluation::models`] gives the value of a relation at each model,
 //! one at a time, until its visitor stops it, the models end, or a cap is
-//! reached.
+//! reached; [`Evaluation::models_with_picks`] gives as well the choice at
+//! each model of the chosen relations its caller names.
 //!
 //! A factor is an entry of a pick, a chosen relation on one example or
 //! task-wide, of a `DEMONSTRATED` relation, or of an `Unfold` instance, and a model holds one choice at
@@ -286,7 +287,23 @@ impl Evaluation<'_> {
         example: Option<Example>,
         visit: &mut dyn FnMut(&RelationValue) -> ControlFlow<()>,
     ) -> Outcome<ModelsEnd> {
-        self.enumerate(None, relation, example, visit)
+        self.enumerate(None, relation, example, &[], &mut |value, _| visit(value))
+    }
+
+    /// [`Evaluation::models`], with `visit` given as well the value at the
+    /// model of each of `picks`, a chosen relation and the example it is
+    /// read on, as [`Evaluation::relation`] takes it, in the order of
+    /// `picks`: the choice that the model holds at it, `None` where the
+    /// model holds none, as where `relation` does not read it. The
+    /// enumeration is that of `relation` alone.
+    pub fn models_with_picks(
+        &self,
+        relation: &GraphRelation,
+        example: Option<Example>,
+        picks: &[(GraphRelation, Option<Example>)],
+        visit: &mut dyn FnMut(&RelationValue, &[Option<RelationValue>]) -> ControlFlow<()>,
+    ) -> Outcome<ModelsEnd> {
+        self.enumerate(None, relation, example, picks, visit)
     }
 
     /// [`Evaluation::models`], with the records of the evaluation of
@@ -303,7 +320,7 @@ impl Evaluation<'_> {
         trace: &mut RunTrace,
     ) -> Outcome<ModelsEnd> {
         let cell = RefCell::new(std::mem::take(trace));
-        let end = self.enumerate(Some(&cell), relation, example, visit);
+        let end = self.enumerate(Some(&cell), relation, example, &[], &mut |value, _| visit(value));
         *trace = cell.into_inner();
         end
     }
@@ -313,7 +330,8 @@ impl Evaluation<'_> {
         trace: Option<&RefCell<RunTrace>>,
         relation: &GraphRelation,
         example: Option<Example>,
-        visit: &mut dyn FnMut(&RelationValue) -> ControlFlow<()>,
+        picks: &[(GraphRelation, Option<Example>)],
+        visit: &mut dyn FnMut(&RelationValue, &[Option<RelationValue>]) -> ControlFlow<()>,
     ) -> Outcome<ModelsEnd> {
         let driver = Driver::nested(self, trace);
         *driver.met.borrow_mut() = Some(Vec::new());
@@ -324,7 +342,7 @@ impl Evaluation<'_> {
                 readers[read.0 as usize].push(node);
             }
         }
-        let mut enumeration = Enumeration { driver: &driver, relation, example, visit, readers, seen: 0 };
+        let mut enumeration = Enumeration { driver: &driver, relation, example, picks, visit, readers, seen: 0 };
         let end = enumeration.level(Vec::new())?.unwrap_or(ModelsEnd::Exhausted);
         if let Some(trace) = trace {
             let stop = match &end {
@@ -342,7 +360,9 @@ struct Enumeration<'d, 'e, 'a> {
     driver: &'d Driver<'e, 'a>,
     relation: &'d GraphRelation,
     example: Option<Example>,
-    visit: &'d mut dyn FnMut(&RelationValue) -> ControlFlow<()>,
+    /// The chosen relations whose values at each model `visit` gets.
+    picks: &'d [(GraphRelation, Option<Example>)],
+    visit: &'d mut dyn FnMut(&RelationValue, &[Option<RelationValue>]) -> ControlFlow<()>,
     /// For each node of the dependency graph, the nodes that read it.
     readers: Vec<Vec<usize>>,
     /// The models given to `visit`.
@@ -389,9 +409,9 @@ impl Enumeration<'_, '_, '_> {
         Ok(end)
     }
 
-    /// Gives `value`, the value at one complete model, to the visitor, or
-    /// the stop at the model cap where the visitor has seen as many models
-    /// as the cap.
+    /// Gives `value`, the value at one complete model, and the values of the
+    /// picks at it, to the visitor, or the stop at the model cap where the
+    /// visitor has seen as many models as the cap.
     fn visit_model(&mut self, value: &RelationValue) -> Option<ModelsEnd> {
         let cap = self.driver.evaluation.session.caps.models;
         if self.seen == cap {
@@ -399,7 +419,17 @@ impl Enumeration<'_, '_, '_> {
             return Some(ModelsEnd::Stopped(Stop { bound: ReachedBound::Models { cap }, form }));
         }
         self.seen += 1;
-        match (self.visit)(value) {
+        let model = self.driver.model.borrow();
+        let picks: Vec<Option<RelationValue>> = self
+            .picks
+            .iter()
+            .map(|(pick, example)| {
+                let chosen = matches!(self.driver.program().graph.nodes[pick.node.0 as usize].kind, DependencyKind::Chosen(_));
+                model.get(&(pick.node, *example)).filter(|_| chosen).map(|choice| choice.0[0].clone())
+            })
+            .collect();
+        drop(model);
+        match (self.visit)(value, &picks) {
             ControlFlow::Break(()) => Some(ModelsEnd::Visitor),
             ControlFlow::Continue(()) => None,
         }

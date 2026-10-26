@@ -1,2 +1,0 @@
-slot[d]: 5 values, one per `p`, `b`
-  no case: the value varies by `p`, `b`, an id the runner stores nothing under

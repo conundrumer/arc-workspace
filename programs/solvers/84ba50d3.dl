@@ -95,6 +95,7 @@ stopped(Id, R, $Sieve()) :- wide(Id, R).
 .decl shift(delta: Offset)
 shift(Delta) :-
     in(P, _), params.fall_dir(D), fall_axis(A),
+    dist(P, D, 0), perp_dir(D, D2), dist(P, D2, 0),      // the corners of the fall edge
     sub_extent(P, A, K), jump_offset(D, K, Delta).
 
 // An offset that carries a shape cell off the grid.

@@ -45,6 +45,7 @@ class Category(StrEnum):
     PARAMS_DATA = "params data"
     RECURSION = "recursion"
     DEAD = "dead"
+    UNFILLED_INPUT = "unfilled-input"
     ALIAS_INLINE = "alias-inline"
     NEGATED_USE = "negated-use"
     CHOICE_DOMAIN = "choice-domain"

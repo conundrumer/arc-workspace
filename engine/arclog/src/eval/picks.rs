@@ -14,7 +14,7 @@
 //! on an encoding order.
 
 use super::ir::{ClauseIr, IrPaths};
-use super::{ir, FormBodies, Outcome, ParameterSource, RelationValue, RunFault, Stop};
+use super::{ir, Evaluation, FormBodies, Outcome, ParameterSource, RelationValue, RunFault, Stop};
 use crate::check::CheckedProgram;
 use crate::hash::StableHashMap;
 use crate::program::path::{node_at, NodePath, NodeRef};
@@ -85,7 +85,7 @@ pub fn pick_options(bodies: &FormBodies<'_>, node: GraphNodeIndex, example: Opti
                 } else {
                     driver.clause(at, example)?
                 };
-                match rows_of(value, types.len(), &fault)? {
+                match rows_of(evaluation, at, value, types.len(), &fault)? {
                     Ok(found) => rows.extend(found),
                     Err(pick) => return Ok(pick),
                 }
@@ -216,7 +216,7 @@ fn choose_rows(
             let (clause, _) = for_pathed(checked, form, choose)
                 .map_err(|compile| fault(format!("the `for` body does not compile: {compile:?}")))?
                 .expect("a `for` clause where the form has a `for` body");
-            match rows_of(bodies.relation(form, &clause, example)?, row_labels.len(), &fault)? {
+            match rows_of(driver.evaluation, form, bodies.relation(form, &clause, example)?, row_labels.len(), &fault)? {
                 Ok(rows) => (rows, clause.nodes.len()),
                 Err(pick) => return Ok(Err(pick)),
             }
@@ -226,7 +226,7 @@ fn choose_rows(
     let FromBody { columns, joined, .. } = from_body(choose, form);
     let offset = if joined { key_nodes } else { 0 };
     let (from, _) = from_pathed(checked, form, choose).map_err(|compile| fault(format!("the `from` body does not compile: {compile:?}")))?;
-    let from_rows = match rows_of(bodies.relation(form, &from, example)?, columns.len(), &fault)? {
+    let from_rows = match rows_of(driver.evaluation, form, bodies.relation(form, &from, example)?, columns.len(), &fault)? {
         Ok(rows) => rows,
         Err(pick) => return Ok(Err(pick)),
     };
@@ -330,7 +330,7 @@ fn never_pairs(
         let reads = [spec(first), spec(second)];
         let clause = ir::compile_instance_body(checked, form, &[body], &columns)
             .map_err(|compile| fault(format!("a `never` body does not compile: {compile:?}")))?;
-        let found = match rows_of(bodies.relation(form, &clause, example)?, columns.len(), &fault)? {
+        let found = match rows_of(bodies.driver.evaluation, form, bodies.relation(form, &clause, example)?, columns.len(), &fault)? {
             Ok(rows) => rows,
             Err(pick) => return Ok(Err(pick)),
         };
@@ -372,8 +372,8 @@ fn column_index(driver: &super::driver::Driver<'_, '_>, form: &NodePath, shape: 
 
 /// The rows of `value`, of `arity` columns, or the pick's value where it
 /// holds no rows, as [`super::init_form::rows_of`] gives them.
-fn rows_of(value: RelationValue, arity: usize, fault: &dyn Fn(String) -> RunFault) -> Outcome<Result<Vec<Row>, Pick>> {
-    Ok(match super::init_form::rows_of(value, arity).map_err(fault)? {
+fn rows_of(evaluation: &Evaluation<'_>, form: &NodePath, value: RelationValue, arity: usize, fault: &dyn Fn(String) -> RunFault) -> Outcome<Result<Vec<Row>, Pick>> {
+    Ok(match super::init_form::rows_of(evaluation, form, value, arity).map_err(fault)? {
         Ok(rows) => Ok(rows),
         Err(RelationValue::Undefined) => Err(Pick::Undefined),
         Err(RelationValue::Stopped(stop)) => Err(Pick::Stopped(stop)),

@@ -233,8 +233,7 @@ subsumed($AnchorCorner($EveryCorner(), $AnchorFirst()), $TieMiddle()).
     // @claim longest-run
     .init first_cell = Order<KeyCorner, Position>
     first_cell.elem([K, Dp, Dc], P) :- order(K, Dp), corner(K, Dc, P).
-    first_cell.before([K, Dp, Dc], P, Q) :-
-        order(K, Dp), corner(K, Dc, P), corner(K, Dc, Q), nearer(Dp, P, Q).
+    first_cell.score([K, Dp, Dc], P, N) :- order(K, Dp), corner(K, Dc, P), dist(P, Dp, N).
 }
 
 // --- $HoleStored ---
@@ -352,9 +351,8 @@ mixed(Pool) :-
 .init middle = Order<Side, Ident>
 middle.elem([Pool, Dc], Sg) :-
     tied(Pool, Sg), seg_axis(Sg, DA), diag_perp(DA, DA2), diag_axis_of(Dc, DA2).
-middle.before([Pool, Dc], Sg1, Sg2) :-
-    middle.elem([Pool, Dc], Sg1), middle.elem([Pool, Dc], Sg2),
-    parse.segment(_, _, Sg1, _, P1), parse.segment(_, _, Sg2, _, P2), nearer(Dc, P1, P2).
+middle.score([Pool, Dc], Sg, K) :-
+    middle.elem([Pool, Dc], Sg), parse.segment(_, _, Sg, _, P), corner_dist(P, Dc, K).
 
 finalist($TieMiddle(), Pool, nil, Sg) :-
     middle.rank([Pool, Dc], Sg, R), middle.rank_desc([Pool, Dc], Sg, R), !mixed(Pool).

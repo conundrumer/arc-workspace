@@ -36,7 +36,7 @@ from ticketing.vocabulary import Status
 
 BATCH_SPAN = 3600
 """The seconds since a batch's first launch after which the batch closes
-with members pending, and the least span between two gate launches."""
+with members pending."""
 
 
 def start(state: State, before: float | None = None) -> float:

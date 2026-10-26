@@ -29,9 +29,7 @@ color_count.item(Col, P) :- in(P, Col).
 
 .init by_count = Order<Unit, Color>
 by_count.elem($U(), Col) :- color_count.tally(Col, _).
-by_count.before($U(), Col, Col2) :-
-    color_count.tally(Col, N), color_count.tally(Col2, N2),  // two colors' counts
-    N < N2.                                                  // the rarer one comes first
+by_count.score($U(), Col, N) :- color_count.tally(Col, N).  // the rarer color comes first
 
 // Two hypotheses on where the cut sits, data-equivalent on this task —
 // every pair has exactly five colors.

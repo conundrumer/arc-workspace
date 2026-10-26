@@ -20,6 +20,10 @@ from souffle.printer import term as souffle_term
 from arclog_convert.literals import collect_vars
 from solver.vocabulary import order_pairs
 from arclog_convert.frame_reads import (
+    FRAME_SUFFIX,
+    INNER_SUFFIX,
+    OUTER_SUFFIX,
+    TILING_SUFFIX,
     Extent,
     FieldPlan,
     FrameRead,
@@ -43,6 +47,30 @@ from arclog_convert.forms import (
 from arclog_convert.leaves import Written
 from arclog_convert.lib import KeyedTable, PROPOSER_COLS, keyed_row, pascal, takes_set_mark
 from arclog_convert.terms import name_of
+
+
+def column_site(column: str, label: str) -> str:
+    """The site of the column `column` that reads `label`, `label` alone where
+    it is the column's name (`docs/arclog/arclog.md#sites`)."""
+    return label if label.lstrip("*^") == column else f"(:{column} {label})"
+
+
+def atom(relation: str, sites: list[str]) -> str:
+    """The atom of `relation` with `sites`."""
+    return "(" + " ".join([relation, *sites]) + ")"
+
+
+def or_of(bodies: list[str]) -> str:
+    """The body that holds each of `bodies`, a list of atoms, as the branches
+    of an `OR`, or that body alone where there is one."""
+    return bodies[0] if len(bodies) == 1 else "(OR " + " ".join(f"({b})" for b in bodies) + ")"
+
+
+def nest(opening: str, lines: list[str]) -> list[str]:
+    """The form that `opening` opens, with `lines` inside it, closed."""
+    out = [opening, *("  " + x for x in lines)]
+    close(out, ")")
+    return out
 
 
 class ParamsMixin:
@@ -126,7 +154,7 @@ class ParamsMixin:
         comp, units, axis_col = plan
         amp = c.rel_name(("Params",), r.name)
         # the frame stands for the `helpers` instance whose `frame_pos` the clauses read
-        c.made[(("Params",), r.name + "_frame")] = Written(("Params",), "helpers", True)
+        c.made[(("Params",), r.name + "_frame")] = (Written(("Params",), "helpers", True),)
         inst = c.rel_name(("Params",), r.name + "_frame")
         c.wrote(f"{inst}.cell", Written(("Params",), "helpers.frame_pos", False))
         u, n, p, bs, rest = units[0][:5]
@@ -173,10 +201,13 @@ class ParamsMixin:
         line = r.span.first if r.span else 0
         amp = c.rel_name(("Params",), r.name)
         forms: list[Form] = []
+        instances, units = plan.souffle(r.name)
+        c.plan_instances.update({(inst.scope.components, inst.name): inst for inst in instances})
+        c.plan_units.extend(units)
 
         def instance(suffix: str) -> str:
             # each instance stands for the `helpers` instance the clause reads
-            c.made[(("Params",), r.name + suffix)] = Written(("Params",), "helpers", True)
+            c.made[(("Params",), r.name + suffix)] = (Written(("Params",), "helpers", True),)
             return c.rel_name(("Params",), r.name + suffix)
 
         def extent(ext: Extent, value: str) -> tuple[list[str], set[str]]:
@@ -201,12 +232,12 @@ class ParamsMixin:
             return inst
 
         if isinstance(plan.read, FrameRead):
-            inst = frame("_frame", plan.read.extent)
+            inst = frame(FRAME_SUFFIX, plan.read.extent)
             c.wrote(f"{inst}.cell", Written(("Params",), "helpers.frame_pos", False))
             read, cells = f"{inst}.cell", [("P", plan.read.cell)]
         else:
-            outer, inner = frame("_outer", plan.read.outer), frame("_inner", plan.read.inner)
-            inst = instance("_tiling")
+            outer, inner = frame(OUTER_SUFFIX, plan.read.outer), frame(INNER_SUFFIX, plan.read.inner)
+            inst = instance(TILING_SUFFIX)
             lines = [f"(INIT {inst} Tiling", "  (outer (P)", f"    ({outer}.cell *P))",
                      "  (inner (P)", f"    ({inner}.cell *P))"]
             reads = {outer, inner}
@@ -475,7 +506,10 @@ class ParamsMixin:
         plan finds the part's value covered. Where the determination relations
         lead with key columns, the parts stand in an `instance` clause over
         those columns, and a part with a determination relation reads them
-        bare, then the columns of its stored `param` record."""
+        bare, then the columns of its stored `param` record. Where the block
+        is an id-keyed chart (`Converter.rigid_keyed`), a `key` clause over the
+        parts' id holds the rest, each part reads the id bare, and each id is
+        an assembly of its own."""
         c = self.c
         out: list[Form] = []
         for m in c.prog.macros:
@@ -493,22 +527,25 @@ class ParamsMixin:
                 dets = [pascal(col.name) for col in det.columns] if det else stored
                 parts.append((part, dets, len(dets) - len(stored) if det else 0, stored))
                 reads.add(part)
-            key = next((d[:w] for _, d, w, _ in parts if w > 0), None)
-            if key is None:
-                head = [f"(RIGID_DET {amp}"] + [
-                    f"  ({part}" + "".join(f" *{l}" for l in d) + ")" for part, d, _, _ in parts]
-                close(head, ")")
-            else:
-                reads_key = [(part, d[:w]) for part, d, w, _ in parts if w > 0]
-                branches = [f"({part}" + "".join(f" {'^' if i == 0 else ''}{l}" for l in k) + ")"
-                            for i, (part, k) in enumerate(reads_key)]
-                body = branches[0] if len(branches) == 1 else \
-                    "(OR " + " ".join(f"({b})" for b in branches) + ")"
-                head = [f"(RIGID_DET {amp}", f"  (instance ({body})"]
-                for part, d, w, stored in parts:
-                    head.append(f"    ({part}" + "".join(f" {l}" for l in (key if w > 0 else []))
-                                + "".join(f" *{l}" for l in stored) + ")")
-                close(head, "))")
+            keyed = m.block in c.rigid_keyed
+            instance_key = next((d[:w] for _, d, w, _ in parts if w > 0), None)
+            label = parts[0][3][0] if keyed else ""   # the label of the id that the `key` clause makes
+
+            def id_sites(stored: list[str], mark: str = "") -> list[str]:
+                """The site of a part's id at the key's label, in a keyed block."""
+                return [column_site(stored[0], mark + label)] if keyed else []
+
+            atoms = [atom(part, [*(instance_key if w > 0 else []), *id_sites(stored),
+                                 *(f"*{l}" for l in (stored[1:] if keyed else stored))])
+                     for part, _, w, stored in parts]
+            if instance_key is not None:
+                branches = [atom(part, [*(("^" if i == 0 else "") + l for l in d[:w]), *id_sites(stored)])
+                            for i, (part, d, w, stored) in enumerate(p for p in parts if p[2] > 0)]
+                atoms = nest(f"(instance ({or_of(branches)})", atoms)
+            if keyed:
+                ids = [atom(part, id_sites(stored, "^" if i == 0 else "")) for i, (part, _, _, stored) in enumerate(parts)]
+                atoms = nest(f"(key ({or_of(ids)})", atoms)
+            head = nest(f"(RIGID_DET {amp}", atoms)
             f = Form(head, amp, reads, line=m.span.first)
             f.comments = [*(";; " + t for t in self.plain_comments(m.span.first)), *self.todo.take()]
             out.append(f)

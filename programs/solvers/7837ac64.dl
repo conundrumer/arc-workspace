@@ -37,9 +37,15 @@
 
 // --- $All ---
 
-// A line carrying a bg cell. A line with none is a cutting line.
+// A line carrying a bg cell. A line with none is a cutting line. A line with a
+// bg cell has one at an end of a bg run along it, so the run ends find each.
 .decl gapped_line(l: Position)
-gapped_line(L) :- in(P, Col), params.bg(Col), axis_elem(A), split(P, A, L, _).
+gapped_line(L) :-
+    in(P, Col), params.bg(Col), dir_elem(D),
+    ( neighbor(P, D, Q), in(Q, Col2), !params.bg(Col2)   // bg run ends toward D at a non-bg cell
+    ; dist(P, D, 0)                                       // or at the edge
+    ),
+    axis_of(D, A2), perp(A2, A), split(P, A, L, _).      // line along D
 
 // A cell on a cutting line.
 .decl on_line(p: Position, a: Axis)

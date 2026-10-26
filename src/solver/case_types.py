@@ -5,7 +5,7 @@ base's value can stand there, as `solver.dependence` reads them."""
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, fields, is_dataclass, replace
 
-from engine import AdtValue, Program, RecordValue, UnitId, Value
+from engine import AdtValue, NilValue, Program, RecordValue, UnitId, Value
 from engine.memo import ByIdentity
 from engine.program import (
     Aggregate,
@@ -80,8 +80,9 @@ class CaseTypes:
     def leaves(self, type: str, value: Value) -> list[tuple[str, Value]]:
         """The values at the case-typed places of a value of `type`, each
         with its type: a record of a case type opened by its fields'
-        types (`fields`)."""
-        if type not in self.types:
+        types (`fields`). A `nil` has no case-typed place, so it gives
+        none, at any type: it holds at every base."""
+        if type not in self.types or isinstance(value, NilValue):
             return []
         fields = self.fields(type)
         if fields is None \

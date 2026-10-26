@@ -10,14 +10,17 @@ Every linear map is a sum over the orbits of D4 on pairs of positions (68 orbits
 action; norms and nonlinearities act per position.
 
 Tables. `load_tables` reads a tables export (engine/arclog-py/tables_export.py) into per-case lists of `Table`, the relation
-tables in stream order, and caches them in a pickle. The evidence tables `ex_input` and `ex_output` are built from
-the task file where the export holds none, and stand first, after the start token. A change to this module, or to the engine code that writes the export's files (`engine/arclog/src/eval/flows.rs`, `engine/arclog/src/decode/`), runs `engine/arclog-py/roundtrip_check.py` with an `arclog` built from its tree before its merge.
+tables in stream order, and caches them in a directory of pickles, one per task. The evidence tables `ex_input` and `ex_output` are built from
+the task file where the export holds none, and stand first, after the start token. A change to this module, or to the engine code that writes the export's files (`engine/arclog-tables/src/`, `engine/arclog-tables-py/src/`, `engine/arclog/src/decode/`), runs `engine/arclog-py/roundtrip_check.py` with an `arclog` built from its tree before its merge.
 """
-import bisect, json, math, os, pickle, re
+import bisect, copy, itertools, json, math, os, pickle, re, shutil
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -196,23 +199,35 @@ class Table:
     `unseen` gives the reason the encoder cannot see the whole table (its projection search stopped, it faults, or
     every entry is unseen), which then has no rows; `largest` is the most rows of one entry, or of one projection
     at an entry. `det_relations` gives the relation of each DET that the table's entries are assigned, as the
-    export spells it ("slot <relation>"), and is empty for an evidence table. An export table whose entries hold
-    several assignments gives one Table per assignment, each with that assignment's entries over every example and
-    model; the Tables of one export table share `step`, `relation` and `export_table`, and stand next to each other
-    (`table_groups`).
+    export spells it ("slot <relation>"), and is empty for an evidence table. `det_types` gives, per DET in that
+    order, the type name of each column of its value, and `det_cells` its value at the Table's assignment, int32
+    [rows, width] as the export's assigned run gives it, or None where the Table's entries hold no value of that
+    DET or the Table is unseen; both are empty for an evidence table and for a Table built with neither.
+    `det_columns` gives, per DET in `det_relations` order, the path of each of its columns as the export spells it,
+    equal across the Tables of a case exactly for one column of one DET relation, and empty for a DET where the
+    export knows none; it is empty for an evidence table and for a Table built without it. The Tables
+    of a case whose values for a DET are equal share one array, which a reader does not write. An export table whose
+    entries hold several assignments gives one Table per assignment, each with that assignment's entries over every
+    example and model; the Tables of one export table share `step`, `relation` and `export_table`, and stand next to
+    each other (`table_groups`).
 
     From an export that gives the column-level provenance (`flows.parquet`), a relation table also holds `depth`, its
     stratum; `keys`, its candidate keys as lists of column indexes; `output_position` and `output_color`, the columns
     that map to Position and Color of ex_output on the program's output relation, -1 elsewhere; and `flows`, one row
-    per source of a column, [m, 5] int32: column, kind (`FLOW_KINDS`), source table (the export table, 0 for ex_input
+    per source of a column, [m, 6] int32: column, kind (`FLOW_KINDS`), source table (the export table, 0 for ex_input
     and 1 for ex_output, -1 where the case holds none), source column (-1 where none, -2 for the example of the
-    source's entry) and DET (the place in `det_relations`, -1 where none). Every column index is one of this loader's
-    columns (Unit columns dropped), except the source column of a flow from a DET, which indexes that DET's columns
-    as `det_types` in tables.parquet gives them; a flow of a dropped column is left out. The Tables of one export table share
-    these. ex_output holds `color_dependent`: whether the output relation's Color column reaches a DET or ex_output
-    through the flows (`color_dependence`), None where the case gives no output relation. Without the export's
-    provenance, each of these holds its class default."""
+    source's entry), DET (the place in `det_relations`, -1 where none) and read (the code within the case of the row
+    of the source's relation that the flow reads: one code for each distinct pair of a non-empty atom and an
+    occurrence of at least 0, so two flows of a Table share the code exactly where the export gives them one atom and
+    one occurrence, which is where they read one row; -1 where no atom reads the source or the occurrence is -1).
+    Every column index is one of this loader's columns (Unit columns dropped), except the source
+    column of a flow from a DET, which indexes that DET's columns as `det_types` in tables.parquet gives them; a flow
+    of a dropped column is left out. The Tables of one export table share these. ex_output holds `color_dependent`:
+    whether the output relation's Color column reaches a DET or ex_output through the flows (`color_dependence`),
+    None where the case gives no output relation. Without the export's provenance, each of these holds its class
+    default."""
     depth, keys, flows, output_position, output_color, color_dependent = None, None, None, -1, -1, None
+    det_types = det_cells = det_columns = ()
 
     def __init__(self, **kw):
         kw.pop("_unique", None)   # what `unique` keeps, which a copy builds again
@@ -267,23 +282,51 @@ OLD_NAMES = {PROJECTIONS_FILE: "views.parquet", PROJECTION_ROWS_FILE: "view_rows
              TABLE_PROJECTIONS: "views", PROJECTION_ID: "view"}
 
 
-def read_part(d, name):
-    """An export's part file, under its name or its name in an older export."""
-    return pd.read_parquet(d / name if (d / name).exists() else d / OLD_NAMES[name])
+class TaskRows:
+    """The rows of an export's parquet file, in the columns given, with `task` and `case` dictionary-encoded, in
+    Arrow, grouped by task through one stable sort of the task codes: the rows of a task keep their order in the
+    file, whatever the order of the tasks in it. `rows` gives one task's rows as a pandas frame, the only copy of
+    any rows in pandas."""
+
+    def __init__(self, path, columns):
+        """The file at `path` (a part file under its name or, in an older export, under `OLD_NAMES`'s), the
+        `columns` of it, each under its name or its name in an older export, named as given."""
+        path = Path(path)
+        path = path if path.exists() else path.with_name(OLD_NAMES[path.name])
+        have = pq.read_schema(path).names
+        found = [c if c in have else OLD_NAMES.get(c, c) for c in columns]
+        self.table = pq.read_table(path, columns=found, read_dictionary=["task", "case"]).rename_columns(columns)
+        self.order, self.span = np.zeros(0, np.int64), {}
+        if len(self.table):
+            task = self.table["task"].unify_dictionaries()
+            names = task.chunk(0).dictionary.to_pylist()
+            codes = np.concatenate([c.indices.to_numpy(zero_copy_only=False) for c in task.chunks])
+            counts = np.bincount(codes, minlength=len(names))
+            self.order = np.argsort(codes, kind="stable")
+            self.span = {names[i]: (int(e - n), int(e)) for i, (n, e) in enumerate(zip(counts, np.cumsum(counts))) if n}
+
+    def tasks(self):
+        """The tasks that have rows, in the order of each task's first row."""
+        return sorted(self.span, key=lambda task: self.order[self.span[task][0]])
+
+    def rows(self, task):
+        """The rows of `task` as a pandas frame, in the file's order; an empty frame where it has none."""
+        start, stop = self.span.get(task, (0, 0))
+        taken = self.table.take(self.order[start:stop])
+        for name in ("task", "case"):
+            taken = taken.set_column(taken.schema.get_field_index(name), name, taken[name].cast(pa.large_string()))
+        return taken.to_pandas()
 
 
-def with_names(df, *columns):
-    """df with each column given renamed from its name in an older export, where it holds that name."""
-    return df.rename(columns={OLD_NAMES[c]: c for c in columns if c not in df.columns and OLD_NAMES[c] in df.columns})
 PROJECTIONS_STOPPED, PROJECTIONS_FOUND = 1, 2
 POINT_RELATION = 0            # the point code of a relation table; a body is 1
 
 
-def read_projections(d):
-    """The projections of every table, each with its id in its case, and the rows of each at each entry."""
-    projections = read_part(d, PROJECTIONS_FILE).reset_index(drop=True)
+def with_projection_ids(projections):
+    """The frame `projections` of one task's projections with each one's id in its case (`PROJECTION_ID`)."""
+    projections = projections.reset_index(drop=True)
     projections[PROJECTION_ID] = projections.groupby(["task", "case"]).cumcount()
-    return projections, with_names(read_part(d, PROJECTION_ROWS_FILE), PROJECTION_ID)
+    return projections
 
 
 def entry_projection_rows(projections, projection_rows, table, entry):
@@ -325,7 +368,8 @@ def unseen_table(t, reason, unseen_entries=None, prov=None):
                  example_kind=np.zeros(0, np.int8), assignment=np.zeros((0, len(t["det_relations"])), np.int32), model=np.zeros(0, np.int32),
                  entry=np.zeros(0, np.int32), part=np.zeros(0, np.int32), marker=np.zeros(0, bool),
                  unseen_entries=unseen_entries or {}, largest=0, export_table=int(t["table"]),
-                 det_relations=list(t["det_relations"]))
+                 det_relations=list(t["det_relations"]), det_types=det_type_names(t),
+                 det_columns=det_column_paths(t), det_cells=[None] * len(t["det_relations"]))
 
 
 def wholly_unseen_reason(unseen_entries):
@@ -354,6 +398,7 @@ def entry_runs(t, e, projections, projection_rows, where=""):
 
 FLOW_KINDS = ("copy", "computed", "constant", "lib name")   # a flow's kind, by its code
 FLOW_COPY, FLOW_CONSTANT, FLOW_LIB_NAME = 0, 2, 3
+FLOW_READ = 5   # the index of the read code in a row of `Table.flows`
 FLOW_COLUMNS = ["table", "column", "kind", "source_table", "source_column", "det"]
 GRID_TABLES = {"ex_input": 0, "ex_output": 1}   # the export table of each grid table, in every case
 
@@ -370,19 +415,23 @@ def kept_columns(column_types):
 
 
 def case_flows(fl, kept, dets=None, where=""):
-    """{export table: flows [m, 5] int32} of one case, from its rows of flows.parquet, with every column index
+    """{export table: flows [m, 6] int32} of one case, from its rows of flows.parquet, with every column index
     mapped to the loader's (`kept`, {export table: `kept_columns`}); a flow of a dropped column is left out, and a
-    dropped source column reads as -1. A flow from a DET (`det` not -1) keeps its source column as the export gives
-    it, an index into that DET's `det_types` in the flow's own table (`dets`, {export table: `case_dets`}). Raises
+    dropped source column reads as -1. A flow's atom and occurrence become a read code, one per distinct pair of a
+    non-empty atom and an occurrence of at least 0 in the case, in order of first appearance, -1 where the atom is
+    empty or the occurrence is -1. A flow from a DET (`det` not -1) keeps its source column as the
+    export gives it, an index into that DET's `det_types` in the flow's own table (`dets`, {export table:
+    `case_dets`}). Raises
     DataFault where a flow names a table the case does not hold, or a column, or a source column, past its table's
     columns or its DET's columns, or a DET past its table's DETs."""
     dets = dets or {}
     a = fl[FLOW_COLUMNS].to_numpy(np.int64)
+    reads = pd.factorize(fl["atom"].where((fl["atom"] != "") & (fl["occurrence"] >= 0)) + "@" + fl["occurrence"].astype(str))[0]
     out = {}
     for tab in np.unique(a[:, 0]):
-        rows = a[a[:, 0] == tab]
+        sel = a[:, 0] == tab
         res = []
-        for row in rows.tolist():
+        for row, read in zip(a[sel].tolist(), reads[sel].tolist()):
             _, col, kind, st, sc, det = row
             km, skm = kept.get(int(tab)), kept.get(st) if st >= 0 else []
             ds = dets.get(int(tab), [])
@@ -398,8 +447,8 @@ def case_flows(fl, kept, dets=None, where=""):
                 continue
             if det < 0 and st >= 0 and sc >= 0:
                 sc = skm[sc]
-            res.append((c, kind, st, sc, det))
-        out[int(tab)] = np.array(res, np.int32).reshape(-1, 5)
+            res.append((c, kind, st, sc, det, read))
+        out[int(tab)] = np.array(res, np.int32).reshape(-1, 6)
     return out
 
 
@@ -426,7 +475,7 @@ def check_provenance(task, case, tables):
         if any(not 0 <= c < nc for c in named):
             raise DataFault(f"{where}: keys {t.keys}, output columns {t.output_position} {t.output_color}")
         for row in t.flows.tolist():
-            c, _, st, sc, _ = row
+            c, _, st, sc, _, _ = row
             if not 0 <= c < nc:
                 raise DataFault(f"{where}: flow {row} names column {c}")
             for i in of.get(st, []) if sc >= 0 and row[4] < 0 else []:
@@ -468,15 +517,28 @@ def orientation_subtypes(tables_dir):
 
 
 def case_dets(t):
-    """[(relation, column types, width)] of each DET of the export table t (a row of tables.parquet), in
-    `det_relations` order, the width from `det_widths`; the types are empty where the export gives no `det_types`."""
+    """[(relation, column types, width, column paths)] of each DET of the export table t (a row of tables.parquet), in
+    `det_relations` order, the width from `det_widths` and the paths from `det_columns`; the types are empty where
+    the export gives no `det_types`."""
     types = t.get("det_types")
     types = [list(x) for x in types] if isinstance(types, (list, np.ndarray)) else []
     widths = list(t["det_widths"])
-    return [(rel, types[i] if i < len(types) else [], int(widths[i])) for i, rel in enumerate(t["det_relations"])]
+    paths = t["det_columns"]
+    return [(rel, types[i] if i < len(types) else [], int(widths[i]), list(paths[i]))
+            for i, rel in enumerate(t["det_relations"])]
 
 
-def copy_flow_check(fl, column_types, kept, tables, dets=None, det_values=None, subtypes=None, where=""):
+def det_type_names(t):
+    """The type name of each column of each DET of the export table t, in `det_relations` order."""
+    return [[type_name(x) for x in types] for _, types, _, _ in case_dets(t)]
+
+
+def det_column_paths(t):
+    """The path of each column of each DET of the export table t, in `det_relations` order: `det_columns`."""
+    return [paths for _, _, _, paths in case_dets(t)]
+
+
+def copy_flow_check(fl, column_types, kept, tables, dets=None, subtypes=None, where=""):
     """The copy flows of one case that break their join, from the case's rows of flows.parquet (export column
     indexes). A copy flow's source column is a column of its source table, or, where its `det` is not -1, a column of
     that DET of the table that holds the flow, whose types are that table's `det_types[det]` in tables.parquet. A copy
@@ -484,9 +546,9 @@ def copy_flow_check(fl, column_types, kept, tables, dets=None, det_values=None, 
     column, or a subtype or a supertype of it that `subtypes` gives ((subtype, supertype) pairs, `orientation_subtypes`;
     where None or empty, the type must be the same). Where every source of a column is such a copy flow, the column's value in
     each present row of its Tables must be a value of one of its source columns: over the rows of a source table's
-    Tables, or over the rows of a DET's relation at the row's own assignment of that DET (the row's `assignment`,
-    which indexes `det_values`, the loader's {(DET relation, run bytes): index}). A column's flows are its sources
-    over every rule that derives it, so its values are in the union of theirs, not in each. `column_types`, `kept`
+    Tables, or over the rows of a DET's relation at the Table's own assignment of that DET (the Table's
+    `det_cells`). A column's flows are its sources over every rule that derives it, so its values are in the union of
+    theirs, not in each. `column_types`, `kept`
     (`kept_columns`) and `dets` (`case_dets`) are per export table, and `tables` are the case's Tables. Gives the
     count of copy flows checked for their type, the count of columns whose values go unchecked (a source other than a
     column of a table that the case holds or of a DET, a dropped column, a table with no Tables, or a source with
@@ -494,7 +556,6 @@ def copy_flow_check(fl, column_types, kept, tables, dets=None, det_values=None, 
     kind "type" for a flow or "value" for a column, given by its first copy flow. Raises DataFault, naming `where`
     (the case), where the widths of a DET's `det_types` differ from its `det_widths`."""
     dets, subtypes = dets or {}, subtypes or set()
-    runs = {i: (rel, b) for (rel, b), i in (det_values or {}).items()}   # a DET value's index -> its run
     of = {}
     for i, t in enumerate(tables):
         e = GRID_TABLES.get(t.relation) if t.evidence else t.export_table
@@ -515,19 +576,19 @@ def copy_flow_check(fl, column_types, kept, tables, dets=None, det_values=None, 
                                 np.unique(t.cells[t.present[:, c] & ~t.marker, o:o + w], axis=0).tolist()}
         return memo[(e, c)]
 
-    def det_values_at(tab, det, c, index):
-        """The values of column c of DET `det` of export table `tab` over the rows of its relation at the DET value
-        `index`, as a set of tuples; empty where the index is -1."""
-        if (tab, det, c, index) not in memo:
-            rel, types, w_all = dets[tab][det]
+    def det_values_at(tab, det, c, cells):
+        """The values of column c of DET `det` of export table `tab` over the rows of its relation, `cells` (a Table's
+        `det_cells[det]`), as a set of tuples; empty where `cells` is None."""
+        if (tab, det, c, id(cells)) not in memo:   # a Table's arrays are the case's shared ones, alive in `tables`
+            rel, types, w_all, _ = dets[tab][det]
             names = [type_name(x) for x in types]
             if sum(width(x) for x in names) != w_all:
                 raise DataFault(f"{where} table {tab} DET {det} ({rel}): its det_types {names} have width "
                                 f"{sum(width(x) for x in names)}, its det_widths {w_all}")
             o, w = sum(width(x) for x in names[:c]), width(names[c])
-            run = np.frombuffer(runs[index][1], np.int32).reshape(-1, w_all) if index >= 0 else np.zeros((0, w_all))
-            memo[(tab, det, c, index)] = {tuple(r) for r in run[:, o:o + w].astype(np.int64).tolist()}
-        return memo[(tab, det, c, index)]
+            run = cells if cells is not None else np.zeros((0, w_all), np.int32)
+            memo[(tab, det, c, id(cells))] = {tuple(r) for r in run[:, o:o + w].astype(np.int64).tolist()}
+        return memo[(tab, det, c, id(cells))]
 
     def source_type(r):
         if r[5] < 0:
@@ -565,14 +626,9 @@ def copy_flow_check(fl, column_types, kept, tables, dets=None, det_values=None, 
         own, outside = set(), set()
         for t in own_tables:
             m = t.present[:, c] & ~t.marker
-            cells, asg = t.cells[m, o:o + w], t.assignment[m][:, [r[5] for r in det_copies]]
-            for key in np.unique(asg, axis=0) if len(det_copies) else [None]:
-                at = cells if key is None else cells[(asg == key).all(1)]
-                vals = {tuple(x) for x in np.unique(at, axis=0).tolist()}
-                own |= vals
-                allowed = src.union(*[det_values_at(tab, r[5], r[4], int(k)) for r, k in zip(det_copies, key)]) \
-                    if key is not None else src
-                outside |= vals - allowed
+            vals = {tuple(x) for x in np.unique(t.cells[m, o:o + w], axis=0).tolist()}
+            own |= vals
+            outside |= vals - src.union(*[det_values_at(tab, r[5], r[4], t.det_cells[r[5]]) for r in det_copies])
         if outside:
             bad.append(("value", copies[0], f"{len(outside)} of its {len(own)} values outside its {len(copies)} "
                                             f"source columns at their rows' assignments, such as {min(outside)}"))
@@ -582,115 +638,229 @@ def copy_flow_check(fl, column_types, kept, tables, dets=None, det_values=None, 
 UNSEEN_TABLE_REASONS = ("the table faults", "the search for its projections stopped")   # those the export's files give
 
 
-def export_unseen_counts(tables, index, cases):
+BASES_COLUMNS = ["task", "case", "base", "tokens", "tables"]
+
+
+def read_bases(d):
+    """The export's `bases` frame (task, case, base, tokens, tables), empty where the export cuts no case."""
+    f = Path(d) / "bases.parquet"
+    return pd.read_parquet(f) if f.exists() else pd.DataFrame({c: [] for c in BASES_COLUMNS})
+
+
+def with_base_rows(rows, bases):
+    """`rows`, a frame of table rows or entry rows (with `task`, `case` and `table`), and for each case that `bases` cuts the rows of its base's
+    tables numbered below the cut, as that case's: the rows the case has in an export of the same streams without bases, but for the tables' numbers
+    of its own, which `bases` has begin at the cut."""
+    if not len(bases):
+        return rows
+    cut = bases.rename(columns={"case": "cut", "base": "case", "tables": "below"})[["task", "case", "cut", "below"]]
+    held = rows.merge(cut, on=["task", "case"])
+    held = held[held["table"] < held["below"]]
+    return pd.concat([rows, held.drop(columns=["case", "below"]).rename(columns={"cut": "case"})[list(rows.columns)]], ignore_index=True)
+
+
+def export_unseen_counts(tables, index, cases, bases):
     """The unseen tables and the unseen entries by reason, as the export's own files give them, over the relation
     tables of `cases`: a table whose fault is not null, a table whose search for its projections stopped, and an
-    entry of an `UNSEEN_KINDS` kind in a table of neither."""
+    entry of an `UNSEEN_KINDS` kind in a table of neither. A case that `bases` cuts counts its base's tables
+    numbered below the cut as well."""
     keys = pd.DataFrame(list(cases), columns=["task", "case"])
-    rel = tables[tables["point"] == POINT_RELATION].merge(keys, on=["task", "case"])
+    rel = with_base_rows(tables, bases)
+    rel = rel[rel["point"] == POINT_RELATION].merge(keys, on=["task", "case"])
     faulted = ~pd.isna(rel["fault"])
     stopped = ~faulted & (rel[TABLE_PROJECTIONS] == PROJECTIONS_STOPPED)
     counts = dict(zip(UNSEEN_TABLE_REASONS, (int(faulted.sum()), int(stopped.sum()))))
     seen = rel[~faulted & ~stopped][["task", "case", "table"]]
-    ix = index[index["kind"].isin(list(UNSEEN_KINDS))][["task", "case", "table", "kind"]]
+    ix = with_base_rows(index, bases)
+    ix = ix[ix["kind"].isin(list(UNSEEN_KINDS))][["task", "case", "table", "kind"]]
     if len(ix):
         ix = ix.astype({"table": seen["table"].dtype}).merge(seen, on=["task", "case", "table"])
     entries = {UNSEEN_KINDS[int(k)]: int(n) for k, n in ix["kind"].value_counts().items()}
     return {r: n for r, n in counts.items() if n}, entries
 
 
-def reconcile_unseen(out, tables, index):
+def reconcile_unseen(out, tables, index, bases):
     """Raises DataFault, with both counts, where the unseen tables and entries of the loader's `out` differ by reason
     from those that the export's own files give (`export_unseen_counts`). The loader's other reasons, such as an
-    entry over the budget, are its own and left out."""
-    export_t, export_e = export_unseen_counts(tables, index, out)
-    loader_t, loader_e = unseen_counts(out)
-    loader_t = {r: n for r, n in loader_t.items() if r in UNSEEN_TABLE_REASONS}
+    entry over the budget, are its own and left out. Gives the loader's unseen tables by reason, all reasons
+    (`unseen_counts`)."""
+    export_t, export_e = export_unseen_counts(tables, index, out, bases)
+    all_t, loader_e = unseen_counts(out)
+    loader_t = {r: n for r, n in all_t.items() if r in UNSEEN_TABLE_REASONS}
     loader_e = {r: n for r, n in loader_e.items() if r in UNSEEN_KINDS.values()}
     if (loader_t, loader_e) != (export_t, export_e):
         raise DataFault(f"the loader's unseen counts differ from the export's: tables by reason, the loader's "
                         f"{loader_t}, the export's {export_t}; entries by reason, the loader's {loader_e}, the "
                         f"export's {export_e}")
+    return all_t
 
 
-def parse_tables(tables_dir, tasks_dir=Path(__file__).resolve().parents[1] / "data/tasks"):
+class Parsed(NamedTuple):
+    """The parse of one case, as the cases cut from it as their base need it: its rows of tables.parquet (`tabs`) and
+    its table rows in the order of their numbers (`records`), its rows of flows.parquet (`flows`, None where it has
+    none), its Tables (`result`, those before the fault where it has one), its DET values (`det_values`, `det_runs`) with the length of
+    `det_values` after each table (`marks`, by the table's number), and its `fault` with the number of the table whose parse
+    raised it (-1 for a fault of the case's file), or None."""
+    tabs: pd.DataFrame
+    records: list
+    flows: pd.DataFrame | None
+    result: list
+    det_values: dict
+    det_runs: dict
+    marks: dict
+    fault: str | None
+    fault_table: int | None
+
+
+TABLE_COLUMNS = ["task", "case", "table", "point", "token", "relation", "column_types", "width", "det_relations",
+                 "det_widths", "det_columns", "fault", TABLE_PROJECTIONS]   # the columns of tables.parquet that the parse reads
+PROVENANCE_COLUMNS = ["depth", "keys", "output_position", "output_color"]   # those it reads where the export gives provenance
+INDEX_COLUMNS = ["task", "case", "table", "entry", "kind", "example_kind", "example_index", "model", "rows", "offset"]
+
+
+class TaskFrames(NamedTuple):
+    """One task's rows of the export's frames, each as {(task, case): the case's rows} (`by_case`): the index, the
+    assigned runs, the projections (with `PROJECTION_ID`), their rows, the flows ({} where the export gives none),
+    and the task's `bases` rows by the cut case."""
+    idx_by: dict
+    asg_by: dict
+    proj_by: dict
+    prows_by: dict
+    flows_by: dict
+    cut_by: dict
+
+
+def by_case(df):
+    """{(task, case): the rows of the case} of a frame of one task's rows, each in the frame's order."""
+    return {k: g for k, g in df.groupby(["task", "case"], sort=False)} if len(df) else {}
+
+
+def parse_tables(tables_dir, tasks_dir=Path(__file__).resolve().parents[1] / "data/tasks", sink=None):
     """{(task, case): [Table]} for every case of the export, and {(task, case): fault} for each case whose export
     cannot be read (no values file, rows past its end), which is left out. A relation table the encoder cannot see
     (it faults, the search for its projections stopped, or an entry is not rows) stays, as an unseen table. A
     relation table whose entries hold several assignments gives one Table per assignment (`parse_table`).
 
+    The parse runs one task at a time, tasks in the order of their first row in tables.parquet. The export's frames
+    are read in the columns the parse reads, and a task's rows alone are turned into pandas (`TaskRows`), so the
+    parse relies on no order of the files' rows. Where `sink` is given, it takes each task's {(task, case): [Table]}
+    (a task with no case that parses gives none) as the task ends, the parse holds the Tables of one task at a time,
+    and the dict returned is empty.
+
+    A case that the export's `bases.parquet` cuts holds its own tables alone, numbered from the row's `tables`, k. Its
+    Tables are the Tables of the export of the same streams without bases (the entry numbers, DET value numbers and flow
+    reads included): shallow copies of the base's Tables of export tables below k, which share the base's arrays, the
+    case's own evidence Tables, and the Tables of its own tables, parsed after the base's DET values (`Parsed`). The base is
+    parsed before the case. A base that faults at a table below k faults the case, with the base's message; a base that
+    faults at a table from k on does not. The stats count each copy flow of the export once, so those of a cut case's
+    flows, which are its own, leave out the base's flows below k.
+
     Raises DataFault where the unseen tables and entries by reason differ from the counts that the export's files give
-    (`reconcile_unseen`). Each copy flow is checked against its source (`copy_flow_check`), and the stats keep the
-    totals under "copy flows": the flows checked, those whose values go unchecked, the violations of each kind, the
+    (`reconcile_unseen`), over the cases of each task against the task's rows, and where more than half the relation
+    tables of the export are unseen. Each copy flow is checked against its source (`copy_flow_check`), and the stats
+    keep the totals under "copy flows": the flows checked, those whose values go unchecked, the violations of each kind, the
     count of cases with one, the count of each such case, the first few violations, and whether the export's
     orientation_types.json gave the orientation subtypes (`orientation_subtypes`)."""
     d = Path(tables_dir)
-    tables = with_names(pd.read_parquet(d / "tables.parquet"), TABLE_PROJECTIONS)
-    index = pd.read_parquet(d / "index.parquet")
-    assigned = pd.read_parquet(d / "assigned.parquet")
-    projections, projection_rows = read_projections(d)
-    by = lambda df: {k: g for k, g in df.groupby(["task", "case"], sort=False)} if len(df) else {}
-    idx_by, asg_by, proj_by, prows_by = by(index), by(assigned), by(projections), by(projection_rows)
-    # the column-level provenance, where the export gives it; else the masked loss takes the table-level sources
-    # and the identifiability test (`field_labels`, `draw_masks`)
-    provenance = (d / "flows.parquet").exists() and "depth" in tables.columns
-    flows_by = by(pd.read_parquet(d / "flows.parquet", columns=["task", "case"] + FLOW_COLUMNS)) if provenance else {}
-    out, faults = {}, {}
+    names = pq.read_schema(d / "tables.parquet").names
+    provenance = (d / "flows.parquet").exists() and "depth" in names   # the column-level provenance, where the export gives it
+    if provenance and "occurrence" not in pq.read_schema(d / "flows.parquet").names:
+        raise DataFault(f"{d}/flows.parquet has no `occurrence` column: the export was written by an engine older than the loader's, which reads the occurrence of each flow")
+    tables = TaskRows(d / "tables.parquet", TABLE_COLUMNS + [c for c in ("det_types",) if c in names]
+                      + (PROVENANCE_COLUMNS if provenance else []))
+    index = TaskRows(d / "index.parquet", INDEX_COLUMNS)
+    assigned = TaskRows(d / "assigned.parquet", ["task", "case", "entry", "det", "rows", "offset"])
+    projections = TaskRows(d / PROJECTIONS_FILE, ["task", "case", "table", "columns", "width"])
+    projection_rows = TaskRows(d / PROJECTION_ROWS_FILE, ["task", "case", PROJECTION_ID, "entry", "defined", "rows", "offset"])
+    flow_rows = TaskRows(d / "flows.parquet", ["task", "case"] + FLOW_COLUMNS + ["atom", "occurrence"]) if provenance else None
+    bases = read_bases(d)
+    bases_of = {k: g for k, g in bases.groupby("task", sort=False)}
     stats = {"body tables": 0, "provenance": "column flows of the export" if provenance else
              "table-level: the export gives no flows, keys or depths"}
     subtypes = orientation_subtypes(d)
     copies = {"checked": 0, "values unchecked": 0, "type": 0, "value": 0, "cases": 0, "by case": {}, "first": [],
               "orientation subtypes": subtypes is not None}
-    for (task, case), tabs in tables.groupby(["task", "case"], sort=False):
+    parsed = {}      # the Parsed of each case of the task that is a base
+
+    def parse_case(task, case, tabs, cut, frames):
+        """The `Parsed` of the case whose rows of tables.parquet are `tabs`, and `cut` its `bases` row where it has one;
+        `frames` are its task's rows (`TaskFrames`)."""
+        key, where = (task, case), f"{task} {case}"
+        base = None
+        if cut is not None:
+            base = parsed.get((task, cut.base))
+            if base is None or (task, cut.base) in frames.cut_by:
+                raise DataFault(f"{where}: its base {cut.base} is no case of the export that holds all its tables")
+        below = 0 if base is None else int(cut.tables)
+        records = tabs.sort_values("table").to_dict("records")
+        failed = lambda fault, at: Parsed(tabs, records, None, [], {}, {}, {}, fault, at)
+        if base is not None and base.fault is not None and base.fault_table < below:
+            return failed(base.fault.replace(f"{task} {cut.base}", where), base.fault_table)
         task_json = json.load(open(f"{tasks_dir}/{task}.json"))
         n_train = len(task_json["train"])
         path = d / "values" / task / f"{case}.i32"
         if not path.exists():
-            faults[(task, case)] = "no values file"; continue
+            return failed("no values file", -1)
         values = np.fromfile(path, np.int32)
-        entries = idx_by.get((task, case))
+        entries = frames.idx_by.get(key)
         ents_of = {} if entries is None else records_by(entries, "table")
-        asg = asg_by.get((task, case))
+        asg = frames.asg_by.get(key)
         asg_of = {} if asg is None else records_by(asg, "entry")
-        projs, prows = proj_by.get((task, case)), prows_by.get((task, case))
+        projs, prows = frames.proj_by.get(key), frames.prows_by.get(key)
         projs = {} if projs is None else records_by(projs, "table")
         # the first row of each projection at each entry
         prows = {} if prows is None else {k: rs[0] for k, rs in records_by(prows, [PROJECTION_ID, "entry"]).items()}
+        result = evidence_for(task_json, tabs if base is None else base.tabs)
         det_values = {}   # (det relation, cells) -> index
-        result = evidence_for(task_json, tabs)
-        records = tabs.sort_values("table").to_dict("records")
+        det_runs = {}     # (det relation, width, cells) -> the cells, int32 [rows, width]
+        entry_offset = 0
+        every = records
+        if base is not None:
+            # the base's Tables of export tables below the cut, and its DET values and entries as they stood there
+            result += [copy.copy(t) for t in base.result[len(result):] if t.export_table < below]
+            det_values = dict(itertools.islice(base.det_values.items(), base.marks[below - 1]))
+            det_runs = dict(base.det_runs)
+            entry_offset = 0 if frames.idx_by.get((task, cut.base)) is None else int((frames.idx_by[(task, cut.base)]["table"] < below).sum())
+            every = base.records[:below] + records
+        fl = frames.flows_by.get(key)
         if provenance:
-            kept = {int(t["table"]): kept_columns(t["column_types"]) for t in records}
-            dets = {int(t["table"]): case_dets(t) for t in records}
-            fl = flows_by.get((task, case))
-            flows = {} if fl is None else case_flows(fl, kept, dets, f"{task} {case}")
+            kept = {int(t["table"]): kept_columns(t["column_types"]) for t in every}
+            dets = {int(t["table"]): case_dets(t) for t in every}
+            before = None if base is None or base.flows is None else base.flows[base.flows["table"] < below]
+            whole = [f for f in (before, fl) if f is not None]
+            flows = case_flows(pd.concat(whole, ignore_index=True), kept, dets, where) if whole else {}
             ex_output = result[1]
-            for t in records:
+            for t in every:
                 k = kept[int(t["table"])]
                 if t["point"] == POINT_RELATION and t["output_color"] >= 0 and k[t["output_color"]] >= 0:
                     ex_output.color_dependent = color_dependence(flows, int(t["table"]), k[t["output_color"]])
+        marks, at = {}, None
         try:
             for t in records:
-                if t["point"] != POINT_RELATION:
+                at = int(t["table"])
+                if t["point"] == POINT_RELATION:
+                    prov = None
+                    if provenance:
+                        k = kept[at]
+                        c_at = lambda c: k[c] if c >= 0 else -1
+                        prov = dict(depth=int(t["depth"]), keys=[[k[c] for c in key if k[c] >= 0] for key in t["keys"]],
+                                    output_position=c_at(int(t["output_position"])), output_color=c_at(int(t["output_color"])),
+                                    flows=flows.get(at, np.zeros((0, 6), np.int32)))
+                    result += parse_table(t, ents_of.get(t["table"], []), values, asg_of, projs, prows, det_values,
+                                          n_train, prov, where, det_runs, entry_offset)
+                else:
                     stats["body tables"] += t["point"] == 1
-                    continue
-                prov = None
-                if provenance:
-                    k = kept[int(t["table"])]
-                    at = lambda c: k[c] if c >= 0 else -1
-                    prov = dict(depth=int(t["depth"]), keys=[[k[c] for c in key if k[c] >= 0] for key in t["keys"]],
-                                output_position=at(int(t["output_position"])), output_color=at(int(t["output_color"])),
-                                flows=flows.get(int(t["table"]), np.zeros((0, 5), np.int32)))
-                result += parse_table(t, ents_of.get(t["table"], []), values, asg_of, projs, prows, det_values,
-                                      n_train, prov, f"{task} {case}")
+                marks[at] = len(det_values)
         except DataFault as f:
-            faults[(task, case)] = str(f); continue
+            return Parsed(tabs, records, fl, result, det_values, det_runs, marks, str(f), at)
+        if base is not None:
+            stats["body tables"] += int(((base.tabs["point"] == 1) & (base.tabs["table"] < below)).sum())
         if provenance:
             check_provenance(task, case, result)   # a fault of the export's provenance fails the whole build
             if fl is not None:
                 n, unchecked, bad = copy_flow_check(
-                    fl, {int(t["table"]): list(t["column_types"]) for t in records}, kept, result,
-                    dets, det_values, subtypes, f"{task} {case}")
+                    fl, {int(t["table"]): list(t["column_types"]) for t in every}, kept, result,
+                    dets, subtypes, where)
                 copies["checked"] += n; copies["values unchecked"] += unchecked
                 for kind, row, detail in bad:
                     copies[kind] += 1
@@ -698,14 +868,43 @@ def parse_tables(tables_dir, tasks_dir=Path(__file__).resolve().parents[1] / "da
                         copies["first"].append(f"{task} {case} flow {row} (table, column, kind, source table, source "
                                                f"column, det): {detail}")
                 if bad:
-                    copies["cases"] += 1; copies["by case"][f"{task} {case}"] = len(bad)
-        out[(task, case)] = result
+                    copies["cases"] += 1; copies["by case"][where] = len(bad)
+        return Parsed(tabs, records, fl, result, det_values, det_runs, marks, None, None)
+
+    out, faults = {}, {}
+    relation_tables, unseen = 0, {}
+    for task in tables.tasks() + [t for t in bases_of if t not in tables.span]:
+        tabs = tables.rows(task)
+        task_bases = bases_of.get(task, bases.iloc[:0])
+        cut_by = {(r.task, r.case): r for r in task_bases.itertuples()}
+        base_keys = {(r.task, r.base) for r in task_bases.itertuples()}
+        index_rows = index.rows(task)
+        frames = TaskFrames(by_case(index_rows), by_case(assigned.rows(task)),
+                            by_case(with_projection_ids(projections.rows(task))), by_case(projection_rows.rows(task)),
+                            by_case(flow_rows.rows(task)) if flow_rows is not None else {}, cut_by)
+        groups = by_case(tabs)
+        order = list(groups) + [key for key in cut_by if key not in groups]      # the order of the export's files
+        done_task = {}
+        for key in [k for k in order if k not in cut_by] + [k for k in order if k in cut_by]:     # a base before the cases cut from it
+            done = parse_case(*key, groups.get(key, tabs.iloc[:0]), cut_by.get(key), frames)
+            if done.fault is None:
+                done_task[key] = done.result
+            else:
+                faults[key] = done.fault
+            if key in base_keys:
+                parsed[key] = done
+        parsed.clear()
+        done_task = {key: done_task[key] for key in order if key in done_task}
+        for reason, n in reconcile_unseen(done_task, tabs, index_rows, task_bases).items():
+            unseen[reason] = unseen.get(reason, 0) + n
+        relation_tables += sum(1 for ts in done_task.values() for t in ts if not t.evidence)
+        if sink is None:
+            out.update(done_task)
+        elif done_task:
+            sink(done_task)
     stats["copy flows"] = copies
-    reconcile_unseen(out, tables, index)
-    relation_tables = [t for ts in out.values() for t in ts if not t.evidence]
-    unseen, _ = unseen_counts(out)
-    if sum(unseen.values()) * 2 > len(relation_tables):
-        raise DataFault(f"more than half of the {len(relation_tables)} relation tables are unseen, which means a bug "
+    if sum(unseen.values()) * 2 > relation_tables:
+        raise DataFault(f"more than half of the {relation_tables} relation tables are unseen, which means a bug "
                         f"in the loader or in the export: {sum(unseen.values())} unseen, by reason {unseen}")
     return out, faults, stats
 
@@ -718,14 +917,23 @@ def records_by(df, key):
     return out
 
 
-def parse_table(t, ents, values, asg_of, projs, prows, det_values, n_train, prov=None, where=""):
+def parse_table(t, ents, values, asg_of, projs, prows, det_values, n_train, prov=None, where="", det_runs=None, entry_offset=0):
     """The Tables of the export's table t, from its entries `ents` (rows of the index, as dicts): one per
     assignment that its entries hold, in the order of each assignment's first entry, or one where they hold one
     assignment or none; or its unseen table. Raises DataFault where the values cannot be read. An entry the
     encoder cannot see gives one marker row; a Table whose every entry is unseen is unseen. `prov` gives the
     table's provenance attributes (`Table`), which every Table of t shares, or None. An entry's rows are read
-    through `entry_runs`; `where` names the case in its faults."""
+    through `entry_runs`; `where` names the case in its faults, which include a DET whose `det_columns` are not one
+    per column of its `det_types`. `det_runs` is the case's {(DET relation, width, run
+    bytes): cells}, which the Tables of a case share their `det_cells` arrays through; None gives a fresh one.
+    `entry_offset` is added to the number of each entry in the Tables' `entry`, for a case that holds the entries of
+    its tables from the cut alone: the count of the entries of the tables before it."""
     prov = prov or {}
+    det_runs = {} if det_runs is None else det_runs
+    for i, (rel, types, _, paths) in enumerate(case_dets(t)):
+        if paths and len(paths) != len(types):
+            raise DataFault(f"{where} table {t['table']} DET {i} ({rel}): its det_columns {paths} are not one per "
+                            f"column of its det_types {types}")
     if not pd.isna(t["fault"]):   # a null reads as None or as nan, by the column's dtype
         return [unseen_table(t, "the table faults", prov=prov)]
     if t[TABLE_PROJECTIONS] == PROJECTIONS_STOPPED:
@@ -738,18 +946,27 @@ def parse_table(t, ents, values, asg_of, projs, prows, det_values, n_train, prov
     # part, marker), the most rows of one entry or of one projection at an entry, and its unseen entries by reason
     splits = {}
     assignment = {}   # entry -> the index of each DET's value at the entry's assignment
+    cells_at = {}     # entry -> the cells of each DET's value at the entry's assignment, None where it has none
+    det_types = det_type_names(t)
 
     def assignment_of(e):
         if e["entry"] not in assignment:
             a = np.full(len(det_rel), -1, np.int32)
+            cells_at[e["entry"]] = [None] * len(det_rel)
             for r in asg_of.get(e["entry"], []):
                 run = rows_at(int(r["offset"]), int(r["rows"]), det_w[r["det"]])
-                a[r["det"]] = det_values.setdefault((det_rel[r["det"]], run.tobytes()), len(det_values))
+                b = run.tobytes()
+                a[r["det"]] = det_values.setdefault((det_rel[r["det"]], b), len(det_values))
+                key = (det_rel[r["det"]], run.shape[1], b)
+                if key not in det_runs:
+                    det_runs[key] = np.frombuffer(b, np.int32).reshape(run.shape)
+                cells_at[e["entry"]][r["det"]] = det_runs[key]
             assignment[e["entry"]] = a
         return assignment[e["entry"]]
 
     def split_of(e):
-        return splits.setdefault(assignment_of(e).tobytes(), {"groups": [], "largest": 0, "unseen": {}})
+        return splits.setdefault(assignment_of(e).tobytes(), {"groups": [], "largest": 0, "unseen": {},
+                                                              "det_cells": cells_at[e["entry"]]})
 
     def rows_at(off, n, w):
         if off + n * w > len(values):
@@ -774,7 +991,7 @@ def parse_table(t, ents, values, asg_of, projs, prows, det_values, n_train, prov
         a = assignment_of(e)
         split_of(e)["groups"].append((full, present, np.full(n, ex, np.int16), np.full(n, kind, np.int8),
                                       np.tile(a, (n, 1)), np.full(n, int(e["model"]), np.int32),
-                                      np.full(n, int(e["entry"]), np.int32), np.full(n, part, np.int32),
+                                      np.full(n, int(e["entry"]) + entry_offset, np.int32), np.full(n, part, np.int32),
                                       np.full(n, marker, bool)))
 
     def unseen_entry(e, reason):
@@ -798,7 +1015,7 @@ def parse_table(t, ents, values, asg_of, projs, prows, det_values, n_train, prov
             note_largest(e, n)
             add(rows_at(off, n, w), cols, e, part=j)
 
-    def table(groups, largest, unseen_entries):
+    def table(groups, largest, unseen_entries, det_cells):
         if unseen_entries and all(g[8].all() for g in groups):
             return unseen_table(t, wholly_unseen_reason(unseen_entries), unseen_entries, prov)
         cat = lambda i, empty: np.concatenate([g[i] for g in groups]) if groups else empty
@@ -809,8 +1026,10 @@ def parse_table(t, ents, values, asg_of, projs, prows, det_values, n_train, prov
                      assignment=cat(4, np.zeros((0, len(det_rel)), np.int32)), model=cat(5, np.zeros(0, np.int32)),
                      entry=cat(6, np.zeros(0, np.int32)), part=cat(7, np.zeros(0, np.int32)),
                      marker=cat(8, np.zeros(0, bool)), unseen_entries=unseen_entries, largest=largest,
-                     export_table=int(t["table"]), det_relations=det_rel)
-    return [table(sp["groups"], sp["largest"], sp["unseen"]) for sp in splits.values()] or [table([], 0, {})]
+                     export_table=int(t["table"]), det_relations=det_rel,
+                     det_types=det_types, det_columns=det_column_paths(t), det_cells=det_cells)
+    return [table(sp["groups"], sp["largest"], sp["unseen"], sp["det_cells"]) for sp in splits.values()] or \
+        [table([], 0, {}, [None] * len(det_rel))]
 
 
 def table_groups(tables):
@@ -826,7 +1045,7 @@ def table_groups(tables):
     return out
 
 
-LOADER_VERSION = 18  # raise on any change to parse_tables or Table
+LOADER_VERSION = 24  # raise on any change to parse_tables or Table
 
 
 def table_stamp(tables_dir):
@@ -851,13 +1070,8 @@ def export_violations(tables_dir):
 
 def copy_flow_rule(stats, strict, where):
     """Prints the copy-flow totals of `stats` (`parse_tables`), and raises DataFault with the first violations
-    where `strict` and there is one. A cache built before the check holds no totals, and prints that it is
-    unchecked."""
-    c = stats.get("copy flows")
-    if c is None:
-        print(f"{where}: the cache holds no copy-flow totals, so its copy flows are unchecked; a rebuild of the cache "
-              f"checks them", flush=True)
-        return
+    where `strict` and there is one."""
+    c = stats["copy flows"]
     line = (f"copy flows of {where}: {c['checked']} checked, {c['type']} with another type than their source column, "
             f"{c['value']} columns with values outside their sources, in {c['cases']} cases; "
             f"{c['values unchecked']} columns not checked for values"
@@ -869,33 +1083,43 @@ def copy_flow_rule(stats, strict, where):
 
 
 def load_tables(tables_dir, cache, strict=True, allow_violations=False, tasks_dir=None):
-    """parse_tables, through a pickle at `cache` keyed by the export, the task files and the loader version. The
-    stamp is also in the file `<cache>.stamp.json`, which is read first, so that a stale pickle is not loaded.
+    """parse_tables, through a cache at `cache` keyed by the export, the task files and the loader version. The cache is a
+    directory: `stamp.json` (the stamp), `summary.pkl` (`skipped`, `stats` and the count of shards) and `<k>.pkl`, the
+    k-th task's {(task, case): [Table]} (`parse_tables`' `sink`), each a pickle of protocol 5. A load reads
+    `stamp.json` first and takes the cache only where it equals the export's stamp. A build writes into
+    `<cache>.partial-<pid>`, `stamp.json` last, and renames it to `cache`, so a cache that stands was built whole; where
+    another process's build of the same stamp stands by then, the build keeps that one. A build that raises removes its
+    directory, and a build removes the `.partial-<pid>` of each process that no longer runs. A stale `cache` is removed
+    before the build. Gives every case's Tables in one dict, the faults and the stats, from a build as from a load.
     Before a build, an export whose checks.txt reports a violation (`export_violations`) is refused with a
     DataFault, unless `allow_violations`; an export without one is built with a line that says so. With `strict`,
-    a copy flow that breaks its join (`copy_flow_check`) is a DataFault, from a build or from the pickle's totals
+    a copy flow that breaks its join (`copy_flow_check`) is a DataFault, from a build or from the cache's totals
     (`copy_flow_rule`). `tasks_dir` is the task files' directory, by default the repo's, which the stamp reads
     whatever it is."""
     tasks = Path(tasks_dir) if tasks_dir else Path(__file__).resolve().parents[1] / "data/tasks"
-    stamp = table_stamp(tables_dir)
-    sidecar = f"{cache}.stamp.json"
-    cached, cached_stamp = None, None
-    if os.path.exists(cache):
-        cached_stamp = read_sidecar(sidecar)
-        if cached_stamp is None:   # no sidecar: the stamp inside the pickle
-            cached = pickle.load(open(cache, "rb"))
-            cached_stamp = list_or_tuple(cached.get("stamp"))
-            if cached_stamp == list_or_tuple(stamp):
-                write_sidecar(sidecar, stamp)
-        if cached_stamp == list_or_tuple(stamp):
-            if cached is None:
-                cached = pickle.load(open(cache, "rb"))
-            copy_flow_rule(cached["stats"], strict, tables_dir)
-            return cached["tables"], cached["skipped"], cached["stats"]
-        print(f"cache rebuilt: {stamp_difference(cached_stamp, stamp)}", flush=True)
-    else:
-        print(f"building cache for {tables_dir}", flush=True)
-    cached = None   # frees a stale pickle before the rebuild
+    stamp, cache = list(table_stamp(tables_dir)), Path(cache)
+    if cache.exists() and not cache.is_dir():
+        raise DataFault(f"{cache} is no directory: the cache of a tables export is a directory of pickles")
+    cached = read_stamp(cache)
+    if cached != stamp:
+        if cache.exists():
+            print(f"cache rebuilt: {stamp_difference(cached, stamp)}", flush=True)
+            remove_tree(cache)
+        else:
+            print(f"building cache for {tables_dir}", flush=True)
+        build_cache(tables_dir, cache, stamp, tasks, allow_violations)
+    with open(cache / "summary.pkl", "rb") as f:
+        summary = pickle.load(f)
+    out = {}
+    for k in range(summary["shards"]):
+        with open(cache / f"{k}.pkl", "rb") as f:
+            out.update(pickle.load(f))
+    copy_flow_rule(summary["stats"], strict, tables_dir)
+    return out, summary["skipped"], summary["stats"]
+
+
+def build_cache(tables_dir, cache, stamp, tasks, allow_violations):
+    """Builds the cache directory `cache` of an export (`load_tables`) with the stamp `stamp`."""
     violations = export_violations(tables_dir)
     if violations is None:
         print(f"{tables_dir} carries no checks.txt: the export's own checks are not known", flush=True)
@@ -904,38 +1128,66 @@ def load_tables(tables_dir, cache, strict=True, allow_violations=False, tasks_di
         if not allow_violations:
             raise DataFault(f"{line}; allow_violations (--allow-check-violations) builds the cache anyway")
         print(f"{line}; built under allow_violations", flush=True)
-    tables, skipped, stats = parse_tables(tables_dir, tasks)
-    if os.path.exists(sidecar):
-        os.remove(sidecar)   # the sidecar stays only beside a pickle that was written whole
-    pickle.dump({"stamp": stamp, "tables": tables, "skipped": skipped,
-                 "stats": stats}, open(cache, "wb"))
-    write_sidecar(sidecar, stamp)
-    copy_flow_rule(stats, strict, tables_dir)
-    return tables, skipped, stats
+    for left in cache.parent.glob(f"{cache.name}.partial-[0-9]*"):
+        if not process_runs(int(left.name.rsplit("-", 1)[1])):
+            remove_tree(left)
+    partial = cache.parent / f"{cache.name}.partial-{os.getpid()}"
+    remove_tree(partial)
+    partial.mkdir(parents=True)
+    shards = 0
+
+    def sink(task_tables):
+        nonlocal shards
+        with open(partial / f"{shards}.pkl", "wb") as f:
+            pickle.dump(task_tables, f, protocol=5)
+        shards += 1
+
+    try:
+        _, skipped, stats = parse_tables(tables_dir, tasks, sink)
+        with open(partial / "summary.pkl", "wb") as f:
+            pickle.dump({"skipped": skipped, "stats": stats, "shards": shards}, f, protocol=5)
+        with open(partial / "stamp.json", "w") as f:
+            json.dump(stamp, f)
+        try:
+            os.rename(partial, cache)
+        except OSError:
+            if read_stamp(cache) != stamp:
+                raise
+            remove_tree(partial)   # another process's build of this stamp ended first
+    except BaseException:
+        remove_tree(partial)
+        raise
 
 
 STAMP_PARTS = ("loader version", "export", "index mtime", "tasks mtime", "flows mtime", "orientation types mtime")
 
 
-def list_or_tuple(stamp):
-    return list(stamp) if isinstance(stamp, (list, tuple)) else stamp
-
-
-def read_sidecar(path):
-    """The stamp in the sidecar file at `path` (a list), or None where there is no readable sidecar."""
+def read_stamp(cache):
+    """The stamp (a list) in the cache directory `cache`, or None where it holds no readable `stamp.json`."""
     try:
-        with open(path) as f:
+        with open(Path(cache) / "stamp.json") as f:
             return json.load(f)
     except (OSError, ValueError):
         return None
 
 
-def write_sidecar(path, stamp):
+def remove_tree(path):
+    """Removes the directory `path` with what it holds; no fault where it is gone, or goes while this runs."""
     try:
-        with open(path, "w") as f:
-            json.dump(list(stamp), f)
-    except OSError as e:
-        print(f"no stamp sidecar written at {path}: {e}", flush=True)
+        shutil.rmtree(path)
+    except FileNotFoundError:
+        pass
+
+
+def process_runs(pid):
+    """Whether a process with the id `pid` runs."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        pass
+    return True
 
 
 def stamp_difference(cached, current):
@@ -1133,8 +1385,9 @@ def attend(q, k, v, mask, flex=None):
 def prev_attention(q, k, mask, rows, P):
     """The attention of the rows `rows` [s] (places among the B N rows of q [B, N, H, w]) over the P pooled vectors
     that follow the N rows among the keys k [B, N + P + ..., H, w], under the key mask [B, 1, 1, keys], as a softmax
-    over those keys alone: [s, H, P] float. It reads the scores that `attend` takes and changes nothing; the share of
-    a pooled vector here is its share of the row's attention over the pooled vectors."""
+    over those keys alone: [s, H, P] float. It reads the scores that `attend` takes, the parent bias's channel
+    (`Block`) among them, and changes nothing; the share of a pooled vector here is its share of the row's attention
+    over the pooled vectors."""
     B, N, H = q.shape[:3]
     b = torch.div(rows, N, rounding_mode="floor")
     qs = q.reshape(B * N, H, -1).index_select(0, rows).float()                       # [s, H, w]
@@ -1174,10 +1427,15 @@ class Block(nn.Module):
     positions of the inner products of a head's channels, scaled, plus the equality term within the table. The keys
     and values also hold each table's earlier pooled vectors and the rows of its program's earlier evidence tables
     after this layer, and, with `source_rows`, the rows of each derived table's source tables after this layer, whose
-    equality term compares each column with the source columns its flows name, under the weights `src_eq`. `ctx` (a
-    `Batch`) holds those, the key mask and the equality term's query and key channels; `mats` the maps that
-    `FeatureEncoder.prepare` gives in head layout."""
-    def __init__(self, c, heads, slots, mlp, source_rows=False):
+    equality term compares each column with the source columns its flows name, under the weights `src_eq`. With
+    `parent_bias` B (not 0), every head's score of a row against an earlier table's pooled vector gains the learned
+    `parent_bias` [3] at the parent type of that table to the row's table (`parent_types`: direct source, ancestor,
+    unrelated), which starts at [B, 0, 0]. The bias enters as PARENT_CHANNELS more channels of q and k: on every query
+    1 then zeros, on a pooled vector's key its bias then zeros, and zeros on every other key; the scores are unscaled
+    inner products (the q map holds the 1 / sqrt(w) of the other channels), so the channel adds the bias alone, and
+    the width stays a multiple of 8. `ctx` (a `Batch`) holds those, the key mask, the parent types and the
+    equality term's query and key channels; `mats` the maps that `FeatureEncoder.prepare` gives in head layout."""
+    def __init__(self, c, heads, slots, mlp, source_rows=False, parent_bias=0.0):
         super().__init__()
         self.heads = heads
         self.n1, self.n2 = nn.LayerNorm(c), nn.LayerNorm(c)
@@ -1186,6 +1444,8 @@ class Block(nn.Module):
         self.eq = nn.Parameter(torch.zeros(heads, slots, slots))   # per head and column-position pair
         if source_rows:   # per head, and per pair of a column's position and its source column's position
             self.src_eq = nn.Parameter(torch.zeros(heads, slots, slots))
+        if parent_bias:   # per parent type: direct source, ancestor, unrelated
+            self.parent_bias = nn.Parameter(torch.tensor([float(parent_bias), 0.0, 0.0]))
 
     def weights(self, pos):
         """The learned weight of each pair of the columns at positions pos [B, m], per head: [B, H, m, m]."""
@@ -1208,6 +1468,12 @@ class Block(nn.Module):
         if ctx.src is not None:
             sk, sv = ctx.src.layer(l)
             k, v = torch.cat([k, sk], 1), torch.cat([v, sv], 1)
+        if ctx.parent is not None:   # the parent bias, as a channel of q and k
+            pb = self.parent_bias[ctx.parent]                                        # [B, P]
+            kc = F.pad(pb, (N, k.shape[1] - N - pb.shape[1])).to(k.dtype)           # [B, keys]
+            k = torch.cat([k, F.pad(kc[:, :, None, None].expand(-1, -1, H, 1), (0, PARENT_CHANNELS - 1))], -1)
+            q = torch.cat([q, F.pad(q.new_ones(1, 1, 1, 1), (0, PARENT_CHANNELS - 1)).expand(B, N, H, -1)], -1)
+        mask = ctx.mask
         flex = None
         if ctx.flex is not None:   # each group's values, presence and weights, for the rows, the first N keys
             flex = ([(vals, pres, self.weights(pos)) for vals, pres, pos in ctx.flex], N)
@@ -1216,10 +1482,10 @@ class Block(nn.Module):
             cv = F.pad(ctx.code_v, (0, 0, v.shape[1] - ctx.code_v.shape[1], 0)).to(v.dtype)
             Wv = v.shape[-1]
             v = torch.cat([v, cv[:, :, None].expand(-1, -1, H, -1)], -1)
-            o = attend(q, k, v, ctx.mask, flex).view(B, N, H, -1)
+            o = attend(q, k, v, mask, flex).view(B, N, H, -1)
             o, acc = o[..., :Wv].reshape(B, N, H * Wv), o[..., Wv:]
         else:
-            o = attend(q, k, v, ctx.mask, flex)
+            o = attend(q, k, v, mask, flex)
         if ctx.probe is not None and ctx.prev is not None:
             ctx.probe["out"].append(prev_attention(q, k, ctx.mask, ctx.probe["rows"], ctx.prev.shape[1]))
         x = x + F.linear(o, mats["o"], mats["bo"]).view(x.shape)
@@ -1638,6 +1904,38 @@ def source_tables(tables):
     return tabs, pairs
 
 
+PARENT_DIRECT, PARENT_ANCESTOR, PARENT_UNRELATED = 0, 1, 2   # the parent types of `parent_types`
+PARENT_CHANNELS = 8   # the channels added to q and k for the parent bias (`Block`): the bias, then zeros, so the width stays a multiple of 8
+
+
+def parent_types(tables):
+    """The parent type of each table of a program to each table, [tables, tables] int8, row i the type of each table
+    j to table i: PARENT_DIRECT where j < i is a source table of a column of table i (`column_sources`),
+    PARENT_ANCESTOR where j is not that but a direct source of a direct or ancestor table of i, and PARENT_UNRELATED
+    otherwise. Only earlier tables are sources here, so a table that feeds only a later Table of i's export table is
+    no ancestor of i. A grid table (ex_input, ex_output) that a column's flows name is a source table like any other; its own
+    columns have no sources, so no table is an ancestor through it. Every type is PARENT_UNRELATED in a program
+    without the export's column-level provenance. Kept on the first table while the program holds the same Tables."""
+    memo = tables[0].__dict__.setdefault("_unique", {}) if tables else {}
+    hit = memo.get(("parent types",))
+    if hit is not None and len(hit[0]) == len(tables) and all(x is y for x, y in zip(hit[0], tables)):
+        return hit[1]
+    direct = [{j for col in cols for j, _ in col if j < i} for i, cols in enumerate(column_sources(tables))]
+    out = np.full((len(tables), len(tables)), PARENT_UNRELATED, np.int8)
+    for i in range(len(tables)):
+        reach, todo = set(), list(direct[i])
+        while todo:
+            j = todo.pop()
+            if j not in reach:
+                reach.add(j)
+                todo += direct[j]
+        out[i, sorted(reach - direct[i])] = PARENT_ANCESTOR
+        out[i, sorted(direct[i])] = PARENT_DIRECT
+    if tables:
+        memo[("parent types",)] = (list(tables), out)
+    return out
+
+
 def keep_occurrence(ex_output, mask, dependent):
     """Makes visible, in place, each hidden dependent Color field of ex_output (`dependent` [n]) whose value no
     other example's output shows in a visible field, one field at a time in row order, so that each hidden
@@ -1849,12 +2147,14 @@ class Batch:
     equality term's query and key channels with the zeros that pad q and k; `ev`, the `EvidenceKeys` of the batch's
     evidence rows; `flex`, the groups of the flex equality term; `probe`, where it is set, a dict whose "rows" [s]
     are places among the batch's B N rows, to whose "out" each Block adds those rows' attention over the pooled vectors
-    alone. The per-layer
+    alone; `parent` [B, P] long, where the parent bias is on, the parent type (`parent_types`) of the table of each
+    pooled vector to the batch item's table. The per-layer
     parts are views that `unbind` gives of one tensor of every layer, whose backward pass builds that tensor's
     gradient once, where a view per layer by indexing builds a gradient of every layer's size at each layer."""
     def __init__(self, level, mask, prev):
         self.level, self.mask, self.prev = level, mask, prev
         self.eq_q = self.eq_k = self.ev = self.flex = self.src = self.code_v = self.code_layer = self.probe = None
+        self.parent = None
 
 
 class Evidence:
@@ -2022,15 +2322,19 @@ class SourceKeys:
 
 class FeatureEncoder(nn.Module):
     def __init__(self, embed, in_index, id_dim, orientations, K=4, layers=2, c=32, heads=4, mlp=2, examples=16,
-                 code_dim=32, number_range=(-64, 1023), margin_range=(-64, 255), recency=16, gram=16, equality="codes", source_rows=False, ptr_equality=False):
+                 code_dim=32, number_range=(-64, 1023), margin_range=(-64, 255), recency=16, gram=16, equality="codes", source_rows=False, ptr_equality=False,
+                 parent_bias=0.0):
         """`examples` is the width of an Example's one-hot equality code, more than any example index; `mlp` the
         width of the feed-forward layers, in multiples of c; `gram` the channels each Gram matrix of the readout
         projects to; `equality` the means of the equality term, one of EQUALITY_MODES; `source_rows`, whether each
         derived table's rows attend also to the rows of its source tables (`source_tables`); `ptr_equality`, whether the
-        pointer heads take equality terms (`masked_fields`)."""
+        pointer heads take equality terms (`masked_fields`); `parent_bias`, where not 0, the starting direct-source value
+        of each Block's parent bias (`Block`), and 0 for none."""
         super().__init__()
         assert equality in EQUALITY_MODES, equality
         assert not (source_rows and equality == "flex"), "the source rows' equality term takes codes or random"
+        assert not (parent_bias and equality == "flex"), "the parent bias takes the codes or random equality term"
+        self.parent_init = float(parent_bias)
         self.equality, self.source_rows, self.ptr_equality = equality, source_rows, ptr_equality
         # the width of a row's pointer codes: a Color's one-hot, an Example's, an Ident's random code, padded to 8
         self.ptr_codes = up8(10 + examples + code_dim) if ptr_equality and source_rows else 0
@@ -2054,7 +2358,8 @@ class FeatureEncoder(nn.Module):
         self.example_kind = nn.Embedding(3, c)
         self.bind_example, self.bind_assignment, self.bind_model = (nn.Parameter(torch.randn(c)) for _ in range(3))
         self.recency = nn.Embedding(recency + 1, c)              # an earlier table's distance back, on its invariant channels
-        self.blocks = nn.ModuleList(Block(c, heads, self.slots, mlp, source_rows) for _ in range(layers))
+        self.blocks = nn.ModuleList(Block(c, heads, self.slots, mlp, source_rows, parent_bias)
+                                    for _ in range(layers))
         self.pool = Pool(c, heads, K, mlp)
         # an unseen entry's marker row, or a table the encoder cannot see, on its invariant channels: a fixed vector,
         # not learned, drawn from its own generator
@@ -2145,6 +2450,14 @@ class FeatureEncoder(nn.Module):
         self.eq_all = torch.stack([blk.eq for blk in self.blocks]) if len(self.blocks) else None   # [L, H, slots, slots]
         if self.source_rows:
             self.src_eq_all = torch.stack([blk.src_eq for blk in self.blocks]) * SOURCE_EQ_GAIN
+
+    def parent_bias_values(self):
+        """Each Block's parent bias, per parent type, a list over the layers: {"direct": [...], "ancestor": [...],
+        "unrelated": [...]}; None without the parent bias."""
+        if not self.parent_init:
+            return None
+        vals = [blk.parent_bias.detach().float().cpu().tolist() for blk in self.blocks]
+        return {name: [v[k] for v in vals] for k, name in enumerate(("direct", "ancestor", "unrelated"))}
 
     def prepared(self):
         """The matrices `prepare` built: each equivariant map's and the head layout maps."""
@@ -2494,12 +2807,13 @@ class FeatureEncoder(nn.Module):
         rows also attend, at each layer, to the rows of its source tables (`source_tables`) after that layer, kept by
         `SourceRows` from their own level, with the equality term of each column against the source columns its flows
         name; and with `ptr_equality` too, the last layer's attention also gathers the source keys' pointer codes for
-        the masked heads. Call `prepare` first. With `masks` (per
+        the masked heads. With the parent bias, each row's scores against the pooled vectors gain it (`Block`). Call
+        `prepare` first. With `masks` (per
         program, per table, a field mask [n, columns] or None), the masked fields are hidden and the result is (pooled
         vectors, records): a record (program, table index, masked_fields' result) per table with a masked field.
         With `probe` too, a record of a table with hidden remote fields gains "parent_attention" [m, layers] and
-        "parent_chance" [m] (`parent_shares`), NaN for its other fields; the probe reads the attention scores and
-        changes no computed value."""
+        "parent_chance" [m] (`parent_shares`), NaN for its other fields; the probe reads the attention scores, with the
+        parent bias where it is on, and changes no computed value."""
         dev, dt, c, K = self.cross.weight.device, self.cross.weight.dtype, self.c, self.K
         act = torch.get_autocast_dtype(dev.type) if torch.is_autocast_enabled(dev.type) else dt
         L, flex = len(self.blocks), self.equality == "flex"
@@ -2522,6 +2836,7 @@ class FeatureEncoder(nn.Module):
                  and tables[1].evidence and tables[0].n and tables[1].n}
         group = [np.array(table_groups(tables)) for tables, _, _ in programs]
         srcs = [source_tables(tables) if self.source_rows else None for tables, _, _ in programs]
+        parents = [parent_types(tables) if self.parent_init else None for tables, _, _ in programs]
         is_source = [{j for src in s[0] for j in src} if s is not None else set() for s in srcs]
         store = SourceRows()
         pack = Pack()
@@ -2594,6 +2909,9 @@ class FeatureEncoder(nn.Module):
                         plan["back"] = pack.add(np.stack([np.repeat(np.minimum(group[it["p"]][t] - group[it["p"]][:t],
                                                                                self.max_recency), K) for it in its]).reshape(-1),
                                                 torch.long)
+                        if self.parent_init:   # each earlier table's parent type to the item's table
+                            plan["parent"] = pack.add(np.stack([np.repeat(parents[it["p"]][t, :t], K) for it in its]),
+                                                      torch.long)
                     if layout and not flex:   # the batch's own layout, with the zeros that pad q and k to a multiple of 8
                         plan["eq"] = self.batch_layout(layout, [it["plan"] for it in its], pack)
                     # the rows of the batch's tables that are sources of a later table, and the batch's source keys
@@ -2703,6 +3021,8 @@ class FeatureEncoder(nn.Module):
                     rec = F.pad(self.recency(pack[plan["back"]])[:, None], (0, 0, 0, NPOS - 1)).view(B, t * K, NPOS, c)
                     prev = pooled.view(-1, NPOS, c).index_select(0, pack[plan["prev"]]).view(B, t * K, NPOS, c) + rec
                 ctx = Batch(level=t, mask=pack[plan["key_mask"]], prev=prev)
+                if "parent" in plan:
+                    ctx.parent = pack[plan["parent"]]
                 if eq is not None and plan["eq"] is not None:
                     q_, k_, (sel, pad) = qs[j_], ks[j_], plan["eq"]
                     if sel is not None:
@@ -2890,15 +3210,19 @@ class FeatureEncoder(nn.Module):
         tables (`column_sources`), and "parent_chance" [m], the share of those vectors among the vectors the row
         attends to (`keep` [t K]), the share under equal scores, and "parent_recent" [m, layers], the same share on
         the vectors of the k latest earlier tables that the row attends to and that are not source tables of the
-        column, k the number of its source tables that it attends to, a reference with the sources' recency. NaN for a
-        field that is not remote, or whose source tables give no vector the row attends to; "parent_recent" NaN also
-        where fewer than k other earlier tables give one."""
+        column, k the number of its source tables that it attends to, a reference with the sources' recency, and
+        "parent_recent_nondirect" [m, layers], the same on the k latest earlier tables that are no source table of any
+        column of the table, which no parent bias on direct sources reaches. NaN for a field that is not remote, or
+        whose source tables give no vector the row attends to; "parent_recent" and "parent_recent_nondirect" NaN also
+        where fewer than k such earlier tables give one."""
         rr, ii = np.nonzero(field_mask)
         lab, src = column_labels(tables, t), column_sources(tables)[t]
         place = {r: k for k, r in enumerate(np.flatnonzero((field_mask & (lab == REMOTE)).any(1)))}
         keep = keep.cpu().numpy()
         share = np.full((len(rr), len(attn)), np.nan)
         chance, recent = np.full(len(rr), np.nan), np.full((len(rr), len(attn)), np.nan)
+        recent_nd = np.full((len(rr), len(attn)), np.nan)
+        direct = {i for col in src for i, _ in col}
         a = [x.cpu().numpy() for x in attn]
         slots_of = lambda tabs: np.array([i * self.K + k for i in tabs for k in range(self.K)], np.int64)
         for f, (r, c) in enumerate(zip(rr, ii)):
@@ -2913,7 +3237,11 @@ class FeatureEncoder(nn.Module):
             others = [i for i in range(t - 1, -1, -1) if keep[i * self.K] and i not in parents][:len(parents)]
             if len(others) == len(parents):
                 recent[f] = [x[place[r]][:, slots_of(others)].sum(-1).mean() for x in a]
-        return {"parent_attention": share, "parent_chance": chance, "parent_recent": recent}
+            others = [i for i in range(t - 1, -1, -1) if keep[i * self.K] and i not in direct][:len(parents)]
+            if len(others) == len(parents):
+                recent_nd[f] = [x[place[r]][:, slots_of(others)].sum(-1).mean() for x in a]
+        return {"parent_attention": share, "parent_chance": chance, "parent_recent": recent,
+                "parent_recent_nondirect": recent_nd}
 
     def pointer_equality(self, table, field_mask, rows, cols, kept, acc, ids, dev):
         """The equality terms of the pointer scores (`masked_fields`) of the hidden fields at (rows, cols) against the

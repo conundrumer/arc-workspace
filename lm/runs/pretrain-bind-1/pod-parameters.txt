@@ -1,0 +1,5 @@
+Set before the run, from the second code check (lm/runs/pretrain-bind-1/codecheck2, --eval-every 2, exit 0):
+device_gb 3.57, s/step 2.31 (mean of 2 steps; 2.06 and 2.31 at steps 1, 2), against unit 1b's 2.08 GB and 1.28 s.
+r = 3.57 / 2.08 = 1.716, over 1.5: --step-rows = 450000 x 1.5 / 1.716 = 393,277, rounded down to 10,000: 390,000.
+Bound = 4,115 x (2.31 / 1.28) + 900 + 1,800 = 10,131 s (includes the 1,800 s for the cache build).
+Written 11:22:09 EDT on 2026-10-26, before the run started.

@@ -9,13 +9,7 @@ transcript within it. An index is idle where none of the session ids
 `tickets/sessions/<index>` gives is live. `file_ticket.py main --help-all`
 gives the files `tickets/main` and `tickets/main-wanted`."""
 
-import calendar
-import ctypes
-import ctypes.util
-import json
 import os
-import struct
-import time
 from pathlib import Path
 
 from operations.constants import FOREGROUND_MS
@@ -25,7 +19,8 @@ from controlled_markdown import mctx
 from ticket_numbers import SESSIONS, indexes, link_new, session_index, session_line, staged
 from ticketing.vocabulary import SETTLED, Status
 from file_reads import state_stat
-from transcripts import mains_named, project_dirs, session_directory, session_subagents
+from process_readings import harness_sessions as harness_processes
+from transcripts import mains_named, session_directory, session_subagents
 from transcript_snapshots import Refused, SUBJECT_FAULTS
 
 MAIN = "main"
@@ -48,36 +43,6 @@ def live(session: str, now: float) -> bool:
     return False
 
 
-HARNESS_SESSIONS = "sessions"
-"""The directory, beside `projects/` in the harness's config directory, in
-which the harness keeps a file `<pid>.json` for each running session, with
-its `sessionId`, its `pid`, and its `procStart`, the start of that process
-in UTC, in the form `ps -o lstart=` prints."""
-
-
-def harness_processes() -> dict[int, str] | None:
-    """The `pid` of each process the harness's file `<pid>.json` gives that
-    runs, mapped to the `sessionId` of that file. A process counts only
-    where it started when the file gives, so a `pid` another process has
-    taken since does not count. None where a file is not readable or gives
-    no `procStart`."""
-    out: dict[int, str] = {}
-    for d in project_dirs():
-        for path in (d.parent / HARNESS_SESSIONS).glob("*.json"):
-            try:
-                entry = json.loads(path.read_text())
-            except FileNotFoundError:
-                continue
-            except json.JSONDecodeError:
-                return None
-            if "procStart" not in entry:
-                return None
-            started = calendar.timegm(time.strptime(entry["procStart"], PROC_START_FORMAT))
-            if process_started(entry["pid"]) == started:
-                out[entry["pid"]] = entry["sessionId"]
-    return out
-
-
 def running(reader: str) -> frozenset[str] | None:
     """The ids of the sessions that run, by the process the harness's file
     on each gives, which a session that waits on the user keeps. None where
@@ -87,31 +52,6 @@ def running(reader: str) -> frozenset[str] | None:
     if held is None or reader not in held.values():
         return None
     return frozenset(held.values())
-
-
-LIBC = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
-
-PROC_START_FORMAT = "%a %b %d %H:%M:%S %Y"
-
-CTL_KERN, KERN_PROC, KERN_PROC_PID = 1, 14, 1
-
-KINFO_PROC_SIZE = 648
-"""The size of macOS's `struct kinfo_proc`, whose first field, `kp_proc.p_starttime.tv_sec`,
-is a 64-bit integer."""
-
-
-def process_started(pid: int) -> int | None:
-    """The start of process `pid`, in seconds since the epoch, or None where
-    it does not run. Raises OSError where `sysctl` fails."""
-    mib = (ctypes.c_int * 4)(CTL_KERN, KERN_PROC, KERN_PROC_PID, pid)
-    buf = ctypes.create_string_buffer(KINFO_PROC_SIZE)
-    size = ctypes.c_size_t(KINFO_PROC_SIZE)
-    if LIBC.sysctl(mib, 4, buf, ctypes.byref(size), None, 0) != 0:
-        raise OSError(ctypes.get_errno(), os.strerror(ctypes.get_errno()))
-    if size.value == 0:
-        return None
-    (seconds,) = struct.unpack_from("q", buf.raw, 0)
-    return seconds
 
 
 def read_session(path: Path) -> tuple[str, float] | None:

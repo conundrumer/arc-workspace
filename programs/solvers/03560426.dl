@@ -31,14 +31,14 @@ block_corner(Id, P, D) :- blocks.label($U(), P, Id), bb.box(Id, B), box_corner(P
 .decl near(id: Ident, p: Position)
 near(Id, P) :- params.corner(Diag), diag_opposite(Diag, Start), block_corner(Id, P, Start).
 
-// Id2 stands further along the order than Id1.
-.decl beyond(id1: Ident, id2: Ident)
-beyond(Id1, Id2) :-
-    params.order(D), bb.box(Id1, B1), bb.box(Id2, B2), nearer(D, B1, B2).
-
 .init chain = Order<Unit, Ident>
 chain.elem($U(), Id) :- blocks.label($U(), _, Id).
-chain.before($U(), Id1, Id2) :- beyond(Id1, Id2).
+chain.score($U(), Id, K) :-
+    params.order(D), bb.box(Id, B), dist(B, D, K).      // distance from the edge params.order
+
+// Id2 stands further along the order than Id1.
+.decl beyond(id1: Ident, id2: Ident)
+beyond(Id1, Id2) :- chain.rank($U(), Id1, R1), chain.rank($U(), Id2, R2), R1 < R2.
 
 // A block, with a cell its near corner may land on.
 .type Landing = [id: Ident, p: Position]

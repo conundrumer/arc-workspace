@@ -1,6 +1,6 @@
 """Counts the remote fields of a tables export: fields whose column's sources are all in other derived tables.
 
-    python count_remote.py <tables dir> <cache pickle> [max rows, default 4000]
+    python count_remote.py <tables dir> <cache directory> [max rows, default 4000]
 
 ALLOW_CHECK_VIOLATIONS=1 in the environment builds the cache through a violation of the export's checks.txt.
 

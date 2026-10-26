@@ -44,11 +44,11 @@ field_cell(P) :- in(P, Col), params.field(Col).
 .decl mark_cell(p: Position)
 mark_cell(P) :- in(P, Col), params.mark(Col).
 
-// The 3×3 window centered at P: the cell and its eight neighbors, whole on
-// the grid.
+// The 3×3 window centered at field cell P: the cell and its eight
+// neighbors, whole on the grid.
 .decl window(p_center: Position, q: Position)
 window(P, Q) :-
-    in(P, _), interior(P, ZERO),                 // off the frame's border
+    field_cell(P), interior(P, ZERO),            // off the frame's border
     ( Q = P
     ; dir8_elem(D), neighbor(P, D, Q)
     ).
@@ -57,14 +57,16 @@ window(P, Q) :-
 .decl broken(p_center: Position)
 broken(P) :- window(P, Q), !field_cell(Q), !mark_cell(Q).
 
-// The marks of a candidate: a window of field and mark cells with a field
-// center.
+// The marks of a candidate: a window of field and mark cells.
 .decl cand_mark(p_center: Position, q: Position)
-cand_mark(P, Q) :- window(P, Q), mark_cell(Q), field_cell(P), !broken(P).
+cand_mark(P, Q) :- window(P, Q), mark_cell(Q), !broken(P).
 
-// Two windows that share a cell.
+.decl cand(p_center: Position)
+cand(P) :- cand_mark(P, _).
+
+// Two candidates that share a cell.
 .decl overlap(p_center: Position, p_center2: Position)
-overlap(P, P2) :- window(P, Q), window(P2, Q), P != P2.
+overlap(P, P2) :- cand(P), cand(P2), window(P, Q), window(P2, Q), P != P2.
 
 .decl dominated(p_center: Position, ch: Choice)
 
@@ -95,7 +97,7 @@ dominated(P, $Complete()) :- overlap(P, P2), cand_mark(P2, Q), !window(P, Q).
 impl_choice($Count()). impl_choice($Maximal()). impl_choice($Complete()).
 
 .decl square(p_center: Position, ch: Choice)
-square(P, Ch) :- cand_mark(P, _), impl_choice(Ch), !dominated(P, Ch).
+square(P, Ch) :- cand(P), impl_choice(Ch), !dominated(P, Ch).
 
 .decl painted(p: Position, col: Color, ch: Choice)
 painted(Q, Col, Ch) :-

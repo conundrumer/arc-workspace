@@ -224,10 +224,25 @@ impl Walk<'_, '_> {
 /// `modes` of its relation: there is no mode, or every label at the sites
 /// of one mode's columns is bound.
 pub(crate) fn mode_holds(atom: &Atom, bound: &StableHashSet<LabelId>, modes: &[Mode]) -> bool {
+    holds_over(atom, bound, modes, false)
+}
+
+/// Whether some completion of `atom`, an atom that takes sites at the
+/// columns it has none at, can have [`mode_holds`] true where `bound` are
+/// bound: [`mode_holds`], with each column at which the atom has no site
+/// counted as bound, since a site written there later can hold bound
+/// labels alone.
+pub(crate) fn mode_may_hold(atom: &Atom, bound: &StableHashSet<LabelId>, modes: &[Mode]) -> bool {
+    holds_over(atom, bound, modes, true)
+}
+
+/// [`mode_holds`], with a column at which `atom` has no site counted as
+/// bound where `absent_bound`.
+fn holds_over(atom: &Atom, bound: &StableHashSet<LabelId>, modes: &[Mode], absent_bound: bool) -> bool {
     modes.is_empty()
         || modes.iter().any(|mode| {
             mode.bound.iter().all(|column| {
-                atom.sites.iter().find(|site| &site.column == column).is_some_and(|site| {
+                atom.sites.iter().find(|site| &site.column == column).map_or(absent_bound, |site| {
                     let mut labels = StableHashSet::default();
                     site_labels(site, &mut labels);
                     labels.iter().all(|label| bound.contains(label))

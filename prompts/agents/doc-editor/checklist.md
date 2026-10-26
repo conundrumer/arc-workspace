@@ -34,10 +34,6 @@
 - Where you made a whole-document pass, set the `+ document-size-budget:` line of each document your change's Scope gives, as [Whole-document pass](prompts/agents/doc-editor/whole-document.md#whole-document-pass) gives, and check and review that edit, as [Reviewing your edit](prompts/agents/doc-editor.md#reviewing-your-edit) gives.
     + xref: prompts/agents/doc-editor/whole-document.md#whole-document-pass, prompts/agents/doc-editor.md#reviewing-your-edit
 
-# Run the gate
-- Where you have accepted gate outputs to write, read [Gate](prompts/agents/notes/worktree.md#gate), and run the gate as it gives.
-    + xref: prompts/agents/notes/worktree.md#gate
-
 # Write your reply
 - Where your brief gives a report file, write your reply to it, as [Your reply](prompts/agents/doc-editor/reply.md#your-reply) gives.
     + xref: prompts/agents/doc-editor/reply.md#your-reply

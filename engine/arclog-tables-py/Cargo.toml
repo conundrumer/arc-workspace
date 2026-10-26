@@ -1,0 +1,15 @@
+[package]
+name = "arclog-tables-py"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+# The settings, the replay progress and the walk over a corpus that the
+# streams bindings share with these.
+arclog-bindings = { path = "../arclog-bindings" }
+# The core crate's replay and stream types.
+arclog = { path = "../arclog" }
+# The tables and their columns, which these bindings give Python.
+arclog-tables = { path = "../arclog-tables" }
+pyo3 = { version = "0.27.2", features = ["abi3-py312"] }

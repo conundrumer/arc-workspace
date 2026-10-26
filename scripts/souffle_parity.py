@@ -8,10 +8,12 @@ A sentence a tool prints stands in an `mctx` call where the tool prints it.
 """
 
 import argparse
+import json
 import sys
 from collections.abc import Mapping
+from pathlib import Path
 
-from cli.common import all_stems, engine
+from cli.common import all_stems, engine, solver_path
 from controlled_markdown import mctx
 from parity import lib, rerun, snapshot, uses
 
@@ -33,11 +35,14 @@ def parser() -> argparse.ArgumentParser:
         "Write each lib name, each proposer and each form keyword that a file of "
         "`work/arclog/gen/` uses, with the stems of the files that use it, to "
         "`.cache/parity/uses.json` of the main worktree, and print its path."))
-    sub.add_parser("lib", help=mctx(
-        "Write the Souffle rows of each lib element's inputs file under "
+    lib_cmd = sub.add_parser("lib", help=mctx(
+        "Write the Souffle rows of each inputs file of the lib elements under "
         "`.cache/parity/lib/inputs/` of the main worktree whose record is not fresh, to "
         "`.cache/parity/lib/`, and print the path of each record written. "
         "`arclog-cli lib-compare` writes the inputs files."))
+    lib_cmd.add_argument("elements", nargs="*", metavar="element", help=mctx(
+        "The lib elements, each by its name; every element with an inputs file where none "
+        "is given."))
     again = sub.add_parser("rerun", help=mctx(
         "Run one case of a solver again on one pair with every relation written out, and "
         "print the rows of each relation under its arclog name. With `--json`, a rerun that gives "
@@ -49,7 +54,40 @@ def parser() -> argparse.ArgumentParser:
     again.add_argument("--json", action="store_true", help=mctx(
         "Print the relations' rows and the number of each orientation constant of the lib "
         "as one JSON object, in place of the text."))
+    rows = sub.add_parser("case-rows", help=mctx(
+        "Write `<out>/<stem>.json` for each solver: the Souffle rows of its concept case, and of the first case "
+        "that takes each ALT no case before it takes, on each train and test pair, for each relation that "
+        "the column map (`columns/<stem>.json` beside `names/` of `arclog_convert.out`) gives an entry, projected "
+        "onto the columns it gives to compare, with the numbers of the orientation constants; and each relation "
+        "of the run or of the name map it leaves out, with its verdict and reason. Print the path of each file "
+        "written."))
+    rows.add_argument("stems", nargs="+", help=mctx("The solvers, each by its stem."))
+    rows.add_argument("--out", type=Path, required=True, help=mctx("The directory to write the files under."))
+    rows.add_argument("--solvers", type=Path, help=mctx(
+        "The directory to read `<stem>.dl` from, in place of `programs/solvers/`; give the one "
+        "`ARCLOG_SOLVERS` names for a conversion that set it."))
     return top
+
+
+def case_rows(stems: list[str], out: Path, solvers: Path | None) -> int:
+    """Write the file of each stem; 1 where a solver gives no rows."""
+    out.mkdir(parents=True, exist_ok=True)
+    status = 0
+    for stem in stems:
+        file = (solvers / f"{stem}.dl") if solvers else solver_path(stem)
+        try:
+            got = rerun.case_rows(stem, file)
+        except rerun.NoSuchCase:
+            print(mctx("No concept case of {stem}.").format(stem=stem), file=sys.stderr)
+            status = 1
+            continue
+        if not isinstance(got, dict):
+            print(mctx("{stem}: the run gives no rows: {got}").format(stem=stem, got=got), file=sys.stderr)
+            status = 1
+            continue
+        (out / f"{stem}.json").write_text(json.dumps(got))
+        print(out / f"{stem}.json")
+    return status
 
 
 def main(argv: list[str]) -> int:
@@ -65,12 +103,19 @@ def main(argv: list[str]) -> int:
                 print(stem)
         return 0
     if args.cmd == "lib":
-        for path in lib.write_all():
+        try:
+            written = lib.write_all(args.elements)
+        except lib.NoInputsFile as missing:
+            print(mctx("No inputs file of the lib element {name}.").format(name=missing), file=sys.stderr)
+            return 2
+        for path in written:
             print(path)
         return 0
     if args.cmd == "uses":
         print(uses.write_all())
         return 0
+    if args.cmd == "case-rows":
+        return case_rows(args.stems, args.out, args.solvers)
     try:
         got = (rerun.kept_json(args.stem, args.case, args.pair) if args.json
                else rerun.relations(args.stem, args.case, args.pair))

@@ -41,8 +41,9 @@ shape_inner(M, P_grid, P_inner) :-
 // --- the row ---
 
 // The row's places are the lines of the shapes' boxes. A line's rank counts
-// the lines before it, and a connected shape holds every line of its own box,
-// so each shape starts where the one before it ended.
+// the lines of the smaller shapes, which is where its shape starts, and a
+// connected shape holds every line of its own box, so each shape starts where
+// the ones smaller than it end.
 .type Line = [m: Ident, k: number]
 
 .decl line(m: Ident, k: number)
@@ -50,16 +51,15 @@ line(M, K) :- shape_inner(M, _, P_inner), params.pack_dir(D), dist(P_inner, D, K
 
 .init row = Order<Unit, Line>
 row.elem($U(), [M, K]) :- line(M, K).
-row.before($U(), [M, K], [M2, K2]) :-
-    line(M, K), line(M2, K2),
-    ( size.tally(M, N), size.tally(M2, N2), N < N2    // a smaller shape stands nearer the corner
-    ; M = M2, K < K2 ).                               // a shape keeps its own lines in order
+row.score($U(), [M, K], N) :- line(M, K), size.tally(M, N).   // a smaller shape stands nearer the corner
 
 .decl paint(p: Position, col: Color)
 paint(P_grid_out, Col) :-
     shapes.label(Col, P_grid_in, M), shape_inner(M, P_grid_in, P_inner), // a shape cell, seen in its own box
-    params.pack_dir(D), dist(P_inner, D, K), row.rank($U(), [M, K], R),  // the place its line takes
-    in(P_grid_out, _), dist(P_grid_out, D, R),                           // an output grid cell, seated at that place
+    params.pack_dir(D), dist(P_inner, D, K), row.rank($U(), [M, K], R),  // its line, and where its shape starts
+    in(P_start, _), dist(P_start, D, R),                                 // a grid cell where the shape starts
+    opposite(D, D_far), jump(P_start, D_far, K, P_grid_out),             // the shape keeps its own lines in order
+    in(P_grid_out, _),                                                   // an output grid cell
     rest_dir(D_rest), same_dist(D_rest, P_inner, P_grid_out).            // as far off the rest edge as in its own box
 
 out(P_grid, Col) :- paint(P_grid, Col).

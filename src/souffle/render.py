@@ -1,8 +1,9 @@
 """A program as text, each line with the line of the parsed text it
 renders."""
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from engine.engine import Rendered, RenderedLine
 from engine.program import (
@@ -277,12 +278,21 @@ def render(program: Program) -> Rendered:
 
 def rendered_for_run(program: Program) -> list[tuple[str, int | None]]:
     """`program` as Souffle reads it, each include naming its file by its
-    full path: its statements alone, each from a line of its own, with no
-    comment or blank line between them, so that the text is the same
-    wherever the statements stand in the file and whatever comments stand
-    between them."""
+    full path (`keyed_statements` names them otherwise): its statements
+    alone, each from a line of its own, with no comment or blank line
+    between them, so that the text is the same wherever the statements
+    stand in the file and whatever comments stand between them."""
     return [(line.text, line.origin)
             for line in _Renderer(program, absolute=True, bare=True).render()]
+
+
+def keyed_statements(lines: Iterable[str], included: Iterable[str],
+                     named: Callable[[Path], str]) -> str:
+    """`lines`, the statements of `rendered_for_run`, as one text, each
+    include directive of a file of `included` naming that file by
+    `named` of its path, in place of its full path."""
+    renamed = {include(path): include(named(Path(path))) for path in included}
+    return lines_text(renamed.get(line, line) for line in lines)
 
 
 def lines_text(lines: Iterable[str]) -> str:

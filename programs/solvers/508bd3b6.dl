@@ -61,27 +61,20 @@ deflect(P, D, $Side()) :- side_wall(P, D), !open_edge(D).
 
 // --- beam ---
 
-// One outgoing component of a beam heading d at p, inverted where it turns.
-.decl leave_dir(p: Position, d: DiagDir, d_out: Dir, ch: Choice)
-leave_dir(P, D, D_out, Ch) :-
-    in(P, _), impl_choice(Ch), diag_dirs(D, _, D_cmp, _),   // a component of d
-    ( deflect(P, D_cmp, Ch), opposite(D_cmp, D_out)         // turned back
-    ; !deflect(P, D_cmp, Ch), D_out = D_cmp                 // free
-    ).
-
-// The heading the beam leaves p with, its two components recombined.
-.decl bounce(p: Position, d: DiagDir, d_out: DiagDir, ch: Choice)
-bounce(P, D, D_out, Ch) :-
-    leave_dir(P, D, D1, Ch), leave_dir(P, D, D2, Ch),       // the two components
-    diag_dirs(D_out, _, D1, D2).                            // one on each axis
-
 // The beam reaches p heading d: from a mark along the aim, it leaves each
 // cell with the heading the walls there turn it to, into the open cell ahead.
 .init beam = Propagation<Choice, Beam>
 beam.source(Ch, [P0, D0]) :- mark_cell(P0), aim(D0), impl_choice(Ch).
 beam.edge(Ch, [P, D], [Q, D_out]) :-
-    bounce(P, D, D_out, Ch),                             // the heading it leaves p with
-    neighbor(P, D_out, Q), in(Q, Bg), params.bg(Bg).     // the open cell ahead
+    in(P, _), impl_choice(Ch), diag_dirs(D, _, D1, D2),     // d's two components
+    ( deflect(P, D1, Ch), opposite(D1, E1)                  // the first turned back
+    ; !deflect(P, D1, Ch), E1 = D1                          // the first free
+    ),
+    ( deflect(P, D2, Ch), opposite(D2, E2)                  // the second turned back
+    ; !deflect(P, D2, Ch), E2 = D2                          // the second free
+    ),
+    diag_dirs(D_out, _, E1, E2),                            // the heading it leaves p with
+    neighbor(P, D_out, Q), in(Q, Bg), params.bg(Bg).        // the open cell ahead
 
 .decl painted(p: Position, ch: Choice)
 painted(P, Ch) :-

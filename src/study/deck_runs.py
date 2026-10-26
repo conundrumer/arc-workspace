@@ -2,7 +2,6 @@
 output of each witness's verdict: a solver loaded in its own checkout, and
 a case of it run on the entry's input at the entry's assignment."""
 
-import os
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -169,12 +168,6 @@ def witness_root(spec: CardSpec) -> Path:
     if spec.witness_file is None:
         return spec.options[0].root
     path = spec.witness_file.resolve()
-    if checkout.WITNESSES_ENV in os.environ:
-        raise ValueError(f"{path}: {checkout.WITNESSES_ENV} is set, so no "
-                         "checkout's witness files stand under its "
-                         "programs/witnesses/, and the solver whose "
-                         "`@witness` lines hold the file's verdicts is "
-                         "unknown")
     for parent in path.parents:
         with at_root(parent):
             if checkout.witnesses().resolve() == path.parent:

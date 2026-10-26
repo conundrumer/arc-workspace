@@ -25,14 +25,11 @@ WINDOW_SECONDS = 7 * 24 * 3600
 the check judges recent calls against."""
 
 CPU_RATIO = 2
-"""The factor by which a figure of the work of a call or a command grows
-past its usual one (`grew`)."""
+"""The factor by which a figure of the work of a call grows past its
+usual one (`grew`)."""
 CPU_MARGIN = 1.0
 """The margin in CPU seconds by which a call's CPU time grows past its
 usual one."""
-INSTRUCTIONS_MARGIN = 10 ** 10
-"""The margin in instructions retired by which a gate command's count
-grows past its accepted one."""
 
 DAY_FORM = "%Y-%m-%d"
 SUFFIX = ".jsonl"

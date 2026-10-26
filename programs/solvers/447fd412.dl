@@ -89,26 +89,23 @@ strip(Id, Q, D, N, K_in) :-
     dir_elem(D), opposite(D, O), dist(Q_rel, O, T),   // T, cells past the block's far edge from D
     stride(T, K, 0, N, K_in).
 
-// Grid cell Q's strips on both axes.
-.decl strips(id: Ident, q: Position, d1: Dir, n1: number, k1: number, d2: Dir, n2: number, k2: number)
-strips(Id, Q, D1, N1, K1, D2, N2, K2) :-
-    strip(Id, Q, D1, N1, K1), strip(Id, Q, D2, N2, K2),
-    axis_of(D1, A1), axis_of(D2, A2), perp(A1, A2).
-
 // Placement (T0, Id) sends template mark T0 to block Id. Under it, each step
 // of one cell in the template is a step of K cells in the grid, so grid cell
 // Q lies in the box of template cell P.
 .decl scaled(t0: Position, id: Ident, p: Position, q: Position)
 scaled(T0, Id, P, Q) :-
-    template_mark(T0), strips(Id, Q, D1, N1, _, D2, N2, _),
-    jump(T0, D1, N1, P1), jump(P1, D2, N2, P), template_cell(P, _).
+    template_mark(T0),
+    strip(Id, Q, D1, N1, _), axis_of(D1, A1), jump(T0, D1, N1, P1),
+    strip(Id, Q, D2, N2, _), axis_of(D2, A2), perp(A1, A2), jump(P1, D2, N2, P),
+    template_cell(P, _).
 
 // C is grid cell Q's counterpart in block Id's box: the cell at the same
-// place within its box.
+// place within its box, for a cell Q that some placement on block Id scales.
 .decl twin(id: Ident, q: Position, c: Position)
 twin(Id, Q, C) :-
-    strips(Id, Q, D1, _, K1, D2, _, K2),
-    strip(Id, C, D1, 0, K1), strip(Id, C, D2, 0, K2).
+    scaled(_, Id, _, Q),
+    strip(Id, Q, D1, _, K1), strip(Id, C, D1, 0, K1), axis_of(D1, A1),
+    strip(Id, Q, D2, _, K2), strip(Id, C, D2, 0, K2), axis_of(D2, A2), perp(A1, A2).
 
 // Under placement (T0, Id), the box of template mark P is the box of a block.
 .decl seated(t0: Position, id: Ident, p: Position)

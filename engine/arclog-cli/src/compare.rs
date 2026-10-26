@@ -23,33 +23,28 @@
 //! it is given none. The rerun is `scripts/souffle_parity.py rerun --json`,
 //! so the command runs from the root of the tree.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::time::Instant;
-use std::ops::ControlFlow;
 use std::process::ExitCode;
 
-use arclog::eval::join::each_row;
-use arclog::eval::models::ModelsEnd;
 use arclog::eval::determinations::{det_node, relation_spelled};
-use arclog::eval::{output_relation, relation_of, Evaluation, RelationValue};
+use arclog::eval::{output_relation, Evaluation};
 use arclog::harness::{print_ended, require_optimized_build, run_over_corpus, CorpusSolver, SolverResult};
 use arclog::judge::candidates::World;
 use arclog::judge::run::{judged_run, Depth, Found, JudgedRun};
 use arclog::judge::solves::OutputSet;
-use arclog::program::{AltsName, DeclaredName, ProgramRelation, RelationName};
-use arclog::relations::Relation;
-use arclog::resolver::Side;
+use arclog::program::AltsName;
 use arclog::solver::CaseName;
-use arclog::task::{Grid, Task};
-use arclog::terms::{Example, Term};
-use arclog::types::ValueType;
+use arclog::task::Grid;
+use arclog::terms::Example;
 use serde_json::Value;
 
 use crate::arguments::Arguments;
 use arclog::stream::corpus::case_spelled;
 use crate::determine::{solver_determination, Finding};
-use crate::renaming::{renaming_exists, same_without_idents, term_leaves, EngineLeaf, Leaf};
+use crate::renaming::same_without_idents;
 use crate::select::{read_json, selected};
+use crate::souffle_rows::{engine_rows, pair_name, EngineRows, Projection, Rerun};
 
 const USAGE: &str = "usage: arclog-cli compare <snapshot-dir> <corpus-dir> <tasks-dir> [<task_id> ...] [--reads <name> ...]";
 
@@ -82,11 +77,6 @@ pub fn run(args: &[String]) -> ExitCode {
     if report.failures.is_empty() { ExitCode::SUCCESS } else { ExitCode::FAILURE }
 }
 
-/// The pair names of the task's examples, as the snapshot writes them.
-fn pair_name(task: &Task, example: usize) -> String {
-    if example < task.train.len() { format!("train {example}") } else { format!("test {}", example - task.train.len()) }
-}
-
 /// The comparison of the cases of `solver` with its snapshot record.
 fn compare_solver(arguments: &Arguments, solver: &CorpusSolver) -> SolverResult {
     match compared(arguments, solver) {
@@ -108,7 +98,7 @@ const DERIVED: &str = "=$Derived";
 /// `<relation>=$Stored` as `<relation>=stored` and its derived reading by
 /// its one proposer as `<relation>=<proposer>`, and is `concept` where
 /// there is none.
-fn names_case(key: &str, name: &CaseName, concept: &[AltsName]) -> bool {
+pub(crate) fn names_case(key: &str, name: &CaseName, concept: &[AltsName]) -> bool {
     let mut parts: BTreeSet<&str> = if key == "concept" { BTreeSet::new() } else { key.split(" & ").collect() };
     for alt in name.0.iter().filter(|alt| !concept.contains(alt)) {
         let found = if let Some(relation) = alt.0.strip_suffix(DERIVED) {
@@ -222,7 +212,7 @@ fn compare_case(id: &str, key: &str, case_record: &Value, evaluation: &Evaluatio
             .map(|((pair, example), rerun)| {
                 let rerun = rerun.as_ref()?;
                 let example = *example;
-                let engine: Box<dyn Fn(&str) -> Option<EngineRows> + '_> = Box::new(move |name| engine_rows(evaluation, name, example, &rerun.orientation_constants));
+                let engine: Box<dyn Fn(&str) -> Option<EngineRows> + '_> = Box::new(move |name| engine_rows(evaluation, name, example, &rerun.orientation_constants, Projection::All));
                 Some(PairRows { pair, rerun, engine })
             })
             .collect();
@@ -304,16 +294,18 @@ struct Comparison {
 }
 
 /// The first relation whose rows differ, by the order of `pairs` and then
-/// the rerun's order on each pair: the first such that no one renaming of
-/// Idents over every pair makes every relation up to it agree. A relation
-/// whose engine rows and Souffle rows hold different counts of leaves,
+/// the rerun's order on each pair. The rows of a relation compare as sets
+/// with each place that holds an Ident left blank, and no renaming of Idents
+/// is looked for: a Souffle number denotes one object only within its
+/// instance, its key and its pair, so a number is no name for an object
+/// across relations or pairs. A relation whose engine rows and Souffle rows
+/// hold different counts of leaves,
 /// as where the converter left a Souffle column out of the arclog
 /// relation, is not compared, and the comparison gives it with the two
 /// counts. A relation whose rows differ between the case's models is not
 /// compared either, and the comparison gives it with that reason.
 fn first_difference(pairs: &[PairRows<'_>]) -> Comparison {
     let mut comparison = Comparison::default();
-    let mut compared: Vec<(&BTreeSet<Vec<Leaf>>, Vec<Vec<EngineLeaf>>)> = Vec::new();
     for PairRows { pair, rerun, engine } in pairs {
         for (name, souffle) in &rerun.relations {
             let Some(rows) = engine(name) else { continue };
@@ -322,6 +314,10 @@ fn first_difference(pairs: &[PairRows<'_>]) -> Comparison {
                 EngineRows::Rows(rows) => rows,
                 EngineRows::DifferBetweenModels => {
                     comparison.not_compared.push(format!("{name} on {pair} is not compared: its rows differ between the case's models"));
+                    continue;
+                }
+                EngineRows::Skip(reason) => {
+                    comparison.not_compared.push(format!("{name} on {pair} is not compared: {reason}"));
                     continue;
                 }
                 EngineRows::Fault(text) => {
@@ -343,139 +339,16 @@ fn first_difference(pairs: &[PairRows<'_>]) -> Comparison {
                 comparison.difference = differs(format!("{} rows against Souffle's {}", rows.len(), souffle.len()));
                 return comparison;
             }
-            if !rows.iter().flatten().any(|leaf| matches!(leaf, EngineLeaf::Ident(_))) {
-                continue;
-            }
-            compared.push((souffle, rows));
-            if !renaming_exists(&compared) {
-                comparison.difference = differs("no one renaming of Idents makes its rows and those before it agree".to_owned());
-                return comparison;
-            }
         }
     }
     comparison
 }
 
-/// The rows of Souffle's rerun of a case on one pair, each relation by its
-/// arclog name, in the rerun's order, and the number Souffle gives each
-/// orientation constant of the lib, by its name.
-struct Rerun {
-    relations: Vec<(String, BTreeSet<Vec<Leaf>>)>,
-    orientation_constants: BTreeMap<String, i64>,
-}
-
-impl Rerun {
-    /// The rerun that `json`, the output of `rerun --json`, gives.
-    fn of(json: &Value) -> Option<Rerun> {
-        let relations = json.get("relations")?.as_array()?.iter().map(|relation| {
-            let [name, rows] = relation.as_array()?.as_slice() else { return None };
-            let rows = rows.as_array()?.iter().map(|row| row.as_array()?.iter().map(Leaf::of).collect()).collect::<Option<_>>()?;
-            Some((name.as_str()?.to_owned(), rows))
-        });
-        let constants = json.get("orientation_constants")?.as_object()?;
-        Some(Rerun {
-            relations: relations.collect::<Option<_>>()?,
-            orientation_constants: constants.iter().map(|(name, n)| Some((name.clone(), n.as_i64()?))).collect::<Option<_>>()?,
-        })
-    }
-}
-
-/// What the engine gives for a relation on a pair.
-enum EngineRows {
-    /// The relation's rows, each the leaves Souffle's rerun writes for it,
-    /// the same at every model of the case.
-    Rows(Vec<Vec<EngineLeaf>>),
-    /// Two models of the case give the relation different rows, so Souffle's
-    /// one set of rows has nothing to compare with.
-    DifferBetweenModels,
-    /// A text for rows the engine cannot give.
-    Fault(String),
-}
-
-/// The engine's rows of the relation that `name` declares on `example`,
-/// each row the leaves Souffle's rerun writes for it, an orientation
-/// constant by the number `constants` gives its name; `None` where the
-/// program derives no relation of that name. The rows are read at each
-/// model of the case: where two models give different rows as sets, the
-/// result is [`EngineRows::DifferBetweenModels`].
-fn engine_rows(evaluation: &Evaluation<'_>, name: &str, example: Example, constants: &BTreeMap<String, i64>) -> Option<EngineRows> {
-    let program = evaluation.program;
-    let declared = ProgramRelation::Declared(RelationName(DeclaredName::Written(name.into())));
-    let relation = relation_of(program, &declared)?;
-    let on = (program.program.side(relation.node) == Side::PerInput).then_some(example);
-    let Some(types) = program.types.columns(&relation) else { return Some(EngineRows::Fault("rows whose columns have no types".to_owned())) };
-    let mut first: Option<Vec<Vec<EngineLeaf>>> = None;
-    let mut fault = None;
-    let mut differ = false;
-    let end = evaluation.models(&relation, on, &mut |value| {
-        let RelationValue::Rows(rows) = value else {
-            fault = Some(format!("{value:?}"));
-            return ControlFlow::Break(());
-        };
-        let rows = match model_leaves(evaluation, rows, types, constants) {
-            Ok(rows) => rows,
-            Err(text) => {
-                fault = Some(text);
-                return ControlFlow::Break(());
-            }
-        };
-        match &first {
-            None => first = Some(rows),
-            Some(kept) if same_rows(kept, &rows) => {}
-            Some(_) => {
-                differ = true;
-                return ControlFlow::Break(());
-            }
-        }
-        ControlFlow::Continue(())
-    });
-    match end {
-        Err(error) => return Some(EngineRows::Fault(error.message.to_string())),
-        Ok(ModelsEnd::Stopped(stop)) if !differ && fault.is_none() => return Some(EngineRows::Fault(format!("{stop:?}"))),
-        Ok(_) => {}
-    }
-    Some(match (fault, differ, first) {
-        (Some(text), _, _) => EngineRows::Fault(text),
-        (None, true, _) => EngineRows::DifferBetweenModels,
-        (None, false, Some(rows)) => EngineRows::Rows(rows),
-        (None, false, None) => EngineRows::Rows(Vec::new()),
-    })
-}
-
-/// The leaves of the rows of one model's value of a relation of column
-/// types `types`.
-fn model_leaves(
-    evaluation: &Evaluation<'_>,
-    rows: &Relation,
-    types: &[ValueType],
-    constants: &BTreeMap<String, i64>,
-) -> Result<Vec<Vec<EngineLeaf>>, String> {
-    let mut written = Vec::new();
-    let mut faults = BTreeSet::new();
-    each_row(rows, &mut |row| match row.iter().zip(types).map(|(&id, ty)| term_leaves(Term::decode(id, ty), evaluation.registry, &|name| souffle_number(name, constants))).collect::<Result<Vec<_>, _>>() {
-        Ok(leaves) => written.push(leaves.concat()),
-        Err(text) => {
-            faults.insert(text);
-        }
-    });
-    faults.into_iter().next().map_or(Ok(written), Err)
-}
-
-/// The leaf of the orientation constant `name` in Souffle's rerun: its
-/// number in `constants`.
-fn souffle_number(name: &str, constants: &BTreeMap<String, i64>) -> Result<Leaf, String> {
-    constants.get(name).map(|&n| Leaf::Number(n)).ok_or_else(|| format!("the orientation constant {name}, which the rerun gives no number"))
-}
-
-/// Whether `a` and `b` hold the same rows, each row once.
-fn same_rows(a: &[Vec<EngineLeaf>], b: &[Vec<EngineLeaf>]) -> bool {
-    a.iter().all(|row| b.contains(row)) && b.iter().all(|row| a.contains(row))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arclog::terms::{Content, Ident, InternTable, WrittenIdent};
+    use std::collections::BTreeMap;
+    use crate::renaming::{EngineLeaf, Leaf};
 
     fn n(value: i64) -> Leaf {
         Leaf::Number(value)
@@ -501,58 +374,12 @@ mod tests {
         row.iter().map(|&v| EngineLeaf::Written(n(v))).collect()
     }
 
-    fn idents(count: u32) -> Vec<Ident> {
-        let mut table = InternTable::default();
-        (0..count).map(|i| table.intern(Content::FromFile { ty: arclog::types::ValueType::Ident, written: WrittenIdent::new(i) })).collect()
-    }
-
     #[test]
     fn names_the_relation_whose_rows_differ_at_an_equal_count() {
         let souffle = rerun(&[("souffle:lib", &[&[0]]), ("&a", &[&[1, 2]]), ("&b", &[&[3], &[4]]), ("&c", &[&[9]])]);
         let ours = [("&a", vec![written(&[1, 2])]), ("&b", vec![written(&[3]), written(&[5])]), ("&c", vec![written(&[0])])];
         let found = first_difference(&[on("train 0", &souffle, &ours)]).difference.expect("a difference");
         assert!(found.contains("is &b on train 0:"), "{found}");
-    }
-
-    #[test]
-    fn compares_idents_up_to_one_renaming_over_the_pairs() {
-        let [x, y] = idents(2)[..] else { unreachable!() };
-        let id = |ident, color: i64| vec![EngineLeaf::Ident(ident), EngineLeaf::Written(n(color))];
-        let first = rerun(&[("&color", &[&[7, 1], &[8, 2]]), ("&big", &[&[7]])]);
-        let second = rerun(&[("&big", &[&[7]])]);
-        let agreeing = [("&color", vec![id(x, 1), id(y, 2)]), ("&big", vec![vec![EngineLeaf::Ident(x)]])];
-        let agreeing_second = [("&big", vec![vec![EngineLeaf::Ident(x)]])];
-        let pairs = [on("train 0", &first, &agreeing), on("train 1", &second, &agreeing_second)];
-        assert_eq!(first_difference(&pairs).difference, None);
-        let crossed_second = [("&big", vec![vec![EngineLeaf::Ident(y)]])];
-        let pairs = [on("train 0", &first, &agreeing), on("train 1", &second, &crossed_second)];
-        let found = first_difference(&pairs).difference.expect("a difference");
-        assert!(found.contains("is &big on train 1:"), "{found}");
-        assert_eq!(first_difference(&pairs[1..]).difference, None);
-    }
-
-    #[test]
-    fn names_a_relation_that_no_renaming_fits_after_many_alike_rows() {
-        let ours = idents(12);
-        let souffle_rows: Vec<Vec<i64>> = (0..12).map(|i| vec![100 + i, 1]).collect();
-        let souffle_rows: Vec<&[i64]> = souffle_rows.iter().map(Vec::as_slice).collect();
-        let souffle = rerun(&[("&alike", &souffle_rows), ("&pairs", &[&[100, 101], &[102, 103], &[104, 105]])]);
-        let alike: Vec<Vec<EngineLeaf>> = ours.iter().map(|&i| vec![EngineLeaf::Ident(i), EngineLeaf::Written(n(1))]).collect();
-        let fits = vec![
-            vec![EngineLeaf::Ident(ours[3]), EngineLeaf::Ident(ours[7])],
-            vec![EngineLeaf::Ident(ours[0]), EngineLeaf::Ident(ours[11])],
-            vec![EngineLeaf::Ident(ours[5]), EngineLeaf::Ident(ours[2])],
-        ];
-        let relations = [("&alike", alike.clone()), ("&pairs", fits)];
-        assert_eq!(first_difference(&[on("train 0", &souffle, &relations)]).difference, None);
-        let chain = vec![
-            vec![EngineLeaf::Ident(ours[3]), EngineLeaf::Ident(ours[7])],
-            vec![EngineLeaf::Ident(ours[7]), EngineLeaf::Ident(ours[11])],
-            vec![EngineLeaf::Ident(ours[5]), EngineLeaf::Ident(ours[2])],
-        ];
-        let relations = [("&alike", alike), ("&pairs", chain)];
-        let found = first_difference(&[on("train 0", &souffle, &relations)]).difference.expect("a difference");
-        assert!(found.contains("is &pairs on train 0:"), "{found}");
     }
 
     #[test]

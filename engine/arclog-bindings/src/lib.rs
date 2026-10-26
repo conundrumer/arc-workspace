@@ -1,0 +1,66 @@
+//! The Python bindings of the arclog engine that the streams export runs:
+//! the task, the session, the decoder, the vocabulary, the replay progress
+//! and the streams of a corpus. [`register`] adds their names to the module
+//! that `arclog-py` builds.
+//!
+//! Each class wraps a value of the core crate and restates no rule of it. A
+//! task session owns the data that its decoders borrow, so a `PyDecoder`
+//! holds the session's data beside the decode.
+//!
+//! The crate depends on the core crate and the lib's constructions, and on no
+//! crate of the tables export: the reuse key of the streams export covers the
+//! sources of this crate and of the crates it depends on, so a call from
+//! here into the tables code would not compile. `arclog-tables-py` takes
+//! these items of this crate, which are `pub`: [`Names`], [`PyDecodeSettings`],
+//! [`PyReplayProgress`], [`Progress`], [`walk_corpus`], [`PyConsistencyKind`]
+//! and [`constructions`].
+
+mod corpus;
+mod decoder;
+mod errors;
+mod names;
+mod results;
+mod session;
+mod settings;
+mod streams;
+mod task;
+mod vocabulary;
+
+pub use corpus::{walk_corpus, Progress, PyReplayProgress};
+pub use names::Names;
+pub use results::PyConsistencyKind;
+pub use settings::PyDecodeSettings;
+
+use arclog::eval::instance::Constructions;
+use pyo3::exceptions::PyRuntimeError;
+use pyo3::prelude::*;
+
+/// The table of the lib's constructions, built once.
+pub fn constructions() -> PyResult<&'static Constructions> {
+    arclog_constructions::shared().map_err(PyRuntimeError::new_err)
+}
+
+/// Registers the classes, the exceptions and the functions of this crate.
+pub fn register(names: &Names<'_, '_>) -> PyResult<()> {
+    let module = names.module();
+    names.class::<task::PyWorld>()?;
+    names.class::<task::PyTask>()?;
+    names.class::<PyDecodeSettings>()?;
+    names.class::<vocabulary::PyVocabulary>()?;
+    names.class::<session::PySession>()?;
+    names.class::<decoder::PyDecoder>()?;
+    names.class::<results::PyStopKind>()?;
+    names.class::<PyConsistencyKind>()?;
+    names.class::<results::PyConsistency>()?;
+    names.class::<results::PyValueKind>()?;
+    names.class::<results::PyRowsView>()?;
+    names.class::<results::PyAssigned>()?;
+    names.class::<results::PyProjection>()?;
+    names.class::<results::PyProjections>()?;
+    names.class::<streams::PyCaseStream>()?;
+    names.value("Refusal", module.py().get_type::<errors::Refusal>().into_any())?;
+    names.value("Fault", module.py().get_type::<errors::Fault>().into_any())?;
+    names.function(wrap_pyfunction!(decoder::step_batch_py, module)?)?;
+    names.class::<PyReplayProgress>()?;
+    names.function(wrap_pyfunction!(streams::corpus_streams, module)?)
+}

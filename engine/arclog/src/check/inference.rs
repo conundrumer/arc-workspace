@@ -15,7 +15,7 @@ pub(super) use state::HeldState;
 use super::safety::{bodies, BodyPlace};
 use super::types::{
     column_type, component, declared_type, demo_rule, form_at, pose_of_fault, project, relation_columns, rule_scope_forms, scope_forms, site_value_type, site_value_type_or,
-    try_map_labels, zero_typed_heads, PoseOr,
+    try_map_key_rows, try_map_labels, zero_typed_heads, PoseOr,
 };
 use super::{ClauseEntry, FileScope, HeldClauses, Refusal, SolverClauses};
 use crate::hash::StableHashMap;
@@ -281,6 +281,26 @@ impl<'a> FormInference<'a> {
     /// alone.
     pub fn is_given(&self, label: LabelId) -> bool {
         self.given.contains(&label)
+    }
+
+    /// The field of the record bound to the type parameter of a column of
+    /// type `ty` that holds `label`, a label of the form, where the form
+    /// is an `INIT` form: the key's column at the label, or the field that
+    /// the head site of the parameter's first projection gives the label.
+    fn bound_field(&self, ty: &ColumnType, label: LabelId) -> Option<ColumnName> {
+        let (ColumnType::Parameter(parameter), ScopeOwner::Form(Form::Instance(instance)), Some(component)) = (ty, self.owner, self.component) else { return None };
+        let places = binding_sites(instance.value(), &component.inputs);
+        match places.iter().find(|places| places.parameter == parameter)?.binding {
+            ParameterSite::Key(key) => key.key.columns.iter().find(|column| column.label == label).map(|column| column.name.clone()),
+            ParameterSite::Head { site, .. } => site.value.args.iter().find_map(|arg| match arg {
+                SiteArg::NamedLabel { name, label: use_ } if use_label(*use_) == Some(label) => Some(name.clone()),
+                SiteArg::Field(field) => match &field.value.args[..] {
+                    [arg] if arg.label().and_then(use_label) == Some(label) => Some(field.column.clone()),
+                    _ => None,
+                },
+                _ => None,
+            }),
+        }
     }
 
     /// The Pose type of `label`, where one of its sites gives it one.
@@ -734,6 +754,9 @@ impl<'a> Inference<'a> {
         let graph_node = &self.program.graph.nodes[node.0 as usize];
         let form_path = self.program.form_of(node);
         let reader = |column: &ColumnName| column_label(atom, column);
+        let key_row = |column: &ColumnName, fields: &[ColumnName]| {
+            Some(KeyRow::Labels(fields.iter().map(|field| field_label(atom, column, field)).collect::<Option<_>>()?))
+        };
         match &graph_node.kind {
             DependencyKind::Fact(fact) => declared_type(self.registry.fact_columns(*fact), path, PoseOr::Open),
             DependencyKind::Clause(relation) | DependencyKind::Parameter(relation) => {
@@ -752,10 +775,10 @@ impl<'a> Inference<'a> {
                     self.relation_type(&graph_node.scope, &relation, path, &reader, pose_or).ok().flatten()
                 }
             },
-            DependencyKind::InstanceOutput { output, .. } => self.instance_output(form_path, output, path),
+            DependencyKind::InstanceOutput { output, .. } => self.instance_output(form_path, output, path, &key_row),
             DependencyKind::RecursiveInstance(_) => match &atom.relation {
                 RelationRef::Output(output) => match &output.path[..] {
-                    [OutputStep::Port(port)] => self.instance_output(form_path, port, path),
+                    [OutputStep::Port(port)] => self.instance_output(form_path, port, path, &key_row),
                     _ => None,
                 },
                 _ => None,
@@ -769,7 +792,7 @@ impl<'a> Inference<'a> {
                 self.rigid_output(form_path, &output.path, path, &key_row)
             }
             DependencyKind::Demonstrated(_) => self.demonstrated_column(form_path, path),
-            DependencyKind::InstanceInput { input, .. } => self.instance_input(form_path, input, path),
+            DependencyKind::InstanceInput { input, .. } => self.instance_input(form_path, input, path, &key_row),
         }
     }
 
@@ -927,7 +950,7 @@ impl<'a> Inference<'a> {
                 try_map_labels(&ty, &|label| target(&columns.iter().find(|column| column.label == label)?.name))
             }
             ClauseColumns::Declared(columns) => declared_type(columns, path, pose_or),
-            ClauseColumns::InstanceOutput(instance, port) => self.instance_output(&instance, port, path),
+            ClauseColumns::InstanceOutput(instance, port) => self.instance_output(&instance, port, path, &|_, _| None),
         }
     }
 
@@ -956,8 +979,7 @@ impl<'a> Inference<'a> {
                 let (Some(component), ScopeOwner::Form(Form::Instance(instance))) = (inference.component, inference.owner) else { return Vec::new() };
                 let written: Vec<&PortName> = written_inputs(instance.value().key.as_ref(), &instance.value().inputs).map(|input| &input.name).collect();
                 for port in component.relation_ports(&written) {
-                    let column = |name: &ColumnName| port_column(&inference, port, std::slice::from_ref(name));
-                    relations.push((Arc::from([OutputStep::Port(port.name.clone())]), relation_columns(port.columns_at(instance.value().key.is_some()).map(|column| &column.name), &column)));
+                    relations.push((Arc::from([OutputStep::Port(port.name.clone())]), port_relation(&inference, port, instance.value().key.is_some())));
                 }
             }
             Form::RigidDet(rigid) => {
@@ -979,21 +1001,21 @@ impl<'a> Inference<'a> {
     }
 
     /// The type of the column at `path` of the output `port` of the `INIT`
-    /// form at `at`, its parameters bound as the form binds them. A type
-    /// that names labels of the form's scope gives none.
-    fn instance_output(&self, at: &NodePath, port: &PortName, path: &[ColumnName]) -> Option<ValueType> {
+    /// form at `at`, its parameters bound as the form binds them, as
+    /// [`port_column`] gives it for the `key_row` it is given.
+    fn instance_output(&self, at: &NodePath, port: &PortName, path: &[ColumnName], key_row: &dyn Fn(&ColumnName, &[ColumnName]) -> Option<KeyRow>) -> Option<ValueType> {
         let inference = self.infer(at)?;
         let output = inference.component?.outputs.iter().find(|output| output.name == *port)?;
-        port_column(&inference, output, path)
+        port_column(&inference, output, path, key_row)
     }
 
     /// The type of the column at `path` of the input `port` of the `INIT`
-    /// form at `at`, its parameters bound as the form binds them. A type
-    /// that names labels of the form's scope gives none.
-    fn instance_input(&self, at: &NodePath, port: &PortName, path: &[ColumnName]) -> Option<ValueType> {
+    /// form at `at`, its parameters bound as the form binds them, as
+    /// [`port_column`] gives it for the `key_row` it is given.
+    fn instance_input(&self, at: &NodePath, port: &PortName, path: &[ColumnName], key_row: &dyn Fn(&ColumnName, &[ColumnName]) -> Option<KeyRow>) -> Option<ValueType> {
         let inference = self.infer(at)?;
         let input = inference.component?.inputs.iter().find(|input| input.port.name == *port)?;
-        port_column(&inference, &input.port, path)
+        port_column(&inference, &input.port, path, key_row)
     }
 
     /// The type of the column at `path` of the output `output`, the path
@@ -1061,13 +1083,49 @@ impl<'a> Inference<'a> {
 
 /// The type of the column at `path` of `port`, a port of the component of
 /// the `INIT` form whose inference is `inference`, its parameters bound as
-/// the form binds them. A type that names labels of the form's scope gives
-/// none.
-fn port_column(inference: &FormInference<'_>, port: &crate::registry::Port, path: &[ColumnName]) -> Option<ValueType> {
+/// the form binds them. A Pose type of a keyed assembly names labels of the
+/// form's scope: where each of them stands at a field of the record that the
+/// column's parameter is bound to, the type names its key row as `key_row`
+/// gives it from the column and those fields (`docs/arclog/rigid.md#the-pose`);
+/// a type that names any other label of the scope gives none.
+fn port_column(
+    inference: &FormInference<'_>,
+    port: &crate::registry::Port,
+    path: &[ColumnName],
+    key_row: &dyn Fn(&ColumnName, &[ColumnName]) -> Option<KeyRow>,
+) -> Option<ValueType> {
     let (first, rest) = path.split_first()?;
     let column = port.columns.iter().find(|column| column.name == *first)?;
     let ty = column_type(&column.ty, rest, &inference.bindings, PoseOr::Open)?;
-    try_map_labels(&ty, &|_| None)
+    try_map_key_rows(&ty, &|labels| key_row(first, &labels.iter().map(|label| inference.bound_field(&column.ty, *label)).collect::<Option<Vec<_>>>()?))
+}
+
+/// The types of the columns of the relation of `port`, a port of the
+/// component of the `INIT` form whose inference is `inference`, at an
+/// instance that has a key clause where `keyed` holds, each name's type as
+/// [`port_column`] gives it, with a Pose type's key row naming the positions
+/// of the relation's columns that hold the key, as [`KeyRow::Columns`] gives
+/// them.
+fn port_relation(inference: &FormInference<'_>, port: &crate::registry::Port, keyed: bool) -> Option<Box<[ValueType]>> {
+    let names: Vec<&ColumnName> = port.columns_at(keyed).map(|column| &column.name).collect();
+    let bare = |name: &ColumnName| port_column(inference, port, std::slice::from_ref(name), &|_, _| Some(KeyRow::Unkeyed));
+    let mut starts: Vec<(&ColumnName, usize)> = Vec::new();
+    let mut at = 0;
+    for name in &names {
+        starts.push((name, at));
+        at += relation_columns([*name], &bare)?.len();
+    }
+    let key_row = |column: &ColumnName, fields: &[ColumnName]| {
+        let start = starts.iter().find(|(name, _)| *name == column)?.1;
+        let ValueType::Record(record) = bare(column)? else { return None };
+        let position = |field: &ColumnName| {
+            let index = record.iter().position(|(name, _)| name == field)?;
+            let before = relation_columns(record[..index].iter().map(|(name, _)| name), &|name| record.iter().find(|(found, _)| found == name).map(|(_, ty)| ty.clone()))?;
+            u16::try_from(start + before.len()).ok()
+        };
+        Some(KeyRow::Columns(fields.iter().map(position).collect::<Option<_>>()?))
+    };
+    relation_columns(names, &|name| port_column(inference, port, std::slice::from_ref(name), &key_row))
 }
 
 /// Where a clause takes the columns of its relation from, as

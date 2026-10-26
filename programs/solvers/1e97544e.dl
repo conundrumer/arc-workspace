@@ -61,10 +61,11 @@ stripe(P, S) :-
     ).
 
 // One color per stripe, from wherever the stripe survives.
-.decl stripe_color(p: Position, col: Color)
-stripe_color(P, Col) :- stripe(P, S), stripe(Q, S), intact(Q, Col).
+// @ignore: single-consumer — keyed by stripe, so a cell's color is one row per cell rather than one per pair of cells on its stripe
+.decl stripe_color(s: Position, col: Color)
+stripe_color(S, Col) :- stripe(Q, S), intact(Q, Col).
 
-out(P, Col, $Stripe()) :- damaged(P), stripe_color(P, Col).
+out(P, Col, $Stripe()) :- damaged(P), stripe(P, S), stripe_color(S, Col).
 
 // --- $Cycle ---
 

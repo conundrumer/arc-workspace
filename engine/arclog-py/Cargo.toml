@@ -16,9 +16,13 @@ crate-type = ["cdylib"]
 extension-module = ["pyo3/extension-module"]
 
 [dependencies]
-# The bindings expose the core crate's entry points to Python.
-arclog = { path = "../arclog" }
-# The table of the lib's constructions, which every decode is evaluated with.
-arclog-constructions = { path = "../arclog-constructions" }
+# The bindings of the streams export, and of the tables export, which the
+# module's init registers. The init calls these two `register`s alone.
+arclog-bindings = { path = "../arclog-bindings" }
+arclog-tables-py = { path = "../arclog-tables-py" }
 # The abi3 wheel runs on Python 3.12 and later.
 pyo3 = { version = "0.27.2", features = ["abi3-py312"] }
+
+[build-dependencies]
+# `build.rs` hashes the inputs of the streams bindings' compile (see there).
+sha2 = "0.10"

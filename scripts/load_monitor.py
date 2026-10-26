@@ -6,24 +6,25 @@ the rules and the alert."""
 import argparse
 import os
 import re
-import subprocess
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from controlled_markdown import mctx
-from gating.cpu import busy_seconds, busy_ticks
-import script_calls
-from idle_sessions import harness_processes, running
+from engine.cpu import busy_seconds, busy_ticks
+from heavy_enforcer import ADOPT_CPUS, ADOPT_GIB
+from heavy_protocol import heavy_dir, read_registry
+from idle_sessions import running
+from process_readings import harness_sessions, owners, rows, usage
 from ticket_numbers import session_id
 from tree_reads import main_tree
+from machine_readings import GIB, KIB, PRESSURE_LEVELS, SWAP_IN_RATE, counters, output, pressure_level
 from ticketing.times import stamp_time, utc_stamp
 
 SAMPLE_SECONDS = 5
-SWAP_IN_RATE = 1000
 SWAP_IN_SAMPLES = 2
-PRESSURE_LEVELS = frozenset({2, 4})
 PRESSURE_SAMPLES = 2
 BUSY_CPU = 90
 CPU_SAMPLES = 6
@@ -49,18 +50,15 @@ HELP = mctx("""
     - On a rule that holds the command writes an alert to a new file `{alerts}/<session id>/<time>{suffix}` of the main tree, the session id being the monitor's own and the time the UTC time of the alert, prints the file's path, and exits 0. The alert gives the rules that held, then the {top} processes of the largest physical footprint, the memory the process takes from the machine, and the {top} of the most CPU, each with its pid, parent pid, footprint, CPU percent, elapsed time, session id and command line.
     - It appends each sample's readings to `{alerts}/<session id>/{readings}` of the main tree, one line a sample of tab-separated fields: the UTC time, the CPU busy percent, the memory pressure level, the swap-in rate, the page-in rate and the swap in use in MB. It keeps the last {keep} hours of them.
     - One monitor watches the machine. Where another `load_monitor.py` process runs for a session that runs, the command exits with a message that gives that process's pid and session id. It exits as well at the first check, made every {check} s, at which its own session is not among the sessions that run.
+    - Where the resource daemon runs (`scripts/resource_daemon.py`), the processes of its registry, each job that holds a share with its descendants and each ungated process it has adopted, are left out of both lists, and the command writes an alert only where a process that stays holds {adopt_gib} GiB or runs over {adopt_cpu}% CPU: the daemon answers the load its registry explains, by its kills and its messages to the owning sessions.
     - It kills no process and notifies no one past its exit.
     """).format(sample=SAMPLE_SECONDS, swap_in=SWAP_IN_RATE, swap_in_samples=SWAP_IN_SAMPLES,
                 pressure_samples=PRESSURE_SAMPLES, busy=BUSY_CPU, cpu=CPU_SAMPLES,
                 realert=REALERT_SECONDS, alerts=ALERTS, suffix=SUFFIX, top=TOP, readings=READINGS,
-                keep=READINGS_SECONDS // 3600, check=CHECK_SECONDS)
+                keep=READINGS_SECONDS // 3600, check=CHECK_SECONDS, adopt_gib=ADOPT_GIB,
+                adopt_cpu=round(ADOPT_CPUS * 100))
 
-SESSION = re.compile(rf"(?:^|\s){script_calls.SESSION_ENV}=(\S+)")
-NO_SESSION = "-"
 SWAP_USED = re.compile(r"used = ([\d.]+)M")
-VM_COUNTER = re.compile(r"^(Pageins|Swapins):\s+(\d+)\.$", re.MULTILINE)
-FOOTPRINT = re.compile(r"(\d+)([BKMG])[+-]?")
-UNIT_KIB = {"B": 1 / 1024, "K": 1, "M": 1024, "G": 1024 ** 2}
 
 
 @dataclass(frozen=True)
@@ -91,71 +89,26 @@ class Reading:
                           f"{self.page_in:.0f}", f"{self.swap_used_mb:.0f}"])
 
 
-def _run(*args: str) -> str:
-    return subprocess.run(args, capture_output=True, text=True, check=True).stdout
-
-
 def processes() -> list[Process]:
-    """Each process of the machine, with the session id of the nearest of
-    itself and its ancestors that is a running Claude Code session's
-    process, as the harness's file gives it, or whose environment gives a
-    session id; the harness's file wins for a process that has both."""
-    sessions: dict[int, str] = {}
-    for text in _run("ps", "-Eww", "-axo", "pid=,command=").splitlines():
-        pid, _, rest = text.strip().partition(" ")
-        if (m := SESSION.search(rest)) is not None:
-            sessions[int(pid)] = m.group(1)
-    sessions |= harness_processes() or {}
-    rows = [text.split(None, 4) for text in
-            _run("ps", "-ww", "-axo", "pid=,ppid=,%cpu=,etime=,command=").splitlines()]
-    parents = {int(row[0]): int(row[1]) for row in rows}
-    return [Process(int(pid), int(ppid), float(cpu), elapsed,
-                    nearest_session(int(pid), sessions, parents), command)
-            for pid, ppid, cpu, elapsed, command in rows]
+    """Each process of the machine, with the session id of its owning session, as
+    `process_readings.owners` gives it."""
+    table = rows()
+    owner = owners(table, harness_sessions() or {})
+    return [Process(row.pid, row.ppid, row.cpu, row.elapsed, owner[row.pid], row.command) for row in table]
 
 
-def nearest_session(pid: int, sessions: dict[int, str], parents: dict[int, int]) -> str:
-    """The session id of `pid`, or of its nearest ancestor by `parents`
-    that has one in `sessions`, or `NO_SESSION`."""
-    seen: set[int] = set()
-    while pid not in seen:
-        if pid in sessions:
-            return sessions[pid]
-        seen.add(pid)
-        if pid not in parents:
-            break
-        pid = parents[pid]
-    return NO_SESSION
-
-
-def footprints() -> dict[int, int]:
-    """The physical footprint in KiB of each process, as the `MEM` column
-    of `top` gives it."""
-    out: dict[int, int] = {}
-    for text in _run("top", "-l", "1", "-stats", "pid,mem").splitlines():
-        pid, _, mem = text.partition(" ")
-        if not pid.isdigit():
-            continue
-        m = FOOTPRINT.fullmatch(mem.strip())
-        if m is None:
-            raise ValueError(f"no footprint in the `top` line {text!r}")
-        out[int(pid)] = int(int(m.group(1)) * UNIT_KIB[m.group(2)])
-    return out
-
-
-def counters() -> tuple[int, int]:
-    """The swap-in and page-in counts since boot, as `vm_stat` gives them."""
-    found = {name: int(count) for name, count in VM_COUNTER.findall(_run("vm_stat"))}
-    return found["Swapins"], found["Pageins"]
+def footprints(pids: list[int]) -> dict[int, int]:
+    """The physical footprint in KiB of each of `pids` that `process_readings.usage` reads."""
+    return {pid: read[0] for pid in pids if (read := usage(pid)) is not None}
 
 
 def pressure_and_swap() -> tuple[int, float]:
     """The kernel's memory pressure level, and the swap in use in MB."""
-    level, usage = _run("sysctl", "-n", "kern.memorystatus_vm_pressure_level", "vm.swapusage").splitlines()
+    usage = output("sysctl", "-n", "vm.swapusage")
     m = SWAP_USED.search(usage)
     if m is None:
         raise ValueError(f"no swap in use in {usage!r}")
-    return int(level), float(m.group(1))
+    return pressure_level(), float(m.group(1))
 
 
 def cpus() -> int:
@@ -282,6 +235,20 @@ def report(trouble: str, found: list[Process], footprint: dict[int, int]) -> str
                       mctx("largest by CPU:"), *(p.line(footprint[p.pid]) for p in by_cpu)])
 
 
+def registered(registry: dict[str, Any] | None) -> set[int]:
+    """The pids of each job in the daemon's `registry`, a gated job or an adopted process, and of
+    its members; none where `registry` is None."""
+    if registry is None:
+        return set()
+    return {int(pid) for job in registry["jobs"] for pid in [job["pid"], *job["members"]]}
+
+
+def heavy(found: list[Process], footprint: dict[int, int]) -> bool:
+    """Whether a process of `found` holds `ADOPT_GIB` GiB or runs at `ADOPT_CPUS` CPUs."""
+    return any(footprint[p.pid] * KIB >= ADOPT_GIB * GIB or p.cpu >= ADOPT_CPUS * 100
+               for p in found if p.pid in footprint)
+
+
 def alert_dir(main: Path, session: str) -> Path:
     return main / ALERTS / session
 
@@ -326,8 +293,14 @@ def main(argv: list[str]) -> int:
                 return 1
         held = held_rules(swap, pressure, cpu, reading, time.time())
         if held:
+            found = processes()
+            registry = read_registry(heavy_dir())
+            left = [p for p in found if p.pid not in registered(registry)]
+            footprint = footprints([p.pid for p in left])
+            if registry is not None and not heavy(left, footprint):
+                continue
             path = folder / f"{utc_stamp(time.time())}{SUFFIX}"
-            path.write_text(report(TROUBLE_SEPARATOR.join(held), processes(), footprints()) + "\n")
+            path.write_text(report(TROUBLE_SEPARATOR.join(held), left, footprint) + "\n")
             print(path)
             return 0
 

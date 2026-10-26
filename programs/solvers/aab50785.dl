@@ -117,8 +117,9 @@
 // One piece of the marker color in an example.
 .type ExPiece = [e: Example, id: Ident]
 
-// The blocks of one case, ordered from edge d of the pair axis.
-.type BandSide = [r: BlockReading, m: MarkerSource, d: Dir]
+// The blocks of one band of one case, ordered from edge d of the pair axis;
+// lines is the band.
+.type BandSide = [r: BlockReading, m: MarkerSource, d: Dir, lines: Box]
 
 // The two blocks that bound a window.
 .type Span = [r: BlockReading, m: MarkerSource, c: CrowdedRows, b1: Box, b2: Box]
@@ -382,11 +383,12 @@ band_stack.elem([R, M, $TwoPerBand(), D], [W, Line]) :-
 band_stack.elem([R, M, $OuterSpan(), D], [W, Line]) :-
     stack_dir(D), window_line(R, M, $OuterSpan(), W, Line).
 
-band_stack.before([R, M, C, D], [W1, L1], [W2, L2]) :-
-    band_stack.elem([R, M, C, D], [W1, L1]), band_stack.elem([R, M, C, D], [W2, L2]),
-    ( dist(W1, D, K1), dist(W2, D, K2), K1 < K2                        // window nearer D
-    ; W1 = W2, dist(L1, D, K1), dist(L2, D, K2), K1 < K2                // one window: line nearer D
-    ).
+// A window nearer D goes first.
+band_stack.score([R, M, C, D], [W, Line], K) :-
+    band_stack.elem([R, M, C, D], [W, Line]), dist(W, D, K).
+// In one window, a line nearer D goes first.
+band_stack.secondary_score([R, M, C, D], [W, Line], K) :-
+    band_stack.elem([R, M, C, D], [W, Line]), dist(Line, D, K).
 
 slot(R, M, C, W, Line, P_row) :-
     band_stack.rank([R, M, C, D], [W, Line], K1), band_stack.rank_desc([R, M, C, D], [W, Line], K2),
@@ -396,14 +398,17 @@ slot(R, M, C, W, Line, P_row) :-
 // The blocks of each band that holds two or more, ranked from edge D.
 // @claim block-pairs
 .init band_rank = Order<BandSide, Box>
-band_rank.elem([R, M, D], B) :- ( beyond(R, M, B, _, D) ; beyond(R, M, _, B, D) ).
-band_rank.before([R, M, D], B1, B2) :- beyond(R, M, B1, B2, D).
+band_rank.elem([R, M, D, Band], B) :-
+    ( beyond(R, M, B, _, D) ; beyond(R, M, _, B, D) ),
+    params.pair_axis(A), split(B, A, _, Band).
+// A block nearer D goes first.
+band_rank.score([R, M, D, Band], B, K) :- band_rank.elem([R, M, D, Band], B), dist(B, D, K).
 
 // The blocks that open a pair, counting from edge D: each block after a
 // whole number of pairs.
 .decl opens(r: BlockReading, m: MarkerSource, b: Box, d: Dir)
 opens(R, M, B, D) :-
-    band_rank.rank([R, M, D], B, K), params.pair_size(N), stride(K, N, 0, _, 0).
+    band_rank.rank([R, M, D, _], B, K), params.pair_size(N), stride(K, N, 0, _, 0).
 
 span(R, M, $PairLeftRight(), B1, B2, D) :- opens(R, M, B1, D), adjacent(R, M, B1, B2, D).
 

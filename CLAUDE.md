@@ -7,6 +7,7 @@
 
 ## Commands
 - Before you run the tests, the type check, a solver, or `scripts/materialize.py`, read [Project commands](prompts/agents/notes/project-commands.md#project-commands).
+- Before you run a command that may use much memory or that starts several processes at once, read [Commands that use much memory](prompts/agents/notes/project-commands.md#commands-that-use-much-memory).
 
 ## Handbook
 - The handbook is what a solver session reads.

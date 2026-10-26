@@ -1,0 +1,10 @@
+[package]
+name = "arclog-tables"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+# The tables are read from a decoder and a checked program of the core crate,
+# through its read-only accessors.
+arclog = { path = "../arclog" }

@@ -66,12 +66,14 @@ def main() -> int:
             import codex_bash_hook
             import detached_bash_hook
             import delete_bash_hook
+            import heavy_command_hook
             import pending_wait_hook
             from reader_delivery import reader_update
 
             return run_pre_tool_use(HOOK, [pending_wait_hook.check, codex_bash_hook.check,
                                            detached_bash_hook.check, checklist_bash,
-                                           delete_bash_hook.check, busy_loop_hook.check],
+                                           delete_bash_hook.check, heavy_command_hook.check,
+                                           busy_loop_hook.check],
                                     reader_update, contexts=[busy_loop_hook.context])
         case args:
             raise SystemExit(f"{HOOK}: usage: joined_hooks.py {HANDBACK}|{SEND}|{AGENT}|{BASH}|{STOP}, "

@@ -22,18 +22,22 @@ The hoist of a site:
   binds each label of a positive atom; the `ground` form keeps it.
 - A position input, `cell`, `outer` or `inner`, takes a projection of its
   atoms: the read gives the position, and a position input may hold more
-  positions than the clause reads, since the instance's output at a
-  position is a function of that position. An atom the projection keeps
+  positions than the clause reads for one key, since the instance's output
+  at a position is a function of that position. An atom the projection keeps
   whole leaves the clause, unless one of its variables is read elsewhere.
 - The atoms that ground a position or a key column take the clause's
   further top-level atoms over their variables, its tests among them, so
   that the instance holds only the positions and keys the clause reads.
 - Every other input, the axis, count, side and gap, and `ExtentDivisions`'
   frame, takes its atoms whole, and they leave the clause. A variable they
-  share with the rest of the clause, or that two of them share, is a key
-  column; so is an axis of an axis form, and a count, side or gap of a 2D
-  form, that its atoms do not fix to one value, which the stored
-  parameters and the orientation tables over them do.
+  share with the rest of the clause is a key column; so is an axis of an
+  axis form, and a count, side or gap of a 2D form, that its atoms do not
+  fix to one value, which the stored parameters and the orientation
+  tables over them do.
+- A variable that the atoms of two inputs share, other than their head
+  terms, is a key column, unless it is a Position that one of the two
+  inputs, a position input, shares: the pair of positions is what the
+  instance holds.
 - A gap of 0 has no `gap` row, and a concat site's axis then has no use.
 - A clause whose site stands in a top-level disjunction, or whose site's
   arguments only a top-level disjunction grounds, is one clause per branch
@@ -69,7 +73,7 @@ from engine.program import (
     Wildcard,
 )
 from arclog_convert import signature
-from arclog_convert.libmap.instances import ROOT, Spec, _parse, term_vars
+from arclog_convert.libmap.instances import LIB_PATH, ROOT, Spec, _parse, term_vars
 
 # ---- the instance specs
 
@@ -289,7 +293,7 @@ class Hoist:
     # -- the grounding rule
 
     def table(self, a: Atom) -> bool:
-        return bool(a.relation.instances and a.relation.instances != ("@lib",)) or a.relation.name not in self.inline
+        return bool(a.relation.instances and a.relation.instances != (LIB_PATH,)) or a.relation.name not in self.inline
 
     use_modes = False
     local_banned = False
@@ -619,12 +623,16 @@ class Hoist:
             nc_vars.discard(ax)
         key = ((nc_vars & rest_vars) | proj_roles) - out_vars - pos_vars
         shared = set()   # a variable two inputs' literals share, and not both heads
-        for x, (_, ts1, g1, _) in enumerate(others):
-            for _, ts2, g2, _ in others[x + 1:]:
+        every = [(ts, g, False) for _, ts, g, _ in others] + [((t,), g, True) for _, t, g in positions]
+        for x, (ts1, g1, p1) in enumerate(every):
+            for ts2, g2, p2 in every[x + 1:]:
                 v1 = set(_vars(tuple(self.body[j] for j in g1)))
                 v2 = set(_vars(tuple(self.body[j] for j in g2)))
                 h = set(_vars(tuple(ts1))) & set(_vars(tuple(ts2)))
-                shared |= (v1 & v2) - h
+                found = (v1 & v2) - h
+                if p1 or p2:   # a position that two position inputs share pairs them, and keys nothing
+                    found = {w for w in found if self.var_type(u, w, types) != "Position"}
+                shared |= found
         while True:
             checked = (*form.single, *((form.axis,) if form.comp == "Division" and form.axis is not None else ()))
             more = {args[k].name for k in checked

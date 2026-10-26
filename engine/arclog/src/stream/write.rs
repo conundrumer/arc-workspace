@@ -48,7 +48,25 @@ use super::{Control, Emitter, Token, Vocabulary};
 /// `DEMONSTRATED` or an `ALTS` form, and a `DET_OR_RULE` or `RULE_OR_DET`
 /// line.
 pub fn token_stream(program: &CheckedProgram, vocabulary: &Vocabulary) -> Result<Vec<(Token, Emitter)>, Diagnostic> {
-    Ok(token_stream_with_paths(program, vocabulary)?.into_iter().map(|(token, emitter, _)| (token, emitter)).collect())
+    Ok(written_stream(program, vocabulary)?.tokens)
+}
+
+/// The token stream of [`token_stream`] with the relation that the program
+/// declares at each slot.
+#[derive(Clone, Debug)]
+pub struct WrittenStream {
+    pub tokens: Vec<(Token, Emitter)>,
+    /// The relation declared at each slot, in slot order.
+    pub relations: Vec<ProgramRelation>,
+}
+
+/// The stream of [`token_stream`] with the relations its slots name, from
+/// one run of the writer.
+pub fn written_stream(program: &CheckedProgram, vocabulary: &Vocabulary) -> Result<WrittenStream, Diagnostic> {
+    let (stream, declared) = write_program(program, vocabulary)?;
+    let mut relations: Vec<(u32, ProgramRelation)> = declared.into_iter().map(|(relation, declared)| (declared.slot, relation)).collect();
+    relations.sort_by_key(|(slot, _)| *slot);
+    Ok(WrittenStream { tokens: stream.into_iter().map(|(token, emitter, _)| (token, emitter)).collect(), relations: relations.into_iter().map(|(_, relation)| relation).collect() })
 }
 
 /// The token stream of [`token_stream`], each token with the path in
@@ -59,6 +77,11 @@ pub fn token_stream(program: &CheckedProgram, vocabulary: &Vocabulary) -> Result
 /// body's path, and a clause's proposers stand at its body's path, which
 /// they precede.
 pub fn token_stream_with_paths(program: &CheckedProgram, vocabulary: &Vocabulary) -> Result<Vec<(Token, Emitter, NodePath)>, Diagnostic> {
+    Ok(write_program(program, vocabulary)?.0)
+}
+
+/// The tokens of `program` with their paths, and the relations the writer declared.
+fn write_program(program: &CheckedProgram, vocabulary: &Vocabulary) -> Result<(Vec<(Token, Emitter, NodePath)>, StableHashMap<ProgramRelation, Declared>), Diagnostic> {
     let mut writer = Writer {
         vocabulary,
         registry: vocabulary.registry(),
@@ -68,7 +91,7 @@ pub fn token_stream_with_paths(program: &CheckedProgram, vocabulary: &Vocabulary
         stream: Vec::new(),
     };
     writer.forms(&program.program.program.value().forms)?;
-    Ok(writer.stream)
+    Ok((writer.stream, writer.declared))
 }
 
 /// The forms of `forms` that hold no form, each with its path under `path`,
@@ -253,8 +276,7 @@ impl Writer<'_> {
     /// Takes the next relation slot for `relation`, with the columns
     /// `columns`, and gives it. A relation already declared is a fault: the
     /// decoder takes a new slot at each declaration, so a second declaration
-    /// would give a stream whose later slots differ from the decoder's, and a
-    /// parameter that several blocks determine has no stream form.
+    /// would give a stream whose later slots differ from the decoder's.
     fn reserve(&mut self, relation: ProgramRelation, columns: Box<[ColumnName]>, path: &NodePath) -> Result<u32, Diagnostic> {
         if self.declared.contains_key(&relation) {
             return Err(run_fault(format!("the stream declares a relation once for each form that derives it, and {relation:?} has more than one"), path));

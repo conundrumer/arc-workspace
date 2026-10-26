@@ -10,7 +10,7 @@ exits 1 where any stage fails:
           where the run exits other than 0.
   checks  `export_checks.check_export` on that export with the values of every case checked; fails on any violation and on
           any non-empty line of the export's `checks.txt`.
-  load    `lm/encoder.py` `load_tables` on that export, with a cache in the temporary directory, `strict=True` and
+  load    `lm/encoder.py` `load_tables` on that export, with a cache directory in the temporary directory, `strict=True` and
           `allow_violations=False`; fails where it raises.
 `--from <export dir>` skips `export` and runs the other two on that export, such as a full export or a kept one.
 
@@ -61,7 +61,7 @@ def checks_stage(out, tmp):
 
 def load_stage(out, tmp):
     import encoder
-    encoder.load_tables(out, f"{tmp}/tables.pkl", strict=True, allow_violations=False)
+    encoder.load_tables(out, f"{tmp}/tables.cache", strict=True, allow_violations=False)
     return ""
 
 

@@ -4,9 +4,9 @@ and clauses their arclog forms."""
 
 from __future__ import annotations
 
-import os
 from collections import Counter, defaultdict
-from dataclasses import dataclass, fields as dc_fields, is_dataclass, replace as dc_replace
+from collections.abc import Iterable, Iterator, Sequence
+from dataclasses import dataclass, field as dc_field, fields as dc_fields, is_dataclass, replace as dc_replace
 from engine.program import (
     AdtType,
     Aggregate,
@@ -16,10 +16,12 @@ from engine.program import (
     Comparison,
     ConstructorTerm,
     Disjunction,
+    Instance,
     RigidCall,
     RecordTerm,
     RecordType,
     RelationName,
+    UnionType,
     Unit,
     Variable,
     Wildcard,
@@ -31,10 +33,12 @@ from arclog_convert.literals import collect_vars
 from arclog_convert.open_orders import keys_retyped as order_keys_retyped, orders as open_orders
 from arclog_convert.picks import rewrite as rewrite_picks
 from arclog_convert.libmap import box as libmap_box, rewrite as libmap_rewrite
+from arclog_convert.libmap.instances import LIB_PATH, Placement
 from arclog_convert import paths
 
+from arclog_convert.checks import Fold, with_checks
 from arclog_convert.clauses import ClauseWriter
-from arclog_convert.forms import Todo, comment_text, tile_frames_split
+from arclog_convert.forms import Form, Source, Todo, comment_text, label_sources, tile_frames_split
 from arclog_convert.lib import Col, ColMismatch, Lib, pascal
 from arclog_convert.terms import (
     MOVED_RELS,
@@ -50,6 +54,9 @@ from arclog_convert.terms import (
 
 FACTS = {"in", "ex_in", "ex_out"}
 
+type ScopedName = tuple[tuple[str, ...], str]
+"""A relation or an instance of the solver's program: the component path it is declared under, and its name there."""
+
 
 # --------------------------------------------------------------------------
 # Leaves: a column's term split into the parts arclog keeps
@@ -62,26 +69,131 @@ class Leaf:
     tparam: bool
     path: tuple[int, ...] = ()
     field: tuple[str, ...] = ()   # the record field names along the path
+    type: str = dc_field(default="", compare=False)   # the Souffle type of a keep leaf, `Example` for an example leaf; "" if unknown
 
 
 @dataclass(frozen=True)
 class Written:
     """The Souffle relation, or instance, an arclog name was written from:
-    the solver component path it is declared under, and its name there."""
+    the solver component path it is declared under, and its name there; and,
+    where the converter holds how the arclog relation's columns stand for
+    the Souffle relation's, the `Placement` of each arclog column in it."""
 
     scope: tuple[str, ...]
     relation: str
     instance: bool
+    columns: tuple[Placement, ...] | None = None
+
+
+def rel_map(x, fn):
+    """`x`, a term, literal or clause, with each relation name inside it replaced by `fn` of it."""
+    if isinstance(x, RelationName):
+        return fn(x)
+    if isinstance(x, tuple):
+        return tuple(rel_map(y, fn) for y in x)
+    if is_dataclass(x) and not isinstance(x, type):
+        ch = {f_.name: rel_map(getattr(x, f_.name), fn) for f_ in dc_fields(x)
+              if isinstance(getattr(x, f_.name), (tuple, RelationName))
+              or (is_dataclass(getattr(x, f_.name)) and not isinstance(getattr(x, f_.name), type))}
+        return dc_replace(x, **ch) if ch else x
+    return x
+
+
+def walk_vars(x, out: list[str]) -> None:
+    """Append to `out` each variable name inside the term, literal or clause `x`, once, in order."""
+    if isinstance(x, Variable):
+        if x.name not in out:
+            out.append(x.name)
+    elif isinstance(x, tuple):
+        for y in x:
+            walk_vars(y, out)
+    elif is_dataclass(x) and not isinstance(x, type):
+        for f_ in dc_fields(x):
+            walk_vars(getattr(x, f_.name), out)
+
+
+class ParseNodes:
+    """The relations, the instances and the clauses of the solver's `Parse` component in `prog`. A
+    node is a relation or an instance of the component, named as the component declares it."""
+
+    def __init__(self, prog, lib: Lib) -> None:
+        self.lib = lib
+        self.rels = {r.name: r for r in prog.relations if r.scope.components == ("Parse",)}
+        self.insts = {i.name: i for i in prog.instances if i.scope.components == ("Parse",)}
+        self.units = [u for u in prog.units if u.scope.components == ("Parse",)]
+        self.deps: dict[str, set[str]] = defaultdict(set)
+        """The nodes whose relations the clauses of each node read."""
+        for u in self.units:
+            h = self.node(u.head.relation)
+            if h is not None:
+                self.deps[h] |= {x for a in Converter._atoms(u.body or ()) if (x := self.node(a.relation)) is not None}
+
+    def node(self, rn: RelationName) -> str | None:
+        """The node that `rn`, read in the component, names: the relation, or the instance its path starts with."""
+        if rn.instances:
+            return rn.instances[0] if rn.instances[0] in self.insts else None
+        return rn.name if rn.name in self.rels else None
+
+    def key_at(self, rn: RelationName) -> int | None:
+        """The column of the relation `rn` of the component whose type is its `Key`."""
+        r = self.rels.get(rn.name) if not rn.instances else None
+        return next((i for i, c_ in enumerate(r.columns) if c_.type.name == "Key"), None) if r else None
+
+    def instance_key_at(self, rn: RelationName) -> int | None:
+        """The key column of a relation of an instance of the component: for an
+        instance of a lib component, the first column typed by the parameter
+        that the component's Key stands for (an input such as `dir(D)` has
+        none); for another, the first column."""
+        inst = self.insts.get(rn.instances[0])
+        if inst is None or len(rn.instances) > 1 or inst.component not in self.lib.comps:
+            return 0
+        tparams, rels = self.lib.relations(inst.component)
+        lr = next((r for r in rels if r.name == rn.name), None)
+        keyed = {p for p, a in zip(tparams, inst.type_args) if a.name == "Key"}
+        return next((i for i, c_ in enumerate(lr.cols) if c_.type in keyed), None) if lr else None
+
+    def read_through(self, units: Iterable[Unit], instance: str) -> Iterator[str]:
+        """The node of each relation that a body of `units` reads through the
+        instance `instance` of the component."""
+        for u in units:
+            for a in Converter._atoms(u.body or ()):
+                if a.relation.instances[:1] == (instance,) and (
+                        x := self.node(RelationName(a.relation.instances[1:], a.relation.name))) is not None:
+                    yield x
+
+    def closure(self, roots: Iterable[str]) -> set[str]:
+        """`roots` and each node whose relation a clause of a node in the set reads."""
+        read: set[str] = set()
+        todo = list(roots)
+        while todo:
+            x = todo.pop()
+            if x not in read:
+                read.add(x)
+                todo += self.deps.get(x, ())
+        return read
 
 
 class Converter:
-    def __init__(self, stem: str, lib: Lib, sig: Lib, todo: Todo, inline: frozenset[str] = frozenset()) -> None:
+    def __init__(self, stem: str, lib: Lib, sig: Lib, todo: Todo, inline: frozenset[str] = frozenset(),
+                 own_copies: frozenset[ScopedName] = frozenset(), checks: Sequence[Fold] = ()) -> None:
         self.stem = stem
+        # the relations of the solver's parse and of its program that an alt
+        # rederives, in clauses keyed by a constructor outside the concept
+        # case, as `split_det_parse` finds them, and those of them that the
+        # determination gets copies of
+        self.rederived: set[ScopedName] = set()
+        self.own_copies = own_copies
         # each relation or instance this pass makes that the Souffle program
-        # does not declare, by its scope and name, with what it stands for
-        self.made: dict[tuple[tuple[str, ...], str], Written] = {}
+        # does not declare, by its scope and name, with each thing it stands
+        # for: none for a relation of an expansion's shape that no Souffle
+        # relation stands behind
+        self.made: dict[tuple[tuple[str, ...], str], tuple[Written, ...]] = {}
         # each arclog name this pass writes, with each thing it was written from
         self.written: dict[str, list[Written]] = {}
+        # for each arclog name whose clauses this pass writes, for each set of
+        # ALT constructors it writes them under (none: the top level), the
+        # `label_sources` of those clauses
+        self.writings: dict[str, dict[frozenset[str], tuple[tuple[Source, ...], ...]]] = {}
         self.unsafe: set[str] = set()   # the relations with a clause whose body no order makes safe
         self.col_mismatch: ColMismatch = {}
         self.lib = lib
@@ -101,11 +213,26 @@ class Converter:
                           functors=tuple(filter(own, prog.functors)),
                           units=tuple(filter(own, prog.units)),
                           macros=tuple(filter(own, prog.macros)))
+        # the column count of each relation and the component of each instance the solver file declares
+        self.souffle_columns = {(r.scope.components, r.name): len(r.columns) for r in prog.relations}
+        self.souffle_components = {(i.scope.components, i.name): i.component for i in prog.instances}
+        self.source = prog   # the solver's own program, as the file gives it
+        prog, self.checks = with_checks(prog, checks, lib)
         prog = inlined(prog, inline, lib)
         prog, self.tile_frames = tile_frames_split(prog)
-        prog, self.picks = rewrite_picks(prog)
+        prog, self.picks, self.dropped = rewrite_picks(prog)
         prog, self.lib_judgment = libmap_box.typed(prog, lib)
-        prog, judgment, self.lib_moved = libmap_rewrite(prog, lib, macros=paths.MACROS_ENV in os.environ)
+        # the rewrite in its ground form, whose clauses the Souffle engine can run, which
+        # `parity_text` reads; it runs first, as `instances.GROUNDED` holds the latest run's inputs
+        self.ground_prog = libmap_rewrite(prog, lib, ground=True)[0]
+        # the instances in `Params` that a frame-read plan makes (`FieldPlan.souffle`), and their
+        # clauses, as the ground program's units are, which `parity_text` reads beside it
+        self.plan_instances: dict[ScopedName, Instance] = {}
+        self.plan_units: list[Unit] = []
+        # for each arclog name, the label and field of each site that a read of it writes, since a
+        # label of a `DET` that no read names is existential and the relation holds no column for it
+        self.read_sites: dict[str, set[tuple[str, str | None]]] = {}
+        prog, judgment, self.lib_moved, lib_held = libmap_rewrite(prog, lib)
         MOVED_RELS.clear()
         MOVED_RELS.update({f"{was}.{r}": new for was, moves in self.lib_moved.values() for r, new in moves.items()})
         self.lib_judgment |= judgment
@@ -116,11 +243,15 @@ class Converter:
             (t.scope.components, t.name): t for t in prog.types}
         self.rels = {(r.scope.components, r.name): r for r in prog.relations}
         self.insts = {(i.scope.components, i.name): i for i in prog.instances}
-        # each relation the lib rewrite moves an instance's relation to
-        for inst, (was, moves) in self.lib_moved.items():
-            for sc in [sc for sc, n in self.insts if n == inst]:
-                for r, new in moves.items():
-                    self.made[(sc, new)] = Written(sc, f"{was}.{r}", False)
+        # each relation of a shape the lib rewrite makes, with each Souffle
+        # relation it holds
+        for (sc, rel), helds in lib_held.items():
+            if (sc, rel) not in self.souffle_columns:
+                self.made[(sc, rel)] = tuple(Written(sc, f"{h.instance}.{h.relation}", False, h.columns) for h in helds)
+        for (sc, _), (_, moves) in self.lib_moved.items():
+            for new in moves.values():
+                if (sc, new) not in self.souffle_columns:
+                    self.made.setdefault((sc, new), ())
         self.comps = {c.name: c for c in prog.components}
         self.case_types = self._case_types()
         self.open_params = self._open_params()
@@ -133,7 +264,11 @@ class Converter:
         self.prog = prog = dc_replace(prog, units=tuple(u2 for u in prog.units for u2 in self.case_tested(u)))
         self.prog = prog = dc_replace(prog, units=tuple(record_eqs(u, self.record_fields) for u in prog.units))
         self.prog = prog = self.split_read_inputs(prog)
+        self.det_copies: dict[ScopedName, ScopedName] = {}   # a copy -> the relation it is a copy of
+        self.det_copy_via: dict[ScopedName, str] = {}   # a copy of a relation of the parse -> the instance of the parse, in the copy's scope, that holds the relation
+        self.prog = prog = self.parse_instance_copies(prog)
         self.prog = prog = self.split_det_parse(prog)
+        self.prog = prog = self.det_program_copies(prog)
         self.rels = {(r.scope.components, r.name): r for r in prog.relations}
         self.prog = prog = self.candidate_parse(prog)
         self.prog = prog = self.demonstrated(prog)
@@ -153,6 +288,19 @@ class Converter:
             if isinstance(m, RigidCall) and m.scope.components == ("Params",):
                 for n in m.names:
                     self.rigid[n] = (m.block, n[len(m.block) + 1:])
+        # An id-keyed chart (`docs/handbook/patterns.md`): a block whose parts
+        # each lead their stored columns with an `Ident`. Its form is keyed on
+        # that id, so each id is an assembly of its own, and a part's read gives
+        # the id at its `key` column.
+        by_block: dict[str, list[str]] = {}
+        for n, (block, part) in self.rigid.items():
+            by_block.setdefault(block, []).append(n)
+
+        def leads_with_ident(n: str) -> bool:
+            return [c.type.name for c in self.rels[(("Params",), n)].columns[1:2]] == ["Ident"]
+
+        self.rigid_keyed: frozenset[str] = frozenset(
+            block for block, names in by_block.items() if all(map(leads_with_ident, names)))
         for n, (block, part) in self.rigid.items():
             self.used_names.add(block)
             self.used_names.add("pose")   # `&<block>.pose` is the form's own output
@@ -232,6 +380,18 @@ class Converter:
         while isinstance(t, AliasType):
             name = t.target.name
             t = self.find_type(name, scope)
+        return name
+
+    def type_root(self, name: str, scope: tuple[str, ...]) -> str:
+        """The type `name` stands for once each alias `.type A = B` and each
+        union `.type A = B | C` it names is followed to its end (a union to
+        its first member), so that a type and the union over it, such as
+        `Dir` and `Dir8`, are one type. A subtype `.type A <: B` stays
+        apart from `B`: `Ident` and `Dir` are both subtypes of `number`."""
+        t = self.find_type(name, scope) or self.lib.types.get(name)
+        while isinstance(t, (AliasType, UnionType)):
+            name = (t.target if isinstance(t, AliasType) else t.members[0]).name
+            t = self.find_type(name, scope) or self.lib.types.get(name)
         return name
 
     def find_type(self, name: str, scope: tuple[str, ...]):
@@ -394,13 +554,16 @@ class Converter:
     def open_carriers_dropped(self, prog):
         """A relation whose columns are a case's and an open value's, with
         at least one of the latter, dropped with its positive reads: in a
-        model it holds the one open value, so a read of it tells nothing."""
+        model it holds the one open value, so a read of it tells nothing. A
+        check relation (`checks`) stays: it is read by no clause, and its
+        clauses are what the row-parity check compares."""
         if not self.open_types:
             return prog
         gone = set()
         cases = {"impl_choice"}   # the relations of a case's columns alone
+        checks = set(self.checks.values())
         for r in prog.relations:
-            if r.scope.components or not r.columns:
+            if r.scope.components or not r.columns or r.name in checks:
                 continue
             kinds = {lf.kind for col in r.columns for lf in self.leaves(col.name, col.type.name, False, (), {})}
             if not any(col.type.name in self.open_types for col in r.columns):
@@ -501,8 +664,9 @@ class Converter:
             prog = got
             self.demo_insts.add(key)
             self.demo_rule_types.add(inst.type_args[1].name)
+            pair = [a.name for a in inst.type_args[:2]]
             self.demo_rule_records |= {t.name for t in prog.types if isinstance(t, RecordType)
-                                       and any(f.type.name == inst.type_args[1].name for f in t.fields)}
+                                       and [f.type.name for f in t.fields] == pair}
         self.select_ctors = {k.name for sc_, n in self.demo_select
                              for t in [self.find_type(self.insts[(sc_, n)].type_args[1].name, ())]
                              if isinstance(t, AdtType) for k in t.constructors}
@@ -887,10 +1051,11 @@ class Converter:
                 return RecordTerm(tuple(args))
             return t
 
-        def fix(a: Atom, scope, m: dict) -> Atom:
+        def fix(a: Atom, scope, m: dict, shared: set[str]) -> Atom:
             """The read with each dropped column's variable at the column it
             repeats, where the read leaves that column out; the renames of
-            the variables it names at both columns go to `m`."""
+            the variables it names at both columns go to `m`. `shared` holds
+            the variables that stand at more than one site of atoms."""
             key = find(a.relation, scope)
             if key is None or key not in self.alias:
                 return a
@@ -901,20 +1066,33 @@ class Converter:
             for k, j in self.alias[key].items():
                 tk, tj = r[k], r[j]
                 ck, lk = pos[k]
-                if isinstance(tk, Variable) and isinstance(tj, Variable) and tk != tj:
-                    whole = a.args[ck]
-                    if isinstance(whole, Variable) and lk.path:
-                        # the record variable spelled out, with the repeated
-                        # column's variable at the dropped leaf
-                        cls = [l for i_, l in pos if i_ == ck]
-                        ts = [t_ if t_ is not None else Wildcard() for (i_, _), t_ in zip(pos, r) if i_ == ck]
-                        rec = None
-                        for l, t_ in zip(cls, ts):
-                            rec = put(rec if rec is not None else build(cls), l.path, tj if l is lk else t_)
-                        m.setdefault(whole.name, rec)
-                    else:
-                        m.setdefault(tk.name, tj)
-                elif isinstance(tk, Variable) and isinstance(tj, Wildcard):
+                if not isinstance(tk, Variable) or not isinstance(tj, (Variable, Wildcard)) or tk == tj:
+                    continue
+                whole, depth = a.args[ck], 0
+                while isinstance(whole, RecordTerm) and depth < len(lk.path):
+                    whole, depth = whole.args[lk.path[depth]], depth + 1
+                one_kept = sum(1 for n_, (i_, l) in enumerate(pos) if i_ == ck and l.path[:depth] == lk.path[:depth]
+                               and l.kind == "keep" and n_ not in self.alias[key]) == 1
+                if isinstance(whole, Variable) and depth < len(lk.path) and (
+                        depth == 0 and isinstance(tj, Variable) or one_kept and whole.name in shared):
+                    # the record variable, which stands whole at the dropped
+                    # leaf's record, spelled out: the repeated column's
+                    # variable is at the dropped leaf, so each other read of
+                    # the variable reads the same leaves; the read here keeps
+                    # one leaf of a record variable, which a clause's other
+                    # read would give a name per leaf
+                    prefix = lk.path[:depth]
+                    cls = [dc_replace(l, path=l.path[depth:]) for i_, l in pos if i_ == ck and l.path[:depth] == prefix]
+                    ts = [t_ if t_ is not None else Wildcard()
+                          for (i_, l), t_ in zip(pos, r) if i_ == ck and l.path[:depth] == prefix]
+                    rec = None
+                    for l, t_ in zip(cls, ts):
+                        rec = put(rec if rec is not None else build(cls), l.path,
+                                  tj if l.path == lk.path[depth:] and isinstance(tj, Variable) else t_)
+                    m.setdefault(whole.name, rec)
+                elif isinstance(tj, Variable):
+                    m.setdefault(tk.name, tj)
+                if isinstance(tj, Wildcard):
                     ci, leaf = pos[j]
                     args[ci] = put(args[ci], leaf.path, tk)
             return dc_replace(a, args=tuple(args))
@@ -962,13 +1140,36 @@ class Converter:
                     and [c_.type for c_ in self.rels[ck].columns] == [c_.type for c_ in rel.columns]:
                 self.alias[key] = dict(self.alias[ck])
 
-        def lits_fix(lits, scope, m):
+        def shared_vars(lits, head=None) -> set[str]:
+            """The variables that stand at more than one site of the atoms of
+            `lits` and `head`."""
+            seen: Counter = Counter()
+
+            def walk(t) -> None:
+                if isinstance(t, Variable):
+                    seen[t.name] += 1
+                for x in getattr(t, "args", ()) or ():
+                    walk(x)
+
+            def scan(ls) -> None:
+                for l in ls:
+                    if isinstance(l, AtomLiteral):
+                        walk(l.atom)
+                    elif isinstance(l, Disjunction):
+                        for b in l.branches:
+                            scan(b)
+            scan(lits)
+            if head is not None:
+                walk(head)
+            return {v for v, n in seen.items() if n > 1}
+
+        def lits_fix(lits, scope, m, shared):
             out = []
             for l in lits:
                 if isinstance(l, AtomLiteral):
-                    out.append(dc_replace(l, atom=fix(l.atom, scope, m)))
+                    out.append(dc_replace(l, atom=fix(l.atom, scope, m, shared)))
                 elif isinstance(l, Disjunction):
-                    out.append(dc_replace(l, branches=tuple(tuple(lits_fix(b, scope, m)) for b in l.branches)))
+                    out.append(dc_replace(l, branches=tuple(tuple(lits_fix(b, scope, m, shared)) for b in l.branches)))
                 else:
                     out.append(l)
             return out
@@ -978,7 +1179,7 @@ class Converter:
                 units.append(u)
                 continue
             m: dict[str, object] = {}
-            body = lits_fix(list(u.body), u.scope.components, m)
+            body = lits_fix(list(u.body), u.scope.components, m, shared_vars(u.body, u.head))
             head = u.head
             if m:
                 head = subst_terms(head, m)
@@ -988,7 +1189,7 @@ class Converter:
             parts = []
             for b in p_.aparts:
                 m = {}
-                b2 = lits_fix(list(b), p_.scope, m)
+                b2 = lits_fix(list(b), p_.scope, m, shared_vars(b))
                 parts.append(tuple(subst_terms(x, m) for x in b2) if m else tuple(b2))
             p_.aparts = parts
         return dc_replace(prog, units=tuple(units))
@@ -1158,9 +1359,9 @@ class Converter:
             cols.append(Column(cn, TypeName((), t)))
             args.append(Variable(pascal(cn)))
         decl = RelationDecl(DeclId(prog.next_decl_index()), name, Scope(sc), tuple(cols), (), (), None)
-        self.made[(sc, name)] = Written(sc, f"{inst.name}.{lr.name}", False)
         new_rn = RelationName((), name)
         kept_idx = [i for i in range(len(lr.cols)) if i not in dup]
+        self.made[(sc, name)] = (Written(sc, f"{inst.name}.{lr.name}", False, tuple(kept_idx)),)
         full = [args[kept_idx.index(dup.get(i, i))] for i in range(len(lr.cols))]
 
         def rename(x):
@@ -1222,55 +1423,33 @@ class Converter:
         unfed differs, and its dependents are copied only where the
         determination reads them. Each relation and instance of the parse
         that reads an input fed otherwise is the determination's own: a copy
-        keyed on Example, which the determination's readers read."""
+        keyed on Example, which the determination's readers read. So is each
+        relation or instance of the parse that an alt rederives, in clauses
+        keyed by a constructor outside the concept case, where a `DET` of the
+        concept program reads it (`own_copies`): the copy has the concept
+        case's clauses alone, so that no alt rederives what such a `DET`
+        reads. An input whose program feed reads a relation of the program
+        that `det_program_copies` copies is fed otherwise too: the
+        determination's feed of it reads no relation an alt rederives."""
         from engine.program import Column, DeclId, Scope, Span, TypeName, UnitId
         det = ("Determine",)
-        self.det_parse_copies: dict[tuple[tuple[str, ...], str], str] = {}   # a copy -> the name it is a copy of
         concept = set(self.concept_of().values())
-        other_ctors = {k.name for _, adt_ in self.point_fields() for k in adt_.constructors} - concept
+        other_ctors = self.other_ctors()
+        concept_program, program_rederived = self.program_concept(prog)
+        self.rederived |= {((), x) for x in program_rederived}
+        # the relations of the program that an alt rederives and a `DET` of the concept program reads, and those that read them
+        copied_program = self.tainted_program(concept_program, program_rederived)
 
         prog_inst = {i.component: i.name for i in prog.instances if i.scope.components == () and i.component in self.comps}
-        parse_rels = {r.name: r for r in prog.relations if r.scope.components == ("Parse",)}
-        parse_insts = {i.name: i for i in prog.instances if i.scope.components == ("Parse",)}
-        parse_units = [u for u in prog.units if u.scope.components == ("Parse",)]
+        nodes = ParseNodes(prog, self.lib)
+        parse_rels, parse_insts, parse_units = nodes.rels, nodes.insts, nodes.units
+        node, key_at, instance_key_at = nodes.node, nodes.key_at, nodes.instance_key_at
         E = Variable("@E")
-
-        def node(rn: RelationName):
-            if rn.instances:
-                return rn.instances[0] if rn.instances[0] in parse_insts else None
-            return rn.name if rn.name in parse_rels else None
-
-        def walk_vars(x, out: list[str]) -> None:
-            if isinstance(x, Variable):
-                if x.name not in out:
-                    out.append(x.name)
-            elif isinstance(x, tuple):
-                for y in x:
-                    walk_vars(y, out)
-            elif is_dataclass(x) and not isinstance(x, type):
-                for f_ in dc_fields(x):
-                    walk_vars(getattr(x, f_.name), out)
 
         def canon(u: Unit) -> str:
             names: list[str] = []
             walk_vars((u.head, u.body), names)
             return souffle_unit(subst(dc_replace(u, scope=Scope(det)), {n: f"V{i}" for i, n in enumerate(names)}))
-
-        def rel_map(x, fn):
-            if isinstance(x, RelationName):
-                return fn(x)
-            if isinstance(x, tuple):
-                return tuple(rel_map(y, fn) for y in x)
-            if is_dataclass(x) and not isinstance(x, type):
-                ch = {f_.name: rel_map(getattr(x, f_.name), fn) for f_ in dc_fields(x)
-                      if isinstance(getattr(x, f_.name), (tuple, RelationName))
-                      or (is_dataclass(getattr(x, f_.name)) and not isinstance(getattr(x, f_.name), type))}
-                return dc_replace(x, **ch) if ch else x
-            return x
-
-        def key_at(rn: RelationName) -> int | None:
-            r = parse_rels.get(rn.name) if not rn.instances else None
-            return next((i for i, c_ in enumerate(r.columns) if c_.type.name == "Key"), None) if r else None
 
         case_rels = {r.name for r in prog.relations if r.scope.components == () and r.columns
                      and all(c_.type.name in self.case_types for c_ in r.columns)} | {"impl_choice"}
@@ -1506,11 +1685,24 @@ class Converter:
                     fed = feed(u, n, True)
                     feeds[rn.name][1].append(fed[0])
                     det_feeds[rn.name].append(fed[1])
+            rederived: set[str] = set()
             for x, clauses in prog_clauses.items():
                 dropped = alternates(clauses)
                 feeds[x][0].extend(feed(u, pname, False, case_key)[0] for i, u in enumerate(clauses) if i not in dropped)
+                if dropped and det_feeds[x]:
+                    rederived.add(x)
+            # the parse's own clauses that a constructor outside the concept case keys
+            alternate_ctors = {id(u): {m for t in u.head.args for m in ctor_names(t)} & other_ctors for u in parse_units}
+            rederived |= {h for u in parse_units if alternate_ctors[id(u)] and (h := node(u.head.relation)) is not None}
+            self.rederived |= {(("Parse",), x) for x in rederived}
+            # an input whose program feed reads a relation that the determination copies, before the `stand` rewrite or not
+            fed_from_copies = {x for x, clauses in prog_clauses.items()
+                               if any(a.relation.name in copied_program and not a.relation.instances
+                                      for i, u in enumerate(clauses) if i not in alternates(clauses)
+                                      for a in self._atoms(u.body or ()))}
             differ = {x for x, (a, b) in feeds.items()
-                      if sorted(a) != sorted(b) and not (a and concept_feed(x, det_feeds[x]))}
+                      if sorted(a) != sorted(b) and not (a and concept_feed(x, det_feeds[x]))} \
+                | {x for x in rederived if (("Parse",), x) in self.own_copies} | fed_from_copies
             if not differ:
                 continue
             # the parse's nodes that read an input fed otherwise
@@ -1525,169 +1717,312 @@ class Converter:
                         tainted.add(h)
                         grew = True
             # those the determination reads
-            deps: dict[str, set[str]] = defaultdict(set)
-            for u in parse_units:
-                h = node(u.head.relation)
-                if h is not None:
-                    deps[h] |= {x for a in self._atoms(u.body or ()) if (x := node(a.relation)) is not None}
-            todo = [x for u in prog.units if u.scope.components == det
-                    and not (u.head.relation.instances == (n,) and u.head.relation.name not in differ)
-                    for a in self._atoms(u.body or ()) if a.relation.instances[:1] == (n,)
-                    and (x := node(RelationName(a.relation.instances[1:], a.relation.name))) is not None]
-            read: set[str] = set()
-            while todo:
-                x = todo.pop()
-                if x not in read:
-                    read.add(x)
-                    todo += deps.get(x, ())
+            read = nodes.closure(nodes.read_through(
+                (u for u in prog.units if u.scope.components == det
+                 and not (u.head.relation.instances == (n,) and u.head.relation.name not in differ)), n))
             copy = tainted & read
             if not copy:
                 continue
-            taken = {r.name for r in prog.relations if r.scope.components == det} | \
-                    {i.name for i in prog.instances if i.scope.components == det}
-            own: dict[str, str] = {}
-            for x in sorted(copy):
-                cand, k = f"{n}__{x}", 2
-                while cand in taken:
-                    cand, k = f"{n}__{x}{k}", k + 1
-                taken.add(cand)
-                own[x] = cand
-                self.det_parse_copies[(det, cand)] = x
-
-            def to_det(rn: RelationName, from_parse: bool):
-                if from_parse:
-                    if rn.instances and rn.instances[0] in parse_insts:
-                        i0 = rn.instances[0]
-                        return RelationName((own[i0],) + rn.instances[1:], rn.name) if i0 in own \
-                            else RelationName((n,) + rn.instances, rn.name)
-                    if not rn.instances and rn.name in parse_rels:
-                        return RelationName((), own[rn.name]) if rn.name in own else RelationName((n,), rn.name)
-                    return rn
-                if rn.instances[:1] == (n,):
-                    return to_det(RelationName(rn.instances[1:], rn.name), True)
-                return rn
-            # the parse's types the copies read, each a copy keyed on Example
-            parse_types = {t.name: t for t in prog.types if t.scope.components == ("Parse",)}
-            det_types = {t.name for t in prog.types if t.scope.components == det}
-
-            def type_refs(x, out: set[str]) -> None:
-                if isinstance(x, TypeName):
-                    if not x.instances and x.name in parse_types and x.name not in out:
-                        out.add(x.name)
-                        type_refs(parse_types[x.name], out)
-                elif isinstance(x, tuple):
-                    for y in x:
-                        type_refs(y, out)
-                elif is_dataclass(x) and not isinstance(x, type):
-                    for f_ in dc_fields(x):
-                        type_refs(getattr(x, f_.name), out)
-            refs: set[str] = set()
-            type_refs(tuple(parse_rels[x] for x in copy if x in parse_rels), refs)
-            type_refs(tuple(parse_insts[x] for x in copy if x in parse_insts), refs)
-            type_refs(tuple(u for u in parse_units if node(u.head.relation) in copy), refs)
-            tmap = dict(tsub)
-            for t in sorted(refs):
-                cand, k = f"{n}__{t}", 2
-                while cand in det_types:
-                    cand, k = f"{n}__{t}{k}", k + 1
-                det_types.add(cand)
-                tmap[t] = cand
-
-            def retype(x):
-                if isinstance(x, TypeName):
-                    return TypeName((), tmap[x.name]) if not x.instances and x.name in tmap else x
-                if isinstance(x, tuple):
-                    return tuple(retype(y) for y in x)
-                if is_dataclass(x) and not isinstance(x, type) and not isinstance(x, (RelationName, Span)):
-                    ch = {f_.name: retype(getattr(x, f_.name)) for f_ in dc_fields(x)
-                          if isinstance(getattr(x, f_.name), tuple) or
-                          (is_dataclass(getattr(x, f_.name)) and not isinstance(getattr(x, f_.name), type))}
-                    return dc_replace(x, **ch) if ch else x
-                return x
-            new_rels, new_insts, new_types, new_units = [], [], [], []
-
-            def next_id() -> DeclId:
-                return DeclId(prog.next_decl_index() + len(new_rels) + len(new_insts) + len(new_types))
-            for t in sorted(refs):
-                new_types.append(dc_replace(retype(parse_types[t]), id=next_id(), name=tmap[t], scope=Scope(det)))
-            for x in sorted(copy):
-                if x in parse_rels:
-                    r = parse_rels[x]
-                    names = [c_.name for c_ in r.columns]
-                    cols = tuple(Column("e" if c_.type.name == "Key" and "e" not in names else c_.name, retype(c_.type))
-                                 for c_ in r.columns)
-                    new_rels.append(dc_replace(r, id=next_id(), name=own[x], scope=Scope(det), columns=cols))
-                else:
-                    i = parse_insts[x]
-                    new_insts.append(dc_replace(i, id=next_id(), name=own[x], scope=Scope(det),
-                                                type_args=retype(i.type_args)))
-            base = prog.next_unit_index()
-            for u in parse_units:
-                if node(u.head.relation) in copy:
-                    # the key is the example, E
-                    hk = 0 if u.head.relation.instances else key_at(u.head.relation)
-                    k0 = u.head.args[hk] if hk is not None and hk < len(u.head.args) else None
-                    used: list[str] = []
-                    walk_vars((u.head, u.body), used)
-                    m: dict[str, str] = {}
-                    if "E" in used and k0 != Variable("E"):
-                        # another E: a lifted read's Example column takes that name
-                        j = 1
-                        while f"E{j}" in used:
-                            j += 1
-                        m["E"] = f"E{j}"
-                    if isinstance(k0, Variable) and k0.name != "E":
-                        m[k0.name] = "E"
-                    new_units.append(subst(retype(Unit(UnitId(base + len(new_units)), Scope(det),
-                                                       rel_map(u.head, lambda rn: to_det(rn, True)),
-                                                       rel_map(u.body, lambda rn: to_det(rn, True)), u.plan, u.span)), m))
-            units = []
-            for u in prog.units:
-                if u.scope.components == det:
-                    rn = u.head.relation
-                    if rn.instances == (n,) and rn.name in copy:
-                        u = dc_replace(u, head=dc_replace(u.head, relation=RelationName((), own[rn.name])))
-                    u = dc_replace(u, body=rel_map(u.body, lambda rn: to_det(rn, False)))
-                units.append(u)
-                if parse_units and u is parse_units[-1]:
-                    units += new_units
-            if not parse_units:
-                units += new_units
-            # a copy no clause derives is empty, and so is an instance copy
-            # no input clause feeds: a clause that reads it holds nowhere,
-            # and a negation of it holds everywhere
-            copies = {r.name for r in new_rels} | {i.name for i in new_insts}
-
-            def of(a: Atom) -> str:
-                return a.relation.instances[0] if a.relation.instances else a.relation.name
-            while True:
-                heads = {of(u.head) for u in units if u.scope.components == det}
-                empty = copies - heads
-                kept = []
-                for u in units:
-                    if u.scope.components == det and any(
-                            isinstance(l, AtomLiteral) and of(l.atom) in empty and not l.negated for l in u.body or ()):
-                        continue
-                    if u.scope.components == det and u.body:
-                        u = dc_replace(u, body=tuple(l for l in u.body if not (
-                            isinstance(l, AtomLiteral) and l.negated and of(l.atom) in empty)))
-                    kept.append(u)
-                if len(kept) == len(units):
-                    units = kept
-                    break
-                units = kept
-            new_rels = [r for r in new_rels if r.name not in empty]
-            new_insts = [i for i in new_insts if i.name not in empty]
-            for key_ in [k_ for k_ in self.det_parse_copies if k_[1] in empty]:
-                del self.det_parse_copies[key_]
-            prog = dc_replace(prog, types=prog.types + tuple(new_types), relations=prog.relations + tuple(new_rels),
-                              instances=prog.instances + tuple(new_insts), units=tuple(units))
-            for i in new_insts:
-                self.insts[(det, i.name)] = i
-            for t in new_types:
-                self.types[(det, t.name)] = t
-            self.rels = {(r.scope.components, r.name): r for r in prog.relations}
+            prog = self.copy_parse(prog, nodes, det, n, tsub, copy,
+                                   [u for u in parse_units if node(u.head.relation) in copy and not (
+                                       alternate_ctors[id(u)] and (("Parse",), node(u.head.relation)) in self.own_copies)])
         return prog
+
+    def parse_instance_copies(self, prog):
+        """Each top-level instance of the solver's `Parse` after the first
+        (the solver's own, which `parse_sub` takes) is written as copies of
+        the nodes of the parse that the program reads through it
+        (`copy_parse`), each keyed on the instance's key type, with the
+        instance's input clauses (`chart.cell`) as the copies' input; the
+        program's parse relations hold the clauses of the solver's own
+        instance alone. The instance is dropped. An instance that a clause
+        outside the top level names is not written so: the clause would
+        still read it, and it gets a `TODO` line, with no clause of the
+        instance in the parse relations."""
+        top = [i for i in prog.instances if i.scope.components == () and i.component == "Parse"]
+        nodes = ParseNodes(prog, self.lib)
+        for inst in top[1:]:
+            n = inst.name
+            named_in = {u.scope.components for u in prog.units
+                        for a in (u.head, *self._atoms(u.body or ())) if a.relation.instances[:1] == (n,)}
+            if named_in <= {()}:
+                copy = nodes.closure(nodes.read_through((u for u in prog.units if u.scope.components == ()), n))
+                prog = self.copy_parse(prog, nodes, (), n, {p: a.name for p, a in zip(self.comps["Parse"].type_params, inst.type_args)},
+                                       copy, [u for u in nodes.units if nodes.node(u.head.relation) in copy])
+            else:
+                self.todo.add("parse-instance", f"{n}: a clause outside the top level names the instance of the "
+                              f"{inst.component} component, which is written as copies in the top level")
+            prog = dc_replace(prog, instances=tuple(i for i in prog.instances if (i.scope.components, i.name) != ((), n)),
+                              units=tuple(u for u in prog.units
+                                          if not (u.scope.components == () and u.head.relation.instances[:1] == (n,))))
+            self.insts.pop(((), n), None)
+        return prog
+
+    def copy_parse(self, prog, nodes: ParseNodes, scope: tuple[str, ...], n: str, tsub: dict[str, str],
+                   copy: set[str], clauses: list[Unit]):
+        """`prog` with a copy, in `scope`, of each node of `copy` of the
+        solver's parse that the instance `n` of `scope` holds, and of each
+        type the copies read, under names of their own (`<n>__<name>`).
+        `tsub` gives the type each parameter of the parse has for `n`, and the
+        copies are keyed on the type `Key` has there. The copies' clauses are
+        `clauses`, those of the parse, and read the copies. The clauses of
+        `scope` that head or read a copied node of `n` head or read the copy.
+        A copy that no clause derives is dropped (`without_empty`). Each copy
+        is a copy through `n` of its node (`det_copies`, `det_copy_via`). A
+        parse keyed on Example has the key variable of each clause `E`, and
+        its key column `e`."""
+        from engine.program import Column, DeclId, Scope, Span, TypeName, UnitId
+        example = tsub.get("Key") == "Example"
+        taken = {r.name for r in prog.relations if r.scope.components == scope} | \
+                {i.name for i in prog.instances if i.scope.components == scope}
+        own: dict[str, str] = {}
+        for x in sorted(copy):
+            cand, k = f"{n}__{x}", 2
+            while cand in taken:
+                cand, k = f"{n}__{x}{k}", k + 1
+            taken.add(cand)
+            own[x] = cand
+            self.det_copies[(scope, cand)] = (("Parse",), x)
+            self.det_copy_via[(scope, cand)] = n
+
+        def to_copy(rn: RelationName, from_parse: bool):
+            if from_parse:
+                if rn.instances and rn.instances[0] in nodes.insts:
+                    i0 = rn.instances[0]
+                    return RelationName((own[i0],) + rn.instances[1:], rn.name) if i0 in own \
+                        else RelationName((n,) + rn.instances, rn.name)
+                if not rn.instances and rn.name in nodes.rels:
+                    return RelationName((), own[rn.name]) if rn.name in own else RelationName((n,), rn.name)
+                return rn
+            if rn.instances[:1] == (n,):
+                return to_copy(RelationName(rn.instances[1:], rn.name), True)
+            return rn
+        # the parse's types the copies read, each a copy keyed as the instance is
+        parse_types = {t.name: t for t in prog.types if t.scope.components == ("Parse",)}
+        scope_types = {t.name for t in prog.types if t.scope.components == scope}
+
+        def type_refs(x, out: set[str]) -> None:
+            if isinstance(x, TypeName):
+                if not x.instances and x.name in parse_types and x.name not in out:
+                    out.add(x.name)
+                    type_refs(parse_types[x.name], out)
+            elif isinstance(x, tuple):
+                for y in x:
+                    type_refs(y, out)
+            elif is_dataclass(x) and not isinstance(x, type):
+                for f_ in dc_fields(x):
+                    type_refs(getattr(x, f_.name), out)
+        refs: set[str] = set()
+        type_refs(tuple(nodes.rels[x] for x in copy if x in nodes.rels), refs)
+        type_refs(tuple(nodes.insts[x] for x in copy if x in nodes.insts), refs)
+        type_refs(tuple(u for u in nodes.units if nodes.node(u.head.relation) in copy), refs)
+        tmap = dict(tsub)
+        for t in sorted(refs):
+            cand, k = f"{n}__{t}", 2
+            while cand in scope_types:
+                cand, k = f"{n}__{t}{k}", k + 1
+            scope_types.add(cand)
+            tmap[t] = cand
+
+        def retype(x):
+            if isinstance(x, TypeName):
+                return TypeName((), tmap[x.name]) if not x.instances and x.name in tmap else x
+            if isinstance(x, tuple):
+                return tuple(retype(y) for y in x)
+            if is_dataclass(x) and not isinstance(x, type) and not isinstance(x, (RelationName, Span)):
+                ch = {f_.name: retype(getattr(x, f_.name)) for f_ in dc_fields(x)
+                      if isinstance(getattr(x, f_.name), tuple) or
+                      (is_dataclass(getattr(x, f_.name)) and not isinstance(getattr(x, f_.name), type))}
+                return dc_replace(x, **ch) if ch else x
+            return x
+        new_rels, new_insts, new_types, new_units = [], [], [], []
+
+        def next_id() -> DeclId:
+            return DeclId(prog.next_decl_index() + len(new_rels) + len(new_insts) + len(new_types))
+        for t in sorted(refs):
+            new_types.append(dc_replace(retype(parse_types[t]), id=next_id(), name=tmap[t], scope=Scope(scope)))
+        for x in sorted(copy):
+            if x in nodes.rels:
+                r = nodes.rels[x]
+                names = [c_.name for c_ in r.columns]
+                cols = tuple(Column("e" if example and c_.type.name == "Key" and "e" not in names else c_.name,
+                                    retype(c_.type))
+                             for c_ in r.columns)
+                new_rels.append(dc_replace(r, id=next_id(), name=own[x], scope=Scope(scope), columns=cols))
+            else:
+                i = nodes.insts[x]
+                new_insts.append(dc_replace(i, id=next_id(), name=own[x], scope=Scope(scope),
+                                            type_args=retype(i.type_args)))
+        base = prog.next_unit_index()
+        for u in clauses:
+            m: dict[str, str] = {}
+            if example:
+                # the key is the example, E
+                hk = nodes.instance_key_at(u.head.relation) if u.head.relation.instances else nodes.key_at(u.head.relation)
+                k0 = u.head.args[hk] if hk is not None and hk < len(u.head.args) else None
+                used: list[str] = []
+                walk_vars((u.head, u.body), used)
+                if "E" in used and k0 != Variable("E"):
+                    # another E: a lifted read's Example column takes that name
+                    j = 1
+                    while f"E{j}" in used:
+                        j += 1
+                    m["E"] = f"E{j}"
+                if isinstance(k0, Variable) and k0.name != "E":
+                    m[k0.name] = "E"
+            new_units.append(subst(retype(Unit(UnitId(base + len(new_units)), Scope(scope),
+                                               rel_map(u.head, lambda rn: to_copy(rn, True)),
+                                               rel_map(u.body, lambda rn: to_copy(rn, True)), u.plan, u.span)), m))
+        units = []
+        for u in prog.units:
+            if u.scope.components == scope:
+                rn = u.head.relation
+                if rn.instances == (n,) and rn.name in copy:
+                    u = dc_replace(u, head=dc_replace(u.head, relation=RelationName((), own[rn.name])))
+                u = dc_replace(u, body=rel_map(u.body, lambda rn: to_copy(rn, False)))
+            units.append(u)
+            if nodes.units and u is nodes.units[-1]:
+                units += new_units
+        if not nodes.units:
+            units += new_units
+        units, empty = self.without_empty(units, scope, {r.name for r in new_rels} | {i.name for i in new_insts})
+        new_rels = [r for r in new_rels if r.name not in empty]
+        new_insts = [i for i in new_insts if i.name not in empty]
+        for key_ in [k_ for k_ in self.det_copies if k_[1] in empty]:
+            del self.det_copies[key_]
+            self.det_copy_via.pop(key_, None)
+        prog = dc_replace(prog, types=prog.types + tuple(new_types), relations=prog.relations + tuple(new_rels),
+                          instances=prog.instances + tuple(new_insts), units=tuple(units))
+        for i in new_insts:
+            self.insts[(scope, i.name)] = i
+        for t in new_types:
+            self.types[(scope, t.name)] = t
+        self.rels = {(r.scope.components, r.name): r for r in prog.relations}
+        return prog
+
+    @staticmethod
+    def without_empty(units, det: tuple[str, ...], copies: set[str]):
+        """`units` and the `copies` that no clause of `det` derives, where a
+        copy no clause derives is empty, and so is an instance copy no input
+        clause feeds: a clause of `det` that reads an empty copy holds
+        nowhere, and a negation of it holds everywhere."""
+        def of(a: Atom) -> str:
+            return a.relation.instances[0] if a.relation.instances else a.relation.name
+        while True:
+            heads = {of(u.head) for u in units if u.scope.components == det}
+            empty = copies - heads
+            kept = []
+            for u in units:
+                if u.scope.components == det and any(
+                        isinstance(l, AtomLiteral) and of(l.atom) in empty and not l.negated for l in u.body or ()):
+                    continue
+                if u.scope.components == det and u.body:
+                    u = dc_replace(u, body=tuple(l for l in u.body if not (
+                        isinstance(l, AtomLiteral) and l.negated and of(l.atom) in empty)))
+                kept.append(u)
+            if len(kept) == len(units):
+                return kept, empty
+            units = kept
+
+    def other_ctors(self) -> set[str]:
+        """The constructors of the points' ADTs outside the concept case."""
+        return {k.name for _, adt_ in self.point_fields() for k in adt_.constructors} - set(self.concept_of().values())
+
+    def program_concept(self, prog) -> tuple[dict[str, list[Unit]], set[str]]:
+        """Each relation of the program, with its clauses that hold in the
+        concept case: those that no constructor outside the concept case
+        keys, in the head, in a positive read of a relation, or by an
+        equation. And the relations with a clause that such a constructor keys:
+        an alt rederives them."""
+        other = self.other_ctors()
+
+        def keyed(u: Unit) -> bool:
+            names = [m for t in u.head.args for m in ctor_names(t)]
+            for l in u.body or ():
+                if isinstance(l, AtomLiteral) and not l.negated:
+                    names += [m for t in l.atom.args for m in ctor_names(t)]
+                elif isinstance(l, Comparison) and l.op == ComparisonOperator.EQ:
+                    names += ctor_names(l.lhs) + ctor_names(l.rhs)
+            return bool(other.intersection(names))
+        concept: dict[str, list[Unit]] = defaultdict(list)
+        rederived: set[str] = set()
+        for u in prog.units:
+            if u.scope.components == () and not u.head.relation.instances:
+                if keyed(u):
+                    rederived.add(u.head.relation.name)
+                else:
+                    concept[u.head.relation.name].append(u)
+        return concept, rederived
+
+    def tainted_program(self, concept: dict[str, list[Unit]], rederived: set[str]) -> set[str]:
+        """The relations of the program that the determination is to copy
+        (`own_copies`) and an alt rederives, and each relation whose clauses
+        of the concept case read one of them, directly or through another."""
+        tainted = {x for x in rederived if ((), x) in self.own_copies}
+        grew = True
+        while grew:
+            grew = False
+            for x, us in concept.items():
+                if x not in tainted and any(a.relation.name in tainted and not a.relation.instances
+                                            for u in us for a in self._atoms(u.body or ())):
+                    tainted.add(x)
+                    grew = True
+        return tainted
+
+    def det_program_copies(self, prog):
+        """Each relation of the program that `tainted_program` finds and the
+        determination reads, directly or through another such relation, gets
+        a copy in the determination under a name of its own, with its clauses
+        of the concept case alone, which reads the copies of the relations it
+        reads; the determination's clauses read the copies. So no alt
+        rederives what a `DET` of the concept program reads. A relation that
+        the determination declares under the same name, or that a clause
+        reads, is left as it is."""
+        from engine.program import DeclId, Scope, UnitId
+        det = ("Determine",)
+        concept, rederived = self.program_concept(prog)
+        det_names = {r.name for r in prog.relations if r.scope.components == det} | \
+                    {i.name for i in prog.instances if i.scope.components == det}
+
+        def reads(us) -> set[str]:
+            return {a.relation.name for u in us for a in self._atoms(u.body or ()) if not a.relation.instances}
+        tainted = self.tainted_program(concept, rederived)
+        tainted -= {x for x in tainted if x in det_names or reads(concept[x]) & det_names}
+        todo = list(reads(u for u in prog.units if u.scope.components == det) & tainted)
+        copy: set[str] = set()
+        while todo:
+            x = todo.pop()
+            if x not in copy:
+                copy.add(x)
+                todo += reads(concept[x]) & tainted
+        if not copy:
+            return prog
+        own: dict[str, str] = {}
+        for x in sorted(copy):
+            cand, k = f"own__{x}", 2
+            while cand in det_names:
+                cand, k = f"own__{x}{k}", k + 1
+            det_names.add(cand)
+            own[x] = cand
+            self.det_copies[(det, cand)] = ((), x)
+
+        def reread(body):
+            for x, cand in own.items():
+                body = rename_rel(body, RelationName((), x), RelationName((), cand))
+            return body
+        decls = {r.name: r for r in prog.relations if r.scope.components == ()}
+        new_rels = [dc_replace(decls[x], id=DeclId(prog.next_decl_index() + i), name=own[x], scope=Scope(det))
+                    for i, x in enumerate(sorted(copy))]
+        base = prog.next_unit_index()
+        new_units = [Unit(UnitId(base + j), Scope(det), dc_replace(u.head, relation=RelationName((), own[x])),
+                          reread(u.body), u.plan, u.span)
+                     for j, (x, u) in enumerate((x, u) for x in sorted(copy) for u in concept[x])]
+        units = [dc_replace(u, body=reread(u.body)) if u.scope.components == det else u for u in prog.units]
+        units, empty = self.without_empty(units + new_units, det, set(own.values()))
+        for key_ in [k_ for k_ in self.det_copies if k_[1] in empty]:
+            del self.det_copies[key_]
+        return dc_replace(prog, relations=prog.relations + tuple(r for r in new_rels if r.name not in empty),
+                          units=tuple(units))
 
     @staticmethod
     def _atoms(lits):
@@ -1750,17 +2085,17 @@ class Converter:
         if t == "@lift":
             return [Leaf(name, "drop", tparam)]
         if t == "@example":
-            return [Leaf("E", "example", False)]
+            return [Leaf("E", "example", False, type="Example")]
         if t.startswith("@cand:"):
             # a candidate parse's key: its example, and the candidate, which
             # the parameter the read binds stands for
             decl = self.find_type(t[len("@cand:"):], ("Determine",))
             cand = self.cand_key_fields.get(t[len("@cand:"):], set())
             if isinstance(decl, RecordType):
-                return [Leaf("E", "example", False, (i,), (f.name,)) if f.type.name == "Example"
-                        else Leaf(f.name, "drop" if i in cand else "keep", tparam, (i,), (f.name,))
+                return [Leaf("E", "example", False, (i,), (f.name,), "Example") if f.type.name == "Example"
+                        else Leaf(f.name, "drop" if i in cand else "keep", tparam, (i,), (f.name,), f.type.name)
                         for i, f in enumerate(decl.fields)]
-            return [Leaf("E", "example", False)]
+            return [Leaf("E", "example", False, type="Example")]
         decl = self.find_type(t, scope)
         if isinstance(decl, RecordType):
             fsub = sub if outer is None else outer
@@ -1770,21 +2105,28 @@ class Converter:
             out = []
             for i, f in enumerate(decl.fields):
                 if lifted and f.type.name == "Example":
-                    out.append(Leaf("E", "example", False, (i,), (f.name,)))
+                    out.append(Leaf("E", "example", False, (i,), (f.name,), "Example"))
                     continue   # an example field: the lifted read's Example column
                 for leaf in self.leaves(f.name, f.type.name, tparam, decl.scope.components, fsub, lift_ex=lifted):
                     out.append(Leaf(leaf.name, leaf.kind, leaf.tparam, (i,) + leaf.path,
-                                    (f.name,) + leaf.field))
+                                    (f.name,) + leaf.field, leaf.type))
             return out
-        return [Leaf(name, "keep", tparam)]
+        return [Leaf(name, "keep", tparam, type=t)]
 
     # ---- names
 
-    def rel_name(self, scope: tuple[str, ...], name: str) -> str:
+    def rel_key(self, scope: tuple[str, ...], name: str) -> tuple[tuple[str, ...], str]:
+        """The key of the arclog relation that the Souffle relation `name` of
+        `scope` is written as: the parameter's, for a `Determine` relation that
+        determines a parameter, and its own otherwise."""
         key = (scope, name)
         if scope == ("Determine",) and key not in self.names and (("Params",), name) in self.rels \
                 and key not in self.insts:
-            key = (("Params",), name)   # the determination of the parameter
+            return (("Params",), name)   # the determination of the parameter
+        return key
+
+    def rel_name(self, scope: tuple[str, ...], name: str) -> str:
+        key = self.rel_key(scope, name)
         if key not in self.names:
             base = name
             cand = base
@@ -1796,20 +2138,58 @@ class Converter:
             self.names[key] = cand
         inst = self.insts.get(key)
         souffle = self.souffle_of(key[0], key[1], inst is not None and inst.component in self.lib.comps)
-        return self.wrote("in" if self.names[key] == "__in__" else "&" + self.names[key], souffle)
+        return self.wrote("in" if self.names[key] == "__in__" else "&" + self.names[key], *souffle)
 
-    def souffle_of(self, scope: tuple[str, ...], name: str, instance: bool) -> Written:
+    def souffle_of(self, scope: tuple[str, ...], name: str, instance: bool) -> tuple[Written, ...]:
         """What the relation, or instance, `name` of `scope` in the program
         this pass converts stands for in the Souffle program: itself, where
-        the pass did not make it."""
-        return self.made.get((scope, name)) or Written(scope, name, instance)
+        the pass did not make it, and what it made it for otherwise (none,
+        where it made it for no Souffle relation)."""
+        if (scope, name) in self.made:
+            return self.made[(scope, name)]
+        return (Written(scope, name, instance),)
 
-    def wrote(self, arc: str, souffle: Written) -> str:
+    def souffle_arity(self, scope: tuple[str, ...], relation: str) -> int | None:
+        """The number of columns of the Souffle relation `relation` declared
+        in `scope`, as the solver file declares it, or, for `<instance>.<name>`
+        of an instance of a component of the lib, as the present lib declares
+        it; none for a relation neither declares."""
+        instance, dot, name = relation.partition(".")
+        if not dot:
+            if (scope, relation) in self.souffle_columns:
+                return self.souffle_columns[(scope, relation)]
+            return len(self.lib.top[relation]) if not scope and relation in self.lib.top else None
+        component = self.souffle_components.get((scope, instance))
+        if component is None or component not in self.lib.comps:
+            return None
+        return next((len(r.cols) for r in self.lib.present(component)[1] if r.name == name), None)
+
+    def note_writing(self, forms: list[Form], within: frozenset[str]) -> None:
+        """Record, for each arclog name that `forms` derive by clauses, the
+        arclog column at which each kept leaf of the clauses' heads stands
+        in `forms`, the writing under the ALTs with the constructors
+        `within` (none: at the top level): a leaf stands at its own column
+        unless the clauses of the name all drop it to the same other."""
+        by_name: dict[str, list[Form]] = {}
+        for f in forms:
+            if f.src is not None and f.col_labels:
+                by_name.setdefault(f.name, []).append(f)
+        for name, fs in by_name.items():
+            records = [label_sources(f) for f in fs]
+            first = records[0]
+            if any(tuple(map(len, r)) != tuple(map(len, first)) for r in records):
+                continue
+            self.writings.setdefault(name, {})[within] = tuple(
+                tuple(first[j][k] if all(r[j][k] == first[j][k] for r in records) else (j, k)
+                      for k in range(len(first[j])))
+                for j in range(len(first)))
+
+    def wrote(self, arc: str, *souffle: Written) -> str:
         """`arc`, an arclog name this pass writes, recorded with what it was
-        written from, once each (`name_map`)."""
+        written from, once each (`name_map`); with none, recorded as written
+        from no Souffle relation."""
         got = self.written.setdefault(arc, [])
-        if souffle not in got:
-            got.append(souffle)
+        got.extend(w for w in dict.fromkeys(souffle) if w not in got)
         return arc
 
     # ---- resolving an atom's relation
@@ -1822,9 +2202,9 @@ class Converter:
         if not parts:
             if name in FACTS:
                 cols = self.lib.top[name]
-                out = [(Col(pascal(n), t, False), [Leaf(pascal(n), "keep", False)]) for n, t in cols]
+                out = [(Col(pascal(n), t, False), [Leaf(pascal(n), "keep", False, type=t)]) for n, t in cols]
                 if name != "in":
-                    out[0] = (out[0][0], [Leaf("E", "example", False)])
+                    out[0] = (out[0][0], [Leaf("E", "example", False, type="Example")])
                 return self.wrote(name, Written((), name, False)), out, "fact", None
             for i in range(len(scope), -1, -1):
                 r = self.rels.get((scope[:i], name))
@@ -1834,14 +2214,14 @@ class Converter:
                 self.wrote(name, Written((), name, False))
             if name in self.lib.top or name in self.sig.top:
                 cols = self.lib.top.get(name) or self.sig.top[name]
-                return name, [(Col(pascal(n), t, False), [Leaf(pascal(n), "keep", False)]) for n, t in cols], "lib", None
+                return name, [(Col(pascal(n), t, False), [Leaf(pascal(n), "keep", False, type=t)]) for n, t in cols], "lib", None
             return name, None, "unknown", None
         head, rest = parts[0], parts[1:]
-        if head == "@lib" and not rest:   # a lib relation an expansion wrote, whose name the solver takes
+        if head == LIB_PATH and not rest:   # a lib relation an expansion wrote, whose name the solver takes
             cols = self.lib.top.get(name) or self.sig.top.get(name)
             if cols is None:
                 return name, None, "unknown", None
-            return name, [(Col(pascal(n), t, False), [Leaf(pascal(n), "keep", False)]) for n, t in cols], "lib", None
+            return name, [(Col(pascal(n), t, False), [Leaf(pascal(n), "keep", False, type=t)]) for n, t in cols], "lib", None
         if head == "params" and not rest:
             r = self.rels.get((("Params",), name))
             if r is None:
@@ -1853,10 +2233,10 @@ class Converter:
             lr = next((r for r in hrels if r.name == name), None)
             if lr is None:
                 return name, None, "unknown", None
-            return name, [(Col(pascal(c.name), c.type, False), [Leaf(pascal(c.name), "keep", False)]) for c in lr.cols], "lib", None
+            return name, [(Col(pascal(c.name), c.type, False), [Leaf(pascal(c.name), "keep", False, type=c.type)]) for c in lr.cols], "lib", None
         inst = None
         for i in range(len(scope), -1, -1):
-            inst = self.insts.get((scope[:i], head))
+            inst = self.insts.get((scope[:i], head)) or self.plan_instances.get((scope[:i], head))
             if inst is not None:
                 break
         if inst is None:
@@ -1899,7 +2279,7 @@ class Converter:
         for c in lr.cols:
             cols.append((c, self.leaves(c.name, c.type, c.tparam, inst.scope.components, isub, outer=sub)))
         iname = self.rel_name(inst.scope.components, inst.name)
-        return (self.wrote(f"{iname}.{name}", self.souffle_of(inst.scope.components, f"{inst.name}.{name}", False)),
+        return (self.wrote(f"{iname}.{name}", *self.souffle_of(inst.scope.components, f"{inst.name}.{name}", False)),
                 cols, "inst", (inst.scope.components, inst.name))
 
     def leaf_type(self, type_name: str, path: tuple[int, ...], scope: tuple[str, ...], sub: dict[str, str]) -> str:
@@ -1915,11 +2295,12 @@ class Converter:
     def _derived(self, r, sub):
         cols = []
         placed = r.scope.components == ("Params",) and r.name in self.rigid
+        keyed = placed and self.rigid[r.name][0] in self.rigid_keyed
         same = getattr(self, "alias", {}).get((r.scope.components, r.name), {})
         n = 0
         for i, c in enumerate(r.columns):
-            col = Col("Pose" if placed and i == 0 else pascal(c.name), c.type.name, False)
-            ls = self.leaves(col.name, c.type.name, False, r.scope.components, sub)
+            col = Col("Pose" if placed and i == 0 else "key" if keyed and i == 1 else pascal(c.name), c.type.name, False)
+            ls = self.leaves(pascal(c.name) if keyed and i == 1 else col.name, c.type.name, False, r.scope.components, sub)
             if len(ls) > 1:
                 ls = [dc_replace(l, name=pascal(l.name)) if l.kind == "keep" else l for l in ls]
             out_ls = []
@@ -1929,7 +2310,8 @@ class Converter:
                 out_ls.append(l)
                 n += 1
             cols.append((col, out_ls))
-        pcols = getattr(self, "proposer_cols", {}).get(r.name) if r.scope.components == ("Params",) else None
+        key = self.rel_key(r.scope.components, r.name)
+        pcols = getattr(self, "proposer_cols", {}).get(r.name) if key[0] == ("Params",) else None
         mismatch = None
         if pcols is not None:
             # a parameter a proposer gives has the proposer's columns, where

@@ -2,7 +2,7 @@
   "id": "b0c4d837",
   "witnesses": [{
     "id": "count-past-four",
-    "separates": "A cup with five empty rows above the liquid. The stored fill order, read at its open values, is undefined there; the derived snake order lays the fifth mark at the middle cell; the derived clockwise spiral lays it at the bottom-right cell; the count table has no entry for five.",
+    "separates": "A cup with five empty rows above the liquid. The stored fill order ranks four cells, so the concept is undefined there; the derived snake order lays the fifth mark at the middle cell; the derived clockwise spiral lays it at the bottom-right cell; the count table has no entry for five.",
     "input": [
       [0,0,0,0,0,0,0,0,0],
       [0,0,5,0,0,0,5,0,0],
@@ -16,18 +16,7 @@
     ],
     "output": [{
       "cases": ["$FillOrder"],
-      "grid": [
-        [
-          [8,8,8],
-          [0,8,8],
-          [0,0,0]
-        ],
-        [
-          [8,8,8],
-          [0,0,8],
-          [0,0,8]
-        ]
-      ]
+      "grid": null
     }, {
       "cases": ["$SnakeOrder"],
       "grid": [

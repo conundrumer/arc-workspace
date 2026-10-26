@@ -58,7 +58,9 @@ pub enum DependencyKind {
     /// a `DET` with `(ONE)` included, which is a chosen relation at the task
     /// level. An open parameter, a `DET` that ends in `(ONE)`, that several
     /// blocks of the case determine is one node, as a
-    /// [`DependencyKind::Parameter`] is.
+    /// [`DependencyKind::Parameter`] is, and the relation of a `DET` has as
+    /// its columns the labels of its clause that its reads name and the
+    /// labels its marks name, as a parameter's has those its reads name.
     Chosen(RelationName),
     /// A `RIGID_DET` form: one node for its assemblies
     /// (`docs/arclog/rigid.md#form`).
@@ -96,6 +98,20 @@ pub struct DependencyGraph {
 }
 
 impl DependencyGraph {
+    /// Whether each node of the graph is read by `root`, at any depth, or is
+    /// `root`.
+    pub fn reached(&self, root: GraphNodeIndex) -> Vec<bool> {
+        let mut seen = vec![false; self.nodes.len()];
+        let mut stack = vec![root];
+        while let Some(node) = stack.pop() {
+            if std::mem::replace(&mut seen[node.0 as usize], true) {
+                continue;
+            }
+            stack.extend(self.reads[node.0 as usize].iter().copied());
+        }
+        seen
+    }
+
     /// A cycle of the graph, as the nodes on it, or `None` where the graph is
     /// acyclic.
     pub fn find_cycle(&self) -> Option<Vec<GraphNodeIndex>> {
@@ -216,9 +232,14 @@ pub struct ResolvedProgram {
     proposer_columns: crate::hash::StableHashMap<(NodePath, usize), Box<[ColumnName]>>,
     /// The path of each read that its form reads in its lifted form.
     lifted: crate::hash::StableHashSet<NodePath>,
+    /// The path of each lifted read whose site on the Example column holds a
+    /// label that a positive `ex_output` atom binds, which reads the train
+    /// examples alone (`docs/arclog/arclog.md#program`).
+    train_lifted: crate::hash::StableHashSet<NodePath>,
     /// For each node of the graph this resolution gives, the column names
-    /// that the sites of the reads of its relation name, for a `DET`
-    /// parameter node that an atom reads, as [`build`] gives them.
+    /// that the sites of the reads of its relation name, with the columns
+    /// that its marks name, for a `DET` node that an atom reads, as [`build`]
+    /// gives them.
     read_columns: Box<[Option<Vec<ColumnName>>]>,
     /// The resolutions of this program with more columns of some `DET`
     /// parameters kept, by the relation and the columns that its reads
@@ -243,6 +264,12 @@ struct ConceptForms {
 }
 
 impl ResolvedProgram {
+    /// The node that `relation`, read in the program's scope, resolves to,
+    /// where the program declares it.
+    pub fn program_read(&self, relation: &RelationRef) -> Option<GraphNodeIndex> {
+        self.names.find(&crate::program::NameScope::Program, relation).map(|target| target.node)
+    }
+
     /// What the name read at `path` resolves to. Each path that a method of
     /// `ResolvedProgram` takes walks as [`crate::program::path::node_at`]
     /// gives.
@@ -335,7 +362,8 @@ impl ResolvedProgram {
     }
 
     /// The column names that the sites of the reads of the relation of
-    /// `node` name, for a `DET` parameter node that an atom reads.
+    /// `node` name, with the columns that its marks name, for a `DET` node
+    /// that an atom reads.
     fn read_columns_of(&self, node: GraphNodeIndex) -> Option<&[ColumnName]> {
         match self.earlier_node(node) {
             Some(earlier) => earlier.read_columns_of(node),
@@ -385,9 +413,12 @@ impl ResolvedProgram {
     /// order: a column's name, and, for a record, `<record>.<field>` once
     /// per field. A name that has no text (`ColumnName::Slot`) is `c<position>`,
     /// its row position. `None` where the columns of `node`
-    /// are not known.
+    /// are not known; for an output or an input of an instance, those its
+    /// port declares.
     pub fn column_names(&self, node: GraphNodeIndex) -> Option<Vec<String>> {
-        let columns = self.names.node_columns_of(node.0 as usize)?;
+        let index = node.0 as usize;
+        let port = || matches!(self.graph.nodes[index].kind, DependencyKind::InstanceOutput { .. } | DependencyKind::InstanceInput { .. });
+        let columns = self.names.node_columns_of(index).or_else(|| self.names.fixed_columns_of(index).filter(|_| port()))?;
         Some(columns.row_names())
     }
 
@@ -397,19 +428,6 @@ impl ResolvedProgram {
     /// columns of `node` are not known.
     pub fn row_paths(&self, node: GraphNodeIndex) -> Option<Vec<Box<[ColumnName]>>> {
         Some(self.names.node_columns_of(node.0 as usize)?.row_paths())
-    }
-
-    /// The position, in the rows of the output `port` of the keyed `INIT`
-    /// form `instance`, of the field `field` of its `key` column, where the
-    /// component declares the output.
-    pub fn key_field_position(instance: &crate::program::Instance, port: &PortName, field: &ColumnName, registry: &Registry) -> Option<ColumnPosition> {
-        let component = registry_columns::component(registry, &instance.component)?;
-        let output = component.outputs.iter().find(|output| output.name == *port)?;
-        let columns = form_columns::port_columns(output, &form_columns::bindings(instance, component), true).columns();
-        match columns.place(&[columns::key(), field.clone()])? {
-            columns::Place::Field(position, _) => Some(position),
-            columns::Place::Column(_) | columns::Place::Group(_) => None,
-        }
     }
 
     /// The signature of the name read at `path`.
@@ -455,6 +473,17 @@ impl ResolvedProgram {
         match self.earlier_of(read) {
             Some(earlier) => earlier.reads_lifted(read),
             None => self.lifted.contains(read),
+        }
+    }
+
+    /// Whether the read at `read` is a lifted read of the train examples
+    /// alone: its site on the Example column holds a label that a positive
+    /// `ex_output` atom of the read's conjunction, or of the guard of the
+    /// `ALL` form it stands in, binds.
+    pub fn reads_train_examples(&self, read: &NodePath) -> bool {
+        match self.earlier_of(read) {
+            Some(earlier) => earlier.reads_train_examples(read),
+            None => self.train_lifted.contains(read),
         }
     }
 
@@ -708,9 +737,9 @@ fn demo_rules<'d>(
 pub(crate) mod column_sources;
 pub(crate) mod columns;
 pub(crate) mod form_columns;
-pub(crate) mod registry_columns;
+pub mod registry_columns;
 
-pub(crate) mod given;
+pub mod given;
 
 mod names;
 

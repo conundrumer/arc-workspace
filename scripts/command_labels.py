@@ -15,7 +15,7 @@ from ticket_form import TICKET_HEAD
 
 WRITE_TOOLS = ("Write", "Edit", "NotebookEdit")
 AGENT_TOOLS = ("Agent", "Task")
-KNOWN = {"gate.py": "gate", "merge_change.py": "merge_change.py",
+KNOWN = {"merge_change.py": "merge_change.py",
          "change_checks.py": "change_checks.py",
          "materialize.py": "materialize.py", "pytest": "pytest",
          "pyright": "pyright"}
@@ -23,7 +23,7 @@ RUN_DL = "run_dl.py"
 SETUP = {"cd", "echo", "export", "set", "true", ":", "printf", "date",
          "source", ".", "uptime", "[", "[[", "test"}
 WRAPPERS = {"timeout", "time", "nice", "env", "exec", "command", "sudo", "uv",
-            "run"}
+            "run", "run_heavy.py"}
 # Options that take the next word as their value, by the wrapper they follow.
 # A wrapper not listed takes no such option.
 UV_OPTIONS = frozenset({"--env-file", "--with", "--python", "-p", "--project",
@@ -32,7 +32,9 @@ UV_OPTIONS = frozenset({"--env-file", "--with", "--python", "-p", "--project",
 WRAPPER_OPTIONS = {"timeout": frozenset({"-s", "-k"}),
                    "env": frozenset({"-u", "--unset", "-C", "--chdir", "-S",
                                      "--split-string"}),
-                   "uv": UV_OPTIONS, "run": UV_OPTIONS}
+                   "uv": UV_OPTIONS, "run": UV_OPTIONS,
+                   "run_heavy.py": frozenset({"--cpus", "--gib", "--need", "--minutes",
+                                             "--wait"})}
 OPENERS = {"do", "then", "else", "elif", "if", "while", "until", "!", "{"}
 CLOSERS = {"for", "case", "done", "fi", "esac", "}"}
 POLL = "poll"

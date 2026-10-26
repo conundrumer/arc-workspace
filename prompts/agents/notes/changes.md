@@ -13,7 +13,7 @@
 ## Changes
 
 ### Making a change
-- Have an editor write each change to the code or the documents. The `handbook-expanded` agent writes the part of a change in [lib.dl](programs/lib.dl), in the modules under [lib](programs/lib) and in the solvers under [solvers](programs/solvers), with the accepted gate outputs its items change, and a code editor in the same worktree writes the part in each other file outside the documents. A code editor drafts the text of each `mctx` fragment its code needs, and a doc editor writes that text once the code editors have reported.
+- Have an editor write each change to the code or the documents. The `handbook-expanded` agent writes the part of a change in [lib.dl](programs/lib.dl), in the modules under [lib](programs/lib) and in the solvers under [solvers](programs/solvers), and a code editor in the same worktree writes the part in each other file outside the documents. A code editor drafts the text of each `mctx` fragment its code needs, and a doc editor writes that text once the code editors have reported.
 - A change is one editor's edit, or one edit for each part the line above splits it into, and each edit that fixes what its review or its checks found.
 - A change's ticket is the `change` ticket that gives that change.
 - Make the worktree of a change with `uv run python scripts/change_worktree.py <number> <agent>`, with the number of its ticket, or, where it has no ticket, with `uv run python scripts/change_worktree.py --name <name>`, with a name for the change that `--help` allows.
@@ -70,13 +70,10 @@
 
 ### Merging a change
 - Where a kept finding of a change raises a decision that goes to the user, leave that change unmerged, and give its branch and worktree with that decision in your reply. The session that gets the user's ruling, or applies that decision's default, merges the change.
-- Before you merge a change, read the diff of each accepted gate output its briefs list, and send each difference there that those briefs do not ask for to the change's editor as a finding of its checks.
 - Merge a change only once it passes, with `uv run python scripts/merge_change.py <worktree> -m <message>`, and commit in no other way.
     + xref: scripts/merge_change.py:merge_main
 - Where that script does not merge the change, act on what it reports:
     - Where it reports that the rebase conflicts and that it moved the branch onto `master`, or a failed check, send what it reports to the change's editor as a finding of its checks.
-        - Where the failed check is the gate, give in that finding, for each `DIFF` line that the change's briefs ask for, the accepted output under `tests/gate/accepted/` to update.
-            + xref: src/gating/lines.py:LineKind.DIFF
     - Where it reports that the rebase conflicts and that the worktree is as it was, put the change in its worktree yourself onto what it rebased it onto, resolving each conflict, then run that script again.
         * comment: Decision a3fdafaa399f0c20c on 6-1429, from the user's words on 6-1417: "it gets sent to you and you handle it". Trial afa894d8d289e9d58 took it as the case below.
     - Where it reports anything else, give the worktree and the script's message in your reply.

@@ -2,7 +2,8 @@
 //! `form_check`, the typing of a program's relations in its module
 //! `program_columns`, which hands the check's types to
 //! [`super::check_program`], the helpers that the check and the inference
-//! of a case program's label types share, and, in its module `within`, the
+//! of a case program's label types share, in its module `key_rows` the
+//! mapping of the key rows of Pose types, and, in its module `within`, the
 //! lookups of forms and label scopes that they read.
 
 use super::{CheckResult, ClauseEntry, FileScope, HeldClauses, Refusal, SolverClauses};
@@ -12,11 +13,14 @@ use crate::program::{ColumnName, Form, LabelId, Site, SiteArg};
 use crate::registry::{Column, ColumnType, TypeParameter};
 use crate::resolver::registry_columns;
 use crate::resolver::Signature;
-use crate::types::{use_label, AssemblyId, KeyRow, LabelFault, ValueType, ZeroMade};
+use crate::types::{use_label, LabelFault, ValueType, ZeroMade};
+pub(super) use key_rows::{try_map_key_rows, try_map_labels};
+use key_rows::map_labels;
 pub(super) use within::{demo_rule, form_at, form_within, rule_scope_forms, scope_forms};
 use within::rule_within;
 
 mod form_check;
+mod key_rows;
 pub(crate) mod own_idents;
 mod program_columns;
 mod within;
@@ -83,31 +87,6 @@ pub(super) fn pose_of_fault(fault: &LabelFault) -> Option<&ValueType> {
         LabelFault::EmptyMeet(a, b) => [a, b].into_iter().find(|ty| matches!(ty, ValueType::Pose(_))),
         LabelFault::NoJoin(..) => None,
     }
-}
-
-/// `ty` with each label of a key row mapped by `map`.
-fn map_labels(ty: &ValueType, map: &dyn Fn(LabelId) -> LabelId) -> ValueType {
-    try_map_labels(ty, &|label| Some(map(label))).expect("a map of every label maps each label of a type")
-}
-
-/// `ty` with each label of a key row mapped by `map`, or `None` where
-/// `map` gives no label for one.
-pub(super) fn try_map_labels(ty: &ValueType, map: &dyn Fn(LabelId) -> Option<LabelId>) -> Option<ValueType> {
-    try_map_key_rows(ty, &|labels| Some(KeyRow::Labels(labels.iter().map(|label| map(*label)).collect::<Option<_>>()?)))
-}
-
-/// `ty` with each key row of labels replaced by the one `map` gives for
-/// its labels, or `None` where `map` gives none.
-fn try_map_key_rows(ty: &ValueType, map: &dyn Fn(&[LabelId]) -> Option<KeyRow>) -> Option<ValueType> {
-    Some(match ty {
-        ValueType::Pose(AssemblyId { name, canonical_form, key: KeyRow::Labels(labels) }) => {
-            ValueType::Pose(AssemblyId { name: name.clone(), canonical_form: canonical_form.clone(), key: map(labels)? })
-        }
-        ValueType::Record(fields) => {
-            ValueType::Record(fields.iter().map(|(name, ty)| Some((name.clone(), try_map_key_rows(ty, map)?))).collect::<Option<_>>()?)
-        }
-        ty => ty.clone(),
-    })
 }
 
 /// The types of the columns that a value of type `ty` takes, in their

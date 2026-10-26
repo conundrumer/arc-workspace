@@ -6,8 +6,7 @@ A command hands each file it generates to `write_generated`, or to
 generated file in the checkout. Before any is written, one
 `git check-ignore` call over all of them and the manifest finds each that
 git does not ignore, and where one is not ignored, nothing is written and
-the command fails with `Unignored`. A path outside the checkout, such as
-the gate's copy of the documents under its out dir, is written with no
+the command fails with `Unignored`. A path outside the checkout is written with no
 check and no manifest entry. The module of the lib's wrappers is generated
 and tracked, so it is written by `write_whole_text` alone, outside the
 check.
@@ -29,8 +28,7 @@ is left in place, reported as `Left`, and dropped from the manifest. So:
   lists nothing, so none of the files it names is removed.
 - Two runs at once each write the manifest whole, so the entries of one
   can replace the other's. An entry lost that way leaves its file in place.
-- A worktree has its own root, ignore rules and manifest, and the gate's
-  copy stands outside the checkout.
+- A worktree has its own root, ignore rules and manifest.
 """
 
 from __future__ import annotations

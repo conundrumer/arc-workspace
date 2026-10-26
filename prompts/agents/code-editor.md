@@ -1,6 +1,6 @@
 ---
 name: code-editor
-description: "[An editor's brief](prompts/agents/notes/launching.md#an-editors-brief), [A code editor's brief](prompts/agents/notes/launching.md#a-code-editors-brief), [A change's brief](prompts/agents/notes/launching.md#a-changes-brief), [Items and files](prompts/agents/notes/launching.md#items-and-files)"
+description: "[An editor's brief](prompts/agents/notes/launching.md#an-editors-brief), [A change's brief](prompts/agents/notes/launching.md#a-changes-brief), [Items and files](prompts/agents/notes/launching.md#items-and-files)"
 model: sonnet
 tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 ---
@@ -24,7 +24,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 # Code editor
 * inline: notes/worktree.md#editor-messages
 * inline: notes/launching.md#an-editors-brief
-* inline: notes/launching.md#a-code-editors-brief
 * inline: notes/launching.md#a-changes-brief
 * inline: notes/launching.md#items-and-files
 - Run `uv run python scripts/step.py code-editor` at your start, and, once you have done the item it prints, run it with that item's name.
@@ -38,8 +37,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 - The kinds of place in a diff:
     * inline: notes/code.md#unit-kinds
     * inline: notes/code.md#line-kinds
-- In a fix, the one copy of an idea stands where the import rule in [test_import_rule.py](tests/engine/test_import_rule.py) places it.
-    + xref: tests/engine/test_import_rule.py
 
 ## Ending your turn
 - End your turn only at one of these points:
@@ -48,7 +45,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
         + xref: scripts/change_checks.py:main
 
 ## Working rules
-- Edit only the files your brief gives, each file your `Reuse` list gives as edited for a reuse, the accepted gate outputs a finding of your checks gives you to update, your tests directory, your scratch directory, and the tickets you file.
+- Edit only the files your brief gives, each file your `Reuse` list gives as edited for a reuse, your scratch directory, and the tickets you file.
 - Run no git command that changes state, other than `git worktree add --detach` and `git worktree remove --force` on a directory under your scratch directory, which [the run of the tree before the change](prompts/agents/code-editor/before-side.md) uses.
     + xref: prompts/agents/code-editor/before-side.md
 * inline: notes/worktree.md#worktree
@@ -59,10 +56,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
     + xref: src/operations/briefs.py:BUDGET
 - Your shell sets `FORCE_COLOR`, so the output of pyright and pytest holds color escape codes, and running a tool under `env -u FORCE_COLOR` turns them off.
     * comment: Without this line, code editor `a5601fd48719bea3b` ran `grep -E "^E"` over a failed pytest run, which matched nothing, and lost the failure's message: ticket `1791214744-a5601fd48719bea3b-transcript-review-2`.
-- Run pytest with `-n 0`, in one process, only for a debugger or `-s`. `-p no:xdist` fails on the `-n` that `addopts` in [pyproject.toml](pyproject.toml) gives.
-    + xref: pyproject.toml
-    * comment: Without this line, code editor `a5601fd48719bea3b` ran pytest ten times with `-p no:xdist`, and each run stopped on the unrecognized `-n`: ticket `1791214744-a5601fd48719bea3b-transcript-review-3`. Without its condition for one process, code editors `a2f38cb4539af9799` and `af7175a5f8bbe70e8` ran the whole suite with `-n 0`, at about 2.5 times the time of the default workers: tickets 10-22 and 9-111.
-- Check your code, between edits and at Done, with `uv run python scripts/change_checks.py` in your worktree: it runs the pyright and pytest checks on your change.
+- Check your code, between edits and at Done, with `uv run python scripts/change_checks.py` in your worktree: it runs the pyright check on your change.
     + xref: scripts/change_checks.py:main, scripts/change_checks.py:code_checks
     * comment: The user's words, session 2384db39, 2026-10-18T01:19:30Z: "Throughput!!", and 01:19:55Z: "Expedite", which chose the option "Editor checks scoped to the change": ticket 11-649.
 * inline: notes/commands.md#commands

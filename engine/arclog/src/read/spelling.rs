@@ -22,7 +22,7 @@ pub(crate) const CONSTRAINT_OPS: &[(ConstraintOp, &str)] = &[
     (ConstraintOp::Ge, ">="),
 ];
 
-pub(crate) const FACT_RELATIONS: &[(FactRelation, &str)] = &[
+pub const FACT_RELATIONS: &[(FactRelation, &str)] = &[
     (FactRelation::Input, "input"),
     (FactRelation::ExInput, "ex_input"),
     (FactRelation::ExOutput, "ex_output"),
@@ -114,7 +114,7 @@ pub(crate) const ANY: &str = "any";
 pub(crate) const OTHER: &str = "other";
 
 /// The spelling of `value` in `table`.
-pub(crate) fn spelling<T: PartialEq>(table: &[(T, &'static str)], value: &T) -> &'static str {
+pub fn spelling<T: PartialEq>(table: &[(T, &'static str)], value: &T) -> &'static str {
     table.iter().find(|(v, _)| v == value).map(|(_, s)| *s).expect("each value of a closed vocabulary has a spelling")
 }
 

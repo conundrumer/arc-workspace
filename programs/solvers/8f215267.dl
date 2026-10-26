@@ -53,10 +53,17 @@ drect.node(Col, P) :- ink(P, Col).
 .decl in_hole(b: Box, id: Ident)
 in_hole(B, Id) :- drect.box(_, B), comps.label(_, P, Id), interior(P, B).
 
+// Rectangle b of color col has a hole.
+.decl holed(col: Color, b: Box)
+holed(Col, B) :- drect.box(Col, B), in(Q, _), interior(Q, B).
+
+// Object id of color col has a cell on the edge of rectangle b.
+.decl draws(col: Color, id: Ident, b: Box)
+draws(Col, Id, B) :- drect.box(Col, B), comps.label(Col, P, Id), box_edge(P, B, _).
+
 frame(Col, Id, B, $Rect()) :-
-    drect.box(Col, B), in(Q, _), interior(Q, B),  // a rectangle with a hole
-    comps.label(Col, P, Id), box_edge(P, B, _),   // the object that draws it
-    !in_hole(B, Id).                              // and leaves the hole empty
+    holed(Col, B), draws(Col, Id, B),  // the object that draws a rectangle with a hole
+    !in_hole(B, Id).                   // and leaves the hole empty
 
 // --- $Enclose ---
 

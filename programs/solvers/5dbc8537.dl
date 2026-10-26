@@ -78,11 +78,12 @@ covers([O, P_spot], P, Col) :-
 // Pieces of one pattern are interchangeable, so which of them takes which
 // spot is free. An order over the positions picks one answer out of that
 // freedom; any order serves, so the program takes every reading order, and
-// out is what they agree on.
-.type Reading = [diag: DiagDir, axis: Axis]
+// out is what they agree on. A reading order and its reverse, from the
+// opposite corner, give one tie-break, so a reading is a diagonal and an axis.
+.type Reading = [diag: DiagAxis, axis: Axis]
 
 .decl reading_elem(r: Reading)
-reading_elem([D, A]) :- diag_dir_elem(D), axis_elem(A).
+reading_elem([Da, A]) :- diag_axis_elem(Da), axis_elem(A).
 
 .type Member = [p_inner: Position, col: Color]
 
@@ -99,9 +100,10 @@ congruent.observed_member(O, [P_inner, Col]) :- shape(O, P_inner, Col).
 pruning.cand(R, [O, P_spot], O) :- reading_elem(R), occ.occurrence(O, P_spot).
 pruning.conflict(R, Cd, Cd2) :-
     reading_elem(R), covers(Cd, P, _), covers(Cd2, P, _).  // over one cell
-pruning.conflict([C, A], [O, P_spot], [O2, P_spot2]) :-
+pruning.conflict([Da, A], [O, P_spot], [O2, P_spot2]) :-
     congruent.equals(O, O2), O != O2,                                 // interchangeable pieces
-    bbox.box(O, B), bbox.box(O2, B2), diag_dirs(C, A, D1, D2),
+    bbox.box(O, B), bbox.box(O2, B2),
+    diag_axis_of(C, Da), diag_dirs(C, A, D1, D2),                     // either corner of the diagonal
     ( nearer(D1, B, B2) ; same_dist(D1, B, B2), nearer(D2, B, B2) ),  // O sits first
     occ.occurrence(O, P_spot), occ.occurrence(O2, P_spot2),
     ( nearer(D1, P_spot2, P_spot)                                     // but takes the later spot

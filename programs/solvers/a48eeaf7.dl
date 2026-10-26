@@ -337,15 +337,13 @@ landed([$Walk(Ps, $Merge()), Bp, R], M, P) :- arrive([Bp, R], Ps, M, P).
 // @claim slide
 .init trail = Order<Track, Position>
 trail.elem([S, Ps, M], P) :- walk_cell(S, Ps, M, P, _).
-trail.before([S, Ps, M], P, Q) :- walk_cell(S, Ps, M, P, K), walk_cell(S, Ps, M, Q, K2), K < K2.
+trail.score([S, Ps, M], P, K) :- walk_cell(S, Ps, M, P, K).
 
 // The markers that stop at one cell, by path length.
 // @claim slide
 .init pile = Order<Track, Position>
 pile.elem([S, Ps, Q], M) :- arrive(S, Ps, M, Q).
-pile.before([S, Ps, Q], M1, M2) :-
-    arrive(S, Ps, M1, Q), walk_cell(S, Ps, M1, Q, N1),
-    arrive(S, Ps, M2, Q), walk_cell(S, Ps, M2, Q, N2), N1 < N2.
+pile.score([S, Ps, Q], M, N) :- arrive(S, Ps, M, Q), walk_cell(S, Ps, M, Q, N).
 
 // The marker with K shorter paths before it stops K cells back on its path.
 landed([$Walk(Ps, $Stack()), Bp, R], M, P) :-

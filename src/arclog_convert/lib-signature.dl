@@ -70,6 +70,7 @@
     .decl member(key: Key, t: T)  // @extensional
     .decl before(key: Key, a: T, b: T)  // @extensional
     .decl score(key: Key, t: T, s: number)  // @extensional
+    .decl secondary_score(key: Key, t: T, s: number)  // @extensional
     .decl probe(key: Key, t: T)  // @extensional
     .decl rank(key: Key, t: T, r: number)
     .decl dual_rank(key: Key, t: T, r: number)

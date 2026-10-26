@@ -23,8 +23,8 @@ ink(P, Col) :- in(P, Col), !params.bg(Col).
 // The seeds run in order of nearness to the grow edge.
 .init order = Order<Unit, Position>
 order.elem($U(), P) :- ink(P, _).
-order.before($U(), P1, P2) :-
-    ink(P1, _), ink(P2, _), params.grow(D), nearer(D, P2, P1).
+order.score($U(), P, K) :-
+    ink(P, _), params.grow(D), opposite(D, D_opp), dist(P, D_opp, K).
 
 // Cyclic next seed: the one just beyond; the first again after the last.
 .decl seed_next(p1: Position, p2: Position)

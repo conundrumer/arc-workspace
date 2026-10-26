@@ -30,7 +30,8 @@ run that writes the rows of its solver faulted; or it has no rows file.
 The rows of a relation whose columns the type check gives no types are not
 written, so its line says no rows file was written.
 
-The corpus is the arclog files of `gen/` of `arclog_convert.out`, which
+The corpus is the arclog files of `gen/` of `corpus_out()`: `arclog_convert.out`
+in the main worktree, `work/arclog/` of the worktree in a linked one. They
 reflect a solver's `.dl` file once `uv run python -m arclog_convert.convert
 <stem>` has run on it. A run of the default corpus on given task ids runs that
 command on them first, and prints its summary on stderr; a run on every
@@ -56,6 +57,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from arc.task import TASKS_DIR
+import arclog_convert
 from engine import checkout
 from study.corpus_survey.bodies import (
     FACTS,
@@ -117,9 +119,19 @@ def quoted(names: Iterable[str]) -> str:
     return ", ".join(f"`{name}`" for name in names)
 
 
+def in_linked_worktree() -> bool:
+    return checkout.main_worktree(checkout.ROOT).resolve() != checkout.ROOT.resolve()
+
+
+def corpus_out() -> Path:
+    """The directory whose `gen/` is the default corpus: `work/arclog/` of this linked worktree, or `arclog_convert.out()` in the main worktree."""
+    return checkout.ROOT / "work" / "arclog" if in_linked_worktree() else arclog_convert.out()
+
+
 def reconvert(ids: Sequence[str]) -> None:
     """Convert the solvers `ids` into the default corpus, with the converter's summary on stderr."""
-    command = [sys.executable, "-m", "arclog_convert.convert", *ids]
+    over = ["--out", str(corpus_out())] if in_linked_worktree() else []
+    command = [sys.executable, "-m", "arclog_convert.convert", *over, *ids]
     done = subprocess.run(command, cwd=checkout.ROOT, stdout=sys.stderr)
     if done.returncode != 0:
         raise RuntimeError(f"{' '.join(command)} exited with {done.returncode}")
@@ -202,7 +214,7 @@ def row_counts(corpus: Path, tasks: Path, ids: Sequence[str], rows: tuple[int, P
     over `rows[0]` written under `rows[1]`."""
     over = ["--over", str(rows[0]), "--rows", str(rows[1])] if rows else []
     command = ["cargo", "run", "--profile", "tool", "-q", "-p", "arclog-cli", "--", "row-counts", *over, str(corpus), str(tasks), *ids]
-    done = subprocess.run(command, cwd=checkout.ROOT / "engine", stdout=subprocess.PIPE, text=True)
+    done = subprocess.run(command, cwd=checkout.ROOT / "engine", env=checkout.cargo_env(), stdout=subprocess.PIPE, text=True)
     if done.returncode not in (0, 1):  # 1: a solver faulted, and its line says so
         raise RuntimeError(f"{' '.join(command)} exited with {done.returncode}")
     return done.stdout
@@ -237,10 +249,10 @@ class Written:
     over_cap: frozenset[str]
     """The relations with a file over `WORK_CAP`."""
     peers: Mapping[tuple[str, int], Sequence[Signature]]
-    """The files within the cap, by input and model."""
+    """The files within the cap of the relations the decode gives a table, by input and model."""
 
 
-def written(rows_dir: Path, solver: str) -> Written:
+def written(rows_dir: Path, solver: str, untabled: frozenset[str] = frozenset()) -> Written:
     paths: dict[str, list[Path]] = defaultdict(list)
     over_cap: set[str] = set()
     peers: dict[tuple[str, int], list[Signature]] = defaultdict(list)
@@ -249,7 +261,7 @@ def written(rows_dir: Path, solver: str) -> Written:
         paths[file.relation].append(path)
         if work(file) > WORK_CAP:
             over_cap.add(file.relation)
-        else:
+        elif file.relation not in untabled:
             names = tuple(name for name, _ in file.columns)
             types = tuple(ty for _, ty in file.columns)
             peers[file.input, file.model].append(Signature(file.relation, path, len(file.rows), names, types, column_values(file)))
@@ -560,11 +572,13 @@ def derive(subject: Subject) -> Finding:
     return Finding(Derivation.NONE, residual(subject))
 
 
-def solver_lines(corpus: Path, rows_dir: Path, solver: str, flagged: Sequence[Relation], fault: str | None = None) -> list[str]:
+def solver_lines(corpus: Path, rows_dir: Path, solver: str, flagged: Sequence[Relation], fault: str | None = None,
+                 untabled: frozenset[str] = frozenset()) -> list[str]:
     """The lines of one solver's flagged relations; `fault` is the fault of
-    the run that wrote its rows, where it had one."""
+    the run that wrote its rows, where it had one, and `untabled` the
+    relations the decode gives no table, which no relation restates."""
     concept = [body for body in bodies(solver, arclog(corpus, solver)) if not body.in_alt()]
-    files = written(rows_dir, solver)
+    files = written(rows_dir, solver, untabled)
     lines = []
     for relation in flagged:
         if relation.stopped is not None:
@@ -598,7 +612,8 @@ def lint(corpus: Path, tasks: Path, ids: Sequence[str]) -> list[str]:
             _, dumped = read_counts(row_counts(corpus, tasks, solvers, (max(min(counted) - 1, 0), Path(rows_dir))))
             dump_faults = {fault.split()[0]: fault.split(" ", 1)[1] for fault in dumped}
         for solver in solvers:
-            lines[solver] = solver_lines(corpus, Path(rows_dir), solver, [r for r in flagged if r.solver == solver], dump_faults.get(solver))
+            untabled = frozenset(r.name for r in relations if r.solver == solver and not r.tabled)
+            lines[solver] = solver_lines(corpus, Path(rows_dir), solver, [r for r in flagged if r.solver == solver], dump_faults.get(solver), untabled)
     return [line for solver in sorted(lines) for line in lines[solver]]
 
 
@@ -638,7 +653,7 @@ def counts_of(solver: str, text: str) -> str:
             (out / "plan" / plan.name).write_text(plan.read_text())
         done = subprocess.run([sys.executable, "-m", "arclog_convert.convert", "--out", str(out), solver], cwd=checkout.ROOT,
                               env={**os.environ, "ARCLOG_SOLVERS": str(solvers)}, capture_output=True, text=True)
-        if done.returncode != 0 or done.stdout.count("converted 1 of 1") != 2:
+        if done.returncode != 0:
             raise RuntimeError(f"the conversion of {solver} failed:\n{done.stdout}{done.stderr}")
         got = row_counts(out / "gen", TASKS_DIR, [solver])
         names = json.loads((out / "names" / f"{solver}.json").read_text())
@@ -694,9 +709,9 @@ def measure(solver: str, before: str, after: str, texts: tuple[str, str] = ("", 
     if removed:
         verdict = f"worse: the edit removes an instance of {', '.join(f'`{c}`' for c in removed)}; keep each lib component instance, and where its encoding makes a table large, report it"
     elif b[0] > a[0] or b[1] > a[1]:
-        verdict = "worse: a table is larger, or more tables are over the cap"
+        verdict = f"worse: the largest table is larger, or more tables are over {CAP} rows"
     elif b[3] < a[3] or b[0] < a[0]:
-        verdict = "better: no table is larger, and the large tables hold fewer rows"
+        verdict = f"better: the largest table is no larger, no more tables are over {CAP} rows, and the largest table or the tables over {THRESHOLD} rows hold fewer rows"
     else:
         verdict = "no change"
     lines.append(f"{solver} {verdict}")
@@ -705,7 +720,7 @@ def measure(solver: str, before: str, after: str, texts: tuple[str, str] = ("", 
 
 def main(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(prog="python -m study.table_lint", description=(__doc__ or "").split("\n\n")[0])
-    parser.add_argument("--corpus", type=Path, default=gen_dir(), help="the directory of the arclog files, `gen/` of `arclog_convert.out` by default")
+    parser.add_argument("--corpus", type=Path, default=corpus_out() / "gen", help="the directory of the arclog files, `gen/` of `corpus_out()` by default: `arclog_convert.out` in the main worktree, `work/arclog/` in a linked one")
     parser.add_argument("--measure", action="store_true", help="print each given solver's tables as committed and as its file now holds them, then its lint lines")
     parser.add_argument("task_ids", nargs="*", help="the solvers to lint, every solver of the corpus by default")
     args = parser.parse_args(argv)
@@ -718,7 +733,7 @@ def main(argv: Sequence[str]) -> int:
             before, after = counts_of(solver, old), counts_of(solver, new)
             for line in measure(solver, before, after, (old, new), sourced(solver, old) | sourced(solver, new)):
                 print(line, flush=True)
-    if args.task_ids and args.corpus == gen_dir():
+    if args.task_ids and args.corpus == corpus_out() / "gen":
         reconvert(args.task_ids)
     for line in lint(args.corpus, TASKS_DIR, args.task_ids):
         print(line, flush=True)

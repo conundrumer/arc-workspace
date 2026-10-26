@@ -27,7 +27,10 @@ field's row's attention over the earlier tables' pooled vectors that lands on th
 source tables, beside `chance`, that share under equal scores, and `fields`; and over the fields that attend to at
 least as many other earlier tables as source tables, `matched_parent` and `matched_recent` (per layer
 `matched_parent_layers` and `matched_recent_layers`), the parent share and the share on as many of the latest other
-earlier tables, over the same `matched_fields` (encoder.py, `parent_shares`). Beside each `loss` the log gives `chance_loss` (`program_chance_loss` and `prior_chance_loss` beside the
+earlier tables, over the same `matched_fields`; and over the fields that attend to at least as many earlier tables
+that are no source table of any column of the field's table, `matched_recent_nondirect`, the share on as many of the
+latest of those, beside `matched_parent_nondirect`, the parent share over the same `matched_nondirect_fields`
+(encoder.py, `parent_shares`). Beside each `loss` the log gives `chance_loss` (`program_chance_loss` and `prior_chance_loss` beside the
 parts' losses), the mean loss of a head with equal scores over the same fields (the encoder's `masked_fields` states it
 per field).
 
@@ -164,8 +167,8 @@ def summarize(records, by=None):
     key groups of each group's mean loss, the groups, and the sum over the key groups of each group's mean chance
     loss, over the program part's remote fields (records that give "source_rows"), a group counted once per record;
     under "parents", [per layer the sum of "parent_attention", the sum of "parent_chance", fields, per layer the sum
-    of "parent_attention" and of "parent_recent" over the fields that give "parent_recent", those fields] over the
-    fields that give them; added to `by` where it is given."""
+    of "parent_attention" and of "parent_recent" over the fields that give "parent_recent", those fields, and the same
+    three for "parent_recent_nondirect"] over the fields that give them; added to `by` where it is given."""
     by = {**{p: {} for p in PARTS}, "depth": {}, "source rows": {}, "parents": []} if by is None else by
     for _, _, r in records:
         bucket = depth_bucket(r.get("depth")) if r["part"] == "program" else None
@@ -193,14 +196,16 @@ def summarize(records, by=None):
                 x[5] += sum(l / n for l, n, _ in gs.values()); x[6] += len(gs)
                 x[7] += sum(ch / n for _, n, ch in gs.values())
         if "parent_attention" in r:
-            pa, pc, pr = r["parent_attention"], r["parent_chance"], r["parent_recent"]
-            on, on_r = ~np.isnan(pc), ~np.isnan(pr).any(1)
+            pa, pc, pr, pn = r["parent_attention"], r["parent_chance"], r["parent_recent"], r["parent_recent_nondirect"]
+            on, on_r, on_n = ~np.isnan(pc), ~np.isnan(pr).any(1), ~np.isnan(pn).any(1)
             if on.any():
                 if not by["parents"]:
-                    by["parents"] = [np.zeros(pa.shape[1]), 0.0, 0, np.zeros(pa.shape[1]), np.zeros(pa.shape[1]), 0]
+                    by["parents"] = [np.zeros(pa.shape[1]), 0.0, 0, np.zeros(pa.shape[1]), np.zeros(pa.shape[1]), 0,
+                                     np.zeros(pa.shape[1]), np.zeros(pa.shape[1]), 0]
                 x = by["parents"]
                 x[0] = x[0] + pa[on].sum(0); x[1] += float(pc[on].sum()); x[2] += int(on.sum())
                 x[3] = x[3] + pa[on_r].sum(0); x[4] = x[4] + pr[on_r].sum(0); x[5] += int(on_r.sum())
+                x[6] = x[6] + pa[on_n].sum(0); x[7] = x[7] + pn[on_n].sum(0); x[8] += int(on_n.sum())
     return by
 
 
@@ -258,7 +263,10 @@ def losses(by, prior_weight):
                                          "matched_recent_layers": (pa[4] / pa[5]).tolist(),
                                          "matched_parent": float(pa[3].mean() / pa[5]),
                                          "matched_recent": float(pa[4].mean() / pa[5]),
-                                         "matched_fields": pa[5]} if pa[5] else {})}} if pa else {})}
+                                         "matched_fields": pa[5]} if pa[5] else {}),
+                                     **({"matched_recent_nondirect": float(pa[7].mean() / pa[8]),
+                                         "matched_parent_nondirect": float(pa[6].mean() / pa[8]),
+                                         "matched_nondirect_fields": pa[8]} if pa[8] else {})}} if pa else {})}
 
 
 def parser():
@@ -304,6 +312,11 @@ def parser():
                          "entry that agree on the columns that share a source table with it (encoder.py, "
                          "draw_masks); the held-out log gains the attention probe; not with --mask-remote or "
                          "--enc-source-rows")
+    ap.add_argument("--enc-parent-bias", type=float, default=0.0,
+                    help="each layer adds to a row's attention scores against an earlier table's pooled vectors a "
+                         "learned value per parent type of that table to the row's table (direct source, ancestor, "
+                         "unrelated; encoder.py, parent_types), which starts at [B, 0, 0]; the held-out log gives the "
+                         "values under parent_bias; 0, the default, for none")
     ap.add_argument("--id-dim", type=int, default=64)
     ap.add_argument("--enc-k", type=int, default=4)
     ap.add_argument("--enc-layers", type=int, default=2)
@@ -361,6 +374,7 @@ def run_config(a, in_names):
                 id_dim=a.id_dim, mask_frac=a.mask_frac, mask_cap=a.mask_cap, mask_kind=a.mask_kind,
                 mask_remote=a.mask_remote, mask_remote_groups=a.mask_remote_groups, prior_weight=a.prior_weight, in_names=in_names, enc_equality=a.enc_equality,
                 enc_source_rows=a.enc_source_rows, enc_ptr_equality=a.enc_ptr_equality, enc_max_rows=a.enc_max_rows,
+                enc_parent_bias=a.enc_parent_bias,
                 value=a.value, value_tables=a.value_tables, value_label=a.value_label, value_weight=a.value_weight,
                 value_positions=a.value_positions, value_groups=a.value_groups)
 
@@ -379,7 +393,7 @@ def main():
     t0 = time.time()
 
     cases, held_cases, names, kinds, mask_table = T.load(a.data)
-    tables, skipped, _ = E.load_tables(a.tables, f"{a.data}/tables.pkl", not a.allow_check_violations,
+    tables, skipped, _ = E.load_tables(a.tables, f"{a.data}/tables.cache", not a.allow_check_violations,
                                        a.allow_check_violations)
     if skipped:
         print(f"DATA FAULT: {len(skipped)} cases whose tables export cannot be read, left out: {skipped}")
@@ -402,7 +416,7 @@ def main():
     value_train, value_held, members = [], [], {}
     if a.value != "off":
         assert a.value_tables, "--value needs --value-tables"
-        members, vskipped = E.load_rollouts(a.value_tables, f"{a.data}/{Path(a.value_tables).resolve().name}.tables.pkl",
+        members, vskipped = E.load_rollouts(a.value_tables, f"{a.data}/{Path(a.value_tables).resolve().name}.tables.cache",
                                             a.enc_budget, a.enc_max_rows, strict=not a.allow_check_violations,
                                             allow_violations=a.allow_check_violations)
         if vskipped:
@@ -446,7 +460,8 @@ def main():
     enc = E.FeatureEncoder(embed, in_index, a.id_dim, json.load(open(f"{a.tables}/orientations.json")), K=a.enc_k,
                            layers=a.enc_layers, c=a.enc_width, heads=a.enc_heads, mlp=a.enc_mlp, gram=a.enc_gram,
                            examples=E.max_example(tables) + 1, equality=a.enc_equality,
-                           source_rows=a.enc_source_rows, ptr_equality=a.enc_ptr_equality).to(a.device)
+                           source_rows=a.enc_source_rows, ptr_equality=a.enc_ptr_equality,
+                           parent_bias=a.enc_parent_bias).to(a.device)
     rel_token = {int(n[2:]): i for i, n in enumerate(names) if re.fullmatch(r"&r\d+", n)}
     enc.checkpoint = a.enc_checkpoint
     use_autocast = a.device == "cuda" if a.autocast is None else a.autocast
@@ -478,6 +493,8 @@ def main():
                 if (i // a.programs + 1) % 10 == 0:
                     print(f"  {min(i + a.programs, len(held))}/{len(held)} programs, {time.time() - t_eval:.0f} s", flush=True)
         out = losses(summarize(records), a.prior_weight)
+        if enc.parent_init:
+            out["parent_bias"] = enc.parent_bias_values()
         if head is not None:   # the held-out branch points, one at a time, with fixed identifiers
             head.eval()
             held_m, draws, loss_sum, n = [], [[] for _ in range(a.value_draws)], 0.0, 0

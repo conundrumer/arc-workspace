@@ -18,7 +18,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
         - Running a command: [commands](prompts/agents/notes/commands.md#commands).
         - A part its brief leaves out: [A part a brief leaves out](prompts/agents/notes/launching.md#a-part-a-brief-leaves-out).
         - Checking the documents of a lib edit before its final reply: the line of [Making a change](#making-a-change) on `controlled_markdown check`.
-        - Writing accepted gate outputs, where its brief or a finding of its checks gives them: [Gate](prompts/agents/notes/worktree.md#gate).
 
 * inline: notes/reading.md#abridgement
 
@@ -60,8 +59,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 * inline: notes/worktree.md#worktree-commands
 
 * inline: notes/worktree.md#re-invoked-in-another-agents-worktree
-
-- Where your brief, or a finding of your checks, gives accepted gate outputs for you to write, read [Gate](prompts/agents/notes/worktree.md#gate), and run the gate as it gives.
 
 - Where you edit `programs/lib.dl`, a module under `programs/lib/` or `programs/proposers.dl`, before your final reply run `uv run python -m controlled_markdown check` with no path, and fix each line it reports in a file your brief lets you edit. Give each other line in your reply as unfinished.
     * comment: The user's words, session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-19T21:30:38Z: "If it's fast then yes", which chose the coordinator option that has an editor check its worktree before it reports. Ticket 11-2379.

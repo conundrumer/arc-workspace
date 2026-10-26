@@ -26,7 +26,7 @@ pub struct TermId(u32);
 impl TermId {
     /// The 32 bits of the term id, for a writer's fixed order of encodings
     /// and for packing.
-    pub(crate) fn encoding(self) -> u32 {
+    pub fn encoding(self) -> u32 {
         self.0
     }
 

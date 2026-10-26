@@ -68,13 +68,13 @@ at_target(P, D) :-
 .decl run(a: Position, d: Dir, p: Position)
 run(A, D, P) :- leg.clear($U(), P, D, _, A), dir_elem(D).
 
-// The path turns onto the next leg where a run halts short of the target.
-// A walker that cannot take its first step does not turn.
-.decl leg_edge(a: Position, d: Dir, a2: Position, d2: Dir)
-leg_edge(A, D, E, D2) :-
+// A run halts short of the target: the way ahead closes, and the path turns
+// there onto the next leg, a quarter turn either way. A walker that cannot
+// take its first step does not turn.
+.decl halt(a: Position, d: Dir, e: Position)
+halt(A, D, E) :-
     run(A, D, E), E != A,                        // ran
-    open.rim_dir($U(), E, D), !at_target(E, D),  // halted, and not arrived
-    perp_dir(D, D2).                             // the quarter turn
+    open.rim_dir($U(), E, D), !at_target(E, D).  // halted, and not arrived
 
 // A run that halts with the target one step on is a last leg.
 .decl leg_goal(p: Position, d: Dir)
@@ -91,15 +91,17 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !path_cell(P, Ch).
 
 // --- $Toward ---
 
-// The target lies to p's d side.
+// The target lies to the open cell p's d side.
 .decl target_side(p: Position, d: Dir)
 target_side(P, D) :-
-    in(P, _), dir_elem(D),
+    open.cell($U(), P), dir_elem(D),
     params.target(Col), in(T, Col), nearer(D, T, P).
 
 // The turn the walker takes: toward the target's side.
 .decl toward(a: Position, d: Dir, a2: Position, d2: Dir)
-toward(A, D, A2, D2) :- leg_edge(A, D, A2, D2), target_side(A2, D2).
+toward(A, D, A2, D2) :-
+    halt(A, D, A2), perp_dir(D, D2),  // the quarter turn
+    target_side(A2, D2).              // the target lies that side
 
 // The legs the walker reaches from the source.
 .init reach = Propagation<Unit, Leg>
@@ -118,7 +120,8 @@ on_path(A, D, $Toward()) :- reach.reached($U(), [A, D]), arrive.reached($U(), [A
 
 on_path(A, D, $Jog()) :-
     leg_start(A1, D1),                                        // out
-    leg_edge(A1, D1, A2, D2), leg_edge(A2, D2, A3, D3),       // link, in
+    halt(A1, D1, A2), perp_dir(D1, D2),                       // link
+    halt(A2, D2, A3), perp_dir(D2, D3),                       // in
     leg_goal(A3, D3),                                         // halts at the target
     params.target(Col), stub_dir(Col, _, D3),                 // along the target's line
     ( A = A1, D = D1 ; A = A2, D = D2 ; A = A3, D = D3 ).

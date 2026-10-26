@@ -1,4 +1,0 @@
-the value is covered on this task's examples; write a determination relation for each value here that a proposer derives from a fact other than any the concept derives it from:
-  axis (domain enumerable(2), pairs-exact: (AXIS_V))
-  dir (domain enumerable(4), pairs-exact: (DIR_T))
-1 of 8 joint assignments of the enumerated parameters reproduce every train pair

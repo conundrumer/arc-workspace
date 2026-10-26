@@ -228,11 +228,13 @@ class Lib:
         prog = parse(path.read_text(), path.parent)
         assert not hasattr(prog, "line"), prog
         self.comps = {c.name: c for c in prog.components}
+        self.types = {t.name: t for t in prog.types if not t.scope.components}   # the top-level type declarations
         inputs = {(c.file, c.line) for c in prog.comments
                   if not c.own_line and ("@input" in c.text or "@extensional" in c.text)}
         self.comp_rels: dict[str, list[tuple[str, list[tuple[str, str]], bool]]] = defaultdict(list)
         self.order: dict[str, list[str]] = {}   # a component's inputs in the order its target declares them
         self.replaced: dict[str, tuple] = {}   # a component of `libmap.REPLACED`: its present relations
+        self.extension: dict[str, set[str]] = defaultdict(set)   # each component, by the relations `extend` added to it
         self.top: dict[str, list[tuple[str, str]]] = {}
         self.clauses: dict[str, list[Unit]] = defaultdict(list)   # a component's own clauses
         for u in prog.units:
@@ -276,6 +278,7 @@ class Lib:
             for name, cols, is_in in sig.comp_rels.get(target, []):
                 if name not in have:
                     self.comp_rels[comp].append((name, [(n, sub.get(t, t)) for n, t in cols], is_in))
+                    self.extension[comp].add(name)
 
     def input_clauses(self, comp: str) -> list[Unit]:
         """The clauses of the component's body, and of the bases it extends,

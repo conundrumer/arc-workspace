@@ -75,13 +75,13 @@ impl<T> Assigned<T> {
 
 /// The sub-body of the clause in progress, as a complete clause of its own
 /// that ends a program of the finished forms.
-pub(super) struct SubBody {
-    pub(super) program: CheckedProgram,
+pub struct SubBody {
+    pub program: CheckedProgram,
     /// The path of that clause.
-    pub(super) form: NodePath,
+    pub form: NodePath,
     /// The indexes of its conjuncts.
     kept: Box<[u32]>,
-    pub(super) scope: ExampleScope,
+    pub scope: ExampleScope,
 }
 
 impl<'a> Decoder<'a> {
@@ -204,13 +204,13 @@ impl<'a> Decoder<'a> {
     /// The value of `sub` on each example of the task, or once for a
     /// task-wide clause, at each assignment, counted in `work` where it is
     /// given.
-    pub(super) fn values_of(&self, sub: &SubBody, work: Option<&TableWork>) -> Box<[Outcome<Assigned<BodyValue>>]> {
+    pub fn values_of(&self, sub: &SubBody, work: Option<&TableWork>) -> Box<[Outcome<Assigned<BodyValue>>]> {
         self.examples_of(sub.scope).into_iter().map(|example| self.assigned_rows(sub, example, work)).collect()
     }
 
     /// The examples a relation of `scope` is evaluated on: each example of
     /// the task, or the one task-wide request.
-    pub(super) fn examples_of(&self, scope: ExampleScope) -> Vec<Option<Example>> {
+    pub fn examples_of(&self, scope: ExampleScope) -> Vec<Option<Example>> {
         match scope {
             ExampleScope::PerExample => self.task.examples().map(Some).collect(),
             ExampleScope::TaskWide => vec![None],
@@ -229,7 +229,7 @@ impl<'a> Decoder<'a> {
     /// the bindings of each evaluation, the walk's domains included, are
     /// counted in it, and a batch that takes the count past its cap stops the
     /// evaluation it is in.
-    pub(super) fn assigned<T>(&self, program: &CheckedProgram, root: GraphNodeIndex, dets: &[Det], work: Option<&TableWork>, at: &mut dyn FnMut(&crate::eval::Evaluation<'_>) -> Result<T, End>) -> Outcome<Assigned<T>> {
+    pub fn assigned<T>(&self, program: &CheckedProgram, root: GraphNodeIndex, dets: &[Det], work: Option<&TableWork>, at: &mut dyn FnMut(&crate::eval::Evaluation<'_>) -> Result<T, End>) -> Outcome<Assigned<T>> {
         let limits = match work {
             Some(work) => self.limits().counted_in(work.clone()),
             None => self.limits(),
@@ -249,8 +249,12 @@ impl<'a> Decoder<'a> {
 
     /// The bounds of one request: the deadline of the decode settings from
     /// now, and the decode's cancellation.
-    pub(super) fn limits(&self) -> Limits {
-        Limits::new(Some(Instant::now() + self.context.settings.deadline), self.cancellation.clone())
+    pub fn limits(&self) -> Limits {
+        let limits = Limits::new(self.context.settings.deadline.map(|deadline| Instant::now() + deadline), self.cancellation.clone());
+        match &self.copies {
+            Some(violations) => limits.checking_copies(violations.clone()),
+            None => limits,
+        }
     }
 
     pub(super) fn inputs<'p>(&'p self, program: &'p CheckedProgram, limits: &'p Limits) -> EvaluationInputs<'p> {
@@ -260,7 +264,7 @@ impl<'a> Decoder<'a> {
 
     /// The sub-body of the clause in progress, or `None` where none is in
     /// progress.
-    pub(super) fn sub_body(&self) -> Option<Outcome<SubBody>> {
+    pub fn sub_body(&self) -> Option<Outcome<SubBody>> {
         let (program, open) = self.state.partial()?;
         let open = open?;
         let (last, finished) = program.value().forms.split_last().expect("a partial program holds its partial form");
@@ -316,7 +320,7 @@ impl<'a> Decoder<'a> {
     /// from a copy of the cache that the check of `before`'s program left,
     /// where that check has run, and the cell keeps the cache that this
     /// check leaves.
-    pub(super) fn finished_checked<'s>(&self, before: &State, after: &'s State) -> &'s Outcome<CheckedProgram> {
+    pub fn finished_checked<'s>(&self, before: &State, after: &'s State) -> &'s Outcome<CheckedProgram> {
         let (checked, _) = after.checked_last().get_or_init(|| {
             let program = after.program();
             let form = NodePath::top(program.value().forms.len() as u32 - 1);
@@ -387,10 +391,10 @@ impl<'a> Decoder<'a> {
 /// The clause in progress of a form: the clause to build the sub-body on,
 /// the conjuncts of the sub-body, and the index of the conjunct in
 /// progress in the clause's body, if there is one.
-pub(super) struct OpenClause {
-    pub(super) clause: Clause,
-    pub(super) kept: Vec<Conjunct>,
-    pub(super) open_at: Option<usize>,
+pub struct OpenClause {
+    pub clause: Clause,
+    pub kept: Vec<Conjunct>,
+    pub open_at: Option<usize>,
 }
 
 /// The clause in progress of `form`, whose innermost open node is at
@@ -399,7 +403,7 @@ pub(super) struct OpenClause {
 /// which a `from` clause inside a `for` clause follows with the conjuncts
 /// of that `for` clause. `None` where `form` is neither or holds no open
 /// clause.
-pub(super) fn open_clause(form: &Form, open: &NodePath, registry: &Registry) -> Option<OpenClause> {
+pub fn open_clause(form: &Form, open: &NodePath, registry: &Registry) -> Option<OpenClause> {
     match form {
         Form::Clause(clause) => {
             let clause = clause.value();
@@ -461,7 +465,7 @@ fn complete_or_atoms(body: &Node<Body>, open_at: Option<usize>, registry: &Regis
 /// The relation that the clause at `form` derives in `program`: a clause
 /// relation, a chosen relation where the clause has `ONE` marks, or the
 /// parameter of a `DET` clause with no `ONE` mark.
-pub(super) fn derived_at(program: &CheckedProgram, form: &NodePath) -> GraphRelation {
+pub fn derived_at(program: &CheckedProgram, form: &NodePath) -> GraphRelation {
     let resolved = &program.program;
     let node = (0..resolved.graph.nodes.len())
         .map(|index| GraphNodeIndex(u32::try_from(index).expect("fewer than 2^32 nodes")))
@@ -476,7 +480,7 @@ pub(super) fn derived_at(program: &CheckedProgram, form: &NodePath) -> GraphRela
 /// that derives the relation at `root` of `program` visits: those it
 /// reads, less the picks, which no clause reads before its form ends, and
 /// `root` itself, which that body does not read.
-pub(super) fn walked_dets(program: &CheckedProgram, root: GraphNodeIndex) -> Vec<Det> {
+pub fn walked_dets(program: &CheckedProgram, root: GraphNodeIndex) -> Vec<Det> {
     dets_read(program, root).into_iter().filter(|det| !det.pick && det.node != root).collect()
 }
 
@@ -484,7 +488,7 @@ pub(super) fn walked_dets(program: &CheckedProgram, root: GraphNodeIndex) -> Vec
 /// of a finished form visits: those it reads, less the picks, with `node`
 /// itself, which the walk assigns each value of its domain where it is a
 /// `DET`'s parameter.
-pub(super) fn relation_dets(program: &CheckedProgram, node: GraphNodeIndex) -> Vec<Det> {
+pub fn relation_dets(program: &CheckedProgram, node: GraphNodeIndex) -> Vec<Det> {
     dets_read(program, node).into_iter().filter(|det| !det.pick).collect()
 }
 

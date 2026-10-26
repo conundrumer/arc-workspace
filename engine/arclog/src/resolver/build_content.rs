@@ -35,14 +35,13 @@ impl Builder<'_> {
         }
     }
 
-    /// Whether no read of the case resolves to each node, for a node of a
-    /// layered resolution of one form, and `false` for every node of
-    /// another resolution.
+    /// Whether no read of the last form resolves to each node, for a node
+    /// of a layered resolution of one form, and `false` for every node of
+    /// another resolution. A node that only another node reads in the
+    /// dependency graph counts as unread, as a write of a content reads no
+    /// other node's content.
     fn unread_nodes(&self) -> Vec<bool> {
         let mut unread = vec![self.earlier.is_some(); self.nodes.len()];
-        for node in self.reads.iter().flatten() {
-            unread[*node as usize] = false;
-        }
         for resolution in self.resolutions.values() {
             if let Resolution::Node(node) = resolution {
                 unread[node.0 as usize] = false;

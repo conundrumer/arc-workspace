@@ -218,12 +218,30 @@ impl Names {
         }
     }
 
+    /// Whether the content of `node` is left for its first read.
+    pub(super) fn is_unwritten(&self, node: usize) -> bool {
+        match &self.earlier {
+            Some(earlier) if node < self.first_node() => earlier.names.is_unwritten(node),
+            _ => self.unwritten.get(node - self.first_node()).is_some_and(Option::is_some),
+        }
+    }
+
     /// The columns of `node`, where they are known.
     pub(super) fn node_columns_of(&self, node: usize) -> Option<&Columns> {
         match &self.earlier {
             Some(earlier) if node < self.first_node() => earlier.names.node_columns_of(node),
             _ => self.node_columns.get(node - self.first_node())?.as_ref(),
         }
+    }
+
+    /// The columns a name of any scope declares for `node` as fixed, as for
+    /// an output of an instance, which has no columns of its own node.
+    pub(super) fn fixed_columns_of(&self, node: usize) -> Option<&Columns> {
+        let own = self.scopes.values().flat_map(|names| names.values()).find_map(|target| match &target.columns {
+            ColumnsOf::Fixed(columns) if target.node.0 as usize == node => Some(columns),
+            _ => None,
+        });
+        own.or_else(|| self.earlier.as_ref()?.names.fixed_columns_of(node))
     }
 
     /// The columns that the relation of the clause at `path` keeps.
@@ -446,12 +464,14 @@ impl NameWriter for Writer<'_> {
                 RelationRef::Declared(_) | RelationRef::Output(_) => self.names.find(self.scope, relation),
                 RelationRef::Fact(_) | RelationRef::Lib(_) | RelationRef::DefinedPort(_) => None,
             };
-            match target.map(|target| self.names.node_content(target.node.0 as usize).expect("a content slot for each node")) {
+            let node = target.map(|target| target.node.0 as usize);
+            match node.map(|node| self.names.node_content(node).expect("a content slot for each node")) {
                 Some(Some(content)) => {
                     out.write(&[Mark::Content as u8]);
                     out.write(&content.hash.0.to_le_bytes());
                 }
                 Some(None) => {
+                    debug_assert!(node.is_some_and(|node| !self.names.is_unwritten(node)), "a write reads the content of a node left unwritten");
                     out.write(&[Mark::Open as u8]);
                     return AsWritten.write_name(relation, out);
                 }

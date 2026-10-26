@@ -19,17 +19,21 @@
 .decl obj(p: Position, col: Color)
 obj(P, Col) :- in(P, Col), !params.bg(Col).
 
-// The color reaches p's level toward d: some cell of it lies at that level
-// or nearer that side.
-.decl reaches(col: Color, d: Dir8, p: Position)
-reaches(Col, D, P) :- obj(Q, Col), in(P, _), dir8_elem(D), !nearer(D, P, Q).
+// Another cell of the color lies strictly nearer side d than q.
+.decl passed(col: Color, d: Dir8, q: Position)
+passed(Col, D, Q) :- obj(Q, Col), obj(Q2, Col), dir8_elem(D), nearer(D, Q2, Q).
+
+// The color's extreme cells toward d: no cell of it lies nearer that side.
+.decl extreme(col: Color, d: Dir8, q: Position)
+extreme(Col, D, Q) :- obj(Q, Col), dir8_elem(D), !passed(Col, D, Q).
 
 // The color's segment swept along axis a.
 .decl sweep(col: Color, a: Axis4, p: Position)
 sweep(Col, A, P) :-
+    in(P, _), obj(Q, Col), same_line(A, P, Q),  // on a line of family a it meets
     axis4_of(D, A), dir8_opposite(D, D2),
-    reaches(Col, D, P), reaches(Col, D2, P),    // across the color's extent along a
-    obj(Q, Col), same_line(A, P, Q).            // on a line of family a it meets
+    extreme(Col, D, E1), !nearer(D, P, E1),     // across the color's extent along a
+    extreme(Col, D2, E2), !nearer(D2, P, E2).
 
 // A sweep that covers ground claims an occluder that is not there.
 .decl unsupported(col: Color, a: Axis4)

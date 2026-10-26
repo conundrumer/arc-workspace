@@ -20,20 +20,23 @@
 //! confirmed rules of a `DEMONSTRATED` form, and [`models`]
 //! enumerates the models of a case on an input, through the driver.
 //! [`mod@determinations`] gives the `DET` nodes in dependency order and the
-//! domain of each, which an evaluation at determined values reads.
+//! domain of each, which an evaluation at determined values reads, and
+//! [`body_ir`] gives the IR the driver joins for a body, for a reader of the
+//! body's facts.
 //! [`output`] reads a grid from a relation, for the judge. [`proposers`]
 //! gives the rows of a proposer over an evidence, which the driver reads for
 //! a clause that derives by a proposer. A request made with a
 //! [`crate::trace::RunTrace`] appends one record to it for each relation the
 //! driver evaluates.
 
+pub mod body_ir;
 pub mod cache;
+pub mod copies;
 pub mod determinations;
 mod demonstrated;
 mod driver;
 pub mod examples;
 pub mod filters;
-pub mod flows;
 pub mod init_form;
 pub mod instance;
 pub mod ir;
@@ -51,7 +54,7 @@ pub mod values;
 
 pub use determinations::Domain;
 pub use driver::FormBodies;
-pub use lookup::{output_relation, relation_of};
+pub use lookup::{input_relation, output_relation, relation_of};
 pub use models::ModelsEnd;
 pub use values::{BodyValue, Caps, Cancellation, GridValue, Limits, Outcome, ReachedBound, RelationValue, RunFault, Stop, TableWork};
 
@@ -69,9 +72,13 @@ use driver::Driver;
 
 /// The values of the case program's parameters, from one source, so a run
 /// reads either the stored records or the evidence and never a mix. The
-/// stored records play the part of an assignment: a `DET` they give reads its
-/// record, and a `DET` they leave out reads as a `DET` that an assignment
-/// leaves out.
+/// stored records play the part of an assignment, except for a `DET` whose
+/// every form is a `DET` clause with a body, no proposer and no `ONE` mark:
+/// that `DET` reads the rows its clause gives, as a `DET` that an assignment
+/// leaves out reads, and its record is compared at the End check alone. Any
+/// other `DET` that a record gives reads its record, and a `DET` that no record
+/// gives reads as a `DET` that an assignment leaves out. A witness's `assign`
+/// of a `DET` gives its rows in place of both.
 #[derive(Clone, Debug)]
 pub struct ParameterValues {
     source: ParameterSource,
@@ -81,24 +88,28 @@ pub struct ParameterValues {
 #[derive(Clone, Debug)]
 pub(super) enum ParameterSource {
     /// The rows of each parameter as an arcdata file writes them, typed only
-    /// when a clause reads them, by [`crate::terms::encode_param_value`].
-    Stored(StableHashMap<ProgramRelation, ParamValue>),
+    /// when a clause reads them, by [`crate::terms::encode_param_value`]:
+    /// the `param` records, and the relations a witness's `assign` gives in
+    /// their place.
+    Stored { records: StableHashMap<ProgramRelation, ParamValue>, assigns: StableHashMap<ProgramRelation, ParamValue> },
     /// The assignment that [`ParameterValues::determined`] takes.
     Determined(StableHashMap<ProgramRelation, Arc<Relation>>),
 }
 
 impl Default for ParameterValues {
     fn default() -> Self {
-        ParameterValues { source: ParameterSource::Stored(StableHashMap::default()) }
+        ParameterValues { source: ParameterSource::Stored { records: StableHashMap::default(), assigns: StableHashMap::default() } }
     }
 }
 
 impl ParameterValues {
-    /// The values of the solver's stored `param` records. A `DET` with no
-    /// record takes the value it takes at determined values that leave it out.
+    /// The values of the solver's stored `param` records. A `DET` whose every
+    /// form is a `DET` clause with a body, no proposer and no `ONE` mark reads
+    /// the rows its clause gives, not its record. A `DET` with no record takes
+    /// the value it takes at determined values that leave it out.
     pub fn stored(arcdata: &crate::program::Arcdata) -> Self {
-        let values = arcdata.params.iter().map(|param| (param.value().name.clone(), param.value().value.clone())).collect();
-        ParameterValues { source: ParameterSource::Stored(values) }
+        let records = arcdata.params.iter().map(|param| (param.value().name.clone(), param.value().value.clone())).collect();
+        ParameterValues { source: ParameterSource::Stored { records, assigns: StableHashMap::default() } }
     }
 
     /// The values determined from the evidence at the assignment `rows`: the
@@ -110,20 +121,22 @@ impl ParameterValues {
     }
 
     /// These stored values, with the values of each relation that a
-    /// witness's `assign` gives in the place of its stored values. Values
-    /// determined from the evidence take no `assign`, so this panics on them.
+    /// witness's `assign` gives in the place of its stored values or of its
+    /// clause's rows. Values determined from the evidence take no `assign`, so
+    /// this panics on them.
     pub fn with_assigns(&self, assigns: &[(ProgramRelation, ParamValue)]) -> Self {
-        let ParameterSource::Stored(values) = &self.source else { panic!("an `assign` over stored values") };
-        let mut values = values.clone();
-        values.extend(assigns.iter().cloned());
-        ParameterValues { source: ParameterSource::Stored(values) }
+        let ParameterSource::Stored { records, assigns: held } = &self.source else { panic!("an `assign` over stored values") };
+        let mut held = held.clone();
+        held.extend(assigns.iter().cloned());
+        ParameterValues { source: ParameterSource::Stored { records: records.clone(), assigns: held } }
     }
 
-    /// The written rows of `relation`, or `None` where no stored record
-    /// gives it, as at values determined from the evidence.
+    /// The written rows of `relation`: its `assign` where one gives it, and
+    /// otherwise its stored record, or `None` where neither gives it, as at
+    /// values determined from the evidence.
     pub fn get(&self, relation: &ProgramRelation) -> Option<&ParamValue> {
         match &self.source {
-            ParameterSource::Stored(values) => values.get(relation),
+            ParameterSource::Stored { records, assigns } => assigns.get(relation).or_else(|| records.get(relation)),
             ParameterSource::Determined(_) => None,
         }
     }

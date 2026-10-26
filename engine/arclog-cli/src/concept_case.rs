@@ -1,7 +1,9 @@
-//! The concept case of a solver of the corpus, checked and set up for its
-//! run on its task at its stored `param` records, which `lib-compare`,
-//! `speed` and `determinism` run, and the parts of that
-//! setup that `determine` shares for each base case: the limits of a run.
+//! A case of a solver of the corpus, the concept case or the case that a
+//! snapshot's key names, checked and set up for its run on its task at its
+//! stored `param` records, with each `DET` by its clauses read from its
+//! clause. It holds the parts of that setup that its callers share: the read
+//! of the solver and its task, the check of a case, the case sets
+//! (`determined_cases`) and the limits of a run (`corpus_limits`).
 
 use std::path::Path;
 use std::time::Instant;
@@ -22,9 +24,15 @@ use arclog::task::{JudgedTask, Task};
 use arclog::stream::corpus::check_case;
 use arclog_constructions::shared as constructions;
 
-/// The concept case of a solver, set up for its run at its stored `param`
-/// records, over the table of the lib's constructions, with the task's pairs
-/// as the judge reads them.
+use crate::compare::names_case;
+
+/// The snapshot's key of the concept case.
+const CONCEPT: &str = "concept";
+
+/// A case of a solver (`with_concept_case`, `with_case`), set up for its run
+/// at its stored `param` records, with each `DET` by its clauses read from
+/// its clause, over the table of the lib's constructions, with the task's
+/// pairs as the judge reads them.
 pub(crate) struct ConceptCase<'a> {
     pub(crate) evaluation: Evaluation<'a>,
     pub(crate) judged: &'a JudgedTask,
@@ -50,17 +58,34 @@ pub(crate) fn corpus_limits() -> Limits {
 /// What `body` gives on the concept case of the solver `id` of `corpus`,
 /// on its task in `tasks`, or the fault that stops the case's setup.
 pub(crate) fn with_concept_case<T>(corpus: &Path, tasks: &Path, id: &str, body: impl FnOnce(&ConceptCase<'_>) -> Result<T, String>) -> Result<T, String> {
+    with_case(corpus, tasks, id, CONCEPT, body)
+}
+
+/// What `body` gives on the case of the solver `id` of `corpus` that the
+/// snapshot's key `name` names (`names_case`), on its task in `tasks`, set
+/// up as the concept case is, or the fault that stops the case's setup.
+pub(crate) fn with_case<T>(corpus: &Path, tasks: &Path, id: &str, name: &str, body: impl FnOnce(&ConceptCase<'_>) -> Result<T, String>) -> Result<T, String> {
     let CorpusTask { solver, task, judged } = read_corpus_task(corpus, tasks, id)?;
     let registry = Registry::get();
     let cases = resolve_cases(&solver, registry);
     let clauses = SolverClauses::of_cases(&cases);
-    let concept = cases.concept();
-    let program = check_case(concept, &clauses, &mut CheckCache::default(), "the concept case")?;
+    let concept_alts = solver.concept_alts();
+    let chosen = if name == CONCEPT { Some(cases.concept()) } else { cases.resolved().find(|case| names_case(name, &case.case.name, &concept_alts)) };
+    let chosen = chosen.ok_or_else(|| format!("the solver has no case named `{name}`"))?;
+    let mut cache = CheckCache::default();
+    let concept = check_case(cases.concept(), &clauses, &mut cache, "the concept case")?;
+    let own;
+    let program = if name == CONCEPT {
+        &concept
+    } else {
+        own = check_case(chosen, &clauses, &mut cache, &format!("the case `{name}`"))?;
+        &own
+    };
     let parameters = ParameterValues::stored(solver.arcdata.value());
     let session = corpus_session();
     let limits = corpus_limits();
-    let evaluation = Evaluation { program: &program, concept: None, task: &task, parameters: &parameters, session: &session, registry, constructions: constructions()?, limits: &limits };
-    body(&ConceptCase { evaluation, judged: &judged })
+    let determined = DeterminedCase { name: &chosen.case.name, program, concept: &concept, task: &task, session: &session, registry, constructions: constructions()?, limits: &limits };
+    body(&ConceptCase { evaluation: determined.evaluation(&parameters), judged: &judged })
 }
 
 /// The cases of `programs` as the determination takes them, on the task

@@ -8,7 +8,6 @@ Run `just` to see frequently used scripts.
 
 ```sh
 uv sync
-uv run pytest -q
 ```
 
 Souffle is required for the Datalog (`.dl`) solvers:

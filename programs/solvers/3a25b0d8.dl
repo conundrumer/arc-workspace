@@ -121,8 +121,12 @@ off_side(A, R, D) :-
 .decl side(a: Axis, r: Ident, d: Dir)
 side(A, R, D) :- hole(_, R), class_dir(A, D), !off_side(A, R, D).
 
-.decl same_class(a: Axis, r: Ident, r2: Ident)
-same_class(A, R, R2) :-
+// A hole under one midline axis.
+.type AxisHole = [a: Axis, r: Ident]
+
+// The holes of one class share an id.
+.init hole_class = Canon<AxisHole>
+hole_class.equiv([A, R], [A, R2]) :-
     class_axis(_, A), hole(_, R), hole(_, R2),
     ( side(A, R, D), side(A, R2, D)      // the same side
     ; !side(A, R, _), !side(A, R2, _)    // or neither
@@ -133,23 +137,21 @@ same_class(A, R, R2) :-
 .init hole_box = Bbox<Ident>
 hole_box.cell(R, P_inner) :- hole_inner(R, P_inner).
 
-.type Ranking = [a: Axis, f: Ident, d: Dir]
+.type Ranking = [a: Axis, f: Ident, d: Dir, c: Ident]
 
 // @claim answer
 .init hole_rank = Order<Ranking, Ident>
-hole_rank.elem([A, F, D], R) :- hole(F, R), rank_dir(A, D).
-hole_rank.before([A, F, D], R, R2) :-
-    hole(F, R), hole(F, R2), same_class(A, R, R2),          // two of one class
-    rank_dir(A, D), hole_box.box(R, B), hole_box.box(R2, B2),
-    nearer(D, B, B2).                                       // R reaches nearer edge D
+hole_rank.elem([A, F, D, C], R) :- hole(F, R), rank_dir(A, D), hole_class.id([A, R], C).
+hole_rank.score([A, F, D, C], R, K) :-
+    hole_rank.elem([A, F, D, C], R),
+    hole_box.box(R, B), dist(B, D, K).                      // how near edge D it reaches
 
 // Both ends of the rank axis rank the holes, and a disagreement leaves the
 // pairing multivalued.
 .decl partner(a: Axis, r: Ident, r_src: Ident)
 partner(A, R, R_src) :-
-    plain(F, _), hole_rank.rank([A, F, D], R, N),           // the plain figure's hole
-    !plain(F2, _), hole_rank.rank([A, F2, D], R_src, N),    // the painted one of that rank
-    same_class(A, R, R_src).                                // and of that class
+    plain(F, _), hole_rank.rank([A, F, D, C], R, N),        // the plain figure's hole
+    !plain(F2, _), hole_rank.rank([A, F2, D, C], R_src, N). // the painted one of that class and rank
 
 // A painted hole holds one color.
 // @claim answer

@@ -8,14 +8,14 @@ use std::sync::Arc;
 use super::{checks, inference, labels_in_scopes, typed_labels, types, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, Scope, SolverClauses};
 use super::safety::{BoundCache, BoundMemo};
 use super::LabelInScope;
-use crate::eval::ir::atom_modes;
+use crate::eval::ir::relation_modes;
 use crate::hash::StableHashMap;
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{node_at, NodePath, NodeRef, PathStep};
 use crate::program::{Atom, Body, Choose, Clause, Conjunct, Form, Instance, InstanceInput, KeyBody, KeyClause, LabelUse, Negated, Node, Program, RigidDet, Site, SiteArg, SiteValue};
-use crate::registry::{Mode, Registry};
-use crate::program::RelationRef;
-use crate::resolver::{resolve_last, ResolvedProgram};
+use crate::registry::{LibEntry, Mode, Registry};
+use crate::program::{OutputName, OutputOwner, RelationRef};
+use crate::resolver::{resolve_last, DependencyKind, ResolvedProgram, Side};
 use crate::stream::write::reads_example_column;
 use crate::types::each_site_label;
 
@@ -126,8 +126,10 @@ pub enum Candidate {
 /// scopes, and each other takes them. A check that [`atom_reading`] says
 /// ignores the relation of such an atom gives each candidate the first
 /// candidate's result, and so does the safety check, where the atoms'
-/// relations have equal modes; and the conjuncts written before the atom bind
-/// the same labels in every candidate.
+/// relations have equal modes, and so does a check that reads the relation
+/// itself, where the candidates' relations are of one [`RelationClass`];
+/// and the conjuncts written before the atom bind the same labels in every
+/// candidate.
 #[derive(Default)]
 struct AtomHead {
     /// The path of the open atom of the first candidate, the path of the
@@ -135,7 +137,7 @@ struct AtomHead {
     open: OnceCell<NodePath>,
     types: RefCell<Option<inference::InferredTypes>>,
     labels: OnceCell<Vec<LabelInScope>>,
-    results: RefCell<StableHashMap<(CheckId, Box<[Mode]>), PrefixResult>>,
+    results: RefCell<StableHashMap<(CheckId, Shared), PrefixResult>>,
     /// The resolution of the candidates that open an atom of a relation
     /// ([`PrefixChecks::check_atom_head`]): the one of the candidate
     /// checked last, retargeted to the next.
@@ -158,10 +160,66 @@ enum AtomReading {
     Ignored,
     /// Through its modes alone, which a relation of none leaves unread.
     Modes,
-    /// Through the relation itself.
+    /// Through the relation itself, which the candidates whose relations
+    /// are of one [`RelationClass`] read alike.
     Relation,
 }
 
+/// What a check's result on an atom-head candidate is shared by: the
+/// candidates that give a check one value of it give it one result.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+enum Shared {
+    /// All candidates.
+    Ignored,
+    /// The candidates whose open atoms' relations have these modes.
+    Modes(Box<[Mode]>),
+    /// The candidates whose open atoms' relations are of this class.
+    Relation(RelationClass),
+}
+
+/// The class of the relation of an atom of no site, within which the checks
+/// that `atom_reading` says read the relation give one result: they read,
+/// of a lib name, the kind of its registry entry and whether it is `ONE`;
+/// of a relation that the forms before the last resolve to a node, only
+/// what that node's side is, where the node is no fact and the relation is
+/// no output of a `RIGID_DET` form.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum RelationClass {
+    /// A lib name: the kind of its registry entry, and whether it is `ONE`.
+    Lib { entry: std::mem::Discriminant<LibEntry>, one: bool },
+    /// A declared relation or an output that the forms before the last
+    /// resolve to a node of this side.
+    Earlier { side: Side },
+}
+
+/// The class of `relation`, the relation of an atom of no site that the
+/// last form of `held` holds, where `earlier` resolves the forms before
+/// the last; none for a relation whose candidates share no such result,
+/// a fact relation or a relation that the last form declares included.
+fn relation_class(registry: &Registry, earlier: &ResolvedProgram, held: &ResolvedProgram, relation: &RelationRef) -> Option<RelationClass> {
+    match relation {
+        RelationRef::Lib(name) => registry.entry(name).map(|entry| RelationClass::Lib { entry: std::mem::discriminant(entry), one: *name.0 == *crate::read::spelling::ONE }),
+        RelationRef::Output(OutputName { of: OutputOwner::RigidDet(_), .. }) => None,
+        RelationRef::Declared(_) | RelationRef::Output(_) => {
+            let node = earlier.program_read(relation).filter(|node| held.program_read(relation) == Some(*node))?;
+            let fact = matches!(earlier.graph.nodes[node.0 as usize].kind, DependencyKind::Fact(_));
+            (!fact).then(|| RelationClass::Earlier { side: earlier.side(node) })
+        }
+        RelationRef::Fact(_) | RelationRef::DefinedPort(_) => None,
+    }
+}
+
+/// What `check`'s result on a candidate that opens an atom of `relation`,
+/// of `class`, is shared by, where it is shared.
+fn shared(registry: &Registry, check: CheckId, relation: Option<&RelationRef>, class: Option<&RelationClass>) -> Option<Shared> {
+    match atom_reading(check) {
+        AtomReading::Ignored => Some(Shared::Ignored),
+        AtomReading::Modes => relation.map(|relation| Shared::Modes(relation_modes(registry, relation).into())),
+        AtomReading::Relation => class.cloned().map(Shared::Relation),
+    }
+}
+
+/// How `check` reads the relation of an atom of no site.
 fn atom_reading(check: CheckId) -> AtomReading {
     match check {
         CheckId::Grammar
@@ -210,12 +268,16 @@ impl PrefixChecks<'_> {
     /// where none refuses. No check after it runs. Where `candidate` is
     /// [`Candidate::AtomHead`], a refusal of a check that ignores the open
     /// atom's relation is the first such candidate's, whatever the
-    /// candidate's own relation; which candidates refuse is the same.
-    pub fn check(&self, program: &ResolvedProgram, open: Option<&NodePath>, candidate: Candidate) -> Option<(CheckId, Box<[Refusal]>)> {
+    /// candidate's own relation; which candidates refuse is the same. So is
+    /// a refusal of a check that reads the relation, where `class` is the
+    /// class of the candidate's relation: the refusal of the first
+    /// candidate of that class. A candidate of no class shares no such
+    /// result.
+    pub fn check(&self, program: &ResolvedProgram, open: Option<&NodePath>, candidate: Candidate, class: Option<&RelationClass>) -> Option<(CheckId, Box<[Refusal]>)> {
         let same_open = |open: &NodePath| self.head.open.get_or_init(|| open.clone()) == open;
         let head = (candidate == Candidate::AtomHead && open.is_some_and(same_open)).then_some(&self.head);
         with_prefix(program, self.clauses, self.registry, Some(self.inference), head, Some(&self.bound), open, |prefix| {
-            checks().iter().find_map(|check| match self.check_prefix(*check, prefix, head) {
+            checks().iter().find_map(|check| match self.check_prefix(*check, prefix, head, class) {
                 PrefixResult::Refuse(refusals) => Some((check.id(), refusals)),
                 PrefixResult::Undecided => None,
             })
@@ -224,20 +286,51 @@ impl PrefixChecks<'_> {
 
     /// [`PrefixChecks::check`] with [`Candidate::AtomHead`] for the prefix
     /// whose last token opens, at `open`, an atom of `relation`, a lib
-    /// relation, relation macro or proposer, or a relation declared or
+    /// relation or relation macro, or a relation declared or
     /// output by a form of `program`, where `earlier` is the resolution of
     /// the forms before the last of `program`. The candidates of one mask
     /// at one open path share one resolution of the form in progress,
     /// retargeted to each one's relation
     /// ([`ResolvedProgram::retarget_atom`]); where that gives no retarget,
-    /// the resolution is [`resolve_last`]'s.
+    /// the resolution is [`resolve_last`]'s. They share as well the result
+    /// of each check, as `AtomHead` states: a candidate for which the
+    /// checks, in their order up to the first that refuses, all hold a
+    /// result that a candidate of its [`RelationClass`] gave takes the
+    /// first refusal of those, or none, with no retarget and no check run.
     pub fn check_atom_head(&self, earlier: &Arc<ResolvedProgram>, program: &Node<Program>, open: &NodePath, relation: &RelationRef) -> Option<(CheckId, Box<[Refusal]>)> {
         let last = program.value().forms.len() as u32 - 1;
         let full = NodePath(std::iter::once(PathStep(last)).chain(open.0.iter().copied()).collect());
+        if !self.head.resolution.borrow().as_ref().is_some_and(|held| held.at == full) {
+            self.hold_atom_head(earlier, program, &full, relation);
+        }
+        let class = {
+            let held = self.head.resolution.borrow();
+            relation_class(self.registry, earlier, &held.as_ref().expect("the resolution is set").resolved, relation)
+        };
+        if self.head.open.get() == Some(open) {
+            if let Some(result) = self.held_result(relation, class.as_ref()) {
+                return result;
+            }
+        }
         self.hold_atom_head(earlier, program, &full, relation);
         let held = self.head.resolution.borrow();
         let resolved = &held.as_ref().expect("the resolution is set").resolved;
-        self.check(resolved, Some(open), Candidate::AtomHead)
+        self.check(resolved, Some(open), Candidate::AtomHead, class.as_ref())
+    }
+
+    /// What [`PrefixChecks::check`] gives for a candidate that opens an
+    /// atom of `relation`, of `class`, where `head` holds the result of each
+    /// check up to the first that refuses: `Some` of the first refusal, or
+    /// of none; `None` where a check before that refusal has no result held.
+    fn held_result(&self, relation: &RelationRef, class: Option<&RelationClass>) -> Option<Option<(CheckId, Box<[Refusal]>)>> {
+        let results = self.head.results.borrow();
+        for check in checks() {
+            let key = (check.id(), shared(self.registry, check.id(), Some(relation), class)?);
+            if let PrefixResult::Refuse(refusals) = results.get(&key)? {
+                return Some(Some((check.id(), refusals.clone())));
+            }
+        }
+        Some(None)
     }
 
     /// Whether the read at `at`, the path in `program` of an atom of
@@ -267,16 +360,13 @@ impl PrefixChecks<'_> {
     }
 
     /// The result of `check` on `prefix`, which is the result of the first
-    /// candidate of `head`, where `check` reads nothing of the open atom
-    /// that the candidates differ in.
-    fn check_prefix(&self, check: &dyn Check, prefix: &Prefix<'_>, head: Option<&AtomHead>) -> PrefixResult {
-        let shared = head.zip(match atom_reading(check.id()) {
-            AtomReading::Ignored => Some(&[][..]),
-            AtomReading::Modes => open_atom(prefix).map(|atom| atom_modes(self.registry, atom)),
-            AtomReading::Relation => None,
-        });
-        let Some((head, modes)) = shared else { return check.check_prefix(prefix) };
-        let key = (check.id(), Box::<[Mode]>::from(modes));
+    /// candidate of `head` that [`shared`] gives the same value, where
+    /// `check` reads nothing of the open atom that the candidates of that
+    /// value differ in.
+    fn check_prefix(&self, check: &dyn Check, prefix: &Prefix<'_>, head: Option<&AtomHead>, class: Option<&RelationClass>) -> PrefixResult {
+        let key = head.and_then(|head| Some((head, shared(self.registry, check.id(), open_atom(prefix).map(|atom| &atom.relation), class)?)));
+        let Some((head, key)) = key else { return check.check_prefix(prefix) };
+        let key = (check.id(), key);
         if let Some(found) = head.results.borrow().get(&key) {
             return found.clone();
         }
@@ -344,14 +434,21 @@ pub(super) fn whole<'a>(prefix: &Prefix<'a>) -> CheckInput<'a> {
 }
 
 /// The refusals of `check` on the whole partial form of `prefix` that stand
-/// at a complete node, as the prefix's refusals: those of a check whose
-/// refusal of a node no node written after it undoes.
+/// at a complete node, as the prefix's refusals.
+///
+/// A caller meets this condition: each refusal of `check`, found at a node,
+/// is one that no node written after that node undoes, so that it stands in
+/// every completion of the prefix. A check with a refusal that a later node
+/// undoes, such as a label that a conjunct written later binds, gives its own
+/// rule of when each refusal stands: [`standing`] keeps the refusals at the
+/// paths of a predicate, and the safety check keeps its own, by kind.
 pub(super) fn settled(prefix: &Prefix<'_>, check: &dyn Check) -> PrefixResult {
     settled_result(prefix, check.check(&whole(prefix)))
 }
 
 /// The refusals of `result`, a check's result on the whole partial form of
-/// `prefix`, that stand at a complete node.
+/// `prefix`, that stand at a complete node: [`settled`], for a caller whose
+/// result is not that of `check`.
 pub(super) fn settled_result(prefix: &Prefix<'_>, result: CheckResult) -> PrefixResult {
     standing(prefix, result, &|at| !prefix.is_open(at))
 }

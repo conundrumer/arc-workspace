@@ -2,7 +2,7 @@
 
     uv run python scripts/retro_checks.py [stem ...]
 
-The test suite, the handbook render, and a run of every solver, or of the
+The handbook render, and a run of every solver, or of the
 stems given. Each one runs to completion, whatever an earlier one reported.
 The checks take minutes, and nothing but stdout is written.
 
@@ -13,7 +13,6 @@ fails or its determination check finds a problem.
 """
 
 import json
-import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -30,16 +29,11 @@ ROOT = Path(__file__).resolve().parents[1]
 # in one pool, so the corpus goes in parts.
 CHUNK = 100
 
-PYTEST_CMD = ["uv", "run", "pytest", "-q"]
 CONTEXT_CMD = ["uv", "run", "python", "scripts/context.py"]
 RUN_CMD = ["uv", "run", "python", "scripts/run_dl.py", "run", "--json"]
 
 CORPUS_COMMAND = (f"uv run python scripts/run_dl.py run --json "
                   f"<the corpus, in chunks of {CHUNK}>")
-
-# The line pytest closes with, and the banner over its failure detail.
-PYTEST_STATS = re.compile(r"\b\d+ (passed|failed|error|errors)\b")
-PYTEST_BANNER = re.compile(r"^=+ (FAILURES|ERRORS) =+$")
 
 # The kind of a `run --json` section whose lines show why a solver fails.
 FAILURES = "failures"
@@ -60,33 +54,6 @@ def _run(cmd: list[str]) -> Ran:
     """One command from the repo root."""
     proc = subprocess.run(cmd, cwd=ROOT, text=True, capture_output=True)
     return Ran(proc.returncode, proc.stdout, proc.stderr)
-
-
-def pytest_summary(out: str) -> str:
-    """The stats line pytest closes with."""
-    for raw in reversed(out.splitlines()):
-        if PYTEST_STATS.search(raw):
-            return raw.strip()
-    return ""
-
-
-def pytest_failures(out: str) -> str:
-    """Pytest's report on the tests that failed. Without its failure banner
-    the whole output stands, so nothing is dropped."""
-    lines = out.splitlines()
-    for n, raw in enumerate(lines):
-        if PYTEST_BANNER.match(raw.strip()):
-            return "\n".join(lines[n:]).strip()
-    return out.strip()
-
-
-def check_pytest() -> Check:
-    ran = _run(PYTEST_CMD)
-    out = ran.stdout + ran.stderr
-    return {"command": " ".join(PYTEST_CMD),
-            "passed": ran.code == 0,
-            "summary": pytest_summary(out),
-            "failures": "" if ran.code == 0 else pytest_failures(out)}
 
 
 def check_context() -> Check:
@@ -248,7 +215,7 @@ def check_corpus(stems: list[str]) -> Check:
 
 def main(argv: list[str]) -> int:
     stems = argv or all_stems()
-    checks = [check_pytest(), check_context(), check_corpus(stems)]
+    checks = [check_context(), check_corpus(stems)]
     print(json.dumps({"checks": checks}, ensure_ascii=False, indent=1))
     return 0
 

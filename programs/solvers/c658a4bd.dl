@@ -114,11 +114,12 @@ extent(Col, A, N) :- square.box(Col, B), square.cell(Col, P), axis_elem(A), box_
 .decl tie(rd: Reading)
 tie(Rd) :- score(Rd, Col1, N), score(Rd, Col2, N), Col1 != Col2.
 
-// The squares from the highest score down: a square's rank is its depth.
+// The squares by score, the lowest first: a square's depth is the count of
+// squares with a higher score, its rank_desc.
 // @claim concentric-rings output-size
 .init order = Order<Reading, Color>
 order.elem(Rd, Col) :- score(Rd, Col, _), !tie(Rd).
-order.before(Rd, Col1, Col2) :- score(Rd, Col1, N1), score(Rd, Col2, N2), N1 > N2.
+order.score(Rd, Col, N) :- score(Rd, Col, N).
 
 .init frame = Frame2D<Choice>
 
@@ -147,14 +148,14 @@ area.item(Col, P) :- square.box(Col, B), in(P, _), inside(P, B).
 score([$RankByBboxArea(), M], Col, N) :- side_measure_choice(M), area.tally(Col, N).
 
 // --- $RankRings, $OutlineAtSide, $SolidAtSide, $InnermostFills ---
-// The side of the first square.
+// The side of the square with the highest score.
 .decl top_side(rd: Reading, n: number)
-top_side([R, M], N) :- order.first([R, M], Col), side(M, Col, N).
+top_side([R, M], N) :- order.last([R, M], Col), side(M, Col, N).
 
 // --- $RankRings, $SideFromCount ---
 // The square ranked k takes the ring at depth k.
 .decl ranked_ring(ch: Choice, p: Position, col: Color)
-ranked_ring([N, R, M], P, Col) :- ring.depth([N, R, M], P, K), order.rank([R, M], Col, K).
+ranked_ring([N, R, M], P, Col) :- ring.depth([N, R, M], P, K), order.rank_desc([R, M], Col, K).
 
 // --- $RankRings ---
 frame.extent([$RankRings(), R, M], A, N) :- top_side([R, M], N), axis_elem(A).
@@ -197,11 +198,11 @@ out(P, Col, [$SolidAtSide(), R, M]) :-
 // --- $SideFromCount ---
 // The smallest square's side as a frame.
 .init core = Frame2D<Reading>
-core.extent([R, M], A, S) :- order.last([R, M], Col), side(M, Col, S), axis_elem(A).
+core.extent([R, M], A, S) :- order.first([R, M], Col), side(M, Col, S), axis_elem(A).
 
 // That frame extended on every side by one ring per larger square.
 frame.extent([$SideFromCount(), R, M], A, N) :-
-    order.last([R, M], Col), order.rank([R, M], Col, K),
+    order.first([R, M], Col), order.rank_desc([R, M], Col, K),
     uniform_outset(K, B), core.cell([R, M], P), box_extent(B, P, A, N).
 
 out(P, Col, [$SideFromCount(), R, M]) :- ranked_ring([$SideFromCount(), R, M], P, Col).
@@ -210,8 +211,8 @@ out(P, Col, [$SideFromCount(), R, M]) :- ranked_ring([$SideFromCount(), R, M], P
 frame.extent([$InnermostFills(), R, M], A, N) :- top_side([R, M], N), axis_elem(A).
 out(P, Col, [$InnermostFills(), R, M]) :-
     ring.depth([$InnermostFills(), R, M], P, K),
-    ( order.rank([R, M], Col, K)
-    ; !order.rank([R, M], _, K), order.last([R, M], Col) ).
+    ( order.rank_desc([R, M], Col, K)
+    ; !order.rank_desc([R, M], _, K), order.first([R, M], Col) ).
 
 .comp Determine {
     // The input color that a train output does not hold.

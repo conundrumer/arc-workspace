@@ -47,7 +47,7 @@ from solver.value_order import row_key
 def line_findings(runs: Runs, solver: Solver, rels: Sequence[RelationName],
                   found: Sequence[Found], capped: Sequence[RelationName],
                   empty: set[RelationName],
-                  differs: Mapping[RelationName, PairId | None],
+                  differs: Mapping[RelationName, PairId],
                   solver_cases: tuple[Case, ...]) -> list[Finding]:
     """The findings the audit prints: on each `@store` line, a second
     line on its relation, a relation that is also a parameter's name, a
@@ -91,12 +91,17 @@ def line_findings(runs: Runs, solver: Solver, rels: Sequence[RelationName],
             if excluded is not None:
                 out.append(excluded)
                 continue
+        pair = differs.get(b.relation)
+        if pair is not None:
+            out.append(Finding(Kind.STORE_NO_VALUE, at, StoreNoValuePayload(
+                b.relation, DiffersOn(pair))))
+            continue
         mine = [f for f in found if f.relation == b.relation]
         owned = [f for f in mine if f.store_branch]
         if not owned:
             if b.relation in capped:
                 continue
-            why = _no_value(b.relation, rels, unread, empty, mine, differs)
+            why = _no_value(b.relation, rels, unread, empty, mine)
             if why is None:
                 out.append(Finding(Kind(ProblemKind.UNDECIDED), at,
                                    UndecidedPayload(b.relation)))
@@ -144,9 +149,7 @@ def line_findings(runs: Runs, solver: Solver, rels: Sequence[RelationName],
 
 def _no_value(path: RelationName, rels: Sequence[RelationName],
               unread: set[RelationName], empty: set[RelationName],
-              mine: Sequence[Found],
-              differs: Mapping[RelationName, PairId | None]
-              ) -> list[NoValue] | None:
+              mine: Sequence[Found]) -> list[NoValue] | None:
     """Why a `@store` line's relation gives no value the runner can
     store: one reason per value of it that is not the same on every
     input. None where no reason is known."""
@@ -158,9 +161,6 @@ def _no_value(path: RelationName, rels: Sequence[RelationName],
     if held_back:
         return [NoAnchor() if f.kind is ValueKind.TRANSLATED
                 else KeyedBy(f.keys) for f in held_back]
-    pair = differs.get(path)
-    if pair is not None:
-        return [DiffersOn(pair)]
     if path in empty:
         return [NoRows()]
     return None

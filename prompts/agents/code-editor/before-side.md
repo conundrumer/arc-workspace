@@ -9,5 +9,5 @@
     * comment: Six briefs from 2026-09-27 to 2026-10-01 had agents run "before" measurements a file already held.
 - Make the before side in a detached worktree of `HEAD`:
     - Add it with `git worktree add --detach <dir> HEAD`, with a new directory under your scratch directory as `<dir>`.
-    - Run each command of the before side with `--directory <dir>` after its `uv run`, and give each path it writes as an absolute path outside `<dir>`.
+    - Run each command of the before side as `cd <dir> && <command>`, and give each path it writes as an absolute path outside `<dir>`.
     - Remove it with `git worktree remove --force <dir>` once the before side is made.

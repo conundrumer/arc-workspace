@@ -172,27 +172,38 @@ frame(G, $EmptyBg(), P) :- ring(G, P, _).
 .init nest = Order<Rings, number>
 nest.elem(G, K) :- marked(G, K).
 
+// --- $RankRings ---
+// A marked ring's score is its distance K: from the center under
+// $CenterRings, from the nearest edge under $DepthRings.
+nest.score(G, K, K) :- marked(G, K).
+
+// The count of marked rings outside ring K, and the innermost marked ring.
+.decl outer_rank(g: Rings, k: number, r: number)
+.decl innermost(g: Rings, k: number)
+
 // --- $CenterRings & $RankRings ---
 // farther from the center lies outside
-nest.before($CenterRings(), K, K2) :- marked($CenterRings(), K), marked($CenterRings(), K2), K > K2.
+outer_rank($CenterRings(), K, R) :- nest.rank_desc($CenterRings(), K, R).
+innermost($CenterRings(), K) :- nest.first($CenterRings(), K).
 
 // --- $DepthRings & $RankRings ---
 // nearer the edge lies outside
-nest.before($DepthRings(), K, K2) :- marked($DepthRings(), K), marked($DepthRings(), K2), K < K2.
+outer_rank($DepthRings(), K, R) :- nest.rank($DepthRings(), K, R).
+innermost($DepthRings(), K) :- nest.last($DepthRings(), K).
 
 // --- $RankRings ---
 // The output square: its center lies as deep as the innermost marked ring's
 // rank, and its cells lie up to that many cells from the center on each axis.
 .decl canvas(g: Rings, p: Position)
 canvas(G, P) :-
-    nest.last(G, K), nest.rank(G, K, N), uniform_inset(N, C),  // the center
-    nest.rank(G, _, K1), nest.rank(G, _, K2),
+    innermost(G, K), outer_rank(G, K, N), uniform_inset(N, C),  // the center
+    outer_rank(G, _, K1), outer_rank(G, _, K2),
     axis_of(D1, A), perp(A, A2), axis_of(D2, A2),
     jump(C, D1, K1, Q), jump(Q, D2, K2, P).
 
 draw(G, $RankRings(), S, V, P, Col) :-
     canvas(G, P),
-    nest.rank(G, K, J), uniform_inset(J, B), box_edge(P, B, _),  // on the Jth ring from outside
+    outer_rank(G, K, J), uniform_inset(J, B), box_edge(P, B, _),  // on the Jth ring from outside
     ring_color(G, S, K, V, Col).
 frame(G, $RankRings(), P) :- canvas(G, P).
 

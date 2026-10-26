@@ -88,9 +88,9 @@ def logistic(train_members, held_members, positions, steps, seed, label, columns
 
 def load(value_tables, data, cfg, allow_violations=False):
     """The members of the rollout export (encoder.load_rollouts, with the tables cache at `<data>/<export
-    name>.tables.pkl` and the budgets of the run's `cfg`, strict unless `allow_violations`), those of training tasks
+    name>.tables.cache` and the budgets of the run's `cfg`, strict unless `allow_violations`), those of training tasks
     and those of held-out tasks as the data marks them, and the data's (names, kinds)."""
-    members, skipped = E.load_rollouts(value_tables, f"{data}/{Path(value_tables).resolve().name}.tables.pkl",
+    members, skipped = E.load_rollouts(value_tables, f"{data}/{Path(value_tables).resolve().name}.tables.cache",
                                        cfg["enc_budget"], cfg.get("enc_max_rows", 4000), strict=not allow_violations,
                                        allow_violations=allow_violations)
     if skipped:
@@ -121,7 +121,8 @@ def build_encoder(cfg, value_tables, members, device, state=None):
                            layers=cfg["enc_layers"], c=cfg["enc_width"], heads=cfg["enc_heads"], mlp=cfg["enc_mlp"],
                            gram=cfg["enc_gram"], examples=E.max_example({m["key"]: m["tables"] for m in members.values()}) + 1,
                            equality=cfg["enc_equality"], source_rows=cfg["enc_source_rows"],
-                           ptr_equality=cfg["enc_ptr_equality"]).to(device)
+                           ptr_equality=cfg["enc_ptr_equality"],
+                           parent_bias=cfg.get("enc_parent_bias", 0.0)).to(device)
     if state is not None:
         missing, unexpected = enc.load_state_dict(state, strict=False)
         assert not unexpected and all(k.startswith("embed.") for k in missing), (missing, unexpected)

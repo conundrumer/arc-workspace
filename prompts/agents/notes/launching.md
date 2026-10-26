@@ -17,8 +17,9 @@
 
 ## Launching
 - Where a launch fails with its agent type not found, give the launch as unfinished, with the failure's text as its reason.
-- Give an agent a brief in the form the sections under [Briefs](prompts/agents/notes/launching.md#briefs) for its work give, where any does, and launch it as the agent type whose `description` links those sections: read each of those sections and each section they link. Restate neither a docstring of the code nor the agent's definition.
+- Give an agent a brief in the form the sections under [Briefs](prompts/agents/notes/launching.md#briefs) for its work give, where any does, and launch it as the agent type whose `description` links those sections: read each of those sections and each section they link. Put in the brief only the parts that form gives, and restate in it neither a docstring of the code, nor the agent's definition, nor anything else a file the brief gives holds, such as its transcript brief.
     + xref: prompts/agents/notes/launching.md#briefs
+    * comment: The user's words, session 5954de00-6c0c-49ac-9f0a-ef6956422bd2, 2026-10-26T16:16:07Z, on a brief that gave a transcript brief's path and restated its design, requirements and instructions beside it: "the agents do not need any elaboration, that is the point of the ticket. do not override briefing instructions": ticket 24-5.
 - Where a brief gives a scratch directory, give a new directory under the session's scratchpad directory.
 - Before you write the items or the Intent of an edit, read [An edit's items](prompts/agents/notes/launching.md#an-edits-items).
 - Before you give another agent a draft `change` ticket that you filed or revised, in your reply or otherwise, read [A draft's outcome](prompts/agents/notes/launching.md#a-drafts-outcome).
@@ -63,7 +64,7 @@
 
 ### An editor's brief
 - An editor's brief gives the change's worktree, and the agent id of the agent that launches it, where that is not the coordinator.
-- It gives the accepted gate outputs under `tests/gate/accepted/` the editor may write, where its items change or add one, with a scratch directory.
+- It gives a scratch directory.
 - Where an editor of its agent type that another session launched worked in that worktree before it, it gives the agent id and the scratch directory of the last such editor that left a report, and its latest report.
 - It gives the rounds the editor has of each review of the change that an item has it make. The editor makes at most that many rounds of such a review, and sorts its findings as [Findings that block a change](prompts/agents/notes/launching.md#findings-that-block-a-change) gives.
     + xref: prompts/agents/notes/launching.md#findings-that-block-a-change
@@ -74,9 +75,6 @@
 - An editor's report on a change gives, for each item of its brief, and of each request a later message adds, that it gives as done, what shows it holds: a command it ran with the output that shows it, the line of a rendered context that states it, the check its ticket's Scope places after the merge where only that check can show it, or, where none of these can, the reason it holds.
 - It gives each finding of the last round of a review its brief gives that blocks the change as left for a decision, with a reason that opens with `at the round cap`, and each finding a later message gave that the editor left unfixed, with why it left it and whether a doc reviewer sent it.
     + xref: src/operations/reports.py:AT_CAP
-
-### A code editor's brief
-- A code editor's brief gives as well its tests directory.
 
 ### A change's brief
 - A brief for a change with a ticket gives the ticket's number, and, where another editor takes part of the ticket's Intent and Scope, the part that is this editor's. Where the brief gives no items of its own, the ticket's Intent gives its items, and the ticket's Scope the files the editor may edit, within that part.
@@ -128,8 +126,6 @@
 - It gives the latest report of each editor of the change other than the `handbook-expanded` agent that has reported since the last item checker launched on the change.
 - Where ticket analysts already decided items on the change, it gives their agent ids and latest reports.
 - Where the check is the change's last review round, or the check after its review round cap, it gives that it is.
-- Where the change writes accepted gate outputs, it gives them, other than those a `run_dl.py` command writes where the change has the `handbook-expanded` agent.
-    + xref: src/gating/commands.py, src/operations/item_check.py:checked_outputs
 - Where the operator launches it, it gives the command whose output its final reply ends with.
 - It gives the agent id of the agent that launches it, where that is not the coordinator.
 

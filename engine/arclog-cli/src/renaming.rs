@@ -10,6 +10,7 @@ use std::collections::BTreeSet;
 use arclog::eval::rigid::renaming::{renaming_between, IdentRows, IdentRowsBuilder};
 use arclog::registry::Registry;
 use arclog::terms::{Constant, Ident, Term};
+use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 
 /// One leaf of a row of a record: an integer, or another value by its
@@ -29,6 +30,13 @@ impl Leaf {
             Value::String(s) => Some(Leaf::Other(s.as_str().into())),
             _ => None,
         }
+    }
+}
+
+impl<'de> Deserialize<'de> for Leaf {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Leaf, D::Error> {
+        let json = Value::deserialize(deserializer)?;
+        Leaf::of(&json).ok_or_else(|| serde::de::Error::custom("a leaf is no number and no string"))
     }
 }
 

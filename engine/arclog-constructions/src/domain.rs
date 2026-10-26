@@ -42,9 +42,15 @@ impl fmt::Display for Constraint {
     }
 }
 
-/// Order's domain: `before` or `score` alone, `before` strict, each element
-/// one score.
-const ORDER: &[Constraint] = &[Constraint::Exclusive(&[1, 2]), Constraint::Irreflexive(1), Constraint::Function(2)];
+/// Order's domain: `before` excludes `score` and `secondary_score`, `before`
+/// is strict, and each element has one score and one `secondary_score`.
+const ORDER: &[Constraint] = &[
+    Constraint::Exclusive(&[1, 2]),
+    Constraint::Exclusive(&[1, 3]),
+    Constraint::Irreflexive(1),
+    Constraint::Function(2),
+    Constraint::Function(3),
+];
 
 /// Wallpaper's domain: one positive period on each axis.
 const WALLPAPER: &[Constraint] = &[Constraint::Function(3), Constraint::Positive { input: 3, column: 1 }];
@@ -97,27 +103,43 @@ mod tests {
         let t = Term::encode_number(1);
         let mut before = RowSet::empty(2);
         before.insert([t, t].into());
-        let inputs = [RowSet::empty(1), before, RowSet::empty(2), RowSet::empty(1)];
+        let inputs = [RowSet::empty(1), before, RowSet::empty(2), RowSet::empty(2), RowSet::empty(1)];
         let broken = check(Order::NAME, &inputs).expect("a broken constraint");
         assert_eq!(broken.to_string(), "no row of input 1 pairs an element with itself");
         let t2 = Term::encode_number(2);
         let mut fine = RowSet::empty(2);
         fine.insert([t, t2].into());
-        assert!(check(Order::NAME, &[RowSet::empty(1), fine, RowSet::empty(2), RowSet::empty(1)]).is_none());
+        assert!(check(Order::NAME, &[RowSet::empty(1), fine, RowSet::empty(2), RowSet::empty(2), RowSet::empty(1)]).is_none());
     }
 
-    /// A group in which an element has two scores is outside Order's domain,
-    /// as the `Construction` method reports.
+    /// A group in which an element has two scores, or two `secondary_score`
+    /// rows, is outside Order's domain, as the `Construction` method
+    /// reports.
     #[test]
     fn order_is_outside_its_domain_where_an_element_has_two_scores() {
         use arclog::eval::instance::{Construction, GroupInputs};
         let (t, one, two) = (Term::encode_number(1), Term::encode_number(1), Term::encode_number(2));
         let mut score = RowSet::empty(2);
         score.insert([t, one].into());
-        let group = |score: RowSet| [RowSet::empty(1), RowSet::empty(2), score, RowSet::empty(1)];
+        let group = |score: RowSet, secondary_score: RowSet| [RowSet::empty(1), RowSet::empty(2), score, secondary_score, RowSet::empty(1)];
         let outside = |inputs: &[RowSet]| Order.outside_domain(&GroupInputs { inputs, types: &[], columns: &[], wanted: &[] });
-        assert!(!outside(&group(score.clone())));
-        score.insert([t, two].into());
-        assert!(outside(&group(score)));
+        assert!(!outside(&group(score.clone(), score.clone())));
+        let mut twice = score.clone();
+        twice.insert([t, two].into());
+        assert!(outside(&group(twice.clone(), RowSet::empty(2))));
+        assert!(outside(&group(score, twice)));
+    }
+
+    /// A `secondary_score` row beside a `before` row is outside Order's
+    /// domain.
+    #[test]
+    fn order_refuses_before_beside_a_secondary_score() {
+        let (t, t2) = (Term::encode_number(1), Term::encode_number(2));
+        let mut before = RowSet::empty(2);
+        before.insert([t, t2].into());
+        let mut secondary_score = RowSet::empty(2);
+        secondary_score.insert([t, t].into());
+        let broken = check(Order::NAME, &[RowSet::empty(1), before, RowSet::empty(2), secondary_score, RowSet::empty(1)]);
+        assert_eq!(broken.expect("a broken constraint").to_string(), "at most one of the inputs [1, 3] holds rows");
     }
 }

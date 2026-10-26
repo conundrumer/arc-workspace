@@ -19,9 +19,7 @@ launched with no isolation, and its brief gives that worktree.
 What the editors' and the doc reviewer's replies give is read by the fixed
 forms of `reports`. Once each editor of a change has reported, the latest report of
 each editor other than the `handbook-expanded` agent that has reported since the last item checker was launched on
-the change, and the accepted gate outputs the change writes, other than,
-on a change with that agent, those of a `run_dl.py` command
-(`item_check.checked_outputs`), go to one item checker. That checker checks the items of each such editor's part,
+the change, go to one item checker. That checker checks the items of each such editor's part,
 and an editor it sends a message reports again. So the change merges only
 once an item checker was launched after the last report of each editor other than that agent, or
 the latest checker sent no editor a message and its `reports.WORKTREE`

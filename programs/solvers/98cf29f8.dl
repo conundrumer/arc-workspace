@@ -71,7 +71,8 @@ body(P) :-
 // The displacements toward the anchor the frame admits.
 .decl shift(delta: Offset)
 shift(V) :-
-    in(P, _), move_dir(D), axis_of(D, A),
+    move_dir(D), axis_of(D, A), perp_dir(D, D2),
+    in(P, _), dist(P, D, 0), dist(P, D2, 0),         // a corner cell of the frame
     sub_extent(P, A, K), jump_offset(D, K, V).
 
 // A displacement that would carry the body onto the anchor.

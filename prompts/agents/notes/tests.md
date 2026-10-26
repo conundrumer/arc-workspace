@@ -9,22 +9,12 @@
 
 ## Tests
 * comment: The user's words, session 7c26445d, 2026-09-15T21:30:26Z to 22:04:42Z: "we have a ton of useless tests ... requires maintanence like changing it when the impl changes. aggressively cut them", and "regression tests are theoretically useful, overwhemlingly useless".
-* comment: The user's words, session 7fd429fb, 2026-10-16T16:18:26Z: "the rule should also be updating according to the evidence, like how to classify tests", and 16:29:03Z: "approve", which chose the coordinator's option "Yes" of 16:24:31Z, the cut and the rule wording of ticket 6-1450.
-- A test costs an edit each time the code it pins changes, and a later session pays it.
-- So the default is no test, and a test has to earn its place.
-- A test stays only when its failure would be silent in use, and it is of one of these kinds:
-    - An invariant over the real repo whose break makes another check skip something, like a lib component that no gate stem runs.
-    - A stored result that must be computed again when a file it rests on changes.
-    - A race or a half-written file: two writers, a lock, a rename.
-    - A parser or a reader that must refuse wrong input.
-    - A check, hook, or gate that must refuse or report: the test feeds it the bad case and asserts the refusal.
-- When a run would show the failure (a wrong grid, a failed command, an error message, a changed line in a file, the page or the feed), the run is the check, and the test is not written.
+* comment: The user's words, session 58147d46, 2026-10-26T19:59:53Z to 20:04:01Z: "we only keep tests when the point is to track progress on incomplete features", "example: the souffle->arclog converter is an inprogress feature. we need tests there to see what still needs to be built", "so if a test is for in-progress, it cannot gate anything. it's basically a check. which means. no gated tests at all", and "ok you know what this means. we are banning tests". The coordinator's transcript evidence of 19:47:45Z: of 185 failure episodes on the current tests, 85 ended in a test fix and 19 in a code fix.
+- Write no test, other than a check that tracks an in-progress feature.
+- Such a check shows what the feature still lacks, by its cases that fail. It fails on purpose, so no change check or merge waits on its result.
+- Delete such a check when its feature is done.
 - A test asserts what a caller sees: outputs, files, exit codes, refusals. It does not assert function signatures, module names, enum values, message wording, or cache internals.
 * comment: The user's words, session 2384db39, 2026-10-22T22:20:24Z: "delete and ban mock-heavy tests", which answered the coordinator's report of 22:16:26Z: "65 of them (12%) stub collaborators on the call path, which is the kind that failed on 7b7de877."
 - A test runs the repo's code that its subject calls, with no stub or fake in place of any of it, whether a patch puts it in place or the test passes it as an argument. A callable or a mock object passed as an argument is a stand-in where the subject's parameter gives a specific read or action of the repo, and is input where the subject's contract leaves open what it does, such as a handler of a generic runner. It may replace a constant, module state, or code that gives a path (with a path under `tmp_path`), and a process the repo does not hold, at that process's boundary, such as a subprocess or a socket peer, and not the repo's code that calls that process.
 - A test does not read `data/upstream/`, the live transcripts, or the session's environment variables. It builds what it reads in `tmp_path` and clears the environment it passes to a subprocess.
-- A concurrency test does not depend on timing. It forces the interleaving with a barrier or a held lock.
-- A test written to fail before the code exists is not by that fact a test that stays.
-- When a test your change broke is not of a kind above, delete it; don't update it.
-- Assertions you need while you work go under `tests/scratch/`.
-- It is collected and not committed.
+- When a test your change broke does not track an in-progress feature, delete it; don't update it.

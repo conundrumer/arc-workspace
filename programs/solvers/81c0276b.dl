@@ -74,7 +74,7 @@ bar($Objects(), Col, N) :- blobs.tally(Col, N).
 // Rows ascend by count: the shortest bar lies against the rank edge.
 .init order = Order<Choice, Color>
 order.elem(Ch, Col) :- bar(Ch, Col, _).
-order.before(Ch, Col, Col2) :- bar(Ch, Col, N), bar(Ch, Col2, N2), N < N2.
+order.score(Ch, Col, N) :- bar(Ch, Col, N).
 
 .init colors = Tally<Choice, Color>
 colors.item(Ch, Col) :- bar(Ch, Col, _).

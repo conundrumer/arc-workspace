@@ -1,180 +1,66 @@
 """Convert the Souffle solvers under programs/solvers/ to arclog and arcdata
-files under gen/, and, with the expansion config `libmap.macros`, under
-gen_macros/, of `arclog_convert.out`: `work/arclog/` of the main
-worktree, or the directory `--out` gives.
+files under gen/ of `arclog_convert.out`: `work/arclog/` of the main
+worktree, or the directory `--out` gives; in a linked worktree, `--out` is
+required (or `ARCLOG_OUT`).
 
     uv run python -m arclog_convert.convert [--out <dir>] [<stem> ...]
 
-Each run writes both outputs for the same solvers, every solver where no
-stem is given, and prints the summary of each.
+Each run writes the output for the solvers, every solver where no
+stem is given, and prints its summary; the run exits with status 1
+where a solver fails to convert. The checks of the converted programs, the
+replay on the train pairs and the comparison with Souffle's rows, are
+`arclog_convert.verify`, which runs apart from the conversion.
 A solver's plan file under plan/ records the hash of the solver
 file it was written from, and the runner and lib stamp of the run; where it
-is missing or records another hash or stamp, the script first reruns
-`scripts/run_dl.py determination-plan <stem>`.
+is missing or records another hash or stamp, the script first restores it
+from the plans kept under `.cache/plans/`, which every `--out` directory
+shares, and reruns `scripts/run_dl.py determination-plan <stem>` where none is
+kept for that hash and stamp (`arclog_convert.plans`). The
+name map and the column map of each solver it converts, written under names/
+and columns/, are those of `arclog_convert.names`, and names/ also holds the
+Souffle texts that derive the rows of the relations the converter adds
+(`arclog_convert.parity_text`): `<stem>.dl`, which the runs of the cases add to
+the solver's program, and `<stem>.determination.dl`, which the determination's
+run adds. Beside gen/, the directory
+`row_parity.CORPUS` holds, for the row-parity check alone, a copy of each
+converted program with the check relations of the relations it folds
+(`arclog_convert.checks`); nothing else reads it.
 A form the script cannot translate is written literally, under a
 `;; TODO <kind>: ...` comment.
+As each phase it runs ends (`plans`, `conversion`), the run prints a line `<phase>: <seconds> s` with that phase's
+wall time. Under `scripts/run_heavy.py --cpus <n>`, the processes and threads
+the run has going at once, Souffle processes included, are at most `n`.
 """
 
-import hashlib
 import json
-import os
 import re
-import subprocess
 import sys
-from concurrent.futures import ThreadPoolExecutor
 from collections import Counter
 from pathlib import Path
+from engine.pool import pool_size
 from engine.program import Qualifier, Variable
 from arclog_convert.libmap import rename as libmap_rename
-from arclog_convert import OUT_ENV, paths
+from arclog_convert import paths
+from arclog_convert.phases import phase, use_out
 
 from arclog_convert.forms import (
     MERGES,
     MERGES_UNMERGED,
     Todo,
-    drop_key_sites,
     fold_or_lines,
     hoist_shared,
     renamed,
 )
-from arclog_convert.leaves import Converter, FACTS, Written
+from arclog_convert.checks import Fold
+from arclog_convert.leaves import ScopedName
 from arclog_convert.lib import Col, ColMismatch, LIB_DL, Lib, SIGNATURE
+from arclog_convert.names import Checks, check_maps, column_map, dropped, folded, name_map, parity, placed, unchecked, untranslated
+from arclog_convert.plans import refresh_plans
 from arclog_convert.solver import Solver
-
-
-ELEM = {"Dir": ("dir_elem", "D"), "Axis": ("axis_elem", "A"), "DiagDir": ("diag_dir_elem", "D"),
-        "DiagAxis": ("diag_axis_elem", "Da"), "D4": ("d4_elem", "D"), "C4": ("c4_elem", "D"),
-        "Sense": ("sense_elem", "S"), "Sym": ("sym_elem", "S"), "Dir8": ("dir8_elem", "D"),
-        "Axis4": ("axis4_elem", "A")}
-
-
-PLAN_HASH = "solver file sha256: "
-
-
-def solver_hash(stem: str) -> str:
-    return hashlib.sha256((paths.SOLVERS / f"{stem}.dl").read_bytes()).hexdigest()
-
-
-def stale_plans(stems: list[str]) -> list[str]:
-    """The solvers whose plan file is missing, or records a hash other than
-    their solver file's, or a runner and lib stamp other than the current
-    one."""
-    from cli.common import stamp
-    lib_line = f"runner and lib: {stamp()}"
-    out = []
-    for stem in stems:
-        p = paths.PLANS / f"{stem}.txt"
-        lines = p.read_text().splitlines() if p.exists() else []
-        if PLAN_HASH + solver_hash(stem) not in lines or lib_line not in lines:
-            out.append(stem)
-    return out
-
-
-def write_plan(stem: str) -> str | None:
-    """Run the determination plan of one solver and write its output, with
-    the solver file's hash, to its plan file; None, or the error."""
-    digest = solver_hash(stem)
-    r = subprocess.run([sys.executable, str(paths.ROOT / "scripts" / "run_dl.py"), "determination-plan", stem],
-                       cwd=paths.ROOT, capture_output=True, text=True)
-    if r.returncode != 0:
-        lines = (r.stderr or r.stdout).strip().splitlines()
-        return lines[-1] if lines else f"exit {r.returncode}"
-    text = r.stdout + r.stderr
-    paths.PLANS.mkdir(parents=True, exist_ok=True)
-    (paths.PLANS / f"{stem}.txt").write_text(text + ("" if text.endswith("\n") else "\n") + PLAN_HASH + digest + "\n")
-    return None
-
-
-def refresh_plans(stems: list[str]) -> None:
-    stale = stale_plans(stems)
-    if not stale:
-        return
-    print(f"rerunning the determination plan of {len(stale)} solvers")
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        for stem, err in zip(stale, pool.map(write_plan, stale)):
-            if err is not None:
-                print(f"  {stem}: the plan failed: {err}")
 
 
 _LIBS: tuple[Lib, Lib] | None = None
 
-
-
-_ARC_TOKEN = re.compile(r"[&$]?[A-Za-z_][\w]*(?:\.[\w]+)*")
-_ALTS_CONCEPT = re.compile(r'\(ALTS \$\w+ "(?:[^"\\]|\\.)*" \$(\w+)')
-"""The constructor an `ALTS` form gives as its concept alt."""
-
-
-def _souffle_relation(c: "Converter", w: Written) -> dict:
-    """The Souffle relation, or instance, `w`: the component path, its name
-    there, and its name from the top level of the solver's program, null
-    where no instance at the top level is of the scope's component."""
-    path: str | None = w.relation
-    if w.scope:
-        at = [n for (sc, n), i in c.insts.items() if sc == () and i.component == w.scope[-1]]
-        path = f"{at[0]}.{w.relation}" if len(w.scope) == 1 and len(at) == 1 else None
-    return {"component": list(w.scope), "relation": w.relation, "path": path}
-
-
-def _renamed_name(name: str, insts: dict[str, str]) -> str:
-    """The arclog name `name` the converter writes, as the renames
-    `convert_one` applies after it leave it: `renamed`, then
-    `libmap_rename.rename` with `insts`."""
-    return libmap_rename.rename(renamed(f"({name})"), insts)[1:-1]
-
-
-def _relations_read(text: str) -> set[str]:
-    """Each name the arclog or arcdata `text` reads as a relation or an
-    instance: a name with `&` outside a quoted text, and the head of a
-    form."""
-    from arclog_convert.lint import L, Sym, read
-    out: set[str] = set()
-
-    def scan(xs: list) -> None:
-        for x in xs:
-            if not isinstance(x, L):
-                continue
-            for i, it in enumerate(x.items):
-                if isinstance(it, Sym):
-                    t = it.text.lstrip("^*")
-                    if _ARC_TOKEN.fullmatch(t) and (t.startswith("&") or i == 0):
-                        out.add(t)
-            scan(x.items)
-    scan(read(text))
-    return out
-
-
-def name_map(s: "Solver", insts: dict[str, str], arclog: str, arcdata: str) -> dict:
-    """Each arclog relation name the written files read, with each Souffle
-    relation it was written from, in the order the pass wrote them; each
-    instance they read, with each Souffle instance; each `ALT` name, with the Souffle `Choice` constructor; and
-    each arclog name with `&` the files read that the renames of this pass
-    give no Souffle relation, under `unmapped`. Each name is the one the
-    converter recorded as it wrote it (`Converter.wrote`), or a top-level
-    lib relation it writes under its own name that the solver declares no
-    relation of, under the renames
-    `convert_one` applies after it (`_renamed_name`)."""
-    c = s.c
-    named = dict(c.written)
-    for own in (*sorted(FACTS), *c.lib.top, *c.sig.top):
-        if ((), own) not in c.rels:   # else the Souffle name is the solver's own relation
-            named.setdefault(own, [Written((), own, False)])
-    rels: dict[str, list[dict]] = {}
-    instances: dict[str, list[dict]] = {}
-    for arc, ws in named.items():
-        for w in ws:
-            got = (instances if w.instance else rels).setdefault(_renamed_name(arc, insts), [])
-            if (r := _souffle_relation(c, w)) not in got:
-                got.append(r)
-    read = _relations_read(arclog + "\n" + arcdata)
-    relations = {n: rels[n] for n in sorted(read) if n in rels}
-    ctors = {f"${m}": m for m in sorted(set(re.findall(r"\(ALT \$(\w+)", arclog))
-                                        | set(_ALTS_CONCEPT.findall(arclog)))}
-    insts_read = {n: instances[n] for n in sorted(read) if n in instances}
-    unmapped = sorted(n for n in read if n.startswith("&") and n not in relations
-                      and n not in insts_read)
-    return {"relations": relations, "instances": insts_read, "constructors": ctors,
-            "unmapped": unmapped}
 
 
 def _written_inline(s: "Solver", arclog: str) -> frozenset[str]:
@@ -196,13 +82,67 @@ def _written_inline(s: "Solver", arclog: str) -> frozenset[str]:
     return frozenset(n for n in names if inlinable(n))
 
 
-def convert_one(stem: str) -> tuple[str, str | None, str | None, Counter, Counter, list[str], ColMismatch, str | None]:
+def _finished(arclog: str, arcdata: str) -> tuple[str, str, dict[str, str]]:
+    """The text of a pass after the renames that every converted program
+    gets, and the instance renames they applied."""
+    from arclog_convert.lint import fix_labels
+    arclog = fold_or_lines(renamed(arclog))
+    insts = libmap_rename.renamed_instances(libmap_rename.instances(arclog),
+                                            libmap_rename.reads(arclog + arcdata))
+    arclog = hoist_shared(fix_labels(libmap_rename.rename(arclog, insts)))
+    return arclog, libmap_rename.rename(arcdata, insts), insts
+
+
+def _with_checks(s: "Solver", lib: Lib, sig: Lib, names: dict, columns: dict, inline: frozenset[str],
+                 copies: frozenset[ScopedName]) -> tuple[str, str] | None:
+    """The arclog and the arcdata of the converted solver with the check
+    relations of the relations it folds (`arclog_convert.checks`), and, in
+    `names` and `columns`, their entries, their names under `checks`, and the
+    reason of each folded relation that has none; none where it folds none."""
+    folds = folded(s, names)
+    if not folds:
+        return None
+    arclog = arcdata = None
+    left: dict[Fold, str] = {}
+    try:
+        # a check relation with a clause the converter cannot write is left out, and the
+        # conversion runs again without it
+        keep = folds
+        while keep:
+            MERGES.clear()
+            MERGES_UNMERGED.clear()
+            again = Solver(s.stem, lib, sig, Todo(), inline, copies, keep)
+            arclog, arcdata = again.run()
+            arclog, arcdata, insts = _finished(arclog, arcdata)
+            more = dropped(again, keep, insts, arclog)
+            if not more:
+                break
+            left |= more
+            keep = [f for f in keep if f not in more]
+        if keep:
+            got = check_maps(again, keep, insts, arclog)
+        else:
+            got, arclog, arcdata = Checks(), None, None
+        got = Checks(got.relations, got.columns, {**got.untranslated, **untranslated(s, left).untranslated})
+    except Exception as e:  # noqa: BLE001
+        reason = f"{type(e).__name__}: {e}".splitlines()[0].replace("\t", " ")
+        got = unchecked(s, folds, f"the conversion with the check relations failed, {reason}")
+        arclog = arcdata = None
+    names["relations"] = dict(sorted({**names["relations"], **got.relations}.items()))
+    names["untranslated"] = got.untranslated
+    names["checks"] = sorted(got.relations)
+    columns.update(got.columns)
+    return None if arclog is None else (arclog, arcdata)
+
+
+def convert_one(stem: str) -> tuple[str, str | None, str | None, Counter, Counter, list[str], ColMismatch, str | None,
+                                    tuple[str, str] | None]:
     """One solver's arclog and arcdata, its TODO kinds, its merge counts and
     its parameters whose columns do not map onto their proposer's, or the
-    error that stopped it: a pool worker's unit of work."""
-    global _LIBS, fix_labels
+    error that stopped it, and the arclog and the arcdata of its program with
+    the check relations: a pool worker's unit of work."""
+    global _LIBS
     if _LIBS is None:
-        from arclog_convert.lint import fix_labels
         lib, sig = Lib(LIB_DL), Lib(SIGNATURE)
         lib.extend(sig)
         _LIBS = lib, sig
@@ -210,66 +150,72 @@ def convert_one(stem: str) -> tuple[str, str | None, str | None, Counter, Counte
     MERGES.clear()
     MERGES_UNMERGED.clear()
     todo = Todo()
+    checked = None
     try:
         s = Solver(stem, lib, sig, todo)
         arclog, arcdata = s.run()
         # an `inline` relation that the pass writes as an arclog relation is no
         # relation: its body stands at each call
         stuck = _written_inline(s, arclog)
-        if stuck:
+        # a relation that an alt rederives and a `DET` of the concept program
+        # reads gets, in the determination, a copy of its own
+        copies = s.own_copies_needed()
+        if stuck or copies:
             MERGES.clear()
             MERGES_UNMERGED.clear()
             todo = Todo()
-            s = Solver(stem, lib, sig, todo, stuck)
+            s = Solver(stem, lib, sig, todo, stuck, copies)
             arclog, arcdata = s.run()
-        arclog = drop_key_sites(fold_or_lines(renamed(arclog)))
-        insts = libmap_rename.renamed_instances(libmap_rename.instances(arclog),
-                                                libmap_rename.reads(arclog + arcdata))
-        arclog = hoist_shared(fix_labels(libmap_rename.rename(arclog, insts)))
-        arcdata = libmap_rename.rename(arcdata, insts)
-        if paths.MACROS_ENV not in os.environ:
-            paths.NAMES_DIR.mkdir(parents=True, exist_ok=True)
-            (paths.NAMES_DIR / f"{stem}.json").write_text(
-                json.dumps(name_map(s, insts, arclog, arcdata), indent=1, sort_keys=True) + "\n")
+        arclog, arcdata, insts = _finished(arclog, arcdata)
+        merges, unmerged = Counter(MERGES), list(MERGES_UNMERGED)
+        names = name_map(s, insts, arclog, arcdata)
+        text = parity(s, names, insts)
+        names = placed(names, text)
+        columns = column_map(s, names, insts, text)
+        checked = _with_checks(s, lib, sig, names, columns, stuck, copies)
+        for directory, data in ((paths.NAMES_DIR, names), (paths.COLUMNS_DIR, columns)):
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / f"{stem}.json").write_text(json.dumps(data, indent=1, sort_keys=True) + "\n")
+        (paths.NAMES_DIR / f"{stem}.dl").write_text(text.text)
+        (paths.NAMES_DIR / f"{stem}.determination.dl").write_text(text.determination)
+        checked = checked or (arclog, arcdata)
     except Exception as e:  # noqa: BLE001
-        return stem, None, None, Counter(), Counter(), [], {}, f"{type(e).__name__}: {e}"
-    return stem, arclog, arcdata, todo.kinds, Counter(MERGES), list(MERGES_UNMERGED), s.c.col_mismatch, None
+        return stem, None, None, Counter(), Counter(), [], {}, f"{type(e).__name__}: {e}", None
+    return stem, arclog, arcdata, todo.kinds, merges, unmerged, s.c.col_mismatch, None, checked
 
 
-def main(argv: list[str]) -> None:
-    global OUT_DIR, MACROS_DIR, PLANS, NAMES_DIR
+def main(argv: list[str]) -> int:
     import argparse
     parser = argparse.ArgumentParser(prog="python -m arclog_convert.convert")
-    parser.add_argument("--out", type=Path, help="the directory to write under, in place of `arclog_out`")
+    parser.add_argument("--out", type=Path, help="the directory to write under, in place of `arclog_convert.out`; required in a linked worktree unless `ARCLOG_OUT` is set")
     parser.add_argument("stems", nargs="*", help="the solvers to convert; every solver where none is given")
     args = parser.parse_args(argv)
-    if args.out is not None:
-        # set before the pools start, so that their workers read it
-        os.environ[OUT_ENV] = str(args.out.resolve())
-        paths.OUT_DIR, paths.MACROS_DIR, paths.PLANS, paths.NAMES_DIR = paths.out_dirs()
+    use_out(args.out)
     stems = args.stems or sorted(p.stem for p in paths.SOLVERS.glob("*.dl"))
-    refresh_plans(stems)
+    with phase("plans"):
+        refresh_plans(stems)
     print(f"{paths.OUT_DIR}:")
-    convert_into(stems, paths.OUT_DIR)
-    # set before the second pool starts, so that its workers read it
-    os.environ[paths.MACROS_ENV] = "1"
-    print(f"{paths.MACROS_DIR}:")
-    convert_into(stems, paths.MACROS_DIR)
+    with phase("conversion"):
+        converted = convert_into(stems, paths.OUT_DIR)
+    return int(len(converted) < len(stems))
 
 
-def convert_into(stems: list[str], out: Path) -> None:
-    """Convert `stems` into `out` over a process pool, and print the
-    summary."""
+def convert_into(stems: list[str], out: Path) -> list[str]:
+    """Convert `stems` into `out` over a process pool, print the
+    summary, and give the stems it converted."""
     from concurrent.futures import ProcessPoolExecutor
+    from arclog_convert.row_parity import CORPUS
     out.mkdir(parents=True, exist_ok=True)
+    corpus = out.parent / CORPUS
     total = Counter()
     per_kind_solvers = Counter()
     merges: Counter[str] = Counter()
     unmerged: list[str] = []
     mismatched: list[tuple[str, str, list[Col], list[Col]]] = []
     failed = []
+    converted = []
     clean = 0
-    workers = min(len(stems), os.cpu_count() or 4)
+    workers = min(len(stems), pool_size())
     if workers > 1:
         pool = ProcessPoolExecutor(workers)
         # the largest solvers first, so that no long one starts last
@@ -277,12 +223,17 @@ def convert_into(stems: list[str], out: Path) -> None:
         results = pool.map(convert_one, order)
     else:
         pool, results = None, map(convert_one, stems)
-    for stem, arclog, arcdata, kinds, m, um, mis, err in results:
+    for stem, arclog, arcdata, kinds, m, um, mis, err, checked in results:
         if err is not None:
             failed.append((stem, err))
             continue
+        converted.append(stem)
         (out / f"{stem}.arclog").write_text(arclog)
         (out / f"{stem}.arcdata").write_text(arcdata)
+        if checked is not None:
+            corpus.mkdir(exist_ok=True)
+            (corpus / f"{stem}.arclog").write_text(checked[0])
+            (corpus / f"{stem}.arcdata").write_text(checked[1])
         merges += m
         unmerged += um
         mismatched += [(stem, name, own, prop) for name, (own, prop) in mis.items()]
@@ -312,5 +263,8 @@ def convert_into(stems: list[str], out: Path) -> None:
         for e, n in errs.most_common(10):
             print(f"  {n:4} {e}")
 
+    return converted
+
+
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    sys.exit(main(sys.argv[1:]))

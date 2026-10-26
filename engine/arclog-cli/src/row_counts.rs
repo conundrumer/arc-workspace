@@ -6,7 +6,7 @@
 //! relation name, then train and test example. Task-wide relations use
 //! `task`; counts are comma-separated model values, `undefined`, or
 //! `stopped:<bound>`. A relation that the decode gives no table
-//! ([`arclog::decode::gives_no_table`]) has, after its lines for an example,
+//! ([`arclog_tables::tables::gives_no_table`]) has, after its lines for an example,
 //! the line `<task_id> <example> <relation> no table`. A solver that faults
 //! gets one fault line instead.
 //!
@@ -35,7 +35,6 @@ use std::sync::{Arc, Mutex};
 
 use arclog::eval::determinations::relation_spelled;
 use arclog::eval::examples::{scope_of, ExampleScope};
-use arclog::decode::gives_no_table;
 use arclog::eval::join::each_row;
 use arclog::eval::{Evaluation, ModelsEnd, ReachedBound, RelationValue};
 use arclog::harness::{require_optimized_build, run_over_corpus, SolverResult};
@@ -45,6 +44,7 @@ use arclog::registry::LibEntry;
 use arclog::resolver::{DependencyKind, GraphNodeIndex};
 use arclog::terms::Example;
 use arclog::types::{GraphRelation, ValueType};
+use arclog_tables::tables::gives_no_table;
 use serde_json::{json, Value};
 
 use crate::concept_case::with_concept_case;
@@ -204,7 +204,7 @@ impl Dump<'_> {
 /// for the one relation of a node, and `c<i>` otherwise: for one of several
 /// outputs of a shared node, whose columns the program records per node, and
 /// where the program's count of columns differs from `count`.
-fn column_names(evaluation: &Evaluation<'_>, relation: &GraphRelation, count: usize) -> Vec<String> {
+pub(crate) fn column_names(evaluation: &Evaluation<'_>, relation: &GraphRelation, count: usize) -> Vec<String> {
     let declared = match relation.output {
         None => evaluation.program.program.column_names(relation.node),
         Some(_) => None,

@@ -17,8 +17,8 @@
     // @claim two-markers
     StoredColor {}
     // @scene two-markers: exactly two cells share one color, the marker color
-    // @rule draw-segment: the marker color is the one color of exactly two
-    //  cells; undefined where several colors have exactly two cells
+    // @rule draw-segment: the marker color is the one color of exactly
+    //  `marker_count` cells; undefined where several colors have that count
     // @witness sparse-ones: borderline concept
   | TwoCellColor {}
     // @scene two-markers: exactly two cells have a color outside
@@ -102,6 +102,13 @@
     //  is defined
     .decl marker_color(col: Color) marker_color(2).
 
+    // --- $TwoCellColor ---
+    // @derive TileCount: variant $EveryAlignedPair
+    //     @relaxed two-markers
+    // @derive TileDim: variant $EveryAlignedPair
+    //     @relaxed two-markers
+    .decl marker_count(n: number) marker_count(2).
+
     // --- $NonFieldColor ---
     .decl field_colors(col: Color) field_colors(0). field_colors(1).
 }
@@ -125,16 +132,19 @@ impl_choice([$StoredColor(), $Segment(), $TwoMarkers(), $KeyedPaint(), $StoredPa
 impl_choice([S, E, $EveryAlignedPair(), C, L]) :-
     marker_source_choice(S), extent_choice(E), crossing_choice(C), line_color_choice(L).
 
-// The colors of exactly two cells.
+// The colors of exactly `marker_count` cells.
 .comp Parse<Key> {
     .decl cell(key: Key, p: Position, col: Color)  // @input
 
-    // A color of three cells or more.
-    .decl crowded(key: Key, col: Color)
-    crowded(K, Col) :- cell(K, P, Col), cell(K, Q, Col), P != Q, cell(K, R, Col), R != P, R != Q.
+    .type KeyColor = [k: Key, col: Color]
+
+    // The cells of each color.
+    // @claim two-markers
+    .init color_size = Tally<KeyColor, Position>
+    color_size.item([K, Col], P) :- cell(K, P, Col).
 
     .decl two_cell(key: Key, col: Color)
-    two_cell(K, Col) :- cell(K, P, Col), cell(K, Q, Col), P != Q, !crowded(K, Col).
+    two_cell(K, Col) :- color_size.tally([K, Col], N), params.marker_count(N).
 }
 
 // The colors of the markers.

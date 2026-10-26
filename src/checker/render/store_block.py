@@ -204,6 +204,8 @@ def _no_witness_why(solver: Solver, f: Found) -> str:
     match f.ended, f.failed, f.unseparated:
         case NoFit.NO_FIT, _, _:
             return no_fit_text(mctx("value"))
+        case SearchEnd.UNFIT, _, _ if f.no_value is not None:
+            return failure_text(f.no_value)
         case SearchEnd.UNFIT, _, _:
             return unfit_text(mctx("value"))
         case SearchEnd.FAILED, failed, _ if failed is not None:

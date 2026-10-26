@@ -60,6 +60,26 @@ impl StableHasher {
         *state = [a, b];
     }
 
+    /// The little-endian value of `bytes`, at most 8 of them.
+    fn partial_word(bytes: &[u8]) -> u64 {
+        let mut word = [0u8; 8];
+        word[..bytes.len()].copy_from_slice(bytes);
+        u64::from_le_bytes(word)
+    }
+
+    /// Appends the low `count` bytes of `value` (1 to 8) to the bytes
+    /// written, little-endian. The bits of `value` above `count` bytes are
+    /// zero. The tail is absorbed where it fills.
+    fn push(&mut self, value: u64, count: u64) {
+        let shift = 8 * (self.len % 8);
+        self.tail |= value << shift;
+        self.len += count;
+        if shift + 8 * count >= 64 {
+            StableHasher::absorb(&mut self.state, self.tail);
+            self.tail = if shift == 0 { 0 } else { value >> (64 - shift) };
+        }
+    }
+
     /// The 128-bit hash of the bytes written so far.
     pub fn finish128(&self) -> StableHash {
         let mut state = self.state;
@@ -81,41 +101,41 @@ impl Hasher for StableHasher {
     /// so the hash does not depend on how the bytes are split into writes.
     fn write(&mut self, bytes: &[u8]) {
         let mut rest = bytes;
-        while !rest.is_empty() {
-            if self.len % 8 == 0 && rest.len() >= 8 {
-                let (word, after) = rest.split_at(8);
-                let word = u64::from_le_bytes(word.try_into().expect("a slice of 8 bytes"));
-                StableHasher::absorb(&mut self.state, word);
-                self.len += 8;
-                rest = after;
-            } else {
-                self.tail |= u64::from(rest[0]) << (8 * (self.len % 8));
-                self.len += 1;
-                rest = &rest[1..];
-                if self.len % 8 == 0 {
-                    StableHasher::absorb(&mut self.state, self.tail);
-                    self.tail = 0;
-                }
-            }
+        let fill = (self.len % 8) as usize;
+        if fill != 0 && !rest.is_empty() {
+            let (head, after) = rest.split_at((8 - fill).min(rest.len()));
+            self.push(StableHasher::partial_word(head), head.len() as u64);
+            rest = after;
+        }
+        let mut words = rest.chunks_exact(8);
+        for word in &mut words {
+            let word = u64::from_le_bytes(word.try_into().expect("a slice of 8 bytes"));
+            StableHasher::absorb(&mut self.state, word);
+            self.len += 8;
+        }
+        let last = words.remainder();
+        if !last.is_empty() {
+            self.push(StableHasher::partial_word(last), last.len() as u64);
         }
     }
 
     // Each integer is written little-endian, and a `usize` or an `isize` as
     // 64 bits, so the hash is the same on every platform.
     fn write_u8(&mut self, i: u8) {
-        self.write(&[i]);
+        self.push(u64::from(i), 1);
     }
     fn write_u16(&mut self, i: u16) {
-        self.write(&i.to_le_bytes());
+        self.push(u64::from(i), 2);
     }
     fn write_u32(&mut self, i: u32) {
-        self.write(&i.to_le_bytes());
+        self.push(u64::from(i), 4);
     }
     fn write_u64(&mut self, i: u64) {
-        self.write(&i.to_le_bytes());
+        self.push(i, 8);
     }
     fn write_u128(&mut self, i: u128) {
-        self.write(&i.to_le_bytes());
+        self.write_u64(i as u64);
+        self.write_u64((i >> 64) as u64);
     }
     fn write_usize(&mut self, i: usize) {
         self.write_u64(i as u64);

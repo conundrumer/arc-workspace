@@ -8,16 +8,22 @@ use crate::check::{check_shared_program, CheckCache, CheckedProgram, SolverClaus
 use crate::decode::replay::holds_demonstrated;
 use crate::harness::read_corpus_solver;
 use crate::registry::Registry;
-use crate::resolver::{resolve, resolve_cases, ResolvedCase, ResolvedCases, SolverScope};
-use crate::solver::CaseName;
-use crate::stream::{token_stream, Emitter, Token, Vocabulary};
+use crate::eval::determinations::relation_spelled;
+use crate::hash::StableHashSet;
+use crate::program::ProgramRelation;
+use crate::resolver::{resolve, resolve_cases, DependencyKind, GraphNodeIndex, ResolvedCase, ResolvedCases, ResolvedProgram, SolverScope};
+use crate::solver::{Case, CaseName, Exclusion};
+use crate::stream::{written_stream, Emitter, Token, Vocabulary, WrittenStream};
 
 /// The cases of a solver whose streams are wanted.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WantedCases<'a> {
     /// The concept case.
     Concept,
-    /// Each case.
+    /// Each case of the solver, the combinations that its `exclude` forms
+    /// leave out not included.
+    Cases,
+    /// Each combination of alts, the excluded ones included.
     All,
     /// The case that [`case_spelled`] spells as given.
     Named(&'a str),
@@ -33,8 +39,8 @@ pub struct CaseStream {
     /// Whether the case program holds a `DEMONSTRATED` form, whose stream
     /// the commands that replay do not decode.
     pub demonstrated: bool,
-    /// The case's token stream, or the writer's fault.
-    pub stream: Result<Vec<(Token, Emitter)>, String>,
+    /// The case's token stream with the relation at each slot, or the writer's fault.
+    pub stream: Result<WrittenStream, String>,
 }
 
 /// The stream of each wanted case of the solver `id` of `corpus`, in the
@@ -46,6 +52,7 @@ pub fn solver_streams(corpus: &Path, id: &str, wanted: WantedCases<'_>, vocabula
     let clauses = SolverClauses::of_cases(&cases);
     let names = match wanted {
         WantedCases::Concept => decoded_cases(&cases, false),
+        WantedCases::Cases => solver.case_names(Exclusion::WithoutExcluded),
         WantedCases::All => decoded_cases(&cases, true),
         WantedCases::Named(spelled) => {
             let found = cases.cases().find(|case| case_spelled(&case.case.name) == spelled).ok_or_else(|| format!("the solver has no case {spelled}"))?;
@@ -62,15 +69,14 @@ pub fn solver_streams(corpus: &Path, id: &str, wanted: WantedCases<'_>, vocabula
                 case: case_spelled(name),
                 concept: name == concept,
                 demonstrated: holds_demonstrated(program),
-                stream: case_stream(case, name == concept, program, vocabulary),
+                stream: case_stream(case, program, vocabulary),
             }
         })
         .collect())
 }
 
-/// The token stream of `case`, whose checked program is `checked` and which
-/// is the solver's concept case where `concept` holds, or the writer's
-/// fault.
+/// The token stream of `case`, whose checked program is `checked`, or the
+/// writer's fault.
 ///
 /// A decoded program reads each of its `DET` forms as the program itself
 /// derives what the form reads (`concept: None` in
@@ -79,20 +85,60 @@ pub fn solver_streams(corpus: &Path, id: &str, wanted: WantedCases<'_>, vocabula
 /// program read alone: the writer resolves the case as the decoder resolves
 /// the program the stream decodes to. The concept program's derivation that
 /// a `DET` of the concept program reads in the case is no part of the
-/// stream. A case that takes no `DET` of the concept program copies nothing
-/// from it, so its checked program is written as it is.
-pub fn case_stream(case: &ResolvedCase, concept: bool, checked: &CheckedProgram, vocabulary: &Vocabulary) -> Result<Vec<(Token, Emitter)>, String> {
-    let written = |program: &CheckedProgram| token_stream(program, vocabulary).map_err(|diagnostic| format!("the writer gives no stream: {}", diagnostic.message));
-    if concept || case.case.concept_determinations().is_empty() {
+/// stream. A case that takes no `DET` of the concept program, the concept
+/// case among them, and whose program read alone is its case program
+/// ([`crate::solver::Case::reads_alone_as_it_stands`]) has its checked
+/// program written as it is. Every other case gets its stream from the
+/// program read alone, which drops each column that is `0` in every clause
+/// of its relation, whether or not the case takes a `DET` of the concept
+/// program. A case where such a `DET` reads, directly or through other
+/// relations, a relation that a block other than the concept program
+/// derives has no stream, since the program read alone would give that
+/// `DET` the block's derivation, and the concept program's derivation is
+/// the one it reads in the case.
+pub fn case_stream(case: &ResolvedCase, checked: &CheckedProgram, vocabulary: &Vocabulary) -> Result<WrittenStream, String> {
+    let written = |program: &CheckedProgram| written_stream(program, vocabulary).map_err(|diagnostic| format!("the writer gives no stream: {}", diagnostic.message));
+    if case.case.reads_alone_as_it_stands() {
         return written(checked);
     }
-    let resolved = std::sync::Arc::new(resolve(&case.case.program, None, &SolverScope::default(), Registry::get()).value);
+    let resolved = std::sync::Arc::new(resolve(case.case.program_alone(), None, &SolverScope::default(), Registry::get()).value);
+    if let Some(fault) = rederived_read(&case.case, &resolved) {
+        return Err(format!("the writer gives no stream: {fault}"));
+    }
     let clauses = SolverClauses::of_shared_program(std::sync::Arc::clone(&resolved));
     let alone = check_shared_program(resolved, &clauses, Registry::get(), &mut CheckCache::default()).map_err(|refusals| {
         let messages: Vec<&str> = refusals.iter().map(|d| &*d.message).collect();
         format!("the writer gives no stream: the case program read alone is refused: {}", messages.join("; "))
     })?;
     written(&alone)
+}
+
+/// The fault of `case` where a `DET` it takes from the concept program reads,
+/// through the dependency graph of `alone`, the case program read alone, a
+/// relation that a block other than the concept program derives, naming the
+/// `DET` and the relation; `None` where no such read stands.
+fn rederived_read(case: &Case, alone: &ResolvedProgram) -> Option<String> {
+    let rederived = |node: GraphNodeIndex| alone.forms_of(node).iter().any(|form| case.rederived_forms().iter().any(|top| form.0.starts_with(&top.0)));
+    let named = |node: GraphNodeIndex| match &alone.graph.nodes[node.0 as usize].kind {
+        DependencyKind::Clause(relation) | DependencyKind::Parameter(relation) => relation_spelled(relation),
+        DependencyKind::Chosen(name) => relation_spelled(&ProgramRelation::Declared(name.clone())),
+        other => format!("{other:?}"),
+    };
+    for det in case.concept_determinations() {
+        let mut seen: StableHashSet<GraphNodeIndex> = StableHashSet::default();
+        let mut open: Vec<GraphNodeIndex> = alone.nodes_of(det).to_vec();
+        while let Some(node) = open.pop() {
+            if !seen.insert(node) {
+                continue;
+            }
+            if rederived(node) {
+                let roots = alone.nodes_of(det).first().map_or_else(String::new, |root| named(*root));
+                return Some(format!("the `DET` of `{roots}` from the concept program reads `{}`, which a block of the case other than the concept program derives, so the case program read alone gives that `DET` another derivation", named(node)));
+            }
+            open.extend(alone.graph.reads[node.0 as usize].iter().copied());
+        }
+    }
+    None
 }
 
 /// The line of a fault in the corpus report: of the case `case` of the

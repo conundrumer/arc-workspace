@@ -205,22 +205,22 @@ impl Determination {
 
 /// A `DET` that a relation reads, at any depth.
 #[derive(Clone, Debug)]
-pub(crate) struct Det {
-    pub(crate) node: GraphNodeIndex,
-    pub(crate) relation: ProgramRelation,
+pub struct Det {
+    pub node: GraphNodeIndex,
+    pub relation: ProgramRelation,
     /// Whether it ends in `(ONE)`.
-    pub(crate) open: bool,
+    pub open: bool,
     /// Whether it ends in `(ONE)` and names no proposer, so that the models
     /// of the constraint module give its values. A solver determination
     /// leaves it unassigned.
-    pub(crate) pick: bool,
+    pub pick: bool,
 }
 
 /// Each `DET` that the relation at `root` reads in `program`, at any depth,
 /// in dependency order.
 pub(crate) fn dets_read(program: &CheckedProgram, root: GraphNodeIndex) -> Vec<Det> {
     let resolved = &program.program;
-    let read = reached(resolved, root);
+    let read = resolved.graph.reached(root);
     let nodes = determinations(program).into_iter().filter(|node| read[node.0 as usize]);
     nodes
         .map(|node| {
@@ -242,7 +242,7 @@ pub(crate) struct Kept {
 
 /// What ends the walk of the assignments before its last assignment.
 #[derive(Clone, Debug)]
-pub(crate) enum End {
+pub enum End {
     Stop(Stop),
     Fault(RunFault),
 }
@@ -342,7 +342,7 @@ pub fn determine(cases: &[DeterminedCase<'_>], judged: &JudgedTask, world: World
 }
 
 /// A value for a `DET`.
-pub(crate) type Assignment = (ProgramRelation, Arc<Relation>);
+pub type Assignment = (ProgramRelation, Arc<Relation>);
 
 /// The joint assignments of `dets`, depth-first in their dependency order,
 /// under the assignment cap `cap`: `leaf` runs at each, with the
@@ -530,19 +530,4 @@ fn keyed_one(program: &CheckedProgram, node: GraphNodeIndex) -> Option<RunFault>
         }
         _ => None,
     })
-}
-
-/// Whether each node of `program` is read by `root`, at any depth, or is
-/// `root`.
-fn reached(program: &crate::resolver::ResolvedProgram, root: GraphNodeIndex) -> Vec<bool> {
-    let graph = &program.graph;
-    let mut seen = vec![false; graph.nodes.len()];
-    let mut stack = vec![root];
-    while let Some(node) = stack.pop() {
-        if std::mem::replace(&mut seen[node.0 as usize], true) {
-            continue;
-        }
-        stack.extend(graph.reads[node.0 as usize].iter().copied());
-    }
-    seen
 }

@@ -60,10 +60,15 @@
       [2,1,0,0,1,0,0,1,0,2]
     ],
     "output": [{
-      "cases": ["concept","$TwoCellColor"],
+      "cases": ["concept","$TwoCellColor & marker_count=stored"],
       "grid": null
     }, {
-      "cases": ["$NonFieldColor","$StoredColor & $EveryAlignedPair"],
+      "cases": [
+        "$NonFieldColor",
+        "$StoredColor & $EveryAlignedPair",
+        "marker_count=TileCount",
+        "marker_count=TileDim"
+      ],
       "grid": [
         [2,3,2,2,3,3,3,2,3,2],
         [3,2,0,0,1,1,1,0,2,2],
@@ -175,7 +180,7 @@
       [0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["concept"],
+      "cases": ["concept","marker_count=TileCount"],
       "grid": null
     }, {
       "cases": ["$NonFieldColor","$StoredColor & $EveryAlignedPair & marker_color=stored"],
@@ -241,7 +246,8 @@
     }, {
       "cases": [
         "$Segment & $KeyedPaint & $StoredPaint & marker_color=RarestColor",
-        "$TwoCellColor & $KeyedPaint & $StoredPaint"
+        "$TwoCellColor & $KeyedPaint & $StoredPaint & marker_count=stored",
+        "marker_count=TileDim"
       ],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0],
@@ -503,7 +509,8 @@
     "output": [{
       "cases": [
         "$StoredColor & bg_paint=stored & marker_color=stored",
-        "$TwoCellColor & $KeyedPaint"
+        "$TwoCellColor & $KeyedPaint & marker_count=stored",
+        "marker_count=TileCount"
       ],
       "grid": [
         [2,0,0,0,0,0,1,1,1,0],
@@ -532,7 +539,7 @@
         [0,0,0,1,0,0,0,0,1,2]
       ]
     }, {
-      "cases": ["$NonFieldColor & $LineInMarkerColor"],
+      "cases": ["$NonFieldColor & $LineInMarkerColor","marker_count=TileDim"],
       "grid": null
     }, {
       "cases": ["$NonFieldColor & $KeyedPaint & $StoredPaint"],
@@ -683,6 +690,224 @@
         [0,0,0,0,0,1,1,1,1,1],
         [0,0,1,1,0,1,1,1,0,0],
         [0,0,0,1,0,0,0,0,2,0]
+      ]
+    }]
+  }, {
+    "id": "marker_count=TileCount",
+    "separates": "`marker_count=TileCount` from the stored value: the input of `four-markers`",
+    "input": [
+      [2,1,0,0,1,1,1,0,1,2],
+      [1,0,0,0,1,1,1,0,0,0],
+      [0,0,0,0,0,1,0,1,0,0],
+      [0,0,0,1,1,0,1,1,1,1],
+      [1,1,0,1,1,0,1,1,0,0],
+      [0,1,0,1,0,1,1,0,1,1],
+      [1,0,0,0,1,0,1,0,1,0],
+      [1,1,0,0,1,1,0,0,0,1],
+      [1,0,1,1,1,0,1,0,1,0],
+      [2,1,0,0,1,0,0,1,0,2]
+    ],
+    "output": [{
+      "cases": ["concept","$TwoCellColor & marker_count=stored"],
+      "grid": null
+    }, {
+      "cases": [
+        "$NonFieldColor",
+        "$StoredColor & $EveryAlignedPair",
+        "marker_count=TileCount",
+        "marker_count=TileDim"
+      ],
+      "grid": [
+        [2,3,2,2,3,3,3,2,3,2],
+        [3,2,0,0,1,1,1,0,2,2],
+        [2,0,2,0,0,1,0,3,0,2],
+        [2,0,0,3,1,0,3,1,1,3],
+        [3,1,0,1,3,2,1,1,0,2],
+        [2,1,0,1,2,3,1,0,1,3],
+        [3,0,0,2,1,0,3,0,1,2],
+        [3,1,2,0,1,1,0,2,0,3],
+        [3,2,1,1,1,0,1,0,3,2],
+        [2,3,2,2,3,2,2,3,2,2]
+      ]
+    }]
+  }, {
+    "id": "marker_count=TileDim",
+    "separates": "`marker_count=TileDim` from the stored value: the input of `four-markers`",
+    "input": [
+      [2,1,0,0,1,1,1,0,1,2],
+      [1,0,0,0,1,1,1,0,0,0],
+      [0,0,0,0,0,1,0,1,0,0],
+      [0,0,0,1,1,0,1,1,1,1],
+      [1,1,0,1,1,0,1,1,0,0],
+      [0,1,0,1,0,1,1,0,1,1],
+      [1,0,0,0,1,0,1,0,1,0],
+      [1,1,0,0,1,1,0,0,0,1],
+      [1,0,1,1,1,0,1,0,1,0],
+      [2,1,0,0,1,0,0,1,0,2]
+    ],
+    "output": [{
+      "cases": ["concept","$TwoCellColor & marker_count=stored"],
+      "grid": null
+    }, {
+      "cases": [
+        "$NonFieldColor",
+        "$StoredColor & $EveryAlignedPair",
+        "marker_count=TileCount",
+        "marker_count=TileDim"
+      ],
+      "grid": [
+        [2,3,2,2,3,3,3,2,3,2],
+        [3,2,0,0,1,1,1,0,2,2],
+        [2,0,2,0,0,1,0,3,0,2],
+        [2,0,0,3,1,0,3,1,1,3],
+        [3,1,0,1,3,2,1,1,0,2],
+        [2,1,0,1,2,3,1,0,1,3],
+        [3,0,0,2,1,0,3,0,1,2],
+        [3,1,2,0,1,1,0,2,0,3],
+        [3,2,1,1,1,0,1,0,3,2],
+        [2,3,2,2,3,2,2,3,2,2]
+      ]
+    }]
+  }, {
+    "id": "tile-dim-markers",
+    "separates": "four cells of 2 at the corners and three cells of 3, the rarest color, off every line through the corners: marker_count=TileDim takes 4 among the tile sizes of a side of 10, and $EveryAlignedPair joins the cells of 2; marker_color=RarestColor takes 3 and joins the cells of 3",
+    "input": [
+      [2,0,0,0,0,0,0,0,0,2],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,3,0,3,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,3,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [2,0,0,0,0,0,0,0,0,2]
+    ],
+    "output": [{
+      "cases": [
+        "concept",
+        "$NonFieldColor & $LineInMarkerColor",
+        "$TwoCellColor & marker_count=stored",
+        "marker_count=TileCount"
+      ],
+      "grid": null
+    }, {
+      "cases": ["$NonFieldColor & $CrossAnyFg"],
+      "grid": [
+        [2,3,3,3,3,3,3,3,3,2],
+        [3,3,0,0,0,0,0,0,3,3],
+        [3,0,3,0,0,0,0,3,0,3],
+        [3,0,0,3,0,0,3,0,0,3],
+        [3,3,3,3,3,3,0,0,0,3],
+        [3,3,3,0,3,3,0,0,0,3],
+        [3,3,0,3,0,0,3,0,0,3],
+        [3,0,3,0,0,0,0,3,0,3],
+        [3,3,0,0,0,0,0,0,3,3],
+        [2,3,3,3,3,3,3,3,3,2]
+      ]
+    }, {
+      "cases": ["$NonFieldColor & $KeyedPaint & $StoredPaint"],
+      "grid": [
+        [2,2,2,2,2,2,2,2,2,2],
+        [2,2,0,0,0,0,0,0,2,2],
+        [2,0,2,0,0,0,0,2,0,2],
+        [2,0,0,2,0,0,2,0,0,2],
+        [2,3,2,3,2,2,0,0,0,2],
+        [2,2,2,0,2,2,0,0,0,2],
+        [2,3,0,2,0,0,2,0,0,2],
+        [2,0,2,0,0,0,0,2,0,2],
+        [2,2,0,0,0,0,0,0,2,2],
+        [2,2,2,2,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": ["$ExtendFullLine & $CrossAnyFg","$ExtendFullLine & $LineInMarkerColor"],
+      "grid": [
+        [2,3,0,0,0,0,0,3,0,2],
+        [0,3,0,0,0,0,3,0,0,0],
+        [0,3,0,0,0,3,0,0,0,0],
+        [0,3,0,0,3,0,0,0,0,0],
+        [3,3,3,3,3,3,3,3,3,3],
+        [0,3,3,0,0,0,0,0,0,0],
+        [0,3,0,0,0,0,0,0,0,0],
+        [3,3,0,0,0,0,0,0,0,0],
+        [0,3,0,0,0,0,0,0,0,0],
+        [2,3,0,0,0,0,0,0,0,2]
+      ]
+    }, {
+      "cases": [
+        "$StoredColor & $EveryAlignedPair & bg_paint=stored & marker_color=stored",
+        "marker_count=TileDim"
+      ],
+      "grid": [
+        [2,2,2,2,2,2,2,2,2,2],
+        [2,2,0,0,0,0,0,0,2,2],
+        [2,0,2,0,0,0,0,2,0,2],
+        [2,0,0,2,0,0,2,0,0,2],
+        [2,3,0,3,2,2,0,0,0,2],
+        [2,0,0,0,2,2,0,0,0,2],
+        [2,3,0,2,0,0,2,0,0,2],
+        [2,0,2,0,0,0,0,2,0,2],
+        [2,2,0,0,0,0,0,0,2,2],
+        [2,2,2,2,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": ["$ExtendFullLine & $KeyedPaint & $StoredPaint & marker_color=RarestColor"],
+      "grid": [
+        [2,2,0,0,0,0,0,2,0,2],
+        [0,2,0,0,0,0,2,0,0,0],
+        [0,2,0,0,0,2,0,0,0,0],
+        [0,2,0,0,2,0,0,0,0,0],
+        [2,3,2,3,2,2,2,2,2,2],
+        [0,2,2,0,0,0,0,0,0,0],
+        [0,3,0,0,0,0,0,0,0,0],
+        [2,2,0,0,0,0,0,0,0,0],
+        [0,2,0,0,0,0,0,0,0,0],
+        [2,2,0,0,0,0,0,0,0,2]
+      ]
+    }, {
+      "cases": ["$StoredColor & bg_paint=RarestColor & marker_color=stored"],
+      "grid": [
+        [2,3,3,3,3,3,3,3,3,2],
+        [3,3,0,0,0,0,0,0,3,3],
+        [3,0,3,0,0,0,0,3,0,3],
+        [3,0,0,3,0,0,3,0,0,3],
+        [3,3,0,3,3,3,0,0,0,3],
+        [3,0,0,0,3,3,0,0,0,3],
+        [3,3,0,3,0,0,3,0,0,3],
+        [3,0,3,0,0,0,0,3,0,3],
+        [3,3,0,0,0,0,0,0,3,3],
+        [2,3,3,3,3,3,3,3,3,2]
+      ]
+    }, {
+      "cases": [
+        "$Segment & $CrossAnyFg & marker_color=RarestColor",
+        "$Segment & $LineInMarkerColor & marker_color=RarestColor"
+      ],
+      "grid": [
+        [2,0,0,0,0,0,0,0,0,2],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,3,3,3,0,0,0,0,0,0],
+        [0,3,3,0,0,0,0,0,0,0],
+        [0,3,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [2,0,0,0,0,0,0,0,0,2]
+      ]
+    }, {
+      "cases": ["$Segment & $KeyedPaint & $StoredPaint & marker_color=RarestColor"],
+      "grid": [
+        [2,0,0,0,0,0,0,0,0,2],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,3,2,3,0,0,0,0,0,0],
+        [0,2,2,0,0,0,0,0,0,0],
+        [0,3,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [2,0,0,0,0,0,0,0,0,2]
       ]
     }]
   }]

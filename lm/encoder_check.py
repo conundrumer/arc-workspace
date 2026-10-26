@@ -46,7 +46,7 @@ real tables of the dev export, cut to a few dozen rows each.
   row, so that its split is unseen at an assignment of no column, with its copy flows checked; it must build, with `strict`, an export with a Dir
   column copied from a Dir8 column where the export's orientation_types.json gives Dir as a subtype of Dir8, and
   refuse it where the export has no orientation_types.json, with a line that says the orientation subtypes were not
-  known; a pickle without the totals must print that it is unchecked. `parse_tables` must count an Undefined entry, and refuse where the loader's count of unseen entries
+  known. `parse_tables` must count an Undefined entry, and refuse where the loader's count of unseen entries
   differs from the export's; `entry_runs` must read a Rows entry's run and refuse an Undefined entry, naming the
   case, the table and the entry.
 - Masks: in a program step, no table with hidden fields may have a source table with hidden fields (no hidden
@@ -93,6 +93,12 @@ real tables of the dev export, cut to a few dozen rows each.
   cap must give no keys. With `--enc-ptr-equality` too, the masked heads' D4 check must hold, and, with `--learn`, a
   hidden Color pointer must learn, from a same-row copy of its value and from the lookup's source rows, where its run without the
   flags stays at its chance level.
+- Parent bias: `parent_types` must type a synthetic program's direct sources, ancestors and unrelated tables, the
+  grid tables among them, a later source table of a column as neither, and type every table unrelated in a program without the column-level provenance; at
+  initialization, on the dev export's first program, a derived row's attention mass on its direct source tables'
+  pooled vectors must be larger with `--enc-parent-bias 4` than with 0, and 0 must give bitwise what the flag absent
+  gives; the attention probe must give a larger parent share with the bias, and the logged values must be three per
+  layer, [4, 0, 0] at initialization, which a training step moves.
 - Equality modes: the D4, permutation and batching checks under `--enc-equality random` and, with --flex, `flex` (on
   small tables and D4's generators, as flex_attention runs eagerly on the CPU); with --flex, flex must give what codes
   gives where the codes are orthonormal; random must score an equal pair at the learned weight.
@@ -104,7 +110,7 @@ The equality term's weights, which start at 0, are drawn at random, so that ever
 The checks of the flex equality mode run only with --flex, and the two learnability runs of the pointer (200 training
 steps each, about 45 s together) only with --learn.
 """
-import copy, json, math, os, pickle, sys
+import copy, json, math, os, pickle, shutil, sys
 from pathlib import Path
 
 import numpy as np
@@ -119,7 +125,7 @@ FLEX = "--flex" in sys.argv[1:]
 LEARN = "--learn" in sys.argv[1:]
 ARGS = [x for x in sys.argv[1:] if x not in ("--full", "--flex", "--learn")]
 TABLES = ARGS[0] if ARGS else "work/tables/dev"
-CACHE = "lm/data-dev/tables.pkl"
+CACHE = "lm/data-dev/tables.cache"
 FIXTURE = "lm/data-dev/encoder-check-fixture.pkl"
 TOL = 1e-4
 torch.manual_seed(0)
@@ -455,20 +461,20 @@ def provenance_export(d, bad=False):
     import pandas as pd
     task = {"train": [{"input": [[1]], "output": [[3]]}, {"input": [[2]], "output": [[3]]}], "test": [{"input": [[1]]}]}
     (d / "tasks").mkdir(); json.dump(task, open(d / "tasks/t.json", "w"))
-    grid = dict(point=2, relation=-1, column_types=["Example", "Box", "Color"], width=6, det_relations=[], det_widths=[],
+    grid = dict(point=2, relation=-1, column_types=["Example", "Box", "Color"], width=6, det_relations=[], det_widths=[], det_columns=[],
                 depth=0, keys=[[0, 1]], output_position=-1, output_color=-1)
     rel = lambda r, types, w, **k: dict(point=0, relation=r, column_types=types, width=w,
-                                        **{"det_relations": [], "det_widths": [], "keys": [], "output_position": -1,
+                                        **{"det_relations": [], "det_widths": [], "det_columns": [], "keys": [], "output_position": -1,
                                            "output_color": -1, **k})
     t2 = rel(0, ["Color", "Number", "Color", "Color"], 4, depth=1, keys=[[1]])
     t3 = rel(1, ["Box", "Color"], 5, depth=2, output_position=0, output_color=1)
     t4 = rel(2, ["Color"], 1, depth=1)
-    t3_dep = {**t3, "det_relations": ["slot 5"], "det_types": [["Color"]], "det_widths": [1]}
+    t3_dep = {**t3, "det_relations": ["slot 5"], "det_types": [["Color"]], "det_widths": [1], "det_columns": [["slot 0"]]}
     cases = {"$Free": [grid, grid, t2, t3], "$Dep": [grid, grid, t2, t3_dep, t4],
              "$Unseen": [grid, grid, t2, t3_dep, {**t4, "fault": "a check"}]}
     rows = {2: lambda e: [[1 + e, 0, 5, 7], [2, 1, 5, 7]], 3: lambda e: [[0, 0, 0, 0, 3]], 4: lambda e: [[3]]}
     flow = lambda tab, col, kind, st, sc, det=-1: dict(table=tab, column=col, kind=kind, source_table=st,
-                                                       source_relation="", source_column=sc, det=det, atom="")
+                                                       source_relation="", source_column=sc, det=det, atom="", occurrence=-1)
     flows = {"$Free": [flow(2, 0, 0, 0, 2), flow(2, 1, 1, 0, 1), flow(2, 2, 2, -1, -1), flow(2, 3, 0, -1, -1),
                        flow(3, 0, 0, 0, 1), flow(3, 1, 0, 2, 0)],
              "$Dep": [flow(2, 0, 0, 0, 2), flow(2, 1, 1, 0, 1), flow(2, 2, 2, -1, -1), flow(2, 3, 0, -1, -1),
@@ -589,18 +595,19 @@ def checked_export(d, variant="clean"):
     grid = dict(point=2, relation=-1, column_types=["Example", "Box", "Color"], width=6)
     dir8 = variant.startswith("dir8")
     is_det = variant.startswith("det")
-    det = dict(det_relations=["slot 0"], det_types=[["Number", "Color"]], det_widths=[2]) if is_det else {}
+    det = dict(det_relations=["slot 0"], det_types=[["Number", "Color"]], det_widths=[2],
+               det_columns=[["slot 0", "slot 1"]]) if is_det else {}
     row3 = {"det per row": [1, 2], "det other row": [2, 2]}.get(variant)   # table 3's Color at each entry
     tabs = [grid, grid, dict(point=0, relation=0, column_types=["Dir8", "Number", "Dir"] if dir8 else ["Color", "Number"], width=3 if dir8 else 2),
             dict(point=0, relation=1, column_types=["Dir", "Dir8"] if dir8 else ["Color"], width=2 if dir8 else 1, **det)]
     rows = {2: [[1, 5, 1], [2, 6, 2]] if dir8 else [[1, 5], [2, 6]], 3: [[1, 1]] if dir8 else [[4 if variant == "value" else 1]]}
     flow = lambda tab, st, sc, det=-1, kind=0, column=0: dict(task="t", case="$C", concept=False, table=tab, column=column,
                                                     kind=kind, source_table=st, source_relation="", source_column=sc,
-                                                    det=det, atom="")
+                                                    det=det, atom="", occurrence=-1)
     tables, index, values, assigned = [], [], [], []
     for i, t in enumerate(tabs):
         tables.append(dict(task="t", case="$C", concept=False, table=i, token=i, projections=0, fault=None,
-                           **{"det_relations": [], "det_types": [], "det_widths": [], **t}, depth=min(i, 2), keys=[],
+                           **{"det_relations": [], "det_types": [], "det_widths": [], "det_columns": [], **t}, depth=min(i, 2), keys=[],
                            output_position=-1, output_color=-1))
         for e in range(2 if i in rows else 0):
             rs = [[row3[e]]] if i == 3 and row3 else rows[i]
@@ -644,7 +651,7 @@ def checked_load(variant, checks=None, **kw):
             text = io.StringIO()
             with contextlib.redirect_stdout(text):
                 try:
-                    got = E.load_tables(tmp, Path(tmp) / "tables.pkl", tasks_dir=Path(tmp) / "tasks", **kw)[2]
+                    got = E.load_tables(tmp, Path(tmp) / "tables.cache", tasks_dir=Path(tmp) / "tasks", **kw)[2]
                 except E.DataFault as x:
                     got = str(x)
             out += [got, text.getvalue()]
@@ -699,12 +706,6 @@ for variant, want in (("det", "passes"), ("det unseen", "passes"), ("det per row
         ok = ok and c["type"] == 2 and not_known in strict and "type Dir from a column of type Dir8" in strict and "type Dir8 from a column of type Dir" in strict
     if not ok:
         bad.append((variant, strict, strict_cached, loose, printed))
-import contextlib, io
-text = io.StringIO()
-with contextlib.redirect_stdout(text):
-    E.copy_flow_rule({"provenance": "a pickle built before the check"}, True, "an old cache")
-if "unchecked" not in text.getvalue():
-    bad.append(("a pickle without the totals", text.getvalue()))
 with tempfile.TemporaryDirectory() as tmp:
     checked_export(Path(tmp), "undefined")
     utabs, _, _ = E.parse_tables(tmp, Path(tmp) / "tasks")
@@ -721,6 +722,34 @@ with tempfile.TemporaryDirectory() as tmp:
 if seen["undefined entry"] != {"an entry is undefined": 1} or "the loader's {}" not in mismatch \
         or "{'an entry is undefined': 1}" not in mismatch:
     bad.append(("a count mismatch", seen["undefined entry"], mismatch))
+with tempfile.TemporaryDirectory() as tmp:   # the cache directory: a sink takes the tasks one by one; a stale partial goes
+    import contextlib, io
+    checked_export(Path(tmp), "clean")
+    tasks, cache = Path(tmp) / "tasks", Path(tmp) / "tables.cache"
+    whole, whole_faults, _ = E.parse_tables(tmp, tasks)
+    sunk = {}
+    kept, sunk_faults, _ = E.parse_tables(tmp, tasks, sunk.update)
+    stale = Path(f"{cache}.partial-4000000")   # a process id that no process holds
+    stale.mkdir()
+    with contextlib.redirect_stdout(io.StringIO()):
+        built, _, _ = E.load_tables(tmp, cache, tasks_dir=tasks)
+        (cache / "stamp.json").write_text("[]")
+        rebuilt, _, _ = E.load_tables(tmp, cache, tasks_dir=tasks)
+    parse_tables = E.parse_tables   # a build that raises
+    E.parse_tables = lambda *a, **k: 1 / 0
+    shutil.rmtree(cache)
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            E.load_tables(tmp, cache, tasks_dir=tasks)
+    except ZeroDivisionError:
+        pass
+    finally:
+        E.parse_tables = parse_tables
+    left = sorted(p.name for p in Path(tmp).glob("tables.cache*"))
+    seen["cache directory"] = left
+    if kept != {} or list(sunk) != list(whole) or sunk_faults != whole_faults or list(built) != list(whole) \
+            or list(rebuilt) != list(whole) or left:
+        bad.append(("a cache directory", kept, list(sunk), list(whole), list(built), list(rebuilt), left))
 t3 = {"table": 3, "column_types": ["Color"], "width": 1}
 runs = [E.entry_runs(t3, {"kind": 0, "entry": 4, "rows": 2, "offset": 8}, {}, {}, "t $C"),
         E.entry_runs(t3, {"kind": 1, "entry": 4, "rows": 2, "offset": 8}, {}, {}, "t $C")]
@@ -907,7 +936,7 @@ print(f"  pairs of constants with equal features: {same or 'none'} {'PASS' if no
 print("== the loader's fault test: a tables frame whose fault column reads as the str dtype, one string and nulls")
 import pandas as pd
 frame = pd.DataFrame({"fault": pd.array([None, "a fault", None], dtype="str"), "projections": [0, 0, 0],
-                      "column_types": [["Color"]] * 3, "det_relations": [[]] * 3, "det_widths": [[]] * 3, "token": [1, 2, 3],
+                      "column_types": [["Color"]] * 3, "det_relations": [[]] * 3, "det_widths": [[]] * 3, "det_columns": [[]] * 3, "token": [1, 2, 3],
                       "relation": [1, 2, 3], "table": [0, 1, 2], "width": [1, 1, 1]})
 parsed = [x for t in frame.to_dict("records") for x in E.parse_table(t, [], np.zeros(0, np.int32), {}, {}, {}, {}, 1)]
 faulted = [t.unseen for t in parsed if t.unseen is not None]
@@ -915,7 +944,7 @@ print(f"  fault dtype {frame['fault'].dtype}; unseen tables {faulted} {'PASS' if
 
 print("== the loader's split by assignment: a table of one DET whose four entries, of 3 rows each, hold two assignments, "
       "under a table cap of 8 rows")
-row = {"fault": None, "projections": 0, "column_types": ["Color"], "det_relations": ["slot 5"], "det_widths": [1],
+row = {"fault": None, "projections": 0, "column_types": ["Color"], "det_relations": ["slot 5"], "det_widths": [1], "det_columns": [[]],
        "token": 4, "relation": 6, "table": 0, "width": 1}
 ents = [{"entry": e, "kind": 0, "rows": 3, "offset": 3 * e, "example_kind": 1, "example_index": e % 2, "model": 0}
         for e in range(4)]
@@ -1490,12 +1519,12 @@ def lookup_export(d, rng, cases=32, n=16):
     import pandas as pd
     task = {"train": [{"input": [[0]], "output": [[0]]}], "test": [{"input": [[0]]}]}
     (d / "tasks").mkdir(); json.dump(task, open(d / "tasks/t.json", "w"))
-    grid = dict(point=2, relation=-1, column_types=["Example", "Box", "Color"], width=6, det_relations=[], det_widths=[],
+    grid = dict(point=2, relation=-1, column_types=["Example", "Box", "Color"], width=6, det_relations=[], det_widths=[], det_columns=[],
                 depth=0, keys=[[0, 1]], output_position=-1, output_color=-1)
     rel = lambda r, depth: dict(point=0, relation=r, column_types=["Ident", "Color"], width=2, det_relations=[],
-                                det_widths=[], depth=depth, keys=[[0]], output_position=-1, output_color=-1)
+                                det_widths=[], det_columns=[], depth=depth, keys=[[0]], output_position=-1, output_color=-1)
     flow = lambda case, col: dict(task="t", case=case, concept=False, table=3, column=col, kind=0, source_table=2,
-                                  source_relation="", source_column=col, det=-1, atom="")
+                                  source_relation="", source_column=col, det=-1, atom="", occurrence=-1)
     tables, index, flows = [], [], []
     (d / "values/t").mkdir(parents=True)
     for k in range(cases):
@@ -1680,7 +1709,7 @@ def group_fixture(shift=0):
                        model=np.zeros(n, np.int32), entry=np.repeat([0, 1], len(rows)).astype(np.int32),
                        part=np.zeros(n, np.int32), marker=np.zeros(n, bool), unseen_entries={}, det_relations=[],
                        depth=i - 1, keys=keys, output_position=-1, output_color=-1,
-                       flows=np.array([f + [-1] for f in flows], np.int32))
+                       flows=np.array([f + [-1, -1] for f in flows], np.int32))
     a = table(2, ["Ident", "Color"], [[1, 3], [2, 3], [3, 4]], [[0]], [[0, 1, 0, 2], [1, 0, 0, 2]])
     b = table(3, ["Ident", "Number", "Color"], [[1, 5, 3], [1, 6, 3], [2, 7, 3], [3, 8, 4]], [],
               [[0, 0, 2, 0], [1, 1, 0, 1], [2, 0, 2, 1]])
@@ -1945,3 +1974,128 @@ if not pa.get("matched_fields") or not pa["matched_fields"] <= pa["fields"] or n
 print(f"  target kinds (fixture, kind) {dict(sorted(kinds_seen.items()))}; entries whose groups are single fields "
       f"{len(singles)}; row targets {rows_log} of the log against {rows_direct} of the records; matched fields "
       f"{pa.get('matched_fields')} of {pa.get('fields')} {'PASS' if not bad else 'FAIL ' + str(bad)}")
+
+print("== --enc-parent-bias: the parent types of a synthetic program (ex_input, ex_output, A from ex_input and from "
+      "the later G, B from A, C from ex_input, D from B and from ex_output, G from ex_input), and of a program without "
+      "the column-level provenance")
+
+
+def parent_fixture():
+    """The evidence tables of the provenance export's $Free, then A, B, C, D and G, one Ident column and one row each,
+    A's Ident from ex_input's first column and from G's, C's and G's from ex_input's, B's from A's, and D's two Idents,
+    from B's and from ex_output's first column. G stands after A, so it is no source of A and no ancestor of B."""
+    def table(i, flows):
+        cols = max(f[0] for f in flows) + 1
+        return E.Table(step=i, relation=i, evidence=False, unseen=None, largest=1, export_table=i,
+                       positions=list(range(cols)), types=["Ident"] * cols, cells=np.ones((1, cols), np.int32),
+                       present=np.ones((1, cols), bool), example=np.zeros(1, np.int16),
+                       example_kind=np.ones(1, np.int8), assignment=np.full((1, 0), -1, np.int32),
+                       model=np.zeros(1, np.int32), entry=np.zeros(1, np.int32), part=np.zeros(1, np.int32),
+                       marker=np.zeros(1, bool), unseen_entries={}, det_relations=[], depth=i - 1, keys=[],
+                       output_position=-1, output_color=-1, flows=np.array([f + [-1, -1] for f in flows], np.int32))
+    return [free[0], free[1], table(2, [[0, 0, 0, 0], [0, 0, 6, 0]]), table(3, [[0, 0, 2, 0]]),
+            table(4, [[0, 0, 0, 0]]), table(5, [[0, 0, 3, 0], [1, 0, 1, 0]]), table(6, [[0, 0, 0, 0]])]
+
+
+D_, A_, U_ = E.PARENT_DIRECT, E.PARENT_ANCESTOR, E.PARENT_UNRELATED
+want = np.full((7, 7), U_, np.int8)
+want[2, 0] = D_                                     # A: ex_input
+want[3, 2], want[3, 0] = D_, A_                     # B: A, and ex_input through A
+want[4, 0] = D_                                     # C: ex_input
+want[5, 3], want[5, 1], want[5, 2], want[5, 0] = D_, D_, A_, A_   # D: B and ex_output, A and ex_input through B
+want[6, 0] = D_                                     # G: ex_input
+got = E.parent_types(parent_fixture())
+no_prov = E.parent_types(real)
+ok = np.array_equal(got, want) and got.dtype == np.int8 and (no_prov == U_).all()
+print(f"  the synthetic program's types {'equal' if np.array_equal(got, want) else 'differ: ' + str(got.tolist())}; "
+      f"a program without provenance all unrelated {(no_prov == U_).all()} {'PASS' if ok else 'FAIL'}")
+
+print("== --enc-parent-bias: at initialization, on the dev export's first program (30 rows a table), B 4 against B 0: "
+      "a derived row's attention mass on its direct source tables' pooled vectors, and B 0 bitwise the flag absent")
+first = sorted(lm_tables)[0]
+pb_prog = [cut(t, 30, np.random.default_rng(11)) for t in lm_tables[first]]
+pt, grp_of = E.parent_types(pb_prog), E.table_groups(pb_prog)
+# the derived table with rows whose direct source tables, in other groups, give the most earlier tables
+direct_of = {t: [j for j in range(t) if pt[t, j] == D_ and grp_of[j] != grp_of[t] and pb_prog[j].n]
+             for t, tb in enumerate(pb_prog) if not tb.evidence and tb.n}
+pb_t = max(direct_of, key=lambda t: (len(direct_of[t]), -t))
+torch.manual_seed(0)
+pb_absent = E.FeatureEncoder(embed, in_index, id_dim=16, orientations=orient, K=4, layers=2, c=32, heads=4)
+torch.manual_seed(0)
+pb_zero = E.FeatureEncoder(embed, in_index, id_dim=16, orientations=orient, K=4, layers=2, c=32, heads=4,
+                           parent_bias=0.0)
+torch.manual_seed(0)
+pb_four = E.FeatureEncoder(embed, in_index, id_dim=16, orientations=orient, K=4, layers=2, c=32, heads=4,
+                           parent_bias=4.0)
+missing, unexpected = pb_four.load_state_dict(pb_absent.state_dict(), strict=False)
+assert not unexpected and all(k.endswith(".parent_bias") for k in missing), (missing, unexpected)
+for e in (pb_absent, pb_zero, pb_four):
+    e.eval()
+
+
+def source_mass(e, tables, t, sources):
+    """The mean over the rows of table t and the heads of each layer's attention mass, over all its keys, on the
+    pooled vectors of the tables `sources`: per layer."""
+    seen, cur = [], {}
+    fwd, att = E.Block.forward, E.attend
+
+    def forward(self, x, ctx, l, mats):
+        cur.update(t=ctx.level, N=x.shape[1])
+        return fwd(self, x, ctx, l, mats)
+
+    def attend(q, k, v, mask, flex=None):
+        if mask.shape[2] == 1 and cur.get("t") == t:   # a Block's call, not the pooling's
+            s = torch.einsum("bqhw,bkhw->bhqk", q.float(), k.float())
+            s = s.masked_fill(~mask, float("-inf")) if mask.dtype == torch.bool else s + mask.float()
+            a = torch.softmax(s, -1)[0, :, :tables[t].n]                               # [H, n, keys]
+            slots = [cur["N"] + j * e.K + kk for j in sources for kk in range(e.K)]
+            seen.append(a[..., slots].sum(-1).mean().item())
+        return att(q, k, v, mask, flex)
+    E.Block.forward, E.attend = forward, attend
+    try:
+        with torch.no_grad():
+            e.prepare()
+            gen = torch.Generator().manual_seed(1)
+            ids = E.Identifiers(e.c, e.code_dim, gen, "cpu", torch.float64)
+            s = e.encode_programs([(tables, [e.relation_vector(x, None) for x in tables], ids)], gen)[0]
+    finally:
+        E.Block.forward, E.attend = fwd, att
+    return seen, s
+
+
+m0, s_zero = source_mass(pb_zero, pb_prog, pb_t, direct_of[pb_t])
+m4, _ = source_mass(pb_four, pb_prog, pb_t, direct_of[pb_t])
+_, s_absent = source_mass(pb_absent, pb_prog, pb_t, direct_of[pb_t])
+with torch.no_grad():   # the masked loss with B 0 against the flag absent
+    l_zero, _ = pb_zero.masked_loss([(pb_prog, [None] * len(pb_prog))], torch.Generator().manual_seed(4), 0.3, 64,
+                                    torch.Generator().manual_seed(5))
+    l_absent, _ = pb_absent.masked_loss([(pb_prog, [None] * len(pb_prog))], torch.Generator().manual_seed(4), 0.3, 64,
+                                        torch.Generator().manual_seed(5))
+same = torch.equal(s_zero, s_absent) and torch.equal(l_zero, l_absent) and not hasattr(pb_zero.blocks[0], "parent_bias")
+ok = len(m0) == len(m4) == 2 and all(b > a for a, b in zip(m0, m4)) and same
+print(f"  {first[0]} {first[1]}: table {pb_t} ({pb_prog[pb_t].n} rows), direct source tables {direct_of[pb_t]}; mass per "
+      f"layer B 0 {[round(x, 4) for x in m0]}, B 4 {[round(x, 4) for x in m4]}; B 0 against the flag absent: pooled "
+      f"vectors and masked loss bitwise the same {same} {'PASS' if ok else 'FAIL'}")
+
+print("== --enc-parent-bias: the probe measures with the bias (the groups fixture, whose B copies from A, under "
+      "--mask-remote-groups), and the log's three values per layer, which a training step moves")
+with torch.no_grad():
+    probed = {}
+    for name, e in (("B 0", pb_absent), ("B 4", pb_four)):
+        _, recs = e.masked_loss([(grp, [None] * len(grp))], torch.Generator().manual_seed(6), 0.5, 10 ** 6,
+                                torch.Generator().manual_seed(7), kind="program", mask_remote="groups", probe=True)
+        probed[name] = P.losses(P.summarize(recs), 1.0)["parent_attention"]["mean"]
+vals0 = pb_four.parent_bias_values()
+ok_log = (sorted(vals0) == ["ancestor", "direct", "unrelated"] and all(len(v) == len(pb_four.blocks) for v in vals0.values())
+          and vals0["direct"] == [4.0] * 2 and vals0["ancestor"] == vals0["unrelated"] == [0.0] * 2
+          and pb_absent.parent_bias_values() is None)
+pb_four.train()
+opt_ = torch.optim.SGD([blk.parent_bias for blk in pb_four.blocks], lr=0.1)
+loss_, _ = pb_four.masked_loss([(grp, [None] * len(grp))], torch.Generator().manual_seed(6), 0.5, 10 ** 6,
+                               torch.Generator().manual_seed(7), kind="program", mask_remote="groups")
+loss_.backward(); opt_.step(); pb_four.zero_grad(); pb_four.eval()
+vals1 = pb_four.parent_bias_values()
+moved = vals1 != vals0
+ok = probed["B 4"] > probed["B 0"] and ok_log and moved
+print(f"  probe parent share B 0 {probed['B 0']:.4f}, B 4 {probed['B 4']:.4f}; values at initialization {vals0}, after "
+      f"one step {({k: [round(x, 4) for x in v] for k, v in vals1.items()})} {'PASS' if ok else 'FAIL'}")

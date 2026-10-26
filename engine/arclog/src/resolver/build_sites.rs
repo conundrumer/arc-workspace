@@ -10,8 +10,10 @@ use super::{AtomRead, Builder};
 use crate::diagnostic::WithDiagnostics;
 use crate::hash::StableHashMap;
 use crate::program::canonical::{AsWritten, CanonicalWriter, NameWriter};
-use crate::program::path::NodePath;
-use crate::program::{ColumnName, RelationRef};
+use crate::program::path::{node_at, NodePath};
+use crate::program::{Atom, Body, ColumnName, Conjunct, FactRelation, LabelUse, Program, RelationRef, SiteArg};
+use crate::program::path::NodeRef;
+use crate::resolver::columns;
 use super::super::names::Names;
 use crate::resolver::{ConceptForms, DependencyGraph, GraphNodeIndex, ResolvedProgram, Resolution, Signature};
 
@@ -25,6 +27,9 @@ impl Builder<'_> {
             if self.lifts(form, &self.resolutions[path]) {
                 columns = columns.map(|found| found.lifted());
                 self.lifted.insert(path.clone());
+                if binds_train_examples(self.case.value(), path, atom) {
+                    self.train_lifted.insert(path.clone());
+                }
             }
             if let Some(columns) = &columns {
                 for (index, site) in atom.sites.iter().enumerate() {
@@ -127,6 +132,7 @@ impl Builder<'_> {
                 groups: self.groups,
                 proposer_columns: self.proposer_columns,
                 lifted: self.lifted,
+                train_lifted: self.train_lifted,
                 names: self.names,
                 concept,
                 depths: Default::default(),
@@ -162,4 +168,37 @@ pub(super) fn signature(names: &Names, resolution: &Resolution, relation: &Relat
         None => out.write(&[0]),
     }
     Signature(out.finish())
+}
+
+/// Whether the lifted read `atom` at `path` of `program` has a site on the
+/// Example column that holds a label which a positive `ex_output` atom binds,
+/// in the read's own conjunction or in the guard of the `ALL` form the read
+/// stands in.
+fn binds_train_examples(program: &Program, path: &NodePath, atom: &Atom) -> bool {
+    let example = columns::example();
+    let label_of = |atom: &Atom| {
+        let site = atom.sites.iter().find(|site| site.column == example)?;
+        match &site.value.args[..] {
+            [SiteArg::Label(LabelUse::Fresh(id) | LabelUse::Join(id))] => Some(*id),
+            _ => None,
+        }
+    };
+    let Some(label) = label_of(atom) else { return false };
+    let binds = |body: &Body| {
+        body.conjuncts.iter().any(|conjunct| match conjunct {
+            Conjunct::Atom(other) => other.value().relation == RelationRef::Fact(FactRelation::ExOutput) && label_of(other.value()) == Some(label),
+            _ => false,
+        })
+    };
+    let root = NodeRef::Program(program);
+    let Some((body_at, _)) = path.0.split_last().map(|(_, rest)| (NodePath(rest.into()), ())) else { return false };
+    let Some(NodeRef::Body(body)) = node_at(root, &body_at) else { return false };
+    if binds(body) {
+        return true;
+    }
+    let Some((all_at, _)) = body_at.0.split_last().map(|(_, rest)| (NodePath(rest.into()), ())) else { return false };
+    match node_at(root, &all_at) {
+        Some(NodeRef::Conjunct(Conjunct::All { domain, body: inner })) => std::ptr::eq(inner.value(), body) && binds(domain.value()),
+        _ => false,
+    }
 }

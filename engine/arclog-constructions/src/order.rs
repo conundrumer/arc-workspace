@@ -79,17 +79,35 @@ fn before_ranking<'r>(members: &StableHashSet<Element<'r>>, probes: &[Element<'r
     Ranking { ranks, minimal, maximal, successors: immediate, work }
 }
 
-/// The ranking under the preorder that `score` induces: a member or a probe
-/// precedes another when its score is less, tied members share a rank, and
-/// a member with no score is related to no other. Each element has at most
-/// one score, as [`crate::domain`] checks.
-fn score_ranking<'r>(members: &StableHashSet<Element<'r>>, probes: &[Element<'r>], score: &'r RowSet, width: usize) -> Ranking<'r> {
-    let mut scores: StableHashMap<Element<'r>, Number> = StableHashMap::default();
+/// What an element is compared by in the score form: its `score`, then its
+/// `secondary_score`, an element with none preceding each element of its
+/// score that has one.
+type Level = (Number, Option<Number>);
+
+/// The ranking under the preorder that `score` and `secondary_score` induce:
+/// a member or a probe precedes another when its score is less, or the
+/// scores tie and its `secondary_score` is less, tied members share a rank,
+/// and a member with no score is related to no other. Each element has at
+/// most one score and one `secondary_score`, as [`crate::domain`] checks.
+fn score_ranking<'r>(
+    members: &StableHashSet<Element<'r>>,
+    probes: &[Element<'r>],
+    score: &'r RowSet,
+    secondary_score: &'r RowSet,
+    width: usize,
+) -> Ranking<'r> {
+    let mut scores: StableHashMap<Element<'r>, Level> = StableHashMap::default();
     for row in score.rows() {
         let (t, s) = row.split_at(width);
-        scores.insert(t, Number(Term::decode_number(s[0])));
+        scores.insert(t, (Number(Term::decode_number(s[0])), None));
     }
-    let mut levels: StableHashMap<Number, Vec<Element<'r>>> = StableHashMap::default();
+    for row in secondary_score.rows() {
+        let (t, s) = row.split_at(width);
+        if let Some(level) = scores.get_mut(t) {
+            level.1 = Some(Number(Term::decode_number(s[0])));
+        }
+    }
+    let mut levels: StableHashMap<Level, Vec<Element<'r>>> = StableHashMap::default();
     let mut unscored = Vec::new();
     for &t in members {
         match scores.get(t) {
@@ -97,7 +115,7 @@ fn score_ranking<'r>(members: &StableHashSet<Element<'r>>, probes: &[Element<'r>
             None => unscored.push(t),
         }
     }
-    let mut sorted: Vec<Number> = members.iter().filter_map(|t| scores.get(t).copied()).collect();
+    let mut sorted: Vec<Level> = members.iter().filter_map(|t| scores.get(t).copied()).collect();
     sorted.sort_unstable();
     let ranks = members
         .iter()
@@ -108,9 +126,9 @@ fn score_ranking<'r>(members: &StableHashSet<Element<'r>>, probes: &[Element<'r>
             None => (t, 0, 0),
         })
         .collect();
-    let mut distinct: Vec<Number> = levels.keys().copied().collect();
+    let mut distinct: Vec<Level> = levels.keys().copied().collect();
     distinct.sort_unstable();
-    let level = |s: Option<&Number>| s.map_or(&[][..], |s| levels[s].as_slice());
+    let level = |s: Option<&Level>| s.map_or(&[][..], |s| levels[s].as_slice());
     let minimal = level(distinct.first()).iter().chain(&unscored).copied().collect();
     let maximal = level(distinct.last()).iter().chain(&unscored).copied().collect();
     let successors = distinct
@@ -121,12 +139,14 @@ fn score_ranking<'r>(members: &StableHashSet<Element<'r>>, probes: &[Element<'r>
 }
 
 /// Rank, dual rank, the minimal and maximal members and the successors of
-/// the group's members under `before` or `score`, tied members sharing a
-/// rank and each tied member minimal or maximal.
+/// the group's members under `before`, or under `score` and
+/// `secondary_score`, tied members sharing a rank and each tied member
+/// minimal or maximal.
 ///
-/// A group outside its domain of [`crate::domain`], with both `before` and
-/// `score` rows or an element with several scores, which
-/// `docs/lib-spec.md#the-constructions` does not cover, is undefined.
+/// A group outside its domain of [`crate::domain`], with `before` rows and
+/// `score` or `secondary_score` rows, or an element with several scores or
+/// several `secondary_score` rows, which `docs/lib-spec.md#the-constructions`
+/// does not cover, is undefined.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Order;
 
@@ -144,14 +164,14 @@ impl Construction for Order {
         group: &GroupInputs<'_>,
         context: &mut ConstructionContext<'_, '_>,
     ) -> Result<GroupOutputs, ReachedBound> {
-        let [member, before, score, probe] = group.inputs else { panic!("Order's four inputs") };
+        let [member, before, score, secondary_score, probe] = group.inputs else { panic!("Order's five inputs") };
         let width = usize::from(member.arity());
         let members: StableHashSet<Element<'_>> = member.rows().collect();
         let probes: Vec<Element<'_>> = probe.rows().filter(|t| !members.contains(t)).collect();
         let ranking = if score.is_empty() {
             before_ranking(&members, &probes, before, width)
         } else {
-            score_ranking(&members, &probes, score, width)
+            score_ranking(&members, &probes, score, secondary_score, width)
         };
         context.budget.charge_work((ranking.successors.len() + ranking.maximal.len() * ranking.minimal.len()) as u64)?;
         let [mut rank, mut dual_rank, mut minimal, mut maximal, mut successor, mut cyclic_successor]: [RowSet; 6] =
@@ -370,5 +390,62 @@ impl Construction for Inclusion {
             }
         }
         charged(vec![superset, equal], input_rows(group) + work, context)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A row set of `arity` columns of the numbers each row of `rows` gives.
+    fn numbers(arity: u16, rows: &[&[i32]]) -> RowSet {
+        let mut set = RowSet::empty(arity);
+        for row in rows {
+            set.insert(row.iter().map(|&n| Term::encode_number(n)).collect());
+        }
+        set
+    }
+
+    /// The rank of the element `n` in `ranking`.
+    fn rank_of(ranking: &Ranking<'_>, n: i32) -> usize {
+        let t = Term::encode_number(n);
+        ranking.ranks.iter().find(|(e, _, _)| e[0] == t).expect("a ranked element").1
+    }
+
+    /// Elements 1 to 3 tie at score 1, and 4 has score 2. `secondary_score`
+    /// orders the tie: 3 has none and precedes 2 and 1, which hold 3 and 5.
+    /// Element 5 has the same two numbers as element 2 and shares its rank.
+    /// Element 6 has a `secondary_score` and no score and is unscored.
+    #[test]
+    fn a_tie_of_score_ranks_by_secondary_score() {
+        let member = numbers(1, &[&[1], &[2], &[3], &[4], &[5], &[6]]);
+        let score = numbers(2, &[&[1, 1], &[2, 1], &[3, 1], &[4, 2], &[5, 1]]);
+        let secondary_score = numbers(2, &[&[1, 5], &[2, 3], &[4, 0], &[5, 3], &[6, 0]]);
+        let members: StableHashSet<Element<'_>> = member.rows().collect();
+        let ranking = score_ranking(&members, &[], &score, &secondary_score, 1);
+        let ranks: Vec<usize> = (1..=6).map(|n| rank_of(&ranking, n)).collect();
+        assert_eq!(ranks, [3, 1, 0, 4, 1, 0]);
+        let named = |elements: &[Element<'_>]| {
+            let mut names: Vec<i32> = elements.iter().map(|e| Term::decode_number(e[0])).collect();
+            names.sort_unstable();
+            names
+        };
+        assert_eq!(named(&ranking.minimal), [3, 6]);
+        assert_eq!(named(&ranking.maximal), [4, 6]);
+        let mut successors: Vec<(i32, i32)> =
+            ranking.successors.iter().map(|(a, b)| (Term::decode_number(a[0]), Term::decode_number(b[0]))).collect();
+        successors.sort_unstable();
+        assert_eq!(successors, [(1, 4), (2, 1), (3, 2), (3, 5), (5, 1)]);
+    }
+
+    /// With no `secondary_score` row, the ranking is that of `score` alone.
+    #[test]
+    fn score_alone_ties_whole_levels() {
+        let member = numbers(1, &[&[1], &[2], &[3]]);
+        let score = numbers(2, &[&[1, 1], &[2, 1], &[3, 2]]);
+        let members: StableHashSet<Element<'_>> = member.rows().collect();
+        let secondary_score = RowSet::empty(2);
+        let ranking = score_ranking(&members, &[], &score, &secondary_score, 1);
+        assert_eq!([1, 2, 3].map(|n| rank_of(&ranking, n)), [0, 0, 2]);
     }
 }

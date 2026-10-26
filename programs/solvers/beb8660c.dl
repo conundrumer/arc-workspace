@@ -105,8 +105,7 @@ unit(I, U) :- unit_cell(I, U, _, _).
 // @claim align-to-side keep-bar
 .init pack = Order<ItemUnit, Position>
 pack.elem([I, U], P) :- unit_cell(I, U, P, _).
-pack.before([I, U], P, Q) :-
-    unit_cell(I, U, P, _), unit_cell(I, U, Q, _), params.align_side(D), nearer(D, P, Q).
+pack.score([I, U], P, K) :- unit_cell(I, U, P, _), params.align_side(D), dist(P, D, K).
 
 // The output row each unit lands on, as its distance from the
 // params.fall_dir edge.
@@ -161,11 +160,12 @@ longer(I, U1, U2) :- length.tally([I, U1], N1), length.tally([I, U2], N2), N1 > 
 .init stack = Order<Ranking, Ident>
 stack.elem([I, B], U) :- unit(I, U), base_choice(B).
 
-placed([I, $Stack(), B], U, R) :- stack.rank([I, B], U, R).
-
 // --- $Stack & $Ranked ---
 
-stack.before([I, $Ranked()], U1, U2) :- longer(I, U1, U2).
+stack.score([I, $Ranked()], U, N) :- length.tally([I, U], N).
+
+// The longer units come first.
+placed([I, $Stack(), $Ranked()], U, R) :- stack.rank_desc([I, $Ranked()], U, R).
 
 // --- $RowByLength ---
 
@@ -190,10 +190,13 @@ undefined([I, Pl, $BaseStays()]) :- impl_choice([I, Pl, $BaseStays()]), !base_un
 
 // --- $Stack & $BaseStays ---
 
+// The base units come first, then the other units, the longer first.
 stack.before([I, $BaseStays()], U1, U2) :-
     base_unit(I, U1), unit(I, U2), !base_unit(I, U2).
 stack.before([I, $BaseStays()], U1, U2) :-
     longer(I, U1, U2), !base_unit(I, U1), !base_unit(I, U2).
+
+placed([I, $Stack(), $BaseStays()], U, R) :- stack.rank([I, $BaseStays()], U, R).
 
 // --- $RowByLength & $BaseStays ---
 

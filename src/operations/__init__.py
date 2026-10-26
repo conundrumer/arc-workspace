@@ -55,8 +55,7 @@ what follows it), `recovery` (ticket-log delivery and replacement before closure
 solver pipelines), `runs` (the pipelines a run script starts),
 `task_work` (the work a pipeline sets aside), `batches` (After a batch),
 `occasions` (the rules the launches no batch holds share with After a
-batch), `standing_reviews` (the standing doc reviews), `gate_launch`
-(the gate), `assessment` (the process assessment), `cost_audit` (the
+batch), `standing_reviews` (the standing doc reviews), `assessment` (the process assessment), `cost_audit` (the
 cost audit), `unbatched` (the kinds of launch no batch holds),
 `after_profile` (the sweep and the script check after a profile launch),
 `under_reads` (the read of `profile_runs.py --under`), `reviews` (the

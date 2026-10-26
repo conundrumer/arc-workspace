@@ -556,6 +556,11 @@ def main():
                     help="the masked loss's pointer heads take equality terms: a candidate row's value against the "
                          "hidden row's visible fields of the same type, and with --enc-source-rows, against the codes "
                          "that the hidden row's last layer gathers from its source rows")
+    ap.add_argument("--enc-parent-bias", type=float, default=0.0,
+                    help="each layer adds to a row's attention scores against an earlier table's pooled vectors a "
+                         "learned value per parent type of that table to the row's table (direct source, ancestor, "
+                         "unrelated; encoder.py, parent_types), which starts at [B, 0, 0]; the held-out log gives the "
+                         "values under parent_bias; 0, the default, for none")
     ap.add_argument("--enc-checkpoint", action=argparse.BooleanOptionalAction, default=None,
                     help="recompute the encoder's Block activations in the backward pass to save memory (default: on "
                          "with cuda, off otherwise); without it, each table keeps its evidence rows' keys and values "
@@ -623,7 +628,7 @@ def main():
     assert not K or a.enc_equality != "flex" or a.device == "cuda", "--enc-equality flex trains on cuda alone"
     if a.tables:   # each case takes its tables; a case without readable tables leaves every set
         import encoder
-        tables, skipped, tstats = encoder.load_tables(a.tables, f"{a.data}/tables.pkl", not a.allow_check_violations,
+        tables, skipped, tstats = encoder.load_tables(a.tables, f"{a.data}/tables.cache", not a.allow_check_violations,
                                                       a.allow_check_violations)
         if skipped:
             print(f"DATA FAULT: {len(skipped)} cases whose tables export cannot be read, left out: {skipped}")
@@ -682,7 +687,8 @@ def main():
                                                K=K, layers=a.enc_layers, c=a.enc_width, heads=a.enc_heads, mlp=a.enc_mlp, gram=a.enc_gram,
                                                examples=encoder.max_example(tables) + 1, equality=a.enc_equality,
                                                source_rows=a.enc_source_rows,
-                                               ptr_equality=a.enc_ptr_equality).to(a.device, dtype)
+                                               ptr_equality=a.enc_ptr_equality,
+                                               parent_bias=a.enc_parent_bias).to(a.device, dtype)
         model.enc_gen = torch.Generator().manual_seed(0)   # the encoder's identifiers, apart from the model's
         model.encoder.checkpoint = a.enc_checkpoint
         model.encoder.group = a.enc_group
@@ -695,7 +701,7 @@ def main():
             assert all(init["config"][k] == v for k, v in mine.items()), f"--encoder-init {a.encoder_init}: another encoder shape"
             missing, unexpected = model.encoder.load_state_dict(init["state"], strict=False)
             # an encoder pretrained without --enc-source-rows or --enc-ptr-equality leaves their weights at 0
-            new = (".src_eq", "heads.ptr_eq", "heads.ptr_src")
+            new = (".src_eq", "heads.ptr_eq", "heads.ptr_src", ".parent_bias")
             assert not unexpected and all(k.startswith("embed.") or k.endswith(new) for k in missing), (missing, unexpected)
             print(f"encoder loaded from {a.encoder_init} (pretrained {init['config'].get('step')} steps)")
         if a.aux_masked:
@@ -720,7 +726,7 @@ def main():
         meta.update(tables=a.tables, enc_k=K, enc_layers=a.enc_layers, enc_width=a.enc_width, enc_heads=a.enc_heads,
                     enc_mlp=a.enc_mlp, enc_gram=a.enc_gram, enc_budget=a.enc_budget, enc_max_rows=a.enc_max_rows,
                     enc_equality=a.enc_equality, enc_source_rows=a.enc_source_rows,
-                    enc_ptr_equality=a.enc_ptr_equality)
+                    enc_ptr_equality=a.enc_ptr_equality, enc_parent_bias=a.enc_parent_bias)
         if a.encoder_init or a.aux_masked:
             meta.update(encoder_init=a.encoder_init, aux_masked=a.aux_masked, mask_frac=a.mask_frac, mask_cap=a.mask_cap,
                         mask_kind=a.mask_kind, mask_remote=a.mask_remote, prior_weight=a.prior_weight)
@@ -775,6 +781,8 @@ def main():
                 ev_in = evaluate(model, indist, enc_args, a.device, a.budget, out_names, classes, autocast, K)
                 ev = evaluate(model, held, enc_args, a.device, a.budget, out_names, classes, autocast, K)
                 stage("evaluated")
+                if K and model.encoder.parent_init:
+                    ev["parent_bias"] = model.encoder.parent_bias_values()
                 row = {"step": step, "epoch": epoch, "seconds": round(time.time() - start), "train_loss": loss.item(),
                        **parts, "device_gb": round(device_memory(a.device), 2), "indist": ev_in, "heldout": ev}
                 if K:

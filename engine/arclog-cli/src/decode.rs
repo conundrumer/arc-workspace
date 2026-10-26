@@ -1,8 +1,8 @@
 //! `decode`: steps the decoder through the token stream of each case
 //! program of the corpus that holds no `DEMONSTRATED` form, as
 //! `docs/engine/synthesis.md#synthesis` gives the end checks of the step: the
-//! decoder admits the stream in full, closed-world; the consistency result
-//! at the stream's last `END` equals the case's solves outcome at the values
+//! decoder admits the stream, closed-world; the consistency result at the
+//! `END` of its `&output` equals the case's solves outcome at the values
 //! the determination determines; and the rows of each prefix equal the rows
 //! of a decode in a task session of its own. A difference prints by solver,
 //! with the first of each kind. With `--no-rows` the decode builds no second
@@ -149,7 +149,7 @@ impl Kind {
     }
 }
 
-/// The counts of cases: those decoded in full, those skipped for a
+/// The counts of cases: those decoded, those skipped for a
 /// `DEMONSTRATED` form, and those with a finding of each kind.
 #[derive(Default)]
 struct Counts {
@@ -174,7 +174,7 @@ impl Counts {
             .iter()
             .map(|kind| if *kind == Kind::Rows && rows == RowsMode::NotChecked { "rows not checked".to_owned() } else { format!("{} {}", found(*kind), kind.label()) })
             .collect();
-        format!("{} cases decoded in full, {} skipped for a `DEMONSTRATED` form, {}", self.decoded, self.demonstrated, others.join(", "))
+        format!("{} cases decoded, {} skipped for a `DEMONSTRATED` form, {}", self.decoded, self.demonstrated, others.join(", "))
     }
 }
 
@@ -247,7 +247,7 @@ fn decode_cases(corpus: &Path, tasks: &Path, id: &str, all: bool, rows: RowsMode
             continue;
         }
         let expected = expected_solves(case, &determination, &judged);
-        let case_run = catch_unwind(AssertUnwindSafe(|| decode_case(resolved_case(&cases, case.name), cases.concept().case.name == *case.name, case.program, expected, &task, &judged, rows, gathered)))
+        let case_run = catch_unwind(AssertUnwindSafe(|| decode_case(resolved_case(&cases, case.name), case.program, expected, &task, &judged, rows, gathered)))
             .unwrap_or_else(|payload| vec![(Kind::Refused, format!("the decoder panicked: {}", panic_message(&*payload)))]);
         let mut found = BTreeSet::new();
         for (kind, line) in case_run {
@@ -282,7 +282,7 @@ fn resolved_case<'a>(cases: &'a ResolvedCases, name: &CaseName) -> &'a ResolvedC
 
 /// The findings of the decode of `program`'s token stream, and the time of
 /// each token into `gathered`.
-fn decode_case(case: &ResolvedCase, concept: bool, program: &CheckedProgram, expected: Result<bool, String>, task: &Task, judged: &JudgedTask, rows: RowsMode, gathered: &mut Totals) -> Vec<(Kind, String)> {
+fn decode_case(case: &ResolvedCase, program: &CheckedProgram, expected: Result<bool, String>, task: &Task, judged: &JudgedTask, rows: RowsMode, gathered: &mut Totals) -> Vec<(Kind, String)> {
     let mut findings: Vec<(Kind, String)> = Vec::new();
     let constructions = constructions().expect("the table of constructions built for the determination");
     let registry = Registry::get();
@@ -292,13 +292,13 @@ fn decode_case(case: &ResolvedCase, concept: bool, program: &CheckedProgram, exp
     let train: Arc<[PairCandidates<'_>]> = judged.train.iter().map(|pair| PairCandidates::of(pair, Section::Train, World::Closed)).collect();
     let mut decoder = Decoder::new(task, &session, registry, constructions, &settings).judging(train);
     let mut mirror = mirror_session.as_ref().map(|session| Decoder::new(task, session, registry, constructions, &settings));
-    let stream = match case_stream(case, concept, program, decoder.vocabulary()) {
+    let stream = match case_stream(case, program, decoder.vocabulary()) {
         Ok(stream) => stream,
         Err(fault) => return vec![(Kind::Refused, fault)],
     };
     let mut consistency = None;
     let mut rows_found = false;
-    let replayed = replay(&mut decoder, &stream, true, &mut |decoder, stepped| {
+    let replayed = replay(&mut decoder, &stream.tokens, true, &mut |decoder, stepped| {
         let Stepped { index, token, consistency: result, mask, step_seconds } = stepped;
         let mask_seconds = mask.expect("the replay computes the mask").seconds;
         gathered.mask.push(mask_seconds);

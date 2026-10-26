@@ -311,16 +311,15 @@ lands_at([S, L, C, $SameCell(), $StoredGap(), B, U], Q, X) :-
     params.gap(K), jump(F, D, K, F_base), neighbor(F_base, D, X).
 
 // --- $Stack ---
-// The satellites that rest against F, in order from F: F ranks 0, and the
-// satellite of rank N lands N cells beyond the pile's base.
+// The satellites that rest against F, in order of their distance from P:
+// F, the nearest, ranks 0, and the satellite of rank N lands N cells beyond
+// the pile's base.
 // @claim pull-in
 .init pile = Order<Pile, Position>
 pile.elem([Ch, P, D, F], F) :- rest_on(Ch, P, D, F, _).
 pile.elem([Ch, P, D, F], Q) :- rest_on(Ch, P, D, F, Q).
-pile.before([Ch, P, D, F], F, Q) :- rest_on(Ch, P, D, F, Q).
-pile.before([Ch, P, D, F], Q1, Q2) :-
-    rest_on(Ch, P, D, F, Q1), pull(Ch, P, Q1, D, K1),
-    rest_on(Ch, P, D, F, Q2), pull(Ch, P, Q2, D, K2), K1 < K2.
+pile.score([Ch, P, D, F], F, K) :- rest_on(Ch, P, D, F, Q), stop.high([Ch, P, Q], F, K).
+pile.score([Ch, P, D, F], Q, K) :- rest_on(Ch, P, D, F, Q), pull(Ch, P, Q, D, K).
 
 // --- $Stack & $NoGap ---
 lands_at([S, L, C, $Stack(), $NoGap(), B, U], Q, X) :-

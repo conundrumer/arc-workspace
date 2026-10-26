@@ -184,7 +184,6 @@ class Linter:
         self.side: dict[str, str] = {}
         self.inst_comp: dict[str, str] = {}
         self.all_names: set[str] = set()
-        self.inst_keys: dict[str, set[str]] = {}   # a keyed instance and its key labels
         self.concept_names: set[str] = set()
         self.block: dict[str, int] = {}   # relation -> line of its clause in the current block
         self.rigid_parts: dict[str, set[str]] = {}   # a RIGID_DET form -> the parts its atoms name, and pose
@@ -259,11 +258,6 @@ class Linter:
                 self.all_names.add(f.items[1].text)
                 if not alt:
                     self.concept_names.add(f.items[1].text)
-                if f.head == "INIT":
-                    for c in f.items[3:]:
-                        if isinstance(c, L) and c.head == "key" and len(c.items) > 1:
-                            self.inst_keys.setdefault(f.items[1].text, {
-                                t.text[1:] for t in walk(c.items[1]) if isinstance(t, Sym) and t.text[:1] == "^"})
             self.prescan(f.items[1:], alt or f.head == "ALTS")
 
     def forms(self, forms, alt: bool) -> None:
@@ -1401,10 +1395,7 @@ class Ctx:
             return
         text = flat(x)
         keys = set(scope.made)
-        # a read of an instance keyed by the key's labels joins on them
-        joined = any(ks and ks <= keys for n, ks in getattr(self.lt, "inst_keys", {}).items()
-                     if re.search(rf"\({re.escape(n)}\.", text))
-        if not (keys & set(re.findall(r"(?<![\w*^:&.])([A-Z]\w*)", text))) and not joined and \
+        if not (keys & set(re.findall(r"(?<![\w*^:&.])([A-Z]\w*)", text))) and \
                 not (self.own and f"{self.own}." in text):
             self.err(x.line, "broadcast-inside", f"({x.head} ...) reads no key label and stands inside the key")
 
@@ -2077,37 +2068,6 @@ def structure(lt: Linter, forms) -> None:
             if a.head in DECL_HEADS and isinstance(x, Sym) and x.text.startswith("&") and not out_line \
                     and not re.fullmatch(r"&[a-z][a-z0-9_]*", x.text):
                 err(a.line, "spelling", f"{a.head} {x.text}: a declared name is & and a snake_case word")
-
-    # -- key sites on a read at the same key
-    inst_keys: dict[str, list[str]] = {}
-    for f in forms:
-        for a in walk(f):
-            if isinstance(a, L) and a.head == "INIT" and len(a.items) > 2 and isinstance(a.items[1], Sym):
-                for c in a.items[3:]:
-                    if isinstance(c, L) and c.head == "key" and len(c.items) > 1:
-                        ks = []
-                        for t in walk(c.items[1]):
-                            if isinstance(t, Sym) and t.text[:1] == "^" and t.text[1:] not in ks:
-                                ks.append(t.text[1:])
-                        inst_keys[a.items[1].text] = ks
-    for f in forms:
-        for a in walk(f):
-            if not (isinstance(a, L) and a.head == "INIT" and len(a.items) > 2):
-                continue
-            for c in a.items[3:]:
-                if not (isinstance(c, L) and c.head == "key" and len(c.items) > 1):
-                    continue
-                ks = inst_keys.get(a.items[1].text, [])
-                for x in c.items[2:]:
-                    for at in walk(x):
-                        if not (isinstance(at, L) and at.head and at.head.startswith("&") and "." in at.head):
-                            continue
-                        other = inst_keys.get(at.head.partition(".")[0])
-                        for site in at.items[1:]:
-                            if isinstance(site, L) and site.head == ":key" and other == ks and ks and \
-                                    [t.text if isinstance(t, Sym) else None for t in site.items[1:]] == ks:
-                                err(site.line, "key-site", f"{at.head} (:key {' '.join(ks)}): a read at the key "
-                                    "in scope joins on it without a key site")
 
     # -- demonstrated rules
     for f in forms:
@@ -2851,9 +2811,10 @@ def main(argv: list[str]) -> None:
         groups[p.with_suffix(".arclog") if p.suffix == ".arcdata" else p].append(p)
     order = sorted(groups.values(), key=lambda g: -sum(x.stat().st_size for x in g if x.exists()))
     if len(order) > 20:
-        import os
         from concurrent.futures import ProcessPoolExecutor
-        with ProcessPoolExecutor(min(len(order), os.cpu_count() or 4)) as pool:
+
+        from engine.pool import pool_size
+        with ProcessPoolExecutor(min(len(order), pool_size())) as pool:
             found = dict(x for got in pool.map(lint_group, order) for x in got)
     else:
         found = dict(x for g in order for x in lint_group(g))

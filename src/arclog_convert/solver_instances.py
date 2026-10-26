@@ -13,8 +13,11 @@ from engine.program import (
     ConstructorTerm,
     DefinedName,
     NumberTerm,
+    RecordTerm,
     RelationName,
+    Scope,
     Unit,
+    UnitId,
     Variable,
     Wildcard,
 )
@@ -51,8 +54,29 @@ LABEL = re.compile(r"(?<![(:\w&.])[*^]?([A-Z]\w*)")
 """A label of a written form, as it stands in a form line."""
 
 
+def set_name(amp: str) -> str:
+    """The relation that holds the set an open parameter's Souffle determination
+    derives, whose `(ONE)` pick the parameter's own name holds."""
+    return amp + "_set"
+
+
+READ = re.compile(r"\((&\w+)(?=[\s)]|$)")
+"""A relation a form line reads, `(&name` up to the end of the name."""
+
+DET_HEAD = re.compile(r"\((?:DET|DET_OR_RULE) (&\w+)(?=[\s)]|$)")
+"""The head of a determination, and the relation it derives."""
+
+
+def line_reads(f: Form) -> set[str]:
+    """The relations a form's lines read."""
+    return {m.group(1) for l in f.lines for m in READ.finditer(l)}
+
+
 class InstancesMixin:
     """The clauses of a solver, their instances and its pick forms."""
+
+    used_sets: frozenset[str] = frozenset()
+    """The open parameters that `settle_sets` writes as a set and a pick."""
 
     def clause(self, u: Unit, side: str, scope, sub, name_scope=None, drop_neg=frozenset()) -> Form:
         c = self.c
@@ -160,7 +184,7 @@ class InstancesMixin:
         branches |= w.branches
         marks = self.one_lines(u, col_names)
         if side == "DET" and hname in self.open_amps() and "(ONE)" not in marks:
-            marks.append("(ONE)")   # an open parameter: each of its values is a model
+            marks.append("(ONE)")   # an open parameter: each of its values is a model; `settle_sets` writes its set
         todos = self.todo.take()
         name = hname
         head_line = f"({side} {name}"
@@ -216,6 +240,57 @@ class InstancesMixin:
                 continue
             out.append("(" + " ".join(["ONE"] + [name[v] for v in key]) + ")")
         return out
+
+    # ---- the set of an open parameter
+
+    @staticmethod
+    def det_side(f: Form) -> bool:
+        return (f.src is not None and f.src[1] == "DET") or (f.src_inst is not None and f.src_inst[2] == "DET")
+
+    def settle_sets(self, forms: list[Form]) -> list[Form]:
+        """`forms`, with each open parameter that a `DET` body reads written in
+        two determinations: the Souffle determination as a `DET` of `set_name`
+        with no `ONE` mark, and a `DET` that picks one row of that set. Each
+        read of the parameter in a `DET` body reads the set."""
+        names = {self.c.rel_name(("Params",), n): n for n in self.c.open_params}
+        determined = {m.group(1) for f in forms if (m := DET_HEAD.match(f.lines[0])) and m.group(1) in names}
+        self.used_sets = frozenset(determined & {r for f in forms if self.det_side(f) for r in line_reads(f)})
+        out = [self.settled(f) for f in forms]
+        for amp in sorted(self.used_sets):
+            n = names[amp]
+            cols = self.c.rels[(("Params",), n)].columns
+            args = tuple(Variable(f"V{i}") for i in range(len(cols)))
+            atom = Atom(RelationName(("params",), n), args, 0)
+            pick = Unit(UnitId(self.c.prog.next_unit_index()), Scope(("Determine",)), atom,
+                        (AtomLiteral(atom, False),), None, None)
+            out.append(self.settled(self.clause(pick, "DET", ("Determine",), {})))
+        return out
+
+    def settled(self, f: Form | None) -> Form | None:
+        """`f` as `settle_sets` writes it."""
+        if f is None or not self.used_sets:
+            return f
+        if self.det_side(f):
+            sets = line_reads(f) & self.used_sets
+
+            def reading(text: str) -> str:
+                return READ.sub(lambda m: "(" + set_name(m.group(1)) if m.group(1) in sets else m.group(0), text)
+            f.lines = [reading(l) for l in f.lines]
+            if f.body is not None:
+                f.body = [reading(l) for l in f.body]
+            for attr in ("reads", "top_pos", "top_neg", "nested"):
+                setattr(f, attr, {set_name(r) if r in sets else r for r in getattr(f, attr)})
+        m = DET_HEAD.match(f.lines[0])
+        if m and m.group(1) in self.used_sets and set_name(m.group(1)) not in f.reads:
+            # the Souffle determination, and not the pick that reads it
+            f.name = set_name(f.name)
+            f.marks = [x for x in f.marks if x != "(ONE)"]
+            if f.body is None:
+                f.lines[0] = f.lines[0].replace(m.group(1), f.name, 1)
+            else:
+                f.lines = [f.lines[0].replace(m.group(1), f.name, 1)] + ["  " + l for l in f.body + f.marks]
+                close(f.lines, ")")
+        return f
 
     def plain_comments(self, line: int) -> list[str]:
         out = []
@@ -341,7 +416,8 @@ class InstancesMixin:
         key_leaves = c.leaves("key", "Key", True, scope, sub, outer=lsub)
         has_key = any(l.kind in ("keep", "example") for l in key_leaves)
         # the key clause: the atoms over key labels alone, where every input
-        # clause shares them; else the union of the generators' bodies
+        # clause shares them; else the union of the generators' bodies, which is
+        # also the key clause of a Cardinality with no domain clause
         residual: dict[int, list] = {}
         key_body: list[str] | None = None
         blocks: list[list[str]] = []
@@ -392,7 +468,11 @@ class InstancesMixin:
             gens = [u for u in us if u.body is not None and u.head.relation.name not in unkeyed and not any(
                 isinstance(l, AtomLiteral) and l.atom.relation.instances[:1] == (inst.name,) for l in u.body)]
             shared = None
-            if gens and all(id(u) in groups for u in gens):
+            # a Cardinality with no domain clause gets its domain from the key,
+            # which then holds only the keys that some member has
+            renamed = libmap.COMP.get(inst.component)
+            counts_members_only = renamed is not None and renamed.name == "Cardinality" and "domain" not in written
+            if gens and not counts_members_only and all(id(u) in groups for u in gens):
                 cands = {tuple(groups[id(u)][0]) for u in gens}
                 if len(cands) == 1:
                     shared = list(next(iter(cands)))
@@ -403,6 +483,7 @@ class InstancesMixin:
                     if g and g[0] == shared:
                         residual[id(u)] = [l for i, l in enumerate(u.body) if i not in g[1]]
                         reads |= g[2].reads
+                        branches |= g[2].branches
             elif gens:
                 uniq = []
                 for u in gens:
@@ -492,15 +573,24 @@ class InstancesMixin:
 
         def skipped(u, lr) -> bool:
             """An input clause the engine fills from the key: the registry marks the
-            input `from-key`."""
+            input `from-key`, and for each kept leaf of the head the key has exactly
+            one label of the leaf's type, which is the head's label at that leaf (the
+            engine's `key_fill`). Two type names are one type where each alias and
+            subtype they name, followed to its end, gives one name. A leaf or a key
+            label with no type keeps the clause."""
             ren = kren(u)
             saved = list(self.todo.pending), Counter(self.todo.kinds)
-            labs = [lab_of(t, ren) for _, kept in head_terms(u, lr, ren) for _, t in kept]
+            leaf_labs = [(l, lab_of(t, ren)) for _, kept in head_terms(u, lr, ren) for l, t in kept]
             self.todo.pending, self.todo.kinds = saved
             ren_ = libmap.COMP.get(inst.component)
             target = ren_.name if ren_ else inst.component
             port = ren_.parts.get(lr.name, lr.name) if ren_ else lr.name
-            skip = port in FROM_KEY.get(target, ()) and all(lab in kn for lab in labs)
+            key_ls = [l for l in key_leaves if l.kind in ("keep", "example")]
+            root = lambda l: c.type_root(l.type, scope)
+            filled = len(key_ls) == len(knames) and all(l.type for l in key_ls) and all(
+                leaf.type and [n for n, k in zip(knames, key_ls) if root(k) == root(leaf)] == [lab]
+                for leaf, lab in leaf_labs)
+            skip = port in FROM_KEY.get(target, ()) and filled
             own_read = any(isinstance(l, AtomLiteral) and l.atom.relation.instances[:1] == (inst.name,)
                            for l in u.body)
             return skip and ((own_read and len(u.body) == 1) or not residual.get(id(u), list(u.body)))
@@ -706,7 +796,8 @@ class InstancesMixin:
         key_leaves = c.leaves("key", "Key", True, scope, sub, outer=lsub)
 
         def head_labels(input_name: str) -> list[list[str]]:
-            """The labels of each head site of the input, as the lines give them."""
+            """The labels of each head site of the input, as the lines give them: at a
+            site of fields, the name of each field, and at another, each label."""
             for line in f.lines:
                 s = line.strip()
                 if s.startswith(f"({input_name} (("):
@@ -721,7 +812,8 @@ class InstancesMixin:
                         elif ch == ")":
                             depth -= 1
                             if depth == 0:
-                                out.append(cur.split()[1:])
+                                _, _, args = cur.partition(" ")
+                                out.append([m[1] or m[2] for m in re.finditer(r"\(:([^\s()]+)[^()]*\)|([^\s()]+)", args)])
                                 continue
                             if depth < 0:
                                 break
@@ -752,8 +844,9 @@ class InstancesMixin:
                 ren = self.key_rename(u, key_leaves, knames)
                 targets = []
                 for t, labs in zip(u.head.args[2:], vlabs):
-                    if isinstance(t, Variable) and len(labs) == 1:
-                        targets.append((t.name, labs[0]))
+                    leaves = t.args if isinstance(t, RecordTerm) else (t,)
+                    if len(leaves) == len(labs) and all(isinstance(x, Variable) for x in leaves):
+                        targets.extend((x.name, lab) for x, lab in zip(leaves, labs))
                 vs: set[str] = set()
                 collect_vars(list(u.body or ()), vs)
                 given = {tl for _, tl in targets}
@@ -776,7 +869,7 @@ class InstancesMixin:
                 rule_reads |= w.reads
                 pred_branches |= w.branches | {x for x in ctor_names(u.head.args[0]) if x in case_ctors}
                 todos = self.todo.take()
-                if len(targets) != len(vlabs):
+                if len(targets) != len(flat_v):
                     self.todo.add("head-term", f"{rule}: a prediction head site that is no label")
                     todos += self.todo.take()
                 texts += self.plain_comments(u.span.first if u.span else 0)

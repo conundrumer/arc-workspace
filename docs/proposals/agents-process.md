@@ -44,7 +44,7 @@ The figures below come from a web search by a Sonnet agent on 2026-10-10. Its fe
 | Declines and decisions brought to the user (6-67, 6-70) | Decision management | 6.3.3 |
 | Code shape decided before the code (6-87, duplicates) | Design definition | 6.4.5 |
 | Editors' edits | Implementation | 6.4.7 |
-| Ticket review, doc review, code review, gate | Verification | 6.4.9 |
+| Ticket review, doc review, code review | Verification | 6.4.9 |
 | Need met after the merge (6-36, 6-63) | Validation | 6.4.11 |
 | Merge, hotfix review (6-77, 6-82) | Integration; Transition | 6.4.8; 6.4.10 |
 | Transcript reviews, the monitor's alerts, root-cause work | Quality assurance (it includes the handling of incidents and problems) | 6.3.8 |
@@ -199,12 +199,12 @@ The figures below come from a web search by a Sonnet agent on 2026-10-10. Its fe
     - Lines already in force in the agents' documents get a standing review, as code already in the tree gets the code review.
     - A finding in a later round of a review falls only on text that changed since the earlier round.
 - Takes from: implementation, requirements. Gives to: integration.
-- Owner: the ticket reviewer for the plan. A change reviewer for the built change (6-86 gives this to a ticket analyst). The doc reviewer for the form of documents. The code reviewer and the gate for code.
+- Owner: the ticket reviewer for the plan. A change reviewer for the built change (6-86 gives this to a ticket analyst). The doc reviewer for the form of documents. The code reviewer for code.
 - Today:
     - Ticket review: 537 `finding:` lines by ticket reviewers, on 187 of the 326 `change` tickets. 72 had three or more findings, and the most was 23 (2-645). The lines are in scratchpad `proposal-6-85/rev-findings.txt`.
     - A change to code alone gets no doc review: `carry` runs `doc_review` only where a doc editor took part (6-86 Grounds). For every change, a ticket analyst checks each item of each editor's latest report against the worktree (`prompts/agents/notes/changes.md`).
     - A change to documents gets a doc review by the steps of `docs/handbook/editing.md`, Reviewing a change. It reads each reader's rendered context, and checks form, conflicts with lines outside the change, and new powers. Those steps check no Intent: the reviewer reports "nothing on a decision the one who asked for the change gives as already settled". A trial runs a reader on the edited text, on the case of each Intent item that alters what an agent does (`prompts/agents/doc-reviewer.md`, Trials).
-    - Code has the gate, pyright, pytest and a standing code review of the tree. Documents have none of the gate's kind. A standing doc review reads a reader's whole context in force (`prompts/agents/doc-reviewer.md`). One audit of lines in force was run once (2-360).
+    - Code has pyright and a standing code review of the tree. A standing doc review reads a reader's whole context in force (`prompts/agents/doc-reviewer.md`). One audit of lines in force was run once (2-360).
 - Evidence:
     - Review rounds as a recurring fault: "draft 2-569 took seven rounds, draft 2-575 five, and draft 2-579 ten" (2-596). The fixes 2-495 and 2-530 did not end it. One cause: "a review stops at one finding, or checks only the parts its brief says were revised" (2-529 log). For documents, `prompts/agents/doc-editor.md` cites change 17, where "each fix brought the next finding" across four messages.
     - Change 2-729 closed `fixed` while its editors left most places undone, "27 of which no edit addressed" (2-787).
@@ -246,9 +246,9 @@ The figures below come from a web search by a Sonnet agent on 2026-10-10. Its fe
 ### Integration (6.4.8) and transition (6.4.10)
 
 - Purpose: merge a verified change into `master` and make it live, with no change that skips verification.
-- Principles: "keep a merge's gate under a minute" (The user's preferences).
+- Principles: "keep a merge's checks under a minute" (The user's preferences).
 - Outcomes:
-    - Each merge passes the gate and the checks of `scripts/merge_change.py`.
+    - Each merge passes the checks of `scripts/merge_change.py`.
     - A change merged with no ticket review or no change review (a hotfix) gets both after it merges.
     - A merge that fails or is denied reaches a role that acts on it.
 - Takes from: verification. Gives to: validation.

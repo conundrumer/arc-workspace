@@ -196,7 +196,11 @@ least.cand([Cc, Cp, Lc], Col, N) :- measure(Cc, Col, N), competitor(Cp, Lc, Col)
 // The colors mirrored.
 .decl copied_color(r: Rank, t: Ties, col: Color)
 
-// q is the image of cell p in the mirror.
+// A cell of a color mirrored under line color lc.
+.decl mirrored(lc: LineColor, p: Position)
+mirrored(Lc, P) :- copied_color([_, _, Lc], _, Col), in(P, Col).
+
+// q is the image of a mirrored cell p in the mirror.
 .decl image(pl: MirrorPlace, lc: LineColor, p: Position, q: Position)
 
 // Cell q takes color col from the image of a mirrored cell.
@@ -318,11 +322,11 @@ copied_color(R, $CopyAllLeast(), Col) :- least.low(R, Col, _).
 // p's offset from a line cell, reflected, taken from that cell.
 image($DrawnLine(), Lc, P, Q) :-
     line_flip(Lc, F), line_color(Lc, L_col), in(L, L_col),     // a line cell
-    in(P, _), relative(L, P, V), apply(F, V, V2), compose(L, V2, Q).
+    mirrored(Lc, P), relative(L, P, V), apply(F, V, V2), compose(L, V2, Q).
 
 // --- $FrameFlip ---
 
-image($FrameFlip(), Lc, P, Q) :- line_flip(Lc, F), in(P, _), apply(F, P, Q).
+image($FrameFlip(), Lc, P, Q) :- line_flip(Lc, F), mirrored(Lc, P), apply(F, P, Q).
 
 // --- $PaintOver ---
 

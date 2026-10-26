@@ -1,7 +1,0 @@
-train 0: PASS (2 witnessed cases)
-train 1: PASS (2 witnessed cases)
-train 2: PASS (2 witnessed cases)
-test 0: PASS (2 witnessed cases)
-
-lint: ok
-determination: ok (glyph_aim, glyph_apex, glyph_shape)

@@ -87,12 +87,11 @@ class Record:
                 selected = tuple(set(ids))
                 if not selected:
                     return ()
-                values = ','.join('(?)' for _ in selected)
-                rows = db.execute(f"""WITH RECURSIVE selected(agent) AS (
-                    VALUES {values}
+                rows = db.execute("""WITH RECURSIVE selected(agent) AS (
+                    SELECT value FROM json_each(?)
                     UNION SELECT identities.agent FROM identities JOIN selected ON identities.parent=selected.agent)
                     SELECT kind, data FROM events WHERE agent IN selected OR recipient IN selected
-                    ORDER BY at, source""", selected).fetchall()
+                    ORDER BY at, source""", (json.dumps(selected),)).fetchall()
         kinds = {kind.__name__: kind for kind in a.EVENTS}
         events = []
         for kind, text in rows:

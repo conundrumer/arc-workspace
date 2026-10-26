@@ -16,6 +16,13 @@ use arclog::terms::{Margins, Term, TermId};
 
 /// The straight path from each source toward each direction, each step
 /// onto a node, with its last cell.
+///
+/// A source that is no node first crosses the Positions off the grid, those
+/// with a margin below 0, as the lib's `Ray.cast` does: a step reaches such a
+/// Position where each margin it lowers stays at or above 0. From its first
+/// node on, a cast reaches only nodes. A source that a grid holds and that is
+/// no node crosses nothing, since a step that leaves its grid lowers a margin
+/// below 0.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Ray;
 
@@ -43,7 +50,7 @@ impl Construction for Ray {
                     if group.wanted[0] {
                         ray.insert(Box::new([p, d, Term::encode_count(k), origin]));
                     }
-                    match step(context.registry, node, p, offset) {
+                    match cast_step(context.registry, node, p, offset) {
                         Some(q) => (p, k) = (q, k + 1),
                         None => break,
                     }
@@ -199,10 +206,33 @@ impl Construction for Outlines {
 /// The node one step from `p` by `offset`, or `None` where that cell is not
 /// in `nodes`: the cell `p` is exposed toward the step in Boundary's sense.
 fn step(registry: &Registry, nodes: &RowSet, p: TermId, offset: TermId) -> Option<TermId> {
+    compose(registry, p, offset).filter(|&q| nodes.contains(&[q]))
+}
+
+/// The cell one step from `p` by `offset` in a cast of Ray: a node, or,
+/// where `p` is no node, a Position off the grid that the step enters
+/// without lowering a margin below 0. `None` where the cast ends at `p`.
+fn cast_step(registry: &Registry, nodes: &RowSet, p: TermId, offset: TermId) -> Option<TermId> {
+    let q = compose(registry, p, offset)?;
+    let crosses = !nodes.contains(&[p]) && enters_off_grid(Term::decode_box(p), Term::decode_box(q));
+    (nodes.contains(&[q]) || crosses).then_some(q)
+}
+
+/// Whether the Position `q` has a margin below 0 and each margin of `q`
+/// lower than that of `p` is at or above 0.
+fn enters_off_grid(p: Margins, q: Margins) -> bool {
+    let margins = |m: Margins| [m.top, m.bottom, m.left, m.right];
+    let (p, q) = (margins(p), margins(q));
+    q.iter().any(|&margin| margin < 0) && p.iter().zip(&q).all(|(&before, &after)| after >= before || after >= 0)
+}
+
+/// The Position one step from `p` by `offset`, or `None` where a margin of it
+/// is outside a signed byte.
+fn compose(registry: &Registry, p: TermId, offset: TermId) -> Option<TermId> {
     let mut q = None;
     // A margin outside a signed byte is a cell no node holds.
     let _ = BoxRelation::Compose.evaluate(&[Some(p), Some(offset), None], registry, &mut |row| q = Some(row[2]));
-    q.filter(|&q| nodes.contains(&[q]))
+    q
 }
 
 /// The Offset of one step toward the Dir8 `d`.

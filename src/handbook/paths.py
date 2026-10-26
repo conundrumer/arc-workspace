@@ -1,6 +1,6 @@
 """The locations the handbook's readers read and write, from the root of
 the checkout. The documents the readers' contexts are rendered from are
-read under `DOCUMENTS_ROOT`, which an environment variable can move."""
+read under `DOCUMENTS_ROOT`."""
 
 import sys
 from pathlib import Path
@@ -10,12 +10,7 @@ from engine import checkout
 REPO_ROOT = checkout.ROOT
 """The checkout the readers work in."""
 
-DOCUMENTS_ENV = "ARC_DOCUMENTS_DIR"
-"""The environment variable that names a directory, laid out as the
-checkout is, to read the documents the contexts are rendered from in place
-of the checkout's root."""
-
-DOCUMENTS_ROOT = checkout.from_env(DOCUMENTS_ENV, checkout.ROOT)
+DOCUMENTS_ROOT = checkout.ROOT
 """The root the documents the contexts are rendered from are read under."""
 
 
@@ -39,7 +34,7 @@ def importable(directory: Path) -> None:
 
 
 def scripts_importable() -> None:
-    """`scripts/` is no package, and a test or a script loads a script by
-    its path with `scripts/` off `sys.path`, so a script that imports from
-    `scripts/` calls this first."""
+    """`scripts/` is no package, and a script is loaded by its path with
+    `scripts/` off `sys.path`, so a script that imports from `scripts/`
+    calls this first."""
     importable(checkout.scripts())

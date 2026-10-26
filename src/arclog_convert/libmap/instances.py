@@ -47,11 +47,36 @@ from engine.program import (AliasType, AdtType, Atom, AtomLiteral, Comparison, C
 
 ROOT = Path(__file__).resolve().parents[3]
 
+LIB_PATH = "@lib"
+"""The instance path of a relation of the lib whose name a relation of the solver takes
+(`Expander.lib_names`)."""
+
 GROUNDED: set[tuple[tuple[str, ...], str, str]] = set()
 """Each input, as its instance's scope, the instance's name and its name,
 that a shape's clause writes with a grounding read: the clause's atoms that
 share no variable with the rest of it restrict nothing the shape's relations
 hold. `expand` gives the inputs of its latest run."""
+
+
+type Placement = int | None | tuple[int | None, ...]
+"""Where a shape atom's argument stands in the Souffle atom of the pattern
+that reads it: the index of the pattern's argument that holds its variable;
+for a record term, the index for each field; none for `_`."""
+
+
+@dataclass(frozen=True)
+class Held:
+    """A Souffle relation that a relation of an expansion's shape holds: the
+    Souffle instance's name and the relation's name in it, and the
+    `Placement` of each argument of the shape's atom in the Souffle
+    relation's."""
+    instance: str
+    relation: str
+    columns: tuple[Placement, ...]
+
+
+type HeirKey = tuple[tuple[str, ...], str]   # an heir instance: its scope and its name
+type ShapeKey = tuple[tuple[str, ...], str]   # a relation of a shape: its scope and its name
 
 
 @dataclass
@@ -76,6 +101,34 @@ def _parse(text: str) -> SouffleProgram:
 
 def _atom(text: str) -> Atom:
     return _parse(f"{text} :- true.").units[0].head
+
+
+def _pure_columns(pattern: Atom, body: tuple) -> tuple[Placement, ...] | None:
+    """The `Placement` of each argument of the replacement `body` of a read
+    of `pattern`, where `body` is one positive atom whose arguments each
+    hold a variable of the pattern, a record of such variables, or `_`;
+    otherwise None."""
+    if len(body) != 1 or not isinstance(body[0], AtomLiteral) or body[0].negated:
+        return None
+    index = {a.name: i for i, a in enumerate(pattern.args) if isinstance(a, Variable)}
+    return _placements(body[0].atom.args, index)
+
+
+def _placements(args: tuple, pattern: dict[str, int]) -> tuple[Placement, ...] | None:
+    """The `Placement` of each of the arguments `args` of a shape atom, given
+    the index of each variable of the pattern atom; None where an argument is
+    none of a variable of the pattern, a record of such variables, and `_`."""
+    out: list[Placement] = []
+    for a in args:
+        if isinstance(a, Wildcard):
+            out.append(None)
+        elif isinstance(a, Variable) and a.name in pattern:
+            out.append(pattern[a.name])
+        elif isinstance(a, RecordTerm) and all(isinstance(x, Variable) and x.name in pattern for x in a.args):
+            out.append(tuple(pattern[x.name] for x in a.args if isinstance(x, Variable)))
+        else:
+            return None
+    return tuple(out)
 
 
 # ---- terms
@@ -187,7 +240,8 @@ class Expander:
         self.made: dict[tuple, dict[str, str]] = {}   # an instance's relations derived from inputs, by input
         self.sig_top = set(getattr(lib, "sig_top", ()))   # the lib relations only the signature holds
         self.own: dict[UnitId, tuple] = {}   # a shape's clause: its instance, whose new relations it reads
-        self.moved: dict[str, tuple[str, dict[str, str]]] = {}   # an heir instance: the name it stands for, and its moves
+        self.moved: dict[HeirKey, tuple[str, dict[str, str]]] = {}   # an heir instance, by its scope and name: the name it stands for, and its moves
+        self.held: dict[ShapeKey, list[Held]] = {}   # a relation of a shape, by its scope and name: each Souffle relation it holds
         self.from_input: set[UnitId] = set()   # a clause of a relation derived from an input: the solver's reads
         self.plans: dict = {}
         self.outputs_only = False
@@ -246,7 +300,9 @@ class Expander:
         input grid at the top level, the example's input under an Example
         field of the key, and Parse's `cell` under a field of Parse's key
         type; None where the key holds no such field. A Unit key at the top
-        level is `$U()`, which a clause need not ground."""
+        level is `$U()`, which a clause need not ground. A Ray or Between
+        takes this frame as its `node` where `places` holds for its marks,
+        and the cells of a `Frame` over the marks' extents otherwise."""
         scope = inst.scope.components
         if inst.type_args[0].text == "Unit" and not scope:
             return "$U()", "in(P, _)"
@@ -274,6 +330,65 @@ class Expander:
         pat, atom = walk(inst.type_args[0].text)
         return (pat, atom) if atom else None
 
+    def places(self, inst: Instance) -> bool:
+        """Each mark of the instance lies in the frame `frame` gives: each
+        clause of its `mark` input has for its position term a variable that
+        a positive atom of the clause's body binds at a placing column.
+
+        - The position column of the frame's relation (`in`, `ex_in`, or
+          Parse's `cell`); for the keyed ones, the atom reads an example or
+          a Parse key that a variable of the head's key columns gives.
+        - The result column of `compose`, `neighbor` or `jump`, where the
+          atom's first argument is placed in the same body.
+        - A column of a relation the solver declares at the top level, for
+          the unkeyed frame, where every clause of the relation has for its
+          term at that column a variable placed in its body; a relation met
+          again on the walk places nothing.
+
+        Anything else places nothing: a constant, a record, `ex_out`, an
+        output of an instance, and any other lib relation or functor. A
+        mark outside that frame takes the cells of a `Frame` over its
+        extents for its `node`."""
+        f = self.frame(inst)
+        if f is None:
+            return False
+        frame_name = f[1].split("(")[0]
+        frame_col = 0 if frame_name == "in" else 1
+        translate = {"compose": (0, 2), "neighbor": (0, 2), "jump": (0, 3)}
+
+        def var_placed(v, body, keys: set[str], scope: tuple[str, ...], seen: frozenset) -> bool:
+            if not isinstance(v, Variable):
+                return False
+            return any(col_placed(l.atom, j, body, keys, scope, seen)
+                       for l in body or () if isinstance(l, AtomLiteral) and not l.negated
+                       for j, t in enumerate(l.atom.args) if t == v)
+
+        def col_placed(a: Atom, j: int, body, keys: set[str], scope, seen: frozenset) -> bool:
+            r = a.relation
+            if r.instances:
+                return False
+            if r.name == frame_name and not r.instances and j == frame_col:
+                if frame_name == "in":
+                    return True
+                k = a.args[0]
+                return isinstance(k, Variable) and k.name in keys
+            if r.name in translate and j == translate[r.name][1] and len(a.args) > j:
+                return var_placed(a.args[translate[r.name][0]], body, keys, scope, seen)
+            if frame_name != "in" or scope or (r.name, j) in seen:
+                return False
+            if not any(d.name == r.name and not d.scope.components and (d.span is None or d.span.file is None)
+                       for d in self.prog.relations):
+                return False
+            us = [u for u in self.prog.units if u.head.relation.name == r.name and not u.head.relation.instances
+                  and not u.scope.components]
+            return bool(us) and all(
+                u.body is not None and len(u.head.args) > j
+                and var_placed(u.head.args[j], u.body, set(), (), seen | {(r.name, j)}) for u in us)
+
+        return all(u.body is not None and var_placed(
+            u.head.args[-1], u.body, set(term_vars(u.head.args[:-1], [])), u.scope.components, frozenset())
+            for u in self.inputs(inst, "mark"))
+
     def did(self) -> DeclId:
         self.next_decl += 1
         return DeclId(self.next_decl)
@@ -281,6 +396,13 @@ class Expander:
     def uid(self) -> UnitId:
         self.next_unit += 1
         return UnitId(self.next_unit)
+
+    def hold(self, scope: tuple[str, ...], relation: str, held: Held) -> None:
+        """Record that the relation of a shape `relation` in `scope` holds
+        the Souffle relation `held`."""
+        got = self.held.setdefault((scope, relation), [])
+        if held not in got:
+            got.append(held)
 
     def fmt(self, text: str, inst: Instance) -> str:
         tparams = list(self.lib.comps[inst.component].type_params)
@@ -338,13 +460,16 @@ class Expander:
                     # a directive's relation of the instance: the relation of the shape that stands for it
                     moves = {}
                     for p_, r_ in spec.reads.items():
-                        rep = next(l.atom for l in _parse(f"x__(0) :- {self.fmt(r_, inst)}.").units[0].body or ()
-                                   if isinstance(l, AtomLiteral)).relation
-                        name = f"{inst.name}_{rep.name[3:]}" if rep.name.startswith("in_") and not rep.instances \
-                            else ".".join((*rep.instances, rep.name))
-                        moves[_atom(self.fmt(p_, inst)).relation.name] = name
+                        pattern = _atom(self.fmt(p_, inst))
+                        body = _parse(f"x__(0) :- {self.fmt(r_, inst)}.").units[0].body or ()
+                        rep = next(l.atom for l in body if isinstance(l, AtomLiteral)).relation
+                        placeholder = rep.name.startswith("in_") and not rep.instances
+                        name = f"{inst.name}_{rep.name[3:]}" if placeholder else ".".join((*rep.instances, rep.name))
+                        moves[pattern.relation.name] = name
+                        if not placeholder and (columns := _pure_columns(pattern, body)) is not None:
+                            self.hold(inst.scope.components, name, Held(inst.name, pattern.relation.name, columns))
                     moves |= {r: self.fmt(t, inst) for r, t in spec.moved.items()}
-                    self.moved[heir] = (inst.name, moves)
+                    self.moved[(inst.scope.components, heir)] = (inst.name, moves)
             heads = {_atom(self.fmt(p, inst)).relation.name: (_atom(self.fmt(p, inst)),
                                                                [_atom(self.fmt(h, inst)) for h in hs])
                      for p, hs in spec.inputs.items()}
@@ -539,7 +664,7 @@ class Expander:
 
     def lib_names(self, body, inst):
         """The body with each lib atom whose name a relation of the solver
-        takes read at the path `@lib`, which `Converter.resolve` reads as
+        takes read at the path `LIB_PATH`, which `Converter.resolve` reads as
         the lib's."""
         from arclog_convert.libmap.box import mapped
         scope = inst.scope.components
@@ -547,7 +672,7 @@ class Expander:
         def fn(a: Atom) -> Atom:
             n = a.relation.name
             if not a.relation.instances and (n in self.lib.top or n in self.sig_top) and self.taken(n, scope):
-                return Atom(RelationName(("@lib",), n), a.args, a.line)
+                return Atom(RelationName((LIB_PATH,), n), a.args, a.line)
             return a
         return mapped(body, fn)
 
@@ -564,6 +689,7 @@ class Expander:
         made[name] = rname
         tparams, lrels = self.lib.present(inst.component)
         lr = next(r for r in lrels if r.name == name)
+        self.hold(inst.scope.components, rname, Held(inst.name, name, tuple(range(len(lr.cols)))))
         sub = {p: a.text for p, a in zip(tparams, inst.type_args)}
         cols = ", ".join(f"{c.name.lower()}: {sub.get(c.type, c.type)}" for c in lr.cols)
         rels.append(replace(_parse(f".decl {rname}({cols})").relations[0], id=self.did(),
@@ -705,6 +831,7 @@ class Expander:
         lr = next(r for r in lrels if r.name == a.relation.name)
         rname = f"{inst.name}_{lr.name}"
         if not any(r.name == rname and r.scope == inst.scope for r in self.rels):
+            self.hold(inst.scope.components, rname, Held(inst.name, lr.name, tuple(range(len(lr.cols)))))
             sub = {p: t.text for p, t in zip(tparams, inst.type_args)}
             cols = ", ".join(f"{c.name.lower()}: {sub.get(c.type, c.type)}" for c in lr.cols)
             self.rels.append(replace(_parse(f".decl {rname}({cols})").relations[0], id=self.did(),
@@ -763,7 +890,7 @@ class Expander:
         """The types of the columns of the relation an atom of a clause in
         `scope` reads: a relation of an instance, the lib's, or the solver's."""
         r = a.relation
-        if r.instances and r.instances != ("@lib",):
+        if r.instances and r.instances != (LIB_PATH,):
             shape = _innermost(self.shape_insts, scope, r.instances[0]) if len(r.instances) == 1 else None
             inst = shape or self.resolve(scope, r.instances)
             if shape is None and inst.component in self.comps:
@@ -889,9 +1016,14 @@ def _atoms(x):
 
 def expand(prog, lib, specs):
     """The program with each instance of a component `specs` maps expanded;
-    each read left in place, with the reason; and each instance that stands
-    for an expanded one under another name, with that name and the relation
-    of the shape that stands for each relation of the expanded one."""
+    each read left in place, with the reason; each instance that stands
+    for an expanded one under another name, by its scope and name, with that name and the relation
+    of the shape that stands for each relation of the expanded one; and
+    each relation of a shape, by its scope and name, with each Souffle
+    relation it holds and the columns (`Held`): the relation a read of the
+    component replaces by that relation's atom alone, the relation derived
+    from an input of the instance, and the relation derived for a read that
+    takes several literals."""
     e = Expander(prog, lib, specs)
     out, judgment = e.run()
-    return out, judgment, e.moved
+    return out, judgment, e.moved, e.held

@@ -36,35 +36,39 @@ impl_choice($ColorClass()). impl_choice($Shape()).
 .decl ink(p: Position, col: Color)
 ink(P, Col) :- in(P, Col), !params.bg(Col).
 
-// Two cells of one container.
-.decl together(ch: Choice, p: Position, q: Position)
+// The container a cell belongs to.
+.decl container(ch: Choice, p: Position, k: Ident)
 
 // --- $ColorClass ---
-together($ColorClass(), P, Q) :- ink(P, Col), ink(Q, Col).
+// @claim container
+.init color_id = IdentOf<Color>
+color_id.value(Col) :- ink(_, Col).
+container($ColorClass(), P, K) :- ink(P, Col), color_id.id(Col, K).
 
 // --- $Shape ---
 // @claim container
 .init shapes = Components8<Color>
 shapes.node(Col, P) :- ink(P, Col).
 
-together($Shape(), P, Q) :- shapes.label(Col, P, Id), shapes.label(Col, Q, Id).
+container($Shape(), P, Id) :- shapes.label(_, P, Id).
 
-// A cell of Q's container lies toward D from inked cell P.
-.decl sees(ch: Choice, p: Position, q: Position, d: Dir)
-sees(Ch, P, Q, D) :-
-    ink(P, _), together(Ch, Q, Q2),                          // an inked cell, a container cell
-    axis_of(D, A), same_line(A, P, Q2), nearer(D, Q2, P).    // on P's line, toward D
+// --- $ColorClass, $Shape ---
+// A cell of container K lies toward D from inked cell P.
+.decl sees(ch: Choice, p: Position, k: Ident, d: Dir)
+sees(Ch, P, K, D) :-
+    ink(P, _), container(Ch, Q, K),                         // an inked cell, a container cell
+    axis_of(D, A), same_line(A, P, Q), nearer(D, Q, P).     // on P's line, toward D
 
-// Q's container sits on both sides of P along axis A.
-.decl between(ch: Choice, p: Position, q: Position, a: Axis)
-between(Ch, P, Q, A) :- sees(Ch, P, Q, D), sees(Ch, P, Q, D2), opposite(D, D2), axis_of(D, A).
+// Container K sits on both sides of P along axis A.
+.decl between(ch: Choice, p: Position, k: Ident, a: Axis)
+between(Ch, P, K, A) :- sees(Ch, P, K, D), sees(Ch, P, K, D2), opposite(D, D2), axis_of(D, A).
 
-// P sits inside Q's container.
-.decl surrounded(ch: Choice, p: Position, q: Position)
-surrounded(Ch, P, Q) :- between(Ch, P, Q, A), perp(A, A2), axis_of(D, A2), sees(Ch, P, Q, D).
+// P sits inside container K.
+.decl surrounded(ch: Choice, p: Position, k: Ident)
+surrounded(Ch, P, K) :- between(Ch, P, K, A), perp(A, A2), axis_of(D, A2), sees(Ch, P, K, D).
 
 .decl erased(ch: Choice, p: Position)
-erased(Ch, P) :- surrounded(Ch, P, Q), !together(Ch, P, Q).
+erased(Ch, P) :- surrounded(Ch, P, K), !container(Ch, P, K).
 
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !erased(Ch, P).
 out(P, Col, Ch) :- erased(Ch, P), params.bg(Col).

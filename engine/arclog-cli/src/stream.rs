@@ -72,7 +72,7 @@ fn stream_text(path: &Path, case: Option<&str>) -> Result<String, String> {
     };
     let stream = only.stream.as_ref().map_err(String::clone)?;
     let mut text = String::new();
-    for (id, emitter) in token_ids(stream, &vocabulary) {
+    for (id, emitter) in token_ids(&stream.tokens, &vocabulary) {
         let emitter = match emitter {
             Emitter::Model => "model",
             Emitter::Engine => "engine",
@@ -151,8 +151,8 @@ fn stream_lines(corpus: &Path, id: &str, all: bool, streamed: &AtomicUsize, faul
             let outcome = match case.stream {
                 Ok(stream) => {
                     streamed.fetch_add(1, Ordering::Relaxed);
-                    let model = stream.iter().filter(|(_, emitter)| *emitter == Emitter::Model).count();
-                    format!("{} tokens, {model} written by the model", stream.len())
+                    let model = stream.tokens.iter().filter(|(_, emitter)| *emitter == Emitter::Model).count();
+                    format!("{} tokens, {model} written by the model", stream.tokens.len())
                 }
                 Err(fault) => {
                     faulted.fetch_add(1, Ordering::Relaxed);

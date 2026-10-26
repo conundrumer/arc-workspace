@@ -1,9 +1,0 @@
-`@witness` lines:
-  gap-below: borderline concept
-    relaxed: block
-  gap-below: borderline concept
-  dense-ink: borderline $EdgeLine
-    relaxed: ink
-
-2 witness grids run
-witness: ok

@@ -17,13 +17,13 @@ import tempfile
 import threading
 import time
 import zlib
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 from typing import IO
 
-import instructions
+from engine import checkout
 from engine.engine import (
     CompileError,
     CpuLimit,
@@ -32,7 +32,6 @@ from engine.engine import (
     IndexedGrids,
     InputValue,
     Limits,
-    ParseFailure,
     RunResult,
     Tuples,
     UndefinedOutput,
@@ -40,8 +39,8 @@ from engine.engine import (
     WallLimit,
 )
 from engine.memo import ByIdentity, Once, Recent, hash_file, kept_recent, write_whole
+from engine.pool import pool_size
 from engine.program import (
-    NumberTerm,
     Primitive,
     Grid,
     Program,
@@ -55,11 +54,11 @@ from engine.program import (
     cell_place,
 )
 from souffle.expand import expand
+from souffle.functors import FUNCTOR_LIB, FUNCTOR_LIB_NAME, build_functors
 from souffle.grounding import ungrounded
 from souffle.index import Hit, Tree, tree_of
-from souffle.parser import parse
-from souffle.install import binary_identity, preprocessor_flags, souffle_include
-from souffle.render import lines_text, rendered_for_run
+from souffle.install import binary_identity, preprocessor_flags
+from souffle.render import keyed_statements, lines_text, rendered_for_run
 from souffle.runkey import included_files, reached
 from souffle.text import PREFIX, declared, fact_text
 from souffle.values import printed
@@ -154,60 +153,6 @@ def _grid_file(grid: Grid) -> str:
     return lines_text(fact_lines(GridInput(grid)))
 
 
-FUNCTOR_LIB_NAME = "functors"
-"""The name Souffle links the functor library by, after `-l`."""
-FUNCTOR_LIB = f"lib{FUNCTOR_LIB_NAME}.dylib"
-"""The functor library's file in the functor directory."""
-FUNCTOR_SOURCE = "lib_functors.cpp"
-"""The functor library's source in the functor directory."""
-FUNCTOR_CONSTANTS = Path("lib") / "orientation.dl"
-"""The lib module, under the functor directory, whose `#define` constants
-the functor library's source reads."""
-
-_BUILDING = threading.Lock()
-
-
-def functor_constants(path: Path) -> tuple[str, ...]:
-    """The compiler flags that define each `#define` constant of the
-    Souffle file at `path` with its number. A `#define` whose value is no
-    number is an error."""
-    program = parse(path.read_text(), path.parent)
-    if isinstance(program, ParseFailure):
-        raise RuntimeError(f"{path}:{program.line}: {program.message}")
-    flags: list[str] = []
-    for d in program.defines:
-        if d.params is not None or not isinstance(d.value, NumberTerm):
-            raise RuntimeError(f"{path}:{d.line}: #define {d.name} is no number constant")
-        flags.append(f"-D{d.name}={d.value.value}")
-    return tuple(flags)
-
-
-def build_functors(functor_dir: Path) -> None:
-    """Compile the functor library from its source, with the clang++ of the
-    SDK xcrun selects and the constants of `FUNCTOR_CONSTANTS`
-    (`functor_constants`), where the library is absent or older than the
-    source or that module. The library is written whole, so a run in
-    another process reads the old library or the new one."""
-    source = functor_dir / FUNCTOR_SOURCE
-    constants = functor_dir / FUNCTOR_CONSTANTS
-    lib = functor_dir / FUNCTOR_LIB
-    with _BUILDING:
-        newest = max(source.stat().st_mtime_ns, constants.stat().st_mtime_ns)
-        if lib.exists() and lib.stat().st_mtime_ns >= newest:
-            return
-        with tempfile.TemporaryDirectory(prefix="functors-") as tmp:
-            out = Path(tmp) / FUNCTOR_LIB
-            done = subprocess.run(
-                ["xcrun", "clang++", "-std=c++17", "-shared", "-fPIC",
-                 f"-I{souffle_include()}", *functor_constants(constants),
-                 f"-Wl,-install_name,{lib}",
-                 "-o", str(out), str(source)],
-                capture_output=True, text=True)
-            if done.returncode != 0:
-                raise RuntimeError(f"building {lib} from {source} failed:\n{done.stderr}")
-            write_whole(lib, out.read_bytes())
-
-
 _RUNNING: list[threading.BoundedSemaphore] = []
 _RUNNING_LOCK = threading.Lock()
 
@@ -226,13 +171,14 @@ def performance_cores() -> int | None:
 
 def _running() -> threading.BoundedSemaphore:
     """The Souffle processes one process has going at once, one per
-    performance core however many threads start them: a run on an
-    efficiency core spends more CPU seconds for the same work, and the CPU
-    limit counts them."""
+    performance core however many threads start them, and at most
+    `pool_size()`: a run on an efficiency core spends more CPU seconds for
+    the same work, and the CPU limit counts them; under
+    `scripts/run_heavy.py` the grant bounds them."""
     with _RUNNING_LOCK:
         if not _RUNNING:
             _RUNNING.append(threading.BoundedSemaphore(
-                performance_cores() or os.cpu_count() or 1))
+                min(performance_cores() or os.cpu_count() or 1, pool_size())))
         return _RUNNING[0]
 
 
@@ -250,6 +196,12 @@ def _cpu_limit_key(key: str, cpu: int) -> str:
     """The key of the record that the run under `key` reached a CPU limit
     of `cpu` seconds."""
     return f"{key}-cpu{cpu}"
+
+
+def _from_root(path: Path) -> str:
+    """`path` from the checkout's root (`checkout.shown`) where it stands
+    under it, else its absolute path."""
+    return str(checkout.shown(path, checkout.ROOT))
 
 
 _STATEMENTS: ByIdentity[Program, tuple[list[tuple[str, int | None]], str]] \
@@ -294,9 +246,16 @@ class Runner:
         self._files: dict[str, tuple[tuple[int, int], bytes | None]] = {}
 
     def flags(self) -> list[str]:
+        """The flags of the Souffle command, the functor directory by its
+        path."""
+        return self._flags(str)
+
+    def _flags(self, named: Callable[[Path], str]) -> list[str]:
+        """The flags of the Souffle command, the functor directory named
+        by `named`."""
         out = ["-w"]
         if self.functor_dir is not None:
-            out += ["-L", str(self.functor_dir), f"-l{FUNCTOR_LIB_NAME}"]
+            out += ["-L", named(self.functor_dir), f"-l{FUNCTOR_LIB_NAME}"]
         return out
 
     def run(self, program: Program, inputs: Mapping[RelationName, InputValue],
@@ -335,9 +294,11 @@ class Runner:
             return bad
         lines, statements = _statements(kept)
         text = statements + lines_text(directives)
+        keyed = keyed_statements(
+            (t for t, _ in lines), included_files(kept), _from_root) + lines_text(directives)
         if self.functor_dir is not None:
             build_functors(self.functor_dir)
-        key = self._key(program, text, facts)
+        key = self._key(program, keyed, facts)
         # The same run being made in another thread is read once it ends.
         return self._once.get(key, lambda: self._result(
             key, text, facts, limits, lines, directives, outputs, tree, printed_as, capped))
@@ -360,23 +321,26 @@ class Runner:
 
     # cache
 
-    def _key(self, program: Program, text: str, facts: dict[str, str]) -> str:
-        """The hash of all a run reads: the text Souffle reads, the
-        program's statements (`rendered_for_run`) with the declarations its
-        units reach alone (`reached`) and the input and output directives
-        after them, each included file's path and bytes,
-        the functor library, the fact files and the flags."""
+    def _key(self, program: Program, keyed: str, facts: dict[str, str]) -> str:
+        """The hash of all a run reads: the text Souffle reads with each
+        path named from the checkout's root where it stands under it
+        (`_from_root`), the program's statements (`rendered_for_run`) with
+        the declarations its units reach alone (`reached`) and the input
+        and output directives after them; each included file's path from
+        the root and bytes, the functor library, the fact files and the
+        flags. Two checkouts with the same files by content give a run the
+        same key."""
         h = hashlib.sha256()
         h.update(binary_identity())
-        h.update(b"\0" + text.encode())
+        h.update(b"\0" + keyed.encode())
         for path in included_files(program):
-            hash_file(h, path, self._file(path))
+            hash_file(h, _from_root(Path(path)), self._file(path))
         if self.functor_dir is not None:
-            lib = str(self.functor_dir / FUNCTOR_LIB)
-            hash_file(h, lib, self._file(lib))
+            lib = self.functor_dir / FUNCTOR_LIB
+            hash_file(h, _from_root(lib), self._file(str(lib)))
         for name in sorted(facts):
             h.update(b"\0" + name.encode() + b"\0" + facts[name].encode())
-        h.update(b"\0" + " ".join(self.flags()).encode())
+        h.update(b"\0" + " ".join(self._flags(_from_root)).encode())
         return h.hexdigest()
 
     def _file(self, path: str) -> bytes | None:
@@ -471,9 +435,7 @@ def _measured(argv: list[str], wall: float, cwd: Path
     negative for the signal that ended it, its stdout, its stderr and the
     CPU seconds `os.wait4` gives it, user and system; None where it was
     still writing at `wall` seconds and was killed. The process is reaped
-    here alone, so the kill reaches no other process that took its id.
-    Where this process counts instructions for the gate, the process's
-    count is added to its children's before the reap (`instructions`)."""
+    here alone, so the kill reaches no other process that took its id."""
     proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, text=True, cwd=cwd)
     assert proc.stdout is not None and proc.stderr is not None
@@ -492,9 +454,6 @@ def _measured(argv: list[str], wall: float, cwd: Path
     killed = any(t.is_alive() for t in readers)
     if killed:
         proc.kill()
-    if instructions.counting():
-        instructions.exited(proc.pid, block=True)
-        instructions.reaped(proc.pid)
     _pid, status, usage = os.wait4(proc.pid, 0)
     proc.returncode = os.waitstatus_to_exitcode(status)
     for t in readers:

@@ -41,9 +41,7 @@ layer_depth.cand(Id, K) :- layer(P, Id), peel.depth($U(), P, K).
 // The layers of an object, ordered from the outside in.
 .init nest = Order<Ident, Ident>
 nest.elem(Obj, Id) :- object(P, Obj), layer(P, Id).
-nest.before(Obj, Id, Id2) :-
-    nest.elem(Obj, Id), nest.elem(Obj, Id2),
-    layer_depth.low(Id, K), layer_depth.low(Id2, K2), K < K2.
+nest.score(Obj, Id, K) :- nest.elem(Obj, Id), layer_depth.low(Id, K).
 
 // The background stays.
 out(P, Col) :- in(P, Col), params.bg(Col).

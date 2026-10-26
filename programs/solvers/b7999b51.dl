@@ -81,11 +81,12 @@ chart.extent($U(), A2, N) :- params.axis(A), perp(A, A2), bar_count.tally($U(), 
 .decl slot_of(p: Position, p_slot: Position)
 slot_of(P, P_slot) :- chart.cell($U(), P), params.axis(A), split(P, A, _, P_slot).
 
-// The colors in order of extent, longest first.
+// The colors in order of extent: the longer colors of a color are those
+// after it.
 // @claim bars-ordered-by-extent
 .init order = Order<Choice, Color>
 order.elem(Ch, Col) :- impl_choice(Ch), extent(Col, _).
-order.before(Ch, C1, C2) :- impl_choice(Ch), extent(C1, N1), extent(C2, N2), N1 > N2.
+order.score(Ch, Col, N) :- impl_choice(Ch), extent(Col, N).
 
 // The color each bar line holds, under each resolution of a tie.
 .init ties = TiebreakResolutions<Choice, Position, Color>
@@ -98,22 +99,26 @@ out(P, Col, Ch, Res) :-
 
 // --- $TieUndefined, $TieByPlace ---
 
-// A bar line holds the color whose rank is its distance from the order edge.
-// Where two colors share a rank, a line holds none, and the output is not
-// total.
+// A bar line holds the color with as many colors after it as the line's
+// distance from the order edge. Where two colors share a rank, a line holds
+// none, and the output is not total.
 ties.cand(Ch, P_slot, C) :-
     slot_of(_, P_slot), params.order_edge(O), dist(P_slot, O, R),
-    order.rank(Ch, C, R), Ch != $TieBothOrders().
+    order.rank_desc(Ch, C, R), Ch != $TieBothOrders().
 
 // --- $TieByPlace ---
 
-// The distances of a color's cells from the order edge, then the anchor,
-// break a tie.
-order.before($TieByPlace(), C1, C2) :-
-    extent(C1, N), extent(C2, N), params.order_edge(O),
-    color_box.box(C1, B1), color_box.box(C2, B2), dist(B1, O, K1), dist(B2, O, K2),
-    ( K1 < K2                                                         // nearer the order edge
-    ; K1 = K2, params.anchor(D), dist(B1, D, J1), dist(B2, D, J2), J1 < J2 ).  // as near, nearer the anchor
+// The colors in order of the distance of their cells from the order edge,
+// then from the anchor.
+// @claim bars-ordered-by-extent
+.init place = Order<Unit, Color>
+place.elem($U(), Col) :- extent(Col, _).
+place.score($U(), Col, K) :- color_box.box(Col, B), params.order_edge(O), dist(B, O, K).
+place.secondary_score($U(), Col, J) :- color_box.box(Col, B), params.anchor(D), dist(B, D, J).
+
+// Of two colors of one extent, the one nearer by place comes later, so
+// that fewer colors come after it.
+order.secondary_score($TieByPlace(), Col, R) :- extent(Col, _), place.rank_desc($U(), Col, R).
 
 // --- $TieBothOrders ---
 
@@ -121,5 +126,5 @@ order.before($TieByPlace(), C1, C2) :-
 // before it, and no more shorter colors than lines after it.
 ties.cand($TieBothOrders(), P_slot, C) :-
     slot_of(_, P_slot), params.order_edge(O), opposite(O, O2),
-    dist(P_slot, O, K1), order.rank($TieBothOrders(), C, R1), R1 <= K1,
-    dist(P_slot, O2, K2), order.rank_desc($TieBothOrders(), C, R2), R2 <= K2.
+    dist(P_slot, O, K1), order.rank_desc($TieBothOrders(), C, R1), R1 <= K1,
+    dist(P_slot, O2, K2), order.rank($TieBothOrders(), C, R2), R2 <= K2.

@@ -135,16 +135,18 @@ impl_choice([Gp, Ps, Gm, Bc]) :-
 
 .decl panel(ps: PanelSource, col: Color)
 
-// p's line along a holds a board cell.
-.decl board_line(a: Axis, p: Position)
-board_line(A, P) :-
-    in(P, _), axis_elem(A), same_line(A, P, Q), in(Q, Col), params.board_color(Col).
+// The line along a, as its cross-axis part, holds a board cell.
+.decl board_line(a: Axis, l: Box)
+board_line(A, L) :- in(Q, Col), params.board_color(Col), axis_elem(A), split(Q, A, _, L).
 
-// The strip: the lines that hold the panel color and no board cell.
+// The lines along a that hold the panel color and no board cell.
+.decl strip_line(ps: PanelSource, a: Axis, l: Box)
+strip_line(Ps, A, L) :-
+    panel(Ps, Col), in(Q, Col), axis_elem(A), split(Q, A, _, L), !board_line(A, L).
+
+// The strip: the cells of those lines.
 .decl strip(ps: PanelSource, p: Position)
-strip(Ps, P) :-
-    panel(Ps, Col), in(Q, Col), axis_elem(A),
-    in(P, _), same_line(A, P, Q), !board_line(A, P).
+strip(Ps, P) :- strip_line(Ps, A, L), in(P, _), split(P, A, _, L).
 
 .decl legend_cell(ps: PanelSource, p: Position, col: Color)
 legend_cell(Ps, P, Col) :- strip(Ps, P), in(P, Col), !panel(Ps, Col).

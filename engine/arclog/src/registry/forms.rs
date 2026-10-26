@@ -144,19 +144,95 @@ impl FileReader {
     /// after its head, each output column with its type.
     fn component(&mut self, rest: &[SExpr], place: SourcePlace) -> Option<(LibName, Component)> {
         let head = self.component_head(rest, place)?;
-        let outputs: Option<Vec<Port>> = head.outputs.iter().map(|output| self.port(output, &head.type_parameters)).collect();
+        let outputs: Option<Vec<Port>> = head.outputs.iter().map(|output| self.output(output, &head.type_parameters, &head.inputs)).collect();
         let component = Component { kind: head.kind, type_parameters: head.type_parameters, inputs: head.inputs, outputs: outputs?.into() };
         Some((head.name, component))
     }
 
-    /// An output, `(<output> (<column> <type>) ...)`.
-    fn port(&mut self, expr: &SExpr, parameters: &[TypeParameter]) -> Option<Port> {
+    /// An output, `(<output> (<column> <type>) ... [(copies <row> ...)])`, whose
+    /// `copies` form reads the `inputs` of its component.
+    fn output(&mut self, expr: &SExpr, parameters: &[TypeParameter], inputs: &[InputPort]) -> Option<Port> {
         let SExpr::List { items, place, .. } = expr else {
             return self.refuse("a port is a list of its name and its columns", expr.place());
         };
         let name = PortName(self.symbol(items.first(), "the port's name", *place)?.into());
-        let columns: Option<Vec<Column>> = items[1..].iter().map(|item| self.column(item, parameters).map(|(c, _)| c)).collect();
-        Some(Port { name, columns: columns?.into() })
+        let mut rest = &items[1..];
+        let copies = rest.last().and_then(|last| headed(last, COPIES));
+        if copies.is_some() {
+            rest = &rest[..rest.len() - 1];
+        }
+        let columns: Option<Vec<Column>> = rest.iter().map(|item| self.column(item, parameters).map(|(c, _)| c)).collect();
+        let columns: Box<[Column]> = columns?.into();
+        let copies = self.copied_rows(copies.unwrap_or_default(), inputs, &name, &columns)?;
+        Some(Port { name, columns, copies })
+    }
+
+    /// The declared rows that `rows`, the items of a `(copies ...)` form of the output
+    /// `name` with `columns`, write.
+    fn copied_rows(&mut self, rows: &[SExpr], inputs: &[InputPort], name: &PortName, columns: &[Column]) -> Option<Box<[CopiedRow]>> {
+        let mut copies = Vec::new();
+        for row in rows {
+            let alternatives = match headed(row, EITHER) {
+                Some(alternatives) if !alternatives.is_empty() => alternatives,
+                Some(_) => return self.refuse(format!("an `({EITHER} ...)` row holds an alternative"), row.place()),
+                None => std::slice::from_ref(row),
+            };
+            let alternatives: Option<Vec<CopiedFrom>> = alternatives.iter().map(|alternative| self.copied_from(alternative, inputs, columns)).collect();
+            let alternatives: Box<[CopiedFrom]> = alternatives?.into();
+            let mapped = |from: &CopiedFrom| {
+                let mut outputs: Vec<usize> = from.columns.iter().map(|&(_, output)| output).collect();
+                outputs.sort_unstable();
+                outputs
+            };
+            if alternatives.iter().any(|from| mapped(from) != mapped(&alternatives[0])) {
+                return self.refuse(format!("the alternatives of a row of `{}` map different output columns", name.0), row.place());
+            }
+            copies.push(CopiedRow { alternatives });
+        }
+        Some(copies.into())
+    }
+
+    /// An alternative of a declared row, `(<input> (<input column> <output column>) ...)`:
+    /// the input and the columns of the output `columns` it copies, none of them a `key`
+    /// column, each output column once, and each pair of one type.
+    fn copied_from(&mut self, expr: &SExpr, inputs: &[InputPort], columns: &[Column]) -> Option<CopiedFrom> {
+        let SExpr::List { items, place, .. } = expr else {
+            return self.refuse("a declared row is a list of an input and its column pairs", expr.place());
+        };
+        let name = self.symbol(items.first(), "the declared row's input", *place)?;
+        let Some(input) = inputs.iter().position(|input| &*input.port.name.0 == name) else {
+            return self.refuse(format!("`{name}` is no input of the component"), items[0].place());
+        };
+        let own = &inputs[input].port.columns;
+        let mut pairs: Vec<(usize, usize)> = Vec::new();
+        for item in &items[1..] {
+            let SExpr::List { items: names, place, .. } = item else {
+                return self.refuse("a column pair is a list of an input column and an output column", item.place());
+            };
+            let [from, to] = &names[..] else {
+                return self.refuse("a column pair is a list of an input column and an output column", *place);
+            };
+            let from_name = self.symbol(Some(from), "a pair's input column", *place)?;
+            let to_name = self.symbol(Some(to), "a pair's output column", *place)?;
+            let at = |columns: &[Column], name: &str| columns.iter().position(|column| matches!(&column.name, ColumnName::Written(written) if &**written == name));
+            let Some(from_at) = at(own, from_name) else {
+                return self.refuse(format!("`{from_name}` is no column of the input `{name}`"), from.place());
+            };
+            let Some(to_at) = at(columns, to_name) else {
+                return self.refuse(format!("`{to_name}` is no column of the output"), to.place());
+            };
+            if is_key(&own[from_at]) || is_key(&columns[to_at]) {
+                return self.refuse("a `key` column is copied by the group's key, and a pair names none", item.place());
+            }
+            if pairs.iter().any(|&(_, output)| output == to_at) {
+                return self.refuse(format!("the row names the output column `{to_name}` twice"), item.place());
+            }
+            if own[from_at].ty != columns[to_at].ty {
+                return self.refuse(format!("the input column `{from_name}` and the output column `{to_name}` have different types"), item.place());
+            }
+            pairs.push((from_at, to_at));
+        }
+        Some(CopiedFrom { input, columns: pairs.into() })
     }
 
     /// An input, `(<input> (<column> <type>) ... [(default <rows>)] [reads-outputs] [from-key])`.
@@ -186,7 +262,7 @@ impl FileReader {
             Some(rows) => Some(DefaultRows { written: self.read(read_param_value(rows, &written))? }),
             None => None,
         };
-        Some(InputPort { port: Port { name, columns: columns.into() }, default, reads_outputs, from_key })
+        Some(InputPort { port: Port { name, columns: columns.into(), copies: Box::default() }, default, reads_outputs, from_key })
     }
 
     /// `(proposer <name> native [domain] (columns ...))` or

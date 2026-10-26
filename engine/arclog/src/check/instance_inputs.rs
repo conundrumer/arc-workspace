@@ -7,9 +7,9 @@ use super::types::{component, result};
 use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::safety::body_labels;
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
-use crate::program::path::{node_at, NodePath, NodeRef};
+use crate::program::path::{NodePath, NodeRef};
 use crate::program::{Instance, InstanceInput, InstancePart, KeyBody, KeyClausePart, PortName};
-use crate::resolver::{column_sources, columns, ResolvedProgram};
+use crate::resolver::ResolvedProgram;
 use crate::types::{each_site_label, use_label};
 
 /// [`CheckId::InstanceInputs`].
@@ -31,7 +31,8 @@ impl Check for InstanceInputsCheck {
     /// `docs/arclog/arclog.md#instance` gives. In a keyed instance, it
     /// refuses as well each input that stands in a group other than its
     /// own: an input after the key clause that reads an output of its
-    /// instance, and a broadcast inside the key clause.
+    /// instance, where the key has a column, and a broadcast inside the key
+    /// clause.
     fn check(&self, input: &CheckInput<'_>) -> CheckResult {
         let program = input.scope.program;
         let reads = form_reads(input.form, input.path);
@@ -76,6 +77,10 @@ impl Check for InstanceInputsCheck {
         result(refusals.into_iter().map(|(message, at)| Refusal { message: message.into(), at: order.canonical_path(&at) }).collect())
     }
 
+    /// Refuses each refusal of [`Check::check`] at a complete input. A
+    /// refusal of an input reads the input itself, the inputs written before
+    /// it, the key clause, which stands before its inputs, and the
+    /// component, so no node written after the input undoes it.
     fn check_prefix(&self, prefix: &Prefix<'_>) -> PrefixResult {
         super::prefix::settled(prefix, self)
     }
@@ -86,11 +91,10 @@ impl Check for InstanceInputsCheck {
 /// its path relative to the form at `form` in the program, as
 /// `docs/arclog/arclog.md#instance` gives: an input after the key clause
 /// that reads an output of its instance, and an input inside it that reads
-/// no key label and no output of its instance, a broadcast. A label at a head
-/// site of the input is a read of it, and a read that joins on labels of
-/// `key` with no key site, as `docs/arclog/arclog.md#instance` gives, is a
-/// read of them. A `CHOOSE` form has no key column, so a read of one joins
-/// on no key.
+/// no key label and no output of its instance, a broadcast. A key of no column
+/// has one key, so each of its inputs stands after the key clause, and none
+/// is in the wrong group. A label at a head site of the input is a read of
+/// it, and so is a label of its body, a key site's labels included.
 fn group_fault<'a>(
     program: &ResolvedProgram,
     form: &NodePath,
@@ -100,22 +104,17 @@ fn group_fault<'a>(
     reads: impl Iterator<Item = &'a FormRead<'a>>,
 ) -> Option<&'static str> {
     let key_labels = body_labels(key.body.value());
-    let in_scope = |read_key: &KeyBody| read_key.columns.iter().all(|column| key.columns.iter().any(|own| own.name == column.name));
     let mut reads_output = false;
-    let mut reads_key = false;
     for read in reads {
-        let Some((node, own)) = read.node(program, form) else { continue };
+        let Some((_, own)) = read.node(program, form) else { continue };
         reads_output |= own;
-        let read_form = node_at(NodeRef::Program(program.program.value()), program.form_of(node));
-        let read_key = read_form.filter(|form| !matches!(form, NodeRef::Choose(_))).and_then(column_sources::key_clause);
-        reads_key |= read_key.is_some_and(|(read_key, _)| in_scope(read_key)) && !read.atom.sites.iter().any(|site| site.column == columns::key());
     }
-    reads_key |= body_labels(written.body.value()).iter().any(|label| key_labels.contains(label));
+    let mut reads_key = body_labels(written.body.value()).iter().any(|label| key_labels.contains(label));
     for site in written.head.iter() {
         each_site_label(site, &mut Vec::new(), &mut |use_, _| reads_key |= use_label(use_).is_some_and(|label| key_labels.contains(&label)));
     }
     match keyed {
-        false if reads_output => Some("the input reads an output of its instance and stands after the key clause, where only a broadcast stands"),
+        false if reads_output && !key.columns.is_empty() => Some("the input reads an output of its instance and stands after the key clause, where only a broadcast stands"),
         true if !reads_key && !reads_output => {
             Some("the input reads no key label and no output of its instance, a broadcast, and stands inside the key clause, where a broadcast stands after it")
         }

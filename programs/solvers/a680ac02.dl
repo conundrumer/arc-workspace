@@ -228,16 +228,15 @@ sq_line(Sq, B, A, L) :- sq_cell(Sq, B, P, _), axis_elem(A), split(P, A, L, _).
 .decl run(ch: Choice, d: Dir, a: Axis)
 run([Sq, R, O], D, A) :- impl_choice([Sq, R, O]), layout_axis(Sq, R, A), axis_of(D, A).
 
-// One kept square comes before another in the sequence from edge d.
-.decl sq_before(rn: Run, b1: Box, b2: Box)
+// A kept square's place in the sequence from edge d.
+.decl sq_score(rn: Run, b: Box, s: number)
 
 // @claim order concatenate
 .init sequence = Order<Run, SqLine>
 sequence.elem([Ch, D], [B, L]) :- run(Ch, D, A), Ch = [Sq, _, _], sq_line(Sq, B, A, L).
-sequence.before(Rn, [B1, L1], [B2, L2]) :-
-    sq_before(Rn, B1, B2), sequence.elem(Rn, [B1, L1]), sequence.elem(Rn, [B2, L2]).
-sequence.before([Ch, D], [B, L1], [B, L2]) :-            // within one square
-    sequence.elem([Ch, D], [B, L1]), sequence.elem([Ch, D], [B, L2]), nearer(D, L1, L2).
+sequence.score(Rn, [B, L], S) :- sq_score(Rn, B, S), sequence.elem(Rn, [B, L]).
+sequence.secondary_score([Ch, D], [B, L], K) :-          // within one square
+    sequence.elem([Ch, D], [B, L]), dist(L, D, K).
 
 // The output cells of a case laid along axis a.
 .decl laid(ch: Choice, a: Axis, p: Position, col: Color)
@@ -321,8 +320,8 @@ out(P, Col, [Sq, $AxisBbox(), O], [nil]) :- laid([Sq, $AxisBbox(), O], _, P, Col
 
 // --- $AlongAxis ---
 // The squares go by their distance to edge d.
-sq_before([[Sq, R, $AlongAxis()], D], B1, B2) :-
-    run([Sq, R, $AlongAxis()], D, _), kept(Sq, B1), kept(Sq, B2), nearer(D, B1, B2).
+sq_score([[Sq, R, $AlongAxis()], D], B, K) :-
+    run([Sq, R, $AlongAxis()], D, _), kept(Sq, B), dist(B, D, K).
 
 // --- $OrderColumnMajor ---
 // Each kept square's corner at an end of params.lex_diagonal.
@@ -336,10 +335,10 @@ lex.corner([Sq, Dg], Dg) :- lex_cell(Sq, Dg, _, _).
 lex.axis([Sq, Dg], A) :- lex_cell(Sq, Dg, _, _), params.lex_axis(A).
 lex.cell([Sq, Dg], P) :- lex_cell(Sq, Dg, _, P).
 
-sq_before([[Sq, R, $OrderColumnMajor()], D], B1, B2) :-
+sq_score([[Sq, R, $OrderColumnMajor()], D], B, Rk) :-
     run([Sq, R, $OrderColumnMajor()], D, A),
-    lex.before([Sq, Dg], P1, P2), dir_of(Dg, A, D),        // ordered from the corner at d
-    lex_cell(Sq, Dg, B1, P1), lex_cell(Sq, Dg, B2, P2).
+    lex_cell(Sq, Dg, B, P), dir_of(Dg, A, D),              // ordered from the corner at d
+    lex.rank([Sq, Dg], P, Rk).
 
 .comp Determine {
     .type ExampleCorner = [e: Example, corner: DiagDir]

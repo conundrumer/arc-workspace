@@ -121,4 +121,20 @@ shielded(P, [LC, $MarkKept()]) :- parse.mark($U(), P), line_corner_choice(LC).
     // The color a train output gives a corner cell that is no mark.
     .decl diag_color(c: Color)
     diag_color(Col) :- ex.corner_cell(E, P), !ex.mark(E, P), ex_out(E, P, Col).
+
+    // A params.background cell off every line, one diagonal step from a mark
+    // toward d, and the color a train output gives it.
+    .decl step_color(d: DiagDir, c: Color)
+    step_color(D, Col) :-
+        ex.mark(E, Q), diag_dir_elem(D), neighbor(Q, D, P),
+        ex.tiled(E, P, Col0), params.background(Col0), !ex.line_cell(E, P),
+        ex_out(E, P, Col).
+
+    // A corner whose step a train output leaves params.background.
+    .decl unpainted(d: DiagDir)
+    unpainted(D) :- step_color(D, Col), params.background(Col).
+
+    // The corners whose steps a train output paints, each of them.
+    .decl diag_dirs(d: DiagDir)
+    diag_dirs(D) :- step_color(D, _), !unpainted(D).
 }

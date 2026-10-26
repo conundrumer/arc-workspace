@@ -1,7 +1,6 @@
 """The reads of git and of the main worktree that the operator's procedures
 take their state from: the worktrees, the commits of `master`, the code
-and lib review tags, the standing doc review tags, the task claims and restores, the solvers that stand, the accepted
-gate outputs a change writes, the `mctx` fragments a change adds or
+and lib review tags, the standing doc review tags, the task claims and restores, the solvers that stand, the `mctx` fragments a change adds or
 changes, and the session's scratchpad directory, and the run of the main
 tree's copy of a script in place of a worktree's copy."""
 
@@ -27,7 +26,6 @@ COMMITS = 300
 """The number of commits of `master` the state reads, newest first."""
 
 PROCESS_DIRS = PathSet(("prompts/agents/", "src/operations/"))
-ACCEPTED = "tests/gate/accepted"
 
 
 @state_cache(lambda: git_entry(checkout.ROOT))
@@ -165,17 +163,6 @@ def solvers(main: Path) -> frozenset[str]:
 def restores(main: Path) -> dict[str, tuple[Restore, ...]]:
     path = restores_file(main)
     return restore_records(file_text(path)) if stat_read(path) is not None else {}
-
-
-def gate_outputs(tree: Path) -> tuple[str, ...]:
-    """The accepted gate outputs the change in the worktree `tree` writes,
-    against its merge base with `master`; none where the worktree is gone
-    (`standing`)."""
-    base = merge_base(tree)
-    if base is None:
-        return ()
-    return standing(tree, lambda: tuple(sorted(
-        {c.path for c in checkout.changed_paths(tree, base, ACCEPTED)})), ())
 
 
 def fragments(tree: Path) -> tuple[Place, ...]:

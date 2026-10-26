@@ -262,7 +262,7 @@ head_corner($HeadNearKeyLine(), S, I, D) :-
 .init key_seq = Order<ShapeColor, Position>
 key_seq.elem(S, P) :-
     key_cell(S, P), key_axis(S, A), params.key_start(D), axis_of(D, A).
-key_seq.before(S, P, Q) :- key_cell(S, P), key_cell(S, Q), params.key_start(D), nearer(D, P, Q).
+key_seq.score(S, P, K) :- key_seq.elem(S, P), params.key_start(D), dist(P, D, K).  // distance from the key's start end
 
 key_first($KeyFromStart(), S, P) :- key_seq.first(S, P).
 key_last($KeyFromStart(), S, P) :- key_seq.last(S, P).

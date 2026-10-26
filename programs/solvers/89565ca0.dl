@@ -98,7 +98,7 @@ row(K) :- chart.cell($U(), P), params.rank_dir(D), dist(P, D, K).
 
 .init fewer = Order<Unit, Color>
 fewer.elem($U(), F) :- frame(F).
-fewer.before($U(), F1, F2) :- size.tally(F1, N1), size.tally(F2, N2), N1 < N2.
+fewer.score($U(), F, N) :- size.tally(F, N).
 
 // Every frame of fewer compartments lies between this one and the rank edge,
 // so a frame sits no nearer that edge than their number; seating them all

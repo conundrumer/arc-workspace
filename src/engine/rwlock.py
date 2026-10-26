@@ -1,27 +1,24 @@
 """The heavy commands' lock, which every worktree of the repository and
-every session on the machine share. A `run_dl.py` command, a pytest run
-and each command of a gate run hold it shared (`held`, `taken`), and run
-alongside each other. The lock is a file in the common git directory,
-`LOCK_FILE`, held shared through `flock`.
+every session on the machine share. A `run_dl.py` command holds it shared
+(`held`, `taken`), and such commands run alongside each other. The lock is
+a file in the common git directory, `LOCK_FILE`, held shared through
+`flock`.
 
 A holder sets `HOLD_ENV` to the value of its `Hold`, and every process it
-starts inherits that variable; a gate run sets it in each command's
-environment. A process that starts under a hold runs under it and takes no
-hold of its own.
+starts inherits that variable. A process that starts under a hold runs
+under it and takes no hold of its own.
 
-Beside it stand two mutexes (`Mutex`), each a file held exclusively
-through `flock`. The merge lock, `MERGE_FILE` in the same directory, is held
-by `scripts/merge_change.py`, so that one merge at a time moves `master`.
-The gate lock, `GATE_FILE` in the git directory of one worktree
-(`gate_lock_dir`), is held by `scripts/gate.py`, so that one gate run at a
-time runs in that worktree. A holder writes into the file what it does, and
-a process that has to wait says on stderr that it waits and what the
-holder wrote, where the holder has written it yet. A process that starts
-under a hold of the heavy commands' lock waits for neither mutex, since the
-holder it would wait for can be the process it runs under: where another
-process holds it, the process stops (`MergeHeld`, `GateHeld`).
+Beside it stands a mutex (`Mutex`), a file held exclusively through
+`flock`. The merge lock, `MERGE_FILE` in the same directory, is held by
+`scripts/merge_change.py`, so that one merge at a time moves `master`. A
+holder writes into the file what it does, and a process that has to wait
+says on stderr that it waits and what the holder wrote, where the holder
+has written it yet. A process that starts under a hold of the heavy
+commands' lock waits for no mutex, since the holder it would wait for can
+be the process it runs under: where another process holds it, the process
+stops (`MergeHeld`).
 
-The kernel releases each hold, of the lock and of each mutex, when its
+The kernel releases each hold, of the lock and of the mutex, when its
 holder ends, however it ends, so a holder that crashes or is killed leaves
 no hold behind."""
 
@@ -41,7 +38,6 @@ from engine import checkout
 
 LOCK_FILE = "arc-heavy.lock"
 MERGE_FILE = "arc-merge.lock"
-GATE_FILE = "arc-gate.lock"
 
 HOLD_ENV = "ARC_HEAVY_HOLD"
 """The environment variable set to the value of the `Hold` a process runs
@@ -53,10 +49,6 @@ class Hold(StrEnum):
 
 
 class MergeHeld(Exception):
-    pass
-
-
-class GateHeld(Exception):
     pass
 
 
@@ -129,7 +121,7 @@ WAIT = mctx("Another process holds the lock whose file is {path}, so this {noun}
             "until that process releases the lock.")
 HOLDER = mctx("The holder wrote: {holder}")
 HELD = mctx("Another process holds the lock whose file is {path}, and this {noun} stops. "
-            "This {noun} runs inside a `run_dl.py` command, a pytest run or a gate command, "
+            "This {noun} runs inside a `run_dl.py` command, "
             "and that command may be the holder. Run this {noun} again outside that command.")
 
 
@@ -144,13 +136,6 @@ class Mutex:
 
 
 MERGE = Mutex(MERGE_FILE, mctx("merge"), MergeHeld)
-GATE = Mutex(GATE_FILE, mctx("gate run"), GateHeld)
-
-
-def gate_lock_dir() -> Path:
-    """The directory the gate lock of this checkout stands in: the
-    checkout's own git directory, which no other worktree shares."""
-    return Path(checkout.git_out(checkout.ROOT, "rev-parse", "--absolute-git-dir").strip())
 
 
 @contextlib.contextmanager

@@ -103,50 +103,50 @@ side_wall(P, D, Col, Ch) :-
 .decl hit(p: Position, d: DiagDir, col: Color, ch: Choice)
 hit(P, D, Col, Ch) :- dir_of(D, _, D_cmp), side_wall(P, D_cmp, Col, Ch).
 
-// One outgoing component of a ray heading d at p, inverted where it reflects.
-.decl leave_dir(p: Position, d: DiagDir, d_out: Dir, ch: Choice)
-leave_dir(P, D, D_out, Ch) :-
-    in(P, _), impl_choice(Ch), dir_of(D, _, D_cmp),            // a component of d
+// One outgoing component of a ray at p beside a wall, from the component
+// d_cmp it arrives with: inverted where a wall lies that way.
+.decl leave_dir(p: Position, d_cmp: Dir, d_out: Dir, ch: Choice)
+leave_dir(P, D_cmp, D_out, Ch) :-
+    side_wall(P, _, _, Ch), dir_elem(D_cmp),                  // a cell beside a wall
     ( side_wall(P, D_cmp, _, Ch), opposite(D_cmp, D_out)       // reflected
     ; !side_wall(P, D_cmp, _, Ch), D_out = D_cmp               // free
     ).
 
-// The direction the ray leaves p with, its two components recombined.
+// The direction a ray heading d leaves a hit cell p with, its two components
+// recombined.
 .decl bounce(p: Position, d: DiagDir, d_out: DiagDir, ch: Choice)
 bounce(P, D, D_out, Ch) :-
-    leave_dir(P, D, D1, Ch), leave_dir(P, D, D2, Ch),          // the two components
-    diag_dirs(D_out, _, D1, D2).                               // one on each axis
+    hit(P, D, _, Ch), diag_dirs(D, A, D1, D2),                 // the two components
+    leave_dir(P, D1, D_out1, Ch), leave_dir(P, D2, D_out2, Ch),
+    diag_dirs(D_out, A, D_out1, D_out2).                       // one on each axis
 
 // The colors a ray can carry: those of the markers and the walls.
 // @ignore: single-consumer — one row per color, where the input holds one per cell
 .decl hue(col: Color)
 hue(Col) :- in(_, Col), !params.bg(Col).
 
-// A ray that reaches p heading d with color col leaves it heading d_out with
-// color col_out.
-.decl leave(p: Position, d: DiagDir, col: Color, d_out: DiagDir, col_out: Color, ch: Choice)
-leave(P, D, Col, D_out, Col_out, Ch) :-
-    bounce(P, D, D_out, Ch), hue(Col),
-    ( hit(P, D, Col_out, Ch)                      // reflected: its color
-    ; !hit(P, D, _, Ch), Col_out = Col            // free: carried on
-    ).
-
 // A ray at a cell, with its heading and its color.
 .type Beam = [p: Position, d: DiagDir, col: Color]
 
-// The rays' walk from the launches: a ray reaches the next cell along the
-// direction it leaves with, when that cell is empty.
+// The rays' walk from the launches: a ray that reaches p heading d with color
+// col leaves it, reflected with the wall's color at a hit or carried on
+// unchanged elsewhere, and reaches the next cell when that cell is empty.
 .init walk = Propagation<Choice, Beam>
 walk.source(Ch, [P, D, Col]) :- launch(P, D, Col, Ch).
 walk.edge(Ch, [P, D, Col], [P_next, D_out, Col_out]) :-
-    leave(P, D, Col, D_out, Col_out, Ch), neighbor(P, D_out, P_next),
-    in(P_next, Bg), params.bg(Bg).                // stops on occupied cells
+    impl_choice(Ch), in(P, _), diag_dir_elem(D), hue(Col),   // a ray at p
+    ( hit(P, D, Col_out, Ch), bounce(P, D, D_out, Ch)          // reflected: its color
+    ; !hit(P, D, _, Ch), D_out = D, Col_out = Col              // free: carried on
+    ),
+    neighbor(P, D_out, P_next), in(P_next, Bg), params.bg(Bg). // stops on occupied cells
 
 .decl paint(p: Position, col: Color, ch: Choice)
 // A ray paints an empty cell with the color it leaves that cell with.
 paint(P, Col, Ch) :-
-    walk.reached(Ch, [P, D, C]), leave(P, D, C, _, Col, Ch),
-    in(P, Bg), params.bg(Bg).
+    walk.reached(Ch, [P, D, C]), in(P, Bg), params.bg(Bg),
+    ( hit(P, D, Col, Ch)                          // reflected: the wall's color
+    ; !hit(P, D, _, Ch), Col = C                  // free: carried on
+    ).
 
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, _, Ch).

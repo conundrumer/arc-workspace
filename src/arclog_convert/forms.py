@@ -451,6 +451,26 @@ def without_repeats(f: "Form", drop: dict[str, str]) -> "Form":
     return new
 
 
+type Source = tuple[int, int]
+"""A kept leaf of a column of a clause's head: the column, then the leaf's
+place among that column's kept leaves."""
+
+
+def label_sources(f: "Form") -> tuple[tuple[Source, ...], ...]:
+    """For each kept leaf of each column of the head of the clause `f`
+    (`Form.col_labels`), the leaf whose arclog column it is written at: its
+    own, or, where `without_repeats` dropped its column, the leaf of the
+    column its head repeats."""
+    at: dict[str, Source] = {}
+    for j, names in enumerate(f.col_labels):
+        for k, name in enumerate(names):
+            at.setdefault(name, (j, k))
+    repeats = dict(f.head_repeat)
+    return tuple(tuple(at[repeats[name]] if name not in f.cols and repeats.get(name) in at else (j, k)
+                       for k, name in enumerate(names))
+                 for j, names in enumerate(f.col_labels))
+
+
 def read_without(lines: list[str], rel: str, drop: dict[str, str]) -> list[str] | None:
     """The lines with each one-line read of `rel` leaving out the dropped
     columns, and the label each named relabeled to the label at the column
@@ -774,51 +794,6 @@ def fold_or_lines(text: str) -> str:
             edits.append((a, end, ""))
     for a, b, new in sorted(edits, reverse=True):
         text = text[:a] + new + text[b:]
-    return text
-
-
-def drop_key_sites(text: str) -> str:
-    """Each key site, inside an instance's keyed inputs, on a read of an
-    instance keyed by the same labels at those labels, dropped: such a read
-    joins on the key in scope."""
-    from arclog_convert.lint import L, Sym, read, walk
-    try:
-        items = read(text)
-    except SyntaxError:
-        return text
-    keys: dict[str, list[str]] = {}
-    inits = [a for f in items for a in walk(f) if isinstance(a, L) and a.head == "INIT" and len(a.items) > 2
-             and isinstance(a.items[1], Sym)]
-    for a in inits:
-        for c in a.items[3:]:
-            if isinstance(c, L) and c.head == "key" and len(c.items) > 1:
-                ks: list[str] = []
-                for t in walk(c.items[1]):
-                    if isinstance(t, Sym) and t.text[:1] == "^" and t.text[1:] not in ks:
-                        ks.append(t.text[1:])
-                keys[a.items[1].text] = ks
-    cuts: list[tuple[int, int]] = []
-    for a in inits:
-        ks = keys.get(a.items[1].text)
-        if not ks:
-            continue
-        for c in a.items[3:]:
-            if not (isinstance(c, L) and c.head == "key"):
-                continue
-            for x in c.items[2:]:
-                for at in walk(x):
-                    if not (isinstance(at, L) and at.head and at.head.startswith("&") and "." in at.head):
-                        continue
-                    if keys.get(at.head.partition(".")[0]) != ks:
-                        continue
-                    for site in at.items[1:]:
-                        if isinstance(site, L) and site.head == ":key" and site.start >= 0 and \
-                                [t.text if isinstance(t, Sym) else None for t in site.items[1:]] == ks:
-                            cuts.append((site.start, site.end))
-    for a, b in sorted(set(cuts), reverse=True):
-        while a > 0 and text[a - 1] == " ":
-            a -= 1
-        text = text[:a] + text[b:]
     return text
 
 

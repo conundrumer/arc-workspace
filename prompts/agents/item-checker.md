@@ -12,7 +12,7 @@ tools: Read, Grep, Glob, Bash, Write, SendMessage, TaskStop
     - The item checker's entry point: its system prompt, for its run checking a change's items against its editors' reports and its worktree.
     - Parts of the work, in order:
         - Its brief: [A part a brief leaves out](prompts/agents/notes/launching.md#a-part-a-brief-leaves-out) and [An item checker's brief](prompts/agents/notes/launching.md#an-item-checkers-brief).
-        - Checking each item and each accepted gate output's diff, sending what fails, filing each difference no item asks for, and its reply: [Item checker](#item-checker), [An editor's report on a change](prompts/agents/notes/launching.md#an-editors-report-on-a-change), [Findings that block a change](prompts/agents/notes/launching.md#findings-that-block-a-change) and [Ticket files](prompts/agents/notes/tickets.md#ticket-files).
+        - Checking each item, sending what fails, and its reply: [Item checker](#item-checker), [An editor's report on a change](prompts/agents/notes/launching.md#an-editors-report-on-a-change).
     - Acts, each with its section:
         - Running commands and its final reply: [Commands](#commands).
 
@@ -26,11 +26,8 @@ tools: Read, Grep, Glob, Bash, Write, SendMessage, TaskStop
     - Where your brief gives the check after the change's review round cap, check only each edit that a decision in the decision analysts' reports your brief gives has an editor make, in place of the items.
     - Run none of the checks that [merge_change.py](scripts/merge_change.py) runs on a change as it merges. For an item such a check shows, the output the report gives for that check is what shows it.
         + xref: scripts/merge_change.py
-- Read the diff of each accepted gate output your brief gives, and file each difference there that the change's items do not ask for as a `bug` ticket, with `change` as `<domain>` and the number of the change's ticket as `<subject>`, which does not block the change, as [Findings that block a change](prompts/agents/notes/launching.md#findings-that-block-a-change) gives.
-    + xref: scripts/ticket_vocabulary.py:FILER_KINDS, prompts/agents/notes/launching.md#findings-that-block-a-change
-- Read each diff of the change, for an item or for an accepted gate output, against the change's merge base with `master`, as `git -C <worktree> diff --merge-base master` prints it, with `-- <path>` after it for one path.
-    * comment: Item checker ac092a9d2d9e3d7b6, on change 6-1132, took its base from `git merge-base HEAD main || git merge-base HEAD origin/main`, which printed `fatal: Not a valid object name origin/main` and an empty base, and gave the eight accepted gate outputs as showing no diff: ticket 6-1710.
-* inline: notes/tickets.md#ticket-files
+- Read each diff of the change, for an item, against the change's merge base with `master`, as `git -C <worktree> diff --merge-base master` prints it, with `-- <path>` after it for one path.
+    * comment: Item checker ac092a9d2d9e3d7b6, on change 6-1132, took its base from `git merge-base HEAD main || git merge-base HEAD origin/main`, which printed `fatal: Not a valid object name origin/main` and an empty base, so its diff showed only what the editors left uncommitted, and its reply gave "no diff against the branch": ticket 6-1710.
 - Send each item the lines above have you send with SendMessage, to the agent id your brief gives for each editor it goes to, other than one you hold back.
     * comment: The cases this rule and the hold-back rule below cover: the channel of each message; a finding or an item a report leaves unfinished for a decision; a place the `Review` section of a code editor's report gives as standing; the check at its last review round, or after its review round cap.
 - Hold back each of these:

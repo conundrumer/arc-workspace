@@ -6,9 +6,7 @@
 # exports; data-dev is tracked, apart from its caches, which are stamped with file mtimes
 data*/
 !data-dev/
-data-dev/tables.pkl
-data-dev/tables.pkl.stamp.json
+data-dev/tables.cache/
 data-dev/encoder-check-fixture.pkl
 __pycache__/
 _pretrain_profile.py
-!runs/data-study/

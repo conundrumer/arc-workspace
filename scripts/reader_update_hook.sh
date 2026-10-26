@@ -5,9 +5,8 @@
 # tool runs too often for a Python start on each. The record's path, its
 # tree and the delivery file's path are those of
 # `reader_commits.record_path`, `reader_commits.reader_tree` and
-# `reader_delivery.delivery_path`, which `tests/test_reader_commits.py`
-# checks this reading against. Where this reading fails, the hook's Python
-# runs. The time this command started is read first, before `jq`, `git`
+# `reader_delivery.delivery_path`. Where this reading fails, the hook's
+# Python runs. The time this command started is read first, before `jq`, `git`
 # and `uv run`, and passed in `HOOK_STARTED` (`hook_entry.hook_started`).
 HOOK_STARTED=$(perl -MTime::HiRes=time -le 'print time')
 export HOOK_STARTED
