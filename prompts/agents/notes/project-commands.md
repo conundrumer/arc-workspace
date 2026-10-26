@@ -26,5 +26,6 @@
 - A command is heavy where it may use much memory, or where it starts several processes at once.
     - Where you do not know, count the command heavy.
 - Run each heavy command as `<checkout>/scripts/ram_slot.py <command> [<arg> ...]`, with `<checkout>` the checkout you work in. Run a command of several simple commands as `<checkout>/scripts/ram_slot.py bash -c '<commands>'`.
-    - The time `ram_slot.py` waits for a slot or for memory counts toward the Bash call's timeout, so run a heavy command in the background where that wait and its run time together may pass that timeout.
+    - `ram_slot.py` starts the command once it holds a slot, the swap in use is at most 2 GiB, the 1-minute load average is at most twice the core count, and the memory `vm_stat` gives as free or inactive is at least 6 GiB. A command that runs under another `ram_slot.py` call waits for none of these.
+    - The time `ram_slot.py` waits for a slot, for swap, for load or for memory counts toward the Bash call's timeout, so run a heavy command in the background where that wait and its run time together may pass that timeout.
 - Where a command starts several heavy processes that you can start one by one, run each of them through `ram_slot.py` in place of the whole command; otherwise run the whole command through it.
