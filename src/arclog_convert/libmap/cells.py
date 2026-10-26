@@ -100,9 +100,8 @@ def ray(inst, ex):
     k, frame = f
     sites = ex.read_sites(inst)
     names = {a.relation.name for a in sites}
-    stop_k = any(a.relation.name == "stop" and type(a.args[3]).__name__ != "Wildcard" for a in sites)
     clear = bool(names & {"clear", "clear_cast", "stop"})
-    full_needed = bool(names & {"cast", "ray"}) or stop_k or not clear
+    full_needed = bool(names & {"cast", "ray", "stop"}) or not clear
     full = "{x}_full" if clear and full_needed else "{x}"
     blocked = bool(ex.inputs(inst, "blocked"))
     placed = ex.places(inst)
