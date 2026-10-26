@@ -1843,11 +1843,18 @@ class Converter:
 
     # ---- names
 
-    def rel_name(self, scope: tuple[str, ...], name: str) -> str:
+    def rel_key(self, scope: tuple[str, ...], name: str) -> tuple[tuple[str, ...], str]:
+        """The key of the arclog relation that the Souffle relation `name` of
+        `scope` is written as: the parameter's, for a `Determine` relation that
+        determines a parameter, and its own otherwise."""
         key = (scope, name)
         if scope == ("Determine",) and key not in self.names and (("Params",), name) in self.rels \
                 and key not in self.insts:
-            key = (("Params",), name)   # the determination of the parameter
+            return (("Params",), name)   # the determination of the parameter
+        return key
+
+    def rel_name(self, scope: tuple[str, ...], name: str) -> str:
+        key = self.rel_key(scope, name)
         if key not in self.names:
             base = name
             cand = base
@@ -2011,7 +2018,8 @@ class Converter:
                 out_ls.append(l)
                 n += 1
             cols.append((col, out_ls))
-        pcols = getattr(self, "proposer_cols", {}).get(r.name) if r.scope.components == ("Params",) else None
+        key = self.rel_key(r.scope.components, r.name)
+        pcols = getattr(self, "proposer_cols", {}).get(r.name) if key[0] == ("Params",) else None
         mismatch = None
         if pcols is not None:
             # a parameter a proposer gives has the proposer's columns, where
