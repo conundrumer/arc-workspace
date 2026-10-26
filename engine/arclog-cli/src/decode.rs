@@ -247,7 +247,7 @@ fn decode_cases(corpus: &Path, tasks: &Path, id: &str, all: bool, rows: RowsMode
             continue;
         }
         let expected = expected_solves(case, &determination, &judged);
-        let case_run = catch_unwind(AssertUnwindSafe(|| decode_case(resolved_case(&cases, case.name), cases.concept().case.name == *case.name, case.program, expected, &task, &judged, rows, gathered)))
+        let case_run = catch_unwind(AssertUnwindSafe(|| decode_case(resolved_case(&cases, case.name), case.program, expected, &task, &judged, rows, gathered)))
             .unwrap_or_else(|payload| vec![(Kind::Refused, format!("the decoder panicked: {}", panic_message(&*payload)))]);
         let mut found = BTreeSet::new();
         for (kind, line) in case_run {
@@ -282,7 +282,7 @@ fn resolved_case<'a>(cases: &'a ResolvedCases, name: &CaseName) -> &'a ResolvedC
 
 /// The findings of the decode of `program`'s token stream, and the time of
 /// each token into `gathered`.
-fn decode_case(case: &ResolvedCase, concept: bool, program: &CheckedProgram, expected: Result<bool, String>, task: &Task, judged: &JudgedTask, rows: RowsMode, gathered: &mut Totals) -> Vec<(Kind, String)> {
+fn decode_case(case: &ResolvedCase, program: &CheckedProgram, expected: Result<bool, String>, task: &Task, judged: &JudgedTask, rows: RowsMode, gathered: &mut Totals) -> Vec<(Kind, String)> {
     let mut findings: Vec<(Kind, String)> = Vec::new();
     let constructions = constructions().expect("the table of constructions built for the determination");
     let registry = Registry::get();
@@ -292,7 +292,7 @@ fn decode_case(case: &ResolvedCase, concept: bool, program: &CheckedProgram, exp
     let train: Arc<[PairCandidates<'_>]> = judged.train.iter().map(|pair| PairCandidates::of(pair, Section::Train, World::Closed)).collect();
     let mut decoder = Decoder::new(task, &session, registry, constructions, &settings).judging(train);
     let mut mirror = mirror_session.as_ref().map(|session| Decoder::new(task, session, registry, constructions, &settings));
-    let stream = match case_stream(case, concept, program, decoder.vocabulary()) {
+    let stream = match case_stream(case, program, decoder.vocabulary()) {
         Ok(stream) => stream,
         Err(fault) => return vec![(Kind::Refused, fault)],
     };

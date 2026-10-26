@@ -69,15 +69,14 @@ pub fn solver_streams(corpus: &Path, id: &str, wanted: WantedCases<'_>, vocabula
                 case: case_spelled(name),
                 concept: name == concept,
                 demonstrated: holds_demonstrated(program),
-                stream: case_stream(case, name == concept, program, vocabulary),
+                stream: case_stream(case, program, vocabulary),
             }
         })
         .collect())
 }
 
-/// The token stream of `case`, whose checked program is `checked` and which
-/// is the solver's concept case where `concept` holds, or the writer's
-/// fault.
+/// The token stream of `case`, whose checked program is `checked`, or the
+/// writer's fault.
 ///
 /// A decoded program reads each of its `DET` forms as the program itself
 /// derives what the form reads (`concept: None` in
@@ -86,15 +85,20 @@ pub fn solver_streams(corpus: &Path, id: &str, wanted: WantedCases<'_>, vocabula
 /// program read alone: the writer resolves the case as the decoder resolves
 /// the program the stream decodes to. The concept program's derivation that
 /// a `DET` of the concept program reads in the case is no part of the
-/// stream. A case that takes no `DET` of the concept program copies nothing
-/// from it, so its checked program is written as it is. A case where such a
-/// `DET` reads, directly or through other relations, a relation that a block
-/// other than the concept program derives has no stream, since the program
-/// read alone would give that `DET` the block's derivation, and the concept
-/// program's derivation is the one it reads in the case.
-pub fn case_stream(case: &ResolvedCase, concept: bool, checked: &CheckedProgram, vocabulary: &Vocabulary) -> Result<WrittenStream, String> {
+/// stream. A case that takes no `DET` of the concept program, the concept
+/// case among them, and whose program read alone is its case program
+/// ([`crate::solver::Case::reads_alone_as_it_stands`]) has its checked
+/// program written as it is. Every other case gets its stream from the
+/// program read alone, which drops each column that is `0` in every clause
+/// of its relation, whether or not the case takes a `DET` of the concept
+/// program. A case where such a `DET` reads, directly or through other
+/// relations, a relation that a block other than the concept program
+/// derives has no stream, since the program read alone would give that
+/// `DET` the block's derivation, and the concept program's derivation is
+/// the one it reads in the case.
+pub fn case_stream(case: &ResolvedCase, checked: &CheckedProgram, vocabulary: &Vocabulary) -> Result<WrittenStream, String> {
     let written = |program: &CheckedProgram| written_stream(program, vocabulary).map_err(|diagnostic| format!("the writer gives no stream: {}", diagnostic.message));
-    if concept || case.case.concept_determinations().is_empty() {
+    if case.case.reads_alone_as_it_stands() {
         return written(checked);
     }
     let resolved = std::sync::Arc::new(resolve(case.case.program_alone(), None, &SolverScope::default(), Registry::get()).value);

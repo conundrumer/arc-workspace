@@ -127,6 +127,13 @@ impl Case {
         self.alone.as_ref().unwrap_or(&self.program)
     }
 
+    /// Whether the case program is the case program read alone: the case
+    /// takes no `DET` of the concept program and the zero-column lowering
+    /// drops no column of it. The concept case takes no such `DET`.
+    pub fn reads_alone_as_it_stands(&self) -> bool {
+        self.concept_determinations.is_empty() && self.alone.is_none()
+    }
+
     /// The arclog file that holds the node at `path` of the case program,
     /// and its path there, so that a diagnostic on a case program reports
     /// its place in the file. Both paths walk as
