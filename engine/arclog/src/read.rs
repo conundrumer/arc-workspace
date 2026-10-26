@@ -12,7 +12,7 @@ mod arclog;
 pub(crate) mod columns;
 mod labels;
 mod sexpr;
-pub(crate) mod spelling;
+pub mod spelling;
 
 use std::sync::Arc;
 

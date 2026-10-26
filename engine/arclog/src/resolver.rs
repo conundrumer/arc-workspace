@@ -717,9 +717,9 @@ fn demo_rules<'d>(
 pub(crate) mod column_sources;
 pub(crate) mod columns;
 pub(crate) mod form_columns;
-pub(crate) mod registry_columns;
+pub mod registry_columns;
 
-pub(crate) mod given;
+pub mod given;
 
 mod names;
 

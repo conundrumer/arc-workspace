@@ -23,28 +23,28 @@
 //! consistency test at a `RULE` clause's end, and its batch form, in
 //! `batch`, steps many decodes at once, and its projections of the body so far,
 //! in `projections`, give the largest sets of its columns under the projection
-//! cap, and its
-//! tables of the last step, in `tables`, give the body of the clause in
-//! progress or the relations of the form finished. The replay of a case
-//! program's stream through a decoder, in `replay`, the walk of a solver's
-//! cases that records their tables, in `corpus`, and the flat columns of a
-//! case's tables, in `columns`, serve the commands and the Python package that
-//! read the tables of a corpus. The decode keeps a
+//! cap. The replay of a case program's stream through a decoder, in
+//! `replay`, and the walk of a solver's cases that records what a caller
+//! builds of each step, in `corpus`, serve the commands and the Python
+//! packages that read the tables of a corpus. The tables of the last step and
+//! their flat columns are no part of this crate: the crate `arclog-tables`
+//! builds them from the read-only accessors of a decoder ([`Decoder::state`],
+//! [`Decoder::before`], [`Decoder::registry`], [`Decoder::settings`],
+//! [`Decoder::grid_columns`] and the rows of the sub-body in `interface`), so
+//! that no code of this crate calls them. The decode keeps a
 //! [`crate::trace::DecodeTrace`] of one record per accepted token.
 
 mod batch;
-pub mod columns;
 pub mod corpus;
 mod interface;
 pub mod replay;
 mod state;
-mod tables;
 mod projections;
 
 pub use batch::step_batch;
-pub use interface::{Consistency, Step};
-pub use tables::{evidence_tables, gives_no_table, Contents, ExampleRows, Point, Points, Table, TableColumn, TableDet, TableRelation};
-pub use projections::{Projection, Projections};
+pub use interface::{derived_at, open_clause, relation_dets, walked_dets, Assigned, Consistency, OpenClause, Step, SubBody};
+pub use projections::{projections, Projection, Projections};
+pub use state::State;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -186,6 +186,37 @@ impl<'a> Decoder<'a> {
     /// declared.
     pub fn relation_slot(&self, relation: &ProgramRelation) -> Option<u32> {
         self.state.slot_of(relation)
+    }
+
+    /// The registry the decode reads.
+    #[inline]
+    pub fn registry(&self) -> &'a Registry {
+        self.context.registry
+    }
+
+    /// The settings the decode runs under.
+    #[inline]
+    pub fn settings(&self) -> &DecodeSettings {
+        &self.context.settings
+    }
+
+    /// The state of the decode: its finished forms and the form in progress.
+    #[inline]
+    pub fn state(&self) -> &State {
+        &self.state
+    }
+
+    /// The state before the last step, none before the first.
+    #[inline]
+    pub fn before(&self) -> Option<&State> {
+        self.before.as_ref()
+    }
+
+    /// The grid columns that the consistency test found at the relation the
+    /// decode ended at, none until it ends.
+    #[inline]
+    pub fn grid_columns(&self) -> Option<crate::eval::output::GridColumns> {
+        self.columns
     }
 
     /// The task, the session and the constructions that the decode's

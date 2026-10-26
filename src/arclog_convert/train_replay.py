@@ -59,7 +59,7 @@ BASELINE = Path(__file__).with_name("unreproduced.tsv")
 ENGINE_PATTERNS = (
     "engine/Cargo.toml", "engine/Cargo.lock",
     *(f"engine/{crate}/{pattern}"
-      for crate in ("arclog", "arclog-constructions", "arclog-cli")
+      for crate in ("arclog", "arclog-constructions", "arclog-tables", "arclog-cli")
       for pattern in ("Cargo.toml", "src/**/*.rs")),
     "engine/lib/*",
 )

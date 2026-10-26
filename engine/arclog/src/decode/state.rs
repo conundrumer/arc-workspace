@@ -49,9 +49,11 @@ struct Declared {
 
 /// The state of a decode. A clone copies the stack's frames, each of which
 /// holds its children as shared nodes, and shares the finished forms and the
-/// declarations.
+/// declarations. Outside the crate it is read through [`super::Decoder::state`] and
+/// [`super::Decoder::before`], by its finished forms ([`State::program`]), the form
+/// in progress ([`State::partial`]) and its relation slots.
 #[derive(Clone, Debug)]
-pub(super) struct State {
+pub struct State {
     program: Node<Program>,
     /// The relations declared, by slot.
     declared: Arc<[Arc<Declared>]>,
@@ -320,7 +322,8 @@ impl State {
     }
 
     /// The finished forms.
-    pub(super) fn program(&self) -> &Node<Program> {
+    #[inline]
+    pub fn program(&self) -> &Node<Program> {
         &self.program
     }
 
@@ -442,7 +445,7 @@ impl State {
     /// The program with the form in progress as its last form, and the path
     /// in that form of the innermost open node, or none where the last form
     /// is complete; or none where the form in progress shows no node yet.
-    pub(super) fn partial(&self) -> Option<(Node<Program>, Option<NodePath>)> {
+    pub fn partial(&self) -> Option<(Node<Program>, Option<NodePath>)> {
         if self.stack.is_empty() {
             return Some((self.program.clone(), None));
         }
@@ -482,18 +485,20 @@ impl State {
 
     /// The readable relations of the finished forms declared from `first` on,
     /// each with its slot.
-    pub(super) fn declared_from(&self, first: u32) -> impl Iterator<Item = (u32, &ProgramRelation)> {
+    pub fn declared_from(&self, first: u32) -> impl Iterator<Item = (u32, &ProgramRelation)> {
         (first..self.finished_slots).zip(self.declared[first as usize..].iter()).filter(|(_, declared)| declared.readable).map(|(slot, declared)| (slot, &declared.relation))
     }
 
     /// The count of the relations that the finished forms declare, which is
     /// the first slot of the form in progress.
-    pub(super) fn finished_slots(&self) -> u32 {
+    #[inline]
+    pub fn finished_slots(&self) -> u32 {
         self.finished_slots
     }
 
     /// The slot that the clause in progress takes.
-    pub(super) fn open_slot(&self) -> u32 {
+    #[inline]
+    pub fn open_slot(&self) -> u32 {
         self.next_slot()
     }
 

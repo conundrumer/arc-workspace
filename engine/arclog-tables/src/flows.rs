@@ -9,22 +9,21 @@
 //! The facts of a body that the sources rest on, the atoms and the column
 //! each variable stands at, the branches of each `OR` and `IF`, each `=`, and
 //! each key read, are those of the [`ClauseIr`] that the evaluator joins for
-//! that body, which the walk gets from the function of the module that
-//! evaluates the form. [`IrPaths`] gives the path of each atom of the IR.
+//! that body, which the walk gets from [`CheckedProgram::body_ir`].
+//! [`IrPaths`] gives the path of each atom of the IR.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
 
-use super::ir::{atom_modes, Argument, AtomSource, ClauseIr, CompiledBody, IrNode, IrPaths, NodePaths, Operand, Union, Variable, VariableInfo};
-use super::{demonstrated, driver, picks, rigid};
-use crate::check::CheckedProgram;
-use crate::program::path::{node_at, NodePath, NodeRef};
-use crate::program::{Atom, ColumnName, Conjunct, ConstraintOp, FactRelation, LabelId, OutputOwner, OutputStep, RelationRef};
-use crate::registry::{is_key, key_fill, ColumnType, Registry};
-use crate::resolver::given::{node_relation, Given, GivenLabel};
-use crate::resolver::registry_columns;
-use crate::resolver::{DependencyKind, GraphNodeIndex, ResolvedProgram, Resolution};
-use crate::types::{Meet, ValueType};
+use arclog::check::CheckedProgram;
+use arclog::eval::body_ir::BodyIr;
+use arclog::eval::ir::{atom_modes, Argument, Arguments, AtomSource, ClauseIr, IrNode, IrPaths, NodePaths, Operand, Union, Variable, VariableInfo};
+use arclog::program::path::{node_at, NodePath, NodeRef};
+use arclog::program::{Atom, ColumnName, Conjunct, ConstraintOp, FactRelation, LabelId, OutputOwner, OutputStep, RelationRef};
+use arclog::registry::{is_key, key_fill, ColumnType, Registry};
+use arclog::resolver::given::{node_relation, Given, GivenLabel};
+use arclog::resolver::registry_columns;
+use arclog::resolver::{DependencyKind, GraphNodeIndex, ResolvedProgram, Resolution};
+use arclog::types::{Meet, ValueType};
 
 /// How a source gives the column's values.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -94,29 +93,6 @@ impl ColumnSource {
     fn in_row(mut self, row: usize) -> Self {
         self.occurrence = if self.atom.0.is_empty() { None } else { Some(u16::try_from(row).expect("fewer than 2^16 declared rows")) };
         self
-    }
-}
-
-/// The clause that the evaluator joins for a body, with the paths of its
-/// nodes, and what holds them.
-enum Held {
-    Body(Arc<CompiledBody>),
-    Shared(Arc<ClauseIr>, Arc<IrPaths>),
-    Own(ClauseIr, IrPaths),
-}
-
-impl Held {
-    fn parts(&self) -> (&ClauseIr, &IrPaths) {
-        match self {
-            Held::Body(body) => (&body.clause, &body.paths),
-            Held::Shared(clause, paths) => (clause, paths),
-            Held::Own(clause, paths) => (clause, paths),
-        }
-    }
-
-    /// The held clause of a compile, none where it faults.
-    fn of<E>(found: Result<(ClauseIr, IrPaths), E>) -> Option<Held> {
-        found.ok().map(|(clause, paths)| Held::Own(clause, paths))
     }
 }
 
@@ -223,7 +199,7 @@ impl<'c> Alt<'c> {
 /// Whether `clause`, or a branch in it, has an argument of an atom on a
 /// variable of `class`, or an `=` comparison of one.
 fn touches(clause: &ClauseIr, class: &[Variable]) -> bool {
-    let on = |arguments: &super::ir::Arguments| arguments.0.iter().any(|(_, argument)| matches!(argument, Argument::Variable(variable) if class.contains(variable)));
+    let on = |arguments: &Arguments| arguments.0.iter().any(|(_, argument)| matches!(argument, Argument::Variable(variable) if class.contains(variable)));
     clause.nodes.iter().any(|node| match node {
         IrNode::Atom(atom) => on(&atom.arguments),
         IrNode::Lib(atom) => on(&atom.arguments),
@@ -417,84 +393,82 @@ struct Flows<'p> {
     registry: &'p Registry,
 }
 
-impl CheckedProgram {
-    /// The sources of each row position of the relation of
-    /// `node`, whose columns take `types`, that a read at `output` after the owner's name reads, in row
-    /// order. Each is the
-    /// union over the forms that give the node and, in each, over every
-    /// clause and branch:
-    ///
-    /// - a column that a form labels: the label's class under `=` in the
-    ///   IR of the body that binds it, each site of a positive atom on it a
-    ///   copy of that atom's column, `0` a constant, and, where only lib
-    ///   atoms bind it, the sources of the labels of a mode of the lib atom,
-    ///   computed; a key label in the class, in a body of a keyed form that
-    ///   binds the class at no site of a positive atom, gives the sources
-    ///   that the key's body gives that label, as copies;
-    /// - a part-site column of a `RIGID_DET` part output whose type a D4
-    ///   element moves ([`ValueType::moved_by_d4`]): the sources of its
-    ///   label, computed, since the column holds the part's values at each
-    ///   pose;
-    /// - a column of a type parameter that an `INIT` form binds: the sources
-    ///   of the labels the form binds it to, and, on an output port of a
-    ///   keyed instance, where a `from-key` input the instance leaves
-    ///   unwritten stands on the parameter, the sources of the key position
-    ///   that the engine's fill gives each row position;
-    /// - a column of an instance's output that a declared row of the
-    ///   registry's `copies` maps: in place of the sources above, the sources
-    ///   of the input column that the row maps it from, as the instance's
-    ///   written body for that input gives them (a computed source staying
-    ///   computed), the lib name where the input has a default, and the
-    ///   fill's sources where it is `from-key` and unwritten. The output's
-    ///   `key`, where a declared row is on an input with a `key` column, keeps
-    ///   its sources and takes beside them the sources of the key's labels in
-    ///   the bodies the instance writes for that input;
-    /// - another declared column of an instance or a `RIGID_DET` assembly:
-    ///   every row position of each relation the node reads, computed, where
-    ///   the column of an input port of an instance is replaced by its
-    ///   sources;
-    /// - a column with no source above and a proposer or a component to give
-    ///   it: the lib name.
-    ///
-    /// The facts of a body, its atoms and their columns, the branches of its
-    /// `OR` and `IF`, its `=` and its key reads, are those of the IR that the
-    /// evaluator joins for it, so a body that does not compile gives no
-    /// source.
-    ///
-    /// The occurrence of a source ([`ColumnSource::occurrence`]) is 0 for a
-    /// source that an atom of a body reads, a computed one included. A source
-    /// that a declared row maps into a column of an instance's output has the
-    /// index of that row among the output's where an atom reads it. Each other
-    /// source of a column of an instance's output has none.
-    ///
-    /// An output of an instance that reads its own outputs has no flow from
-    /// them.
-    ///
-    /// A source that names a column of an input port of an instance is
-    /// replaced by the sources of that port's column, through each chain of
-    /// input ports, because the export makes no table for a port.
-    pub fn column_flows(&self, node: GraphNodeIndex, output: Option<&[OutputStep]>, types: &[ValueType], registry: &Registry) -> Vec<Vec<ColumnSource>> {
-        let flows = Flows { checked: self, program: &self.program, registry };
-        flows.flows_visiting(node, output, types.len(), types, &mut Vec::new())
-    }
+/// The sources of each row position of the relation of
+/// `node`, whose columns take `types`, that a read at `output` after the owner's name reads, in row
+/// order. Each is the
+/// union over the forms that give the node and, in each, over every
+/// clause and branch:
+///
+/// - a column that a form labels: the label's class under `=` in the
+///   IR of the body that binds it, each site of a positive atom on it a
+///   copy of that atom's column, `0` a constant, and, where only lib
+///   atoms bind it, the sources of the labels of a mode of the lib atom,
+///   computed; a key label in the class, in a body of a keyed form that
+///   binds the class at no site of a positive atom, gives the sources
+///   that the key's body gives that label, as copies;
+/// - a part-site column of a `RIGID_DET` part output whose type a D4
+///   element moves ([`ValueType::moved_by_d4`]): the sources of its
+///   label, computed, since the column holds the part's values at each
+///   pose;
+/// - a column of a type parameter that an `INIT` form binds: the sources
+///   of the labels the form binds it to, and, on an output port of a
+///   keyed instance, where a `from-key` input the instance leaves
+///   unwritten stands on the parameter, the sources of the key position
+///   that the engine's fill gives each row position;
+/// - a column of an instance's output that a declared row of the
+///   registry's `copies` maps: in place of the sources above, the sources
+///   of the input column that the row maps it from, as the instance's
+///   written body for that input gives them (a computed source staying
+///   computed), the lib name where the input has a default, and the
+///   fill's sources where it is `from-key` and unwritten. The output's
+///   `key`, where a declared row is on an input with a `key` column, keeps
+///   its sources and takes beside them the sources of the key's labels in
+///   the bodies the instance writes for that input;
+/// - another declared column of an instance or a `RIGID_DET` assembly:
+///   every row position of each relation the node reads, computed, where
+///   the column of an input port of an instance is replaced by its
+///   sources;
+/// - a column with no source above and a proposer or a component to give
+///   it: the lib name.
+///
+/// The facts of a body, its atoms and their columns, the branches of its
+/// `OR` and `IF`, its `=` and its key reads, are those of the IR that the
+/// evaluator joins for it, so a body that does not compile gives no
+/// source.
+///
+/// The occurrence of a source ([`ColumnSource::occurrence`]) is 0 for a
+/// source that an atom of a body reads, a computed one included. A source
+/// that a declared row maps into a column of an instance's output has the
+/// index of that row among the output's where an atom reads it. Each other
+/// source of a column of an instance's output has none.
+///
+/// An output of an instance that reads its own outputs has no flow from
+/// them.
+///
+/// A source that names a column of an input port of an instance is
+/// replaced by the sources of that port's column, through each chain of
+/// input ports, because the export makes no table for a port.
+pub fn column_flows(checked: &CheckedProgram, node: GraphNodeIndex, output: Option<&[OutputStep]>, types: &[ValueType], registry: &Registry) -> Vec<Vec<ColumnSource>> {
+    let flows = Flows { checked, program: &checked.program, registry };
+    flows.flows_visiting(node, output, types.len(), types, &mut Vec::new())
 }
 
 impl<'p> Flows<'p> {
-    /// [`CheckedProgram::column_flows`], where `visiting` holds the nodes
+    /// [`column_flows`], where `visiting` holds the nodes
     /// being resolved above `node`. A column of a position that `types`
     /// leaves out has a type no D4 element moves.
     fn flows_visiting(&self, node: GraphNodeIndex, output: Option<&[OutputStep]>, width: usize, types: &[ValueType], visiting: &mut Vec<GraphNodeIndex>) -> Vec<Vec<ColumnSource>> {
         visiting.push(node);
         let mut flows: Vec<Vec<ColumnSource>> = vec![Vec::new(); width];
         let given: Vec<Given> = self.program.given(node, self.registry).into_iter().filter(|relation| output.zip(relation.output.as_deref()).is_none_or(|(read, own)| read == own)).collect();
-        let mut held: BTreeMap<(usize, NodePath), Option<Held>> = BTreeMap::new();
+        let mut held: BTreeMap<(usize, NodePath), Option<BodyIr>> = BTreeMap::new();
         for (which, relation) in given.iter().enumerate() {
             let mut start = 0usize;
             for (index, slot) in relation.slots.iter().enumerate() {
                 for GivenLabel { label, body, place } in &slot.labels {
                     let own = self.program.label_position(&relation.form, *label).map(|position| usize::from(position.0));
                     let Some(position) = own.or(*place) else { continue };
-                    let body = held.entry((which, body.clone())).or_insert_with(|| self.held(relation, body));
+                    let body = held.entry((which, body.clone())).or_insert_with(|| self.checked.body_ir(self.registry, relation, body));
                     let found = self.label_sources(body.as_ref(), *label, visiting);
                     let moved = index >= relation.sites_from && types.get(position).is_some_and(ValueType::moved_by_d4);
                     if let Some(sources) = flows.get_mut(position) {
@@ -541,45 +515,11 @@ impl<'p> Flows<'p> {
 
     /// The sources of `label` in the IR of a body `held`, none where the body
     /// does not compile or binds no such label.
-    fn label_sources(&self, held: Option<&Held>, label: LabelId, visiting: &[GraphNodeIndex]) -> Vec<ColumnSource> {
+    fn label_sources(&self, held: Option<&BodyIr>, label: LabelId, visiting: &[GraphNodeIndex]) -> Vec<ColumnSource> {
         let Some(held) = held else { return Vec::new() };
         let (clause, paths) = held.parts();
         let walk = Walk { flows: self, visiting };
         paths.labels.iter().position(|bound| *bound == label).map_or_else(Vec::new, |variable| walk.sources(Variable(variable as u16), &Alt::of(clause, paths), &mut Vec::new()))
-    }
-
-    /// The IR that the evaluator joins for the body at `body`, a path below
-    /// the form of `relation`, with the paths of its nodes; none where the
-    /// form's body does not compile.
-    fn held(&self, relation: &Given, body: &NodePath) -> Option<Held> {
-        let form = &relation.form;
-        let at = form.join(body);
-        let root = NodeRef::Program(self.program.program.value());
-        match node_at(root, form)? {
-            NodeRef::Clause(clause) => driver::clause_body(self.checked, form, clause).ok().map(Held::Body),
-            NodeRef::Choose(choose) => {
-                if choose.rows.is_some() && *body == NodePath::default().child(0) {
-                    picks::for_pathed(self.checked, form, choose).ok().flatten().map(|(clause, paths)| Held::Own(clause, paths))
-                } else {
-                    Held::of(picks::from_pathed(self.checked, form, choose))
-                }
-            }
-            NodeRef::Demonstrated(demonstrated) => {
-                let (clause, paths) = demonstrated::clause_at(self.checked, demonstrated, form, &at)?.ok()?;
-                Some(Held::Shared(clause, paths))
-            }
-            NodeRef::Instance(instance) => {
-                let component = registry_columns::component(self.registry, &instance.component)?;
-                let shape = super::init_form::InstanceShape::of(self.checked, form, instance, component);
-                let (clause, paths) = shape.clause_at(self.checked, form, component, &at)?.ok()?;
-                Some(Held::Shared(clause, paths))
-            }
-            NodeRef::RigidDet(rigid) => {
-                let steps = relation.output.as_deref()?;
-                Held::of(rigid::output_clause(self.checked, form, rigid, steps.first()?))
-            }
-            _ => None,
-        }
     }
 
     /// The fill of each `from-key` input that the instance of `relation`
@@ -683,7 +623,7 @@ impl<'p> Flows<'p> {
                     if is_key(&input.port.columns[from_column]) {
                         // The key's labels as the input's written bodies bind them.
                         for body in self.program.input_bodies(&relation.form, &input.port.name) {
-                            let bound = self.held(relation, &body);
+                            let bound = self.checked.body_ir(self.registry, relation, &body);
                             for slot in relation.slots.iter().filter(|slot| slot.is_key) {
                                 for GivenLabel { label, place, .. } in &slot.labels {
                                     let Some(position) = self.program.label_position(&relation.form, *label).map(|position| usize::from(position.0)).or(*place) else { continue };

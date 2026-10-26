@@ -2,7 +2,7 @@
 
     python engine/arclog-py/tables_export.py <out dir> [--all-cases] [--bodies] [--projection-cap N] [--previous <export dir>] [<task id> ...]
 
-It needs an interpreter with `arclog`, pandas and pyarrow, such as the LM work's venv. The code that decides a part's rows, values and fault lines is in `export_rows.py`. A change to that module, or to the engine code that writes the export's files (`engine/arclog/src/eval/flows.rs`, `engine/arclog/src/decode/`), runs `engine/arclog-py/roundtrip_check.py` with an `arclog` built from its tree before its merge.
+It needs an interpreter with `arclog`, pandas and pyarrow, such as the LM work's venv. The code that decides a part's rows, values and fault lines is in `export_rows.py`. A change to that module, or to the engine code that writes the export's files (`engine/arclog-tables/src/`, `engine/arclog-tables-py/src/`, `engine/arclog/src/decode/`), runs `engine/arclog-py/roundtrip_check.py` with an `arclog` built from its tree before its merge.
 
 Runs one `arclog.corpus_tables` call per task id, the longest first, on a queue of N Python threads, where N is `ARCLOG_THREADS`
 if set and `os.cpu_count()` otherwise. `replay_order` gives the order, which `lm/export.py` takes too: the tasks the export `--previous` gives no seconds for, or all tasks where none is given, by the largest
@@ -183,10 +183,15 @@ def digest_files(files):
     return digest.hexdigest()
 
 
-def engine_digest():
-    """The sha256 of the files of the installed `arclog` package (its compiled library holds the lib's registry and constructions) and of one line of the versions of Python, numpy, pandas and pyarrow."""
+def package_files():
+    """The (name, path) pairs of the files of the installed `arclog` package, its compiled library among them (it holds the lib's registry and constructions)."""
     package = os.path.dirname(arclog.__file__)
-    files = [(os.path.relpath(f, package), f) for f in glob.glob(f"{package}/**", recursive=True) if os.path.isfile(f) and "__pycache__" not in f]
+    return [(os.path.relpath(f, package), f) for f in glob.glob(f"{package}/**", recursive=True) if os.path.isfile(f) and "__pycache__" not in f]
+
+
+def engine_digest():
+    """The sha256 of the files `package_files` gives and of one line of the versions of Python, numpy, pandas and pyarrow."""
+    files = package_files()
     versions = f"{sys.version} {np.__version__} {pd.__version__} {pyarrow.__version__}"
     return hashlib.sha256((digest_files(files) + versions).encode()).hexdigest()
 
@@ -196,10 +201,10 @@ def checks_digest():
     return digest_files([("export_checks.py", CHECKER)])
 
 
-def task_key(engine, task, settings):
-    """The sha256 of the task's generated program and data, its task file, the `engine_digest`, `export_rows.py` (the file `ROWS` gives) and the settings text."""
+def task_key(engine, task, settings, modules):
+    """The sha256 of the task's generated program and data, its task file, the files `modules` gives, the `engine` digest and the settings text."""
     digest = hashlib.sha256()
-    for f in (f"{CORPUS}/{task}.arclog", f"{CORPUS}/{task}.arcdata", f"{TASKS}/{task}.json", ROWS):
+    for f in (f"{CORPUS}/{task}.arclog", f"{CORPUS}/{task}.arcdata", f"{TASKS}/{task}.json", *modules):
         digest.update(open(f, "rb").read() + b"\0")
     digest.update(engine.encode() + b"\0" + settings.encode())
     return digest.hexdigest()
@@ -332,7 +337,7 @@ def main(out, task_ids, previous=None, **options):
         else:
             os.remove(f)
     engine, checks = engine_digest(), checks_digest()
-    keys = {t: task_key(engine, t, settings_text) for t in task_ids}
+    keys = {t: task_key(engine, t, settings_text, (ROWS,)) for t in task_ids}
     tagged = {t: (key, checks) for t, key in keys.items()}
     check_pool = ProcessPoolExecutor(os.cpu_count(), mp_context=multiprocessing.get_context("spawn"))
     reused, k, open_parts = reuse_parts(out, previous, keys, k, done, checks, check_pool) if previous else (set(), k, {})

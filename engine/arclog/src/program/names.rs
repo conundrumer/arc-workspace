@@ -24,7 +24,7 @@ pub(crate) fn declared_spelled(name: &DeclaredName) -> String {
 }
 
 /// `column` as a file writes it, or its slot.
-pub(crate) fn column_spelled(column: &ColumnName) -> String {
+pub fn column_spelled(column: &ColumnName) -> String {
     match column {
         ColumnName::Written(text) => text.to_string(),
         ColumnName::Slot(slot) => slot_spelled(*slot),

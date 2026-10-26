@@ -20,13 +20,16 @@
 //! confirmed rules of a `DEMONSTRATED` form, and [`models`]
 //! enumerates the models of a case on an input, through the driver.
 //! [`mod@determinations`] gives the `DET` nodes in dependency order and the
-//! domain of each, which an evaluation at determined values reads.
+//! domain of each, which an evaluation at determined values reads, and
+//! [`body_ir`] gives the IR the driver joins for a body, for a reader of the
+//! body's facts.
 //! [`output`] reads a grid from a relation, for the judge. [`proposers`]
 //! gives the rows of a proposer over an evidence, which the driver reads for
 //! a clause that derives by a proposer. A request made with a
 //! [`crate::trace::RunTrace`] appends one record to it for each relation the
 //! driver evaluates.
 
+pub mod body_ir;
 pub mod cache;
 pub mod copies;
 pub mod determinations;
@@ -34,7 +37,6 @@ mod demonstrated;
 mod driver;
 pub mod examples;
 pub mod filters;
-pub mod flows;
 pub mod init_form;
 pub mod instance;
 pub mod ir;

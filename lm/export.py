@@ -39,15 +39,16 @@ model steps done, as arclog.ReplayProgress gives them.
 
 `--previous <dir>` takes, for each task whose key equals the key in <dir>/keys.json, that task's rows of <dir>/cases.npz
 and its lines of <dir>/stream-report-all.txt, and streams only the other tasks; the files written are those a run with
-no `--previous` writes. A task's key is the sha256 of its work/arclog/gen `.arclog` and `.arcdata`, its task file, the files
-of the installed `arclog` package, the versions of Python, numpy, pandas and pyarrow, `export_rows.py`, this file and the step cap
-(`tables_export.task_key` computes it). A <dir> with no keys.json gives no reuse. With a <out>/streams.pkl, `--previous`
+no `--previous` writes. A task's key is the sha256 of its work/arclog/gen `.arclog` and `.arcdata`, its task file,
+`arclog.streams_digest()` (fixed when the package is built, over the inputs of the compile of the crates the streams bindings are built from, and
+over no file of the crates that only the tables export runs), the files of the installed `arclog` package other than its compiled library,
+the versions of Python and numpy, this file and the step cap (`tables_export.task_key` computes it). A <dir> with no keys.json gives no reuse. With a <out>/streams.pkl, `--previous`
 exits with a message.
 
 Where <out>/streams.pkl exists, written by export_chunks.py, and no task id is given, the streams come from it
 instead.
 """
-import argparse, collections, concurrent.futures, glob, hashlib, json, os, pickle, sys, time, types
+import argparse, collections, concurrent.futures, glob, hashlib, importlib.machinery, json, os, pickle, sys, time, types
 import arclog, numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "engine", "arclog-py"))
 import tables_export as X
@@ -75,8 +76,9 @@ declared = {i for i, k in enumerate(kinds) if k in ("relation", "label")}
 CORPUS = "work/arclog/gen"
 X.CORPUS, X.TASKS = CORPUS, "data/tasks"
 task_ids = args.task_ids or sorted(os.path.basename(f)[:-len(".arcdata")] for f in glob.glob(f"{CORPUS}/*.arcdata"))
-engine = hashlib.sha256((X.engine_digest() + open(os.path.abspath(__file__)).read()).encode()).hexdigest()
-task_keys = {t: X.task_key(engine, t, f"step_cap={args.step_cap}") for t in task_ids}
+package_files = [(name, f) for name, f in X.package_files() if not f.endswith(tuple(importlib.machinery.EXTENSION_SUFFIXES))]     # the compiled library is covered by arclog.streams_digest()
+engine = hashlib.sha256((arclog.streams_digest() + X.digest_files(package_files) + f"{sys.version} {np.__version__}" + open(os.path.abspath(__file__)).read()).encode()).hexdigest()
+task_keys = {t: X.task_key(engine, t, f"step_cap={args.step_cap}", ()) for t in task_ids}
 previous = json.load(open(f"{args.previous}/keys.json")) if args.previous and os.path.exists(f"{args.previous}/keys.json") else {}
 reused = {t for t in task_ids if t in previous and previous[t]["key"] == task_keys[t]}
 to_stream = [t for t in task_ids if t not in reused]

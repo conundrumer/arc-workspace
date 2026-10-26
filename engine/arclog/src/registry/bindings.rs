@@ -79,7 +79,7 @@ fn parameter_column<'p>(port: &'p InputPort, column: &ColumnName) -> Option<&'p 
 /// `from-key` input other than the key's, where each takes the one key
 /// position among `key_types` of its type; none where one has none or
 /// several.
-pub(crate) fn key_fill(key_types: &[ValueType], types: &[ValueType]) -> Option<Vec<usize>> {
+pub fn key_fill(key_types: &[ValueType], types: &[ValueType]) -> Option<Vec<usize>> {
     types
         .iter()
         .map(|ty| {

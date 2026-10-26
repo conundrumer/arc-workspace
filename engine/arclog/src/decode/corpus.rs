@@ -1,9 +1,9 @@
-//! The walk of a solver of a corpus that records the tables of its case
-//! programs: the read of the solver and its task, the check of each wanted
-//! case, and, for each case whose stream the decoder takes, the tables of
-//! each step of its replay with the index of the step's token. The
-//! `arclog-cli` commands that replay a corpus and the Python package share
-//! the read of the task and the session of the run.
+//! The walk of a solver of a corpus that records what a caller builds of its
+//! case programs: the read of the solver and its task, the check of each
+//! wanted case, and, for each case whose stream the decoder takes, the
+//! record that the caller's function builds over the steps of its replay.
+//! The `arclog-cli` commands that replay a corpus and the Python packages
+//! share the read of the task and the session of the run.
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use super::replay::{replay_from, Stepped};
-use super::{Consistency, Decoder, Points, Table};
+use super::{Consistency, Decoder};
 use crate::eval::determinations::relation_spelled;
 use crate::eval::ReachedBound;
 use crate::eval::instance::Constructions;
@@ -644,38 +644,4 @@ pub fn replay_units<T: Default + Clone, U: Send>(
         }
     }
     results.into_iter().map(|results| results.into_iter().map(|result| result.expect("a result for each stream")).collect()).collect()
-}
-
-/// The tables of one case of a solver, each with the index in the stream of
-/// the token whose step gives it, or the fault that gives none.
-#[derive(Debug)]
-pub struct CaseTables {
-    /// The case as [`case_spelled`](crate::stream::corpus::case_spelled) writes its name.
-    pub case: String,
-    /// Whether the case is the solver's concept case.
-    pub concept: bool,
-    /// The tables in the order of the stream, or why the stream gives none.
-    pub tables: Result<Vec<(usize, Table)>, String>,
-}
-
-/// The tables of each wanted case of a solver, with the count of train
-/// pairs of its task, which names an example.
-#[derive(Debug)]
-pub struct SolverTables {
-    pub train: usize,
-    pub cases: Vec<CaseTables>,
-}
-
-/// The tables, at `points`, of each case of the solver `id` of `corpus` on
-/// its task in `tasks`, the concept case or, with `all`, every case, in the
-/// order of the cases, with the lib's constructions `constructions`, under
-/// `settings`; or the
-/// fault that stops the solver. A case that holds a `DEMONSTRATED` form is
-/// left out. The replay computes no token mask.
-pub fn solver_tables(corpus: &Path, tasks: &Path, id: &str, all: bool, points: Points, constructions: &Constructions, settings: &DecodeSettings) -> Result<SolverTables, String> {
-    let replayed = replay_solver(corpus, tasks, id, all, constructions, settings, false, &|tables: &mut Vec<(usize, Table)>, decoder, stepped| {
-        tables.extend(decoder.tables(points).into_iter().map(|table| (stepped.index, table)));
-    })?;
-    let cases = replayed.cases.into_iter().map(|case| CaseTables { case: case.case, concept: case.concept, tables: case.outcome }).collect();
-    Ok(SolverTables { train: replayed.train, cases })
 }

@@ -1,9 +1,14 @@
-# The arclog engine: one Cargo workspace with its four crates, the core
-# crate, the lib's constructions, the Python bindings and the binary.
+# The arclog engine: one Cargo workspace. The core crate, the lib's
+# constructions and the Python bindings of the streams export
+# (`arclog-bindings`) stand apart from the crates that only the tables export
+# runs (`arclog-tables`, `arclog-tables-py`): no crate of the first group
+# depends on one of the second, so the compiler refuses a call from the
+# streams path into the tables code. `arclog-py` is the extension module that
+# maturin builds, and `arclog-cli` the binary.
 
 [workspace]
 resolver = "3"
-members = ["arclog", "arclog-constructions", "arclog-cli", "arclog-py"]
+members = ["arclog", "arclog-constructions", "arclog-tables", "arclog-bindings", "arclog-tables-py", "arclog-cli", "arclog-py"]
 
 [workspace.package]
 version = "0.1.0"

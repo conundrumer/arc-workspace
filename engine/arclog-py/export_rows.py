@@ -3,8 +3,8 @@
 The reuse key of `tables_export.task_key` covers the bytes of this module, the installed `arclog` package and the versions of
 Python, numpy, pandas and pyarrow, so code that can change a part's rows, values or fault lines belongs here, and code that
 only moves, merges, orders or reports parts belongs in `tables_export.py`, whose edits leave the key unchanged. A change to
-this module, or to the engine code that writes the export's files (`engine/arclog/src/eval/flows.rs`,
-`engine/arclog/src/decode/`), runs `engine/arclog-py/roundtrip_check.py` with an `arclog` built from its tree before its merge.
+this module, or to the engine code that writes the export's files (`engine/arclog-tables/src/`,
+`engine/arclog-tables-py/src/`, `engine/arclog/src/decode/`), runs `engine/arclog-py/roundtrip_check.py` with an `arclog` built from its tree before its merge.
 """
 import os
 import numpy as np

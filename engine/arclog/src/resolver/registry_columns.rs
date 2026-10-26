@@ -69,7 +69,7 @@ pub(super) fn is_proposer(registry: &Registry, name: &LibName) -> bool {
 
 /// The component an `INIT` form names: a construction, a detector or a
 /// task-structure component.
-pub(crate) fn component<'r>(registry: &'r Registry, name: &LibName) -> Option<&'r Component> {
+pub fn component<'r>(registry: &'r Registry, name: &LibName) -> Option<&'r Component> {
     match registry.entry(name)? {
         LibEntry::Component(component) => Some(component),
         LibEntry::Relation(_) | LibEntry::Proposer(_) | LibEntry::Macro(Macro::Relation { .. }) => None,

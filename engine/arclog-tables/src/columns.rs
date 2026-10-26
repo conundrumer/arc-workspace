@@ -13,7 +13,7 @@
 //! - [`FlowColumns`]: a source of a column of a table;
 //! - [`CopyColumns`]: a declared row of a component's output that the
 //!   output's rows break, which a replay under
-//!   [`DecodeSettings::check_copies`](crate::stream::DecodeSettings::check_copies)
+//!   [`DecodeSettings::check_copies`](arclog::stream::DecodeSettings::check_copies)
 //!   finds.
 //!
 //! The first tables of a case are the evidence tables of its task, `ex_input`
@@ -35,21 +35,24 @@
 //! one offset, and the cells stand once in `values`. A run without a cell has
 //! offset 0.
 
-use super::{Contents, Point, Table, TableRelation, Projections};
-use crate::read::spelling::{spelling, FACT_RELATIONS};
-use crate::eval::determinations::relation_spelled;
-use crate::eval::join::each_row;
-use crate::eval::{RelationValue, Stop};
-use crate::hash::{StableHash, StableHashMap, StableHasher};
 use std::hash::Hash;
-use crate::program::path::NodePath;
-use crate::program::{column_spelled, ColumnName, ProgramRelation, RelationRef};
-use crate::registry::Registry;
-use crate::eval::copies::CopyViolation;
-use crate::eval::flows::{ColumnSource, SourceColumn, SourceKind};
-use crate::relations::Relation;
-use crate::terms::{Constant, OrientationConstant, Term, TermId, ORIENTATION_TYPES};
-use crate::types::ValueType;
+
+use arclog::decode::Projections;
+use arclog::eval::copies::CopyViolation;
+use arclog::eval::determinations::relation_spelled;
+use arclog::eval::join::each_row;
+use arclog::eval::{RelationValue, Stop};
+use arclog::hash::{StableHash, StableHashMap, StableHasher};
+use arclog::program::path::NodePath;
+use arclog::program::{column_spelled, ColumnName, ProgramRelation, RelationRef};
+use arclog::read::spelling::{spelling, FACT_RELATIONS};
+use arclog::registry::Registry;
+use arclog::relations::Relation;
+use arclog::terms::{Constant, OrientationConstant, Term, TermId, ORIENTATION_TYPES};
+use arclog::types::ValueType;
+
+use crate::flows::{ColumnSource, SourceColumn, SourceKind};
+use crate::tables::{Contents, Point, Table, TableRelation};
 
 /// The point of a table, as the code in [`TableColumns::point`].
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -253,7 +256,7 @@ pub struct FlowColumns {
 }
 
 /// One row for each declared row of an output that the output's rows break,
-/// as [`crate::eval::copies`] checks it.
+/// as [`arclog::eval::copies`] checks it.
 #[derive(Clone, Debug, Default)]
 pub struct CopyColumns {
     /// The instance, its output, the declared row and the count of rows that

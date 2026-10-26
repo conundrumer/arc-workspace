@@ -13,6 +13,9 @@ arclog = { path = "../arclog" }
 # The table of the lib's constructions, which the concept cases and the lib
 # comparison's components are evaluated with.
 arclog-constructions = { path = "../arclog-constructions" }
+# The tables of a decode's steps, which `tables` counts and `row-counts`
+# marks the relations without.
+arclog-tables = { path = "../arclog-tables" }
 # The JSON of the Souffle snapshot and of `souffle_parity.py rerun --json`,
 # which `compare`, `speed`, `check-diff` and `select` read, and of the files
 # of `lib-compare` and `row-counts`, which a Python program reads

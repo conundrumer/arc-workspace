@@ -205,15 +205,15 @@ impl Determination {
 
 /// A `DET` that a relation reads, at any depth.
 #[derive(Clone, Debug)]
-pub(crate) struct Det {
-    pub(crate) node: GraphNodeIndex,
-    pub(crate) relation: ProgramRelation,
+pub struct Det {
+    pub node: GraphNodeIndex,
+    pub relation: ProgramRelation,
     /// Whether it ends in `(ONE)`.
-    pub(crate) open: bool,
+    pub open: bool,
     /// Whether it ends in `(ONE)` and names no proposer, so that the models
     /// of the constraint module give its values. A solver determination
     /// leaves it unassigned.
-    pub(crate) pick: bool,
+    pub pick: bool,
 }
 
 /// Each `DET` that the relation at `root` reads in `program`, at any depth,
@@ -242,7 +242,7 @@ pub(crate) struct Kept {
 
 /// What ends the walk of the assignments before its last assignment.
 #[derive(Clone, Debug)]
-pub(crate) enum End {
+pub enum End {
     Stop(Stop),
     Fault(RunFault),
 }
@@ -342,7 +342,7 @@ pub fn determine(cases: &[DeterminedCase<'_>], judged: &JudgedTask, world: World
 }
 
 /// A value for a `DET`.
-pub(crate) type Assignment = (ProgramRelation, Arc<Relation>);
+pub type Assignment = (ProgramRelation, Arc<Relation>);
 
 /// The joint assignments of `dets`, depth-first in their dependency order,
 /// under the assignment cap `cap`: `leaf` runs at each, with the
