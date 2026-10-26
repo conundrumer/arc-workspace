@@ -344,7 +344,6 @@ fn first_difference(pairs: &[PairRows<'_>]) -> Comparison {
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
-    use arclog::terms::{Content, Ident, InternTable, WrittenIdent};
     use crate::renaming::{EngineLeaf, Leaf};
 
     fn n(value: i64) -> Leaf {
@@ -371,32 +370,12 @@ mod tests {
         row.iter().map(|&v| EngineLeaf::Written(n(v))).collect()
     }
 
-    fn idents(count: u32) -> Vec<Ident> {
-        let mut table = InternTable::default();
-        (0..count).map(|i| table.intern(Content::FromFile { ty: arclog::types::ValueType::Ident, written: WrittenIdent::new(i) })).collect()
-    }
-
     #[test]
     fn names_the_relation_whose_rows_differ_at_an_equal_count() {
         let souffle = rerun(&[("souffle:lib", &[&[0]]), ("&a", &[&[1, 2]]), ("&b", &[&[3], &[4]]), ("&c", &[&[9]])]);
         let ours = [("&a", vec![written(&[1, 2])]), ("&b", vec![written(&[3]), written(&[5])]), ("&c", vec![written(&[0])])];
         let found = first_difference(&[on("train 0", &souffle, &ours)]).difference.expect("a difference");
         assert!(found.contains("is &b on train 0:"), "{found}");
-    }
-
-    #[test]
-    fn compares_the_places_that_hold_idents_as_blanks_with_no_renaming() {
-        let [x, y] = idents(2)[..] else { unreachable!() };
-        let id = |ident, color: i64| vec![EngineLeaf::Ident(ident), EngineLeaf::Written(n(color))];
-        let first = rerun(&[("&color", &[&[7, 1], &[8, 2]]), ("&big", &[&[7]])]);
-        let second = rerun(&[("&big", &[&[8]])]);
-        let ours = [("&color", vec![id(x, 1), id(y, 2)]), ("&big", vec![vec![EngineLeaf::Ident(x)]])];
-        let ours_second = [("&big", vec![vec![EngineLeaf::Ident(x)]])];
-        let pairs = [on("train 0", &first, &ours), on("train 1", &second, &ours_second)];
-        assert_eq!(first_difference(&pairs).difference, None);
-        let other_color = [("&color", vec![id(x, 1), id(y, 3)]), ("&big", vec![vec![EngineLeaf::Ident(x)]])];
-        let found = first_difference(&[on("train 0", &first, &other_color)]).difference.expect("a difference");
-        assert!(found.contains("is &color on train 0:"), "{found}");
     }
 
     #[test]

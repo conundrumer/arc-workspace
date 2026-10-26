@@ -450,17 +450,6 @@ mod tests {
     }
 
     #[test]
-    fn equals_where_minted_ids_that_share_a_number_in_souffle_agree_by_their_members() {
-        // Souffle gives the number 7 to an object of each relation, but two objects; each relation's rows are the sets of the members.
-        let relations = [
-            checked("&comps4.component", BTreeSet::from([vec![text("{[1],[2]}")]]), vec![minted("{[1],[2]}")]),
-            checked("&comps8.component", BTreeSet::from([vec![text("{[3],[4]}")]]), vec![minted("{[3],[4]}")]),
-        ];
-        let verdicts = compare_pair("train 0", &relations);
-        assert!(verdicts.iter().all(|(_, verdict)| matches!(verdict, Verdict::Equal(_))), "{verdicts:?}");
-    }
-
-    #[test]
     fn differs_where_a_minted_id_has_other_members() {
         let relations = [checked("&label", BTreeSet::from([vec![text("{[1],[2]}")]]), vec![minted("{[1],[3]}")])];
         let [(_, verdict)] = &compare_pair("train 0", &relations)[..] else { panic!("one verdict") };

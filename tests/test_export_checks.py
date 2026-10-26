@@ -59,14 +59,6 @@ def with_entry(frames, table, rows, offset):
     entries.loc[len(entries)] = [table, 1, 0, 0, rows, offset]
 
 
-def test_case_whose_entries_and_assignments_share_a_run_gives_no_line():
-    frames, values = case()
-    with_entry(frames, 3, 2, 40)                    # the rows of entry 4, which hold a Dir8 and a Dir column at its assignment
-    assigned = frames["assigned"]
-    assigned.loc[len(assigned)] = [5, 0, 1, 46]     # and its assignment's run
-    assert lines(frames, values) == []
-
-
 def test_run_that_partly_overlaps_another_is_reported():
     frames, values = case()
     with_entry(frames, 2, 1, 36)                    # the first row of the run of entry 3

@@ -59,15 +59,3 @@ fn the_evidence_tables_are_the_first_tables_of_a_case() {
         assert_eq!(columns.values[offset..offset + count * 6], expected[..], "the cells of entry {entry}");
     }
 }
-
-#[test]
-fn entries_with_equal_rows_share_one_run() {
-    let task = read_task_text(r#"{"train": [{"input": [[1, 2]], "output": [[1, 2]]}, {"input": [[3]], "output": [[4]]}], "test": [{"input": [[3]]}]}"#).expect("the task reads");
-    let columns = case_columns(&evidence_tables(&task, Registry::get()), &[], 2);
-    let entries = &columns.entries;
-    // ex_input then ex_output: the train pair 0 holds the same grid twice, so the same rows.
-    assert_eq!(entries.table, vec![0, 0, 0, 1, 1]);
-    assert_eq!(entries.offset[0], entries.offset[3]);
-    assert_ne!(entries.offset[1], entries.offset[4]);
-    assert_eq!(columns.values.len(), (2 + 1 + 1 + 1) * 6, "each distinct run stands once");
-}

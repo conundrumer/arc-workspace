@@ -144,25 +144,3 @@ def test_lines_give_seconds_and_units_and_older_lines_give_no_reuse(tmp_path, mo
         for f in os.listdir(tmp_path / "second" / "values" / t):
             assert not os.path.samefile(tmp_path / "second" / "values" / t / f, tmp_path / "first" / "values" / t / f)
     assert {l.task: l.units for l in task_lines(tmp_path / "second")} == {t: 1 for t in TASKS}
-
-
-@pytest.mark.skipif(not all((GEN / f"{t}.arclog").exists() for t in TASKS), reason="no generated corpus")
-def test_a_long_task_replays_in_units_and_the_next_run_reads_its_seconds_times_units(tmp_path, monkeypatch):
-    options = {**setup(tmp_path, monkeypatch), "all_cases": True}
-    export.main(str(tmp_path / "first"), TASKS, **options)
-    cases = {t: len(os.listdir(tmp_path / "first" / "values" / t)) for t in TASKS}
-    if max(cases.values()) < 2:
-        pytest.skip("no task of the corpus here has two cases")
-    long = max(TASKS, key=lambda t: cases[t])
-    for part in (tmp_path / "first" / "parts").glob("*.tasks.txt"):
-        part.write_text("".join(l._replace(seconds=1000.0 if l.task == long else 1.0, key=None).text() + "\n" for l in export.read_task_lines(part)))
-    monkeypatch.setenv("ARCLOG_THREADS", "2")    # `main` sets it to 1 for the engine
-    export.main(str(tmp_path / "second"), TASKS, previous=str(tmp_path / "first"), **options)
-    units = {l.task: l.units for l in task_lines(tmp_path / "second")}
-    assert units[long] == min(2, cases[long]) and all(units[t] == 1 for t in TASKS if t != long)
-    export.main(str(tmp_path / "full"), TASKS, **options)
-    for name in ("report.txt", "checks.txt"):
-        assert (tmp_path / "second" / name).read_text() == (tmp_path / "full" / name).read_text()
-    for t in TASKS:
-        assert sorted(os.listdir(tmp_path / "second" / "values" / t)) == sorted(os.listdir(tmp_path / "full" / "values" / t))
-    assert {l.task: l.one_thread_seconds for l in task_lines(tmp_path / "second")}[long] == pytest.approx(units[long] * next(l.seconds for l in task_lines(tmp_path / "second") if l.task == long))

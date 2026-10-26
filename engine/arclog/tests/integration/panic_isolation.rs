@@ -9,7 +9,7 @@ use arclog::stream::corpus::{solver_streams, token_ids, WantedCases};
 use arclog::stream::{DecodeSettings, Vocabulary};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-pub(crate) const ARCLOG: &str = "\
+const ARCLOG: &str = "\
 ;; tie
 
 (DET &seed RarestColor)
@@ -40,7 +40,7 @@ pub(crate) const ARCLOG: &str = "\
        (&seed (:C Col)))))
 ";
 
-pub(crate) const ARCDATA: &str = "\
+const ARCDATA: &str = "\
 ;; tie
 
 (param &seed Color (2))
