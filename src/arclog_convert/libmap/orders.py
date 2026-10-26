@@ -1,8 +1,14 @@
 """The expansions of the order components onto `Order`, `Tally` and
 `Canon`, as `instances.Spec` shapes: the score form of `Order` for
 `Ordinal`, `Extremes`, `ArgExtremes`, `IndexCycle` and `Mode`, the `before`
-form for `LexOrder` and `OrderFrame`, `Canon` over the identity for
-`IdentOf`, and a `Tally` for `KeyedSetCompare.pattern_size`.
+form for `OrderFrame`, `Canon` over the identity for `IdentOf`, and a `Tally`
+for `KeyedSetCompare.pattern_size`.
+
+`LexOrder` has both forms. Where a clause reads its `before`, the `before`
+form states each ordered pair of cells. Otherwise the score form gives each
+cell two rows, `score` the first of its two distances from the corner and
+`secondary_score` the second, so the order is the lexicographic order of the
+two.
 """
 from __future__ import annotations
 
@@ -75,12 +81,16 @@ ORDER_READS = {f"{r}(Ky, A, B)": f"{{x}}.{r}(Ky, A, B)" for r in ("before", "nex
 
 
 def lex_order(inst, ex):
+    cells = "{x}.elem(Ky, P) :- in_cell(Ky, P).\n"
+    if "before" in ex.reads_of(inst):
+        order = ("{x}.before(Ky, Q, P) :- in_cell(Ky, Q), in_cell(Ky, P), in_corner(Ky, Diag), in_axis(Ky, A),"
+                 " (dir_of(Diag, A, D), nearer(D, Q, P) ;"
+                 " diag_dirs(Diag, A, D, D2), same_dist(D, Q, P), nearer(D2, Q, P)).")
+    else:
+        dist = "in_cell(Ky, P), in_corner(Ky, Diag), in_axis(Ky, A), diag_dist(P, Diag, A, K1, K2)."
+        order = f"{{x}}.score(Ky, P, K1) :- {dist}\n{{x}}.secondary_score(Ky, P, K2) :- {dist}"
     return Spec(".init {x} = Order<{Key}, Position>", {},
-                ORDER_READS | {"cell(Ky, P)": "{x}.elem(Ky, P)"},
-                "{x}.elem(Ky, P) :- in_cell(Ky, P).\n"
-                "{x}.before(Ky, Q, P) :- in_cell(Ky, Q), in_cell(Ky, P), in_corner(Ky, Diag), in_axis(Ky, A),"
-                " (dir_of(Diag, A, D), nearer(D, Q, P) ;"
-                " diag_dirs(Diag, A, D, D2), same_dist(D, Q, P), nearer(D2, Q, P)).")
+                ORDER_READS | {"cell(Ky, P)": "{x}.elem(Ky, P)"}, cells + order)
 
 
 def order_frame(inst, ex):

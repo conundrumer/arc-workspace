@@ -20,10 +20,11 @@ fn rows(arity: u16, rows: &[&[i32]]) -> RowSet {
 fn broken(minimal: &[&[i32]]) -> Vec<(usize, usize, usize)> {
     let registry = Registry::get();
     let Some(LibEntry::Component(order)) = registry.entry(&LibName("Order".into())) else { panic!("Order is a component") };
-    let inputs = [rows(1, &[&[1], &[2]]), rows(2, &[]), rows(2, &[]), rows(1, &[])];
+    let inputs = [rows(1, &[&[1], &[2]]), rows(2, &[]), rows(2, &[]), rows(2, &[]), rows(1, &[])];
     let numbers: Box<[ValueType]> = Box::new([ValueType::Number]);
-    let types = [numbers.clone(), Box::new([ValueType::Number, ValueType::Number]), Box::new([ValueType::Number, ValueType::Number]), numbers.clone()];
-    let columns = [numbers.clone(), Box::new([ValueType::Number, ValueType::Number]), Box::new([ValueType::Number, ValueType::Number]), numbers];
+    let pair: Box<[ValueType]> = Box::new([ValueType::Number, ValueType::Number]);
+    let types = [numbers.clone(), pair.clone(), pair.clone(), pair.clone(), numbers.clone()];
+    let columns = [numbers.clone(), pair.clone(), pair.clone(), pair, numbers];
     let wanted = [true; 6];
     let group = GroupInputs { inputs: &inputs, types: &types, columns: &columns, wanted: &wanted };
     let outputs = GroupOutputs { outputs: Box::new([rows(2, &[&[1, 0]]), rows(2, &[&[1, 0]]), rows(1, minimal), rows(1, &[&[2]]), rows(2, &[&[1, 2]]), rows(2, &[&[1, 2], &[2, 1]])]) };

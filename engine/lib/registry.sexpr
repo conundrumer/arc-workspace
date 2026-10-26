@@ -75,6 +75,7 @@
   (inputs (member (key Key) (t T))
     (before (key Key) (a T) (b T))
     (score (key Key) (t T) (S number))
+    (secondary_score (key Key) (t T) (S number))
     (probe (key Key) (t T)))
   (outputs (rank (key Key) (t T) (R number)
       (copies (either (member (t t)) (probe (t t)))))
