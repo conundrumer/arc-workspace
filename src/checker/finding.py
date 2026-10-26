@@ -276,6 +276,7 @@ class LintSentence(StrEnum):
     OPEN_VALUE_NO_COLUMN = "open value no column"
     RECURSION = "recursion"
     DEAD = "dead"
+    UNFILLED_INPUT = "unfilled input"
     ALIAS = "alias"
     NEGATED_USE = "negated use"
     CHOICE_DOMAIN = "choice domain"

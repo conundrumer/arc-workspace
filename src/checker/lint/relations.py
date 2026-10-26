@@ -1,7 +1,8 @@
 """The relation-level lint checks on shapes that the corpus's edits
 rewrite away, each mirroring an edit family observed across the solvers.
 They read the relations of the scopes that hold program code, less the
-case enumeration's."""
+case enumeration's. With them, the check on a read of an input of a lib
+component's instance that no clause writes."""
 
 from collections.abc import Sequence
 
@@ -25,6 +26,7 @@ from checker.lint.view import (
     view,
 )
 from checker.runs import Runs
+from engine import Resolved
 from engine.program import (
     AggregateOperator,
     Atom,
@@ -43,9 +45,10 @@ from engine.program import (
     Unit,
     Variable,
     Wildcard,
+    body_atoms,
     own,
 )
-from engine.quotes import quotes
+from engine.quotes import guard, quotes
 from solver.aggregate import Solver
 from solver.case_types import (
     substituted_atom,
@@ -225,6 +228,69 @@ def check_dead(solver: Solver, runs: Runs) -> list[Finding]:
     relation's rules can orphan the relations those rules read. Serves the
     purest form: nothing the concept does not use."""
     return _claimed(solver, runs, Category.DEAD)
+
+
+type InstancePath = tuple[DeclId, ...]
+"""The instances a name passes through, outermost first
+(`engine.Resolved.through`)."""
+
+
+def _written_at(v: View, decl: RelationDecl) -> list[InstancePath]:
+    """The instance path of each clause or fact, of the solver or of the
+    lib, that heads `decl`. The path is empty for a clause of the
+    component itself, which writes the relation at every instance: a default
+    of an input."""
+    paths: list[InstancePath] = []
+    for o in v.index.feeding(decl.id):
+        unit = v.units.get(o.unit)
+        r = v.index.resolve(o.atom.relation, unit.scope) \
+            if unit is not None else None
+        if isinstance(r, Resolved):
+            paths.append(r.through)
+    return paths
+
+
+def _writes(through: InstancePath, written: Sequence[InstancePath]) -> bool:
+    """Whether a clause at one of the paths `written` writes the relation
+    at `through`: the path is a tail of `through`, since a clause inside a
+    component names an instance of it by the instances inside the
+    component."""
+    return any(len(w) <= len(through) and through[len(through) - len(w):] == w
+               for w in written)
+
+
+@guard("A read of an input of a lib component's instance that no clause "
+       "writes: the read matches no row, and Souffle gives no message.")
+def check_unfilled_input(solver: Solver, runs: Runs) -> list[Finding]:
+    """A positive read of `<inst>.<input>` of an instance of a lib
+    component, where no clause or fact heads that input at that instance
+    (`_written_at`): the instance's relation derives no row without one,
+    as `<inst>.before` of an `Order` the solver states in the score form.
+    A lib relation that no rule of its component derives is an input
+    (`handbook.libcheck.input_marks`). A negated read gives no finding."""
+    v = view(solver, runs)
+    written: dict[DeclId, list[InstancePath]] = {}
+    out: list[Finding] = []
+    for u in v.own_units:
+        negated = {id(a) for a, n in body_atoms(u.body or ()) if n}
+        seen: set[tuple[InstancePath, DeclId]] = set()
+        for atom in atoms_read(u):
+            r = v.index.resolve(atom.relation, u.scope)
+            if id(atom) in negated or not isinstance(r, Resolved) \
+                    or not r.through or (r.through, r.declaration) in seen:
+                continue
+            d = v.decls.get(r.declaration)
+            if not isinstance(d, RelationDecl) or not v.is_lib(d):
+                continue
+            paths = written.setdefault(d.id, _written_at(v, d))
+            if _writes(r.through, paths):
+                continue
+            seen.add((r.through, r.declaration))
+            out.append(lint(atom.line, LintNamed(
+                Category.UNFILLED_INPUT, LintSentence.UNFILLED_INPUT,
+                (".".join(atom.relation.instances), atom.relation.name)),
+                (u.id,)))
+    return out
 
 
 def lib_inline(v: View) -> tuple[frozenset[str], frozenset[str]]:

@@ -177,6 +177,9 @@ LINT_TEXT: dict[LintSentence, Callable[[tuple[str, ...], tuple[str, ...]],
         "[Types](docs/handbook/solver-file.md#types) lists; re-encode it or "
         "propose it").format(*n),
     LintSentence.DEAD: lambda n, _: mctx("`{0}` has no uses").format(*n),
+    LintSentence.UNFILLED_INPUT: lambda n, _: mctx(
+        "`{0}.{1}` is read, and no clause or fact writes the "
+        "input `{1}` of `{0}`, so the read matches no row").format(*n),
     LintSentence.CHOICE_DOMAIN: lambda n, m: mctx(
         "`{name}` keeps one arbitrary tuple per `{over}`; state what picks "
         "it").format(name=n[0], over=", ".join(m)),
