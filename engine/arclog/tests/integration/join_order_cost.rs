@@ -31,7 +31,11 @@ fn checked(body: &str) -> CheckedProgram {
 }
 
 fn task() -> Task {
-    let rows = (0..SIDE).map(|_| (0..SIDE).map(|_| Color::from_digit(1).expect("a color digit")).collect()).collect();
+    square_task(SIDE)
+}
+
+fn square_task(side: usize) -> Task {
+    let rows = (0..side).map(|_| (0..side).map(|_| Color::from_digit(1).expect("a color digit")).collect()).collect();
     let input = Grid::from_rows(rows).expect("a grid");
     Task { train: Box::new([TrainPair { input: input.clone(), output: input }]), test: Box::new([]) }
 }
@@ -46,6 +50,7 @@ fn fact_inputs(clause: &ClauseIr, task: &Task) -> JoinInputs {
                     let AtomSource::Fact(fact) = atom.source else { panic!("an atom of a fact relation") };
                     NodeInput::Relation(Arc::new(task.fact_rows(fact, Some(Example::at(0)))))
                 }
+                IrNode::Or(union) => NodeInput::Clauses(union.branches.iter().map(|branch| fact_inputs(branch, task)).collect()),
                 _ => NodeInput::Unread,
             })
             .collect(),
@@ -114,4 +119,38 @@ fn an_export_with_an_estimate_stands_before_one_without_whatever_their_positions
     let offset = *union.exported.iter().find(|variable| *variable != piece).expect("two exports");
     assert!(offset.0 < piece.0, "the export without an estimate stands at the lower position: {union:?}");
     assert_eq!(order.0.as_ref(), [*piece, offset], "{order:?}");
+}
+
+/// A body shaped like a `$Cross` clause: an atom binds `Corner`, and a union
+/// exports `Piece`, `Corner` and `Cell`, where its second branch binds `Piece`
+/// only by `(= Piece Corner)`.
+const EQUAL_BRANCH_BODY: &str = "(input (:P *Corner))\n  (OR ((input (:P *Piece)) (= Corner Piece) (input (:P *Cell)))\n      ((= Piece Corner) (input (:P Cell))))";
+
+#[test]
+fn a_union_export_stands_after_the_variable_its_equal_branch_reads_and_the_join_gives_the_rows() {
+    let program = checked(EQUAL_BRANCH_BODY);
+    let task = square_task(3);
+    let path = NodePath(Box::new([PathStep(program.program.program.value().forms.len() as u32 - 1)]));
+    let clause = compile_conjuncts(&program, &path, &[0, 1]).expect("the body compiles");
+    let inputs = fact_inputs(&clause, &task);
+    let IrNode::Or(union) = &clause.nodes[1] else { panic!("a union node") };
+    // The atom's rows exceed the estimate of `Cell`, which each branch binds by an atom of 3 rows.
+    let branch_sizes = union
+        .branches
+        .iter()
+        .map(|branch| RelationSizes(branch.nodes.iter().map(|node| if matches!(node, IrNode::Atom(_)) { NodeSize::Rows(3) } else { NodeSize::Unread }).collect()))
+        .collect();
+    let sizes = RelationSizes(Box::new([NodeSize::Rows(572), NodeSize::Clauses(branch_sizes)]));
+    let order = variable_order(&clause, &sizes, &[]);
+    let IrNode::Atom(atom) = &clause.nodes[0] else { panic!("the `input` atom") };
+    let Some((_, Argument::Variable(corner))) = atom.arguments.0.first() else { panic!("a variable at the atom's site") };
+    let place = |variable: Variable| order.0.iter().position(|v| *v == variable).expect("in the order");
+    for export in union.exported.iter().filter(|export| *export != corner) {
+        assert!(place(*corner) < place(*export), "{order:?}");
+    }
+    let session = TaskSession::new(SessionBound { bytes: 1 << 26 }, Caps::CORPUS);
+    let limits = Limits::new(None, Cancellation::default());
+    let relation = join::join(&clause, &order, &inputs, Registry::get(), &mut Budget::new(&limits, &session)).expect("no bound reached");
+    // Each of the 9 cells as `Corner` with `Piece` the same cell and each of the 9 cells as `Cell`.
+    assert_eq!(relation.len(), 81);
 }

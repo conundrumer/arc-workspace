@@ -234,7 +234,22 @@ pub fn join_in(
     bound: &[(Variable, TermId)],
     budget: &mut Budget<'_>,
 ) -> Result<Relation, ReachedBound> {
-    let plan = memo.plan(clause, order, inputs, bound);
+    join_ordered(memo, clause, &|_| order.clone(), inputs, registry, bound, budget)
+}
+
+/// The relation of `clause` as [`join_in`] gives it, in the order that
+/// `order_at` gives at the variables `bound` binds, which is called when the
+/// memo holds no plan for those variables.
+fn join_ordered(
+    memo: &SearchMemo,
+    clause: &ClauseIr,
+    order_at: &dyn Fn(&[Variable]) -> VariableOrder,
+    inputs: &JoinInputs,
+    registry: &crate::registry::Registry,
+    bound: &[(Variable, TermId)],
+    budget: &mut Budget<'_>,
+) -> Result<Relation, ReachedBound> {
+    let plan = memo.plan(clause, order_at, inputs, bound);
     let mut found = Vec::new();
     for part in &plan.parts {
         let rows = Search::new(clause, &part.plan, inputs, registry, memo, bound).run(&part.projected, budget)?;
@@ -436,9 +451,6 @@ struct Plan {
     libs: Vec<Vec<usize>>,
     /// The variable order of each filter's body, by its node.
     filter_orders: StableHashMap<usize, VariableOrder>,
-    /// The variable order of each branch of a union, by its node and the
-    /// branch's index.
-    branch_orders: StableHashMap<(usize, usize), VariableOrder>,
     /// The nodes of the unions.
     unions: Vec<usize>,
     /// The rank from which no variable left in the order is projected,
@@ -472,7 +484,6 @@ impl Plan {
         let mut checks = vec![Vec::new(); order.len() + 1];
         let mut libs = vec![Vec::new(); clause.variables.len()];
         let mut filter_orders = StableHashMap::default();
-        let mut branch_orders = StableHashMap::default();
         let mut unions = Vec::new();
         for &node in nodes {
             let held = node_variables(&clause.nodes[node]);
@@ -493,12 +504,7 @@ impl Plan {
                     filter_orders.insert(node, variable_order(&filter.body, &sizes(&bodies[0]), &filter.outer));
                     checks[last].push(node);
                 }
-                IrNode::Or(union) => {
-                    let NodeInput::Clauses(bodies) = &inputs.0[node] else { panic!("the inputs of each branch") };
-                    for (branch, (body, inputs)) in union.branches.iter().zip(bodies.iter()).enumerate() {
-                        let outer: Vec<Variable> = body.columns.iter().copied().filter(|c| !union.exported.contains(c)).collect();
-                        branch_orders.insert((node, branch), variable_order(body, &sizes(inputs), &outer));
-                    }
+                IrNode::Or(_) => {
                     unions.push(node);
                     checks[last].push(node);
                 }
@@ -509,7 +515,7 @@ impl Plan {
             slot.sort_by_key(|&node| (check_cost(&clause.nodes[node]), node));
         }
         let stop_from = order.len() - order.iter().rev().take_while(|v| !clause.columns.contains(v)).count();
-        Plan { order, atoms, checks, libs, filter_orders, branch_orders, unions, stop_from }
+        Plan { order, atoms, checks, libs, filter_orders, unions, stop_from }
     }
 }
 
@@ -585,21 +591,23 @@ pub struct SearchMemo {
 
 impl SearchMemo {
     /// The plan of `clause` with `bound` bound before its search, made at
-    /// its first use.
-    fn plan(&self, clause: &ClauseIr, order: &VariableOrder, inputs: &JoinInputs, bound: &[(Variable, TermId)]) -> Rc<ClausePlan> {
+    /// its first use in the order that `order_at` gives at the sorted
+    /// variables of `bound`.
+    fn plan(&self, clause: &ClauseIr, order_at: &dyn Fn(&[Variable]) -> VariableOrder, inputs: &JoinInputs, bound: &[(Variable, TermId)]) -> Rc<ClausePlan> {
         let mut variables: Vec<Variable> = bound.iter().map(|&(variable, _)| variable).collect();
         variables.sort_by_key(|variable| variable.0);
         let key = (std::ptr::from_ref(clause) as usize, variables);
         if let Some(plan) = self.tables.borrow().plans.get(&key) {
             return plan.clone();
         }
+        let order = order_at(&key.1);
         let nodes: Vec<usize> = (0..clause.nodes.len()).collect();
         let parts = parts(clause, &nodes, &|node| node)
             .into_iter()
             .map(|part| PartPlan {
                 columns: part.columns(clause),
                 projected: clause.columns.iter().copied().filter(|v| part.variables.contains(v)).collect(),
-                plan: Plan::new(clause, &part.nodes, &[], part.order(order, &key.1), &key.1, inputs),
+                plan: Plan::new(clause, &part.nodes, &[], part.order(&order, &key.1), &key.1, inputs),
             })
             .collect();
         let plan = Rc::new(ClausePlan { parts });
@@ -879,8 +887,8 @@ impl<'c> Search<'c> {
             budget.replay(&charges)?;
             return Ok(relation);
         }
-        let order = &self.plan.branch_orders[&(node, index)];
-        let (relation, charges) = budget.logged(|budget| join_in(self.memo, branch, order, &bodies[index], self.registry, &key.1, budget))?;
+        let order_at = |bound: &[Variable]| variable_order(branch, &sizes(&bodies[index]), bound);
+        let (relation, charges) = budget.logged(|budget| join_ordered(self.memo, branch, &order_at, &bodies[index], self.registry, &key.1, budget))?;
         let relation = Arc::new(relation);
         self.memo.keep_branch(key, (relation.clone(), charges));
         Ok(relation)
