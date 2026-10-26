@@ -3,8 +3,9 @@
 A `CoverForcing`, `PlacementPruning` or `TiebreakResolutions` instance
 becomes a `Pick`: an item relation, whose rows are a slot's candidates, a
 picked relation named as the instance was, and the `apart` bodies. Reads of
-the instance's outputs become reads of the picked relation, and every
-column of type `TiebreakResolution` is dropped.
+the instance's outputs become reads of the picked relation, a read of its
+generator relation outside the instance becomes a read of the item relation,
+and every column of type `TiebreakResolution` is dropped.
 
 A pick whose every apart says that one candidate stands in two slots gets
 `ones`, the key columns of its `ONE` marks: the slot's columns, then the
@@ -16,6 +17,7 @@ only reader, the item relation's clauses become the picked relation's
 """
 
 from dataclasses import dataclass, field, fields as dc_fields, is_dataclass, replace as dc_replace
+from typing import NamedTuple
 
 from engine.program import (
     AdtType,
@@ -42,6 +44,23 @@ from engine.program import (
 
 COMPS = {"CoverForcing", "PlacementPruning", "TiebreakResolutions"}
 RES = "TiebreakResolution"
+
+
+class Generator(NamedTuple):
+    """A component's generator relation: the head positions of its (key,
+    slot, item) terms, and the index in the instance's type arguments of the
+    slot's and the item's types (`None`: the slot is a `Position`)."""
+
+    relation: str
+    order: tuple[int, int, int]
+    types: tuple[int | None, int]
+
+
+GENERATORS = {
+    "CoverForcing": Generator("covers", (0, 2, 1), (None, 1)),
+    "PlacementPruning": Generator("cand", (0, 2, 1), (2, 1)),
+    "TiebreakResolutions": Generator("cand", (0, 1, 2), (1, 2)),
+}
 
 
 @dataclass
@@ -419,12 +438,8 @@ class Rewriter:
         comp = inst.component
         targs = [a.name for a in inst.type_args]
         ktype = targs[0]
-        if comp == "CoverForcing":
-            gen_rel, order, types_ = "covers", (0, 2, 1), (ktype, "Position", targs[1])
-        elif comp == "PlacementPruning":
-            gen_rel, order, types_ = "cand", (0, 2, 1), (ktype, targs[2], targs[1])
-        else:
-            gen_rel, order, types_ = "cand", (0, 1, 2), (ktype, targs[1], targs[2])
+        gen_rel, order, type_args = GENERATORS[comp]
+        types_ = (ktype, *("Position" if i is None else targs[i] for i in type_args))
         conf_rel = None if comp == "TiebreakResolutions" else "conflict"
         gens = [u for u in mine if u.head.relation.name == gen_rel and u.body is not None]
         confs = [u for u in mine if u.head.relation.name == conf_rel and u.body is not None]
@@ -694,11 +709,19 @@ class Rewriter:
         equal: list = []   # the equalities the read being converted needs
         taken = term_vars((u.head, u.body), set())
 
-        def picked(k, s, x):
+        def bind(k, s, x):
+            """The binding of the pattern's variables at a read's key, slot and item."""
             pairs = ([(key_s, k)] if keyed else []) + ([(slot_s, s)] if s is not None else []) + [(item_s, x)]
             m, s_, eqs = self.unify(pairs, taken, "")
             subst.update(s_)
             equal.extend(Comparison(ComparisonOperator.EQ, x, y, 0) for x, y in eqs)
+            return m
+
+        def generated(k, s, x):
+            return AtomLiteral(tsubst(pick.item, fill(bind(k, s, x), pat_s)), False)
+
+        def picked(k, s, x):
+            m = bind(k, s, x)
             val = {v: fill(m, pat_s).get(v, Wildcard()) if not isinstance(spread[v], RecordTerm)
                    else tsubst(spread[v], fill(m, pat_s)) for v in cvars}
             args = tuple(val[v] if v else Wildcard() for v in (pick.fold or cvars))
@@ -731,6 +754,9 @@ class Rewriter:
                     if not keyed or not self.key_plain or term_vars(a[0], set()) <= others:
                         continue
                     out.append(picked(a[0], Wildcard(), Wildcard()))
+                elif rn == GENERATORS[comp].relation:
+                    k, s, x = (a[i] for i in GENERATORS[comp].order)
+                    out.append(dc_replace(generated(k, s, x), negated=l.negated))
                 else:
                     pick.notes.append(f"read {rn}")
                     out.append(l)

@@ -107,10 +107,19 @@ class ClauseWriter:
         self.nested: set[str] = set()
         self.drop_neg: frozenset[str] = getattr(conv, "cur_empty", frozenset())
         self.clause_vars: set[str] = set()   # the labels of the lists written so far
+        self.fields: dict[str, dict[str, str]] = {}   # a variable spread into fields: field name -> the field's variable
         self.stuck = False   # a top-level body whose algebra atoms no order makes safe
 
     def label(self, v: str) -> str:
         return self.rename.get(v, v)
+
+    def field_labels(self, v: str, label: str, bound: set[str]) -> dict[str, str]:
+        """The labels of the fields of the record variable `v`, whose own label
+        is `label`, by field name: those the sites made by `split`, and those
+        of `bound` that a record term of variables `<label>_<field>` made."""
+        out = {x[len(label) + 1:]: x for x in bound if x.startswith(label + "_")}
+        out.update({f: self.label(n) for f, n in self.fields.get(v, {}).items()})
+        return out
 
     def term_text(self, t) -> str:
         if isinstance(t, Variable):
@@ -157,8 +166,14 @@ class ClauseWriter:
             last = [f[-1] if f else l.name.lower() for f, l in zip(inner, leaves)]
             tags = last if len(set(last)) == len(last) else \
                 ["_".join(f) if f else l.name.lower() for f, l in zip(inner, leaves)]
-            return [Variable(f"{term.name}_{t}") if l.kind in ("keep", "example") else Wildcard()
-                    for l, t in zip(leaves, tags)]
+            out = []
+            for l, t in zip(leaves, tags):
+                if l.kind in ("keep", "example"):
+                    self.fields.setdefault(term.name, {})[t] = f"{term.name}_{t}"
+                    out.append(Variable(f"{term.name}_{t}"))
+                else:
+                    out.append(Wildcard())
+            return out
         if isinstance(term, RecordTerm):
             groups: dict[int, list[Leaf]] = defaultdict(list)
             for l in leaves:
@@ -288,15 +303,14 @@ class ClauseWriter:
             if l.op.value in ("=", "!=") and isinstance(lhs, Variable) and isinstance(rhs, Variable):
                 a, b = self.label(lhs.name), self.label(rhs.name)
                 if a not in bound and b not in bound:
-                    fa = {x[len(a) + 1:] for x in bound if x.startswith(a + "_")}
-                    fb = {x[len(b) + 1:] for x in bound if x.startswith(b + "_")}
-                    common = sorted(fa & fb)
-                    if common and fa == fb:
+                    fa, fb = self.field_labels(lhs.name, a, bound), self.field_labels(rhs.name, b, bound)
+                    common = sorted(fa.keys() & fb.keys())
+                    if common and fa.keys() == fb.keys():
                         if l.op.value == "=":
-                            return [f"(= {a}_{x} {b}_{x})" for x in common]
+                            return [f"(= {fa[x]} {fb[x]})" for x in common]
                         if len(common) == 1:
-                            return [f"(!= {a}_{common[0]} {b}_{common[0]})"]
-                        return wrap("(OR ", [[f"(!= {a}_{x} {b}_{x})"] for x in common])
+                            return [f"(!= {fa[common[0]]} {fb[common[0]]})"]
+                        return wrap("(OR ", [[f"(!= {fa[x]} {fb[x]})"] for x in common])
             if l.op.value == "=" and isinstance(lhs, RecordTerm) and isinstance(rhs, RecordTerm) \
                     and agrees_but_wildcards(lhs, rhs):
                 # two records that differ only where one holds `_`: the test names the
