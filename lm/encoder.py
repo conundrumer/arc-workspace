@@ -208,14 +208,16 @@ class Table:
     From an export that gives the column-level provenance (`flows.parquet`), a relation table also holds `depth`, its
     stratum; `keys`, its candidate keys as lists of column indexes; `output_position` and `output_color`, the columns
     that map to Position and Color of ex_output on the program's output relation, -1 elsewhere; and `flows`, one row
-    per source of a column, [m, 5] int32: column, kind (`FLOW_KINDS`), source table (the export table, 0 for ex_input
+    per source of a column, [m, 6] int32: column, kind (`FLOW_KINDS`), source table (the export table, 0 for ex_input
     and 1 for ex_output, -1 where the case holds none), source column (-1 where none, -2 for the example of the
-    source's entry) and DET (the place in `det_relations`, -1 where none). Every column index is one of this loader's
-    columns (Unit columns dropped), except the source column of a flow from a DET, which indexes that DET's columns
-    as `det_types` in tables.parquet gives them; a flow of a dropped column is left out. The Tables of one export table share
-    these. ex_output holds `color_dependent`: whether the output relation's Color column reaches a DET or ex_output
-    through the flows (`color_dependence`), None where the case gives no output relation. Without the export's
-    provenance, each of these holds its class default."""
+    source's entry), DET (the place in `det_relations`, -1 where none) and atom (the code within the case of the
+    atom that reads the source, the same for two flows exactly where the export gives them one atom; -1 where no
+    atom reads it). Every column index is one of this loader's columns (Unit columns dropped), except the source
+    column of a flow from a DET, which indexes that DET's columns as `det_types` in tables.parquet gives them; a flow
+    of a dropped column is left out. The Tables of one export table share these. ex_output holds `color_dependent`:
+    whether the output relation's Color column reaches a DET or ex_output through the flows (`color_dependence`),
+    None where the case gives no output relation. Without the export's provenance, each of these holds its class
+    default."""
     depth, keys, flows, output_position, output_color, color_dependent = None, None, None, -1, -1, None
     det_types = det_cells = ()
 
@@ -360,6 +362,7 @@ def entry_runs(t, e, projections, projection_rows, where=""):
 
 FLOW_KINDS = ("copy", "computed", "constant", "lib name")   # a flow's kind, by its code
 FLOW_COPY, FLOW_CONSTANT, FLOW_LIB_NAME = 0, 2, 3
+FLOW_ATOM = 5   # the index of the atom code in a row of `Table.flows`
 FLOW_COLUMNS = ["table", "column", "kind", "source_table", "source_column", "det"]
 GRID_TABLES = {"ex_input": 0, "ex_output": 1}   # the export table of each grid table, in every case
 
@@ -376,19 +379,22 @@ def kept_columns(column_types):
 
 
 def case_flows(fl, kept, dets=None, where=""):
-    """{export table: flows [m, 5] int32} of one case, from its rows of flows.parquet, with every column index
+    """{export table: flows [m, 6] int32} of one case, from its rows of flows.parquet, with every column index
     mapped to the loader's (`kept`, {export table: `kept_columns`}); a flow of a dropped column is left out, and a
-    dropped source column reads as -1. A flow from a DET (`det` not -1) keeps its source column as the export gives
-    it, an index into that DET's `det_types` in the flow's own table (`dets`, {export table: `case_dets`}). Raises
+    dropped source column reads as -1. A flow's atom becomes a code, one per distinct non-empty atom of the case in
+    order of first appearance, -1 for an empty atom. A flow from a DET (`det` not -1) keeps its source column as the
+    export gives it, an index into that DET's `det_types` in the flow's own table (`dets`, {export table:
+    `case_dets`}). Raises
     DataFault where a flow names a table the case does not hold, or a column, or a source column, past its table's
     columns or its DET's columns, or a DET past its table's DETs."""
     dets = dets or {}
     a = fl[FLOW_COLUMNS].to_numpy(np.int64)
+    atoms = pd.factorize(fl["atom"].mask(fl["atom"] == ""))[0]
     out = {}
     for tab in np.unique(a[:, 0]):
-        rows = a[a[:, 0] == tab]
+        sel = a[:, 0] == tab
         res = []
-        for row in rows.tolist():
+        for row, atom in zip(a[sel].tolist(), atoms[sel].tolist()):
             _, col, kind, st, sc, det = row
             km, skm = kept.get(int(tab)), kept.get(st) if st >= 0 else []
             ds = dets.get(int(tab), [])
@@ -404,8 +410,8 @@ def case_flows(fl, kept, dets=None, where=""):
                 continue
             if det < 0 and st >= 0 and sc >= 0:
                 sc = skm[sc]
-            res.append((c, kind, st, sc, det))
-        out[int(tab)] = np.array(res, np.int32).reshape(-1, 5)
+            res.append((c, kind, st, sc, det, atom))
+        out[int(tab)] = np.array(res, np.int32).reshape(-1, 6)
     return out
 
 
@@ -432,7 +438,7 @@ def check_provenance(task, case, tables):
         if any(not 0 <= c < nc for c in named):
             raise DataFault(f"{where}: keys {t.keys}, output columns {t.output_position} {t.output_color}")
         for row in t.flows.tolist():
-            c, _, st, sc, _ = row
+            c, _, st, sc, _, _ = row
             if not 0 <= c < nc:
                 raise DataFault(f"{where}: flow {row} names column {c}")
             for i in of.get(st, []) if sc >= 0 and row[4] < 0 else []:
@@ -639,7 +645,7 @@ def parse_tables(tables_dir, tasks_dir=Path(__file__).resolve().parents[1] / "da
     # the column-level provenance, where the export gives it; else the masked loss takes the table-level sources
     # and the identifiability test (`field_labels`, `draw_masks`)
     provenance = (d / "flows.parquet").exists() and "depth" in tables.columns
-    flows_by = by(pd.read_parquet(d / "flows.parquet", columns=["task", "case"] + FLOW_COLUMNS)) if provenance else {}
+    flows_by = by(pd.read_parquet(d / "flows.parquet", columns=["task", "case"] + FLOW_COLUMNS + ["atom"])) if provenance else {}
     out, faults = {}, {}
     stats = {"body tables": 0, "provenance": "column flows of the export" if provenance else
              "table-level: the export gives no flows, keys or depths"}
@@ -686,7 +692,7 @@ def parse_tables(tables_dir, tasks_dir=Path(__file__).resolve().parents[1] / "da
                     at = lambda c: k[c] if c >= 0 else -1
                     prov = dict(depth=int(t["depth"]), keys=[[k[c] for c in key if k[c] >= 0] for key in t["keys"]],
                                 output_position=at(int(t["output_position"])), output_color=at(int(t["output_color"])),
-                                flows=flows.get(int(t["table"]), np.zeros((0, 5), np.int32)))
+                                flows=flows.get(int(t["table"]), np.zeros((0, 6), np.int32)))
                 result += parse_table(t, ents_of.get(t["table"], []), values, asg_of, projs, prows, det_values,
                                       n_train, prov, f"{task} {case}", det_runs)
         except DataFault as f:
@@ -845,7 +851,7 @@ def table_groups(tables):
     return out
 
 
-LOADER_VERSION = 19  # raise on any change to parse_tables or Table
+LOADER_VERSION = 20  # raise on any change to parse_tables or Table
 
 
 def table_stamp(tables_dir):

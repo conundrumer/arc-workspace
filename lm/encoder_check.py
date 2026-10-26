@@ -1686,7 +1686,7 @@ def group_fixture(shift=0):
                        model=np.zeros(n, np.int32), entry=np.repeat([0, 1], len(rows)).astype(np.int32),
                        part=np.zeros(n, np.int32), marker=np.zeros(n, bool), unseen_entries={}, det_relations=[],
                        depth=i - 1, keys=keys, output_position=-1, output_color=-1,
-                       flows=np.array([f + [-1] for f in flows], np.int32))
+                       flows=np.array([f + [-1, -1] for f in flows], np.int32))
     a = table(2, ["Ident", "Color"], [[1, 3], [2, 3], [3, 4]], [[0]], [[0, 1, 0, 2], [1, 0, 0, 2]])
     b = table(3, ["Ident", "Number", "Color"], [[1, 5, 3], [1, 6, 3], [2, 7, 3], [3, 8, 4]], [],
               [[0, 0, 2, 0], [1, 1, 0, 1], [2, 0, 2, 1]])
@@ -1969,7 +1969,7 @@ def parent_fixture():
                        example_kind=np.ones(1, np.int8), assignment=np.full((1, 0), -1, np.int32),
                        model=np.zeros(1, np.int32), entry=np.zeros(1, np.int32), part=np.zeros(1, np.int32),
                        marker=np.zeros(1, bool), unseen_entries={}, det_relations=[], depth=i - 1, keys=[],
-                       output_position=-1, output_color=-1, flows=np.array([f + [-1] for f in flows], np.int32))
+                       output_position=-1, output_color=-1, flows=np.array([f + [-1, -1] for f in flows], np.int32))
     return [free[0], free[1], table(2, [[0, 0, 0, 0], [0, 0, 6, 0]]), table(3, [[0, 0, 2, 0]]),
             table(4, [[0, 0, 0, 0]]), table(5, [[0, 0, 3, 0], [1, 0, 1, 0]]), table(6, [[0, 0, 0, 0]])]
 
