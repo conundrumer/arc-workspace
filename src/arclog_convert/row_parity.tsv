@@ -930,7 +930,9 @@ cb2d8a2c	souffle:run.item	uncompared	-
 cb2d8a2c	souffle:walk.source	uncompared	-
 cb2d8a2c	souffle:wall.node	uncompared	-
 cb2d8a2c	split	uncompared	-
-cbebaa4b	*	fault	20-39
+cbebaa4b	&matched	differ	20-359
+cbebaa4b	&paired_up	differ	20-359
+cbebaa4b	input	uncompared	-
 d47aa2ff	&cell2	uncompared	-
 d47aa2ff	&cell_division.tile	uncompared	-
 d47aa2ff	&cell_division2.tile	uncompared	-

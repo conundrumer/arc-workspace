@@ -89,3 +89,29 @@ fn a_cell_a_mode_gives_stands_after_the_cell_it_reads_and_the_join_tries_few_bin
     let bindings = session.largest_counts().bindings;
     assert!(bindings < 10_000, "{bindings} bindings tried");
 }
+
+/// A body of one `OR` whose export `Piece` is bound by an atom of each branch
+/// and whose export `Offset` is bound by a lib atom alone, so only `Piece`
+/// has an estimate.
+const UNION_BODY: &str = "(OR ((input (:P *Piece)) (axis_elem (:A *Offset)))\n      ((input (:P Piece)) (axis_elem (:A Offset))))";
+
+#[test]
+fn an_export_with_an_estimate_stands_before_one_without_whatever_their_positions() {
+    let program = checked(UNION_BODY);
+    let path = NodePath(Box::new([PathStep(program.program.program.value().forms.len() as u32 - 1)]));
+    let clause = compile_conjuncts(&program, &path, &[0]).expect("the body compiles");
+    let IrNode::Or(union) = &clause.nodes[0] else { panic!("a union node") };
+    let branch_sizes = union
+        .branches
+        .iter()
+        .map(|branch| RelationSizes(branch.nodes.iter().map(|node| if matches!(node, IrNode::Atom(_)) { NodeSize::Rows(100) } else { NodeSize::Unread }).collect()))
+        .collect();
+    let sizes = RelationSizes(Box::new([NodeSize::Clauses(branch_sizes)]));
+    let order = variable_order(&clause, &sizes, &[]);
+    // `Piece` is the export an atom of each branch binds: the one the branches' `input` atoms hold.
+    let IrNode::Atom(atom) = &union.branches[0].nodes[0] else { panic!("the branch's `input` atom") };
+    let Some((_, Argument::Variable(piece))) = atom.arguments.0.first() else { panic!("a variable at the atom's site") };
+    let offset = *union.exported.iter().find(|variable| *variable != piece).expect("two exports");
+    assert!(offset.0 < piece.0, "the export without an estimate stands at the lower position: {union:?}");
+    assert_eq!(order.0.as_ref(), [*piece, offset], "{order:?}");
+}

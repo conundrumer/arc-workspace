@@ -15,9 +15,9 @@
 //! each algebra relation whose mode the placed variables satisfy, and by each
 //! variable an `=` binds from a placed one. A tie in cost goes to the
 //! sequence of the smaller estimates, then of the canonical positions. A
-//! clause with more than 12 choices takes the atoms' variables by size
-//! alone, and each export of a union that no atom or comparison binds stands
-//! after the columns its branches read.
+//! clause with more than 12 choices takes its choices in order of estimate
+//! then canonical position, each export of a union that no atom or
+//! comparison binds after the columns its branches read.
 
 use super::join::node_variables;
 use super::ir::{Argument, Arguments, ClauseIr, IrNode, Operand, Union, Variable};
@@ -26,7 +26,7 @@ use crate::registry::{AlgebraRelation, LibName, Registry};
 use crate::algebra::geometry::orientation_domain;
 
 /// The most choices the order searches subsets of; past it the order places
-/// the variables that atoms bind by size.
+/// the choices by estimate.
 const SUBSET_BOUND: usize = 12;
 
 /// The order the join binds a clause's variables in, each variable once.
@@ -126,7 +126,7 @@ pub fn variable_order(clause: &ClauseIr, sizes: &RelationSizes, outer: &[Variabl
     let sequence = if (2..=SUBSET_BOUND).contains(&choices.len()) {
         cheapest_sequence(&choices, &placed, &mut extend)
     } else {
-        choices.iter().filter(|choice| choice.reads.is_none()).map(|choice| choice.variable).collect()
+        sequence_in_order(&choices, &placed, &mut extend)
     };
     for variable in sequence {
         place(variable, &mut placed, &mut order);
@@ -167,6 +167,14 @@ struct Choice {
     /// that the union's branches read from the clause, which stand before the
     /// choice; `None` for a variable that an atom binds.
     reads: Option<Box<[Variable]>>,
+}
+
+impl Choice {
+    /// Whether the choice can come next: its variable is outside `closure`
+    /// and its `reads` stand in it.
+    fn is_next(&self, closure: &[bool]) -> bool {
+        !closure[usize::from(self.variable.0)] && self.reads.as_deref().unwrap_or_default().iter().all(|read| closure[usize::from(read.0)])
+    }
 }
 
 /// The choices of `clause` in the order of estimate then variable: each
@@ -242,8 +250,7 @@ fn cheapest_sequence(choices: &[Choice], placed: &[bool], extend: &mut impl FnMu
                 let before = mask & !(1 << choice);
                 let Some((cost, earlier)) = &best[before] else { continue };
                 let closure = &closures[before];
-                let reads = choices[choice].reads.as_deref().unwrap_or_default();
-                if closure[usize::from(choices[choice].variable.0)] || !reads.iter().all(|read| closure[usize::from(read.0)]) {
+                if !choices[choice].is_next(closure) {
                     continue;
                 }
                 let mut next = earlier.clone();
@@ -263,6 +270,22 @@ fn cheapest_sequence(choices: &[Choice], placed: &[bool], extend: &mut impl FnMu
     }
     let (_, sequence) = finish.expect("the choices in order reach a set whose closure holds them all");
     sequence.into_iter().map(|c| choices[c].variable).collect()
+}
+
+/// The sequence of `choices` to place, each followed by its closure, where
+/// the count of choices is outside the range that [`cheapest_sequence`]
+/// searches, 0 or 1 or past [`SUBSET_BOUND`]: the first of `choices`, in
+/// their order of estimate then index, that the closure of the earlier ones
+/// does not hold and whose `reads` stand in that closure, until none is left.
+/// `extend` and `placed` are as for [`cheapest_sequence`].
+fn sequence_in_order(choices: &[Choice], placed: &[bool], extend: &mut impl FnMut(&mut Vec<bool>, Variable)) -> Vec<Variable> {
+    let mut closure = placed.to_vec();
+    let mut sequence = Vec::new();
+    while let Some(choice) = choices.iter().find(|choice| choice.is_next(&closure)) {
+        extend(&mut closure, choice.variable);
+        sequence.push(choice.variable);
+    }
+    sequence
 }
 
 /// The count of rows of the smallest atom of `clause` that binds each
