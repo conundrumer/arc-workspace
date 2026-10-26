@@ -45,9 +45,10 @@ each `[relation, verdict, detail]`. A task is fresh, and runs nothing, by the
 rule of `train_replay.stale_tasks`.
 
 The stale tasks run on at most `parity.snapshot.RECORDS_WORKERS` processes,
-each taking chunks of `CHUNK` tasks: for a chunk, the Souffle side of each
-task, then one `arclog-cli row-parity` call on the chunk with
-`ARCLOG_THREADS=1`. The Souffle runs go through the run cache.
+and at most `engine.pool.pool_size()`, each taking chunks of `CHUNK` tasks:
+for a chunk, the Souffle side of each task, then one `arclog-cli row-parity`
+call on the chunk. Each process runs bounded to one CPU
+(`engine.pool.share_env`). The Souffle runs go through the run cache.
 
 `row_parity.tsv` is the baseline: a line `<task> <relation> <verdict>
 <ticket or ->` (tab-separated) for each task and relation whose verdict is
@@ -78,6 +79,7 @@ from pathlib import Path
 from arc.task import TASKS_DIR
 from arclog_convert import OUT_ENV, parity_text, paths, train_replay
 from engine import checkout
+from engine.pool import pool_size, share_env
 
 BASELINE = Path(__file__).with_name("row_parity.tsv")
 
@@ -159,7 +161,7 @@ def check_chunk(stems: list[str], corpus: Path, tasks: Path, records: Path, solv
         if rows:
             command = [str(train_replay.tool_binary(BINARY)), "row-parity", str(corpus), str(tasks), str(work), *rows]
             done = subprocess.run(command, cwd=checkout.ROOT / "engine", stdout=subprocess.PIPE, text=True,
-                                  env={**os.environ, "ARCLOG_THREADS": "1"})
+                                  env=share_env(1))
             if done.returncode not in (0, 1):
                 raise RuntimeError(f"{' '.join(command)} exited with {done.returncode}")
             for stem in rows:
@@ -171,6 +173,12 @@ def check_chunk(stems: list[str], corpus: Path, tasks: Path, records: Path, solv
             write_record(records, stem, files[stem], sources, binary, lines[stem])
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+
+def bound_to_one_cpu() -> None:
+    """The initializer of a worker: its environment is `share_env(1)`, so the
+    Souffle runs it makes in process take a bound of one."""
+    os.environ.update(share_env(1))
 
 
 def chunks(stems: list[str], solvers: Path) -> list[list[str]]:
@@ -199,7 +207,7 @@ def check(stems: list[str], out: Path, accept: bool = False) -> int:
     if stale:
         built = digests[0] if digests else train_replay.binary_digest(BINARY)
         records.mkdir(parents=True, exist_ok=True)
-        with ProcessPoolExecutor(RECORDS_WORKERS) as pool:
+        with ProcessPoolExecutor(min(RECORDS_WORKERS, pool_size()), initializer=bound_to_one_cpu) as pool:
             futures = [pool.submit(check_chunk, chunk, corpus, tasks, records, solvers, files, sources, built)
                        for chunk in chunks(stale, solvers)]
             for future in futures:

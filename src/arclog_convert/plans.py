@@ -1,7 +1,8 @@
 """The determination plan files under `plan/` of `arclog_convert.out`: one
 per solver, from `scripts/run_dl.py determination-plan`, with the hash of the
 solver file and the runner and lib stamp it was written under. The converter
-reads them and reruns a stale one."""
+reads them and reruns a stale one, on at most `engine.pool.pool_size()`
+threads, each running its command bounded to one CPU."""
 
 import hashlib
 import subprocess
@@ -9,6 +10,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 
 from arclog_convert import paths
+from engine.pool import pool_size, share_env
 
 
 PLAN_HASH = "solver file sha256: "
@@ -38,7 +40,7 @@ def write_plan(stem: str) -> str | None:
     the solver file's hash, to its plan file; None, or the error."""
     digest = solver_hash(stem)
     r = subprocess.run([sys.executable, str(paths.ROOT / "scripts" / "run_dl.py"), "determination-plan", stem],
-                       cwd=paths.ROOT, capture_output=True, text=True)
+                       cwd=paths.ROOT, capture_output=True, text=True, env=share_env(1))
     if r.returncode != 0:
         lines = (r.stderr or r.stdout).strip().splitlines()
         return lines[-1] if lines else f"exit {r.returncode}"
@@ -53,7 +55,7 @@ def refresh_plans(stems: list[str]) -> None:
     if not stale:
         return
     print(f"rerunning the determination plan of {len(stale)} solvers")
-    with ThreadPoolExecutor(max_workers=8) as pool:
+    with ThreadPoolExecutor(max_workers=pool_size()) as pool:
         for stem, err in zip(stale, pool.map(write_plan, stale)):
             if err is not None:
                 print(f"  {stem}: the plan failed: {err}")

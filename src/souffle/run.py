@@ -40,6 +40,7 @@ from engine.engine import (
     WallLimit,
 )
 from engine.memo import ByIdentity, Once, Recent, hash_file, kept_recent, write_whole
+from engine.pool import pool_size
 from engine.program import (
     NumberTerm,
     Primitive,
@@ -226,13 +227,14 @@ def performance_cores() -> int | None:
 
 def _running() -> threading.BoundedSemaphore:
     """The Souffle processes one process has going at once, one per
-    performance core however many threads start them: a run on an
-    efficiency core spends more CPU seconds for the same work, and the CPU
-    limit counts them."""
+    performance core however many threads start them, and at most
+    `pool_size()`: a run on an efficiency core spends more CPU seconds for
+    the same work, and the CPU limit counts them; under
+    `scripts/run_heavy.py` the grant bounds them."""
     with _RUNNING_LOCK:
         if not _RUNNING:
             _RUNNING.append(threading.BoundedSemaphore(
-                performance_cores() or os.cpu_count() or 1))
+                min(performance_cores() or os.cpu_count() or 1, pool_size())))
         return _RUNNING[0]
 
 

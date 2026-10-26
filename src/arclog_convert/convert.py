@@ -39,13 +39,20 @@ converted program with the check relations of the relations it folds
 (`arclog_convert.checks`); nothing else reads it.
 A form the script cannot translate is written literally, under a
 `;; TODO <kind>: ...` comment.
+As each phase it runs ends (`plans`, `conversion`, `train replay`,
+`row parity`), the run prints a line `<phase>: <seconds> s` with that phase's
+wall time. Under `scripts/run_heavy.py --cpus <n>`, the processes and threads
+the run has going at once, Souffle processes included, are at most `n`.
 """
 
 import json
 import os
 import re
 import sys
+import time
 from collections import Counter
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from engine.pool import pool_size
 from engine.program import Qualifier, Variable
@@ -175,6 +182,16 @@ def convert_one(stem: str) -> tuple[str, str | None, str | None, Counter, Counte
     return stem, arclog, arcdata, todo.kinds, merges, unmerged, s.c.col_mismatch, None, checked
 
 
+@contextmanager
+def phase(name: str) -> Iterator[None]:
+    """Print `<name>: <seconds> s`, the wall time of the block, as it ends."""
+    start = time.monotonic()
+    try:
+        yield
+    finally:
+        print(f"{name}: {time.monotonic() - start:.1f} s", flush=True)
+
+
 def main(argv: list[str]) -> int:
     global OUT_DIR, PLANS, NAMES_DIR, COLUMNS_DIR
     import argparse
@@ -194,15 +211,21 @@ def main(argv: list[str]) -> int:
     else:
         writable_out()
     stems = args.stems or sorted(p.stem for p in paths.SOLVERS.glob("*.dl"))
-    refresh_plans(stems)
+    with phase("plans"):
+        refresh_plans(stems)
     print(f"{paths.OUT_DIR}:")
-    converted = convert_into(stems, paths.OUT_DIR)
+    with phase("conversion"):
+        converted = convert_into(stems, paths.OUT_DIR)
     from arclog_convert import row_parity, train_replay
     failed = int(len(converted) < len(stems))
-    status = (0 if args.no_train_replay else train_replay.replay(converted, paths.OUT_DIR.parent, args.accept)) or failed
+    status = failed
+    if not args.no_train_replay:
+        with phase("train replay"):
+            status = train_replay.replay(converted, paths.OUT_DIR.parent, args.accept) or failed
     if args.no_row_parity:
         return status
-    return row_parity.check(converted, paths.OUT_DIR.parent, args.accept) or status
+    with phase("row parity"):
+        return row_parity.check(converted, paths.OUT_DIR.parent, args.accept) or status
 
 
 def convert_into(stems: list[str], out: Path) -> list[str]:
