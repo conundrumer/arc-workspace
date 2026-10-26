@@ -79,9 +79,7 @@
 - Round trip holds: parsing what the formatter writes gives the tree it was written from.
     + xref: src/controlled_markdown/round_trip.py:round_trips
 
-## Rules and cases
+## Rules
 
 - Each rule the check reports has a short name, which the check prints beside its message.
     + xref: src/controlled_markdown/nodes.py:Rule, src/controlled_markdown/nodes.py:ControlledMarkdownError
-- A case under `tests/controlled_markdown_cases/` pins each rule, holding the document and the name it expects.
-    + xref: tests/test_controlled_markdown.py

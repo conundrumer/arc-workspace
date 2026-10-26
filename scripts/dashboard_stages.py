@@ -27,7 +27,7 @@ ROLE_STAGE: Mapping[Role, Stage] = {
     Role.SOLVER_FIX: Stage.BUILD, Role.ANALYZE: Stage.BUILD, Role.CREATE: Stage.BUILD,
     Role.REFINE: Stage.BUILD,
     Role.ITEM_CHECKER: Stage.REVIEW, Role.CODE_REVIEWER: Stage.REVIEW, Role.DOC_REVIEWER: Stage.REVIEW,
-    Role.LIB_REVIEWER: Stage.REVIEW, Role.GATE: Stage.REVIEW, Role.BATCH_PROFILE: Stage.REVIEW,
+    Role.LIB_REVIEWER: Stage.REVIEW, Role.BATCH_PROFILE: Stage.REVIEW,
     Role.AFTER_MERGE: Stage.MERGE,
 }
 """The stage of the work an agent of each role does."""

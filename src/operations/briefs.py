@@ -26,7 +26,6 @@ if TYPE_CHECKING:
 
 TICKET_PATH = shlex.join([*FILE_TICKET, "path"]) + " {number}"
 WORK_IN = mctx("Work in the worktree {worktree}.")
-TESTS = mctx("Tests directory: `tests/`.")
 SCRATCH = mctx("Scratch directory: {scratch}.")
 SCRATCH_LINE = re.compile(form(SCRATCH, {"scratch": r"(?P<scratch>\S.*)"}))
 LAUNCHER = mctx("The agent that launches you: {operator}.")
@@ -102,11 +101,9 @@ def read_ticket(number: str) -> str:
 
 PARTS: dict[Role, str] = {
     Role.CODE_EDITOR: mctx("each file outside the documents, the lib, its modules, the solvers under "
-                           "`programs/` and the accepted gate outputs that the code editor's "
-                           "items change, with a draft of the text of each `mctx` fragment "
+                           "`programs/`, with a draft of the text of each `mctx` fragment "
                            "those changes need"),
-    Role.HANDBOOK_EXPANDED: mctx("the lib, its modules and the solvers under `programs/`, with "
-                                 "the accepted gate outputs that the `handbook-expanded` agent's items change"),
+    Role.HANDBOOK_EXPANDED: mctx("the lib, its modules and the solvers under `programs/`"),
     Role.DOC_EDITOR: mctx("the documents and the text of the `mctx` fragments"),
 }
 """The part of a change each editor takes, where the change has more than
@@ -222,10 +219,6 @@ def editor(editor: EditorPart | DocEditor, number: str, worktree: Path, scratch:
         lines += [FRAGMENT.format(file=f.file, line=f.line) for f in editor.fragments]
         if editor.code_editors:
             lines.append(CODE_EDITORS.format(ids=", ".join(editor.code_editors)))
-    lines.append(mctx("Accepted gate outputs under `tests/gate/accepted/` you may write: each "
-                      "whose path a `DIFF` of the gate your items cause gives."))
-    if part.role is Role.CODE_EDITOR:
-        lines.append(TESTS)
     lines.append(SCRATCH.format(scratch=scratch))
     lines.append(ROUNDS.format(number=number, rounds=review_rounds(settled.launched_before)))
     lines.append(LAUNCHER.format(operator=operator))
@@ -344,7 +337,7 @@ def quotes_fix(number: str, worktree: Path, calls: list[str], files: list[str], 
         read_ticket(number), WORK_IN.format(worktree=worktree),
         QUOTES_ITEMS,
         *calls,
-        MAY_EDIT.format(files=", ".join(files)), TESTS, SCRATCH.format(scratch=scratch),
+        MAY_EDIT.format(files=", ".join(files)), SCRATCH.format(scratch=scratch),
         LAUNCHER.format(operator=operator), *settled_lines(settled)])
 
 
@@ -461,24 +454,17 @@ def editor_reports(reports: list[tuple[str, str]]) -> list[str]:
     return lines
 
 
-def item_check(number: str, worktree: Path, reports: list[tuple[str, str]], gate: list[str],
+def item_check(number: str, worktree: Path, reports: list[tuple[str, str]],
                editors: list[tuple[Agent, str]], operator: str, settled: "Settled",
                round: Round) -> str:
     """The brief of an item checker that checks the items of the editors
     of a change it checks, by each editor's agent id and latest report,
-    and the accepted gate outputs `gate` it reads, with the agent id and
-    part of each of those editors, each beside its record in `editors`,
+    with the agent id and part of each of those editors, each beside its record in `editors`,
     and what the agents before it settled (`settled_lines`), on the round
     `round`."""
     lines = [*change_lines(number, worktree), *editor_lines(editors)]
     lines.extend(round.lines(number))
     lines.extend(editor_reports(reports))
-    if gate:
-        lines.append(mctx(
-            "Read the diff of each accepted gate output the change writes, {gate}, and send "
-            "each difference there that the change's items do not ask for to its editors, "
-            "{editors}, as a finding of its checks.").format(
-                gate=", ".join(gate), editors=", ".join(i for _, i in editors)))
     return "\n".join(lines + reviewer_closing(worktree, operator, settled))
 
 
@@ -788,23 +774,6 @@ def batch_profile(runs: list[str], reviewable: list[str], commit: str,
                                 deferred_titles=DEFERRED_TITLES)
     brief = transcript_review(RUN, "agent", RUN, False, ())
     return f"{text}\n\n```\n{brief}\n```"
-
-
-GATE = mctx("""
-    - Add a worktree with `git worktree add --detach <dir> master`, with a new directory under {scratch} as `<dir>`.
-    - Run `uv run python scripts/gate.py --record-deps <out>` in that worktree, and remove that worktree.
-    - For each `DIFF` line that run prints that the `Evidence` of no ticket outside `tickets/draft/` and `tickets/closed/` holds, bisect the commits of `master` from the commit that the `affected:` line of that run gives after `the change from` to `master`, and file a ticket of kind `bug` that gives the commit the bisection stops at.
-        - Run each step in a worktree you add at the commit with `git worktree add --detach` and remove after.
-        - Each step is `uv run python scripts/gate.py <out> <cmd>`, with that line's command.
-        - A step at a commit whose gate has no such command counts as before the change.
-        - File a `DIFF` line unbisected where it stands at that commit, or where no `affected:` line of that run gives one, and say which in the ticket.
-    - File each ticket {filing}.
-    - Reply with the tickets you filed.
-    """)
-
-
-def gate(scratch: Path) -> str:
-    return GATE.format(scratch=scratch, filing=AT_MASTER)
 
 
 LISTING_WAIT = mctx("""

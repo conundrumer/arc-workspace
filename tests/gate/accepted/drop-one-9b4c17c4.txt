@@ -1,2 +1,0 @@
-2 stored facts across 1 multi-fact parameter
-every fact changes a train pair

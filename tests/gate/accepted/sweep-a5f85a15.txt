@@ -1,8 +1,0 @@
-bg: unique = (0) ✓
-mark: unique = (4) ✓
-period: unique = (2) ✓
-mark_phase: unique = (1) ✓
-line_dir: unique = (DIAG_BR) ✓
-start_edge: set of 2 = [(DIR_T), (DIR_L)] ✓
-parity_edge: unique = (DIR_L) ✓
-time limit 300s; elapsed Ns

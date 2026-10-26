@@ -1,41 +1,36 @@
-"""The pyright and pytest checks of a change: the paths that call for
-them and the files each takes; the paths a change touches; and the runs
-of checks in a tree, which `merge_steps.py` also uses for the checks of a
-merge.
+"""The pyright check of a change: the paths that call for it and the files
+it takes; the paths a change touches; and the runs of checks in a tree,
+which `merge_steps.py` also uses for the checks of a merge.
 
     uv run python scripts/change_checks.py
 
-Run in a change's worktree, the command runs there the pyright and pytest
-checks that the change calls for:
+Run in a change's worktree, the command runs there the pyright check that
+the change calls for:
 
     uv run pyright [<file> ...]
-    uv run pytest -q [<file> ...]
 
 It takes as touched the paths outside `work` whose content differs from
-the merge base of `master` and `HEAD`, committed or not. A check runs
-where the change touches a path whose content its results can depend on:
-a path under src/, scripts/, tests/ or data/tasks/, one
-`cli.common.SOURCES` matches, pyproject.toml or uv.lock, apart from each
-Python file that stands at the merge base and whose edits change nothing
-but bare string statements, blank lines, comments that hold no
+the merge base of `master` and `HEAD`, committed or not. The check runs
+where the change touches a path whose content its result can depend on:
+a path under src/, scripts/ or tests/, pyproject.toml or uv.lock, apart
+from each Python file that stands at the merge base and whose edits change
+nothing but bare string statements, blank lines, comments that hold no
 type-checker directive, and argparse help values that are plain strings
-(`gating.edits.same_code`). A comment that holds such a directive counts
+(`same_code.same_code`). A comment that holds such a directive counts
 with the code of its line, and an import counts as code, since an import
-edit can remove a name a module uses. A source file the change deletes is
-found in the main tree.
+edit can remove a name a module uses.
 
 Pyright checks each file of its `include` from which a Python file the
-change touches is reached along `import` statements, and pytest runs each
-test file from which one is reached along the loads of code a run can
-make (`dependents`). Pyright checks the whole tree where the change
-touches pyproject.toml, uv.lock, or a `.pyi` or `py.typed` file, and
-pytest runs every test where it touches one of those paths that is no
-Python file. A check with no file to take does not run, and the lines of
-the command name a check that takes files by its command and the number
-of its files.
+change touches is reached along `import` statements, and the whole tree
+where the change touches pyproject.toml, uv.lock, or a `.pyi` or
+`py.typed` file. With no file to take, it does not run, and the line of
+the command names the check by its command and the number of its files.
 
-Exit status: 0 where each check passes or no check runs, 1 where one
-fails, with the output of each that fails.
+No test run is a check of a change: a check that tracks an in-progress
+feature fails on purpose, so it is run by hand and gates nothing.
+
+Exit status: 0 where the check passes or does not run, 1 where it fails,
+with its output.
 """
 
 import argparse
@@ -52,30 +47,24 @@ from pathlib import Path
 
 from change_worktree import as_copied
 from dependents import PYTHON_SUFFIX, Graph, Reach
+from same_code import same_code
 
-from cli.common import stamped_paths
 from controlled_markdown import mctx
 from engine import checkout, duration
-from gating.edits import same_code
 from operations.merging import CHECK_FAILED, PREFIX, TOOL, check_name
 from operations.worktrees import BASE
 
-CODE_DIRS = ("src", "scripts", "tests", "data/tasks")
-"""The directories a change under which calls for the code checks."""
+CODE_DIRS = ("src", "scripts", "tests")
+"""The directories a change under which calls for the pyright check."""
 
 CODE_FILES = ("pyproject.toml", "uv.lock")
-"""The files that set the environment every code check runs in."""
+"""The files that set the environment the pyright check runs in."""
 
 TYPE_FILES = (".pyi", "py.typed")
 """The endings of the paths, besides Python files, whose content pyright
 reads for the types of the files it checks."""
 
 PYRIGHT = ("uv", "run", "pyright")
-PYTEST = ("uv", "run", "pytest", "-q")
-
-TEST_FILES = ["test_*.py", "*_test.py"]
-"""The names of the files pytest collects tests from where
-`python_files` of `pyproject.toml` gives none: pytest's default."""
 
 TAIL = 40
 """Lines of a failed command's output a refusal shows."""
@@ -130,21 +119,17 @@ def merge_base(worktree: Path) -> str:
     return checkout.git_out(worktree, "merge-base", BASE, "HEAD").strip()
 
 
-def code_paths(tree: Path, main: Path, touched: set[str]) -> set[str]:
-    """The paths of `touched` whose content the results of pyright and
-    pytest can depend on. A path `stamped_paths` gives is found in `tree`, where the
-    change adds or edits it, or in the main worktree `main`, where the
-    change deletes it."""
-    sources = stamped_paths(tree) | stamped_paths(main)
+def code_paths(touched: set[str]) -> set[str]:
+    """The paths of `touched` whose content the result of pyright can
+    depend on."""
     return {p for p in touched
-            if p in CODE_FILES or p in sources
-            or any(p.startswith(f"{d}/") for d in CODE_DIRS)}
+            if p in CODE_FILES or any(p.startswith(f"{d}/") for d in CODE_DIRS)}
 
 
 def same_code_paths(tree: Path, base: str, touched: set[str]) -> set[str]:
     """The Python files of `touched` that stand at the commit `base` and in
-    `tree` and whose text in `tree` gives pyright and pytest the code their
-    text at `base` gives (`gating.edits.same_code`)."""
+    `tree` and whose text in `tree` gives pyright the code its
+    text at `base` gives (`same_code.same_code`)."""
     python = sorted(p for p in touched if p.endswith(PYTHON_SUFFIX) and (tree / p).is_file())
     if not python:
         return set()
@@ -153,36 +138,19 @@ def same_code_paths(tree: Path, base: str, touched: set[str]) -> set[str]:
         p, checkout.git_out(tree, "show", f"{base}:{p}"), (tree / p).read_text())}
 
 
-def code_checks(tree: Path, main: Path, base: str, touched: set[str]) -> list[Check]:
+def code_checks(tree: Path, base: str, touched: set[str]) -> list[Check]:
     """The code checks of changes from the commit `base` that touch
     `touched`, with the files each takes, as the module docstring gives
     them."""
     touched = touched - same_code_paths(tree, base, touched)
-    code = code_paths(tree, main, touched)
-    if not code:
+    if not code_paths(touched):
         return []
-    config = tomllib.loads((tree / "pyproject.toml").read_text())["tool"]
-    graph = Graph(tree, touched)
-    checks: list[Check] = []
     if any(p in CODE_FILES or p.endswith(TYPE_FILES) for p in touched):
-        checks.append(Check(PYRIGHT))
-    else:
-        checked = config["pyright"]
-        files = {p for p in graph.dependents(Reach.IMPORTS)
-                 if under(p, checked["include"]) and not under(p, checked["exclude"])}
-        if files:
-            checks.append(Check(PYRIGHT, tuple(sorted(files))))
-    if any(not p.endswith(PYTHON_SUFFIX) for p in code):
-        checks.append(Check(PYTEST))
-    else:
-        collected = config["pytest"]["ini_options"]
-        tests = {p for p in graph.dependents(Reach.RUN)
-                 if under(p, collected["testpaths"])
-                 and any(fnmatch.fnmatchcase(Path(p).name, t)
-                         for t in collected.get("python_files", TEST_FILES))}
-        if tests:
-            checks.append(Check(PYTEST, tuple(sorted(tests))))
-    return checks
+        return [Check(PYRIGHT)]
+    checked = tomllib.loads((tree / "pyproject.toml").read_text())["tool"]["pyright"]
+    files = {p for p in Graph(tree, touched).dependents(Reach.IMPORTS)
+             if under(p, checked["include"]) and not under(p, checked["exclude"])}
+    return [Check(PYRIGHT, tuple(sorted(files)))] if files else []
 
 
 def under(path: str, patterns: Sequence[str]) -> bool:
@@ -238,7 +206,7 @@ def failures(tree: Path, checks: Sequence[Check]) -> list[str]:
             for s, done in zip(shown, dones, strict=True) if done.returncode != 0]
 
 
-NO_CHECK = mctx("the change calls for no pyright or pytest check")
+NO_CHECK = mctx("the change calls for no pyright check")
 
 
 def main(argv: Sequence[str]) -> int:
@@ -246,8 +214,7 @@ def main(argv: Sequence[str]) -> int:
                             formatter_class=argparse.RawDescriptionHelpFormatter).parse_args(argv)
     tree = Path(checkout.git_out(Path.cwd(), "rev-parse", "--show-toplevel").strip())
     base = merge_base(tree)
-    checks = code_checks(tree, checkout.main_worktree(tree), base,
-                         set(changed_outside_work(tree, base)))
+    checks = code_checks(tree, base, set(changed_outside_work(tree, base)))
     if not checks:
         print(NO_CHECK)
         return 0

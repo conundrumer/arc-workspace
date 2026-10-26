@@ -20,8 +20,7 @@ once the commits are made, the script holds the merge lock
 invocation that finds it held waits for it. So each rebase is onto the
 `master` the merge before it left, and the checks run on the changes as
 they land. The kernel releases the lock when its holder ends, however it
-ends. The merge lock is taken before the shared holds of the heavy
-commands' lock that the gate takes for its commands.
+ends.
 
 Other writers of `master` take no merge lock: a user's direct commit, and
 a merge of a Claude agent's worktree. So `master` can move after the
@@ -53,7 +52,6 @@ the command line of `master`'s copy. The checks are:
 
     uv run python -m controlled_markdown check
     uv run python scripts/context.py --write
-    uv run python scripts/gate.py --affected <base> <out>
     cargo test --manifest-path engine/Cargo.toml <crates> --offline --no-fail-fast
     env RUSTDOCFLAGS=-D warnings cargo doc --manifest-path engine/Cargo.toml <crates> --no-deps --offline
 
@@ -70,37 +68,19 @@ all of them. The checks fail where the top of the stack's tree holds an
 kept tree and the selection in full.
 
 The checks run concurrently. A check passes when it exits 0, and a refusal
-lists every check that fails. The gate's dependency record decides which
-of its commands a change affects, so the gate runs on every change, with
-`<base>` the `master` commit the stack is rebased onto. It writes into a
-new directory under `$TMPDIR`, whose name is `merge-change-gate-`, then the
-first 8 hex digits of each commit after `<base>` up to the top of the stack,
-newest first, each followed by `-`, for at most the 24 newest commits,
-then a random part. So `ls -dt "$TMPDIR"/merge-change-gate-*<hash>*`, with
-`<hash>` what `git rev-parse --short=8 <commit>` prints, lists the
-directories of the gates that checked `<commit>`, newest first, for a gate
-that passes as for one that fails. The merge's `running` line of the gate
-gives its directory too. The gate's `--help` says which
-commands `--affected` runs and how the gate's times are judged.
-
-The top of the stack holds every change committed, so where the gate runs
-every command, it traces them and writes a dependency record of that
-commit into its directory.
+lists every check that fails. `<base>` is the `master` commit the stack is
+rebased onto.
 
 When every check passes, the script runs in the main tree
 `uv run python scripts/context.py context --keep-tree HEAD`, so that the
 readers' updates after the merge find the tree of the old `master` made,
 and goes on where it fails. It then fast-forwards `master` in the main tree
 to the top of the stack, and runs in the main tree, by
-`uv run python scripts/merge_steps.py after <out>` and so by the command
+`uv run python scripts/merge_steps.py after` and so by the command
 lines of the new `master`,
-`uv run python scripts/context.py --write`,
-`uv run python scripts/document_pass.py` and
-`uv run python scripts/gate.py --adopt <out>`, with `<out>` the
-directory of the gate that checked the stack, so that a record the gate
-wrote stands as the dependency record of the new `master`, the gate's counts
-of instructions are adopted, and a ticket is filed on each `SLOW` line, as the
-gate's `--help` gives. It then removes each worktree and its branch.
+`uv run python scripts/context.py --write` and
+`uv run python scripts/document_pass.py`. It then removes each worktree
+and its branch.
 
 Before the first fast-forward of `master` of the call whose commits change
 a `.py` file, the script locks the refresh locks
@@ -336,35 +316,23 @@ def set_up_submodules(worktree: Path, main: Path) -> None:
         raise Refused(str(exc)) from exc
 
 
-GATE_PREFIX = "merge-change-gate-"
-
-NAMED_COMMITS = 24
-"""The most commits the name of the gate's out-dir gives, which the module
-docstring states: the newest, so that the name stays under the file
-system's 255 bytes."""
-
-
 def check(tree: Path, main: Path, base: str, touched: set[str],
-          engine_passed: str | None = None) -> Path:
+          engine_passed: str | None = None) -> None:
     """Run in `tree` the checks of changes from the commit `base`, or
-    refuse; the gate's out-dir, named as the module docstring gives.
-    `touched`, the paths the changes touch, picks the copy of
+    refuse. `touched`, the paths the changes touch, picks the copy of
     `merge_steps.py` that runs, as the module docstring gives, and `main`
     is the main tree, where that copy is the main tree's. `engine_passed`,
     the commit on which the engine checks last passed, is given to
     `merge_steps.py checks`, as its `--help` gives."""
-    commits = checkout.git_out(tree, "rev-list", f"--max-count={NAMED_COMMITS}", f"{base}..HEAD").split()
-    gate_out = tempfile.mkdtemp(prefix=GATE_PREFIX + "".join(f"{c[:8]}-" for c in commits))
     steps = (("--project", str(main), "python", str(main / STEPS[0])) if STEPS[0] in touched
              else ("python", *STEPS))
     passed = ("--engine-passed", engine_passed) if engine_passed is not None else ()
-    argv = ("uv", "run", *steps, "checks", *passed, base, gate_out)
+    argv = ("uv", "run", *steps, "checks", *passed, base)
     done = subprocess.run(argv, cwd=tree, env=checkout.tree_env(), stdout=subprocess.PIPE,
                           text=True, stdin=subprocess.DEVNULL)
     if done.returncode != 0:
         raise Refused(done.stdout.strip() or mctx("{shown} exited with status {code}").format(
             shown=" ".join(argv), code=done.returncode))
-    return Path(gate_out)
 
 
 def refuse_main_touched(main: Path, touched: Mapping[Path, frozenset[str]]) -> dict[str, str]:
@@ -624,9 +592,9 @@ def stack(main: Path, changes: Sequence[Change], locks: MergeLocks) -> None:
             again = engine_runs(top, base, passed)
             if moved_from is not None:
                 say_moved(moved_from, base, again)
-            gate_out = check(top, main, base, touched_by(changes), passed)
+            check(top, main, base, touched_by(changes), passed)
             passed = onto if again else passed
-            land(main, changes, gate_out, locks, base)
+            land(main, changes, locks, base)
             return
         except Refused:
             for c in changes:
@@ -667,7 +635,7 @@ def merge_alone(main: Path, change: Change, locks: MergeLocks) -> None:
             again = engine_runs(change.worktree, onto, passed)
             if moved_from is not None:
                 say_moved(moved_from, onto, again)
-            gate_out = check(change.worktree, main, onto, set(change.touched), passed)
+            check(change.worktree, main, onto, set(change.touched), passed)
         except Refused as exc:
             tree = checkout.git_out(change.worktree, "rev-parse", "HEAD^{tree}").strip()
             checkout.git_out(change.worktree, "reset", "-q", "--mixed", onto)
@@ -677,7 +645,7 @@ def merge_alone(main: Path, change: Change, locks: MergeLocks) -> None:
         if again:
             passed = checkout.git_out(change.worktree, "rev-parse", "HEAD").strip()
         try:
-            land(main, [change], gate_out, locks, onto)
+            land(main, [change], locks, onto)
             return
         except Moved as moved:
             if attempt == RECHECKS:
@@ -794,12 +762,11 @@ def run_step(main: Path, argv: Sequence[str]) -> subprocess.CompletedProcess[str
         return run_in(main, ("uv", "run", "python", *argv))
 
 
-def land(main: Path, changes: Sequence[Change], gate_out: Path, locks: MergeLocks,
+def land(main: Path, changes: Sequence[Change], locks: MergeLocks,
          onto: str) -> None:
-    """Merge `changes`, the stack the gate passed with its outputs in
-    `gate_out`, rebased onto the commit `onto` of `master`, into `master` in
-    the main tree `main`, with the refresh locks `locks` taken before the
-    fast-forward. Where the fast-forward fails and `master` is no longer
+    """Merge `changes`, the stack the checks passed, rebased onto the commit
+    `onto` of `master`, into `master` in the main tree `main`, with the
+    refresh locks `locks` taken before the fast-forward. Where the fast-forward fails and `master` is no longer
     `onto`, raise `Moved`, with the refresh locks released."""
     replaced = refuse_main_touched(main, {c.worktree: c.touched for c in changes})
     done = run_step(main, TREE_KEEP)
@@ -827,7 +794,7 @@ def land(main: Path, changes: Sequence[Change], gate_out: Path, locks: MergeLock
         raise Moved(now, failure)
     locks.mark_landed()
 
-    argv = (*STEPS, "after", str(gate_out))
+    argv = (*STEPS, "after")
     done = run_step(main, argv)
     if done.returncode != 0:
         raise Failed(mctx("{master} is fast-forwarded, and {shown} failed in {main}; the "

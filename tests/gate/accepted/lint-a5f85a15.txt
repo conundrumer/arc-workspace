@@ -1,8 +1,0 @@
-
---- hints: 5 across 1 solver(s) ---
-  a5f85a15.dl:89: case section: by the program's rules, not by a run, `$DerivedAxis` may read `params.line_dir`, which the clause feeds, and the marker `// --- $StoredStep ---` above it does not list them; see "Case markers" in [Cases](docs/handbook/solver-file.md#cases); an `@ignore` directive can keep the relation it fires on
-  a5f85a15.dl:94: case section: by the program's rules, not by a run, `$StoredStep` may read `params.start_edge`, which the clause feeds, and the marker `// --- $DerivedAxis ---` above it does not list them; see "Case markers" in [Cases](docs/handbook/solver-file.md#cases); an `@ignore` directive can keep the relation it fires on
-  a5f85a15.dl:152: case section: by the program's rules, not by a run, `$DerivedAxis` may read `heading`, which the clause feeds, and the marker `// --- $StoredStep ---` above it does not list them; see "Case markers" in [Cases](docs/handbook/solver-file.md#cases); an `@ignore` directive can keep the relation it fires on
-  a5f85a15.dl:155: case section: by the program's rules, not by a run, `$StoredStep` may read `heading`, which the clause feeds, and the marker `// --- $DerivedAxis ---` above it does not list them; see "Case markers" in [Cases](docs/handbook/solver-file.md#cases); an `@ignore` directive can keep the relation it fires on
-  a5f85a15.dl:233: determine prediction: the clauses of `start_edge` keep a guessed value by the test `contradicted`, which reads facts of the inputs and of the outputs together; see [Models and tasks](docs/handbook/principles.md#models-and-tasks); an `@ignore` directive can keep the relation it fires on
-lint: ok, 5 hints

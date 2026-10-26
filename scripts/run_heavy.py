@@ -60,7 +60,7 @@ wait that ran out, `sysctl`, `vm_stat` or `taskpolicy`. A command that is not
 found exits 127, and one that cannot be executed 126, as `env` does. A signal
 before the command starts ends the call, and the command has not run.
 
-`ARC_HEAVY_DIR` sets the directory of the daemon's files, for the tests."""
+`ARC_HEAVY_DIR` sets the directory of the daemon's files."""
 
 from __future__ import annotations
 

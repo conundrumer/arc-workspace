@@ -1,5 +1,0 @@
-bg: DominantColor — each color whose cell count in every input is the highest of that input's colors, ties included
-  witness: `bg=DominantColor` in the witness file
-  line 52: @derive DominantColor: variant derived
-
-derive: ok

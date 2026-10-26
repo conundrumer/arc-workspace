@@ -1,12 +1,9 @@
 """Starts the record of this process's call (`script_calls`), where the
-process runs a script under `scripts/` of the main tree, and the count of
-its instructions for the gate (`instructions`), where the gate asks for
-one. The tree is the
+process runs a script under `scripts/` of the main tree. The tree is the
 parent of `src/`; the main tree's `.git` is a directory, and a linked
 worktree's is a file, so a call that runs a worktree's changed code
 writes no line. This module runs at the start of every `python` of the
-venv, so it imports nothing for a process that writes no line and counts
-nothing, and it names `instructions.COUNT_ENV` by its value."""
+venv, so it imports nothing for a process that writes no line."""
 
 import os
 import sys
@@ -25,12 +22,4 @@ def _start() -> None:
     atexit.register(script_calls.record)
 
 
-def _count() -> None:
-    path = os.environ.pop("ARC_GATE_INSTRUCTIONS_FILE", None)
-    if path is not None:
-        import instructions
-        instructions.count_to(path)
-
-
 _start()
-_count()

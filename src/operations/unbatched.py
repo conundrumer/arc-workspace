@@ -40,8 +40,6 @@ class Unbatched:
 PROFILE = Unbatched(Role.BATCH_PROFILE)
 """The profile agent of After a batch."""
 
-GATE = Unbatched(Role.GATE)
-
 STANDING = Unbatched(Role.DOC_REVIEWER, lambda s: s.startswith(DOC_REVIEW))
 """The standing doc review."""
 
@@ -51,7 +49,7 @@ ASSESSMENT = Unbatched(Role.TICKET_ANALYST, lambda s: (
 
 COST_AUDIT = Unbatched(Role.COST_AUDIT)
 
-KINDS = (PROFILE, *(Unbatched(r.role) for r in Review), GATE, STANDING, ASSESSMENT,
+KINDS = (PROFILE, *(Unbatched(r.role) for r in Review), STANDING, ASSESSMENT,
          COST_AUDIT)
 
 

@@ -1,8 +1,0 @@
-train 0: PASS
-train 1: PASS
-train 2: PASS
-test 0: PASS
-test 1: PASS
-
-lint: ok
-determination: no Determine comp

@@ -1,7 +1,7 @@
 """The rules that the procedures of After a batch (`batches`) and of the
 launches no batch holds (`unbatched`) share: the time from which the
 next launch of a kind counts what stands (`opened`), whether a change
-merged since a time (`merged`, `merged_since`), and the number of the
+merged since a time (`merged`), and the number of the
 next launch of a kind (`next_number`)."""
 
 from operations.completion import occupies
@@ -30,8 +30,3 @@ def opened(state: State, past: list[Agent]) -> float | None:
     if past and past[-1].pending:
         return None
     return past[-1].launched if past else state.started
-
-
-def merged_since(state: State, past: list[Agent]) -> float | None:
-    since = opened(state, past)
-    return since if since is not None and merged(state, since) else None

@@ -11,10 +11,7 @@ from open_agents import Listed, quiet_since, work_open
 from operator_state import stuck_read
 from transcript_snapshots import Refused, SUBJECT_FAULTS
 from transcripts import find, is_subagent
-from tree_reads import (
-    fragments,
-    gate_outputs,
-)
+from tree_reads import fragments
 
 from operations.changes import holds
 from operations.plan import earlier_open, elsewhere
@@ -110,5 +107,4 @@ def read_held(tickets: Mapping[str, Ticket], me: str, tree: GitRead) -> HeldRead
     holds."""
     trees = {w for t in tickets.values() if holds(t, me)
              and (w := worktree_in(t, tree.worktrees)) is not None}
-    return HeldRead(gate_outputs=ReadOnUse(sorted(trees), gate_outputs),
-                    fragments=ReadOnUse(sorted(trees), fragments))
+    return HeldRead(fragments=ReadOnUse(sorted(trees), fragments))

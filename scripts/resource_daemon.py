@@ -34,7 +34,7 @@ JSON in `daemon.log` under the directory, with its reason, owner and figures.
 A kill signals only a process that still has the start the daemon recorded for
 it. A message is one line, `{"type":"user","message":{"role":"user","content":<text>}}`,
 written to the socket `<claude pid>.sock` of the owning session in
-`/tmp/cc-socks` (`ARC_HEAVY_SOCKS` sets that directory, for the tests).
+`/tmp/cc-socks` (`ARC_HEAVY_SOCKS` sets that directory).
 
 A restarted daemon, whether it was stopped or replaced itself, reads the
 registry, and keeps each job whose process runs with the recorded start,

@@ -4,7 +4,7 @@
     - Acts, each with its section: each step of its work, under the item of that step.
 
 # Copy the tree
-- Copy `src/`, `scripts/`, `tests/` and each other directory that holds a file of your part into a new directory under your scratch directory, and note its path in `progress.md`.
+- Copy `src/`, `scripts/` and each other directory that holds a file of your part into a new directory under your scratch directory, and note its path in `progress.md`.
 
 # Write the Reuse list
 - Read the index of the packages that hold the files your brief gives, as `uv run python scripts/code_index.py <those files>` prints it, and the list of packages that `uv run python scripts/code_index.py` prints, and look first in the modules they lead to.
@@ -47,10 +47,6 @@
 
 ## Make the comparison
 - Make each comparison your brief asks for.
-
-# Run the gate
-- Where your brief, or a finding of your checks, gives accepted gate outputs for you to write, read [Gate](prompts/agents/notes/worktree.md#gate), and run the gate as it gives.
-    + xref: prompts/agents/notes/worktree.md#gate
 
 # File your tickets
 - File each case noted under the `Questions` heading of your `progress.md`, and each place your diff holds that poses a question, as [Tickets](prompts/agents/code-editor.md#tickets) gives.

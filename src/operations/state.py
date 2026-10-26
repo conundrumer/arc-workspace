@@ -799,13 +799,10 @@ class ReadOnUse[K, V](Mapping[K, V]):
 
 @dataclass(frozen=True)
 class HeldRead:
-    """What the operator reads of the changes `me` holds. `gate_outputs`
-    gives, for the worktree of each, the accepted gate outputs under
-    `tests/gate/accepted/` its change writes, and `fragments` the
-    fragments whose text that change adds or changes, as
-    `tree_reads.fragments` gives them, each read at its first use
-    (`ReadOnUse`)."""
-    gate_outputs: Mapping[Path, tuple[str, ...]]
+    """What the operator reads of the changes `me` holds. `fragments` gives,
+    for the worktree of each, the fragments whose text that change adds or
+    changes, as `tree_reads.fragments` gives them, each read at its first
+    use (`ReadOnUse`)."""
     fragments: Mapping[Path, tuple[Place, ...]]
 
 

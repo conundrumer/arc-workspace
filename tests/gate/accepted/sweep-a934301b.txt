@@ -1,8 +1,0 @@
-background: unique = (0) ✓
-max_marks: unique = (1) ✓
-kept_count: stored {(0), (1)} (its value is a set of rows, and a case stores one set; every single-row change swept); the train pairs do not pin the set: single-row changes of it that give every train output: 11
-dropped_count: stored {(2), (3), (4)} (its value is a set of rows, and a case stores one set; every single-row change swept); the train pairs do not pin the set: single-row changes of it that give every train output: 11
-keep_count: unique = (3) ✓
-body: unique = (1) ✓
-mark: unique = (8) ✓
-time limit 300s; elapsed Ns

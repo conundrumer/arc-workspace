@@ -1,5 +1,0 @@
-2 stored facts across 1 multi-fact parameter
-
-2 fact(s) no pair needs:
-  start_edge(DIR_T)
-  start_edge(DIR_L)

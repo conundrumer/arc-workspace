@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from controlled_markdown import mctx
-from gating.cpu import busy_seconds, busy_ticks
+from engine.cpu import busy_seconds, busy_ticks
 from heavy_enforcer import ADOPT_CPUS, ADOPT_GIB
 from heavy_protocol import heavy_dir, read_registry
 from idle_sessions import running

@@ -2,12 +2,13 @@
 it runs in the main tree after the fast-forward, run in the tree this
 script is run in.
 
-    uv run python scripts/merge_steps.py checks [--engine-passed <commit>] <base> <gate-out>
-    uv run python scripts/merge_steps.py after <gate-out>
+    uv run python scripts/merge_steps.py checks [--engine-passed <commit>] <base> [<gate-out>]
+    uv run python scripts/merge_steps.py after [<gate-out>]
 
 The `--help` of `merge_change.py` says which checks and steps these are,
 when it runs each form, which copy of this script it runs, and what
-`<base>` and `<gate-out>` are.
+`<base>` is. `<gate-out>` is accepted and unused: the `merge_change.py` on
+`master` before the gate was removed passes it.
 
 `checks` runs the checks concurrently. The engine checks run where the
 changes touch a path under `engine/`. With `--engine-passed <commit>`, the
@@ -205,7 +206,7 @@ def tested(kept: Path, base: str) -> tuple[str, ...] | None:
     return None if reached == directories.keys() else tuple(sorted(reached))
 
 
-def checks(tree: Path, base: str, gate_out: str, engine_passed: str | None = None) -> list[str]:
+def checks(tree: Path, base: str, engine_passed: str | None = None) -> list[str]:
     """Run in `tree` the checks of changes from the commit `base`: the
     output of each that fails. Where `engine_runs` holds for
     `engine_passed`, the compile and the tests of the engine
@@ -214,8 +215,7 @@ def checks(tree: Path, base: str, gate_out: str, engine_passed: str | None = Non
     the crates `tested` gives, and a `tree` that holds an `engine/` edit
     outside its `HEAD` fails the check `ENGINE_EDITS`, with no cargo run."""
     engine = engine_runs(tree, base, engine_passed)
-    common = [*map(Check, DOCUMENT_CHECKS),
-              Check(("uv", "run", "python", "scripts/gate.py", "--affected", base, gate_out))]
+    common = list(map(Check, DOCUMENT_CHECKS))
     with contextlib.redirect_stdout(sys.stderr):
         if not engine:
             return failures(tree, common)
@@ -229,10 +229,10 @@ def checks(tree: Path, base: str, gate_out: str, engine_passed: str | None = Non
                                      for argv in (engine_check(selected), engine_doc_check(selected)))])
 
 
-def after(tree: Path, gate_out: str) -> bool:
+def after(tree: Path) -> bool:
     """Run in `tree` the steps after the fast-forward, in order, up to the
     first that fails; whether each passes."""
-    for argv in (CONTEXT_WRITE, DOCUMENT_PASS, ("scripts/gate.py", "--adopt", gate_out)):
+    for argv in (CONTEXT_WRITE, DOCUMENT_PASS):
         shown = " ".join(argv)
         done = run_in(tree, ("uv", "run", "python", *argv))
         print(done.stdout, end="", flush=True)
@@ -250,14 +250,14 @@ def main(argv: Sequence[str]) -> int:
     on_checks.add_argument("--engine-passed", metavar="COMMIT",
                            help="the commit on which the engine checks last passed")
     on_checks.add_argument("base", help="the commit the changes stand on")
-    on_checks.add_argument("gate_out", help="the gate's out-dir")
+    on_checks.add_argument("gate_out", nargs="?", help="accepted and unused")
     on_after = forms.add_parser("after", help="run the steps after the fast-forward")
-    on_after.add_argument("gate_out", help="the out-dir of the gate that checked the changes")
+    on_after.add_argument("gate_out", nargs="?", help="accepted and unused")
     a = ap.parse_args(argv)
     tree = Path(checkout.git_out(Path.cwd(), "rev-parse", "--show-toplevel").strip())
     if a.form == "after":
-        return 0 if after(tree, a.gate_out) else 1
-    failed = checks(tree, a.base, a.gate_out, a.engine_passed)
+        return 0 if after(tree) else 1
+    failed = checks(tree, a.base, a.engine_passed)
     print("\n".join(failed), end="\n" if failed else "")
     return 1 if failed else 0
 

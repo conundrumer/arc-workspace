@@ -10,6 +10,8 @@
 
 ## Project commands
 - `uv run pytest -q`
+    * comment: The user's words, session 58147d46, 2026-10-26T20:03:17Z: "if a test is for in-progress, it cannot gate anything".
+    - It runs only the checks of in-progress features, which fail on purpose and gate nothing.
 - `uv run pyright`
 - `uv run python scripts/materialize.py`
 - `uv run python scripts/run_dl.py`

@@ -3,7 +3,6 @@ limits of a run on one grid, the grid a caller writes, and the stamp of
 the code a run loads."""
 
 import json
-import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -21,7 +20,6 @@ from checker.render import commands, finding_lines
 from checker.render.no_result import run_failed
 from checker.runs import Runs
 from cli import text
-from controlled_markdown import mctx
 from engine import (
     CompileError,
     Grid,
@@ -42,25 +40,10 @@ from souffle import SouffleEngine
 from souffle.engine import FUNCTOR_DIR
 from souffle.functors import FUNCTOR_SOURCE
 
-WALL_LIMIT_ENV = "ARC_WALL_LIMIT_SECONDS"
-"""The environment variable that gives the wall limit of `LIMITS` in
-seconds, so that a caller whose outputs must not depend on the load, like
-the gate, can make the CPU limit the one a run reaches first."""
+CPU_SECONDS = 20.0
+"""The CPU seconds one run on one grid may take."""
 
-
-def _limits() -> Limits:
-    cpu = 20.0
-    given = os.environ.get(WALL_LIMIT_ENV)
-    if given is None:
-        return Limits(cpu_seconds=cpu, wall_seconds=2 * cpu)
-    wall = float(given)
-    if not wall > 0:
-        raise ValueError(mctx("{env} gives `{given}`, which is no positive number of "
-                              "seconds").format(env=WALL_LIMIT_ENV, given=given))
-    return Limits(cpu_seconds=cpu, wall_seconds=wall)
-
-
-LIMITS = _limits()
+LIMITS = Limits(cpu_seconds=CPU_SECONDS, wall_seconds=2 * CPU_SECONDS)
 """The limits of one run on one grid."""
 
 
@@ -304,20 +287,13 @@ def assign_arg(written: str | None
 
 SOURCES = ["src/engine/**/*.py", "src/souffle/**/*.py", "src/solver/**/*.py",
            "src/checker/**/*.py", "src/cli/**/*.py", "src/arc/**/*.py",
-           "src/controlled_markdown/**/*.py", "src/instructions.py",
+           "src/controlled_markdown/**/*.py",
            "programs/lib.dl",
            "programs/lib/*.dl", "programs/proposers.dl",
            (FUNCTOR_DIR / FUNCTOR_SOURCE).relative_to(
                checkout.ROOT).as_posix()]
 """What a run's result depends on besides the solver and the task: the
 packages' code and the Souffle sources every solver includes."""
-
-
-def stamped_paths(root: Path) -> set[str]:
-    """The path, from `root`, of each file under `root` that a pattern of
-    `SOURCES` matches."""
-    return {p.relative_to(root).as_posix()
-            for p in checkout.matched(root, SOURCES)}
 
 
 def stamp() -> str:
