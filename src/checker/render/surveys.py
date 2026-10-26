@@ -612,6 +612,8 @@ def _write_part(v: _PlanValues) -> list[PlanPart]:
 
 def _moved_part(v: _PlanValues) -> list[PlanPart]:
     moved = v.plan.moved
+    if moved is None:
+        return []
     if not isinstance(moved, tuple):
         return [PlanPart((MOVED_UNKNOWN + _make_run(moved),), True)]
     return _plan_section(MOVED, [mctx("{param} at witness `{witness}`").format(

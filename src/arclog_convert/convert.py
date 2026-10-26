@@ -10,12 +10,13 @@ stem is given, and prints its summary; the run exits with status 1
 where a solver fails to convert. The checks of the converted programs, the
 replay on the train pairs and the comparison with Souffle's rows, are
 `arclog_convert.verify`, which runs apart from the conversion.
-A solver's plan file under plan/ records the hash of the solver
-file it was written from, and the runner and lib stamp of the run; where it
-is missing or records another hash or stamp, the script first restores it
-from the plans kept under `.cache/plans/`, which every `--out` directory
-shares, and reruns `scripts/run_dl.py determination-plan <stem>` where none is
-kept for that hash and stamp (`arclog_convert.plans`). The
+A solver's plan file under plan/ records the hash of the solver file, task
+file and witness file it was written from, and the runner and lib stamp of
+the run; where it is missing or records another hash or stamp, the script
+first restores it from the plans kept under `.cache/plans/`, which every
+`--out` directory shares, and reruns the determination plan of the solver,
+without the moved witnesses that the plan file does not hold, in a worker
+process where none is kept for that hash and stamp (`arclog_convert.plans`). The
 name map and the column map of each solver it converts, written under names/
 and columns/, are those of `arclog_convert.names`, and names/ also holds the
 Souffle texts that derive the rows of the relations the converter adds

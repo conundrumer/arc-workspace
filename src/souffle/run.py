@@ -198,10 +198,17 @@ def _cpu_limit_key(key: str, cpu: int) -> str:
     return f"{key}-cpu{cpu}"
 
 
+@cache
+def _shown_from(path: Path, root: Path) -> str:
+    return str(checkout.shown(path, root))
+
+
 def _from_root(path: Path) -> str:
     """`path` from the checkout's root (`checkout.shown`) where it stands
-    under it, else its absolute path."""
-    return str(checkout.shown(path, checkout.ROOT))
+    under it, else its absolute path. Kept per path and root for the life of
+    the process: a file's place under a root does not change while the
+    process runs, and `study.deck_runs.at_root` changes the root."""
+    return _shown_from(path, checkout.ROOT)
 
 
 _STATEMENTS: ByIdentity[Program, tuple[list[tuple[str, int | None]], str]] \
