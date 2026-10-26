@@ -10,15 +10,16 @@ Every linear map is a sum over the orbits of D4 on pairs of positions (68 orbits
 action; norms and nonlinearities act per position.
 
 Tables. `load_tables` reads a tables export (engine/arclog-py/tables_export.py) into per-case lists of `Table`, the relation
-tables in stream order, and caches them in a pickle. The evidence tables `ex_input` and `ex_output` are built from
+tables in stream order, and caches them in a directory of pickles, one per task. The evidence tables `ex_input` and `ex_output` are built from
 the task file where the export holds none, and stand first, after the start token. A change to this module, or to the engine code that writes the export's files (`engine/arclog-tables/src/`, `engine/arclog-tables-py/src/`, `engine/arclog/src/decode/`), runs `engine/arclog-py/roundtrip_check.py` with an `arclog` built from its tree before its merge.
 """
-import bisect, copy, itertools, json, math, os, pickle, re
+import bisect, copy, itertools, json, math, os, pickle, re, shutil
 from pathlib import Path
 from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
 import pyarrow.parquet as pq
 import torch
 import torch.nn as nn
@@ -281,23 +282,51 @@ OLD_NAMES = {PROJECTIONS_FILE: "views.parquet", PROJECTION_ROWS_FILE: "view_rows
              TABLE_PROJECTIONS: "views", PROJECTION_ID: "view"}
 
 
-def read_part(d, name):
-    """An export's part file, under its name or its name in an older export."""
-    return pd.read_parquet(d / name if (d / name).exists() else d / OLD_NAMES[name])
+class TaskRows:
+    """The rows of an export's parquet file, in the columns given, with `task` and `case` dictionary-encoded, in
+    Arrow, grouped by task through one stable sort of the task codes: the rows of a task keep their order in the
+    file, whatever the order of the tasks in it. `rows` gives one task's rows as a pandas frame, the only copy of
+    any rows in pandas."""
+
+    def __init__(self, path, columns):
+        """The file at `path` (a part file under its name or, in an older export, under `OLD_NAMES`'s), the
+        `columns` of it, each under its name or its name in an older export, named as given."""
+        path = Path(path)
+        path = path if path.exists() else path.with_name(OLD_NAMES[path.name])
+        have = pq.read_schema(path).names
+        found = [c if c in have else OLD_NAMES.get(c, c) for c in columns]
+        self.table = pq.read_table(path, columns=found, read_dictionary=["task", "case"]).rename_columns(columns)
+        self.order, self.span = np.zeros(0, np.int64), {}
+        if len(self.table):
+            task = self.table["task"].unify_dictionaries()
+            names = task.chunk(0).dictionary.to_pylist()
+            codes = np.concatenate([c.indices.to_numpy(zero_copy_only=False) for c in task.chunks])
+            counts = np.bincount(codes, minlength=len(names))
+            self.order = np.argsort(codes, kind="stable")
+            self.span = {names[i]: (int(e - n), int(e)) for i, (n, e) in enumerate(zip(counts, np.cumsum(counts))) if n}
+
+    def tasks(self):
+        """The tasks that have rows, in the order of each task's first row."""
+        return sorted(self.span, key=lambda task: self.order[self.span[task][0]])
+
+    def rows(self, task):
+        """The rows of `task` as a pandas frame, in the file's order; an empty frame where it has none."""
+        start, stop = self.span.get(task, (0, 0))
+        taken = self.table.take(self.order[start:stop])
+        for name in ("task", "case"):
+            taken = taken.set_column(taken.schema.get_field_index(name), name, taken[name].cast(pa.large_string()))
+        return taken.to_pandas()
 
 
-def with_names(df, *columns):
-    """df with each column given renamed from its name in an older export, where it holds that name."""
-    return df.rename(columns={OLD_NAMES[c]: c for c in columns if c not in df.columns and OLD_NAMES[c] in df.columns})
 PROJECTIONS_STOPPED, PROJECTIONS_FOUND = 1, 2
 POINT_RELATION = 0            # the point code of a relation table; a body is 1
 
 
-def read_projections(d):
-    """The projections of every table, each with its id in its case, and the rows of each at each entry."""
-    projections = read_part(d, PROJECTIONS_FILE).reset_index(drop=True)
+def with_projection_ids(projections):
+    """The frame `projections` of one task's projections with each one's id in its case (`PROJECTION_ID`)."""
+    projections = projections.reset_index(drop=True)
     projections[PROJECTION_ID] = projections.groupby(["task", "case"]).cumcount()
-    return projections, with_names(read_part(d, PROJECTION_ROWS_FILE), PROJECTION_ID)
+    return projections
 
 
 def entry_projection_rows(projections, projection_rows, table, entry):
@@ -653,15 +682,17 @@ def export_unseen_counts(tables, index, cases, bases):
 def reconcile_unseen(out, tables, index, bases):
     """Raises DataFault, with both counts, where the unseen tables and entries of the loader's `out` differ by reason
     from those that the export's own files give (`export_unseen_counts`). The loader's other reasons, such as an
-    entry over the budget, are its own and left out."""
+    entry over the budget, are its own and left out. Gives the loader's unseen tables by reason, all reasons
+    (`unseen_counts`)."""
     export_t, export_e = export_unseen_counts(tables, index, out, bases)
-    loader_t, loader_e = unseen_counts(out)
-    loader_t = {r: n for r, n in loader_t.items() if r in UNSEEN_TABLE_REASONS}
+    all_t, loader_e = unseen_counts(out)
+    loader_t = {r: n for r, n in all_t.items() if r in UNSEEN_TABLE_REASONS}
     loader_e = {r: n for r, n in loader_e.items() if r in UNSEEN_KINDS.values()}
     if (loader_t, loader_e) != (export_t, export_e):
         raise DataFault(f"the loader's unseen counts differ from the export's: tables by reason, the loader's "
                         f"{loader_t}, the export's {export_t}; entries by reason, the loader's {loader_e}, the "
                         f"export's {export_e}")
+    return all_t
 
 
 class Parsed(NamedTuple):
@@ -681,11 +712,40 @@ class Parsed(NamedTuple):
     fault_table: int | None
 
 
-def parse_tables(tables_dir, tasks_dir=Path(__file__).resolve().parents[1] / "data/tasks"):
+TABLE_COLUMNS = ["task", "case", "table", "point", "token", "relation", "column_types", "width", "det_relations",
+                 "det_widths", "det_columns", "fault", TABLE_PROJECTIONS]   # the columns of tables.parquet that the parse reads
+PROVENANCE_COLUMNS = ["depth", "keys", "output_position", "output_color"]   # those it reads where the export gives provenance
+INDEX_COLUMNS = ["task", "case", "table", "entry", "kind", "example_kind", "example_index", "model", "rows", "offset"]
+
+
+class TaskFrames(NamedTuple):
+    """One task's rows of the export's frames, each as {(task, case): the case's rows} (`by_case`): the index, the
+    assigned runs, the projections (with `PROJECTION_ID`), their rows, the flows ({} where the export gives none),
+    and the task's `bases` rows by the cut case."""
+    idx_by: dict
+    asg_by: dict
+    proj_by: dict
+    prows_by: dict
+    flows_by: dict
+    cut_by: dict
+
+
+def by_case(df):
+    """{(task, case): the rows of the case} of a frame of one task's rows, each in the frame's order."""
+    return {k: g for k, g in df.groupby(["task", "case"], sort=False)} if len(df) else {}
+
+
+def parse_tables(tables_dir, tasks_dir=Path(__file__).resolve().parents[1] / "data/tasks", sink=None):
     """{(task, case): [Table]} for every case of the export, and {(task, case): fault} for each case whose export
     cannot be read (no values file, rows past its end), which is left out. A relation table the encoder cannot see
     (it faults, the search for its projections stopped, or an entry is not rows) stays, as an unseen table. A
     relation table whose entries hold several assignments gives one Table per assignment (`parse_table`).
+
+    The parse runs one task at a time, tasks in the order of their first row in tables.parquet. The export's frames
+    are read in the columns the parse reads, and a task's rows alone are turned into pandas (`TaskRows`), so the
+    parse relies on no order of the files' rows. Where `sink` is given, it takes each task's {(task, case): [Table]}
+    (a task with no case that parses gives none) as the task ends, the parse holds the Tables of one task at a time,
+    and the dict returned is empty.
 
     A case that the export's `bases.parquet` cuts holds its own tables alone, numbered from the row's `tables`, k. Its
     Tables are the Tables of the export of the same streams without bases (the entry numbers, DET value numbers and flow
@@ -696,41 +756,40 @@ def parse_tables(tables_dir, tasks_dir=Path(__file__).resolve().parents[1] / "da
     flows, which are its own, leave out the base's flows below k.
 
     Raises DataFault where the unseen tables and entries by reason differ from the counts that the export's files give
-    (`reconcile_unseen`). Each copy flow is checked against its source (`copy_flow_check`), and the stats keep the
-    totals under "copy flows": the flows checked, those whose values go unchecked, the violations of each kind, the
+    (`reconcile_unseen`), over the cases of each task against the task's rows, and where more than half the relation
+    tables of the export are unseen. Each copy flow is checked against its source (`copy_flow_check`), and the stats
+    keep the totals under "copy flows": the flows checked, those whose values go unchecked, the violations of each kind, the
     count of cases with one, the count of each such case, the first few violations, and whether the export's
     orientation_types.json gave the orientation subtypes (`orientation_subtypes`)."""
     d = Path(tables_dir)
-    tables = with_names(pd.read_parquet(d / "tables.parquet"), TABLE_PROJECTIONS)
-    index = pd.read_parquet(d / "index.parquet")
-    assigned = pd.read_parquet(d / "assigned.parquet")
-    bases = read_bases(d)
-    projections, projection_rows = read_projections(d)
-    by = lambda df: {k: g for k, g in df.groupby(["task", "case"], sort=False)} if len(df) else {}
-    idx_by, asg_by, proj_by, prows_by = by(index), by(assigned), by(projections), by(projection_rows)
-    # the column-level provenance, where the export gives it; else the masked loss takes the table-level sources
-    # and the identifiability test (`field_labels`, `draw_masks`)
-    provenance = (d / "flows.parquet").exists() and "depth" in tables.columns
+    names = pq.read_schema(d / "tables.parquet").names
+    provenance = (d / "flows.parquet").exists() and "depth" in names   # the column-level provenance, where the export gives it
     if provenance and "occurrence" not in pq.read_schema(d / "flows.parquet").names:
         raise DataFault(f"{d}/flows.parquet has no `occurrence` column: the export was written by an engine older than the loader's, which reads the occurrence of each flow")
-    flows_by = by(pd.read_parquet(d / "flows.parquet", columns=["task", "case"] + FLOW_COLUMNS + ["atom", "occurrence"])) if provenance else {}
+    tables = TaskRows(d / "tables.parquet", TABLE_COLUMNS + [c for c in ("det_types",) if c in names]
+                      + (PROVENANCE_COLUMNS if provenance else []))
+    index = TaskRows(d / "index.parquet", INDEX_COLUMNS)
+    assigned = TaskRows(d / "assigned.parquet", ["task", "case", "entry", "det", "rows", "offset"])
+    projections = TaskRows(d / PROJECTIONS_FILE, ["task", "case", "table", "columns", "width"])
+    projection_rows = TaskRows(d / PROJECTION_ROWS_FILE, ["task", "case", PROJECTION_ID, "entry", "defined", "rows", "offset"])
+    flow_rows = TaskRows(d / "flows.parquet", ["task", "case"] + FLOW_COLUMNS + ["atom", "occurrence"]) if provenance else None
+    bases = read_bases(d)
+    bases_of = {k: g for k, g in bases.groupby("task", sort=False)}
     stats = {"body tables": 0, "provenance": "column flows of the export" if provenance else
              "table-level: the export gives no flows, keys or depths"}
     subtypes = orientation_subtypes(d)
     copies = {"checked": 0, "values unchecked": 0, "type": 0, "value": 0, "cases": 0, "by case": {}, "first": [],
               "orientation subtypes": subtypes is not None}
-    groups = by(tables)
-    cut_by = {(r.task, r.case): r for r in bases.itertuples()}
-    base_keys = {(r.task, r.base) for r in bases.itertuples()}
-    parsed = {}      # the Parsed of each case that is a base
+    parsed = {}      # the Parsed of each case of the task that is a base
 
-    def parse_case(task, case, tabs, cut):
-        """The `Parsed` of the case whose rows of tables.parquet are `tabs`, and `cut` its `bases` row where it has one."""
+    def parse_case(task, case, tabs, cut, frames):
+        """The `Parsed` of the case whose rows of tables.parquet are `tabs`, and `cut` its `bases` row where it has one;
+        `frames` are its task's rows (`TaskFrames`)."""
         key, where = (task, case), f"{task} {case}"
         base = None
         if cut is not None:
             base = parsed.get((task, cut.base))
-            if base is None or (task, cut.base) in cut_by:
+            if base is None or (task, cut.base) in frames.cut_by:
                 raise DataFault(f"{where}: its base {cut.base} is no case of the export that holds all its tables")
         below = 0 if base is None else int(cut.tables)
         records = tabs.sort_values("table").to_dict("records")
@@ -743,11 +802,11 @@ def parse_tables(tables_dir, tasks_dir=Path(__file__).resolve().parents[1] / "da
         if not path.exists():
             return failed("no values file", -1)
         values = np.fromfile(path, np.int32)
-        entries = idx_by.get(key)
+        entries = frames.idx_by.get(key)
         ents_of = {} if entries is None else records_by(entries, "table")
-        asg = asg_by.get(key)
+        asg = frames.asg_by.get(key)
         asg_of = {} if asg is None else records_by(asg, "entry")
-        projs, prows = proj_by.get(key), prows_by.get(key)
+        projs, prows = frames.proj_by.get(key), frames.prows_by.get(key)
         projs = {} if projs is None else records_by(projs, "table")
         # the first row of each projection at each entry
         prows = {} if prows is None else {k: rs[0] for k, rs in records_by(prows, [PROJECTION_ID, "entry"]).items()}
@@ -761,9 +820,9 @@ def parse_tables(tables_dir, tasks_dir=Path(__file__).resolve().parents[1] / "da
             result += [copy.copy(t) for t in base.result[len(result):] if t.export_table < below]
             det_values = dict(itertools.islice(base.det_values.items(), base.marks[below - 1]))
             det_runs = dict(base.det_runs)
-            entry_offset = 0 if idx_by.get((task, cut.base)) is None else int((idx_by[(task, cut.base)]["table"] < below).sum())
+            entry_offset = 0 if frames.idx_by.get((task, cut.base)) is None else int((frames.idx_by[(task, cut.base)]["table"] < below).sum())
             every = base.records[:below] + records
-        fl = flows_by.get(key)
+        fl = frames.flows_by.get(key)
         if provenance:
             kept = {int(t["table"]): kept_columns(t["column_types"]) for t in every}
             dets = {int(t["table"]): case_dets(t) for t in every}
@@ -812,23 +871,40 @@ def parse_tables(tables_dir, tasks_dir=Path(__file__).resolve().parents[1] / "da
                     copies["cases"] += 1; copies["by case"][where] = len(bad)
         return Parsed(tabs, records, fl, result, det_values, det_runs, marks, None, None)
 
-    order = list(groups) + [key for key in cut_by if key not in groups]      # the order of the export's files
     out, faults = {}, {}
-    for key in [k for k in order if k not in cut_by] + [k for k in order if k in cut_by]:     # a base before the cases cut from it
-        done = parse_case(*key, groups.get(key, tables.iloc[:0]), cut_by.get(key))
-        if done.fault is None:
-            out[key] = done.result
-        else:
-            faults[key] = done.fault
-        if key in base_keys:
-            parsed[key] = done
-    out = {key: out[key] for key in order if key in out}
+    relation_tables, unseen = 0, {}
+    for task in tables.tasks() + [t for t in bases_of if t not in tables.span]:
+        tabs = tables.rows(task)
+        task_bases = bases_of.get(task, bases.iloc[:0])
+        cut_by = {(r.task, r.case): r for r in task_bases.itertuples()}
+        base_keys = {(r.task, r.base) for r in task_bases.itertuples()}
+        index_rows = index.rows(task)
+        frames = TaskFrames(by_case(index_rows), by_case(assigned.rows(task)),
+                            by_case(with_projection_ids(projections.rows(task))), by_case(projection_rows.rows(task)),
+                            by_case(flow_rows.rows(task)) if flow_rows is not None else {}, cut_by)
+        groups = by_case(tabs)
+        order = list(groups) + [key for key in cut_by if key not in groups]      # the order of the export's files
+        done_task = {}
+        for key in [k for k in order if k not in cut_by] + [k for k in order if k in cut_by]:     # a base before the cases cut from it
+            done = parse_case(*key, groups.get(key, tabs.iloc[:0]), cut_by.get(key), frames)
+            if done.fault is None:
+                done_task[key] = done.result
+            else:
+                faults[key] = done.fault
+            if key in base_keys:
+                parsed[key] = done
+        parsed.clear()
+        done_task = {key: done_task[key] for key in order if key in done_task}
+        for reason, n in reconcile_unseen(done_task, tabs, index_rows, task_bases).items():
+            unseen[reason] = unseen.get(reason, 0) + n
+        relation_tables += sum(1 for ts in done_task.values() for t in ts if not t.evidence)
+        if sink is None:
+            out.update(done_task)
+        elif done_task:
+            sink(done_task)
     stats["copy flows"] = copies
-    reconcile_unseen(out, tables, index, bases)
-    relation_tables = [t for ts in out.values() for t in ts if not t.evidence]
-    unseen, _ = unseen_counts(out)
-    if sum(unseen.values()) * 2 > len(relation_tables):
-        raise DataFault(f"more than half of the {len(relation_tables)} relation tables are unseen, which means a bug "
+    if sum(unseen.values()) * 2 > relation_tables:
+        raise DataFault(f"more than half of the {relation_tables} relation tables are unseen, which means a bug "
                         f"in the loader or in the export: {sum(unseen.values())} unseen, by reason {unseen}")
     return out, faults, stats
 
@@ -969,7 +1045,7 @@ def table_groups(tables):
     return out
 
 
-LOADER_VERSION = 23  # raise on any change to parse_tables or Table
+LOADER_VERSION = 24  # raise on any change to parse_tables or Table
 
 
 def table_stamp(tables_dir):
@@ -994,13 +1070,8 @@ def export_violations(tables_dir):
 
 def copy_flow_rule(stats, strict, where):
     """Prints the copy-flow totals of `stats` (`parse_tables`), and raises DataFault with the first violations
-    where `strict` and there is one. A cache built before the check holds no totals, and prints that it is
-    unchecked."""
-    c = stats.get("copy flows")
-    if c is None:
-        print(f"{where}: the cache holds no copy-flow totals, so its copy flows are unchecked; a rebuild of the cache "
-              f"checks them", flush=True)
-        return
+    where `strict` and there is one."""
+    c = stats["copy flows"]
     line = (f"copy flows of {where}: {c['checked']} checked, {c['type']} with another type than their source column, "
             f"{c['value']} columns with values outside their sources, in {c['cases']} cases; "
             f"{c['values unchecked']} columns not checked for values"
@@ -1012,33 +1083,43 @@ def copy_flow_rule(stats, strict, where):
 
 
 def load_tables(tables_dir, cache, strict=True, allow_violations=False, tasks_dir=None):
-    """parse_tables, through a pickle at `cache` keyed by the export, the task files and the loader version. The
-    stamp is also in the file `<cache>.stamp.json`, which is read first, so that a stale pickle is not loaded.
+    """parse_tables, through a cache at `cache` keyed by the export, the task files and the loader version. The cache is a
+    directory: `stamp.json` (the stamp), `summary.pkl` (`skipped`, `stats` and the count of shards) and `<k>.pkl`, the
+    k-th task's {(task, case): [Table]} (`parse_tables`' `sink`), each a pickle of protocol 5. A load reads
+    `stamp.json` first and takes the cache only where it equals the export's stamp. A build writes into
+    `<cache>.partial-<pid>`, `stamp.json` last, and renames it to `cache`, so a cache that stands was built whole; where
+    another process's build of the same stamp stands by then, the build keeps that one. A build that raises removes its
+    directory, and a build removes the `.partial-<pid>` of each process that no longer runs. A stale `cache` is removed
+    before the build. Gives every case's Tables in one dict, the faults and the stats, from a build as from a load.
     Before a build, an export whose checks.txt reports a violation (`export_violations`) is refused with a
     DataFault, unless `allow_violations`; an export without one is built with a line that says so. With `strict`,
-    a copy flow that breaks its join (`copy_flow_check`) is a DataFault, from a build or from the pickle's totals
+    a copy flow that breaks its join (`copy_flow_check`) is a DataFault, from a build or from the cache's totals
     (`copy_flow_rule`). `tasks_dir` is the task files' directory, by default the repo's, which the stamp reads
     whatever it is."""
     tasks = Path(tasks_dir) if tasks_dir else Path(__file__).resolve().parents[1] / "data/tasks"
-    stamp = table_stamp(tables_dir)
-    sidecar = f"{cache}.stamp.json"
-    cached, cached_stamp = None, None
-    if os.path.exists(cache):
-        cached_stamp = read_sidecar(sidecar)
-        if cached_stamp is None:   # no sidecar: the stamp inside the pickle
-            cached = pickle.load(open(cache, "rb"))
-            cached_stamp = list_or_tuple(cached.get("stamp"))
-            if cached_stamp == list_or_tuple(stamp):
-                write_sidecar(sidecar, stamp)
-        if cached_stamp == list_or_tuple(stamp):
-            if cached is None:
-                cached = pickle.load(open(cache, "rb"))
-            copy_flow_rule(cached["stats"], strict, tables_dir)
-            return cached["tables"], cached["skipped"], cached["stats"]
-        print(f"cache rebuilt: {stamp_difference(cached_stamp, stamp)}", flush=True)
-    else:
-        print(f"building cache for {tables_dir}", flush=True)
-    cached = None   # frees a stale pickle before the rebuild
+    stamp, cache = list(table_stamp(tables_dir)), Path(cache)
+    if cache.exists() and not cache.is_dir():
+        raise DataFault(f"{cache} is no directory: the cache of a tables export is a directory of pickles")
+    cached = read_stamp(cache)
+    if cached != stamp:
+        if cache.exists():
+            print(f"cache rebuilt: {stamp_difference(cached, stamp)}", flush=True)
+            remove_tree(cache)
+        else:
+            print(f"building cache for {tables_dir}", flush=True)
+        build_cache(tables_dir, cache, stamp, tasks, allow_violations)
+    with open(cache / "summary.pkl", "rb") as f:
+        summary = pickle.load(f)
+    out = {}
+    for k in range(summary["shards"]):
+        with open(cache / f"{k}.pkl", "rb") as f:
+            out.update(pickle.load(f))
+    copy_flow_rule(summary["stats"], strict, tables_dir)
+    return out, summary["skipped"], summary["stats"]
+
+
+def build_cache(tables_dir, cache, stamp, tasks, allow_violations):
+    """Builds the cache directory `cache` of an export (`load_tables`) with the stamp `stamp`."""
     violations = export_violations(tables_dir)
     if violations is None:
         print(f"{tables_dir} carries no checks.txt: the export's own checks are not known", flush=True)
@@ -1047,38 +1128,66 @@ def load_tables(tables_dir, cache, strict=True, allow_violations=False, tasks_di
         if not allow_violations:
             raise DataFault(f"{line}; allow_violations (--allow-check-violations) builds the cache anyway")
         print(f"{line}; built under allow_violations", flush=True)
-    tables, skipped, stats = parse_tables(tables_dir, tasks)
-    if os.path.exists(sidecar):
-        os.remove(sidecar)   # the sidecar stays only beside a pickle that was written whole
-    pickle.dump({"stamp": stamp, "tables": tables, "skipped": skipped,
-                 "stats": stats}, open(cache, "wb"))
-    write_sidecar(sidecar, stamp)
-    copy_flow_rule(stats, strict, tables_dir)
-    return tables, skipped, stats
+    for left in cache.parent.glob(f"{cache.name}.partial-[0-9]*"):
+        if not process_runs(int(left.name.rsplit("-", 1)[1])):
+            remove_tree(left)
+    partial = cache.parent / f"{cache.name}.partial-{os.getpid()}"
+    remove_tree(partial)
+    partial.mkdir(parents=True)
+    shards = 0
+
+    def sink(task_tables):
+        nonlocal shards
+        with open(partial / f"{shards}.pkl", "wb") as f:
+            pickle.dump(task_tables, f, protocol=5)
+        shards += 1
+
+    try:
+        _, skipped, stats = parse_tables(tables_dir, tasks, sink)
+        with open(partial / "summary.pkl", "wb") as f:
+            pickle.dump({"skipped": skipped, "stats": stats, "shards": shards}, f, protocol=5)
+        with open(partial / "stamp.json", "w") as f:
+            json.dump(stamp, f)
+        try:
+            os.rename(partial, cache)
+        except OSError:
+            if read_stamp(cache) != stamp:
+                raise
+            remove_tree(partial)   # another process's build of this stamp ended first
+    except BaseException:
+        remove_tree(partial)
+        raise
 
 
 STAMP_PARTS = ("loader version", "export", "index mtime", "tasks mtime", "flows mtime", "orientation types mtime")
 
 
-def list_or_tuple(stamp):
-    return list(stamp) if isinstance(stamp, (list, tuple)) else stamp
-
-
-def read_sidecar(path):
-    """The stamp in the sidecar file at `path` (a list), or None where there is no readable sidecar."""
+def read_stamp(cache):
+    """The stamp (a list) in the cache directory `cache`, or None where it holds no readable `stamp.json`."""
     try:
-        with open(path) as f:
+        with open(Path(cache) / "stamp.json") as f:
             return json.load(f)
     except (OSError, ValueError):
         return None
 
 
-def write_sidecar(path, stamp):
+def remove_tree(path):
+    """Removes the directory `path` with what it holds; no fault where it is gone, or goes while this runs."""
     try:
-        with open(path, "w") as f:
-            json.dump(list(stamp), f)
-    except OSError as e:
-        print(f"no stamp sidecar written at {path}: {e}", flush=True)
+        shutil.rmtree(path)
+    except FileNotFoundError:
+        pass
+
+
+def process_runs(pid):
+    """Whether a process with the id `pid` runs."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        pass
+    return True
 
 
 def stamp_difference(cached, current):

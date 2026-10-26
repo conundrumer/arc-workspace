@@ -628,7 +628,7 @@ def main():
     assert not K or a.enc_equality != "flex" or a.device == "cuda", "--enc-equality flex trains on cuda alone"
     if a.tables:   # each case takes its tables; a case without readable tables leaves every set
         import encoder
-        tables, skipped, tstats = encoder.load_tables(a.tables, f"{a.data}/tables.pkl", not a.allow_check_violations,
+        tables, skipped, tstats = encoder.load_tables(a.tables, f"{a.data}/tables.cache", not a.allow_check_violations,
                                                       a.allow_check_violations)
         if skipped:
             print(f"DATA FAULT: {len(skipped)} cases whose tables export cannot be read, left out: {skipped}")

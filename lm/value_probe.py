@@ -6,7 +6,7 @@ regressions fitted on the training branch points of a rollout export and scored 
 
 Without `--encoder`, the encoder is a random initialization of pretrain.py's default shape. The members, the split
 and the encoder come from value_eval.py (`load`, `build_encoder`), so the tables cache is
-`<data>/<export name>.tables.pkl`, as value_eval.py's is. The probed tables are those of the lists of encoder.py's
+`<data>/<export name>.tables.cache`, as value_eval.py's is. The probed tables are those of the lists of encoder.py's
 `value_lists` under the solving label: the tables at the positions below `--positions` after the branch, the empty,
 unseen and faulted ones left out. Each member is encoded whole, `--draws` times under fresh identifiers, and a table's
 vector is its readout's mean over the draws. The encoding's time grows with the tables of the encoded members, and a

@@ -46,7 +46,7 @@ real tables of the dev export, cut to a few dozen rows each.
   row, so that its split is unseen at an assignment of no column, with its copy flows checked; it must build, with `strict`, an export with a Dir
   column copied from a Dir8 column where the export's orientation_types.json gives Dir as a subtype of Dir8, and
   refuse it where the export has no orientation_types.json, with a line that says the orientation subtypes were not
-  known; a pickle without the totals must print that it is unchecked. `parse_tables` must count an Undefined entry, and refuse where the loader's count of unseen entries
+  known. `parse_tables` must count an Undefined entry, and refuse where the loader's count of unseen entries
   differs from the export's; `entry_runs` must read a Rows entry's run and refuse an Undefined entry, naming the
   case, the table and the entry.
 - Masks: in a program step, no table with hidden fields may have a source table with hidden fields (no hidden
@@ -110,7 +110,7 @@ The equality term's weights, which start at 0, are drawn at random, so that ever
 The checks of the flex equality mode run only with --flex, and the two learnability runs of the pointer (200 training
 steps each, about 45 s together) only with --learn.
 """
-import copy, json, math, os, pickle, sys
+import copy, json, math, os, pickle, shutil, sys
 from pathlib import Path
 
 import numpy as np
@@ -125,7 +125,7 @@ FLEX = "--flex" in sys.argv[1:]
 LEARN = "--learn" in sys.argv[1:]
 ARGS = [x for x in sys.argv[1:] if x not in ("--full", "--flex", "--learn")]
 TABLES = ARGS[0] if ARGS else "work/tables/dev"
-CACHE = "lm/data-dev/tables.pkl"
+CACHE = "lm/data-dev/tables.cache"
 FIXTURE = "lm/data-dev/encoder-check-fixture.pkl"
 TOL = 1e-4
 torch.manual_seed(0)
@@ -474,7 +474,7 @@ def provenance_export(d, bad=False):
              "$Unseen": [grid, grid, t2, t3_dep, {**t4, "fault": "a check"}]}
     rows = {2: lambda e: [[1 + e, 0, 5, 7], [2, 1, 5, 7]], 3: lambda e: [[0, 0, 0, 0, 3]], 4: lambda e: [[3]]}
     flow = lambda tab, col, kind, st, sc, det=-1: dict(table=tab, column=col, kind=kind, source_table=st,
-                                                       source_relation="", source_column=sc, det=det, atom="")
+                                                       source_relation="", source_column=sc, det=det, atom="", occurrence=-1)
     flows = {"$Free": [flow(2, 0, 0, 0, 2), flow(2, 1, 1, 0, 1), flow(2, 2, 2, -1, -1), flow(2, 3, 0, -1, -1),
                        flow(3, 0, 0, 0, 1), flow(3, 1, 0, 2, 0)],
              "$Dep": [flow(2, 0, 0, 0, 2), flow(2, 1, 1, 0, 1), flow(2, 2, 2, -1, -1), flow(2, 3, 0, -1, -1),
@@ -603,7 +603,7 @@ def checked_export(d, variant="clean"):
     rows = {2: [[1, 5, 1], [2, 6, 2]] if dir8 else [[1, 5], [2, 6]], 3: [[1, 1]] if dir8 else [[4 if variant == "value" else 1]]}
     flow = lambda tab, st, sc, det=-1, kind=0, column=0: dict(task="t", case="$C", concept=False, table=tab, column=column,
                                                     kind=kind, source_table=st, source_relation="", source_column=sc,
-                                                    det=det, atom="")
+                                                    det=det, atom="", occurrence=-1)
     tables, index, values, assigned = [], [], [], []
     for i, t in enumerate(tabs):
         tables.append(dict(task="t", case="$C", concept=False, table=i, token=i, projections=0, fault=None,
@@ -651,7 +651,7 @@ def checked_load(variant, checks=None, **kw):
             text = io.StringIO()
             with contextlib.redirect_stdout(text):
                 try:
-                    got = E.load_tables(tmp, Path(tmp) / "tables.pkl", tasks_dir=Path(tmp) / "tasks", **kw)[2]
+                    got = E.load_tables(tmp, Path(tmp) / "tables.cache", tasks_dir=Path(tmp) / "tasks", **kw)[2]
                 except E.DataFault as x:
                     got = str(x)
             out += [got, text.getvalue()]
@@ -706,12 +706,6 @@ for variant, want in (("det", "passes"), ("det unseen", "passes"), ("det per row
         ok = ok and c["type"] == 2 and not_known in strict and "type Dir from a column of type Dir8" in strict and "type Dir8 from a column of type Dir" in strict
     if not ok:
         bad.append((variant, strict, strict_cached, loose, printed))
-import contextlib, io
-text = io.StringIO()
-with contextlib.redirect_stdout(text):
-    E.copy_flow_rule({"provenance": "a pickle built before the check"}, True, "an old cache")
-if "unchecked" not in text.getvalue():
-    bad.append(("a pickle without the totals", text.getvalue()))
 with tempfile.TemporaryDirectory() as tmp:
     checked_export(Path(tmp), "undefined")
     utabs, _, _ = E.parse_tables(tmp, Path(tmp) / "tasks")
@@ -728,6 +722,34 @@ with tempfile.TemporaryDirectory() as tmp:
 if seen["undefined entry"] != {"an entry is undefined": 1} or "the loader's {}" not in mismatch \
         or "{'an entry is undefined': 1}" not in mismatch:
     bad.append(("a count mismatch", seen["undefined entry"], mismatch))
+with tempfile.TemporaryDirectory() as tmp:   # the cache directory: a sink takes the tasks one by one; a stale partial goes
+    import contextlib, io
+    checked_export(Path(tmp), "clean")
+    tasks, cache = Path(tmp) / "tasks", Path(tmp) / "tables.cache"
+    whole, whole_faults, _ = E.parse_tables(tmp, tasks)
+    sunk = {}
+    kept, sunk_faults, _ = E.parse_tables(tmp, tasks, sunk.update)
+    stale = Path(f"{cache}.partial-4000000")   # a process id that no process holds
+    stale.mkdir()
+    with contextlib.redirect_stdout(io.StringIO()):
+        built, _, _ = E.load_tables(tmp, cache, tasks_dir=tasks)
+        (cache / "stamp.json").write_text("[]")
+        rebuilt, _, _ = E.load_tables(tmp, cache, tasks_dir=tasks)
+    parse_tables = E.parse_tables   # a build that raises
+    E.parse_tables = lambda *a, **k: 1 / 0
+    shutil.rmtree(cache)
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            E.load_tables(tmp, cache, tasks_dir=tasks)
+    except ZeroDivisionError:
+        pass
+    finally:
+        E.parse_tables = parse_tables
+    left = sorted(p.name for p in Path(tmp).glob("tables.cache*"))
+    seen["cache directory"] = left
+    if kept != {} or list(sunk) != list(whole) or sunk_faults != whole_faults or list(built) != list(whole) \
+            or list(rebuilt) != list(whole) or left:
+        bad.append(("a cache directory", kept, list(sunk), list(whole), list(built), list(rebuilt), left))
 t3 = {"table": 3, "column_types": ["Color"], "width": 1}
 runs = [E.entry_runs(t3, {"kind": 0, "entry": 4, "rows": 2, "offset": 8}, {}, {}, "t $C"),
         E.entry_runs(t3, {"kind": 1, "entry": 4, "rows": 2, "offset": 8}, {}, {}, "t $C")]
@@ -1502,7 +1524,7 @@ def lookup_export(d, rng, cases=32, n=16):
     rel = lambda r, depth: dict(point=0, relation=r, column_types=["Ident", "Color"], width=2, det_relations=[],
                                 det_widths=[], det_columns=[], depth=depth, keys=[[0]], output_position=-1, output_color=-1)
     flow = lambda case, col: dict(task="t", case=case, concept=False, table=3, column=col, kind=0, source_table=2,
-                                  source_relation="", source_column=col, det=-1, atom="")
+                                  source_relation="", source_column=col, det=-1, atom="", occurrence=-1)
     tables, index, flows = [], [], []
     (d / "values/t").mkdir(parents=True)
     for k in range(cases):

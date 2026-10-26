@@ -26,7 +26,7 @@ TABLES = sys.argv[2] if len(sys.argv) > 2 else "work/tables/dev"
 K = 4
 
 train, held, names, kinds, mask_table = T.load(DATA)
-tables, _, _ = E.load_tables(TABLES, f"{DATA}/tables.pkl")
+tables, _, _ = E.load_tables(TABLES, f"{DATA}/tables.cache")
 names_in = {n for n, k in zip(names, kinds) if k not in ("relation", "label")}
 in_names = sorted(names_in) + [T.BOS] + [f"{p}_{k}" for p in ("DECL", "REF") for k in T.KINDS]
 out_names = sorted(names_in) + [f"REF_{k}" for k in T.KINDS]

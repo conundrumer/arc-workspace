@@ -88,9 +88,9 @@ def logistic(train_members, held_members, positions, steps, seed, label, columns
 
 def load(value_tables, data, cfg, allow_violations=False):
     """The members of the rollout export (encoder.load_rollouts, with the tables cache at `<data>/<export
-    name>.tables.pkl` and the budgets of the run's `cfg`, strict unless `allow_violations`), those of training tasks
+    name>.tables.cache` and the budgets of the run's `cfg`, strict unless `allow_violations`), those of training tasks
     and those of held-out tasks as the data marks them, and the data's (names, kinds)."""
-    members, skipped = E.load_rollouts(value_tables, f"{data}/{Path(value_tables).resolve().name}.tables.pkl",
+    members, skipped = E.load_rollouts(value_tables, f"{data}/{Path(value_tables).resolve().name}.tables.cache",
                                        cfg["enc_budget"], cfg.get("enc_max_rows", 4000), strict=not allow_violations,
                                        allow_violations=allow_violations)
     if skipped:

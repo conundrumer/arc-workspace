@@ -393,7 +393,7 @@ def main():
     t0 = time.time()
 
     cases, held_cases, names, kinds, mask_table = T.load(a.data)
-    tables, skipped, _ = E.load_tables(a.tables, f"{a.data}/tables.pkl", not a.allow_check_violations,
+    tables, skipped, _ = E.load_tables(a.tables, f"{a.data}/tables.cache", not a.allow_check_violations,
                                        a.allow_check_violations)
     if skipped:
         print(f"DATA FAULT: {len(skipped)} cases whose tables export cannot be read, left out: {skipped}")
@@ -416,7 +416,7 @@ def main():
     value_train, value_held, members = [], [], {}
     if a.value != "off":
         assert a.value_tables, "--value needs --value-tables"
-        members, vskipped = E.load_rollouts(a.value_tables, f"{a.data}/{Path(a.value_tables).resolve().name}.tables.pkl",
+        members, vskipped = E.load_rollouts(a.value_tables, f"{a.data}/{Path(a.value_tables).resolve().name}.tables.cache",
                                             a.enc_budget, a.enc_max_rows, strict=not a.allow_check_violations,
                                             allow_violations=a.allow_check_violations)
         if vskipped:
