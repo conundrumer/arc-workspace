@@ -216,6 +216,7 @@ class Rewriter:
         self.next_decl = 1 + max((d.id.index for d in prog.declarations), default=0)
         self.next_unit = 1 + max((u.id.index for u in prog.units), default=0)
         self.picks: dict[str, Pick] = {}
+        self.dropped: dict[tuple[tuple[str, ...], str], tuple[int, ...]] = {}   # each relation's dropped resolution columns, by index
         self.fresh_n = 0
 
     def fresh(self, base: str) -> Variable:
@@ -262,7 +263,7 @@ class Rewriter:
         if not insts:
             units, rels = self.ctor_picks(units, rels)
             if not self.picks:
-                return prog, {}
+                return prog, {}, {}
         for inst in insts:
             sc = inst.scope.components
             mine = [u for u in units if u.head.relation.instances == (inst.name,)
@@ -290,7 +291,7 @@ class Rewriter:
         types = tuple(t for t in prog.types if t.name != RES)
         prog = dc_replace(prog, relations=tuple(rels), units=tuple(units), types=types,
                           instances=tuple(i for i in prog.instances if i not in insts))
-        return prog, self.picks
+        return prog, self.picks, self.dropped
 
     # ---- ONE
 
@@ -753,6 +754,7 @@ class Rewriter:
             idx = [i for i, c in enumerate(r.columns) if c.type.name == RES]
             if idx:
                 drop[r.name] = idx
+                self.dropped[(r.scope.components, r.name)] = tuple(idx)
                 r = dc_replace(r, columns=tuple(c for i, c in enumerate(r.columns) if i not in idx))
             out_rels.append(r)
         if not drop:
@@ -802,4 +804,7 @@ def reads_of(lits) -> set[str]:
 
 
 def rewrite(prog):
+    """The program with its constraint components rewritten, its picks by
+    name, and the index of each `TiebreakResolution` column dropped from a
+    relation, by the relation's scope and name."""
     return Rewriter(prog).run()

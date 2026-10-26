@@ -32,6 +32,7 @@ from arclog_convert.literals import collect_vars
 from arclog_convert.open_orders import keys_retyped as order_keys_retyped, orders as open_orders
 from arclog_convert.picks import rewrite as rewrite_picks
 from arclog_convert.libmap import box as libmap_box, rewrite as libmap_rewrite
+from arclog_convert.libmap.instances import Placement
 from arclog_convert import paths
 
 from arclog_convert.clauses import ClauseWriter
@@ -69,19 +70,24 @@ class Leaf:
 @dataclass(frozen=True)
 class Written:
     """The Souffle relation, or instance, an arclog name was written from:
-    the solver component path it is declared under, and its name there."""
+    the solver component path it is declared under, and its name there; and,
+    where the converter holds how the arclog relation's columns stand for
+    the Souffle relation's, the `Placement` of each arclog column in it."""
 
     scope: tuple[str, ...]
     relation: str
     instance: bool
+    columns: tuple[Placement, ...] | None = None
 
 
 class Converter:
     def __init__(self, stem: str, lib: Lib, sig: Lib, todo: Todo, inline: frozenset[str] = frozenset()) -> None:
         self.stem = stem
         # each relation or instance this pass makes that the Souffle program
-        # does not declare, by its scope and name, with what it stands for
-        self.made: dict[tuple[tuple[str, ...], str], Written] = {}
+        # does not declare, by its scope and name, with what it stands for:
+        # none for a relation of an expansion's shape that no Souffle relation
+        # stands behind
+        self.made: dict[tuple[tuple[str, ...], str], Written | None] = {}
         # each arclog name this pass writes, with each thing it was written from
         self.written: dict[str, list[Written]] = {}
         self.unsafe: set[str] = set()   # the relations with a clause whose body no order makes safe
@@ -103,11 +109,14 @@ class Converter:
                           functors=tuple(filter(own, prog.functors)),
                           units=tuple(filter(own, prog.units)),
                           macros=tuple(filter(own, prog.macros)))
+        # the column count of each relation and the component of each instance the solver file declares
+        self.souffle_columns = {(r.scope.components, r.name): len(r.columns) for r in prog.relations}
+        self.souffle_components = {(i.scope.components, i.name): i.component for i in prog.instances}
         prog = inlined(prog, inline, lib)
         prog, self.tile_frames = tile_frames_split(prog)
-        prog, self.picks = rewrite_picks(prog)
+        prog, self.picks, self.dropped = rewrite_picks(prog)
         prog, self.lib_judgment = libmap_box.typed(prog, lib)
-        prog, judgment, self.lib_moved = libmap_rewrite(prog, lib, macros=paths.MACROS_ENV in os.environ)
+        prog, judgment, self.lib_moved, lib_held = libmap_rewrite(prog, lib, macros=paths.MACROS_ENV in os.environ)
         MOVED_RELS.clear()
         MOVED_RELS.update({f"{was}.{r}": new for was, moves in self.lib_moved.values() for r, new in moves.items()})
         self.lib_judgment |= judgment
@@ -118,11 +127,15 @@ class Converter:
             (t.scope.components, t.name): t for t in prog.types}
         self.rels = {(r.scope.components, r.name): r for r in prog.relations}
         self.insts = {(i.scope.components, i.name): i for i in prog.instances}
-        # each relation the lib rewrite moves an instance's relation to
+        # each relation the lib rewrite moves an instance's relation to, with
+        # the Souffle relation it holds where one read of the instance reaches
+        # it with that relation alone
         for inst, (was, moves) in self.lib_moved.items():
             for sc in [sc for sc, n in self.insts if n == inst]:
-                for r, new in moves.items():
-                    self.made[(sc, new)] = Written(sc, f"{was}.{r}", False)
+                for new in sorted(set(moves.values())):
+                    held = lib_held[inst].get(new)
+                    self.made[(sc, new)] = None if held is None else Written(
+                        sc, f"{was}.{held.relation}", False, held.columns)
         self.comps = {c.name: c for c in prog.components}
         self.case_types = self._case_types()
         self.open_params = self._open_params()
@@ -1849,17 +1862,36 @@ class Converter:
         souffle = self.souffle_of(key[0], key[1], inst is not None and inst.component in self.lib.comps)
         return self.wrote("in" if self.names[key] == "__in__" else "&" + self.names[key], souffle)
 
-    def souffle_of(self, scope: tuple[str, ...], name: str, instance: bool) -> Written:
+    def souffle_of(self, scope: tuple[str, ...], name: str, instance: bool) -> Written | None:
         """What the relation, or instance, `name` of `scope` in the program
         this pass converts stands for in the Souffle program: itself, where
-        the pass did not make it."""
-        return self.made.get((scope, name)) or Written(scope, name, instance)
+        the pass did not make it, and none where it made it for no Souffle
+        relation."""
+        if (scope, name) in self.made:
+            return self.made[(scope, name)]
+        return Written(scope, name, instance)
 
-    def wrote(self, arc: str, souffle: Written) -> str:
+    def souffle_arity(self, scope: tuple[str, ...], relation: str) -> int | None:
+        """The number of columns of the Souffle relation `relation` declared
+        in `scope`, as the solver file declares it, or, for `<instance>.<name>`
+        of an instance of a component of the lib, as the present lib declares
+        it; none for a relation neither declares."""
+        instance, dot, name = relation.partition(".")
+        if not dot:
+            if (scope, relation) in self.souffle_columns:
+                return self.souffle_columns[(scope, relation)]
+            return len(self.lib.top[relation]) if not scope and relation in self.lib.top else None
+        component = self.souffle_components.get((scope, instance))
+        if component is None or component not in self.lib.comps:
+            return None
+        return next((len(r.cols) for r in self.lib.present(component)[1] if r.name == name), None)
+
+    def wrote(self, arc: str, souffle: Written | None) -> str:
         """`arc`, an arclog name this pass writes, recorded with what it was
-        written from, once each (`name_map`)."""
+        written from, once each (`name_map`); with none, recorded as written
+        from no Souffle relation."""
         got = self.written.setdefault(arc, [])
-        if souffle not in got:
+        if souffle is not None and souffle not in got:
             got.append(souffle)
         return arc
 

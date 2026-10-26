@@ -45,6 +45,7 @@ from collections import Counter
 from pathlib import Path
 from engine.program import Qualifier, RelationName, Variable
 from arclog_convert.libmap import rename as libmap_rename
+from arclog_convert.libmap.instances import Placement
 from arclog_convert import OUT_ENV, paths, writable_out
 
 from arclog_convert.forms import (
@@ -55,7 +56,7 @@ from arclog_convert.forms import (
     hoist_shared,
     renamed,
 )
-from arclog_convert.clauses import site_columns
+from arclog_convert.clauses import Site, site_columns
 from arclog_convert.leaves import Converter, FACTS, Written
 from arclog_convert.lib import Col, ColMismatch, LIB_DL, Lib, SIGNATURE
 from arclog_convert.solver import Solver
@@ -190,28 +191,69 @@ def name_map(s: "Solver", insts: dict[str, str], arclog: str, arcdata: str) -> d
             "unmapped": unmapped}
 
 
-def column_map(s: "Solver", names: dict) -> dict:
+def column_map(s: "Solver", names: dict, insts: dict[str, str]) -> dict:
     """For each arclog relation of the name map `names` with one Souffle
-    relation that has a path from the top level, its columns as the Souffle
-    relation's, in order: for each, the list of its kept leaves, each as
-    `{"leaf": <path into the column's record>, "label": <the arclog column>,
-    "field": <the field within the column, or null>, "example": <whether the
-    leaf is an Example leaf>}`. The relation is
-    resolved from the top level (`Converter.resolve`), as a read from the top
-    level sees it, and the labels are those `site_columns` gives, the ones
-    every read the converter writes of the relation names."""
+    relation that has a path from the top level, one entry per column of the
+    Souffle relation, in its order: the list of the kept leaves of that
+    Souffle column that the arclog relation holds, each as
+    `{"leaf": <path into the Souffle column's record>, "label": <the arclog
+    column>, "field": <the field within the arclog column, or null>,
+    "example": <whether the leaf is an Example leaf>}`; the list is empty
+    where no arclog column holds a leaf of the Souffle column. The arclog
+    columns stand for the Souffle relation's columns by the `Written.columns`
+    of the relation of an expansion's shape (`Converter.made`); for a relation
+    that lost `TiebreakResolution` columns, by the columns it kept; otherwise
+    one to one. A relation whose arclog columns and Souffle columns differ in
+    number and whose correspondence the converter does not hold gets no entry.
+    The relation is resolved as a read sees it (`Converter.resolve`): from the
+    top level by the Souffle relation's path, and a relation of an expansion's
+    shape by its own name; the labels are those `site_columns` gives, the ones
+    every read the converter writes of the relation names. `insts` are the
+    instance renames `convert_one` applies to the names."""
+    c = s.c
     out: dict[str, list[list[dict]]] = {}
+    shaped: set[str] = set()
+    for (scope, shape), w in c.made.items():
+        if w is None or w.columns is None:
+            continue
+        *chain, rel = shape.split(".")
+        name, cols, _, inst = c.resolve(RelationName(tuple(chain), rel), scope, {})
+        arc = _renamed_name(name, insts)
+        shaped.add(arc)
+        width = c.souffle_arity(w.scope, w.relation)
+        if cols is None or width is None or len(cols) != len(w.columns) \
+                or names["relations"].get(arc) != [_souffle_relation(c, w)]:
+            continue
+        out[arc] = _souffle_columns(site_columns(c, cols, inst), w.columns, width)
     for arc, souffle in names["relations"].items():
-        if len(souffle) != 1 or souffle[0]["path"] is None:
+        if arc in shaped or len(souffle) != 1 or souffle[0]["path"] is None:
             continue
-        *insts, rel = souffle[0]["path"].split(".")
-        resolved = s.c.resolve(RelationName(tuple(insts), rel), (), {})
-        _, cols, _, inst = resolved
-        if cols is None:
+        *chain, rel = souffle[0]["path"].split(".")
+        _, cols, _, inst = c.resolve(RelationName(tuple(chain), rel), (), {})
+        scope, relation = tuple(souffle[0]["component"]), souffle[0]["relation"]
+        width = c.souffle_arity(scope, relation)
+        if cols is None or width is None:
             continue
-        out[arc] = [[{"leaf": list(site.leaf.path), "label": site.label, "field": site.field,
-                      "example": site.leaf.kind == "example"}
-                     for site in column] for column in site_columns(s.c, cols, inst)]
+        kept = tuple(j for j in range(width) if j not in c.dropped.get((scope, relation), ()))
+        if len(kept) == len(cols):
+            out[arc] = _souffle_columns(site_columns(c, cols, inst), kept, width)
+    return out
+
+
+def _souffle_columns(columns: list[list[Site]], placement: tuple[Placement, ...], width: int) -> list[list[dict]]:
+    """The sites of the arclog columns `columns`, as the entries of the
+    `width` columns of the Souffle relation they are placed in by
+    `placement` (`Written.columns`): each site under the Souffle column that
+    holds its leaf, with the leaf's path into that column."""
+    out: list[list[dict]] = [[] for _ in range(width)]
+    for sites, where in zip(columns, placement):
+        for site in sites:
+            at, path = where, tuple(site.leaf.path)
+            if isinstance(where, tuple):   # a record term: its field holds the leaf
+                at, path = where[path[0]], path[1:]
+            if at is not None:
+                out[at].append({"leaf": list(path), "label": site.label, "field": site.field,
+                                "example": site.leaf.kind == "example"})
     return out
 
 
@@ -267,7 +309,7 @@ def convert_one(stem: str) -> tuple[str, str | None, str | None, Counter, Counte
         arcdata = libmap_rename.rename(arcdata, insts)
         if paths.MACROS_ENV not in os.environ:
             names = name_map(s, insts, arclog, arcdata)
-            columns = column_map(s, names)
+            columns = column_map(s, names, insts)
             for directory, data in ((paths.NAMES_DIR, names), (paths.COLUMNS_DIR, columns)):
                 directory.mkdir(parents=True, exist_ok=True)
                 (directory / f"{stem}.json").write_text(json.dumps(data, indent=1, sort_keys=True) + "\n")

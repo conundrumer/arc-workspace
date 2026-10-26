@@ -693,7 +693,7 @@ def expand(prog, lib, names: set[str] | None = None) -> tuple[object, dict[Atom,
     for _ in range(4):   # an instance's shape may hold a cell instance, which expands in turn
         if not any((i.span is None or i.span.file is None) and i.component in specs for i in prog.instances):
             break
-        prog, j, _ = expand_instances(prog, _SouffleLib(lib), specs)
+        prog, j, _, _ = expand_instances(prog, _SouffleLib(lib), specs)
         judgment |= j
     prog, j = expand_relations(prog, lib, names)
     return prog, judgment | j

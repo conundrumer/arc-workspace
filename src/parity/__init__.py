@@ -72,8 +72,10 @@ def names_dir() -> Path:
 def columns_path(stem: str) -> Path:
     """Where the converter writes the column map of the solver `stem`, beside
     `names/`: for each arclog relation of the name map with one Souffle
-    relation that has a path, the arclog column at which each kept leaf of
-    each Souffle column is read (`arclog_convert.convert.column_map`)."""
+    relation that has a path, one entry per column of the Souffle relation,
+    in its order: the arclog column at which each kept leaf of that Souffle
+    column is read, empty where no arclog column holds a leaf of it
+    (`arclog_convert.convert.column_map`)."""
     return names_dir().parent / "columns" / f"{stem}.json"
 
 

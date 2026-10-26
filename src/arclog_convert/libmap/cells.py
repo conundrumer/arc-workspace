@@ -120,10 +120,13 @@ def ray(inst, ex):
         clauses.append(f"{full}.node({k}, P) :- {ground}{frame}.")
     if clear:
         clauses.append(f"{{x}}.node({k}, P) :- {ground}{frame}" + (f", !in_blocked({k}, P)." if blocked else "."))
-    reads = {"cast(Ky, P, D, N, S)": f"{full}.ray(Ky, P, D, N, S)",
-             "ray(Ky, P, D, N, S)": f"{full}.ray(Ky, P, D, N, S){cell}",
-             "clear_cast(Ky, P, D, N, S)": "{x}.ray(Ky, P, D, N, S)",
-             "clear(Ky, P, D, N, S)": "{x}.ray(Ky, P, D, N, S)" + cell}
+    reads = {}
+    if full_needed:
+        reads |= {"cast(Ky, P, D, N, S)": f"{full}.ray(Ky, P, D, N, S)",
+                  "ray(Ky, P, D, N, S)": f"{full}.ray(Ky, P, D, N, S){cell}"}
+    if clear:
+        reads |= {"clear_cast(Ky, P, D, N, S)": "{x}.ray(Ky, P, D, N, S)",
+                  "clear(Ky, P, D, N, S)": "{x}.ray(Ky, P, D, N, S)" + cell}
     if k in ("Ky", "$U()"):
         reads["stop(Ky, P, D, _, S)"] = f"{{x}}.end(Ky, E, D, _, S), neighbor(E, D, P), {frame}"
     reads |= {"stop(Ky, P, D, N, S)": f"{{x}}.end(Ky, E, D, _, S), neighbor(E, D, P), {full}.ray(Ky, P, D, N, S)",
@@ -148,7 +151,8 @@ def between(inst, ex):
         decls += "\n" + _FRAME_DECL
         extent = _FRAME_EXTENT + "\n"
     return Spec(decls, {},
-                {"between(Ky, P)": "{x}_between(Ky, P)", "ray(Ky, P, D, N, S)": "{x}.ray(Ky, P, D, N, S)" + cell,
+                {"cast(Ky, P, D, N, S)": "{x}.ray(Ky, P, D, N, S)", "between(Ky, P)": "{x}_between(Ky, P)",
+                 "ray(Ky, P, D, N, S)": "{x}.ray(Ky, P, D, N, S)" + cell,
                  "mark(Ky, P)": "{x}.source(Ky, P)", "axis(Ky, A)": "in_axis(Ky, A)", "cell(Ky, P)": "in_cell(Ky, P)"},
                 "{x}.source(Ky, P) :- in_mark(Ky, P).\n"
                 "{x}.dir(Ky, D) :- in_axis(Ky, A), axis4_of(D, A).\n" + node + extent +

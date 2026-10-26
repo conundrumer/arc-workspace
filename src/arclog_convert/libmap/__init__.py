@@ -70,7 +70,8 @@ DERIVATIONS: dict[str, str] = {"Frame2D": "Frame", "SepTiles": "Division"}
 def rewrite(prog, lib, ground: bool = False, only: set[str] | None = None, macros: bool = False):
     """The program with each expansion's site replaced by its shape; each
     site left in place, with the reason; and each instance that stands for
-    an expanded one under another name, as `instances.expand` gives it.
+    an expanded one under another name and what each relation of its shape
+    holds, as `instances.expand` gives them.
     `lib` is the present lib's `Lib`. With `ground`, the shape holds the
     atoms the Souffle engine needs to ground it. With `only`, only the
     expansions of those names apply: a component's name, or a relation's,
@@ -80,7 +81,7 @@ def rewrite(prog, lib, ground: bool = False, only: set[str] | None = None, macro
     from arclog_convert.libmap import box, cells, division, instances, orders
     from arclog_convert.libmap import macros as config
     specs = {k: v for k, v in (orders.SPECS | cells.SPECS | division.SPECS).items() if only is None or k in only}
-    prog, judgment, moved = instances.expand(prog, lib, specs)
+    prog, judgment, moved, held = instances.expand(prog, lib, specs)
     if only is None or only & box.IDIOMS:
         prog, j2 = box.idioms(prog, ground)
         judgment |= j2
@@ -90,4 +91,4 @@ def rewrite(prog, lib, ground: bool = False, only: set[str] | None = None, macro
     if macros:
         prog, j4 = config.expand(prog, lib)
         judgment |= j4
-    return prog, judgment, moved
+    return prog, judgment, moved, held

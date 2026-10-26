@@ -54,6 +54,21 @@ share no variable with the rest of it restrict nothing the shape's relations
 hold. `expand` gives the inputs of its latest run."""
 
 
+type Placement = int | None | tuple[int | None, ...]
+"""Where a shape atom's argument stands in the Souffle atom of the pattern
+that reads it: the index of the pattern's argument that holds its variable;
+for a record term, the index for each field; none for `_`."""
+
+
+@dataclass(frozen=True)
+class Held:
+    """The Souffle relation a relation of an expansion's shape holds, and
+    the `Placement` of each argument of the shape's atom in the Souffle
+    relation's."""
+    relation: str
+    columns: tuple[Placement, ...]
+
+
 @dataclass
 class Spec:
     decls: str = ""
@@ -76,6 +91,34 @@ def _parse(text: str) -> SouffleProgram:
 
 def _atom(text: str) -> Atom:
     return _parse(f"{text} :- true.").units[0].head
+
+
+def _pure_columns(pattern: Atom, body: tuple) -> tuple[Placement, ...] | None:
+    """The `Placement` of each argument of the replacement `body` of a read
+    of `pattern`, where `body` is one positive atom whose arguments each
+    hold a variable of the pattern, a record of such variables, or `_`;
+    otherwise None."""
+    if len(body) != 1 or not isinstance(body[0], AtomLiteral) or body[0].negated:
+        return None
+    index = {a.name: i for i, a in enumerate(pattern.args) if isinstance(a, Variable)}
+    return _placements(body[0].atom.args, index)
+
+
+def _placements(args: tuple, pattern: dict[str, int]) -> tuple[Placement, ...] | None:
+    """The `Placement` of each of the arguments `args` of a shape atom, given
+    the index of each variable of the pattern atom; None where an argument is
+    none of a variable of the pattern, a record of such variables, and `_`."""
+    out: list[Placement] = []
+    for a in args:
+        if isinstance(a, Wildcard):
+            out.append(None)
+        elif isinstance(a, Variable) and a.name in pattern:
+            out.append(pattern[a.name])
+        elif isinstance(a, RecordTerm) and all(isinstance(x, Variable) and x.name in pattern for x in a.args):
+            out.append(tuple(pattern[x.name] for x in a.args if isinstance(x, Variable)))
+        else:
+            return None
+    return tuple(out)
 
 
 # ---- terms
@@ -188,6 +231,7 @@ class Expander:
         self.sig_top = set(getattr(lib, "sig_top", ()))   # the lib relations only the signature holds
         self.own: dict[UnitId, tuple] = {}   # a shape's clause: its instance, whose new relations it reads
         self.moved: dict[str, tuple[str, dict[str, str]]] = {}   # an heir instance: the name it stands for, and its moves
+        self.held: dict[str, dict[str, Held]] = {}   # an heir instance: what each relation of its shape that a pure read reaches holds
         self.from_input: set[UnitId] = set()   # a clause of a relation derived from an input: the solver's reads
         self.plans: dict = {}
         self.outputs_only = False
@@ -398,14 +442,19 @@ class Expander:
                 if heir is not None:
                     # a directive's relation of the instance: the relation of the shape that stands for it
                     moves = {}
+                    holds: dict[str, set[Held]] = {}   # each relation of the shape, by the pure patterns that reach it
                     for p_, r_ in spec.reads.items():
-                        rep = next(l.atom for l in _parse(f"x__(0) :- {self.fmt(r_, inst)}.").units[0].body or ()
-                                   if isinstance(l, AtomLiteral)).relation
+                        pattern = _atom(self.fmt(p_, inst))
+                        body = _parse(f"x__(0) :- {self.fmt(r_, inst)}.").units[0].body or ()
+                        rep = next(l.atom for l in body if isinstance(l, AtomLiteral)).relation
                         name = f"{inst.name}_{rep.name[3:]}" if rep.name.startswith("in_") and not rep.instances \
                             else ".".join((*rep.instances, rep.name))
-                        moves[_atom(self.fmt(p_, inst)).relation.name] = name
+                        moves[pattern.relation.name] = name
+                        if (columns := _pure_columns(pattern, body)) is not None:
+                            holds.setdefault(name, set()).add(Held(pattern.relation.name, columns))
                     moves |= {r: self.fmt(t, inst) for r, t in spec.moved.items()}
                     self.moved[heir] = (inst.name, moves)
+                    self.held[heir] = {n: next(iter(hs)) for n, hs in holds.items() if len(hs) == 1}
             heads = {_atom(self.fmt(p, inst)).relation.name: (_atom(self.fmt(p, inst)),
                                                                [_atom(self.fmt(h, inst)) for h in hs])
                      for p, hs in spec.inputs.items()}
@@ -952,7 +1001,10 @@ def expand(prog, lib, specs):
     """The program with each instance of a component `specs` maps expanded;
     each read left in place, with the reason; and each instance that stands
     for an expanded one under another name, with that name and the relation
-    of the shape that stands for each relation of the expanded one."""
+    of the shape that stands for each relation of the expanded one; and, for
+    each such instance, the Souffle relation and columns that each relation
+    of its shape holds, where a read of the component whose replacement is
+    that relation's atom alone reaches it (`Held`)."""
     e = Expander(prog, lib, specs)
     out, judgment = e.run()
-    return out, judgment, e.moved
+    return out, judgment, e.moved, e.held
