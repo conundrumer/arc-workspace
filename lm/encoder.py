@@ -199,7 +199,10 @@ class Table:
     export spells it ("slot <relation>"), and is empty for an evidence table. `det_types` gives, per DET in that
     order, the type name of each column of its value, and `det_cells` its value at the Table's assignment, int32
     [rows, width] as the export's assigned run gives it, or None where the Table's entries hold no value of that
-    DET or the Table is unseen; both are empty for an evidence table and for a Table built with neither. The Tables
+    DET or the Table is unseen; both are empty for an evidence table and for a Table built with neither.
+    `det_columns` gives, per DET in `det_relations` order, the path of each of its columns as the export spells it,
+    equal across the Tables of a case exactly for one column of one DET relation, and empty for a DET where the
+    export knows none; it is empty for an evidence table and for a Table built without it. The Tables
     of a case whose values for a DET are equal share one array, which a reader does not write. An export table whose
     entries hold several assignments gives one Table per assignment, each with that assignment's entries over every
     example and model; the Tables of one export table share `step`, `relation` and `export_table`, and stand next to
@@ -219,7 +222,7 @@ class Table:
     None where the case gives no output relation. Without the export's provenance, each of these holds its class
     default."""
     depth, keys, flows, output_position, output_color, color_dependent = None, None, None, -1, -1, None
-    det_types = det_cells = ()
+    det_types = det_cells = det_columns = ()
 
     def __init__(self, **kw):
         kw.pop("_unique", None)   # what `unique` keeps, which a copy builds again
@@ -333,7 +336,7 @@ def unseen_table(t, reason, unseen_entries=None, prov=None):
                  entry=np.zeros(0, np.int32), part=np.zeros(0, np.int32), marker=np.zeros(0, bool),
                  unseen_entries=unseen_entries or {}, largest=0, export_table=int(t["table"]),
                  det_relations=list(t["det_relations"]), det_types=det_type_names(t),
-                 det_cells=[None] * len(t["det_relations"]))
+                 det_columns=det_column_paths(t), det_cells=[None] * len(t["det_relations"]))
 
 
 def wholly_unseen_reason(unseen_entries):
@@ -480,17 +483,25 @@ def orientation_subtypes(tables_dir):
 
 
 def case_dets(t):
-    """[(relation, column types, width)] of each DET of the export table t (a row of tables.parquet), in
-    `det_relations` order, the width from `det_widths`; the types are empty where the export gives no `det_types`."""
+    """[(relation, column types, width, column paths)] of each DET of the export table t (a row of tables.parquet), in
+    `det_relations` order, the width from `det_widths` and the paths from `det_columns`; the types are empty where
+    the export gives no `det_types`."""
     types = t.get("det_types")
     types = [list(x) for x in types] if isinstance(types, (list, np.ndarray)) else []
     widths = list(t["det_widths"])
-    return [(rel, types[i] if i < len(types) else [], int(widths[i])) for i, rel in enumerate(t["det_relations"])]
+    paths = t["det_columns"]
+    return [(rel, types[i] if i < len(types) else [], int(widths[i]), list(paths[i]))
+            for i, rel in enumerate(t["det_relations"])]
 
 
 def det_type_names(t):
     """The type name of each column of each DET of the export table t, in `det_relations` order."""
-    return [[type_name(x) for x in types] for _, types, _ in case_dets(t)]
+    return [[type_name(x) for x in types] for _, types, _, _ in case_dets(t)]
+
+
+def det_column_paths(t):
+    """The path of each column of each DET of the export table t, in `det_relations` order: `det_columns`."""
+    return [paths for _, _, _, paths in case_dets(t)]
 
 
 def copy_flow_check(fl, column_types, kept, tables, dets=None, subtypes=None, where=""):
@@ -535,7 +546,7 @@ def copy_flow_check(fl, column_types, kept, tables, dets=None, subtypes=None, wh
         """The values of column c of DET `det` of export table `tab` over the rows of its relation, `cells` (a Table's
         `det_cells[det]`), as a set of tuples; empty where `cells` is None."""
         if (tab, det, c, id(cells)) not in memo:   # a Table's arrays are the case's shared ones, alive in `tables`
-            rel, types, w_all = dets[tab][det]
+            rel, types, w_all, _ = dets[tab][det]
             names = [type_name(x) for x in types]
             if sum(width(x) for x in names) != w_all:
                 raise DataFault(f"{where} table {tab} DET {det} ({rel}): its det_types {names} have width "
@@ -736,10 +747,15 @@ def parse_table(t, ents, values, asg_of, projs, prows, det_values, n_train, prov
     assignment or none; or its unseen table. Raises DataFault where the values cannot be read. An entry the
     encoder cannot see gives one marker row; a Table whose every entry is unseen is unseen. `prov` gives the
     table's provenance attributes (`Table`), which every Table of t shares, or None. An entry's rows are read
-    through `entry_runs`; `where` names the case in its faults. `det_runs` is the case's {(DET relation, width, run
+    through `entry_runs`; `where` names the case in its faults, which include a DET whose `det_columns` are not one
+    per column of its `det_types`. `det_runs` is the case's {(DET relation, width, run
     bytes): cells}, which the Tables of a case share their `det_cells` arrays through; None gives a fresh one."""
     prov = prov or {}
     det_runs = {} if det_runs is None else det_runs
+    for i, (rel, types, _, paths) in enumerate(case_dets(t)):
+        if paths and len(paths) != len(types):
+            raise DataFault(f"{where} table {t['table']} DET {i} ({rel}): its det_columns {paths} are not one per "
+                            f"column of its det_types {types}")
     if not pd.isna(t["fault"]):   # a null reads as None or as nan, by the column's dtype
         return [unseen_table(t, "the table faults", prov=prov)]
     if t[TABLE_PROJECTIONS] == PROJECTIONS_STOPPED:
@@ -833,7 +849,7 @@ def parse_table(t, ents, values, asg_of, projs, prows, det_values, n_train, prov
                      entry=cat(6, np.zeros(0, np.int32)), part=cat(7, np.zeros(0, np.int32)),
                      marker=cat(8, np.zeros(0, bool)), unseen_entries=unseen_entries, largest=largest,
                      export_table=int(t["table"]), det_relations=det_rel,
-                     det_types=det_types, det_cells=det_cells)
+                     det_types=det_types, det_columns=det_column_paths(t), det_cells=det_cells)
     return [table(sp["groups"], sp["largest"], sp["unseen"], sp["det_cells"]) for sp in splits.values()] or \
         [table([], 0, {}, [None] * len(det_rel))]
 
@@ -851,7 +867,7 @@ def table_groups(tables):
     return out
 
 
-LOADER_VERSION = 20  # raise on any change to parse_tables or Table
+LOADER_VERSION = 21  # raise on any change to parse_tables or Table
 
 
 def table_stamp(tables_dir):

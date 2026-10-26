@@ -39,7 +39,7 @@ use crate::eval::{RelationValue, Stop};
 use crate::hash::{StableHash, StableHashMap, StableHasher};
 use std::hash::Hash;
 use crate::program::path::NodePath;
-use crate::program::{ColumnName, ProgramRelation, RelationRef};
+use crate::program::{column_spelled, ColumnName, ProgramRelation, RelationRef};
 use crate::registry::Registry;
 use crate::eval::flows::{ColumnSource, SourceColumn, SourceKind};
 use crate::relations::Relation;
@@ -128,6 +128,11 @@ pub struct TableColumns {
     pub det_relations: Vec<Vec<String>>,
     pub det_types: Vec<Vec<Vec<String>>>,
     pub det_widths: Vec<Vec<u32>>,
+    /// The path of each column of each `DET`, in the order of its types: the
+    /// names of the path, as `column_spelled` gives them, joined by `.`; the
+    /// same for one column of one `DET` relation in every table of a case. Empty
+    /// where the program names no columns of the `DET`.
+    pub det_columns: Vec<Vec<Vec<String>>>,
     /// The [`ProjectionsKind`] code.
     pub projections: Vec<u8>,
     /// The bound that stopped the projections, and its form.
@@ -307,6 +312,12 @@ fn type_names(types: &[ValueType]) -> Vec<String> {
     types.iter().map(|ty| format!("{ty:?}")).collect()
 }
 
+/// The names of a column's path as a file writes them, or their slots, joined
+/// by `.`.
+fn path_spelled(path: &[ColumnName]) -> String {
+    path.iter().map(column_spelled).collect::<Vec<_>>().join(".")
+}
+
 /// The width in cells of a row of columns of `types`.
 fn row_width(types: &[ValueType]) -> u32 {
     types.iter().map(|ty| if *ty == ValueType::Box { 4 } else { 1 }).sum()
@@ -390,6 +401,7 @@ fn push_table(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, to
             tables.det_relations.push(Vec::new());
             tables.det_types.push(Vec::new());
             tables.det_widths.push(Vec::new());
+            tables.det_columns.push(Vec::new());
             tables.projections.push(ProjectionsKind::None as u8);
             tables.projections_stop.push(None);
             tables.fault.push(Some(format!("{} at {}", fault.message, form_path(&fault.form))));
@@ -412,6 +424,7 @@ fn push_table(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, to
             tables.det_relations.push(contents.dets.iter().map(|det| relation_spelled(&det.relation)).collect());
             tables.det_types.push(contents.dets.iter().map(|det| type_names(&det.types)).collect());
             tables.det_widths.push(contents.dets.iter().map(|det| row_width(&det.types)).collect());
+            tables.det_columns.push(contents.dets.iter().map(|det| det.columns.iter().flat_map(|paths| paths.iter()).map(|path| path_spelled(path)).collect()).collect());
             let (projections, stop) = match &contents.projections {
                 None => (ProjectionsKind::None, None),
                 Some(Projections::Stopped(stop)) => (ProjectionsKind::Stopped, Some(stop)),

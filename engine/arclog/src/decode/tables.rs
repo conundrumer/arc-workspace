@@ -90,11 +90,14 @@ pub struct TableColumn {
 }
 
 /// A `DET` that a table's relation reads, whose value an assignment gives:
-/// its relation and its columns' types.
+/// its relation, its columns' types, and the path of each column, where the
+/// program's reads name the columns of the relation and the count of their
+/// paths is that of the types.
 #[derive(Clone, Debug)]
 pub struct TableDet {
     pub relation: ProgramRelation,
     pub types: Box<[ValueType]>,
+    pub columns: Option<Box<[Box<[ColumnName]>]>>,
 }
 
 /// The rows of a table on one example, or once for a task-wide relation:
@@ -253,7 +256,8 @@ impl Decoder<'_> {
             .iter()
             .map(|det| {
                 let types = program.types.columns(&GraphRelation { node: det.node, output: None }).ok_or_else(|| fault("the columns of a `DET` have no types"))?;
-                Ok(TableDet { relation: det.relation.clone(), types: types.into() })
+                let columns = program.program.row_paths(det.node).filter(|paths| paths.len() == types.len());
+                Ok(TableDet { relation: det.relation.clone(), types: types.into(), columns: columns.map(Vec::into_boxed_slice) })
             })
             .collect::<Outcome<Box<[_]>>>()?;
         let cap = self.context.settings.projection_cap;

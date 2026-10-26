@@ -38,7 +38,9 @@ written as a part. Writes to <out dir>:
                    gives none), and, for the table of the relation at which the replay's consistency test found the grid
                    columns of `ex_output`, the index of its Position column (`output_position`) and of its Color column
                    (`output_color`), which map to `P` and `Col` of `ex_output`, with the entry's example as `E`; -1 in each
-                   other table
+                   other table; and, per DET in `det_relations` order, `det_columns`: the path of each of its columns in
+                   `det_types` order (a slot named `slot <k>`, a record's field after a `.`), equal for one column of one
+                   DET relation across the tables of a case, and an empty list where the engine knows none
   flows.parquet    one row per source of a column of a table, keyed by task, case, `table` and `column`: `kind` (copy 0,
                    computed 1, constant 2, lib name 3), `source_table` (the row of the source's table in the case, -1 where
                    the case gives none: a lib relation, a constant, a lib name), `source_relation`

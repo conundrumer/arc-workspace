@@ -461,15 +461,15 @@ def provenance_export(d, bad=False):
     import pandas as pd
     task = {"train": [{"input": [[1]], "output": [[3]]}, {"input": [[2]], "output": [[3]]}], "test": [{"input": [[1]]}]}
     (d / "tasks").mkdir(); json.dump(task, open(d / "tasks/t.json", "w"))
-    grid = dict(point=2, relation=-1, column_types=["Example", "Box", "Color"], width=6, det_relations=[], det_widths=[],
+    grid = dict(point=2, relation=-1, column_types=["Example", "Box", "Color"], width=6, det_relations=[], det_widths=[], det_columns=[],
                 depth=0, keys=[[0, 1]], output_position=-1, output_color=-1)
     rel = lambda r, types, w, **k: dict(point=0, relation=r, column_types=types, width=w,
-                                        **{"det_relations": [], "det_widths": [], "keys": [], "output_position": -1,
+                                        **{"det_relations": [], "det_widths": [], "det_columns": [], "keys": [], "output_position": -1,
                                            "output_color": -1, **k})
     t2 = rel(0, ["Color", "Number", "Color", "Color"], 4, depth=1, keys=[[1]])
     t3 = rel(1, ["Box", "Color"], 5, depth=2, output_position=0, output_color=1)
     t4 = rel(2, ["Color"], 1, depth=1)
-    t3_dep = {**t3, "det_relations": ["slot 5"], "det_types": [["Color"]], "det_widths": [1]}
+    t3_dep = {**t3, "det_relations": ["slot 5"], "det_types": [["Color"]], "det_widths": [1], "det_columns": [["slot 0"]]}
     cases = {"$Free": [grid, grid, t2, t3], "$Dep": [grid, grid, t2, t3_dep, t4],
              "$Unseen": [grid, grid, t2, t3_dep, {**t4, "fault": "a check"}]}
     rows = {2: lambda e: [[1 + e, 0, 5, 7], [2, 1, 5, 7]], 3: lambda e: [[0, 0, 0, 0, 3]], 4: lambda e: [[3]]}
@@ -595,7 +595,8 @@ def checked_export(d, variant="clean"):
     grid = dict(point=2, relation=-1, column_types=["Example", "Box", "Color"], width=6)
     dir8 = variant.startswith("dir8")
     is_det = variant.startswith("det")
-    det = dict(det_relations=["slot 0"], det_types=[["Number", "Color"]], det_widths=[2]) if is_det else {}
+    det = dict(det_relations=["slot 0"], det_types=[["Number", "Color"]], det_widths=[2],
+               det_columns=[["slot 0", "slot 1"]]) if is_det else {}
     row3 = {"det per row": [1, 2], "det other row": [2, 2]}.get(variant)   # table 3's Color at each entry
     tabs = [grid, grid, dict(point=0, relation=0, column_types=["Dir8", "Number", "Dir"] if dir8 else ["Color", "Number"], width=3 if dir8 else 2),
             dict(point=0, relation=1, column_types=["Dir", "Dir8"] if dir8 else ["Color"], width=2 if dir8 else 1, **det)]
@@ -606,7 +607,7 @@ def checked_export(d, variant="clean"):
     tables, index, values, assigned = [], [], [], []
     for i, t in enumerate(tabs):
         tables.append(dict(task="t", case="$C", concept=False, table=i, token=i, projections=0, fault=None,
-                           **{"det_relations": [], "det_types": [], "det_widths": [], **t}, depth=min(i, 2), keys=[],
+                           **{"det_relations": [], "det_types": [], "det_widths": [], "det_columns": [], **t}, depth=min(i, 2), keys=[],
                            output_position=-1, output_color=-1))
         for e in range(2 if i in rows else 0):
             rs = [[row3[e]]] if i == 3 and row3 else rows[i]
@@ -913,7 +914,7 @@ print(f"  pairs of constants with equal features: {same or 'none'} {'PASS' if no
 print("== the loader's fault test: a tables frame whose fault column reads as the str dtype, one string and nulls")
 import pandas as pd
 frame = pd.DataFrame({"fault": pd.array([None, "a fault", None], dtype="str"), "projections": [0, 0, 0],
-                      "column_types": [["Color"]] * 3, "det_relations": [[]] * 3, "det_widths": [[]] * 3, "token": [1, 2, 3],
+                      "column_types": [["Color"]] * 3, "det_relations": [[]] * 3, "det_widths": [[]] * 3, "det_columns": [[]] * 3, "token": [1, 2, 3],
                       "relation": [1, 2, 3], "table": [0, 1, 2], "width": [1, 1, 1]})
 parsed = [x for t in frame.to_dict("records") for x in E.parse_table(t, [], np.zeros(0, np.int32), {}, {}, {}, {}, 1)]
 faulted = [t.unseen for t in parsed if t.unseen is not None]
@@ -921,7 +922,7 @@ print(f"  fault dtype {frame['fault'].dtype}; unseen tables {faulted} {'PASS' if
 
 print("== the loader's split by assignment: a table of one DET whose four entries, of 3 rows each, hold two assignments, "
       "under a table cap of 8 rows")
-row = {"fault": None, "projections": 0, "column_types": ["Color"], "det_relations": ["slot 5"], "det_widths": [1],
+row = {"fault": None, "projections": 0, "column_types": ["Color"], "det_relations": ["slot 5"], "det_widths": [1], "det_columns": [[]],
        "token": 4, "relation": 6, "table": 0, "width": 1}
 ents = [{"entry": e, "kind": 0, "rows": 3, "offset": 3 * e, "example_kind": 1, "example_index": e % 2, "model": 0}
         for e in range(4)]
@@ -1496,10 +1497,10 @@ def lookup_export(d, rng, cases=32, n=16):
     import pandas as pd
     task = {"train": [{"input": [[0]], "output": [[0]]}], "test": [{"input": [[0]]}]}
     (d / "tasks").mkdir(); json.dump(task, open(d / "tasks/t.json", "w"))
-    grid = dict(point=2, relation=-1, column_types=["Example", "Box", "Color"], width=6, det_relations=[], det_widths=[],
+    grid = dict(point=2, relation=-1, column_types=["Example", "Box", "Color"], width=6, det_relations=[], det_widths=[], det_columns=[],
                 depth=0, keys=[[0, 1]], output_position=-1, output_color=-1)
     rel = lambda r, depth: dict(point=0, relation=r, column_types=["Ident", "Color"], width=2, det_relations=[],
-                                det_widths=[], depth=depth, keys=[[0]], output_position=-1, output_color=-1)
+                                det_widths=[], det_columns=[], depth=depth, keys=[[0]], output_position=-1, output_color=-1)
     flow = lambda case, col: dict(task="t", case=case, concept=False, table=3, column=col, kind=0, source_table=2,
                                   source_relation="", source_column=col, det=-1, atom="")
     tables, index, flows = [], [], []

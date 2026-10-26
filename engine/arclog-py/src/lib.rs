@@ -1068,6 +1068,7 @@ impl PyCaseTables {
         t.list("det_relations", &c.det_relations)?;
         t.list("det_types", &c.det_types)?;
         t.list("det_widths", &c.det_widths)?;
+        t.list("det_columns", &c.det_columns)?;
         t.ints("projections", &c.projections)?;
         t.stop("projections_stop", &c.projections_stop)?;
         t.list("fault", &c.fault)?;

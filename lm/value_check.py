@@ -125,9 +125,9 @@ def write_export(d, rng, tasks=("ta", "tb"), branches=BRANCHES, tasks_dir=None, 
             json.dump({"train": [{"input": g(), "output": g()} for _ in range(2)], "test": [{"input": g()}]},
                       open(Path(tasks_dir) / f"{task}.json", "w"))
     grid = dict(point=2, relation=-1, column_types=["Example", "Box", "Color"], width=6, det_relations=[],
-                det_widths=[], token=0, fault=None)
+                det_widths=[], det_columns=[], token=0, fault=None)
     rel = lambda r, token, fault=None: dict(point=0, relation=r, column_types=["Number", "Color"], width=2,
-                                            det_relations=[], det_widths=[], token=token, fault=fault)
+                                            det_relations=[], det_widths=[], det_columns=[], token=token, fault=fault)
     random_rows = lambda: [[i, int(rng.integers(0, 10))] for i in range(N_ROWS)]
     settings = {"settings": {}, "world": "Closed", "args": {"model": "runs/synthetic", "prefix": "random",
                                                            "data": None if data_dir is None else str(data_dir)},
