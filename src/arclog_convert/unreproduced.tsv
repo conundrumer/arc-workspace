@@ -55,7 +55,6 @@ ad173014	SeveralValues	12	-
 af24b4cc	NotConsistent	768	9-2339
 b0039139	Refused	96	9-2141
 b10624e5	NotConsistent	768	9-2339
-b27ca6d3	NotConsistent	12	9-2092
 b457fec5	SeveralValues	48	20-189,9-2105
 b60334d2	NotConsistent	1	9-2092
 b74ca5d1	SeveralValues	8	20-189,9-2105
@@ -64,7 +63,7 @@ ba97ae07	NotConsistent	1	9-2092
 bae5c565	NotConsistent	48	9-2338
 bae5c565	SeveralValues	6	-
 baf41dbf	Stopped	4	-
-bcb3040b	Stopped	37	-
+bcb3040b	SeveralValues	2	-
 c0f76784	NotConsistent	32	9-2339
 c3fa4749	NotConsistent	16	9-2092
 c4d1a9ae	SeveralValues	8	-
