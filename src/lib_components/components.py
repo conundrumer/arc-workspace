@@ -231,12 +231,12 @@ class OrderRows(NamedTuple):
     next: Relation
 
 
-def Order(Key: TypeArg, T: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, elem: Iterable[PyRow] | None = None, before: Iterable[PyRow] | None = None) -> OrderRows:
+def Order(Key: TypeArg, T: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, elem: Iterable[PyRow] | None = None, before: Iterable[PyRow] | None = None, score: Iterable[PyRow] | None = None, secondary_score: Iterable[PyRow] | None = None) -> OrderRows:
     """Runs `Order` (programs/lib/orders.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Order', [Key, T],
                GridTypes(LibType.POSITION, LibType.OFFSET),
-               {'elem': Columns((Key, T, ), True), 'before': Columns((Key, T, T, ), True), 'rank': Columns((Key, T, Primitive.NUMBER, ), True), 'rank_desc': Columns((Key, T, Primitive.NUMBER, ), True), 'first': Columns((Key, T, ), True), 'last': Columns((Key, T, ), True), 'next': Columns((Key, T, T, ), True)},
-               {'elem': elem, 'before': before},
+               {'elem': Columns((Key, T, ), True), 'before': Columns((Key, T, T, ), True), 'score': Columns((Key, T, Primitive.NUMBER, ), True), 'secondary_score': Columns((Key, T, Primitive.NUMBER, ), True), 'rank': Columns((Key, T, Primitive.NUMBER, ), True), 'rank_desc': Columns((Key, T, Primitive.NUMBER, ), True), 'first': Columns((Key, T, ), True), 'last': Columns((Key, T, ), True), 'next': Columns((Key, T, T, ), True)},
+               {'elem': elem, 'before': before, 'score': score, 'secondary_score': secondary_score},
                ['rank', 'rank_desc', 'first', 'last', 'next'], sizes)
     return OrderRows(got['rank'], got['rank_desc'], got['first'], got['last'], got['next'])
 

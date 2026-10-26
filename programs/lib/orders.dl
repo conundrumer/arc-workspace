@@ -7,18 +7,19 @@
     /// The numbers to rank.
     .decl idx_set(key: Key, k: number)  // @input
 
+    // Each number ordered by itself as its score.
+    .init _order = Order<Key, number>
+    _order.elem(Ky, K) :- idx_set(Ky, K).
+    _order.score(Ky, K, K) :- idx_set(Ky, K).
+
     /// r = the count of the key's elements strictly less than k, so ranks run
     /// ascending from 0.
     .decl rank(key: Key, k: number, r: number)
-    rank(Ky, K, R) :-
-        idx_set(Ky, K),
-        R = count : { idx_set(Ky, K2), K2 < K }.
+    rank(Ky, K, R) :- _order.rank(Ky, K, R).
 
     /// The same count, strictly greater.
     .decl rank_desc(key: Key, k: number, r: number)
-    rank_desc(Ky, K, R) :-
-        idx_set(Ky, K),
-        R = count : { idx_set(Ky, K2), K2 > K }.
+    rank_desc(Ky, K, R) :- _order.rank_desc(Ky, K, R).
 }
 
 /// The highest and the lowest score of each key's candidate set.
@@ -49,45 +50,112 @@
     low(Ky, V, S) <= low(Ky, _, S2) :- S > S2.
 }
 
-/// Ranking over members of any type: the caller supplies the strict order,
-/// and the rank of t counts the members before it, ascending from 0.
-/// `before` is read over `elem`, and a row with an endpoint outside `elem`
-/// is ignored.
+/// Ranking over members of any type, in one of two forms at each key. The
+/// rank of t counts the members before it, ascending from 0.
+///
+/// - The `before` form, at a key with no `score` row: the caller supplies
+///   the strict order. `before` is read over `elem`, and a row with an
+///   endpoint outside `elem` is ignored.
+/// - The score form, at a key with a `score` row: members compare by
+///   `score`, and within a tie of `score` by `secondary_score`. A member
+///   with a score and no `secondary_score` row precedes each member of its
+///   score that has one. Members that tie on both share a rank. A member
+///   with no score is related to no other member, and its
+///   `secondary_score` row is read nowhere.
 ///
 /// Requires: `before` is transitive; it is never closed, so a `before` that
 /// holds direct comparisons alone yields predecessor counts, not ranks.
+///
+/// Requires: each member has at most one `score` row and at most one
+/// `secondary_score` row, and a key gives `before` rows or `score` rows,
+/// not both. A member with two such rows takes a rank under each, and a
+/// key with both takes the score form, with `first` and `last` cut by
+/// `before`.
 .comp Order<Key, T> {
     .decl elem(key: Key, t: T)  // @input
     .decl before(key: Key, a: T, b: T)  // @input
+
+    /// A number that orders the members.
+    .decl score(key: Key, t: T, s: number)  // @input
+
+    /// A number that orders the members within each tie of `score`.
+    .decl secondary_score(key: Key, t: T, s: number)  // @input
+
+    // A key of the score form.
+    .decl _scored_key(key: Key)
+    _scored_key(Ky) :- score(Ky, _, _).
 
     // A before row both of whose endpoints are members.
     .decl _edge(key: Key, a: T, b: T)
     _edge(Ky, A, B) :- before(Ky, A, B), elem(Ky, A), elem(Ky, B).
 
+    // A member with score s and no secondary score.
+    .decl _plain(key: Key, t: T, s: number)
+    _plain(Ky, T, S) :- elem(Ky, T), score(Ky, T, S), !secondary_score(Ky, T, _).
+
+    // A member with score s and secondary score s2.
+    .decl _paired(key: Key, t: T, s: number, s2: number)
+    _paired(Ky, T, S, S2) :- elem(Ky, T), score(Ky, T, S), secondary_score(Ky, T, S2).
+
+    // A member with score s.
+    .decl _scored(key: Key, t: T, s: number)
+    _scored(Ky, T, S) :- _plain(Ky, T, S).
+    _scored(Ky, T, S) :- _paired(Ky, T, S, _).
+
+    // The count of the key's scored members.
+    .decl _total(key: Key, n: number)
+    _total(Ky, N) :- _scored_key(Ky), N = count : { _scored(Ky, _, _) }.
+
+    // A scored member's rank, the count of the scored members before it,
+    // and the count of the members it ties with on both scores, itself included.
+    .decl _rank(key: Key, t: T, below: number, tie: number)
+    _rank(Ky, T, R, N) :-
+        _plain(Ky, T, S),
+        R = count : { _scored(Ky, _, S1), S1 < S },
+        N = count : { _plain(Ky, _, S) }.
+    _rank(Ky, T, R1 + R2 + R3, N) :-
+        _paired(Ky, T, S, S2),
+        R1 = count : { _scored(Ky, _, S1), S1 < S },
+        R2 = count : { _plain(Ky, _, S) },
+        R3 = count : { _paired(Ky, _, S, S3), S3 < S2 },
+        N = count : { _paired(Ky, _, S, S2) }.
+
+    // A member of a score-form key with no score.
+    .decl _unscored(key: Key, t: T)
+    _unscored(Ky, T) :- elem(Ky, T), _scored_key(Ky), !_scored(Ky, T, _).
+
     .decl rank(key: Key, t: T, r: number)
-    rank(Ky, T, R) :- elem(Ky, T), R = count : { _edge(Ky, A, T) }.
+    rank(Ky, T, R) :- elem(Ky, T), !_scored_key(Ky), R = count : { _edge(Ky, A, T) }.
+    rank(Ky, T, R) :- _rank(Ky, T, R, _).
+    rank(Ky, T, 0) :- _unscored(Ky, T).
 
     /// The same count, over the members after t.
     .decl rank_desc(key: Key, t: T, r: number)
-    rank_desc(Ky, T, R) :- elem(Ky, T), R = count : { _edge(Ky, T, B) }.
+    rank_desc(Ky, T, R) :- elem(Ky, T), !_scored_key(Ky), R = count : { _edge(Ky, T, B) }.
+    rank_desc(Ky, T, M - R - N) :- _rank(Ky, T, R, N), _total(Ky, M).
+    rank_desc(Ky, T, 0) :- _unscored(Ky, T).
 
     /// The element nothing precedes.
     .decl first(key: Key, t: T)
-    first(Ky, T) :- elem(Ky, T).
+    first(Ky, T) :- elem(Ky, T), !_scored_key(Ky).
     first(Ky, T) <= first(Ky, T2) :- before(Ky, T2, T).
+    first(Ky, T) :- _scored_key(Ky), rank(Ky, T, 0).
 
     /// The element nothing follows.
     .decl last(key: Key, t: T)
-    last(Ky, T) :- elem(Ky, T).
+    last(Ky, T) :- elem(Ky, T), !_scored_key(Ky).
     last(Ky, T) <= last(Ky, T2) :- before(Ky, T, T2).
+    last(Ky, T) :- _scored_key(Ky), rank_desc(Ky, T, 0).
 
     // Some element lies between a and b.
     .decl _skipped(key: Key, a: T, b: T)
     _skipped(Ky, A, B) :- _edge(Ky, A, X), _edge(Ky, X, B).
 
-    /// b directly follows a: before, with nothing between.
+    /// b directly follows a: before, with nothing between. In the score
+    /// form, b's rank is the next rank in use after a's.
     .decl next(key: Key, a: T, b: T)
-    next(Ky, A, B) :- _edge(Ky, A, B), !_skipped(Ky, A, B).
+    next(Ky, A, B) :- _edge(Ky, A, B), !_skipped(Ky, A, B), !_scored_key(Ky).
+    next(Ky, A, B) :- _rank(Ky, A, R, N), _rank(Ky, B, R + N, _).
 }
 
 /// The fewest-hop distance from a seed set over a supplied edge relation,

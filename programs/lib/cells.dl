@@ -326,50 +326,31 @@
         cell(Ky, P), corner(Ky, Diag), axis(Ky, A),
         diag_dist(P, Diag, A, K1, K2).
 
-    // The least and the greatest k2 of the key's cells.
-    .decl _span(key: Key, lo: number, hi: number)
-    _span(Ky, Lo, Hi) :-
-        corner(Ky, _),
-        Lo = min K2 : { _place(Ky, _, _, K2) },
-        Hi = max K2 : { _place(Ky, _, _, K2) }.
-
-    // The cell's score: k1 times the span's width, plus k2 less the least
-    // k2. Each k2 less the least is below the span's width, so two cells'
-    // scores compare as their pairs (k1, k2) compare by k1 first and by k2
-    // on a tie.
-    .decl _score(key: Key, p: Position, s: number)
-    _score(Ky, P, K1 * (Hi - Lo + 1) + K2 - Lo) :-
-        _place(Ky, P, K1, K2), _span(Ky, Lo, Hi).
-
     /// The lexicographic order of the cells, as a strict order.
     .decl before(key: Key, a: Position, b: Position)
-    before(Ky, Q, P) :- _score(Ky, Q, S), _score(Ky, P, S2), S < S2.
+    before(Ky, Q, P) :- _place(Ky, Q, K1, _), _place(Ky, P, K1b, _), K1 < K1b.
+    before(Ky, Q, P) :- _place(Ky, Q, K1, K2), _place(Ky, P, K1, K2b), K2 < K2b.
+
+    // The cells ordered by k1, and by k2 within a tie of k1.
+    .init _order = Order<Key, Position>
+    _order.elem(Ky, P) :- _place(Ky, P, _, _).
+    _order.score(Ky, P, K1) :- _place(Ky, P, K1, _).
+    _order.secondary_score(Ky, P, K2) :- _place(Ky, P, _, K2).
 
     .decl rank(key: Key, t: Position, r: number)
-    rank(Ky, P, R) :-
-        _score(Ky, P, S), R = count : { _score(Ky, _, S2), S2 < S }.
+    rank(Ky, P, R) :- _order.rank(Ky, P, R).
 
     .decl rank_desc(key: Key, t: Position, r: number)
-    rank_desc(Ky, P, R) :-
-        _score(Ky, P, S), R = count : { _score(Ky, _, S2), S2 > S }.
-
-    .init _extremes = ArgExtremes<Key, Position>
-    _extremes.cand(Ky, P, S) :- _score(Ky, P, S).
+    rank_desc(Ky, P, R) :- _order.rank_desc(Ky, P, R).
 
     .decl first(key: Key, t: Position)
-    first(Ky, P) :- _extremes.low(Ky, P, _).
+    first(Ky, P) :- _order.first(Ky, P).
 
     .decl last(key: Key, t: Position)
-    last(Ky, P) :- _extremes.high(Ky, P, _).
-
-    // The scores in use, ranked: two cells at adjacent ranks are next.
-    .init _ordinal = Ordinal<Key>
-    _ordinal.idx_set(Ky, S) :- _score(Ky, _, S).
+    last(Ky, P) :- _order.last(Ky, P).
 
     .decl next(key: Key, a: Position, b: Position)
-    next(Ky, Q, P) :-
-        _score(Ky, Q, S), _ordinal.rank(Ky, S, R),
-        _score(Ky, P, S2), _ordinal.rank(Ky, S2, R + 1).
+    next(Ky, Q, P) :- _order.next(Ky, Q, P).
 }
 
 /// Bounding box of a box set: the pointwise minimum over the set, the least
