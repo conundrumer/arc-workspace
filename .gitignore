@@ -41,7 +41,7 @@ docs/codex-style.md
 theory/.lake/
 
 # Cargo build output
-/engine/target/
+/engine/target
 node_modules/
 
 tools/console/
