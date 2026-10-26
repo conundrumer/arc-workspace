@@ -15,18 +15,33 @@
 //! solver's cases, which leave out each combination of alts that an `exclude`
 //! form of its arcdata file matches. A case that holds a `DEMONSTRATED` form
 //! prints no line, so a solver whose every case holds one prints none.
+//!
+//! After the case lines of a solver, the line `ended\t<task>` ends the solver
+//! on stdout, or, where its replay panicked, `panicked\t<task>\t<message>`,
+//! which follows no case line of the solver. Neither line can be a case line,
+//! as no task id is `ended` or `panicked`. On stderr, the line
+//! `<task>: ended in <seconds> s` gives the wall time of the solver's replay.
+//! The solvers start in the order of their `.arclog` file size, largest first.
 
+use std::cell::Cell;
 use std::collections::BTreeSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::time::Instant;
 
 use arclog::decode::corpus::{solver_verdicts, Verdict};
-use arclog::harness::{require_optimized_build, run_over_corpus, SolverResult};
+use arclog::harness::{require_optimized_build, run_over_corpus, CorpusSolver, SolverResult};
 use arclog::algebra::tables::OrientationTables;
 use arclog_constructions::shared as constructions;
 
 const USAGE: &str = "usage: verdicts <corpus-dir> <tasks-dir> [<task_id> ...]";
+
+thread_local! {
+    /// When the worker thread started the solver it runs: `run_over_corpus`
+    /// calls `ended` on the thread that ran the solver.
+    static STARTED: Cell<Option<Instant>> = const { Cell::new(None) };
+}
 
 fn main() -> ExitCode {
     // Reads and checks the orientation tables: a table that is not
@@ -42,7 +57,10 @@ fn main() -> ExitCode {
     };
     let (corpus, tasks): (PathBuf, PathBuf) = (corpus.into(), tasks.into());
     let selected: Option<BTreeSet<String>> = (!task_ids.is_empty()).then(|| task_ids.iter().cloned().collect());
-    let report = run_over_corpus(&corpus, selected.as_ref(), |solver| verdicts_solver(&corpus, &tasks, &solver.task_id), |solver, _| eprintln!("{}: ended", solver.task_id));
+    let report = run_over_corpus(&corpus, selected.as_ref(), |solver| {
+        STARTED.set(Some(Instant::now()));
+        verdicts_solver(&corpus, &tasks, &solver.task_id)
+    }, end_solver);
     match report {
         Ok(_) => ExitCode::SUCCESS,
         Err(error) => {
@@ -80,6 +98,19 @@ fn verdicts_solver(corpus: &Path, tasks: &Path, id: &str) -> SolverResult {
     }
     out.flush().expect("stdout takes a verdict line");
     SolverResult::Pass
+}
+
+/// The end line of `solver` on stdout, flushed, and its wall time on stderr.
+fn end_solver(solver: &CorpusSolver, result: &SolverResult) {
+    let line = match result {
+        SolverResult::Pass => format!("ended\t{}", solver.task_id),
+        SolverResult::Fail(report) => format!("panicked\t{}\t{}", solver.task_id, one_line(&report.join("; "))),
+    };
+    let mut out = std::io::stdout().lock();
+    writeln!(out, "{line}").expect("stdout takes an end line");
+    out.flush().expect("stdout takes an end line");
+    let seconds = STARTED.take().expect("a solver started before it ended").elapsed().as_secs_f64();
+    eprintln!("{}: ended in {seconds:.1} s", solver.task_id);
 }
 
 /// `text` on one line, with its tabs and line breaks as spaces.

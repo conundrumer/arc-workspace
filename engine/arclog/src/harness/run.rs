@@ -90,7 +90,9 @@ pub fn run_on_workers<I: Sync, R: Send>(items: &[I], threads: usize, work: impl 
 /// Runs `check` over every solver of `dir` whose task id `selected` gives
 /// (every solver where it is `None`), on the threads of
 /// [`corpus_threads`] (`ARCLOG_THREADS`, or as many as the machine has), and
-/// gives the report over them. A panic of `check` on a
+/// gives the report over them. The solvers start in the order of their
+/// `.arclog` file size, largest first and ties in the order of their task
+/// ids, so that no long solver starts last. A panic of `check` on a
 /// solver is a failure of that solver, whose report is the panic's message.
 /// As the check of a solver ends, the worker that ran it calls `ended` with
 /// that solver and its result, so a run that stops before its last solver
@@ -105,19 +107,28 @@ where
     if let Some(ids) = selected {
         solvers.retain(|solver| ids.contains(&solver.task_id));
     }
-    let results = run_on_workers(&solvers, corpus_threads(), |solver| {
+    let sizes = solvers
+        .iter()
+        .map(|solver| std::fs::metadata(&solver.arclog).map(|meta| meta.len()).map_err(|error| CorpusError::Unreadable { path: solver.arclog.clone(), error }))
+        .collect::<Result<Vec<u64>, _>>()?;
+    let mut order: Vec<usize> = (0..solvers.len()).collect();
+    order.sort_by_key(|&index| std::cmp::Reverse(sizes[index]));
+    let by_size: Vec<&CorpusSolver> = order.iter().map(|&index| &solvers[index]).collect();
+    let results = run_on_workers(&by_size, corpus_threads(), |solver| {
         let result = catch_unwind(AssertUnwindSafe(|| check(solver))).unwrap_or_else(|payload| SolverResult::Fail(vec![panic_line(&*payload)]));
         ended(solver, &result);
         result
     });
-    let failures = results
+    let mut failed: Vec<(usize, Vec<String>)> = order
         .into_iter()
-        .enumerate()
+        .zip(results)
         .filter_map(|(index, result)| match result {
             SolverResult::Pass => None,
-            SolverResult::Fail(report) => Some((solvers[index].clone(), report)),
+            SolverResult::Fail(report) => Some((index, report)),
         })
         .collect();
+    failed.sort_by_key(|(index, _)| *index);
+    let failures = failed.into_iter().map(|(index, report)| (solvers[index].clone(), report)).collect();
     Ok(CorpusReport { checked: solvers.len(), failures })
 }
 

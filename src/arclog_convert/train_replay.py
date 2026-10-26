@@ -18,6 +18,14 @@ every train pair consistent. The command needs a Rust toolchain
 and no Python environment with the `arclog` package: cargo finds or builds
 the engine's tool build in the tree the command runs in.
 
+`verdicts` starts the largest `.arclog` file first and ends a task with an end
+line, on which the command writes that task's record at once, so a replay that
+stops or fails keeps the record of each task that ended. A task whose replay
+panics gets no record, a line in the report, and the exit status 1. The report
+does not depend on the order the tasks end in. Where the `verdicts` binary is
+replaced during the run, the command removes the records the run wrote and
+fails.
+
 A task's verdicts stand in `train_replay/<stem>.json` beside `gen/`, as a
 record with these fields: `files`, the sha256 of the task's `.arclog` and
 `.arcdata`, of the files of each solver that a `(representative <id>)` line
@@ -165,17 +173,39 @@ def stale_tasks(stems: list[str], files: Callable[[str], str], records: Path, so
     return stale
 
 
-def run_verdicts(stems: list[str], gen: Path, tasks: Path) -> dict[str, list[Case]]:
-    """The cases of each of `stems`, from one run of the `verdicts` binary."""
+def run_verdicts(stems: list[str], gen: Path, tasks: Path,
+                 ended: Callable[[str, list[Case]], None]) -> dict[str, str]:
+    """Run the `verdicts` binary over `stems`. At the end line of a task, call
+    `ended` with the task and its cases, in the order the tasks end in. Give
+    the message of each task whose replay panicked, which `ended` does not get.
+    Raise where the binary exits nonzero, or exits with a task of `stems`
+    neither ended nor panicked; `ended` has run for each task that ended before."""
     command = [str(tool_binary("verdicts")), str(gen), str(tasks), *stems]
-    done = subprocess.run(command, cwd=checkout.ROOT / "engine", stdout=subprocess.PIPE, text=True)
-    if done.returncode != 0:
-        raise RuntimeError(f"{' '.join(command)} exited with {done.returncode}")
-    cases: dict[str, list[Case]] = {stem: [] for stem in stems}
-    for line in done.stdout.splitlines():
-        task, case, concept, verdict, token, detail = line.split("\t", 5)
-        cases[task].append(Case(case, concept == "1", verdict, token, detail))
-    return cases
+    cases: dict[str, list[Case]] = {}
+    done: set[str] = set()
+    panics: dict[str, str] = {}
+    with subprocess.Popen(command, cwd=checkout.ROOT / "engine", stdout=subprocess.PIPE, text=True) as process:
+        assert process.stdout is not None
+        try:
+            for line in process.stdout:
+                kind, _, rest = line.rstrip("\n").partition("\t")
+                if kind == "ended":
+                    done.add(rest)
+                    ended(rest, cases.pop(rest, []))
+                elif kind == "panicked":
+                    task, _, panics[task] = rest.partition("\t")
+                    cases.pop(task, None)
+                else:
+                    task, case, concept, verdict, token, detail = line.rstrip("\n").split("\t", 5)
+                    cases.setdefault(task, []).append(Case(case, concept == "1", verdict, token, detail))
+        except BaseException:
+            process.kill()
+            raise
+    if process.returncode != 0:
+        raise RuntimeError(f"{' '.join(command)} exited with {process.returncode}")
+    if missing := [stem for stem in stems if stem not in done and stem not in panics]:
+        raise RuntimeError(f"{' '.join(command)} gave no end line for {', '.join(missing)}")
+    return panics
 
 
 def write_record(records: Path, stem: str, files: str, sources: str, binary: str, cases: list[Case]) -> None:
@@ -199,18 +229,33 @@ def replay(stems: list[str], out: Path, accept: bool = False) -> int:
     stale = stale_tasks(stems, lambda stem: files_digest(stem, gen, tasks), records, sources, binary)
     previous = {stem: read_record(records, stem) for stem in stale}
     cases: dict[str, list[Case]] = {}
+    panics: dict[str, str] = {}
     if stale:
         built = digests[0] if digests else binary_digest()
-        cases = run_verdicts(stale, gen, tasks)
-        if hash_binary() != built:
-            raise RuntimeError("the verdicts binary was replaced during the run")
-        for stem in stale:
-            write_record(records, stem, files_digest(stem, gen, tasks), sources, built, cases[stem])
+
+        def keep(stem: str, stem_cases: list[Case]) -> None:
+            write_record(records, stem, files_digest(stem, gen, tasks), sources, built, stem_cases)
+            cases[stem] = stem_cases
+
+        def drop_if_replaced() -> None:
+            if hash_binary() != built:
+                for stem in cases:
+                    (records / f"{stem}.json").unlink()
+                raise RuntimeError("the verdicts binary was replaced during the run")
+
+        try:
+            panics = run_verdicts(stale, gen, tasks, keep)
+        except BaseException:
+            drop_if_replaced()
+            raise
+        drop_if_replaced()
     for stem in stems:
-        if stem not in cases:
+        if stem not in cases and stem not in panics:
             cases[stem] = [Case(**c) for c in read_record(records, stem)["cases"]]
+    for stem, message in sorted(panics.items()):
+        print(f"{stem}: the replay panicked, so the task has no record: {message}")
     baseline = read_baseline()
-    counts = {(stem, v): n for stem in stems for v, n in Counter(c.verdict for c in cases[stem]).items() if v != "Consistent"}
+    counts = {(stem, v): n for stem in cases for v, n in Counter(c.verdict for c in cases[stem]).items() if v != "Consistent"}
     beyond = below = regressed = 0
     for (stem, verdict), n in sorted(counts.items()):
         if n > baseline.get((stem, verdict), (0, "-"))[0]:
@@ -220,7 +265,7 @@ def replay(stems: list[str], out: Path, accept: bool = False) -> int:
                   f"first {first.case} (token {first.token}) {first.detail}")
     for stem in stale:
         old = previous[stem]
-        if old is None:
+        if old is None or stem in panics:
             continue
         was = {c["case"] for c in old["cases"] if c["verdict"] == "Consistent"}
         for c in cases[stem]:
@@ -232,13 +277,13 @@ def replay(stems: list[str], out: Path, accept: bool = False) -> int:
             below += n - counts.get((stem, verdict), 0)
             print(f"{stem}: {counts.get((stem, verdict), 0)} cases {verdict} where the baseline gives {n}")
     total = sum(counts.values())
-    print(f"train replay: {len(stale)} tasks replayed, {len(stems) - len(stale)} taken from their record; "
+    print(f"train replay: {len(stale) - len(panics)} tasks replayed, {len(stems) - len(stale)} taken from their record; "
           f"{total} cases not Consistent, {beyond} beyond the baseline, {below} below it")
     if accept:
         kept = {k: v for k, v in baseline.items() if k[0] not in cases}
         kept |= {k: (n, baseline.get(k, (0, "-"))[1]) for k, n in counts.items()}
         write_baseline(kept)
-    return 1 if beyond or regressed else 0
+    return 1 if beyond or regressed or panics else 0
 
 
 def main(argv: list[str]) -> int:
