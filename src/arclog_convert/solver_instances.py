@@ -341,7 +341,8 @@ class InstancesMixin:
         key_leaves = c.leaves("key", "Key", True, scope, sub, outer=lsub)
         has_key = any(l.kind in ("keep", "example") for l in key_leaves)
         # the key clause: the atoms over key labels alone, where every input
-        # clause shares them; else the union of the generators' bodies
+        # clause shares them; else the union of the generators' bodies, which is
+        # also the key clause of a Cardinality with no domain clause
         residual: dict[int, list] = {}
         key_body: list[str] | None = None
         blocks: list[list[str]] = []
@@ -392,7 +393,11 @@ class InstancesMixin:
             gens = [u for u in us if u.body is not None and u.head.relation.name not in unkeyed and not any(
                 isinstance(l, AtomLiteral) and l.atom.relation.instances[:1] == (inst.name,) for l in u.body)]
             shared = None
-            if gens and all(id(u) in groups for u in gens):
+            # a Cardinality with no domain clause gets its domain from the key,
+            # which then holds only the keys that some member has
+            renamed = libmap.COMP.get(inst.component)
+            counts_members_only = renamed is not None and renamed.name == "Cardinality" and "domain" not in written
+            if gens and not counts_members_only and all(id(u) in groups for u in gens):
                 cands = {tuple(groups[id(u)][0]) for u in gens}
                 if len(cands) == 1:
                     shared = list(next(iter(cands)))
