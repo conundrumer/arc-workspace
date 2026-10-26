@@ -6,7 +6,9 @@ that the rows are the case's own; the JSON form of that rerun; and
 the kept JSON of a rerun that gave rows, which stands while each input of
 the rerun is unchanged (`kept_json`); and the rows of the cases the row
 parity check runs on each pair, projected onto the columns the converter
-maps, with the relations the check leaves out (`case_rows`).
+maps, with the relations the check leaves out (`case_rows`); and the rows of
+the relations of `Determine` at the run of its component over the task's
+examples (`determination_entry`).
 
 The check (`arclog_convert.row_parity`) runs the concept case and, for each
 `Choice` constructor (an ALT) that no case run before takes, the first case
@@ -30,13 +32,21 @@ first of these that holds (`classify`):
 - `uncompared`, "no entry in the column map".
 
 Each arclog relation of the name map (`relations` and `unmapped`) that no
-relation of the run maps to (`relation_name`) is `uncompared`, "no Souffle
-relation of the run stands for it". `arclog-cli row-parity` gives the rest
+relation of the run maps to (`relation_name`), and that is no relation of
+`Determine` the check compares (`determined_relations`), is `uncompared`, "no
+Souffle relation of the run stands for it". `arclog-cli row-parity` gives the rest
 of the verdicts, and `uncompared` "no case's program has a relation of that
 name" for a relation that no case it runs has. An `equal` line proves that
 the relation's rows in each case that derives it, at the stored parameters,
 are these rows over the columns the converter maps
-(`engine/arclog-cli/src/row_parity.rs` gives the rest)."""
+(`engine/arclog-cli/src/row_parity.rs` gives the rest).
+
+A relation of `Determine` that the name map gives an arclog name and the
+column map an entry is compared as well with Souffle's rows of it at the run
+of the `Determine` component, the program of `solver.determine.run_program`,
+over the task's examples, which `solver.determine.determine` makes, once for
+the task (`determination_entry`): a relation with an Example leaf in its column
+map per train pair, and any other once for the task."""
 
 import hashlib
 import json
@@ -49,23 +59,27 @@ from typing import Any
 from arc.task import Example
 from cli.common import LIMITS, engine, solver_path
 from engine import (AdtValue, Engine, Program, RecordValue, RelationName, Rows,
-                    RunFailure, Scope, TypeName)
+                    RunFailure, Scope, Tuples, TypeName)
 from engine.memo import hash_files, read_or_make
 from engine.program import (AtomLiteral, BodyLiteral, Comparison, ComparisonOperator,
                             ConstructorTerm, Disjunction, Qualifier, Term, Unit, Value, as_grid,
                             own, subterms)
 from parity import NameMap, case_name, columns_path, name_map, names_path, relation_name, snapshot
-from parity.idents import Ambiguous, Minted, NoMembers, Source, Unresolved, Writer, ident_sources, kind_of, leaves
+from parity.idents import (Ambiguous, IdentSources, Minted, NoMembers, Source, Unresolved, Writer, ident_sources,
+                           kind_of, leaves)
 from solver.aggregate import Solver
 from solver.cases import cases as cases_of
+from solver.determine import RunProgram, run_program
 from solver.graph import Graph
 from solver.load import load
 from solver.model import Base, Case, Lib, concept_branch
 from solver.outcome import Assignment
 from solver.pair_runs import examples
-from solver.solve import relations_at
+from solver.probe import example_inputs
+from solver.solve import output_rows, relations_at
 from solver.undefined import Undefined
-from solver.vocabulary import OPEN_VALUE
+from solver.variant_limits import over_examples
+from solver.vocabulary import DETERMINE_SCOPE, INPUT, OPEN_VALUE
 
 
 class NoSuchCase(LookupError):
@@ -295,8 +309,13 @@ def case_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | RunF
     "idents": [kind, ...], "unread": [[label, field], ...],
     "unresolved": [[label, field, reason], ...], "rows": [[[leaves of column 1], ...], ...],
     "by_open": [rows, ...], "fault": text}]}]}], "not_compared": [{"name",
-    "verdict", "reason"}]}`; a case whose run gives no rows has `"failure":
-    text` in place of `pairs`. A relation whose entry has no column to
+    "verdict", "reason"}], "determination": {"pairs": [{"pair": "train 0" or
+    "task", "relations": [...]}]}}`; a case whose run gives no rows has `"failure":
+    text` in place of `pairs`, and so has `determination`; the entries of its
+    relations are a case's. `determination` is there where the check compares
+    a relation of `Determine`; a relation with an Example leaf in its column map has an entry
+    for each train pair, with the rows of that example, and any other relation
+    one under the pair `task`, with the rows of the run. A relation whose entry has no column to
     compare has an empty `columns`, and its rows are `[]` where it has a row.
     A column of
     `unread` is a mapped column whose leaf some row lacks, which every list
@@ -320,7 +339,9 @@ def case_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | RunF
         return loaded
     chosen = cases_to_run(loaded)
     columns: dict[str, list[list[dict[str, Any]]]] = json.loads(columns_path(stem).read_text())
-    mapped, not_compared = classify(loaded, columns, read_by_converted(stem))
+    run = run_program(loaded.solver)
+    determined = determined_relations(loaded, columns, run)
+    mapped, not_compared = classify(loaded, columns, [n for n in read_by_converted(stem) if n not in determined.values()])
     entries = []
     for i, case in enumerate(chosen):
         name = case_name(loaded.solver, case, loaded.names)
@@ -331,8 +352,11 @@ def case_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | RunF
             return got
         else:
             entries.append({"case": name, "failure": str(got)})
-    return {"orientation_constants": orientation_constants(loaded.solver.lib), "cases": entries,
-            "not_compared": not_compared}
+    out = {"orientation_constants": orientation_constants(loaded.solver.lib), "cases": entries,
+           "not_compared": not_compared}
+    if determined:
+        out["determination"] = determination_entry(loaded, run, columns, determined)
+    return out
 
 
 def case_entry(loaded: Loaded, chosen: Case, columns: Mapping[str, list[list[dict[str, Any]]]],
@@ -340,29 +364,77 @@ def case_entry(loaded: Loaded, chosen: Case, columns: Mapping[str, list[list[dic
     """The `pairs` of the entry of `chosen` in `case_rows`' form, or the
     case's undefined outcome or a run's failure."""
     taken = loaded.taking(chosen)
-    sources = ident_sources(loaded.eng, taken.program)
-    graph = sources.graph
-    leaves_of = {r: [MappedLeaf(j, e["label"], e["field"], tuple(e["leaf"]), sources.of(r, j, tuple(e["leaf"])))
-                     for j, column in enumerate(columns[name]) for e in column if not e["example"]]
-                 for r, name in mapped.items()}
-    opens = {r: [j for j, column in enumerate(columns[name]) if not any(not e["example"] for e in column)
-                 and open_valued(graph, r, j)]
-             for r, name in mapped.items()}
-    asked = list(dict.fromkeys([*mapped, *(m for ls in leaves_of.values() for leaf in ls
-                                           if isinstance(leaf.source, Minted) for m in sources.minting(leaf.source))]))
+    projection = Projection.of(ident_sources(loaded.eng, taken.program), columns, mapped)
     runs = []
     for p, ex in examples(loaded.solver.given_task):
-        got = loaded.run(taken, chosen, ex, asked)
+        got = loaded.run(taken, chosen, ex, projection.asked)
         if not isinstance(got, Mapping):
             return got
         runs.append((p.text, got))
-    unread = {r: [leaf for leaf in ls if any(leaves_at(row[leaf.column], leaf.path) is None
-                                             for _, got in runs for row in got[r])]
-              for r, ls in leaves_of.items()}
-    return [{"pair": pair, "relations": [relation_entry(name, got[r], leaves_of[r], unread[r], opens[r],
-                                                        Writer(sources, got))
-                                         for r, name in mapped.items()]}
+    unread = projection.unread([got for _, got in runs])
+    return [{"pair": pair, "relations": [projection.entry(name, r, got[r], got, unread) for r, name in mapped.items()]}
             for pair, got in runs]
+
+
+def determined_relations(loaded: Loaded, columns: Mapping[str, Any], run: RunProgram
+                         ) -> dict[RelationName, str]:
+    """Each relation of `Determine` that the name map gives an arclog name
+    and the column map an entry, with that name, by its path under the
+    instance of `Determine` in the program of `run` (`run_program`), if the
+    program outputs it."""
+    if run.determine is None or loaded.names is None:
+        return {}
+    declared = set(every_relation(loaded.eng, run.program))
+    found = {}
+    for arc, souffle in loaded.names.relations.items():
+        if arc in columns and len(souffle) == 1 and souffle[0].component == DETERMINE_SCOPE.components:
+            *chain, name = souffle[0].relation.split(".")
+            relation = RelationName((run.determine.name, *chain), name)
+            if relation in declared:
+                found[relation] = arc
+    return found
+
+
+def determination_entry(loaded: Loaded, run: RunProgram, columns: Mapping[str, list[list[dict[str, Any]]]],
+                        mapped: Mapping[RelationName, str]) -> dict[str, Any]:
+    """The `determination` entry of `case_rows`' form for the relations
+    `mapped`: the program of `run` over the task's examples, as
+    `solver.determine.determine` runs it, once, each relation projected
+    as in a case's `pairs`. A relation with an Example leaf in its column
+    map has its rows of each train example under the pair `train <i>`, those
+    of a test example left out, and any other relation all its rows under the
+    pair `task`.
+    `{"failure": text}` where the run fails."""
+    task = loaded.solver.given_task
+    projection = Projection.of(ident_sources(loaded.eng, run.program), columns, mapped)
+    got = loaded.eng.run(run.program, {INPUT: (), **example_inputs(task)}, projection.asked,
+                         over_examples(LIMITS, task))
+    if not isinstance(got, Tuples):
+        return {"failure": str(got)}
+    rows = output_rows(got, projection.asked)
+    unread = projection.unread([rows])
+    per_input = {r: at for r, name in mapped.items() if (at := _example_leaf(columns[name])) is not None}
+    pairs = []
+    for i in range(len(task.train) if per_input else 0):
+        pairs.append({"pair": f"train {i}", "relations": [
+            projection.entry(mapped[r], r, _of_example(rows[r], at, i), rows, unread) for r, at in per_input.items()]})
+    alone = [r for r in mapped if r not in per_input]
+    if alone:
+        pairs.append({"pair": "task", "relations": [
+            projection.entry(mapped[r], r, rows[r], rows, unread) for r in alone]})
+    return {"pairs": pairs}
+
+
+def _example_leaf(column_map: list[list[dict[str, Any]]]) -> tuple[int, tuple[int, ...]] | None:
+    """The Souffle column and the path in it of the first Example leaf in
+    `column_map`, the entry of a relation; None where it has none."""
+    return next(((j, tuple(e["leaf"])) for j, column in enumerate(column_map) for e in column if e["example"]), None)
+
+
+def _of_example(rows: Rows, at: tuple[int, tuple[int, ...]], example: int) -> Rows:
+    """The rows of `rows` whose Example leaf at `at` is `example`."""
+    column, path = at
+    return tuple(row for row in rows if leaves_at(row[column], path) == [example])
 
 
 def open_valued(graph: Graph, relation: RelationName, column: int) -> bool:
@@ -383,6 +455,51 @@ class MappedLeaf:
     field: str | None
     path: tuple[int, ...]
     source: Source | None
+
+
+@dataclass(frozen=True)
+class Projection:
+    """The relations `mapped` of one program, each with its mapped leaves
+    (`MappedLeaf`) and the columns of type `OpenValue` that it holds, for
+    their rows to be written out as `relation_entry` does."""
+
+    sources: IdentSources
+    leaves_of: Mapping[RelationName, list[MappedLeaf]]
+    opens: Mapping[RelationName, list[int]]
+
+    @staticmethod
+    def of(sources: IdentSources, columns: Mapping[str, list[list[dict[str, Any]]]],
+           mapped: Mapping[RelationName, str]) -> "Projection":
+        leaves_of = {r: [MappedLeaf(j, e["label"], e["field"], tuple(e["leaf"]), sources.of(r, j, tuple(e["leaf"])))
+                         for j, column in enumerate(columns[name]) for e in column if not e["example"]]
+                     for r, name in mapped.items()}
+        opens = {r: [j for j, column in enumerate(columns[name]) if not any(not e["example"] for e in column)
+                     and open_valued(sources.graph, r, j)]
+                 for r, name in mapped.items()}
+        return Projection(sources, leaves_of, opens)
+
+    @property
+    def asked(self) -> list[RelationName]:
+        """The relations a run outputs for the entries: the mapped ones, and
+        those that mint the ids of their leaves."""
+        return list(dict.fromkeys([*self.leaves_of, *(m for ls in self.leaves_of.values() for leaf in ls
+                                                   if isinstance(leaf.source, Minted)
+                                                   for m in self.sources.minting(leaf.source))]))
+
+    def unread(self, runs: Sequence[Mapping[RelationName, Rows]]) -> dict[RelationName, list[MappedLeaf]]:
+        """The leaves of each relation that some row of some run in `runs`
+        lacks."""
+        return {r: [leaf for leaf in ls if any(leaves_at(row[leaf.column], leaf.path) is None
+                                               for got in runs for row in got[r])]
+                for r, ls in self.leaves_of.items()}
+
+    def entry(self, name: str, relation: RelationName, rows: Rows, got: Mapping[RelationName, Rows],
+              unread: Mapping[RelationName, list[MappedLeaf]]) -> dict[str, Any]:
+        """The entry (`relation_entry`) of `relation`, which the name `name`
+        stands for, from its `rows`, with the rows `got` of a run for the
+        minted ids."""
+        return relation_entry(name, rows, self.leaves_of[relation], unread[relation], self.opens[relation],
+                              Writer(self.sources, got))
 
 
 def relation_entry(name: str, rows: Rows, mapped: list[MappedLeaf], unread: list[MappedLeaf],

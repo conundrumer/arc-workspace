@@ -193,8 +193,10 @@ def name_map(s: "Solver", insts: dict[str, str], arclog: str, arcdata: str) -> d
 
 def column_map(s: "Solver", names: dict, insts: dict[str, str]) -> dict:
     """For each arclog relation of the name map `names` with one Souffle
-    relation that has a path from the top level, one entry per column of the
-    Souffle relation, in its order: the list of the kept leaves of that
+    relation that has a path from the top level, or is declared in
+    `Determine` (its path under the instance that `solver.determine.run_program`
+    adds is `determine.<relation>`), one entry per column of the Souffle
+    relation, in its order: the list of the kept leaves of that
     Souffle column that the arclog relation holds, each as
     `{"leaf": <path into the Souffle column's record>, "label": <the arclog
     column>, "field": <the field within the arclog column, or null>,
@@ -206,7 +208,8 @@ def column_map(s: "Solver", names: dict, insts: dict[str, str]) -> dict:
     one to one. A relation whose arclog columns and Souffle columns differ in
     number and whose correspondence the converter does not hold gets no entry.
     The relation is resolved as a read sees it (`Converter.resolve`): from the
-    top level by the Souffle relation's path, and a relation of an expansion's
+    top level by the Souffle relation's path, a relation of `Determine` with no
+    path from within `Determine`, and a relation of an expansion's
     shape by its own name; the labels are those `site_columns` gives, the ones
     every read the converter writes of the relation names. `insts` are the
     instance renames `convert_one` applies to the names."""
@@ -226,11 +229,17 @@ def column_map(s: "Solver", names: dict, insts: dict[str, str]) -> dict:
             continue
         out[arc] = _souffle_columns(site_columns(c, cols, inst), w.columns, width)
     for arc, souffle in names["relations"].items():
-        if arc in shaped or len(souffle) != 1 or souffle[0]["path"] is None:
+        if arc in shaped or len(souffle) != 1:
             continue
-        *chain, rel = souffle[0]["path"].split(".")
-        _, cols, _, inst = c.resolve(RelationName(tuple(chain), rel), (), {})
-        scope, relation = tuple(souffle[0]["component"]), souffle[0]["relation"]
+        scope, relation, path = tuple(souffle[0]["component"]), souffle[0]["relation"], souffle[0]["path"]
+        if path is not None:
+            *chain, rel = path.split(".")
+            _, cols, _, inst = c.resolve(RelationName(tuple(chain), rel), (), {})
+        elif scope == ("Determine",):   # the instance a run adds (`solver.determine.run_program`) has no path in the solver's text
+            *chain, rel = relation.split(".")
+            _, cols, _, inst = c.resolve(RelationName(tuple(chain), rel), scope, {})
+        else:
+            continue
         width = c.souffle_arity(scope, relation)
         if cols is None or width is None:
             continue

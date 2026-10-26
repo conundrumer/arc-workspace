@@ -24,11 +24,24 @@
 //! fails, has the relation `*`. It exits 1 where a line is `differ`, `fault`
 //! or `uncompared`.
 //!
+//! The file's `determination` entry, where it has one, holds Souffle's rows of
+//! the relations of the `Determine` component at its run over the task's
+//! examples, the run `solver.determine.determine` makes: for a relation with
+//! an Example leaf in the column map the rows of each train example under the pair `train <i>`,
+//! and for any other relation the rows of the run under the pair `task`. Each
+//! is compared as a case's relation is, with the engine's rows of the relation
+//! at the concept case's program, at the train example for a relation per
+//! input and once for a relation of the task, and its lines are the relation's
+//! lines. An engine relation that is of the task where Souffle's has an
+//! Example leaf in the column map, or the reverse, shows as a `differ`. A run that gives no
+//! rows is a fault of the whole task.
+//!
 //! An `equal` line proves: for each case that derives the relation, at the
 //! stored parameters, on each train and test input of the task, the arclog
 //! rows of the relation, projected onto the leaves the converter maps from
 //! Souffle's columns, are Souffle's rows projected onto the same leaves, as a
-//! set; where the map gives no column to compare, the relation is present in
+//! set, and, for a relation of `Determine`, the same over the train examples
+//! at the concept case's stored parameters; where the map gives no column to compare, the relation is present in
 //! both or absent in both. Where the relation's rows differ between the
 //! case's models, and Souffle's relation holds the open value in a column,
 //! the rows of the models are the rows of the open values, as sets of sets;
@@ -53,7 +66,7 @@ use arclog::harness::{require_optimized_build, run_over_corpus, SolverResult};
 use arclog::terms::Example;
 use serde_json::Value;
 
-use crate::concept_case::{with_case, ConceptCase};
+use crate::concept_case::{with_case, with_concept_case, ConceptCase};
 use crate::renaming::{renaming_exists, same_without_idents, EngineLeaf, Leaf};
 use crate::select::read_json;
 use crate::souffle_rows::{engine_columns, engine_models, pair_name, Column, EngineModels, Projection};
@@ -66,6 +79,10 @@ const WHOLE_TASK: &str = "*";
 /// The reason of the `uncompared` line of a relation that the file sends and
 /// that no case's program has.
 const NO_CASE_HAS_IT: &str = "no case's program has a relation of that name";
+
+/// The pair of the `determination` entry that holds the relations of the
+/// task, which Souffle's rows give once.
+const TASK_PAIR: &str = "task";
 
 /// What the comparison of one relation gives.
 #[derive(Clone, Debug, PartialEq)]
@@ -189,15 +206,19 @@ fn task_verdicts(corpus: &Path, tasks: &Path, id: &str, file: &Value) -> Result<
         }
         let pairs = case.get("pairs").and_then(Value::as_array).ok_or("a case of the rows file has no `pairs`")?;
         match with_case(corpus, tasks, id, name, |case| case_verdicts(case, name, &constants, pairs)) {
-            Ok((verdicts, names)) => {
-                verdicts.into_iter().for_each(|(relation, verdict)| merge(&mut merged, relation, verdict));
-                for relation in names {
-                    if !sent.contains(&relation) {
-                        sent.push(relation);
-                    }
-                }
-            }
+            Ok(found) => absorb(&mut merged, &mut sent, found),
             Err(fault) => merged.push((WHOLE_TASK.to_owned(), Verdict::Fault(format!("case {name}: {fault}")))),
+        }
+    }
+    if let Some(determination) = file.get("determination") {
+        if let Some(failure) = determination.get("failure").and_then(Value::as_str) {
+            merged.push((WHOLE_TASK.to_owned(), Verdict::Fault(format!("determination: no Souffle rows: {failure}"))));
+        } else {
+            let pairs = determination.get("pairs").and_then(Value::as_array).ok_or("the `determination` of the rows file has no `pairs`")?;
+            match with_concept_case(corpus, tasks, id, |case| determination_verdicts(case, &constants, pairs)) {
+                Ok(found) => absorb(&mut merged, &mut sent, found),
+                Err(fault) => merged.push((WHOLE_TASK.to_owned(), Verdict::Fault(format!("determination: {fault}")))),
+            }
         }
     }
     for relation in sent {
@@ -219,6 +240,17 @@ fn task_verdicts(corpus: &Path, tasks: &Path, id: &str, file: &Value) -> Result<
     Ok(merged)
 }
 
+/// Merges the `verdicts` of one case or of the determination into `merged`,
+/// and the relation names they send into `sent`.
+fn absorb(merged: &mut Vec<(String, Verdict)>, sent: &mut Vec<String>, (verdicts, names): (Vec<(String, Verdict)>, Vec<String>)) {
+    verdicts.into_iter().for_each(|(relation, verdict)| merge(merged, relation, verdict));
+    for relation in names {
+        if !sent.contains(&relation) {
+            sent.push(relation);
+        }
+    }
+}
+
 /// The verdict of each relation of the case `name`, one of the `pairs` of
 /// the rows file, over the pairs of the task of `case`, merged over the
 /// pairs, and the name of each relation the pairs send.
@@ -229,33 +261,60 @@ fn case_verdicts(case: &ConceptCase<'_>, name: &str, constants: &BTreeMap<String
     for (index, example) in evaluation.task.examples().enumerate() {
         let pair = pair_name(evaluation.task, index);
         let in_file = pairs.iter().find(|entry| entry.get("pair").and_then(Value::as_str) == Some(pair.as_str())).ok_or_else(|| format!("the rows file has no pair `{pair}`"))?;
-        let relations = in_file.get("relations").and_then(Value::as_array).ok_or("a pair of the rows file has no `relations`")?;
-        let mut checked = Vec::new();
-        for relation in relations {
-            let relation_name = relation.get("name").and_then(Value::as_str).ok_or("a relation of the rows file has no `name`")?;
-            let columns = column_names_of(relation, "columns")?;
-            let minted = minted_of(relation)?;
-            if minted.len() != columns.len() {
-                return Err(format!("the relation `{relation_name}` of the rows file has {} columns and {} `idents`", columns.len(), minted.len()));
-            }
-            let file_relation = FileRelation {
-                columns,
-                minted,
-                left_out: [column_names_of(relation, "unread")?, unresolved_of(relation)?].concat(),
-                rows: souffle_rows_of(relation.get("rows"))?,
-                by_open: by_open_of(relation)?,
-            };
-            let fault = relation.get("fault").map(|text| text.as_str().map(str::to_owned).ok_or("a fault of the rows file is no text")).transpose()?;
-            checked.push(engine_side(evaluation, relation_name, example, constants, file_relation, fault));
-            if !sent.iter().any(|held| held == relation_name) {
-                sent.push(relation_name.to_owned());
-            }
-        }
-        for (relation, verdict) in compare_pair(&format!("{name}, {pair}"), &checked) {
-            merge(&mut merged, relation, verdict);
-        }
+        entry_verdicts(evaluation, &format!("{name}, {pair}"), example, in_file, constants, &mut merged, &mut sent)?;
     }
     Ok((merged, sent))
+}
+
+/// The verdict of each relation of the `pairs` of the rows file's
+/// `determination` entry, merged over the pairs, and the name of each
+/// relation they send: the entry of a train pair at that example, the entry
+/// of the task at the first.
+fn determination_verdicts(case: &ConceptCase<'_>, constants: &BTreeMap<String, i64>, pairs: &[Value]) -> Result<(Vec<(String, Verdict)>, Vec<String>), String> {
+    let evaluation = &case.evaluation;
+    let mut merged: Vec<(String, Verdict)> = Vec::new();
+    let mut sent: Vec<String> = Vec::new();
+    for entry in pairs {
+        let pair = entry.get("pair").and_then(Value::as_str).ok_or("a pair of the `determination` has no `pair`")?;
+        let mut trains = evaluation.task.train_examples().enumerate();
+        let example = if pair == TASK_PAIR { trains.next().map(|(_, example)| example) } else { trains.find(|&(index, _)| pair_name(evaluation.task, index) == pair).map(|(_, example)| example) };
+        let example = example.ok_or_else(|| format!("the `determination` has the pair `{pair}`, which is no train pair of the task"))?;
+        entry_verdicts(evaluation, &format!("determination, {pair}"), example, entry, constants, &mut merged, &mut sent)?;
+    }
+    Ok((merged, sent))
+}
+
+/// The verdict of each relation of `entry`, a pair of the rows file, compared
+/// with the engine's rows on `example` and merged into `merged`, under the
+/// scope `scope` that the lines name; the name of each relation it sends is
+/// added to `sent`.
+fn entry_verdicts(evaluation: &Evaluation<'_>, scope: &str, example: Example, entry: &Value, constants: &BTreeMap<String, i64>, merged: &mut Vec<(String, Verdict)>, sent: &mut Vec<String>) -> Result<(), String> {
+    let relations = entry.get("relations").and_then(Value::as_array).ok_or("a pair of the rows file has no `relations`")?;
+    let mut checked = Vec::new();
+    for relation in relations {
+        let relation_name = relation.get("name").and_then(Value::as_str).ok_or("a relation of the rows file has no `name`")?;
+        let columns = column_names_of(relation, "columns")?;
+        let minted = minted_of(relation)?;
+        if minted.len() != columns.len() {
+            return Err(format!("the relation `{relation_name}` of the rows file has {} columns and {} `idents`", columns.len(), minted.len()));
+        }
+        let file_relation = FileRelation {
+            columns,
+            minted,
+            left_out: [column_names_of(relation, "unread")?, unresolved_of(relation)?].concat(),
+            rows: souffle_rows_of(relation.get("rows"))?,
+            by_open: by_open_of(relation)?,
+        };
+        let fault = relation.get("fault").map(|text| text.as_str().map(str::to_owned).ok_or("a fault of the rows file is no text")).transpose()?;
+        checked.push(engine_side(evaluation, relation_name, example, constants, file_relation, fault));
+        if !sent.iter().any(|held| held == relation_name) {
+            sent.push(relation_name.to_owned());
+        }
+    }
+    for (relation, verdict) in compare_pair(scope, &checked) {
+        merge(merged, relation, verdict);
+    }
+    Ok(())
 }
 
 /// One relation on one pair: the engine's rows at each model, over the
