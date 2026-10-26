@@ -25,9 +25,6 @@
 * comment: The user's words, session 64993706, 2026-10-26T01:38:48Z: "multiple claude sessions using up RAM resulted in OOM: feels like a known problem with a known solution, help me manage this".
 - A command is heavy where it may use much memory, or where it starts several processes at once.
     - Where you do not know, count the command heavy.
-- Run each heavy command as `sem --id arc-ram --fg -j 3 --memfree 6G 'unset XDG_CACHE_HOME; <command>'`, with the command quoted as one string. `sem` sets `XDG_CACHE_HOME` empty, and the Hugging Face libraries read an empty one as a cache under the working directory.
-    * comment: Bug 20-266, Evidence: under the form without the `unset`, `lm/checks.sh` failed `regression_check` in three runs with "OSError: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.", and passed with the cache set outside `sem`.
-    - `sem` runs at most `-j` of the commands that share the id at once, and starts each only when the memory `vm_stat` gives as free or inactive is at least `--memfree`. Where that memory falls under half of `--memfree`, it kills each command it runs and runs that command again from its start. `--fg` makes it wait for the command and exit with its status.
-    - The time `sem` waits for a slot or for memory counts toward the Bash call's timeout, so run a heavy command in the background where that wait and its run time together may pass that timeout.
-- For a command that runs longer than a few minutes, or that is not safe to run twice, put `--memsuspend` in place of `--memfree`, with the same size: it starts the command at the same floor and never kills it.
-- Where a command starts several heavy processes that you can start one by one, run each of them through `sem` in place of the whole command; otherwise run the whole command through `sem`. Run no `sem` call inside a command that runs through `sem`.
+- Run each heavy command as `<checkout>/scripts/ram_slot.py <command> [<arg> ...]`, with `<checkout>` the checkout you work in. Run a command of several simple commands as `<checkout>/scripts/ram_slot.py bash -c '<commands>'`.
+    - The time `ram_slot.py` waits for a slot or for memory counts toward the Bash call's timeout, so run a heavy command in the background where that wait and its run time together may pass that timeout.
+- Where a command starts several heavy processes that you can start one by one, run each of them through `ram_slot.py` in place of the whole command; otherwise run the whole command through it.

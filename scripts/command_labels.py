@@ -23,7 +23,7 @@ RUN_DL = "run_dl.py"
 SETUP = {"cd", "echo", "export", "set", "true", ":", "printf", "date",
          "source", ".", "uptime", "[", "[[", "test"}
 WRAPPERS = {"timeout", "time", "nice", "env", "exec", "command", "sudo", "uv",
-            "run"}
+            "run", "ram_slot.py"}
 # Options that take the next word as their value, by the wrapper they follow.
 # A wrapper not listed takes no such option.
 UV_OPTIONS = frozenset({"--env-file", "--with", "--python", "-p", "--project",
