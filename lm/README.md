@@ -29,7 +29,7 @@ The LM writes arclog programs token by token under the engine's token mask, and 
 
 ## Data
 
-- [export.py](export.py) gets every case's token stream from the `arclog` package (`arclog.corpus_streams`) in one call, and writes `work/lm/data/cases.npz` and `work/lm/data/vocab.json`, which holds each token's name and kind. Its docstring gives the layout. `cases.npz` holds the engine's mask at each model-written step, as a table of distinct masks and an index into it for each step.
+- [export.py](export.py) gets every case's token stream from the `arclog` package (`arclog.corpus_streams`), one call per task in worker processes, and writes `work/lm/data/cases.npz` and `work/lm/data/vocab.json`, which holds each token's name and kind. Its docstring gives the layout. `cases.npz` holds the engine's mask at each model-written step, as a table of distinct masks and an index into it for each step.
     - A stream is dropped when its model reads a relation or label before the engine declares it, or when the engine gives it no masks; the stream report gives the reason. Identical streams of one task are kept once.
     - A task is marked held out when its id is in `work/lm/data/evaluation.ids`, the public evaluation set.
 - Before you export, rebuild the CLI and the package, or they read a vocabulary that differs from the engine's:

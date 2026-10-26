@@ -27,8 +27,8 @@ held-out marks come from work/lm/data/evaluation.ids, or from `--heldout` where 
 the model steps of their prefix tree stay within N, 10000 where it is not given and 0 for no cap; each later stream of the
 solver gets a line in the stream report that gives the cap.
 
-One arclog.corpus_streams call per task id, on a queue of N Python threads, where N is `ARCLOG_THREADS` if set and `os.cpu_count()`
-otherwise, each thread on one engine thread. The tasks go longest first, in the order of `tables_export.replay_order` over the `seconds`
+One arclog.corpus_streams call per task id, on a queue of N worker processes, where N is `ARCLOG_THREADS` if set and `os.cpu_count()`
+otherwise, each process on one engine thread and running one call after another (`tables_export.run_in_worker`). The tasks go longest first, in the order of `tables_export.replay_order` over the `seconds`
 of the `--previous` keys.json. While the calls run, `tables_export.print_progress` prints a line every 10 s:
 
     <k> of <n> tasks ended, <s> s, about <t> s left, running past 10 s: <id> <s> s <p>% ...
@@ -45,13 +45,38 @@ over no file of the crates that only the tables export runs), the files of the i
 the versions of Python and numpy, this file and the step cap (`tables_export.task_key` computes it). A <dir> with no keys.json gives no reuse. With a <out>/streams.pkl, `--previous`
 exits with a message.
 
+As each call ends, its worker writes the task's streams, fault lines, key and seconds to <out>/finished/<task>.pkl, and the
+export removes <out>/finished once it has written its files. A run on an <out> whose finished/ holds a task's file with the
+task's key takes the task from that file and streams only the other tasks, so a run that was stopped loses only the calls that were
+running. Where a worker process dies in a call, the export prints on stderr the task and the exit status, and runs the call
+once more in a new worker; where that one dies too, the task gets the fault line `tables_export.death_line` gives, no streams, and
+a null key in keys.json.
+
 Where <out>/streams.pkl exists, written by export_chunks.py, and no task id is given, the streams come from it
 instead.
 """
-import argparse, collections, concurrent.futures, glob, hashlib, importlib.machinery, json, os, pickle, sys, time, types
+import argparse, collections, concurrent.futures, glob, hashlib, importlib.machinery, json, os, pickle, shutil, sys, time, types
 import arclog, numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "engine", "arclog-py"))
 import tables_export as X
+
+
+def stream_task(payload, progress):
+    """The call of a worker process: streams the task of `payload` and writes `{"key", "seconds", "streams", "faults"}` to its file in `<out>/finished`,
+    each stream a dict of the fields of arclog.CaseStream. Gives the seconds of the call."""
+    task, corpus, tasks, step_cap, key, path = payload
+    start = time.time()
+    streams, faults = arclog.corpus_streams(corpus, all_cases=True, task_ids=[task], tasks=tasks, progress=progress, step_cap=step_cap)
+    seconds = time.time() - start
+    with open(f"{path}.tmp", "wb") as sink:
+        pickle.dump({"key": key, "seconds": seconds, "streams": [X.stream_fields(s) for s in streams], "faults": faults}, sink)
+    os.replace(f"{path}.tmp", path)
+    return seconds
+
+
+if sys.argv[1:2] == ["--worker"]:
+    X.serve(stream_task)
+    sys.exit()
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--out", help="the output directory; work/lm/data where no task id is given")
@@ -86,7 +111,16 @@ if args.previous:
     print(f"{len(reused)} tasks reused, {len(to_stream)} to stream", flush=True)
 
 t0 = time.time()
-took = {}      # task id -> the wall seconds of its call, for each task this run streams
+took = {}      # task id -> the wall seconds of its call, for each task this run streams or takes from <out>/finished
+FINISHED = f"{DATA}/finished"
+finished_file = lambda t: f"{FINISHED}/{t}.pkl"
+
+
+def load_finished(t):
+    """The content of the file of `t` in <out>/finished, or None where there is none."""
+    return pickle.load(open(finished_file(t), "rb")) if os.path.exists(finished_file(t)) else None
+
+
 if not to_stream:
     streams, faults = [], []
 elif os.path.exists(f"{DATA}/streams.pkl") and not args.task_ids:     # written by export_chunks.py, one process per chunk of solvers
@@ -94,19 +128,26 @@ elif os.path.exists(f"{DATA}/streams.pkl") and not args.task_ids:     # written 
     task_keys = dict.fromkeys(task_ids)     # export_chunks.py replays with no step cap, so no later --previous may reuse these rows
     streams, faults = [types.SimpleNamespace(**s) for s in cached["streams"]], cached["faults"]
 else:
+    os.makedirs(FINISHED, exist_ok=True)
+    resumed = {t for t in to_stream if (f := load_finished(t)) is not None and f["key"] == task_keys[t]}
+    if resumed:
+        print(f"{len(resumed)} tasks taken from {FINISHED}, {len(to_stream) - len(resumed)} to stream", flush=True)
     workers = X.take_workers()
-    running, results = {}, {}      # task id -> (start, ReplayProgress) of the tasks running; task id -> (streams, faults) of the tasks ended
+    running, died = {}, {}      # task id -> (start, progress) of the tasks running; task id -> its fault line, for each task whose worker died on both runs
 
-    def stream_task(task):
-        start, progress = time.time(), arclog.ReplayProgress()
+    def stream_in_worker(task):
+        start, progress = time.time(), types.SimpleNamespace(done=0, total=0)
         running[task] = start, progress
-        results[task] = arclog.corpus_streams(CORPUS, all_cases=True, task_ids=[task], tasks="data/tasks", progress=progress, step_cap=args.step_cap or None)
-        took[task] = time.time() - start
+        payload = (task, CORPUS, "data/tasks", args.step_cap or None, task_keys[task], finished_file(task))
+        try:
+            took[task] = X.run_in_worker([sys.executable, os.path.abspath(__file__)], task, payload, progress)
+        except X.WorkerDied as death:
+            died[task] = X.death_line(task, death.status)
         del running[task]
 
     with concurrent.futures.ThreadPoolExecutor(workers) as pool:
         before = {t: v["seconds"] for t, v in previous.items() if v.get("seconds") is not None}
-        pending = {pool.submit(stream_task, t) for t in X.replay_order(to_stream, before)}
+        pending = {pool.submit(stream_in_worker, t) for t in X.replay_order([t for t in to_stream if t not in resumed], before)}
         last = t0
         try:
             while pending:
@@ -114,13 +155,19 @@ else:
                 for f in got:
                     f.result()
                 if time.time() - last >= 10:
-                    X.print_progress(t0, len(took), len(to_stream), 0, running)
+                    X.print_progress(t0, len(resumed) + len(took) + len(died), len(to_stream), len(resumed), running)
                     last = time.time()
         except BaseException:
+            X.stop_workers()
             pool.shutdown(wait=False, cancel_futures=True)
             raise
-    streams = [s for t in sorted(results) for s in results[t][0]]     # the order of the solvers in one call over all the tasks
-    faults = [l for t in sorted(results) for l in results[t][1]]
+    X.close_workers()
+    results = {t: load_finished(t) for t in to_stream if t not in died}
+    took |= {t: results[t]["seconds"] for t in resumed}
+    for t in died:
+        task_keys[t] = None     # the death may not recur, so no later --previous may reuse its fault line
+    streams = [types.SimpleNamespace(**s) for t in sorted(results) for s in results[t]["streams"]]     # the order of the solvers in one call over all the tasks
+    faults = [l for t in sorted(results.keys() | died.keys()) for l in (results[t]["faults"] if t in results else [died[t]])]
 mask_faults = [f"{s.task} {s.case}: mask fault: {s.mask_fault}" for s in streams if s.mask_fault is not None]
 streams = [s for s in streams if s.mask_fault is None]
 faults = faults + mask_faults
@@ -196,4 +243,5 @@ counts = collections.Counter("heldout" if r[0] in held_out else "train" for r in
 seconds = {t: round(s, 1) for t, s in took.items()} | {t: previous[t].get("seconds") for t in reused}
 json.dump({t: {"key": task_keys[t], "seconds": seconds.get(t), "streamed": streamed[t], "problems": {k: n for k, n in problems[t].items() if n}} for t in task_ids}, open(f"{DATA}/keys.json", "w"))
 json.dump({"names": names, "kinds": kinds}, open(f"{DATA}/vocab.json", "w"))
+shutil.rmtree(FINISHED, ignore_errors=True)     # the export's files now hold every finished task
 print(dict(counts), dict(sum(problems.values(), collections.Counter())), f"{len(mask_table)} distinct masks, {time.time() - t0:.0f}s")

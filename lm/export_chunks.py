@@ -12,13 +12,13 @@ import glob, os, pickle, subprocess, sys, time
 
 DATA = "work/lm/data"
 CHUNK = int(sys.argv[1]) if len(sys.argv) > 1 else 40
-WORKER = """
+WORKER = f"""
 import pickle, sys, arclog
+sys.path.insert(0, {os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "engine", "arclog-py")!r})
+import tables_export
 ids = sys.argv[1].split(",")
 streams, faults = arclog.corpus_streams("work/arclog/gen", all_cases=True, task_ids=ids, tasks="data/tasks")
-rows = [dict(task=s.task, case=s.case, concept=s.concept, ids=bytes(s.ids), model=bytes(s.model),
-             masks=None if s.masks is None else bytes(s.masks), mask_fault=s.mask_fault) for s in streams]
-pickle.dump({"streams": rows, "faults": faults}, open(sys.argv[2], "wb"))
+pickle.dump({{"streams": [tables_export.stream_fields(s) for s in streams], "faults": faults}}, open(sys.argv[2], "wb"))
 """
 
 

@@ -4,7 +4,7 @@
 
 It needs an interpreter with `arclog`, pandas and pyarrow, such as the LM work's venv. The code that decides a part's rows, values and fault lines is in `export_rows.py`. A change to that module, or to the engine code that writes the export's files (`engine/arclog-tables/src/`, `engine/arclog-tables-py/src/`, `engine/arclog/src/decode/`), runs `engine/arclog-py/roundtrip_check.py` with an `arclog` built from its tree before its merge.
 
-Runs one `arclog.corpus_tables` call per task id, the longest first, on a queue of N Python threads, where N is `ARCLOG_THREADS`
+Runs one `arclog.corpus_tables` call per task id, the longest first, on a queue of N worker processes (`run_in_worker`), where N is `ARCLOG_THREADS`
 if set and `os.cpu_count()` otherwise, and checks the parts it writes on N processes. `replay_order` gives the order, which `lm/export.py` takes too: the tasks the export `--previous` gives no seconds for, or all tasks where none is given, by the largest
 `.arcdata` file first, then the others by the one-thread seconds each took in that export (see `parts/<k>.tasks.txt`: the line's seconds times its units), longest first. A task whose one-thread seconds would end past half the mean load of a worker (the summed one-thread seconds of the
 tasks to replay over N) is replayed in `units` units on `units` engine threads, the least count (at most N and at most the cases the previous export
@@ -16,8 +16,9 @@ written as parts of the out dir. Its check lines are those of that export where 
 and otherwise the part is checked again in the check processes. The run prints the counts reused, of them to check again, and to replay first.
 An export with no key in its lines gives no reuse.
 `--previous` changes no output file but the Ident numbers of a task it gives more than one unit. The script sets `ARCLOG_THREADS=1` for the engine, so a call
-of a task of one unit runs on one worker, and each thread starts the next task as its task ends. Every 10 s the tasks ended since the last write are
-written as a part. Writes to <out dir>:
+of a task of one unit runs on one engine thread, and each worker process starts the next task as its task ends and writes each task as its own part.
+Where a worker process dies in a call, the export prints on stderr the task and the exit status, and runs the call once more in a new worker;
+where that one dies too, the task's part holds no case, the fault line `death_line` gives, and a bare `tasks.txt` line. Writes to <out dir>:
   values/<task>/<case>.i32   raw int32 (np.fromfile), every row of the case: the rows of each entry, of each DET
                              at each entry's assignment, and of each projection at each entry, each row's cells in
                              column order, equal runs of a case sharing one offset (see `arclog.decode.columns`)
@@ -95,9 +96,10 @@ pairs and `bases` the list of bases as `arclog.stream_tables` takes them. `out` 
 consistency of the last `RULE` clause the stream ends, or `ended none`), then the fault line of each stream that
 faults (its tables up to the fault are kept) or lies past the cap. It writes no `settings.json`.
 """
-import collections, hashlib, json, os, sys, glob, time
+import collections, enum, hashlib, json, os, shutil, signal, subprocess, sys, glob, threading, time, types
 from typing import NamedTuple
 import multiprocessing, traceback
+from multiprocessing.connection import Connection
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, wait, FIRST_COMPLETED
 import numpy as np
 import pandas as pd
@@ -316,11 +318,141 @@ def print_progress(begin, ended, count, done, running):
 
 
 def take_workers():
-    """The count of Python threads of an export's queue of calls, `ARCLOG_THREADS` if set and `os.cpu_count()` otherwise, and sets `ARCLOG_THREADS` to 1,
-    so that each call runs on one engine thread, on the Python thread that makes it."""
+    """The count of worker processes of an export's queue of calls, `ARCLOG_THREADS` if set and `os.cpu_count()` otherwise, and sets `ARCLOG_THREADS` to 1,
+    so that each call runs on one engine thread, in the worker process that makes it."""
     workers = int(os.environ.get("ARCLOG_THREADS") or os.cpu_count())
     os.environ["ARCLOG_THREADS"] = "1"
     return workers
+
+
+class WorkerDied(Exception):
+    """The worker processes of two runs of one task call died; `status` gives how the second one ended, as `exit_status` gives it."""
+    def __init__(self, status):
+        super().__init__(status)
+        self.status = status
+
+
+class Message(enum.IntEnum):
+    """The kind of a message a worker process sends. It is sent as its value: a worker of `main` runs this file as `__main__`, where the class pickles under another module name."""
+    PROGRESS = 0    # (done, total) of the call's arclog.ReplayProgress
+    ERROR = 1       # the traceback of an exception the call raised
+    REPLY = 2       # what the call gave
+
+
+TEST_ABORT = "ARCLOG_EXPORT_TEST_ABORT"     # `<task>:<n>`: the worker calls os.abort() on the first n runs of that task's call
+_threads = threading.local()                # the worker process of each thread of an export's queue
+_started, _stopping = [], threading.Event()  # every worker process started; set once `stop_workers` runs
+
+
+def exit_status(code):
+    """The text of the return code of a process: `signal <n> (<name>)` for a process a signal ended, `exit status <n>` otherwise."""
+    if code < 0:
+        try:
+            return f"signal {-code} ({signal.Signals(-code).name})"
+        except ValueError:
+            return f"signal {-code}"
+    return f"exit status {code}"
+
+
+def stream_fields(stream):
+    """The fields of an arclog.CaseStream as a dict, its buffers as bytes, for a pickle."""
+    return dict(task=stream.task, case=stream.case, concept=stream.concept, ids=bytes(stream.ids), model=bytes(stream.model),
+                masks=None if stream.masks is None else bytes(stream.masks), mask_fault=stream.mask_fault)
+
+
+def death_line(task, status):
+    """The fault line of a task whose call killed its worker process on both runs, the second ending with `status`."""
+    return f"{task}: the worker process died on both runs of the task ({status})"
+
+
+def start_worker(command):
+    """Starts `command` with `--worker` and the descriptors of its two pipes, as `serve` reads them. Gives the process and the parent's ends: requests, replies."""
+    requests_r, requests_w = os.pipe()
+    replies_r, replies_w = os.pipe()
+    process = subprocess.Popen([*command, "--worker", str(requests_r), str(replies_w)], pass_fds=(requests_r, replies_w))
+    os.close(requests_r)
+    os.close(replies_w)
+    worker = process, Connection(requests_w, readable=False), Connection(replies_r, writable=False)
+    _started.append(worker)
+    return worker
+
+
+def run_in_worker(command, task, payload, progress):
+    """Runs the call of `task` with `payload` in this thread's worker process, which `command` starts where the thread has none, and gives its reply.
+
+    While the call runs, `progress` takes the `done` and `total` the worker sends. Where the worker dies, the death is printed on stderr at once
+    and the call runs once more in a new worker; where that one dies too, raises `WorkerDied`. A call that raises in the worker raises `RuntimeError`
+    with the worker's traceback."""
+    for attempt in (1, 2):
+        if _stopping.is_set():
+            raise RuntimeError("the export stopped its worker processes")
+        if getattr(_threads, "worker", None) is None:
+            _threads.worker = start_worker(command)
+        process, requests, replies = _threads.worker
+        try:
+            requests.send((task, attempt, payload))
+            while True:
+                kind, *message = replies.recv()
+                match Message(kind):
+                    case Message.PROGRESS:
+                        progress.done, progress.total = message
+                    case Message.ERROR:
+                        raise RuntimeError(f"{task}: {message[0]}")
+                    case Message.REPLY:
+                        return message[0]
+        except (EOFError, BrokenPipeError):
+            status = exit_status(process.wait())
+            requests.close()
+            replies.close()
+            _threads.worker = None
+            if _stopping.is_set():
+                raise RuntimeError("the export stopped its worker processes")
+            then = "it runs again in a new worker process" if attempt == 1 else "it gets a fault line"
+            print(f"the worker process {process.pid} died on task {task} ({status}); {then}", file=sys.stderr, flush=True)
+    raise WorkerDied(status)
+
+
+def close_workers():
+    """Ends each worker process at its next read of a request, and waits for it."""
+    for process, requests, _ in _started:
+        requests.close()
+        process.wait()
+
+
+def stop_workers():
+    """Kills each worker process, and stops the queue from starting another."""
+    _stopping.set()
+    for process, _, _ in _started:
+        process.kill()
+
+
+def serve(handle):
+    """The loop of a worker process that `start_worker` started: for each request `(task, attempt, payload)`, sends the reply `handle(payload, progress)`,
+    with `progress` an `arclog.ReplayProgress` whose `done` and `total` it sends each second while `handle` runs. Ends at the end of the requests."""
+    signal.signal(signal.SIGINT, signal.SIG_IGN)       # the export ends its workers itself
+    requests, replies = Connection(int(sys.argv[-2]), writable=False), Connection(int(sys.argv[-1]), readable=False)
+    test_task, _, test_runs = os.environ.get(TEST_ABORT, "").partition(":")
+    while True:
+        try:
+            task, attempt, payload = requests.recv()
+        except EOFError:
+            return
+        if task == test_task and attempt <= int(test_runs):
+            os.abort()
+        progress, ended = arclog.ReplayProgress(), threading.Event()
+
+        def send_progress():
+            while not ended.wait(1):
+                replies.send((Message.PROGRESS.value, progress.done, progress.total))
+        sender = threading.Thread(target=send_progress, daemon=True)
+        sender.start()
+        try:
+            reply = (Message.REPLY.value, handle(payload, progress))
+        except Exception:
+            reply = (Message.ERROR.value, traceback.format_exc())
+        ended.set()
+        sender.join()
+        replies.send(reply)
 
 
 def main(out, task_ids, previous=None, **options):
@@ -357,18 +489,21 @@ def main(out, task_ids, previous=None, **options):
     bound = SPLIT_SHARE * sum(before.get(t, 0) for t in todo) / workers
     units = {t: unit_count(before[t], bound, min(workers, previous_cases(previous, t))) if t in before else 1 for t in todo}
     print(f"{len(reused)} tasks reused, {len({t for pairs, _, _ in open_parts.values() for t, _ in pairs})} of them to check again, {len(todo)} to replay", flush=True)
-    started, progress, took = {}, {}, {}
+    started, progress = {}, {}
 
-    def run(task):
-        progress[task] = arclog.ReplayProgress()
+    def run(task, part):
+        progress[task] = types.SimpleNamespace(done=0, total=0)
         started[task] = time.time()
-        cases, lines = export_rows.replay(CORPUS, TASKS, task, progress[task], options, units[task] if units[task] > 1 else None)
-        took[task] = (time.time() - started[task], units[task])
-        return task, cases, lines
+        try:
+            return part, run_in_worker([sys.executable, os.path.abspath(__file__)], task, (out, part, task, CORPUS, TASKS, options, units[task], tagged[task]), progress[task])
+        except WorkerDied as died:
+            clear_part(out, part, task)
+            write_files(out, part, [(task, [], [death_line(task, died.status)])])
+            return part, []
 
     pool = ThreadPoolExecutor(workers)
-    futures = {t: pool.submit(run, t) for t in todo}
-    pending, results, ended, begin, last = set(futures.values()) | set(checking), [], len(done), time.time(), time.time()
+    futures = {t: pool.submit(run, t, k + i) for i, t in enumerate(todo)}
+    pending, ended, begin, last = set(futures.values()) | set(checking), len(done), time.time(), time.time()
     failure = None
     while pending and not failure:
         got, pending = wait(pending, timeout=max(0.0, last + 10 - time.time()), return_when=FIRST_COMPLETED)
@@ -384,22 +519,21 @@ def main(out, task_ids, previous=None, **options):
                     finish_part(out, checking[f], sorted(lines, key=lambda l: position[l.split(": ", 1)[0]]))
                     del open_parts[checking[f]]
             else:
-                results.append(f.result())
-        replaying = pending & set(futures.values())
-        if time.time() - last >= 10 or not replaying or failure:
-            if results and not failure:
-                pairs = write_files(out, k, results, took, tagged)
-                new = submit_checks(check_pool, workers, out, k, pairs) if pairs else []
+                part, pairs = f.result()
+                new = submit_checks(check_pool, workers, out, part, pairs) if pairs else []
                 if new:
-                    open_parts[k] = [pairs, set(new), []]
-                    checking.update({f: k for f in new})
+                    open_parts[part] = [pairs, set(new), []]
+                    checking.update({c: part for c in new})
                     pending |= set(new)
                 else:
-                    finish_part(out, k, [])
-                k, ended, results = k + 1, ended + len(results), []
+                    finish_part(out, part, [])
+                ended += 1
+        replaying = pending & set(futures.values())
+        if time.time() - last >= 10 or not replaying or failure:
             print_progress(begin, ended, len(task_ids), len(done), {t: (started[t], progress[t]) for t in list(started) if futures[t] in pending})
             last = time.time()
     if failure:
+        stop_workers()
         pool.shutdown(wait=False, cancel_futures=True)
         workers_running = list((check_pool._processes or {}).values())
         check_pool.shutdown(wait=False, cancel_futures=True)
@@ -407,8 +541,26 @@ def main(out, task_ids, previous=None, **options):
             process.kill()
         raise failure
     pool.shutdown()
+    close_workers()
     check_pool.shutdown()
     merge(out)
+
+
+def clear_part(out, k, task):
+    """Removes the files of part `k` and the values of `task`, which a worker process that died while it wrote them may have left."""
+    for f in glob.glob(f"{out}/parts/{k:05d}.*"):
+        os.remove(f)
+    shutil.rmtree(f"{out}/values/{task}", ignore_errors=True)
+
+
+def replay_part(payload, progress):
+    """The call of a worker process of `main`: replays the task of `payload` and writes it as its own part, but for the part's `checks.txt` and `tasks.txt`.
+    Gives the part's (task, case) pairs."""
+    out, k, task, corpus, tasks, options, units, tag = payload
+    clear_part(out, k, task)
+    start = time.time()
+    cases, lines = export_rows.replay(corpus, tasks, task, progress, options, units if units > 1 else None)
+    return write_files(out, k, [(task, cases, lines)], {task: (time.time() - start, units)}, {task: tag})
 
 
 def merge(out):
@@ -457,7 +609,9 @@ def export_streams(out, task, streams, names=None, settings=None, bodies=False, 
     merge(out)
 
 
-if __name__ == "__main__":
+if __name__ == "__main__" and sys.argv[1:2] == ["--worker"]:
+    serve(replay_part)
+elif __name__ == "__main__":
     args, options, ids = sys.argv[2:], {"projection_cap": 10000, "step_cap": 10000}, []
     while args:
         a = args.pop(0)
