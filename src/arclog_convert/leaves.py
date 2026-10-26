@@ -442,13 +442,16 @@ class Converter:
     def open_carriers_dropped(self, prog):
         """A relation whose columns are a case's and an open value's, with
         at least one of the latter, dropped with its positive reads: in a
-        model it holds the one open value, so a read of it tells nothing."""
+        model it holds the one open value, so a read of it tells nothing. A
+        check relation (`checks`) stays: it is read by no clause, and its
+        clauses are what the row-parity check compares."""
         if not self.open_types:
             return prog
         gone = set()
         cases = {"impl_choice"}   # the relations of a case's columns alone
+        checks = set(self.checks.values())
         for r in prog.relations:
-            if r.scope.components or not r.columns:
+            if r.scope.components or not r.columns or r.name in checks:
                 continue
             kinds = {lf.kind for col in r.columns for lf in self.leaves(col.name, col.type.name, False, (), {})}
             if not any(col.type.name in self.open_types for col in r.columns):

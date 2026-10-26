@@ -8,7 +8,19 @@ name stands for (`arclog_convert.names.folded`). Its check relation is declared
 in the scope of its clauses with the columns of the folded relation, and
 nothing reads it, so the converter writes its clauses as it writes those of
 any relation it does not fold, and the rest of the converted program is as it
-is without it."""
+is without it.
+
+A folded relation whose columns are a case's (`Converter.case_types`) and
+open values has the same kind of check relation. The converted program keeps
+no column of either kind, so the check relation has no column: each clause
+stands under the ALT its head's `Choice` fixes, as any clause of the
+converter does, and a read of the open value in its body is a read of the
+open parameter's `DET`. Where a clause reads no parameter, the relation
+holds one row in each case that clause is written for. The column map gives an
+empty list for each of its Souffle columns (`arclog_convert.names.check_maps`),
+so the row-parity check compares, in each case it runs, whether the relation
+has a row. `Converter.open_carriers_dropped` drops the clauses of every
+relation of such columns but a check relation."""
 
 from __future__ import annotations
 

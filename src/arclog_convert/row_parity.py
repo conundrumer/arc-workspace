@@ -83,7 +83,7 @@ from engine.pool import pool_size, share_env
 
 BASELINE = Path(__file__).with_name("row_parity.tsv")
 
-VERSION = 4
+VERSION = 5
 """The form of a record."""
 
 CORPUS = "gen_check"
