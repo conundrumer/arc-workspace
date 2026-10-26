@@ -61,7 +61,7 @@ r0 N N, r1 N C, r2 C S.
   from the others along one direction, so a head that has learned nothing still ranks them all one way or all the
   other. The two runs take about 30 s together.
 
-    work/lm/.venv/bin/python lm/value_check.py [--learn] [--lr=<lr>]
+    work/lm/.venv/bin/python lm/value_check.py [--learn] [--lr=<lr>] [--tables=<dir>]
 """
 import json, shutil, sys, tempfile, time
 from pathlib import Path
@@ -82,7 +82,8 @@ from train import fold_of
 
 FOLD = next(k for k in range(4) if k not in {fold_of("ta", 4), fold_of("tb", 4)})   # a fold of 4 with neither task
 LEARN = "--learn" in sys.argv[1:]
-ORIENT = [tuple(x) for x in json.load(open("work/tables/dev/orientations.json"))]
+TABLES = next((x.split("=", 1)[1] for x in sys.argv if x.startswith("--tables=")), "work/tables/dev")
+ORIENT = [tuple(x) for x in json.load(open(f"{TABLES}/orientations.json"))]
 N_ROWS, BRANCHES = 8, 16
 LR = float(next((x.split("=")[1] for x in sys.argv if x.startswith("--lr=")), 5e-4))
 UNIFORM = float(np.log(4))   # the ranking loss of equal scores on a list of 4 with 2 solving

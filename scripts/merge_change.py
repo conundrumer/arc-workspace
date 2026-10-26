@@ -161,8 +161,10 @@ worktree's `.gitignore` gives. Git ignores `work`, so the removal would
 delete the files under a worktree's own `work/`. Before it removes a
 worktree whose `work` is a directory, the script moves each file under it
 to the same path under the main tree's `work/`, where nothing stands there.
-Where a file stands at one of those paths, or at a directory above one,
-the worktree and its branch stay, and the script lists each file that
+A file that is a link to the main tree's file or directory at that path,
+or that holds the bytes of the file there, is removed with the worktree.
+Where another file stands at one of those paths, or at a directory above
+one, the worktree and its branch stay, and the script lists each file that
 stays. Where a move fails, or the worktree's `work` is neither a directory
 nor a link, they stay as well, and the script says why. A `work` that is
 a link is removed as the link alone.
@@ -226,6 +228,7 @@ a failed step, 2 when the call itself is malformed.
 """
 
 import argparse
+import filecmp
 import os
 import shutil
 import subprocess
@@ -698,16 +701,31 @@ def files_under(top: Path) -> list[Path]:
     return sorted(found)
 
 
+def holds_nothing_new(src: Path, dst: Path) -> bool:
+    """Whether the entry `src` leads to the same file or directory as `dst`,
+    or both are regular files, no link, of equal bytes (`filecmp.cmp` reads
+    them only where their sizes are equal)."""
+    if os.path.realpath(src) == os.path.realpath(dst):
+        return True
+    return (src.is_file() and dst.is_file()
+            and not src.is_symlink() and not dst.is_symlink()
+            and filecmp.cmp(src, dst, shallow=False))
+
+
 def move_work(main: Path, worktree: Path) -> list[str]:
     """Move each file under the worktree's `work/` to the same path under
     the main tree's `work/` (`checkout.work`), where nothing stands there;
     each path, from the worktree's root, of a file that stays, since a file
     or a link stands at its path under the main tree's `work/`, or a file
-    at a directory above it. The file comes to stand there whole or not at
-    all, and a file another process puts there first stays where it is. A
-    `work` that is a link is left to the removal, which deletes the link and
-    nothing it leads to. A `work` that is neither a directory nor a link is
-    a fault (`ValueError`)."""
+    at a directory above it. A file that holds nothing the main tree's
+    `work/` lacks is removed with no move: a link that leads to the same
+    file or directory as the main tree's path (`os.path.realpath`), or a
+    regular file whose bytes equal those of the main tree's regular file
+    there. The file comes to stand there whole or not at all, and a file
+    another process puts there first stays where it is. A `work` that is a
+    link is left to the removal, which deletes the link and nothing it
+    leads to. A `work` that is neither a directory nor a link is a fault
+    (`ValueError`)."""
     name = checkout.work().name
     work = worktree / name
     if work.is_symlink() or not os.path.lexists(work):
@@ -724,8 +742,9 @@ def move_work(main: Path, worktree: Path) -> list[str]:
             else:
                 os.link(src, dst)
         except (FileExistsError, NotADirectoryError):
-            stays.append(f"{name}/{rel}")
-            continue
+            if not holds_nothing_new(src, dst):
+                stays.append(f"{name}/{rel}")
+                continue
         src.unlink()
     return stays
 

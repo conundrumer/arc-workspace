@@ -5,10 +5,13 @@
 # pod runs first: it prints PASS portability, or FAIL portability and the line, for each machine-specific name. The
 # repo's document check (`controlled_markdown check`), which refuses a merge when it fails, runs with the rest.
 #
-#     lm/checks.sh [--full]
+#     [LM_PYTHON=<python>] [LM_TABLES=<dev export>] lm/checks.sh [--full]
+#
+# LM_PYTHON defaults to work/lm/.venv/bin/python and LM_TABLES to work/tables/dev.
 set -u
 cd "$(dirname "$0")/.."
-PY=work/lm/.venv/bin/python
+PY=${LM_PYTHON:-work/lm/.venv/bin/python}
+TABLES=${LM_TABLES:-work/tables/dev}
 LIMIT=${CHECK_TIMEOUT:-600}
 ENC_ARGS=()
 [ "${1:-}" = "--full" ] && ENC_ARGS=(--full)
@@ -26,10 +29,10 @@ run() {   # name, command...
 
 export HF_HUB_OFFLINE=1
 export OMP_NUM_THREADS=${OMP_NUM_THREADS:-2}   # the checks run small tensors; more threads only contend
-run encoder_check "$PY" lm/encoder_check.py ${ENC_ARGS[@]+"${ENC_ARGS[@]}"} &
-run insertion_check "$PY" lm/insertion_check.py &
+run encoder_check "$PY" lm/encoder_check.py "$TABLES" ${ENC_ARGS[@]+"${ENC_ARGS[@]}"} &
+run insertion_check "$PY" lm/insertion_check.py lm/data-dev "$TABLES" &
 run regression_check "$PY" lm/regression_check.py &
-run value_check "$PY" lm/value_check.py &
+run value_check "$PY" lm/value_check.py --tables="$TABLES" &
 run documents uv run python -m controlled_markdown check &
 wait
 
