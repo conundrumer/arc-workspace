@@ -76,7 +76,7 @@ written as a part. Writes to <out dir>:
                    task file, the copy flows' values against their source columns, the engine's rows against the declared rows of the registry's `copies`); a part is whole, with its `tasks.txt`, once its
                    checks are written; `python engine/arclog-py/export_checks.py <out dir> --all` checks an existing export the same way
   settings.json    the options the calls run under, written before the first task: {"projection_cap": N, "step_cap": N, "parts": [...]} with 10000 and 10000 (null for --step-cap 0, no cap)
-                   where no --projection-cap is given, each other option given, and the names of the parts the run writes
+                   where no --projection-cap is given, each other option given, and the names of the parts of the layout (`export_rows.PARTS`)
   report.txt       the fault lines, by task id
 The whole files hold the rows of the parts sorted by task, in the order of the parts within a task.
 A run on an out dir whose `settings.json` gives other options prints both and exits with status 2. Otherwise the

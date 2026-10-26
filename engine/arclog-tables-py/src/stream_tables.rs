@@ -4,7 +4,7 @@ use std::num::NonZeroUsize;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 
-use arclog::decode::corpus::{read_task_files, replay_panic, replay_units, ReplayProgress, StreamReplay, UnitSolver};
+use arclog::decode::corpus::{common_prefix, read_task_files, replay_panic, replay_units, ReplayProgress, StreamReplay, UnitSolver};
 use arclog::harness::{corpus_threads, run_on_workers};
 use arclog::registry::Registry;
 use arclog::stream::corpus::fault_line;
@@ -17,12 +17,6 @@ use pyo3::prelude::*;
 
 use crate::case_tables::{Base, PyCaseTables};
 use crate::record::StreamRecord;
-
-/// The length of the longest prefix that `a` and `b` share, as
-/// `arclog::decode::corpus` counts the prefix its replay shares.
-fn common_prefix(a: &[(u32, Emitter)], b: &[(u32, Emitter)]) -> usize {
-    a.iter().zip(b).take_while(|(x, y)| x == y).count()
-}
 
 /// The stream a stream is cut from, and the length of the prefix they share.
 type Cut = (usize, usize);

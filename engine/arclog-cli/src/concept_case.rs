@@ -1,10 +1,9 @@
 //! A case of a solver of the corpus, the concept case or the case that a
 //! snapshot's key names, checked and set up for its run on its task at its
 //! stored `param` records, with each `DET` by its clauses read from its
-//! clause: `lib-compare`, `speed` and `determinism` run the concept case,
-//! `row-parity` each case its rows file gives. It holds as well the parts of
-//! that setup that `determine` shares for each base case: the limits of a
-//! run.
+//! clause. It holds the parts of that setup that its callers share: the read
+//! of the solver and its task, the check of a case, the case sets
+//! (`determined_cases`) and the limits of a run (`corpus_limits`).
 
 use std::path::Path;
 use std::time::Instant;

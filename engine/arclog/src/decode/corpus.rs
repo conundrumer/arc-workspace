@@ -260,7 +260,7 @@ pub fn sorted_streams(streams: &[Vec<(u32, Emitter)>]) -> Vec<usize> {
 }
 
 /// The length of the longest prefix that `a` and `b` share.
-fn common_prefix(a: &[(u32, Emitter)], b: &[(u32, Emitter)]) -> usize {
+pub fn common_prefix(a: &[(u32, Emitter)], b: &[(u32, Emitter)]) -> usize {
     a.iter().zip(b).take_while(|(x, y)| x == y).count()
 }
 
