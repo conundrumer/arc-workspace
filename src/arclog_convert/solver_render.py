@@ -760,7 +760,7 @@ class RenderMixin:
         adds = {f.name for f in fs if f.side == "RULE" and f.lines[0].startswith("(RULE ") and f.name not in reps
                 and all(g.side == "RULE" and g.lines[0].startswith("(RULE ") and g.cols == f.cols
                         for g in main if g.name == f.name)}
-        redo = self.dead_clauses(main, empty, mine, out, others_k, adds)
+        fs, redo = self.dead_clauses(main, fs, empty, mine, out, others_k, adds)
         fs = fs + redo
         # a relation that no form of this case derives is empty in it: a
         # form of the alt that reads one is written again without it

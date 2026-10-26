@@ -1,7 +1,7 @@
 """The output forms of a converted solver (`Form`, `Dead`, `Todo`), the parameter
 writers, the text of a comment or a quoted gloss, and the passes on the output
 text: the merge of forms, the fold of `or` lines, the drop of key sites, the
-relabeling and the hoist of shared forms."""
+drop of zero columns, the relabeling and the hoist of shared forms."""
 
 from __future__ import annotations
 
@@ -433,20 +433,30 @@ def made_at_site(lines: list[str], x: str) -> bool:
 OPS_ = {"=", "!=", "<", "<=", ">", ">="}
 
 
+def top_zeros(f: "Form") -> set[str]:
+    """The head columns that the clause of a `RULE` or a `DET` makes `0` with
+    an `(= *X 0)` at the top level of its body."""
+    if not f.lines[0].startswith(("(RULE ", "(DET ")):
+        return set()
+    return {m.group(1) for l in f.lines[1:] if (m := re.fullmatch(r"  \(= \*(\w+) 0\)\)*", l))} & set(f.cols)
+
+
 def without_repeats(f: "Form", drop: dict[str, str]) -> "Form":
     """The form without the `(= *X Y)` lines that repeat a dropped column
-    X, and without those columns, its body reading Y for X."""
-    lines: list[str] = []
-    for l in f.lines:
-        m = next((re.fullmatch(rf"\s*\(= \*{x} {y}\)(\)*)", l) for x, y in drop.items()
-                  if re.fullmatch(rf"\s*\(= \*{x} {y}\)(\)*)", l)), None)
-        if m is None:
-            lines.append(l)
-        elif m.group(1):
-            lines[-1] += m.group(1)   # the form's closers move to the line before
-    # the body reads the column the dropped one repeats
-    lines = relabel(lines, lambda mark, v: drop[v] if v in drop else mark + v)
-    new = dc_replace(f, lines=lines)
+    X, and without those columns, its body reading Y for X; Y is `0` for a
+    column that the clause makes `0`."""
+    def without(lines: list[str]) -> list[str]:
+        out: list[str] = []
+        for l in lines:
+            m = next((re.fullmatch(rf"\s*\(= \*{x} {y}\)(\)*)", l) for x, y in drop.items()
+                      if re.fullmatch(rf"\s*\(= \*{x} {y}\)(\)*)", l)), None)
+            if m is None:
+                out.append(l)
+            elif m.group(1):
+                out[-1] += m.group(1)   # the form's closers move to the line before
+        # the body reads the column the dropped one repeats
+        return relabel(out, lambda mark, v: drop[v] if v in drop else mark + v)
+    new = dc_replace(f, lines=without(f.lines), body=None if f.body is None else without(f.body))
     new.cols = [c_ for c_ in f.cols if c_ not in drop]
     return new
 
@@ -455,7 +465,8 @@ def read_without(lines: list[str], rel: str, drop: dict[str, str]) -> list[str] 
     """The lines with each one-line read of `rel` leaving out the dropped
     columns, and the label each named relabeled to the label at the column
     it repeats, or, where the read names no label there, standing at that
-    column; None where a read is not one line."""
+    column; a column that `drop` gives as `0` is left out, its label
+    relabeled `0`; None where a read is not one line."""
     ren: dict[str, str] = {}
     out = []
     for l in lines:
@@ -498,17 +509,207 @@ def read_without(lines: list[str], rel: str, drop: dict[str, str]) -> list[str] 
         for it in items:
             col, lab, mark = col_lab(it)
             if col in drop:
-                if drop[col] not in labs:
+                if drop[col] == "0":
+                    ren[lab] = "0"
+                elif drop[col] not in labs:
                     # the read takes the label at the column the dropped one repeats
                     kept.append(f"(:{drop[col]} {mark}{lab})")
-                    continue
-                ren[lab] = labs[drop[col]]
+                else:
+                    ren[lab] = labs[drop[col]]
                 continue
             kept.append(it)
         out.append(l[:i] + "(" + " ".join([rel] + kept) + l[j:])
     if not ren:
         return out
     return relabel(out, lambda mark, v: (mark if v not in ren else "") + ren.get(v, v))
+
+
+def without_atom(lines: list[str], rel: str) -> list[str] | None:
+    """The lines without each read of `rel` that has no site and stands
+    alone on its line; None where a read of `rel` stands any other way."""
+    out: list[str] = []
+    for l in lines:
+        m = re.fullmatch(rf"\s*\({re.escape(rel)}\)(\)*)", l)
+        if m is None:
+            out.append(l)
+        elif m.group(1):
+            out[-1] += m.group(1)   # the form's closers move to the line before
+    if any(re.search(rf"\({re.escape(rel)}[ )]", l) for l in out if not l.lstrip().startswith(";;")):
+        return None
+    return out
+
+
+def with_lines(f: "Form", fn) -> "Form | None":
+    """The form with `fn` applied to its lines and to its body; None where
+    `fn` gives None."""
+    lines = fn(f.lines)
+    body = None if f.body is None else fn(f.body)
+    if lines is None or (f.body is not None and body is None):
+        return None
+    return dc_replace(f, lines=lines, body=body)
+
+
+ZERO_TYPES = ("number", "Box", "Position", "Offset")
+
+
+def zero_barrier(lines: list[str], x: str, top: dict[str, list[tuple[str, str]]]) -> str | None:
+    """What keeps the label X from standing as `0` in the clause `lines`, as
+    a phrase that says where X stands, or None.
+    `0` is no key site, no label of an input's head, no first label of a
+    constraint, and it stands only on a column of `top`, the lib's relations
+    with their columns and types, whose type is in `ZERO_TYPES`."""
+    from arclog_convert.lint import L, Sym, read
+    try:
+        form = read("\n".join(lines))[0]
+    except (SyntaxError, IndexError):
+        return "the clause does not read"
+
+    def named(node) -> bool:
+        return any(isinstance(it, Sym) and it.text.lstrip("*^") == x
+                   for it in (node.items if isinstance(node, L) else [node]))
+
+    def mentions(node) -> bool:
+        return named(node) or (isinstance(node, L) and any(mentions(it) for it in node.items))
+
+    def symbols(node) -> set[str]:
+        return {node.text} if isinstance(node, Sym) else \
+            set().union(*(symbols(it) for it in node.items)) if isinstance(node, L) else set()
+
+    def sites(atom: L):
+        """Each (column, labels) of the atom's sites."""
+        for it in atom.items[1:]:
+            if isinstance(it, Sym):
+                yield it.text.lstrip("*^"), [it]
+            elif isinstance(it, L) and (it.head or "").startswith(":"):
+                yield it.head[1:], it.items[1:]
+
+    def why(node: L) -> str | None:
+        cols = {pascal(n): t for n, t in top.get(node.head or "", [])}
+        if node.head in OPS_ and len(node.items) > 2 and named(node.items[1]) \
+                and not (isinstance(node.items[2], Sym) and node.items[2].text == "0"):
+            return "it is the first label of a constraint"
+        for col, labels in sites(node):
+            if col in cols and cols[col] not in ZERO_TYPES and any(named(y) for y in labels):
+                return f"it stands at the {col} column of {node.head}, which is a {cols[col]}"
+        return next(filter(None, (why(it) for it in node.items if isinstance(it, L))), None)
+    if form.head == "INIT" and any(
+            part.head != "key" and len(part.items) > 1 and mentions(part.items[1])
+            for part in form.items[3:] if isinstance(part, L)):
+        return "it stands in an input's head"
+    return "it stands at a key site" if f"^{x}" in symbols(form) else why(form)
+
+
+class ZeroDrop:
+    """The drop, in an alt's forms, of each column that a relation of the alt
+    makes `0` with `(= *X 0)` in every clause. `own` and `redo` are the alt's
+    forms and `rest` the concept's forms that the alt leaves alone, by
+    relation. Each form that reads the relation reads `0` in place of the
+    label at that column. A column of a reader that was that label is `0` in
+    the reader too, and is left out where it is `0` in every clause of the
+    reader's relation. A relation left with no column and no atom is true,
+    and no form: the reads of it leave out its atom. A column stays, and a
+    note says why, where a reader's label at it stands at a site that `0`
+    may not (a head site of a relation that has other values there, a key
+    site, an input's head, a column of another type than a number, `Box`,
+    `Position` or `Offset`) or in a read that is not one line, since the
+    reader would then read a column that the relation has not. `top` gives
+    the columns and their types of the lib's relations."""
+
+    def __init__(self, top: dict[str, list[tuple[str, str]]], own: list["Form"], redo: list["Form"],
+                 rest: dict[str, list["Form"]]) -> None:
+        self.top, self.own, self.redo, self.rest = top, own, redo, rest
+        self.alt: dict[str, list[Form]] = defaultdict(list)
+        for f in own + redo:
+            self.alt[f.name].append(f)
+        self.rederived = set(self.alt)
+        for name, fs in rest.items():
+            self.alt.setdefault(name, fs)
+        self.kept: dict[str, set[str]] = defaultdict(set)   # relation -> its zero columns that stay
+        self.why: dict[tuple[str, str], str] = {}   # relation, column -> why the column stays
+        self.notes: list[str] = []
+
+    def gone(self, f: "Form", rel: str, cols: set[str]) -> set[str] | None:
+        """The labels of `f` that leave with the columns `cols` of its reads
+        of `rel`; None where a read is not one line."""
+        lines = read_without(f.lines, rel, dict.fromkeys(cols, "0"))
+        return None if lines is None else label_names(f.lines) - label_names(lines)
+
+    def columns(self) -> dict[str, set[str]]:
+        """For each relation, the columns that every clause has as `0`."""
+        zero: dict[str, set[str]] = {}
+
+        def zero_at(f: Form) -> set[str]:
+            made = top_zeros(f) if f.name in self.rederived else set()
+            made |= {x for rel in f.reads & zero.keys() for x in self.gone(f, rel, zero[rel]) or ()} & set(f.cols)
+            return {c for c in made if zero_barrier(f.lines, c, self.top) is None}
+        while True:
+            now = {name: set.intersection(*map(zero_at, fs)) - self.kept[name] for name, fs in self.alt.items()}
+            now = {name: cols for name, cols in now.items() if cols}
+            if now == zero:
+                return zero
+            zero = now
+
+    def rewritten(self, f: "Form", zero: dict[str, set[str]]) -> tuple["Form", set[tuple[str, str]]]:
+        """The form with the zero columns left out, and the columns of the
+        relations it reads that must stay."""
+        keep: set[tuple[str, str]] = set()
+        for rel in sorted(f.reads & zero.keys()):
+            for c in sorted(zero[rel]):
+                xs = self.gone(f, rel, {c})
+                if xs is None:
+                    self.why[rel, c] = f"{f.name} reads {rel} in more than one line"
+                    keep.add((rel, c))
+                for x in sorted(xs or ()):
+                    if barrier := zero_barrier(f.lines, x, self.top):
+                        self.why[rel, c] = f"{f.name} reads {rel} at its column {c}, which is 0, and {x} may not be 0: {barrier}"
+                        keep.add((rel, c))
+                    elif x in f.cols and x not in zero.get(f.name, ()):
+                        keep.add((rel, c))
+        for rel in sorted(f.reads & zero.keys()):
+            if not any(r == rel for r, _ in keep):
+                f = with_lines(f, lambda ls: read_without(ls, rel, dict.fromkeys(zero[rel], "0"))) or f
+        return (without_repeats(f, dict.fromkeys(zero[f.name], "0")) if f.name in zero else f), keep
+
+    def attempt(self, zero: dict[str, set[str]]) -> tuple[dict[int, "Form"], set[str], set[tuple[str, str]]]:
+        """Each form of the alt, by its id, with the zero columns left out,
+        the relations left with no column and no atom, and the columns that
+        must stay."""
+        done: dict[int, Form] = {}
+        keeps: set[tuple[str, str]] = set()
+        for fs in self.alt.values():
+            for f in fs:
+                done[id(f)], more = self.rewritten(f, zero)
+                keeps |= more
+        bare = {name for name in zero
+                if all(not done[id(f)].cols and len(done[id(f)].lines) == 1 for f in self.alt[name])}
+        for key, f in list(done.items()):
+            for rel in sorted(f.reads & bare):
+                g = with_lines(done[key], lambda ls: without_atom(ls, rel))
+                if g is None:
+                    self.why[rel, min(zero[rel])] = \
+                        f"{f.name} reads {rel}, which is true and has no column, other than as an atom of its own line"
+                    keeps |= {(rel, c) for c in zero[rel]}
+                else:
+                    done[key] = g
+        return done, bare, keeps
+
+    def run(self) -> tuple[list["Form"], list["Form"]]:
+        """The alt's forms `own` and `redo` with the zero columns left out,
+        and in `redo` the forms of `rest` that read them; `notes` gives each
+        column that stays."""
+        while True:
+            zero = self.columns()
+            done, bare, keeps = self.attempt(zero) if zero else ({}, set(), set())
+            if not keeps:
+                break
+            for rel, c in keeps:
+                self.kept[rel].add(c)
+        self.notes = [text for (rel, c), text in sorted(self.why.items()) if c in self.kept[rel]]
+        if not zero:
+            return self.own, self.redo
+        moved = [f for fs in self.rest.values() if any(done[id(f)] is not f for f in fs) for f in fs]
+        remaining = lambda fs: [done[id(f)] for f in fs if f.name not in bare]
+        return remaining(self.own), remaining(self.redo + moved)
 
 
 def relabel(lines: list[str], fn) -> list[str]:

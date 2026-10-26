@@ -25,6 +25,7 @@ from arclog_convert import paths
 
 from arclog_convert.forms import (
     Form,
+    ZeroDrop,
     close,
     comment_text,
     directives,
@@ -88,10 +89,12 @@ class CasesMixin:
             out.append(parent)
             cur = parent[0]
 
-    def dead_clauses(self, main: list[Form], empty: set[str], mine: set[str], out: list[str],
-                     others: set[str] = frozenset(), adds: set[str] | frozenset[str] = frozenset()) -> list[Form]:
-        """The alt's rederivations of the concept relations whose clauses
-        read a relation the alt derives no rows of: a clause that reads
+    def dead_clauses(self, main: list[Form], own: list[Form], empty: set[str], mine: set[str], out: list[str],
+                     others: set[str] = frozenset(), adds: set[str] | frozenset[str] = frozenset()
+                     ) -> tuple[list[Form], list[Form]]:
+        """The alt's own forms `own`, as `ZeroDrop` gives them, and
+        the alt's rederivations of the concept relations whose clauses read
+        a relation the alt derives no rows of: a clause that reads
         one positively is dead, a `NOT` of one holds and is dropped, and a
         relation all of whose clauses are dead is empty too. A clause whose
         head fixes one of `others`, the point's other constructors, holds
@@ -196,6 +199,12 @@ class CasesMixin:
                 lines = read_without(redo[i].lines, n, reps[n])
                 if lines is not None:
                     redo[i] = dc_replace(redo[i], lines=lines)
+        rest = {n: [f if revived(f) else f.concept_form or f for f in fs]
+                for n, fs in groups.items() if n not in empty and n not in mine}
+        zeros = ZeroDrop(self.c.sig.top, own, redo, rest)
+        own, redo = zeros.run()
+        out.extend(f"    ;; TODO zero-column: {text}" for text in zeros.notes)
+        self.todo.kinds["zero-column"] += len(zeros.notes)
         # a rederivation the same as the concept's is no rederivation
         concept_lines: dict[str, list] = defaultdict(list)
         for f in main:
@@ -208,7 +217,7 @@ class CasesMixin:
         if "&out" in empty:
             out.append("    ;; TODO alt-undefined: every &output clause reads a relation this alt leaves empty")
             self.todo.kinds["alt-undefined"] += 1
-        return redo
+        return own, redo
 
     # ---- arcdata
 
