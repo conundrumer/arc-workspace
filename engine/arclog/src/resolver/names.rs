@@ -218,6 +218,14 @@ impl Names {
         }
     }
 
+    /// Whether the content of `node` is left for its first read.
+    pub(super) fn is_unwritten(&self, node: usize) -> bool {
+        match &self.earlier {
+            Some(earlier) if node < self.first_node() => earlier.names.is_unwritten(node),
+            _ => self.unwritten.get(node - self.first_node()).is_some_and(Option::is_some),
+        }
+    }
+
     /// The columns of `node`, where they are known.
     pub(super) fn node_columns_of(&self, node: usize) -> Option<&Columns> {
         match &self.earlier {
@@ -456,12 +464,14 @@ impl NameWriter for Writer<'_> {
                 RelationRef::Declared(_) | RelationRef::Output(_) => self.names.find(self.scope, relation),
                 RelationRef::Fact(_) | RelationRef::Lib(_) | RelationRef::DefinedPort(_) => None,
             };
-            match target.map(|target| self.names.node_content(target.node.0 as usize).expect("a content slot for each node")) {
+            let node = target.map(|target| target.node.0 as usize);
+            match node.map(|node| self.names.node_content(node).expect("a content slot for each node")) {
                 Some(Some(content)) => {
                     out.write(&[Mark::Content as u8]);
                     out.write(&content.hash.0.to_le_bytes());
                 }
                 Some(None) => {
+                    debug_assert!(node.is_some_and(|node| !self.names.is_unwritten(node)), "a write reads the content of a node left unwritten");
                     out.write(&[Mark::Open as u8]);
                     return AsWritten.write_name(relation, out);
                 }

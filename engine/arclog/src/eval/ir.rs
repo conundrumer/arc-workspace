@@ -375,7 +375,13 @@ fn form_types<'p>(program: &'p CheckedProgram, form: &NodePath) -> &'p FormTypes
 /// The modes of the relation `atom` reads: an algebra relation's or a
 /// relation macro's, and none for every other relation.
 pub fn atom_modes<'r>(registry: &'r Registry, atom: &Atom) -> &'r [Mode] {
-    let RelationRef::Lib(name) = &atom.relation else { return &[] };
+    relation_modes(registry, &atom.relation)
+}
+
+/// The modes of `relation`: an algebra relation's or a relation macro's,
+/// and none for every other relation.
+pub fn relation_modes<'r>(registry: &'r Registry, relation: &RelationRef) -> &'r [Mode] {
+    let RelationRef::Lib(name) = relation else { return &[] };
     registry.algebra_relation(name).map_or(&[], |relation| &relation.modes)
 }
 

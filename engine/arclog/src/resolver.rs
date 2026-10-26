@@ -250,6 +250,12 @@ struct ConceptForms {
 }
 
 impl ResolvedProgram {
+    /// The node that `relation`, read in the program's scope, resolves to,
+    /// where the program declares it.
+    pub fn program_read(&self, relation: &RelationRef) -> Option<GraphNodeIndex> {
+        self.names.find(&crate::program::NameScope::Program, relation).map(|target| target.node)
+    }
+
     /// What the name read at `path` resolves to. Each path that a method of
     /// `ResolvedProgram` takes walks as [`crate::program::path::node_at`]
     /// gives.

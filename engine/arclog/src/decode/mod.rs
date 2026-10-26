@@ -10,9 +10,11 @@
 //! whose step opens an atom are one program but for the atom's relation,
 //! which holds no site yet, so they share the labels and their types, the
 //! bindings of the conjuncts before the atom, and the result of each check
-//! that reads nothing of that relation ([`Candidate::AtomHead`]), and the candidates that open an
-//! atom of a lib relation, a relation macro or a relation of the program take one
-//! resolution of the form in progress, retargeted to each one's relation. The mask keeps the state and
+//! that reads nothing of that relation ([`Candidate::AtomHead`]); the candidates
+//! that open an atom share as well the result of each check that reads the
+//! relation, by the class of that relation (`RelationClass`), and take one
+//! resolution of the form in progress, retargeted to each one's relation,
+//! where a result is not shared. The mask keeps the state and
 //! forced tokens of each admitted token, which the step of that token takes.
 //! It admits a constraint's operator, or first label, only where some
 //! completion of the constraint passes the checks (`Decoder::completes`), and a
@@ -418,7 +420,7 @@ impl<'a> Decoder<'a> {
             return Ok(());
         }
         let resolved = resolve_last(&self.state.resolved(self.context.registry), &program, self.context.registry);
-        match checks.check(&resolved, open.as_ref(), candidate) {
+        match checks.check(&resolved, open.as_ref(), candidate, None) {
             Some((check, refusals)) => Err(Refusal::Check { check, refusals }),
             None => Ok(()),
         }

@@ -205,7 +205,7 @@ impl ResolvedProgram {
         match relation {
             RelationRef::Lib(lib) => registry.entry(lib).is_some().then(|| Target::Lib(lib.clone())),
             RelationRef::Declared(_) | RelationRef::Output(_) => {
-                let node = self.names.find(&NameScope::Program, relation)?.node;
+                let node = self.program_read(relation)?;
                 ((node.0 as usize) < self.names.first_node()).then_some(Target::Node(node))
             }
             RelationRef::Fact(_) | RelationRef::DefinedPort(_) => None,
