@@ -114,6 +114,7 @@ Every element of the lib is one of these kinds, and each kind has its own test.
     - `source`, where something starts
     - `before`, a strict order
     - `score`, a number that orders
+    - `secondary_score`, a number that orders within each tie of `score`
 - Names use whole words. An abbreviation is used only in one of these cases:
     - a reader of the lib already knows it: `id`, `max`, `min`, `dist`, `diag`, `perp`, the D4 constant scheme
     - a long word recurs across many names and its short form is unmistakable
@@ -254,7 +255,10 @@ Order takes the order in either of two forms:
 
 - `before(key, a, b)`, a strict order the caller states, read over `member`
 - `score(key, t, s)`, a number per member; the order is the preorder it induces, and the lib compares scores and materializes no pairs
-- `probe(key, t)`, in either form, a member ranked by its `before` rows or its score and not counted among the members
+    - `secondary_score(key, t, s)`, optional, a number per member that orders the members within each tie of `score`: members compare by `score`, and within a tie by `secondary_score`. A member with a `score` and no `secondary_score` row precedes the members of its tie that have one.
+- `probe(key, t)`, in either form, a member ranked by its `before` rows or in the score form and not counted among the members
+
+A nested order of any depth is a composition over Order: the outer Order's rank goes to `score`, and the rank of an inner Order keyed by the outer class goes to `secondary_score`. A third level chains one more Order in the inner one.
 
 | Name | Extensional | Exported | Operation |
 | --- | --- | --- | --- |
@@ -263,7 +267,7 @@ Order takes the order in either of two forms:
 | Singleton | `member` | `value`, `plural` | the one value of the set, absent when the members disagree |
 | Inclusion | `pattern`, `observed` | `superset`, `equal` | each observed set against the stored patterns, by count equality; the pattern side is keyed, and the enumeration ranges over pairs that share a member |
 | Quotient | `equivalent`, or `edge` | `class` | one class id per equivalence class; `edge` gives a generating relation, which the construction closes inside its body |
-| Order | `member`, `before` or `score`, `probe` | `rank`, `dual_rank`, `minimal`, `maximal`, `successor`, `cyclic_successor` | rank, the count of predecessors; dual rank, the count of successors; minimal and maximal, the elements nothing precedes or follows, all of them under ties; successor, the immediate successor; cyclic successor, the order closed from the last to the first |
+| Order | `member`, `before` or `score`, `secondary_score`, `probe` | `rank`, `dual_rank`, `minimal`, `maximal`, `successor`, `cyclic_successor` | rank, the count of predecessors; dual rank, the count of successors; minimal and maximal, the elements nothing precedes or follows, all of them under ties; successor, the immediate successor; cyclic successor, the order closed from the last to the first |
 | Walk | `successor`, `steps` | `walk` | the element n successors from a start, bounded by the counts in use |
 | Unfold | `start`, `initial_taken`, `initial_untaken`, `conflict`, `score`, `step`, `skip`, `take` | `taken`, `untaken`, `excluded`, and `take` where `score` is given | the state along a walk the state may choose: a partition, one item crossing per `step` and none per `skip`; `step`, `skip` and `take` may read the outputs, and the inputs that bind the types stand before them; with `conflict`, a relation over items, the items in conflict with a take leave `untaken` as `excluded`, without joining `taken`; with `score`, a number per state and item, the item taken at a state is the untaken item of least score, ties fork the walk, each walk is one tiebreak resolution, and walks that reach states of equal content merge |
 | Propagation | `source`, `edge`, `join` | `reached` | forward chaining: a source is reached, an `edge` reaches its head once its tail is reached, and a `join` reaches its head once both its tails are; keyed by the start node, with that node as its source, `reached` is the closure of `edge` |
@@ -313,7 +317,7 @@ Order takes the order in either of two forms:
     - by `before`: 2.1 s
     - by `score`: 0.16 s for `minimal`, 0.6 s for `rank`, 0.2 s for `successor`
     - the present `Extremes`: 0.1 s
-    - Placement families reach thousands of elements, so a site that orders by a number uses the score form.
+    - Placement families reach thousands of elements, so a site that orders by a number, or by two lexicographically, uses the score form.
 - The implementation mechanisms, each behind its interface:
     - The algebras run on functors.
     - The closure and propagation rows, Distance, Connectivity, UnitPropagation, PathInverseConsistency, run as lattice relations: one value per key, joined under `Lub`, so a minimum or a shrinking candidate set is a clause.
