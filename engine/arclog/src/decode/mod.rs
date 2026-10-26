@@ -11,7 +11,7 @@
 //! which holds no site yet, so they share the labels and their types, the
 //! bindings of the conjuncts before the atom, and the result of each check
 //! that reads nothing of that relation ([`Candidate::AtomHead`]), and the candidates that open an
-//! atom of a lib relation, a relation macro, a proposer or a relation of the program take one
+//! atom of a lib relation, a relation macro or a relation of the program take one
 //! resolution of the form in progress, retargeted to each one's relation. The mask keeps the state and
 //! forced tokens of each admitted token, which the step of that token takes.
 //! It admits a constraint's operator, or first label, only where some
@@ -358,7 +358,7 @@ impl<'a> Decoder<'a> {
         }
         if let Some((program, open)) = state.partial() {
             if !program.value().forms.is_empty() {
-                if let (Some(open), true, Token::Lib(_) | Token::Proposer(_) | Token::Relation(_)) = (&open, opened.is_some(), token) {
+                if let (Some(open), true, Token::Lib(_) | Token::Relation(_)) = (&open, opened.is_some(), token) {
                     let relation = state.open_relation().expect("an atom stands open");
                     if let Some((check, refusals)) = checks.check_atom_head(&earlier(), &program, open, &relation) {
                         return Err(Refusal::Check { check, refusals });

@@ -538,7 +538,7 @@ impl State {
     fn offer(&mut self, context: &Context<'_>, token: &Token, forced: &mut Vec<Token>) -> Result<Offer, Unexpected> {
         match self.stack.last() {
             None => self.open_form(token, forced),
-            Some(Frame::Clause(_)) => self.offer_clause(context, token),
+            Some(Frame::Clause(_)) => self.offer_clause(token),
             Some(Frame::One(_)) => match token {
                 Token::Label(id) if *id < self.labels => {
                     top!(self, Frame::One).push(LabelId(*id));
@@ -601,21 +601,13 @@ impl State {
         Ok(Offer::Taken)
     }
 
-    /// A clause's proposers, which a column token after the last of them
-    /// makes an atom of the body, and its marks and `END`.
-    fn offer_clause(&mut self, context: &Context<'_>, token: &Token) -> Result<Offer, Unexpected> {
+    /// A clause's proposers, and its marks and `END`.
+    fn offer_clause(&mut self, token: &Token) -> Result<Offer, Unexpected> {
         let clause = top!(self, Frame::Clause);
         match (&clause.stage, token) {
             (ClauseStage::Proposers, Token::Proposer(name)) => {
                 clause.proposers.push(name.clone());
                 Ok(Offer::Taken)
-            }
-            (ClauseStage::Proposers, Token::Column(_)) if !clause.proposers.is_empty() => {
-                let proposer = clause.proposers.pop().expect("a proposer");
-                clause.stage = ClauseStage::Body;
-                self.push_body(Close::Clause, false);
-                self.open_atom(context, &Token::Proposer(proposer))?;
-                Ok(Offer::Again)
             }
             (ClauseStage::Proposers, _) => {
                 clause.stage = ClauseStage::Body;
@@ -683,9 +675,8 @@ impl State {
     /// Opens the atom of the relation token `token`.
     fn open_atom(&mut self, context: &Context<'_>, token: &Token) -> Result<(), Unexpected> {
         let registry = context.registry;
-        let lib = |name: &LibName, proposer: bool| match registry.entry(name) {
-            Some(LibEntry::Proposer(_)) if proposer => Ok(RelationRef::Lib(name.clone())),
-            Some(LibEntry::Relation(_) | LibEntry::Macro(_)) if !proposer && component(registry, name).is_none() => Ok(RelationRef::Lib(name.clone())),
+        let lib = |name: &LibName| match registry.entry(name) {
+            Some(LibEntry::Relation(_) | LibEntry::Macro(_)) if component(registry, name).is_none() => Ok(RelationRef::Lib(name.clone())),
             _ => Err("the lib name is no relation"),
         };
         let (relation, columns): (RelationRef, Arc<[ColumnName]>) = match token {
@@ -701,8 +692,7 @@ impl State {
                 (relation, declared.columns.clone())
             }
             Token::Fact(fact) => (RelationRef::Fact(*fact), Arc::from([])),
-            Token::Lib(name) => (lib(name, false)?, Arc::from([])),
-            Token::Proposer(name) => (lib(name, true)?, Arc::from([])),
+            Token::Lib(name) => (lib(name)?, Arc::from([])),
             _ => return Err("an atom opens with its relation"),
         };
         let columns = match token {
@@ -1402,7 +1392,7 @@ fn child_step(frame: &Frame, above: &Frame) -> u32 {
 
 /// Whether `token` opens an atom.
 fn is_relation(token: &Token) -> bool {
-    matches!(token, Token::Lib(_) | Token::Proposer(_) | Token::Fact(_) | Token::Relation(_))
+    matches!(token, Token::Lib(_) | Token::Fact(_) | Token::Relation(_))
 }
 
 /// Whether `column` is a column of a type parameter, whose bare labels

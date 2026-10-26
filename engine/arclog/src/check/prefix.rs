@@ -224,7 +224,7 @@ impl PrefixChecks<'_> {
 
     /// [`PrefixChecks::check`] with [`Candidate::AtomHead`] for the prefix
     /// whose last token opens, at `open`, an atom of `relation`, a lib
-    /// relation, relation macro or proposer, or a relation declared or
+    /// relation or relation macro, or a relation declared or
     /// output by a form of `program`, where `earlier` is the resolution of
     /// the forms before the last of `program`. The candidates of one mask
     /// at one open path share one resolution of the form in progress,
