@@ -16,6 +16,14 @@
 //! element that does, the assembly has no value, and each output is
 //! `undefined`.
 //!
+//! Where a key column holds the assembly's own Idents, the renaming also
+//! takes the frame's key onto the instance's key, and the instances whose
+//! readings and keys are images of one another form one class, which
+//! takes the place of a key: its frame is the reading of its instance
+//! least by content, its key is that instance's key, and each output
+//! holds the class's key. Where two classes hold instances at one key, the
+//! assembly has no value.
+//!
 //! A part's site that holds a bare label of the `instance` clause selects
 //! the part's rows at an instance and gives the part no column, so an
 //! instance's reading of the part is the part's rows at that instance's
@@ -101,8 +109,30 @@ struct Instance {
     reading: Vec<RowSet>,
 }
 
-/// What [`Assembly::solve`] gives: each key's frame, a reading in the order
-/// of the parts, and each instance's row with its D4 elements.
+impl Instance {
+    /// The instance's key, the first `key_width` columns of its row, and
+    /// its reading.
+    fn view(&self, key_width: usize) -> View<'_> {
+        View { key: &self.row[..key_width], parts: &self.reading }
+    }
+}
+
+/// What [`Assembly::classes`] gives: the key of each instance's class, in
+/// the order of the instances, and each class's frame at its key.
+struct Classes {
+    keys: Vec<Row>,
+    frames: StableHashMap<Row, Vec<RowSet>>,
+}
+
+/// A key and a reading, the rows of each part in the order of the parts.
+struct View<'v> {
+    key: &'v [TermId],
+    parts: &'v [RowSet],
+}
+
+/// What [`Assembly::solve`] gives: each class's frame, a reading in the
+/// order of the parts, at the class's key, and, for each instance, its row
+/// at its class's key, with its D4 elements.
 struct Solution {
     frames: StableHashMap<Row, Vec<RowSet>>,
     poses: Vec<(Row, Vec<TermId>)>,
@@ -115,6 +145,8 @@ struct Assembly<'e, 'p> {
     form: &'e NodePath,
     key: Option<(&'p Body, NodePath)>,
     key_labels: Vec<LabelId>,
+    key_types: Vec<ValueType>,
+    key_own: Vec<bool>,
     instance: Option<(&'p Body, NodePath)>,
     instance_labels: Vec<LabelId>,
     parts: Vec<Part<'p>>,
@@ -140,6 +172,8 @@ impl<'e, 'p> Assembly<'e, 'p> {
         let (key, key_labels) = clause(&rigid.key).unzip();
         let (instance, instance_labels) = clause(&rigid.instance).unzip();
         let (key_labels, instance_labels) = (key_labels.unwrap_or_default(), instance_labels.unwrap_or_default());
+        let key_types = typed(&key_labels)?;
+        let key_own = own_flags(types_of, &key_labels, &key_types);
         let mut parts = Vec::with_capacity(rigid.parts.len());
         for (atom, index) in rigid.parts.iter().zip(clauses..) {
             let mut labels = Vec::new();
@@ -150,10 +184,10 @@ impl<'e, 'p> Assembly<'e, 'p> {
                 return Err(fault("a part's site holds a label of the `instance` clause inside a term of other labels, whose column `docs/arclog/rigid.md#semantics` gives no value in the part's output".into()));
             }
             let types = typed(&labels)?;
-            let own = labels.iter().zip(&types).map(|(&label, ty)| *ty == ValueType::Ident && types_of.is_own_ident(label)).collect();
+            let own = own_flags(types_of, &labels, &types);
             parts.push(Part { atom, path: form.child(index), labels, types, own });
         }
-        Ok(Assembly { program, form, key, key_labels, instance, instance_labels, parts })
+        Ok(Assembly { program, form, key, key_labels, key_types, key_own, instance, instance_labels, parts })
     }
 
     fn fault(&self, message: String) -> RunFault {
@@ -234,18 +268,25 @@ impl<'e, 'p> Assembly<'e, 'p> {
         Ordering::Equal
     }
 
-    /// Whether some column of some part holds the assembly's own Idents.
+    /// Whether some column of some part, or of the key, holds the assembly's
+    /// own Idents.
     fn has_own_idents(&self) -> bool {
-        self.parts.iter().any(|part| part.own.contains(&true))
+        self.key_has_own_idents() || self.parts.iter().any(|part| part.own.contains(&true))
     }
 
-    /// Whether the element `g` takes `frame`, the rows of each part in the
-    /// order of the parts, onto `observed` at every part at once: the image
-    /// of the frame under `g` is `observed`, up to one one-to-one renaming
-    /// of the assembly's own Idents, the same at every part.
-    fn takes_onto(&self, geometry: &Geometry, g: D4Element, frame: &[RowSet], observed: &[RowSet]) -> bool {
+    /// Whether some column of the key holds the assembly's own Idents.
+    fn key_has_own_idents(&self) -> bool {
+        self.key_own.contains(&true)
+    }
+
+    /// Whether the element `g` takes `frame` onto `observed` at every part
+    /// at once: the image of the frame's rows of each part under `g` is
+    /// `observed`'s, up to one one-to-one renaming of the assembly's own
+    /// Idents, the same at every part and at the key, which `g` leaves as
+    /// it is.
+    fn takes_onto(&self, geometry: &Geometry, g: D4Element, frame: &View<'_>, observed: &View<'_>) -> bool {
         if !self.has_own_idents() {
-            return self.parts.iter().zip(frame).zip(observed).all(|((part, frame), observed)| {
+            return self.parts.iter().zip(frame.parts).zip(observed.parts).all(|((part, frame), observed)| {
                 let images: StableHashSet<Row> = frame.rows().map(|values| image(geometry, g, values, &part.types).collect()).collect();
                 images.len() == observed.len() && observed.rows().all(|values| images.contains(values))
             });
@@ -253,27 +294,101 @@ impl<'e, 'p> Assembly<'e, 'p> {
         let mut images: IdentRowsBuilder<u32, TermId> = IdentRowsBuilder::default();
         let mut readings: IdentRowsBuilder<u32, TermId> = IdentRowsBuilder::default();
         for (index, part) in self.parts.iter().enumerate() {
-            let split = |values: &[TermId], builder: &mut IdentRowsBuilder<u32, TermId>| {
-                let leaves = values.iter().zip(&part.own).map(|(&value, &own)| (!own).then_some(value.encoding())).collect();
-                let idents = values.iter().zip(&part.own).filter(|(_, own)| **own).map(|(&value, _)| value);
-                builder.push(index, leaves, idents);
-            };
-            for values in frame[index].rows() {
+            for values in frame.parts[index].rows() {
                 let moved: Vec<TermId> = image(geometry, g, values, &part.types).collect();
-                split(&moved, &mut images);
+                push_row(&mut images, index, &moved, &part.own);
             }
-            for values in observed[index].rows() {
-                split(values, &mut readings);
+            for values in observed.parts[index].rows() {
+                push_row(&mut readings, index, values, &part.own);
             }
         }
+        push_row(&mut images, self.parts.len(), frame.key, &self.key_own);
+        push_row(&mut readings, self.parts.len(), observed.key, &self.key_own);
         renaming_between(&images.finish(), &readings.finish())
     }
 
-    /// The assembly's frames and poses: at each key, the reading of the
-    /// instance at that key whose reading is least by
-    /// [`Assembly::reading_order`], and for each instance, the D4 elements
-    /// that take its key's frame onto its reading at every part at once,
-    /// as [`Assembly::takes_onto`] gives; or `undefined`, where some instance has no such element, or the
+    /// The classes of the assembly's instances: for each instance, in the
+    /// order of `instances`, the key of its class, and for each class key,
+    /// the class's frame, the reading of the class's instance least by
+    /// [`Assembly::reading_order`], and then by the content of its key.
+    ///
+    /// Where the key holds no own Idents, a class is the instances at one
+    /// key. Where it does, a class is the instances whose key and reading
+    /// some D4 element and one renaming take onto those of one instance, as
+    /// [`Assembly::takes_onto`] gives; or `undefined`, where two classes
+    /// hold instances at one key, or the value of a stop.
+    fn classes(&self, instances: &[Instance], bodies: &FormBodies<'_>, budget: &mut Budget<'_>) -> Outcome<Result<Classes, RelationValue>> {
+        let key_width = self.key_labels.len();
+        let table = bodies.driver.evaluation.session.intern.read().expect("an intern table that no panic poisoned");
+        let mut representatives: Vec<&Instance> = Vec::new();
+        let mut class_of = vec![0; instances.len()];
+        if self.key_has_own_idents() {
+            let by_content = |a: &Instance, b: &Instance| {
+                self.reading_order(&a.reading, &b.reading, &table).then_with(|| crate::terms::content_order(&self.key_types, &a.row[..key_width], &b.row[..key_width], &table))
+            };
+            let mut order: Vec<usize> = (0..instances.len()).collect();
+            order.sort_by(|&a, &b| by_content(&instances[a], &instances[b]));
+            let geometry = Geometry::get();
+            let elements = geometry.domain(&ValueType::D4);
+            for at in order {
+                let instance = &instances[at];
+                let observed = instance.view(key_width);
+                let mut found = None;
+                for (class, representative) in representatives.iter().enumerate() {
+                    let frame = representative.view(key_width);
+                    if let Err(bound) = self.charge_search(budget, &frame, &observed, elements.len()) {
+                        return Ok(Err(self.stopped(bound)));
+                    }
+                    if elements.iter().any(|&element| self.takes_onto(geometry, geometry.element(element), &frame, &observed)) {
+                        found = Some(class);
+                        break;
+                    }
+                }
+                class_of[at] = found.unwrap_or_else(|| {
+                    representatives.push(instance);
+                    representatives.len() - 1
+                });
+            }
+            let mut at_key: StableHashMap<&[TermId], usize> = StableHashMap::default();
+            for (instance, &class) in instances.iter().zip(&class_of) {
+                if *at_key.entry(&instance.row[..key_width]).or_insert(class) != class {
+                    return Ok(Err(RelationValue::Undefined));
+                }
+            }
+        } else {
+            let mut class_at: StableHashMap<&[TermId], usize> = StableHashMap::default();
+            for (at, instance) in instances.iter().enumerate() {
+                let class = *class_at.entry(&instance.row[..key_width]).or_insert_with(|| {
+                    representatives.push(instance);
+                    representatives.len() - 1
+                });
+                if self.reading_order(&instance.reading, &representatives[class].reading, &table).is_lt() {
+                    representatives[class] = instance;
+                }
+                class_of[at] = class;
+            }
+        }
+        let keys = class_of.iter().map(|&class| representatives[class].row[..key_width].into()).collect();
+        let frames = representatives.iter().map(|representative| (representative.row[..key_width].into(), representative.reading.clone())).collect();
+        Ok(Ok(Classes { keys, frames }))
+    }
+
+    /// Charges `budget` for the search of the D4 elements that take
+    /// `frame` onto `observed`, where `elements` is their count.
+    fn charge_search(&self, budget: &mut Budget<'_>, frame: &View<'_>, observed: &View<'_>, elements: usize) -> Result<(), super::ReachedBound> {
+        budget.charge_work(elements as u64)?;
+        if self.has_own_idents() {
+            let searched: u64 = frame.parts.iter().chain(observed.parts).map(|rows| rows.len() as u64).sum();
+            budget.charge_work(searched * elements as u64)?;
+        }
+        Ok(())
+    }
+
+    /// The assembly's frames and poses: the frame of each class of
+    /// instances, as [`Assembly::classes`] gives them, and for each
+    /// instance, the D4 elements that take its class's frame onto its
+    /// reading at every part at once, as [`Assembly::takes_onto`] gives; or
+    /// `undefined`, where some instance has no such element, or the
     /// value of a body of the form that is `undefined` or stopped, or of a
     /// stop.
     fn solve(&self, bodies: &FormBodies<'_>, example: Option<Example>, budget: &mut Budget<'_>) -> Outcome<Result<Solution, RelationValue>> {
@@ -281,43 +396,27 @@ impl<'e, 'p> Assembly<'e, 'p> {
             Ok(instances) => instances,
             Err(value) => return Ok(Err(value)),
         };
-        let mut frames: StableHashMap<Row, Vec<RowSet>> = StableHashMap::default();
-        {
-            let table = bodies.driver.evaluation.session.intern.read().expect("an intern table that no panic poisoned");
-            let mut least: StableHashMap<&[TermId], &Instance> = StableHashMap::default();
-            for instance in &instances {
-                let key = &instance.row[..self.key_labels.len()];
-                let frame = least.entry(key).or_insert(instance);
-                if self.reading_order(&instance.reading, &frame.reading, &table).is_lt() {
-                    *frame = instance;
-                }
-            }
-            frames.extend(least.into_iter().map(|(key, instance)| (key.into(), instance.reading.clone())));
-        }
+        let Classes { keys, frames } = match self.classes(&instances, bodies, budget)? {
+            Ok(classes) => classes,
+            Err(value) => return Ok(Err(value)),
+        };
         let geometry = Geometry::get();
         let elements = geometry.domain(&ValueType::D4);
+        let key_width = self.key_labels.len();
         let mut poses = Vec::with_capacity(instances.len());
-        for instance in instances {
-            if let Err(bound) = budget.charge_work(elements.len() as u64) {
+        for (instance, key) in instances.into_iter().zip(keys) {
+            let frame = &frames[&key];
+            let (frame, observed) = (View { key: &key, parts: frame }, instance.view(key_width));
+            if let Err(bound) = self.charge_search(budget, &frame, &observed, elements.len()) {
                 return Ok(Err(self.stopped(bound)));
             }
-            let frame = &frames[&instance.row[..self.key_labels.len()]];
-            let mut found = Vec::new();
-            for &element in elements {
-                if self.has_own_idents() {
-                    let searched = frame.iter().chain(&instance.reading).map(|rows| rows.len() as u64).sum();
-                    if let Err(bound) = budget.charge_work(searched) {
-                        return Ok(Err(self.stopped(bound)));
-                    }
-                }
-                if self.takes_onto(geometry, geometry.element(element), frame, &instance.reading) {
-                    found.push(element);
-                }
-            }
+            let found: Vec<TermId> = elements.iter().copied().filter(|&element| self.takes_onto(geometry, geometry.element(element), &frame, &observed)).collect();
             if found.is_empty() {
                 return Ok(Err(RelationValue::Undefined));
             }
-            poses.push((instance.row, found));
+            let mut row = key.to_vec();
+            row.extend_from_slice(&instance.row[key_width..]);
+            poses.push((row.into(), found));
         }
         Ok(Ok(Solution { frames, poses }))
     }
@@ -352,8 +451,8 @@ impl<'e, 'p> Assembly<'e, 'p> {
         Ok(Ok(rows))
     }
 
-    /// The rows of `&marker.pose`: for each instance, each D4 element that
-    /// takes its key's frame onto the instance's reading at every part at
+    /// The rows of `&marker.pose`: for each instance, at its class's key,
+    /// each D4 element that takes its class's frame onto the instance's reading at every part at
     /// once, as [`Assembly::takes_onto`] gives, or the value of [`Assembly::solve`] where it gives no
     /// solution.
     fn poses(&self, bodies: &FormBodies<'_>, example: Option<Example>, budget: &mut Budget<'_>) -> Outcome<Result<RowSet, RelationValue>> {
@@ -417,6 +516,19 @@ impl<'e, 'p> Assembly<'e, 'p> {
 /// The fault `message` at the form at `form`.
 fn fault(form: &NodePath, message: String) -> RunFault {
     RunFault { message: message.into(), form: form.clone() }
+}
+
+/// Adds to `builder` the row `values` of the relation at `relation`: its
+/// leaves, with each own Ident's place left empty, and its own Idents.
+fn push_row(builder: &mut IdentRowsBuilder<u32, TermId>, relation: usize, values: &[TermId], own: &[bool]) {
+    let leaves = values.iter().zip(own).map(|(&value, &own)| (!own).then_some(value.encoding())).collect();
+    builder.push(relation, leaves, values.iter().zip(own).filter(|(_, own)| **own).map(|(&value, _)| value));
+}
+
+/// Whether each of `labels`, whose types are `types`, is a column of the
+/// assembly's own Idents.
+fn own_flags(types_of: &FormTypes, labels: &[LabelId], types: &[ValueType]) -> Vec<bool> {
+    labels.iter().zip(types).map(|(&label, ty)| *ty == ValueType::Ident && types_of.is_own_ident(label)).collect()
 }
 
 /// The type of `label`, or the fault of a label with none.

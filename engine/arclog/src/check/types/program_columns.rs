@@ -33,8 +33,8 @@ use super::SolverClauses;
 /// it, in the order of the resolver's columns of it. A fact relation takes
 /// the types of the columns that [`Registry::fact_columns`] gives it. A
 /// relation a column of which no form types gets no column types. The types
-/// of a `RIGID_DET` form hold the labels at its parts' sites that are the
-/// assembly's own Idents, as `own_idents` gives them.
+/// of a `RIGID_DET` form hold the labels at its parts' sites and key columns that are
+/// the assembly's own Idents, as `own_idents` gives them.
 pub fn program_types(
     program: &ResolvedProgram,
     registry: &Registry,

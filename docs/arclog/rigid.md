@@ -57,7 +57,7 @@ The `RIGID_DET` form, a rigid determination, is the arclog form for parameters t
 A form may also hold an `instance` clause, and a `key` clause:
 
 - `instance` is written as a [key clause](arclog.md#instance) is, and one of its rows is one instance. Each atom inside `instance`, after its body, is a part, and it reads the instance's labels.
-- `key` is a key clause with the meaning it has in an `INIT`: each key row is an independent assembly, aligned on its own and posed on its own. A form with no `key` has one assembly. The outputs hold the key's columns first, as an instance's outputs do.
+- `key` is a key clause with the meaning it has in an `INIT`: each key row is an independent assembly, aligned on its own and posed on its own, other than where a key column holds the assembly's own Idents, as [Semantics](#semantics) gives. A form with no `key` has one assembly. The outputs hold the key's columns first, as an instance's outputs do.
 - Where a form has a `key` clause, the rest of the form stands inside it, after its body: the `instance` clause where the form has one, and the parts otherwise. The key's labels are in scope there, as they are in the keyed inputs of an `INIT`.
 
 ## Semantics
@@ -66,7 +66,9 @@ An instance's reading is, for each part, the part's rows at that instance. A mod
 
 An element acts by type. A `Box`, `Position` or `Offset` goes through `apply`, and a `Dir`, `DiagDir` or `Dir8` goes through the direction actions. An `Axis` or `DiagAxis` goes through the swap the element induces on its directions, and a reflection reverses a `Sense`. A renaming moves the assembly's own Idents. Every other type is left as it is.
 
-An `Ident` column of a part is the assembly's own where no label at it stands at an `Ident` site outside the assembly's parts and the relations that take their types from them, other than a site in the body of a determination relation that an `instance` clause of the assembly reads. That body gives each instance its reading, which the model takes up to the renaming. Every other `Ident` column is a plain `Ident`, and a renaming leaves it as it is.
+An `Ident` column of a part or of the key is the assembly's own where no label at it stands at an `Ident` site outside the assembly's parts and key and the relations that take their types from them, other than a site in the body of a determination relation that a `key` or `instance` clause of the assembly reads, or in the body of a determination relation that one of those reads, at any depth. Those bodies give each instance its reading and its key, which the model takes up to the renaming. Every other `Ident` column is a plain `Ident`, and a renaming leaves it as it is.
+
+Where a key column holds the assembly's own Idents, the renaming of an instance also takes the key of the common reading onto the instance's key. Two instances whose readings are images of each other under one D4 element and one renaming that takes the key of the one onto the key of the other stand at one key: the form has one assembly per class of such instances, and each output gives that assembly one key, the key of the class's instance whose reading is least by content. Where instances of two classes stand at one key row, the assembly has no value.
 
 If the instances of an assembly admit no common reading, the assembly has no value. Where a common reading `R` exists, every image of `R` under D4 is one too. The choice among them is the assembly's frame. Nothing in the task makes that choice, and the outputs are defined so that no read observes it.
 
