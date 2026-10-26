@@ -16,12 +16,6 @@
 * comment: The user's words, session dc433af1, 2026-10-04T21:27:39Z: "we need to have some pointer to souffle-undocumented.md so for agents looking to improve lib perf they can look here".
 - When you work to speed up the lib, look in [Souffle: undocumented features](docs/souffle-undocumented.md) for Souffle features the official documentation leaves out.
 
-## Tickets
-- `tickets/` is the ticket tracker, and [Ticket notes](prompts/agents/notes/tickets.md) states its conventions.
-
-## Launching
-- Before you launch an agent by a call that no command printed to you, read [Launching](prompts/agents/notes/launching.md#launching), where your context does not hold it.
-
 ## Conventions
 - **Patches are the source of truth** for corrections.
     - `data/tasks/` regenerates from them via `scripts/materialize.py`.

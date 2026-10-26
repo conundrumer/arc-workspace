@@ -1,6 +1,6 @@
 + document-size-budget: 15345
 * comment: when editing this doc
-    - The coordinator loads Making a change, Merging a change and A denied merge by the links of its Changes section, at the steps they give; the decision analyst loads Findings an editor leaves by a link of [An editor's findings](prompts/agents/decision-analyst/findings.md), where its brief gives findings an editor left.
+    - The coordinator loads Making a change, Merging a change and A denied merge by the links of the [Changes](prompts/agents/notes/ops.md#changes) section of Ops, at the steps they give; the decision analyst loads Findings an editor leaves by a link of [An editor's findings](prompts/agents/decision-analyst/findings.md), where its brief gives findings an editor left.
     - Acts, each with its section:
         - Having an editor write a change, and taking it through its review and checks: [Making a change](#making-a-change).
         - Judging the findings and items an editor leaves: [Findings an editor leaves](#findings-an-editor-leaves).

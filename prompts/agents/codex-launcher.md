@@ -42,7 +42,7 @@ tools: Bash, Agent, SendMessage, TaskStop
 - Run each `scripts/trial_agent.py run` command Codex asks for in a foreground Bash call and pass its output to Codex, since Codex's sandbox cannot run Claude.
 - Use `uv run python scripts/codex_agent.py show <scratch>` to read the running turn's status, tokens and recent activity.
     + xref: scripts/codex_agent.py:control, scripts/codex_rollout.py:Rollout.show
-- Take the coordinator's corrections through an operator of the session, as [Codex](prompts/agents/notes/coordinator.md#codex) gives.
+- Take the coordinator's corrections through an operator of the session, as [Codex](prompts/agents/notes/ops.md#codex) gives.
 - Where you have a result Codex asked for or a message from any agent, resume Codex after its turn and descendants end, whether or not you have handed back: add `--resume` to the same launch command and replace `< /dev/null` with a heredoc containing each requested result and each message as it stands, with its sender's agent id. Codex then continues its walk.
     + xref: scripts/codex_agent.py:main
     * comment: Change 11-2851, Grounds: launchers a5e302f9281b584f8 at 2026-10-20T22:46:11Z and a27a402a53a2970f6 at 2026-10-21T00:56:32Z read the after-turn rule as ending at successful handback and left follow-up reviews undone.
