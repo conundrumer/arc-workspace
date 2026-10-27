@@ -2,10 +2,12 @@
 //! for each selected solver, each relation of the cases its rows file gives,
 //! at their stored parameters, with Souffle's rows of it, from
 //! `<rows-dir>/<task_id>.json` (`scripts/souffle_parity.py case-rows`). It
-//! reads a file as a stream, one case at a time, so that a case's rows are
-//! dropped once it is compared: `orientation_constants` and
-//! `check_relations` come before `cases`, as `parity.rerun.case_rows` writes
-//! them.
+//! reads a file as a stream, one relation at a time, so that the file's rows
+//! of a relation, and the sides it is compared on, are dropped once its
+//! verdict is merged: `orientation_constants` and `check_relations` come
+//! before `cases`, a case's `case` before its `failure`, `pairs` and
+//! `determination`, and a pair's `pair` before its `relations`, as
+//! `parity.rerun.case_rows` writes them.
 //!
 //! It prints a line `<task>\t<relation>\t<verdict>\t<detail>` for each task
 //! and relation, in the rows file's order, ordered by task id: `equal`;
@@ -89,6 +91,7 @@
 //! inputs (witness inputs among them), the relations that the file leaves out
 //! as `skip` or `uncompared`, or the multiplicity of rows.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs::File;
@@ -96,14 +99,14 @@ use std::io::BufReader;
 use std::path::Path;
 use std::process::ExitCode;
 use std::sync::mpsc::{self, RecvTimeoutError};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use arclog::eval::{output_relation, Evaluation};
 use arclog::harness::{require_optimized_build, run_over_corpus, SolverResult};
 use arclog::hash::StableHashSet;
 use arclog::terms::Example;
-use serde::de::{DeserializeSeed, IgnoredAny, MapAccess, SeqAccess, Visitor};
+use serde::de::{DeserializeSeed, Error as _, IgnoredAny, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 
 use crate::concept_case::{with_case, ConceptCase};
@@ -256,21 +259,12 @@ struct FilePick {
     columns: Vec<String>,
 }
 
-/// A pair of the rows file, a case's or the determination's.
+/// A pair of the rows file's `determination`. A case's pairs are read one
+/// relation at a time, by [`Pairs`].
 #[derive(Deserialize)]
 struct FilePair {
     pair: String,
     relations: Vec<FileRelation>,
-}
-
-/// An entry of the rows file's `cases`: the pairs, or the failure of its
-/// Souffle run, and the case's `determination` where it has one.
-#[derive(Deserialize)]
-struct FileCase {
-    case: String,
-    failure: Option<String>,
-    pairs: Option<Vec<FilePair>>,
-    determination: Option<FileDetermination>,
 }
 
 /// A case's `determination`: the pairs, or the failure of its Souffle run.
@@ -437,37 +431,36 @@ impl Verdicts<'_> {
         }
     }
 
-    /// Merges the verdicts of `case`, an entry of the rows file's `cases`: of
-    /// its pairs, and of its `determination`.
-    fn read_case(&mut self, case: FileCase) -> Result<(), String> {
-        let FileCase { case: name, failure, pairs, determination } = case;
-        self.set_case(&name);
-        let pairs = match failure {
-            Some(failure) => {
-                self.found.lines.push((WHOLE_TASK.to_owned(), Verdict::Fault(format!("case {name}: no Souffle rows: {failure}"))));
-                None
-            }
-            None => Some(pairs.ok_or("a case of the rows file has no `pairs`")?),
-        };
-        if pairs.is_none() && determination.is_none() {
-            return Ok(());
-        }
+    /// Reads the rest of the map of the case `name`, from its first `pairs` or
+    /// `determination` key `first`, and merges its verdicts: of its pairs, and
+    /// of its `determination`. `failed` is whether its Souffle run gave no
+    /// rows.
+    fn read_case<'de, A: MapAccess<'de>>(&mut self, name: &str, failed: bool, first: String, map: A) -> Result<(), A::Error> {
         let mut awaiting = self.awaiting.take();
-        let (constants, checks) = self.before_cases()?;
-        let found = with_case(self.corpus, self.tasks, self.id, &name, |case| {
-            let mut found = match pairs {
-                Some(pairs) => case_verdicts(case, &name, constants, checks, pairs)?,
-                None => Found::default(),
-            };
-            if let Some(determination) = determination {
-                match determination_verdicts(case, &name, constants, determination, &mut awaiting) {
-                    Ok(of_determination) => found.absorb(of_determination),
-                    Err(fault) => found.lines.push((WHOLE_TASK.to_owned(), Verdict::Fault(format!("case {name}, determination: {fault}")))),
-                }
+        let (constants, checks) = match self.before_cases() {
+            Ok(before) => before,
+            Err(fault) => return Err(self.refuse(fault)),
+        };
+        let mut rest = CaseRest { map, pending: Some(first), name, failed, constants, checks, awaiting: &mut awaiting, pairs_seen: false, finished: false };
+        let mut broken = None;
+        let found = with_case(self.corpus, self.tasks, self.id, name, |case| match rest.read(Some(case)) {
+            Ok(found) => found,
+            Err(error) => {
+                broken = Some(error);
+                Err(String::new())
             }
-            Ok(found)
         });
+        if broken.is_none() && !rest.finished {
+            broken = rest.read(None).err();
+        }
+        let pairs_seen = rest.pairs_seen;
         self.awaiting = awaiting;
+        if let Some(error) = broken {
+            return Err(error);
+        }
+        if !failed && !pairs_seen {
+            return Err(self.refuse("a case of the rows file has no `pairs`"));
+        }
         match found {
             Ok(of_case) => self.found.absorb(of_case),
             Err(fault) => self.found.lines.push((WHOLE_TASK.to_owned(), Verdict::Fault(format!("case {name}: {fault}")))),
@@ -501,12 +494,10 @@ impl Verdicts<'_> {
         Ok(merged)
     }
 
-    /// Stops the stream at the fault `result` gives, if it does.
-    fn stop<E: serde::de::Error>(&mut self, result: Result<(), String>) -> Result<(), E> {
-        result.map_err(|fault| {
-            self.fault = Some(fault);
-            E::custom("the verdicts stopped")
-        })
+    /// The error that stops the stream at `fault`.
+    fn refuse<E: serde::de::Error>(&mut self, fault: impl Into<String>) -> E {
+        self.fault = Some(fault.into());
+        E::custom("the verdicts stopped")
     }
 }
 
@@ -563,11 +554,134 @@ impl<'de> Visitor<'de> for Cases<'_, '_> {
     }
 
     fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<(), A::Error> {
-        while let Some(case) = seq.next_element::<FileCase>()? {
-            let read = self.0.read_case(case);
-            self.0.stop(read)?;
-        }
+        while seq.next_element_seed(Case(&mut *self.0))?.is_some() {}
         Ok(())
+    }
+}
+
+/// One entry of the rows file's `cases`, read as a map into the verdicts. Its
+/// `case` key comes first and sets the case; a `failure` key adds the fault
+/// line of a case whose Souffle run gave no rows. At the first `pairs` or
+/// `determination` key the case is set up, and the rest of the map is read
+/// by [`CaseRest`].
+struct Case<'a, 'b>(&'a mut Verdicts<'b>);
+
+impl<'de> DeserializeSeed<'de> for Case<'_, '_> {
+    type Value = ();
+
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
+        deserializer.deserialize_map(self)
+    }
+}
+
+impl<'de> Visitor<'de> for Case<'_, '_> {
+    type Value = ();
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a case of a rows file")
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
+        let verdicts = self.0;
+        let mut name: Option<String> = None;
+        let mut failure: Option<String> = None;
+        while let Some(key) = map.next_key::<String>()? {
+            match key.as_str() {
+                "case" => {
+                    let case: String = map.next_value()?;
+                    verdicts.set_case(&case);
+                    name = Some(case);
+                }
+                "failure" => {
+                    failure = map.next_value()?;
+                    if let Some(failure) = &failure {
+                        let Some(name) = &name else { return Err(verdicts.refuse("the `case` of a case of the rows file comes before its `failure`")) };
+                        verdicts.found.lines.push((WHOLE_TASK.to_owned(), Verdict::Fault(format!("case {name}: no Souffle rows: {failure}"))));
+                    }
+                }
+                "pairs" if failure.is_some() => {
+                    map.next_value::<IgnoredAny>()?;
+                }
+                "pairs" | "determination" => {
+                    let Some(name) = &name else { return Err(verdicts.refuse("the `case` of a case of the rows file comes before its `pairs` and `determination`")) };
+                    return verdicts.read_case(name, failure.is_some(), key, map);
+                }
+                _ => {
+                    map.next_value::<IgnoredAny>()?;
+                }
+            }
+        }
+        if name.is_none() {
+            return Err(A::Error::missing_field("case"));
+        }
+        match failure {
+            Some(_) => Ok(()),
+            None => Err(verdicts.refuse("a case of the rows file has no `pairs`")),
+        }
+    }
+}
+
+/// The rest of the map of a case, from its first `pairs` or `determination`
+/// key, whose value is not yet read.
+struct CaseRest<'a, A> {
+    map: A,
+    /// The key whose value is next in the map.
+    pending: Option<String>,
+    name: &'a str,
+    /// The case's Souffle run gave no rows, so its `pairs` are not read.
+    failed: bool,
+    constants: &'a BTreeMap<String, i64>,
+    checks: &'a [String],
+    awaiting: &'a mut Option<Vec<String>>,
+    pairs_seen: bool,
+    /// The map is read to its end.
+    finished: bool,
+}
+
+impl<'de, A: MapAccess<'de>> CaseRest<'_, A> {
+    /// Reads the map to its end: `pairs` one relation at a time and
+    /// `determination` whole, compared on `case`, or, where the case's setup
+    /// failed (`None`), skipped. The verdicts of the case, merged, or the
+    /// fault of its pairs, which drops those of the case.
+    fn read(&mut self, case: Option<&ConceptCase<'_>>) -> Result<Result<Found, String>, A::Error> {
+        self.finished = true;
+        let mut found = Found::default();
+        let mut fault = None;
+        while let Some(key) = match self.pending.take() {
+            Some(key) => Some(key),
+            None => self.map.next_key::<String>()?,
+        } {
+            let live = case.filter(|_| fault.is_none());
+            match (key.as_str(), live) {
+                ("pairs", live) => {
+                    self.pairs_seen = true;
+                    match live {
+                        Some(case) if !self.failed => {
+                            let mut pairs = Pairs::new(case, self.name, self.constants, self.checks);
+                            self.map.next_value_seed(&mut pairs)?;
+                            match pairs.finish() {
+                                Ok(of_pairs) => found.absorb(of_pairs),
+                                Err(of_pairs) => fault = Some(of_pairs),
+                            }
+                        }
+                        _ => {
+                            self.map.next_value::<IgnoredAny>()?;
+                        }
+                    }
+                }
+                ("determination", Some(case)) => {
+                    let determination: FileDetermination = self.map.next_value()?;
+                    match determination_verdicts(case, self.name, self.constants, determination, self.awaiting) {
+                        Ok(of_determination) => found.absorb(of_determination),
+                        Err(fault) => found.lines.push((WHOLE_TASK.to_owned(), Verdict::Fault(format!("case {}, determination: {fault}", self.name)))),
+                    }
+                }
+                _ => {
+                    self.map.next_value::<IgnoredAny>()?;
+                }
+            }
+        }
+        Ok(fault.map_or(Ok(found), Err))
     }
 }
 
@@ -598,29 +712,170 @@ fn add_once(names: &mut Vec<String>, name: &str) {
     }
 }
 
-/// The verdict of each relation of the case `name`, one of the `pairs` of
-/// the rows file, over the pairs of the task of `case`, merged over the
-/// pairs, and the name of each relation the pairs send. Each pair is dropped
-/// once it is compared. A relation is compared where the case's `&output`
-/// reads it, at any depth, or is it, or where it is one of the `checks`, the
-/// check relations, which nothing reads.
-fn case_verdicts(case: &ConceptCase<'_>, name: &str, constants: &BTreeMap<String, i64>, checks: &[String], mut pairs: Vec<FilePair>) -> Result<Found, String> {
-    let evaluation = &case.evaluation;
-    let program = evaluation.program;
-    let output = output_relation(program).expect("a checked case program derives `&output`");
-    let mut reads = program.program.graph.reached(output.node);
-    for check in checks {
-        if let Some(Ok(node)) = named_relation(program, check) {
-            reads[node.node.0 as usize] = true;
+/// The `pairs` of the case `name`, read one relation at a time into the
+/// verdicts of each relation `case` compares, merged over the pairs, and the
+/// name of each relation the pairs send. A relation is compared where the
+/// case's `&output` reads it, at any depth, or is it, or where it is one of
+/// the check relations, which nothing reads. A pair of the task that the
+/// pairs lack is a fault, given once the pairs end, as is the first fault of
+/// a relation, after which the rest is skipped.
+struct Pairs<'a, 'c> {
+    case: &'a ConceptCase<'c>,
+    name: &'a str,
+    constants: &'a BTreeMap<String, i64>,
+    /// For each node of the program, whether the case's `&output` reads it.
+    reads: Vec<bool>,
+    /// The name of each pair of the task and its example, in the task's order.
+    examples: Vec<(String, Example)>,
+    /// For each pair of `examples`, whether the rows file has given it.
+    seen: Vec<bool>,
+    found: Found,
+    fault: Option<String>,
+}
+
+impl<'a, 'c> Pairs<'a, 'c> {
+    fn new(case: &'a ConceptCase<'c>, name: &'a str, constants: &'a BTreeMap<String, i64>, checks: &[String]) -> Self {
+        let evaluation = &case.evaluation;
+        let program = evaluation.program;
+        let output = output_relation(program).expect("a checked case program derives `&output`");
+        let mut reads = program.program.graph.reached(output.node);
+        for check in checks {
+            if let Some(Ok(node)) = named_relation(program, check) {
+                reads[node.node.0 as usize] = true;
+            }
+        }
+        let examples: Vec<(String, Example)> = evaluation.task.examples().enumerate().map(|(index, example)| (pair_name(evaluation.task, index), example)).collect();
+        Pairs { case, name, constants, reads, seen: vec![false; examples.len()], examples, found: Found::default(), fault: None }
+    }
+
+    /// What the pairs gave, or the fault that drops it.
+    fn finish(self) -> Result<Found, String> {
+        if let Some(fault) = self.fault {
+            return Err(fault);
+        }
+        match self.seen.iter().position(|seen| !seen) {
+            Some(missing) => Err(format!("the rows file has no pair `{}`", self.examples[missing].0)),
+            None => Ok(self.found),
         }
     }
-    let mut found = Found::default();
-    for (index, example) in evaluation.task.examples().enumerate() {
-        let pair = pair_name(evaluation.task, index);
-        let at = pairs.iter().position(|entry| entry.pair == pair).ok_or_else(|| format!("the rows file has no pair `{pair}`"))?;
-        entry_verdicts(evaluation, &format!("{name}, {pair}"), example, pairs.swap_remove(at), constants, Some(&reads), &mut found)?;
+}
+
+impl<'de> DeserializeSeed<'de> for &mut Pairs<'_, '_> {
+    type Value = ();
+
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
+        deserializer.deserialize_seq(self)
     }
-    Ok(found)
+}
+
+impl<'de> Visitor<'de> for &mut Pairs<'_, '_> {
+    type Value = ();
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("the pairs of a case")
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<(), A::Error> {
+        while seq.next_element_seed(PairEntry(&mut *self))?.is_some() {}
+        Ok(())
+    }
+}
+
+/// One pair of a case's `pairs`, read as a map: its `pair` key comes before
+/// its `relations`.
+struct PairEntry<'a, 'b, 'c>(&'a mut Pairs<'b, 'c>);
+
+impl<'de> DeserializeSeed<'de> for PairEntry<'_, '_, '_> {
+    type Value = ();
+
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
+        deserializer.deserialize_map(self)
+    }
+}
+
+impl<'de> Visitor<'de> for PairEntry<'_, '_, '_> {
+    type Value = ();
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a pair of a case")
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
+        let pairs = self.0;
+        let mut pair: Option<String> = None;
+        let mut relations_seen = false;
+        while let Some(key) = map.next_key::<String>()? {
+            match key.as_str() {
+                "pair" => pair = Some(map.next_value()?),
+                "relations" => {
+                    let Some(pair) = &pair else { return Err(A::Error::custom("the `pair` of a pair comes before its `relations`")) };
+                    relations_seen = true;
+                    let at = pairs.examples.iter().position(|(held, _)| held == pair).filter(|&at| !pairs.seen[at] && pairs.fault.is_none());
+                    match at {
+                        Some(at) => {
+                            pairs.seen[at] = true;
+                            let example = pairs.examples[at].1;
+                            let compare = PairCompare::new(format!("{}, {pair}", pairs.name));
+                            map.next_value_seed(Relations { pairs: &mut *pairs, example, compare })?;
+                        }
+                        None => {
+                            map.next_value::<IgnoredAny>()?;
+                        }
+                    }
+                }
+                _ => {
+                    map.next_value::<IgnoredAny>()?;
+                }
+            }
+        }
+        if pair.is_none() {
+            return Err(A::Error::missing_field("pair"));
+        }
+        if !relations_seen {
+            return Err(A::Error::missing_field("relations"));
+        }
+        Ok(())
+    }
+}
+
+/// The `relations` of one pair of a case, read one at a time: each is
+/// compared and dropped before the next is read.
+struct Relations<'a, 'b, 'c> {
+    pairs: &'a mut Pairs<'b, 'c>,
+    example: Example,
+    compare: PairCompare,
+}
+
+impl<'de> DeserializeSeed<'de> for Relations<'_, '_, '_> {
+    type Value = ();
+
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
+        deserializer.deserialize_seq(self)
+    }
+}
+
+impl<'de> Visitor<'de> for Relations<'_, '_, '_> {
+    type Value = ();
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("the relations of a pair")
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(mut self, mut seq: A) -> Result<(), A::Error> {
+        loop {
+            if self.pairs.fault.is_some() {
+                if seq.next_element::<IgnoredAny>()?.is_none() {
+                    return Ok(());
+                }
+                continue;
+            }
+            let Some(relation) = seq.next_element::<FileRelation>()? else { return Ok(()) };
+            let pairs = &mut *self.pairs;
+            if let Err(fault) = relation_verdict(&pairs.case.evaluation, self.example, pairs.constants, Some(&pairs.reads), relation, &mut self.compare, &mut pairs.found) {
+                pairs.fault = Some(fault);
+            }
+        }
+    }
 }
 
 /// The verdict of each relation of the `determination` of the case `name`
@@ -653,34 +908,41 @@ fn determination_verdicts(case: &ConceptCase<'_>, name: &str, constants: &BTreeM
         let mut trains = evaluation.task.train_examples().enumerate();
         let example = if pair == TASK_PAIR { trains.next().map(|(_, example)| example) } else { trains.find(|&(index, _)| pair_name(evaluation.task, index) == pair).map(|(_, example)| example) };
         let example = example.ok_or_else(|| format!("the `determination` has the pair `{pair}`, which is no train pair of the task"))?;
-        entry_verdicts(evaluation, &format!("{name}, determination, {pair}"), example, entry, constants, None, &mut found)?;
+        let mut compare = PairCompare::new(format!("{name}, determination, {pair}"));
+        for relation in entry.relations {
+            relation_verdict(evaluation, example, constants, None, relation, &mut compare, &mut found)?;
+        }
     }
     waiting.retain(|relation| !left.contains(relation));
     Ok(found)
 }
 
-/// The verdict of each relation of `entry`, a pair of the rows file, compared
-/// with the engine's rows on `example` and merged into `found`, under the
-/// scope `scope` that the lines name; the name of each relation it sends is
-/// added to `found`. Where `reads` gives, for each node of the program, whether
-/// it is read, a relation whose node is not read is not compared, and is
-/// added to `found.unread`.
-fn entry_verdicts(evaluation: &Evaluation<'_>, scope: &str, example: Example, entry: FilePair, constants: &BTreeMap<String, i64>, reads: Option<&[bool]>, found: &mut Found) -> Result<(), String> {
-    let mut checked = Vec::new();
-    for relation in entry.relations {
-        add_once(&mut found.sent, &relation.name);
-        let unread = reads.is_some_and(|reads| matches!(named_relation(evaluation.program, &relation.name), Some(Ok(node)) if !reads[node.node.0 as usize]));
-        if unread {
-            add_once(&mut found.unread, &relation.name);
-            continue;
-        }
-        if relation.idents.len() != relation.columns.len() {
-            return Err(format!("the relation `{}` of the rows file has {} columns and {} `idents`", relation.name, relation.columns.len(), relation.idents.len()));
-        }
-        checked.push(engine_side(evaluation, relation, example, constants));
+/// The verdict of `relation`, one relation of a pair of the rows file,
+/// compared with the engine's rows on `example` and merged into `found`, with
+/// `compare` the compare of its pair; the relation's name is added to
+/// `found.sent`. Where `reads` gives, for each node of the program, whether it
+/// is read, a relation whose node is not read is not compared, and is added
+/// to `found.unread`.
+fn relation_verdict(
+    evaluation: &Evaluation<'_>,
+    example: Example,
+    constants: &BTreeMap<String, i64>,
+    reads: Option<&[bool]>,
+    relation: FileRelation,
+    compare: &mut PairCompare,
+    found: &mut Found,
+) -> Result<(), String> {
+    add_once(&mut found.sent, &relation.name);
+    let unread = reads.is_some_and(|reads| matches!(named_relation(evaluation.program, &relation.name), Some(Ok(node)) if !reads[node.node.0 as usize]));
+    if unread {
+        add_once(&mut found.unread, &relation.name);
+        return Ok(());
     }
-    for (relation, verdict) in compare_pair(scope, &checked) {
-        merge(&mut found.lines, relation, verdict);
+    if relation.idents.len() != relation.columns.len() {
+        return Err(format!("the relation `{}` of the rows file has {} columns and {} `idents`", relation.name, relation.columns.len(), relation.idents.len()));
+    }
+    if let Some((name, verdict)) = compare.verdict(engine_side(evaluation, relation, example, constants)) {
+        merge(&mut found.lines, name, verdict);
     }
     Ok(())
 }
@@ -690,7 +952,8 @@ fn entry_verdicts(evaluation: &Evaluation<'_>, scope: &str, example: Example, en
 /// model, Souffle's rows projected onto the columns, and each open value of
 /// Souffle's relation projected onto them. A column of the map that the
 /// engine's relation lacks, or that the relation of an open parameter lacks,
-/// gives a fault.
+/// gives a fault. The file's rows are dropped, with equal texts of the
+/// projected rows held once, before the engine's models are read.
 fn engine_side(evaluation: &Evaluation<'_>, file: FileRelation, example: Example, constants: &BTreeMap<String, i64>) -> Checked {
     let FileRelation { name, columns, idents, unread, unresolved, rows, by_open, fault } = file;
     let checked = |engine, left_out, souffle, by_open| Checked { name: name.clone(), souffle, by_open, engine, left_out, fault: fault.clone() };
@@ -726,7 +989,18 @@ fn engine_side(evaluation: &Evaluation<'_>, file: FileRelation, example: Example
         Ok(columns) => columns,
         Err(text) => return checked(Some(EngineModels::Fault(text)), left_out, BTreeSet::new(), OpenValues::default()),
     };
-    let project = |rows: &[Vec<Vec<Leaf>>]| -> BTreeSet<Vec<Leaf>> { rows.iter().map(|row| kept.iter().flat_map(|&(entry, _)| row[entry].clone()).collect()).collect() };
+    let mut interner = Interner::default();
+    let entries: Vec<usize> = kept.iter().map(|&(entry, _)| entry).collect();
+    let souffle = interner.project(&entries, &rows);
+    drop(rows);
+    let values = open_values
+        .iter()
+        .map(|value| OpenValue {
+            rows: interner.project(&entries, &value.rows),
+            picks: picks.iter().map(|pick| value.picks.get(&pick.name).map(|rows| rows.iter().map(|row| interner.row(row.iter().flatten())).collect())).collect(),
+        })
+        .collect();
+    drop(open_values);
     let columns: Vec<Column> = kept.iter().map(|&(_, column)| column).collect();
     let requests: Vec<PickRequest<'_>> = picks.iter().zip(&pick_columns).map(|(pick, columns)| PickRequest { name: &pick.name, projection: Projection::Positions(columns) }).collect();
     let engine = match engine_models(evaluation, &name, example, constants, Projection::Positions(&columns), &requests) {
@@ -736,15 +1010,37 @@ fn engine_side(evaluation: &Evaluation<'_>, file: FileRelation, example: Example
         }
         Some(fault) => fault,
     };
-    let values = open_values
-        .iter()
-        .map(|value| OpenValue {
-            rows: project(&value.rows),
-            picks: picks.iter().map(|pick| value.picks.get(&pick.name).map(|rows| rows.iter().map(|row| row.concat()).collect())).collect(),
-        })
-        .collect();
     let by_open = OpenValues { picks: picks.into_iter().map(|pick| pick.name).collect(), values };
-    checked(Some(engine), left_out, project(&rows), by_open)
+    checked(Some(engine), left_out, souffle, by_open)
+}
+
+/// An intern pool for the texts of the leaves of one relation's rows: equal
+/// texts share one allocation.
+#[derive(Default)]
+struct Interner(StableHashSet<Arc<str>>);
+
+impl Interner {
+    /// `leaves`, each text replaced by the pool's equal text.
+    fn row<'l>(&mut self, leaves: impl Iterator<Item = &'l Leaf>) -> Vec<Leaf> {
+        leaves
+            .map(|leaf| match leaf {
+                Leaf::Number(number) => Leaf::Number(*number),
+                Leaf::Other(text) => Leaf::Other(match self.0.get(text) {
+                    Some(held) => Arc::clone(held),
+                    None => {
+                        self.0.insert(Arc::clone(text));
+                        Arc::clone(text)
+                    }
+                }),
+            })
+            .collect()
+    }
+
+    /// The set of rows that give the leaves at `entries` of each row of
+    /// `rows`, a row of the file as its columns' leaves.
+    fn project(&mut self, entries: &[usize], rows: &[Vec<Vec<Leaf>>]) -> BTreeSet<Vec<Leaf>> {
+        rows.iter().map(|row| self.row(entries.iter().flat_map(|&entry| &row[entry]))).collect()
+    }
 }
 
 /// The columns of the engine's relation of each of `picks` that the file
@@ -786,10 +1082,16 @@ fn unresolved_note(leaf: &FileUnresolved) -> String {
     format!("{} (unresolved: {reason})", column_name(label, field.as_deref()))
 }
 
+/// For each of `rows`, whether it is the first of its equal rows.
+fn first_of_each<'a>(rows: impl Iterator<Item = &'a Vec<EngineLeaf>>) -> Vec<bool> {
+    let mut seen: StableHashSet<&Vec<EngineLeaf>> = StableHashSet::default();
+    rows.map(|row| seen.insert(row)).collect()
+}
+
 /// `rows` with each row once, in order.
 fn distinct(rows: Vec<Vec<EngineLeaf>>) -> Vec<Vec<EngineLeaf>> {
-    let mut seen: StableHashSet<Vec<EngineLeaf>> = StableHashSet::default();
-    rows.into_iter().filter(|row| seen.insert(row.clone())).collect()
+    let first = first_of_each(rows.iter());
+    rows.into_iter().zip(first).filter_map(|(row, first)| first.then_some(row)).collect()
 }
 
 /// Adds `verdict`, of one pair of one case, to `merged`: a `differ`, a
@@ -806,10 +1108,11 @@ fn merge(merged: &mut Vec<(String, Verdict)>, name: String, verdict: Verdict) {
 
 /// One comparison of a relation: the Souffle rows an engine model's rows
 /// stand for, those rows, and, where the models give different rows, the
-/// open value the model takes, written for the line's detail.
-struct Comparison {
-    souffle: BTreeSet<Vec<Leaf>>,
-    engine: Vec<Vec<EngineLeaf>>,
+/// open value the model takes, written for the line's detail. The rows are
+/// borrowed from the relation where the comparison takes them whole.
+struct Comparison<'a> {
+    souffle: Cow<'a, BTreeSet<Vec<Leaf>>>,
+    engine: Cow<'a, [Vec<EngineLeaf>]>,
     open: String,
 }
 
@@ -819,20 +1122,22 @@ struct Comparison {
 /// model with Souffle's rows of the open value that model takes (`taken`),
 /// else the union of the models' rows with Souffle's rows. A text for what
 /// does not match.
-fn comparisons(models: &[EngineModel], souffle: &BTreeSet<Vec<Leaf>>, by_open: &OpenValues) -> Result<Vec<Comparison>, String> {
-    let one = |engine: Vec<Vec<EngineLeaf>>| Ok(vec![Comparison { souffle: souffle.clone(), engine, open: String::new() }]);
-    if models.iter().all(|model| same_rows(&model.rows, &models[0].rows)) {
-        return one(models[0].rows.clone());
+fn comparisons<'a>(models: &'a [EngineModel], souffle: &'a BTreeSet<Vec<Leaf>>, by_open: &OpenValues) -> Result<Vec<Comparison<'a>>, String> {
+    let one = |engine: Cow<'a, [Vec<EngineLeaf>]>| Ok(vec![Comparison { souffle: Cow::Borrowed(souffle), engine, open: String::new() }]);
+    if models.iter().skip(1).all(|model| same_rows(&model.rows, &models[0].rows)) {
+        return one(Cow::Borrowed(&models[0].rows));
     }
     if by_open.values.is_empty() {
-        return one(distinct(models.iter().flat_map(|model| model.rows.clone()).collect()));
+        let all: Vec<&Vec<EngineLeaf>> = models.iter().flat_map(|model| &model.rows).collect();
+        let first = first_of_each(all.iter().copied());
+        return one(Cow::Owned(all.into_iter().zip(first).filter(|&(_, first)| first).map(|(row, _)| row.clone()).collect()));
     }
     let mut used = vec![false; by_open.values.len()];
     let mut pairs = Vec::new();
     for (index, model) in models.iter().enumerate() {
         let (expected, taken) = taken(model, by_open).map_err(|text| format!("{} models; model {} takes {}: {text}", models.len(), index + 1, show_picks(&by_open.picks, &model.picks)))?;
         taken.into_iter().for_each(|open| used[open] = true);
-        pairs.push(Comparison { souffle: expected, engine: model.rows.clone(), open: show_picks(&by_open.picks, &model.picks) });
+        pairs.push(Comparison { souffle: Cow::Owned(expected), engine: Cow::Borrowed(&model.rows), open: show_picks(&by_open.picks, &model.picks) });
     }
     match used.iter().position(|used| !used) {
         Some(open) => Err(format!("{} models; open value {} of Souffle's {} is the open value of no model", models.len(), open + 1, by_open.values.len())),
@@ -890,51 +1195,63 @@ fn show_picks(names: &[String], picks: &[Option<Vec<Vec<EngineLeaf>>>]) -> Strin
     format!("the open value {}", held.join(" "))
 }
 
-/// The verdict of each relation of `relations` on `scope`, a case and a
-/// pair, in order; none for a relation that the case's program lacks. Each
-/// relation compares as sets, with each Ident that a lib relation mints
-/// written as the text of the set of its members; the relations that hold an
-/// Ident of another kind, a number a fact writes, then must agree under one
-/// renaming of Idents over all of them, as each pair is a separate run of
-/// Souffle, whose numbers denote the objects of that input alone.
-pub(crate) fn compare_pair(scope: &str, relations: &[Checked]) -> Vec<(String, Verdict)> {
-    let mut verdicts = Vec::new();
-    let mut compared: Vec<(BTreeSet<Vec<Leaf>>, Vec<Vec<EngineLeaf>>)> = Vec::new();
-    'relations: for Checked { name, souffle, by_open, engine, left_out, fault } in relations {
-        let note = if left_out.is_empty() { String::new() } else { format!("; columns left out of both sides: {}", left_out.join(", ")) };
-        let verdict = match engine {
-            None => continue,
-            Some(EngineModels::Skip(reason)) => Verdict::Skip(reason.clone()),
-            Some(EngineModels::Fault(text)) => Verdict::Fault(format!("{scope}: {text}")),
-            Some(EngineModels::Models(_)) if fault.is_some() => Verdict::Fault(format!("{scope}: {}", fault.as_deref().unwrap_or_default())),
-            Some(EngineModels::Models(models)) => {
-                let pairs = match comparisons(models, souffle, by_open) {
-                    Ok(pairs) => pairs,
-                    Err(text) => {
-                        verdicts.push((name.clone(), Verdict::Differ(format!("{scope}: {text}{note}"))));
-                        continue;
-                    }
-                };
-                for Comparison { souffle, engine, open } in &pairs {
-                    if !same_without_idents(engine, souffle) {
-                        let at = if open.is_empty() { String::new() } else { format!("at {open}: ") };
-                        verdicts.push((name.clone(), Verdict::Differ(format!("{scope}: {at}{}{note}", describe_difference(engine, souffle)))));
-                        continue 'relations;
-                    }
-                }
-                let before = compared.len();
-                compared.extend(pairs.into_iter().map(|pair| (pair.souffle, pair.engine)).filter(|(_, rows)| rows.iter().flatten().any(|leaf| matches!(leaf, EngineLeaf::Ident(_)))));
-                if compared.len() > before && !renaming_exists(&compared.iter().map(|(souffle, engine)| (souffle, engine.clone())).collect::<Vec<_>>()) {
-                    compared.truncate(before);
-                    verdicts.push((name.clone(), Verdict::Differ(format!("{scope}: no one renaming of Idents makes its rows and those of the relations before it agree{note}"))));
-                    continue;
-                }
-                Verdict::Equal(format!("{scope}{note}"))
-            }
-        };
-        verdicts.push((name.clone(), verdict));
+/// The compare of the relations of one pair, one relation at a time, on
+/// `scope`, a case and a pair. Each relation compares as sets, with each
+/// Ident that a lib relation mints written as the text of the set of its
+/// members; the relations that hold an Ident of another kind, a number a fact
+/// writes, then must agree under one renaming of Idents over all of them, as
+/// each pair is a separate run of Souffle, whose numbers denote the objects
+/// of that input alone.
+struct PairCompare {
+    scope: String,
+    /// Souffle's rows and the engine's rows of each relation so far that holds
+    /// an Ident leaf, which the renaming reads.
+    compared: Vec<(BTreeSet<Vec<Leaf>>, Vec<Vec<EngineLeaf>>)>,
+}
+
+impl PairCompare {
+    fn new(scope: String) -> Self {
+        PairCompare { scope, compared: Vec::new() }
     }
-    verdicts
+
+    /// The verdict of `relation` and its name, none for a relation that the
+    /// case's program lacks. The relation is dropped with it, apart from its
+    /// rows that hold an Ident, which the later relations' renaming reads.
+    fn verdict(&mut self, relation: Checked) -> Option<(String, Verdict)> {
+        let Checked { name, souffle, by_open, engine, left_out, fault } = relation;
+        let note = if left_out.is_empty() { String::new() } else { format!("; columns left out of both sides: {}", left_out.join(", ")) };
+        let verdict = match engine? {
+            EngineModels::Skip(reason) => Verdict::Skip(reason),
+            EngineModels::Fault(text) => Verdict::Fault(format!("{}: {text}", self.scope)),
+            EngineModels::Models(_) if fault.is_some() => Verdict::Fault(format!("{}: {}", self.scope, fault.unwrap_or_default())),
+            EngineModels::Models(models) => self.models_verdict(&models, &souffle, &by_open, &note),
+        };
+        Some((name, verdict))
+    }
+
+    /// The verdict of a relation whose rows at each of `models` are compared
+    /// with `souffle`, a `differ` with `note` or an `equal`.
+    fn models_verdict(&mut self, models: &[EngineModel], souffle: &BTreeSet<Vec<Leaf>>, by_open: &OpenValues, note: &str) -> Verdict {
+        let scope = &self.scope;
+        let comparisons = match comparisons(models, souffle, by_open) {
+            Ok(comparisons) => comparisons,
+            Err(text) => return Verdict::Differ(format!("{scope}: {text}{note}")),
+        };
+        for Comparison { souffle, engine, open } in &comparisons {
+            if !same_without_idents(engine, souffle) {
+                let at = if open.is_empty() { String::new() } else { format!("at {open}: ") };
+                return Verdict::Differ(format!("{scope}: {at}{}{note}", describe_difference(engine, souffle)));
+            }
+        }
+        let before = self.compared.len();
+        let with_idents = comparisons.into_iter().filter(|comparison| comparison.engine.iter().flatten().any(|leaf| matches!(leaf, EngineLeaf::Ident(_))));
+        self.compared.extend(with_idents.map(|comparison| (comparison.souffle.into_owned(), comparison.engine.into_owned())));
+        if self.compared.len() > before && !renaming_exists(&self.compared.iter().map(|(souffle, engine)| (souffle, engine.as_slice())).collect::<Vec<_>>()) {
+            self.compared.truncate(before);
+            return Verdict::Differ(format!("{}: no one renaming of Idents makes its rows and those of the relations before it agree{note}", self.scope));
+        }
+        Verdict::Equal(format!("{}{note}", self.scope))
+    }
 }
 
 /// The two counts of rows and one row that only one side holds, with each
@@ -997,13 +1314,6 @@ mod tests {
     }
 
     #[test]
-    fn refuses_a_leaf_that_is_no_number_and_no_string() {
-        let text = r#"{"orientation_constants": {}, "cases": [{"case": "concept", "pairs": [{"pair": "train 0", "relations": [
-            {"name": "&a", "columns": [], "idents": [], "unread": [], "unresolved": [], "rows": [[[true]]]}]}]}], "not_compared": []}"#;
-        assert!(verdicts_of("leaf", text).is_err());
-    }
-
-    #[test]
     fn refuses_cases_that_come_before_the_constants() {
         let text = r#"{"cases": [{"case": "concept", "pairs": []}], "orientation_constants": {}, "not_compared": []}"#;
         assert!(verdicts_of("order", text).is_err());
@@ -1012,6 +1322,13 @@ mod tests {
     #[test]
     fn refuses_a_rows_file_with_no_left_out_relations() {
         assert!(verdicts_of("not_compared", r#"{"orientation_constants": {}, "cases": []}"#).is_err());
+    }
+
+    /// The verdict of each relation of `relations` on `scope`, a case and a
+    /// pair, in order; none for a relation that the case's program lacks.
+    fn compare_pair(scope: &str, relations: impl IntoIterator<Item = Checked>) -> Vec<(String, Verdict)> {
+        let mut compare = PairCompare::new(scope.to_owned());
+        relations.into_iter().filter_map(|relation| compare.verdict(relation)).collect()
     }
 
     fn n(value: i64) -> Leaf {
@@ -1043,7 +1360,7 @@ mod tests {
     #[test]
     fn differs_where_the_engine_holds_souffles_rows_and_more() {
         let relations = [checked("&a", souffle(&[&[1, 2]]), vec![written(&[1, 2]), written(&[3, 4])])];
-        let [(_, verdict)] = &compare_pair("concept, train 0", &relations)[..] else { panic!("one verdict") };
+        let [(_, verdict)] = &compare_pair("concept, train 0", relations)[..] else { panic!("one verdict") };
         let Verdict::Differ(text) = verdict else { panic!("{verdict:?}") };
         assert!(text.contains("2 rows in the engine and 1 in Souffle") && text.contains("only the engine holds [3 4]"), "{text}");
     }
@@ -1052,7 +1369,7 @@ mod tests {
     fn differs_where_a_nullary_relation_stands_on_one_side_alone() {
         let present = BTreeSet::from([Vec::new()]);
         let relations = [checked("&flag", present.clone(), Vec::new()), checked("&other", BTreeSet::new(), vec![Vec::new()]), checked("&both", present, vec![Vec::new()])];
-        let verdicts = compare_pair("concept, train 0", &relations);
+        let verdicts = compare_pair("concept, train 0", relations);
         assert!(matches!(verdicts[0].1, Verdict::Differ(_)), "{verdicts:?}");
         assert!(matches!(verdicts[1].1, Verdict::Differ(_)), "{verdicts:?}");
         assert!(matches!(verdicts[2].1, Verdict::Equal(_)), "{verdicts:?}");
@@ -1061,14 +1378,14 @@ mod tests {
     #[test]
     fn equals_where_the_union_of_the_models_is_souffles_rows() {
         let relations = [models("&order", souffle(&[&[1, 2], &[3, 4]]), vec![vec![written(&[1, 2])], vec![written(&[3, 4])]])];
-        let [(_, verdict)] = &compare_pair("concept, train 0", &relations)[..] else { panic!("one verdict") };
+        let [(_, verdict)] = &compare_pair("concept, train 0", relations)[..] else { panic!("one verdict") };
         assert!(matches!(verdict, Verdict::Equal(_)), "{verdict:?}");
     }
 
     #[test]
     fn differs_where_the_union_of_the_models_is_not_souffles_rows() {
         let relations = [models("&order", souffle(&[&[1, 2], &[3, 4]]), vec![vec![written(&[1, 2])], vec![written(&[5, 6])]])];
-        let [(_, verdict)] = &compare_pair("concept, train 0", &relations)[..] else { panic!("one verdict") };
+        let [(_, verdict)] = &compare_pair("concept, train 0", relations)[..] else { panic!("one verdict") };
         assert!(matches!(verdict, Verdict::Differ(_)), "{verdict:?}");
     }
 
@@ -1093,14 +1410,14 @@ mod tests {
     #[test]
     fn equals_where_each_model_holds_the_rows_of_its_own_open_value() {
         let relations = [open_relation([(&[1, 2], 1), (&[3, 4], 2)])];
-        let [(_, verdict)] = &compare_pair("concept, train 0", &relations)[..] else { panic!("one verdict") };
+        let [(_, verdict)] = &compare_pair("concept, train 0", relations)[..] else { panic!("one verdict") };
         assert!(matches!(verdict, Verdict::Equal(_)), "{verdict:?}");
     }
 
     #[test]
     fn differs_where_the_models_hold_the_rows_of_the_open_values_swapped() {
         let relations = [open_relation([(&[1, 2], 2), (&[3, 4], 1)])];
-        let [(_, verdict)] = &compare_pair("concept, train 0", &relations)[..] else { panic!("one verdict") };
+        let [(_, verdict)] = &compare_pair("concept, train 0", relations)[..] else { panic!("one verdict") };
         let Verdict::Differ(text) = verdict else { panic!("{verdict:?}") };
         assert!(text.contains("&p=[2]") && text.contains("only the engine holds [1 2]"), "{text}");
     }
@@ -1108,7 +1425,7 @@ mod tests {
     #[test]
     fn differs_where_a_model_takes_no_open_value_of_souffles() {
         let relations = [open_relation([(&[1, 2], 1), (&[3, 4], 3)])];
-        let [(_, verdict)] = &compare_pair("concept, train 0", &relations)[..] else { panic!("one verdict") };
+        let [(_, verdict)] = &compare_pair("concept, train 0", relations)[..] else { panic!("one verdict") };
         let Verdict::Differ(text) = verdict else { panic!("{verdict:?}") };
         assert!(text.contains("open value 2 of Souffle's 3 is the open value of no model"), "{text}");
     }
@@ -1121,7 +1438,7 @@ mod tests {
             checked("&color", souffle(&[&[7, 1], &[8, 2]]), vec![id(x, 1), id(y, 2)]),
             checked("&big", souffle(&[&[7]]), vec![vec![EngineLeaf::Ident(y)]]),
         ];
-        let verdicts = compare_pair("concept, train 0", &relations);
+        let verdicts = compare_pair("concept, train 0", relations);
         assert!(matches!(verdicts[0].1, Verdict::Equal(_)), "{verdicts:?}");
         assert!(matches!(&verdicts[1].1, Verdict::Differ(text) if text.contains("no one renaming")), "{verdicts:?}");
     }
@@ -1137,7 +1454,7 @@ mod tests {
     #[test]
     fn differs_where_a_minted_id_has_other_members() {
         let relations = [checked("&label", BTreeSet::from([vec![text("{[1],[2]}")]]), vec![minted("{[1],[3]}")])];
-        let [(_, verdict)] = &compare_pair("concept, train 0", &relations)[..] else { panic!("one verdict") };
+        let [(_, verdict)] = &compare_pair("concept, train 0", relations)[..] else { panic!("one verdict") };
         assert!(matches!(verdict, Verdict::Differ(_)), "{verdict:?}");
     }
 
@@ -1145,7 +1462,7 @@ mod tests {
     fn faults_where_a_minted_id_has_no_row_of_the_minting_relation() {
         let mut relation = checked("&label", BTreeSet::from([vec![text("{}")]]), vec![minted("{}")]);
         relation.fault = Some("the id 5 has no row of comps4.label at the key of the row".to_owned());
-        let [(_, verdict)] = &compare_pair("concept, train 0", &[relation])[..] else { panic!("one verdict") };
+        let [(_, verdict)] = &compare_pair("concept, train 0", [relation])[..] else { panic!("one verdict") };
         assert!(matches!(verdict, Verdict::Fault(text) if text.contains("the id 5 has no row")), "{verdict:?}");
     }
 
@@ -1157,7 +1474,7 @@ mod tests {
             checked("&color", souffle(&[&[7, 1], &[8, 2]]), vec![id(x, 1), id(y, 2)]),
             checked("&big", souffle(&[&[7]]), vec![vec![EngineLeaf::Ident(x)]]),
         ];
-        let verdicts = compare_pair("concept, train 0", &relations);
+        let verdicts = compare_pair("concept, train 0", relations);
         assert!(verdicts.iter().all(|(_, verdict)| matches!(verdict, Verdict::Equal(_))), "{verdicts:?}");
     }
 }

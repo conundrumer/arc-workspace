@@ -59,7 +59,7 @@ the call or for the next chunk; that process is bound to one CPU
 (`engine.pool.share_env`). The second phase runs in the main process, in the
 thread of the chunk, which waits on the call and writes the records. The
 Souffle runs go through the run cache. A task's rows file is written to disk
-as it is serialized, and `arclog-cli row-parity` reads it one case at a time.
+as it is serialized, and `arclog-cli row-parity` reads it one relation at a time.
 The call's stderr reaches the run's output: for each task that has run 10 s,
 and each further 10 s, a line `row-parity: <task> case <case>: <n> s`.
 

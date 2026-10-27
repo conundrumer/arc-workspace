@@ -5,11 +5,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::ControlFlow;
+use std::sync::Arc;
 
 use arclog::eval::join::each_row;
 use arclog::eval::models::ModelsEnd;
 use arclog::eval::{input_relation, relation_of, Evaluation, RelationValue};
-use arclog::hash::StableHashSet;
+use arclog::hash::{StableHashMap, StableHashSet};
 use arclog::program::{DeclaredName, InstanceName, OutputName, OutputOwner, OutputStep, PortName, ProgramRelation, RelationName};
 use arclog::relations::Relation;
 use arclog::resolver::Side;
@@ -293,7 +294,8 @@ fn models_of(
 }
 
 /// The leaves of the rows of one model's value of a relation of column
-/// types `types`.
+/// types `types`. The text of each Ident a lib relation mints is made once,
+/// and its rows share it.
 pub(crate) fn model_leaves(
     evaluation: &Evaluation<'_>,
     rows: &Relation,
@@ -303,9 +305,10 @@ pub(crate) fn model_leaves(
 ) -> Result<Vec<Vec<EngineLeaf>>, String> {
     let mut written = Vec::new();
     let mut faults = BTreeSet::new();
+    let mut texts: StableHashMap<Ident, Arc<str>> = StableHashMap::default();
     each_row(rows, &mut |row| {
         let leaves = row.iter().zip(types).map(|(&id, ty)| term_leaves(Term::decode(id, ty), evaluation.registry, &|name| souffle_number(name, constants))).collect::<Result<Vec<_>, _>>();
-        match leaves.and_then(|leaves| projected(evaluation, leaves, constants, projection)) {
+        match leaves.and_then(|leaves| projected(evaluation, leaves, constants, projection, &mut texts)) {
             Ok(leaves) => written.push(leaves),
             Err(text) => {
                 faults.insert(text);
@@ -316,16 +319,30 @@ pub(crate) fn model_leaves(
 }
 
 /// The leaves of one row, whose positions hold `leaves`, as `projection`
-/// reads them.
-fn projected(evaluation: &Evaluation<'_>, leaves: Vec<Vec<EngineLeaf>>, constants: &BTreeMap<String, i64>, projection: Projection<'_>) -> Result<Vec<EngineLeaf>, String> {
+/// reads them; `texts` holds the text of each Ident made so far.
+fn projected(
+    evaluation: &Evaluation<'_>,
+    leaves: Vec<Vec<EngineLeaf>>,
+    constants: &BTreeMap<String, i64>,
+    projection: Projection<'_>,
+    texts: &mut StableHashMap<Ident, Arc<str>>,
+) -> Result<Vec<EngineLeaf>, String> {
     let Projection::Positions(columns) = projection else { return Ok(leaves.concat()) };
     let mut row = Vec::new();
     for column in columns {
         for leaf in &leaves[column.position] {
             match leaf {
                 EngineLeaf::Ident(ident) if column.minted => {
-                    let table = evaluation.session.intern.read().expect("an intern table that no panic poisoned");
-                    row.push(EngineLeaf::Written(Leaf::Other(ident_text(&table, evaluation.registry, *ident, constants)?.into())));
+                    let text = match texts.get(ident) {
+                        Some(text) => Arc::clone(text),
+                        None => {
+                            let table = evaluation.session.intern.read().expect("an intern table that no panic poisoned");
+                            let text: Arc<str> = ident_text(&table, evaluation.registry, *ident, constants)?.into();
+                            texts.insert(*ident, Arc::clone(&text));
+                            text
+                        }
+                    };
+                    row.push(EngineLeaf::Written(Leaf::Other(text)));
                 }
                 other => row.push(other.clone()),
             }

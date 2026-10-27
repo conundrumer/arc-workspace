@@ -435,7 +435,7 @@ def case_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | RunF
     "unresolved": [[label, field, reason], ...], "rows": [[[leaves of column 1], ...], ...],
     "by_open": {...}, "fault": text}]}]}], "not_compared": [{"name",
     "verdict", "reason"}]}`, with the keys in that order, which `arclog-cli row-parity`
-    reads one case at a time; a case whose run gives no rows has `"failure":
+    reads one relation at a time; a case whose run gives no rows has `"failure":
     text` in place of `pairs`. A case's entry has as well `"determination":
     {"pairs": [{"pair": "train 0" or "task", "relations": [...]}]}`, where the
     check compares a relation of `Determine`, with `"failure": text` in place of
