@@ -64,16 +64,23 @@ impl PyDecoder {
         self.decoder().vocabulary().token(id).cloned().ok_or_else(|| PyIndexError::new_err(format!("no token with id {id}")))
     }
 
+    /// The ids of the tokens `forced`, which the engine emits.
+    fn forced_ids(&self, forced: &[Token]) -> Vec<u32> {
+        let vocabulary = self.decoder().vocabulary();
+        forced.iter().map(|token| vocabulary.id(token).expect("a forced token is in the vocabulary")).collect()
+    }
+
     fn step_result(&self, result: arclog::decode::StepResult) -> PyResult<(Vec<u32>, Option<PyConsistency>)> {
         match result {
-            Ok(step) => {
-                let vocabulary = self.decoder().vocabulary();
-                let forced = step.forced.iter().map(|token| vocabulary.id(token).expect("a forced token is in the vocabulary")).collect();
-                Ok((forced, step.consistency.as_ref().map(PyConsistency::of)))
-            }
-            Err(refusal) => Err(Refusal::new_err(format!("{refusal:?}"))),
+            Ok(step) => Ok((self.forced_ids(&step.forced), step.consistency.as_ref().map(PyConsistency::of))),
+            Err(refusal) => Err(refusal_error(&refusal)),
         }
     }
+}
+
+/// The `Refusal` that Python raises for a decode's `refusal`.
+fn refusal_error(refusal: &arclog::decode::Refusal) -> PyErr {
+    Refusal::new_err(format!("{refusal:?}"))
 }
 
 /// The bytes of `mask` over a vocabulary of `len` tokens: bit `id % 8` of
@@ -116,6 +123,16 @@ impl PyDecoder {
         let token = self.token(id)?;
         let result = self.decoder_mut().step(token);
         self.step_result(result)
+    }
+
+    /// The ids of the tokens the engine emits after the token with id `id`,
+    /// as `step` gives them, with no consistency test, and leaves the decode
+    /// as it was. Where `admissible` has computed the mask at this state,
+    /// it reads them from the mask. Raises `Refusal` for a token outside the
+    /// mask, as `step` does.
+    fn forced(&self, id: u32) -> PyResult<Vec<u32>> {
+        let token = self.token(id)?;
+        self.decoder().forced(&token).map(|forced| self.forced_ids(&forced)).map_err(|refusal| refusal_error(&refusal))
     }
 
     /// A second decode from the same state, which shares this one's caches.

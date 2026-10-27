@@ -1,7 +1,8 @@
 //! The decoder reads the token stream of a program into a program of the
 //! same content, with each token the language model emits in its mask and
 //! each token the engine emits among the tokens it forces, refuses a token
-//! outside the mask, and forks a decode that leaves its source as it was.
+//! outside the mask, gives the tokens it forces after a token, with no step,
+//! and forks a decode that leaves its source as it was.
 //! Each prefix that the checks cut from a decoded form is the partial
 //! program that the decode shows at the token of its stream that ends the
 //! prefix's node.
@@ -407,5 +408,35 @@ fn a_step_after_the_mask_is_the_step_with_no_mask() {
         assert_eq!(format!("{stepped:?}"), format!("{expected:?}"), "{token:?}");
         assert_eq!(format!("{:?}", decoder.partial()), format!("{:?}", bare.partial()), "{token:?}");
         assert_eq!(decoder.program(), bare.program(), "{token:?}");
+    }
+}
+
+/// At a state where `END` ends a `RULE` clause, `forced` of a token gives
+/// the tokens that the step of the token on a fork gives as forced, whether
+/// the decode holds the mask of its state or not, leaves the decode's trace
+/// and program as they were, and refuses a token outside the mask as the
+/// step does.
+#[test]
+fn forced_is_the_forced_of_the_step_and_leaves_the_decode_as_it_was() {
+    let inputs = inputs();
+    let mut at = decoded(&inputs, BG);
+    for token in [Token::Control(Control::Rule), Token::Relation(0), Token::Column(0), Token::Control(Control::Fresh)] {
+        at.step(token).expect("a clause that reads `&bg`");
+    }
+    let closer = Token::Control(Control::End);
+    let outside = Token::Control(Control::Rule);
+    let expected = at.fork().step(closer.clone()).expect("the closer is in the mask").forced.to_vec();
+    let refused = at.fork().step(outside.clone()).expect_err("a `RULE` inside a clause is outside the mask");
+    let trace = at.trace().len();
+    let program = at.program().clone();
+    for held in [false, true] {
+        if held {
+            let id = at.vocabulary().id(&closer).expect("a token of the vocabulary");
+            assert!(at.admissible().contains(id));
+        }
+        assert_eq!(at.forced(&closer), Ok(expected.clone()), "mask held: {held}");
+        assert_eq!(at.forced(&outside), Err(refused.clone()), "mask held: {held}");
+        assert_eq!(at.trace().len(), trace, "mask held: {held}");
+        assert_eq!(&program, at.program(), "mask held: {held}");
     }
 }

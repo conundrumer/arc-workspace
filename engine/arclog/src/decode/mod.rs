@@ -292,14 +292,30 @@ impl<'a> Decoder<'a> {
         self.apply(advanced)
     }
 
+    /// The tokens that [`Decoder::step`] gives as `forced` after `token`, or
+    /// the refusal that it gives for a token it refuses. It runs no
+    /// consistency test, and leaves the decode as it was. Where the decode
+    /// holds the mask of its state and the mask admits `token`, it reads the
+    /// forced tokens from the mask and runs no check.
+    pub fn forced(&self, token: &Token) -> Result<Vec<Token>, Refusal> {
+        self.next_state(token).map(|(_, forced)| forced)
+    }
+
+    /// The state after `token`, and the tokens the engine emits after it:
+    /// those the held mask keeps for the token's id, or else those that the
+    /// checks of the state give.
+    fn next_state(&self, token: &Token) -> Result<(state::State, Vec<Token>), Refusal> {
+        let kept = self.held.0.get().and_then(|held| held.steps.get(&self.context.vocabulary.id(token)?));
+        match kept {
+            Some((state, forced)) => Ok((state.clone(), forced.clone())),
+            None => self.with_checks(|checks| self.next(token, checks, &RefCell::default())),
+        }
+    }
+
     /// The state after `token`, and what the step gives, which
     /// [`Decoder::apply`] makes the decode's.
     fn advance(&self, token: &Token) -> Result<Advanced, Refusal> {
-        let kept = self.held.0.get().and_then(|held| held.steps.get(&self.context.vocabulary.id(token)?));
-        let (state, forced) = match kept {
-            Some((state, forced)) => (state.clone(), forced.clone()),
-            None => self.with_checks(|checks| self.next(token, checks, &RefCell::default()))?,
-        };
+        let (state, forced) = self.next_state(token)?;
         let judged = self.consistency(&self.state, &state);
         let (consistency, columns) = judged.map_or((None, None), |(result, columns)| (Some(result), columns));
         Ok(Advanced { token: token.clone(), state, step: Step { forced: forced.into(), consistency, columns } })
