@@ -909,12 +909,6 @@ bcb3040b	&bg_paint	uncompared	-
 bcb3040b	&two_cell2.plural	uncompared	-
 bcb3040b	&two_cell_train	uncompared	-
 bcb3040b	input	uncompared	-
-bd14c3bf	&matched	differ	20-474
-bd14c3bf	&output	differ	20-474
-bd14c3bf	&painted	differ	20-474
-bd14c3bf	&ref_fig	differ	20-474
-bd14c3bf	&same.equal	differ	20-474
-bd14c3bf	&same.pattern	differ	20-474
 bd14c3bf	&same.superset	uncompared	-
 bf699163	&drawn	uncompared	-
 bf699163	&frame_by_shape.plural	uncompared	-
