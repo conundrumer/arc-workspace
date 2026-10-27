@@ -9,6 +9,7 @@ use std::ops::ControlFlow;
 use arclog::eval::join::each_row;
 use arclog::eval::models::ModelsEnd;
 use arclog::eval::{input_relation, relation_of, Evaluation, RelationValue};
+use arclog::hash::StableHashSet;
 use arclog::program::{DeclaredName, InstanceName, OutputName, OutputOwner, OutputStep, PortName, ProgramRelation, RelationName};
 use arclog::relations::Relation;
 use arclog::resolver::Side;
@@ -380,5 +381,8 @@ pub(crate) fn souffle_number(name: &str, constants: &BTreeMap<String, i64>) -> R
 
 /// Whether `a` and `b` hold the same rows, each row once.
 pub(crate) fn same_rows(a: &[Vec<EngineLeaf>], b: &[Vec<EngineLeaf>]) -> bool {
-    a.iter().all(|row| b.contains(row)) && b.iter().all(|row| a.contains(row))
+    fn set(side: &[Vec<EngineLeaf>]) -> StableHashSet<&Vec<EngineLeaf>> {
+        side.iter().collect()
+    }
+    set(a) == set(b)
 }

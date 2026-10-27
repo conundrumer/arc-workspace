@@ -15,7 +15,7 @@ use serde_json::Value;
 
 /// One leaf of a row of a record: an integer, or another value by its
 /// text, as `scripts/souffle_parity.py rerun --json` writes a row.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub(crate) enum Leaf {
     Number(i64),
     Other(Box<str>),
@@ -43,7 +43,7 @@ impl<'de> Deserialize<'de> for Leaf {
 /// One leaf of a row of the engine: a leaf as a record writes it, or an
 /// Ident, which stands for the record's number of the same entity under a
 /// renaming that [`renaming_exists`] looks for.
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub(crate) enum EngineLeaf {
     Written(Leaf),
     Ident(Ident),

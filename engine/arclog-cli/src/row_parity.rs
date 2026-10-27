@@ -39,6 +39,11 @@
 //! fails, has the relation `*`. It exits 1 where a line is `differ`, `fault`
 //! or `uncompared`.
 //!
+//! While it runs, each task that has run 10 s, and then each further 10 s,
+//! gets one line on stderr, `row-parity: <task> case <case>: <n> s`, with the
+//! case its rows file's stream has reached (empty before the first case,
+//! `determination` for the determination) and the seconds it has run.
+//!
 //! The file's `determination` entry, where it has one, holds Souffle's rows of
 //! the relations of the `Determine` component at its run over the task's
 //! examples, the run `solver.determine.determine` makes: for a relation with
@@ -84,10 +89,13 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use std::process::ExitCode;
+use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use arclog::eval::{output_relation, Evaluation};
 use arclog::harness::{require_optimized_build, run_over_corpus, SolverResult};
+use arclog::hash::StableHashSet;
 use arclog::terms::Example;
 use serde::de::{DeserializeSeed, IgnoredAny, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
@@ -95,6 +103,9 @@ use serde::{Deserialize, Deserializer};
 use crate::concept_case::{with_case, with_concept_case, ConceptCase};
 use crate::renaming::{renaming_exists, same_without_idents, EngineLeaf, Leaf};
 use crate::souffle_rows::{engine_columns, engine_models, named_relation, pair_name, same_rows, Column, EngineModel, EngineModels, PickRequest, Projection};
+
+/// The seconds between the progress lines of a task that is still running.
+const PROGRESS_SECS: u64 = 10;
 
 const USAGE: &str = "usage: arclog-cli row-parity <corpus-dir> <tasks-dir> <rows-dir> <task_id> [<task_id> ...]";
 
@@ -294,15 +305,32 @@ pub fn run(args: &[String]) -> ExitCode {
     }
     let selected: BTreeSet<String> = ids.iter().cloned().collect();
     let lines: Mutex<BTreeMap<String, Vec<(String, Verdict)>>> = Mutex::new(BTreeMap::new());
-    let report = run_over_corpus(Path::new(corpus), Some(&selected), |solver| {
-        match task_verdicts(Path::new(corpus), Path::new(tasks), &solver.task_id, &Path::new(rows).join(format!("{}.json", solver.task_id))) {
-            Ok(verdicts) => {
-                lines.lock().expect("the lines are not poisoned").insert(solver.task_id.clone(), verdicts);
-                SolverResult::Pass
+    let progress: Progress = Mutex::new(BTreeMap::new());
+    let progress = &progress;
+    let (done, watching) = mpsc::channel::<()>();
+    let report = std::thread::scope(|scope| {
+        scope.spawn(move || {
+            while watching.recv_timeout(Duration::from_secs(1)) == Err(RecvTimeoutError::Timeout) {
+                for line in overdue(progress, Instant::now()) {
+                    eprintln!("{line}");
+                }
             }
-            Err(fault) => SolverResult::Fail(vec![fault]),
-        }
-    }, |_, _| {});
+        });
+        let report = run_over_corpus(Path::new(corpus), Some(&selected), |solver| {
+            progress.lock().expect("the progress is not poisoned").insert(solver.task_id.clone(), Running { case: String::new(), start: Instant::now(), printed: 0 });
+            match task_verdicts(Path::new(corpus), Path::new(tasks), &solver.task_id, &Path::new(rows).join(format!("{}.json", solver.task_id)), progress) {
+                Ok(verdicts) => {
+                    lines.lock().expect("the lines are not poisoned").insert(solver.task_id.clone(), verdicts);
+                    SolverResult::Pass
+                }
+                Err(fault) => SolverResult::Fail(vec![fault]),
+            }
+        }, |solver, _| {
+            progress.lock().expect("the progress is not poisoned").remove(&solver.task_id);
+        });
+        drop(done);
+        report
+    });
     let report = match report {
         Ok(report) => report,
         Err(error) => {
@@ -324,15 +352,42 @@ pub fn run(args: &[String]) -> ExitCode {
     if failed { ExitCode::FAILURE } else { ExitCode::SUCCESS }
 }
 
+/// A task in flight: the case its rows file's stream has reached, when it
+/// started, and the count of progress lines printed for it.
+struct Running {
+    case: String,
+    start: Instant,
+    printed: u64,
+}
+
+/// The tasks in flight, by task id.
+type Progress = Mutex<BTreeMap<String, Running>>;
+
+/// The progress line of each task of `progress` whose time in flight at `now`
+/// has reached `PROGRESS_SECS` times one more than its count of lines
+/// printed, and counts that line as printed.
+fn overdue(progress: &Progress, now: Instant) -> Vec<String> {
+    let mut tasks = progress.lock().expect("the progress is not poisoned");
+    let mut lines = Vec::new();
+    for (task, running) in tasks.iter_mut() {
+        let seconds = now.saturating_duration_since(running.start).as_secs();
+        if seconds >= PROGRESS_SECS * (running.printed + 1) {
+            running.printed += 1;
+            lines.push(format!("row-parity: {task} case {}: {seconds} s", running.case));
+        }
+    }
+    lines
+}
+
 /// The verdict of each relation of the rows file at `path` of the solver `id`:
 /// each relation of the cases it gives, merged over the cases and their pairs,
 /// in the file's order of relations, then the relations that the file leaves
 /// out. A case that fails to set up, and a case whose Souffle run gave no
 /// rows, give a fault of the whole task.
-fn task_verdicts(corpus: &Path, tasks: &Path, id: &str, path: &Path) -> Result<Vec<(String, Verdict)>, String> {
+fn task_verdicts(corpus: &Path, tasks: &Path, id: &str, path: &Path, progress: &Progress) -> Result<Vec<(String, Verdict)>, String> {
     let file = File::open(path).map_err(|error| format!("{} does not read: {error}", path.display()))?;
     let mut deserializer = serde_json::Deserializer::from_reader(BufReader::new(file));
-    let mut verdicts = Verdicts { corpus, tasks, id, constants: None, checks: None, cases_read: false, found: Found::default(), left_out: None, fault: None };
+    let mut verdicts = Verdicts { corpus, tasks, id, progress, constants: None, checks: None, cases_read: false, found: Found::default(), left_out: None, fault: None };
     let read = (&mut verdicts).deserialize(&mut deserializer).and_then(|()| deserializer.end());
     if let Some(fault) = verdicts.fault.take() {
         return Err(fault);
@@ -347,6 +402,7 @@ struct Verdicts<'a> {
     corpus: &'a Path,
     tasks: &'a Path,
     id: &'a str,
+    progress: &'a Progress,
     constants: Option<BTreeMap<String, i64>>,
     /// The arclog names of the check relations.
     checks: Option<Vec<String>>,
@@ -365,9 +421,17 @@ impl Verdicts<'_> {
         Ok((constants, checks))
     }
 
+    /// Sets the case that the progress line of this task gives.
+    fn set_case(&self, case: &str) {
+        if let Some(running) = self.progress.lock().expect("the progress is not poisoned").get_mut(self.id) {
+            case.clone_into(&mut running.case);
+        }
+    }
+
     /// Merges the verdicts of `case`, an entry of the rows file's `cases`.
     fn read_case(&mut self, case: FileCase) -> Result<(), String> {
         let FileCase { case: name, failure, pairs } = case;
+        self.set_case(&name);
         if let Some(failure) = failure {
             self.found.lines.push((WHOLE_TASK.to_owned(), Verdict::Fault(format!("case {name}: no Souffle rows: {failure}"))));
             return Ok(());
@@ -384,6 +448,7 @@ impl Verdicts<'_> {
 
     /// Merges the verdicts of the rows file's `determination`.
     fn read_determination(&mut self, determination: FileDetermination) -> Result<(), String> {
+        self.set_case("determination");
         if let Some(failure) = determination.failure {
             self.found.lines.push((WHOLE_TASK.to_owned(), Verdict::Fault(format!("determination: no Souffle rows: {failure}"))));
             return Ok(());
@@ -697,13 +762,8 @@ fn unresolved_note(leaf: &FileUnresolved) -> String {
 
 /// `rows` with each row once, in order.
 fn distinct(rows: Vec<Vec<EngineLeaf>>) -> Vec<Vec<EngineLeaf>> {
-    let mut seen: Vec<Vec<EngineLeaf>> = Vec::new();
-    for row in rows {
-        if !seen.contains(&row) {
-            seen.push(row);
-        }
-    }
-    seen
+    let mut seen: StableHashSet<Vec<EngineLeaf>> = StableHashSet::default();
+    rows.into_iter().filter(|row| seen.insert(row.clone())).collect()
 }
 
 /// Adds `verdict`, of one pair of one case, to `merged`: a `differ`, a
@@ -896,7 +956,7 @@ mod tests {
     fn verdicts_of(name: &str, text: &str) -> Result<Vec<(String, Verdict)>, String> {
         let path = std::env::temp_dir().join(format!("row_parity_{}_{name}.json", std::process::id()));
         std::fs::write(&path, text).expect("the rows file writes");
-        let verdicts = task_verdicts(Path::new("corpus"), Path::new("tasks"), "aaaa0001", &path);
+        let verdicts = task_verdicts(Path::new("corpus"), Path::new("tasks"), "aaaa0001", &path, &Mutex::new(BTreeMap::new()));
         std::fs::remove_file(&path).expect("the rows file is removed");
         verdicts
     }

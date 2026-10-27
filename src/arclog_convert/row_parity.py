@@ -60,6 +60,8 @@ the call or for the next chunk; that process is bound to one CPU
 thread of the chunk, which waits on the call and writes the records. The
 Souffle runs go through the run cache. A task's rows file is written to disk
 as it is serialized, and `arclog-cli row-parity` reads it one case at a time.
+The call's stderr reaches the run's output: for each task that has run 10 s,
+and each further 10 s, a line `row-parity: <task> case <case>: <n> s`.
 
 `row_parity.tsv` is the baseline: a line `<task> <relation> <verdict>
 <ticket or ->` (tab-separated) for each task and relation whose verdict is
