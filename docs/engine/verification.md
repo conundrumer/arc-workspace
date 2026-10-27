@@ -25,6 +25,13 @@ How each step of the [build order](overview.md#build-order) is checked against t
 - This comparison is a command, not a test of the test suite.
 - Agreement with Souffle does not show that a lib element is equivariant, as [Equivalence and subsumption](../../docs/handbook/principles.md#equivalence-and-subsumption) gives for agreement on some inputs. How the lib keeps equivariance is in [equivariance.md](equivariance.md).
 
+## Mutation run
+
+- [mutation_run.py](../../engine/arclog-py/mutation_run.py) writes mutants of the corpus solvers' `.arclog` texts, each by one edit of one s-expression, and runs each through the reader, the checker and the evaluator of the `arclog-cli` build it is given. Its docstring gives its arguments.
+- It prints one line for each of these findings: a panic, a verdict that departs from a rule of [arclog.md](../arclog/arclog.md) or [rigid.md](../arclog/rigid.md), an accepted mutant the evaluator cannot run, a refusal that names no cause, and a stage that does not end within its time bound.
+- Whoever wants an audit of a build starts it by hand. It is no test and no condition of a merge, and no test suite, merge step or gate runs it.
+- Each finding line is a fault to file as a bug, with its mutant directory as the evidence.
+
 ## Build speed
 
 - The constructions are in a crate of their own, as [Crates](overview.md#crates) gives.
