@@ -81,7 +81,12 @@ relation P say something of a case only where some reader of P, a form that held
 an atom on P before the pass redirected it, derives its own relation in the case
 and the `OUT` form reads that relation or is it (an `OUT` form that held an atom on P is the output itself), or that
 relation is itself a removed relation of which this holds (`ReaderForm` gives when a reader derives its
-relation). `Projected.readers` gives the readers of each removed relation."""
+relation). `Projected.readers` gives the readers of each removed relation.
+
+`Projected.blocked` says whether, in the last scan of the pass, a rule on blocks kept a clause: a reader outside the
+clause's block, a form of Q in another block or a line of two readings (`pull_up.READINGS`) that a rule above reads, or a removal that would leave an `ALT`
+form without a concept form of its name (the lint code `alt-tail`). A clause so kept may go in the flat program of a
+case, where each relation has one deriving form and no `ALT` block stands."""
 
 import re
 from collections import Counter, defaultdict
@@ -93,7 +98,7 @@ from typing import Any, Literal, NamedTuple
 from arclog_convert.lint import (
     CLAIMS, FACTS, FORMS, MARKS, OPS, L, Linter, Placed, Sym, alt_points, bare_label, e_site, implied_branches,
     is_const, leaves, placements, read, site_pairs, walk)
-from arclog_convert.pull_up import BODIES, OUTPUT, Edit, Reader, applied, atom_sites, readers_by_relation
+from arclog_convert.pull_up import BODIES, OUTPUT, READINGS, Edit, Reader, applied, atom_sites, readers_by_relation
 
 type Reading = Literal["RULE", "DET"]
 """How a clause reads: per input, or task-wide."""
@@ -143,6 +148,8 @@ class Projected:
 
     arclog: str
     readers: Mapping[str, tuple[ReaderForm, ...]]
+    blocked: bool
+    """Whether a rule on blocks kept a clause in the last scan of the pass (`_Program.blocked`)."""
 
 
 class _Step(NamedTuple):
@@ -341,6 +348,10 @@ class _Program:
                 if isinstance(x, L) and x.items and isinstance(x.items[0], Sym):
                     self.heads[x.items[0].text].add(x.items[0].pos)
         self.scopes_of: dict[int, frozenset[Scope]] = {}
+        self.blocked = False
+        """Whether a rule on blocks kept a clause in the scans of `step`: a clause that stays because a reader or a
+        form of a relation stands in another block, or because the removal would leave an `ALT` form with no concept
+        form of its name."""
 
     def step(self, keep: bool) -> _Step | None:
         """The text after the first projection clause that may go, with its relation and the forms that read it: its
@@ -348,6 +359,7 @@ class _Program:
         lint another code than the text has stays, other than for an `OR` branch the redirect leaves implied, which
         goes."""
         baseline = None
+        self.blocked = False
         for p in self.placed:
             parts = self._parts(p) if p.name else None
             found = None if parts is None else self._redirects(p, parts)
@@ -357,10 +369,13 @@ class _Program:
             edits = redirects if keep else [*redirects, _removal(self.text, p.form)]
             text = applied(self.text, edits)
             baseline = _codes(self.text) if baseline is None else baseline
-            if not _codes(text) <= baseline:
+            codes = _codes(text)
+            if not codes <= baseline:
                 text = _without_implied(text, _landed(edits, redirects))
-            if _codes(text) <= baseline:
+                codes = _codes(text)
+            if codes <= baseline:
                 return _Step(text, str(p.name), readers)
+            self.blocked |= any(code.startswith("alt-") for code in codes - baseline)
         return None
 
     # ---- the rules that keep a clause
@@ -396,8 +411,12 @@ class _Program:
         bases = {relation.partition(".")[0] for relation in relations}
         settled = [_settled(part, self.columns) for part in parts]
         derivations = [self._derivations(relation) for relation in relations]
-        if (any(s is None for s in settled) or any(d is None for d in derivations) or self._named(p)
-                or p.form.head == "DET" and any(len({d.alts for d in self.decls[base]}) > 1 for base in bases)):
+        in_blocks = any(len({d.alts for d in self.decls[base]}) > 1 for base in bases)
+        varies = in_blocks or any(d.form.head in READINGS for base in bases for d in self.decls[base])
+        if any(s is None for s in settled) or self._named(p):
+            return None
+        if any(d is None for d in derivations) or p.form.head == "DET" and in_blocks:
+            self.blocked |= varies
             return None
         origins = {label: origin for part in settled for label, origin in (part or {}).items()}
         active = self._active(p)
@@ -411,6 +430,7 @@ class _Program:
                     or "DET" in readings and bases & self.chosen
                     or any(self._blocked(p, placed, readings, d, bool(found.keys() - origins.keys()), flipped)
                            for ds in derivations for d in ds or ())):
+                self.blocked |= varies or any(pl.form.head in READINGS for _, pl in active or ())
                 return None
             edits.append((reader.atom.start, reader.atom.end, text))
         return (edits, frozenset(self._reader_form(placed) for _, placed in active or ())) if edits else None
@@ -446,6 +466,7 @@ class _Program:
             if not block <= stands:
                 if placed.form.head != "DET" and self._rederived(placed, case):
                     continue
+                self.blocked = True
                 return None
             for d in others:
                 held = set(d.alts)
@@ -453,8 +474,10 @@ class _Program:
                     continue
                 if placed.form.head == "DET":
                     if held <= stands:
+                        self.blocked = True
                         return None
                 elif self._consistent(case | held) and not self._rederived(placed, case | held):
+                    self.blocked = True
                     return None
             active.append((reader, placed))
         return active
@@ -497,7 +520,7 @@ class _Program:
         reading = READS_AS.get(str(form.head))
         if reading is not None:
             return frozenset({reading})
-        if form.head in ("RULE_OR_DET", "DET_OR_RULE"):
+        if form.head in READINGS:
             return frozenset({"RULE", "DET"})
         if form.head in INSTANCES:
             return frozenset({"RULE" if s == "input" else "DET" for s in self._scopes(form)})
@@ -521,7 +544,7 @@ class _Program:
                 out.append(_Derivation("RULE", True))
             elif not port and d.form.head == "DET":
                 out.append(_Derivation("DET", False))
-            elif not port and d.form.head in ("RULE_OR_DET", "DET_OR_RULE"):
+            elif not port and d.form.head in READINGS:
                 out += [_Derivation("RULE", True), _Derivation("DET", False)]
             else:
                 return None
@@ -734,8 +757,11 @@ def project(arclog: str, arcdata: str, columns: Mapping[str, Mapping[str, Any]],
     with `keep`)."""
     chosen = frozenset(_lint(arclog).chosen)
     readers: dict[str, set[ReaderForm]] = defaultdict(set)
-    while (step := _Program(arclog, arcdata, columns, chosen).step(keep)) is not None:
+    while True:
+        program = _Program(arclog, arcdata, columns, chosen)
+        if (step := program.step(keep)) is None:
+            break
         arclog = step.text
         readers[step.relation] |= step.readers
     return Projected(arclog if keep or not readers else _restand(arclog),
-                     {relation: tuple(sorted(forms)) for relation, forms in sorted(readers.items())})
+                     {relation: tuple(sorted(forms)) for relation, forms in sorted(readers.items())}, program.blocked)

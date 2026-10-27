@@ -25,7 +25,13 @@ another kind (`docs/arclog/arclog.md#program`) would read a relation of the
 factor that its kind may not read; and where the relation has several clauses.
 It stays as well where it is a broadcast: each atom of the component reads at
 most one distinct row of its relation, over the columns the atom reads, on
-each pair of the cases that `parity.rerun.cases_to_run` gives (`Single`)."""
+each pair of the cases that `parity.rerun.cases_to_run` gives (`Single`).
+
+`Pulled.blocked` says whether a rule on blocks keeps a factor in the last scan of the
+pass: the factor's relation has clauses in more than one block, or a reader of it stands in an `ALT` block, is a line
+of two readings (`READINGS`), or derives a relation that a deeper block derives again (it reads nothing in a case that
+holds that block), or the factor's clause is a line of two readings. A factor so kept may move in the flat program of
+a case, where each relation has one deriving form and no `ALT` block stands."""
 
 import json
 import re
@@ -41,6 +47,8 @@ from arclog_convert.lint import (
 
 BODIES = ("RULE", "DET")
 """The clauses with a body that the pass reads and rewrites."""
+READINGS = ("RULE_OR_DET", "DET_OR_RULE")
+"""The lines that are an `ALTS` form on their relation, whose two readings are a case's (`docs/arclog/arclog.md#alts`)."""
 OUTPUT = "&output"
 FINITE = frozenset(re.findall(r"^\(relation (\w+) \(columns \(\w+ (?:[\w-]+|\([^()]*\))\)\)\)$",
                               REGISTRY.read_text(), re.M))
@@ -67,6 +75,8 @@ class Pulled:
 
     arclog: str
     dropped: Mapping[str, frozenset[str]]
+    blocked: bool
+    """Whether a rule on blocks keeps a factor in the text."""
 
 
 @dataclass(frozen=True)
@@ -286,12 +296,13 @@ def given_rows(arcdata: str) -> frozenset[str]:
 
 def _renamed(text: str, group: list[L], new: Mapping[str, tuple[str, bool]], star: frozenset[str]) -> list[str]:
     """The text of each item of `group` with each label that `new` names replaced by its new label, whose `*` mark
-    stays where the pair's flag holds; a site elided to its label is written out, and a site whose label becomes
+    stays where the pair's flag holds; a site elided to its label is written out (a one-label site on `key` is a field of the
+    key's record, elided), and a site whose label becomes
     its column's name is elided. Each label of `star` gets one `*` mark in the group."""
     edits: list[list] = []   # the item's index, the node's span, the label it replaces, its new text
 
     def visit(k: int, x: L) -> None:
-        elided = x.head is not None and (x.head.startswith(":") and len(x.items) > 2
+        elided = x.head is not None and (x.head.startswith(":") and (len(x.items) > 2 or x.head == ":key")
                                          or not x.head.startswith(":") and x.head not in FORMS | OPS)
         for i, y in enumerate(x.items):
             if isinstance(y, L):
@@ -372,20 +383,34 @@ class _Program:
         self.columns = linter.cols
         self.broadcast = {line for line, code, _ in linter.errs if code == "broadcast-inside"}
         self.declared = Counter(p.name for p in self.placed if p.name)
-        self.readers: dict[str, list[Reader]] = defaultdict(
-            list, {name: [r for r, _ in found] for name, found in readers_by_relation(self.placed).items()})
+        by_relation = readers_by_relation(self.placed)
+        self.readers: dict[str, list[Reader]] = defaultdict(list, {name: [r for r, _ in found] for name, found in by_relation.items()})
+        self.blocks: dict[str, set[tuple[str, ...]]] = defaultdict(set)
+        for p in self.placed:
+            if p.name:
+                self.blocks[p.name].add(tuple(sorted(p.alts)))
+        self.read_in_block = {name for name, found in by_relation.items() if any(
+            placed.alts or placed.form.head in READINGS or len(self.blocks[str(placed.name)]) > 1 for _, placed in found)}
+        self.blocked = False
 
     def move(self) -> tuple[str, str, frozenset[str]] | None:
         """The text after the first move of a factor, the relation it left and the columns that took away, none where
-        no factor moves."""
+        no factor moves; `blocked` says, once a scan has found none, whether a rule on blocks kept a factor."""
+        self.blocked = False
         for p in self.placed:
             clause = p.form
-            if not self._editable(clause) or self.declared[str(p.name)] != 1:
+            if clause.head in READINGS:
+                self.blocked |= len(_components([x for x in clause.items[2:] if isinstance(x, L)])) > 1
+            if not self._editable(clause):
                 continue
             items = _items(clause)
             assert items is not None
             comps = _components(items)
+            if self.declared[str(p.name)] != 1:
+                self.blocked |= len(comps) > 1 and len(self.blocks[str(p.name)]) > 1
+                continue
             plans = [self._plan(clause, items, [items[i] for i in comp]) for comp in comps]
+            self.blocked |= len(comps) > 1 and None in plans and str(p.name) in self.read_in_block
             moving = [plan for plan in plans if plan is not None]
             if len(moving) == len(plans):
                 moving = moving[1:]
@@ -513,8 +538,8 @@ class _Program:
 
 
 def pull_up(arclog: str, arcdata: str, single: Single) -> Pulled:
-    """`arclog` after the pass, with the columns it took away from each relation, given the `arcdata` of the same
-    program and the rows `single` gives."""
+    """`arclog` after the pass, with the columns it took away from each relation and whether a rule on blocks kept a
+    factor, given the `arcdata` of the same program and the rows `single` gives."""
     given = given_rows(arcdata)
     dropped: dict[str, set[str]] = defaultdict(set)
     while True:
@@ -526,7 +551,7 @@ def pull_up(arclog: str, arcdata: str, single: Single) -> Pulled:
             arclog = relocated
         else:
             break
-    return Pulled(arclog, {name: frozenset(gone) for name, gone in dropped.items()})
+    return Pulled(arclog, {name: frozenset(gone) for name, gone in dropped.items()}, program.blocked)
 
 
 def drop_columns(columns: Mapping[str, Mapping[str, object]], dropped: Mapping[str, frozenset[str]]

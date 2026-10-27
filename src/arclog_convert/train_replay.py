@@ -30,7 +30,7 @@ it, in a temporary directory that the run removes when it ends or is stopped.
 A task's verdicts stand in `train_replay/<stem>.json` beside `gen/`, as a
 record with these fields: `files`, the sha256 of the task's `.arclog` and
 `.arcdata`, of the files of each solver that a `(representative <id>)` line
-names, followed to its end, and of the task file; `sources`, the digest of the
+names, followed to its end, of the files under `gen/cases/<stem>/` (`arclog_convert.convert.convert_cases`), and of the task file; `sources`, the digest of the
 engine's sources; `binary`, the sha256 of the `verdicts` binary the run ran; and
 `cases`. A task is fresh, and replays nothing, where its record's `files`
 equal the current ones and either its `sources` equal the current digest or its
@@ -108,7 +108,8 @@ def write_baseline(baseline: dict[tuple[str, str], tuple[int, str]], path: Path 
 
 def solver_files(gen: Path, stem: str) -> list[Path]:
     """The `.arclog` and `.arcdata` files of the solver `stem`, then those of
-    each representative its `.arcdata` names, followed to its end."""
+    each representative its `.arcdata` names, followed to its end, then the
+    files under `cases/<stem>/` of `gen`, by name."""
     files, queue, seen = [], [stem], set()
     while queue:
         name = queue.pop(0)
@@ -119,7 +120,7 @@ def solver_files(gen: Path, stem: str) -> list[Path]:
         data = gen / f"{name}.arcdata"
         if data.exists():
             queue += REPRESENTATIVE.findall(data.read_text())
-    return files
+    return files + sorted((gen / "cases" / stem).glob("*"))
 
 
 def engine_digest() -> str:

@@ -47,16 +47,27 @@ where one of those forms derives its relation and `&output` reads that relation
 (`parity.rerun`).
 A form the script cannot translate is written literally, under a
 `;; TODO <kind>: ...` comment.
-As each phase it runs ends (`plans`, `conversion`), the run prints a line `<phase>: <seconds> s` with that phase's
+A clause or a factor that a pass keeps because a block other than the reader's derives its relation again, or because
+its relation has clauses in several blocks, holds in the flat program of a case, where each relation has one deriving
+form (`projections.Projected.blocked`, `pull_up.Pulled.blocked`). On each solver where a pass keeps one, the run
+writes, once every solver stands in `gen/`, the files of the cases whose program read alone differs after the two
+passes (`convert_cases`): `gen/cases/<stem>/<case>.arclog` and `.arcdata`, with `<case>` as `arclog.case_files`
+names the file of the case. A case whose program the passes leave as `arclog.case_files` gives it, and a case of
+which it gives a fault, have no files. The passes read Souffle's rows of the whole program
+(`pull_up.Rows.single`). The run removes `gen/cases/<stem>/` of each solver it converts before it converts it.
+As each phase it runs ends (`plans`, `conversion`, `cases`), the run prints a line `<phase>: <seconds> s` with that phase's
 wall time. Under `scripts/run_heavy.py --cpus <n>`, the processes and threads
 the run has going at once, Souffle processes included, are at most `n`.
 """
 
 import json
 import re
+import shutil
 import sys
 from collections import Counter
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import NamedTuple
 from engine.pool import pool_size
 from engine.program import Qualifier, Variable
 from arclog_convert.libmap import rename as libmap_rename
@@ -77,12 +88,15 @@ from arclog_convert.lib import Col, ColMismatch, LIB_DL, Lib, SIGNATURE
 from arclog_convert.names import Checks, check_maps, column_map, dropped, folded, name_map, parity, placed, unchecked, untranslated
 from arclog_convert.plans import refresh_plans
 from arclog_convert.projections import project, readers_json
-from arclog_convert.pull_up import OUTPUT, Rows, drop_columns, pull_up
+from arclog_convert.pull_up import OUTPUT, Pulled, Rows, drop_columns, pull_up
 from arclog_convert.solver import Solver
 
 
 _LIBS: tuple[Lib, Lib] | None = None
 
+CASES = "cases"
+"""The directory of `gen/` that holds, in a directory per solver, the files of the cases whose normal form
+`convert_cases` writes."""
 
 
 def _written_inline(s: "Solver", arclog: str) -> frozenset[str]:
@@ -178,12 +192,46 @@ def _write_json(directory: Path, stem: str, data: dict) -> None:
     (directory / f"{stem}.json").write_text(json.dumps(data, indent=1, sort_keys=True) + "\n")
 
 
-def convert_one(stem: str) -> tuple[str, str | None, str | None, Counter, Counter, list[str], ColMismatch, str | None,
-                                    tuple[str, str] | None]:
+type Answers = Mapping[tuple[str, frozenset[str]], bool]
+"""The answers of `Rows.single` by the question: a relation and the arclog columns read."""
+
+
+class Converted(NamedTuple):
+    """What `convert_one` gives for one solver."""
+
+    stem: str
+    arclog: str | None
+    arcdata: str | None
+    kinds: Counter
+    """The TODO kinds."""
+    merges: Counter
+    unmerged: list[str]
+    mismatched: ColMismatch
+    """The parameters whose columns do not map onto their proposer's."""
+    error: str | None
+    checked: tuple[str, str] | None
+    """The arclog and the arcdata of the program with the check relations."""
+    answers: Answers | None
+    """The answers of `Rows.single` for the solver, where a rule on blocks kept a clause or a factor in the passes on
+    the whole program, so that `convert_cases` runs the passes on each case; none otherwise."""
+
+
+def _pull_up_all(rows: Rows, texts: Sequence[tuple[str, str]]) -> list[Pulled]:
+    """The pull-up pass on each (arclog, arcdata) text of `texts`, with Souffle's rows asked once for all of them."""
+    asked: set[tuple[str, frozenset[str]]] = set()
+    for text, data in texts:
+        pull_up(text, data, lambda relation, read: bool(asked.add((relation, read))))
+    rows.ask(asked)
+    return [pull_up(text, data, rows.single) for text, data in texts]
+
+
+def convert_one(stem: str) -> Converted:
     """One solver's arclog and arcdata, its TODO kinds, its merge counts and
     its parameters whose columns do not map onto their proposer's, or the
-    error that stopped it, and the arclog and the arcdata of its program with
-    the check relations: a pool worker's unit of work."""
+    error that stopped it, the arclog and the arcdata of its program with
+    the check relations, and the answers of `Rows.single` where
+    `convert_cases` is to run: a pool worker's unit of work. The run first
+    removes `cases/<stem>/` of `gen/`, which `convert_cases` writes."""
     global _LIBS
     if _LIBS is None:
         lib, sig = Lib(LIB_DL), Lib(SIGNATURE)
@@ -194,6 +242,8 @@ def convert_one(stem: str) -> tuple[str, str | None, str | None, Counter, Counte
     MERGES_UNMERGED.clear()
     todo = Todo()
     checked = None
+    answers = None
+    shutil.rmtree(paths.OUT_DIR / CASES / stem, ignore_errors=True)
     try:
         s = Solver(stem, lib, sig, todo)
         arclog, arcdata = s.run()
@@ -222,18 +272,12 @@ def convert_one(stem: str) -> tuple[str, str | None, str | None, Counter, Counte
         (paths.NAMES_DIR / f"{stem}.determination.dl").write_text(text.determination)
         # the pass reads Souffle's rows, which `parity.rerun` gives from the name map and the texts just written
         rows = Rows(stem, columns)
-        asked: set[tuple[str, frozenset[str]]] = set()
-        for text, data in ((arclog, arcdata), *([checked] if checked is not None else [])):
-            pull_up(text, data, lambda relation, read: bool(asked.add((relation, read))))
-        rows.ask(asked)
-        single = rows.single
-        pulled = pull_up(arclog, arcdata, single)
+        pulled, *copy = _pull_up_all(rows, [(arclog, arcdata), *([checked] if checked is not None else [])])
         dropped = dict(pulled.dropped)
         arclog = pulled.arclog
         if checked is not None:
-            copy = pull_up(checked[0], checked[1], single)
-            checked = (copy.arclog, checked[1])
-            dropped.update({n: dropped.get(n, frozenset()) | g for n, g in copy.dropped.items()})
+            checked = (copy[0].arclog, checked[1])
+            dropped.update({n: dropped.get(n, frozenset()) | g for n, g in copy[0].dropped.items()})
         columns = drop_columns(columns, dropped)
         paths.COLUMNS_DIR.mkdir(parents=True, exist_ok=True)
         _write_json(paths.COLUMNS_DIR, stem, columns)
@@ -246,13 +290,48 @@ def convert_one(stem: str) -> tuple[str, str | None, str | None, Counter, Counte
         base = checked or (arclog, arcdata)
         kept = project(base[0], base[1], columns, keep=True)
         checked = (kept.arclog, base[1])
-        arclog = project(arclog, arcdata, columns).arclog
+        projected = project(arclog, arcdata, columns)
+        arclog = projected.arclog
+        if pulled.blocked or projected.blocked:
+            answers = rows.answers
         if kept.readers:
             names["removed"] = readers_json(kept.readers)
             _write_json(paths.NAMES_DIR, stem, names)
     except Exception as e:  # noqa: BLE001
-        return stem, None, None, Counter(), Counter(), [], {}, f"{type(e).__name__}: {e}", None
-    return stem, arclog, arcdata, todo.kinds, merges, unmerged, s.c.col_mismatch, None, checked
+        return Converted(stem, None, None, Counter(), Counter(), [], {}, f"{type(e).__name__}: {e}", None, None)
+    return Converted(stem, arclog, arcdata, todo.kinds, merges, unmerged, s.c.col_mismatch, None, checked, answers)
+
+
+def convert_cases(stem: str, answers: Answers) -> tuple[str, int, str | None]:
+    """Write the files of the cases of the solver `stem` whose normal form differs from the case as `gen/` gives it:
+    `gen/cases/<stem>/<case>.arclog` and `.arcdata`, with `<case>` as `arclog.case_files` gives it. The normal form of
+    a case is its program read alone (`arclog.case_files`) after the pull-up pass and then the projection pass, which
+    read Souffle's rows of the whole program (`Rows.single`; `answers` are those `convert_one` found). A case of which
+    `arclog.case_files` gives a fault gets no files. It reads the texts, the column map and the files of the
+    solvers `gen/` holds that `convert_one` and the run wrote, so it runs after every solver is converted, and it
+    writes nothing but those files.
+
+    Gives the stem, the number of cases it wrote files of, and the error that stopped it."""
+    from arclog import case_files
+    try:
+        gen = paths.OUT_DIR
+        texts = (gen / f"{stem}.arclog").read_text(), (gen / f"{stem}.arcdata").read_text()
+        columns = json.loads((paths.COLUMNS_DIR / f"{stem}.json").read_text())
+        rows = Rows(stem, columns)
+        rows.answers.update(answers)
+        files = [f for f in case_files(stem, *texts, str(gen)) if f.fault is None]
+        pulled = _pull_up_all(rows, [(f.arclog, f.arcdata) for f in files])
+        normal = [project(p.arclog, f.arcdata, drop_columns(columns, p.dropped)).arclog for f, p in zip(files, pulled)]
+        written = [(f, text) for f, text in zip(files, normal) if text != f.arclog]
+        directory = gen / CASES / stem
+        if written:
+            directory.mkdir(parents=True, exist_ok=True)
+        for f, text in written:
+            (directory / f"{f.file}.arclog").write_text(text)
+            (directory / f"{f.file}.arcdata").write_text(f.arcdata)
+    except Exception as e:  # noqa: BLE001
+        return stem, 0, f"{type(e).__name__}: {e}"
+    return stem, len(written), None
 
 
 def main(argv: list[str]) -> int:
@@ -294,7 +373,8 @@ def convert_into(stems: list[str], out: Path) -> list[str]:
         results = pool.map(convert_one, order)
     else:
         pool, results = None, map(convert_one, stems)
-    for stem, arclog, arcdata, kinds, m, um, mis, err, checked in results:
+    asked: dict[str, Answers] = {}
+    for stem, arclog, arcdata, kinds, m, um, mis, err, checked, answers in results:
         if err is not None:
             failed.append((stem, err))
             continue
@@ -305,6 +385,8 @@ def convert_into(stems: list[str], out: Path) -> list[str]:
             corpus.mkdir(exist_ok=True)
             (corpus / f"{stem}.arclog").write_text(checked[0])
             (corpus / f"{stem}.arcdata").write_text(checked[1])
+        if answers is not None:
+            asked[stem] = answers
         merges += m
         unmerged += um
         mismatched += [(stem, name, own, prop) for name, (own, prop) in mis.items()]
@@ -313,9 +395,20 @@ def convert_into(stems: list[str], out: Path) -> list[str]:
             per_kind_solvers[k] += 1
         if not kinds:
             clean += 1
+    # the files of a case read the files of the solvers its solver names, so they are written once all stand
+    with phase("cases"):
+        cased = list(pool.map(convert_cases, asked, asked.values()) if pool is not None
+                     else map(convert_cases, asked, asked.values()))
+    for stem, count, err in cased:
+        if err is not None:
+            failed.append((stem, f"the case files: {err}"))
+            converted.remove(stem)
+    written = [count for _, count, err in cased if err is None]
     if pool is not None:
         pool.shutdown()
     print(f"converted {len(stems) - len(failed)} of {len(stems)}; {clean} with no TODO")
+    print(f"case files: {sum(written)} cases of {sum(1 for count in written if count)} solvers; "
+          f"the passes ran on the cases of {len(written)} solvers")
     print(f"merged {merges['relation']} relations and {merges['input']} inputs; "
           f"unmerged {merges['unmerged']} relations ({', '.join(sorted(set(unmerged)))}) "
           f"and {merges['input-unmerged']} inputs")

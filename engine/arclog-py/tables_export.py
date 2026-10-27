@@ -9,7 +9,7 @@ if set and `os.cpu_count()` otherwise, and checks the parts it writes on N proce
 `.arcdata` file first, then the others by the one-thread seconds each took in that export (see `parts/<k>.tasks.txt`: the line's seconds times its units), longest first. A task whose one-thread seconds would end past half the mean load of a worker (the summed one-thread seconds of the
 tasks to replay over N) is replayed in `units` units on `units` engine threads, the least count (at most N and at most the cases the previous export
 holds for the task) at which its expected unit time, `1 + (units - 1) / 14` times its seconds over `units`, is under that bound; any other
-task is replayed in one unit. The cut of a task into units is a function of the task and its count (see `arclog.corpus_tables`). With `--previous`, each task whose key (the sha256 of its `work/arclog/gen` `.arclog` and `.arcdata`, its task file, every file of
+task is replayed in one unit. The cut of a task into units is a function of the task and its count (see `arclog.corpus_tables`). With `--previous`, each task whose key (the sha256 of its `work/arclog/gen` `.arclog` and `.arcdata`, its files under `work/arclog/gen/cases/<task>/` with their names, its task file, every file of
 the installed `arclog` package, the versions of Python, numpy, pandas and pyarrow, `export_rows.py` and the text of `settings.json`) equals the key in that export's
 `tasks.txt` lines is not replayed: its rows, values (hard-linked) and fault lines are those of that export,
 written as parts of the out dir. Its check lines are those of that export where the sha256 of `export_checks.py` (the checks digest) equals the one in its `tasks.txt` line,
@@ -211,10 +211,11 @@ def checks_digest():
 
 
 def task_key(engine, task, settings, modules):
-    """The sha256 of the task's generated program and data, its task file, the files `modules` gives, the `engine` digest and the settings text."""
+    """The sha256 of the task's generated program and data, its files under `gen/cases/<task>/` with their names, its task file, the files `modules` gives, the `engine` digest and the settings text."""
     digest = hashlib.sha256()
-    for f in (f"{CORPUS}/{task}.arclog", f"{CORPUS}/{task}.arcdata", f"{TASKS}/{task}.json", *modules):
-        digest.update(open(f, "rb").read() + b"\0")
+    cases = sorted(glob.glob(f"{CORPUS}/cases/{task}/*"))
+    for f in (f"{CORPUS}/{task}.arclog", f"{CORPUS}/{task}.arcdata", *cases, f"{TASKS}/{task}.json", *modules):
+        digest.update((os.path.basename(f).encode() + b"\0" if f in cases else b"") + open(f, "rb").read() + b"\0")
     digest.update(engine.encode() + b"\0" + settings.encode())
     return digest.hexdigest()
 
