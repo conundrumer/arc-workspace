@@ -1,6 +1,8 @@
-//! The type of a label over its scope: the meet of the types of its sites,
-//! the join over the branches of an `OR` or an `IF` that exports it, and the
-//! fault where a meet is empty or a join does not exist.
+//! The type of a label over its scope: the meet of the types of its sites
+//! other than those of `NOT` atoms, or, where those give no type, of the
+//! sites of `NOT` atoms, the join over the branches of an `OR` or an `IF`
+//! that exports it, and the fault where a meet is empty or a join does not
+//! exist.
 
 use super::body_walks::{each_conjunct, each_site_label, each_site_use, use_label};
 use super::{Meet, ValueType};
@@ -29,12 +31,15 @@ pub(crate) fn label_fault_message(fault: LabelFault) -> String {
 ///
 /// The type is the meet, as [`ValueType::meet`] gives it, of the types of
 /// every site of the label, at any depth, and a join, as [`ValueType::join`]
-/// gives it, comes only between alternatives. A constraint over two labels
-/// gives each the sites of the other in the list that holds the constraint
-/// and in the lists nested in it, and, for a constraint in an `IF`'s test or
-/// in an `ALL`'s domain, in that form's then or body as well; `0` gives no
-/// type. A negated atom's sites count as a positive atom's, and a `NOT` of a
-/// form gives what that form gives. An `OR` gives the join of the types its
+/// gives it, comes only between alternatives. A site of a `NOT` atom gives a
+/// type only where no site of a positive atom does, since a `NOT` atom tests
+/// whether a row with the label's value stands and binds no value; a `NOT`
+/// site whose type has an empty meet with the type of any other site is the
+/// fault `EmptyMeet`. A constraint over two labels gives each the sites of
+/// the other in the list that holds the constraint and in the lists nested
+/// in it, and, for a constraint in an `IF`'s test or in an `ALL`'s domain,
+/// in that form's then or body as well; `0` gives no type. A `NOT` of a form
+/// gives what that form gives. An `OR` gives the join of the types its
 /// branches give, and an `ALL` the meet of its domain's and its body's types.
 /// An `IF` gives the meet of its test's type with the join of its then and
 /// else lists' types, or, where the label is fresh in the test, the meet of
@@ -87,7 +92,10 @@ pub fn label_type_keyed(
 
 /// [`label_type_keyed`] with the facts of the walk that do not depend on
 /// the label asked taken from `cache`, which holds them for the walks of
-/// every label of one inference that `site_type` types.
+/// every label of one inference that `site_type` types. The walk over every
+/// site gives the faults and the type; where a `NOT` atom stands in `body`
+/// or in `key`, a walk over the sites of positive atoms gives the type, and
+/// the first walk gives it only where the second gives none.
 pub(crate) fn label_type_cached(
     body: &crate::program::Body,
     label: crate::program::LabelId,
@@ -95,7 +103,12 @@ pub(crate) fn label_type_cached(
     key: Option<&crate::program::Body>,
     cache: &WalkCache,
 ) -> Result<Option<ValueType>, LabelFault> {
-    LabelWalk { label, site_type, asked: vec![label], key, cache }.body_type(body, &[], None, &Outside::Sites(None))
+    let walk = |sites| LabelWalk { label, site_type, asked: vec![label], key, cache, sites };
+    let all = walk(Sites::All).body_type(body, &[], None, &Outside::Sites(None))?;
+    if !cache.holds_negated_atom(body) && !key.is_some_and(|key| cache.holds_negated_atom(key)) {
+        return Ok(all);
+    }
+    Ok(walk(Sites::Positive).body_type(body, &[], None, &Outside::Unchecked)?.or(all))
 }
 
 /// What the walks of the labels of one inference read of a part of the
@@ -109,6 +122,7 @@ pub(crate) struct WalkCache {
     held: std::cell::RefCell<crate::hash::StableHashMap<usize, std::rc::Rc<crate::hash::StableHashSet<crate::program::LabelId>>>>,
     fresh: std::cell::RefCell<crate::hash::StableHashMap<usize, std::rc::Rc<crate::hash::StableHashSet<crate::program::LabelId>>>>,
     zero_made: std::cell::RefCell<crate::hash::StableHashMap<usize, std::rc::Rc<ZeroMade>>>,
+    negated: std::cell::RefCell<crate::hash::StableHashMap<usize, bool>>,
 }
 
 impl WalkCache {
@@ -120,6 +134,16 @@ impl WalkCache {
     fn fresh(&self, body: &crate::program::Body) -> std::rc::Rc<crate::hash::StableHashSet<crate::program::LabelId>> {
         let at = body as *const crate::program::Body as usize;
         std::rc::Rc::clone(self.fresh.borrow_mut().entry(at).or_insert_with(|| std::rc::Rc::new(fresh_labels(body))))
+    }
+
+    /// Whether an atom under a `NOT` stands in `body`, at any depth.
+    fn holds_negated_atom(&self, body: &crate::program::Body) -> bool {
+        let at = body as *const crate::program::Body as usize;
+        *self.negated.borrow_mut().entry(at).or_insert_with(|| {
+            let mut found = false;
+            each_conjunct(body, &mut |conjunct| found |= matches!(conjunct, crate::program::Conjunct::Not(crate::program::Negated::Atom(_))));
+            found
+        })
     }
 
     fn zero_made(&self, body: &crate::program::Body) -> std::rc::Rc<ZeroMade> {
@@ -213,6 +237,16 @@ struct LabelWalk<'a> {
     /// input's body.
     key: Option<&'a crate::program::Body>,
     cache: &'a WalkCache,
+    sites: Sites,
+}
+
+/// The sites of atoms that a walk reads.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Sites {
+    /// Every site of an atom, a `NOT` atom's included.
+    All,
+    /// The sites of the atoms that no `NOT` holds.
+    Positive,
 }
 
 /// A list around the list a walk is in: the list, the pairs of labels that
@@ -286,7 +320,7 @@ impl LabelWalk<'_> {
     fn key_type(&self, other: crate::program::LabelId) -> Result<Option<ValueType>, LabelFault> {
         let Some(key) = self.key else { return Ok(None) };
         let asked = self.asked.iter().copied().chain(std::iter::once(other)).collect();
-        let walk = LabelWalk { label: other, site_type: self.site_type, asked, key: None, cache: self.cache };
+        let walk = LabelWalk { label: other, site_type: self.site_type, asked, key: None, cache: self.cache, sites: self.sites };
         walk.list_type(key, &[], &[other], None, None, &Outside::Unchecked)
     }
 
@@ -294,7 +328,7 @@ impl LabelWalk<'_> {
     /// around it, outside the conjunct of each that holds the inner list.
     fn around_type(&self, other: crate::program::LabelId, around: &Around<'_>) -> Result<Option<ValueType>, LabelFault> {
         let asked = self.asked.iter().copied().chain(std::iter::once(other)).collect();
-        let walk = LabelWalk { label: other, site_type: self.site_type, asked, key: self.key, cache: self.cache };
+        let walk = LabelWalk { label: other, site_type: self.site_type, asked, key: self.key, cache: self.cache, sites: self.sites };
         let mut ty = None;
         let mut frame = Some(around);
         while let Some(list) = frame {
@@ -354,6 +388,7 @@ impl LabelWalk<'_> {
     ) -> Result<Option<ValueType>, LabelFault> {
         use crate::program::{Conjunct, Negated};
         match conjunct {
+            Conjunct::Not(Negated::Atom(_)) if self.sites == Sites::Positive => Ok(None),
             Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => {
                 let atom = atom.value();
                 let mut held = class.to_vec();
