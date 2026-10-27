@@ -41,7 +41,7 @@ HARD_GIB = 32
 """The footprint in GiB past which a job is killed. On the machine's 24 GiB, a decode that held at
 44 GiB thrashed it for 39 minutes (2026-10-26), and a run that grew to 96 GiB; the largest run that
 finished well held 20.6 GiB."""
-SOFT_GIB = 8
+SOFT_GIB = 12
 """The footprint in GiB past which a job's session is told to fix its memory use."""
 CRITICAL_PAUSE_SECONDS = 10
 VICTIM_GIB = 1
