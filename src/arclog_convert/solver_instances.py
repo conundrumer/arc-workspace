@@ -918,7 +918,9 @@ class InstancesMixin:
         """A DemonstrationConsistency instance as a DEMONSTRATED form: its
         `value` and `demonstration` inputs as an instance's, then a DEMO_RULE
         per rule, whose `&prediction` clause has the columns the `value`
-        head names."""
+        head names. It records on the converter (`demo_value_labels`), by the
+        instance's key, the labels of each leaf of each `value` head site, which
+        `site_columns` gives the leaves of the instance's `prediction`."""
         c = self.c
         preds = [u for u in us if u.head.relation.name == "prediction"]
         gs = self._instance(inst, [u for u in us if u not in preds], side, frozenset())
@@ -962,6 +964,7 @@ class InstancesMixin:
                     return out
             return []
         vlabs = head_labels("value")
+        c.demo_value_labels = {**getattr(c, "demo_value_labels", {}), key: vlabs}
         flat_v = [x for ls in vlabs for x in ls]
         # the rules, in the order the type declares them
         order = []

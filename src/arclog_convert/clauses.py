@@ -66,11 +66,16 @@ def case_ctors(leaves: list["Leaf"], terms: list) -> set[str]:
     return {x for leaf, t in zip(leaves, terms) if leaf.kind == "case" for x in ctor_names(t)}
 
 
-def site_columns(c: "Converter", cols: list, inst) -> list[list[Site]]:
+def site_columns(c: "Converter", cols: list, inst, port: str | None = None) -> list[list[Site]]:
     """For each Souffle column of `cols` (`Converter.resolve`), the `Site`
     of each of its leaves that `kept_leaf` keeps, in order. `ClauseWriter.sites`
     writes its sites with these labels, and `names.column_map` writes
-    them, so a label is chosen here alone."""
+    them, so a label is chosen here alone. `column_map` gives the `port` of
+    the instance's relation, and for the `prediction` of a `DEMONSTRATED`
+    form (`Solver.demonstrated_form`), each leaf of a column after the
+    key and the alternative takes the label its `&prediction` clause holds it
+    at, the label of the `value` head site, with no field, where the head site
+    has a label for each kept leaf."""
     out: list[list[Site]] = []
     for i, (col, leaves) in enumerate(cols):
         kept = [l for l in leaves if kept_leaf(l)]
@@ -102,6 +107,10 @@ def site_columns(c: "Converter", cols: list, inst) -> list[list[Site]]:
                 sites = [Site(l, "E" if l.kind == "example" else l.name if nkeep > 1 else col.name, None)
                          for l in kept]
         out.append(sites)
+    demo = getattr(c, "demo_value_labels", {}).get(inst) if port == "prediction" else None
+    for i, labels in enumerate(demo or [], start=2):
+        if i < len(out) and len(labels) == len(out[i]):
+            out[i] = [Site(site.leaf, label, None) for site, label in zip(out[i], labels)]
     return out
 
 

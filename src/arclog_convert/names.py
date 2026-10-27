@@ -259,7 +259,9 @@ def column_map(s: "Solver", names: dict, insts: dict[str, str], text: ParityText
     number and whose correspondence the converter does not hold gets no entry.
     The relation is resolved as a read sees it (`Converter.resolve`): from the
     top level by the Souffle relation's path, and a relation of an expansion's
-    shape by its own name; the labels are those `site_columns` gives, but for a
+    shape by its own name; the labels are those `site_columns` gives (for the
+    `prediction` of a `DEMONSTRATED` form, the labels of the `value` head's
+    sites, as its `DEMO_RULE` clause names them), but for a
     relation of `Determine` that is no instance's port, whose entry gives only
     the sites that a read of it names (`_named_sites`). A
     relation whose clauses the converter writes at other arclog columns under
@@ -293,12 +295,14 @@ def column_map(s: "Solver", names: dict, insts: dict[str, str], text: ParityText
             else:
                 scope, relation = tuple(source["component"]), source["relation"]
                 if source["path"] is not None:
-                    resolved = c.resolve(relation_name(source["path"]), (), {})
+                    place = relation_name(source["path"])
+                    resolved = c.resolve(place, (), {})
                 elif scope == ("Determine",):   # the instance a run adds (`solver.determine.run_program`) has no path in the solver's text
-                    resolved = c.resolve(relation_name(relation), scope, {})
+                    place = relation_name(relation)
+                    resolved = c.resolve(place, scope, {})
                 else:
                     continue
-                got = _own_columns(c, resolved, scope, relation, (scope, relation))
+                got = _own_columns(c, resolved, scope, relation, (scope, relation), place.name)
                 if got is None:
                     continue
             out.setdefault(arc, {})[source["relation"] if source["path"] is None else source["path"]] = got
@@ -354,12 +358,13 @@ def _read_at(sites: list[list[Site]], record: tuple[tuple[Source, ...], ...]) ->
 
 
 def _own_columns(c: "Converter", resolved: tuple, scope: tuple[str, ...], relation: str,
-                 dropped: tuple[tuple[str, ...], str]) -> list[list[dict]] | dict | None:
+                 dropped: tuple[tuple[str, ...], str], port: str) -> list[list[dict]] | dict | None:
     """The entry of the Souffle relation `relation` declared in `scope`, for
     the arclog relation `resolved` (`Converter.resolve`) whose columns stand
     for those of the Souffle relation one to one, but for the columns the
     converter dropped from `dropped` (`_entry` gives its form); none where
-    the columns differ in number."""
+    the columns differ in number. `port` is the name `resolved` was read by,
+    which `site_columns` takes for the relation of an instance."""
     written, cols, _, inst = resolved
     width = c.souffle_arity(scope, relation)
     if cols is None or width is None:
@@ -367,7 +372,7 @@ def _own_columns(c: "Converter", resolved: tuple, scope: tuple[str, ...], relati
     kept = tuple(j for j in range(width) if j not in c.dropped.get(dropped, ()))
     if len(kept) != len(cols):
         return None
-    return _entry(c.writings.get(written, {}), site_columns(c, cols, inst),
+    return _entry(c.writings.get(written, {}), site_columns(c, cols, inst, port),
                   lambda sites: _souffle_columns(sites, kept, width), _named_sites(c, written, scope, ()))
 
 
@@ -504,7 +509,8 @@ def check_maps(s: "Solver", folds: list[Fold], insts: dict[str, str], arclog: st
             out.untranslated[path] = "the converter wrote no clause of the relation"
             continue
         at = path.removesuffix(fold.relation) + check
-        got = _own_columns(c, c.resolve(relation_name(at), (), {}), fold.scope, fold.relation, (fold.scope, check))
+        place = relation_name(at)
+        got = _own_columns(c, c.resolve(place, (), {}), fold.scope, fold.relation, (fold.scope, check), place.name)
         if got is None:
             out.untranslated[path] = "the columns of the clauses the converter wrote do not map onto those of the relation"
             continue
