@@ -13,8 +13,7 @@ branch that case does not take is dropped (`determination_entry`).
 
 The check (`arclog_convert.row_parity`) runs the concept case and, for each
 `Choice` constructor (an ALT) that no case run before takes, the first case
-of `Loaded.every` that takes it (`cases_to_run`), so that each ALT's
-relations are compared on a case that has them; `Loaded.every` holds no case
+of `Loaded.every` that takes it (`cases_to_run`); `Loaded.every` holds no case
 that an `exclude` form leaves out. Each relation of the program that a run
 outputs (`every_relation`) is compared, or has a line of its own, by the
 first of these that holds (`classify`):

@@ -309,3 +309,22 @@ sig_frame_offset(P, A, K, V) :- axis_of(D, A), sub_extent(P, A, K), jump_offset(
         perp(A1, A2), _ax.cell(Ky, A1, P1), _ax.cell(Ky, A2, P2),
         compose(P1, P2, P).
 }
+
+// The translations of a valued cell set that fix it, over the lib's
+// OffsetInvariance, whose own period is the damage-tolerant reading: period
+// is each candidate no cell pair contradicts, fundamental_period the least
+// such one that has a pair, per axis, and approximate_period the reading
+// through sparse damage. The lib's period stands under approximate_period.
+.comp SigPeriods<Key, Val> {
+    .decl cell(key: Key, p: Position, v: Val)
+    .decl period(key: Key, a: Axis, k: number)
+    .decl fundamental_period(key: Key, a: Axis, k: number)
+    .decl approximate_period(key: Key, a: Axis, k: number)
+
+    .init _inv = OffsetInvariance<Key, Val>
+    _inv.cell(Ky, P, V) :- cell(Ky, P, V).
+
+    period(Ky, A, K) :- _inv.cand(Ky, A, K, _), !_inv.mismatch(Ky, A, K).
+    fundamental_period(Ky, A, K) :- _inv.min_period(Ky, A, K).
+    approximate_period(Ky, A, K) :- _inv.period(Ky, A, K).
+}

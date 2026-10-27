@@ -34,7 +34,7 @@ from arclog_convert.open_orders import keys_retyped as order_keys_retyped, order
 from arclog_convert.picks import rewrite as rewrite_picks
 from arclog_convert.libmap import box as libmap_box, rewrite as libmap_rewrite
 from arclog_convert.libmap.instances import LIB_PATH, Placement
-from arclog_convert import paths
+from arclog_convert import libmap, paths
 
 from arclog_convert.checks import Fold, with_checks
 from arclog_convert.clauses import ClauseWriter
@@ -2489,8 +2489,22 @@ class Converter:
         for c in lr.cols:
             cols.append((c, self.leaves(c.name, c.type, c.tparam, inst.scope.components, isub, outer=sub)))
         iname = self.rel_name(inst.scope.components, inst.name)
-        return (self.wrote(f"{iname}.{name}", *self.souffle_of(inst.scope.components, f"{inst.name}.{name}", False)),
+        return (self.wrote(f"{iname}.{name}", *self.instance_relation_souffle(inst, name)),
                 cols, "inst", (inst.scope.components, inst.name))
+
+    def instance_relation_souffle(self, inst, name: str) -> tuple[Written, ...]:
+        """What the relation `name` of the instance `inst` of a lib component
+        stands for in the Souffle program (`souffle_of`), except where the
+        Souffle instance's component is one that `libmap.COMP` renames and
+        renames the relation `name` of that component to another name: the
+        Souffle component's relation of that name is then another relation
+        than `name`, and `name` stands for what the pass made it for, none
+        where it made it for none."""
+        scope, relation = inst.scope.components, f"{inst.name}.{name}"
+        renamed = libmap.COMP.get(self.souffle_components.get((scope, inst.name), ""))
+        if renamed is not None and renamed.parts.get(name, name) != name:
+            return self.made.get((scope, relation), ())
+        return self.souffle_of(scope, relation, False)
 
     def leaf_type(self, type_name: str, path: tuple[int, ...], scope: tuple[str, ...], sub: dict[str, str]) -> str:
         """The type of the leaf at `path` of a column of `type_name`, as
