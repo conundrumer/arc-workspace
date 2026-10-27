@@ -49,14 +49,17 @@ rule of `train_replay.stale_tasks`. The run executes a private copy of the
 `arclog-cli` binary (`train_replay.private_binaries`), so a build in the checkout's
 `engine/target` during the run does not change it.
 
-The stale tasks run on at most `parity.snapshot.RECORDS_WORKERS` processes,
-and at most `engine.pool.pool_size()`, each taking chunks of `CHUNK` tasks:
-for a chunk, the Souffle side of each task, then one `arclog-cli row-parity`
-call on the chunk. Each process runs one chunk and exits, so that none keeps
-the memory of a chunk for the next, and runs bounded to one CPU
-(`engine.pool.share_env`). The Souffle runs go through the run cache. A
-task's rows file is written to disk as it is serialized, and
-`arclog-cli row-parity` reads it one case at a time.
+The stale tasks run in chunks of `CHUNK` tasks, at most
+`parity.snapshot.RECORDS_WORKERS` chunks at once, and at most
+`engine.pool.pool_size()`. A chunk has two phases: the Souffle side of each
+of its tasks, then one `arclog-cli row-parity` call on the chunk. The first
+phase runs in a process of its own that runs that phase alone and exits when
+it returns, so that no process keeps the memory of a chunk's Souffle runs for
+the call or for the next chunk; that process is bound to one CPU
+(`engine.pool.share_env`). The second phase runs in the main process, in the
+thread of the chunk, which waits on the call and writes the records. The
+Souffle runs go through the run cache. A task's rows file is written to disk
+as it is serialized, and `arclog-cli row-parity` reads it one case at a time.
 
 `row_parity.tsv` is the baseline: a line `<task> <relation> <verdict>
 <ticket or ->` (tab-separated) for each task and relation whose verdict is
@@ -81,7 +84,7 @@ import subprocess
 import sys
 import tempfile
 from collections import Counter
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from pathlib import Path
 
 from arc.task import TASKS_DIR
@@ -147,28 +150,36 @@ def write_record(records: Path, stem: str, files: str, sources: str, binary: str
     (records / f"{stem}.json").write_text(json.dumps(data, indent=1) + "\n")
 
 
-def check_chunk(stems: list[str], corpus: Path, tasks: Path, records: Path, solvers: Path,
-                files: dict[str, str], sources: str, binary: str, tool: Path) -> None:
-    """Write the record of each of `stems`: the Souffle side of each, then
-    one call of the `arclog-cli` binary at `tool`, with the digest `binary`,
-    on those that gave rows."""
+def souffle_side(stems: list[str], work: Path, solvers: Path) -> tuple[dict[str, list[Line]], list[str]]:
+    """Write the rows file of each of `stems` under `work`, and give the
+    fault lines of the stems that have no rows and the stems that have."""
     from parity import rerun
+    faults: dict[str, list[Line]] = {}
+    rows = []
+    for stem in stems:
+        try:
+            got = rerun.case_rows(stem, solvers / f"{stem}.dl")
+        except (rerun.NoSuchCase, FileNotFoundError) as e:
+            faults[stem] = [("*", "fault", f"no Souffle rows: {type(e).__name__}: {e}")]
+            continue
+        if not isinstance(got, dict):
+            faults[stem] = [("*", "fault", f"no Souffle rows: {got}")]
+            continue
+        with (work / f"{stem}.json").open("w") as handle:
+            json.dump(got, handle)
+        rows.append(stem)
+    return faults, rows
+
+
+def check_chunk(souffle: ProcessPoolExecutor, stems: list[str], corpus: Path, tasks: Path, records: Path,
+                solvers: Path, files: dict[str, str], sources: str, binary: str, tool: Path) -> None:
+    """Write the record of each of `stems`: the Souffle side of each, in a
+    process of `souffle` that exits when it returns, then one call of the
+    `arclog-cli` binary at `tool`, with the digest `binary`, on those that gave
+    rows."""
     work = Path(tempfile.mkdtemp(dir=records))
     try:
-        lines: dict[str, list[Line]] = {}
-        rows = []
-        for stem in stems:
-            try:
-                got = rerun.case_rows(stem, solvers / f"{stem}.dl")
-            except (rerun.NoSuchCase, FileNotFoundError) as e:
-                lines[stem] = [("*", "fault", f"no Souffle rows: {type(e).__name__}: {e}")]
-                continue
-            if not isinstance(got, dict):
-                lines[stem] = [("*", "fault", f"no Souffle rows: {got}")]
-                continue
-            with (work / f"{stem}.json").open("w") as handle:
-                json.dump(got, handle)
-            rows.append(stem)
+        lines, rows = souffle.submit(souffle_side, stems, work, solvers).result()
         if rows:
             command = [str(tool), "row-parity", str(corpus), str(tasks), str(work), *rows]
             done = subprocess.run(command, cwd=checkout.ROOT / "engine", stdout=subprocess.PIPE, text=True,
@@ -213,9 +224,11 @@ def check(stems: list[str], out: Path, accept: bool = False) -> int:
         if stale:
             tool, built = copy(BINARY)
             records.mkdir(parents=True, exist_ok=True)
-            with ProcessPoolExecutor(min(RECORDS_WORKERS, pool_size()), initializer=bound_to_one_cpu,
-                                     max_tasks_per_child=1) as pool:
-                futures = [pool.submit(check_chunk, chunk, corpus, tasks, records, solvers, files, sources, built, tool)
+            workers = min(RECORDS_WORKERS, pool_size())
+            with (ProcessPoolExecutor(workers, initializer=bound_to_one_cpu, max_tasks_per_child=1) as souffle,
+                  ThreadPoolExecutor(workers) as threads):
+                futures = [threads.submit(check_chunk, souffle, chunk, corpus, tasks, records, solvers, files, sources,
+                                          built, tool)
                            for chunk in chunks(stale, solvers)]
                 for future in futures:
                     future.result()
