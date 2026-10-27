@@ -380,7 +380,9 @@ class _Lift:
 
     def reached(self, name: RelationName, scope: tuple[str, ...], path: InstancePath) -> tuple[At, tuple[str, ...]] | None:
         """The node that `name` names, read in a unit of `scope` whose component stands at `path`, and the instances
-        it names inside that node; None for a relation of the lib."""
+        it names inside that node; None for a relation of the lib. A name that ends at a held instance of a
+        component of the solver reaches the relation `name.name` of that component where the rewrite's program
+        declares it, so a relation the rewrite adds there is a node the text does not hold."""
         if not name.instances:
             node = self.ground.find(Kind.RELATION, scope, name.name)
             return None if node is None else (At(node, path if node.scope == scope else ()), ())
@@ -394,6 +396,10 @@ class _Lift:
             if inside is None:
                 return None
             at, rest = At(inside, (*at.path, at.node.name)), rest[1:]
+        if not rest and self.held(at) and (component := self.ground.decls[at.node].component) in self.comps:
+            relation = Node(Kind.RELATION, name.name, (component,))
+            if relation in self.ground.decls:
+                return At(relation, (*at.path, at.node.name)), ()
         return at, tuple(rest)
 
     def type_at(self, t: TypeName, path: InstancePath) -> At | None:
