@@ -186,13 +186,34 @@ impl Relation {
         indexes.entry(order.clone()).or_insert_with(|| std::sync::Arc::new(self.build_index(order))).clone()
     }
 
+    /// The index of the relation in `order`. It reads the parts that hold a
+    /// column of `order` and no other. Where several parts do, it reads
+    /// each part that holds a column outside `order` by its distinct
+    /// projections onto the columns of `order`, so the walk takes one step
+    /// for each combination of them.
+    ///
+    /// Each level of the index holds its keys in the order of their first
+    /// insertion. A key of `order` first occurs in the walk of the product of
+    /// all parts where each part that holds no column of `order` stands at
+    /// its first row and each read part stands at its first row with that
+    /// key's projection. So the walk of the read parts' first projections
+    /// inserts the keys in the order in which the walk of all parts first
+    /// inserts them.
     fn build_index(&self, order: &ColumnOrder) -> Index {
         for column in &order.0 {
             assert!(column.0 < self.arity, "an order of the relation's columns");
         }
         let mut index = Index::default();
+        if self.is_empty() {
+            return index;
+        }
+        let read: Vec<&RelationPart> = self.parts.iter().filter(|part| part.columns.iter().any(|column| order.0.contains(column))).collect();
+        let walked: Vec<WalkedPart> = match read[..] {
+            [only] => vec![WalkedPart { columns: only.columns.clone(), rows: WalkedRows::All(&only.rows) }],
+            _ => read.iter().map(|part| WalkedPart::new(part, order)).collect(),
+        };
         let mut row = vec![TermId::from_encoding(0); usize::from(self.arity)];
-        self.each_row(0, &mut row, &mut |row| {
+        Self::each_row(&walked, &mut row, &mut |row| {
             let mut level = &mut index;
             for column in &order.0 {
                 level = level.children.entry(row[usize::from(column.0)]).or_default();
@@ -201,18 +222,65 @@ impl Relation {
         index
     }
 
-    /// Calls `visit` on each row of the product of the parts from `part` on,
-    /// with the columns of the parts before it as `row` holds them.
-    fn each_row(&self, part: usize, row: &mut [TermId], visit: &mut impl FnMut(&[TermId])) {
-        let Some(this) = self.parts.get(part) else {
+    /// Calls `visit` on each combination of a row of each of `parts`, the
+    /// first part outermost, with the columns of `parts` as `row` holds them.
+    fn each_row(parts: &[WalkedPart], row: &mut [TermId], visit: &mut impl FnMut(&[TermId])) {
+        let Some((this, rest)) = parts.split_first() else {
             visit(row);
             return;
         };
-        for part_row in this.rows.rows() {
+        this.rows.each(|part_row| {
             for (column, &value) in this.columns.iter().zip(part_row) {
                 row[usize::from(column.0)] = value;
             }
-            self.each_row(part + 1, row, visit);
+            Self::each_row(rest, row, visit);
+        });
+    }
+}
+
+/// A part of a relation as the build of an index walks it: the columns that
+/// its rows give, and the rows.
+struct WalkedPart<'a> {
+    columns: Box<[ColumnIndex]>,
+    rows: WalkedRows<'a>,
+}
+
+impl<'a> WalkedPart<'a> {
+    /// The part's rows, where each of its columns is in `order`, and its
+    /// distinct projections onto the columns of `order` otherwise, in the
+    /// order in which they first occur among its rows.
+    fn new(part: &'a RelationPart, order: &ColumnOrder) -> Self {
+        if part.columns.iter().all(|column| order.0.contains(column)) {
+            return WalkedPart { columns: part.columns.clone(), rows: WalkedRows::All(&part.rows) };
+        }
+        let held: Vec<usize> = (0..part.columns.len()).filter(|&at| order.0.contains(&part.columns[at])).collect();
+        let mut seen: StableHashSet<Row> = StableHashSet::default();
+        let mut projections: Vec<Row> = Vec::new();
+        for part_row in part.rows.rows() {
+            let projection: Row = held.iter().map(|&at| part_row[at]).collect();
+            if seen.insert(projection.clone()) {
+                projections.push(projection);
+            }
+        }
+        WalkedPart { columns: held.iter().map(|&at| part.columns[at]).collect(), rows: WalkedRows::Projected(projections) }
+    }
+}
+
+/// The rows of a [`WalkedPart`].
+enum WalkedRows<'a> {
+    /// Each row of a part.
+    All(&'a RowSet),
+    /// Projections of a part's rows, each once.
+    Projected(Vec<Row>),
+}
+
+impl WalkedRows<'_> {
+    /// Calls `visit` on each row, in the order that [`RowSet::rows`] gives
+    /// for `All` and in the order of the list for `Projected`.
+    fn each(&self, mut visit: impl FnMut(&[TermId])) {
+        match self {
+            WalkedRows::All(rows) => rows.rows().for_each(visit),
+            WalkedRows::Projected(rows) => rows.iter().for_each(|row| visit(row)),
         }
     }
 }
