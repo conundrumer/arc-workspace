@@ -362,7 +362,7 @@ fn union_rows(
     registry: &Registry,
     budget: &mut Budget<'_>,
 ) -> Option<Result<RowSet, ReachedBound>> {
-    let ([IrNode::Or(union)], [0], NodeInput::Clauses(bodies)) = (&*clause.nodes, nodes, &inputs.0[0]) else { return None };
+    let ([IrNode::Or(union)], [0], Some(NodeInput::Clauses(bodies))) = (&*clause.nodes, nodes, inputs.0.first()) else { return None };
     let searches: Vec<(Vec<Variable>, Vec<ColumnIndex>)> = union
         .branches
         .iter()

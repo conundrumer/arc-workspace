@@ -151,3 +151,11 @@ fn a_body_one_conjunct_longer_searches_its_new_part_alone() {
     let counts: Counts = extended.largest_counts();
     assert_eq!(counts, alone.largest_counts(), "the longer body counts the work of its new part alone");
 }
+
+#[test]
+fn a_union_with_a_branch_of_no_conjunct_and_no_column_gives_one_empty_row() {
+    let program = checked("(OR ()\n      ((input *P (:Col *A))))");
+    let task = task();
+    let session = session();
+    assert_eq!(body_rows(&program, &task, &session, &[0]), HashSet::from([Vec::new()]));
+}
