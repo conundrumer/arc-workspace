@@ -912,6 +912,7 @@ class RenderMixin:
         anc = list(dict.fromkeys(a for f_, _ in alts for a in self.ancestors(f_)))
         anc_ctors = {ck for _, ck in anc}
         sib = {kk.name for f_ in pts for kk in adts[f_].constructors} | anc_ctors
+        at = dict(anc) | dict(alts)
 
         def takes(f: "Form", case: dict[str, str]) -> bool:
             # a form names its points' constructors as alternatives, and each
@@ -922,7 +923,7 @@ class RenderMixin:
 
         def holds(f: "Form") -> bool:
             bs = set(f.branches)
-            return bool(bs & ks) and not (bs - concept - sib) and takes(f, dict(alts))
+            return bool(bs & ks) and not (bs - concept - sib) and takes(f, at)
         fs = [f for f in branch_forms if holds(f)]
         fs = topo(fs)
         # drop forms identical to the concept's
@@ -931,7 +932,6 @@ class RenderMixin:
         for f in fs:
             mine_text[f.name].append(f.lines)
         fs = [f for f in fs if main_text.get(f.name) != mine_text[f.name]]
-        at = dict(anc) | dict(alts)
         mine = all_mine | {f.name for f in branch_forms if set(f.branches) & ks}
         # what a point this one stands under derives, its alt's case derives
         under = {f.name for f in branch_forms if set(f.branches) - concept

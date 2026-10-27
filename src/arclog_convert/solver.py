@@ -54,7 +54,7 @@ from arclog_convert.lib import (
     plan_proposer,
 )
 from arclog_convert.solver_cases import CasesMixin
-from arclog_convert.solver_instances import InstancesMixin
+from arclog_convert.solver_instances import InstancesMixin, set_name
 from arclog_convert.solver_params import ParamsMixin
 from arclog_convert.solver_render import RenderMixin
 from arclog_convert.terms import MOVED_RELS, NEG_OP, ctor_names, subst, subst_terms, var_uses
@@ -890,6 +890,14 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
                         f.claim_slugs = rest.split()
 
         forms = self.settle_sets([f for f in forms if f is not None])
+        # a set `DET` with no body has the stored rows of its parameter as its value
+        bodiless = {f.name for f in forms if f.body is None}
+        for amp in sorted(self.used_sets):
+            if set_name(amp) not in bodiless:
+                continue
+            for i, text in enumerate(arcdata_params):
+                if text.startswith(f"(param {amp} "):
+                    arcdata_params[i] = f"(param {set_name(amp)} " + text[len(f"(param {amp} "):]
         # an open parameter's determination by a proposer, or with no body,
         # and its DET_OR_RULE line end in `(ONE)`, as its clauses do
         for f in forms:

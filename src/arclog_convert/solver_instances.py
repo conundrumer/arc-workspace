@@ -298,7 +298,9 @@ class InstancesMixin:
         """`forms`, with each open parameter that a `DET` body reads written in
         two determinations: the Souffle determination as a `DET` of `set_name`
         with no `ONE` mark, and a `DET` that picks one row of that set. Each
-        read of the parameter in a `DET` body reads the set."""
+        read of the parameter in a `DET` body reads the set. Where the set's
+        `DET` has no body, the parameter's stored rows are the set's value,
+        and the `param` form of the rows names the set."""
         names = {self.c.rel_name(("Params",), n): n for n in self.c.open_params}
         determined = {m.group(1) for f in forms if (m := DET_HEAD.match(f.lines[0])) and m.group(1) in names}
         self.used_sets = frozenset(determined & {r for f in forms if self.det_side(f) for r in line_reads(f)})
@@ -432,10 +434,16 @@ class InstancesMixin:
                 out.extend(gs)
             # a form that writes what a form of fewer branches writes repeats
             # it: the latter holds wherever the former does
+            def holds_where(h: Form, g: Form) -> bool:
+                """Whether `h` holds in each case `g` holds: at each point, `h` names
+                no constructor of the point or each one that `g` names."""
+                return all(not (hs := {b for b in h.branches if point_of.get(b) == p})
+                           or {b for b in g.branches if point_of.get(b) == p} <= hs
+                           for p, _ in points)
             concept = {adt.constructors[0].name for _, adt in points}
             kept: list[Form] = []
             for g in sorted(out, key=lambda g: len(set(g.branches) - concept)):
-                if not any(h.lines == g.lines and set(h.branches) - concept <= set(g.branches) for h in kept):
+                if not any(h.lines == g.lines and holds_where(h, g) for h in kept):
                     kept.append(g)
             return [g for g in out if any(g is h for h in kept)]
         c.cur_empty = empty
