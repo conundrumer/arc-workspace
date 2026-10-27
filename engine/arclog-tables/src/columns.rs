@@ -399,7 +399,7 @@ fn path_spelled(path: &[ColumnName]) -> String {
 
 /// The width in cells of a row of columns of `types`.
 fn row_width(types: &[ValueType]) -> u32 {
-    types.iter().map(|ty| if *ty == ValueType::Box { 4 } else { 1 }).sum()
+    types.iter().map(|ty| if ty.is_box() { 4 } else { 1 }).sum()
 }
 
 /// The cells of the term of `id` at a column of type `ty`.

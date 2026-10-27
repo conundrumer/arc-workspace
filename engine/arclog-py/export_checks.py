@@ -31,8 +31,11 @@ COPY, COMPUTED, CONSTANT, LIB_NAME = 0, 1, 2, 3     # the `kind` of a flow
 EVIDENCE = 2            # the `point` of an evidence table
 
 
+BOX_TYPES = ("Box", "Position", "Offset")   # the types of a value that is four margins
+
+
 def width_of(ty):
-    return 4 if ty == "Box" else 1
+    return 4 if ty in BOX_TYPES else 1
 
 
 def orientation_sets(types):
@@ -50,8 +53,8 @@ def cells_of(ty, types):
 
 
 def copy_keeps_type(ty, source, types):
-    """Whether a column of type `ty` may copy a column of type `source`: equal types, or orientation types whose cells of either lie within the other's."""
-    if ty == source:
+    """Whether a column of type `ty` may copy a column of type `source`: equal types, a type of a box and Box, or orientation types whose cells of either lie within the other's."""
+    if ty == source or ("Box" in (ty, source) and ty in BOX_TYPES and source in BOX_TYPES):
         return True
     mine, theirs = cells_of(ty, types), cells_of(source, types)
     return mine is not None and theirs is not None and (mine <= theirs or theirs <= mine)
@@ -151,9 +154,9 @@ def check_case(frames, values, task, orientation_types, size=None, base=None):
         nc = len(t.column_types)
         if any(not 0 <= c < nc for k in t.keys for c in k):
             bad("tables-key-columns", f"table {i} has keys {[list(k) for k in t.keys]} for {nc} columns")
-        for column, ty, name in ((t.output_position, "Box", "output_position"), (t.output_color, "Color", "output_color")):
-            if column >= 0 and not (column < nc and t.column_types[column] == ty):
-                bad("tables-output-columns", f"table {i} gives {name} {column}, not a {ty} column of {nc}")
+        for column, tys, name in ((t.output_position, ("Position", "Box"), "output_position"), (t.output_color, ("Color",), "output_color")):
+            if column >= 0 and not (column < nc and t.column_types[column] in tys):
+                bad("tables-output-columns", f"table {i} gives {name} {column}, not a {' or '.join(tys)} column of {nc}")
     if (tabs.output_position >= 0).sum() > 1:
         bad("tables-output-columns", f"tables {list(np.flatnonzero(tabs.output_position >= 0))} give output_position")
     # flows
@@ -359,7 +362,7 @@ def _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest
                 bad("values-key", f"table {ti} key {[int(c) for c in k]}: {int(dup.sum())} repeated rows, first in entry {e[1:][dup][0]}")
     # the evidence tables, which a cut case's base holds
     for g, fact in ((0, "input"), (1, "output")):
-        if not cut and len(tl) > g and tl[g].fact == f"ex_{fact}" and list(tl[g].column_types) == ["Example", "Box", "Color"]:
+        if not cut and len(tl) > g and tl[g].fact == f"ex_{fact}" and list(tl[g].column_types) == ["Example", "Position", "Color"]:
             got = np.concatenate([b for _, _, b in blocks[g]]).astype(np.int64) if blocks[g] else np.zeros((0, 6), np.int64)
             got, want = np.unique(got, axis=0), _evidence_cells(task, fact)
             if got.shape != want.shape or (got != want).any():

@@ -154,7 +154,7 @@ def transform(table, g):
     o = 0
     for ty in table.types:
         w = E.width(ty)
-        if ty == "Box":
+        if E.is_box(ty):
             for f in range(4):
                 cells[:, o + g[f]] = table.cells[:, o + f]
         elif ty in E.ORIENTATION_TYPES:
@@ -214,7 +214,7 @@ def random_table(rng, n=12):
     domain["Axis4"] = domain["Axis"] + domain["DiagAxis"]
     cols = []
     for ty in types:
-        if ty == "Box":
+        if E.is_box(ty):
             cols.append(rng.integers(0, 6, (n, 4)))
         elif ty == "Number":
             cols.append(rng.integers(0, 4, (n, 1)))
@@ -394,9 +394,9 @@ for (title, tabs), kind in [(x, k) for x in suites.items() for k in ("program", 
           + ", ".join(f"{h} {v:.1e}" for h, v in worst.items()) + f" {'PASS' if ok else 'FAIL'}")
 
 print("== chance loss of the masked heads: each field's chance_loss against its formula (a pointer: -log(targets / "
-      "(candidates + 1)); a Box or Position: ln 320), and the loss of every head with all-zero weights, whose scores "
+      "(candidates + 1)); a Box, Position or Offset: ln 320), and the loss of every head with all-zero weights, whose scores "
       "are all equal, against chance_loss")
-formula = {"Box": math.log(320), "Position": math.log(320), "Number": math.log(1088)}
+formula = {**dict.fromkeys(E.BOX_TYPES, math.log(320)), "Number": math.log(1088)}
 saved = {k: v.detach().clone() for k, v in enc.heads.state_dict().items()}
 
 

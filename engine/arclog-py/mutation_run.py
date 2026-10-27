@@ -67,7 +67,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 STAGE_BOUND = 60  # seconds
 CONSTRAINT_OPS = ("=", "!=", "<", "<=", ">", ">=")
-BOX_TYPES = ("Box", "Position", "Offset")  # the reader gives all three the Box type
+BOX_TYPES = ("Box", "Position", "Offset")  # the three types of the box algebra
 ZERO_TYPES = ("number", *BOX_TYPES)  # docs/arclog/arclog.md: the columns at which a site may hold `0`, and the first labels of a constraint with `0` second
 REFUSAL_PREFIX = re.compile(r"(a fault that stops the (?:stream|decode):\s*)?(the checker refuses the case \S+:\s*|the solver's files do not read:\s*)?")
 CASE_REFUSAL = re.compile(r"a fault that stops the decode:\s*the checker refuses the case\b")  # a `decode` line: the checker refuses a case

@@ -82,7 +82,10 @@
 //! the assembly the read names, `shared-pose` for one assembly's Pose type
 //! at each such column of the relation, `(pose-or <type>)` for the type or
 //! the Pose type of the label at the site, or a type parameter of its
-//! component. The file declares no `representative`. The file and
+//! component. A column is `Position` or `Offset` only where the lib fixes
+//! its role, and `Box` where the lib's clauses take it in either role, so a
+//! label at it narrows only where another site narrows it. The file declares
+//! no `representative`. The file and
 //! `engine/lib/proposers.arclog` are named in diagnostics as
 //! [`crate::layout::SourceFile::LibRegistry`] and
 //! [`crate::layout::SourceFile::LibProposers`].

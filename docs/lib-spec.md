@@ -134,7 +134,7 @@ Every element of the lib is one of these kinds, and each kind has its own test.
 
 - The ARC types, Color and the orientation types, are nominal: a value has identity and no arithmetic. Its encoding as a number is an engine fact the lib hides.
 - A `number` is a count.
-- Box is the box algebra's carrier. Position and Offset are its two interpretations, aliases of one type, which is what lets `compose` add a cell to a translation.
+- Box is the box algebra's carrier. Position and Offset are its two interpretations, types under Box, and `compose` takes Box at each column, so it adds a cell to a translation.
 - `Ident` is an opaque label, `Example` the index of an example, train or test, and `Unit` the key of a single-set site.
 
 ## Conventions

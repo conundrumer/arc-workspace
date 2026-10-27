@@ -56,7 +56,7 @@ fn a_zero_typed_label_takes_the_join_of_the_clauses_of_its_own_case() {
             zero_types.push(types.label(constraint.first.label).cloned());
         }
     }
-    assert_eq!(zero_types, vec![Some(ValueType::Box), Some(ValueType::Number)]);
+    assert_eq!(zero_types, vec![Some(ValueType::Position), Some(ValueType::Number)]);
 }
 
 /// A case program holds the lone `(= *D 0)` clause of `&way`; the clause

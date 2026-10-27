@@ -41,7 +41,7 @@ FEATURES = ["log rows", "empty", "unseen", "depth", "log step index", "position"
 
 def features(t, r):
     """The trivial features of table t with its value record r."""
-    bag = [sum(ty == name for ty in t.types) for name in E.TYPE_NAMES]
+    bag = [sum(E.feature_type(ty) == name for ty in t.types) for name in E.TYPE_NAMES]
     return [np.log1p(int((~t.marker).sum())), float(r["empty"]), float(r["unseen"]), float(t.depth or 0),
             np.log1p(t.step), float(r["position"])] + bag
 

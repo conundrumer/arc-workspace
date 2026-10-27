@@ -444,7 +444,7 @@ fn panel_combine(grids: &Grids<'_>, axes: &Axes, session: &TaskSession) -> Rows 
         }
     }
     let member = ValueType::Record(Box::new([
-        (ColumnName::Written("P".into()), ValueType::Box),
+        (ColumnName::Written("P".into()), ValueType::Position),
         (ColumnName::Written("C".into()), ValueType::Color),
         (ColumnName::Written("C_out".into()), ValueType::Color),
     ]));

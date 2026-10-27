@@ -678,7 +678,7 @@ fn label_type(types: &FormTypes, label: LabelId) -> Result<ValueType, String> {
 pub fn image<'v>(geometry: &'v Geometry, g: D4Element, values: &'v [TermId], types: &'v [ValueType]) -> impl Iterator<Item = TermId> + 'v {
     values.iter().zip(types).map(move |(&value, ty)| match ty {
         ValueType::Record(_) => unreachable!("a label's type is no record"),
-        ValueType::Box => Term::Box(apply(g, Term::decode_box(value))).encode().expect("a Box's margins, moved among its edges, each fit a signed byte"),
+        ty if ty.is_box() => Term::Box(apply(g, Term::decode_box(value))).encode().expect("a Box's margins, moved among its edges, each fit a signed byte"),
         _ if ty.moved_by_d4() => geometry.under(g, value),
         _ => value,
     })

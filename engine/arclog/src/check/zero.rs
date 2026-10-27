@@ -157,7 +157,7 @@ fn rule_refusals(form: &Form, path: &NodePath, scope: &Scope<'_>, open: &dyn Fn(
         }
         NodeRef::Conjunct(Conjunct::Constraint(Constraint { first, second: Operand::Zero, .. })) => {
             let label = label_scope(scope.labels, at).into_iter().find(|entry| entry.label == first.label);
-            if label.and_then(|entry| entry.ty.as_ref()).is_some_and(|ty| !has_zero(ty)) {
+            if label.and_then(|entry| entry.ty.as_ref()).is_some_and(|ty| !ty.has_zero()) {
                 refused.push(refusal(ZERO_AGAINST, at.clone()));
             }
         }
@@ -177,12 +177,6 @@ fn rule_refusals(form: &Form, path: &NodePath, scope: &Scope<'_>, open: &dyn Fn(
     refused
 }
 
-/// Whether `0` has a value of the type `ty`: the number zero, or the zero
-/// box.
-fn has_zero(ty: &ValueType) -> bool {
-    matches!(ty, ValueType::Number | ValueType::Box)
-}
-
 /// Pushes onto `refused` each site of `atom`, at `at` of the form at
 /// `path`, that holds `0` on a column whose type is fixed and has no `0`.
 fn zero_sites(atom: &crate::program::Atom, path: &NodePath, at: &NodePath, scope: &Scope<'_>, refused: &mut Vec<Refusal>) {
@@ -191,7 +185,7 @@ fn zero_sites(atom: &crate::program::Atom, path: &NodePath, at: &NodePath, scope
             continue;
         }
         let ty = column_type(atom, path, at, &site.column, scope);
-        if ty.is_some_and(|ty| !has_zero(&ty)) {
+        if ty.is_some_and(|ty| !ty.has_zero()) {
             refused.push(refusal(ZERO_ON, at.child(index)));
         }
     }

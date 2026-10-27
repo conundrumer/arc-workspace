@@ -315,7 +315,7 @@ A clause may end in `ONE` marks, each naming key columns of its relation, and a 
 (OUT (&bar.cell ^P) (&on ^Col))
 ```
 
-An `OUT` form states the program's output. It is `(OUT <atom>)`, whose atom holds two sites, or `(OUT <atom> <atom>)`, whose atoms hold one site each. Each atom is in parentheses and reads `input` or a relation the program declares, as a `RULE` body reads it. Each site selects one column, or one field of a record column, with one label marked `^` and nothing else: no `*`, no label with no mark, no `0`. The first site in written order selects a column of type Position and the second a column of type Color. The checker refuses an `OUT` form that breaks one of these rules.
+An `OUT` form states the program's output. It is `(OUT <atom>)`, whose atom holds two sites, or `(OUT <atom> <atom>)`, whose atoms hold one site each. Each atom is in parentheses and reads `input` or a relation the program declares, as a `RULE` body reads it. Each site selects one column, or one field of a record column, with one label marked `^` and nothing else: no `*`, no label with no mark, no `0`. The first site in written order selects a column of type Position or Box and the second a column of type Color. The checker refuses an `OUT` form that breaks one of these rules.
 
 An `OUT` form writes each site elided, as `^<name>` with `<name>` the name of the column or of the field: `(OUT (&r ^C_out ^Col))` selects the columns `C_out` and `Col` of `&r`, and `(:t ^V)` selects the field `V` of the record column `t`. No site gives a label of its own, and no later form reads the labels of an `OUT` form, which are its two key columns, as [Instance](#instance) gives a key's.
 

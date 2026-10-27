@@ -66,7 +66,7 @@ impl TypeName {
         crate::read::spelling::parse(crate::read::spelling::TYPE_NAMES, text)
     }
 
-    /// The type the name stands for, `Box` for `Position` and `Offset`.
+    /// The type the name stands for.
     pub fn value_type(self) -> crate::types::ValueType {
         use crate::types::ValueType;
         match self {
@@ -74,7 +74,9 @@ impl TypeName {
             TypeName::Color => ValueType::Color,
             TypeName::Example => ValueType::Example,
             TypeName::Unit => ValueType::Unit,
-            TypeName::Box | TypeName::Position | TypeName::Offset => ValueType::Box,
+            TypeName::Box => ValueType::Box,
+            TypeName::Position => ValueType::Position,
+            TypeName::Offset => ValueType::Offset,
             TypeName::Ident => ValueType::Ident,
             TypeName::C4 => ValueType::C4,
             TypeName::D4 => ValueType::D4,

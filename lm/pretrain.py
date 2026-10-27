@@ -11,7 +11,7 @@ fields of the program and output steps, plus `--prior-weight` times the prior pa
 evaluated every `--eval-every` steps with fixed masks and identifiers, on a sample of `--eval-limit` of them drawn once with `--seed` (0: all); the log (JSON lines, as train.py writes)
 gives the masked loss, each part's loss, and per part the loss and the accuracy per column type, with the fields of
 `ex_output` under "ex_output/<type>", and where the export gives depths, the program part per depth bucket of the
-derived tables (`by_depth`: 1, 2, 3, 4+); a Box or Position field is right when all four margins are, and its type also
+derived tables (`by_depth`: 1, 2, 3, 4+); a Box, Position or Offset field is right when all four margins are, and its type also
 gives the edge accuracy, of single margins. With `--mask-remote` or `--mask-remote-groups`, a remote field is
 labelled "remote/<type>" in `by_type`, `by_depth` leaves remote fields out, and the log gives the program part over
 the remote fields (`remote_entries`): `by_source_rows`, by the most rows of a source table of the field's column
@@ -163,7 +163,7 @@ TARGETS = {1: "row_target", 2: "row_target_cross_entry", 0: "no_row_target"}
 
 def summarize(records, by=None):
     """Per part, per label, over the records of masked_loss: [loss sum, fields right, fields, margins right,
-    chance loss sum], the margins for a Box or Position, of four per field; under "depth", the same per depth bucket
+    chance loss sum], the margins for a Box, Position or Offset, of four per field; under "depth", the same per depth bucket
     (`depth_bucket`) over the program part's fields of the derived tables that give a depth, remote fields left out;
     under "source rows", per (`source_bucket`, type, "all" or a `TARGETS` kind), the same and then the sum over the
     key groups of each group's mean loss, the groups, and the sum over the key groups of each group's mean chance
@@ -212,10 +212,10 @@ def summarize(records, by=None):
 
 
 def by_type(by):
-    """The per-label table of the log: loss and its chance level, and accuracy (a Box or Position: all four margins
-    right), and for a Box or Position, the edge accuracy (a margin right)."""
+    """The per-label table of the log: loss and its chance level, and accuracy (a Box, Position or Offset: all four
+    margins right), and for those, the edge accuracy (a margin right)."""
     return {k: {"loss": x[0] / x[2], "chance_loss": x[4] / x[2], "accuracy": x[1] / x[2], "fields": x[2],
-                **({"edge_accuracy": x[3] / (4 * x[2])} if k.split("/")[-1] in ("Box", "Position") else {})}
+                **({"edge_accuracy": x[3] / (4 * x[2])} if E.is_box(k.split("/")[-1]) else {})}
             for k, x in sorted(by.items())}
 
 

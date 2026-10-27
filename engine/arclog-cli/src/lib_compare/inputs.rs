@@ -285,7 +285,7 @@ pub(super) fn columns_json(columns: &[Column], ty: &dyn Fn(&Column) -> ValueType
 pub(super) fn value_kind(ty: &ValueType) -> &'static str {
     if is_orientation(ty) {
         "constant"
-    } else if *ty == ValueType::Box {
+    } else if ty.is_box() {
         "box"
     } else {
         "number"
@@ -293,7 +293,7 @@ pub(super) fn value_kind(ty: &ValueType) -> &'static str {
 }
 
 pub(super) fn is_orientation(ty: &ValueType) -> bool {
-    !matches!(ty, ValueType::Number | ValueType::Color | ValueType::Example | ValueType::Unit | ValueType::Box | ValueType::Ident | ValueType::Record(_))
+    !(ty.is_box() || matches!(ty, ValueType::Number | ValueType::Color | ValueType::Example | ValueType::Unit | ValueType::Ident | ValueType::Record(_)))
 }
 
 pub(super) fn constant_name(id: TermId) -> &'static str {
@@ -342,7 +342,7 @@ impl Random {
     /// from its constants in the order of their names.
     pub(super) fn value(&mut self, ty: &ValueType) -> Value {
         match ty {
-            ValueType::Box => {
+            ty if ty.is_box() => {
                 let cell = self.below(2) == 0;
                 let mut span = |extent: usize| {
                     let near = self.below(extent);

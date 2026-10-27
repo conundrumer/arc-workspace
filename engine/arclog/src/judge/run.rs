@@ -183,11 +183,11 @@ impl Tested {
     }
 }
 
-/// The pairs of a Position column and a Color column of a relation whose
+/// The pairs of a Position or Box column and a Color column of a relation whose
 /// columns take `types`, each a candidate for its grid columns.
 fn candidate_columns(types: &[ValueType]) -> Vec<GridColumns> {
-    let of = |ty: ValueType| types.iter().enumerate().filter(move |(_, t)| **t == ty).map(|(i, _)| ColumnIndex(i as u16));
-    of(ValueType::Box).flat_map(|position| of(ValueType::Color).map(move |color| GridColumns { position, color })).collect()
+    let of = |ty: ValueType| types.iter().enumerate().filter(move |(_, t)| t.meets(&ty)).map(|(i, _)| ColumnIndex(i as u16));
+    of(ValueType::Position).flat_map(|position| of(ValueType::Color).map(move |color| GridColumns { position, color })).collect()
 }
 
 /// Output sets already evaluated during the assignment filter.

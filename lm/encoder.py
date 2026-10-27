@@ -174,14 +174,25 @@ def position_permutation(g):
 
 ORIENTATION_TYPES = {"Dir", "DiagDir", "Dir8", "Axis", "DiagAxis", "Axis4", "D4", "C4", "Sym", "Sense", "Pose"}
 TYPE_NAMES = ["Number", "Color", "Example", "Ident", "Box"] + sorted(ORIENTATION_TYPES)
+BOX_TYPES = ("Box", "Position", "Offset")   # the types of a value that is four margins: Box, and the two under it
+BOX_SUBTYPES = {("Position", "Box"), ("Offset", "Box")}   # (subtype, supertype), as `orientation_subtypes` gives its pairs
 
 
 def type_name(t):
     return "Pose" if t.startswith("Pose") else t
 
 
+def is_box(t):
+    return t in BOX_TYPES
+
+
+def feature_type(t):
+    """The name in TYPE_NAMES whose features a column of type `t` takes: Box for each type of a box."""
+    return "Box" if is_box(t) else t
+
+
 def width(t):
-    return 4 if t == "Box" else 1
+    return 4 if is_box(t) else 1
 
 
 class Table:
@@ -262,8 +273,7 @@ def evidence_tables(task_json):
                         ("ex_output", [(i, p["output"]) for i, p in enumerate(train)])):
         cells = grid_rows(grids)
         n = len(cells)
-        # the cell column is a Position, which the engine types as a Box
-        out.append(Table(step=0, relation=name, evidence=True, positions=[0, 1, 2], types=["Example", "Box", "Color"],
+        out.append(Table(step=0, relation=name, evidence=True, positions=[0, 1, 2], types=["Example", "Position", "Color"],
                          cells=cells, present=np.ones((n, 3), bool), example=np.full(n, -1, np.int16),
                          example_kind=np.zeros(n, np.int8), assignment=np.full((n, 0), -1, np.int32),
                          model=np.zeros(n, np.int32), entry=cells[:, 0].astype(np.int32), part=np.zeros(n, np.int32),
@@ -543,8 +553,8 @@ def copy_flow_check(fl, column_types, kept, tables, dets=None, subtypes=None, wh
     indexes). A copy flow's source column is a column of its source table, or, where its `det` is not -1, a column of
     that DET of the table that holds the flow, whose types are that table's `det_types[det]` in tables.parquet. A copy
     flow from a column of a table that the case holds, or from a DET, must give its column the type of the source
-    column, or a subtype or a supertype of it that `subtypes` gives ((subtype, supertype) pairs, `orientation_subtypes`;
-    where None or empty, the type must be the same). Where every source of a column is such a copy flow, the column's value in
+    column, or a subtype or a supertype of it that `subtypes` or `BOX_SUBTYPES` gives ((subtype, supertype) pairs,
+    `orientation_subtypes`; where None or empty, the type must be the same or a Box type's pair of `BOX_SUBTYPES`). Where every source of a column is such a copy flow, the column's value in
     each present row of its Tables must be a value of one of its source columns: over the rows of a source table's
     Tables, or over the rows of a DET's relation at the Table's own assignment of that DET (the Table's
     `det_cells`). A column's flows are its sources over every rule that derives it, so its values are in the union of
@@ -555,7 +565,7 @@ def copy_flow_check(fl, column_types, kept, tables, dets=None, subtypes=None, wh
     unseen entries; a column with a type violation is left out), and [(kind, flow row, detail)] of each violation,
     kind "type" for a flow or "value" for a column, given by its first copy flow. Raises DataFault, naming `where`
     (the case), where the widths of a DET's `det_types` differ from its `det_widths`."""
-    dets, subtypes = dets or {}, subtypes or set()
+    dets, subtypes = dets or {}, BOX_SUBTYPES | (subtypes or set())
     of = {}
     for i, t in enumerate(tables):
         e = GRID_TABLES.get(t.relation) if t.evidence else t.export_table
@@ -2086,7 +2096,7 @@ def hidden_remote_line(hidden):
             f"with a cross-entry row target {sum(x for _, _, x in ptr.values())}")
 
 
-GROUPS = {"Number": "number", "Color": "color", "Example": "example", "Ident": "ident", "Box": "box"}
+GROUPS = {"Number": "number", "Color": "color", "Example": "example", "Ident": "ident", **dict.fromkeys(BOX_TYPES, "box")}
 
 
 def to_device(t, device):
@@ -2513,7 +2523,7 @@ class FeatureEncoder(nn.Module):
             v = cells[:, o:o + w]; col = o; o += w
             rows = np.flatnonzero(present[:, i])
             hid = hidden[rows, i]
-            ty_i = TYPE_NAMES.index(ty)
+            ty_i = TYPE_NAMES.index(feature_type(ty))
             pos = tb.positions[i]
             pidx = np.full(len(rows), n_num + ty_n)                       # the zero row of the value table
             code = None
@@ -2534,7 +2544,7 @@ class FeatureEncoder(nn.Module):
                     width_ = 10 if ty == "Color" else self.examples
                     assert 0 <= v[:, 0].min() and v[:, 0].max() < width_, f"a {ty} value outside its code's {width_} places"
                     code = ("hot", v[:, :1].astype(np.int64), width_)
-            elif ty == "Box":
+            elif is_box(ty):
                 m = np.clip(v[rows], *self.margin_range) - mar_lo
                 Ed.append((rows, pos, np.where(hid[:, None], n_mar + ty_n, m)))
                 code = ("box", v)
@@ -2552,11 +2562,11 @@ class FeatureEncoder(nn.Module):
                     code = ("hot", oi[:, None], len(self.orient_index))
             g = GROUPS.get(ty, "orientation")
             if self.equality == "random":   # a sign code per value, of each of a Box's margins
-                vals = v if ty == "Box" else v[:, :1]
+                vals = v if is_box(ty) else v[:, :1]
                 code = ("dense", torch.cat([ids.host("sign " + g, vals[:, j], RANDOM_CODE_WIDTH)
                                             for j in range(vals.shape[1])], 1))
             elif self.equality == "flex":   # the values themselves, of each of a Box's margins
-                code = ("flex", (v if ty == "Box" else v[:, :1]).astype(np.int64))
+                code = ("flex", (v if is_box(ty) else v[:, :1]).astype(np.int64))
             A.append((rows, pos, ty_i, pidx))
             groups.setdefault(g, []).append((i, code))
         eq, eq_cols, box_u = {}, {g: [i for i, _ in cols] for g, cols in groups.items()}, None
@@ -2732,7 +2742,7 @@ class FeatureEncoder(nn.Module):
             return dense(ids.host(ty.lower() + " code", v[:, 0], self.code_dim) if r else torch.zeros(0, self.code_dim))
         if ty in ("Color", "Example"):
             return v[:, :1].astype(np.int64), np.ones((r, 1))
-        if ty == "Box":
+        if is_box(ty):
             u = plan["box_u"]
             at = np.minimum(np.searchsorted(u, v), len(u) - 1)
             ok = u[at] == v
@@ -3148,7 +3158,7 @@ class FeatureEncoder(nn.Module):
             losses.append(F.cross_entropy(up(logits), tgt, reduction="none")); correct.append(logits.argmax(1) == tgt)
             chances.append(torch.full_like(losses[-1], math.log(logits.shape[1])))
             order.append(idx); out["number"] = (idx, logits)
-        idx = sel(lambda ty: ty == "Box")
+        idx = sel(is_box)
         if len(idx):
             lo, hi = self.margin_range
             tgt = torch.tensor([[min(max(value(k, j), lo), hi) - lo for j in range(4)] for k in idx], device=dev)
@@ -3201,15 +3211,12 @@ class FeatureEncoder(nn.Module):
             order.append(idx); out["pointer"] = (idx, logits)
         perm = torch.from_numpy(np.argsort(np.concatenate(order), kind="stable")).to(dev)
         prefix = "ex_output/" if table.relation == "ex_output" else ""
-        # the engine types a Position as a Box, and encodes and predicts it as one; the evidence tables' cell
-        # column is a Position, so its fields are labelled so
-        label = lambda ty: "Position" if table.evidence and ty == "Box" else ty
         n_edges = torch.full((len(types),), -1, dtype=torch.long, device=dev)
         if "box" in out:
             n_edges[torch.from_numpy(out["box"][0]).to(dev)] = edges[0]
         rec = {"loss": torch.cat(losses)[perm], "correct": torch.cat(correct)[perm], "edges": n_edges,
                "chance_loss": torch.cat(chances)[perm],
-               "label": [prefix + label(ty) for ty in types]}
+               "label": [prefix + ty for ty in types]}
         if detail:
             rec["out"] = out
         return rec

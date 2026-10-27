@@ -19,12 +19,12 @@ use crate::types::ValueType;
 pub struct OutCheck;
 
 /// The types of the columns an `OUT` selects, in written order: a Position,
-/// which the engine holds as a box, then a Color.
-const SELECTED: [ValueType; 2] = [ValueType::Box, ValueType::Color];
+/// which a column of type `Box` or `Position` holds, then a Color.
+const SELECTED: [ValueType; 2] = [ValueType::Position, ValueType::Color];
 
-/// The refusal of an `OUT` form that selects other columns than a Position,
-/// then a Color.
-const COLUMNS: &str = "an `OUT` form selects a Position column, then a Color column";
+/// The refusal of an `OUT` form that selects other columns than a Position
+/// or Box column, then a Color.
+const COLUMNS: &str = "an `OUT` form selects a Position or Box column, then a Color column";
 
 /// Whether the form is read whole, or as a prefix of a decode, where a
 /// refusal stands only if no completion undoes it.
@@ -156,7 +156,7 @@ fn found(scope: &Scope<'_>, form: &NodePath, out: &Out, reading: Reading<'_, '_>
             continue;
         };
         match label_type(scope, *label) {
-            Some(ty) if ty != wanted => refused.push((at.clone(), COLUMNS)),
+            Some(ty) if !ty.meets(wanted) => refused.push((at.clone(), COLUMNS)),
             None if reading.complete() => refused.push((at.clone(), "the label of an `OUT` site has no type")),
             _ => {}
         }
@@ -209,7 +209,7 @@ fn column_may_hold(scope: &Scope<'_>, form: &NodePath, atom_at: &NodePath, atom:
     paths
         .iter()
         .filter(|path| column.is_none_or(|column| path.first() == Some(column)))
-        .any(|path| scope.inference.site_type(reading, atom, path).is_none_or(|ty| ty == *wanted))
+        .any(|path| scope.inference.site_type(reading, atom, path).is_none_or(|ty| ty.meets(wanted)))
 }
 
 /// Whether an atom of an `OUT` form may read `relation`: `input`, or a
