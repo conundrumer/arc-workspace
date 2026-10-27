@@ -294,34 +294,51 @@ class ClauseWriter:
             return lab
         return self.term_text(t)
 
-    def gate(self, l: AtomLiteral) -> None:
-        """An atom of a `skip_rels` relation, such as `impl_choice`, writes no text:
-        the constructors its arguments name at case leaves are the branches the
-        clause stands in, as `sites` gives them for any other atom. A negated atom
-        that names a constructor is no branch, and gives a TODO."""
+    def skips(self, l: AtomLiteral) -> bool:
+        """Whether `l` is an atom of a `skip_rels` relation, such as `impl_choice`,
+        which writes no text."""
+        rel = l.atom.relation
+        return rel.name in self.c.skip_rels and (not rel.instances or rel.instances[0] in ("parse", "ex"))
+
+    def is_gate(self, l: AtomLiteral) -> bool:
+        """Whether `l` is a skipped atom that holds no case set: its arguments
+        fix the case the clause stands in."""
+        return self.skips(l) and l.atom.relation.name not in getattr(self.c, "case_sets", ())
+
+    def gate_ctors(self, l: AtomLiteral) -> set[str] | None:
+        """The constructors that the arguments of the gate atom `l` name at case
+        leaves, or None where the atom's columns do not resolve."""
         _, cols, _, _ = self.c.resolve(l.atom.relation, self.scope, self.sub)
         if cols is None or len(cols) != len(l.atom.args):
-            self.c.todo.add("choice-gate", souffle_term(l.atom))
-            return
+            return None
         ctors: set[str] = set()
         for (_, leaves), arg in zip(cols, l.atom.args):
             ctors |= case_ctors(leaves, self.split(arg, leaves))
-        if l.negated and ctors:
+        return ctors
+
+    def gate(self, l: AtomLiteral) -> None:
+        """A gate atom: the constructors its arguments name at case leaves are
+        the branches the clause stands in, as `sites` gives them for any other
+        atom. A negated atom that names a constructor is no branch, and gives a
+        TODO."""
+        ctors = self.gate_ctors(l)
+        if ctors is None:
+            self.c.todo.add("choice-gate", souffle_term(l.atom))
+        elif l.negated and ctors:
             self.c.todo.add("choice-gate", "!" + souffle_term(l.atom))
         elif not l.negated:
             self.branches |= ctors
 
     def lit(self, l, bound: set[str]) -> list[str]:
         if isinstance(l, AtomLiteral):
-            if l.atom.relation.name in self.c.skip_rels and (not l.atom.relation.instances or
-                                                              l.atom.relation.instances[0] in ("parse", "ex")):
-                if l.atom.relation.name in getattr(self.c, "case_sets", ()):
+            if self.skips(l):
+                if self.is_gate(l):
+                    self.gate(l)
+                else:
                     self.note("%" + l.atom.relation.name, l.negated)
                     self.reads.add("%" + l.atom.relation.name)
                     if "%" + l.atom.relation.name in self.drop_neg and not l.negated:
                         raise Dead
-                else:
-                    self.gate(l)
                 return []
             if l.negated and not l.atom.relation.instances and self.defect(l.atom.relation.name):
                 return self.universal(l.atom, bound)

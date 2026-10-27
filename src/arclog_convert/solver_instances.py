@@ -67,6 +67,49 @@ DET_HEAD = re.compile(r"\((?:DET|DET_OR_RULE) (&\w+)(?=[\s)]|$)")
 """The head of a determination, and the relation it derives."""
 
 
+def fresh(base: str, taken: set[str]) -> str:
+    """`base`, or `base` with the least number from 2 that makes it a label
+    outside `taken`; the label joins `taken`."""
+    lab, n = base, 2
+    while lab in taken:
+        lab, n = f"{base}{n}", n + 1
+    taken.add(lab)
+    return lab
+
+
+FRAME_2D = "Frame2D"
+"""The component whose `cell` holds a key's cells only where `extent` has that
+key on each of two perpendicular axes."""
+
+
+def perpendicular_join(body: list[str], axis: str, knames: list[str]) -> list[str]:
+    """The key clause `body`, which makes the label `axis` as the axis of a key's
+    extent row, joined with a copy of itself on the key labels `knames`, whose
+    other labels are renamed, at an axis perpendicular to `axis`: the keys that
+    `body` gives on each of two perpendicular axes."""
+    taken = label_names(body) | set(knames)
+    ren = {x: fresh(x, taken) for x in sorted(label_names(body) - set(knames))}
+    copy = relabel(body, lambda mark, x: x if x in knames else mark + ren[x])
+    sites = [lab if lab == col else f"(:{col} {lab})" for col, lab in (("A", axis), ("A2", ren.get(axis, axis)))]
+    return [*body, *copy, f"(perp {' '.join(sites)})"]
+
+
+def extent_axis(gens: list[Unit], kren, knames: list[str]) -> str:
+    """The label of the axis of the extent row in the key clause of every
+    generator in `gens`: the label they share where it is no key label, else a
+    label that no generator holds. `kren` gives a generator's renames of its
+    key variables."""
+    held = {kren(u).get(u.head.args[1].name, u.head.args[1].name) for u in gens}
+    if len(held) == 1 and not held & set(knames):
+        return next(iter(held))
+    taken = set(knames)
+    for u in gens:
+        vs: set[str] = set()
+        collect_vars(list(u.body) + [AtomLiteral(u.head, False)], vs)
+        taken |= {kren(u).get(v, v) for v in vs}
+    return fresh("A", taken)
+
+
 def line_reads(f: Form) -> set[str]:
     """The relations a form's lines read."""
     return {m.group(1) for l in f.lines for m in READ.finditer(l)}
@@ -303,17 +346,36 @@ class InstancesMixin:
 
     def instance(self, inst, us: list[Unit], side: str, empty: frozenset[str] = frozenset(),
                  split: frozenset[str] = frozenset()) -> list[Form]:
+        """The forms of an instance of the lib component, from its input clauses
+        `us`. Input clauses that fix branches of one point make one instance per
+        branch, which holds that branch's clauses and the clauses that fix no
+        branch of the point, and one of the latter alone for the branches no
+        clause fixes. A clause fixes a branch through the constructors of its
+        head's key, or through an `impl_choice` atom of its body, as the clause
+        writer records the branches of any clause. Where clauses fix branches of
+        two points, a form stands at the branches of both points, each its own
+        or the branches no clause fixes."""
         c = self.c
-        # input clauses whose heads name branches of one point: one instance
-        # per named branch, which holds that branch's clauses and the clauses
-        # that name no branch of the point, and one of the latter alone for
-        # the branches no clause names
         points = list(c.point_fields())
         point_of = {k.name: f_ for f_, adt_ in points for k in adt_.constructors}
         _, lrs = c.lib.relations(inst.component) if inst.component in c.lib.comps else (None, [])
         keyed = {lr.name for lr in lrs if lr.cols and lr.cols[0].name == "key"}
-        named = [{k for k in ctor_names(u.head.args[0]) if k in point_of}
-                 if u.head.args and u.head.relation.name in keyed else set() for u in us]
+        gate_writer = ClauseWriter(c, inst.scope.components, c.parse_sub if inst.scope.components == ("Parse",) else {}, {})
+
+        def body_ctors(u: Unit) -> set[str]:
+            """The constructors the `impl_choice` atoms of the clause's body fix."""
+            saved = list(self.todo.pending), Counter(self.todo.kinds)
+            ctors: set[str] = set()
+            for l in u.body or []:
+                if isinstance(l, AtomLiteral) and not l.negated and gate_writer.is_gate(l):
+                    fixed = gate_writer.gate_ctors(l)
+                    if fixed is not None:
+                        ctors |= fixed
+            self.todo.pending, self.todo.kinds = saved
+            return ctors
+        named = [({k for k in ctor_names(u.head.args[0]) if k in point_of}
+                  if u.head.args and u.head.relation.name in keyed else set()) | (body_ctors(u) & point_of.keys())
+                 for u in us]
         for f_, adt_ in points:
             if f_ in split:
                 continue   # split already
@@ -336,7 +398,11 @@ class InstancesMixin:
                 isinstance(l, AtomLiteral) and l.atom.relation.instances[:1] == (inst.name,) for l in u.body)]
             if gen and rest:
                 gs = self.instance(inst, free, side, empty, split | {f_})
-                if c0 in ks:
+                # where another point is also fixed, the forms of the clauses that fix
+                # nothing at this point stand at the point's other branches, so that
+                # a case that takes a branch of both points has one form of the relation
+                fixes_other = bool(split) or any(point_of[x] != f_ for ns in named for x in ns)
+                if c0 in ks or fixes_other:
                     for g in gs:
                         g.branches = tuple(sorted(set(g.branches) | rest))
                 out.extend(gs)
@@ -417,7 +483,10 @@ class InstancesMixin:
         has_key = any(l.kind in ("keep", "example") for l in key_leaves)
         # the key clause: the atoms over key labels alone, where every input
         # clause shares them; else the union of the generators' bodies, which is
-        # also the key clause of a Cardinality with no domain clause
+        # also the key clause of a Cardinality with no domain clause. A Frame2D
+        # holds the keys that `extent` gives on each of two perpendicular axes:
+        # the join of the generators' union with a copy of itself at a
+        # perpendicular axis, in place of the union
         residual: dict[int, list] = {}
         key_body: list[str] | None = None
         blocks: list[list[str]] = []
@@ -472,7 +541,8 @@ class InstancesMixin:
             # which then holds only the keys that some member has
             renamed = libmap.COMP.get(inst.component)
             counts_members_only = renamed is not None and renamed.name == "Cardinality" and "domain" not in written
-            if gens and not counts_members_only and all(id(u) in groups for u in gens):
+            two_axes = inst.component == FRAME_2D
+            if gens and not counts_members_only and not two_axes and all(id(u) in groups for u in gens):
                 cands = {tuple(groups[id(u)][0]) for u in gens}
                 if len(cands) == 1:
                     shared = list(next(iter(cands)))
@@ -485,17 +555,30 @@ class InstancesMixin:
                         reads |= g[2].reads
                         branches |= g[2].branches
             elif gens:
+                axis = extent_axis(gens, kren, knames) if two_axes else None
                 uniq = []
                 for u in gens:
                     ren = kren(u)
+                    key_axis = None
+                    if axis is not None:
+                        # a generator whose axis is a key label makes the axis label equal to it
+                        v = u.head.args[1].name
+                        if ren.get(v, v) in knames:
+                            key_axis = ren.get(v, v)
+                        else:
+                            ren = {**ren, v: axis}
                     w = ClauseWriter(c, scope, lsub, ren, own_inst=key)
                     ls = mark_key(w.lits(list(u.body), set()), knames)
+                    if key_axis is not None:
+                        ls.append(f"(= *{axis} {key_axis})")
                     reads |= w.reads
                     branches |= w.branches
                     if ls not in uniq:
                         uniq.append(ls)
                 uniq = drop_implied(uniq)
                 key_body = list(uniq[0] if len(uniq) == 1 else wrap("(OR ", share_labels(uniq)))
+                if axis is not None:
+                    key_body = perpendicular_join(key_body, axis, knames)
         def head_terms(u, lr, ren):
             """Each non-key column of the input's head: (col, [(leaf, term)])."""
             out = []
@@ -535,13 +618,6 @@ class InstancesMixin:
             if labs[0] == col.name and len(labs) == 1:
                 return labs[0]
             return f"(:{col.name} {' '.join(labs)})"
-
-        def fresh(base: str, taken: set[str]) -> str:
-            lab, n = base, 2
-            while lab in taken:
-                lab, n = f"{base}{n}", n + 1
-            taken.add(lab)
-            return lab
 
         def zero_sites(hts, ren, taken: set[str]) -> tuple[list[str], list[str]]:
             """The head sites, each zero term a label named after its leaf,
