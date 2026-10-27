@@ -29,7 +29,8 @@ pub struct SolverText {
 /// layout elides as its bare label. A token whose node has no layout stands
 /// one space after the token before it. Each name and column of `program`
 /// is written as a file writes it, and each label is named in the layout of
-/// its scope; a slot of a decode is a fault.
+/// its scope, a form that an `ALT` gave to a `DEMO_RULE` form a scope of its
+/// own; a slot of a decode is a fault.
 pub fn write_arclog(program: &Node<Program>, layout: &Layout) -> String {
     arclog::write(program.value(), layout)
 }
@@ -109,6 +110,19 @@ impl IdentNumbering {
     }
 }
 
+/// Marks in `layout` each site of the atoms of `out`, the `OUT` form at
+/// `form`, that is a column of one label, as written elided: `^<column>`.
+pub(crate) fn elide_out_sites(out: &crate::program::Out, form: &crate::program::path::NodePath, layout: &mut Layout) {
+    use crate::layout::SourceFile;
+    use crate::program::SiteArg;
+    let body = form.child(crate::program::Out::BODY);
+    for (index, conjunct) in out.key.body.value().conjuncts.iter().enumerate() {
+        let Some(atom) = conjunct.atom() else { continue };
+        let elided = atom.value().sites.iter().enumerate().filter(|(_, site)| matches!(&site.value.args[..], [SiteArg::Label(_)])).map(|(at, _)| at as u32);
+        layout.nodes.entry((SourceFile::Arclog, body.child(index as u32))).or_default().elided_sites = elided.collect();
+    }
+}
+
 /// The program form of a decoded program: its slots named, its labels named
 /// in the scope of each form, and the program written with that layout.
 mod synthesized {
@@ -135,7 +149,7 @@ mod synthesized {
             let node = NodeLayout { tokens: Box::new([place]), label_names: names.into(), ..NodeLayout::default() };
             layout.nodes.insert((SourceFile::Arclog, NodePath::top(index as u32)), node);
             if let Form::Out(out) = &forms[index] {
-                synth.elide_out_sites(out.value(), NodePath::top(index as u32), &mut layout);
+                super::elide_out_sites(out.value(), &NodePath::top(index as u32), &mut layout);
             }
         }
         super::write_arclog(&Node::new(Program { forms: forms.into() }), &layout)
@@ -394,18 +408,6 @@ mod synthesized {
                 self.columns.insert(ProgramRelation::Output(output), texts);
             }
             value
-        }
-
-        /// Marks in `layout` each site of the atoms of `out`, the `OUT` form at
-        /// `form`, that is a column of one label, as written elided: `^<column>`.
-        fn elide_out_sites(&self, out: &Out, form: NodePath, layout: &mut Layout) {
-            let body = form.child(Out::BODY);
-            for (index, conjunct) in out.key.body.value().conjuncts.iter().enumerate() {
-                let Some(atom) = conjunct.atom() else { continue };
-                let elided = atom.value().sites.iter().enumerate().filter(|(_, site)| matches!(&site.value.args[..], [SiteArg::Label(_)])).map(|(at, _)| at as u32);
-                let node = NodeLayout { elided_sites: elided.collect(), ..NodeLayout::default() };
-                layout.nodes.insert((SourceFile::Arclog, body.child(index as u32)), node);
-            }
         }
 
         fn key_body(&self, key: &KeyBody, names: &Names) -> KeyBody {

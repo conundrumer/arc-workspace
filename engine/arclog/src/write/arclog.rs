@@ -606,7 +606,12 @@ impl<'l> Writer<'l> {
         if let Some(text) = &rule.text {
             self.put(&mut t, &quoted(&text.0));
         }
-        self.forms(&rule.forms, &ChildPaths::of(path, NodeRef::DemoRule(rule)), Some(&names));
+        let children = ChildPaths::of(path, NodeRef::DemoRule(rule));
+        for (index, form) in rule.forms.iter().enumerate() {
+            // A form that an `ALT` gave the rule is a label scope of its own.
+            let scope = if rule.forms.from_alt(index) { None } else { Some(&names) };
+            self.form(form, &children.path(NodeRef::from(form)), scope);
+        }
         self.put(&mut t, ")");
     }
 }

@@ -60,9 +60,12 @@ struct IdStream {
 /// case or, with `all_cases`, every case, over the solvers whose task ids
 /// `task_ids` gives, or every solver where it is `None`, in the order of the
 /// task ids and then of the cases, with the ids of the vocabulary under the
-/// default settings. The second value holds a line for each case that gives no
-/// stream and each solver that gives none, in the form the report of
-/// `arclog-cli stream --corpus` prints it, in the order of the task ids.
+/// default settings. A case whose files `cases/<task id>/<file>.arclog` and
+/// `<file>.arcdata` stand in `corpus`, with `<file>` as `CaseFiles.file` gives
+/// it, takes the stream of the solver those two files make. The second value
+/// holds a line for each case that gives no stream and each solver that gives
+/// none, in the form the report of `arclog-cli stream --corpus` prints it, in
+/// the order of the task ids.
 /// Where `tasks`, the directory of the task files, is given, each stream is
 /// also replayed on its task under the default settings, judging the train
 /// pairs in the closed world, and the stream's `masks` are the engine's

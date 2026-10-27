@@ -1,12 +1,17 @@
 //! The token streams of the cases of a solver of a corpus, and the helpers
 //! that read, check and name those cases, which the `arclog-cli`
-//! subcommands and the `arclog` Python package share.
+//! subcommands and the `arclog` Python package share. The files of a case
+//! under `cases/` of a corpus are those of [`case_files`].
+
+mod files;
 
 use std::path::Path;
 
+pub use files::{case_file_name, case_files, CaseFiles, CaseTexts};
+
 use crate::check::{check_shared_program, CheckCache, CheckedProgram, SolverClauses};
 use crate::decode::replay::holds_demonstrated;
-use crate::harness::read_corpus_solver;
+use crate::harness::{read_corpus_solver, read_solver_texts};
 use crate::registry::Registry;
 use crate::eval::determinations::relation_spelled;
 use crate::hash::StableHashSet;
@@ -44,8 +49,9 @@ pub struct CaseStream {
 }
 
 /// The stream of each wanted case of the solver `id` of `corpus`, in the
-/// order of the cases, or the fault that stops the solver: its files do not
-/// read, a wanted case is absent, or the checker refuses a wanted case.
+/// order of the cases, as [`corpus_case_stream`] gives it, or the fault that
+/// stops the solver: its files do not read, a wanted case is absent, or the
+/// checker refuses a wanted case.
 pub fn solver_streams(corpus: &Path, id: &str, wanted: WantedCases<'_>, vocabulary: &Vocabulary) -> Result<Vec<CaseStream>, String> {
     let solver = read_corpus_solver(corpus, id).map_err(|e| format!("the solver's files do not read: {e}"))?;
     let cases = resolve_cases(&solver, Registry::get());
@@ -69,10 +75,27 @@ pub fn solver_streams(corpus: &Path, id: &str, wanted: WantedCases<'_>, vocabula
                 case: case_spelled(name),
                 concept: name == concept,
                 demonstrated: holds_demonstrated(program),
-                stream: case_stream(case, program, vocabulary),
+                stream: corpus_case_stream(corpus, id, case, program, vocabulary),
             }
         })
         .collect())
+}
+
+/// The token stream of `case`, a case of the solver `id` of `corpus`, whose
+/// checked program is `checked`, or the writer's fault: where `corpus` holds,
+/// under `cases/<id>/`, the files of the case as [`case_file_name`] names
+/// them, the concept stream of the solver those two files make; otherwise
+/// [`case_stream`]. Where only one of the two files stands, or they do not
+/// read, or the solver they make has no stream, the fault.
+pub fn corpus_case_stream(corpus: &Path, id: &str, case: &ResolvedCase, checked: &CheckedProgram, vocabulary: &Vocabulary) -> Result<WrittenStream, String> {
+    let Some(texts) = files::read_case_files(corpus, id, &case.case.name)? else {
+        return case_stream(case, checked, vocabulary);
+    };
+    let solver = read_solver_texts(corpus, id, &texts.arclog, &texts.arcdata).map_err(|e| format!("the case's files do not read: {e}"))?;
+    let cases = resolve_cases(&solver, Registry::get());
+    let clauses = SolverClauses::of_cases(&cases);
+    let alone = check_case(cases.concept(), &clauses, &mut CheckCache::default(), "the case's files")?;
+    case_stream(cases.concept(), &alone, vocabulary)
 }
 
 /// The token stream of `case`, whose checked program is `checked`, or the
@@ -101,16 +124,23 @@ pub fn case_stream(case: &ResolvedCase, checked: &CheckedProgram, vocabulary: &V
     if case.case.reads_alone_as_it_stands() {
         return written(checked);
     }
-    let resolved = std::sync::Arc::new(resolve(case.case.program_alone(), None, &SolverScope::default(), Registry::get()).value);
-    if let Some(fault) = rederived_read(&case.case, &resolved) {
-        return Err(format!("the writer gives no stream: {fault}"));
-    }
+    let resolved = resolve_alone(&case.case).map_err(|fault| format!("the writer gives no stream: {fault}"))?;
     let clauses = SolverClauses::of_shared_program(std::sync::Arc::clone(&resolved));
     let alone = check_shared_program(resolved, &clauses, Registry::get(), &mut CheckCache::default()).map_err(|refusals| {
         let messages: Vec<&str> = refusals.iter().map(|d| &*d.message).collect();
         format!("the writer gives no stream: the case program read alone is refused: {}", messages.join("; "))
     })?;
     written(&alone)
+}
+
+/// The program of `case` read alone, resolved, or the fault of
+/// [`rederived_read`]: the program that [`case_stream`] checks and writes.
+fn resolve_alone(case: &Case) -> Result<std::sync::Arc<ResolvedProgram>, String> {
+    let resolved = std::sync::Arc::new(resolve(case.program_alone(), None, &SolverScope::default(), Registry::get()).value);
+    match rederived_read(case, &resolved) {
+        Some(fault) => Err(fault),
+        None => Ok(resolved),
+    }
 }
 
 /// The fault of `case` where a `DET` it takes from the concept program reads,
