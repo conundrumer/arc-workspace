@@ -35,7 +35,7 @@ The `RIGID_DET` form, a rigid determination, is the arclog form for parameters t
 142ca369: each marker launches a diagonal ray. A marker is an L-triomino with a cell the ray leaves from and the diagonal it heads along, and the markers of one input stand in different orientations. The determination reads one representative marker: `&pick` takes one launch cell that the training outputs show, and `&bbox` is the box of that marker's cells.
 
 - The `DET` forms are tables over the observed data that read the representative marker, with its cells in the frame of its box.
-- Each atom of the form is a part, and its sites are that part's reading. The program reads the part under the atom's relation name in the form's path: `&marker.glyph`, or `&marker.bbox.box` for a part that reads `&bbox.box`.
+- Each atom of the form is a part, and its sites are that part's reading. The program reads the part under the atom's relation name in the form's path: `&marker.glyph`, or `&marker.bbox.box` for a part that reads `&bbox.box`. A part that reads `input`, `ex_input`, `ex_output` or a lib relation has no output.
 - A form with no `instance` clause has one instance. Its parts read no instance label, and each part's `DET` table is that one instance's reading.
 - In a form with an `instance` clause, a part whose atom holds no label of that clause is a frame part: no instance's reading holds it, and the other parts place it, as [Semantics](#semantics) gives.
 

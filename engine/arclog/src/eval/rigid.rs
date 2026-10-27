@@ -229,9 +229,9 @@ impl<'e, 'p> Assembly<'e, 'p> {
     }
 
     /// The index among the parts of the one part whose output's path
-    /// begins with `step`.
+    /// begins with `step`. A part that has no output matches no step.
     fn part(&self, step: &OutputStep) -> Outcome<usize> {
-        let mut found = self.parts.iter().enumerate().filter(|(_, part)| self.steps(part).first() == Some(step)).map(|(index, _)| index);
+        let mut found = self.parts.iter().enumerate().filter(|(_, part)| self.steps(part).is_some_and(|steps| steps.first() == Some(step))).map(|(index, _)| index);
         match (found.next(), found.next()) {
             (Some(part), None) => Ok(part),
             (Some(_), Some(_)) => Err(self.fault(format!("more than one part's output begins with the step {step:?}"))),
@@ -239,9 +239,10 @@ impl<'e, 'p> Assembly<'e, 'p> {
         }
     }
 
-    /// The path after the form's name of `part`'s output.
-    fn steps(&self, part: &Part<'_>) -> Vec<OutputStep> {
-        form_columns::part_steps(&part.atom.value().relation).expect("a part that reads a relation")
+    /// The path after the form's name of `part`'s output, or `None` for a
+    /// part that reads a fact or a lib relation, which has no output.
+    fn steps(&self, part: &Part<'_>) -> Option<Vec<OutputStep>> {
+        form_columns::part_steps(&part.atom.value().relation)
     }
 
     /// The instances of the assembly, each with its reading of each part,
@@ -487,7 +488,7 @@ impl<'e, 'p> Assembly<'e, 'p> {
                 continue;
             }
             let Some(record) = self.record_of(part, bodies) else {
-                return Err(self.fault(format!("the stored records hold no record of the part {:?}, which the record of a frame part is imaged by", self.steps(part))));
+                return Err(self.fault(format!("the stored records hold no record of the part {:?}, which the record of a frame part is imaged by", part.atom.value().relation)));
             };
             let types: Vec<ValueType> = self.key_types.iter().chain(&part.types).cloned().collect();
             let rows = {
@@ -534,9 +535,9 @@ impl<'e, 'p> Assembly<'e, 'p> {
     }
 
     /// The stored record of `&<assembly>.<part>`, or `None` where the
-    /// records hold none.
+    /// records hold none, or the part has no output.
     fn record_of<'b>(&self, part: &Part<'_>, bodies: &'b FormBodies<'_>) -> Option<&'b ParamValue> {
-        let name = OutputName { of: OutputOwner::RigidDet(self.name.clone()), path: self.steps(part).into() };
+        let name = OutputName { of: OutputOwner::RigidDet(self.name.clone()), path: self.steps(part)?.into() };
         bodies.driver.evaluation.parameters.get(&ProgramRelation::Output(name))
     }
 
