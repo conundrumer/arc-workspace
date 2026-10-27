@@ -1134,12 +1134,9 @@ class Ctx:
         if len(brs) < 2 or not all(isinstance(b, L) for b in brs):
             self.err(a.line, "or", "OR holds two or more branches")
             return
-        for i, bi in enumerate(brs):
-            j = next((j for j, bj in enumerate(brs) if j != i and implies(bi.items, bj.items)
-                      and not (implies(bj.items, bi.items) and j > i)), None)
-            if j is not None:
-                self.err(bi.line, "or-implied", f"OR branch {i + 1} holds only where branch {j + 1} holds, "
-                         "so it adds no rows")
+        for i, j in implied_branches([b.items for b in brs]):
+            self.err(brs[i].line, "or-implied", f"OR branch {i + 1} holds only where branch {j + 1} holds, "
+                     "so it adds no rows")
         first = Scope(scope, kind="first", union=getattr(self, "whole_or", False))
         self.whole_or = False
         self.body(brs[0].items, first)
@@ -1482,6 +1479,21 @@ def implies(bi: list, bj: list) -> bool:
         elif norm(y) not in texts:
             return False
     return True
+
+
+def implied_branches(branches: list[list]) -> list[tuple[int, int]]:
+    """Each branch of an `OR` that holds only where another branch holds (`implies`), by index, with the branch it
+    holds only where, in order of the branches: of two branches that hold only where each other holds, the later is
+    implied, and a branch already implied is no implying branch."""
+    out: list[tuple[int, int]] = []
+    gone: set[int] = set()
+    for i, bi in enumerate(branches):
+        j = next((j for j, bj in enumerate(branches) if j != i and j not in gone and implies(bi, bj)
+                  and not (implies(bj, bi) and j > i)), None)
+        if j is not None:
+            out.append((i, j))
+            gone.add(i)
+    return out
 
 
 def one_states(f: L) -> bool:

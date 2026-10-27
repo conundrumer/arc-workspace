@@ -635,19 +635,12 @@ def or_body(bodies: list[tuple[list[str], list[str]]], cols: set[str], outer: se
 def drop_implied(bodies: list[list[str]]) -> list[list[str]]:
     """The union's bodies less each that holds only where another holds,
     the earlier of two that each imply the other kept."""
-    from arclog_convert.lint import implies, read
+    from arclog_convert.lint import implied_branches, read
     try:
         parsed = [read("\n".join(b)) for b in bodies]
     except SyntaxError:
         return bodies
-    gone: set[int] = set()
-    for i in range(len(bodies)):
-        for j in range(len(bodies)):
-            if i == j or j in gone:
-                continue
-            if implies(parsed[i], parsed[j]) and not (implies(parsed[j], parsed[i]) and j > i):
-                gone.add(i)
-                break
+    gone = {i for i, _ in implied_branches(parsed)}
     return [b for k, b in enumerate(bodies) if k not in gone]
 
 

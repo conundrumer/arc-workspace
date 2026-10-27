@@ -27,7 +27,12 @@ not read:
   the case: the form of the block of greatest depth derives a relation in a case
   (`docs/arclog/arclog.md#alts`). So another clause d of P does not keep the
   clause for a reader outside d's block where, in each case that holds d's block
-  and the reader's, such a form stands.
+  and the reader's, such a form stands. Likewise a reader outside the block of
+  the clause itself, other than a `DET`, does not keep it where, in the case
+  that holds the clause's block and the reader's, such a form stands: that reader
+  derives nothing and reads no clause of P in any case that holds the block. A
+  `DET` outside the block reads the derivation of the concept program in every
+  case, so it keeps the clause.
 - A one-label site of P's atom on a column of a type parameter is one that the
   column-map entry of Q does not settle as a field or as the whole value.
 - A reader's clause kind may not read Q, or reads it in another scope than P
@@ -46,9 +51,13 @@ not read:
   that it did not give. Where the code is `or-implied` at an `OR` that holds a
   redirected atom, the pass first removes each branch of that `OR` that the lint
   names as holding only where another branch holds: that branch adds no rows. An
-  `OR` left with one branch becomes that branch's conjuncts. The clause stays
-  where the lint, with those branches removed, gives any code, other than
-  `stands-under`, in more places than before.
+  `OR` left with one branch becomes that branch's conjuncts. Where a removed
+  branch holds labels marked `^`, the first branch that stays takes the mark at
+  its first site of each such label, so the key clause keeps its columns in
+  their order (`docs/arclog/arclog.md#instance`); where it lacks a site of one
+  of them, or its first sites of them stand in another order, the pass removes no
+  branch of that `OR`. The clause stays where the lint, with those branches
+  removed, gives any code, other than `stands-under`, in more places than before.
 
 With `keep`, the pass redirects the readers and leaves each clause it would
 remove where it stands, and moves no form: this is the copy for the row-parity
@@ -62,8 +71,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 from arclog_convert.lint import (
-    CLAIMS, FACTS, FORMS, MARKS, OPS, L, Linter, Placed, Sym, alt_points, bare_label, e_site, implies, is_const,
-    placements, read, site_pairs, walk)
+    CLAIMS, FACTS, FORMS, MARKS, OPS, L, Linter, Placed, Sym, alt_points, bare_label, e_site, implied_branches,
+    is_const, leaves, placements, read, site_pairs, walk)
 from arclog_convert.pull_up import BODIES, OUTPUT, Edit, Reader, applied, atom_sites, readers_by_relation
 
 type Reading = Literal["RULE", "DET"]
@@ -330,7 +339,8 @@ class _Program:
 
     def _active(self, p: Placed) -> list[tuple[Reader, Placed]] | None:
         """The atoms that read the relation of `p` from its clause in some case; none where one stands outside the
-        block of the clause, or reads another clause of the relation in another case where it is active."""
+        block of the clause, other than a reader that is no `DET` and is inactive in the case that holds that block
+        and its own, or reads another clause of the relation in another case where it is active."""
         block = set(p.alts)
         others = [d for d in self.decls[str(p.name)] if d is not p]
         active = []
@@ -340,6 +350,8 @@ class _Program:
             if not self._consistent(case) or any(block < set(d.alts) <= case for d in others):
                 continue
             if not block <= stands:
+                if placed.form.head != "DET" and self._rederived(placed, case):
+                    continue
                 return None
             for d in others:
                 held = set(d.alts)
@@ -489,18 +501,38 @@ def _landed(edits: list[Edit], redirects: list[Edit]) -> set[int]:
     return out
 
 
-def _implied(branches: list[L]) -> list[L]:
-    """The branches of an `OR` that hold only where another branch holds, as `Linter.disj` gives them with the
-    code `or-implied`: of two branches that hold only where each other holds, the later."""
-    return [bi for i, bi in enumerate(branches)
-            if any(j != i and implies(bi.items, bj.items) and not (implies(bj.items, bi.items) and j > i)
-                   for j, bj in enumerate(branches))]
+def _sites(branch: L) -> list[Sym]:
+    """The labels at the sites of the atoms of the `OR` branch `branch`, in order of the text."""
+    return [leaf for atom in walk(branch)
+            if isinstance(atom, L) and atom.head and not atom.head.startswith(":")
+            and atom.head not in OPS | FORMS | MARKS
+            for leaf in leaves(atom)]
+
+
+def _marks_moved(branches: list[L], dropped: set[int], stays: L) -> list[Edit] | None:
+    """The edits that give the branch `stays` of an `OR` the mark `^` at its first site of each label that a branch
+    of `dropped` marks, in the order that the dropped branches mark them; none where `stays` lacks a site of one of
+    those labels, or its first sites of them stand in another order or hold another mark."""
+    labels = list(dict.fromkeys(bare_label(site.text) for i in sorted(dropped) for site in _sites(branches[i])
+                                if site.text.startswith("^")))
+    first: dict[str, Sym] = {}
+    for site in _sites(stays):
+        first.setdefault(bare_label(site.text), site)
+    chosen = [first.get(label) for label in labels]
+    if any(site is None or "*" in site.text for site in chosen):
+        return None
+    sites = [site for site in chosen if site is not None]
+    if [site.pos for site in sites] != sorted(site.pos for site in sites):
+        return None
+    return [(site.pos, site.pos + len(site.text), "^" + site.text) for site in sites if not site.text.startswith("^")]
 
 
 def _without_implied(text: str, landed: set[int]) -> str:
     """`text` without the implied branches of each `OR` that holds an atom starting at a position of `landed`, an
-    `OR` left with one branch replaced by that branch's conjuncts."""
+    `OR` left with one branch replaced by that branch's conjuncts. The first branch that stays takes the mark `^` of
+    each label that a dropped branch marks; an `OR` where it cannot is left as it is."""
     gone: list[tuple[int, int]] = []
+    marks: list[Edit] = []
 
     def before(node: L) -> int:
         return len(text[:node.start].rstrip())
@@ -510,13 +542,20 @@ def _without_implied(text: str, landed: set[int]) -> str:
             if not (isinstance(node, L) and node.head == "OR" and all(isinstance(b, L) for b in node.items[1:])
                     and any(isinstance(x, L) and x.start in landed for x in walk(node))):
                 continue
-            drop = _implied(node.items[1:])
-            kept = [b for b in node.items[1:] if all(b is not d for d in drop)]
-            gone += [(before(d), d.end) for d in drop]
-            if drop and len(kept) == 1:
+            branches = node.items[1:]
+            dropped = {i for i, _ in implied_branches([b.items for b in branches])}
+            kept = [b for i, b in enumerate(branches) if i not in dropped]
+            moved = _marks_moved(branches, dropped, kept[0]) if dropped else None
+            if moved is None:
+                continue
+            marks += moved
+            gone += [(before(branches[i]), branches[i].end) for i in sorted(dropped)]
+            if len(kept) == 1:
                 gone += [(node.start, node.items[1].start), (before(kept[0]), kept[0].start + 1),
                          (kept[0].end - 1, node.end)]
-    return applied(text, [(a, b, "") for a, b in _union(gone)])
+    spans = _union(gone)
+    return applied(text, [*((a, b, "") for a, b in spans),
+                          *(m for m in marks if not any(a <= m[0] < b for a, b in spans))])
 
 
 def _union(spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
