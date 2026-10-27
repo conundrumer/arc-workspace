@@ -24,4 +24,4 @@
 - **A grid is drawn as a grid**, wherever one is written: one row per line, cells separated by spaces, 0 as `0`.
 
 ## Tests
-- Before you write, change, delete or judge a test, read [Tests](prompts/agents/notes/tests.md#tests).
+- Before you write, ask for, change, delete or judge a test, read [Tests](prompts/agents/notes/tests.md#tests).
