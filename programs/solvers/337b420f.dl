@@ -24,9 +24,6 @@
 
 .type Choice = [d: DecChoice, move: Move]
 
-// A frame cell under one arrangement.
-.type Site = [dc: DecChoice, m: Ident, d: Dir, k: number, p: Position]
-
 // A shape under one cut.
 .type Piece = [dc: DecChoice, id: Ident]
 
@@ -115,20 +112,17 @@ slide(Dc, D, K) :- frame(Dc, P), dir_elem(D), dist(P, D, K).
 slid(Dc, M, D, K, Q) :-
     piece(Dc, M, _), slide(Dc, D, K), piece_cell(Dc, M, P), jump(P, D, K, Q).
 
-// The piece holding a frame cell where two pieces may meet, absent where
-// they do: under the slid piece, or under two pieces at rest.
-.init holder = Unanimous<Site, Ident>
-holder.item([Dc, M, D, K, P], M) :- slid(Dc, M, D, K, P).
-holder.item([Dc, M, D, K, P], Id) :-
-    slid(Dc, M, D, K, P), piece_cell(Dc, Id, P), Id != M.     // a piece at rest under the slid one
-holder.item([Dc, M, D, K, P], Id) :-
-    piece(Dc, M, _), slide(Dc, D, K),                         // an arrangement
-    piece_cell(Dc, Id, P), piece_cell(Dc, Id2, P),            // two pieces on one cell
-    Id != Id2, Id != M, Id2 != M.                             // both at rest
+// Two pieces whose cells share a frame cell at rest.
+.decl meet(dc: DecChoice, id: Ident, id2: Ident)
+meet(Dc, Id, Id2) :- piece_cell(Dc, Id, P), piece_cell(Dc, Id2, P), Id != Id2.
 
 // An arrangement fails where two pieces meet, or a piece leaves the frame.
 .decl clash(dc: DecChoice, m: Ident, d: Dir, k: number)
-clash(Dc, M, D, K) :- holder.clash([Dc, M, D, K, _]).
+clash(Dc, M, D, K) :-
+    slid(Dc, M, D, K, P), piece_cell(Dc, Id, P), Id != M.     // the slid piece meets one at rest
+clash(Dc, M, D, K) :-
+    piece(Dc, M, _), slide(Dc, D, K),                         // an arrangement
+    meet(Dc, Id, Id2), Id != M, Id2 != M.                     // two pieces at rest meet
 clash(Dc, M, D, K) :- slid(Dc, M, D, K, P), !frame(Dc, P).
 
 .decl fits(dc: DecChoice, m: Ident, d: Dir, k: number)

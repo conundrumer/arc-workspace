@@ -54,31 +54,18 @@ fill_cell(P) :- in(P, Col), params.fill(Col).
 .decl footprint_choice(fp: Footprint)
 footprint_choice($Plus()). footprint_choice($Shape()).
 
-// The placements whose footprint holds a mark: only these can act.
-.decl site(p_place: Position, fp: Footprint)
-
-// $Plus — the mark's own cell and each cardinal step from it.
-site(P, $Plus()) :-
-    mark_cell(Q),
-    ( P = Q
-    ; dir_elem(D), neighbor(Q, D, P), in(P, _)
-    ).
-
-// $Shape — the mark placed at each stored cell.
-site(P, $Shape()) :- mark_cell(Q), params.shape(S), relative(S, Q, P).
-
-// The footprint's cells at each site, cut off by the frame edge.
-.decl footprint(p_place: Position, p: Position, fp: Footprint)
+// The footprint's cells at each placement, cut off by the frame edge.
+.decl footprint(p_place: Position, p: Position, fp: Footprint) inline
 
 // $Plus — the cell and its four cardinal neighbors.
 footprint(P, Q, $Plus()) :-
-    site(P, $Plus()),
+    in(P, _),
     ( Q = P                                       // the placement's own cell
     ; dir_elem(D), neighbor(P, D, Q), in(Q, _)    // and each cardinal step
     ).
 
 // $Shape — the stored cells.
-footprint(P, Q, $Shape()) :- site(P, $Shape()), params.shape(S), compose(P, S, Q), in(Q, _).
+footprint(P, Q, $Shape()) :- in(Q, _), params.shape(S), relative(S, Q, P).
 
 // Held back by a footprint cell that is neither mark nor fill.
 .decl blocked(p_place: Position, fp: Footprint)
@@ -86,7 +73,7 @@ blocked(P, Fp) :- footprint(P, Q, Fp), !mark_cell(Q), !fill_cell(Q).
 
 // Marks in the footprint of an unblocked placement.
 .decl cand_mark(p_place: Position, p: Position, fp: Footprint)
-cand_mark(P, Q, Fp) :- footprint(P, Q, Fp), mark_cell(Q), !blocked(P, Fp).
+cand_mark(P, Q, Fp) :- mark_cell(Q), footprint(P, Q, Fp), !blocked(P, Fp).
 
 // --- Act cases: which placements act ---
 
