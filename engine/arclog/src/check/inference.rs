@@ -30,7 +30,7 @@ use crate::resolver::columns;
 use crate::resolver::form_columns;
 use crate::resolver::registry_columns;
 use crate::resolver::{DependencyKind, GraphNodeIndex, Resolution, ResolvedProgram, Signature};
-use crate::types::{fresh_in_nested_form, label_type_cached, list_class, WalkCache, scope_lists, use_label, AssemblyId, KeyRow, LabelFault, ValueType};
+use crate::types::{flat_label_types, fresh_in_nested_form, label_type_cached, list_class, WalkCache, scope_lists, use_label, AssemblyId, KeyRow, LabelFault, ValueType};
 
 /// The labels of a form's own scope, with the list each label's sites stand
 /// in: the conjuncts of the form's bodies, each instance input a branch of
@@ -469,6 +469,9 @@ pub(super) struct Inference<'a> {
     /// Whether a form may take the types of the held state: false for the
     /// inference of the state itself.
     splits: bool,
+    /// Whether the inference serves a mask: a form of atoms alone takes
+    /// [`Inference::flat_form`].
+    fast: bool,
 }
 
 impl std::fmt::Debug for Inference<'_> {
@@ -498,9 +501,100 @@ impl<'a, 'e: 'a> EarlierForms<'a> for Inference<'e> {
 }
 
 impl<'a> Inference<'a> {
+    /// This inference in mask mode where `enabled`, as [`Inference::is_mask`]
+    /// gives.
+    pub(super) fn mask(mut self, enabled: bool) -> Self { self.fast = enabled; self }
+
+    /// Whether the inference serves a mask: it types a form of atoms alone
+    /// by [`Inference::flat_form`], and its type check collects no types
+    /// of relations.
+    pub(in crate::check) fn is_mask(&self) -> bool { self.fast }
+
+    /// The inference of a form whose bodies hold atoms alone, in mask mode:
+    /// such a body has no `NOT`, constraint, `OR`, `IF` or `ALL`, so the type
+    /// of a label is the meet of the types of all its sites
+    /// ([`crate::types::label_type`]), which [`flat_label_types`] takes in
+    /// one pass over the sites. The binding of the component's type
+    /// parameters and the pose-or pass are as [`Inference::infer_new`] gives
+    /// them. It gives `None` where a meet is empty, or the form is no form of
+    /// atoms alone, and `infer_new` runs.
+    fn flat_form(&self, form: &'a Form, path: &NodePath) -> Option<FormInference<'a>> {
+        let component = match form {
+            Form::Instance(instance) => {
+                let c = component(self.registry, &instance.value().component)?;
+                Some(c)
+            }
+            Form::Clause(_) | Form::Choose(_) | Form::RigidDet(_) | Form::Out(_) => None,
+            _ => return None,
+        };
+        if !bodies(NodeRef::from(form)).iter().all(|b| b.body.value().conjuncts.iter().all(|c| matches!(c, Conjunct::Atom(_)))) { return None; }
+        let walk = FormWalk::of(form);
+        let mut bindings = StableHashMap::default();
+        let type_all = |pose_or, bindings: &StableHashMap<TypeParameter, ValueType>| -> Option<StableHashMap<LabelId, Option<ValueType>>> {
+            let reading = SiteReading { path, walk: &walk, component, bindings, pose_or };
+            let sites = walk.uses.iter().map(|site| {
+                let head;
+                let atom = match site.atom {
+                    Some(atom) => atom,
+                    None => {
+                        // Head sites read their input's declared port.
+                        let mut at = site.at.clone();
+                        let port = loop {
+                            if let Some(NodeRef::InstanceInput(input)) = crate::program::path::node_at(NodeRef::from(form), &at) { break &input.name; }
+                            if at.0.is_empty() { return None; }
+                            at = NodePath(at.0[..at.0.len() - 1].into());
+                        };
+                        head = Atom { relation: RelationRef::DefinedPort(port.clone()), sites: Arc::from([]) };
+                        &head
+                    }
+                };
+                Some((site.label, self.site_type(reading, atom, &site.column)))
+            });
+            flat_label_types(sites.collect::<Option<Vec<_>>>()?)
+        };
+        let mut all = type_all(PoseOr::Open, &bindings)?;
+        if let (Form::Instance(instance), Some(component)) = (form, component) {
+            if !component.type_parameters.is_empty() {
+                bindings = bind(instance.value(), component, &|label| all.get(&label).cloned().flatten());
+                all = type_all(PoseOr::Open, &bindings)?;
+            }
+        }
+        let members = form_scope_labels(form);
+        let mut given = if members.iter().any(|label| all.get(label).and_then(Option::as_ref).is_none()) { type_all(PoseOr::Given, &bindings)? } else { StableHashMap::default() };
+        let mut given_labels = Vec::new();
+        let labels = members.iter().map(|label| {
+            let open = all.remove(label).flatten();
+            let ty = open.or_else(|| {
+                let ty = given.remove(label).flatten();
+                if ty.is_some() { given_labels.push(*label); }
+                ty
+            });
+            (*label, Ok(ty))
+        }).collect();
+        Some(FormInference { owner: ScopeOwner::Form(form), path: path.clone(), labels, bindings, walk, component, zero_typed: Vec::new(), given: given_labels })
+    }
+
+    /// A scalar column type fixed by the already finished forms. No type
+    /// bound by the candidate's in-progress instance is read here.
+    pub(in crate::check) fn fixed_column_type(&self, relation: &RelationRef, column: &ColumnName) -> Option<ValueType> {
+        let ty = match relation {
+            RelationRef::Lib(_) | RelationRef::Fact(_) => {
+                let column = registry_columns::typed_columns(self.registry, relation)?.iter().find(|found| found.name == *column)?;
+                let ColumnType::Fixed(ty) = &column.ty else { return None };
+                ty.clone()
+            }
+            _ => {
+                let node = self.program.program_read(relation)?;
+                let atom = Atom { relation: relation.clone(), sites: Arc::from([]) };
+                self.node_type(node, &atom, std::slice::from_ref(column), PoseOr::Open)?
+            }
+        };
+        ty.is_scalar().then_some(ty)
+    }
+
     pub fn new(program: &'a ResolvedProgram, cases: &'a CaseInferences<'a>) -> Self {
         let concept = program.concept().map(|concept| cases.concept(concept));
-        Inference { program, registry: cases.registry, cases, concept, earlier: None, held: std::cell::OnceCell::new(), forms: RefCell::default(), signatures: RefCell::default(), shared: None, state: std::cell::OnceCell::new(), splits: true }
+        Inference { program, registry: cases.registry, cases, concept, earlier: None, held: std::cell::OnceCell::new(), forms: RefCell::default(), signatures: RefCell::default(), shared: None, state: std::cell::OnceCell::new(), splits: true, fast: false }
     }
 
     /// The inference of `program`, a resolution by [`crate::resolver::resolve_last`]
@@ -580,6 +674,9 @@ impl<'a> Inference<'a> {
     }
 
     fn infer_new(&self, form: &'a Form, path: &NodePath) -> FormInference<'a> {
+        if self.fast {
+            if let Some(inferred) = self.flat_form(form, path) { return inferred; }
+        }
         let scope = ScopeBody::of(form, self.registry);
         let walk = FormWalk::of(form);
         let all_labels = form_scope_labels(form);

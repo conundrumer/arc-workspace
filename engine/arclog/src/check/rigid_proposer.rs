@@ -74,7 +74,7 @@ fn names_proposer_and_holds_body(clause: &Clause) -> bool {
 
 /// Whether `name` is a proposer's name: an uppercase letter, then letters
 /// and digits.
-fn is_proposer_name(name: &str) -> bool {
+pub(crate) fn is_proposer_name(name: &str) -> bool {
     let mut chars = name.chars();
     chars.next().is_some_and(|c| c.is_ascii_uppercase()) && chars.all(|c| c.is_ascii_alphanumeric())
 }

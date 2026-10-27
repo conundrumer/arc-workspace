@@ -32,6 +32,7 @@ use crate::safety::body_labels;
 use crate::resolver::form_columns::rigid_outputs;
 use crate::resolver::registry_columns::{component, proposer_columns, typed_columns};
 use crate::stream::{Control, Token};
+use crate::types::{Meet, ValueType};
 
 /// Why the grammar refuses a token at a state.
 pub(super) type Unexpected = &'static str;
@@ -71,6 +72,13 @@ pub struct State {
     /// one thread reads at a time, so the pool lends each to one reader,
     /// and a reader finding the pool empty makes one.
     clauses: Arc<std::sync::Mutex<Vec<SolverClauses>>>,
+    /// The fixed scalar type of each column read, which the finished forms
+    /// and the registry give, shared by the states and forks with those
+    /// finished forms.
+    fixed_columns: Arc<std::sync::Mutex<crate::hash::StableHashMap<(RelationRef, ColumnName), Option<ValueType>>>>,
+    /// The verdicts of [`State::cached_prefix`], shared by the states and
+    /// forks with the same finished forms.
+    prefixes: Arc<std::sync::Mutex<PrefixMemo>>,
     /// The checked program of the finished forms, resolved from the
     /// resolution of the state before the last form finished, with the
     /// check cache that its check left, made on its first read and shared
@@ -79,6 +87,22 @@ pub struct State {
     /// The atom that the step in progress opened, as [`State::step`] takes
     /// it: none in every state a step gives.
     opened: Option<Opened>,
+}
+
+/// The most bytes of a prefix key that [`State::cached_prefix`] keeps.
+const PREFIX_KEY_BYTES: usize = 64 * 1024;
+/// The most entries, and the most bytes of keys, that a state's prefix
+/// verdicts hold before they are dropped.
+const PREFIX_ENTRIES: usize = 4096;
+const PREFIX_BYTES: usize = 8 * 1024 * 1024;
+
+/// The check verdicts of the prefixes at an open node, by the key of
+/// `prefix_key`, for one set of finished forms. A key holds the complete
+/// source of its prefix.
+#[derive(Debug, Default)]
+struct PrefixMemo {
+    entries: crate::hash::StableHashMap<Vec<u8>, Result<(), super::Refusal>>,
+    bytes: usize,
 }
 
 /// An atom that a step opened as its last change, which the form in
@@ -320,7 +344,46 @@ const FIELDS_TRIED: u32 = 1;
 
 impl State {
     pub(super) fn new() -> State {
-        State { program: Node::new(Program { forms: Arc::from([]) }), declared: Arc::from([]), finished_slots: 0, labels: 0, stack: Vec::new(), resolved: Arc::default(), clauses: Arc::default(), checked_last: Arc::default(), opened: None }
+        State { program: Node::new(Program { forms: Arc::from([]) }), declared: Arc::from([]), finished_slots: 0, labels: 0, stack: Vec::new(), resolved: Arc::default(), clauses: Arc::default(), fixed_columns: Arc::default(), prefixes: Arc::default(), checked_last: Arc::default(), opened: None }
+    }
+
+    /// The fixed scalar type of `column` of `relation` ([`ValueType::is_scalar`]),
+    /// which `compute` gives and this state keeps until a form finishes. A
+    /// column's type that the finished forms and the registry fix does not
+    /// change while the form in progress is written.
+    pub(super) fn fixed_column_type(&self, relation: &RelationRef, column: &ColumnName, compute: impl FnOnce() -> Option<ValueType>) -> Option<ValueType> {
+        let key = (relation.clone(), column.clone());
+        if let Some(ty) = self.fixed_columns.lock().expect("the column cache is not poisoned").get(&key) {
+            return ty.clone();
+        }
+        let ty = compute();
+        self.fixed_columns.lock().expect("the column cache is not poisoned").insert(key, ty.clone());
+        ty
+    }
+
+    /// The verdict of `Decoder::check_state` with `Candidate::Any` at an open
+    /// node for the prefix with source key `key`, which `compute` gives and
+    /// this state keeps until a form finishes. The checks of that verdict read
+    /// the prefix's source, its open path and the finished forms, which the
+    /// key and the cache's lifetime fix.
+    pub(super) fn cached_prefix(&self, key: Vec<u8>, compute: impl FnOnce() -> Result<(), super::Refusal>) -> Result<(), super::Refusal> {
+        {
+            let memo = self.prefixes.lock().expect("the prefix cache is not poisoned");
+            if let Some(verdict) = memo.entries.get(&key).cloned() {
+                return verdict;
+            }
+        }
+        let verdict = compute();
+        if key.len() <= PREFIX_KEY_BYTES {
+            let mut memo = self.prefixes.lock().expect("the prefix cache is not poisoned");
+            if memo.entries.len() >= PREFIX_ENTRIES || memo.bytes + key.len() > PREFIX_BYTES {
+                memo.entries.clear();
+                memo.bytes = 0;
+            }
+            memo.bytes += key.len();
+            memo.entries.insert(key, verdict.clone());
+        }
+        verdict
     }
 
     /// The finished forms.
@@ -356,6 +419,244 @@ impl State {
     /// progress as the last form, as [`State::partial`] gives it.
     fn resolved_partial(&self, partial: &Node<Program>, registry: &Registry) -> ResolvedProgram {
         resolve_last(&self.resolved(registry), partial, registry)
+    }
+
+    /// Whether `token` may pass [`State::step`] at this state: `false` only for
+    /// a token that [`State::offer`] and the frames it closes into refuse, so
+    /// the mask takes no clone of the state for it. A site with no record and
+    /// an atom may close without taking the token, so their enclosing frame
+    /// still sees it.
+    pub(super) fn mask_may_take(&self, token: &Token) -> bool {
+        let top = self.stack.last();
+        match token {
+            Token::Label(id) => *id < self.labels && matches!(top, Some(Frame::One(_) | Frame::Site(_) | Frame::Constraint(_) | Frame::HeadSite(_))),
+            Token::Relation(id) if *id as usize >= self.declared.len() => false,
+            Token::Column(position) => match top {
+                Some(Frame::Atom(atom)) => (*position as usize) < atom.columns.len(),
+                Some(Frame::Site(SiteFrame { field: None, record: Some(fields), .. })) => *position < u32::from(*fields),
+                Some(Frame::Site(SiteFrame { field: None, record: None, .. })) => {
+                    matches!(self.stack.iter().rev().nth(1), Some(Frame::Atom(atom)) if (*position as usize) < atom.columns.len())
+                }
+                Some(Frame::HeadSite(site)) => site.field.is_none() && !site.record_ended && *position == site.fields,
+                _ => false,
+            },
+            Token::Proposer(_) => matches!(top, Some(Frame::Clause(ClauseFrame { stage: ClauseStage::Proposers, .. }))),
+            Token::Lib(_) | Token::Fact(_) | Token::Relation(_) => match top {
+                None | Some(Frame::One(_) | Frame::Constraint(_) | Frame::HeadSite(_)) => false,
+                Some(Frame::Site(site)) if site.field.is_some() || site.record.is_some() => false,
+                Some(Frame::Clause(clause)) => matches!(clause.stage, ClauseStage::Proposers) && clause.proposers.is_empty(),
+                Some(Frame::Choose(ChooseFrame { stage: ChooseStage::NeverEnd, .. })) => false,
+                _ => true,
+            },
+            Token::Control(control) => match top {
+                None => matches!(control, Control::Rule | Control::Det | Control::Init | Control::Choose | Control::RigidDet | Control::Out),
+                Some(Frame::One(_)) => *control == Control::End,
+                Some(Frame::Constraint(_)) => matches!(control, Control::Fresh | Control::Zero),
+                Some(Frame::HeadSite(site)) if site.field.is_some() => matches!(control, Control::Fresh | Control::Zero),
+                Some(Frame::HeadSite(_)) => matches!(control, Control::End | Control::Fresh | Control::Zero),
+                Some(Frame::Site(site)) if site.field.is_some() => matches!(control, Control::Fresh | Control::Key | Control::Zero),
+                Some(Frame::Site(site)) if site.record.is_some() => matches!(control, Control::End | Control::Fresh | Control::Key | Control::Zero),
+                _ => true,
+            },
+        }
+    }
+
+    /// Whether the state holds an `INIT` form that has no component yet.
+    pub(super) fn awaits_component(&self) -> bool {
+        matches!(&self.stack[..], [Frame::Instance(InstanceFrame { component: None, .. })])
+    }
+
+    /// Whether `token` takes the grammar step alone, with no check of the
+    /// prefix: an `INIT`'s component token, and the first proposer of a
+    /// clause. At an `INIT` that holds its component alone, and at a clause
+    /// that holds one proposer and no body, no check refuses but the
+    /// proposer's name rule of `RigidPartsAndProposersCheck`.
+    pub(super) fn grammar_only_candidate(&self, token: &Token) -> bool {
+        if self.awaits_component() {
+            return matches!(token, Token::Lib(_));
+        }
+        match (&self.stack[..], token) {
+            ([Frame::Clause(ClauseFrame { stage: ClauseStage::Proposers, proposers, .. })], Token::Proposer(name)) if proposers.is_empty() => crate::check::rigid_proposer::is_proposer_name(&name.0),
+            _ => false,
+        }
+    }
+
+    /// The labels that `TypesCheck` refuses with `EmptyMeet` at the open site
+    /// of a fixed scalar column of a positive atom, in a body of atoms, `NOT`
+    /// atoms and constraints, or, in an instance whose bodies are all atoms,
+    /// across its key and inputs: the labels whose sites of fixed scalar
+    /// columns there give a type with an empty meet with the column's type.
+    /// `TypesCheck` refuses such a label at its first use, which no open node
+    /// holds, as the label is not given, so a later site cannot undo it. A
+    /// form with an `OR`, a list or a `NOT` body gives none.
+    pub(super) fn fixed_label_conflicts(&self, registry: &Registry, column_type: &impl Fn(&RelationRef, &ColumnName) -> Option<ValueType>) -> Vec<u32> {
+        if self.stack.iter().any(|frame| matches!(frame, Frame::Or(_) | Frame::Lists(_) | Frame::Body(BodyFrame { close: Close::Not, .. }))) {
+            return Vec::new();
+        }
+        let (expected, body, atom): (Option<ValueType>, Option<&Body>, Option<&AtomFrame>) = match self.stack.last() {
+            Some(Frame::Site(site)) if site.field.is_none() => {
+                let Some(Frame::Atom(atom)) = self.stack.iter().rev().nth(1) else { return Vec::new() };
+                if atom.negated {
+                    return Vec::new();
+                }
+                (column_type(&atom.relation, &site.column), None, Some(atom))
+            }
+            Some(Frame::HeadSite(site)) if site.field.is_none() && site.args.is_empty() => {
+                let Some(Frame::Input(input)) = self.stack.iter().rev().nth(1) else { return Vec::new() };
+                let port = &self.component_from_input(registry).inputs[input.position].port;
+                let expected = port.columns.iter().find(|column| column.name == site.column).and_then(|column| scalar_fixed(&column.ty));
+                (expected, input.body.as_ref().map(Node::value), None)
+            }
+            _ => return Vec::new(),
+        };
+        let Some(expected) = expected else { return Vec::new() };
+        let conjuncts = match body {
+            Some(body) => &body.conjuncts[..],
+            None => match self.stack.iter().rev().find_map(|frame| match frame { Frame::Body(body) => Some(body), _ => None }) {
+                Some(body) => &body.conjuncts[..],
+                None => return Vec::new(),
+            },
+        };
+        if !conjuncts.iter().all(|conjunct| matches!(conjunct, Conjunct::Atom(_) | Conjunct::Not(Negated::Atom(_)) | Conjunct::Constraint(_))) {
+            return Vec::new();
+        }
+        let mut conflicts = Vec::new();
+        let mut add_sites = |relation: &RelationRef, sites: &[Site]| {
+            for site in sites {
+                let Some(known) = column_type(relation, &site.column) else { continue };
+                if matches!(known.meet(&expected), Meet::Empty) {
+                    for arg in site.value.args.iter() {
+                        if let SiteArg::Label(LabelUse::Fresh(label) | LabelUse::Join(label) | LabelUse::Key(label)) = arg {
+                            conflicts.push(label.0);
+                        }
+                    }
+                }
+            }
+        };
+        for conjunct in conjuncts {
+            if let Conjunct::Atom(atom) = conjunct {
+                add_sites(&atom.value().relation, &atom.value().sites);
+            }
+        }
+        if let Some(atom) = atom {
+            add_sites(&atom.relation, &atom.sites);
+        }
+        // An instance has one label scope across its key and inputs. A
+        // fixed positive site anywhere in a flat instance constrains joins
+        // in its current body, even if that site is in an earlier input.
+        if matches!(self.stack.first(), Some(Frame::Instance(_))) {
+            if let Some((program, _)) = self.partial() {
+                if let Some(Form::Instance(instance)) = program.value().forms.last() {
+                    let instance = instance.value();
+                    let inputs: Vec<_> = crate::program::written_inputs(instance.key.as_ref(), &instance.inputs).collect();
+                    let bodies = instance.key.iter().map(|key| key.value().key.body.value()).chain(inputs.iter().map(|input| input.body.value()));
+                    let bodies: Vec<_> = bodies.collect();
+                    if bodies.iter().all(|body| body.conjuncts.iter().all(|c| matches!(c, Conjunct::Atom(_)))) {
+                        for body in bodies {
+                            for conjunct in body.conjuncts.iter() {
+                                if let Conjunct::Atom(atom) = conjunct { add_sites(&atom.value().relation, &atom.value().sites); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        conflicts
+    }
+
+    fn component_from_input<'r>(&self, registry: &'r Registry) -> &'r Component {
+        let name = self.instance().component.as_ref().expect("an input's component");
+        component(registry, name).expect("the instance names a component")
+    }
+
+    /// The sets of mask candidates that share one check verdict, outside an
+    /// `OUT` and a `RIGID_DET` form:
+    ///
+    /// - the column tokens of the unwritten columns of the open atom, of a
+    ///   fixed scalar type other than Example: the checks read the type of
+    ///   no column that has no site.
+    /// - at a site of a top-level clause body of positive atoms of fixed
+    ///   scalar columns, the labels that an atom of no mode binds before the
+    ///   open atom and whose type equals the column's type: the meet of such
+    ///   a label with the column's type is its own type, so the checks give
+    ///   the same labels and types for each.
+    ///
+    /// Each member still takes its own grammar step.
+    pub(super) fn native_classes(&self, registry: &Registry, column_type: &impl Fn(&RelationRef, &ColumnName) -> Option<ValueType>) -> Vec<Vec<Token>> {
+        let (atom, site) = match self.stack.last() {
+            Some(Frame::Atom(atom)) => (atom, None),
+            Some(Frame::Site(site)) if site.record.is_none() && site.field.is_none() => match self.stack.iter().rev().nth(1) {
+                Some(Frame::Atom(atom)) => (atom, Some(site)),
+                _ => return Vec::new(),
+            },
+            _ => return Vec::new(),
+        };
+        if self.stack.iter().any(|frame| matches!(frame, Frame::Out | Frame::Rigid(_))) {
+            return Vec::new();
+        }
+        let mut groups = Vec::new();
+        let columns: Vec<Token> = atom.columns.iter().enumerate().filter_map(|(position, name)| {
+            if *name == example() || atom.sites.iter().any(|site| site.column == *name) || site.is_some_and(|site| site.column == *name) {
+                return None;
+            }
+            let ty = column_type(&atom.relation, name)?;
+            (ty != ValueType::Example).then_some(Token::Column(position as u32))
+        }).collect();
+        if columns.len() > 1 {
+            groups.push(columns);
+        }
+        let body = match &self.stack[..] {
+            [Frame::Clause(_), Frame::Body(body), Frame::Atom(_)] | [Frame::Clause(_), Frame::Body(body), Frame::Atom(_), Frame::Site(_)] => body,
+            _ => return groups,
+        };
+        if atom.negated || body.negate {
+            return groups;
+        }
+        let mut types: std::collections::BTreeMap<u32, ValueType> = std::collections::BTreeMap::new();
+        let mut bound = std::collections::BTreeSet::new();
+        let mut add = |relation: &RelationRef, sites: &[Site], before: bool| -> Option<()> {
+            for site in sites {
+                let ty = column_type(relation, &site.column)?;
+                for arg in site.value.args.iter() {
+                    let SiteArg::Label(LabelUse::Fresh(label) | LabelUse::Join(label)) = arg else { return None };
+                    if before {
+                        bound.insert(label.0);
+                    }
+                    match types.get(&label.0) {
+                        Some(old) => match old.meet(&ty) {
+                            Meet::Type(ty) => { types.insert(label.0, ty); }
+                            Meet::Empty => return None,
+                        },
+                        None => { types.insert(label.0, ty.clone()); }
+                    }
+                }
+            }
+            Some(())
+        };
+        for conjunct in &body.conjuncts {
+            let Conjunct::Atom(prior) = conjunct else { return groups };
+            let unmoded = crate::eval::ir::atom_modes(registry, prior.value()).is_empty();
+            if add(&prior.value().relation, &prior.value().sites, unmoded).is_none() {
+                return groups;
+            }
+        }
+        if add(&atom.relation, &atom.sites, false).is_none() {
+            return groups;
+        }
+        if let Some(site) = site {
+            if add(&atom.relation, std::slice::from_ref(&Site { column: site.column.clone(), value: SiteValue { args: site.args.clone().into() } }), false).is_none() {
+                return groups;
+            }
+        }
+        if let Some(site) = site {
+            if let Some(expected) = column_type(&atom.relation, &site.column) {
+                let labels: Vec<Token> = types.iter().filter(|(label, ty)| **ty == expected && bound.contains(label)).map(|(label, _)| Token::Label(*label)).collect();
+                if labels.len() > 1 {
+                    groups.push(labels);
+                }
+            }
+        }
+        groups
     }
 
     /// The state after `token`, and the tokens the engine emits after it.
@@ -480,6 +781,8 @@ impl State {
         self.finished_slots = self.next_slot();
         self.resolved = Arc::default();
         self.clauses = Arc::default();
+        self.fixed_columns = Arc::default();
+        self.prefixes = Arc::default();
         self.checked_last = Arc::default();
         self.labels = 0;
     }
@@ -1424,6 +1727,15 @@ fn child_step(frame: &Frame, above: &Frame) -> u32 {
             }
         }
         Frame::One(_) | Frame::Constraint(_) | Frame::HeadSite(_) => unreachable!("a frame that holds no open child"),
+    }
+}
+
+/// The type of a column that the registry fixes, where it is a scalar
+/// ([`ValueType::is_scalar`]).
+fn scalar_fixed(ty: &crate::registry::ColumnType) -> Option<ValueType> {
+    match ty {
+        crate::registry::ColumnType::Fixed(ty) if ty.is_scalar() => Some(ty.clone()),
+        _ => None,
     }
 }
 

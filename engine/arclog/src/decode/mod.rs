@@ -41,6 +41,7 @@ pub mod corpus;
 mod interface;
 pub mod replay;
 mod state;
+mod prefix_key;
 mod projections;
 
 pub use batch::step_batch;
@@ -238,7 +239,109 @@ impl<'a> Decoder<'a> {
         self.held.0.get_or_init(|| self.compute_mask()).mask.clone()
     }
 
+    /// The mask that [`Decoder::next`] gives over every token of the
+    /// vocabulary, the oracle of [`Decoder::admissible`].
+    #[cfg(feature = "admissible-reference")]
+    pub fn admissible_reference(&self) -> TokenMask {
+        self.compute_mask_reference().mask
+    }
+
+    /// The mask of `compute_mask_reference`, which `admissible_workload check`
+    /// compares with it along a corpus's streams, and the step of each token
+    /// it admits. It tries fewer tokens and shares check verdicts, each
+    /// where a rule of the checks makes the verdict equal:
+    ///
+    /// - [`State::mask_may_take`] drops a token that the grammar refuses
+    ///   with no step.
+    /// - [`State::fixed_label_conflicts`] drops the labels that the type
+    ///   check refuses by their first use.
+    /// - [`State::awaits_component`] and [`State::grammar_only_candidate`]
+    ///   take the grammar step alone.
+    /// - [`State::native_classes`] shares one verdict among candidates.
+    /// - [`State::cached_prefix`] shares the verdict of a repeated prefix.
     fn compute_mask(&self) -> Mask {
+        let vocabulary = &self.context.vocabulary;
+        let mut mask = TokenMask::new(vocabulary.len());
+        let mut steps = HashMap::new();
+        if self.output.is_some() {
+            return Mask { mask, steps };
+        }
+        if self.state.awaits_component() {
+            for id in 0..vocabulary.len() as u32 {
+                let token = vocabulary.token(id).expect("a vocabulary token");
+                if matches!(token, Token::Lib(_)) {
+                    if let Ok(step) = self.grammar_next(token) {
+                        mask.insert(id);
+                        steps.insert(id, step);
+                    }
+                }
+            }
+            return Mask { mask, steps };
+        }
+        self.with_checks_at_state(|checks| {
+            checks.prepare_mask();
+            let order = RefCell::default();
+            let column_type = |relation: &RelationRef, column: &crate::program::ColumnName| self.fixed_column_type(checks, relation, column);
+            let conflicts = self.state.fixed_label_conflicts(self.context.registry, &column_type);
+            let classes = self.state.native_classes(self.context.registry, &column_type);
+            let mut class_of = vec![None; vocabulary.len()];
+            let mut admitted = vec![None; classes.len()];
+            for (class, tokens) in classes.iter().enumerate() {
+                for token in tokens {
+                    if let Some(id) = vocabulary.id(token) {
+                        class_of[id as usize] = Some(class);
+                    }
+                }
+            }
+            for id in 0..u32::try_from(vocabulary.len()).expect("fewer than 2^32 tokens") {
+                let token = vocabulary.token(id).expect("an id of the vocabulary");
+                if matches!(token, Token::Label(label) if conflicts.contains(label)) {
+                    continue;
+                }
+                if self.state.mask_may_take(token) {
+                    if let Some(result) = class_of[id as usize].and_then(|class| admitted[class]) {
+                        if result {
+                            // A member shares the class's verdict, and takes its own
+                            // grammar step.
+                            let step = self.grammar_next(token).expect("a class member passes the same grammar");
+                            mask.insert(id);
+                            steps.insert(id, step);
+                        }
+                        continue;
+                    }
+                    let next = if self.state.grammar_only_candidate(token) { self.grammar_next(token) } else { self.next(token, checks, &order) };
+                    if let Some(class) = class_of[id as usize] {
+                        admitted[class] = Some(next.is_ok());
+                    }
+                    if let Ok(step) = next {
+                        mask.insert(id);
+                        steps.insert(id, step);
+                    }
+                }
+            }
+        });
+        Mask { mask, steps }
+    }
+
+    /// The fixed scalar type of `column` of `relation` at this decoder's state,
+    /// kept in the state.
+    fn fixed_column_type(&self, checks: &PrefixChecks<'_>, relation: &RelationRef, column: &crate::program::ColumnName) -> Option<crate::types::ValueType> {
+        self.state.fixed_column_type(relation, column, || checks.fixed_column_type(relation, column))
+    }
+
+    /// The step of `token` and the cap on the tokens it forces, with no check
+    /// of the prefix: for a candidate whose verdict is shared or known.
+    fn grammar_next(&self, token: &Token) -> Result<(state::State, Vec<Token>), Refusal> {
+        let (state, forced, _) = self.state.step(&self.context, token, &|_, _, _| unreachable!("grammar-only candidates open no declared atom")).map_err(Refusal::Grammar)?;
+        if forced.iter().any(|token| self.context.vocabulary.id(token).is_none()) {
+            return Err(Refusal::Grammar("a token the engine emits after it passes a vocabulary cap"));
+        }
+        Ok((state, forced))
+    }
+
+    /// The mask of [`Decoder::next`] over every token.
+    #[cfg(feature = "admissible-reference")]
+    fn compute_mask_reference(&self) -> Mask {
         let vocabulary = &self.context.vocabulary;
         let mut mask = TokenMask::new(vocabulary.len());
         let mut steps = HashMap::new();
@@ -450,11 +553,21 @@ impl<'a> Decoder<'a> {
         if program.value().forms.is_empty() {
             return Ok(());
         }
-        let resolved = resolve_last(&self.state.resolved(self.context.registry), &program, self.context.registry);
-        match checks.check(&resolved, open.as_ref(), candidate, None) {
-            Some((check, refusals)) => Err(Refusal::Check { check, refusals }),
-            None => Ok(()),
+        let check = || {
+            let resolved = resolve_last(&self.state.resolved(self.context.registry), &program, self.context.registry);
+            match checks.check(&resolved, open.as_ref(), candidate, None) {
+                Some((check, refusals)) => Err(Refusal::Check { check, refusals }),
+                None => Ok(()),
+            }
+        };
+        // Only the verdict at an open node is shared: a completed form keeps the
+        // node that the step built, and its checks run on that node.
+        if checks.is_mask() && candidate == Candidate::Any && open.is_some() {
+            if let Some(key) = prefix_key::key(program.value().forms.last().unwrap(), open.as_ref()) {
+                return self.state.cached_prefix(key, check);
+            }
         }
+        check()
     }
 
     /// Whether some completion of the constraint open in `state` passes the
@@ -522,12 +635,18 @@ impl<'a> Decoder<'a> {
     /// refuses, with a refusal that says the search spent its budget.
     fn completes_projection(&self, state: &state::State, checks: &PrefixChecks<'_>, reads_example: state::ReadsExample<'_>, limit: usize, steps: &mut usize) -> Result<(), Refusal> {
         let Some(tokens) = state.head_site_completions(limit) else { return Ok(()) };
+        let conflicts = if checks.is_mask() { state.fixed_label_conflicts(self.context.registry, &|relation, column| self.fixed_column_type(checks, relation, column)) } else { Vec::new() };
         let mut refusal = Refusal::Grammar("a projection has no completion");
         for token in tokens {
             if *steps == 0 {
                 return Err(Refusal::Grammar("the completion search of a projection spent its budget"));
             }
             *steps -= 1;
+            // The refused label still spends its search step, as the original
+            // refuses it at `check_state` with no deeper search.
+            if matches!(&token, Token::Label(label) if conflicts.contains(label)) {
+                continue;
+            }
             let next = match state.step(&self.context, &token, reads_example) {
                 Ok((next, _, _)) => next,
                 Err(unexpected) => {

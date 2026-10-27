@@ -6,6 +6,11 @@ publish.workspace = true
 # `cargo run -p arclog-cli` runs the subcommands' binary, not `check_one`.
 default-run = "arclog-cli"
 
+[[bin]]
+name = "admissible_workload"
+path = "src/bin/admissible_workload.rs"
+required-features = ["arclog/admissible-reference"]
+
 [dependencies]
 # The binary runs the core crate's reader, resolver, checker and evaluator
 # over solver files.

@@ -111,6 +111,20 @@ pub(crate) fn label_type_cached(
     Ok(walk(Sites::Positive).body_type(body, &[], None, &Outside::Unchecked)?.or(all))
 }
 
+/// The result of [`label_type`] for every label of a body of positive atoms
+/// alone, at once, from the type each site of the body gives its label
+/// (`None` where a site gives none): the meet of a label's site types, or
+/// `None` where one meet is empty, whose fault [`label_type`] gives. A
+/// label with no site type has the entry `None`.
+pub(crate) fn flat_label_types(sites: impl IntoIterator<Item = (crate::program::LabelId, Option<ValueType>)>) -> Option<crate::hash::StableHashMap<crate::program::LabelId, Option<ValueType>>> {
+    let mut types = crate::hash::StableHashMap::<crate::program::LabelId, Option<ValueType>>::default();
+    for (label, site) in sites {
+        let held = types.entry(label).or_default();
+        *held = meet(held.take(), site).ok()?;
+    }
+    Some(types)
+}
+
 /// What the walks of the labels of one inference read of a part of the
 /// program, which does not depend on the label asked: the type that the
 /// sites of an atom give a class of labels, and, for a body, the labels

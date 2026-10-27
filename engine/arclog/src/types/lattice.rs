@@ -80,6 +80,13 @@ impl ValueType {
         self.meet(other) != Meet::Empty
     }
 
+    /// Whether the type is a scalar: any type but `Unit`, a Pose type and a
+    /// record type. The shortcuts of the decode's mask read only the columns
+    /// of these types.
+    pub fn is_scalar(&self) -> bool {
+        !matches!(self, ValueType::Unit | ValueType::Pose(_) | ValueType::Record(_))
+    }
+
     /// Whether the type is `Box` or stands under it: the types of a value
     /// that is four margins.
     pub fn is_box(&self) -> bool {
