@@ -468,8 +468,10 @@ fn stream_steps<'a>(streams: &'a [Vec<(u32, Emitter)>], order: &'a [usize]) -> i
 /// [`UNIT_STEPS`] model steps. With a count `k`, the running sum of the new
 /// model steps of the streams, each counted after the stream before it in
 /// `order`, is cut into `k` parts of equal sum, and a unit ends at each stream
-/// that passes the end of a part (several parts' ends at one stream give one
-/// unit), so the solver has at most `k` units.
+/// that passes the end of a part other than the last (several parts' ends at
+/// one stream give one unit), so the solver has at most `k` units. The last
+/// part's end ends no unit, so the streams after the last stream that adds
+/// model steps stay in the last unit.
 fn cut_units(index: usize, solver: &UnitSolver<'_>, order: &[usize]) -> Vec<ReplayUnit> {
     let new_unit = || ReplayUnit { solver: index, streams: Vec::new(), steps: 0 };
     let all_added: Vec<usize> = stream_steps(solver.streams, order).collect();
@@ -488,7 +490,7 @@ fn cut_units(index: usize, solver: &UnitSolver<'_>, order: &[usize]) -> Vec<Repl
             Some(count) => {
                 running += added;
                 let parts_passed = if total == 0 { 0 } else { running * count.get() / total };
-                let ends = parts_passed > parts_ended;
+                let ends = parts_passed > parts_ended && parts_passed < count.get();
                 parts_ended = parts_passed;
                 ends
             }
