@@ -25,7 +25,7 @@ use arclog::registry::{is_key, key_fill, ColumnType, LibName, Registry};
 use arclog::resolver::given::{node_relation, Given, GivenLabel};
 use arclog::resolver::registry_columns;
 use arclog::resolver::{DependencyKind, GraphNodeIndex, ResolvedProgram, Resolution};
-use arclog::types::{Meet, ValueType};
+use arclog::types::ValueType;
 
 /// How a source gives the column's values.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -189,8 +189,7 @@ impl<'c> Alt<'c> {
             };
             for (column, argument) in arguments.0.iter() {
                 if matches!(argument, Argument::Variable(variable) if class.contains(variable)) {
-                    let Argument::Variable(variable) = argument else { continue };
-                    hits.push(Hit { node, paths, column: column.0, variable: *variable });
+                    hits.push(Hit { node, paths, column: column.0 });
                 }
             }
         }
@@ -219,8 +218,6 @@ struct Hit<'c> {
     node: &'c IrNode,
     paths: &'c NodePaths,
     column: u16,
-    /// The variable that stands there.
-    variable: Variable,
 }
 
 /// The walk over a body's IR for the sources of a variable, with the nodes
@@ -240,20 +237,6 @@ impl<'p> Walk<'p> {
             NodeRef::Atom(atom) => Some((path, atom)),
             _ => None,
         }
-    }
-
-    /// Whether the column that `hit` reads holds values of the type of the
-    /// variable that stands there, or of a type that the variable's type
-    /// lies below, such as a C4 label that reads a D4 column.
-    fn keeps_type(&self, alt: &Alt<'_>, hit: &Hit<'_>) -> bool {
-        let (IrNode::Atom(atom), Some((path, _))) = (hit.node, self.atom_of(hit.paths)) else { return true };
-        let AtomSource::Relation(relation) = &atom.source else { return true };
-        if self.flows.program.reads_lifted(path) {
-            return true;
-        }
-        let Some(column) = self.flows.checked.types.columns(relation).and_then(|columns| columns.get(usize::from(hit.column))) else { return true };
-        let Some(info) = alt.variables.get(usize::from(hit.variable.0)) else { return true };
-        matches!(info.ty.meet(column), Meet::Type(_))
     }
 
     /// The sources that the read of `hit`, an `Atom` or a `Lib` node, gives:
@@ -317,8 +300,7 @@ impl<'p> Walk<'p> {
             match hit.node {
                 IrNode::Lib(_) => libs.push(hit),
                 IrNode::Atom(atom) if matches!(atom.source, AtomSource::Key(_)) => keys.push(hit),
-                _ if self.keeps_type(alt, hit) => program.push(hit),
-                _ => {}
+                _ => program.push(hit),
             }
         }
         let mut found: Vec<ColumnSource> = Vec::new();
