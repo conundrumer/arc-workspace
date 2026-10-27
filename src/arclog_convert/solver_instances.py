@@ -1136,7 +1136,6 @@ class InstancesMixin:
                    and list(ren.values()).count(b) == 1}
             if ren:
                 item = relabel(item, lambda mark, x: mark + ren.get(x, x))
-                item = [re.sub(r"\(:([A-Z]\w*) (\*?)\1\)", r"\2\1", l) for l in item]
         lines.extend(nest_keyed(slot if heads else None, [["  (@@in " + " ".join(item) + ")"]],
                                 sorted(heads), "for"))
         for body in p.aparts:

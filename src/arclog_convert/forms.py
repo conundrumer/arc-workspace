@@ -533,8 +533,9 @@ def read_without(lines: list[str], rel: str, drop: dict[str, str]) -> list[str] 
 
 def relabel(lines: list[str], fn) -> list[str]:
     """The lines with each label `[*^]X` replaced by `fn(mark, X)`; a bare
-    site whose label changes keeps its column, `(:X new)`, and a record's
-    field elided to its label keeps its field the same way."""
+    site whose label changes keeps its column, `(:X new)`, a record's
+    field elided to its label keeps its field the same way, and a site
+    `(:X new)` of one label whose new label is `X` elides to `new`."""
     stack: list[str | None] = []
     out = []
     for l in lines:
@@ -561,6 +562,14 @@ def relabel(lines: list[str], fn) -> list[str]:
             if new == tok:
                 continue
             head = stack[-1] if stack else None
+            if head is not None and re.fullmatch(r":[A-Z]\w*", head) and new.lstrip("*^") == head[1:]:
+                opened = re.search(r"\(" + re.escape(head) + r"\s+$", l[:m.start()])
+                closed = re.match(r"\s*\)", l[m.end():])
+                if opened and closed:
+                    parts.append(l[i:opened.start()])
+                    parts.append(new)
+                    i = m.end() + closed.end()
+                    continue
             bare = head is not None and not head.startswith(":") and head not in OPS_
             field_ = head is not None and re.fullmatch(r":[a-z]\w*", head) is not None
             if bare and new.lstrip("*^") != lm.group(2):
