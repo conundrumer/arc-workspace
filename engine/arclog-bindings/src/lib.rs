@@ -12,8 +12,8 @@
 //! sources of this crate and of the crates it depends on, so a call from
 //! here into the tables code would not compile. `arclog-tables-py` takes
 //! these items of this crate, which are `pub`: [`Names`], [`PyDecodeSettings`],
-//! [`PyReplayProgress`], [`Progress`], [`walk_corpus`], [`PyConsistencyKind`]
-//! and [`constructions`].
+//! [`PyReplayProgress`], [`Progress`], [`walk_corpus`], [`PyConsistencyKind`],
+//! [`PyDecoder`] and [`constructions`].
 
 mod case_files;
 mod corpus;
@@ -28,6 +28,7 @@ mod task;
 mod vocabulary;
 
 pub use corpus::{walk_corpus, Progress, PyReplayProgress};
+pub use decoder::PyDecoder;
 pub use names::Names;
 pub use results::PyConsistencyKind;
 pub use settings::PyDecodeSettings;

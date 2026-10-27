@@ -9,6 +9,7 @@ use arclog::judge::attempts::Attempts;
 use arclog::judge::candidates::{PairCandidates, Section};
 use arclog::registry::Registry;
 use arclog::stream::Token;
+use arclog::task::Task;
 use arclog::terms::Example;
 use arclog::trace::render::{trace_form, TraceFormOptions};
 use arclog::trace::{Stop, TopK};
@@ -40,7 +41,7 @@ type StepResult = (Vec<u32>, Option<PyConsistency>, Option<PyConsistency>);
 /// it drops first, and the `'static` of its type stands for the lifetime of
 /// that `Arc`. `decoder` is `None` only inside [`step_batch`]'s call.
 #[pyclass(name = "Decoder", module = "arclog")]
-pub(crate) struct PyDecoder {
+pub struct PyDecoder {
     decoder: Option<Decoder<'static>>,
     data: Arc<SessionData>,
 }
@@ -57,8 +58,14 @@ impl PyDecoder {
         Ok(PyDecoder { decoder: Some(decoder), data: Arc::clone(data) })
     }
 
-    fn decoder(&self) -> &Decoder<'static> {
+    /// The decode, for a crate that reads it as the engine's own value.
+    pub fn decoder(&self) -> &Decoder<'static> {
         self.decoder.as_ref().expect("a decode outside a batch step")
+    }
+
+    /// The task that the decode runs on.
+    pub fn task(&self) -> &Task {
+        &self.data.task.task
     }
 
     fn decoder_mut(&mut self) -> &mut Decoder<'static> {
