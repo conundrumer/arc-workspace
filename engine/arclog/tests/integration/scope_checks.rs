@@ -39,6 +39,8 @@ fn zero_typed_clause(other: &str) -> String {
 (RULE &output
   (input *P *Col)
   (&way *D))
+
+(DET &counts NumberDomain)
 "
     )
 }
@@ -54,9 +56,9 @@ fn first_head_type(checked: &CheckedProgram) -> Option<ValueType> {
 #[test]
 fn a_clause_of_equal_content_takes_the_types_of_its_own_relation_s_clauses() {
     let mut cache = CheckCache::default();
-    let colors = check(&zero_typed_clause("(input (:Col *D))"), &mut cache).expect("every check passes");
-    let dirs = check(&zero_typed_clause("(dir_elem *D)"), &mut cache).expect("every check passes");
-    assert_eq!((first_head_type(&colors), first_head_type(&dirs)), (Some(ValueType::Color), Some(ValueType::Dir)));
+    let boxes = check(&zero_typed_clause("(input (:P *D))"), &mut cache).expect("every check passes");
+    let numbers = check(&zero_typed_clause("(&counts (:N *D))"), &mut cache).expect("every check passes");
+    assert_eq!((first_head_type(&boxes), first_head_type(&numbers)), (Some(ValueType::Box), Some(ValueType::Number)));
 }
 
 #[test]

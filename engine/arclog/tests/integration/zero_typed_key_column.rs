@@ -19,13 +19,13 @@ const ARCLOG: &str = "
       (&mid (:P *Q))
       (= *V S)))
   (cell (P (:v V))
-    (input *P (:Col *V))))
+    (input *P) (input (:P *V))))
 
 (ALTS $scope \"what &scope holds\" $Still
   (ALT $Still
     (RULE &scope (input *P) (= *S 0)))
-  (ALT $Colored
-    (RULE &scope (input *P (:Col *S)))))
+  (ALT $Located
+    (RULE &scope (input *P) (input (:P *S)))))
 ";
 
 #[test]

@@ -14,9 +14,11 @@ use arclog::resolver::resolve_cases;
 use arclog::types::ValueType;
 
 const ARCLOG: &str = "
-(RULE &dirs (dir_elem *D))
+(RULE &cells (input (:P *D)))
 
-(RULE &way (&dirs *D))
+(DET &counts NumberDomain)
+
+(RULE &way (&cells *D))
 
 (RULE &way (= *D 0))
 
@@ -24,11 +26,9 @@ const ARCLOG: &str = "
   (input *P *Col)
   (&way *D))
 
-(ALTS $ways \"which directions &way holds\" $Straight
-  (ALT $Diagonal
-    (RULE &diags (diag_dir_elem *D))
-
-    (RULE &way (&diags *D))
+(ALTS $ways \"which values &way holds\" $Cells
+  (ALT $Counts
+    (RULE &way (&counts (:N *D)))
 
     (RULE &way (= *D 0))))
 ";
@@ -56,23 +56,23 @@ fn a_zero_typed_label_takes_the_join_of_the_clauses_of_its_own_case() {
             zero_types.push(types.label(constraint.first.label).cloned());
         }
     }
-    assert_eq!(zero_types, vec![Some(ValueType::Dir), Some(ValueType::DiagDir)]);
+    assert_eq!(zero_types, vec![Some(ValueType::Box), Some(ValueType::Number)]);
 }
 
 /// A case program holds the lone `(= *D 0)` clause of `&way`; the clause
 /// that types the column stands in the other case's `ALT`.
 const OTHER_CASE_ARCLOG: &str = "
-(RULE &diags (diag_dir_elem *D))
+(DET &counts NumberDomain)
 
 (RULE &output
   (input *P *Col)
   (&way *D))
 
-(ALTS $ways \"which directions &way holds\" $Still
+(ALTS $ways \"which values &way holds\" $Still
   (ALT $Still
     (RULE &way (= *D 0)))
-  (ALT $Diagonal
-    (RULE &way (&diags *D))))
+  (ALT $Counted
+    (RULE &way (&counts (:N *D)))))
 ";
 
 #[test]
@@ -98,5 +98,5 @@ fn a_lone_zero_typed_label_takes_the_join_of_the_clauses_of_the_other_cases() {
             zero_types.push(types.label(constraint.first.label).cloned());
         }
     }
-    assert_eq!(zero_types, vec![Some(ValueType::DiagDir)]);
+    assert_eq!(zero_types, vec![Some(ValueType::Number)]);
 }

@@ -239,7 +239,7 @@ fn evaluating<T>(program: &CheckedProgram, task: &Task, caps: Caps, run: impl Fn
 
 #[test]
 fn a_run_with_a_trace_records_each_relation_it_evaluates_and_a_run_without_one_none() {
-    let solver = read_solver("runs", "(RULE &a (input *P *Col))\n(RULE &b (&a *P *Col) (!= Col 0))\n", "", &|_| None).expect("the file reads").value;
+    let solver = read_solver("runs", "(RULE &a (input *P *Col))\n(RULE &b (&a *P *Col))\n", "", &|_| None).expect("the file reads").value;
     let registry = Registry::get();
     let program = resolve(&solver.concept_case().program, None, &solver.derived_relations(), registry).value;
     let program = check_program(program, &SolverClauses::of(&solver, registry), registry, &mut CheckCache::default()).expect("every check passes");
