@@ -614,13 +614,20 @@ impl State {
         Ok(Offer::Taken)
     }
 
-    /// A clause's proposers, and its marks and `END`.
+    /// A clause's proposers, and its marks and `END`. A clause that holds a
+    /// proposer has no body, so a token other than a proposer closes its
+    /// body empty and goes to its marks; a clause with no proposer opens its
+    /// body.
     fn offer_clause(&mut self, token: &Token) -> Result<Offer, Unexpected> {
         let clause = top!(self, Frame::Clause);
         match (&clause.stage, token) {
             (ClauseStage::Proposers, Token::Proposer(name)) => {
                 clause.proposers.push(name.clone());
                 Ok(Offer::Taken)
+            }
+            (ClauseStage::Proposers, _) if !clause.proposers.is_empty() => {
+                clause.stage = ClauseStage::Marks { body: empty(), ones: Vec::new(), set: false };
+                Ok(Offer::Again)
             }
             (ClauseStage::Proposers, _) => {
                 clause.stage = ClauseStage::Body;

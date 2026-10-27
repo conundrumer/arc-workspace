@@ -816,11 +816,13 @@ fn readings(line: &Clause) -> Vec<(AltsName, Reading)> {
 
 /// A line's clause in one reading: the stored reading a `DET`, and a derived
 /// reading a `RULE`. Each reading keeps the line's `ONE` marks and its
-/// columns; the stored reading alone keeps its `SET` mark. The line's body is one reading's, as
-/// `docs/arclog/arclog.md#the-alts-form` gives, and the other reading holds
-/// no body. The derived reading by a proposer other than the line's first
-/// holds the line's first proposer, which names the relation's columns, then
-/// its own, whose columns map onto them by position.
+/// columns; the stored reading alone keeps its `SET` mark. The line's body is
+/// one reading's, as `docs/arclog/arclog.md#the-alts-form` gives, and the
+/// other reading holds no body. The reading that owns a body names no
+/// proposer, as a `DET` or `RULE` that names a proposer has no body; the other
+/// reading keeps the line's proposers. The derived reading by a proposer other
+/// than the line's first holds the line's first proposer, which names the
+/// relation's columns, then its own, whose columns map onto them by position.
 fn read_as(line: &Clause, reading: Reading) -> Clause {
     let (keyword, proposers, owns_body) = match reading {
         Reading::Stored => (ClauseKeyword::Det, line.proposers.clone(), line.keyword == ClauseKeyword::DetOrRule),
@@ -834,6 +836,7 @@ fn read_as(line: &Clause, reading: Reading) -> Clause {
         }
     };
     let body = if owns_body { line.body.clone() } else { Node::new(Body { conjuncts: Arc::from([]) }) };
+    let proposers = if body.value().conjuncts.is_empty() { proposers } else { Arc::from([]) };
     // A reading with no body has no labels for the body's columns: its
     // proposer declares the columns.
     let columns = if body.value().conjuncts.is_empty() && !proposers.is_empty() { Arc::from([]) } else { line.columns.clone() };
