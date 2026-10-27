@@ -44,8 +44,16 @@ def or_line(f: Form) -> bool:
 def holds_at(f: Form, at: dict[str, str], concept: set[str], field_of: dict[str, str]) -> bool:
     """Whether `f` holds in the case that takes the constructor `at` gives
     for each point it names, and the concept's constructor at each other
-    point: each constructor of `f.branches` is the case's at its point."""
-    return all(at[field_of[b]] == b if field_of[b] in at else b in concept for b in f.branches)
+    point: each constructor of `f.branches` is the case's at its point. A
+    `DET` form also holds at a constructor that is the concept's, whatever
+    constructor the case takes there: Souffle's `Determine` runs once, so a
+    constructor that it names in a read selects that branch's rows, which in
+    the converter's cases are the concept case's."""
+    def holds(b: str) -> bool:
+        if f.side == "DET" and b in concept:
+            return True
+        return at[field_of[b]] == b if field_of[b] in at else b in concept
+    return all(holds(b) for b in f.branches)
 
 
 PROPOSED = re.compile(r'\((?:DET|DET_OR_RULE|RULE_OR_DET) (&\w+)(?: "(?:[^"\\]|\\.)*")? [A-Z]')
@@ -938,11 +946,7 @@ class RenderMixin:
         inherited = mine - {f.name for f in fs}
         clauses = [f for f in main if not or_line(f)]
 
-        def live(f: "Form") -> bool:
-            # a determination runs once, under the concept's case, so a
-            # relation it derives holds in every branch
-            return f.side == "DET" or holds(f)
-        fixed_only = {f.name for f in clauses} - {f.name for f in clauses if live(f)}
+        fixed_only = {f.name for f in clauses} - {f.name for f in clauses if holds(f)}
         instances = {f.name for f in main if all(g.src_inst is not None for g in main if g.name == f.name)}
 
         def derived_without(gone: set[str]) -> set[str]:
@@ -958,7 +962,7 @@ class RenderMixin:
                 and all(g.side == "RULE" and g.lines[0].startswith("(RULE ") and g.cols == f.cols
                         for g in clauses if g.name == f.name)}
         while True:
-            redo = self.dead_clauses(main, empty, mine, live, adds)
+            redo = self.dead_clauses(main, empty, mine, holds, adds)
             # an instance whose branch forms all read a relation that
             # `dead_clauses` put in `empty` is empty too
             lapsed = (fixed_only & instances) - empty - derived_without(empty)

@@ -50,10 +50,10 @@
 //! check compares a relation of the `Determine` component. It holds Souffle's
 //! rows of those relations at their run over the task's examples, the run
 //! `solver.determine.determine` makes, on the determination program from which
-//! each clause of a branch that case does not take is dropped: for a relation
-//! with an Example leaf in the column map the rows of each train example under
-//! the pair `train <i>`, and for any other relation the rows of the run under
-//! the pair `task`. A relation of the entry is compared at the first case of
+//! each clause of a branch that neither that case nor the concept case takes is
+//! dropped: for a relation with an Example leaf in the column map the rows of
+//! each train example under the pair `train <i>`, and for any other relation
+//! the rows of the run under the pair `task`. A relation of the entry is compared at the first case of
 //! the file whose program has a relation of that name, with the entry of that
 //! case, as a case's relation is, with the engine's rows of the relation at
 //! that case's program, at the train example for a relation per input and

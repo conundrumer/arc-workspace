@@ -9,7 +9,8 @@ parity check runs on each pair, projected onto the columns the converter
 maps, with the relations the check leaves out (`case_rows`); and, for each of
 those cases, the rows of the relations of `Determine` at the run of its
 component over the task's examples, on the program from which each clause of a
-branch that case does not take is dropped (`determination_entry`).
+branch that neither that case nor the concept case takes is dropped
+(`determination_entry`).
 
 The check (`arclog_convert.row_parity`) runs the concept case and, for each
 `Choice` constructor (an ALT) that no case run before takes, the first case
@@ -84,10 +85,11 @@ column map an entry is compared as well with Souffle's rows of it at the run
 of the `Determine` component over the task's examples, once for the task
 (`determination_entry`), as `solver.determine.determine` makes it, on the
 program of `solver.determine.run_program` over `Loaded.determination` from which
-each clause of a branch a case does not take is dropped
-(`taken_program`), as that case's run drops them, for each case the check
-runs: a relation with an Example leaf in its column map per train pair, and any
-other once for the task. The check compares a relation at the first case it
+each clause of a branch that neither that case nor the concept case takes is
+dropped (`taken_program`), for each case the check runs (Souffle's one
+`Determine` run reads the concept case's rows where a clause names a
+constructor of the concept): a relation with an Example leaf in its column map
+per train pair, and any other once for the task. The check compares a relation at the first case it
 runs whose program has a relation of that name, with the rows of that case's
 entry (a `DET` inside an `ALT` is in the program of the cases that take the
 branch). So is a relation of the converter's text of the
@@ -195,10 +197,11 @@ class Loaded:
         return ex
 
     def taking(self, chosen: Case) -> Solver:
-        """The solver with the program of `taken_program` for `chosen`, to
-        run `chosen` on each pair (`run`); the program is built once, so that
-        the caches keyed by it serve every pair."""
-        return taking(self.solver, chosen)
+        """The solver with the program of `taken_program` that drops the
+        constructors `chosen` does not take (`untaken`), to run `chosen` on
+        each pair (`run`); the program is built once, so that the caches keyed
+        by it serve every pair."""
+        return taking(self.solver, untaken(self.solver, chosen.base))
 
     def run(self, taken: Solver, chosen: Case, ex: Example, rels: list[RelationName]
             ) -> Mapping[RelationName, Rows] | Undefined | RunFailure:
@@ -208,9 +211,9 @@ class Loaded:
         return relations_at(self.eng, taken, chosen, as_grid(ex.input), rels, Assignment(()), LIMITS)
 
 
-def taking(solver: Solver, chosen: Case) -> Solver:
-    """`solver` with the program of `taken_program` for `chosen`."""
-    return replace(solver, program=taken_program(solver, chosen.base))
+def taking(solver: Solver, dropped: frozenset[str]) -> Solver:
+    """`solver` with the program of `taken_program` for `dropped`."""
+    return replace(solver, program=taken_program(solver, dropped))
 
 
 def with_text(eng: Engine, solver: Solver, text: str) -> Solver:
@@ -441,10 +444,11 @@ def case_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | RunF
     check compares a relation of `Determine`, with `"failure": text` in place of
     `pairs` where its run gives no rows; the entries of its
     relations are a case's. It holds the rows of the run of the case's
-    program of `Loaded.determination` (`taken_program`), so that the check compares a
-    relation at the first case whose engine program has it, with that case's
-    rows; a relation with an Example leaf in its column map has an entry
-    for each train pair, with the rows of that example, and any other relation
+    program of `Loaded.determination` from which each clause of a branch that
+    neither the case nor the concept case takes is dropped (`taken_program`),
+    so that the check compares a relation at the first case whose engine
+    program has it, with that case's rows; a relation with an Example leaf in
+    its column map has an entry for each train pair, with the rows of that example, and any other relation
     one under the pair `task`, with the rows of the run. A relation whose entry has no column to
     compare has an empty `columns`, and its rows are `[]` where it has a row.
     A column of
@@ -474,7 +478,8 @@ def case_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | RunF
         return loaded
     chosen = cases_to_run(loaded)
     columns: dict[str, dict[str, Entry | dict[str, Any]]] = json.loads(columns_path(stem).read_text())
-    concept_run = run_program(taking(loaded.determination, chosen[0]))
+    concept_untaken = untaken(loaded.determination, chosen[0].base)
+    concept_run = run_program(taking(loaded.determination, concept_untaken))
     determined = determined_relations(loaded, columns, concept_run)
     read = [] if loaded.names is None else loaded.names.read
     mapped, not_compared = classify(loaded, columns, [n for n in read if n not in {at.name for at in determined}])
@@ -490,7 +495,8 @@ def case_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | RunF
         else:
             entry = {"case": name, "failure": str(got)}
         if determined:
-            run = concept_run if i == 0 else run_program(taking(loaded.determination, case))
+            run = concept_run if i == 0 else run_program(
+                taking(loaded.determination, untaken(loaded.determination, case.base) & concept_untaken))
             entry["determination"] = determination_entry(loaded, run, columns, determined)
         entries.append(entry)
     out = {"orientation_constants": orientation_constants(loaded.solver.lib),
@@ -544,7 +550,8 @@ def determination_entry(loaded: Loaded, run: RunProgram, columns: Mapping[str, M
                         mapped: Sequence[Pairing]) -> dict[str, Any]:
     """The `determination` entry of a case in `case_rows`' form for the relations
     `mapped`: the program of `run`, which `case_rows` gives the cut of the
-    case (`taken_program`), over the task's examples, as
+    branches that neither the case nor the concept case takes
+    (`taken_program`), over the task's examples, as
     `solver.determine.determine` runs it, once, each relation projected
     as in a case's `pairs`. A relation with an Example leaf in its column
     map has its rows of each train example under the pair `train <i>`, those
@@ -813,17 +820,18 @@ def untaken(solver: Solver, base: Base | None) -> frozenset[str]:
     return frozenset(c.name for p in choice.points for c in p.constructors) - taken
 
 
-def taken_program(solver: Solver, base: Base | None) -> Program:
-    """The program of `solver` with each clause of a branch the case of `base`
-    does not take (`untaken`) dropped. A clause is of such a branch where one of
-    its constructors stands in its head, or in a positive atom or a `=`
+def taken_program(solver: Solver, dropped: frozenset[str]) -> Program:
+    """The program of `solver` with each clause of a branch whose constructor
+    is in `dropped` dropped: the constructors a case does not take
+    (`untaken`), or, for a determination run, those that neither the case nor
+    the concept case takes. A clause is of such a branch where one of its
+    constructors stands in its head, or in a positive atom or a `=`
     comparison of its body, outside a negation and an aggregate: a disjunct of the
     body that holds one is dropped from its disjunction, and the clause with
     it where no disjunct is left. A fact is dropped by its head alone."""
-    names = untaken(solver, base)
-    if not names:
+    if not dropped:
         return solver.program
-    units = tuple(u for u in (_taken_unit(u, names) for u in solver.program.units) if u is not None)
+    units = tuple(u for u in (_taken_unit(u, dropped) for u in solver.program.units) if u is not None)
     return replace(solver.program, units=units)
 
 
