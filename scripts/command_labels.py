@@ -24,17 +24,27 @@ SETUP = {"cd", "echo", "export", "set", "true", ":", "printf", "date",
          "source", ".", "uptime", "[", "[[", "test"}
 WRAPPERS = {"timeout", "time", "nice", "env", "exec", "command", "sudo", "uv",
             "run", "run_heavy.py"}
-# Options that take the next word as their value, by the wrapper they follow.
+# The options of a wrapper, by wrapper. `WRAPPER_OPTIONS` lists those that take
+# the next word as their value, and `WRAPPER_FLAGS` those that take none.
+#   timeout: values -s -k.
+#   time: values -o; none -a -h -l -p.
+#   nice: values -n.
+#   env: values -u --unset -C --chdir -S --split-string.
+#   uv, run: values `UV_OPTIONS`.
+#   run_heavy.py: values --cpus --gib --need --minutes --wait.
 # A wrapper not listed takes no such option.
 UV_OPTIONS = frozenset({"--env-file", "--with", "--python", "-p", "--project",
                         "--directory", "--package", "--extra", "--group",
                         "--from"})
 WRAPPER_OPTIONS = {"timeout": frozenset({"-s", "-k"}),
+                   "time": frozenset({"-o"}),
+                   "nice": frozenset({"-n"}),
                    "env": frozenset({"-u", "--unset", "-C", "--chdir", "-S",
                                      "--split-string"}),
                    "uv": UV_OPTIONS, "run": UV_OPTIONS,
                    "run_heavy.py": frozenset({"--cpus", "--gib", "--need", "--minutes",
                                              "--wait"})}
+WRAPPER_FLAGS = {"time": frozenset({"-a", "-h", "-l", "-p"})}
 OPENERS = {"do", "then", "else", "elif", "if", "while", "until", "!", "{"}
 CLOSERS = {"for", "case", "done", "fi", "esac", "}"}
 POLL = "poll"
