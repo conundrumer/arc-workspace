@@ -28,13 +28,15 @@
 //! (`removed_relations` of the file, by name, with the forms that held an
 //! atom on it before the pass) and some such form derives its relation in the
 //! case, and that relation is `&output` or is read by it at any depth or is
-//! itself a removed relation that the case compares. A form derives its
-//! relation in a case that takes every alt of the form's block (`alts`) and
-//! every alt of no deeper block (`deeper`); an instance's form derives its
-//! outputs, and a `CHOOSE` form its chosen relation. A relation of the file
-//! that the case's program has and that none of these gives takes no verdict
-//! from that case, since the rows of a relation that nothing reads say
-//! nothing of the case. A relation that more than one case reads has one
+//! itself a removed relation that the case compares; a relation that several
+//! nodes hold, one per `DEMO_RULE`, is `&output` or is read by it where
+//! `&output` is one of those nodes or reads one of them at any depth. A form
+//! derives its relation in a case that takes every alt of the form's block
+//! (`alts`) and every alt of no deeper block (`deeper`); an instance's form
+//! derives its outputs, and a `CHOOSE` form its chosen relation. A relation
+//! of the file that the case's program has and that none of these gives takes
+//! no verdict from that case, since the rows of a relation that nothing reads
+//! say nothing of the case. A relation that more than one case reads has one
 //! line, the first `differ`, `fault` or `uncompared` of the cases and
 //! pairs, else the first `equal`. A column of the file that the engine's
 //! relation lacks is a `fault` of the relation, which names each such column.
@@ -124,7 +126,7 @@ use serde::{Deserialize, Deserializer};
 
 use crate::concept_case::{with_case, ConceptCase};
 use crate::renaming::{renaming_exists, same_without_idents, EngineLeaf, Leaf};
-use crate::souffle_rows::{engine_columns, engine_models, named_relation, pair_name, same_rows, Column, EngineModel, EngineModels, PickRequest, Projection};
+use crate::souffle_rows::{engine_columns, engine_models, holders, named_relation, pair_name, same_rows, Column, EngineModel, EngineModels, PickRequest, Projection};
 
 /// The seconds between the progress lines of a task that is still running.
 const PROGRESS_SECS: u64 = 10;
@@ -764,22 +766,20 @@ impl CheckRelations<'_> {
 /// Whether `reached` holds a node that the form deriving `relation` derives in
 /// `program`: the node of the relation, or, for an instance, of one of its
 /// outputs. A name that several nodes hold, one per `DEMO_RULE`, counts as
-/// read.
+/// read where `reached` holds any of them.
 fn derived_is_read(program: &CheckedProgram, reached: &[bool], relation: &str) -> bool {
-    match named_relation(program, relation) {
-        Some(Ok(node)) => reached[node.node.0 as usize],
-        Some(Err(_)) => true,
-        None => {
-            let name = DeclaredName::Written(relation.into());
-            program.program.graph.nodes.iter().zip(reached).any(|(node, &read)| {
-                read && match &node.kind {
-                    DependencyKind::InstanceOutput { instance, .. } | DependencyKind::RecursiveInstance(instance) => instance.0 == name,
-                    DependencyKind::Demonstrated(demonstrated) => demonstrated.0 == name,
-                    _ => false,
-                }
-            })
-        }
+    let holders = holders(program, relation);
+    if !holders.is_empty() {
+        return holders.iter().any(|&node| reached[node]);
     }
+    let name = DeclaredName::Written(relation.into());
+    program.program.graph.nodes.iter().zip(reached).any(|(node, &read)| {
+        read && match &node.kind {
+            DependencyKind::InstanceOutput { instance, .. } | DependencyKind::RecursiveInstance(instance) => instance.0 == name,
+            DependencyKind::Demonstrated(demonstrated) => demonstrated.0 == name,
+            _ => false,
+        }
+    })
 }
 
 /// What the entries of the rows file give: the verdict of each relation they

@@ -143,17 +143,36 @@ const SEVERAL_FORMS: &str = "several forms of the program derive the name";
 /// instance, else its input of that port; the reason for a skip where more
 /// than one node holds the name.
 pub(crate) fn named_relation(program: &arclog::check::CheckedProgram, name: &str) -> Option<Result<GraphRelation, String>> {
+    let relation = found_relation(program, name)?;
+    Some(if holders_of(program, &relation).len() > 1 { Err(SEVERAL_FORMS.to_owned()) } else { Ok(relation) })
+}
+
+/// The indices of the nodes of `program`'s graph that hold `name`: those whose
+/// kind is that of the node `named_relation` finds for it, one per
+/// `DEMO_RULE`; none where it finds none.
+pub(crate) fn holders(program: &arclog::check::CheckedProgram, name: &str) -> Vec<usize> {
+    found_relation(program, name).map_or_else(Vec::new, |relation| holders_of(program, &relation))
+}
+
+/// The relation that `name` finds in `program`, as `named_relation` gives
+/// it, before the check for several holders.
+fn found_relation(program: &arclog::check::CheckedProgram, name: &str) -> Option<GraphRelation> {
     let declared = ProgramRelation::Declared(RelationName(DeclaredName::Written(name.into())));
-    let relation = relation_of(program, &declared).or_else(|| {
+    relation_of(program, &declared).or_else(|| {
         let (instance, port) = name.split_once('.')?;
         let instance = InstanceName(DeclaredName::Written(instance.into()));
         let port = PortName(port.into());
         let output = OutputName { of: OutputOwner::Instance(instance.clone()), path: [OutputStep::Port(port.clone())].into() };
         relation_of(program, &ProgramRelation::Output(output)).or_else(|| input_relation(program, &instance, &port))
-    })?;
+    })
+}
+
+/// The indices of the nodes of `program`'s graph whose kind is that of the
+/// node of `relation`.
+fn holders_of(program: &arclog::check::CheckedProgram, relation: &GraphRelation) -> Vec<usize> {
     let nodes = &program.program.graph.nodes;
-    let holders = nodes.iter().filter(|node| node.kind == nodes[relation.node.0 as usize].kind).count();
-    Some(if holders > 1 { Err(SEVERAL_FORMS.to_owned()) } else { Ok(relation) })
+    let kind = &nodes[relation.node.0 as usize].kind;
+    nodes.iter().enumerate().filter(|(_, node)| node.kind == *kind).map(|(index, _)| index).collect()
 }
 
 /// One row position of the engine's relation, by its name.
