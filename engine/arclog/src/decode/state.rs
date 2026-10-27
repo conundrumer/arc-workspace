@@ -405,14 +405,16 @@ impl State {
     /// tokens the grammar admits there that a completion can use, in the
     /// order a search tries them. After a body site's field token: `*`, `^`
     /// where the site stands in a key, `0`, and the labels in scope from the
-    /// last made. At a head site: `END`, the
-    /// labels in scope from the last made, and the column token of the next
-    /// field. After a field's column token only the labels, and after the
-    /// record's `END` only `END`. A site that holds `limit` arguments takes
-    /// `END` alone. A column of a type parameter takes the bare labels
-    /// after its last bare label, so a set of them is tried once, and a
-    /// record of at most `FIELDS_TRIED` fields; one of a fixed type takes
-    /// one label.
+    /// last made. At a head site that holds an argument: `END`, the labels
+    /// in scope from the last made, and the column token of the next field;
+    /// at one that holds none, the same tokens with `END` last, as `END`
+    /// there leaves the column without a site, which the check of the input
+    /// can refuse once the input closes. After a field's column token only
+    /// the labels, and after the record's `END` only `END`. A site that
+    /// holds `limit` arguments takes `END` alone. A column of a type
+    /// parameter takes the bare labels after its last bare label, so a set
+    /// of them is tried once, and a record of at most `FIELDS_TRIED`
+    /// fields; one of a fixed type takes one label.
     pub(super) fn head_site_completions(&self, limit: usize) -> Option<Vec<Token>> {
         let labels = |after: Option<u32>| (after.map_or(0, |last| last + 1)..self.labels).rev().map(Token::Label);
         let site = match self.stack.last() {
@@ -431,12 +433,18 @@ impl State {
         if site.record_ended || site.args.len() >= limit {
             return Some(vec![end]);
         }
-        if !type_parameter(&site.column) {
-            let bare = site.args.is_empty().then(|| labels(None));
-            return Some(std::iter::once(end).chain(bare.into_iter().flatten()).collect());
+        let mut tokens: Vec<Token> = if !type_parameter(&site.column) {
+            site.args.is_empty().then(|| labels(None)).into_iter().flatten().collect()
+        } else {
+            let field = (site.fields < FIELDS_TRIED).then_some(Token::Column(site.fields));
+            labels(site.last_bare).chain(field).collect()
+        };
+        if site.args.is_empty() {
+            tokens.push(end);
+        } else {
+            tokens.insert(0, end);
         }
-        let field = (site.fields < FIELDS_TRIED).then_some(Token::Column(site.fields));
-        Some(std::iter::once(end).chain(labels(site.last_bare)).chain(field).collect())
+        Some(tokens)
     }
 
     /// The count of the labels made so far.
@@ -1345,7 +1353,7 @@ impl State {
                 };
                 Built::Input { input: Node::new(InstanceInput { name: input.name.clone(), head, body }), position: input.position }
             }
-            Frame::HeadSite(site) => Built::HeadSite(Some(Site { column: site.column.clone(), value: SiteValue { args: site.args.iter().cloned().collect() } })),
+            Frame::HeadSite(site) => Built::HeadSite((!site.args.is_empty()).then(|| Site { column: site.column.clone(), value: SiteValue { args: site.args.iter().cloned().collect() } })),
             Frame::Choose(choose) => {
                 let from = choose.from.clone().unwrap_or_else(empty);
                 let mut value = Choose { name: RelationName(slot), rows: choose.rows.clone(), candidate_columns: Arc::from([]), from, from_inside_for: false, never: Arc::from([]) };
