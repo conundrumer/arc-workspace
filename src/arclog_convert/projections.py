@@ -21,19 +21,34 @@ not read:
   than as the relation of an atom or the name of P's clauses.
 - No atom reads P from the clause, or one that does stands outside the block of
   the clause, or in another case reads another clause of P
-  (`arclog_convert.lint.alt_repeats` gives how a case reads a relation).
+  (`arclog_convert.lint.alt_repeats` gives how a case reads a relation). A reader
+  is inactive in a case, and so reads no clause of P there, where a form of the
+  reader's own relation stands in a block deeper than the reader's and is held in
+  the case: the form of the block of greatest depth derives a relation in a case
+  (`docs/arclog/arclog.md#alts`). So another clause d of P does not keep the
+  clause for a reader outside d's block where, in each case that holds d's block
+  and the reader's, such a form stands.
 - A one-label site of P's atom on a column of a type parameter is one that the
   column-map entry of Q does not settle as a field or as the whole value.
 - A reader's clause kind may not read Q, or reads it in another scope than P
   does (`docs/arclog/arclog.md#program`, `docs/arclog/arclog.md#instance`); P
   is a `DET` and Q stands in several blocks; a `DET` reads Q and Q is a chosen
   relation. A reader reads as the kind of its form gives, and an instance's
-  input body as the scope of the instance gives. Q is derived as each form that
+  input body as the scope of the instance gives. A `CHOOSE` form is an instance
+  in this: its `for` clause is its key clause, its other clauses read as an
+  instance's input bodies do, and the chosen relation it derives is an instance's output of its
+  scope (`docs/arclog/constraints.md#choose`), so a redirect that gives a
+  `CHOOSE` form another scope keeps the clause. Q is derived as each form that
   derives it gives, and a rule that holds for one of them keeps the clause.
 - A reader stands in a form of a kind the pass does not read, such as
-  `RIGID_DET`, or a form of such a kind derives Q, such as `CHOOSE`.
+  `RIGID_DET`, or a form of such a kind derives Q.
 - After the redirect the lint gives the text a code, other than `stands-under`,
-  that it did not give.
+  that it did not give. Where the code is `or-implied` at an `OR` that holds a
+  redirected atom, the pass first removes each branch of that `OR` that the lint
+  names as holding only where another branch holds: that branch adds no rows. An
+  `OR` left with one branch becomes that branch's conjuncts. The clause stays
+  where the lint, with those branches removed, gives any code, other than
+  `stands-under`, in more places than before.
 
 With `keep`, the pass redirects the readers and leaves each clause it would
 remove where it stands, and moves no form: this is the copy for the row-parity
@@ -47,8 +62,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 from arclog_convert.lint import (
-    CLAIMS, FACTS, FORMS, MARKS, OPS, L, Linter, Placed, Sym, alt_points, bare_label, e_site, is_const, placements,
-    read, site_pairs, walk)
+    CLAIMS, FACTS, FORMS, MARKS, OPS, L, Linter, Placed, Sym, alt_points, bare_label, e_site, implies, is_const,
+    placements, read, site_pairs, walk)
 from arclog_convert.pull_up import BODIES, OUTPUT, Edit, Reader, applied, atom_sites, readers_by_relation
 
 type Reading = Literal["RULE", "DET"]
@@ -56,11 +71,14 @@ type Reading = Literal["RULE", "DET"]
 type Scope = Literal["example", "input", "pooled"]
 """What an instance is per (`docs/arclog/arclog.md#instance`)."""
 type Kind = Literal["input", "fact", "lib", "RULE", "DET", "instance"]
-"""What derives a relation Q: the fact `input`, `ex_input` or `ex_output`, the lib, a clause, an instance's output."""
+"""What derives a relation Q: the fact `input`, `ex_input` or `ex_output`, the lib, a clause, an instance's output or
+the relation a `CHOOSE` form chooses."""
 
-INSTANCES = ("INIT", "DEMONSTRATED")
+INSTANCES = ("INIT", "DEMONSTRATED", "CHOOSE")
 """The forms whose inputs read by the scope of the form."""
-READS_AS: dict[str, Reading] = {"RULE": "RULE", "CHOOSE": "RULE", "DET": "DET"}
+KEY_CLAUSES = ("key", "for")
+"""The heads of the key clause of an instance and of a `CHOOSE` form."""
+READS_AS: dict[str, Reading] = {"RULE": "RULE", "DET": "DET"}
 """The reading of each form that reads as one clause does."""
 
 
@@ -220,11 +238,12 @@ def _removal(text: str, form: L) -> Edit:
 
 
 def _example_key(form: L) -> bool:
-    """Whether the key clause of the instance `form` holds a label marked `^` at a site on an Example column."""
+    """Whether the key clause of the instance `form`, the `for` clause of a `CHOOSE`, holds a label marked `^` at a
+    site on an Example column."""
     return any(isinstance(atom, L) and atom.head and not atom.head.startswith(":")
                and any(column == "E" and label.startswith("^") for node in atom.items[1:]
                        for column, label in site_pairs(node))
-               for key in form.items[2:] if isinstance(key, L) and key.head == "key" and len(key.items) > 1
+               for key in form.items[2:] if isinstance(key, L) and key.head in KEY_CLAUSES and len(key.items) > 1
                for atom in walk(key.items[1]))
 
 
@@ -251,15 +270,18 @@ class _Program:
     def step(self, keep: bool) -> tuple[str, str] | None:
         """The text after the first projection clause that may go, with its relation: its readers redirected, and
         the clause removed unless `keep`; none where no clause may go. A clause that gives the lint another code
-        than the text has stays."""
+        than the text has stays, other than for an `OR` branch the redirect leaves implied, which goes."""
         baseline = None
         for p in self.placed:
             projection = _projection(p.form) if p.name else None
-            edits = None if projection is None else self._redirects(p, projection)
-            if edits is None:
+            redirects = None if projection is None else self._redirects(p, projection)
+            if redirects is None:
                 continue
-            text = applied(self.text, edits if keep else [*edits, _removal(self.text, p.form)])
+            edits = redirects if keep else [*redirects, _removal(self.text, p.form)]
+            text = applied(self.text, edits)
             baseline = _codes(self.text) if baseline is None else baseline
+            if not _codes(text) <= baseline:
+                text = _without_implied(text, _landed(edits, redirects))
             if _codes(text) <= baseline:
                 return text, str(p.name)
         return None
@@ -308,7 +330,7 @@ class _Program:
 
     def _active(self, p: Placed) -> list[tuple[Reader, Placed]] | None:
         """The atoms that read the relation of `p` from its clause in some case; none where one stands outside the
-        block of the clause, or reads another clause of the relation in another case."""
+        block of the clause, or reads another clause of the relation in another case where it is active."""
         block = set(p.alts)
         others = [d for d in self.decls[str(p.name)] if d is not p]
         active = []
@@ -321,10 +343,20 @@ class _Program:
                 return None
             for d in others:
                 held = set(d.alts)
-                if not held <= block and (held <= stands if placed.form.head == "DET" else self._consistent(case | held)):
+                if held <= block:
+                    continue
+                if placed.form.head == "DET":
+                    if held <= stands:
+                        return None
+                elif self._consistent(case | held) and not self._rederived(placed, case | held):
                     return None
             active.append((reader, placed))
         return active
+
+    def _rederived(self, placed: Placed, case: set[str]) -> bool:
+        """Whether a form of the relation of `placed` stands in a block deeper than the block of `placed`, held in
+        `case`: that form derives the relation there, so a reader in `placed` is inactive in `case`."""
+        return placed.name is not None and any(set(placed.alts) < set(e.alts) <= case for e in self.decls[placed.name])
 
     def _consistent(self, alts: set[str]) -> bool:
         """Whether the alts can hold in one case: no two are alts of one `ALTS` form."""
@@ -364,7 +396,7 @@ class _Program:
         base, _, port = relation.partition(".")
         out: list[_Derivation] = []
         for d in self.decls[base]:
-            if port and d.form.head == "INIT":
+            if port and d.form.head == "INIT" or not port and d.form.head == "CHOOSE":
                 out += [_Derivation("instance", s == "input") for s in sorted(self._scopes(d.form))]
             elif not port and d.form.head == "RULE":
                 out.append(_Derivation("RULE", True))
@@ -444,6 +476,58 @@ def _lint(text: str) -> Linter:
 def _codes(text: str) -> Counter[str]:
     """The lint codes of `text` but `stands-under`, which the pass repairs, with their counts."""
     return Counter(code for _, code, _ in _lint(text).errs if code != "stands-under")
+
+
+def _landed(edits: list[Edit], redirects: list[Edit]) -> set[int]:
+    """The position, in the text after `edits`, of each of `redirects`, which are among them."""
+    out: set[int] = set()
+    shift = 0
+    for edit in sorted(edits):
+        if edit in redirects:
+            out.add(edit[0] + shift)
+        shift += len(edit[2]) - (edit[1] - edit[0])
+    return out
+
+
+def _implied(branches: list[L]) -> list[L]:
+    """The branches of an `OR` that hold only where another branch holds, as `Linter.disj` gives them with the
+    code `or-implied`: of two branches that hold only where each other holds, the later."""
+    return [bi for i, bi in enumerate(branches)
+            if any(j != i and implies(bi.items, bj.items) and not (implies(bj.items, bi.items) and j > i)
+                   for j, bj in enumerate(branches))]
+
+
+def _without_implied(text: str, landed: set[int]) -> str:
+    """`text` without the implied branches of each `OR` that holds an atom starting at a position of `landed`, an
+    `OR` left with one branch replaced by that branch's conjuncts."""
+    gone: list[tuple[int, int]] = []
+
+    def before(node: L) -> int:
+        return len(text[:node.start].rstrip())
+
+    for form in read(text):
+        for node in walk(form):
+            if not (isinstance(node, L) and node.head == "OR" and all(isinstance(b, L) for b in node.items[1:])
+                    and any(isinstance(x, L) and x.start in landed for x in walk(node))):
+                continue
+            drop = _implied(node.items[1:])
+            kept = [b for b in node.items[1:] if all(b is not d for d in drop)]
+            gone += [(before(d), d.end) for d in drop]
+            if drop and len(kept) == 1:
+                gone += [(node.start, node.items[1].start), (before(kept[0]), kept[0].start + 1),
+                         (kept[0].end - 1, node.end)]
+    return applied(text, [(a, b, "") for a, b in _union(gone)])
+
+
+def _union(spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """The spans of `spans` with those that overlap or touch joined."""
+    out: list[tuple[int, int]] = []
+    for start, end in sorted(spans):
+        if out and start <= out[-1][1]:
+            out[-1] = (out[-1][0], max(out[-1][1], end))
+        else:
+            out.append((start, end))
+    return out
 
 
 def _moved_into(text: str, form: L, claim: L) -> str:
