@@ -439,6 +439,10 @@ pub struct CheckedProgram {
 /// and the count of its key columns.
 pub type InstanceClause = (Arc<ClauseIr>, Arc<IrPaths>, usize);
 
+/// The clause of a `RIGID_DET` form's key and instance bodies, joined with
+/// the atom of one part where it is given, with the paths of its nodes.
+pub type AssemblyClause = (Arc<ClauseIr>, Arc<IrPaths>);
+
 /// What a function of a checked program, a path and its arguments alone
 /// gives, kept per argument on the first ask.
 #[derive(Debug, Default)]
@@ -450,6 +454,10 @@ struct Derived {
     /// is `None`, with the paths of its nodes and the count of its key
     /// columns, as the evaluator compiles it.
     instance_clauses: Mutex<StableHashMap<(NodePath, Option<PortName>), Result<InstanceClause, CompileFault>>>,
+    /// The clause of a `RIGID_DET` form's key and instance bodies, joined
+    /// with the atom at the path of a part where it is given, with the
+    /// paths of its nodes, as the evaluator compiles it.
+    assembly_clauses: Mutex<StableHashMap<(NodePath, Option<NodePath>), Result<AssemblyClause, CompileFault>>>,
     /// The resolved content of the clause at each path.
     contents: Mutex<StableHashMap<NodePath, Option<ResolvedContent>>>,
     /// The resolved content of the part of the clause at a path that its
@@ -478,6 +486,20 @@ impl CheckedProgram {
         let key = (form.clone(), input.cloned());
         let mut memo = self.derived.instance_clauses.lock().expect("a memo that no panic poisoned");
         memo.entry(key).or_insert_with(|| compile().map(|(clause, paths, key)| (Arc::new(clause), Arc::new(paths), key))).clone()
+    }
+
+    /// The clause of the `RIGID_DET` form at `form`: its key and instance
+    /// bodies, joined with the atom at `part` where it is given, with the
+    /// paths of its nodes, from `compile` on the first ask.
+    pub fn assembly_clause(
+        &self,
+        form: &NodePath,
+        part: Option<&NodePath>,
+        compile: impl FnOnce() -> Result<(ClauseIr, IrPaths), CompileFault>,
+    ) -> Result<AssemblyClause, CompileFault> {
+        let key = (form.clone(), part.cloned());
+        let mut memo = self.derived.assembly_clauses.lock().expect("a memo that no panic poisoned");
+        memo.entry(key).or_insert_with(|| compile().map(|(clause, paths)| (Arc::new(clause), Arc::new(paths)))).clone()
     }
 
     /// The resolved content of the clause at `path`, as

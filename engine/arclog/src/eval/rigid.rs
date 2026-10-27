@@ -40,7 +40,7 @@ use super::ir::{ClauseIr, IrPaths};
 use super::{ir, Evaluation, FormBodies, Outcome, RelationValue, RunFault, Stop};
 use crate::algebra::boxes::apply;
 use crate::algebra::geometry::{D4Element, Geometry};
-use crate::check::CheckedProgram;
+use crate::check::{AssemblyClause, CheckedProgram};
 use crate::hash::{StableHashMap, StableHashSet};
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{Atom, Body, Conjunct, LabelId, Node, OutputStep, RigidDet};
@@ -88,7 +88,8 @@ pub(crate) fn output_clause(program: &CheckedProgram, form: &NodePath, rigid: &R
         OutputStep::Pose => None,
         step => Some(&assembly.parts[assembly.part(step).map_err(|fault| fault.message.to_string())?]),
     };
-    assembly.clause(part).map_err(|compile| format!("a body of the form does not compile: {compile:?}"))
+    let (clause, paths) = assembly.clause(part).map_err(|compile| format!("a body of the form does not compile: {compile:?}"))?;
+    Ok(((*clause).clone(), (*paths).clone()))
 }
 
 /// One part of an assembly: its atom with its path, the labels of its
@@ -482,8 +483,15 @@ impl<'e, 'p> Assembly<'e, 'p> {
 
     /// The clause that joins the key and instance bodies with the atom of
     /// `part` where it is given, at [`Self::columns`], with the paths of its
-    /// nodes: what the form's output reads, and its column flows read.
-    pub(crate) fn clause(&self, part: Option<&Part<'_>>) -> Result<(ClauseIr, IrPaths), ir::CompileFault> {
+    /// nodes: what the form's output reads, and its column flows read. The
+    /// program compiles it on the first ask for the form and the part, and
+    /// keeps the result, a compile fault included.
+    pub(crate) fn clause(&self, part: Option<&Part<'_>>) -> Result<AssemblyClause, ir::CompileFault> {
+        self.program.assembly_clause(self.form, part.map(|part| &part.path), || self.compile_clause(part))
+    }
+
+    /// What [`Self::clause`] keeps: the compile of the clause of `part`.
+    fn compile_clause(&self, part: Option<&Part<'_>>) -> Result<(ClauseIr, IrPaths), ir::CompileFault> {
         let atom = part.map(|part| (Conjunct::Atom(part.atom.clone()), part.path.clone()));
         let conjuncts = self
             .key
