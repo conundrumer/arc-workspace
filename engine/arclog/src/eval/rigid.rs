@@ -57,7 +57,7 @@ use crate::program::{Atom, Body, Conjunct, LabelId, Node, OutputName, OutputOwne
 use crate::relations::{Row, RowSet};
 use crate::resolver::form_columns;
 use crate::terms::{Example, Term, TermId};
-use crate::types::{each_site_label, use_label, FormTypes, ValueType};
+use crate::types::{FormTypes, ValueType};
 
 /// The value of `output`, an output of the `RIGID_DET` form at `form`:
 /// [`OutputStep::Part`] for `&marker.<part>`, and [`OutputStep::Pose`] for
@@ -198,16 +198,13 @@ impl<'e, 'p> Assembly<'e, 'p> {
         let key_own = own_flags(types_of, &key_labels, &key_types);
         let mut parts = Vec::with_capacity(rigid.parts.len());
         for (atom, index) in rigid.parts.iter().zip(clauses..) {
-            let mut labels = Vec::new();
-            for site in atom.value().sites.iter().filter(|site| !form_columns::at_instance(rigid, site)) {
-                each_site_label(site, &mut Vec::new(), &mut |use_, _| labels.extend(use_label(use_)));
-            }
+            let labels = form_columns::part_labels(rigid, atom.value());
             if labels.iter().any(|label| instance_labels.contains(label)) {
                 return Err(fault("a part's site holds a label of the `instance` clause inside a term of other labels, whose column `docs/arclog/rigid.md#semantics` gives no value in the part's output".into()));
             }
             let types = typed(&labels)?;
             let own = own_flags(types_of, &labels, &types);
-            let frame = rigid.instance.is_some() && !atom.value().sites.iter().any(|site| form_columns::at_instance(rigid, site));
+            let frame = form_columns::is_frame_part(rigid, atom.value());
             parts.push(Part { atom, path: form.child(index), labels, types, own, frame });
         }
         Ok(Assembly { program, form, name: &rigid.name, key, key_labels, key_types, key_own, instance, instance_labels, parts })

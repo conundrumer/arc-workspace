@@ -10,11 +10,11 @@ use super::columns::{key_fields, pose, projection, Columns, Slot};
 use crate::hash::StableHashMap;
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::{
-    Choose, ChoosePart, ColumnName, DeclaredName, Demonstrated, Instance, InstanceName, OutputOwner, OutputStep, RelationColumn, RelationName, RelationRef,
-    RigidDet, RigidDetName, Site, SiteArg,
+    Atom, Choose, ChoosePart, ColumnName, DeclaredName, Demonstrated, Instance, InstanceName, LabelId, OutputOwner, OutputStep, RelationColumn, RelationName,
+    RelationRef, RigidDet, RigidDetName, Site, SiteArg,
 };
 use crate::registry::{binding_sites, ColumnType, Component, ParameterSite, Port, TypeParameter};
-use crate::types::use_label;
+use crate::types::{each_site_label, use_label};
 
 /// The input of a `DEMONSTRATED` form whose head gives the relation's
 /// columns after the key's, `docs/arclog/arclog.md#demonstrated`.
@@ -149,6 +149,23 @@ pub(crate) fn at_instance(form: &RigidDet, site: &Site) -> bool {
     let [SiteArg::Label(label)] = &site.value.args[..] else { return false };
     let instance = form.instance.iter().flat_map(|instance| instance.columns.iter());
     use_label(*label).is_some_and(|label| instance.map(|column| column.label).any(|column| column == label))
+}
+
+/// The labels at the sites of `part`, a part of `form`, other than those at a
+/// site that [`at_instance`] gives, in the order of the sites: the labels of
+/// the part's columns, as `docs/arclog/rigid.md#semantics` gives them.
+pub(crate) fn part_labels(form: &RigidDet, part: &Atom) -> Vec<LabelId> {
+    let mut labels = Vec::new();
+    for site in part.sites.iter().filter(|site| !at_instance(form, site)) {
+        each_site_label(site, &mut Vec::new(), &mut |use_, _| labels.extend(use_label(use_)));
+    }
+    labels
+}
+
+/// Whether `part`, a part of `form`, is a frame part: the form has an
+/// `instance` clause and no site of `part` is at an instance.
+pub(crate) fn is_frame_part(form: &RigidDet, part: &Atom) -> bool {
+    form.instance.is_some() && !part.sites.iter().any(|site| at_instance(form, site))
 }
 
 /// The listing of each output of a `RIGID_DET` form, by its path after the

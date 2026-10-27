@@ -7,7 +7,7 @@ use super::types::result;
 use super::prefix::{refused, whole};
 use super::{Check, CheckId, CheckInput, CheckResult, LabelInScope, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::eval::ir::atom_modes;
-use crate::safety::{body_labels, conjunct_labels, each_label_use_at, bound_labels, conjunct_label_set, LabelCounts, list_of, mode_holds, mode_may_hold, orientation_labels, parts_of};
+use crate::safety::{conjunct_labels, each_label_use_at, bound_labels, conjunct_label_set, LabelCounts, list_of, mode_holds, mode_may_hold, orientation_labels, parts_of};
 use std::cell::RefCell;
 
 use crate::hash::{StableHashMap, StableHashSet};
@@ -38,8 +38,9 @@ impl Check for SafetyCheck {
         Some(CheckCacheKey { check: self.id(), canonical_form, signatures: at.signatures.into() })
     }
 
-    /// Refuses each label of a body of the form that the body leaves
-    /// unbound, and each positive atom and each negated atom of an algebra
+    /// Refuses each label of a body of the form, and of each part of a
+    /// `RIGID_DET` form read as a body of its atom, that the
+    /// body leaves unbound, and each positive atom and each negated atom of an algebra
     /// relation with modes at which no mode holds from the conjuncts written before it: one pass over each list in its written order, each prefix
     /// bound by [`crate::safety::bound_labels`], with the modes of
     /// the algebra relations and relation macros. A label is refused at its first use
@@ -79,12 +80,16 @@ impl SafetyCheck {
     /// place of those that `keep` keeps.
     fn found(&self, input: &CheckInput<'_>, keep: &dyn Fn(&Fault, &NodePath) -> bool) -> Vec<Found> {
         let registry = input.scope.registry;
+        let bodies = form_bodies(input.form);
+        let parts = part_bodies(input.form);
+        let mut readings: Vec<Reading<'_>> = bodies.iter().map(Reading::of_body).chain(parts.iter().map(Reading::of_part)).collect();
+        readings.sort_by(|a, b| a.at.cmp(b.at));
         let mut refused = Vec::new();
-        for form_body in form_bodies(input.form) {
-            let scope = label_scope(input.scope.labels, &form_body.at);
+        for reading in &readings {
+            let scope = label_scope(input.scope.labels, reading.at);
             let types = |label: LabelId| scope.iter().find(|entry| entry.label == label).and_then(|entry| entry.ty.clone());
             let walk = Walk { registry, types: &types, memo: input.scope.bound };
-            refused.extend(walk.refusals(&form_body, keep));
+            refused.extend(walk.refusals(reading, keep));
         }
         refused
     }
@@ -274,6 +279,41 @@ fn labels(columns: &[RelationColumn]) -> Vec<LabelId> {
     columns.iter().map(|column| column.label).collect()
 }
 
+/// A part of a `RIGID_DET` form, read as a body of its atom alone: the
+/// evaluator compiles each part as a clause of its own, the key's body, the
+/// instance's body other than for a frame part, and the part's atom, so the
+/// part reads no label that another part makes
+/// (`docs/arclog/rigid.md#form`).
+struct PartBody {
+    /// The part's path relative to the top-level form.
+    at: NodePath,
+    atom: Conjunct,
+    /// The labels the part reads bound from the key and instance clauses:
+    /// the key's, and the instance's other than for a frame part.
+    given: Vec<LabelId>,
+    /// The labels of the clause's columns: those in `given`, and then the
+    /// part's own, as `Assembly::columns` gives them.
+    columns: Vec<LabelId>,
+}
+
+/// The parts of each `RIGID_DET` form of `form` and of each form of a
+/// `DEMO_RULE` it holds, in the order of their paths.
+fn part_bodies(form: &Form) -> Vec<PartBody> {
+    let mut out = Vec::new();
+    for (at, node) in forms_within(form) {
+        let NodeRef::RigidDet(rigid) = node else { continue };
+        let key = rigid.key.iter().flat_map(|key| labels(&key.columns)).collect::<Vec<_>>();
+        let instance = rigid.instance.iter().flat_map(|instance| labels(&instance.columns)).collect::<Vec<_>>();
+        for (index, atom) in rigid.parts.iter().enumerate() {
+            let frame = form_columns::is_frame_part(rigid, atom.value());
+            let given: Vec<LabelId> = key.iter().copied().chain(instance.iter().copied().filter(|_| !frame)).collect();
+            let columns = given.iter().copied().chain(form_columns::part_labels(rigid, atom.value())).collect();
+            out.push(PartBody { at: at.child(rigid.position(RigidDetPart::Part(index))), atom: Conjunct::Atom(atom.clone()), given, columns });
+        }
+    }
+    out
+}
+
 fn plain<'a>(body: &'a Node<Body>, at: NodePath, given: &[LabelId], columns: Vec<LabelId>) -> FormBody<'a> {
     FormBody { at, body, place: BodyPlace::List, given: given.to_vec(), columns, fields: Vec::new() }
 }
@@ -427,6 +467,42 @@ impl<'l, 'c> Prefixes<'l, 'c> {
     }
 }
 
+/// What the walk reads as one body: its conjuncts with their paths, at the
+/// body's path, with what its context gives it.
+struct Reading<'a> {
+    at: &'a NodePath,
+    list: Vec<(NodePath, &'a Conjunct)>,
+    given: &'a [LabelId],
+    /// The labels that stand outside the list.
+    outside: StableHashSet<LabelId>,
+    columns: &'a [LabelId],
+    head: Option<(&'a InstanceInput, &'a NodePath)>,
+}
+
+impl<'a> Reading<'a> {
+    fn of_body(form_body: &'a FormBody<'_>) -> Self {
+        Reading {
+            at: &form_body.at,
+            list: list_of(form_body.body.value(), &form_body.at),
+            given: &form_body.given,
+            outside: form_body.outside(),
+            columns: &form_body.columns,
+            head: form_body.head(),
+        }
+    }
+
+    fn of_part(part: &'a PartBody) -> Self {
+        Reading {
+            at: &part.at,
+            list: vec![(part.at.clone(), &part.atom)],
+            given: &part.given,
+            outside: part.given.iter().chain(&part.columns).copied().collect(),
+            columns: &part.columns,
+            head: None,
+        }
+    }
+}
+
 struct Walk<'a> {
     registry: &'a Registry,
     types: &'a dyn Fn(LabelId) -> Option<ValueType>,
@@ -434,26 +510,28 @@ struct Walk<'a> {
 }
 
 impl Walk<'_> {
-    /// The refusals of `form_body` that `keep` keeps, each label once, at
+    /// The refusals of `reading` that `keep` keeps, each label once, at
     /// the first place that refuses it.
-    fn refusals(&self, form_body: &FormBody<'_>, keep: &dyn Fn(&Fault, &NodePath) -> bool) -> Vec<Found> {
-        let given: StableHashSet<LabelId> = form_body.given.iter().copied().collect();
-        let outside = form_body.outside();
+    fn refusals(&self, reading: &Reading<'_>, keep: &dyn Fn(&Fault, &NodePath) -> bool) -> Vec<Found> {
+        let given: StableHashSet<LabelId> = reading.given.iter().copied().collect();
+        let conjuncts: Vec<&Conjunct> = reading.list.iter().map(|(_, conjunct)| *conjunct).collect();
         let mut found = Vec::new();
-        self.ordered(&list_of(form_body.body.value(), &form_body.at), &given, &outside, &mut found);
-        let bound = bound_labels(&form_body.body.value().conjuncts.iter().collect::<Vec<_>>(), &given, &outside, &|atom| atom_modes(self.registry, atom), self.types);
+        self.ordered(&reading.list, &given, &reading.outside, &mut found);
+        let bound = bound_labels(&conjuncts, &given, &reading.outside, &|atom| atom_modes(self.registry, atom), self.types);
         let mut check_use = |at: &NodePath, use_: LabelUse| {
             if let Some(label) = use_label(use_).filter(|label| !bound.contains(label)) {
-                found.push(Found { label: Some(label), fault: Fault::Unbound { body: form_body.at.clone() }, at: at.clone() });
+                found.push(Found { label: Some(label), fault: Fault::Unbound { body: reading.at.clone() }, at: at.clone() });
             }
         };
-        each_label_use_at(NodeRef::Body(form_body.body.value()), &form_body.at, &mut check_use);
-        if let Some((input, at)) = form_body.head() {
+        for (at, conjunct) in &reading.list {
+            each_label_use_at(NodeRef::Conjunct(conjunct), at, &mut check_use);
+        }
+        if let Some((input, at)) = reading.head {
             each_head_use(input, at, &mut check_use);
         }
-        let held = body_labels(form_body.body.value());
-        for &label in form_body.columns.iter().filter(|label| !bound.contains(label) && !held.contains(label)) {
-            found.push(Found { label: Some(label), fault: Fault::ColumnUnbound { body: form_body.at.clone() }, at: form_body.at.clone() });
+        let held = list_labels(conjuncts);
+        for &label in reading.columns.iter().filter(|label| !bound.contains(label) && !held.contains(label)) {
+            found.push(Found { label: Some(label), fault: Fault::ColumnUnbound { body: reading.at.clone() }, at: reading.at.clone() });
         }
         let mut seen = StableHashSet::default();
         found.into_iter().filter(|found| keep(&found.fault, &found.at)).filter(|found| found.label.is_none_or(|label| seen.insert(label))).collect()

@@ -57,7 +57,7 @@ The `RIGID_DET` form, a rigid determination, is the arclog form for parameters t
 
 A form may also hold an `instance` clause, and a `key` clause:
 
-- `instance` is written as a [key clause](arclog.md#instance) is, and one of its rows is one instance. Each atom inside `instance`, after its body, is a part, and it reads the instance's labels, other than a frame part.
+- `instance` is written as a [key clause](arclog.md#instance) is, and one of its rows is one instance. Each atom inside `instance`, after its body, is a part, and it reads the instance's labels, other than a frame part. Each other label of the part, one that neither the instance clause nor the key gives, is the part's own, made at a site of the part's atom.
 - `key` is a key clause with the meaning it has in an `INIT`: each key row is an independent assembly, aligned on its own and posed on its own, other than where a key column holds the assembly's own Idents, as [Semantics](#semantics) gives. A form with no `key` has one assembly. The outputs hold the key's columns first, as an instance's outputs do.
 - Where a form has a `key` clause, the rest of the form stands inside it, after its body: the `instance` clause where the form has one, and the parts otherwise. The key's labels are in scope there, as they are in the keyed inputs of an `INIT`.
 
