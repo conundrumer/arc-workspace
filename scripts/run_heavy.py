@@ -12,7 +12,9 @@ that for a minute. `--gib`, `--minutes` and `--wait`, which older calls give, ha
 the command's result (default `soon`), and sets the nice value of the command, which each process it starts
 inherits: `now` where someone waits before the next step can start, nice value 0; `soon` where the result
 feeds the next step and nothing sits idle for it, 5; `idle` where nothing waits on it, 15. A call that runs
-at a higher nice value keeps it.
+at a higher nice value keeps it. A job of need `now` that has run `LONG_NOW_SECONDS` seconds becomes `soon`
+(`scripts/heavy_enforcer.py`): the daemon raises the nice value of its processes as `need <pid> soon` does, and tells
+the session once.
 
 A call starts its command at once, whatever else runs. Memory gates no start: the daemon tells a job's session to fix its memory
 use when the job passes `SOFT_GIB`, and kills the job when it passes `HARD_GIB`; and it kills the largest

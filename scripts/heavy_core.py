@@ -19,8 +19,9 @@ of a gate older than the daemon, is counted and is sent no message that says it 
 outside the gate. A job whose footprint passes `SOFT_GIB` gets one log line and one message to its
 session, and one that passes `HARD_GIB` is killed with its processes, and its session is told. Where the
 memory pressure is critical, the largest job of a session is killed, as `scripts/heavy_enforcer.py` gives it.
-Each reading is logged, each minute and at each reading whose swap-ins are over the load monitor's alert
-rate, with the seconds the daemon took to read the machine.
+A gated job of need `now` that has run `LONG_NOW_SECONDS` seconds gets the need `soon`, one log line and one
+message to its session. Each reading is logged, each minute and at each reading whose swap-ins are over the
+load monitor's alert rate, with the seconds the daemon took to read the machine.
 
 Standard library only, Python 3.9."""
 
@@ -34,8 +35,8 @@ from typing import Any, Dict, FrozenSet, List, Optional, Tuple, Union
 import heavy_notices
 from heavy_notices import Reason
 from heavy_enforcer import (ADOPT_CPU_SECONDS, ADOPT_CPUS, ADOPT_GIB, ADOPT_GIB_SECONDS, CPU_OVERRUN_FACTOR,
-                            CPU_OVERRUN_SECONDS, CRITICAL_PAUSE_SECONDS, HARD_GIB, KILL_GRACE, SOFT_GIB,
-                            command_roots, victims)
+                            CPU_OVERRUN_SECONDS, CRITICAL_PAUSE_SECONDS, HARD_GIB, KILL_GRACE, LONG_NOW_SECONDS,
+                            SOFT_GIB, command_roots, victims)
 from heavy_model import Job, Kind, Need
 from machine_readings import CRITICAL_PRESSURE, GIB, KIB, SWAP_IN_RATE
 from process_readings import NO_SESSION
@@ -90,9 +91,15 @@ class SetClass:
     pid: int
 
 
+@dataclass(frozen=True)
+class Demote:
+    """The gated job of client `pid` is to be given the need `need`, which is above its own, and its
+    processes the nice value of it."""
+    pid: int
+    need: Need
 
 
-Effect = Union[Log, Signal, SetClass]
+Effect = Union[Log, Signal, SetClass, Demote]
 
 
 @dataclass
@@ -166,10 +173,12 @@ class Core:
         return [Log("grant", {"pid": pid, "owner": owner, "need": need.value, "cpus": cpus,
                               "command": command[:COMMAND_CHARS]})]
 
-    def set_need(self, job: Job, need: Need, processes: int) -> List[Effect]:
-        """Give `job` the need `need`, which `processes` of its processes run at."""
+    def set_need(self, job: Job, need: Need, processes: int, reason: Optional[Reason]) -> List[Effect]:
+        """Give `job` the need `need`, which `processes` of its processes run at, for `reason`, or
+        at the request of a client where `reason` is None."""
         job.need = need
-        return [Log("need", {"pid": job.pid, "owner": job.owner, "need": need.value, "processes": processes})]
+        return [Log("need", {"pid": job.pid, "owner": job.owner, "need": need.value, "processes": processes,
+                             "reason": None if reason is None else reason.value})]
 
     def finish(self, job: Job, now: float) -> List[Effect]:
         """End `job`, and queue the processes it left behind for a kill."""
@@ -192,7 +201,8 @@ class Core:
 
     def tick(self, sample: Sample, now: float) -> List[Effect]:
         """Take a reading of the machine in: the pressure level, the end of jobs, the measure of each job,
-        the adoption of ungated commands, the overruns, the jobs past the soft cap, and the kills."""
+        the adoption of ungated commands, the overruns, the jobs that have run long at need `now`, the jobs past the soft cap, and the
+        kills."""
         out: List[Effect] = []
         self.claude = {session: pid for pid, session in sample.claude.items()}
         elapsed = None if self.last_at is None else max(now - self.last_at, 1e-3)
@@ -203,6 +213,7 @@ class Core:
         held = {pid for job in self.jobs.values() for pid in job.members}
         self.outside_kib = sum(p.footprint_kib or 0 for pid, p in sample.procs.items() if pid not in held)
         out += self.overruns(now)
+        out += self.long_nows(now)
         out += self.growth()
         out += self.kills(sample, now)
         out += self.reading(sample, now)
@@ -353,6 +364,17 @@ class Core:
                                                "cpus": round(job.cpu, 1), "declared": job.cpus}))
             else:
                 self.cpu_over.pop(job.pid, None)
+        return out
+
+    def long_nows(self, now: float) -> List[Effect]:
+        """Demote each gated job of need `now` that has run `LONG_NOW_SECONDS` seconds to `soon`, and
+        queue one message for it."""
+        out: List[Effect] = []
+        for job in self.jobs.values():
+            if job.kind is Kind.GATED and job.need is Need.NOW and now - job.granted >= LONG_NOW_SECONDS:
+                self.tell(job, Reason.LONG_NOW,
+                          heavy_notices.long_now(job.pid, job.command, LONG_NOW_SECONDS // 60))
+                out.append(Demote(job.pid, Need.SOON))
         return out
 
     def kills(self, sample: Sample, now: float) -> List[Effect]:

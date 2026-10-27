@@ -22,6 +22,10 @@ goes for this.
 
 A job whose footprint passes `SOFT_GIB` GiB is told once to fix its memory use, and runs on.
 
+A gated job of need `now` that has run `LONG_NOW_SECONDS` seconds becomes `soon`: the daemon raises
+the nice value of its processes as `need <pid> soon` does, and tells the job's session once, since
+no call waits on a job that long.
+
 Standard library only, Python 3.9."""
 
 from __future__ import annotations
@@ -43,6 +47,9 @@ HARD_GIB = 32
 finished well held 20.6 GiB."""
 SOFT_GIB = 12
 """The footprint in GiB past which a job's session is told to fix its memory use."""
+LONG_NOW_SECONDS = 600
+"""The seconds a gated job of need `now` runs before it becomes `soon`. A Bash call waits at most
+600000 ms, so no call waits on a job past it."""
 CRITICAL_PAUSE_SECONDS = 10
 VICTIM_GIB = 1
 KILL_GRACE = 5

@@ -38,4 +38,5 @@
     - `<checkout>/scripts/run_heavy.py queue` prints the running jobs with their need and the processes that sessions run outside `run_heavy.py` and that count against the machine.
     - `<checkout>/scripts/run_heavy.py need <pid> now|soon|idle` changes the nice value of a running job's processes. A user cannot lower a nice value, so only raising it works (for example `soon` to `idle`). Where the system refuses it says so and exits 125.
     * comment: The user's words, session 5954de00, 2026-10-26T22:34:10Z: "go", which approved the proposal of 22:31:46Z that has this line. Request 24-33.
+    - A job that runs at `now` for 10 minutes or more becomes `soon`: the daemon raises its nice value as `need <pid> soon` does, `queue` shows `soon`, and the session gets one message. A Bash call waits at most 10 minutes, so no call waits on such a job. Start a run that may take that long with `--need soon`.
 - Where a command starts several heavy processes that you can start one by one, run each of them through `run_heavy.py` in place of the whole command; otherwise run the whole command through it.

@@ -31,6 +31,7 @@ class Reason(enum.Enum):
     CPU = "cpu"
     GROWTH = "growth"
     KILLED = "killed"
+    LONG_NOW = "long-now"
 
 
 def mctx(prose: str) -> str:
@@ -73,6 +74,13 @@ def cpu_overrun(pid: int, command: str, used: float, declared: int) -> str:
 def passed_soft(pid: int, command: str, soft_gib: int) -> str:
     return mctx("pid {pid} (`{command}`) passed {soft} GiB. Fix its memory use.").format(
         pid=pid, command=short(command), soft=soft_gib)
+
+
+def long_now(pid: int, command: str, minutes: int) -> str:
+    return mctx(
+        "pid {pid} (`{command}`) has run {minutes} minutes at `--need now`, so no call waits on it, and it "
+        "now runs at `soon`. Start such runs with `--need soon`."
+    ).format(pid=pid, command=short(command), minutes=minutes)
 
 
 def killed(pid: int, command: str, gib: int, reason: str) -> str:

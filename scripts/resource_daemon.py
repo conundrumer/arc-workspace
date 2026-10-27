@@ -1,8 +1,8 @@
 #!/usr/bin/python3
 """The resource daemon: one process on the machine that records the heavy
 commands of `scripts/run_heavy.py`, counts what the sessions run outside it, sets
-the nice value of a job by its need, kills a job that holds too much memory, and tells the
-owning session what it did.
+the nice value of a job by its need, kills a job that holds too much memory, lowers a `now` job that has run
+`LONG_NOW_SECONDS` seconds to `soon`, and tells the owning session what it did.
 
 `run_heavy.py` starts it where none runs, from the main tree's copy of this
 script (`heavy_client.daemon_script`). It runs while a Claude Code session
@@ -37,8 +37,8 @@ written to the socket `<claude pid>.sock` of the owning session in
 `/tmp/cc-socks` (`ARC_HEAVY_SOCKS` sets that directory).
 
 A daemon of a directory that `ARC_HEAVY_DIR` gives (`heavy_protocol.private`) adopts no process, writes
-no message to a session socket but logs it as `message-withheld`, and so signals only the processes of
-its own gated jobs.
+no message to a session socket but logs it as `message-withheld`, and so signals and renices only the
+processes of its own gated jobs.
 
 A restarted daemon, whether it was stopped or replaced itself, reads the
 registry, and keeps each job whose process runs with the recorded start."""
@@ -58,10 +58,10 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import heavy_protocol
-from heavy_core import Core, Effect, Log, Proc, Sample, SetClass, Signal as SendSignal
+from heavy_core import Core, Demote, Effect, Log, Proc, Sample, SetClass, Signal as SendSignal
 from heavy_model import Job, Kind, Need
 import heavy_legacy
-from heavy_notices import message_line
+from heavy_notices import Reason, message_line
 from heavy_protocol import LEGACY_VERSION, VERSION, Refusal
 from machine_readings import PRESSURE_LEVELS, budget, counters, pressure_level
 from process_readings import NO_SESSION, harness_sessions, owners, process_started, rows, usage
@@ -156,6 +156,8 @@ class Daemon:
                 self.send_signal(effect)
             elif isinstance(effect, SetClass):
                 self.set_class(effect.pid)
+            elif isinstance(effect, Demote):
+                self.demote(effect)
 
     def send_signal(self, effect: SendSignal) -> None:
         """Send the signal where the process still has the recorded start."""
@@ -172,6 +174,12 @@ class Daemon:
             subprocess.run(["taskpolicy", "-c", TASKPOLICY_CLASS, "-p", str(pid)], capture_output=True, timeout=5)
         except (OSError, subprocess.SubprocessError) as error:
             self.log("class-failed", {"pid": pid, "error": repr(error)})
+
+    def demote(self, effect: Demote) -> None:
+        """Give the job of `effect` its need, where it still runs."""
+        job = self.core.gated(effect.pid)
+        if job is not None:
+            self.give_need(job, effect.need, Reason.LONG_NOW)
 
     def post(self, claude: int, text: str) -> None:
         if heavy_protocol.private():
@@ -321,10 +329,15 @@ class Daemon:
         if job is None:
             raise Refusal(f"no job of pid {pid} runs under run_heavy.py")
         need = Need(request["need"])
+        return need, self.give_need(job, need, None)
+
+    def give_need(self, job: Job, need: Need, reason: Optional[Reason]) -> int:
+        """Give `job` the need `need` for `reason` (None for a client's request), and return the
+        processes left at its nice value or higher."""
         processes = self.renice(job, need)
-        self.apply(self.core.set_need(job, need, processes))
+        self.apply(self.core.set_need(job, need, processes, reason))
         self.dirty = True
-        return need, processes
+        return processes
 
     def handle(self, client: Client, text: str, now: float) -> None:
         try:

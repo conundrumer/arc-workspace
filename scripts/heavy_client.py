@@ -15,7 +15,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 import heavy_protocol
-from heavy_enforcer import HARD_GIB
+from heavy_enforcer import HARD_GIB, LONG_NOW_SECONDS
 from heavy_protocol import Refusal
 
 START_SECONDS = 15
@@ -167,7 +167,8 @@ def queue_text(registry: Dict[str, Any], now: float) -> str:
     """The queue view: the machine, and each job with its need."""
     machine = registry["machine"]
     lines: List[str] = [f"machine: {machine['cpus']} CPUs; no job waits for a start, and a job is killed over "
-                        f"{HARD_GIB} GiB or at critical pressure; "
+                        f"{HARD_GIB} GiB or at critical pressure, and a job of need now becomes soon after "
+                        f"{LONG_NOW_SECONDS // 60} minutes; "
                         f"{machine['outside_gib']} GiB readable outside the jobs"]
     if registry["fault"]:
         lines.append(f"fault: {registry['fault']}")
