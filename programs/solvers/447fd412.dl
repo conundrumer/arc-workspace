@@ -99,13 +99,12 @@ scaled(T0, Id, P, Q) :-
     strip(Id, Q, D2, N2, _), axis_of(D2, A2), perp(A1, A2), jump(P1, D2, N2, P),
     template_cell(P, _).
 
-// C is grid cell Q's counterpart in block Id's box: the cell at the same
-// place within its box, for a cell Q that some placement on block Id scales.
-.decl twin(id: Ident, q: Position, c: Position)
-twin(Id, Q, C) :-
-    scaled(_, Id, _, Q),
-    strip(Id, Q, D1, _, K1), strip(Id, C, D1, 0, K1), axis_of(D1, A1),
-    strip(Id, Q, D2, _, K2), strip(Id, C, D2, 0, K2), axis_of(D2, A2), perp(A1, A2).
+// Cell C of block Id's box lies K1 cells into the box from D1 and K2 cells
+// into it from D2, on the other axis.
+.decl box_place(id: Ident, d1: Dir, k1: number, d2: Dir, k2: number, c: Position)
+box_place(Id, D1, K1, D2, K2, C) :-
+    strip(Id, C, D1, 0, K1), axis_of(D1, A1),
+    strip(Id, C, D2, 0, K2), axis_of(D2, A2), perp(A1, A2).
 
 // Under placement (T0, Id), the box of template mark P is the box of a block.
 .decl seated(t0: Position, id: Ident, p: Position)
@@ -113,7 +112,9 @@ seated(T0, Id, P) :-
     scaled(T0, Id, P, C), template_mark(P),
     block.cell(Id2, C), side(Id, K), side(Id2, K),   // a block of the same side
     block.box(Id2, B2), crop(C, B2, R),
-    twin(Id, C, C2), block.box(Id, B), crop(C2, B, R).  // at the same place in both boxes
+    strip(Id, C, D1, _, K1), strip(Id, C, D2, _, K2),
+    box_place(Id, D1, K1, D2, K2, C2),                 // C2, C's counterpart in block Id's box
+    block.box(Id, B), crop(C2, B, R).                  // at the same place in both boxes
 
 // A placement that sends some template mark where no block stands.
 .decl astray(t0: Position, id: Ident)
@@ -147,4 +148,6 @@ carried(P, Col, $Whole()) :- template_cell(P, Col).
 
 covered_cell(P, Q, $Box()) :- covers(_, P, Q).
 covered_cell(P, Q, $Cells()) :-
-    covers(Id, P, Q), twin(Id, Q, C), block.cell(Id, C).  // where the block carries a cell
+    covers(Id, P, Q),
+    strip(Id, Q, D1, _, K1), strip(Id, Q, D2, _, K2),
+    box_place(Id, D1, K1, D2, K2, C), block.cell(Id, C).  // where the block carries a cell
