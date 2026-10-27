@@ -1,6 +1,6 @@
 """Write the tables of the corpus's case programs as an index and flat int32 value arrays.
 
-    python engine/arclog-py/tables_export.py <out dir> [--all-cases] [--bodies] [--projection-cap N] [--previous <export dir>] [<task id> ...]
+    python engine/arclog-py/tables_export.py <out dir> [--all-cases] [--bodies] [--projection-cap N] [--step-cap N] [--previous <export dir>] [<task id> ...]
 
 It needs an interpreter with `arclog`, pandas and pyarrow, such as the LM work's venv. The code that decides a part's rows, values and fault lines is in `export_rows.py`. A change to that module, or to the engine code that writes the export's files (`engine/arclog-tables/src/`, `engine/arclog-tables-py/src/`, `engine/arclog/src/decode/`), runs `engine/arclog-py/roundtrip_check.py` with an `arclog` built from its tree before its merge.
 
@@ -96,7 +96,7 @@ pairs and `bases` the list of bases as `arclog.stream_tables` takes them. `out` 
 consistency of the last `RULE` clause the stream ends, or `ended none`), then the fault line of each stream that
 faults (its tables up to the fault are kept) or lies past the cap. It writes no `settings.json`.
 """
-import collections, enum, hashlib, json, os, shutil, signal, subprocess, sys, glob, threading, time, types
+import argparse, collections, enum, hashlib, json, os, shutil, signal, subprocess, sys, glob, threading, time, types
 from typing import NamedTuple
 import multiprocessing, traceback
 from multiprocessing.connection import Connection
@@ -612,18 +612,25 @@ def export_streams(out, task, streams, names=None, settings=None, bodies=False, 
 if __name__ == "__main__" and sys.argv[1:2] == ["--worker"]:
     serve(replay_part)
 elif __name__ == "__main__":
-    args, options, ids = sys.argv[2:], {"projection_cap": 10000, "step_cap": 10000}, []
-    while args:
-        a = args.pop(0)
-        if a == "--all-cases": options["all_cases"] = True
-        elif a == "--bodies": options["bodies"] = True
-        elif a == "--previous": options["previous"] = args.pop(0)
-        elif a == "--projection-cap": options["projection_cap"] = int(args.pop(0))
-        elif a == "--step-cap": options["step_cap"] = int(args.pop(0)) or None
-        else: ids.append(a)
+    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser.add_argument("out", help="the new or empty output directory")
+    parser.add_argument("--all-cases", action="store_true", help="the tables of every case of a task, not of its concept case alone")
+    parser.add_argument("--bodies", action="store_true", help="table the bodies in progress as well as the relations of the finished forms")
+    parser.add_argument("--previous", help="an earlier export directory whose parts of the tasks with an equal key are reused")
+    parser.add_argument("--projection-cap", type=int, default=10000, help="the cap of the rows of a projection")
+    parser.add_argument("--step-cap", type=int, default=10000, help="the cap of the model steps of a replay; 0 for no cap")
+    parser.add_argument("task_ids", nargs="*", help="the tasks to export; every task of the corpus where none is given")
+    parsed = parser.parse_intermixed_args(sys.argv[1:])
+    options = {"projection_cap": parsed.projection_cap, "step_cap": parsed.step_cap or None}
+    for flag in ("all_cases", "bodies"):
+        if getattr(parsed, flag):
+            options[flag] = True
+    if parsed.previous:
+        options["previous"] = parsed.previous
+    ids = parsed.task_ids
     ids = ids or sorted(os.path.basename(f)[:-len(".arcdata")] for f in glob.glob(f"{CORPUS}/*.arcdata"))
     try:
-        main(sys.argv[1], ids, **options)
+        main(parsed.out, ids, **options)
     except Exception:       # a failed task or check ends the run at once: the replay threads of the other tasks do not delay the exit
         traceback.print_exc()
         sys.stderr.flush()

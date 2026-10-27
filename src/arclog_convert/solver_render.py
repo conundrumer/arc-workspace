@@ -45,12 +45,16 @@ class RenderMixin:
         slugs = [cl.slug for cl in claims]
         idx = {s: i for i, s in enumerate(slugs)}
         # An instance whose inputs fix the constructors of several cases
-        # stands in the concept with the inputs the concept's case admits.
+        # stands in the concept with the inputs the concept's case admits,
+        # unless the concept already holds a form of the instance.
         extra: list[Form] = []
         for f in forms:
             if f.src_inst is None or not (set(f.branches) - concept):
                 continue
             inst, us, side = f.src_inst
+            if any(h.src_inst is not None and h.src_inst[0] == inst and not (set(h.branches) - concept)
+                   for h in forms):
+                continue   # the concept has a form of the instance
 
             def unit_ctors(u) -> set[str]:
                 args = list(u.head.args) + [a for l in u.body or () if isinstance(l, AtomLiteral) and not l.negated

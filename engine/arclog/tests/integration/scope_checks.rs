@@ -90,3 +90,13 @@ fn a_read_of_an_undeclared_slot_gives_a_scope_diagnostic_that_names_the_slot() {
     assert_eq!(scope.len(), 1, "{:?}", resolved.diagnostics);
     assert!(scope[0].message.contains("slot 7"), "{}", scope[0].message);
 }
+
+#[test]
+fn a_second_init_of_one_name_in_one_scope_gives_a_scope_diagnostic_and_no_panic() {
+    let solver = read_solver("scopes", "(INIT &state Unfold)\n\n(INIT &state Unfold\n  (start ((:t P))\n    (input *P)))\n", "", &|_| None).expect("the file reads").value;
+    let resolved = resolve(&solver.concept_case().program, None, &solver.derived_relations(), Registry::get());
+    let scope: Vec<_> = resolved.diagnostics.iter().filter(|d| d.kind == DiagnosticKind::Check(CheckId::Scope)).collect();
+    assert_eq!(scope.len(), 1, "{:?}", resolved.diagnostics);
+    assert_eq!(scope[0].location, Location::Path(path(&[1])));
+    assert!(scope[0].message.contains("state"), "{}", scope[0].message);
+}

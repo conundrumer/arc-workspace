@@ -215,15 +215,28 @@ impl<'a> Builder<'a> {
 
     /// Declares the nodes of an `INIT` form: one node for an instance
     /// whose inputs read its outputs, and otherwise a node per input it
-    /// writes and per output, each output reading every input.
+    /// writes and per output, each output reading every input. A form
+    /// whose name an earlier `INIT` form of the scope declared gives a
+    /// diagnostic and declares nothing.
     pub(super) fn declare_instance(&mut self, instance: &'a Instance, path: NodePath, scope: &NameScope) {
         let Some(component) = registry_columns::component(self.registry, &instance.component) else {
             let resolution = self.unresolved(&path, &instance.component.0);
             self.resolutions.insert(path, resolution);
             return;
         };
-        self.resolutions.insert(path.clone(), Resolution::Lib(instance.component.clone()));
         let name = &instance.name;
+        if self.instances.contains_key(&(scope.clone(), name.clone())) {
+            self.diagnostics.push(Diagnostic {
+                kind: DiagnosticKind::Check(crate::check::CheckId::Scope),
+                severity: Severity::Error,
+                message: format!("`{}` is declared by an earlier `INIT` form in this scope", crate::program::declared_spelled(&name.0)).into(),
+                location: Location::Path(path.clone()),
+                cases: Box::default(),
+            });
+            self.resolutions.insert(path, Resolution::Unresolved);
+            return;
+        }
+        self.resolutions.insert(path.clone(), Resolution::Lib(instance.component.clone()));
         let written: Vec<_> = crate::program::written_inputs(instance.key.as_ref(), &instance.inputs).collect();
         let mut inputs = Vec::new();
         let mut outputs = Vec::new();
@@ -296,7 +309,7 @@ impl<'a> Builder<'a> {
             }
             Form::Instance(instance) => {
                 let instance = instance.value();
-                let Some(nodes) = self.instances.get(&(scope.clone(), instance.name.clone())) else { return };
+                let Some(nodes) = self.instances.get(&(scope.clone(), instance.name.clone())).filter(|nodes| nodes.form == path) else { return };
                 let every = nodes.every();
                 let reader = |input: &PortName| nodes.input(input).expect("a node of each input the form writes");
                 let mut readers: Vec<(NodeRef<'a>, NodePath, Vec<GraphNodeIndex>)> = Vec::new();

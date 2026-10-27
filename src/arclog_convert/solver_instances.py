@@ -350,32 +350,30 @@ class InstancesMixin:
         `us`. Input clauses that fix branches of one point make one instance per
         branch, which holds that branch's clauses and the clauses that fix no
         branch of the point, and one of the latter alone for the branches no
-        clause fixes. A clause fixes a branch through the constructors of its
-        head's key, or through an `impl_choice` atom of its body, as the clause
-        writer records the branches of any clause. Where clauses fix branches of
-        two points, a form stands at the branches of both points, each its own
-        or the branches no clause fixes."""
+        clause fixes. A clause fixes a branch through a constructor of its
+        head, or through the constructors its body fixes as the clause writer
+        records the branches of any clause, and it fixes the branch of each
+        point that the branch's point is nested under. Where clauses fix
+        branches of two points, a form stands at the branches of both points,
+        each its own or the branches no clause fixes."""
         c = self.c
         points = list(c.point_fields())
         point_of = {k.name: f_ for f_, adt_ in points for k in adt_.constructors}
-        _, lrs = c.lib.relations(inst.component) if inst.component in c.lib.comps else (None, [])
-        keyed = {lr.name for lr in lrs if lr.cols and lr.cols[0].name == "key"}
-        gate_writer = ClauseWriter(c, inst.scope.components, c.parse_sub if inst.scope.components == ("Parse",) else {}, {})
+        scope = inst.scope.components
+        sub = c.parse_sub if scope == ("Parse",) else {}
 
-        def body_ctors(u: Unit) -> set[str]:
-            """The constructors the `impl_choice` atoms of the clause's body fix."""
+        def fixed(u: Unit) -> set[str]:
+            """The constructors of a point that the clause `u` fixes: those the
+            clause writer records for its body and those of its head, each with
+            the constructors of the points that the constructor's point stands
+            under."""
             saved = list(self.todo.pending), Counter(self.todo.kinds)
-            ctors: set[str] = set()
-            for l in u.body or []:
-                if isinstance(l, AtomLiteral) and not l.negated and gate_writer.is_gate(l):
-                    fixed = gate_writer.gate_ctors(l)
-                    if fixed is not None:
-                        ctors |= fixed
+            w = ClauseWriter(c, scope, sub, {})
+            w.lits(list(u.body or []), set())
             self.todo.pending, self.todo.kinds = saved
-            return ctors
-        named = [({k for k in ctor_names(u.head.args[0]) if k in point_of}
-                  if u.head.args and u.head.relation.name in keyed else set()) | (body_ctors(u) & point_of.keys())
-                 for u in us]
+            ctors = (w.branches | {k for a in u.head.args for k in ctor_names(a)}) & point_of.keys()
+            return ctors | {k for x in ctors for _, k in self.ancestors(point_of[x])}
+        named = [fixed(u) for u in us]
         for f_, adt_ in points:
             if f_ in split:
                 continue   # split already
