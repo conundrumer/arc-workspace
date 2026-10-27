@@ -46,7 +46,7 @@ the form of the record (`VERSION`); `sources`, the digest of the engine's
 sources; `binary`, the sha256 of the `arclog-cli` binary the run ran; and `lines`,
 each `[relation, verdict, detail]`. A task is fresh, and runs nothing, by the
 rule of `train_replay.stale_tasks`. The run executes a private copy of the
-`arclog-cli` binary (`train_replay.private_binaries`), so a build in the shared
+`arclog-cli` binary (`train_replay.private_binaries`), so a build in the checkout's
 `engine/target` during the run does not change it.
 
 The stale tasks run on at most `parity.snapshot.RECORDS_WORKERS` processes,

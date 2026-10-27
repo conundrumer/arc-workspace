@@ -23,7 +23,7 @@ line, on which the command writes that task's record at once, so a replay that
 stops or fails keeps the record of each task that ended. A task whose replay
 panics gets no record, a line in the report, and the exit status 1. The report
 does not depend on the order the tasks end in. Where the `verdicts` binary is
-built again in the shared `engine/target` during the run, the run is not
+built again in the checkout's `engine/target` during the run, the run is not
 affected: it runs a private copy of the binary, taken once where the run needs
 it, in a temporary directory that the run removes when it ends or is stopped.
 
@@ -129,7 +129,7 @@ def engine_digest() -> str:
 
 def tool_binary(name: str) -> Path:
     """The built `name` binary of `arclog-cli` (`verdicts`, `arclog-cli`), in the
-    `engine/target` of the main worktree."""
+    `engine/target` of the checkout."""
     return checkout.engine_target() / "tool" / name
 
 
@@ -148,7 +148,7 @@ def private_binaries() -> Iterator[Callable[[str], tuple[Path, str]]]:
     """Give `copy`, which builds the `name` binary of `arclog-cli` and, on its
     first call for `name`, copies it to a temporary directory of the run and
     gives the copy's path and sha256; a later call gives the same pair. A
-    build in `engine/target` after the copy leaves the copy as it was. On
+    build in the checkout's `engine/target` after the copy leaves the copy as it was. On
     leaving, also after a failure, a stop by SIGTERM or an interrupt, the
     directory is removed."""
     directory = Path(tempfile.mkdtemp(prefix="arclog-binaries-"))
