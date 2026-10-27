@@ -146,7 +146,7 @@ impl MacroDerivation<'_, '_> {
         let declaration = self.label_types(&m).and_then(|(types, label_types)| {
             let modes = self.modes_of(&m, &label_types)?;
             let columns = m.columns.iter().zip(types).map(|((name, _), ty)| Column { name: name.clone(), ty: ColumnType::Fixed(ty) });
-            Some(AlgebraRelation { columns: columns.collect(), modes })
+            Some(AlgebraRelation { columns: columns.collect(), modes, frames: Box::default() })
         });
         self.states[i] = match declaration {
             Some(relation) => MacroState::Declared(relation),

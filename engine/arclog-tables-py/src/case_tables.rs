@@ -27,6 +27,20 @@ use pyo3::types::{PyBytes, PyDict};
 /// it claims none; `copies` gives one row, its `detail` a sentence, for each declared row of a
 /// component's output that the replay found the output's rows break, and none for a call without
 /// `copies`.
+/// `tables` gives, beside `column_types` and `det_types`, the frame that the values of each column
+/// stand in: `column_frames`, one string per column in the order of `column_names`, and `det_frames`,
+/// for each `DET` one string per column in the order of its `det_types`. A frame is
+///
+/// - `input`: the frame of the task's input grid, and `output`: of its output grid;
+/// - `<maker>@<path>`: a frame that a lib column makes, one per row of the atom or the instance at
+///   `<path>`. `<maker>` is `<relation>.<column>` for a lib relation or a relation macro, such as
+///   `relative.X_rel`, and `<component>.<output>.<column>` for a component's output, such as
+///   `Division.tile.P_inner`. `<path>` is the path of the atom or of the `INIT` form as the `atom` of
+///   `flows` spells a path;
+/// - `<maker>@<path> in <frame>`: such a frame, lying in `<frame>`, as `relative.X_rel@<path> in input`;
+/// - the empty string: no frame. Only a column of type `Position` or `Box` has a frame, and a column
+///   whose sources give no frame, or give two different frames, has none.
+///
 /// `projection_cap` is the cap of the projection rows that the tables ran
 /// under.
 ///
@@ -158,9 +172,11 @@ impl PyCaseTables {
         t.list("relation_name", relation_names(c, relations))?;
         t.list("column_names", &c.column_names)?;
         t.list("column_types", &c.column_types)?;
+        t.list("column_frames", &c.column_frames)?;
         t.ints("width", &c.width)?;
         t.list("det_relations", &c.det_relations)?;
         t.list("det_types", &c.det_types)?;
+        t.list("det_frames", &c.det_frames)?;
         t.list("det_widths", &c.det_widths)?;
         t.list("det_columns", &c.det_columns)?;
         t.ints("projections", &c.projections)?;

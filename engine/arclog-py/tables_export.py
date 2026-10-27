@@ -40,7 +40,15 @@ where that one dies too, the task's part holds no case, the fault line `death_li
                    that selects the Color column, the index of that column (`output_color`), which map to `P` and `Col` of
                    `ex_output`, with the entry's example as `E`; -1 in each other table; and, per DET in `det_relations` order, `det_columns`: the path of each of its columns in
                    `det_types` order (a slot named `slot <k>`, a record's field after a `.`), equal for one column of one
-                   DET relation across the tables of a case, and an empty list where the engine knows none
+                   DET relation across the tables of a case, and an empty list where the engine knows none;
+                   `column_frames`: the frame that the values of each column stand in, one string per column in `column_names` order, and
+                   `det_frames`: per DET in `det_relations` order, one per column in `det_types` order. A frame is `input` (the task's input
+                   grid's) or `output` (its output grid's); `<maker>@<path>`, a frame that a lib column makes, one per row of the atom or the
+                   instance at `<path>` (spelled as `atom` of flows.parquet spells a path), where `<maker>` is `<relation>.<column>` for a lib
+                   relation or a relation macro, such as `relative.X_rel`, and `<component>.<output>.<column>` for a component's output, such as
+                   `Division.tile.P_inner`; or `<maker>@<path> in <frame>`, such a frame lying in `<frame>`, as `relative.X_rel@<path> in input`.
+                   The empty string is no frame: only a column of type `Position` or `Box` has one, and a column whose sources give no frame, or
+                   give two different frames, has none
   flows.parquet    one row per source of a column of a table, keyed by task, case, `table` and `column`: `kind` (copy 0,
                    computed 1, constant 2, lib name 3), `source_table` (the row of the source's table in the case, -1 where
                    the case gives none: a lib relation, a constant, a lib name), `source_relation`

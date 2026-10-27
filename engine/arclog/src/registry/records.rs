@@ -10,6 +10,8 @@ pub(super) struct WrittenRelation {
     pub(super) place: SourcePlace,
     pub(super) columns: LabelColumns,
     pub(super) definition: Node<Body>,
+    /// The items of the `(frames ...)` form of a macro, none for a proposer.
+    pub(super) frames: Box<[SExpr]>,
 }
 
 /// Each column of a form, with the label of the form's body that the

@@ -11,8 +11,20 @@
 //! each key read, are those of the [`ClauseIr`] that the evaluator joins for
 //! that body, which the walk gets from [`CheckedProgram::body_ir`].
 //! [`IrPaths`] gives the path of each atom of the IR.
+//!
+//! A source also gives the frames its column's values stand in
+//! ([`SourceFrame`]), which `columns` resolves where it knows the tables of
+//! the case. A source of a program relation or a fact gives the frame of the
+//! column it reads. A source computed through a lib atom, or declared by an
+//! instance's output, gives what the registry's frame rule for the column
+//! gives it ([`FrameRule`]), so a chain of lib atoms nests the made frames.
+//! A constant and a copy of a lib relation's column give none, nor does a lib
+//! name but that of a component's output column whose rule makes a frame,
+//! which gives the made frame. A source that a D4 element moves gives an
+//! unknown frame.
 
 use std::collections::BTreeMap;
+use std::ops::Range;
 
 use arclog::algebra::geometry::Geometry;
 use arclog::algebra::algebra;
@@ -20,8 +32,8 @@ use arclog::check::CheckedProgram;
 use arclog::eval::body_ir::BodyIr;
 use arclog::eval::ir::{atom_modes, Argument, Arguments, AtomSource, ClauseIr, IrNode, IrPaths, NodePaths, Operand, Union, Variable, VariableInfo};
 use arclog::program::path::{node_at, NodePath, NodeRef};
-use arclog::program::{Atom, ColumnName, Conjunct, ConstraintOp, FactRelation, LabelId, OutputOwner, OutputStep, RelationRef};
-use arclog::registry::{is_key, key_fill, ColumnType, LibName, Registry};
+use arclog::program::{column_spelled, Atom, ColumnName, Conjunct, ConstraintOp, FactRelation, LabelId, OutputOwner, OutputStep, PortName, RelationRef};
+use arclog::registry::{is_key, key_fill, ColumnType, FrameRule, LibName, Registry};
 use arclog::resolver::given::{node_relation, Given, GivenLabel};
 use arclog::resolver::registry_columns;
 use arclog::resolver::{DependencyKind, GraphNodeIndex, ResolvedProgram, Resolution};
@@ -41,6 +53,39 @@ pub enum SourceKind {
     /// A lib name gives the values with no program relation read: a
     /// proposer's or a component's default rows.
     LibName = 3,
+}
+
+/// How a source gives the frame its column's values stand in.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum SourceFrame {
+    /// The frame of the column the source reads.
+    Read,
+    /// A frame that the lib column `maker` makes, one per row of the atom or
+    /// the instance at `at`. It lies in the frame that `within` gives, where
+    /// that is some.
+    Made { maker: Maker, at: NodePath, within: Option<Box<SourceFrame>> },
+    /// A frame the engine cannot name: a D4 element moves the values.
+    Unknown,
+}
+
+/// The lib column that makes a frame.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum Maker {
+    /// The column of a lib relation or a relation macro.
+    Relation { relation: LibName, column: ColumnName },
+    /// The column of an output of a component.
+    Output { component: LibName, output: PortName, column: ColumnName },
+}
+
+impl Maker {
+    /// `<relation>.<column>`, such as `relative.X_rel`, or
+    /// `<component>.<output>.<column>`, such as `Division.tile.P_inner`.
+    pub fn spelled(&self) -> String {
+        match self {
+            Maker::Relation { relation, column } => format!("{}.{}", relation.0, column_spelled(column)),
+            Maker::Output { component, output, column } => format!("{}.{}.{}", component.0, output.0, column_spelled(column)),
+        }
+    }
 }
 
 /// The column of the relation a source reads.
@@ -78,11 +123,62 @@ pub struct ColumnSource {
     /// claims no row: a source of no atom, and a source of a column of an
     /// instance's output that no declared row maps.
     pub occurrence: Option<u16>,
+    /// The frames the source gives its column's values, empty where it gives
+    /// none: a constant and a copy of a lib relation's column give none, and a
+    /// lib name gives the made frame of an output column whose rule makes one.
+    /// Two sources that differ only here are one source, which gives the
+    /// frames of both (`add_distinct`).
+    pub frames: Vec<SourceFrame>,
+}
+
+/// The frame rule of the lib column that computes a column's values, with the
+/// frame the column makes where the rule makes one: its `maker`, and the path
+/// `at` of the atom or the `INIT` form that makes it.
+struct RuleAt<'a> {
+    rule: &'a FrameRule,
+    maker: &'a Maker,
+    at: &'a NodePath,
+}
+
+impl RuleAt<'_> {
+    fn made(&self, within: Option<SourceFrame>) -> SourceFrame {
+        SourceFrame::Made { maker: self.maker.clone(), at: self.at.clone(), within: within.map(Box::new) }
+    }
 }
 
 impl ColumnSource {
     fn without_atom(kind: SourceKind, relation: Option<RelationRef>) -> Self {
-        ColumnSource { kind, relation, column: SourceColumn::None, row: None, atom: NodePath::default(), occurrence: None }
+        ColumnSource { kind, relation, column: SourceColumn::None, row: None, atom: NodePath::default(), occurrence: None, frames: Vec::new() }
+    }
+
+    fn with_frames(mut self, frames: Vec<SourceFrame>) -> Self {
+        self.frames = frames;
+        self
+    }
+
+    /// Whether `other` is this source but for the frames.
+    fn same_source(&self, other: &ColumnSource) -> bool {
+        (self.kind, &self.relation, self.column, &self.row, &self.atom, self.occurrence) == (other.kind, &other.relation, other.column, &other.row, &other.atom, other.occurrence)
+    }
+
+    /// This source, which computes a column's values through a lib column
+    /// whose frame rule is `rule_at`, as the column's source: `named` is
+    /// whether the rule names the column that this source reads. Under
+    /// `(of ...)` a named source keeps its frames, under `new` each source
+    /// gives the made frame, and under `(new (of ...))` a named source gives
+    /// the made frame lying in each frame it gave, or in none where it gave
+    /// none. A source of no named column gives none, and so does every source
+    /// where there is no rule.
+    fn framed(mut self, rule_at: Option<&RuleAt<'_>>, named: bool) -> Self {
+        let kept = if named { std::mem::take(&mut self.frames) } else { Vec::new() };
+        self.frames = match rule_at {
+            None => Vec::new(),
+            Some(rule_at) if rule_at.rule.makes && rule_at.rule.of.is_empty() => vec![rule_at.made(None)],
+            Some(rule_at) if rule_at.rule.makes && named && kept.is_empty() => vec![rule_at.made(None)],
+            Some(rule_at) if rule_at.rule.makes => kept.into_iter().map(|frame| rule_at.made(Some(frame))).collect(),
+            Some(_) => kept,
+        };
+        self
     }
 
     fn computed(mut self) -> Self {
@@ -263,7 +359,8 @@ impl<'p> Walk<'p> {
                 return self.flows.port_sources(*port, position, &mut self.visiting.to_vec());
             }
         }
-        vec![ColumnSource { kind: SourceKind::Copy, relation: Some(relation), column, row, atom: path.clone(), occurrence: Some(0) }]
+        let frames = if matches!(relation, RelationRef::Lib(_)) { Vec::new() } else { vec![SourceFrame::Read] };
+        vec![ColumnSource { kind: SourceKind::Copy, relation: Some(relation), column, row, atom: path.clone(), occurrence: Some(0), frames }]
     }
 
     /// The sources of `variable` in `alt`, which `visiting` holds the
@@ -344,7 +441,10 @@ impl<'p> Walk<'p> {
     /// not bind the column, and otherwise a copy of the lib relation's
     /// column. A mode holds where each of its bound columns holds `0` or a
     /// variable with sources, and at least one holds a variable: a mode whose
-    /// bound columns hold only `0` computes from no variable.
+    /// bound columns hold only `0` computes from no variable. Each computed
+    /// source gives the frames that the registry's rule for the column at the
+    /// mode gives it ([`ColumnSource::framed`]), made at the atom, and none
+    /// where the variable it comes from has type `Offset`.
     fn lib_sources(&self, hit: &Hit<'_>, alt: &Alt<'_>, visiting: &mut Vec<Variable>) -> Vec<ColumnSource> {
         let (IrNode::Lib(lib), Some((path, atom))) = (hit.node, self.atom_of(hit.paths)) else { return Vec::new() };
         let program = self.flows.program;
@@ -353,12 +453,19 @@ impl<'p> Walk<'p> {
             program.column_position(&path.child(index as u32)).map(|position| position.0)
         };
         let here = atom.sites.iter().find(|site| position_of(&site.column) == Some(hit.column)).map(|site| &site.column);
+        let lib_name = match &atom.relation {
+            RelationRef::Lib(name) => Some(name),
+            _ => None,
+        };
+        let maker = lib_name.zip(here).map(|(name, column)| Maker::Relation { relation: name.clone(), column: column.clone() });
         let mut computed = Vec::new();
         let mut holds = false;
         for mode in atom_modes(self.flows.registry, atom) {
             if here.is_some_and(|column| mode.bound.contains(column)) {
                 continue;
             }
+            let rule = lib_name.zip(here).and_then(|(name, column)| self.flows.registry.relation_frame(name, mode, column));
+            let rule_at = rule.as_ref().zip(maker.as_ref()).map(|(rule, maker)| RuleAt { rule, maker, at: path });
             let mut from = Vec::new();
             let mut bound = true;
             let mut reads_variable = false;
@@ -367,17 +474,22 @@ impl<'p> Walk<'p> {
                     bound = false;
                     break;
                 };
+                let named = rule.as_ref().is_some_and(|rule| rule.names(None, column));
                 for (_, argument) in lib.arguments.0.iter().filter(|(at, _)| at.0 == position) {
                     let Argument::Variable(variable) = argument else { continue };
                     reads_variable = true;
                     let sources = self.sources(*variable, alt, visiting);
                     bound &= !sources.is_empty();
-                    from.extend(sources);
+                    let offset = alt.variables.get(usize::from(variable.0)).is_some_and(|info| info.ty == ValueType::Offset);
+                    from.extend(sources.into_iter().map(|source| {
+                        let source = source.computed().framed(rule_at.as_ref(), named);
+                        if offset { source.with_frames(Vec::new()) } else { source }
+                    }));
                 }
             }
             if bound && reads_variable {
                 holds = true;
-                computed.extend(from.into_iter().map(ColumnSource::computed));
+                computed.extend(from);
             }
         }
         if holds { computed } else { self.read(hit) }
@@ -485,6 +597,8 @@ impl<'p> Flows<'p> {
         let mut flows: Vec<Vec<ColumnSource>> = vec![Vec::new(); width];
         let given: Vec<Given> = self.program.given(node, self.registry).into_iter().filter(|relation| output.zip(relation.output.as_deref()).is_none_or(|(read, own)| read == own)).collect();
         let mut held: BTreeMap<(usize, NodePath), Option<BodyIr>> = BTreeMap::new();
+        // The frame that the registry's rule makes at each row position of an output of an instance, where it makes one.
+        let mut made: Vec<Option<SourceFrame>> = vec![None; width];
         for (which, relation) in given.iter().enumerate() {
             let mut start = 0usize;
             for (index, slot) in relation.slots.iter().enumerate() {
@@ -495,13 +609,15 @@ impl<'p> Flows<'p> {
                     let found = self.label_sources(body.as_ref(), *label, visiting);
                     let moved = index >= relation.sites_from && types.get(position).is_some_and(ValueType::moved_by_d4);
                     if let Some(sources) = flows.get_mut(position) {
-                        add_distinct(sources, if moved { found.into_iter().map(ColumnSource::computed).collect() } else { found });
+                        add_distinct(sources, if moved { found.into_iter().map(|source| source.computed().with_frames(vec![SourceFrame::Unknown])).collect() } else { found });
                     }
                 }
                 if slot.declared.is_some() && slot.labels.is_empty() {
+                    let frame = self.output_frame(relation, index);
                     for position in start..start + slot.width {
                         if let Some(sources) = flows.get_mut(position) {
-                            add_distinct(sources, self.declared_sources(node, visiting));
+                            add_distinct(sources, self.declared_sources(node, frame.as_ref(), visiting));
+                            made[position] = frame.as_ref().filter(|frame| frame.rule.makes).map(|frame| frame.rule_at().made(None));
                         }
                     }
                 }
@@ -528,9 +644,9 @@ impl<'p> Flows<'p> {
                 add_distinct(sources, held.into_iter().map(|source| ColumnSource { occurrence: None, ..source }).collect());
             }
         }
-        for sources in flows.iter_mut().filter(|sources| sources.is_empty()) {
+        for (sources, made) in flows.iter_mut().zip(made).filter(|(sources, _)| sources.is_empty()) {
             let lib = given.iter().flat_map(|relation| relation.lib.iter());
-            sources.extend(lib.map(|name| ColumnSource::without_atom(SourceKind::LibName, Some(RelationRef::Lib(name.clone())))));
+            sources.extend(lib.map(|name| ColumnSource::without_atom(SourceKind::LibName, Some(RelationRef::Lib(name.clone()))).with_frames(made.iter().cloned().collect())));
         }
         visiting.pop();
         flows
@@ -708,34 +824,96 @@ impl<'p> Flows<'p> {
     /// Every row position of each relation that `node` reads, computed:
     /// the sources of a declared column of an instance or an assembly. A
     /// read of an input port of an instance gives the sources of the port's
-    /// columns, computed, in place of the port.
-    fn declared_sources(&self, node: GraphNodeIndex, visiting: &mut Vec<GraphNodeIndex>) -> Vec<ColumnSource> {
+    /// columns, computed, in place of the port. Each gives the frames that
+    /// `frame`, the frame rule of the declared column of an instance's
+    /// output, gives it ([`ColumnSource::framed`]), and none where there is
+    /// no rule.
+    fn declared_sources(&self, node: GraphNodeIndex, frame: Option<&OutputFrame>, visiting: &mut Vec<GraphNodeIndex>) -> Vec<ColumnSource> {
+        let rule_at = frame.map(OutputFrame::rule_at);
         let mut found = Vec::new();
         for &read in self.program.graph.reads[node.0 as usize].iter().filter(|&&read| read != node) {
             let graph_node = &self.program.graph.nodes[read.0 as usize];
             let Some(relation) = node_relation(&graph_node.kind) else { continue };
             let Some((_, width)) = self.program.node_width(read) else { continue };
             for position in 0..width {
-                if matches!(graph_node.kind, DependencyKind::InstanceInput { .. }) {
-                    found.extend(self.port_sources(read, position as u16, visiting).into_iter().map(ColumnSource::computed));
+                if let DependencyKind::InstanceInput { input, .. } = &graph_node.kind {
+                    let named = frame.is_some_and(|frame| frame.names(input, position));
+                    found.extend(self.port_sources(read, position as u16, visiting).into_iter().map(|source| source.computed().framed(rule_at.as_ref(), named)));
                     continue;
                 }
                 let (relation, position) = match relation {
                     RelationRef::Fact(FactRelation::Input) => (RelationRef::Fact(FactRelation::ExInput), position + 1),
                     ref other => (other.clone(), position),
                 };
-                found.push(ColumnSource { kind: SourceKind::Computed, relation: Some(relation), column: SourceColumn::Position(position as u16), row: None, atom: NodePath::default(), occurrence: None });
+                let source = ColumnSource { kind: SourceKind::Computed, relation: Some(relation), column: SourceColumn::Position(position as u16), row: None, atom: NodePath::default(), occurrence: None, frames: Vec::new() };
+                found.push(source.framed(rule_at.as_ref(), false));
             }
         }
         found
     }
+
+    /// The frame rule of the column at `slot` of the output that `relation`
+    /// gives, where `relation` is an output of an instance of a component of the
+    /// registry, and the column has a frame.
+    fn output_frame(&self, relation: &Given, slot: usize) -> Option<OutputFrame> {
+        let [OutputStep::Port(port)] = relation.output.as_deref()? else { return None };
+        let NodeRef::Instance(instance) = node_at(NodeRef::Program(self.program.program.value()), &relation.form)? else { return None };
+        let component = registry_columns::component(self.registry, &instance.component)?;
+        let output = component.outputs.iter().find(|output| output.name == *port)?;
+        let keyed = instance.key.is_some();
+        let column = output.columns_at(keyed).nth(slot)?;
+        let rule = self.registry.output_frame(&instance.component, port, &column.name)?;
+        let named = rule
+            .of
+            .iter()
+            .filter_map(|named| {
+                let input = component.inputs.iter().find(|input| Some(&input.port.name) == named.input.as_ref())?;
+                let slots = self.program.instance_port_slots(&relation.form, &input.port, self.registry)?;
+                let ranges = input.port.row_ranges(keyed, slots.iter().map(|slot| slot.width));
+                let at = input.port.columns.iter().position(|column| column.name == named.column)?;
+                Some((input.port.name.clone(), ranges[at].clone()?))
+            })
+            .collect();
+        let maker = Maker::Output { component: instance.component.clone(), output: port.clone(), column: column.name.clone() };
+        Some(OutputFrame { rule, maker, at: relation.form.clone(), named })
+    }
 }
 
-/// Adds to `held` each of `sources` it does not hold, in order.
+/// The frame rule of a column of an instance's output, with the frame it
+/// makes: the lib column that makes it, the path of the `INIT` form, and the
+/// row positions of the input columns that the rule names.
+struct OutputFrame {
+    rule: FrameRule,
+    maker: Maker,
+    at: NodePath,
+    named: Vec<(PortName, Range<usize>)>,
+}
+
+impl OutputFrame {
+    fn rule_at(&self) -> RuleAt<'_> {
+        RuleAt { rule: &self.rule, maker: &self.maker, at: &self.at }
+    }
+
+    /// Whether the rule names the column of the input port `input` that stands
+    /// at row position `position`.
+    fn names(&self, input: &PortName, position: usize) -> bool {
+        self.named.iter().any(|(name, range)| name == input && range.contains(&position))
+    }
+}
+
+/// Adds to `held` each of `sources` it does not hold, in order. A source that
+/// `held` holds but for its frames adds the frames it lacks to the held one.
 fn add_distinct(held: &mut Vec<ColumnSource>, sources: Vec<ColumnSource>) {
     for source in sources {
-        if !held.contains(&source) {
-            held.push(source);
+        match held.iter_mut().find(|own| own.same_source(&source)) {
+            Some(own) => {
+                for frame in source.frames {
+                    if !own.frames.contains(&frame) {
+                        own.frames.push(frame);
+                    }
+                }
+            }
+            None => held.push(source),
         }
     }
 }

@@ -4,7 +4,7 @@
 
 use super::reader::FileReader;
 use super::records::{BodyInFile, LabelColumns, WrittenRelation};
-use super::spellings::{headed, COLUMNS};
+use super::spellings::{headed, COLUMNS, FRAMES};
 use super::*;
 
 impl FileReader {
@@ -56,11 +56,15 @@ impl FileReader {
 
     fn relation_macro(&mut self, name: LibName, rest: &[SExpr], place: SourcePlace) -> Option<()> {
         let written = headed(&rest[1], COLUMNS).expect("the form's `columns` form");
-        let (definition, labels) = self.read(read_body(&rest[2..]))?;
+        let (frames, body) = match rest.get(2).and_then(|expr| headed(expr, FRAMES)) {
+            Some(frames) => (frames, &rest[3..]),
+            None => (&[][..], &rest[2..]),
+        };
+        let (definition, labels) = self.read(read_body(body))?;
         let columns = self.label_columns(written, &labels, &format!("the macro `{}`", name.0), place)?;
         if self.declare(&name, place) {
             self.bodies.push(BodyInFile { body: definition.clone(), place });
-            self.relation_macros.push(WrittenRelation { name, place, columns, definition });
+            self.relation_macros.push(WrittenRelation { name, place, columns, definition, frames: frames.into() });
         }
         Some(())
     }

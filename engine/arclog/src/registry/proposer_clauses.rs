@@ -44,7 +44,7 @@ impl FileReader {
                 .map(|label| self.label_of(&kept, label, &what(label), proposer.place).map(|id| (ColumnName::Written(label.clone()), id)))
                 .collect();
             if let Some(columns) = columns.into_iter().collect::<Option<_>>() {
-                self.proposer_clauses.push(WrittenRelation { name, place: proposer.place, columns, definition });
+                self.proposer_clauses.push(WrittenRelation { name, place: proposer.place, columns, definition, frames: Box::default() });
             }
         }
         for (name, place, ..) in clauses {

@@ -35,7 +35,9 @@ impl FileReader {
         match declarations {
             Ok(mut declarations) => {
                 for m in std::mem::take(&mut self.relation_macros) {
-                    let relation = declarations.relations.remove(&m.name).expect("each relation macro takes a declaration");
+                    let mut relation = declarations.relations.remove(&m.name).expect("each relation macro takes a declaration");
+                    let what = format!("the macro `{}`", m.name.0);
+                    relation.frames = self.relation_frames(&m.frames, &relation.columns, &what).unwrap_or_default();
                     let labels = m.columns.iter().map(|(_, label)| *label).collect();
                     self.entries.insert(m.name, LibEntry::Macro(Macro::Relation { relation, labels, definition: m.definition }));
                 }

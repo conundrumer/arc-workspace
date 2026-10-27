@@ -15,14 +15,15 @@
 //!
 //! Each top-level form declares one lib element, by its head:
 //!
-//! - `(relation <name> (columns (<Column> <type>) ...) (modes (<Column> ...) ...))`:
+//! - `(relation <name> (columns (<Column> <type>) ...) (modes (<Column> ...) ...) [<frames>])`:
 //!   an algebra relation, the group relations and `pose_difference`
 //!   included. Each mode lists the columns, other than an orientation
 //!   type's, that must be bound for the relation to bind the others; a
 //!   relation over a finite domain has no `modes` form, and no mode is empty.
+//!   `<frames>` is a `(frames ...)` form, as the section on frames gives it.
 //! - `(component <name> <construction|detector|task-structure> (type-parameters <t> ...)
 //!   (inputs (<input> (<column> <type>) ... [(default <rows>)] [reads-outputs] [from-key]) ...)
-//!   (outputs (<output> (<column> <type>) ... [(copies <row> ...)]) ...))`: a construction, a
+//!   (outputs (<output> (<column> <type>) ... [(copies <row> ...)] [<frames>]) ...))`: a construction, a
 //!   detector or a task-structure component, its inputs in the order the component declares them. An
 //!   input's `default` writes its rows as a `param` form writes them after
 //!   its types (`docs/arclog/arcdata.md#params`). An input marked
@@ -68,11 +69,36 @@
 //! - `(fact <name> (columns (<Column> <type>) ...))`: the columns of a fact
 //!   relation, `input`, `ex_input` or `ex_output`, the Example column `E`
 //!   first in the two of the examples.
-//! - `(macro <name> (columns (<Column> <Label>) ...) <body>)`:
+//! - `(macro <name> (columns (<Column> <Label>) ...) [<frames>] <body>)`:
 //!   a lib relation that the lib defines from other lib names, each column
 //!   with the label of the definition it stands for, and its definition. A
 //!   [`Macro::Relation`]'s column types and modes are the ones
 //!   [`macro_column_types`] gives.
+//!
+//! # Frames
+//!
+//! A column of type `Position` or `Box` has values in a frame: the input
+//! grid's, the output grid's, or a frame that a lib column makes. A
+//! `(frames (<column> <rule>) ...)` form, in a `relation`, a `macro` or an
+//! output of a `component`, gives the rule of each column it names, and a
+//! `<rule>` is one of
+//!
+//! - `(of <column> ...)`: the frame of those columns' values;
+//! - `new`: a frame the column makes, in no frame;
+//! - `(new (of <column> ...))`: a frame the column makes that lies in the
+//!   frame of those columns' values.
+//!
+//! A column a rule names is a column of the relation or the macro, and, in
+//! an output, `<input>.<column>`, a column of one of the component's inputs.
+//! A column of type `Position` or `Box` that no form names takes the rule
+//! `(of <each column of that type that the mode binds>)` in a relation or a
+//! macro, at each mode, and `(of <each column of that type, other than
+//! `key`, of the component's inputs>)` in an output. [`Registry::relation_frame`]
+//! and [`Registry::output_frame`] give the rule of a column. A rule on a
+//! column of another type, a rule that names a column the element does not
+//! declare, and a rule on an output column that a `copies` row maps (a
+//! copied column has the frame of the column it copies) are faults of the
+//! file.
 //!
 //! An atom of a body of either file reads a name that a form declares, at
 //! columns that name declares: a lib name, a macro or a fact. An atom that
@@ -94,8 +120,8 @@
 //!
 //! The reader of the two files, the spellings of the registry file's forms, the records of a form the reader reads, the reader of the registry file's other
 //! forms, the reader of its macro form, the reader of the proposers file's clauses, the check of the reads of their bodies, the derivation of the
-//! macros' column types, the declaration of the macros and of the proposers written in arclog from it, and the rule by which an `INIT` form binds its
-//! component's type parameters each stand in a module of their own. The derivations take the forms as the reader gives them, and
+//! macros' column types, the declaration of the macros and of the proposers written in arclog from it, the rule by which an `INIT` form binds its
+//! component's type parameters, and the frame rules each stand in a module of their own. The derivations take the forms as the reader gives them, and
 //! read no file.
 //!
 //! `engine/lib/proposers.arclog` holds one form `(proposer <Name> <atom> ...)`
@@ -192,6 +218,10 @@ pub struct AlgebraRelation {
     pub columns: Box<[Column]>,
     /// Empty for a relation over a finite domain.
     pub modes: Box<[Mode]>,
+    /// The rule that the `frames` form declares for each column it names, in
+    /// the order it names them; [`Registry::relation_frame`] gives the rule of
+    /// any column.
+    pub frames: Box<[(ColumnName, FrameRule)]>,
 }
 
 /// The kind of a component: a construction, a detector or a task-structure
@@ -215,6 +245,10 @@ pub struct Port {
     /// order the file declares them; empty for an input and for an output
     /// that claims no row.
     pub copies: Box<[CopiedRow]>,
+    /// The rule that the `frames` form of an output declares for each column
+    /// it names, in the order it names them; empty for an input.
+    /// [`Registry::output_frame`] gives the rule of any column.
+    pub frames: Box<[(ColumnName, FrameRule)]>,
 }
 
 /// A declared row of an output: the row of an input of its group that the
@@ -529,6 +563,7 @@ impl Registry {
 mod bindings;
 mod column_types;
 mod forms;
+mod frames;
 mod macro_declarations;
 mod macro_forms;
 mod proposer_clauses;
@@ -540,4 +575,5 @@ mod spellings;
 pub(crate) use bindings::{binding_sites, unbound, ParameterSite};
 pub use bindings::key_fill;
 pub use column_types::{macro_column_types, MacroDeclarations, RelationMacro};
+pub use frames::{has_frame, FrameColumn, FrameRule};
 use reader::FileReader;

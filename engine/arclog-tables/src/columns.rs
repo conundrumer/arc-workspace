@@ -54,14 +54,14 @@ use arclog::eval::join::each_row;
 use arclog::eval::{RelationValue, Stop};
 use arclog::hash::{StableHash, StableHashMap, StableHasher};
 use arclog::program::path::NodePath;
-use arclog::program::{column_spelled, ColumnName, ProgramRelation, RelationRef};
+use arclog::program::{column_spelled, ColumnName, FactRelation, ProgramRelation, RelationRef};
 use arclog::read::spelling::{spelling, FACT_RELATIONS};
-use arclog::registry::Registry;
+use arclog::registry::{has_frame, Registry};
 use arclog::relations::Relation;
 use arclog::terms::{Constant, OrientationConstant, Term, TermId, ORIENTATION_TYPES};
 use arclog::types::ValueType;
 
-use crate::flows::{ColumnSource, SourceColumn, SourceKind};
+use crate::flows::{ColumnSource, SourceColumn, SourceFrame, SourceKind};
 use crate::tables::{Contents, Point, Table, TableRelation};
 
 /// The point of a table, as the code in [`TableColumns::point`].
@@ -140,12 +140,36 @@ pub struct TableColumns {
     pub column_names: Vec<Vec<String>>,
     /// The name of each column's type, as `ValueType` spells it.
     pub column_types: Vec<Vec<String>>,
+    /// The frame that the values of each column stand in, in the order of
+    /// `column_names`, and the empty string for a column with no frame:
+    ///
+    /// - `input`: the frame of the task's input grid, `output`: of its output
+    ///   grid;
+    /// - `<maker>@<path>`: a frame that a lib column makes, one per row of the
+    ///   atom or the instance at `<path>`, as the flows' `atom` spells a path.
+    ///   `<maker>` is `<relation>.<column>` for a lib relation or a relation
+    ///   macro, such as `relative.X_rel`, and `<component>.<output>.<column>`
+    ///   for a component's output, such as `Division.tile.P_inner`;
+    /// - `<maker>@<path> in <frame>`: such a frame, lying in `<frame>`, which
+    ///   is any of these.
+    ///
+    /// Only a column of type `Position` or `Box` has a frame. A column whose
+    /// sources give no frame, or give two different frames, has none. A
+    /// source that gives a frame that no column of the case holds, or that a
+    /// D4 element moves, gives an unknown frame, and a column with such a
+    /// source has none.
+    pub column_frames: Vec<Vec<String>>,
     /// The width in cells of a row.
     pub width: Vec<u32>,
     /// The relation of each `DET` the table reads, its columns' types, and
     /// the width of its rows.
     pub det_relations: Vec<Vec<String>>,
     pub det_types: Vec<Vec<Vec<String>>>,
+    /// The frame of each column of each `DET`, in the order of its types, as
+    /// `column_frames` spells it: the frame of that column in the latest
+    /// table of the `DET`'s relation, found by its path in `det_columns`, and
+    /// empty where the case holds no such table.
+    pub det_frames: Vec<Vec<Vec<String>>>,
     pub det_widths: Vec<Vec<u32>>,
     /// The path of each column of each `DET`, in the order of its types: the
     /// names of the path, as `column_spelled` gives them, joined by `.`; the
@@ -327,10 +351,11 @@ pub fn cut_case_columns(evidence: &[Table], tables: &[(usize, Table)], tokens: u
 }
 
 /// The fold of [`case_columns`] and [`cut_case_columns`]: the only state it
-/// keeps across tables is the `names` of the tables so far and the `Runs`
-/// written, so a table's columns depend on its own step and the tables before
-/// it. With `cut`, the tables before it are folded into `names` alone, and the
-/// count of them is given with the columns.
+/// keeps across tables is the `names` of the tables so far, with the frames of
+/// their columns, and the `Runs` written, so a table's columns depend on its
+/// own step and the tables before it. With `cut`, the tables before it are
+/// folded into `names` alone, and the count of them is given with the
+/// columns.
 fn fold(evidence: &[Table], tables: &[(usize, Table)], cut: Option<usize>, train: usize) -> (CaseColumns, u32) {
     let skipped = cut.map_or(0, |tokens| evidence.len() + tables.partition_point(|(token, _)| *token < tokens));
     let mut columns = CaseColumns::default();
@@ -339,7 +364,7 @@ fn fold(evidence: &[Table], tables: &[(usize, Table)], cut: Option<usize>, train
     for (place, (token, table)) in evidence.iter().map(|table| (0, table)).chain(tables.iter().map(|(token, table)| (*token, table))).enumerate() {
         let row = u32::try_from(place).expect("fewer than 2^32 tables");
         if place < skipped {
-            note_name(&mut names, row, table);
+            note_name(&mut names, row, table, None);
         } else {
             push_table(&mut columns, &mut names, &mut runs, row, token, table, train);
         }
@@ -452,10 +477,19 @@ fn push_rows(values: &mut Vec<i32>, runs: &mut Runs, rows: &Relation, types: &[V
     (count, offset as u64)
 }
 
-/// The name of the relation that the tables of `names` stand for, each with
-/// its row, in the order of the rows: the relation as the program spells it,
-/// or the fact relation's name.
-type TableNames = Vec<(String, u32, Option<Vec<Box<[ColumnName]>>>)>;
+/// A table that stands for a relation: the relation as the program spells it,
+/// or the fact relation's name, the table's row, the path of each row position of
+/// its columns where the relation is a program node, and the frame of each
+/// column (empty for none).
+struct Named {
+    name: String,
+    row: u32,
+    paths: Option<Vec<Box<[ColumnName]>>>,
+    frames: Vec<String>,
+}
+
+/// The tables so far that stand for a relation, in the order of the rows.
+type TableNames = Vec<Named>;
 
 /// The columns of `table`, the table at `row`, after the tables before it.
 fn push_table(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, row: u32, token: usize, table: &Table, train: usize) {
@@ -476,9 +510,11 @@ fn push_table(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, ro
             tables.fact.push(None);
             tables.column_names.push(Vec::new());
             tables.column_types.push(Vec::new());
+            tables.column_frames.push(Vec::new());
             tables.width.push(0);
             tables.det_relations.push(Vec::new());
             tables.det_types.push(Vec::new());
+            tables.det_frames.push(Vec::new());
             tables.det_widths.push(Vec::new());
             tables.det_columns.push(Vec::new());
             tables.projections.push(ProjectionsKind::None as u8);
@@ -499,9 +535,12 @@ fn push_table(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, ro
             tables.fact.push(fact);
             tables.column_names.push(contents.columns.iter().map(|column| column.name.clone()).collect());
             tables.column_types.push(type_names(&types));
+            let frames = column_frames(names, contents);
+            tables.column_frames.push(frames.clone());
             tables.width.push(row_width(&types));
             tables.det_relations.push(contents.dets.iter().map(|det| relation_spelled(&det.relation)).collect());
             tables.det_types.push(contents.dets.iter().map(|det| type_names(&det.types)).collect());
+            tables.det_frames.push(det_frames(names, contents));
             tables.det_widths.push(contents.dets.iter().map(|det| row_width(&det.types)).collect());
             tables.det_columns.push(contents.dets.iter().map(|det| det.columns.iter().flat_map(|paths| paths.iter()).map(|path| path_spelled(path)).collect()).collect());
             let (projections, stop) = match &contents.projections {
@@ -517,15 +556,16 @@ fn push_table(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, ro
             tables.output_position.push(contents.selected.position.map_or(-1, i32::from));
             tables.output_color.push(contents.selected.color.map_or(-1, i32::from));
             push_flows(out, names, row, contents);
-            note_name(names, row, table);
+            note_name(names, row, table, Some(frames));
             push_contents(out, runs, row, contents, &types, train);
         }
     }
 }
 
 /// Adds the relation of `table`, the table at `row`, to `names`, if it stands
-/// for one: a table of a relation that has not faulted.
-fn note_name(names: &mut TableNames, row: u32, table: &Table) {
+/// for one: a table of a relation that has not faulted. `frames` are the frames
+/// of its columns where the caller has them, and otherwise `names` gives them.
+fn note_name(names: &mut TableNames, row: u32, table: &Table, frames: Option<Vec<String>>) {
     let Ok(contents) = &table.contents else { return };
     if matches!(table.point, Point::Body { .. }) {
         return;
@@ -534,7 +574,8 @@ fn note_name(names: &mut TableNames, row: u32, table: &Table) {
         TableRelation::Slot(_) => contents.name.clone(),
         TableRelation::Fact(fact) => spelling(FACT_RELATIONS, &fact).to_owned(),
     };
-    names.push((name, row, contents.rows.clone()));
+    let frames = frames.unwrap_or_else(|| column_frames(names, contents));
+    names.push(Named { name, row, paths: contents.rows.clone(), frames });
 }
 
 /// The relation `relation` as the program spells it, a fact relation's name,
@@ -549,29 +590,142 @@ fn source_spelled(relation: &RelationRef) -> String {
     }
 }
 
+/// Where a source stands in the case: the relation it reads as spelled, the
+/// latest table of `names` that stands for it, and its place among the reading
+/// table's `DET`s, -1 where it is none of them.
+struct Located<'n> {
+    spelled: String,
+    table: Option<&'n Named>,
+    det: i32,
+}
+
+/// Where `source` stands, among the tables of `names` and the `DET`s `dets` of
+/// the table that reads it. A constant and a lib name stand nowhere.
+fn locate<'n>(names: &'n TableNames, dets: &[String], source: &ColumnSource) -> Located<'n> {
+    let spelled = source.relation.as_ref().map(source_spelled).unwrap_or_default();
+    let (table, det) = match source.kind {
+        SourceKind::Copy | SourceKind::Computed => (names.iter().rev().find(|named| named.name == spelled), dets.iter().position(|det| *det == spelled).map_or(-1, |place| place as i32)),
+        SourceKind::Constant | SourceKind::LibName => (None, -1),
+    };
+    Located { spelled, table, det }
+}
+
+/// The index of the column of `table` that `source` reads, by the source's path
+/// among the table's row positions: `None` where the source or the table gives
+/// no path, and `Some(None)` where the table has no such path.
+fn position_in(table: &Named, source: &ColumnSource) -> Option<Option<usize>> {
+    match (&table.paths, &source.row) {
+        (Some(rows), Some(path)) => Some(rows.iter().position(|row| row == path)),
+        _ => None,
+    }
+}
+
+/// The frame of the column that `source` reads, in the table `located` gives,
+/// or `None` where that column has no frame or the case does not hold it.
+fn read_frame(located: &Located<'_>, source: &ColumnSource) -> Option<String> {
+    let table = located.table?;
+    let SourceColumn::Position(position) = source.column else { return None };
+    let index = match position_in(table, source) {
+        Some(found) => found?,
+        None if located.det < 0 => usize::from(position),
+        None => return None,
+    };
+    table.frames.get(index).filter(|frame| !frame.is_empty()).cloned()
+}
+
+/// The frame that `frame` is, where the source gives it, or `None` where it is
+/// unknown. `read` is the frame of the column the source reads. A made frame
+/// is spelled with no ` in` where the frame it lies in is unknown or none.
+fn resolve_frame(frame: &SourceFrame, read: &Option<String>) -> Option<String> {
+    match frame {
+        SourceFrame::Read => read.clone(),
+        SourceFrame::Unknown => None,
+        SourceFrame::Made { maker, at, within } => {
+            let made = format!("{}@{}", maker.spelled(), form_path(at));
+            Some(match within.as_deref().and_then(|within| resolve_frame(within, read)) {
+                Some(within) => format!("{made} in {within}"),
+                None => made,
+            })
+        }
+    }
+}
+
+/// The frame of each column of `contents`, empty for none: `input` and
+/// `output` at `P` of the evidence tables, and, in any other table, for a
+/// column of type `Position` or `Box`, the one frame that its sources give,
+/// where each source that gives a frame gives one, they all give the same, and
+/// none gives an unknown one. A source's frame is resolved in the latest table
+/// of `names` that stands for the relation it reads.
+fn column_frames(names: &TableNames, contents: &Contents) -> Vec<String> {
+    if let TableRelation::Fact(fact) = contents.relation {
+        let grid = match fact {
+            FactRelation::ExOutput => "output",
+            FactRelation::Input | FactRelation::ExInput => "input",
+        };
+        return contents.columns.iter().map(|column| if column.name == "P" && has_frame(&column.ty) { grid.to_owned() } else { String::new() }).collect();
+    }
+    let dets: Vec<String> = contents.dets.iter().map(|det| relation_spelled(&det.relation)).collect();
+    contents
+        .columns
+        .iter()
+        .enumerate()
+        .map(|(column, own)| {
+            if !has_frame(&own.ty) {
+                return String::new();
+            }
+            let mut found: Vec<String> = Vec::new();
+            for source in contents.flows.get(column).into_iter().flatten() {
+                let located = locate(names, &dets, source);
+                let read = read_frame(&located, source);
+                for frame in &source.frames {
+                    match resolve_frame(frame, &read) {
+                        Some(frame) if found.contains(&frame) => {}
+                        Some(frame) => found.push(frame),
+                        None => return String::new(),
+                    }
+                }
+            }
+            if found.len() == 1 { found.remove(0) } else { String::new() }
+        })
+        .collect()
+}
+
+/// The frame of each column of each `DET` of `contents`, empty for none: that
+/// of the column in the latest table of `names` that stands for the `DET`'s
+/// relation, found by the column's path among the table's row positions.
+fn det_frames(names: &TableNames, contents: &Contents) -> Vec<Vec<String>> {
+    contents
+        .dets
+        .iter()
+        .map(|det| {
+            let table = names.iter().rev().find(|named| named.name == relation_spelled(&det.relation));
+            let frame = |index: usize, ty: &ValueType| -> Option<String> {
+                if !has_frame(ty) {
+                    return None;
+                }
+                let path = det.columns.as_ref()?.get(index)?;
+                let table = table?;
+                let at = table.paths.as_ref()?.iter().position(|row| row == path)?;
+                table.frames.get(at).cloned()
+            };
+            det.types.iter().enumerate().map(|(index, ty)| frame(index, ty).unwrap_or_default()).collect()
+        })
+        .collect()
+}
+
 /// The sources of each column of `contents`, the table at `row`. A source's
 /// table is the latest of `names` that stands for its relation.
 fn push_flows(out: &mut CaseColumns, names: &TableNames, row: u32, contents: &Contents) {
     let dets: Vec<String> = contents.dets.iter().map(|det| relation_spelled(&det.relation)).collect();
     for (column, sources) in contents.flows.iter().enumerate() {
-        for ColumnSource { kind, relation, column: source_column, row: source_row, atom, occurrence } in sources {
-            let spelled = relation.as_ref().map(source_spelled).unwrap_or_default();
-            let source = match kind {
-                SourceKind::Copy | SourceKind::Computed => names.iter().rev().find(|(name, ..)| *name == spelled),
-                SourceKind::Constant | SourceKind::LibName => None,
-            };
-            let table = source.map_or(-1, |&(_, table, _)| table as i32);
-            let det = match kind {
-                SourceKind::Copy | SourceKind::Computed => dets.iter().position(|det| *det == spelled).map_or(-1, |place| place as i32),
-                SourceKind::Constant | SourceKind::LibName => -1,
-            };
+        for source in sources {
+            let ColumnSource { kind, column: source_column, atom, occurrence, .. } = source;
+            let Located { spelled, table: source_table, det } = locate(names, &dets, source);
+            let table = source_table.map_or(-1, |named| named.row as i32);
             // The source's table was exported with the order its columns had
             // then; a later form may have reordered them. A `DET` source's
             // column indexes the reading table's own `DET` columns.
-            let exported = match (source.and_then(|(_, _, rows)| rows.as_ref()), source_row) {
-                (Some(rows), Some(path)) if det < 0 => Some(rows.iter().position(|row| row == path)),
-                _ => None,
-            };
+            let exported = if det < 0 { source_table.and_then(|named| position_in(named, source)) } else { None };
             let flows = &mut out.flows;
             flows.table.push(row);
             flows.column.push(column as u32);
