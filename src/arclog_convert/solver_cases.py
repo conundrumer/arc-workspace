@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import re
 from collections import defaultdict
+from collections.abc import Callable
 from engine.program import (
     AdtType,
     AtomLiteral,
@@ -37,6 +38,7 @@ from arclog_convert.forms import (
 )
 from arclog_convert.leaves import ScopedName, Written
 from arclog_convert.lib import derive_proposer
+from arclog_convert.solver_render import or_line
 from arclog_convert.terms import name_of
 
 
@@ -90,20 +92,22 @@ class CasesMixin:
             cur = parent[0]
 
     def dead_clauses(self, main: list[Form], empty: set[str], mine: set[str],
-                     others: set[str] = frozenset(), adds: set[str] | frozenset[str] = frozenset()) -> list[Form]:
+                     live: Callable[[Form], bool], adds: set[str] | frozenset[str] = frozenset()) -> list[Form]:
         """The alt's rederivations of the concept relations whose clauses
         read a relation the alt derives no rows of: a clause that reads
         one positively is dead, a `NOT` of one holds and is dropped, and a
-        relation all of whose clauses are dead is empty too. A clause whose
-        head fixes one of `others`, the point's other constructors, holds
-        no row in the alt, and its relation is rederived without it. A `DET`
-        that fixes no constructor and that the concept case derives is one
-        parameter for every case, which the concept's evidence determines, so
-        no alt rederives it."""
+        relation all of whose clauses are dead is empty too. A clause that is
+        not `live` in the alt holds no row in it, and its relation is
+        rederived without it. A `RULE_OR_DET` or `DET_OR_RULE` line is no
+        clause. A `DET` that fixes no constructor and that the concept case
+        derives is one parameter for every case, which the concept's evidence
+        determines, so no alt rederives it."""
         groups: dict[str, list[Form]] = defaultdict(list)
         fixed: set[str] = set()
         for f in main:
-            if f.side != "DET" and set(f.branches) & others:
+            if or_line(f):
+                continue
+            if not live(f):
                 fixed.add(f.name)
                 continue
             groups[f.name].append(f)
