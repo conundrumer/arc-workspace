@@ -157,19 +157,20 @@ def _lib_ports(c: "Converter", insts: dict[str, str], arclog: str) -> dict[str, 
     return out
 
 
-def _shaped(c: "Converter", insts: dict[str, str]) -> dict[str, tuple[list | None, object, tuple[Written, ...]]]:
+def _shaped(c: "Converter", insts: dict[str, str]
+            ) -> dict[str, tuple[str, list | None, object, tuple[Written, ...]]]:
     """Each relation of an expansion's shape (`Converter.made`) that stands
     for a Souffle relation, by the arclog name the converter writes it
     under (the renames `convert_one` applies after it, `_renamed_name`), with
-    its columns as `Converter.resolve` gives them, its instance, and the
-    Souffle relations it stands for."""
-    out: dict[str, tuple[list | None, object, tuple[Written, ...]]] = {}
+    that name before the renames, its columns as `Converter.resolve` gives
+    them, its instance, and the Souffle relations it stands for."""
+    out: dict[str, tuple[str, list | None, object, tuple[Written, ...]]] = {}
     for (scope, shape), ws in c.made.items():
         if not ws or any(w.instance for w in ws):
             continue
         *chain, rel = shape.split(".")
         name, cols, _, inst = c.resolve(RelationName(tuple(chain), rel), scope, c.parse_sub if scope == ("Parse",) else {})
-        out[_renamed_name(name, insts)] = (cols, inst, ws)
+        out[_renamed_name(name, insts)] = (name, cols, inst, ws)
     return out
 
 
@@ -204,7 +205,7 @@ def name_map(s: "Solver", insts: dict[str, str], arclog: str, arcdata: str) -> d
             got = (instances if w.instance else rels).setdefault(_renamed_name(arc, insts), [])
             if (r := _souffle_relation(c, w)) not in got:
                 got.append(r)
-    for arc, (_, _, ws) in shaped.items():
+    for arc, (_, _, _, ws) in shaped.items():
         got = rels.setdefault(arc, [])
         got.extend(r for w in ws if _souffle_exists(c, w) and (r := _souffle_relation(c, w)) not in got)
     read = _relations_read(arclog + "\n" + arcdata)
@@ -256,7 +257,9 @@ def column_map(s: "Solver", names: dict, insts: dict[str, str], text: ParityText
     number and whose correspondence the converter does not hold gets no entry.
     The relation is resolved as a read sees it (`Converter.resolve`): from the
     top level by the Souffle relation's path, and a relation of an expansion's
-    shape by its own name; the labels are those `site_columns` gives. A
+    shape by its own name; the labels are those `site_columns` gives, but for a
+    relation of `Determine` that is no instance's port, whose entry gives only
+    the sites that a read of it names (`_named_sites`). A
     relation whose clauses the converter writes at other arclog columns under
     one ALT than under another, or than at the top level
     (`Converter.writings`), has for entry `{"writings": [...]}`: one
@@ -278,12 +281,13 @@ def column_map(s: "Solver", names: dict, insts: dict[str, str], text: ParityText
                 if got is None:
                     continue
             elif arc in shaped:
-                cols, inst, ws = shaped[arc]
+                written, cols, inst, ws = shaped[arc]
                 w = next((w for w in ws if _souffle_relation(c, w) == source), None)
                 width = None if w is None else c.souffle_arity(w.scope, w.relation)
                 if w is None or w.columns is None or cols is None or width is None or len(cols) != len(w.columns):
                     continue
-                got = _souffle_columns(site_columns(c, cols, inst), w.columns, width)
+                got = _souffle_columns(_read_sites(site_columns(c, cols, inst), _named_sites(c, written, w.scope, ())),
+                                       w.columns, width)
             else:
                 scope, relation = tuple(source["component"]), source["relation"]
                 if source["path"] is not None:
@@ -300,25 +304,44 @@ def column_map(s: "Solver", names: dict, insts: dict[str, str], text: ParityText
 
 
 def _entry(writings: dict[frozenset[str], tuple[tuple[Source, ...], ...]], sites: list[list[Site]],
-           place: Callable[[list[list[Site]]], list[list[dict]]]) -> list[list[dict]] | dict:
+           place: Callable[[list[list[Site]]], list[list[dict]]], named: set[tuple[str, str | None]] | None
+           ) -> list[list[dict]] | dict:
     """The entry of a relation whose arclog columns are `sites` (`site_columns`)
-    in the column map, with the Souffle columns they are `place`d in: the one
+    in the column map, with the Souffle columns they are `place`d in, the
+    sites of each column but those `named` leaves out (none: all stand): the one
     entry, where the clauses of the relation are written at one set of arclog
     columns in every writing (`Converter.writings`). Otherwise `{"writings":
     [...]}`, one `{"constructors": [...], "columns": <entry>}` for the top
     level, first, and for each ALT writing whose entry differs from it, by
     the constructors of its ALTs. The entry of a writing reads the label of a
     leaf that its clauses drop at the column of the leaf they repeat."""
+    def placed(columns: list[list[Site]]) -> list[list[dict]]:
+        return place(_read_sites(columns, named))
     fitting = {key: record for key, record in writings.items()
                if tuple(map(len, record)) == tuple(map(len, sites))}
     if len(set(fitting.values())) < 2:
-        return place(sites)
-    entries = {key: place(_read_at(sites, record)) for key, record in fitting.items()}
-    top = entries.setdefault(frozenset(), place(sites))
+        return placed(sites)
+    entries = {key: placed(_read_at(sites, record)) for key, record in fitting.items()}
+    top = entries.setdefault(frozenset(), placed(sites))
     written = [{"constructors": sorted(key), "columns": entry}
                for key, entry in sorted(entries.items(), key=lambda kv: (len(kv[0]), sorted(kv[0])))
                if not key or entry != top]
     return {"writings": written} if len(written) > 1 else top
+
+
+def _named_sites(c: "Converter", written: str, scope: tuple[str, ...], instances: tuple[str, ...]
+                 ) -> set[tuple[str, str | None]] | None:
+    """The (label, field) sites that a read names of the relation `written`,
+    declared in `scope`, where it is a relation of `Determine` that is no
+    instance's port (`instances` are its instance path): a `DET` has as its
+    columns the labels that a read names, and a label no read names is
+    existential. None where the relation is no such `DET`, or no read names it."""
+    return c.read_sites.get(written) if scope == (DETERMINE,) and not instances else None
+
+
+def _read_sites(columns: list[list[Site]], named: set[tuple[str, str | None]] | None) -> list[list[Site]]:
+    """`columns` with the sites that `named` (`_named_sites`) leaves out dropped; all stand where it is none."""
+    return [[s for s in column if named is None or (s.label, s.field) in named] for column in columns]
 
 
 def _read_at(sites: list[list[Site]], record: tuple[tuple[Source, ...], ...]) -> list[list[Site]]:
@@ -343,7 +366,7 @@ def _own_columns(c: "Converter", resolved: tuple, scope: tuple[str, ...], relati
     if len(kept) != len(cols):
         return None
     return _entry(c.writings.get(written, {}), site_columns(c, cols, inst),
-                  lambda sites: _souffle_columns(sites, kept, width))
+                  lambda sites: _souffle_columns(sites, kept, width), _named_sites(c, written, scope, ()))
 
 
 def _parity_columns(c: Converter, at: Place) -> list[list[dict]] | dict | None:
@@ -356,13 +379,9 @@ def _parity_columns(c: Converter, at: Place) -> list[list[dict]] | dict | None:
     kept = tuple(j for j in range(at.width) if j not in dropped)
     if cols is None or len(kept) != len(cols):
         return None
-    # a `DET` has as its columns the labels that a read names: a label no read names is existential
-    named = c.read_sites.get(written) if at.scope == (DETERMINE,) and not at.relation.instances else None
-
-    def placed(sites: list[list[Site]]) -> list[list[dict]]:
-        return _souffle_columns([[s for s in column if named is None or (s.label, s.field) in named]
-                                 for column in sites], kept, at.width)
-    return _entry(c.writings.get(written, {}), site_columns(c, cols, inst), placed)
+    return _entry(c.writings.get(written, {}), site_columns(c, cols, inst),
+                  lambda sites: _souffle_columns(sites, kept, at.width),
+                  _named_sites(c, written, at.scope, at.relation.instances))
 
 
 def _souffle_columns(columns: list[list[Site]], placement: tuple[Placement, ...], width: int) -> list[list[dict]]:

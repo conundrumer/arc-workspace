@@ -651,6 +651,17 @@ def drop_implied(bodies: list[list[str]]) -> list[list[str]]:
     return [b for k, b in enumerate(bodies) if k not in gone]
 
 
+def body_of(f: Form) -> list[str]:
+    """The body lines of the clause `f`, read from its lines: `Form.body` is the
+    body as the clause was first written, and a later rewrite of `lines` (a read
+    without a repeated column) leaves it as it was."""
+    if len(f.lines) == 1:
+        return []
+    inner = [l[2:] for l in f.lines[1:]]
+    inner[-1] = inner[-1][:-1]   # the closing parenthesis of the form
+    return inner[:len(inner) - len(f.marks)]
+
+
 def merge_forms(forms: list[Form]) -> list[Form]:
     """Each relation's clauses in one block as one clause whose body is an OR,
     a branch per clause."""
@@ -674,7 +685,7 @@ def merge_forms(forms: list[Form]) -> list[Form]:
             out.extend(fs)
             continue
         MERGES["relation"] += 1
-        body = or_body([(g.comments, g.body or []) for g in fs], set(fs[0].cols), set())
+        body = or_body([(g.comments, body_of(g)) for g in fs], set(fs[0].cols), set())
         g = Form([f"({fs[0].side} {f.name}"] + ["  " + l for l in body + fs[0].marks], f.name,
                  set().union(*(x.reads for x in fs)), line=min(x.line for x in fs))
         close(g.lines, ")")

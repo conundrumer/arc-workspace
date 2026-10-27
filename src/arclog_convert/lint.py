@@ -1746,6 +1746,17 @@ def alt_points(forms) -> tuple[dict[str, str], dict[str, str | None]]:
     return point, under
 
 
+def is_case(c: frozenset, point: dict[str, str], under: dict[str, str | None],
+            excluded: tuple[frozenset, ...] | list[frozenset]) -> bool:
+    """Whether the alts `c` are a case: one alt for each point, a nested
+    point's alt with its parent's (`alt_points` gives `point` and `under`),
+    and no combination that `excluded`, the arcdata file's excludes, leaves out."""
+    pts = [point[a] for a in c]
+    if len(set(pts)) != len(pts):
+        return False   # two alts of one point
+    return all(under[pt] is None or under[pt] in c for pt in pts) and not any(x <= c for x in excluded)
+
+
 def unstated_combinations(pl: list[Placed], forms, excluded: tuple[frozenset, ...] | list[frozenset] = ()
                           ) -> list[tuple[str, frozenset, list[Placed]]]:
     """The relations that a case reads from several blocks, none of which
@@ -1759,19 +1770,13 @@ def unstated_combinations(pl: list[Placed], forms, excluded: tuple[frozenset, ..
         if p.name and p.name.startswith("&") and p.rigid is None and p.alts and all(a in point for a in p.alts):
             defs[p.name.partition(".")[0]].setdefault(frozenset(p.alts), []).append(p)
 
-    def is_case(c: frozenset) -> bool:
-        pts = [point[a] for a in c]
-        if len(set(pts)) != len(pts):
-            return False   # two alts of one point
-        return all(under[pt] is None or under[pt] in c for pt in pts) and not any(x <= c for x in excluded)
-
     out = []
     for n, at in defs.items():
         if len(at) < 2:
             continue
         cases = {frozenset()}
         for q in at:
-            cases |= {c | q for c in cases if is_case(c | q)}
+            cases |= {c | q for c in cases if is_case(c | q, point, under, excluded)}
         seen: set[frozenset] = set()
         for c in sorted(cases, key=len):
             qs = [q for q in at if q <= c]

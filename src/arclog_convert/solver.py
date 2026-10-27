@@ -178,6 +178,7 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
         self.todo = todo
         self.c = Converter(stem, lib, sig, todo, inline, own_copies, checks)
         self.alt_derived: set[str] = set()   # the relations that some alt's block derives
+        self.rerendered: dict[tuple[int, frozenset[str]], tuple[Form, Form | None]] = {}   # the forms that `written_without` wrote
         self.lines = self.c.src_lines
         self.c.skip_rels = {"impl_choice"}
 
@@ -276,19 +277,26 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
     def written_without(self, f: Form, empty: frozenset[str]) -> Form | None:
         """The form `f` written again with the relations `empty` empty: a positive
         read of one kills its list, and a NOT of one is dropped. None where `f`
-        derives nothing then, or where it has no source to write again."""
-        saved = list(self.todo.pending), Counter(self.todo.kinds)
-        try:
-            if f.src_inst is not None:
-                inst, us, side = f.src_inst
-                gs = self.instance(inst, us, side, empty)
-                return gs[0] if gs else None
-            if f.src is not None:
-                u, side, scope, sub, ns = f.src
-                return self.clause(u, side, scope, sub, ns, drop_neg=empty)
-            return None
-        finally:
-            self.todo.pending, self.todo.kinds = saved
+        derives nothing then, or where it has no source to write again. The same
+        `f` and `empty` give the same form in every case, so it is written once."""
+        key = id(f), empty
+        if key not in self.rerendered:
+            saved = list(self.todo.pending), Counter(self.todo.kinds)
+            try:
+                if f.src_inst is not None:
+                    inst, us, side = f.src_inst
+                    gs = self.instance(inst, us, side, empty)
+                    g = gs[0] if gs else None
+                elif f.src is not None:
+                    u, side, scope, sub, ns = f.src
+                    g = self.clause(u, side, scope, sub, ns, drop_neg=empty)
+                else:
+                    g = None
+            finally:
+                self.todo.pending, self.todo.kinds = saved
+            self.rerendered[key] = f, g
+        g = self.rerendered[key][1]
+        return None if g is None else dc_replace(g)
 
     def run(self) -> tuple[str, str]:
         c = self.c
