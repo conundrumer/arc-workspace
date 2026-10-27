@@ -28,6 +28,16 @@
 //! the part's rows at an instance and gives the part no column, so an
 //! instance's reading of the part is the part's rows at that instance's
 //! row, without those columns.
+//!
+//! In a form with an `instance` clause, a part with no such site is a frame
+//! part. No instance's reading holds it: the elements of each instance are
+//! those that take the frame onto the instance's reading of the other parts.
+//! The frame holds the frame part's rows. They are the rows of the part's
+//! `DET`, other than at the stored records where the part's `DET` has no
+//! record, no `assign` and no clause of its own. There they are the image of
+//! the record of `&<assembly>.<part>` under the elements that take the
+//! records of the other parts onto the frame, which must agree on the image;
+//! where none does or they differ, the assembly has no value.
 
 pub mod renaming;
 
@@ -43,7 +53,7 @@ use crate::algebra::geometry::{D4Element, Geometry};
 use crate::check::{AssemblyClause, CheckedProgram};
 use crate::hash::{StableHashMap, StableHashSet};
 use crate::program::path::{node_at, NodePath, NodeRef};
-use crate::program::{Atom, Body, Conjunct, LabelId, Node, OutputStep, RigidDet};
+use crate::program::{Atom, Body, Conjunct, LabelId, Node, OutputName, OutputOwner, OutputStep, ParamValue, ProgramRelation, RigidDet, RigidDetName};
 use crate::relations::{Row, RowSet};
 use crate::resolver::form_columns;
 use crate::terms::{Example, Term, TermId};
@@ -94,17 +104,27 @@ pub(crate) fn output_clause(program: &CheckedProgram, form: &NodePath, rigid: &R
 
 /// One part of an assembly: its atom with its path, the labels of its
 /// sites that give it a column, in the order of its columns, their types,
-/// and whether each column holds the assembly's own Idents.
+/// whether each column holds the assembly's own Idents, and whether it is a
+/// frame part.
 pub(crate) struct Part<'p> {
     atom: &'p Node<Atom>,
     path: NodePath,
     labels: Vec<LabelId>,
     types: Vec<ValueType>,
     own: Vec<bool>,
+    frame: bool,
+}
+
+impl Part<'_> {
+    /// The part's rows where it has none.
+    fn no_rows(&self) -> RowSet {
+        RowSet::empty(self.labels.len() as u16)
+    }
 }
 
 /// An instance of an assembly: its row of the key and instance clauses,
-/// and its reading, its rows of each part in the order of the parts.
+/// and its reading, its rows of each part in the order of the parts, none
+/// for a frame part.
 struct Instance {
     row: Row,
     reading: Vec<RowSet>,
@@ -144,6 +164,7 @@ struct Solution {
 struct Assembly<'e, 'p> {
     program: &'e CheckedProgram,
     form: &'e NodePath,
+    name: &'p RigidDetName,
     key: Option<(&'p Body, NodePath)>,
     key_labels: Vec<LabelId>,
     key_types: Vec<ValueType>,
@@ -186,9 +207,10 @@ impl<'e, 'p> Assembly<'e, 'p> {
             }
             let types = typed(&labels)?;
             let own = own_flags(types_of, &labels, &types);
-            parts.push(Part { atom, path: form.child(index), labels, types, own });
+            let frame = rigid.instance.is_some() && !atom.value().sites.iter().any(|site| form_columns::at_instance(rigid, site));
+            parts.push(Part { atom, path: form.child(index), labels, types, own, frame });
         }
-        Ok(Assembly { program, form, key, key_labels, key_types, key_own, instance, instance_labels, parts })
+        Ok(Assembly { program, form, name: &rigid.name, key, key_labels, key_types, key_own, instance, instance_labels, parts })
     }
 
     fn fault(&self, message: String) -> RunFault {
@@ -236,21 +258,20 @@ impl<'e, 'p> Assembly<'e, 'p> {
         };
         let mut by_part: Vec<StableHashMap<Row, RowSet>> = Vec::with_capacity(self.parts.len());
         for part in &self.parts {
+            if part.frame {
+                by_part.push(StableHashMap::default());
+                continue;
+            }
             let rows = match self.rows(bodies, Some(part), example)? {
                 Ok(rows) => rows,
                 Err(value) => return Ok(Err(value)),
             };
-            let mut by_instance: StableHashMap<Row, RowSet> = StableHashMap::default();
-            for row in rows {
-                let (at, values) = row.split_at(prefix.len());
-                by_instance.entry(at.into()).or_insert_with(|| RowSet::empty(part.labels.len() as u16)).insert(values.into());
-            }
-            by_part.push(by_instance);
+            by_part.push(group_by_key(rows, prefix.len(), part.labels.len()));
         }
         Ok(Ok(rows
             .into_iter()
             .map(|row| {
-                let reading = self.parts.iter().zip(&mut by_part).map(|(part, by_instance)| by_instance.remove(&row).unwrap_or_else(|| RowSet::empty(part.labels.len() as u16))).collect();
+                let reading = self.parts.iter().zip(&mut by_part).map(|(part, by_instance)| by_instance.remove(&row).unwrap_or_else(|| part.no_rows())).collect();
                 Instance { row, reading }
             })
             .collect()))
@@ -269,10 +290,10 @@ impl<'e, 'p> Assembly<'e, 'p> {
         Ordering::Equal
     }
 
-    /// Whether some column of some part, or of the key, holds the assembly's
-    /// own Idents.
+    /// Whether some column of some part that an instance reads, or of the
+    /// key, holds the assembly's own Idents.
     fn has_own_idents(&self) -> bool {
-        self.key_has_own_idents() || self.parts.iter().any(|part| part.own.contains(&true))
+        self.key_has_own_idents() || self.parts.iter().any(|part| !part.frame && part.own.contains(&true))
     }
 
     /// Whether some column of the key holds the assembly's own Idents.
@@ -397,7 +418,7 @@ impl<'e, 'p> Assembly<'e, 'p> {
             Ok(instances) => instances,
             Err(value) => return Ok(Err(value)),
         };
-        let Classes { keys, frames } = match self.classes(&instances, bodies, budget)? {
+        let Classes { keys, mut frames } = match self.classes(&instances, bodies, budget)? {
             Ok(classes) => classes,
             Err(value) => return Ok(Err(value)),
         };
@@ -419,7 +440,104 @@ impl<'e, 'p> Assembly<'e, 'p> {
             row.extend_from_slice(&instance.row[key_width..]);
             poses.push((row.into(), found));
         }
+        if let Err(value) = self.place_frame_parts(&mut frames, bodies, example, budget)? {
+            return Ok(Err(value));
+        }
         Ok(Ok(Solution { frames, poses }))
+    }
+
+    /// Sets the rows of each frame part in `frames`, the frame of each class
+    /// of instances, which hold none yet: at the class's key, the rows of the
+    /// part's `DET`, or, where [`Assembly::frame_record`] gives a record, as
+    /// [`Assembly::image_records`] gives them; or the value of a body of the
+    /// form that is `undefined` or stopped, or of a stop.
+    fn place_frame_parts(&self, frames: &mut StableHashMap<Row, Vec<RowSet>>, bodies: &FormBodies<'_>, example: Option<Example>, budget: &mut Budget<'_>) -> Outcome<Result<(), RelationValue>> {
+        let key_width = self.key_width();
+        let mut recorded = Vec::new();
+        for (index, part) in self.parts.iter().enumerate().filter(|(_, part)| part.frame) {
+            if self.frame_record(part, bodies).is_some() {
+                recorded.push(index);
+                continue;
+            }
+            let rows = match self.rows(bodies, Some(part), example)? {
+                Ok(rows) => rows,
+                Err(value) => return Ok(Err(value)),
+            };
+            let mut by_key = group_by_key(rows, key_width, part.labels.len());
+            for (key, frame) in frames.iter_mut() {
+                frame[index] = by_key.remove(key).unwrap_or_else(|| part.no_rows());
+            }
+        }
+        if recorded.is_empty() { Ok(Ok(())) } else { self.image_records(&recorded, frames, bodies, budget) }
+    }
+
+    /// Sets the rows of the frame parts at `recorded` in `frames`: at each
+    /// class's key, the image of the part's record under the D4 elements that
+    /// take the records of the parts that an instance reads onto the class's
+    /// frame, as [`Assembly::takes_onto`] gives them; or `undefined`, where
+    /// some class has no such element, or the elements give a record
+    /// different images, or the value of a stop.
+    fn image_records(&self, recorded: &[usize], frames: &mut StableHashMap<Row, Vec<RowSet>>, bodies: &FormBodies<'_>, budget: &mut Budget<'_>) -> Outcome<Result<(), RelationValue>> {
+        let key_width = self.key_width();
+        let evaluation = bodies.driver.evaluation;
+        let mut records: Vec<StableHashMap<Row, RowSet>> = Vec::with_capacity(self.parts.len());
+        for (index, part) in self.parts.iter().enumerate() {
+            if part.frame && !recorded.contains(&index) {
+                records.push(StableHashMap::default());
+                continue;
+            }
+            let Some(record) = self.record_of(part, bodies) else {
+                return Err(self.fault(format!("the stored records hold no record of the part {:?}, which the record of a frame part is imaged by", self.steps(part))));
+            };
+            let types: Vec<ValueType> = self.key_types.iter().chain(&part.types).cloned().collect();
+            let rows = {
+                let mut table = evaluation.session.intern.write().expect("an intern table that no panic poisoned");
+                crate::terms::encode_param_value(record, &types, evaluation.registry, &mut table)
+                    .map_err(|error| self.fault(format!("the record of a part does not read at the key and the part's columns: {error:?}")))?
+            };
+            records.push(group_by_key(rows, key_width, part.labels.len()));
+        }
+        let geometry = Geometry::get();
+        let elements = geometry.domain(&ValueType::D4);
+        let mut undefined = false;
+        for (key, frame) in frames.iter_mut() {
+            let others: Vec<RowSet> = self.parts.iter().zip(&records).map(|(part, rows)| rows.get(key).filter(|_| !part.frame).cloned().unwrap_or_else(|| part.no_rows())).collect();
+            let (from, onto) = (View { key, parts: &others }, View { key, parts: frame });
+            if let Err(bound) = self.charge_search(budget, &from, &onto, elements.len()) {
+                return Ok(Err(self.stopped(bound)));
+            }
+            let found: Vec<D4Element> = elements.iter().map(|&element| geometry.element(element)).filter(|&g| self.takes_onto(geometry, g, &from, &onto)).collect();
+            undefined |= found.is_empty();
+            for &index in recorded {
+                let part = &self.parts[index];
+                let mut agreed: Option<StableHashSet<Row>> = None;
+                for &g in &found {
+                    let images: StableHashSet<Row> = records[index].get(key).into_iter().flat_map(RowSet::rows).map(|values| image(geometry, g, values, &part.types).collect()).collect();
+                    undefined |= agreed.get_or_insert_with(|| images.clone()) != &images;
+                }
+                let mut rows = part.no_rows();
+                for row in agreed.unwrap_or_default() {
+                    rows.insert(row);
+                }
+                frame[index] = rows;
+            }
+        }
+        Ok(if undefined { Err(RelationValue::Undefined) } else { Ok(()) })
+    }
+
+    /// The stored record of `&<assembly>.<part>` that gives the frame part
+    /// `part` its rows: the record, where the stored records leave the part's
+    /// `DET` no rows of its own, as `Driver::lacks_stored_rows` gives, and
+    /// hold the record. At values determined from the evidence, none.
+    fn frame_record<'b>(&self, part: &Part<'_>, bodies: &'b FormBodies<'_>) -> Option<&'b ParamValue> {
+        if bodies.driver.lacks_stored_rows(&part.atom.value().relation) { self.record_of(part, bodies) } else { None }
+    }
+
+    /// The stored record of `&<assembly>.<part>`, or `None` where the
+    /// records hold none.
+    fn record_of<'b>(&self, part: &Part<'_>, bodies: &'b FormBodies<'_>) -> Option<&'b ParamValue> {
+        let name = OutputName { of: OutputOwner::RigidDet(self.name.clone()), path: self.steps(part).into() };
+        bodies.driver.evaluation.parameters.get(&ProgramRelation::Output(name))
     }
 
     /// The rows of `&marker.<part>`: at each key, at each D4 element, the
@@ -476,9 +594,11 @@ impl<'e, 'p> Assembly<'e, 'p> {
 
     /// The columns of the clause that joins the key and instance bodies with
     /// the atom of `part` where it is given: the key's labels, the
-    /// instance's, and the part's.
+    /// instance's, and the part's. A frame part's clause leaves out the
+    /// instance body and its labels.
     fn columns(&self, part: Option<&Part<'_>>) -> Vec<LabelId> {
-        self.key_labels.iter().chain(&self.instance_labels).chain(part.into_iter().flat_map(|part| &part.labels)).copied().collect()
+        let instance: &[LabelId] = if part.is_some_and(|part| part.frame) { &[] } else { &self.instance_labels };
+        self.key_labels.iter().chain(instance).chain(part.into_iter().flat_map(|part| &part.labels)).copied().collect()
     }
 
     /// The clause that joins the key and instance bodies with the atom of
@@ -496,7 +616,7 @@ impl<'e, 'p> Assembly<'e, 'p> {
         let conjuncts = self
             .key
             .iter()
-            .chain(&self.instance)
+            .chain(self.instance.iter().filter(|_| !part.is_some_and(|part| part.frame)))
             .flat_map(|(body, path)| body.conjuncts.iter().zip(0u32..).map(move |(conjunct, index)| (conjunct, path.child(index))))
             .chain(atom.iter().map(|(conjunct, path)| (conjunct, path.clone())))
             .collect();
@@ -519,6 +639,17 @@ impl<'e, 'p> Assembly<'e, 'p> {
         join::each_row(&relation, &mut |row| rows.push(row.into()));
         Ok(Ok(rows))
     }
+}
+
+/// `rows` grouped by their first `key_width` columns: for each key, the
+/// rest of the rows that begin with it, which have `arity` columns.
+fn group_by_key(rows: impl IntoIterator<Item = Row>, key_width: usize, arity: usize) -> StableHashMap<Row, RowSet> {
+    let mut groups: StableHashMap<Row, RowSet> = StableHashMap::default();
+    for row in rows {
+        let (key, values) = row.split_at(key_width);
+        groups.entry(key.into()).or_insert_with(|| RowSet::empty(arity as u16)).insert(values.into());
+    }
+    groups
 }
 
 /// The fault `message` at the form at `form`.

@@ -16,7 +16,7 @@ use super::{cache, instance, plan, proposers, rigid};
 use super::{Evaluation, Outcome, ParameterSource, ReachedBound, RelationValue, RunFault, Stop};
 use crate::hash::StableHashMap;
 use crate::program::path::{node_at, NodePath, NodeRef};
-use crate::program::{Clause, ClauseKeyword, ProgramRelation};
+use crate::program::{Clause, ClauseKeyword, ParamValue, ProgramRelation, RelationRef};
 use crate::relations::{ColumnIndex, Relation, RelationPart, RowSet};
 use crate::resolver::ResolvedContent;
 use crate::resolver::{DependencyKind, GraphNodeIndex};
@@ -126,13 +126,10 @@ impl<'e, 'a> Driver<'e, 'a> {
         let form = self.program().form_of(relation.node);
         let fault = |message: String| RunFault { message: message.into(), form: form.clone() };
         let value = match evaluation.parameters.source() {
-            ParameterSource::Stored { records, assigns } => {
-                let record = if self.is_by_clauses(relation) { None } else { records.get(name) };
-                match assigns.get(name).or(record) {
-                    Some(value) => value,
-                    None => return self.one_value(relation),
-                }
-            }
+            ParameterSource::Stored { .. } => match self.stored_value(relation, name) {
+                Some(value) => value,
+                None => return self.one_value(relation),
+            },
             ParameterSource::Determined(assigned) => {
                 return match assigned.get(name) {
                     Some(rows) => Ok(RelationValue::Rows(rows.clone())),
@@ -149,6 +146,30 @@ impl<'e, 'a> Driver<'e, 'a> {
             set.insert(row);
         }
         Ok(RelationValue::Rows(Arc::new(join::one_part(set))))
+    }
+
+    /// The written rows that the stored records give the `DET` relation
+    /// `name`: its `assign`, or else its record, which a `DET` by its clauses
+    /// ([`Driver::is_by_clauses`]) does not read. `None` where neither gives
+    /// it, and at values determined from the evidence.
+    fn stored_value(&self, relation: &GraphRelation, name: &ProgramRelation) -> Option<&'a ParamValue> {
+        let ParameterSource::Stored { records, assigns } = self.evaluation.parameters.source() else { return None };
+        let record = if self.is_by_clauses(relation) { None } else { records.get(name) };
+        assigns.get(name).or(record)
+    }
+
+    /// Whether the stored records leave the relation `read` with no source of
+    /// rows: it is a `DET` that is no `DET` by its clauses, and neither an
+    /// `assign` nor a record gives it rows, so that [`Driver::parameter`]
+    /// would take its one value, or fault where its domain holds several.
+    /// False at values determined from the evidence.
+    pub(super) fn lacks_stored_rows(&self, read: &RelationRef) -> bool {
+        let (ParameterSource::Stored { .. }, RelationRef::Declared(name)) = (self.evaluation.parameters.source(), read) else { return false };
+        let name = ProgramRelation::Declared(name.clone());
+        let nodes = &self.program().graph.nodes;
+        let Some(node) = nodes.iter().position(|node| matches!(&node.kind, DependencyKind::Parameter(found) if *found == name)) else { return false };
+        let relation = GraphRelation { node: GraphNodeIndex(node as u32), output: None };
+        !self.is_by_clauses(&relation) && self.stored_value(&relation, &name).is_none()
     }
 
     /// Whether the node of `relation` is a `DET` by its clauses: each of its
