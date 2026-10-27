@@ -4,8 +4,8 @@
 //! `<rows-dir>/<task_id>.json` (`scripts/souffle_parity.py case-rows`). It
 //! reads a file as a stream, one case at a time, so that a case's rows are
 //! dropped once it is compared: `orientation_constants` and
-//! `check_relations` come before `cases` and `determination`, and `cases`
-//! before `determination`, as `parity.rerun.case_rows` writes them.
+//! `check_relations` come before `cases`, as `parity.rerun.case_rows` writes
+//! them.
 //!
 //! It prints a line `<task>\t<relation>\t<verdict>\t<detail>` for each task
 //! and relation, in the rows file's order, ordered by task id: `equal`;
@@ -41,22 +41,26 @@
 //!
 //! While it runs, each task that has run 10 s, and then each further 10 s,
 //! gets one line on stderr, `row-parity: <task> case <case>: <n> s`, with the
-//! case its rows file's stream has reached (empty before the first case,
-//! `determination` for the determination) and the seconds it has run.
+//! case its rows file's stream has reached (empty before the first case) and
+//! the seconds it has run.
 //!
-//! The file's `determination` entry, where it has one, holds Souffle's rows of
-//! the relations of the `Determine` component at its run over the task's
-//! examples, the run `solver.determine.determine` makes, on the determination
-//! program from which each clause of a branch the concept case does not take
-//! is dropped: for a relation with
-//! an Example leaf in the column map the rows of each train example under the pair `train <i>`,
-//! and for any other relation the rows of the run under the pair `task`. Each
-//! is compared as a case's relation is, with the engine's rows of the relation
-//! at the concept case's program, at the train example for a relation per
-//! input and once for a relation of the task, and its lines are the relation's
-//! lines. An engine relation that is of the task where Souffle's has an
-//! Example leaf in the column map, or the reverse, shows as a `differ`. A run that gives no
-//! rows is a fault of the whole task.
+//! The entry of a case in the file's `cases` has a `determination` where the
+//! check compares a relation of the `Determine` component. It holds Souffle's
+//! rows of those relations at their run over the task's examples, the run
+//! `solver.determine.determine` makes, on the determination program from which
+//! each clause of a branch that case does not take is dropped: for a relation
+//! with an Example leaf in the column map the rows of each train example under
+//! the pair `train <i>`, and for any other relation the rows of the run under
+//! the pair `task`. A relation of the entry is compared at the first case of
+//! the file whose program has a relation of that name, with the entry of that
+//! case, as a case's relation is, with the engine's rows of the relation at
+//! that case's program, at the train example for a relation per input and
+//! once for a relation of the task, and its lines are the relation's lines. A
+//! relation that no case's program has is `uncompared`. An engine relation
+//! that is of the task where Souffle's has an Example leaf in the column map,
+//! or the reverse, shows as a `differ`. A run that gives no rows is a fault of
+//! the whole task where a relation that no earlier case compared is in that
+//! case's program, or where no entry before has given the relations.
 //!
 //! An `equal` line proves: for each case that derives the relation and whose
 //! `&output` reads it, or is it, or that is a check relation, at the stored
@@ -64,7 +68,7 @@
 //! rows of the relation, projected onto the leaves the converter maps from
 //! Souffle's columns, are Souffle's rows projected onto the same leaves, as a
 //! set, and, for a relation of `Determine`, the same over the train examples
-//! at the concept case's stored parameters; where the map gives no column to compare, the relation is present in
+//! at the stored parameters of the first case whose program has it; where the map gives no column to compare, the relation is present in
 //! both or absent in both. Where the relation's rows differ between the
 //! case's models, and Souffle's relation holds the open value in a column,
 //! each model's rows are Souffle's rows of that model's open value, the
@@ -102,7 +106,7 @@ use arclog::terms::Example;
 use serde::de::{DeserializeSeed, IgnoredAny, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 
-use crate::concept_case::{with_case, with_concept_case, ConceptCase};
+use crate::concept_case::{with_case, ConceptCase};
 use crate::renaming::{renaming_exists, same_without_idents, EngineLeaf, Leaf};
 use crate::souffle_rows::{engine_columns, engine_models, named_relation, pair_name, same_rows, Column, EngineModel, EngineModels, PickRequest, Projection};
 
@@ -260,16 +264,16 @@ struct FilePair {
 }
 
 /// An entry of the rows file's `cases`: the pairs, or the failure of its
-/// Souffle run.
+/// Souffle run, and the case's `determination` where it has one.
 #[derive(Deserialize)]
 struct FileCase {
     case: String,
     failure: Option<String>,
     pairs: Option<Vec<FilePair>>,
+    determination: Option<FileDetermination>,
 }
 
-/// The rows file's `determination`: the pairs, or the failure of its Souffle
-/// run.
+/// A case's `determination`: the pairs, or the failure of its Souffle run.
 #[derive(Deserialize)]
 struct FileDetermination {
     failure: Option<String>,
@@ -389,7 +393,7 @@ fn overdue(progress: &Progress, now: Instant) -> Vec<String> {
 fn task_verdicts(corpus: &Path, tasks: &Path, id: &str, path: &Path, progress: &Progress) -> Result<Vec<(String, Verdict)>, String> {
     let file = File::open(path).map_err(|error| format!("{} does not read: {error}", path.display()))?;
     let mut deserializer = serde_json::Deserializer::from_reader(BufReader::new(file));
-    let mut verdicts = Verdicts { corpus, tasks, id, progress, constants: None, checks: None, cases_read: false, found: Found::default(), left_out: None, fault: None };
+    let mut verdicts = Verdicts { corpus, tasks, id, progress, constants: None, checks: None, awaiting: None, cases_read: false, found: Found::default(), left_out: None, fault: None };
     let read = (&mut verdicts).deserialize(&mut deserializer).and_then(|()| deserializer.end());
     if let Some(fault) = verdicts.fault.take() {
         return Err(fault);
@@ -408,6 +412,9 @@ struct Verdicts<'a> {
     constants: Option<BTreeMap<String, i64>>,
     /// The arclog names of the check relations.
     checks: Option<Vec<String>>,
+    /// The relations of the `determination` entries that no case has compared,
+    /// once an entry has given them.
+    awaiting: Option<Vec<String>>,
     cases_read: bool,
     found: Found,
     left_out: Option<Vec<FileNotCompared>>,
@@ -430,37 +437,40 @@ impl Verdicts<'_> {
         }
     }
 
-    /// Merges the verdicts of `case`, an entry of the rows file's `cases`.
+    /// Merges the verdicts of `case`, an entry of the rows file's `cases`: of
+    /// its pairs, and of its `determination`.
     fn read_case(&mut self, case: FileCase) -> Result<(), String> {
-        let FileCase { case: name, failure, pairs } = case;
+        let FileCase { case: name, failure, pairs, determination } = case;
         self.set_case(&name);
-        if let Some(failure) = failure {
-            self.found.lines.push((WHOLE_TASK.to_owned(), Verdict::Fault(format!("case {name}: no Souffle rows: {failure}"))));
+        let pairs = match failure {
+            Some(failure) => {
+                self.found.lines.push((WHOLE_TASK.to_owned(), Verdict::Fault(format!("case {name}: no Souffle rows: {failure}"))));
+                None
+            }
+            None => Some(pairs.ok_or("a case of the rows file has no `pairs`")?),
+        };
+        if pairs.is_none() && determination.is_none() {
             return Ok(());
         }
-        let pairs = pairs.ok_or("a case of the rows file has no `pairs`")?;
+        let mut awaiting = self.awaiting.take();
         let (constants, checks) = self.before_cases()?;
-        let found = with_case(self.corpus, self.tasks, self.id, &name, |case| case_verdicts(case, &name, constants, checks, pairs));
+        let found = with_case(self.corpus, self.tasks, self.id, &name, |case| {
+            let mut found = match pairs {
+                Some(pairs) => case_verdicts(case, &name, constants, checks, pairs)?,
+                None => Found::default(),
+            };
+            if let Some(determination) = determination {
+                match determination_verdicts(case, &name, constants, determination, &mut awaiting) {
+                    Ok(of_determination) => found.absorb(of_determination),
+                    Err(fault) => found.lines.push((WHOLE_TASK.to_owned(), Verdict::Fault(format!("case {name}, determination: {fault}")))),
+                }
+            }
+            Ok(found)
+        });
+        self.awaiting = awaiting;
         match found {
             Ok(of_case) => self.found.absorb(of_case),
             Err(fault) => self.found.lines.push((WHOLE_TASK.to_owned(), Verdict::Fault(format!("case {name}: {fault}")))),
-        }
-        Ok(())
-    }
-
-    /// Merges the verdicts of the rows file's `determination`.
-    fn read_determination(&mut self, determination: FileDetermination) -> Result<(), String> {
-        self.set_case("determination");
-        if let Some(failure) = determination.failure {
-            self.found.lines.push((WHOLE_TASK.to_owned(), Verdict::Fault(format!("determination: no Souffle rows: {failure}"))));
-            return Ok(());
-        }
-        let pairs = determination.pairs.ok_or("the `determination` of the rows file has no `pairs`")?;
-        let (constants, _) = self.before_cases()?;
-        let found = with_concept_case(self.corpus, self.tasks, self.id, |case| determination_verdicts(case, constants, pairs));
-        match found {
-            Ok(of_determination) => self.found.absorb(of_determination),
-            Err(fault) => self.found.lines.push((WHOLE_TASK.to_owned(), Verdict::Fault(format!("determination: {fault}")))),
         }
         Ok(())
     }
@@ -524,11 +534,6 @@ impl<'de> Visitor<'de> for &mut Verdicts<'_> {
                     map.next_value_seed(Cases(&mut *self))?;
                     self.cases_read = true;
                 }
-                "determination" => {
-                    let determination = map.next_value()?;
-                    let read = self.read_determination(determination);
-                    self.stop(read)?;
-                }
                 "not_compared" => self.left_out = Some(map.next_value()?),
                 _ => {
                     map.next_value::<IgnoredAny>()?;
@@ -578,7 +583,7 @@ struct Found {
 }
 
 impl Found {
-    /// Merges what one case or the determination gave into this.
+    /// Merges what one case gave into this.
     fn absorb(&mut self, other: Found) {
         other.lines.into_iter().for_each(|(relation, verdict)| merge(&mut self.lines, relation, verdict));
         other.sent.iter().for_each(|relation| add_once(&mut self.sent, relation));
@@ -618,20 +623,39 @@ fn case_verdicts(case: &ConceptCase<'_>, name: &str, constants: &BTreeMap<String
     Ok(found)
 }
 
-/// The verdict of each relation of the `pairs` of the rows file's
-/// `determination` entry, merged over the pairs, and the name of each
-/// relation they send: the entry of a train pair at that example, the entry
-/// of the task at the first. Each pair is dropped once it is compared.
-fn determination_verdicts(case: &ConceptCase<'_>, constants: &BTreeMap<String, i64>, pairs: Vec<FilePair>) -> Result<Found, String> {
+/// The verdict of each relation of the `determination` of the case `name`
+/// that is in `awaiting` and that the program of `case` has, merged over the
+/// pairs, and the name of each relation the entry sends: the entry of a train
+/// pair at that example, the entry of the task at the first. Each pair is
+/// dropped once it is compared, and each relation compared leaves `awaiting`,
+/// which the first entry sets to the relations it sends. A run that gave no
+/// rows is a fault where `awaiting` is not set, or a relation in it is in the
+/// program of `case`.
+fn determination_verdicts(case: &ConceptCase<'_>, name: &str, constants: &BTreeMap<String, i64>, determination: FileDetermination, awaiting: &mut Option<Vec<String>>) -> Result<Found, String> {
     let evaluation = &case.evaluation;
+    let has = |relation: &String| named_relation(evaluation.program, relation).is_some();
     let mut found = Found::default();
-    for entry in pairs {
+    let pairs = match (determination.failure, determination.pairs) {
+        (Some(failure), _) => {
+            return if awaiting.as_ref().is_some_and(|waiting| !waiting.iter().any(has)) { Ok(found) } else { Err(format!("no Souffle rows: {failure}")) };
+        }
+        (None, pairs) => pairs.ok_or("the `determination` of the rows file has no `pairs`")?,
+    };
+    pairs.iter().flat_map(|entry| &entry.relations).for_each(|relation| add_once(&mut found.sent, &relation.name));
+    let waiting = awaiting.get_or_insert_with(|| found.sent.clone());
+    let left: Vec<String> = waiting.iter().filter(|relation| has(relation)).cloned().collect();
+    for mut entry in pairs {
+        entry.relations.retain(|relation| left.contains(&relation.name));
+        if entry.relations.is_empty() {
+            continue;
+        }
         let pair = entry.pair.clone();
         let mut trains = evaluation.task.train_examples().enumerate();
         let example = if pair == TASK_PAIR { trains.next().map(|(_, example)| example) } else { trains.find(|&(index, _)| pair_name(evaluation.task, index) == pair).map(|(_, example)| example) };
         let example = example.ok_or_else(|| format!("the `determination` has the pair `{pair}`, which is no train pair of the task"))?;
-        entry_verdicts(evaluation, &format!("determination, {pair}"), example, entry, constants, None, &mut found)?;
+        entry_verdicts(evaluation, &format!("{name}, determination, {pair}"), example, entry, constants, None, &mut found)?;
     }
+    waiting.retain(|relation| !left.contains(relation));
     Ok(found)
 }
 

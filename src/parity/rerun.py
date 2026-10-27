@@ -6,10 +6,10 @@ that the rows are the case's own; the JSON form of that rerun; and
 the kept JSON of a rerun that gave rows, which stands while each input of
 the rerun is unchanged (`kept_json`); and the rows of the cases the row
 parity check runs on each pair, projected onto the columns the converter
-maps, with the relations the check leaves out (`case_rows`); and the rows of
-the relations of `Determine` at the run of its component over the task's
-examples, on the program from which each clause of a branch the concept case
-does not take is dropped (`determination_entry`).
+maps, with the relations the check leaves out (`case_rows`); and, for each of
+those cases, the rows of the relations of `Determine` at the run of its
+component over the task's examples, on the program from which each clause of a
+branch that case does not take is dropped (`determination_entry`).
 
 The check (`arclog_convert.row_parity`) runs the concept case and, for each
 `Choice` constructor (an ALT) that no case run before takes, the first case
@@ -85,10 +85,13 @@ column map an entry is compared as well with Souffle's rows of it at the run
 of the `Determine` component over the task's examples, once for the task
 (`determination_entry`), as `solver.determine.determine` makes it, on the
 program of `solver.determine.run_program` over `Loaded.determination` from which
-each clause of a branch the concept case does not take is dropped
-(`taken_program`), as the concept case's run drops them:
-a relation with an Example leaf in its column map per train pair, and any
-other once for the task. So is a relation of the converter's text of the
+each clause of a branch a case does not take is dropped
+(`taken_program`), as that case's run drops them, for each case the check
+runs: a relation with an Example leaf in its column map per train pair, and any
+other once for the task. The check compares a relation at the first case it
+runs whose program has a relation of that name, with the rows of that case's
+entry (a `DET` inside an `ALT` is in the program of the cases that take the
+branch). So is a relation of the converter's text of the
 determination run: the name map gives it the component `Determine` and its path
 from the top level of that program, and any other relation of `Determine` its
 path under the instance of `Determine`."""
@@ -432,13 +435,16 @@ def case_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | RunF
     "idents": [kind, ...], "unread": [[label, field], ...],
     "unresolved": [[label, field, reason], ...], "rows": [[[leaves of column 1], ...], ...],
     "by_open": {...}, "fault": text}]}]}], "not_compared": [{"name",
-    "verdict", "reason"}], "determination": {"pairs": [{"pair": "train 0" or
-    "task", "relations": [...]}]}}`, with the keys in that order, which `arclog-cli row-parity`
+    "verdict", "reason"}]}`, with the keys in that order, which `arclog-cli row-parity`
     reads one case at a time; a case whose run gives no rows has `"failure":
-    text` in place of `pairs`, and so has `determination`; the entries of its
-    relations are a case's. `determination` is there where the check compares
-    a relation of `Determine`, and holds the rows of the run of the concept case's
-    program of `Loaded.determination` (`taken_program`); a relation with an Example leaf in its column map has an entry
+    text` in place of `pairs`. A case's entry has as well `"determination":
+    {"pairs": [{"pair": "train 0" or "task", "relations": [...]}]}`, where the
+    check compares a relation of `Determine`, with `"failure": text` in place of
+    `pairs` where its run gives no rows; the entries of its
+    relations are a case's. It holds the rows of the run of the case's
+    program of `Loaded.determination` (`taken_program`), so that the check compares a
+    relation at the first case whose engine program has it, with that case's
+    rows; a relation with an Example leaf in its column map has an entry
     for each train pair, with the rows of that example, and any other relation
     one under the pair `task`, with the rows of the run. A relation whose entry has no column to
     compare has an empty `columns`, and its rows are `[]` where it has a row.
@@ -469,25 +475,28 @@ def case_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | RunF
         return loaded
     chosen = cases_to_run(loaded)
     columns: dict[str, dict[str, Entry | dict[str, Any]]] = json.loads(columns_path(stem).read_text())
-    run = run_program(taking(loaded.determination, chosen[0]))
-    determined = determined_relations(loaded, columns, run)
+    concept_run = run_program(taking(loaded.determination, chosen[0]))
+    determined = determined_relations(loaded, columns, concept_run)
     read = [] if loaded.names is None else loaded.names.read
     mapped, not_compared = classify(loaded, columns, [n for n in read if n not in {at.name for at in determined}])
     entries = []
     for i, case in enumerate(chosen):
         name = case_name(loaded.solver, case, loaded.names)
         got = case_entry(loaded, case, columns, mapped)
+        entry: dict[str, Any]
         if isinstance(got, list):
-            entries.append({"case": name, "pairs": got})
+            entry = {"case": name, "pairs": got}
         elif i == 0:
             return got
         else:
-            entries.append({"case": name, "failure": str(got)})
+            entry = {"case": name, "failure": str(got)}
+        if determined:
+            run = concept_run if i == 0 else run_program(taking(loaded.determination, case))
+            entry["determination"] = determination_entry(loaded, run, columns, determined)
+        entries.append(entry)
     out = {"orientation_constants": orientation_constants(loaded.solver.lib),
            "check_relations": [] if loaded.names is None else list(loaded.names.checks),
            "cases": entries, "not_compared": not_compared}
-    if determined:
-        out["determination"] = determination_entry(loaded, run, columns, determined)
     return out
 
 
@@ -534,9 +543,9 @@ def determined_relations(loaded: Loaded, columns: Mapping[str, Mapping[str, Any]
 
 def determination_entry(loaded: Loaded, run: RunProgram, columns: Mapping[str, Mapping[str, Any]],
                         mapped: Sequence[Pairing]) -> dict[str, Any]:
-    """The `determination` entry of `case_rows`' form for the relations
+    """The `determination` entry of a case in `case_rows`' form for the relations
     `mapped`: the program of `run`, which `case_rows` gives the cut of the
-    concept case (`taken_program`), over the task's examples, as
+    case (`taken_program`), over the task's examples, as
     `solver.determine.determine` runs it, once, each relation projected
     as in a case's `pairs`. A relation with an Example leaf in its column
     map has its rows of each train example under the pair `train <i>`, those
