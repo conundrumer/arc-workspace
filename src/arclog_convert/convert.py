@@ -25,10 +25,16 @@ the solver's program, and `<stem>.determination.dl`, which the determination's
 run adds. Beside gen/, the directory
 `row_parity.CORPUS` holds, for the row-parity check alone, a copy of each
 converted program with the check relations of the relations it folds
-(`arclog_convert.checks`); nothing else reads it.
+(`arclog_convert.checks`) and the clauses of the relations the projection pass
+removes from `gen/`; nothing else reads it.
 A pass after the conversion moves the unjoined factors of clause bodies into
 the clauses that join them (`arclog_convert.pull_up`); it runs on both texts,
 and the column map lists the columns it took away from each relation no more.
+A pass after that one folds each relation that only projects one earlier
+relation into the atoms that read it (`arclog_convert.projections`): it runs
+on both texts, and in the copy under `CORPUS` it keeps each clause it removes,
+as a check relation that nothing reads, which the name map lists under
+`checks`.
 A form the script cannot translate is written literally, under a
 `;; TODO <kind>: ...` comment.
 As each phase it runs ends (`plans`, `conversion`), the run prints a line `<phase>: <seconds> s` with that phase's
@@ -60,6 +66,7 @@ from arclog_convert.leaves import ScopedName
 from arclog_convert.lib import Col, ColMismatch, LIB_DL, Lib, SIGNATURE
 from arclog_convert.names import Checks, check_maps, column_map, dropped, folded, name_map, parity, placed, unchecked, untranslated
 from arclog_convert.plans import refresh_plans
+from arclog_convert.projections import project
 from arclog_convert.pull_up import Rows, drop_columns, pull_up
 from arclog_convert.solver import Solver
 
@@ -201,9 +208,18 @@ def convert_one(stem: str) -> tuple[str, str | None, str | None, Counter, Counte
             copy = pull_up(checked[0], checked[1], single)
             checked = (copy.arclog, checked[1])
             dropped.update({n: dropped.get(n, frozenset()) | g for n, g in copy.dropped.items()})
+        columns = drop_columns(columns, dropped)
         paths.COLUMNS_DIR.mkdir(parents=True, exist_ok=True)
-        _write_json(paths.COLUMNS_DIR, stem, drop_columns(columns, dropped))
-        checked = checked or (arclog, arcdata)
+        _write_json(paths.COLUMNS_DIR, stem, columns)
+        # the copy keeps each clause the pass removes, as a check relation that nothing reads
+        base = checked or (arclog, arcdata)
+        kept = project(base[0], base[1], columns, keep=True)
+        checked = (kept.arclog, base[1])
+        projected = project(arclog, arcdata, columns)
+        arclog = projected.arclog
+        if projected.removed or kept.removed:
+            names["checks"] = sorted({*names.get("checks", ()), *projected.removed, *kept.removed})
+            _write_json(paths.NAMES_DIR, stem, names)
     except Exception as e:  # noqa: BLE001
         return stem, None, None, Counter(), Counter(), [], {}, f"{type(e).__name__}: {e}", None
     return stem, arclog, arcdata, todo.kinds, merges, unmerged, s.c.col_mismatch, None, checked

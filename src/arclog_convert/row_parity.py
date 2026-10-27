@@ -6,7 +6,8 @@ the report of the relations that differ.
 The command checks the task files of `arclog_convert.out`, or of `--out`,
 with no conversion: the program under `CORPUS`, which is the one under `gen/`
 with the check relations of the relations the converter folds
-(`arclog_convert.checks`), and the name map and the column map; in a linked
+(`arclog_convert.checks`) and the clauses of the relations the projection pass
+removes (`arclog_convert.projections`), and the name map and the column map; in a linked
 worktree it writes no record without
 `--out` or `ARCLOG_OUT`, and it rewrites no baseline. `arclog_convert.verify` runs the same check on the
 solvers it checks. For each task, `arclog-cli row-parity` compares the rows
@@ -103,7 +104,9 @@ VERSION = 5
 CORPUS = "gen_check"
 """The directory beside `gen/` that holds, for each converted task, its
 program with the check relations of the relations it folds
-(`arclog_convert.checks`), which `arclog-cli row-parity` reads as its corpus."""
+(`arclog_convert.checks`) and the clauses of the relations the projection pass
+removes from the program of `gen/` (`arclog_convert.projections`), which
+`arclog-cli row-parity` reads as its corpus."""
 
 FAILING = ("differ", "fault", "uncompared")
 """The verdicts that the baseline holds and that fail the run."""

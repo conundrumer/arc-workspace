@@ -61,6 +61,11 @@ of such a relation proves that the converter's translation of the relation's
 clauses derives Souffle's rows of it; the fold of those clauses into the
 relations that read them is checked by those relations' own lines.
 
+An arclog relation whose clause `arclog_convert.projections` removes from the
+program of `gen/` keeps the clause in the corpus, under its own name, as a check
+relation that no relation reads; the relations that read it there read the
+relation it projects.
+
 Each arclog relation with `&` of the name map (`relations` and `unmapped`)
 that no relation of the run maps to (`relation_names`), and that is no relation of
 `Determine` the check compares (`determined_relations`), is `skip`, "each Souffle

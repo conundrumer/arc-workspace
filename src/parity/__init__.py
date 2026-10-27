@@ -54,8 +54,9 @@ class NameMap:
     converted program reads that no Souffle relation was written into; and,
     for each Souffle relation by its path that the converter folds and made
     no check relation of, why not; and the arclog name of each check
-    relation (`arclog_convert.checks`) the converted program has, which is
-    among `relations` too."""
+    relation the converted program has, which is among `relations` too: one
+    of a folded Souffle relation (`arclog_convert.checks`), and one whose
+    clause `arclog_convert.projections` removes from the program of `gen/`."""
 
     relations: Mapping[str, tuple[SouffleRelation, ...]]
     constructors: Mapping[str, str]

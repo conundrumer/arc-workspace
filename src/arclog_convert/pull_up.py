@@ -35,7 +35,7 @@ from pathlib import Path
 
 from engine import Rows as EngineRows
 from arclog_convert.lint import (
-    FACTS, FORMS, MARKS, OPS, L, Linter, Sym, bare_label, form_labels, is_const, placements, read, walk)
+    FACTS, FORMS, MARKS, OPS, L, Linter, Placed, Sym, bare_label, form_labels, is_const, placements, read, walk)
 
 BODIES = ("RULE", "DET")
 """The clauses with a body that the pass reads and rewrites."""
@@ -59,7 +59,7 @@ class Pulled:
 
 
 @dataclass(frozen=True)
-class _Site:
+class Site:
     """A site of an atom: its column, its label (none where it holds a constant or several labels), the label's mark and the site's node."""
 
     column: str
@@ -69,7 +69,7 @@ class _Site:
 
 
 @dataclass(frozen=True)
-class _Reader:
+class Reader:
     """An atom that reads a relation, with the `RULE` or `DET` clause whose body holds it where the pass can rewrite
     the atom (none elsewhere), and the lists from the clause's body down to the atom's, each with the index of the
     item that holds the atom."""
@@ -94,18 +94,18 @@ def _labels(x: L) -> frozenset[str]:
     return frozenset(bare_label(t) for t in form_labels(x))
 
 
-def _sites(atom: L) -> dict[str, _Site] | None:
+def atom_sites(atom: L) -> dict[str, Site] | None:
     """The sites of `atom` by column; none where a site has a shape the pass does not read."""
-    out: dict[str, _Site] = {}
+    out: dict[str, Site] = {}
     for node in atom.items[1:]:
         if isinstance(node, Sym) and not is_const(node.text):
             column = bare_label(node.text)
-            out[column] = _Site(column, column, node.text[:len(node.text) - len(column)], node)
+            out[column] = Site(column, column, node.text[:len(node.text) - len(column)], node)
         elif isinstance(node, L) and node.head and node.head.startswith(":"):
             args = node.items[1:]
             one = args[0] if len(args) == 1 and isinstance(args[0], Sym) and not is_const(args[0].text) else None
             label = None if one is None else bare_label(one.text)
-            out[node.head[1:]] = _Site(node.head[1:], label, "" if one is None else one.text[:len(one.text) - len(label or "")], node)
+            out[node.head[1:]] = Site(node.head[1:], label, "" if one is None else one.text[:len(one.text) - len(label or "")], node)
         else:
             return None
     return out
@@ -161,11 +161,18 @@ def _existence_test(group: list[L]) -> L | None:
     """The atom of `group` where it is one atom with each label once and every label at a site of its own."""
     if len(group) != 1 or group[0].head is None or group[0].head in FORMS | OPS:
         return None
-    sites = _sites(group[0])
-    if sites is None or any(s.label is None and form_labels(s.node) for s in sites.values()):
+    found = atom_sites(group[0])
+    if found is None or any(s.label is None and form_labels(s.node) for s in found.values()):
         return None
     labels = form_labels(group[0])
     return group[0] if len(set(labels)) == len(labels) else None
+
+
+def applied(text: str, edits: list[Edit]) -> str:
+    """`text` with the non-overlapping `edits` made."""
+    for start, end, replacement in sorted(edits, reverse=True):
+        text = text[:start] + replacement + text[end:]
+    return text
 
 
 def _cut(text: str, node: Sym | L) -> Edit:
@@ -176,17 +183,17 @@ def _cut(text: str, node: Sym | L) -> Edit:
     return start, end, ""
 
 
-def _readers(clause: L) -> Iterator[_Reader]:
+def readers(clause: L) -> Iterator[Reader]:
     """Each atom under `clause` that reads a relation by a name with `&`."""
     body = _items(clause) if clause.head in BODIES else None
     if body is None:
-        yield from (_Reader(a, None, ()) for a in walk(clause) if isinstance(a, L) and str(a.head).startswith("&"))
+        yield from (Reader(a, None, ()) for a in walk(clause) if isinstance(a, L) and str(a.head).startswith("&"))
     else:
         yield from _body_readers(clause, body, (), True)
 
 
 def _body_readers(clause: L, items: list, above: tuple[tuple[list, int], ...], rewritable: bool
-                  ) -> Iterator[_Reader]:
+                  ) -> Iterator[Reader]:
     for i, item in enumerate(items):
         if not isinstance(item, L):
             continue
@@ -206,10 +213,22 @@ def _body_readers(clause: L, items: list, above: tuple[tuple[list, int], ...], r
         elif head in FORMS:
             yield from _body_readers(clause, item.items[1:], level, False)
         elif head.startswith("&"):
-            yield _Reader(item, clause if rewritable else None, level)
+            yield Reader(item, clause if rewritable else None, level)
 
 
-def _given_rows(arcdata: str) -> frozenset[str]:
+def readers_by_relation(placed: list[Placed]) -> dict[str, list[tuple[Reader, Placed]]]:
+    """Each atom under a placed form that reads a relation by a name with `&`, once, with the form, by the name."""
+    out: dict[str, list[tuple[Reader, Placed]]] = defaultdict(list)
+    seen: set[int] = set()
+    for p in placed:
+        for r in readers(p.form):
+            if r.atom.start not in seen:
+                seen.add(r.atom.start)
+                out[str(r.atom.head)].append((r, p))
+    return out
+
+
+def given_rows(arcdata: str) -> frozenset[str]:
     """The relations whose rows the arcdata gives: a `param` form's, and a witness's `assign`."""
     return frozenset(x.items[1].text for f in read(arcdata) for x in walk(f)
                      if isinstance(x, L) and x.head in ("param", "assign") and len(x.items) > 1
@@ -274,13 +293,8 @@ class _Program:
         linter.run()
         self.columns = linter.cols
         self.declared = Counter(p.name for p in self.placed if p.name)
-        self.readers: dict[str, list[_Reader]] = defaultdict(list)
-        seen: set[int] = set()
-        for p in self.placed:
-            for r in _readers(p.form):
-                if r.atom.start not in seen:
-                    seen.add(r.atom.start)
-                    self.readers[str(r.atom.head)].append(r)
+        self.readers: dict[str, list[Reader]] = defaultdict(
+            list, {name: [r for r, _ in found] for name, found in readers_by_relation(self.placed).items()})
 
     def move(self) -> tuple[str, str, frozenset[str]] | None:
         """The text after the first move of a factor, the relation it left and the columns that took away, none where
@@ -298,11 +312,7 @@ class _Program:
                 moving = moving[1:]
             moving = [plan for plan in moving if plan.edits]
             if moving:
-                edits = sorted(moving[0].edits, reverse=True)
-                text = self.text
-                for start, end, replacement in edits:
-                    text = text[:start] + replacement + text[end:]
-                return text, str(p.name), moving[0].gone
+                return applied(self.text, moving[0].edits), str(p.name), moving[0].gone
         return None
 
     def _editable(self, clause: L) -> bool:
@@ -318,14 +328,14 @@ class _Program:
         used = frozenset().union(*map(_labels, group))
         if not used:
             return _Plan([], frozenset())
-        sites_of = [(r, _sites(r.atom)) for r in self.readers[name]]
+        sites_of = [(r, atom_sites(r.atom)) for r in self.readers[name]]
         if any(sites is None for _, sites in sites_of):
             return None
         made = used & self.columns[name]
         read_by_some = frozenset().union(*(frozenset(sites) for _, sites in sites_of if sites is not None))
         columns = made if kind == "RULE" else made & read_by_some
         test = _existence_test(group)
-        joins: list[tuple[_Reader, dict[str, _Site]]] = []
+        joins: list[tuple[Reader, dict[str, Site]]] = []
         silent = not sites_of
         for r, sites in sites_of:
             assert sites is not None
@@ -342,7 +352,7 @@ class _Program:
             return None
         edits: list[Edit] = []
         if test is not None:
-            edits += [_cut(self.text, s.node) for s in (_sites(test) or {}).values() if s.label is not None]
+            edits += [_cut(self.text, s.node) for s in (atom_sites(test) or {}).values() if s.label is not None]
         else:
             edits += [_cut(self.text, x) for x in group]
         taken: dict[int, set[str]] = {}
@@ -351,7 +361,7 @@ class _Program:
             edits += self._copy(r, sites, group, columns, used, taken.setdefault(r.clause.start, set(_labels(r.clause))))
         return _Plan(edits, made)
 
-    def _copy(self, reader: _Reader, sites: dict[str, _Site], group: list[L], columns: frozenset[str],
+    def _copy(self, reader: Reader, sites: dict[str, Site], group: list[L], columns: frozenset[str],
               used: frozenset[str], taken: set[str]) -> list[Edit]:
         """The edits that drop the sites of `columns` from the atom of `reader` and write `group` after it, its
         labels of `columns` as the reader's, and its other labels fresh, in the `taken` labels of the reader's clause."""
@@ -378,8 +388,8 @@ class _Program:
         for x in group:
             if x.head in OPS or x.head == "NOT":
                 continue
-            sites = None if x.head in FORMS else _sites(x)
-            if sites is None or not self.single(str(x.head), frozenset(sites)):
+            found = None if x.head in FORMS else atom_sites(x)
+            if found is None or not self.single(str(x.head), frozenset(found)):
                 return False
             atoms += 1
         return atoms > 0
@@ -388,7 +398,7 @@ class _Program:
 def pull_up(arclog: str, arcdata: str, single: Single) -> Pulled:
     """`arclog` after the pass, with the columns it took away from each relation, given the `arcdata` of the same
     program and the rows `single` gives."""
-    given = _given_rows(arcdata)
+    given = given_rows(arcdata)
     dropped: dict[str, set[str]] = defaultdict(set)
     while (moved := _Program(arclog, given, single).move()) is not None:
         arclog, name, gone = moved
