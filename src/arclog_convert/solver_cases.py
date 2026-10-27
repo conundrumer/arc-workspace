@@ -89,7 +89,7 @@ class CasesMixin:
             out.append(parent)
             cur = parent[0]
 
-    def dead_clauses(self, main: list[Form], empty: set[str], mine: set[str], out: list[str],
+    def dead_clauses(self, main: list[Form], empty: set[str], mine: set[str],
                      others: set[str] = frozenset(), adds: set[str] | frozenset[str] = frozenset()) -> list[Form]:
         """The alt's rederivations of the concept relations whose clauses
         read a relation the alt derives no rows of: a clause that reads
@@ -201,9 +201,6 @@ class CasesMixin:
         for g in redo:
             redo_lines[g.name].append(g.lines)
         redo = [g for g in redo if g.name in adds or redo_lines[g.name] != concept_lines.get(g.name)]
-        if "&out" in empty:
-            out.append("    ;; TODO alt-undefined: every &output clause reads a relation this alt leaves empty")
-            self.todo.kinds["alt-undefined"] += 1
         return redo
 
     def reading_determinations(self, fs: list[Form], main: list[Form]) -> list[Form]:

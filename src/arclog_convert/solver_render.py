@@ -44,9 +44,11 @@ class RenderMixin:
     def render(self, forms: list[Form], claims: list[Claim], points, concept, all_ctors) -> str:
         slugs = [cl.slug for cl in claims]
         idx = {s: i for i, s in enumerate(slugs)}
-        # An instance whose inputs fix the constructors of several cases
-        # stands in the concept with the inputs the concept's case admits,
-        # unless the concept already holds a form of the instance.
+        # An instance form whose branches hold the concept's constructor at
+        # each point it names stands in the concept with its branches cut to
+        # the concept's. An instance whose inputs fix the constructors of
+        # several cases stands in the concept with the inputs the concept's
+        # case admits, unless the concept already holds a form of the instance.
         extra: list[Form] = []
         for f in forms:
             if f.src_inst is None or not (set(f.branches) - concept):
@@ -55,6 +57,14 @@ class RenderMixin:
             if any(h.src_inst is not None and h.src_inst[0] == inst and not (set(h.branches) - concept)
                    for h in forms):
                 continue   # the concept has a form of the instance
+
+            at_points: dict[str, set[str]] = defaultdict(set)
+            for b in f.branches:
+                at_points[all_ctors[b]].add(b)
+            if all(bs & concept for bs in at_points.values()):
+                # the form holds at the concept's constructor of each point it names
+                extra.append(dc_replace(f, branches=tuple(sorted(set(f.branches) & concept))))
+                continue
 
             def unit_ctors(u) -> set[str]:
                 args = list(u.head.args) + [a for l in u.body or () if isinstance(l, AtomLiteral) and not l.negated
@@ -665,10 +675,13 @@ class RenderMixin:
                     changed = True
         if not moved:
             return main, branch_forms
-        # a concept form that the branch derives again is read nowhere
-        dead = {n for n, k in moved.items()
-                if any(g.name == n and k == set(g.branches) - concept for g in branch_forms)}
-        main = [f for f in main if f.name not in dead]
+        # a concept form that the branch derives again from the same Souffle
+        # clause is read nowhere; a branch clause from another clause adds rows
+        def derived_again(f: Form) -> bool:
+            return f.name in moved and any(
+                g.name == f.name and moved[f.name] == set(g.branches) - concept
+                and (f.src is None or g.src is None or g.src[0] is f.src[0]) for g in branch_forms)
+        main = [f for f in main if not derived_again(f)]
         for f in main:
             if f.name in moved:
                 f.branches = tuple(sorted(set(f.branches) | moved[f.name]))
@@ -812,6 +825,12 @@ class RenderMixin:
                     self.todo.kinds["combination"] += 1
                     out.extend(render_forms([f], "    "))
             for others, cfs in combos.items():
+                # a case set that holds no row of the combination's case is
+                # empty in it: a form that reads one is written again without
+                # that read
+                rowless = self.rowless_sets(dict(self.ancestors(fname)) | {fname: k.name}
+                                            | {field_of[b]: b for b in others})
+                cfs = [g for g in (self.without_reads(g, rowless) for g in cfs) if g is not None]
                 # a relation the combination derives as the other branch
                 # alone does is no rederivation
                 alone: dict[str, list] = defaultdict(list)
@@ -854,15 +873,38 @@ class RenderMixin:
         out.append("")
         return out
 
+    def rowless_sets(self, at: dict[str, str]) -> set[str]:
+        """The case sets (`%name`) that hold no row of the case that takes
+        the constructor `at` gives for each of its points: they are empty in
+        it. A set whose values hold no value of a point holds in the case as
+        it holds in the concept's."""
+        return {"%" + name for name, rows in self.case_set_rows.items()
+                if not any(all(row.get(f_, ck) == ck for f_, ck in at.items())
+                           and all(row.get(f_, v) == v for f_, v in self.concept_of.items() if f_ not in at)
+                           for row in rows)}
+
+    def without_reads(self, f: "Form", gone: set[str] | frozenset[str]) -> "Form | None":
+        """`f` written again without each read of `gone`, with its comments,
+        claim slugs and branches; `f` itself where it reads none of them or
+        has no clause to write again; `None` where nothing is left."""
+        gone = frozenset((f.top_pos | f.top_neg | f.nested | f.reads) & gone)
+        if not gone or (f.src is None and f.src_inst is None):
+            return f
+        g = self.written_without(f, gone)
+        if g is not None:
+            g.comments, g.claim_slugs, g.branches = f.comments, f.claim_slugs, f.branches
+        return g
+
     def alt_case(self, alts: list[tuple[str, str]], branch_forms, concept, main, main_text, out: list[str]
                  ) -> tuple[list["Form"], dict[str, list]]:
         """The forms of the case that takes each (point, constructor) of
         `alts`, where they differ from `main_text`, and each relation's lines
         as that case derives them. A relation the case leaves empty is one
-        that no form of the case derives, or that `dead_clauses` puts in
-        `empty` because each of its concept clauses fixes another constructor
-        of a point of the case; each form of the alt's own that reads one is
-        written again without that read."""
+        that no form of the case derives (a branch form derives in the case
+        only where it takes the case's constructor at each point it names),
+        or that `dead_clauses` puts in `empty` because each of its concept
+        clauses fixes another constructor of a point of the case; each form
+        of the alt's own that reads one is written again without that read."""
         adts = dict(self.c.point_fields())
         field_of = {kk.name: f_ for f_, a_ in adts.items() for kk in a_.constructors}
         pts = {f_ for f_, _ in alts}
@@ -871,12 +913,16 @@ class RenderMixin:
         anc_ctors = {ck for _, ck in anc}
         sib = {kk.name for f_ in pts for kk in adts[f_].constructors} | anc_ctors
 
-        def holds(f: "Form") -> bool:
+        def takes(f: "Form", case: dict[str, str]) -> bool:
             # a form names its points' constructors as alternatives, and each
             # point of the case that it names takes the case's constructor
             bs = set(f.branches)
-            return bool(bs & ks) and not (bs - concept - sib) and all(
-                k in bs or not bs & {kk.name for kk in adts[f_].constructors} for f_, k in alts)
+            return all(k in bs or not bs & {kk.name for kk in adts[f_].constructors}
+                       for f_, k in case.items())
+
+        def holds(f: "Form") -> bool:
+            bs = set(f.branches)
+            return bool(bs & ks) and not (bs - concept - sib) and takes(f, dict(alts))
         fs = [f for f in branch_forms if holds(f)]
         fs = topo(fs)
         # drop forms identical to the concept's
@@ -885,10 +931,12 @@ class RenderMixin:
         for f in fs:
             mine_text[f.name].append(f.lines)
         fs = [f for f in fs if main_text.get(f.name) != mine_text[f.name]]
+        at = dict(anc) | dict(alts)
         mine = all_mine | {f.name for f in branch_forms if set(f.branches) & ks}
         # what a point this one stands under derives, its alt's case derives
-        mine |= {f.name for f in branch_forms if set(f.branches) - concept
+        under = {f.name for f in branch_forms if set(f.branches) - concept
                  and set(f.branches) - concept <= anc_ctors}
+        mine |= under
 
         def fixed(f: "Form") -> bool:
             return any(b in concept and field_of.get(b) in pts for b in f.branches)
@@ -897,16 +945,19 @@ class RenderMixin:
             fixed_names[f.name].append(fixed(f))
         # a determination runs once, under the concept's case, so a
         # relation it derives holds in every branch
-        empty = {f.name for f in main
-                 if all(fixed_names[f.name]) and f.name not in mine and f.side != "DET" and fixed(f)}
-        at = dict(anc) | dict(alts)
-        for name, rows in self.case_set_rows.items():
-            # a set whose values hold no value of a point holds in the
-            # alt's case as it holds in the concept's
-            if not any(all(row.get(f_, ck) == ck for f_, ck in at.items())
-                       and all(row.get(f_, v) == v for f_, v in self.concept_of.items() if f_ not in at)
-                       for row in rows):
-                empty.add("%" + name)
+        fixed_only = {f.name for f in main
+                      if all(fixed_names[f.name]) and f.side != "DET" and fixed(f)}
+        instances = {f.name for f in main if all(g.src_inst is not None for g in main if g.name == f.name)}
+
+        def derived_without(gone: set[str]) -> set[str]:
+            # a branch form derives in the case only where it takes the
+            # case's constructor at each point it names, and keeps a clause
+            # once it is written again without the relations `gone`
+            return under | {f.name for f in branch_forms
+                            if set(f.branches) & ks and (holds(f) or takes(f, at))
+                            and self.without_reads(f, gone) is not None}
+        rowless = self.rowless_sets(at)
+        empty = (fixed_only - derived_without(rowless)) | rowless
         # a concept clause whose head fixes another constructor of this
         # point, or of a point this one stands under, holds no row here
         others_k = {kk.name for f_, ck in at.items() for kk in adts[f_].constructors if kk.name != ck}
@@ -916,7 +967,18 @@ class RenderMixin:
         adds = {f.name for f in fs if f.side == "RULE" and f.lines[0].startswith("(RULE ") and f.name not in reps
                 and all(g.side == "RULE" and g.lines[0].startswith("(RULE ") and g.cols == f.cols
                         for g in main if g.name == f.name)}
-        redo = self.dead_clauses(main, empty, mine, out, others_k, adds)
+        while True:
+            redo = self.dead_clauses(main, empty, mine, others_k, adds)
+            # an instance whose branch forms all read a relation that
+            # `dead_clauses` put in `empty` is empty too
+            lapsed = (fixed_only & instances) - empty - derived_without(empty)
+            if not lapsed:
+                break
+            empty |= lapsed
+            mine -= lapsed
+        if "&out" in empty:
+            out.append("    ;; TODO alt-undefined: every &output clause reads a relation this alt leaves empty")
+            self.todo.kinds["alt-undefined"] += 1
         fs = fs + redo
         reread = self.reading_determinations(fs, main)
         fs = fs + reread
@@ -935,16 +997,11 @@ class RenderMixin:
             dropped_any = False
             fs2 = []
             for f in fs:
-                gone = (f.top_pos | f.top_neg | f.nested | f.reads) & (known - here_names)
-                if gone and (f.src is not None or f.src_inst is not None):
-                    g = self.written_without(f, frozenset(gone))
-                    if g is None:
-                        dropped_any = True
-                        continue
-                    g.comments, g.claim_slugs, g.branches = f.comments, f.claim_slugs, f.branches
-                    fs2.append(g)
+                g = self.without_reads(f, known - here_names)
+                if g is None:
+                    dropped_any = True
                 else:
-                    fs2.append(f)
+                    fs2.append(g)
         fs = fs2
         # a form written again without an empty relation can come out as the
         # concept's, and so can the clauses of a relation, merged into one
