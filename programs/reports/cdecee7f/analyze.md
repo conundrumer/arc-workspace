@@ -13,10 +13,7 @@
             - `$Diag8`: 8-adjacency, so two dots of one color that meet at a corner are one dot. Fits every pair. Witness `touching-same-color-corner` breaks `scattered-dots` (no two touching), plausibility `foreign`, verdict `concept`; the invariant it breaks: no two dots of any input touch, even at a corner.
         - `object-color`
             - `concept`: a component holds one color
-            - `$MixedObjects`: a component joins touching cells of any color that is not `bg`; undefined where a component holds two colors. Fits every pair. Fails Subsumption: where it is defined, each component holds one color, so its output is the output of `$Objects`. Witness `touching-two-colors` (`$MixedObjects` is undefined there) breaks `scattered-dots` (no two touching), plausibility `foreign`, verdict `concept`; the invariant it breaks: no two dots of any input touch, even at a corner.
-- `column-tie`
-    - `concept`: two dots at one distance from the `scan-dir` edge take one rank, and the model is undefined
-    - `$LexTie`: the rank breaks a tie by row, from the `tie-dir` edge. Fits every pair. Witness `shared-column` breaks `scattered-dots` (no two in one column), plausibility `foreign`, verdict `$LexTie`; the invariant it breaks: no column of any input holds two dots.
+            - `$MixedObjects`: a component joins touching cells of any color that is not `bg`; undefined where a component holds two colors. Fits every pair. Fails Subsumption: where it is defined, each component holds one color, so its output is the output of `$Objects`.
 - `bg`
     - `concept`: `bg` stored, `0`
     - `bg=DominantColor`: `bg` is the commonest color of the input; it is defined on every input. Fits every pair. Witness `bg=DominantColor` breaks `scattered-dots` (a field of `0`), plausibility `variant`, verdict `bg=DominantColor`; the invariant it breaks: the field of every input is `0`.
@@ -34,13 +31,10 @@
     - `$ColumnIndex`: a dot takes the path cell at its column index, with no ranking. Fails Fit at train0: no dot sits in col 3, so (1,2) stays empty, and the output holds 6 there.
 - `overflow`
     - `concept`: the dots past the last path cell are dropped
-    - `$Overflow`: the model is undefined where the dots outnumber the path's cells. Fits every pair. Fails Subsumption: where it is defined, its output is the concept's. Witness `ten-dots` (`$Overflow` is undefined there) breaks `scattered-dots` (no more dots than the cells of an `out-size` grid), plausibility `borderline`, verdict `$FitSquare`; the invariant it breaks: no input holds more than 9 dots.
-- `dot-unit` & `column-tie`, `dot-unit` & `bg`, `dot-unit` & `fill-path`, `dot-unit` & `out-size`, `dot-unit` & `overflow`, `adjacency` & `column-tie`, `adjacency` & `bg`, `adjacency` & `fill-path`, `adjacency` & `out-size`, `adjacency` & `overflow`, `object-color` & `column-tie`, `object-color` & `bg`, `object-color` & `fill-path`, `object-color` & `out-size`, `object-color` & `overflow`, `column-tie` & `bg`, `column-tie` & `fill-path`, `column-tie` & `out-size`, `column-tie` & `overflow`, `bg` & `fill-path`, `bg` & `out-size`, `bg` & `overflow`, `fill-path` & `overflow`: the two branches' changes applied together
+    - `$Overflow`: the model is undefined where the dots outnumber the path's cells. Fits every pair. Fails Subsumption: where it is defined, its output is the concept's. Witness `ten-dots` breaks `scattered-dots` (no more dots than the cells of an `out-size` grid), plausibility `borderline`, verdict `$FitSquare`; the invariant it breaks: no input holds more than 9 dots.
+- `dot-unit` & `bg`, `dot-unit` & `fill-path`, `dot-unit` & `out-size`, `dot-unit` & `overflow`, `adjacency` & `bg`, `adjacency` & `fill-path`, `adjacency` & `out-size`, `adjacency` & `overflow`, `object-color` & `bg`, `object-color` & `fill-path`, `object-color` & `out-size`, `object-color` & `overflow`, `bg` & `fill-path`, `bg` & `out-size`, `bg` & `overflow`, `fill-path` & `overflow`: the two branches' changes applied together
 - `out-size` & `overflow`: the two branches' changes applied together
     - `$FitSquare` & `$Overflow`: the model of `$FitSquare` alone, because its square holds every dot and no dot overflows
-
-## Open parameters
-- `tie-dir`: top, bottom, under `$LexTie`
 
 ## Not formed
 - A separate color for the empty output cells: in every variant task it follows from `bg`, so it is derived data and not a second parameter.

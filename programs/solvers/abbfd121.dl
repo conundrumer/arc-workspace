@@ -80,11 +80,6 @@
     // @witness tall-thin: ordinary concept
     // @witness wide-thin: ordinary concept
   | Perimeter {}
-    // @rule select: the selected occluder has the greatest extent along
-    //  params.primary_axis, then the greatest extent across it
-    // @witness tall-thin: ordinary concept
-    // @witness wide-thin: ordinary concept
-  | AxisThenCross {}
     // @rule select: the selected occluder has the longest side, then the
     //  longest short side
     // @witness tall-thin: ordinary concept
@@ -93,29 +88,13 @@
     // @witness wide-beside-square: ordinary concept
   | LongestThenShortest {}
 
-// what happens when occluders tie at the top of the selection's order
-.type AreaTie =
-    // @claim unique-largest
-    UniqueTop {}
-    // @rule tie-first: among the tied occluders, the one whose corner at the
-    //  corner of params.scan comes first along that scan order wins
-    // @witness area-tie: borderline any
-    //     @relaxed unique-largest
-    // @witness equal-blocks: borderline any
-    //     @relaxed unique-largest
-  | TieFirst {}
-
 .type Choice = [occluder: Occluder, recovery: Recovery, orbit: HiddenOrbit,
-                selection: Selection, tie: AreaTie]
+                selection: Selection]
 
 // A row or a column, by its axis.
 .type Line = [a: Axis, l: Position]
 
-.type AxisValue = [a: Axis]
-.type ScanValue = [c: DiagDir, a: Axis]
-.type OpenValue = [primary_axis: AxisValue, scan: ScanValue]
-
-.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // --- $ComponentRect ---
@@ -131,19 +110,6 @@
     // @ignore: derive VanishedColor — fails Subsumption: on one input it gives every color of that input, so it is undefined wherever a cell takes the fill, and elsewhere it gives the output of the stored fill
     .decl fill(col: Color)
     fill(0). fill(1). fill(2). fill(3). fill(4). fill(5). fill(6). fill(7). fill(8). fill(9).
-
-    // --- $AxisThenCross ---
-    // The pairs fix neither axis, so both stay open.
-    // @open
-    .decl primary_axis(a: Axis) primary_axis(AXIS_V). primary_axis(AXIS_H).
-
-    // --- $TieFirst ---
-    // The scan order: a corner and a primary axis. The pairs hold no tie, so
-    // every order stays open.
-    // @open
-    .decl scan(c: DiagDir, a: Axis)
-    scan(DIAG_TL, AXIS_V). scan(DIAG_TL, AXIS_H). scan(DIAG_TR, AXIS_V). scan(DIAG_TR, AXIS_H).
-    scan(DIAG_BL, AXIS_V). scan(DIAG_BL, AXIS_H). scan(DIAG_BR, AXIS_V). scan(DIAG_BR, AXIS_H).
 }
 
 .init params = Params
@@ -158,27 +124,21 @@ recovery_choice($AxisPeriods()). recovery_choice($ObliquePeriod()). recovery_cho
 hidden_orbit_choice($NoSource()). hidden_orbit_choice($HiddenFill()).
 
 .decl selection_choice(s: Selection)
-selection_choice($Area()). selection_choice($Perimeter()).
-selection_choice($AxisThenCross()). selection_choice($LongestThenShortest()).
+selection_choice($Area()). selection_choice($Perimeter()). selection_choice($LongestThenShortest()).
 
-// Beside the concept case, every case fills sourceless cells and breaks ties:
-// a case without the fill or the tie-break gives the output of the case with
-// them wherever it gives one.
+// Beside the concept case, every case fills sourceless cells: a case without
+// the fill gives the output of the case with it wherever it gives one.
 .decl impl_choice(ch: Choice)
-impl_choice([$ColorFill(), $AxisPeriods(), $NoSource(), $Area(), $UniqueTop()]).
-impl_choice([O, R, $HiddenFill(), Sel, $TieFirst()]) :-
+impl_choice([$ColorFill(), $AxisPeriods(), $NoSource(), $Area()]).
+impl_choice([O, R, $HiddenFill(), Sel]) :-
     occluder_choice(O), recovery_choice(R), selection_choice(Sel).
 
-// The occluders, each recovery's colors, and each selection's top occluders
-// and tie-break picks. A selection is read along every axis, and a tie along
-// every scan order.
+// The occluders, each recovery's colors, and each selection's top occluders.
 .comp Parse<Key> {
     .type Hue = [ky: Key, col: Color]
     .type Block = [ky: Key, b: Box]
-    // A selection's order over the key's occluders, read along an axis.
-    .type Rank = [ky: Key, sel: Selection, axis: Axis]
-    // A scan order over a rank's top occluders.
-    .type Scan = [rank: Rank, corner: DiagDir, axis: Axis]
+    // A selection's order over the key's occluders.
+    .type Rank = [ky: Key, sel: Selection]
 
     .decl cell(ky: Key, p: Position, col: Color)
 
@@ -252,27 +212,27 @@ impl_choice([O, R, $HiddenFill(), Sel, $TieFirst()]) :-
 
     // --- selection ---
 
-    .decl extent(ky: Key, b: Box, a: Axis, n: number)
-    extent(Ky, B, A, N) :- block_cell(Ky, B, P), box_extent(B, P, A, N).
-
-    // B ranks above A under selection sel, read along axis x.
-    .decl above(ky: Key, sel: Selection, x: Axis, a: Box, b: Box)
+    // B ranks above A under selection sel.
+    .decl above(ky: Key, sel: Selection, a: Box, b: Box)
 
     .decl beaten(k: Rank, a: Box)
-    beaten([Ky, Sel, X], A) :- above(Ky, Sel, X, A, B).
+    beaten([Ky, Sel], A) :- above(Ky, Sel, A, B).
 
     // The occluders nothing ranks above.
     .decl top(k: Rank, b: Box)
-    top([Ky, Sel, X], B) :-
-        occluder(Ky, B), selection_choice(Sel), axis_elem(X), !beaten([Ky, Sel, X], B).
+    top([Ky, Sel], B) :- occluder(Ky, B), selection_choice(Sel), !beaten([Ky, Sel], B).
+
+    // The selected occluder: the one occluder nothing ranks above.
+    // @claim unique-largest
+    .init sole = Unanimous<Rank, Box>
+    sole.item(K, B) :- top(K, B).
 
     // --- $Area ---
     // @claim select
     .init area = Tally<Block, Position>
     area.item([Ky, B], P) :- block_cell(Ky, B, P).
 
-    above(Ky, $Area(), X, A, B) :-
-        axis_elem(X), area.tally([Ky, A], N1), area.tally([Ky, B], N2), N1 < N2.
+    above(Ky, $Area(), A, B) :- area.tally([Ky, A], N1), area.tally([Ky, B], N2), N1 < N2.
 
     // --- $Perimeter ---
     // The rows and columns a box spans.
@@ -280,82 +240,34 @@ impl_choice([O, R, $HiddenFill(), Sel, $TieFirst()]) :-
     .init span = Tally<Block, Line>
     span.item([Ky, B], [A, L]) :- block_cell(Ky, B, P), axis_elem(A), split(P, A, L, _).
 
-    above(Ky, $Perimeter(), X, A, B) :-
-        axis_elem(X), span.tally([Ky, A], N1), span.tally([Ky, B], N2), N1 < N2.
-
-    // --- $AxisThenCross ---
-    above(Ky, $AxisThenCross(), X, A, B) :-
-        perp(X, Y),
-        extent(Ky, A, X, N1), extent(Ky, B, X, N2), extent(Ky, A, Y, M1), extent(Ky, B, Y, M2),
-        ( N1 < N2 ; N1 = N2, M1 < M2 ).
+    above(Ky, $Perimeter(), A, B) :- span.tally([Ky, A], N1), span.tally([Ky, B], N2), N1 < N2.
 
     // --- $LongestThenShortest ---
     // @claim select
     .init sides = Extremes<Block>
-    sides.cand([Ky, B], N) :- extent(Ky, B, _, N).
+    sides.cand([Ky, B], N) :- block_cell(Ky, B, P), box_extent(B, P, _, N).
 
-    above(Ky, $LongestThenShortest(), X, A, B) :-
-        axis_elem(X),
+    above(Ky, $LongestThenShortest(), A, B) :-
         sides.high([Ky, A], N1), sides.high([Ky, B], N2),
         sides.low([Ky, A], M1), sides.low([Ky, B], M2),
         ( N1 < N2 ; N1 = N2, M1 < M2 ).
-
-    // --- $UniqueTop ---
-    // @claim unique-largest
-    .init sole = Unanimous<Rank, Box>
-    sole.item(K, B) :- top(K, B).
-
-    // --- $TieFirst ---
-    // Each top occluder's first cell along a scan is its corner at the scan's
-    // corner.
-    // @claim tie-first
-    .init scan_order = LexOrder<Scan>
-    scan_order.corner([K, C, A], C) :- scan_order.cell([K, C, A], _).
-    scan_order.axis([K, C, A], A) :- scan_order.cell([K, C, A], _).
-    scan_order.cell([[Ky, Sel, X], C, A], P) :-
-        top([Ky, Sel, X], B), axis_elem(A), block_cell(Ky, B, P), box_corner(P, B, C).
-
-    // The top occluder a scan order reaches first.
-    .decl first_pick(k: Rank, c: DiagDir, a: Axis, b: Box)
-    first_pick([Ky, Sel, X], C, A, B) :-
-        scan_order.first([[Ky, Sel, X], C, A], P), top([Ky, Sel, X], B), box_corner(P, B, C).
 }
 
 .init parse = Parse<Occluder>
 parse.cell(S, P, Col) :- occluder_choice(S), in(P, Col).
 
-// The axes each selection is read along, with the open value of
-// params.primary_axis each is read at, nil where the selection reads none.
-// @ignore: head-repeat — the value column is nil for the selections that read no open axis
-.decl reads_axis(sel: Selection, x: Axis, av: AxisValue)
-
-// The open values of params.scan each tie reading is derived at.
-.decl tie_value(t: AreaTie, sv: ScanValue)
-
-// The occluder each tie reading picks at open value v, per axis the selection
-// is read along.
-.decl pick(s: Occluder, sel: Selection, x: Axis, t: AreaTie, v: OpenValue, b: Box)
-
-// Some axis the selection is read along leaves no pick at v.
-.decl unpicked(s: Occluder, sel: Selection, t: AreaTie, v: OpenValue)
-unpicked(S, Sel, T, [Av, Sv]) :-
-    occluder_choice(S), reads_axis(Sel, X, Av), tie_value(T, Sv),
-    !pick(S, Sel, X, T, [Av, Sv], _).
-
 // The colors each hidden-orbit reading gives a cell.
 .decl shade(s: Occluder, r: Recovery, f: HiddenOrbit, p: Position, col: Color)
 shade(S, R, F, P, Col) :- hidden_orbit_choice(F), parse.color(S, R, P, Col).
 
-// Open value v leaves the case with no grid, or with a cell of its grid
-// uncolored.
-.decl broken(ch: Choice, v: OpenValue)
-broken([O, R, F, Sel, T], V) :- impl_choice([O, R, F, Sel, T]), unpicked(O, Sel, T, V).
-broken([O, R, F, Sel, T], V) :-
-    impl_choice([O, R, F, Sel, T]), pick(O, Sel, _, T, V, B),
+// A cell of the selected occluder's box is uncolored.
+.decl broken(ch: Choice)
+broken([O, R, F, Sel]) :-
+    impl_choice([O, R, F, Sel]), parse.sole.value([O, Sel], B),
     parse.block_cell(O, B, P), !shade(O, R, F, P, _).
 
-out(P_inner, Col, [O, R, F, Sel, T], V) :-
-    impl_choice([O, R, F, Sel, T]), pick(O, Sel, _, T, V, B), !broken([O, R, F, Sel, T], V),
+out(P_inner, Col, [O, R, F, Sel]) :-
+    impl_choice([O, R, F, Sel]), parse.sole.value([O, Sel], B), !broken([O, R, F, Sel]),
     shade(O, R, F, P, Col), crop(P, B, P_inner).
 
 // --- $ColorFill ---
@@ -414,66 +326,10 @@ parse.map_link(S, $IsometryOrbit(), P, Q) :-
 shade(S, R, $HiddenFill(), P, Col) :-
     parse.cell(S, P, _), recovery_choice(R), !parse.color(S, R, P, _), params.fill(Col).
 
-// --- $Area ---
-reads_axis($Area(), X, nil) :- axis_elem(X).
-
-// --- $Perimeter ---
-reads_axis($Perimeter(), X, nil) :- axis_elem(X).
-
-// --- $AxisThenCross ---
-reads_axis($AxisThenCross(), X, [X]) :- params.primary_axis(X).
-
-// --- $LongestThenShortest ---
-reads_axis($LongestThenShortest(), X, nil) :- axis_elem(X).
-
-// --- $UniqueTop ---
-tie_value($UniqueTop(), nil).
-
-pick(S, Sel, X, $UniqueTop(), [Av, nil], B) :-
-    reads_axis(Sel, X, Av), parse.sole.value([S, Sel, X], B).
-
-// --- $TieFirst ---
-tie_value($TieFirst(), [C, A]) :- params.scan(C, A).
-
-pick(S, Sel, X, $TieFirst(), [Av, [C, A]], B) :-
-    reads_axis(Sel, X, Av), params.scan(C, A), parse.first_pick([S, Sel, X], C, A, B).
-
 .comp Determine {
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col).
     parse.occluder(E, B) :- parse.color_fill(E, _, B).
-
-    // A block of the extents of the example's output, on both axes.
-    .decl framed(e: Example, b: Box)
-    framed(E, B) :-
-        parse.extent(E, B, A, N), perp(A, A2), parse.extent(E, B, A2, N2),
-        ex_out(E, Q, _), axis_dims(Q, A, N, N2).
-
-    // Under axis x, the concept's tie reading picks a block of the output's
-    // extents.
-    .decl axis_fits(e: Example, x: Axis)
-    axis_fits(E, X) :- parse.sole.value([E, $AxisThenCross(), X], B), framed(E, B).
-
-    // An axis under which one example's pick fits and another's does not.
-    .decl axis_missed(x: Axis)
-    axis_missed(X) :- axis_fits(_, X), ex_out(E, _, _), !axis_fits(E, X).
-
-    .decl primary_axis(a: Axis)
-    primary_axis(X) :- axis_fits(_, X), !axis_missed(X).
-
-    // Under scan (c, a), the tie among the largest blocks goes to one of the
-    // output's extents.
-    .decl scan_fits(e: Example, c: DiagDir, a: Axis)
-    scan_fits(E, C, A) :- parse.first_pick([E, $Area(), _], C, A, B), framed(E, B).
-
-    // A scan under which some example's pick has other extents.
-    .decl scan_missed(c: DiagDir, a: Axis)
-    scan_missed(C, A) :-
-        scan_fits(_, C, A), parse.first_pick([E, $Area(), _], C, A, _), ex_out(E, _, _),
-        !scan_fits(E, C, A).
-
-    .decl scan(c: DiagDir, a: Axis)
-    scan(C, A) :- scan_fits(_, C, A), !scan_missed(C, A).
 
     // The colors the examples hold.
     .decl palette(col: Color)
@@ -484,7 +340,7 @@ pick(S, Sel, X, $TieFirst(), [Av, [C, A]], B) :-
     // color in the output.
     .decl fill_contradicted(col: Color)
     fill_contradicted(Col) :-
-        parse.sole.value([E, $Area(), _], B), parse.block_cell(E, B, P),
+        parse.sole.value([E, $Area()], B), parse.block_cell(E, B, P),
         !parse.axis_color(E, P, _),
         crop(P, B, P_inner), ex_out(E, P_inner, C), palette(Col), Col != C.
 

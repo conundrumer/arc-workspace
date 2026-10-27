@@ -42,19 +42,6 @@
     //     @relaxed background
   | BgSeparatorColor {}
 
-// which axis the panels follow one another along
-.type PanelAxis =
-    // @claim separator-columns
-    SourceAxis {}
-    // @scene separator-columns: the panel axis is the one across which full
-    //  background lines cut the input, and a panel takes its fill toward
-    //  source_dir on that axis, or toward cross_source_dir on the other; with
-    //  $BgSeparatorColor, the separator lines are read across either axis;
-    //  undefined where full background lines cut on both axes or on neither
-    // @witness row-separators: variant $AxisFromSeparators
-    //     @relaxed separator-columns
-  | AxisFromSeparators {}
-
 // which panel the last panel takes its color from
 .type Wrap =
     // @claim wrap
@@ -65,13 +52,10 @@
     //     @relaxed separator-columns
   | WrapTwoBack {}
 
-.type Choice = [region: Region, bg: Background, axis: PanelAxis, wrap: Wrap]
-
-.type CrossSourceDirValue = [d: Dir]
-.type OpenValue = [cross_source_dir: CrossSourceDirValue]
+.type Choice = [region: Region, bg: Background, wrap: Wrap]
 
 // A case's panels, with the direction they take their fill from.
-.type Site = [r: Region, b: Background, x: PanelAxis, d: Dir]
+.type Site = [r: Region, b: Background, d: Dir]
 
 // One ink color of a case's input.
 .type SiteInk = [k: Site, col: Color]
@@ -79,18 +63,12 @@
 // One panel of a case's input.
 .type SitePanel = [k: Site, m: Ident]
 
-.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // the direction, along the line of panels, in which a panel finds the
     // panel whose color it takes
     .decl source_dir(d: Dir) source_dir(DIR_R).
-
-    // --- $AxisFromSeparators ---
-    // the direction a panel finds its source panel in where the panels follow
-    // one another across the axis of source_dir; the pairs fix neither value
-    // @open
-    .decl cross_source_dir(d: Dir) cross_source_dir(DIR_T). cross_source_dir(DIR_B).
 }
 
 .init params = Params
@@ -101,15 +79,12 @@ region_choice($Runs()). region_choice($ColorSpan()).
 .decl background_choice(b: Background)
 background_choice($Commonest()). background_choice($BgSeparatorColor()).
 
-.decl panel_axis_choice(x: PanelAxis)
-panel_axis_choice($SourceAxis()). panel_axis_choice($AxisFromSeparators()).
-
 .decl wrap_choice(w: Wrap)
 wrap_choice($WrapFirst()). wrap_choice($WrapTwoBack()).
 
 .decl impl_choice(ch: Choice)
-impl_choice([R, Bg, X, W]) :-
-    region_choice(R), background_choice(Bg), panel_axis_choice(X), wrap_choice(W).
+impl_choice([R, Bg, W]) :-
+    region_choice(R), background_choice(Bg), wrap_choice(W).
 
 // Cell p lies on line l, the line across axis a.
 .decl on_line(a: Axis, p: Position, l: Position)
@@ -124,23 +99,22 @@ line_other(A, L, Col) :- on_line(A, P, L), in(P, Col2), in(_, Col), Col != Col2.
 uniform(A, L, Col) :- on_line(A, P, L), in(P, Col), !line_other(A, L, Col).
 
 // The background of each case.
-.decl bg(b: Background, x: PanelAxis, col: Color)
+.decl bg(b: Background, col: Color)
 
-// The direction each case's panels take their fill from, and the open value
-// it is read at.
-// @ignore: head-repeat — the open value records the direction it is read at
-.decl fill_dir(b: Background, x: PanelAxis, d: Dir, v: OpenValue)
+// The direction each case's panels take their fill from.
+.decl fill_dir(b: Background, d: Dir)
+fill_dir(Bg, D) :- background_choice(Bg), params.source_dir(D).
 
 // The lines of each panel.
 .decl panel(k: Site, m: Ident, l: Position)
 
 // Cell p lies in panel m.
 .decl panel_cell(k: Site, m: Ident, p: Position)
-panel_cell(K, M, P) :- panel(K, M, L), K = [_, _, _, D], axis_of(D, A), on_line(A, P, L).
+panel_cell(K, M, P) :- panel(K, M, L), K = [_, _, D], axis_of(D, A), on_line(A, P, L).
 
 // The ink colors of each panel.
 .decl ink(k: Site, m: Ident, col: Color)
-ink(K, M, Col) :- panel_cell(K, M, P), in(P, Col), K = [_, Bg, X, _], !bg(Bg, X, Col).
+ink(K, M, Col) :- panel_cell(K, M, P), in(P, Col), K = [_, Bg, _], !bg(Bg, Col).
 
 // A panel holds more than one ink color, or two panels share a line.
 .decl broken(k: Site)
@@ -157,7 +131,7 @@ extent.cell([K, M], L) :- panel(K, M, L).
 .init order = Order<Site, Ident>
 order.elem(K, M) :- panel(K, M, _).
 order.score(K, M, S) :-
-    extent.box([K, M], B), K = [_, _, _, D], opposite(D, D_far),
+    extent.box([K, M], B), K = [_, _, D], opposite(D, D_far),
     dist(B, D_far, S).                                               // distance from the far edge
 
 // Panel m takes its fill color from panel m2.
@@ -172,18 +146,18 @@ unfed(W, K) :- wrap_choice(W), order.elem(K, M), !source(W, K, M, _).
 .decl fill(w: Wrap, k: Site, p: Position, col: Color)
 fill(W, K, P, Col) :-
     panel_cell(K, M, P), source(W, K, M, M2), ink(K, M2, Col),
-    in(P, Col_bg), K = [_, Bg, X, _], bg(Bg, X, Col_bg).
+    in(P, Col_bg), K = [_, Bg, _], bg(Bg, Col_bg).
 
-// The fill direction each case reads, at each open value.
-.decl site(ch: Choice, d: Dir, v: OpenValue)
-site([R, Bg, X, W], D, V) :-
-    impl_choice([R, Bg, X, W]), fill_dir(Bg, X, D, V),
-    order.next([R, Bg, X, D], _, _),                                 // two or more panels
-    !broken([R, Bg, X, D]), !unfed(W, [R, Bg, X, D]).
+// The fill direction each case reads.
+.decl site(ch: Choice, d: Dir)
+site([R, Bg, W], D) :-
+    impl_choice([R, Bg, W]), fill_dir(Bg, D),
+    order.next([R, Bg, D], _, _),                                    // two or more panels
+    !broken([R, Bg, D]), !unfed(W, [R, Bg, D]).
 
-out(P, Col, [R, Bg, X, W], V) :- site([R, Bg, X, W], D, V), fill(W, [R, Bg, X, D], P, Col).
-out(P, Col, [R, Bg, X, W], V) :-
-    site([R, Bg, X, W], D, V), in(P, Col), !fill(W, [R, Bg, X, D], P, _).    // keep-rest
+out(P, Col, [R, Bg, W]) :- site([R, Bg, W], D), fill(W, [R, Bg, D], P, Col).
+out(P, Col, [R, Bg, W]) :-
+    site([R, Bg, W], D), in(P, Col), !fill(W, [R, Bg, D], P, _).    // keep-rest
 
 // --- $Commonest ---
 
@@ -195,65 +169,35 @@ color_count.item($U(), Col, P) :- in(P, Col).
 .init commonest = Unanimous<Unit, Color>
 commonest.item($U(), Col) :- color_count.mode($U(), Col).
 
-bg($Commonest(), X, Col) :- panel_axis_choice(X), commonest.value($U(), Col).
+bg($Commonest(), Col) :- commonest.value($U(), Col).
 
-// --- $BgSeparatorColor, $AxisFromSeparators ---
+// --- $BgSeparatorColor ---
 
 // Toward d from the full line l of col, some line holds another color.
 .decl flanked(a: Axis, l: Position, col: Color, d: Dir)
 flanked(A, L, Col, D) :-
     uniform(A, L, Col), axis_of(D, A), line_other(A, L2, Col), nearer(D, L2, L).
 
+// Toward some side of the full line l of col, no line holds another color.
 .decl unflanked(a: Axis, l: Position, col: Color)
 unflanked(A, L, Col) :- uniform(A, L, Col), axis_of(D, A), !flanked(A, L, Col, D).
 
-// A full line of col across axis a cuts the grid: a line holding another
-// color stands on each side of it.
-.decl cut(a: Axis, col: Color)
-cut(A, Col) :- uniform(A, L, Col), !unflanked(A, L, Col).
-
-// --- $BgSeparatorColor ---
-
-// The axes whose cutting lines give the background.
-.decl sep_axis(x: PanelAxis, a: Axis)
-
 // @claim background
-.init separator_color = Unanimous<PanelAxis, Color>
-separator_color.item(X, Col) :- sep_axis(X, A), cut(A, Col).
+.init separator_color = Unanimous<Unit, Color>
+separator_color.item($U(), Col) :-
+    params.source_dir(D), axis_of(D, A),
+    uniform(A, L, Col), !unflanked(A, L, Col).                      // a full line with another color on each side
 
-bg($BgSeparatorColor(), X, Col) :- separator_color.value(X, Col).
-
-// --- $BgSeparatorColor & $SourceAxis ---
-
-sep_axis($SourceAxis(), A) :- params.source_dir(D), axis_of(D, A).
-
-// --- $BgSeparatorColor & $AxisFromSeparators ---
-
-sep_axis($AxisFromSeparators(), A) :- axis_elem(A).
-
-// --- $SourceAxis ---
-
-fill_dir(Bg, $SourceAxis(), D, [nil]) :- background_choice(Bg), params.source_dir(D).
-
-// --- $AxisFromSeparators ---
-
-// @claim separator-columns
-.init cut_axis = Unanimous<Background, Axis>
-cut_axis.item(Bg, A) :- bg(Bg, $AxisFromSeparators(), Col), cut(A, Col).
-
-fill_dir(Bg, $AxisFromSeparators(), D, [nil]) :-
-    cut_axis.value(Bg, A), params.source_dir(D), axis_of(D, A).
-fill_dir(Bg, $AxisFromSeparators(), D, [[D]]) :-
-    cut_axis.value(Bg, A), params.cross_source_dir(D), axis_of(D, A).
+bg($BgSeparatorColor(), Col) :- separator_color.value($U(), Col).
 
 // --- $Runs ---
 
 // A panel is a maximal run of lines that are not full background lines.
 // @claim separator-columns
 .init runs = Components<Site>
-runs.node([$Runs(), Bg, X, D], L) :-
-    fill_dir(Bg, X, D, _), axis_of(D, A), on_line(A, _, L),
-    bg(Bg, X, Col), !uniform(A, L, Col).
+runs.node([$Runs(), Bg, D], L) :-
+    fill_dir(Bg, D), axis_of(D, A), on_line(A, _, L),
+    bg(Bg, Col), !uniform(A, L, Col).
 
 panel(K, M, L) :- runs.label(K, L, M).
 
@@ -262,17 +206,17 @@ panel(K, M, L) :- runs.label(K, L, M).
 // The lines each ink color reaches.
 // @claim separator-columns
 .init span = Bbox<SiteInk>
-span.cell([[$ColorSpan(), Bg, X, D], Col], L) :-
-    fill_dir(Bg, X, D, _), axis_of(D, A), on_line(A, P, L),
-    in(P, Col), !bg(Bg, X, Col).
+span.cell([[$ColorSpan(), Bg, D], Col], L) :-
+    fill_dir(Bg, D), axis_of(D, A), on_line(A, P, L),
+    in(P, Col), !bg(Bg, Col).
 
 // @claim separator-columns
 .init color_id = IdentOf<Color>
 color_id.value(Col) :- in(_, Col).
 
 // A panel is the full lines from the first to the last line its color reaches.
-panel([$ColorSpan(), Bg, X, D], M, L) :-
-    span.box([[$ColorSpan(), Bg, X, D], Col], B), color_id.id(Col, M),
+panel([$ColorSpan(), Bg, D], M, L) :-
+    span.box([[$ColorSpan(), Bg, D], Col], B), color_id.id(Col, M),
     axis_of(D, A), on_line(A, _, L), inside(L, B).
 
 // --- $WrapFirst ---

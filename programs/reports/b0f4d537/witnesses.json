@@ -3,7 +3,7 @@
   "witnesses": [
     {
       "id": "line-one-end",
-      "separates": "The field's row 4 keeps its left end marker and its crossing markers and loses its right end marker. The concept reads no line row and draws only the two key columns; $LineByEitherEnd and $LineByCrossing read row 4 as a line and draw the train3 output; $LineByHeaderEdge, run with every header corner, gives no grid.",
+      "separates": "The field's row 4 keeps its left end marker and its crossing markers and loses its right end marker. The concept reads no line row and draws only the two key columns; $LineByEitherEnd and $LineByCrossing read row 4 as a line and draw the train3 output.",
       "input": [
         [
           0,
@@ -190,279 +190,6 @@
         {
           "cases": [
             "$LineByEitherEnd",
-            "$LineByCrossing"
-          ],
-          "grid": [
-            [
-              0,
-              0,
-              2,
-              0,
-              3,
-              0,
-              0
-            ],
-            [
-              0,
-              0,
-              2,
-              0,
-              3,
-              0,
-              0
-            ],
-            [
-              0,
-              0,
-              2,
-              0,
-              3,
-              0,
-              0
-            ],
-            [
-              0,
-              0,
-              2,
-              0,
-              3,
-              0,
-              0
-            ],
-            [
-              1,
-              1,
-              2,
-              1,
-              3,
-              1,
-              1
-            ],
-            [
-              0,
-              0,
-              2,
-              0,
-              3,
-              0,
-              0
-            ],
-            [
-              0,
-              0,
-              2,
-              0,
-              3,
-              0,
-              0
-            ]
-          ]
-        },
-        {
-          "cases": [
-            "$LineByHeaderEdge"
-          ],
-          "grid": null
-        }
-      ]
-    },
-    {
-      "id": "header-edge",
-      "separates": "The same input with header reassigned to the top-left corner: $LineByHeaderEdge reads row 4 by its left end marker and draws the train3 output, where the concept draws only the two key columns.",
-      "input": [
-        [
-          0,
-          0,
-          4,
-          0,
-          4,
-          0,
-          0,
-          5,
-          0,
-          2,
-          0,
-          3,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          5,
-          1,
-          2,
-          1,
-          3,
-          1
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          5,
-          0,
-          2,
-          0,
-          3,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          5,
-          5,
-          5,
-          5,
-          5,
-          5
-        ],
-        [
-          4,
-          0,
-          4,
-          0,
-          4,
-          0,
-          0,
-          5,
-          5,
-          5,
-          5,
-          5,
-          5
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          5,
-          5,
-          5,
-          5,
-          5,
-          5
-        ],
-        [
-          0,
-          0,
-          4,
-          0,
-          4,
-          0,
-          0,
-          5,
-          5,
-          5,
-          5,
-          5,
-          5
-        ]
-      ],
-      "assign": {
-        "header": [
-          [
-            "DIAG_TL"
-          ]
-        ]
-      },
-      "output": [
-        {
-          "cases": [
-            "concept",
-            "$DrawLines",
-            "$DrawLines & background=DominantColor",
-            "$KeyByFill",
-            "$KeyByFill & $MarkerFromField",
-            "$DividerFromFullLine"
-          ],
-          "grid": [
-            [
-              0,
-              0,
-              2,
-              0,
-              3,
-              0,
-              0
-            ],
-            [
-              0,
-              0,
-              2,
-              0,
-              3,
-              0,
-              0
-            ],
-            [
-              0,
-              0,
-              2,
-              0,
-              3,
-              0,
-              0
-            ],
-            [
-              0,
-              0,
-              2,
-              0,
-              3,
-              0,
-              0
-            ],
-            [
-              0,
-              0,
-              2,
-              0,
-              3,
-              0,
-              0
-            ],
-            [
-              0,
-              0,
-              2,
-              0,
-              3,
-              0,
-              0
-            ],
-            [
-              0,
-              0,
-              2,
-              0,
-              3,
-              0,
-              0
-            ]
-          ]
-        },
-        {
-          "cases": [
-            "$LineByEitherEnd",
-            "$LineByHeaderEdge",
             "$LineByCrossing"
           ],
           "grid": [
@@ -660,7 +387,6 @@
           "cases": [
             "concept",
             "$LineByEitherEnd",
-            "$LineByHeaderEdge",
             "$DrawLines",
             "$DrawLines & background=DominantColor",
             "$KeyByFill",
@@ -956,7 +682,6 @@
           "cases": [
             "concept",
             "$LineByEitherEnd",
-            "$LineByHeaderEdge",
             "$LineByCrossing",
             "$KeyByFill",
             "$KeyByFill & $MarkerFromField",
@@ -1246,7 +971,6 @@
           "cases": [
             "concept",
             "$LineByEitherEnd",
-            "$LineByHeaderEdge",
             "$LineByCrossing",
             "$DrawLines",
             "$DrawLines & background=DominantColor",
@@ -1472,7 +1196,6 @@
           "cases": [
             "concept",
             "$LineByEitherEnd",
-            "$LineByHeaderEdge",
             "$LineByCrossing",
             "$DrawLines",
             "$DrawLines & background=DominantColor",
@@ -1785,7 +1508,6 @@
           "cases": [
             "concept",
             "$LineByEitherEnd",
-            "$LineByHeaderEdge",
             "$LineByCrossing",
             "$DrawLines & background=DominantColor",
             "$KeyByFill",
@@ -2093,7 +1815,6 @@
           "cases": [
             "concept",
             "$LineByEitherEnd",
-            "$LineByHeaderEdge",
             "$LineByCrossing",
             "$DrawLines",
             "$DrawLines & background=DominantColor",

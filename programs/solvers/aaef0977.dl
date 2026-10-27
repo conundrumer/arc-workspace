@@ -8,7 +8,7 @@
 //  color along params.cycle_succ.
 // @rule total: every cell is painted this way, and the output has the input's size.
 
-// how many seeds the input holds, and how a cell picks its seed
+// how many seeds the input holds
 .type Choice =
     // @claim seed
     OneSeed {}
@@ -19,16 +19,8 @@
     // @witness two-seeds: variant $NearestSeed
     //     @relaxed seed
   | NearestSeed {}
-    // @scene seed: one or more non-background cells, each a seed.
-    // @rule diamond-rings: each cell's ring is its Manhattan distance to the
-    //  last seed in the scan order params.scan_order, a corner and an axis.
-    // @witness two-seeds: variant $NearestSeed
-  | LastSeed {}
 
-.type ScanValue = [d: DiagDir, a: Axis]
-.type OpenValue = [scan_order: ScanValue]
-
-.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // @derive DominantColor: borderline derived
@@ -46,23 +38,11 @@
     cycle_succ(9, 6).
     cycle_succ(6, 1).
     cycle_succ(1, 3).
-
-    // --- $LastSeed ---
-    // The scan order whose last seed rings the grid. The pairs hold one seed
-    // each, so every value stays open.
-    // @open
-    .decl scan_order(d: DiagDir, a: Axis)
-    scan_order(DIAG_TL, AXIS_V). scan_order(DIAG_TL, AXIS_H).
-    scan_order(DIAG_TR, AXIS_V). scan_order(DIAG_TR, AXIS_H).
-    scan_order(DIAG_BL, AXIS_V). scan_order(DIAG_BL, AXIS_H).
-    scan_order(DIAG_BR, AXIS_V). scan_order(DIAG_BR, AXIS_H).
 }
 
 .init params = Params
 
 .comp Parse<Key> {
-    .type Scan = [ky: Key, corner: DiagDir, axis: Axis]
-
     .decl cell(key: Key, p: Position, col: Color)  // @input
 
     .decl seed(key: Key, p: Position, col: Color)
@@ -74,13 +54,6 @@
         cell(Ky, P, _), seed(Ky, S, _), relative(S, P, V),
         diag_dist(V, Diag, _, K1, K2), K1 >= 0, K2 >= 0,   // the corner facing away from P
         corner_dist(V, Diag, K).
-
-    // The seeds in each scan order: from a corner, along a primary axis.
-    // @claim diamond-rings
-    .init scan = LexOrder<Scan>
-    scan.corner([Ky, C, A], C) :- scan.cell([Ky, C, A], _).
-    scan.axis([Ky, C, A], A) :- scan.cell([Ky, C, A], _).
-    scan.cell([Ky, C, A], S) :- seed(Ky, S, _), diag_dir_elem(C), axis_elem(A).
 }
 
 .init parse = Parse<Unit>
@@ -97,7 +70,7 @@ hue(P, S, Col) :-
     parse.taxicab($U(), P, S, K), parse.seed($U(), S, C0), cycle.walk($U(), C0, K, Col).
 
 // --- $OneSeed ---
-out(P, Col, $OneSeed(), [nil]) :- hue(P, _, Col).
+out(P, Col, $OneSeed()) :- hue(P, _, Col).
 
 // --- $NearestSeed ---
 
@@ -105,13 +78,7 @@ out(P, Col, $OneSeed(), [nil]) :- hue(P, _, Col).
 .init nearest = ArgExtremes<Position, Position>
 nearest.cand(P, S, K) :- parse.taxicab($U(), P, S, K).
 
-out(P, Col, $NearestSeed(), [nil]) :- nearest.low(P, S, _), hue(P, S, Col).
-
-// --- $LastSeed ---
-// Each open scan order's last seed rings the grid.
-out(P, Col, $LastSeed(), [[C, A]]) :-
-    params.scan_order(C, A), parse.scan.last([$U(), C, A], S),
-    hue(P, S, Col).
+out(P, Col, $NearestSeed()) :- nearest.low(P, S, _), hue(P, S, Col).
 
 .comp Determine {
     .init parse = Parse<Example>
@@ -123,20 +90,4 @@ out(P, Col, $LastSeed(), [[C, A]]) :-
         parse.taxicab(E, P, S, K), dir_elem(D), neighbor(P, D, Q),
         parse.taxicab(E, Q, S, K2), K2 > K,
         ex_out(E, P, C), ex_out(E, Q, C2).
-
-    // A scan order whose last seed is not the rings' center: two cells at one
-    // distance from it differ in color.
-    .decl scan_contradicted(d: DiagDir, a: Axis)
-    scan_contradicted(D, A) :-
-        parse.scan.last([E, D, A], S),
-        parse.taxicab(E, P, S, K), parse.taxicab(E, Q, S, K),
-        ex_out(E, P, C), ex_out(E, Q, C2), C != C2.
-
-    // A scan order whose last seed keeps its color in the output, as the
-    // rings' center does.
-    .decl scan_kept(d: DiagDir, a: Axis)
-    scan_kept(D, A) :- parse.scan.last([E, D, A], S), parse.seed(E, S, Col), ex_out(E, S, Col).
-
-    .decl scan_order(d: DiagDir, a: Axis)
-    scan_order(D, A) :- scan_kept(D, A), !scan_contradicted(D, A).
 }

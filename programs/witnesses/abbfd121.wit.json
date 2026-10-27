@@ -2,7 +2,7 @@
   "id": "abbfd121",
   "witnesses": [{
     "id": "tall-thin",
-    "separates": "A 9x3 block beside a 5x6 block: area picks the 5x6 block; perimeter and longest side then shortest pick the 9x3 block. The extent along an axis then across picks the 9x3 block along V and the 5x6 block along H, so at both open axes it has no output.",
+    "separates": "A 9x3 block beside a 5x6 block: area picks the 5x6 block; perimeter and longest side then shortest pick the 9x3 block.",
     "input": [
       [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
       [4,2,2,2,6,5,4,6,5,4,6,5,4,6,5,4],
@@ -30,29 +30,7 @@
         [5,6,4,5,6,4],
         [4,4,4,4,4,4]
       ]
-    }, {
-      "cases": ["$AxisThenCross"],
-      "grid": [
-        [
-          [6,5,4],
-          [5,6,4],
-          [4,4,4],
-          [6,5,4],
-          [5,6,4],
-          [4,4,4],
-          [6,5,4],
-          [5,6,4],
-          [4,4,4]
-        ],
-        [
-          [5,6,4,5,6,4],
-          [4,4,4,4,4,4],
-          [6,5,4,6,5,4],
-          [5,6,4,5,6,4],
-          [4,4,4,4,4,4]
-        ]
-      ]
-    }, {
+    } , {
       "cases": ["$LongestThenShortest","$Perimeter"],
       "grid": [
         [6,5,4],
@@ -68,7 +46,7 @@
     }]
   }, {
     "id": "wide-thin",
-    "separates": "The transpose of tall-thin, a 3x9 block beside a 6x5 block: area picks the 6x5 block; perimeter and longest side then shortest pick the 3x9 block. The extent along an axis then across picks the 6x5 block along V and the 3x9 block along H, so at both open axes it has no output.",
+    "separates": "The transpose of tall-thin, a 3x9 block beside a 6x5 block: area picks the 6x5 block; perimeter and longest side then shortest pick the 3x9 block.",
     "input": [
       [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
       [4,2,2,2,2,2,2,2,2,2,6,5,4,6,5,4],
@@ -97,24 +75,7 @@
         [6,4,5,6,4],
         [4,4,4,4,4]
       ]
-    }, {
-      "cases": ["$AxisThenCross"],
-      "grid": [
-        [
-          [5,4,6,5,4],
-          [6,4,5,6,4],
-          [4,4,4,4,4],
-          [5,4,6,5,4],
-          [6,4,5,6,4],
-          [4,4,4,4,4]
-        ],
-        [
-          [6,5,4,6,5,4,6,5,4],
-          [5,6,4,5,6,4,5,6,4],
-          [4,4,4,4,4,4,4,4,4]
-        ]
-      ]
-    }, {
+    } , {
       "cases": ["$LongestThenShortest","$Perimeter"],
       "grid": [
         [6,5,4,6,5,4,6,5,4],
@@ -124,7 +85,7 @@
     }]
   }, {
     "id": "area-tie",
-    "separates": "A 4x9 block and a 6x6 block tie at area 36, so the concept has no largest block. $TieFirst takes, at each open scan order, the block whose corner at the scan's corner comes first along that order, which is the 4x9 block at some orders and the 6x6 block at others; perimeter and longest side then shortest take the 4x9 block. Extent along an axis then across takes the 6x6 block along V and the 4x9 block along H.",
+    "separates": "A 4x9 block and a 6x6 block tie at area 36, so the area selection has no largest block and no output; perimeter and longest side then shortest take the 4x9 block.",
     "input": [
       [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
       [4,2,2,2,2,2,2,2,2,2,6,5,4,6,5,4,6,5],
@@ -144,44 +105,8 @@
       [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4]
     ],
     "output": [{
-      "cases": ["concept"],
+      "cases": ["$Area"],
       "grid": null
-    }, {
-      "cases": ["$Area & $TieFirst"],
-      "grid": [
-        [
-          [6,5,4,6,5,4,6,5,4],
-          [5,6,4,5,6,4,5,6,4],
-          [4,4,4,4,4,4,4,4,4],
-          [6,5,4,6,5,4,6,5,4]
-        ],
-        [
-          [5,6,4,5,6,4],
-          [4,4,4,4,4,4],
-          [6,5,4,6,5,4],
-          [5,6,4,5,6,4],
-          [4,4,4,4,4,4],
-          [6,5,4,6,5,4]
-        ]
-      ]
-    }, {
-      "cases": ["$AxisThenCross"],
-      "grid": [
-        [
-          [5,6,4,5,6,4],
-          [4,4,4,4,4,4],
-          [6,5,4,6,5,4],
-          [5,6,4,5,6,4],
-          [4,4,4,4,4,4],
-          [6,5,4,6,5,4]
-        ],
-        [
-          [6,5,4,6,5,4,6,5,4],
-          [5,6,4,5,6,4,5,6,4],
-          [4,4,4,4,4,4,4,4,4],
-          [6,5,4,6,5,4,6,5,4]
-        ]
-      ]
     }, {
       "cases": ["$LongestThenShortest","$Perimeter"],
       "grid": [
@@ -452,49 +377,8 @@
       "grid": null
     }]
   }, {
-    "id": "equal-blocks",
-    "separates": "Two 4x4 blocks tie under every selection, so no case without the tie-break has an output; the tie-break takes, at each open scan order, the block whose corner at the scan's corner comes first along that order: the upper block at some orders and the lower block at others.",
-    "input": [
-      [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
-      [4,6,5,4,6,5,4,6,5,4,6,5,4,6,5,4],
-      [4,5,2,2,2,2,4,5,6,4,5,6,4,5,6,4],
-      [4,4,2,2,2,2,4,4,4,4,4,4,4,4,4,4],
-      [4,6,2,2,2,2,4,6,5,4,6,5,4,6,5,4],
-      [4,5,2,2,2,2,4,5,6,4,5,6,4,5,6,4],
-      [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
-      [4,6,5,4,6,5,4,6,5,4,6,5,4,6,5,4],
-      [4,5,6,4,5,6,4,5,6,4,5,6,4,5,6,4],
-      [4,4,4,4,4,4,4,4,4,8,8,8,8,4,4,4],
-      [4,6,5,4,6,5,4,6,5,8,8,8,8,6,5,4],
-      [4,5,6,4,5,6,4,5,6,8,8,8,8,5,6,4],
-      [4,4,4,4,4,4,4,4,4,8,8,8,8,4,4,4],
-      [4,6,5,4,6,5,4,6,5,4,6,5,4,6,5,4],
-      [4,5,6,4,5,6,4,5,6,4,5,6,4,5,6,4],
-      [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4]
-    ],
-    "output": [{
-      "cases": ["concept"],
-      "grid": null
-    }, {
-      "cases": ["$HiddenFill"],
-      "grid": [
-        [
-          [6,4,5,6],
-          [4,4,4,4],
-          [5,4,6,5],
-          [6,4,5,6]
-        ],
-        [
-          [4,4,4,4],
-          [4,6,5,4],
-          [4,5,6,4],
-          [4,4,4,4]
-        ]
-      ]
-    }]
-  }, {
     "id": "tall-beside-square",
-    "separates": "A 6x3 block beside a 5x5 block: area and perimeter pick the 5x5 block; the longest side picks the 6x3 block. The extent along an axis then across picks the 6x3 block along V and the 5x5 block along H, so at both open axes it has no output.",
+    "separates": "A 6x3 block beside a 5x5 block: area and perimeter pick the 5x5 block; the longest side picks the 6x3 block.",
     "input": [
       [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
       [4,6,5,4,6,5,4,6,5,4,6,5,4,6,5,4],
@@ -522,26 +406,7 @@
         [6,4,5,6,4],
         [4,4,4,4,4]
       ]
-    }, {
-      "cases": ["$AxisThenCross"],
-      "grid": [
-        [
-          [5,6,4],
-          [4,4,4],
-          [6,5,4],
-          [5,6,4],
-          [4,4,4],
-          [6,5,4]
-        ],
-        [
-          [6,4,5,6,4],
-          [4,4,4,4,4],
-          [5,4,6,5,4],
-          [6,4,5,6,4],
-          [4,4,4,4,4]
-        ]
-      ]
-    }, {
+    } , {
       "cases": ["$LongestThenShortest"],
       "grid": [
         [5,6,4],
@@ -554,7 +419,7 @@
     }]
   }, {
     "id": "wide-beside-square",
-    "separates": "A 3x6 block beside a 5x5 block: area and perimeter pick the 5x5 block; the longest side picks the 3x6 block. The extent along an axis then across picks the 5x5 block along V and the 3x6 block along H, so at both open axes it has no output.",
+    "separates": "A 3x6 block beside a 5x5 block: area and perimeter pick the 5x5 block; the longest side picks the 3x6 block.",
     "input": [
       [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
       [4,6,5,4,6,5,4,6,5,4,6,5,4,6,5,4],
@@ -582,23 +447,7 @@
         [6,4,5,6,4],
         [4,4,4,4,4]
       ]
-    }, {
-      "cases": ["$AxisThenCross"],
-      "grid": [
-        [
-          [6,4,5,6,4],
-          [4,4,4,4,4],
-          [5,4,6,5,4],
-          [6,4,5,6,4],
-          [4,4,4,4,4]
-        ],
-        [
-          [5,4,6,5,4,6],
-          [6,4,5,6,4,5],
-          [4,4,4,4,4,4]
-        ]
-      ]
-    }, {
+    } , {
       "cases": ["$LongestThenShortest"],
       "grid": [
         [5,4,6,5,4,6],
@@ -980,49 +829,6 @@
       ]
     }]
   }, {
-    "id": "wide-beside-square-v",
-    "separates": "The input of wide-beside-square, with the primary axis set to V: area, perimeter, and the extent along V then across pick the 5x5 block; the longest side picks the 3x6 block.",
-    "input": [
-      [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
-      [4,6,5,4,6,5,4,6,5,4,6,5,4,6,5,4],
-      [4,5,2,2,2,2,2,5,6,4,5,6,4,5,6,4],
-      [4,4,2,2,2,2,2,4,4,4,4,4,4,4,4,4],
-      [4,6,2,2,2,2,2,6,5,4,6,5,4,6,5,4],
-      [4,5,2,2,2,2,2,5,6,4,5,6,4,5,6,4],
-      [4,4,2,2,2,2,2,4,4,4,4,4,4,4,4,4],
-      [4,6,5,4,6,5,4,6,5,4,6,5,4,6,5,4],
-      [4,5,6,4,5,6,4,5,6,4,5,6,4,5,6,4],
-      [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
-      [4,6,5,4,6,5,4,6,8,8,8,8,8,8,5,4],
-      [4,5,6,4,5,6,4,5,8,8,8,8,8,8,6,4],
-      [4,4,4,4,4,4,4,4,8,8,8,8,8,8,4,4],
-      [4,6,5,4,6,5,4,6,5,4,6,5,4,6,5,4],
-      [4,5,6,4,5,6,4,5,6,4,5,6,4,5,6,4],
-      [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4]
-    ],
-    "assign": {
-      "primary_axis": [
-        ["AXIS_V"]
-      ]
-    },
-    "output": [{
-      "cases": ["$Area","$AxisThenCross","$Perimeter"],
-      "grid": [
-        [6,4,5,6,4],
-        [4,4,4,4,4],
-        [5,4,6,5,4],
-        [6,4,5,6,4],
-        [4,4,4,4,4]
-      ]
-    }, {
-      "cases": ["$LongestThenShortest"],
-      "grid": [
-        [5,4,6,5,4,6],
-        [6,4,5,6,4,5],
-        [4,4,4,4,4,4]
-      ]
-    }]
-  }, {
     "id": "mirror-fill",
     "separates": "The input of mirror-wide, with the fill set to 0: every copy of the axis phases (1,2) and (1,3) lies under a block. The tile's half-turn symmetry reaches them from (3,1) and (3,2); under the axis periods alone the fill paints them 0.",
     "input": [
@@ -1106,52 +912,6 @@
         [3,3,3],
         [5,6,3],
         [3,5,3]
-      ]
-    }]
-  }, {
-    "id": "tall-beside-square-v",
-    "separates": "The input of tall-beside-square, with the primary axis set to V: area and perimeter pick the 5x5 block; the extent along V then across, and the longest side, pick the 6x3 block.",
-    "input": [
-      [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
-      [4,6,5,4,6,5,4,6,5,4,6,5,4,6,5,4],
-      [4,5,2,2,2,2,2,5,6,4,8,8,8,5,6,4],
-      [4,4,2,2,2,2,2,4,4,4,8,8,8,4,4,4],
-      [4,6,2,2,2,2,2,6,5,4,8,8,8,6,5,4],
-      [4,5,2,2,2,2,2,5,6,4,8,8,8,5,6,4],
-      [4,4,2,2,2,2,2,4,4,4,8,8,8,4,4,4],
-      [4,6,5,4,6,5,4,6,5,4,8,8,8,6,5,4],
-      [4,5,6,4,5,6,4,5,6,4,5,6,4,5,6,4],
-      [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
-      [4,6,5,4,6,5,4,6,5,4,6,5,4,6,5,4],
-      [4,5,6,4,5,6,4,5,6,4,5,6,4,5,6,4],
-      [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
-      [4,6,5,4,6,5,4,6,5,4,6,5,4,6,5,4],
-      [4,5,6,4,5,6,4,5,6,4,5,6,4,5,6,4],
-      [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4]
-    ],
-    "assign": {
-      "primary_axis": [
-        ["AXIS_V"]
-      ]
-    },
-    "output": [{
-      "cases": ["$Area","$Perimeter"],
-      "grid": [
-        [6,4,5,6,4],
-        [4,4,4,4,4],
-        [5,4,6,5,4],
-        [6,4,5,6,4],
-        [4,4,4,4,4]
-      ]
-    }, {
-      "cases": ["$AxisThenCross","$LongestThenShortest"],
-      "grid": [
-        [5,6,4],
-        [4,4,4],
-        [6,5,4],
-        [5,6,4],
-        [4,4,4],
-        [6,5,4]
       ]
     }]
   }]

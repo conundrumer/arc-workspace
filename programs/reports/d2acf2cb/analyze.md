@@ -16,8 +16,7 @@
     - `$OneEnd`: a line with a marker at either end has each of its non-marker cells recoded; replaces `marker-pairs` and `recode-between`. Fits every pair. Witness `lone-marker`: train0's input with (5,8) set to `0`; breaks `marker-pairs`; `borderline`, verdict `concept`; breaks the invariant that every marker has a partner on the opposite edge.
 - `recode`: how a cell of a marked line takes its color
     - `concept`: the stored map `recolor`, keyed by input color
-    - `$ForegroundElse`: parameters `fg`, `fg_to`, `other_to`; a cell of `fg` takes `fg_to`, and any other cell takes `other_to`; replaces `recode-between` and `recodable-field`; undefined nowhere. Fits every pair. Witness `third-color` (shared): a `2` at (5,4) of train0's input; breaks `recodable-field`; `borderline`, verdict `$KeepUnmapped`; breaks the invariant that every non-marker cell is `0` or `6`.
-    - `$BackgroundElse`: parameters `bg`, `bg_to`, `other_to`; a cell of `bg` takes `bg_to`, and any other cell takes `other_to`; replaces `recode-between` and `recodable-field`; undefined nowhere. Fits every pair. Witness `third-color`, as above.
+    - `$BackgroundElse`: parameters `bg`, `bg_to`, `other_to`; a cell of `bg` takes `bg_to`, and any other cell takes `other_to`; replaces `recode-between` and `recodable-field`; undefined nowhere. Fits every pair. Witness `third-color`: a `2` at (5,4) of train0's input; breaks `recodable-field`; `borderline`, verdict `$KeepUnmapped`; breaks the invariant that every non-marker cell is `0` or `6`.
 - `unmapped`: what a cell of a marked line does when `recolor` has no key for its color
     - `concept`: no output color, so the model is undefined on that input
     - `$KeepUnmapped`: the cell keeps its color; replaces `recodable-field`. Fits every pair. Witness `third-color`, as above.
@@ -33,11 +32,8 @@
     - `recolor=VanishedNewPairs`: undefined on every input for the same reason. Fails Fit at train0.
 - `line-family` & `segment`, `line-family` & `recode`, `line-family` & `unmapped`, `line-family` & `marker`, `line-family` & `recolor`, `segment` & `recode`, `segment` & `unmapped`, `segment` & `marker`, `segment` & `recolor`, `recode` & `marker`, `unmapped` & `marker`, `unmapped` & `recolor`, `marker` & `recolor`: the two branches' changes applied together
 - `recode` & `unmapped`: the `unmapped` property exists only with the map that the concept branch of `recode` reads, so `unmapped` stands at the concept
-    - `$ForegroundElse` & `$KeepUnmapped`: the `$ForegroundElse` model alone
     - `$BackgroundElse` & `$KeepUnmapped`: the `$BackgroundElse` model alone
 - `recode` & `recolor`: the `recolor` property exists only with the map that the concept branch of `recode` reads, so `recolor` stands at the concept
-    - `$ForegroundElse` & `recolor=ChangedPairs`: the `$ForegroundElse` model alone
-    - `$ForegroundElse` & `recolor=VanishedNewPairs`: the `$ForegroundElse` model alone
     - `$BackgroundElse` & `recolor=ChangedPairs`: the `$BackgroundElse` model alone
     - `$BackgroundElse` & `recolor=VanishedNewPairs`: the `$BackgroundElse` model alone
 

@@ -42,39 +42,18 @@
     //     @relaxed recodable-field
   | KeepUnmapped {}
 
-// how a recoded cell takes its color
-.type Recode =
-    // @claim recode-between
-    Recolor {u: Unmapped}
-    // @scene recodable-field: a non-marker cell may hold any color
-    // @rule recode-between: a recoded cell of one color c takes c_to, and a
-    //  recoded cell of any other color takes other_to, at each row
-    //  [c, c_to, other_to] of params.split
-    // @witness third-color: borderline $KeepUnmapped
-  | ForegroundElse {}
+.type Choice = [l: Lines, s: Segment, u: Unmapped]
 
-.type Choice = [l: Lines, s: Segment, r: Recode]
-
-.type SplitValue = [c: Color, c_to: Color, other_to: Color]
-.type OpenValue = [split: SplitValue]
-
-.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // @derive RarestColor: variant concept
     .decl marker(c: Color) marker(4).
 
-    // --- $Recolor ---
     // the color a recoded cell takes, keyed by its input color
     .decl recolor(c: Color, c2: Color)
     recolor(0, 8).
     recolor(6, 7).
-
-    // --- $ForegroundElse ---
-    // @open
-    .decl split(c: Color, c_to: Color, other_to: Color)
-    split(6, 7, 8).
-    split(0, 8, 7).
 }
 
 .init params = Params
@@ -85,13 +64,9 @@ lines_choice($Straight()). lines_choice($WithDiagonals()).
 .decl unmapped_choice(u: Unmapped)
 unmapped_choice($Strict()). unmapped_choice($KeepUnmapped()).
 
-.decl recode_choice(r: Recode)
-recode_choice($Recolor(U)) :- unmapped_choice(U).
-recode_choice($ForegroundElse()).
-
 .decl impl_choice(ch: Choice)
-impl_choice([L, $EdgePair(), R]) :- lines_choice(L), recode_choice(R).
-impl_choice([$Straight(), $OneEnd(), R]) :- recode_choice(R).
+impl_choice([L, $EdgePair(), U]) :- lines_choice(L), unmapped_choice(U).
+impl_choice([$Straight(), $OneEnd(), U]) :- unmapped_choice(U).
 
 // A marker cell on edge d.
 .decl marker_on(p: Position, d: Dir)
@@ -114,11 +89,11 @@ from_end(L, D, A, Q) :-
 //  params.recolor takes itself
 // @ignore: store — a stored table of these rows is a params.recolor of
 //  another value, so its branch is the concept model and fails Equivalence
-.decl recode(r: Recode, col: Color, col2: Color, v: OpenValue)
+.decl recode(u: Unmapped, col: Color, col2: Color)
 
-out(Q, Col2, [L, S, R], V) :-
-    recoded(L, S, Q), impl_choice([L, S, R]), in(Q, Col), recode(R, Col, Col2, V).
-out(P, Col, [L, S, R], [nil]) :- in(P, Col), impl_choice([L, S, R]), !recoded(L, S, P).
+out(Q, Col2, [L, S, U]) :-
+    recoded(L, S, Q), impl_choice([L, S, U]), in(Q, Col), recode(U, Col, Col2).
+out(P, Col, [L, S, U]) :- in(P, Col), impl_choice([L, S, U]), !recoded(L, S, P).
 
 // --- $Straight ---
 family($Straight(), A) :- axis_elem(A).
@@ -134,24 +109,13 @@ recoded(L, $EdgePair(), Q) :-
 // --- $OneEnd ---
 recoded(L, $OneEnd(), Q) :- from_end(L, _, _, Q), in(Q, Col), !params.marker(Col).
 
-// --- $Recolor ---
-recode($Recolor(U), Col, Col2, [nil]) :- unmapped_choice(U), params.recolor(Col, Col2).
+// --- $Strict, $KeepUnmapped ---
+recode(U, Col, Col2) :- unmapped_choice(U), params.recolor(Col, Col2).
 
 // --- $KeepUnmapped ---
-recode($Recolor($KeepUnmapped()), Col, Col, [nil]) :- in(_, Col), !params.recolor(Col, _).
-
-// --- $ForegroundElse ---
-recode($ForegroundElse(), Col, Col2, [[C, C_to, O]]) :-
-    in(_, Col), params.split(C, C_to, O),
-    ( Col = C, Col2 = C_to
-    ; Col != C, Col2 = O
-    ).
+recode($KeepUnmapped(), Col, Col) :- in(_, Col), !params.recolor(Col, _).
 
 .comp Determine {
-    // A train cell of color col takes col2.
-    .decl changed(col: Color, col2: Color)
-    changed(Col, Col2) :- ex_in(E, P, Col), ex_out(E, P, Col2), Col != Col2.
-
     // Cell q of a train input lies strictly between edge cell p and the cell
     // of p's color facing it on the opposite edge, on p's row or column.
     .decl inside(e: Example, p: Position, q: Position)
@@ -169,15 +133,7 @@ recode($ForegroundElse(), Col, Col2, [[C, C_to, O]]) :-
     .decl marker(c: Color)
     marker(Col) :- inside(E, P, _), !kept_inside(E, P), ex_in(E, P, Col).
 
+    // A train cell of color col takes col2.
     .decl recolor(c: Color, c2: Color)
-    recolor(Col, Col2) :- changed(Col, Col2).
-
-    // Some changed color other than c takes a color other than other_to.
-    .decl split_clash(c: Color, other_to: Color)
-    split_clash(C, O) :- changed(C, _), changed(C2, O), changed(C3, O3), C3 != C, O3 != O.
-
-    .decl split(c: Color, c_to: Color, other_to: Color)
-    split(C, C_to, O) :-
-        changed(C, C_to), changed(C2, O), C2 != C,    // c's own color, another color's
-        !split_clash(C, O).                           // every other color takes other_to
+    recolor(Col, Col2) :- ex_in(E, P, Col), ex_out(E, P, Col2), Col != Col2.
 }

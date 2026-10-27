@@ -338,8 +338,8 @@
     - M_open: the model with open(i) in place of θᵢ
 - The output contains each grid some open value produces, and is undefined where the model is undefined at some open value.
     + xref: src/checker/sweep.py:values_giving, src/solver/out_grids.py:open_union
-    - 28a6681f
-        - Water settles under gravity: the basin it reaches fills by level, and what overflows pours to the next basin on one side first. The pairs fix neither side, and the output holds both.
+    - caa06a1f
+        - A periodic pattern continues one step toward the corner of its block, along the horizontal or the vertical axis. The pairs fix neither axis, and the output holds the grid of each. The test pair's two candidates are those two grids.
             + gloss
 
 ## Cases

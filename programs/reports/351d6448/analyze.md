@@ -28,16 +28,13 @@
 - `divider_color`
     - `concept`: stored, `5`
     - `$DividerColorFromLines`: replaces `panels`: derived per input as the color whose full lines along `panel_axis` cut the grid into equal panels; undefined where no color does; fits every pair; witness `divider-8`, which breaks `panels`, plausibility `variant`, verdict `$DividerColorFromLines`, breaking the invariant that the dividers are `5`
-- `panel_axis`
-    - `concept`: stored, `V`
-    - `$PanelAxisFromLines`: replaces `panels`: derived per input as the axis on which full lines of `divider_color` cut the grid into equal panels; undefined where neither does; fits every pair; witness `side-by-side`, which breaks `panels`, plausibility `variant`, verdict `$PanelAxisFromLines`, breaking the invariant that the panels stack top to bottom
 - `divider_width`
     - `concept`: stored, `1`
     - `$DividerWidthFromLines`: replaces `panels`: derived per input as the width of the runs of full `divider_color` lines; undefined where the runs differ in width; fits every pair; witness `divider-2-wide`, which breaks `panels`, plausibility `variant`, verdict `$DividerWidthFromLines`, breaking the invariant that each divider is one line
 - `panel_count`
     - `concept`: stored, `4`
     - `$AnyPanelCount`: replaces `panels`: any count of three or more panels, read from the input; fits every pair; witness `five-panels`, which breaks `panels`, plausibility `variant`, verdict `$AnyPanelCount`, breaking the invariant that each input has four panels
-- `change_reading` & `step_direction`, `change_reading` & `step_check`, `change_reading` & `step_scope`, `change_reading` & `divider_color`, `change_reading` & `panel_axis`, `change_reading` & `divider_width`, `change_reading` & `panel_count`, `step_direction` & `step_check`, `step_direction` & `step_scope`, `step_direction` & `divider_color`, `step_direction` & `panel_axis`, `step_direction` & `divider_width`, `step_direction` & `panel_count`, `step_check` & `step_scope`, `step_check` & `divider_color`, `step_check` & `panel_axis`, `step_check` & `divider_width`, `step_check` & `panel_count`, `step_scope` & `divider_color`, `step_scope` & `panel_axis`, `step_scope` & `divider_width`, `step_scope` & `panel_count`, `divider_color` & `panel_axis`, `divider_color` & `divider_width`, `divider_color` & `panel_count`, `panel_axis` & `divider_width`, `panel_axis` & `panel_count`, `divider_width` & `panel_count`: the two branches' changes applied together
+- `change_reading` & `step_direction`, `change_reading` & `step_check`, `change_reading` & `step_scope`, `change_reading` & `divider_color`, `change_reading` & `divider_width`, `change_reading` & `panel_count`, `step_direction` & `step_check`, `step_direction` & `step_scope`, `step_direction` & `divider_color`, `step_direction` & `divider_width`, `step_direction` & `panel_count`, `step_check` & `step_scope`, `step_check` & `divider_color`, `step_check` & `divider_width`, `step_check` & `panel_count`, `step_scope` & `divider_color`, `step_scope` & `divider_width`, `step_scope` & `panel_count`, `divider_color` & `divider_width`, `divider_color` & `panel_count`, `divider_width` & `panel_count`: the two branches' changes applied together
 
 ## Open parameters
 - none

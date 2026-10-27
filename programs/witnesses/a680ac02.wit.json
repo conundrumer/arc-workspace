@@ -2,7 +2,7 @@
   "id": "a680ac02",
   "witnesses": [{
     "id": "spread-rows",
-    "separates": "Three hollow squares whose column extents are pairwise disjoint; two of them overlap in rows and the third lies far below, so the row spread (12) is larger than the column spread (10). The concept lines them up left to right; $AxisSpread stacks them top to bottom.",
+    "separates": "Three hollow squares whose column extents are pairwise disjoint; two of them overlap in rows and the third lies far below, so the row spread (12) is larger than the column spread (10). The concept lines them up left to right; $AxisBbox stacks them top to bottom.",
     "input": [
       [2,2,2,2,0,0,0,0,0,0,0,0,0,0,0],
       [2,0,0,2,0,0,0,0,0,0,0,0,0,0,0],
@@ -31,7 +31,7 @@
         [2,2,2,2,4,4,4,4,1,1,1,1]
       ]
     }, {
-      "cases": ["$AxisBbox","$AxisSpread"],
+      "cases": ["$AxisBbox"],
       "grid": [
         [2,2,2,2],
         [2,0,0,2],
@@ -49,7 +49,7 @@
     }]
   }, {
     "id": "diagonal",
-    "separates": "Three hollow squares down a diagonal, disjoint in both rows and columns, with a row spread (12) larger than the column spread (10). The concept finds no single separating axis and is undefined; $AxisSpread stacks them top to bottom.",
+    "separates": "Three hollow squares down a diagonal, disjoint in both rows and columns, with a row spread (12) larger than the column spread (10). The concept finds no single separating axis and is undefined; $AxisBbox stacks them top to bottom.",
     "input": [
       [2,2,2,2,0,0,0,0,0,0,6,6,6,6,0],
       [2,0,0,2,0,0,0,0,0,0,6,6,6,6,0],
@@ -73,7 +73,7 @@
       "cases": ["$SeparatingAxis"],
       "grid": null
     }, {
-      "cases": ["$AxisBbox","$AxisSpread"],
+      "cases": ["$AxisBbox"],
       "grid": [
         [2,2,2,2],
         [2,0,0,2],
@@ -219,15 +219,7 @@
         [2,2,2,2,4,4,4,4]
       ]
     }, {
-      "cases": ["$SelectFewestCells & $AxisSpread"],
-      "grid": [
-        [3,0,3,3],
-        [3,0,0,3],
-        [3,0,0,3],
-        [3,3,3,3]
-      ]
-    }, {
-      "cases": ["$SelectFewestCells & $SeparatingAxis"],
+      "cases": ["$SelectFewestCells"],
       "grid": null
     }, {
       "cases": ["$SelectNotFull"],
@@ -313,7 +305,7 @@
     }]
   }, {
     "id": "spread-tie",
-    "separates": "Three hollow squares with pairwise disjoint columns whose top-left corners spread 10 on both axes. $AxisSpread gives a grid for each open tie axis: it stacks them along V and lines them up left to right along H; $AxisBbox finds a square joint box and is undefined; the concept lines them up left to right.",
+    "separates": "Three hollow squares with pairwise disjoint columns whose top-left corners spread 10 on both axes. $AxisBbox finds a square joint box and is undefined; the concept lines them up left to right.",
     "input": [
       [2,2,2,2,0,0,0,0,0,0,0,0,0,0,0,0],
       [2,0,0,2,0,4,4,4,4,0,0,0,0,0,0,0],
@@ -342,30 +334,6 @@
     }, {
       "cases": ["$AxisBbox"],
       "grid": null
-    }, {
-      "cases": ["$AxisSpread"],
-      "grid": [
-        [
-          [2,2,2,2],
-          [2,0,0,2],
-          [2,0,0,2],
-          [2,2,2,2],
-          [4,4,4,4],
-          [4,0,0,4],
-          [4,0,0,4],
-          [4,4,4,4],
-          [1,1,1,1],
-          [1,0,0,1],
-          [1,0,0,1],
-          [1,1,1,1]
-        ],
-        [
-          [2,2,2,2,4,4,4,4,1,1,1,1],
-          [2,0,0,2,4,0,0,4,1,0,0,1],
-          [2,0,0,2,4,0,0,4,1,0,0,1],
-          [2,2,2,2,4,4,4,4,1,1,1,1]
-        ]
-      ]
     }]
   }, {
     "id": "corner-fewest",
@@ -401,7 +369,7 @@
     }]
   }, {
     "id": "wide-rings",
-    "separates": "Two hollow 3x10 rectangles, the second 5 rows lower and 2 columns further right, and a solid 5x5 square. Their top-left corners spread further down the rows, so the concept and $AxisSpread stack them; their joint box is wider than tall, so $AxisBbox lines them up left to right.",
+    "separates": "Two hollow 3x10 rectangles, the second 5 rows lower and 2 columns further right, and a solid 5x5 square. Their top-left corners spread further down the rows, so the concept stacks them; their joint box is wider than tall, so $AxisBbox lines them up left to right.",
     "input": [
       [2,2,2,2,2,2,2,2,2,2,0,0,0],
       [2,0,0,0,0,0,0,0,0,2,0,0,0],
@@ -421,7 +389,7 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["$ColorObjects & $SeparatingAxis","$AxisSpread"],
+      "cases": ["$ColorObjects & $SeparatingAxis"],
       "grid": [
         [2,2,2,2,2,2,2,2,2,2],
         [2,0,0,0,0,0,0,0,0,2],

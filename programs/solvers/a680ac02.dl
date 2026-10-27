@@ -16,7 +16,7 @@
 //  which they lie in the input
 //     @approximated: the output lines the kept squares up along the axis on
 //      which their extents are pairwise disjoint
-//     @witness diagonal: borderline $AxisSpread
+//     @witness diagonal: borderline $AxisBbox
 //         @relaxed one-separating-axis
 // @rule order: along that axis, the kept squares keep the order they have in
 //  the input
@@ -67,15 +67,10 @@
 .type AxisRule =
     // @claim axis
     SeparatingAxis {}
-    // @rule axis: the axis along which the kept squares' corners spread
-    //  further, the same at every corner, and params.tie_axis on a tie
-    // @witness spread-rows: ordinary concept
-    // @witness diagonal: borderline $AxisSpread
-    // @witness spread-tie: ordinary concept
-  | AxisSpread {}
     // @rule axis: the longer axis of the kept squares' joint bounding box;
     //  undefined when the box is square
     // @witness spread-rows: ordinary concept
+    // @witness diagonal: borderline $AxisBbox
     // @witness spread-tie: ordinary concept
     // @witness wide-rings: borderline concept
     //     @relaxed squares
@@ -105,14 +100,7 @@
 // A case, with the edge its sequence runs from.
 .type Run = [ch: Choice, d: Dir]
 
-.type TieAxisValue = [a: Axis]
-
-.type OpenValue = [tie_axis: TieAxisValue]
-
-// The kept squares at an open value.
-.type SqValue = [sq: Squares, v: OpenValue]
-
-.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // @derive DominantColor: variant derived
@@ -130,10 +118,6 @@
     .decl template_hole(p: Position)
     template_hole(P) :- square_side(K), helpers.frame_pos([K, K], P), interior(P, ZERO).
 
-    // --- $AxisSpread ---
-    // @open
-    .decl tie_axis(a: Axis) tie_axis(AXIS_V). tie_axis(AXIS_H).
-
     // --- $OrderColumnMajor ---
     .decl lex_diagonal(da: DiagAxis) lex_diagonal(DAXIS_DG).
     .decl lex_axis(a: Axis) lex_axis(AXIS_H).
@@ -142,50 +126,29 @@
 .init params = Params
 
 // The single-color objects of a grid, under each connectivity.
-.comp Parse<Key> {
-    .type KeyColor = [k: Key, col: Color]
-    .type KeyObj = [k: Key, conn: Connectivity, id: Ident]
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
 
-    .decl cell(k: Key, p: Position, col: Color)
+.decl obj_cell(o: Obj, p: Position)
 
-    .decl ink(k: Key, p: Position, col: Color)
-    ink(K, P, Col) :- cell(K, P, Col), !params.bg(Col).
+// --- $FourConnected ---
+// @claim select-hollow
+.init comp4 = Components<Color>
+comp4.node(Col, P) :- ink(P, Col).
 
-    .decl obj_cell(o: KeyObj, p: Position)
+obj_cell([$FourConnected(), Id], P) :- comp4.label(_, P, Id).
 
-    // --- $FourConnected ---
-    // @claim select-hollow
-    .init comp4 = Components<KeyColor>
-    comp4.node([K, Col], P) :- ink(K, P, Col).
+// --- $EightConnected ---
+// @claim select-hollow
+.init comp8 = Components8<Color>
+comp8.node(Col, P) :- ink(P, Col).
 
-    obj_cell([K, $FourConnected(), Id], P) :- comp4.label([K, _], P, Id).
+obj_cell([$EightConnected(), Id], P) :- comp8.label(_, P, Id).
 
-    // --- $EightConnected ---
-    // @claim select-hollow
-    .init comp8 = Components8<KeyColor>
-    comp8.node([K, Col], P) :- ink(K, P, Col).
-
-    obj_cell([K, $EightConnected(), Id], P) :- comp8.label([K, _], P, Id).
-
-    // --- $ColorObjects ---
-    // @claim select-hollow concatenate
-    .init obj_box = Bbox<KeyObj>
-    obj_box.cell(O, P) :- obj_cell(O, P).
-
-    // --- $EnclosesHole ---
-    // The cells each object closes off from the grid edge.
-    // @claim select-hollow
-    .init hole = Closed<KeyObj>
-    hole.cell([K, C, Id], P) :- obj_box.box([K, C, Id], _), cell(K, P, _), !obj_cell([K, C, Id], P).
-
-    // The box of each object that closes off a params.bg cell.
-    .decl encloses(k: Key, conn: Connectivity, b: Box)
-    encloses(K, C, B) :-
-        obj_box.box([K, C, Id], B), hole.region([K, C, Id], P, _), cell(K, P, Col), params.bg(Col).
-}
-
-.init parse = Parse<Unit>
-parse.cell($U(), P, Col) :- in(P, Col).
+// --- $ColorObjects ---
+// @claim select-hollow concatenate
+.init obj_box = Bbox<Obj>
+obj_box.cell(O, P) :- obj_cell(O, P).
 
 .decl connectivity_choice(c: Connectivity)
 connectivity_choice($FourConnected()). connectivity_choice($EightConnected()).
@@ -194,15 +157,14 @@ connectivity_choice($FourConnected()). connectivity_choice($EightConnected()).
 keep_test_choice($EnclosesHole()). keep_test_choice($SelectNotFull()).
 keep_test_choice($SelectFewestCells()).
 
+// --- $ColorObjects, $StoredTemplate ---
 .decl axis_rule_choice(r: AxisRule)
-axis_rule_choice($SeparatingAxis()). axis_rule_choice($AxisSpread()). axis_rule_choice($AxisBbox()).
+axis_rule_choice($SeparatingAxis()). axis_rule_choice($AxisBbox()).
 
 .decl order_rule_choice(o: OrderRule)
 order_rule_choice($AlongAxis()). order_rule_choice($OrderColumnMajor()).
 
-// StoredTemplate & AxisBbox is left out: the template's windows are all one
-// size, so their joint box reads the axis their corner spread reads, and
-// AxisSpread subsumes it.
+// StoredTemplate & AxisBbox is not a case.
 .decl impl_choice(ch: Choice)
 impl_choice([$ColorObjects(C, K), R, O]) :-
     connectivity_choice(C), keep_test_choice(K), axis_rule_choice(R), order_rule_choice(O).
@@ -223,8 +185,7 @@ sq_line(Sq, B, A, L) :- sq_cell(Sq, B, P, _), axis_elem(A), split(P, A, L, _).
 // The axis the kept squares line up along.
 .decl layout_axis(sq: Squares, r: AxisRule, a: Axis)
 
-// A case's sequence runs from each edge of its layout axis, and the two
-// must agree at each open value.
+// A case's sequence runs from each edge of its layout axis.
 .decl run(ch: Choice, d: Dir, a: Axis)
 run([Sq, R, O], D, A) :- impl_choice([Sq, R, O]), layout_axis(Sq, R, A), axis_of(D, A).
 
@@ -249,32 +210,41 @@ laid(Ch, A, P_grid, Col) :-
     compose(P_along, P_across, P_grid).
 
 // --- $EnclosesHole ---
-kept($ColorObjects(C, $EnclosesHole()), B) :- parse.encloses($U(), C, B).
+// The cells each object closes off from the grid edge.
+// @claim select-hollow
+.init hole = Closed<Obj>
+hole.cell(O, P) :- obj_box.box(O, _), in(P, _), !obj_cell(O, P).
+
+// The box of each object that closes off a params.bg cell.
+.decl encloses(conn: Connectivity, b: Box)
+encloses(C, B) :- obj_box.box([C, Id], B), hole.region([C, Id], P, _), in(P, Col), params.bg(Col).
+
+kept($ColorObjects(C, $EnclosesHole()), B) :- encloses(C, B).
 
 // --- $SelectNotFull ---
 kept($ColorObjects(C, $SelectNotFull()), B) :-
-    parse.obj_box.box([$U(), C, Id], B), in(P, _), inside(P, B), !parse.obj_cell([$U(), C, Id], P).
+    obj_box.box([C, Id], B), in(P, _), inside(P, B), !obj_cell([C, Id], P).
 
 // --- $SelectFewestCells ---
 // @claim select-hollow
 .init obj_size = Tally<Obj, Position>
-obj_size.item([C, Id], P) :- parse.obj_cell([$U(), C, Id], P).
-obj_size.domain([C, Id]) :- parse.obj_cell([$U(), C, Id], _).
+obj_size.item([C, Id], P) :- obj_cell([C, Id], P).
+obj_size.domain([C, Id]) :- obj_cell([C, Id], _).
 
 // @claim select-hollow
 .init fewest = ArgExtremes<Connectivity, Ident>
 fewest.cand(C, Id, N) :- obj_size.tally([C, Id], N).
 
 kept($ColorObjects(C, $SelectFewestCells()), B) :-
-    fewest.low(C, Id, _), parse.obj_box.box([$U(), C, Id], B).
+    fewest.low(C, Id, _), obj_box.box([C, Id], B).
 
 // --- $StoredTemplate ---
 // The windows that match the template, one key per wall color.
 // @claim select-hollow
 .init window = Occurrences<Color, Color>
-window.cell(Col, P, V) :- parse.ink($U(), _, Col), in(P, V).
-window.shape(Col, S, Col) :- parse.ink($U(), _, Col), params.template_wall(S).
-window.shape(Col, S, Bg) :- parse.ink($U(), _, Col), params.template_hole(S), params.bg(Bg).
+window.cell(Col, P, V) :- ink(_, Col), in(P, V).
+window.shape(Col, S, Col) :- ink(_, Col), params.template_wall(S).
+window.shape(Col, S, Bg) :- ink(_, Col), params.template_hole(S), params.bg(Bg).
 
 kept($StoredTemplate(), B) :- window.occurrence(_, B).
 
@@ -286,25 +256,7 @@ overlap(Sq, A) :- sq_line(Sq, B1, A, L), sq_line(Sq, B2, A, L), B1 != B2.
 layout_axis(Sq, $SeparatingAxis(), A) :-
     overlap(Sq, A2), perp(A, A2), !overlap(Sq, A).
 
-out(P, Col, [Sq, $SeparatingAxis(), O], [nil]) :- laid([Sq, $SeparatingAxis(), O], _, P, Col).
-
-// --- $AxisSpread ---
-// The box of the kept squares' corners, once per corner.
-// @claim axis
-.init spread = Bbox<Corner>
-spread.cell([Sq, D], P) :- sq_cell(Sq, B, P, _), box_corner(P, B, D).
-
-// @claim axis
-.init spread_axis = Unanimous<SqValue, Axis>
-spread_axis.item([Sq, [[T]]], A) :-
-    spread.box([Sq, _], B), in(P, _), params.tie_axis(T),
-    perp(A, A2), box_extent(B, P, A, N), box_extent(B, P, A2, N2),
-    ( N > N2 ; N = N2, A = T ).
-
-layout_axis(Sq, $AxisSpread(), A) :- spread_axis.value([Sq, _], A).
-
-out(P, Col, [Sq, $AxisSpread(), O], V) :-
-    laid([Sq, $AxisSpread(), O], A, P, Col), spread_axis.value([Sq, V], A).
+out(P, Col, [Sq, $SeparatingAxis(), O]) :- laid([Sq, $SeparatingAxis(), O], _, P, Col).
 
 // --- $AxisBbox ---
 // The joint box of the kept squares.
@@ -316,7 +268,7 @@ layout_axis(Sq, $AxisBbox(), A) :-
     joint.box(Sq, B), in(P, _),
     perp(A, A2), box_extent(B, P, A, N), box_extent(B, P, A2, N2), N > N2.
 
-out(P, Col, [Sq, $AxisBbox(), O], [nil]) :- laid([Sq, $AxisBbox(), O], _, P, Col).
+out(P, Col, [Sq, $AxisBbox(), O]) :- laid([Sq, $AxisBbox(), O], _, P, Col).
 
 // --- $AlongAxis ---
 // The squares go by their distance to edge d.
@@ -341,36 +293,7 @@ sq_score([[Sq, R, $OrderColumnMajor()], D], B, Rk) :-
     lex.rank([Sq, Dg], P, Rk).
 
 .comp Determine {
-    .type ExampleCorner = [e: Example, corner: DiagDir]
-
-    .init parse = Parse<Example>
-    parse.cell(E, P, Col) :- ex_in(E, P, Col).
-
     // The shorter extent of an output.
     .decl square_side(k: number)
     square_side(K) :- ex_out(_, P, _), axis_dims(P, A, N, K), K < N.
-
-    // The longer axis of an output.
-    .decl out_axis(e: Example, a: Axis)
-    out_axis(E, A) :- ex_out(E, P, _), axis_dims(P, A, N, N2), N > N2.
-
-    // The box of the concept's kept squares' corners, once per corner.
-    .init spread = Bbox<ExampleCorner>
-    spread.cell([E, D], P) :-
-        parse.encloses(E, $FourConnected(), B), ex_in(E, P, _), box_corner(P, B, D).
-
-    // Those corners spread equally on both axes.
-    .decl tie(e: Example)
-    tie(E) :-
-        spread.box([E, _], B), ex_in(E, P, _),
-        perp(A, A2), box_extent(B, P, A, N), box_extent(B, P, A2, N).
-
-    .decl tied_pair(e: Example)
-    tied_pair(E) :- tie(E), ex_out(E, _, _).
-
-    // The longer axis of each tied output, and either axis where no train
-    // pair ties.
-    .decl tie_axis(a: Axis)
-    tie_axis(A) :- tied_pair(E), out_axis(E, A).
-    tie_axis(A) :- axis_elem(A), !tied_pair(_).
 }

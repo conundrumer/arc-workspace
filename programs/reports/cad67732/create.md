@@ -1,7 +1,6 @@
 # cad67732
 
 ## Departures
-- The witness file adds the witness `anchor-edge`, which is not in `witnesses.json`: the audit reported that removing `anchor_edge(DIR_T)` or `anchor_edge(DIR_L)` changed no output on any input of the task or of the witness file. Every anti-diagonal input there is symmetric under the half turn. The new input is an anti-diagonal band 1 2 3 of eight cells, and the two open values give different grids. After it was added, the open-values check is ok.
 - The witness file adds the witness `short-anti-shift-field`, which is not in `witnesses.json`: no Analyze witness showed the case `$LeastPeriodDiagonal & background=DominantColor` giving an output that no case with only part of its branches gives. The new input is the input of `short-anti-shift` on a field of 5, and each of the four cases gives its own output there. All four cases are now witnessed.
 - `record --all` rewrote the witness file's group names into the forms the runner lists (`$CornerDiagonal & background=stored`, `$LeastPeriodDiagonal & background=stored`, and the others). The grids of the `witnesses.json` witnesses are unchanged, and `witness --file programs/reports/cad67732/witnesses.json` is ok.
 

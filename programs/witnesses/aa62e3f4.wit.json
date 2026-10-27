@@ -190,7 +190,7 @@
     }]
   }, {
     "id": "corner-touch",
-    "separates": "Two pieces touch at one corner. Taken as two 4-connected objects, each has rarest color 1, and $PerObject & $ScanOrder paints every halo 1; taken as one 8-connected object, the rarest color is 2, and $PerObject & $ScanOrder & $PerObject8 paints every halo 2, as the cases that count over all cells do. The $InnermostColor cases find two colors at one level and are undefined.",
+    "separates": "Two pieces touch at one corner. Taken as two 4-connected objects, each has rarest color 1, and $Conn4 paints every halo 1; taken as one 8-connected object, the rarest color is 2, and $PerObject8 paints every halo 2, as the cases that count over all cells do. The $InnermostColor cases find two colors at one level and are undefined.",
     "input": [
       [8,8,8,8,8,8,8,8,8,8,8,8],
       [8,3,3,3,3,3,8,8,8,8,8,8],
@@ -202,7 +202,7 @@
       [8,8,8,8,8,8,8,8,8,8,8,8]
     ],
     "output": [{
-      "cases": ["$RareColor & $AllCells"],
+      "cases": ["$RareColor & $AllCells", "$RareColor & $PerObject8"],
       "grid": [
         [8,2,2,2,2,2,8,8,8,8,8,8],
         [2,8,8,8,8,8,2,8,8,8,8,8],
@@ -227,39 +227,6 @@
         [8,8,8,8,8,1,8,8,8,8,8,1],
         [8,8,8,8,8,1,8,8,8,8,8,1],
         [8,8,8,8,8,8,1,1,1,1,1,8]
-      ]
-    }]
-  }, {
-    "id": "diagonal-tie",
-    "separates": "Colors 2 and 4 tie for the fewest cells, two each, and share the innermost level. The concept and the $InnermostColor cases leave the halo undefined; the $ScanOrder cases paint it 2, since a cell of 2 comes first among the tied cells in every scan order.",
-    "input": [
-      [8,8,8,8,8,8,8,8,8,8],
-      [8,3,3,3,3,3,3,8,8,8],
-      [8,3,2,3,3,3,3,8,8,8],
-      [8,3,3,4,3,3,3,8,8,8],
-      [8,3,3,3,4,3,3,8,8,8],
-      [8,3,3,3,3,2,3,8,8,8],
-      [8,3,3,3,3,3,3,8,8,8],
-      [8,8,8,8,8,8,8,8,8,8],
-      [8,8,8,8,8,8,8,8,8,8],
-      [8,8,8,8,8,8,8,8,8,8]
-    ],
-    "output": [{
-      "cases": ["concept","$InnermostColor"],
-      "grid": null
-    }, {
-      "cases": ["$ScanOrder"],
-      "grid": [
-        [8,2,2,2,2,2,2,8,8,8],
-        [2,8,8,8,8,8,8,2,8,8],
-        [2,8,8,8,8,8,8,2,8,8],
-        [2,8,8,8,8,8,8,2,8,8],
-        [2,8,8,8,8,8,8,2,8,8],
-        [2,8,8,8,8,8,8,2,8,8],
-        [2,8,8,8,8,8,8,2,8,8],
-        [8,2,2,2,2,2,2,8,8,8],
-        [8,8,8,8,8,8,8,8,8,8],
-        [8,8,8,8,8,8,8,8,8,8]
       ]
     }]
   }, {
@@ -318,7 +285,7 @@
         [8,8,8,8,8,8,8,8,8,8,8,8,8,8]
       ]
     }, {
-      "cases": ["$Conn4"],
+      "cases": ["$Conn4", "$RareColor & $PerObject8"],
       "grid": [
         [8,8,8,8,8,8,8,8,9,8,8,8,9,8],
         [8,8,1,1,1,8,8,8,9,8,8,8,9,8],
@@ -336,7 +303,7 @@
         [8,8,8,8,8,8,8,8,8,8,8,8,8,8]
       ]
     }, {
-      "cases": ["$PerObject8"],
+      "cases": ["$InnermostColor & $PerObject8"],
       "grid": [
         [8,8,8,8,8,8,8,8,9,8,8,8,9,8],
         [8,8,6,6,6,8,8,8,9,8,8,8,9,8],

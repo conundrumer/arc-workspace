@@ -163,50 +163,6 @@
       ]
     }]
   }, {
-    "id": "side-by-side",
-    "separates": "train0 transposed, the panels side by side: the concept finds no full row of 5 and is undefined; $PanelAxisFromLines, with time running toward R, cuts at the full columns",
-    "input": [
-      [0,0,0,5,0,0,0,5,0,0,0,5,0,0,0],
-      [0,2,0,5,0,0,0,5,0,0,0,5,0,0,0],
-      [0,2,0,5,0,2,0,5,0,0,0,5,0,0,0],
-      [0,3,0,5,0,2,0,5,0,2,0,5,0,0,0],
-      [0,0,0,5,0,3,0,5,0,2,0,5,0,2,0],
-      [0,0,0,5,0,0,0,5,0,3,0,5,0,2,0],
-      [0,0,0,5,0,0,0,5,0,0,0,5,0,3,0],
-      [0,0,0,5,0,0,0,5,0,0,0,5,0,0,0],
-      [0,0,0,5,0,0,0,5,0,0,0,5,0,0,0],
-      [0,0,0,5,0,0,0,5,0,0,0,5,0,0,0],
-      [0,0,0,5,0,0,0,5,0,0,0,5,0,0,0],
-      [0,0,0,5,0,0,0,5,0,0,0,5,0,0,0],
-      [0,0,0,5,0,0,0,5,0,0,0,5,0,0,0]
-    ],
-    "assign": {
-      "time_corner": [
-        ["DIAG_BR"]
-      ]
-    },
-    "output": [{
-      "cases": ["$StoredAxis"],
-      "grid": null
-    }, {
-      "cases": ["$PanelAxisFromLines"],
-      "grid": [
-        [0,0,0],
-        [0,0,0],
-        [0,0,0],
-        [0,0,0],
-        [0,0,0],
-        [0,2,0],
-        [0,2,0],
-        [0,3,0],
-        [0,0,0],
-        [0,0,0],
-        [0,0,0],
-        [0,0,0],
-        [0,0,0]
-      ]
-    }]
-  }, {
     "id": "divider-2-wide",
     "separates": "train0 with each divider two rows wide: the concept is undefined; $DividerWidthFromLines cuts at the two-row dividers",
     "input": [

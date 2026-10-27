@@ -2,7 +2,6 @@
 
 ## Concept
 - The concept fits every pair (probe `work/task/bc93ec48/probe.py`, reading `concept`).
-- The concept is undefined where two copies give one cell different colors, as on witness `copies-overlap`; `$Precedence` is the case that is defined there.
 - No witness has the verdict `other`. Every rule has a relational form, so the concept rule is applied as written.
 
 ## Choice points
@@ -25,9 +24,6 @@
 - `draw-layer`: whether a copy covers non-background cells
     - `concept`: a copy is drawn over every cell it covers
     - `$Underlay`: replaces `overlay` with a copy that paints only `background` cells. Fails train0, because (0,8) turns from 6 to 4.
-- `copy-clash`: the color of a cell that two copies of different colors cover
-    - `concept`: none, and the model is undefined there
-    - `$Precedence`: adds the rule that the copy from the corner ranked first in `precedence` wins, with `precedence` an open parameter. Fits every pair. Witness `copies-overlap`: plausibility `borderline`, verdict `$Precedence`. It breaks this invariant of the inputs: each corner shape lies within the quarter of the grid at its corner.
 - `corner-step`: how the target corner of each corner is encoded
     - `concept`: the next corner in `sense`, a stored `Sense`
     - `$CornerD4`: replaces `sense` with a stored `D4` element `corner_d4` (`D4_CW`) whose action on the corners gives each target. Fits every pair. Witness `corners-swap`, at `corner_d4` = `D4_LR` and `corner_target` = the left-right swap: plausibility `ordinary`, verdict `$CornerMap`. It fails Subsumption, because each `corner_d4` value gives on every input the output of `$CornerMap` at the action of that value on the corners.
@@ -37,10 +33,10 @@
     - `background=DominantColor`: the commonest color of the input, in place of the stored `background`. Fits every pair. Witness `background=DominantColor`: breaks `background-field`, plausibility `variant`, verdict `background=DominantColor`. It breaks this invariant of the inputs: 7 is the field color.
     - `background=SharedColor`: every color of the input. Fails train0, because each color other than 7 makes the 7 field a corner shape whose copies clash, so the model is undefined.
     - `background=RarestColor`: the rarest color of the input. Fails train0, because the 2 shape at BL becomes background and TL does not get its copy.
-- `shape-cells` & `corner-pick`, `shape-cells` & `copy-form`, `shape-cells` & `vacated-cells`, `shape-cells` & `draw-layer`, `shape-cells` & `copy-clash`, `shape-cells` & `corner-step`, `shape-cells` & `background`, `corner-pick` & `copy-form`, `corner-pick` & `vacated-cells`, `corner-pick` & `draw-layer`, `corner-pick` & `copy-clash`, `corner-pick` & `corner-step`, `corner-pick` & `background`, `copy-form` & `vacated-cells`, `copy-form` & `draw-layer`, `copy-form` & `copy-clash`, `copy-form` & `corner-step`, `copy-form` & `background`, `vacated-cells` & `draw-layer`, `vacated-cells` & `copy-clash`, `vacated-cells` & `corner-step`, `vacated-cells` & `background`, `draw-layer` & `copy-clash`, `draw-layer` & `corner-step`, `draw-layer` & `background`, `copy-clash` & `corner-step`, `copy-clash` & `background`, `corner-step` & `background`: the two branches' changes applied together
+- `shape-cells` & `corner-pick`, `shape-cells` & `copy-form`, `shape-cells` & `vacated-cells`, `shape-cells` & `draw-layer`, `shape-cells` & `corner-step`, `shape-cells` & `background`, `corner-pick` & `copy-form`, `corner-pick` & `vacated-cells`, `corner-pick` & `draw-layer`, `corner-pick` & `corner-step`, `corner-pick` & `background`, `copy-form` & `vacated-cells`, `copy-form` & `draw-layer`, `copy-form` & `corner-step`, `copy-form` & `background`, `vacated-cells` & `draw-layer`, `vacated-cells` & `corner-step`, `vacated-cells` & `background`, `draw-layer` & `corner-step`, `draw-layer` & `background`, `corner-step` & `background`: the two branches' changes applied together
 
 ## Open parameters
-- `precedence`: every order of the four corners, under `$Precedence`
+- none
 
 ## Not formed
 - the counterclockwise `sense`: it is a value of `sense`, not a branch, and it fails train0.

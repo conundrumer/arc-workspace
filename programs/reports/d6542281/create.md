@@ -1,15 +1,12 @@
 # d6542281
 
 ## Departures
-- `$BackgroundByCorner` reads a parameter, `bg_corner`, stored as `@open` with all four corners. `analyze.md` gives the branch "no parameter" and names the top-left cell: the corner is an orientation, so it is task data and cannot be fixed in the program. The task singles out no corner, and the sweep shows all four fit every pair.
-- Because `bg_corner` is open, `witness --file programs/reports/d6542281/witnesses.json` differs at `shape-at-corner`. `$BackgroundByCorner` there gives two grids, where `witnesses.json` gives one. The top-left corner leaves the input unchanged. The other three corners give the concept's grid.
 - `impl_choice` leaves out every `$UniqueDotPlacement & $PlaceOverAny` combination. It fails Fit at train0, train2, test0 and test1. Copies placed over any cell cover each dot more than once, so no dot keeps a placement and no shape is completed. `analyze.md` gives each branch as fitting on its own, and its pair line says the two changes may be applied together.
-- An added branch, `@derive SepTileCount` on `group_reach` (`group_reach=SepTileCount`), holds the built-in derivation that `derive` reports fits. `analyze.md` does not have it.
-- The witness file adds `group_reach=SepTileCount`, `fragment-sizes` and `reach-steps`. It also adds `shape-at-top-right`, `shape-at-bottom-left` and `shape-at-bottom-right`, which are `shape-at-corner` mirrored or turned a half turn.
+- The witness file adds `fragment-sizes`.
 - The branches `analyze.md` gives no witness, because they fail Fit, are not formed: `$Adjacency4` (train0), `$AllPlacements` (train0, train1), `$MatchUpToD4` (train0) and `$AnchorByRarestColor` (train2).
 
 ## Judgments
-- The solver works: every train and test pair passes, lint is clean, the audit is clean apart from the skipped `store` check under Unsettled, and the determination run is ok. 13 of 216 cases are witnessed.
+- The solver works: every train and test pair passes, lint is clean, the audit is clean apart from the skipped `store` check under Unsettled, and the determination run is ok.
 - The Not formed item ("drawing only the cells a copy adds") is not formed. As `analyze.md` states, it draws the concept's output on every input, so it fails Equivalence.
 - Hint `case section` (the `case_ov` clauses that name `$GroupByReach`): moved under the `$LargestMatch, $UniqueDotPlacement, $MostDotsPerDot` and `$GroupByReach` markers.
 - Hint `case section` on the clause that writes erased dots to `out`: its head now names `$EraseUncovered`.
@@ -32,10 +29,7 @@
 - `src/` was not read.
 
 ## Unsettled
-- The `group_reach` determination does not survive `near-groups`. The plan asks that it still keep 2, 3, 4 with that pair added, but on that pair `$GroupByReach` fits no reach, and no fact of the inputs alone or the outputs alone tells its 2-cell gap from train2's 5-cell gap. To settle it, rule whether a witness at which the branch fits no value should bind the determination, or derive the reach from another fact.
 - The audit's `store` check skipped `paint` and `seat`, which have over 20000 rows on an input. A `store` run with a higher row cap would settle it.
-- Whether a reader of `$BackgroundByCorner` takes all four corners, which is why the solver stores all four, or the top-left alone, as `analyze.md` names it. A reviewer's ruling would settle it.
-- Whether `sub_extent` is an acceptable candidate domain for an object-size threshold. A precedent for a grounded threshold domain would settle it.
 
 ## Concept faults
 - none

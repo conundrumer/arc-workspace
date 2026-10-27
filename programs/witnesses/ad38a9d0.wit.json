@@ -211,7 +211,7 @@
     }]
   }, {
     "id": "t-tetromino",
-    "separates": "a T-tetromino stands where the Z was. The concept has no key for it under any open value of shape_sym and is undefined; $SizeBoxKey matches it to the Z by its 4 cells and 2x3 box and paints it 8; $KeepUnknown leaves it 6.",
+    "separates": "a T-tetromino stands where the Z was. The concept has no key for it under any value of shape_sym and is undefined; $SizeBoxKey matches it to the Z by its 4 cells and 2x3 box and paints it 8; $KeepUnknown leaves it 6.",
     "input": [
       [7,6,7,7,7,6,7,7,7],
       [6,6,6,7,6,6,6,7,7],
@@ -277,52 +277,8 @@
       ]
     }]
   }, {
-    "id": "horizontal-domino",
-    "separates": "the vertical domino lies flat. At shape_sym SYM_1 no key matches it, and the cases that keep only keyed pieces are undefined; at SYM_C4 and SYM_D4 it matches the domino and takes 9.",
-    "input": [
-      [7,6,7,7,6,6,7,7,7],
-      [6,6,6,7,7,6,6,7,7],
-      [7,6,7,7,7,7,7,7,6],
-      [7,7,7,6,6,6,7,7,6],
-      [7,7,7,6,6,6,7,7,6],
-      [7,7,7,7,7,7,7,7,7],
-      [6,6,7,7,7,7,7,6,6],
-      [7,6,7,7,7,7,7,7,6],
-      [7,7,7,7,7,6,6,7,7]
-    ],
-    "output": [{
-      "cases": ["concept"],
-      "grid": null
-    }, {
-      "cases": ["$KeepUnknown"],
-      "grid": [
-        [
-          [7,3,7,7,8,8,7,7,7],
-          [3,3,3,7,7,8,8,7,7],
-          [7,3,7,7,7,7,7,7,2],
-          [7,7,7,5,5,5,7,7,2],
-          [7,7,7,5,5,5,7,7,2],
-          [7,7,7,7,7,7,7,7,7],
-          [4,4,7,7,7,7,7,4,4],
-          [7,4,7,7,7,7,7,7,4],
-          [7,7,7,7,7,6,6,7,7]
-        ],
-        [
-          [7,3,7,7,8,8,7,7,7],
-          [3,3,3,7,7,8,8,7,7],
-          [7,3,7,7,7,7,7,7,2],
-          [7,7,7,5,5,5,7,7,2],
-          [7,7,7,5,5,5,7,7,2],
-          [7,7,7,7,7,7,7,7,7],
-          [4,4,7,7,7,7,7,4,4],
-          [7,4,7,7,7,7,7,7,4],
-          [7,7,7,7,7,9,9,7,7]
-        ]
-      ]
-    }]
-  }, {
     "id": "s-tetromino",
-    "separates": "the Z is mirrored into an S. Only SYM_D4 matches it to the Z and paints it 8; at SYM_1 and SYM_C4 no key matches it.",
+    "separates": "the Z is mirrored into an S. Only the shape_sym value SYM_D4 matches it to the Z, so the values disagree and $ShapeKey is undefined; $SizeBoxKey matches it to the Z by its 4 cells and 2x3 box and paints it 8.",
     "input": [
       [7,6,7,7,7,6,6,7,7],
       [6,6,6,7,6,6,7,7,7],
@@ -335,34 +291,8 @@
       [7,7,7,7,7,6,7,7,7]
     ],
     "output": [{
-      "cases": ["concept"],
+      "cases": ["$ShapeKey"],
       "grid": null
-    }, {
-      "cases": ["$ShapeKey & $KeepUnknown"],
-      "grid": [
-        [
-          [7,3,7,7,7,6,6,7,7],
-          [3,3,3,7,6,6,7,7,7],
-          [7,3,7,7,7,7,7,7,2],
-          [7,7,7,5,5,5,7,7,2],
-          [7,7,7,5,5,5,7,7,2],
-          [7,7,7,7,7,7,7,7,7],
-          [4,4,7,7,7,7,7,4,4],
-          [7,4,7,7,7,9,7,7,4],
-          [7,7,7,7,7,9,7,7,7]
-        ],
-        [
-          [7,3,7,7,7,8,8,7,7],
-          [3,3,3,7,8,8,7,7,7],
-          [7,3,7,7,7,7,7,7,2],
-          [7,7,7,5,5,5,7,7,2],
-          [7,7,7,5,5,5,7,7,2],
-          [7,7,7,7,7,7,7,7,7],
-          [4,4,7,7,7,7,7,4,4],
-          [7,4,7,7,7,9,7,7,4],
-          [7,7,7,7,7,9,7,7,7]
-        ]
-      ]
     }, {
       "cases": ["$SizeBoxKey"],
       "grid": [

@@ -1,61 +1,30 @@
 // 8ee62060
 // @keywords: decompose d4
-// input: the grid divides into params.block_size blocks, and the blocks that
-//  hold content sit on one diagonal of the block-grid.
-// output: each block keeps its contents, and a D4 element moves it in the
-//  block-grid. That element carries either diagonal of the block-grid onto the
-//  other. The pairs fix none of the four elements that do so, so Params holds
-//  every one, the program runs them all, and the output holds each one's grid.
-
-.type BlockD4 = [d: D4]
-.type OpenValue = [block_d4: BlockD4]
-
-.decl out(p: Position, col: Color, v: OpenValue)
+// @scene diagonal: the grid divides into blocks of params.block_size, and the
+//  blocks that hold content sit on one diagonal of the block-grid.
+// @rule swap: each block keeps its contents, and moves in the block-grid by
+//  each D4 element that moves some block of the input onto a block of other
+//  content; the model is undefined where two such elements put different
+//  colors on one cell.
 
 .comp Params {
     .decl block_size(k: number)
     block_size(2).
-
-    // the elements that swap the two diagonals of the block-grid; the pairs
-    // fix none
-    // @open
-    .decl block_d4(d: D4)
-    block_d4(D4_LR).
-    block_d4(D4_TB).
-    block_d4(D4_CW).
-    block_d4(D4_CC).
 }
 
 .init params = Params
 
-out(P_out, Col, [[D]]) :-
-    in(P_in, Col),                                          // input cell
-    params.block_size(K),
-    divide_by_size_2d(P_in, K, 0, P_block_in, P_local),     // its block, and its cell in that block
-    params.block_d4(D), apply(D, P_block_in, P_block_out),  // the block moves
-    concat_2d(P_block_out, P_local, 0, P_out).              // back to grid coordinates
+// At each within-block offset, the input's block-grid, matched against
+// itself.
+// @claim diagonal swap
+.init block = D4Map<Position, Color>
+block.src(P_local, P_block, Col) :-
+    in(P, Col), params.block_size(K),
+    divide_by_size_2d(P, K, 0, P_block, P_local).    // its block, and its cell in that block
+block.dst(Ky, P_block, Col) :- block.src(Ky, P_block, Col).
 
-.comp Determine {
-    .type BlockK = [e: Example, p_local: Position]
-
-    // At each within-block offset, each train input's block-grid, matched
-    // against itself.
-    .init block = D4Map<BlockK, Color>
-    block.src([E, P_local], P_block, Col) :-
-        ex_in(E, P_grid, Col), ex_out(E, _, _),                                    // cell of a train input
-        params.block_size(K), divide_by_size_2d(P_grid, K, 0, P_block, P_local).   // decompose
-    block.dst(Ky, P_block, Col) :- block.src(Ky, P_block, Col).
-
-    // An element that moves some block of train input E onto a block of
-    // other content.
-    .decl moved(e: Example, d: D4)
-    moved(E, D) :- block.mismatch([E, _], D).
-
-    // An element that keeps some train input's block-grid in place: it fixes
-    // the diagonal the content lies on.
-    .decl kept(d: D4)
-    kept(D) :- ex_in(E, _, _), ex_out(E, _, _), d4_elem(D), !moved(E, D).
-
-    .decl block_d4(d: D4)
-    block_d4(D) :- d4_elem(D), !kept(D).
-}
+.decl out(p: Position, col: Color)
+out(P_out, Col) :-
+    block.src(P_local, P_block_in, Col),                     // input cell, by its block and its cell in that block
+    block.mismatch(_, D), apply(D, P_block_in, P_block_out), // the block moves
+    concat_2d(P_block_out, P_local, 0, P_out).               // back to grid coordinates

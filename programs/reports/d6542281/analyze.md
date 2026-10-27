@@ -9,17 +9,12 @@
 - `object-adjacency`
     - `concept`: objects are 8-connected.
     - `$Adjacency4`: replaces `shapes`, `dots`: objects are 4-connected; no parameter; undefined where kept copies conflict. Fails Fit at train0: the 8 at (12,8) of the 3 8 shape meets the rest only at a corner, so it becomes a dot.
-- `background`
-    - `concept`: the commonest color of the input.
-    - `$BackgroundByCorner`: replaces `background`: the color of the top-left cell is the background; no parameter; undefined where kept copies conflict. Fits every pair. Witness `shape-at-corner` (train2 moved up a row, so the shape's 1 sits at (0,0)): breaks no scene claim; at the stored assignment; plausibility `ordinary`; verdict `concept`.
 - `shape-test`
     - `concept`: an object of more than one color is a shape, and an object of one color is dots.
-    - `$ShapeBySize`: replaces `shapes`, `dots`: an object with at least `shape_min_size` cells is a shape, and a smaller one is dots; parameter `shape_min_size`; undefined where kept copies conflict. Fits every pair at 3, 4 and 5. Witness `two-color-fragment` (train1 with its dots replaced by the touching 4 2 at (10,7), (10,8)): breaks `dots`; at the stored assignment, every open value giving one output; plausibility `variant`; verdict `$ShapeBySize`, which `$ShapeByContainment` shares; invariant broken: every fragment object in the inputs holds one color.
-    - `$ShapeByContainment`: replaces `shapes`, `dots`: an object whose translate lies on a larger object's cells, color for color, is dots, and every other object is a shape; no parameter; undefined where kept copies conflict. Fits every pair. Witness `two-color-fragment`: as for `$ShapeBySize`, verdict `$ShapeByContainment`.
+    - `$ShapeByContainment`: replaces `shapes`, `dots`: an object whose translate lies on a larger object's cells, color for color, is dots, and every other object is a shape; no parameter; undefined where kept copies conflict. Fits every pair. Witness `two-color-fragment` (train1 with its dots replaced by the touching 4 2 at (10,7), (10,8)): breaks `dots`; at the stored assignment; plausibility `variant`; verdict `$ShapeByContainment`; invariant broken: every fragment object in the inputs holds one color.
 - `kept-placements`
     - `concept`: a placement is kept when no other placement covers a proper superset of its dots.
     - `$AllPlacements`: replaces `largest-match`: every placement is kept; no parameter; undefined where kept copies conflict. Fails Fit at train0 (a second copy of the 3 8 shape over the 8 at (4,12) alone) and at train1 (a second copy over the 4 at (9,6) alone).
-    - `$GroupByReach`: replaces `largest-match`: dots within `group_reach` cells of each other on both axes join one group, and a group is completed at each placement whose covered dots are exactly that group; parameter `group_reach`; undefined where kept copies conflict. Fits every pair at 2, 3 and 4. Witness `near-groups` (test0 with its lone 4 moved to (21,17), two cells from the 3 3 fragment): breaks no scene claim; at the stored assignment, every open value giving one output; plausibility `variant`; verdict `concept`; invariant broken: every two fragments of an input sit at least 6 cells apart.
     - `$UniqueDotPlacement`: replaces `largest-match`: a dot that exactly one placement covers keeps that placement; no parameter; undefined where kept copies conflict. Fits every pair. Witness `common-color-fragment` (train1 with its dots replaced by 2 2 at (9,7), (9,8), the shape's top row): breaks no scene claim; at the stored assignment; plausibility `variant`; verdict `concept`; invariant broken: no fragment holds a cell of its shape's commonest color.
     - `$MostDotsPerDot`: replaces `largest-match`: each dot keeps the placements that cover it and cover the most dots; no parameter; undefined where kept copies conflict. Fits every pair. Witness `close-fragments` (a 5 ring with a 2 center, and two fragments of three 5s each two columns apart): breaks no scene claim; at the stored assignment; plausibility `variant`; verdict `$MostDotsPerDot`; invariant broken: every two fragments of an input sit at least 6 cells apart.
 - `copy-past-edge`
@@ -37,11 +32,10 @@
 - `uncovered-dots`
     - `concept`: a dot that no kept copy covers keeps its color.
     - `$EraseUncovered`: adds to `stamp`: a dot that no kept copy covers turns to background; no parameter; undefined where kept copies conflict. Fits every pair. Witness `stray-dot` (train0 with a 9 at (16,15), a color no shape holds): breaks `dots-from-one-shape`; at the stored assignment; plausibility `borderline`; verdict `concept`; invariant broken: a kept copy covers every dot.
-- `object-adjacency` & `background` & `shape-test` & `kept-placements` & `copy-past-edge` & `copy-over-cells` & `copy-orientation` & `copy-anchor` & `uncovered-dots`, each two of them: the two branches' changes applied together.
+- `object-adjacency` & `shape-test` & `kept-placements` & `copy-past-edge` & `copy-over-cells` & `copy-orientation` & `copy-anchor` & `uncovered-dots`, each two of them: the two branches' changes applied together.
 
 ## Open parameters
-- `shape_min_size`: 3, 4, 5, under `$ShapeBySize`
-- `group_reach`: 2, 3, 4, under `$GroupByReach`
+- none
 
 ## Not formed
 - Drawing only the cells a copy adds, in place of the whole copy: a copy agrees with every dot it covers and lands elsewhere on background, so the two draw one output on every input.

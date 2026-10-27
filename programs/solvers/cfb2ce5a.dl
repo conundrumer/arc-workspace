@@ -32,11 +32,6 @@
     // @witness asymmetric-tile: borderline concept
     //     @relaxed diagonal-symmetric-tile
   | RotatedCopies {}
-    // @rule mirror-into-quadrants: each other quadrant takes the tile under
-    //  the element of params.copy_group that carries the source quadrant onto
-    //  it, at each of its open values. Undefined where the concept is.
-    // @witness asymmetric-tile: borderline concept
-  | StoredGroup {}
 
 // where the square is
 .type Square =
@@ -63,21 +58,13 @@
 
 .type Choice = [copy: Copy, square: Square, source: Source]
 
-.type CopyGroupValue = [s: Sym]
-.type OpenValue = [copy_group: CopyGroupValue]
-
-.decl out(p: Position, col: Color, ch: Choice, ov: OpenValue)
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // @derive DominantColor: variant derived
     //     @relaxed square-in-border
     //     @relaxed sparse-markers
     .decl background(c: Color) background(0).
-
-    // --- $StoredGroup ---
-    // The subgroup of D4 whose elements carry the tile into the other quadrants.
-    // @open
-    .decl copy_group(s: Sym) copy_group(SYM_BOX). copy_group(SYM_C4).
 
     // --- $Inset ---
     // @derive TileDim: borderline $SquareFromFullTile
@@ -91,7 +78,7 @@
 .init params = Params
 
 .decl copy_choice(c: Copy)
-copy_choice($Mirror()). copy_choice($RotatedCopies()). copy_choice($StoredGroup()).
+copy_choice($Mirror()). copy_choice($RotatedCopies()).
 
 .decl source_choice(s: Source)
 source_choice($StoredCorner()). source_choice($SourceFromFullQuadrant()).
@@ -185,40 +172,34 @@ tile_cell(Sq, Src, D, B, S, S_sq) :-
     source(Sq, Src, D, B), sq_cell(Sq, B, S, S_sq), quad.quadrant(Sq, S_sq, D).
 
 // The tile color each cell of quadrant q, other than the source's, takes.
-.decl copy(ch: Choice, ov: OpenValue, q: DiagDir, p: Position, col: Color)
+.decl copy(ch: Choice, q: DiagDir, p: Position, col: Color)
 
 // --- $Mirror ---
-copy([$Mirror(), Sq, Src], [nil], Q, P, Col) :-
+copy([$Mirror(), Sq, Src], Q, P, Col) :-
     tile_cell(Sq, Src, D, B, S, S_sq), in(S, Col),
     sq_cell(Sq, B, P, P_sq), quad.quadrant(Sq, P_sq, Q), Q != D,
     diag_dist(P_sq, Q, A, K1, K2), diag_dist(S_sq, D, A, K1, K2).  // same distances to its corner's edges
 
 // --- $RotatedCopies ---
-copy([$RotatedCopies(), Sq, Src], [nil], Q, P, Col) :-
+copy([$RotatedCopies(), Sq, Src], Q, P, Col) :-
     tile_cell(Sq, Src, D, B, S, S_sq), in(S, Col),
     c4_elem(R), apply_diag_dir(R, D, Q), Q != D,                  // the turn onto quadrant Q
     apply(R, S_sq, P_sq), sq_cell(Sq, B, P, P_sq).
 
-// --- $StoredGroup ---
-copy([$StoredGroup(), Sq, Src], [[G]], Q, P, Col) :-
-    tile_cell(Sq, Src, D, B, S, S_sq), in(S, Col),
-    params.copy_group(G), sym_member(G, R), apply_diag_dir(R, D, Q), Q != D,  // the element onto quadrant Q
-    apply(R, S_sq, P_sq), sq_cell(Sq, B, P, P_sq).
-
-// --- $Mirror, $RotatedCopies, $StoredGroup ---
+// --- $Mirror, $RotatedCopies ---
 // The marker color over tile color col in quadrant q.
-.decl recolor(ch: Choice, ov: OpenValue, q: DiagDir, col: Color, col_mark: Color)
-recolor(Ch, Ov, Q, Col, Col_mark) :-
-    copy(Ch, Ov, Q, P, Col), in(P, Col_mark), !params.background(Col_mark).
+.decl recolor(ch: Choice, q: DiagDir, col: Color, col_mark: Color)
+recolor(Ch, Q, Col, Col_mark) :-
+    copy(Ch, Q, P, Col), in(P, Col_mark), !params.background(Col_mark).
 
-out(P, Col_out, Ch, Ov) :-
-    impl_choice(Ch), copy(Ch, Ov, Q, P, Col),
-    ( recolor(Ch, Ov, Q, Col, Col_out)
-    ; !recolor(Ch, Ov, Q, Col, _), params.background(Col_out)
+out(P, Col_out, Ch) :-
+    impl_choice(Ch), copy(Ch, Q, P, Col),
+    ( recolor(Ch, Q, Col, Col_out)
+    ; !recolor(Ch, Q, Col, _), params.background(Col_out)
     ).
 
-out(P, Col, Ch, [nil]) :-
-    impl_choice(Ch), Ch = [_, Sq, Src], source(Sq, Src, _, _), in(P, Col), !copy(Ch, _, _, P, _).
+out(P, Col, Ch) :-
+    impl_choice(Ch), Ch = [_, Sq, Src], source(Sq, Src, _, _), in(P, Col), !copy(Ch, _, P, _).
 
 .comp Determine {
     // The color of the grid's edge cells.

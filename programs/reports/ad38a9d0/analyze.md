@@ -1,7 +1,7 @@
 # ad38a9d0
 
 ## Concept
-- The concept case fits every pair, at each open value of `shape_sym`. Each test shape occurs in a train pair in the same orientation, so `shape_color` has no unseen key.
+- The concept case fits every pair, at each value of `shape_sym`. Each test shape occurs in a train pair in the same orientation, so `shape_color` has no unseen key.
 - `recolor-by-shape` has a relational form: 4-components of `fg`, each normalized to its bounding box and matched against stored keys. No approximation is needed.
 - No witness has the verdict `other`.
 
@@ -35,11 +35,11 @@
 - `fg-source` & `piece-color-split`, `fg-source` & `bg-source`: no case takes a non-concept branch at both, as they stand under different branches of `piece-cells`
 
 ## Open parameters
-- `shape_sym`: `SYM_1`, `SYM_C4`, `SYM_D4`. Each train and test shape has the orientation of its key, so the pairs do not separate them. An input with a key shape in another orientation (a horizontal domino, an S-tetromino) separates them. It is read by every branch except `$SizeKey`.
+- none
 
 ## Not formed
 - `shape_color` derived: the colors 3, 2, 9, 4, 8, 5 follow from nothing in the input, and no proposer gives a shape-to-color table.
-- Matching a key up to rotation or up to D4 as a branch of `shape-key`: those are values of `shape_sym` with the program unchanged, so they are open values, not branches.
+- Matching a key up to rotation or up to D4 as a branch of `shape-key`: those are values of `shape_sym` with the program unchanged, not branches.
 - `shape_sym` values that hold reflections alone (`SYM_LR`, `SYM_TB`, `SYM_DG`, `SYM_AD`, `SYM_HT`, `SYM_BOX`, `SYM_X`): a reader of the concept would not take a matching that admits a mirror and not a rotation.
 - `fg` derived by `ChangedColor`, `UnchangedColor`, `VanishedColor`, `OutNewColor`, `AnyOutNewColor` or `ChangedPairs`: these read the train outputs, which a `@derive` run on one input leaves empty, so they give no value that names the piece color.
 - `fg` derived by `CountRankAsc` or `CountRankDesc`: they propose a color with its rank, and the rank-0 color of `CountRankAsc` is `fg=RarestColor`'s value on every two-color input.

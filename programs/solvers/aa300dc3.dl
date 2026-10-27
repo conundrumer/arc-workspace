@@ -32,16 +32,6 @@
     // @witness all-corners: ordinary concept
   | EveryCorner {}
 
-// which of the tied corner cells anchors a line
-.type AnchorPick =
-    // @claim longest-run
-    EveryCornerCell {}
-    // @rule longest-run: of the cells tied for an anchor corner, only the
-    //  one nearest params.pick_dir, the edge the reading starts from,
-    //  anchors; that edge is open
-    // @witness tied-anchor: ordinary concept
-  | AnchorFirst {}
-
 // which runs compete
 .type Candidates =
     // @claim longest-run
@@ -54,7 +44,7 @@
     //  along that corner's own diagonal, competes; the anchor corners are the
     //  two corners of params.anchor_edge
     // @witness inner-longest: ordinary concept
-  | AnchorCorner {corners: AnchorCorners, pick: AnchorPick}
+  | AnchorCorner {corners: AnchorCorners}
 
 // where one run is painted
 .type Scope =
@@ -71,11 +61,6 @@
 .type Tie =
     // @claim tie-center
     TieCenter {}
-    // @rule tie-center: the tied runs along params.tie_dir win, and the
-    //  concept's rule breaks the tie left among them; the output holds the
-    //  grid of each open value
-    // @witness cross-tie: ordinary any
-  | TieDirection {}
     // @rule tie-center: when the tied runs are parallel and odd in number,
     //  the middle one is painted; undefined otherwise
     // @witness offcenter-tie: ordinary any
@@ -99,11 +84,7 @@
 
 .type Choice = [extent: Extent, cand: Candidates, scope: Scope, tie: Tie, hole: HoleColor]
 
-.type TieValue = [da: DiagAxis]
-.type PickValue = [d: Dir]
-.type OpenValue = [tie_dir: TieValue, pick_dir: PickValue]
-
-.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl paint_color(c: Color) paint_color(8).
@@ -112,129 +93,38 @@
     // @derive RarestColor: variant derived
     .decl hole_color(c: Color) hole_color(0).
 
-    // --- $TieDirection ---
-    // The diagonal whose tied runs win a tie across the two diagonals.
-    // @open
-    .decl tie_dir(da: DiagAxis) tie_dir(DAXIS_DG). tie_dir(DAXIS_AD).
-
     // --- $EdgeCorners ---
     // The edge whose two corners anchor the competing lines.
     .decl anchor_edge(d: Dir) anchor_edge(DIR_T).
-
-    // --- $AnchorFirst ---
-    // The edges a reading starts from: the cell nearest that edge is the
-    // first of the cells tied for an anchor corner.
-    // @open
-    .decl pick_dir(d: Dir) pick_dir(DIR_T). pick_dir(DIR_B). pick_dir(DIR_L). pick_dir(DIR_R).
 }
 
 .init params = Params
 
 .type ArenaCell = [h: HoleColor, s: Scope, p: Position]
-.type Pool = [e: Extent, c: Candidates, a: Ident, pk: PickValue]
-.type DirPool = [pool: Pool, da: DiagAxis]
+.type Pool = [e: Extent, c: Candidates, a: Ident]
 .type Side = [pool: Pool, dc: DiagDir]
-.type Contest = [t: Tie, pool: Pool, tv: TieValue]
+.type Contest = [t: Tie, pool: Pool]
 
 .decl extent_choice(e: Extent)
 extent_choice($Run()). extent_choice($LineCount()). extent_choice($NoPinch()).
 
 .decl candidates_choice(c: Candidates)
 candidates_choice($EveryRun()). candidates_choice($CornerRun()).
-candidates_choice($AnchorCorner($EdgeCorners(), $EveryCornerCell())).
-candidates_choice($AnchorCorner($EdgeCorners(), $AnchorFirst())).
-candidates_choice($AnchorCorner($EveryCorner(), $EveryCornerCell())).
-candidates_choice($AnchorCorner($EveryCorner(), $AnchorFirst())).
+candidates_choice($AnchorCorner($EdgeCorners())).
+candidates_choice($AnchorCorner($EveryCorner())).
 
 .decl scope_choice(s: Scope)
 scope_choice($WholeGrid()). scope_choice($PerRegion()).
 
 .decl tie_choice(t: Tie)
-tie_choice($TieCenter()). tie_choice($TieDirection()). tie_choice($TieMiddle()). tie_choice($TieCorner()).
+tie_choice($TieCenter()). tie_choice($TieMiddle()). tie_choice($TieCorner()).
 
 .decl hole_color_choice(h: HoleColor)
 hole_color_choice($HoleStored()). hole_color_choice($HoleDerived()).
 
 .decl impl_choice(ch: Choice)
 impl_choice([E, C, S, T, H]) :-
-    extent_choice(E), candidates_choice(C), scope_choice(S), tie_choice(T), hole_color_choice(H),
-    !subsumed(C, T).
-
-// AnchorFirst leaves at most one run along each anchor corner's diagonal, so
-// at most two parallel runs tie, and TieMiddle leaves any tie undefined:
-// TieCenter gives its output wherever it is defined.
-.decl subsumed(c: Candidates, t: Tie)
-subsumed($AnchorCorner($EdgeCorners(), $AnchorFirst()), $TieMiddle()).
-subsumed($AnchorCorner($EveryCorner(), $AnchorFirst()), $TieMiddle()).
-
-// The segments and corner cells of each arena: a set of hole cells in which
-// one segment is painted.
-.comp Parse<Key> {
-    .type KeyCell = [k: Key, e: Extent, da: DiagAxis, p: Position]
-    .type KeyCorner = [k: Key, dp: Dir, dc: DiagDir]
-
-    .decl cell(k: Key, p: Position)
-
-    // Consecutive cells of one segment along DA.
-    .decl link(k: Key, e: Extent, da: DiagAxis, p: Position, q: Position)
-
-    // --- $Run, $NoPinch ---
-    // Neighboring cells along DA.
-    .decl diag_step(k: Key, da: DiagAxis, p: Position, q: Position)
-    diag_step(K, DA, P, Q) :- cell(K, P), diag_axis_of(D, DA), neighbor(P, D, Q), cell(K, Q).
-
-    // --- $Run ---
-    link(K, $Run(), DA, P, Q) :- diag_step(K, DA, P, Q).
-
-    // --- $NoPinch ---
-    link(K, $NoPinch(), DA, P, Q) :-
-        diag_step(K, DA, P, Q), neighbor(P, D, Q),
-        dir_of(D, _, D_side), neighbor(P, D_side, R), cell(K, R).   // a hole cell beside the step
-
-    // --- $LineCount ---
-    link(K, $LineCount(), DA, P, Q) :-
-        cell(K, P), cell(K, Q), diag_axis_elem(DA), same_line(DA, P, Q).
-
-    // --- shared ---
-    // A segment is what the links connect.
-    .init seg = Canon<KeyCell>
-    seg.edge([K, E, DA, P], [K, E, DA, P]) :- cell(K, P), extent_choice(E), diag_axis_elem(DA).
-    seg.edge([K, E, DA, Q], [K, E, DA, R]) :- link(K, E, DA, Q, R).
-
-    // Cell P of segment Sg, which runs along DA.
-    .decl segment(k: Key, e: Extent, sg: Ident, da: DiagAxis, p: Position)
-    segment(K, E, Sg, DA, P) :- seg.id([K, E, DA, P], Sg).
-
-    // @claim longest-run
-    .init seg_len = Tally<Ident, Position>
-    seg_len.item(Sg, P) :- segment(_, _, Sg, _, P).
-
-    // Distance from a segment's line to the nearer of the two corners it
-    // separates; the larger it is, the nearer the line passes to the center.
-    // @claim tie-center
-    .init center = Extremes<Ident>
-    center.cand(Sg, K) :-
-        segment(_, _, Sg, DA, P), diag_perp(DA, DA2), diag_axis_of(Dc, DA2), corner_dist(P, Dc, K).
-
-    // Some cell lies nearer corner Dc than P.
-    .decl passed(k: Key, dc: DiagDir, p: Position)
-    passed(K, Dc, P) :- cell(K, P), cell(K, Q), diag_dir_elem(Dc), nearer(Dc, Q, P).
-
-    // A corner cell: nearest corner Dc.
-    .decl corner(k: Key, dc: DiagDir, p: Position)
-    corner(K, Dc, P) :- cell(K, P), diag_dir_elem(Dc), !passed(K, Dc, P).
-
-    // --- $AnchorFirst ---
-    // The edges a reading starts from.
-    .decl order(k: Key, dp: Dir)
-
-    // The first corner cell of corner Dc in the reading from edge Dp: the one
-    // nearest that edge.
-    // @claim longest-run
-    .init first_cell = Order<KeyCorner, Position>
-    first_cell.elem([K, Dp, Dc], P) :- order(K, Dp), corner(K, Dc, P).
-    first_cell.score([K, Dp, Dc], P, N) :- order(K, Dp), corner(K, Dc, P), dist(P, Dp, N).
-}
+    extent_choice(E), candidates_choice(C), scope_choice(S), tie_choice(T), hole_color_choice(H).
 
 // --- $HoleStored ---
 .decl hole(h: HoleColor, p: Position)
@@ -271,21 +161,73 @@ arena_cell(H, S, A, P) :- arena.id([H, S, P], A).
 .decl arena_of(h: HoleColor, s: Scope, a: Ident)
 arena_of(H, S, A) :- arena_cell(H, S, A, _).
 
-.init parse = Parse<Ident>
-parse.cell(A, P) :- arena_cell(_, _, A, P).
+// The segments and corner cells of each arena: a set of hole cells in which
+// one segment is painted.
+.type KeyCell = [a: Ident, e: Extent, da: DiagAxis, p: Position]
+
+.decl cell(a: Ident, p: Position)
+cell(A, P) :- arena_cell(_, _, A, P).
+
+// Consecutive cells of one segment along DA.
+.decl link(a: Ident, e: Extent, da: DiagAxis, p: Position, q: Position)
+
+// --- $Run, $NoPinch ---
+// Neighboring cells along DA.
+.decl diag_step(a: Ident, da: DiagAxis, p: Position, q: Position)
+diag_step(A, DA, P, Q) :- cell(A, P), diag_axis_of(D, DA), neighbor(P, D, Q), cell(A, Q).
+
+// --- $Run ---
+link(A, $Run(), DA, P, Q) :- diag_step(A, DA, P, Q).
+
+// --- $NoPinch ---
+link(A, $NoPinch(), DA, P, Q) :-
+    diag_step(A, DA, P, Q), neighbor(P, D, Q),
+    dir_of(D, _, D_side), neighbor(P, D_side, R), cell(A, R).   // a hole cell beside the step
+
+// --- $LineCount ---
+link(A, $LineCount(), DA, P, Q) :-
+    cell(A, P), cell(A, Q), diag_axis_elem(DA), same_line(DA, P, Q).
+
+// --- shared ---
+// A segment is what the links connect.
+.init seg = Canon<KeyCell>
+seg.edge([A, E, DA, P], [A, E, DA, P]) :- cell(A, P), extent_choice(E), diag_axis_elem(DA).
+seg.edge([A, E, DA, Q], [A, E, DA, R]) :- link(A, E, DA, Q, R).
+
+// Cell P of segment Sg, which runs along DA.
+.decl segment(a: Ident, e: Extent, sg: Ident, da: DiagAxis, p: Position)
+segment(A, E, Sg, DA, P) :- seg.id([A, E, DA, P], Sg).
+
+// @claim longest-run
+.init seg_len = Tally<Ident, Position>
+seg_len.item(Sg, P) :- segment(_, _, Sg, _, P).
+
+// Distance from a segment's line to the nearer of the two corners it
+// separates; the larger it is, the nearer the line passes to the center.
+// @claim tie-center
+.init center = Extremes<Ident>
+center.cand(Sg, K) :-
+    segment(_, _, Sg, DA, P), diag_perp(DA, DA2), diag_axis_of(Dc, DA2), corner_dist(P, Dc, K).
+
+// Some cell lies nearer corner Dc than P.
+.decl passed(a: Ident, dc: DiagDir, p: Position)
+passed(A, Dc, P) :- cell(A, P), cell(A, Q), diag_dir_elem(Dc), nearer(Dc, Q, P).
+
+// A corner cell: nearest corner Dc.
+.decl corner(a: Ident, dc: DiagDir, p: Position)
+corner(A, Dc, P) :- cell(A, P), diag_dir_elem(Dc), !passed(A, Dc, P).
 
 .decl seg_axis(sg: Ident, da: DiagAxis)
-seg_axis(Sg, DA) :- parse.segment(_, _, Sg, DA, _).
+seg_axis(Sg, DA) :- segment(_, _, Sg, DA, _).
 
-// Segment Sg competes in pool [E, C, A, Pk]: arena A, at open value Pk of
-// params.pick_dir where the candidates read it.
+// Segment Sg competes in pool [E, C, A]: extent E, candidates C, arena A.
 .decl cand(pool: Pool, sg: Ident)
 
 // --- $EveryRun ---
-cand([E, $EveryRun(), A, nil], Sg) :- parse.segment(A, E, Sg, _, _).
+cand([E, $EveryRun(), A], Sg) :- segment(A, E, Sg, _, _).
 
 // --- $CornerRun ---
-cand([E, $CornerRun(), A, nil], Sg) :- parse.segment(A, E, Sg, _, P), parse.corner(A, _, P).
+cand([E, $CornerRun(), A], Sg) :- segment(A, E, Sg, _, P), corner(A, _, P).
 
 // --- $AnchorCorner ---
 // The anchor corners.
@@ -297,49 +239,28 @@ anchor($EdgeCorners(), Dc) :- params.anchor_edge(D), dir_of(Dc, _, D).
 // --- $EveryCorner ---
 anchor($EveryCorner(), Dc) :- diag_dir_elem(Dc).
 
-// --- $EveryCornerCell ---
-cand([E, $AnchorCorner(Cs, $EveryCornerCell()), A, nil], Sg) :-
-    anchor(Cs, Dc), diag_axis_of(Dc, DA), parse.corner(A, Dc, P), parse.segment(A, E, Sg, DA, P).
-
-// --- $AnchorFirst ---
-parse.order(A, Dp) :- arena_of(_, _, A), params.pick_dir(Dp).
-
-cand([E, $AnchorCorner(Cs, $AnchorFirst()), A, [Dp]], Sg) :-
-    parse.order(A, Dp), anchor(Cs, Dc), diag_axis_of(Dc, DA),
-    parse.first_cell.first([A, Dp, Dc], P), parse.segment(A, E, Sg, DA, P).
+// --- $AnchorCorner ---
+cand([E, $AnchorCorner(Cs), A], Sg) :-
+    anchor(Cs, Dc), diag_axis_of(Dc, DA), corner(A, Dc, P), segment(A, E, Sg, DA, P).
 
 // --- shared ---
 
 // @claim longest-run
 .init longest = ArgExtremes<Pool, Ident>
-longest.cand(Pool, Sg, N) :- cand(Pool, Sg), parse.seg_len.tally(Sg, N).
+longest.cand(Pool, Sg, N) :- cand(Pool, Sg), seg_len.tally(Sg, N).
 
 .decl tied(pool: Pool, sg: Ident)
 tied(Pool, Sg) :- longest.high(Pool, Sg, _).
 
-// A tied segment the tie rule keeps, at open value Tv of params.tie_dir
-// where the rule reads it.
-.decl finalist(t: Tie, pool: Pool, tv: TieValue, sg: Ident)
+// A tied segment the tie rule keeps.
+.decl finalist(t: Tie, pool: Pool, sg: Ident)
 
 // --- $TieCenter ---
 // @claim tie-center
 .init nearest = ArgExtremes<Pool, Ident>
-nearest.cand(Pool, Sg, K) :- tied(Pool, Sg), parse.center.low(Sg, K).
+nearest.cand(Pool, Sg, K) :- tied(Pool, Sg), center.low(Sg, K).
 
-finalist($TieCenter(), Pool, nil, Sg) :- nearest.high(Pool, Sg, _).
-
-// --- $TieDirection ---
-.decl tied_along(pool: Pool, da: DiagAxis)
-tied_along(Pool, DA) :- tied(Pool, Sg), seg_axis(Sg, DA).
-
-// @claim tie-center
-.init nearest_dir = ArgExtremes<DirPool, Ident>
-nearest_dir.cand([Pool, V], Sg, K) :-
-    params.tie_dir(V), tied(Pool, Sg), parse.center.low(Sg, K),
-    ( seg_axis(Sg, V)                // along the winning diagonal
-    ; !tied_along(Pool, V) ).        // or none is
-
-finalist($TieDirection(), Pool, [V], Sg) :- nearest_dir.high([Pool, V], Sg, _).
+finalist($TieCenter(), Pool, Sg) :- nearest.high(Pool, Sg, _).
 
 // --- $TieMiddle ---
 .decl mixed(pool: Pool)
@@ -352,9 +273,9 @@ mixed(Pool) :-
 middle.elem([Pool, Dc], Sg) :-
     tied(Pool, Sg), seg_axis(Sg, DA), diag_perp(DA, DA2), diag_axis_of(Dc, DA2).
 middle.score([Pool, Dc], Sg, K) :-
-    middle.elem([Pool, Dc], Sg), parse.segment(_, _, Sg, _, P), corner_dist(P, Dc, K).
+    middle.elem([Pool, Dc], Sg), segment(_, _, Sg, _, P), corner_dist(P, Dc, K).
 
-finalist($TieMiddle(), Pool, nil, Sg) :-
+finalist($TieMiddle(), Pool, Sg) :-
     middle.rank([Pool, Dc], Sg, R), middle.rank_desc([Pool, Dc], Sg, R), !mixed(Pool).
 
 // --- $TieCorner ---
@@ -362,59 +283,34 @@ finalist($TieMiddle(), Pool, nil, Sg) :-
 contested(Pool) :- tied(Pool, Sg1), tied(Pool, Sg2), Sg1 != Sg2.
 
 .decl shared_corner(a: Ident, dc: DiagDir)
-shared_corner(A, Dc) :- parse.corner(A, Dc, P), parse.corner(A, Dc, Q), P != Q.
+shared_corner(A, Dc) :- corner(A, Dc, P), corner(A, Dc, Q), P != Q.
 
-finalist($TieCorner(), Pool, nil, Sg) :-
+finalist($TieCorner(), Pool, Sg) :-
     tied(Pool, Sg),
     ( !contested(Pool)
-    ; contested(Pool), parse.segment(A, _, Sg, _, P),
-      parse.corner(A, Dc, P), !shared_corner(A, Dc) ).  // holds a lone corner cell
+    ; contested(Pool), segment(A, _, Sg, _, P),
+      corner(A, Dc, P), !shared_corner(A, Dc) ).  // holds a lone corner cell
 
 // --- shared ---
 // The one segment the contest keeps.
 // @claim longest-run tie-center
 .init pick = Unanimous<Contest, Ident>
-pick.item([T, Pool, Tv], Sg) :- finalist(T, Pool, Tv, Sg).
+pick.item([T, Pool], Sg) :- finalist(T, Pool, Sg).
 
-// An open value some arena of the case has a winner at.
-.decl case_value(ch: Choice, v: OpenValue)
-case_value([E, C, S, T, H], [Tv, Pk]) :-
-    impl_choice([E, C, S, T, H]), arena_of(H, S, A), pick.value([T, [E, C, A, Pk], Tv], _).
+// Some arena of the case has a winner.
+.decl has_winner(ch: Choice)
+has_winner([E, C, S, T, H]) :-
+    impl_choice([E, C, S, T, H]), arena_of(H, S, A), pick.value([T, [E, C, A]], _).
 
-// Some arena of the case has no winner at the open value.
-.decl unsettled(ch: Choice, v: OpenValue)
-unsettled([E, C, S, T, H], [Tv, Pk]) :-
-    case_value([E, C, S, T, H], [Tv, Pk]), arena_of(H, S, A),
-    !pick.value([T, [E, C, A, Pk], Tv], _).
+// Some arena of the case has no winner.
+.decl unsettled(ch: Choice)
+unsettled([E, C, S, T, H]) :-
+    has_winner([E, C, S, T, H]), arena_of(H, S, A), !pick.value([T, [E, C, A]], _).
 
-.decl painted(ch: Choice, v: OpenValue, p: Position)
-painted([E, C, S, T, H], [Tv, Pk], P) :-
-    case_value([E, C, S, T, H], [Tv, Pk]), !unsettled([E, C, S, T, H], [Tv, Pk]),
-    arena_of(H, S, A), pick.value([T, [E, C, A, Pk], Tv], Sg), parse.segment(_, _, Sg, _, P).
+.decl painted(ch: Choice, p: Position)
+painted([E, C, S, T, H], P) :-
+    has_winner([E, C, S, T, H]), !unsettled([E, C, S, T, H]),
+    arena_of(H, S, A), pick.value([T, [E, C, A]], Sg), segment(_, _, Sg, _, P).
 
-out(P, Col, Ch, V) :- painted(Ch, V, P), params.paint_color(Col).
-out(P, Col, Ch, V) :-
-    case_value(Ch, V), !unsettled(Ch, V), in(P, Col), !painted(Ch, V, P).
-
-.comp Determine {
-    // Train pairs only: the ex_out atom holds the test inputs out.
-    .init parse = Parse<Example>
-    parse.cell(E, P) :- ex_in(E, P, Col), params.hole_color(Col), ex_out(E, _, _).
-    parse.order(E, Dp) :- ex_out(E, _, _), dir_elem(Dp).
-
-    // --- pick_dir: the painted run holds the corner cell the reading picks ---
-
-    // A painted cell that the reading from edge Dp picks first at a corner
-    // of the anchor edge.
-    .decl anchored(e: Example, dp: Dir)
-    anchored(E, Dp) :-
-        ex_out(E, P, Col), params.paint_color(Col),  // a painted cell
-        anchor($EdgeCorners(), Dc), parse.first_cell.first([E, Dp, Dc], P).
-
-    // A trained example whose painted cells hold no such cell.
-    .decl order_defect(dp: Dir)
-    order_defect(Dp) :- anchored(_, Dp), ex_out(E, _, _), !anchored(E, Dp).
-
-    .decl pick_dir(d: Dir)
-    pick_dir(Dp) :- anchored(_, Dp), !order_defect(Dp).
-}
+out(P, Col, Ch) :- painted(Ch, P), params.paint_color(Col).
+out(P, Col, Ch) :- has_winner(Ch), !unsettled(Ch), in(P, Col), !painted(Ch, P).

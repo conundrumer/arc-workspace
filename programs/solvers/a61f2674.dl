@@ -12,9 +12,8 @@
 // @rule tallest-recolor: the tallest bar keeps its cells and takes
 //  params.tallest_color; undefined where two bars tie for the tallest
 // @rule shortest-recolor: the shortest bar keeps its cells and takes
-//  params.shortest_color; undefined where two bars tie for the shortest; a
-//  bar that is both the tallest and the shortest takes a color of
-//  params.role_priority, and the output holds a grid for each such color
+//  params.shortest_color; undefined where two bars tie for the shortest, and
+//  where one bar is both the tallest and the shortest
 // @rule erase-rest: every other bar takes params.background
 
 // the unit that is ranked, and how its height is measured
@@ -53,9 +52,8 @@
     // @rule tallest-recolor: every bar at the greatest height keeps its cells
     //  and takes params.tallest_color
     // @rule shortest-recolor: every bar at the least height keeps its cells
-    //  and takes params.shortest_color; a bar at both extremes, as when all
-    //  bars have one height, takes a color of params.role_priority, and the
-    //  output holds a grid for each such color
+    //  and takes params.shortest_color; undefined where a bar is at both
+    //  extremes, as when all bars have one height
     // @witness tied-tallest: borderline $TieAll
     //     @relaxed distinct-heights
   | TieAll {}
@@ -79,11 +77,7 @@
 // One ranked unit under a view.
 .type Bar = [v: View, id: Ident]
 
-.type RolePriorityValue = [col: Color]
-
-.type OpenValue = [role_priority: RolePriorityValue]
-
-.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // @derive DominantColor: variant derived
@@ -96,13 +90,6 @@
     .decl background(col: Color) background(0).
     .decl tallest_color(col: Color) tallest_color(1).
     .decl shortest_color(col: Color) shortest_color(2).
-
-    // The role color a bar at both extremes takes. The pairs leave the
-    // tallest role and the shortest role open.
-    // @open
-    .decl role_priority(col: Color)
-    role_priority(1).
-    role_priority(2).
 
     // --- $ComponentSpan, $ColumnCount, $TopExtent, $EightConnected ---
     // The edge the bars stand on.
@@ -160,15 +147,13 @@ rank.cand(V, Id, N) :- height([V, Id], N).
 paint(T, X, Col) :- tallest(T, X), !shortest(T, X), params.tallest_color(Col).
 paint(T, X, Col) :- shortest(T, X), !tallest(T, X), params.shortest_color(Col).
 
-out(P, Col, [R, T, S], V) :-
+out(P, Col, [R, T, S]) :-
     impl_choice([R, T, S]), member([[R, S], Id], P),
-    ( paint(T, [[R, S], Id], Col), V = [nil]
-    ; tallest(T, [[R, S], Id]), shortest(T, [[R, S], Id]),                // both extremes
-      params.role_priority(Col), V = [[Col]]
+    ( paint(T, [[R, S], Id], Col)
     ; !rank.high([R, S], Id, _), !rank.low([R, S], Id, _),               // neither extreme
-      params.background(Col), V = [nil]
+      params.background(Col)
     ).
-out(P, Col, [R, T, S], [nil]) :- impl_choice([R, T, S]), bar_color(S, _), in(P, Col), !ink(S, P).
+out(P, Col, [R, T, S]) :- impl_choice([R, T, S]), bar_color(S, _), in(P, Col), !ink(S, P).
 
 // --- $StoredBarColor ---
 bar_color($StoredBarColor(), Col) :- params.bar_color(Col).

@@ -15,8 +15,8 @@
 // @rule window: each pair gives a window: the cells of its band strictly
 //  between its two blocks
 // @rule copy-window: the window's cells are copied unchanged, 0 included
-// @rule stack: the windows stack across params.pair_axis, in the order of
-//  their bands, and form the output
+// @rule stack: the windows, of one width by equal-gaps, stack across
+//  params.pair_axis, in the order of their bands, and form the output
 
 // the shape of a block under ComponentBlocks
 .type BlockShape =
@@ -85,31 +85,8 @@
     //     @relaxed disjoint-rows
     // @witness big-blocks: variant $DerivedShape
   | OuterSpan {}
-    // @scene block-pairs: the blocks of a band pair off in their order along
-    //  params.pair_axis; undefined on an odd count
-    // @rule stack: the windows of one band stack in their order along
-    //  params.pair_axis, turned onto the stack axis by params.band_sense
-    // @witness four-in-row: foreign any
-  | PairLeftRight {}
-    // @rule window: each two adjacent blocks of a band bound a window
-    // @rule stack: the windows of one band stack in their order along
-    //  params.pair_axis, turned onto the stack axis by params.band_sense
-    // @witness four-in-row: foreign any
-  | ConsecutiveWindows {}
 
-// what windows of unequal width give
-.type Widths =
-    // @claim equal-gaps
-    EqualWidths {}
-    // @rule pad-widest: a window narrower than the widest keeps flush with
-    //  edge params.flush of the pair axis, and params.bg fills the rest of its
-    //  lines out to the widest window's width
-    // @witness blank-window: foreign any
-    //     @relaxed equal-gaps
-  | PadWidest {}
-
-.type Choice = [reading: BlockReading, marker: MarkerSource, lone: LoneBlock, crowd: CrowdedRows,
-                width: Widths]
+.type Choice = [reading: BlockReading, marker: MarkerSource, lone: LoneBlock, crowd: CrowdedRows]
 
 // One piece of the marker color.
 .type Piece = [c: Connectivity, id: Ident]
@@ -117,28 +94,16 @@
 // One piece of the marker color in an example.
 .type ExPiece = [e: Example, id: Ident]
 
-// The blocks of one band of one case, ordered from edge d of the pair axis;
-// lines is the band.
-.type BandSide = [r: BlockReading, m: MarkerSource, d: Dir, lines: Box]
-
 // The two blocks that bound a window.
 .type Span = [r: BlockReading, m: MarkerSource, c: CrowdedRows, b1: Box, b2: Box]
 
 // The window lines of one case, ranked from stack edge d.
 .type Windows = [r: BlockReading, m: MarkerSource, c: CrowdedRows, d: Dir]
 
-// The window lines of one case, ranked from stack edge d under sense s.
-.type Stack = [r: BlockReading, m: MarkerSource, c: CrowdedRows, d: Dir, s: Sense]
-
 // A line of a window, across the pair axis.
 .type WinLine = [w: Box, line: Position]
 
-.type BandSenseValue = [s: Sense]
-.type FlushValue = [d: Dir]
-
-.type OpenValue = [band_sense: BandSenseValue, flush: FlushValue]
-
-.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // The axis the two blocks of a pair lie along.
@@ -153,26 +118,8 @@
     // --- $StoredMarker ---
     .decl marker_color(c: Color) marker_color(8).
 
-    // --- $DeriveMarker, $PadWidest ---
+    // --- $DeriveMarker ---
     .decl bg(c: Color) bg(0).
-
-    // --- $PairLeftRight, $ConsecutiveWindows ---
-    // The windows of one band stack in their order along the pair axis: the
-    // one nearer edge D goes nearer the stack edge that a quarter turn in
-    // sense S reaches from D. No pair has a band with two windows, so both
-    // senses stay open.
-    // @open
-    .decl band_sense(s: Sense) band_sense(SENSE_CW). band_sense(SENSE_CC).
-
-    // --- $PairLeftRight ---
-    // The blocks of a pair.
-    .decl pair_size(n: number) pair_size(2).
-
-    // --- $PadWidest ---
-    // The pair-axis edge a narrower window keeps flush with. No pair has
-    // windows of unequal width, so both edges stay open.
-    // @open
-    .decl flush(d: Dir) flush(DIR_L). flush(DIR_R).
 }
 
 .init params = Params
@@ -189,14 +136,10 @@ marker_source_choice($StoredMarker()). marker_source_choice($DeriveMarker()).
 
 // The cases. A case that is undefined where another case is defined, and
 // agrees with it elsewhere, is subsumed; so each case besides the concept
-// takes LoneSkip, PadWidest, and a reading of crowded bands.
+// takes LoneSkip and OuterSpan.
 .decl impl_choice(ch: Choice)
-impl_choice([$WindowBlocks(), $StoredMarker(), $LoneUndefined(), $TwoPerBand(), $EqualWidths()]).
-impl_choice([R, M, $LoneSkip(), $OuterSpan(), $PadWidest()]) :-
-    block_reading_choice(R), marker_source_choice(M).
-impl_choice([R, M, $LoneSkip(), $PairLeftRight(), $PadWidest()]) :-
-    block_reading_choice(R), marker_source_choice(M).
-impl_choice([R, M, $LoneSkip(), $ConsecutiveWindows(), $PadWidest()]) :-
+impl_choice([$WindowBlocks(), $StoredMarker(), $LoneUndefined(), $TwoPerBand()]).
+impl_choice([R, M, $LoneSkip(), $OuterSpan()]) :-
     block_reading_choice(R), marker_source_choice(M).
 
 // The blocks of color k under each reading.
@@ -216,16 +159,13 @@ beyond(R, M, B1, B2, D) :-
 .decl crossed(r: BlockReading, m: MarkerSource, b1: Box, b2: Box, d: Dir)
 crossed(R, M, B1, B2, D) :- beyond(R, M, B1, B, D), beyond(R, M, B, B2, D).
 
-.decl adjacent(r: BlockReading, m: MarkerSource, b1: Box, b2: Box, d: Dir)
-adjacent(R, M, B1, B2, D) :- beyond(R, M, B1, B2, D), !crossed(R, M, B1, B2, D).
-
 // The cells of the band past B1 away from D, and short of B2.
 .decl gap(r: BlockReading, m: MarkerSource, b1: Box, b2: Box, d: Dir, p: Position)
 gap(R, M, B1, B2, D, P) :-
     beyond(R, M, B1, B2, D), in(P, _),
     params.pair_axis(A), split(B1, A, _, Band), split(P, A, _, Line), inside(Line, Band),
-    opposite(D, O), dist(P, O, K1), dist(B1, O, J1), K1 < J1,   // past B1
-    dist(P, D, K2), dist(B2, D, J2), K2 < J2.                    // short of B2
+    opposite(D, O), nearer(O, P, B1),                           // past B1
+    nearer(D, P, B2).                                           // short of B2
 
 // The two blocks that bound a window, B1 nearer edge D.
 .decl span(r: BlockReading, m: MarkerSource, c: CrowdedRows, b1: Box, b2: Box, d: Dir)
@@ -234,15 +174,12 @@ gap(R, M, B1, B2, D, P) :-
 .init window = Bbox<Span>
 window.cell([R, M, C, B1, B2], P) :- span(R, M, C, B1, B2, D), gap(R, M, B1, B2, D, P).
 
-.decl win(r: BlockReading, m: MarkerSource, c: CrowdedRows, w: Box)
-win(R, M, C, W) :- window.box([R, M, C, _, _], W).
-
 // A window cell: its place along the pair axis in the window, its line, and
 // its color.
 .decl window_cell(r: BlockReading, m: MarkerSource, c: CrowdedRows, w: Box,
                   p_col: Position, line: Position, col: Color)
 window_cell(R, M, C, W, P_col, Line, Col) :-
-    win(R, M, C, W), in(P, Col), crop(P, W, P_inner),
+    window.box([R, M, C, _, _], W), in(P, Col), crop(P, W, P_inner),
     params.pair_axis(A), split(P_inner, A, P_col, _), split(P, A, _, Line).
 
 .decl window_line(r: BlockReading, m: MarkerSource, c: CrowdedRows, w: Box, line: Position)
@@ -255,38 +192,19 @@ stack_dir(D) :- params.pair_axis(A0), perp(A0, A), axis_of(D, A).
 // Each line of each window, and its place in the stack along the stack axis.
 .decl slot(r: BlockReading, m: MarkerSource, c: CrowdedRows, w: Box, line: Position, p_row: Position)
 
-// The same at band sense S.
-.decl turned_slot(r: BlockReading, m: MarkerSource, c: CrowdedRows, s: Sense, w: Box,
-                  line: Position, p_row: Position)
-
-// Each window cell: its line, its place along the pair axis in the output,
-// and its color.
-// @ignore: single-consumer — the out clause reads it beside flush_placed, which
-//  holds the rows of the cases that read params.flush
-.decl placed(r: BlockReading, m: MarkerSource, c: CrowdedRows, wd: Widths, w: Box,
-             line: Position, p_col: Position, col: Color)
-
-// The same at flush edge E.
-.decl flush_placed(r: BlockReading, m: MarkerSource, c: CrowdedRows, wd: Widths, e: Dir, w: Box,
-                   line: Position, p_col: Position, col: Color)
-
 // The blocks break the case's reading.
 .decl defect(ch: Choice)
 
 // A span with no cell between its blocks.
-defect([R, M, L, C, Wd]) :-
-    impl_choice([R, M, L, C, Wd]), span(R, M, C, B1, B2, _), !window.box([R, M, C, B1, B2], _).
+defect([R, M, L, C]) :-
+    impl_choice([R, M, L, C]), span(R, M, C, B1, B2, _), !window.box([R, M, C, B1, B2], _).
 
-out(P_out, Col, [R, M, L, C, Wd], [V_s, V_e]) :-
-    impl_choice([R, M, L, C, Wd]),
-    ( placed(R, M, C, Wd, W, Line, P_col, Col), V_e = nil
-    ; flush_placed(R, M, C, Wd, E, W, Line, P_col, Col), V_e = [E]
-    ),
-    ( slot(R, M, C, W, Line, P_row), V_s = nil
-    ; turned_slot(R, M, C, S, W, Line, P_row), V_s = [S]
-    ),
+out(P_out, Col, [R, M, L, C]) :-
+    impl_choice([R, M, L, C]),
+    window_cell(R, M, C, W, P_col, Line, Col),
+    slot(R, M, C, W, Line, P_row),
     compose(P_row, P_col, P_out),
-    !defect([R, M, L, C, Wd]).
+    !defect([R, M, L, C]).
 
 // --- $WindowBlocks ---
 // @claim marker-blocks
@@ -360,13 +278,13 @@ thin($ComponentBlocks($DerivedShape(), Cn), B) :-
     in(P, _), box_edge(P, B, D), opposite(D, O), box_edge(P, B, O).
 
 // --- $LoneUndefined ---
-defect([R, M, $LoneUndefined(), C, Wd]) :-
-    impl_choice([R, M, $LoneUndefined(), C, Wd]), block(R, M, B), !beyond(R, M, B, _, _).
+defect([R, M, $LoneUndefined(), C]) :-
+    impl_choice([R, M, $LoneUndefined(), C]), block(R, M, B), !beyond(R, M, B, _, _).
 
 // --- $TwoPerBand ---
-span(R, M, $TwoPerBand(), B1, B2, D) :- adjacent(R, M, B1, B2, D).
-defect([R, M, L, $TwoPerBand(), Wd]) :-
-    impl_choice([R, M, L, $TwoPerBand(), Wd]), crossed(R, M, _, _, _).
+span(R, M, $TwoPerBand(), B1, B2, D) :- beyond(R, M, B1, B2, D), !crossed(R, M, B1, B2, D).
+defect([R, M, L, $TwoPerBand()]) :-
+    impl_choice([R, M, L, $TwoPerBand()]), crossed(R, M, _, _, _).
 
 // --- $OuterSpan ---
 // The first and the last block of a band.
@@ -393,84 +311,6 @@ band_stack.secondary_score([R, M, C, D], [W, Line], K) :-
 slot(R, M, C, W, Line, P_row) :-
     band_stack.rank([R, M, C, D], [W, Line], K1), band_stack.rank_desc([R, M, C, D], [W, Line], K2),
     axis_inset(D, K1, K2, P_row).
-
-// --- $PairLeftRight ---
-// The blocks of each band that holds two or more, ranked from edge D.
-// @claim block-pairs
-.init band_rank = Order<BandSide, Box>
-band_rank.elem([R, M, D, Band], B) :-
-    ( beyond(R, M, B, _, D) ; beyond(R, M, _, B, D) ),
-    params.pair_axis(A), split(B, A, _, Band).
-// A block nearer D goes first.
-band_rank.score([R, M, D, Band], B, K) :- band_rank.elem([R, M, D, Band], B), dist(B, D, K).
-
-// The blocks that open a pair, counting from edge D: each block after a
-// whole number of pairs.
-.decl opens(r: BlockReading, m: MarkerSource, b: Box, d: Dir)
-opens(R, M, B, D) :-
-    band_rank.rank([R, M, D, _], B, K), params.pair_size(N), stride(K, N, 0, _, 0).
-
-span(R, M, $PairLeftRight(), B1, B2, D) :- opens(R, M, B1, D), adjacent(R, M, B1, B2, D).
-
-defect([R, M, L, $PairLeftRight(), Wd]) :-
-    impl_choice([R, M, L, $PairLeftRight(), Wd]),
-    opens(R, M, B, D), !beyond(R, M, B, _, D).               // a block left over
-
-// --- $ConsecutiveWindows ---
-span(R, M, $ConsecutiveWindows(), B1, B2, D) :- adjacent(R, M, B1, B2, D).
-
-// --- $PairLeftRight, $ConsecutiveWindows ---
-// The windows stack in the order of their bands, the windows of one band in
-// their order along the pair axis, turned onto the stack axis, and each
-// window's lines in their own order.
-// @claim stack
-.init window_stack = Order<Stack, WinLine>
-window_stack.elem([R, M, $PairLeftRight(), D, S], [W, Line]) :-
-    stack_dir(D), params.band_sense(S), window_line(R, M, $PairLeftRight(), W, Line).
-window_stack.elem([R, M, $ConsecutiveWindows(), D, S], [W, Line]) :-
-    stack_dir(D), params.band_sense(S), window_line(R, M, $ConsecutiveWindows(), W, Line).
-
-window_stack.before([R, M, C, D, S], [W1, L1], [W2, L2]) :-
-    window_stack.elem([R, M, C, D, S], [W1, L1]), window_stack.elem([R, M, C, D, S], [W2, L2]),
-    params.pair_axis(A), split(W1, A, _, Band1), split(W2, A, _, Band2),
-    ( dist(Band1, D, K1), dist(Band2, D, K2), K1 < K2                  // band nearer D
-    ; Band1 = Band2, turn(S, D_pair, D),                               // one band: nearer
-      dist(W1, D_pair, K1), dist(W2, D_pair, K2), K1 < K2              //  the edge turned onto D
-    ; W1 = W2, dist(L1, D, K1), dist(L2, D, K2), K1 < K2                // one window: line nearer D
-    ).
-
-turned_slot(R, M, C, S, W, Line, P_row) :-
-    window_stack.rank([R, M, C, D, S], [W, Line], K1),
-    window_stack.rank_desc([R, M, C, D, S], [W, Line], K2),
-    axis_inset(D, K1, K2, P_row).
-
-// --- $EqualWidths ---
-placed(R, M, C, $EqualWidths(), W, Line, P_col, Col) :- window_cell(R, M, C, W, P_col, Line, Col).
-
-// --- $PadWidest ---
-// Window W2 is wider than W1.
-.decl wider(r: BlockReading, m: MarkerSource, c: CrowdedRows, w1: Box, w2: Box)
-wider(R, M, C, W1, W2) :-
-    win(R, M, C, W1), win(R, M, C, W2), in(P, _),
-    params.pair_axis(A), box_extent(W1, P, A, N1), box_extent(W2, P, A, N2), N1 < N2.
-
-// The places along the pair axis of the widest window.
-.decl column(r: BlockReading, m: MarkerSource, c: CrowdedRows, q: Position)
-column(R, M, C, Q) :- window_cell(R, M, C, W, Q, _, _), !wider(R, M, C, W, _).
-
-// The place of the widest window that a window's place lands on: the same
-// distance to flush edge E.
-.decl landing(r: BlockReading, m: MarkerSource, c: CrowdedRows, w: Box, e: Dir, p_col: Position,
-              q: Position)
-landing(R, M, C, W, E, P_col, Q) :-
-    window_cell(R, M, C, W, P_col, _, _),
-    params.flush(E), column(R, M, C, Q), same_dist(E, P_col, Q).
-
-flush_placed(R, M, C, $PadWidest(), E, W, Line, Q, Col) :-
-    window_cell(R, M, C, W, P_col, Line, Col), landing(R, M, C, W, E, P_col, Q).
-flush_placed(R, M, C, $PadWidest(), E, W, Line, Q, Col) :-
-    window_line(R, M, C, W, Line), params.flush(E), column(R, M, C, Q),
-    !landing(R, M, C, W, E, _, Q), params.bg(Col).                     // a place no cell lands on
 
 .comp Determine {
     .init pieces = Components<Example>

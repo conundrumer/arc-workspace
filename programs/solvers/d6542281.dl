@@ -1,6 +1,6 @@
 // d6542281
 // @draft
-// @keywords: objects markers stamp count rank merge
+// @keywords: objects markers stamp count rank
 // @scene background: the commonest color of the input fills the field.
 // @scene shapes: some 8-connected objects of non-background cells hold more
 //  than one color; these are the whole shapes.
@@ -19,48 +19,23 @@
 // @rule stamp: each kept placement draws the whole shape, cell for cell, over
 //  the input; every other cell keeps its input color.
 
-// how the background color is found
-.type Background =
-    // @claim background
-    Commonest {}
-    // @scene background: the color of the cell at the params.bg_corner corner
-    //  is the background; undefined where kept copies conflict.
-    // @witness shape-at-corner: ordinary concept
-    // @witness shape-at-top-right: ordinary concept
-    // @witness shape-at-bottom-left: ordinary concept
-    // @witness shape-at-bottom-right: ordinary concept
-  | BackgroundByCorner {}
-
 // which objects are whole shapes and which are dots
 .type ShapeTest =
     // @claim shapes
     MultiColor {}
-    // @scene shapes: an object with at least params.shape_min_size cells is a
-    //  shape; undefined where kept copies conflict.
-    // @scene dots: an object with fewer cells is dots.
-    // @witness two-color-fragment: variant $ShapeBySize
-    //     @relaxed dots
-    // @witness fragment-sizes: variant concept
-  | ShapeBySize {}
     // @scene shapes: an object whose translate lies on no larger object's
     //  cells, color for color, is a shape; undefined where kept copies
     //  conflict.
     // @scene dots: an object whose translate lies on a larger object's cells,
     //  color for color, is dots.
-    // @witness two-color-fragment: variant $ShapeBySize
+    // @witness two-color-fragment: variant $ShapeByContainment
+    //     @relaxed dots
   | ShapeByContainment {}
 
 // which placements are completed
 .type KeptPlacements =
     // @claim largest-match
     LargestMatch {}
-    // @rule largest-match: dots within params.group_reach cells of each other
-    //  on both axes join one group, and a group is completed at each placement
-    //  whose covered dots are exactly that group; undefined where kept copies
-    //  conflict.
-    // @witness near-groups: variant concept
-    // @witness reach-steps: variant concept
-  | GroupByReach {}
     // @rule largest-match: a dot that exactly one placement covers keeps that
     //  placement; undefined where kept copies conflict.
     // @witness common-color-fragment: variant concept
@@ -106,47 +81,21 @@
   | EraseUncovered {}
 
 .type Choice = [
-    background: Background, shape_test: ShapeTest,
-    kept_placements: KeptPlacements, copy_past_edge: CopyPastEdge,
-    copy_over_cells: CopyOverCells, uncovered_dots: UncoveredDots]
+    shape_test: ShapeTest, kept_placements: KeptPlacements,
+    copy_past_edge: CopyPastEdge, copy_over_cells: CopyOverCells,
+    uncovered_dots: UncoveredDots]
 
-.type BgCorner = [d: DiagDir]
-.type ShapeMinSize = [n: number]
-.type GroupReach = [k: number]
-.type OpenValue = [bg_corner: BgCorner, shape_min_size: ShapeMinSize, group_reach: GroupReach]
+.decl out(p: Position, col: Color, ch: Choice)
 
-.decl out(p: Position, col: Color, ch: Choice, ov: OpenValue)
-
-.comp Params {
-    // --- $BackgroundByCorner ---
-    // the corner whose cell gives the background color
-    // @open
-    .decl bg_corner(d: DiagDir)
-    bg_corner(DIAG_TL). bg_corner(DIAG_TR). bg_corner(DIAG_BL). bg_corner(DIAG_BR).
-
-    // --- $ShapeBySize ---
-    // @open
-    .decl shape_min_size(n: number)
-    shape_min_size(3). shape_min_size(4). shape_min_size(5).
-
-    // --- $GroupByReach ---
-    // @derive SepTileCount: variant concept
-    // @open
-    .decl group_reach(k: number)
-    group_reach(2). group_reach(3). group_reach(4).
-}
+.comp Params {}
 
 .init params = Params
 
-.decl background_choice(b: Background)
-background_choice($Commonest()). background_choice($BackgroundByCorner()).
-
 .decl shape_test_choice(s: ShapeTest)
-shape_test_choice($MultiColor()). shape_test_choice($ShapeBySize()).
-shape_test_choice($ShapeByContainment()).
+shape_test_choice($MultiColor()). shape_test_choice($ShapeByContainment()).
 
 .decl kept_placements_choice(k: KeptPlacements)
-kept_placements_choice($LargestMatch()). kept_placements_choice($GroupByReach()).
+kept_placements_choice($LargestMatch()).
 kept_placements_choice($UniqueDotPlacement()). kept_placements_choice($MostDotsPerDot()).
 
 .decl copy_past_edge_choice(e: CopyPastEdge)
@@ -159,79 +108,69 @@ copy_over_cells_choice($OverBackground()). copy_over_cells_choice($PlaceOverAny(
 uncovered_dots_choice($KeepUncovered()). uncovered_dots_choice($EraseUncovered()).
 
 .decl impl_choice(ch: Choice)
-impl_choice([B, S, K, E, $OverBackground(), U]) :-
-    background_choice(B), shape_test_choice(S), kept_placements_choice(K),
+impl_choice([S, K, E, $OverBackground(), U]) :-
+    shape_test_choice(S), kept_placements_choice(K),
     copy_past_edge_choice(E), uncovered_dots_choice(U).
-impl_choice([B, S, K, E, $PlaceOverAny(), U]) :-
-    background_choice(B), shape_test_choice(S), kept_placements_choice(K),
+impl_choice([S, K, E, $PlaceOverAny(), U]) :-
+    shape_test_choice(S), kept_placements_choice(K),
     K != $UniqueDotPlacement(), copy_past_edge_choice(E), uncovered_dots_choice(U).
 
-// The open value each way of finding the background reads.
-.decl ground(back: Background, ov: OpenValue)
+// The background color.
+.decl bg(col: Color)
 
-// The background color, under each way of finding it.
-.decl bg(col: Color, back: Background, ov: OpenValue)
+// @claim background
+.init commonest = Mode<Unit, Color, Position>
+commonest.item($U(), Col, P) :- in(P, Col).
+
+bg(Col) :- commonest.mode($U(), Col).
 
 // The non-background cells.
-.decl ink(back: Background, ov: OpenValue, p: Position, col: Color)
-ink(Back, Ov, P, Col) :- in(P, Col), ground(Back, Ov), !bg(Col, Back, Ov).
-
-// The input under one way of finding the background.
-.type Ground = [background: Background, ov: OpenValue]
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !bg(Col).
 
 // @claim shapes dots
-.init objects = Components8<Ground>
-objects.node([Back, Ov], P) :- ink(Back, Ov, P, _).
+.init objects = Components8<Unit>
+objects.node($U(), P) :- ink(P, _).
 
-// An object, under one way of finding the background.
-.type Obj = [background: Background, ov: OpenValue, id: Ident]
+.decl obj_cell(o: Ident, p: Position, col: Color)
+obj_cell(Id, P, Col) :- objects.label($U(), P, Id), ink(P, Col).
 
-.decl obj_cell(o: Obj, p: Position, col: Color)
-obj_cell([Back, Ov, Id], P, Col) :- objects.label([Back, Ov], P, Id), ink(Back, Ov, P, Col).
+// The objects each way of telling shapes from dots takes as whole shapes.
+.decl shape_obj(o: Ident, test: ShapeTest)
 
-// The open value each reading of the objects reads.
-.decl reading(back: Background, test: ShapeTest, ov: OpenValue)
+// The objects each way of telling shapes from dots takes as dots.
+.decl dots_obj(o: Ident, test: ShapeTest)
 
-// The objects each reading takes as whole shapes.
-.decl shape_obj(o: Obj, test: ShapeTest, ov: OpenValue)
+.decl shape_cell(test: ShapeTest, id: Ident, p: Position, col: Color)
+shape_cell(T, Id, P, Col) :- shape_obj(Id, T), obj_cell(Id, P, Col).
 
-// The objects each reading takes as dots.
-// @ignore: common-subexpr — under $ShapeBySize the shape clause and the dots
-//  clause are the two sides of one size threshold
-.decl dots_obj(o: Obj, test: ShapeTest, ov: OpenValue)
-
-.decl shape_cell(back: Background, test: ShapeTest, ov: OpenValue, id: Ident, p: Position, col: Color)
-shape_cell(Back, T, Ov, Id, P, Col) :-
-    shape_obj([Back, Ov0, Id], T, Ov), obj_cell([Back, Ov0, Id], P, Col).
-
-.decl dot(back: Background, test: ShapeTest, ov: OpenValue, p: Position, col: Color)
-dot(Back, T, Ov, P, Col) :- dots_obj([Back, Ov0, Id], T, Ov), obj_cell([Back, Ov0, Id], P, Col).
+.decl dot(test: ShapeTest, p: Position, col: Color)
+dot(T, P, Col) :- dots_obj(Id, T), obj_cell(Id, P, Col).
 
 // A shape cell of color col may land on p: a background cell, or a dot of
 // col.
-.decl seat(back: Background, test: ShapeTest, ov: OpenValue, p: Position, col: Color)
-seat(Back, T, Ov, P, Col) :- dot(Back, T, Ov, P, Col).
-seat(Back, T, Ov, P, Col) :-
-    in(P, C0), Ov = [Bc, _, _], bg(C0, Back, [Bc, nil, nil]), shape_cell(Back, T, Ov, _, _, Col).
+.decl seat(test: ShapeTest, p: Position, col: Color)
+seat(T, P, Col) :- dot(T, P, Col).
+seat(T, P, Col) :- in(P, C0), bg(C0), shape_cell(T, _, _, Col).
 
-// A copy of a shape at a translation, under one reading of the input and one
-// way of placing copies.
+// A copy of a shape at a translation, under one way of telling shapes from
+// dots and one way of placing copies.
 .type Copy = [
-    background: Background, shape_test: ShapeTest, ov: OpenValue,
+    shape_test: ShapeTest,
     copy_past_edge: CopyPastEdge, copy_over_cells: CopyOverCells,
     id: Ident, m: Offset]
 
 // A translation that takes some cell of a shape onto a dot of its color.
 .decl candidate(c: Copy)
-candidate([Back, T, Ov, E, O, Id, M]) :-
-    shape_cell(Back, T, Ov, Id, S, Col), dot(Back, T, Ov, P, Col), relative(S, P, M),
+candidate([T, E, O, Id, M]) :-
+    shape_cell(T, Id, S, Col), dot(T, P, Col), relative(S, P, M),
     copy_past_edge_choice(E), copy_over_cells_choice(O).
 
 // Where each cell of a candidate copy lands.
 .decl landing(c: Copy, p: Position, col: Color)
 landing(C, P, Col) :-
-    candidate(C), C = [Back, T, Ov, _, _, Id, M],
-    shape_cell(Back, T, Ov, Id, S, Col), compose(M, S, P).
+    candidate(C), C = [T, _, _, Id, M],
+    shape_cell(T, Id, S, Col), compose(M, S, P).
 
 // A candidate copy with a cell where it may not land.
 .decl misfit(c: Copy)
@@ -243,124 +182,88 @@ placement(C) :- candidate(C), !misfit(C).
 // The dots a placement covers.
 .decl covers(c: Copy, p: Position)
 covers(C, P) :-
-    placement(C), landing(C, P, Col), C = [Back, T, Ov, _, _, _, _], dot(Back, T, Ov, P, Col).
+    placement(C), landing(C, P, Col), C = [T, _, _, _, _], dot(T, P, Col).
 
 // The kept copies of each case.
-.decl kept(ch: Choice, ov: OpenValue, c: Copy)
-
-// Each case with each open value it reads.
-.decl case_ov(ch: Choice, ov: OpenValue)
+.decl kept(ch: Choice, c: Copy)
 
 // The cells a kept copy draws.
-.decl paint(ch: Choice, ov: OpenValue, p: Position, col: Color)
+.decl paint(ch: Choice, p: Position, col: Color)
 
 // The dots a kept copy covers.
-.decl covered(ch: Choice, ov: OpenValue, p: Position)
-covered(Ch, Ov, P) :- kept(Ch, Ov, C), covers(C, P).
+.decl covered(ch: Choice, p: Position)
+covered(Ch, P) :- kept(Ch, C), covers(C, P).
 
 // A dot the output turns to background.
-.decl erased(ch: Choice, ov: OpenValue, p: Position)
+.decl erased(ch: Choice, p: Position)
 
-out(P, Col, Ch, Ov) :- paint(Ch, Ov, P, Col).
-out(P, Col, Ch, Ov) :- case_ov(Ch, Ov), in(P, Col), !paint(Ch, Ov, P, _), !erased(Ch, Ov, P).
-
-// --- $Commonest ---
-
-ground($Commonest(), [nil, nil, nil]).
-
-// @claim background
-.init commonest = Mode<Unit, Color, Position>
-commonest.item($U(), Col, P) :- in(P, Col).
-
-bg(Col, $Commonest(), Ov) :- ground($Commonest(), Ov), commonest.mode($U(), Col).
-
-// --- $BackgroundByCorner ---
-
-ground($BackgroundByCorner(), [[D], nil, nil]) :- params.bg_corner(D).
-
-bg(Col, $BackgroundByCorner(), [[D], nil, nil]) :-
-    params.bg_corner(D), corner_dist(P, D, 0), in(P, Col).
-
-// --- $MultiColor, $ShapeByContainment ---
-
-reading(Back, T, Ov) :- ground(Back, Ov), shape_test_choice(T), T != $ShapeBySize().
+out(P, Col, Ch) :- paint(Ch, P, Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(Ch, P, _), !erased(Ch, P).
 
 // --- $MultiColor ---
 
 // @claim shapes dots
-.init palette = Unanimous<Obj, Color>
+.init palette = Unanimous<Ident, Color>
 palette.item(O, Col) :- obj_cell(O, _, Col).
 
-shape_obj(O, $MultiColor(), Ov) :- palette.clash(O), O = [_, Ov, _].
-dots_obj(O, $MultiColor(), Ov) :- palette.value(O, _), O = [_, Ov, _].
-
-// --- $ShapeBySize, $ShapeByContainment ---
-
-// @claim shapes dots
-.init size = Tally<Obj, Position>
-size.item(O, P) :- obj_cell(O, P, _).
-
-// --- $ShapeBySize ---
-
-reading(Back, $ShapeBySize(), [Bc, [K], nil]) :-
-    ground(Back, [Bc, nil, nil]), params.shape_min_size(K).
-
-shape_obj(O, $ShapeBySize(), [Bc, [K], nil]) :-
-    size.tally(O, N), O = [_, [Bc, _, _], _], params.shape_min_size(K), N >= K.
-dots_obj(O, $ShapeBySize(), [Bc, [K], nil]) :-
-    size.tally(O, N), O = [_, [Bc, _, _], _], params.shape_min_size(K), N < K.
+shape_obj(O, $MultiColor()) :- palette.clash(O).
+dots_obj(O, $MultiColor()) :- palette.value(O, _).
 
 // --- $ShapeByContainment ---
 
+// @claim shapes dots
+.init size = Tally<Ident, Position>
+size.item(O, P) :- obj_cell(O, P, _).
+
 // Each object, sought among the cells of each larger object.
-.type ObjPair = [background: Background, ov: OpenValue, id: Ident, id2: Ident]
+.type ObjPair = [id: Ident, id2: Ident]
 
 // The second object has more cells than the first.
 .decl larger(o: ObjPair)
-larger([Back, Ov, Id, Id2]) :-
-    size.tally([Back, Ov, Id], N), size.tally([Back, Ov, Id2], N2), N < N2.
+larger([Id, Id2]) :-
+    size.tally(Id, N), size.tally(Id2, N2), N < N2.
 
 // @claim shapes dots
 .init within = Occurrences<ObjPair, Color>
-within.shape([Back, Ov, Id, Id2], P, Col) :-
-    larger([Back, Ov, Id, Id2]), obj_cell([Back, Ov, Id], P, Col).
-within.cell([Back, Ov, Id, Id2], P, Col) :-
-    larger([Back, Ov, Id, Id2]), obj_cell([Back, Ov, Id2], P, Col).
+within.shape([Id, Id2], P, Col) :-
+    larger([Id, Id2]), obj_cell(Id, P, Col).
+within.cell([Id, Id2], P, Col) :-
+    larger([Id, Id2]), obj_cell(Id2, P, Col).
 
 // An object whose translate lies on a larger object's cells.
-.decl contained(o: Obj)
-contained([Back, Ov, Id]) :- within.occurrence([Back, Ov, Id, _], _).
+.decl contained(o: Ident)
+contained(Id) :- within.occurrence([Id, _], _).
 
-shape_obj(O, $ShapeByContainment(), Ov) :- size.tally(O, _), O = [_, Ov, _], !contained(O).
-dots_obj(O, $ShapeByContainment(), Ov) :- contained(O), O = [_, Ov, _].
+shape_obj(O, $ShapeByContainment()) :- size.tally(O, _), !contained(O).
+dots_obj(O, $ShapeByContainment()) :- contained(O).
 
 // --- $InsideGrid ---
 
-misfit(C) :- landing(C, P, _), C = [_, _, _, $InsideGrid(), _, _, _], !in(P, _).
+misfit(C) :- landing(C, P, _), C = [_, $InsideGrid(), _, _, _], !in(P, _).
 
 // --- $OverBackground ---
 
 misfit(C) :-
-    landing(C, P, Col), C = [Back, T, Ov, _, $OverBackground(), _, _],
-    in(P, _), !seat(Back, T, Ov, P, Col).
+    landing(C, P, Col), C = [T, _, $OverBackground(), _, _],
+    in(P, _), !seat(T, P, Col).
 
-paint(Ch, Ov, P, Col) :-
-    kept(Ch, Ov, C), Ch = [_, _, _, _, $OverBackground(), _],
+paint(Ch, P, Col) :-
+    kept(Ch, C), Ch = [_, _, _, $OverBackground(), _],
     landing(C, P, Col), in(P, _).
 
 // --- $PlaceOverAny ---
 
-paint(Ch, Ov, P, Col) :-
-    kept(Ch, Ov, C), Ch = [Back, _, _, _, $PlaceOverAny(), _], Ov = [Bc, _, _],
-    landing(C, P, Col), in(P, C0), bg(C0, Back, [Bc, nil, nil]).   // only on background
+paint(Ch, P, Col) :-
+    kept(Ch, C), Ch = [_, _, _, $PlaceOverAny(), _],
+    landing(C, P, Col), in(P, C0), bg(C0).   // only on background
 
 // --- $LargestMatch ---
 
 // Two placements that cover a common dot.
 .decl overlap(c: Copy, c2: Copy)
 overlap(C, C2) :-
-    covers(C, P), C = [Back, T, Ov, E, O, _, _],
-    covers(C2, P), C2 = [Back, T, Ov, E, O, _, _].
+    covers(C, P), C = [T, E, O, _, _],
+    covers(C2, P), C2 = [T, E, O, _, _].
 
 // The first placement covers a dot the second does not.
 .decl escapes(c: Copy, c2: Copy)
@@ -370,66 +273,26 @@ escapes(C, C2) :- overlap(C, C2), covers(C, P), !covers(C2, P).
 .decl dominated(c: Copy)
 dominated(C) :- overlap(C, C2), !escapes(C, C2), escapes(C2, C).
 
-kept([Back, T, $LargestMatch(), E, O, U], Ov, C) :-
-    placement(C), C = [Back, T, Ov, E, O, _, _], !dominated(C),
+kept([T, $LargestMatch(), E, O, U], C) :-
+    placement(C), C = [T, E, O, _, _], !dominated(C),
     uncovered_dots_choice(U).
-
-// --- $LargestMatch, $UniqueDotPlacement, $MostDotsPerDot ---
-
-case_ov(Ch, Ov) :-
-    impl_choice(Ch), Ch = [Back, T, K, _, _, _], K != $GroupByReach(), reading(Back, T, Ov).
-
-// --- $GroupByReach ---
-
-case_ov(Ch, [Bc, Sz, [K]]) :-
-    impl_choice(Ch), Ch = [Back, T, $GroupByReach(), _, _, _], reading(Back, T, [Bc, Sz, nil]),
-    params.group_reach(K).
-
-// A dot under a reading of the objects, with the reach that groups it.
-.type GroupDot = [background: Background, shape_test: ShapeTest, ov: OpenValue, p: Position]
-
-// Dots within the reach of each other on both axes join one group.
-.init group = Canon<GroupDot>
-group.edge([Back, T, [Bc, Sz, [K]], P], [Back, T, [Bc, Sz, [K]], Q]) :-
-    dot(Back, T, [Bc, Sz, nil], P, _), dot(Back, T, [Bc, Sz, nil], Q, _),
-    params.group_reach(K), uniform_outset(K, B_reach), compose(P, B_reach, B),   // P's square of the reach
-    inside(Q, B).
-
-// The groups of the dots a placement covers, at each reach.
-.decl copy_group(c: Copy, k: number, g: Ident)
-copy_group(C, K, G) :-
-    covers(C, P), C = [Back, T, [Bc, Sz, nil], _, _, _, _],
-    group.id([Back, T, [Bc, Sz, [K]], P], G).
-
-// A placement that covers dots of two groups.
-.decl spans(c: Copy, k: number)
-spans(C, K) :- copy_group(C, K, G), copy_group(C, K, G2), G != G2.
-
-// A placement that leaves a dot of its group uncovered.
-.decl misses(c: Copy, k: number)
-misses(C, K) :-
-    copy_group(C, K, G), C = [Back, T, [Bc, Sz, nil], _, _, _, _],
-    group.id([Back, T, [Bc, Sz, [K]], Q], G), !covers(C, Q).
-
-kept([Back, T, $GroupByReach(), E, O, U], [Bc, Sz, [K]], C) :-
-    copy_group(C, K, _), C = [Back, T, [Bc, Sz, nil], E, O, _, _],
-    !spans(C, K), !misses(C, K), uncovered_dots_choice(U).
 
 // --- $UniqueDotPlacement, $MostDotsPerDot ---
 
-// A dot under one reading of the input and one way of placing copies.
+// A dot under one way of telling shapes from dots and one way of placing
+// copies.
 .type SiteDot = [
-    background: Background, shape_test: ShapeTest, ov: OpenValue,
+    shape_test: ShapeTest,
     copy_past_edge: CopyPastEdge, copy_over_cells: CopyOverCells, p: Position]
 
 // --- $UniqueDotPlacement ---
 
 // @claim largest-match
 .init coverer = Unanimous<SiteDot, Copy>
-coverer.item([Back, T, Ov, E, O, P], C) :- covers(C, P), C = [Back, T, Ov, E, O, _, _].
+coverer.item([T, E, O, P], C) :- covers(C, P), C = [T, E, O, _, _].
 
-kept([Back, T, $UniqueDotPlacement(), E, O, U], Ov, C) :-
-    coverer.value([Back, T, Ov, E, O, _], C), uncovered_dots_choice(U).
+kept([T, $UniqueDotPlacement(), E, O, U], C) :-
+    coverer.value([T, E, O, _], C), uncovered_dots_choice(U).
 
 // --- $MostDotsPerDot ---
 
@@ -439,98 +302,17 @@ coverage.item(C, P) :- covers(C, P).
 
 // @claim largest-match
 .init widest = ArgExtremes<SiteDot, Copy>
-widest.cand([Back, T, Ov, E, O, P], C, N) :-
-    covers(C, P), C = [Back, T, Ov, E, O, _, _], coverage.tally(C, N).
+widest.cand([T, E, O, P], C, N) :-
+    covers(C, P), C = [T, E, O, _, _], coverage.tally(C, N).
 
-kept([Back, T, $MostDotsPerDot(), E, O, U], Ov, C) :-
-    widest.high([Back, T, Ov, E, O, _], C, _), uncovered_dots_choice(U).
+kept([T, $MostDotsPerDot(), E, O, U], C) :-
+    widest.high([T, E, O, _], C, _), uncovered_dots_choice(U).
 
 // --- $EraseUncovered ---
 
-erased(Ch, Ov, P) :-
-    case_ov(Ch, Ov), Ch = [Back, T, _, _, _, $EraseUncovered()], Ov = [Bc, Sz, _],
-    dot(Back, T, [Bc, Sz, nil], P, _), !covered(Ch, Ov, P).
+erased(Ch, P) :-
+    impl_choice(Ch), Ch = [T, _, _, _, $EraseUncovered()],
+    dot(T, P, _), !covered(Ch, P).
 
-out(P, Col, [Back, T, K, E, O, $EraseUncovered()], Ov) :-
-    erased([Back, T, K, E, O, $EraseUncovered()], Ov, P), Ov = [Bc, _, _],
-    bg(Col, Back, [Bc, nil, nil]).
-
-// Both open values are kept where a fact of the train inputs holds at them.
-// A size threshold parts the objects as their colors do: every object of at
-// least that many cells holds more than one color, and every smaller one holds
-// one. A reach groups the dots so that no group lies on the shapes' cells,
-// color for color, at more than one translation, and every group of more than
-// one dot lies on them at one.
-.comp Determine {
-    // Each train input's background: its commonest color.
-    .init field = Mode<Example, Color, Position>
-    field.item(E, Col, P) :- ex_in(E, P, Col), ex_out(E, _, _).
-
-    .init parts = Components8<Example>
-    parts.node(E, P) :- ex_in(E, P, Col), ex_out(E, _, _), field.mode(E, Bg), Col != Bg.
-
-    .type Part = [e: Example, id: Ident]
-
-    .init palette = Unanimous<Part, Color>
-    palette.item([E, Id], Col) :- parts.label(E, P, Id), ex_in(E, P, Col).
-
-    .init size = Tally<Part, Position>
-    size.item([E, Id], P) :- parts.label(E, P, Id).
-
-    // The candidate thresholds and reaches: the counts below a train input's
-    // extent.
-    .decl bound(n: number)
-    bound(N) :- ex_in(E, P, _), ex_out(E, _, _), axis_elem(A), sub_extent(P, A, N).
-
-    // A threshold an object contradicts: a one-color object that reaches it,
-    // or a many-color object that falls short of it.
-    .decl contradicted(n: number)
-    contradicted(K) :-
-        bound(K), size.tally(O, N),
-        ( palette.value(O, _), N >= K     // one color, and large enough
-        ; palette.clash(O), N < K         // many colors, and too small
-        ).
-
-    .decl shape_min_size(n: number)
-    shape_min_size(N) :- bound(N), !contradicted(N).
-
-    // The dots: the cells of the one-color objects.
-    .decl dot(e: Example, p: Position, col: Color)
-    dot(E, P, Col) :- parts.label(E, P, Id), palette.value([E, Id], Col).
-
-    // A dot at a reach.
-    .type Grouped = [e: Example, k: number, p: Position]
-
-    // Dots within the reach of each other on both axes join one group.
-    .init group = Canon<Grouped>
-    group.edge([E, K, P], [E, K, Q]) :-
-        dot(E, P, _), dot(E, Q, _),
-        bound(K), uniform_outset(K, B_reach), compose(P, B_reach, B), inside(Q, B).
-
-    // A group of dots at a reach, sought among the cells of a many-color
-    // object.
-    .type Seat = [e: Example, k: number, g: Ident, id: Ident]
-
-    .init seat = Occurrences<Seat, Color>
-    seat.shape([E, K, G, Id], P, Col) :-
-        group.id([E, K, P], G), dot(E, P, Col), palette.clash([E, Id]).
-    seat.cell([E, K, G, Id], P, Col) :-
-        group.id([E, K, _], G), palette.clash([E, Id]), parts.label(E, P, Id), ex_in(E, P, Col).
-
-    // A group at a reach, and a shape and translation that seat it.
-    .type Group = [e: Example, k: number, g: Ident]
-    .type Placing = [id: Ident, m: Offset]
-
-    .init seats = Unanimous<Group, Placing>
-    seats.item([E, K, G], [Id, M]) :- seat.occurrence([E, K, G, Id], M).
-
-    // A reach that misreads the dots: a group lies on shapes at more than one
-    // translation, or a group of more than one dot lies on none.
-    .decl misread(k: number)
-    misread(K) :- seats.clash([E, K, _]).
-    misread(K) :-
-        group.id([E, K, P], G), group.id([E, K, Q], G), P != Q, !seats.value([E, K, G], _).
-
-    .decl group_reach(k: number)
-    group_reach(K) :- bound(K), !misread(K).
-}
+out(P, Col, [T, K, E, O, $EraseUncovered()]) :-
+    erased([T, K, E, O, $EraseUncovered()], P), bg(Col).

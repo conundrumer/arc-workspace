@@ -52,19 +52,6 @@
     //     @relaxed steady-step
   | StepPerLine {}
 
-// where the axis the panels stack along comes from
-.type PanelAxis =
-    // @claim panels
-    StoredAxis {}
-    // @scene panels: the panels stack along whichever axis the full lines of
-    //  the divider color cut so, in time order toward the end
-    //  params.time_corner has on that axis; undefined where no axis's lines
-    //  cut the grid so
-    // @witness side-by-side: variant $PanelAxisFromLines
-    //     @relaxed panels
-    //     @reassigned time_corner
-  | PanelAxisFromLines {}
-
 // where the divider width comes from
 .type DividerWidth =
     // @claim panels
@@ -85,13 +72,10 @@
     //     @relaxed panels
   | AnyPanelCount {}
 
-.type Choice = [reading: Reading, check: StepCheck, scope: StepScope, axis: PanelAxis,
+.type Choice = [reading: Reading, check: StepCheck, scope: StepScope,
                 width: DividerWidth, panels: PanelCount]
 
-.type TimeCorner = [d: DiagDir]
-.type OpenValue = [time_corner: TimeCorner]
-
-.decl out(p: Position, col: Color, ch: Choice, c: DemonstratedRule, v: OpenValue)
+.decl out(p: Position, col: Color, ch: Choice, c: DemonstratedRule)
 
 .decl reading_choice(r: Reading)
 reading_choice($ObjectMotion()). reading_choice($FirstChange()).
@@ -102,9 +86,6 @@ step_check_choice($EveryStep()). step_check_choice($StepFromFirstTwo()).
 .decl step_scope_choice(sc: StepScope)
 step_scope_choice($WholePanel()). step_scope_choice($StepPerLine()).
 
-.decl panel_axis_choice(ab: PanelAxis)
-panel_axis_choice($StoredAxis()). panel_axis_choice($PanelAxisFromLines()).
-
 .decl divider_width_choice(wb: DividerWidth)
 divider_width_choice($StoredWidth()). divider_width_choice($DividerWidthFromLines()).
 
@@ -114,9 +95,9 @@ panel_count_choice($StoredCount()). panel_count_choice($AnyPanelCount()).
 // $ObjectMotion read per line fails Fit at test0, where the front of row 1
 // stops at a 0 cell and shows no steady advance.
 .decl impl_choice(ch: Choice)
-impl_choice([R, Ck, Sc, Ab, Wb, Nb]) :-
+impl_choice([R, Ck, Sc, Wb, Nb]) :-
     reading_choice(R), step_check_choice(Ck), step_scope_choice(Sc),
-    panel_axis_choice(Ab), divider_width_choice(Wb), panel_count_choice(Nb),
+    divider_width_choice(Wb), panel_count_choice(Nb),
     ( R = $FirstChange() ; Sc = $WholePanel() ).
 
 .comp Params {
@@ -126,6 +107,9 @@ impl_choice([R, Ck, Sc, Ab, Wb, Nb]) :-
     //  input, as SharedColor does, so its cases are equivalent to theirs
     .decl divider_color(c: Color) divider_color(5).
 
+    // Time runs toward this edge, so the last frame sits on it.
+    .decl time_dir(d: Dir) time_dir(DIR_B).
+
     // --- $StoredWidth ---
     // @ignore: derive SepThickness — subsumed by $DividerWidthFromLines: where
     //  the width it gives cuts the grid, it is the width of the full lines of
@@ -133,17 +117,6 @@ impl_choice([R, Ck, Sc, Ab, Wb, Nb]) :-
     // @ignore: derive TileDim — subsumed by $DividerWidthFromLines, for the
     //  same reason
     .decl divider_width(g: number) divider_width(1).
-
-    // --- $StoredAxis ---
-    // Time runs toward this edge, so the last frame sits on it.
-    .decl time_dir(d: Dir) time_dir(DIR_B).
-
-    // --- $PanelAxisFromLines ---
-    // Time runs toward this corner's edge on the axis the panels stack along.
-    // Every pair stacks its panels top to bottom, so the corner's side on the
-    // other axis is open.
-    // @open
-    .decl time_corner(d: DiagDir) time_corner(DIAG_BL). time_corner(DIAG_BR).
 
     // --- $StoredCount ---
     // @ignore: derive SepTileCount — subsumed by $AnyPanelCount: where the
@@ -169,9 +142,6 @@ impl_choice([R, Ck, Sc, Ab, Wb, Nb]) :-
 // The inner task and the rule each fact of `out` is derived at.
 .type DemonstratedRule = [task: MotionKey, rule: DemonstratedChoice]
 
-// The time direction each reading of the panel axis takes.
-.decl time_read(ab: PanelAxis, t: Dir)
-
 // @ignore: store — the stored counts are those admitted takes on the
 //  pairs' frame: a count past a grid's extent cuts nothing, and a count a
 //  larger grid needs is missing only where the case is undefined, so the case
@@ -184,10 +154,10 @@ impl_choice([R, Ck, Sc, Ab, Wb, Nb]) :-
 //  that derives them subsumes it
 .decl count_read(nb: PanelCount, n: number)
 
-// The frames each reading of the cut takes, one per time direction it reads.
-.decl frames_of(ab: PanelAxis, wb: DividerWidth, nb: PanelCount, k: Frames)
-frames_of(Ab, Wb, Nb, [T, C, G, N]) :-
-    time_read(Ab, T), axis_of(T, A),
+// The frames each reading of the cut takes.
+.decl frames_of(wb: DividerWidth, nb: PanelCount, k: Frames)
+frames_of(Wb, Nb, [T, C, G, N]) :-
+    params.time_dir(T), axis_of(T, A),
     params.divider_color(C), width_read(Wb, G), count_read(Nb, N),
     valid_cut(A, C, G, N).
 
@@ -234,8 +204,6 @@ cut_defect(A, C, G, N) :-
 
 // @store: variant stored
 //     @relaxed panels
-// @ignore: store $PanelAxisFromLines — the stored cut fixes the axis, so
-//  these cases are equivalent to those that take $StoredAxis
 // @ignore: store $DividerWidthFromLines — the stored cut fixes the width,
 //  so these cases are equivalent to those that take $StoredWidth
 // @ignore: store $AnyPanelCount — the stored cut fixes the count, so these
@@ -250,7 +218,7 @@ valid_cut(A, C, G, N) :-
 
 .decl panel(k: Frames, p_tile: Position, p_intile: Position, col: Color)
 panel([T, C, G, N], P_tile, P_intile, Col) :-
-    frames_of(_, _, _, [T, C, G, N]), axis_of(T, A),
+    frames_of(_, _, [T, C, G, N]), axis_of(T, A),
     in(P_grid, Col), divide_slab(P_grid, A, N, G, P_tile, P_intile).
 
 .decl succ_panel(k: Frames, p_tile: Position, p_tile2: Position)
@@ -529,21 +497,8 @@ next_frame(K, Ck, Sc, D, P_intile, Col) :-
     ; Col = Col0, !paint(K, D, J, P_tile, P_intile, _)     // the moved change passes it by
     ).
 
-// --- $StoredAxis ---
-time_read($StoredAxis(), T) :- params.time_dir(T).
-
-// One grid, read at every time corner.
-out(P_intile, Col, [R, Ck, Sc, $StoredAxis(), Wb, Nb], C, [nil]) :-
-    frames_of($StoredAxis(), Wb, Nb, K), result(R, Ck, Sc, K, C, P_intile, Col).
-
-// --- $PanelAxisFromLines ---
-time_read($PanelAxisFromLines(), T) :- params.time_corner(Dc), dir_of(Dc, _, T).
-
-// One grid per time corner: the frames whose time direction is one of the
-// corner's edges.
-out(P_intile, Col, [R, Ck, Sc, $PanelAxisFromLines(), Wb, Nb], Cm, [[Dc]]) :-
-    frames_of($PanelAxisFromLines(), Wb, Nb, [T, C, G, N]),
-    result(R, Ck, Sc, [T, C, G, N], Cm, P_intile, Col), params.time_corner(Dc), dir_of(Dc, _, T).
+out(P_intile, Col, [R, Ck, Sc, Wb, Nb], C) :-
+    frames_of(Wb, Nb, K), result(R, Ck, Sc, K, C, P_intile, Col).
 
 // --- $StoredWidth ---
 width_read($StoredWidth(), G) :- params.divider_width(G).

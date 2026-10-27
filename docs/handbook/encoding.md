@@ -83,10 +83,6 @@
                 - No stored correspondence is needed.
     - Storing an orientation as an `Axis`, `Sense`, or `Sym` requires conversion to the `D4` used by the clause.
         + xref: programs/lib/orientation.dl
-        - 8ee62060
-            - The parameter stores the D4 elements that fit.
-                + gloss
-                - The program applies them directly to block positions.
 - Conversion is justified when its two sides differ in content.
     - A sparse set differs in content from its `Ordinal` ranking.
         + xref: programs/lib/orders.dl

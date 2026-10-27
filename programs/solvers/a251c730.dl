@@ -32,7 +32,7 @@
     //  found in both box interiors. A figure is a group with exactly one
     //  anchor-colored cell, its anchor, and at least one other cell; other
     //  groups are skipped. Undefined when no figure results.
-    // @witness two-single-colors: variant $AnchorBySharedColor & $UnmatchedStays & $FirstWins
+    // @witness two-single-colors: variant $AnchorBySharedColor & $UnmatchedStays
     //     @relaxed template-box
     // @witness anchor-reused-as-decoration: variant concept
   | AnchorBySharedColor {}
@@ -44,7 +44,7 @@
     // @rule stamp-at-anchor: a stamp writes only onto interior cells that hold
     //  the background color, so the frame and the lone cells keep their
     //  colors. Undefined where two stamps write different colors to one cell.
-    // @witness stamp-over-frame: borderline $FillOnly & $UnmatchedStays & $FirstWins
+    // @witness stamp-over-frame: borderline $FillOnly & $UnmatchedStays
   | FillOnly {}
 
 // what a lone cell whose color is no figure's anchor color gets
@@ -52,21 +52,9 @@
     // @claim stamp-at-anchor
     MatchRequired {}
     // @rule stamp-at-anchor: such a lone cell keeps its color and gets no stamp
-    // @witness unmatched-lone-cell: borderline $UnmatchedStays & $FirstWins
+    // @witness unmatched-lone-cell: borderline $UnmatchedStays
     //     @relaxed anchor-box
   | UnmatchedStays {}
-
-// what figures of one anchor color that differ give
-.type SameColorFigures =
-    // @claim template-box
-    ClashUndefined {}
-    // @scene template-box: figures with the same anchor color may differ. A
-    //  lone cell takes the figure of its color whose anchor comes first in the
-    //  scan order, from a corner along an axis. The output holds the grid of
-    //  each open scan order.
-    // @witness unused-clash: borderline $UnmatchedStays & $FirstWins
-    //     @relaxed template-box
-  | FirstWins {}
 
 // which cells of the anchor box take a stamp, under RoleBySize
 .type StampSites =
@@ -97,25 +85,14 @@
   | Conn4 {}
 
 .type Choice = [anchor: AnchorCell, reach: StampReach, unmatched: UnmatchedLoneCell,
-                same: SameColorFigures, role: BoxRole, adj: Adjacency]
+                role: BoxRole, adj: Adjacency]
 
 // One role reading and one adjacency: the parse's key.
 .type Reading = [role: BoxRole, adj: Adjacency]
 
-.type Scan = [d: DiagDir, ax: Axis]
-.type OpenValue = [scan: Scan]
+.decl out(p: Position, col: Color, ch: Choice)
 
-.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
-
-.comp Params {
-    // --- $FirstWins ---
-    // The scan order that picks among the figures of one anchor color: from a
-    // corner, along an axis. The pairs fix no order, so every order is open.
-    // @open
-    .decl scan(d: DiagDir, ax: Axis)
-    scan(DIAG_TL, AXIS_V). scan(DIAG_TL, AXIS_H). scan(DIAG_TR, AXIS_V). scan(DIAG_TR, AXIS_H).
-    scan(DIAG_BL, AXIS_V). scan(DIAG_BL, AXIS_H). scan(DIAG_BR, AXIS_V). scan(DIAG_BR, AXIS_H).
-}
+.comp Params {}
 
 .init params = Params
 
@@ -134,13 +111,12 @@ box_role_choice($RoleByContent()). box_role_choice($RoleBySize(Si)) :- stamp_sit
 .decl adjacency_choice(j: Adjacency)
 adjacency_choice($Conn8()). adjacency_choice($Conn4()).
 
-// The concept case, and the cases that take UnmatchedStays and FirstWins.
-// Another case with MatchRequired or ClashUndefined is subsumed: wherever it
-// is defined, the case with UnmatchedStays and FirstWins in their place gives
-// the same grid.
+// The concept case, and the cases that take UnmatchedStays. Another case with
+// MatchRequired is subsumed: wherever it is defined, the case with
+// UnmatchedStays in its place gives the same grid.
 .decl impl_choice(ch: Choice)
-impl_choice([$OnceColor(), $CropReach(), $MatchRequired(), $ClashUndefined(), $RoleByContent(), $Conn8()]).
-impl_choice([A, S, $UnmatchedStays(), $FirstWins(), Role, J]) :-
+impl_choice([$OnceColor(), $CropReach(), $MatchRequired(), $RoleByContent(), $Conn8()]).
+impl_choice([A, S, $UnmatchedStays(), Role, J]) :-
     anchor_cell_choice(A), stamp_reach_choice(S), box_role_choice(Role), adjacency_choice(J).
 
 // The cells that take a stamp of their color.
@@ -177,8 +153,6 @@ sheet(R, P, P_inner, Col) :- target.value(R, B), in(P, Col), crop(P, B, P_inner)
 
 // One group of the template box under one anchor reading.
 .type Figure = [anchor: AnchorCell, r: Reading, id: Ident]
-// The anchors of one color's figures, ordered by one scan.
-.type Queue = [d: DiagDir, ax: Axis, anchor: AnchorCell, r: Reading, k: Color]
 
 // The rectangle outlines of one color.
 // @claim striped-field two-boxes
@@ -241,18 +215,19 @@ fig_key(A, R, Id, K) :- anchor.value([A, R, Id], P), in(P, K).
 fig_rel(A, R, Id, V, Col) :-
     anchor.value([A, R, Id], P_a), fig_cell(R, Id, P, Col), relative(P_a, P, V).
 
-// Each scan order over the anchors of one color's figures.
-// @claim template-box
-.init scan = LexOrder<Queue>
-scan.corner([D, Ax, A, R, K], D) :- scan.cell([D, Ax, A, R, K], _).
-scan.axis([D, Ax, A, R, K], Ax) :- scan.cell([D, Ax, A, R, K], _).
-scan.cell([D, Ax, A, R, K], P) :-
-    diag_dir_elem(D), axis_elem(Ax), anchor.value([A, R, Id], P), fig_key(A, R, Id, K).
+// Two figures of one anchor color differ.
+.decl clash(a: AnchorCell, r: Reading)
+clash(A, R) :-
+    fig_key(A, R, Id, K), fig_key(A, R, Id2, K),
+    fig_rel(A, R, Id, V, Col), !fig_rel(A, R, Id2, V, Col).
 
-// The figure each scan picks for its anchor color.
-.decl picked(d: DiagDir, ax: Axis, a: AnchorCell, r: Reading, id: Ident)
-picked(D, Ax, A, R, Id) :-
-    scan.first([D, Ax, A, R, _], P), anchor.value([A, R, Id], P).
+out(P_inner, Col, [A, S, U, Role, J]) :-
+    impl_choice([A, S, U, Role, J]), settled(A, U, [Role, J]), !clash(A, [Role, J]),
+    sheet([Role, J], P, P_inner, C),
+    ( paint(A, S, [Role, J], _, P, Col)
+    ; site(A, [Role, J], P, Col)                      // a site writes its own color
+    ; !paint(A, S, [Role, J], _, P, _), Col = C
+    ).
 
 // --- $OnceColor ---
 // A color that occurs more than once in a figure.
@@ -326,36 +301,6 @@ settled(A, $MatchRequired(), R) :-
 // --- $UnmatchedStays ---
 settled(A, $UnmatchedStays(), R) :-
     template.value(R, _), anchor_cell_choice(A), !defect(A, R).
-
-// --- $ClashUndefined ---
-// Two figures of one anchor color differ.
-.decl clash(a: AnchorCell, r: Reading)
-clash(A, R) :-
-    fig_key(A, R, Id, K), fig_key(A, R, Id2, K),
-    fig_rel(A, R, Id, V, Col), !fig_rel(A, R, Id2, V, Col).
-
-out(P_inner, Col, [A, S, U, $ClashUndefined(), Role, J], [nil]) :-
-    impl_choice([A, S, U, $ClashUndefined(), Role, J]), settled(A, U, [Role, J]), !clash(A, [Role, J]),
-    sheet([Role, J], P, P_inner, C),
-    ( paint(A, S, [Role, J], _, P, Col)
-    ; site(A, [Role, J], P, Col)                      // a site writes its own color
-    ; !paint(A, S, [Role, J], _, P, _), Col = C
-    ).
-
-// --- $FirstWins ---
-// A cell a scan's picked figures write.
-// @ignore: store — the scan columns range over the open scan orders
-.decl scan_painted(d: DiagDir, ax: Axis, a: AnchorCell, s: StampReach, r: Reading, p: Position)
-scan_painted(D, Ax, A, S, R, P) :- picked(D, Ax, A, R, Id), paint(A, S, R, Id, P, _).
-
-// Each open scan gives a grid.
-out(P_inner, Col, [A, S, U, $FirstWins(), Role, J], [[D, Ax]]) :-
-    impl_choice([A, S, U, $FirstWins(), Role, J]), settled(A, U, [Role, J]), params.scan(D, Ax),
-    sheet([Role, J], P, P_inner, C),
-    ( picked(D, Ax, A, [Role, J], Id), paint(A, S, [Role, J], Id, P, Col)
-    ; site(A, [Role, J], P, Col)                      // a site writes its own color
-    ; !scan_painted(D, Ax, A, S, [Role, J], P), Col = C
-    ).
 
 // --- $EveryAnchorColored ---
 site(A, [$RoleBySize($EveryAnchorColored()), J], P, K) :-

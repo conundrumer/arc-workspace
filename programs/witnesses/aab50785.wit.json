@@ -80,9 +80,7 @@
     "output": [{
       "cases": [
         "concept",
-        "$StoredShape",
-        "$WindowBlocks & $PairLeftRight",
-        "$WindowBlocks & $ConsecutiveWindows"
+        "$StoredShape"
       ],
       "grid": null
     }, {
@@ -133,7 +131,7 @@
     }]
   }, {
     "id": "four-in-row",
-    "separates": "A 6x19 grid of noise with four 2x2 blocks of 8 on rows 2-3 at cols 0, 5, 10 and 15, three columns apart. The concept is undefined on more than two blocks on one band; $OuterSpan takes one 2x13 window through the middle blocks; $PairLeftRight takes the windows of blocks 1-2 and 3-4, and $ConsecutiveWindows takes all three gaps, each giving a grid for each open band sense, with the leftmost window on top at one sense and at the bottom at the other.",
+    "separates": "A 6x19 grid of noise with four 2x2 blocks of 8 on rows 2-3 at cols 0, 5, 10 and 15, three columns apart. The concept is undefined on more than two blocks on one band; $OuterSpan takes one 2x13 window through the middle blocks.",
     "input": [
       [3,0,4,9,0,0,6,0,3,7,0,6,1,0,0,4,4,0,1],
       [0,6,4,0,7,0,1,9,9,7,0,7,7,4,0,1,0,6,0],
@@ -150,42 +148,6 @@
       "grid": [
         [0,6,0,8,8,6,9,0,8,8,7,9,1],
         [7,1,5,8,8,4,3,5,8,8,3,2,1]
-      ]
-    }, {
-      "cases": ["$PairLeftRight"],
-      "grid": [
-        [
-          [0,6,0],
-          [7,1,5],
-          [7,9,1],
-          [3,2,1]
-        ],
-        [
-          [7,9,1],
-          [3,2,1],
-          [0,6,0],
-          [7,1,5]
-        ]
-      ]
-    }, {
-      "cases": ["$ConsecutiveWindows"],
-      "grid": [
-        [
-          [0,6,0],
-          [7,1,5],
-          [6,9,0],
-          [4,3,5],
-          [7,9,1],
-          [3,2,1]
-        ],
-        [
-          [7,9,1],
-          [3,2,1],
-          [6,9,0],
-          [4,3,5],
-          [0,6,0],
-          [7,1,5]
-        ]
       ]
     }]
   }, {
@@ -216,31 +178,6 @@
         [0,0,2],
         [1,3,0],
         [0,0,9]
-      ]
-    }]
-  }, {
-    "id": "blank-window",
-    "separates": "An 8x10 grid with two pairs: rows 1-2 with a 4-wide window of noise, and rows 5-6 with a 3-wide window of 0. The concept is undefined on windows of unequal width; $PadWidest pads the blank window with 0 to width 4, and both open flush edges give the same 4x4 output.",
-    "input": [
-      [3,0,0,4,0,0,0,0,7,0],
-      [8,8,1,0,6,2,8,8,0,0],
-      [8,8,0,9,0,3,8,8,5,0],
-      [0,0,4,0,0,0,0,0,0,2],
-      [6,0,0,0,7,0,0,0,1,0],
-      [0,8,8,0,0,0,8,8,0,9],
-      [2,8,8,0,0,0,8,8,0,0],
-      [0,0,0,5,0,1,0,0,3,0]
-    ],
-    "output": [{
-      "cases": ["concept"],
-      "grid": null
-    }, {
-      "cases": ["$LoneSkip"],
-      "grid": [
-        [1,0,6,2],
-        [0,9,0,3],
-        [0,0,0,0],
-        [0,0,0,0]
       ]
     }]
   }, {
@@ -278,7 +215,7 @@
     }]
   }, {
     "id": "wide-pair",
-    "separates": "train0 with a third pair of 8 blocks, 2x3 each, at rows 11-12, cols 1-3 and 9-11, five columns apart. The stored 2x2 shape reads no block there and gives the train0 output; $DerivedShape reads the 2x3 pieces as a pair and adds their window, rows 11-12, cols 4-8, below the other two. The 2x2 windows find two overlapping blocks at each end of that band, so $OuterSpan takes the 5-wide window and the other crowded-band readings are undefined.",
+    "separates": "train0 with a third pair of 8 blocks, 2x3 each, at rows 11-12, cols 1-3 and 9-11, five columns apart. The stored 2x2 shape reads no block there and gives the train0 output; $DerivedShape reads the 2x3 pieces as a pair and adds their window, rows 11-12, cols 4-8, below the other two. The 2x2 windows find two overlapping blocks at each end of that band, so $OuterSpan takes a 7-wide window beside the 5-wide ones, and the widths differ, so it is undefined, as are the concept and the other crowded-band readings.",
     "input": [
       [0,2,0,0,0,0,4,5,0,0,1,0,6,5,0,0,0],
       [9,0,4,3,0,0,9,0,4,7,9,4,6,0,2,7,0],
@@ -297,30 +234,9 @@
     "output": [{
       "cases": [
         "concept",
-        "$WindowBlocks & $PairLeftRight",
-        "$WindowBlocks & $ConsecutiveWindows"
+        "$WindowBlocks & $OuterSpan"
       ],
       "grid": null
-    }, {
-      "cases": ["$WindowBlocks & $OuterSpan"],
-      "grid": [
-        [
-          [0,0,0,7,0,0,0],
-          [6,4,3,1,9,0,0],
-          [0,4,0,6,0,0,0],
-          [0,3,0,0,6,0,0],
-          [8,0,1,0,4,1,8],
-          [8,1,4,6,0,0,8]
-        ],
-        [
-          [0,0,0,0,0,7,0],
-          [0,0,6,4,3,1,9],
-          [0,0,0,4,0,6,0],
-          [0,0,0,3,0,0,6],
-          [8,0,1,0,4,1,8],
-          [8,1,4,6,0,0,8]
-        ]
-      ]
     }, {
       "cases": ["$StoredShape"],
       "grid": [

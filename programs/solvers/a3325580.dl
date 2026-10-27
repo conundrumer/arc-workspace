@@ -10,7 +10,8 @@
 //  largest cell count in the input
 // @rule order: the kept objects are ordered from an end of
 //  params.layout_axis by a key, the distance from that end to the object's
-//  nearest cell, and objects with the same key may take either order
+//  nearest cell, and objects with the same key may take either order; the
+//  output is undefined where the two ends give different orders
 // @rule columns: the output has one line per kept object, laid out in that
 //  order from that end, each filled with that object's color
 // @rule height: each line is as long as the largest cell count
@@ -38,20 +39,18 @@
     // @claim order
     NearEdge {}
     // @rule order: the key is read over the unit's line nearest an edge
-    //  across params.layout_axis alone
+    //  across params.layout_axis alone, and the output is undefined where the
+    //  two edges give different orders
     // @witness narrow-ends: borderline concept
     //     @relaxed apart
   | FirstScan {}
 
 .type Choice = [piece: Piece, rank: Rank]
 
-.type LeadCorner = [c: DiagDir]
-.type OpenValue = [lead_corner: LeadCorner]
-
 .type TiebreakResolution =
     End {} | Sit {line: Position, id: Ident, rest: TiebreakResolution}
 
-.decl out(p: Position, col: Color, ch: Choice, v: OpenValue, res: TiebreakResolution)
+.decl out(p: Position, col: Color, ch: Choice, res: TiebreakResolution)
 
 .comp Params {
     // @derive DominantColor: variant derived
@@ -60,13 +59,6 @@
 
     // The axis the kept units are ordered along and laid out along.
     .decl layout_axis(a: Axis) layout_axis(AXIS_H).
-
-    // The corner the order starts from: its side on params.layout_axis is the
-    // lead end, and its other side the scan edge. The pairs fix neither, so
-    // every corner stays open.
-    // @open
-    .decl lead_corner(c: DiagDir)
-    lead_corner(DIAG_TL). lead_corner(DIAG_TR). lead_corner(DIAG_BL). lead_corner(DIAG_BR).
 }
 
 .init params = Params
@@ -74,13 +66,11 @@
 // A unit, under the piece reading that finds it.
 .type Part = [pc: Piece, id: Ident]
 
-// A color in one example.
-.type ExColor = [e: Example, col: Color]
-
 // A unit, read toward an edge.
 .type Lean = [part: Part, d: Dir]
 
-// A case's order at one open corner.
+// A case's order from one corner: the corner's side on params.layout_axis is
+// the lead end, and its other side the scan edge.
 .type View = [ch: Choice, c: DiagDir]
 
 .decl ink(p: Position, col: Color)
@@ -106,9 +96,9 @@ kept(Pc, Id) :- size.tally([Pc, Id], N), largest.high(Pc, N).
 .init kept_count = Tally<Piece, Ident>
 kept_count.item(Pc, Id) :- kept(Pc, Id).
 
-// The lead end of each open corner: its side on the layout axis.
+// The lead end of each corner: its side on the layout axis.
 .decl lead_end(c: DiagDir, l: Dir)
-lead_end(C, L) :- params.lead_corner(C), params.layout_axis(A), dir_of(C, A, L).
+lead_end(C, L) :- diag_dir_elem(C), params.layout_axis(A), dir_of(C, A, L).
 
 .init chart = Frame2D<Piece>
 chart.extent(Pc, A, K) :- params.layout_axis(A), kept_count.tally(Pc, K).
@@ -132,10 +122,16 @@ order.elem([[Pc, K], C], Id) :- view([[Pc, K], C]), kept(Pc, Id).
 // seating them all leaves each the lines of its own tie.
 .init ties = TiebreakResolutions<View, Position, Ident>
 
-// Each line takes the color of the unit seated on it.
-out(P, Col, [Pc, K], [[C]], Res) :-
-    line_of(Pc, P, P_line), ties.assign([[Pc, K], C], Res, P_line, Id),
-    cell(Pc, Id, Q), in(Q, Col).
+// A case whose corners give different seatings.
+.decl split_res(ch: Choice)
+split_res(Ch) :-
+    ties.resolution([Ch, C], Res), view([Ch, C2]), !ties.resolution([Ch, C2], Res).
+
+// Each line takes the color of the unit seated on it, where every corner
+// gives the same seatings.
+out(P, Col, [Pc, K], Res) :-
+    line_of(Pc, P, P_line), ties.assign([[Pc, K], _], Res, P_line, Id),
+    cell(Pc, Id, Q), in(Q, Col), !split_res([Pc, K]).
 
 // --- $Conn8 ---
 
@@ -162,7 +158,7 @@ cell($ColorClass(), Id, P) :- classes.id(P, Id).
 
 // --- $NearEdge ---
 
-view([[Pc, $NearEdge()], C]) :- piece_choice(Pc), params.lead_corner(C).
+view([[Pc, $NearEdge()], C]) :- piece_choice(Pc), diag_dir_elem(C).
 
 ties.cand([[Pc, $NearEdge()], C], P_line, Id) :-
     view([[Pc, $NearEdge()], C]), lead_end(C, L), line_of(Pc, _, P_line), dist(P_line, L, N),
@@ -173,7 +169,7 @@ order.score([[Pc, $NearEdge()], C], Id, K) :-
 
 // --- $FirstScan ---
 
-view([[Pc, $FirstScan()], C]) :- piece_choice(Pc), params.lead_corner(C).
+view([[Pc, $FirstScan()], C]) :- piece_choice(Pc), diag_dir_elem(C).
 
 ties.cand([[Pc, $FirstScan()], C], P_line, Id) :-
     view([[Pc, $FirstScan()], C]), lead_end(C, L), line_of(Pc, _, P_line), dist(P_line, L, N),
@@ -183,7 +179,7 @@ ties.cand([[Pc, $FirstScan()], C], P_line, Id) :-
 // @claim order
 .init head = Bbox<Lean>
 head.cell([[Pc, Id], S], P) :-
-    params.lead_corner(C), params.layout_axis(A), diag_dirs(C, A, _, S),   // scan edge
+    diag_dir_elem(C), params.layout_axis(A), diag_dirs(C, A, _, S),   // scan edge
     obox.box([Pc, Id], B), dist(B, S, K),
     cell(Pc, Id, P), dist(P, S, K).
 
@@ -192,23 +188,6 @@ order.score([[Pc, $FirstScan()], C], Id, K) :-
     head.box([[Pc, Id], S], B), dist(B, L, K).
 
 .comp Determine {
-    // A color's cells in one example's input.
-    .init color_box = Bbox<ExColor>
-    color_box.cell([E, Col], P) :- ex_in(E, P, Col), !params.bg(Col).
-
-    // An end of the layout axis that orders some output's lines as it
-    // orders their colors' input cells: a line nearer it holds a color whose
-    // input cells lie nearer it than the cells of a color on a later line.
-    .decl ordering_end(d: Dir)
-    ordering_end(L) :-
-        params.layout_axis(A), axis_of(L, A),
-        ex_out(E, P1, Col1), dist(P1, L, K1), ex_out(E, P2, Col2), dist(P2, L, K2), K1 < K2,
-        color_box.box([E, Col1], B1), dist(B1, L, J1),
-        color_box.box([E, Col2], B2), dist(B2, L, J2), J1 < J2.
-
-    .decl lead_corner(c: DiagDir)
-    lead_corner(C) :- ordering_end(L), params.layout_axis(A), dir_of(C, A, L).
-
     // An edge some output contradicts: a line across its axis holds two colors.
     .decl clash(d: Dir)
     clash(D) :-

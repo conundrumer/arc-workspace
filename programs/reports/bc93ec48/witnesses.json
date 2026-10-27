@@ -131,7 +131,6 @@
      "cases": [
       "concept",
       "$EdgePair",
-      "$Precedence",
       "$CornerD4",
       "$CornerMap",
       "background=DominantColor"
@@ -478,7 +477,6 @@
      "cases": [
       "concept",
       "$Conn8",
-      "$Precedence",
       "$CornerD4",
       "$CornerMap",
       "background=DominantColor"
@@ -650,276 +648,6 @@
        7,
        9,
        9
-      ]
-     ]
-    }
-   ]
-  },
-  {
-   "id": "copies-overlap",
-   "separates": "An 8x8 field of 7 with a 2 bar on row 0 cols 3-7 and a 3 bar on row 7 cols 3-7. The TR bar's copy at BR and the BR bar's copy at BL both cover (7,3) and (7,4). The concept is undefined there; $Precedence gives both grids, one per color on top.",
-   "input": [
-    [
-     7,
-     7,
-     7,
-     2,
-     2,
-     2,
-     2,
-     2
-    ],
-    [
-     7,
-     7,
-     7,
-     7,
-     7,
-     7,
-     7,
-     7
-    ],
-    [
-     7,
-     7,
-     7,
-     7,
-     7,
-     7,
-     7,
-     7
-    ],
-    [
-     7,
-     7,
-     7,
-     7,
-     7,
-     7,
-     7,
-     7
-    ],
-    [
-     7,
-     7,
-     7,
-     7,
-     7,
-     7,
-     7,
-     7
-    ],
-    [
-     7,
-     7,
-     7,
-     7,
-     7,
-     7,
-     7,
-     7
-    ],
-    [
-     7,
-     7,
-     7,
-     7,
-     7,
-     7,
-     7,
-     7
-    ],
-    [
-     7,
-     7,
-     7,
-     3,
-     3,
-     3,
-     3,
-     3
-    ]
-   ],
-   "output": [
-    {
-     "cases": [
-      "concept",
-      "$Conn8",
-      "$EdgePair",
-      "$CornerD4",
-      "$CornerMap",
-      "background=DominantColor"
-     ],
-     "grid": null
-    },
-    {
-     "cases": [
-      "$Precedence"
-     ],
-     "grid": [
-      [
-       [
-        7,
-        7,
-        7,
-        2,
-        2,
-        2,
-        2,
-        2
-       ],
-       [
-        7,
-        7,
-        7,
-        7,
-        7,
-        7,
-        7,
-        7
-       ],
-       [
-        7,
-        7,
-        7,
-        7,
-        7,
-        7,
-        7,
-        7
-       ],
-       [
-        7,
-        7,
-        7,
-        7,
-        7,
-        7,
-        7,
-        7
-       ],
-       [
-        7,
-        7,
-        7,
-        7,
-        7,
-        7,
-        7,
-        7
-       ],
-       [
-        7,
-        7,
-        7,
-        7,
-        7,
-        7,
-        7,
-        7
-       ],
-       [
-        7,
-        7,
-        7,
-        7,
-        7,
-        7,
-        7,
-        7
-       ],
-       [
-        3,
-        3,
-        3,
-        2,
-        2,
-        2,
-        2,
-        2
-       ]
-      ],
-      [
-       [
-        7,
-        7,
-        7,
-        2,
-        2,
-        2,
-        2,
-        2
-       ],
-       [
-        7,
-        7,
-        7,
-        7,
-        7,
-        7,
-        7,
-        7
-       ],
-       [
-        7,
-        7,
-        7,
-        7,
-        7,
-        7,
-        7,
-        7
-       ],
-       [
-        7,
-        7,
-        7,
-        7,
-        7,
-        7,
-        7,
-        7
-       ],
-       [
-        7,
-        7,
-        7,
-        7,
-        7,
-        7,
-        7,
-        7
-       ],
-       [
-        7,
-        7,
-        7,
-        7,
-        7,
-        7,
-        7,
-        7
-       ],
-       [
-        7,
-        7,
-        7,
-        7,
-        7,
-        7,
-        7,
-        7
-       ],
-       [
-        3,
-        3,
-        3,
-        3,
-        3,
-        2,
-        2,
-        2
-       ]
       ]
      ]
     }
@@ -1223,7 +951,6 @@
      "cases": [
       "concept",
       "$Conn8",
-      "$Precedence",
       "$CornerD4",
       "$CornerMap"
      ],
@@ -2145,7 +1872,6 @@
       "concept",
       "$Conn8",
       "$EdgePair",
-      "$Precedence",
       "background=DominantColor"
      ],
      "grid": [

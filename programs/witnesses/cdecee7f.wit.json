@@ -61,39 +61,6 @@
       ]
     }]
   }, {
-    "id": "shared-column",
-    "separates": "two dots in one column: the concept, $Objects, $Diag8, $FitSquare and $StoredPath give them one rank and are undefined, $LexTie orders them by row, the top one first or the bottom one first",
-    "input": [
-      [0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,8,0,0,0,0,0],
-      [1,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,9,0],
-      [0,0,3,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,2,0,0,0],
-      [6,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0]
-    ],
-    "output": [{
-      "cases": ["concept"],
-      "grid": null
-    }, {
-      "cases": ["$LexTie"],
-      "grid": [
-        [
-          [1,6,3],
-          [9,2,8],
-          [0,0,0]
-        ],
-        [
-          [6,1,3],
-          [9,2,8],
-          [0,0,0]
-        ]
-      ]
-    }]
-  }, {
     "id": "bg=DominantColor",
     "separates": "dots on a field of 5: the concept takes every 5 cell as a dot and is undefined, bg=DominantColor takes 5 as the field and fills the empty output cells with 5",
     "input": [
@@ -109,63 +76,14 @@
       [5,5,5,5,5,5,5,5,5,5]
     ],
     "output": [{
-      "cases": ["concept"],
+      "cases": ["bg=stored"],
       "grid": null
-    }, {
-      "cases": ["$Cell & $LexTie & $StoredSize & bg=stored","$StoredPath"],
-      "grid": [
-        [
-          [5,5,5],
-          [5,5,2],
-          [5,5,5]
-        ],
-        [
-          [5,5,5],
-          [5,5,5],
-          [2,5,5]
-        ]
-      ]
     }, {
       "cases": ["bg=DominantColor"],
       "grid": [
         [2,8,3],
         [5,4,1],
         [5,5,5]
-      ]
-    }, {
-      "cases": ["$FitSquare"],
-      "grid": [
-        [
-          [5,5,5,2,5,5,5,5,5,5],
-          [5,5,5,5,5,5,5,5,5,5],
-          [5,5,5,5,5,5,5,8,5,5],
-          [5,5,5,5,5,5,5,5,5,5],
-          [5,3,5,5,5,5,5,5,5,5],
-          [5,5,5,5,5,5,5,5,5,5],
-          [5,5,5,5,5,1,5,5,5,5],
-          [5,5,5,5,5,5,5,5,5,5],
-          [5,5,5,5,5,5,5,5,4,5],
-          [5,5,5,5,5,5,5,5,5,5]
-        ],
-        [
-          [5,5,5,5,5,5,2,5,5,5],
-          [5,5,5,5,5,5,5,5,5,5],
-          [5,5,8,5,5,5,5,5,5,5],
-          [5,5,5,5,5,5,5,5,5,5],
-          [5,5,5,5,5,5,5,5,3,5],
-          [5,5,5,5,5,5,5,5,5,5],
-          [5,5,5,5,1,5,5,5,5,5],
-          [5,5,5,5,5,5,5,5,5,5],
-          [5,4,5,5,5,5,5,5,5,5],
-          [5,5,5,5,5,5,5,5,5,5]
-        ]
-      ]
-    }, {
-      "cases": ["$Objects"],
-      "grid": [
-        [5,2,8],
-        [4,1,3],
-        [0,0,0]
       ]
     }]
   }, {

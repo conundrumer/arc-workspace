@@ -1,7 +1,7 @@
 # caa06a1f
 
 ## Departures
-- The witnesses `block-bottom-left` and `block-bottom-right`, and the `@store` witness `parse.block_at=stored`, carry `@relaxed background-band` beside `@relaxed periodic-block`, which is the only claim `analyze.md` gives: at the stored `block_corner` (top-left), `background-band` says the band lies along the bottom and right edges. On each of those inputs the band lies along other edges, so the claim is false of them.
+- The witness `block-bottom-left` and the `@store` witness `parse.block_at=stored` carry `@relaxed background-band` beside `@relaxed periodic-block`, which is the only claim `analyze.md` gives: at the stored `block_corner` (top-left), `background-band` says the band lies along the bottom and right edges. On each of those inputs the band lies along other edges, so the claim is false of them.
 - `$DeriveCorner`'s `periodic-block` text says the rectangle holds the corner's cell, where `analyze.md` says the rectangle "sits at that corner": `Parse.block_at` tests that the corner's own cell is off the band, and that on some axis no off-band cell reaches the edge of the opposite corner. That is the bounding-box test with the corner's cell required to be a block cell.
 - The witness file has three witnesses that `witnesses.json` does not have: `block-top-middle`, `stored-corner-elsewhere` and `block-full-width`. They resolve the pairs of cases that `witness` reported unseparated (see Judgments). It also has the `parse.block_at=stored` witness that `store` wrote.
 

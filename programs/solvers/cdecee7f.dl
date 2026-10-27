@@ -35,16 +35,6 @@
     //     @relaxed scattered-dots
   | Diag8 {}
 
-// what ranks two dots at one distance from the params.scan_dir edge
-.type ColumnTie =
-    // @claim scan-order
-    OneRank {}
-    // @rule scan-order: a tie in distance is broken by the distance from the
-    //  params.tie_dir edge
-    // @witness shared-column: foreign $LexTie
-    //     @relaxed scattered-dots
-  | LexTie {}
-
 // which output cell each rank takes
 .type FillPath =
     // @claim snake-fill
@@ -66,17 +56,13 @@
     //     @relaxed scattered-dots
   | FitSquare {}
 
-.type Choice = [unit: DotUnit, tie: ColumnTie, path: FillPath]
+.type Choice = [unit: DotUnit, path: FillPath]
 
-.type TieDir = [d: Dir]
-.type OpenValue = [tie_dir: TieDir]
-
-.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // @derive DominantColor: variant derived
     //     @relaxed scattered-dots
-    // @ignore: derive $OneRank — subsumed by the same case with $LexTie
     .decl bg(col: Color) bg(0).
 
     // The edge the dots are ranked from.
@@ -91,11 +77,6 @@
 
     // --- $StoredSize ---
     .decl out_size(a: Axis, n: number) out_size(AXIS_V, 3). out_size(AXIS_H, 3).
-
-    // --- $LexTie ---
-    // The edge a tie in rank is broken from.
-    // @open
-    .decl tie_dir(d: Dir) tie_dir(DIR_T). tie_dir(DIR_B).
 
     // --- $StoredPath ---
     // The rank of the dot each output cell takes.
@@ -112,23 +93,8 @@
 dot_unit_choice($Cell()).
 dot_unit_choice($Objects($Adj4())). dot_unit_choice($Objects($Diag8())).
 
-.decl fill_path_choice(f: FillPath)
-fill_path_choice($Snake($StoredSize())). fill_path_choice($Snake($FitSquare())). fill_path_choice($StoredPath()).
-
-// Each case but the concept case breaks a tie in rank: without the
-// tiebreak, it would give the same output wherever it is defined.
-.decl impl_choice(ch: Choice)
-impl_choice([$Cell(), $OneRank(), $Snake($StoredSize())]).
-impl_choice([U, $LexTie(), F]) :- dot_unit_choice(U), fill_path_choice(F).
-
 // A dot, under the unit reading that finds it.
 .type Part = [u: DotUnit, id: Ident]
-
-// A dot unit with the edge a tie is broken from.
-.type LexKey = [u: DotUnit, d: Dir]
-
-// The dots of one unit reading, ranked under one tie reading at one open value.
-.type Ranking = [u: DotUnit, t: ColumnTie, v: OpenValue]
 
 // The output frame of one unit reading and size reading.
 .type Canvas = [u: DotUnit, s: OutSize]
@@ -149,20 +115,30 @@ dot_box.cell([U, Id], P) :- dot_cell(U, Id, P).
 .decl reach(u: DotUnit, id: Ident, k: number)
 reach(U, Id, K) :- dot_box.box([U, Id], B), params.scan_dir(D), dist(B, D, K).
 
-.decl dot_rank(k: Ranking, id: Ident, r: number)
+// Two dots at one distance from the scan edge.
+.decl tied(u: DotUnit)
+tied(U) :- reach(U, Id1, K), reach(U, Id2, K), Id1 != Id2.
+
+// @claim scan-order
+.init scan = Order<DotUnit, Ident>
+scan.elem(U, Id) :- dot_cell(U, Id, _).
+scan.before(U, A, B) :- reach(U, A, K1), reach(U, B, K2), K1 < K2.
+
+.decl dot_rank(u: DotUnit, id: Ident, r: number)
+dot_rank(U, Id, R) :- scan.rank(U, Id, R), !tied(U).
 
 // @claim empty-rest
-.init last = Extremes<Ranking>
-last.cand(K, R) :- dot_rank(K, _, R).
+.init last = Extremes<DotUnit>
+last.cand(U, R) :- dot_rank(U, _, R).
 
 // The output cells of each unit reading and path reading, with each cell's
 // place on the path.
 .decl slot(u: DotUnit, f: FillPath, p: Position, r: number)
 
-out(P, Col, [U, T, F], V) :-
+out(P, Col, [U, F]) :-
     slot(U, F, P, R),
-    ( dot_rank([U, T, V], Id, R), dot_cell(U, Id, Q), in(Q, Col)   // the dot at this place
-    ; last.high([U, T, V], R2), R > R2, params.bg(Col)         // past the last dot
+    ( dot_rank(U, Id, R), dot_cell(U, Id, Q), in(Q, Col)   // the dot at this place
+    ; last.high(U, R2), R > R2, params.bg(Col)         // past the last dot
     ).
 
 // --- $Cell ---
@@ -185,31 +161,6 @@ dot_cell($Objects($Adj4()), Id, P) :- group4.label(_, P, Id).
 group8.node(Col, P) :- ink(P, Col).
 
 dot_cell($Objects($Diag8()), Id, P) :- group8.label(_, P, Id).
-
-// --- $OneRank ---
-// Two dots at one distance from the scan edge.
-.decl tied(u: DotUnit)
-tied(U) :- reach(U, Id1, K), reach(U, Id2, K), Id1 != Id2.
-
-// @claim scan-order
-.init scan = Order<DotUnit, Ident>
-scan.elem(U, Id) :- dot_cell(U, Id, _).
-scan.before(U, A, B) :- reach(U, A, K1), reach(U, B, K2), K1 < K2.
-
-dot_rank([U, $OneRank(), [nil]], Id, R) :- scan.rank(U, Id, R), !tied(U).
-
-// --- $LexTie ---
-// @claim scan-order
-.init lex = Order<LexKey, Ident>
-lex.elem([U, D], Id) :- dot_cell(U, Id, _), params.tie_dir(D).
-lex.before([U, D], A, B) :-
-    params.tie_dir(D), reach(U, A, K1), reach(U, B, K2),
-    ( K1 < K2
-    ; K1 = K2, dot_box.box([U, A], B1), dist(B1, D, J1),       // a tie: nearer the tie edge first
-      dot_box.box([U, B], B2), dist(B2, D, J2), J1 < J2
-    ).
-
-dot_rank([U, $LexTie(), [[D]]], Id, R) :- lex.rank([U, D], Id, R).
 
 // --- $Snake ---
 // The direction of the path's first line, and the step from line to line.

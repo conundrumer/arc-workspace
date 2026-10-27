@@ -42,20 +42,13 @@
     // @witness hole-1x4: borderline any
     //     @relaxed square-outlines
   | KeyByArea {}
-    // @scene hole-sizes-keyed: the extent of each hole along params.axis is
-    //  a key of params.fill_by_side
-    // @rule fill-hole-by-side: each cell of a hole takes the color that
-    //  params.fill_by_side gives for the hole's extent along params.axis;
-    //  undefined where that extent is no key
-    // @witness hole-2x3: borderline any
-    //     @relaxed square-outlines
-  | KeyByAxisExtent {}
     // @scene hole-sizes-keyed: the shorter side of each hole's bounding box
     //  is a key of params.fill_by_side
     // @rule fill-hole-by-side: each cell of a hole takes the color that
     //  params.fill_by_side gives for the shorter side of the hole's bounding
     //  box; undefined where it is no key
     // @witness hole-2x3: borderline any
+    //     @relaxed square-outlines
   | KeyByMinSide {}
     // @scene hole-sizes-keyed: the longer side of each hole's bounding box
     //  is a key of params.fill_by_side
@@ -110,9 +103,6 @@
 
 .type Choice = [measure: Measure, key: FillKey, region: HoleRegion]
 
-.type AxisValue = [a: Axis]
-.type OpenValue = [axis: AxisValue]
-
 // A hole under one hole reading.
 .type Hole = [r: HoleRegion, id: Ident]
 
@@ -120,26 +110,22 @@
 .type Obj = [adj: OutlineAdjacency, id: Ident]
 
 // The holes' measures that one case ranks.
-.type Ranking = [m: Measure, r: HoleRegion, v: OpenValue]
+.type Ranking = [m: Measure, r: HoleRegion]
 
-.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // @derive DominantColor: variant derived
     //     @relaxed square-outlines
     .decl background(c: Color) background(0).
 
-    // --- $HoleSide & $MeasureKey, $KeyByAxisExtent & $MeasureKey, $KeyByMinSide & $MeasureKey, $KeyByMaxSide & $MeasureKey ---
+    // --- $HoleSide & $MeasureKey, $KeyByMinSide & $MeasureKey, $KeyByMaxSide & $MeasureKey ---
     .decl fill_by_side(n: number, c: Color)
     fill_by_side(1, 6). fill_by_side(2, 7). fill_by_side(3, 8).
 
     // --- $KeyByArea & $MeasureKey ---
     .decl fill_by_area(n: number, c: Color)
     fill_by_area(1, 6). fill_by_area(4, 7). fill_by_area(9, 8).
-
-    // --- $KeyByAxisExtent ---
-    // @open
-    .decl axis(a: Axis) axis(AXIS_V). axis(AXIS_H).
 
     // --- $KeyByOutlineSide, $WallsOfFrameColor, $FillBboxInterior ---
     // @derive RarestColor: variant derived
@@ -169,7 +155,7 @@ outline_measure_choice($OutlineSide()). outline_measure_choice($KeyByOutlineCoun
 outline_adjacency_choice($OutlineAdj8()). outline_adjacency_choice($OutlineAdj4()).
 
 .decl measure_choice(m: Measure)
-measure_choice($HoleSide()). measure_choice($KeyByArea()). measure_choice($KeyByAxisExtent()).
+measure_choice($HoleSide()). measure_choice($KeyByArea()).
 measure_choice($KeyByMinSide()). measure_choice($KeyByMaxSide()).
 measure_choice($KeyByOutlineSide(M, A)) :- outline_measure_choice(M), outline_adjacency_choice(A).
 
@@ -187,8 +173,8 @@ adjacency_clash($KeyByOutlineSide(M, A1), $FillBboxInterior(A2)) :-
     outline_measure_choice(M), outline_adjacency_choice(A1), outline_adjacency_choice(A2), A1 != A2.
 
 // A hole has a side only where it is a solid square, and there its side is
-// its extent along either axis, so the case that takes $KeyByAxisExtent in
-// place of $HoleSide gives the output of each of these cases wherever that
+// the shorter side of its bounding box, so the case that takes $KeyByMinSide
+// in place of $HoleSide gives the output of each of these cases wherever that
 // case is defined, at every assignment.
 .decl subsumed(ch: Choice)
 subsumed([$HoleSide(), K, R]) :-
@@ -208,16 +194,16 @@ blank(P) :- in(P, Col), params.background(Col).
 .decl hole_cell(r: HoleRegion, id: Ident, p: Position)
 
 // The number a case's measure gives a hole.
-.decl measure(m: Measure, r: HoleRegion, id: Ident, v: OpenValue, n: number)
+.decl measure(m: Measure, r: HoleRegion, id: Ident, n: number)
 
 // The fill color the measure's own table gives a hole.
-.decl keyed(m: Measure, r: HoleRegion, id: Ident, v: OpenValue, col: Color)
+.decl keyed(m: Measure, r: HoleRegion, id: Ident, col: Color)
 
 // The fill color of each hole under each case.
-.decl fill(ch: Choice, id: Ident, v: OpenValue, col: Color)
+.decl fill(ch: Choice, id: Ident, col: Color)
 
-out(P, Col, Ch, V) :- fill(Ch, Id, V, Col), Ch = [_, _, R], hole_cell(R, Id, P).
-out(P, Col, Ch, [nil]) :- impl_choice(Ch), Ch = [_, _, R], in(P, Col), !hole_cell(R, _, P).
+out(P, Col, Ch) :- fill(Ch, Id, Col), Ch = [_, _, R], hole_cell(R, Id, P).
+out(P, Col, Ch) :- impl_choice(Ch), Ch = [_, _, R], in(P, Col), !hole_cell(R, _, P).
 
 // --- $Enclose4 ---
 // @claim fill-hole-by-side
@@ -276,7 +262,7 @@ obj_box.cell([A, Id], P) :- obj_cell(A, Id, P).
 // --- $FillBboxInterior ---
 hole_cell($FillBboxInterior(A), Id, P) :- obj_box.box([A, Id], B), blank(P), interior(P, B).
 
-// --- $HoleSide, $KeyByAxisExtent, $KeyByMinSide, $KeyByMaxSide ---
+// --- $HoleSide, $KeyByMinSide, $KeyByMaxSide ---
 // @claim fill-hole-by-side
 .init hole_box = Bbox<Hole>
 hole_box.cell([R, Id], P) :- hole_cell(R, Id, P).
@@ -288,17 +274,17 @@ hole_extent(R, Id, A, N) :-
 
 // A hole length on the scale of params.fill_by_side, under each measure that
 // reads one.
-.decl hole_length(m: Measure, r: HoleRegion, id: Ident, v: OpenValue, n: number)
+.decl hole_length(m: Measure, r: HoleRegion, id: Ident, n: number)
 
-measure(M, R, Id, V, N) :- hole_length(M, R, Id, V, N).
-keyed(M, R, Id, V, Col) :- hole_length(M, R, Id, V, N), params.fill_by_side(N, Col).
+measure(M, R, Id, N) :- hole_length(M, R, Id, N).
+keyed(M, R, Id, Col) :- hole_length(M, R, Id, N), params.fill_by_side(N, Col).
 
 // --- $HoleSide ---
 // A cell of a hole's bounding box lies outside the hole.
 .decl gap(r: HoleRegion, id: Ident)
 gap(R, Id) :- hole_box.box([R, Id], B), in(P, _), inside(P, B), !hole_cell(R, Id, P).
 
-hole_length($HoleSide(), R, Id, [nil], N) :-
+hole_length($HoleSide(), R, Id, N) :-
     hole_extent(R, Id, A, N), perp(A, A2), hole_extent(R, Id, A2, N), !gap(R, Id).
 
 // --- $KeyByArea ---
@@ -306,18 +292,15 @@ hole_length($HoleSide(), R, Id, [nil], N) :-
 .init hole_size = Tally<Hole, Position>
 hole_size.item([R, Id], P) :- hole_cell(R, Id, P).
 
-measure($KeyByArea(), R, Id, [nil], N) :- hole_size.tally([R, Id], N).
-keyed($KeyByArea(), R, Id, [nil], Col) :- hole_size.tally([R, Id], N), params.fill_by_area(N, Col).
-
-// --- $KeyByAxisExtent ---
-hole_length($KeyByAxisExtent(), R, Id, [[A]], N) :- params.axis(A), hole_extent(R, Id, A, N).
+measure($KeyByArea(), R, Id, N) :- hole_size.tally([R, Id], N).
+keyed($KeyByArea(), R, Id, Col) :- hole_size.tally([R, Id], N), params.fill_by_area(N, Col).
 
 // --- $KeyByMinSide ---
-hole_length($KeyByMinSide(), R, Id, [nil], N) :-
+hole_length($KeyByMinSide(), R, Id, N) :-
     hole_extent(R, Id, A, N), perp(A, A2), hole_extent(R, Id, A2, N2), N <= N2.
 
 // --- $KeyByMaxSide ---
-hole_length($KeyByMaxSide(), R, Id, [nil], N) :-
+hole_length($KeyByMaxSide(), R, Id, N) :-
     hole_extent(R, Id, A, N), perp(A, A2), hole_extent(R, Id, A2, N2), N >= N2.
 
 // --- $KeyByOutlineSide ---
@@ -332,9 +315,9 @@ obj_side(A, O, N) :-
     obj_box.box([A, O], B), obj_cell(A, O, P), perp(Ax, Ax2),
     box_extent(B, P, Ax, N), box_extent(B, P, Ax2, N).
 
-measure($KeyByOutlineSide($OutlineSide(), A), R, Id, [nil], N) :-
+measure($KeyByOutlineSide($OutlineSide(), A), R, Id, N) :-
     border(R, Id, A, O), obj_side(A, O, N).
-keyed($KeyByOutlineSide($OutlineSide(), A), R, Id, [nil], Col) :-
+keyed($KeyByOutlineSide($OutlineSide(), A), R, Id, Col) :-
     border(R, Id, A, O), obj_side(A, O, N), params.fill_by_outline_side(N, Col).
 
 // --- $KeyByOutlineCount ---
@@ -342,23 +325,23 @@ keyed($KeyByOutlineSide($OutlineSide(), A), R, Id, [nil], Col) :-
 .init obj_size = Tally<Obj, Position>
 obj_size.item([A, O], P) :- obj_cell(A, O, P).
 
-measure($KeyByOutlineSide($KeyByOutlineCount(), A), R, Id, [nil], N) :-
+measure($KeyByOutlineSide($KeyByOutlineCount(), A), R, Id, N) :-
     border(R, Id, A, O), obj_size.tally([A, O], N).
-keyed($KeyByOutlineSide($KeyByOutlineCount(), A), R, Id, [nil], Col) :-
+keyed($KeyByOutlineSide($KeyByOutlineCount(), A), R, Id, Col) :-
     border(R, Id, A, O), obj_size.tally([A, O], N), params.fill_by_outline_count(N, Col).
 
 // --- $MeasureKey ---
-fill([M, $MeasureKey(), R], Id, V, Col) :-
-    impl_choice([M, $MeasureKey(), R]), keyed(M, R, Id, V, Col).
+fill([M, $MeasureKey(), R], Id, Col) :-
+    impl_choice([M, $MeasureKey(), R]), keyed(M, R, Id, Col).
 
 // --- $RankBySize ---
 // @claim fill-hole-by-side
 .init size_rank = Ordinal<Ranking>
-size_rank.idx_set([M, R, V], N) :- measure(M, R, _, V, N).
+size_rank.idx_set([M, R], N) :- measure(M, R, _, N).
 
-fill([M, $RankBySize(), R], Id, V, Col) :-
-    impl_choice([M, $RankBySize(), R]), measure(M, R, Id, V, N),
-    size_rank.rank_desc([M, R, V], N, K), params.fill_by_rank(K, Col).
+fill([M, $RankBySize(), R], Id, Col) :-
+    impl_choice([M, $RankBySize(), R]), measure(M, R, Id, N),
+    size_rank.rank_desc([M, R], N, K), params.fill_by_rank(K, Col).
 
 .comp Determine {
     // A cell a train pair changes, with its input color.

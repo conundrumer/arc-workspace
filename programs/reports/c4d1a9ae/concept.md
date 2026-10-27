@@ -5,7 +5,7 @@
 
 ## Scene
 - `background`: one color fills most of the grid and every cell that no panel draws.
-- `separator-columns`: full lines of background color, perpendicular to the axis of `source-dir`, cut the grid into `panel-count` panels.
+- `separator-columns`: full lines of background color, perpendicular to the axis of `source-dir`, cut the grid into 3 panels.
 - `one-color-panel`: each panel draws its marks in one color other than the background, and no two panels share a color.
 
 ## Rules
@@ -16,6 +16,3 @@
 ## Parameters
 - `source-dir`: R
     - the direction, along the line of panels, in which a panel finds the panel whose color it takes
-
-## Scene parameters
-- `panel-count`: 3

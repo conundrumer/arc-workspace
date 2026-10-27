@@ -57,60 +57,15 @@
     //     @relaxed tiling
   | CellBetween {}
 
-// what a params.bg cell that bridges of two colors claim becomes
-.type DrawOrder =
-    // @claim bridge-odd-tiles
-    Unordered {}
-    // @rule bridge-odd-tiles: where bridges of two colors claim one params.bg
-    //  cell, the color drawn later in a stored order of colors takes it;
-    //  undefined where the order ranks no claimant above the others
-    // @witness shared-line: ordinary $DrawnOver
-    // @witness missing-crossing: borderline $DrawnOver
-    //     @relaxed tiling
-  | DrawnOver {}
-
-.type Choice = [join: Join, test: LineTest, order: DrawOrder]
-
-.type DrawRankValue = [v: Ident]
-.type OpenValue = [draw_rank: DrawRankValue]
+.type Choice = [join: Join, test: LineTest]
 
 // The cell-level bridges of one odd color at one case.
 .type Bridging = [pairs: LinePairs, dirs: Directions, c: Color]
 
-.decl out(p: Position, col: Color, ch: Choice, ov: OpenValue)
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
-
-    // --- $DrawnOver ---
-    // Each color's rank in the order the colors are drawn, under each open
-    // value: every order of the odd colors the inputs hold.
-    // @open
-    .decl draw_rank(v: Ident, col: Color, r: number)
-    draw_rank(0, 1, 0). draw_rank(0, 3, 1). draw_rank(0, 4, 2). draw_rank(0, 8, 3).
-    draw_rank(1, 1, 0). draw_rank(1, 3, 1). draw_rank(1, 8, 2). draw_rank(1, 4, 3).
-    draw_rank(2, 1, 0). draw_rank(2, 4, 1). draw_rank(2, 3, 2). draw_rank(2, 8, 3).
-    draw_rank(3, 1, 0). draw_rank(3, 4, 1). draw_rank(3, 8, 2). draw_rank(3, 3, 3).
-    draw_rank(4, 1, 0). draw_rank(4, 8, 1). draw_rank(4, 3, 2). draw_rank(4, 4, 3).
-    draw_rank(5, 1, 0). draw_rank(5, 8, 1). draw_rank(5, 4, 2). draw_rank(5, 3, 3).
-    draw_rank(6, 3, 0). draw_rank(6, 1, 1). draw_rank(6, 4, 2). draw_rank(6, 8, 3).
-    draw_rank(7, 3, 0). draw_rank(7, 1, 1). draw_rank(7, 8, 2). draw_rank(7, 4, 3).
-    draw_rank(8, 3, 0). draw_rank(8, 4, 1). draw_rank(8, 1, 2). draw_rank(8, 8, 3).
-    draw_rank(9, 3, 0). draw_rank(9, 4, 1). draw_rank(9, 8, 2). draw_rank(9, 1, 3).
-    draw_rank(10, 3, 0). draw_rank(10, 8, 1). draw_rank(10, 1, 2). draw_rank(10, 4, 3).
-    draw_rank(11, 3, 0). draw_rank(11, 8, 1). draw_rank(11, 4, 2). draw_rank(11, 1, 3).
-    draw_rank(12, 4, 0). draw_rank(12, 1, 1). draw_rank(12, 3, 2). draw_rank(12, 8, 3).
-    draw_rank(13, 4, 0). draw_rank(13, 1, 1). draw_rank(13, 8, 2). draw_rank(13, 3, 3).
-    draw_rank(14, 4, 0). draw_rank(14, 3, 1). draw_rank(14, 1, 2). draw_rank(14, 8, 3).
-    draw_rank(15, 4, 0). draw_rank(15, 3, 1). draw_rank(15, 8, 2). draw_rank(15, 1, 3).
-    draw_rank(16, 4, 0). draw_rank(16, 8, 1). draw_rank(16, 1, 2). draw_rank(16, 3, 3).
-    draw_rank(17, 4, 0). draw_rank(17, 8, 1). draw_rank(17, 3, 2). draw_rank(17, 1, 3).
-    draw_rank(18, 8, 0). draw_rank(18, 1, 1). draw_rank(18, 3, 2). draw_rank(18, 4, 3).
-    draw_rank(19, 8, 0). draw_rank(19, 1, 1). draw_rank(19, 4, 2). draw_rank(19, 3, 3).
-    draw_rank(20, 8, 0). draw_rank(20, 3, 1). draw_rank(20, 1, 2). draw_rank(20, 4, 3).
-    draw_rank(21, 8, 0). draw_rank(21, 3, 1). draw_rank(21, 4, 2). draw_rank(21, 1, 3).
-    draw_rank(22, 8, 0). draw_rank(22, 4, 1). draw_rank(22, 1, 2). draw_rank(22, 3, 3).
-    draw_rank(23, 8, 0). draw_rank(23, 4, 1). draw_rank(23, 3, 2). draw_rank(23, 1, 3).
 }
 
 .init params = Params
@@ -125,9 +80,8 @@ directions_choice($Cardinal()). directions_choice($Dir8Bridges()).
 line_test_choice($TileLevel()). line_test_choice($CellBetween()).
 
 .decl impl_choice(ch: Choice)
-impl_choice([$Bridges($AnyPair(), $Cardinal()), $TileLevel(), $Unordered()]).
-impl_choice([$Bridges(L, Ds), T, $DrawnOver()]) :- line_pairs_choice(L), directions_choice(Ds), line_test_choice(T).
-impl_choice([$BboxOutline(), $TileLevel(), $DrawnOver()]).
+impl_choice([$Bridges(L, Ds), T]) :- line_pairs_choice(L), directions_choice(Ds), line_test_choice(T).
+impl_choice([$BboxOutline(), $TileLevel()]).
 
 .comp Parse<Key> {
     .type KeyColor = [k: Key, col: Color]
@@ -169,10 +123,8 @@ odd_tile(I, Col) :- parse.tile($U(), Col, _, I), parse.odd($U(), Col).
 // The background cells each case paints, with each color that claims them.
 .decl paint(ch: Choice, p: Position, col: Color)
 
-out(P, Col, Ch, [nil]) :- impl_choice(Ch), in(P, Col), !paint(Ch, P, _).
-
-// --- concept ---
-out(P, Col, [J, T, $Unordered()], [nil]) :- paint([J, T, $Unordered()], P, Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(Ch, P, _).
+out(P, Col, Ch) :- paint(Ch, P, Col).
 
 // --- $TileLevel ---
 
@@ -210,8 +162,8 @@ span_tile(Ds, Col, I1, I2, P) :-
 // The pairs a case leaves unjoined.
 .decl blocked_tile(l: LinePairs, ds: Directions, i: Ident, i2: Ident)
 
-paint([$Bridges(L, Ds), $TileLevel(), O], P, Col) :-
-    impl_choice([$Bridges(L, Ds), $TileLevel(), O]),
+paint([$Bridges(L, Ds), $TileLevel()], P, Col) :-
+    impl_choice([$Bridges(L, Ds), $TileLevel()]),
     span_tile(Ds, Col, I1, I2, P), parse.ground($U(), P), !blocked_tile(L, Ds, I1, I2).
 
 // --- $Dir8Bridges & $TileLevel ---
@@ -231,7 +183,7 @@ blocked_tile($BlockedByOdd(), Ds, I1, I2) :-
 // --- $Bridges & $CellBetween ---
 
 .decl cell_key(k: Bridging)
-cell_key([L, Ds, Col]) :- impl_choice([$Bridges(L, Ds), $CellBetween(), _]), parse.odd($U(), Col).
+cell_key([L, Ds, Col]) :- impl_choice([$Bridges(L, Ds), $CellBetween()]), parse.odd($U(), Col).
 
 // @claim bridge-odd-tiles
 // @ignore dir: store — the case's Directions branch gives the cast directions
@@ -241,8 +193,8 @@ cell_ray.cell([L, Ds, Col], P) :- cell_key([L, Ds, Col]), parse.ground($U(), P).
 cell_ray.mark([L, Ds, Col], P) :- cell_key([L, Ds, Col]), in(P, Col).
 
 // A background cell with a cell of the color on each side along one line.
-paint([$Bridges(L, Ds), $CellBetween(), O], P, Col) :-
-    impl_choice([$Bridges(L, Ds), $CellBetween(), O]),
+paint([$Bridges(L, Ds), $CellBetween()], P, Col) :-
+    impl_choice([$Bridges(L, Ds), $CellBetween()]),
     cell_ray.clear([L, Ds, Col], P, D, _, _), dir8_opposite(D, D2),
     cell_ray.clear([L, Ds, Col], P, D2, _, _).
 
@@ -257,47 +209,14 @@ cell_ray.blocked([$BlockedByOdd(), Ds, Col], P) :-
 color_box.cell(Col, P) :- parse.odd($U(), Col), in(P, Col).
 
 // A background cell in the rectangle, in line with a tile on its d side.
-paint([$BboxOutline(), $TileLevel(), O], P, Col) :-
-    impl_choice([$BboxOutline(), $TileLevel(), O]),
+paint([$BboxOutline(), $TileLevel()], P, Col) :-
+    impl_choice([$BboxOutline(), $TileLevel()]),
     color_box.box(Col, B_all), tile_box.box(I, B),
     dir_elem(D), same_dist(D, B, B_all),                    // a tile on the d side
     axis_of(D, A_d), perp(A_d, A), parse.tile($U(), Col, Q, I),
     parse.ground($U(), P), same_line(A, P, Q), inside(P, B_all).
 
-// --- $DrawnOver ---
-
-// A claimant of a cell that a color drawn later also claims, at open value V.
-.decl covered(ch: Choice, v: Ident, p: Position, col: Color)
-covered([J, T, $DrawnOver()], V, P, Col) :-
-    paint([J, T, $DrawnOver()], P, Col), params.draw_rank(V, Col, R),
-    paint([J, T, $DrawnOver()], P, Col2), params.draw_rank(V, Col2, R2), R < R2.
-
-out(P, Col, [J, T, $DrawnOver()], [[V]]) :-
-    paint([J, T, $DrawnOver()], P, Col), params.draw_rank(V, _, _),
-    !covered([J, T, $DrawnOver()], V, P, Col).
-
 .comp Determine {
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col).
-
-    // The colors each order of draw_rank ranks: the odd colors of every input.
-    .decl draw_rank_col(col: Color)
-    draw_rank_col(Col) :- parse.odd(_, Col).
-
-    // The count of the colors an order of draw_rank ranks.
-    .init color_count = Tally<Unit, Color>
-    color_count.item($U(), Col) :- draw_rank_col(Col).
-    color_count.domain($U()).
-
-    // A line of one cell per color, whose cells' distances to an edge are
-    // the ranks an order gives the colors.
-    .init rank_line = AxisFrame<Unit>
-    rank_line.extent($U(), A, N) :- color_count.tally($U(), N), axis_elem(A).
-
-    .decl draw_rank_r(r: number)
-    draw_rank_r(R) :- rank_line.cell($U(), A, P), axis_of(D, A), dist(P, D, R).
-
-    // Each color an order of draw_rank ranks, with each rank it can take.
-    .decl draw_rank_pairs(col: Color, r: number)
-    draw_rank_pairs(Col, R) :- draw_rank_col(Col), draw_rank_r(R).
 }

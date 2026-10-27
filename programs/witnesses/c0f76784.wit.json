@@ -2,7 +2,7 @@
   "id": "c0f76784",
   "witnesses": [{
     "id": "rank-two-sizes",
-    "separates": "two outlines only, holes of side 1 and 2: the side table fills 6 and 7; the descending rank fills the larger 8 and the smaller 7; an extent on either axis gives the side table's grid",
+    "separates": "two outlines only, holes of side 1 and 2: the side table fills 6 and 7; the descending rank fills the larger 8 and the smaller 7",
     "input": [
       [0,0,0,0,0,0,0,0,0,0],
       [0,5,5,5,0,5,5,5,5,0],
@@ -34,7 +34,7 @@
     }]
   }, {
     "id": "hole-1x4",
-    "separates": "a 1x4 hole: the side readings are undefined; the cell count 4 fills 7; the shorter side 1 fills 6; the longer side and the width have no key",
+    "separates": "a 1x4 hole: the side readings are undefined; the cell count 4 fills 7; the shorter side 1 fills 6; the longer side has no key",
     "input": [
       [0,0,0,0,0,0,0,0],
       [0,5,5,5,5,5,5,0],
@@ -44,7 +44,6 @@
     ],
     "output": [{
       "cases": [
-        "$KeyByAxisExtent & $MeasureKey",
         "concept",
         "$KeyByOutlineSide",
         "$KeyByMaxSide & $MeasureKey"
@@ -80,7 +79,7 @@
     }]
   }, {
     "id": "hole-2x3",
-    "separates": "a 2x3 hole: the side, area and outline-side readings are undefined; the shorter side and the height fill 7; the longer side and the width fill 8",
+    "separates": "a 2x3 hole: the side, area and outline-side readings are undefined; the shorter side fills 7; the longer side fills 8",
     "input": [
       [0,0,0,0,0,0,0],
       [0,5,5,5,5,5,0],
@@ -92,26 +91,6 @@
     "output": [{
       "cases": ["concept","$KeyByOutlineSide","$KeyByArea & $MeasureKey"],
       "grid": null
-    }, {
-      "cases": ["$KeyByAxisExtent & $MeasureKey"],
-      "grid": [
-        [
-          [0,0,0,0,0,0,0],
-          [0,5,5,5,5,5,0],
-          [0,5,7,7,7,5,0],
-          [0,5,7,7,7,5,0],
-          [0,5,5,5,5,5,0],
-          [0,0,0,0,0,0,0]
-        ],
-        [
-          [0,0,0,0,0,0,0],
-          [0,5,5,5,5,5,0],
-          [0,5,8,8,8,5,0],
-          [0,5,8,8,8,5,0],
-          [0,5,5,5,5,5,0],
-          [0,0,0,0,0,0,0]
-        ]
-      ]
     }, {
       "cases": ["$RankBySize","$KeyByMaxSide"],
       "grid": [
@@ -147,7 +126,6 @@
     ],
     "output": [{
       "cases": [
-        "$KeyByAxisExtent & $MeasureKey",
         "concept",
         "$KeyByArea & $MeasureKey",
         "$KeyByMaxSide & $MeasureKey",
@@ -244,7 +222,6 @@
     "output": [{
       "cases": [
         "$FillBboxInterior",
-        "$KeyByAxisExtent & $MeasureKey & $Enclose4",
         "$WallsOfFrameColor",
         "concept",
         "$OutlineSide",
@@ -297,7 +274,6 @@
     ],
     "output": [{
       "cases": [
-        "$KeyByAxisExtent & $MeasureKey & $Enclose4",
         "$Enclose8",
         "concept",
         "$KeyByArea & $MeasureKey & $Enclose4",
@@ -367,7 +343,6 @@
     ],
     "output": [{
       "cases": [
-        "$KeyByAxisExtent & $MeasureKey & $Enclose4",
         "$OutlineAdj4",
         "$Enclose8",
         "$WallsOfFrameColor",
@@ -472,7 +447,6 @@
     "output": [{
       "cases": [
         "frame_color=RarestColor",
-        "$KeyByAxisExtent & $Enclose4",
         "$Enclose8",
         "concept",
         "$KeyByArea & $Enclose4",
@@ -530,7 +504,6 @@
     "output": [{
       "cases": [
         "$FillBboxInterior & $OutlineAdj8",
-        "$KeyByAxisExtent & $MeasureKey & $Enclose4",
         "$WallsOfFrameColor",
         "concept",
         "$KeyByArea & $MeasureKey & $Enclose4",
@@ -592,7 +565,7 @@
     }]
   }, {
     "id": "rank-mixed-shapes",
-    "separates": "holes of 1x5, 2x2 and 1x3: ranked by cell count they fill 8, 7, 6; ranked by longer side 8, 6, 7; ranked by shorter side 7, 8, 7; ranked by the extent along the open axis both of the last two grids come out",
+    "separates": "holes of 1x5, 2x2 and 1x3: ranked by cell count they fill 8, 7, 6; ranked by longer side 8, 6, 7; ranked by shorter side 7, 8, 7",
     "input": [
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
       [0,5,5,5,5,5,5,5,0,5,5,5,5,0],
@@ -606,39 +579,12 @@
     ],
     "output": [{
       "cases": [
-        "$KeyByAxisExtent & $MeasureKey",
         "concept",
         "$OutlineSide",
         "$KeyByArea & $MeasureKey",
         "$KeyByMaxSide & $MeasureKey"
       ],
       "grid": null
-    }, {
-      "cases": ["$KeyByAxisExtent & $RankBySize"],
-      "grid": [
-        [
-          [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-          [0,5,5,5,5,5,5,5,0,5,5,5,5,0],
-          [0,5,7,7,7,7,7,5,0,5,8,8,5,0],
-          [0,5,5,5,5,5,5,5,0,5,8,8,5,0],
-          [0,0,0,0,0,0,0,0,0,5,5,5,5,0],
-          [0,5,5,5,5,5,0,0,0,0,0,0,0,0],
-          [0,5,7,7,7,5,0,0,0,0,0,0,0,0],
-          [0,5,5,5,5,5,0,0,0,0,0,0,0,0],
-          [0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-        ],
-        [
-          [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-          [0,5,5,5,5,5,5,5,0,5,5,5,5,0],
-          [0,5,8,8,8,8,8,5,0,5,6,6,5,0],
-          [0,5,5,5,5,5,5,5,0,5,6,6,5,0],
-          [0,0,0,0,0,0,0,0,0,5,5,5,5,0],
-          [0,5,5,5,5,5,0,0,0,0,0,0,0,0],
-          [0,5,7,7,7,5,0,0,0,0,0,0,0,0],
-          [0,5,5,5,5,5,0,0,0,0,0,0,0,0],
-          [0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-        ]
-      ]
     }, {
       "cases": ["$KeyByOutlineCount"],
       "grid": [

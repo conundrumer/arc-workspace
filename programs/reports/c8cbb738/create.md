@@ -1,7 +1,6 @@
 # c8cbb738
 
 ## Departures
-- `$CornerBackground` reads the background from the corner cell that the `@open` parameter `bg_corner` gives, and all four corners are stored. The Analyze report gives that branch the top-left cell and no parameters. That reading fixes an orientation in the program, and an orientation is task data. Every corner fits every train pair, and the pairs do not separate the corners, so each one is an open value. So on `mark-on-corner` the case gives two grids: the input back (at `DIAG_TL`) and the concept's 3x3 overlay (at the other corners). The Analyze file gives the input back alone. `witness --file work/task/c8cbb738/witnesses.json` reports this difference, and only this one.
 - I added a choice point `Figures` with the branch `$CountedClasses` and the parameter `marks_per_figure(4)`, with witness `stray-dot`. It comes from the Not formed item "a filter that keeps only color classes of `marks-per-figure` cells", which states one model that meets Fit and Relational form (Develop step 3).
 - I added `@derive TileCount` and `@derive TileDim` on `marks_per_figure`, with witnesses `marks_per_figure=TileCount`, `marks_per_figure=TileDim` and `diagonal-pair`. `derive` lists both as derivations that fit, and Develop step 4 has me keep each one as a branch.
 

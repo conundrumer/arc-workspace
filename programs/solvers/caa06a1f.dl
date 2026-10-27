@@ -10,9 +10,10 @@
 // @rule extend-pattern: the output has the input's size, and each output cell
 //  takes the color that the block's pattern, continued without end, has at
 //  that cell after the shift.
-// @rule shift-one: the continued pattern moves `shift_step` cells toward
-//  `shift_dir`: for left, output cell (r, c) takes the pattern's color at
-//  (r, c + 1), and for up, at (r + 1, c).
+// @rule shift-one: the continued pattern moves `shift_step` cells toward the
+//  block's corner on the axis `shift_axis` gives: for the top-left corner,
+//  on the horizontal axis output cell (r, c) takes the pattern's color at
+//  (r, c + 1), and on the vertical axis, at (r + 1, c).
 
 // how each output cell takes its color from the continued pattern
 .type Recolor =
@@ -38,24 +39,12 @@
     // @witness block-bottom-left: variant $DeriveCorner
     //     @relaxed periodic-block
     //     @relaxed background-band
-  | DeriveCorner {frame: Frame}
-
-// the frame the shift's direction is read in
-.type Frame =
-    // @claim shift-one
-    Absolute {}
-    // @rule shift-one: on the axis of each value of `shift_axis`, the pattern
-    //  moves toward the derived corner.
-    // @witness block-bottom-right: variant $ShiftTowardCorner
-    //     @relaxed periodic-block
-    //     @relaxed background-band
-  | ShiftTowardCorner {}
+  | DeriveCorner {}
 
 .type Choice = [r: Recolor, c: Corner]
 
-.type ShiftDirValue = [d: Dir]
 .type ShiftAxisValue = [a: Axis]
-.type OpenValue = [shift_dir: ShiftDirValue, shift_axis: ShiftAxisValue]
+.type OpenValue = [shift_axis: ShiftAxisValue]
 
 // A block's corner with one of its colors.
 .type CornerColor = [d: DiagDir, col: Color]
@@ -69,11 +58,6 @@
     // --- $Shift ---
     .decl shift_step(k: number) shift_step(1).
 
-    // --- concept, $Shift & $Absolute ---
-    // @open
-    .decl shift_dir(d: Dir) shift_dir(DIR_L). shift_dir(DIR_T).
-
-    // --- $ShiftTowardCorner ---
     // @open
     .decl shift_axis(a: Axis) shift_axis(AXIS_H). shift_axis(AXIS_V).
 
@@ -87,9 +71,8 @@
 .decl impl_choice(ch: Choice)
 impl_choice([$Shift(), $StoredCorner()]).
 impl_choice([$ColorSuccessor(), $StoredCorner()]).
-impl_choice([$Shift(), $DeriveCorner($Absolute())]).
-impl_choice([$ColorSuccessor(), $DeriveCorner($Absolute())]).
-impl_choice([$Shift(), $DeriveCorner($ShiftTowardCorner())]).
+impl_choice([$Shift(), $DeriveCorner()]).
+impl_choice([$ColorSuccessor(), $DeriveCorner()]).
 
 .comp Parse<Key> {
     .decl cell(key: Key, p: Position, col: Color)  // input
@@ -146,9 +129,11 @@ orbit(C, P, D, R, D2, R2) :-
 
 // --- $Shift ---
 
-// The direction the pattern moves in, per case and open value.
-// @ignore: head-repeat — the open value is the stored direction itself, where the case stores a direction
+// The direction the pattern moves in, per case and open value: toward the
+// block's corner on the open value's axis.
 .decl shift(ch: Choice, d: Dir, ov: OpenValue)
+shift(Ch, D, [[A]]) :-
+    Ch = [$Shift(), _], corner(Ch, C), params.shift_axis(A), dir_of(C, A, D).
 
 // Each cell takes the color of a block cell whose move lands in its class.
 out(P, Col, Ch, Ov) :-
@@ -161,28 +146,14 @@ out(P, Col, Ch, Ov) :-
 corner([R, $StoredCorner()], C) :-
     impl_choice([R, $StoredCorner()]), params.block_corner(C), parse.block_at($U(), C).
 
-// --- concept ---
-
-shift([$Shift(), $StoredCorner()], D, [[D], nil]) :- params.shift_dir(D).
-
 // --- $DeriveCorner ---
 
 // @claim periodic-block
 .init corner_pick = Unanimous<Unit, DiagDir>
 corner_pick.item($U(), C) :- parse.block_at($U(), C).
 
-corner([R, $DeriveCorner(F)], C) :-
-    impl_choice([R, $DeriveCorner(F)]), corner_pick.value($U(), C).
-
-// --- $Shift & $Absolute ---
-
-shift([$Shift(), $DeriveCorner($Absolute())], D, [[D], nil]) :- params.shift_dir(D).
-
-// --- $ShiftTowardCorner ---
-
-shift(Ch, D, [nil, [A]]) :-
-    Ch = [$Shift(), $DeriveCorner($ShiftTowardCorner())],
-    corner(Ch, C), params.shift_axis(A), dir_of(C, A, D).
+corner([R, $DeriveCorner()], C) :-
+    impl_choice([R, $DeriveCorner()]), corner_pick.value($U(), C).
 
 // --- $ColorSuccessor ---
 
@@ -198,7 +169,7 @@ successor.item([C, Col], Col2) :-
     parse.off_band($U(), C, P, Col),
     params.follow_dir(F), neighbor(P, F, Q), parse.off_band($U(), C, Q, Col2).
 
-out(P, Col, Ch, [nil, nil]) :-
+out(P, Col, Ch, [nil]) :-
     Ch = [$ColorSuccessor(), _], corner(Ch, C),
     orbit(C, P, D, R, D2, R2), class_color(C, D, R, D2, R2, Col0),   // the continued pattern
     successor.value([C, Col0], Col).
@@ -215,11 +186,11 @@ out(P, Col, Ch, [nil, nil]) :-
     block_corner(C) :- diag_dir_elem(C), !corner_defect(C).
 
     // A step k at which some train output disagrees with the input's block
-    // moved k toward a value of shift_dir.
+    // moved k toward its corner on an axis of shift_axis.
     .decl step_defect(k: number)
     step_defect(K) :-
         block_corner(C), ex_parse.off_band(E, C, S, Col),          // a block cell
-        params.shift_dir(D), axis_of(D, A), sub_extent(S, A, K),
+        params.shift_axis(A), dir_of(C, A, D), sub_extent(S, A, K),
         jump(S, D, K, Q), ex_out(E, Q, Col2), Col2 != Col.          // where the move takes it
 
     // The least step that every train output agrees with.

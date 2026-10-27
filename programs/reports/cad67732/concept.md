@@ -16,7 +16,7 @@
 ## Parameters
 - `scale`: 2
 - `background`: 0
-- `anchor-edge`: `T`, `L`
+- `anchor-edge`: `T`
     - the output edge the input touches; with the band's diagonal it gives the corner the input sits at
 
 ## Scene parameters
