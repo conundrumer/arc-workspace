@@ -1,9 +1,10 @@
 // The components of lib-signature.dl that programs/lib.dl holds no form of,
-// or holds with other relations, as Souffle components over the present lib:
-// each states the relations of its signature component with the semantics of
-// its construction in engine/arclog-constructions/src. The text follows the
-// lib's text and the solver's, and a component stands under the name
-// Sig<signature name>, since the lib's Ray takes its own name.
+// or holds with other relations or other rows (Frame, which Frame2D holds at a
+// key with an extent row on both axes alone), as Souffle components over the
+// present lib: each states the relations of its signature component with the
+// semantics of its construction in engine/arclog-constructions/src. The text
+// follows the lib's text and the solver's, and a component stands under the
+// name Sig<signature name>, since the lib's Ray takes its own name.
 
 // The relations of the signature that the lib holds no relation of, each as
 // sig_<name>, since a relation of the solver may take the name: the text
@@ -285,4 +286,26 @@ sig_frame_offset(P, A, K, V) :- axis_of(D, A), sub_extent(P, A, K), jump_offset(
 
     mismatch(Ky, D) :- source(Ky, P, V), _admitted(D), apply(D, P, P2), !target(Ky, P2, V).
     conflict(Ky, D) :- source(Ky, P, V), _admitted(D), apply(D, P, P2), target(Ky, P2, V2), V2 != V.
+}
+
+// The cells of a frame from its extent on each axis. An axis with no extent
+// row at a key that has one on the other axis has extent 1, as the
+// construction gives it; the lib's Frame2D gives no cell there.
+.comp SigFrame<Key> {
+    .decl extent(key: Key, a: Axis, n: number)
+    .decl cell(key: Key, p: Position)
+
+    .decl _key(key: Key)
+    _key(Ky) :- extent(Ky, _, _).
+
+    .decl _given(key: Key, a: Axis)
+    _given(Ky, A) :- extent(Ky, A, _).
+
+    .init _ax = AxisFrame<Key>
+    _ax.extent(Ky, A, N) :- extent(Ky, A, N).
+    _ax.extent(Ky, A, 1) :- _key(Ky), axis_elem(A), !_given(Ky, A).
+
+    cell(Ky, P) :-
+        perp(A1, A2), _ax.cell(Ky, A1, P1), _ax.cell(Ky, A2, P2),
+        compose(P1, P2, P).
 }
