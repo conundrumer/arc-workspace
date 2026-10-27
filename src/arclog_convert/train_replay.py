@@ -4,8 +4,8 @@ report of the cases that do not end `Consistent`.
     uv run python -m arclog_convert.train_replay [--out <dir>] [<stem> ...]
 
 The command replays the files under `gen/` of `arclog_convert.out`, or of
-`--out`, with no conversion; in a linked worktree it writes no record without `--out` or `ARCLOG_OUT`; `arclog_convert.convert` runs the same replay on
-the solvers it converted. the `verdicts` binary of `arclog-cli` replays every case closed-world
+`--out`, with no conversion; in a linked worktree it writes no record without `--out` or `ARCLOG_OUT`; `arclog_convert.verify` runs the same replay on
+the solvers it checks. The `verdicts` binary of `arclog-cli` replays every case closed-world
 and gives each case a verdict: the consistency of the last `RULE` the stream
 ends (`Consistent`, `NotConsistent`, `SeveralValues`, `Fault`, `Stopped`),
 `NoRule` where it ends none, `Refused` where the decoder refuses the stream,
@@ -48,7 +48,7 @@ previous record gives as `Consistent` and that is not now; a line for each
 task and verdict whose count fell below the baseline's; and a final line
 with the counts. The exit status is 1 where a count exceeds the baseline or
 a case that was `Consistent` is not now, and 0 otherwise. Only
-`arclog_convert.convert --accept` rewrites the baseline."""
+`arclog_convert.verify --accept` rewrites the baseline."""
 
 import argparse
 import hashlib

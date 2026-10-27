@@ -8,8 +8,8 @@ with no conversion: the program under `CORPUS`, which is the one under `gen/`
 with the check relations of the relations the converter folds
 (`arclog_convert.checks`), and the name map and the column map; in a linked
 worktree it writes no record without
-`--out` or `ARCLOG_OUT`, and it rewrites no baseline. `arclog_convert.convert` runs the same check on the
-solvers it converted. For each task, `arclog-cli row-parity` compares the rows
+`--out` or `ARCLOG_OUT`, and it rewrites no baseline. `arclog_convert.verify` runs the same check on the
+solvers it checks. For each task, `arclog-cli row-parity` compares the rows
 of each relation of the cases the check runs, the concept case and the first
 case that takes each ALT that no case before it takes, with the rows of
 Souffle's run of the solver (`parity.rerun.case_rows`), as
@@ -69,8 +69,8 @@ its detail; a line for each relation that the task's previous record gives
 of `skip` and of `uncompared`, and of the lines beyond the baseline. The
 exit status is 1 where a line is beyond the baseline or a relation was
 `equal` and is not now, and 0 otherwise.
-`arclog_convert.convert --accept` rewrites the baseline lines of the solvers
-it converted, keeping the ticket field of each line that stays."""
+`arclog_convert.verify --accept` rewrites the baseline; `arclog_convert.verify`
+gives which lines it rewrites."""
 
 import argparse
 import hashlib
