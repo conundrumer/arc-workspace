@@ -64,15 +64,41 @@ fn a_line_that_no_form_of_the_case_reads_does_not_split_it() {
     assert_eq!(from_k, 3, "{names:?}");
 }
 
+/// The departures of the case of the alts `alts` in `arclog`.
+fn departures(arclog: &str, alts: &[&str]) -> Vec<String> {
+    let solver = read_solver("lines", arclog, "", &|_| None).expect("the file reads").value;
+    let name = CaseName(alts.iter().map(|alt| AltsName((*alt).into())).collect());
+    solver.departures(&name).into_iter().map(|alt| alt.0.to_string()).collect()
+}
+
 #[test]
-fn the_concept_alts_hold_the_first_reading_of_a_line_that_a_nested_block_holds() {
-    let solver = read_solver("lines", ARCLOG, "", &|_| None).expect("the file reads").value;
-    let alt = |text: &str| AltsName(text.into());
-    let alts = solver.concept_alts();
-    assert!(alts.contains(&alt("&k=$Stored")), "{alts:?}");
-    assert!(alts.contains(&alt("&j=$Stored")), "{alts:?}");
-    assert!(!alts.contains(&alt("&j=SepTileCount")), "{alts:?}");
-    assert!(!alts.contains(&alt("$Own")), "{alts:?}");
+fn a_case_departs_by_the_first_reading_of_no_line_and_by_each_other_reading() {
+    assert_eq!(departures(ARCLOG, &["$FromK", "&k=$Stored"]), Vec::<String>::new());
+    assert_eq!(departures(ARCLOG, &["$FromK", "&k=SepTileCount"]), ["&k=SepTileCount"]);
+    // A line that only a nested block holds: the concept case reaches neither it nor its blocks.
+    assert_eq!(departures(ARCLOG, &["$Own", "&j=$Stored"]), ["$Own"]);
+    assert_eq!(departures(ARCLOG, &["$Own", "&j=SepTileCount"]), ["$Own", "&j=SepTileCount"]);
+}
+
+/// `$Plain` is the concept alt of `$inner`, which only `$Nested` reaches.
+const NESTED: &str = "
+(INPUT sides \"a side.\"
+  (RULE &output
+    (input *P *Col)))
+
+(ALTS $reading \"how a side is found\" $First
+  (ALT $Nested
+    (ALTS $inner \"which side\" $Plain
+      (ALT $Fancy
+        (RULE &extra
+          (input *P *Col))))))
+";
+
+#[test]
+fn the_concept_alt_of_a_nested_point_is_no_departure() {
+    assert_eq!(departures(NESTED, &["$First"]), Vec::<String>::new());
+    assert_eq!(departures(NESTED, &["$Nested", "$Plain"]), ["$Nested"]);
+    assert_eq!(departures(NESTED, &["$Nested", "$Fancy"]), ["$Nested", "$Fancy"]);
 }
 
 #[test]

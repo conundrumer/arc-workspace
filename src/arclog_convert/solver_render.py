@@ -854,7 +854,11 @@ class RenderMixin:
                  ) -> tuple[list["Form"], dict[str, list]]:
         """The forms of the case that takes each (point, constructor) of
         `alts`, where they differ from `main_text`, and each relation's lines
-        as that case derives them."""
+        as that case derives them. A relation the case leaves empty is one
+        that no form of the case derives, or that `dead_clauses` puts in
+        `empty` because each of its concept clauses fixes another constructor
+        of a point of the case; each form of the alt's own that reads one is
+        written again without that read."""
         adts = dict(self.c.point_fields())
         field_of = {kk.name: f_ for f_, a_ in adts.items() for kk in a_.constructors}
         pts = {f_ for f_, _ in alts}
@@ -912,8 +916,9 @@ class RenderMixin:
         fs = fs + redo
         reread = self.reading_determinations(fs, main)
         fs = fs + reread
-        # a relation that no form of this case derives is empty in it: a
-        # form of the alt that reads one is written again without it
+        # a relation that no form of this case derives is empty in it, and so
+        # is each that `dead_clauses` put in `empty`: a form of the alt that
+        # reads one is written again without it
         in_case = concept | ks | anc_ctors
         known = {f.name for f in main} | {f.name for f in branch_forms}
         fs2 = fs
@@ -922,6 +927,7 @@ class RenderMixin:
             fs = fs2
             here_names = {f.name for f in main if not f.concept_dead} | {f.name for f in fs} | \
                 {f.name for f in branch_forms if set(f.branches) <= in_case and f.name not in all_mine}
+            here_names -= empty
             dropped_any = False
             fs2 = []
             for f in fs:

@@ -217,7 +217,7 @@ impl Solver {
         for base in alts_product(&self.program.value().forms) {
             let walk = self.walk(&base);
             let lines: Vec<&Placed> = walk.placed.iter().filter(|p| line_of(&p.form).is_some_and(|line| walk.read_elsewhere(p, line))).collect();
-            let mut picks: Vec<Vec<(usize, AltsName)>> = vec![walk.points.clone()];
+            let mut picks: Vec<Vec<(usize, AltsName)>> = vec![walk.points.iter().map(|point| (point.step, point.alt.clone())).collect()];
             for line in lines {
                 let clause = line_of(&line.form).expect("a line");
                 picks = picks
@@ -503,24 +503,25 @@ impl Solver {
         self.build(name).expect("the concept case takes an alt at each `ALTS` form it reaches")
     }
 
-    /// The alts that a case takes without departing from the concept case:
-    /// each alt of the concept case's name, and the first reading of each
-    /// `DET_OR_RULE` and `RULE_OR_DET` line that some base reads, the
-    /// concept case's reading of that line, including a line that the
-    /// concept case's own base does not reach.
-    pub fn concept_alts(&self) -> Vec<AltsName> {
-        let mut alts = self.all_case_names().swap_remove(0).0.into_vec();
-        for base in alts_product(&self.program.value().forms) {
-            for placed in &self.walk(&base).placed {
-                if let Some(line) = line_of(&placed.form) {
-                    let first = readings(line).swap_remove(0).0;
-                    if !alts.contains(&first) {
-                        alts.push(first);
-                    }
-                }
+    /// The alts at which the case `name` departs from the concept case, in
+    /// the order of `name`, each once: at each `ALTS` form the case's walk
+    /// reaches, the alt it takes there where that alt is not the form's
+    /// concept alt, and at each `DET_OR_RULE` and `RULE_OR_DET` line the walk
+    /// places, the reading `name` holds where that reading is not the line's
+    /// first. An alt that the case takes at the concept branch of a point is
+    /// no departure, whether or not the concept case reaches that point.
+    pub fn departures(&self, name: &CaseName) -> Vec<AltsName> {
+        let walk = self.walk(&name.0);
+        let at_points = walk.points.iter().filter(|point| point.alt != point.concept).map(|point| point.alt.clone());
+        let at_lines = walk.placed.iter().filter_map(|placed| line_of(&placed.form)).flat_map(|line| readings(line).into_iter().skip(1).map(|(alt, _)| alt));
+        let departing: Vec<AltsName> = at_points.chain(at_lines).collect();
+        let mut departures: Vec<AltsName> = Vec::new();
+        for alt in name.0.iter().filter(|alt| departing.contains(alt)) {
+            if !departures.contains(alt) {
+                departures.push(alt.clone());
             }
         }
-        alts
+        departures
     }
 
     /// The cases of `case_names(exclusion)`, each built when the iterator
@@ -568,13 +569,20 @@ struct Placed {
     depth: u32,
 }
 
+/// An `ALTS` form a walk reaches: the walk's step at it, the alt the walk
+/// takes there, and the form's concept alt.
+struct Point {
+    step: usize,
+    alt: AltsName,
+    concept: AltsName,
+}
+
 /// The walk of a case's blocks: the forms it reaches, and the alt of each
 /// `ALTS` form it reaches.
 struct Walk<'a> {
     chosen: &'a [AltsName],
     placed: Vec<Placed>,
-    /// Each `ALTS` form reached, by the walk's step at it, and its alt.
-    points: Vec<(usize, AltsName)>,
+    points: Vec<Point>,
     /// An `ALTS` form at which `chosen` takes no alt.
     unchosen: Option<AltsName>,
 }
@@ -596,7 +604,7 @@ impl<'a> Walk<'a> {
                     self.unchosen = Some(alts.name.clone());
                     return;
                 };
-                self.points.push((self.placed.len() + self.points.len(), choice.clone()));
+                self.points.push(Point { step: self.placed.len() + self.points.len(), alt: choice.clone(), concept: alts.concept.clone() });
                 self.descend(Block::Form(form), owner, &path, depth, &|alt| alt.name == *choice);
             }
             _ => {

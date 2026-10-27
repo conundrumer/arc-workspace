@@ -69,8 +69,7 @@ pub(crate) fn with_case<T>(corpus: &Path, tasks: &Path, id: &str, name: &str, bo
     let registry = Registry::get();
     let cases = resolve_cases(&solver, registry);
     let clauses = SolverClauses::of_cases(&cases);
-    let concept_alts = solver.concept_alts();
-    let chosen = if name == CONCEPT { Some(cases.concept()) } else { cases.resolved().find(|case| names_case(name, &case.case.name, &concept_alts)) };
+    let chosen = if name == CONCEPT { Some(cases.concept()) } else { cases.resolved().find(|case| names_case(name, &solver.departures(&case.case.name))) };
     let chosen = chosen.ok_or_else(|| format!("the solver has no case named `{name}`"))?;
     let mut cache = CheckCache::default();
     let concept = check_case(cases.concept(), &clauses, &mut cache, "the concept case")?;
