@@ -703,20 +703,16 @@ class InstancesMixin:
             return port in FROM_KEY.get(target, ())
 
         def skipped(u, lr) -> bool:
-            """An input clause the engine fills from the key: the registry marks the
-            input `from-key`, and for each kept leaf of the head the key has exactly
-            one label of the leaf's type, which is the head's label at that leaf. A
-            leaf or a key label with no type keeps the clause. The converse is
-            `unfilled`."""
-            ren = kren(u)
-            saved = list(self.todo.pending), Counter(self.todo.kinds)
-            leaf_labs = [(l, lab_of(t, ren)) for _, kept in head_terms(u, lr, ren) for l, t in kept]
-            self.todo.pending, self.todo.kinds = saved
-            skip = from_key(lr) and key_typed and all(
-                key_label(leaf) == lab for leaf, lab in leaf_labs)
+            """An input clause the engine fills from the key whatever the types: the
+            registry marks the input `from-key`, the input has no kept leaf beside
+            the key, and the clause only reads the instance's own key. A written
+            input gets no fill from the engine, so the clauses of an input are left
+            out only where this holds for each of them. The converse is `unfilled`."""
             own_read = any(isinstance(l, AtomLiteral) and l.atom.relation.instances[:1] == (inst.name,)
                            for l in u.body)
-            return skip and ((own_read and len(u.body) == 1) or not residual.get(id(u), list(u.body)))
+            beside_key = any(l.kind in ("keep", "example") for _, leaves in column_leaves(lr) for l in leaves)
+            return from_key(lr) and not beside_key and (
+                (own_read and len(u.body) == 1) or not residual.get(id(u), list(u.body)))
 
         def unfilled(lr) -> list[str] | None:
             """A clause of the input that no solver clause writes, which derives no row,
@@ -885,7 +881,8 @@ class InstancesMixin:
                 continue
             kn = [] if lr.name in unkeyed else knames
             first = len(blocks)
-            us_ = [u for u in by_rel[lr.name] if u.body is None or not skipped(u, lr)]
+            filled = all(u.body is not None and skipped(u, lr) for u in by_rel[lr.name])
+            us_ = [] if filled else list(by_rel[lr.name])
             facts = [u for u in us_ if u.body is None]
             if len(us_) > 1:
                 block = merged(us_, lr)

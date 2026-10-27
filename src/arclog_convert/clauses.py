@@ -138,11 +138,13 @@ class ClauseWriter:
     def label(self, v: str) -> str:
         return self.rename.get(v, v)
 
-    def field_labels(self, v: str, label: str, bound: set[str]) -> dict[str, str]:
-        """The labels of the fields of the record variable `v`, whose own label
-        is `label`, by field name: those the sites made by `split`, and those
-        of `bound` that a record term of variables `<label>_<field>` made."""
-        out = {x[len(label) + 1:]: x for x in bound if x.startswith(label + "_")}
+    def field_labels(self, v: str, bound: set[str]) -> dict[str, str]:
+        """The labels of the fields of the record variable `v`, by field name:
+        those the sites made by `split`, and the labels in `bound` of the
+        variables `<v>_<field>` that a record term made, whatever label the
+        clause's head renames them to."""
+        out = {n[len(v) + 1:]: self.label(n) for n in self.rename.keys() | bound
+               if n.startswith(v + "_") and self.label(n) in bound}
         out.update({f: self.label(n) for f, n in self.fields.get(v, {}).items()})
         return out
 
@@ -367,7 +369,7 @@ class ClauseWriter:
             if l.op.value in ("=", "!=") and isinstance(lhs, Variable) and isinstance(rhs, Variable):
                 a, b = self.label(lhs.name), self.label(rhs.name)
                 if a not in bound and b not in bound:
-                    fa, fb = self.field_labels(lhs.name, a, bound), self.field_labels(rhs.name, b, bound)
+                    fa, fb = self.field_labels(lhs.name, bound), self.field_labels(rhs.name, bound)
                     common = sorted(fa.keys() & fb.keys())
                     if common and fa.keys() == fb.keys():
                         if l.op.value == "=":
