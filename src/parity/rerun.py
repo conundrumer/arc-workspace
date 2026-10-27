@@ -62,9 +62,17 @@ clauses derives Souffle's rows of it; the fold of those clauses into the
 relations that read them is checked by those relations' own lines.
 
 An arclog relation whose clause `arclog_convert.projections` removes from the
-program of `gen/` keeps the clause in the corpus, under its own name, as a check
+program of `gen/` keeps the clause in the corpus, under its own name, as a
 relation that no relation reads; the relations that read it there read the
-relation it projects.
+relation it projects. The name map gives, for such a relation P, the forms that
+held an atom on P before the pass redirected it (`NameMap.removed`), each with
+the relation it derives, the ALT names of its block, and the ALT names of the
+block of each form of that relation that stands deeper. In a case, the check
+compares P only where some reader of P derives its relation there, which holds
+where the case holds the ALT names of the reader's block and all the ALT names
+of no deeper block, and where that relation is `&output`, or `&output` reads it
+at any depth, or it is itself such a relation P' that the check compares in the
+case. In any other case nothing reads P, so its rows say nothing of the case.
 
 Each arclog relation with `&` of the name map (`relations` and `unmapped`)
 that no relation of the run maps to (`relation_names`), and that is no relation of
@@ -78,11 +86,14 @@ of the verdicts, and `uncompared` "no case's program has a relation of that
 name" for a relation that no case it runs has, and "no case the check runs
 reads it from `&output`" for one that a case has and no case's `&output`
 reads, at any depth. In a case the check compares a relation only where the
-case's `&output` reads it or is it, or where it is a check relation
-(`NameMap.checks`), which the case counts as read though nothing reads it
-(`case_rows` writes their names as `check_relations`). An `equal` line proves that
+case's `&output` reads it or is it, or where it is a check relation of a folded
+Souffle relation (`NameMap.checks`), which the case counts as read though nothing
+reads it (`case_rows` writes their names as `check_relations`), or where it is a
+relation whose clause the projection pass removes and a reader of it derives its
+relation in the case as above (`NameMap.removed`, which `case_rows` writes as
+`removed_relations`). An `equal` line proves that
 the relation's rows in each case that derives it and whose `&output` reads
-it, or that is a check relation, at the stored parameters, are these rows over the columns the converter maps
+it, or that is a check relation of a folded relation, or whose reader derives its relation there, at the stored parameters, are these rows over the columns the converter maps
 (`engine/arclog-cli/src/row_parity.rs` gives the rest). Where the relation is
 one of the converter's Souffle text, the rows are those the text's clauses
 derive with the solver's program, which says nothing on whether those clauses
@@ -123,6 +134,7 @@ from engine.program import (AtomLiteral, BodyLiteral, Comparison, ComparisonOper
                             ConstructorTerm, Disjunction, Qualifier, Term, Unit, Value, as_grid,
                             own, subterms)
 from arclog_convert.parity_text import FORMS
+from arclog_convert.projections import readers_json
 from parity import (PARAMS_COMPONENT, Entry, NameMap, case_name, column_entry, columns_path,
                     determination_text_path, name_map, relation_names, snapshot, text_path)
 from parity.idents import (Ambiguous, IdentSources, Minted, NoMembers, Source, Unresolved, Writer, ident_sources,
@@ -441,7 +453,8 @@ def case_rows(stem: str, solver_file: Path, path: Path) -> Undefined | RunFailur
     column map (`columns_path`) gives it, which leave out each Example leaf:
     for each, the leaves of the value at its `leaf` in its Souffle column. A
     relation's rows are a set. The form: `{"orientation_constants": {...},
-    "check_relations": [<arclog name>, ...], "cases": [{"case": <arclog name>, "pairs": [{"pair": "train 0",
+    "check_relations": [<arclog name>, ...], "removed_relations": {<arclog name>: [{"relation": <arclog name>, "alts":
+    [<ALT name>, ...], "deeper": [[<ALT name>, ...], ...]}, ...]}, "cases": [{"case": <arclog name>, "pairs": [{"pair": "train 0",
     "relations": [{"name": "&x", "columns": [[label, field], ...],
     "idents": [kind, ...], "unread": [[label, field], ...],
     "unresolved": [[label, field, reason], ...], "rows": [[[leaves of column 1], ...], ...],
@@ -521,6 +534,7 @@ def case_rows(stem: str, solver_file: Path, path: Path) -> Undefined | RunFailur
         with path.open("w") as handle:
             write_json(handle, {"orientation_constants": orientation_constants(loaded.solver.lib),
                                 "check_relations": [] if loaded.names is None else list(loaded.names.checks),
+                                "removed_relations": {} if loaded.names is None else readers_json(loaded.names.removed),
                                 "cases": cases(), "not_compared": not_compared})
     except BaseException:
         path.unlink(missing_ok=True)

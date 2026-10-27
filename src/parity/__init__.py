@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import arclog_convert
+from arclog_convert.projections import ReaderForm, readers_of
 from engine import Engine, RelationName
 from solver import names as solver_names
 from solver.aggregate import Solver
@@ -54,17 +55,23 @@ class NameMap:
     converted program reads that no Souffle relation was written into; and,
     for each Souffle relation by its path that the converter folds and made
     no check relation of, why not; and the arclog name of each check
-    relation the converted program has, which is among `relations` too: one
-    of a folded Souffle relation (`arclog_convert.checks`), and, after
-    `arclog_convert.projections`, one whose clause the pass leaves with no
-    reader in the copy of the program under `arclog_convert.row_parity.CORPUS`,
-    which holds each relation whose clause the pass removes from `gen/`."""
+    relation the converted program has of a folded Souffle relation
+    (`arclog_convert.checks`), which is among `relations` too (`checks`), and
+    which the row-parity check compares in each case; and, for each arclog
+    relation whose clause `arclog_convert.projections` removes from the program
+    of `gen/` and keeps in the program of the check, the forms that held an atom
+    on it before the pass redirected it (`removed`). The check compares such a
+    relation in a case only where some reader derives its relation there, which
+    holds where the case holds the ALT names of the reader's block and all the
+    ALT names of no deeper block, and `&output` reads that relation or is it, or
+    it is itself such a relation that the check compares in the case."""
 
     relations: Mapping[str, tuple[SouffleRelation, ...]]
     constructors: Mapping[str, str]
     unmapped: tuple[str, ...]
     untranslated: Mapping[str, str] = field(default_factory=dict)
     checks: tuple[str, ...] = ()
+    removed: Mapping[str, tuple[ReaderForm, ...]] = field(default_factory=dict)
 
     @staticmethod
     def of(data: Mapping) -> "NameMap":
@@ -73,7 +80,7 @@ class NameMap:
             {a: tuple(SouffleRelation(tuple(s["component"]), s["relation"], s["path"]) for s in ss)
              for a, ss in data["relations"].items()},
             dict(data["constructors"]), tuple(data["unmapped"]), dict(data.get("untranslated", {})),
-            tuple(data.get("checks", ())))
+            tuple(data.get("checks", ())), readers_of(data.get("removed", {})))
 
     @property
     def read(self) -> list[str]:

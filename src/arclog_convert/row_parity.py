@@ -27,10 +27,15 @@ the column map, an arclog relation that no Souffle relation of the run
 stands for, a relation that no case it runs has, and a relation that a case
 has and no case it runs reads from `&output`, at any depth (in a case, a
 relation is compared only where its `&output` reads it, or where it is a check
-relation, which the case counts as read). A line's detail gives
+relation of a folded relation, which the case counts as read, or where it is a
+relation whose clause the projection pass removes and a form that read it
+derives its relation in the case and `&output` reads that relation, or that
+relation is itself such a removed relation that the case compares:
+`parity.rerun` gives the rule). A line's detail gives
 the reason of a `skip` or an `uncompared`, and the case and the pair of any
 other verdict. An `equal` line proves that the relation's rows in each case
-that derives it and whose `&output` reads it or that is a check relation, at the stored parameters, are Souffle's rows of it over the
+that derives it and whose `&output` reads it, that is a check relation of a folded relation, or that the
+projection pass removes and a form that read it derives its relation in, at the stored parameters, are Souffle's rows of it over the
 columns the converter maps (`row_parity.rs` gives the rest). For a relation of
 the converter's Souffle text (`arclog_convert.parity_text`) that is the rows of
 the text's clauses with the solver's program, which says nothing on whether the
@@ -105,7 +110,9 @@ CORPUS = "gen_check"
 """The directory beside `gen/` that holds, for each converted task, its
 program with the check relations of the relations it folds
 (`arclog_convert.checks`) and the clauses of the relations the projection pass
-removes from the program of `gen/` (`arclog_convert.projections`), which
+removes from the program of `gen/` (`arclog_convert.projections`), the latter
+compared in a case only where a form that read the relation derives its relation
+there and `&output` reads it (`parity.rerun`), which
 `arclog-cli row-parity` reads as its corpus."""
 
 FAILING = ("differ", "fault", "uncompared")

@@ -4,10 +4,10 @@
 //! `<rows-dir>/<task_id>.json` (`scripts/souffle_parity.py case-rows`). It
 //! reads a file as a stream, one relation at a time, so that the file's rows
 //! of a relation, and the sides it is compared on, are dropped once its
-//! verdict is merged: `orientation_constants` and `check_relations` come
-//! before `cases`, a case's `case` before its `failure`, `pairs` and
-//! `determination`, and a pair's `pair` before its `relations`, as
-//! `parity.rerun.case_rows` writes them.
+//! verdict is merged: `orientation_constants`, `check_relations` and
+//! `removed_relations` come before `cases`, a case's `case` before its
+//! `failure`, `pairs` and `determination`, and a pair's `pair` before its
+//! `relations`, as `parity.rerun.case_rows` writes them.
 //!
 //! It prints a line `<task>\t<relation>\t<verdict>\t<detail>` for each task
 //! and relation, in the rows file's order, ordered by task id: `equal`;
@@ -21,11 +21,19 @@
 //! from `&output`", for any other relation the check does not compare.
 //! In a case, a relation is compared only where the node of the case
 //! program's dependency graph that holds it is `&output`'s node or is read
-//! by it at any depth, or is a check relation (`check_relations` of the
-//! file), which nothing reads and the converter writes to compare the
-//! clauses of a folded relation; a relation of the file that the case's
-//! program has and its `&output` does not read takes no verdict from that
-//! case, since the rows of a relation that the output does not read say
+//! by it at any depth, or is a check relation of a folded relation
+//! (`check_relations` of the file), which nothing reads and the converter
+//! writes to compare the clauses of that relation, or is a relation whose
+//! clause the projection pass removes from the program of `gen/`
+//! (`removed_relations` of the file, by name, with the forms that held an
+//! atom on it before the pass) and some such form derives its relation in the
+//! case, and that relation is `&output` or is read by it at any depth or is
+//! itself a removed relation that the case compares. A form derives its
+//! relation in a case that takes every alt of the form's block (`alts`) and
+//! every alt of no deeper block (`deeper`); an instance's form derives its
+//! outputs, and a `CHOOSE` form its chosen relation. A relation of the file
+//! that the case's program has and that none of these gives takes no verdict
+//! from that case, since the rows of a relation that nothing reads say
 //! nothing of the case. A relation that more than one case reads has one
 //! line, the first `differ`, `fault` or `uncompared` of the cases and
 //! pairs, else the first `equal`. A column of the file that the engine's
@@ -65,9 +73,10 @@
 //! case's program, or where no entry before has given the relations.
 //!
 //! An `equal` line proves: for each case that derives the relation and whose
-//! `&output` reads it, or is it, or that is a check relation, at the stored
-//! parameters, on each train and test input of the task, the arclog
-//! rows of the relation, projected onto the leaves the converter maps from
+//! `&output` reads it, or is it, or that is a check relation of a folded
+//! relation, or that the projection pass removes and a form that read it derives
+//! its relation for, as above, at the stored parameters, on each train and test
+//! input of the task, the arclog rows of the relation, projected onto the leaves the converter maps from
 //! Souffle's columns, are Souffle's rows projected onto the same leaves, as a
 //! set, and, for a relation of `Determine`, the same over the train examples
 //! at the stored parameters of the first case whose program has it; where the map gives no column to compare, the relation is present in
@@ -87,7 +96,8 @@
 //! its pair, so those are compared up to one renaming per pair, over all the
 //! relations of the pair. It does not prove anything about a leaf that the
 //! line names as left out, the cases that the file does not give, the cases
-//! whose `&output` does not read the relation (a check relation excepted), other
+//! whose `&output` does not read the relation (a check relation of a folded
+//! relation excepted, and a removed relation read as above), other
 //! inputs (witness inputs among them), the relations that the file leaves out
 //! as `skip` or `uncompared`, or the multiplicity of rows.
 
@@ -102,9 +112,12 @@ use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use arclog::check::CheckedProgram;
 use arclog::eval::{output_relation, Evaluation};
 use arclog::harness::{require_optimized_build, run_over_corpus, SolverResult};
 use arclog::hash::StableHashSet;
+use arclog::program::DeclaredName;
+use arclog::resolver::DependencyKind;
 use arclog::terms::Example;
 use serde::de::{DeserializeSeed, Error as _, IgnoredAny, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
@@ -387,7 +400,7 @@ fn overdue(progress: &Progress, now: Instant) -> Vec<String> {
 fn task_verdicts(corpus: &Path, tasks: &Path, id: &str, path: &Path, progress: &Progress) -> Result<Vec<(String, Verdict)>, String> {
     let file = File::open(path).map_err(|error| format!("{} does not read: {error}", path.display()))?;
     let mut deserializer = serde_json::Deserializer::from_reader(BufReader::new(file));
-    let mut verdicts = Verdicts { corpus, tasks, id, progress, constants: None, checks: None, awaiting: None, cases_read: false, found: Found::default(), left_out: None, fault: None };
+    let mut verdicts = Verdicts { corpus, tasks, id, progress, constants: None, checks: None, removed: None, awaiting: None, cases_read: false, found: Found::default(), left_out: None, fault: None };
     let read = (&mut verdicts).deserialize(&mut deserializer).and_then(|()| deserializer.end());
     if let Some(fault) = verdicts.fault.take() {
         return Err(fault);
@@ -404,8 +417,10 @@ struct Verdicts<'a> {
     id: &'a str,
     progress: &'a Progress,
     constants: Option<BTreeMap<String, i64>>,
-    /// The arclog names of the check relations.
+    /// The arclog names of the check relations of the folded relations.
     checks: Option<Vec<String>>,
+    /// The readers of each relation whose clause the projection pass removes.
+    removed: Option<BTreeMap<String, Vec<RemovedReader>>>,
     /// The relations of the `determination` entries that no case has compared,
     /// once an entry has given them.
     awaiting: Option<Vec<String>>,
@@ -418,10 +433,11 @@ struct Verdicts<'a> {
 
 impl Verdicts<'_> {
     /// The constants and the check relations, which come before the cases.
-    fn before_cases(&self) -> Result<(&BTreeMap<String, i64>, &[String]), String> {
+    fn before_cases(&self) -> Result<(&BTreeMap<String, i64>, CheckRelations<'_>), String> {
         let constants = self.constants.as_ref().ok_or("the rows file has no `orientation_constants` before its cases")?;
-        let checks = self.checks.as_deref().ok_or("the rows file has no `check_relations` before its cases")?;
-        Ok((constants, checks))
+        let folded = self.checks.as_deref().ok_or("the rows file has no `check_relations` before its cases")?;
+        let removed = self.removed.as_ref().ok_or("the rows file has no `removed_relations` before its cases")?;
+        Ok((constants, CheckRelations { folded, removed }))
     }
 
     /// Sets the case that the progress line of this task gives.
@@ -521,6 +537,7 @@ impl<'de> Visitor<'de> for &mut Verdicts<'_> {
             match key.as_str() {
                 "orientation_constants" => self.constants = Some(map.next_value()?),
                 "check_relations" => self.checks = Some(map.next_value()?),
+                "removed_relations" => self.removed = Some(map.next_value()?),
                 "cases" => {
                     map.next_value_seed(Cases(&mut *self))?;
                     self.cases_read = true;
@@ -631,7 +648,7 @@ struct CaseRest<'a, A> {
     /// The case's Souffle run gave no rows, so its `pairs` are not read.
     failed: bool,
     constants: &'a BTreeMap<String, i64>,
-    checks: &'a [String],
+    checks: CheckRelations<'a>,
     awaiting: &'a mut Option<Vec<String>>,
     pairs_seen: bool,
     /// The map is read to its end.
@@ -685,6 +702,86 @@ impl<'de, A: MapAccess<'de>> CaseRest<'_, A> {
     }
 }
 
+/// A form that held an atom on a relation P, before the pass that removes P's
+/// clause from the program redirected it (`removed_relations` of the rows file,
+/// `parity.NameMap.removed`).
+#[derive(Deserialize)]
+struct RemovedReader {
+    /// The relation the form derives: an instance's name for an `INIT` form.
+    relation: String,
+    /// The names of the alts of the form's block.
+    alts: Vec<String>,
+    /// The names of the alts of the block of each form of `relation` that
+    /// stands deeper than the form's block.
+    deeper: Vec<Vec<String>>,
+}
+
+impl RemovedReader {
+    /// Whether the form derives its relation in the case that takes the alts
+    /// `case`: the case takes every alt of the form's block, and every alt of
+    /// no deeper block.
+    fn derives(&self, case: &[String]) -> bool {
+        let takes = |alts: &[String]| alts.iter().all(|alt| case.contains(alt));
+        takes(&self.alts) && !self.deeper.iter().any(|block| takes(block))
+    }
+}
+
+/// The relations that the rows file has a case compare though `&output` need
+/// not read them.
+#[derive(Clone, Copy)]
+struct CheckRelations<'a> {
+    /// The check relations of the folded relations, which nothing reads: the
+    /// case compares each.
+    folded: &'a [String],
+    /// The relations whose clause the projection pass removes, by name, with
+    /// their readers: the case compares such a relation where a reader
+    /// derives its relation there and `&output` reads that relation.
+    removed: &'a BTreeMap<String, Vec<RemovedReader>>,
+}
+
+impl CheckRelations<'_> {
+    /// Whether the case that takes the alts `case`, with the nodes of its
+    /// program that `&output` reads or is (`reached`), compares the removed
+    /// relation `relation`: some reader of it derives its relation in the case
+    /// (`RemovedReader::derives`), and that relation is read by `&output`,
+    /// or is itself a removed relation that the case compares. `asked` are the
+    /// removed relations being decided, which stops a cycle.
+    fn compares(&self, program: &CheckedProgram, case: &[String], reached: &[bool], relation: &str, asked: &mut Vec<String>) -> bool {
+        if asked.iter().any(|held| held == relation) {
+            return false;
+        }
+        asked.push(relation.to_owned());
+        let compared = self.removed.get(relation).is_some_and(|readers| {
+            readers.iter().any(|reader| {
+                reader.derives(case) && (derived_is_read(program, reached, &reader.relation) || self.compares(program, case, reached, &reader.relation, asked))
+            })
+        });
+        asked.pop();
+        compared
+    }
+}
+
+/// Whether `reached` holds a node that the form deriving `relation` derives in
+/// `program`: the node of the relation, or, for an instance, of one of its
+/// outputs. A name that several nodes hold, one per `DEMO_RULE`, counts as
+/// read.
+fn derived_is_read(program: &CheckedProgram, reached: &[bool], relation: &str) -> bool {
+    match named_relation(program, relation) {
+        Some(Ok(node)) => reached[node.node.0 as usize],
+        Some(Err(_)) => true,
+        None => {
+            let name = DeclaredName::Written(relation.into());
+            program.program.graph.nodes.iter().zip(reached).any(|(node, &read)| {
+                read && match &node.kind {
+                    DependencyKind::InstanceOutput { instance, .. } | DependencyKind::RecursiveInstance(instance) => instance.0 == name,
+                    DependencyKind::Demonstrated(demonstrated) => demonstrated.0 == name,
+                    _ => false,
+                }
+            })
+        }
+    }
+}
+
 /// What the entries of the rows file give: the verdict of each relation they
 /// compare, merged over the entries, the name of each relation they send,
 /// and the name of each relation that they send and a case's program has but
@@ -715,8 +812,9 @@ fn add_once(names: &mut Vec<String>, name: &str) {
 /// The `pairs` of the case `name`, read one relation at a time into the
 /// verdicts of each relation `case` compares, merged over the pairs, and the
 /// name of each relation the pairs send. A relation is compared where the
-/// case's `&output` reads it, at any depth, or is it, or where it is one of
-/// the check relations, which nothing reads. A pair of the task that the
+/// case's `&output` reads it, at any depth, or is it, or where it is a check
+/// relation of a folded relation, which nothing reads, or a removed relation
+/// that [`CheckRelations::compares`] gives. A pair of the task that the
 /// pairs lack is a fault, given once the pairs end, as is the first fault of
 /// a relation, after which the rest is skipped.
 struct Pairs<'a, 'c> {
@@ -734,14 +832,22 @@ struct Pairs<'a, 'c> {
 }
 
 impl<'a, 'c> Pairs<'a, 'c> {
-    fn new(case: &'a ConceptCase<'c>, name: &'a str, constants: &'a BTreeMap<String, i64>, checks: &[String]) -> Self {
+    fn new(case: &'a ConceptCase<'c>, name: &'a str, constants: &'a BTreeMap<String, i64>, checks: CheckRelations<'_>) -> Self {
         let evaluation = &case.evaluation;
         let program = evaluation.program;
         let output = output_relation(program).expect("a checked case program derives `&output`");
-        let mut reads = program.program.graph.reached(output.node);
-        for check in checks {
+        let reached = program.program.graph.reached(output.node);
+        let mut reads = reached.clone();
+        for check in checks.folded {
             if let Some(Ok(node)) = named_relation(program, check) {
                 reads[node.node.0 as usize] = true;
+            }
+        }
+        for relation in checks.removed.keys() {
+            if let Some(Ok(node)) = named_relation(program, relation) {
+                if checks.compares(program, &case.alts, &reached, relation, &mut Vec::new()) {
+                    reads[node.node.0 as usize] = true;
+                }
             }
         }
         let examples: Vec<(String, Example)> = evaluation.task.examples().enumerate().map(|(index, example)| (pair_name(evaluation.task, index), example)).collect();

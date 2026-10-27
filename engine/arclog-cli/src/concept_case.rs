@@ -36,6 +36,9 @@ const CONCEPT: &str = "concept";
 pub(crate) struct ConceptCase<'a> {
     pub(crate) evaluation: Evaluation<'a>,
     pub(crate) judged: &'a JudgedTask,
+    /// The name of the alt that the case takes at each `ALTS` form it reaches
+    /// (`CaseName`), as the arclog file writes it.
+    pub(crate) alts: Vec<String>,
 }
 
 impl ConceptCase<'_> {
@@ -84,7 +87,7 @@ pub(crate) fn with_case<T>(corpus: &Path, tasks: &Path, id: &str, name: &str, bo
     let session = corpus_session();
     let limits = corpus_limits();
     let determined = DeterminedCase { name: &chosen.case.name, program, concept: &concept, task: &task, session: &session, registry, constructions: constructions()?, limits: &limits };
-    body(&ConceptCase { evaluation: determined.evaluation(&parameters), judged: &judged })
+    body(&ConceptCase { evaluation: determined.evaluation(&parameters), judged: &judged, alts: chosen.case.name.0.iter().map(|alt| alt.0.to_string()).collect() })
 }
 
 /// The cases of `programs` as the determination takes them, on the task

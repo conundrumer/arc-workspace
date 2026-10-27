@@ -61,14 +61,19 @@ not read:
 
 With `keep`, the pass redirects the readers and leaves each clause it would
 remove where it stands, and moves no form: this is the copy for the row-parity
-check, where the clause stays as a relation that nothing reads."""
+check, where the clause stays as a relation that nothing reads. The rows of that
+relation P say something of a case only where some reader of P, a form that held
+an atom on P before the pass redirected it, derives its own relation in the case
+and `&output` reads that relation or is it, or that relation is itself a removed
+relation of which this holds (`ReaderForm` gives when a reader derives its
+relation). `Projected.readers` gives the readers of each removed relation."""
 
 import re
 from collections import Counter, defaultdict
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 
 from arclog_convert.lint import (
     CLAIMS, FACTS, FORMS, MARKS, OPS, L, Linter, Placed, Sym, alt_points, bare_label, e_site, implied_branches,
@@ -91,12 +96,46 @@ READS_AS: dict[str, Reading] = {"RULE": "RULE", "DET": "DET"}
 """The reading of each form that reads as one clause does."""
 
 
+@dataclass(frozen=True, order=True)
+class ReaderForm:
+    """A form that held an atom on a relation P before the pass redirected it: the relation the form derives (an
+    instance's name for an `INIT` form, the chosen relation for a `CHOOSE` form), the ALT names of its block, and the
+    ALT names of the block of each form of that relation that stands deeper than its block. In a case that holds the
+    ALT names of its block and, for no deeper block, all of that block's, the form derives its relation and so reads
+    the clause of P; in any other case the atom reads nothing of P (`_Program._rederived`)."""
+
+    relation: str
+    alts: tuple[str, ...]
+    deeper: tuple[tuple[str, ...], ...]
+
+
+def readers_json(readers: Mapping[str, tuple[ReaderForm, ...]]) -> dict[str, list[dict[str, Any]]]:
+    """The readers of each removed relation as the name map holds them (`removed`) and `parity.rerun.case_rows` writes
+    them: by the relation, one object per reader with its `relation`, `alts` and `deeper`."""
+    return {relation: [asdict(form) for form in forms] for relation, forms in readers.items()}
+
+
+def readers_of(data: Mapping[str, list[Mapping[str, Any]]]) -> dict[str, tuple[ReaderForm, ...]]:
+    """The readers that `readers_json` wrote as `data`."""
+    return {relation: tuple(ReaderForm(f["relation"], tuple(f["alts"]), tuple(tuple(b) for b in f["deeper"]))
+                            for f in forms) for relation, forms in data.items()}
+
+
 @dataclass(frozen=True)
 class Projected:
-    """The text after the pass, and the relations whose clause it removed (kept, with `keep`)."""
+    """The text after the pass, and, by each relation whose clause it removed (kept, with `keep`), the forms that held
+    an atom on that relation before the pass redirected it."""
 
     arclog: str
-    removed: frozenset[str]
+    readers: Mapping[str, tuple[ReaderForm, ...]]
+
+
+class _Step(NamedTuple):
+    """The text after one clause of the pass, the relation of that clause, and the forms that read it."""
+
+    text: str
+    relation: str
+    readers: frozenset[ReaderForm]
 
 
 @dataclass(frozen=True)
@@ -276,30 +315,32 @@ class _Program:
                     self.heads[x.items[0].text].add(x.items[0].pos)
         self.scopes_of: dict[int, frozenset[Scope]] = {}
 
-    def step(self, keep: bool) -> tuple[str, str] | None:
-        """The text after the first projection clause that may go, with its relation: its readers redirected, and
-        the clause removed unless `keep`; none where no clause may go. A clause that gives the lint another code
-        than the text has stays, other than for an `OR` branch the redirect leaves implied, which goes."""
+    def step(self, keep: bool) -> _Step | None:
+        """The text after the first projection clause that may go, with its relation and the forms that read it: its
+        readers redirected, and the clause removed unless `keep`; none where no clause may go. A clause that gives the
+        lint another code than the text has stays, other than for an `OR` branch the redirect leaves implied, which
+        goes."""
         baseline = None
         for p in self.placed:
             projection = _projection(p.form) if p.name else None
-            redirects = None if projection is None else self._redirects(p, projection)
-            if redirects is None:
+            found = None if projection is None else self._redirects(p, projection)
+            if found is None:
                 continue
+            redirects, readers = found
             edits = redirects if keep else [*redirects, _removal(self.text, p.form)]
             text = applied(self.text, edits)
             baseline = _codes(self.text) if baseline is None else baseline
             if not _codes(text) <= baseline:
                 text = _without_implied(text, _landed(edits, redirects))
             if _codes(text) <= baseline:
-                return text, str(p.name)
+                return _Step(text, str(p.name), readers)
         return None
 
     # ---- the rules that keep a clause
 
-    def _redirects(self, p: Placed, projection: _Projection) -> list[Edit] | None:
-        """The edit of each atom that reads the relation of `p` from it, to read the projected relation; none where
-        the clause stays."""
+    def _redirects(self, p: Placed, projection: _Projection) -> tuple[list[Edit], frozenset[ReaderForm]] | None:
+        """The edit of each atom that reads the relation of `p` from it, to read the projected relation, and the forms
+        of those atoms; none where the clause stays."""
         relation = projection.relation
         base = relation.partition(".")[0]
         origins = _settled(projection, self.columns)
@@ -314,12 +355,13 @@ class _Program:
             found = atom_sites(reader.atom)
             text = self._redirected(reader.atom, relation, origins)
             readings = self._readings(placed.form)
-            if (found is None or text is None or readings is None or "DET" in readings and base in self.chosen
+            if (found is None or text is None or readings is None or placed.name is None
+                    or "DET" in readings and base in self.chosen
                     or any(self._blocked(p, placed, readings, d, bool(found.keys() - origins.keys()), flipped)
                            for d in derivations)):
                 return None
             edits.append((reader.atom.start, reader.atom.end, text))
-        return edits or None
+        return (edits, frozenset(self._reader_form(placed) for _, placed in active or ())) if edits else None
 
     def _blocked(self, p: Placed, placed: Placed, readings: frozenset[Reading], derivation: _Derivation,
                  lifted: bool, flipped: set[int]) -> bool:
@@ -368,7 +410,17 @@ class _Program:
     def _rederived(self, placed: Placed, case: set[str]) -> bool:
         """Whether a form of the relation of `placed` stands in a block deeper than the block of `placed`, held in
         `case`: that form derives the relation there, so a reader in `placed` is inactive in `case`."""
-        return placed.name is not None and any(set(placed.alts) < set(e.alts) <= case for e in self.decls[placed.name])
+        return any(block <= case for block in self._deeper(placed))
+
+    def _deeper(self, placed: Placed) -> set[frozenset[str]]:
+        """The ALT names of the block of each form of the relation of `placed` that stands deeper than the block of
+        `placed`."""
+        own = set(placed.alts)
+        return {frozenset(e.alts) for e in self.decls[str(placed.name)] if own < set(e.alts)}
+
+    def _reader_form(self, placed: Placed) -> ReaderForm:
+        """The form `placed`, as it reads a removed relation."""
+        return ReaderForm(str(placed.name), tuple(sorted(placed.alts)), tuple(sorted(tuple(sorted(b)) for b in self._deeper(placed))))
 
     def _consistent(self, alts: set[str]) -> bool:
         """Whether the alts can hold in one case: no two are alts of one `ALTS` form."""
@@ -606,10 +658,12 @@ def _restand(text: str) -> str:
 
 def project(arclog: str, arcdata: str, columns: Mapping[str, Mapping[str, Any]], keep: bool = False) -> Projected:
     """`arclog` after the pass, given the `arcdata` of the same program and its column map `columns`
-    (`arclog_convert.names.column_map`), with the relations whose clause the pass removed (left in place with `keep`)."""
+    (`arclog_convert.names.column_map`), with the readers of each relation whose clause the pass removed (left in place
+    with `keep`)."""
     chosen = frozenset(_lint(arclog).chosen)
-    removed: set[str] = set()
+    readers: dict[str, set[ReaderForm]] = defaultdict(set)
     while (step := _Program(arclog, arcdata, columns, chosen).step(keep)) is not None:
-        arclog = step[0]
-        removed.add(step[1])
-    return Projected(arclog if keep or not removed else _restand(arclog), frozenset(removed))
+        arclog = step.text
+        readers[step.relation] |= step.readers
+    return Projected(arclog if keep or not readers else _restand(arclog),
+                     {relation: tuple(sorted(forms)) for relation, forms in sorted(readers.items())})
