@@ -75,12 +75,12 @@ pub(crate) fn with_case<T>(corpus: &Path, tasks: &Path, id: &str, name: &str, bo
     let chosen = if name == CONCEPT { Some(cases.concept()) } else { cases.resolved().find(|case| names_case(name, &solver.departures(&case.case.name))) };
     let chosen = chosen.ok_or_else(|| format!("the solver has no case named `{name}`"))?;
     let mut cache = CheckCache::default();
-    let concept = check_case(cases.concept(), &clauses, &mut cache, "the concept case")?;
+    let concept = check_case(&solver, cases.concept(), &clauses, &mut cache, "the concept case")?;
     let own;
     let program = if name == CONCEPT {
         &concept
     } else {
-        own = check_case(chosen, &clauses, &mut cache, &format!("the case `{name}`"))?;
+        own = check_case(&solver, chosen, &clauses, &mut cache, &format!("the case `{name}`"))?;
         &own
     };
     let parameters = ParameterValues::stored(solver.arcdata.value());

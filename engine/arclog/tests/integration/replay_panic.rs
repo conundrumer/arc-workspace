@@ -35,6 +35,8 @@ const ARCLOG: &str = "\
        (NOT (&taken P)))
       ((&taken P)
        (&seed (:C Col)))))
+
+(OUT (&output ^P ^Col))
 ";
 
 const ARCDATA: &str = "\

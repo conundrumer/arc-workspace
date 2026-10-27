@@ -40,6 +40,8 @@ const ARCLOG: &str = "\
        (NOT (&taken P)))
       ((&taken P)
        (&seed (:C Col)))))
+
+(OUT (&output ^P ^Col))
 ";
 
 /// The program of `ARCLOG` but for its `&taken` clause, which gives a stream
@@ -74,6 +76,8 @@ const OTHER: &str = "\
        (NOT (&taken P)))
       ((&taken P)
        (&seed (:C Col)))))
+
+(OUT (&output ^P ^Col))
 ";
 
 const ARCDATA: &str = "\

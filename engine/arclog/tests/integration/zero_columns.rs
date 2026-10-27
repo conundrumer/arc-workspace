@@ -223,6 +223,8 @@ const CONSTANT_IN_THE_CONCEPT: &str = "
 
       (RULE &host
         (&frame.box *B)))))
+
+(OUT (&cell ^P ^Col))
 ";
 
 /// The columns of `&host` in the program that the stream of the case of
@@ -237,7 +239,7 @@ fn streamed_host(alts: &[&str]) -> (Vec<String>, bool) {
         let wanted = case(&solver, alts).name;
         cases.cases().find(|resolved| resolved.case.name == wanted).expect("a resolved case")
     };
-    let checked = check_case(resolved, &SolverClauses::of_cases(&cases), &mut CheckCache::default(), "the case").expect("the case checks");
+    let checked = check_case(&solver, resolved, &SolverClauses::of_cases(&cases), &mut CheckCache::default(), "the case").expect("the case checks");
     let vocabulary = Vocabulary::new(registry, &DecodeSettings::default());
     let stream = case_stream(resolved, &checked, &vocabulary).expect("the writer gives a stream");
     let zero = stream.tokens.iter().any(|(token, _)| matches!(token, Token::Control(Control::Zero | Control::Op(_))));

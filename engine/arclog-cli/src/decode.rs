@@ -234,10 +234,10 @@ fn decode_cases(corpus: &Path, tasks: &Path, id: &str, all: bool, rows: RowsMode
     let cases = resolve_cases(&solver, registry);
     let clauses = SolverClauses::of_cases(&cases);
     let mut cache = CheckCache::default();
-    let concept = check_case(cases.concept(), &clauses, &mut cache, "the concept case")?;
+    let concept = check_case(&solver, cases.concept(), &clauses, &mut cache, "the concept case")?;
     let bases = solver.base_case_names(Exclusion::WithoutExcluded);
     let decoded = decoded_cases(&cases, all);
-    let programs = check_cases(&cases, &clauses, &mut cache, &|name| bases.contains(name) || decoded.contains(name))?;
+    let programs = check_cases(&solver, &cases, &clauses, &mut cache, &|name| bases.contains(name) || decoded.contains(name))?;
     let session = corpus_session();
     let limits = corpus_limits();
     let constructions = constructions()?;

@@ -211,7 +211,10 @@ const INPUT_PORT: &str = "
   (RULE_OR_DET &canvas.extent)
 
   (RULE &output
-    (&canvas.cell *P)))
+    (&canvas.cell *P)
+    (input P *Col)))
+
+(OUT (&output ^P ^Col))
 ";
 
 #[test]
@@ -279,9 +282,9 @@ fn verdict_of(forms: &str) -> Verdict {
 
 #[test]
 fn a_lifted_read_bound_by_ex_output_reads_the_train_examples_alone() {
-    let bound = verdict_of("(DET &d (ex_output (:E *E)) (&c (:E E) (:Col *Col)))\n(RULE &output (input *P *Col) (&d (:Col Col)))\n(OUT (&output ^P ^Col))");
+    let bound = verdict_of("(DET &d (ex_output *E) (&c E *Col))\n(RULE &output (input *P *Col) (&d Col))\n(OUT (&output ^P ^Col))");
     assert_eq!(bound, Verdict::Consistent);
-    let unbound = verdict_of("(DET &d (ex_input *E) (&c (:E E) (:Col *Col)))\n(RULE &output (input *P *Col) (&d (:Col Col)))\n(OUT (&output ^P ^Col))");
+    let unbound = verdict_of("(DET &d (ex_input *E) (&c E *Col))\n(RULE &output (input *P *Col) (&d Col))\n(OUT (&output ^P ^Col))");
     assert_ne!(unbound, Verdict::Consistent);
 }
 
@@ -292,7 +295,7 @@ const UNREAD_COLUMN: &str = "
 
   (RULE &output
     (input *P *Col)
-    (&cell (:Col Col))))
+    (&cell Col)))
 
 (OUT (&output ^P ^Col))
 ";
@@ -320,11 +323,11 @@ const READS_IN_THE_BLOCK_THAT_HOLDS_THE_LINE: &str = "
         (input *P *Col))
 
       (RULE &other
-        (&cell (:P *P)))
+        (&cell *P))
 
       (RULE &output
         (input *P *Col)
-        (&cell (:Col Col))
+        (&cell Col)
         (&other P)))))
 
 (OUT (&output ^P ^Col))

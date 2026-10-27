@@ -221,6 +221,12 @@ impl<'a> CaseFiles<'a> {
         (owner, owning, file_path)
     }
 
+    /// Whether the file writes the node at `path` of the case program as
+    /// the program holds it, as [`Case::written_as_held`] gives.
+    pub fn writes(&self, path: &NodePath) -> bool {
+        self.case.written_as_held(path)
+    }
+
     /// The layout of the node at `path` of the case program, where its
     /// file gives it one.
     fn layout(&self, path: &NodePath) -> Option<&'a NodeLayout> {

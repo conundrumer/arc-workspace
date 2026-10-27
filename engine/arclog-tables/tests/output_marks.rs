@@ -35,9 +35,9 @@ fn the_table_of_the_relation_of_each_atom_marks_the_column_it_selects() {
     // The evidence tables, then `&r`, which an `OUT` of one atom reads at both columns.
     assert_eq!(marks("(RULE &r (input *P *Col))\n(OUT (&r ^P ^Col))\n"), [(-1, -1), (-1, -1), (0, 1)]);
     // `&pos` and `&colr`, one atom each.
-    assert_eq!(marks("(RULE &pos (input *P))\n(RULE &colr (input (:Col *Col)))\n(OUT (&pos ^P) (&colr ^Col))\n"), [(-1, -1), (-1, -1), (0, -1), (-1, 0)]);
+    assert_eq!(marks("(RULE &pos (input *P))\n(RULE &colr (input *Col))\n(OUT (&pos ^P) (&colr ^Col))\n"), [(-1, -1), (-1, -1), (0, -1), (-1, 0)]);
     // A relation that no table holds, `input`, marks none.
-    assert_eq!(marks("(RULE &colr (input (:Col *Col)))\n(OUT (input ^P) (&colr ^Col))\n"), [(-1, -1), (-1, -1), (-1, 0)]);
+    assert_eq!(marks("(RULE &colr (input *Col))\n(OUT (input ^P) (&colr ^Col))\n"), [(-1, -1), (-1, -1), (-1, 0)]);
     // A relation that the `OUT` does not read marks none.
     assert_eq!(marks("(RULE &r (input *P *Col))\n(RULE &other (input *P *Col))\n(OUT (&r ^P ^Col))\n"), [(-1, -1), (-1, -1), (0, 1), (-1, -1)]);
 }

@@ -9,7 +9,7 @@ use std::path::Path;
 
 pub use files::{case_file_name, case_files, CaseFiles, CaseTexts};
 
-use crate::check::{check_shared_program, CheckCache, CheckedProgram, SolverClauses};
+use crate::check::{check_program_of_files, check_shared_program, CheckCache, CheckedProgram, SolverClauses};
 use crate::decode::replay::holds_demonstrated;
 use crate::harness::{read_corpus_solver, read_solver_texts};
 use crate::registry::Registry;
@@ -17,7 +17,7 @@ use crate::eval::determinations::relation_spelled;
 use crate::hash::StableHashSet;
 use crate::program::ProgramRelation;
 use crate::resolver::{resolve, resolve_cases, DependencyKind, GraphNodeIndex, ResolvedCase, ResolvedCases, ResolvedProgram, SolverScope};
-use crate::solver::{Case, CaseName, Exclusion};
+use crate::solver::{Case, CaseName, Exclusion, Solver};
 use crate::stream::{written_stream, Emitter, Token, Vocabulary, WrittenStream};
 
 /// The cases of a solver whose streams are wanted.
@@ -65,7 +65,7 @@ pub fn solver_streams(corpus: &Path, id: &str, wanted: WantedCases<'_>, vocabula
             vec![found.case.name.clone()]
         }
     };
-    let programs = check_cases(&cases, &clauses, &mut CheckCache::default(), &|name| names.contains(name))?;
+    let programs = check_cases(&solver, &cases, &clauses, &mut CheckCache::default(), &|name| names.contains(name))?;
     let concept = &cases.concept().case.name;
     Ok(programs
         .iter()
@@ -94,7 +94,7 @@ pub fn corpus_case_stream(corpus: &Path, id: &str, case: &ResolvedCase, checked:
     let solver = read_solver_texts(corpus, id, &texts.arclog, &texts.arcdata).map_err(|e| format!("the case's files do not read: {e}"))?;
     let cases = resolve_cases(&solver, Registry::get());
     let clauses = SolverClauses::of_cases(&cases);
-    let alone = check_case(cases.concept(), &clauses, &mut CheckCache::default(), "the case's files")?;
+    let alone = check_case(&solver, cases.concept(), &clauses, &mut CheckCache::default(), "the case's files")?;
     case_stream(cases.concept(), &alone, vocabulary)
 }
 
@@ -202,22 +202,26 @@ pub fn case_spelled(name: &CaseName) -> String {
     if name.0.is_empty() { "concept".to_owned() } else { name.0.iter().map(|alt| &*alt.0).collect::<Vec<_>>().join(" ") }
 }
 
-/// The checked program of `case`, one of the cases whose clauses `clauses`
-/// index, or the checker's refusal of `what`, the case as a line names it.
-pub fn check_case(case: &ResolvedCase, clauses: &SolverClauses, cache: &mut CheckCache, what: &str) -> Result<CheckedProgram, String> {
-    check_shared_program(std::sync::Arc::clone(&case.resolved.value), clauses, Registry::get(), cache).map_err(|refusals| {
+/// The checked program of `case`, one of the cases of `solver` whose clauses
+/// `clauses` index, checked with the files of `solver` that the checks
+/// which read files read, or the checker's refusal of `what`, the case as a
+/// line names it.
+pub fn check_case(solver: &Solver, case: &ResolvedCase, clauses: &SolverClauses, cache: &mut CheckCache, what: &str) -> Result<CheckedProgram, String> {
+    let files = crate::check::CaseFiles { solver, case: &case.case };
+    check_program_of_files(std::sync::Arc::clone(&case.resolved.value), clauses, Registry::get(), cache, Some(&files)).map_err(|refusals| {
         let messages: Vec<&str> = refusals.iter().map(|d| &*d.message).collect();
         format!("the checker refuses {what}: {}", messages.join("; "))
     })
 }
 
-/// The checked program of each case of `cases` whose name `wanted` holds,
-/// in the order of the cases, or the first refusal.
-pub fn check_cases(cases: &ResolvedCases, clauses: &SolverClauses, cache: &mut CheckCache, wanted: &dyn Fn(&CaseName) -> bool) -> Result<Vec<(CaseName, CheckedProgram)>, String> {
+/// The checked program of each case of `cases`, those of `solver`, whose
+/// name `wanted` holds, in the order of the cases, or the first refusal, as
+/// [`check_case`] gives it.
+pub fn check_cases(solver: &Solver, cases: &ResolvedCases, clauses: &SolverClauses, cache: &mut CheckCache, wanted: &dyn Fn(&CaseName) -> bool) -> Result<Vec<(CaseName, CheckedProgram)>, String> {
     let mut programs = Vec::new();
     for case in cases.cases().filter(|case| wanted(&case.case.name)) {
         let what = format!("the case {}", case_spelled(&case.case.name));
-        programs.push((case.case.name.clone(), check_case(case, clauses, cache, &what)?));
+        programs.push((case.case.name.clone(), check_case(solver, case, clauses, cache, &what)?));
     }
     Ok(programs)
 }

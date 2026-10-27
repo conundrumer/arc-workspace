@@ -185,6 +185,11 @@ impl Placing<'_> {
     /// rewrites or builds ([`Case::program`]) takes the names that
     /// [`fallback_names`] gives, and its tokens stand one space after the
     /// other.
+    ///
+    /// A node whose tokens are the file's keeps the file's elided sites. Each
+    /// other atom, and each head of an instance's input, elides the sites
+    /// that hold one label whose name in its scope is the site's column's
+    /// name, as `docs/arclog/arclog.md#sites` gives.
     fn place(&self, layout: &mut Layout, line: u32) -> u32 {
         let top = NodePath::top(self.index as u32);
         let (owner, origin) = self.case.file_path(&top);
@@ -199,6 +204,8 @@ impl Placing<'_> {
         };
         let mut last = line;
         let mut nodes: Vec<(NodePath, NodeLayout)> = Vec::new();
+        // Whether the node took its tokens and its elided sites from the file.
+        let mut copied: Vec<bool> = Vec::new();
         each_node(NodeRef::from(self.form), &top, &mut |path, _| {
             let below = NodePath(path.0[1..].into());
             let written = labels_stand.then(|| source.layout.node(SourceFile::Arclog, &origin.join(&below))).flatten();
@@ -208,18 +215,44 @@ impl Placing<'_> {
                 if let Some(shift) = shift {
                     node.place = written.place.map(|place| moved(place, shift));
                     node.tokens = written.tokens.iter().map(|place| moved(*place, shift)).collect();
+                    node.elided_sites = written.elided_sites.clone();
                 }
             }
             if path == &top && shift.is_none() {
                 node.tokens = Box::new([line_start(SourceFile::Arclog, line)]);
             }
             last = node.tokens.iter().map(|place| place.line).fold(last, u32::max);
+            copied.push(written.is_some() && shift.is_some());
             nodes.push((path.clone(), node));
         });
         if !labels_stand {
             for (path, names) in fallback_names(self.form, &top) {
                 let node = nodes.iter_mut().find(|(at, _)| *at == path).map(|(_, node)| node).expect("a scope of the form is a node of it");
                 node.label_names = names.into();
+            }
+        }
+        // The other nodes elide each site of one label that the layout names as the site's column.
+        let mut elided: Vec<Box<[u32]>> = Vec::new();
+        each_node(NodeRef::from(self.form), &top, &mut |path, node| {
+            let sites = match node {
+                NodeRef::Conjunct(conjunct) => conjunct.atom().map(|atom| &atom.value().sites[..]),
+                NodeRef::InstanceInput(input) => Some(&input.head[..]),
+                _ => None,
+            };
+            let name_of = |label: LabelId| {
+                let scopes = nodes.iter().filter(|(at, node)| path.0.starts_with(&at.0) && node.label_names.iter().any(|(id, _)| *id == label));
+                let (_, scope) = scopes.max_by_key(|(at, _)| at.0.len())?;
+                scope.label_names.iter().find(|(id, _)| *id == label).map(|(_, name)| name.clone())
+            };
+            let is_bare = |site: &Site| match (&site.column, &site.value.args[..]) {
+                (ColumnName::Written(column), [SiteArg::Label(LabelUse::Fresh(label) | LabelUse::Join(label) | LabelUse::Key(label))]) => name_of(*label).is_some_and(|name| name == *column),
+                _ => false,
+            };
+            elided.push(sites.map_or_else(|| Box::new([]) as Box<[u32]>, |sites| sites.iter().enumerate().filter(|(_, site)| is_bare(site)).map(|(index, _)| index as u32).collect()));
+        });
+        for (((_, node), copied), elided) in nodes.iter_mut().zip(&copied).zip(elided) {
+            if !copied {
+                node.elided_sites = elided;
             }
         }
         layout.nodes.extend(nodes.into_iter().map(|(path, node)| ((SourceFile::Arclog, path), node)));

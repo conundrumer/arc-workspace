@@ -86,6 +86,11 @@ pub struct Case {
     /// by its path. A node below such a form stands at the same path below
     /// the form's path in the file.
     origins: StableHashMap<NodePath, (FileOwner, NodePath)>,
+    /// The paths of the top-level forms that the case's reading of a line
+    /// makes or rewrites: the file does not write them as the program holds
+    /// them, so no node below one stands at the place of
+    /// [`Case::file_path`] as the file writes it.
+    made: Box<[NodePath]>,
     concept_determinations: Box<[NodePath]>,
     rederived: Box<[NodePath]>,
     /// The alts of the block of each `OUT` form of the program, in the order of
@@ -152,6 +157,14 @@ impl Case {
     /// drops no column of it. The concept case takes no such `DET`.
     pub fn reads_alone_as_it_stands(&self) -> bool {
         self.concept_determinations.is_empty() && self.alone.is_none()
+    }
+
+    /// Whether the file writes the node at `path` of the case program as the
+    /// program holds it: no form that the case's reading of a line makes or
+    /// rewrites holds the node. [`Case::file_path`] names the line's place
+    /// for such a node, where the file writes other text.
+    pub fn written_as_held(&self, path: &NodePath) -> bool {
+        !self.made.iter().any(|made| path.0.starts_with(&made.0))
     }
 
     /// The arclog file that holds the node at `path` of the case program,
@@ -302,8 +315,8 @@ impl Solver {
             if line.keyword == ClauseKeyword::RuleOrDet && *reading == Reading::Stored {
                 stored.push((index, line, port));
             } else if let (Some(Port { instance, name, input: true }), Reading::Stored) = (port, reading) {
-                if let Some(Placed { form: Form::Instance(form), .. }) = placed[instance].first_mut() {
-                    *form = Node::new(without_input(form.value(), name));
+                if let Some(first) = placed[instance].first_mut() {
+                    rewrite_instance(first, |instance| without_input(instance, name));
                 }
             }
         }
@@ -323,15 +336,15 @@ impl Solver {
                 let reading = stored_reading(line, port, instance, &others, read_columns.get(&line.derives).map_or(&[], |columns| columns), &mut used);
                 let Some(reading) = reading else {
                     if let Some(Port { instance, name, input: true }) = port {
-                        if let Some(Placed { form: Form::Instance(form), .. }) = placed[instance].first_mut() {
-                            *form = Node::new(without_input(form.value(), name));
+                        if let Some(first) = placed[instance].first_mut() {
+                            rewrite_instance(first, |instance| without_input(instance, name));
                         }
                     }
                     continue;
                 };
                 if let (Some(Port { instance, name, .. }), Some(body)) = (port, &reading.input) {
-                    if let Some(Placed { form: Form::Instance(form), .. }) = placed[instance].first_mut() {
-                        *form = Node::new(with_input_body(form.value(), name, body));
+                    if let Some(first) = placed[instance].first_mut() {
+                        rewrite_instance(first, |instance| with_input_body(instance, name, body));
                     }
                 }
                 if let Some(rename) = &reading.rename {
@@ -340,6 +353,7 @@ impl Solver {
                             if !concept_determination(p) {
                                 if let Some(form) = map_atoms(&p.form, &|atom| rename.of(atom)) {
                                     p.form = form;
+                                    p.made = true;
                                 }
                             }
                         }
@@ -348,7 +362,7 @@ impl Solver {
                 if let Some(helper) = reading.helper {
                     helpers.push(helper);
                 }
-                placed[index] = reading.forms.into_iter().map(|form| Placed { form, ..original.clone() }).collect();
+                placed[index] = reading.forms.into_iter().map(|form| Placed { form, made: true, ..original.clone() }).collect();
             }
         }
         let placed: Vec<Placed> = placed.into_iter().flatten().collect();
@@ -357,6 +371,7 @@ impl Solver {
         let mut origins = StableHashMap::default();
         let mut concept_determinations = Vec::new();
         let mut rederived = Vec::new();
+        let mut made = Vec::new();
         let mut out_blocks = Vec::new();
         for taken in taken {
             let p = taken.placed;
@@ -369,6 +384,9 @@ impl Solver {
             }
             if concept_determination(p) {
                 concept_determinations.push(path.clone());
+            }
+            if p.made {
+                made.push(path.clone());
             }
             let (form, below) = taken.form();
             origins.extend(below.into_iter().map(|(at, origin)| (path.join(&at), origin)));
@@ -395,6 +413,7 @@ impl Solver {
             name,
             program: Node::new(Program { forms: forms.into() }),
             origins,
+            made: made.into(),
             concept_determinations: concept_determinations.into(),
             rederived: rederived.into(),
             out_blocks: out_blocks.into(),
@@ -593,6 +612,9 @@ struct Placed {
     owner: FileOwner,
     path: NodePath,
     alts: Vec<AltsName>,
+    /// Whether the case's reading of a line made or rewrote the form, so the
+    /// file does not write it as it stands.
+    made: bool,
 }
 
 impl Placed {
@@ -648,7 +670,7 @@ impl<'a> Walk<'a> {
             }
             _ => {
                 let step = self.placed.len() + self.points.len();
-                self.placed.push(Placed { step, form: form.clone(), owner, path, alts: alts.to_vec() })
+                self.placed.push(Placed { step, form: form.clone(), owner, path, alts: alts.to_vec(), made: false })
             }
         }
     }
@@ -758,6 +780,14 @@ fn without_input(instance: &Instance, port: &PortName) -> Instance {
     };
     let key = instance.key.as_ref().map(|key| Node::new(KeyClause { inputs: kept(&key.value().inputs), ..key.value().clone() }));
     Instance { key, inputs: kept(&instance.inputs), ..instance.clone() }
+}
+
+/// Rewrites the `INIT` form at `placed` by `rewrite`, and marks it made.
+fn rewrite_instance(placed: &mut Placed, rewrite: impl FnOnce(&Instance) -> Instance) {
+    if let Form::Instance(form) = &mut placed.form {
+        *form = Node::new(rewrite(form.value()));
+        placed.made = true;
+    }
 }
 
 /// `instance` with the body of its input `port` replaced by `body`, of its
