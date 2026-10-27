@@ -15,7 +15,9 @@ Options:
   --out <dir>             where the mutants are kept (default `work/arclog/mutation`)
   --operators <a,b,...>   the operators to run (default every operator; the names are the keys of `OPERATORS`)
   --per-operator <k>      mutants of each operator per solver (default 1)
-  --limit <n>             the most mutants of the run; the solvers are taken in the order of a shuffle by `--seed`
+  --limit <n>             the most mutants of the run; each operator has the share `n // k` of the `k` operators, and the first `n mod k`
+                          operators of `--operators` have one more; each operator's mutants are taken from the solvers in the order of a
+                          shuffle by `--seed`, up to its share, and solvers are read until every share is met or none is left
   --seed <s>              the seed of every draw (default 0); a run is the same at every `--jobs`
   --jobs <n>              mutants run in parallel (default 1)
   <task id> ...           the solvers to mutate (default every solver of the corpus)
@@ -28,13 +30,16 @@ The operators, with the rule of `docs/arclog/` that gives the verdict of their m
   fresh-again     a bare label at a site becomes `*X` where an earlier site of the body makes X. Rule (`docs/arclog/arclog.md`, Sites): refused.
   proposer-body   a proposer name put before the body of a `DET`, or a body atom put after the proposer of a `DET` that names one.
                   Rule (`docs/arclog/arclog.md`, Program): a `DET` that names a proposer has no body, so refused.
-  rigid-lib-part  an atom of a lib relation over labels that a part makes, added as a part of a `RIGID_DET`. Rule (`docs/arclog/rigid.md`,
+  rigid-lib-part  an atom of a lib relation added as a part of a `RIGID_DET`, with a site for each column whose type is the type of a label
+                  that a part makes (the first such label in the order of the parts, whatever its name). Rule (`docs/arclog/rigid.md`,
                   Form): accepted.
   literal, column, mark, drop-site, repeat-site, drop-atom, repeat-atom
                   a number, constant or string for another; a site's column for another of its relation; `*X` to `X` or `X` to `^X`;
                   a site or an atom dropped or repeated. No rule gives a verdict.
-The types of the columns of a lib relation come from `engine/lib/registry.sexpr`; a site of any other relation, and a label with no
-site on a typed column, get no expected verdict.
+The types of the columns of a lib relation come from `engine/lib/registry.sexpr`; a site of any other relation gets no expected verdict.
+A label's type is the meet, over the lattice of `docs/engine/reader.md`, of the types of its sites in its clause outside `NOT` atoms; the
+type of a site of a relation that a clause names as its own is the meet of the types of the label of its column's name in each such clause.
+A label with no typed site, or whose types have no meet, gets no expected verdict.
 
 A mutant is the text of a solver's `.arclog` with one span replaced, so its comments and layout stand. Each mutant has a directory of
 its own under `--out`, with its `.arclog`, the `.arcdata` of the solver and the files of each solver that `.arcdata` names. Each stage
@@ -67,6 +72,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 STAGE_BOUND = 60  # seconds
 CONSTRAINT_OPS = ("=", "!=", "<", "<=", ">", ">=")
+TYPE_UNDER = {"C4": "D4", "Dir": "Dir8", "DiagDir": "Dir8", "Axis": "Axis4", "DiagAxis": "Axis4", "Position": "Box", "Offset": "Box"}  # docs/engine/reader.md: a type to the type above it
+CLAUSE_HEADS = ("RULE", "DET", "RIGID_DET", "INIT")  # the clauses that name a relation as their own, by their second item
 BOX_TYPES = ("Box", "Position", "Offset")  # the three types of the box algebra
 ZERO_TYPES = ("number", *BOX_TYPES)  # docs/arclog/arclog.md: the columns at which a site may hold `0`, and the first labels of a constraint with `0` second
 REFUSAL_PREFIX = re.compile(r"(a fault that stops the (?:stream|decode):\s*)?(the checker refuses the case \S+:\s*|the solver's files do not read:\s*)?")
@@ -223,6 +230,24 @@ def atom_sites(node, lib):
     return None if None in sites else sites
 
 
+def meet(a, b):
+    """The lower of two types where one is the other or is under it, else None."""
+    if a == b or TYPE_UNDER.get(a) == b:
+        return a
+    return b if TYPE_UNDER.get(b) == a else None
+
+
+def meet_all(types):
+    """The meet of the types, None where there are none or two have no meet."""
+    types = iter(types)
+    result = next(types, None)
+    for t in types:
+        if result is None:
+            return None
+        result = meet(result, t)
+    return result
+
+
 def bare(label):
     return label.text.lstrip("*^")
 
@@ -238,12 +263,12 @@ class Context:
         self.task, self.src, self.lib, self.proposers = task, src, lib, proposers
         self.tree = read(src)
         self.atoms = {id(n): s for n in walk(self.tree) if (s := atom_sites(n, lib)) is not None}
-        self.label_types: dict[str, set[str]] = {}
-        for n in walk(self.tree):
-            for site in self.atoms.get(id(n), []):
-                column = self.column_type(n, site)
-                if column and site.label is not None:
-                    self.label_types.setdefault(bare(site.label), set()).add(column)
+        self.owners: dict[str, list[Node]] = {}  # a relation's name to the clauses that name it as their own
+        for clause in self.clauses(*CLAUSE_HEADS):
+            self.owners.setdefault(clause.items[1].text, []).append(clause)
+        self.label_types: dict[tuple[int, str], str | None] = {}  # (clause, label name) to the label's type, for the results that no cycle cut
+        self.typing: set[tuple[int, str]] = set()
+        self.cuts = 0
 
     def clauses(self, *heads):
         return [n for n in walk(self.tree) if n.kind == NodeKind.LIST and n.head in heads and len(n.items) >= 2]
@@ -256,9 +281,44 @@ class Context:
         rel = self.lib.relations.get(atom.head)
         return dict(rel.columns).get(site.column) if rel else None
 
-    def label_type(self, label):
-        types = self.label_types.get(bare(label), set())
-        return next(iter(types)) if len(types) == 1 else None
+    def site_types(self, atom, site):
+        """The types that a site gives its label: its column's type for a lib relation, else the types of the same-named label in each clause that names the relation."""
+        column = self.column_type(atom, site)
+        if column:
+            return [column]
+        return [t for clause in self.owners.get(atom.head, []) if (t := self.label_type(clause, site.column))]
+
+    def label_type(self, clause, label):
+        """The meet of the types of the sites of the label named `label` in `clause`, outside `NOT` atoms; None where it has no meet. A
+        relation that is defined through itself gives no type at its second visit."""
+        key = (id(clause), label)
+        if key in self.label_types:
+            return self.label_types[key]
+        if key in self.typing:
+            self.cuts += 1
+            return None
+        self.typing.add(key)
+        cuts = self.cuts
+        types = []
+        for atom in walk([clause]):
+            if id(atom) in self.atoms and not self.inside_not(clause, atom):
+                for site in self.atoms[id(atom)]:
+                    if site.label is not None and bare(site.label) == label:
+                        types += self.site_types(atom, site)
+        self.typing.discard(key)
+        result = meet_all(types)
+        if self.cuts == cuts:
+            self.label_types[key] = result
+        return result
+
+    @staticmethod
+    def inside_not(clause, atom):
+        node = atom.parent
+        while node is not clause:
+            if node.head == "NOT":
+                return True
+            node = node.parent
+        return False
 
     def indent_of(self, node):
         line = self.src.rfind("\n", 0, node.start) + 1
@@ -324,7 +384,7 @@ def zero(ctx):
                 first, second = item.items[1], item.items[2]
                 if first.kind != NodeKind.ATOM or second.kind != NodeKind.ATOM or bare(second) in ("0", "") or INTEGER.fullmatch(second.text):
                     continue
-                column = ctx.label_type(first)
+                column = ctx.label_type(clause, bare(first))
                 # docs/arclog/arclog.md: `0` as the second label is refused unless the first label is a number, a Box, a Position or an
                 # Offset. No line gives a verdict for the ordering operators on a Box, a Position or an Offset.
                 expected = None if column is None or (column in BOX_TYPES and item.head != "!=") else column in ZERO_TYPES
@@ -377,13 +437,17 @@ def rigid_lib_part(ctx):
     edits = []
     for form in ctx.clauses("RIGID_DET"):
         parts = [p for p in rigid_parts(form) if id(p) in ctx.atoms]
-        made = {bare(s.label): ctx.label_type(s.label) for p in parts for s in ctx.atoms[id(p)] if s.label is not None and mark(s.label) == "*"}
         if not parts:
             continue
+        made = {}  # a type to the first label in the order of the parts that a part makes with it
+        for p in parts:
+            for s in ctx.atoms[id(p)]:
+                if s.label is not None and mark(s.label) == "*" and (t := ctx.label_type(form, bare(s.label))):
+                    made.setdefault(t, bare(s.label))
         for name, rel in sorted(ctx.lib.lib_relations().items()):
-            columns = [(c, t) for c, t in rel.columns if made.get(c) == t]
+            columns = [(c, made[t]) for c, t in rel.columns if t in made]
             if columns and (not rel.modes or any(mode <= {c for c, _ in columns} for mode in rel.modes)):
-                text = "(" + " ".join([name] + [c for c, _ in columns]) + ")"
+                text = "(" + " ".join([name] + [f"(:{c} {label})" for c, label in columns]) + ")"
                 edits.append(insertion_after(ctx, parts[-1], text, expected=True, note=f"the lib atom {text} as a part"))
     return edits
 
@@ -489,6 +553,14 @@ def draw(ctx, operators, per_operator, seed):
             text = ctx.src[:edit.start] + edit.new + ctx.src[edit.end:]
             mutants.append(Mutant(-1, ctx.task, name, text, edit.expected, edit.note))
     return mutants
+
+
+def share_of_limit(limit, operators):
+    """Each operator's share of `limit` mutants: `limit // k` of the `k` operators, one more for the first `limit mod k`; None without a limit."""
+    if limit is None:
+        return None
+    base, extra = divmod(limit, len(operators))
+    return {o: base + (i < extra) for i, o in enumerate(operators)}
 
 
 def named_solvers(corpus, task):
@@ -645,15 +717,23 @@ def main():
     tasks = args.task_ids or sorted(p.stem for p in Path(args.corpus).glob("*.arclog"))
     if args.limit is not None and not args.task_ids:
         random.Random(f"{args.seed}/tasks").shuffle(tasks)
+    shares = share_of_limit(args.limit, operators)
     mutants = []
     for task in tasks:
-        if args.limit is not None and len(mutants) >= args.limit:
+        wanted = [o for o in operators if shares is None or shares[o] > 0]
+        if not wanted:
             break
         try:
-            mutants += draw(Context(task, (Path(args.corpus) / f"{task}.arclog").read_text(), lib, proposers), operators, args.per_operator, args.seed)
+            drawn = draw(Context(task, (Path(args.corpus) / f"{task}.arclog").read_text(), lib, proposers), wanted, args.per_operator, args.seed)
         except (ValueError, OSError) as error:
             print(f"left out {task}: {error}", file=sys.stderr)
-    mutants = mutants[:args.limit]
+            continue
+        for mutant in drawn:
+            if shares is None:
+                mutants.append(mutant)
+            elif shares[mutant.operator] > 0:
+                shares[mutant.operator] -= 1
+                mutants.append(mutant)
     for index, mutant in enumerate(mutants):
         mutant.index = index
     runner = Runner(args)
