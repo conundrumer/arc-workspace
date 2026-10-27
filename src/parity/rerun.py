@@ -12,6 +12,10 @@ component over the task's examples, on the program from which each clause of a
 branch that neither that case nor the concept case takes is dropped
 (`determination_entry`).
 
+`case_rows` writes those rows to a file (`write_json`) as each relation's entry
+is made, so that it holds at once the runs of one case and the entry of one
+relation, whose rows are held as their JSON texts (`JsonText`).
+
 The check (`arclog_convert.row_parity`) runs the concept case and, for each
 `Choice` constructor (an ALT) that no case run before takes, the first case
 of `Loaded.every` that takes it (`cases_to_run`); `Loaded.every` holds no case
@@ -71,7 +75,7 @@ reads it from `&output`" for one that a case has and no case's `&output`
 reads, at any depth. In a case the check compares a relation only where the
 case's `&output` reads it or is it, or where it is a check relation
 (`NameMap.checks`), which the case counts as read though nothing reads it
-(`case_rows` gives their names as `check_relations`). An `equal` line proves that
+(`case_rows` writes their names as `check_relations`). An `equal` line proves that
 the relation's rows in each case that derives it and whose `&output` reads
 it, or that is a check relation, at the stored parameters, are these rows over the columns the converter maps
 (`engine/arclog-cli/src/row_parity.rs` gives the rest). Where the relation is
@@ -99,11 +103,11 @@ path under the instance of `Determine`."""
 
 import hashlib
 import json
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 from arc.task import Example
 from cli.common import LIMITS, engine, solver_path
@@ -425,10 +429,10 @@ def inline(names: NameMap | None, graph: Graph, name: str) -> bool:
     return bool(found) and all(f is not None and Qualifier.INLINE in f[0].qualifiers for f in found)
 
 
-def case_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | RunFailure:
-    """The rows of the cases `cases_to_run` gives for the solver of `stem`,
-    read from `solver_file`, each on every train and test pair, for each
-    relation `classify` compares, each row projected onto the columns the
+def case_rows(stem: str, solver_file: Path, path: Path) -> Undefined | RunFailure | None:
+    """Write to the file `path` the rows of the cases `cases_to_run` give for
+    the solver of `stem`, read from `solver_file`, each on every train and
+    test pair, for each relation `classify` compares, each row projected onto the columns the
     column map (`columns_path`) gives it, which leave out each Example leaf:
     for each, the leaves of the value at its `leaf` in its Souffle column. A
     relation's rows are a set. The form: `{"orientation_constants": {...},
@@ -470,9 +474,16 @@ def case_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | RunF
     the relation's rows under it (a list as `rows` is, the union of them all
     being `rows`) and, for each open parameter whose field of that value is
     not `nil`, the rows of the parameter's arclog relation that the value
-    gives, over the columns that `picks` lists for it. The concept case's undefined outcome or a run's failure
-    where it gives no rows. Raises `NoSuchCase` where the solver has no concept case,
-    and `FileNotFoundError` where the column map is missing."""
+    gives, over the columns that `picks` lists for it. The file holds that
+    form as `json.dumps` writes it with its default separators, written
+    (`write_json`) as each relation's entry (`relation_entry`) is made, so that
+    the function holds at once the runs of one case (`case_entry`) and the entry
+    of one relation, and no entry it has written. It gives None, or the concept
+    case's undefined outcome or a run's failure where it gives no rows; where
+    it gives one or raises, no file stays at `path`. Raises `NoSuchCase` where
+    the solver has no concept case, and `FileNotFoundError` where the column
+    map is missing."""
+    path.unlink(missing_ok=True)
     loaded = load_once(stem, solver_file)
     if not isinstance(loaded, Loaded):
         return loaded
@@ -483,32 +494,41 @@ def case_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | RunF
     determined = determined_relations(loaded, columns, concept_run)
     read = [] if loaded.names is None else loaded.names.read
     mapped, not_compared = classify(loaded, columns, [n for n in read if n not in {at.name for at in determined}])
-    entries = []
-    for i, case in enumerate(chosen):
-        name = case_name(loaded.solver, case, loaded.names)
-        got = case_entry(loaded, case, columns, mapped)
-        entry: dict[str, Any]
-        if isinstance(got, list):
-            entry = {"case": name, "pairs": got}
-        elif i == 0:
-            return got
-        else:
-            entry = {"case": name, "failure": str(got)}
-        if determined:
-            run = concept_run if i == 0 else run_program(
-                taking(loaded.determination, untaken(loaded.determination, case.base) & concept_untaken))
-            entry["determination"] = determination_entry(loaded, run, columns, determined)
-        entries.append(entry)
-    out = {"orientation_constants": orientation_constants(loaded.solver.lib),
-           "check_relations": [] if loaded.names is None else list(loaded.names.checks),
-           "cases": entries, "not_compared": not_compared}
-    return out
+    first = case_entry(loaded, chosen[0], columns, mapped)
+    if not isinstance(first, Iterator):
+        return first
+
+    def cases() -> Iterator[dict[str, Any]]:
+        for i, case in enumerate(chosen):
+            got = first if i == 0 else case_entry(loaded, case, columns, mapped)
+            entry: dict[str, Any] = {"case": case_name(loaded.solver, case, loaded.names)}
+            if isinstance(got, Iterator):
+                entry["pairs"] = got
+            else:
+                entry["failure"] = str(got)
+            if determined:
+                run = concept_run if i == 0 else run_program(
+                    taking(loaded.determination, untaken(loaded.determination, case.base) & concept_untaken))
+                entry["determination"] = determination_entry(loaded, run, columns, determined)
+            yield entry
+
+    try:
+        with path.open("w") as handle:
+            write_json(handle, {"orientation_constants": orientation_constants(loaded.solver.lib),
+                                "check_relations": [] if loaded.names is None else list(loaded.names.checks),
+                                "cases": cases(), "not_compared": not_compared})
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
+    return None
 
 
 def case_entry(loaded: Loaded, chosen: Case, columns: Mapping[str, Mapping[str, Any]],
-               mapped: Sequence[Pairing]) -> list[dict[str, Any]] | Undefined | RunFailure:
-    """The `pairs` of the entry of `chosen` in `case_rows`' form, or the
-    case's undefined outcome or a run's failure. A relation of the run that
+               mapped: Sequence[Pairing]) -> Iterator[dict[str, Any]] | Undefined | RunFailure:
+    """The case's undefined outcome or a run's failure, or, once each run of
+    `chosen` gives rows, its `pairs` in `case_rows`' form as an iterator, which
+    makes each relation's entry (`relation_entry`) when it is consumed and
+    holds the case's runs until it ends. A relation of the run that
     several arclog relations hold has an entry for each. Each relation's
     columns are those of the writing the case takes (`column_entry`)."""
     taken = loaded.taking(chosen)
@@ -521,8 +541,11 @@ def case_entry(loaded: Loaded, chosen: Case, columns: Mapping[str, Mapping[str, 
             return got
         runs.append((p.text, got))
     unread = projection.unread([got for _, got in runs])
-    return [{"pair": pair, "relations": [projection.entry(at, got[at.relation], got, unread) for at in mapped]}
-            for pair, got in runs]
+
+    def pairs() -> Iterator[dict[str, Any]]:
+        for pair, got in runs:
+            yield {"pair": pair, "relations": projection.entries([(at, got[at.relation]) for at in mapped], got, unread)}
+    return pairs()
 
 
 def determined_relations(loaded: Loaded, columns: Mapping[str, Mapping[str, Any]], run: RunProgram
@@ -548,7 +571,8 @@ def determined_relations(loaded: Loaded, columns: Mapping[str, Mapping[str, Any]
 
 def determination_entry(loaded: Loaded, run: RunProgram, columns: Mapping[str, Mapping[str, Any]],
                         mapped: Sequence[Pairing]) -> dict[str, Any]:
-    """The `determination` entry of a case in `case_rows`' form for the relations
+    """The `determination` entry of a case in `case_rows`' form, its `pairs` an
+    iterator that makes each relation's entry when it is consumed, for the relations
     `mapped`: the program of `run`, which `case_rows` gives the cut of the
     branches that neither the case nor the concept case takes
     (`taken_program`), over the task's examples, as
@@ -568,15 +592,15 @@ def determination_entry(loaded: Loaded, run: RunProgram, columns: Mapping[str, M
     unread = projection.unread([rows])
     per_input = {p: leaf for p in mapped
                  if (leaf := _example_leaf(column_entry(columns[p.name][p.key], frozenset()))) is not None}
-    pairs = []
-    for i in range(len(task.train) if per_input else 0):
-        pairs.append({"pair": f"train {i}", "relations": [
-            projection.entry(p, _of_example(rows[p.relation], leaf, i), rows, unread) for p, leaf in per_input.items()]})
     alone = [p for p in mapped if p not in per_input]
-    if alone:
-        pairs.append({"pair": "task", "relations": [
-            projection.entry(p, rows[p.relation], rows, unread) for p in alone]})
-    return {"pairs": pairs}
+
+    def pairs() -> Iterator[dict[str, Any]]:
+        for i in range(len(task.train) if per_input else 0):
+            yield {"pair": f"train {i}", "relations": projection.entries(
+                [(p, _of_example(rows[p.relation], leaf, i)) for p, leaf in per_input.items()], rows, unread)}
+        if alone:
+            yield {"pair": "task", "relations": projection.entries([(p, rows[p.relation]) for p in alone], rows, unread)}
+    return {"pairs": pairs()}
 
 
 def _example_leaf(column_map: list[list[dict[str, Any]]]) -> tuple[int, tuple[int, ...]] | None:
@@ -727,12 +751,46 @@ class Projection:
                                                 for got in runs for row in got[at.relation])]
                 for at, ls in self.leaves_of.items()}
 
-    def entry(self, at: Pairing, rows: Rows, got: Mapping[RelationName, Rows],
-              unread: Mapping[Pairing, list[MappedLeaf]]) -> dict[str, Any]:
-        """The entry (`relation_entry`) of the pairing `at`, from its
-        `rows`, with the rows `got` of a run for the minted ids."""
-        return relation_entry(at.name, rows, self.leaves_of[at], unread[at], self.opens[at],
-                              self.picks, Writer(self.sources, got))
+    def entries(self, held: Sequence[tuple[Pairing, Rows]], got: Mapping[RelationName, Rows],
+                unread: Mapping[Pairing, list[MappedLeaf]]) -> Iterator[dict[str, Any]]:
+        """The entry (`relation_entry`) of each pairing of `held`, from its
+        rows, with the rows `got` of a run for the minted ids; each is made when
+        it is consumed."""
+        for at, rows in held:
+            yield relation_entry(at.name, rows, self.leaves_of[at], unread[at], self.opens[at],
+                                 self.picks, Writer(self.sources, got))
+
+
+@dataclass(frozen=True, slots=True)
+class JsonText:
+    """A value in its JSON text, which `write_json` writes as it stands."""
+
+    text: str
+
+
+def write_json(handle: TextIO, value: Any) -> None:
+    """Write `value` to `handle` as `json.dumps` writes it, with its default
+    separators: a dict (its keys strings) and a list or other iterable piece by
+    piece, an iterable consumed once, and a `JsonText` as it stands."""
+    if isinstance(value, JsonText):
+        handle.write(value.text)
+    elif isinstance(value, Mapping):
+        handle.write("{")
+        for i, (key, item) in enumerate(value.items()):
+            if not isinstance(key, str):
+                raise TypeError(f"the key {key!r} is no string")
+            handle.write(f"{', ' if i else ''}{json.dumps(key)}: ")
+            write_json(handle, item)
+        handle.write("}")
+    elif isinstance(value, Iterable) and not isinstance(value, (str, bytes)):
+        handle.write("[")
+        for i, item in enumerate(value):
+            if i:
+                handle.write(", ")
+            write_json(handle, item)
+        handle.write("]")
+    else:
+        handle.write(json.dumps(value))
 
 
 def relation_entry(name: str, rows: Rows, mapped: list[MappedLeaf], unread: list[MappedLeaf],
@@ -740,7 +798,9 @@ def relation_entry(name: str, rows: Rows, mapped: list[MappedLeaf], unread: list
     """The entry of the relation `name` for one pair in `case_rows`' form,
     from its `rows` on the pair, its `mapped` leaves, those of them that are
     `unread`, the columns of type `OpenValue` that it holds (`opens`), the
-    open `picks` of the solver, and the `writer` of the minted ids."""
+    open `picks` of the solver, and the `writer` of the minted ids. The `rows`
+    of the entry, and of each `by_open` value, are the sorted JSON texts
+    (`JsonText`) of the distinct rows over the columns it keeps."""
     unresolved = {leaf: leaf.source.reason for leaf in mapped
                   if leaf not in unread and isinstance(leaf.source, Unresolved)}
     read = [leaf for leaf in mapped if leaf not in unread and leaf not in unresolved]
@@ -766,8 +826,8 @@ def relation_entry(name: str, rows: Rows, mapped: list[MappedLeaf], unread: list
     unresolved.update((read[i], reason) for i, reason in ambiguous.items())
     fault = [text for i, text in faults if i in kept]
 
-    def distinct(cells: list[list[list[int | float | str]]]) -> list[Any]:
-        return [json.loads(cell) for cell in sorted({json.dumps([c[i] for i in kept]) for c in cells})]
+    def distinct(cells: list[list[list[int | float | str]]]) -> list[JsonText]:
+        return [JsonText(cell) for cell in sorted({json.dumps([c[i] for i in kept]) for c in cells})]
 
     entry: dict[str, Any] = {
         "name": name, "columns": [[read[i].label, read[i].field] for i in kept],

@@ -58,8 +58,9 @@ it returns, so that no process keeps the memory of a chunk's Souffle runs for
 the call or for the next chunk; that process is bound to one CPU
 (`engine.pool.share_env`). The second phase runs in the main process, in the
 thread of the chunk, which waits on the call and writes the records. The
-Souffle runs go through the run cache. A task's rows file is written to disk
-as it is serialized, and `arclog-cli row-parity` reads it one relation at a time.
+Souffle runs go through the run cache. The Souffle side holds the runs of one
+case and the entry of one relation at a time, writing a task's rows file as
+each entry is made, and `arclog-cli row-parity` reads it one relation at a time.
 The call's stderr reaches the run's output: for each task that has run 10 s,
 and each further 10 s, a line `row-parity: <task> case <case>: <n> s`.
 
@@ -160,15 +161,13 @@ def souffle_side(stems: list[str], work: Path, solvers: Path) -> tuple[dict[str,
     rows = []
     for stem in stems:
         try:
-            got = rerun.case_rows(stem, solvers / f"{stem}.dl")
+            got = rerun.case_rows(stem, solvers / f"{stem}.dl", work / f"{stem}.json")
         except (rerun.NoSuchCase, FileNotFoundError) as e:
             faults[stem] = [("*", "fault", f"no Souffle rows: {type(e).__name__}: {e}")]
             continue
-        if not isinstance(got, dict):
+        if got is not None:
             faults[stem] = [("*", "fault", f"no Souffle rows: {got}")]
             continue
-        with (work / f"{stem}.json").open("w") as handle:
-            json.dump(got, handle)
         rows.append(stem)
     return faults, rows
 
