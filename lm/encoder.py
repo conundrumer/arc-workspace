@@ -635,7 +635,9 @@ def copy_flow_check(fl, column_types, kept, tables, dets=None, subtypes=None, wh
     return checked, unchecked, bad
 
 
-UNSEEN_TABLE_REASONS = ("the table faults", "the search for its projections stopped")   # those the export's files give
+TABLE_FAULTS, PROJECTIONS_STOP = "the table faults", "the search for its projections stopped"
+UNSEEN_TABLE_REASONS = (TABLE_FAULTS, PROJECTIONS_STOP)   # those the export's files give
+STOP_ENTRY_REASONS = frozenset({UNSEEN_KINDS[3], UNSEEN_KINDS[5]})   # an entry whose stop the export records
 
 
 BASES_COLUMNS = ["task", "case", "base", "tokens", "tables"]
@@ -677,6 +679,13 @@ def export_unseen_counts(tables, index, cases, bases):
         ix = ix.astype({"table": seen["table"].dtype}).merge(seen, on=["task", "case", "table"])
     entries = {UNSEEN_KINDS[int(k)]: int(n) for k, n in ix["kind"].value_counts().items()}
     return {r: n for r, n in counts.items() if n}, entries
+
+
+def unseen_for_stops(t):
+    """Whether the unseen Table t is unseen for stops that the export records alone: the search for its projections
+    stopped, or each reason that its entries are unseen for is a stopped entry (kind 3) or an example with no entries
+    (kind 5)."""
+    return t.unseen == PROJECTIONS_STOP or (t.unseen is not None and bool(t.unseen_entries) and set(t.unseen_entries) <= STOP_ENTRY_REASONS)
 
 
 def reconcile_unseen(out, tables, index, bases):
@@ -757,7 +766,7 @@ def parse_tables(tables_dir, tasks_dir=Path(__file__).resolve().parents[1] / "da
 
     Raises DataFault where the unseen tables and entries by reason differ from the counts that the export's files give
     (`reconcile_unseen`), over the cases of each task against the task's rows, and where more than half the relation
-    tables of the export are unseen. Each copy flow is checked against its source (`copy_flow_check`), and the stats
+    tables of the export are unseen, but for those unseen for stops that the export records (`unseen_for_stops`). Each copy flow is checked against its source (`copy_flow_check`), and the stats
     keep the totals under "copy flows": the flows checked, those whose values go unchecked, the violations of each kind, the
     count of cases with one, the count of each such case, the first few violations, and whether the export's
     orientation_types.json gave the orientation subtypes (`orientation_subtypes`)."""
@@ -895,8 +904,11 @@ def parse_tables(tables_dir, tasks_dir=Path(__file__).resolve().parents[1] / "da
                 parsed[key] = done
         parsed.clear()
         done_task = {key: done_task[key] for key in order if key in done_task}
-        for reason, n in reconcile_unseen(done_task, tabs, index_rows, task_bases).items():
-            unseen[reason] = unseen.get(reason, 0) + n
+        reconcile_unseen(done_task, tabs, index_rows, task_bases)
+        for ts in done_task.values():
+            for t in ts:
+                if t.unseen is not None and not unseen_for_stops(t):
+                    unseen[t.unseen] = unseen.get(t.unseen, 0) + 1
         relation_tables += sum(1 for ts in done_task.values() for t in ts if not t.evidence)
         if sink is None:
             out.update(done_task)
@@ -904,8 +916,8 @@ def parse_tables(tables_dir, tasks_dir=Path(__file__).resolve().parents[1] / "da
             sink(done_task)
     stats["copy flows"] = copies
     if sum(unseen.values()) * 2 > relation_tables:
-        raise DataFault(f"more than half of the {relation_tables} relation tables are unseen, which means a bug "
-                        f"in the loader or in the export: {sum(unseen.values())} unseen, by reason {unseen}")
+        raise DataFault(f"more than half of the {relation_tables} relation tables are unseen for no stop that the export "
+                        f"records, which means a bug in the loader or in the export: {sum(unseen.values())} unseen, by reason {unseen}")
     return out, faults, stats
 
 
@@ -935,9 +947,9 @@ def parse_table(t, ents, values, asg_of, projs, prows, det_values, n_train, prov
             raise DataFault(f"{where} table {t['table']} DET {i} ({rel}): its det_columns {paths} are not one per "
                             f"column of its det_types {types}")
     if not pd.isna(t["fault"]):   # a null reads as None or as nan, by the column's dtype
-        return [unseen_table(t, "the table faults", prov=prov)]
+        return [unseen_table(t, TABLE_FAULTS, prov=prov)]
     if t[TABLE_PROJECTIONS] == PROJECTIONS_STOPPED:
-        return [unseen_table(t, "the search for its projections stopped", prov=prov)]
+        return [unseen_table(t, PROJECTIONS_STOP, prov=prov)]
     types = [type_name(x) for x in t["column_types"]]
     keep = [i for i, x in enumerate(types) if x != "Unit"]
     kept_width = sum(width(types[i]) for i in keep)

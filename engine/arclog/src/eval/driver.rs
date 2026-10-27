@@ -4,6 +4,7 @@
 //! over a lib component.
 
 use std::cell::RefCell;
+use std::convert::Infallible;
 use std::sync::Arc;
 
 use super::examples::{self, ExampleScope};
@@ -12,7 +13,7 @@ use super::join::{self, Budget, JoinInputs, NodeInput, Part};
 use super::models::{self, Choice, Entry, Factor};
 use super::determinations::Domain;
 use super::{cache, instance, plan, proposers, rigid};
-use super::{Evaluation, Outcome, ParameterSource, RelationValue, RunFault, Stop};
+use super::{Evaluation, Outcome, ParameterSource, ReachedBound, RelationValue, RunFault, Stop};
 use crate::hash::StableHashMap;
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{Clause, ClauseKeyword, ProgramRelation};
@@ -295,14 +296,16 @@ impl<'e, 'a> Driver<'e, 'a> {
             return value;
         }
         let mut budget = Budget::new(evaluation.limits, evaluation.session);
-        let rows = match self.linked(form, body, part, inputs, order, example, &entry.columns, &mut budget) {
-            Some(rows) => rows,
-            None => join::search(&body.clause, &part.nodes, &[], part.order(order, &[]), &[], inputs, evaluation.registry, &entry.columns, &mut budget),
-        };
-        let value = match rows {
-            Ok(rows) => RelationValue::Rows(Arc::new(join::one_part(rows))),
-            Err(bound) => RelationValue::Stopped(Stop { bound, form: form.clone() }),
-        };
+        let Ok(value) = self.holding_stops::<Infallible>(&request, || {
+            let rows = match self.linked(form, body, part, inputs, order, example, &entry.columns, &mut budget) {
+                Some(rows) => rows,
+                None => join::search(&body.clause, &part.nodes, &[], part.order(order, &[]), &[], inputs, evaluation.registry, &entry.columns, &mut budget),
+            };
+            Ok(match rows {
+                Ok(rows) => RelationValue::Rows(Arc::new(join::one_part(rows))),
+                Err(bound) => RelationValue::Stopped(Stop { bound, form: form.clone() }),
+            })
+        });
         record_whole(&budget, [&value]);
         cache::store(evaluation.session, &request, &value);
         value
@@ -454,7 +457,7 @@ impl<'e, 'a> Driver<'e, 'a> {
             // A computation that ended since the lookup above stored the entry.
             let value = match cache::lookup(session, request, form) {
                 Some(value) => Ok(value),
-                None => compute().inspect(|value| cache::store(session, request, value)),
+                None => self.holding_stops(request, compute).inspect(|value| cache::store(session, request, value)),
             };
             let shared = value.as_ref().ok().and_then(cache::cached);
             own = Some(value);
@@ -464,6 +467,33 @@ impl<'e, 'a> Driver<'e, 'a> {
             let shared = shared.expect("a value from the computation another thread ended");
             Ok(shared.map_stop(|bound| Stop { bound, form: form.clone() }))
         })
+    }
+
+    /// The value of `compute`, the evaluation of the entry `request`, where
+    /// the evaluation runs for a table, with the stops held for the table's
+    /// case ([`super::values::TableStops`]): the stop held for the entry, if there is one, in
+    /// place of an evaluation that tries bindings; and otherwise, where the
+    /// evaluation begins within the table work cap and ends at that cap, the
+    /// stop is held. An evaluation that begins past the cap stops at once,
+    /// and is not held. A later table of the case takes the held stop at the
+    /// form that stopped.
+    fn holding_stops<E>(&self, request: &cache::EntryRequest<'_>, compute: impl FnOnce() -> Result<RelationValue, E>) -> Result<RelationValue, E> {
+        let session = self.evaluation.session;
+        let Some(work) = &self.evaluation.limits.table_work else { return compute() };
+        if !work.stops().is_empty()
+            && let Some(stop) = work.stops().get(&cache::key(session, request))
+        {
+            return Ok(RelationValue::Stopped(stop));
+        }
+        let began_within_cap = !work.is_past_cap();
+        let value = compute()?;
+        if began_within_cap
+            && let RelationValue::Stopped(stop) = &value
+            && matches!(stop.bound, ReachedBound::TableWork { .. })
+        {
+            work.stops().hold(cache::key(session, request), stop.clone());
+        }
+        Ok(value)
     }
 
     /// The relation of `clause`, at `form`, that derives by its proposer at
@@ -662,7 +692,7 @@ impl FormBodies<'_> {
         if let Some(value) = cache::lookup(session, &request, form) {
             return Ok(value);
         }
-        let value = driver.join(form, clause, &inputs);
+        let Ok(value) = driver.holding_stops::<Infallible>(&request, || Ok(driver.join(form, clause, &inputs)));
         cache::store(session, &request, &value);
         Ok(value)
     }

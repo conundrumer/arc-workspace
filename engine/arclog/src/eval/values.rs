@@ -4,13 +4,14 @@
 //! flag that cancels evaluations. The driver and the parts of [`super`]
 //! share them.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use crate::diagnostic::{Diagnostic, DiagnosticKind, Location, Severity};
+use crate::hash::StableHashMap;
 use crate::program::path::NodePath;
 use crate::relations::Relation;
-use crate::session::ReachedSessionBound;
+use crate::session::{ReachedSessionBound, ResultKey};
 use crate::solver::CaseName;
 use crate::task::Grid;
 use crate::terms::ReachedMarginBound;
@@ -100,8 +101,9 @@ impl ReachedBound {
     /// request of its entry. A stop at the session's byte bound, at the
     /// deadline or by a cancellation depends on the machine or the
     /// session's history, and is stored nowhere. A stop at the model cap,
-    /// the node cap, the assignment cap or the table work cap is stored
-    /// nowhere either.
+    /// the node cap or the assignment cap is stored nowhere either, and a stop
+    /// at the table work cap is held for the tables of one case alone, in
+    /// [`TableStops`].
     pub fn is_stored(self) -> bool {
         match self {
             ReachedBound::Bindings { .. } | ReachedBound::Rows { .. } | ReachedBound::Margin(_) => true,
@@ -266,19 +268,55 @@ impl Cancellation {
     }
 }
 
+/// The stops at the table work cap of the evaluations in the tables of one
+/// case, each held by the result-cache key of its entry. A table whose
+/// evaluation needs a held evaluation takes its stop, at the form that
+/// stopped, and tries no binding for it.
+#[derive(Debug, Default)]
+pub struct TableStops(Mutex<StableHashMap<ResultKey, Stop>>);
+
+impl TableStops {
+    /// The stop held for the entry `key`, if any.
+    pub fn get(&self, key: &ResultKey) -> Option<Stop> {
+        self.0.lock().expect(UNPOISONED).get(key).cloned()
+    }
+
+    /// Holds `stop` for the entry `key`. The first stop held for a key stands.
+    pub fn hold(&self, key: ResultKey, stop: Stop) {
+        self.0.lock().expect(UNPOISONED).entry(key).or_insert(stop);
+    }
+
+    /// Whether no stop is held.
+    pub fn is_empty(&self) -> bool {
+        self.0.lock().expect(UNPOISONED).is_empty()
+    }
+
+    /// A store of its own that holds the stops this one holds now, for a
+    /// fork of a decode: the tables of the fork then depend on the fork's
+    /// own history.
+    pub fn snapshot(&self) -> TableStops {
+        TableStops(Mutex::new(self.0.lock().expect(UNPOISONED).clone()))
+    }
+}
+
+const UNPOISONED: &str = "a store that no panic poisoned";
+
 /// The bindings that the evaluations of one table try, counted over all its
-/// examples, assignments, models and projections, and the cap on the count.
-/// Clones share one count.
+/// examples, assignments, models and projections, and the cap on the count,
+/// with the [`TableStops`] of the table's case. Clones share one count and
+/// one store.
 #[derive(Clone, Debug)]
 pub struct TableWork {
     count: Arc<AtomicU64>,
     cap: u64,
+    stops: Arc<TableStops>,
 }
 
 impl TableWork {
-    /// A table with no bindings counted, under `cap`.
-    pub fn new(cap: u64) -> Self {
-        TableWork { count: Arc::new(AtomicU64::new(0)), cap }
+    /// A table with no bindings counted, under `cap`, in a case whose
+    /// evaluations that stopped at a cap are held in `stops`.
+    pub fn new(cap: u64, stops: Arc<TableStops>) -> Self {
+        TableWork { count: Arc::new(AtomicU64::new(0)), cap, stops }
     }
 
     /// Adds `bindings` to the count, and gives the stop once the count is past
@@ -289,6 +327,17 @@ impl TableWork {
         };
         let count = before.saturating_add(bindings);
         if count > self.cap { Err(ReachedBound::TableWork { cap: self.cap }) } else { Ok(()) }
+    }
+
+    /// Whether the count is past the cap: each batch of an evaluation that
+    /// begins now stops at once.
+    pub fn is_past_cap(&self) -> bool {
+        self.count.load(Ordering::Relaxed) > self.cap
+    }
+
+    /// The stops held for the table's case.
+    pub fn stops(&self) -> &TableStops {
+        &self.stops
     }
 }
 

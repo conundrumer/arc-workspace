@@ -18,7 +18,11 @@
 //! settings stops the evaluation it is in with [`ReachedBound::TableWork`](arclog::eval::ReachedBound::TableWork),
 //! and each later batch of the table stops at once. The table keeps the entries
 //! found before, and records the stop as it records a stop at another bound.
-//! No result-cache entry holds that stop. The recording makes no choice among the points: it keeps each,
+//! No result-cache entry holds that stop. An evaluation that begins within the
+//! cap and whose batches take the count past it is held, with its stop, in a store that
+//! the tables of one case share ([`Decoder::table_work`]), and a later table of the case that
+//! needs that evaluation, at the same result-cache key, records that stop at the
+//! form that stopped and tries no binding for it. The recording makes no choice among the points: it keeps each,
 //! and a caller that reads no body in progress asks for [`Points::Relations`],
 //! so that no body table is evaluated.
 //!
@@ -196,7 +200,7 @@ fn body_table(decoder: &Decoder<'_>, before: &State) -> Option<Table> {
     let contents = sub.map(|sub| {
         let relation = derived_at(&sub.program, &sub.form);
         let slot = decoder.state().open_slot();
-        let work = TableWork::new(decoder.settings().table_work_cap);
+        let work = decoder.table_work();
         let examples = decoder.examples_of(sub.scope).into_iter().zip(decoder.values_of(&sub, Some(&work)).into_vec()).map(|(example, rows)| ExampleRows { example, rows: rows.map(|rows| models_of_body(&rows)) }).collect();
         contents(decoder, &sub.program, &sub.form, &relation, slot, &walked_dets(&sub.program, relation.node), examples, &work)
     });
@@ -222,7 +226,7 @@ fn relation_tables(decoder: &Decoder<'_>, before: &State) -> Vec<Table> {
             let contents = match graph_relation(checked, registry, &form, declared) {
                 Some(relation) => {
                     let dets = relation_dets(checked, relation.node);
-                    let work = TableWork::new(decoder.settings().table_work_cap);
+                    let work = decoder.table_work();
                     let examples = decoder
                         .examples_of(scope_of(checked, &relation))
                         .into_iter()
