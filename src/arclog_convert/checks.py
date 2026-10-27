@@ -27,7 +27,10 @@ copy cannot hold is left out. Where the converter writes a clause of a check
 relation with a `TODO` line, which the reader refuses, the converter leaves
 that check relation out of the check copy, and the column map gives the folded
 relation's path as untranslated, with a reason that names the `TODO` kinds
-(`todo_kinds`, `arclog_convert.names.dropped`). The other check relations stay."""
+(`todo_kinds`, `arclog_convert.names.dropped`). It does so too for a check
+relation in whose text the arclog lint (`arclog_convert.lint.Linter`) finds a
+violation, which the reader refuses as well, and the reason names the lint
+codes (`lint_codes`). The other check relations stay."""
 
 from __future__ import annotations
 
@@ -75,26 +78,46 @@ def clauses_of(prog: Program) -> dict[Fold, list[Unit]]:
 _TODO_KIND = re.compile(r"^\s*;; TODO ([\w-]+):", re.MULTILINE)
 
 
-def todo_kinds(arclog: str, name: str) -> list[str]:
-    """The kinds of the `TODO` lines in the text of the declaration of the
-    relation `name` in the arclog `arclog`: its comment lines before it, and
-    the lines of its form. Empty where `arclog` declares no such relation."""
+def declaration_span(arclog: str, name: str) -> tuple[int, int] | None:
+    """The offsets in the arclog `arclog` of the text of the declaration of the
+    relation `name`: its comment lines before it, and the lines of its form.
+    None where `arclog` declares no such relation."""
     from arclog_convert.lint import DECL_HEADS, L, Sym, read
 
-    def region(forms: list, start: int) -> str | None:
+    def region(forms: list, start: int) -> tuple[int, int] | None:
         before = start
         for f in forms:
             if not isinstance(f, L):
                 continue
             if f.head in DECL_HEADS and len(f.items) > 1 and isinstance(f.items[1], Sym) and f.items[1].text == name:
-                return arclog[before:f.end]
+                text = arclog[before:f.end]
+                return before + len(text) - len(text.lstrip()), f.end
             if (got := region(f.items, f.start)) is not None:
                 return got
             before = f.end
         return None
 
-    text = region(read(arclog), 0)
-    return [] if text is None else sorted(set(_TODO_KIND.findall(text)))
+    return region(read(arclog), 0)
+
+
+def todo_kinds(arclog: str, name: str) -> list[str]:
+    """The kinds of the `TODO` lines in the text of the declaration of the
+    relation `name` in the arclog `arclog` (`declaration_span`). Empty where
+    `arclog` declares no such relation."""
+    span = declaration_span(arclog, name)
+    return [] if span is None else sorted(set(_TODO_KIND.findall(arclog[span[0]:span[1]])))
+
+
+def lint_codes(arclog: str, name: str, violations: Sequence[tuple[int, str, str]]) -> list[str]:
+    """The codes of those of `violations` (the `errs` of a `Linter` run over
+    `arclog`: line, code, message) whose line falls in the text of the
+    declaration of the relation `name` (`declaration_span`). Empty where
+    `arclog` declares no such relation."""
+    span = declaration_span(arclog, name)
+    if span is None:
+        return []
+    first, last = arclog.count("\n", 0, span[0]) + 1, arclog.count("\n", 0, span[1]) + 1
+    return sorted({code for line, code, _ in violations if first <= line <= last})
 
 
 def check_name(fold: Fold, taken: set[str]) -> str:

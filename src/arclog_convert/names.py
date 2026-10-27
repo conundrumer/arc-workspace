@@ -30,6 +30,7 @@ solver's relations that read them."""
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 
 from engine.program import Qualifier, RelationName
 from solver.vocabulary import DETERMINE
@@ -38,10 +39,11 @@ from arclog_convert import libmap
 from arclog_convert.libmap import rename as libmap_rename
 from arclog_convert.libmap.instances import Placement
 
-from arclog_convert.checks import Fold, clauses_of, todo_kinds
+from arclog_convert.checks import Fold, clauses_of, lint_codes, todo_kinds
 from arclog_convert.clauses import Site, site_columns
 from arclog_convert.forms import Source, renamed
 from arclog_convert.leaves import Converter, FACTS, Written
+from arclog_convert.lint import Linter
 from arclog_convert.parity_text import ParityText, Place, parity_text
 from arclog_convert.solver import Solver
 
@@ -463,14 +465,20 @@ def _check_arclog_name(c: "Converter", fold: Fold, insts: dict[str, str]) -> str
 
 
 def dropped(s: "Solver", folds: list[Fold], insts: dict[str, str], arclog: str) -> dict[Fold, str]:
-    """Each of `folds` whose check relation the converter wrote with a clause
-    with a `TODO` line into the text `arclog` (`check_maps` gives the
-    arguments), with the reason its path is untranslated: the `TODO` kinds."""
+    """Each of `folds` whose check relation the converter wrote into the text
+    `arclog` (`check_maps` gives the arguments) with a clause with a `TODO`
+    line or with a text in which the arclog lint finds a violation, with the
+    reason its path is untranslated: the `TODO` kinds and the lint codes."""
+    lt = Linter(Path("check.arclog"), arclog)
+    lt.run()
     out: dict[Fold, str] = {}
     for fold in folds:
         name = _check_arclog_name(s.c, fold, insts)
-        if name is not None and (kinds := todo_kinds(arclog, name)):
-            out[fold] = "the converter cannot write a clause of the relation: " + ", ".join(f"TODO {k}" for k in kinds)
+        if name is None:
+            continue
+        found = [f"TODO {k}" for k in todo_kinds(arclog, name)] + [f"lint {c}" for c in lint_codes(arclog, name, lt.errs)]
+        if found:
+            out[fold] = "the converter cannot write a clause of the relation: " + ", ".join(found)
     return out
 
 
