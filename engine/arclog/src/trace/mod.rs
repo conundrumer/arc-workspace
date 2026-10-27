@@ -1,11 +1,14 @@
 //! The trace of a decode and of a run, as `docs/engine/synthesis.md#traces`
 //! gives it: an append-only list of records, one per step, in the order of
 //! the steps. [`Trace`] holds the records over a persistent spine, so a forked
-//! decode shares its parent's records. [`render`] holds the renderers over
-//! a trace, the trace form and the report of the stops. The evaluator and the
-//! decoder write records, and read none.
+//! decode shares its parent's records. [`render`] holds the trace form,
+//! [`stop_shares`] the report of the stops, and [`label_names`] the naming of
+//! the labels that the forms give. The evaluator and the decoder write
+//! records, and read none.
 
+pub mod label_names;
 pub mod render;
+pub mod stop_shares;
 
 use std::sync::Arc;
 

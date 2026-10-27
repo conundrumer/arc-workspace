@@ -119,7 +119,7 @@ mod synthesized {
     use crate::registry::Registry;
     use crate::resolver::form_columns::rigid_outputs;
     use crate::resolver::registry_columns::{component, proposer_columns};
-    use crate::trace::render::label_name;
+    use crate::trace::label_names::label_name;
 
     pub(super) fn write(program: &Node<Program>, registry: &Registry) -> String {
         let mut synth = Synthesizer { registry, columns: StableHashMap::default() };

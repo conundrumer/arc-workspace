@@ -30,11 +30,11 @@ only the tables of the steps from its token `tokens` on, after the tables of its
 before min(prefix_tokens, `tokens`) with its own tables before prefix_tokens, so the count is the one that the export of the same streams without bases gives.
 It is null for a case that the export does not hold.
 
-A clause ends where the engine declares a relation (an id that the model did not write, of the kind "relation"), as
-lm/sample.py's `--max-clause` counts clauses; the ids the engine emits after one model-written token end at most one
-clause. A clause is a RULE clause where its first model-written token is RULE, and its end is the index of the
-first such declaration. A continuation's last clause can be open (a stream cut at the sampler's step cap or at an
-empty mask), with no end and no verdict.
+A clause is one top-level form: it opens at a form keyword the model writes (`FORM_KEYWORDS`), as lm/sample.py's
+`--max-clause` counts clauses. A RULE clause ends at the first declaration of a relation that the engine makes after
+its RULE (an id that the model did not write, of the kind "relation"), and its end is the index of that declaration.
+The declarations of an INIT form stand before its inputs, so they end no RULE clause. A continuation's last
+clause can be open (a stream cut at the sampler's step cap or at an empty mask), with no end and no verdict.
 
 A ValueError stops the run in each of these cases: a line's prefix mode is other than `random` or `0`, so a
 prefix can end off a rule boundary; a line under `--prefix random` gives no corpus case; the lines of one task,
@@ -50,6 +50,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "engine" / "arclog-py"))
 import export_checks
 
+FORM_KEYWORDS = frozenset({"RULE", "DET", "INIT", "CHOOSE", "RIGID_DET"})   # the tokens the model writes to open a top-level form
 POINT_EVIDENCE = 2   # the point code of an evidence table in tables.parquet
 ONE_CELL = '{"train": [{"input": [[0]], "output": [[0]]}], "test": [{"input": [[0]]}]}'   # a task to open a session
 
@@ -64,14 +65,13 @@ def vocabulary(settings):
 
 def rule_ends(ids, model, names, kinds, start):
     """The stream index of the end of each RULE clause from index `start` on (the module docstring)."""
-    ends, first = [], None   # first: the name of the first model-written token of the open clause
+    ends, opened = [], None   # opened: the keyword of the open clause
     for j in range(start, len(ids)):
         if model[j]:
-            first = names[ids[j]] if first is None else first
-        elif kinds[ids[j]] == "relation" and first is not None:
-            if first == "RULE":
-                ends.append(j)
-            first = None
+            opened = names[ids[j]] if names[ids[j]] in FORM_KEYWORDS else opened
+        elif kinds[ids[j]] == "relation" and opened == "RULE":
+            ends.append(j)
+            opened = None
     return ends
 
 

@@ -18,10 +18,9 @@ A "panic" program keeps the token it panicked at in its stream; the other progra
 without the panic. Each "panic" program also gets `<out dir>/panic-<task>-<index>.json`: task, ids, model, end,
 panic, settings, world and its record, for a replay of the stream.
 
-Two caps count model-written tokens. A clause is a top-level form of the program (a RULE, DET, INIT, CHOOSE or
-other form): it starts at the first model-written token of the stream and at the first one after the engine
-declares a relation, which it does when the clause ends, and it holds the model-written tokens up to the next
-such declaration. `--max-clause <n>` ends a program ("max-clause") when its current clause holds more than n
+Two caps count model-written tokens. A clause is one top-level form of the program (a RULE, DET, INIT, CHOOSE or
+RIGID_DET form): it opens at the form's keyword token, which the model writes, and it holds the model-written tokens
+up to the next form keyword. `--max-clause <n>` ends a program ("max-clause") when its current clause holds more than n
 model-written tokens, a prefix's tokens of that clause included. Without the flag, n is 1.5 times the most
 model-written tokens that one clause of any case in `--data`'s cases.npz holds, computed at start and printed;
 `--max-clause 0` turns the cap off. `--max-steps-factor <f>` (default 0, off) lowers a program's `--max-steps`
@@ -94,6 +93,7 @@ import torch
 import torch.nn.functional as F
 
 import arclog
+from rollout_labels import FORM_KEYWORDS
 from train import BOS, KINDS, KIND_OF, Masks, Model, vocabularies
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, DynamicCache
 
@@ -155,9 +155,9 @@ class Program:
         self.ids.append(i); self.model.append(int(by_model))
         k = kind[i]
         if by_model:
+            if names[i] in FORM_KEYWORDS:
+                self.clause = 0
             self.clause += 1
-        elif k == "rel":   # the engine declares the relation of a clause that ends
-            self.clause = 0
         if k and not by_model:   # the engine declares a relation or a label
             v = torch.randn(self.id_dim, generator=self.gen) / math.sqrt(self.id_dim)
             self.latest[i] = (k, len(self.decl_ids[k]))
@@ -450,19 +450,18 @@ def corpus_cases(data, names):
     return cases
 
 
-def corpus_stats(data, names, kinds):
+def corpus_stats(data, names):
     """From a data export's cases.npz: the most model-written tokens that one clause of any case holds, and for each
     task the median model-written token count of its cases."""
     vocab = json.load(open(f"{data}/vocab.json"))
     assert (vocab["names"] if isinstance(vocab, dict) else vocab) == names, f"{data}: the export's vocabulary differs from the engine's"
     z = np.load(f"{data}/cases.npz")
     ids, model, off = z["ids"], z["model"].astype(bool), z["offsets"]
-    rel = np.array([k == "relation" for k in kinds])
+    keyword = np.array([n in FORM_KEYWORDS for n in names])
     most, counts = 0, {}
     for c, task in enumerate(z["task"].tolist()):
         i, m = ids[off[c]:off[c + 1]], model[off[c]:off[c + 1]]
-        end = (~m) & rel[i]                  # the engine declares a relation: the clause before it ends
-        clause = np.cumsum(end) - end        # the clause index of each position; a declaration belongs to its clause's end
+        clause = np.cumsum(m & keyword[i])   # the clause index of each position: a form keyword the model writes opens one
         per = np.bincount(clause[m]) if m.any() else np.zeros(1, int)
         most = max(most, int(per.max()))
         counts.setdefault(task, []).append(int(m.sum()))
@@ -534,7 +533,7 @@ def main():
                 sampler = Sampler(model, meta, dtype, session.vocabulary, a.device, a.temperature, a.greedy,
                                   a.max_steps, a.max_tokens, a.seed)
                 if a.max_clause is None or a.max_steps_factor:
-                    most, medians = corpus_stats(a.data, sampler.names, sampler.kinds)
+                    most, medians = corpus_stats(a.data, sampler.names)
                 sampler.steps_factor = a.max_steps_factor
                 sampler.cont_factor = a.max_cont_factor
                 if a.max_clause is None:

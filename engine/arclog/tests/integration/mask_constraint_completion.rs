@@ -214,7 +214,7 @@ fn step_text(decoder: &mut Decoder<'_>, text: &str) {
     }
 }
 
-const CARDINALITY: &str = "INIT Cardinality :0 input :0 * L0 :1 ^ L1 END :1 input :0 * L2 :1 L1 END :0 END :1 L2 END :2 SKIP :2 SKIP &r0 &r1 &r2";
+const CARDINALITY: &str = "INIT Cardinality &r0 &r1 &r2 :0 input :0 * L0 :1 ^ L1 END :1 input :0 * L2 :1 L1 END :0 END :1 L2 END :2 SKIP :2 SKIP";
 
 /// A field's column token on the site of a body atom is admitted only where
 /// some label after it passes. `&r0` is an output of `Cardinality` whose
@@ -237,7 +237,7 @@ fn a_field_token_whose_every_label_is_refused_is_refused() {
     let inputs = inputs();
     let mut decoder = decoder(&inputs);
     step_text(&mut decoder, CARDINALITY);
-    step_text(&mut decoder, "DET RarestColor END &r3 DET AnyOutNewColor END &r4 RULE &r3 :0 * L0 input :0 * L1 :1 L0 END &r5 INIT Connectivity :0 OR &r5 :0 ^ L0 :1 * L1 ALSO &r5 :0 L0 :1 L1 NOT &r5 :0 L0 END END :1 &r5 :0 L0 :1 * L2 END :0 END :1 END :2 SKIP :2 SKIP &r6 &r7 &r8 &r9 INIT BoundingBox :0 &r6 :2 * L0 :1 ^ L1 END :1 &r6 :2 * L2 :1 L1 END :0 END :1 L1 END &r10 &r11 RULE &r6 :0");
+    step_text(&mut decoder, "DET RarestColor END &r3 DET AnyOutNewColor END &r4 RULE &r3 :0 * L0 input :0 * L1 :1 L0 END &r5 INIT Connectivity &r6 &r7 &r8 &r9 :0 OR &r5 :0 ^ L0 :1 * L1 ALSO &r5 :0 L0 :1 L1 NOT &r5 :0 L0 END END :1 &r5 :0 L0 :1 * L2 END :0 END :1 END :2 SKIP :2 SKIP INIT BoundingBox &r10 &r11 :0 &r6 :2 * L0 :1 ^ L1 END :1 &r6 :2 * L2 :1 L1 END :0 END :1 L1 END RULE &r6 :0");
     assert!(!admits(&decoder, &Token::Column(0)));
     assert!(matches!(decoder.fork().step(Token::Column(0)), Err(Refusal::Check { .. })));
 }

@@ -11,10 +11,10 @@
 //! component, and the inputs after the key clause follow them, one name per
 //! input that the key clause does not write. An instance declares each
 //! output of its component, then each input whose name no output shares,
-//! written or not. A `RIGID_DET` form's `key` and `instance` are named at 0
-//! and 1, its parts follow them and end with `END`, and it declares its
-//! outputs in the order `crate::resolver::form_columns::rigid_outputs`
-//! gives. A projection gives one column
+//! written or not, right after its component token. A `RIGID_DET` form's
+//! `key` and `instance` are named at 0 and 1, its parts follow them and end
+//! with `END`, and it declares its outputs in the order
+//! `crate::resolver::form_columns::rigid_outputs` gives. A projection gives one column
 //! name per column of the input, each followed by the head site's arguments
 //! at that column and `END`.
 
@@ -479,6 +479,9 @@ impl Writer<'_> {
         let component = component(self.registry, &instance.component).ok_or_else(|| run_fault(format!("the lib names no component `{}`", instance.component.0), path))?;
         let keyed: &[_] = instance.key.as_ref().map_or(&[], |key| &key.value().inputs);
         let outputs: Vec<u32> = instance_outputs(component, instance).into_iter().map(|(relation, columns)| self.reserve(relation, columns, path)).collect::<Result<_, _>>()?;
+        for slot in outputs {
+            self.push(Token::Relation(slot), Emitter::Engine, path)?;
+        }
         self.push(Token::Column(0), Emitter::Engine, path)?;
         match &instance.key {
             None => self.model(Control::Skip, path)?,
@@ -491,11 +494,7 @@ impl Writer<'_> {
             }
         }
         let written_in_key = |port: &InputPort| keyed.iter().any(|input| input.value().name == port.port.name);
-        self.inputs(component, &instance.inputs, |port| !written_in_key(port), path, u32::from(instance.key.is_some()))?;
-        for slot in outputs {
-            self.push(Token::Relation(slot), Emitter::Engine, path)?;
-        }
-        Ok(())
+        self.inputs(component, &instance.inputs, |port| !written_in_key(port), path, u32::from(instance.key.is_some()))
     }
 
     /// The name of each input of `component` that `named` takes, each

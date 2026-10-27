@@ -809,13 +809,15 @@ impl State {
                 let declared = component(context.registry, name).ok_or("an `INIT` names a component")?;
                 instance.component = Some(name.clone());
                 instance.stage = Naming::Named(None);
-                let owner = OutputOwner::Instance(InstanceName(DeclaredName::Slot(instance.first)));
+                let first = instance.first;
+                let owner = OutputOwner::Instance(InstanceName(DeclaredName::Slot(first)));
                 let every: Vec<&PortName> = declared.inputs.iter().map(|input| &input.port.name).collect();
                 for port in declared.relation_ports(&every) {
                     let output = OutputName { of: owner.clone(), path: [OutputStep::Port(port.name.clone())].into() };
                     let readable = declared.outputs.iter().any(|output| output.name == port.name);
                     self.declare(ProgramRelation::Output(output), port.columns.iter().map(|column| column.name.clone()).collect(), readable);
                 }
+                forced.extend((first..self.next_slot()).map(Token::Relation));
                 forced.push(Token::Column(0));
                 Ok(Offer::Taken)
             }
@@ -1141,8 +1143,7 @@ impl State {
     /// The engine's name of the next input at or after `from` that the open
     /// group of the instance names; past the last, the close of that group:
     /// of a key clause, after which the instance names each input the key
-    /// clause does not write, or of the instance, which declares its
-    /// relations.
+    /// clause does not write, or of the instance.
     fn name_input(&mut self, context: &Context<'_>, from: usize, forced: &mut Vec<Token>) {
         let declared = self.component(context);
         let in_key = matches!(self.stack.last(), Some(Frame::KeyClause(_)));
@@ -1164,7 +1165,6 @@ impl State {
                 self.name_input(context, 0, forced);
             }
             Some(Frame::Instance(instance)) => {
-                forced.extend((instance.first..self.next_slot()).map(Token::Relation));
                 let name = InstanceName(DeclaredName::Slot(instance.first));
                 let component = instance.component.expect("a named component");
                 let value = Instance { name, component, key: instance.key, inputs: instance.inputs.into() };

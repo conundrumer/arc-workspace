@@ -255,8 +255,10 @@ def seq_len(prog, max_len, K):
 
 def relation_declaration(decls, step):
     """Of the declarations [(step, identifier)] of a table's relation, the one the table gives: the first after
-    its step, since the engine declares a relation after the step that ends its clause, or else the latest at or
-    before it. Gives the identifier and which rule chose it ("after", "before" or "none")."""
+    its step, since the engine declares a clause's relation after the step that ends the clause, or else the
+    latest at or before it, since the engine declares an instance's relations before its inputs, so no
+    declaration of an instance table's relation follows the table's step. Gives the identifier and which rule chose
+    it ("after", "before" or "none")."""
     after = [v for st, v in decls if st > step]
     if after:
         return after[0], "after"

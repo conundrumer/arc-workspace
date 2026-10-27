@@ -470,7 +470,7 @@ The language model emits tokens from these sets, each a closed set of ids:
 - column tokens: a relation's columns, which for a derived relation are the labels of its clause; the fields of a site on a record-valued column, by their position in the record; and the names the engine emits for a form's inputs and named clauses, by position: an instance's `key` at 0 and its component's input k at 1 + k, a `CHOOSE`'s `for`, `from` and `never` at 0, 1 and 2, and a `RIGID_DET`'s `key` and `instance` at 0 and 1; in an `INIT`, `CHOOSE` or `RIGID_DET` form, a read of a derived relation that is per input and is no relation of the form itself gives the Example column the column token 0 whether or not the read is lifted, and the relation's own columns follow it
 - labels: the variables of the current clause, in order of creation
 
-The engine emits the declaration of each derived relation, the declarations at each instance or `CHOOSE` form, the name of each input, each column name of a projection, and the label echo after each `*` and `^`. The declarations at an instance are each output, then each input whose name no output shares, written or not. The engine names each input of the component, an unwritten one too, and the language model declines an unwritten one by `SKIP`. In a keyed instance, the key clause names each input, and after the key clause the engine names each input that the key clause did not write. A projection names each column of the input, and an empty one is answered by `END`. It emits the name of each named clause of a form as it emits the names of an instance's inputs: an instance's `key`, a `CHOOSE`'s `for`, `from` and `never`, and a `RIGID_DET`'s `instance` and `key`. The language model never emits a label it has not seen echoed, and never names a relation or a column with text.
+The engine emits the declaration of each derived relation, the declarations at each instance or `CHOOSE` form, the name of each input, each column name of a projection, and the label echo after each `*` and `^`. The declarations at an instance follow its component token: each output, then each input whose name no output shares, written or not. The engine names each input of the component, an unwritten one too, and the language model declines an unwritten one by `SKIP`. In a keyed instance, the key clause names each input, and after the key clause the engine names each input that the key clause did not write. A projection names each column of the input, and an empty one is answered by `END`. It emits the name of each named clause of a form as it emits the names of an instance's inputs: an instance's `key`, a `CHOOSE`'s `for`, `from` and `never`, and a `RIGID_DET`'s `instance` and `key`. The language model never emits a label it has not seen echoed, and never names a relation or a column with text.
 
 The token sets are disjoint, so an atom's site list ends at the first token that is not a column token, and no separator exists. Every site opens with its column token, an elided one too.
 
@@ -526,13 +526,13 @@ The trace form is the program's tree with the engine's forced tokens in brackets
 [&fg]
 
 (INIT Connectivity
+  [&comps.component &comps.adjacent &comps.node &comps.step]
   [key] SKIP
   [node]
   ((&fg (:P *[P])) END
    [node key] (END)
    [node P] (P END))
-  [step] SKIP
-  [&comps.component &comps.adjacent &comps.node &comps.step])
+  [step] SKIP)
 
 (RULE (&axis_len (:B *[B]) (:N *[N]))
       (&axis_len (:B *[B2]) (:N *[N2]))
@@ -548,12 +548,12 @@ The trace form is the program's tree with the engine's forced tokens in brackets
 The bracket's content says which kind of forced token it holds:
 
 - a relation after a clause's `END` is its declaration, `[&fg]`
-- the declarations after an instance's last input, each output and then each input whose name no output shares, `[&comps.component &comps.adjacent &comps.node &comps.step]`
+- the declarations after an instance's component, each output and then each input whose name no output shares, `[&comps.component &comps.adjacent &comps.node &comps.step]`
 - an input's name alone, before its body or its `SKIP`, is the input name, `[node]`, `[key]`
 - an input's name with a column is the column name, `[node P]`, and the list that follows is the language model's answer, `(END)` for an empty projection
 - a label after `*` is its echo, `[P]`
 
-A clause's `END` is the language model's, and its declaration follows it as a sibling. An instance has no `END` from the language model: it ends when the engine has emitted the name of each input, and its declaration sits inside it.
+A clause's `END` is the language model's, and its declaration follows it as a sibling. An instance has no `END` from the language model: it ends when the engine has emitted the name of each input, and its declarations sit inside it, after its component.
 
 A renderer flag adds the language model's top-k tokens after a symbol, in braces, each with its probability. The braces attach to the symbol whose decision they show:
 

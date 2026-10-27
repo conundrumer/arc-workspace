@@ -187,6 +187,14 @@ fn a_keyed_instance_decodes_to_its_stream() {
     round_trip(&format!("{BG}{FG}{COMPS}{boxes}"));
 }
 
+/// An input that reads its instance's own output reads a relation that the
+/// stream has declared, so the decode steps the stream.
+#[test]
+fn an_instance_whose_input_reads_its_own_output_decodes_to_its_stream() {
+    let walk = "(INIT &walk Unfold (start ((:t B)) (&bg (:C *B))) (initial_taken ((:item B)) (&bg (:C *B))) (initial_untaken ((:item B)) (&bg (:C *B))) (step ((:t B) (:t2 X)) (&bg (:C *B)) (&bg (:C *X)) (&walk.take (:t B) (:item X))))\n";
+    round_trip(&format!("{BG}{walk}"));
+}
+
 /// A decode stepped through the stream of `arclog`.
 fn decoded<'i>(inputs: &'i Inputs, arclog: &str) -> Decoder<'i> {
     let vocabulary = Vocabulary::new(Registry::get(), &DecodeSettings::default());

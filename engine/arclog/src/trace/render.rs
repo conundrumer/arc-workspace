@@ -1,7 +1,5 @@
-//! The renderers over a trace: the trace form of
-//! `docs/arclog/arclog.md#trace-form`, and the report of the share of
-//! decodes and of runs that each bound stopped. A renderer reads a trace and
-//! changes nothing in it.
+//! The trace form of `docs/arclog/arclog.md#trace-form`. The renderer reads a
+//! trace and changes nothing in it.
 //!
 //! The trace form parses the stream the records give, by the grammar that
 //! [`crate::stream::token_stream`] writes, and prints the tree of the program
@@ -11,7 +9,8 @@
 
 use std::collections::BTreeMap;
 
-use super::{DecodeRecord, DecodeTrace, Stop, TopK};
+use super::label_names::label_name;
+use super::{DecodeRecord, DecodeTrace, TopK};
 use crate::program::{column_spelled, RelationRef};
 use crate::read::spelling::{self as sp, spelling};
 use crate::registry::{Component, Registry};
@@ -52,48 +51,6 @@ pub fn trace_form(trace: &DecodeTrace, vocabulary: &Vocabulary, options: &TraceF
     let mut text = lines.join("\n");
     text.push('\n');
     text
-}
-
-/// The share of traces that each bound stopped: each trace counts once, under
-/// the first bound it records, and a trace that records none counts in
-/// `total` alone.
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
-pub struct StopShares {
-    pub total: usize,
-    pub stopped: BTreeMap<Stop, usize>,
-}
-
-impl StopShares {
-    /// The share of the traces that `stop` stopped, `0` where there are none.
-    pub fn share(&self, stop: Stop) -> f64 {
-        match self.total {
-            0 => 0.0,
-            total => self.stopped.get(&stop).copied().unwrap_or(0) as f64 / total as f64,
-        }
-    }
-
-    fn of(firsts: impl Iterator<Item = Option<Stop>>) -> StopShares {
-        let mut shares = StopShares::default();
-        for first in firsts {
-            shares.total += 1;
-            if let Some(stop) = first {
-                *shares.stopped.entry(stop).or_default() += 1;
-            }
-        }
-        shares
-    }
-}
-
-/// The share of the decodes that each bound stopped. A decode is a candidate
-/// program, and counts under the first bound its trace records.
-pub fn stop_shares<'t>(decodes: impl IntoIterator<Item = &'t DecodeTrace>) -> StopShares {
-    StopShares::of(decodes.into_iter().map(|trace| trace.records().into_iter().find_map(|record| record.stop)))
-}
-
-/// The share of the runs that each bound stopped, counted as
-/// [`stop_shares`] counts decodes.
-pub fn run_stop_shares<'t>(runs: impl IntoIterator<Item = &'t super::RunTrace>) -> StopShares {
-    StopShares::of(runs.into_iter().map(|trace| trace.records().into_iter().find_map(|record| record.stop)))
 }
 
 /// A printed piece: its lines, the first without the indent of its place.
@@ -430,6 +387,16 @@ impl<'a> Renderer<'a> {
         };
         let component: Option<&Component> = component(self.registry, &name.1);
         let mut items: Vec<Block> = vec![];
+        let declared = self.declarations();
+        if let Some(component) = component {
+            let every: Vec<_> = component.inputs.iter().map(|input| &input.port.name).collect();
+            for (slot, port) in declared.iter().zip(component.relation_ports(&every)) {
+                self.columns.insert(*slot, port.columns.iter().map(|column| column_spelled(&column.name)).collect());
+            }
+        }
+        if !declared.is_empty() {
+            items.push(vec![self.declared_bracket(&declared)]);
+        }
         let mut written = Vec::new();
         while let Some(DecodeRecord { token: Token::Column(position), emitter: Emitter::Engine, .. }) = self.peek() {
             self.next();
@@ -472,16 +439,6 @@ impl<'a> Renderer<'a> {
             }
             items.push(hang("(", pieces, ")"));
         }
-        let declared = self.declarations();
-        if let Some(component) = component {
-            let every: Vec<_> = component.inputs.iter().map(|input| &input.port.name).collect();
-            for (slot, port) in declared.iter().zip(component.relation_ports(&every)) {
-                self.columns.insert(*slot, port.columns.iter().map(|column| column_spelled(&column.name)).collect());
-            }
-        }
-        if !declared.is_empty() {
-            items.push(vec![self.declared_bracket(&declared)]);
-        }
         let mut lines = vec![format!("({} {}", self.symbol(init, "INIT"), self.symbol(name.0, &name.1.0))];
         for item in items {
             lines.extend(item.into_iter().map(|line| format!("  {line}")));
@@ -506,27 +463,6 @@ fn hang(prefix: &str, blocks: Vec<Block>, close: &str) -> Block {
     }
     lines.last_mut().expect("a line").push_str(close);
     lines
-}
-
-/// The name of a label made at a site on the column `base`: the column's name
-/// in PascalCase, with the least digit suffix from 2 that `taken` does not
-/// refuse where the name itself is taken.
-pub(crate) fn label_name(base: &str, taken: impl Fn(&str) -> bool) -> String {
-    let base = pascal_case(base);
-    if !taken(&base) {
-        return base;
-    }
-    (2..).map(|n| format!("{base}{n}")).find(|name| !taken(name)).expect("an unbounded range")
-}
-
-/// `text` with the first letter of each part between `_` and `-` upper case.
-pub(crate) fn pascal_case(text: &str) -> String {
-    text.split(['_', '-'])
-        .map(|part| {
-            let mut chars = part.chars();
-            chars.next().map(|first| first.to_uppercase().chain(chars).collect::<String>()).unwrap_or_default()
-        })
-        .collect()
 }
 
 /// A probability as the trace form writes it: two decimals, with no leading

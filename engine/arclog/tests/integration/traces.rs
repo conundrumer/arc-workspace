@@ -25,7 +25,8 @@ use arclog::program::{Node, Program};
 use arclog::resolver::SolverScope;
 use arclog::terms::{Color, Example};
 use arclog::write::write_synthesized;
-use arclog::trace::render::{stop_shares, trace_form, TraceFormOptions};
+use arclog::trace::render::{trace_form, TraceFormOptions};
+use arclog::trace::stop_shares::stop_shares;
 use arclog::trace::{DecodeTrace, RunTrace, Stop, TopK};
 
 const BG: &str = "(RULE &bg (input (:Col *C)))\n";
@@ -139,13 +140,13 @@ fn a_decode_renders_the_trace_form_of_an_instance() {
     let instance: Vec<&str> = text.lines().skip(8).collect();
     let expected = "\
 (INIT Connectivity
+  [&comps.component &comps.adjacent &comps.node &comps.step]
   [key] SKIP
   [node]
   ((&fg (:P *[P])) END
    [node key] (END)
    [node P] (P END))
-  [step] SKIP
-  [&comps.component &comps.adjacent &comps.node &comps.step])";
+  [step] SKIP)";
     assert_eq!(instance.join("\n"), expected);
 }
 

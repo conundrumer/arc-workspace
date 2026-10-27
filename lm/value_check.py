@@ -10,8 +10,9 @@ continuation has one Color on all its rows, and every other table random Colors.
 lm/rollout_labels.py, on sampler lines, whose settings line gives an LM of a fold that holds neither task and a data
 export that marks `tb` held out, and a report written beside the export.
 
-Each continuation's stream holds a DET clause and two RULE clauses after the branch, the first table after the branch
-in the first rule and the second in the second, where the DET clause stands; r2's stream stops before the second
+Each continuation's stream holds an INIT form and two RULE clauses after the branch, the first table after the branch
+in the first rule and the second in the second, where the INIT form stands, its declaration before its last
+model-written token; r2's stream stops before the second
 rule's end, an open last clause. The members' verdicts per rule (`rules`) are mixed: C for Consistent, N for
 NotConsistent, F for Fault, S for SeveralValues: gold C N, r0 N C, r1 C N, r2 N (open), r3 C C, r4 C F, and for `$D`
 r0 N N, r1 N C, r2 C S.
@@ -21,7 +22,7 @@ r0 N N, r1 N C, r2 C S.
   verdict, its name's space read as part of the case. `heldout` must be true for each case of `tb` alone. Where
   lm/export_rollouts.py merges two sampler files of different runs, each sampled case must give its own file's run.
   `rules` must be the sampler's and
-  `rule_ends` the two RULE clause ends (one for r2), the DET clause's end not among them; rollout_labels.py must
+  `rule_ends` the two RULE clause ends (one for r2), the INIT form's declaration not among them; rollout_labels.py must
   refuse a line whose `rules` count another number of RULE clause ends. A case whose report gives a fault line
   and no verdict, as a stream past the export's step cap, must give no consistency. rollout_labels.py must refuse
   `--prefix random-token`, a line with no corpus case under `--prefix random`, two members of one branch point with
@@ -97,12 +98,13 @@ RULES = {("$C", "gold"): "CN", ("$C", 0): "NC", ("$C", 1): "CN", ("$C", 2): "N",
 
 def stream(case, m):
     """(ids, model) of a continuation: a RULE clause ($C) or a DET clause ($D) in tokens 0 to 4, then a RULE clause
-    whose END is token 10, a DET clause, and a RULE clause whose END is token 20 (r2's stream stops there), then an
-    open RULE clause. An engine-emitted relation declaration ends each clause."""
+    whose END is token 10, an INIT form whose engine-emitted declaration is followed by its `SKIP`, and a RULE clause
+    whose END is token 21 (r2's stream stops there), then an open RULE clause. An engine-emitted relation
+    declaration ends each RULE and DET clause."""
     w = lambda n: (ID[n], 1)
     e = (REL, 0)
     toks = [w("RULE" if case == "$C" else "DET"), w("input"), w("END"), e, e,
-            w("RULE")] + [w("input")] * 4 + [w("END"), e, w("DET"), w("END"), e, w("RULE")] + [w("input")] * 4 + [w("END")]
+            w("RULE")] + [w("input")] * 4 + [w("END"), e, w("INIT"), w("Unfold"), e, w("SKIP"), w("RULE")] + [w("input")] * 4 + [w("END")]
     toks += [] if (case, m) == ("$C", 2) else [e, w("RULE")] + [w("input")] * 7
     return [i for i, _ in toks], [b for _, b in toks]
 failed = []
@@ -149,7 +151,7 @@ def write_export(d, rng, tasks=("ta", "tb"), branches=BRANCHES, tasks_dir=None, 
             if case == "$C":
                 tabs.append((rel(0, 2), pre))
             tabs += [(rel(1, 10, "a check" if m == 4 else None), None if m == 4 else [] if m == 3 else [first, first]),
-                     (rel(2, 20), [random_rows(), random_rows()])]
+                     (rel(2, 21), [random_rows(), random_rows()])]
             values, entry = [], 0
             for i, (t, rows) in enumerate(tabs):
                 tables.append(dict(task=task, case=name, concept=False, table=i, projections=0, **t))
@@ -169,7 +171,7 @@ def write_export(d, rng, tasks=("ta", "tb"), branches=BRANCHES, tasks_dir=None, 
                                 consistency={"kind": "Consistent", "assignments": 1, "stop": None, "message": None},
                                 solved_test=None if m == "gold" else solving or m == 4, attempts=1, tokens=len(ids),
                                 program_form=None))
-            report.append(f"{task} {name}: ended {'Consistent' if solving or m == 4 else 'NotConsistent'} at token 20")
+            report.append(f"{task} {name}: ended {'Consistent' if solving or m == 4 else 'NotConsistent'} at token 21")
             if m == 4:
                 report.append(f"{task} {name}: a check fault")
     pd.DataFrame(tables).to_parquet(d / "tables.parquet")
@@ -225,9 +227,9 @@ first, merged = XR.read_lines([two / "a.jsonl", two / "b.jsonl"])
 by_run = {(l["task"], l["sampler_run"]) for l in RL.labels(two / "samples.jsonl", d) if l["rollout"] != "gold"}
 verdict(by_run == {("ta", "runs/synthetic"), ("tb", "runs/other")},
         f"the merged file of two sampler files of different runs gives each line its own file's run: {sorted(by_run)}")
-verdict(lab("gold")["rules"] == ["Consistent", "NotConsistent"] and lab("gold")["rule_ends"] == [11, 21]
-        and lab(2)["rule_ends"] == [11] and lab(2, case="$D $E", b=0)["rule_ends"] == [11, 21],
-        "rules are the sampler's; rule_ends the RULE clause ends, the DET clause's not, one for r2's open clause")
+verdict(lab("gold")["rules"] == ["Consistent", "NotConsistent"] and lab("gold")["rule_ends"] == [11, 22]
+        and lab(2)["rule_ends"] == [11] and lab(2, case="$D $E", b=0)["rule_ends"] == [11, 22],
+        "rules are the sampler's; rule_ends the RULE clause ends, the INIT form's declaration not, one for r2's open clause")
 sampler = [json.loads(l) for l in open(d / "sampler.jsonl")]
 r1 = next(i for i, s in enumerate(sampler) if s.get("case") == "$C" and s["branch"] == 1 and s["rollout"] == 1)
 

@@ -230,7 +230,7 @@ rank = np.empty(len(used), np.int32)
 rank[by_use] = np.arange(len(used))
 flat = rank[np.searchsorted(used, flat)]
 table_rows = list(mask_row)
-lengths = np.array([len(r[3]) for r in rows])
+lengths = np.array([len(r[3]) for r in rows], np.int64)
 mask_table = np.frombuffer(b"".join(table_rows[j] for j in used[by_use]), np.uint8).reshape(-1, MASK_BYTES)
 np.savez_compressed(f"{DATA}/cases.npz",
          ids=np.fromiter((i for r in rows for i in r[3]), np.uint16, lengths.sum()),
