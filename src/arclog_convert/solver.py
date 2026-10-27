@@ -677,10 +677,10 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
             if derives:
                 props = self.derive_props[r.name]
                 if r.name in c.cand_params:
-                    # the stored reading: the candidates the examples show, kept by the program's fit
+                    # the stored reading: the candidates the examples show, one of them per model
                     lab = pascal(r.columns[0].name)
-                    f = Form([f"(DET_OR_RULE {amp}{or_gloss(gloss)} {' '.join(props)}", f"  (ex_input (:Col *{lab})))"],
-                             amp, set(), line=r.span.first)
+                    f = Form([f"(DET_OR_RULE {amp}{or_gloss(gloss)} {' '.join(props)}", f"  (ex_input (:Col *{lab}))",
+                              "  (ONE))"], amp, set(), line=r.span.first)
                 else:
                     mark = self.set_mark(amp, r, props, param_facts.get(r.name, []), grid_params.get(r.name, []))
                     f = Form([f"(DET_OR_RULE {amp}{or_gloss(gloss)} {' '.join(props)}{mark})"], amp, set(),
