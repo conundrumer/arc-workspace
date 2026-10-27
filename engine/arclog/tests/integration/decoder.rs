@@ -153,8 +153,8 @@ fn the_programs_of_the_trace_form_decode_to_their_content() {
 
 #[test]
 fn a_negation_an_if_an_all_and_a_constraint_on_zero_decode_to_their_content() {
-    let lists = "(RULE &lists (input *P *Col) (NOT (&fg P)) (IF ((&bg (:C Col))) ((= *K 0)) ((input P (:Col *D)) (= *K 0))) (ALL ((input (:P *Q) (:Col Col))) ((&fg (:P Q)))))\n";
-    same_content(&format!("{BG}{FG}{lists}"));
+    let lists = "(RULE &lists (input *P *Col) (NOT (&fg P)) (IF ((&bg (:C Col))) ((= *K 0)) ((input P (:Col *D)) (&axis_len (:N K)))) (ALL ((input (:P *Q) (:Col Col))) ((&fg (:P Q)))))\n";
+    same_content(&format!("{BG}{FG}{AXIS}{lists}"));
 }
 
 #[test]
@@ -384,9 +384,9 @@ fn a_retargeted_resolution_is_what_resolve_last_gives() {
 /// forms before it as well.
 #[test]
 fn a_retargeted_resolution_of_a_clause_is_what_resolve_last_gives() {
-    let lists = "(RULE &lists (input *P *Col) (NOT (&fg P)) (IF ((&bg (:C Col))) ((= *K 0)) ((input P (:Col *D)) (= *K 0))) (ALL ((input (:P *Q) (:Col Col))) ((&fg (:P Q)))))\n";
+    let lists = "(RULE &lists (input *P *Col) (NOT (&fg P)) (IF ((&bg (:C Col))) ((= *K 0)) ((input P (:Col *D)) (&axis_len (:N K)))) (ALL ((input (:P *Q) (:Col Col))) ((&fg (:P Q)))))\n";
     let det = "(DET &arr_dim ScaleRatio)\n";
-    for program in [format!("{BG}{FG}{lists}"), format!("{BG}{FG}{AXIS}{PRIOR}"), format!("{BG}{FG}{det}(RULE &cell (input *P *Col) (&fg P) (&bg (:C Col)) (&arr_dim))\n")] {
+    for program in [format!("{BG}{FG}{AXIS}{lists}"), format!("{BG}{FG}{AXIS}{PRIOR}"), format!("{BG}{FG}{det}(RULE &cell (input *P *Col) (&fg P) (&bg (:C Col)) (&arr_dim))\n")] {
         let counts = compare_retargets(&program);
         assert!(counts.to_node > 0 && counts.from_node > 0, "{} retargets to a node, {} from one, of {} candidates", counts.to_node, counts.from_node, counts.compared);
     }

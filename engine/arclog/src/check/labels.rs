@@ -7,7 +7,7 @@ use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refus
 use crate::hash::StableHashSet;
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{NodePath, NodeRef};
-use crate::program::{Body, Conjunct, Form, LabelId, LabelUse, Negated};
+use crate::program::{Body, Conjunct, Constraint, ConstraintOp, Form, LabelId, LabelUse, Negated};
 use crate::read::columns::exports;
 
 /// [`CheckId::MadeAndExportedLabels`].
@@ -33,9 +33,15 @@ impl Check for MadeAndExportedLabelsCheck {
     /// - a label made at a site of a `NOT` atom, where every site joins
     ///   (`docs/arclog/arclog.md#negation-and-constraints`);
     /// - a `^` label that the key body's own list does not keep, so that no
-    ///   atom at the key body's top level binds the key's column.
+    ///   atom at the key body's top level binds the key's column;
+    /// - a `(= *X Y)` or `(= *X 0)` in a later branch of an `OR`, in the
+    ///   test or the else of an `IF`, or in a list of an `ALL`, and one in
+    ///   the first branch of an `OR` or the then of an `IF` whose label `X`
+    ///   the form does not export, as
+    ///   `docs/arclog/arclog.md#negation-and-constraints` gives. A union
+    ///   `OR`, a body's one conjunct, exports by the same rule.
     fn check(&self, input: &CheckInput<'_>) -> CheckResult {
-        let refused = body_refusals(input.form, &|_| true);
+        let refused = body_refusals(input.form, &|_| true, &|_| false);
         if refused.is_empty() {
             return CheckResult::Pass;
         }
@@ -44,18 +50,27 @@ impl Check for MadeAndExportedLabelsCheck {
     }
 
     /// The refusals of each complete body of the partial form, since a node
-    /// written later in an open body may make or export the label it reads.
+    /// written later in an open body may make or export the label it reads;
+    /// and, of the refusals of `=`, each at a node that is complete, since
+    /// a later branch of an `OR` may yet name the label of a `=` in its
+    /// first branch.
     fn check_prefix(&self, prefix: &Prefix<'_>) -> PrefixResult {
-        super::prefix::refused(body_refusals(prefix.partial, &|body| !prefix.is_open(&body.at)))
+        super::prefix::refused(body_refusals(prefix.partial, &|body| !prefix.is_open(&body.at), &|at| prefix.is_open(at)))
     }
 }
 
-/// The refusals of each body of `form` that `checked` keeps, each at its
-/// source path.
-fn body_refusals(form: &Form, checked: &dyn Fn(&FormBody<'_>) -> bool) -> Vec<Refusal> {
+/// The refusals of each body of `form` that `checked` keeps, and the
+/// refusals of `=` in each body at a path that `open` does not hold, each at
+/// its source path.
+fn body_refusals(form: &Form, checked: &dyn Fn(&FormBody<'_>) -> bool, open: &dyn Fn(&NodePath) -> bool) -> Vec<Refusal> {
     let mut refused: Vec<(&'static str, NodePath)> = Vec::new();
-    for form_body in form_bodies(form).iter().filter(|body| checked(body)) {
-        refusals(form_body, &mut refused);
+    for form_body in form_bodies(form) {
+        if checked(&form_body) {
+            refusals(&form_body, &mut refused);
+        }
+        let mut made = Vec::new();
+        made_by_equality(form_body.body.value(), &form_body.at, &Making::Any, &mut made);
+        refused.extend(made.into_iter().filter(|(_, at)| !open(at)));
     }
     refused.into_iter().map(|(message, at)| Refusal { message: message.into(), at }).collect()
 }
@@ -86,6 +101,71 @@ fn refusals(form_body: &FormBody<'_>, refused: &mut Vec<(&'static str, NodePath)
                 read(&visible, label, at, refused);
             }
         });
+    }
+}
+
+/// Where a list stands, as to the label a `=` of it makes.
+enum Making {
+    /// A form's body: a `=` makes a label of the body.
+    Any,
+    /// The first branch of an `OR` or the then of an `IF`, at the path
+    /// given, which exports the labels given: a `=` makes only a label of
+    /// those.
+    Exports(NodePath, Vec<LabelId>),
+    /// A later branch of an `OR`, the test or the else of an `IF`, or a list
+    /// of an `ALL`: a `=` makes no label.
+    Nothing,
+}
+
+/// Pushes onto `refused` each refusal of a `(= *X Y)` or a `(= *X 0)` in the
+/// list `body`, at `at`, which stands as `making` gives, and so for each
+/// list below it.
+fn made_by_equality(body: &Body, at: &NodePath, making: &Making, refused: &mut Vec<(&'static str, NodePath)>) {
+    for (at, conjunct) in list_of(body, at) {
+        made_in_conjunct(conjunct, &at, making, refused);
+    }
+}
+
+/// [`made_by_equality`] on the conjunct `conjunct` at `at` of a list that
+/// stands as `making` gives.
+fn made_in_conjunct(conjunct: &Conjunct, at: &NodePath, making: &Making, refused: &mut Vec<(&'static str, NodePath)>) {
+    let mut push = |refusal: (&'static str, NodePath)| {
+        if !refused.contains(&refusal) {
+            refused.push(refusal);
+        }
+    };
+    match conjunct {
+        Conjunct::Constraint(Constraint { op: ConstraintOp::Eq, first, .. }) if first.fresh => match making {
+            Making::Any => {}
+            Making::Exports(form, exported) => {
+                if !exported.contains(&first.label) {
+                    push(("the form does not export the label that `=` makes", form.clone()));
+                }
+            }
+            Making::Nothing => push(("`=` makes a label only in an `OR`'s first branch or an `IF`'s then", at.clone())),
+        },
+        Conjunct::Or(branches) => {
+            let later: Vec<&Body> = branches[1..].iter().map(|branch| branch.value()).collect();
+            let mut exported = Vec::new();
+            exports(branches[0].value(), &later, &mut exported);
+            for (branch, index) in branches.iter().zip(0u32..) {
+                let making = if index == 0 { Making::Exports(at.clone(), exported.clone()) } else { Making::Nothing };
+                made_by_equality(branch.value(), &at.child(index), &making, refused);
+            }
+        }
+        Conjunct::If { test, then, otherwise } => {
+            let mut exported = Vec::new();
+            exports(then.value(), &[otherwise.value()], &mut exported);
+            made_by_equality(test.value(), &at.child(0), &Making::Nothing, refused);
+            made_by_equality(then.value(), &at.child(1), &Making::Exports(at.clone(), exported), refused);
+            made_by_equality(otherwise.value(), &at.child(2), &Making::Nothing, refused);
+        }
+        Conjunct::All { domain, body } => {
+            made_by_equality(domain.value(), &at.child(0), &Making::Nothing, refused);
+            made_by_equality(body.value(), &at.child(1), &Making::Nothing, refused);
+        }
+        Conjunct::Not(Negated::Form(form)) => made_in_conjunct(form, &at.child(0), &Making::Any, refused),
+        Conjunct::Atom(_) | Conjunct::Not(Negated::Atom(_)) | Conjunct::Constraint(_) => {}
     }
 }
 
