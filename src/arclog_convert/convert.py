@@ -26,6 +26,9 @@ run adds. Beside gen/, the directory
 `row_parity.CORPUS` holds, for the row-parity check alone, a copy of each
 converted program with the check relations of the relations it folds
 (`arclog_convert.checks`); nothing else reads it.
+A pass after the conversion moves the unjoined factors of clause bodies into
+the clauses that join them (`arclog_convert.pull_up`); it runs on both texts,
+and the column map lists the columns it took away from each relation no more.
 A form the script cannot translate is written literally, under a
 `;; TODO <kind>: ...` comment.
 As each phase it runs ends (`plans`, `conversion`), the run prints a line `<phase>: <seconds> s` with that phase's
@@ -57,6 +60,7 @@ from arclog_convert.leaves import ScopedName
 from arclog_convert.lib import Col, ColMismatch, LIB_DL, Lib, SIGNATURE
 from arclog_convert.names import Checks, check_maps, column_map, dropped, folded, name_map, parity, placed, unchecked, untranslated
 from arclog_convert.plans import refresh_plans
+from arclog_convert.pull_up import Rows, drop_columns, pull_up
 from arclog_convert.solver import Solver
 
 
@@ -137,6 +141,10 @@ def _with_checks(s: "Solver", lib: Lib, sig: Lib, names: dict, columns: dict, in
     return None if arclog is None else (arclog, arcdata)
 
 
+def _write_json(directory: Path, stem: str, data: dict) -> None:
+    (directory / f"{stem}.json").write_text(json.dumps(data, indent=1, sort_keys=True) + "\n")
+
+
 def convert_one(stem: str) -> tuple[str, str | None, str | None, Counter, Counter, list[str], ColMismatch, str | None,
                                     tuple[str, str] | None]:
     """One solver's arclog and arcdata, its TODO kinds, its merge counts and
@@ -175,11 +183,26 @@ def convert_one(stem: str) -> tuple[str, str | None, str | None, Counter, Counte
         names = placed(names, text)
         columns = column_map(s, names, insts, text)
         checked = _with_checks(s, lib, sig, names, columns, stuck, copies)
-        for directory, data in ((paths.NAMES_DIR, names), (paths.COLUMNS_DIR, columns)):
-            directory.mkdir(parents=True, exist_ok=True)
-            (directory / f"{stem}.json").write_text(json.dumps(data, indent=1, sort_keys=True) + "\n")
+        paths.NAMES_DIR.mkdir(parents=True, exist_ok=True)
+        _write_json(paths.NAMES_DIR, stem, names)
         (paths.NAMES_DIR / f"{stem}.dl").write_text(text.text)
         (paths.NAMES_DIR / f"{stem}.determination.dl").write_text(text.determination)
+        # the pass reads Souffle's rows, which `parity.rerun` gives from the name map and the texts just written
+        rows = Rows(stem, columns)
+        asked: set[tuple[str, frozenset[str]]] = set()
+        for text, data in ((arclog, arcdata), *([checked] if checked is not None else [])):
+            pull_up(text, data, lambda relation, read: bool(asked.add((relation, read))))
+        rows.ask(asked)
+        single = rows.single
+        pulled = pull_up(arclog, arcdata, single)
+        dropped = dict(pulled.dropped)
+        arclog = pulled.arclog
+        if checked is not None:
+            copy = pull_up(checked[0], checked[1], single)
+            checked = (copy.arclog, checked[1])
+            dropped.update({n: dropped.get(n, frozenset()) | g for n, g in copy.dropped.items()})
+        paths.COLUMNS_DIR.mkdir(parents=True, exist_ok=True)
+        _write_json(paths.COLUMNS_DIR, stem, drop_columns(columns, dropped))
         checked = checked or (arclog, arcdata)
     except Exception as e:  # noqa: BLE001
         return stem, None, None, Counter(), Counter(), [], {}, f"{type(e).__name__}: {e}", None
