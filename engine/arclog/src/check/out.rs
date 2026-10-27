@@ -1,14 +1,18 @@
 //! The check of the `OUT` form (`docs/arclog/arclog.md#the-out-form`): its
 //! atoms, its sites and the types of its two columns, and, for a form read
-//! from a solver's files, its place in them and that the solver holds one.
+//! from a solver's files, its place in them (the tail, or an `ALT` block),
+//! that its block holds no other, that the tail holds one, and that the case
+//! program holds one: the `OUT` form of the most specific blocks that hold
+//! one ([`crate::solver::Case::several_outs`]).
 
 use super::types::PoseOr;
 use super::{Check, CheckCacheKey, CheckId, CheckInput, CheckResult, KeyInput, Prefix, PrefixResult, Refusal, Scope};
 use super::prefix::refused;
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
-use crate::program::path::{NodePath, NodeRef};
-use crate::program::{Atom, ColumnName, Conjunct, FactRelation, Form, LabelId, LabelUse, Out, RelationRef, Site, SiteArg};
+use crate::program::path::{node_at, NodePath, NodeRef, PathStep};
+use crate::program::{AltItem, Atom, ColumnName, Conjunct, FactRelation, Form, LabelId, LabelUse, Out, RelationRef, Site, SiteArg};
 use crate::resolver::Resolution;
+use crate::solver::Case;
 use crate::types::ValueType;
 
 /// [`CheckId::Out`].
@@ -67,8 +71,12 @@ impl Check for OutCheck {
     /// the program declares, each site selects one column, or one field of a
     /// record column, with one label marked `^`, the first such label is a
     /// Position and the second a Color; and, where the program was read from
-    /// a solver's files, the form is the last of the solver's file, under no
-    /// claim and in no `ALT` block, and the case program holds no other.
+    /// a solver's files, the form is the last of the tail, or stands in an
+    /// `ALT` block after each form of the block other than its `ALT` blocks
+    /// and `ALTS` forms, under no claim, and its block holds no other. A case
+    /// program read from the files that holds none is refused as a whole, and
+    /// so is one that holds more than one, naming the blocks it took them
+    /// from.
     fn check(&self, input: &CheckInput<'_>) -> CheckResult {
         let Form::Out(out) = input.form else { return CheckResult::Pass };
         let mut found = found(&input.scope, input.path, out.value(), Reading::Whole);
@@ -273,21 +281,31 @@ fn label_type<'s>(scope: &'s Scope<'_>, label: LabelId) -> Option<&'s ValueType>
 }
 
 /// The refusals of the place of the form in the solver's files, where the
-/// program was read from them: the form is the last form of the solver's
-/// arclog file, outside every claim and `ALT` block, and the file holds no
-/// other `OUT` form, at any depth, equal forms included.
+/// program was read from them: the form stands in the tail, after every other
+/// form, or in an `ALT` block, after each form of the block other than its
+/// `ALT` blocks and `ALTS` forms, under no claim; and its block holds no
+/// other `OUT` form, equal forms included.
 fn placed(input: &CheckInput<'_>) -> Vec<(NodePath, &'static str)> {
     let Some(files) = input.scope.files else { return Vec::new() };
-    let mut refused = Vec::new();
     let (_, owning, file_path) = files.file_of(input.path);
-    let last = owning.program.value().forms.len();
-    if file_path.0.len() != 1 || file_path.0[0].0 as usize + 1 != last {
-        refused.push((NodePath::default(), "the `OUT` form is the last form of the file, under no claim and in no `ALT` block"));
+    let Some((PathStep(index), block)) = file_path.0.split_last() else { return Vec::new() };
+    let index = *index as usize;
+    let block = NodePath(block.into());
+    let is_out = |form: &Form| matches!(form, Form::Out(_));
+    let (in_place, outs) = match node_at(NodeRef::Program(owning.program.value()), &block) {
+        Some(NodeRef::Program(program)) => (index + 1 == program.forms.len(), program.forms.iter().filter(|form| is_out(form)).count()),
+        Some(NodeRef::Alt(alt)) => {
+            let blocks_follow = alt.items[index + 1..].iter().all(|item| matches!(item, AltItem::Alt(_) | AltItem::Form(Form::Alts(_))));
+            (blocks_follow, alt.items.iter().filter(|item| matches!(item, AltItem::Form(form) if is_out(form))).count())
+        }
+        _ => (false, 0),
+    };
+    let mut refused = Vec::new();
+    if !in_place {
+        refused.push((NodePath::default(), "an `OUT` form stands in the tail, after every other form, or in an `ALT` block, after each form of the block other than its `ALT` blocks and `ALTS` forms, and under no claim"));
     }
-    let mut outs = 0;
-    super::each_node(NodeRef::Program(owning.program.value()), &NodePath::default(), &mut |node, _| outs += usize::from(matches!(node, NodeRef::Out(_))));
     if outs > 1 {
-        refused.push((NodePath::default(), "a solver holds one `OUT` form"));
+        refused.push((NodePath::default(), "a block holds one `OUT` form"));
     }
     refused
 }
@@ -298,4 +316,13 @@ pub(super) fn missing(program: &crate::program::Program) -> Option<Refusal> {
     let none = !program.forms.iter().any(|form| matches!(form, Form::Out(_)));
     let at = program.forms.len().checked_sub(1).map_or_else(NodePath::default, |last| NodePath::top(last as u32));
     none.then(|| Refusal { message: "a solver holds one `OUT` form".into(), at })
+}
+
+/// The refusal of a case program read from a solver's files that holds more
+/// than one `OUT` form, which `case` gives with the blocks it took them from
+/// ([`Case::several_outs`]), at the last form of the program.
+pub(super) fn several(case: &Case, program: &crate::program::Program) -> Option<Refusal> {
+    let message = case.several_outs()?;
+    let at = program.forms.len().checked_sub(1).map_or_else(NodePath::default, |last| NodePath::top(last as u32));
+    Some(Refusal { message: message.into(), at })
 }

@@ -30,7 +30,8 @@
 //! case, and that relation is the `OUT` form's or is read by it at any depth or is
 //! itself a removed relation that the case compares; a form that derives no
 //! relation, the `OUT` form (`relation` empty), is the output itself and derives it
-//! in every case; a relation that several
+//! in the cases that take its block and no more specific block's `OUT` form (its
+//! `alts` and `deeper`); a relation that several
 //! nodes hold, one per `DEMO_RULE`, is read by the `OUT` form where the form
 //! reads one of them at any depth. A form
 //! derives its relation in a case that takes every alt of the form's block
@@ -716,8 +717,9 @@ struct RemovedReader {
     relation: String,
     /// The names of the alts of the form's block.
     alts: Vec<String>,
-    /// The names of the alts of the block of each form of `relation` that
-    /// stands deeper than the form's block.
+    /// The names of the alts of the block of each form of `relation`, or, for
+    /// an `OUT` form, of each `OUT` form, that stands deeper than the form's
+    /// block.
     deeper: Vec<Vec<String>>,
 }
 

@@ -45,7 +45,7 @@ def grid_param(head: str, types: list[str], rest: str) -> str | None:
     row holds the position. None where the rows are not grids so: a row
     that gives several values after its position, two rows at one cell, or
     positions of different frames in one grid."""
-    from arclog_convert.lint import L, read, flat
+    from arclog_convert.lint_read import L, flat, read
     if "Position" not in types:
         return None
     pi = types.index("Position")
@@ -635,7 +635,8 @@ def or_body(bodies: list[tuple[list[str], list[str]]], cols: set[str], outer: se
 def drop_implied(bodies: list[list[str]]) -> list[list[str]]:
     """The union's bodies less each that holds only where another holds,
     the earlier of two that each imply the other kept."""
-    from arclog_convert.lint import implied_branches, read
+    from arclog_convert.lint import implied_branches
+    from arclog_convert.lint_read import read
     try:
         parsed = [read("\n".join(b)) for b in bodies]
     except SyntaxError:
@@ -696,7 +697,7 @@ MERGES_UNMERGED: list[str] = []
 def exported(lines: list[str]) -> set[str]:
     """The labels a list of atoms makes in its own scope: at its sites, and
     those an OR or IF in it exports."""
-    from arclog_convert.lint import L, Sym, leaves as lint_leaves, read
+    from arclog_convert.lint_read import L, Sym, leaves as lint_leaves, read
     try:
         items = read("\n".join(lines))
     except SyntaxError:
@@ -736,7 +737,7 @@ def fold_or_lines(text: str) -> str:
     line's head, gloss and proposers, and the line goes, so one form
     derives the relation. A `(SET)` mark of the line goes with it: a clause
     with a body gives one value."""
-    from arclog_convert.lint import L, Str, Sym, read, flat
+    from arclog_convert.lint_read import L, Str, Sym, flat, read
     try:
         items = read(text)
     except SyntaxError:
@@ -884,7 +885,8 @@ def hoist_shared(text: str, concept_empty: frozenset[str] | set[str]) -> str:
     that declares a relation it reads. A relation of `concept_empty`, which
     the Souffle solver derives no rows of in the concept case, stays in its
     alts."""
-    from arclog_convert.lint import alt_repeats, placements, read, reads
+    from arclog_convert.lint_alts import alt_repeats, placements, reads
+    from arclog_convert.lint_read import read
     forms = read(text)
     pl = placements(forms)
     groups: dict[int, tuple] = {}

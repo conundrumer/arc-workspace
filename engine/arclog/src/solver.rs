@@ -88,6 +88,9 @@ pub struct Case {
     origins: StableHashMap<NodePath, (FileOwner, NodePath)>,
     concept_determinations: Box<[NodePath]>,
     rederived: Box<[NodePath]>,
+    /// The alts of the block of each `OUT` form of the program, in the order of
+    /// the forms, the outermost alt first; none for the tail's.
+    out_blocks: Box<[Box<[AltsName]>]>,
     /// The program as [`Case::program_alone`] gives it, where it differs from
     /// `program`.
     alone: Option<Node<Program>>,
@@ -108,6 +111,23 @@ impl Case {
     /// form in a `DEMO_RULE` form.
     pub fn rederived_forms(&self) -> &[NodePath] {
         &self.rederived
+    }
+
+    /// The fault of a case program that holds more than one `OUT` form, which
+    /// a case does where two blocks that neither holds the other's alts hold
+    /// different `OUT` forms and no combination block holds one of its own,
+    /// naming the blocks the case took them from; `None` where it holds one or
+    /// none.
+    pub fn several_outs(&self) -> Option<String> {
+        if self.out_blocks.len() < 2 {
+            return None;
+        }
+        let block = |alts: &[AltsName]| match alts {
+            [] => "the tail".to_owned(),
+            alts => format!("the block of the alts {}", alts.iter().map(|alt| &*alt.0).collect::<Vec<_>>().join(" ")),
+        };
+        let blocks: Vec<String> = self.out_blocks.iter().map(|alts| block(alts)).collect();
+        Some(format!("the case takes more than one `OUT` form, from {}; an `ALT` block of their combination holds an `OUT` form of its own to state the case's", blocks.join(" and ")))
     }
 
     /// The case program as it reads when it stands alone, with no concept
@@ -244,9 +264,9 @@ impl Solver {
     fn walk<'a>(&'a self, chosen: &'a [AltsName]) -> Walk<'a> {
         let mut walk = Walk { chosen, placed: Vec::new(), points: Vec::new(), unchosen: None };
         for (index, form) in self.representative_claims() {
-            walk.form(form, FileOwner::Representative, NodePath::top(index as u32), 0);
+            walk.form(form, FileOwner::Representative, NodePath::top(index as u32), &[]);
         }
-        walk.forms(&self.program.value().forms, FileOwner::Solver, &NodePath::default(), 0);
+        walk.forms(&self.program.value().forms, FileOwner::Solver, &NodePath::default(), &[]);
         walk
     }
 
@@ -287,7 +307,7 @@ impl Solver {
                 }
             }
         }
-        let concept_determination = |p: &Placed| p.depth == 0 && is_det(&p.form) && !other_readings.contains(&p.step);
+        let concept_determination = |p: &Placed| p.depth() == 0 && is_det(&p.form) && !other_readings.contains(&p.step);
         let mut helpers = Vec::new();
         if !stored.is_empty() {
             let mut used = self.declared_names();
@@ -337,10 +357,14 @@ impl Solver {
         let mut origins = StableHashMap::default();
         let mut concept_determinations = Vec::new();
         let mut rederived = Vec::new();
+        let mut out_blocks = Vec::new();
         for taken in taken {
             let p = taken.placed;
             let path = NodePath::top(forms.len() as u32);
-            if p.depth > 0 || !taken.in_rules.is_empty() {
+            if derives(&p.form) == Some(Derives::Out) {
+                out_blocks.push(p.alts.clone().into());
+            }
+            if p.depth() > 0 || !taken.in_rules.is_empty() {
                 rederived.push(path.clone());
             }
             if concept_determination(p) {
@@ -373,6 +397,7 @@ impl Solver {
             origins,
             concept_determinations: concept_determinations.into(),
             rederived: rederived.into(),
+            out_blocks: out_blocks.into(),
             alone,
         })
     }
@@ -557,16 +582,30 @@ impl Iterator for Cases<'_> {
 }
 
 /// A form a case reaches: the form, its file and its path there, and the
-/// number of `ALT` blocks it stands in, so the form of a combination's
-/// nested `ALT` stands deeper than each alt's. `step` counts the walk's
-/// steps before it, so it gives the order of the forms in the files.
+/// names of the alts of the `ALT` blocks it stands in, from the outermost, so
+/// the form of a combination's nested `ALT` stands deeper than each alt's.
+/// `step` counts the walk's steps before it, so it gives the order of the
+/// forms in the files.
 #[derive(Clone, Debug)]
 struct Placed {
     step: usize,
     form: Form,
     owner: FileOwner,
     path: NodePath,
-    depth: u32,
+    alts: Vec<AltsName>,
+}
+
+impl Placed {
+    /// The number of `ALT` blocks the form stands in.
+    fn depth(&self) -> u32 {
+        self.alts.len() as u32
+    }
+
+    /// Whether the alts of the blocks the form stands in hold those of
+    /// `other`'s blocks and more: the form stands in a more specific block.
+    fn more_specific_than(&self, other: &Placed) -> bool {
+        self.alts.len() > other.alts.len() && other.alts.iter().all(|alt| self.alts.contains(alt))
+    }
 }
 
 /// An `ALTS` form a walk reaches: the walk's step at it, the alt the walk
@@ -588,41 +627,45 @@ struct Walk<'a> {
 }
 
 impl<'a> Walk<'a> {
-    fn forms(&mut self, forms: &'a [Form], owner: FileOwner, base: &NodePath, depth: u32) {
+    fn forms(&mut self, forms: &'a [Form], owner: FileOwner, base: &NodePath, alts: &[AltsName]) {
         for (index, form) in forms.iter().enumerate() {
-            self.form(form, owner, base.child(index as u32), depth);
+            self.form(form, owner, base.child(index as u32), alts);
         }
     }
 
-    fn form(&mut self, form: &'a Form, owner: FileOwner, path: NodePath, depth: u32) {
+    fn form(&mut self, form: &'a Form, owner: FileOwner, path: NodePath, alts: &[AltsName]) {
         let chosen = self.chosen;
         match form {
-            Form::Claim(_) => self.descend(Block::Form(form), owner, &path, depth, &|alt| chosen.contains(&alt.name)),
-            Form::Alts(alts) => {
-                let alts = alts.value();
-                let Some(choice) = alt_names(alts).find(|name| chosen.contains(name)) else {
-                    self.unchosen = Some(alts.name.clone());
+            Form::Claim(_) => self.descend(Block::Form(form), owner, &path, alts, &|alt| chosen.contains(&alt.name)),
+            Form::Alts(node) => {
+                let node = node.value();
+                let Some(choice) = alt_names(node).find(|name| chosen.contains(name)) else {
+                    self.unchosen = Some(node.name.clone());
                     return;
                 };
-                self.points.push(Point { step: self.placed.len() + self.points.len(), alt: choice.clone(), concept: alts.concept.clone() });
-                self.descend(Block::Form(form), owner, &path, depth, &|alt| alt.name == *choice);
+                self.points.push(Point { step: self.placed.len() + self.points.len(), alt: choice.clone(), concept: node.concept.clone() });
+                self.descend(Block::Form(form), owner, &path, alts, &|alt| alt.name == *choice);
             }
             _ => {
                 let step = self.placed.len() + self.points.len();
-                self.placed.push(Placed { step, form: form.clone(), owner, path, depth })
+                self.placed.push(Placed { step, form: form.clone(), owner, path, alts: alts.to_vec() })
             }
         }
     }
 
     /// The blocks of `block`, the block at `path`, that `enter` admits, an
-    /// `ALT` block one deeper than `depth`; below an `ALT` block, each nested
+    /// `ALT` block one deeper than `alts`, the alts of the blocks `block`
+    /// stands in, with its own alt last; below an `ALT` block, each nested
     /// block that the case chooses.
-    fn descend(&mut self, block: Block<'a>, owner: FileOwner, path: &NodePath, depth: u32, enter: &dyn Fn(&Alt) -> bool) {
+    fn descend(&mut self, block: Block<'a>, owner: FileOwner, path: &NodePath, alts: &[AltsName], enter: &dyn Fn(&Alt) -> bool) {
         let chosen = self.chosen;
         for (index, inner) in inner_blocks(block, enter) {
             match inner {
-                Block::Form(form) => self.form(form, owner, path.child(index), depth),
-                Block::Alt(_) => self.descend(inner, owner, &path.child(index), depth + 1, &|alt| chosen.contains(&alt.name)),
+                Block::Form(form) => self.form(form, owner, path.child(index), alts),
+                Block::Alt(alt) => {
+                    let inner_alts = [alts, std::slice::from_ref(&alt.name)].concat();
+                    self.descend(inner, owner, &path.child(index), &inner_alts, &|alt| chosen.contains(&alt.name))
+                }
             }
         }
     }
@@ -1404,13 +1447,15 @@ fn map_atoms(form: &Form, map: &dyn Fn(&Atom) -> Option<Atom>) -> Option<Form> {
 
 /// The relation, instance, rigid `DET` or `OUT` form that a form derives. A
 /// case keeps, of the forms that derive one such thing, those of the deepest
-/// blocks (`rederived`).
+/// blocks, and of the `OUT` forms those of the most specific blocks
+/// (`rederived`).
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 enum Derives {
     Relation(ProgramRelation),
     Instance(InstanceName),
     RigidDet(RigidDetName),
-    /// The `OUT` form, which a case holds once.
+    /// The `OUT` form, which a case holds once: the forms of the most
+    /// specific blocks that hold one (`rederived`).
     Out,
 }
 
@@ -1449,35 +1494,45 @@ fn is_det(form: &Form) -> bool {
 
 /// The forms of a case, from the forms its walk reaches: for each thing
 /// derived, the forms of the deepest blocks that derive it, at the place of
-/// the concept program's first form that derives it. The place of a thing
-/// that a `DEMO_RULE` form of the concept program derives is in each such
-/// form, at its first form that derives it, as [`Taken::in_rules`] gives.
-/// Of the kept forms of one thing that are equal, the first in the walk's
-/// order stands: forms that derive one thing equally derive it once, so their
-/// combination needs no nested `ALT`, and a relation is derived by one clause.
-/// The `OUT` form stands after every other form, as it does in a solver file.
+/// the concept program's first form that derives it. The `OUT` form is the
+/// exception: the forms of the most specific blocks that hold one, those
+/// whose alts no other `OUT` form's alts hold with more, the tail's among
+/// them as the block of no alt. Two such blocks that neither holds the
+/// other's alts each keep their `OUT` form, and the case then holds several
+/// ([`Case::several_outs`]). The place of a thing that a `DEMO_RULE` form of
+/// the concept program derives is in each such form, at its first form that
+/// derives it, as [`Taken::in_rules`] gives. Of the kept forms of one thing
+/// that are equal, the first in the walk's order stands: forms that derive
+/// one thing equally derive it once, so their combination needs no nested
+/// `ALT`, and a relation is derived by one clause. The `OUT` forms stand
+/// after every other form, as the `OUT` form does in a solver file.
 fn rederived(placed: &[Placed]) -> Vec<Taken<'_>> {
     let keys: Vec<Derives> = placed.iter().map(|p| derives(&p.form).expect("a reached form derives")).collect();
     let mut deepest: StableHashMap<&Derives, u32> = StableHashMap::default();
-    for (p, key) in placed.iter().zip(&keys) {
-        let depth = deepest.entry(key).or_insert(p.depth);
-        *depth = (*depth).max(p.depth);
+    for (p, key) in placed.iter().zip(&keys).filter(|(_, key)| **key != Derives::Out) {
+        let depth = deepest.entry(key).or_insert(p.depth());
+        *depth = (*depth).max(p.depth());
     }
-    let mut keep: Vec<bool> = placed.iter().zip(&keys).map(|(p, key)| p.depth == deepest[key]).collect();
+    let is_out = |index: usize| keys[index] == Derives::Out;
+    let mut keep: Vec<bool> = (0..placed.len())
+        .map(|index| match is_out(index) {
+            true => !(0..placed.len()).any(|other| is_out(other) && placed[other].more_specific_than(&placed[index])),
+            false => placed[index].depth() == deepest[&keys[index]],
+        })
+        .collect();
     for index in 0..placed.len() {
         if keep[index] && (0..index).any(|earlier| keep[earlier] && keys[earlier] == keys[index] && equal_forms(&placed[earlier].form, &placed[index].form)) {
             keep[index] = false;
         }
     }
     let rederived_in = |rules: &StableHashSet<Derives>| -> Vec<&Placed> {
-        (0..placed.len()).filter(|index| placed[*index].depth > 0 && keep[*index] && rules.contains(&keys[*index])).map(|index| &placed[index]).collect()
+        (0..placed.len()).filter(|index| placed[*index].depth() > 0 && keep[*index] && rules.contains(&keys[*index])).map(|index| &placed[index]).collect()
     };
     let mut in_rules = StableHashSet::default();
     let mut taken = Vec::new();
     let mut emitted = vec![false; placed.len()];
     let mut placed_keys = StableHashSet::default();
-    let is_out = |index: usize| keys[index] == Derives::Out;
-    for (index, p) in placed.iter().enumerate().filter(|(index, p)| p.depth == 0 && !is_out(*index)) {
+    for (index, p) in placed.iter().enumerate().filter(|(index, p)| p.depth() == 0 && !is_out(*index)) {
         let key = &keys[index];
         if keep[index] {
             let rules: StableHashSet<Derives> = rule_derives(&p.form).collect();
@@ -1487,7 +1542,7 @@ fn rederived(placed: &[Placed]) -> Vec<Taken<'_>> {
         }
         if deepest[key] > 0 && placed_keys.insert(key) {
             for other in 0..placed.len() {
-                if !emitted[other] && placed[other].depth > 0 && keep[other] && keys[other] == *key {
+                if !emitted[other] && placed[other].depth() > 0 && keep[other] && keys[other] == *key {
                     taken.push(Taken { placed: &placed[other], in_rules: Vec::new() });
                     emitted[other] = true;
                 }

@@ -1,11 +1,11 @@
 """The arclog and arcdata files of `gen/` as plain trees: a list per list
-node, a `str` per symbol, a `Quoted` per string, as `arclog_convert.lint`
+node, a `str` per symbol, a `Quoted` per string, as `arclog_convert.lint_read`
 reads them; and the solvers of `gen/` a section reads."""
 
 from collections.abc import Iterator
 from pathlib import Path
 
-from arclog_convert import lint, out
+from arclog_convert import lint_read, out
 
 
 class Quoted(str):
@@ -21,17 +21,17 @@ def gen_dir() -> Path:
 
 
 def _plain(node: object) -> Node:
-    if isinstance(node, lint.L):
+    if isinstance(node, lint_read.L):
         return [_plain(x) for x in node.items]
-    if isinstance(node, lint.Str):
+    if isinstance(node, lint_read.Str):
         return Quoted(node.text[1:-1])
-    assert isinstance(node, lint.Sym)
+    assert isinstance(node, lint_read.Sym)
     return node.text
 
 
 def read(path: Path) -> list[Node]:
     """The top-level forms of the file at `path`."""
-    return [_plain(x) for x in lint.read(path.read_text())]
+    return [_plain(x) for x in lint_read.read(path.read_text())]
 
 
 def stems(gen: Path) -> list[str]:

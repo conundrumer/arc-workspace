@@ -306,8 +306,9 @@ class RenderMixin:
         derives it. This holds also where no two of the case's alts rederive
         one relation. The cases tried are the pairs of alts, and a larger
         combination only where one of its pairs got a block."""
-        from arclog_convert.lint import L as LintL, Sym as LintSym, alt_points, flat, form_reads, is_case, placements, \
-            read as lint_read, unstated_combinations
+        from arclog_convert.lint import form_reads
+        from arclog_convert.lint_alts import alt_points, is_case, placements, unstated_combinations
+        from arclog_convert.lint_read import L as LintL, Sym as LintSym, flat, read as lint_read
         branch_forms, concept, _, main = self.render_args
         main_text: dict[str, list] = defaultdict(list)
         for f in main:

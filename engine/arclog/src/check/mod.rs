@@ -568,8 +568,9 @@ pub fn check_program_of_files(
     if let CheckResult::Refuse(refusals) = cached(cache, cycles_key, || check_cycles(&program.graph, &program)) {
         refused.extend(refusals.iter().map(|r| diagnostic(DiagnosticKind::Check(CheckId::Cycles), Severity::Error, r.message.clone(), r.at.clone())));
     }
-    if files.is_some() {
-        if let Some(refusal) = out::missing(program.program.value()) {
+    if let Some(files) = files {
+        let refusals = [out::missing(program.program.value()), out::several(files.case, program.program.value())];
+        for refusal in refusals.into_iter().flatten() {
             refused.push(diagnostic(DiagnosticKind::Check(CheckId::Out), Severity::Error, refusal.message, refusal.at));
         }
     }

@@ -30,13 +30,15 @@ removes from `gen/`; nothing else reads it.
 A pass after the conversion moves the unjoined factors of clause bodies into
 the clauses that join them (`arclog_convert.pull_up`); it runs on both texts,
 and the column map lists the columns it took away from each relation no more.
-Before that pass, each text gets the tail's `OUT` form, `(OUT (&output ^<l0> ^<l1>))`,
-with `<l0>` and `<l1>` the labels that the column map entry of `&output` gives the first two
-columns of the solver's `out` (`docs/arclog/arclog.md#the-out-form`).
+Before that pass, each text gets `(OUT (&output ^<l0> ^<l1>))` in the tail and in each
+`ALT` block whose own forms derive `&output`, with `<l0>` and `<l1>` the labels that the column map
+entry of `&output` gives the first two columns of the solver's `out`
+(`docs/arclog/arclog.md#the-out-form`).
 A pass after that one folds each relation that only projects one earlier
 relation into the atoms that read it (`arclog_convert.projections`), the atoms of
-the `OUT` form among them, and removes `&output` where it states the output's two
-columns alone: it runs
+each `OUT` form among them, removes a clause of `&output` where it states the output's two
+columns alone for the `OUT` form of its block, and removes each `OUT` form of an `ALT` block
+that restates the `OUT` form its cases take without it: it runs
 on both texts, and in the copy under `CORPUS` it keeps each clause it removes,
 as a relation that nothing reads. The name map lists under `checks` the check
 relations of the relations the conversion folds, which the row-parity check
@@ -71,6 +73,8 @@ from typing import NamedTuple
 from engine.pool import pool_size
 from engine.program import Qualifier, Variable
 from arclog_convert.libmap import rename as libmap_rename
+from arclog_convert.lint_alts import alt_blocks, derived, placements
+from arclog_convert.lint_read import L, read
 from arclog_convert import paths
 from arclog_convert.phases import phase, use_out
 
@@ -173,7 +177,7 @@ def _with_checks(s: "Solver", lib: Lib, sig: Lib, names: dict, columns: dict, in
 
 
 def _output_form(columns: dict) -> str:
-    """The tail's `OUT` form of a program: it reads `&output` at the arclog columns that the column map entry of
+    """The `OUT` form of a program: it reads `&output` at the arclog columns that the column map entry of
     `&output` gives the first two columns of the solver's `out`, its Position and its Color. The entry that the
     top level writes is the one that counts."""
     entry = columns[OUTPUT]["out"]
@@ -184,7 +188,18 @@ def _output_form(columns: dict) -> str:
 
 
 def _with_output_form(arclog: str, form: str) -> str:
-    """`arclog` with the form after its last form, a blank line between."""
+    """`arclog` with `form` after its last form, a blank line between, and in each `ALT` block whose own forms derive
+    `&output`, on a line of its own after the block's forms other than its `ALT` blocks and `ALTS` forms."""
+    inserts: list[tuple[int, str]] = []
+    for path, block in alt_blocks(read(arclog)):
+        own = [f for f in block.items[2:] if isinstance(f, L) and f.head not in ("ALT", "ALTS")]
+        if not any(p.alts == path and derived(p) == OUTPUT for p in placements(block.items[2:], alts=path)):
+            continue
+        line = arclog.rfind("\n", 0, own[-1].start) + 1
+        indent = arclog[line:own[-1].start] if not arclog[line:own[-1].start].strip() else ""
+        inserts.append((own[-1].end, "\n" + indent + form))
+    for at, text in sorted(inserts, reverse=True):
+        arclog = arclog[:at] + text + arclog[at:]
     return arclog.rstrip("\n") + "\n\n" + form + "\n"
 
 
@@ -281,7 +296,8 @@ def convert_one(stem: str) -> Converted:
         columns = drop_columns(columns, dropped)
         paths.COLUMNS_DIR.mkdir(parents=True, exist_ok=True)
         _write_json(paths.COLUMNS_DIR, stem, columns)
-        # the tail's `OUT` form reads `&output`; the projection pass folds it into what `&output` projects
+        # each `OUT` form reads `&output`; the projection pass folds it into what the clause of `&output` in its block
+        # projects
         output = _output_form(columns)
         arclog = _with_output_form(arclog, output)
         if checked is not None:

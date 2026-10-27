@@ -118,8 +118,13 @@ pub fn corpus_case_stream(corpus: &Path, id: &str, case: &ResolvedCase, checked:
 /// relations, a relation that a block other than the concept program
 /// derives has no stream, since the program read alone would give that
 /// `DET` the block's derivation, and the concept program's derivation is
-/// the one it reads in the case.
+/// the one it reads in the case. A case that takes more than one `OUT` form
+/// ([`crate::solver::Case::several_outs`]) has no stream either, since a
+/// stream holds one.
 pub fn case_stream(case: &ResolvedCase, checked: &CheckedProgram, vocabulary: &Vocabulary) -> Result<WrittenStream, String> {
+    if let Some(fault) = case.case.several_outs() {
+        return Err(format!("the writer gives no stream: {fault}"));
+    }
     let written = |program: &CheckedProgram| written_stream(program, vocabulary).map_err(|diagnostic| format!("the writer gives no stream: {}", diagnostic.message));
     if case.case.reads_alone_as_it_stands() {
         return written(checked);

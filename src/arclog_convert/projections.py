@@ -11,22 +11,28 @@ atom has L (`docs/arclog/arclog.md#sites` gives how a site is written). The site
 on a column that is no label of the clause, the Example site of a lifted read,
 stays. The comment lines directly before the removed clause go with it. The
 pass repeats until it removes no clause, and leaves the text as it is where it
-removes none. Where a removal leaves Q standing under a claim before the first
+removes no clause and no `OUT` form. Where a removal leaves Q standing under a claim before the first
 claim that reads it, the pass moves Q's form, with its comment lines, to the head
 of the forms of that first claim.
 
-The `OUT` form is a reader like any other, of a relation it reads by its atoms:
+Each `OUT` form is a reader like any other, of a relation it reads by its atoms:
 an atom of it that the pass redirects reads the column or field of Q in place of
 P's column, with its label renamed to the name of that column or field and no
-site of its own beside it (`docs/arclog/arclog.md#the-out-form`). Where `&output`
+site of its own beside it (`docs/arclog/arclog.md#the-out-form`). An `OUT` form
+derives the output, so it is a reader of its block, inactive in a case that
+holds the block of a more specific `OUT` form
+(`docs/arclog/arclog.md#alts`). Where `&output`
 is the clause of two positive atoms on relations A and B, each site a label
 marked `*` or a site of such fields, with no label in both atoms, the Position
-label of the `OUT` form in A and its Color label in B, and the `OUT` form is the
-only reader of `&output`, the pass removes the clause and the atom of the `OUT`
+label of the `OUT` form in A and its Color label in B, and the one reader of
+the clause that is active in some case is the `OUT` form of the clause's block,
+the pass removes the clause and the atom of the `OUT`
 form becomes two, one on A with its site of the Position column alone and one
 on B with its site of the Color column alone: the rows of the `OUT` form are the
 product of the projections of A and B, which are the rows of the clause
 projected onto the grid columns.
+The pass ends by removing each `OUT` form of an `ALT` block that restates the
+`OUT` form its cases take without it (`arclog_convert.lint_alts.restated_outs`).
 
 A clause stays where the rows its readers get would change or the program would
 not read:
@@ -34,7 +40,7 @@ not read:
   relation of an atom or the name of P's clauses.
 - No atom reads P from the clause, or one that does stands outside the block of
   the clause, or in another case reads another clause of P
-  (`arclog_convert.lint.alt_repeats` gives how a case reads a relation). A reader
+  (`arclog_convert.lint_alts.alt_repeats` gives how a case reads a relation). A reader
   is inactive in a case, and so reads no clause of P there, where a form of the
   reader's own relation stands in a block deeper than the reader's and is held in
   the case: the form of the block of greatest depth derives a relation in a case
@@ -45,7 +51,9 @@ not read:
   that holds the clause's block and the reader's, such a form stands: that reader
   derives nothing and reads no clause of P in any case that holds the block. A
   `DET` outside the block reads the derivation of the concept program in every
-  case, so it keeps the clause.
+  case, so it keeps the clause. The `OUT` form of the tail is a reader outside the
+  block of a clause in an `ALT` block, inactive in the cases that hold a block with an
+  `OUT` form of its own.
 - A one-label site of P's atom on a column of a type parameter is one that the
   column-map entry of Q does not settle as a field or as the whole value.
 - A reader's clause kind may not read Q, or reads it in another scope than P
@@ -95,9 +103,9 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, Literal, NamedTuple
 
-from arclog_convert.lint import (
-    CLAIMS, FACTS, FORMS, MARKS, OPS, L, Linter, Placed, Sym, alt_points, bare_label, e_site, implied_branches,
-    is_const, leaves, placements, read, site_pairs, walk)
+from arclog_convert.lint import FACTS, FORMS, MARKS, OPS, Linter, bare_label, e_site, implied_branches, is_const, site_pairs
+from arclog_convert.lint_alts import CLAIMS, Placed, alt_points, placements, restated_outs
+from arclog_convert.lint_read import L, Sym, leaves, read, walk
 from arclog_convert.pull_up import BODIES, OUTPUT, READINGS, Edit, Reader, applied, atom_sites, readers_by_relation
 
 type Reading = Literal["RULE", "DET"]
@@ -112,6 +120,9 @@ INSTANCES = ("INIT", "DEMONSTRATED", "CHOOSE")
 """The forms whose inputs read by the scope of the form."""
 KEY_CLAUSES = ("key", "for")
 """The heads of the key clause of an instance and of a `CHOOSE` form."""
+REPAIRED = ("stands-under", "output-restated")
+"""The lint codes that the pass repairs after it removes the clauses: a form that stands under a claim before the first
+claim that reads it, and an `OUT` form that restates another."""
 READS_AS: dict[str, Reading] = {"RULE": "RULE", "DET": "DET", "OUT": "RULE"}
 """The reading of each form that reads as one clause does."""
 
@@ -119,8 +130,9 @@ READS_AS: dict[str, Reading] = {"RULE": "RULE", "DET": "DET", "OUT": "RULE"}
 @dataclass(frozen=True, order=True)
 class ReaderForm:
     """A form that held an atom on a relation P before the pass redirected it: the relation the form derives (an
-    instance's name for an `INIT` form, the chosen relation for a `CHOOSE` form, none for the `OUT` form, which is the output itself), the ALT names of its block, and the
-    ALT names of the block of each form of that relation that stands deeper than its block. In a case that holds the
+    instance's name for an `INIT` form, the chosen relation for a `CHOOSE` form, none for an `OUT` form, which is the
+    output itself), the ALT names of its block, and the ALT names of the block of each form of that relation, or
+    each `OUT` form for an `OUT` form, that stands deeper than its block. In a case that holds the
     ALT names of its block and, for no deeper block, all of that block's, the form derives its relation and so reads
     the clause of P; in any other case the atom reads nothing of P (`_Program._rederived`)."""
 
@@ -342,6 +354,7 @@ class _Program:
         for p in self.placed:
             if p.name:
                 self.decls[p.name].append(p)
+        self.outs = [p for p in self.placed if p.form.head == "OUT"]
         self.heads: dict[str, set[int]] = defaultdict(set)   # the position of each atom's relation, by the relation
         for form in forms:
             for x in walk(form):
@@ -361,8 +374,12 @@ class _Program:
         baseline = None
         self.blocked = False
         for p in self.placed:
-            parts = self._parts(p) if p.name else None
-            found = None if parts is None else self._redirects(p, parts)
+            projection = _projection(p.form) if p.name else None
+            if projection is None and p.name != OUTPUT:
+                continue
+            active = self._active(p)
+            parts = None if active is None else self._parts(p, projection, active)
+            found = None if parts is None else self._redirects(p, parts, active or [])
             if found is None:
                 continue
             redirects, readers = found
@@ -380,18 +397,19 @@ class _Program:
 
     # ---- the rules that keep a clause
 
-    def _parts(self, p: Placed) -> list[_Projection] | None:
+    def _parts(self, p: Placed, projection: _Projection | None, active: list[tuple[Reader, Placed]]
+               ) -> list[_Projection] | None:
         """The relations that the clause of `p` projects, each with the origins of the labels it gives: the one
-        relation of a projection clause; for `&output`, where it is no projection clause, the relation of each of two
-        atoms that give the Position label and the Color label of the `OUT` form that reads it; none where the clause
-        is neither."""
-        projection = _projection(p.form)
+        relation of `projection`, the projection that the clause states; for `&output`, where it states none, the
+        relation of each of two atoms that give the Position label and the Color label of the `OUT` form of the
+        block of `p` that is its one reader in `active`, the readers of the clause; none where the clause is
+        neither."""
         if projection is not None:
             return [projection]
-        readers = self.readers[str(p.name)]
-        if p.name != OUTPUT or len(readers) != 1 or readers[0][1].form.head != "OUT" or len(p.form.items) != 4:
+        if (p.name != OUTPUT or len(active) != 1 or active[0][1].form.head != "OUT" or active[0][1].alts != p.alts
+                or len(p.form.items) != 4):
             return None
-        sites = atom_sites(readers[0][0].atom)
+        sites = atom_sites(active[0][0].atom)
         if sites is None or len(sites) != 2:
             return None
         first, second = (_projection(L([p.form.items[0], p.form.items[1], atom], p.form.line)) for atom in p.form.items[2:])
@@ -404,9 +422,10 @@ class _Program:
                         _Projection(color_atom.relation, {color: color_atom.origins[color]})]
         return None
 
-    def _redirects(self, p: Placed, parts: list[_Projection]) -> tuple[list[Edit], frozenset[ReaderForm]] | None:
-        """The edit of each atom that reads the relation of `p` from it, to read the projected relations, and the forms
-        of those atoms; none where the clause stays."""
+    def _redirects(self, p: Placed, parts: list[_Projection], active: list[tuple[Reader, Placed]]
+                   ) -> tuple[list[Edit], frozenset[ReaderForm]] | None:
+        """The edit of each atom of `active`, the atoms that read the relation of `p` from its clause, to read the
+        projected relations, and the forms of those atoms; none where the clause stays."""
         relations = [part.relation for part in parts]
         bases = {relation.partition(".")[0] for relation in relations}
         settled = [_settled(part, self.columns) for part in parts]
@@ -419,10 +438,9 @@ class _Program:
             self.blocked |= varies
             return None
         origins = {label: origin for part in settled for label, origin in (part or {}).items()}
-        active = self._active(p)
-        flipped = {id(r.atom) for r, _ in active or ()}
+        flipped = {id(r.atom) for r, _ in active}
         edits: list[Edit] = []
-        for reader, placed in active or ():
+        for reader, placed in active:
             found = atom_sites(reader.atom)
             text = self._redirected(reader.atom, relations, origins, placed.form.head == "OUT")
             readings = self._readings(placed.form)
@@ -433,7 +451,7 @@ class _Program:
                 self.blocked |= varies or any(pl.form.head in READINGS for _, pl in active or ())
                 return None
             edits.append((reader.atom.start, reader.atom.end, text))
-        return (edits, frozenset(self._reader_form(placed) for _, placed in active or ())) if edits else None
+        return (edits, frozenset(self._reader_form(placed) for _, placed in active)) if edits else None
 
     def _blocked(self, p: Placed, placed: Placed, readings: frozenset[Reading], derivation: _Derivation,
                  lifted: bool, flipped: set[int]) -> bool:
@@ -488,17 +506,17 @@ class _Program:
         return any(block <= case for block in self._deeper(placed))
 
     def _deeper(self, placed: Placed) -> set[frozenset[str]]:
-        """The ALT names of the block of each form of the relation of `placed` that stands deeper than the block of
-        `placed`."""
+        """The ALT names of the block of each form of the relation of `placed`, or, for an `OUT` form, of each `OUT`
+        form, that stands deeper than the block of `placed`."""
         own = set(placed.alts)
-        return {frozenset(e.alts) for e in self.decls[str(placed.name)] if own < set(e.alts)}
+        forms = self.outs if placed.form.head == "OUT" else self.decls[str(placed.name)]
+        return {frozenset(e.alts) for e in forms if own < set(e.alts)}
 
     def _reader_form(self, placed: Placed) -> ReaderForm:
-        """The form `placed`, as it reads a removed relation. The `OUT` form derives no relation: it is the output,
-        in every case, and its reader form has no relation."""
-        if placed.form.head == "OUT":
-            return ReaderForm("", (), ())
-        return ReaderForm(str(placed.name), tuple(sorted(placed.alts)), tuple(sorted(tuple(sorted(b)) for b in self._deeper(placed))))
+        """The form `placed`, as it reads a removed relation. An `OUT` form derives no relation: it is the output, in
+        the cases of its block, and its reader form has no relation."""
+        relation = "" if placed.form.head == "OUT" else str(placed.name)
+        return ReaderForm(relation, tuple(sorted(placed.alts)), tuple(sorted(tuple(sorted(b)) for b in self._deeper(placed))))
 
     def _consistent(self, alts: set[str]) -> bool:
         """Whether the alts can hold in one case: no two are alts of one `ALTS` form."""
@@ -633,8 +651,8 @@ def _lint(text: str) -> Linter:
 
 
 def _codes(text: str) -> Counter[str]:
-    """The lint codes of `text` but `stands-under`, which the pass repairs, with their counts."""
-    return Counter(code for _, code, _ in _lint(text).errs if code != "stands-under")
+    """The lint codes of `text` but those the pass repairs (`REPAIRED`), with their counts."""
+    return Counter(code for _, code, _ in _lint(text).errs if code not in REPAIRED)
 
 
 def _landed(edits: list[Edit], redirects: list[Edit]) -> set[int]:
@@ -751,6 +769,12 @@ def _restand(text: str) -> str:
     return text
 
 
+def _without_restated_outs(text: str) -> str:
+    """`text` without each `OUT` form of an `ALT` block that restates the `OUT` form its cases take without it."""
+    restated = restated_outs(placements(read(text)))
+    return applied(text, [_removal(text, p.form) for p in restated]) if restated else text
+
+
 def project(arclog: str, arcdata: str, columns: Mapping[str, Mapping[str, Any]], keep: bool = False) -> Projected:
     """`arclog` after the pass, given the `arcdata` of the same program and its column map `columns`
     (`arclog_convert.names.column_map`), with the readers of each relation whose clause the pass removed (left in place
@@ -763,5 +787,6 @@ def project(arclog: str, arcdata: str, columns: Mapping[str, Mapping[str, Any]],
             break
         arclog = step.text
         readers[step.relation] |= step.readers
-    return Projected(arclog if keep or not readers else _restand(arclog),
-                     {relation: tuple(sorted(forms)) for relation, forms in sorted(readers.items())}, program.blocked)
+    arclog = _without_restated_outs(arclog if keep or not readers else _restand(arclog))
+    return Projected(arclog, {relation: tuple(sorted(forms)) for relation, forms in sorted(readers.items())},
+                     program.blocked)

@@ -82,7 +82,8 @@ def declaration_span(arclog: str, name: str) -> tuple[int, int] | None:
     """The offsets in the arclog `arclog` of the text of the declaration of the
     relation `name`: its comment lines before it, and the lines of its form.
     None where `arclog` declares no such relation."""
-    from arclog_convert.lint import DECL_HEADS, L, Sym, read
+    from arclog_convert.lint_alts import DECL_HEADS
+    from arclog_convert.lint_read import L, Sym, read
 
     def region(forms: list, start: int) -> tuple[int, int] | None:
         before = start

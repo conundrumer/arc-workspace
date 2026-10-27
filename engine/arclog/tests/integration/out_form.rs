@@ -128,7 +128,7 @@ fn an_out_site_of_the_wrong_type_is_refused_where_its_label_stands() {
 
 /// The file rules of item 4.
 #[test]
-fn a_solver_holds_one_out_in_its_tail_under_no_claim_and_in_no_alt_block() {
+fn a_block_holds_one_out_in_its_place_under_no_claim() {
     let one = format!("{RELATIONS}(OUT (&r ^P ^Col))\n");
     assert_eq!(refused_lines(&one), Vec::<u32>::new());
     let none = RELATIONS.to_owned();
@@ -142,7 +142,11 @@ fn a_solver_holds_one_out_in_its_tail_under_no_claim_and_in_no_alt_block() {
     let claim = "(INPUT cells \"the cells\"\n  (RULE &r (input *P *Col))\n  (OUT (&r ^P ^Col)))\n";
     assert!(!refused_lines(claim).is_empty(), "an `OUT` in a claim");
     let alt = format!("{RELATIONS}(ALTS $a \"which\" $Plain\n  (ALT $Own\n    (OUT (&r ^P ^Col))))\n(OUT (&r ^P ^Col))\n");
-    assert!(!refused_lines(&alt).is_empty(), "an `OUT` in an `ALT` block");
+    assert_eq!(refused_lines(&alt), Vec::<u32>::new(), "an `OUT` in an `ALT` block");
+    let alt_before = format!("{RELATIONS}(ALTS $a \"which\" $Plain\n  (ALT $Own\n    (OUT (&r ^P ^Col))\n    (RULE &late (input *P))))\n(OUT (&r ^P ^Col))\n");
+    assert!(!refused_lines(&alt_before).is_empty(), "an `OUT` before another form of its `ALT` block");
+    let alt_two = format!("{RELATIONS}(ALTS $a \"which\" $Plain\n  (ALT $Own\n    (OUT (&r ^P ^Col))\n    (OUT (input ^P ^Col))))\n(OUT (&r ^P ^Col))\n");
+    assert!(!refused_lines(&alt_two).is_empty(), "two `OUT` forms in one `ALT` block");
 }
 
 /// The checked program of the arclog text `arclog`, with no solver files.

@@ -42,8 +42,9 @@ from pathlib import Path
 
 from engine import Rows as EngineRows
 from arclog_convert.lib import REGISTRY
-from arclog_convert.lint import (
-    FACTS, FORMS, LIB, MARKS, OPS, L, Linter, Placed, Sym, bare_label, form_labels, is_const, placements, read, walk)
+from arclog_convert.lint import FACTS, FORMS, LIB, MARKS, OPS, Linter, bare_label, form_labels, is_const
+from arclog_convert.lint_alts import Placed, placements
+from arclog_convert.lint_read import L, Sym, read, walk
 
 BODIES = ("RULE", "DET")
 """The clauses with a body that the pass reads and rewrites."""

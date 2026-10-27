@@ -84,7 +84,7 @@ def _relations_read(text: str) -> set[str]:
     """Each name the arclog or arcdata `text` reads as a relation or an
     instance: a name with `&` outside a quoted text, and the head of a
     form."""
-    from arclog_convert.lint import L, Sym, read
+    from arclog_convert.lint_read import L, Sym, read
     out: set[str] = set()
 
     def scan(xs: list) -> None:
@@ -104,7 +104,7 @@ def _relations_read(text: str) -> set[str]:
 def _inputs_written(text: str) -> set[str]:
     """Each input of an instance, as `&<instance>.<input>`, that an `INIT`
     form of the arclog `text` writes."""
-    from arclog_convert.lint import L, Sym, read
+    from arclog_convert.lint_read import L, Sym, read
     out: set[str] = set()
 
     def inputs(instance: str, items: list) -> None:
