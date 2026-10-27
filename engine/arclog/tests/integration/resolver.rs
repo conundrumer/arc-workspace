@@ -148,12 +148,12 @@ fn an_instance_keyed_on_an_example_label_of_another_name_is_task_wide() {
            (key ((&cells (:E ^K) *P))\n\
              (node (P)\n\
                (&cells (:E K) *P)\n\
-               (&bg *P *Col))))\n\
+               (&bg P *Col))))\n\
          (INIT &next Connectivity\n\
            (key ((&obj.component (:key (:K ^K2)) *P *Id))\n\
              (node (P)\n\
                (&obj.component (:key (:K K2)) *P *Id)\n\
-               (&bg *P *Col))))\n",
+               (&bg P *Col))))\n",
     ));
     assert!(form_sides(&program, 2).iter().all(|side| *side == Side::TaskWide));
     assert!(form_sides(&program, 3).iter().all(|side| *side == Side::TaskWide));
@@ -168,7 +168,7 @@ fn an_instance_keyed_on_a_det_column_bound_at_an_example_site_is_task_wide() {
            (key ((&top ^Ky *P))\n\
              (node (P)\n\
                (&top Ky *P)\n\
-               (&bg *P *Col))))\n",
+               (&bg P *Col))))\n",
     ));
     assert!(form_sides(&program, 2).iter().all(|side| *side == Side::TaskWide));
 }
@@ -194,7 +194,7 @@ fn an_instance_keyed_on_a_demonstrated_key_field_that_holds_an_example_is_task_w
            (key ((&cells ^K *P))\n\
              (value ((:o P) (:v Col))\n\
                (&cells K *P)\n\
-               (&bg *P *Col))\n\
+               (&bg P *Col))\n\
              (demonstration ((:o P) (:o2 P2))\n\
                (&bg *P *Col)\n\
                (&bg *P2 Col)))\n\
@@ -204,7 +204,7 @@ fn an_instance_keyed_on_a_demonstrated_key_field_that_holds_an_example_is_task_w
            (key ((&catalog (:key (:K ^K2)) (:o *P)))\n\
              (node (P)\n\
                (&catalog (:key (:K K2)) (:o *P))\n\
-               (&bg *P *Col))))\n",
+               (&bg P *Col))))\n",
     ));
     assert!(form_sides(&program, 3).iter().all(|side| *side == Side::TaskWide));
 }
@@ -221,7 +221,7 @@ fn an_instance_keyed_on_an_example_column_of_a_concept_det_is_task_wide() {
                (key ((&d ^Ky *P))\n\
                  (node (P)\n\
                    (&d Ky *P)\n\
-                   (&bg *P *Col))))\n",
+                   (&bg P *Col))))\n",
         ),
         Some(ConceptReads { concept: &concept, determinations: &determinations }),
     );
@@ -238,7 +238,7 @@ fn an_instance_keyed_on_a_chosen_column_that_holds_an_example_is_task_wide() {
            (key ((&pick ^Ky *P))\n\
              (node (P)\n\
                (&pick Ky *P)\n\
-               (&bg *P *Col))))\n",
+               (&bg P *Col))))\n",
     ));
     assert!(form_sides(&program, 2).iter().all(|side| *side == Side::TaskWide));
 }
@@ -254,7 +254,7 @@ fn an_instance_keyed_on_a_column_whose_binding_head_projects_an_example_label_is
            (key ((&classes.class (:a (:E ^K) *P)))\n\
              (node (P)\n\
                (&classes.class (:a (:E K) *P))\n\
-               (&bg *P *Col))))\n",
+               (&bg P *Col))))\n",
         "(INIT &ord Order\n\
            (member ((:t E))\n\
              (ex_input *E *P *Col)))\n\
@@ -275,7 +275,7 @@ fn an_instance_keyed_on_a_column_whose_binding_head_projects_an_example_label_is
            (key ((&catalog (:o (:E ^K) *P)))\n\
              (node (P)\n\
                (&catalog (:o (:E K) *P))\n\
-               (&bg *P *Col))))\n",
+               (&bg P *Col))))\n",
     ];
     for forms in programs {
         let program = resolved(&format!("{PER_INPUT_BACKGROUND}{forms}"));

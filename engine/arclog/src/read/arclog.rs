@@ -160,6 +160,11 @@ fn label_name(text: &str) -> ColumnName {
     ColumnName::Written(text.trim_start_matches([sp::FRESH_MARK, sp::KEY_MARK]).into())
 }
 
+/// The names of the labels of `columns`.
+fn column_names(columns: &[RelationColumn], scope: &LabelScope) -> Vec<Box<str>> {
+    columns.iter().map(|column| scope.name(column.label).into()).collect()
+}
+
 /// Whether `column`, a site's column as the file writes it, is a type
 /// parameter's (`docs/arclog/arclog.md#sites`).
 pub(crate) fn is_type_parameter_column(column: &str) -> bool {
@@ -197,6 +202,22 @@ impl Reader {
     pub(super) fn refuse<T>(&mut self, message: impl Into<Box<str>>, place: SourcePlace) -> R<T> {
         self.diagnostics.push(grammar(message, place));
         Err(Refused)
+    }
+
+    /// Refuses each site of `exprs`, a body, that makes a label whose name an
+    /// earlier site of `exprs`, its `OR`, `IF` and `ALL` lists included, makes
+    /// or `held` holds, the names of the labels in scope in the body
+    /// (`docs/arclog/arclog.md#sites`). The read goes on.
+    fn made_once(&mut self, exprs: &[SExpr], scope: &LabelScope, held: &[Box<str>]) {
+        for (name, place) in scope.repeated(exprs, held).into_iter().filter(|(name, _)| is_name(name)) {
+            self.diagnostics.push(grammar(
+                format!(
+                    "`{name}` is a label that another site of the body, or a label in scope, makes: a bare `{name}` joins the label of the first site, \
+                     and a label local to a later branch of an `OR` or to an `IF`'s else takes a name of its own"
+                ),
+                place,
+            ));
+        }
     }
 
     pub(super) fn save(&mut self, path: &NodePath, record: Record) {
@@ -334,7 +355,7 @@ impl Reader {
 
     pub(super) fn program(&mut self, exprs: &[SExpr], end: SourcePlace) -> Node<Program> {
         let root = NodePath::default();
-        let forms = self.forms(exprs, &root, 0, None);
+        let forms = self.forms(exprs, &root, 0, None, &[]);
         let mut record = Record::new(None);
         record.token(end);
         self.save(&root, record);
@@ -343,11 +364,11 @@ impl Reader {
 
     /// The forms of `exprs`, each at its index after `first` among the
     /// children of `parent`, leaving out each that matches no form.
-    fn forms(&mut self, exprs: &[SExpr], parent: &NodePath, first: u32, scope: Option<&LabelScope>) -> Vec<Form> {
+    fn forms(&mut self, exprs: &[SExpr], parent: &NodePath, first: u32, scope: Option<&LabelScope>, fields: &[Box<str>]) -> Vec<Form> {
         let mut forms = Vec::new();
         for expr in exprs {
             let path = parent.child(first + forms.len() as u32);
-            if let Some(form) = self.optional(|r| r.form(expr, &path, scope)) {
+            if let Some(form) = self.optional(|r| r.form(expr, &path, scope, fields)) {
                 forms.push(form);
             }
         }
@@ -355,8 +376,9 @@ impl Reader {
     }
 
     /// A form, in `scope` where it stands inside a `DEMO_RULE` form, and in
-    /// a scope of its own otherwise.
-    pub(super) fn form(&mut self, expr: &SExpr, path: &NodePath, scope: Option<&LabelScope>) -> R<Form> {
+    /// a scope of its own otherwise. `fields` are the names of that
+    /// `DEMO_RULE`'s fields.
+    pub(super) fn form(&mut self, expr: &SExpr, path: &NodePath, scope: Option<&LabelScope>, fields: &[Box<str>]) -> R<Form> {
         let list = self.list(expr, "a form")?;
         let (head, head_place) = self.symbol(list.items.first(), "a form's keyword", list.place)?;
         if parse(sp::CLAIM_KINDS, head).is_some() {
@@ -377,7 +399,7 @@ impl Reader {
         record.token(list.open);
         record.token(head_place);
         let form = if parse(sp::CLAUSE_KEYWORDS, head).is_some() {
-            Form::Clause(self.clause(&list, path, scope, &mut record)?)
+            Form::Clause(self.clause(&list, path, scope, fields, &mut record)?)
         } else {
             match head {
                 sp::INIT => Form::Instance(self.instance(&list, path, scope, &mut record)?),
@@ -421,7 +443,7 @@ impl Reader {
             approximated = Some(Text(rule.into()));
             rest = &rest[1..];
         }
-        let forms = self.forms(rest, path, 0, None);
+        let forms = self.forms(rest, path, 0, None, &[]);
         record.token(list.close);
         self.save(path, record);
         Ok(Node::new(Claim { kind, slug: Slug(slug.into()), text: Text(text.into()), approximated, forms: forms.into() }))
@@ -468,7 +490,7 @@ impl Reader {
             let child = path.child(items.len() as u32);
             if head_of(expr) == Some(sp::ALT) {
                 items.push(AltItem::Alt(self.alt(expr, &child)?));
-            } else if let Some(form) = self.optional(|r| r.form(expr, &child, None)) {
+            } else if let Some(form) = self.optional(|r| r.form(expr, &child, None, &[])) {
                 items.push(AltItem::Form(form));
             }
         }
@@ -477,7 +499,7 @@ impl Reader {
         Ok(Node::new(Alt { name: AltsName(name), items: items.into() }))
     }
 
-    fn clause(&mut self, list: &List, path: &NodePath, scope: &LabelScope, record: &mut Record) -> R<Node<Clause>> {
+    fn clause(&mut self, list: &List, path: &NodePath, scope: &LabelScope, fields: &[Box<str>], record: &mut Record) -> R<Node<Clause>> {
         let (head, _) = self.symbol(list.items.first(), "a clause's keyword", list.place)?;
         let keyword = parse(sp::CLAUSE_KEYWORDS, head).expect("the caller read a clause's keyword");
         let (name, place) = self.symbol(list.items.get(1), "the relation's name", list.place)?;
@@ -501,6 +523,7 @@ impl Reader {
         }
         let marks_at = rest.iter().position(|e| matches!(head_of(e), Some(sp::ONE | sp::SET))).unwrap_or(rest.len());
         let (conjuncts, marks) = rest.split_at(marks_at);
+        self.made_once(conjuncts, scope, fields);
         let body = self.conjuncts(conjuncts, &path.child(0), scope, Record::new(None), None);
         let mut ones = Vec::new();
         let mut set = false;
@@ -742,7 +765,8 @@ impl Reader {
         }
     }
 
-    fn input(&mut self, expr: &SExpr, path: &NodePath, scope: &LabelScope) -> R<Node<InstanceInput>> {
+    /// An input, whose body may not make a name that `held` holds.
+    fn input(&mut self, expr: &SExpr, path: &NodePath, scope: &LabelScope, held: &[Box<str>]) -> R<Node<InstanceInput>> {
         let list = self.list(expr, "an input")?;
         let mut record = Record::new(Some(list.place));
         record.token(list.open);
@@ -756,13 +780,16 @@ impl Reader {
         record.token(head.open);
         let sites = self.sites(head.items, path, scope, &mut record, true);
         record.token(head.close);
+        self.made_once(&list.items[2..], scope, held);
         let body = self.conjuncts(&list.items[2..], &path.child(sites.len() as u32), scope, Record::new(None), None);
         record.token(list.close);
         self.save(path, record);
         Ok(Node::new(InstanceInput { name: PortName(name.into()), head: sites, body }))
     }
 
-    fn key_body(&mut self, expr: Option<&SExpr>, path: &NodePath, scope: &LabelScope, at: SourcePlace) -> R<KeyBody> {
+    /// A key clause's body, which may not make a name that `held` holds.
+    fn key_body(&mut self, expr: Option<&SExpr>, path: &NodePath, scope: &LabelScope, held: &[Box<str>], at: SourcePlace) -> R<KeyBody> {
+        self.made_once(expr.map(std::slice::from_ref).unwrap_or_default(), scope, held);
         let body = self.in_key_body(|reader| reader.body_list(expr, path, scope, at))?;
         let columns = relation_columns(&key_labels(body.value()), scope);
         Ok(KeyBody { body, columns })
@@ -780,6 +807,7 @@ impl Reader {
     /// body is, read as a key clause's body. The key's columns are named by
     /// their positions, since no form reads a label of an `OUT`.
     fn out(&mut self, list: &List, path: &NodePath, scope: &LabelScope) -> Node<Out> {
+        self.made_once(&list.items[1..], scope, &[]);
         let body = self.in_key_body(|reader| reader.conjuncts(&list.items[1..], &path.child(Out::BODY), scope, Record::new(None), None));
         let columns = slot_columns(key_labels(body.value()), 0);
         Node::new(Out { key: KeyBody { body, columns } })
@@ -789,11 +817,12 @@ impl Reader {
         let mut record = Record::new(Some(list.place));
         record.token(list.open);
         record.token(list.items[0].place());
-        let key = self.key_body(list.items.get(1), &path.child(0), scope, list.place)?;
+        let key = self.key_body(list.items.get(1), &path.child(0), scope, &[], list.place)?;
+        let held = column_names(&key.columns, scope);
         let mut inputs = Vec::new();
         for expr in list.items.iter().skip(2) {
             let child = path.child(1 + inputs.len() as u32);
-            inputs.push(self.input(expr, &child, scope)?);
+            inputs.push(self.input(expr, &child, scope, &held)?);
         }
         record.token(list.close);
         self.save(path, record);
@@ -826,7 +855,7 @@ impl Reader {
         let mut inputs = Vec::new();
         for expr in rest {
             let child = path.child(first + inputs.len() as u32);
-            inputs.push(self.input(expr, &child, scope)?);
+            inputs.push(self.input(expr, &child, scope, &[])?);
         }
         Ok(Node::new(Instance { name, component: LibName(component.into()), key, inputs: inputs.into() }))
     }
@@ -844,12 +873,14 @@ impl Reader {
             let clause = self.list(expr, "a `for` clause")?;
             record.token(clause.open);
             record.token(clause.items[0].place());
-            rows = Some(self.key_body(clause.items.get(1), &path.child(next), scope, clause.place)?);
+            let key = self.key_body(clause.items.get(1), &path.child(next), scope, &[], clause.place)?;
+            let rows_names = column_names(&key.columns, scope);
+            rows = Some(key);
             next += 1;
             match &clause.items[2..] {
                 [] => {}
                 [inner] if head_of(inner) == Some(sp::FROM) => {
-                    from = Some(self.choose_from(inner, &path.child(next), scope, record)?);
+                    from = Some(self.choose_from(inner, &path.child(next), scope, &rows_names, record)?);
                     from_inside_for = true;
                     next += 1;
                 }
@@ -861,7 +892,7 @@ impl Reader {
         if from.is_none() {
             match rest.first().filter(|e| head_of(e) == Some(sp::FROM)) {
                 Some(expr) => {
-                    from = Some(self.choose_from(expr, &path.child(next), scope, record)?);
+                    from = Some(self.choose_from(expr, &path.child(next), scope, &[], record)?);
                     next += 1;
                     rest = &rest[1..];
                 }
@@ -877,6 +908,7 @@ impl Reader {
             let clause = self.list(expr, "a `never` clause")?;
             record.token(clause.open);
             record.token(clause.items[0].place());
+            self.made_once(&clause.items[1..], scope, &[]);
             never.push(self.conjuncts(&clause.items[1..], &path.child(next), scope, Record::new(Some(clause.place)), None));
             next += 1;
             record.token(clause.close);
@@ -885,10 +917,12 @@ impl Reader {
         Ok(Node::new(Choose { name, rows, candidate_columns, from, from_inside_for, never: never.into() }))
     }
 
-    fn choose_from(&mut self, expr: &SExpr, path: &NodePath, scope: &LabelScope, record: &mut Record) -> R<Node<Body>> {
+    /// A `from` clause, whose body may not make a name that `held` holds.
+    fn choose_from(&mut self, expr: &SExpr, path: &NodePath, scope: &LabelScope, held: &[Box<str>], record: &mut Record) -> R<Node<Body>> {
         let clause = self.list(expr, "a `from` clause")?;
         record.token(clause.open);
         record.token(clause.items[0].place());
+        self.made_once(&clause.items[1..], scope, held);
         let body = self.conjuncts(&clause.items[1..], path, scope, Record::new(None), None);
         record.token(clause.close);
         Ok(body)
@@ -903,6 +937,7 @@ impl Reader {
         let mut rest = &list.items[2..];
         let mut key = None;
         let mut instance = None;
+        let mut held: Vec<Box<str>> = Vec::new();
         for (head, clause) in [(sp::KEY, &mut key), (sp::INSTANCE, &mut instance)] {
             let [expr] = rest else { continue };
             if head_of(expr) != Some(head) {
@@ -911,7 +946,9 @@ impl Reader {
             let inner = self.list(expr, "a clause of a `RIGID_DET` form")?;
             record.token(inner.open);
             record.token(inner.items[0].place());
-            *clause = Some(self.key_body(inner.items.get(1), &path.child(next), scope, inner.place)?);
+            let body = self.key_body(inner.items.get(1), &path.child(next), scope, &held, inner.place)?;
+            held.extend(column_names(&body.columns, scope));
+            *clause = Some(body);
             next += 1;
             closes.push(inner.close);
             rest = inner.items.get(2..).unwrap_or_default();
@@ -920,6 +957,7 @@ impl Reader {
         for expr in rest {
             let atom = self.list(expr, "a part")?;
             let child = path.child(next + parts.len() as u32);
+            self.made_once(std::slice::from_ref(expr), scope, &held);
             let mut part = Record::new(Some(atom.place));
             part.token(atom.open);
             let value = self.atom(&atom, &child, scope, &mut part)?;
@@ -945,7 +983,7 @@ impl Reader {
             if is_demo_rule(expr) {
                 rules.push(self.demo_rule(expr, &path.child(next))?);
             } else if rules.is_empty() {
-                inputs.push(self.input(expr, &path.child(next), scope)?);
+                inputs.push(self.input(expr, &path.child(next), scope, &[])?);
             } else {
                 return self.refuse("a `DEMONSTRATED` form's inputs stand before its `DEMO_RULE` forms", expr.place());
             }
@@ -989,11 +1027,12 @@ impl Reader {
             record.token(*place);
             rest = &rest[1..];
         }
-        let forms = self.forms(rest, path, 0, Some(&scope));
+        let fields = relation_columns(&fields, &scope);
+        let forms = self.forms(rest, path, 0, Some(&scope), &column_names(&fields, &scope));
         record.token(list.close);
         record.labels = scope.names();
         self.save(path, record);
-        Ok(Node::new(DemoRule { name: DemoRuleName(name), fields: relation_columns(&fields, &scope), text, forms: RuleForms::written(forms.into()) }))
+        Ok(Node::new(DemoRule { name: DemoRuleName(name), fields, text, forms: RuleForms::written(forms.into()) }))
     }
 
     /// The body of a registry definition, `exprs`, read in `scope`.

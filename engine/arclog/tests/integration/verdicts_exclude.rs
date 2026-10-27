@@ -48,7 +48,7 @@ const SEVERAL: &str = "\
 ;; pick
 
 (DET &c ColorDomain)
-(RULE &output (input *P *Col) (&c (:C *Col)))
+(RULE &output (input *P *Col) (&c (:C *Color)))
 (OUT (&output ^P ^Col))
 ";
 
