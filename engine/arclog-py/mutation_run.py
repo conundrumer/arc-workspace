@@ -22,8 +22,9 @@ Options:
 
 The operators, with the rule of `docs/arclog/` that gives the verdict of their mutants where one stands (`departs` needs one):
   zero            `0` for a label at a site, or at the second place of a `!=`, `<`, `<=`, `>` or `>=`; or `(!= X 0)` added after a
-                  site that makes X. Rule (`docs/arclog/arclog.md`, Negation and constraints): a constraint is refused unless the first label is a
-                  number or a Box; a site is refused unless its column is a number, a Box, a Position or an Offset.
+                  site that makes X. Rule (`docs/arclog/arclog.md`, Negation and constraints): a constraint with `0` as its second label is
+                  refused unless the first label is a number, a Box, a Position or an Offset; a site is refused unless its column is one of
+                  those four. The reader gives a Position and an Offset the Box type, so `0` against either is the zero box.
   fresh-again     a bare label at a site becomes `*X` where an earlier site of the body makes X. Rule (`docs/arclog/arclog.md`, Sites): refused.
   proposer-body   a proposer name put before the body of a `DET`, or a body atom put after the proposer of a `DET` that names one.
                   Rule (`docs/arclog/arclog.md`, Program): a `DET` that names a proposer has no body, so refused.
@@ -37,15 +38,18 @@ site on a typed column, get no expected verdict.
 
 A mutant is the text of a solver's `.arclog` with one span replaced, so its comments and layout stand. Each mutant has a directory of
 its own under `--out`, with its `.arclog`, the `.arcdata` of the solver and the files of each solver that `.arcdata` names. Each stage
-of a mutant runs under a time bound of 60 s and with `ARCLOG_THREADS=1`: `arclog-cli stream` gives the reader's and the checker's
-verdict, and of an accepted mutant `arclog-cli decode --no-rows` and `arclog-cli tables --bodies` run the evaluator, the decoder's
-replay and the step tables. A solver whose own file `stream` refuses is left out of the run, and a kind of fault that `decode` gives on the solver's own
-file is no finding of its mutants.
+of a mutant runs under a time bound of 60 s and with `ARCLOG_THREADS=1`. `arclog-cli stream` gives the reader's verdict and the
+checker's verdict on the concept case alone. Of a mutant that `stream` accepts, `arclog-cli decode --no-rows` checks each case it
+decodes, runs the evaluator and replays the decoder, and `arclog-cli tables --bodies` runs the step tables. A mutant is refused where
+`stream` refuses it, or where `decode` reports that the checker refuses a case (a fault line `a fault that stops the decode: the checker
+refuses the case ...`), and the verdict of the mutant is then that refusal: `departs` and `no-cause` read it, the mutant gets no
+`run-fault` for that line and no `tables` stage. A solver whose own file `stream` refuses, or whose own file `decode` reports such a
+refusal, is left out of the run, and a kind of fault that `decode` gives on the solver's own file is no finding of its mutants.
 
 Each finding is one line, `<kind> <task> <operator> <mutant dir>: <message>`, and its mutant's directory stays under `--out` for a
 rerun, `arclog-cli stream <mutant dir>/<task>.arclog`. The kinds:
   panic     a stage panics, or ends by a signal.
-  departs   an operator whose rule in `docs/arclog/` gives the verdict of its mutant, and the verdict of `stream` differs from it.
+  departs   an operator whose rule in `docs/arclog/` gives the verdict of its mutant, and the verdict of the build, as above, differs from it.
   run-fault an accepted mutant whose `decode` gives a fault, a refused case or a case differing in consistency, or a case with no
             solves outcome because the determination or the judged run faults (a program that no assignment solves, or whose
             parameters are underdetermined, is an outcome of a mutation and no finding), or whose `tables` fails where `decode`
@@ -63,8 +67,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 STAGE_BOUND = 60  # seconds
 CONSTRAINT_OPS = ("=", "!=", "<", "<=", ">", ">=")
-ZERO_TYPES = ("number", "Box", "Position", "Offset")  # docs/arclog/arclog.md: the columns at which a site may hold `0`
-REFUSAL_PREFIX = re.compile(r"(a fault that stops the stream:\s*)?(the checker refuses the case \S+:\s*|the solver's files do not read:\s*)?")
+BOX_TYPES = ("Box", "Position", "Offset")  # the reader gives all three the Box type
+ZERO_TYPES = ("number", *BOX_TYPES)  # docs/arclog/arclog.md: the columns at which a site may hold `0`, and the first labels of a constraint with `0` second
+REFUSAL_PREFIX = re.compile(r"(a fault that stops the (?:stream|decode):\s*)?(the checker refuses the case \S+:\s*|the solver's files do not read:\s*)?")
+CASE_REFUSAL = re.compile(r"a fault that stops the decode:\s*the checker refuses the case\b")  # a `decode` line: the checker refuses a case
 INTEGER = re.compile(r"\d+")
 
 
@@ -311,7 +317,7 @@ def zero(ctx):
         note = f"`0` at a {column} column of {atom.head}"
         edits.append(site_label_edit(site, "0", expected=expected, note=note, variant="site"))
         if mark(label) == "*":
-            edits.append(insertion_after(ctx, atom, f"(!= {bare(label)} 0)", expected=column in ("number", "Box"), note=f"`(!= {bare(label)} 0)` over a {column} column of {atom.head}", variant="added"))
+            edits.append(insertion_after(ctx, atom, f"(!= {bare(label)} 0)", expected=column in ZERO_TYPES, note=f"`(!= {bare(label)} 0)` over a {column} column of {atom.head}", variant="added"))
     for clause in ctx.clauses("RULE", "DET"):
         for item in clause.items[2:]:
             if item.kind == NodeKind.LIST and item.head in CONSTRAINT_OPS and item.head != "=" and len(item.items) == 3:
@@ -319,9 +325,9 @@ def zero(ctx):
                 if first.kind != NodeKind.ATOM or second.kind != NodeKind.ATOM or bare(second) in ("0", "") or INTEGER.fullmatch(second.text):
                     continue
                 column = ctx.label_type(first)
-                # docs/arclog/arclog.md: `0` as the second label is refused unless the first label is a number or a Box. No line gives
-                # a verdict for the ordering operators on a Box.
-                expected = None if column is None or (column == "Box" and item.head != "!=") else column in ("number", "Box")
+                # docs/arclog/arclog.md: `0` as the second label is refused unless the first label is a number, a Box, a Position or an
+                # Offset. No line gives a verdict for the ordering operators on a Box, a Position or an Offset.
+                expected = None if column is None or (column in BOX_TYPES and item.head != "!=") else column in ZERO_TYPES
                 edits.append(replace(second, "0", expected=expected, note=f"`0` as the second label of `{item.head}` over a {column} label", variant="constraint"))
     return edits
 
@@ -513,6 +519,11 @@ def decode_faults(task, output):
     return found
 
 
+def case_refusals(faults):
+    """The bodies of the fault lines of `faults` that report that the checker refuses a case."""
+    return [body for _, body in faults if CASE_REFUSAL.match(body)]
+
+
 def one_line(text, bound=300):
     return " ".join(text.split())[:bound]
 
@@ -521,7 +532,7 @@ class Runner:
     def __init__(self, args):
         self.args = args
         self.env = {**os.environ, "ARCLOG_THREADS": "1"}
-        self.originals: dict[str, set[str] | None] = {}  # a task to the kinds of fault of its own file, None where the file is refused
+        self.originals: dict[str, set[str] | None] = {}  # a task to the kinds of fault of its own file, None where `stream` or `decode` refuses the file
         self.guard = threading.Lock()
         self.locks: dict[str, threading.Lock] = {}
 
@@ -535,14 +546,15 @@ class Runner:
 
     def original_faults(self, task):
         """The kinds of fault that `decode` gives on the solver's own file, which a mutant's findings leave out, or None where `stream`
-        refuses that file."""
+        refuses that file or `decode` reports that the checker refuses a case of it."""
         with self.guard:
             lock = self.locks.setdefault(task, threading.Lock())
         with lock:
             if task not in self.originals:
                 streamed = self.cli("stream", str(Path(self.args.corpus) / f"{task}.arclog"))
                 decoded = self.cli("decode", self.args.corpus, self.args.tasks, "--no-rows", task) if streamed and streamed[0] == 0 else None
-                self.originals[task] = {kind for kind, _ in decode_faults(task, decoded[1])} if decoded else None
+                faults = decode_faults(task, decoded[1]) if decoded else None
+                self.originals[task] = None if faults is None or case_refusals(faults) else {kind for kind, _ in faults}
             return self.originals[task]
 
     def stage(self, label, result, findings):
@@ -573,7 +585,8 @@ class Runner:
         return directory
 
     def examine(self, mutant):
-        """(accepted, findings, directory) of a mutant whose solver's own file `stream` accepts."""
+        """(accepted, findings, directory) of a mutant whose solver's own file `stream` and `decode` accept. The mutant is refused where
+        `stream` refuses it or `decode` reports that the checker refuses a case."""
         task = mutant.task
         directory = self.write(mutant)
         findings = []
@@ -582,20 +595,25 @@ class Runner:
             return False, findings, directory
         accepted = result[0] == 0
         message = one_line(result[2], 1000)
+        faults, decoded, decode_stopped = [], None, False
+        if accepted:
+            decoded = self.cli("decode", str(directory), self.args.tasks, "--no-rows", task)
+            decode_stopped = self.stage("decode", decoded, findings)
+            if not decode_stopped:
+                faults = decode_faults(task, decoded[1])
+                refusals = case_refusals(faults)
+                if refusals:
+                    accepted, message = False, one_line(refusals[0], 1000)
         if not accepted and not REFUSAL_PREFIX.sub("", message, count=1).strip():
             findings.append((FindingKind.NO_CAUSE, message or "the refusal has no message"))
         if mutant.expected is not None and mutant.expected != accepted:
             verdict = "accepted" if accepted else f"refused: {message}"
             findings.append((FindingKind.DEPARTS, f"{mutant.note}: the rule {'accepts' if mutant.expected else 'refuses'} it, the build {verdict}"))
-        if not accepted:
+        if not accepted or decode_stopped:
             return accepted, findings, directory
-        result = self.cli("decode", str(directory), self.args.tasks, "--no-rows", task)
-        if self.stage("decode", result, findings):
-            return accepted, findings, directory
-        faults = decode_faults(task, result[1])
         findings += [(FindingKind.RUN_FAULT, f"decode: {body}") for kind, body in faults if kind not in self.original_faults(task)]
-        if result[0] and not any(line.removeprefix(f"{task}: ").startswith(FAULT_LINES) for line in result[1].splitlines()):
-            findings.append((FindingKind.RUN_FAULT, f"decode exits {result[0]}: {one_line(result[2])}"))
+        if decoded[0] and not any(line.removeprefix(f"{task}: ").startswith(FAULT_LINES) for line in decoded[1].splitlines()):
+            findings.append((FindingKind.RUN_FAULT, f"decode exits {decoded[0]}: {one_line(decoded[2])}"))
         result = self.cli("tables", str(directory), self.args.tasks, "--bodies", task)
         if self.stage("tables", result, findings):
             return accepted, findings, directory
@@ -662,7 +680,7 @@ def main():
             if not findings:
                 shutil.rmtree(directory, ignore_errors=True)
     print("; ".join(f"{o}: {c['mutants']} mutants, {c['accepted']} accepted, {c['refused']} refused, {c['findings']} findings" for o, c in counts.items())
-          + (f"; {left_out} mutants left out for solvers whose own file stream refuses" if left_out else ""), flush=True)
+          + (f"; {left_out} mutants left out for solvers whose own file stream or decode refuses" if left_out else ""), flush=True)
 
 
 if __name__ == "__main__":

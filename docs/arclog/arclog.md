@@ -148,7 +148,7 @@ A constraint is an operator over two labels: `(= A B)`, `(!= A B)`, `(< A B)`, `
 - Y in `(= *X Y)` is not a label that a site of the same list made. That site could have made X. In a branch of a union, X may be a label the `OR` exports where Y is made in that branch, since no site there can make X.
 - The first label of a `=` that makes nothing is not one that a site of the same list made. That site could have named its partner, so `=` on such a label is a second spelling and the decoder blocks it. A label made in an enclosing list, or an export of an earlier branch, passes.
 
-`0` is a reserved label usable as the second label of a constraint. Its type comes from the first label: the number zero, or the zero box for a Box.
+`0` is a reserved label usable as the second label of a constraint. Its type comes from the first label: the number zero, or the zero box for a Box, a Position or an Offset.
 
 `0` also stands as a site's label, on a column of a number, a `Box`, a `Position` or an `Offset`, and its type is the column's. The site joins the column to zero, as `dist(P, D, 0)` does in the Souffle solvers, where a `0` counts nothing that is present: `(margin (:B P) D (:K 0))` reads a cell with no cell between it and edge D, and `(same_corner (:D C) (:P1 P) (:P2 0))` a cell at corner C of the whole frame. `(= K 0)` on a label that a site of the same list made is then a second spelling, and the decoder blocks it, as the rules above give. `0` is never made, so no site holds `*0` or `^0`, and no head site holds it.
 
