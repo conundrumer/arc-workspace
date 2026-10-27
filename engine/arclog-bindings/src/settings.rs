@@ -19,6 +19,7 @@ pub struct PyDecodeSettings {
     deadline_seconds: Option<f64>,
     projection_cap: u64,
     table_work_cap: u64,
+    rule_tests: bool,
 }
 
 impl PyDecodeSettings {
@@ -32,6 +33,7 @@ impl PyDecodeSettings {
             deadline_seconds: settings.deadline.map(|deadline| deadline.as_secs_f64()),
             projection_cap: settings.projection_cap,
             table_work_cap: settings.table_work_cap,
+            rule_tests: settings.rule_tests,
         }
     }
 
@@ -45,6 +47,7 @@ impl PyDecodeSettings {
             deadline,
             projection_cap: self.projection_cap,
             table_work_cap: self.table_work_cap,
+            rule_tests: self.rule_tests,
             ..DecodeSettings::default()
         })
     }
@@ -53,7 +56,7 @@ impl PyDecodeSettings {
 #[pymethods]
 impl PyDecodeSettings {
     #[new]
-    #[pyo3(signature = (*, proposer_tokens=None, type_domain_proposers=None, relations=None, columns=None, labels=None, deadline_seconds=None, projection_cap=None, table_work_cap=None))]
+    #[pyo3(signature = (*, proposer_tokens=None, type_domain_proposers=None, relations=None, columns=None, labels=None, deadline_seconds=None, projection_cap=None, table_work_cap=None, rule_tests=None))]
     fn new(
         proposer_tokens: Option<bool>,
         type_domain_proposers: Option<bool>,
@@ -63,6 +66,7 @@ impl PyDecodeSettings {
         deadline_seconds: Option<f64>,
         projection_cap: Option<u64>,
         table_work_cap: Option<u64>,
+        rule_tests: Option<bool>,
     ) -> PyResult<PyDecodeSettings> {
         let base = PyDecodeSettings::of(&DecodeSettings::default());
         let settings = PyDecodeSettings {
@@ -74,6 +78,7 @@ impl PyDecodeSettings {
             deadline_seconds: deadline_seconds.or(base.deadline_seconds),
             projection_cap: projection_cap.unwrap_or(base.projection_cap),
             table_work_cap: table_work_cap.unwrap_or(base.table_work_cap),
+            rule_tests: rule_tests.unwrap_or(base.rule_tests),
         };
         settings.engine()?;
         Ok(settings)

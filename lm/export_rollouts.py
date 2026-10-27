@@ -4,7 +4,9 @@
 
 Each sampler lines file is the `--out` of lm/sample.py: a settings line, then one line per continuation. Every file
 must give the same `settings` and the world `Closed`, the world in which the replay judges the train pairs. The
-streams of each task are replayed by `arclog.stream_tables` under those settings, with the case names of
+streams of each task are replayed by `arclog.stream_tables` under those settings, so that a rollout export of a
+`--rule-tests` run replays with the rule tests on and gives `samples.jsonl` a settings line with `rule_tests` true, which
+`--value-label consistent` of lm/pretrain.py requires, with the case names of
 lm/rollout_labels.py (`case_name`), and written as engine/arclog-py/tables_export.py writes a part; the whole files
 and `report.txt` follow, as that script's `merge` writes them. `<out dir>` must not exist or be empty. Where more than
 one file is given, `<out dir>/samples.jsonl` gets the first file's settings line and every continuation line, for

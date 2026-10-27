@@ -240,7 +240,7 @@ impl BodyValue {
 /// The outcome of a request: a value, or a fault of the run.
 pub type Outcome<T> = Result<T, RunFault>;
 
-/// The grid of `&output` on one example: the grid, `undefined`, or a stop. A
+/// The grid of the `OUT` form's relation on one example: the grid, `undefined`, or a stop. A
 /// grid is undefined where the relation is, and where
 /// `docs/arclog/constraints.md#the-output-set` gives.
 #[derive(Clone, Debug)]

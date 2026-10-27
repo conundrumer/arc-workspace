@@ -69,7 +69,7 @@ pub fn program_types(
                 let found = relation_columns(declared.iter().map(|column| &column.name), &column);
                 columns.extend(found.map(|found| (GraphRelation { node, output: None }, found)));
             }
-            DependencyKind::Clause(_) | DependencyKind::Parameter(_) | DependencyKind::Chosen(_) => {
+            DependencyKind::Clause(_) | DependencyKind::Parameter(_) | DependencyKind::Chosen(_) | DependencyKind::Out(_) => {
                 columns.extend(given_columns(program, &types, &fixed, node).map(|found| (GraphRelation { node, output: None }, found)));
             }
             DependencyKind::InstanceInput { input: port, .. } | DependencyKind::InstanceOutput { output: port, .. } => {

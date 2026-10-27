@@ -152,8 +152,8 @@ impl From<ReachedBound> for Stop {
 #[derive(Clone, PartialEq, Debug, Default)]
 pub struct TopK(pub Vec<(Token, f32)>);
 
-/// What the test of a `RULE` clause's relation found, as
-/// [`crate::decode::Consistency`] gives it.
+/// What the test of an `OUT` form's relation, or of a `RULE` clause's, found,
+/// as [`crate::decode::Consistency`] gives it.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Verdict {
     Consistent { assignments: usize },
@@ -181,8 +181,11 @@ pub struct DecodeRecord {
     pub rows: Vec<RowsSeen>,
     /// The counts the caller asked for after this step, one per example.
     pub counts: Option<Box<[Option<u64>]>>,
-    /// The consistency test, at a clause's end.
+    /// The consistency test of the `OUT` form, at its end.
     pub consistency: Option<Verdict>,
+    /// The test of the relation of a `RULE` clause, at its end, where the
+    /// decode settings run the rule tests.
+    pub rule_test: Option<Verdict>,
     /// The bound the prefix reached at this step.
     pub stop: Option<Stop>,
     pub top_k: Option<TopK>,
@@ -190,7 +193,7 @@ pub struct DecodeRecord {
 
 impl DecodeRecord {
     pub fn new(token: Token, emitter: Emitter) -> DecodeRecord {
-        DecodeRecord { token, emitter, rows: Vec::new(), counts: None, consistency: None, stop: None, top_k: None }
+        DecodeRecord { token, emitter, rows: Vec::new(), counts: None, consistency: None, rule_test: None, stop: None, top_k: None }
     }
 }
 

@@ -38,6 +38,7 @@
 //! | input | the head sites, then the body |
 //! | `CHOOSE` form | the `for` body where it has one, the `from` body, the `never` bodies |
 //! | `RIGID_DET` form | the `key` body, the `instance` body, each where it has one, then the parts |
+//! | `OUT` form | the body |
 //! | `DEMONSTRATED` form | the key clause where it has one, the inputs after it, the `DEMO_RULE` forms |
 //!
 //! A site's children are its arguments as written, whether or not it reads
@@ -64,7 +65,7 @@ use std::ops::ControlFlow;
 
 use super::{
     Alt, AltItem, AltRecord, Alts, Arcdata, Atom, Block, Body, Choose, ChoosePart, Claim, Clause, Conjunct, DemoRule, Demonstrated, DemonstratedPart,
-    Exclude, Form, Grid, Instance, InstanceInput, InstanceInputPart, InstancePart, KeyClause, KeyClausePart, LabelUse, Negated, Node, Param, ParamValue, Program,
+    Exclude, Form, Grid, Instance, InstanceInput, InstanceInputPart, InstancePart, KeyClause, KeyClausePart, LabelUse, Negated, Node, Out, Param, ParamValue, Program,
     ProgramRelation, Representative, RigidDet, RigidDetPart, Site, SiteArg, Slug, Witness, WitnessOutput, WitnessRecord,
 };
 
@@ -109,6 +110,7 @@ pub enum NodeRef<'a> {
     InstanceInput(&'a InstanceInput),
     Choose(&'a Choose),
     RigidDet(&'a RigidDet),
+    Out(&'a Out),
     Demonstrated(&'a Demonstrated),
     DemoRule(&'a DemoRule),
     Alts(&'a Alts),
@@ -132,6 +134,7 @@ impl<'a> From<&'a Form> for NodeRef<'a> {
             Form::Instance(instance) => NodeRef::Instance(instance.value()),
             Form::Choose(choose) => NodeRef::Choose(choose.value()),
             Form::RigidDet(rigid) => NodeRef::RigidDet(rigid.value()),
+            Form::Out(out) => NodeRef::Out(out.value()),
             Form::Demonstrated(demonstrated) => NodeRef::Demonstrated(demonstrated.value()),
             Form::Alts(alts) => NodeRef::Alts(alts.value()),
         }
@@ -278,6 +281,7 @@ impl<'a> NodeRef<'a> {
                 }),
                 visit,
             ),
+            NodeRef::Out(out) => bodies([&out.key.body], visit),
             NodeRef::Demonstrated(demonstrated) => run(
                 demonstrated.parts().map(|part| match part {
                     DemonstratedPart::Key => Handle::KeyClause(demonstrated.key.as_ref().expect("the key clause of a part")),
@@ -402,6 +406,7 @@ impl PathNode for NodeRef<'_> {
             NodeRef::InstanceInput(node) => address_of(node),
             NodeRef::Choose(node) => address_of(node),
             NodeRef::RigidDet(node) => address_of(node),
+            NodeRef::Out(node) => address_of(node),
             NodeRef::Demonstrated(node) => address_of(node),
             NodeRef::DemoRule(node) => address_of(node),
             NodeRef::Alts(node) => address_of(node),

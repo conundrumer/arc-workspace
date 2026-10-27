@@ -18,19 +18,21 @@
 //! name" for a name that more than one node of the program holds, one per
 //! `DEMO_RULE`; or `uncompared`, with the reason the file gives, "no case's
 //! program has a relation of that name", or "no case the check runs reads it
-//! from `&output`", for any other relation the check does not compare.
+//! from the `OUT` form", for any other relation the check does not compare.
 //! In a case, a relation is compared only where the node of the case
-//! program's dependency graph that holds it is `&output`'s node or is read
+//! program's dependency graph that holds it is the `OUT` form's node or is read
 //! by it at any depth, or is a check relation of a folded relation
 //! (`check_relations` of the file), which nothing reads and the converter
 //! writes to compare the clauses of that relation, or is a relation whose
 //! clause the projection pass removes from the program of `gen/`
 //! (`removed_relations` of the file, by name, with the forms that held an
 //! atom on it before the pass) and some such form derives its relation in the
-//! case, and that relation is `&output` or is read by it at any depth or is
-//! itself a removed relation that the case compares; a relation that several
-//! nodes hold, one per `DEMO_RULE`, is `&output` or is read by it where
-//! `&output` is one of those nodes or reads one of them at any depth. A form
+//! case, and that relation is the `OUT` form's or is read by it at any depth or is
+//! itself a removed relation that the case compares; a form that derives no
+//! relation, the `OUT` form (`relation` empty), is the output itself and derives it
+//! in every case; a relation that several
+//! nodes hold, one per `DEMO_RULE`, is read by the `OUT` form where the form
+//! reads one of them at any depth. A form
 //! derives its relation in a case that takes every alt of the form's block
 //! (`alts`) and every alt of no deeper block (`deeper`); an instance's form
 //! derives its outputs, and a `CHOOSE` form its chosen relation. A relation
@@ -75,7 +77,7 @@
 //! case's program, or where no entry before has given the relations.
 //!
 //! An `equal` line proves: for each case that derives the relation and whose
-//! `&output` reads it, or is it, or that is a check relation of a folded
+//! the `OUT` form reads it, or is it, or that is a check relation of a folded
 //! relation, or that the projection pass removes and a form that read it derives
 //! its relation for, as above, at the stored parameters, on each train and test
 //! input of the task, the arclog rows of the relation, projected onto the leaves the converter maps from
@@ -98,7 +100,7 @@
 //! its pair, so those are compared up to one renaming per pair, over all the
 //! relations of the pair. It does not prove anything about a leaf that the
 //! line names as left out, the cases that the file does not give, the cases
-//! whose `&output` does not read the relation (a check relation of a folded
+//! whose `OUT` form does not read the relation (a check relation of a folded
 //! relation excepted, and a removed relation read as above), other
 //! inputs (witness inputs among them), the relations that the file leaves out
 //! as `skip` or `uncompared`, or the multiplicity of rows.
@@ -142,8 +144,8 @@ const NO_CASE_HAS_IT: &str = "no case's program has a relation of that name";
 
 /// The reason of the `uncompared` line of a relation that the file sends, that
 /// some case's program has, and that no case the check runs reads from its
-/// `&output`.
-const NO_CASE_READS_IT: &str = "no case the check runs reads it from `&output`";
+/// `OUT` form.
+const NO_CASE_READS_IT: &str = "no case the check runs reads it from the `OUT` form";
 
 /// The pair of the `determination` entry that holds the relations of the
 /// task, which Souffle's rows give once.
@@ -709,7 +711,8 @@ impl<'de, A: MapAccess<'de>> CaseRest<'_, A> {
 /// `parity.NameMap.removed`).
 #[derive(Deserialize)]
 struct RemovedReader {
-    /// The relation the form derives: an instance's name for an `INIT` form.
+    /// The relation the form derives: an instance's name for an `INIT` form;
+    /// empty for an `OUT` form, which is the output itself.
     relation: String,
     /// The names of the alts of the form's block.
     alts: Vec<String>,
@@ -728,7 +731,7 @@ impl RemovedReader {
     }
 }
 
-/// The relations that the rows file has a case compare though `&output` need
+/// The relations that the rows file has a case compare though the `OUT` form need
 /// not read them.
 #[derive(Clone, Copy)]
 struct CheckRelations<'a> {
@@ -737,15 +740,15 @@ struct CheckRelations<'a> {
     folded: &'a [String],
     /// The relations whose clause the projection pass removes, by name, with
     /// their readers: the case compares such a relation where a reader
-    /// derives its relation there and `&output` reads that relation.
+    /// derives its relation there and the `OUT` form reads that relation.
     removed: &'a BTreeMap<String, Vec<RemovedReader>>,
 }
 
 impl CheckRelations<'_> {
     /// Whether the case that takes the alts `case`, with the nodes of its
-    /// program that `&output` reads or is (`reached`), compares the removed
+    /// program that the `OUT` form reads or is (`reached`), compares the removed
     /// relation `relation`: some reader of it derives its relation in the case
-    /// (`RemovedReader::derives`), and that relation is read by `&output`,
+    /// (`RemovedReader::derives`), and that relation is read by the `OUT` form,
     /// or is itself a removed relation that the case compares. `asked` are the
     /// removed relations being decided, which stops a cycle.
     fn compares(&self, program: &CheckedProgram, case: &[String], reached: &[bool], relation: &str, asked: &mut Vec<String>) -> bool {
@@ -766,8 +769,12 @@ impl CheckRelations<'_> {
 /// Whether `reached` holds a node that the form deriving `relation` derives in
 /// `program`: the node of the relation, or, for an instance, of one of its
 /// outputs. A name that several nodes hold, one per `DEMO_RULE`, counts as
-/// read where `reached` holds any of them.
+/// read where `reached` holds any of them. The `OUT` form (`relation` empty)
+/// is the output, so it is read.
 fn derived_is_read(program: &CheckedProgram, reached: &[bool], relation: &str) -> bool {
+    if relation.is_empty() {
+        return true;
+    }
     let holders = holders(program, relation);
     if !holders.is_empty() {
         return holders.iter().any(|&node| reached[node]);
@@ -785,7 +792,7 @@ fn derived_is_read(program: &CheckedProgram, reached: &[bool], relation: &str) -
 /// What the entries of the rows file give: the verdict of each relation they
 /// compare, merged over the entries, the name of each relation they send,
 /// and the name of each relation that they send and a case's program has but
-/// that case's `&output` does not read.
+/// that case's `OUT` form does not read.
 #[derive(Default)]
 struct Found {
     lines: Vec<(String, Verdict)>,
@@ -812,7 +819,7 @@ fn add_once(names: &mut Vec<String>, name: &str) {
 /// The `pairs` of the case `name`, read one relation at a time into the
 /// verdicts of each relation `case` compares, merged over the pairs, and the
 /// name of each relation the pairs send. A relation is compared where the
-/// case's `&output` reads it, at any depth, or is it, or where it is a check
+/// case's `OUT` form reads it, at any depth, or is it, or where it is a check
 /// relation of a folded relation, which nothing reads, or a removed relation
 /// that [`CheckRelations::compares`] gives. A pair of the task that the
 /// pairs lack is a fault, given once the pairs end, as is the first fault of
@@ -821,7 +828,7 @@ struct Pairs<'a, 'c> {
     case: &'a ConceptCase<'c>,
     name: &'a str,
     constants: &'a BTreeMap<String, i64>,
-    /// For each node of the program, whether the case's `&output` reads it.
+    /// For each node of the program, whether the case's `OUT` form reads it.
     reads: Vec<bool>,
     /// The name of each pair of the task and its example, in the task's order.
     examples: Vec<(String, Example)>,
@@ -835,7 +842,7 @@ impl<'a, 'c> Pairs<'a, 'c> {
     fn new(case: &'a ConceptCase<'c>, name: &'a str, constants: &'a BTreeMap<String, i64>, checks: CheckRelations<'_>) -> Self {
         let evaluation = &case.evaluation;
         let program = evaluation.program;
-        let output = output_relation(program).expect("a checked case program derives `&output`");
+        let output = output_relation(program).expect("a checked case program holds an `OUT` form");
         let reached = program.program.graph.reached(output.node);
         let mut reads = reached.clone();
         for check in checks.folded {

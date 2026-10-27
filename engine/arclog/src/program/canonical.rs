@@ -109,6 +109,7 @@ pub enum LabelScope<'a> {
     Instance(&'a Instance),
     Choose(&'a Choose),
     RigidDet(&'a RigidDet),
+    Out(&'a Out),
     /// A `DEMONSTRATED` form's key clause and inputs, apart from its
     /// `DEMO_RULE` forms.
     DemonstratedKey(&'a Demonstrated),

@@ -6,7 +6,7 @@ use arclog::decode::replay::Stepped;
 use arclog::decode::Decoder;
 use arclog::eval::copies::CopyViolation;
 use arclog_bindings::PyConsistencyKind;
-use arclog_tables::tables::{step_tables, Points, Table};
+use arclog_tables::tables::{record_step, Points, Table};
 
 /// The consistency kind that the last step of a stream gave, with the index
 /// of its token.
@@ -36,7 +36,7 @@ pub(crate) struct StreamRecord {
 impl StreamRecord {
     /// Records the tables of a step and, where the step judged, its consistency.
     pub(crate) fn step(&mut self, decoder: &Decoder<'_>, stepped: Stepped<'_>, points: Points) {
-        self.tables.extend(step_tables(decoder, points).into_iter().map(|table| (stepped.index, table)));
+        record_step(&mut self.tables, decoder, stepped.index, points);
         for violation in decoder.take_copy_violations() {
             if !self.copies.contains(&violation) {
                 self.copies.push(violation);

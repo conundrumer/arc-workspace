@@ -52,7 +52,7 @@ pub fn node_relation(kind: &DependencyKind) -> Option<RelationRef> {
         DependencyKind::Clause(relation) | DependencyKind::Parameter(relation) => Some(of(relation)),
         DependencyKind::Chosen(name) | DependencyKind::Demonstrated(name) => Some(RelationRef::Declared(name.clone())),
         DependencyKind::InstanceInput { instance, input: name } | DependencyKind::InstanceOutput { instance, output: name } => Some(port(instance, name)),
-        DependencyKind::RigidAssembly(_) | DependencyKind::RecursiveInstance(_) => None,
+        DependencyKind::RigidAssembly(_) | DependencyKind::RecursiveInstance(_) | DependencyKind::Out(_) => None,
     }
 }
 
@@ -138,7 +138,7 @@ impl ResolvedProgram {
             let whole = |listing: Listing, lib: Vec<LibName>| Given { form: form.clone(), output: None, slots: slots(&listing), lib, sites_from: usize::MAX, filled: Vec::new() };
             match shape {
                 NodeRef::Clause(clause) => given.push(whole(form_columns::form_listing(shape), clause.proposers.to_vec())),
-                NodeRef::Choose(_) => given.push(whole(form_columns::form_listing(shape), Vec::new())),
+                NodeRef::Choose(_) | NodeRef::Out(_) => given.push(whole(form_columns::form_listing(shape), Vec::new())),
                 NodeRef::Demonstrated(demonstrated) => given.push(whole(form_columns::demonstrated_listing(demonstrated), Vec::new())),
                 NodeRef::RigidDet(rigid) => {
                     for (steps, listing) in form_columns::rigid_listings(rigid) {

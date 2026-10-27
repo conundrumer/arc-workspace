@@ -3,8 +3,8 @@
 //!
 //! The trace form parses the stream the records give, by the grammar that
 //! [`crate::stream::token_stream`] writes, and prints the tree of the program
-//! with the engine's tokens in brackets. It prints a `RULE`, `DET` and
-//! `INIT` form; the tokens of any other form stand on one line, in the order
+//! with the engine's tokens in brackets. It prints a `RULE`, `DET`, `INIT` and
+//! `OUT` form; the tokens of any other form stand on one line, in the order
 //! of the stream, the engine's in brackets.
 
 use std::collections::BTreeMap;
@@ -147,6 +147,7 @@ impl<'a> Renderer<'a> {
         match self.peek_control() {
             Some(control @ (Control::Rule | Control::Det)) => self.clause(control),
             Some(Control::Init) => self.instance(),
+            Some(Control::Out) => self.out(),
             _ => self.flat(),
         }
     }
@@ -156,11 +157,21 @@ impl<'a> Renderer<'a> {
         let mut words = Vec::new();
         while let Some(record) = self.next() {
             words.push(self.shown(record));
-            if matches!(self.peek_control(), Some(Control::Rule | Control::Det | Control::Init | Control::Choose | Control::RigidDet)) {
+            if matches!(self.peek_control(), Some(Control::Rule | Control::Det | Control::Init | Control::Choose | Control::RigidDet | Control::Out)) {
                 break;
             }
         }
         vec![words.join(" ")]
+    }
+
+    /// An `OUT` form: its atoms, then its `END`. It declares no relation.
+    fn out(&mut self) -> Block {
+        let record = self.next().expect("the keyword");
+        let mut pieces = self.conjuncts(&[Control::End]);
+        if let Some(end) = self.take_control(Control::End) {
+            pieces.push(vec![self.symbol(end, "END")]);
+        }
+        hang(&format!("({} ", self.symbol(record, Control::Out.text())), pieces, ")")
     }
 
     fn clause(&mut self, keyword: Control) -> Block {

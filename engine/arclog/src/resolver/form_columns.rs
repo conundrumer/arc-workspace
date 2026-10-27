@@ -189,6 +189,7 @@ fn bound_columns(form: NodeRef<'_>) -> Vec<(&RelationColumn, NodePath)> {
             let from = NodePath::default().child(choose.position(ChoosePart::From));
             rows.chain(choose.candidate_columns.iter().map(|column| (column, from.clone()))).collect()
         }
+        NodeRef::Out(_) => key_clause(form).into_iter().flat_map(|(key, body)| key.columns.iter().map(move |column| (column, body.clone()))).collect(),
         _ => Vec::new(),
     }
 }

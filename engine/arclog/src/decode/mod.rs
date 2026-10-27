@@ -22,7 +22,7 @@
 //! some completion of the projection does (`Decoder::completes_projection`),
 //! or where the search spends its steps. Its interface
 //! beside the mask, in `interface`, gives the rows of the body so far and the
-//! consistency test at a `RULE` clause's end, and its batch form, in
+//! consistency test at an `OUT` form's end, and its batch form, in
 //! `batch`, steps many decodes at once, and its projections of the body so far,
 //! in `projections`, give the largest sets of its columns under the projection
 //! cap. The replay of a case program's stream through a decoder, in
@@ -65,6 +65,7 @@ use crate::program::{ConstraintOp, Node, Program};
 use crate::registry::Registry;
 use crate::resolver::resolve_last;
 use crate::session::TaskSession;
+use crate::judge::run::Tested;
 use crate::stream::{Control, DecodeSettings, Emitter, Token, Vocabulary};
 use crate::task::Task;
 use crate::trace::{DecodeRecord, DecodeTrace, TopK, Verdict};
@@ -83,10 +84,10 @@ pub struct Decoder<'a> {
     /// where the decode judges them.
     train: Option<Arc<[PairCandidates<'a>]>>,
     cancellation: Cancellation,
-    /// The first relation that was consistent, at which the decode ended.
-    output: Option<ProgramRelation>,
+    /// The path of the first `OUT` form that was consistent, at which the
+    /// decode ended.
+    output: Option<NodePath>,
     assignments: Vec<Vec<(ProgramRelation, Arc<crate::relations::Relation>)>>,
-    columns: Option<crate::eval::output::GridColumns>,
     /// One record per accepted token, shared with the forks.
     trace: DecodeTrace,
     /// The mask of the current state with the step of each token it admits.
@@ -179,7 +180,7 @@ impl<'a> Decoder<'a> {
         assert_eq!(settings.caps, session.caps, "the caps of the decode settings are those of the session");
         let context = Context { registry, settings: *settings, vocabulary: Vocabulary::new(registry, settings) };
         let state = state::State::new();
-        Decoder { task, session, constructions, context: Arc::new(context), state, before: None, train: None, cancellation: Cancellation::default(), output: None, assignments: Vec::new(), columns: None, trace: DecodeTrace::default(), held: Held::default(), copies: settings.check_copies.then(CopyViolations::default), held_stops: Arc::default() }
+        Decoder { task, session, constructions, context: Arc::new(context), state, before: None, train: None, cancellation: Cancellation::default(), output: None, assignments: Vec::new(), trace: DecodeTrace::default(), held: Held::default(), copies: settings.check_copies.then(CopyViolations::default), held_stops: Arc::default() }
     }
 
     /// The ids of the decode's tokens.
@@ -222,13 +223,6 @@ impl<'a> Decoder<'a> {
     #[inline]
     pub fn before(&self) -> Option<&State> {
         self.before.as_ref()
-    }
-
-    /// The grid columns that the consistency test found at the relation the
-    /// decode ended at, none until it ends.
-    #[inline]
-    pub fn grid_columns(&self) -> Option<crate::eval::output::GridColumns> {
-        self.columns
     }
 
     /// The task, the session and the constructions that the decode's
@@ -283,10 +277,11 @@ impl<'a> Decoder<'a> {
     }
 
     /// Advances the decode by `token`, and gives the tokens that the engine
-    /// emits after it, with the consistency of the relation of a `RULE`
-    /// clause that the token ends; or refuses a token outside the mask, and
-    /// leaves the decode as it was. The decode ends at the first consistent
-    /// relation, and refuses every token after it.
+    /// emits after it, with the consistency of the relation of an `OUT` form
+    /// that the token ends and, under the rule tests, of a `RULE` clause that
+    /// it ends; or refuses a token outside the mask, and leaves the decode as
+    /// it was. The decode ends at the first `OUT` form that is consistent,
+    /// and at nothing else, and refuses every token after it.
     pub fn step(&mut self, token: Token) -> StepResult {
         let advanced = self.advance(&token);
         self.apply(advanced)
@@ -316,9 +311,9 @@ impl<'a> Decoder<'a> {
     /// [`Decoder::apply`] makes the decode's.
     fn advance(&self, token: &Token) -> Result<Advanced, Refusal> {
         let (state, forced) = self.next_state(token)?;
-        let judged = self.consistency(&self.state, &state);
-        let (consistency, columns) = judged.map_or((None, None), |(result, columns)| (Some(result), columns));
-        Ok(Advanced { token: token.clone(), state, step: Step { forced: forced.into(), consistency, columns } })
+        let consistency = self.consistency(&self.state, &state, Tested::Out);
+        let rule_test = if self.context.settings.rule_tests { self.consistency(&self.state, &state, Tested::Rule) } else { None };
+        Ok(Advanced { token: token.clone(), state, step: Step { forced: forced.into(), consistency, rule_test } })
     }
 
     fn apply(&mut self, advanced: Result<Advanced, Refusal>) -> StepResult {
@@ -328,30 +323,32 @@ impl<'a> Decoder<'a> {
         self.record(token, &step);
         if let Some(Consistency::Consistent { assignments }) = &step.consistency {
             self.assignments = assignments.clone();
-            self.columns = step.columns;
-            let Some(crate::program::Form::Clause(clause)) = self.state.program().value().forms.last() else {
-                unreachable!("a consistent relation is a clause's")
-            };
-            self.output = Some(clause.value().derives.clone());
+            self.output = Some(NodePath::top(self.state.program().value().forms.len() as u32 - 1));
         }
         Ok(step)
     }
 
-    /// Appends the record of the model's `token`, with the verdict and the
-    /// stop of its consistency test, and the record of each token the
+    /// Appends the record of the model's `token`, with the verdicts and the
+    /// stop of its consistency tests, and the record of each token the
     /// engine forced after it.
     fn record(&mut self, token: Token, step: &Step) {
         let mut record = DecodeRecord::new(token, Emitter::Model);
+        let verdict = |consistency: &Consistency| match consistency {
+            Consistency::Consistent { assignments } => (Verdict::Consistent { assignments: assignments.len() }, None),
+            Consistency::NotConsistent => (Verdict::NotConsistent, None),
+            Consistency::SeveralValues { .. } => (Verdict::SeveralValues, None),
+            Consistency::Fault(_) => (Verdict::Fault, None),
+            Consistency::Stopped(stop) => (Verdict::Stopped, Some(stop.bound.into())),
+        };
         if let Some(consistency) = &step.consistency {
-            let (verdict, stop) = match consistency {
-                Consistency::Consistent { assignments } => (Verdict::Consistent { assignments: assignments.len() }, None),
-                Consistency::NotConsistent => (Verdict::NotConsistent, None),
-                Consistency::SeveralValues { .. } => (Verdict::SeveralValues, None),
-                Consistency::Fault(_) => (Verdict::Fault, None),
-                Consistency::Stopped(stop) => (Verdict::Stopped, Some(stop.bound.into())),
-            };
+            let (verdict, stop) = verdict(consistency);
             record.consistency = Some(verdict);
             record.stop = stop;
+        }
+        if let Some(rule_test) = &step.rule_test {
+            let (verdict, stop) = verdict(rule_test);
+            record.rule_test = Some(verdict);
+            record.stop = record.stop.or(stop);
         }
         self.trace.push(record);
         for forced in step.forced.iter() {
@@ -412,7 +409,7 @@ impl<'a> Decoder<'a> {
     fn next(&self, token: &Token, checks: &PrefixChecks<'_>, order: &RefCell<Order>) -> Result<(state::State, Vec<Token>), Refusal> {
         let vocabulary = &self.context.vocabulary;
         if self.output.is_some() {
-            return Err(Refusal::Grammar("the decode has ended at its `&output`"));
+            return Err(Refusal::Grammar("the decode has ended at its `OUT` form"));
         }
         if vocabulary.id(token).is_none() {
             return Err(Refusal::Grammar("the vocabulary holds no such token"));

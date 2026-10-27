@@ -1,8 +1,9 @@
 //! What a decode gives its caller beside the token mask, as
 //! `docs/engine/synthesis.md#decode-interface` gives it: the rows and the
-//! counts of the body of the clause in progress, and, at the `END` of a
-//! `RULE` clause, the consistency of the new relation, read as `&output`,
-//! with the train pairs.
+//! counts of the body of the clause in progress, and, at the `END` of an
+//! `OUT` form, the consistency of its relation with the train pairs, and,
+//! where the decode settings run the rule tests, at the `END` of a `RULE`
+//! clause, the consistency of the clause's relation read as an output.
 
 use std::sync::Arc;
 use std::time::Instant;
@@ -15,6 +16,7 @@ use crate::eval::ir::atom_modes;
 use crate::eval::{BodyValue, Limits, Outcome, ParameterValues, RelationValue, RunFault, Stop, TableWork};
 use crate::registry::Registry;
 use crate::judge::candidates::PairCandidates;
+use crate::judge::run::{Found, Tested};
 use crate::judge::determination::{dets_read, descend_assignments, distinct_values, walk, Assignment, Det, End, EvaluationInputs, Walked};
 use crate::program::path::{NodePath, PathStep};
 use crate::program::{Body, Choose, ChoosePart, Clause, ClauseKeyword, Conjunct, Form, Node, Program, ProgramRelation};
@@ -25,20 +27,21 @@ use crate::resolver::{resolve_last, DependencyKind, GraphNodeIndex, ResolvedProg
 use crate::trace::{DecodeRecord, RowsSeen};
 use crate::types::{each_site_label, use_label, GraphRelation};
 
-/// The consistency of a relation that a `RULE` clause's `END` finishes,
-/// read as `&output`, with the train pairs, as
-/// `docs/engine/synthesis.md#decode-interface` gives.
+/// The consistency of the relation of an `OUT` form that its `END` finishes,
+/// or, under the rule tests, of a `RULE` clause that its `END` finishes, with
+/// the train pairs, as `docs/engine/synthesis.md#decode-interface` gives.
 #[derive(Clone, Debug)]
 pub enum Consistency {
-    /// M_open over these joint assignments solves every train pair.
-    /// The decode ends at this relation.
+    /// M_open over these joint assignments solves every train pair. Of an
+    /// `OUT` form, the decode ends at it.
     Consistent { assignments: Vec<Vec<(ProgramRelation, Arc<Relation>)>> },
     /// M_open does not solve every train pair.
     NotConsistent,
     /// A `DET` without `(ONE)` that the relation reads takes more than one
     /// value over the consistent assignments.
     SeveralValues { relation: ProgramRelation, values: Vec<Arc<Relation>> },
-    /// The grid columns of M_open are underdetermined, or a run faults.
+    /// A run faults, or, in a rule test, the grid columns of M_open are
+    /// underdetermined.
     Fault(RunFault),
     /// The test reached a bound: the assignment cap, a cap of a run, the
     /// deadline or a cancellation.
@@ -46,13 +49,18 @@ pub enum Consistency {
 }
 
 /// What a step of a decode gives: the tokens that the engine emits after
-/// the token, and, where the token ends a `RULE` clause of a decode that
-/// judges the train pairs, the consistency of its relation.
+/// the token, and, where the token ends an `OUT` form of a decode that
+/// judges the train pairs, the consistency of its relation; and, where it
+/// ends a `RULE` clause of such a decode that runs the rule tests, the
+/// consistency of the clause's relation.
 #[derive(Clone, Debug)]
 pub struct Step {
     pub forced: Box<[Token]>,
+    /// The consistency of the `OUT` form that the token ends.
     pub consistency: Option<Consistency>,
-    pub(super) columns: Option<crate::eval::output::GridColumns>,
+    /// The consistency of the relation of the `RULE` clause that the token
+    /// ends, an observation that ends no decode.
+    pub rule_test: Option<Consistency>,
 }
 
 /// What a prefix gives at each joint assignment of the `DET`s it reads, in
@@ -87,8 +95,9 @@ pub struct SubBody {
 impl<'a> Decoder<'a> {
     /// The decode, judging the train pairs of `train`, the candidates of
     /// the task's train pairs under the world of its task data: at the `END`
-    /// of each `RULE` clause, [`Decoder::step`] gives the consistency of its
-    /// relation.
+    /// of each `OUT` form, [`Decoder::step`] gives the consistency of its
+    /// relation, and, under the rule tests, at the `END` of each `RULE`
+    /// clause that of the clause's relation.
     pub fn judging(mut self, train: Arc<[PairCandidates<'a>]>) -> Decoder<'a> {
         self.train = Some(train);
         self
@@ -100,25 +109,30 @@ impl<'a> Decoder<'a> {
         &self.cancellation
     }
 
-    /// The relation at which the decode ended, its `&output`, where a
-    /// relation was consistent.
-    pub fn output(&self) -> Option<&ProgramRelation> {
+    /// The path of the `OUT` form at which the decode ended, where an `OUT`
+    /// form was consistent.
+    pub fn output(&self) -> Option<&NodePath> {
         self.output.as_ref()
     }
 
+    /// The grid columns of the `OUT` form at which the decode ended, none
+    /// until it ends.
+    pub fn grid_columns(&self) -> Option<crate::eval::output::GridColumns> {
+        self.output.as_ref().map(|_| crate::eval::output::GridColumns::OUT)
+    }
+
     /// The attempts on each test input, or none until the decode ends at
-    /// a consistent relation, as `docs/engine/synthesis.md#open-parameters` gives.
+    /// a consistent `OUT` form, as `docs/engine/synthesis.md#open-parameters` gives.
     pub fn attempts(&self) -> Option<Outcome<Box<[crate::judge::attempts::Attempts]>>> {
-        self.output.as_ref()?;
-        let form = NodePath::top(self.program().value().forms.len() as u32 - 1);
+        let form = self.output.as_ref()?;
         Some((|| {
-            let checked = self.checked(self.state.resolved(self.context.registry), &form)?;
-            let relation = derived_at(&checked, &form);
+            let checked = self.checked(self.state.resolved(self.context.registry), form)?;
+            let relation = derived_at(&checked, form);
             let limits = self.limits();
             let parameters: Vec<_> = self.assignments.iter().map(|values| ParameterValues::determined(values.clone())).collect();
             let inputs = self.inputs(&checked, &limits);
             let evaluations: Vec<_> = parameters.iter().map(|values| inputs.at(values)).collect();
-            crate::judge::attempts::attempts(&evaluations, &relation, self.columns.expect("a consistent decode has grid columns"))
+            crate::judge::attempts::attempts(&evaluations, &relation)
         })())
     }
 
@@ -284,7 +298,7 @@ impl<'a> Decoder<'a> {
                 distinct.push(label);
             }
         }
-        let columns = super::state::slot_columns(distinct, 0);
+        let columns = crate::read::columns::slot_columns(distinct, 0);
         let count = u32::try_from(kept.len()).expect("fewer than 2^32 conjuncts");
         let sub = Clause { body: Node::new(Body { conjuncts: kept.into() }), columns, ..clause };
         let forms = finished.iter().cloned().chain([Form::Clause(Node::new(sub))]).collect();
@@ -332,58 +346,61 @@ impl<'a> Decoder<'a> {
         checked
     }
 
-    /// The consistency of the relation of the `RULE` clause that ends the
-    /// program of `after`, where `before`, the state before the step, holds
-    /// fewer forms and the decode judges the train pairs.
-    pub(super) fn consistency(&self, before: &State, after: &State) -> Option<(Consistency, Option<crate::eval::output::GridColumns>)> {
+    /// The consistency of the relation of the form that ends the program of
+    /// `after`, where `before`, the state before the step, holds fewer forms
+    /// and the decode judges the train pairs: of an `OUT` form when `tested`
+    /// is [`Tested::Out`], and of a `RULE` clause when it is
+    /// [`Tested::Rule`]; none for a form of the other kind.
+    pub(super) fn consistency(&self, before: &State, after: &State, tested: Tested) -> Option<Consistency> {
         let train = self.train.as_ref()?;
         let program = after.program();
         let forms = &program.value().forms;
         if forms.len() == before.program().value().forms.len() {
             return None;
         }
-        let Some(Form::Clause(clause)) = forms.last() else { return None };
-        if clause.value().keyword != ClauseKeyword::Rule {
-            return None;
+        match (forms.last()?, tested) {
+            (Form::Out(_), Tested::Out) => {}
+            (Form::Clause(clause), Tested::Rule) if clause.value().keyword == ClauseKeyword::Rule => {}
+            _ => return None,
         }
         let form = NodePath::top(forms.len() as u32 - 1);
         let checked = match self.finished_checked(before, after) {
             Ok(checked) => checked,
-            Err(fault) => return Some((Consistency::Fault(fault.clone()), None)),
+            Err(fault) => return Some(Consistency::Fault(fault.clone())),
         };
         let output = derived_at(checked, &form);
-        Some(self.test(checked, &output, train))
+        Some(self.test(checked, &output, train, tested))
     }
 
     /// The consistency test of `output` in `program`, at each joint
     /// assignment of the `DET`s it reads, under the assignment cap of the
     /// decode settings.
-    fn test(&self, program: &CheckedProgram, output: &GraphRelation, train: &[PairCandidates<'_>]) -> (Consistency, Option<crate::eval::output::GridColumns>) {
+    fn test(&self, program: &CheckedProgram, output: &GraphRelation, train: &[PairCandidates<'_>], tested: Tested) -> Consistency {
         let dets: Vec<_> = dets_read(program, output.node);
         let limits = self.limits();
-        let Walked { kept, end, .. } = walk(self.inputs(program, &limits), &dets, output, train, self.context.settings.caps.assignments);
+        let Walked { kept, end, .. } = walk(self.inputs(program, &limits), &dets, output, train, self.context.settings.caps.assignments, tested);
         match end {
-            Err(End::Stop(stop)) => return (Consistency::Stopped(stop), None),
-            Err(End::Fault(fault)) => return (Consistency::Fault(fault), None),
+            Err(End::Stop(stop)) => return Consistency::Stopped(stop),
+            Err(End::Fault(fault)) => return Consistency::Fault(fault),
             Ok(()) => {}
         }
         if kept.is_empty() {
-            return (Consistency::NotConsistent, None);
+            return Consistency::NotConsistent;
         }
         for det in dets.iter().filter(|det| !det.open) {
             let values = distinct_values(&kept, &det.relation);
             if values.len() > 1 {
-                return (Consistency::SeveralValues { relation: det.relation.clone(), values }, None);
+                return Consistency::SeveralValues { relation: det.relation.clone(), values };
             }
         }
         let parameters: Vec<_> = kept.iter().map(|assignment| ParameterValues::determined(assignment.values.clone())).collect();
         let inputs = self.inputs(program, &limits);
         let evaluations: Vec<_> = parameters.iter().map(|values| inputs.at(values)).collect();
-        match crate::judge::run::grid_columns_observed(&evaluations, &mut kept.iter().map(|assignment| assignment.observed.clone()).collect::<Vec<_>>(), output, train) {
-            Ok(crate::judge::run::Found::Columns(columns)) => (Consistency::Consistent { assignments: kept.into_iter().map(|assignment| assignment.values).collect() }, Some(columns)),
-            Ok(crate::judge::run::Found::None) => (Consistency::NotConsistent, None),
-            Ok(crate::judge::run::Found::Stopped(stop)) => (Consistency::Stopped(stop), None),
-            Err(fault) => (Consistency::Fault(fault), None),
+        match tested.observed(&evaluations, &mut kept.iter().map(|assignment| assignment.observed.clone()).collect::<Vec<_>>(), output, train) {
+            Ok(Found::Columns(_)) => Consistency::Consistent { assignments: kept.into_iter().map(|assignment| assignment.values).collect() },
+            Ok(Found::None) => Consistency::NotConsistent,
+            Ok(Found::Stopped(stop)) => Consistency::Stopped(stop),
+            Err(fault) => Consistency::Fault(fault),
         }
     }
 }
@@ -462,17 +479,18 @@ fn complete_or_atoms(body: &Node<Body>, open_at: Option<usize>, registry: &Regis
     body.value().conjuncts.iter().enumerate().filter(kept).map(|(_, conjunct)| conjunct.clone()).collect()
 }
 
-/// The relation that the clause at `form` derives in `program`: a clause
-/// relation, a chosen relation where the clause has `ONE` marks, or the
-/// parameter of a `DET` clause with no `ONE` mark.
+/// The relation that the form at `form` derives in `program`: a clause
+/// relation, a chosen relation where the clause has `ONE` marks, the
+/// parameter of a `DET` clause with no `ONE` mark, or the relation of an
+/// `OUT` form.
 pub fn derived_at(program: &CheckedProgram, form: &NodePath) -> GraphRelation {
     let resolved = &program.program;
     let node = (0..resolved.graph.nodes.len())
         .map(|index| GraphNodeIndex(u32::try_from(index).expect("fewer than 2^32 nodes")))
         .find(|&node| {
-            matches!(resolved.graph.nodes[node.0 as usize].kind, DependencyKind::Clause(_) | DependencyKind::Parameter(_) | DependencyKind::Chosen(_)) && resolved.forms_of(node).contains(form)
+            matches!(resolved.graph.nodes[node.0 as usize].kind, DependencyKind::Clause(_) | DependencyKind::Parameter(_) | DependencyKind::Chosen(_) | DependencyKind::Out(_)) && resolved.forms_of(node).contains(form)
         })
-        .expect("a checked clause derives its relation");
+        .expect("a checked clause or `OUT` form derives its relation");
     GraphRelation { node, output: None }
 }
 

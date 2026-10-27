@@ -13,7 +13,7 @@ use super::ir::{self, Argument, Arguments, AtomSource, ClauseIr, CompiledBody, I
 use super::join::{self, Budget, JoinInputs, NodeInput, Part};
 use super::models::{self, Choice, Entry, Factor};
 use super::determinations::Domain;
-use super::{cache, instance, plan, proposers, rigid};
+use super::{cache, init_form, instance, plan, proposers, rigid};
 use super::{Evaluation, Outcome, ParameterSource, ReachedBound, RelationValue, RunFault, Stop};
 use crate::hash::StableHashMap;
 use crate::program::path::{node_at, NodePath, NodeRef};
@@ -112,8 +112,18 @@ impl<'e, 'a> Driver<'e, 'a> {
             DependencyKind::RecursiveInstance(_) => models::walk_value(self, relation, example),
             DependencyKind::Chosen(_) => models::pick_value(self, relation, example),
             DependencyKind::Demonstrated(_) => models::demonstrated_value(self, relation, example),
+            DependencyKind::Out(_) => self.out(form, example),
             DependencyKind::Fact(_) => unreachable!("an atom reads a fact relation from the task"),
         }
+    }
+
+    /// The relation of the `OUT` form at `form` on `example`: the rows of its
+    /// body at its `^` labels, which are its two selected columns.
+    fn out(&self, form: &NodePath, example: Option<Example>) -> Outcome<RelationValue> {
+        let Some(NodeRef::Out(out)) = node_at(NodeRef::Program(self.program().program.value()), form) else { panic!("an `OUT` form at the form of an `OUT` node") };
+        let (clause, _, _) = init_form::out_clause(self.evaluation.program, form, out)
+            .map_err(|fault| RunFault { message: format!("the body of the `OUT` form does not compile: {fault:?}").into(), form: form.clone() })?;
+        self.bodies().relation(form, &clause, example)
     }
 
     /// The rows of the `DET` relation `name`: the stored rows of its `assign`

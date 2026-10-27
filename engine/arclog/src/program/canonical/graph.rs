@@ -170,6 +170,7 @@ impl<'a> ScopeSink<'a> for GraphBuilder<'_> {
             Open::Instance(_) => self.vertex_under(at, role, index, Tag::Instance, |_| {}),
             Open::Choose(choose) => self.vertex_under(at, role, index, Tag::Choose, |out| out.flag(choose.from_inside_for)),
             Open::RigidDet(_) => self.vertex_under(at, role, index, Tag::RigidDet, |_| {}),
+            Open::Out(_) => self.vertex_under(at, role, index, Tag::Out, |_| {}),
             // The fields and the forms of a rule stand at the vertex of its form.
             Open::DemoRule(_) => at,
             Open::KeyClause => self.vertex_under(at, role, index, Tag::KeyClause, |_| {}),

@@ -4,8 +4,8 @@
 //! restricted across cases to the values they agree on, and the value, the
 //! open values or the error of each parameter. The walk of a relation's
 //! joint assignments is `descend_assignments`, and `walk`, which the
-//! consistency test of [`crate::decode`] runs too, searches for the grid
-//! columns at each; the rows of a prefix in [`crate::decode`] are evaluated
+//! consistency test of [`crate::decode`] runs too, tests the relation
+//! test at each; the rows of a prefix in [`crate::decode`] are evaluated
 //! at each.
 
 use std::sync::Arc;
@@ -28,7 +28,7 @@ use crate::task::{JudgedTask, Task};
 use crate::types::GraphRelation;
 
 use super::candidates::{PairCandidates, Section, World};
-use super::run::{grid_columns_recorded, Found, Observed};
+use super::run::{Found, Observed, Tested};
 
 /// A case that the determination runs: its name, its checked program, the
 /// checked concept program, in which the `DET` forms the case takes from
@@ -124,8 +124,7 @@ pub enum CaseOutcome {
     /// The case stopped at a bound, the assignment cap or a bound of a run,
     /// with the parameters of several values in a domain it read.
     Stopped { stop: Stop, parameters: Vec<ProgramRelation> },
-    /// A fault of a run, or underdetermined grid columns at an assignment
-    /// the case keeps.
+    /// A fault of a run at an assignment the case keeps.
     Fault(RunFault),
     /// The case solves no train pair at any assignment, or keeps none after
     /// the restriction across cases.
@@ -231,8 +230,8 @@ pub(crate) fn dets_read(program: &CheckedProgram, root: GraphNodeIndex) -> Vec<D
 }
 
 /// An assignment the walk keeps: a value for each `DET` it assigns, and the
-/// fault of underdetermined grid columns or of the run at it, which is the
-/// case's error where the assignment is left after the restriction.
+/// fault of the run at it, which is the case's error where the assignment is
+/// left after the restriction.
 #[derive(Clone, Debug)]
 pub(crate) struct Kept {
     pub(crate) values: Vec<Assignment>,
@@ -249,8 +248,8 @@ pub enum End {
 
 /// The walk of the joint assignments of a relation's `DET`s.
 pub(crate) struct Walked {
-    /// The assignments at which the relation, read as `&output`, solves
-    /// every train pair, in the order of the walk.
+    /// The assignments at which the relation solves every train pair, in
+    /// the order of the walk.
     pub(crate) kept: Vec<Kept>,
     /// The `DET`s met with several values in the domain, in the order met.
     pub(crate) branching: Vec<ProgramRelation>,
@@ -259,12 +258,12 @@ pub(crate) struct Walked {
 
 /// The walk of the joint assignments of `dets`, the `DET`s that `output`
 /// reads, depth-first in their dependency order, under the
-/// assignment cap `cap`: at each assignment, the search for the grid
-/// columns of `output` over the train pairs whose candidates are `train`.
-pub(crate) fn walk(inputs: EvaluationInputs<'_>, dets: &[Det], output: &GraphRelation, train: &[PairCandidates<'_>], cap: u64) -> Walked {
+/// assignment cap `cap`: at each assignment, the test of `output`, as
+/// `tested` gives it, over the train pairs whose candidates are `train`.
+pub(crate) fn walk(inputs: EvaluationInputs<'_>, dets: &[Det], output: &GraphRelation, train: &[PairCandidates<'_>], cap: u64, tested: Tested) -> Walked {
     let mut kept = Vec::new();
     let mut leaf = |evaluation: &Evaluation<'_>, assigned: &[Assignment]| {
-        let (found, observed) = grid_columns_recorded(evaluation, output, train);
+        let (found, observed) = tested.recorded(evaluation, output, train);
         let fault = match found {
             Ok(Found::Columns(_)) => None,
             Ok(Found::None) => return Ok(()),
@@ -289,7 +288,7 @@ pub fn determine(cases: &[DeterminedCase<'_>], judged: &JudgedTask, world: World
     let mut walked: Vec<(CaseOutcome, Vec<ProgramRelation>, Vec<Kept>)> = Vec::new();
     for case in cases {
         let program = &case.program.program;
-        let output = output_relation(case.program).expect("a checked case program derives `&output`");
+        let output = output_relation(case.program).expect("a checked case program holds an `OUT` form");
         let mut dets = Vec::new();
         let mut reads = Vec::new();
         for det in dets_read(case.program, output.node) {
@@ -310,7 +309,7 @@ pub fn determine(cases: &[DeterminedCase<'_>], judged: &JudgedTask, world: World
         if holds_demonstrated {
             demonstrated.extend(reads.iter().cloned());
         }
-        let Walked { kept, branching, end } = walk(case.inputs(), &dets, &output, &train, case.session.caps.assignments);
+        let Walked { kept, branching, end } = walk(case.inputs(), &dets, &output, &train, case.session.caps.assignments, Tested::Out);
         let outcome = match end {
             Ok(()) if kept.is_empty() => CaseOutcome::Unsolved,
             Ok(()) => CaseOutcome::Solved,

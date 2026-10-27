@@ -15,7 +15,7 @@ use crate::program::path::NodePath;
 use crate::program::*;
 use crate::registry::LibName;
 
-use super::columns::{key_labels, made_labels, relation_columns};
+use super::columns::{key_labels, made_labels, relation_columns, slot_columns};
 use super::labels::LabelScope;
 use super::spelling::{self as sp, parse};
 use super::{grammar, SExpr};
@@ -77,7 +77,7 @@ impl Owners {
                         self.alt(alt.value());
                     }
                 }
-                Form::Clause(_) | Form::Choose(_) => {}
+                Form::Clause(_) | Form::Choose(_) | Form::Out(_) => {}
             }
         }
     }
@@ -383,6 +383,7 @@ impl Reader {
                 sp::INIT => Form::Instance(self.instance(&list, path, scope, &mut record)?),
                 sp::CHOOSE => Form::Choose(self.choose(&list, path, scope, &mut record)?),
                 sp::RIGID_DET => Form::RigidDet(self.rigid_det(&list, path, scope, &mut record)?),
+                sp::OUT => Form::Out(self.out(&list, path, scope)),
                 sp::DEMONSTRATED => Form::Demonstrated(self.demonstrated(&list, path, scope, &mut record)?),
                 _ => return self.refuse(format!("`{head}` heads no form"), head_place),
             }
@@ -762,12 +763,26 @@ impl Reader {
     }
 
     fn key_body(&mut self, expr: Option<&SExpr>, path: &NodePath, scope: &LabelScope, at: SourcePlace) -> R<KeyBody> {
-        let outer = std::mem::replace(&mut self.in_key_body, true);
-        let body = self.body_list(expr, path, scope, at);
-        self.in_key_body = outer;
-        let body = body?;
+        let body = self.in_key_body(|reader| reader.body_list(expr, path, scope, at))?;
         let columns = relation_columns(&key_labels(body.value()), scope);
         Ok(KeyBody { body, columns })
+    }
+
+    /// What `read` reads as a key clause's body, where a `^` label stands.
+    fn in_key_body<T>(&mut self, read: impl FnOnce(&mut Self) -> T) -> T {
+        let outer = std::mem::replace(&mut self.in_key_body, true);
+        let read = read(self);
+        self.in_key_body = outer;
+        read
+    }
+
+    /// An `OUT` form: its atoms, written after the keyword as a clause's
+    /// body is, read as a key clause's body. The key's columns are named by
+    /// their positions, since no form reads a label of an `OUT`.
+    fn out(&mut self, list: &List, path: &NodePath, scope: &LabelScope) -> Node<Out> {
+        let body = self.in_key_body(|reader| reader.conjuncts(&list.items[1..], &path.child(Out::BODY), scope, Record::new(None), None));
+        let columns = slot_columns(key_labels(body.value()), 0);
+        Node::new(Out { key: KeyBody { body, columns } })
     }
 
     fn key_clause(&mut self, list: &List, path: &NodePath, scope: &LabelScope) -> R<Node<KeyClause>> {

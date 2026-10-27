@@ -190,12 +190,13 @@ fn a_forked_decode_keeps_its_own_observations() {
 }
 
 /// The trace of a decode of one `RULE` clause over a task, which the row cap
-/// of `caps` stops after the clause's last atom where it is `1`, and which is
-/// cancelled before the clause's `END` where `cancel` says so.
+/// of `caps` stops after the clause's last atom where it is `1`, and, with the
+/// `OUT` form that reads the clause, which is cancelled before that form's
+/// `END` where `cancel` says so.
 fn stopped_decode(caps: Caps, cancel: bool) -> DecodeTrace {
     let inputs = inputs(&[1, 2], caps);
     let mut decoder = decoder(&inputs);
-    let tokens = model_tokens("(RULE &output (input *P *Col))\n");
+    let tokens = model_tokens(if cancel { "(RULE &output (input *P *Col))\n(OUT (&output ^P ^Col))\n" } else { "(RULE &output (input *P *Col))\n" });
     let (end, prefix) = tokens.split_last().expect("a stream");
     walk(&mut decoder, prefix);
     if cancel {

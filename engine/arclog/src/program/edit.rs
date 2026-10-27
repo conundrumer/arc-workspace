@@ -500,6 +500,13 @@ fn form_with(form: &Form, children: Vec<Owned>) -> Option<Form> {
             })?;
             Form::RigidDet(Node::new(RigidDet { name: rigid.name.clone(), key, instance, parts }))
         }
+        Form::Out(out) => {
+            let body = as_body(children.next()?)?;
+            if children.next().is_some() {
+                return None;
+            }
+            Form::Out(Node::new(Out { key: key_body(&out.value().key, body) }))
+        }
         Form::Demonstrated(demonstrated) => {
             let demonstrated = demonstrated.value();
             let key = match demonstrated.key {
@@ -786,7 +793,7 @@ fn own_lists(node: NodeRef<'_>) -> usize {
 fn wrappers_of(parent: NodeRef<'_>, index: u32, child: NodeRef<'_>) -> Vec<Wrapper> {
     let own = Wrapper::Own(index);
     match (parent, child) {
-        (NodeRef::Clause(_) | NodeRef::InstanceInput(_), NodeRef::Body(_)) => Vec::new(),
+        (NodeRef::Clause(_) | NodeRef::InstanceInput(_) | NodeRef::Out(_), NodeRef::Body(_)) => Vec::new(),
         (NodeRef::InstanceInput(_), _) => vec![Wrapper::Head],
         (NodeRef::Choose(choose), _) => match choose.parts().nth(index as usize) {
             Some(ChoosePart::For) => vec![Wrapper::For, own],

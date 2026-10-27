@@ -20,9 +20,9 @@ use crate::program::path::{NodePath, PathStep};
 use crate::program::{
     written_inputs, Atom, Body, Choose, Clause, ClauseKeyword, ColumnName, Conjunct, Constraint, ConstraintLabel, ConstraintOp, DeclaredName, Form, Instance,
     InstanceInput, InstanceName, KeyBody, KeyClause, LabelId, LabelUse, Negated, Node, OneMark, Operand, OutputName, OutputOwner, OutputStep, PortName,
-    Program, ProgramRelation, RelationColumn, RelationName, RelationRef, RigidDet, RigidDetName, Site, SiteArg, SiteValue,
+    Out, Program, ProgramRelation, RelationName, RelationRef, RigidDet, RigidDetName, Site, SiteArg, SiteValue,
 };
-use crate::read::columns::{key_labels, made_labels};
+use crate::read::columns::{key_labels, made_labels, slot_columns};
 use crate::read::is_type_parameter_column;
 use crate::registry::{Component, LibEntry, LibName};
 use crate::registry::Registry;
@@ -109,6 +109,8 @@ enum Frame {
     HeadSite(HeadSiteFrame),
     Choose(ChooseFrame),
     Rigid(RigidFrame),
+    /// An `OUT` form, whose body stands open above it.
+    Out,
 }
 
 /// The frame of `$variant` on top of `$state`'s stack.
@@ -580,6 +582,7 @@ impl State {
             Some(Frame::HeadSite(_)) => self.offer_head_site(token, forced),
             Some(Frame::Choose(_)) => self.offer_choose(token, forced),
             Some(Frame::Rigid(_)) => self.offer_rigid(context, token, forced),
+            Some(Frame::Out) => unreachable!("an `OUT` form whose body stands open"),
             Some(Frame::Or(_) | Frame::Lists(_) | Frame::Input(_)) => unreachable!("a frame that stands below an open child"),
         }
     }
@@ -599,6 +602,11 @@ impl State {
             Token::Control(Control::RigidDet) => {
                 forced.push(Token::Column(0));
                 Frame::Rigid(RigidFrame { key: None, instance: None, parts: Vec::new(), stage: RigidStage::Key })
+            }
+            Token::Control(Control::Out) => {
+                self.stack.push(Frame::Out);
+                self.push_body(Close::List, true);
+                return Ok(Offer::Taken);
             }
             _ => return Err("a form opens with its keyword"),
         };
@@ -637,8 +645,12 @@ impl State {
     /// wherever it stands, and `ALSO` closes a branch of one.
     fn offer_body(&mut self, context: &Context<'_>, token: &Token) -> Result<Offer, Unexpected> {
         let in_key = self.in_key();
+        let in_out = matches!(self.stack.iter().rev().nth(1), Some(Frame::Out));
         let body = top!(self, Frame::Body);
         if let Token::Control(control @ (Control::Not | Control::Op(_) | Control::Or | Control::If | Control::All)) = token {
+            if in_out {
+                return Err("an `OUT` form holds atoms alone");
+            }
             if std::mem::take(&mut body.negate) {
                 self.push_body(Close::Not, in_key);
                 if *control == Control::Not {
@@ -991,7 +1003,7 @@ impl State {
                 }
                 Built::Form(Form::RigidDet(Node::new(value)))
             }
-            Frame::Constraint(_) | Frame::Or(_) | Frame::Lists(_) | Frame::Instance(_) | Frame::KeyClause(_) | Frame::Input(_) | Frame::Choose(_) => {
+            Frame::Constraint(_) | Frame::Or(_) | Frame::Lists(_) | Frame::Instance(_) | Frame::KeyClause(_) | Frame::Input(_) | Frame::Choose(_) | Frame::Out => {
                 unreachable!("a frame that its own offer or its child's delivery closes")
             }
         };
@@ -1079,6 +1091,10 @@ impl State {
                 if let Some(built) = self.next_column(forced) {
                     self.deliver(context, built, None, forced)?;
                 }
+            }
+            (Frame::Out, Built::Body(body)) => {
+                self.stack.pop();
+                self.finish_form(Form::Out(Node::new(Out { key: key_body(body) })));
             }
             (Frame::Choose(choose), Built::Body(body)) => match choose.stage {
                 ChooseStage::ForOpen => {
@@ -1336,6 +1352,7 @@ impl State {
                 value.from_inside_for = inside_for(value.rows.as_ref(), value.from.value());
                 Built::Form(Form::Choose(Node::new(value)))
             }
+            Frame::Out => Built::Form(Form::Out(Node::new(Out { key: KeyBody { body: open_body(child), columns: Arc::from([]) } }))),
             Frame::Rigid(rigid) => {
                 let mut value = RigidDet { name: RigidDetName(slot), key: rigid.key.clone(), instance: rigid.instance.clone(), parts: Arc::from([]) };
                 let parts = rigid.parts.iter().cloned();
@@ -1357,7 +1374,7 @@ impl State {
 fn child_step(frame: &Frame, above: &Frame) -> u32 {
     let count = |count: usize| u32::try_from(count).expect("fewer than 2^32 children");
     match frame {
-        Frame::Clause(_) => 0,
+        Frame::Clause(_) | Frame::Out => 0,
         Frame::Body(body) => count(body.conjuncts.len()),
         Frame::Atom(atom) => count(atom.sites.len()),
         Frame::Site(site) => count(site.args.len()),
@@ -1420,12 +1437,6 @@ fn field_arg(column: &ColumnName, field: u32, label: LabelUse) -> SiteArg {
         true => SiteArg::NamedLabel { name: ColumnName::Slot(field), label },
         false => SiteArg::Field(Site { column: ColumnName::Slot(field), value: SiteValue { args: Arc::from([SiteArg::Label(label)]) } }),
     }
-}
-
-/// The columns of `labels`, each named by its slot, from `first`.
-pub(super) fn slot_columns(labels: Vec<LabelId>, first: usize) -> Arc<[RelationColumn]> {
-    let column = |(index, label)| RelationColumn { name: ColumnName::Slot(u32::try_from(first + index).expect("fewer than 2^32 columns")), label };
-    labels.into_iter().enumerate().map(column).collect()
 }
 
 /// Whether a `CHOOSE` form's `from` stands inside its `for`, which is where

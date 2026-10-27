@@ -6,8 +6,8 @@ admits, REF_<kind> being admitted where the mask admits an identifier of that ki
 and the pointer distribution is over the declarations of that kind whose identifier the mask admits and that are
 the latest declaration of it. The sampler draws a class, and for REF_<kind> a declaration, from those
 distributions at `--temperature` (or takes the argmax with `--greedy`), steps the decoder by the token's id, and
-feeds the token and the ids the engine emits after it to the model. A program stops when the decode ends at a
-consistent relation, at `--max-steps` model-written tokens, at `--max-tokens` positions of context, at
+feeds the token and the ids the engine emits after it to the model. A program stops when the decode ends at an
+`OUT` form that solves the train pairs, at `--max-steps` model-written tokens, at `--max-tokens` positions of context, at
 `--max-seconds` of wall time for its task, where the mask admits no token ("empty-mask"), where it admits no token
 the head can write ("stuck": only identifiers that the stream has not declared), or where the engine panics at its
 token ("panic": `arclog.step_batch` gives an `arclog.Fault` in the place of that decoder). The `--max-seconds`
@@ -18,8 +18,8 @@ A "panic" program keeps the token it panicked at in its stream; the other progra
 without the panic. Each "panic" program also gets `<out dir>/panic-<task>-<index>.json`: task, ids, model, end,
 panic, settings, world and its record, for a replay of the stream.
 
-Two caps count model-written tokens. A clause is one top-level form of the program (a RULE, DET, INIT, CHOOSE or
-RIGID_DET form): it opens at the form's keyword token, which the model writes, and it holds the model-written tokens
+Two caps count model-written tokens. A clause is one top-level form of the program (a RULE, DET, INIT, CHOOSE,
+RIGID_DET or OUT form): it opens at the form's keyword token, which the model writes, and it holds the model-written tokens
 up to the next form keyword. `--max-clause <n>` ends a program ("max-clause") when its current clause holds more than n
 model-written tokens, a prefix's tokens of that clause included. Without the flag, n is 1.5 times the most
 model-written tokens that one clause of any case in `--data`'s cases.npz holds, computed at start and printed;
@@ -40,14 +40,18 @@ With `--prefix`, each program starts from a prefix of a corpus program of its ta
 export's cases.npz holds it (`--data`, `--prefix-cases`). The sampler steps the decoder through the prefix's
 model-written tokens, asserts that each is admissible and that the engine emits the stream's next ids after it, and
 samples the rest. The prefix ends at a token boundary, after a model-written token and the ids the engine emits
-after it. `--prefix random` takes a rule boundary at random, uniformly: the end of a RULE clause, which is where the
-engine gives a consistency, and where the decode has not ended; a case with none gives the empty prefix.
+after it. `--prefix random` takes a rule boundary at random, uniformly: the end of a RULE clause, where the decode has
+not ended; a case with none gives the empty prefix.
 `--prefix random-token` takes any token boundary at which the decode has not ended, uniformly. `--prefix <f>`, a
 number, takes the last such token boundary at or before the fraction f of the stream's tokens; 0, the default, is
 the empty prefix.
 
+`--rule-tests` sets the decode setting `rule_tests` of every session, so that the END of each RULE clause gives the
+verdict of the test of its relation, which the lines' `rules` hold; without it `rules` is empty. The verdict ends no
+program, and changes no mask.
+
 `--out` gets, on its first line, {"settings": the fields of arclog.DecodeSettings that every session took (the
-engine's defaults), "world", "args": the run's flags, "model_meta"}, so `arclog.DecodeSettings(**settings)` replays
+engine's defaults, and `rule_tests` as the flag gives it), "world", "args": the run's flags, "model_meta"}, so `arclog.DecodeSettings(**settings)` replays
 the streams under the same settings. Then one JSON line per program:
   task               the task id
   case               the corpus case that gave the prefix, or null
@@ -59,8 +63,8 @@ the streams under the same settings. Then one JSON line per program:
                      and for each a 1 where the decoder was stepped by it and a 0 where step() emitted it
   prefix_tokens      the stream's first prefix_tokens ids are the prefix
   prefix_rules       the RULE ends in the prefix
-  ended              whether the decode ended at a consistent relation
-  consistency        the consistency that the last step gave, or null
+  ended              whether the decode ended at an OUT form that solves the train pairs
+  consistency        the consistency that the last step gave, which only the END of an OUT form gives, or null
   solved_test        for an ended decode, whether the attempts on every test input hold its test output; else null
   attempts           for an ended decode, the count of attempt grids over the test inputs; else null
   tokens             len(ids)
@@ -74,9 +78,9 @@ the streams under the same settings. Then one JSON line per program:
                      `--max-steps-factor`
   max_cont_used      the program's cap on sampled tokens under `--max-cont-factor`; 0 for none
   max_clause_used    the program's cap on the model-written tokens of a clause; 0 for none
-  rules              the consistency kind of each sampled RULE clause's END, in order; for a gold line, that of
-                     each RULE clause of the case's stream after the prefix, from the one replay of the whole
-                     stream that finds the case's rule boundaries
+  rules              under `--rule-tests`, the verdict kind of the rule test at each sampled RULE clause's END, in
+                     order; for a gold line, that of each RULE clause of the case's stream after the prefix, from
+                     the one replay of the whole stream that finds the case's rule boundaries; empty without it
   model_steps        the sampled tokens
   refusals, seconds
 The run's summary is printed as one JSON line at the end. The sampler does not run the feature encoder; a run
@@ -100,7 +104,7 @@ from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, Dynami
 MAX_TOKENS = 4096   # train.py's default --max-len
 MAX_STEPS = 10_000  # the export's step cap
 SETTINGS = ("proposer_tokens", "type_domain_proposers", "relations", "columns", "labels", "deadline_seconds",
-            "projection_cap", "table_work_cap")   # the fields of arclog.DecodeSettings
+            "projection_cap", "table_work_cap", "rule_tests")   # the fields of arclog.DecodeSettings
 
 
 def load_model(run, device):
@@ -144,6 +148,7 @@ class Program:
         self.pending = [(in_index[BOS], torch.zeros(id_dim), None)]   # (input index, identifier vector, kind of a declaration)
         self.fed = 0
         self.consistency, self.rules, self.end, self.steps, self.refusals = None, [], None, 0, 0
+        self.opened = None                        # the keyword of the form in progress, as the model wrote it
         self.clause = 0                           # the model-written tokens of the current clause
         self.max_steps = self.max_clause = self.max_cont = 0
         self.logits = self.query = None
@@ -261,25 +266,37 @@ class Sampler:
 
     def boundaries(self, decoder, ids, model, deadline=None):
         """Step a fork of the decoder through a case's stream: the token boundaries and the rule boundaries at
-        which the decode has not ended, as counts of the stream's tokens before them, and the consistency kind of
-        each RULE clause's END, in order; None where the time passes the deadline first."""
+        which the decode has not ended, as counts of the stream's tokens before them, and the verdict kind of the rule
+        test at each RULE clause's END, in order, where the decoder runs the rule tests; None where the time passes
+        the deadline first."""
         d = decoder.fork()
         tokens, rules, kinds = [0], [], []
+        opened = None
         for j, (i, w) in enumerate(zip(ids, model)):
             if not w:
                 continue
             if deadline and time.time() > deadline:
                 return None
-            forced, cons = d.step(i)
-            if cons is not None:
-                kinds.append(kind_name(cons))
+            opened, rule_end = self.after_step(opened, i)
+            forced, _, rule_test = d.step(i)
+            rule_end = rule_end and any(self.kinds[f] == "relation" for f in forced)
+            if rule_end:
+                opened = None
+            if rule_test is not None:
+                kinds.append(kind_name(rule_test))
             end = j + 1 + len(forced)
             if d.ended or end >= len(ids):
                 break
             tokens.append(end)
-            if cons is not None:
+            if rule_end:
                 rules.append(end)
         return tokens, rules, kinds
+
+    def after_step(self, opened, i):
+        """The keyword of the form in progress after the model writes token i, given that before it, and whether the
+        token can end a RULE clause: a RULE clause ends at the END that the engine answers with a relation's id."""
+        keyword = self.names[i] if self.names[i] in FORM_KEYWORDS else opened
+        return keyword, keyword == "RULE" and self.names[i] == "END"
 
     def replay(self, p, case, ids, model, m, deadline=None):
         """Step program p's decoder through the first m tokens of a case's stream, and feed them; False where the
@@ -293,14 +310,17 @@ class Sampler:
             assert model[j], f"{p.task} {case}: the prefix's token {j} is the engine's"
             mask = p.decoder.admissible()
             assert mask[i // 8] >> (i % 8) & 1, f"{p.task} {case}: the prefix's token {j} is outside the mask"
-            forced, cons = p.decoder.step(i)
+            p.opened, rule_end = self.after_step(p.opened, i)
+            forced, cons, _ = p.decoder.step(i)
             assert list(forced) == list(ids[j + 1:j + 1 + len(forced)]), \
                 f"{p.task} {case}: the engine emits other ids after the prefix's token {j} than the stream holds"
             p.push(i, True, self.names, self.kind)
             for f in forced:
                 p.push(f, False, self.names, self.kind)
             p.consistency = cons
-            p.prefix_rules += cons is not None
+            if rule_end and any(self.kinds[f] == "relation" for f in forced):
+                p.opened = None
+                p.prefix_rules += 1
             j += 1 + len(forced)
         assert j == m and not p.decoder.ended
         return True
@@ -369,14 +389,17 @@ class Sampler:
                         continue
                     if isinstance(r, Exception):
                         p.refusals += 1; p.end = "refused"; continue
-                    forced, cons = r
+                    forced, cons, rule_test = r
                     p.steps += 1
+                    p.opened, rule_end = self.after_step(p.opened, i)
                     p.push(i, True, self.names, self.kind)
                     for f in forced:
                         p.push(f, False, self.names, self.kind)
                     p.consistency = cons
-                    if cons is not None:
-                        p.rules.append(kind_name(cons))
+                    if rule_end and any(self.kinds[f] == "relation" for f in forced):
+                        p.opened = None
+                    if rule_test is not None:
+                        p.rules.append(kind_name(rule_test))
                     if p.decoder.ended:
                         p.end = "ended"
                     elif p.max_clause and p.clause > p.max_clause:
@@ -517,6 +540,9 @@ def main():
                     help="the cases whose streams give the prefixes, by turns over the programs: first (the task's "
                          "first case in the export), all, or case names separated by commas")
     ap.add_argument("--data", default="work/lm/data", help="the data export whose cases.npz gives the prefixes")
+    ap.add_argument("--rule-tests", action="store_true",
+                    help="run the decode setting rule_tests: the END of each RULE clause gives the verdict of the test of "
+                         "its relation, which the lines' `rules` hold; the verdict ends no program")
     ap.add_argument("--out", required=True, help="the JSON lines file of the programs")
     a = ap.parse_args()
     assert a.temperature > 0 or a.greedy
@@ -528,7 +554,8 @@ def main():
     sampler, records, dropped, t0, corpus = None, [], {}, time.time(), None
     with open(out, "w") as f, torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16, enabled=use_autocast):
         for task in task_ids(a.tasks):
-            session = arclog.Session(arclog.Task.from_json(open(f"{a.task_dir}/{task}.json").read(), getattr(arclog.World, a.world)))
+            session = arclog.Session(arclog.Task.from_json(open(f"{a.task_dir}/{task}.json").read(), getattr(arclog.World, a.world)),
+                                     arclog.DecodeSettings(rule_tests=a.rule_tests))
             if sampler is None:
                 sampler = Sampler(model, meta, dtype, session.vocabulary, a.device, a.temperature, a.greedy,
                                   a.max_steps, a.max_tokens, a.seed)

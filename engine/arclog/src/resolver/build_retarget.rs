@@ -140,7 +140,7 @@ impl ResolvedProgram {
         let nodes = self.form_nodes.get(&form_path)?;
         let root = NodeRef::Program(program.value());
         match node_at(root, &form_path)? {
-            NodeRef::Clause(_) | NodeRef::Choose(_) | NodeRef::RigidDet(_) => match &nodes[..] {
+            NodeRef::Clause(_) | NodeRef::Choose(_) | NodeRef::RigidDet(_) | NodeRef::Out(_) => match &nodes[..] {
                 [node] => Some(vec![*node]),
                 _ => None,
             },

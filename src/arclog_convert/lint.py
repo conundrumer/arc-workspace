@@ -200,6 +200,7 @@ class Linter:
         self.params: set[str] = set()   # the param names of the arcdata file
         self.set_marked: dict[str, int] = {}   # each relation whose clause ends in `(SET)`, and its line
         self.decl_cols: dict[str, list[set[str]]] = defaultdict(list)   # each declaration's own columns, in order
+        self.outs: list[int] = []   # the line of each OUT form
         self.placed: list[Placed] = []
         self.alt_chain: list[str] = []   # the ALT blocks open at the current form, outermost first
         # (alts, relation) -> the columns of a declaration in the blocks of those alts, over the whole file
@@ -233,8 +234,10 @@ class Linter:
                 self.err(0, "scene-arclog", f"no arclog file {arclog.name} under gen/")
         self.prescan(forms)
         self.forms(forms, alt=False)
-        if "&output" not in self.declared and not self.scene:
-            self.err(0, "no-output", "no &output relation")
+        if not self.outs and not self.scene:
+            self.err(0, "no-output", "no OUT form")
+        for line in self.outs[1:]:
+            self.err(line, "no-output", "a second OUT form")
         self.records(forms)
         structure(self, forms)
         if not self.scene:
@@ -379,6 +382,8 @@ class Linter:
             self.choose(f, alt)
         elif h == "RIGID_DET":
             self.rigid(f, alt)
+        elif h == "OUT":
+            self.out(f, alt)
         elif h == "DEMONSTRATED":
             self.demonstrated(f, alt)
         elif h == "DEMO_RULE":
@@ -825,6 +830,19 @@ class Linter:
         pcols["pose"] = inst_labels
         self.stored.update(f"{name}.{x}" for x in names)
         self.declared[name] = ("rigid", None)
+
+    def out(self, f: L, alt: bool) -> None:
+        """`(OUT <atom> [<atom>])`: the atoms of a key body, whose two `^` labels select the Position column and the
+        Color column of the output (`docs/arclog/arclog.md#the-out-form`)."""
+        self.outs.append(f.line)
+        atoms = f.items[1:]
+        if not atoms or len(atoms) > 2 or not all(isinstance(a, L) and a.head and a.head not in FORMS | OPS for a in atoms):
+            self.err(f.line, "key-form", "(OUT <atom> [<atom>]): one or two atoms")
+            return
+        scope = Scope(None, key_mode=True, kind="key")
+        Ctx(self, "RULE", alt, own=None, self_name="").body(atoms, scope)
+        if len(scope.keys) != 2:
+            self.err(f.line, "key-form", f"OUT marks {len(scope.keys)} labels ^, and selects two columns")
 
     def parse_clause(self, c: L, alt: bool, name: str) -> None:
         """`(parse (<head sites>) <body>)`: a determination over the task
@@ -1944,7 +1962,7 @@ def structure(lt: Linter, forms) -> None:
             if p.form.head == "RENDER" and p.slug is not None:
                 err(p.form.line, "render-place", "a RENDER stands at the tail, under no claim block")
 
-    # -- APPROXIMATED and &output
+    # -- APPROXIMATED and OUT
     for f in forms:
         for c in walk(f):
             if not (isinstance(c, L) and c.head in CLAIMS):
@@ -1957,8 +1975,8 @@ def structure(lt: Linter, forms) -> None:
                     err(x.line, "approximated", "(APPROXIMATED \"<the rule the program runs>\")")
     if not lt.scene:
         for p in pl:
-            if p.name == "&output" and p.slug is not None:
-                err(p.form.line, "output-tail", "&output stands in the tail, under no claim block")
+            if p.form.head == "OUT" and (p.slug is not None or p.alts):
+                err(p.form.line, "output-tail", "OUT stands in the tail, under no claim block and in no ALT block")
 
     # -- where a relation stands
     concept_pl = [p for p in pl if not p.alts]

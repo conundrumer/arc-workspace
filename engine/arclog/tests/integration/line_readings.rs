@@ -47,6 +47,8 @@ const ARCLOG: &str = "
 
       (RULE &v
         (&j *N)))))
+
+(OUT (&output ^P ^Col))
 ";
 
 fn names() -> Vec<Vec<String>> {
@@ -163,6 +165,8 @@ const BODY_LINE: &str = "
   (RULE &output
     (input *P *Col)
     (&cell P)))
+
+(OUT (&output ^P ^Col))
 ";
 
 #[test]
@@ -184,6 +188,8 @@ const OUTPUT_PORT: &str = "
   (RULE &output
     (input *P *Col)
     (&ring.value (:v Col))))
+
+(OUT (&output ^P ^Col))
 ";
 
 #[test]
@@ -228,6 +234,8 @@ const CONCEPT_READ: &str = "
   (RULE &output
     (input *P *Col)
     (&gap P Col)))
+
+(OUT (&output ^P ^Col))
 ";
 
 #[test]
@@ -271,9 +279,9 @@ fn verdict_of(forms: &str) -> Verdict {
 
 #[test]
 fn a_lifted_read_bound_by_ex_output_reads_the_train_examples_alone() {
-    let bound = verdict_of("(DET &d (ex_output (:E *E)) (&c (:E E) (:Col *Col)))\n(RULE &output (input *P *Col) (&d (:Col Col)))");
+    let bound = verdict_of("(DET &d (ex_output (:E *E)) (&c (:E E) (:Col *Col)))\n(RULE &output (input *P *Col) (&d (:Col Col)))\n(OUT (&output ^P ^Col))");
     assert_eq!(bound, Verdict::Consistent);
-    let unbound = verdict_of("(DET &d (ex_input *E) (&c (:E E) (:Col *Col)))\n(RULE &output (input *P *Col) (&d (:Col Col)))");
+    let unbound = verdict_of("(DET &d (ex_input *E) (&c (:E E) (:Col *Col)))\n(RULE &output (input *P *Col) (&d (:Col Col)))\n(OUT (&output ^P ^Col))");
     assert_ne!(unbound, Verdict::Consistent);
 }
 
@@ -285,6 +293,8 @@ const UNREAD_COLUMN: &str = "
   (RULE &output
     (input *P *Col)
     (&cell (:Col Col))))
+
+(OUT (&output ^P ^Col))
 ";
 
 #[test]
@@ -316,6 +326,8 @@ const READS_IN_THE_BLOCK_THAT_HOLDS_THE_LINE: &str = "
         (input *P *Col)
         (&cell (:Col Col))
         (&other P)))))
+
+(OUT (&output ^P ^Col))
 ";
 
 #[test]
@@ -343,6 +355,8 @@ const KEYED_PORT: &str = "
 
   (RULE &output
     (&bbox.box (:key *Col) *B)))
+
+(OUT (&output ^B ^Col))
 ";
 
 #[test]

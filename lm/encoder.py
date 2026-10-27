@@ -3526,14 +3526,24 @@ class FeatureEncoder(nn.Module):
 # baseline language model samples from the gold prefix; its `labels.jsonl` (lm/rollout_labels.py) gives each case's
 # branch point, continuation and outcome. The value head scores a table by one logit, trained to rank, among one
 # branch point's continuations, the tables after the branch whose label is 1 above those whose label is 0. A table
-# has two labels: `solving`, the continuation's solving (`value_solving`), and `consistent`, the verdict of the
-# RULE clause whose evaluation gave the table: 1 where the relation that its END finishes, read as the output, solves
-# every train pair. The second label is given per rule.
+# has two labels: `solving`, the continuation's solving (`value_solving`), and `consistent`, the verdict of the rule
+# test of the RULE clause whose evaluation gave the table: 1 where the relation that its END finishes, read as the
+# output, solves every train pair. The second label is given per rule, by the sampler's `--rule-tests`, and a rollout
+# export made without them has no such verdicts (`read_value_labels`).
 
 VALUE_LABELS = ("solving", "consistent")
 
-def read_value_labels(path):
-    """{(task, case): label} from a labels.jsonl, one JSON object per line (lm/rollout_labels.py)."""
+def read_value_labels(path, label="solving"):
+    """{(task, case): label} from a labels.jsonl, one JSON object per line (lm/rollout_labels.py). Raises DataFault
+    under the label `consistent` where the settings line of the `samples.jsonl` beside it does not give `rule_tests`
+    true: the verdicts of `rules` are those of the rule tests, which the sampler's `--rule-tests` runs."""
+    if label == "consistent":
+        samples = Path(path).parent / "samples.jsonl"
+        with open(samples) as f:
+            settings = json.loads(f.readline())["settings"]
+        if not settings.get("rule_tests"):
+            raise DataFault(f"{samples}: --value-label consistent reads the verdicts of the rule tests, and the settings "
+                            f"line gives rule_tests {settings.get('rule_tests')}; sample with --rule-tests")
     out = {}
     with open(path) as f:
         for line in f:
@@ -3620,7 +3630,7 @@ def value_groups(records):
 
 
 def load_rollouts(rollout_dir, cache=None, budget=None, max_rows=None, tasks_dir=None, strict=True,
-                  allow_violations=False):
+                  allow_violations=False, label="solving"):
     """A rollout export and the labels.jsonl in its directory, as {(task, case): member}, a member a dict of
     "tables", "records" (`value_records`), "group", "solving" and "rate" (its group's share of solving members),
     and the faults of the cases left out. The tables come through `load_tables` and its cache at `cache`, or, where
@@ -3629,8 +3639,9 @@ def load_rollouts(rollout_dir, cache=None, budget=None, max_rows=None, tasks_dir
     `mark_over_budget` and `mark_over_rows` do, before the flags are read. A case that the labels do not give is
     left out. Raises DataFault, naming the task, where a sampled continuation's LM was trained on its task's fold
     (`sampler_fold` k/n with `train.fold_of(task, n) == k`) and the labels do not mark the task held out (`heldout`):
-    a fold LM trains on its fold's tasks less the held-out ones."""
-    labels = read_value_labels(Path(rollout_dir) / "labels.jsonl")
+    a fold LM trains on its fold's tasks less the held-out ones, and, under the label `consistent`, where the export's
+    settings line does not give `rule_tests` true (`read_value_labels`)."""
+    labels = read_value_labels(Path(rollout_dir) / "labels.jsonl", label)
     for (task, case), lab in labels.items():
         if lab.get("sampler_fold") and not lab.get("heldout"):
             from train import fold_of

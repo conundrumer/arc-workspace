@@ -163,8 +163,8 @@ fn replay_streams<T: Default + Clone>(
     Ok((task.train.len(), replayed))
 }
 
-/// What a case's replay ends on, from the consistency of the last `RULE`
-/// clause its stream ends.
+/// What a case's replay ends on, from the consistency of the last `OUT` form
+/// its stream ends.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Verdict {
     Consistent,
@@ -177,8 +177,8 @@ pub enum Verdict {
     /// The message of the run fault.
     Fault(String),
     Stopped(ReachedBound),
-    /// The stream ends no `RULE` clause.
-    NoRule,
+    /// The stream ends no `OUT` form.
+    NoOut,
     /// The decoder refuses the stream, or it ends while the engine forces tokens.
     Refused(String),
     /// The writer gives the case no stream.
@@ -186,7 +186,7 @@ pub enum Verdict {
 }
 
 /// The verdict of one case, with the index of the token that ends the last
-/// `RULE` clause the replay reached.
+/// `OUT` form the replay reached.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CaseVerdict {
     pub case: String,
@@ -224,7 +224,7 @@ pub fn solver_verdicts(corpus: &Path, tasks: &Path, id: &str, constructions: &Co
                 let (verdict, token) = match case.replay {
                     Err(fault) => (Verdict::NoStream(fault), None),
                     Ok((StreamReplay { fault: Some(message), record }, _)) => (Verdict::Refused(message), record.map(|(index, _)| index)),
-                    Ok((StreamReplay { fault: None, record: None }, _)) => (Verdict::NoRule, None),
+                    Ok((StreamReplay { fault: None, record: None }, _)) => (Verdict::NoOut, None),
                     Ok((StreamReplay { fault: None, record: Some((index, recorded)) }, relations)) => {
                         let verdict = match recorded {
                             Recorded::Ended(verdict) => verdict,

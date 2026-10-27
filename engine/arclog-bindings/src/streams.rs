@@ -30,7 +30,7 @@ use crate::decoder::mask_bytes;
 /// `numpy.frombuffer(masks, numpy.uint8).reshape(-1, (len(vocabulary) + 7) // 8)`
 /// has one row for each token the model writes. Otherwise it is `None`, and
 /// `mask_fault` is `None` where `tasks` is `None` and else the reason the
-/// case gives no masks. Where the decode of the case ends at its `&output`
+/// case gives no masks. Where the decode of the case ends at its `OUT` form
 /// before the stream does, `ids` and `model` hold the tokens before the first
 /// token the model writes after that end, and `masks` has one row for each
 /// model token among them.

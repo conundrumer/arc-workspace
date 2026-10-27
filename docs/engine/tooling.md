@@ -20,7 +20,7 @@ The step ends when a refine pass runs on the engine, the checks of the present l
     - record a witness
     - find the proposers whose derivation solves the train pairs, as `$Derived` alts
     - find the relations with one value on every input, as `$Stored` alts
-- Explain gives, for a case on an input, the alts the case takes, the models enumerated, the parameter values, and each relation's row count. For an undefined output, it gives the cell, and the first atom of `&output`'s body, in body order, whose relation has no row at the cell's binding. On request, it gives the same for that atom's relation, one step further back in the dependency graph.
+- Explain gives, for a case on an input, the alts the case takes, the models enumerated, the parameter values, and each relation's row count. For an undefined output, it gives the cell, and the first atom of the `OUT` form, in written order, whose relation has no row at the cell's binding. On request, it gives the same for that atom's relation, one step further back in the dependency graph.
 
 ## CLI
 

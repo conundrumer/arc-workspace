@@ -41,7 +41,9 @@ summed cost counts in `--step-rows`, then the masked loss's programs within the 
 whole, with no field hidden and one random identifier per relation slot; the value loss is taken over its tables at
 the positions below `--value-positions` after the branch (encoder.py, `value_lists` and `value_loss`), times
 `--value-weight`, beside the masked loss. `--value-label` selects each table's label: `solving` (the default), the
-continuation's solving, or `consistent`, the engine's verdict on the rule whose evaluation gave the table. A branch point
+continuation's solving, or `consistent`, the engine's rule test of the rule whose evaluation gave the table, which needs
+a rollout export of a `lm/sample.py --rule-tests` run and raises a DataFault where the export's settings line does not
+give `rule_tests` true. A branch point
 is held out where its task is held out. The log gives, under "train" and "heldout", `value_loss`, `value_pair_acc`
 (the pairwise ranking accuracy over each list's pairs of a member of label 1 and one of label 0),
 `value_pair_acc_sampled` (the same over the sampled continuations alone, without the gold one), `value_auc` (the
@@ -352,7 +354,8 @@ def parser():
     ap.add_argument("--value-tables", help="a rollout export with its labels.jsonl (lm/rollout_labels.py)")
     ap.add_argument("--value-label", choices=E.VALUE_LABELS, default="solving",
                     help="the label of a table: solving, the continuation's solving; "
-                         "consistent, the engine's verdict on the rule whose evaluation gave it")
+                         "consistent, the engine's rule test of the rule whose evaluation gave it (a rollout export "
+                         "of a sampler run with --rule-tests)")
     ap.add_argument("--value-weight", type=float, default=1.0, help="the weight of the value loss beside the masked loss")
     ap.add_argument("--value-positions", type=int, default=1,
                     help="the value loss takes the tables at the positions after the branch below this, each position "
@@ -418,7 +421,7 @@ def main():
         assert a.value_tables, "--value needs --value-tables"
         members, vskipped = E.load_rollouts(a.value_tables, f"{a.data}/{Path(a.value_tables).resolve().name}.tables.cache",
                                             a.enc_budget, a.enc_max_rows, strict=not a.allow_check_violations,
-                                            allow_violations=a.allow_check_violations)
+                                            allow_violations=a.allow_check_violations, label=a.value_label)
         if vskipped:
             print(f"DATA FAULT: {len(vskipped)} rollout cases whose tables export cannot be read, left out: {vskipped}")
         for m in members.values():

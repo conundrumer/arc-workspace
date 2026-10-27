@@ -1,11 +1,16 @@
-//! The judged run of a case on a task: the search for the grid columns of
-//! the relation it tests, as `docs/engine/cases.md#grid-columns` gives, and,
-//! by those columns, the case's output set on each pair and whether it
-//! solves each pair and the task, as `docs/engine/cases.md#solves` gives.
+//! The judged run of a case on a task: the case's output set on each pair,
+//! read from its `OUT` form's relation by that form's columns, and whether
+//! it solves each pair and the task, as `docs/engine/cases.md#solves` gives.
+//! The tests of a decode also run here: of the `OUT` form, and, under the
+//! rule tests of `docs/engine/synthesis.md#decode-settings`, of the relation
+//! of a `RULE` clause, whose grid columns are searched for as that setting
+//! gives.
 
 use std::ops::ControlFlow;
 
-use crate::eval::output::{candidate_columns, read_grid, GridColumns};
+use crate::eval::output::{read_grid, GridColumns};
+use crate::relations::ColumnIndex;
+use crate::types::ValueType;
 use crate::eval::{Evaluation, GridValue, ModelsEnd, Outcome, RelationValue, RunFault, Stop};
 use crate::task::JudgedTask;
 use crate::terms::Example;
@@ -23,12 +28,13 @@ pub enum Depth {
     Full,
 }
 
-/// What the search for the grid columns finds.
+/// What the test of a relation against the train pairs finds: the grid
+/// columns under which the relation solves every train pair, for an `OUT`
+/// form's relation its own columns.
 #[derive(Clone, Debug)]
 pub enum Found {
     Columns(GridColumns),
-    /// No pair of columns solves every train pair, so the case is undefined
-    /// on every input.
+    /// No pair of columns solves every train pair.
     None,
     /// The relation stopped at a bound on a train pair.
     Stopped(Stop),
@@ -38,7 +44,6 @@ pub enum Found {
 /// test pairs, each with whether the case solves it.
 #[derive(Clone, Debug)]
 pub struct JudgedRun {
-    pub columns: Found,
     pub pairs: Box<[JudgedOutput]>,
 }
 
@@ -63,62 +68,131 @@ fn pair_candidates(judged: &JudgedTask, world: World) -> Vec<PairCandidates<'_>>
     train.chain(judged.test.iter().map(|pair| PairCandidates::of(pair, Section::Test, world))).collect()
 }
 
-/// The judged run of `relation`, the relation the case tests, of the case
+/// The judged run of `relation`, the relation of the `OUT` form of the case
 /// that `evaluation` evaluates, against the pairs of `judged`, under
-/// `world`, each pair's enumeration going as far as `depth` gives. With no
-/// grid columns, the case's set is `undefined` on every pair, and with a
-/// stop in the search, that stop.
+/// `world`, each pair's enumeration going as far as `depth` gives.
 pub fn judged_run(evaluation: &Evaluation<'_>, relation: &GraphRelation, judged: &JudgedTask, world: World, depth: Depth) -> Outcome<JudgedRun> {
     let candidates = pair_candidates(judged, world);
-    let columns = grid_columns(evaluation, relation, &candidates[..judged.train.len()])?;
     let pairs = candidates
         .iter()
         .zip(evaluation.task.examples())
         .map(|(pair, example)| {
-            let set = match &columns {
-                Found::Columns(columns) => {
-                    let comparison = match depth {
-                        Depth::Decided => Comparison::Pair(pair),
-                        Depth::Full => Comparison::Full,
-                    };
-                    output_sets(evaluation, relation, example, &[*columns], &[comparison])?.pop().expect("one set")
-                }
-                Found::None => OutputSet::Undefined,
-                Found::Stopped(stop) => OutputSet::Stopped(stop.clone()),
+            let comparison = match depth {
+                Depth::Decided => Comparison::Pair(pair),
+                Depth::Full => Comparison::Full,
             };
+            let set = output_sets(evaluation, relation, example, &[GridColumns::OUT], &[comparison])?.pop().expect("one set");
             let solved = solves(&set, pair);
             Ok(JudgedOutput { set, solved })
         })
         .collect::<Outcome<_>>()?;
-    Ok(JudgedRun { columns, pairs })
+    Ok(JudgedRun { pairs })
 }
 
-/// The grid columns of `relation`: the pair of one Position column and one
-/// Color column under which its grids, read model by model, solve each
-/// train pair, whose candidates are `train`.
-///
-/// Where two pairs of columns pass and give different output sets on an
-/// input of the task, the grid columns are underdetermined, and this gives
-/// a [`RunFault`] at the form of `relation`. Where several pass and agree
-/// on every input, this gives the first by column position. A stop at a
-/// bound on an input the search reads ends the search with that stop.
-pub fn grid_columns(evaluation: &Evaluation<'_>, relation: &GraphRelation, train: &[PairCandidates<'_>]) -> Outcome<Found> {
-    grid_columns_by(evaluation, relation, train, &mut |example, columns, comparisons| {
-        output_sets(evaluation, relation, example, columns, comparisons)
-    })
+/// What a test of a relation against the train pairs searches for: nothing,
+/// for the `OUT` form's relation, whose grid columns are its own, or the pair
+/// of one Position column and one Color column of the relation of a `RULE`
+/// clause under which it solves every train pair.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Tested {
+    Out,
+    Rule,
+}
+
+impl Tested {
+    /// The grid columns that the test of `relation` tries: the `OUT` form's
+    /// own, or each pair of a Position column and a Color column of the
+    /// relation of a `RULE` clause.
+    fn candidates(self, evaluation: &Evaluation<'_>, relation: &GraphRelation) -> Outcome<Vec<GridColumns>> {
+        match self {
+            Tested::Out => Ok(vec![GridColumns::OUT]),
+            Tested::Rule => {
+                let types = evaluation.program.types.columns(relation).ok_or_else(|| RunFault {
+                    message: "the columns of the tested relation have no types".into(),
+                    form: evaluation.program.program.form_of(relation.node).clone(),
+                })?;
+                Ok(candidate_columns(types))
+            }
+        }
+    }
+
+    /// The test of `relation` at the evaluation, against the train pairs
+    /// `train`, with the output sets it evaluated.
+    pub(crate) fn recorded(self, evaluation: &Evaluation<'_>, relation: &GraphRelation, train: &[PairCandidates<'_>]) -> (Outcome<Found>, Observed) {
+        let mut observed = Observed::default();
+        let found = self.found(evaluation, relation, train, &mut |example, columns, comparisons| {
+            recorded_sets(evaluation, relation, &mut observed, example, columns, comparisons)
+        });
+        (found, observed)
+    }
+
+    /// The test of `relation` over the evaluations, each with the output
+    /// sets that its assignment's test recorded.
+    pub(crate) fn observed(self, evaluations: &[Evaluation<'_>], observations: &mut [Observed], relation: &GraphRelation, train: &[PairCandidates<'_>]) -> Outcome<Found> {
+        self.found(&evaluations[0], relation, train, &mut |example, columns, comparisons| {
+            output_sets_observed(evaluations, observations, relation, example, columns, comparisons)
+        })
+    }
+
+    /// The grid columns of `relation` among the candidates, under which the
+    /// grids it gives, read model by model, solve each train pair, whose
+    /// candidates are `train`, with `sets` giving the output sets.
+    ///
+    /// Where two pairs of columns pass and give different output sets on an
+    /// input of the task, the grid columns are underdetermined, and this
+    /// gives a [`RunFault`] at the form of `relation`. Where several pass
+    /// and agree on every input, this gives the first by column position. A
+    /// stop at a bound on an input the search reads ends the search with
+    /// that stop.
+    fn found(
+        self,
+        evaluation: &Evaluation<'_>, relation: &GraphRelation, train: &[PairCandidates<'_>],
+        sets: &mut dyn FnMut(Example, &[GridColumns], &[Comparison<'_, '_>]) -> Outcome<Vec<OutputSet>>,
+    ) -> Outcome<Found> {
+        let mut passing = self.candidates(evaluation, relation)?;
+        for (pair, example) in train.iter().zip(evaluation.task.examples()) {
+            if passing.is_empty() {
+                break;
+            }
+            let comparisons = vec![Comparison::Pair(pair); passing.len()];
+            let sets = sets(example, &passing, &comparisons)?;
+            let mut kept = Vec::new();
+            for (columns, set) in passing.into_iter().zip(sets) {
+                match set {
+                    OutputSet::Stopped(stop) => return Ok(Found::Stopped(stop)),
+                    set if solves(&set, pair) => kept.push(columns),
+                    _ => {}
+                }
+            }
+            passing = kept;
+        }
+        let Some(&first) = passing.first() else { return Ok(Found::None) };
+        if passing.len() > 1 {
+            let comparisons = vec![Comparison::Full; passing.len()];
+            for example in evaluation.task.examples() {
+                let sets = sets(example, &passing, &comparisons)?;
+                if let Some(stop) = sets.iter().find_map(|set| if let OutputSet::Stopped(stop) = set { Some(stop) } else { None }) {
+                    return Ok(Found::Stopped(stop.clone()));
+                }
+                if sets.iter().any(|set| !same_set(set, &sets[0])) {
+                    return Err(RunFault { message: "the grid columns of the tested relation are underdetermined".into(), form: evaluation.program.program.form_of(relation.node).clone() });
+                }
+            }
+        }
+        Ok(Found::Columns(first))
+    }
+}
+
+/// The pairs of a Position column and a Color column of a relation whose
+/// columns take `types`, each a candidate for its grid columns.
+fn candidate_columns(types: &[ValueType]) -> Vec<GridColumns> {
+    let of = |ty: ValueType| types.iter().enumerate().filter(move |(_, t)| **t == ty).map(|(i, _)| ColumnIndex(i as u16));
+    of(ValueType::Box).flat_map(|position| of(ValueType::Color).map(move |color| GridColumns { position, color })).collect()
 }
 
 /// Output sets already evaluated during the assignment filter.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Observed(Vec<(Example, GridColumns, bool, OutputSet)>);
-
-pub(crate) fn grid_columns_recorded(evaluation: &Evaluation<'_>, relation: &GraphRelation, train: &[PairCandidates<'_>]) -> (Outcome<Found>, Observed) {
-    let mut observed = Observed::default();
-    let found = grid_columns_by(evaluation, relation, train, &mut |example, columns, comparisons| {
-        recorded_sets(evaluation, relation, &mut observed, example, columns, comparisons)
-    });
-    (found, observed)
-}
 
 /// The output set of `relation` on `example` by each of `columns`, each
 /// compared as the comparison at its index in `comparisons` gives: a set
@@ -157,12 +231,6 @@ fn recorded_sets(evaluation: &Evaluation<'_>, relation: &GraphRelation, observed
         .collect())
 }
 
-pub(crate) fn grid_columns_observed(evaluations: &[Evaluation<'_>], observations: &mut [Observed], relation: &GraphRelation, train: &[PairCandidates<'_>]) -> Outcome<Found> {
-    grid_columns_by(&evaluations[0], relation, train, &mut |example, columns, comparisons| {
-        output_sets_observed(evaluations, observations, relation, example, columns, comparisons)
-    })
-}
-
 pub(crate) fn output_sets_observed(evaluations: &[Evaluation<'_>], observations: &mut [Observed], relation: &GraphRelation, example: Example, columns: &[GridColumns], comparisons: &[Comparison<'_, '_>]) -> Outcome<Vec<OutputSet>> {
     let mut enumerations: Vec<(Enumeration<'_, '_>, Next)> = comparisons.iter().map(|&comparison| (Enumeration::new(comparison), Next::GoOn)).collect();
     let mut outside = vec![false; columns.len()];
@@ -188,48 +256,6 @@ pub(crate) fn output_sets_observed(evaluations: &[Evaluation<'_>], observations:
         }
     }
     Ok(enumerations.into_iter().zip(outside).map(|((enumeration, _), outside)| if outside { OutputSet::Outside } else { enumeration.finish() }).collect())
-}
-
-fn grid_columns_by(
-    evaluation: &Evaluation<'_>, relation: &GraphRelation, train: &[PairCandidates<'_>],
-    sets: &mut dyn FnMut(Example, &[GridColumns], &[Comparison<'_, '_>]) -> Outcome<Vec<OutputSet>>,
-) -> Outcome<Found> {
-    let form = evaluation.program.program.form_of(relation.node).clone();
-    let types = evaluation.program.types.columns(relation).ok_or_else(|| RunFault {
-        message: "the columns of the tested relation have no types".into(),
-        form: form.clone(),
-    })?;
-    let mut passing = candidate_columns(types);
-    for (pair, example) in train.iter().zip(evaluation.task.examples()) {
-        if passing.is_empty() {
-            break;
-        }
-        let comparisons = vec![Comparison::Pair(pair); passing.len()];
-        let sets = sets(example, &passing, &comparisons)?;
-        let mut kept = Vec::new();
-        for (columns, set) in passing.into_iter().zip(sets) {
-            match set {
-                OutputSet::Stopped(stop) => return Ok(Found::Stopped(stop)),
-                set if solves(&set, pair) => kept.push(columns),
-                _ => {}
-            }
-        }
-        passing = kept;
-    }
-    let Some(&first) = passing.first() else { return Ok(Found::None) };
-    if passing.len() > 1 {
-        let comparisons = vec![Comparison::Full; passing.len()];
-        for example in evaluation.task.examples() {
-            let sets = sets(example, &passing, &comparisons)?;
-            if let Some(stop) = sets.iter().find_map(|set| if let OutputSet::Stopped(stop) = set { Some(stop) } else { None }) {
-                return Ok(Found::Stopped(stop.clone()));
-            }
-            if sets.iter().any(|set| !same_set(set, &sets[0])) {
-                return Err(RunFault { message: "the grid columns of the tested relation are underdetermined".into(), form });
-            }
-        }
-    }
-    Ok(Found::Columns(first))
 }
 
 /// The output set of `relation` on `example` by each of `columns`, each

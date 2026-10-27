@@ -14,14 +14,15 @@ streams (engine/arclog-py/tables_export.py, `export_streams`), whose case names 
 
 <out> (default `<rollout export>/labels.jsonl`) gets, per sampler line, {"case": the export's case name, "task",
 "corpus_case", "branch", "rollout", "prefix_tokens", "prefix_rules", "prefix_tables", "ended" (the sampler's),
-"consistency" (the verdict of the export's `report.txt` at the last RULE end, `ended <kind> at token <i>`, or null),
+"consistency" (the verdict of the export's `report.txt` at the END of the OUT form that holds, `ended <kind> at token <i>`, or null),
 "solved_test", "fault" (the report's fault line for the case, or null; a stream that faults or lies past the
 export's step cap has one), "sampler_run" (the sampling LM's run directory, the settings line's `--model`) and
 "sampler_fold" (that LM's `--fold`, k/n, from the settings line's `model_meta`, else from the run's model.json; null
 for an LM trained without one); both are null for a gold continuation; "heldout" (whether the sampler's data export,
 the settings line's `--data`, marks the task held out in its cases.npz; null where the line gives no `--data` or the
-export holds no case of the task); "rules" (the sampler's, the engine's
-verdict on each RULE clause of the continuation, in order, or null for a gold line of a sampler that gave none) and
+export holds no case of the task); "rules" (the sampler's, the rule test's
+verdict on each RULE clause of the continuation, in order, or null where the sampler's settings line does not give `rule_tests`
+true, or for a gold line of a sampler that gave none) and
 "rule_ends" (the stream index of the end of each RULE clause of the continuation that ends)}. `prefix_tables` is
 the count of the case's export tables that the prefix gives: the evidence tables, and each table whose `token`, the
 stream index of the step that gives it, is below prefix_tokens. The export numbers a case's tables in the order of their steps, so the first
@@ -30,8 +31,8 @@ only the tables of the steps from its token `tokens` on, after the tables of its
 before min(prefix_tokens, `tokens`) with its own tables before prefix_tokens, so the count is the one that the export of the same streams without bases gives.
 It is null for a case that the export does not hold.
 
-A clause is one top-level form: it opens at a form keyword the model writes (`FORM_KEYWORDS`), as lm/sample.py's
-`--max-clause` counts clauses. A RULE clause ends at the first declaration of a relation that the engine makes after
+A clause is one top-level form: it opens at a form keyword the model writes (`FORM_KEYWORDS`, the `OUT` keyword among
+them), as lm/sample.py's `--max-clause` counts clauses. A RULE clause ends at the first declaration of a relation that the engine makes after
 its RULE (an id that the model did not write, of the kind "relation"), and its end is the index of that declaration.
 The declarations of an INIT form stand before its inputs, so they end no RULE clause. A continuation's last
 clause can be open (a stream cut at the sampler's step cap or at an empty mask), with no end and no verdict.
@@ -40,7 +41,7 @@ A ValueError stops the run in each of these cases: a line's prefix mode is other
 prefix can end off a rule boundary; a line under `--prefix random` gives no corpus case; the lines of one task,
 corpus case and branch differ in `prefix_tokens` or `prefix_tables`, or hold more than one gold continuation; the
 report gives a case neither a verdict nor a fault line; a line's `rules` count other RULE clause ends than
-`rule_ends`.
+`rule_ends`, where the settings line gives `rule_tests` true.
 """
 import json, sys
 from pathlib import Path
@@ -50,7 +51,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "engine" / "arclog-py"))
 import export_checks
 
-FORM_KEYWORDS = frozenset({"RULE", "DET", "INIT", "CHOOSE", "RIGID_DET"})   # the tokens the model writes to open a top-level form
+FORM_KEYWORDS = frozenset({"RULE", "DET", "INIT", "CHOOSE", "RIGID_DET", "OUT"})   # the tokens the model writes to open a top-level form
 POINT_EVIDENCE = 2   # the point code of an evidence table in tables.parquet
 ONE_CELL = '{"train": [{"input": [[0]], "output": [[0]]}], "test": [{"input": [[0]]}]}'   # a task to open a session
 
@@ -158,6 +159,7 @@ def labels(sampler_path, export):
             raise ValueError(f"{sampler_path}: sample.py --prefix {prefix} can end a prefix off a rule boundary, which is "
                              f"no branch point; labels take --prefix random or 0")
     spellings, kinds = vocabulary(settings["settings"])
+    rule_tests = bool(settings["settings"].get("rule_tests"))
     export = Path(export)
     verdicts, faults = read_report(export / "report.txt")
     names = [case_name(s["task"], s["case"], s["branch"], s["rollout"]) for s in lines]
@@ -184,7 +186,7 @@ def labels(sampler_path, export):
             raise ValueError(f"{s['task']} {n}: the export's report.txt gives no verdict and no fault line")
         sampled = s["rollout"] != "gold"
         ends = rule_ends(s["ids"], s["model"], spellings, kinds, int(s["prefix_tokens"]))
-        if s.get("rules") is not None and len(s["rules"]) != len(ends):
+        if rule_tests and s.get("rules") is not None and len(s["rules"]) != len(ends):
             raise ValueError(f"{s['task']} {n}: {len(s['rules'])} verdicts in `rules` and {len(ends)} RULE clause ends "
                              f"in the continuation")
         out.append({"case": n, "task": s["task"], "corpus_case": s["case"], "branch": int(s["branch"]),
@@ -194,7 +196,7 @@ def labels(sampler_path, export):
                     "sampler_run": m["sampler_run"] if sampled else None,
                     "sampler_fold": m["sampler_fold"] if sampled else None,
                     "heldout": heldout_of[m["sampler_data"]].get(s["task"]) if m["sampler_data"] is not None else None,
-                    "rules": s.get("rules"), "rule_ends": ends})
+                    "rules": s.get("rules") if rule_tests else None, "rule_ends": ends})
     return out
 
 

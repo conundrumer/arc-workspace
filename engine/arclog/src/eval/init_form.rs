@@ -15,7 +15,7 @@ use crate::eval::{Evaluation, FormBodies, Outcome, RelationValue, RunFault};
 use crate::terms::{Constant, Term};
 use crate::hash::StableHashMap;
 use crate::program::path::{node_at, NodePath, NodeRef};
-use crate::program::{Body, ColumnName, Instance, InstanceInput, InstanceInputPart, InstancePart, KeyClausePart, LabelId, PortName, Site};
+use crate::program::{Body, ColumnName, Instance, InstanceInput, InstanceInputPart, InstancePart, KeyClausePart, LabelId, Out, PortName, Site};
 use crate::registry::{is_key, Column, ColumnType, Component, InputPort, LibEntry, TypeParameter};
 use crate::relations::{Relation, Row, RowSet};
 use crate::resolver::columns::projection;
@@ -100,6 +100,14 @@ pub(super) fn key_group_rows(key: Option<&Relation>) -> Vec<Row> {
 /// column flows of the form's relations read.
 pub(crate) fn key_clause_memo(program: &CheckedProgram, form: &NodePath, key_body: &(&Body, NodePath), key_labels: &[LabelId]) -> Result<InstanceClause, ir::CompileFault> {
     program.instance_clause(form, None, || key_clause(program, form, key_body, key_labels).map(|(clause, paths)| (clause, paths, 0)))
+}
+
+/// The clause of the body of the `OUT` form `out` at `form`, whose columns
+/// are its `^` labels in order of appearance, with the paths of its nodes:
+/// the compile of a key body, as [`key_clause_memo`] gives it.
+pub(crate) fn out_clause(program: &CheckedProgram, form: &NodePath, out: &Out) -> Result<InstanceClause, ir::CompileFault> {
+    let labels: Vec<LabelId> = out.key.columns.iter().map(|column| column.label).collect();
+    key_clause_memo(program, form, &(out.key.body.value(), form.child(Out::BODY)), &labels)
 }
 
 /// The clause of the key body `key_body` of the form at `form`, whose

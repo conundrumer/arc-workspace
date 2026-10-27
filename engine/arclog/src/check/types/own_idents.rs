@@ -336,7 +336,7 @@ impl<'a> Places<'a> {
         };
         let derived = |relation: &ProgramRelation| Read { kind: ReadKind::Column(relation.clone(), node.scope.clone()), relation: Some(relation.clone()) };
         Some(match &node.kind {
-            DependencyKind::Fact(_) | DependencyKind::Demonstrated(_) => Read { kind: ReadKind::Outside, relation: None },
+            DependencyKind::Fact(_) | DependencyKind::Demonstrated(_) | DependencyKind::Out(_) => Read { kind: ReadKind::Outside, relation: None },
             DependencyKind::Clause(relation) | DependencyKind::Parameter(relation) => derived(relation),
             DependencyKind::Chosen(name) => derived(&ProgramRelation::Declared(name.clone())),
             DependencyKind::RigidAssembly(name) => {

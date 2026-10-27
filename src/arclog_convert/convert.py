@@ -30,8 +30,13 @@ removes from `gen/`; nothing else reads it.
 A pass after the conversion moves the unjoined factors of clause bodies into
 the clauses that join them (`arclog_convert.pull_up`); it runs on both texts,
 and the column map lists the columns it took away from each relation no more.
+Before that pass, each text gets the tail's `OUT` form, `(OUT (&output ^<l0> ^<l1>))`,
+with `<l0>` and `<l1>` the labels that the column map entry of `&output` gives the first two
+columns of the solver's `out` (`docs/arclog/arclog.md#the-out-form`).
 A pass after that one folds each relation that only projects one earlier
-relation into the atoms that read it (`arclog_convert.projections`): it runs
+relation into the atoms that read it (`arclog_convert.projections`), the atoms of
+the `OUT` form among them, and removes `&output` where it states the output's two
+columns alone: it runs
 on both texts, and in the copy under `CORPUS` it keeps each clause it removes,
 as a relation that nothing reads. The name map lists under `checks` the check
 relations of the relations the conversion folds, which the row-parity check
@@ -72,7 +77,7 @@ from arclog_convert.lib import Col, ColMismatch, LIB_DL, Lib, SIGNATURE
 from arclog_convert.names import Checks, check_maps, column_map, dropped, folded, name_map, parity, placed, unchecked, untranslated
 from arclog_convert.plans import refresh_plans
 from arclog_convert.projections import project, readers_json
-from arclog_convert.pull_up import Rows, drop_columns, pull_up
+from arclog_convert.pull_up import OUTPUT, Rows, drop_columns, pull_up
 from arclog_convert.solver import Solver
 
 
@@ -153,6 +158,22 @@ def _with_checks(s: "Solver", lib: Lib, sig: Lib, names: dict, columns: dict, in
     return None if arclog is None else (arclog, arcdata)
 
 
+def _output_form(columns: dict) -> str:
+    """The tail's `OUT` form of a program: it reads `&output` at the arclog columns that the column map entry of
+    `&output` gives the first two columns of the solver's `out`, its Position and its Color. The entry that the
+    top level writes is the one that counts."""
+    entry = columns[OUTPUT]["out"]
+    grid = (entry["writings"][0]["columns"] if isinstance(entry, dict) else entry)[:2]
+    if len(grid) != 2 or any(len(leaves) != 1 or leaves[0]["field"] is not None for leaves in grid):
+        raise ValueError(f"the first two columns of `out` are not one arclog column each: {grid}")
+    return f"(OUT ({OUTPUT} ^{grid[0][0]['label']} ^{grid[1][0]['label']}))"
+
+
+def _with_output_form(arclog: str, form: str) -> str:
+    """`arclog` with the form after its last form, a blank line between."""
+    return arclog.rstrip("\n") + "\n\n" + form + "\n"
+
+
 def _write_json(directory: Path, stem: str, data: dict) -> None:
     (directory / f"{stem}.json").write_text(json.dumps(data, indent=1, sort_keys=True) + "\n")
 
@@ -216,6 +237,11 @@ def convert_one(stem: str) -> tuple[str, str | None, str | None, Counter, Counte
         columns = drop_columns(columns, dropped)
         paths.COLUMNS_DIR.mkdir(parents=True, exist_ok=True)
         _write_json(paths.COLUMNS_DIR, stem, columns)
+        # the tail's `OUT` form reads `&output`; the projection pass folds it into what `&output` projects
+        output = _output_form(columns)
+        arclog = _with_output_form(arclog, output)
+        if checked is not None:
+            checked = (_with_output_form(checked[0], output), checked[1])
         # the copy keeps each clause the pass removes, as a relation that nothing reads
         base = checked or (arclog, arcdata)
         kept = project(base[0], base[1], columns, keep=True)

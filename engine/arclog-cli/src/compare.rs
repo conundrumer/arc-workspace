@@ -31,7 +31,7 @@ use arclog::eval::determinations::{det_node, relation_spelled};
 use arclog::eval::{output_relation, Evaluation};
 use arclog::harness::{print_ended, require_optimized_build, run_over_corpus, CorpusSolver, SolverResult};
 use arclog::judge::candidates::World;
-use arclog::judge::run::{judged_run, Depth, Found, JudgedRun};
+use arclog::judge::run::{judged_run, Depth, JudgedRun};
 use arclog::judge::solves::OutputSet;
 use arclog::program::AltsName;
 use arclog::task::Grid;
@@ -156,7 +156,7 @@ fn compared(arguments: &Arguments, corpus: &CorpusSolver) -> Result<Vec<String>,
             }
         };
         let evaluation = case.evaluation(&values);
-        let output = output_relation(case.program).expect("a checked case program derives `&output`");
+        let output = output_relation(case.program).expect("a checked case program holds an `OUT` form");
         let run = judged_run(&evaluation, &output, &setup.judged, World::Closed, Depth::Full);
         let run = match run {
             Ok(run) => run,
@@ -197,7 +197,7 @@ fn compare_case(id: &str, key: &str, case_record: &Value, evaluation: &Evaluatio
         if agrees(got, expected) {
             continue;
         }
-        let mut line = format!("{key}, {pair}: the engine gives {}, Souffle {}", describe(run, got), expected.map_or("no outcome".to_owned(), Value::to_string));
+        let mut line = format!("{key}, {pair}: the engine gives {}, Souffle {}", describe(got), expected.map_or("no outcome".to_owned(), Value::to_string));
         if matches!(got, OutputSet::Grids(grids) if grids.len() > 1) {
             lines.push(line);
             continue;
@@ -246,16 +246,13 @@ fn grid_json(grid: &Grid) -> Value {
     Value::from(grid.rows().iter().map(|row| Value::from(row.iter().map(|&c| Value::from(c.digit())).collect::<Vec<_>>())).collect::<Vec<_>>())
 }
 
-/// What the engine gives on a pair, `got` of `run`, for a mismatch line.
-fn describe(run: &JudgedRun, got: &OutputSet) -> String {
-    let stop = |stop: &arclog::eval::Stop| format!("a stop at {:?} at the form {:?}", stop.bound, stop.form);
-    match (&run.columns, got) {
-        (Found::None, _) => "no grid columns of `&output`, so `undefined`".to_owned(),
-        (Found::Stopped(at), _) => format!("no grid columns of `&output`, by {}", stop(at)),
-        (_, OutputSet::Grids(grids)) => Value::from(grids.iter().map(grid_json).collect::<Vec<_>>()).to_string(),
-        (_, OutputSet::Undefined) => "undefined".to_owned(),
-        (_, OutputSet::Outside) => "outside".to_owned(),
-        (_, OutputSet::Stopped(at)) => stop(at),
+/// What the engine gives on a pair, `got`, for a mismatch line.
+fn describe(got: &OutputSet) -> String {
+    match got {
+        OutputSet::Grids(grids) => Value::from(grids.iter().map(grid_json).collect::<Vec<_>>()).to_string(),
+        OutputSet::Undefined => "undefined".to_owned(),
+        OutputSet::Outside => "outside".to_owned(),
+        OutputSet::Stopped(at) => format!("a stop at {:?} at the form {:?}", at.bound, at.form),
     }
 }
 

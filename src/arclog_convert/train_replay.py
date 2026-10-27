@@ -6,9 +6,9 @@ report of the cases that do not end `Consistent`.
 The command replays the files under `gen/` of `arclog_convert.out`, or of
 `--out`, with no conversion; in a linked worktree it writes no record without `--out` or `ARCLOG_OUT`; `arclog_convert.verify` runs the same replay on
 the solvers it checks. The `verdicts` binary of `arclog-cli` replays every case closed-world
-and gives each case a verdict: the consistency of the last `RULE` the stream
+and gives each case a verdict: the consistency of the last `OUT` form the stream
 ends (`Consistent`, `NotConsistent`, `SeveralValues`, `Fault`, `Stopped`),
-`NoRule` where it ends none, `Refused` where the decoder refuses the stream,
+`NoOut` where it ends none, `Refused` where the decoder refuses the stream,
 `NoStream` where the writer gives the case no stream, and `Unread` for a
 solver whose files or task do not read. The cases are the solver's cases,
 without the combinations that its `exclude` forms leave out. A task whose

@@ -66,6 +66,10 @@ impl CheckedProgram {
                 let (clause, paths) = shape.clause_at(self, form, component, &at)?.ok()?;
                 Some(BodyIr::Shared(clause, paths))
             }
+            NodeRef::Out(out) => {
+                let (clause, paths, _) = init_form::out_clause(self, form, out).ok()?;
+                Some(BodyIr::Shared(clause, paths))
+            }
             NodeRef::RigidDet(rigid) => {
                 let steps = relation.output.as_deref()?;
                 BodyIr::of(rigid::output_clause(self, form, rigid, steps.first()?))

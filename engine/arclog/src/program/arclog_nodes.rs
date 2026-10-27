@@ -23,6 +23,7 @@ pub enum Form {
     RigidDet(Node<RigidDet>),
     Demonstrated(Node<Demonstrated>),
     Alts(Node<Alts>),
+    Out(Node<Out>),
 }
 
 /// Whether a claim is about the input or the output.
@@ -540,6 +541,21 @@ impl RigidDet {
     pub fn position(&self, part: RigidDetPart) -> u32 {
         position_among(self.children(), part)
     }
+}
+
+/// An `OUT` form, as `docs/arclog/arclog.md#the-out-form` gives it: the atoms
+/// that select the output's two columns, held as the body of a key clause
+/// holds them. The key's columns are the `^` labels of the atoms in order of
+/// appearance, so the first is the Position column and the second the Color
+/// column.
+#[derive(Clone, Debug)]
+pub struct Out {
+    pub key: KeyBody,
+}
+
+impl Out {
+    /// The position of the form's one child, its body, among its children.
+    pub const BODY: u32 = 0;
 }
 
 /// A `DEMONSTRATED` form, as `docs/arclog/arclog.md#demonstrated` gives.

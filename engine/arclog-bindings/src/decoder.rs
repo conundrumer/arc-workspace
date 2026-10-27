@@ -28,6 +28,11 @@ fn pool() -> &'static Pool {
     POOL.get_or_init(|| Pool::new(None))
 }
 
+/// What `Decoder.step` gives: the ids of the tokens the engine emits, the
+/// consistency of the `OUT` form that the token ends, and the consistency of
+/// the `RULE` clause that it ends, where the decode settings run the rule tests.
+type StepResult = (Vec<u32>, Option<PyConsistency>, Option<PyConsistency>);
+
 /// A decode over a task in a session.
 ///
 /// The decode borrows the data of its session, which the struct holds in an
@@ -70,9 +75,9 @@ impl PyDecoder {
         forced.iter().map(|token| vocabulary.id(token).expect("a forced token is in the vocabulary")).collect()
     }
 
-    fn step_result(&self, result: arclog::decode::StepResult) -> PyResult<(Vec<u32>, Option<PyConsistency>)> {
+    fn step_result(&self, result: arclog::decode::StepResult) -> PyResult<StepResult> {
         match result {
-            Ok(step) => Ok((self.forced_ids(&step.forced), step.consistency.as_ref().map(PyConsistency::of))),
+            Ok(step) => Ok((self.forced_ids(&step.forced), step.consistency.as_ref().map(PyConsistency::of), step.rule_test.as_ref().map(PyConsistency::of))),
             Err(refusal) => Err(refusal_error(&refusal)),
         }
     }
@@ -102,7 +107,7 @@ impl PyDecoder {
         PyVocabulary::of(self.decoder().vocabulary())
     }
 
-    /// Whether the decode has ended at a consistent relation.
+    /// Whether the decode has ended at a consistent `OUT` form.
     #[getter]
     fn ended(&self) -> bool {
         self.decoder().output().is_some()
@@ -116,10 +121,11 @@ impl PyDecoder {
     }
 
     /// Advances the decode by the token with id `id`, and gives the ids of
-    /// the tokens the engine emits after it, with the consistency of a
-    /// `RULE` clause that the token ends, or `None`. Raises `Refusal` for a
-    /// token outside the mask, and leaves the decode as it was.
-    fn step(&mut self, id: u32) -> PyResult<(Vec<u32>, Option<PyConsistency>)> {
+    /// the tokens the engine emits after it, with the consistency of the
+    /// `OUT` form that the token ends, or `None`, and the consistency of the
+    /// `RULE` clause that it ends under the rule tests, or `None`. Raises
+    /// `Refusal` for a token outside the mask, and leaves the decode as it was.
+    fn step(&mut self, id: u32) -> PyResult<StepResult> {
         let token = self.token(id)?;
         let result = self.decoder_mut().step(token);
         self.step_result(result)

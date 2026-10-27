@@ -120,6 +120,7 @@ impl Sides<'_, '_> {
             }
             NodeRef::Clause(clause) => keyword_side(clause.keyword),
             NodeRef::RigidDet(_) => Side::TaskWide,
+            NodeRef::Out(_) => Side::PerInput,
             _ => self.read_side(path),
         };
         self.forms.insert(path.clone(), Some(side));

@@ -164,9 +164,11 @@ pub struct TableColumns {
     /// the row's columns of a `CHOOSE`, and `E` with `P` of an evidence table.
     /// The registry declares no key of a component's output.
     pub keys: Vec<Vec<Vec<u32>>>,
-    /// The index of the Position and of the Color grid column of the table
-    /// of the relation at which the replay's consistency test found them,
-    /// which map to `P` and `Col` of `ex_output`; -1 for each other table.
+    /// The index of the Position column that the `OUT` form of the decode
+    /// selects in the table of the relation of the atom that selects it, and
+    /// of the Color column in the table of the relation of the atom that
+    /// selects that one, which map to `P` and `Col` of `ex_output`; -1 for
+    /// each other table.
     pub output_position: Vec<i32>,
     pub output_color: Vec<i32>,
 }
@@ -512,8 +514,8 @@ fn push_table(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, ro
             tables.fault.push(None);
             tables.depth.push(contents.depth);
             tables.keys.push(contents.keys.iter().map(|key| key.iter().map(|&column| u32::from(column)).collect()).collect());
-            tables.output_position.push(contents.grid.map_or(-1, |grid| i32::from(grid.position.0)));
-            tables.output_color.push(contents.grid.map_or(-1, |grid| i32::from(grid.color.0)));
+            tables.output_position.push(contents.selected.position.map_or(-1, i32::from));
+            tables.output_color.push(contents.selected.color.map_or(-1, i32::from));
             push_flows(out, names, row, contents);
             note_name(names, row, table);
             push_contents(out, runs, row, contents, &types, train);

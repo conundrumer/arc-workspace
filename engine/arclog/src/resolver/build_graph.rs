@@ -210,6 +210,11 @@ impl<'a> Builder<'a> {
                 }
             }
             Form::Instance(instance) => self.declare_instance(instance.value(), path, scope),
+            Form::Out(out) => {
+                let node = self.node(DependencyKind::Out(path.clone()), scope, Some(&path));
+                self.form_node.insert(path.clone(), node);
+                self.relate(node, &path, None, form_columns::form_listing(NodeRef::Out(out.value())));
+            }
         }
     }
 
@@ -330,7 +335,7 @@ impl<'a> Builder<'a> {
                     self.read_below(node, at, scope, &readers, &path);
                 }
             }
-            Form::Choose(_) | Form::RigidDet(_) => {
+            Form::Choose(_) | Form::RigidDet(_) | Form::Out(_) => {
                 let node = self.form_node[&path];
                 self.read_below(NodeRef::from(form), path.clone(), scope, &[node], &path);
             }

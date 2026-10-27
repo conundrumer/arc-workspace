@@ -27,8 +27,9 @@
 //! so that no body table is evaluated.
 //!
 //! Each table also gives the sources of each column's values, its depth in
-//! the dependency graph, its candidate keys, and, for the relation at which
-//! the replay's consistency test found the grid columns, those columns.
+//! the dependency graph, its candidate keys, and, for each relation that an
+//! atom of the `OUT` form at which the decode ended reads, the columns that
+//! the form selects in it ([`record_step`]).
 //!
 //! Beside the tables of a step, [`evidence_tables`] gives the evidence tables
 //! of a task, `ex_input` and `ex_output`, which stand before the first step.
@@ -40,11 +41,11 @@ use std::ops::ControlFlow;
 use std::sync::Arc;
 
 use arclog::check::CheckedProgram;
+use arclog::check::out::selected_sites;
 use arclog::decode::{derived_at, open_clause, projections, relation_dets, walked_dets, Assigned, Decoder, OpenClause, Projections, State};
 use arclog::eval::determinations::relation_spelled;
 use arclog::eval::examples::scope_of;
 use arclog::eval::join::{each_row, Budget};
-use arclog::eval::output::GridColumns;
 use arclog::eval::{BodyValue, Evaluation, ModelsEnd, Outcome, RelationValue, RunFault, TableWork};
 use arclog::judge::determination::{Assignment, Det, End};
 use arclog::program::path::{node_at, NodePath, NodeRef};
@@ -144,9 +145,17 @@ pub struct Contents {
     pub depth: u32,
     /// The candidate keys the program text gives, each as column positions.
     pub keys: Vec<Vec<u16>>,
-    /// The grid columns of the relation, where the replay's consistency test
-    /// found them in it.
-    pub grid: Option<GridColumns>,
+    /// The columns of the relation that the `OUT` form at which the decode
+    /// ended selects ([`record_step`]).
+    pub selected: SelectedColumns,
+}
+
+/// The columns of a table's relation that an `OUT` form selects, each by its
+/// position among the table's columns.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct SelectedColumns {
+    pub position: Option<u16>,
+    pub color: Option<u16>,
 }
 
 /// A table at a point of a form of the program.
@@ -156,6 +165,58 @@ pub struct Table {
     pub point: Point,
     /// The contents, or the fault of the relation's check or of its types.
     pub contents: Outcome<Contents>,
+}
+
+/// Appends to `tables` the tables of the last step of `decoder`
+/// ([`step_tables`]) at points `points`, each with the index of the step's
+/// token, `index`. Where the step ended the decode at an `OUT` form, it also
+/// marks, in the table of each relation an atom of the form reads, the columns
+/// of that relation the form selects: the Position column in the table of the
+/// relation of the atom that selects it, and the Color column in the table of
+/// the relation of the atom that selects that.
+pub fn record_step(tables: &mut Vec<(usize, Table)>, decoder: &Decoder<'_>, index: usize, points: Points) {
+    tables.extend(step_tables(decoder, points).into_iter().map(|table| (index, table)));
+    for (slot, selected) in selected_columns(decoder) {
+        for (_, table) in tables.iter_mut().filter(|(_, table)| table.point == Point::Relation) {
+            if let Ok(contents) = &mut table.contents {
+                if contents.relation == TableRelation::Slot(slot) {
+                    contents.selected = SelectedColumns { position: selected.position.or(contents.selected.position), color: selected.color.or(contents.selected.color) };
+                }
+            }
+        }
+    }
+}
+
+/// The columns that the `OUT` form at which `decoder` ended selects, by the
+/// slot of the relation of the atom that selects each; none while the decode
+/// has not ended. A column of a relation that no table holds, such as
+/// `input`'s, has no slot.
+fn selected_columns(decoder: &Decoder<'_>) -> Vec<(u32, SelectedColumns)> {
+    let (Some(form), Some(before)) = (decoder.output(), decoder.before()) else { return Vec::new() };
+    let Ok(checked) = decoder.finished_checked(before, decoder.state()) else { return Vec::new() };
+    let Some(NodeRef::Out(out)) = node_at(NodeRef::Program(decoder.program().value()), form) else { return Vec::new() };
+    let mut marks: Vec<(u32, SelectedColumns)> = Vec::new();
+    for (selected, site) in selected_sites(out).into_iter().enumerate() {
+        let relation = match &site.atom.relation {
+            RelationRef::Declared(name) => ProgramRelation::Declared(name.clone()),
+            RelationRef::Output(name) => ProgramRelation::Output(name.clone()),
+            RelationRef::Fact(_) | RelationRef::Lib(_) | RelationRef::DefinedPort(_) => continue,
+        };
+        let (Some(slot), Some(column)) = (decoder.relation_slot(&relation), checked.program.column_position(&form.join(&site.at))) else { continue };
+        let at = match marks.iter().position(|(held, _)| *held == slot) {
+            Some(at) => at,
+            None => {
+                marks.push((slot, SelectedColumns::default()));
+                marks.len() - 1
+            }
+        };
+        let mark = &mut marks[at].1;
+        match selected {
+            0 => mark.position = Some(column.0),
+            _ => mark.color = Some(column.0),
+        }
+    }
+    marks
 }
 
 /// The tables of the last step of `decoder`: none before the first, none where
@@ -214,6 +275,9 @@ fn relation_tables(decoder: &Decoder<'_>, before: &State) -> Vec<Table> {
     let registry = decoder.registry();
     let program = decoder.program();
     let form = NodePath::top(program.value().forms.len() as u32 - 1);
+    if decoder.state().declared_from(before.finished_slots()).next().is_none() {
+        return Vec::new();
+    }
     let checked = match decoder.finished_checked(before, decoder.state()) {
         Ok(checked) => checked,
         Err(fault) => return vec![Table { form, point: Point::Relation, contents: Err(fault.clone()) }],
@@ -232,8 +296,7 @@ fn relation_tables(decoder: &Decoder<'_>, before: &State) -> Vec<Table> {
                         .into_iter()
                         .map(|example| ExampleRows { example, rows: decoder.assigned(checked, relation.node, &dets, Some(&work), &mut |evaluation| models_at(evaluation, &relation, example)) })
                         .collect();
-                    let grid = decoder.grid_columns().filter(|_| decoder.output() == Some(declared));
-                    contents(decoder, checked, &form, &relation, slot, &dets, examples, &work).map(|contents| Contents { name: relation_spelled(declared), keys: checked.program.column_keys(relation.node), grid, ..contents })
+                    contents(decoder, checked, &form, &relation, slot, &dets, examples, &work).map(|contents| Contents { name: relation_spelled(declared), keys: checked.program.column_keys(relation.node), ..contents })
                 }
                 None => Err(RunFault { message: "the graph holds no node for a relation the form declares".into(), form: form.clone() }),
             };
@@ -268,7 +331,7 @@ fn contents(decoder: &Decoder<'_>, program: &CheckedProgram, form: &NodePath, re
     let flows = column_flows(program, relation.node, relation.output.as_deref(), &types, decoder.registry()).into();
     let depth = program.program.depth(relation.node);
     let rows = program.program.row_paths(relation.node).filter(|rows| relation.output.is_none() && rows.len() == types.len());
-    Ok(Contents { relation: TableRelation::Slot(slot), columns, dets, examples: examples.into(), projections, name: String::new(), flows, rows, depth, keys: Vec::new(), grid: None })
+    Ok(Contents { relation: TableRelation::Slot(slot), columns, dets, examples: examples.into(), projections, name: String::new(), flows, rows, depth, keys: Vec::new(), selected: SelectedColumns::default() })
 }
 
 /// The projections of the rows of `examples`, none where an example gives a
@@ -320,7 +383,7 @@ fn evidence_table(task: &Task, registry: &Registry, fact: FactRelation) -> Table
         .zip(held)
         .map(|(example, rows)| ExampleRows { example: Some(example), rows: Ok(Assigned { at: vec![(Vec::new(), vec![RelationValue::Rows(Arc::new(arclog::eval::join::one_part(rows)))])], stop: None }) })
         .collect();
-    Table { form: NodePath::default(), point: Point::Evidence, contents: Ok(Contents { relation: TableRelation::Fact(fact), columns, dets: Box::new([]), examples, projections: None, name: String::new(), flows: Box::new([]), rows: None, depth: 0, keys: vec![vec![0, 1]], grid: None }) }
+    Table { form: NodePath::default(), point: Point::Evidence, contents: Ok(Contents { relation: TableRelation::Fact(fact), columns, dets: Box::new([]), examples, projections: None, name: String::new(), flows: Box::new([]), rows: None, depth: 0, keys: vec![vec![0, 1]], selected: SelectedColumns::default() }) }
 }
 
 /// The relation of the graph that the form at `form` of `program` declares as

@@ -42,11 +42,11 @@ pub(crate) struct ConceptCase<'a> {
 }
 
 impl ConceptCase<'_> {
-    /// The judged run of `&output` on the task, closed-world, with the full
+    /// The judged run of the `OUT` form's relation on the task, closed-world, with the full
     /// output set on each pair, and the run's seconds.
     pub(crate) fn run(&self) -> (Outcome<JudgedRun>, f64) {
         let start = Instant::now();
-        let output = output_relation(self.evaluation.program).expect("a checked case program derives `&output`");
+        let output = output_relation(self.evaluation.program).expect("a checked case program holds an `OUT` form");
         let run = judged_run(&self.evaluation, &output, self.judged, World::Closed, Depth::Full);
         (run, start.elapsed().as_secs_f64())
     }

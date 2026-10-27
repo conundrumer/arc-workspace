@@ -15,10 +15,23 @@ removes none. Where a removal leaves Q standing under a claim before the first
 claim that reads it, the pass moves Q's form, with its comment lines, to the head
 of the forms of that first claim.
 
+The `OUT` form is a reader like any other, of a relation it reads by its atoms:
+an atom of it that the pass redirects reads the column or field of Q in place of
+P's column, with its label renamed to the name of that column or field and no
+site of its own beside it (`docs/arclog/arclog.md#the-out-form`). Where `&output`
+is the clause of two positive atoms on relations A and B, each site a label
+marked `*` or a site of such fields, with no label in both atoms, the Position
+label of the `OUT` form in A and its Color label in B, and the `OUT` form is the
+only reader of `&output`, the pass removes the clause and the atom of the `OUT`
+form becomes two, one on A with its site of the Position column alone and one
+on B with its site of the Color column alone: the rows of the `OUT` form are the
+product of the projections of A and B, which are the rows of the clause
+projected onto the grid columns.
+
 A clause stays where the rows its readers get would change or the program would
 not read:
-- P is `&output`, the arcdata contains P's name, or the text contains it other
-  than as the relation of an atom or the name of P's clauses.
+- The arcdata contains P's name, or the text contains it other than as the
+  relation of an atom or the name of P's clauses.
 - No atom reads P from the clause, or one that does stands outside the block of
   the clause, or in another case reads another clause of P
   (`arclog_convert.lint.alt_repeats` gives how a case reads a relation). A reader
@@ -47,6 +60,8 @@ not read:
   derives it gives, and a rule that holds for one of them keeps the clause.
 - A reader stands in a form of a kind the pass does not read, such as
   `RIGID_DET`, or a form of such a kind derives Q.
+- A reader is an `OUT` form, and the redirect gives one of its sites more than one
+  label or none.
 - After the redirect the lint gives the text a code, other than `stands-under`,
   that it did not give. Where the code is `or-implied` at an `OR` that holds a
   redirected atom, the pass first removes each branch of that `OR` that the lint
@@ -64,8 +79,8 @@ remove where it stands, and moves no form: this is the copy for the row-parity
 check, where the clause stays as a relation that nothing reads. The rows of that
 relation P say something of a case only where some reader of P, a form that held
 an atom on P before the pass redirected it, derives its own relation in the case
-and `&output` reads that relation or is it, or that relation is itself a removed
-relation of which this holds (`ReaderForm` gives when a reader derives its
+and the `OUT` form reads that relation or is it (an `OUT` form that held an atom on P is the output itself), or that
+relation is itself a removed relation of which this holds (`ReaderForm` gives when a reader derives its
 relation). `Projected.readers` gives the readers of each removed relation."""
 
 import re
@@ -92,14 +107,14 @@ INSTANCES = ("INIT", "DEMONSTRATED", "CHOOSE")
 """The forms whose inputs read by the scope of the form."""
 KEY_CLAUSES = ("key", "for")
 """The heads of the key clause of an instance and of a `CHOOSE` form."""
-READS_AS: dict[str, Reading] = {"RULE": "RULE", "DET": "DET"}
+READS_AS: dict[str, Reading] = {"RULE": "RULE", "DET": "DET", "OUT": "RULE"}
 """The reading of each form that reads as one clause does."""
 
 
 @dataclass(frozen=True, order=True)
 class ReaderForm:
     """A form that held an atom on a relation P before the pass redirected it: the relation the form derives (an
-    instance's name for an `INIT` form, the chosen relation for a `CHOOSE` form), the ALT names of its block, and the
+    instance's name for an `INIT` form, the chosen relation for a `CHOOSE` form, none for the `OUT` form, which is the output itself), the ALT names of its block, and the
     ALT names of the block of each form of that relation that stands deeper than its block. In a case that holds the
     ALT names of its block and, for no deeper block, all of that block's, the form derives its relation and so reads
     the clause of P; in any other case the atom reads nothing of P (`_Program._rederived`)."""
@@ -148,6 +163,8 @@ class _Origin:
     column: str
     field: str | None
     one: bool = False
+    relation: str = ""
+    """The relation whose column this is, once the pass settles the origin."""
 
 
 @dataclass(frozen=True)
@@ -228,6 +245,7 @@ def _settled(projection: _Projection, columns: Mapping[str, Mapping[str, Any]]) 
     whole value, by the column-map entry of the projected relation; none where an entry does not settle one."""
     out: dict[str, _Origin] = {}
     for label, origin in projection.origins.items():
+        origin = replace(origin, relation=projection.relation)
         if origin.one:
             fields = _fields(columns.get(projection.relation, {}), origin.column)
             if fields == {None}:
@@ -254,6 +272,15 @@ def _site_text(column: str, members: list[tuple[_Origin, str]]) -> str:
         return label if column[0].isupper() and bare_label(label) == column else f"(:{column} {label})"
     fields = [label if bare_label(label) == origin.field else f"(:{origin.field} {label})" for origin, label in members]
     return f"(:{column} {' '.join(fields)})"
+
+
+def _out_site(origin: _Origin) -> str | None:
+    """The site of an `OUT` form that selects the column or the field of `origin`: its label is the name of the column
+    or of the field, marked `^` (`docs/arclog/arclog.md#the-out-form`); none for a whole value of a column of a type
+    parameter, which no label name stands for."""
+    if origin.field is not None:
+        return f"(:{origin.column} ^{origin.field})"
+    return f"^{origin.column}" if origin.column[0].isupper() else None
 
 
 def _extent(text: str, form: L) -> tuple[int, int]:
@@ -322,8 +349,8 @@ class _Program:
         goes."""
         baseline = None
         for p in self.placed:
-            projection = _projection(p.form) if p.name else None
-            found = None if projection is None else self._redirects(p, projection)
+            parts = self._parts(p) if p.name else None
+            found = None if parts is None else self._redirects(p, parts)
             if found is None:
                 continue
             redirects, readers = found
@@ -338,27 +365,52 @@ class _Program:
 
     # ---- the rules that keep a clause
 
-    def _redirects(self, p: Placed, projection: _Projection) -> tuple[list[Edit], frozenset[ReaderForm]] | None:
-        """The edit of each atom that reads the relation of `p` from it, to read the projected relation, and the forms
-        of those atoms; none where the clause stays."""
-        relation = projection.relation
-        base = relation.partition(".")[0]
-        origins = _settled(projection, self.columns)
-        derivations = self._derivations(relation)
-        if (p.name == OUTPUT or origins is None or derivations is None or self._named(p)
-                or p.form.head == "DET" and len({d.alts for d in self.decls[base]}) > 1):
+    def _parts(self, p: Placed) -> list[_Projection] | None:
+        """The relations that the clause of `p` projects, each with the origins of the labels it gives: the one
+        relation of a projection clause; for `&output`, where it is no projection clause, the relation of each of two
+        atoms that give the Position label and the Color label of the `OUT` form that reads it; none where the clause
+        is neither."""
+        projection = _projection(p.form)
+        if projection is not None:
+            return [projection]
+        readers = self.readers[str(p.name)]
+        if p.name != OUTPUT or len(readers) != 1 or readers[0][1].form.head != "OUT" or len(p.form.items) != 4:
             return None
+        sites = atom_sites(readers[0][0].atom)
+        if sites is None or len(sites) != 2:
+            return None
+        first, second = (_projection(L([p.form.items[0], p.form.items[1], atom], p.form.line)) for atom in p.form.items[2:])
+        if first is None or second is None or not first.origins.keys().isdisjoint(second.origins):
+            return None
+        position, color = sites
+        for position_atom, color_atom in ((first, second), (second, first)):
+            if position in position_atom.origins and color in color_atom.origins:
+                return [_Projection(position_atom.relation, {position: position_atom.origins[position]}),
+                        _Projection(color_atom.relation, {color: color_atom.origins[color]})]
+        return None
+
+    def _redirects(self, p: Placed, parts: list[_Projection]) -> tuple[list[Edit], frozenset[ReaderForm]] | None:
+        """The edit of each atom that reads the relation of `p` from it, to read the projected relations, and the forms
+        of those atoms; none where the clause stays."""
+        relations = [part.relation for part in parts]
+        bases = {relation.partition(".")[0] for relation in relations}
+        settled = [_settled(part, self.columns) for part in parts]
+        derivations = [self._derivations(relation) for relation in relations]
+        if (any(s is None for s in settled) or any(d is None for d in derivations) or self._named(p)
+                or p.form.head == "DET" and any(len({d.alts for d in self.decls[base]}) > 1 for base in bases)):
+            return None
+        origins = {label: origin for part in settled for label, origin in (part or {}).items()}
         active = self._active(p)
         flipped = {id(r.atom) for r, _ in active or ()}
         edits: list[Edit] = []
         for reader, placed in active or ():
             found = atom_sites(reader.atom)
-            text = self._redirected(reader.atom, relation, origins)
+            text = self._redirected(reader.atom, relations, origins, placed.form.head == "OUT")
             readings = self._readings(placed.form)
-            if (found is None or text is None or readings is None or placed.name is None
-                    or "DET" in readings and base in self.chosen
+            if (found is None or text is None or readings is None or placed.name is None and placed.form.head != "OUT"
+                    or "DET" in readings and bases & self.chosen
                     or any(self._blocked(p, placed, readings, d, bool(found.keys() - origins.keys()), flipped)
-                           for d in derivations)):
+                           for ds in derivations for d in ds or ())):
                 return None
             edits.append((reader.atom.start, reader.atom.end, text))
         return (edits, frozenset(self._reader_form(placed) for _, placed in active or ())) if edits else None
@@ -419,7 +471,10 @@ class _Program:
         return {frozenset(e.alts) for e in self.decls[str(placed.name)] if own < set(e.alts)}
 
     def _reader_form(self, placed: Placed) -> ReaderForm:
-        """The form `placed`, as it reads a removed relation."""
+        """The form `placed`, as it reads a removed relation. The `OUT` form derives no relation: it is the output,
+        in every case, and its reader form has no relation."""
+        if placed.form.head == "OUT":
+            return ReaderForm("", (), ())
         return ReaderForm(str(placed.name), tuple(sorted(placed.alts)), tuple(sorted(tuple(sorted(b)) for b in self._deeper(placed))))
 
     def _consistent(self, alts: set[str]) -> bool:
@@ -505,30 +560,47 @@ class _Program:
 
     # ---- the text of a redirect
 
-    def _redirected(self, atom: L, relation: str, origins: Mapping[str, _Origin]) -> str | None:
-        """The atom `atom`, which reads a relation whose columns are the labels of `origins`, as it reads `relation`:
-        its sites in order, a site on a label of `origins` at the column and the field of its origin, with the sites on
-        one column of `relation` in the place of the first, and each other site as written."""
+    def _redirected(self, atom: L, relations: list[str], origins: Mapping[str, _Origin], out: bool) -> str | None:
+        """The atom `atom`, which reads a relation whose columns are the labels of `origins`, as it reads `relations`,
+        one atom for each: its sites in order, a site on a label of `origins` at the column and the field of its
+        origin, with the sites on one column of a relation in the place of the first, and each other site as written.
+        An atom of an `OUT` form (`out`) gives each site of an origin one label, the name of its column or field
+        marked `^`, and has no other site."""
         found = atom_sites(atom)
         if found is None:
             return None
-        parts: list[str | list[tuple[_Origin, str]]] = []
-        groups: dict[str, list[tuple[_Origin, str]]] = {}
+        parts: dict[str, list[str | list[tuple[_Origin, str]]]] = {relation: [] for relation in relations}
+        groups: dict[tuple[str, str], list[tuple[_Origin, str]]] = {}
         for site in found.values():
             origin = origins.get(site.column)
             if origin is None:
-                parts.append(self.text[site.node.start:site.node.end] if isinstance(site.node, L)
-                             else site.node.text)
+                if out:
+                    return None
+                parts[relations[0]].append(self.text[site.node.start:site.node.end] if isinstance(site.node, L)
+                                           else site.node.text)
                 continue
             label = _label_text(site.node)
             if label is None:
                 return None
-            if origin.column not in groups:
-                groups[origin.column] = []
-                parts.append(groups[origin.column])
-            groups[origin.column].append((origin, label))
-        sites = [x if isinstance(x, str) else _site_text(x[0][0].column, x) for x in parts]
-        return "(" + " ".join([relation, *sites]) + ")"
+            if (origin.relation, origin.column) not in groups:
+                groups[origin.relation, origin.column] = []
+                parts[origin.relation].append(groups[origin.relation, origin.column])
+            groups[origin.relation, origin.column].append((origin, label))
+        atoms: list[str] = []
+        for relation, members in parts.items():
+            sites: list[str | None] = [x if isinstance(x, str) else self._site(x, out) for x in members]
+            if None in sites:
+                return None
+            atoms.append("(" + " ".join([relation, *sites]) + ")")   # type: ignore[arg-type]
+        return " ".join(atoms)
+
+    @staticmethod
+    def _site(members: list[tuple[_Origin, str]], out: bool) -> str | None:
+        """The site on the column of `members`, the origins of the labels that read it, each with its label as the atom
+        writes it; an `OUT` form's site holds one label alone."""
+        if not out:
+            return _site_text(members[0][0].column, members)
+        return _out_site(members[0][0]) if len(members) == 1 else None
 
 
 def _lint(text: str) -> Linter:

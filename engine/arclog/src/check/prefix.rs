@@ -12,7 +12,7 @@ use crate::eval::ir::relation_modes;
 use crate::hash::StableHashMap;
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{node_at, NodePath, NodeRef, PathStep};
-use crate::program::{Atom, Body, Choose, Clause, Conjunct, Form, Instance, InstanceInput, KeyBody, KeyClause, LabelUse, Negated, Node, Program, RigidDet, Site, SiteArg, SiteValue};
+use crate::program::{Atom, Body, Choose, Clause, Conjunct, Form, Instance, InstanceInput, KeyBody, KeyClause, LabelUse, Negated, Node, Out, Program, RigidDet, Site, SiteArg, SiteValue};
 use crate::registry::{LibEntry, Mode, Registry};
 use crate::program::{OutputName, OutputOwner, RelationRef};
 use crate::resolver::{resolve_last, DependencyKind, ResolvedProgram, Side};
@@ -163,6 +163,9 @@ enum AtomReading {
     /// Through the relation itself, which the candidates whose relations
     /// are of one [`RelationClass`] read alike.
     Relation,
+    /// Through the types of the relation's columns, which no two candidates
+    /// read alike.
+    Columns,
 }
 
 /// What a check's result on an atom-head candidate is shared by: the
@@ -216,6 +219,7 @@ fn shared(registry: &Registry, check: CheckId, relation: Option<&RelationRef>, c
         AtomReading::Ignored => Some(Shared::Ignored),
         AtomReading::Modes => relation.map(|relation| Shared::Modes(relation_modes(registry, relation).into())),
         AtomReading::Relation => class.cloned().map(Shared::Relation),
+        AtomReading::Columns => None,
     }
 }
 
@@ -240,6 +244,7 @@ fn atom_reading(check: CheckId) -> AtomReading {
         | CheckId::InstanceSites
         | CheckId::Picks
         | CheckId::RigidPartsAndProposers => AtomReading::Relation,
+        CheckId::Out => AtomReading::Columns,
     }
 }
 
@@ -493,6 +498,7 @@ fn cut_form(form: &Form, path: &[PathStep]) -> Form {
         }
         Form::Choose(choose) => Form::Choose(Node::new(cut_choose(choose.value(), index, rest))),
         Form::RigidDet(rigid) => Form::RigidDet(Node::new(cut_rigid(rigid.value(), index, rest))),
+        Form::Out(out) => Form::Out(Node::new(Out { key: cut_key_body(&out.value().key, rest) })),
         Form::Claim(_) | Form::Alts(_) | Form::Demonstrated(_) => unreachable!("no prefix ends at a node of a claim, an `ALTS` form or a `DEMONSTRATED` form"),
     }
 }

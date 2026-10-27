@@ -15,6 +15,7 @@ pub(super) enum Open<'a> {
     Instance(&'a Instance),
     Choose(&'a Choose),
     RigidDet(&'a RigidDet),
+    Out(&'a Out),
     DemoRule(&'a DemoRule),
     KeyClause,
     KeyBody,
@@ -94,6 +95,7 @@ pub(super) fn scope<'a, S: ScopeSink<'a>>(sink: &mut S, root: S::At, scope: Labe
         LabelScope::Instance(instance) => self::instance(sink, root, 0, instance),
         LabelScope::Choose(choose) => self::choose(sink, root, 0, choose),
         LabelScope::RigidDet(rigid) => rigid_det(sink, root, 0, rigid),
+        LabelScope::Out(out) => self::out(sink, root, 0, out),
         LabelScope::DemonstratedKey(demonstrated) => demonstrated_key(sink, root, demonstrated),
         LabelScope::DemoRule(rule) => demo_rule(sink, root, rule),
         LabelScope::Body(body) => self::body(sink, root, Tag::Body, 0, body),
@@ -262,6 +264,11 @@ pub(super) fn rigid_det<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, index: us
     }
 }
 
+pub(super) fn out<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, index: usize, out: &'a Out) {
+    let at = sink.open(at, Tag::Form, index, Open::Out(out));
+    key_body(sink, at, NodeRef::Out(out), Tag::Key, &out.key);
+}
+
 /// Walks the key clause and the inputs of `demonstrated`, below the node
 /// at `at`.
 pub(super) fn demonstrated_key<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, demonstrated: &'a Demonstrated) {
@@ -280,7 +287,7 @@ pub(super) fn demo_rule<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, rule: &'a
             Form::Instance(instance) => self::instance(sink, at, index, instance.value()),
             Form::Choose(choose) => self::choose(sink, at, index, choose.value()),
             Form::RigidDet(rigid) => rigid_det(sink, at, index, rigid.value()),
-            Form::Claim(_) | Form::Demonstrated(_) | Form::Alts(_) => unreachable!("`shares_rule_scope` holds of none of these"),
+            Form::Claim(_) | Form::Demonstrated(_) | Form::Alts(_) | Form::Out(_) => unreachable!("`shares_rule_scope` holds of none of these"),
         });
     }
 }

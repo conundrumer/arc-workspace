@@ -19,6 +19,7 @@ pub mod labels;
 pub mod lint;
 pub mod marks;
 pub mod one_clause;
+pub mod out;
 pub mod picks;
 pub mod pose;
 pub mod prefix;
@@ -154,6 +155,11 @@ pub enum CheckId {
     /// case program, which the form's [`CheckCacheKey`] does not hold, so
     /// its result is cached under no key.
     RigidPartsAndProposers,
+    /// The `OUT` form: its atoms, its sites and the types of its columns,
+    /// and, for a program read from a solver's files, its place in them and
+    /// that the solver holds one. The check reads the other forms of the
+    /// case program and the files, so its result is cached under no key.
+    Out,
 }
 
 /// A label of a label scope within a top-level form, as [`LabelId`] gives
@@ -562,6 +568,11 @@ pub fn check_program_of_files(
     if let CheckResult::Refuse(refusals) = cached(cache, cycles_key, || check_cycles(&program.graph, &program)) {
         refused.extend(refusals.iter().map(|r| diagnostic(DiagnosticKind::Check(CheckId::Cycles), Severity::Error, r.message.clone(), r.at.clone())));
     }
+    if files.is_some() {
+        if let Some(refusal) = out::missing(program.program.value()) {
+            refused.push(diagnostic(DiagnosticKind::Check(CheckId::Out), Severity::Error, refusal.message, refusal.at));
+        }
+    }
     let mut alerts = Vec::new();
     let held = HeldClauses::of(&program);
     let forms: Vec<TopLevelForm<'_>> = top_level_forms(&program)
@@ -769,7 +780,7 @@ fn read_signatures(program: &ResolvedProgram, form: &Form, path: &NodePath, orde
 /// a partial form that no completion makes a node of the grammar, or a name
 /// that no completion resolves.
 pub fn checks() -> &'static [&'static dyn Check] {
-    static CHECKS: [&dyn Check; 17] = [
+    static CHECKS: [&dyn Check; 18] = [
         &grammar::GrammarCheck,
         &scope::ScopeCheck,
         &site_columns::SiteColumnsCheck,
@@ -787,6 +798,7 @@ pub fn checks() -> &'static [&'static dyn Check] {
         &spelling::SpellingCheck,
         &picks::PicksCheck,
         &rigid_proposer::RigidPartsAndProposersCheck,
+        &out::OutCheck,
     ];
     &CHECKS
 }

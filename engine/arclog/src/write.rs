@@ -77,8 +77,10 @@ pub fn write_solver(solver: &Solver) -> SolverText {
 /// and reads back as two labels.
 ///
 /// A relation slot `n` is written `&rn`. The writer prints each form a decode
-/// builds, `RULE`, `DET`, `INIT`, `CHOOSE` and `RIGID_DET`, and refuses a
-/// record site.
+/// builds, `RULE`, `DET`, `INIT`, `CHOOSE`, `RIGID_DET` and `OUT`, and refuses
+/// a record site. It writes a site of an `OUT` form that is a column of one
+/// label as `^<column>`, with the column's name whatever the other labels of
+/// the form are named, since no label of an `OUT` is read again.
 pub fn write_synthesized(program: &Node<Program>, registry: &Registry) -> String {
     synthesized::write(program, registry)
 }
@@ -132,6 +134,9 @@ mod synthesized {
             let place = SourcePlace { file: SourceFile::Arclog, start: 0, end: 0, line: index as u32 + 1, column: 1 };
             let node = NodeLayout { tokens: Box::new([place]), label_names: names.into(), ..NodeLayout::default() };
             layout.nodes.insert((SourceFile::Arclog, NodePath::top(index as u32)), node);
+            if let Form::Out(out) = &forms[index] {
+                synth.elide_out_sites(out.value(), NodePath::top(index as u32), &mut layout);
+            }
         }
         super::write_arclog(&Node::new(Program { forms: forms.into() }), &layout)
     }
@@ -223,10 +228,16 @@ mod synthesized {
         }
 
         /// The name of each label of `form`: the reserved names, then the
-        /// other labels in the order of their ids.
+        /// other labels in the order of their ids. A label of an `OUT` form
+        /// takes the name of the column of its site whatever other label
+        /// takes it, since the form writes each such site as `^<column>`.
         fn label_names(&self, form: &Form) -> Vec<(LabelId, Box<str>)> {
             let mut uses = Uses::default();
             self.form_uses(form, &mut uses);
+            if matches!(form, Form::Out(_)) {
+                let made = uses.made.iter().filter(|(label, _)| !uses.reserved.iter().any(|(id, _)| id == label));
+                return uses.reserved.iter().cloned().chain(made.map(|(label, column)| (*label, column.as_str().into()))).collect();
+            }
             let reserved: Vec<&str> = uses.reserved.iter().map(|(_, name)| &**name).collect();
             let mut names: Vec<(LabelId, Box<str>)> = uses.reserved.iter().cloned().collect();
             names.dedup_by_key(|(id, _)| *id);
@@ -266,7 +277,8 @@ mod synthesized {
                         part.sites.iter().for_each(|site| self.site_uses(Some(&part.relation), site, uses));
                     }
                 }
-                _ => panic!("write_synthesized writes the forms a decode builds: RULE, DET, INIT, CHOOSE and RIGID_DET"),
+                Form::Out(out) => self.body_uses(out.value().key.body.value(), uses),
+                _ => panic!("write_synthesized writes the forms a decode builds: RULE, DET, INIT, CHOOSE, RIGID_DET and OUT"),
             }
         }
 
@@ -320,7 +332,8 @@ mod synthesized {
                 Form::Instance(instance) => Form::Instance(Node::new(self.instance(instance.value(), names))),
                 Form::Choose(choose) => Form::Choose(Node::new(self.choose(choose.value(), names))),
                 Form::RigidDet(rigid) => Form::RigidDet(Node::new(self.rigid_det(rigid.value(), names))),
-                _ => panic!("write_synthesized writes the forms a decode builds: RULE, DET, INIT, CHOOSE and RIGID_DET"),
+                Form::Out(out) => Form::Out(Node::new(Out { key: self.key_body(&out.value().key, names) })),
+                _ => panic!("write_synthesized writes the forms a decode builds: RULE, DET, INIT, CHOOSE, RIGID_DET and OUT"),
             }
         }
 
@@ -381,6 +394,18 @@ mod synthesized {
                 self.columns.insert(ProgramRelation::Output(output), texts);
             }
             value
+        }
+
+        /// Marks in `layout` each site of the atoms of `out`, the `OUT` form at
+        /// `form`, that is a column of one label, as written elided: `^<column>`.
+        fn elide_out_sites(&self, out: &Out, form: NodePath, layout: &mut Layout) {
+            let body = form.child(Out::BODY);
+            for (index, conjunct) in out.key.body.value().conjuncts.iter().enumerate() {
+                let Some(atom) = conjunct.atom() else { continue };
+                let elided = atom.value().sites.iter().enumerate().filter(|(_, site)| matches!(&site.value.args[..], [SiteArg::Label(_)])).map(|(at, _)| at as u32);
+                let node = NodeLayout { elided_sites: elided.collect(), ..NodeLayout::default() };
+                layout.nodes.insert((SourceFile::Arclog, body.child(index as u32)), node);
+            }
         }
 
         fn key_body(&self, key: &KeyBody, names: &Names) -> KeyBody {

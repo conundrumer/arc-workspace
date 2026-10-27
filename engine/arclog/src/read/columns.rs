@@ -56,6 +56,12 @@ pub(crate) fn exports(first: &Body, later: &[&Body], out: &mut Vec<LabelId>) {
 }
 
 
+/// The columns of `labels`, each named by its slot, from `first`.
+pub(crate) fn slot_columns(labels: Vec<LabelId>, first: usize) -> Arc<[RelationColumn]> {
+    let column = |(index, label)| RelationColumn { name: ColumnName::Slot(u32::try_from(first + index).expect("fewer than 2^32 columns")), label };
+    labels.into_iter().enumerate().map(column).collect()
+}
+
 /// The `^` labels of a key body, in order of appearance.
 pub(crate) fn key_labels(body: &Body) -> Vec<LabelId> {
     let mut out = Vec::new();

@@ -35,10 +35,10 @@ where that one dies too, the task's part holds no case, the fault line `death_li
                    relation), its candidate keys (`keys`, a list of lists of column indexes: the columns of each `ONE` mark of
                    its clause, none for `(ONE)`, the row's columns of a `CHOOSE`'s chosen relation, and `E` with `P` of
                    `ex_input` and `ex_output`; the registry declares no key of a component's output, so any other table
-                   gives none), and, for the table of the relation at which the replay's consistency test found the grid
-                   columns of `ex_output`, the index of its Position column (`output_position`) and of its Color column
-                   (`output_color`), which map to `P` and `Col` of `ex_output`, with the entry's example as `E`; -1 in each
-                   other table; and, per DET in `det_relations` order, `det_columns`: the path of each of its columns in
+                   gives none), and, for the table of the relation of the atom of the `OUT` form, at which the decode ended, that selects the
+                   Position column, the index of that column (`output_position`), and, for the table of the relation of the atom
+                   that selects the Color column, the index of that column (`output_color`), which map to `P` and `Col` of
+                   `ex_output`, with the entry's example as `E`; -1 in each other table; and, per DET in `det_relations` order, `det_columns`: the path of each of its columns in
                    `det_types` order (a slot named `slot <k>`, a record's field after a `.`), equal for one column of one
                    DET relation across the tables of a case, and an empty list where the engine knows none
   flows.parquet    one row per source of a column of a table, keyed by task, case, `table` and `column`: `kind` (copy 0,
@@ -93,7 +93,7 @@ arclog.ReplayProgress gives them. `print_progress` prints it, and `lm/export.py`
 for the token streams of one task, for a caller that imports the module: `streams` is a list of `(ids, model)`
 pairs and `bases` the list of bases as `arclog.stream_tables` takes them. `out` must not exist or be empty (else `FileExistsError`). Its
 `report.txt` holds, for each stream replayed, `<task> <case>: ended <kind> at token <index>` (`<kind>` the
-consistency of the last `RULE` clause the stream ends, or `ended none`), then the fault line of each stream that
+consistency of the last `OUT` form the stream ends, or `ended none`), then the fault line of each stream that
 faults (its tables up to the fault are kept) or lies past the cap. It writes no `settings.json`.
 """
 import argparse, collections, enum, hashlib, json, os, shutil, signal, subprocess, sys, glob, threading, time, types

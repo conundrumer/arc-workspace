@@ -1,8 +1,8 @@
-//! At the `END` of a `RULE` clause, a decode reports whether the relation,
-//! read as `&output`, solves the train pairs, keeps the assignments of a
-//! `DET` under which it does, and ends at a consistent relation; a prefix
-//! past the row cap reports the stop and the cap; and a batch of decodes
-//! gives the results of each decode stepped alone.
+//! At the `END` of an `OUT` form, a decode reports whether its relation
+//! solves the train pairs, keeps the assignments of a `DET` under which it
+//! does, and ends at a consistent `OUT` form; a prefix past the row cap
+//! reports the stop and the cap; and a batch of decodes gives the results of
+//! each decode stepped alone.
 
 use std::sync::Arc;
 
@@ -28,6 +28,7 @@ type Assignment = (ProgramRelation, Arc<Relation>);
 const INPUT: &[u8] = &[1, 2];
 
 const COPIES: &str = "(RULE &output (input *P *Col))\n";
+const COPIES_OUT: &str = "(RULE &output (input *P *Col))\n(OUT (&output ^P ^Col))\n";
 
 fn grid(colors: &[u8]) -> Grid {
     let rows: Box<[Box<[Color]>]> = Box::new([colors.iter().map(|&digit| Color::from_digit(digit).expect("a color")).collect()]);
@@ -57,7 +58,7 @@ fn inputs(output: &[u8], caps: Caps) -> Inputs {
     let judged = JudgedTask { train: Box::new([JudgedPair { output: grid(output), alt: None }]), test: Box::new([]) };
     let constructions = Constructions::new(Vec::new(), Registry::get()).expect("an empty table");
     let session = TaskSession::new(SessionBound { bytes: 1 << 26 }, caps);
-    Inputs { task, judged, session, constructions, settings: DecodeSettings { caps, ..DecodeSettings::default() } }
+    Inputs { task, judged, session, constructions, settings: DecodeSettings { caps, rule_tests: true, ..DecodeSettings::default() } }
 }
 
 fn decoder(inputs: &Inputs) -> Decoder<'_> {
@@ -73,22 +74,32 @@ fn model_tokens(arclog: &str) -> Vec<Token> {
 }
 
 /// Steps `decoder` through `tokens`, and gives the last consistency a step
-/// gave.
+/// gave at an `OUT` form.
 fn walk(decoder: &mut Decoder<'_>, tokens: &[Token]) -> Option<Consistency> {
-    let mut last = None;
+    walk_both(decoder, tokens).0
+}
+
+/// Steps `decoder` through `tokens`, and gives the last consistency a step
+/// gave at an `OUT` form and the last it gave at a `RULE` clause, under the
+/// rule tests.
+fn walk_both(decoder: &mut Decoder<'_>, tokens: &[Token]) -> (Option<Consistency>, Option<Consistency>) {
+    let (mut ended, mut rule) = (None, None);
     for token in tokens {
         let step = decoder.step(token.clone()).unwrap_or_else(|refusal| panic!("{token:?}: {refusal:?}"));
-        last = step.consistency.or(last);
+        ended = step.consistency.or(ended);
+        rule = step.rule_test.or(rule);
     }
-    last
+    (ended, rule)
 }
 
 #[test]
 fn a_relation_that_solves_the_pairs_is_consistent_and_ends_the_decode() {
     let inputs = inputs(INPUT, Caps::CORPUS);
     let mut decoder = decoder(&inputs);
-    let tokens = model_tokens(COPIES);
-    assert!(matches!(walk(&mut decoder, &tokens), Some(Consistency::Consistent { .. })));
+    let tokens = model_tokens(COPIES_OUT);
+    let (ended, rule) = walk_both(&mut decoder, &tokens);
+    assert!(matches!(ended, Some(Consistency::Consistent { .. })));
+    assert!(matches!(rule, Some(Consistency::Consistent { .. })), "the rule test gives the verdict the clause's end gave");
     assert!(decoder.output().is_some());
     assert!(matches!(decoder.step(Token::Control(Control::Rule)), Err(Refusal::Grammar(_))), "the decode has ended");
 }
@@ -97,7 +108,9 @@ fn a_relation_that_solves_the_pairs_is_consistent_and_ends_the_decode() {
 fn a_relation_that_does_not_solve_the_pairs_is_not_consistent() {
     let inputs = inputs(&[3, 3], Caps::CORPUS);
     let mut decoder = decoder(&inputs);
-    assert!(matches!(walk(&mut decoder, &model_tokens(COPIES)), Some(Consistency::NotConsistent)));
+    let (ended, rule) = walk_both(&mut decoder, &model_tokens(COPIES_OUT));
+    assert!(matches!(ended, Some(Consistency::NotConsistent)));
+    assert!(matches!(rule, Some(Consistency::NotConsistent)));
     assert!(decoder.output().is_none());
 }
 
@@ -105,9 +118,11 @@ fn a_relation_that_does_not_solve_the_pairs_is_not_consistent() {
 fn a_det_of_two_values_keeps_the_assignment_that_solves_the_pairs() {
     let inputs = inputs(&[2, 2], Caps::CORPUS);
     let mut decoder = decoder(&inputs);
-    let program = "(DET &c ColorDomain)\n(RULE &output (input *P) (&c (:C *Col)))\n";
-    let Some(Consistency::Consistent { assignments }) = walk(&mut decoder, &model_tokens(program)) else { panic!("a consistent relation") };
+    let program = "(DET &c ColorDomain)\n(RULE &output (input *P) (&c (:C *Col)))\n(OUT (&output ^P ^Col))\n";
+    let (ended, rule) = walk_both(&mut decoder, &model_tokens(program));
+    let (Some(Consistency::Consistent { assignments }), Some(Consistency::Consistent { assignments: ruled })) = (ended, rule) else { panic!("a consistent relation") };
     assert_eq!(assignments.len(), 1, "one value of `&c` paints the output: {assignments:?}");
+    assert_eq!(ruled.len(), 1, "and the rule test keeps it: {ruled:?}");
 }
 
 #[test]

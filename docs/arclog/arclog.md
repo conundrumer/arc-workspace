@@ -73,9 +73,11 @@ Both are stored as s-expressions, read by one fixed reader. An infix view of the
   (IF ((&painted P))
       ((&fill_color (:C *Col)))
       ((= Col C_in))))
+
+(OUT (&output ^P ^Col))
 ```
 
-A program is `INPUT` and `OUTPUT` blocks in dependency order, then `ALTS` forms, then the tail. A block is a claim: its slug, its text, then the forms that serve it. A relation stands under the first claim that reads it, and a parameter under the first claim whose text names it, as `&background` or `&fill_color`, or under the first claim that reads it where that claim comes earlier: 9bebae7a's erase claim names `&bg`, and the arms claim before it reads `&bg`. A block with nothing after its text is a claim with no relations of its own. Where the program runs an approximation in place of an output claim, an `APPROXIMATED` form after the claim's text gives the rule the program runs, as in 1da012fc's `place` claim. The tail holds the relations that every output claim ends in. `&output` is the output relation.
+A program is `INPUT` and `OUTPUT` blocks in dependency order, then `ALTS` forms, then the tail. A block is a claim: its slug, its text, then the forms that serve it. A relation stands under the first claim that reads it, and a parameter under the first claim whose text names it, as `&background` or `&fill_color`, or under the first claim that reads it where that claim comes earlier: 9bebae7a's erase claim names `&bg`, and the arms claim before it reads `&bg`. A block with nothing after its text is a claim with no relations of its own. Where the program runs an approximation in place of an output claim, an `APPROXIMATED` form after the claim's text gives the rule the program runs, as in 1da012fc's `place` claim. The tail holds the relations that every output claim ends in, then the `OUT` form, which states the output ([The `OUT` form](#the-out-form)).
 
 A clause reads only relations that earlier forms declared, the fact relations, and the lib's relations, so a program is a DAG of relations, and local recursion does not exist: closures come from lib components. One component, `Unfold`, has inputs that read its outputs, under the rule [Instance](#instance) states. A choice among candidates is a [`ONE`](constraints.md#one) mark or a [`CHOOSE`](constraints.md#choose), and a `DET` reads a chosen relation only where that relation has one model.
 
@@ -108,7 +110,7 @@ A proposer's name, `DominantColor`, stands for its derivation, defined once besi
 
 An `INIT` form is per input where its input bodies read as a `RULE` clause does, and task-wide where they read as a `DET` clause does. A determination becomes task-wide through a pooled read, or through an instance whose key holds no Example label, which pools over the examples, and its outputs then have no Example column. 009d5c81's `&key_out` holds the color of each class of examples whose keys share a pattern, at the example that shows it, and `&output` reads it pooled, `(&key_out Id (:C *Col))`, so `&key_out` has no Example column: `&output` reads it with no `E`.
 
-The engine finds the [grid columns](constraints.md#the-output-set) of `&output` by testing every pair of one Position column and one Color column against `ex_output` over the train examples, and a case's output on an input is a set of grids, one per model of the program's `ONE` marks, `CHOOSE` forms and `DEMONSTRATED` forms, as [Constraints](constraints.md#the-output-set) gives. In synthesis, the engine tests each `RULE` relation that way, and the first one that solves every train pair is `&output` and ends the program.
+The `OUT` form states the program's output, and a case's output on an input is a set of grids, one per model of the program's `ONE` marks, `CHOOSE` forms and `DEMONSTRATED` forms, as [Constraints](constraints.md#the-output-set) gives.
 
 ## Clause
 
@@ -305,6 +307,22 @@ The instance's outputs are read as `<name>.<output>`, with the key's columns fir
 
 A clause may end in `ONE` marks, each naming key columns of its relation, and a model keeps one row of the relation for each value of each key. A `CHOOSE` form chooses one candidate for each row of its `for` clause, with the pairs that are never chosen together. The program reads a chosen relation like any other. [Constraints](constraints.md) gives the two forms, which pick each writes, their models and the output set.
 
+## The `OUT` form
+
+```
+(OUT (&fill ^P ^Col))
+
+(OUT (&bar.cell ^P) (&on ^Col))
+```
+
+An `OUT` form states the program's output. It is `(OUT <atom>)`, whose atom holds two sites, or `(OUT <atom> <atom>)`, whose atoms hold one site each. Each atom is in parentheses and reads `input` or a relation the program declares, as a `RULE` body reads it. Each site selects one column, or one field of a record column, with one label marked `^` and nothing else: no `*`, no label with no mark, no `0`. The first site in written order selects a column of type Position and the second a column of type Color. The checker refuses an `OUT` form that breaks one of these rules.
+
+An `OUT` form writes each site elided, as `^<name>` with `<name>` the name of the column or of the field: `(OUT (&r ^C_out ^Col))` selects the columns `C_out` and `Col` of `&r`, and `(:t ^V)` selects the field `V` of the record column `t`. No site gives a label of its own, and no later form reads the labels of an `OUT` form, which are its two key columns, as [Instance](#instance) gives a key's.
+
+The rows of an `OUT` form are the rows of its two selected columns, Position then Color: the projection of its one atom's relation, or the product of the projections of its two atoms' relations. A case's output on an input is the set of grids those rows give, one per model, as [The output set](constraints.md#the-output-set) gives a grid. A two-atom `OUT` form whose second relation holds two colors on an input gives no grid there.
+
+Every program has an `OUT` form. A solver file holds one, in its tail, after every other form, under no claim and in no `ALT` block, and it reads each relation in each case as that case derives it. A solver file with no `OUT` form or with two is refused. No program's output is inferred from a relation. An `OUT` form holds where its output set solves every train pair, as [Solves](../engine/cases.md#solves) gives; the decode ends at the first `OUT` form that holds, as [Synthesis](../engine/synthesis.md#decode-interface) gives.
+
 ## Rigid
 
 ```
@@ -463,7 +481,7 @@ A session records a value as open where another task in the family of the case's
 
 The language model emits tokens from these sets, each a closed set of ids:
 
-- control: `RULE` `DET` `INIT` `ONE` `SET` `CHOOSE` `RIGID_DET` `OR` `IF` `ALL` `END` `SKIP` `ALSO` `NOT` `*` `^` `0` and the constraint operators. `^` marks a label of a key clause's body as a column of the key, as [Instance](#instance) gives, in an instance's `key`, a `CHOOSE`'s `for`, and a `RIGID_DET`'s `instance` and `key`, and the engine echoes the label after it as after `*`.
+- control: `RULE` `DET` `INIT` `ONE` `SET` `CHOOSE` `RIGID_DET` `OUT` `OR` `IF` `ALL` `END` `SKIP` `ALSO` `NOT` `*` `^` `0` and the constraint operators. `^` marks a label of a key clause's body as a column of the key, as [Instance](#instance) gives, in an instance's `key`, a `CHOOSE`'s `for`, a `RIGID_DET`'s `instance` and `key`, and an `OUT`'s atoms, and the engine echoes the label after it as after `*`.
 - lib relations and components, one token each; proposers, one token each
 - fact relations: `input` `ex_input` `ex_output`
 - derived relations: the index the engine assigned at the declaration
@@ -479,6 +497,8 @@ The language model emits `END` where a decision to stop exists: at the end of a 
 The language model emits `SKIP` after the name of an optional clause or input, to decline it. After the name of a required clause, and after the last name of a required input in the form, the decoder refuses `SKIP`, so no form lacks a required input and then waits on a decline that the decoder never admits.
 
 A `RIGID_DET` is written as `RIGID_DET`, then the `key` name and its body and `END`, or `SKIP`, then the `instance` name and its body and `END`, or `SKIP`, then its parts, each an atom, then `END`; the engine then declares the form's outputs.
+
+An `OUT` form is written as `OUT`, then each atom as an atom of a key clause's body is written, a relation, then each site's column token, `^` and the engine's echo of the label, then `END`; the engine declares nothing after it, and the program's last form is its `OUT` form.
 
 A clause that may repeat, such as `never`, is written as its first instance, then `ALSO` and the next instance, for each further repeat. The next name the engine emits, or the `END` that closes the enclosing form, ends the run, so the repetition has no token of its own at its end. A `CHOOSE` form whose `never` clause is written closes with `END` after its last `never` clause, and the engine then declares the form's relation.
 
@@ -501,7 +521,7 @@ Each kind of name has its own spelling:
 
 | kind | spelling |
 | --- | --- |
-| keyword | `RULE` `INIT` `CHOOSE` `OUTPUT` `DEMO_RULE` `DET_OR_RULE` |
+| keyword | `RULE` `INIT` `CHOOSE` `OUT` `OUTPUT` `DEMO_RULE` `DET_OR_RULE` |
 | fact relation | `input` `ex_input` `ex_output` |
 | lib relation, proposer | `margin` `inside` `DominantColor` |
 | instance | `&comps` |
@@ -642,6 +662,8 @@ A task where each object's bounding box fills with the object's color under a fi
       ((&obj_col Id (:Col *Col1))
        (&recolor.value (:key (:Col Col1)) (:v *Col)))
       ((= Col C_in))))
+
+(OUT (&output ^P ^Col))
 ```
 
 `&pair` reads `&fg` lifted, so it has the Example column `E`. `&recolor` keys on `Col` alone, so it pools over the examples, and `&recolor.value` has no Example column and is read by a `RULE` clause. `&comps` has no key clause, so its relations have no key column.

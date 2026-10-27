@@ -2,7 +2,7 @@
 //! program of the corpus that holds no `DEMONSTRATED` form, as
 //! `docs/engine/synthesis.md#synthesis` gives the end checks of the step: the
 //! decoder admits the stream, closed-world; the consistency result at the
-//! `END` of its `&output` equals the case's solves outcome at the values
+//! `END` of its `OUT` form equals the case's solves outcome at the values
 //! the determination determines; and the rows of each prefix equal the rows
 //! of a decode in a task session of its own. A difference prints by solver,
 //! with the first of each kind. With `--no-rows` the decode builds no second
@@ -270,7 +270,7 @@ fn decode_cases(corpus: &Path, tasks: &Path, id: &str, all: bool, rows: RowsMode
 fn expected_solves(case: &DeterminedCase<'_>, determination: &Determination, judged: &JudgedTask) -> Result<bool, String> {
     let values = determination.case_values(case)?;
     let evaluation = case.evaluation(&values);
-    let output = output_relation(case.program).expect("a checked case program derives `&output`");
+    let output = output_relation(case.program).expect("a checked case program holds an `OUT` form");
     let run = judged_run(&evaluation, &output, judged, World::Closed, Depth::Full).map_err(|fault| format!("the judged run faults at {:?}: {}", fault.form, fault.message))?;
     Ok(run.pairs[..judged.train.len()].iter().all(|pair| pair.solved))
 }
@@ -299,7 +299,7 @@ fn decode_case(case: &ResolvedCase, program: &CheckedProgram, expected: Result<b
     let mut consistency = None;
     let mut rows_found = false;
     let replayed = replay(&mut decoder, &stream.tokens, true, &mut |decoder, stepped| {
-        let Stepped { index, token, consistency: result, mask, step_seconds } = stepped;
+        let Stepped { index, token, consistency: result, mask, step_seconds, .. } = stepped;
         let mask_seconds = mask.expect("the replay computes the mask").seconds;
         gathered.mask.push(mask_seconds);
         gathered.step.push(step_seconds);
@@ -345,7 +345,7 @@ fn decode_case(case: &ResolvedCase, program: &CheckedProgram, expected: Result<b
             None
         }
         Some(other) => {
-            findings.push((Kind::Consistency, format!("the consistency at the last END is {other:?}")));
+            findings.push((Kind::Consistency, format!("the consistency at the last `OUT` END is {other:?}")));
             None
         }
         None => {
@@ -356,7 +356,7 @@ fn decode_case(case: &ResolvedCase, program: &CheckedProgram, expected: Result<b
     match (actual, expected) {
         (_, Err(why)) => findings.push((Kind::Unjudged, why)),
         (Some(actual), Ok(solves)) if actual != solves => {
-            findings.push((Kind::Consistency, format!("the consistency at the last END is {}, and the case {} the train pairs", if actual { "consistent" } else { "not consistent" }, if solves { "solves" } else { "does not solve" })));
+            findings.push((Kind::Consistency, format!("the consistency at the last `OUT` END is {}, and the case {} the train pairs", if actual { "consistent" } else { "not consistent" }, if solves { "solves" } else { "does not solve" })));
         }
         _ => {}
     }

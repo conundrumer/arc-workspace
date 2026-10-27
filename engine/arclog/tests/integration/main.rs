@@ -34,6 +34,7 @@ mod negated_atom_modes;
 mod no_key_columns;
 mod open_parameters;
 mod open_read_refusals;
+mod out_form;
 mod orientation_tables;
 mod panic_isolation;
 mod program_edits;

@@ -30,6 +30,7 @@ pub const FACT_RELATIONS: &[(FactRelation, &str)] = &[
 
 pub(crate) const INIT: &str = "INIT";
 pub(crate) const CHOOSE: &str = "CHOOSE";
+pub(crate) const OUT: &str = "OUT";
 pub(crate) const RIGID_DET: &str = "RIGID_DET";
 pub(crate) const DEMONSTRATED: &str = "DEMONSTRATED";
 pub(crate) const DEMO_RULE: &str = "DEMO_RULE";

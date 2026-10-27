@@ -211,7 +211,7 @@ fn layered(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &R
     }
     match last {
         Form::Clause(clause) if matches!(clause.value().derives, ProgramRelation::Declared(_)) => {}
-        Form::Instance(_) | Form::Choose(_) | Form::RigidDet(_) => {}
+        Form::Instance(_) | Form::Choose(_) | Form::RigidDet(_) | Form::Out(_) => {}
         _ => return None,
     }
     let program_scope = NameScope::Program;

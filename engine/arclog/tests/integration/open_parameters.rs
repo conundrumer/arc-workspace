@@ -48,7 +48,7 @@ fn inputs(output: &[u8], caps: Caps) -> Inputs {
     let judged = JudgedTask { train: Box::new([JudgedPair { output: grid(output), alt: None }]), test: Box::new([]) };
     let constructions = Constructions::new(Vec::new(), Registry::get()).expect("an empty table");
     let session = TaskSession::new(SessionBound { bytes: 1 << 26 }, caps);
-    Inputs { task, judged, session, constructions, settings: DecodeSettings { caps, ..DecodeSettings::default() } }
+    Inputs { task, judged, session, constructions, settings: DecodeSettings { caps, rule_tests: true, ..DecodeSettings::default() } }
 }
 
 fn decoder(inputs: &Inputs) -> Decoder<'_> {
@@ -64,34 +64,44 @@ fn model_tokens(arclog: &str) -> Vec<Token> {
 }
 
 /// Steps `decoder` through `tokens`, and gives the last consistency a step
-/// gave.
-fn walk(decoder: &mut Decoder<'_>, tokens: &[Token]) -> Option<Consistency> {
-    let mut last = None;
+/// gave at an `OUT` form and the last it gave at a `RULE` clause.
+fn walk(decoder: &mut Decoder<'_>, tokens: &[Token]) -> (Option<Consistency>, Option<Consistency>) {
+    let (mut ended, mut rule) = (None, None);
     for token in tokens {
         let step = decoder.step(token.clone()).unwrap_or_else(|refusal| panic!("{token:?}: {refusal:?}"));
-        last = step.consistency.or(last);
+        ended = step.consistency.or(ended);
+        rule = step.rule_test.or(rule);
     }
-    last
+    (ended, rule)
+}
+
+/// Steps `decoder` through the stream of `program`, whose `OUT` form is
+/// consistent, as is, under the rule tests, the relation of its last `RULE`
+/// clause.
+fn walk_consistent(decoder: &mut Decoder<'_>, program: &str) {
+    let (ended, rule) = walk(decoder, &model_tokens(program));
+    assert!(matches!(ended, Some(Consistency::Consistent { .. })), "{ended:?}");
+    assert!(matches!(rule, Some(Consistency::Consistent { .. })), "{rule:?}");
 }
 
 #[test]
 fn open_proposers_keep_joint_assignments() {
     let inputs = inputs(INPUT, Caps::CORPUS);
     let mut decoder = decoder(&inputs);
-    let program = "(DET &a ColorDomain (ONE))\n(DET &b ColorDomain (ONE))\n(RULE &output (input *P *Col) (&a (:C *A)) (&b (:C A)))\n";
-    assert!(matches!(walk(&mut decoder, &model_tokens(program)), Some(Consistency::Consistent { .. })));
+    let program = "(DET &a ColorDomain (ONE))\n(DET &b ColorDomain (ONE))\n(RULE &output (input *P *Col) (&a (:C *A)) (&b (:C A)))\n(OUT (&output ^P ^Col))\n";
+    walk_consistent(&mut decoder, program);
     assert_eq!(&*decoder.attempts().unwrap().unwrap(), &[arclog::judge::attempts::Attempts::One(grid(&[3, 4]))]);
 }
 
 #[test]
 fn three_or_more_test_grids_give_no_attempt() {
     let inputs = inputs(INPUT, Caps::CORPUS);
-    let program = "(DET &a ColorDomain (ONE))\n(RULE &output (input *P) (IF ((input (:Col *D)) (input (:Col *E)) (!= D E)) ((&a (:C *Col))) ((input P (:Col Col)))))\n";
+    let program = "(DET &a ColorDomain (ONE))\n(RULE &output (input *P) (IF ((input (:Col *D)) (input (:Col *E)) (!= D E)) ((&a (:C *Col))) ((input P (:Col Col)))))\n(OUT (&output ^P ^Col))\n";
     let mut inputs = inputs;
     inputs.task.train[0] = TrainPair { input: grid(&[1, 1]), output: grid(&[1, 1]) };
     inputs.judged.train[0].output = grid(&[1, 1]);
     let mut decoder = self::decoder(&inputs);
-    assert!(matches!(walk(&mut decoder, &model_tokens(program)), Some(Consistency::Consistent { .. })));
+    walk_consistent(&mut decoder, program);
     assert_eq!(&*decoder.attempts().unwrap().unwrap(), &[arclog::judge::attempts::Attempts::None]);
 }
 
@@ -99,8 +109,8 @@ fn three_or_more_test_grids_give_no_attempt() {
 fn a_single_assignment_gives_one_attempt() {
     let inputs = inputs(&[2, 2], Caps::CORPUS);
     let mut decoder = decoder(&inputs);
-    let program = "(DET &a ColorDomain (ONE))\n(RULE &output (input *P) (&a (:C *Col)))\n";
-    assert!(matches!(walk(&mut decoder, &model_tokens(program)), Some(Consistency::Consistent { .. })));
+    let program = "(DET &a ColorDomain (ONE))\n(RULE &output (input *P) (&a (:C *Col)))\n(OUT (&output ^P ^Col))\n";
+    walk_consistent(&mut decoder, program);
     assert_eq!(&*decoder.attempts().unwrap().unwrap(), &[arclog::judge::attempts::Attempts::One(grid(&[2, 2]))]);
 }
 
@@ -108,7 +118,7 @@ fn a_single_assignment_gives_one_attempt() {
 fn a_body_det_uses_its_models_as_parameter_values() {
     let inputs = inputs(&[2, 2], Caps::CORPUS);
     let mut decoder = decoder(&inputs);
-    let program = "(DET &a (ex_input *E *P *Col) (ONE))\n(RULE &output (input (:P *Q)) (&a (:Col *Col)))\n";
-    assert!(matches!(walk(&mut decoder, &model_tokens(program)), Some(Consistency::Consistent { .. })));
+    let program = "(DET &a (ex_input *E *P *Col) (ONE))\n(RULE &output (input (:P *Q)) (&a (:Col *Col)))\n(OUT (&output ^Q ^Col))\n";
+    walk_consistent(&mut decoder, program);
     assert_eq!(&*decoder.attempts().unwrap().unwrap(), &[arclog::judge::attempts::Attempts::One(grid(&[2, 2]))]);
 }

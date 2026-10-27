@@ -71,7 +71,7 @@ impl<'a> ScopeBody<'a> {
                 found_instance = Some(instance);
             }
             Form::RigidDet(rigid) => conjuncts.extend(rigid.value().parts.iter().map(|part| Conjunct::Atom(part.clone()))),
-            Form::Clause(_) | Form::Choose(_) | Form::Demonstrated(_) | Form::Claim(_) | Form::Alts(_) => {}
+            Form::Clause(_) | Form::Choose(_) | Form::Demonstrated(_) | Form::Claim(_) | Form::Alts(_) | Form::Out(_) => {}
         }
         ScopeBody { body: Body { conjuncts: conjuncts.into() }, heads, component: found_component, instance: found_instance }
     }
@@ -793,6 +793,7 @@ impl<'a> Inference<'a> {
             }
             DependencyKind::Demonstrated(_) => self.demonstrated_column(form_path, path),
             DependencyKind::InstanceInput { input, .. } => self.instance_input(form_path, input, path, &key_row),
+            DependencyKind::Out(_) => None,
         }
     }
 
@@ -995,7 +996,7 @@ impl<'a> Inference<'a> {
                 let column = |name: &ColumnName| self.demonstrated_column(at, std::slice::from_ref(name));
                 relations.push((Arc::from([]), relation_columns(names.names(), &column)));
             }
-            Form::Clause(_) | Form::Choose(_) | Form::Claim(_) | Form::Alts(_) => {}
+            Form::Clause(_) | Form::Choose(_) | Form::Claim(_) | Form::Alts(_) | Form::Out(_) => {}
         }
         relations.into_iter().filter_map(|(output, columns)| Some((output, columns?))).collect()
     }

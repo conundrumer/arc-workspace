@@ -1,14 +1,20 @@
 //! The graph relation of a named relation in a checked program: the lookup
-//! of a relation by its name, and of `&output` in a case program.
+//! of a relation by its name, and of the `OUT` form's in a case program.
 
 use crate::check::CheckedProgram;
-use crate::program::{DeclaredName, InstanceName, OutputOwner, OutputStep, PortName, ProgramRelation, RelationName};
+use crate::program::{InstanceName, OutputOwner, OutputStep, PortName, ProgramRelation};
 use crate::resolver::{DependencyKind, GraphNodeIndex};
 use crate::types::GraphRelation;
 
-/// The relation of `&output` in `program`, or `None` where it derives none.
+/// The relation of the last `OUT` form of `program`, the program's output, or
+/// `None` where it holds none.
 pub fn output_relation(program: &CheckedProgram) -> Option<GraphRelation> {
-    relation_of(program, &ProgramRelation::Declared(RelationName(DeclaredName::Written("&output".into()))))
+    let nodes = program.program.graph.nodes.iter().enumerate();
+    let (node, _) = nodes.filter_map(|(index, node)| match &node.kind {
+        DependencyKind::Out(form) => Some((index, form)),
+        _ => None,
+    }).max_by(|(_, a), (_, b)| a.cmp(b))?;
+    Some(GraphRelation { node: GraphNodeIndex(node as u32), output: None })
 }
 
 /// The relation that a clause derives, a parameter stores or a `ONE` mark chooses as `name` in

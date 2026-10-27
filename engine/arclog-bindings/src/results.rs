@@ -42,7 +42,7 @@ impl From<Stop> for PyStopKind {
     }
 }
 
-/// What the consistency test of a `RULE` clause's relation found.
+/// What the consistency test of an `OUT` form's relation, or of a `RULE` clause's, found.
 #[pyclass(name = "ConsistencyKind", eq, eq_int, frozen, module = "arclog")]
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PyConsistencyKind {
@@ -53,7 +53,7 @@ pub enum PyConsistencyKind {
     Stopped,
 }
 
-/// The consistency of a relation, read as `&output`, with the train pairs.
+/// The consistency of the relation of an `OUT` form, or of a `RULE` clause under the rule tests, with the train pairs.
 #[pyclass(name = "Consistency", frozen, get_all, module = "arclog")]
 pub(crate) struct PyConsistency {
     kind: PyConsistencyKind,

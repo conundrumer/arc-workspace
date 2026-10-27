@@ -101,7 +101,7 @@ fn determination(solver: &str, colors: &[u8], caps: Caps) -> Determination {
 fn copies_input(names: &[&str]) -> String {
     let dets: String = names.iter().map(|name| format!("(DET &{name} ColorDomain)\n")).collect();
     let reads: String = names.iter().map(|name| format!(" (&{name} (:C *C_{name}))")).collect();
-    format!("{dets}(RULE &output (input *P *Col){reads})\n")
+    format!("{dets}(RULE &output (input *P *Col){reads})\n(OUT (&output ^P ^Col))\n")
 }
 
 #[test]

@@ -278,6 +278,7 @@ impl<'l> Writer<'l> {
             Form::Instance(instance) => self.instance(instance.value(), path, names, &mut t),
             Form::Choose(choose) => self.choose(choose.value(), path, names, &mut t),
             Form::RigidDet(rigid) => self.rigid_det(rigid.value(), path, names, &mut t),
+            Form::Out(out) => self.out(out.value(), path, names, &mut t),
             Form::Demonstrated(demonstrated) => self.demonstrated(demonstrated.value(), path, names, &mut t),
             Form::Claim(_) | Form::Alts(_) => unreachable!("a claim and an `ALTS` form are written above"),
         }
@@ -567,6 +568,12 @@ impl<'l> Writer<'l> {
         for _ in 0..open {
             self.put(t, ")");
         }
+    }
+
+    fn out(&mut self, out: &crate::program::Out, path: &NodePath, names: &Names, t: &mut Tokens) {
+        self.put(t, sp::OUT);
+        let body = out.key.body.value();
+        self.conjuncts(body, &ChildPaths::of(path, NodeRef::Out(out)).path(NodeRef::Body(body)), names);
     }
 
     fn demonstrated(&mut self, demonstrated: &Demonstrated, path: &NodePath, names: &Names, t: &mut Tokens) {

@@ -215,6 +215,7 @@ pub(super) enum Tag {
     Instance,
     Choose,
     RigidDet,
+    Out,
     Demonstrated,
     Alts,
     Alt,
@@ -389,6 +390,7 @@ pub(crate) fn form_scope(form: &Form) -> Option<LabelScope<'_>> {
         Form::Instance(instance) => instance.value().scope(),
         Form::Choose(choose) => choose.value().scope(),
         Form::RigidDet(rigid) => rigid.value().scope(),
+        Form::Out(out) => out.value().scope(),
         Form::Demonstrated(demonstrated) => demonstrated.value().scope(),
         Form::Alts(alts) => alts.value().scope(),
     }
@@ -414,6 +416,7 @@ pub(super) fn cache(form: &Form) -> &FormCache {
         Form::Instance(node) => &node.shared.cache,
         Form::Choose(node) => &node.shared.cache,
         Form::RigidDet(node) => &node.shared.cache,
+        Form::Out(node) => &node.shared.cache,
         Form::Demonstrated(node) => &node.shared.cache,
         Form::Alts(node) => &node.shared.cache,
     };
@@ -425,7 +428,7 @@ pub(super) fn cache(form: &Form) -> &FormCache {
 pub(crate) fn shares_rule_scope(rule: &DemoRule, index: usize) -> bool {
     let kind = match &rule.forms[index] {
         Form::Clause(_) | Form::Instance(_) | Form::Choose(_) | Form::RigidDet(_) => true,
-        Form::Claim(_) | Form::Demonstrated(_) | Form::Alts(_) => false,
+        Form::Claim(_) | Form::Demonstrated(_) | Form::Alts(_) | Form::Out(_) => false,
     };
     kind && !rule.forms.from_alt(index)
 }
@@ -461,6 +464,7 @@ pub(super) fn form_with(cx: &mut Context, out: &mut CanonicalWriter, form: &Form
         Form::Instance(instance) => instance.value().write_form(cx, out),
         Form::Choose(choose) => choose.value().write_form(cx, out),
         Form::RigidDet(rigid) => rigid.value().write_form(cx, out),
+        Form::Out(form) => form.value().write_form(cx, out),
         Form::Demonstrated(demonstrated) => demonstrated.value().write_form(cx, out),
         Form::Alts(alts) => alts.value().write_form(cx, out),
     };
@@ -770,6 +774,16 @@ impl WriteForm for RigidDet {
     }
 }
 
+impl WriteForm for Out {
+    fn scope(&self) -> Option<LabelScope<'_>> {
+        Some(LabelScope::Out(self))
+    }
+
+    fn write_form(&self, cx: &mut Context, out: &mut CanonicalWriter) {
+        cx.walk_into(out, |cx| walk::out(cx, (), 0, self));
+    }
+}
+
 impl WriteForm for DemoRule {
     fn scope(&self) -> Option<LabelScope<'_>> {
         Some(LabelScope::DemoRule(self))
@@ -812,6 +826,7 @@ impl<'a> ScopeSink<'a> for Context<'_> {
                 out.tag(Tag::RigidDet);
                 names.write_own(&rigid.name.0, out);
             }
+            Open::Out(_) => out.tag(Tag::Out),
             Open::DemoRule(rule) => {
                 out.tag(Tag::DemoRule);
                 out.text(&rule.name.0);

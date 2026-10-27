@@ -47,6 +47,11 @@ pub struct DecodeSettings {
     /// construction declare they copy ([`crate::eval::copies`]), and report
     /// the violations to [`crate::decode::Decoder::take_copy_violations`].
     pub check_copies: bool,
+    /// Whether the `END` of a `RULE` clause tests the clause's relation, as
+    /// `docs/engine/synthesis.md#decode-settings` gives it: an observation
+    /// beside the step's other results, which ends no decode and changes no
+    /// mask.
+    pub rule_tests: bool,
 }
 
 impl DecodeSettings {
@@ -67,6 +72,7 @@ impl Default for DecodeSettings {
             projection_cap: 10_000,
             table_work_cap: 1 << 20,
             check_copies: false,
+            rule_tests: false,
         }
     }
 }

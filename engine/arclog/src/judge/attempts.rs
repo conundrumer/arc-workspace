@@ -17,11 +17,11 @@ pub enum Attempts {
     Two(Grid, Grid),
 }
 
-pub(crate) fn attempts(evaluations: &[Evaluation<'_>], relation: &GraphRelation, columns: GridColumns) -> Outcome<Box<[Attempts]>> {
+pub(crate) fn attempts(evaluations: &[Evaluation<'_>], relation: &GraphRelation) -> Outcome<Box<[Attempts]>> {
     let task = evaluations[0].task;
     let mut observed = vec![Observed::default(); evaluations.len()];
     task.examples().skip(task.train.len()).map(|example| {
-        let set = output_sets_observed(evaluations, &mut observed, relation, example, &[columns], &[Comparison::Full])?.pop().expect("one output set");
+        let set = output_sets_observed(evaluations, &mut observed, relation, example, &[GridColumns::OUT], &[Comparison::Full])?.pop().expect("one output set");
         Ok(match set {
             OutputSet::Grids(grids) => match &*grids {
                 [one] => Attempts::One(one.clone()),

@@ -24,7 +24,7 @@ use crate::hash::{StableHashMap, StableHashSet};
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{
     Body, Choose, Clause, ClauseKeyword, ColumnName, Conjunct, ConstraintLabel, Form, Instance, InstanceInput, LabelId, LabelUse, Negated,
-    Operand, OutputName, OutputOwner, OutputStep, ProgramRelation, RelationRef, RigidDet, Site, SiteArg,
+    Operand, Out, OutputName, OutputOwner, OutputStep, ProgramRelation, RelationRef, RigidDet, Site, SiteArg,
 };
 use crate::program::Atom;
 use crate::registry::{Component, InputPort, LibEntry, Registry};
@@ -153,7 +153,7 @@ fn declarations(registry: &Registry, form: &Form) -> Vec<ProgramRelation> {
             component(registry, &instance.component).map_or_else(Vec::new, |component| instance_outputs(component, instance).into_iter().map(|(relation, _)| relation).collect())
         }
         Form::RigidDet(rigid) => rigid_det_outputs(rigid.value()).into_iter().map(|(relation, _)| relation).collect(),
-        Form::Claim(_) | Form::Demonstrated(_) | Form::Alts(_) => Vec::new(),
+        Form::Claim(_) | Form::Demonstrated(_) | Form::Alts(_) | Form::Out(_) => Vec::new(),
     }
 }
 
@@ -259,6 +259,7 @@ impl Writer<'_> {
                 Form::Instance(instance) => self.instance(instance.value(), at)?,
                 Form::Choose(choose) => self.choose(choose.value(), at)?,
                 Form::RigidDet(rigid) => self.rigid_det(rigid.value(), at)?,
+                Form::Out(out) => self.out(out.value(), at)?,
                 Form::Demonstrated(_) => return Err(no_form("a `DEMONSTRATED` form", at)),
                 Form::Alts(_) => return Err(no_form("an `ALTS` form", at)),
             }
@@ -594,6 +595,14 @@ impl Writer<'_> {
             self.declare(relation, columns, path)?;
         }
         Ok(())
+    }
+
+    /// Emits the `OUT` form: its atoms as the body of a key clause, then
+    /// `END`. It declares nothing.
+    fn out(&mut self, out: &Out, path: &NodePath) -> Written {
+        self.model(Control::Out, path)?;
+        self.body(out.key.body.value(), &path.child(Out::BODY))?;
+        self.model(Control::End, path)
     }
 
     fn choose(&mut self, choose: &Choose, path: &NodePath) -> Written {

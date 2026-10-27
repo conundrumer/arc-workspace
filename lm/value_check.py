@@ -7,8 +7,9 @@ branch is empty, and r4, whose first table after the branch faults and which the
 mark solved. Every case holds the evidence tables, one prefix table (none for `$D`) and two tables after the branch,
 each table (Number, Color) of 8 rows on each of two train examples; the first table after the branch of a solving
 continuation has one Color on all its rows, and every other table random Colors. The labels file comes from
-lm/rollout_labels.py, on sampler lines, whose settings line gives an LM of a fold that holds neither task and a data
-export that marks `tb` held out, and a report written beside the export.
+lm/rollout_labels.py, on sampler lines, whose settings line gives an LM of a fold that holds neither task, a data
+export that marks `tb` held out and `rule_tests` true, and a report written beside the export, whose verdicts stand
+for the verdict at the END of the stream's `OUT` form.
 
 Each continuation's stream holds an INIT form and two RULE clauses after the branch, the first table after the branch
 in the first rule and the second in the second, where the INIT form stands, its declaration before its last
@@ -132,7 +133,7 @@ def write_export(d, rng, tasks=("ta", "tb"), branches=BRANCHES, tasks_dir=None, 
     rel = lambda r, token, fault=None: dict(point=0, relation=r, column_types=["Number", "Color"], width=2,
                                             det_relations=[], det_widths=[], det_columns=[], token=token, fault=fault)
     random_rows = lambda: [[i, int(rng.integers(0, 10))] for i in range(N_ROWS)]
-    settings = {"settings": {}, "world": "Closed", "args": {"model": "runs/synthetic", "prefix": "random",
+    settings = {"settings": {"rule_tests": True}, "world": "Closed", "args": {"model": "runs/synthetic", "prefix": "random",
                                                            "data": None if data_dir is None else str(data_dir)},
                 "model_meta": {"fold": f"{FOLD}/4"}}
     tables, index, sampler, report = [], [], [settings], []
@@ -202,6 +203,20 @@ RL.main(d / "sampler.jsonl", d)
 
 print("== labels (rollout_labels.py)")
 labels = E.read_value_labels(d / "labels.jsonl")
+no_rule_tests = Path(tmp.name) / "no-rule-tests"
+no_rule_tests.mkdir()
+(no_rule_tests / "labels.jsonl").write_text((d / "labels.jsonl").read_text())
+(no_rule_tests / "samples.jsonl").write_text(json.dumps({"settings": {"rule_tests": False}}) + "\n")
+try:
+    E.read_value_labels(no_rule_tests / "labels.jsonl", "consistent")
+    refused = False
+except E.DataFault:
+    refused = True
+(d / "samples.jsonl").write_text((d / "sampler.jsonl").read_text())
+verdict(refused and len(E.read_value_labels(d / "labels.jsonl", "consistent")) == len(labels)
+        and len(E.read_value_labels(no_rule_tests / "labels.jsonl", "solving")) == len(labels),
+        "the consistent label raises a DataFault where the settings line gives no rule_tests, and reads where it does")
+
 lab = lambda m, case="$C", b=1, task="ta": labels[(task, RL.case_name(task, case, b, m))]
 verdict(all(l["prefix_tables"] == (3 if l["corpus_case"] == "$C" else 2) for l in labels.values()),
         f"prefix_tables 3 for $C and 2 for $D, over {len(labels)} cases")

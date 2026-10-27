@@ -70,7 +70,7 @@ the relation it derives, the ALT names of its block, and the ALT names of the
 block of each form of that relation that stands deeper. In a case, the check
 compares P only where some reader of P derives its relation there, which holds
 where the case holds the ALT names of the reader's block and all the ALT names
-of no deeper block, and where that relation is `&output`, or `&output` reads it
+of no deeper block, and where that relation is `&output`, or the `OUT` form reads it
 at any depth, or it is itself such a relation P' that the check compares in the
 case. In any other case nothing reads P, so its rows say nothing of the case.
 
@@ -84,15 +84,15 @@ several arclog relations hold, and an arclog relation that holds several
 relations of the run, are compared once for each pair. `arclog-cli row-parity` gives the rest
 of the verdicts, and `uncompared` "no case's program has a relation of that
 name" for a relation that no case it runs has, and "no case the check runs
-reads it from `&output`" for one that a case has and no case's `&output`
+reads it from the `OUT` form" for one that a case has and no case's `OUT` form
 reads, at any depth. In a case the check compares a relation only where the
-case's `&output` reads it or is it, or where it is a check relation of a folded
+case's `OUT` form reads it or is it, or where it is a check relation of a folded
 Souffle relation (`NameMap.checks`), which the case counts as read though nothing
 reads it (`case_rows` writes their names as `check_relations`), or where it is a
 relation whose clause the projection pass removes and a reader of it derives its
 relation in the case as above (`NameMap.removed`, which `case_rows` writes as
 `removed_relations`). An `equal` line proves that
-the relation's rows in each case that derives it and whose `&output` reads
+the relation's rows in each case that derives it and whose `OUT` form reads
 it, or that is a check relation of a folded relation, or whose reader derives its relation there, at the stored parameters, are these rows over the columns the converter maps
 (`engine/arclog-cli/src/row_parity.rs` gives the rest). Where the relation is
 one of the converter's Souffle text, the rows are those the text's clauses

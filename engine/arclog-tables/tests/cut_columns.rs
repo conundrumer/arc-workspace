@@ -9,7 +9,7 @@ use arclog::registry::Registry;
 use arclog::stream::corpus::{solver_streams, token_ids, WantedCases};
 use arclog::stream::{DecodeSettings, Emitter, Vocabulary};
 use arclog_tables::columns::{case_columns, cut_case_columns, CaseColumns};
-use arclog_tables::tables::{evidence_tables, step_tables, Points, Table};
+use arclog_tables::tables::{evidence_tables, record_step, Points, Table};
 
 const ARCLOG: &str = "\
 ;; tie
@@ -167,7 +167,7 @@ fn a_cut_stream_gives_the_tables_of_the_whole_stream_after_its_base_prefix() {
     let streams: Vec<Vec<(u32, Emitter)>> = vec![whole.clone(), other, whole[..shared + 3].to_vec(), whole.clone()];
     let constructions = Constructions::new(Vec::new(), registry).expect("an empty table");
     let record = |tables: &mut Vec<(usize, Table)>, decoder: &arclog::decode::Decoder<'_>, stepped: arclog::decode::replay::Stepped<'_>| {
-        tables.extend(step_tables(decoder, Points::All).into_iter().map(|table| (stepped.index, table)));
+        record_step(tables, decoder, stepped.index, Points::All);
     };
     let replayed = replay_prefix_tree(&task, &judged, &streams, &constructions, &settings, false, &record);
     let evidence = evidence_tables(&task, registry);

@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 use crate::program::{
     written_inputs, Alt, Alts, AltsName, Block, Arcdata, Body, Clause, ClauseKeyword, ColumnName, DeclaredName, DemoRule, Demonstrated, DemonstratedPart, Form, Instance,
-    InstanceInput, InstanceName, KeyBody, KeyClause, LabelId, LabelUse, Atom, Choose, Conjunct, FactRelation, Negated, Node, OutputOwner, OutputStep, PortName, Program, ProgramRelation, RelationColumn, RelationName, RelationRef, RigidDet, RigidDetName, RuleForms, Site, SiteArg, SiteValue,
+    InstanceInput, InstanceName, KeyBody, KeyClause, LabelId, LabelUse, Atom, Choose, Conjunct, FactRelation, Negated, Node, OutputOwner, OutputStep, PortName, Program, ProgramRelation, RelationColumn, RelationName, RelationRef, Out, RigidDet, RigidDetName, RuleForms, Site, SiteArg, SiteValue,
 };
 
 /// A solver read from its two files: the claims, the tree of alts, the
@@ -443,7 +443,7 @@ impl Solver {
                 Some(Derives::RigidDet(name)) => {
                     owners.insert(OutputOwner::RigidDet(name));
                 }
-                None => {}
+                Some(Derives::Out) | None => {}
             });
             each_read(NodeRef::from(form), &mut |relation| {
                 if let RelationRef::Output(output) = relation {
@@ -631,7 +631,7 @@ impl<'a> Walk<'a> {
     /// atom that names it, or, for an input of an instance, the instance's
     /// `INIT` form, which holds that input. A form that a deeper block
     /// derives again (`rederived`) is not a form of the case, and a form
-    /// that no read leads from to `&output` (`reaching_output`) reads
+    /// that no read leads from to the `OUT` form (`reaching_output`) reads
     /// nothing the case needs.
     fn read_elsewhere(&self, line: &Placed, clause: &Clause) -> bool {
         if port_of(clause, &self.placed).is_some_and(|port| port.input) {
@@ -648,11 +648,10 @@ impl<'a> Walk<'a> {
     }
 }
 
-/// For each of `forms`, whether the thing it derives reaches `&output`: it
-/// is `&output`, or an instance or a rigid determination, or a form that
-/// reaches `&output` reads it.
+/// For each of `forms`, whether the thing it derives reaches the `OUT` form:
+/// it is the `OUT` form, or an instance or a rigid determination, or a form
+/// that reaches the `OUT` form reads it.
 fn reaching_output(forms: &[&Placed]) -> Vec<bool> {
-    let output = relation_of(&ProgramRelation::Declared(RelationName(DeclaredName::Written("&output".into()))));
     let derived: Vec<Option<RelationRef>> = forms
         .iter()
         .map(|p| match derives(&p.form) {
@@ -660,7 +659,7 @@ fn reaching_output(forms: &[&Placed]) -> Vec<bool> {
             _ => None,
         })
         .collect();
-    let mut reaching: Vec<bool> = derived.iter().map(|relation| relation.as_ref().is_none_or(|relation| *relation == output)).collect();
+    let mut reaching: Vec<bool> = derived.iter().map(Option::is_none).collect();
     loop {
         let mut changed = false;
         for reader in 0..forms.len() {
@@ -1395,18 +1394,21 @@ fn map_atoms(form: &Form, map: &dyn Fn(&Atom) -> Option<Atom>) -> Option<Form> {
                 rules: demonstrated.rules.iter().zip(rules).map(|(old, new)| new.unwrap_or_else(|| old.clone())).collect(),
             })))
         }
+        Form::Out(out) => key_body(&out.value().key, map).map(|key| Form::Out(Node::new(Out { key }))),
         Form::Claim(_) | Form::Alts(_) => None,
     }
 }
 
-/// The relation, instance or rigid `DET` that a form derives. A case keeps,
-/// of the forms that derive one such thing, those of the deepest blocks
-/// (`rederived`).
+/// The relation, instance, rigid `DET` or `OUT` form that a form derives. A
+/// case keeps, of the forms that derive one such thing, those of the deepest
+/// blocks (`rederived`).
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 enum Derives {
     Relation(ProgramRelation),
     Instance(InstanceName),
     RigidDet(RigidDetName),
+    /// The `OUT` form, which a case holds once.
+    Out,
 }
 
 fn derives(form: &Form) -> Option<Derives> {
@@ -1418,6 +1420,7 @@ fn derives(form: &Form) -> Option<Derives> {
         Form::Demonstrated(demonstrated) => {
             Some(Derives::Relation(ProgramRelation::Declared(demonstrated.value().name.clone())))
         }
+        Form::Out(_) => Some(Derives::Out),
         Form::Claim(_) | Form::Alts(_) => None,
     }
 }
@@ -1432,6 +1435,7 @@ fn equal_forms(left: &Form, right: &Form) -> bool {
         (Form::RigidDet(a), Form::RigidDet(b)) => a == b,
         (Form::Demonstrated(a), Form::Demonstrated(b)) => a == b,
         (Form::Alts(a), Form::Alts(b)) => a == b,
+        (Form::Out(a), Form::Out(b)) => a == b,
         _ => false,
     }
 }

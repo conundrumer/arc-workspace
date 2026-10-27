@@ -47,6 +47,8 @@ const ARCLOG: &str = "\
        (NOT (&taken P)))
       ((&taken P)
        (&seed (:C Col)))))
+
+(OUT (&output ^P ^Col))
 ";
 
 const ARCDATA: &str = "\
@@ -78,7 +80,7 @@ fn run(dir: &Path, alt: &str) -> JudgedRun {
     let limits = Limits::new(None, Cancellation::default());
     let constructions = Constructions::new(Vec::new(), registry).expect("an empty table");
     let evaluation = Evaluation { program: &program, concept: None, task: &task, parameters: &parameters, session: &session, registry, constructions: &constructions, limits: &limits };
-    let output = output_relation(&program).expect("the case derives `&output`");
+    let output = output_relation(&program).expect("the case holds an `OUT` form");
     judged_run(&evaluation, &output, &judged, World::Closed, Depth::Full).expect("the run has no fault")
 }
 
