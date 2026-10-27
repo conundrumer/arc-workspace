@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 
@@ -58,11 +59,14 @@ def read(text: str) -> list:
     return stack[0].items
 
 
-def walk(t):
-    yield t
-    if isinstance(t, L):
-        for i in t.items:
-            yield from walk(i)
+def walk(t) -> Iterator:
+    """`t` and each node under it, each before the nodes under it, in order of the text."""
+    pending = [t]
+    while pending:
+        node = pending.pop()
+        yield node
+        if isinstance(node, L):
+            pending.extend(reversed(node.items))
 
 
 def leaves(t):

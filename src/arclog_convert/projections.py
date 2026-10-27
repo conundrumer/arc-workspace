@@ -165,11 +165,13 @@ class Projected:
 
 
 class _Step(NamedTuple):
-    """The text after one clause of the pass, the relation of that clause, and the forms that read it."""
+    """The text after one clause of the pass, the relation of that clause, the forms that read it, and the lint codes
+    of the text (`_codes`)."""
 
     text: str
     relation: str
     readers: frozenset[ReaderForm]
+    codes: Counter[str]
 
 
 @dataclass(frozen=True)
@@ -342,10 +344,13 @@ def _example_key(form: L) -> bool:
 
 
 class _Program:
-    """A program text with what the removal of a projection clause reads of it."""
+    """A program text with what the removal of a projection clause reads of it. `codes` is the lint codes of the text
+    (`_codes`)."""
 
-    def __init__(self, text: str, arcdata: str, columns: Mapping[str, Mapping[str, Any]], chosen: frozenset[str]):
+    def __init__(self, text: str, arcdata: str, columns: Mapping[str, Mapping[str, Any]], chosen: frozenset[str],
+                 codes: Counter[str]):
         self.text, self.arcdata, self.columns, self.chosen = text, arcdata, columns, chosen
+        self.codes = codes
         forms = read(text)
         self.placed = placements(forms)
         self.points = alt_points(forms)[0]
@@ -371,7 +376,6 @@ class _Program:
         readers redirected, and the clause removed unless `keep`; none where no clause may go. A clause that gives the
         lint another code than the text has stays, other than for an `OR` branch the redirect leaves implied, which
         goes."""
-        baseline = None
         self.blocked = False
         for p in self.placed:
             projection = _projection(p.form) if p.name else None
@@ -385,14 +389,13 @@ class _Program:
             redirects, readers = found
             edits = redirects if keep else [*redirects, _removal(self.text, p.form)]
             text = applied(self.text, edits)
-            baseline = _codes(self.text) if baseline is None else baseline
             codes = _codes(text)
-            if not codes <= baseline:
+            if not codes <= self.codes:
                 text = _without_implied(text, _landed(edits, redirects))
                 codes = _codes(text)
-            if codes <= baseline:
-                return _Step(text, str(p.name), readers)
-            self.blocked |= any(code.startswith("alt-") for code in codes - baseline)
+            if codes <= self.codes:
+                return _Step(text, str(p.name), readers, codes)
+            self.blocked |= any(code.startswith("alt-") for code in codes - self.codes)
         return None
 
     # ---- the rules that keep a clause
@@ -652,7 +655,12 @@ def _lint(text: str) -> Linter:
 
 def _codes(text: str) -> Counter[str]:
     """The lint codes of `text` but those the pass repairs (`REPAIRED`), with their counts."""
-    return Counter(code for _, code, _ in _lint(text).errs if code not in REPAIRED)
+    return _error_codes(_lint(text))
+
+
+def _error_codes(lint: Linter) -> Counter[str]:
+    """The lint codes of the text `lint` ran on, as `_codes` gives them."""
+    return Counter(code for _, code, _ in lint.errs if code not in REPAIRED)
 
 
 def _landed(edits: list[Edit], redirects: list[Edit]) -> set[int]:
@@ -779,13 +787,15 @@ def project(arclog: str, arcdata: str, columns: Mapping[str, Mapping[str, Any]],
     """`arclog` after the pass, given the `arcdata` of the same program and its column map `columns`
     (`arclog_convert.names.column_map`), with the readers of each relation whose clause the pass removed (left in place
     with `keep`)."""
-    chosen = frozenset(_lint(arclog).chosen)
+    first = _lint(arclog)
+    chosen = frozenset(first.chosen)
     readers: dict[str, set[ReaderForm]] = defaultdict(set)
+    codes = _error_codes(first)
     while True:
-        program = _Program(arclog, arcdata, columns, chosen)
+        program = _Program(arclog, arcdata, columns, chosen, codes)
         if (step := program.step(keep)) is None:
             break
-        arclog = step.text
+        arclog, codes = step.text, step.codes
         readers[step.relation] |= step.readers
     arclog = _without_restated_outs(arclog if keep or not readers else _restand(arclog))
     return Projected(arclog, {relation: tuple(sorted(forms)) for relation, forms in sorted(readers.items())},

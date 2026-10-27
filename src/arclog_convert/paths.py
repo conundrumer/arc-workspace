@@ -1,6 +1,6 @@
 """The directories the converter reads and writes. `main` of
-`arclog_convert.convert` rebinds `OUT_DIR`, `PLANS` and
-`NAMES_DIR` and `COLUMNS_DIR` under `--out`, so a module reads them as attributes of this module
+`arclog_convert.convert` rebinds `OUT_DIR`, `PLANS`,
+`NAMES_DIR`, `COLUMNS_DIR` and `CASE_RECORDS` under `--out`, so a module reads them as attributes of this module
 (`paths.PLANS`) and never imports them by name."""
 
 from __future__ import annotations
@@ -20,13 +20,15 @@ SOLVERS = Path(os.environ[SOLVERS_ENV]) if os.environ.get(SOLVERS_ENV) else ROOT
 WITNESSES = ROOT / "programs" / "witnesses"
 
 
-def out_dirs() -> tuple[Path, Path, Path, Path]:
-    """`gen/`, `plan/`, `names/` and `columns/` of `arclog_out`.
+def out_dirs() -> tuple[Path, Path, Path, Path, Path]:
+    """`gen/`, `plan/`, `names/`, `columns/` and `case_records/` of `arclog_out`.
     `convert_one` writes each solver's name map (`name_map`) to `names/` and
-    its column map (`column_map`) to `columns/`, beside `gen/`, whose globs
-    read only arclog and arcdata files."""
+    its column map (`column_map`) to `columns/`, and `convert_into` writes the
+    record of the inputs of each solver's case files (`convert_cases`) to
+    `case_records/`, beside `gen/`, whose globs read only arclog and arcdata
+    files and whose `cases/` directories hold only case files."""
     root = arclog_out()
-    return root / "gen", root / "plan", root / "names", root / "columns"
+    return root / "gen", root / "plan", root / "names", root / "columns", root / "case_records"
 
 
-OUT_DIR, PLANS, NAMES_DIR, COLUMNS_DIR = out_dirs()
+OUT_DIR, PLANS, NAMES_DIR, COLUMNS_DIR, CASE_RECORDS = out_dirs()
