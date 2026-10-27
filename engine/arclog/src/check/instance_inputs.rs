@@ -1,6 +1,6 @@
-//! The check of an instance's input order and defaults, and the inputs of
-//! an `INIT` form by their paths, which the check of an `Unfold` instance's
-//! reads reads too.
+//! The check of an instance's input order, defaults and head sites, and the
+//! inputs of an `INIT` form by their paths, which the check of an `Unfold`
+//! instance's reads reads too.
 
 use super::reads::{form_reads, forms_within, FormRead};
 use super::types::{component, result};
@@ -9,6 +9,7 @@ use crate::safety::body_labels;
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::{Instance, InstanceInput, InstancePart, KeyBody, KeyClausePart, PortName};
+use crate::registry::{binding_sites, is_key, unbound, Column, ColumnType, InputPort, TypeParameter};
 use crate::resolver::ResolvedProgram;
 use crate::types::{each_site_label, use_label};
 
@@ -26,8 +27,10 @@ impl Check for InstanceInputsCheck {
 
     /// Refuses, in each `INIT` form of the form, each input that its
     /// component does not declare, each input written after another clause of
-    /// the same input, and each input that stands before an input of its
-    /// group that the component declares before it, as
+    /// the same input, each input that stands before an input of its
+    /// group that the component declares before it, and each input that
+    /// writes no head site on a column of its port other than `key`, other
+    /// than a column of a type parameter that no place of the form binds, as
     /// `docs/arclog/arclog.md#instance` gives. In a keyed instance, it
     /// refuses as well each input that stands in a group other than its
     /// own: an input after the key clause that reads an output of its
@@ -45,6 +48,8 @@ impl Check for InstanceInputsCheck {
             let mut group = None;
             let mut latest = None;
             let instance_at = input.path.join(&at);
+            let sites = binding_sites(instance, &component.inputs);
+            let unit = unbound(&component.type_parameters, &sites);
             for (path, keyed, written_input) in inputs_at(instance) {
                 if group != Some(keyed) {
                     group = Some(keyed);
@@ -53,19 +58,21 @@ impl Check for InstanceInputsCheck {
                 let name = &written_input.name;
                 let index = declared(name);
                 let message = match index {
-                    None => Some("the component declares no input of this name"),
-                    Some(_) if written.contains(&name) => Some("the input is written in another clause; a union is one clause whose body is an `OR`"),
+                    None => Some("the component declares no input of this name".to_owned()),
+                    Some(_) if written.contains(&name) => Some("the input is written in another clause; a union is one clause whose body is an `OR`".to_owned()),
                     Some(index) if latest.is_some_and(|latest| index < latest) => {
-                        Some("the input stands before an input of its group that the component declares before it")
+                        Some("the input stands before an input of its group that the component declares before it".to_owned())
                     }
                     Some(_) => None,
                 };
+                let headless = index.and_then(|index| headless_column(&component.inputs[index], written_input, &unit));
                 latest = latest.max(index);
                 written.push(name);
                 let input_at = at.join(&path);
                 let within = reads.iter().filter(|read| read.form == instance_at && read.at.0.starts_with(&input_at.0));
                 let group = instance.key.as_ref().and_then(|key| group_fault(program, input.path, keyed, written_input, &key.value().key, within));
-                for message in [message, group].into_iter().flatten() {
+                let group = group.map(str::to_owned);
+                for message in [message, headless, group].into_iter().flatten() {
                     refusals.push((message, input_at.clone()));
                 }
             }
@@ -84,6 +91,18 @@ impl Check for InstanceInputsCheck {
     fn check_prefix(&self, prefix: &Prefix<'_>) -> PrefixResult {
         super::prefix::settled(prefix, self)
     }
+}
+
+/// Why `written`, an input of the port `port`, writes no head site on a
+/// column it must cover, where it does not: the first column of the port other
+/// than `key` that has no head site of the input, other than a column of a
+/// type parameter in `unit`, which no place of the form binds, as
+/// `docs/arclog/arclog.md#instance` gives. The evaluator reads the same
+/// columns ([`crate::eval::init_form`]).
+fn headless_column(port: &InputPort, written: &InstanceInput, unit: &[&TypeParameter]) -> Option<String> {
+    let binds_nothing = |column: &Column| matches!(&column.ty, ColumnType::Parameter(parameter) if unit.contains(&parameter));
+    let column = port.port.columns.iter().find(|column| !is_key(column) && !binds_nothing(column) && !written.head.iter().any(|site| site.column == column.name))?;
+    Some(format!("the input writes no head site on column {:?}", column.name))
 }
 
 /// Why `written`, an input of an instance whose key is `key`, stands in the

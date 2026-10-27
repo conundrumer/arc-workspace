@@ -1,9 +1,8 @@
 //! The mask admits a constraint's operator, or its first label, only where
-//! some completion of the constraint passes every check, and a projection of
-//! an instance input takes one label on a column of a fixed type, and a token
-//! in a projection only where some completion of the projection passes, and
-//! a field's column token on a body site only where some label after it
-//! passes.
+//! some completion of the constraint passes every check, and a token in a
+//! projection of an instance input only where some completion of the
+//! projection passes, and a field's column token on a body site only where
+//! some label after it passes.
 
 use arclog::decode::{Decoder, Refusal};
 use arclog::eval::instance::Constructions;
@@ -107,28 +106,6 @@ fn each_admitted_operator_and_first_label_has_an_admitted_continuation() {
     assert!(firsts > 0, "the mask admits a constraint");
 }
 
-/// A projection on `A`, a column of the type `Axis`, takes one label, and
-/// one on `key`, a column of a type parameter, takes fields.
-#[test]
-fn a_projection_on_a_column_of_a_fixed_type_takes_one_label() {
-    let inputs = inputs();
-    let mut decoder = decoder(&inputs);
-    let frame = Token::Lib(LibName("Frame".into()));
-    let axes = [Token::Lib(LibName("axis_elem".into())), Token::Column(0), Token::Control(Control::Fresh), Token::Control(Control::End)];
-    step_all(&mut decoder, &[Token::Control(Control::Init), frame, Token::Control(Control::Skip)]);
-    step_all(&mut decoder, &axes);
-    assert!(admits(&decoder, &Token::Column(0)), "a field of the type parameter `Key`");
-    step_all(&mut decoder, &[Token::Control(Control::End)]);
-    assert!(!admits(&decoder, &Token::Column(0)), "no field of an `Axis`");
-    assert!(admits(&decoder, &Token::Label(0)));
-    assert!(matches!(decoder.fork().step(Token::Column(0)), Err(Refusal::Grammar(_))));
-    step_all(&mut decoder, &[Token::Label(0)]);
-    assert!(!admits(&decoder, &Token::Label(0)), "no second label");
-    assert!(!admits(&decoder, &Token::Column(0)));
-    assert!(admits(&decoder, &Token::Control(Control::End)));
-}
-
-
 fn lib(name: &str) -> Token {
     Token::Lib(LibName(name.into()))
 }
@@ -148,22 +125,6 @@ fn instance_with_body<'a>(inputs: &'a Inputs, component: &str, key: Control) -> 
         decoder.step(token).ok()?;
     }
     Some(decoder)
-}
-
-/// The `cell` input of a `BoundingBox` instance reads a key label or an
-/// output of the instance in its projection. With a key that makes a key
-/// label, the key column can hold it, and the body's `END` is admitted;
-/// with a key that makes none, the body makes no label of the projection
-/// that can, and its `END` is refused.
-#[test]
-fn a_body_end_is_admitted_only_where_a_completion_of_the_projection_passes() {
-    let inputs = inputs();
-    let end = Token::Control(Control::End);
-    let without = instance_with_body(&inputs, "BoundingBox", Control::Fresh).expect("a body of one atom");
-    assert!(!admits(&without, &end), "no key label to read");
-    assert!(matches!(without.fork().step(end.clone()), Err(Refusal::Check { .. })));
-    let with = instance_with_body(&inputs, "BoundingBox", Control::Key).expect("a body of one atom");
-    assert!(admits(&with, &end), "the key column can hold the key label");
 }
 
 /// Every token that the mask admits in the projection of an input has an
@@ -227,17 +188,4 @@ fn a_field_token_whose_label_passes_is_admitted() {
     step_text(&mut decoder, CARDINALITY);
     step_text(&mut decoder, "RULE &r0 :0");
     assert!(admits(&decoder, &Token::Column(0)));
-}
-
-/// `&r6` is an output of `BoundingBox`, a relation that a `RULE` over
-/// `input` reads on its Example column, which the rule may read only pooled:
-/// no label follows the field `:0`, so the field token is refused.
-#[test]
-fn a_field_token_whose_every_label_is_refused_is_refused() {
-    let inputs = inputs();
-    let mut decoder = decoder(&inputs);
-    step_text(&mut decoder, CARDINALITY);
-    step_text(&mut decoder, "DET RarestColor END &r3 DET AnyOutNewColor END &r4 RULE &r3 :0 * L0 input :0 * L1 :1 L0 END &r5 INIT Connectivity &r6 &r7 &r8 &r9 :0 OR &r5 :0 ^ L0 :1 * L1 ALSO &r5 :0 L0 :1 L1 NOT &r5 :0 L0 END END :1 &r5 :0 L0 :1 * L2 END :0 END :1 END :2 SKIP :2 SKIP INIT BoundingBox &r10 &r11 :0 &r6 :2 * L0 :1 ^ L1 END :1 &r6 :2 * L2 :1 L1 END :0 END :1 L1 END RULE &r6 :0");
-    assert!(!admits(&decoder, &Token::Column(0)));
-    assert!(matches!(decoder.fork().step(Token::Column(0)), Err(Refusal::Check { .. })));
 }

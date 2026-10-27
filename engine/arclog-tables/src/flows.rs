@@ -14,12 +14,14 @@
 
 use std::collections::BTreeMap;
 
+use arclog::algebra::geometry::Geometry;
+use arclog::algebra::algebra;
 use arclog::check::CheckedProgram;
 use arclog::eval::body_ir::BodyIr;
 use arclog::eval::ir::{atom_modes, Argument, Arguments, AtomSource, ClauseIr, IrNode, IrPaths, NodePaths, Operand, Union, Variable, VariableInfo};
 use arclog::program::path::{node_at, NodePath, NodeRef};
 use arclog::program::{Atom, ColumnName, Conjunct, ConstraintOp, FactRelation, LabelId, OutputOwner, OutputStep, RelationRef};
-use arclog::registry::{is_key, key_fill, ColumnType, Registry};
+use arclog::registry::{is_key, key_fill, ColumnType, LibName, Registry};
 use arclog::resolver::given::{node_relation, Given, GivenLabel};
 use arclog::resolver::registry_columns;
 use arclog::resolver::{DependencyKind, GraphNodeIndex, ResolvedProgram, Resolution};
@@ -289,7 +291,11 @@ impl<'p> Walk<'p> {
     /// such column, and a variable bound to `0` is a constant. A variable
     /// that only lib atoms bind is computed from the variables at the columns
     /// of a mode of the atom that the alternative binds elsewhere, and
-    /// otherwise copies the lib relation's column.
+    /// otherwise copies the lib relation's column. A variable of an
+    /// orientation type whose class stands at no atom, which the evaluator
+    /// binds by the type's domain, copies the column of the lib relation of
+    /// one column that holds that domain ([`domain_relation`]), with no atom
+    /// and no occurrence.
     fn sources(&self, variable: Variable, alt: &Alt<'_>, visiting: &mut Vec<Variable>) -> Vec<ColumnSource> {
         if visiting.contains(&variable) {
             return Vec::new();
@@ -319,6 +325,13 @@ impl<'p> Walk<'p> {
         if zero {
             found.push(ColumnSource::without_atom(SourceKind::Constant, None));
         }
+        if !zero && hits.is_empty() {
+            let ty = alt.variables.get(usize::from(variable.0)).map(|info| &info.ty);
+            found.extend(ty.and_then(|ty| domain_relation(self.flows.registry, ty)).map(|relation| ColumnSource {
+                column: SourceColumn::Position(0),
+                ..ColumnSource::without_atom(SourceKind::Copy, Some(RelationRef::Lib(relation)))
+            }));
+        }
         found.extend(program.iter().flat_map(|hit| self.read(hit)));
         let mut keyed = false;
         if !zero && program.is_empty() {
@@ -347,7 +360,9 @@ impl<'p> Walk<'p> {
     /// The sources that the lib atom of `hit` gives the variable at its
     /// column: computed from the variables of each mode that holds and does
     /// not bind the column, and otherwise a copy of the lib relation's
-    /// column.
+    /// column. A mode holds where each of its bound columns holds `0` or a
+    /// variable with sources, and at least one holds a variable: a mode whose
+    /// bound columns hold only `0` computes from no variable.
     fn lib_sources(&self, hit: &Hit<'_>, alt: &Alt<'_>, visiting: &mut Vec<Variable>) -> Vec<ColumnSource> {
         let (IrNode::Lib(lib), Some((path, atom))) = (hit.node, self.atom_of(hit.paths)) else { return Vec::new() };
         let program = self.flows.program;
@@ -364,6 +379,7 @@ impl<'p> Walk<'p> {
             }
             let mut from = Vec::new();
             let mut bound = true;
+            let mut reads_variable = false;
             for column in mode.bound.iter() {
                 let Some(position) = position_of(column) else {
                     bound = false;
@@ -371,18 +387,41 @@ impl<'p> Walk<'p> {
                 };
                 for (_, argument) in lib.arguments.0.iter().filter(|(at, _)| at.0 == position) {
                     let Argument::Variable(variable) = argument else { continue };
+                    reads_variable = true;
                     let sources = self.sources(*variable, alt, visiting);
                     bound &= !sources.is_empty();
                     from.extend(sources);
                 }
             }
-            if bound {
+            if bound && reads_variable {
                 holds = true;
                 computed.extend(from.into_iter().map(ColumnSource::computed));
             }
         }
         if holds { computed } else { self.read(hit) }
     }
+}
+
+/// The lib relation of one column that holds each constant of the orientation
+/// type `ty`, such as `axis_elem` for `Axis`, or `None` where `ty` is no
+/// orientation type or the registry has no such relation. A one-column
+/// relation of `ty` with fewer rows, such as `d4_identity`, is not it.
+fn domain_relation(registry: &Registry, ty: &ValueType) -> Option<LibName> {
+    ty.orientation_types()?;
+    let domain = Geometry::get().domain(ty).len();
+    let mut found = registry.names().filter(|&name| {
+        let Some(relation) = registry.algebra_relation(name) else { return false };
+        let [column] = &*relation.columns else { return false };
+        if column.ty.fixed() != Some(ty) || !relation.modes.is_empty() {
+            return false;
+        }
+        let mut rows = 0;
+        let Some(algebra) = algebra(name) else { return false };
+        let counted = algebra.evaluate(&[None], registry, &mut |_| rows += 1);
+        counted.is_ok() && rows == domain
+    });
+    let name = found.next()?;
+    found.next().is_none().then(|| name.clone())
 }
 
 /// The walk over the dependency graph: the program, the checked program
@@ -403,8 +442,10 @@ struct Flows<'p> {
 ///   IR of the body that binds it, each site of a positive atom on it a
 ///   copy of that atom's column, `0` a constant, and, where only lib
 ///   atoms bind it, the sources of the labels of a mode of the lib atom,
-///   computed; a key label in the class, in a body of a keyed form that
-///   binds the class at no site of a positive atom, gives the sources
+///   computed; a label of an orientation type whose class stands at no
+///   atom, a copy of the column of the lib relation that holds the type's
+///   domain, such as `axis_elem`; a key label in the class, in a body of a
+///   keyed form that binds the class at no site of a positive atom, gives the sources
 ///   that the key's body gives that label, as copies;
 /// - a part-site column of a `RIGID_DET` part output whose type a D4
 ///   element moves ([`ValueType::moved_by_d4`]): the sources of its
