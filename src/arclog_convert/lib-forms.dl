@@ -58,25 +58,22 @@ sig_frame_offset(P, A, K, V) :- axis_of(D, A), sub_extent(P, A, K), jump_offset(
 
     _key(Ky) :- cell(Ky, _).
 
-    .decl _extent(key: Key, a: Axis, e: number)
-    _extent(Ky, A, E) :- cell(Ky, P), axis_elem(A), axis_dim(P, A, E).
-
     .decl _cut_axis(key: Key, a: Axis)
     _cut_axis(Ky, A) :- parts(Ky, A, _).
     _cut_axis(Ky, A) :- side(Ky, A, _).
 
-    // A side k and a gap g that cut an axis: a given side, or the side that
-    // n parts fill an extent of the key's cells with, where n > 1.
-    .decl _cut(key: Key, a: Axis, k: number, g: number)
-    _cut(Ky, A, K, G) :- side(Ky, A, K), _gap(Ky, A, G).
-    _cut(Ky, A, K, G) :-
-        parts(Ky, A, N), N > 1, _gap(Ky, A, G), _extent(Ky, A, E),
+    // A side k and a gap g that cut an axis of the cell p: a given side, or
+    // the side that n parts fill the extent of p with, where n > 1.
+    .decl _cut(key: Key, p: Position, a: Axis, k: number, g: number)
+    _cut(Ky, P, A, K, G) :- cell(Ky, P), side(Ky, A, K), _gap(Ky, A, G).
+    _cut(Ky, P, A, K, G) :-
+        cell(Ky, P), parts(Ky, A, N), N > 1, _gap(Ky, A, G), axis_dim(P, A, E),
         tile_size(E, N, G, K), G >= 1 - K, G < E.
 
     // The part of p on an axis, as its outer and inner position, each on the
     // axis alone.
     .decl _split(key: Key, p: Position, a: Axis, p_outer: Position, p_inner: Position)
-    _split(Ky, P, A, O, I) :- cell(Ky, P), _cut(Ky, A, K, G), divide_by_size(P, A, K, G, O, I).
+    _split(Ky, P, A, O, I) :- _cut(Ky, P, A, K, G), divide_by_size(P, A, K, G, O, I).
     _split(Ky, P, A, O, I) :-
         cell(Ky, P), parts(Ky, A, 1), _gap(Ky, A, G), axis_dim(P, A, E),
         divide_by_size(P, A, E, G, O, I).
