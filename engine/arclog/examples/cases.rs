@@ -11,13 +11,15 @@
 //! A solver fails where its files do not read, where a case's build
 //! panics, or where a top-level form of a case program stands at a path
 //! that [`arclog::solver::Case::file_path`] gives and the walk of
-//! [`arclog::program::path::node_at`] reaches no node at in that file.
+//! [`arclog::program::path::node_at`] reaches no node at in that file, or
+//! where the last top-level form of a case program is no `OUT` form.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use arclog::harness::{print_ended, read_corpus_solver, require_optimized_build, run_over_corpus, CorpusSolver, SolverResult};
 use arclog::program::path::{node_at, NodePath, NodeRef, PathStep};
+use arclog::program::Form;
 use arclog::solver::{Exclusion, FileOwner, Solver};
 
 /// A line for each fault of the cases of `solver`.
@@ -33,6 +35,9 @@ fn faults(solver: &Solver) -> Vec<String> {
             if file.and_then(|program| node_at(NodeRef::Program(program.value()), &path)).is_none() {
                 faults.push(format!("case {:?}: form {index} stands at {path:?} of the {owner:?} file, which holds no node there", case.name));
             }
+        }
+        if !matches!(case.program.value().forms.last(), Some(Form::Out(_))) {
+            faults.push(format!("case {:?}: the last form of the case program is no `OUT` form", case.name));
         }
     }
     faults

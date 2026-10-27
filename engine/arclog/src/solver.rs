@@ -1452,6 +1452,7 @@ fn is_det(form: &Form) -> bool {
 /// Of the kept forms of one thing that are equal, the first in the walk's
 /// order stands: forms that derive one thing equally derive it once, so their
 /// combination needs no nested `ALT`, and a relation is derived by one clause.
+/// The `OUT` form stands after every other form, as it does in a solver file.
 fn rederived(placed: &[Placed]) -> Vec<Taken<'_>> {
     let keys: Vec<Derives> = placed.iter().map(|p| derives(&p.form).expect("a reached form derives")).collect();
     let mut deepest: StableHashMap<&Derives, u32> = StableHashMap::default();
@@ -1472,7 +1473,8 @@ fn rederived(placed: &[Placed]) -> Vec<Taken<'_>> {
     let mut taken = Vec::new();
     let mut emitted = vec![false; placed.len()];
     let mut placed_keys = StableHashSet::default();
-    for (index, p) in placed.iter().enumerate().filter(|(_, p)| p.depth == 0) {
+    let is_out = |index: usize| keys[index] == Derives::Out;
+    for (index, p) in placed.iter().enumerate().filter(|(index, p)| p.depth == 0 && !is_out(*index)) {
         let key = &keys[index];
         if keep[index] {
             let rules: StableHashSet<Derives> = rule_derives(&p.form).collect();
@@ -1489,8 +1491,9 @@ fn rederived(placed: &[Placed]) -> Vec<Taken<'_>> {
             }
         }
     }
-    let rest = (0..placed.len()).filter(|index| !emitted[*index] && keep[*index] && !in_rules.contains(&keys[*index]));
-    taken.extend(rest.map(|index| Taken { placed: &placed[index], in_rules: Vec::new() }));
+    let rest = (0..placed.len()).filter(|index| !emitted[*index] && keep[*index] && !is_out(*index) && !in_rules.contains(&keys[*index]));
+    let out = (0..placed.len()).filter(|index| keep[*index] && is_out(*index));
+    taken.extend(rest.chain(out).map(|index| Taken { placed: &placed[index], in_rules: Vec::new() }));
     taken
 }
 
