@@ -100,7 +100,7 @@ impl<'e, 'a> Driver<'e, 'a> {
         let mut budget = Budget::new(evaluation.limits, evaluation.session);
         match &program.graph.nodes[relation.node.0 as usize].kind {
             DependencyKind::Clause(_) => self.clauses(relation.node, example),
-            DependencyKind::InstanceInput { input, .. } => instance::evaluate_input(evaluation, &self.bodies(), form, input, example),
+            DependencyKind::InstanceInput { input, .. } => instance::evaluate_input(evaluation, &self.bodies(), form, relation, input, example),
             DependencyKind::Parameter(name) => self.parameter(relation, name),
             DependencyKind::InstanceOutput { .. } => instance::evaluate_instance(evaluation, &self.bodies(), form, example, relation, &mut budget),
             DependencyKind::RigidAssembly(_) => {

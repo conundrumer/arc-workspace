@@ -49,24 +49,13 @@ pub(super) fn key_groups(
     shape: &InstanceShape<'_>,
     example: Option<Example>,
 ) -> Outcome<Result<Vec<Row>, RelationValue>> {
-    Ok(key_read(evaluation, bodies, form, shape, example)?.map(|(groups, _)| groups))
-}
-
-/// The key groups as [`key_groups`] gives them, with the relation of the
-/// key clause where the instance has one.
-pub(super) fn key_read(
-    evaluation: &Evaluation<'_>,
-    bodies: &FormBodies<'_>,
-    form: &NodePath,
-    shape: &InstanceShape<'_>,
-    example: Option<Example>,
-) -> Outcome<Result<(Vec<Row>, Option<Arc<Relation>>), RelationValue>> {
-    key_rows(evaluation, bodies, form, &shape.key_body, &shape.key_labels(), example)
+    Ok(key_rows(evaluation, bodies, form, &shape.key_body, &shape.key_labels(), example)?.map(|(groups, _)| groups))
 }
 
 /// The key groups of a form whose key body is `key_body` with the key
-/// columns `key_labels`, as [`key_read`] gives them: the form is an `INIT`
-/// form or a `DEMONSTRATED` form.
+/// columns `key_labels`: the rows of the relation [`key_relation`] gives,
+/// as [`key_group_rows`] gives them, with that relation where the form has
+/// a key clause. The form is an `INIT` form or a `DEMONSTRATED` form.
 pub(super) fn key_rows(
     evaluation: &Evaluation<'_>,
     bodies: &FormBodies<'_>,
@@ -75,13 +64,34 @@ pub(super) fn key_rows(
     key_labels: &[LabelId],
     example: Option<Example>,
 ) -> Outcome<Result<(Vec<Row>, Option<Arc<Relation>>), RelationValue>> {
+    Ok(key_relation(evaluation, bodies, form, key_body, key_labels, example)?.map(|key| (key_group_rows(key.as_deref()), key)))
+}
+
+/// The relation of the key clause of a form whose key body is `key_body`
+/// with the key columns `key_labels`, read as [`relation_read`] gives it;
+/// `None` where the form has no key clause, or the value of the key body
+/// where it holds no rows. The relation's rows are not walked.
+pub(super) fn key_relation(
+    evaluation: &Evaluation<'_>,
+    bodies: &FormBodies<'_>,
+    form: &NodePath,
+    key_body: &Option<(&Body, NodePath)>,
+    key_labels: &[LabelId],
+    example: Option<Example>,
+) -> Outcome<Result<Option<Arc<Relation>>, RelationValue>> {
     let fault = |message: String| RunFault { message: message.into(), form: form.clone() };
     let Some(key_body) = key_body else {
-        return Ok(Ok((vec![Row::default()], None)));
+        return Ok(Ok(None));
     };
     let (clause, _, _) = key_clause_memo(evaluation.program, form, key_body, key_labels)
         .map_err(|compile| fault(format!("the key body does not compile: {compile:?}")))?;
-    Ok(rows_read(evaluation, form, bodies.relation(form, &clause, example)?, key_labels.len()).map_err(&fault)?.map(|(rows, relation)| (rows, Some(relation))))
+    Ok(relation_read(evaluation, form, bodies.relation(form, &clause, example)?, key_labels.len()).map_err(&fault)?.map(Some))
+}
+
+/// The key groups of a form whose key clause has the relation `key`: its
+/// rows, or the one empty row where the form has no key clause.
+pub(super) fn key_group_rows(key: Option<&Relation>) -> Vec<Row> {
+    key.map_or_else(|| vec![Row::default()], relation_rows)
 }
 
 /// The clause of the key body `key_body` of the form at `form`, whose
@@ -456,15 +466,17 @@ fn with_unit(prefix: usize, head: &[Option<LabelId>], row: &Row) -> Row {
 }
 
 /// The rows of `value`, of `arity` columns, or the value where it holds no
-/// rows, read in `evaluation` at `form` as [`rows_read`] gives.
+/// rows, read in `evaluation` at `form` as [`relation_read`] gives.
 pub(super) fn rows_of(evaluation: &Evaluation<'_>, form: &NodePath, value: RelationValue, arity: usize) -> Result<Result<Vec<Row>, RelationValue>, String> {
-    Ok(rows_read(evaluation, form, value, arity)?.map(|(rows, _)| rows))
+    Ok(relation_read(evaluation, form, value, arity)?.map(|relation| relation_rows(&relation)))
 }
 
-/// The rows of `value` as [`rows_of`] gives them, with the relation that
-/// holds them. The walk of the relation's product is counted as
-/// [`join::charge_walk`] gives, and its stop is the value.
-pub(super) fn rows_read(evaluation: &Evaluation<'_>, form: &NodePath, value: RelationValue, arity: usize) -> Result<Result<(Vec<Row>, Arc<Relation>), RelationValue>, String> {
+/// The relation of `value`, of `arity` columns, or the value where it holds
+/// no rows. A relation of another arity is a fault. The walk of the
+/// relation's product is counted as [`join::charge_walk`] gives, and its
+/// stop is the value; the rows are not walked, as [`relation_rows`] gives
+/// them.
+pub(super) fn relation_read(evaluation: &Evaluation<'_>, form: &NodePath, value: RelationValue, arity: usize) -> Result<Result<Arc<Relation>, RelationValue>, String> {
     let RelationValue::Rows(relation) = value else { return Ok(Err(value)) };
     if relation.arity() as usize != arity {
         return Err(format!("a body gives {} columns, where {arity} are read", relation.arity()));
@@ -472,9 +484,14 @@ pub(super) fn rows_read(evaluation: &Evaluation<'_>, form: &NodePath, value: Rel
     if let Err(stop) = join::charge_walk(evaluation, &relation, form) {
         return Ok(Err(RelationValue::Stopped(stop)));
     }
+    Ok(Ok(relation))
+}
+
+/// The rows of `relation`, the product of its parts.
+pub(super) fn relation_rows(relation: &Relation) -> Vec<Row> {
     let mut rows = Vec::new();
-    join::each_row(&relation, &mut |row| rows.push(row.into()));
-    Ok(Ok((rows, relation)))
+    join::each_row(relation, &mut |row| rows.push(row.into()));
+    rows
 }
 
 /// `rows`, whose first `key` columns are a key and whose other `width`
