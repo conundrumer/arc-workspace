@@ -19,8 +19,8 @@
 //! and each later batch of the table stops at once. The table keeps the entries
 //! found before, and records the stop as it records a stop at another bound.
 //! No result-cache entry holds that stop. An evaluation that begins within the
-//! cap and whose batches take the count past it is held, with its stop, in a store that
-//! the tables of one case share ([`Decoder::table_work`]), and a later table of the case that
+//! cap and whose batches take the count past it is held, with its stop, in the store of
+//! held stops that the decode's requests share ([`Decoder::limits`]), and a later table of the case that
 //! needs that evaluation, at the same result-cache key, records that stop at the
 //! form that stopped and tries no binding for it. The recording makes no choice among the points: it keeps each,
 //! and a caller that reads no body in progress asks for [`Points::Relations`],

@@ -56,7 +56,7 @@ use crate::check::prefix::{Candidate, PrefixChecks};
 use crate::check::CheckId;
 use crate::eval::instance::Constructions;
 use crate::eval::copies::{CopyViolation, CopyViolations};
-use crate::eval::values::TableStops;
+use crate::eval::values::HeldStops;
 use crate::eval::{Cancellation, TableWork};
 use crate::judge::candidates::PairCandidates;
 use crate::program::path::NodePath;
@@ -94,9 +94,9 @@ pub struct Decoder<'a> {
     /// Where the evaluations report the declared rows that a construction's
     /// outputs break, where the settings check them.
     copies: Option<CopyViolations>,
-    /// The stops at the table work cap that the tables of this decode's case
-    /// hold, which each table's [`TableWork`] shares.
-    table_stops: Arc<TableStops>,
+    /// The stops that this decode's requests hold, which the limits of each
+    /// request share ([`Decoder::limits`]).
+    held_stops: Arc<HeldStops>,
 }
 
 /// What [`Decoder::admissible`] computes at a state: the mask, and the
@@ -179,7 +179,7 @@ impl<'a> Decoder<'a> {
         assert_eq!(settings.caps, session.caps, "the caps of the decode settings are those of the session");
         let context = Context { registry, settings: *settings, vocabulary: Vocabulary::new(registry, settings) };
         let state = state::State::new();
-        Decoder { task, session, constructions, context: Arc::new(context), state, before: None, train: None, cancellation: Cancellation::default(), output: None, assignments: Vec::new(), columns: None, trace: DecodeTrace::default(), held: Held::default(), copies: settings.check_copies.then(CopyViolations::default), table_stops: Arc::default() }
+        Decoder { task, session, constructions, context: Arc::new(context), state, before: None, train: None, cancellation: Cancellation::default(), output: None, assignments: Vec::new(), columns: None, trace: DecodeTrace::default(), held: Held::default(), copies: settings.check_copies.then(CopyViolations::default), held_stops: Arc::default() }
     }
 
     /// The ids of the decode's tokens.
@@ -207,9 +207,9 @@ impl<'a> Decoder<'a> {
     }
 
     /// The work count of a table of this decode, under the settings' table
-    /// work cap, sharing the stops that the decode's earlier tables hold.
+    /// work cap.
     pub fn table_work(&self) -> TableWork {
-        TableWork::new(self.context.settings.table_work_cap, Arc::clone(&self.table_stops))
+        TableWork::new(self.context.settings.table_work_cap)
     }
 
     /// The state of the decode: its finished forms and the form in progress.
@@ -373,14 +373,15 @@ impl<'a> Decoder<'a> {
     }
 
     /// A second decode from the same state, which shares this one's caches
-    /// and takes a cancellation of its own, and a store of table stops of its
-    /// own that holds the stops this decode's tables hold now.
+    /// and takes a cancellation of its own, and a store of held stops of its
+    /// own that holds the stops at the table work cap this decode holds now
+    /// and shares the stops at the deadline ([`HeldStops::snapshot`]).
     pub fn fork(&self) -> Decoder<'a> {
         Decoder {
             cancellation: Cancellation::default(),
             held: Held::default(),
             copies: self.copies.as_ref().map(|_| CopyViolations::default()),
-            table_stops: Arc::new(self.table_stops.snapshot()),
+            held_stops: Arc::new(self.held_stops.snapshot()),
             ..self.clone()
         }
     }

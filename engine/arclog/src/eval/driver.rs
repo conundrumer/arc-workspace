@@ -6,6 +6,7 @@
 use std::cell::RefCell;
 use std::convert::Infallible;
 use std::sync::Arc;
+use std::time::Instant;
 
 use super::examples::{self, ExampleScope};
 use super::ir::{self, Argument, Arguments, AtomSource, ClauseIr, CompiledBody, IrNode};
@@ -491,28 +492,47 @@ impl<'e, 'a> Driver<'e, 'a> {
     }
 
     /// The value of `compute`, the evaluation of the entry `request`, where
-    /// the evaluation runs for a table, with the stops held for the table's
-    /// case ([`super::values::TableStops`]): the stop held for the entry, if there is one, in
-    /// place of an evaluation that tries bindings; and otherwise, where the
-    /// evaluation begins within the table work cap and ends at that cap, the
-    /// stop is held. An evaluation that begins past the cap stops at once,
-    /// and is not held. A later table of the case takes the held stop at the
-    /// form that stopped.
+    /// the evaluation runs for a decode, with the stops that the decode holds
+    /// ([`super::values::HeldStops`]). The stop held for the entry is taken
+    /// at the form that stopped, in place of an evaluation that tries
+    /// bindings, where one of these holds:
+    ///
+    /// - the evaluation runs for a table, and the stop is at the table work
+    ///   cap;
+    /// - the evaluation has a deadline, and the stop is at the deadline,
+    ///   with at most [`super::values::DEADLINE_STOP_REUSE`] times the time
+    ///   its evaluation ran left to the deadline.
+    ///
+    /// Otherwise the stop of `compute` is held: a stop at the table work cap
+    /// where the evaluation began within the cap, which an evaluation that
+    /// begins past the cap does not reach, and a stop at the deadline with
+    /// the time from the start of `compute`, where the evaluation has a
+    /// deadline.
     fn holding_stops<E>(&self, request: &cache::EntryRequest<'_>, compute: impl FnOnce() -> Result<RelationValue, E>) -> Result<RelationValue, E> {
         let session = self.evaluation.session;
-        let Some(work) = &self.evaluation.limits.table_work else { return compute() };
-        if !work.stops().is_empty()
-            && let Some(stop) = work.stops().get(&cache::key(session, request))
-        {
-            return Ok(RelationValue::Stopped(stop));
+        let limits = self.evaluation.limits;
+        let Some(held) = &limits.held_stops else { return compute() };
+        if limits.table_work.is_none() && limits.deadline.is_none() {
+            return compute();
         }
-        let began_within_cap = !work.is_past_cap();
+        let entry_key = || cache::key(session, request);
+        if !held.is_empty() {
+            let key = entry_key();
+            let table_work = limits.table_work.as_ref().and_then(|_| held.table_work_stop(&key));
+            let deadline = || limits.deadline.and_then(|deadline| held.deadline_stop(&key, deadline.saturating_duration_since(Instant::now())));
+            if let Some(stop) = table_work.or_else(deadline) {
+                return Ok(RelationValue::Stopped(stop));
+            }
+        }
+        let began_within_cap = limits.table_work.as_ref().is_some_and(|work| !work.is_past_cap());
+        let began = limits.deadline.map(|_| Instant::now());
         let value = compute()?;
-        if began_within_cap
-            && let RelationValue::Stopped(stop) = &value
-            && matches!(stop.bound, ReachedBound::TableWork { .. })
-        {
-            work.stops().hold(cache::key(session, request), stop.clone());
+        if let RelationValue::Stopped(stop) = &value {
+            match (stop.bound, began) {
+                (ReachedBound::TableWork { .. }, _) if began_within_cap => held.hold_table_work(entry_key(), stop.clone()),
+                (ReachedBound::Deadline, Some(began)) => held.hold_deadline(entry_key(), stop.clone(), began.elapsed()),
+                _ => {}
+            }
         }
         Ok(value)
     }
