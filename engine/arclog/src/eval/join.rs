@@ -313,7 +313,9 @@ pub fn product(clause: &ClauseIr, parts: Vec<RelationPart>) -> Relation {
 /// variables of `order` that passes every node of `nodes` and agrees with a
 /// row of each relation of `tries`, by generic join in `order`, at the
 /// values `bound` gives some of the clause's variables. A relation of
-/// `tries` is read as an atom over its arguments.
+/// `tries` is read as an atom over its arguments. Where `clause` is one
+/// union and `tries` and `bound` are empty, the rows are those of
+/// `union_rows`.
 #[allow(clippy::too_many_arguments)]
 pub fn search(
     clause: &ClauseIr,
@@ -327,9 +329,67 @@ pub fn search(
     budget: &mut Budget<'_>,
 ) -> Result<RowSet, ReachedBound> {
     let projected: Vec<Variable> = columns.iter().map(|c| clause.columns[usize::from(c.0)]).collect();
+    if tries.is_empty() && bound.is_empty() {
+        if let Some(rows) = union_rows(clause, nodes, &projected, inputs, registry, budget) {
+            return rows;
+        }
+    }
     let variables: Vec<Variable> = bound.iter().map(|&(variable, _)| variable).collect();
     let plan = Plan::new(clause, nodes, tries, order, &variables, inputs, budget)?;
     Search::new(clause, &plan, inputs, registry, &SearchMemo::default(), bound).run(&projected, budget)
+}
+
+/// The rows of `projected`, variables of `clause`, where the one node of
+/// `clause` is a union and `nodes` is that node: the rows of its branches,
+/// each branch joined once at no bound value, with all its nodes, and
+/// projected onto `projected`. `None` where `clause` is anything else, or
+/// where a branch leaves out a node at no bound value or holds no column of
+/// `projected`; the generic join over `clause` gives the rows then.
+///
+/// A union that is a clause's whole body is the union of its branches'
+/// relations (`docs/arclog/arclog.md#disjunction`), so no branch is joined again
+/// at the values bound so far, as [`Search::union_values`] joins a union
+/// beside other conjuncts.
+fn union_rows(
+    clause: &ClauseIr,
+    nodes: &[usize],
+    projected: &[Variable],
+    inputs: &JoinInputs,
+    registry: &Registry,
+    budget: &mut Budget<'_>,
+) -> Option<Result<RowSet, ReachedBound>> {
+    let ([IrNode::Or(union)], [0], NodeInput::Clauses(bodies)) = (&*clause.nodes, nodes, &inputs.0[0]) else { return None };
+    let places: Vec<Vec<usize>> = union
+        .branches
+        .iter()
+        .map(|branch| {
+            let whole = kept_nodes(branch, &[]).len() == branch.nodes.len();
+            let places: Option<Vec<usize>> = projected.iter().map(|variable| branch.columns.iter().position(|column| column == variable)).collect();
+            places.filter(|_| whole)
+        })
+        .collect::<Option<_>>()?;
+    let memo = SearchMemo::default();
+    let mut rows = RowSet::empty(projected.len() as u16);
+    for ((branch, inputs), places) in union.branches.iter().zip(bodies.iter()).zip(&places) {
+        let relation = match join_ordered(&memo, branch, &branch_order(branch, inputs), inputs, registry, &[], budget) {
+            Ok(relation) => relation,
+            Err(bound) => return Some(Err(bound)),
+        };
+        if let Err(bound) = budget.charge_product(&relation) {
+            return Some(Err(bound));
+        }
+        each_row(&relation, &mut |row| {
+            rows.insert(places.iter().map(|&place| row[place]).collect());
+        });
+    }
+    Some(Ok(rows))
+}
+
+/// The order and the nodes that the join of `branch`, a branch of a union
+/// whose inputs are `inputs`, takes at the variables bound before it: the
+/// variable order of the branch, and the nodes that [`kept_nodes`] leaves.
+fn branch_order<'a>(branch: &'a ClauseIr, inputs: &'a JoinInputs) -> impl Fn(&[Variable]) -> (VariableOrder, Vec<usize>) + 'a {
+    move |bound| (variable_order(branch, &sizes(inputs), bound), kept_nodes(branch, bound))
 }
 
 /// Calls `visit` on each row of `relation`, the product of its parts, in an
@@ -947,7 +1007,7 @@ impl<'c> Search<'c> {
             budget.replay(&charges)?;
             return Ok(relation);
         }
-        let order_at = |bound: &[Variable]| (variable_order(branch, &sizes(&bodies[index]), bound), kept_nodes(branch, bound));
+        let order_at = branch_order(branch, &bodies[index]);
         let (relation, charges) = budget.logged(|budget| join_ordered(self.memo, branch, &order_at, &bodies[index], self.registry, &key.1, budget))?;
         let relation = Arc::new(relation);
         self.memo.keep_branch(key, (relation.clone(), charges));
