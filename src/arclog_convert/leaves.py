@@ -864,6 +864,49 @@ class Converter:
         return dc_replace(prog, units=tuple(u for u in units if u.head.relation.name not in dropped
                                             or u.head.relation.instances))
 
+    def candidate_fields(self, prog) -> tuple[set[str], dict[str, dict[int, str]]]:
+        """The parameters that the determination's instances of the program's
+        parse run candidates of, and, for each such instance with a record
+        key, the key fields that hold a candidate (field index -> parameter):
+        a clause of the determination feeds an input of the instance, which
+        the program fills from a parameter, and does not read that parameter
+        in its body."""
+        det = ("Determine",)
+        comp_insts = {n: i for (sc, n), i in self.insts.items() if sc == det and i.component in self.comps}
+        prog_inst = {i.component: n for (sc, n), i in self.insts.items() if sc == () and i.component in self.comps}
+        cand_params: set[str] = set()
+        # each Parse input the program fills from a parameter: name -> params
+        fed: dict[tuple[str, str], set[str]] = defaultdict(set)
+        for u in prog.units:
+            rn = u.head.relation
+            if u.scope.components == () and len(rn.instances) == 1 and rn.instances[0] in prog_inst.values():
+                comp = self.insts[((), rn.instances[0])].component
+                for a in self._atoms(u.body or ()):
+                    if a.relation.instances == ("params",):
+                        fed[(comp, rn.name)].add(a.relation.name)
+        cand_fields: dict[str, dict[int, str]] = {}   # instance -> key field index -> parameter
+        for n, inst in comp_insts.items():
+            for u in prog.units:
+                rn = u.head.relation
+                if u.scope.components != det or rn.instances != (n,) or (inst.component, rn.name) not in fed:
+                    continue
+                read = {a.relation.name for a in self._atoms(u.body or ())
+                        if not a.relation.instances or a.relation.instances == ("params",)}
+                for p_ in fed[(inst.component, rn.name)]:
+                    if p_ not in read:
+                        cand_params.add(p_)
+                        # the key field that holds the candidate
+                        k = u.head.args[0] if u.head.args else None
+                        if isinstance(k, RecordTerm):
+                            pu = next((x for x in prog.units if x.scope.components == () and
+                                       x.head.relation == RelationName((prog_inst[inst.component],), rn.name)), None)
+                            for j, (hk, ha) in enumerate(zip(u.head.args[1:], pu.head.args[1:] if pu else ())):
+                                if isinstance(hk, Variable):
+                                    for fi, f_ in enumerate(k.args):
+                                        if f_ == hk and isinstance(ha, Variable):
+                                            cand_fields.setdefault(n, {})[fi] = p_
+        return cand_params, cand_fields
+
     def candidate_parse(self, prog):
         """A determination that runs the program's parse at each candidate
         value of a parameter and keeps the values a test of its own passes:
@@ -879,50 +922,8 @@ class Converter:
         comp_insts = {n: i for (sc, n), i in self.insts.items() if sc == det and i.component in self.comps}
         if not comp_insts:
             return prog
-        prog_inst = {i.component: n for (sc, n), i in self.insts.items() if sc == () and i.component in self.comps}
-
-        def atoms(lits):
-            for l in lits:
-                if isinstance(l, AtomLiteral):
-                    yield l.atom
-                elif isinstance(l, Disjunction):
-                    for b in l.branches:
-                        yield from atoms(b)
-                elif isinstance(l, Comparison):
-                    for t in (l.lhs, l.rhs):
-                        if isinstance(t, Aggregate):
-                            yield from atoms(t.body)
         params = {r.name for r in prog.relations if r.scope.components == ("Params",)}
-        # each Parse input the program fills from a parameter: name -> params
-        fed: dict[tuple[str, str], set[str]] = defaultdict(set)
-        for u in prog.units:
-            rn = u.head.relation
-            if u.scope.components == () and len(rn.instances) == 1 and rn.instances[0] in prog_inst.values():
-                comp = self.insts[((), rn.instances[0])].component
-                for a in atoms(u.body or ()):
-                    if a.relation.instances == ("params",):
-                        fed[(comp, rn.name)].add(a.relation.name)
-        cand_fields: dict[str, dict[int, str]] = {}   # instance -> key field index -> parameter
-        for n, inst in comp_insts.items():
-            for u in prog.units:
-                rn = u.head.relation
-                if u.scope.components != det or rn.instances != (n,) or (inst.component, rn.name) not in fed:
-                    continue
-                read = {a.relation.name for a in atoms(u.body or ())
-                        if not a.relation.instances or a.relation.instances == ("params",)}
-                for p_ in fed[(inst.component, rn.name)]:
-                    if p_ not in read:
-                        self.cand_params.add(p_)
-                        # the key field that holds the candidate
-                        k = u.head.args[0] if u.head.args else None
-                        if isinstance(k, RecordTerm):
-                            pu = next((x for x in prog.units if x.scope.components == () and
-                                       x.head.relation == RelationName((prog_inst[inst.component],), rn.name)), None)
-                            for j, (hk, ha) in enumerate(zip(u.head.args[1:], pu.head.args[1:] if pu else ())):
-                                if isinstance(hk, Variable):
-                                    for fi, f_ in enumerate(k.args):
-                                        if f_ == hk and isinstance(ha, Variable):
-                                            cand_fields.setdefault(n, {})[fi] = p_
+        self.cand_params, cand_fields = self.candidate_fields(prog)
         if not self.cand_params:
             return prog
         # a candidate stands where the parameter's determination refutes it:
@@ -942,7 +943,7 @@ class Converter:
             got = any(a.relation.instances[:1] and a.relation.instances[0] in comp_insts
                       or (not a.relation.instances and a.relation.name in dheads
                           and reads(a.relation.name, seen | {x}))
-                      for u in dheads.get(x, ()) for a in atoms(u.body or ()))
+                      for u in dheads.get(x, ()) for a in self._atoms(u.body or ()))
             reads_parse[x] = got
             return got
 
@@ -962,7 +963,7 @@ class Converter:
         rules = defaultdict(set)
         for u in prog.units:
             if u.scope.components == ("Params",) and u.body:
-                rules[u.head.relation.name] |= {a.relation.name for a in atoms(u.body)
+                rules[u.head.relation.name] |= {a.relation.name for a in self._atoms(u.body)
                                                 if not a.relation.instances and a.relation.name in params}
         todo = list(self.cand_params)
         self.cand_params = set()
@@ -1009,7 +1010,7 @@ class Converter:
                 continue
             need.add(x)
             for u in heads.get(x, ()):
-                for a in atoms(u.body or ()):
+                for a in self._atoms(u.body or ()):
                     rn = a.relation
                     y = rn.instances[0] if rn.instances else rn.name
                     if y in heads and y not in need and not (y in params and y in self.cand_params):
@@ -1026,7 +1027,7 @@ class Converter:
                     continue
                 # a read of the candidate parse binds its candidate to the parameter
                 extra = []
-                for a in atoms(u.body or ()):
+                for a in self._atoms(u.body or ()):
                     fs = cand_fields.get(a.relation.instances[0] if a.relation.instances else "")
                     key = a.args[0] if a.args else None
                     while isinstance(key, RecordTerm) and fs and len(key.args) and isinstance(key.args[0], RecordTerm):
@@ -1476,7 +1477,12 @@ class Converter:
         case's clauses alone, so that no alt rederives what such a `DET`
         reads. An input whose program feed reads a relation of the program
         that `det_program_copies` copies is fed otherwise too: the
-        determination's feed of it reads no relation an alt rederives."""
+        determination's feed of it reads no relation an alt rederives. A
+        determination's instance of the parse keyed on a type other than
+        Example, which `candidate_parse` does not take (`candidate_fields`
+        gives none of its key's fields a candidate), is written as copies of
+        the nodes the determination reads through it (`copy_read_through`),
+        keyed on its key type, with its own input clauses as their input."""
         from engine.program import Column, DeclId, Scope, Span, TypeName, UnitId
         det = ("Determine",)
         concept = set(self.concept_of().values())
@@ -1720,10 +1726,13 @@ class Converter:
             return len(facts) == 1 and facts[0].body is None and bool(names) and names <= concept
 
         trained: set[str] = set()   # the determination's instances of the parse whose feed holds the test examples out
+        cand_fields = self.candidate_fields(prog)[1]
         for inst in [i for i in prog.instances if i.scope.components == det and i.component in prog_inst]:
             comp = self.comps[inst.component]
             tsub = {p: a.name for p, a in zip(comp.type_params, inst.type_args)}
             if tsub.get("Key") != "Example":
+                if inst.name not in cand_fields:
+                    prog = self.copy_read_through(prog, nodes, det, inst, [u for u in prog.units if u.scope.components == det])
                 continue
             n, pname = inst.name, prog_inst[inst.component]
             pinst = next(i for i in prog.instances if i.scope.components == () and i.name == pname)
@@ -1802,9 +1811,7 @@ class Converter:
             named_in = {u.scope.components for u in prog.units
                         for a in (u.head, *self._atoms(u.body or ())) if a.relation.instances[:1] == (n,)}
             if named_in <= {()}:
-                copy = nodes.closure(nodes.read_through((u for u in prog.units if u.scope.components == ()), n))
-                prog = self.copy_parse(prog, nodes, (), n, {p: a.name for p, a in zip(self.comps["Parse"].type_params, inst.type_args)},
-                                       copy, [u for u in nodes.units if nodes.node(u.head.relation) in copy])
+                prog = self.copy_read_through(prog, nodes, (), inst, [u for u in prog.units if u.scope.components == ()])
             else:
                 self.todo.add("parse-instance", f"{n}: a clause outside the top level names the instance of the "
                               f"{inst.component} component, which is written as copies in the top level")
@@ -1813,6 +1820,16 @@ class Converter:
                                           if not (u.scope.components == () and u.head.relation.instances[:1] == (n,))))
             self.insts.pop(((), n), None)
         return prog
+
+    def copy_read_through(self, prog, nodes: ParseNodes, scope: tuple[str, ...], inst, readers: list[Unit]):
+        """`prog` with the nodes of the parse that the clauses `readers` of
+        `scope` read through the instance `inst` of `scope`, and the nodes
+        those read, written as copies (`copy_parse`) keyed on the instance's
+        key type, with the instance's input clauses as the copies' input."""
+        copy = nodes.closure(nodes.read_through(readers, inst.name))
+        tsub = {p: a.name for p, a in zip(self.comps[inst.component].type_params, inst.type_args)}
+        return self.copy_parse(prog, nodes, scope, inst.name, tsub, copy,
+                               [u for u in nodes.units if nodes.node(u.head.relation) in copy])
 
     def copy_parse(self, prog, nodes: ParseNodes, scope: tuple[str, ...], n: str, tsub: dict[str, str],
                    copy: set[str], clauses: list[Unit]):
