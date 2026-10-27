@@ -810,7 +810,6 @@ b10624e5	&line_color.plural	uncompared	-
 b10624e5	&shared.plural	uncompared	-
 b10624e5	&side.minimal	uncompared	-
 b10624e5	&template.plural	uncompared	-
-b190f7f5	&half_division2.tile	differ	20-476
 b190f7f5	&sole_color.plural	uncompared	-
 b190f7f5	souffle:impl_choice	uncompared	-
 b25e450b	&nearest.maximal	uncompared	-
@@ -1080,6 +1079,8 @@ e133d23d	&combine_match.superset	uncompared	-
 e345f17b	&combine_match.superset	uncompared	-
 ea9794b1	&front_ink.maximal	uncompared	-
 ea9794b1	&front_tile.maximal	uncompared	-
+eb281b96	&output_tiling2.cell	differ	20-478
+eb281b96	&tile_map_tiling.cell	differ	20-478
 ed74f2f2	&key_match.superset	uncompared	-
 f25ffba3	&n_tiles_division.tile	uncompared	-
 f25ffba3	&slab_cut	uncompared	-

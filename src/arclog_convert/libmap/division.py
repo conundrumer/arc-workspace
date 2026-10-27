@@ -15,7 +15,7 @@ The hoist of a site:
   lib atom grounds it once the variables of one of its modes are grounded
   (`_modes`); a variable of an orientation type there counts as grounded,
   since arclog binds each label of a positive atom, and the `ground`
-  form adds its `*_elem` atom.
+  form adds its `*_elem` atom, which grounds no other variable.
 - An elem atom an input's body copies, such as `axis_elem(A)`, leaves the
   instance's inputs where, in each input that holds it, another positive
   atom holds its variable at a column of the elem's own type, since arclog
@@ -451,8 +451,9 @@ class Hoist:
             g += more
 
     def lits(self):
-        """The top-level positive literals of the clause other than the site."""
-        for i, lit in enumerate(self.body):
+        """The top-level positive literals of the clause other than the site;
+        the elem atoms that `elem` appends are not among them."""
+        for i, lit in enumerate(self.body[:self.own]):
             if i == self.site_i:
                 continue
             if isinstance(lit, AtomLiteral) and not lit.negated:
@@ -562,6 +563,7 @@ class Hoist:
         """The clause with its site i hoisted, and the instance's new
         declarations and clauses."""
         self.body: list[Any] = list(u.body or ())
+        self.own = len(self.body)
         self.site_i = i
         self.relaxed_used = False
         a = self.body[i].atom
