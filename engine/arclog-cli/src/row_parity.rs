@@ -46,7 +46,9 @@
 //!
 //! The file's `determination` entry, where it has one, holds Souffle's rows of
 //! the relations of the `Determine` component at its run over the task's
-//! examples, the run `solver.determine.determine` makes: for a relation with
+//! examples, the run `solver.determine.determine` makes, on the determination
+//! program from which each clause of a branch the concept case does not take
+//! is dropped: for a relation with
 //! an Example leaf in the column map the rows of each train example under the pair `train <i>`,
 //! and for any other relation the rows of the run under the pair `task`. Each
 //! is compared as a case's relation is, with the engine's rows of the relation
