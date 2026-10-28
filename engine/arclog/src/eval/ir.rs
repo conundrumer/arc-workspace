@@ -504,6 +504,27 @@ pub fn compile_keyed_body(
     compile_instance_conjuncts(program, instance, Some(key), &[body], columns)
 }
 
+/// Compile a body in a context that supplies its ambient `given` labels.
+/// The context is a separate relation projected to exactly those labels:
+/// its local witnesses must not become bindings in the nested body. A
+/// body that mentions no ambient label needs no context read.
+pub fn compile_ambient_body(
+    program: &CheckedProgram,
+    form: &NodePath,
+    context: &[(&Body, NodePath)],
+    given: &[LabelId],
+    body: (&Body, NodePath),
+    columns: &[LabelId],
+) -> Result<ClauseIr, CompileFault> {
+    let used = crate::safety::body_labels(body.0);
+    if !given.iter().any(|label| used.contains(label)) {
+        return compile_instance_body(program, form, &[body], columns);
+    }
+    let (clause, paths) = compile_instance_pathed(program, form, context, given)?;
+    let key = KeyRead { form: form.clone(), clause };
+    compile_keyed_body(program, form, (key, paths, given), body, columns).map(|(clause, _)| clause)
+}
+
 /// The IR of the instance bodies `bodies`, as [`compile_instance_body`] and
 /// [`compile_keyed_body`] give it.
 fn compile_instance_conjuncts(
