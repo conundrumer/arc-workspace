@@ -178,6 +178,10 @@ def main():
     total = 0
     for task in tasks:
         names = inventory(args.export, task)
+        if args.replay_identities:
+            for _, case in selected_cases(task, names, False):
+                if not manifest_cases[(task, case)].get("identities"):
+                    parser.error(f"--replay-identities: no identities for task {task}, case {case!r}")
         remaining = len(selected_cases(task,names))
         skipped += len(selected_cases(task,names,False)) - remaining
         if remaining:
@@ -254,7 +258,7 @@ def main():
                 points = gold.points()[:args.point_limit]
                 def case_mutants():
                     historical=manifest_cases.get((task,case),{}).get('identities',[])
-                    if args.replay_identities and historical:
+                    if args.replay_identities:
                         for identity in historical:
                             tick=time.monotonic()
                             try:
