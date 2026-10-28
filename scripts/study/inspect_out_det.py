@@ -147,6 +147,7 @@ def inspect(record, base, args, context):
                     require(actual[name]['rows'] == expected[name]['rows'], 'native full choice decode differs')
             if hasattr(program, 'out_bindings_json'):
                 binding = json.loads(program.out_bindings_json())
+                result['out_binding'] = 'pass'
                 require(binding['complete'] and len(binding['columns']) == 2, 'OUT projection incomplete')
                 require(all(c['occurrences'] and c['body_column'] >= 0 for c in binding['columns']), 'OUT binding lacks original label path')
             else:
@@ -188,8 +189,11 @@ def inspect(record, base, args, context):
                         if 'value_kind' not in model:
                             result['detailed_out'] = 'requires_new_wheel'
                         if model.get('value_kind') == 'rows':
+                            result.setdefault('detailed_out', 'pass')
                             require(len(model['rows']) == len(model['packed_rows']), 'OUT decoding loses rows')
                             require(model['grid_defined'] == (model['grid'] is not None), 'OUT grid status differs')
+                            if model['grid_defined']:
+                                require(model['equals'] == (model['grid'] == example['expected_grid']), 'OUT grid equality differs')
             result['conditional_out_comparison'] = 'pass'
             result['admissibility'] = [d for c in report['choices'] for d in c['admissibility']]
             require(all(d['status'] == 'complete' for d in result['admissibility']), 'DET admissibility incomplete')
