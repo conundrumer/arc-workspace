@@ -95,54 +95,6 @@ impl SafetyCheck {
     }
 }
 
-/// Binding constraints for a mutation domain. Edits keep label ids, heads,
-/// scopes and types; this is the same whole-form walk as `SafetyCheck`, not
-/// an approximation based on the presence of a fresh marker.
-pub(crate) fn mutation_bindings(
-    form: &Form,
-    top: &NodePath,
-    types: &crate::types::ProgramTypes,
-    registry: &Registry,
-) -> Vec<(&'static str, String)> {
-    let bodies = form_bodies(form);
-    let parts = part_bodies(form);
-    let readings: Vec<_> = bodies.iter().map(Reading::of_body).chain(parts.iter().map(Reading::of_part)).collect();
-    let mut errors = Vec::new();
-    for reading in &readings {
-        let scope = top.join(reading.at);
-        let label_type = |label| mutation_label_type(types, &scope, label);
-        let walk = Walk { registry, types: &label_type, memo: None };
-        for found in walk.refusals(reading, &|_,_| true) {
-            let reason = match found.fault {
-                Fault::Unbound {..} => "unbound_label",
-                Fault::ColumnUnbound {..} => "unbound_column",
-                Fault::NoMode {..} | Fault::AtomNoMode => "mode",
-                Fault::Misordered => "misordered",
-            };
-            errors.push((reason, format!("{:?} label {:?}: {}", top.join(&found.at), found.label, found.fault.message())));
-        }
-    }
-    errors
-}
-
-fn mutation_label_type(types: &crate::types::ProgramTypes, scope: &NodePath, label: LabelId) -> Option<ValueType> {
-    (1..=scope.0.len()).rev().find_map(|n| types.form(&NodePath(scope.0[..n].into())))?.label(label).cloned()
-}
-
-/// For deletion-only search, loss of a required head/key/input label cannot
-/// be repaired by deleting more atoms. Branch-local uses can disappear
-/// together, so they are deliberately not used for this partial-state prune.
-pub(crate) fn deletion_preserves_columns(form: &Form, top: &NodePath, types: &crate::types::ProgramTypes, registry: &Registry) -> bool {
-    form_bodies(form).iter().all(|body| {
-        let outside = body.outside();
-        let given = body.given.iter().copied().collect();
-        let scope = top.join(&body.at);
-        let bound = bound_labels(&body.body.value().conjuncts.iter().collect::<Vec<_>>(), &given, &outside,
-            &|atom| atom_modes(registry, atom), &|label| mutation_label_type(types, &scope, label));
-        outside.iter().all(|label| bound.contains(label))
-    })
-}
-
 /// A refusal of the safety check at a source path: the label it is about,
 /// where it is about one, why it refuses, and where.
 struct Found {

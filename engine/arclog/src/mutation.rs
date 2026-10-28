@@ -298,29 +298,11 @@ impl CompletionDomain<'_> {
                 self.stats.count("domain_binding_excluded:shadowed_name");
                 return Ok(());
             }
-            let violations = crate::check::safety::mutation_bindings(
-                &ast.value().forms[top],
-                &NodePath::top(top as u32),
-                &self.gold.checked().types,
-                self.registry,
-            );
-            if !violations.is_empty() {
-                let mut reasons = BTreeSet::new();
-                for (reason, example) in violations {
-                    if reasons.insert(reason) {
-                        let key = format!("domain_binding_excluded:{reason}");
-                        self.stats.count(&key);
-                        let examples = self.stats.examples.entry(key).or_default();
-                        if examples.len() < 3 {
-                            examples.push(format!(
-                                "sites {:?}: {example}",
-                                edits.iter().map(|e| path_json(&e.at)).collect::<Vec<_>>()
-                            ));
-                        }
-                    }
-                }
-                return Ok(());
-            }
+            // An edit can change an INIT parameter's inferred type and the
+            // binding modes available in sibling/nested bodies. Gold's types
+            // are not a safety certificate for this assignment. Resolve and
+            // infer the complete candidate before the engine's whole-program
+            // safety walk; only that certificate enters the selectable domain.
             let checked = match StudyProgram::from_program_cached(
                 ast,
                 edit::layout(self.gold.layout(), edits),
@@ -328,9 +310,6 @@ impl CompletionDomain<'_> {
                 &mut self.cache,
             ) {
                 Ok(checked) => checked,
-                Err(error) if error.contains("Check(Safety)") => {
-                    return Err(format!("binding_domain_invariant: {error}"));
-                }
                 Err(error) => {
                     self.stats.refusal("domain_check_excluded", &error);
                     return Ok(());
@@ -358,12 +337,9 @@ impl CompletionDomain<'_> {
                 edits.push(edit);
                 let can_complete = if self.deletion_only {
                     let ast = edit::apply(self.gold.program(), edits)?;
-                    crate::check::safety::deletion_preserves_columns(
-                        &ast.value().forms[top],
-                        &NodePath::top(top as u32),
-                        &self.gold.checked().types,
-                        self.registry,
-                    )
+                    // Pure deletion cannot restore a lost exported/key
+                    // label. This syntax-derived prune needs no stale types.
+                    crate::study::interfaces_hold(&ast.value().forms[top])
                 } else {
                     true
                 };
