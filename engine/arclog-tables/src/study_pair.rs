@@ -742,7 +742,9 @@ fn evaluate_pair_inner(
     let mutant_clause_seconds=clause_started.elapsed().as_secs_f64();
     let comparison_started=Instant::now();
     let (g, m) = (result.gold.len(), result.mutant.len());
-    result.report["table_indices"] = json!({"gold_all":g,"gold_kept":g+1,"mutant_all":m,"mutant_kept":m+1,"note":"indices include the two evidence tables; kept entries follow kept_assignments order"});
+    result.report["table_indices"] = json!({"gold_all":g,"gold_kept":g+1,"mutant_all":m,"mutant_kept":m+1,"note":"indices include the two evidence tables; each kept assignment can have multiple native models per example; use the kept assignment maps"});
+    result.report["gold_kept_assignment_map"] = component_tables::assignment_map(&result.gold[g-1..],g+1,task.train.len());
+    result.report["mutant_kept_assignment_map"] = component_tables::assignment_map(&result.mutant[m-1..],m+1,task.train.len());
     let comparison_work = TableWork::new(settings.table_work_cap);
     result.report["comparisons"] = comparisons(
         &result.gold[g - 2].1,
