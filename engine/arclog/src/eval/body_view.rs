@@ -113,23 +113,27 @@ impl BodyView {
         Ok(Self {form:form.clone(),clause,paths,scope,input:None})
     }
 
-    /// Derivation queries: choose union alternatives in already typed IR,
+    /// The compiled native key queries read by this body. They retain their
+    /// own projection and scope; deriving key-local evidence separately avoids
+    /// joining every key witness with every input witness.
+    pub fn key_views(&self)->Vec<Self> {
+        self.clause.nodes.iter().zip(self.paths.nodes.iter()).filter_map(|(node,paths)| {
+            let (IrNode::Atom(atom),NodePaths::Key(paths))=(node,paths) else {return None};
+            let AtomSource::Key(key)=&atom.source else {return None};
+            Some(Self {form:self.form.clone(),clause:key.clause.clone(),paths:(**paths).clone(),scope:self.scope,input:None})
+        }).collect()
+    }
+
+    /// Derivation queries retain native projected KeyRead nodes. Key-local
+    /// frame evidence is queried separately with key_views, never multiplied
+    /// into the input query's witness domain.
+    /// Choose union alternatives in already typed IR,
     /// expose their positive locals, and keep all original result columns.
     /// Native equality nodes bind aliases without public AST normalization.
     pub fn widened(&self)->Outcome<Vec<Self>> {
-        fn expand(mut clause:ClauseIr,mut paths:IrPaths,out:&mut Vec<(ClauseIr,IrPaths)>)->bool {
+        fn expand(mut clause:ClauseIr,paths:IrPaths,out:&mut Vec<(ClauseIr,IrPaths)>)->bool {
             if out.len()>=MAX_DERIVATIONS {return false;}
             for i in 0..clause.nodes.len() {
-                if let (IrNode::Atom(atom),NodePaths::Key(key_paths))=(&clause.nodes[i],&paths.nodes[i]) {
-                    if let AtomSource::Key(read)=&atom.source {
-                        // Both compiles use the same checked form's canonical
-                        // variable scope. Keep the key's positive witnesses.
-                        let nodes=clause.nodes[..i].iter().chain(read.clause.nodes.iter()).chain(clause.nodes[i+1..].iter()).cloned().collect();
-                        let nodes_at=paths.nodes[..i].iter().chain(key_paths.nodes.iter()).chain(paths.nodes[i+1..].iter()).cloned().collect();
-                        clause.nodes=nodes;paths.nodes=nodes_at;
-                        return expand(clause,paths,out);
-                    }
-                }
                 if let (IrNode::Or(union),NodePaths::Branches(branch_paths))=(&clause.nodes[i],&paths.nodes[i]) {
                     for (branch,branch_paths) in union.branches.iter().zip(branch_paths.iter()) {
                         let mut next=clause.clone();let mut at=paths.clone();

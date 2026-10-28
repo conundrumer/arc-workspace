@@ -312,7 +312,7 @@ impl CacheState {
 /// Whether `a` and `b` hold the same rows. Where their parts split the
 /// columns alike, the parts' rows are compared; otherwise each row of `a`
 /// is looked up in `b`'s parts.
-pub(crate) fn same_rows(a: &Relation, b: &Relation) -> bool {
+pub fn same_rows(a: &Relation, b: &Relation) -> bool {
     if std::ptr::eq(a, b) {
         return true;
     }

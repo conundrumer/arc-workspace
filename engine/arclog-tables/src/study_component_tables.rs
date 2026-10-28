@@ -135,7 +135,7 @@ pub fn full_choice_extents(tables:&[(usize,Table)],fixed:&[Vec<Assignment>],trai
                 let (kind,index)=match e.example {None=>("task",0),Some(e) if usize::from(e.index())<train_count=>("train",usize::from(e.index())),Some(e)=>("test",usize::from(e.index())-train_count)};
                 for (model,value) in models.iter().enumerate() {
                     let RelationValue::Rows(rows)=value else {continue;};
-                    if rows.rows_hash()!=held.rows_hash() || rows.arity()!=held.arity() || rows.len()!=held.len() {continue;}
+                    if !arclog::session::same_rows(rows,held) {continue;}
                     let annotations=crate::extents::annotated_rows(contents,place,choice,model,rows);
                     let columns=contents.columns.iter().enumerate().filter(|(_,c)|c.ty.is_box()).map(|(i,_)|i).collect::<Vec<_>>();
                     let mut at=0;let mut out=Vec::new();

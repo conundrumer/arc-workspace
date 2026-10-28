@@ -363,6 +363,14 @@ pub(crate) fn relation_examples(decoder: &Decoder<'_>, checked: &CheckedProgram,
 /// relation holds more rows than the projection cap. The frames and extents are
 /// those of `made`, which sets them.
 fn contents(decoder: &Decoder<'_>, program: &CheckedProgram, form: &NodePath, relation: &GraphRelation, slot: u32, dets: &[Det], examples: Vec<ExampleRows>, work: &TableWork) -> Outcome<Contents> {
+    let mut contents = relation_metadata(decoder.registry(), program, form, relation, slot, dets, examples)?;
+    add_projections(decoder, &mut contents, form, work);
+    Ok(contents)
+}
+
+/// The checked schema/provenance of a relation, without evaluating projections
+/// or extents. Recursive component ports use the same adapter as public tables.
+pub(crate) fn relation_metadata(registry: &Registry, program: &CheckedProgram, form: &NodePath, relation: &GraphRelation, slot: u32, dets: &[Det], examples: Vec<ExampleRows>) -> Outcome<Contents> {
     let fault = |message: &str| RunFault { message: message.into(), form: form.clone() };
     let types = program.types.columns(relation).ok_or_else(|| fault("the columns of the relation have no types"))?;
     let names = match &relation.output {
@@ -370,9 +378,9 @@ fn contents(decoder: &Decoder<'_>, program: &CheckedProgram, form: &NodePath, re
         Some(_) => None,
     };
     let names = names.unwrap_or_else(|| (0..types.len()).map(|index| format!("c{index}")).collect());
-    let placements = column_placements(program, relation.node, relation.output.as_deref(), form, types.len(), decoder.registry());
+    let placements = column_placements(program, relation.node, relation.output.as_deref(), form, types.len(), registry);
     let top = form.0.first().expect("a table's form is a top-level form").0 as usize;
-    let named = label_names(&program.program.program, decoder.registry()).swap_remove(top);
+    let named = label_names(&program.program.program, registry).swap_remove(top);
     let label_text = |label: LabelId| named.iter().find(|(id, _)| *id == label).map(|(_, name)| name.clone()).expect("every label of the form is named");
     let columns = names
         .into_iter()
@@ -383,21 +391,45 @@ fn contents(decoder: &Decoder<'_>, program: &CheckedProgram, form: &NodePath, re
             TableColumn { name, ty: ty.clone(), slot: placement.map(|placed| placed.slot), label_id, label: label_id.map(label_text) }
         })
         .collect();
-    let dets = dets
-        .iter()
-        .map(|det| {
-            let types = program.types.columns(&GraphRelation { node: det.node, output: None }).ok_or_else(|| fault("the columns of a `DET` have no types"))?;
-            let columns = program.program.row_paths(det.node).filter(|paths| paths.len() == types.len());
-            Ok(TableDet { relation: det.relation.clone(), types: types.into(), columns: columns.map(Vec::into_boxed_slice) })
-        })
-        .collect::<Outcome<Box<[_]>>>()?;
-    let cap = decoder.settings().projection_cap;
-    let over = examples.iter().any(|example| example.rows.as_ref().is_ok_and(|rows| rows.at.iter().flat_map(|(_, models)| models).any(|model| matches!(model, RelationValue::Rows(rows) if rows.len() > cap))));
-    let projections = over.then(|| projections_of(decoder, &examples, form, work)).flatten();
-    let flows = column_flows(program, relation.node, relation.output.as_deref(), &types, decoder.registry()).into();
-    let depth = program.program.depth(relation.node);
-    let rows = program.program.row_paths(relation.node).filter(|rows| relation.output.is_none() && rows.len() == types.len());
-    Ok(Contents { relation: TableRelation::Slot(slot), columns, dets, examples: examples.into(), projections, name: String::new(), flows, rows, depth, keys: Vec::new(), selected: SelectedColumns::default(), frames: Vec::new(), extents: None })
+    let flows = column_flows(program, relation.node, relation.output.as_deref(), &types, registry).into();
+    let mut contents = metadata(program, form, TableRelation::Slot(slot), columns, dets, examples, flows)?;
+    contents.depth = program.program.depth(relation.node);
+    contents.rows = program.program.row_paths(relation.node).filter(|rows| relation.output.is_none() && rows.len() == types.len());
+    Ok(contents)
+}
+
+/// Common native schema and assignment contract, before any annotation queries.
+/// Both the relation and IR adapters retain their original column order.
+pub(crate) fn metadata(program: &CheckedProgram, form: &NodePath, relation: TableRelation,
+    columns: Box<[TableColumn]>, dets: &[Det], examples: Vec<ExampleRows>, flows: Box<[Vec<ColumnSource>]>) -> Outcome<Contents> {
+    let fault = |message: &str| RunFault { message: message.into(), form: form.clone() };
+    let dets = dets.iter().map(|det| {
+        let types = program.types.columns(&GraphRelation { node: det.node, output: None })
+            .ok_or_else(|| fault("the columns of a DET have no types"))?;
+        let paths = program.program.row_paths(det.node).filter(|paths| paths.len() == types.len());
+        Ok(TableDet { relation: det.relation.clone(), types: types.into(), columns: paths.map(Vec::into_boxed_slice) })
+    }).collect::<Outcome<Box<[_]>>>()?;
+    for example in &examples { if let Ok(assigned) = &example.rows {
+        for (values, _) in &assigned.at {
+            if values.len() != dets.len() { return Err(fault("assignment DET count differs from its checked schema")); }
+            for ((name, rows), det) in values.iter().zip(dets.iter()) {
+                if name != &det.relation || usize::from(rows.arity()) != det.types.len() {
+                    return Err(fault(&format!("assignment DET {name:?} has native arity {}, incompatible with checked DET {:?} ({} columns)", rows.arity(), det.relation, det.types.len())));
+                }
+            }
+        }
+    }}
+    Ok(Contents { relation, columns, dets, examples: examples.into(), projections: None, name: String::new(), flows,
+        rows: None, depth: 0, keys: Vec::new(), selected: SelectedColumns::default(), frames: Vec::new(), extents: None })
+}
+
+/// Projection policy shared by both schema adapters; metadata-only callers do
+/// not invoke this evaluator.
+pub(crate) fn add_projections(decoder: &Decoder<'_>, contents: &mut Contents, form: &NodePath, work: &TableWork) {
+    let over = contents.examples.iter().any(|example| example.rows.as_ref().is_ok_and(|rows|
+        rows.at.iter().flat_map(|(_, models)| models).any(|model|
+            matches!(model, RelationValue::Rows(rows) if rows.len() > decoder.settings().projection_cap))));
+    if over { contents.projections = projections_of(decoder, &contents.examples, form, work); }
 }
 
 /// The projections of the rows of `examples`, none where an example gives a

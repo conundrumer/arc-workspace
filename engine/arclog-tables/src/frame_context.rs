@@ -189,20 +189,27 @@ impl Proof<'_> {
     }
 }
 
-pub(super) fn read_at<'a>(clause: &'a ClauseIr, paths: &'a IrPaths, wanted: &NodePath) -> Option<(&'a RelationAtom, &'a IrPaths)> {
-    for (node, at) in clause.nodes.iter().zip(paths.nodes.iter()) {
-        match (node, at) {
-            (IrNode::Atom(atom), NodePaths::Atom(at)) if at == wanted => return Some((atom, paths)),
-            (IrNode::Atom(atom), NodePaths::Key(at)) => if let AtomSource::Key(key) = &atom.source {
-                if let Some(found) = read_at(&key.clause, at, wanted) { return Some(found); }
+/// The native owner of a source path, for relation and algebra atoms alike.
+/// Scope remains attached to its original IrPaths even through key/OR nodes.
+pub(super) fn node_at_path<'a>(clause:&'a ClauseIr,paths:&'a IrPaths,wanted:&NodePath)->Option<(&'a IrNode,&'a IrPaths)> {
+    for (node,at) in clause.nodes.iter().zip(paths.nodes.iter()) {
+        match (node,at) {
+            (IrNode::Atom(_) | IrNode::Lib(_),NodePaths::Atom(at)) if at==wanted=>return Some((node,paths)),
+            (IrNode::Atom(atom),NodePaths::Key(at))=>if let AtomSource::Key(key)=&atom.source {
+                if let Some(found)=node_at_path(&key.clause,at,wanted) {return Some(found);}
             },
-            (IrNode::Or(union), NodePaths::Branches(branches)) => {
-                for (clause, at) in union.branches.iter().zip(branches.iter()) {
-                    if let Some(found) = read_at(clause, at, wanted) { return Some(found); }
+            (IrNode::Or(union),NodePaths::Branches(branches))=>{
+                for (clause,at) in union.branches.iter().zip(branches.iter()) {
+                    if let Some(found)=node_at_path(clause,at,wanted) {return Some(found);}
                 }
-            }
-            _ => {}
+            },
+            _=>{},
         }
     }
     None
+}
+
+pub(super) fn read_at<'a>(clause:&'a ClauseIr,paths:&'a IrPaths,wanted:&NodePath)->Option<(&'a RelationAtom,&'a IrPaths)> {
+    let (IrNode::Atom(atom),paths)=node_at_path(clause,paths,wanted)? else {return None};
+    Some((atom,paths))
 }

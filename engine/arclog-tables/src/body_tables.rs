@@ -22,38 +22,23 @@ pub fn examples(decoder:&Decoder<'_>,checked:&CheckedProgram,view:&BodyView,dets
 }
 
 pub fn contents(decoder:&Decoder<'_>,checked:&CheckedProgram,view:&BodyView,slot:u32,dets:&[Det],examples:Vec<ExampleRows>,work:&TableWork,earlier:&[&Table])->Outcome<Contents> {
-    let fault=|message:&str|RunFault {message:message.into(),form:view.form.clone()};
+    let mut contents = metadata(decoder, checked, view, slot, dets, examples, earlier)?;
+    super::add_projections(decoder, &mut contents, &view.form, work);
+    contents.extents=crate::extents::body_extents(decoder,earlier,checked,view,&contents);
+    Ok(contents)
+}
+
+/// The exact IR interface and provenance, without recursive annotation or
+/// projection evaluation. Key evidence uses this adapter too.
+pub(crate) fn metadata(decoder:&Decoder<'_>,checked:&CheckedProgram,view:&BodyView,slot:u32,dets:&[Det],examples:Vec<ExampleRows>,earlier:&[&Table])->Outcome<Contents> {
     let named=label_names(&checked.program.program,decoder.registry()).swap_remove(view.form.0[0].0 as usize);
     let columns=view.clause.columns.iter().enumerate().map(|(i,v)| {
         let label=view.paths.labels[v.0 as usize];
         TableColumn {name:format!("c{i}"),ty:view.clause.variables[v.0 as usize].ty.clone(),slot:Some(i as u32),label_id:Some(label),label:named.iter().find(|(id,_)|*id==label).map(|(_,name)|name.clone())}
     }).collect();
-    let dets=dets.iter().map(|d| {
-        let ty=checked.types.columns(&GraphRelation {node:d.node,output:None}).ok_or_else(||fault("DET has no column types"))?;
-        Ok(TableDet {relation:d.relation.clone(),types:ty.into(),columns:checked.program.row_paths(d.node).filter(|p|p.len()==ty.len()).map(Vec::into_boxed_slice)})
-    }).collect::<Outcome<Box<[_]>>>()?;
-    // Even an unused held dependency must keep its original schema. Reject
-    // incompatible assignment evidence before it reaches the packed writer;
-    // do not attach original cells to a mutant's shorter DET column list.
-    for example in &examples {
-        if let Ok(assigned) = &example.rows {
-            for (values, _) in &assigned.at {
-                if values.len() != dets.len() {
-                    return Err(fault("body assignment DET count differs from its checked schema"));
-                }
-                for ((name, rows), det) in values.iter().zip(dets.iter()) {
-                    if name != &det.relation || usize::from(rows.arity()) != det.types.len() {
-                        return Err(fault(&format!("body assignment DET {name:?} has native arity {}, incompatible with checked DET {:?} ({} columns)", rows.arity(), det.relation, det.types.len())));
-                    }
-                }
-            }
-        }
-    }
-    let over=examples.iter().any(|e|e.rows.as_ref().is_ok_and(|a|a.at.iter().flat_map(|(_,m)|m).any(|v|matches!(v,RelationValue::Rows(r) if r.len()>decoder.settings().projection_cap))));
-    let projections=if over {super::projections_of(decoder,&examples,&view.form,work)} else {None};
     let flows=crate::flows::body_column_flows(checked,&view.clause,&view.paths,decoder.registry()).into();
-    let mut contents=Contents {relation:TableRelation::Slot(slot),columns,dets,examples:examples.into(),projections,name:String::new(),flows,rows:None,depth:checked.program.nodes_of(&view.form).iter().map(|n|checked.program.depth(*n)).max().unwrap_or(0),keys:Vec::new(),selected:SelectedColumns::default(),frames:Vec::new(),extents:None};
+    let mut contents=super::metadata(checked,&view.form,TableRelation::Slot(slot),columns,dets,examples,flows)?;
+    contents.depth=checked.program.nodes_of(&view.form).iter().map(|n|checked.program.depth(*n)).max().unwrap_or(0);
     contents.frames=column_frames(&names_of(decoder.registry(),earlier),&contents);
-    contents.extents=crate::extents::body_extents(decoder,earlier,checked,view,&contents);
     Ok(contents)
 }

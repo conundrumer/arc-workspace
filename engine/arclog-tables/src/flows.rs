@@ -105,6 +105,34 @@ pub enum SourceColumn {
     Example,
 }
 
+/// Coordinates shared by provenance (IR -> source) and frame lookups
+/// (source -> IR). Input aliases ExInput with its Example column removed;
+/// lifted reads add an explicit Example before their original schema.
+#[derive(Clone, Copy)]
+pub(crate) struct ReadCoordinates {
+    shift: i32,
+    example: Option<u16>,
+}
+
+impl ReadCoordinates {
+    pub(crate) fn new(input:bool,lifted:bool)->Self {
+        Self {shift:if input {1} else if lifted {-1} else {0},example:(!input && lifted).then_some(0)}
+    }
+
+    pub(crate) fn source(self,argument:u16)->Option<SourceColumn> {
+        if self.example==Some(argument) {return Some(SourceColumn::Example);}
+        u16::try_from(i32::from(argument)+self.shift).ok().map(SourceColumn::Position)
+    }
+
+    pub(crate) fn argument(self,source:SourceColumn)->Option<u16> {
+        match source {
+            SourceColumn::None=>None,
+            SourceColumn::Example=>self.example,
+            SourceColumn::Position(position)=>u16::try_from(i32::from(position)-self.shift).ok(),
+        }
+    }
+}
+
 /// One source of a column.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct ColumnSource {
@@ -351,12 +379,9 @@ impl<'p> Walk<'p> {
         let program = self.flows.program;
         let lifted = program.reads_lifted(path);
         let position = hit.column;
-        let (relation, column) = match &atom.relation {
-            RelationRef::Fact(FactRelation::Input) => (RelationRef::Fact(FactRelation::ExInput), SourceColumn::Position(position + 1)),
-            relation if lifted && position == 0 => (relation.clone(), SourceColumn::Example),
-            relation if lifted => (relation.clone(), SourceColumn::Position(position - 1)),
-            relation => (relation.clone(), SourceColumn::Position(position)),
-        };
+        let input=matches!(atom.relation,RelationRef::Fact(FactRelation::Input));
+        let relation=if input {RelationRef::Fact(FactRelation::ExInput)} else {atom.relation.clone()};
+        let Some(column)=ReadCoordinates::new(input,lifted).source(position) else {return Vec::new()};
         let resolved = program.resolution(path);
         let row = match (resolved, column) {
             (Some(Resolution::Node(node)), SourceColumn::Position(position)) => program.row_paths(*node).and_then(|paths| paths.into_iter().nth(usize::from(position))),

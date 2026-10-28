@@ -297,7 +297,7 @@ fn assigned_equal(
         && a.iter().all(|(name, rows)| {
             b.iter().any(|(other, value)| {
                 canonical(name, a_names) == canonical(other, b_names)
-                    && row_set(rows) == row_set(value)
+                    && arclog::session::same_rows(rows,value)
             })
         })
 }

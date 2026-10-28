@@ -14,9 +14,13 @@ pub struct Continuation {
     pub mutant: Vec<(usize, Table)>,
 }
 
-fn rows(value: &Relation, budget: &mut Budget<'_>, at: &NodePath) -> Result<BTreeSet<Vec<u32>>, End> {
+fn charge_rows(value:&Relation,budget:&mut Budget<'_>,at:&NodePath)->Result<(),End> {
     budget.charge_work(value.len().saturating_mul(u64::from(value.arity()).max(1)))
-        .map_err(|bound| End::Stop(arclog::eval::Stop {bound, form:at.clone()}))?;
+        .map_err(|bound| End::Stop(arclog::eval::Stop {bound, form:at.clone()}))
+}
+
+fn rows(value: &Relation, budget: &mut Budget<'_>, at: &NodePath) -> Result<BTreeSet<Vec<u32>>, End> {
+    charge_rows(value,budget,at)?;
     let mut found=BTreeSet::new();
     each_row(value,&mut |row| {found.insert(row.iter().map(|term|term.encoding()).collect());});
     Ok(found)
@@ -50,7 +54,9 @@ fn admissibility(e:&Evaluation<'_>, gold:&CheckedProgram, assigned:&[Assignment]
         let parameters=ParameterValues::determined(assigned.iter().filter(|(n,_)|n!=name).cloned());
         let reading=Evaluation {parameters:&parameters,..*e};
         let result=(|| -> Result<Value,End> {
-            let target=rows(held,budget,at)?;
+            let target=if det.open {Some(rows(held,budget,at)?)} else {
+                charge_rows(held,budget,at)?;None
+            };
             let domain=reading.domain(node).map_err(End::Fault)?;
             match domain {
                 Domain::Undefined=>Ok(json!({"status":"complete","admissible":false,"reason":"DET domain undefined"})),
@@ -58,8 +64,14 @@ fn admissibility(e:&Evaluation<'_>, gold:&CheckedProgram, assigned:&[Assignment]
                 Domain::Rows(values)=> {
                     let mut found=false;
                     for value in &values {
-                        let candidate=rows(value,budget,at)?;
-                        if (det.open && target.len()==1 && target.is_subset(&candidate)) || (!det.open && candidate==target) {found=true;}
+                        let matches=if det.open {
+                            let candidate=rows(value,budget,at)?;
+                            target.as_ref().is_some_and(|target|target.len()==1 && target.is_subset(&candidate))
+                        } else {
+                            charge_rows(value,budget,at)?;
+                            arclog::session::same_rows(held,value)
+                        };
+                        if matches {found=true;}
                     }
                     Ok(json!({"status":"complete","admissible":found,"domain_values":values.len(),
                         "comparison_test":if det.open {"singleton_membership"} else {"row_set_equality"},

@@ -94,7 +94,7 @@ use arclog::resolver::{DependencyKind, Resolution};
 use arclog::terms::{Constant, Example, Margins, Term, TermId};
 use arclog::types::{use_label, GraphRelation, ValueType};
 
-use crate::columns::{extent_columns, fault_spelled, locate, names_of, read_index, Named, TableNames, INPUT_FRAME, OUTPUT_FRAME};
+use crate::columns::{column_frames, extent_columns, fault_spelled, locate, names_of, read_index, Named, TableNames, INPUT_FRAME, OUTPUT_FRAME};
 use crate::flows::{body_column_flows, column_placements, output_copies, output_frames, ColumnSource, Maker, OutputFrame, Placement, SourceFrame};
 use crate::tables::{relation_examples, Contents, ExampleRows, Table, EVIDENCE_FACTS};
 
@@ -245,13 +245,39 @@ struct Subject<'a> {
     examples: &'a [ExampleRows],
     columns: &'a [u32],
     /// Parallel to the full extent-column list, never a compressed interface.
-    /// Internal port derivations have already selected their wanted columns.
+    /// Recursive ports apply the same evidence planner before selection.
     needed: Option<&'a [bool]>,
 }
 
 impl Subject<'_> {
     fn needs(&self, column: usize) -> bool {
         self.needed.is_none_or(|needed| needed[column])
+    }
+}
+
+/// One demand policy for public tables, body queries and recursive ports.
+/// Missing frame evidence does not prove no_grid: it still requests bounded
+/// derivation. Intrinsic Position and proved direct grids never request it.
+struct EvidencePlan {
+    columns: Vec<u32>,
+    no_grid: Vec<bool>,
+    contexts: DirectContexts,
+    needed: Vec<bool>,
+}
+
+impl EvidencePlan {
+    fn new(decoder:&Decoder<'_>,earlier:&[&Table],checked:&CheckedProgram,form:&NodePath,contents:&Contents)->Self {
+        let types=contents.columns.iter().map(|c|c.ty.clone()).collect::<Vec<_>>();
+        let columns=extent_columns(&types,&contents.frames);
+        let no_grid=no_grid_columns(decoder,earlier,contents,&columns);
+        let contexts=DirectContexts::new(decoder,checked,form,contents,earlier);
+        let needed=derivation_mask(contents,&columns,&no_grid,&contexts);
+        Self {columns,no_grid,contexts,needed}
+    }
+
+    fn wanted(&self,columns:&[u32])->Vec<bool> {
+        columns.iter().map(|column|self.columns.iter().position(|c|c==column)
+            .is_some_and(|i|self.needed[i])).collect()
     }
 }
 
@@ -347,11 +373,8 @@ pub fn annotated_rows(contents:&Contents,example:usize,assignment:usize,model:us
 /// that its rows read.
 pub fn table_extents(decoder: &Decoder<'_>, earlier: &[&Table], checked: &CheckedProgram, relation: &GraphRelation, contents: &Contents) -> Option<Extents> {
     let types: Vec<ValueType> = contents.columns.iter().map(|column| column.ty.clone()).collect();
-    let columns = extent_columns(&types, &contents.frames);
+    let EvidencePlan {columns,no_grid,contexts,needed}=EvidencePlan::new(decoder,earlier,checked,checked.program.form_of(relation.node),contents);
     if columns.is_empty() { return None; }
-    let no_grid = no_grid_columns(decoder, earlier, contents, &columns);
-    let contexts = DirectContexts::new(decoder, checked, checked.program.form_of(relation.node), contents, earlier);
-    let needed = derivation_mask(contents, &columns, &no_grid, &contexts);
     if !needed.iter().any(|needed| *needed) {
         return Some(direct_extents(contexts,contents,columns,no_grid));
     }
@@ -365,22 +388,24 @@ pub fn table_extents(decoder: &Decoder<'_>, earlier: &[&Table], checked: &Checke
 /// Extents of a checked body query, using the same native derivation and
 /// earlier-table lookup as relation tables, with its exact result interface.
 pub fn body_extents(decoder:&Decoder<'_>,earlier:&[&Table],checked:&CheckedProgram,view:&BodyView,contents:&Contents)->Option<Extents> {
+    let reads=Reads {names:names_of(decoder.registry(),earlier),tables:earlier,cache:RefCell::default(),work:decoder.table_work()};
+    body_extents_in(decoder,&reads,checked,view,contents)
+}
+
+/// Nested key evidence shares the parent work count and source lookup cache.
+fn body_extents_in(decoder:&Decoder<'_>,reads:&Reads<'_>,checked:&CheckedProgram,view:&BodyView,contents:&Contents)->Option<Extents> {
     let types=contents.columns.iter().map(|c|c.ty.clone()).collect::<Vec<_>>();
-    let columns=extent_columns(&types,&contents.frames);
+    let EvidencePlan {columns,no_grid,contexts,needed}=EvidencePlan::new(decoder,reads.tables,checked,&view.form,contents);
     if columns.is_empty() {return None;}
-    let no_grid=no_grid_columns(decoder,earlier,contents,&columns);
-    let contexts=DirectContexts::new(decoder,checked,&view.form,contents,earlier);
-    let needed=derivation_mask(contents,&columns,&no_grid,&contexts);
     if !needed.iter().any(|needed| *needed) {
         return Some(direct_extents(contexts,contents,columns,no_grid));
     }
-    let reads=Reads {names:names_of(decoder.registry(),earlier),tables:earlier,cache:RefCell::default(),work:decoder.table_work()};
     let subject=Subject {checked,relation:None,types:&types,examples:&contents.examples,columns:&columns,needed:Some(&needed)};
     let mut gathered=subject.examples.iter().map(|e|e.rows.as_ref().map_or_else(|_|Vec::new(),|a|a.at.iter().map(|_|Gathered::default()).collect())).collect::<Vec<Vec<Gathered>>>();
     let placements=view.clause.columns.iter().enumerate().map(|(i,v)|Some(Placement {slot:i as u32,label:Some(view.paths.labels[v.0 as usize])})).collect::<Vec<_>>();
     let dets=contents.dets.iter().map(|d|relation_spelled(&d.relation)).collect::<Vec<_>>();
     match view.widened() {
-        Ok(views)=>for sub in &views {gather(decoder,&reads,&dets,&subject,sub,&placements,&mut gathered)},
+        Ok(views)=>for sub in &views {gather(decoder,reads,&dets,&subject,sub,&placements,&mut gathered)},
         Err(fault)=>lose_all(&mut gathered,&fault_spelled(&fault)),
     }
     Some(Extents {examples:finish(&contexts,contents,&gathered,&columns,&no_grid),columns,no_grid,contexts})
@@ -499,7 +524,11 @@ fn gather(decoder: &Decoder<'_>, reads: &Reads<'_>, dets: &[String], subject: &S
     let checked=subject.checked;
     let types=sub.clause.columns.iter().map(|v|sub.clause.variables[v.0 as usize].ty.clone()).collect::<Vec<_>>();
     let sources=body_column_flows(checked,&sub.clause,&sub.paths,decoder.registry());
-    let analysis=Analysis {decoder,registry:decoder.registry(),checked,sub,types:&types,sources,reads,dets};
+    let keys=match key_evidence(decoder,reads,checked,sub) {
+        Ok(keys)=>keys,
+        Err(fault)=>return lose_all(gathered,&fault_spelled(&fault)),
+    };
+    let analysis=Analysis {decoder,registry:decoder.registry(),checked,sub,types:&types,sources,reads,dets,keys:&keys};
     let walked=crate::tables::body_tables::dets(checked,sub);
     let values=crate::tables::body_tables::examples(decoder,checked,sub,&walked,&reads.work);
     for (place, example) in subject.examples.iter().enumerate() {
@@ -528,6 +557,8 @@ fn gather(decoder: &Decoder<'_>, reads: &Reads<'_>, dets: &[String], subject: &S
                                 continue;
                             }
                             let ctx = Ctx { example: example.example, assignment: body_assignment };
+                            if let Some(stop)=analysis.key_stop(&ctx) {entry.stop=Some(stop);}
+                            if let Some(fault)=analysis.key_fault(&ctx) {entry.lose(&fault);}
                             each_row(body_rows, &mut |row| {
                                 let derived: Box<[TermId]> = key.iter().map(|&column| row[column]).collect();
                                 let slots = entry.rows.entry(derived).or_insert_with(|| vec![Merged::Unset; subject.columns.len()]);
@@ -671,15 +702,45 @@ impl OutputPlan {
     }
 
     /// Derives the rows of each input whose extents a column wants.
-    fn derive_ports(&mut self, decoder: &Decoder<'_>, reads: &Reads<'_>, checked: &CheckedProgram) {
+    fn derive_ports(&mut self, decoder: &Decoder<'_>, reads: &Reads<'_>, checked: &CheckedProgram) -> arclog::eval::Outcome<()> {
         for port in self.ports.iter_mut().filter(|port| !port.wanted.is_empty()) {
             let port_relation=port.relation.clone();
-            let Some(types) = checked.types.columns(&port_relation) else { continue };
-            let examples = relation_examples(decoder, checked, &port_relation, &relation_dets(checked, port_relation.node), &reads.work);
-            let port_subject = Subject { checked, relation: Some(&port_relation), types, examples: &examples, columns: &port.wanted, needed:None };
-            let derived = derive(decoder, reads, &port_subject);
+            let form=checked.program.form_of(port_relation.node);
+            let types=checked.types.columns(&port_relation).ok_or_else(||arclog::eval::RunFault {message:"component input has no checked types".into(),form:form.clone()})?;
+            let dets=relation_dets(checked,port_relation.node);
+            let examples=relation_examples(decoder,checked,&port_relation,&dets,&reads.work);
+            // This metadata is private to the query, not a published slot.
+            let mut contents=crate::tables::relation_metadata(decoder.registry(),checked,form,&port_relation,0,&dets,examples)?;
+            contents.frames=column_frames(&reads.names,&contents);
+            let plan=EvidencePlan::new(decoder,reads.tables,checked,form,&contents);
+            let needed=plan.wanted(&port.wanted);
+            let examples=contents.examples.to_vec();
+            let port_subject=Subject {checked,relation:Some(&port_relation),types,examples:&examples,columns:&port.wanted,needed:Some(&needed)};
+            let mut derived=if needed.iter().any(|n|*n) {derive(decoder,reads,&port_subject)} else {
+                examples.iter().map(|e|e.rows.as_ref().map_or_else(|_|Vec::new(),|a|a.at.iter().map(|_|Gathered::default()).collect())).collect()
+            };
+            // Retain full native row identities and wanted-slot order. Complete
+            // intrinsic/direct slots independently of other slots' stops.
+            for (example,e) in examples.iter().enumerate() {if let Ok(assigned)=&e.rows {
+                for (at,(_,models)) in assigned.at.iter().enumerate() {for model in models {
+                    if let RelationValue::Rows(rows)=model {
+                        let completed=completed_rows(&plan.contexts,&contents,example,rows,&port.wanted,
+                            &port.wanted.iter().map(|c|plan.columns.iter().position(|x|x==c).is_some_and(|k|plan.no_grid[k])).collect::<Vec<_>>(),Some(&derived[example][at]));
+                        let mut i=0;
+                        each_row(rows,&mut |row| {
+                            derived[example][at].rows.insert(row.into(),completed[i].iter().map(|v|v.map_or(Merged::None,Merged::One)).collect());
+                            i+=1;
+                        });
+                    } else if let RelationValue::Stopped(stop)=model {
+                        derived[example][at].stop=Some(stop.clone());
+                    } else {
+                        derived[example][at].lose("the component input is undefined");
+                    }
+                }}
+            }}
             port.derived = Some((examples, derived));
         }
+        Ok(())
     }
 
     /// The extents that the inputs give each wanted column at the assignment
@@ -731,7 +792,7 @@ impl OutputPlan {
 /// `instance` that `given` gives, as [`OutputPlan::new`] gives them.
 fn gather_output(decoder: &Decoder<'_>, reads: &Reads<'_>, subject: &Subject<'_>, given: &Given, instance: &Instance, gathered: &mut [Vec<Gathered>]) {
     let Some(mut plan) = OutputPlan::new(decoder, subject, given, instance) else { return lose_all(gathered, "the component of the instance is not in the registry") };
-    plan.derive_ports(decoder, reads, subject.checked);
+    if let Err(fault)=plan.derive_ports(decoder,reads,subject.checked) {return lose_all(gathered,&fault_spelled(&fault));}
     for (place, example) in subject.examples.iter().enumerate() {
         let Ok(rows) = &example.rows else { continue };
         for ((assigned, models), entry) in rows.at.iter().zip(gathered[place].iter_mut()) {
@@ -846,7 +907,7 @@ fn consistent(table: &[Assignment], body: &[Assignment]) -> bool {
 }
 
 fn same_rows(left: &Relation, right: &Relation) -> bool {
-    std::ptr::eq(left, right) || left.rows_hash() == right.rows_hash()
+    arclog::session::same_rows(left,right)
 }
 
 /// Where a row is evaluated: its example, and the assignment of the `DET`s of
@@ -949,7 +1010,12 @@ struct Analysis<'a> {
     reads: &'a Reads<'a>,
     /// The `DET`s of the relation the body gives rows of, as their relations are spelled.
     dets: &'a [String],
+    keys: &'a [KeyEvidence],
 }
+
+#[path = "key_evidence.rs"]
+mod key_evidence;
+use key_evidence::{KeyEvidence, key_evidence};
 
 /// The deepest chain of sizes that the extent of a frame follows.
 const DEPTH: u8 = 16;
@@ -963,6 +1029,7 @@ impl Analysis<'_> {
             ValueType::Box if depth < DEPTH => {
                 let mut found: Option<Extent> = None;
                 for source in &self.sources[column] {
+                    if self.key_source_present(source,row,ctx)==Some(false) {continue;}
                     for frame in &source.frames {
                         let extent = match frame {
                             SourceFrame::Unknown => None,
@@ -990,6 +1057,7 @@ impl Analysis<'_> {
         let Maker::Relation { relation, column } = maker else { return None };
         let size = self.registry.frame_size(relation, column)?;
         let atom = atom_at(self.checked, at)?;
+        if let Some(extent)=self.key_made_extent(at,site_label(atom,column)?,row,ctx) {return extent;}
         let made = self.sub.column_of(site_label(atom, column)?)?;
         let sized = self.sub.column_of(site_label(atom, &size.column.column)?)?;
         let margins = margins_of(row[made], self.types.get(made)?)?;
@@ -1020,6 +1088,7 @@ impl Analysis<'_> {
     /// The extent of the frame of the column that `source` reads, in the latest
     /// earlier table of the relation it reads.
     fn read_extent(&self, source: &ColumnSource, row: &[TermId], ctx: &Ctx<'_>) -> Option<Extent> {
+        if let Some(extent)=self.key_read_extent(source,row,ctx) {return extent;}
         let located = locate(&self.reads.names, self.dets, source);
         let named = located.table?;
         let index = read_index(&located, source)?;
@@ -1079,7 +1148,8 @@ impl Analysis<'_> {
         let mut fixed = Vec::new();
         for (position, argument) in arguments.0.iter() {
             let Some(column) = self.argument_column(argument, paths) else { continue };
-            let Some(position) = (if lifted { position.0.checked_sub(1) } else { Some(position.0) }).map(usize::from) else { continue };
+            let Some(crate::flows::SourceColumn::Position(position))=crate::flows::ReadCoordinates::new(false,lifted).source(position.0) else {continue};
+            let position=usize::from(position);
             let held = match (&named.paths, node_paths.as_ref().and_then(|paths| paths.get(position))) {
                 (Some(held), Some(path)) => held.iter().position(|own| own == path),
                 (None, _) if det < 0 => Some(position),
