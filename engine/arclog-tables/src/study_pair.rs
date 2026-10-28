@@ -392,20 +392,37 @@ fn comparisons(
                     row["example"] = json!(example.map(|e| e.index()));
                     row["assignment"] = json!(a);
                     row["model"] = json!(model);
+                    row["gold_model"] = json!(model);
+                    row["mutant_model"] = Value::Null;
+                    row["model_alignment"] = json!("absent_assignment");
+                    row["scope_alignment"] = json!(scope_alignment);
                     out.push(row);
                 }
                 continue;
             };
-            for (model, (gv, mv)) in models.iter().zip(others).enumerate() {
-                let mut row =
-                    json!({"example":example.map(|e|e.index()),"assignment":a,"model":model});
+            // Enumeration indices belong to one program, not to a shared
+            // model identity. A mutation may add/remove pick dependencies or
+            // change their alternatives. Compare the full Cartesian family.
+            for (gold_model, gv) in models.iter().enumerate() {
+              for (mutant_model, mv) in others.iter().enumerate() {
+                let mut row = json!({"example":example.map(|e|e.index()),"assignment":a,
+                    "model":gold_model,"gold_model":gold_model,"mutant_model":mutant_model,
+                    "model_alignment":"cartesian","scope_alignment":scope_alignment});
+                // Count alternatives as work even when both are empty or
+                // undefined. A product cannot bypass the comparison work cap.
+                if let Err(bound) = work.charge(1) {
+                    row["status"] = json!("stopped");
+                    row["reason"] = json!(format!("{bound:?}"));
+                    out.push(row);
+                    return json!(out);
+                }
                 match (gv, mv) {
                     (RelationValue::Rows(g), RelationValue::Rows(m)) => {
                         if let Err(bound) = work.charge(g.len().saturating_add(m.len())) {
                             row["status"] = json!("stopped");
                             row["reason"] = json!(format!("{bound:?}"));
                             out.push(row);
-                            continue;
+                            return json!(out);
                         }
                         let g = row_set(g);
                         let raw = row_set(m);
@@ -449,9 +466,7 @@ fn comparisons(
                     }
                 }
                 out.push(row);
-            }
-            if models.len() != others.len() {
-                out.push(json!({"example":example.map(|e|e.index()),"assignment":a,"status":"fault","reason":"model counts differ; unmatched models are not compared"}));
+              }
             }
         }
         for (a, (assigned, models)) in mr.at.iter().enumerate() {
@@ -466,6 +481,10 @@ fn comparisons(
                     row["example"] = json!(example.map(|e| e.index()));
                     row["mutant_assignment"] = json!(a);
                     row["model"] = json!(model);
+                    row["gold_model"] = Value::Null;
+                    row["mutant_model"] = json!(model);
+                    row["model_alignment"] = json!("absent_assignment");
+                    row["scope_alignment"] = json!(scope_alignment);
                     out.push(row);
                 }
             }

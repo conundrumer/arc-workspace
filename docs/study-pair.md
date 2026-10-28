@@ -51,7 +51,13 @@ ambiguous, differently colored, or in a different frame, plus occupied
 extra coordinates. Those cases carry `grid_defined=false` and a reason.
 
 `comparisons` compares native tables over their own assignment domains;
-`kept_comparisons` compares at the same gold FITS assignments. Task-wide values are explicitly broadcast over examples when a mutation
+`kept_comparisons` compares at the same gold FITS assignments. At a matched
+assignment, model alternatives form a Cartesian comparison family, identified
+by `gold_model`, `mutant_model`, and `model_alignment="cartesian"`. Indices
+are local to each program; equal indices or counts do not establish a shared
+pick choice. Removing a pick dependency can legitimately change the number
+of models. Each model pair and its visited rows charge the comparison work
+cap, including empty and undefined values. Task-wide values are explicitly broadcast over examples when a mutation
 changes scope; comparison records mark `scope_alignment`. Row tuples
 are aligned by original AST label identity and type. The relation describes
 the **mutant relative to gold**: equal, subset, superset, or overlap (which
