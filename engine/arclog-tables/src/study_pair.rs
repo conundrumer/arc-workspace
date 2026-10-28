@@ -112,7 +112,7 @@ fn original_relations(program:&StudyProgram,written:&arclog::stream::WrittenStre
         key.extend(written.tokens[..form.tokens.end].iter().map(|(token,_)|decoder.vocabulary().id(token).expect("a written vocabulary token")));
         if let Some(held)=cache.prefix(&key) {tables.extend(held);last=key;continue;}
         let mut held=Vec::new();
-        for slot in form.relations.clone() {
+        for &slot in &form.readable {
             let declared=&written.relations[slot];
             if gives_no_table(program.program().value(),&form.path,declared) {continue;}
             let relation=graph_relation(checked,decoder.registry(),&form.path,declared).ok_or_else(||fault("the graph holds no node for a relation the form declares",&form.path))?;

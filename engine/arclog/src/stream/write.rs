@@ -68,6 +68,8 @@ pub struct WrittenForm {
     /// Half-open token span and relation-slot span emitted by this form.
     pub tokens: std::ops::Range<usize>,
     pub relations: std::ops::Range<usize>,
+    /// Readable relation slots: outputs and written inputs, excluding SKIP reservations.
+    pub readable: Vec<usize>,
     /// The form's path in the program.
     pub path: NodePath,
     /// The program's label at each label slot of the form, in slot order.
@@ -292,7 +294,18 @@ impl Writer<'_> {
             }
             let mut labels: Vec<(u32, LabelId)> = self.labels.iter().map(|(id, slot)| (*slot, *id)).collect();
             labels.sort_by_key(|(slot, _)| *slot);
-            self.written.push(WrittenForm { tokens:token_start..self.stream.len(),relations:relation_start..self.declared.len(),path: at.clone(), labels: labels.into_iter().map(|(_, id)| id).collect() });
+            let readable = match form {
+                Form::Instance(instance) => {
+                    let instance = instance.value();
+                    let written = crate::program::written_inputs(instance.key.as_ref(), &instance.inputs).map(|input| &input.name).collect::<Vec<_>>();
+                    component(self.registry, &instance.component).expect("checked component")
+                        .relation_ports(&written)
+                        .map(|port| ProgramRelation::Output(OutputName { of: OutputOwner::Instance(instance.name.clone()), path: [OutputStep::Port(port.name.clone())].into() }))
+                        .map(|relation| self.declared[&relation].slot as usize).collect()
+                }
+                _ => (relation_start..self.declared.len()).collect(),
+            };
+            self.written.push(WrittenForm { tokens:token_start..self.stream.len(),relations:relation_start..self.declared.len(),readable,path: at.clone(), labels: labels.into_iter().map(|(_, id)| id).collect() });
         }
         Ok(())
     }
