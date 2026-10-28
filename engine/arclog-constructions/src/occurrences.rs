@@ -1,0 +1,74 @@
+//! Occurrences: the placements of each shape under each D4 element, each
+//! tested by Agreement's comparison of [`crate::agreement`], as
+//! `docs/lib-spec.md#detectors` gives.
+//!
+//! It reads the box algebra and the orientation algebra through
+//! [`arclog::algebra::algebra`], and reads no order of term ids, cells or
+//! rows.
+
+use arclog::eval::instance::{Construction, ConstructionContext, GroupInputs, GroupOutputs};
+use arclog::eval::ReachedBound;
+use arclog::hash::{StableHashMap, StableHashSet};
+use arclog::relations::RowSet;
+use arclog::terms::TermId;
+
+use crate::agreement::{compare, outputs, Family, Lib};
+
+/// The placements of each shape under each admitted D4 element, as
+/// candidates and as occurrences.
+///
+/// A placement is the offset that takes the transformed shape onto the
+/// cells, and it is one correspondence: each shape cell with the cell it
+/// lands on.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Occurrences;
+
+impl Construction for Occurrences {
+    fn name(&self) -> &'static str {
+        Self::NAME
+    }
+
+    fn evaluate(
+        &self,
+        group: &GroupInputs<'_>,
+        context: &mut ConstructionContext<'_, '_>,
+    ) -> Result<GroupOutputs, ReachedBound> {
+        let [cell, shape_rows, transform] = group.inputs else { panic!("Occurrences' three inputs") };
+        let lib = Lib(context.registry);
+        let cells = Family::of(cell, 1);
+        let shape = Family::of(shape_rows, 1);
+        let mut at_value: StableHashMap<&[TermId], Vec<TermId>> = StableHashMap::default();
+        for row in cell.rows() {
+            at_value.entry(&row[1..]).or_default().push(row[0]);
+        }
+        let (mut candidate, mut occurrence) = (RowSet::empty(2), RowSet::empty(2));
+        for d in transform.rows() {
+            let d = d[0];
+            let mut images: Vec<(TermId, TermId)> = Vec::new();
+            for s in shape.indices() {
+                images.push((s[0], lib.apply(d, s[0])?));
+            }
+            let mut placements: StableHashSet<TermId> = StableHashSet::default();
+            for row in shape_rows.rows() {
+                let image = lib.apply(d, row[0])?;
+                for &p in at_value.get(&row[1..]).into_iter().flatten() {
+                    context.budget.charge_work(1)?;
+                    placements.insert(lib.relative(image, p)?);
+                }
+            }
+            for m in placements {
+                let mut pairs = Vec::with_capacity(images.len());
+                for &(s, image) in &images {
+                    pairs.push(([s], [lib.compose(m, image)?]));
+                }
+                if group.wanted[0] {
+                    candidate.insert([d, m].into());
+                }
+                if group.wanted[1] && !compare(&shape, &cells, pairs, context.budget)?.mismatch {
+                    occurrence.insert([d, m].into());
+                }
+            }
+        }
+        outputs(vec![candidate, occurrence], context.budget)
+    }
+}

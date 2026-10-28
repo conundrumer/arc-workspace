@@ -10,7 +10,9 @@ pub mod connectivity;
 pub mod distance;
 pub mod division;
 pub mod domain;
+pub mod occurrences;
 pub mod order;
+pub mod periods;
 pub mod ray;
 pub mod wallpaper;
 
@@ -61,8 +63,8 @@ constructions! {
     ray::Boundary,
     ray::Outlines,
     agreement::Agreement,
-    agreement::Periods,
-    agreement::Occurrences,
+    periods::Periods,
+    occurrences::Occurrences,
     wallpaper::Wallpaper,
     distance::Distance,
     distance::CellDistance,
