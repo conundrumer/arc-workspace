@@ -78,6 +78,15 @@ per task. Use its `from_stream(ids, model)` and
 `evaluate_pair(gold, point, mutant)` methods. This retains the native task
 session and evidence tables across cases, the checked-body compilation
 cache, and bounded prefix tables (128 entries, at most 64 MiB estimated).
+Validated completed token prefixes also retain decoder checkpoints, so later
+body views replay only the suffix beyond their longest shared prefix. Source
+ordering is written once for the active gold program. Native column packing
+retains the exact prefix fold, including row-run interning; each pair appends
+its two body tables. Within a fold, the same native relation at the same typed
+schema is sorted and packed once, including repeated DET assignment rows.
+The cache retains the relation allocation, so an address cannot be reused for
+an unrelated relation. The full returned buffers and their offsets are preserved.
+
 Gold FITS is evaluated once per gold handle; complete gold clause tables
 are cached by `(gold handle, body AST path)`. Each report includes phase
 timings and cache counters. Independent tasks can run concurrently.
@@ -131,3 +140,12 @@ exact historical identity. It reconstructs only the recorded leaf edits,
 checks the full candidate again, requires an exact identity round trip, and
 runs the AST audit. A historical mutant that the current checks refuse
 raises its diagnostic; it is never replaced by a new draw.
+
+For an isolated performance wheel from the enclosing `ast` directory, use
+`build_stage3_perf.sh` through `run_heavy.py`. It builds the `engine-perf`
+worktree into `target-perf` and `wheels-perf`, installs only into `venv-perf`,
+and prints build progress every five seconds. Existing `venv` and `wheels`
+remain available to live runs. After the optimized runtime inspection,
+`compare_stage3_reports.py stage3-fast.jsonl <candidate.jsonl>` expands compact
+gold references and compares mutation identities, reports, and native buffer
+inspection summaries. Only timing and cache telemetry are excluded.
