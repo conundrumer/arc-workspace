@@ -1471,7 +1471,7 @@ fn path_to(root: NodeRef<'_>, target: NodeRef<'_>, at: NodePath) -> Option<NodeP
 /// The type each parameter of `component` takes by `instance`'s binding
 /// (`docs/arclog/arclog.md#instance`), at the places that [`binding_sites`]
 /// gives, with `label` giving the type of each label of the instance, and
-/// its bound, or `Unit` where it has none, for each parameter onto which no
+/// its bound, or an empty record where it has none, for each parameter onto which no
 /// place projects.
 fn bind(instance: &Instance, component: &Component, label: &dyn Fn(LabelId) -> Option<ValueType>) -> StableHashMap<TypeParameter, ValueType> {
     let sites = binding_sites(instance, &component.inputs);
@@ -1495,7 +1495,7 @@ fn bind(instance: &Instance, component: &Component, label: &dyn Fn(LabelId) -> O
         }
     }
     for parameter in unbound(&component.type_parameters, &sites) {
-        bindings.insert(parameter.clone(), parameter.bound.clone().unwrap_or(ValueType::Unit));
+        bindings.insert(parameter.clone(), parameter.bound.clone().unwrap_or_else(|| ValueType::Record(Box::new([]))));
     }
     bindings
 }

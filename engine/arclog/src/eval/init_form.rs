@@ -147,11 +147,12 @@ pub(crate) fn joined_clause(
 
 /// What an `INIT` form binds a type parameter of its component to: the
 /// labels of its binding, by which its types are given, with the fields of
-/// the record it is bound to, or `None` for one label, or `Unit`, where no
-/// place of the form projects onto it.
+/// the record it is bound to, or `None` for one label, or the parameter's
+/// fixed bound. An unbound parameter with no bound is a zero-field record
+/// and contributes no row positions.
 enum Binding {
     Labels { fields: Option<Box<[ColumnName]>>, labels: Vec<LabelId> },
-    Unit,
+    Fixed(ValueType),
 }
 
 /// The clause of an input the form writes, whose columns are the key's
@@ -163,6 +164,8 @@ pub(super) struct InputClause {
     pub(crate) paths: Arc<IrPaths>,
     key: usize,
     head: Vec<Option<LabelId>>,
+    /// The first logical input column, if it has a native position.
+    cursor: Option<ir::Variable>,
 }
 
 impl InputClause {
@@ -173,9 +176,8 @@ impl InputClause {
         // does. A keyed input binds its own key positions exactly.
         if self.key!=0 && key.len()!=self.key {return Err("recursive input and state key arities differ".into());}
         let mut bound=self.clause.columns[..self.key].iter().copied().zip(key.iter().copied()).collect::<Vec<_>>();
-        let cursor_head=self.head.first().ok_or("recursive input has no cursor position")?;
-        match cursor_head {
-            Some(_)=>bound.push((self.clause.columns[self.key],cursor)),
+        match self.cursor {
+            Some(variable)=>bound.push((variable,cursor)),
             None if cursor==Term::Constant(Constant::Unit).encode().expect("Unit term")=>{},
             None=>return Ok(None),
         }
@@ -183,7 +185,7 @@ impl InputClause {
     }
     pub(super) fn expanded_rows(&self,rows:&crate::relations::Relation)->RowSet {
         let mut expanded=RowSet::empty((self.key+self.head.len()) as u16);
-        super::join::each_row(rows,&mut |row|{expanded.insert(with_unit(self.key,&self.head,&row.into()));});
+        super::join::each_row(rows,&mut |row|{expanded.insert(row.into());});
         expanded
     }
     /// The number of columns of the clause's rows.
@@ -191,15 +193,10 @@ impl InputClause {
         self.key + self.head.iter().flatten().count()
     }
 
-    /// The number of the input's row positions other than `key`.
-    pub(super) fn width(&self) -> usize {
-        self.head.len()
-    }
-
     /// `rows`, rows of the clause, at each of `groups`, in the input's row
     /// positions other than `key`.
     pub(super) fn grouped(&self, groups: &[Row], rows: Vec<Row>) -> Vec<RowSet> {
-        grouped(groups, self.key, self.head.len(), rows.iter().map(|row| with_unit(self.key, &self.head, row)).collect())
+        grouped(groups, self.key, self.head.len(), rows)
     }
 }
 
@@ -234,7 +231,10 @@ impl<'p> InstanceShape<'p> {
         let sites = crate::registry::binding_sites(instance, &component.inputs);
         let mut bindings = StableHashMap::default();
         for parameter in crate::registry::unbound(&component.type_parameters, &sites) {
-            bindings.insert(parameter, Binding::Unit);
+            bindings.insert(parameter, match &parameter.bound {
+                Some(ty)=>Binding::Fixed(ty.clone()),
+                None=>Binding::Labels {fields:Some(Box::new([])),labels:Vec::new()},
+            });
         }
         for sites in &sites {
             let binding = match sites.binding {
@@ -274,7 +274,12 @@ impl<'p> InstanceShape<'p> {
         let (clause, paths, key) = program
             .instance_clause(form, Some(name), || joined_clause(program, form, &self.key_body, &self.key_labels(), *keyed, body, &flat))
             .map_err(|compile| format!("input `{}` does not compile: {compile:?}", name.0))?;
-        Ok(Some(InputClause { clause, paths, key, head }))
+        let first = input.port.columns.iter().find(|column|!is_key(column));
+        let cursor = match first {
+            Some(column) if !self.column_types(column)?.is_empty()=>clause.columns.get(key).copied(),
+            _=>None,
+        };
+        Ok(Some(InputClause { clause, paths, key, head, cursor }))
     }
 
     /// The clause that the evaluation joins for the body at `at`, a path
@@ -310,7 +315,7 @@ impl<'p> InstanceShape<'p> {
         match &column.ty {
             ColumnType::Parameter(parameter) => match self.binding(parameter) {
                 Binding::Labels { labels, .. } => labels.iter().map(|&label| self.label_type(label)).collect(),
-                Binding::Unit => Ok(vec![ValueType::Unit]),
+                Binding::Fixed(ty) => Ok(vec![ty.clone()]),
             },
             ty => ty.fixed().cloned().map(|ty| vec![ty]).ok_or_else(|| format!("the column {:?} has no type of its own", column.name)),
         }
@@ -321,6 +326,26 @@ impl<'p> InstanceShape<'p> {
     /// [`Self::key_width`] positions.
     pub(super) fn widths(&self, columns: &[Column]) -> Result<Vec<Option<usize>>, String> {
         columns.iter().map(|column| if is_key(column) { Ok(None) } else { self.column_types(column).map(|types| Some(types.len())) }).collect()
+    }
+
+    /// Private Unfold atoms: a zero-field value has one singleton handle.
+    /// Program relation rows never use this scalar representation.
+    pub(super) fn scalar_widths(&self, columns:&[Column])->Result<Vec<usize>,String> {
+        columns.iter().filter(|c|!is_key(c)).map(|column| {
+            let width=self.column_types(column)?.len();
+            if width>1 {return Err("Unfold cursor/item must be scalar or an empty record".into());}
+            Ok(width)
+        }).collect()
+    }
+    pub(super) fn scalar_rows(&self, columns:&[Column], rows:&RowSet)->Result<RowSet,String> {
+        let widths=self.scalar_widths(columns)?;
+        let mut atoms=RowSet::empty(widths.len() as u16);
+        let unit=Term::Constant(Constant::Unit).encode().expect("singleton handle");
+        for row in rows.rows() {
+            let mut cells=row.iter();
+            atoms.insert(widths.iter().map(|width| if *width==0 {unit} else {*cells.next().expect("native input width")}).collect());
+        }
+        Ok(atoms)
     }
 
     /// The count of row positions of a port whose columns have `widths`.
@@ -355,12 +380,12 @@ impl<'p> InstanceShape<'p> {
 
     /// The fields of the record that the type parameter of `column` is
     /// bound to, or `None` for a column of a fixed type or of a parameter
-    /// bound to one label or `Unit`.
+    /// bound to one label or a fixed bound.
     fn fields(&self, column: &Column) -> Option<&[ColumnName]> {
         match &column.ty {
             ColumnType::Parameter(parameter) => match self.binding(parameter) {
                 Binding::Labels { fields, .. } => fields.as_deref(),
-                Binding::Unit => None,
+                Binding::Fixed(_) => None,
             },
             _ => None,
         }
@@ -392,21 +417,18 @@ impl<'p> InstanceShape<'p> {
 
     /// The labels of the head sites of `input` at the row positions of
     /// `columns` other than `key`, a record's in the order of its binding's
-    /// fields, and `None` at the position of a column whose type parameter
-    /// is `Unit`, on which the input writes no site.
+    /// fields. An unbound parameter has zero fields and no head position.
     fn head_labels(&self, input: &InstanceInput, columns: &[Column]) -> Result<Vec<Option<LabelId>>, String> {
         let mut labels = Vec::new();
         for column in columns.iter().filter(|column| !is_key(column)) {
             let fields = match &column.ty {
                 ColumnType::Parameter(parameter) => match self.binding(parameter) {
                     Binding::Labels { fields, .. } => fields.as_deref(),
-                    Binding::Unit => {
-                        labels.push(None);
-                        continue;
-                    }
+                    Binding::Fixed(_) => None,
                 },
                 _ => None,
             };
+            if fields.is_some_and(|fields|fields.is_empty()) {continue;}
             let site = input.head.iter().find(|site| site.column == column.name);
             let site = site.ok_or_else(|| format!("input `{}` writes no head site on column {:?}", input.name.0, column.name))?;
             let at_site = site_labels(site);
@@ -475,22 +497,6 @@ pub(super) fn site_labels(site: &Site) -> Vec<(Vec<ColumnName>, LabelId)> {
     let mut labels = Vec::new();
     each_site_label(site, &mut Vec::new(), &mut |use_, path| labels.extend(use_label(use_).map(|label| (path.to_vec(), label))));
     labels
-}
-
-/// `row`, whose first `prefix` positions are a key's and whose others are
-/// the labels of `head` that are not `None`, with the one `Unit` term at each
-/// position of `head` that is `None`.
-fn with_unit(prefix: usize, head: &[Option<LabelId>], row: &Row) -> Row {
-    let unit = Term::Constant(Constant::Unit).encode().expect("a Unit has a term id");
-    let (key, mut values) = (&row[..prefix], row[prefix..].iter());
-    let mut filled = key.to_vec();
-    for label in head {
-        filled.push(match label {
-            Some(_) => *values.next().expect("a row position for each label of the head"),
-            None => unit,
-        });
-    }
-    filled.into()
 }
 
 /// The rows of `value`, of `arity` columns, or the value where it holds no

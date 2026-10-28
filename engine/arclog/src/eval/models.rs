@@ -68,7 +68,7 @@ enum Options {
     Pick { rows: Vec<Row>, pick: constraints::Pick, arity: u16 },
     /// The state graph of each key of the instance, and the arity of its
     /// outputs.
-    Walks { graphs: Vec<(Row, StateGraph)>, arity: u16 },
+    Walks { graphs: Vec<(Row, StateGraph)>, arity: u16, layout:unfold::OutputLayout },
     /// For each key of a `DEMONSTRATED` relation that holds a confirmed
     /// rule, the distinct predictions of its confirmed rules in the
     /// canonical order by content, and the arity of the relation.
@@ -83,8 +83,8 @@ impl Options {
             Options::Pick { rows, pick, arity } => {
                 Draw::Pick { rows, arity: *arity, models: pick.models(evaluation.session.caps.nodes, false) }
             }
-            Options::Walks { graphs, arity } => {
-                Draw::Walks { walks: JointWalks::of_instance(graphs, *arity), budget: Budget::new(evaluation.limits, evaluation.session) }
+            Options::Walks { graphs, arity, layout } => {
+                Draw::Walks { walks: JointWalks::of_layout(graphs, *arity,*layout), budget: Budget::new(evaluation.limits, evaluation.session) }
             }
             Options::Demonstrated { keys, arity } => Draw::Demonstrated { keys, arity: *arity, at: Some(vec![0; keys.len()]) },
         }
@@ -197,7 +197,7 @@ pub(super) fn walk_value(driver: &Driver<'_, '_>, relation: &GraphRelation, exam
             Ok(graphs) => graphs,
             Err(value) => return Ok(Err(value)),
         };
-        Ok(Ok(Options::Walks { graphs, arity: arity(driver, relation, form)? }))
+        Ok(Ok(Options::Walks { graphs, arity: arity(driver, relation, form)?,layout:unfold::OutputLayout::at(evaluation,form)? }))
     };
     let many = "the instance gives more than one value, so the case has more than one model";
     let choice = choice(driver, (relation.node, example), form, build, UnfoldOutput::ALL.len(), Some(many))?;

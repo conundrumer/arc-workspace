@@ -27,7 +27,7 @@ use crate::hash::{StableHashMap, StableHashSet};
 use crate::product::Product;
 use crate::program::path::NodePath;
 use crate::program::{OutputStep, PortName};
-use crate::registry::{is_key, Component, InputPort};
+use crate::registry::{Component, InputPort};
 use crate::relations::{Row, RowSet};
 use crate::terms::{Example, Term, TermId};
 use crate::types::GraphRelation;
@@ -67,6 +67,21 @@ pub struct StateGraph {
     pub branches: Vec<Box<[Branch]>>,
 }
 
+/// Public row positions of the private scalar cursor/item pair. Empty
+/// parameters have no row positions; their singleton TermId stays in states.
+#[derive(Clone,Copy,Debug)]
+pub(super) struct OutputLayout {pub cursor:bool,pub item:bool}
+impl OutputLayout {
+    const SCALARS:Self=Self {cursor:true,item:true};
+    pub fn width(self)->usize {usize::from(self.cursor)+usize::from(self.item)}
+    pub fn at(evaluation:&Evaluation<'_>,form:&NodePath)->Outcome<Self> {
+        let (instance,component)=instance_at(evaluation,form)?;
+        let shape=InstanceShape::of(evaluation.program,form,instance,component);
+        let widths=shape.scalar_widths(&component.outputs[0].columns).map_err(|message|RunFault {message:message.into(),form:form.clone()})?;
+        Ok(Self {cursor:widths[0]!=0,item:widths[1]!=0})
+    }
+}
+
 /// An output of `Unfold`, each of key, cursor and item.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum UnfoldOutput {
@@ -96,7 +111,7 @@ impl UnfoldOutput {
 
     /// Adds to `rows` the rows of this output at `state` on `branch`, the
     /// branch a walk takes there, each `key`, the cursor, then the item.
-    pub(super) fn add_rows(self, key: &[TermId], state: &UnfoldState, branch: &Branch, rows: &mut RowSet) {
+    pub(super) fn add_rows(self, layout:OutputLayout, key: &[TermId], state: &UnfoldState, branch: &Branch, rows: &mut RowSet) {
         let items: &[TermId] = match self {
             UnfoldOutput::Taken => &state.taken,
             UnfoldOutput::Untaken => &state.untaken,
@@ -104,7 +119,7 @@ impl UnfoldOutput {
             UnfoldOutput::Take => &branch.take,
         };
         for &item in items {
-            rows.insert(key.iter().copied().chain([state.cursor, item]).collect());
+            rows.insert(key.iter().copied().chain(layout.cursor.then_some(state.cursor)).chain(layout.item.then_some(item)).collect());
         }
     }
 }
@@ -260,25 +275,26 @@ struct DistinctWalks<'g> {
     seen: StableHashSet<Vec<Vec<Row>>>,
     found: Vec<Vec<RowSet>>,
     contexts:Vec<Vec<WalkContext>>,
+    layout:OutputLayout,
 }
 
 impl<'g> DistinctWalks<'g> {
-    fn new(graph: &'g StateGraph, outputs: &'g [UnfoldOutput], key: Row) -> Self {
-        DistinctWalks { walks: Walks::new(graph), outputs, key, seen: StableHashSet::default(), found: Vec::new(),contexts:Vec::new() }
+    fn new(graph: &'g StateGraph, outputs: &'g [UnfoldOutput], key: Row, layout:OutputLayout) -> Self {
+        DistinctWalks { walks: Walks::new(graph), outputs, key, seen: StableHashSet::default(), found: Vec::new(),contexts:Vec::new(),layout }
     }
 
     /// The distinct value at `index`, walking on until it is found, or
     /// `None` where the walks give fewer distinct values.
     fn get(&mut self, index: usize, budget: &mut Budget<'_>) -> Result<Option<&[RowSet]>, ReachedBound> {
         let graph = self.walks.graph;
-        let arity = (self.key.len() + 2) as u16;
+        let arity = (self.key.len() + self.layout.width()) as u16;
         while self.found.len() <= index {
             let Some(chosen) = self.walks.next(budget)? else { break };
             let mut parts = vec![RowSet::empty(arity); self.outputs.len()];
             for ((state, branches), branch) in graph.states.iter().zip(&graph.branches).zip(&chosen) {
                 let Some(branch) = branch else { continue };
                 for (output, rows) in self.outputs.iter().zip(&mut parts) {
-                    output.add_rows(&self.key, state, &branches[*branch as usize], rows);
+                    output.add_rows(self.layout, &self.key, state, &branches[*branch as usize], rows);
                 }
             }
             let content = parts
@@ -314,14 +330,18 @@ impl<'g> JointWalks<'g> {
     /// gives them, of each output of [`UnfoldOutput::ALL`], in that order,
     /// of `arity` columns.
     pub fn of_instance(graphs: &'g [(Row, StateGraph)], arity: u16) -> Self {
-        JointWalks::new(graphs.iter().map(|(key, graph)| (graph, key.clone())), &UnfoldOutput::ALL, arity)
+        Self::of_layout(graphs,arity,OutputLayout::SCALARS)
+    }
+
+    pub(super) fn of_layout(graphs:&'g [(Row,StateGraph)],arity:u16,layout:OutputLayout)->Self {
+        Self::new(graphs.iter().map(|(key,graph)|(graph,key.clone())),&UnfoldOutput::ALL,arity,layout)
     }
 
     /// The joint walks over `keys`, the state graph of each key with the
     /// columns that stand before the cursor in an output's rows, of each of
     /// `outputs`, of `arity` columns.
-    fn new(keys: impl IntoIterator<Item = (&'g StateGraph, Row)>, outputs: &'g [UnfoldOutput], arity: u16) -> Self {
-        let keys = keys.into_iter().map(|(graph, key)| DistinctWalks::new(graph, outputs, key)).collect();
+    fn new(keys: impl IntoIterator<Item = (&'g StateGraph, Row)>, outputs: &'g [UnfoldOutput], arity: u16, layout:OutputLayout) -> Self {
+        let keys = keys.into_iter().map(|(graph, key)| DistinctWalks::new(graph, outputs, key,layout)).collect();
         JointWalks { keys: Product::new(keys), outputs: outputs.len(), arity }
     }
 
@@ -370,7 +390,7 @@ pub fn unfold_given(component: &Component, keys: &[(Row, Vec<RowSet>)], limit: u
         let reads = GivenReads { rows: [RecursiveInput::Step, RecursiveInput::Skip, RecursiveInput::Take].map(pairs) };
         graphs.push((graph(&group, &reads, budget)?, key.clone()));
     }
-    let mut walks = JointWalks::new(graphs.iter().map(|(graph, key)| (graph, key.clone())), &outputs, arity);
+    let mut walks = JointWalks::new(graphs.iter().map(|(graph, key)| (graph, key.clone())), &outputs, arity,OutputLayout::SCALARS);
     let mut values = Vec::new();
     while values.len() < limit {
         let Some(value) = walks.next(budget)? else { break };
@@ -510,9 +530,7 @@ impl<'r, 'a> Run<'r, 'a> {
     fn compile(&self, input: UnfoldInput) -> Outcome<Option<InputClause>> {
         let declared = self.declared(input)?;
         let Some(clause) = self.shape.input_clause(self.evaluation.program, self.form, declared).map_err(|message| self.fault(message))? else { return Ok(None) };
-        if clause.width() != declared.port.columns.iter().filter(|column| !is_key(column)).count() {
-            return Err(self.fault(format!("a head site of input `{}` of `Unfold` holds other than one label", declared.port.name.0)));
-        }
+        self.shape.scalar_widths(&declared.port.columns).map_err(|message|self.fault(message))?;
         Ok(Some(clause))
     }
 
@@ -525,12 +543,18 @@ impl<'r, 'a> Run<'r, 'a> {
     /// The rows of `input`, an input that reads no output, at each of
     /// `keys`, each without the key's labels.
     fn input_rows(&self, input: UnfoldInput, keys: &[Row]) -> Outcome<Result<Vec<RowSet>, RelationValue>> {
-        let Some(clause) = self.compile(input)? else {
-            let declared = self.declared(input)?;
-            let types = self.shape.port_types(&declared.port.columns).map_err(|message| self.fault(message))?;
-            return Ok(Ok(self.shape.unwritten(declared, &types, keys, self.evaluation).map_err(|message| self.fault(message))?));
+        let declared=self.declared(input)?;
+        let rows=match self.compile(input)? {
+            Some(clause)=>match self.rows(&clause.clause,clause.arity())? {
+                Ok(rows)=>clause.grouped(keys,rows),Err(value)=>return Ok(Err(value)),
+            },
+            None=>{
+                let types=self.shape.port_types(&declared.port.columns).map_err(|message|self.fault(message))?;
+                self.shape.unwritten(declared,&types,keys,self.evaluation).map_err(|message|self.fault(message))?
+            }
         };
-        Ok(self.rows(&clause.clause, clause.arity())?.map(|rows| clause.grouped(keys, rows)))
+        let rows=rows.iter().map(|rows|self.shape.scalar_rows(&declared.port.columns,rows).map_err(|message|self.fault(message))).collect::<Outcome<Vec<_>>>()?;
+        Ok(Ok(rows))
     }
 
     /// The key groups, each with its rows of the inputs that read no output.
@@ -564,13 +588,15 @@ impl<'r, 'a> Run<'r, 'a> {
     /// The second column of the rows that `body` gives at the key of
     /// `group` and the cursor of `state`, with the outputs read at `state`
     /// and `take`.
-    fn at_cursor(&self, group: &Group, state: &UnfoldState, take: &[TermId], body: &InputClause) -> Outcome<Result<Vec<TermId>, RelationValue>> {
+    fn at_cursor(&self, group: &Group, state: &UnfoldState, take: &[TermId], body: &InputClause, input:UnfoldInput) -> Outcome<Result<Vec<TermId>, RelationValue>> {
         let rows = match self.with_state(group, state, take, || self.rows(&body.clause, body.arity()))? {
             Ok(rows) => rows,
             Err(value) => return Ok(Err(value)),
         };
         let [at_key] = &body.grouped(std::slice::from_ref(&group.key), rows)[..] else { unreachable!("the rows of one key") };
-        Ok(Ok(at_key.rows().filter(|row| row[0] == state.cursor).map(|row| row[1]).collect()))
+        let declared=self.declared(input)?;
+        let atoms=self.shape.scalar_rows(&declared.port.columns,at_key).map_err(|message|self.fault(message))?;
+        Ok(Ok(atoms.rows().filter(|row| row[0] == state.cursor).map(|row| row[1]).collect()))
     }
 
     /// The value of `evaluate`, with each read of the instance's outputs
@@ -580,8 +606,11 @@ impl<'r, 'a> Run<'r, 'a> {
         let branch = Branch { take: take.into(), next: Box::default() };
         let values = &self.bodies.driver.values;
         for (which, entry) in &self.own {
-            let mut rows = RowSet::empty((key.len() + 2) as u16);
-            which.add_rows(key, state, &branch, &mut rows);
+            let widths=self.shape.widths(&self.component.outputs[0].columns).expect("checked output widths");
+            let scalar=self.shape.scalar_widths(&self.component.outputs[0].columns).expect("checked scalar output");
+            let layout=OutputLayout {cursor:scalar[0]!=0,item:scalar[1]!=0};
+            let mut rows = RowSet::empty(self.shape.arity(&widths) as u16);
+            which.add_rows(layout,key, state, &branch, &mut rows);
             values.borrow_mut().insert(entry.clone(), RelationValue::Rows(Arc::new(join::one_part(rows))));
         }
         let value = evaluate();
@@ -623,7 +652,7 @@ impl ReadsOutputs for DriverReads<'_, '_, '_> {
             RecursiveInput::Take => &self.recursive.take,
         };
         let Some(body) = body else { return Ok(None) };
-        match self.run.at_cursor(group, state, take, body) {
+        match self.run.at_cursor(group, state, take, body,input.input()) {
             Ok(Ok(rows)) => Ok(Some(rows)),
             Ok(Err(value)) => Err(Halt::Value(value)),
             Err(fault) => Err(Halt::Fault(fault)),
