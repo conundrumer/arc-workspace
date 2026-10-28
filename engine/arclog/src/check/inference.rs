@@ -858,6 +858,24 @@ impl<'a> Inference<'a> {
                 zero_typed.push(label);
             }
         }
+        // A label local to alternatives can have no whole-list restriction:
+        // one alternative does not produce it. Its produced values still
+        // need a concrete storage type in every checked IR compile. Infer
+        // those binding types separately after parameter/header inference;
+        // never let an absent branch erase a known value type.
+        if types.iter().any(|(_,ty)|matches!(ty,Ok(None))) {
+            let prior=types.clone();
+            let reading=SiteReading {path,walk:&walk,labels:&prior,component:scope.component,bindings:&bindings,pose_or:PoseOr::Given,grids:None};
+            let grids=framed.then(||FormGrids::new(self,reading,&scope));
+            let reading=SiteReading {grids:grids.as_ref().map(|g|g as &dyn SharedGrids),..reading};
+            let site_type=|atom:&Atom,column:&[ColumnName]|self.site_type(reading,atom,column);
+            let cache=WalkCache::default();
+            for ((label,ty),list) in types.iter_mut().zip(scope.lists(&all_labels)) {
+                if matches!(ty,Ok(None)) && !scope.heads.contains(label) {
+                    *ty=crate::types::label_binding_type_cached(list,*label,&site_type,key,&cache);
+                }
+            }
+        }
         self.share_pose(SiteReading { path, walk: &walk, labels: &[], component: scope.component, bindings: &bindings, pose_or: PoseOr::Open, grids: None }, &mut types);
         FormInference { owner: ScopeOwner::Form(form), path: path.clone(), labels: types, bindings, walk, component: scope.component, zero_typed, given: given_labels }
     }
