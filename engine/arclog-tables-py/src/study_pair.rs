@@ -102,6 +102,24 @@ struct PyStudyTaskEvaluator {
     cache:std::sync::Mutex<study_pair::PairCache>,
 }
 
+impl PyStudyTaskEvaluator {
+    /// Catch native unwinds while the guard itself remains in scope, so a
+    /// packing assertion becomes a Python exception without poisoning the
+    /// task mutex. Failed case observations are discarded, never reused.
+    fn with_cache<T>(&self,operation:&str,run:impl FnOnce(&mut study_pair::PairCache)->Result<T,String>)->Result<T,String> {
+        let mut cache=self.cache.lock().map_err(|_|"task evaluator cache was poisoned; call finish_case to discard the failed case".to_owned())?;
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(||run(&mut cache))) {
+            Ok(result)=>result,
+            Err(payload)=>{
+                let reason=arclog::decode::corpus::replay_panic(&*payload);
+                cache.finish_case();
+                self.session.results.clear();
+                Err(format!("native {operation} panicked; failed case discarded: {reason}"))
+            }
+        }
+    }
+}
+
 #[pymethods]
 impl PyStudyTaskEvaluator {
     #[new]
@@ -119,9 +137,8 @@ impl PyStudyTaskEvaluator {
     fn from_stream(&self,py:Python<'_>,ids:Vec<u32>,model:Vec<u8>)->PyResult<PyStudyProgram> {
         if ids.len()!=model.len() || model.iter().any(|f|*f>1) {return Err(PyValueError::new_err("expected equal-length ids/model and flags 0 or 1"));}
         let constructions=constructions()?;
-        let program=py.detach(|| {
+        let program=py.detach(|| self.with_cache("from_stream",|cache| {
             // A new ingestion starts a case even if decoding subsequently faults.
-            let mut cache=self.cache.lock().expect("task evaluator cache is not poisoned");
             cache.finish_case();
             self.session.results.clear();
             let mut decoder=arclog::decode::Decoder::new(&self.task,&self.session,Registry::get(),constructions,&self.settings);
@@ -135,7 +152,7 @@ impl PyStudyTaskEvaluator {
                 i=end;
             }
             arclog::study::StudyProgram::from_decoded(decoder.program().clone(),Registry::get())
-        }).map_err(PyValueError::new_err)?;
+        })).map_err(PyValueError::new_err)?;
         Ok(PyStudyProgram {program,settings:self.settings})
     }
 
@@ -157,9 +174,10 @@ impl PyStudyTaskEvaluator {
     /// task namespace; returned CaseTables own their packed buffers.
     fn finish_case(&self,py:Python<'_>) {
         py.detach(|| {
-            let mut cache=self.cache.lock().expect("task evaluator cache is not poisoned");
+            let mut cache=self.cache.lock().unwrap_or_else(|poisoned|poisoned.into_inner());
             cache.finish_case();
             self.session.results.clear();
+            self.cache.clear_poison();
         });
     }
 
@@ -169,34 +187,32 @@ impl PyStudyTaskEvaluator {
     fn gold_tables(&self,py:Python<'_>,gold:&PyStudyProgram)->PyResult<(String,PyCaseTables)> {
         if gold.settings!=self.settings {return Err(PyValueError::new_err("task evaluator and program settings differ"));}
         let constructions=constructions()?;
-        let (report,columns)=py.detach(|| {
-            let mut cache=self.cache.lock().expect("task evaluator cache is not poisoned");
+        let (report,columns)=py.detach(|| self.with_cache("gold_tables",|cache| {
             if cache.activate(&gold.program) {self.session.results.clear();}
-            let (mut report,tables)=study_pair::gold_tables_cached(&gold.program,&self.task,&self.session,constructions,&self.settings,&mut cache);
+            let (mut report,tables)=study_pair::gold_tables_cached(&gold.program,&self.task,&self.session,constructions,&self.settings,cache);
             let started=std::time::Instant::now();
             let columns=case_columns(&self.evidence,&tables,self.task.train.len(),None);
             report["native_columns_seconds"]=started.elapsed().as_secs_f64().into();
-            (report,columns)
-        });
+            Ok((report,columns))
+        })).map_err(PyValueError::new_err)?;
         Ok((report.to_string(),PyCaseTables::of(py,self.task_name.clone(),"gold".into(),false,self.settings.projection_cap,&columns,None,None)?))
     }
 
     fn evaluate_pair(&self,py:Python<'_>,gold:&PyStudyProgram,point:&PyMutationPoint,mutant:&PyValidMutant)->PyResult<(String,PyCaseTables,PyCaseTables)> {
         if gold.settings!=self.settings || mutant.settings!=self.settings {return Err(PyValueError::new_err("task evaluator and program settings differ"));}
         let constructions=constructions()?;
-        let (report,g,m)=py.detach(|| {
-            let mut cache=self.cache.lock().expect("task evaluator cache is not poisoned");
+        let (report,g,m)=py.detach(|| self.with_cache("evaluate_pair",|cache| {
             if cache.activate(&gold.program) {self.session.results.clear();}
-            let mut result=study_pair::evaluate_pair_cached(&gold.program,&point.inner,&mutant.inner,&self.task,&self.session,constructions,&self.settings,&mut cache);
+            let mut result=study_pair::evaluate_pair_cached(&gold.program,&point.inner,&mutant.inner,&self.task,&self.session,constructions,&self.settings,cache);
             let started=std::time::Instant::now();
-            let (g,m)=study_pair::pair_columns_cached(&self.evidence,&result,self.task.train.len(),&mut cache);
+            let (g,m)=study_pair::pair_columns_cached(&self.evidence,&result,self.task.train.len(),cache);
             result.report["timings"]["native_columns"]=started.elapsed().as_secs_f64().into();
             result.report["cache"]=cache.stats();
             result.report["cache"]["session_result_bytes"]=self.session.results.bytes().into();
             // Drop the native pair tables before allocating their Python
             // buffers; the Python API returns only the report and columns.
-            (result.report.to_string(),g,m)
-        });
+            Ok((result.report.to_string(),g,m))
+        })).map_err(PyValueError::new_err)?;
         Ok((report,PyCaseTables::of(py,self.task_name.clone(),"gold".into(),false,self.settings.projection_cap,&g,None,None)?,PyCaseTables::of(py,self.task_name.clone(),"mutant".into(),false,self.settings.projection_cap,&m,None,None)?))
     }
 }
