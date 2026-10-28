@@ -86,6 +86,12 @@ impl PyStudyProgram {
         Ok(Self { program, settings })
     }
 
+    /// Structured engine evidence. JSON schema/capabilities are versioned.
+    fn render_json(&self, py: Python<'_>) -> PyResult<String> {
+        py.detach(|| self.program.render_json(Registry::get()).map(|v|v.to_string()))
+            .map_err(PyValueError::new_err)
+    }
+
     fn sexp(&self) -> String {
         self.program.sexp(Registry::get())
     }

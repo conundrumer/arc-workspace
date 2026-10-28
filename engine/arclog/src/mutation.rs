@@ -4,6 +4,7 @@
 //! has no task evaluation: it shares the resolver, binder, checker and writer.
 //! Diagnostics from unavailable choices are counted, never silently repaired.
 pub mod edit;
+#[path = "study_replay.rs"] mod study_replay;
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
@@ -686,6 +687,22 @@ impl ValidMutant {
     }
     /// Exact, source-order evidence that only the requested original atoms
     /// changed. This compares AST values directly, without any fingerprint.
+    /// Every original node is either mapped exactly, deleted, or belongs
+    /// to a replaced subtree. Replacement descendants have no guessed match.
+    pub fn source_paths(&self) -> Value {
+        fn walk(node: NodeRef<'_>, at: &NodePath, edits: &[AtomEdit], out: &mut Vec<Value>) {
+            let replaced = edits.iter().any(|e| e.replacement.is_some() && at.0.len()>e.at.0.len() && at.0.starts_with(&e.at.0));
+            let after = if replaced {None} else {edit::mapped(at,edits)};
+            out.push(json!({"before_path":path_json(at),"after_path":after.as_ref().map(path_json),
+                "status":if replaced {"replaced_subtree"} else if after.is_none() {"deleted"}
+                    else if edits.iter().any(|e|e.at==*at) {"replaced"} else {"preserved"}}));
+            for (i,child) in node.children().into_iter().enumerate() {walk(child,&at.child(i as u32),edits,out);}
+        }
+        let mut out=Vec::new();
+        walk(NodeRef::Program(self.gold().program.program.value()),&NodePath::default(),&self.spec.edits,&mut out);
+        json!(out)
+    }
+
     pub fn audit(&self) -> Result<Value, String> {
         let gold = NodeRef::Program(self.spec.source.program.program.value());
         let mutant = NodeRef::Program(self.program().program().value());
@@ -1196,7 +1213,7 @@ fn site_variants(
     }
 }
 
-fn conjunct_json(c: &Conjunct) -> Value {
+pub(crate) fn conjunct_json(c: &Conjunct) -> Value {
     if let Some(atom) = c.atom() {
         json!({"node":if matches!(c, Conjunct::Not(_)) {"not_atom"} else {"atom"},
                "relation":relation_json(&atom.value().relation), "sites":atom.value().sites.iter().map(site_json).collect::<Vec<_>>()})
@@ -1208,7 +1225,7 @@ fn conjunct_json(c: &Conjunct) -> Value {
     }
 }
 
-fn relation_json(r: &RelationRef) -> Value {
+pub(crate) fn relation_json(r: &RelationRef) -> Value {
     fn name(n: &DeclaredName) -> Value {
         match n {
             DeclaredName::Written(n) => json!({"name":n}),
@@ -1239,7 +1256,7 @@ fn relation_json(r: &RelationRef) -> Value {
     }
 }
 
-fn site_json(s: &Site) -> Value {
+pub(crate) fn site_json(s: &Site) -> Value {
     fn column(c: &ColumnName) -> Value {
         match c {
             ColumnName::Written(n) => json!({"name":n}),

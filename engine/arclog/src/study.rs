@@ -6,6 +6,8 @@
 
 use std::sync::Arc;
 
+pub mod render;
+
 use crate::check::{CheckCache, CheckedProgram, SolverClauses, check_shared_program};
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::layout::{Layout, SourceFile};

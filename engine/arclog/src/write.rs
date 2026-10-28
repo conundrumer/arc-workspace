@@ -94,6 +94,48 @@ pub fn label_names(program: &Node<Program>, registry: &Registry) -> Vec<Vec<(cra
     synthesized::label_names(program, registry)
 }
 
+/// Engine-written display text keyed by the ORIGINAL AST paths. Synthesized
+/// named-record field wrappers are presentation only, never new source paths.
+pub(crate) fn node_texts(program: &Node<Program>, layout: Option<&Layout>, registry: &Registry)
+    -> Result<std::collections::BTreeMap<crate::program::path::NodePath, String>, String>
+{
+    use crate::program::path::{NodePath,NodeRef};
+    use crate::program::LabelId;
+    let named = match layout {
+        Some(layout) => program.value().forms.iter().enumerate().map(|(i,f)| {
+            let names = layout.node(crate::layout::SourceFile::Arclog,&NodePath::top(i as u32))
+                .map(|n|n.label_names.to_vec()).unwrap_or_default();
+            (f.clone(),names)
+        }).collect(),
+        None => synthesized::named_forms(program,registry),
+    };
+    fn walk(original: NodeRef<'_>, mut display: NodeRef<'_>, at: &NodePath,
+        names: &[(LabelId,Box<str>)], out: &mut std::collections::BTreeMap<NodePath,String>) -> Result<(),String> {
+        // NamedLabel at a decoded record field is printed as (:field LABEL).
+        // Its source node is still LABEL, at the original argument path.
+        if matches!(original,NodeRef::Label(_)) && matches!(display,NodeRef::Site(_)) {
+            let children = display.children();
+            if children.len()!=1 {return Err(format!("display field shape mismatch at {at:?}"));}
+            display=children[0];
+        }
+        out.insert(at.clone(),arclog::snippet(display,names)?);
+        let original_children=original.children();let display_children=display.children();
+        if original_children.len()!=display_children.len() {
+            return Err(format!("display child count mismatch at {at:?}"));
+        }
+        for (i,(original,display)) in original_children.into_iter().zip(display_children).enumerate() {
+            walk(original,display,&at.child(i as u32),names,out)?;
+        }
+        Ok(())
+    }
+    let mut out=std::collections::BTreeMap::new();
+    for (i,(original,(display,names))) in program.value().forms.iter().zip(named).enumerate() {
+        walk(NodeRef::from(original),NodeRef::from(&display),&NodePath::top(i as u32),&names,&mut out)?;
+    }
+    out.insert(NodePath::default(),match layout {Some(l)=>write_arclog(program,l),None=>write_synthesized(program,registry)});
+    Ok(out)
+}
+
 /// The numbers a writer gives the Idents it writes, private to the crate's
 /// writers, since a number is an order of encodings.
 ///
@@ -147,7 +189,7 @@ mod synthesized {
     use crate::trace::label_names::label_name;
 
     /// Each form of `program` as written, with the name of each of its labels.
-    fn named_forms(
+    pub(super) fn named_forms(
         program: &Node<Program>,
         registry: &Registry,
     ) -> Vec<(Form, Vec<(LabelId, Box<str>)>)> {

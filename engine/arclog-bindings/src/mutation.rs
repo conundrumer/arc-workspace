@@ -72,6 +72,16 @@ impl PyValidMutant {
     fn k(&self) -> usize {
         self.inner.k()
     }
+    /// Includes the original-to-mutant AST path correspondence.
+    fn render_json(&self, py: Python<'_>) -> PyResult<String> {
+        py.detach(|| {
+            let mut value=self.inner.program().render_json(Registry::get())?;
+            value["mutation_identity"]=self.inner.identity();
+            value["source_path_correspondence"]=self.inner.source_paths();
+            Ok(value.to_string())
+        }).map_err(|error:String|PyValueError::new_err(error))
+    }
+
     fn sexp(&self) -> String {
         self.inner.program().sexp(Registry::get())
     }
