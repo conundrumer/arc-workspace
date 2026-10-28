@@ -151,6 +151,13 @@ impl PyStudyProgram {
             .map(|v| v.to_string()).map_err(PyValueError::new_err)
     }
 
+    /// Relation names from the original case writer, guarded by exact stream identity.
+    fn relation_source_names_json(&self, py: Python<'_>, corpus: &str, task: &str, case: &str) -> PyResult<String> {
+        py.detach(|| arclog::study::render_names::from_case(self.program.checked(), &self.settings,
+            std::path::Path::new(corpus), task, case).map(|v|v.to_string()))
+            .map_err(PyValueError::new_err)
+    }
+
     fn render_json(&self, py: Python<'_>) -> PyResult<String> {
         py.detach(|| {
             self.program

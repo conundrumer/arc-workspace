@@ -28,15 +28,28 @@ fn complete_export(program:&arclog::study::StudyProgram,settings:&arclog::stream
 }
 
 #[pyfunction]
-fn study_program_export_json(py:Python<'_>,program:&PyStudyProgram)->PyResult<String> {
-    py.detach(||complete_export(&program.program,&program.settings).map(|v|v.to_string()))
+#[pyo3(signature=(program, relation_source_names_json=None))]
+fn study_program_export_json(py:Python<'_>,program:&PyStudyProgram,relation_source_names_json:Option<&str>)->PyResult<String> {
+    py.detach(|| {
+        let mut export=complete_export(&program.program,&program.settings)?;
+        if let Some(names)=relation_source_names_json {
+            let names=serde_json::from_str(names).map_err(|e|format!("invalid relation source names: {e}"))?;
+            arclog::study::render_names::attach(&mut export,program.program.checked(),&program.settings,&names)?;
+        }
+        Ok::<_,String>(export.to_string())
+    })
         .map_err(PyValueError::new_err)
 }
 
 #[pyfunction]
-fn study_mutant_export_json(py:Python<'_>,mutant:&PyValidMutant)->PyResult<String> {
+#[pyo3(signature=(mutant, relation_source_names_json=None))]
+fn study_mutant_export_json(py:Python<'_>,mutant:&PyValidMutant,relation_source_names_json:Option<&str>)->PyResult<String> {
     py.detach(|| {
         let mut export=complete_export(mutant.inner.program(),&mutant.settings)?;
+        if let Some(names)=relation_source_names_json {
+            let names=serde_json::from_str(names).map_err(|e|format!("invalid relation source names: {e}"))?;
+            arclog::study::render_names::attach(&mut export,mutant.inner.gold(),&mutant.settings,&names)?;
+        }
         export["mutation_identity"]=mutant.inner.identity();
         export["source_path_correspondence"]=mutant.inner.source_paths();
         Ok::<_,String>(export.to_string())
