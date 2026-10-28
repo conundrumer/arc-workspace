@@ -154,7 +154,7 @@ pub(crate) fn stream_tables(py: Python<'_>, task: &str, tasks: &str, streams: Ve
             &steps,
             &|record: &mut StreamRecord, decoder, stepped| record.step(decoder, stepped, points),
             &|_| {},
-            &|_, replay| replay,
+            &|_, _, replay| replay,
             &|_| {},
             step_cap,
         )
@@ -175,10 +175,10 @@ pub(crate) fn stream_tables(py: Python<'_>, task: &str, tasks: &str, streams: Ve
             run_on_workers(&jobs, corpus_threads(), |&(replay, cut)| {
                 catch_unwind(AssertUnwindSafe(|| match cut {
                     Some((base, tokens)) => {
-                        let (columns, tables) = cut_case_columns(&evidence, &replay.record.tables, tokens, train);
+                        let (columns, tables) = cut_case_columns(&evidence, &replay.record.tables, tokens, train, None);
                         (columns.with_copies(&replay.record.copies), Some((base, tokens, tables)))
                     }
-                    None => (case_columns(&evidence, &replay.record.tables, train).with_copies(&replay.record.copies), None),
+                    None => (case_columns(&evidence, &replay.record.tables, train, None).with_copies(&replay.record.copies), None),
                 }))
                 .map_err(|payload| replay_panic(&*payload))
             })

@@ -69,10 +69,11 @@ use arclog::eval::join::each_row;
 use arclog::eval::{RelationValue, Stop};
 use arclog::hash::{StableHash, StableHashMap, StableHasher};
 use arclog::program::path::NodePath;
-use arclog::program::{column_spelled, ColumnName, FactRelation, ProgramRelation, RelationRef};
+use arclog::program::{column_spelled, ColumnName, FactRelation, LabelId, ProgramRelation, RelationRef};
 use arclog::read::spelling::{spelling, FACT_RELATIONS};
 use arclog::registry::{has_frame, Registry};
 use arclog::relations::Relation;
+use arclog::stream::corpus::StreamLabels;
 use arclog::terms::{Constant, OrientationConstant, Term, TermId, ORIENTATION_TYPES};
 use arclog::types::ValueType;
 
@@ -186,9 +187,15 @@ pub struct TableColumns {
     /// order of `column_names` is the order the relation stores them in.
     pub column_slots: Vec<Vec<i32>>,
     /// The name of the label that the table's form writes at each column, in
-    /// the order of `column_names`, as `arclog::write::label_names` names it,
-    /// and the empty string where the form writes none.
+    /// the order of `column_names`, as `arclog::write::label_names` names it
+    /// in the decoded program, and the empty string where the form writes none.
     pub column_labels: Vec<Vec<String>>,
+    /// The name that the case's `.arclog` text writes for the label of each
+    /// column, in the order of `column_names`, and the empty string where the
+    /// form writes none. Where the call of [`case_columns`] or
+    /// [`cut_case_columns`] gives the label names of the case's stream, the
+    /// names are those, and otherwise those of `column_labels`.
+    pub column_source_labels: Vec<Vec<String>>,
     /// The width in cells of a row.
     pub width: Vec<u32>,
     /// The relation of each `DET` the table reads, its columns' types, and
@@ -209,6 +216,11 @@ pub struct TableColumns {
     /// such table.
     pub det_slots: Vec<Vec<Vec<i32>>>,
     pub det_labels: Vec<Vec<Vec<String>>>,
+    /// The name that the case's `.arclog` text writes for the label of each
+    /// column of each `DET`, in the order of its types: that of the column
+    /// in the latest table of the `DET`'s relation, as `column_source_labels`
+    /// gives it, and the empty string where the case holds no such table.
+    pub det_source_labels: Vec<Vec<Vec<String>>>,
     pub det_widths: Vec<Vec<u32>>,
     /// The path of each column of each `DET`, in the order of its types: the
     /// names of the path, as `column_spelled` gives them, joined by `.`; the
@@ -383,9 +395,11 @@ impl CaseColumns {
 
 /// The columns of `evidence`, each at token 0, then of `tables`, each with
 /// the index of its token, on a task of `train` train pairs, which names the
-/// examples.
-pub fn case_columns(evidence: &[Table], tables: &[(usize, Table)], train: usize) -> CaseColumns {
-    fold(evidence, tables, None, train).0
+/// examples. `labels` are the names that the case's text writes for the
+/// labels of its stream, which `column_source_labels` and `det_source_labels`
+/// give; with `None` they give the decoded names.
+pub fn case_columns(evidence: &[Table], tables: &[(usize, Table)], train: usize, labels: Option<&StreamLabels>) -> CaseColumns {
+    fold(evidence, tables, None, train, labels).0
 }
 
 /// The columns of the tables of a stream that shares its first `tokens`
@@ -397,9 +411,10 @@ pub fn case_columns(evidence: &[Table], tables: &[(usize, Table)], train: usize)
 /// projection of the columns gives a table by the number it has in the
 /// stream's whole list, and a number below `k` names the base's table of that
 /// number. The `values` hold the runs of those tables alone, and a table's
-/// sources read the tables below `k` as [`case_columns`] reads them.
-pub fn cut_case_columns(evidence: &[Table], tables: &[(usize, Table)], tokens: usize, train: usize) -> (CaseColumns, u32) {
-    fold(evidence, tables, Some(tokens), train)
+/// sources read the tables below `k` as [`case_columns`] reads them. `labels`
+/// are as [`case_columns`] takes them.
+pub fn cut_case_columns(evidence: &[Table], tables: &[(usize, Table)], tokens: usize, train: usize, labels: Option<&StreamLabels>) -> (CaseColumns, u32) {
+    fold(evidence, tables, Some(tokens), train, labels)
 }
 
 /// The fold of [`case_columns`] and [`cut_case_columns`]: the only state it
@@ -408,7 +423,8 @@ pub fn cut_case_columns(evidence: &[Table], tables: &[(usize, Table)], tokens: u
 /// own step and the tables before it. With `cut`, the tables before it are
 /// folded into `names` alone, and the count of them is given with the
 /// columns.
-fn fold(evidence: &[Table], tables: &[(usize, Table)], cut: Option<usize>, train: usize) -> (CaseColumns, u32) {
+/// `labels` are as [`case_columns`] takes them.
+fn fold(evidence: &[Table], tables: &[(usize, Table)], cut: Option<usize>, train: usize, labels: Option<&StreamLabels>) -> (CaseColumns, u32) {
     let skipped = cut.map_or(0, |tokens| evidence.len() + tables.partition_point(|(token, _)| *token < tokens));
     let mut columns = CaseColumns::default();
     let mut names = Vec::new();
@@ -416,9 +432,9 @@ fn fold(evidence: &[Table], tables: &[(usize, Table)], cut: Option<usize>, train
     for (place, (token, table)) in evidence.iter().map(|table| (0, table)).chain(tables.iter().map(|(token, table)| (*token, table))).enumerate() {
         let row = u32::try_from(place).expect("fewer than 2^32 tables");
         if place < skipped {
-            note_name(&mut names, row, table);
+            note_name(&mut names, row, table, labels);
         } else {
-            push_table(&mut columns, &mut names, &mut runs, row, token, table, train);
+            push_table(&mut columns, &mut names, &mut runs, row, token, table, train, labels);
         }
     }
     (columns, u32::try_from(skipped).expect("fewer than 2^32 tables"))
@@ -556,7 +572,8 @@ fn push_extents(values: &mut Vec<i32>, runs: &mut Runs, rows: &Relation, types: 
 /// A table that stands for a relation: the relation as the program spells it,
 /// or the fact relation's name, the table's row, the path of each row position of
 /// its columns where the relation is a program node, and the frame (empty for
-/// none), the slot (-1 for none) and the label (empty for none) of each column.
+/// none), the slot (-1 for none), the label (empty for none) and the label the
+/// case's text writes (empty for none) of each column.
 pub(crate) struct Named {
     pub(crate) name: String,
     pub(crate) row: u32,
@@ -564,6 +581,7 @@ pub(crate) struct Named {
     pub(crate) frames: Vec<String>,
     slots: Vec<i32>,
     labels: Vec<String>,
+    source_labels: Vec<String>,
 }
 
 /// The tables so far that stand for a relation, in the order of the rows.
@@ -576,13 +594,13 @@ pub(crate) type TableNames = Vec<Named>;
 pub(crate) fn names_of(registry: &Registry, earlier: &[&Table]) -> TableNames {
     let mut names = Vec::new();
     for (place, table) in evidence_shells(registry).iter().chain(earlier.iter().copied()).enumerate() {
-        note_name(&mut names, u32::try_from(place).expect("fewer than 2^32 tables"), table);
+        note_name(&mut names, u32::try_from(place).expect("fewer than 2^32 tables"), table, None);
     }
     names
 }
 
 /// The columns of `table`, the table at `row`, after the tables before it.
-fn push_table(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, row: u32, token: usize, table: &Table, train: usize) {
+fn push_table(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, row: u32, token: usize, table: &Table, train: usize, labels: Option<&StreamLabels>) {
     let tables = &mut out.tables;
     tables.token.push(u32::try_from(token).expect("fewer than 2^32 tokens"));
     tables.form.push(form_path(&table.form));
@@ -604,12 +622,14 @@ fn push_table(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, ro
             tables.extent_columns.push(Vec::new());
             tables.column_slots.push(Vec::new());
             tables.column_labels.push(Vec::new());
+            tables.column_source_labels.push(Vec::new());
             tables.width.push(0);
             tables.det_relations.push(Vec::new());
             tables.det_types.push(Vec::new());
             tables.det_frames.push(Vec::new());
             tables.det_slots.push(Vec::new());
             tables.det_labels.push(Vec::new());
+            tables.det_source_labels.push(Vec::new());
             tables.det_widths.push(Vec::new());
             tables.det_columns.push(Vec::new());
             tables.projections.push(ProjectionsKind::None as u8);
@@ -630,13 +650,14 @@ fn push_table(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, ro
             tables.fact.push(fact);
             tables.column_names.push(contents.columns.iter().map(|column| column.name.clone()).collect());
             tables.column_types.push(type_names(&types));
-            let own = named(names, row, table);
+            let own = named(names, row, table, labels);
             let frames = own.as_ref().map_or_else(|| column_frames(names, contents), |own| own.frames.clone());
             let extent_columns = extent_columns(&types, &frames);
             tables.column_frames.push(frames);
             tables.extent_columns.push(extent_columns.clone());
             tables.column_slots.push(slots_of(contents));
             tables.column_labels.push(labels_of(contents));
+            tables.column_source_labels.push(source_labels_of(&table.form, contents, labels));
             tables.width.push(row_width(&types));
             tables.det_relations.push(contents.dets.iter().map(|det| relation_spelled(&det.relation)).collect());
             tables.det_types.push(contents.dets.iter().map(|det| type_names(&det.types)).collect());
@@ -644,6 +665,7 @@ fn push_table(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, ro
             tables.det_frames.push(det_frames(&places, contents));
             tables.det_slots.push(places.iter().map(|det| det.iter().map(|place| place.and_then(|(table, at)| table.slots.get(at).copied()).unwrap_or(-1)).collect()).collect());
             tables.det_labels.push(places.iter().map(|det| det.iter().map(|place| place.and_then(|(table, at)| table.labels.get(at).cloned()).unwrap_or_default()).collect()).collect());
+            tables.det_source_labels.push(places.iter().map(|det| det.iter().map(|place| place.and_then(|(table, at)| table.source_labels.get(at).cloned()).unwrap_or_default()).collect()).collect());
             tables.det_widths.push(contents.dets.iter().map(|det| row_width(&det.types)).collect());
             tables.det_columns.push(contents.dets.iter().map(|det| det.columns.iter().flat_map(|paths| paths.iter()).map(|path| path_spelled(path)).collect()).collect());
             let (projections, stop) = match &contents.projections {
@@ -667,14 +689,14 @@ fn push_table(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, ro
 
 /// Adds the relation of `table`, the table at `row`, to `names`, if it stands
 /// for one.
-fn note_name(names: &mut TableNames, row: u32, table: &Table) {
-    names.extend(named(names, row, table));
+fn note_name(names: &mut TableNames, row: u32, table: &Table, labels: Option<&StreamLabels>) {
+    names.extend(named(names, row, table, labels));
 }
 
 /// The `Named` of `table`, the table at `row`, with its frames resolved in
 /// `names`, the tables before it: none for a table that stands for no relation,
 /// a table of a body or one that has faulted.
-fn named(names: &TableNames, row: u32, table: &Table) -> Option<Named> {
+fn named(names: &TableNames, row: u32, table: &Table, labels: Option<&StreamLabels>) -> Option<Named> {
     let Ok(contents) = &table.contents else { return None };
     if matches!(table.point, Point::Body { .. }) {
         return None;
@@ -684,7 +706,7 @@ fn named(names: &TableNames, row: u32, table: &Table) -> Option<Named> {
         TableRelation::Fact(fact) => spelling(FACT_RELATIONS, &fact).to_owned(),
     };
     let frames = column_frames(names, contents);
-    Some(Named { name, row, paths: contents.rows.clone(), frames, slots: slots_of(contents), labels: labels_of(contents) })
+    Some(Named { name, row, paths: contents.rows.clone(), frames, slots: slots_of(contents), labels: labels_of(contents), source_labels: source_labels_of(&table.form, contents, labels) })
 }
 
 /// The relation `relation` as the program spells it, a fact relation's name,
@@ -816,6 +838,31 @@ fn slots_of(contents: &Contents) -> Vec<i32> {
 /// The label of each column of `contents`, empty for none.
 fn labels_of(contents: &Contents) -> Vec<String> {
     contents.columns.iter().map(|column| column.label.as_deref().unwrap_or_default().to_owned()).collect()
+}
+
+/// The name that the case's text writes for the label of each column of
+/// `contents`, the contents of the table at `form`, empty for none. With the
+/// names `labels` of the case's stream, a column's name is that of its label
+/// at the table's form, and without them, the name the decoded program gives
+/// the label.
+fn source_labels_of(form: &NodePath, contents: &Contents, labels: Option<&StreamLabels>) -> Vec<String> {
+    contents
+        .columns
+        .iter()
+        .map(|column| match (labels, column.label_id) {
+            (Some(labels), Some(id)) => written_label(labels, form, id).to_owned(),
+            _ => column.label.as_deref().unwrap_or_default().to_owned(),
+        })
+        .collect()
+}
+
+/// The name that the stream's text writes for the decoded label `label` of the
+/// table at `form`. The decoder makes the label at each label slot of a form
+/// as `LabelId(slot)`, and the form of the table is the form's place in the
+/// stream, so `labels` gives the name at that form and slot.
+fn written_label<'a>(labels: &'a StreamLabels, form: &NodePath, label: LabelId) -> &'a str {
+    let top = form.0.first().expect("a table with a label stands in a top-level form").0 as usize;
+    labels.get(top).and_then(|form| form.get(label.0 as usize)).expect("the stream names each label of each form the decode reaches")
 }
 
 /// For each column of each `DET` of `contents`, the latest table that stands

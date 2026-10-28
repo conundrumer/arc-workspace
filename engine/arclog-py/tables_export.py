@@ -67,10 +67,14 @@ where that one dies too, the task's part holds no case, the fault line `death_li
                    positions of their labels, or a `DET` keeps only the columns that its reads name), a record's fields sharing the slot of
                    their record, and -1 where the engine knows none; and `column_labels`: the name of the label that the table's form writes
                    at each column, one string per column in `column_names` order, as `arclog.write_synthesized` names that label in the decoded
-                   program, and the empty string where the form writes none; and, per DET in `det_relations` order, one per column in
-                   `det_types` order, `det_slots` and `det_labels`: those of that column in the latest table of the DET's relation, the table
-                   itself where it is the DET's relation's, found by its path in `det_columns`, and -1 and the empty string where the case
-                   holds no such table. By table kind:
+                   program, and the empty string where the form writes none; `column_source_labels`: the name that the case's `.arclog` text
+                   writes for that label, one string per column in `column_names` order, and the empty string where the form writes none. The
+                   text is the one `arclog::stream::corpus::case_files` writes for the case, or, for a case whose files the corpus's `cases/`
+                   directory holds, those files, as `arclog.corpus_tables` builds the tables; the tables of `arclog.stream_tables` and
+                   `arclog.step_tables`, whose program comes from a decode, give the entries of `column_labels`; and, per DET in
+                   `det_relations` order, one per column in `det_types` order, `det_slots`, `det_labels` and `det_source_labels`: those of
+                   that column in the latest table of the DET's relation, the table itself where it is the DET's relation's, found by its
+                   path in `det_columns`, and -1 and the empty string where the case holds no such table. By table kind:
                    a `RULE` clause gives the index in its columns and the clause's label; a `DET` that atoms read gives the index in the
                    clause's columns, with a gap for each column that the reads do not name, and the clause's label; a `DET` with `ONE` marks
                    and a `CHOOSE` give the index among the row columns and then the candidate's, and the label of the `for` body or of the `from` body;
@@ -81,8 +85,9 @@ where that one dies too, the task's part holds no case, the fault line `death_li
                    `Pose`; a clause with no columns of its own (a proposer's, or an instance output's) gives the index among the proposer's or
                    the port's declared columns, and the empty string; `ex_input` and `ex_output` give the row position and the empty string.
                    A table of a body in progress (`bodies`) gives a provisional slot and label: the finished clause's columns are those of
-                   its whole body, so a later conjunct can give a label another slot or none. A label's name equals its name in the solver's
-                   `.arclog` file only where the file was written from the stream and kept its names. A slot is no label id: a label made under a
+                   its whole body, so a later conjunct can give a label another slot or none. A name in `column_labels` equals the name in the
+                   solver's `.arclog` file only where the file was written from the stream and kept its names, and a name in
+                   `column_source_labels` is the file's name. A slot is no label id: a label made under a
                    `NOT`, an `ALL`, or an `OR` or `IF` branch that the clause does not export takes a label id and no slot. A node of several
                    forms gives the labels of the table's own form. A table that faulted gives empty lists
   flows.parquet    one row per source of a column of a table, keyed by task, case, `table` and `column`: `kind` (copy 0,

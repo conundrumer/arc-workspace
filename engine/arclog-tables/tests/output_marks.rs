@@ -26,7 +26,7 @@ fn marks(arclog: &str) -> Vec<(i32, i32)> {
     std::fs::remove_dir_all(&dir).ok();
     let solver = solver.expect("the solver's tables");
     let tables = solver.cases[0].tables.as_ref().expect("the case's tables");
-    let columns = case_columns(&evidence_tables(&task, registry), tables, solver.train);
+    let columns = case_columns(&evidence_tables(&task, registry), tables, solver.train, None);
     columns.tables.output_position.iter().copied().zip(columns.tables.output_color.iter().copied()).collect()
 }
 

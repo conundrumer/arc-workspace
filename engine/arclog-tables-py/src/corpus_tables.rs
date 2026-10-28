@@ -9,7 +9,7 @@ use arclog::decode::corpus::{read_task_files, replay_units, ReplayProgress, Unit
 use arclog::eval::determinations::relation_spelled;
 use arclog::harness::corpus_threads;
 use arclog::registry::Registry;
-use arclog::stream::corpus::{fault_line, solver_streams, token_ids, WantedCases};
+use arclog::stream::corpus::{fault_line, solver_streams, token_ids, StreamLabels, WantedCases};
 use arclog::stream::{DecodeSettings, Emitter, Vocabulary};
 use arclog::task::{JudgedTask, Task};
 use arclog_bindings::{constructions, walk_corpus, Progress, PyConsistencyKind, PyReplayProgress};
@@ -22,12 +22,13 @@ use crate::case_tables::PyCaseTables;
 use crate::record::StreamRecord;
 
 /// A case of a solver whose tables `corpus_tables` builds: its stream's
-/// token ids and the spelling by `relation_spelled` of the relation declared
-/// at each slot, in slot order, or the writer's fault.
+/// token ids, the spelling by `relation_spelled` of the relation declared
+/// at each slot, in slot order, and the names that the case's text writes for
+/// the labels of the stream, or the writer's fault.
 struct TableCase {
     case: String,
     concept: bool,
-    stream: Result<(Vec<(u32, Emitter)>, Vec<String>), String>,
+    stream: Result<(Vec<(u32, Emitter)>, Vec<String>, StreamLabels), String>,
 }
 
 /// The tables of each case of each solver of `corpus`, on its task in
@@ -98,7 +99,7 @@ pub(crate) fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases
             Ok(streams) => match read_task_files(Path::new(tasks), id) {
                 Ok(read) => {
                     for case in streams.into_iter().filter(|case| !case.demonstrated) {
-                        let stream = case.stream.map(|stream| (token_ids(&stream.tokens, &vocabulary), stream.relations.iter().map(relation_spelled).collect()));
+                        let stream = case.stream.map(|stream| (token_ids(&stream.tokens, &vocabulary), stream.relations.iter().map(relation_spelled).collect(), case.labels));
                         cases.push(TableCase { case: case.case, concept: case.concept, stream });
                     }
                     reads.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).insert(id.to_string(), read);
@@ -110,24 +111,27 @@ pub(crate) fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases
         (cases, faults)
     })?;
     let reads = reads.into_inner().unwrap_or_else(|poisoned| poisoned.into_inner());
-    // For each solver that has cases: the ids of the streams its writer gives.
-    let streamed: Vec<(&str, Vec<Vec<(u32, Emitter)>>)> = found
+    // For each solver that has cases: the ids of the streams its writer gives, and their label names.
+    let streamed: Vec<(&str, Vec<Vec<(u32, Emitter)>>, Vec<&StreamLabels>)> = found
         .iter()
         .filter(|(id, cases, _)| !cases.is_empty() && reads.contains_key(id))
-        .map(|(id, cases, _)| (id.as_str(), cases.iter().filter_map(|case| case.stream.as_ref().ok().map(|(ids, _)| ids.clone())).collect()))
+        .map(|(id, cases, _)| {
+            let written = cases.iter().filter_map(|case| case.stream.as_ref().ok());
+            (id.as_str(), written.clone().map(|(ids, _, _)| ids.clone()).collect(), written.map(|(_, _, labels)| labels).collect())
+        })
         .collect();
     let solvers: Vec<UnitSolver<'_>> = streamed
         .iter()
-        .map(|(id, ids)| {
+        .map(|(id, ids, _)| {
             let (task, judged) = &reads[*id];
             UnitSolver { task, judged, streams: ids, units }
         })
         .collect();
-    let trains: Vec<usize> = streamed.iter().map(|(id, _)| reads[*id].0.train.len()).collect();
+    let trains: Vec<usize> = streamed.iter().map(|(id, _, _)| reads[*id].0.train.len()).collect();
     let evidence: Vec<Vec<Table>> = solvers.iter().map(|solver| evidence_tables(solver.task, Registry::get())).collect();
     let unread = ReplayProgress::default();
     let steps = progress.as_ref().map_or(&unread, |progress| &progress.get().inner);
-    let progress = Progress::new(None, ended.as_ref(), streamed.iter().map(|(id, _)| *id).collect(), streamed.iter().map(|(_, ids)| ids.len()).collect());
+    let progress = Progress::new(None, ended.as_ref(), streamed.iter().map(|(id, _, _)| *id).collect(), streamed.iter().map(|(_, ids, _)| ids.len()).collect());
     let mut replayed = py
         .detach(|| {
             replay_units(
@@ -139,7 +143,7 @@ pub(crate) fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases
                 steps,
                 &|record: &mut StreamRecord, decoder, stepped| record.step(decoder, stepped, points),
                 &|solver| progress.start(solver),
-                &|solver, replay| replay.into_result().map(|record| (case_columns(&evidence[solver], &record.tables, trains[solver]).with_copies(&record.copies), record.ended)),
+                &|solver, stream, replay| replay.into_result().map(|record| (case_columns(&evidence[solver], &record.tables, trains[solver], Some(streamed[solver].2[stream])).with_copies(&record.copies), record.ended)),
                 &|solver| progress.settle(solver),
                 step_cap,
             )
@@ -155,7 +159,7 @@ pub(crate) fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases
         let mut outs = replayed.next().expect("a result for each solver that has cases").into_iter();
         for case in cases {
             let outcome = match &case.stream {
-                Ok((_, relations)) => outs.next().expect("a result for each stream").and_then(|out| out).map(|out| (out, relations)),
+                Ok((_, relations, _)) => outs.next().expect("a result for each stream").and_then(|out| out).map(|out| (out, relations)),
                 Err(fault) => Err(fault.clone()),
             };
             match outcome {

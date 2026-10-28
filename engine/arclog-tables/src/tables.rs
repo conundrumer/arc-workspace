@@ -89,18 +89,19 @@ pub enum Points {
 
 /// A column of a table: its name, `c<position>` where the program gives the
 /// relation's columns no names, such as the relations of an instance, its
-/// type, its slot in the relation's own column order, and the name of the
-/// label that the table's form writes at its position
-/// ([`arclog::write::label_names`]). The slot is none where the form's
-/// columns reach no such position, and the label is none there and where the
-/// form writes no label at the position. The slot and the label of a table of
-/// a body in progress are provisional: a later conjunct can give the label
-/// another slot or none.
+/// type, its slot in the relation's own column order, and the label that the
+/// table's form writes at its position, as the label's id in the decoded
+/// program and the name ([`arclog::write::label_names`]) that the decoded
+/// program gives it. The slot is none where the form's columns reach no such
+/// position, and the label is none there and where the form writes no label
+/// at the position. The slot and the label of a table of a body in progress
+/// are provisional: a later conjunct can give the label another slot or none.
 #[derive(Clone, Debug)]
 pub struct TableColumn {
     pub name: String,
     pub ty: ValueType,
     pub slot: Option<u32>,
+    pub label_id: Option<LabelId>,
     pub label: Option<Box<str>>,
 }
 
@@ -356,7 +357,10 @@ fn contents(decoder: &Decoder<'_>, program: &CheckedProgram, form: &NodePath, re
         .into_iter()
         .zip(types)
         .zip(placements)
-        .map(|((name, ty), placement)| TableColumn { name, ty: ty.clone(), slot: placement.map(|placed| placed.slot), label: placement.and_then(|placed| placed.label).map(label_text) })
+        .map(|((name, ty), placement)| {
+            let label_id = placement.and_then(|placed| placed.label);
+            TableColumn { name, ty: ty.clone(), slot: placement.map(|placed| placed.slot), label_id, label: label_id.map(label_text) }
+        })
         .collect();
     let dets = dets
         .iter()
@@ -437,6 +441,7 @@ fn evidence_table_of(registry: &Registry, fact: FactRelation, examples: Box<[Exa
             },
             ty: column.ty.fixed().expect("a fact column has a fixed type").clone(),
             slot: Some(u32::try_from(index).expect("fewer than 2^32 columns")),
+            label_id: None,
             label: None,
         })
         .collect();

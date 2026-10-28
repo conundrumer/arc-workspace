@@ -57,7 +57,13 @@ use pyo3::types::{PyBytes, PyDict};
 /// `column_names`: the column's slot in the relation's own column order (-1 where the engine
 /// knows none) and the name of the label that the table's form writes at it (the empty string
 /// where none), and `det_slots` and `det_labels`, for each `DET` one entry per column in the order of
-/// its `det_types`, those of that column in the latest table of the `DET`'s relation.
+/// its `det_types`, those of that column in the latest table of the `DET`'s relation. The name in
+/// `column_labels` is the name that the decoded program gives the label. `tables` also gives
+/// `column_source_labels` and `det_source_labels`, of the shapes of `column_labels` and `det_labels`, with
+/// the name that the case's `.arclog` text writes for the label: in the `CaseTables` of `corpus_tables`,
+/// the text that `arclog::stream::corpus::case_files` writes for the case, or, for a case whose files the
+/// corpus's `cases/` directory holds, those files; in those of `stream_tables` and `step_tables`, whose
+/// program comes from a decode, the entries of `column_labels` and `det_labels`.
 ///
 /// `projection_cap` is the cap of the projection rows that the tables ran
 /// under.
@@ -195,12 +201,14 @@ impl PyCaseTables {
         t.list("extent_columns", &c.extent_columns)?;
         t.list("column_slots", &c.column_slots)?;
         t.list("column_labels", &c.column_labels)?;
+        t.list("column_source_labels", &c.column_source_labels)?;
         t.ints("width", &c.width)?;
         t.list("det_relations", &c.det_relations)?;
         t.list("det_types", &c.det_types)?;
         t.list("det_frames", &c.det_frames)?;
         t.list("det_slots", &c.det_slots)?;
         t.list("det_labels", &c.det_labels)?;
+        t.list("det_source_labels", &c.det_source_labels)?;
         t.list("det_widths", &c.det_widths)?;
         t.list("det_columns", &c.det_columns)?;
         t.ints("projections", &c.projections)?;

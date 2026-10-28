@@ -52,21 +52,32 @@ pub fn token_stream(program: &CheckedProgram, vocabulary: &Vocabulary) -> Result
 }
 
 /// The token stream of [`token_stream`] with the relation that the program
-/// declares at each slot.
+/// declares at each slot and the labels of each form.
 #[derive(Clone, Debug)]
 pub struct WrittenStream {
     pub tokens: Vec<(Token, Emitter)>,
     /// The relation declared at each slot, in slot order.
     pub relations: Vec<ProgramRelation>,
+    /// Each form of the stream, in the order of the stream.
+    pub forms: Vec<WrittenForm>,
 }
 
-/// The stream of [`token_stream`] with the relations its slots name, from
-/// one run of the writer.
+/// A form that the stream writes, a form of the program that holds no form.
+#[derive(Clone, Debug)]
+pub struct WrittenForm {
+    /// The form's path in the program.
+    pub path: NodePath,
+    /// The program's label at each label slot of the form, in slot order.
+    pub labels: Vec<LabelId>,
+}
+
+/// The stream of [`token_stream`] with the relations its slots name and the
+/// labels of its forms, from one run of the writer.
 pub fn written_stream(program: &CheckedProgram, vocabulary: &Vocabulary) -> Result<WrittenStream, Diagnostic> {
-    let (stream, declared) = write_program(program, vocabulary)?;
+    let WriterOutput { stream, declared, forms } = write_program(program, vocabulary)?;
     let mut relations: Vec<(u32, ProgramRelation)> = declared.into_iter().map(|(relation, declared)| (declared.slot, relation)).collect();
     relations.sort_by_key(|(slot, _)| *slot);
-    Ok(WrittenStream { tokens: stream.into_iter().map(|(token, emitter, _)| (token, emitter)).collect(), relations: relations.into_iter().map(|(_, relation)| relation).collect() })
+    Ok(WrittenStream { tokens: stream.into_iter().map(|(token, emitter, _)| (token, emitter)).collect(), relations: relations.into_iter().map(|(_, relation)| relation).collect(), forms })
 }
 
 /// The token stream of [`token_stream`], each token with the path in
@@ -77,11 +88,19 @@ pub fn written_stream(program: &CheckedProgram, vocabulary: &Vocabulary) -> Resu
 /// body's path, and a clause's proposers stand at its body's path, which
 /// they precede.
 pub fn token_stream_with_paths(program: &CheckedProgram, vocabulary: &Vocabulary) -> Result<Vec<(Token, Emitter, NodePath)>, Diagnostic> {
-    Ok(write_program(program, vocabulary)?.0)
+    Ok(write_program(program, vocabulary)?.stream)
 }
 
-/// The tokens of `program` with their paths, and the relations the writer declared.
-fn write_program(program: &CheckedProgram, vocabulary: &Vocabulary) -> Result<(Vec<(Token, Emitter, NodePath)>, StableHashMap<ProgramRelation, Declared>), Diagnostic> {
+/// What one run of the writer gives: the tokens with their paths, the
+/// relations declared, and the forms written.
+struct WriterOutput {
+    stream: Vec<(Token, Emitter, NodePath)>,
+    declared: StableHashMap<ProgramRelation, Declared>,
+    forms: Vec<WrittenForm>,
+}
+
+/// The tokens of `program` with their paths, the relations the writer declared, and the forms it wrote.
+fn write_program(program: &CheckedProgram, vocabulary: &Vocabulary) -> Result<WriterOutput, Diagnostic> {
     let mut writer = Writer {
         vocabulary,
         registry: vocabulary.registry(),
@@ -89,9 +108,10 @@ fn write_program(program: &CheckedProgram, vocabulary: &Vocabulary) -> Result<(V
         declared: StableHashMap::default(),
         labels: StableHashMap::default(),
         stream: Vec::new(),
+        written: Vec::new(),
     };
     writer.forms(&program.program.program.value().forms)?;
-    Ok((writer.stream, writer.declared))
+    Ok(WriterOutput { stream: writer.stream, declared: writer.declared, forms: writer.written })
 }
 
 /// The forms of `forms` that hold no form, each with its path under `path`,
@@ -216,6 +236,8 @@ struct Writer<'w> {
     /// The slot of each label of the current top-level form.
     labels: StableHashMap<LabelId, u32>,
     stream: Vec<(Token, Emitter, NodePath)>,
+    /// The forms written so far.
+    written: Vec<WrittenForm>,
 }
 
 impl Writer<'_> {
@@ -263,6 +285,9 @@ impl Writer<'_> {
                 Form::Demonstrated(_) => return Err(no_form("a `DEMONSTRATED` form", at)),
                 Form::Alts(_) => return Err(no_form("an `ALTS` form", at)),
             }
+            let mut labels: Vec<(u32, LabelId)> = self.labels.iter().map(|(id, slot)| (*slot, *id)).collect();
+            labels.sort_by_key(|(slot, _)| *slot);
+            self.written.push(WrittenForm { path: at.clone(), labels: labels.into_iter().map(|(_, id)| id).collect() });
         }
         Ok(())
     }

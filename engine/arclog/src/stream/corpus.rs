@@ -20,6 +20,8 @@ use crate::resolver::{resolve, resolve_cases, DependencyKind, GraphNodeIndex, Re
 use crate::solver::{Case, CaseName, Exclusion, Solver};
 use crate::stream::{written_stream, Emitter, Token, Vocabulary, WrittenStream};
 
+use files::{case_layout, label_name_at};
+
 /// The cases of a solver whose streams are wanted.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WantedCases<'a> {
@@ -34,6 +36,11 @@ pub enum WantedCases<'a> {
     Named(&'a str),
 }
 
+/// The name that the text of a case's program writes for the label at each
+/// label slot of each form of its stream: for each form of
+/// [`WrittenStream::forms`], in that order, the name at each slot of the form.
+pub type StreamLabels = Vec<Vec<Box<str>>>;
+
 /// The stream of one case of a solver, or the fault that gives none.
 #[derive(Clone, Debug)]
 pub struct CaseStream {
@@ -46,6 +53,13 @@ pub struct CaseStream {
     pub demonstrated: bool,
     /// The case's token stream with the relation at each slot, or the writer's fault.
     pub stream: Result<WrittenStream, String>,
+    /// The names of the stream's labels as the case's `.arclog` text writes
+    /// them: those of [`case_files`], or, for a case whose files the corpus's
+    /// `cases/` directory holds, those files. A form that stands as its file
+    /// writes it, or as the zero-column lowering rewrote it, has the file's
+    /// names, and a form that the case program builds or rewrites has the
+    /// names that [`case_files`] gives it. Empty where `stream` is a fault.
+    pub labels: StreamLabels,
 }
 
 /// The stream of each wanted case of the solver `id` of `corpus`, in the
@@ -75,14 +89,34 @@ pub fn solver_streams(corpus: &Path, id: &str, wanted: WantedCases<'_>, vocabula
         .iter()
         .map(|(name, program)| {
             let case = cases.cases().find(|case| case.case.name == *name).expect("a checked case is a case of the solver");
-            CaseStream {
-                case: case_spelled(name),
-                concept: name == concept,
-                demonstrated: holds_demonstrated(program),
-                stream: corpus_case_stream(corpus, id, case, program, vocabulary, prefix),
-            }
+            let (stream, labels) = match named_case_stream(corpus, id, &solver, case, program, vocabulary, prefix) {
+                Ok((stream, labels)) => (Ok(stream), labels),
+                Err(fault) => (Err(fault), Vec::new()),
+            };
+            CaseStream { case: case_spelled(name), concept: name == concept, demonstrated: holds_demonstrated(program), stream, labels }
         })
         .collect())
+}
+
+/// The program that the files of a case under `cases/<id>/` of a corpus make:
+/// the solver they read as, its resolved cases, whose concept case is the
+/// program, and the program's checked form.
+struct FilesProgram {
+    solver: std::sync::Arc<Solver>,
+    cases: ResolvedCases,
+    checked: CheckedProgram,
+}
+
+/// The program of the files of the case `name` of the solver `id` of `corpus`,
+/// `None` where it has no files, or the fault that the files stand in part, do
+/// not read, or make a solver whose program the checker refuses.
+fn files_program(corpus: &Path, id: &str, name: &CaseName, prefix: bool) -> Result<Option<FilesProgram>, String> {
+    let Some(texts) = files::read_case_files(corpus, id, name)? else { return Ok(None) };
+    let solver = read_solver_texts(corpus, id, &texts.arclog, &texts.arcdata).map_err(|e| format!("the case's files do not read: {e}"))?;
+    let cases = resolve_cases(&solver, Registry::get());
+    let clauses = SolverClauses::of_cases(&cases);
+    let checked = check_case(&solver, cases.concept(), &clauses, &mut CheckCache::default(), "the case's files", prefix)?;
+    Ok(Some(FilesProgram { solver, cases, checked }))
 }
 
 /// The token stream of `case`, a case of the solver `id` of `corpus`, whose
@@ -93,14 +127,39 @@ pub fn solver_streams(corpus: &Path, id: &str, wanted: WantedCases<'_>, vocabula
 /// read, or the solver they make has no stream, the fault. Where `prefix`,
 /// the case's files are read as [`solver_streams`] reads them.
 pub fn corpus_case_stream(corpus: &Path, id: &str, case: &ResolvedCase, checked: &CheckedProgram, vocabulary: &Vocabulary, prefix: bool) -> Result<WrittenStream, String> {
-    let Some(texts) = files::read_case_files(corpus, id, &case.case.name)? else {
-        return case_stream(case, checked, vocabulary);
-    };
-    let solver = read_solver_texts(corpus, id, &texts.arclog, &texts.arcdata).map_err(|e| format!("the case's files do not read: {e}"))?;
-    let cases = resolve_cases(&solver, Registry::get());
-    let clauses = SolverClauses::of_cases(&cases);
-    let alone = check_case(&solver, cases.concept(), &clauses, &mut CheckCache::default(), "the case's files", prefix)?;
-    case_stream(cases.concept(), &alone, vocabulary)
+    match files_program(corpus, id, &case.case.name, prefix)? {
+        None => case_stream(case, checked, vocabulary),
+        Some(files) => case_stream(files.cases.concept(), &files.checked, vocabulary),
+    }
+}
+
+/// The stream of [`corpus_case_stream`] for `case`, a case of `solver`, with
+/// the names that the text of the program it writes gives its labels: the
+/// text of `case` in `solver`, or the text of the concept case of the solver
+/// that the case's files make.
+fn named_case_stream(corpus: &Path, id: &str, solver: &Solver, case: &ResolvedCase, checked: &CheckedProgram, vocabulary: &Vocabulary, prefix: bool) -> Result<(WrittenStream, StreamLabels), String> {
+    match files_program(corpus, id, &case.case.name, prefix)? {
+        None => named_stream(solver, case, checked, vocabulary),
+        Some(files) => named_stream(&files.solver, files.cases.concept(), &files.checked, vocabulary),
+    }
+}
+
+/// The stream of `case`, a case of `solver`, as [`case_stream`] gives it,
+/// with the name that [`case_layout`] of the case gives each label of each of
+/// its forms. The name stands in the innermost node at or above the form's
+/// path whose label names hold the label, since the names of the labels of a
+/// claim's built forms stand at the claim's path. The reader names each label
+/// it makes, and the layout of a built form names each label of the form, so
+/// a label with no name is a fault of the engine.
+fn named_stream(solver: &Solver, case: &ResolvedCase, checked: &CheckedProgram, vocabulary: &Vocabulary) -> Result<(WrittenStream, StreamLabels), String> {
+    let stream = case_stream(case, checked, vocabulary)?;
+    let layout = case_layout(solver, &case.case);
+    let labels = stream
+        .forms
+        .iter()
+        .map(|form| form.labels.iter().map(|&label| label_name_at(&layout, &form.path, label).expect("every label of the form is named").into()).collect())
+        .collect();
+    Ok((stream, labels))
 }
 
 /// The token stream of `case`, whose checked program is `checked`, or the

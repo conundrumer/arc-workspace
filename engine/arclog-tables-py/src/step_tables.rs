@@ -45,7 +45,7 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
         if let Some(index) = engine.trace().records().iter().rposition(|record| record.emitter == Emitter::Model) {
             record_step(&mut tables, engine, index, points);
         }
-        case_columns(&evidence_tables(evidence, engine.registry()), &tables, evidence.train.len()).with_copies(&engine.take_copy_violations())
+        case_columns(&evidence_tables(evidence, engine.registry()), &tables, evidence.train.len(), None).with_copies(&engine.take_copy_violations())
     });
     PyCaseTables::of(py, task, case, false, engine.settings().projection_cap, &columns, None, None)
 }

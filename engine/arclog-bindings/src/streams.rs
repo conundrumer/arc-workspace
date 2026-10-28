@@ -198,7 +198,7 @@ fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &Hash
             masks.extend(mask_bytes(masked.mask, decoder.vocabulary().len()));
         },
         &|solver| progress.start(solver),
-        &|_, replay| replay.into_result(),
+        &|_, _, replay| replay.into_result(),
         &|solver| progress.settle(solver),
         step_cap,
     );

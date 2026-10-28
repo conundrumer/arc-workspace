@@ -108,13 +108,38 @@ fn case_texts(solver: &Solver, case: &Case) -> Result<CaseTexts, String> {
         resolve_alone(case).map_err(|fault| format!("the case program read alone has no files: {fault}"))?;
     }
     let program = case.program_alone();
-    let mut layout = Layout::default();
-    let mut line = 1;
-    for (index, form) in program.value().forms.iter().enumerate() {
-        line = Placing { solver, case, index, form }.place(&mut layout, line);
-    }
+    let mut layout = case_layout(solver, case);
     let arcdata = case_arcdata(solver, case, &mut layout);
     Ok(CaseTexts { arclog: write_arclog(program, &layout), arcdata: write_arcdata(&arcdata, &layout) })
+}
+
+/// The layout of the `.arclog` text of the case `case` of `solver`, the text
+/// of its program read alone ([`Case::program_alone`]): the places of the
+/// tokens and the names of the labels, as [`Placing::place`] gives them.
+pub(super) fn case_layout(solver: &Solver, case: &Case) -> Layout {
+    let mut layout = Layout::default();
+    let mut line = 1;
+    for (index, form) in case.program_alone().value().forms.iter().enumerate() {
+        line = Placing { solver, case, index, form }.place(&mut layout, line);
+    }
+    layout
+}
+
+/// The name that `layout` gives the label `label` at `path` of the arclog
+/// text: the one in the innermost node at or above `path` whose label names
+/// hold `label`, since a label is made by the form that is its scope. `None`
+/// where no node does.
+pub(super) fn label_name_at<'a>(layout: &'a Layout, path: &NodePath, label: LabelId) -> Option<&'a str> {
+    innermost_label_name(path, label, |at| layout.node(SourceFile::Arclog, at))
+}
+
+/// The name of `label` in the innermost node at or above `path` that
+/// `node_at` gives and whose label names hold `label`.
+fn innermost_label_name<'a>(path: &NodePath, label: LabelId, node_at: impl Fn(&NodePath) -> Option<&'a NodeLayout>) -> Option<&'a str> {
+    (0..=path.0.len()).rev().find_map(|depth| {
+        let node = node_at(&NodePath(path.0[..depth].into()))?;
+        node.label_names.iter().find(|(id, _)| *id == label).map(|(_, name)| &**name)
+    })
 }
 
 /// The solver whose file holds a node of a case program.
@@ -239,13 +264,9 @@ impl Placing<'_> {
                 NodeRef::InstanceInput(input) => Some(&input.head[..]),
                 _ => None,
             };
-            let name_of = |label: LabelId| {
-                let scopes = nodes.iter().filter(|(at, node)| path.0.starts_with(&at.0) && node.label_names.iter().any(|(id, _)| *id == label));
-                let (_, scope) = scopes.max_by_key(|(at, _)| at.0.len())?;
-                scope.label_names.iter().find(|(id, _)| *id == label).map(|(_, name)| name.clone())
-            };
+            let name_of = |label: LabelId| innermost_label_name(path, label, |at| nodes.iter().find(|(held, _)| held == at).map(|(_, node)| node));
             let is_bare = |site: &Site| match (&site.column, &site.value.args[..]) {
-                (ColumnName::Written(column), [SiteArg::Label(LabelUse::Fresh(label) | LabelUse::Join(label) | LabelUse::Key(label))]) => name_of(*label).is_some_and(|name| name == *column),
+                (ColumnName::Written(column), [SiteArg::Label(LabelUse::Fresh(label) | LabelUse::Join(label) | LabelUse::Key(label))]) => name_of(*label).is_some_and(|name| name == &**column),
                 _ => false,
             };
             elided.push(sites.map_or_else(|| Box::new([]) as Box<[u32]>, |sites| sites.iter().enumerate().filter(|(_, site)| is_bare(site)).map(|(index, _)| index as u32).collect()));
