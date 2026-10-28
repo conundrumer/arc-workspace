@@ -48,7 +48,29 @@ where that one dies too, the task's part holds no case, the fault line `death_li
                    relation or a relation macro, such as `relative.X_rel`, and `<component>.<output>.<column>` for a component's output, such as
                    `Division.tile.P_inner`; or `<maker>@<path> in <frame>`, such a frame lying in `<frame>`, as `relative.X_rel@<path> in input`.
                    The empty string is no frame: only a column of type `Position` or `Box` has one, and a column whose sources give no frame, or
-                   give two different frames, has none
+                   give two different frames, has none;
+                   `column_slots`: the slot of each column in the relation's own column order, one int per column in `column_names` order (the
+                   order the relation stores its columns in, which differs from its own where a clause stores its columns at the canonical
+                   positions of their labels, or a `DET` keeps only the columns that its reads name), a record's fields sharing the slot of
+                   their record, and -1 where the engine knows none; and `column_labels`: the name of the label that the table's form writes
+                   at each column, one string per column in `column_names` order, as `arclog.write_synthesized` names that label in the decoded
+                   program, and the empty string where the form writes none; and, per DET in `det_relations` order, one per column in
+                   `det_types` order, `det_slots` and `det_labels`: those of that column in the latest table of the DET's relation, found by
+                   its path in `det_columns`, and -1 and the empty string where the case holds no such table. By table kind:
+                   a `RULE` clause gives the index in its columns and the clause's label; a `DET` that atoms read gives the index in the
+                   clause's columns, with a gap for each column that the reads do not name, and the clause's label; a `DET` with `ONE` marks
+                   and a `CHOOSE` give the index among the row columns and then the candidate's, and the label of the `for` body or of the `from` body;
+                   an `INIT` output, and an instance input that gets a table, give the index among the port's declared columns, and the empty
+                   string for a declared column, the label of the binding site for a field below a type-parameter column where the engine
+                   places one; a `RIGID_DET` output and a recursive instance's output give the index in the output's listing (`key`, `Pose`, part
+                   columns, or the instance's columns then `Pose`), and the label of the key, part or instance site, the empty string for
+                   `Pose`; a clause with no columns of its own (a proposer's, or an instance output's) gives the index among the proposer's or
+                   the port's declared columns, and the empty string; `ex_input` and `ex_output` give the row position and the empty string.
+                   A table of a body in progress (`bodies`) gives a provisional slot and label: the finished clause's columns are those of
+                   its whole body, so a later conjunct can give a label another slot or none. A label's name equals its name in the solver's
+                   `.arclog` file only where the file was written from the stream and kept its names. A slot is no label id: a label made under a
+                   `NOT`, an `ALL`, or an `OR` or `IF` branch that the clause does not export takes a label id and no slot. A node of several
+                   forms gives the labels of the table's own form. A table that faulted gives empty lists
   flows.parquet    one row per source of a column of a table, keyed by task, case, `table` and `column`: `kind` (copy 0,
                    computed 1, constant 2, lib name 3), `source_table` (the row of the source's table in the case, -1 where
                    the case gives none: a lib relation, a constant, a lib name), `source_relation`

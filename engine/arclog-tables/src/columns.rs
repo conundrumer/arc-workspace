@@ -159,6 +159,16 @@ pub struct TableColumns {
     /// D4 element moves, gives an unknown frame, and a column with such a
     /// source has none.
     pub column_frames: Vec<Vec<String>>,
+    /// The slot of each column in the relation's own column order, in the
+    /// order of `column_names`, and -1 for a column that the engine knows no
+    /// slot for. The relation's own order is the order the form gives its
+    /// columns, and a record's fields share the slot of their record. The
+    /// order of `column_names` is the order the relation stores them in.
+    pub column_slots: Vec<Vec<i32>>,
+    /// The name of the label that the table's form writes at each column, in
+    /// the order of `column_names`, as `arclog::write::label_names` names it,
+    /// and the empty string where the form writes none.
+    pub column_labels: Vec<Vec<String>>,
     /// The width in cells of a row.
     pub width: Vec<u32>,
     /// The relation of each `DET` the table reads, its columns' types, and
@@ -170,6 +180,13 @@ pub struct TableColumns {
     /// table of the `DET`'s relation, found by its path in `det_columns`, and
     /// empty where the case holds no such table.
     pub det_frames: Vec<Vec<Vec<String>>>,
+    /// The slot and the label of each column of each `DET`, in the order of
+    /// its types, as `column_slots` and `column_labels` give them: those of
+    /// that column in the latest table of the `DET`'s relation, found by its
+    /// path in `det_columns`, and -1 and the empty string where the case
+    /// holds no such table.
+    pub det_slots: Vec<Vec<Vec<i32>>>,
+    pub det_labels: Vec<Vec<Vec<String>>>,
     pub det_widths: Vec<Vec<u32>>,
     /// The path of each column of each `DET`, in the order of its types: the
     /// names of the path, as `column_spelled` gives them, joined by `.`; the
@@ -351,8 +368,8 @@ pub fn cut_case_columns(evidence: &[Table], tables: &[(usize, Table)], tokens: u
 }
 
 /// The fold of [`case_columns`] and [`cut_case_columns`]: the only state it
-/// keeps across tables is the `names` of the tables so far, with the frames of
-/// their columns, and the `Runs` written, so a table's columns depend on its
+/// keeps across tables is the `names` of the tables so far, with the frames,
+/// slots and labels of their columns, and the `Runs` written, so a table's columns depend on its
 /// own step and the tables before it. With `cut`, the tables before it are
 /// folded into `names` alone, and the count of them is given with the
 /// columns.
@@ -479,13 +496,15 @@ fn push_rows(values: &mut Vec<i32>, runs: &mut Runs, rows: &Relation, types: &[V
 
 /// A table that stands for a relation: the relation as the program spells it,
 /// or the fact relation's name, the table's row, the path of each row position of
-/// its columns where the relation is a program node, and the frame of each
-/// column (empty for none).
+/// its columns where the relation is a program node, and the frame (empty for
+/// none), the slot (-1 for none) and the label (empty for none) of each column.
 struct Named {
     name: String,
     row: u32,
     paths: Option<Vec<Box<[ColumnName]>>>,
     frames: Vec<String>,
+    slots: Vec<i32>,
+    labels: Vec<String>,
 }
 
 /// The tables so far that stand for a relation, in the order of the rows.
@@ -511,10 +530,14 @@ fn push_table(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, ro
             tables.column_names.push(Vec::new());
             tables.column_types.push(Vec::new());
             tables.column_frames.push(Vec::new());
+            tables.column_slots.push(Vec::new());
+            tables.column_labels.push(Vec::new());
             tables.width.push(0);
             tables.det_relations.push(Vec::new());
             tables.det_types.push(Vec::new());
             tables.det_frames.push(Vec::new());
+            tables.det_slots.push(Vec::new());
+            tables.det_labels.push(Vec::new());
             tables.det_widths.push(Vec::new());
             tables.det_columns.push(Vec::new());
             tables.projections.push(ProjectionsKind::None as u8);
@@ -537,10 +560,15 @@ fn push_table(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, ro
             tables.column_types.push(type_names(&types));
             let frames = column_frames(names, contents);
             tables.column_frames.push(frames.clone());
+            tables.column_slots.push(slots_of(contents));
+            tables.column_labels.push(labels_of(contents));
             tables.width.push(row_width(&types));
             tables.det_relations.push(contents.dets.iter().map(|det| relation_spelled(&det.relation)).collect());
             tables.det_types.push(contents.dets.iter().map(|det| type_names(&det.types)).collect());
-            tables.det_frames.push(det_frames(names, contents));
+            let places = det_places(names, contents);
+            tables.det_frames.push(det_frames(&places, contents));
+            tables.det_slots.push(places.iter().map(|det| det.iter().map(|place| place.and_then(|(table, at)| table.slots.get(at).copied()).unwrap_or(-1)).collect()).collect());
+            tables.det_labels.push(places.iter().map(|det| det.iter().map(|place| place.and_then(|(table, at)| table.labels.get(at).cloned()).unwrap_or_default()).collect()).collect());
             tables.det_widths.push(contents.dets.iter().map(|det| row_width(&det.types)).collect());
             tables.det_columns.push(contents.dets.iter().map(|det| det.columns.iter().flat_map(|paths| paths.iter()).map(|path| path_spelled(path)).collect()).collect());
             let (projections, stop) = match &contents.projections {
@@ -575,7 +603,7 @@ fn note_name(names: &mut TableNames, row: u32, table: &Table, frames: Option<Vec
         TableRelation::Fact(fact) => spelling(FACT_RELATIONS, &fact).to_owned(),
     };
     let frames = frames.unwrap_or_else(|| column_frames(names, contents));
-    names.push(Named { name, row, paths: contents.rows.clone(), frames });
+    names.push(Named { name, row, paths: contents.rows.clone(), frames, slots: slots_of(contents), labels: labels_of(contents) });
 }
 
 /// The relation `relation` as the program spells it, a fact relation's name,
@@ -690,27 +718,46 @@ fn column_frames(names: &TableNames, contents: &Contents) -> Vec<String> {
         .collect()
 }
 
-/// The frame of each column of each `DET` of `contents`, empty for none: that
-/// of the column in the latest table of `names` that stands for the `DET`'s
-/// relation, found by the column's path among the table's row positions.
-fn det_frames(names: &TableNames, contents: &Contents) -> Vec<Vec<String>> {
+/// The slot of each column of `contents`, -1 for none.
+fn slots_of(contents: &Contents) -> Vec<i32> {
+    contents.columns.iter().map(|column| column.slot.map_or(-1, |slot| i32::try_from(slot).expect("a slot within an i32"))).collect()
+}
+
+/// The label of each column of `contents`, empty for none.
+fn labels_of(contents: &Contents) -> Vec<String> {
+    contents.columns.iter().map(|column| column.label.as_deref().unwrap_or_default().to_owned()).collect()
+}
+
+/// For each column of each `DET` of `contents`, the latest table of `names`
+/// that stands for the `DET`'s relation and the position in it of the column,
+/// found by the column's path among the table's row positions; none where the
+/// case holds no such table or the path is unknown.
+fn det_places<'n>(names: &'n TableNames, contents: &Contents) -> Vec<Vec<Option<(&'n Named, usize)>>> {
     contents
         .dets
         .iter()
         .map(|det| {
             let table = names.iter().rev().find(|named| named.name == relation_spelled(&det.relation));
-            let frame = |index: usize, ty: &ValueType| -> Option<String> {
-                if !has_frame(ty) {
-                    return None;
-                }
+            let place = |index: usize| -> Option<(&'n Named, usize)> {
                 let path = det.columns.as_ref()?.get(index)?;
                 let table = table?;
                 let at = table.paths.as_ref()?.iter().position(|row| row == path)?;
-                table.frames.get(at).cloned()
+                Some((table, at))
             };
-            det.types.iter().enumerate().map(|(index, ty)| frame(index, ty).unwrap_or_default()).collect()
+            (0..det.types.len()).map(place).collect()
         })
         .collect()
+}
+
+/// The frame of each column of each `DET` of `contents`, empty for none: that
+/// of the column at its place in `places` ([`det_places`]), for a type that
+/// has a frame.
+fn det_frames(places: &[Vec<Option<(&Named, usize)>>], contents: &Contents) -> Vec<Vec<String>> {
+    let frame = |place: Option<(&Named, usize)>, ty: &ValueType| -> Option<String> {
+        let (table, at) = place.filter(|_| has_frame(ty))?;
+        table.frames.get(at).cloned()
+    };
+    places.iter().zip(&contents.dets).map(|(det, own)| det.iter().zip(own.types.iter()).map(|(place, ty)| frame(*place, ty).unwrap_or_default()).collect()).collect()
 }
 
 /// The sources of each column of `contents`, the table at `row`. A source's

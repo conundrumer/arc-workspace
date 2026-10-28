@@ -41,6 +41,12 @@ use pyo3::types::{PyBytes, PyDict};
 /// - the empty string: no frame. Only a column of type `Position` or `Box` has a frame, and a column
 ///   whose sources give no frame, or give two different frames, has none.
 ///
+/// `tables` also gives `column_slots` and `column_labels`, one entry per column in the order of
+/// `column_names`: the column's slot in the relation's own column order (-1 where the engine
+/// knows none) and the name of the label that the table's form writes at it (the empty string
+/// where none), and `det_slots` and `det_labels`, for each `DET` one entry per column in the order of
+/// its `det_types`, those of that column in the latest table of the `DET`'s relation.
+///
 /// `projection_cap` is the cap of the projection rows that the tables ran
 /// under.
 ///
@@ -173,10 +179,14 @@ impl PyCaseTables {
         t.list("column_names", &c.column_names)?;
         t.list("column_types", &c.column_types)?;
         t.list("column_frames", &c.column_frames)?;
+        t.list("column_slots", &c.column_slots)?;
+        t.list("column_labels", &c.column_labels)?;
         t.ints("width", &c.width)?;
         t.list("det_relations", &c.det_relations)?;
         t.list("det_types", &c.det_types)?;
         t.list("det_frames", &c.det_frames)?;
+        t.list("det_slots", &c.det_slots)?;
+        t.list("det_labels", &c.det_labels)?;
         t.list("det_widths", &c.det_widths)?;
         t.list("det_columns", &c.det_columns)?;
         t.ints("projections", &c.projections)?;

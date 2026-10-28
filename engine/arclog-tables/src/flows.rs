@@ -588,6 +588,80 @@ pub fn column_flows(checked: &CheckedProgram, node: GraphNodeIndex, output: Opti
     flows.flows_visiting(node, output, types.len(), types, &mut Vec::new())
 }
 
+/// What a form's column gives to the row positions of its relation.
+enum Placed<'g> {
+    /// A column with a label written at a path of it, which stands at `position`.
+    Labelled { slot: usize, position: usize, label: &'g GivenLabel },
+    /// A column of a declared type that no label is written at, which takes
+    /// the row `positions` of its width.
+    Declared { slot: usize, positions: Range<usize> },
+}
+
+/// The column of a form's relation that stands at a row position of the
+/// table, and the label the form writes at it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Placement {
+    /// The index of the column in the relation's own column order, as
+    /// [`arclog::resolver::given::Given::slots`] lists the columns; a record's
+    /// fields share the index of their record.
+    pub slot: u32,
+    /// The label written at the position, none for a column of a declared type.
+    pub label: Option<LabelId>,
+}
+
+/// The [`Placement`] at each of the `width` row positions of the relation of
+/// `node`, whose read names `output`, as the form at `form` gives it: none at a
+/// position that the form's columns do not reach. Where several labels stand at
+/// a position, the first in the order of the form's columns. A clause with no
+/// columns of its own stores the columns of its first proposer or of its
+/// instance's port in their declared order, so each of its row positions
+/// stands at the slot of its column in that order, with no label.
+pub fn column_placements(checked: &CheckedProgram, node: GraphNodeIndex, output: Option<&[OutputStep]>, form: &NodePath, width: usize, registry: &Registry) -> Vec<Option<Placement>> {
+    let flows = Flows { checked, program: &checked.program, registry };
+    let mut placements: Vec<Option<Placement>> = vec![None; width];
+    let mut place = |slot: usize, positions: Range<usize>, label: Option<LabelId>| {
+        let slot = u32::try_from(slot).expect("fewer than 2^32 columns");
+        for position in positions {
+            if let Some(held @ None) = placements.get_mut(position) {
+                *held = Some(Placement { slot, label });
+            }
+        }
+    };
+    for relation in flows.given_at(node, output).iter().filter(|relation| relation.form == *form) {
+        for placed in flows.placements(relation) {
+            match placed {
+                Placed::Labelled { slot, position, label } => place(slot, position..position + 1, Some(label.label)),
+                Placed::Declared { slot, positions } => place(slot, positions, None),
+            }
+        }
+        if relation.slots.is_empty() {
+            if let Some(paths) = checked.program.row_paths(node).filter(|paths| paths.len() == width) {
+                for (position, slot) in record_slots(&paths).into_iter().enumerate() {
+                    place(slot, position..position + 1, None);
+                }
+            }
+        }
+    }
+    placements
+}
+
+/// The index among the columns of a relation of each of its row positions,
+/// given the path of each: a record's fields, which share the first name of
+/// their paths, share the index of their record.
+fn record_slots(paths: &[Box<[ColumnName]>]) -> Vec<usize> {
+    let mut slots = Vec::new();
+    for (index, path) in paths.iter().enumerate() {
+        let field_of_previous = index > 0 && path.len() > 1 && paths[index - 1].len() > 1 && paths[index - 1][0] == path[0];
+        let slot = match slots.last() {
+            None => 0,
+            Some(&previous) if field_of_previous => previous,
+            Some(&previous) => previous + 1,
+        };
+        slots.push(slot);
+    }
+    slots
+}
+
 impl<'p> Flows<'p> {
     /// [`column_flows`], where `visiting` holds the nodes
     /// being resolved above `node`. A column of a position that `types`
@@ -595,33 +669,31 @@ impl<'p> Flows<'p> {
     fn flows_visiting(&self, node: GraphNodeIndex, output: Option<&[OutputStep]>, width: usize, types: &[ValueType], visiting: &mut Vec<GraphNodeIndex>) -> Vec<Vec<ColumnSource>> {
         visiting.push(node);
         let mut flows: Vec<Vec<ColumnSource>> = vec![Vec::new(); width];
-        let given: Vec<Given> = self.program.given(node, self.registry).into_iter().filter(|relation| output.zip(relation.output.as_deref()).is_none_or(|(read, own)| read == own)).collect();
+        let given = self.given_at(node, output);
         let mut held: BTreeMap<(usize, NodePath), Option<BodyIr>> = BTreeMap::new();
         // The frame that the registry's rule makes at each row position of an output of an instance, where it makes one.
         let mut made: Vec<Option<SourceFrame>> = vec![None; width];
         for (which, relation) in given.iter().enumerate() {
-            let mut start = 0usize;
-            for (index, slot) in relation.slots.iter().enumerate() {
-                for GivenLabel { label, body, place } in &slot.labels {
-                    let own = self.program.label_position(&relation.form, *label).map(|position| usize::from(position.0));
-                    let Some(position) = own.or(*place) else { continue };
-                    let body = held.entry((which, body.clone())).or_insert_with(|| self.checked.body_ir(self.registry, relation, body));
-                    let found = self.label_sources(body.as_ref(), *label, visiting);
-                    let moved = index >= relation.sites_from && types.get(position).is_some_and(ValueType::moved_by_d4);
-                    if let Some(sources) = flows.get_mut(position) {
-                        add_distinct(sources, if moved { found.into_iter().map(|source| source.computed().with_frames(vec![SourceFrame::Unknown])).collect() } else { found });
-                    }
-                }
-                if slot.declared.is_some() && slot.labels.is_empty() {
-                    let frame = self.output_frame(relation, index);
-                    for position in start..start + slot.width {
+            for placed in self.placements(relation) {
+                match placed {
+                    Placed::Labelled { slot, position, label: GivenLabel { label, body, .. } } => {
+                        let body = held.entry((which, body.clone())).or_insert_with(|| self.checked.body_ir(self.registry, relation, body));
+                        let found = self.label_sources(body.as_ref(), *label, visiting);
+                        let moved = slot >= relation.sites_from && types.get(position).is_some_and(ValueType::moved_by_d4);
                         if let Some(sources) = flows.get_mut(position) {
-                            add_distinct(sources, self.declared_sources(node, frame.as_ref(), visiting));
-                            made[position] = frame.as_ref().filter(|frame| frame.rule.makes).map(|frame| frame.rule_at().made(None));
+                            add_distinct(sources, if moved { found.into_iter().map(|source| source.computed().with_frames(vec![SourceFrame::Unknown])).collect() } else { found });
+                        }
+                    }
+                    Placed::Declared { slot, positions } => {
+                        let frame = self.output_frame(relation, slot);
+                        for position in positions {
+                            if let Some(sources) = flows.get_mut(position) {
+                                add_distinct(sources, self.declared_sources(node, frame.as_ref(), visiting));
+                                made[position] = frame.as_ref().filter(|frame| frame.rule.makes).map(|frame| frame.rule_at().made(None));
+                            }
                         }
                     }
                 }
-                start += slot.width;
             }
         }
         for relation in &given {
@@ -650,6 +722,35 @@ impl<'p> Flows<'p> {
         }
         visiting.pop();
         flows
+    }
+
+    /// The relations that the forms of `node` give it, but for those of an
+    /// output other than the `output` that a read names.
+    fn given_at(&self, node: GraphNodeIndex, output: Option<&[OutputStep]>) -> Vec<Given> {
+        self.program.given(node, self.registry).into_iter().filter(|relation| output.zip(relation.output.as_deref()).is_none_or(|(read, own)| read == own)).collect()
+    }
+
+    /// The place of each column of `relation` among the row positions: a
+    /// labelled slot at the position of each of its labels, `label_position`
+    /// of the label in the relation's form or else the label's own `place`,
+    /// and a declared slot with no labels at its `width` row positions from
+    /// the end of the slots before it. A label with no position is left out.
+    fn placements<'g>(&self, relation: &'g Given) -> Vec<Placed<'g>> {
+        let mut placed = Vec::new();
+        let mut start = 0usize;
+        for (slot, given) in relation.slots.iter().enumerate() {
+            for label in &given.labels {
+                let own = self.program.label_position(&relation.form, label.label).map(|position| usize::from(position.0));
+                if let Some(position) = own.or(label.place) {
+                    placed.push(Placed::Labelled { slot, position, label });
+                }
+            }
+            if given.declared.is_some() && given.labels.is_empty() {
+                placed.push(Placed::Declared { slot, positions: start..start + given.width });
+            }
+            start += given.width;
+        }
+        placed
     }
 
     /// The sources of `label` in the IR of a body `held`, none where the body

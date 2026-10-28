@@ -8,7 +8,7 @@
 //! of those relations hold, the `adjacent`
 //! output of a Connectivity instance and the `predecessor` output of a
 //! CellDistance instance, which no clause reads. Each table gives its
-//! point, its relation's slot, its columns' names and types, and its rows on
+//! point, its relation's slot, its columns' names, types, slots and labels, and its rows on
 //! every example at each assignment of the `DET`s it reads, at each model for
 //! a relation with picks. Where a relation holds more rows on an example than
 //! the projection cap of the decode settings, the table gives its projections in place of
@@ -49,7 +49,7 @@ use arclog::eval::join::{each_row, Budget};
 use arclog::eval::{BodyValue, Evaluation, ModelsEnd, Outcome, RelationValue, RunFault, TableWork};
 use arclog::judge::determination::{Assignment, Det, End};
 use arclog::program::path::{node_at, NodePath, NodeRef};
-use arclog::program::{ColumnName, Conjunct, FactRelation, Negated, OutputOwner, OutputStep, Program, ProgramRelation, RelationRef};
+use arclog::program::{ColumnName, Conjunct, FactRelation, LabelId, Negated, OutputOwner, OutputStep, Program, ProgramRelation, RelationRef};
 use arclog::registry::Registry;
 use arclog::relations::RowSet;
 use arclog::resolver::registry_columns::component;
@@ -57,8 +57,9 @@ use arclog::resolver::{DependencyKind, GraphNodeIndex};
 use arclog::task::Task;
 use arclog::terms::{Constant, Example, Term};
 use arclog::types::{GraphRelation, ValueType};
+use arclog::write::label_names;
 
-use crate::flows::{column_flows, ColumnSource};
+use crate::flows::{column_flows, column_placements, ColumnSource};
 
 /// Where in a form a table stands.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -83,12 +84,20 @@ pub enum Points {
 }
 
 /// A column of a table: its name, `c<position>` where the program gives the
-/// relation's columns no names, such as the relations of an instance, and
-/// its type.
+/// relation's columns no names, such as the relations of an instance, its
+/// type, its slot in the relation's own column order, and the name of the
+/// label that the table's form writes at its position
+/// ([`arclog::write::label_names`]). The slot is none where the form's
+/// columns reach no such position, and the label is none there and where the
+/// form writes no label at the position. The slot and the label of a table of
+/// a body in progress are provisional: a later conjunct can give the label
+/// another slot or none.
 #[derive(Clone, Debug)]
 pub struct TableColumn {
     pub name: String,
     pub ty: ValueType,
+    pub slot: Option<u32>,
+    pub label: Option<Box<str>>,
 }
 
 /// A `DET` that a table's relation reads, whose value an assignment gives:
@@ -316,7 +325,16 @@ fn contents(decoder: &Decoder<'_>, program: &CheckedProgram, form: &NodePath, re
         Some(_) => None,
     };
     let names = names.unwrap_or_else(|| (0..types.len()).map(|index| format!("c{index}")).collect());
-    let columns = names.into_iter().zip(types).map(|(name, ty)| TableColumn { name, ty: ty.clone() }).collect();
+    let placements = column_placements(program, relation.node, relation.output.as_deref(), form, types.len(), decoder.registry());
+    let top = form.0.first().expect("a table's form is a top-level form").0 as usize;
+    let named = label_names(&program.program.program, decoder.registry()).swap_remove(top);
+    let label_text = |label: LabelId| named.iter().find(|(id, _)| *id == label).map(|(_, name)| name.clone()).expect("every label of the form is named");
+    let columns = names
+        .into_iter()
+        .zip(types)
+        .zip(placements)
+        .map(|((name, ty), placement)| TableColumn { name, ty: ty.clone(), slot: placement.map(|placed| placed.slot), label: placement.and_then(|placed| placed.label).map(label_text) })
+        .collect();
     let dets = dets
         .iter()
         .map(|det| {
@@ -367,6 +385,8 @@ fn evidence_table(task: &Task, registry: &Registry, fact: FactRelation) -> Table
                 ColumnName::Slot(_) => format!("c{index}"),
             },
             ty: column.ty.fixed().expect("a fact column has a fixed type").clone(),
+            slot: Some(u32::try_from(index).expect("fewer than 2^32 columns")),
+            label: None,
         })
         .collect();
     let counts = match fact {

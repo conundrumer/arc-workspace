@@ -86,6 +86,14 @@ pub fn write_synthesized(program: &Node<Program>, registry: &Registry) -> String
     synthesized::write(program, registry)
 }
 
+/// The name of each label of each form of `program`, in form order, as
+/// [`write_synthesized`] names them: the form's reserved names, then its
+/// other labels in the order of their ids. It refuses the programs that
+/// `write_synthesized` refuses.
+pub fn label_names(program: &Node<Program>, registry: &Registry) -> Vec<Vec<(crate::program::LabelId, Box<str>)>> {
+    synthesized::label_names(program, registry)
+}
+
 /// The numbers a writer gives the Idents it writes, private to the crate's
 /// writers, since a number is an order of encodings.
 ///
@@ -137,20 +145,33 @@ mod synthesized {
     use crate::resolver::registry_columns::{component, proposer_columns};
     use crate::trace::label_names::label_name;
 
-    pub(super) fn write(program: &Node<Program>, registry: &Registry) -> String {
+    /// Each form of `program` as written, with the name of each of its labels.
+    fn named_forms(program: &Node<Program>, registry: &Registry) -> Vec<(Form, Vec<(LabelId, Box<str>)>)> {
         let mut synth = Synthesizer { registry, columns: StableHashMap::default() };
+        let mut named = Vec::new();
+        for form in program.value().forms.iter() {
+            let names = synth.label_names(form);
+            let written = synth.form(form, &Names(&names));
+            named.push((written, names));
+        }
+        named
+    }
+
+    pub(super) fn label_names(program: &Node<Program>, registry: &Registry) -> Vec<Vec<(LabelId, Box<str>)>> {
+        named_forms(program, registry).into_iter().map(|(_, names)| names).collect()
+    }
+
+    pub(super) fn write(program: &Node<Program>, registry: &Registry) -> String {
         let mut forms = Vec::new();
         let mut layout = Layout::default();
-        for (index, form) in program.value().forms.iter().enumerate() {
-            let names = synth.label_names(form);
-            let lookup = Names(&names);
-            forms.push(synth.form(form, &lookup));
+        for (index, (form, names)) in named_forms(program, registry).into_iter().enumerate() {
             let place = SourcePlace { file: SourceFile::Arclog, start: 0, end: 0, line: index as u32 + 1, column: 1 };
             let node = NodeLayout { tokens: Box::new([place]), label_names: names.into(), ..NodeLayout::default() };
             layout.nodes.insert((SourceFile::Arclog, NodePath::top(index as u32)), node);
-            if let Form::Out(out) = &forms[index] {
+            if let Form::Out(out) = &form {
                 super::elide_out_sites(out.value(), &NodePath::top(index as u32), &mut layout);
             }
+            forms.push(form);
         }
         super::write_arclog(&Node::new(Program { forms: forms.into() }), &layout)
     }
