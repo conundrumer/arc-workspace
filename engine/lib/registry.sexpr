@@ -2,11 +2,20 @@
 ;; module comment of engine/arclog/src/registry.rs.
 
 ;; Relations: the modes of programs/lib/box.dl.
-(relation compose (columns (A Box) (B Box) (C Box)) (modes (A B)))
-(relation relative (columns (Base Box) (X Box) (X_rel Box)) (modes (Base X)) (frames (X_rel (new (of Base)))))
+(relation compose (columns (A Box) (B Box) (C Box)) (modes (A B))
+  (types
+    (when ((A Position) (B Offset)) (C Position))
+    (when ((A Offset) (B Position)) (C Position))
+    (when ((A Offset) (B Offset)) (C Offset))))
+(relation relative (columns (Base Box) (X Box) (X_rel Box)) (modes (Base X)) (frames (X_rel (new (of Base))))
+  (types
+    (when ((Base Offset) (X Offset)) (X_rel Offset))
+    (when ((Base Offset) (X Position)) (X_rel Position))))
 (relation edge_inset (columns (D Dir) (K number) (B Box)) (modes (K)))
 (relation margin (columns (B Box) (D Dir) (K number)) (modes (B)))
-(relation apply (columns (D D4) (P Box) (P_out Box)) (modes (P)))
+(relation apply (columns (D D4) (P Box) (P_out Box)) (modes (P))
+  (types
+    (when ((P Offset)) (P_out Offset))))
 (relation corner_dist (columns (P Box) (Diag DiagDir) (K number)) (modes (P)))
 (relation frame_extent (columns (P Position) (A Axis) (N number)) (modes (P)))
 (relation step_offset (columns (D Dir8) (V Offset)))
@@ -133,8 +142,8 @@
       (copies (cell (P P))))
     (exposed (key Key) (P Position) (D Dir8)
       (copies (cell (P P)) (dir (D D))))))
-(component BoundingBox construction (type-parameters Key)
-  (inputs (cell (key Key) (P Box) from-key))
+(component BoundingBox construction (type-parameters Key (Point Box))
+  (inputs (cell (key Key) (P Point) from-key))
   (outputs (box (key Key) (B Box)
     (copies (cell)))))
 (component Agreement construction (type-parameters Key Val)
@@ -390,6 +399,9 @@
   (compose (:A *P) (:B V) (:C *Q)))
 (macro split (columns (P P) (A A) (Along Along) (Across Across))
   (frames (Across (new (of P))))
+  (types
+    (when ((P Position)) (Across Position))
+    (when ((P Offset)) (Across Offset)))
   (axis_of *D *A)
   (opposite D (:Opp *O))
   (margin (:B *P) D (:K *K1))

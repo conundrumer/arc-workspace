@@ -1,14 +1,14 @@
 //! The reader of the registry file's macro form,
-//! `(macro <name> (columns ...) <body>)`, with the labels of its body that
+//! `(macro <name> (columns ...) [(frames ...)] [(types ...)] <body>)`, with the labels of its body that
 //! its columns stand for.
 
 use super::reader::FileReader;
 use super::records::{BodyInFile, LabelColumns, WrittenRelation};
-use super::spellings::{headed, COLUMNS, FRAMES};
+use super::spellings::{headed, COLUMNS, FRAMES, TYPES};
 use super::*;
 
 impl FileReader {
-    /// `(macro <name> (columns ...) <body>)`, after its head.
+    /// `(macro <name> (columns ...) [(frames ...)] [(types ...)] <body>)`, after its head.
     pub(super) fn macro_form(&mut self, rest: &[SExpr], place: SourcePlace) -> Option<()> {
         let name = LibName(self.symbol(rest.first(), "the macro's name", place)?.into());
         match rest.get(1).and_then(head_of) {
@@ -63,15 +63,19 @@ impl FileReader {
 
     fn relation_macro(&mut self, name: LibName, rest: &[SExpr], place: SourcePlace) -> Option<()> {
         let written = headed(&rest[1], COLUMNS).expect("the form's `columns` form");
-        let (frames, body) = match rest.get(2).and_then(|expr| headed(expr, FRAMES)) {
+        let (frames, rest) = match rest.get(2).and_then(|expr| headed(expr, FRAMES)) {
             Some(frames) => (frames, &rest[3..]),
             None => (&[][..], &rest[2..]),
+        };
+        let (rules, body) = match rest.first().and_then(|expr| headed(expr, TYPES)) {
+            Some(items) => (self.type_rules(items)?, &rest[1..]),
+            None => (Box::default(), rest),
         };
         let (definition, labels) = self.read(read_body(body))?;
         let columns = self.label_columns(written, &labels, &format!("the macro `{}`", name.0), place)?;
         if self.declare(&name, place) {
             self.bodies.push(BodyInFile { body: definition.clone(), place });
-            self.relation_macros.push(WrittenRelation { name, place, columns, definition, frames: frames.into() });
+            self.relation_macros.push(WrittenRelation { name, place, columns, definition, frames: frames.into(), rules });
         }
         Some(())
     }

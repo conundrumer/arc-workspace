@@ -1,8 +1,8 @@
-//! The derivation of a relation macro's column types and modes from its
-//! definition.
+//! The derivation of a relation macro's column types, modes and type rules
+//! from its definition.
 
 use super::*;
-use crate::types::{label_fault_message, scope_lists};
+use crate::types::{each_site_label, label_fault_message, meet, scope_lists, settle_label_types, typed, use_label, TypedLabels};
 
 /// A column of a relation macro, or of a proposer written in arclog: its
 /// name, the label of the definition it stands for, and the type its form
@@ -27,6 +27,8 @@ pub struct RelationMacro<'a> {
     pub columns: &'a [LabelColumn],
     /// The definition, as [`crate::read::read_body`] gives it.
     pub definition: &'a Body,
+    /// The rules of the macro's `types` form.
+    pub rules: &'a [TypeRule],
 }
 
 /// The declarations of the macros of the file that
@@ -58,10 +60,21 @@ pub struct MacroDeclarations {
 /// this gives it. Where the empty set binds the definition, the macro has
 /// no mode, as a relation over a finite domain has none.
 ///
+/// The rules of a macro are the rules its `types` form writes, then the
+/// rules derived from its definition. For each assignment of `Position` and
+/// `Offset` to the columns of type `Box` that a mode binds, the types the
+/// definition's labels take over their sites and the rules of the relations
+/// it reads, with the assigned labels at their assigned types, give a rule
+/// `when` the columns have the assigned types for each other column whose
+/// type stands strictly under its type with no assignment. A written rule is
+/// a fault where its type for a column does not stand at or under the type
+/// the definition gives the column under the rule's conditions, or where the
+/// rules are faulty as [`TypeRule`] gives.
+///
 /// `lib` holds the columns of each lib name that a form other than a
 /// relation macro declares, `modes` the modes of each `relation` form,
-/// none for a form with no `modes` form, and `facts` the columns of each
-/// `fact` form. The macros are read in an order of
+/// none for a form with no `modes` form, `rules` the rules of each `relation`
+/// form, and `facts` the columns of each `fact` form. The macros are read in an order of
 /// their reads of one another, so the order of `macros`
 /// gives the order of the diagnostics alone. A fault is a cycle of macros
 /// that read one another, given at each macro of the cycle; a label of the
@@ -78,12 +91,14 @@ pub fn macro_column_types(
     macros: &[RelationMacro<'_>],
     lib: &StableHashMap<LibName, Box<[Column]>>,
     modes: &StableHashMap<LibName, Box<[Mode]>>,
+    rules: &StableHashMap<LibName, Box<[TypeRule]>>,
     facts: &StableHashMap<FactRelation, Box<[Column]>>,
 ) -> Result<MacroDeclarations, Vec<crate::diagnostic::Diagnostic>> {
     let mut derivation = MacroDerivation {
         macros,
         lib,
         modes,
+        rules,
         facts,
         index: macros.iter().enumerate().map(|(i, m)| (m.name.clone(), i)).collect(),
         states: vec![MacroState::Unread; macros.len()],
@@ -92,6 +107,11 @@ pub fn macro_column_types(
     };
     for i in 0..macros.len() {
         derivation.read(i);
+    }
+    for i in 0..macros.len() {
+        if matches!(derivation.states[i], MacroState::Declared(_)) {
+            derivation.check_written_rules(i);
+        }
     }
     if !derivation.diagnostics.is_empty() {
         return Err(derivation.diagnostics);
@@ -120,6 +140,7 @@ struct MacroDerivation<'a, 'b> {
     macros: &'a [RelationMacro<'b>],
     lib: &'a StableHashMap<LibName, Box<[Column]>>,
     modes: &'a StableHashMap<LibName, Box<[Mode]>>,
+    rules: &'a StableHashMap<LibName, Box<[TypeRule]>>,
     facts: &'a StableHashMap<FactRelation, Box<[Column]>>,
     index: StableHashMap<LibName, usize>,
     states: Vec<MacroState>,
@@ -161,8 +182,10 @@ impl MacroDerivation<'_, '_> {
         let m = self.macros[i];
         let declaration = self.label_types(&m).and_then(|(types, label_types)| {
             let modes = self.modes_of(&m, &label_types)?;
-            let columns = m.columns.iter().zip(types).map(|(column, ty)| Column { name: column.name.clone(), ty: ColumnType::Fixed(ty) });
-            Some(AlgebraRelation { columns: columns.collect(), modes, frames: Box::default() })
+            let columns: Box<[Column]> = m.columns.iter().zip(types).map(|(column, ty)| Column { name: column.name.clone(), ty: ColumnType::Fixed(ty) }).collect();
+            let derived = self.derived_rules(&m, &columns, &modes);
+            let rules = m.rules.iter().cloned().chain(derived).collect();
+            Some(AlgebraRelation { columns, modes, frames: Box::default(), rules })
         });
         self.states[i] = match declaration {
             Some(relation) => MacroState::Declared(relation),
@@ -190,11 +213,12 @@ impl MacroDerivation<'_, '_> {
     /// its definition that has one, or `None` with a diagnostic for each
     /// column and each other label that has a fault.
     fn label_types(&mut self, m: &RelationMacro<'_>) -> Option<(Box<[ValueType]>, StableHashMap<LabelId, ValueType>)> {
-        let site_type = |atom: &Atom, column: &[ColumnName]| self.site_type(atom, column);
+        let settled = self.settled(m, &[]);
+        let found = |label: LabelId| &settled.iter().find(|(own, _)| *own == label).expect("each label of the definition is typed").1;
         let mut diagnostics = Vec::new();
         let mut types = Vec::new();
         for column in m.columns {
-            let message = match (label_type(m.definition, column.label, &site_type), &column.declared) {
+            let message = match (found(column.label).clone(), &column.declared) {
                 (Ok(Some(derived)), None) => {
                     types.push(derived);
                     continue;
@@ -213,14 +237,14 @@ impl MacroDerivation<'_, '_> {
             diagnostics.push(crate::read::check_error(CheckId::Types, message, m.place));
         }
         let mut label_types = StableHashMap::default();
-        for (label, ty) in local_label_types(m.definition, m.columns, &site_type) {
+        for (label, ty) in settled.iter().filter(|(label, _)| !m.columns.iter().any(|column| column.label == *label)) {
             match ty {
                 Ok(Some(ty)) => {
-                    label_types.insert(label, ty);
+                    label_types.insert(*label, ty.clone());
                 }
                 Ok(None) => {}
                 Err(fault) => {
-                    let message = format!("a label of the definition of the macro `{}` {}", m.name.0, label_fault_message(fault));
+                    let message = format!("a label of the definition of the macro `{}` {}", m.name.0, label_fault_message(fault.clone()));
                     diagnostics.push(crate::read::check_error(CheckId::Types, message, m.place));
                 }
             }
@@ -232,6 +256,109 @@ impl MacroDerivation<'_, '_> {
         }
         label_types.extend(m.columns.iter().map(|column| column.label).zip(types.iter().cloned()));
         Some((types.into(), label_types))
+    }
+
+    /// The type of each label of the definition of `m`, the labels of its
+    /// columns and then each other, once the types that the rules of the
+    /// relations it reads give narrow no further. `seeds` are labels with a
+    /// type besides the types their sites give: a label's type is met with
+    /// its seed, so a label that has a fault under them has the fault.
+    fn settled(&self, m: &RelationMacro<'_>, seeds: &[(LabelId, ValueType)]) -> TypedLabels {
+        let (labels, lists) = definition_labels(m);
+        let known = |priors: &TypedLabels, label: LabelId| {
+            let seed = seeds.iter().find(|(seeded, _)| *seeded == label).map(|(_, ty)| ty.clone());
+            typed(priors, label).or(seed)
+        };
+        let run = |priors: &TypedLabels| -> TypedLabels {
+            let site_type = |atom: &Atom, column: &[ColumnName]| self.site_type(atom, column, &|label| known(priors, label));
+            let typed_label = |label: &LabelId, list: &Body| {
+                let found = label_type(list, *label, &site_type);
+                match seeds.iter().find(|(seeded, _)| seeded == label) {
+                    Some((_, seed)) => found.and_then(|found| meet(found, Some(seed.clone()))),
+                    None => found,
+                }
+            };
+            labels.iter().zip(&lists).map(|(label, list)| (*label, typed_label(label, list))).collect()
+        };
+        let narrows = |priors: &TypedLabels| {
+            let mut narrows = false;
+            each_atom(m.definition, &mut |atom| {
+                for site in atom.sites.iter() {
+                    each_site_label(site, &mut Vec::new(), &mut |use_, path| {
+                        let site_type = self.site_type(atom, path, &|label| known(priors, label));
+                        let label = use_label(use_).and_then(|label| typed(priors, label));
+                        narrows |= site_type.is_some_and(|site| !label.is_some_and(|label| at_or_under(&label, &site)));
+                    });
+                }
+            });
+            narrows
+        };
+        settle_label_types(run(&Vec::new()), narrows, run)
+    }
+
+    /// The rules that `m`'s definition gives its columns under each
+    /// assignment of `Position` and `Offset` to its `Box` columns that a mode
+    /// of `modes` binds, as [`macro_column_types`] gives them. `columns` are
+    /// the macro's columns, with their types.
+    fn derived_rules(&self, m: &RelationMacro<'_>, columns: &[Column], modes: &[Mode]) -> Vec<TypeRule> {
+        let assigned: Vec<usize> = (0..columns.len())
+            .filter(|&c| columns[c].ty == ColumnType::Fixed(ValueType::Box) && modes.iter().any(|mode| mode.bound.contains(&columns[c].name)))
+            .collect();
+        let mut rules = Vec::new();
+        for number in 0..1usize << assigned.len() {
+            let when: Vec<(ColumnName, ValueType)> = assigned
+                .iter()
+                .enumerate()
+                .map(|(k, &c)| (columns[c].name.clone(), if number >> k & 1 == 0 { ValueType::Position } else { ValueType::Offset }))
+                .collect();
+            let settled = self.settled(m, &Self::seeds(m, &when));
+            if settled.iter().any(|(_, ty)| ty.is_err()) {
+                continue;
+            }
+            let gives: Vec<(ColumnName, ValueType)> = columns
+                .iter()
+                .zip(m.columns)
+                .filter(|(column, _)| !when.iter().any(|(assigned, _)| *assigned == column.name))
+                .filter_map(|(column, written)| {
+                    let (found, base) = (typed(&settled, written.label)?, column.ty.fixed()?);
+                    (found != *base && at_or_under(&found, base)).then(|| (column.name.clone(), found))
+                })
+                .collect();
+            if !gives.is_empty() {
+                rules.push(TypeRule { place: m.place, when: when.into(), gives: gives.into() });
+            }
+        }
+        rules
+    }
+
+    /// The labels of `m`'s columns that `when` names, with their types.
+    fn seeds(m: &RelationMacro<'_>, when: &[(ColumnName, ValueType)]) -> Vec<(LabelId, ValueType)> {
+        let label = |name: &ColumnName| m.columns.iter().find(|column| column.name == *name).map(|column| column.label);
+        when.iter().filter_map(|(name, ty)| Some((label(name)?, ty.clone()))).collect()
+    }
+
+    /// Gives a diagnostic at the macro `i`, which has its declaration, for
+    /// each fault of the rules its `types` form writes.
+    fn check_written_rules(&mut self, i: usize) {
+        let m = self.macros[i];
+        let MacroState::Declared(declared) = &self.states[i] else { return };
+        let mut diagnostics = rule_diagnostics(m.name, &declared.columns, m.rules);
+        if diagnostics.is_empty() {
+            for rule in m.rules {
+                let settled = self.settled(&m, &Self::seeds(&m, &rule.when));
+                for (column, ty) in rule.gives.iter() {
+                    let label = m.columns.iter().find(|written| written.name == *column).map(|written| written.label).expect("`rule_diagnostics` refuses a rule on no column");
+                    let message = match typed(&settled, label) {
+                        Some(found) if at_or_under(ty, &found) => continue,
+                        Some(found) => format!("gives the column {:?} the type {ty:?}, which does not stand at or under {found:?}, the type the definition gives it under the rule's conditions", crate::program::column_spelled(column)),
+                        None => format!("conditions give the column {:?} no type, or a type with an empty meet, in the definition", crate::program::column_spelled(column)),
+                    };
+                    let message = format!("a type rule of the macro `{}` {message}", m.name.0);
+                    diagnostics.push(crate::read::check_error(CheckId::Types, message, rule.place));
+                }
+            }
+        }
+        self.diagnostics.extend(diagnostics);
     }
 
     /// The modes of `m`, as [`macro_column_types`] gives them, or `None`
@@ -293,24 +420,27 @@ impl MacroDerivation<'_, '_> {
         relation
     }
 
-    /// The type of the column `path` gives of the relation `atom` reads,
-    /// where that relation is a fact relation of `facts`, a lib name of
-    /// `lib` or a macro with its declaration and `path` is one column. A
-    /// longer path, a field of a type parameter's column, gives no type.
-    fn site_type(&self, atom: &Atom, path: &[ColumnName]) -> Option<ValueType> {
+    /// The type of the column `path` gives of the relation `atom` reads, a
+    /// site of a macro's definition, where that relation is a fact relation
+    /// of `facts`, a lib name of `lib` or a macro with its declaration and
+    /// `path` is one column, with the rules of the relation read under
+    /// `label_type`, the types of the definition's labels. A longer path, a
+    /// field of a type parameter's column, gives no type.
+    fn site_type(&self, atom: &Atom, path: &[ColumnName], label_type: &dyn Fn(LabelId) -> Option<ValueType>) -> Option<ValueType> {
         let [column] = path else { return None };
-        let columns: &[Column] = match &atom.relation {
-            RelationRef::Fact(fact) => self.facts.get(fact)?,
+        let (columns, rules): (&[Column], &[TypeRule]) = match &atom.relation {
+            RelationRef::Fact(fact) => (self.facts.get(fact)?, &[]),
             RelationRef::Lib(name) => match self.index.get(name) {
                 Some(&j) => match &self.states[j] {
-                    MacroState::Declared(relation) => &relation.columns,
+                    MacroState::Declared(relation) => (&relation.columns, &relation.rules),
                     MacroState::Unread | MacroState::Reading | MacroState::Faulted => return None,
                 },
-                None => self.lib.get(name)?,
+                None => (self.lib.get(name)?, self.rules.get(name).map_or(&[][..], |rules| &rules[..])),
             },
             RelationRef::DefinedPort(_) | RelationRef::Declared(_) | RelationRef::Output(_) => return None,
         };
-        columns.iter().find(|c| &c.name == column)?.ty.fixed().cloned()
+        let declared = columns.iter().find(|c| &c.name == column)?.ty.fixed().cloned()?;
+        Some(ruled_type(declared, rules, column, atom, label_type))
     }
 }
 
@@ -334,26 +464,28 @@ fn subsets_of_size(items: &[usize], size: usize) -> Vec<Vec<usize>> {
     subsets
 }
 
-/// The type that [`label_type`] gives each label of `body` that `columns`
-/// gives no column, in the order of the label's first site in `body`, over
-/// the list of the label's scope, as [`crate::types::scope_lists`] gives it.
-/// `body` stands for the body of a clause whose head labels are the labels
-/// of `columns`.
-fn local_label_types(
-    body: &Body,
-    columns: &[LabelColumn],
-    site_type: &dyn Fn(&Atom, &[ColumnName]) -> Option<ValueType>,
-) -> Vec<(LabelId, Result<Option<ValueType>, LabelFault>)> {
+/// The labels of the definition of `m`, those of its columns and then each
+/// other in the order of its first site, each with the list of its scope, as
+/// [`crate::types::scope_lists`] gives it: the definition for a column's
+/// label.
+fn definition_labels<'m>(m: &RelationMacro<'m>) -> (Vec<LabelId>, Vec<&'m Body>) {
     let mut labels: Vec<LabelId> = Vec::new();
-    each_conjunct(body, &mut |conjunct| {
+    for column in m.columns {
+        if !labels.contains(&column.label) {
+            labels.push(column.label);
+        }
+    }
+    let columns = labels.len();
+    each_conjunct(m.definition, &mut |conjunct| {
         let mut own = Vec::new();
         own_labels(conjunct, &mut own);
         for label in own {
-            if !labels.contains(&label) && !columns.iter().any(|column| column.label == label) {
+            if !labels.contains(&label) {
                 labels.push(label);
             }
         }
     });
-    let lists = scope_lists(body, &labels);
-    labels.into_iter().zip(lists).map(|(label, list)| (label, label_type(list, label, site_type))).collect()
+    let mut lists = vec![m.definition; columns];
+    lists.extend(scope_lists(m.definition, &labels[columns..]));
+    (labels, lists)
 }

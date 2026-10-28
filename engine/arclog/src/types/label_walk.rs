@@ -125,6 +125,40 @@ pub(crate) fn flat_label_types(sites: impl IntoIterator<Item = (crate::program::
     Some(types)
 }
 
+/// The type of each label of a scope, or its fault, in the order of the
+/// scope's labels.
+pub(crate) type TypedLabels = Vec<(crate::program::LabelId, Result<Option<ValueType>, LabelFault>)>;
+
+/// The type `types` gives `label`, where it gives one.
+pub(crate) fn typed(types: &[(crate::program::LabelId, Result<Option<ValueType>, LabelFault>)], label: crate::program::LabelId) -> Option<ValueType> {
+    match types.iter().find(|(found, _)| *found == label)? {
+        (_, Ok(ty)) => ty.clone(),
+        (_, Err(_)) => None,
+    }
+}
+
+/// The types of a scope's labels once a run gives the types of the run
+/// before it. `types` are the types `run` gives with no earlier types, and
+/// `run` gives the types under the earlier types it is given. `narrows` tells
+/// whether a site, read under the types it is given as the earlier types,
+/// gives its label a type that the label's type is not under; where none
+/// does, a run gives the same types, and is not made. A fault ends the runs.
+/// The types of a label only narrow from run to run, so the runs end.
+pub(crate) fn settle_label_types(
+    mut types: TypedLabels,
+    narrows: impl Fn(&TypedLabels) -> bool,
+    run: impl Fn(&TypedLabels) -> TypedLabels,
+) -> TypedLabels {
+    while types.iter().all(|(_, ty)| ty.is_ok()) && narrows(&types) {
+        let next = run(&types);
+        if next == types {
+            break;
+        }
+        types = next;
+    }
+    types
+}
+
 /// What the walks of the labels of one inference read of a part of the
 /// program, which does not depend on the label asked: the type that the
 /// sites of an atom give a class of labels, and, for a body, the labels

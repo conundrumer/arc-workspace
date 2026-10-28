@@ -105,7 +105,7 @@ impl FileReader {
         columns.map(Into::into)
     }
 
-    /// `(relation <name> (columns ...) [(modes ...)] [(frames ...)])`, after its head.
+    /// `(relation <name> (columns ...) [(modes ...)] [(frames ...)] [(types ...)])`, after its head.
     fn relation(&mut self, rest: &[SExpr], place: SourcePlace) -> Option<()> {
         let name = LibName(self.symbol(rest.first(), "the relation's name", place)?.into());
         let columns = self.columns(rest.get(1), COLUMNS, &[], place)?;
@@ -124,9 +124,16 @@ impl FileReader {
             }
             None => Box::default(),
         };
+        let rules = match rest.get(at).and_then(|expr| headed(expr, TYPES)) {
+            Some(items) => {
+                at += 1;
+                self.type_rules(items)?
+            }
+            None => Box::default(),
+        };
         self.no_more(rest.get(at..).unwrap_or_default())?;
         if self.declare(&name, place) {
-            self.entries.insert(name, LibEntry::Relation(AlgebraRelation { columns, modes, frames }));
+            self.entries.insert(name, LibEntry::Relation(AlgebraRelation { columns, modes, frames, rules }));
         }
         Some(())
     }

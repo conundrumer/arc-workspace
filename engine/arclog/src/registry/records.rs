@@ -12,6 +12,8 @@ pub(super) struct WrittenRelation {
     pub(super) definition: Node<Body>,
     /// The items of the `(frames ...)` form of a macro, none for a proposer.
     pub(super) frames: Box<[SExpr]>,
+    /// The rules of the `(types ...)` form of a macro, none for a proposer.
+    pub(super) rules: Box<[TypeRule]>,
 }
 
 /// Each column of a form, with the label of the form's body that the

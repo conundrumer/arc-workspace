@@ -15,11 +15,13 @@ impl FileReader {
     pub(super) fn declare_macros(&mut self) {
         let mut lib: StableHashMap<LibName, Box<[Column]>> = StableHashMap::default();
         let mut modes: StableHashMap<LibName, Box<[Mode]>> = StableHashMap::default();
+        let mut rules: StableHashMap<LibName, Box<[TypeRule]>> = StableHashMap::default();
         for (name, entry) in &self.entries {
             match entry {
                 LibEntry::Relation(relation) => {
                     lib.insert(name.clone(), relation.columns.clone());
                     modes.insert(name.clone(), relation.modes.clone());
+                    rules.insert(name.clone(), relation.rules.clone());
                 }
                 LibEntry::Proposer(proposer) => {
                     lib.insert(name.clone(), proposer.columns.clone());
@@ -29,9 +31,9 @@ impl FileReader {
         }
         let macros: Vec<RelationMacro<'_>> = self
             .written_relations()
-            .map(|m| RelationMacro { name: &m.name, place: m.place, columns: &m.columns, definition: m.definition.value() })
+            .map(|m| RelationMacro { name: &m.name, place: m.place, columns: &m.columns, definition: m.definition.value(), rules: &m.rules })
             .collect();
-        let declarations = macro_column_types(&macros, &lib, &modes, &self.facts);
+        let declarations = macro_column_types(&macros, &lib, &modes, &rules, &self.facts);
         match declarations {
             Ok(mut declarations) => {
                 for m in std::mem::take(&mut self.relation_macros) {

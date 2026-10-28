@@ -15,19 +15,20 @@
 //!
 //! Each top-level form declares one lib element, by its head:
 //!
-//! - `(relation <name> (columns (<Column> <type>) ...) (modes (<Column> ...) ...) [<frames>])`:
+//! - `(relation <name> (columns (<Column> <type>) ...) (modes (<Column> ...) ...) [<frames>] [<types>])`:
 //!   an algebra relation, the group relations and `pose_difference`
 //!   included. Each mode lists the columns, other than an orientation
 //!   type's, that must be bound for the relation to bind the others; a
 //!   relation over a finite domain has no `modes` form, and no mode is empty.
-//!   `<frames>` is a `(frames ...)` form, as the section on frames gives it.
+//!   `<frames>` is a `(frames ...)` form, as the section on frames gives it,
+//!   and `<types>` a `(types ...)` form, as the section on type rules gives it.
 //! - `(component <name> <construction|detector|task-structure> (type-parameters <t> ...)
 //!   (inputs (<input> (<column> <type>) ... [(default <rows>)] [reads-outputs] [from-key]) ...)
 //!   (outputs (<output> (<column> <type>) ... [(copies <row> ...)] [<frames>]) ...))`: a construction, a
 //!   detector or a task-structure component, its inputs in the order the component declares them. Each
 //!   `<t>` is a parameter's name or `(<name> <type>)`, a parameter with a bound. An `INIT` form's binding of a
 //!   bounded parameter is a type at or under the bound, a binding outside it is a type fault at the site that
-//!   binds it, and a bounded parameter that no place of the form binds takes its bound. A column of a parameter
+//!   binds it, and a bounded parameter that no place of the form binds takes its bound. A bounded parameter binds to the join of the types of every projection onto it, and projections whose types have no join are a type fault at the first site that has none with the sites before it. A column of a parameter
 //!   has a frame where a column of its bound's type has one. An
 //!   input's `default` writes its rows as a `param` form writes them after
 //!   its types (`docs/arclog/arcdata.md#params`). An input marked
@@ -73,13 +74,13 @@
 //! - `(fact <name> (columns (<Column> <type>) ...))`: the columns of a fact
 //!   relation, `input`, `ex_input` or `ex_output`, the Example column `E`
 //!   first in the two of the examples.
-//! - `(macro <name> (columns (<Column> <Label> [<type>]) ...) [<frames>] <body>)`:
+//! - `(macro <name> (columns (<Column> <Label> [<type>]) ...) [<frames>] [<types>] <body>)`:
 //!   a lib relation that the lib defines from other lib names, each column
 //!   with the label of the definition it stands for, and its definition. A
 //!   `<type>` stands strictly under the type the definition gives the
 //!   column's label, and is the column's type; a column with none has the
-//!   type the definition gives. A [`Macro::Relation`]'s column types and
-//!   modes are the ones [`macro_column_types`] gives.
+//!   type the definition gives. A [`Macro::Relation`]'s column types,
+//!   modes and rules are the ones [`macro_column_types`] gives.
 //!
 //! # Frames
 //!
@@ -106,6 +107,47 @@
 //! copied column has the frame of the column it copies) are faults of the
 //! file.
 //!
+//! # Type rules
+//!
+//! A `(types <rule> ...)` form of a `relation` or a `macro` form narrows a
+//! `Box` column at a site from the types of the labels at the site's other
+//! columns. A rule is `(when ((<Column> <type>) ...) (<Column> <type>) ...)`,
+//! each `<type>` `Box`, `Position` or `Offset`. The rule holds at a site
+//! where each column of its conditions has a label whose type stands at or
+//! under the condition's type. At a site, a column's type is the meet of its
+//! declared type and of the types each rule that holds gives it
+//! ([`ruled_type`]), so a rule that holds keeps holding as the labels narrow.
+//! A rule conditions columns of a `Box` type and gives columns it has no
+//! condition on a type at or under the declared type; no two rules that hold
+//! at one assignment of `Box`, `Position` and `Offset` to the condition
+//! columns give a column types with an empty meet. A rule that breaks this
+//! is a fault of the file.
+//!
+//! A rule holds for every value its column can take, where its reason needs
+//! no two labels in one frame, since the type check sees no frame. A
+//! `Position` is a box of extent 1 on both axes, with per-axis sums (the
+//! frame's extent minus the box's) that a frame fixes, and an `Offset` has
+//! sums 0 in every frame. `compose` adds margins and `relative` subtracts
+//! them, so the sums add and subtract. The rules and their reasons:
+//!
+//! - `compose` (`Position`, `Offset`) and (`Offset`, `Position`) give `C`
+//!   `Position`: its sums are the `Position`'s, in the frame `C` takes from
+//!   the `Position`'s column. (`Offset`, `Offset`) gives `Offset`: 0 + 0 = 0.
+//! - `relative` (`Offset`, `Offset`) gives `X_rel` `Offset`: 0 - 0 = 0.
+//!   (`Offset`, `Position`) gives `Position`: `X_rel` has `X`'s sums, in the
+//!   frame `(new (of Base))` makes.
+//! - `apply` `Offset` gives `Offset`: a permutation of margins that sum to 0
+//!   on each axis sums to 0.
+//! - `split` `Position` gives `Across` `Position`: `Across` is `P` with its
+//!   two margins on axis `A` set to 0, so its sum along `A` is 0 and across
+//!   `A` is `P`'s, a cell of the frame of one line across `A` that
+//!   `(new (of P))` makes. `Offset` gives `Offset`.
+//!
+//! The rules of a macro are its written rules, then the rules
+//! [`macro_column_types`] derives from its definition. A written rule stands
+//! at or under the type the definition gives its column under the rule's
+//! conditions, and is a fault otherwise.
+//!
 //! An atom of a body of either file reads a name that a form declares, at
 //! columns that name declares: a lib name, a macro or a fact. An atom that
 //! reads another name or column is a fault of the file.
@@ -116,7 +158,8 @@
 //! the Pose type of the label at the site, or a type parameter of its
 //! component. A column is `Position` or `Offset` only where the lib fixes
 //! its role, and `Box` where the lib's clauses take it in either role, so a
-//! label at it narrows only where another site narrows it. This holds of a
+//! label at it narrows only where another site narrows it or where a type
+//! rule narrows the column. This holds of a
 //! macro's column, with the type it declares, and of a column of a type
 //! parameter, with its bound. The file declares
 //! no `representative`. The file and
@@ -128,8 +171,8 @@
 //!
 //! The reader of the two files, the spellings of the registry file's forms, the records of a form the reader reads, the reader of the registry file's other
 //! forms, the reader of its macro form, the reader of the proposers file's clauses, the check of the reads of their bodies, the derivation of the
-//! macros' column types, the declaration of the macros and of the proposers written in arclog from it, the rule by which an `INIT` form binds its
-//! component's type parameters, and the frame rules each stand in a module of their own. The derivations take the forms as the reader gives them, and
+//! macros' column types and type rules, the declaration of the macros and of the proposers written in arclog from it, the rule by which an `INIT` form binds its
+//! component's type parameters, the frame rules, and the type rules, their reader and the type a column takes under them, each stand in a module of their own. The derivations take the forms as the reader gives them, and
 //! read no file.
 //!
 //! `engine/lib/proposers.arclog` holds one form `(proposer <Name> <atom> ...)`
@@ -149,7 +192,7 @@ use crate::program::{
 use crate::read::spelling;
 use crate::read::{check_error, head_of, read_body, read_param_value, read_sexprs, SExpr};
 use crate::terms::{OrientationConstant, OrientationType};
-use crate::types::{each_atom, each_conjunct, label_type, LabelFault, ValueType};
+use crate::types::{each_atom, each_conjunct, label_type, ValueType};
 
 /// The text of the registry file, which [`Registry::get`] reads.
 pub const REGISTRY_TEXT: &str = include_str!("../../lib/registry.sexpr");
@@ -241,6 +284,9 @@ pub struct AlgebraRelation {
     /// the order it names them; [`Registry::relation_frame`] gives the rule of
     /// any column.
     pub frames: Box<[(ColumnName, FrameRule)]>,
+    /// The type rules of the relation's `types` form, then, for a relation
+    /// macro, the rules [`macro_column_types`] derives.
+    pub rules: Box<[TypeRule]>,
 }
 
 /// The kind of a component: a construction, a detector or a task-structure
@@ -518,6 +564,7 @@ impl Registry {
         let clauses = reader.sexprs(proposers, SourceFile::LibProposers);
         reader.proposer_clauses(&clauses);
         reader.check_reads();
+        reader.check_rules();
         reader.declare_macros();
         reader.check_complete();
         reader.registry()
@@ -590,9 +637,13 @@ mod reader;
 mod reads;
 mod records;
 mod spellings;
+mod type_rules;
+mod rule_forms;
 
 pub(crate) use bindings::{binding_sites, unbound, ParameterSite};
 pub use bindings::key_fill;
 pub use column_types::{macro_column_types, LabelColumn, MacroDeclarations, RelationMacro};
 pub use frames::{has_frame, FrameColumn, FrameRule};
+pub use type_rules::{ruled_type, TypeRule};
+use type_rules::rule_diagnostics;
 use reader::FileReader;

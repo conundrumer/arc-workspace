@@ -73,3 +73,13 @@ pub fn each_atom(body: &crate::program::Body, visit: &mut dyn FnMut(&crate::prog
         }
     });
 }
+
+/// The label that `atom` gives at its site on `column`, a column of one
+/// label.
+pub(crate) fn column_label(atom: &crate::program::Atom, column: &crate::program::ColumnName) -> Option<crate::program::LabelId> {
+    let site = atom.sites.iter().find(|site| site.column == *column)?;
+    match &site.value.args[..] {
+        [arg] => arg.label().and_then(use_label),
+        _ => None,
+    }
+}
