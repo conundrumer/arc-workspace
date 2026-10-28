@@ -335,10 +335,19 @@ fn gather_view(decoder:&Decoder<'_>,reads:&Reads<'_>,dets:&[String],subject:&Sub
 }
 
 fn gather(decoder: &Decoder<'_>, reads: &Reads<'_>, dets: &[String], subject: &Subject<'_>, sub: &BodyView, placements: &[Option<Placement>], gathered: &mut [Vec<Gathered>]) {
-    let at_label = |placement: &Option<Placement>| placement.and_then(|placement| placement.label).and_then(|label| sub.column_of(label));
-    let Some(key) = placements.iter().map(at_label).collect::<Option<Vec<usize>>>() else {
-        return lose_all(gathered, "a column of the relation has no label that the widened body makes");
-    };
+    // Native input schemas contain implicit Unit positions as well as
+    // labelled query columns. Preserve that complete row interface, just as
+    // InputClause::expanded_rows does for evaluation.
+    let projection = placements.iter().zip(subject.types).map(|(placement, ty)| {
+        if *ty == ValueType::Unit {
+            Ok(None)
+        } else {
+            placement.and_then(|p| p.label).and_then(|label| sub.column_of(label)).map(Some)
+                .ok_or("a non-Unit relation column has no label in its checked derivation")
+        }
+    }).collect::<Result<Vec<Option<usize>>, &str>>();
+    let key = match projection {Ok(key)=>key,Err(reason)=>return lose_all(gathered,reason)};
+    let unit = Term::Constant(Constant::Unit).encode().expect("a Unit has a term id");
     let checked=subject.checked;
     let types=sub.clause.columns.iter().map(|v|sub.clause.variables[v.0 as usize].ty.clone()).collect::<Vec<_>>();
     let sources=body_column_flows(checked,&sub.clause,&sub.paths,decoder.registry());
@@ -372,10 +381,10 @@ fn gather(decoder: &Decoder<'_>, reads: &Reads<'_>, dets: &[String], subject: &S
                             }
                             let ctx = Ctx { example: example.example, assignment: body_assignment };
                             each_row(body_rows, &mut |row| {
-                                let derived: Box<[TermId]> = key.iter().map(|&column| row[column]).collect();
+                                let derived: Box<[TermId]> = key.iter().map(|&column| column.map_or(unit, |column| row[column])).collect();
                                 let slots = entry.rows.entry(derived).or_insert_with(|| vec![Merged::Unset; subject.columns.len()]);
                                 for (slot, &column) in slots.iter_mut().zip(subject.columns) {
-                                    slot.merge(analysis.extent_of(key[column as usize], row, &ctx, 0));
+                                    slot.merge(key[column as usize].and_then(|column| analysis.extent_of(column, row, &ctx, 0)));
                                 }
                             });
                             // The reads of earlier tables that the rows made may have passed the cap.
