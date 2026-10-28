@@ -638,6 +638,7 @@ struct Runs(
 /// in that order, sorted by their cells, rows of equal cells in the order of
 /// [`each_row`].
 fn sorted_rows(rows: &Relation, types: &[ValueType]) -> (Vec<i32>, Vec<usize>) {
+    assert_eq!(usize::from(rows.arity()), types.len(), "native relation arity differs from its packed schema");
     let width = row_width(types) as usize;
     let count = usize::try_from(rows.len()).expect("a count of rows within a usize");
     let mut written = Vec::with_capacity(count.saturating_mul(width));
