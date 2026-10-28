@@ -9,7 +9,8 @@
 //! and no atom or comparison binds, estimated at the sum over the union's
 //! branches of the estimate of the variable in the branch, and chosen only
 //! where the union grounds at the placed variables: each column of its
-//! branches that it does not export is placed, and each branch, with its
+//! branches that it does not export is placed or has a finite orientation
+//! domain, and each branch, with its
 //! placed columns bound, grounds every variable it holds. A variable that
 //! an algebra relation or an `=` places costs nothing, and the cost of a
 //! sequence of choices is the sum over its choices of the product of the
@@ -190,16 +191,22 @@ fn next_left(wanted: &[bool], placed: &[bool], binders: &[Option<(usize, &Union)
         .map(|v| Variable(v as u16))
 }
 
+/// Whether `variable` has a binding or a native finite orientation domain.
+/// Availability does not turn a finite-domain variable into a physical binding.
+fn bound_or_finite(clause: &ClauseIr, variable: Variable, bound: &[bool]) -> bool {
+    bound[usize::from(variable.0)] || orientation_domain(&clause.variables[usize::from(variable.0)].ty).is_some()
+}
+
 /// Whether `union` can give its exports at `placed`, the placed variables of
 /// its clause: each column of a branch that the union does not export is
-/// placed, and each branch, with its columns among the placed variables
+/// placed or has a finite orientation domain, and each branch, with its columns among the placed variables
 /// bound, grounds every variable it holds. A branch grounds a variable that
 /// an atom of it binds, that an algebra relation outputs once a mode holds,
 /// that an `=` binds from a grounded one, that a union of the branch binds
 /// where that union grounds at the variables grounded so far, and a variable
 /// of an orientation type, whose values are finite.
 fn grounds(union: &Union, placed: &[bool]) -> bool {
-    let reads_placed = |branch: &ClauseIr| branch.columns.iter().all(|column| union.exported.contains(column) || placed[usize::from(column.0)]);
+    let reads_placed = |branch: &ClauseIr| branch.columns.iter().all(|column| union.exported.contains(column) || bound_or_finite(branch, *column, placed));
     union.branches.iter().all(reads_placed) && grounds_leaving(union, placed)
 }
 
@@ -270,7 +277,7 @@ impl<'b> Grounding<'b> {
 
     /// Whether `variable` is grounded or of an orientation type.
     fn covers(&self, variable: Variable) -> bool {
-        self.grounded[usize::from(variable.0)] || orientation_domain(&self.branch.variables[usize::from(variable.0)].ty).is_some()
+        bound_or_finite(self.branch, variable, &self.grounded)
     }
 
     /// The nodes that hold no column the branch does not cover.
@@ -525,9 +532,7 @@ pub(super) fn mode_holds(relation: &AlgebraRelation, arguments: &Arguments, clau
     for (column, argument) in arguments.0.iter() {
         columns[usize::from(column.0)] = match argument {
             Argument::Term(_) => true,
-            Argument::Variable(variable) => {
-                bound[usize::from(variable.0)] || orientation_domain(&clause.variables[usize::from(variable.0)].ty).is_some()
-            }
+            Argument::Variable(variable) => bound_or_finite(clause, *variable, bound),
         };
     }
     crate::algebra::satisfied_mode(relation, &columns).is_some()
