@@ -357,6 +357,15 @@ fn derive(decoder: &Decoder<'_>, reads: &Reads<'_>, subject: &Subject<'_>) -> Ve
                     Err(fault)=>lose_all(&mut gathered,&fault_spelled(&fault)),
                 }
             }
+            (Some(NodeRef::RigidDet(_)), DependencyKind::RigidAssembly(_)) => {
+                // Rigid outputs are native D4 images, not the rows of a
+                // widened clause. flows_visiting deliberately marks moved
+                // part frames Unknown: the pre-image's frame is not proof
+                // of the image's extent. Leave these slots Unset, which
+                // finish exports as unresolved, rather than reporting a
+                // fault in already evaluated native rows. Intrinsic Position
+                // and known grid-frame evidence is completed independently.
+            }
             (Some(NodeRef::Instance(_)), DependencyKind::InstanceInput { input, .. }) => {
                 let placements=placements();
                 let all=checked.program.input_bodies(&given.form,input);
