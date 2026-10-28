@@ -1,0 +1,306 @@
+# The arclog lib
+
+Every relation, component and proposer a program can read.
+
+Reading an entry:
+
+- A relation is `name(Column: Type, ...)`. A site names one of these columns.
+- `needs` lists the columns an earlier atom of the clause must bind. A relation with no `needs` can enumerate every column.
+- A component lists its inputs, then its outputs. Each has a first column `key`, apart from those marked *shared*, which every key reads. An input with *default* rows holds those rows when the instance writes no clause for it. A clause for that input replaces the default rows. An input marked *from the key* holds the key's own values when the instance writes no clause for it. That fill works only where the key has one label of each type the input needs. Where the key has two labels of one type, write the clause.
+- The inputs of an instance stand in the order listed here.
+
+## Types
+
+- `Color`: a color. Colors have identity and nothing else: no color is first, last, light or dark.
+- `Box`: a rectangle of the grid, given by its margins, the count of cells between it and each edge of the grid. `Position` is a Box of one cell, and `Offset` is a Box that moves another Box. A Position or an Offset stands at a Box column. A label at a Box column and a Position column is a Position. A label never stands at a Position column and an Offset column.
+- `number`: a count of things the task has. `0` counts nothing.
+- `Dir`: the four edges of the grid, T B L R. `DiagDir`: the four corners, TL TR BL BR. `Dir8` is either.
+- `Axis`: V, the vertical axis, on which T and B lie, and H, the horizontal axis, on which L and R lie. `DiagAxis`: DG, the diagonal through TL and BR, and AD, the diagonal through TR and BL. `Axis4` is either.
+- `D4`: the eight symmetries of a square. ID is the identity. CW, HT and CC are the quarter turn clockwise, the half turn and the quarter turn counterclockwise. LR swaps the left and the right, TB swaps the top and the bottom, and DG and AD reflect across those diagonals. `C4` is the four turns.
+- `Sense`: CW and CC, the two senses of a turn.
+- `Sym`: a symmetry group, a set of D4 elements: 1 (the identity alone), LR, TB, HT, DG, AD, BOX (ID LR TB HT), X (ID HT DG AD), C4, D4.
+- `Ident`: a label of one thing, such as one object. It holds nothing but the thing's identity.
+- `Example`: one example of the task, in a DET.
+
+## Facts
+
+- `input(P: Position, Col: Color)`: each cell of the input and its color.
+- `ex_input(E: Example, P: Position, Col: Color)`: each cell of each example's input, train and test. DET only.
+- `ex_output(E: Example, P: Position, Col: Color)`: each cell of each train output. DET only.
+
+## Boxes
+
+The relations over Box, Position and Offset.
+
+- `margin(B: Box, D: Dir, K: number)`, needs B: K cells lie between B and edge D.
+- `dist_pair(P: Box, D: Dir, K: number, K2: number)`, needs P: P's margins on edge D (K) and on the opposite edge (K2).
+- `diag_dist(P: Box, Diag: DiagDir, A: Axis, K1: number, K2: number)`, needs P: P's margin K1 on the edge of corner Diag that lies on axis A, and K2 on the corner's other edge.
+- `corner_dist(P: Box, Diag: DiagDir, K: number)`, needs P: the sum of P's margins on the two edges of corner Diag.
+- `frame_extent(P: Position, A: Axis, N: number)`, needs P: the grid has N cells along axis A. Along V, N is the number of rows. Along H, N is the number of columns.
+- `axis_extents(P: Position, A: Axis, N1: number, N2: number)`, needs P: the grid's extent along A (N1) and along the other axis (N2).
+- `sub_extent(P: Position, A: Axis, K: number)`, needs P: each K from 1 to one less than the grid's extent along A.
+- `box_extent(B: Box, P: Position, A: Axis, N: number)`, needs B P: B is N cells long along A. P is any cell of the grid, and gives only the grid's extent.
+- `compose(A: Box, B: Box, C: Box)`, needs A B: C's margin at each edge is A's plus B's. With B an offset, C is A moved by B.
+- `relative(Base: Box, X: Box, X_rel: Box)`, needs Base X: X_rel is X less Base, margin by margin. For two cells, X_rel is the offset that moves Base onto X, so `compose` of Base and X_rel is X. For a box Base, X_rel is X counted from Base's sides: X as a cell of the box's own frame. A margin below 0 means X reaches past that side of Base.
+- `neighbor(P: Box, D: Dir8, Q: Box)`, needs P: Q is one step from P toward D. Q can lie off the grid, with a margin below 0. Such a Q matches no `input` row.
+- `jump(P: Box, D: Dir8, K: number, Q: Box)`, needs P K: Q is K steps from P toward D. Q can lie off the grid.
+- `gap(D: Dir8, P: Position, Q: Position, K: number)`, needs P Q: Q is ahead of P toward D, on P's line, with K cells strictly between them.
+- `step_offset(D: Dir8, V: Offset)`: V is one step toward D.
+- `jump_offset(D: Dir8, K: number, V: Offset)`, needs K: V is K steps toward D.
+- `frame_offset(P: Position, A: Axis, K: number, V: Offset)`, needs P: V is K steps along A, for each K that `sub_extent` gives. Each K has two rows, one toward each edge of A.
+- `inside(A: Box, B: Box)`, needs A B: A lies in B, its sides included.
+- `interior(A: Box, B: Box)`, needs A B: A lies in B and touches none of B's sides.
+- `centered(P: Box)`, needs P: P's two margins on each axis are equal. On an axis of even extent, no cell is centered.
+- `same_dist(D: Dir, P1: Box, P2: Box)`, needs P1 P2: P1 and P2 have the same margin on edge D.
+- `same_line(A: Axis4, P: Box, Q: Box)`, needs P Q: P and Q are on one line along A: one column for V, one row for H, one diagonal for DG or AD.
+- `same_corner(D: DiagDir, P1: Box, P2: Box)`, needs P1 P2: P1 and P2 have the same margins on both edges of corner D. For cells of different frames, such as a cell of a tile and a cell of the grid, they are at the same place counted from corner D.
+- `same_slab(D: Dir, P1: Box, P2: Box)`, needs P1 P2: P1 and P2 have the same margin on edge D, and the same two margins on the other axis. Their margins on the edge opposite D are not compared.
+- `nearer(D: Dir8, P: Box, Q: Box)`, needs P Q: P is strictly nearer edge D than Q is. For a corner, the distances compared are `corner_dist`.
+- `split(P: Box, A: Axis, Along: Box, Across: Box)`, needs P: Along has P's margins on axis A and 0 on the other axis, so for A = V it is P's whole row, and for A = H P's whole column. Across is P less Along: for A = V, the offset from P's row to P.
+- `apply(D: D4, P: Box, P_out: Box)`, needs P: P_out is P's image when the whole grid undergoes D.
+- `edge_inset(D: Dir, K: number, B: Box)`, needs K: the grid with K lines cut from edge D.
+- `axis_inset(D: Dir, K1: number, K2: number, B: Box)`, needs K1 K2: the grid with K1 lines cut from edge D and K2 from the opposite edge.
+- `uniform_inset(K: number, B: Box)`, needs K: the grid with K lines cut from every edge.
+- `corner_inset(Diag: DiagDir, K: number, B: Box)`, needs K: the grid with K lines cut from each edge of corner Diag.
+- `edge_outset(D: Dir, K: number, B: Box)`, needs K: the grid with K lines added past edge D. B's margin there is less than 0, so B reaches past the grid.
+- `axis_outset(D: Dir, K1: number, K2: number, B: Box)`, needs K1 K2: the grid with K1 lines added past edge D and K2 past the opposite edge.
+- `uniform_outset(K: number, B: Box)`, needs K: the grid with K lines added past every edge.
+- `corner_outset(Diag: DiagDir, K: number, B: Box)`, needs K: the grid with K lines added past each edge of corner Diag.
+- `divide(T: number, Side: number, Gap: number, Part: number, Remainder: number)`, needs T Side Gap: along a row of parts of Side cells with Gap cells between each two, the cell T cells from the start is in part Part, Remainder cells into it. Part and Remainder count from 0. A cell in a gap gives no row. T is not tested against an end.
+
+## Orientation
+
+The values of the orientation types and the relations among them.
+
+- `dir_elem(D: Dir)`, `diag_dir_elem(D: DiagDir)`, `dir8_elem(D: Dir8)`, `axis_elem(A: Axis)`, `diag_axis_elem(Da: DiagAxis)`, `axis4_elem(A: Axis4)`, `d4_elem(D: D4)`, `c4_elem(D: C4)`, `sense_elem(S: Sense)`, `sym_elem(S: Sym)`: each value of the type.
+- `sym_member(S: Sym, D: D4)`: D is an element of group S.
+- `pose_difference(A: Pose, B: Pose, D: D4)`: D takes the placement of a `RIGID_DET` shape at pose A onto its placement at pose B. A and B are poses of one shape.
+- `axis_of(D: Dir, A: Axis)`: edge D lies on axis A.
+- `diag_axis_of(D: DiagDir, Da: DiagAxis)`: corner D lies on diagonal Da.
+- `axis4_of(D: Dir8, A: Axis4)`: D lies on A.
+- `corner_dir(C: DiagDir, A: Axis, D: Dir)`: corner C's edge on axis A is D.
+- `diag_dirs(D: DiagDir, A: Axis, D1: Dir, D2: Dir)`: corner D's edge on axis A is D1, and its edge on the other axis is D2.
+- `opposite(D: Dir, Opp: Dir)`, `diag_opposite(D: DiagDir, Opp: DiagDir)`, `dir8_opposite(D: Dir8, D2: Dir8)`: the opposite edge or corner.
+- `perp(A: Axis, A2: Axis)`, `diag_perp(Da: DiagAxis, Da2: DiagAxis)`: the other axis.
+- `perp_dir(D: Dir, D2: Dir)`: D2 is an edge on the other axis from D.
+- `turn(S: Sense, D: Dir, D2: Dir)`: a quarter turn in sense S takes D to D2.
+- `c4_turn(S: Sense, T: C4)`: T is the quarter turn in sense S.
+- `reflection(A: Axis4, T: D4)`: T reflects across a line along A, and fixes that line: V gives LR, H gives TB, DG gives DG, AD gives AD.
+- `axis_inversion(A: Axis4, T: D4)`: T reverses axis A, swapping its two directions: V gives TB, H gives LR, DG gives AD, AD gives DG.
+- `d4_compose(A: D4, B: D4, C: D4)`: C is B, then A.
+- `d4_inverse(D: D4, D_inv: D4)`: D_inv undoes D.
+- `d4_identity(D: D4)`: the identity.
+- `apply_dir(D: D4, Dir: Dir, Dir_out: Dir)`, `apply_diag_dir(D: D4, Dir: DiagDir, Dir_out: DiagDir)`, `apply_dir8(D: D4, Dir: Dir8, Dir_out: Dir8)`: D takes direction Dir to Dir_out.
+
+## Sets and counts
+
+- **Cardinality**: the count of each key's members.
+  - in `member(key, m)`: the members.
+  - in `domain(key)`, from the key: the keys to count. A key with no member counts 0.
+  - out `size(key, N)`.
+- **Excess**: how many more members the plus set has than the minus set.
+  - in `plus(key, m)`, `minus(key, m)`.
+  - out `excess(key, N)`: the plus count less the minus count, where that is more than 0.
+- **Singleton**: the one value of each key's members.
+  - in `member(key, v)`.
+  - out `value(key, v)`: the value, where every member has it.
+  - out `plural(key)`: the members have more than one value.
+- **Inclusion**: each observed set against each pattern set, by their members. Its key column is named `observed`, and its outputs' first column is `observed`, not `key`.
+  - in `pattern(pattern, m)`, shared: the members of each pattern.
+  - in `observed(observed, m)`: the members of each observed set.
+  - out `superset(observed, pattern)`: the observed set holds every member of the pattern.
+  - out `equal(observed, pattern)`: the two sets have the same members.
+  - A pair of sets that share no member has no row.
+- **Quotient**: one label per class of an equivalence.
+  - in `equivalent(a, b)`, shared: a and b are in one class.
+  - in `edge(a, b)`, shared: a and b are in one class.
+  - The classes are closed over chains of both inputs.
+  - out `class(a, Id)`: a's class. An element in neither input has no class, and `equivalent(a, a)` gives it a class of its own.
+
+## Orders
+
+- **Order**: each member's rank, from a strict order or from a score.
+  - in `member(key, t)`: the members.
+  - in `before(key, a, b)`: a comes before b. `before` holds every such pair, not only neighbors, and never a before a.
+  - in `score(key, t, S)`: a number per member. A lower score comes first, and equal scores tie.
+  - in `secondary_score(key, t, S)`: a number that orders the members within each tie of `score`. A member with a `score` and no `secondary_score` comes before the members of its tie that have one.
+  - Give `before`, or `score` with `secondary_score`, not both. A key with both, or with two `score` rows or two `secondary_score` rows for one member, has no output.
+  - A member with no `score` row is related to no member: it has rank 0 and dual rank 0, and it is minimal and maximal.
+  - in `probe(key, t)`: an element ranked against the members, and not counted among them. It takes its place from its own `score` or `before` rows.
+  - out `rank(key, t, R)`: R members come before t, so the first has rank 0. Ties share a rank, and the next rank counts every tied member: scores 1, 1, 2 give ranks 0, 0, 2.
+  - out `dual_rank(key, t, R)`: R members come after t.
+  - out `minimal(key, t)`, `maximal(key, t)`: the members nothing comes before, or after. Under a tie, every tied member.
+  - out `successor(key, a, b)`: b comes next after a. Under ties, each member of one score level is followed by each member of the next, and tied members don't follow each other.
+  - out `cyclic_successor(key, a, b)`: `successor`, with the first after the last.
+- **Walk**: the member a count of steps along a successor relation reaches.
+  - in `successor(key, p, p_next)`.
+  - in `steps(key, N)`: the step counts to walk.
+  - out `walk(key, p0, N, p)`: N steps from p0 reach p, for every N from 0 to the greatest N of `steps`. A walk starts only at a member that has a successor, and a walk that runs out of successors has no row past its end.
+- **Unfold**: the items taken and left at each state of a walk over states.
+  - in `start(key, t)`, `initial_taken(key, item)`, `initial_untaken(key, item)`.
+  - in `conflict(key, item, item2)`: when item is taken, item2 leaves the untaken items without being taken.
+  - in `score(key, t, item, S)`: with a score, the item taken at a state is the untaken item of least score.
+  - in `step(key, t, t2)`: a step from t to t2 takes one item. `skip(key, t, t2)`: a step that takes none. `take(key, t, item)`: the item taken at t. These three may read the outputs.
+  - out `taken(key, t, item)`, `untaken(key, t, item)`, `excluded(key, t, item)`, and `take` where `score` gives it.
+  - With `score`, a tie forks the walk. An item taken on one branch and left on another is in both `taken` and `untaken` at a state both branches reach.
+- **Propagation**: the nodes reached by forward chaining.
+  - in `source(key, n)`, from the key: the nodes reached at the start.
+  - in `edge(key, a, b)`: b is reached once a is.
+  - in `join(key, a, b, c)`: c is reached once a and b both are.
+  - out `reached(key, n)`.
+- **Distance**: the least cost from a source to each node of a graph.
+  - in `edge(key, a, b)`: a step from a to b, of cost 1.
+  - in `weight(key, a, b, W)`: a step from a to b, of cost W.
+  - in `source(key, n)`, from the key: a node at cost 0.
+  - in `source_distance(key, n, K)`: a node at start cost K.
+  - out `distance(key, n, K)`.
+  - out `predecessor(key, b, a)`: a comes just before b on some least-cost path. Under ties, b has several.
+
+## Cells
+
+The components whose input is a set of cells.
+
+- **Connectivity**: the connected pieces of a cell set.
+  - in `node(key, P)`: the cells.
+  - in `step(Delta)`, shared, default the four cardinal steps: the steps that join two cells. To join cells that touch at a corner too, the clause gives all eight steps.
+  - out `component(key, P, Id)`: P's piece.
+  - out `adjacent(key, P, Q)`: Q is one step from P, both in the set.
+- **Flood**: the cells a walk through the set reaches from a source.
+  - in `node(key, P)`, `source(key, P)` (from the key), `step(Delta)` (shared, default the four cardinal steps).
+  - out `reached(key, P)`. A source outside `node` reaches nothing.
+- **CellDistance**: the fewest steps through the set from a source to each cell.
+  - in `node(key, P)`, `source(key, P)`, `step(Delta)` (shared, default the four cardinal steps).
+  - out `distance(key, P, K)`: K steps from the nearest source reach P. A source is at 0. A source outside `node` is at 0 and reaches nothing.
+  - out `predecessor(key, Q, P)`: P comes just before Q on some fewest-step path. Under ties, Q has several.
+- **Enclosure**: the parts of a cell set that no walk through the set reaches from the grid's edge. The walk starts at the set's cells on the grid's edge and takes the four cardinal steps.
+  - in `cell(key, P)`: the cells a walk may cross.
+  - out `enclosed(key, P, Id)`: each enclosed part under its own label.
+- **Boundary**: the cells of a set that face out of it.
+  - in `cell(key, P)`.
+  - in `dir(D)`, shared, default the four edges: the directions tested.
+  - out `exposed(key, P, D)`: no cell of the set lies one step from P toward D. Off the grid counts as no cell.
+  - out `boundary(key, P)`: P is exposed toward some direction.
+- **BoundingBox**: the least box that holds a set.
+  - in `cell(key, P)`, from the key.
+  - out `box(key, B)`.
+- **Ray**: the straight path from a source toward a direction.
+  - in `source(key, P)`: where each path starts. A source on the grid and outside `node` gives only its own row at K = 0.
+  - in `node(key, P)`: the cells a path may step onto. A path stops before its first step off them.
+  - in `dir(key, D)`, from the key: the directions.
+  - out `ray(key, P, D, K, Origin)`: P is K steps from Origin toward D. Each source is on its own path at K = 0.
+  - out `end(key, P, D, K, Origin)`: the path's last cell.
+- **Frame**: the cells of a frame of given extents.
+  - in `extent(key, A, N)`, from the key: N cells along A. An axis with no row has extent 1.
+  - out `cell(key, P)`.
+- **Division**: the frame cut into equal parts on each axis.
+  - in `cell(key, P)`: the cells to cut.
+  - in `parts(key, A, N)`: N parts along A. Or `side(key, A, K)`: parts of K cells along A. An axis with neither is one part.
+  - in `gap(key, A, G)`: G cells between each two parts along A. An axis with no row has gap 0.
+  - out `tile(key, P, P_outer, P_inner)`: P is the cell P_inner of the part at P_outer. P_outer is a cell of the frame of parts.
+  - A cell in a gap, or in a leftover shorter than a part, has no row. Where the parts and gaps don't fill an extent exactly, no cell has a row.
+- **Tiling**: a frame built from copies of an inner frame at outer positions.
+  - in `outer(key, P)`: the frame of copies.
+  - in `inner(key, P)`: the frame of one copy.
+  - in `gap(key, A, G)`: G cells between each two copies along A. An axis with no row has gap 0.
+  - out `cell(key, P_outer, P_inner, P)`: P is the cell P_inner of the copy at P_outer.
+
+## Finders
+
+The components that search one input for a structure.
+
+- **Outlines**: the rectangles drawn in a cell set.
+  - in `node(key, P)`.
+  - out `box(key, B)`: every cell of B's outline is in the set. B is at least two cells long on each axis, and its interior may hold any cells.
+- **Occurrences**: where a shape appears among valued cells.
+  - in `cell(key, P, v)`: the cells and their values.
+  - in `shape(key, P, v)`: the shape's cells and their values.
+  - in `transform(D)`, shared, default the identity: the D4 images of the shape to place.
+  - out `occurrence(key, D, P)`: P is an offset, and D is in `transform`. For every shape cell S of value v, the cell that `apply` of D to S, then `compose` with P, gives is a `cell` row of value v. P moves the D-image of the shape onto the cells.
+  - out `candidate(key, D, P)`: the same, where at least one shape cell lands on a cell of its value. Every occurrence is a candidate.
+  - Only the cells `cell` holds count.
+- **Periods**: the translations along an axis that leave valued cells unchanged.
+  - in `cell(key, P, v)`.
+  - out `period(key, A, K)`: a move of K along A takes every cell onto a cell of the same value, wherever both cells exist. K runs from 1 to one less than the extent. A K with no pair of cells to compare is a period.
+  - out `fundamental_period(key, A, K)`: the least period along A that compares at least one pair of cells.
+  - out `approximate_period(key, A, K)`: a period read through damage: the line pairs the move breaks do not outnumber those it keeps. Every period is one.
+- **ExtentDivisions**: the equal divisions a frame's extent admits.
+  - in `frame(key, P)`: the frame's cells.
+  - out `division(key, A, N, K, G)`: along A, N parts of K cells with G cells between each two fill the extent exactly. N is 2 or more and K is 1 or more. G can be less than 0, down to 1 less K: then two neighboring parts share that many lines.
+- **Agreement**: two valued cell sets compared under D4 transforms.
+  - in `source(key, P, v)`, `target(key, P, v)`.
+  - in `transform(D)`, shared, default all eight.
+  - out `mismatch(key, D)`: D is in `transform`, and for some source cell P, the cell `apply` of D to P gives is not a target cell of P's value: no target cell is there, or one of another value.
+  - out `conflict(key, D)`: for some source cell, its image is a target cell of another value. A missing target cell is no conflict.
+  - A D in `transform` with no `mismatch` row takes the source into the target. Target cells that are no source cell's image are not tested.
+- **Wallpaper**: the symmetries of a periodic valued pattern.
+  - in `transform(D)`, shared, no default: the D4 elements to test.
+  - in `cell(key, P, v)`: the pattern's cells.
+  - in `grid(key, P)`: the frame's cells.
+  - in `period(key, A, K)`: the pattern's period along A, at most one per axis, more than 0. An axis with no row has none. A key with two periods on an axis, or a period of 0, has no output.
+  - out `symmetry(key, D, Delta)`: D, then the shift Delta, takes some cell onto another cell and no cell onto a cell of another value. Cells outside `grid` are ignored. One D has a row for each shift that differs by a multiple of the period and lands in the frame. Delta is 0 on an axis with no period. So the identity has a row only where a period exists.
+  - out `action(key, P, Q)`: a symmetry or a period move takes the frame cell P onto the frame cell Q.
+
+## Nested tasks
+
+- **DemonstrationConsistency**: the rules a demonstrated pair confirms. An input of a nested task holds pairs that demonstrate a rule, and an object that the same rule completes.
+  - in `value(key, o, i, v)`: object o holds v at index i.
+  - in `prediction(key, c, o, i, v)`: rule c predicts that the object paired with o holds v at i.
+  - in `demonstration(key, o, o2)`: a demonstrated pair, o and its partner o2.
+  - out `consistent(key, c, o, o2)`: c's prediction for o is o2. `counterexample(key, c, o, o2)`: it is not.
+  - A prediction holds every index of the object it predicts. An index it leaves out counts as one that object lacks.
+  - out `confirmed(key, c)`: c predicts every demonstrated pair. `unconfirmed(key, c)`: it fails some pair. A rule that predicts nothing for any object is in neither.
+
+## Proposers
+
+A DET that names a proposer takes its values from the task, and has the proposer's columns.
+
+- A proposer of one column, and a domain proposer, gives the DET several values. The engine keeps those under which `&output` gives every train output.
+- Any other proposer of several columns gives one value: its whole table. That table can hold several rows for one value of a column, such as one `C_from` with two `C_to`.
+- "Every input" counts the test inputs too. "Every train output" counts the train outputs only.
+
+Domains: each gives every value of its column's type that the grids it reads admit.
+
+- `AxisDomain(A)`: each axis, V and H.
+- `DirDomain(D)`: each edge, T B L R.
+- `DiagDirDomain(D)`: each corner, TL TR BL BR.
+- `DiagAxisDomain(Da)`: each diagonal axis, DG and AD.
+- `D4Domain(D)`: each of the eight symmetries.
+- `SenseDomain(S)`: CW and CC.
+- `SymDomain(S)`: each symmetry group that `Sym` lists.
+- `ColorDomain(C)`: each color of the grids it reads.
+- `NumberDomain(N)`: each number from 0 to the largest extent of the grids it reads.
+- `ColorColorDomain(C_from, C_to)`, `DiagDirAxisDomain(D, A)`, `NumberDirDomain(N, D)`: each pair of a value of the first column's domain and a value of the second's.
+- In a DET, `(DET &a AxisDomain)`, a domain reads every grid of the task: the train inputs, the train outputs and the test inputs. The DET holds one value, a single row, at each assignment. `&a` is one axis, not the set of axes: the engine tries each value and keeps those under which `&output` gives every train output. A pair domain's DET holds one pair at each assignment.
+- In a RULE, `(RULE &a AxisDomain)`, a domain reads the input of each example alone. The relation holds every value at once, one row each, at every example: `&a` is V and H. `ColorDomain` gives the colors of that input, and `NumberDomain` the numbers up to that input's largest extent.
+- A clause names a domain as its proposer. A body atom can't read one: write `(RULE &a AxisDomain)`, then read `&a`.
+
+Colors:
+
+- `DominantColor(C)`: a color with the most cells in every input.
+- `RarestColor(C)`: a color with the fewest cells in every input.
+- `SharedColor(C)`: a color in every input.
+- `OutNewColor(C)`: a color in every train output and no input.
+- `AnyOutNewColor(C)`: a color in some train output and no input.
+- `VanishedColor(C)`: a color in every input and no train output.
+- `ChangedColor(C)`: a color that every one of its cells loses in the output.
+- `UnchangedColor(C)`: a color that every one of its cells keeps in the output.
+- These two compare each input cell with the output cell at the same place. Where a pair's input and output differ in size, a cell outside the smaller grid keeps no color.
+- `ChangedPairs(C_from, C_to)`: a color map: each cell that changes gives its input color and its output color.
+- `VanishedNewPairs(C_from, C_to)`: a color map read off whole examples: each input color an output lacks, with each output color its input lacks.
+- `CountRankAsc(C, R)`, `CountRankDesc(C, R)`: the colors of the inputs ranked by cell count: R colors have fewer cells (Asc) or more cells (Desc) than C. Ties share a rank, and a row is kept only where every input gives it.
+
+Sizes:
+
+- `ConstInDim(N)`, `ConstOutDim(N)`: an extent of every input, or of every train output. `ConstInDimAxis(A, N)`, `ConstOutDimAxis(A, N)`: the same, with its axis.
+- `ScaleRatio(K)`, `ScaleRatioAxis(A, K)`: along some axis, each output extent is K times its input extent. K can be 1.
+- `DivisorRatio(K)`, `DivisorRatioAxis(A, K)`: along some axis, each input extent is K times its output extent.
+- `DimDiff(D)`: along some axis, each output extent differs from its input extent by D, more or less.
+- `Period(K)`: on each axis, the least move under which every input repeats. An axis with no common period gives none.
+- `TileCount(N)`, `TileDim(D)`: N tiles, or tiles of D cells, with a gap of 0 to 3 between each two, fill an axis of every input. N is 2 to 8. The two are found apart, so an N and a D need not come from one tiling.
+- `SepTileCount(N)`, `SepTileDim(D)`, `SepThickness(G)`: along some axis, N parts of D cells with G lines between each two fill the axis, and each line in a gap holds one color, the same in every input. N is 2 to 8, and G is 1 to 3. The lines are rows along V, columns along H.
+- `SepTileCountAxis(A, N)`: N with its axis, and also (the other axis, 1) where no input has such a tiling on it.
+
+Arrangements:
+
+- `TileD4(Pt, T)`: in every pair, the output is a whole number of input-sized copies along each axis, and is not the input's size. Pt is a copy's place in the frame of copies, and the copy at Pt is the input under T. A T that swaps the axes is tried only for a square input. A Pt has several rows where the input is symmetric.
+- `PanelCombine(Id, C_out, P, C)`: the input is two panels of the output's size along one axis, with any number of separator lines between. Each output cell has the cell at the same place in each panel. An entry Id has two rows, one per panel, that share C_out: P is the panel's place as a cell of the frame of two parts along that axis, C is the color of that panel's cell, and C_out is the output cell's color. There is one entry per combination of the two panel colors and the output color in the train pairs.

@@ -123,6 +123,11 @@ impl ProgramTypes {
         self.columns.get(relation).map(|columns| &columns[..])
     }
 
+    /// Every typed graph relation, including output ports of shared nodes.
+    pub fn relations(&self) -> impl Iterator<Item = (&GraphRelation, &[ValueType])> + '_ {
+        self.columns.iter().map(|(relation, columns)| (relation, &columns[..]))
+    }
+
     /// Sets the type of each column of `relation`.
     pub(crate) fn insert_columns(&mut self, relation: GraphRelation, columns: Box<[ValueType]>) {
         self.columns.insert(relation, columns);

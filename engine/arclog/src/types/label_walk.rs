@@ -103,7 +103,19 @@ pub(crate) fn label_type_cached(
     key: Option<&crate::program::Body>,
     cache: &WalkCache,
 ) -> Result<Option<ValueType>, LabelFault> {
-    let walk = |sites| LabelWalk { label, site_type, asked: vec![label], key, cache, sites };
+    label_type_mode(body,label,site_type,key,cache,false)
+}
+
+/// Storage type of a branch-local binding. A branch producing no value of
+/// the label contributes no value type, rather than erasing the types of
+/// values produced by other branches. This pass does not infer a domain
+/// restriction for a label that passes through an unconstrained branch.
+pub(crate) fn label_binding_type_cached(body:&crate::program::Body,label:crate::program::LabelId,site_type:&dyn Fn(&crate::program::Atom,&[crate::program::ColumnName])->Option<ValueType>,key:Option<&crate::program::Body>,cache:&WalkCache)->Result<Option<ValueType>,LabelFault> {
+    label_type_mode(body,label,site_type,key,cache,true)
+}
+
+fn label_type_mode(body:&crate::program::Body,label:crate::program::LabelId,site_type:&dyn Fn(&crate::program::Atom,&[crate::program::ColumnName])->Option<ValueType>,key:Option<&crate::program::Body>,cache:&WalkCache,binding_types:bool)->Result<Option<ValueType>,LabelFault> {
+    let walk = |sites| LabelWalk { label, site_type, asked: vec![label], key, cache, sites, binding_types };
     let all = walk(Sites::All).body_type(body, &[], None, &Outside::Sites(None))?;
     if !cache.holds_negated_atom(body) && !key.is_some_and(|key| cache.holds_negated_atom(key)) {
         return Ok(all);
@@ -286,6 +298,7 @@ struct LabelWalk<'a> {
     key: Option<&'a crate::program::Body>,
     cache: &'a WalkCache,
     sites: Sites,
+    binding_types:bool,
 }
 
 /// The sites of atoms that a walk reads.
@@ -368,7 +381,7 @@ impl LabelWalk<'_> {
     fn key_type(&self, other: crate::program::LabelId) -> Result<Option<ValueType>, LabelFault> {
         let Some(key) = self.key else { return Ok(None) };
         let asked = self.asked.iter().copied().chain(std::iter::once(other)).collect();
-        let walk = LabelWalk { label: other, site_type: self.site_type, asked, key: None, cache: self.cache, sites: self.sites };
+        let walk = LabelWalk { label: other, site_type: self.site_type, asked, key: None, cache: self.cache, sites: self.sites,binding_types:self.binding_types };
         walk.list_type(key, &[], &[other], None, None, &Outside::Unchecked)
     }
 
@@ -376,7 +389,7 @@ impl LabelWalk<'_> {
     /// around it, outside the conjunct of each that holds the inner list.
     fn around_type(&self, other: crate::program::LabelId, around: &Around<'_>) -> Result<Option<ValueType>, LabelFault> {
         let asked = self.asked.iter().copied().chain(std::iter::once(other)).collect();
-        let walk = LabelWalk { label: other, site_type: self.site_type, asked, key: self.key, cache: self.cache, sites: self.sites };
+        let walk = LabelWalk { label: other, site_type: self.site_type, asked, key: self.key, cache: self.cache, sites: self.sites,binding_types:self.binding_types };
         let mut ty = None;
         let mut frame = Some(around);
         while let Some(list) = frame {
@@ -454,7 +467,7 @@ impl LabelWalk<'_> {
                     .iter()
                     .filter(|branch| (!made_here || holds(branch.value())) && !self.makes_only_by_zero(branch.value(), class));
                 let inside = outside.of_parts(made_here);
-                join_branches(taking.map(|branch| self.branch_type(branch.value(), pairs, here, &inside)).collect::<Result<Vec<_>, _>>()?)
+                join_branches(taking.map(|branch| self.branch_type(branch.value(), pairs, here, &inside)).collect::<Result<Vec<_>, _>>()?,self.binding_types)
             }
             Conjunct::If { test, then, otherwise } => {
                 let inside = outside.of_parts(self.fresh_in_any(&[test.value(), then.value(), otherwise.value()]));
@@ -464,7 +477,7 @@ impl LabelWalk<'_> {
                     return meet(test_type, then_type);
                 }
                 let otherwise_type = (!self.makes_only_by_zero(otherwise.value(), class)).then(|| self.branch_type(otherwise.value(), pairs, here, &inside)).transpose()?;
-                meet(test_type, join_branches([then_type].into_iter().chain(otherwise_type))?)
+                meet(test_type, join_branches([then_type].into_iter().chain(otherwise_type),self.binding_types)?)
             }
             Conjunct::All { domain, body } => {
                 let inside = outside.of_parts(self.fresh_in_any(&[domain.value(), body.value()]));
@@ -635,10 +648,10 @@ impl ZeroMade {
 
 /// The join of the types that branches give one label, or `None` where a
 /// branch gives it none.
-fn join_branches(branches: impl IntoIterator<Item = Option<ValueType>>) -> Result<Option<ValueType>, LabelFault> {
+fn join_branches(branches: impl IntoIterator<Item = Option<ValueType>>,binding_types:bool) -> Result<Option<ValueType>, LabelFault> {
     let mut joined: Option<ValueType> = None;
     for branch in branches {
-        let Some(ty) = branch else { return Ok(None) };
+        let Some(ty) = branch else { if binding_types {continue;} else {return Ok(None);} };
         joined = Some(match joined {
             None => ty,
             Some(prev) => prev.join(&ty).ok_or_else(|| LabelFault::NoJoin(prev.clone(), ty.clone()))?,

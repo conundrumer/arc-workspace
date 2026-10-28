@@ -503,7 +503,7 @@ fn graph_relation(program: &CheckedProgram, registry: &Registry, form: &NodePath
                 [OutputStep::Port(port)] => Some(port),
                 _ => None,
             };
-            name.of == OutputOwner::Instance(instance.clone()) && component.zip(port).is_some_and(|(component, port)| component.outputs.iter().any(|output| output.name == *port))
+            name.of == OutputOwner::Instance(instance.clone()) && component.zip(port).is_some_and(|(component, port)| component.relation_ports(&component.inputs.iter().map(|i|&i.port.name).collect::<Vec<_>>()).any(|output| output.name == *port))
         }
         _ => false,
     })?;
@@ -577,3 +577,7 @@ fn flatten(rows: &Assigned<Vec<RelationValue>>) -> Assigned<BodyValue> {
     let at = rows.at.iter().flat_map(|(assigned, models): &(Vec<Assignment>, _)| models.iter().map(move |model| (assigned.clone(), BodyValue(model.clone())))).collect();
     Assigned { at, stop: rows.stop.clone() }
 }
+
+#[path = "study_pair.rs"] pub mod study_pair;
+#[path = "study_render.rs"] pub mod study_render;
+#[path = "body_tables.rs"] pub(crate) mod body_tables;

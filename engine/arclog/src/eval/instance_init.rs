@@ -43,8 +43,8 @@ use crate::types::{GraphRelation, ValueType};
 ///
 /// The key clause's rows are the groups, and an instance with no key
 /// clause has one group, with no key column. A type parameter onto which no
-/// place of the form projects is `Unit`, and each row of an input or an
-/// output holds the one `Unit` term at each column of that parameter. A key
+/// place of the form projects and that has no bound is an empty record,
+/// contributing zero positions to every input and output row. A key
 /// group whose inputs lie outside the construction's domain makes each
 /// output undefined. A
 /// component whose inputs read its outputs, a task-structure component and

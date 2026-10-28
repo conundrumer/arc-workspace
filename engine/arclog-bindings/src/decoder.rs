@@ -149,7 +149,7 @@ impl PyDecoder {
     }
 
     /// A second decode from the same state, which shares this one's caches.
-    fn fork(&self) -> PyDecoder {
+    pub(crate) fn fork(&self) -> PyDecoder {
         PyDecoder { decoder: Some(self.decoder().fork()), data: Arc::clone(&self.data) }
     }
 

@@ -269,6 +269,7 @@ impl PyCaseTables {
         e.ints("extent_offset", &c.extent_offset)?;
         e.stop("extent_stop", &c.extent_stop)?;
         e.list("extent_fault", &c.extent_fault)?;
+        e.list("extent_status", &c.extent_status)?;
         let a = Part::new(py, "assigned", &dtypes);
         let c = &columns.assigned;
         a.ints("entry", &c.entry)?;
@@ -288,6 +289,7 @@ impl PyCaseTables {
         r.ints("rows", &c.rows)?;
         r.ints("offset", &c.offset)?;
         r.ints("extent_offset", &c.extent_offset)?;
+        r.list("extent_status", &c.extent_status)?;
         let f = Part::new(py, "flows", &dtypes);
         let c = &columns.flows;
         f.ints("table", &c.table)?;

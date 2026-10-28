@@ -40,12 +40,13 @@ mod batch;
 pub mod corpus;
 mod interface;
 pub mod replay;
+pub mod program_read;
 mod state;
 mod prefix_key;
 mod projections;
 
 pub use batch::step_batch;
-pub use interface::{derived_at, open_clause, relation_dets, walked_dets, Assigned, Consistency, OpenClause, Step, SubBody};
+pub use interface::{BodyWidening, derived_at, open_clause, relation_dets, walked_dets, Assigned, Consistency, OpenClause, Step, SubBody};
 pub use projections::{projections, Projection, Projections};
 pub use state::State;
 

@@ -277,6 +277,15 @@ impl<'a> Builder<'a> {
             port_columns.insert(port.clone(), listing.columns());
             self.relate(*node, &path, Some(Arc::from([OutputStep::Port(port.clone())])), listing);
         }
+        if component.reads_outputs() {
+            let node=inputs.first().map(|(_,node)|*node).or_else(||outputs.first().map(|(_,node)|*node)).expect("recursive instance node");
+            for input in &written {
+                if component.outputs.iter().any(|p|p.name==input.name) {continue;}
+                let port=&component.inputs.iter().find(|p|p.port.name==input.name).expect("checked input port").port;
+                let listing=form_columns::input_columns(port,&bindings,keyed,instance,input);
+                self.relate(node,&path,Some(Arc::from([OutputStep::Port(input.name.clone())])),listing);
+            }
+        }
         let written: Vec<&PortName> = written.iter().map(|input| &input.name).collect();
         for port in component.relation_ports(&written) {
             let node = outputs.iter().chain(&inputs).find(|(name, _)| *name == port.name).map(|(_, node)| *node);

@@ -491,13 +491,29 @@ impl<'p> Walk<'p> {
                 for (_, argument) in lib.arguments.0.iter().filter(|(at, _)| at.0 == position) {
                     let Argument::Variable(variable) = argument else { continue };
                     reads_variable = true;
-                    let sources = self.sources(*variable, alt, visiting);
-                    bound &= !sources.is_empty();
                     let offset = alt.variables.get(usize::from(variable.0)).is_some_and(|info| info.ty == ValueType::Offset);
-                    from.extend(sources.into_iter().map(|source| {
-                        let source = source.computed().framed(rule_at.as_ref(), named);
-                        if offset { source.with_frames(Vec::new()) } else { source }
-                    }));
+                    let mut any = false;
+                    if !visiting.contains(variable) {
+                        for chosen in alt.expand(*variable) {
+                            let sources = self.sources_in(*variable, &chosen, visiting);
+                            any |= !sources.is_empty();
+                            // A value can have both frame-giving and value-only
+                            // lineage (relative's Base and X, for example).
+                            // Inheriting its frame does not turn each value-only
+                            // contribution into another, unknown reference frame.
+                            // Keep alternatives separate: an unframed branch is
+                            // still unknown even if another branch has a frame.
+                            let inherits_known = named && rule.as_ref().is_some_and(|r|!r.makes)
+                                && sources.iter().any(|s|!s.frames.is_empty());
+                            from.extend(sources.into_iter().map(|source| {
+                                let empty_contribution = inherits_known && source.frames.is_empty();
+                                let source = if empty_contribution {source.computed()}
+                                    else {source.computed().framed(rule_at.as_ref(), named)};
+                                if offset { source.with_frames(Vec::new()) } else { source }
+                            }));
+                        }
+                    }
+                    bound &= any;
                 }
             }
             if bound && reads_variable {
@@ -601,6 +617,14 @@ struct Flows<'p> {
 pub fn column_flows(checked: &CheckedProgram, node: GraphNodeIndex, output: Option<&[OutputStep]>, types: &[ValueType], registry: &Registry) -> Vec<Vec<ColumnSource>> {
     let flows = Flows { checked, program: &checked.program, registry };
     flows.flows_visiting(node, output, types.len(), types, &mut Vec::new())
+}
+
+/// Column provenance of a checked body query in the original program.
+/// No synthetic public relation is needed to preserve its bindings/types.
+pub fn body_column_flows(checked:&CheckedProgram,clause:&ClauseIr,paths:&IrPaths,registry:&Registry)->Vec<Vec<ColumnSource>> {
+    let flows=Flows {checked,program:&checked.program,registry};
+    let walk=Walk {flows:&flows,visiting:&[]};
+    clause.columns.iter().map(|v|walk.sources(*v,&Alt::of(clause,paths),&mut Vec::new())).collect()
 }
 
 /// What a form's column gives to the row positions of its relation.
@@ -854,14 +878,15 @@ impl<'p> Flows<'p> {
             let mut known = true;
             for ty in columns {
                 match ty {
-                    ColumnType::Fixed(fixed) => input_types.push(fixed.clone()),
+                    ColumnType::Fixed(fixed) => input_types.push(vec![fixed.clone()]),
                     ColumnType::Parameter(_) => {
                         let Some((_, _, own)) = at.iter().find(|(is_key, declared, _)| !is_key && *declared == Some(ty)) else {
                             known = false;
                             break;
                         };
-                        targets.extend(own.clone().map(|position| (position, input_types.len() + position - own.start)));
-                        input_types.extend(types[own.clone()].iter().cloned());
+                        let offset = input_types.iter().map(Vec::len).sum::<usize>();
+                        targets.extend(own.clone().map(|position| (position, offset + position - own.start)));
+                        input_types.push(types[own.clone()].to_vec());
                     }
                     _ => {
                         known = false;
@@ -872,7 +897,7 @@ impl<'p> Flows<'p> {
             if !known {
                 continue;
             }
-            let Some(positions) = key_fill(&types[key.clone()], &input_types) else { continue };
+            let Some(positions) = key_fill(&types[key.clone()], input_types.iter().map(Vec::as_slice)) else { continue };
             fills.push(Fill { input: *input, key_start: key.start, positions, targets });
         }
         fills

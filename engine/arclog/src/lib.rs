@@ -88,6 +88,8 @@
 
 pub mod algebra;
 pub mod check;
+pub mod study;
+pub mod mutation;
 pub mod constraints;
 pub mod decode;
 pub mod diagnostic;
@@ -111,3 +113,5 @@ pub mod terms;
 pub mod trace;
 pub mod types;
 pub mod write;
+
+pub mod study_clause;

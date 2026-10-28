@@ -10,6 +10,9 @@
 //! `arclog-bindings`, which depends on nothing here.
 
 mod case_tables;
+mod study_pair;
+mod study_filters;
+mod study_render;
 mod corpus_tables;
 mod orientation;
 mod record;
@@ -22,6 +25,9 @@ use pyo3::prelude::*;
 /// Registers the class and the functions of this crate.
 pub fn register(names: &Names<'_, '_>) -> PyResult<()> {
     let module = names.module();
+    study_pair::register(names)?;
+    study_filters::register(names)?;
+    study_render::register(names)?;
     names.class::<case_tables::PyCaseTables>()?;
     names.function(wrap_pyfunction!(corpus_tables::corpus_tables, module)?)?;
     names.function(wrap_pyfunction!(stream_tables::stream_tables, module)?)?;

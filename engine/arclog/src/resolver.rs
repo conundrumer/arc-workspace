@@ -670,6 +670,13 @@ pub fn resolve_last(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, reg
     build::resolve_last(earlier, program, registry)
 }
 
+/// Whether a complete-program grammar must insert the lifted Example
+/// column at an open relation. Runs only binding and side analysis; the
+/// completed AST still goes through the full resolver and checker.
+pub(crate) fn grammar_reads_example_column(program: &Node<Program>, read: &NodePath, registry: &Registry) -> bool {
+    build::reads_example_column(program, read, registry)
+}
+
 /// A case of a solver with its resolution and the diagnostics of that
 /// resolution.
 #[derive(Debug)]

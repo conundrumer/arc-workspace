@@ -143,7 +143,19 @@ impl<'e, 'a> Driver<'e, 'a> {
             },
             ParameterSource::Determined(assigned) => {
                 return match assigned.get(name) {
-                    Some(rows) => Ok(RelationValue::Rows(rows.clone())),
+                    Some(rows) => {
+                        // Held interventions use this program's checked row
+                        // schema. A mutation can remove a globally unused
+                        // column, so an original assignment is not necessarily
+                        // a value of the mutant parameter. Never silently zip
+                        // or truncate its cells into that new schema.
+                        let types = evaluation.program.types.columns(relation)
+                            .ok_or_else(|| fault("the parameter's columns have no types".into()))?;
+                        if usize::from(rows.arity()) != types.len() {
+                            return Err(fault(format!("determined parameter {name:?} has native arity {}, but its checked schema has {} columns", rows.arity(), types.len())));
+                        }
+                        Ok(RelationValue::Rows(rows.clone()))
+                    },
                     None => self.one_value(relation),
                 };
             }
@@ -746,6 +758,18 @@ impl FormBodies<'_> {
         let Ok(value) = driver.holding_stops::<Infallible>(&request, || Ok(driver.join(form, clause, &inputs)));
         cache::store(session, &request, &value);
         Ok(value)
+    }
+
+    /// A state-local body query at explicit key/cursor bindings. These
+    /// bindings are part of the request, so it uses the bound native join
+    /// rather than a cache key for an unbound body.
+    pub(super) fn bound_relation(&self,form:&NodePath,clause:&ClauseIr,example:Option<Example>,bound:&[(ir::Variable,crate::terms::TermId)])->Outcome<RelationValue> {
+        let inputs=match self.driver.inputs(clause,scope_at(example),example)? {Ok(inputs)=>inputs,Err(value)=>return Ok(value)};
+        let evaluation=self.driver.evaluation;
+        let order=plan::variable_order(clause,&join::sizes(&inputs),&bound.iter().map(|(v,_)|*v).collect::<Vec<_>>());
+        let mut budget=Budget::new(evaluation.limits,evaluation.session);
+        let value=match join::join_at(clause,&order,&inputs,evaluation.registry,bound,&mut budget) {Ok(rows)=>RelationValue::Rows(Arc::new(rows)),Err(bound)=>RelationValue::Stopped(Stop {bound,form:form.clone()})};
+        record_whole(&budget,[&value]);Ok(value)
     }
 
     /// The value the result cache holds for `request`, made at `form`, or,

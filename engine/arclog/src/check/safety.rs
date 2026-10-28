@@ -154,7 +154,7 @@ impl Fault {
 
 /// One body of a form: a clause's, a key clause's, an instance input's, or
 /// one of a `CHOOSE` or a `RIGID_DET` form, with what its context gives it.
-pub(super) struct FormBody<'a> {
+pub(crate) struct FormBody<'a> {
     /// The body's path relative to the top-level form.
     pub at: NodePath,
     pub body: &'a Node<Body>,
@@ -175,7 +175,7 @@ pub(super) struct FormBody<'a> {
 }
 
 /// Where a body stands in the scope of its form.
-pub(super) enum BodyPlace<'a> {
+pub(crate) enum BodyPlace<'a> {
     /// In the form's own list, with the form's other bodies of this place.
     List,
     /// In a branch of its own, as a `never` clause.
@@ -198,7 +198,7 @@ impl FormBody<'_> {
     /// The labels that stand outside the body in its context: those
     /// [`FormBody::given`], [`FormBody::columns`] and [`FormBody::fields`]
     /// hold, and the labels of the input's head.
-    fn outside(&self) -> StableHashSet<LabelId> {
+    pub(crate) fn outside(&self) -> StableHashSet<LabelId> {
         let mut outside: StableHashSet<LabelId> = self.given.iter().chain(&self.columns).chain(&self.fields).copied().collect();
         if let Some((input, at)) = self.head() {
             each_head_use(input, at, &mut |_, use_| outside.extend(use_label(use_)));
@@ -209,7 +209,7 @@ impl FormBody<'_> {
 
 /// Each body of `form` and of each form of a `DEMO_RULE` it holds, in the
 /// order of their paths.
-pub(super) fn form_bodies(form: &Form) -> Vec<FormBody<'_>> {
+pub(crate) fn form_bodies(form: &Form) -> Vec<FormBody<'_>> {
     let mut out = Vec::new();
     for (at, node) in forms_within(form) {
         let fields = match at.0.split_last() {

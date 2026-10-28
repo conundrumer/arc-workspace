@@ -55,6 +55,13 @@ impl PyDecodeSettings {
 
 #[pymethods]
 impl PyDecodeSettings {
+    /// Corpus verification has finite supplied programs and no wall-clock
+    /// search deadline. Its verdict must not depend on competing machine load.
+    #[staticmethod]
+    fn corpus() -> Self {
+        Self::of(&DecodeSettings::default())
+    }
+
     #[new]
     #[pyo3(signature = (*, proposer_tokens=None, type_domain_proposers=None, relations=None, columns=None, labels=None, deadline_seconds=None, projection_cap=None, table_work_cap=None, rule_tests=None))]
     fn new(

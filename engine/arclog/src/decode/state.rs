@@ -1667,6 +1667,14 @@ impl State {
                     ChooseStage::NeverOpen => value.never = never.chain([open_body(child)]).collect(),
                     ChooseStage::For | ChooseStage::Never | ChooseStage::NeverEnd => value.never = never.collect(),
                 }
+                // Once FROM is complete its columns are in scope in NEVER,
+                // including while NEVER is still a prefix. The full form
+                // has these columns too; omitting them here falsely refuses
+                // a valid join to a candidate label.
+                if choose.from.is_some() {
+                    let rows = value.rows.as_ref().map_or(0, |rows| rows.columns.len());
+                    value.candidate_columns = slot_columns(made_labels(value.from.value()), rows);
+                }
                 value.from_inside_for = inside_for(value.rows.as_ref(), value.from.value());
                 Built::Form(Form::Choose(Node::new(value)))
             }

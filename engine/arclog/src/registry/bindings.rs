@@ -48,7 +48,7 @@ pub(crate) fn binding_sites<'a>(init: &'a crate::program::Instance, inputs: &'a 
 }
 
 /// Each of `parameters` onto which none of `sites` projects, which is its
-/// bound, or `Unit` where it has none (`docs/arclog/arclog.md#instance`).
+/// bound, or an empty record where it has none (`docs/arclog/arclog.md#instance`).
 pub(crate) fn unbound<'p>(parameters: &'p [TypeParameter], sites: &[ParameterSites<'_>]) -> Vec<&'p TypeParameter> {
     parameters.iter().filter(|parameter| sites.iter().all(|sites| sites.parameter != *parameter)).collect()
 }
@@ -75,19 +75,25 @@ fn parameter_column<'p>(port: &'p InputPort, column: &ColumnName) -> Option<&'p 
 }
 
 
-/// The position in the key of each of `types`, the row-position types of a
-/// `from-key` input other than the key's, where each takes the one key
-/// position among `key_types` of its type; none where one has none or
-/// several.
-pub fn key_fill(key_types: &[ValueType], types: &[ValueType]) -> Option<Vec<usize>> {
-    types
-        .iter()
-        .map(|ty| {
+/// The key position of each row field of the logical non-key `columns`
+/// of a `from-key` input. Each field needs exactly one key label of its
+/// type. A logical column with no fields has no key label to supply it,
+/// and cannot be filled. This differs from a declared input with no
+/// non-key columns, whose successful fill is the empty tuple.
+///
+/// Keep column boundaries until matching: flattening first confuses an
+/// unbound parameter `[[]]` with a zero-column input `[]` and invents rows.
+pub fn key_fill<'a>(key_types: &[ValueType], columns: impl IntoIterator<Item=&'a [ValueType]>) -> Option<Vec<usize>> {
+    let mut positions = Vec::new();
+    for fields in columns {
+        let (first, rest) = fields.split_first()?;
+        for ty in std::iter::once(first).chain(rest) {
             let mut matching = key_types.iter().enumerate().filter(|(_, key)| *key == ty).map(|(position, _)| position);
             match (matching.next(), matching.next()) {
-                (Some(position), None) => Some(position),
-                _ => None,
+                (Some(position), None) => positions.push(position),
+                _ => return None,
             }
-        })
-        .collect()
+        }
+    }
+    Some(positions)
 }

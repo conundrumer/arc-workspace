@@ -289,6 +289,9 @@ pub struct EntryColumns {
     /// its form, as `fault` spells a fault, or the reason the extents do not
     /// derive them. `None` otherwise.
     pub extent_fault: Vec<Option<String>>,
+    /// [entry][native sorted row][extent_columns index]: 0=no_grid,
+    /// 1=resolved (positive extent pair), 2=unresolved. No renderer inference.
+    pub extent_status: Vec<Vec<Vec<u8>>>,
 }
 
 /// One row for each `DET` of each entry's assignment, in the order of the
@@ -331,6 +334,7 @@ pub struct ProjectionRowColumns {
     /// projects; -1 where the row is not defined, none of the projection's
     /// columns is among them, or the entry's extents stopped.
     pub extent_offset: Vec<i64>,
+    pub extent_status: Vec<Vec<Vec<u8>>>,
 }
 
 /// One row for each source of each column of a table, in the order of the
@@ -409,6 +413,45 @@ impl CaseColumns {
 /// give; with `None` they give the decoded names.
 pub fn case_columns(evidence: &[Table], tables: &[(usize, Table)], train: usize, labels: Option<&StreamLabels>) -> CaseColumns {
     fold(evidence, tables, None, train, labels).0
+}
+
+/// The exact column fold at a completed program prefix. Cloning preserves
+/// row-run interning, so appending produces the same buffers as case_columns.
+#[derive(Clone)]
+pub struct CaseColumnPrefix {
+    columns: CaseColumns,
+    names: TableNames,
+    runs: Runs,
+    count: usize,
+}
+impl CaseColumnPrefix {
+    pub fn new(evidence:&[Table],tables:&[(usize,Table)],train:usize)->Self {
+        let mut held=Self {columns:CaseColumns::default(),names:Vec::new(),runs:Runs::default(),count:0};
+        push_tables(&mut held.columns,&mut held.names,&mut held.runs,0,evidence.iter().map(|table|(0,table)),train,None);
+        held.count=evidence.len();
+        held.append(tables,train);
+        // Pointer memoization serves one packing operation only. Retaining it
+        // in a reusable fold would also retain each relation's native indexes.
+        held.runs.1=StableHashMap::default();
+        held
+    }
+    fn append(&mut self,tables:&[(usize,Table)],train:usize) {
+        push_tables(&mut self.columns,&mut self.names,&mut self.runs,self.count,tables.iter().map(|(token,table)|(*token,table)),train,None);
+        self.count+=tables.len();
+    }
+    pub fn finish(&self,tables:&[(usize,Table)],train:usize)->CaseColumns {
+        self.clone().into_finished(tables,train)
+    }
+    pub fn into_finished(mut self,tables:&[(usize,Table)],train:usize)->CaseColumns {
+        self.append(tables,train);self.columns
+    }
+    /// Owned capacities, including nested strings, table names, and the
+    /// run-interning hash table. The fold holds no native relation Arcs.
+    pub fn retained_bytes(&self)->usize {
+        std::mem::size_of::<Self>()+self.columns.heap_bytes()+self.names.heap_bytes()
+            +self.runs.0.capacity()*2*std::mem::size_of::<((u64,usize,StableHash),Vec<usize>)>()
+            +self.runs.0.values().map(HeapBytes::heap_bytes).sum::<usize>()
+    }
 }
 
 /// The columns of the tables of a stream that shares its first `tokens`
@@ -587,14 +630,19 @@ fn push_cells(out: &mut Vec<i32>, id: TermId, ty: &ValueType) {
 /// The runs written to the `values` of a case, by their count of rows, their
 /// count of cells and the hash of their cells: the offsets of the runs with
 /// those.
-#[derive(Default)]
-struct Runs(StableHashMap<(u64, usize, StableHash), Vec<usize>>);
+#[derive(Clone, Default)]
+struct Runs(
+    StableHashMap<(u64, usize, StableHash), Vec<usize>>,
+    // Retain the Arc to make allocation identity stable across prefix clones.
+    StableHashMap<(usize, Vec<ValueType>), (Arc<Relation>, u64, Arc<[usize]>)>,
+);
 
 /// The cells of the rows of `rows`, of columns of `types`, in the order of
 /// [`each_row`] ([`row_width`] cells for each row), and the places of the rows
 /// in that order, sorted by their cells, rows of equal cells in the order of
 /// [`each_row`].
 fn sorted_rows(rows: &Relation, types: &[ValueType]) -> (Vec<i32>, Vec<usize>) {
+    assert_eq!(usize::from(rows.arity()), types.len(), "native relation arity differs from its packed schema");
     let width = row_width(types) as usize;
     let count = usize::try_from(rows.len()).expect("a count of rows within a usize");
     let mut written = Vec::with_capacity(count.saturating_mul(width));
@@ -634,7 +682,11 @@ fn push_run(values: &mut Vec<i32>, runs: &mut Runs, count: u64, cells: Vec<i32>)
 /// The count of rows, the offset of the run of the rows of `rows`, of
 /// columns of `types`, in the order of their cells, as [`push_run`] places it,
 /// and the places of the rows in that order, as [`sorted_rows`] gives them.
-fn push_rows(values: &mut Vec<i32>, runs: &mut Runs, rows: &Relation, types: &[ValueType]) -> (u64, u64, Vec<usize>) {
+fn push_rows(values: &mut Vec<i32>, runs: &mut Runs, rows: &Arc<Relation>, types: &[ValueType]) -> (u64, u64, Arc<[usize]>) {
+    let key=(Arc::as_ptr(rows) as usize,types.to_vec());
+    if let Some((_,offset,order))=runs.1.get(&key) {
+        return (order.len() as u64,*offset,Arc::clone(order));
+    }
     let (written, order) = sorted_rows(rows, types);
     let width = row_width(types) as usize;
     let count = order.len() as u64;
@@ -642,7 +694,10 @@ fn push_rows(values: &mut Vec<i32>, runs: &mut Runs, rows: &Relation, types: &[V
     for &at in &order {
         cells.extend_from_slice(&written[at * width..(at + 1) * width]);
     }
-    (count, push_run(values, runs, count, cells), order)
+    let offset=push_run(values, runs, count, cells);
+    let order:Arc<[usize]>=order.into();
+    runs.1.insert(key,(Arc::clone(rows),offset,Arc::clone(&order)));
+    (count,offset,order)
 }
 
 /// The offset of the extent run of the rows that [`push_rows`] gave the places
@@ -1039,7 +1094,7 @@ fn push_contents(out: &mut CaseColumns, runs: &mut Runs, row: u32, contents: &Co
             }
         };
         let index = u32::try_from(index).expect("fewer than 2^32 examples");
-        let push = |out: &mut CaseColumns, runs: &mut Runs, model: u32, value: Option<&RelationValue>, stop: Option<&Stop>, fault: Option<String>, extents: Option<&EntryExtents>| {
+        let push = |out: &mut CaseColumns, runs: &mut Runs, at_assignment:usize, model: u32, value: Option<&RelationValue>, stop: Option<&Stop>, fault: Option<String>, extents: Option<&EntryExtents>| {
             let faulted = fault.is_some();
             let entries = &mut out.entries;
             entries.table.push(row);
@@ -1048,7 +1103,7 @@ fn push_contents(out: &mut CaseColumns, runs: &mut Runs, row: u32, contents: &Co
             entries.model.push(model);
             entries.stop.push(stop);
             entries.fault.push(fault);
-            let mut order = Vec::new();
+            let mut order:Arc<[usize]> = Arc::from([]);
             let (value_kind, rows, offset, value_stop) = match value {
                 None if faulted => (ValueKind::Fault, 0, 0, None),
                 None => (ValueKind::NoEntries, 0, 0, None),
@@ -1061,13 +1116,24 @@ fn push_contents(out: &mut CaseColumns, runs: &mut Runs, row: u32, contents: &Co
                 Some(RelationValue::Undefined) => (ValueKind::Undefined, 0, 0, None),
                 Some(RelationValue::Stopped(stop)) => (ValueKind::Stopped, 0, 0, Some(stop)),
             };
-            let (extent_offset, extent_stop, extent_fault) = match (value, extents) {
+            let (mut extent_offset, extent_stop, extent_fault) = match (value, extents) {
                 (_, Some(EntryExtents::Stopped(stop))) => (-1, Some(stop), None),
                 (_, Some(EntryExtents::Lost(reason))) => (-1, None, Some(reason.clone())),
-                (Some(RelationValue::Rows(rows)), Some(EntryExtents::Rows(held))) if !count_only && !rows.is_empty() => (push_extents(&mut out.values, runs, &order, held), None, None),
+                (Some(RelationValue::Rows(rows)), Some(EntryExtents::Rows(_held))) if !count_only && !rows.is_empty() => (-1, None, None),
                 _ => (-1, None, None),
             };
+            let extent_status = if let Some(RelationValue::Rows(relation)) = value {
+                if count_only || relation.is_empty() || extent_columns.is_empty() {Vec::new()} else {
+                    // Native annotation has each_row order; export in exactly
+                    // the same sorted row order as this entry's value buffer.
+                    let cells=crate::extents::annotated_rows(contents,place,at_assignment,model as usize,relation);
+                    let per_row=cells.iter().map(|r|r.iter().map(|(_,e)|*e).collect::<Box<[_]>>()).collect::<Vec<_>>();
+                    extent_offset=push_extents(&mut out.values,runs,&order,&per_row);
+                    order.iter().map(|i|cells[*i].iter().map(|(status,_)|*status).collect()).collect()
+                }
+            } else {Vec::new()};
             let entries = &mut out.entries;
+            entries.extent_status.push(extent_status);
             entries.kind.push(value_kind as u8);
             entries.rows.push(rows);
             entries.offset.push(offset);
@@ -1078,15 +1144,15 @@ fn push_contents(out: &mut CaseColumns, runs: &mut Runs, row: u32, contents: &Co
         };
         let entry_extents = |at: usize, model: usize| contents.extents.as_ref().and_then(|extents| extents.entry(place, at, model));
         match &example.rows {
-            Err(fault) => push(out, runs, 0, None, None, Some(fault_spelled(fault)), None),
+            Err(fault) => push(out, runs, 0, 0, None, None, Some(fault_spelled(fault)), None),
             Ok(rows) => {
                 if rows.at.is_empty() {
-                    push(out, runs, 0, None, rows.stop.as_ref(), None, None);
+                    push(out, runs, 0, 0, None, rows.stop.as_ref(), None, None);
                 }
                 for (at, (assigned, models)) in rows.at.iter().enumerate() {
                     let first = out.entries.table.len();
                     for (model, value) in models.iter().enumerate() {
-                        push(out, runs, model as u32, Some(value), rows.stop.as_ref(), None, entry_extents(at, model));
+                        push(out, runs, at, model as u32, Some(value), rows.stop.as_ref(), None, entry_extents(at, model));
                     }
                     let mut assigned_runs = Vec::new();
                     for (position, ((_, det_rows), det)) in assigned.iter().zip(contents.dets.iter()).enumerate() {
@@ -1118,7 +1184,7 @@ fn push_contents(out: &mut CaseColumns, runs: &mut Runs, row: u32, contents: &Co
             out.projections.width.push(row_width(&projection_types));
             for (example, assigned) in projection.rows.iter().enumerate() {
                 for (at, (_, projection_rows)) in assigned.at.iter().enumerate() {
-                    let mut order = Vec::new();
+                    let mut order:Arc<[usize]> = Arc::from([]);
                     let (defined, count, offset) = match projection_rows {
                         None => (0, 0, 0),
                         Some(rows) => {
@@ -1127,13 +1193,30 @@ fn push_contents(out: &mut CaseColumns, runs: &mut Runs, row: u32, contents: &Co
                             (1, count, offset)
                         }
                     };
-                    let extent_offset = match (projection_rows, entries.get(example).and_then(|flat| flat.get(at))) {
+                    let (extent_offset,extent_status) = match (projection_rows, entries.get(example).and_then(|flat| flat.get(at))) {
                         (Some(rows), Some((RelationValue::Rows(table_rows), Some(EntryExtents::Rows(held))))) if !projected_extents.is_empty() && count > 0 => {
                             let per_row = projected_extent_rows(rows, table_rows, held, &projected_columns, &projected_extents);
-                            push_extents(&mut out.values, runs, &order, &per_row)
+                            let status=order.iter().map(|i|per_row[*i].iter().enumerate().map(|(k,e)| {
+                                let no_grid=contents.extents.as_ref().is_some_and(|x|x.no_grid[projected_extents[k]]);
+                                if no_grid {0} else if e.is_some() {1} else {2}
+                            }).collect()).collect();
+                            (push_extents(&mut out.values, runs, &order, &per_row),status)
                         }
-                        _ => -1,
+                        (Some(rows),_) if count>0 && !projected_extents.is_empty()=> {
+                            let mut per_row=Vec::new();
+                            each_row(rows,&mut |row|per_row.push(projection.columns.iter().enumerate().filter_map(|(j,c)| {
+                                let k=extent_columns.iter().position(|i|*i==u32::from(c.0))?;
+                                let no_grid=contents.extents.as_ref().is_some_and(|x|x.no_grid[k]) || projection_types[j]==ValueType::Offset;
+                                Some(if no_grid {None} else if projection_types[j]==ValueType::Position {crate::extents::position_extent(row[j],&ValueType::Position)} else {None})
+                            }).collect::<Box<[_]>>()));
+                            let status=order.iter().map(|i|per_row[*i].iter().enumerate().map(|(k,e)| {
+                                if contents.extents.as_ref().is_some_and(|x|x.no_grid[projected_extents[k]]) {0} else if e.is_some(){1}else{2}
+                            }).collect()).collect();
+                            (push_extents(&mut out.values,runs,&order,&per_row),status)
+                        }
+                        _=>(-1,Vec::new()),
                     };
+                    out.projection_rows.extent_status.push(extent_status);
                     out.projection_rows.projection.push(projection_row);
                     out.projection_rows.entry.push((starts[example] + at) as u32);
                     out.projection_rows.defined.push(defined);
@@ -1186,10 +1269,11 @@ fn projected_extent_rows(rows: &Relation, table_rows: &Relation, held: &[Box<[Op
     per_row
 }
 
-/// The indexes, in increasing order, of the columns of `types` of type `Box`
-/// whose frame in `frames` is a made frame.
+/// Every geometric scalar column in native row order. A missing global
+/// frame name is not a reason to omit per-cell extent/status evidence.
 pub(crate) fn extent_columns(types: &[ValueType], frames: &[String]) -> Vec<u32> {
-    types.iter().zip(frames).enumerate().filter(|(_, (ty, frame))| **ty == ValueType::Box && is_made(frame)).map(|(index, _)| u32::try_from(index).expect("fewer than 2^32 columns")).collect()
+    let _ = frames;
+    types.iter().enumerate().filter(|(_,ty)|ty.is_box()).map(|(index,_)|index as u32).collect()
 }
 
 /// The frame of the task's input grid, and of its output grid, as `column_frames`
@@ -1197,8 +1281,30 @@ pub(crate) fn extent_columns(types: &[ValueType], frames: &[String]) -> Vec<u32>
 pub(crate) const INPUT_FRAME: &str = "input";
 pub(crate) const OUTPUT_FRAME: &str = "output";
 
-/// Whether `frame`, a frame as `column_frames` spells it, is a made frame:
-/// `<maker>@<path>`, with or without ` in <frame>`.
-fn is_made(frame: &str) -> bool {
-    frame.contains('@')
+// Capacity accounting for the owned column fold. Scalar storage is charged by
+// its enclosing vector; each nested allocation includes allocator slack.
+trait HeapBytes {fn heap_bytes(&self)->usize;}
+macro_rules! scalar_heap {($($ty:ty),*)=>{$(impl HeapBytes for $ty {fn heap_bytes(&self)->usize {0}})*};}
+scalar_heap!(u8,u32,i32,u64,i64,usize);
+impl HeapBytes for String {fn heap_bytes(&self)->usize {self.capacity()+usize::from(self.capacity()>0)*32}}
+impl<T:HeapBytes> HeapBytes for Vec<T> {
+    fn heap_bytes(&self)->usize {self.capacity()*std::mem::size_of::<T>()+usize::from(self.capacity()>0)*32+self.iter().map(HeapBytes::heap_bytes).sum::<usize>()}
 }
+impl<T:HeapBytes> HeapBytes for Box<[T]> {
+    fn heap_bytes(&self)->usize {std::mem::size_of_val(&**self)+32+self.iter().map(HeapBytes::heap_bytes).sum::<usize>()}
+}
+impl<T:HeapBytes> HeapBytes for Option<T> {fn heap_bytes(&self)->usize {self.as_ref().map_or(0,HeapBytes::heap_bytes)}}
+impl HeapBytes for ColumnName {fn heap_bytes(&self)->usize {match self {ColumnName::Written(name)=>name.len()+32,ColumnName::Slot(_)=>0}}}
+macro_rules! fields_heap {
+    ($ty:ty;$($field:ident),*)=>{impl HeapBytes for $ty {fn heap_bytes(&self)->usize {0 $(+self.$field.heap_bytes())*}}};
+}
+fields_heap!(StopColumns;bound,form);
+fields_heap!(TableColumns;token,form,point,conjuncts,sites,relation,fact,column_names,column_types,column_frames,extent_columns,column_slots,column_labels,column_source_labels,width,det_relations,det_types,det_frames,det_slots,det_labels,det_source_labels,det_widths,det_columns,projections,projections_stop,fault,depth,keys,output_position,output_color);
+fields_heap!(EntryColumns;table,example_kind,example_index,model,kind,rows,offset,stop,value_stop,fault,extent_offset,extent_stop,extent_fault,extent_status);
+fields_heap!(AssignedColumns;entry,det,rows,offset);
+fields_heap!(ProjectionColumns;table,columns,width);
+fields_heap!(ProjectionRowColumns;projection,entry,defined,rows,offset,extent_offset,extent_status);
+fields_heap!(FlowColumns;table,column,kind,source_table,source_relation,source_column,det,atom,occurrence);
+fields_heap!(CopyColumns;detail);
+fields_heap!(CaseColumns;tables,entries,assigned,projections,projection_rows,flows,copies,values);
+fields_heap!(Named;name,row,paths,frames,slots,labels,source_labels);

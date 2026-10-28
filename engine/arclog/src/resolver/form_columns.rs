@@ -13,7 +13,7 @@ use crate::program::{
     Atom, Choose, ChoosePart, ColumnName, DeclaredName, Demonstrated, Instance, InstanceName, LabelId, OutputOwner, OutputStep, RelationColumn, RelationName,
     RelationRef, RigidDet, RigidDetName, Site, SiteArg,
 };
-use crate::registry::{binding_sites, ColumnType, Component, ParameterSite, Port, TypeParameter};
+use crate::registry::{binding_sites, unbound, ColumnType, Component, ParameterSite, Port, TypeParameter};
 use crate::types::{each_site_label, use_label};
 
 /// The input of a `DEMONSTRATED` form whose head gives the relation's
@@ -30,8 +30,8 @@ struct Binding {
 
 /// What an `INIT` form binds each type parameter of its component to,
 /// at the place that [`crate::registry::binding_sites`] gives. A
-/// parameter that the map leaves out takes one column, with no source
-/// below it.
+/// An unbound, unbounded parameter is an empty record with zero positions.
+/// A bounded parameter without a projection retains its declared bound.
 pub(super) struct Bindings(StableHashMap<TypeParameter, Binding>);
 
 pub(super) fn bindings(instance: &Instance, component: &Component) -> Bindings {
@@ -55,7 +55,12 @@ pub(super) fn bindings(instance: &Instance, component: &Component) -> Bindings {
         }
         (sites.parameter.clone(), binding)
     });
-    Bindings(records.collect())
+    let mut records: StableHashMap<_,_> = records.collect();
+    let sites = binding_sites(instance, &component.inputs);
+    for parameter in unbound(&component.type_parameters, &sites).into_iter().filter(|p|p.bound.is_none()) {
+        records.insert(parameter.clone(), Binding {record:Some(Box::new([])),sources:Vec::new()});
+    }
+    Bindings(records)
 }
 
 /// The columns of `port` of an instance whose binding is `bindings`, with a

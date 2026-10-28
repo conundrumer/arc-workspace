@@ -13,6 +13,7 @@
 mod frames;
 pub mod grammar;
 pub mod safety;
+pub mod render_sites;
 mod inference;
 pub mod instance_inputs;
 pub mod instance_sites;
@@ -404,6 +405,9 @@ pub struct CheckCacheKey {
 /// [`CheckCacheKey`], so that the cases that share a form share its check.
 #[derive(Clone, Debug, Default)]
 pub struct CheckCache {
+    /// An immutable gold-only base, shared by temporary mutation searches.
+    /// Candidate-specific results remain in the requesting search's overlay.
+    base: Option<Arc<CheckCache>>,
     entries: crate::hash::StableHashMap<CheckCacheKey, CheckResult>,
     /// The types the type check inferred for each label scope of a form, by
     /// the scope's canonical path, under the key of the form's
@@ -412,9 +416,13 @@ pub struct CheckCache {
 }
 
 impl CheckCache {
+    pub(crate) fn over(base: Arc<Self>) -> Self {
+        Self { base: Some(base), ..Self::default() }
+    }
+
     /// The result cached under `key`, if any.
     pub fn get(&self, key: &CheckCacheKey) -> Option<&CheckResult> {
-        self.entries.get(key)
+        self.entries.get(key).or_else(|| self.base.as_ref()?.get(key))
     }
 
     /// Caches `result` under `key`.
@@ -425,7 +433,7 @@ impl CheckCache {
     /// The types of each label scope of a form, by the scope's canonical
     /// path, cached under `key`, the key of the form's type check.
     pub fn types(&self, key: &CheckCacheKey) -> Option<std::sync::Arc<types::ScopeTypes>> {
-        self.types.get(key).cloned()
+        self.types.get(key).cloned().or_else(|| self.base.as_ref()?.types(key))
     }
 
     /// Caches `types`, the types of each label scope of a form by the

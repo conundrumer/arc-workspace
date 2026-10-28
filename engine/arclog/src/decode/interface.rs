@@ -100,7 +100,60 @@ impl SubBody {
     }
 }
 
-/// The most bodies that [`Decoder::widened_bodies`] gives for one clause.
+/// A widening operation bound to its checked owner's evaluation scope.
+/// Its fields are private: callers obtain it from [`Decoder::widening`],
+/// never from a guessed clause keyword or the reads left in one branch.
+pub struct BodyWidening<'d, 'a> {
+    decoder: &'d Decoder<'a>,
+    scope: ExampleScope,
+}
+
+impl BodyWidening<'_, '_> {
+    fn keyword(&self) -> ClauseKeyword {
+        match self.scope {
+            ExampleScope::PerExample => ClauseKeyword::Rule,
+            ExampleScope::TaskWide => ClauseKeyword::Det,
+        }
+    }
+
+    /// Each widened branch of a clause, evaluated in the owner's scope.
+    /// Retains the existing widening and binding rules; only the synthetic
+    /// wrapper's execution context comes from the checked owner.
+    pub fn clause(&self, clause: &Clause) -> Vec<Outcome<SubBody>> {
+        let decoder = self.decoder;
+        let registry = decoder.context.registry;
+        let finished = &decoder.state.program().value().forms;
+        let reads = |atom: &Atom| match &atom.relation {
+            RelationRef::Declared(_) | RelationRef::Output(_) => true,
+            RelationRef::Lib(name) => registry.algebra_relation(name).is_some_and(|relation| relation.frames.iter().any(|(_, rule)| rule.makes)),
+            RelationRef::Fact(_) | RelationRef::DefinedPort(_) => false,
+        };
+        let mut lists = Vec::new();
+        if !widen(clause.body.value().conjuncts.to_vec(), false, &reads, &mut lists) {
+            let form = NodePath::top(finished.len() as u32);
+            return vec![Err(RunFault { message: format!("the clause widens to more than {WIDENED_BODIES} bodies").into(), form })];
+        }
+        let own = Clause { keyword: self.keyword(), derives: decoder.fresh_relation(), ones: Arc::from([]), set: false, ..clause.clone() };
+        let made = |kept: &[Conjunct]| crate::read::columns::made_labels(&Body { conjuncts: kept.into() });
+        lists.into_iter().map(|kept| decoder.body_of(finished, own.clone(), kept.clone(), made(&kept))).collect()
+    }
+
+    /// Each written input clause, including its key context, widened in
+    /// the checked instance's scope. No input can choose its own scope.
+    pub fn input(&self, instance: &Instance, input: &PortName) -> Vec<Vec<Outcome<SubBody>>> {
+        let key = instance.key.as_ref();
+        let keyed = key.into_iter().flat_map(|key| key.value().inputs.iter()).map(|own| (true, own));
+        let plain = instance.inputs.iter().map(|own| (false, own));
+        keyed.chain(plain).filter(|(_, own)| own.value().name == *input).map(|(in_key, own)| {
+            let before = key.filter(|_| in_key).into_iter().flat_map(|key| key.value().key.body.value().conjuncts.iter().map(unkeyed));
+            let conjuncts = before.chain(own.value().body.value().conjuncts.iter().cloned()).collect();
+            let clause = Clause { keyword: self.keyword(), derives: self.decoder.fresh_relation(), gloss: None, proposers: Arc::from([]), body: Node::new(Body { conjuncts }), ones: Arc::from([]), set: false, columns: Arc::from([]) };
+            self.clause(&clause)
+        }).collect()
+    }
+}
+
+/// The most bodies that [`BodyWidening::clause`] gives for one clause.
 pub const WIDENED_BODIES: usize = 32;
 
 impl<'a> Decoder<'a> {
@@ -298,55 +351,12 @@ impl<'a> Decoder<'a> {
         Some(self.body_of(finished, clause, kept, labels))
     }
 
-    /// The widened bodies of `clause`, a clause of the finished forms: its
-    /// body with each `OR` and each `IF` that holds an atom a frame's extent
-    /// reads replaced by one of its branches (an `IF` by its test and its
-    /// `then`, or by `NOT` of its test and its `otherwise`), one body for
-    /// each choice of a branch of each, and every other `OR` and `IF` left
-    /// as it is. Each body is a [`SubBody`] of the clause, as
-    /// [`Decoder::sub_body`] builds one, ending the program of the finished
-    /// forms and deriving a relation of its own, with a column for each label that
-    /// its conjuncts make (`made_labels`). The extent of a frame reads an atom of a lib
-    /// relation that makes a frame and an atom of a relation the program
-    /// declares. Where the clause widens to more than `WIDENED_BODIES`
-    /// bodies, this gives one fault at the clause.
-    pub fn widened_bodies(&self, clause: &Clause) -> Vec<Outcome<SubBody>> {
-        let registry = self.context.registry;
-        let finished = &self.state.program().value().forms;
-        let reads = |atom: &Atom| match &atom.relation {
-            RelationRef::Declared(_) | RelationRef::Output(_) => true,
-            RelationRef::Lib(name) => registry.algebra_relation(name).is_some_and(|relation| relation.frames.iter().any(|(_, rule)| rule.makes)),
-            RelationRef::Fact(_) | RelationRef::DefinedPort(_) => false,
-        };
-        let mut lists = Vec::new();
-        if !widen(clause.body.value().conjuncts.to_vec(), false, &reads, &mut lists) {
-            let form = NodePath::top(finished.len() as u32);
-            return vec![Err(RunFault { message: format!("the clause widens to more than {WIDENED_BODIES} bodies").into(), form })];
-        }
-        let own = Clause { derives: self.fresh_relation(), ones: Arc::from([]), set: false, ..clause.clone() };
-        let made = |kept: &[Conjunct]| crate::read::columns::made_labels(&Body { conjuncts: kept.into() });
-        lists.into_iter().map(|kept| self.body_of(finished, own.clone(), kept.clone(), made(&kept))).collect()
-    }
-
-    /// The widened bodies ([`Decoder::widened_bodies`]) of each clause that
-    /// `instance` writes for its input `input`, in the order the form writes
-    /// them: the body of the input, and, where the input stands in the key clause,
-    /// the key clause's body before it with its `^` labels made, as the
-    /// instance's evaluation joins the two.
-    pub fn widened_input_bodies(&self, instance: &Instance, input: &PortName) -> Vec<Vec<Outcome<SubBody>>> {
-        let key = instance.key.as_ref();
-        let keyed = key.into_iter().flat_map(|key| key.value().inputs.iter()).map(|own| (true, own));
-        let plain = instance.inputs.iter().map(|own| (false, own));
-        keyed
-            .chain(plain)
-            .filter(|(_, own)| own.value().name == *input)
-            .map(|(in_key, own)| {
-                let before = key.filter(|_| in_key).into_iter().flat_map(|key| key.value().key.body.value().conjuncts.iter().map(unkeyed));
-                let conjuncts: Arc<[Conjunct]> = before.chain(own.value().body.value().conjuncts.iter().cloned()).collect();
-                let clause = Clause { keyword: ClauseKeyword::Rule, derives: self.fresh_relation(), gloss: None, proposers: Arc::from([]), body: Node::new(Body { conjuncts }), ones: Arc::from([]), set: false, columns: Arc::from([]) };
-                self.widened_bodies(&clause)
-            })
-            .collect()
+    /// Bind body reification to the checked owner before any branch or
+    /// input is extracted. A widened branch must retain lifted reads and
+    /// evidence access even when the read that decided the owner's side
+    /// lies in a different input or branch.
+    pub fn widening<'d>(&'d self, program: &CheckedProgram, relation: &GraphRelation) -> BodyWidening<'d, 'a> {
+        BodyWidening { decoder: self, scope: scope_of(program, relation) }
     }
 
     /// A relation that no form of the decode declares: the one the next
@@ -468,7 +478,7 @@ impl<'a> Decoder<'a> {
 }
 
 /// Appends to `out` the conjunct lists that `list` widens to, in the order of
-/// the branches ([`Decoder::widened_bodies`]): the first `OR` or `IF` of `list`
+/// the branches ([`BodyWidening::clause`]): the first `OR` or `IF` of `list`
 /// that holds an atom `reads` admits is replaced by each branch in turn, and
 /// each result widens again. A list that replaced an `OR` or an `IF` (`split`)
 /// makes, at its first use, each label that only the branches it left made

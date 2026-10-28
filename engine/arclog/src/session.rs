@@ -168,6 +168,15 @@ impl ResultCache {
         self.state.lock().expect(UNPOISONED).evict(bound);
     }
 
+    /// Release entries, relations, indexes and hash-table capacities between
+    /// cases. The caller must have joined every evaluation using this cache.
+    /// Relation IDs remain monotonic within the session.
+    pub fn clear(&self) {
+        let mut state=self.state.lock().expect(UNPOISONED);
+        let next_id=state.next_id;
+        *state=CacheState {next_id,..CacheState::default()};
+    }
+
     /// The bytes the cache holds, which count toward the task session's
     /// bound.
     pub fn bytes(&self) -> usize {

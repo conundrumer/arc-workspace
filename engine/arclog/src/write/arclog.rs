@@ -97,7 +97,14 @@ impl<'l> Out<'l> {
             }
             None => false,
         };
-        if !placed && !self.text.is_empty() && !self.after_open && text != ")" {
+        // A replacement may be longer than the source token whose layout
+        // it kept (for example `<` -> `>=`). Reaching the next token's old
+        // column then adds no whitespace. Layout must never concatenate
+        // two symbol tokens into a different symbol such as `>=R1`.
+        let symbol_edge = |c: char| !c.is_whitespace() && !matches!(c, '(' | ')' | '"');
+        let joined_symbols = self.text.chars().last().is_some_and(symbol_edge)
+            && text.chars().next().is_some_and(symbol_edge);
+        if joined_symbols || (!placed && !self.text.is_empty() && !self.after_open && text != ")") {
             self.put(" ");
         }
         self.put(text);
@@ -621,4 +628,42 @@ pub(super) fn write(program: &Program, layout: &Layout) -> String {
     writer.program(program);
     let end = writer.tokens(&NodePath::default()).first();
     writer.out.finish(end, SourceFile::Arclog)
+}
+
+/// A display fragment using the ordinary engine writer and caller's lexical
+/// label names. Bodies get a list wrapper; a bare label stays a bare label.
+pub(super) fn snippet(node: NodeRef<'_>, names: &[(LabelId, Box<str>)]) -> Result<String, String> {
+    let layout = Layout::default();
+    let mut writer = Writer {layout: &layout, out: Out::new(&layout, SourceFile::Arclog)};
+    let path = NodePath::default();
+    let names = Names(names);
+    let form = match node {
+        NodeRef::Clause(c) => Some(Form::Clause(Node::new(c.clone()))),
+        NodeRef::Instance(c) => Some(Form::Instance(Node::new(c.clone()))),
+        NodeRef::Choose(c) => Some(Form::Choose(Node::new(c.clone()))),
+        NodeRef::RigidDet(c) => Some(Form::RigidDet(Node::new(c.clone()))),
+        NodeRef::Out(c) => Some(Form::Out(Node::new(c.clone()))),
+        _ => None,
+    };
+    if let Some(form) = form {
+        writer.form(&form, &path, Some(&names));
+    } else {
+        match node {
+            NodeRef::Program(p) => writer.program(p),
+            NodeRef::Body(b) => writer.body_list(b, &path, &names),
+            NodeRef::Conjunct(c) => writer.conjunct(c, &path, &names),
+            NodeRef::Atom(a) => {
+                let mut tokens = writer.tokens(&path);
+                writer.put(&mut tokens, "(");
+                writer.atom(a, &ChildPaths::of(&path, node), &names, &mut tokens);
+                writer.put(&mut tokens, ")");
+            }
+            NodeRef::Site(s) => writer.site(s, &path, &names, false),
+            NodeRef::Label(l) => writer.out.put(&label_use(*l, &names)),
+            NodeRef::KeyClause(k) => writer.key_clause(k, &path, &names),
+            NodeRef::InstanceInput(i) => writer.input(i, &path, &names),
+            _ => return Err(format!("unsupported study snippet node: {node:?}")),
+        }
+    }
+    Ok(writer.out.text.trim().to_owned())
 }

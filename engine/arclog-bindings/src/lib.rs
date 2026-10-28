@@ -24,6 +24,8 @@ mod results;
 mod session;
 mod settings;
 mod streams;
+mod study;
+mod mutation;
 mod task;
 mod vocabulary;
 
@@ -32,6 +34,8 @@ pub use decoder::PyDecoder;
 pub use names::Names;
 pub use results::PyConsistencyKind;
 pub use settings::PyDecodeSettings;
+pub use study::PyStudyProgram;
+pub use mutation::{PyMutationPoint, PyMutationSpec, PyValidMutant};
 
 use arclog::eval::instance::Constructions;
 use pyo3::exceptions::PyRuntimeError;
@@ -50,6 +54,10 @@ pub fn register(names: &Names<'_, '_>) -> PyResult<()> {
     names.class::<PyDecodeSettings>()?;
     names.class::<vocabulary::PyVocabulary>()?;
     names.class::<session::PySession>()?;
+    names.class::<study::PyStudyProgram>()?;
+    names.class::<mutation::PyMutationPoint>()?;
+    names.class::<mutation::PyMutationSpec>()?;
+    names.class::<mutation::PyValidMutant>()?;
     names.class::<decoder::PyDecoder>()?;
     names.class::<results::PyStopKind>()?;
     names.class::<PyConsistencyKind>()?;

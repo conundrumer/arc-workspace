@@ -183,6 +183,12 @@ impl ResolvedProgram {
                             for own in component.outputs.iter() {
                                 port(own, true);
                             }
+                            for input in &written {
+                                if component.outputs.iter().any(|p|p.name==input.name) {continue;}
+                                let own=component.inputs.iter().find(|p|p.port.name==input.name).expect("checked input port");
+                                let listing=form_columns::input_columns(&own.port,&bindings,keyed,instance,input);
+                                given.push(Given {form:form.clone(),output:Some(Arc::from([OutputStep::Port(input.name.clone())])),slots:slots(&listing),lib:lib.clone(),sites_from:usize::MAX,filled:Vec::new()});
+                            }
                         }
                         _ => {}
                     }
