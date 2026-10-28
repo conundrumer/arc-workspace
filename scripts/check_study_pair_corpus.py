@@ -18,8 +18,8 @@ import sys
 import threading
 import time
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT))
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent / "study"))
 from check_stage1_all import inventory
 from study_faults import fault_group, normalized_reason
 
@@ -96,9 +96,11 @@ def checkpoints(path):
 
 
 def main():
+    from execution_evidence import example_fit
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--export", type=Path, default=Path("/Users/davidlu/code/arc-workspace/work/lm/data-full-9fac8128"))
-    parser.add_argument("--tasks", type=Path, default=ROOT / "engine/data/tasks")
+    parser.add_argument("--tasks", type=Path, default=ROOT / "data/tasks")
     parser.add_argument("--task", action="append")
     parser.add_argument("--jobs", type=int, default=12)
     parser.add_argument("--case-limit", type=int)
@@ -268,8 +270,8 @@ def main():
                                     raise ValueError("negative table comparison count")
                         for output in report["outputs"]:
                             for pair in output.get("gold_train",[]):
-                                if not all(model["equals"] and model["differing_cells"] == 0 for model in pair["models"]):
-                                    raise ValueError("kept gold assignment fails its own train output")
+                                if example_fit(pair, context="kept gold train") is not True:
+                                    raise ValueError("kept gold assignment lacks native accepted-set FITS")
                     timings["inspect_native"]+=time.monotonic()-tick_native
                     emit_started=time.monotonic()
                     emit(dict(type="pair", **ctx, status=report["status"], reason=report.get("reason"),

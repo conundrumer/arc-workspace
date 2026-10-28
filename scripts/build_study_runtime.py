@@ -4,6 +4,7 @@ Run through run_heavy.py. The source archive, wheel, interpreter environment,
 and checker copies belong exclusively to this build. Rebuild into a new path.
 """
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -57,10 +58,11 @@ def main():
     source.mkdir()
     archive = destination / "source.tar"
     run(["git", "archive", "--format=tar", "-o", archive, revision,
-         "engine", "scripts/study"], "archive " + revision, cwd=repo)
+         "engine", "scripts/study", "scripts/check_study_pair_corpus.py"], "archive " + revision, cwd=repo)
     run(["tar", "-xf", archive, "-C", source], "extract committed source")
     checks = destination / "checks"
     shutil.copytree(source / "scripts/study", checks)
+    shutil.copy2(source / "scripts/check_study_pair_corpus.py", checks / "check_study_pair_corpus.py")
     wheels = destination / "wheels"
     env = dict(os.environ, CARGO_TARGET_DIR=str(destination / "target"),
                CARGO_BUILD_JOBS=os.environ["ARC_HEAVY_CPUS"], PYTHONDONTWRITEBYTECODE="1")
@@ -74,8 +76,11 @@ def main():
         raise RuntimeError(f"expected exactly one wheel, got {built}")
     run(["uv", "pip", "install", "--python", venv / "bin/python", "--no-deps",
          built[0]], "install private wheel")
+    helper = checks / "execution_evidence.py"
     manifest = dict(revision=revision, wheel=str(built[0]), python=str(venv / "bin/python"),
-                    checks=str(checks), seconds=time.monotonic()-started)
+                    checks=str(checks), seconds=time.monotonic()-started,
+                    execution_evidence=dict(path=str(helper),
+                        sha256=hashlib.sha256(helper.read_bytes()).hexdigest()))
     (destination / "ready.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(json.dumps(manifest), flush=True)
 
