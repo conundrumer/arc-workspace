@@ -5,6 +5,9 @@ use arclog::eval::join::Budget;
 use arclog::relations::Relation;
 use std::collections::BTreeSet;
 
+#[path = "study_out.rs"]
+mod output;
+
 pub struct Continuation {
     pub report: Value,
     pub gold: Vec<(usize, Table)>,
@@ -83,13 +86,14 @@ pub fn evaluate(gold:&StudyProgram,mutant:&ValidMutant,task:&Task,session:&TaskS
         let e=Evaluation {program:mutant.program().checked(),concept:None,task,session,constructions,registry:Registry::get(),parameters:&parameters,limits:&limits};
         let checks=admissibility(&e,gold.checked(),assigned,&mut budget);
         let output=output_relation(e.program).ok_or("mutant has no OUT")?;
-        let out=match train(&e,&output) {Ok(v)=>json!({"status":"complete","train":v}),Err(End::Fault(f))=>faulted(&f),Err(End::Stop(s))=>stopped(&s)};
+        let out=match output::train(&e,&output,&mut budget) {Ok(v)=>json!({"status":"complete","train":v}),Err(End::Fault(f))=>faulted(&f),Err(End::Stop(s))=>stopped(&s)};
         choices.push(json!({"assignment":index,"admissibility":checks,"out":out}));
     }
     let g=super::component_tables::relation_tables(gold,&decoder,&fixed,&limits,&work,&mut budget);
     let m=super::component_tables::relation_tables(mutant.program(),&decoder,&fixed,&limits,&work,&mut budget);
     let status=|tables:&Outcome<Vec<(usize,Table)>>|match tables {Ok(t)=>table_status(t),Err(f)=>faulted(f)};
     let report=json!({"schema":"arclog-study-continuation-v1","gold_observation_ref":memo.sequence,
+        "out_bindings":arclog::study::render_out::export(mutant.program())?,
         "kept_assignments":records,"gold_observation_stop":walked.stop.as_ref().map(stopped),"choices":choices,
         "gold_tables":status(&g),"mutant_tables":status(&m),
         "assignment_scope":"exact cached gold FITS interventions; no alternate assignment search",

@@ -138,6 +138,12 @@ impl PyStudyProgram {
             .map(|v| v.to_string()).map_err(PyValueError::new_err)
     }
 
+    /// Exact OUT key projection onto native body columns and original label paths.
+    fn out_bindings_json(&self, py: Python<'_>) -> PyResult<String> {
+        py.detach(|| arclog::study::render_out::export(&self.program))
+            .map(|v| v.to_string()).map_err(PyValueError::new_err)
+    }
+
     fn render_json(&self, py: Python<'_>) -> PyResult<String> {
         py.detach(|| {
             self.program
