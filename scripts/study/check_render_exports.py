@@ -50,12 +50,12 @@ def worker(args):
             phase="gold_export"
             if text not in handles:
                 gold=arclog.StudyProgram.from_sexp(text,settings if evaluator else None).decode_source()
-                handles[text]=(gold,json.loads(gold.render_json()))
+                handles[text]=(gold,json.loads(arclog.study_program_export_json(gold) if hasattr(arclog,"study_program_export_json") else gold.render_json()))
                 while len(handles)>4:handles.popitem(last=False)
             gold,g=handles[text]
             phase="identity_replay"
             mutant=gold.construct_identity(json.dumps(record["identity"]))
-            m=json.loads(mutant.render_json())
+            m=json.loads(arclog.study_mutant_export_json(mutant) if hasattr(arclog,"study_mutant_export_json") else mutant.render_json())
             require(m["program_sexp"]==record["programs"]["mutant"],"stored mutant sexp differs")
             require(m["mutation_identity"]==record["identity"],"stored identity differs")
             phase="change"
@@ -86,7 +86,7 @@ def worker(args):
                         require(registry[resolution["id"]]["semantics"]["status"]=="authored_contract","missing authored semantics")
                 require(all(r.get("source_name") and r.get("display_name") for r in definitions["native_relations"]),"missing relation writer spelling")
                 phase=side+"_frames"
-                frames=json.loads(arclog.study_frame_sources_json(program))
+                frames=export.get("frame_sources") or json.loads(arclog.study_frame_sources_json(program))
                 require(frames["complete"] is True,"incomplete native frame source export")
                 phase=side+"_body_columns"
                 for body in export["body_views"]:

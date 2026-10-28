@@ -1,6 +1,19 @@
 # Native structured program evidence
 
-Part 1 bindings (JSON strings):
+Complete static export bindings (JSON strings, core AST plus table provenance):
+
+```python
+gold_evidence = json.loads(arclog.study_program_export_json(gold))
+mutant_evidence = json.loads(arclog.study_mutant_export_json(mutant))
+```
+
+These return `arclog-study-render-v1`, include `frame_sources`, and report
+`parts.types_frames=complete` after both native layers succeed. Every native
+frame-source variant is exported; `native_unknown` remains an explicit native
+result, and per-example extents still come from the supplied stored tables.
+The mutant export retains identity and before/after path correspondence.
+
+Core-only bindings, already available on v8:
 
 ```python
 gold_evidence = json.loads(gold.render_json())       # StudyProgram
@@ -8,8 +21,11 @@ mutant_evidence = json.loads(mutant.render_json())   # ValidMutant
 ```
 
 Schema: `arclog-study-render-v1`. `parts` declares completeness separately:
-`nodes=complete`; `definitions_readers`, `types_frames`, `literal_meanings`
-are currently `pending`. A consumer must check the part it uses. Unsupported
+`nodes`, `definitions_readers`, `argument_types`, `literal_meanings`,
+`body_views` and current `native_semantics` are complete. Only core-only
+`types_frames` remains pending because core arclog does not depend on the
+tables crate; use the combined bindings above or the separate frame-source
+binding below. A consumer must check the part it uses. Unsupported
 nodes or a presentation/source mismatch raise `ValueError`; nothing is dropped.
 
 `nodes` contains every node in original AST preorder, including the program
@@ -186,10 +202,6 @@ and writes failure-class counts/examples to `summary.json`. `--continuation`
 also checks exact historical kept assignments and the new execution binding;
 `--only TASK ...`, `--limit N`, and `--workers N` bound or parallelize a run.
 
-## Resolved arguments, comparisons and typed reserved zero
-
-`parts.argument_types=complete` and `parts.literal_meanings=complete`.
-
 ## Exact-kept continuation and DET admissibility
 
 `arclog.study_continuation(evaluator, gold, mutant, expected_kept_json=None)`
@@ -224,6 +236,11 @@ reports remain historical producer evidence and should be described as such.
 On v8, CHANGE, definition closure, authored meanings, typed Term decoding,
 native frame sources, and input-port projection already work; continuation is
 an additional binding requiring the new build.
+
+## Resolved arguments, comparisons and typed reserved zero
+
+`parts.argument_types=complete` and `parts.literal_meanings=complete`.
+
 `typed_sites.arguments` gives every scalar site argument's original `path`,
 `site_path`, `scope_path`, label ID (null for zero), native `resolved_type`,
 source `column_type` where applicable, native checker `frame` evidence, and
