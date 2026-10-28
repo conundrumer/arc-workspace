@@ -562,7 +562,7 @@ impl<'a> Inference<'a> {
         let members = form_scope_labels(form);
         let mut given = if members.iter().any(|label| all.get(label).and_then(Option::as_ref).is_none()) { type_all(PoseOr::Given, &bindings)? } else { StableHashMap::default() };
         let mut given_labels = Vec::new();
-        let labels = members.iter().map(|label| {
+        let mut labels: Vec<_> = members.iter().map(|label| {
             let open = all.remove(label).flatten();
             let ty = open.or_else(|| {
                 let ty = given.remove(label).flatten();
@@ -571,6 +571,7 @@ impl<'a> Inference<'a> {
             });
             (*label, Ok(ty))
         }).collect();
+        self.share_pose(SiteReading { path, walk: &walk, component, bindings: &bindings, pose_or: PoseOr::Open }, &mut labels);
         Some(FormInference { owner: ScopeOwner::Form(form), path: path.clone(), labels, bindings, walk, component, zero_typed: Vec::new(), given: given_labels })
     }
 
@@ -754,6 +755,7 @@ impl<'a> Inference<'a> {
                 zero_typed.push(label);
             }
         }
+        self.share_pose(SiteReading { path, walk: &walk, component: scope.component, bindings: &bindings, pose_or: PoseOr::Open }, &mut types);
         FormInference { owner: ScopeOwner::Form(form), path: path.clone(), labels: types, bindings, walk, component: scope.component, zero_typed, given: given_labels }
     }
 
@@ -843,6 +845,41 @@ impl<'a> Inference<'a> {
         let Some(Resolution::Lib(name)) = self.program.resolution(&reading.path.join(at)) else { return false };
         let column = path.first().and_then(|first| registry_columns::lib_typed_columns(self.registry, name)?.iter().find(|column| column.name == *first));
         column.is_some_and(|column| column.ty == ColumnType::SharedPose)
+    }
+
+    /// Gives each label of `labels` that stands at no type, and at a column
+    /// of a lib relation of type Pose that each column of its relation
+    /// shares, the Pose type of the labels at the other such columns of the
+    /// same atom, where those labels have one Pose type: `pose_difference(a,
+    /// b, d)` reads two poses of one assembly
+    /// (`docs/arclog/rigid.md#the-pose`). A label that takes a type here
+    /// shares it with the labels at such columns of each other atom it
+    /// stands at. `labels` holds the types of the form read under `reading`.
+    fn share_pose(&self, reading: SiteReading<'_, 'a>, labels: &mut [(LabelId, Result<Option<ValueType>, LabelFault>)]) {
+        let mut atoms: Vec<(*const Atom, Vec<LabelId>)> = Vec::new();
+        for site in &reading.walk.uses {
+            let Some(atom) = site.atom else { continue };
+            if !self.shares_pose(reading, atom, &site.column) {
+                continue;
+            }
+            let key = atom as *const Atom;
+            match atoms.iter_mut().find(|(found, _)| *found == key) {
+                Some((_, group)) if !group.contains(&site.label) => group.push(site.label),
+                Some(_) => {}
+                None => atoms.push((key, vec![site.label])),
+            }
+        }
+        let mut changed = true;
+        while std::mem::take(&mut changed) {
+            for (_, group) in &atoms {
+                let shared = group.iter().filter_map(|label| typed(labels, *label)).try_fold(None, |met, ty| crate::types::meet(met, Some(ty)));
+                let Ok(Some(pose @ ValueType::Pose(_))) = shared else { continue };
+                for (_, ty) in labels.iter_mut().filter(|(label, ty)| group.contains(label) && matches!(ty, Ok(None))) {
+                    *ty = Ok(Some(pose.clone()));
+                    changed = true;
+                }
+            }
+        }
     }
 
     /// The type of the column at `path` of the relation of `node`, read by

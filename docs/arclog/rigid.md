@@ -86,7 +86,7 @@ A change of frame relabels every pose of an assembly in the same way, by composi
 - A column of a derived relation, of an instance's key or of an instance's input, which then takes the type.
 - `=` and `!=`.
 - `d4_elem`, whose column takes the type of its label, since every D4 element is a pose.
-- `pose_difference(a, b, d)`, where d is the element that takes the placement at pose a onto the placement at pose b. It is the same in every frame, a D4 value in the grid frame, and it is the one way from a Pose to a D4 value.
+- `pose_difference(a, b, d)`, where d is the element that takes the placement at pose a onto the placement at pose b. It is the same in every frame, a D4 value in the grid frame, and it is the one way from a Pose to a D4 value. A label of no type at a or b takes the Pose type of the other labels at a and b, where their types meet in a Pose type. A label at a or b that has a type other than a Pose type is refused, and so is a label that has no type once its form is complete.
 
 Under a `key` clause each key row is an assembly of its own, and the Pose type of a pose read is that assembly's at the key labels the read gives, so two pose reads meet only where they read the same key labels. A pose of a keyed assembly that reaches a column of a derived relation, of an instance's key or of an instance's input takes the Pose type at the key that another column of the same relation holds, where the pose label stands at the pose column and the key's label at that other column. A read that binds a label at the key column and another at the pose column gives the second the Pose type at the first. A join of poses at two different key labels is refused.
 
