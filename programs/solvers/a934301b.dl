@@ -195,4 +195,9 @@ spared(A, Id, Kind, U, $CountTable()) :-
     keep_count(N) :-
         parse.mark_count([E, A, Id, _], _, N), ex_out(E, _, _),   // a train object's count
         !changed(E, A, Id).                                       // the output keeps it
+
+    .decl drop_count(n: number)
+    drop_count(N) :-
+        parse.mark_count([E, A, Id, _], _, N),   // a train object's count
+        changed(E, A, Id).                       // the output erases it
 }

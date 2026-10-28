@@ -90,3 +90,28 @@ painted(P, Col, Ch) :- rays.clear([P_end, Ch], P, _, _, _), object(_, P_end, Col
 
 out(P, Col, Ch) :- painted(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(P, _, Ch).
+
+// A cell of one example.
+.type ExampleCell = [e: Example, p: Position]
+
+.comp Determine {
+    // The checkerboard's two square classes: cells joined by diagonal steps.
+    .init square = Canon<ExampleCell>
+    square.edge([E, P], [E, Q]) :-
+        ex_in(E, P, _), diag_dir_elem(D), neighbor(P, D, Q), ex_in(E, Q, _).
+
+    // The most common color of each square class.
+    .init class_color = Mode<Ident, Color, Position>
+    class_color.item(Id, Col, P) :- square.id([E, P], Id), ex_in(E, P, Col).
+
+    .decl square_color(e: Example, col: Color)
+    square_color(E, Col) :- square.id([E, _], Id), class_color.mode(Id, Col).
+
+    // Some input whose squares do not take the color.
+    .decl off_board(col: Color)
+    off_board(Col) :- square_color(_, Col), ex_in(E, _, _), !square_color(E, Col).
+
+    // The checkerboard's colors: a square class's most common color, in every input.
+    .decl bg(col: Color)
+    bg(Col) :- square_color(_, Col), !off_board(Col).
+}
