@@ -1,5 +1,7 @@
 //! The decode settings of `docs/engine/synthesis.md#decode-settings`, each
-//! with its default.
+//! with its default. [`DecodeSettings::default`] holds no deadline, the
+//! settings of a replay of the corpus; [`DecodeSettings::synthesis`] gives
+//! the settings of the synthesis decode.
 
 use std::time::Duration;
 
@@ -55,12 +57,15 @@ pub struct DecodeSettings {
 }
 
 impl DecodeSettings {
-    /// The default settings with no deadline, those of a replay of the corpus.
-    pub fn corpus() -> DecodeSettings {
-        DecodeSettings { deadline: None, ..DecodeSettings::default() }
+    /// The default settings with the deadline of the synthesis decode, 10 s per
+    /// request.
+    pub fn synthesis() -> DecodeSettings {
+        DecodeSettings { deadline: Some(Duration::from_secs(10)), ..DecodeSettings::default() }
     }
 }
 
+/// The settings of a replay of the corpus: no deadline, so a verdict does not
+/// depend on the machine's load.
 impl Default for DecodeSettings {
     fn default() -> DecodeSettings {
         DecodeSettings {
@@ -68,7 +73,7 @@ impl Default for DecodeSettings {
             type_domain_proposers: true,
             vocabulary: VocabularyCaps::CORPUS,
             caps: Caps::CORPUS,
-            deadline: Some(Duration::from_secs(10)),
+            deadline: None,
             projection_cap: 10_000,
             table_work_cap: 1 << 20,
             check_copies: false,

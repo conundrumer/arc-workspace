@@ -68,7 +68,7 @@ impl PyDecodeSettings {
         table_work_cap: Option<u64>,
         rule_tests: Option<bool>,
     ) -> PyResult<PyDecodeSettings> {
-        let base = PyDecodeSettings::of(&DecodeSettings::default());
+        let base = PyDecodeSettings::of(&DecodeSettings::synthesis());
         let settings = PyDecodeSettings {
             proposer_tokens: proposer_tokens.unwrap_or(base.proposer_tokens),
             type_domain_proposers: type_domain_proposers.unwrap_or(base.type_domain_proposers),

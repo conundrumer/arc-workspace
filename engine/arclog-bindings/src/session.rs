@@ -32,7 +32,7 @@ impl PySession {
     fn new(task: &PyTask, settings: Option<PyDecodeSettings>, session_bytes: Option<usize>) -> PyResult<PySession> {
         let settings = match settings {
             Some(settings) => settings.engine()?,
-            None => DecodeSettings::default(),
+            None => DecodeSettings::synthesis(),
         };
         let session = TaskSession::new(SessionBound { bytes: session_bytes.unwrap_or(SESSION_BYTES) }, settings.caps);
         Ok(PySession { data: Arc::new(SessionData { task: Arc::clone(&task.data), session, settings }) })

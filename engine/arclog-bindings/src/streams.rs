@@ -182,7 +182,7 @@ fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &Hash
     let results = replay_units(
         &solvers,
         constructions,
-        &DecodeSettings::corpus(),
+        &DecodeSettings::default(),
         true,
         corpus_threads(),
         steps,

@@ -99,7 +99,7 @@ fn check_bases(bases: Option<Vec<Option<usize>>>, streams: usize) -> PyResult<Ve
 pub(crate) fn stream_tables(py: Python<'_>, task: &str, tasks: &str, streams: Vec<(Vec<u32>, Vec<u8>)>, names: Option<Vec<String>>, settings: Option<PyDecodeSettings>, bodies: bool, step_cap: Option<usize>, copies: bool, bases: Option<Vec<Option<usize>>>) -> PyResult<(Vec<PyCaseTables>, Vec<String>)> {
     let settings = match settings {
         Some(settings) => settings.engine()?,
-        None => DecodeSettings::default(),
+        None => DecodeSettings::synthesis(),
     };
     let settings = DecodeSettings { check_copies: copies, ..settings };
     let vocabulary = Vocabulary::new(Registry::get(), &settings);

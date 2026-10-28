@@ -68,7 +68,7 @@ fn main() -> Result<(), String> {
     };
     assert!(["bench", "check"].contains(&mode.as_str()));
     assert!(!ids.is_empty(), "supply explicit task ids to bound the workload");
-    let settings = DecodeSettings::corpus();
+    let settings = DecodeSettings::default();
     let vocabulary = Vocabulary::new(Registry::get(), &settings);
     let constructions = arclog_constructions::shared()?;
     let mut counts = Counts::default();
