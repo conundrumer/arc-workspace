@@ -64,6 +64,16 @@ impl BodyView {
         let mut columns=Vec::new();
         if let Some((_,_,labels))=&key {columns.extend(labels.iter().copied());}
         for (body,_) in &bodies {for label in crate::read::columns::made_labels(body) {if !columns.contains(&label) {columns.push(label);}}}
+        // A label mentioned in each branch need not be bound by each branch.
+        // Query columns are outer requirements, never branch-local witnesses.
+        let conjuncts = bodies.iter().flat_map(|(body,_)|body.conjuncts.iter()).collect::<Vec<_>>();
+        let given = key.as_ref().map(|(_,_,labels)|labels.iter().copied().collect()).unwrap_or_default();
+        let outside = columns.iter().copied().collect();
+        let types = ir::label_types(program,&form);
+        let bound = crate::safety::bound_labels(&conjuncts,&given,&outside,
+            &|atom|ir::atom_modes(crate::registry::Registry::get(),atom),
+            &|label|types.label(label).cloned());
+        columns.retain(|label|bound.contains(label));
         let (clause,paths)=if let Some((read,paths,labels))=key {
             ir::compile_keyed_body(program,&form,(read,paths,&labels),(body,at.clone()),&columns)
         } else {
