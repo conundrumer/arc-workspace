@@ -16,6 +16,8 @@ use arclog::check::{CheckedProgram};
 
 #[path = "study_continuation.rs"]
 pub mod continuation;
+#[path = "study_component_tables.rs"]
+pub mod component_tables;
 
 pub struct PairEvaluation {
     /// Full native tables, including preceding relation tables needed to

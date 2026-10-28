@@ -12,6 +12,8 @@ use std::path::Path;
 
 #[path = "study_continuation.rs"]
 mod continuation;
+#[path = "study_component_tables.rs"]
+mod component_tables;
 
 /// Returns (report_json, gold CaseTables, mutant CaseTables). The last
 /// two native tables on each side are the completed body over its own DET
@@ -84,6 +86,7 @@ fn evaluate_pair(
 pub(crate) fn register(names: &Names<'_, '_>) -> PyResult<()> {
     names.class::<PyStudyTaskEvaluator>()?;
     continuation::register(names)?;
+    component_tables::register(names)?;
     names.function(wrap_pyfunction!(evaluate_pair, names.module())?)
 }
 

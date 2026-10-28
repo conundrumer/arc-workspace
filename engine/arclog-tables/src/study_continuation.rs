@@ -60,42 +60,6 @@ fn admissibility(e:&Evaluation<'_>, gold:&CheckedProgram, assigned:&[Assignment]
     }).collect()
 }
 
-fn relation_tables(program:&StudyProgram,decoder:&Decoder<'_>,fixed:&[Vec<Assignment>],limits:&arclog::eval::Limits,
-    work:&TableWork,budget:&mut Budget<'_>)->Outcome<Vec<(usize,Table)>> {
-    let checked=program.checked();
-    let written=arclog::stream::written_stream(checked,decoder.vocabulary()).map_err(|d|fault(d.message,&NodePath::default()))?;
-    let (task,session,constructions)=decoder.evaluation_inputs();
-    let mut tables=Vec::new();
-    for form in &written.forms {for &slot in &form.readable {
-        budget.charge_work(0).map_err(|bound|fault(format!("continuation metadata stopped: {bound:?}"),&form.path))?;
-        let declared=&written.relations[slot];
-        if gives_no_table(program.program().value(),&form.path,declared) {continue;}
-        let relation=graph_relation(checked,decoder.registry(),&form.path,declared).ok_or_else(||fault("no native graph for continuation relation",&form.path))?;
-        let dets=relation_dets(checked,relation.node);
-        let examples=decoder.examples_of(scope_of(checked,&relation)).into_iter().map(|example| {
-            let mut at=Vec::new();
-            for assigned in fixed {
-                let projected=dets.iter().filter_map(|det|assigned.iter().find(|(name,_)|*name==det.relation).cloned()).collect::<Vec<_>>();
-                if projected.len()!=dets.len() {return ExampleRows {example,rows:Err(fault("kept assignment lacks a continuation DET",&form.path))};}
-                let parameters=ParameterValues::determined(assigned.clone());
-                let e=Evaluation {program:checked,concept:None,task,session,constructions,registry:decoder.registry(),parameters:&parameters,limits};
-                match models_at(&e,&relation,example) {
-                    Ok(models)=>at.push((projected,models)),
-                    Err(End::Fault(f))=>return ExampleRows {example,rows:Err(f)},
-                    Err(End::Stop(stop))=>return ExampleRows {example,rows:Ok(Assigned {at,stop:Some(stop)})},
-                }
-            }
-            ExampleRows {example,rows:Ok(Assigned {at,stop:None})}
-        }).collect();
-        let c=contents(decoder,checked,&form.path,&relation,slot as u32,&dets,examples,work).map(|c| {
-            let c=Contents {name:relation_spelled(declared),keys:checked.program.column_keys(relation.node),..c};
-            made(decoder,&tables.iter().map(|(_,t)|t).collect::<Vec<_>>(),checked,&relation,c)
-        });
-        tables.push((form.tokens.end.saturating_sub(1),Table {form:form.path.clone(),point:Point::Relation,contents:c}));
-    }}
-    Ok(tables)
-}
-
 /// Requires this evaluator's cached gold observation from evaluate_pair. If
 /// supplied, expected_kept must exactly match that observation, including the
 /// session's Ident encodings. A stale/different stored assignment is an error.
@@ -122,8 +86,8 @@ pub fn evaluate(gold:&StudyProgram,mutant:&ValidMutant,task:&Task,session:&TaskS
         let out=match train(&e,&output) {Ok(v)=>json!({"status":"complete","train":v}),Err(End::Fault(f))=>faulted(&f),Err(End::Stop(s))=>stopped(&s)};
         choices.push(json!({"assignment":index,"admissibility":checks,"out":out}));
     }
-    let g=relation_tables(gold,&decoder,&fixed,&limits,&work,&mut budget);
-    let m=relation_tables(mutant.program(),&decoder,&fixed,&limits,&work,&mut budget);
+    let g=super::component_tables::relation_tables(gold,&decoder,&fixed,&limits,&work,&mut budget);
+    let m=super::component_tables::relation_tables(mutant.program(),&decoder,&fixed,&limits,&work,&mut budget);
     let status=|tables:&Outcome<Vec<(usize,Table)>>|match tables {Ok(t)=>table_status(t),Err(f)=>faulted(f)};
     let report=json!({"schema":"arclog-study-continuation-v1","gold_observation_ref":memo.sequence,
         "kept_assignments":records,"gold_observation_stop":walked.stop.as_ref().map(stopped),"choices":choices,

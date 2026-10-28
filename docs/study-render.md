@@ -189,8 +189,10 @@ the renderer must not parse a definition header to recover either one.
 
 `native_relations[].readable_in_checked_program` distinguishes a reserved
 writer slot from a relation actually defined by this specialized checked graph.
-For example, an unkeyed Division instance reserves a `parts` slot but defines
-only its applicable output. Native frame export reports such slots as
+For example, a Division instance with side/gap inputs reserves a `parts`
+input slot but does not define that unwritten input as a relation; likewise
+Connectivity with default steps reserves an unwritten `step` input slot.
+Native frame export reports such slots as
 `not_a_readable_relation_in_checked_program`, without asking the evaluator for
 a nonexistent graph node. This is distinct from an existing input port omitted
 by the native table format because it aliases a source relation.
@@ -236,6 +238,19 @@ reports remain historical producer evidence and should be described as such.
 On v8, CHANGE, definition closure, authored meanings, typed Term decoding,
 native frame sources, and input-port projection already work; continuation is
 an additional binding requiring the new build.
+
+Component-table collection is also available independently of OUT:
+`arclog.study_component_tables(evaluator, gold, mutant, expected_kept_json=None)`
+returns `(report_json, gold_CaseTables, mutant_CaseTables)` with the same
+cached-observation requirement. `gold_assignment_map` and
+`mutant_assignment_map` explicitly map every native `table_entry` to a full
+`kept_assignment` index, plus example kind/index and model. Filter native
+entries by the indicated `table` and use their native order; the index is
+table-relative. Do not match choices by their projected DET values: different
+full choices can have the same read subset. A null kept index names a native
+fault/no-entries placeholder. Table indices include the two evidence tables.
+The collection helper lives in `study_pair::component_tables`, independent of
+OUT/admissibility and decoded-choice modules.
 
 ## Resolved arguments, comparisons and typed reserved zero
 
