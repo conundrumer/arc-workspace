@@ -310,8 +310,9 @@ fn placed(input: &CheckInput<'_>) -> Vec<(NodePath, &'static str)> {
     refused
 }
 
-/// The refusal of a case program read from a solver's files that holds no
-/// `OUT` form, at its last form, or at the program where it holds none.
+/// The refusal of a case program read whole from a solver's files that holds
+/// no `OUT` form, at its last form, or at the program where it holds none. A
+/// prefix of a solver is no such program: a completion may append the form.
 pub(super) fn missing(program: &crate::program::Program) -> Option<Refusal> {
     let none = !program.forms.iter().any(|form| matches!(form, Form::Out(_)));
     let at = program.forms.len().checked_sub(1).map_or_else(NodePath::default, |last| NodePath::top(last as u32));

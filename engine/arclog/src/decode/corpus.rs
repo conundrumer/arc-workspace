@@ -144,7 +144,7 @@ fn replay_streams<T: Default + Clone>(
     record: &dyn Fn(&mut T, &Decoder<'_>, Stepped<'_>),
 ) -> Result<(usize, Vec<ReplayedCase<T>>), String> {
     let vocabulary = Vocabulary::new(Registry::get(), &DecodeSettings::default());
-    let cases = solver_streams(corpus, id, wanted, &vocabulary)?;
+    let cases = solver_streams(corpus, id, wanted, &vocabulary, false)?;
     let (task, judged) = read_task_files(tasks, id)?;
     let cases: Vec<CaseStream> = cases.into_iter().filter(|case| !case.demonstrated).collect();
     let ids: Vec<Vec<(u32, Emitter)>> = cases.iter().filter_map(|case| case.stream.as_ref().ok()).map(|stream| token_ids(&stream.tokens, &vocabulary)).collect();

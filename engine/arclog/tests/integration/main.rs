@@ -43,8 +43,6 @@ mod reader;
 mod record_sites;
 mod registry_file;
 mod replay_panic;
-mod replay_prefix_tree;
-mod replay_step_cap;
 mod resolver;
 mod scope_checks;
 mod scope_types;

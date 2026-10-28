@@ -66,6 +66,12 @@ struct IdStream {
 /// holds a line for each case that gives no stream and each solver that gives
 /// none, in the form the report of `arclog-cli stream --corpus` prints it, in
 /// the order of the task ids.
+/// With `prefix`, each solver's files hold a prefix of a solver, whole forms
+/// that later forms may follow: each case takes every check but the refusal
+/// of a case program that holds no `OUT` form, and its stream ends with the
+/// last token of its last form. With `tasks`, a prefix's replay gives the
+/// mask before each of its model tokens, and its decode ends at no `OUT`
+/// form, as `replay` gives for a stream that ends before one.
 /// Where `tasks`, the directory of the task files, is given, each stream is
 /// also replayed on its task under the default settings, judging the train
 /// pairs in the closed world, and the stream's `masks` are the engine's
@@ -93,15 +99,15 @@ struct IdStream {
 /// second phase: its `total` is set once the groups are cut and its `done`
 /// grows while they replay.
 #[pyfunction]
-#[pyo3(signature = (corpus, all_cases=false, task_ids=None, tasks=None, started=None, ended=None, progress=None, step_cap=None))]
-pub(crate) fn corpus_streams(py: Python<'_>, corpus: &str, all_cases: bool, task_ids: Option<Vec<String>>, tasks: Option<&str>, started: Option<Py<PyAny>>, ended: Option<Py<PyAny>>, progress: Option<Py<PyReplayProgress>>, step_cap: Option<usize>) -> PyResult<(Vec<PyCaseStream>, Vec<String>)> {
+#[pyo3(signature = (corpus, all_cases=false, task_ids=None, tasks=None, started=None, ended=None, progress=None, step_cap=None, prefix=false))]
+pub(crate) fn corpus_streams(py: Python<'_>, corpus: &str, all_cases: bool, task_ids: Option<Vec<String>>, tasks: Option<&str>, started: Option<Py<PyAny>>, ended: Option<Py<PyAny>>, progress: Option<Py<PyReplayProgress>>, step_cap: Option<usize>, prefix: bool) -> PyResult<(Vec<PyCaseStream>, Vec<String>)> {
     let wanted = if all_cases { WantedCases::All } else { WantedCases::Concept };
     let constructions = constructions()?;
     let vocabulary = Vocabulary::new(Registry::get(), &DecodeSettings::default());
     let reads: Mutex<HashMap<String, Result<(Task, JudgedTask), String>>> = Mutex::new(HashMap::new());
     let mut found = walk_corpus(py, corpus, &task_ids, |id| {
         let (mut streams, mut faults) = (Vec::new(), Vec::new());
-        match solver_streams(Path::new(corpus), id, wanted, &vocabulary) {
+        match solver_streams(Path::new(corpus), id, wanted, &vocabulary, prefix) {
             Ok(cases) => {
                 for case in cases {
                     match case.stream {

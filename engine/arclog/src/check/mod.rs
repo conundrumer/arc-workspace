@@ -206,6 +206,9 @@ pub struct Scope<'a> {
 pub struct CaseFiles<'a> {
     pub solver: &'a Solver,
     pub case: &'a Case,
+    /// Whether the files hold a prefix of a solver: whole forms that a
+    /// completion may follow.
+    pub prefix: bool,
 }
 
 impl<'a> CaseFiles<'a> {
@@ -561,7 +564,9 @@ pub fn check_shared_program(
 }
 
 /// [`check_shared_program`] over a program read from `files`, which
-/// [`CheckId::OneClause`] and [`CheckId::Spelling`] read.
+/// [`CheckId::OneClause`], [`CheckId::Spelling`] and the `OUT` form checks
+/// of [`CheckId::Out`] read. The refusal of a program with no `OUT` form
+/// is of a program read whole, so it does not run where `files.prefix`.
 pub fn check_program_of_files(
     program: Arc<ResolvedProgram>,
     clauses: &SolverClauses,
@@ -575,7 +580,8 @@ pub fn check_program_of_files(
         refused.extend(refusals.iter().map(|r| diagnostic(DiagnosticKind::Check(CheckId::Cycles), Severity::Error, r.message.clone(), r.at.clone())));
     }
     if let Some(files) = files {
-        let refusals = [out::missing(program.program.value()), out::several(files.case, program.program.value())];
+        let missing = if files.prefix { None } else { out::missing(program.program.value()) };
+        let refusals = [missing, out::several(files.case, program.program.value())];
         for refusal in refusals.into_iter().flatten() {
             refused.push(diagnostic(DiagnosticKind::Check(CheckId::Out), Severity::Error, refusal.message, refusal.at));
         }

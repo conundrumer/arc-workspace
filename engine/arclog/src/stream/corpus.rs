@@ -51,8 +51,12 @@ pub struct CaseStream {
 /// The stream of each wanted case of the solver `id` of `corpus`, in the
 /// order of the cases, as [`corpus_case_stream`] gives it, or the fault that
 /// stops the solver: its files do not read, a wanted case is absent, or the
-/// checker refuses a wanted case.
-pub fn solver_streams(corpus: &Path, id: &str, wanted: WantedCases<'_>, vocabulary: &Vocabulary) -> Result<Vec<CaseStream>, String> {
+/// checker refuses a wanted case. Where `prefix`, the files of the solver,
+/// and of each case under `cases/<id>/`, hold a prefix of a solver, as
+/// [`crate::check::CaseFiles::prefix`] gives it, so the checker does not
+/// refuse a case program for holding no `OUT` form, and a case's stream ends
+/// with the last token of its last form.
+pub fn solver_streams(corpus: &Path, id: &str, wanted: WantedCases<'_>, vocabulary: &Vocabulary, prefix: bool) -> Result<Vec<CaseStream>, String> {
     let solver = read_corpus_solver(corpus, id).map_err(|e| format!("the solver's files do not read: {e}"))?;
     let cases = resolve_cases(&solver, Registry::get());
     let clauses = SolverClauses::of_cases(&cases);
@@ -65,7 +69,7 @@ pub fn solver_streams(corpus: &Path, id: &str, wanted: WantedCases<'_>, vocabula
             vec![found.case.name.clone()]
         }
     };
-    let programs = check_cases(&solver, &cases, &clauses, &mut CheckCache::default(), &|name| names.contains(name))?;
+    let programs = check_cases(&solver, &cases, &clauses, &mut CheckCache::default(), &|name| names.contains(name), prefix)?;
     let concept = &cases.concept().case.name;
     Ok(programs
         .iter()
@@ -75,7 +79,7 @@ pub fn solver_streams(corpus: &Path, id: &str, wanted: WantedCases<'_>, vocabula
                 case: case_spelled(name),
                 concept: name == concept,
                 demonstrated: holds_demonstrated(program),
-                stream: corpus_case_stream(corpus, id, case, program, vocabulary),
+                stream: corpus_case_stream(corpus, id, case, program, vocabulary, prefix),
             }
         })
         .collect())
@@ -86,15 +90,16 @@ pub fn solver_streams(corpus: &Path, id: &str, wanted: WantedCases<'_>, vocabula
 /// under `cases/<id>/`, the files of the case as [`case_file_name`] names
 /// them, the concept stream of the solver those two files make; otherwise
 /// [`case_stream`]. Where only one of the two files stands, or they do not
-/// read, or the solver they make has no stream, the fault.
-pub fn corpus_case_stream(corpus: &Path, id: &str, case: &ResolvedCase, checked: &CheckedProgram, vocabulary: &Vocabulary) -> Result<WrittenStream, String> {
+/// read, or the solver they make has no stream, the fault. Where `prefix`,
+/// the case's files are read as [`solver_streams`] reads them.
+pub fn corpus_case_stream(corpus: &Path, id: &str, case: &ResolvedCase, checked: &CheckedProgram, vocabulary: &Vocabulary, prefix: bool) -> Result<WrittenStream, String> {
     let Some(texts) = files::read_case_files(corpus, id, &case.case.name)? else {
         return case_stream(case, checked, vocabulary);
     };
     let solver = read_solver_texts(corpus, id, &texts.arclog, &texts.arcdata).map_err(|e| format!("the case's files do not read: {e}"))?;
     let cases = resolve_cases(&solver, Registry::get());
     let clauses = SolverClauses::of_cases(&cases);
-    let alone = check_case(&solver, cases.concept(), &clauses, &mut CheckCache::default(), "the case's files")?;
+    let alone = check_case(&solver, cases.concept(), &clauses, &mut CheckCache::default(), "the case's files", prefix)?;
     case_stream(cases.concept(), &alone, vocabulary)
 }
 
@@ -205,9 +210,10 @@ pub fn case_spelled(name: &CaseName) -> String {
 /// The checked program of `case`, one of the cases of `solver` whose clauses
 /// `clauses` index, checked with the files of `solver` that the checks
 /// which read files read, or the checker's refusal of `what`, the case as a
-/// line names it.
-pub fn check_case(solver: &Solver, case: &ResolvedCase, clauses: &SolverClauses, cache: &mut CheckCache, what: &str) -> Result<CheckedProgram, String> {
-    let files = crate::check::CaseFiles { solver, case: &case.case };
+/// line names it. Where `prefix`, the files hold a prefix of a solver, as
+/// [`crate::check::CaseFiles::prefix`] gives it.
+pub fn check_case(solver: &Solver, case: &ResolvedCase, clauses: &SolverClauses, cache: &mut CheckCache, what: &str, prefix: bool) -> Result<CheckedProgram, String> {
+    let files = crate::check::CaseFiles { solver, case: &case.case, prefix };
     check_program_of_files(std::sync::Arc::clone(&case.resolved.value), clauses, Registry::get(), cache, Some(&files)).map_err(|refusals| {
         let messages: Vec<&str> = refusals.iter().map(|d| &*d.message).collect();
         format!("the checker refuses {what}: {}", messages.join("; "))
@@ -216,12 +222,12 @@ pub fn check_case(solver: &Solver, case: &ResolvedCase, clauses: &SolverClauses,
 
 /// The checked program of each case of `cases`, those of `solver`, whose
 /// name `wanted` holds, in the order of the cases, or the first refusal, as
-/// [`check_case`] gives it.
-pub fn check_cases(solver: &Solver, cases: &ResolvedCases, clauses: &SolverClauses, cache: &mut CheckCache, wanted: &dyn Fn(&CaseName) -> bool) -> Result<Vec<(CaseName, CheckedProgram)>, String> {
+/// [`check_case`] gives it, with `prefix` as it reads it.
+pub fn check_cases(solver: &Solver, cases: &ResolvedCases, clauses: &SolverClauses, cache: &mut CheckCache, wanted: &dyn Fn(&CaseName) -> bool, prefix: bool) -> Result<Vec<(CaseName, CheckedProgram)>, String> {
     let mut programs = Vec::new();
     for case in cases.cases().filter(|case| wanted(&case.case.name)) {
         let what = format!("the case {}", case_spelled(&case.case.name));
-        programs.push((case.case.name.clone(), check_case(solver, case, clauses, cache, &what)?));
+        programs.push((case.case.name.clone(), check_case(solver, case, clauses, cache, &what, prefix)?));
     }
     Ok(programs)
 }

@@ -139,9 +139,9 @@ pub(crate) fn solver_determination(corpus: &Path, tasks: &Path, id: &str) -> Res
     let cases = resolve_cases(&solver, registry);
     let clauses = SolverClauses::of_cases(&cases);
     let mut cache = CheckCache::default();
-    let concept = check_case(&solver, cases.concept(), &clauses, &mut cache, "the concept case")?;
+    let concept = check_case(&solver, cases.concept(), &clauses, &mut cache, "the concept case", false)?;
     let names = solver.case_names(Exclusion::WithoutExcluded);
-    let programs = check_cases(&solver, &cases, &clauses, &mut cache, &|name| names.contains(name))?;
+    let programs = check_cases(&solver, &cases, &clauses, &mut cache, &|name| names.contains(name), false)?;
     let session = corpus_session();
     let limits = corpus_limits();
     let constructions = constructions()?;

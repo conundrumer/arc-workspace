@@ -39,7 +39,7 @@ pub fn lint(solver: &Solver, registry: &Registry) -> Vec<Diagnostic> {
     let mut found = Found::default();
     for ResolvedCase { case, resolved } in cases.cases() {
         let mut diagnostics = resolved.diagnostics.clone();
-        let files = CaseFiles { solver, case };
+        let files = CaseFiles { solver, case, prefix: false };
         if let Err(refused) = check_program_of_files(Arc::clone(&resolved.value), &clauses, registry, &mut cache, Some(&files)) {
             diagnostics.extend(refused);
         }
@@ -92,7 +92,7 @@ impl Found {
 /// of its nearest node above that has a place, as a bare-label argument of a
 /// site has none of its own.
 fn place(solver: &Solver, case: &Case, path: &NodePath) -> FilePlace {
-    let (_, owning, file_path) = CaseFiles { solver, case }.file_of(path);
+    let (_, owning, file_path) = CaseFiles { solver, case, prefix: false }.file_of(path);
     let place = (0..=file_path.0.len())
         .rev()
         .find_map(|depth| owning.layout.node(SourceFile::Arclog, &NodePath(file_path.0[..depth].into()))?.place)

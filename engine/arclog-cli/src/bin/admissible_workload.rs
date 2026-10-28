@@ -74,7 +74,7 @@ fn main() -> Result<(), String> {
     let mut counts = Counts::default();
     eprintln!("pid {}", std::process::id());
     for id in ids {
-        let streams = solver_streams(Path::new(corpus), id, WantedCases::Concept, &vocabulary)?;
+        let streams = solver_streams(Path::new(corpus), id, WantedCases::Concept, &vocabulary, false)?;
         let (task, judged) = read_task_files(Path::new(tasks), id)?;
         let session = corpus_session();
         let train: Arc<[_]> = judged.train.iter().map(|pair| PairCandidates::of(pair, Section::Train, World::Closed)).collect();

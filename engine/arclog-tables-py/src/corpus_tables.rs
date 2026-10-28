@@ -80,9 +80,10 @@ struct TableCase {
 /// With `copies`, the replay checks the rows that the outputs of the constructions declare they copy
 /// (`arclog::eval::copies`), and each `CaseTables.copies` gives the violations it found; a
 /// construction's run that an earlier run of the call cached is not checked again.
+/// With `prefix`, each solver's files hold a prefix of a solver, read as `corpus_streams` reads them.
 #[pyfunction]
-#[pyo3(signature = (corpus, tasks, all_cases=false, task_ids=None, bodies=false, projection_cap=None, ended=None, progress=None, step_cap=None, table_work_cap=None, units=None, copies=false))]
-pub(crate) fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, task_ids: Option<Vec<String>>, bodies: bool, projection_cap: Option<u64>, ended: Option<Py<PyAny>>, progress: Option<Py<PyReplayProgress>>, step_cap: Option<usize>, table_work_cap: Option<u64>, units: Option<usize>, copies: bool) -> PyResult<(Vec<PyCaseTables>, Vec<String>)> {
+#[pyo3(signature = (corpus, tasks, all_cases=false, task_ids=None, bodies=false, projection_cap=None, ended=None, progress=None, step_cap=None, table_work_cap=None, units=None, copies=false, prefix=false))]
+pub(crate) fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, task_ids: Option<Vec<String>>, bodies: bool, projection_cap: Option<u64>, ended: Option<Py<PyAny>>, progress: Option<Py<PyReplayProgress>>, step_cap: Option<usize>, table_work_cap: Option<u64>, units: Option<usize>, copies: bool, prefix: bool) -> PyResult<(Vec<PyCaseTables>, Vec<String>)> {
     let units = units.map(|count| NonZeroUsize::new(count).ok_or_else(|| PyValueError::new_err("units must be a positive integer"))).transpose()?;
     let points = if bodies { Points::All } else { Points::Relations };
     let wanted = if all_cases { WantedCases::All } else { WantedCases::Concept };
@@ -93,7 +94,7 @@ pub(crate) fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases
     let reads: Mutex<HashMap<String, (Task, JudgedTask)>> = Mutex::new(HashMap::new());
     let found = walk_corpus(py, corpus, &task_ids, |id| {
         let (mut cases, mut faults) = (Vec::new(), Vec::new());
-        match solver_streams(Path::new(corpus), id, wanted, &vocabulary) {
+        match solver_streams(Path::new(corpus), id, wanted, &vocabulary, prefix) {
             Ok(streams) => match read_task_files(Path::new(tasks), id) {
                 Ok(read) => {
                     for case in streams.into_iter().filter(|case| !case.demonstrated) {
