@@ -171,6 +171,21 @@ these contracts alongside signatures, avoiding repeated parsing/geometry work.
 kept-assignment join key (`slot N`, etc.). These fields have different purposes;
 the renderer must not parse a definition header to recover either one.
 
+`native_relations[].readable_in_checked_program` distinguishes a reserved
+writer slot from a relation actually defined by this specialized checked graph.
+For example, an unkeyed Division instance reserves a `parts` slot but defines
+only its applicable output. Native frame export reports such slots as
+`not_a_readable_relation_in_checked_program`, without asking the evaluator for
+a nonexistent graph node. This is distinct from an existing input port omitted
+by the native table format because it aliases a source relation.
+
+`scripts/study/check_render_exports.py --pool POOL --output NEW_DIRECTORY`
+audits real saved pool sources. It runs one process per task, caches checked
+gold handles, streams each pair to `cases.jsonl`, prints done/total, rate and ETA,
+and writes failure-class counts/examples to `summary.json`. `--continuation`
+also checks exact historical kept assignments and the new execution binding;
+`--only TASK ...`, `--limit N`, and `--workers N` bound or parallelize a run.
+
 ## Resolved arguments, comparisons and typed reserved zero
 
 `parts.argument_types=complete` and `parts.literal_meanings=complete`.

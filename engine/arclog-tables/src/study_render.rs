@@ -62,10 +62,10 @@ pub fn export(
     for form in &written.forms {
         for slot in form.relations.clone() {
             let declared = &written.relations[slot];
-            if gives_no_table(program.program().value(), &form.path, declared) {
+            if !form.readable.contains(&slot) || gives_no_table(program.program().value(), &form.path, declared) {
                 relations.push(json!({"relation_slot":slot,"source_name":relation_spelled(declared),"form_path":path_json(&form.path),
-                    "materialized_table_expected":false,"schema_status":"native_export_omits_this_port",
-                    "reason":"native alias/projection or unused specialized output; use INIT input_port_projection and its source relation schema"}));
+                    "materialized_table_expected":false,"schema_status":if form.readable.contains(&slot) {"native_export_omits_this_port"} else {"not_a_readable_relation_in_checked_program"},
+                    "reason":if form.readable.contains(&slot) {"native alias/projection or unused specialized output; use INIT input_port_projection and its source relation schema"} else {"writer reserves this registry port slot, but this specialized checked instance defines no readable graph relation for it; registry declaration describes the port"}}));
                 continue;
             }
             let graph =

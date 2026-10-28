@@ -195,11 +195,13 @@ pub fn export(program: &StudyProgram, registry: &Registry) -> Result<Value, Stri
     let written = crate::stream::written_stream(program.checked(), &vocabulary)
         .map_err(|d| super::diagnostics_text(&[d]))?;
     let native_relations=written.relations.iter().enumerate().map(|(slot,r)| {
-        let form=written.forms.iter().find(|f|f.relations.contains(&slot)).map(|f|&f.path);
+        let owner=written.forms.iter().find(|f|f.relations.contains(&slot));
+        let form=owner.map(|f|&f.path);
         let reference=match r {ProgramRelation::Declared(n)=>RelationRef::Declared(n.clone()),ProgramRelation::Output(n)=>RelationRef::Output(n.clone())};
         let display_name=crate::write::relation_ref(&reference,|n|match n {DeclaredName::Written(n)=>n.to_string(),DeclaredName::Slot(n)=>format!("&r{n}")});
         json!({"relation_slot":slot,"relation":program_relation(r),"source_name":crate::eval::determinations::relation_spelled(r),
             "display_name":display_name,
+            "readable_in_checked_program":owner.is_some_and(|f|f.readable.contains(&slot)),
             "definition_path":form.map(path_json),"native_selector":{"point":0,"relation":slot,
                 "form":form.map(|p|p.0.iter().map(|s|s.0.to_string()).collect::<Vec<_>>().join("."))},
             "note":"selector identifies a present relation table; some aliased/omitted INIT ports have no table"})
