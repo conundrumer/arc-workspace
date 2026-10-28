@@ -185,3 +185,12 @@ high-water mark. A torn final JSONL row is truncated before appending; valid
 rows are preserved. `--resume-from PATH` is repeatable and reads additional
 checkpoint files without modifying them. Summaries report this invocation's
 work and its skipped case count; progress continues to print every second.
+
+After integrating the checked-IR fixes and memory lifecycle, one isolated
+wheel supports fault replay and corpus resume. From `ast`, run
+`engine-perf/scripts/build_study_unified.sh` through `run_heavy.py`. It uses
+`target-perf`, writes `wheels-s3-unified`, installs only `venv-s3-unified`,
+and checks that both `replay` and `finish_case` are exported. Build progress
+prints every five seconds. Use that interpreter for `check_stage3_fast.py`
+with either `--case-manifest ... --replay-identities --gold-tables` or
+`--resume --output stage3-fast2.jsonl`.

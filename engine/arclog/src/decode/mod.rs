@@ -102,16 +102,6 @@ pub struct Decoder<'a> {
     held_stops: Arc<HeldStops>,
 }
 
-/// A validated replay prefix, without borrowed task inputs. It can only be
-/// resumed in the same task session and decode settings that created it.
-#[derive(Clone)]
-pub struct ReplayCheckpoint {
-    state: state::State,
-    before: Option<state::State>,
-    output: Option<NodePath>,
-    assignments: Vec<Vec<(ProgramRelation, Arc<crate::relations::Relation>)>>,
-}
-
 /// What [`Decoder::admissible`] computes at a state: the mask, and the
 /// state and the forced tokens that each admitted token gives, by the
 /// token's id, which [`Decoder::advance`] takes in place of a second check.
@@ -506,21 +496,6 @@ impl<'a> Decoder<'a> {
             held_stops: Arc::new(self.held_stops.snapshot()),
             ..self.clone()
         }
-    }
-
-    /// Save the syntactic replay state. Evaluation budgets and held stops
-    /// belong to the requesting decode, rather than to a cached prefix.
-    pub fn replay_checkpoint(&self) -> ReplayCheckpoint {
-        ReplayCheckpoint {state:self.state.clone(),before:self.before.clone(),output:self.output.clone(),assignments:self.assignments.clone()}
-    }
-
-    /// Resume an exact validated token prefix in this task's namespace.
-    pub fn resume_replay(&mut self, checkpoint:&ReplayCheckpoint) {
-        self.state=checkpoint.state.clone();
-        self.before=checkpoint.before.clone();
-        self.output=checkpoint.output.clone();
-        self.assignments=checkpoint.assignments.clone();
-        self.held=Held::default();
     }
 
     /// The declared rows that the constructions' outputs broke in the
