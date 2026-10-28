@@ -166,9 +166,35 @@ pub struct Extents {
     pub columns: Vec<u32>,
     /// Native proof that a column has no reference grid (not missing evidence).
     pub no_grid: Vec<bool>,
+    /// Direct grid evidence is independent of whether a different column's
+    /// derivation stops. Keep it without retaining or re-evaluating any rows.
+    grids: Vec<DirectGrids>,
     /// For each example of the table, for each assignment of its rows, for each
     /// model; empty for an example whose rows fault.
     examples: Vec<Vec<Vec<EntryExtents>>>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct DirectGrids {
+    input: Option<Extent>,
+    output: Option<Extent>,
+}
+
+impl DirectGrids {
+    fn at(&self, frame: &str) -> Option<Extent> {
+        match frame {
+            INPUT_FRAME => self.input,
+            OUTPUT_FRAME => self.output,
+            _ => None,
+        }
+    }
+}
+
+fn direct_grids(decoder: &Decoder<'_>, contents: &Contents) -> Vec<DirectGrids> {
+    contents.examples.iter().map(|example| DirectGrids {
+        input: grid_extent(decoder, INPUT_FRAME, example.example),
+        output: grid_extent(decoder, OUTPUT_FRAME, example.example),
+    }).collect()
 }
 
 impl Extents {
@@ -176,6 +202,19 @@ impl Extents {
     /// the example `example` of the table.
     pub fn entry(&self, example: usize, assignment: usize, model: usize) -> Option<&EntryExtents> {
         self.examples.get(example)?.get(assignment)?.get(model)
+    }
+
+    /// Evidence that does not depend on a widened-body query. Also used by
+    /// downstream native reads when another column's derivation stopped.
+    fn direct_at(&self, contents: &Contents, example: usize, column: usize, value: TermId) -> Option<Extent> {
+        match contents.columns[column].ty {
+            ValueType::Position => position_extent(value, &ValueType::Position),
+            ValueType::Box => {
+                let extent = self.grids.get(example)?.at(&contents.frames[column])?;
+                fitted_size(extent, margins_of(value, &ValueType::Box)?).map(|_| extent)
+            }
+            _ => None,
+        }
     }
 }
 
@@ -208,6 +247,26 @@ struct Subject<'a> {
     types: &'a [ValueType],
     examples: &'a [ExampleRows],
     columns: &'a [u32],
+    /// Parallel to the full extent-column list, never a compressed interface.
+    /// Internal port derivations have already selected their wanted columns.
+    needed: Option<&'a [bool]>,
+}
+
+impl Subject<'_> {
+    fn needs(&self, column: usize) -> bool {
+        self.needed.is_none_or(|needed| needed[column])
+    }
+}
+
+/// Export coverage does not request evaluation. Only a Box without a direct
+/// proof needs a widened derivation. A task-wide/lifted request with no single
+/// example retains derivation, since its rows can refer to different grids.
+fn derivation_mask(contents: &Contents, columns: &[u32], no_grid: &[bool], grids: &[DirectGrids]) -> Vec<bool> {
+    columns.iter().enumerate().map(|(k, &column)| {
+        let column = column as usize;
+        contents.columns[column].ty == ValueType::Box && !no_grid[k]
+            && !grids.iter().all(|grid| grid.at(&contents.frames[column]).is_some())
+    }).collect()
 }
 
 /// Only positive native provenance proves no_grid. Empty/unknown frame names
@@ -253,15 +312,13 @@ fn completed_rows(decoder:&Decoder<'_>,contents:&Contents,example:Option<Example
 }
 
 fn direct_extents(decoder:&Decoder<'_>,contents:&Contents,columns:Vec<u32>,no_grid:Vec<bool>)->Extents {
-    let work=decoder.table_work();
     let examples=contents.examples.iter().map(|e|e.rows.as_ref().map_or_else(|_|Vec::new(),|a|a.at.iter().map(|(_,models)|models.iter().map(|v|match v {
-        RelationValue::Rows(rows)=>match work.charge(rows.len()) {
-            Ok(())=>EntryExtents::Rows(completed_rows(decoder,contents,e.example,rows,&columns,&no_grid,None)),
-            Err(bound)=>EntryExtents::Stopped(Stop {bound,form:NodePath::default()}),
-        },
+        // These rows were already materialized and charged. This is the same
+        // formatting walk as the native value buffer, not another evaluation.
+        RelationValue::Rows(rows)=>EntryExtents::Rows(completed_rows(decoder,contents,e.example,rows,&columns,&no_grid,None)),
         _=>EntryExtents::Absent,
     }).collect()).collect())).collect();
-    Extents {columns,no_grid,examples}
+    Extents {columns,no_grid,examples,grids:direct_grids(decoder,contents)}
 }
 
 /// Native per-cell annotation, in the relation's each_row order. This is used
@@ -276,7 +333,11 @@ pub fn annotated_rows(contents:&Contents,example:usize,assignment:usize,model:us
             let no_grid=contents.columns[*c as usize].ty==ValueType::Offset || extents.is_some_and(|e|e.no_grid.get(k)==Some(&true));
             if no_grid {return (0,None);}
             let extent=match held {Some(EntryExtents::Rows(rows))=>rows.get(at).and_then(|r|r.get(k)).copied().flatten(),_=>None}
-                .or_else(||(contents.columns[*c as usize].ty==ValueType::Position).then(||position_extent(row[*c as usize],&ValueType::Position)).flatten());
+                .or_else(||match contents.columns[*c as usize].ty {
+                    ValueType::Position=>position_extent(row[*c as usize],&ValueType::Position),
+                    ValueType::Box=>extents?.direct_at(contents,example,*c as usize,row[*c as usize]),
+                    _=>None,
+                });
             (if extent.is_some(){1}else{2},extent)
         }).collect());at+=1;
     });result
@@ -292,14 +353,16 @@ pub fn table_extents(decoder: &Decoder<'_>, earlier: &[&Table], checked: &Checke
     let columns = extent_columns(&types, &contents.frames);
     if columns.is_empty() { return None; }
     let no_grid = no_grid_columns(decoder, earlier, contents, &columns);
-    if !columns.iter().enumerate().any(|(k,c)|types[*c as usize]==ValueType::Box && !no_grid[k]) {
+    let grids = direct_grids(decoder, contents);
+    let needed = derivation_mask(contents, &columns, &no_grid, &grids);
+    if !needed.iter().any(|needed| *needed) {
         return Some(direct_extents(decoder,contents,columns,no_grid));
     }
     let names = names_of(decoder.registry(), earlier);
     let reads = Reads { names, tables: earlier, cache: RefCell::default(), work: decoder.table_work() };
-    let subject = Subject { checked, relation:Some(relation), types: &types, examples: &contents.examples, columns: &columns };
+    let subject = Subject { checked, relation:Some(relation), types: &types, examples: &contents.examples, columns: &columns, needed:Some(&needed) };
     let gathered = derive(decoder, &reads, &subject);
-    Some(Extents { examples: finish(decoder, contents, &gathered, &columns, &no_grid), columns, no_grid })
+    Some(Extents { examples: finish(decoder, contents, &gathered, &columns, &no_grid), columns, no_grid, grids })
 }
 
 /// Extents of a checked body query, using the same native derivation and
@@ -309,11 +372,13 @@ pub fn body_extents(decoder:&Decoder<'_>,earlier:&[&Table],checked:&CheckedProgr
     let columns=extent_columns(&types,&contents.frames);
     if columns.is_empty() {return None;}
     let no_grid=no_grid_columns(decoder,earlier,contents,&columns);
-    if !columns.iter().enumerate().any(|(k,c)|types[*c as usize]==ValueType::Box && !no_grid[k]) {
+    let grids=direct_grids(decoder,contents);
+    let needed=derivation_mask(contents,&columns,&no_grid,&grids);
+    if !needed.iter().any(|needed| *needed) {
         return Some(direct_extents(decoder,contents,columns,no_grid));
     }
     let reads=Reads {names:names_of(decoder.registry(),earlier),tables:earlier,cache:RefCell::default(),work:decoder.table_work()};
-    let subject=Subject {checked,relation:None,types:&types,examples:&contents.examples,columns:&columns};
+    let subject=Subject {checked,relation:None,types:&types,examples:&contents.examples,columns:&columns,needed:Some(&needed)};
     let mut gathered=subject.examples.iter().map(|e|e.rows.as_ref().map_or_else(|_|Vec::new(),|a|a.at.iter().map(|_|Gathered::default()).collect())).collect::<Vec<Vec<Gathered>>>();
     let placements=view.clause.columns.iter().enumerate().map(|(i,v)|Some(Placement {slot:i as u32,label:Some(view.paths.labels[v.0 as usize])})).collect::<Vec<_>>();
     let dets=contents.dets.iter().map(|d|relation_spelled(&d.relation)).collect::<Vec<_>>();
@@ -321,7 +386,7 @@ pub fn body_extents(decoder:&Decoder<'_>,earlier:&[&Table],checked:&CheckedProgr
         Ok(views)=>for sub in &views {gather(decoder,&reads,&dets,&subject,sub,&placements,&mut gathered)},
         Err(fault)=>lose_all(&mut gathered,&fault_spelled(&fault)),
     }
-    Some(Extents {examples:finish(decoder,contents,&gathered,&columns,&no_grid),columns,no_grid})
+    Some(Extents {examples:finish(decoder,contents,&gathered,&columns,&no_grid),columns,no_grid,grids})
 }
 
 /// What the derivations of the rows of `subject` give for each of its
@@ -469,8 +534,10 @@ fn gather(decoder: &Decoder<'_>, reads: &Reads<'_>, dets: &[String], subject: &S
                             each_row(body_rows, &mut |row| {
                                 let derived: Box<[TermId]> = key.iter().map(|&column| row[column]).collect();
                                 let slots = entry.rows.entry(derived).or_insert_with(|| vec![Merged::Unset; subject.columns.len()]);
-                                for (slot, &column) in slots.iter_mut().zip(subject.columns) {
-                                    slot.merge(analysis.extent_of(key[column as usize], row, &ctx, 0));
+                                for (k, (slot, &column)) in slots.iter_mut().zip(subject.columns).enumerate() {
+                                    if subject.needs(k) {
+                                        slot.merge(analysis.extent_of(key[column as usize], row, &ctx, 0));
+                                    }
                                 }
                             });
                             // The reads of earlier tables that the rows made may have passed the cap.
@@ -572,7 +639,11 @@ impl OutputPlan {
             Some(ports.len() - 1)
         };
         let mut columns: Vec<Option<ColumnPlan>> = Vec::new();
-        for &column in subject.columns {
+        for (k, &column) in subject.columns.iter().enumerate() {
+            if !subject.needs(k) {
+                columns.push(None);
+                continue;
+            }
             let position = column as usize;
             let wants: Option<(Vec<(PortName, usize)>, bool)> = match &key {
                 Some(key) if key.contains(&position) => component.inputs.iter().find_map(|input| {
@@ -608,7 +679,7 @@ impl OutputPlan {
             let port_relation=port.relation.clone();
             let Some(types) = checked.types.columns(&port_relation) else { continue };
             let examples = relation_examples(decoder, checked, &port_relation, &relation_dets(checked, port_relation.node), &reads.work);
-            let port_subject = Subject { checked, relation: Some(&port_relation), types, examples: &examples, columns: &port.wanted };
+            let port_subject = Subject { checked, relation: Some(&port_relation), types, examples: &examples, columns: &port.wanted, needed:None };
             let derived = derive(decoder, reads, &port_subject);
             port.derived = Some((examples, derived));
         }
@@ -856,7 +927,8 @@ impl Reads<'_> {
         each_row(relation, &mut |row| {
             let extent = match ty {
                 Some(ValueType::Position) => position_extent(row[index], &ValueType::Position),
-                _ => held.zip(held_at).and_then(|(held, column)| held.get(row_at)?.get(column).copied().flatten()),
+                _ => held.zip(held_at).and_then(|(held, column)| held.get(row_at)?.get(column).copied().flatten())
+                    .or_else(|| contents.extents.as_ref()?.direct_at(contents, place, index, row[index])),
             };
             let key: Box<[TermId]> = fixed.iter().map(|&column| row[column]).collect();
             merged.entry(key).or_insert(Merged::Unset).merge(extent);
