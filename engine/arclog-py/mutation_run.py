@@ -44,7 +44,7 @@ A label with no typed site, or whose types have no meet, gets no expected verdic
 
 A mutant is the text of a solver's `.arclog` with one span replaced, so its comments and layout stand. Each mutant has a directory of
 its own under `--out`, with its `.arclog`, the `.arcdata` of the solver and the files of each solver that `.arcdata` names. Each stage
-of a mutant runs under a time bound of 60 s and with `ARCLOG_THREADS=1`. `arclog-cli stream` gives the reader's verdict and the
+of a mutant runs under a bound of 60 s of CPU time, with a backstop of 600 s on the wall clock, and with `ARCLOG_THREADS=1`. `arclog-cli stream` gives the reader's verdict and the
 checker's verdict on the concept case alone. Of a mutant that `stream` accepts, `arclog-cli decode --no-rows` checks each case it
 decodes, runs the evaluator and replays the decoder, and `arclog-cli tables --bodies` runs the step tables. A mutant is refused where
 `stream` refuses it, or where `decode` reports that the checker refuses a case (a fault line `a fault that stops the decode: the checker
@@ -62,16 +62,17 @@ rerun, `arclog-cli stream <mutant dir>/<task>.arclog`. The kinds:
             where `decode` found nothing.
   no-cause  a refusal whose message is empty or has no text after the prefixes that give the stage and the case, such as
             `a fault that stops the stream: the checker refuses the case concept:`.
-  stopped   a stage does not end within its time bound.
+  stopped   a stage passes its CPU bound or its wall-clock bound.
 The directories of mutants with no finding are removed. The last line gives, per operator, the mutants run, accepted, refused and the
 findings. The exit status is 0 where the run ended, with findings or none.
 """
-import argparse, dataclasses, enum, os, random, re, shutil, subprocess, sys, threading
+import argparse, dataclasses, enum, os, random, re, shutil, signal, subprocess, sys, threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-STAGE_BOUND = 60  # seconds
+STAGE_BOUND = 60  # seconds of CPU time
+WALL_BOUND = 10 * STAGE_BOUND  # seconds on the wall clock, for a process that waits without using CPU
 CONSTRAINT_OPS = ("=", "!=", "<", "<=", ">", ">=")
 TYPE_UNDER = {"C4": "D4", "Dir": "Dir8", "DiagDir": "Dir8", "Axis": "Axis4", "DiagAxis": "Axis4", "Position": "Box", "Offset": "Box"}  # docs/engine/reader.md: a type to the type above it
 CLAUSE_HEADS = ("RULE", "DET", "RIGID_DET", "INIT")  # the clauses that name a relation as their own, by their second item
@@ -165,6 +166,11 @@ class FindingKind(enum.Enum):
     RUN_FAULT = "run-fault"
     NO_CAUSE = "no-cause"
     STOPPED = "stopped"
+
+
+class Bound(enum.Enum):
+    CPU = enum.auto()
+    WALL = enum.auto()
 
 
 @dataclasses.dataclass
@@ -611,11 +617,16 @@ class Runner:
         self.locks: dict[str, threading.Lock] = {}
 
     def cli(self, *argv):
-        """(exit code, stdout, stderr) of one call, or None where it does not end in the bound."""
+        """(exit code, stdout, stderr) of one call, or the `Bound` that the call passes: `CPU` where its process uses more than
+        `STAGE_BOUND` s of CPU time, `WALL` where it does not end in `WALL_BOUND` s. The limit is set by `ulimit -t` in a shell, as
+        `preexec_fn` is unsafe in the threads that call this."""
         try:
-            run = subprocess.run([self.args.cli, *argv], capture_output=True, text=True, errors="replace", timeout=STAGE_BOUND, env=self.env)
+            run = subprocess.run(["/bin/sh", "-c", f'ulimit -t {STAGE_BOUND}; exec "$0" "$@"', self.args.cli, *argv],
+                                 capture_output=True, text=True, errors="replace", timeout=WALL_BOUND, env=self.env)
         except subprocess.TimeoutExpired:
-            return None
+            return Bound.WALL
+        if run.returncode == -signal.SIGXCPU:
+            return Bound.CPU
         return run.returncode, run.stdout, run.stderr
 
     def original_faults(self, task):
@@ -626,15 +637,15 @@ class Runner:
         with lock:
             if task not in self.originals:
                 streamed = self.cli("stream", str(Path(self.args.corpus) / f"{task}.arclog"))
-                decoded = self.cli("decode", self.args.corpus, self.args.tasks, "--no-rows", task) if streamed and streamed[0] == 0 else None
-                faults = decode_faults(task, decoded[1]) if decoded else None
+                decoded = self.cli("decode", self.args.corpus, self.args.tasks, "--no-rows", task) if isinstance(streamed, tuple) and streamed[0] == 0 else None
+                faults = decode_faults(task, decoded[1]) if isinstance(decoded, tuple) else None
                 self.originals[task] = None if faults is None or case_refusals(faults) else {kind for kind, _ in faults}
             return self.originals[task]
 
     def stage(self, label, result, findings):
         """Adds the `stopped` or `panic` finding of a stage's result; True where it has one."""
-        if result is None:
-            findings.append((FindingKind.STOPPED, f"{label} does not end in {STAGE_BOUND} s"))
+        if isinstance(result, Bound):
+            findings.append((FindingKind.STOPPED, f"{label} uses more than {STAGE_BOUND} s of CPU time" if result is Bound.CPU else f"{label} does not end in {WALL_BOUND} s"))
             return True
         code, out, err = result
         lines = err.splitlines()
@@ -762,7 +773,7 @@ def main():
             if not findings:
                 shutil.rmtree(directory, ignore_errors=True)
     print("; ".join(f"{o}: {c['mutants']} mutants, {c['accepted']} accepted, {c['refused']} refused, {c['findings']} findings" for o, c in counts.items())
-          + (f"; {left_out} mutants left out for solvers whose own file stream or decode refuses" if left_out else ""), flush=True)
+          + (f"; {left_out} mutants left out for solvers whose own file stream or decode refuses or does not end within its bound" if left_out else ""), flush=True)
 
 
 if __name__ == "__main__":
