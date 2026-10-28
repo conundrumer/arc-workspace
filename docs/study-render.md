@@ -174,6 +174,41 @@ the renderer must not parse a definition header to recover either one.
 ## Resolved arguments, comparisons and typed reserved zero
 
 `parts.argument_types=complete` and `parts.literal_meanings=complete`.
+
+## Exact-kept continuation and DET admissibility
+
+`arclog.study_continuation(evaluator, gold, mutant, expected_kept_json=None)`
+returns `(report_json, gold_CaseTables, mutant_CaseTables)`. First call
+`evaluator.evaluate_pair(gold, point, mutant)` on these exact handles. This
+operation reads that evaluator's cached gold observation; it never walks FITS
+or selects replacement assignments. Keep the evaluator alive for the case.
+Tables include every materialized written relation, in written order, including
+INIT component output ports. Native schemas, frames, example/model/assignment
+axes and packed storage are the ordinary `CaseTables` export. Evidence tables
+are prepended as usual. Relation table selectors use the same form/slot map as
+`definitions.native_relations`. Assignment indices follow report
+`kept_assignments`, even when a relation reads only a subset of those DETs.
+
+For each held DET the report removes only that DET's held value, evaluates its
+native domain with the other kept values fixed, and compares exact row sets.
+For a proposer DET with ONE, the held singleton must occur in a domain value.
+Undefined domains, changed schemas, faults and bounds remain explicit. OUT is
+reported separately at the held full assignment: native parameter evaluation
+overrides the proposal body with the held value, **including when that value is
+inadmissible**. Such conditional OUT evidence does not claim that execution
+selected a row from the displayed candidate body. No alternate FITS is used.
+One shared deadline and table-work counter bound this additional operation.
+
+For historical corpus-v5/v8 records pass the stored full `kept_assignments` as
+`expected_kept_json`. A mismatch is an error, including a different interned
+Ident namespace; packed identifiers from another task session must never be
+silently injected. Reuse original source streams and the task evaluator's
+ingestion/evaluation sequence when recreating the observation. The API cannot
+retroactively claim an unrecorded historical observation. Existing recorded OUT
+reports remain historical producer evidence and should be described as such.
+On v8, CHANGE, definition closure, authored meanings, typed Term decoding,
+native frame sources, and input-port projection already work; continuation is
+an additional binding requiring the new build.
 `typed_sites.arguments` gives every scalar site argument's original `path`,
 `site_path`, `scope_path`, label ID (null for zero), native `resolved_type`,
 source `column_type` where applicable, native checker `frame` evidence, and

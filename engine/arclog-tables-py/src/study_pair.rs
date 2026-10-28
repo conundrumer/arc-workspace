@@ -10,6 +10,9 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::path::Path;
 
+#[path = "study_continuation.rs"]
+mod continuation;
+
 /// Returns (report_json, gold CaseTables, mutant CaseTables). The last
 /// two native tables on each side are the completed body over its own DET
 /// assignments and at gold FITS assignments. Earlier tables
@@ -80,6 +83,7 @@ fn evaluate_pair(
 
 pub(crate) fn register(names: &Names<'_, '_>) -> PyResult<()> {
     names.class::<PyStudyTaskEvaluator>()?;
+    continuation::register(names)?;
     names.function(wrap_pyfunction!(evaluate_pair, names.module())?)
 }
 

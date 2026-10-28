@@ -14,6 +14,9 @@ use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 use arclog::check::{CheckedProgram};
 
+#[path = "study_continuation.rs"]
+pub mod continuation;
+
 pub struct PairEvaluation {
     /// Full native tables, including preceding relation tables needed to
     /// resolve provenance/frame references. The last two are the complete
