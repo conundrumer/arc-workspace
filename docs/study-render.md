@@ -203,6 +203,8 @@ gold handles, streams each pair to `cases.jsonl`, prints done/total, rate and ET
 and writes failure-class counts/examples to `summary.json`. `--continuation`
 also checks exact historical kept assignments and the new execution binding;
 `--only TASK ...`, `--limit N`, and `--workers N` bound or parallelize a run.
+`--component-tables` checks component outputs independently of OUT and audits
+the explicit full-choice entry maps against the actual native entry buffers.
 
 ## Exact-kept continuation and DET admissibility
 

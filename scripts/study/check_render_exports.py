@@ -31,8 +31,9 @@ def worker(args):
     job=json.load(sys.stdin)
     handles=OrderedDict()
     evaluator=None
-    if args.continuation:
-        require(hasattr(arclog,"study_continuation"), "rebuild required: study_continuation")
+    if args.continuation or args.component_tables:
+        require(hasattr(arclog,"study_component_tables"), "rebuild required: study_component_tables")
+        if args.continuation:require(hasattr(arclog,"study_continuation"), "rebuild required: study_continuation")
         settings=arclog.DecodeSettings(deadline_seconds=args.native_seconds,rule_tests=False)
         evaluator=arclog.StudyTaskEvaluator(job["task"],str(args.tasks),settings,compact=False)
     def alarm(*_):
@@ -100,6 +101,27 @@ def worker(args):
                 phase="observe_gold"
                 point=next(p for p in gold.points() if p.body_path==record["identity"]["body"])
                 evaluator.evaluate_pair(gold,point,mutant)
+                phase="component_tables"
+                components,gt,mt=arclog.study_component_tables(evaluator,gold,mutant,
+                    json.dumps(record["evaluation"]["kept_assignments"]))
+                components=json.loads(components)
+                require(components["gold_status"]["status"]=="complete","gold component tables "+str(components["gold_status"]))
+                require(components["mutant_status"]["status"]=="complete","mutant component tables "+str(components["mutant_status"]))
+                require(components["gold_observation_stop"] is None,"gold FITS observation incomplete")
+                for side,native in (("gold",gt),("mutant",mt)):
+                    axes={name:list(memoryview(native.entries[name]).cast("B" if name=="example_kind" else "I"))
+                        for name in ("table","example_kind","example_index","model")}
+                    for table in components[side+"_assignment_map"]:
+                        require([e["table_entry"] for e in table["entries"]]==list(range(len(table["entries"]))),"noncontiguous native entry indices")
+                        require(all(e["kept_assignment"] is None or 0<=e["kept_assignment"]<len(components["kept_assignments"]) for e in table["entries"]),"component entry has invalid full choice index")
+                        native_entries=[i for i,t in enumerate(axes["table"]) if t==table["table"]]
+                        require(len(native_entries)==len(table["entries"]),"assignment map length differs from actual native entries")
+                        for index,entry in zip(native_entries,table["entries"]):
+                            require(axes["example_kind"][index]=={"task":0,"train":1,"test":2}[entry["example_kind"]]
+                                and axes["example_index"][index]==entry["example_index"] and axes["model"][index]==entry["model"],
+                                "assignment map axes differ from actual native entries")
+                result["component_tables"]="complete"
+            if args.continuation:
                 phase="continuation"
                 report,gt,mt=arclog.study_continuation(evaluator,gold,mutant,
                     json.dumps(record["evaluation"]["kept_assignments"]))
@@ -132,6 +154,7 @@ def main():
     parser.add_argument("--pair-seconds",type=float,default=10)
     parser.add_argument("--native-seconds",type=float,default=1)
     parser.add_argument("--continuation",action="store_true")
+    parser.add_argument("--component-tables",action="store_true",help="check native component output tables independently of OUT")
     parser.add_argument("--worker",action="store_true",help=argparse.SUPPRESS)
     args=parser.parse_args()
     if args.worker:
@@ -161,6 +184,7 @@ def main():
             command=[sys.executable,"-B",str(Path(__file__).resolve()),"--worker","--tasks",str(args.tasks),
                 "--pair-seconds",str(args.pair_seconds),"--native-seconds",str(args.native_seconds)]
             if args.continuation:command.append("--continuation")
+            if args.component_tables:command.append("--component-tables")
             with subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True,bufsize=1) as process:
                 process.stdin.write(json.dumps(dict(task=task,paths=files)));process.stdin.close()
                 received=0
