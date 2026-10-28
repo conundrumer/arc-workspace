@@ -91,6 +91,7 @@ fn registry_export_uncached(registry: &Registry) -> Result<Value, String> {
             .get(lib.0.as_ref())
             .ok_or_else(|| format!("no embedded definition for {}", lib.0))?;
         entries.push(json!({"id":format!("lib:{}",lib.0),"name":lib.0,"kind":kind,"implementation":implementation,
+            "semantics":super::render_meanings::contract(&format!("lib:{}",lib.0),registry),
             "declaration":declaration,"arclog_implementation":implementations.get(lib.0.as_ref()),"reads":reads,"ports":ports}));
     }
     for fact in [
@@ -108,21 +109,28 @@ fn registry_export_uncached(registry: &Registry) -> Result<Value, String> {
             .ok_or_else(|| format!("missing fact definition {key}"))?;
         entries.push(
             json!({"id":format!("fact:{key}"),"name":key,"kind":"fact","declaration":definition,
+            "semantics":super::render_meanings::contract(&format!("fact:{key}"),registry),
             "reads":[],"implementation":"task_grid_evidence"}),
         );
     }
     Ok(
         json!({"completeness":"entire_embedded_registry_and_arclog_proposers","entries":entries,
-        "native_semantics":"native relations/components/proposers expose their registry contracts; implementation kinds are explicit, no arclog body is invented"}),
+        "semantic_catalogue":{"schema":super::render_meanings::catalogue()["schema"],"general_contract":super::render_meanings::catalogue()["general_contract"],"proposer_context":super::render_meanings::catalogue()["proposer_context"]}}),
     )
 }
 
-fn registry_export(registry:&Registry)->Result<Value,String> {
-    static SHARED:std::sync::OnceLock<Result<std::sync::Arc<Value>,String>>=std::sync::OnceLock::new();
-    if std::ptr::eq(registry,Registry::get()) {
-        SHARED.get_or_init(||registry_export_uncached(registry).map(std::sync::Arc::new))
-            .as_ref().map(|value|(**value).clone()).map_err(Clone::clone)
-    } else {registry_export_uncached(registry)}
+fn registry_export(registry: &Registry) -> Result<Value, String> {
+    static SHARED: std::sync::OnceLock<Result<std::sync::Arc<Value>, String>> =
+        std::sync::OnceLock::new();
+    if std::ptr::eq(registry, Registry::get()) {
+        SHARED
+            .get_or_init(|| registry_export_uncached(registry).map(std::sync::Arc::new))
+            .as_ref()
+            .map(|value| (**value).clone())
+            .map_err(Clone::clone)
+    } else {
+        registry_export_uncached(registry)
+    }
 }
 
 pub fn export(program: &StudyProgram, registry: &Registry) -> Result<Value, String> {
@@ -188,12 +196,25 @@ pub fn export(program: &StudyProgram, registry: &Registry) -> Result<Value, Stri
         .map_err(|d| super::diagnostics_text(&[d]))?;
     let native_relations=written.relations.iter().enumerate().map(|(slot,r)| {
         let form=written.forms.iter().find(|f|f.relations.contains(&slot)).map(|f|&f.path);
+        let reference=match r {ProgramRelation::Declared(n)=>RelationRef::Declared(n.clone()),ProgramRelation::Output(n)=>RelationRef::Output(n.clone())};
+        let display_name=crate::write::relation_ref(&reference,|n|match n {DeclaredName::Written(n)=>n.to_string(),DeclaredName::Slot(n)=>format!("&r{n}")});
         json!({"relation_slot":slot,"relation":program_relation(r),"source_name":crate::eval::determinations::relation_spelled(r),
+            "display_name":display_name,
             "definition_path":form.map(path_json),"native_selector":{"point":0,"relation":slot,
                 "form":form.map(|p|p.0.iter().map(|s|s.0.to_string()).collect::<Vec<_>>().join("."))},
             "note":"selector identifies a present relation table; some aliased/omitted INIT ports have no table"})
     }).collect::<Vec<_>>();
+    let library = registry_export(registry)?;
+    let pending = library["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["semantics"]["status"] != "authored_contract")
+        .map(|e| e["id"].clone())
+        .collect::<Vec<_>>();
     Ok(
-        json!({"graph_nodes":graph,"readers":readers,"native_relations":native_relations,"registry":registry_export(registry)?}),
+        json!({"graph_nodes":graph,"readers":readers,"native_relations":native_relations,
+        "semantic_coverage":{"complete":pending.is_empty(),"pending":pending,"scope":"entire embedded registry"},
+        "registry":library}),
     )
 }

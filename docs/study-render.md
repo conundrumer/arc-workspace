@@ -146,3 +146,27 @@ Custom registries/settings fall back to uncached computation rather than
 reusing a mismatched cache. Per-program caches live as long as caller-owned
 handles, not in an unbounded global program map. JSON results remain complete
 values; render2 may store identical immutable definitions once in artifacts.
+
+## Authoritative implementation meanings
+
+Signatures are not marked as meanings. Each registry entry now has `semantics`,
+looked up by its exact resolved ID (`lib:Walk`, `lib:apply`, `fact:input`, …).
+The frozen authored source is `docs/study-library-meanings.source.md`; the
+explicit ID catalogue is `engine/lib/study-meanings.json`. Each entry carries
+its authored summary/full contract, source lines and section. All 140 current
+registry declarations have authored coverage. A future unmapped ID is
+`status=pending`; `definitions.semantic_coverage` and `parts.native_semantics`
+report this separately from structural reader completeness. There is no runtime
+name/port regex or guessed semantics.
+
+Walk additionally exports structured start-domain, zero-step, bound, branching
+and dead-end rules checked against its native implementation. apply exports its
+margin transformation rule and all eight margin-index permutations **computed
+by the native Geometry/D4 action**, with the authored meaning. Its all-zero
+margin input remains all-zero under every D4 element. The registry cache retains
+these contracts alongside signatures, avoiding repeated parsing/geometry work.
+
+`definitions.native_relations[].display_name` is the engine writer's spelling
+(`&rN`/output port for a decode), while `source_name` remains the exact native
+kept-assignment join key (`slot N`, etc.). These fields have different purposes;
+the renderer must not parse a definition header to recover either one.

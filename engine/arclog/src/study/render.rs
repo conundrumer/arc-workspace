@@ -106,10 +106,16 @@ impl StudyProgram {
             &text,
             &mut nodes,
         )?;
+        let definitions = super::render_definitions::export(self, registry)?;
+        let native_semantics = if definitions["semantic_coverage"]["complete"] == true {
+            "complete"
+        } else {
+            "pending"
+        };
         Ok(
             json!({"schema":"arclog-study-render-v1","parts":{"nodes":"complete",
-            "definitions_readers":"complete","types_frames":"pending","literal_meanings":"pending","body_views":"complete"},
-            "definitions":super::render_definitions::export(self,registry)?,"program_sexp":self.sexp(registry),"nodes":nodes,"body_views":super::render_bodies::export(self,registry)?,
+            "definitions_readers":"complete","native_semantics":native_semantics,"types_frames":"pending","literal_meanings":"pending","body_views":"complete"},
+            "definitions":definitions,"program_sexp":self.sexp(registry),"nodes":nodes,"body_views":super::render_bodies::export(self,registry)?,
             "source_path_correspondence":"identity; use ValidMutant.render_json for mutation correspondence"}),
         )
     }
@@ -150,7 +156,9 @@ pub fn render_pair(
     mutant: &crate::mutation::ValidMutant,
     registry: &Registry,
 ) -> Result<Value, String> {
-    if !std::sync::Arc::ptr_eq(gold.checked(),mutant.gold()) {return Err("render source handle differs from rehydrated mutation source".into());}
+    if !std::sync::Arc::ptr_eq(gold.checked(), mutant.gold()) {
+        return Err("render source handle differs from rehydrated mutation source".into());
+    }
     let mut changed = mutant.program().render_json(registry)?;
     changed["mutation_identity"] = mutant.identity();
     changed["source_path_correspondence"] = mutant.source_paths();
