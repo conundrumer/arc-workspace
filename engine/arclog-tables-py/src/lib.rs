@@ -1,7 +1,8 @@
 //! The Python bindings of the tables export: the class `CaseTables`, which
 //! gives a case program's tables as flat columns
 //! ([`arclog_tables::columns`] gives the layout and the codes), the functions
-//! `corpus_tables`, `stream_tables` and `step_tables` that build them, and the
+//! `corpus_tables`, `stream_tables` and `step_tables` that build them,
+//! `output_columns`, which gives the columns an `OUT` form selects, and the
 //! orientation constants their cells encode. [`register`] adds their names to
 //! the module that `arclog-py` builds.
 //!
@@ -25,6 +26,7 @@ pub fn register(names: &Names<'_, '_>) -> PyResult<()> {
     names.function(wrap_pyfunction!(corpus_tables::corpus_tables, module)?)?;
     names.function(wrap_pyfunction!(stream_tables::stream_tables, module)?)?;
     names.function(wrap_pyfunction!(step_tables::step_tables, module)?)?;
+    names.function(wrap_pyfunction!(step_tables::output_columns, module)?)?;
     names.function(wrap_pyfunction!(orientation::orientation_names, module)?)?;
     names.function(wrap_pyfunction!(orientation::orientation_types, module)?)
 }

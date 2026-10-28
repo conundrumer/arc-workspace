@@ -1,9 +1,11 @@
-//! `step_tables`: the tables of the last step of a decode.
+//! `step_tables`: the tables of the last step of a decode, and
+//! `output_columns`: the columns that the `OUT` form at which the decode ended
+//! selects.
 
 use arclog::stream::Emitter;
 use arclog_bindings::PyDecoder;
 use arclog_tables::columns::case_columns;
-use arclog_tables::tables::{evidence_tables, record_step, Points};
+use arclog_tables::tables::{evidence_tables, record_step, selected_columns, Points};
 use pyo3::prelude::*;
 
 use crate::case_tables::PyCaseTables;
@@ -34,6 +36,10 @@ use crate::case_tables::PyCaseTables;
 /// Where the settings check copies, the `copies` part holds the violations
 /// that the decode found since the last call that took them, which this call
 /// takes.
+///
+/// `output_position` and `output_color` are -1 in each table, since the `OUT`
+/// form that selects a column ends the decode at a step after the one that
+/// gives that column's table: `output_columns` gives that selection.
 #[pyfunction]
 #[pyo3(signature = (decoder, task, case, bodies=false))]
 pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: String, case: String, bodies: bool) -> PyResult<PyCaseTables> {
@@ -48,4 +54,18 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
         case_columns(&evidence_tables(evidence, engine.registry()), &tables, evidence.train.len(), None).with_copies(&engine.take_copy_violations())
     });
     PyCaseTables::of(py, task, case, false, engine.settings().projection_cap, &columns, None, None)
+}
+
+/// The columns that the `OUT` form at which `decoder` ended selects: one
+/// `(slot, position, color)` for each relation an atom of the form selects a
+/// column of, with `slot` the `relation` of that relation's table in
+/// `step_tables`, `position` the index of the Position column the form selects
+/// there and `color` that of the Color column, and -1 for a column it does not
+/// select there. They are the `output_position` and `output_color` of that
+/// relation's table in `stream_tables` of the same stream. The list is empty
+/// where the decode has not ended at an `OUT` form whose check holds.
+#[pyfunction]
+pub(crate) fn output_columns(py: Python<'_>, decoder: PyRef<'_, PyDecoder>) -> Vec<(u32, i32, i32)> {
+    let engine = decoder.decoder();
+    py.detach(|| selected_columns(engine).into_iter().map(|(slot, selected)| (slot, selected.position.map_or(-1, i32::from), selected.color.map_or(-1, i32::from))).collect())
 }

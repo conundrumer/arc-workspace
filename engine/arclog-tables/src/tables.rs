@@ -211,7 +211,7 @@ pub fn record_step(tables: &mut Vec<(usize, Table)>, decoder: &Decoder<'_>, inde
 /// slot of the relation of the atom that selects each; none while the decode
 /// has not ended. A column of a relation that no table holds, such as
 /// `input`'s, has no slot.
-fn selected_columns(decoder: &Decoder<'_>) -> Vec<(u32, SelectedColumns)> {
+pub fn selected_columns(decoder: &Decoder<'_>) -> Vec<(u32, SelectedColumns)> {
     let (Some(form), Some(before)) = (decoder.output(), decoder.before()) else { return Vec::new() };
     let Ok(checked) = decoder.finished_checked(before, decoder.state()) else { return Vec::new() };
     let Some(NodeRef::Out(out)) = node_at(NodeRef::Program(decoder.program().value()), form) else { return Vec::new() };
