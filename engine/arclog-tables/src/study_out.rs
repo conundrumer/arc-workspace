@@ -5,16 +5,17 @@ fn grid_json(grid: &Grid) -> Value {
     json!(grid.rows().iter().map(|row| row.iter().map(|c|c.digit()).collect::<Vec<_>>()).collect::<Vec<_>>())
 }
 
-pub(super) fn train(e: &Evaluation<'_>, output: &GraphRelation, budget: &mut Budget<'_>) -> Result<Value, End> {
+pub(super) fn train(e: &Evaluation<'_>, output: &GraphRelation, judge: &judgement::TrainJudge<'_>, budget: &mut Budget<'_>) -> Result<Value, End> {
     let mut out = Vec::new();
-    for (example, pair) in e.task.examples().zip(e.task.train.iter()) {
+    for ((example, pair), candidates) in e.task.examples().zip(e.task.train.iter()).zip(&judge.pairs) {
         let mut models = Vec::new();
+        let mut observed = judgement::ModelSet::default();
         let mut model_end = None;
         let end = e.models(output, Some(example), &mut |value| {
             let detail = match value {
                 RelationValue::Stopped(stop) => { model_end = Some(End::Stop(stop.clone())); stopped(stop) }
-                RelationValue::Undefined => json!({"status":"complete","value_kind":"undefined","equals":false,
-                    "grid_defined":false,"differing_cells":pair.output.rows().iter().map(|r|r.len()).sum::<usize>(),"reason":"undefined OUT"}),
+                RelationValue::Undefined => {observed.observe(None);json!({"status":"complete","value_kind":"undefined","equals":false,
+                    "grid_defined":false,"differing_cells":pair.output.rows().iter().map(|r|r.len()).sum::<usize>(),"reason":"undefined OUT"})},
                 RelationValue::Rows(value) => {
                     let packed = match rows(value,budget,e.program.program.form_of(output.node)) {
                         Ok(rows) => rows,
@@ -38,12 +39,15 @@ pub(super) fn train(e: &Evaluation<'_>, output: &GraphRelation, budget: &mut Bud
                         Err(message) => {model_end=Some(End::Fault(fault(message,e.program.program.form_of(output.node))));return ControlFlow::Break(());}
                     };
                     match read_grid(value,GridColumns::OUT) {
-                        Some(grid) => json!({"status":"complete","value_kind":"rows","packed_rows":packed,"rows":decoded,
+                        Some(grid) => {
+                            let detail=json!({"status":"complete","value_kind":"rows","packed_rows":packed,"rows":decoded,
                             "grid_defined":true,"grid":grid_json(&grid),"equals":grid==pair.output,
-                            "differing_cells":differences(&grid,&pair.output)}),
-                        None => json!({"status":"complete","value_kind":"rows","packed_rows":packed,"rows":decoded,
+                            "differing_cells":differences(&grid,&pair.output)});
+                            observed.observe(Some(grid));detail
+                        },
+                        None => {observed.observe(None);json!({"status":"complete","value_kind":"rows","packed_rows":packed,"rows":decoded,
                             "grid_defined":false,"grid":null,"equals":false,
-                            "differing_cells":invalid_differences(value,&pair.output),"reason":"OUT rows do not define a grid"}),
+                            "differing_cells":invalid_differences(value,&pair.output),"reason":"OUT rows do not define a grid"})},
                     }
                 }
             };
@@ -52,7 +56,11 @@ pub(super) fn train(e: &Evaluation<'_>, output: &GraphRelation, budget: &mut Bud
         }).map_err(End::Fault)?;
         if let Some(end) = model_end {return Err(end);}
         if let ModelsEnd::Stopped(stop) = end {return Err(End::Stop(stop));}
-        out.push(json!({"example":example.index(),"expected_grid":grid_json(&pair.output),"models":models}));
+        let mut comparison=observed.finish(candidates);
+        comparison["example"]=json!(example.index());
+        comparison["expected_grid"]=grid_json(&pair.output);
+        comparison["models"]=json!(models);
+        out.push(comparison);
     }
     Ok(json!(out))
 }

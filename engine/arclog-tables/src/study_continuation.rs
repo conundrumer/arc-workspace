@@ -80,9 +80,10 @@ fn admissibility(e:&Evaluation<'_>, gold:&CheckedProgram, assigned:&[Assignment]
 /// Requires this evaluator's cached gold observation from evaluate_pair. If
 /// supplied, expected_kept must exactly match that observation, including the
 /// session's Ident encodings. A stale/different stored assignment is an error.
-pub fn evaluate(gold:&StudyProgram,mutant:&ValidMutant,task:&Task,session:&TaskSession,
+pub fn evaluate(gold:&StudyProgram,mutant:&ValidMutant,task:&Task,judged:&JudgedTask,session:&TaskSession,
     constructions:&Constructions,settings:&DecodeSettings,cache:&PairCache,expected_kept:Option<&Value>)->Result<Continuation,String> {
     if !Arc::ptr_eq(gold.checked(),mutant.gold()) {return Err("mutant belongs to another gold handle".into());}
+    let judge=judgement::TrainJudge::new(task,judged)?;
     let key=Arc::as_ptr(gold.checked()) as usize;
     let memo=cache.gold.get(&key).ok_or("call evaluate_pair on this evaluator/gold handle first; no new FITS search is performed")?;
     let walked=memo.walked.as_ref().map_err(|f|f.message.to_string())?;
@@ -100,7 +101,7 @@ pub fn evaluate(gold:&StudyProgram,mutant:&ValidMutant,task:&Task,session:&TaskS
         let e=Evaluation {program:mutant.program().checked(),concept:None,task,session,constructions,registry:Registry::get(),parameters:&parameters,limits:&limits};
         let checks=admissibility(&e,gold.checked(),assigned,&mut budget);
         let output=output_relation(e.program).ok_or("mutant has no OUT")?;
-        let out=match output::train(&e,&output,&mut budget) {Ok(v)=>json!({"status":"complete","train":v}),Err(End::Fault(f))=>faulted(&f),Err(End::Stop(s))=>stopped(&s)};
+        let out=match output::train(&e,&output,&judge,&mut budget) {Ok(v)=>json!({"status":"complete","train":v}),Err(End::Fault(f))=>faulted(&f),Err(End::Stop(s))=>stopped(&s)};
         choices.push(json!({"assignment":index,"admissibility":checks,"out":out}));
     }
     let g=super::component_tables::relation_tables(gold,&decoder,&fixed,&limits,&work,&mut budget);

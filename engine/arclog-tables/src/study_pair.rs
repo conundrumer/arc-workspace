@@ -9,6 +9,7 @@ use arclog::session::TaskSession;
 use arclog::stream::DecodeSettings;
 use arclog::study::StudyProgram;
 use arclog::task::Grid;
+use arclog::task::JudgedTask;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
@@ -18,6 +19,9 @@ use arclog::check::{CheckedProgram};
 pub mod continuation;
 #[path = "study_component_tables.rs"]
 pub mod component_tables;
+
+#[path = "study_judgement.rs"]
+mod judgement;
 
 pub struct PairEvaluation {
     /// Full native tables, including preceding relation tables needed to
@@ -546,18 +550,22 @@ fn invalid_differences(rows: &arclog::relations::Relation, expected: &Grid) -> u
     different + cells.len()
 }
 
-fn train(e: &Evaluation<'_>, output: &GraphRelation) -> Result<Value, End> {
+fn train(e: &Evaluation<'_>, output: &GraphRelation, judge: &judgement::TrainJudge<'_>) -> Result<Value, End> {
     let mut out = Vec::new();
-    for (example, pair) in e.task.examples().zip(e.task.train.iter()) {
+    for ((example, pair), candidates) in e.task.examples().zip(e.task.train.iter()).zip(&judge.pairs) {
         let mut models = Vec::new();
+        let mut observed = judgement::ModelSet::default();
         let mut model_stop = None;
         let end=e.models(output,Some(example),&mut |value| {
             models.push(match value {
                 RelationValue::Stopped(stop)=>{model_stop=Some(stop.clone());stopped(stop)},
-                RelationValue::Undefined=>json!({"status":"complete","equals":false,"differing_cells":pair.output.rows().iter().map(|r|r.len()).sum::<usize>(),"grid_defined":false,"reason":"undefined OUT"}),
+                RelationValue::Undefined=>{observed.observe(None);json!({"status":"complete","equals":false,"differing_cells":pair.output.rows().iter().map(|r|r.len()).sum::<usize>(),"grid_defined":false,"reason":"undefined OUT"})},
                 RelationValue::Rows(rows)=>match read_grid(rows,GridColumns::OUT) {
-                    Some(grid)=>json!({"status":"complete","equals":grid==pair.output,"differing_cells":differences(&grid,&pair.output)}),
-                    None=>json!({"status":"complete","equals":false,"differing_cells":invalid_differences(rows,&pair.output),"grid_defined":false,"reason":"OUT rows do not define a grid"}),
+                    Some(grid)=>{
+                        let detail=json!({"status":"complete","equals":grid==pair.output,"differing_cells":differences(&grid,&pair.output)});
+                        observed.observe(Some(grid));detail
+                    },
+                    None=>{observed.observe(None);json!({"status":"complete","equals":false,"differing_cells":invalid_differences(rows,&pair.output),"grid_defined":false,"reason":"OUT rows do not define a grid"})},
                 }
             }); ControlFlow::Continue(())
         }).map_err(End::Fault)?;
@@ -567,18 +575,17 @@ fn train(e: &Evaluation<'_>, output: &GraphRelation) -> Result<Value, End> {
         if let Some(stop) = model_stop {
             return Err(End::Stop(stop));
         }
-        out.push(json!({"example":example.index(),"models":models}));
+        let mut comparison=observed.finish(candidates);
+        comparison["example"]=json!(example.index());
+        comparison["models"]=json!(models);
+        out.push(comparison);
     }
     Ok(json!(out))
 }
 fn fits(train: &Value) -> bool {
     train.as_array().is_some_and(|pairs| {
         !pairs.is_empty()
-            && pairs.iter().all(|p| {
-                p["models"].as_array().is_some_and(|models| {
-                    !models.is_empty() && models.iter().all(|m| m["equals"] == true)
-                })
-            })
+            && pairs.iter().all(|p| p["fits"] == true)
     })
 }
 
@@ -590,6 +597,7 @@ fn evaluate_pair_inner(
     point: &MutationPoint,
     mutant: &ValidMutant,
     task: &Task,
+    judged: &JudgedTask,
     session: &TaskSession,
     constructions: &Constructions,
     settings: &DecodeSettings,
@@ -602,6 +610,11 @@ fn evaluate_pair_inner(
         mutant_prefix:Vec::new(),
         report: json!({"status":"complete","kept_assignments":[],"outputs":[],"comparisons":[]}),
     };
+    let judge=match judgement::TrainJudge::new(task,judged) {
+        Ok(judge)=>judge,
+        Err(message)=>{result.report=faulted(&fault(message,&point.body));return result;}
+    };
+    result.report["fits_contract"]=json!("native closed-world candidate-set comparison; per-model equals/differing_cells compare the given output only");
     if !Arc::ptr_eq(gold.checked(), mutant.gold())
         || point.body != mutant.point().body
         || point.clause != mutant.point().clause
@@ -636,7 +649,7 @@ fn evaluate_pair_inner(
     let gold_hit=cache.gold.contains_key(&gold_key);
     let memo=if gold_hit {cache.gold_hits+=1;Arc::clone(&cache.gold[&gold_key])} else {
         let dets=arclog::eval::determinations::determinations(gold.checked()).into_iter().filter_map(|node|relation_dets(gold.checked(),node).into_iter().find(|det|det.node==node)).collect::<Vec<_>>();
-        let walked=gd.assigned(gold.checked(),output.node,&dets,Some(&work),&mut |e|train(e,&output));
+        let walked=gd.assigned(gold.checked(),output.node,&dets,Some(&work),&mut |e|train(e,&output,&judge));
         let records=walked.as_ref().map(|w|w.at.iter().map(|(a,_)|assignment_json(a)).collect()).unwrap_or_default();
         cache.sequence+=1;
         let memo=Arc::new(GoldMemo {_source:Arc::clone(gold.checked()),walked,records,sequence:cache.sequence});
@@ -678,7 +691,7 @@ fn evaluate_pair_inner(
                     limits: &limits,
                 };
                 let out_started=Instant::now();
-                let mutant_train = match train(&evaluation, &mutant_output) {
+                let mutant_train = match train(&evaluation, &mutant_output, &judge) {
                     Ok(v) => json!({"status":"complete","train":v}),
                     Err(End::Stop(s)) => stopped(&s),
                     Err(End::Fault(f)) => faulted(&f),
@@ -810,15 +823,16 @@ pub fn evaluate_pair(
     point: &MutationPoint,
     mutant: &ValidMutant,
     task: &Task,
+    judged: &JudgedTask,
     session: &TaskSession,
     constructions: &Constructions,
     settings: &DecodeSettings,
 ) -> PairEvaluation {
-    evaluate_pair_cached(gold,point,mutant,task,session,constructions,settings,&mut PairCache::default())
+    evaluate_pair_cached(gold,point,mutant,task,judged,session,constructions,settings,&mut PairCache::default())
 }
 
-pub fn evaluate_pair_cached(gold:&StudyProgram,point:&MutationPoint,mutant:&ValidMutant,task:&Task,session:&TaskSession,constructions:&Constructions,settings:&DecodeSettings,cache:&mut PairCache)->PairEvaluation {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(||evaluate_pair_inner(gold,point,mutant,task,session,constructions,settings,cache)))
+pub fn evaluate_pair_cached(gold:&StudyProgram,point:&MutationPoint,mutant:&ValidMutant,task:&Task,judged:&JudgedTask,session:&TaskSession,constructions:&Constructions,settings:&DecodeSettings,cache:&mut PairCache)->PairEvaluation {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(||evaluate_pair_inner(gold,point,mutant,task,judged,session,constructions,settings,cache)))
         .unwrap_or_else(|payload|PairEvaluation {gold:Vec::new(),mutant:Vec::new(),gold_prefix:Vec::new(),mutant_prefix:Vec::new(),report:json!({"status":"fault","reason":format!("pair evaluation panicked: {}",arclog::decode::corpus::replay_panic(&*payload))})})
 }
 

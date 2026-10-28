@@ -19,8 +19,10 @@ mod component_tables;
 /// two native tables on each side are the completed body over its own DET
 /// assignments and at gold FITS assignments. Earlier tables
 /// retain the provenance and frame references used by the export format.
-/// FITS keeps every gold assignment whose every model equals every train
-/// output. Mutant OUT runs at those same assignments, with no re-selection.
+/// FITS compares each train's distinct model output set with the native
+/// closed-world candidates, including rule and tiebreak alternatives.
+/// Per-model equality/differences still compare the given output only.
+/// Mutant OUT runs at those same assignments, with no re-selection.
 /// Undefined OUT counts all expected cells as missing. For non-grid OUT,
 /// count missing/ambiguous/wrong-frame cells and occupied extra positions.
 #[pyfunction]
@@ -35,7 +37,7 @@ fn evaluate_pair(
     session_bytes: usize,
 ) -> PyResult<(String, PyCaseTables, PyCaseTables)> {
     let constructions = constructions()?;
-    let (read, _) = read_task_files(Path::new(tasks), task).map_err(PyValueError::new_err)?;
+    let (read, judged) = read_task_files(Path::new(tasks), task).map_err(PyValueError::new_err)?;
     let settings = gold.settings;
     let (report, g, m) = py.detach(|| {
         let session = TaskSession::new(
@@ -49,6 +51,7 @@ fn evaluate_pair(
             &point.inner,
             &mutant.inner,
             &read,
+            &judged,
             &session,
             constructions,
             &settings,
@@ -96,6 +99,7 @@ pub(crate) fn register(names: &Names<'_, '_>) -> PyResult<()> {
 struct PyStudyTaskEvaluator {
     task_name:String,
     task:arclog::task::Task,
+    judged:arclog::task::JudgedTask,
     session:TaskSession,
     settings:arclog::stream::DecodeSettings,
     evidence:Vec<arclog_tables::tables::Table>,
@@ -126,11 +130,11 @@ impl PyStudyTaskEvaluator {
     #[pyo3(signature=(task,tasks,settings,session_bytes=67108864,compact=true,observation_start=0))]
     fn new(py:Python<'_>,task:&str,tasks:&str,settings:arclog_bindings::PyDecodeSettings,session_bytes:usize,compact:bool,observation_start:u64)->PyResult<Self> {
         let settings=settings.engine()?;
-        let read=py.detach(||read_task_files(Path::new(tasks),task)).map_err(PyValueError::new_err)?.0;
+        let (read,judged)=py.detach(||read_task_files(Path::new(tasks),task)).map_err(PyValueError::new_err)?;
         let evidence=evidence_tables(&read,Registry::get());
         let mut cache=study_pair::PairCache::with_byte_bound(compact,session_bytes);
         cache.set_observation_start(observation_start);
-        Ok(Self {task_name:task.into(),task:read,session:TaskSession::new(SessionBound {bytes:session_bytes},settings.caps),settings,evidence,cache:std::sync::Mutex::new(cache)})
+        Ok(Self {task_name:task.into(),task:read,judged,session:TaskSession::new(SessionBound {bytes:session_bytes},settings.caps),settings,evidence,cache:std::sync::Mutex::new(cache)})
     }
 
     /// Exact native ingestion in this task's session, with the GIL released.
@@ -203,7 +207,7 @@ impl PyStudyTaskEvaluator {
         let constructions=constructions()?;
         let (report,g,m)=py.detach(|| self.with_cache("evaluate_pair",|cache| {
             if cache.activate(&gold.program) {self.session.results.clear();}
-            let mut result=study_pair::evaluate_pair_cached(&gold.program,&point.inner,&mutant.inner,&self.task,&self.session,constructions,&self.settings,cache);
+            let mut result=study_pair::evaluate_pair_cached(&gold.program,&point.inner,&mutant.inner,&self.task,&self.judged,&self.session,constructions,&self.settings,cache);
             let started=std::time::Instant::now();
             let (g,m)=study_pair::pair_columns_cached(&self.evidence,&result,self.task.train.len(),cache);
             result.report["timings"]["native_columns"]=started.elapsed().as_secs_f64().into();

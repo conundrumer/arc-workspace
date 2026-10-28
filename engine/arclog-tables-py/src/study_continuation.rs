@@ -13,7 +13,7 @@ fn study_continuation(py:Python<'_>,evaluator:&PyStudyTaskEvaluator,gold:&PyStud
     let constructions=constructions()?;
     let (report,g,m)=py.detach(|| evaluator.with_cache("study_continuation",|cache| {
         let result=study_pair::continuation::evaluate(&gold.program,&mutant.inner,&evaluator.task,
-            &evaluator.session,constructions,&evaluator.settings,cache,expected.as_ref())?;
+            &evaluator.judged,&evaluator.session,constructions,&evaluator.settings,cache,expected.as_ref())?;
         let g=case_columns(&evaluator.evidence,&result.gold,evaluator.task.train.len(),None);
         let m=case_columns(&evaluator.evidence,&result.mutant,evaluator.task.train.len(),None);
         Ok::<_,String>((result.report.to_string(),g,m))
