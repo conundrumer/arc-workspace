@@ -221,12 +221,19 @@ pub(crate) fn dets_read(program: &CheckedProgram, root: GraphNodeIndex) -> Vec<D
     let resolved = &program.program;
     let read = resolved.graph.reached(root);
     let nodes = determinations(program).into_iter().filter(|node| read[node.0 as usize]);
-    nodes
-        .map(|node| {
-            let (relation, open) = det_relation(&resolved.graph.nodes[node.0 as usize].kind).expect("a `DET` node");
-            Det { node, relation, open, pick: open && !names_proposer(resolved, node) }
-        })
-        .collect()
+    nodes.map(|node| det(program, node)).collect()
+}
+
+/// All assignable DETs, without a relation-specific dependency traversal.
+pub(crate) fn held_dets(program: &CheckedProgram) -> Vec<Det> {
+    determinations(program).into_iter().map(|node| det(program, node))
+        .filter(|det| !det.pick).collect()
+}
+
+fn det(program: &CheckedProgram, node: GraphNodeIndex) -> Det {
+    let resolved = &program.program;
+    let (relation, open) = det_relation(&resolved.graph.nodes[node.0 as usize].kind).expect("a `DET` node");
+    Det { node, relation, open, pick: open && !names_proposer(resolved, node) }
 }
 
 /// An assignment the walk keeps: a value for each `DET` it assigns, and the

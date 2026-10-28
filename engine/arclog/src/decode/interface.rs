@@ -759,6 +759,12 @@ pub fn relation_dets(program: &CheckedProgram, node: GraphNodeIndex) -> Vec<Det>
     dets_read(program, node).into_iter().filter(|det| !det.pick).collect()
 }
 
+/// Assignable parameter DETs in the full program's native dependency order.
+/// Model picks are excluded, including picks outside OUT's dependencies.
+pub fn held_dets(program: &CheckedProgram) -> Vec<Det> {
+    crate::judge::determination::held_dets(program)
+}
+
 /// The count at the first assignment of `rows`, and the stop of that value
 /// or of the walk, as the trace records them.
 fn seen(rows: &Assigned<BodyValue>) -> (Option<u64>, Option<crate::trace::Stop>) {

@@ -187,7 +187,7 @@ impl StudyProgram {
             .map_err(|e|format!("stored identity failed on both source AST and its native decode AST: {e}; source: {}",original.unwrap_err()))
     }
 
-    fn construct_identity_at_source(
+    pub(super) fn construct_identity_at_source(
         &self,
         identity: &Value,
         registry: &Registry,
@@ -263,6 +263,7 @@ impl StudyProgram {
         }
         let certified =
             StudyProgram::from_program(ast, edit::layout(self.layout(), &edits), registry)?;
+        self.checked().check_held_det_interfaces(certified.checked()).map_err(|e| e.to_string())?;
         certified.decode_stream(registry, settings)?;
         let spec = MutationSpec {
             source: Arc::clone(self.checked()),

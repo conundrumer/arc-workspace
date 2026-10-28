@@ -11,6 +11,8 @@
 //! its own.
 
 mod frames;
+mod held_det;
+pub use held_det::HeldDetInterfaceError;
 pub mod grammar;
 pub mod safety;
 pub mod render_sites;

@@ -297,12 +297,14 @@ impl StudyProgram {
         Ok((domain.output, domain.stats))
     }
 
-    /// Construction cannot discover a type/binding problem: its input is an
-    /// immutable certified spec. Only a spec from another gold handle refuses.
+    /// Construct an immutable certified spec from this gold handle. Recheck
+    /// its held-value interface at this public admission boundary.
     pub fn construct(&self, spec: &MutationSpec) -> Result<ValidMutant, &'static str> {
         if !Arc::ptr_eq(self.checked(), &spec.source) {
             return Err("spec_belongs_to_another_program");
         }
+        self.checked().check_held_det_interfaces(spec.certified.checked())
+            .map_err(|_| "mutator_held_det_interface")?;
         Ok(ValidMutant { spec: spec.clone() })
     }
 }
@@ -494,6 +496,10 @@ impl CompletionDomain<'_> {
                 return Ok(());
             }
         };
+        if let Err(error) = self.gold.checked().check_held_det_interfaces(checked.checked()) {
+            self.stats.refusal("domain_held_det_excluded", &error.to_string());
+            return Ok(());
+        }
         if let Err(error) = checked.decode_stream(self.registry, self.settings) {
             self.stats.refusal("domain_stream_excluded", &error);
             return Ok(());

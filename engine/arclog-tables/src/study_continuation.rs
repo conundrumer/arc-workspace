@@ -1,6 +1,6 @@
 //! Exact-kept interventions. Never enumerate or substitute a new FITS assignment.
 use super::*;
-use arclog::eval::determinations::{Domain, det_node};
+use arclog::eval::determinations::Domain;
 use arclog::eval::join::Budget;
 use arclog::relations::Relation;
 use std::collections::BTreeSet;
@@ -30,27 +30,13 @@ fn rows(value: &Relation, budget: &mut Budget<'_>, at: &NodePath) -> Result<BTre
 fn admissibility(e:&Evaluation<'_>, gold:&CheckedProgram, assigned:&[Assignment], budget:&mut Budget<'_>) -> Vec<Value> {
     assigned.iter().map(|(name,held)| {
         let source=relation_spelled(name);
-        let Some(node)=det_node(e.program,name) else {
-            return json!({"source_name":source,"status":"complete","admissible":false,"reason":"held DET no longer exists"});
+        let det=match gold.check_held_det_interface(e.program,name) {
+            Ok(det)=>det,
+            Err(error)=>return json!({"source_name":source,"status":"complete","admissible":false,
+                "reason":error.to_string(),"selected_value_overrides_proposal":true}),
         };
+        let node=det.node;
         let at=e.program.program.form_of(node);
-        let gold_node=det_node(gold,name);
-        let gold_types=gold_node.and_then(|node|gold.types.columns(&GraphRelation {node,output:None}));
-        let mutant_types=e.program.types.columns(&GraphRelation {node,output:None});
-        // Native subtypes share an encoding with their parent: for example,
-        // an Offset remains a valid value after its column widens to Box.
-        // Identity/order and arity must still match; never relabel held cells.
-        let same_columns=gold_node.is_some_and(|gold_node|
-            gold.program.row_paths(gold_node)==e.program.program.row_paths(node));
-        let compatible=gold_types.zip(mutant_types).is_some_and(|(g,m)|
-            g.len()==m.len() && g.iter().zip(m).all(|(a,b)|a.meet(b)==arclog::types::Meet::Type(a.clone())));
-        if !same_columns || !compatible {
-            return json!({"source_name":source,"status":"complete","admissible":false,
-                "reason":"held gold DET schema differs from mutant schema","selected_value_overrides_proposal":true});
-        }
-        let Some(det)=relation_dets(e.program,node).into_iter().find(|det|det.node==node) else {
-            return json!({"source_name":source,"status":"fault","reason":"held relation is not an assignable DET"});
-        };
         // Remove only this intervention. All other gold-kept DET values stay fixed.
         let parameters=ParameterValues::determined(assigned.iter().filter(|(n,_)|n!=name).cloned());
         let reading=Evaluation {parameters:&parameters,..*e};
@@ -96,6 +82,7 @@ fn admissibility(e:&Evaluation<'_>, gold:&CheckedProgram, assigned:&[Assignment]
 pub fn evaluate(gold:&StudyProgram,mutant:&ValidMutant,task:&Task,judged:&JudgedTask,session:&TaskSession,
     constructions:&Constructions,settings:&DecodeSettings,cache:&PairCache,expected_kept:Option<&Value>)->Result<Continuation,String> {
     if !Arc::ptr_eq(gold.checked(),mutant.gold()) {return Err("mutant belongs to another gold handle".into());}
+    gold.checked().check_held_det_interfaces(mutant.program().checked()).map_err(|e| e.to_string())?;
     let judge=judgement::TrainJudge::new(task,judged)?;
     let key=Arc::as_ptr(gold.checked()) as usize;
     let memo=cache.gold.get(&key).ok_or("call evaluate_pair on this evaluator/gold handle first; no new FITS search is performed")?;
@@ -118,8 +105,8 @@ pub fn evaluate(gold:&StudyProgram,mutant:&ValidMutant,task:&Task,judged:&Judged
         let out=match output::train(&e,&output,&judge,&mut budget) {Ok(v)=>json!({"status":"complete","train":v}),Err(End::Fault(f))=>faulted(&f),Err(End::Stop(s))=>stopped(&s)};
         choices.push(json!({"assignment":index,"admissibility":checks,"out":out}));
     }
-    let g=super::component_tables::relation_tables(gold,&decoder,&fixed,&limits,&work,&mut budget);
-    let m=super::component_tables::relation_tables(mutant.program(),&decoder,&fixed,&limits,&work,&mut budget);
+    let g=super::component_tables::relation_tables(gold,gold.checked(),&decoder,&fixed,&limits,&work,&mut budget);
+    let m=super::component_tables::relation_tables(mutant.program(),gold.checked(),&decoder,&fixed,&limits,&work,&mut budget);
     let report=json!({"schema":"arclog-study-continuation-v1","gold_observation_ref":memo.sequence,
         "out_bindings":arclog::study::render_out::export(mutant.program())?,
         "kept_assignments":records,"gold_observation_stop":walked.stop.as_ref().map(stopped),"choices":choices,

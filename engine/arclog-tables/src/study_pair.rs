@@ -204,7 +204,7 @@ fn original_relations(program:&StudyProgram,written:&arclog::stream::WrittenStre
     Ok((tables,last))
 }
 
-fn clause_tables(program:&StudyProgram,body:&NodePath,decoder:&mut Decoder<'_>,fixed:&[Vec<Assignment>],cache:&mut PairCache)->Outcome<ClauseTables> {
+fn clause_tables(program:&StudyProgram,origin:&Arc<CheckedProgram>,body:&NodePath,decoder:&mut Decoder<'_>,fixed:&[Vec<Assignment>],cache:&mut PairCache)->Outcome<ClauseTables> {
     let view=arclog::eval::body_view::BodyView::at(program.checked(),body)?;
     let written=source_stream(program,decoder,cache)?;
     let (mut tables,prefix)=original_relations(program,&written,Some(&view.form),decoder,cache)?;
@@ -219,7 +219,7 @@ fn clause_tables(program:&StudyProgram,body:&NodePath,decoder:&mut Decoder<'_>,f
     tables.push((index,Table {form:view.form.clone(),point,contents:Ok(held)}));
     let work=decoder.table_work();
     let limits=decoder.limits().counted_in(work.clone());
-    let receipt=HeldAssignments::new(Arc::clone(program.checked()),fixed);
+    let receipt=HeldAssignments::new(Arc::clone(program.checked()),Arc::clone(origin),fixed)?;
     let context=AssignmentContext::Held {receipt:&receipt,limits:&limits,work:&work};
     let completed=&tables.last().expect("the all-assignment body table just inserted").1.contents.as_ref().expect("body contents was checked").examples;
     let examples=super::body_tables::examples_reusing(decoder,program.checked(),&view,&dets,&work,context,Some(completed));
@@ -640,6 +640,11 @@ fn evaluate_pair_inner(
         result.report = json!({"status":"fault","reason":"gold, point and mutant do not belong to the same certified pair"});
         return result;
     }
+    if let Err(error) = gold.checked().check_held_det_interfaces(mutant.program().checked()) {
+        result.report = faulted(&error.into());
+        result.report["fault_kind"] = json!("mutator_held_det_interface");
+        return result;
+    }
     cache.activate(gold);
     let mut gd = Decoder::new(task, session, Registry::get(), constructions, settings).with_operation_limits(limits.clone());
     let mut md = Decoder::new(task, session, Registry::get(), constructions, settings).with_operation_limits(limits.clone());
@@ -666,7 +671,7 @@ fn evaluate_pair_inner(
     }
     let gold_hit=cache.gold.contains_key(&gold_key);
     let memo=if gold_hit {cache.gold_hits+=1;Arc::clone(&cache.gold[&gold_key])} else {
-        let dets=arclog::eval::determinations::determinations(gold.checked()).into_iter().filter_map(|node|relation_dets(gold.checked(),node).into_iter().find(|det|det.node==node)).collect::<Vec<_>>();
+        let dets=arclog::decode::held_dets(gold.checked());
         let walked=gd.assigned(gold.checked(),output.node,&dets,Some(&work),&mut |e|train(e,&output,&judge));
         let records=walked.as_ref().map(|w|w.at.iter().map(|(a,_)|assignment_json(a)).collect()).unwrap_or_default();
         cache.sequence+=1;
@@ -742,7 +747,7 @@ fn evaluate_pair_inner(
     let body_key=(gold_key,point.body.clone());
     let gold_body=match cache.gold_bodies.get(&body_key) {
         Some(held)=>{cache.gold_body_hits+=1;held.clone()},
-        None=>{cache.gold_bodies=HashMap::new();let held=clause_tables(gold,&point.body,&mut gd,&fixed,cache);cache.gold_bodies.insert(body_key,held.clone());held}
+        None=>{cache.gold_bodies=HashMap::new();let held=clause_tables(gold,gold.checked(),&point.body,&mut gd,&fixed,cache);cache.gold_bodies.insert(body_key,held.clone());held}
     };
     match gold_body {
         Ok(t) => {
@@ -758,7 +763,7 @@ fn evaluate_pair_inner(
     }
     let gold_clause_seconds=clause_started.elapsed().as_secs_f64();
     let clause_started=Instant::now();
-    match clause_tables(mutant.program(), &point.body, &mut md, &fixed, cache) {
+    match clause_tables(mutant.program(), gold.checked(), &point.body, &mut md, &fixed, cache) {
         Ok(t) => {
             result.mutant_prefix=t.prefix;
             result.mutant = t.tables;

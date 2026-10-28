@@ -50,11 +50,10 @@ pub fn export(program: &StudyProgram, kept: &Value, registry: &Registry) -> Resu
     let checked = program.checked();
     let mut schemas = Vec::new();
     let mut types_by_name = BTreeMap::new();
-    for node in determinations(checked) {
+    for det in crate::decode::held_dets(checked) {
+        let node = det.node;
         let (relation, one) = det_relation(&checked.program.graph.nodes[node.0 as usize].kind)
             .ok_or("determination has no native relation")?;
-        // Model picks are not held parameter assignments.
-        if !relation_dets(checked, node).iter().any(|d| d.node == node) { continue; }
         let types = checked.types.columns(&GraphRelation {node, output: None})
             .ok_or_else(|| format!("DET has no checked schema: {relation:?}"))?
             .iter().map(|t| format!("{t:?}")).collect::<Vec<_>>();

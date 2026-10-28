@@ -14,18 +14,37 @@ pub enum AssignmentLayout {
     Held(Arc<HeldAssignments>),
 }
 
-/// One operation's full ordered interventions and their checked source owner.
+/// One operation's full ordered interventions, gold origin and queried owner.
 /// The owned receipt has a fresh identity; it is not a packed-row hash or a
 /// reusable pointer to a dropped list. Its values use that operation's session.
 #[derive(Debug)]
 pub struct HeldAssignments {
-    _source: Arc<CheckedProgram>,
+    query: Arc<CheckedProgram>,
+    origin: Arc<CheckedProgram>,
     values: Box<[Vec<Assignment>]>,
 }
 
 impl HeldAssignments {
-    pub(crate) fn new(source: Arc<CheckedProgram>, values: &[Vec<Assignment>]) -> Arc<Self> {
-        Arc::new(Self { _source: source, values: values.into() })
+    pub(crate) fn new(source: Arc<CheckedProgram>, origin: Arc<CheckedProgram>, values: &[Vec<Assignment>]) -> Outcome<Arc<Self>> {
+        origin.check_held_det_interfaces(&source)?;
+        // Validate carried identities as well as the full gold interface. The
+        // untyped ParameterValues map cannot establish where rows originated.
+        let names = arclog::decode::held_dets(&origin);
+        for (name, _) in values.iter().flatten() {
+            if !names.iter().any(|det| &det.relation == name) {
+                origin.check_held_det_interface(&source, name)?;
+            }
+        }
+        Ok(Arc::new(Self { query: source, origin, values: values.into() }))
+    }
+
+    fn validate(&self, target: &CheckedProgram) -> Outcome<()> {
+        // The immutable queried owner was checked at construction. A query
+        // against another program must establish the gold interface again.
+        if !std::ptr::eq(self.query.as_ref(), target) {
+            self.origin.check_held_det_interfaces(target)?;
+        }
+        Ok(())
     }
 }
 
@@ -103,7 +122,12 @@ pub(crate) fn examples_reusing(
     completed: Option<&[ExampleRows]>,
     at: &mut dyn FnMut(&Evaluation<'_>, Option<Example>) -> Result<Vec<RelationValue>, End>,
 ) -> Vec<ExampleRows> {
+    let admission = match context {
+        AssignmentContext::Search => Ok(()),
+        AssignmentContext::Held {receipt, ..} => receipt.validate(checked),
+    };
     decoder.examples_of(scope).into_iter().map(|example| {
+        if let Err(fault) = &admission { return ExampleRows {example, rows: Err(fault.clone())}; }
         let rows = match context {
             AssignmentContext::Search => decoder.assigned(checked, root, dets, Some(work), &mut |evaluation| at(evaluation, example)),
             AssignmentContext::Held { receipt, limits, work } => {

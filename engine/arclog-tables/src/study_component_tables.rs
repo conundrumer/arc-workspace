@@ -32,6 +32,7 @@ impl RelationTables {
 pub fn evaluate_cached(gold:&StudyProgram,mutant:&ValidMutant,task:&Task,session:&TaskSession,
     constructions:&Constructions,settings:&DecodeSettings,cache:&PairCache,expected_kept:Option<&Value>)->Result<ComponentTables,String> {
     if !Arc::ptr_eq(gold.checked(),mutant.gold()) {return Err("mutant belongs to another gold handle".into());}
+    gold.checked().check_held_det_interfaces(mutant.program().checked()).map_err(|e| e.to_string())?;
     let key=Arc::as_ptr(gold.checked()) as usize;
     let memo=cache.gold.get(&key).ok_or("call evaluate_pair on this evaluator/gold handle first; no FITS search is performed")?;
     let walked=memo.walked.as_ref().map_err(|f|f.message.to_string())?;
@@ -44,8 +45,8 @@ pub fn evaluate_cached(gold:&StudyProgram,mutant:&ValidMutant,task:&Task,session
     let decoder=Decoder::new(task,session,Registry::get(),constructions,settings).with_operation_limits(operation);
     let work=decoder.table_work();let limits=decoder.limits().counted_in(work.clone());
     let mut budget=Budget::new(&limits,session);
-    let g=relation_tables(gold,&decoder,&fixed,&limits,&work,&mut budget);
-    let m=relation_tables(mutant.program(),&decoder,&fixed,&limits,&work,&mut budget);
+    let g=relation_tables(gold,gold.checked(),&decoder,&fixed,&limits,&work,&mut budget);
+    let m=relation_tables(mutant.program(),gold.checked(),&decoder,&fixed,&limits,&work,&mut budget);
     let (choice_extents,choice_allocations)=full_choice_extents(&Materializer::new(session,&limits),&g.tables,&fixed,task.train.len());
     let report=json!({"schema":"arclog-study-component-tables-v1","gold_observation_ref":memo.sequence,
         "full_choice_extents":choice_extents,
@@ -85,10 +86,13 @@ pub fn assignment_map(tables:&[(usize,Table)],table_offset:usize,train_count:usi
     }).collect::<Vec<_>>())
 }
 
-pub fn relation_tables(program:&StudyProgram,decoder:&Decoder<'_>,fixed:&[Vec<Assignment>],limits:&arclog::eval::Limits,
+pub fn relation_tables(program:&StudyProgram,origin:&Arc<CheckedProgram>,decoder:&Decoder<'_>,fixed:&[Vec<Assignment>],limits:&arclog::eval::Limits,
     work:&TableWork,budget:&mut Budget<'_>)->RelationTables {
     let checked=program.checked();
-    let receipt=HeldAssignments::new(Arc::clone(program.checked()),fixed);
+    let receipt=match HeldAssignments::new(Arc::clone(program.checked()),Arc::clone(origin),fixed) {
+        Ok(receipt)=>receipt,
+        Err(error)=>return RelationTables {tables:Vec::new(),terminal:Some(End::Fault(error))},
+    };
     let mut tables=Vec::new();
     let collected=(|| ->Result<(),End> {
     let written=arclog::stream::written_stream(checked,decoder.vocabulary()).map_err(|d|End::Fault(fault(d.message,&NodePath::default())))?;
