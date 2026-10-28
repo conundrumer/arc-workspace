@@ -52,3 +52,12 @@ null when unresolved). This uses the native Position singleton/margin rule
 regardless of `grid_defined`. Conflicting colors, holes or multiple colors per
 point do not remove a Position's determined reference extent. The expected
 output grid is never used to fill missing metadata.
+
+Inherited frame provenance is evaluated per native alternative and bound
+variable, rather than independently for each value-lineage contribution.
+For example, `relative(Base, X, X_rel)` takes its new frame from Base, while X
+also contributes margins without contributing a frame. A later `(of X_rel)`
+keeps the known frame; it must not turn X's value-only lineage into an unknown
+second frame. A branch with no frame, an explicit unknown source, or conflicting
+known extents remains unresolved. This distinction applies to the native static
+frame export and to per-row extent derivation alike.

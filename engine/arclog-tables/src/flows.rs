@@ -491,13 +491,29 @@ impl<'p> Walk<'p> {
                 for (_, argument) in lib.arguments.0.iter().filter(|(at, _)| at.0 == position) {
                     let Argument::Variable(variable) = argument else { continue };
                     reads_variable = true;
-                    let sources = self.sources(*variable, alt, visiting);
-                    bound &= !sources.is_empty();
                     let offset = alt.variables.get(usize::from(variable.0)).is_some_and(|info| info.ty == ValueType::Offset);
-                    from.extend(sources.into_iter().map(|source| {
-                        let source = source.computed().framed(rule_at.as_ref(), named);
-                        if offset { source.with_frames(Vec::new()) } else { source }
-                    }));
+                    let mut any = false;
+                    if !visiting.contains(variable) {
+                        for chosen in alt.expand(*variable) {
+                            let sources = self.sources_in(*variable, &chosen, visiting);
+                            any |= !sources.is_empty();
+                            // A value can have both frame-giving and value-only
+                            // lineage (relative's Base and X, for example).
+                            // Inheriting its frame does not turn each value-only
+                            // contribution into another, unknown reference frame.
+                            // Keep alternatives separate: an unframed branch is
+                            // still unknown even if another branch has a frame.
+                            let inherits_known = named && rule.as_ref().is_some_and(|r|!r.makes)
+                                && sources.iter().any(|s|!s.frames.is_empty());
+                            from.extend(sources.into_iter().map(|source| {
+                                let empty_contribution = inherits_known && source.frames.is_empty();
+                                let source = if empty_contribution {source.computed()}
+                                    else {source.computed().framed(rule_at.as_ref(), named)};
+                                if offset { source.with_frames(Vec::new()) } else { source }
+                            }));
+                        }
+                    }
+                    bound &= any;
                 }
             }
             if bound && reads_variable {
