@@ -8,6 +8,7 @@ from collections import Counter, defaultdict, OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 import hashlib
+from itertools import islice
 import subprocess
 import time
 import gzip
@@ -120,6 +121,21 @@ def inspect(record, base, args, context):
         gold = context['gold'][key]
         mutant = gold.construct_identity(json.dumps(r['identity']))
         for side, program in (('gold', gold), ('mutant', mutant.as_program())):
+            if r['kind'] == 'INIT input':
+                static = json.loads(program.render_json())
+                view = next(b for b in static['body_views'] if b['body_path'] == r['identity']['body'])
+                payload = r['native'][side]
+                t = r['evaluation']['table_indices'][side+'_kept']
+                stored = payload['tables']
+                require(stored['column_types'][t] == [c['type'] for c in view['columns']], 'stored/native projection body types differ')
+                require(stored['column_source_labels'][t] == [c['label_spelling'] for c in view['columns']], 'stored/native projection body label identity differs; no alias guess permitted')
+                for projection in view['input_port_projection']:
+                    if projection['body_column'] is None:
+                        require(projection.get('inserted_constant',{}).get('kind') == 'unit' and projection['type'] == 'Unit', 'unknown historical inserted constant')
+                    else:
+                        c = view['columns'][projection['body_column']]
+                        require(c['label_id'] == projection['label_id'] and c['type'] == projection['type'], 'port projection loses native label/type identity')
+                result.setdefault('input_port_projection',{})[side] = dict(status='pass',port=view['input_port'],columns=len(view['input_port_projection']),key_labels=view['group_key_label_ids'])
             evidence = json.loads(program.choice_evidence_json(json.dumps(kept)))
             require(evidence['complete'], 'native choices incomplete')
             body = next(b for b in evidence['bodies'] if b['body_path'] == r['identity']['body'])
@@ -195,7 +211,17 @@ def worker(args):
     def alarm(*_):
         raise TimeoutError('per-record deadline')
     signal.signal(signal.SIGALRM, alarm)
-    for item in job['items']:
+    def records():
+        with gzip.open(job['source'], 'rt') as incoming:
+            found = 0
+            for line in incoming:
+                record = json.loads(line)
+                if args.body_kind and record['kind'] != args.body_kind:
+                    continue
+                yield dict(record=record,base=job['base'],source=job['source'])
+                found += 1
+                if found >= job['count']: break
+    for item in records():
         started = time.monotonic()
         signal.setitimer(signal.ITIMER_REAL, args.seconds)
         try:
@@ -217,6 +243,7 @@ def main():
     p.add_argument('--native-storage', type=Path, required=True)
     p.add_argument('--tasks', type=Path, required=True)
     p.add_argument('--only', nargs='*')
+    p.add_argument('--body-kind', help='select an exact recorded body kind, e.g. INIT input')
     p.add_argument('--limit', type=int, default=2, help='maximum records per task')
     p.add_argument('--workers', type=int, default=4)
     p.add_argument('--seconds', type=float, default=10, help='per-record wall bound')
@@ -234,18 +261,19 @@ def main():
         args.output.mkdir(parents=True, exist_ok=False)
     jobs = []
     for path in sorted(args.corpus.glob('*/pairs.jsonl.gz')):
+        if path.parent.name.startswith('.'):
+            continue  # interrupted staging tasks are not published corpus records
         if args.only and path.parent.name not in args.only:
             continue
-        items = []
         with gzip.open(path, 'rt') as incoming:
-            for index, line in enumerate(incoming):
-                if index >= args.limit:
-                    break
-                items.append(dict(record=json.loads(line), base=str(path.parent.resolve()), source=str(path)))
-        if items:
-            jobs.append(dict(task=path.parent.name, items=items))
+            if args.body_kind:
+                count = sum(1 for _ in islice((line for line in incoming if json.loads(line)['kind'] == args.body_kind), args.limit))
+            else:
+                count = sum(1 for _ in islice(incoming, args.limit))
+        if count:
+            jobs.append(dict(task=path.parent.name, source=str(path.resolve()), base=str(path.parent.resolve()), count=count))
     counts = Counter()
-    total = sum(len(j['items']) for j in jobs)
+    total = sum(j['count'] for j in jobs)
     started = time.monotonic()
     done = 0
     outgoing = (args.output/'cases.jsonl').open('w') if args.output else None
@@ -256,6 +284,7 @@ def main():
                    '--corpus', str(args.corpus), '--native-storage', str(args.native_storage.resolve()),
                    '--tasks', str(args.tasks.resolve()), '--seconds', str(args.seconds),
                    '--native-seconds', str(args.native_seconds)]
+        if args.body_kind: command.extend(['--body-kind', args.body_kind])
         if args.continuation: command.append('--continuation')
         if args.components: command.append('--components')
         with subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as process:
@@ -264,8 +293,8 @@ def main():
             for line in process.stdout:
                 events.put(json.loads(line)); received += 1
             code = process.wait()
-            if code or received != len(job['items']):
-                events.put(dict(status='worker_failure',task=job['task'],code=code,received=received,expected=len(job['items'])))
+            if code or received != job['count']:
+                events.put(dict(status='worker_failure',task=job['task'],code=code,received=received,expected=job['count']))
     def progress():
         elapsed = time.monotonic()-started
         rate = done/elapsed if elapsed else 0
