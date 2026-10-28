@@ -8,6 +8,24 @@ pub struct ComponentTables {
     pub mutant:Vec<(usize,Table)>,
 }
 
+/// A bounded collection retains every table already materialized. A stop
+/// between relations is not a fault and cannot erase the prefix or its maps.
+pub struct RelationTables {
+    pub tables:Vec<(usize,Table)>,
+    pub terminal:Option<End>,
+}
+impl RelationTables {
+    pub fn status(&self)->Value {
+        let status=table_status(&self.tables);
+        if status["status"]!="complete" {return status;}
+        match &self.terminal {None=>status,Some(End::Stop(s))=>stopped(s),Some(End::Fault(f))=>faulted(f)}
+    }
+    pub fn collection(&self)->Value {
+        let terminal=match &self.terminal {None=>None,Some(End::Stop(s))=>Some(stopped(s)),Some(End::Fault(f))=>Some(faulted(f))};
+        json!({"materialization_complete":self.terminal.is_none(),"returned_relation_tables":self.tables.len(),"terminal":terminal})
+    }
+}
+
 /// Tables of the exact cached observation; no OUT evaluation or DET search.
 pub fn evaluate_cached(gold:&StudyProgram,mutant:&ValidMutant,task:&Task,session:&TaskSession,
     constructions:&Constructions,settings:&DecodeSettings,cache:&PairCache,expected_kept:Option<&Value>)->Result<ComponentTables,String> {
@@ -25,17 +43,17 @@ pub fn evaluate_cached(gold:&StudyProgram,mutant:&ValidMutant,task:&Task,session
     let mut budget=Budget::new(&limits,session);
     let g=relation_tables(gold,&decoder,&fixed,&limits,&work,&mut budget);
     let m=relation_tables(mutant.program(),&decoder,&fixed,&limits,&work,&mut budget);
-    let status=|tables:&Outcome<Vec<(usize,Table)>>|match tables {Ok(t)=>table_status(t),Err(f)=>faulted(f)};
     let report=json!({"schema":"arclog-study-component-tables-v1","gold_observation_ref":memo.sequence,
-        "full_choice_extents":g.as_ref().ok().map(|tables|full_choice_extents(tables,&fixed,task.train.len())),
+        "full_choice_extents":full_choice_extents(&g.tables,&fixed,task.train.len()),
         "kept_assignments":records,"gold_observation_stop":walked.stop.as_ref().map(stopped),
-        "gold_status":status(&g),"mutant_status":status(&m),
-        "gold_assignment_map":g.as_ref().ok().map(|t|assignment_map(t,2,task.train.len())),
-        "mutant_assignment_map":m.as_ref().ok().map(|t|assignment_map(t,2,task.train.len())),
+        "gold_status":g.status(),"mutant_status":m.status(),
+        "gold_collection":g.collection(),"mutant_collection":m.collection(),
+        "gold_assignment_map":assignment_map(&g.tables,2,task.train.len()),
+        "mutant_assignment_map":assignment_map(&m.tables,2,task.train.len()),
         "scope":"native materialized relations including computed INIT outputs under exact cached gold DET interventions; no new FITS or OUT search",
         "assignment_contract":"table_entry is the zero-based position among native entries for its table; kept_assignment indexes the full kept_assignments list even when DET subsets repeat",
         "bound_scope":"one shared native deadline and table-work budget"});
-    Ok(ComponentTables {report,gold:g.unwrap_or_default(),mutant:m.unwrap_or_default()})
+    Ok(ComponentTables {report,gold:g.tables,mutant:m.tables})
 }
 
 /// Mapping uses the exact native entries order, including repeated equal
@@ -64,16 +82,17 @@ pub fn assignment_map(tables:&[(usize,Table)],table_offset:usize,train_count:usi
 }
 
 pub fn relation_tables(program:&StudyProgram,decoder:&Decoder<'_>,fixed:&[Vec<Assignment>],limits:&arclog::eval::Limits,
-    work:&TableWork,budget:&mut Budget<'_>)->Outcome<Vec<(usize,Table)>> {
+    work:&TableWork,budget:&mut Budget<'_>)->RelationTables {
     let checked=program.checked();
-    let written=arclog::stream::written_stream(checked,decoder.vocabulary()).map_err(|d|fault(d.message,&NodePath::default()))?;
     let (task,session,constructions)=decoder.evaluation_inputs();
     let mut tables=Vec::new();
+    let collected=(|| ->Result<(),End> {
+    let written=arclog::stream::written_stream(checked,decoder.vocabulary()).map_err(|d|End::Fault(fault(d.message,&NodePath::default())))?;
     for form in &written.forms {for &slot in &form.readable {
-        budget.charge_work(0).map_err(|bound|fault(format!("continuation metadata stopped: {bound:?}"),&form.path))?;
+        budget.charge_work(0).map_err(|bound|End::Stop(arclog::eval::Stop {bound,form:form.path.clone()}))?;
         let declared=&written.relations[slot];
         if gives_no_table(program.program().value(),&form.path,declared) {continue;}
-        let relation=graph_relation(checked,decoder.registry(),&form.path,declared).ok_or_else(||fault("no native graph for continuation relation",&form.path))?;
+        let relation=graph_relation(checked,decoder.registry(),&form.path,declared).ok_or_else(||End::Fault(fault("no native graph for continuation relation",&form.path)))?;
         let dets=relation_dets(checked,relation.node);
         let examples=decoder.examples_of(scope_of(checked,&relation)).into_iter().map(|example| {
             let mut at=Vec::new();
@@ -96,7 +115,9 @@ pub fn relation_tables(program:&StudyProgram,decoder:&Decoder<'_>,fixed:&[Vec<As
         });
         tables.push((form.tokens.end.saturating_sub(1),Table {form:form.path.clone(),point:Point::Relation,contents:c}));
     }}
-    Ok(tables)
+    Ok(())
+    })();
+    RelationTables {tables,terminal:collected.err()}
 }
 
 

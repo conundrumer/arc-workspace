@@ -91,14 +91,14 @@ pub fn evaluate(gold:&StudyProgram,mutant:&ValidMutant,task:&Task,session:&TaskS
     }
     let g=super::component_tables::relation_tables(gold,&decoder,&fixed,&limits,&work,&mut budget);
     let m=super::component_tables::relation_tables(mutant.program(),&decoder,&fixed,&limits,&work,&mut budget);
-    let status=|tables:&Outcome<Vec<(usize,Table)>>|match tables {Ok(t)=>table_status(t),Err(f)=>faulted(f)};
     let report=json!({"schema":"arclog-study-continuation-v1","gold_observation_ref":memo.sequence,
         "out_bindings":arclog::study::render_out::export(mutant.program())?,
         "kept_assignments":records,"gold_observation_stop":walked.stop.as_ref().map(stopped),"choices":choices,
-        "gold_tables":status(&g),"mutant_tables":status(&m),
+        "gold_tables":g.status(),"mutant_tables":m.status(),
+        "gold_collection":g.collection(),"mutant_collection":m.collection(),
         "assignment_scope":"exact cached gold FITS interventions; no alternate assignment search",
         "out_scope":"conditional OUT under held gold DET values; held values override DET proposal bodies even when inadmissible",
         "tables_scope":"all materialized native relations in written order, including INIT computed output ports; each table assignment index follows kept_assignments",
         "bound_scope":"one shared native deadline and table-work budget for this operation"});
-    Ok(Continuation {report,gold:g.unwrap_or_default(),mutant:m.unwrap_or_default()})
+    Ok(Continuation {report,gold:g.tables,mutant:m.tables})
 }
