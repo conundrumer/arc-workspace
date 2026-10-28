@@ -23,3 +23,4 @@ pub mod corpus;
 pub mod extents;
 pub mod flows;
 pub mod tables;
+pub mod study_filters;

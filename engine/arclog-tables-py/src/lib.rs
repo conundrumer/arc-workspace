@@ -11,6 +11,7 @@
 
 mod case_tables;
 mod study_pair;
+mod study_filters;
 mod corpus_tables;
 mod orientation;
 mod record;
@@ -24,6 +25,7 @@ use pyo3::prelude::*;
 pub fn register(names: &Names<'_, '_>) -> PyResult<()> {
     let module = names.module();
     study_pair::register(names)?;
+    study_filters::register(names)?;
     names.class::<case_tables::PyCaseTables>()?;
     names.function(wrap_pyfunction!(corpus_tables::corpus_tables, module)?)?;
     names.function(wrap_pyfunction!(stream_tables::stream_tables, module)?)?;

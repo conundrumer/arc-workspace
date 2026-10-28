@@ -63,6 +63,7 @@ dependencies = [
  "arclog-bindings",
  "arclog-tables",
  "pyo3",
+ "serde_json",
 ]
 
 [[package]]

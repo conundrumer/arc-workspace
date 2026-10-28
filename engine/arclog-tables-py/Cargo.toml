@@ -5,6 +5,7 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
+serde_json = "1"
 # The settings, the replay progress and the walk over a corpus that the
 # streams bindings share with these.
 arclog-bindings = { path = "../arclog-bindings" }
