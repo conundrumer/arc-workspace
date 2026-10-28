@@ -99,7 +99,7 @@ where that one dies too, the task's part holds no case, the fault line `death_li
                    case, rows equal to the base's rows for tables below `k` and the case's own, but for the numbers of Idents, which depend on the session that interned them
   assigned.parquet one row per DET at an entry's assignment: task, case, entry, det, rows, offset
   projections.parquet    one row per projection (columns) and projection_rows.parquet one row per projection at an entry
-  orientations.json  [encoding, name] of each orientation constant; an orientation cell is its encoding
+  orientations.json  [encoding, name] of each orientation constant; an orientation cell is its encoding (written before the first task)
   orientation_types.json  [type name, cells] of each orientation type without a parameter (Dir, DiagDir, Dir8, Axis, DiagAxis,
                    Axis4, D4, C4, Sym, Sense): the cells its columns admit; a Pose type admits D4's
   parts/<k>.checks.txt, checks.txt  one line `<task> <case>: <invariant>: <detail>` per violation of an invariant of this layout
@@ -110,6 +110,16 @@ where that one dies too, the task's part holds no case, the fault line `death_li
   settings.json    the options the calls run under, written before the first task: {"projection_cap": N, "step_cap": N, "parts": [...]} with 10000 and 10000 (null for --step-cap 0, no cap)
                    where no --projection-cap is given, each other option given, and the names of the parts of the layout (`export_rows.PARTS`)
   report.txt       the fault lines, by task id
+  tasks/<task>/    the output of one task, made as the task ends: `index.parquet`, `tables.parquet`, `flows.parquet`, `copies.parquet`, `assigned.parquet`,
+                   `projections.parquet`, `projection_rows.parquet` and `report.txt`, which hold the task's rows of the whole files (the same numbering), and `bases.parquet`
+                   where the task has a cut case; the values stay in `values/<task>/`, which stands before the directory. The last file made is
+                   `DONE`, an empty file: where it stands, every other file of the directory is whole. A task that gets no output has `FAILED` in place of `DONE`,
+                   with the reason: the fault line `death_line` gives for a task whose worker process died on both runs, the traceback of the call or the check
+                   that raised, or `the export stopped: <the exception's type and first line>` for a task that had not ended when the run ended with an exception,
+                   a `KeyboardInterrupt` or the SIGTERM that `timeout` sends (the script handles it as an interrupt). A run on an <out dir> that holds a task's
+                   part makes the directory again where it holds no `DONE`; a task that the run replays has its directory removed before its call. With `--previous`, the directory of a reused task is
+                   a hard-linked copy of the previous export's where that one holds `DONE`. A kill that gives the process no chance to run Python (SIGKILL, an abort of
+                   the main process) leaves the tasks that had not ended with neither marker
 The whole files hold the rows of the parts sorted by task, in the order of the parts within a task.
 A run on an out dir whose `settings.json` gives other options prints both and exits with status 2. Otherwise the
 run takes as done each task id of a `parts/*.tasks.txt`, removes the files of a part with no `tasks.txt`, runs the
@@ -127,7 +137,7 @@ pairs and `bases` the list of bases as `arclog.stream_tables` takes them. `out` 
 consistency of the last `OUT` form the stream ends, or `ended none`), then the fault line of each stream that
 faults (its tables up to the fault are kept) or lies past the cap. It writes no `settings.json`.
 """
-import argparse, collections, enum, hashlib, json, os, shutil, signal, subprocess, sys, glob, threading, time, types
+import argparse, collections, contextlib, enum, hashlib, json, os, shutil, signal, subprocess, sys, glob, threading, time, types
 from typing import NamedTuple
 import multiprocessing, traceback
 from multiprocessing.connection import Connection
@@ -256,15 +266,99 @@ def line_task(line):
     return line.split()[0].rstrip(":") if line.split() else ""
 
 
+DONE, FAILED = "DONE", "FAILED"     # the markers of a task's directory under `tasks/`
+
+
+def write_marker(directory, name, text=""):
+    """Makes the file `<directory>/<name>` with `text`, whole at once: written to `<name>.tmp` and moved over `<name>` by `os.replace`. Makes the directory where it stands not."""
+    os.makedirs(directory, exist_ok=True)
+    with open(f"{directory}/{name}.tmp", "w") as sink:
+        sink.write(text)
+    os.replace(f"{directory}/{name}.tmp", f"{directory}/{name}")
+
+
+def ignore_interrupts():
+    """Makes this process ignore SIGINT and SIGTERM, for the handler of a run that is ending: `timeout` signals its command and its process group, so the SIGTERM can come twice."""
+    for number in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(number, signal.SIG_IGN)
+
+
+def stop_reason(exception):
+    """The reason `mark_stopped` gives: `the export stopped: ` and the type of `exception` and the first line of its text, where it has one."""
+    first = next(iter(str(exception).splitlines()), "")
+    return f"the export stopped: {type(exception).__name__}" + (f": {first}" if first else "")
+
+
+def mark_stopped(out, task_ids, exception):
+    """Gives `FAILED` with `stop_reason(exception)` to the directory `<out>/tasks/<task>` of each of `task_ids` that holds neither marker."""
+    for task in task_ids:
+        directory = f"{out}/tasks/{task}"
+        if not any(os.path.exists(f"{directory}/{marker}") for marker in (DONE, FAILED)):
+            write_marker(directory, FAILED, stop_reason(exception) + "\n")
+
+
+@contextlib.contextmanager
+def failing_into(directory):
+    """Within the block, an exception other than `WorkersStopped` gives `<directory>/FAILED` its traceback, and then raises on."""
+    try:
+        yield
+    except WorkersStopped:
+        raise
+    except Exception:
+        write_marker(directory, FAILED, traceback.format_exc())
+        raise
+
+
+def link_files(source, dest, skip=()):
+    """Makes the directory `dest` and hard-links into it the files of the directory `source` (none where it is no directory) but those named in `skip`,
+    in place of a file of the same name."""
+    os.makedirs(dest, exist_ok=True)
+    for name in os.listdir(source) if os.path.isdir(source) else []:
+        if name not in skip:
+            if os.path.lexists(f"{dest}/{name}"):
+                os.remove(f"{dest}/{name}")
+            os.link(f"{source}/{name}", f"{dest}/{name}")
+
+
+def part_tasks(out, k):
+    """The tasks of the part `k` of `out`, from its `tasks.txt`."""
+    return [line.task for line in read_task_lines(f"{out}/parts/{k:05d}.tasks.txt")]
+
+
+def write_task(out, k, task, previous=None):
+    """Makes `<out>/tasks/<task>/` from part `k`, which is whole, with `DONE` made last. A task whose `tasks.txt` line is bare (its worker process died on both runs)
+    gets `FAILED` with its report lines in place of `DONE`. Otherwise the directory holds hard links of `<previous>/tasks/<task>/` where `previous` is given and that directory holds `DONE`
+    (a reused task: equal keys give equal rows), and else the task's rows of the part, as `write_layout` gives them."""
+    directory = f"{out}/tasks/{task}"
+    shutil.rmtree(directory, ignore_errors=True)
+    os.makedirs(directory)
+    stem = f"{out}/parts/{k:05d}"
+    line = next(l for l in read_task_lines(f"{stem}.tasks.txt") if l.task == task)
+    if line.key is None:
+        write_marker(directory, FAILED, "".join(l + "\n" for l in report_lines([stem], task)))
+        return
+    if previous and os.path.exists(f"{previous}/tasks/{task}/{DONE}"):
+        link_files(f"{previous}/tasks/{task}", directory, skip=(DONE, FAILED))
+    else:
+        write_layout(out, [stem], directory, task)
+    write_marker(directory, DONE)
+
+
+def submit_writes(pool, out, k, tasks, previous, reused):
+    """Submits `write_task` to `pool` for the `tasks` of part `k`, with `previous` for the ones in `reused`. Returns {future: task}."""
+    return {pool.submit(write_task, out, k, t, previous if t in reused else None): t for t in tasks}
+
+
 def reuse_parts(out, previous, keys, k, skip, checks, pool, workers):
     """Writes parts from `previous`, from its `k`-th on, for each task of `keys` ({task: key}, not in `skip`) whose task key the previous export's `tasks.txt` lines give equal.
 
     A part takes the rows, fault lines and values (hard-linked) of the tasks of one previous part. Where every such line gives the
     checks digest `checks`, the part takes their check lines and `tasks.txt` lines as well. Otherwise its check is submitted to `pool`, of `workers` processes,
     and its `tasks.txt` lines are given `checks`, for `main` to finish as it finishes a replayed part.
-    Returns the set of tasks reused, the next part number and {part: [the (task, case) pairs, the check futures, []]} of the parts to check again (`main`'s `open_parts`).
+    Returns the set of tasks reused, the next part number, {part: [the (task, case) pairs, the check futures, []]} of the parts to check again (`main`'s `open_parts`),
+    and the numbers of the parts made whole here.
     """
-    reused, again = set(), {}
+    reused, again, whole = set(), {}, []
     for tasks_file in sorted(glob.glob(f"{previous}/parts/*.tasks.txt")):
         stem = os.path.basename(tasks_file).split(".")[0]
         lines = [l for l in read_task_lines(tasks_file) if l.key and l.task not in skip and keys.get(l.task) == l.key]
@@ -282,24 +376,22 @@ def reuse_parts(out, previous, keys, k, skip, checks, pool, workers):
             with open(f"{out}/parts/{k:05d}.{kind}.txt", "w") as sink:
                 sink.write("".join(l + "\n" for l in open(f"{previous}/parts/{stem}.{kind}.txt").read().splitlines() if line_task(l) in tasks))
         for task in tasks:
-            os.makedirs(f"{out}/values/{task}", exist_ok=True)
-            for name in os.listdir(f"{previous}/values/{task}") if os.path.isdir(f"{previous}/values/{task}") else []:
-                if os.path.lexists(f"{out}/values/{task}/{name}"):
-                    os.remove(f"{out}/values/{task}/{name}")
-                os.link(f"{previous}/values/{task}/{name}", f"{out}/values/{task}/{name}")
+            link_files(f"{previous}/values/{task}", f"{out}/values/{task}")
         with open(f"{out}/parts/{k:05d}.tasks.tmp", "w") as sink:
             sink.write("".join(l._replace(checks=checks).text() + "\n" for l in lines))
         if len(kinds) == 2:
             os.rename(f"{out}/parts/{k:05d}.tasks.tmp", f"{out}/parts/{k:05d}.tasks.txt")
+            whole.append(k)
         else:
             pairs = part_cases(out, k, tasks)
             if pairs:
                 again[k] = [pairs, set(submit_checks(pool, workers, out, k, pairs)), []]
             else:
                 finish_part(out, k, [])
+                whole.append(k)
         reused |= set(tasks)
         k += 1
-    return reused, k, again
+    return reused, k, again, whole
 
 
 def part_cases(out, k, tasks):
@@ -364,6 +456,10 @@ class WorkerDied(Exception):
         self.status = status
 
 
+class WorkersStopped(RuntimeError):
+    """`stop_workers` ran, so the worker processes are gone and the queue starts no call."""
+
+
 class Message(enum.IntEnum):
     """The kind of a message a worker process sends. It is sent as its value: a worker of `main` runs this file as `__main__`, where the class pickles under another module name."""
     PROGRESS = 0    # (done, total) of the call's arclog.ReplayProgress
@@ -414,10 +510,10 @@ def run_in_worker(command, task, payload, progress):
 
     While the call runs, `progress` takes the `done` and `total` the worker sends. Where the worker dies, the death is printed on stderr at once
     and the call runs once more in a new worker; where that one dies too, raises `WorkerDied`. A call that raises in the worker raises `RuntimeError`
-    with the worker's traceback."""
+    with the worker's traceback. After `stop_workers`, raises `WorkersStopped`."""
     for attempt in (1, 2):
         if _stopping.is_set():
-            raise RuntimeError("the export stopped its worker processes")
+            raise WorkersStopped("the export stopped its worker processes")
         if getattr(_threads, "worker", None) is None:
             _threads.worker = start_worker(command)
         process, requests, replies = _threads.worker
@@ -438,7 +534,7 @@ def run_in_worker(command, task, payload, progress):
             replies.close()
             _threads.worker = None
             if _stopping.is_set():
-                raise RuntimeError("the export stopped its worker processes")
+                raise WorkersStopped("the export stopped its worker processes")
             then = "it runs again in a new worker process" if attempt == 1 else "it gets a fault line"
             print(f"the worker process {process.pid} died on task {task} ({status}); {then}", file=sys.stderr, flush=True)
     raise WorkerDied(status)
@@ -496,22 +592,44 @@ def main(out, task_ids, previous=None, **options):
         if found != settings:
             print(f"{out} holds settings {json.dumps(found)}, this run has {json.dumps(settings)}", file=sys.stderr)
             sys.exit(2)
-    settings_text = json.dumps(settings)
     json.dump(settings, open(f"{out}/settings.json", "w"))
-    done, k = set(), 0
+    pool, check_pool = ThreadPoolExecutor(workers), ProcessPoolExecutor(workers, mp_context=multiprocessing.get_context("spawn"))
+    try:
+        write_orientations(out)
+        export_tasks(out, task_ids, previous, options, json.dumps(settings), workers, pool, check_pool)
+    except BaseException as stop:       # an exception, a KeyboardInterrupt, or the SIGTERM that `__main__` turns into one
+        ignore_interrupts()
+        stop_workers()
+        pool.shutdown(wait=False, cancel_futures=True)
+        workers_running = list((check_pool._processes or {}).values())
+        check_pool.shutdown(wait=False, cancel_futures=True)
+        for process in workers_running:
+            process.kill()
+        mark_stopped(out, task_ids, stop)
+        raise
+
+
+def export_tasks(out, task_ids, previous, options, settings_text, workers, pool, check_pool):
+    """The run of `main` once its out dir stands: the tasks are replayed on `pool` (threads that each own a worker process) and their parts checked, and written under `tasks/`, on `check_pool`."""
+    done, k, whole = set(), 0, []
     for f in sorted(glob.glob(f"{out}/parts/*")):
         stem = os.path.basename(f).split(".")[0]
         if os.path.exists(f"{out}/parts/{stem}.tasks.txt"):
             k = max(k, int(stem) + 1)
             if f.endswith(".tasks.txt"):
                 done |= {line.split()[0] for line in open(f) if line.strip()}
+                whole.append(int(stem))
         else:
             os.remove(f)
     engine, checks = engine_digest(), checks_digest()
     keys = {t: task_key(engine, t, settings_text, (ROWS,)) for t in task_ids}
     tagged = {t: (key, checks) for t, key in keys.items()}
-    check_pool = ProcessPoolExecutor(workers, mp_context=multiprocessing.get_context("spawn"))
-    reused, k, open_parts = reuse_parts(out, previous, keys, k, done, checks, check_pool, workers) if previous else (set(), k, {})
+    writing = {}        # write_task future -> its task
+    for part in whole:      # parts of an earlier run whose tasks it did not end
+        writing |= submit_writes(check_pool, out, part, [t for t in part_tasks(out, part) if not os.path.exists(f"{out}/tasks/{t}/{DONE}")], None, ())
+    reused, k, open_parts, reused_whole = reuse_parts(out, previous, keys, k, done, checks, check_pool, workers) if previous else (set(), k, {}, [])
+    for part in reused_whole:
+        writing |= submit_writes(check_pool, out, part, part_tasks(out, part), previous, reused)
     checking = {f: part for part, (_, futures, _) in open_parts.items() for f in futures}   # check future -> its part
     done |= reused
     before = {}
@@ -526,22 +644,32 @@ def main(out, task_ids, previous=None, **options):
     def run(task, part):
         progress[task] = types.SimpleNamespace(done=0, total=0)
         started[task] = time.time()
-        try:
-            return part, run_in_worker([sys.executable, os.path.abspath(__file__)], task, (out, part, task, CORPUS, TASKS, options, units[task], tagged[task]), progress[task])
-        except WorkerDied as died:
-            clear_part(out, part, task)
-            write_files(out, part, [(task, [], [death_line(task, died.status)])])
-            return part, []
+        with failing_into(f"{out}/tasks/{task}"):
+            try:
+                return part, run_in_worker([sys.executable, os.path.abspath(__file__)], task, (out, part, task, CORPUS, TASKS, options, units[task], tagged[task]), progress[task])
+            except WorkerDied as died:
+                clear_part(out, part, task)
+                write_files(out, part, [(task, [], [death_line(task, died.status)])])
+                return part, []
 
-    pool = ThreadPoolExecutor(workers)
+    def failed_tasks(future):
+        """The tasks that a raised check or `write_task` leaves with no output: those of the part it checks, or the one it writes. A call that raised has its marker from `run`."""
+        if future in writing:
+            return [writing[future]]
+        return sorted({t for t, _ in open_parts[checking[future]][0]}) if future in checking else []
+
     futures = {t: pool.submit(run, t, k + i) for i, t in enumerate(todo)}
-    pending, ended, begin, last = set(futures.values()) | set(checking), len(done), time.time(), time.time()
+    pending, ended, begin, last = set(futures.values()) | set(checking) | set(writing), len(done), time.time(), time.time()
     failure = None
     while pending and not failure:
         got, pending = wait(pending, timeout=max(0.0, last + 10 - time.time()), return_when=FIRST_COMPLETED)
         for f in got:
             if f.exception():
                 failure = failure or f.exception()
+                for task in failed_tasks(f):
+                    write_marker(f"{out}/tasks/{task}", FAILED, "".join(traceback.format_exception(f.exception())))
+            elif f in writing:
+                pass
             elif f in checking:
                 pairs, waiting, lines = open_parts[checking[f]]
                 waiting.remove(f)
@@ -549,6 +677,9 @@ def main(out, task_ids, previous=None, **options):
                 if not waiting:
                     position = {f"{t} {c}": i for i, (t, c) in enumerate(pairs)}
                     finish_part(out, checking[f], sorted(lines, key=lambda l: position[l.split(": ", 1)[0]]))
+                    new = submit_writes(check_pool, out, checking[f], part_tasks(out, checking[f]), previous, reused)
+                    writing |= new
+                    pending |= set(new)
                     del open_parts[checking[f]]
             else:
                 part, pairs = f.result()
@@ -559,18 +690,15 @@ def main(out, task_ids, previous=None, **options):
                     pending |= set(new)
                 else:
                     finish_part(out, part, [])
+                    new = submit_writes(check_pool, out, part, part_tasks(out, part), previous, reused)
+                    writing |= new
+                    pending |= set(new)
                 ended += 1
         replaying = pending & set(futures.values())
         if time.time() - last >= 10 or not replaying or failure:
             print_progress(begin, ended, len(task_ids), len(done), {t: (started[t], progress[t]) for t in list(started) if futures[t] in pending})
             last = time.time()
     if failure:
-        stop_workers()
-        pool.shutdown(wait=False, cancel_futures=True)
-        workers_running = list((check_pool._processes or {}).values())
-        check_pool.shutdown(wait=False, cancel_futures=True)
-        for process in workers_running:
-            process.kill()
         raise failure
     pool.shutdown()
     close_workers()
@@ -579,10 +707,11 @@ def main(out, task_ids, previous=None, **options):
 
 
 def clear_part(out, k, task):
-    """Removes the files of part `k` and the values of `task`, which a worker process that died while it wrote them may have left."""
+    """Removes the files of part `k` and the values and the directory under `tasks/` of `task`, which a worker process that died while it wrote them, or an earlier run, may have left."""
     for f in glob.glob(f"{out}/parts/{k:05d}.*"):
         os.remove(f)
     shutil.rmtree(f"{out}/values/{task}", ignore_errors=True)
+    shutil.rmtree(f"{out}/tasks/{task}", ignore_errors=True)
 
 
 def replay_part(payload, progress):
@@ -595,33 +724,57 @@ def replay_part(payload, progress):
     return write_files(out, k, [(task, cases, lines)], {task: (time.time() - start, units)}, {task: tag})
 
 
-def merge(out):
-    """Writes the whole files, `orientations.json` and `report.txt` from the parts of `out`, and prints the counts."""
-    parts = lambda p: sorted(glob.glob(f"{out}/parts/*.{p}.parquet"))
-    lines = [l for f in sorted(glob.glob(f"{out}/parts/*.report.txt")) for l in open(f).read().splitlines()]
-    lines.sort(key=lambda l: l.split()[0])
-    json.dump(sorted(arclog.orientation_names()), open(f"{out}/orientations.json", "w"))
-    json.dump(arclog.orientation_types(), open(f"{out}/orientation_types.json", "w"))
-    open(f"{out}/report.txt", "w").write("\n".join(lines) + "\n")
-    checks = [l for f in sorted(glob.glob(f"{out}/parts/*.checks.txt")) for l in open(f).read().splitlines()]
-    checks.sort(key=lambda l: l.split()[0])
-    open(f"{out}/checks.txt", "w").write("".join(l + "\n" for l in checks))
-    by_invariant = collections.Counter(l.split(": ", 1)[1].split(": ", 1)[0] for l in checks)
-    summary = f", {len(checks)} check lines" + (": " + ", ".join(f"{inv} {n}" for inv, n in sorted(by_invariant.items())) if checks else "")
-    if not parts("tables"):
-        print(f"0 index rows, {len(lines)} fault lines{summary}")
-        return
-    whole = {p: pd.concat([pd.read_parquet(f) for f in parts(p)]).sort_values("task", kind="stable") for p in PARTS if parts(p)}   # no part is written for `bases` where no case is cut
+def write_orientations(out):
+    """Writes `orientations.json` and `orientation_types.json` of `out`, each whole at once."""
+    for name, value in (("orientations", sorted(arclog.orientation_names())), ("orientation_types", arclog.orientation_types())):
+        with open(f"{out}/{name}.json.tmp", "w") as sink:
+            json.dump(value, sink)
+        os.replace(f"{out}/{name}.json.tmp", f"{out}/{name}.json")
+
+
+def report_lines(stems, task=None):
+    """The fault lines of the parts at the path prefixes `stems`, sorted by task, but for those of `task` alone where one is given."""
+    lines = [l for stem in stems if os.path.exists(f"{stem}.report.txt") for l in open(f"{stem}.report.txt").read().splitlines() if task is None or line_task(l) == task]
+    return sorted(lines, key=lambda l: l.split()[0])
+
+
+def write_layout(out, stems, dest, task=None):
+    """Writes into the directory `dest` the whole files of the parts at the path prefixes `stems` (`<out>/parts/<k>`): the parquet files and `report.txt`, but for the rows of `task` alone where one is given.
+    A task with no `tables` row gets no parquet file, and `bases.parquet` stays where the task has no row of it. Returns the count of index rows and the report lines."""
+    files = lambda p: [f for stem in stems if os.path.exists(f := f"{stem}.{p}.parquet")]
+    lines = report_lines(stems, task)
+    open(f"{dest}/report.txt", "w").write("\n".join(lines) + "\n")
+    if not files("tables"):
+        return 0, lines
+    whole = {p: pd.concat([pd.read_parquet(f) for f in files(p)]).sort_values("task", kind="stable") for p in PARTS if files(p)}   # no part is written for `bases` where no case is cut
+    if task is not None:
+        whole = {p: rows[rows["task"] == task].copy() for p, rows in whole.items()}
+        whole = {p: rows for p, rows in whole.items() if p != "bases" or len(rows)}
+        if not len(whole["tables"]):
+            return 0, lines
     for rows in whole.values():
         if "concept" in rows:
             rows["concept"] = rows["concept"].astype(bool)
     tables, entries = whole["tables"], whole["entries"]
     export_checks.number_rows(tables, entries, whole.get("bases", export_checks.empty_bases()))
-    entries.merge(tables, on=["task", "case", "table"], suffixes=("", "_table")).to_parquet(f"{out}/index.parquet")
+    entries.merge(tables, on=["task", "case", "table"], suffixes=("", "_table")).to_parquet(f"{dest}/index.parquet")
     for p in whole:
         if p != "entries":      # the entries stand in index.parquet
-            whole[p].to_parquet(f"{out}/{p}.parquet")
-    print(f"{len(entries)} index rows, {len(lines)} fault lines{summary}")
+            whole[p].to_parquet(f"{dest}/{p}.parquet")
+    return len(entries), lines
+
+
+def merge(out):
+    """Writes the whole files, `orientations.json`, `report.txt` and `checks.txt` from the parts of `out`, and prints the counts."""
+    write_orientations(out)
+    checks = [l for f in sorted(glob.glob(f"{out}/parts/*.checks.txt")) for l in open(f).read().splitlines()]
+    checks.sort(key=lambda l: l.split()[0])
+    open(f"{out}/checks.txt", "w").write("".join(l + "\n" for l in checks))
+    by_invariant = collections.Counter(l.split(": ", 1)[1].split(": ", 1)[0] for l in checks)
+    summary = f", {len(checks)} check lines" + (": " + ", ".join(f"{inv} {n}" for inv, n in sorted(by_invariant.items())) if checks else "")
+    stems = sorted({f"{out}/parts/{os.path.basename(f).split('.')[0]}" for f in glob.glob(f"{out}/parts/*")})
+    rows, lines = write_layout(out, stems, out)
+    print(f"{rows} index rows, {len(lines)} fault lines{summary}")
 
 
 def export_streams(out, task, streams, names=None, settings=None, bodies=False, step_cap=10000, bases=None):
@@ -661,9 +814,10 @@ elif __name__ == "__main__":
         options["previous"] = parsed.previous
     ids = parsed.task_ids
     ids = ids or sorted(os.path.basename(f)[:-len(".arcdata")] for f in glob.glob(f"{CORPUS}/*.arcdata"))
+    signal.signal(signal.SIGTERM, signal.default_int_handler)       # the SIGTERM of `timeout` ends the run as an interrupt does
     try:
         main(parsed.out, ids, **options)
-    except Exception:       # a failed task or check ends the run at once: the replay threads of the other tasks do not delay the exit
+    except (Exception, KeyboardInterrupt):       # a failed task or check, or an interrupt, ends the run at once: the replay threads of the other tasks do not delay the exit
         traceback.print_exc()
         sys.stderr.flush()
         os._exit(1)
