@@ -38,10 +38,55 @@ Extent export coverage and extent derivation requests are now separate:
   missing frame evidence remains unresolved, and only positive native proof
   gives no_grid.
 
-This removes the class at all relation/body annotation entry points, rather
-than exempting a task, hiding a stop, raising the cap or suppressing a genuine
-derivation. The external row/column layout and status codes are unchanged.
+The first coverage/derivation separation (`4223b27d`) removed double charges
+and queries with a single outer example. Its replay still had 204 TableWork
+records, versus 89 on `6108dd6e`. It did not cover the main task-wide case.
 The separate RIGID_DET derivation contract is owned by the AST thread.
+
+## Task-wide row context
+
+The remaining class was losing the Example binding of a frame when the table
+itself has no single outer Example. A task-wide Singleton's native key already
+contains the Example that its Box's `input` frame belongs to. Treating outer
+context `None` as missing proof caused recomputation of widened key/member
+bodies for every such column, instead of reading that native key.
+
+The exact saved record `4e7e0eb9`, `$Any $Blank`, body `[2,0]` completes on
+`6108dd6e` and stops on `4223b27d`. The bounded comparison in
+`run/tablework-one-4e7e0eb9/` shows complete row values on both builds. The
+three form `[1]` Singleton tables hold Example, Axis and input-framed Box
+columns (two also hold Color); only their extent derivation stops on 4223.
+There are no value bounds, other bounds or Deadline stops in that comparison.
+This evidence does not establish a held-stop cache defect.
+
+`frame_context` now proves per-column row contexts from compiled source-atom
+arguments. Explicit `ex_input`/`ex_output` and native lifted reads identify an
+Example argument by their native schema. Its scoped LabelId must match an
+actual Example column of the current native interface; all frame-contributing
+sources must agree. A later native read can propagate an earlier column's
+proof through its actual argument ordinal/column path. Constants remain typed
+native terms and are decoded with `Term::decode(..., Example)`. Column names,
+the mere presence of an Example column, and expected-output dimensions never
+supply a context. Equal LabelIds in different forms cannot match.
+
+Both relation and body masks use these proofs against the already materialized
+rows. Every row with a proved context gets that exact example's declared grid
+extent without re-evaluating the body. Missing, conflicting or unprojected
+bindings keep the bounded native derivation path. In that path explicit
+example facts also retain their Example argument; reads of task-wide source
+tables can use the exact argument-constrained row proofs when no outer grid
+is available. This covers direct facts, component keys, normal relation reads
+and downstream copies through one proof mechanism at all annotation entry
+points. Full geometric slots/status codes, positive no_grid proof priority,
+native row evaluation, work caps and genuine stop reporting are unchanged.
+
+The direct proof and bounded derivation share one implementation of source
+read lookup (`read_at`), native explicit/lifted Example argument selection
+(`example_argument`), scoped argument binding (`RowExample::from_argument`),
+and typed Example decoding (`RowExample::get`) in `frame_context`. The
+`Analysis` methods delegate to it; they do not carry a second interpretation.
+This resolves duplicate-reference group G04, including nested key/OR reads,
+explicit fact Example arguments and native constant arguments.
 
 Validation requires an immutable runtime built from the landed commit, then
 the same full identity manifest, work cap and gold/native-table paths as the
