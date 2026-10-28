@@ -8,6 +8,7 @@ use std::sync::{Arc,OnceLock};
 
 pub mod render;
 pub mod render_terms;
+pub mod render_choices;
 pub mod render_bodies;
 pub mod render_definitions;
 pub mod render_meanings;

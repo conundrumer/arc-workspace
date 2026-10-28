@@ -1,26 +1,9 @@
 //! Native tables of checked IR queries, with the export's metadata and caps.
 use super::*;
 use arclog::eval::body_view::BodyView;
-use arclog::eval::ir::{AtomSource,ClauseIr,IrNode};
 
 pub fn dets(checked:&CheckedProgram,view:&BodyView)->Vec<Det> {
-    fn reads(clause:&ClauseIr,nodes:&mut Vec<GraphNodeIndex>) {
-        for node in clause.nodes.iter() {match node {
-            IrNode::Atom(atom)=>match &atom.source {
-                AtomSource::Relation(r)=>{if !nodes.contains(&r.node) {nodes.push(r.node)}},
-                AtomSource::Key(read)=>reads(&read.clause,nodes),
-                _=>{}
-            },
-            IrNode::Or(union)=>for branch in union.branches.iter() {reads(branch,nodes)},
-            IrNode::Not(f)|IrNode::Counterexample(f)=>reads(&f.body,nodes),
-            _=>{}
-        }}
-    }
-    let mut nodes=Vec::new();reads(&view.clause,&mut nodes);
-    let mut held=Vec::new();
-    for node in nodes {for det in relation_dets(checked,node) {if !held.iter().any(|d:&Det|d.node==det.node) {held.push(det);}}}
-    let order=arclog::eval::determinations::determinations(checked);
-    held.sort_by_key(|d|order.iter().position(|n|*n==d.node));held
+    arclog::study::render_choices::body_dets(checked,view)
 }
 
 pub fn models(evaluation:&Evaluation<'_>,view:&BodyView,example:Option<Example>)->Result<Vec<RelationValue>,End> {

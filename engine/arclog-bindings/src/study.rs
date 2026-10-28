@@ -132,6 +132,12 @@ impl PyStudyProgram {
             .map_err(PyValueError::new_err)
     }
 
+    /// Full held DET choices and exact body-read subsets, decoded by Term::decode.
+    fn choice_evidence_json(&self, py: Python<'_>, kept_json: &str) -> PyResult<String> {
+        py.detach(|| arclog::study::render_choices::export_json(&self.program, kept_json, Registry::get()))
+            .map(|v| v.to_string()).map_err(PyValueError::new_err)
+    }
+
     fn render_json(&self, py: Python<'_>) -> PyResult<String> {
         py.detach(|| {
             self.program
