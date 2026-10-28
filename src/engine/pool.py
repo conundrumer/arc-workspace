@@ -8,9 +8,11 @@ import os
 SHARE_ENV = "ARC_HEAVY_CPUS"
 """The variable in which `scripts/run_heavy.py` gives the CPUs the command declares."""
 
-POOL_ENVS = ("ARCLOG_THREADS", "CARGO_BUILD_JOBS", "RAYON_NUM_THREADS")
+POOL_ENVS = ("ARCLOG_THREADS", "CARGO_BUILD_JOBS", "RAYON_NUM_THREADS",
+             "RUST_TEST_THREADS", "OMP_NUM_THREADS", "VECLIB_MAXIMUM_THREADS")
 """The variables in which `scripts/run_heavy.py` bounds the threads of the
-tools it runs; `scripts/run_heavy.py` holds the same names."""
+tools it runs; `scripts/run_heavy.py` and `engine/arclog-py/export_checks.py`,
+which run under other interpreters, hold the same names."""
 
 
 def pool_size() -> int:

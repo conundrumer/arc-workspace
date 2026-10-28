@@ -29,8 +29,9 @@ The call replaces itself with the command by `exec` of `taskpolicy -c utility
 user's interactive applications, as does each process it starts, as the call's
 own process in the call's process group, with the caller's environment as it
 stands, plus `ARC_HEAVY_CPUS` set to `--cpus`, and `ARCLOG_THREADS`,
-`CARGO_BUILD_JOBS` and `RAYON_NUM_THREADS` set to that number, each at most
-the value the caller set. So a `timeout` around the call, the end of the Bash
+`CARGO_BUILD_JOBS`, `RAYON_NUM_THREADS`, `RUST_TEST_THREADS`, `OMP_NUM_THREADS`
+and `VECLIB_MAXIMUM_THREADS` set to that number, each at most the value the
+caller set. So a `timeout` around the call, the end of the Bash
 call and `TaskStop` reach it as they reach the command run without this
 script. The call exits with the command's status. The daemon counts the job
 until that process ends, and kills the processes the command leaves behind.
@@ -71,7 +72,9 @@ from heavy_model import Need
 from heavy_protocol import Refusal
 
 SHARE_ENV = "ARC_HEAVY_CPUS"
-POOL_ENVS = ("ARCLOG_THREADS", "CARGO_BUILD_JOBS", "RAYON_NUM_THREADS")
+# The same names stand in `src/engine/pool.py` and `engine/arclog-py/export_checks.py`, which run under other interpreters.
+POOL_ENVS = ("ARCLOG_THREADS", "CARGO_BUILD_JOBS", "RAYON_NUM_THREADS",
+             "RUST_TEST_THREADS", "OMP_NUM_THREADS", "VECLIB_MAXIMUM_THREADS")
 NOT_RUN = 125
 NOT_EXECUTABLE = 126
 NOT_FOUND = 127

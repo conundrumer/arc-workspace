@@ -21,10 +21,14 @@ has tables. The number of cases with tables and no stream is printed and is no v
 """
 import collections, concurrent.futures, glob, heapq, json, multiprocessing, os, random, sys
 from typing import NamedTuple
+from unittest import mock
 import numpy as np
 import pandas as pd
 
 ROOT = os.path.dirname(os.path.abspath(__file__)) + "/../.."
+POOL_ENVS = ("ARCLOG_THREADS", "CARGO_BUILD_JOBS", "RAYON_NUM_THREADS", "RUST_TEST_THREADS", "OMP_NUM_THREADS", "VECLIB_MAXIMUM_THREADS")
+# The variables in which `scripts/run_heavy.py` bounds the threads of the tools it runs; `scripts/run_heavy.py` and `src/engine/pool.py`,
+# which run under other interpreters, hold the same names.
 TASKS = f"{ROOT}/data/tasks"
 ROWS, COUNT = 0, 1      # the `kind` of an entry
 COPY, COMPUTED, CONSTANT, LIB_NAME = 0, 1, 2, 3     # the `kind` of a flow
@@ -585,9 +589,15 @@ def check_part(out, k, cases):
     return [f"{task} {case}: {inv}: {detail}" for (task, case), inv, detail in found]
 
 
+def one_thread_env():
+    """The variables of `POOL_ENVS`, each set to 1: the environment of a worker process of a pool that is sized to the CPUs the command may use."""
+    return {name: "1" for name in POOL_ENVS}
+
+
 def check_export(dir, sample=100, seed=0, streams=None, out=sys.stdout, jobs=None):
     """Checks the export in `dir` and prints a report; `sample` is the number of cases whose values are checked, None for every case.
     `jobs` is the number of worker processes, `ARCLOG_THREADS` where it is None and set, and `os.cpu_count()` where it is neither; the report does not depend on it.
+    Each worker process runs with every variable of `POOL_ENVS` at 1.
     Returns the Counter of violations by invariant."""
     bases = read_bases(dir)
     valued = [tuple(f[len(f"{dir}/values/"):-len(".i32")].split("/", 1)) for f in glob.glob(f"{dir}/values/*/*.i32")]
@@ -610,7 +620,8 @@ def check_export(dir, sample=100, seed=0, streams=None, out=sys.stdout, jobs=Non
         results = [_check_cases(dir, cases, chosen, orientation)]
     else:
         cut = shares(dir, cases, chosen, jobs)
-        with concurrent.futures.ProcessPoolExecutor(len(cut), mp_context=multiprocessing.get_context("spawn")) as pool:
+        with mock.patch.dict(os.environ, one_thread_env()), \
+                concurrent.futures.ProcessPoolExecutor(len(cut), mp_context=multiprocessing.get_context("spawn")) as pool:
             futures = [pool.submit(_check_cases, dir, share, chosen & set(share), orientation) for share in cut]
             results = [f.result() for f in futures]
     position = {key: i for i, key in enumerate(cases)}

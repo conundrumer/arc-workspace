@@ -28,7 +28,16 @@ run() {   # name, command...
 }
 
 export HF_HUB_OFFLINE=1
-export OMP_NUM_THREADS=${OMP_NUM_THREADS:-2}   # the checks run small tensors; more threads only contend
+# The checks run small tensors; more threads only contend. Under `scripts/run_heavy.py` each check gets its share of
+# `ARC_HEAVY_CPUS` (the gate sets OMP_NUM_THREADS to the whole of it), at least 1 and at most 2.
+CHECKS=5   # the checks started at once below
+threads=2
+if [ -n "${ARC_HEAVY_CPUS:-}" ]; then
+    threads=$((ARC_HEAVY_CPUS / CHECKS))
+    [ "$threads" -lt 1 ] && threads=1
+    [ "$threads" -gt 2 ] && threads=2
+fi
+export OMP_NUM_THREADS=$threads
 run encoder_check "$PY" lm/encoder_check.py "$TABLES" ${ENC_ARGS[@]+"${ENC_ARGS[@]}"} &
 run insertion_check "$PY" lm/insertion_check.py lm/data-dev "$TABLES" &
 run regression_check "$PY" lm/regression_check.py &

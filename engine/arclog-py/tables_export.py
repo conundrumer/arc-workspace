@@ -15,7 +15,7 @@ the installed `arclog` package, the versions of Python, numpy, pandas and pyarro
 written as parts of the out dir. Its check lines are those of that export where the sha256 of `export_checks.py` (the checks digest) equals the one in its `tasks.txt` line,
 and otherwise the part is checked again in the check processes. The run prints the counts reused, of them to check again, and to replay first.
 An export with no key in its lines gives no reuse.
-`--previous` changes no output file but the Ident numbers of a task it gives more than one unit. The script sets `ARCLOG_THREADS=1` for the engine, so a call
+`--previous` changes no output file but the Ident numbers of a task it gives more than one unit. The script sets `ARCLOG_THREADS=1` for the engine, and the other variables of `export_checks.POOL_ENVS` to 1, so a call
 of a task of one unit runs on one engine thread, and each worker process starts the next task as its task ends and writes each task as its own part.
 Where a worker process dies in a call, the export prints on stderr the task and the exit status, and runs the call once more in a new worker;
 where that one dies too, the task's part holds no case, the fault line `death_line` gives, and a bare `tasks.txt` line. Writes to <out dir>:
@@ -442,10 +442,10 @@ def print_progress(begin, ended, count, done, running):
 
 
 def take_workers():
-    """The count of worker processes of an export's queue of calls, `ARCLOG_THREADS` if set and `os.cpu_count()` otherwise, and sets `ARCLOG_THREADS` to 1,
-    so that each call runs on one engine thread, in the worker process that makes it."""
+    """The count of worker processes of an export's queue of calls, `ARCLOG_THREADS` if set and `os.cpu_count()` otherwise, and sets each variable of `export_checks.POOL_ENVS` to 1,
+    so that each call runs on one engine thread, in the worker process that makes it, and each process this one starts after it runs on one thread of each pool."""
     workers = int(os.environ.get("ARCLOG_THREADS") or os.cpu_count())
-    os.environ["ARCLOG_THREADS"] = "1"
+    os.environ.update(export_checks.one_thread_env())
     return workers
 
 

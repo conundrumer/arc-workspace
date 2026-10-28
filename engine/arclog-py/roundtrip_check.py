@@ -43,7 +43,7 @@ TASKS = [
 
 def export_stage(out, tmp, python):
     run = subprocess.run([python, "-u", str(HERE / "tables_export.py"), out, "--all-cases", *TASKS],
-                         env={**os.environ, "ARCLOG_THREADS": "4"}, capture_output=True, text=True, timeout=300)
+                         env=os.environ, capture_output=True, text=True, timeout=300)
     if run.returncode:
         raise RuntimeError(f"exit {run.returncode}\n{run.stdout}{run.stderr}")
     return run.stdout[-2000:]
