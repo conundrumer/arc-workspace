@@ -32,8 +32,13 @@ use crate::types::{each_site_label, use_label, ValueType};
 /// together, and that `outside` does not hold, is local to each part that
 /// holds it. It is bound where every part that holds it binds it from
 /// the labels bound outside the form, so a part that holds it only in a
-/// negated atom or a constraint other than `=` leaves it unbound. `outside` holds the labels that stand in
-/// the body's context outside the body: a clause's head labels, or a
+/// negated atom or a constraint other than `=` leaves it unbound. The else
+/// of an `IF` holds each label that its test holds at any depth and does
+/// not make with `*` or `^`, as the else's clause reads the test negated
+/// with only the test's fresh labels projected away. Such a label that the
+/// else does not bind is unbound in the `IF`, since a negated test binds no
+/// label. `outside` holds the labels that stand in the body's context
+/// outside the body: a clause's head labels, or a
 /// relation macro's column labels. Each of them is an outer label of each
 /// form of `body` where it stands, so a form binds it for the body only by
 /// the rule above for that form, and never as a label local to a part.
@@ -156,9 +161,13 @@ impl Walk<'_, '_> {
             let around = counts.around(outside, Some(&sets[i]));
             let per_part: Vec<(StableHashSet<LabelId>, StableHashSet<LabelId>)> = parts(conjunct)
                 .iter()
-                .map(|part| {
+                .enumerate()
+                .map(|(index, part)| {
                     let mut held = StableHashSet::default();
                     part.iter().for_each(|inner| conjunct_labels(inner, &mut held));
+                    if index == ELSE_PART {
+                        held.extend(test_joined_labels(conjunct));
+                    }
                     held.retain(|label| !around.contains(label));
                     (self.bound_in(part, &bound, &around), held)
                 })
@@ -302,6 +311,35 @@ pub(crate) fn conjunct_labels(conjunct: &Conjunct, labels: &mut StableHashSet<La
     own_labels(conjunct, labels);
     for part in parts(conjunct) {
         part.into_iter().for_each(|inner| conjunct_labels(inner, labels));
+    }
+}
+
+/// The index in [`parts`] of the else of an `IF`.
+const ELSE_PART: usize = 1;
+
+/// The labels that the test of `conjunct`, an `IF` or a `NOT` of one, holds
+/// at any depth and does not make with `*` or `^`, which the else holds
+/// too, as the else's clause reads the test negated. No label for a
+/// conjunct of another kind.
+fn test_joined_labels(conjunct: &Conjunct) -> StableHashSet<LabelId> {
+    match conjunct {
+        Conjunct::Not(Negated::Form(form)) => test_joined_labels(form),
+        Conjunct::If { test, .. } => {
+            let mut joined = StableHashSet::default();
+            let mut made = StableHashSet::default();
+            each_label_use(test.value(), &mut |use_| match use_ {
+                LabelUse::Join(label) => {
+                    joined.insert(label);
+                }
+                LabelUse::Fresh(label) | LabelUse::Key(label) => {
+                    made.insert(label);
+                }
+                LabelUse::Zero => {}
+            });
+            joined.retain(|label| !made.contains(label));
+            joined
+        }
+        Conjunct::Or(_) | Conjunct::All { .. } | Conjunct::Atom(_) | Conjunct::Not(Negated::Atom(_)) | Conjunct::Constraint(_) => StableHashSet::default(),
     }
 }
 
