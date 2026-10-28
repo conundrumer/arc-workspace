@@ -29,9 +29,17 @@ fn admissibility(e:&Evaluation<'_>, gold:&CheckedProgram, assigned:&[Assignment]
             return json!({"source_name":source,"status":"complete","admissible":false,"reason":"held DET no longer exists"});
         };
         let at=e.program.program.form_of(node);
-        let gold_types=det_node(gold,name).and_then(|node|gold.types.columns(&GraphRelation {node,output:None}));
+        let gold_node=det_node(gold,name);
+        let gold_types=gold_node.and_then(|node|gold.types.columns(&GraphRelation {node,output:None}));
         let mutant_types=e.program.types.columns(&GraphRelation {node,output:None});
-        if gold_types.is_none() || gold_types!=mutant_types {
+        // Native subtypes share an encoding with their parent: for example,
+        // an Offset remains a valid value after its column widens to Box.
+        // Identity/order and arity must still match; never relabel held cells.
+        let same_columns=gold_node.is_some_and(|gold_node|
+            gold.program.row_paths(gold_node)==e.program.program.row_paths(node));
+        let compatible=gold_types.zip(mutant_types).is_some_and(|(g,m)|
+            g.len()==m.len() && g.iter().zip(m).all(|(a,b)|a.meet(b)==arclog::types::Meet::Type(a.clone())));
+        if !same_columns || !compatible {
             return json!({"source_name":source,"status":"complete","admissible":false,
                 "reason":"held gold DET schema differs from mutant schema","selected_value_overrides_proposal":true});
         }
@@ -54,7 +62,13 @@ fn admissibility(e:&Evaluation<'_>, gold:&CheckedProgram, assigned:&[Assignment]
                         if (det.open && target.len()==1 && target.is_subset(&candidate)) || (!det.open && candidate==target) {found=true;}
                     }
                     Ok(json!({"status":"complete","admissible":found,"domain_values":values.len(),
-                        "comparison":if det.open {"ONE: held singleton occurs in a native domain value"} else {"held row set equals a native domain value"}}))
+                        "comparison_test":if det.open {"singleton_membership"} else {"row_set_equality"},
+                        "comparison":match (det.open,found) {
+                            (true,true)=>"ONE: held singleton occurs in a native domain value",
+                            (true,false)=>"ONE: held value is not a singleton occurring in any native domain value",
+                            (false,true)=>"held row set equals a native domain value",
+                            (false,false)=>"held row set does not equal any native domain value",
+                        }}))
                 }
             }
         })();
