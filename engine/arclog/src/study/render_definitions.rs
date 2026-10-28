@@ -9,6 +9,47 @@ use crate::registry::{LibEntry, Macro, ProposerKind, Registry};
 use crate::resolver::{DependencyKind, GraphNodeIndex, Resolution};
 use serde_json::{Value, json};
 
+fn column_witnesses(program: &StudyProgram, registry: &Registry, relation: &ProgramRelation, form: &NodePath) -> (String, Vec<Value>) {
+    use crate::resolver::given::BindingProof;
+    let checked=program.checked();
+    let reference=match relation {ProgramRelation::Declared(n)=>RelationRef::Declared(n.clone()),ProgramRelation::Output(n)=>RelationRef::Output(n.clone())};
+    let Some(node)=checked.program.program_read(&reference) else {return ("unsupported_relation".into(),Vec::new())};
+    let output=match (&checked.program.graph.nodes[node.0 as usize].kind,relation) {
+        (DependencyKind::RigidAssembly(_) | DependencyKind::RecursiveInstance(_),ProgramRelation::Output(n))=>Some(n.path.clone()),
+        _=>None,
+    };
+    let graph=crate::types::GraphRelation {node,output};
+    let Some(types)=checked.types.columns(&graph) else {return ("unsupported_schema".into(),Vec::new())};
+    let columns=checked.program.column_bindings(node,graph.output.as_deref(),form,types.len(),registry);
+    let native_names=checked.program.column_names(node);
+    let proof=|p|match p {
+        BindingProof::ResolverLabelPosition=>"resolver_label_position",
+        BindingProof::DeclaredLayout=>"declared_layout",
+        BindingProof::ResolvedRowPath=>"resolved_row_path",
+    };
+    let columns=columns.iter().zip(types).enumerate().map(|(physical,(c,ty))| {
+        let bindings=c.bindings.iter().map(|b| {
+            let scope=crate::eval::ir::scope_of(checked,&b.form.join(&b.body));
+            let field_type=checked.types.form(&scope).and_then(|f|f.label(b.label));
+            json!({"definition_path":path_json(&b.form),"scope_path":path_json(&scope),"body_path":path_json(&b.form.join(&b.body)),
+                "output_identity":program_relation(relation),"label_id":b.label.0,"logical_slot":b.slot,
+                "source_column_path":b.source_path.iter().map(column).collect::<Vec<_>>(),
+                "field_type":field_type.map(|t|format!("{t:?}")),"proof":proof(b.proof),
+                "status":if field_type.is_some(){"resolved"}else{"unsupported_label_type"}})
+        }).collect::<Vec<_>>();
+        let selected=c.selected_header_binding.and_then(|i|bindings.get(i)).cloned();
+        let status=if c.placement.is_none() {"unsupported"} else if c.declared_without_local_label {"declared_without_local_label"}
+            else if selected.as_ref().is_some_and(|s|s["status"]=="resolved") {"resolved"} else {"unsupported"};
+        json!({"physical_column":physical,"type":format!("{ty:?}"),
+            "row_path":c.row_path.as_ref().map(|p|p.iter().map(column).collect::<Vec<_>>()),
+            "native_name":native_names.as_ref().and_then(|n|n.get(physical)),
+            "definition_path":path_json(form),"relation":program_relation(relation),"status":status,
+            "logical_slot":c.placement.map(|p|p.slot),"proof":c.proof.map(proof),
+            "bindings":bindings,"selected_header_binding":selected})
+    }).collect();
+    ("complete".into(),columns)
+}
+
 fn expression(e: &SExpr) -> Value {
     match e {
         SExpr::Symbol { text, .. } => json!({"symbol":text}),
@@ -199,8 +240,11 @@ pub fn export(program: &StudyProgram, registry: &Registry) -> Result<Value, Stri
         let form=owner.map(|f|&f.path);
         let reference=match r {ProgramRelation::Declared(n)=>RelationRef::Declared(n.clone()),ProgramRelation::Output(n)=>RelationRef::Output(n.clone())};
         let display_name=crate::write::relation_ref(&reference,|n|match n {DeclaredName::Written(n)=>n.to_string(),DeclaredName::Slot(n)=>format!("&r{n}")});
+        let (witness_status,witnesses)=form.map(|form|column_witnesses(program,registry,r,form))
+            .unwrap_or_else(||("unsupported_definition".into(),Vec::new()));
         json!({"relation_slot":slot,"relation":program_relation(r),"source_name":crate::eval::determinations::relation_spelled(r),
             "display_name":display_name,
+            "column_witness_status":witness_status,"column_witnesses":witnesses,
             "readable_in_checked_program":owner.is_some_and(|f|f.readable.contains(&slot)),
             "definition_path":form.map(path_json),"native_selector":{"point":0,"relation":slot,
                 "form":form.map(|p|p.0.iter().map(|s|s.0.to_string()).collect::<Vec<_>>().join("."))},

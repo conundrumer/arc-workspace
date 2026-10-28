@@ -39,7 +39,7 @@ use arclog::eval::ir::{atom_modes, Argument, Arguments, AtomSource, ClauseIr, Ir
 use arclog::program::path::{node_at, NodePath, NodeRef};
 use arclog::program::{column_spelled, Atom, ColumnName, Conjunct, ConstraintOp, FactRelation, Instance, LabelId, OutputOwner, OutputStep, PortName, RelationRef};
 use arclog::registry::{is_key, key_fill, Column, ColumnType, Component, FrameRule, LibName, Port, Registry, TypeParameter};
-use arclog::resolver::given::{node_relation, Given, GivenLabel};
+use arclog::resolver::given::{node_relation, Given, GivenLabel, GivenPlacement as Placed};
 use arclog::resolver::registry_columns;
 use arclog::resolver::{DependencyKind, GraphNodeIndex, ResolvedProgram, Resolution};
 use arclog::types::ValueType;
@@ -652,26 +652,8 @@ pub fn body_column_flows(checked:&CheckedProgram,clause:&ClauseIr,paths:&IrPaths
     clause.columns.iter().map(|v|walk.sources(*v,&Alt::of(clause,paths),&mut Vec::new())).collect()
 }
 
-/// What a form's column gives to the row positions of its relation.
-enum Placed<'g> {
-    /// A column with a label written at a path of it, which stands at `position`.
-    Labelled { slot: usize, position: usize, label: &'g GivenLabel },
-    /// A column of a declared type that no label is written at, which takes
-    /// the row `positions` of its width.
-    Declared { slot: usize, positions: Range<usize> },
-}
-
-/// The column of a form's relation that stands at a row position of the
-/// table, and the label the form writes at it.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct Placement {
-    /// The index of the column in the relation's own column order, as
-    /// [`arclog::resolver::given::Given::slots`] lists the columns; a record's
-    /// fields share the index of their record.
-    pub slot: u32,
-    /// The label written at the position, none for a column of a declared type.
-    pub label: Option<LabelId>,
-}
+/// The canonical selected header binding at a physical row position.
+pub use arclog::resolver::given::ColumnPlacement as Placement;
 
 /// The [`Placement`] at each of the `width` row positions of the relation of
 /// `node`, whose read names `output`, as the form at `form` gives it: none at a
@@ -681,32 +663,8 @@ pub struct Placement {
 /// instance's port in their declared order, so each of its row positions
 /// stands at the slot of its column in that order, with no label.
 pub fn column_placements(checked: &CheckedProgram, node: GraphNodeIndex, output: Option<&[OutputStep]>, form: &NodePath, width: usize, registry: &Registry) -> Vec<Option<Placement>> {
-    let flows = Flows { checked, program: &checked.program, registry };
-    let mut placements: Vec<Option<Placement>> = vec![None; width];
-    let mut place = |slot: usize, positions: Range<usize>, label: Option<LabelId>| {
-        let slot = u32::try_from(slot).expect("fewer than 2^32 columns");
-        for position in positions {
-            if let Some(held @ None) = placements.get_mut(position) {
-                *held = Some(Placement { slot, label });
-            }
-        }
-    };
-    for relation in flows.given_at(node, output).iter().filter(|relation| relation.form == *form) {
-        for placed in flows.placements(relation) {
-            match placed {
-                Placed::Labelled { slot, position, label } => place(slot, position..position + 1, Some(label.label)),
-                Placed::Declared { slot, positions } => place(slot, positions, None),
-            }
-        }
-        if relation.slots.is_empty() {
-            if let Some(paths) = checked.program.row_paths(node).filter(|paths| paths.len() == width) {
-                for (position, slot) in record_slots(&paths).into_iter().enumerate() {
-                    place(slot, position..position + 1, None);
-                }
-            }
-        }
-    }
-    placements
+    checked.program.column_bindings(node, output, form, width, registry)
+        .into_iter().map(|column|column.placement).collect()
 }
 
 /// The frame rule at each of the `width` row positions of the relation of
@@ -750,23 +708,6 @@ pub fn output_copies(checked: &CheckedProgram, node: GraphNodeIndex, output: Opt
         }
     }
     copies
-}
-
-/// The index among the columns of a relation of each of its row positions,
-/// given the path of each: a record's fields, which share the first name of
-/// their paths, share the index of their record.
-fn record_slots(paths: &[Box<[ColumnName]>]) -> Vec<usize> {
-    let mut slots = Vec::new();
-    for (index, path) in paths.iter().enumerate() {
-        let field_of_previous = index > 0 && path.len() > 1 && paths[index - 1].len() > 1 && paths[index - 1][0] == path[0];
-        let slot = match slots.last() {
-            None => 0,
-            Some(&previous) if field_of_previous => previous,
-            Some(&previous) => previous + 1,
-        };
-        slots.push(slot);
-    }
-    slots
 }
 
 impl<'p> Flows<'p> {
@@ -853,21 +794,7 @@ impl<'p> Flows<'p> {
     /// and a declared slot with no labels at its `width` row positions from
     /// the end of the slots before it. A label with no position is left out.
     fn placements<'g>(&self, relation: &'g Given) -> Vec<Placed<'g>> {
-        let mut placed = Vec::new();
-        let mut start = 0usize;
-        for (slot, given) in relation.slots.iter().enumerate() {
-            for label in &given.labels {
-                let own = self.program.label_position(&relation.form, label.label).map(|position| usize::from(position.0));
-                if let Some(position) = own.or(label.place) {
-                    placed.push(Placed::Labelled { slot, position, label });
-                }
-            }
-            if given.declared.is_some() && given.labels.is_empty() {
-                placed.push(Placed::Declared { slot, positions: start..start + given.width });
-            }
-            start += given.width;
-        }
-        placed
+        self.program.given_placements(relation)
     }
 
     /// The sources of `label` in the IR of a body `held`, none where the body

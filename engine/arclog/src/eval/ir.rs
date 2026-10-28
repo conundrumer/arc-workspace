@@ -388,7 +388,9 @@ pub fn relation_modes<'r>(registry: &'r Registry, relation: &RelationRef) -> &'r
 /// The path of the form whose label scope holds the labels of the form at
 /// `path`: the innermost label scope of the canonical labeling,
 /// [`CanonicalOrder::label_scopes`], whose form holds it.
-fn scope_of(program: &CheckedProgram, path: &NodePath) -> NodePath {
+/// The native innermost label scope of a nonempty checked program-form path.
+/// Metadata consumers share the same lookup as IR compilation.
+pub(crate) fn scope_of(program: &CheckedProgram, path: &NodePath) -> NodePath {
     let (first, within) = path.0.split_first().expect("the path of a form of the program");
     let top = &program.program.program.value().forms[first.0 as usize];
     let order = CanonicalOrder::of(top, &mut SearchBudget::new());
