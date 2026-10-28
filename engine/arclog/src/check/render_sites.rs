@@ -9,8 +9,27 @@ use crate::program::*;
 use crate::registry::Registry;
 use crate::types::{ValueType, typed};
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
+
+/// Native expected column type, distinct from the existing label's type.
+/// None records a missing column type (for example an input-head declaration).
+#[derive(Debug)]
+pub(crate) struct SiteColumnType {
+    pub scope_path: NodePath,
+    pub ty: Option<ValueType>,
+}
+
+#[derive(Debug)]
+pub(crate) struct TypedSiteExport {
+    pub json: Value,
+    pub columns: BTreeMap<NodePath, SiteColumnType>,
+}
 
 pub fn export(checked: &CheckedProgram, registry: &Registry) -> Result<Value, String> {
+    Ok(export_typed(checked, registry)?.json)
+}
+
+pub(crate) fn export_typed(checked: &CheckedProgram, registry: &Registry) -> Result<TypedSiteExport, String> {
     let clauses = SolverClauses::of_shared_program(std::sync::Arc::clone(&checked.program));
     let cases = CaseInferences::new(&clauses, registry);
     let inference = Inference::new(&checked.program, &cases);
@@ -18,6 +37,7 @@ pub fn export(checked: &CheckedProgram, registry: &Registry) -> Result<Value, St
     let mut comparisons = Vec::new();
     let mut variables = Vec::new();
     let mut scopes = Vec::new();
+    let mut column_types = BTreeMap::new();
     let names = crate::write::label_names(&checked.program.program, registry);
     fn frame(ty: &ValueType, label: Option<LabelId>, grids: &FormGrids<'_, '_>) -> Value {
         if !crate::registry::has_frame(ty) {
@@ -39,13 +59,14 @@ pub fn export(checked: &CheckedProgram, registry: &Registry) -> Result<Value, St
         reading: SiteReading<'_, 'a>,
         grids: &FormGrids<'_, 'a>,
         out: &mut Vec<Value>,
+        column_types: &mut BTreeMap<NodePath, SiteColumnType>,
     ) -> Result<(), String> {
         column.push(site.column.clone());
         for (i, arg) in site.value.args.iter().enumerate() {
             let arg_at = at.child(i as u32);
             let (label, field) = match arg {
                 SiteArg::Field(inner) => {
-                    walk_site(inner, &arg_at, atom, column, inference, reading, grids, out)?;
+                    walk_site(inner, &arg_at, atom, column, inference, reading, grids, out, column_types)?;
                     continue;
                 }
                 SiteArg::Label(l) => (*l, None),
@@ -54,6 +75,9 @@ pub fn export(checked: &CheckedProgram, registry: &Registry) -> Result<Value, St
             let mut path = column.clone();
             path.extend(field.cloned());
             let column_type = atom.and_then(|a| inference.site_type(reading, a, &path));
+            column_types.insert(arg_at.clone(), SiteColumnType {
+                scope_path: reading.path.clone(), ty: column_type.clone(),
+            });
             let label_id = crate::types::use_label(label);
             let ty = match label_id {
                 Some(l) => typed(reading.labels, l),
@@ -80,6 +104,7 @@ pub fn export(checked: &CheckedProgram, registry: &Registry) -> Result<Value, St
         grids: &FormGrids<'_, 'a>,
         arguments: &mut Vec<Value>,
         comparisons: &mut Vec<Value>,
+        column_types: &mut BTreeMap<NodePath, SiteColumnType>,
     ) -> Result<(), String> {
         if let Some(atom) = node.atom() {
             for (i, s) in atom.sites.iter().enumerate() {
@@ -92,6 +117,7 @@ pub fn export(checked: &CheckedProgram, registry: &Registry) -> Result<Value, St
                     reading,
                     grids,
                     arguments,
+                    column_types,
                 )?;
             }
             return Ok(());
@@ -107,6 +133,7 @@ pub fn export(checked: &CheckedProgram, registry: &Registry) -> Result<Value, St
                     reading,
                     grids,
                     arguments,
+                    column_types,
                 )?;
             }
             return walk(
@@ -117,6 +144,7 @@ pub fn export(checked: &CheckedProgram, registry: &Registry) -> Result<Value, St
                 grids,
                 arguments,
                 comparisons,
+                column_types,
             );
         }
         if let NodeRef::Conjunct(Conjunct::Constraint(c)) = node {
@@ -144,6 +172,7 @@ pub fn export(checked: &CheckedProgram, registry: &Registry) -> Result<Value, St
                 grids,
                 arguments,
                 comparisons,
+                column_types,
             )?;
         }
         Ok(())
@@ -170,6 +199,7 @@ pub fn export(checked: &CheckedProgram, registry: &Registry) -> Result<Value, St
             &grids,
             &mut arguments,
             &mut comparisons,
+            &mut column_types,
         )?;
         // Index original occurrences once per scope, rather than rescanning
         // every site and declaration for every variable.
@@ -222,7 +252,7 @@ pub fn export(checked: &CheckedProgram, registry: &Registry) -> Result<Value, St
         scopes.push(json!({"scope_path":path_json(reading.path),"label_ids":scope_labels,
             "argument_count":arguments.len()-first_argument,"comparison_count":comparisons.len()-first_comparison}));
     }
-    Ok(json!({"arguments":arguments,"comparisons":comparisons,"variables":variables,"scopes":scopes,
+    Ok(TypedSiteExport { columns: column_types, json: json!({"arguments":arguments,"comparisons":comparisons,"variables":variables,"scopes":scopes,
         "variable_identity":"(scope_path,label_id); includes comparison-only and branch-local variables; occurrence paths are original AST paths",
-        "frame_analysis":"native checker grid evidence; made/native table frames are a separate export part"}))
+        "frame_analysis":"native checker grid evidence; made/native table frames are a separate export part"}) })
 }

@@ -163,9 +163,9 @@ impl StudyProgram {
         )
     }
 
-    /// Runtime audit on real programs: the old depth-first order and the fair
-    /// order use identical alternatives and certificates. Only the production
-    /// order returns specs to callers; this method returns classified counts.
+    /// Runtime audit on real programs: v5 and v6 use the same fair traversal
+    /// and validity certificates. The reference retains v5's argument domain
+    /// and separate zero bucket; only v6 returns production specs to callers.
     pub fn audit_draw_order(
         &self,
         point: &MutationPoint,
@@ -191,7 +191,9 @@ impl StudyProgram {
         let (_, after) = self.draw_order(
             point, k, count, seed, operation, origin, settings, registry, true,
         )?;
-        Ok(json!({"before":before.json(), "after":after.json()}))
+        Ok(json!({"before_policy":"complete-domain-without-replacement-v5",
+            "after_policy":"complete-domain-without-replacement-v6",
+            "before":before.json(), "after":after.json()}))
     }
 
     fn draw_order(
@@ -204,7 +206,7 @@ impl StudyProgram {
         origin: Source,
         settings: &DecodeSettings,
         registry: &Registry,
-        fair: bool,
+        expanded: bool,
     ) -> Result<(Vec<MutationSpec>, DrawStats), String> {
         if !Arc::ptr_eq(self.checked(), &point.source) {
             return Err("point_belongs_to_another_program".into());
@@ -216,7 +218,7 @@ impl StudyProgram {
             return Err("operation must be substitute, delete or mixed".into());
         }
         let mut rng = Rng(seed);
-        if fair {
+        {
             // Independent deterministic order per source clause, instead of
             // replaying the same short permutation at every clause.
             for byte in origin.task.bytes().chain(origin.case.bytes()) {
@@ -235,7 +237,7 @@ impl StudyProgram {
         for at in &point.atoms {
             let mut unique = BTreeSet::new();
             let mut values = Vec::new();
-            for (replacement, kind) in alternatives(self, at, operation, registry) {
+            for (replacement, kind) in alternatives(self, at, operation, registry, expanded)? {
                 let key = replacement
                     .as_ref()
                     .map(conjunct_json)
@@ -282,14 +284,11 @@ impl StudyProgram {
             output: Vec::new(),
             requested: count,
             deletion_only: operation == "delete",
+            expanded,
             started: std::time::Instant::now(),
             stopped: false,
         };
-        if fair {
-            domain.fair_visit(k, &mut rng)?;
-        } else {
-            domain.visit(0, k, &mut Vec::new())?;
-        }
+        domain.fair_visit(k, &mut rng)?;
         if domain.stopped {
             domain.stats.count("domain_search_stopped:Deadline");
         } else if domain.output.len() < count {
@@ -324,6 +323,7 @@ struct CompletionDomain<'a> {
     output: Vec<MutationSpec>,
     requested: usize,
     deletion_only: bool,
+    expanded: bool,
     started: std::time::Instant,
     stopped: bool,
 }
@@ -343,11 +343,11 @@ struct ChoiceFrame {
 
 impl CompletionDomain<'_> {
     fn fair_visit(&mut self, k: usize, rng: &mut Rng) -> Result<(), String> {
-        // One scheduling option per edit kind, independent of how many
-        // columns/values instantiate it. In particular N zero-valued columns
-        // do not give reserved zero N tickets against a variable substitution.
-        // Within each kind, rotate sites/values and resume suffix searches so
-        // a small requested prefix cannot be filled by one DFS subtree.
+        // V6 schedules one argument bucket: every distinct variable or zero
+        // replacement gets one ticket within it. Giving all variables one
+        // category ticket against zero's category overweighted that literal.
+        // Resume suffix searches so a prefix is not one DFS subtree. V5 is
+        // retained only as the real-data audit's reference policy.
         let mut roots: BTreeMap<&str, Vec<AssignmentCursor>> = BTreeMap::new();
         for (site, values) in self.sites.iter().enumerate() {
             if self.sites.len() - site < k {
@@ -364,7 +364,7 @@ impl CompletionDomain<'_> {
                     }
                 }
                 roots
-                    .entry(edit.choice_kind)
+                    .entry(if self.expanded { edit.kind } else { edit.choice_kind })
                     .or_default()
                     .push(AssignmentCursor {
                         edits: vec![edit.clone()],
@@ -516,56 +516,6 @@ impl CompletionDomain<'_> {
         for edit in edits {
             self.stats
                 .count(&format!("drawn_edit_kind:{}", edit.choice_kind));
-        }
-        Ok(())
-    }
-
-    fn visit(
-        &mut self,
-        start: usize,
-        remaining: usize,
-        edits: &mut Vec<AtomEdit>,
-    ) -> Result<(), String> {
-        if self.output.len() >= self.requested || self.stopped {
-            return Ok(());
-        }
-        if self
-            .settings
-            .deadline
-            .is_some_and(|limit| self.started.elapsed() >= limit)
-        {
-            self.stopped = true;
-            return Ok(());
-        }
-        self.stats.count("domain_search_nodes");
-        if self.sites.len().saturating_sub(start) < remaining {
-            return Ok(());
-        }
-        let top = self.point.body.0[0].0 as usize;
-        if remaining == 0 {
-            return self.certify(edits);
-        }
-        for index in start..=self.sites.len() - remaining {
-            for edit in self.sites[index].clone() {
-                edits.push(edit);
-                let can_complete = if self.deletion_only {
-                    let ast = edit::apply(self.gold.program(), edits)?;
-                    // Pure deletion cannot restore a lost exported/key
-                    // label. This syntax-derived prune needs no stale types.
-                    crate::study::interfaces_hold(&ast.value().forms[top])
-                } else {
-                    true
-                };
-                if can_complete {
-                    self.visit(index + 1, remaining - 1, edits)?;
-                } else {
-                    self.stats.count("domain_pruned:required_column_binding");
-                }
-                edits.pop();
-                if self.output.len() >= self.requested || self.stopped {
-                    return Ok(());
-                }
-            }
         }
         Ok(())
     }
@@ -923,15 +873,18 @@ fn alternatives(
     at: &NodePath,
     operation: &str,
     registry: &Registry,
-) -> Vec<(Option<Conjunct>, &'static str)> {
+    rich: bool,
+) -> Result<Vec<(Option<Conjunct>, &'static str)>, String> {
     let Some(NodeRef::Conjunct(old)) = node_at(NodeRef::Program(program.program().value()), at)
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(types) = scope_types(program, at) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let bound = available(program, at, registry);
+    let native_sites = (rich && operation != "delete" && old.atom().is_some())
+        .then(|| program.typed_sites(registry)).transpose()?;
     let mut result = Vec::new();
     if operation != "substitute" {
         let parent = NodePath(at.0[..at.0.len() - 1].into());
@@ -943,7 +896,7 @@ fn alternatives(
         }
     }
     if operation == "delete" {
-        return result;
+        return Ok(result);
     }
     if let Some(atom) = old.atom() {
         let value = atom.value();
@@ -1039,7 +992,20 @@ fn alternatives(
                 .program
                 .column_position(&at.child(site_index as u32))
                 .is_none();
-            site_variants(site, types, &labels, record, &mut replacements);
+            site_variants(
+                site,
+                types,
+                &labels,
+                record,
+                &mut replacements,
+                rich,
+                &|path| {
+                    let site = native_sites.as_ref().and_then(|s| s.columns.get(path))
+                        .ok_or_else(|| format!("missing native argument site at {path:?}"))?;
+                    site.ty.clone().ok_or_else(|| format!("missing native argument column type at {path:?} in scope {:?}", site.scope_path))
+                },
+                &at.child(site_index as u32),
+            )?;
             for (site, choice_kind) in replacements {
                 let mut sites = value.sites.to_vec();
                 sites[site_index] = site;
@@ -1053,6 +1019,9 @@ fn alternatives(
                     )),
                     choice_kind,
                 ));
+            }
+            if rich {
+                site_declarations(site, &mut labels);
             }
         }
     } else if let Conjunct::Constraint(c) = old {
@@ -1088,7 +1057,7 @@ fn alternatives(
             }
         }
     }
-    result
+    Ok(result)
 }
 
 fn with_atom(old: &Conjunct, atom: Atom) -> Conjunct {
@@ -1150,21 +1119,53 @@ fn relation_templates(
     }
 }
 
+fn site_declarations(site: &Site, out: &mut Vec<LabelId>) {
+    for arg in site.value.args.iter() {
+        argument_declarations(arg, out);
+    }
+}
+
+fn argument_declarations(arg: &SiteArg, out: &mut Vec<LabelId>) {
+    match arg {
+        SiteArg::Label(LabelUse::Fresh(l) | LabelUse::Key(l))
+        | SiteArg::NamedLabel { label: LabelUse::Fresh(l) | LabelUse::Key(l), .. } => {
+            if !out.contains(l) {
+                out.push(*l);
+            }
+        }
+        SiteArg::Field(s) => site_declarations(s, out),
+        _ => {}
+    }
+}
+
 fn site_variants(
     site: &Site,
     types: &FormTypes,
     bound: &[LabelId],
     record: bool,
     result: &mut Vec<(Site, &'static str)>,
-) {
+    rich: bool,
+    expected_type: &dyn Fn(&NodePath) -> Result<ValueType, String>,
+    at: &NodePath,
+) -> Result<(), String> {
+    let mut local = bound.to_vec();
     for (index, arg) in site.value.args.iter().enumerate() {
         let mut args = Vec::new();
         match arg {
-            SiteArg::Label(LabelUse::Join(old))
+            SiteArg::Label(label @ (LabelUse::Join(_) | LabelUse::Zero))
             | SiteArg::NamedLabel {
-                label: LabelUse::Join(old),
+                label: label @ (LabelUse::Join(_) | LabelUse::Zero),
                 ..
-            } => {
+            } if rich || matches!(label, LabelUse::Join(_)) => {
+                let old = use_label(*label);
+                // Resolve named record fields at their own scalar position,
+                // not the containing record's or its old label's narrow type.
+                // Whole-assignment inference certifies conditional rules.
+                let expected = if rich {
+                    Some(expected_type(&at.child(index as u32))?)
+                } else {
+                    old.and_then(|l| types.label(l).cloned())
+                };
                 let replacement = |label| match arg {
                     SiteArg::NamedLabel { name, .. } if record => SiteArg::Field(Site {
                         column: name.clone(),
@@ -1174,21 +1175,31 @@ fn site_variants(
                     }),
                     _ => SiteArg::Label(label),
                 };
-                for label in bound {
-                    if label != old
-                        && types.label(*label).is_some()
-                        && types.label(*label) == types.label(*old)
-                    {
+                for label in &local {
+                    let compatible = types
+                        .label(*label)
+                        .zip(expected.as_ref())
+                        .is_some_and(|(a, b)| if rich { a.meets(b) } else { a == b });
+                    if Some(*label) != old && compatible {
                         args.push((replacement(LabelUse::Join(*label)), "argument_variable"));
                     }
                 }
-                if types.label(*old).is_some_and(ValueType::has_zero) {
+                if old.is_some() && expected.as_ref().is_some_and(ValueType::has_zero) {
                     args.push((replacement(LabelUse::Zero), "argument_zero"));
                 }
             }
             SiteArg::Field(field) => {
                 let mut variants = Vec::new();
-                site_variants(field, types, bound, false, &mut variants);
+                site_variants(
+                    field,
+                    types,
+                    &local,
+                    false,
+                    &mut variants,
+                    rich,
+                    expected_type,
+                    &at.child(index as u32),
+                )?;
                 args.extend(
                     variants
                         .into_iter()
@@ -1197,6 +1208,9 @@ fn site_variants(
             }
             // Fresh/key arguments introduce the clause's interface.
             _ => {}
+        }
+        if rich {
+            argument_declarations(arg, &mut local);
         }
         for (arg, kind) in args {
             let mut changed = site.value.args.to_vec();
@@ -1212,6 +1226,7 @@ fn site_variants(
             ));
         }
     }
+    Ok(())
 }
 
 pub(crate) fn conjunct_json(c: &Conjunct) -> Value {

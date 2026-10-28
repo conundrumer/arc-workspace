@@ -34,6 +34,7 @@ pub struct StudyProgram {
     source_cache: Arc<OnceLock<(usize,DecodeSettings,Result<StudyProgram,String>)>>,
     stream_cache: Arc<OnceLock<(usize,DecodeSettings,Result<StudyStream,String>)>>,
     mutation_checks: Arc<OnceLock<Result<Arc<CheckCache>,String>>>,
+    typed_sites_cache: Arc<OnceLock<(usize,Result<Arc<crate::check::render_sites::TypedSiteExport>,String>)>>,
 }
 
 /// An engine-written stream and its source-order AST correspondence.
@@ -141,7 +142,17 @@ impl StudyProgram {
             source_cache:Arc::new(OnceLock::new()),
             stream_cache:Arc::new(OnceLock::new()),
             mutation_checks:Arc::new(OnceLock::new()),
+            typed_sites_cache:Arc::new(OnceLock::new()),
         })
+    }
+
+    /// Renderer and mutation share one native inference traversal on this
+    /// exact checked handle. New checked programs get fresh caches.
+    pub(crate) fn typed_sites(&self, registry: &Registry) -> Result<Arc<crate::check::render_sites::TypedSiteExport>, String> {
+        let key = registry as *const Registry as usize;
+        let read = || crate::check::render_sites::export_typed(self.checked(), registry).map(Arc::new);
+        let cached = self.typed_sites_cache.get_or_init(|| (key, read()));
+        if cached.0 == key { cached.1.clone() } else { read() }
     }
 
     /// Gold checks shared by independent domain searches on this handle.

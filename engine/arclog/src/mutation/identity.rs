@@ -225,7 +225,7 @@ impl StudyProgram {
             let expected = text(&e["kind"])?;
             // Check this stored primitive at the original site; never enumerate
             // K-edit assignments or draw a replacement for it.
-            let choice = alternatives(self, &at, "mixed", registry)
+            let choice = alternatives(self, &at, "mixed", registry, true)?
                 .into_iter()
                 .find(|(c, kind)| {
                     let kind = if kind.starts_with("argument_") {

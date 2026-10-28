@@ -35,32 +35,73 @@ running check's extension or replace its checker source. Every checker uses
 one process per task, streams task results, reports progress and retains the
 case and domain deadlines. Supply `--tasks` explicitly for archived checkers.
 
-## Draw-prefix diversity (policy v5)
+## Argument diversity (policy v6)
 
-The old depth-first traversal could fill a short draw prefix with completions
-of the same early edit. Reusing one seed for every point also correlated those
-short prefixes. The production traversal now rotates among nonempty edit-kind
-buckets (`argument_zero`, `argument_variable`, `relation`, `comparison`,
-`delete`), then among their first-site alternatives. Each cursor resumes a
-canonical suffix search; complete assignments remain unique and checked before
-selection. Reserved zero gets one kind scheduling slot regardless of how many
-columns admit it. An exhausted kind yields its slot to the others. This is a
-stratified draw order, not uniform sampling of all complete K-edit assignments;
-scarce domains can still contain predominantly zero substitutions. It preserves
-the deterministic-prefix contract when a caller increases `count`.
+The fault class had two sources. The primitive argument domain offered a
+reserved-zero replacement for a join but omitted legal variable choices:
+existing zero arguments had no variable replacements, earlier Fresh/Key
+labels inside the same atom were absent from the available pool, and exact
+old-label type equality excluded compatible substitutions at a broader site.
+These omissions occurred in the shared scalar/record-site walk. Separately,
+v5 scheduled the entire variable category against the zero category with
+equal weight, giving one literal disproportionate weight when a site had
+several variable alternatives.
 
-Stats distinguish `domain_primitive_kind:*` (unique alternatives before whole
-assignment constraints), `drawn_root_kind:*` (the interleaved root choices), and
-`drawn_edit_kind:*` (every edited atom in selected complete assignments).
-`audit_draw_order` returns these counts for both the legacy depth-first order
-and production order over the same real ASTs and checks. It exposes no legacy
-mutant handles. `scripts/study/check_mutation_diversity.py` runs the comparison
-in parallel over tasks and streams each point/K report. Draw shares are measured
-before evaluation, filters, quota and publication; a retained judge batch can
-have a different distribution. A domain/deadline stop makes the audit incomplete
-and is reported as a failure, never as a diversity improvement.
+V6 uses one argument bucket containing every distinct variable or zero
+replacement once. Relation, comparison and deletion buckets retain their
+rotation. A resumed cursor still owns a disjoint, canonical suffix of
+complete K-edit assignments; there are no duplicate selected assignments or
+partial mutants. Reserved `0` is the only literal the decode language admits.
+It has no separate category ticket or repeated sampling weight.
 
-The batch renderer's reserved-zero meanings are documented in
+The shared site walk handles ordinary, named and nested record arguments.
+It tracks earlier declarations without leaking labels across atoms or scopes,
+and reads expected site/column types from the native inference used by the
+checker and renderer, including polymorphic library sites, record paths,
+DefinedPort, poses and lifted Example columns. The expected column type is
+separate from an existing label binding's type. Compatible
+variables use the native type meet; whole-program inference/checks and exact
+stream certification remain the final membership certificate. A proposal is
+never a public mutation spec until that certificate exists. Both normal draws
+and stored-identity replay call the same primitive generator. Fresh/Key binding
+sites themselves retain the original interface. No field or header is repaired.
+
+This removes the missing-choice and literal-category weighting conditions for
+all scalar/record sites, rather than downweighting a particular type, task or
+reported judge batch. Scarce domains can still contain mostly zero choices;
+there is no promised corpus-wide percentage or artificial quota per kind.
+
+Stats distinguish `domain_primitive_kind:*`, `drawn_root_kind:*` and
+`drawn_edit_kind:*`. The audit compares **v5 fair scheduling/domain** against
+**v6 fair scheduling/expanded domain** on the same decoded gold AST. It does
+not compare an unrelated legacy DFS policy against v6. Both sides use the
+same native certification implementation and seed derivation; only the audit
+can invoke the old policy. An exhausted expanded domain is checked against the reference;
+missing native site/type evidence is an explicit error, not an old-label fallback. Bound stops are recorded as incomplete coverage, not improvements.
+
+`scripts/study/check_mutation_diversity.py` loads each task/export once in one
+worker process, reads the actual exported gold streams, streams point/K records
+and prints done/total, elapsed, rate and ETA. The summary reports each kind's
+count/share before study filters. A retained judge batch may differ. The
+checker freezes CURRENT's immutable runtime manifest for every worker; an
+explicit `--runtime-manifest` selects a candidate build without changing
+CURRENT. It calls the study harness's shared `run/provenance.py::select_runtime`,
+which authenticates the installed extension against the wheel with `load_build`.
+It records that authenticated build, the selector path/hash, settings and script
+hash; workers inherit the same frozen selection. The stage-2 checker
+requires policy v6, so old policy checkpoints cannot count as new coverage.
+
+The G06 typing consolidation keeps one inference traversal: the existing
+`check/render_sites.rs::walk_site` produces both the native argument-path map
+(expected column type and explicit missing-type state) and the existing render
+JSON. `StudyProgram` caches that combined result per exact checked handle and
+registry. Clones share it; newly checked mutants get fresh caches. Mutation and
+rendering consume the same result without parsing JSON type names. G07 runtime
+selection/authentication similarly has one owner in the study harness; the audit
+contains no independent bootstrap. All rendering scope, frame and variable
+occurrence fields keep their original contract.
+
+The batch renderer's reserved-zero meanings remain documented in
 [`study-reserved-zero.md`](study-reserved-zero.md).
 
 ## Stage-2 streaming audit and resume

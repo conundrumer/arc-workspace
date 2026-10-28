@@ -23,7 +23,7 @@ import time
 
 from check_stage1_all import CaseDeadline, inventory
 
-POLICY = "complete-domain-without-replacement-v5"
+POLICY = "complete-domain-without-replacement-v6"
 READER = "complete-program-bindings-v2"
 COVERAGE = "stage2-unit-free-v1"
 

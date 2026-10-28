@@ -117,7 +117,7 @@ impl StudyProgram {
             "definitions_readers":"complete","native_semantics":native_semantics,"types_frames":"pending","literal_meanings":"complete","argument_types":"complete","body_views":"complete"},
             "orientation_domains":super::render_terms::program_orientation_domains(self,registry),
             "orientation_domains_contract":"native scalar encoding domains including every resolved nominal Pose type; proposal admissibility is separate",
-            "typed_sites":crate::check::render_sites::export(self.checked(),registry)?,"definitions":definitions,"program_sexp":self.sexp(registry),"nodes":nodes,"body_views":super::render_bodies::export(self,registry)?,
+            "typed_sites":self.typed_sites(registry)?.json.clone(),"definitions":definitions,"program_sexp":self.sexp(registry),"nodes":nodes,"body_views":super::render_bodies::export(self,registry)?,
             "source_path_correspondence":"identity; use ValidMutant.render_json for mutation correspondence"}),
         )
     }

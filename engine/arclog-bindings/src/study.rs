@@ -34,7 +34,7 @@ type Stream = (Vec<u32>, Vec<u8>, Vec<Vec<u32>>);
 impl PyStudyProgram {
     #[staticmethod]
     fn mutation_policy() -> &'static str {
-        "complete-domain-without-replacement-v5"
+        "complete-domain-without-replacement-v6"
     }
     /// Complete-program parsing retains grammar, binding, full checks and exact
     /// stream reproduction. It performs no online completion or OUT evaluation.
