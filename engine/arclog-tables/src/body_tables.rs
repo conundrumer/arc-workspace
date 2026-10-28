@@ -18,7 +18,7 @@ pub fn dets(checked:&CheckedProgram,view:&BodyView)->Vec<Det> {
     }
     let mut nodes=Vec::new();reads(&view.clause,&mut nodes);
     let mut held=Vec::new();
-    for node in nodes {for det in walked_dets(checked,node) {if !held.iter().any(|d:&Det|d.node==det.node) {held.push(det);}}}
+    for node in nodes {for det in relation_dets(checked,node) {if !held.iter().any(|d:&Det|d.node==det.node) {held.push(det);}}}
     let order=arclog::eval::determinations::determinations(checked);
     held.sort_by_key(|d|order.iter().position(|n|*n==d.node));held
 }
