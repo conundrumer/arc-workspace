@@ -55,8 +55,9 @@ where that one dies too, the task's part holds no case, the fault line `death_li
                    their record, and -1 where the engine knows none; and `column_labels`: the name of the label that the table's form writes
                    at each column, one string per column in `column_names` order, as `arclog.write_synthesized` names that label in the decoded
                    program, and the empty string where the form writes none; and, per DET in `det_relations` order, one per column in
-                   `det_types` order, `det_slots` and `det_labels`: those of that column in the latest table of the DET's relation, found by
-                   its path in `det_columns`, and -1 and the empty string where the case holds no such table. By table kind:
+                   `det_types` order, `det_slots` and `det_labels`: those of that column in the latest table of the DET's relation, the table
+                   itself where it is the DET's relation's, found by its path in `det_columns`, and -1 and the empty string where the case
+                   holds no such table. By table kind:
                    a `RULE` clause gives the index in its columns and the clause's label; a `DET` that atoms read gives the index in the
                    clause's columns, with a gap for each column that the reads do not name, and the clause's label; a `DET` with `ONE` marks
                    and a `CHOOSE` give the index among the row columns and then the candidate's, and the label of the `for` body or of the `from` body;

@@ -177,14 +177,16 @@ pub struct TableColumns {
     pub det_types: Vec<Vec<Vec<String>>>,
     /// The frame of each column of each `DET`, in the order of its types, as
     /// `column_frames` spells it: the frame of that column in the latest
-    /// table of the `DET`'s relation, found by its path in `det_columns`, and
-    /// empty where the case holds no such table.
+    /// table of the `DET`'s relation, the table itself where it is the
+    /// `DET`'s relation's, found by its path in `det_columns`, and empty where
+    /// the case holds no such table.
     pub det_frames: Vec<Vec<Vec<String>>>,
     /// The slot and the label of each column of each `DET`, in the order of
     /// its types, as `column_slots` and `column_labels` give them: those of
-    /// that column in the latest table of the `DET`'s relation, found by its
-    /// path in `det_columns`, and -1 and the empty string where the case
-    /// holds no such table.
+    /// that column in the latest table of the `DET`'s relation, the table
+    /// itself where it is the `DET`'s relation's, found by its path in
+    /// `det_columns`, and -1 and the empty string where the case holds no
+    /// such table.
     pub det_slots: Vec<Vec<Vec<i32>>>,
     pub det_labels: Vec<Vec<Vec<String>>>,
     pub det_widths: Vec<Vec<u32>>,
@@ -381,7 +383,7 @@ fn fold(evidence: &[Table], tables: &[(usize, Table)], cut: Option<usize>, train
     for (place, (token, table)) in evidence.iter().map(|table| (0, table)).chain(tables.iter().map(|(token, table)| (*token, table))).enumerate() {
         let row = u32::try_from(place).expect("fewer than 2^32 tables");
         if place < skipped {
-            note_name(&mut names, row, table, None);
+            note_name(&mut names, row, table);
         } else {
             push_table(&mut columns, &mut names, &mut runs, row, token, table, train);
         }
@@ -558,14 +560,14 @@ fn push_table(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, ro
             tables.fact.push(fact);
             tables.column_names.push(contents.columns.iter().map(|column| column.name.clone()).collect());
             tables.column_types.push(type_names(&types));
-            let frames = column_frames(names, contents);
-            tables.column_frames.push(frames.clone());
+            let own = named(names, row, table);
+            tables.column_frames.push(own.as_ref().map_or_else(|| column_frames(names, contents), |own| own.frames.clone()));
             tables.column_slots.push(slots_of(contents));
             tables.column_labels.push(labels_of(contents));
             tables.width.push(row_width(&types));
             tables.det_relations.push(contents.dets.iter().map(|det| relation_spelled(&det.relation)).collect());
             tables.det_types.push(contents.dets.iter().map(|det| type_names(&det.types)).collect());
-            let places = det_places(names, contents);
+            let places = det_places(names, own.as_ref(), contents);
             tables.det_frames.push(det_frames(&places, contents));
             tables.det_slots.push(places.iter().map(|det| det.iter().map(|place| place.and_then(|(table, at)| table.slots.get(at).copied()).unwrap_or(-1)).collect()).collect());
             tables.det_labels.push(places.iter().map(|det| det.iter().map(|place| place.and_then(|(table, at)| table.labels.get(at).cloned()).unwrap_or_default()).collect()).collect());
@@ -584,26 +586,32 @@ fn push_table(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, ro
             tables.output_position.push(contents.selected.position.map_or(-1, i32::from));
             tables.output_color.push(contents.selected.color.map_or(-1, i32::from));
             push_flows(out, names, row, contents);
-            note_name(names, row, table, Some(frames));
+            names.extend(own);
             push_contents(out, runs, row, contents, &types, train);
         }
     }
 }
 
 /// Adds the relation of `table`, the table at `row`, to `names`, if it stands
-/// for one: a table of a relation that has not faulted. `frames` are the frames
-/// of its columns where the caller has them, and otherwise `names` gives them.
-fn note_name(names: &mut TableNames, row: u32, table: &Table, frames: Option<Vec<String>>) {
-    let Ok(contents) = &table.contents else { return };
+/// for one.
+fn note_name(names: &mut TableNames, row: u32, table: &Table) {
+    names.extend(named(names, row, table));
+}
+
+/// The `Named` of `table`, the table at `row`, with its frames resolved in
+/// `names`, the tables before it: none for a table that stands for no relation,
+/// a table of a body or one that has faulted.
+fn named(names: &TableNames, row: u32, table: &Table) -> Option<Named> {
+    let Ok(contents) = &table.contents else { return None };
     if matches!(table.point, Point::Body { .. }) {
-        return;
+        return None;
     }
     let name = match contents.relation {
         TableRelation::Slot(_) => contents.name.clone(),
         TableRelation::Fact(fact) => spelling(FACT_RELATIONS, &fact).to_owned(),
     };
-    let frames = frames.unwrap_or_else(|| column_frames(names, contents));
-    names.push(Named { name, row, paths: contents.rows.clone(), frames, slots: slots_of(contents), labels: labels_of(contents) });
+    let frames = column_frames(names, contents);
+    Some(Named { name, row, paths: contents.rows.clone(), frames, slots: slots_of(contents), labels: labels_of(contents) })
 }
 
 /// The relation `relation` as the program spells it, a fact relation's name,
@@ -728,16 +736,17 @@ fn labels_of(contents: &Contents) -> Vec<String> {
     contents.columns.iter().map(|column| column.label.as_deref().unwrap_or_default().to_owned()).collect()
 }
 
-/// For each column of each `DET` of `contents`, the latest table of `names`
-/// that stands for the `DET`'s relation and the position in it of the column,
-/// found by the column's path among the table's row positions; none where the
-/// case holds no such table or the path is unknown.
-fn det_places<'n>(names: &'n TableNames, contents: &Contents) -> Vec<Vec<Option<(&'n Named, usize)>>> {
+/// For each column of each `DET` of `contents`, the latest table that stands
+/// for the `DET`'s relation, among `names` and `own`, the table of `contents`
+/// itself where it stands for one, and the position in it of the column, found
+/// by the column's path among the table's row positions; none where the case
+/// holds no such table or the path is unknown.
+fn det_places<'n>(names: &'n TableNames, own: Option<&'n Named>, contents: &Contents) -> Vec<Vec<Option<(&'n Named, usize)>>> {
     contents
         .dets
         .iter()
         .map(|det| {
-            let table = names.iter().rev().find(|named| named.name == relation_spelled(&det.relation));
+            let table = own.into_iter().chain(names.iter().rev()).find(|named| named.name == relation_spelled(&det.relation));
             let place = |index: usize| -> Option<(&'n Named, usize)> {
                 let path = det.columns.as_ref()?.get(index)?;
                 let table = table?;
