@@ -173,22 +173,22 @@ pub fn export(checked: &CheckedProgram, registry: &Registry) -> Result<Value, St
         )?;
         // Index original occurrences once per scope, rather than rescanning
         // every site and declaration for every variable.
-        let mut occurrence_index = std::collections::BTreeMap::<LabelId,Vec<Value>>::new();
+        let mut occurrence_index = std::collections::BTreeMap::<u32,Vec<Value>>::new();
         for argument in &arguments[first_argument..] {
             if let Some(label) = argument["label_id"].as_u64() {
-                occurrence_index.entry(LabelId(label as u32)).or_default()
+                occurrence_index.entry(label as u32).or_default()
                     .push(json!({"kind":"site_argument","path":argument["path"]}));
             }
         }
         for comparison in &comparisons[first_comparison..] {
             for operand in ["first","second"] {
                 if let Some(label) = comparison[operand]["label_id"].as_u64() {
-                    occurrence_index.entry(LabelId(label as u32)).or_default()
+                    occurrence_index.entry(label as u32).or_default()
                         .push(json!({"kind":"comparison_operand","path":comparison["path"],"operand":operand}));
                 }
             }
         }
-        fn declarations(node: NodeRef<'_>, at: &NodePath, out: &mut std::collections::BTreeMap<LabelId,Vec<Value>>) {
+        fn declarations(node: NodeRef<'_>, at: &NodePath, out: &mut std::collections::BTreeMap<u32,Vec<Value>>) {
             let columns = match node {
                 NodeRef::Clause(c) => Some(&c.columns[..]),
                 NodeRef::KeyClause(k) => Some(&k.key.columns[..]),
@@ -197,7 +197,7 @@ pub fn export(checked: &CheckedProgram, registry: &Registry) -> Result<Value, St
             };
             if let Some(columns) = columns {
                 for (i,column) in columns.iter().enumerate() {
-                    out.entry(column.label).or_default()
+                    out.entry(column.label.0).or_default()
                         .push(json!({"kind":"declaration_column","path":path_json(at),"column":i}));
                 }
             }
@@ -210,7 +210,7 @@ pub fn export(checked: &CheckedProgram, registry: &Registry) -> Result<Value, St
         for (label, _) in reading.labels {
             let ty = typed(reading.labels, *label)
                 .ok_or_else(||format!("no native inferred variable type at {at:?} label {label:?}"))?;
-            let occurrences = occurrence_index.remove(label).unwrap_or_default();
+            let occurrences = occurrence_index.remove(&label.0).unwrap_or_default();
             if occurrences.is_empty() {
                 return Err(format!("native inferred variable has no original occurrence at {at:?} label {label:?}"));
             }
