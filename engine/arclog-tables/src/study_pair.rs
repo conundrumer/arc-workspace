@@ -21,6 +21,8 @@ pub struct PairEvaluation {
     pub gold: Vec<(usize, Table)>,
     pub mutant: Vec<(usize, Table)>,
     pub report: Value,
+    gold_prefix: Vec<u32>,
+    mutant_prefix: Vec<u32>,
 }
 
 /// One task's reusable observations and bounded native prefix tables.
@@ -32,6 +34,10 @@ pub struct PairCache {
     gold_relations: HashMap<usize,(Arc<CheckedProgram>,Outcome<Vec<(usize,Table)>>)>,
     gold_body_hits:u64,
     prefixes: HashMap<Vec<u32>,(Vec<(usize,Table)>,usize)>,
+    replay: HashMap<Vec<u32>, (arclog::decode::ReplayCheckpoint, Vec<(usize,Table)>)>,
+    replay_hits:u64,
+    columns: HashMap<Vec<u32>,crate::columns::CaseColumnPrefix>,
+    source: Option<(Arc<CheckedProgram>,Arc<arclog::stream::WrittenStream>)>,
     order: VecDeque<Vec<u32>>,
     bytes: usize,
     checks: CheckCache,
@@ -48,7 +54,7 @@ struct GoldMemo {
 }
 impl Default for PairCache { fn default()->Self {Self::new(false)} }
 impl PairCache {
-    pub fn new(compact:bool)->Self {Self {gold:HashMap::new(),gold_bodies:HashMap::new(),gold_relations:HashMap::new(),gold_body_hits:0,prefixes:HashMap::new(),order:VecDeque::new(),bytes:0,checks:CheckCache::default(),compact,gold_hits:0,prefix_hits:0,sequence:0}}
+    pub fn new(compact:bool)->Self {Self {gold:HashMap::new(),gold_bodies:HashMap::new(),gold_relations:HashMap::new(),gold_body_hits:0,prefixes:HashMap::new(),replay:HashMap::new(),replay_hits:0,source:None,columns:HashMap::new(),order:VecDeque::new(),bytes:0,checks:CheckCache::default(),compact,gold_hits:0,prefix_hits:0,sequence:0}}
     fn prefix(&mut self,key:&[u32])->Option<Vec<(usize,Table)>> {
         let found=self.prefixes.get(key).map(|(tables,_)|tables.clone());
         if found.is_some() {self.prefix_hits+=1;}
@@ -63,11 +69,16 @@ impl PairCache {
         if bytes>CAP || self.prefixes.contains_key(&key) {return;}
         while self.bytes.saturating_add(bytes)>CAP || self.prefixes.len()>=128 {
             let Some(old)=self.order.pop_front() else {break;};
+            self.replay.remove(&old);
+            self.columns.remove(&old);
             if let Some((_,size))=self.prefixes.remove(&old) {self.bytes-=size;}
         }
         self.bytes+=bytes;self.order.push_back(key.clone());self.prefixes.insert(key,(tables,bytes));
     }
-    pub fn stats(&self)->Value {json!({"gold_hits":self.gold_hits,"gold_body_hits":self.gold_body_hits,"gold_body_entries":self.gold_bodies.len(),"gold_relation_entries":self.gold_relations.len(),"prefix_hits":self.prefix_hits,"prefix_entries":self.prefixes.len(),"prefix_bytes_estimate":self.bytes})}
+    fn remember_replay(&mut self,key:Vec<u32>,tables:Vec<(usize,Table)>,checkpoint:arclog::decode::ReplayCheckpoint) {
+        if self.prefixes.contains_key(&key) {self.replay.entry(key).or_insert((checkpoint,tables));}
+    }
+    pub fn stats(&self)->Value {json!({"replay_hits":self.replay_hits,"gold_hits":self.gold_hits,"gold_body_hits":self.gold_body_hits,"gold_body_entries":self.gold_bodies.len(),"gold_relation_entries":self.gold_relations.len(),"prefix_hits":self.prefix_hits,"prefix_entries":self.prefixes.len(),"prefix_bytes_estimate":self.bytes})}
 }
 
 fn fault(message: impl Into<Box<str>>, form: &NodePath) -> RunFault {
@@ -84,6 +95,7 @@ fn fault(message: impl Into<Box<str>>, form: &NodePath) -> RunFault {
 struct ClauseTables {
     tables: Vec<(usize, Table)>,
     names: Vec<(ProgramRelation, ProgramRelation)>,
+    prefix: Vec<u32>,
 }
 
 fn clause_tables(
@@ -93,13 +105,30 @@ fn clause_tables(
     fixed: &[Vec<Assignment>],
     cache: &mut PairCache,
 ) -> Outcome<ClauseTables> {
-    let view =
-        arclog::study_clause::checked_body_cached(program, body, decoder.settings(), decoder.registry(), &mut cache.checks)
-            .map_err(|s| fault(s, body))?;
+    let source=match &cache.source {
+        Some((checked,written)) if Arc::ptr_eq(checked,program.checked())=>Arc::clone(written),
+        _=>Arc::new(arclog::stream::written_stream(program.checked(),decoder.vocabulary()).map_err(|d|fault(d.message,body))?),
+    };
+    let view = arclog::study_clause::checked_body_from_written(program, body, decoder.registry(), &mut cache.checks,&source)
+        .map_err(|s| fault(s, body))?;
     let written = arclog::stream::written_stream(&view, decoder.vocabulary())
         .map_err(|d| fault(d.message, body))?;
+    // Only the synthetic final body differs between gold and its mutant.
+    // Resume the longest exact completed prefix, including its native tables.
+    let ids=written.tokens.iter().map(|(token,_)|decoder.vocabulary().id(token).expect("a written vocabulary token")).collect::<Vec<_>>();
     let mut tables = Vec::new();
     let mut index = 0;
+    let mut prefix_end=0;
+    for end in (1..written.tokens.len()).rev() {
+        if let Some(checkpoint)=cache.replay.get(&ids[..end]) {
+            decoder.resume_replay(&checkpoint.0);
+            tables=checkpoint.1.clone();
+            index=end;
+            prefix_end=end;
+            cache.replay_hits+=1;
+            break;
+        }
+    }
     while index < written.tokens.len() {
         let (token, emitter) = &written.tokens[index];
         if *emitter != arclog::stream::Emitter::Model {
@@ -132,8 +161,16 @@ fn clause_tables(
                 }
             }
         }
+        if end < written.tokens.len() && decoder.before().is_some_and(|before|decoder.program().value().forms.len()>before.program().value().forms.len()) {
+            prefix_end=end;
+            let key=ids[..end].to_vec();
+            // Prefix tables in this entry include the complete earlier prefix,
+            // not just the last form's tables.
+            cache.remember_replay(key, tables.clone(), decoder.replay_checkpoint());
+        }
         index = end;
     }
+    let prefix=ids[..prefix_end].to_vec();
     let before = decoder
         .before()
         .ok_or_else(|| fault("complete-body replay has no final step", body))?;
@@ -261,7 +298,7 @@ fn clause_tables(
         .declared_from(0)
         .map(|(slot, name)| (name.clone(), written.relations[slot as usize].clone()))
         .collect();
-    Ok(ClauseTables { tables, names })
+    Ok(ClauseTables { tables, names, prefix })
 }
 
 fn stopped(stop: &arclog::eval::Stop) -> Value {
@@ -615,6 +652,8 @@ fn evaluate_pair_inner(
     let mut result = PairEvaluation {
         gold: Vec::new(),
         mutant: Vec::new(),
+        gold_prefix:Vec::new(),
+        mutant_prefix:Vec::new(),
         report: json!({"status":"complete","kept_assignments":[],"outputs":[],"comparisons":[]}),
     };
     if !Arc::ptr_eq(gold.checked(), mutant.gold())
@@ -640,6 +679,12 @@ fn evaluate_pair_inner(
     // parameters explicitly; OUT remains the sole FITS criterion.
     let gold_started=Instant::now();
     let gold_key=Arc::as_ptr(gold.checked()) as usize;
+    if !cache.source.as_ref().is_some_and(|(checked,_)|Arc::ptr_eq(checked,gold.checked())) {
+        match arclog::stream::written_stream(gold.checked(),gd.vocabulary()) {
+            Ok(written)=>cache.source=Some((Arc::clone(gold.checked()),Arc::new(written))),
+            Err(d)=>{result.report=faulted(&fault(d.message,&point.body));return result;}
+        }
+    }
     let gold_hit=cache.gold.contains_key(&gold_key);
     let memo=if gold_hit {cache.gold_hits+=1;Arc::clone(&cache.gold[&gold_key])} else {
         let dets=arclog::eval::determinations::determinations(gold.checked()).into_iter().filter_map(|node|relation_dets(gold.checked(),node).into_iter().find(|det|det.node==node)).collect::<Vec<_>>();
@@ -722,6 +767,7 @@ fn evaluate_pair_inner(
     };
     match gold_body {
         Ok(t) => {
+            result.gold_prefix=t.prefix;
             result.gold = t.tables;
             gold_names = t.names;
         }
@@ -735,6 +781,7 @@ fn evaluate_pair_inner(
     let clause_started=Instant::now();
     match clause_tables(mutant.program(), &point.body, &mut md, &fixed, cache) {
         Ok(t) => {
+            result.mutant_prefix=t.prefix;
             result.mutant = t.tables;
             mutant_names = t.names;
         }
@@ -822,7 +869,7 @@ pub fn evaluate_pair(
 
 pub fn evaluate_pair_cached(gold:&StudyProgram,point:&MutationPoint,mutant:&ValidMutant,task:&Task,session:&TaskSession,constructions:&Constructions,settings:&DecodeSettings,cache:&mut PairCache)->PairEvaluation {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(||evaluate_pair_inner(gold,point,mutant,task,session,constructions,settings,cache)))
-        .unwrap_or_else(|payload|PairEvaluation {gold:Vec::new(),mutant:Vec::new(),report:json!({"status":"fault","reason":format!("pair evaluation panicked: {}",arclog::decode::corpus::replay_panic(&*payload))})})
+        .unwrap_or_else(|payload|PairEvaluation {gold:Vec::new(),mutant:Vec::new(),gold_prefix:Vec::new(),mutant_prefix:Vec::new(),report:json!({"status":"fault","reason":format!("pair evaluation panicked: {}",arclog::decode::corpus::replay_panic(&*payload))})})
 }
 
 /// Full native relation tables, evaluated once per gold handle in this task
@@ -863,4 +910,19 @@ pub fn gold_tables_cached(gold:&StudyProgram,task:&Task,session:&TaskSession,con
         Ok(tables)=>{let mut report=table_status(tables);report["cached"]=json!(hit);report["relation_tables"]=json!(tables.len());(report,tables.clone())},
         Err(f)=>{let mut report=faulted(f);report["cached"]=json!(hit);(report,Vec::new())}
     }
+}
+
+/// Pack the shared relation prefix once, preserving every exported offset
+/// and run-interning decision. Only the two body tables are appended per side.
+pub fn pair_columns_cached(evidence:&[Table],result:&PairEvaluation,train:usize,cache:&mut PairCache)->(crate::columns::CaseColumns,crate::columns::CaseColumns) {
+    let mut pack=|tables:&[(usize,Table)],key:&Vec<u32>| {
+        if tables.len()<2 {return crate::columns::case_columns(evidence,tables,train,None);}
+        let split=tables.len()-2;
+        // An oversized prefix may be deliberately absent from the bounded
+        // replay cache; do not retain its columns under an incomplete key.
+        if !key.is_empty() && !cache.replay.contains_key(key) {return crate::columns::case_columns(evidence,tables,train,None);}
+        let prefix=cache.columns.entry(key.clone()).or_insert_with(||crate::columns::CaseColumnPrefix::new(evidence,&tables[..split],train));
+        prefix.finish(&tables[split..],train)
+    };
+    (pack(&result.gold,&result.gold_prefix),pack(&result.mutant,&result.mutant_prefix))
 }

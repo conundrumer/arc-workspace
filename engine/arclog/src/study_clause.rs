@@ -21,6 +21,15 @@ pub fn checked_body(
 pub fn checked_body_cached(
     program:&StudyProgram,at:&NodePath,settings:&DecodeSettings,registry:&Registry,cache:&mut CheckCache,
 )->Result<CheckedProgram,String> {
+    let vocabulary = Vocabulary::new(registry, settings);
+    let written = written_stream(program.checked(), &vocabulary).map_err(|d| diagnostics_text(&[d]))?;
+    checked_body_from_written(program,at,registry,cache,&written)
+}
+
+/// Construct a body view using the source program's once-written ordering.
+pub fn checked_body_from_written(
+    program:&StudyProgram,at:&NodePath,registry:&Registry,cache:&mut CheckCache,written:&crate::stream::WrittenStream,
+)->Result<CheckedProgram,String> {
     let top = at.0.first().ok_or("body path has no form")?.0 as usize;
     let form = program
         .program()
@@ -96,11 +105,8 @@ pub fn checked_body_cached(
         }
         _ => Arc::from([]),
     };
-    let vocabulary = Vocabulary::new(registry, settings);
-    let written =
-        written_stream(program.checked(), &vocabulary).map_err(|d| diagnostics_text(&[d]))?;
     let mut forms = Vec::new();
-    for f in written.forms {
+    for f in &written.forms {
         if f.path == NodePath::top(top as u32) {
             break;
         }
