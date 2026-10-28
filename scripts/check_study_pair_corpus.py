@@ -230,7 +230,7 @@ def main():
     def run(task):
         names, offsets, ids, flags = inventory(args.export, task, True)
         settings = arclog.DecodeSettings(deadline_seconds=args.deadline, table_work_cap=args.work_cap, rule_tests=False)
-        evaluator=arclog.StudyTaskEvaluator(task,str(args.tasks),settings,session_bytes=64*1024*1024,compact=True,observation_start=observation_starts[task])
+        evaluator=arclog.StudyTaskEvaluator(task,str(args.tasks),settings,compact=True,observation_start=observation_starts[task])
         def run_case(i,case):
             context = dict(task=task, case=case)
             pairs = 0

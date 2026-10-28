@@ -57,7 +57,7 @@ def check_task(args):
     task = arclog.Task.from_json((args.tasks / f"{args.worker}.json").read_text(), arclog.World.Closed)
     settings = arclog.DecodeSettings(deadline_seconds=2, rule_tests=False)
     vocab = json.loads((args.export / "vocab.json").read_text())
-    session = arclog.Session(task, settings, session_bytes=256 * 1024 * 1024)
+    session = arclog.Session(task, settings, session_bytes=arclog.STUDY_SESSION_BYTES)
     v = session.vocabulary
     vocabulary_matches = ([v.name(i) for i in range(len(v))] == vocab["names"] and
                           [v.kind(i) for i in range(len(v))] == vocab["kinds"])

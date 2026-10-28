@@ -166,7 +166,7 @@ def check_task(args):
     settings = (arclog.DecodeSettings(deadline_seconds=args.domain_seconds, rule_tests=False)
                 if args.domain_seconds else arclog.DecodeSettings.corpus())
     task = arclog.Task.from_json((args.tasks / f"{args.worker}.json").read_text(), arclog.World.Closed)
-    session = arclog.Session(task, settings, session_bytes=64 * 1024 * 1024)
+    session = arclog.Session(task, settings, session_bytes=arclog.STUDY_SESSION_BYTES)
     samples = [args.sample_start]
     previous = signal.getsignal(signal.SIGALRM)
     def deadline(*_):

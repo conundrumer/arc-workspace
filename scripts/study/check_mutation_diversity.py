@@ -29,7 +29,7 @@ def worker(args):
     selected = set(args.cases or names)
     settings = arclog.DecodeSettings(deadline_seconds=args.draw_seconds, rule_tests=False)
     task = arclog.Task.from_json((args.tasks / (args.worker + ".json")).read_text(), arclog.World.Closed)
-    session = arclog.Session(task, settings, session_bytes=64 * 1024 * 1024)
+    session = arclog.Session(task, settings, session_bytes=arclog.STUDY_SESSION_BYTES)
     def deadline(*_):
         raise CaseDeadline("case deadline")
     signal.signal(signal.SIGALRM, deadline)
