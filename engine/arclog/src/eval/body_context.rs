@@ -14,7 +14,7 @@ pub(super) fn value(driver:&Driver<'_, '_>,view:&BodyView,example:Option<Example
     let fault=|message:String|RunFault {message:message.into(),form:view.form.clone()};
     let plain=||driver.bodies().relation(&view.form,&view.clause,example);
     let Some(port)=&view.input else {return plain()};
-    let Some(NodeRef::Instance(instance))=node_at(NodeRef::Program(evaluation.program.program.program.value()),&view.form) else {return plain()};
+    let Some(NodeRef::Instance(instance))=node_at(NodeRef::Program(evaluation.program.program.program.value()),&view.form) else {return Err(fault("input query owner is not an instance".into()))};
     let component=registry_columns::component(evaluation.registry,&instance.component).ok_or_else(||fault("body component is absent".into()))?;
     let declared=component.inputs.iter().find(|i|i.port.name==*port).ok_or_else(||fault("body input is absent".into()))?;
     if !declared.reads_outputs {return plain();}
