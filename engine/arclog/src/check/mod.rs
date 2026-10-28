@@ -13,6 +13,7 @@
 mod frames;
 pub mod grammar;
 pub mod safety;
+pub mod render_sites;
 mod inference;
 pub mod instance_inputs;
 pub mod instance_sites;

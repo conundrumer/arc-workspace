@@ -111,6 +111,17 @@ type Grids = Vec<Grid<Example>>;
 /// The grids of a relation's column.
 type ColumnGrids = Vec<Grid<ColumnExample>>;
 
+/// Structured evidence from this exact bounded native grid analysis. Empty
+/// evidence means not established, never a claim that a Box has no frame.
+pub(super) fn render_grid_evidence(grids:&FormGrids<'_,'_>,label:LabelId)->serde_json::Value {
+    use serde_json::json;
+    let found=grids.grids(label);
+    json!({"status":if found.is_empty() {"not_established_by_native_grid_analysis"} else {"established"},
+        "grids":found.iter().map(|grid|json!({"kind":match grid.kind {GridKind::Input=>"input",GridKind::Output=>"output"},
+            "example":match grid.example {Example::Current=>json!({"kind":"current"}),Example::Label(l)=>json!({"kind":"label","label_id":l.0})}})).collect::<Vec<_>>(),
+        "analysis":"checker same-frame grid analysis; made-frame provenance is exported separately"})
+}
+
 /// Whether two labels of a form stand in one grid, as the type rules'
 /// `same-frame` condition reads it.
 pub(super) trait SharedGrids {

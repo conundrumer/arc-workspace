@@ -170,3 +170,23 @@ these contracts alongside signatures, avoiding repeated parsing/geometry work.
 (`&rN`/output port for a decode), while `source_name` remains the exact native
 kept-assignment join key (`slot N`, etc.). These fields have different purposes;
 the renderer must not parse a definition header to recover either one.
+
+## Resolved arguments, comparisons and typed reserved zero
+
+`parts.argument_types=complete` and `parts.literal_meanings=complete`.
+`typed_sites.arguments` gives every scalar site argument's original `path`,
+`site_path`, `scope_path`, label ID (null for zero), native `resolved_type`,
+source `column_type` where applicable, native checker `frame` evidence, and
+`literal` for reserved zero. The type comes from the same Inference/site-type
+and same-frame rule machinery as the checker, including INIT type-parameter
+bindings; Python does not infer it from names. `typed_sites.comparisons` gives
+both operand types/frames and typed zero meanings, keyed by the comparison's
+original node path.
+
+A frame's `established` grids identify input/output and current example or
+example label. `not_established_by_native_grid_analysis` is an explicit lack
+of proof, not “no frame.” `contextual_reserved_zero` describes the constant's
+relation reference frame; no independent label frame is invented. Offset and
+non-frame types report `not_applicable`. `parts.types_frames` remains pending
+until the separate native made-frame/table provenance part is supplied. This
+bounded checker analysis deliberately does not replace native table extents.

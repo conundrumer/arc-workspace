@@ -94,3 +94,23 @@ pub fn decode(type_name: &str, packed: i64, registry: &Registry) -> Result<Value
     }
     Ok(value)
 }
+
+/// Meaning of the reserved decoder label, after native site type resolution.
+pub fn zero_meaning(ty: &ValueType) -> Result<Value, String> {
+    if !ty.has_zero() {
+        return Err(format!("reserved zero is illegal at {ty:?}"));
+    }
+    let meaning = match ty {
+        ValueType::Number => "number zero",
+        ValueType::Offset => "zero offset: identity translation, all four margins zero",
+        ValueType::Position => {
+            "zero box at Position type: all four frame margins zero; not a top-left cell coordinate"
+        }
+        _ => "zero box: all four frame margins zero, edges coincide with the reference frame",
+    };
+    Ok(
+        json!({"kind":"reserved_zero","resolved_type":format!("{ty:?}"),"encoding_u32":0,
+        "value":if *ty==ValueType::Number {json!(0)} else {json!({"top":0,"bottom":0,"left":0,"right":0})},
+        "meaning":meaning,"documentation":"engine/docs/study-reserved-zero.md"}),
+    )
+}
