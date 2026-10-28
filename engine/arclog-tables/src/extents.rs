@@ -347,6 +347,16 @@ fn derive(decoder: &Decoder<'_>, reads: &Reads<'_>, subject: &Subject<'_>) -> Ve
                 let placements=placements();
                 gather_view(decoder,reads,&dets,subject,&given.form.child(0),&placements,&mut gathered);
             }
+            (Some(NodeRef::Choose(_)), _) => {
+                let placements=placements();
+                // Every selected row is an original option. Match its whole
+                // native row against the checked for/from derivations; do
+                // not treat selection as a new frame or widen the pick.
+                match BodyView::choose_options(checked,&given.form).and_then(|view|view.widened()) {
+                    Ok(views)=>for view in &views {gather(decoder,reads,&dets,subject,view,&placements,&mut gathered)},
+                    Err(fault)=>lose_all(&mut gathered,&fault_spelled(&fault)),
+                }
+            }
             (Some(NodeRef::Instance(_)), DependencyKind::InstanceInput { input, .. }) => {
                 let placements=placements();
                 let all=checked.program.input_bodies(&given.form,input);

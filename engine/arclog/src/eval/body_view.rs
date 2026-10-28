@@ -90,6 +90,29 @@ impl BodyView {
         Ok(Self {form,clause,paths,scope,input})
     }
 
+    /// The checked option relation that a CHOOSE selects rows from: its
+    /// for rows with their from candidates. Never constraints and picking
+    /// select a subset; they do not create the selected cells' frames.
+    pub fn choose_options(program:&CheckedProgram,form:&NodePath)->Outcome<Self> {
+        let fault=|message:String|RunFault {message:message.into(),form:form.clone()};
+        let root=NodeRef::Program(program.program.program.value());
+        let Some(NodeRef::Choose(choose))=node_at(root,form) else {
+            return Err(fault("choice derivation owner is not CHOOSE".into()));
+        };
+        let mut bodies=Vec::new();
+        if let Some(rows)=&choose.rows {bodies.push((rows.body.value(),form.child(choose.position(ChoosePart::For))));}
+        bodies.push((choose.from.value(),form.child(choose.position(ChoosePart::From))));
+        let columns=ir::relation_columns(&program.program,form,NodeRef::Choose(choose));
+        let (clause,paths)=ir::compile_instance_pathed(program,form,&bodies,&columns)
+            .map_err(|e|fault(format!("checked CHOOSE option compile: {e:?}")))?;
+        let scope=match program.program.form_side(form) {
+            Some(Side::PerInput)=>ExampleScope::PerExample,
+            Some(Side::TaskWide)=>ExampleScope::TaskWide,
+            None=>return Err(fault("CHOOSE owner has no checked evaluation scope".into())),
+        };
+        Ok(Self {form:form.clone(),clause,paths,scope,input:None})
+    }
+
     /// Derivation queries: choose union alternatives in already typed IR,
     /// expose their positive locals, and keep all original result columns.
     /// Native equality nodes bind aliases without public AST normalization.
