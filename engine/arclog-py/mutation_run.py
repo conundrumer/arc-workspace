@@ -32,7 +32,8 @@ The operators, with the rule of `docs/arclog/` that gives the verdict of their m
                   Rule (`docs/arclog/arclog.md`, Program): a `DET` that names a proposer has no body, so refused.
   rigid-lib-part  an atom of a lib relation added as a part of a `RIGID_DET`, with a site for each column whose type is the type of a label
                   that a part makes (the first such label in the order of the parts, whatever its name). Rule (`docs/arclog/rigid.md`,
-                  Form): accepted.
+                  Form, and the safety condition of `docs/engine/reader.md`): a part is a clause of its own and reads no label that
+                  another part makes, so refused where the lib relation has modes and accepted where it enumerates.
   literal, column, mark, drop-site, repeat-site, drop-atom, repeat-atom
                   a number, constant or string for another; a site's column for another of its relation; `*X` to `X` or `X` to `^X`;
                   a site or an atom dropped or repeated. No rule gives a verdict.
@@ -448,7 +449,7 @@ def rigid_lib_part(ctx):
             columns = [(c, made[t]) for c, t in rel.columns if t in made]
             if columns and (not rel.modes or any(mode <= {c for c, _ in columns} for mode in rel.modes)):
                 text = "(" + " ".join([name] + [f"(:{c} {label})" for c, label in columns]) + ")"
-                edits.append(insertion_after(ctx, parts[-1], text, expected=True, note=f"the lib atom {text} as a part"))
+                edits.append(insertion_after(ctx, parts[-1], text, expected=not rel.modes, note=f"the lib atom {text} as a part"))
     return edits
 
 
