@@ -63,6 +63,7 @@
 //! [`EntryColumns::extent_stop`] or a reason in [`EntryColumns::extent_fault`].
 
 use std::hash::Hash;
+use std::sync::Arc;
 
 use arclog::decode::Projections;
 use arclog::eval::copies::CopyViolation;
@@ -81,7 +82,7 @@ use arclog::types::ValueType;
 
 use crate::extents::{EntryExtents, Extent, Merged};
 use crate::flows::{ColumnSource, SourceColumn, SourceFrame, SourceKind};
-use crate::tables::{evidence_shells, Contents, Point, Table, TableRelation};
+use crate::tables::{evidence_shells, Contents, Point, Table, TableColumn, TableRelation};
 
 /// The point of a table, as the code in [`TableColumns::point`].
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -425,27 +426,33 @@ pub fn cut_case_columns(evidence: &[Table], tables: &[(usize, Table)], tokens: u
     fold(evidence, tables, Some(tokens), train, labels)
 }
 
-/// The names of the tables of a stream up to the end of a step, which the
-/// tables of the steps after it read to resolve their sources: the state that
-/// [`step_case_columns`] takes from a step to the next. It holds the
-/// `TableNames` of the tables so far and the count of them.
+/// The tables of a stream up to the end of a step, which the tables of the
+/// steps after it read for their frames, extents and sources: the state that
+/// [`step_case_columns`] takes from a step to the next. It holds the stream's
+/// tables so far, each shared, evidence tables excluded, and the count of the
+/// tables with the evidence tables.
 #[derive(Clone)]
-pub struct StepNames {
-    names: TableNames,
-    tables: u32,
+pub struct StreamTables {
+    tables: Vec<Arc<Table>>,
+    count: u32,
 }
 
-impl StepNames {
+impl StreamTables {
     /// The count of the tables so far: the evidence tables and each table of
     /// the steps up to this one.
-    pub fn tables(&self) -> u32 {
-        self.tables
+    pub fn count(&self) -> u32 {
+        self.count
+    }
+
+    /// The tables of the steps so far, in order, without the evidence tables.
+    pub fn tables(&self) -> Vec<&Table> {
+        self.tables.iter().map(|table| &**table).collect()
     }
 }
 
 /// The columns of the tables of one step, `tables`, on a task of `train`
-/// train pairs, and the [`StepNames`] after them. With `before`, the
-/// [`StepNames`] after the previous step of the stream, the columns hold the
+/// train pairs, and the [`StreamTables`] after them. With `before`, the
+/// [`StreamTables`] after the previous step of the stream, the columns hold the
 /// step's own tables alone, numbered from the count of the tables before them
 /// as [`cut_case_columns`] numbers its tables, and a table's sources read the
 /// tables before it as [`case_columns`] reads them. With `None`, the step is
@@ -453,20 +460,26 @@ impl StepNames {
 /// token 0, and then the step's tables, as [`case_columns`] holds them. The
 /// names of the labels are the decoded ones, as [`case_columns`] gives with
 /// `None` for its `labels`.
-pub fn step_case_columns(before: Option<&StepNames>, evidence: &[Table], tables: &[(usize, Table)], train: usize) -> (CaseColumns, StepNames) {
+pub fn step_case_columns(before: Option<&StreamTables>, evidence: &[Table], tables: Vec<(usize, Table)>, train: usize) -> (CaseColumns, StreamTables) {
     let mut columns = CaseColumns::default();
     let mut runs = Runs::default();
-    let (mut names, first) = match before {
-        Some(before) => (before.names.clone(), before.tables as usize),
+    let mut names = Vec::new();
+    let first = match before {
+        Some(before) => {
+            for (place, table) in evidence.iter().chain(before.tables.iter().map(|table| &**table)).enumerate() {
+                note_name(&mut names, u32::try_from(place).expect("fewer than 2^32 tables"), table, None);
+            }
+            before.count as usize
+        }
         None => {
-            let mut names = Vec::new();
             push_tables(&mut columns, &mut names, &mut runs, 0, evidence.iter().map(|table| (0, table)), train, None);
-            (names, evidence.len())
+            evidence.len()
         }
     };
     push_tables(&mut columns, &mut names, &mut runs, first, tables.iter().map(|(token, table)| (*token, table)), train, None);
     let count = u32::try_from(first + tables.len()).expect("fewer than 2^32 tables");
-    (columns, StepNames { names, tables: count })
+    let kept = before.map_or_else(Vec::new, |before| before.tables.clone()).into_iter().chain(tables.into_iter().map(|(_, table)| Arc::new(table))).collect();
+    (columns, StreamTables { tables: kept, count })
 }
 
 /// The fold of [`case_columns`] and [`cut_case_columns`]: the only state it
@@ -725,10 +738,9 @@ fn push_table(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, ro
             tables.fact.push(fact);
             tables.column_names.push(contents.columns.iter().map(|column| column.name.clone()).collect());
             tables.column_types.push(type_names(&types));
-            let own = named(names, row, table, labels);
-            let frames = own.as_ref().map_or_else(|| column_frames(names, contents), |own| own.frames.clone());
-            let extent_columns = extent_columns(&types, &frames);
-            tables.column_frames.push(frames);
+            let own = named(row, table, labels);
+            let extent_columns = extent_columns(&types, &contents.frames);
+            tables.column_frames.push(contents.frames.clone());
             tables.extent_columns.push(extent_columns.clone());
             tables.column_slots.push(slots_of(contents));
             tables.column_labels.push(labels_of(contents));
@@ -765,13 +777,13 @@ fn push_table(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, ro
 /// Adds the relation of `table`, the table at `row`, to `names`, if it stands
 /// for one.
 fn note_name(names: &mut TableNames, row: u32, table: &Table, labels: Option<&StreamLabels>) {
-    names.extend(named(names, row, table, labels));
+    names.extend(named(row, table, labels));
 }
 
-/// The `Named` of `table`, the table at `row`, with its frames resolved in
-/// `names`, the tables before it: none for a table that stands for no relation,
-/// a table of a body or one that has faulted.
-fn named(names: &TableNames, row: u32, table: &Table, labels: Option<&StreamLabels>) -> Option<Named> {
+/// The `Named` of `table`, the table at `row`, with the frames its contents
+/// hold: none for a table that stands for no relation, a table of a body or
+/// one that has faulted.
+fn named(row: u32, table: &Table, labels: Option<&StreamLabels>) -> Option<Named> {
     let Ok(contents) = &table.contents else { return None };
     if matches!(table.point, Point::Body { .. }) {
         return None;
@@ -780,8 +792,7 @@ fn named(names: &TableNames, row: u32, table: &Table, labels: Option<&StreamLabe
         TableRelation::Slot(_) => contents.name.clone(),
         TableRelation::Fact(fact) => spelling(FACT_RELATIONS, &fact).to_owned(),
     };
-    let frames = column_frames(names, contents);
-    Some(Named { name, row, paths: contents.rows.clone(), frames, slots: slots_of(contents), labels: labels_of(contents), source_labels: source_labels_of(&table.form, contents, labels) })
+    Some(Named { name, row, paths: contents.rows.clone(), frames: contents.frames.clone(), slots: slots_of(contents), labels: labels_of(contents), source_labels: source_labels_of(&table.form, contents, labels) })
 }
 
 /// The relation `relation` as the program spells it, a fact relation's name,
@@ -873,11 +884,7 @@ fn resolve_frame(frame: &SourceFrame, read: &Option<String>) -> Option<String> {
 /// of `names` that stands for the relation it reads.
 pub(crate) fn column_frames(names: &TableNames, contents: &Contents) -> Vec<String> {
     if let TableRelation::Fact(fact) = contents.relation {
-        let grid = match fact {
-            FactRelation::ExOutput => OUTPUT_FRAME,
-            FactRelation::Input | FactRelation::ExInput => INPUT_FRAME,
-        };
-        return contents.columns.iter().map(|column| if column.name == "P" && has_frame(&column.ty) { grid.to_owned() } else { String::new() }).collect();
+        return fact_frames(fact, &contents.columns);
     }
     let dets: Vec<String> = contents.dets.iter().map(|det| relation_spelled(&det.relation)).collect();
     contents
@@ -903,6 +910,16 @@ pub(crate) fn column_frames(names: &TableNames, contents: &Contents) -> Vec<Stri
             if found.len() == 1 { found.remove(0) } else { String::new() }
         })
         .collect()
+}
+
+/// The frame of each column of the table of the fact relation `fact` with
+/// `columns`, empty for none: `input` or `output` at `P`.
+pub(crate) fn fact_frames(fact: FactRelation, columns: &[TableColumn]) -> Vec<String> {
+    let grid = match fact {
+        FactRelation::ExOutput => OUTPUT_FRAME,
+        FactRelation::Input | FactRelation::ExInput => INPUT_FRAME,
+    };
+    columns.iter().map(|column| if column.name == "P" && has_frame(&column.ty) { grid.to_owned() } else { String::new() }).collect()
 }
 
 /// The slot of each column of `contents`, -1 for none.

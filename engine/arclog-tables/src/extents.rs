@@ -94,7 +94,7 @@ use arclog::resolver::{DependencyKind, GraphNodeIndex, Resolution};
 use arclog::terms::{Constant, Example, Margins, Term, TermId};
 use arclog::types::{use_label, GraphRelation, ValueType};
 
-use crate::columns::{column_frames, extent_columns, fault_spelled, locate, names_of, read_index, Named, TableNames, INPUT_FRAME, OUTPUT_FRAME};
+use crate::columns::{extent_columns, fault_spelled, locate, names_of, read_index, Named, TableNames, INPUT_FRAME, OUTPUT_FRAME};
 use crate::flows::{column_flows, column_placements, output_copies, output_frames, ColumnSource, Maker, OutputFrame, Placement, SourceFrame};
 use crate::tables::{relation_examples, Contents, ExampleRows, Table, EVIDENCE_FACTS};
 
@@ -210,16 +210,17 @@ struct Subject<'a> {
 }
 
 /// The extents of the made frames of the `Box` columns of the table of
-/// `relation`, whose contents are `contents`, in `checked`: none where the
-/// table has no such column. `earlier` are the tables before it that its rows
-/// read.
+/// `relation`, whose contents are `contents` with their `frames`, in `checked`:
+/// none where the table has no such column. The columns are those of
+/// `extent_columns` of `contents.frames`. `earlier` are the tables before it
+/// that its rows read.
 pub fn table_extents(decoder: &Decoder<'_>, earlier: &[&Table], checked: &CheckedProgram, relation: &GraphRelation, contents: &Contents) -> Option<Extents> {
     let types: Vec<ValueType> = contents.columns.iter().map(|column| column.ty.clone()).collect();
     if !types.contains(&ValueType::Box) {
         return None;
     }
     let names = names_of(decoder.registry(), earlier);
-    let columns = extent_columns(&types, &column_frames(&names, contents));
+    let columns = extent_columns(&types, &contents.frames);
     if columns.is_empty() {
         return None;
     }

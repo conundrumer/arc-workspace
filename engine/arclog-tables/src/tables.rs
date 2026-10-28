@@ -62,6 +62,7 @@ use arclog::terms::{Constant, Example, Term};
 use arclog::types::{GraphRelation, ValueType};
 use arclog::write::label_names;
 
+use crate::columns::{column_frames, fact_frames, names_of};
 use crate::extents::{table_extents, Extents};
 use crate::flows::{column_flows, column_placements, ColumnSource};
 
@@ -162,10 +163,15 @@ pub struct Contents {
     /// The columns of the relation that the `OUT` form at which the decode
     /// ended selects ([`record_step`]).
     pub selected: SelectedColumns,
+    /// The frame of each column, empty for none (`column_frames`), computed
+    /// once where the table is made, from the tables of the stream before it.
+    /// Every reader of the table's frames reads this: the export's
+    /// `column_frames` and `extent_columns`, the columns of `extents`, and the
+    /// tables after this one that resolve a source's frame through it.
+    pub frames: Vec<String>,
     /// The extents of the made frames of the table's `Box` columns
-    /// ([`table_extents`]): none for a table that has no such column, an
-    /// evidence table, and a table that [`step_tables`] gives with no tables
-    /// before it to read.
+    /// ([`table_extents`]): none for a table that has no such column and an
+    /// evidence table.
     pub extents: Option<Extents>,
 }
 
@@ -189,19 +195,27 @@ pub struct Table {
 /// Appends to `tables` the tables of the last step of `decoder`
 /// ([`step_tables`]) at points `points`, each with the index of the step's
 /// token, `index`. Where the step ended the decode at an `OUT` form, it also
-/// marks, in the table of each relation an atom of the form reads, the columns
-/// of that relation the form selects: the Position column in the table of the
-/// relation of the atom that selects it, and the Color column in the table of
-/// the relation of the atom that selects that.
+/// marks ([`mark_selected`]) the columns that the form selects in the tables
+/// of `tables`.
 pub fn record_step(tables: &mut Vec<(usize, Table)>, decoder: &Decoder<'_>, index: usize, points: Points) {
-    let stepped = step_tables(decoder, points, tables);
+    let seen: Vec<&Table> = tables.iter().map(|(_, table)| table).collect();
+    let stepped = step_tables(decoder, points, &seen);
     tables.extend(stepped.into_iter().map(|table| (index, table)));
-    for (slot, selected) in selected_columns(decoder) {
-        for (_, table) in tables.iter_mut().filter(|(_, table)| table.point == Point::Relation) {
-            if let Ok(contents) = &mut table.contents {
-                if contents.relation == TableRelation::Slot(slot) {
-                    contents.selected = SelectedColumns { position: selected.position.or(contents.selected.position), color: selected.color.or(contents.selected.color) };
-                }
+    mark_selected(decoder, tables.iter_mut().map(|(_, table)| table));
+}
+
+/// Marks, in the table of each relation an atom of the `OUT` form at which
+/// `decoder` ended reads, among `tables`, the columns of that relation the
+/// form selects: the Position column in the table of the relation of the atom
+/// that selects it, and the Color column in the table of the relation of the
+/// atom that selects that.
+pub fn mark_selected<'t>(decoder: &Decoder<'_>, tables: impl Iterator<Item = &'t mut Table>) {
+    let marks = selected_columns(decoder);
+    for table in tables.filter(|table| table.point == Point::Relation) {
+        let Ok(contents) = &mut table.contents else { continue };
+        for (slot, selected) in &marks {
+            if contents.relation == TableRelation::Slot(*slot) {
+                contents.selected = SelectedColumns { position: selected.position.or(contents.selected.position), color: selected.color.or(contents.selected.color) };
             }
         }
     }
@@ -243,9 +257,10 @@ pub fn selected_columns(decoder: &Decoder<'_>) -> Vec<(u32, SelectedColumns)> {
 /// the step left the clause in progress as it was, such as a `*` before its
 /// echo, and none where no clause is in progress and no form finished; under
 /// [`Points::Relations`], none where no form finished, and no body table
-/// evaluated. `earlier` are the tables of the steps before, which a table's
-/// extents read.
-pub fn step_tables(decoder: &Decoder<'_>, points: Points, earlier: &[(usize, Table)]) -> Vec<Table> {
+/// evaluated. `earlier` are the tables of the stream before the step, in
+/// order and without the evidence tables, which a table's frames and extents
+/// read.
+pub fn step_tables(decoder: &Decoder<'_>, points: Points, earlier: &[&Table]) -> Vec<Table> {
     let Some(before) = decoder.before() else { return Vec::new() };
     if decoder.program().value().forms.len() > before.program().value().forms.len() {
         relation_tables(decoder, before, earlier)
@@ -272,7 +287,7 @@ fn body_point(decoder: &Decoder<'_>, state: &State) -> Option<Point> {
 
 /// The table of the sub-body of the clause in progress, where the step added a
 /// site or a conjunct to it; `before` is the state before the step.
-fn body_table(decoder: &Decoder<'_>, before: &State, earlier: &[(usize, Table)]) -> Option<Table> {
+fn body_table(decoder: &Decoder<'_>, before: &State, earlier: &[&Table]) -> Option<Table> {
     let point = body_point(decoder, decoder.state())?;
     if Some(point) == body_point(decoder, before) || point == (Point::Body { conjuncts: 0, sites: 0 }) {
         return None;
@@ -284,11 +299,7 @@ fn body_table(decoder: &Decoder<'_>, before: &State, earlier: &[(usize, Table)])
         let slot = decoder.state().open_slot();
         let work = decoder.table_work();
         let examples = decoder.examples_of(sub.scope).into_iter().zip(decoder.values_of(&sub, Some(&work)).into_vec()).map(|(example, rows)| ExampleRows { example, rows: rows.map(|rows| models_of_body(&rows)) }).collect();
-        contents(decoder, &sub.program, &sub.form, &relation, slot, &walked_dets(&sub.program, relation.node), examples, &work).map(|contents| {
-            let seen: Vec<&Table> = earlier.iter().map(|(_, table)| table).collect();
-            let extents = table_extents(decoder, &seen, &sub.program, &relation, &contents);
-            Contents { extents, ..contents }
-        })
+        contents(decoder, &sub.program, &sub.form, &relation, slot, &walked_dets(&sub.program, relation.node), examples, &work).map(|contents| made(decoder, earlier, &sub.program, &relation, contents))
     });
     Some(Table { form, point, contents: contents.and_then(|contents| contents) })
 }
@@ -296,7 +307,7 @@ fn body_table(decoder: &Decoder<'_>, before: &State, earlier: &[(usize, Table)])
 /// The table of each relation the form that the step finished declares, but
 /// for each that gets no table ([`gives_no_table`]); `before` is the state
 /// before the step, and `earlier` the tables of the steps before it.
-fn relation_tables(decoder: &Decoder<'_>, before: &State, earlier: &[(usize, Table)]) -> Vec<Table> {
+fn relation_tables(decoder: &Decoder<'_>, before: &State, earlier: &[&Table]) -> Vec<Table> {
     let registry = decoder.registry();
     let program = decoder.program();
     let form = NodePath::top(program.value().forms.len() as u32 - 1);
@@ -316,9 +327,8 @@ fn relation_tables(decoder: &Decoder<'_>, before: &State, earlier: &[(usize, Tab
                 let examples = relation_examples(decoder, checked, &relation, &dets, &work);
                 contents(decoder, checked, &form, &relation, slot, &dets, examples, &work).map(|contents| {
                     let contents = Contents { name: relation_spelled(declared), keys: checked.program.column_keys(relation.node), ..contents };
-                    let seen: Vec<&Table> = earlier.iter().map(|(_, table)| table).chain(&tables).collect();
-                    let extents = table_extents(decoder, &seen, checked, &relation, &contents);
-                    Contents { extents, ..contents }
+                    let seen: Vec<&Table> = earlier.iter().copied().chain(&tables).collect();
+                    made(decoder, &seen, checked, &relation, contents)
                 })
             }
             None => Err(RunFault { message: "the graph holds no node for a relation the form declares".into(), form: form.clone() }),
@@ -326,6 +336,16 @@ fn relation_tables(decoder: &Decoder<'_>, before: &State, earlier: &[(usize, Tab
         tables.push(Table { form: form.clone(), point: Point::Relation, contents });
     }
     tables
+}
+
+/// `contents`, the contents of the table of `relation` in `checked`, with its
+/// frames and then its extents, both computed from `seen`, the tables of the
+/// stream before the table.
+fn made(decoder: &Decoder<'_>, seen: &[&Table], checked: &CheckedProgram, relation: &GraphRelation, contents: Contents) -> Contents {
+    let frames = column_frames(&names_of(decoder.registry(), seen), &contents);
+    let contents = Contents { frames, ..contents };
+    let extents = table_extents(decoder, seen, checked, relation, &contents);
+    Contents { extents, ..contents }
 }
 
 /// The rows of `relation` in `checked` on each example it is evaluated on, at
@@ -340,7 +360,8 @@ pub(crate) fn relation_examples(decoder: &Decoder<'_>, checked: &CheckedProgram,
 
 /// The contents of the table of `relation` in `program`, from its rows on each
 /// example: its slot, its columns, its `DET`s, and its projections where a
-/// relation holds more rows than the projection cap.
+/// relation holds more rows than the projection cap. The frames and extents are
+/// those of `made`, which sets them.
 fn contents(decoder: &Decoder<'_>, program: &CheckedProgram, form: &NodePath, relation: &GraphRelation, slot: u32, dets: &[Det], examples: Vec<ExampleRows>, work: &TableWork) -> Outcome<Contents> {
     let fault = |message: &str| RunFault { message: message.into(), form: form.clone() };
     let types = program.types.columns(relation).ok_or_else(|| fault("the columns of the relation have no types"))?;
@@ -376,7 +397,7 @@ fn contents(decoder: &Decoder<'_>, program: &CheckedProgram, form: &NodePath, re
     let flows = column_flows(program, relation.node, relation.output.as_deref(), &types, decoder.registry()).into();
     let depth = program.program.depth(relation.node);
     let rows = program.program.row_paths(relation.node).filter(|rows| relation.output.is_none() && rows.len() == types.len());
-    Ok(Contents { relation: TableRelation::Slot(slot), columns, dets, examples: examples.into(), projections, name: String::new(), flows, rows, depth, keys: Vec::new(), selected: SelectedColumns::default(), extents: None })
+    Ok(Contents { relation: TableRelation::Slot(slot), columns, dets, examples: examples.into(), projections, name: String::new(), flows, rows, depth, keys: Vec::new(), selected: SelectedColumns::default(), frames: Vec::new(), extents: None })
 }
 
 /// The projections of the rows of `examples`, none where an example gives a
@@ -430,7 +451,7 @@ fn evidence_table(task: &Task, registry: &Registry, fact: FactRelation) -> Table
 
 /// The evidence table of `fact` with the entries `examples`.
 fn evidence_table_of(registry: &Registry, fact: FactRelation, examples: Box<[ExampleRows]>) -> Table {
-    let columns = registry
+    let columns: Box<[TableColumn]> = registry
         .fact_columns(fact)
         .iter()
         .enumerate()
@@ -445,7 +466,8 @@ fn evidence_table_of(registry: &Registry, fact: FactRelation, examples: Box<[Exa
             label: None,
         })
         .collect();
-    Table { form: NodePath::default(), point: Point::Evidence, contents: Ok(Contents { relation: TableRelation::Fact(fact), columns, dets: Box::new([]), examples, projections: None, name: String::new(), flows: Box::new([]), rows: None, depth: 0, keys: vec![vec![0, 1]], selected: SelectedColumns::default(), extents: None }) }
+    let frames = fact_frames(fact, &columns);
+    Table { form: NodePath::default(), point: Point::Evidence, contents: Ok(Contents { relation: TableRelation::Fact(fact), columns, dets: Box::new([]), examples, projections: None, name: String::new(), flows: Box::new([]), rows: None, depth: 0, keys: vec![vec![0, 1]], selected: SelectedColumns::default(), frames, extents: None }) }
 }
 
 /// The relation of the graph that the form at `form` of `program` declares as

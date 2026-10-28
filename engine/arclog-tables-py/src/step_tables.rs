@@ -7,7 +7,7 @@ use std::sync::Arc;
 use arclog::stream::Emitter;
 use arclog_bindings::PyDecoder;
 use arclog_tables::columns::step_case_columns;
-use arclog_tables::tables::{evidence_tables, record_step, selected_columns, Points};
+use arclog_tables::tables::{evidence_tables, mark_selected, selected_columns, step_tables as step_tables_of, Points, Table};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
@@ -63,16 +63,21 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
     let written: Vec<usize> = engine.trace().records().iter().enumerate().filter(|(_, record)| record.emitter == Emitter::Model).map(|(index, _)| index).collect();
     let index = written.last().copied();
     let earlier = check_before(before.as_deref(), &task, &case, bodies, &written)?;
-    let (columns, names) = py.detach(|| {
-        let mut tables = Vec::new();
-        if let Some(index) = index {
-            record_step(&mut tables, engine, index, points);
-        }
-        let (columns, names) = step_case_columns(earlier.map(|step| &*step.names), &evidence_tables(evidence, engine.registry()), &tables, evidence.train.len());
-        (columns.with_copies(&engine.take_copy_violations()), names)
+    let (columns, stream) = py.detach(|| {
+        let tables: Vec<(usize, Table)> = match index {
+            Some(index) => {
+                let before = earlier.map_or_else(Vec::new, |step| step.stream.tables());
+                let mut own = step_tables_of(engine, points, &before);
+                mark_selected(engine, own.iter_mut());
+                own.into_iter().map(|table| (index, table)).collect()
+            }
+            None => Vec::new(),
+        };
+        let (columns, stream) = step_case_columns(earlier.map(|step| &*step.stream), &evidence_tables(evidence, engine.registry()), tables, evidence.train.len());
+        (columns.with_copies(&engine.take_copy_violations()), stream)
     });
-    let base = earlier.map(|step| Base { case: case.clone(), tokens: index.unwrap_or(0), tables: step.names.tables() });
-    Ok(PyCaseTables::of(py, task, case, false, engine.settings().projection_cap, &columns, None, base)?.with_step(Step { names: Arc::new(names), bodies, token: index }))
+    let base = earlier.map(|step| Base { case: case.clone(), tokens: index.unwrap_or(0), tables: step.stream.count() });
+    Ok(PyCaseTables::of(py, task, case, false, engine.settings().projection_cap, &columns, None, base)?.with_step(Step { stream: Arc::new(stream), bodies, token: index }))
 }
 
 /// The `Step` of `before`, the `before` of a call of `step_tables` for `task`

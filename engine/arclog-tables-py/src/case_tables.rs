@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use arclog_tables::columns::{CaseColumns, StepNames, StopColumns, TableColumns};
+use arclog_tables::columns::{CaseColumns, StopColumns, StreamTables, TableColumns};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
 
@@ -123,11 +123,11 @@ pub(crate) struct PyCaseTables {
 }
 
 /// What a `step_tables` call leaves for the call at the decode's next model
-/// step: the names of the tables up to its step, the `bodies` it was made
+/// step: the tables of the stream up to its step, the `bodies` it was made
 /// with, and its step's token index, or `None` for a decode before its first
 /// step.
 pub(crate) struct Step {
-    pub(crate) names: Arc<StepNames>,
+    pub(crate) stream: Arc<StreamTables>,
     pub(crate) bodies: bool,
     pub(crate) token: Option<usize>,
 }
