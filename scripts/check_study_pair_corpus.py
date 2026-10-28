@@ -284,7 +284,9 @@ def main():
                         ix = report["table_indices"]
                         native = dict(gold=inspect_native(g, ix["gold_all"]), mutant=inspect_native(m, ix["mutant_all"]))
                         for comparison in report["comparisons"] + report["kept_comparisons"]:
-                            if comparison["status"] == "complete":
+                            # Complete Undefined comparisons have null counts;
+                            # only comparable row sets have numeric diagnostics.
+                            if comparison["status"] == "complete" and comparison["comparable"] is True:
                                 if min(comparison["kept"], comparison["extra"], comparison["missing"]) < 0:
                                     raise ValueError("negative table comparison count")
                         for output in report["outputs"]:
