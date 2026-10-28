@@ -22,6 +22,7 @@ pub(super) const COPIES: &str = "copies";
 pub(super) const FRAMES: &str = "frames";
 pub(super) const TYPES: &str = "types";
 pub(super) const WHEN: &str = "when";
+pub(super) const SAME_FRAME: &str = "same-frame";
 pub(super) const OF: &str = "of";
 pub(super) const NEW: &str = "new";
 pub(super) const EITHER: &str = "either";

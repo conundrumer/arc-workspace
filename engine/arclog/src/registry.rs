@@ -111,31 +111,43 @@
 //!
 //! A `(types <rule> ...)` form of a `relation` or a `macro` form narrows a
 //! `Box` column at a site from the types of the labels at the site's other
-//! columns. A rule is `(when ((<Column> <type>) ...) (<Column> <type>) ...)`,
-//! each `<type>` `Box`, `Position` or `Offset`. The rule holds at a site
-//! where each column of its conditions has a label whose type stands at or
-//! under the condition's type. At a site, a column's type is the meet of its
-//! declared type and of the types each rule that holds gives it
-//! ([`ruled_type`]), so a rule that holds keeps holding as the labels narrow.
-//! A rule conditions columns of a `Box` type and gives columns it has no
-//! condition on a type at or under the declared type; no two rules that hold
-//! at one assignment of `Box`, `Position` and `Offset` to the condition
-//! columns give a column types with an empty meet. A rule that breaks this
-//! is a fault of the file.
+//! columns, and from the grids of those labels. A rule is `(when
+//! (<condition> ...) (<Column> <type>) ...)`, each `<type>` `Box`,
+//! `Position` or `Offset`, and each condition `(<Column> <type>)` or
+//! `(same-frame <Column> <Column>)`. The rule holds at a site where each
+//! column of its `(<Column> <type>)` conditions has a label whose type
+//! stands at or under the condition's type, and each `same-frame` condition
+//! has labels at its two columns of which a grid holds, as the type check
+//! gives the grids of a label (`check/frames.rs`). At a site, a column's
+//! type is the meet of its declared type and of the types each rule that
+//! holds gives it ([`ruled_type`]), so a rule that holds keeps holding as the
+//! types of the labels narrow and their grids grow. A rule conditions columns
+//! of a `Box` type and gives columns it has no condition on a type at or
+//! under the declared type; no two rules that hold at one assignment of
+//! `Box`, `Position` and `Offset` to the condition columns, with each
+//! `same-frame` condition holding, give a column types with an empty meet. A
+//! rule that breaks this is a fault of the file. A `same-frame` condition
+//! names two distinct `Box` columns of a relation, and a macro's written
+//! rule has none, since a macro's derivation sees no grids.
 //!
-//! A rule holds for every value its column can take, where its reason needs
-//! no two labels in one frame, since the type check sees no frame. A
-//! `Position` is a box of extent 1 on both axes, with per-axis sums (the
-//! frame's extent minus the box's) that a frame fixes, and an `Offset` has
-//! sums 0 in every frame. `compose` adds margins and `relative` subtracts
-//! them, so the sums add and subtract. The rules and their reasons:
+//! A rule holds for every value its column can take; a rule whose reason
+//! needs two labels in one frame holds where a grid holds of both, as the
+//! type check gives the grids of a label. A `Position` is a box of extent 1
+//! on both axes, with per-axis sums (the frame's extent minus the box's) that
+//! a frame fixes, and an `Offset` has sums 0 in every frame. `compose` adds
+//! margins and `relative` subtracts them, so the sums add and subtract. The
+//! rules and their reasons:
 //!
 //! - `compose` (`Position`, `Offset`) and (`Offset`, `Position`) give `C`
 //!   `Position`: its sums are the `Position`'s, in the frame `C` takes from
 //!   the `Position`'s column. (`Offset`, `Offset`) gives `Offset`: 0 + 0 = 0.
 //! - `relative` (`Offset`, `Offset`) gives `X_rel` `Offset`: 0 - 0 = 0.
 //!   (`Offset`, `Position`) gives `Position`: `X_rel` has `X`'s sums, in the
-//!   frame `(new (of Base))` makes.
+//!   frame `(new (of Base))` makes. (`Position`, `Position`) with `Base` and
+//!   `X` in one frame gives `Offset`: both have the sums of one frame's
+//!   extent minus 1, so `X_rel` has sums (V - 1) - (V - 1) = 0 on each axis.
+//!   A grid that holds of both labels is one frame of one extent, and the
+//!   condition stays true as the labels narrow and their grids grow.
 //! - `apply` `Offset` gives `Offset`: a permutation of margins that sum to 0
 //!   on each axis sums to 0.
 //! - `split` `Position` gives `Across` `Position`: `Across` is `P` with its

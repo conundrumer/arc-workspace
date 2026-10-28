@@ -325,7 +325,7 @@ impl MacroDerivation<'_, '_> {
                 })
                 .collect();
             if !gives.is_empty() {
-                rules.push(TypeRule { place: m.place, when: when.into(), gives: gives.into() });
+                rules.push(TypeRule { place: m.place, when: when.into(), same_frame: Box::default(), gives: gives.into() });
             }
         }
         rules
@@ -342,7 +342,7 @@ impl MacroDerivation<'_, '_> {
     fn check_written_rules(&mut self, i: usize) {
         let m = self.macros[i];
         let MacroState::Declared(declared) = &self.states[i] else { return };
-        let mut diagnostics = rule_diagnostics(m.name, &declared.columns, m.rules);
+        let mut diagnostics = rule_diagnostics(m.name, &declared.columns, m.rules, false);
         if diagnostics.is_empty() {
             for rule in m.rules {
                 let settled = self.settled(&m, &Self::seeds(&m, &rule.when));
@@ -440,7 +440,7 @@ impl MacroDerivation<'_, '_> {
             RelationRef::DefinedPort(_) | RelationRef::Declared(_) | RelationRef::Output(_) => return None,
         };
         let declared = columns.iter().find(|c| &c.name == column)?.ty.fixed().cloned()?;
-        Some(ruled_type(declared, rules, column, atom, label_type))
+        Some(ruled_type(declared, rules, column, atom, label_type, &|_, _| false))
     }
 }
 

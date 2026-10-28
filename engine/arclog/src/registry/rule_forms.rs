@@ -1,6 +1,7 @@
 //! The reader of the `types` form of a `relation` form and of a `macro`
-//! form of the registry file: its rules, `(when ((<Column> <type>) ...)
-//! (<Column> <type>) ...)`.
+//! form of the registry file: its rules, `(when (<condition> ...)
+//! (<Column> <type>) ...)`, each condition `(<Column> <type>)` or
+//! `(same-frame <Column> <Column>)`.
 
 use super::reader::FileReader;
 use super::spellings::*;
@@ -20,11 +21,29 @@ impl FileReader {
             return self.refuse(format!("a rule of a `{TYPES}` form is a `({WHEN} ...)` form"), place);
         };
         let [SExpr::List { items: conditions, .. }, results @ ..] = rest else {
-            return self.refuse(format!("a `{WHEN}` rule lists its conditions, `((<Column> <type>) ...)`, first"), place);
+            return self.refuse(format!("a `{WHEN}` rule lists its conditions, `(<condition> ...)`, first"), place);
         };
-        let when: Option<Vec<_>> = conditions.iter().map(|condition| self.typed_column(condition)).collect();
+        let mut when = Vec::new();
+        let mut same_frame = Vec::new();
+        for condition in conditions.iter() {
+            match headed(condition, SAME_FRAME) {
+                Some(columns) => same_frame.push(self.same_frame_columns(columns, condition.place())?),
+                None => when.push(self.typed_column(condition)?),
+            }
+        }
         let gives: Option<Vec<_>> = results.iter().map(|result| self.typed_column(result)).collect();
-        Some(TypeRule { place, when: when?.into(), gives: gives?.into() })
+        Some(TypeRule { place, when: when.into(), same_frame: same_frame.into(), gives: gives?.into() })
+    }
+
+    /// The columns that `columns`, the items after `same-frame` of a
+    /// `(same-frame <Column> <Column>)` condition at `place`, write.
+    fn same_frame_columns(&mut self, columns: &[SExpr], place: SourcePlace) -> Option<(ColumnName, ColumnName)> {
+        let [a, b] = columns else {
+            return self.refuse(format!("a `{SAME_FRAME}` condition names two columns"), place);
+        };
+        let a = self.symbol(Some(a), "the column's name", place)?;
+        let b = self.symbol(Some(b), "the column's name", place)?;
+        Some((ColumnName::Written(a.into()), ColumnName::Written(b.into())))
     }
 
     /// The column and the type that `expr`, `(<Column> <type>)`, writes.
@@ -50,7 +69,7 @@ impl FileReader {
         let mut faulty = Vec::new();
         for name in ruled {
             let Some(LibEntry::Relation(relation)) = self.entries.get(name) else { continue };
-            let found = rule_diagnostics(name, &relation.columns, &relation.rules);
+            let found = rule_diagnostics(name, &relation.columns, &relation.rules, true);
             if !found.is_empty() {
                 faulty.push(name.clone());
                 faults.extend(found);

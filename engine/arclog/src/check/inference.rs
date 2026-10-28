@@ -12,6 +12,7 @@ mod state;
 
 pub(super) use state::HeldState;
 
+use super::frames::{FormGrids, GridCache, SharedGrids};
 use super::safety::{bodies, BodyPlace};
 use super::types::{
     column_type, component, declared_type, demo_rule, form_at, pose_of_fault, project, relation_columns, rule_scope_forms, scope_forms, site_value_type, site_value_type_or,
@@ -36,7 +37,7 @@ use crate::types::{column_label, flat_label_types, fresh_in_nested_form, label_t
 /// in: the conjuncts of the form's bodies, each instance input a branch of
 /// its own, after an atom of its head on the input's port, and the labels
 /// of the form's columns, whose scope is the whole list.
-struct ScopeBody<'a> {
+pub(super) struct ScopeBody<'a> {
     body: Body,
     heads: Vec<LabelId>,
     /// The component whose input ports the head atoms read.
@@ -46,7 +47,7 @@ struct ScopeBody<'a> {
 }
 
 impl<'a> ScopeBody<'a> {
-    fn of(form: &'a Form, registry: &'a Registry) -> Self {
+    pub(super) fn of(form: &'a Form, registry: &'a Registry) -> Self {
         let mut conjuncts: Vec<Conjunct> = Vec::new();
         let mut heads: Vec<LabelId> = Vec::new();
         for form_body in bodies(NodeRef::from(form)) {
@@ -77,7 +78,7 @@ impl<'a> ScopeBody<'a> {
     }
 
     /// The list of the scope of each of `labels`, in their order.
-    fn lists(&self, labels: &[LabelId]) -> Vec<&Body> {
+    pub(super) fn lists(&self, labels: &[LabelId]) -> Vec<&Body> {
         let mut lists = scope_lists(&self.body, labels);
         for (label, list) in labels.iter().zip(&mut lists) {
             if self.heads.contains(label) {
@@ -359,12 +360,17 @@ pub(super) struct SiteReading<'r, 'a> {
     pub component: Option<&'a Component>,
     pub bindings: &'r StableHashMap<TypeParameter, ValueType>,
     pub pose_or: PoseOr,
+    /// Whether two of the form's labels stand in one grid, where the reading
+    /// is of a run of [`Inference::infer_new`] that gives it; none for the
+    /// reading of a finished form, whose sites then read the types that the
+    /// other rules give.
+    pub grids: Option<&'r dyn SharedGrids>,
 }
 
 impl<'a> FormInference<'a> {
     /// What the form's sites read their column types under.
     pub fn reading(&self, pose_or: PoseOr) -> SiteReading<'_, 'a> {
-        SiteReading { path: &self.path, walk: &self.walk, labels: &self.labels, component: self.component, bindings: &self.bindings, pose_or }
+        SiteReading { path: &self.path, walk: &self.walk, labels: &self.labels, component: self.component, bindings: &self.bindings, pose_or, grids: None }
     }
 }
 
@@ -422,7 +428,7 @@ impl ClauseColumnReads {
 /// it keeps there unless `cycle_reads`, the count of reads through a cycle
 /// of forms, grows while `read` runs, since the value then depends on the
 /// forms whose inference runs.
-fn cached_unless_cycle<K: std::hash::Hash + Eq, V: Clone>(map: &RefCell<StableHashMap<K, V>>, key: K, cycle_reads: &Cell<usize>, read: impl FnOnce() -> V) -> V {
+pub(super) fn cached_unless_cycle<K: std::hash::Hash + Eq, V: Clone>(map: &RefCell<StableHashMap<K, V>>, key: K, cycle_reads: &Cell<usize>, read: impl FnOnce() -> V) -> V {
     if let Some(found) = map.borrow().get(&key) {
         return found.clone();
     }
@@ -510,6 +516,9 @@ pub(super) struct Inference<'a> {
     /// Whether the inference serves a mask: a form of atoms alone takes
     /// [`Inference::flat_form`].
     fast: bool,
+    /// The grids of the columns of the relations that this program's forms
+    /// give, each read once (`check/frames.rs`).
+    grids: GridCache,
 }
 
 impl std::fmt::Debug for Inference<'_> {
@@ -548,6 +557,39 @@ impl<'a> Inference<'a> {
     /// of relations.
     pub(in crate::check) fn is_mask(&self) -> bool { self.fast }
 
+    /// The program this inference types.
+    pub(super) fn program(&self) -> &'a ResolvedProgram {
+        self.program
+    }
+
+    /// The registry the inference reads.
+    pub(super) fn registry(&self) -> &'a Registry {
+        self.registry
+    }
+
+    /// The count of reads so far of a form whose inference runs, as
+    /// [`cached_unless_cycle`] reads it.
+    pub(super) fn cycle_reads(&self) -> &Cell<usize> {
+        &self.cases.cycle_reads
+    }
+
+    /// The grids of the columns of the relations that this program's forms
+    /// give.
+    pub(super) fn grid_cache(&self) -> &GridCache {
+        &self.grids
+    }
+
+    /// The inference that resolves the read `atom` of a form read under
+    /// `reading`, and the path of the read there: the inference of the concept
+    /// program where the form stands at or under a form the case takes from
+    /// it.
+    pub(super) fn atom_place(&self, reading: SiteReading<'_, 'a>, atom: &Atom) -> Option<(&Inference<'a>, NodePath)> {
+        if let Some((concept, at)) = self.in_concept(reading.path) {
+            return concept.atom_place(SiteReading { path: &at, ..reading }, atom);
+        }
+        Some((self, reading.path.join(reading.walk.atoms.get(&(atom as *const Atom))?)))
+    }
+
     /// The inference of a form whose bodies hold atoms alone, in mask mode:
     /// such a body has no `NOT`, constraint, `OR`, `IF` or `ALL`, so the type
     /// of a label is the meet of the types of all its sites
@@ -571,7 +613,7 @@ impl<'a> Inference<'a> {
         if self.holds_ruled_site(&walk) { return None; }
         let mut bindings = StableHashMap::default();
         let type_all = |pose_or, bindings: &StableHashMap<TypeParameter, ValueType>| -> Option<StableHashMap<LabelId, Option<ValueType>>> {
-            let reading = SiteReading { path, walk: &walk, labels: &[], component, bindings, pose_or };
+            let reading = SiteReading { path, walk: &walk, labels: &[], component, bindings, pose_or, grids: None };
             let sites = walk.uses.iter().map(|site| {
                 let head;
                 let atom = match site.atom {
@@ -611,7 +653,7 @@ impl<'a> Inference<'a> {
             });
             (*label, Ok(ty))
         }).collect();
-        self.share_pose(SiteReading { path, walk: &walk, labels: &[], component, bindings: &bindings, pose_or: PoseOr::Open }, &mut labels);
+        self.share_pose(SiteReading { path, walk: &walk, labels: &[], component, bindings: &bindings, pose_or: PoseOr::Open, grids: None }, &mut labels);
         Some(FormInference { owner: ScopeOwner::Form(form), path: path.clone(), labels, bindings, walk, component, zero_typed: Vec::new(), given: given_labels })
     }
 
@@ -635,7 +677,7 @@ impl<'a> Inference<'a> {
 
     pub fn new(program: &'a ResolvedProgram, cases: &'a CaseInferences<'a>) -> Self {
         let concept = program.concept().map(|concept| cases.concept(concept));
-        Inference { program, registry: cases.registry, cases, concept, earlier: None, held: std::cell::OnceCell::new(), forms: RefCell::default(), signatures: RefCell::default(), shared: None, state: std::cell::OnceCell::new(), splits: true, fast: false }
+        Inference { program, registry: cases.registry, cases, concept, earlier: None, held: std::cell::OnceCell::new(), forms: RefCell::default(), signatures: RefCell::default(), shared: None, state: std::cell::OnceCell::new(), splits: true, fast: false, grids: GridCache::default() }
     }
 
     /// The inference of `program`, a resolution by [`crate::resolver::resolve_last`]
@@ -722,6 +764,7 @@ impl<'a> Inference<'a> {
         let walk = FormWalk::of(form);
         let all_labels = form_scope_labels(form);
         let ruled = self.holds_ruled_site(&walk);
+        let framed = self.holds_framed_site(&walk);
         let split = if ruled { None } else { self.state_split(form, path, &all_labels) };
         let labels = match &split {
             Some((_, own)) => own.clone(),
@@ -731,7 +774,9 @@ impl<'a> Inference<'a> {
         let key = scope.instance.and_then(|instance| instance.key.as_ref()).map(|key| key.value().key.body.value());
         let no_bindings = StableHashMap::default();
         let type_all = |bindings: &StableHashMap<TypeParameter, ValueType>, pose_or: PoseOr, prior: &TypedLabels| -> TypedLabels {
-            let reading = SiteReading { path, walk: &walk, labels: prior, component: scope.component, bindings, pose_or };
+            let reading = SiteReading { path, walk: &walk, labels: prior, component: scope.component, bindings, pose_or, grids: None };
+            let grids = framed.then(|| FormGrids::new(self, reading, &scope));
+            let reading = SiteReading { grids: grids.as_ref().map(|grids| grids as &dyn SharedGrids), ..reading };
             let site_type = |atom: &Atom, column: &[ColumnName]| self.site_type(reading, atom, column);
             // With no key clause, the labels of one class in one scope list
             // that are fresh in no form nested in it take one walk.
@@ -764,7 +809,9 @@ impl<'a> Inference<'a> {
                 return first;
             }
             let narrows = |prior: &TypedLabels| {
-                let reading = SiteReading { path, walk: &walk, labels: prior, component: scope.component, bindings, pose_or: PoseOr::Open };
+                let reading = SiteReading { path, walk: &walk, labels: prior, component: scope.component, bindings, pose_or: PoseOr::Open, grids: None };
+                let grids = framed.then(|| FormGrids::new(self, reading, &scope));
+                let reading = SiteReading { grids: grids.as_ref().map(|grids| grids as &dyn SharedGrids), ..reading };
                 let ruled_uses = walk.uses.iter().filter(|site| self.is_ruled_use(site));
                 ruled_uses.filter_map(|site| Some((site.label, self.site_type(reading, site.atom?, &site.column)?))).any(|(label, site)| !typed(prior, label).is_some_and(|label| at_or_under(&label, &site)))
             };
@@ -811,7 +858,7 @@ impl<'a> Inference<'a> {
                 zero_typed.push(label);
             }
         }
-        self.share_pose(SiteReading { path, walk: &walk, labels: &[], component: scope.component, bindings: &bindings, pose_or: PoseOr::Open }, &mut types);
+        self.share_pose(SiteReading { path, walk: &walk, labels: &[], component: scope.component, bindings: &bindings, pose_or: PoseOr::Open, grids: None }, &mut types);
         FormInference { owner: ScopeOwner::Form(form), path: path.clone(), labels: types, bindings, walk, component: scope.component, zero_typed, given: given_labels }
     }
 
@@ -872,14 +919,27 @@ impl<'a> Inference<'a> {
     /// that `reading` holds.
     fn ruled(&self, reading: SiteReading<'_, 'a>, atom: &Atom, name: &LibName, path: &[ColumnName], declared: ValueType) -> ValueType {
         let ([column], Some(relation)) = (path, self.registry.algebra_relation(name)) else { return declared };
-        ruled_type(declared, &relation.rules, column, atom, &|label| typed(reading.labels, label))
+        ruled_type(declared, &relation.rules, column, atom, &|label| typed(reading.labels, label), &|a, b| reading.grids.is_some_and(|grids| grids.share(a, b)))
     }
 
     /// Whether `site` stands at a column that a rule of its relation gives a
     /// type.
     fn is_ruled_use(&self, site: &SiteUse<'_>) -> bool {
-        let (Some(Atom { relation: RelationRef::Lib(name), .. }), [column]) = (site.atom, &site.column[..]) else { return false };
-        self.registry.algebra_relation(name).is_some_and(|relation| relation.is_ruled(column))
+        self.relation_of_use(site).is_some_and(|(relation, column)| relation.is_ruled(column))
+    }
+
+    /// The algebra relation `site` stands in, and the column it stands at,
+    /// where its atom reads a lib relation and the site is on one column.
+    fn relation_of_use<'s>(&self, site: &'s SiteUse<'_>) -> Option<(&'a crate::registry::AlgebraRelation, &'s ColumnName)> {
+        let (Some(Atom { relation: RelationRef::Lib(name), .. }), [column]) = (site.atom, &site.column[..]) else { return None };
+        Some((self.registry.algebra_relation(name)?, column))
+    }
+
+    /// Whether a site of `walk` stands at a column that a rule of its
+    /// relation with a `same-frame` condition gives a type.
+    fn holds_framed_site(&self, walk: &FormWalk<'_>) -> bool {
+        let framed = |site: &SiteUse<'_>| self.relation_of_use(site).is_some_and(|(relation, column)| relation.is_framed(column));
+        walk.uses.iter().any(framed)
     }
 
     /// Whether a site of `walk` stands at a column that a rule of its
@@ -1462,7 +1522,7 @@ fn field_type(site: &Site, path: &[ColumnName], label: &dyn Fn(LabelId) -> Optio
 
 /// The label that `atom` gives the field `field` of its site on the column
 /// `column`, a record.
-fn field_label(atom: &Atom, column: &ColumnName, field: &ColumnName) -> Option<LabelId> {
+pub(super) fn field_label(atom: &Atom, column: &ColumnName, field: &ColumnName) -> Option<LabelId> {
     let site = atom.sites.iter().find(|site| site.column == *column)?;
     site.value.args.iter().find_map(|arg| match arg {
         SiteArg::NamedLabel { name, label } if name == field => use_label(*label),

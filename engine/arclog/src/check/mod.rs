@@ -10,6 +10,7 @@
 //! The checker stage writes the bodies of the checks, each in a submodule of
 //! its own.
 
+mod frames;
 pub mod grammar;
 pub mod safety;
 mod inference;
