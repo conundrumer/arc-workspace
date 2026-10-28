@@ -47,14 +47,6 @@ pub struct PyDecoder {
 }
 
 impl PyDecoder {
-    /// Parse a stream into a program without evaluating OUT. The same
-    /// prefix checks and engine echoes apply; judgment is a separate stage.
-    pub(crate) fn step_for_program(&mut self, id: u32) -> PyResult<Vec<u32>> {
-        let token = self.token(id)?;
-        let result = self.decoder_mut().step_untested(token);
-        self.step_result(result).map(|(forced, _, _)| forced)
-    }
-
     pub(crate) fn open(data: &Arc<SessionData>) -> PyResult<PyDecoder> {
         // SAFETY: the reference points into the `Arc`'s allocation, which the
         // returned `PyDecoder` keeps alive and never moves, and the decode

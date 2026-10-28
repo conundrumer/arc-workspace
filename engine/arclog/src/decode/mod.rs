@@ -40,6 +40,7 @@ mod batch;
 pub mod corpus;
 mod interface;
 pub mod replay;
+pub mod program_read;
 mod state;
 mod prefix_key;
 mod projections;

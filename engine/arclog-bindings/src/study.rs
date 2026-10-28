@@ -6,21 +6,16 @@ use arclog::study::StudyProgram;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-use crate::decoder::PyDecoder;
 use crate::mutation::{PyMutationPoint, PyMutationSpec, PyValidMutant};
 use crate::session::PySession;
 use crate::settings::PyDecodeSettings;
 use crate::vocabulary::PyVocabulary;
 
-/// Only the last successful replay's checkpoints are retained. Each is at
-/// a model-step boundary after its engine echoes have been verified. At
-/// most 64 decoder forks share the session's persistent engine structures;
-/// this is not a growing corpus-wide trie or a cache of rewritten fields.
+/// A grammar/binder reader for this session's immutable settings. Each
+/// returned AST still goes through the whole-program checks below.
 #[derive(Default)]
 pub(crate) struct ProgramReplay {
-    ids: Vec<u32>,
-    model: Vec<u8>,
-    checkpoints: Vec<(usize, PyDecoder)>,
+    reader: Option<arclog::decode::program_read::ProgramReader<'static>>,
 }
 
 /// A checked, standalone gold program through OUT. Mutations address AST
@@ -38,7 +33,7 @@ type Stream = (Vec<u32>, Vec<u8>, Vec<Vec<u32>>);
 impl PyStudyProgram {
     #[staticmethod]
     fn mutation_policy() -> &'static str {
-        "complete-domain-without-replacement-v3"
+        "complete-domain-without-replacement-v4"
     }
     /// Read standalone case sexp, preserving source column/variable names.
     #[staticmethod]
@@ -57,78 +52,37 @@ impl PyStudyProgram {
         Ok(Self { program, settings })
     }
 
-    /// Replay an exact exported stream, then take its AST directly. Engine
-    /// echoes must match; no token is repaired, dropped or guessed.
+    /// Parse a complete stream with the engine grammar/binder and exact
+    /// echoes, then check the entire AST. No prefix completion search or OUT
+    /// evaluation is needed when the complete program is supplied.
     #[staticmethod]
-    fn from_stream(session: &PySession, ids: Vec<u32>, model: Vec<u8>) -> PyResult<Self> {
-        if ids.len() != model.len() || model.iter().any(|&flag| flag > 1) {
-            return Err(PyValueError::new_err(
-                "expected equal-length ids/model arrays and flags 0 or 1",
-            ));
-        }
-        let mut cached = session
-            .program_replay
-            .lock()
-            .expect("a replay cache outside a panic");
-        let common = ids
-            .iter()
-            .zip(&model)
-            .zip(cached.ids.iter().zip(&cached.model))
-            .take_while(|(a, b)| a == b)
-            .count();
-        let mut checkpoints: Vec<_> = cached
-            .checkpoints
-            .iter()
-            .filter(|(index, _)| *index <= common)
-            .map(|(index, decoder)| (*index, decoder.fork()))
-            .collect();
-        let (mut index, mut decoder) = match checkpoints.last() {
-            Some((index, decoder)) => (*index, decoder.fork()),
-            None => (0, session.decoder()?),
-        };
-        // Bound retained forks independently of program length.
-        let stride = ids.len().div_ceil(63).max(32);
-        let mut next_checkpoint = index + stride;
-        while index < ids.len() {
-            if model[index] != 1 {
-                return Err(PyValueError::new_err(format!(
-                    "unexpected engine token at {index}"
-                )));
-            }
-            let forced = decoder.step_for_program(ids[index])?;
-            let end = index + 1 + forced.len();
-            if end > ids.len()
-                || ids[index + 1..end] != forced
-                || model[index + 1..end].iter().any(|&flag| flag != 0)
-            {
-                return Err(PyValueError::new_err(format!(
-                    "engine echo mismatch after model token {index}"
-                )));
-            }
-            index = end;
-            if index >= next_checkpoint {
-                checkpoints.push((index, decoder.fork()));
-                next_checkpoint = index + stride;
-            }
-        }
-        let settings = decoder.decoder().settings().clone();
-        let program =
-            StudyProgram::from_decoded(decoder.decoder().program().clone(), Registry::get())
-                .map_err(PyValueError::new_err)?;
-        program
-            .decode_stream(Registry::get(), &settings)
+    fn from_stream(
+        py: Python<'_>,
+        session: &PySession,
+        ids: Vec<u32>,
+        model: Vec<u8>,
+    ) -> PyResult<Self> {
+        let settings = session.program_settings();
+        let program = py
+            .detach(|| {
+                let mut cached = session
+                    .program_replay
+                    .lock()
+                    .expect("a program reader outside a panic");
+                let reader = cached.reader.get_or_insert_with(|| {
+                    arclog::decode::program_read::ProgramReader::new(Registry::get(), settings)
+                });
+                let ast = reader.read(&ids, &model)?;
+                let program = StudyProgram::from_decoded(ast, Registry::get())?;
+                let written = program.decode_stream(Registry::get(), &settings)?;
+                if written.ids != ids || written.model != model {
+                    return Err(
+                        "parsed program does not reproduce its exact input stream".to_owned()
+                    );
+                }
+                Ok(program)
+            })
             .map_err(PyValueError::new_err)?;
-        // Commit only after the entire replay and full AST check pass.
-        // A refusal leaves the previous successful prefix cache intact.
-        if checkpoints.len() > 64 {
-            let keep_every = checkpoints.len().div_ceil(64);
-            checkpoints = checkpoints.into_iter().step_by(keep_every).collect();
-        }
-        *cached = ProgramReplay {
-            ids,
-            model,
-            checkpoints,
-        };
         Ok(Self { program, settings })
     }
 

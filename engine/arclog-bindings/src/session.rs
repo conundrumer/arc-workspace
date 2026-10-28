@@ -26,6 +26,12 @@ pub(crate) struct PySession {
     pub(crate) program_replay: Mutex<crate::study::ProgramReplay>,
 }
 
+impl PySession {
+    pub(crate) fn program_settings(&self) -> DecodeSettings {
+        self.data.settings
+    }
+}
+
 #[pymethods]
 impl PySession {
     #[new]
