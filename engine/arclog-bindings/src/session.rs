@@ -1,6 +1,6 @@
 //! A task session and the settings of its decodes, as Python gives them.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use arclog::registry::Registry;
 use arclog::session::{SessionBound, TaskSession, SESSION_BYTES};
@@ -23,6 +23,7 @@ pub(crate) struct SessionData {
 #[pyclass(name = "Session", frozen, module = "arclog")]
 pub(crate) struct PySession {
     data: Arc<SessionData>,
+    pub(crate) program_replay: Mutex<crate::study::ProgramReplay>,
 }
 
 #[pymethods]
@@ -35,7 +36,7 @@ impl PySession {
             None => DecodeSettings::synthesis(),
         };
         let session = TaskSession::new(SessionBound { bytes: session_bytes.unwrap_or(SESSION_BYTES) }, settings.caps);
-        Ok(PySession { data: Arc::new(SessionData { task: Arc::clone(&task.data), session, settings }) })
+        Ok(PySession { data: Arc::new(SessionData { task: Arc::clone(&task.data), session, settings }), program_replay: Mutex::default() })
     }
 
     #[getter]
@@ -49,7 +50,7 @@ impl PySession {
     }
 
     /// A decode of no token yet, judging the train pairs.
-    fn decoder(&self) -> PyResult<PyDecoder> {
+    pub(crate) fn decoder(&self) -> PyResult<PyDecoder> {
         PyDecoder::open(&self.data)
     }
 }

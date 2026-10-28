@@ -95,6 +95,54 @@ impl SafetyCheck {
     }
 }
 
+/// Binding constraints for a mutation domain. Edits keep label ids, heads,
+/// scopes and types; this is the same whole-form walk as `SafetyCheck`, not
+/// an approximation based on the presence of a fresh marker.
+pub(crate) fn mutation_bindings(
+    form: &Form,
+    top: &NodePath,
+    types: &crate::types::ProgramTypes,
+    registry: &Registry,
+) -> Vec<(&'static str, String)> {
+    let bodies = form_bodies(form);
+    let parts = part_bodies(form);
+    let readings: Vec<_> = bodies.iter().map(Reading::of_body).chain(parts.iter().map(Reading::of_part)).collect();
+    let mut errors = Vec::new();
+    for reading in &readings {
+        let scope = top.join(reading.at);
+        let label_type = |label| mutation_label_type(types, &scope, label);
+        let walk = Walk { registry, types: &label_type, memo: None };
+        for found in walk.refusals(reading, &|_,_| true) {
+            let reason = match found.fault {
+                Fault::Unbound {..} => "unbound_label",
+                Fault::ColumnUnbound {..} => "unbound_column",
+                Fault::NoMode {..} | Fault::AtomNoMode => "mode",
+                Fault::Misordered => "misordered",
+            };
+            errors.push((reason, format!("{:?} label {:?}: {}", top.join(&found.at), found.label, found.fault.message())));
+        }
+    }
+    errors
+}
+
+fn mutation_label_type(types: &crate::types::ProgramTypes, scope: &NodePath, label: LabelId) -> Option<ValueType> {
+    (1..=scope.0.len()).rev().find_map(|n| types.form(&NodePath(scope.0[..n].into())))?.label(label).cloned()
+}
+
+/// For deletion-only search, loss of a required head/key/input label cannot
+/// be repaired by deleting more atoms. Branch-local uses can disappear
+/// together, so they are deliberately not used for this partial-state prune.
+pub(crate) fn deletion_preserves_columns(form: &Form, top: &NodePath, types: &crate::types::ProgramTypes, registry: &Registry) -> bool {
+    form_bodies(form).iter().all(|body| {
+        let outside = body.outside();
+        let given = body.given.iter().copied().collect();
+        let scope = top.join(&body.at);
+        let bound = bound_labels(&body.body.value().conjuncts.iter().collect::<Vec<_>>(), &given, &outside,
+            &|atom| atom_modes(registry, atom), &|label| mutation_label_type(types, &scope, label));
+        outside.iter().all(|label| bound.contains(label))
+    })
+}
+
 /// A refusal of the safety check at a source path: the label it is about,
 /// where it is about one, why it refuses, and where.
 struct Found {
@@ -154,7 +202,7 @@ impl Fault {
 
 /// One body of a form: a clause's, a key clause's, an instance input's, or
 /// one of a `CHOOSE` or a `RIGID_DET` form, with what its context gives it.
-pub(super) struct FormBody<'a> {
+pub(crate) struct FormBody<'a> {
     /// The body's path relative to the top-level form.
     pub at: NodePath,
     pub body: &'a Node<Body>,
@@ -175,7 +223,7 @@ pub(super) struct FormBody<'a> {
 }
 
 /// Where a body stands in the scope of its form.
-pub(super) enum BodyPlace<'a> {
+pub(crate) enum BodyPlace<'a> {
     /// In the form's own list, with the form's other bodies of this place.
     List,
     /// In a branch of its own, as a `never` clause.
@@ -198,7 +246,7 @@ impl FormBody<'_> {
     /// The labels that stand outside the body in its context: those
     /// [`FormBody::given`], [`FormBody::columns`] and [`FormBody::fields`]
     /// hold, and the labels of the input's head.
-    fn outside(&self) -> StableHashSet<LabelId> {
+    pub(crate) fn outside(&self) -> StableHashSet<LabelId> {
         let mut outside: StableHashSet<LabelId> = self.given.iter().chain(&self.columns).chain(&self.fields).copied().collect();
         if let Some((input, at)) = self.head() {
             each_head_use(input, at, &mut |_, use_| outside.extend(use_label(use_)));
@@ -209,7 +257,7 @@ impl FormBody<'_> {
 
 /// Each body of `form` and of each form of a `DEMO_RULE` it holds, in the
 /// order of their paths.
-pub(super) fn form_bodies(form: &Form) -> Vec<FormBody<'_>> {
+pub(crate) fn form_bodies(form: &Form) -> Vec<FormBody<'_>> {
     let mut out = Vec::new();
     for (at, node) in forms_within(form) {
         let fields = match at.0.split_last() {

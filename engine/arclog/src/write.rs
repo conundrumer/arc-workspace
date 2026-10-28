@@ -78,8 +78,8 @@ pub fn write_solver(solver: &Solver) -> SolverText {
 /// and reads back as two labels.
 ///
 /// A relation slot `n` is written `&rn`. The writer prints each form a decode
-/// builds, `RULE`, `DET`, `INIT`, `CHOOSE`, `RIGID_DET` and `OUT`, and refuses
-/// a record site. It writes a site of an `OUT` form that is a column of one
+/// builds, `RULE`, `DET`, `INIT`, `CHOOSE`, `RIGID_DET` and `OUT`, including
+/// explicit record-field sites. It writes a site of an `OUT` form that is a column of one
 /// label as `^<column>`, with the column's name whatever the other labels of
 /// the form are named, since no label of an `OUT` is read again.
 pub fn write_synthesized(program: &Node<Program>, registry: &Registry) -> String {
@@ -140,14 +140,22 @@ mod synthesized {
     use crate::layout::{Layout, NodeLayout, SourceFile, SourcePlace};
     use crate::program::path::NodePath;
     use crate::program::*;
-    use crate::registry::Registry;
+    use crate::registry::{Registry, ColumnType, ParameterSite, TypeParameter, binding_sites};
+    use crate::resolver::columns::projection;
     use crate::resolver::form_columns::rigid_outputs;
     use crate::resolver::registry_columns::{component, proposer_columns};
     use crate::trace::label_names::label_name;
 
     /// Each form of `program` as written, with the name of each of its labels.
-    fn named_forms(program: &Node<Program>, registry: &Registry) -> Vec<(Form, Vec<(LabelId, Box<str>)>)> {
-        let mut synth = Synthesizer { registry, columns: StableHashMap::default() };
+    fn named_forms(
+        program: &Node<Program>,
+        registry: &Registry,
+    ) -> Vec<(Form, Vec<(LabelId, Box<str>)>)> {
+        let mut synth = Synthesizer {
+            registry,
+            columns: StableHashMap::default(),
+            records: StableHashMap::default(),
+        };
         let mut named = Vec::new();
         for form in program.value().forms.iter() {
             let names = synth.label_names(form);
@@ -189,6 +197,9 @@ mod synthesized {
         /// The written names of the columns of each relation a form before
         /// the current one declares, by the position of the column.
         columns: StableHashMap<ProgramRelation, Vec<String>>,
+        /// Record field names belong to the parameter's binding, not to the
+        /// label a later read happens to use for the field's value.
+        records: StableHashMap<(ProgramRelation, ColumnName), Vec<(ColumnName, ColumnName)>>,
     }
 
     fn slot_text(slot: u32) -> String {
@@ -356,7 +367,13 @@ mod synthesized {
                         None => uses.made.push((*id, column.clone())),
                     },
                     SiteArg::NamedLabel { label: LabelUse::Zero, .. } => {}
-                    SiteArg::Field(_) => panic!("write_synthesized writes no record site"),
+                    SiteArg::Field(field) => {
+                        let mut field = field.clone();
+                        if let Some(to) = self.record_field(relation, &site.column, &field.column) {
+                            field.column = to.clone();
+                        }
+                        self.site_uses(None, &field, uses);
+                    },
                 }
             }
         }
@@ -383,19 +400,87 @@ mod synthesized {
         }
 
         fn instance(&mut self, instance: &Instance, names: &Names) -> Instance {
-            let component_ports = component(self.registry, &instance.component).expect("the lib names the component");
-            let written_inputs: Vec<_> = component_ports.inputs.iter().map(|input| &input.port.name).collect();
+            let component_ports =
+                component(self.registry, &instance.component).expect("the lib names the component");
+            let mut fields: StableHashMap<TypeParameter, Vec<(ColumnName, ColumnName)>> =
+                StableHashMap::default();
+            for sites in binding_sites(instance, &component_ports.inputs) {
+                let names_of_fields = match sites.binding {
+                    ParameterSite::Key(key) => key
+                        .key
+                        .columns
+                        .iter()
+                        .map(|column| {
+                            (
+                                column.name.clone(),
+                                ColumnName::Written(names.get(column.label).into()),
+                            )
+                        })
+                        .collect(),
+                    ParameterSite::Head { site, .. } => {
+                        let old = projection(site);
+                        let written = self.site(None, site, names);
+                        old.zip(projection(&written))
+                            .map(|(old, new)| {
+                                old.iter().cloned().zip(new.iter().cloned()).collect()
+                            })
+                            .unwrap_or_default()
+                    }
+                };
+                fields.insert(sites.parameter.clone(), names_of_fields);
+            }
+            let written_inputs: Vec<_> = component_ports
+                .inputs
+                .iter()
+                .map(|input| &input.port.name)
+                .collect();
             for port in component_ports.relation_ports(&written_inputs) {
-                let name = OutputName { of: OutputOwner::Instance(instance.name.clone()), path: Arc::from([OutputStep::Port(port.name.clone())]) };
-                self.columns.insert(ProgramRelation::Output(name), port.columns.iter().filter_map(|column| written(&column.name).map(str::to_owned)).collect());
+                let name = OutputName {
+                    of: OutputOwner::Instance(instance.name.clone()),
+                    path: Arc::from([OutputStep::Port(port.name.clone())]),
+                };
+                let relation = ProgramRelation::Output(name);
+                for column in port.columns.iter() {
+                    if let ColumnType::Parameter(parameter) = &column.ty {
+                        if let Some(fields) = fields.get(parameter) {
+                            self.records
+                                .insert((relation.clone(), column.name.clone()), fields.clone());
+                        }
+                    }
+                }
+                self.columns.insert(
+                    relation,
+                    port.columns
+                        .iter()
+                        .filter_map(|column| written(&column.name).map(str::to_owned))
+                        .collect(),
+                );
             }
             let key = instance.key.as_ref().map(|key| {
                 let value = key.value();
-                let inputs = value.inputs.iter().map(|input| Node::new(self.input(input.value(), names))).collect();
-                Node::new(KeyClause { key: self.key_body(&value.key, names), inputs })
+                let inputs = value
+                    .inputs
+                    .iter()
+                    .map(|input| {
+                        Node::new(self.input(input.value(), names, component_ports, &fields))
+                    })
+                    .collect();
+                Node::new(KeyClause {
+                    key: self.key_body(&value.key, names),
+                    inputs,
+                })
             });
-            let inputs = instance.inputs.iter().map(|input| Node::new(self.input(input.value(), names))).collect();
-            Instance { name: InstanceName(declared(&instance.name.0)), component: instance.component.clone(), key, inputs }
+            let inputs = instance
+                .inputs
+                .iter()
+                .map(|input| Node::new(self.input(input.value(), names, component_ports, &fields)))
+                .collect();
+            Instance {
+                name: InstanceName(declared(&instance.name.0)),
+                component: instance.component.clone(),
+                key,
+                inputs,
+            }
         }
 
         fn choose(&mut self, choose: &Choose, names: &Names) -> Choose {
@@ -420,6 +505,11 @@ mod synthesized {
             // with, which is not its position.
             for ((path, columns), (_, written_columns)) in rigid_outputs(rigid).into_iter().zip(rigid_outputs(&value)) {
                 let output = OutputName { of: OutputOwner::RigidDet(rigid.name.clone()), path };
+                if let (Some(old), Some(new)) = (&rigid.key, &value.key) {
+                    let fields = old.columns.iter().zip(new.columns.iter())
+                        .map(|(old,new)|(old.name.clone(),new.name.clone())).collect();
+                    self.records.insert((ProgramRelation::Output(output.clone()), crate::resolver::columns::key()), fields);
+                }
                 let mut texts: Vec<String> = Vec::new();
                 for (column, text) in columns.names().zip(written_columns.names()) {
                     let ColumnName::Slot(slot) = column else { continue };
@@ -435,8 +525,34 @@ mod synthesized {
             KeyBody { body: self.body(&key.body, names), columns: named_columns(&key.columns, names) }
         }
 
-        fn input(&self, input: &InstanceInput, names: &Names) -> InstanceInput {
-            InstanceInput { name: input.name.clone(), head: input.head.iter().map(|site| self.site(None, site, names)).collect(), body: self.body(&input.body, names) }
+        fn input(
+            &self,
+            input: &InstanceInput,
+            names: &Names,
+            component: &crate::registry::Component,
+            fields: &StableHashMap<TypeParameter, Vec<(ColumnName, ColumnName)>>,
+        ) -> InstanceInput {
+            let head = input
+                .head
+                .iter()
+                .map(|site| {
+                    let parameter = component
+                        .inputs
+                        .iter()
+                        .find(|port| port.port.name == input.name)
+                        .and_then(|port| port.port.columns.iter().find(|c| c.name == site.column))
+                        .and_then(|c| match &c.ty {
+                            ColumnType::Parameter(p) => fields.get(p),
+                            _ => None,
+                        });
+                    self.site_with_fields(None, site, names, parameter.map(Vec::as_slice))
+                })
+                .collect();
+            InstanceInput {
+                name: input.name.clone(),
+                head,
+                body: self.body(&input.body, names),
+            }
         }
 
         fn body(&self, body: &Node<Body>, names: &Names) -> Node<Body> {
@@ -462,11 +578,68 @@ mod synthesized {
         }
 
         fn site(&self, relation: Option<&RelationRef>, site: &Site, names: &Names) -> Site {
+            let fields = relation
+                .and_then(read_relation)
+                .and_then(|r| self.records.get(&(r, site.column.clone())));
+            self.site_with_fields(relation, site, names, fields.map(Vec::as_slice))
+        }
+
+        fn record_field(&self, relation: Option<&RelationRef>, column: &ColumnName, field: &ColumnName) -> Option<&ColumnName> {
+            let fields = self.records.get(&(relation.and_then(read_relation)?, column.clone()))?;
+            fields.iter().find(|(from,_)| from == field).map(|(_,to)|to)
+        }
+
+        fn site_with_fields(
+            &self,
+            relation: Option<&RelationRef>,
+            site: &Site,
+            names: &Names,
+            fields: Option<&[(ColumnName, ColumnName)]>,
+        ) -> Site {
             let args = site.value.args.iter().map(|arg| match arg {
-                SiteArg::NamedLabel { name: ColumnName::Slot(_), label: label @ (LabelUse::Fresh(id) | LabelUse::Join(id) | LabelUse::Key(id)) } => SiteArg::NamedLabel { name: ColumnName::Written(names.get(*id).into()), label: *label },
+                SiteArg::NamedLabel { name, label: LabelUse::Zero } => {
+                    let field = fields.and_then(|fields| fields.iter().find(|(from,_)|from == name)).map(|(_,to)|to.clone())
+                        .or_else(|| matches!(name, ColumnName::Written(_)).then(||name.clone()))
+                        .expect("a zero at a record field has the binding's field name");
+                    SiteArg::Field(Site { column: field, value: SiteValue { args: Arc::from([SiteArg::Label(LabelUse::Zero)]) } })
+                },
+                SiteArg::NamedLabel {
+                    name: old @ ColumnName::Slot(_),
+                    label: label @ (LabelUse::Fresh(id) | LabelUse::Join(id) | LabelUse::Key(id)),
+                } => {
+                    let field = fields
+                        .and_then(|fields| fields.iter().find(|(from, _)| from == old))
+                        .map(|(_, to)| to.clone())
+                        .unwrap_or_else(|| ColumnName::Written(names.get(*id).into()));
+                    if written(&field) == Some(names.get(*id)) {
+                        SiteArg::NamedLabel {
+                            name: field,
+                            label: *label,
+                        }
+                    } else {
+                        SiteArg::Field(Site {
+                            column: field,
+                            value: SiteValue {
+                                args: Arc::from([SiteArg::Label(*label)]),
+                            },
+                        })
+                    }
+                }
+                SiteArg::Field(field) => {
+                    let mut field = field.clone();
+                    if let Some(to) = fields.and_then(|fields|fields.iter().find(|(from,_)|from == &field.column)).map(|(_,to)|to) {
+                        field.column = to.clone();
+                    }
+                    SiteArg::Field(self.site_with_fields(None, &field, names, None))
+                },
                 other => other.clone(),
             });
-            Site { column: ColumnName::Written(self.column_text(relation, &site.column).into()), value: SiteValue { args: args.collect() } }
+            Site {
+                column: ColumnName::Written(self.column_text(relation, &site.column).into()),
+                value: SiteValue {
+                    args: args.collect(),
+                },
+            }
         }
     }
 

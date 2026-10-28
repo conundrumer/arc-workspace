@@ -97,7 +97,14 @@ impl<'l> Out<'l> {
             }
             None => false,
         };
-        if !placed && !self.text.is_empty() && !self.after_open && text != ")" {
+        // A replacement may be longer than the source token whose layout
+        // it kept (for example `<` -> `>=`). Reaching the next token's old
+        // column then adds no whitespace. Layout must never concatenate
+        // two symbol tokens into a different symbol such as `>=R1`.
+        let symbol_edge = |c: char| !c.is_whitespace() && !matches!(c, '(' | ')' | '"');
+        let joined_symbols = self.text.chars().last().is_some_and(symbol_edge)
+            && text.chars().next().is_some_and(symbol_edge);
+        if joined_symbols || (!placed && !self.text.is_empty() && !self.after_open && text != ")") {
             self.put(" ");
         }
         self.put(text);
