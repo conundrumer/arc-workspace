@@ -93,12 +93,14 @@ cases or interpreter runs.
 Parent supervisors drain bounded eight-record queues and flush each draw,
 mutant, failure and case record directly to its JSONL. A separate heartbeat
 prints case/task progress and active phases every second, including during
-native calls. There is no task-long event list. The requested SIGALRM case
-budget is retained; a parent guard allows at most one native-request deadline
-of dispatch grace. A stuck case is recorded alone, and a fresh worker starts
-at the next unattempted case. Startup failures are task events, not fabricated
-failures for every unstarted case. An explicit `--task-seconds` remains a hard
-whole-task override.
+native calls. There is no task-long event list. Case, startup, search and
+stall deadlines are opt-in: defaults finish the finite matrix even under
+competing machine load. The heartbeat includes the oldest active phase age.
+An explicitly requested guard records only the active interrupted case; a
+fresh worker starts at the next unattempted case. Startup failures are task
+events, not fabricated failures for unstarted cases. `--task-seconds` is an
+optional hard whole-task override. A timed-out domain never marks its case
+complete.
 
 Use `--resume` with the same output prefix to append safely. A case row with
 `complete=true` proves the requested audit matrix finished. Interrupted,
@@ -114,3 +116,46 @@ exclusive directory, then run its `checks/check_stage2.py` with that directory's
 `venv/bin/python`. Supply `--tasks` explicitly, and use `--task-file` for the
 recorded rerun's task list. The summary labels new invocation counts and
 retained completed cases separately; rates count only new work.
+
+
+### Follow-up from the running stage-2 audit
+
+The first 450 case rows from `stage2-rerun-fast` recorded 2,098 phase-seconds
+in stream replay, 594 in sexp rereads and 973 in domain requests. There were
+335 case deadlines. Three live workers (65697, 65699, 65701) were sampled for
+three seconds each; the replay stacks contained 87, 107 and 112 samples in
+`State::resolved` initialization from the relation-token callback. The callback
+was constructing full canonical content and signatures of completed prefixes,
+then resolving the unfinished last form, solely to decide whether to insert
+an Example column. `grammar_reads_example_column` instead runs the existing
+declaration, read-binding, kept-column and side passes, without content,
+signatures or site placement. RULE and OUT forms need no lifted column. This
+is the same binding/side decision; the complete AST still undergoes the full
+resolver, derived-interface validation, all checks and exact stream rewriting.
+The complete grammar reader no longer applies the synthesis search deadline
+to its finite supplied token array.
+
+Domain requests previously started a new empty `CheckCache` for every
+point/K/operation. Each immutable gold handle now prepares one gold-only check
+base on its first domain request. Each request has an independent overlay
+over that base. Exact semantic keys still include every dependency required
+by each check; changed dependencies miss the cache and run the check. No
+candidate-specific results accumulate across requests. The gold base is
+released with the case's program handle.
+
+`DecodeSettings.corpus()` exposes the engine's existing deadline-free corpus
+settings. The audit uses them by default; positive `--domain-seconds`,
+`--case-seconds`, `--startup-seconds`, `--stall-seconds` and `--task-seconds`
+remain explicit bounded debugging modes. Finishing more real work is measured
+by completed cases, not by a quicker timeout rate.
+
+A rebuilt runtime uses a new output prefix. `--resume-from OLD.json` snapshots
+completed cases from a compatible earlier audit into `NEW.inherited.json`,
+including the old native/checker provenance and paths to its JSONL evidence.
+Policy, corpus, selection and draw parameters must agree; v5 coverage cannot
+be inherited into v6. Incomplete cases and any old row containing a timeout
+are retried, including older rows incorrectly marked complete after a domain
+timeout. The inherited list is frozen once; later `--resume` invocations
+combine it with this runtime's own case checkpoints. The old output is never
+rewritten. A completed audit's substantive failures remain failures, unless
+explicitly rerun with `--retry-failed`.

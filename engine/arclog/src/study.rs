@@ -32,6 +32,7 @@ pub struct StudyProgram {
     render_cache: Arc<OnceLock<(usize, Result<serde_json::Value,String>)>>,
     source_cache: Arc<OnceLock<(usize,DecodeSettings,Result<StudyProgram,String>)>>,
     stream_cache: Arc<OnceLock<(usize,DecodeSettings,Result<StudyStream,String>)>>,
+    mutation_checks: Arc<OnceLock<Result<Arc<CheckCache>,String>>>,
 }
 
 /// An engine-written stream and its source-order AST correspondence.
@@ -138,7 +139,21 @@ impl StudyProgram {
             render_cache:Arc::new(OnceLock::new()),
             source_cache:Arc::new(OnceLock::new()),
             stream_cache:Arc::new(OnceLock::new()),
+            mutation_checks:Arc::new(OnceLock::new()),
         })
+    }
+
+    /// Gold checks shared by independent domain searches on this handle.
+    /// The permanent base contains no candidate results. Each search drops
+    /// its own overlay, so trying more points never retains all mutants.
+    pub(crate) fn mutation_check_base(&self, registry:&Registry)->Result<Arc<CheckCache>,String> {
+        self.mutation_checks.get_or_init(|| {
+            let mut cache=CheckCache::default();
+            let clauses=SolverClauses::of_shared_program(Arc::clone(&self.checked.program));
+            check_shared_program(Arc::clone(&self.checked.program),&clauses,registry,&mut cache)
+                .map_err(|diagnostics|diagnostics_text(&diagnostics))?;
+            Ok(Arc::new(cache))
+        }).clone()
     }
 
     /// Reusable native decode AST for stored anonymous-slot identities.

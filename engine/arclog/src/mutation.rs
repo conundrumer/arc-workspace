@@ -277,7 +277,7 @@ impl StudyProgram {
             settings,
             registry,
             sites,
-            cache: CheckCache::default(),
+            cache: CheckCache::over(self.mutation_check_base(registry)?),
             stats,
             output: Vec::new(),
             requested: count,

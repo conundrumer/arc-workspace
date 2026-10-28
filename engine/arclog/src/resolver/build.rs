@@ -252,6 +252,46 @@ pub(super) fn resolve_last(earlier: &Arc<ResolvedProgram>, program: &Node<Progra
     layered(earlier, program, registry).unwrap_or_else(|| resolve(program, None, &SolverScope::default(), registry).value)
 }
 
+/// The grammar's decision at an open relation needs binding and sides,
+/// never canonical content, signatures, or placement of sites. In particular
+/// it must not canonicalize every completed prefix again at each new form.
+pub(super) fn reads_example_column(program: &Node<Program>, read: &NodePath, registry: &Registry) -> bool {
+    let Some(top) = read.0.first() else { return false };
+    let Some(form) = program.value().forms.get(top.0 as usize) else { return false };
+    match form {
+        Form::Clause(clause) if matches!(clause.value().keyword, crate::program::ClauseKeyword::Rule | crate::program::ClauseKeyword::RuleOrDet) => return false,
+        Form::Out(_) => return false,
+        _ => {}
+    }
+    let scope = SolverScope::default();
+    let mut builder = Builder::new(program, &scope, registry, None);
+    for fact in [FactRelation::Input, FactRelation::ExInput, FactRelation::ExOutput] {
+        let node = builder.node(DependencyKind::Fact(fact), &NameScope::Program, None);
+        let columns = Columns::of_names(registry.fact_columns(fact).iter().map(|column| column.name.clone()));
+        builder.target(&NameScope::Program, RelationRef::Fact(fact), Target { node, columns: ColumnsOf::Fixed(columns) });
+    }
+    let mut pending = Vec::new();
+    for (index, form) in program.value().forms.iter().enumerate() {
+        builder.declare(form, NodePath::top(index as u32), &NameScope::Program, &mut pending);
+    }
+    for (scope, relation, target) in pending {
+        builder.target(&scope, relation, target);
+    }
+    for (index, form) in program.value().forms.iter().enumerate() {
+        builder.read_form(form, NodePath::top(index as u32), &NameScope::Program);
+    }
+    builder.read_columns();
+    builder.sides();
+    let Some(Resolution::Node(node)) = builder.resolutions.get(read) else { return false };
+    let form_path = NodePath::top(top.0);
+    if matches!(form, Form::Instance(_) | Form::Choose(_) | Form::RigidDet(_)) {
+        !builder.is_fact(*node) && !builder.forms[node.0 as usize].contains(&form_path)
+            && builder.sides[node.0 as usize] == super::Side::PerInput
+    } else {
+        sides::lifted(builder.is_fact(*node), builder.form_sides[&form_path], builder.sides[node.0 as usize])
+    }
+}
+
 pub(super) fn resolve(
     case: &Node<Program>,
     concept: Option<ConceptReads<'_>>,

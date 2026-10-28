@@ -11,7 +11,6 @@ use super::{Context, state::State};
 use crate::program::{Node, Program};
 use crate::registry::Registry;
 use crate::stream::{DecodeSettings, Vocabulary};
-use std::time::Instant;
 
 /// One fixed registry/settings context; at most 64 parsed-prefix snapshots
 /// from the preceding stream are retained. It holds no task/evaluation data.
@@ -56,16 +55,7 @@ impl<'r> ProgramReader<'r> {
             .unwrap_or_else(|| (0, State::new()));
         let stride = ids.len().div_ceil(63).max(32);
         let mut checkpoint = index + stride;
-        let started = Instant::now();
         while index < ids.len() {
-            if self
-                .context
-                .settings
-                .deadline
-                .is_some_and(|limit| started.elapsed() >= limit)
-            {
-                return Err("program stream reader reached Deadline".into());
-            }
             if model[index] != 1 {
                 return Err(format!("unexpected engine token at {index}"));
             }
@@ -79,10 +69,7 @@ impl<'r> ProgramReader<'r> {
             let reads_example = |program: &Node<Program>,
                                  at: &crate::program::path::NodePath,
                                  _: &crate::program::RelationRef| {
-                let earlier = state.resolved(self.context.registry);
-                let resolved =
-                    crate::resolver::resolve_last(&earlier, program, self.context.registry);
-                crate::stream::write::reads_example_column(&resolved, at)
+                crate::resolver::grammar_reads_example_column(program, at, self.context.registry)
             };
             let (next, forced, _) = state
                 .step(&self.context, token, &reads_example)

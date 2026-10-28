@@ -24,7 +24,7 @@ import time
 from check_stage1_all import CaseDeadline, inventory
 
 POLICY = "complete-domain-without-replacement-v5"
-READER = "complete-program-grammar-v1"
+READER = "complete-program-bindings-v2"
 
 
 def emit(event):
@@ -162,7 +162,8 @@ def check_task(args):
     sources = arclog.case_files(args.worker, (args.corpus / f"{args.worker}.arclog").read_text(),
                                (args.corpus / f"{args.worker}.arcdata").read_text(), str(args.corpus))
     sources = {case.case: case for case in sources}
-    settings = arclog.DecodeSettings(deadline_seconds=args.domain_seconds, rule_tests=False)
+    settings = (arclog.DecodeSettings(deadline_seconds=args.domain_seconds, rule_tests=False)
+                if args.domain_seconds else arclog.DecodeSettings.corpus())
     task = arclog.Task.from_json((args.tasks / f"{args.worker}.json").read_text(), arclog.World.Closed)
     session = arclog.Session(task, settings, session_bytes=64 * 1024 * 1024)
     samples = [args.sample_start]
@@ -180,7 +181,7 @@ def check_task(args):
             try:
                 session.reset_program_replay()
                 audit_case(args, row, sources[name], session, settings, samples)
-                row["complete"] = True
+                row["complete"] = not any(error["exception"] == "TimeoutError" for error in row["failures"])
             except CaseDeadline as exc:
                 failure(row, "case_deadline", TimeoutError(str(exc)), row.get("cursor"))
             except BaseException as exc:
@@ -246,7 +247,7 @@ def run_task(args, task, names, receive, cancel, job_dir):
                    OPENBLAS_NUM_THREADS="1", VECLIB_MAXIMUM_THREADS="1", PYTHONDONTWRITEBYTECODE="1")
         messages, halt_reader = Queue(maxsize=8), Event()
         active, cursor, active_started = None, {}, 0.0
-        deadline = time.monotonic() + args.startup_seconds
+        deadline = time.monotonic() + args.startup_seconds if args.startup_seconds else float("inf")
         fault = None
         with tempfile.TemporaryFile(dir=job_dir) as errors:
             process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=errors, text=True,
@@ -303,16 +304,19 @@ def run_task(args, task, names, receive, cancel, job_dir):
                     if event == "case_start":
                         active, cursor = row["case"], {}
                         active_started = time.monotonic()
-                        # SIGALRM gets the requested case budget. One native
-                        # request's bound is allowed to return the signal; a
-                        # hung native call is killed without losing other cases.
-                        deadline = active_started + args.case_seconds + args.domain_seconds
+                        # A case's matrix grows with its AST and is not a unit
+                        # of bounded work. A hard case/stall guard must
+                        # be explicitly requested by the caller.
+                        deadline = (active_started + args.case_seconds + args.domain_seconds if args.case_seconds
+                                    else active_started + args.stall_seconds if args.stall_seconds else float("inf"))
                     elif event == "cursor":
                         cursor = row["cursor"]
+                        if not args.case_seconds and args.stall_seconds:
+                            deadline = time.monotonic() + args.stall_seconds
                     elif event == "case":
                         remaining.pop(row["case"], None)
                         active, cursor = None, {}
-                        deadline = time.monotonic() + args.startup_seconds
+                        deadline = time.monotonic() + args.startup_seconds if args.startup_seconds else float("inf")
                     elif event == "mutant" and "sexp" in row:
                         samples += 1
                     receive(row)
@@ -356,13 +360,15 @@ def main():
     parser.add_argument("--per-point", type=int, default=2)
     parser.add_argument("--seed", type=int, default=4231)
     parser.add_argument("--workers", "--jobs", type=int, default=int(os.environ.get("ARC_HEAVY_CPUS", "1")))
-    parser.add_argument("--case-seconds", type=float, default=10)
-    parser.add_argument("--domain-seconds", type=float, default=2)
-    parser.add_argument("--startup-seconds", type=float, default=30)
+    parser.add_argument("--case-seconds", type=float, default=0, help="optional whole-case limit; 0 (default) lets the full matrix finish")
+    parser.add_argument("--domain-seconds", type=float, default=0, help="optional native search deadline; 0 (default) finishes the finite domain")
+    parser.add_argument("--startup-seconds", type=float, default=0, help="optional startup limit; 0 (default) lets task expansion finish")
+    parser.add_argument("--stall-seconds", type=float, default=0, help="optional guard for time without a new audit phase; 0 disables it")
     parser.add_argument("--task-seconds", type=float, help="optional hard total task budget; default is case supervision")
     parser.add_argument("--program-samples", type=int, default=2)
     parser.add_argument("--output", type=Path, default=Path(__file__).parent / "stage2-check.json")
     parser.add_argument("--resume", action="store_true", help="append intact JSONL and skip completed cases from this exact runtime/configuration")
+    parser.add_argument("--resume-from", type=Path, help="inherit completed cases into a new output prefix from an earlier compatible audit")
     parser.add_argument("--retry-failed", action="store_true", help="with --resume, retry completed audits that reported failures too")
     parser.add_argument("--frozen", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--worker", help=argparse.SUPPRESS)
@@ -387,7 +393,8 @@ def main():
         check_task(args)
         return
     budget = int(os.environ.get("ARC_HEAVY_CPUS", str(args.workers)))
-    if (not 1 <= args.workers <= budget or min(args.case_seconds, args.domain_seconds, args.startup_seconds) <= 0
+    if (not 1 <= args.workers <= budget or min(args.case_seconds, args.startup_seconds) < 0
+            or min(args.domain_seconds, args.stall_seconds) < 0
             or args.task_seconds is not None and args.task_seconds <= 0):
         parser.error("invalid workers/deadline; workers must not exceed ARC_HEAVY_CPUS")
     if args.per_point < 1 or args.program_samples < 0 or not args.ks or min(args.ks) < 1:
@@ -416,7 +423,8 @@ def main():
         export=str(args.export.resolve()), corpus=str(args.corpus.resolve()), tasks_path=str(args.tasks.resolve()),
         tasks=tasks, cases=args.cases, body=args.body, ks=args.ks, operations=args.operations,
         per_point=args.per_point, seed=args.seed, case_seconds=args.case_seconds,
-        domain_seconds=args.domain_seconds, program_samples=args.program_samples)
+        domain_seconds=args.domain_seconds, program_samples=args.program_samples,
+        resume_from=str(args.resume_from.resolve()) if args.resume_from else None)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     output_lock = args.output.with_suffix(".lock").open("a+")
     try:
@@ -425,6 +433,7 @@ def main():
         parser.error("another stage-2 writer owns this output prefix")
     paths = {name: args.output.with_suffix("."+name+".jsonl") for name in ("cases", "mutants", "draws")}
     config_path = args.output.with_suffix(".config.json")
+    inherited_path = args.output.with_suffix(".inherited.json")
     existing = any(path.exists() for path in paths.values())
     if args.resume and existing:
         if not config_path.exists() or json.loads(config_path.read_text()) != config:
@@ -432,10 +441,37 @@ def main():
     elif existing and not args.resume:
         parser.error("JSONL output exists; use --resume or choose a new --output")
     else:
+        inherited = dict(cases=[], source=None)
+        if args.resume_from:
+            if args.resume_from.resolve() == args.output.resolve():
+                parser.error("--resume-from requires a new output prefix")
+            source_config = json.loads(args.resume_from.with_suffix(".config.json").read_text())
+            coverage = ("policy", "export", "corpus", "tasks_path", "tasks", "cases", "body", "ks", "operations", "per_point", "seed")
+            if any(source_config.get(key) != config[key] for key in coverage):
+                parser.error("--resume-from mutation policy or audit coverage differs")
+            if args.domain_seconds and source_config.get("domain_seconds") != args.domain_seconds:
+                parser.error("--resume-from native search deadline differs")
+            if source_config.get("reader") not in ("complete-program-grammar-v1", READER):
+                parser.error("--resume-from has an incompatible complete-program reader")
+            source_cases = {}
+            source_inherited = args.resume_from.with_suffix(".inherited.json")
+            ancestors = json.loads(source_inherited.read_text()) if source_inherited.exists() else None
+            if ancestors:
+                source_cases.update({(row["task"],row["case"]): dict(complete=True, failures=[{}] if row["failed"] else [])
+                                     for row in ancestors["cases"]})
+            for row, _, _ in read_jsonl(args.resume_from.with_suffix(".cases.jsonl")):
+                if row.get("event") == "case":
+                    source_cases[(row["task"], row["case"])] = row
+            inherited = dict(source=str(args.resume_from.resolve()), config=source_config, ancestors=ancestors,
+                cases=[dict(task=task, case=case, failed=bool(row["failures"]))
+                       for (task,case),row in source_cases.items() if row.get("complete", False)
+                       and not any(error.get("exception") == "TimeoutError" for error in row["failures"])])
+        inherited_path.write_text(json.dumps(inherited, indent=2)+"\n")
         temporary = config_path.with_suffix(".tmp")
         temporary.write_text(json.dumps(config, indent=2)+"\n")
         temporary.replace(config_path)
-    completed = {}
+    inherited = json.loads(inherited_path.read_text())
+    completed = {(row["task"],row["case"]): (True,row["failed"]) for row in inherited["cases"]}
     if args.resume:
         for row, _, _ in read_jsonl(paths["cases"]):
             if row.get("event") == "case":
@@ -505,7 +541,8 @@ def main():
             phases_now = Counter(value["phase"] for value in active.values())
             print(f"{done_tasks}/{len(work)} tasks; {total}/{expected-skipped} new cases, {passed} passed; "
                   f"skipped={skipped}; elapsed={elapsed:.1f}s rate={total/max(elapsed,1e-9):.2f} cases/s; "
-                  f"active={dict(phases_now)}; failures={dict(reasons)}", file=sys.stderr, flush=True)
+                  f"active={dict(phases_now)}; oldest_phase_s={max((time.monotonic()-value['since'] for value in active.values()),default=0):.1f}; "
+                  f"failures={dict(reasons)}", file=sys.stderr, flush=True)
     def ticker():
         while not stop.wait(1):
             progress()
@@ -541,7 +578,7 @@ def main():
     summary = dict(stage=2, scope="this_invocation", tasks=len(tasks), active_tasks=len(work),
         expected_cases=expected, checked_cases=total, complete_cases=complete, passed_cases=passed,
         failed_cases=total-passed, skipped_cases=skipped, skipped_failed_cases=skipped_failed,
-        remaining_cases=expected-skipped-complete, failure_counts=dict(reasons), failure_examples=dict(examples),
+        remaining_cases=expected-skipped-complete, inherited_checkpoint=str(inherited_path), failure_counts=dict(reasons), failure_examples=dict(examples),
         phase_pass_counts=dict(phases), counts=dict(counts), events=dict(events), timings=dict(timings),
         seconds=round(time.monotonic()-started,3), streams_digest=arclog.streams_digest(),
         export=str(args.export), corpus=str(args.corpus), policy=policy, reader=reader,

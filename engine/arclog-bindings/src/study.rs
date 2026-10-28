@@ -40,7 +40,7 @@ impl PyStudyProgram {
     /// stream reproduction. It performs no online completion or OUT evaluation.
     #[staticmethod]
     fn stream_reader_policy() -> &'static str {
-        "complete-program-grammar-v1"
+        "complete-program-bindings-v2"
     }
 
     /// Read standalone case sexp, preserving source column/variable names.
