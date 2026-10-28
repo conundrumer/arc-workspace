@@ -4,6 +4,18 @@
 use super::*;
 use crate::types::{label_fault_message, scope_lists};
 
+/// A column of a relation macro, or of a proposer written in arclog: its
+/// name, the label of the definition it stands for, and the type its form
+/// declares for it, if it declares one.
+#[derive(Clone, Debug)]
+pub struct LabelColumn {
+    pub name: ColumnName,
+    pub label: LabelId,
+    /// A type that stands strictly under the type the definition gives the
+    /// label, which is then the column's type.
+    pub declared: Option<ValueType>,
+}
+
 /// A relation macro of the file, or a proposer written in arclog with its
 /// clause as the definition, as [`macro_column_types`] reads it.
 #[derive(Clone, Copy, Debug)]
@@ -11,9 +23,8 @@ pub struct RelationMacro<'a> {
     pub name: &'a LibName,
     /// The place of the macro's form, where a diagnostic on it stands.
     pub place: SourcePlace,
-    /// Each column's name and the label of the definition it stands for, in
-    /// the order of the macro's columns.
-    pub columns: &'a [(ColumnName, LabelId)],
+    /// The macro's columns, in order.
+    pub columns: &'a [LabelColumn],
     /// The definition, as [`crate::read::read_body`] gives it.
     pub definition: &'a Body,
 }
@@ -29,9 +40,12 @@ pub struct MacroDeclarations {
 /// with their types and its modes, or a diagnostic at a macro's form for
 /// each fault.
 ///
-/// The type of a relation macro's column is the type that [`label_type`]
-/// gives its label over the definition. A site has the column's type: a
-/// column of a fact relation, of the type that `facts` gives it, a column
+/// The type of a relation macro's column is its declared type, where it
+/// declares one, and otherwise the type that [`label_type`] gives its label
+/// over the definition. A declared type stands strictly under the type
+/// [`label_type`] gives the label, and is the type of the label among the
+/// definition's labels. A site has the column's type: a column of a fact
+/// relation, of the type that `facts` gives it, a column
 /// of a lib name that `lib` declares, where the type is fixed or
 /// `(pose-or <type>)`, or a column of another macro of `macros`, of the type
 /// this gives it. Any other site gives no type.
@@ -55,7 +69,9 @@ pub struct MacroDeclarations {
 /// have an empty meet, or whose branches give types with no join, over the
 /// list of the label's scope that `crate::types::scope_lists` gives, the
 /// definition for a column's label; a column whose label stands at no site
-/// that gives a type; or a definition that no set of the columns binds.
+/// that gives a type; a column whose declared type does not stand strictly
+/// under the type its label has; or a definition that no set of the columns
+/// binds.
 /// A macro that reads a macro with a fault takes no declaration, and gives
 /// no diagnostic of its own for it.
 pub fn macro_column_types(
@@ -145,7 +161,7 @@ impl MacroDerivation<'_, '_> {
         let m = self.macros[i];
         let declaration = self.label_types(&m).and_then(|(types, label_types)| {
             let modes = self.modes_of(&m, &label_types)?;
-            let columns = m.columns.iter().zip(types).map(|((name, _), ty)| Column { name: name.clone(), ty: ColumnType::Fixed(ty) });
+            let columns = m.columns.iter().zip(types).map(|(column, ty)| Column { name: column.name.clone(), ty: ColumnType::Fixed(ty) });
             Some(AlgebraRelation { columns: columns.collect(), modes, frames: Box::default() })
         });
         self.states[i] = match declaration {
@@ -177,16 +193,23 @@ impl MacroDerivation<'_, '_> {
         let site_type = |atom: &Atom, column: &[ColumnName]| self.site_type(atom, column);
         let mut diagnostics = Vec::new();
         let mut types = Vec::new();
-        for (column, label) in m.columns {
-            let message = match label_type(m.definition, *label, &site_type) {
-                Ok(Some(ty)) => {
-                    types.push(ty);
+        for column in m.columns {
+            let message = match (label_type(m.definition, column.label, &site_type), &column.declared) {
+                (Ok(Some(derived)), None) => {
+                    types.push(derived);
                     continue;
                 }
-                Ok(None) => "stands at no site that gives a type".to_string(),
-                Err(fault) => label_fault_message(fault),
+                (Ok(Some(derived)), Some(declared)) if stands_strictly_under(declared, &derived) => {
+                    types.push(declared.clone());
+                    continue;
+                }
+                (Ok(Some(derived)), Some(declared)) => {
+                    format!("has the type {derived:?}, which the declared type {declared:?} does not stand strictly under")
+                }
+                (Ok(None), _) => "stands at no site that gives a type".to_string(),
+                (Err(fault), _) => label_fault_message(fault),
             };
-            let message = format!("the label of the column `{}` of the macro `{}` {message}", crate::program::column_spelled(column), m.name.0);
+            let message = format!("the label of the column `{}` of the macro `{}` {message}", crate::program::column_spelled(&column.name), m.name.0);
             diagnostics.push(crate::read::check_error(CheckId::Types, message, m.place));
         }
         let mut label_types = StableHashMap::default();
@@ -207,7 +230,7 @@ impl MacroDerivation<'_, '_> {
         if faulted {
             return None;
         }
-        label_types.extend(m.columns.iter().map(|(_, label)| *label).zip(types.iter().cloned()));
+        label_types.extend(m.columns.iter().map(|column| column.label).zip(types.iter().cloned()));
         Some((types.into(), label_types))
     }
 
@@ -218,13 +241,13 @@ impl MacroDerivation<'_, '_> {
     /// set without it binds, so no mode holds one.
     fn modes_of(&mut self, m: &RelationMacro<'_>, label_types: &StableHashMap<LabelId, ValueType>) -> Option<Box<[Mode]>> {
         let definition_labels = body_labels(m.definition);
-        let column_labels: StableHashSet<LabelId> = m.columns.iter().map(|(_, label)| *label).collect();
+        let column_labels: StableHashSet<LabelId> = m.columns.iter().map(|column| column.label).collect();
         let label_types = |label: LabelId| label_types.get(&label).cloned();
         let atom_modes = |atom: &Atom| self.atom_modes(atom);
         let columns: Vec<usize> = (0..m.columns.len()).collect();
         let definition: Vec<&crate::program::Conjunct> = m.definition.conjuncts.iter().collect();
         let binds = |set: &[usize]| {
-            let bound: StableHashSet<LabelId> = set.iter().map(|&c| m.columns[c].1).collect();
+            let bound: StableHashSet<LabelId> = set.iter().map(|&c| m.columns[c].label).collect();
             let reached = bound_labels(&definition, &bound, &column_labels, &atom_modes, &label_types);
             definition_labels.iter().all(|label| reached.contains(label))
         };
@@ -247,7 +270,7 @@ impl MacroDerivation<'_, '_> {
             self.diagnostics.push(crate::read::check_error(CheckId::Safety, message, m.place));
             return None;
         }
-        let modes = found.into_iter().map(|set| Mode { bound: set.into_iter().map(|c| m.columns[c].0.clone()).collect() });
+        let modes = found.into_iter().map(|set| Mode { bound: set.into_iter().map(|c| m.columns[c].name.clone()).collect() });
         Some(modes.collect())
     }
 
@@ -291,6 +314,11 @@ impl MacroDerivation<'_, '_> {
     }
 }
 
+/// Whether `declared` is a type other than `derived` that stands under it.
+fn stands_strictly_under(declared: &ValueType, derived: &ValueType) -> bool {
+    declared != derived && at_or_under(declared, derived)
+}
+
 /// The subsets of `items` of `size` elements, each in the order of `items`.
 fn subsets_of_size(items: &[usize], size: usize) -> Vec<Vec<usize>> {
     if size == 0 {
@@ -313,7 +341,7 @@ fn subsets_of_size(items: &[usize], size: usize) -> Vec<Vec<usize>> {
 /// of `columns`.
 fn local_label_types(
     body: &Body,
-    columns: &[(ColumnName, LabelId)],
+    columns: &[LabelColumn],
     site_type: &dyn Fn(&Atom, &[ColumnName]) -> Option<ValueType>,
 ) -> Vec<(LabelId, Result<Option<ValueType>, LabelFault>)> {
     let mut labels: Vec<LabelId> = Vec::new();
@@ -321,7 +349,7 @@ fn local_label_types(
         let mut own = Vec::new();
         own_labels(conjunct, &mut own);
         for label in own {
-            if !labels.contains(&label) && !columns.iter().any(|(_, column)| *column == label) {
+            if !labels.contains(&label) && !columns.iter().any(|column| column.label == label) {
                 labels.push(label);
             }
         }

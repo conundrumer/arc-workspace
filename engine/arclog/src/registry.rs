@@ -24,7 +24,11 @@
 //! - `(component <name> <construction|detector|task-structure> (type-parameters <t> ...)
 //!   (inputs (<input> (<column> <type>) ... [(default <rows>)] [reads-outputs] [from-key]) ...)
 //!   (outputs (<output> (<column> <type>) ... [(copies <row> ...)] [<frames>]) ...))`: a construction, a
-//!   detector or a task-structure component, its inputs in the order the component declares them. An
+//!   detector or a task-structure component, its inputs in the order the component declares them. Each
+//!   `<t>` is a parameter's name or `(<name> <type>)`, a parameter with a bound. An `INIT` form's binding of a
+//!   bounded parameter is a type at or under the bound, a binding outside it is a type fault at the site that
+//!   binds it, and a bounded parameter that no place of the form binds takes its bound. A column of a parameter
+//!   has a frame where a column of its bound's type has one. An
 //!   input's `default` writes its rows as a `param` form writes them after
 //!   its types (`docs/arclog/arcdata.md#params`). An input marked
 //!   `reads-outputs` reads the instance's outputs, as `Unfold`'s `step`,
@@ -69,11 +73,13 @@
 //! - `(fact <name> (columns (<Column> <type>) ...))`: the columns of a fact
 //!   relation, `input`, `ex_input` or `ex_output`, the Example column `E`
 //!   first in the two of the examples.
-//! - `(macro <name> (columns (<Column> <Label>) ...) [<frames>] <body>)`:
+//! - `(macro <name> (columns (<Column> <Label> [<type>]) ...) [<frames>] <body>)`:
 //!   a lib relation that the lib defines from other lib names, each column
 //!   with the label of the definition it stands for, and its definition. A
-//!   [`Macro::Relation`]'s column types and modes are the ones
-//!   [`macro_column_types`] gives.
+//!   `<type>` stands strictly under the type the definition gives the
+//!   column's label, and is the column's type; a column with none has the
+//!   type the definition gives. A [`Macro::Relation`]'s column types and
+//!   modes are the ones [`macro_column_types`] gives.
 //!
 //! # Frames
 //!
@@ -110,7 +116,9 @@
 //! the Pose type of the label at the site, or a type parameter of its
 //! component. A column is `Position` or `Offset` only where the lib fixes
 //! its role, and `Box` where the lib's clauses take it in either role, so a
-//! label at it narrows only where another site narrows it. The file declares
+//! label at it narrows only where another site narrows it. This holds of a
+//! macro's column, with the type it declares, and of a column of a type
+//! parameter, with its bound. The file declares
 //! no `representative`. The file and
 //! `engine/lib/proposers.arclog` are named in diagnostics as
 //! [`crate::layout::SourceFile::LibRegistry`] and
@@ -157,9 +165,20 @@ pub const PROPOSERS_TEXT: &str = include_str!("../../lib/proposers.arclog");
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct LibName(pub Box<str>);
 
-/// The name of a component's type parameter, such as `t` or `key`.
+/// A component's type parameter: its name, such as `t` or `key`, and the
+/// type that bounds it, where it has one.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct TypeParameter(pub Box<str>);
+pub struct TypeParameter {
+    pub name: Box<str>,
+    /// The type at or under which an `INIT` form binds the parameter, and
+    /// which the parameter takes where no place of the form binds it.
+    pub bound: Option<ValueType>,
+}
+
+/// Whether `ty` is `bound` or stands under it.
+pub(crate) fn at_or_under(ty: &ValueType, bound: &ValueType) -> bool {
+    ty.meet(bound) == crate::types::Meet::Type(ty.clone())
+}
 
 /// The type a lib column declares. A `:Pose` column has the type Pose of its
 /// assembly.
@@ -574,6 +593,6 @@ mod spellings;
 
 pub(crate) use bindings::{binding_sites, unbound, ParameterSite};
 pub use bindings::key_fill;
-pub use column_types::{macro_column_types, MacroDeclarations, RelationMacro};
+pub use column_types::{macro_column_types, LabelColumn, MacroDeclarations, RelationMacro};
 pub use frames::{has_frame, FrameColumn, FrameRule};
 use reader::FileReader;

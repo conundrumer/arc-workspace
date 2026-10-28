@@ -29,27 +29,34 @@ impl FileReader {
         }
     }
 
-    /// Each `(<Column> <Label>)` of `items`, the column's name and the label
-    /// of `labels` it stands for, each column named once. `what` names the
-    /// form whose columns they are.
+    /// Each `(<Column> <Label>)` and `(<Column> <Label> <type>)` of `items`,
+    /// the column's name, the label of `labels` it stands for and the type
+    /// it declares, each column named once. `what` names the form whose
+    /// columns they are.
     fn label_columns(&mut self, items: &[SExpr], labels: &crate::read::LabelNames, what: &str, place: SourcePlace) -> Option<LabelColumns> {
         let mut columns = Vec::new();
         let mut names: Vec<&str> = Vec::new();
         for item in items {
             let SExpr::List { items: pair, .. } = item else {
-                return self.refuse(format!("a column of {what} is a list of its name and its label"), item.place());
+                return self.refuse(format!("a column of {what} is a list of its name, its label and optionally its type"), item.place());
             };
-            let [column, label] = &pair[..] else {
-                return self.refuse(format!("a column of {what} is a list of its name and its label"), item.place());
+            let (column, label, declared) = match &pair[..] {
+                [column, label] => (column, label, None),
+                [column, label, declared] => (column, label, Some(declared)),
+                _ => return self.refuse(format!("a column of {what} is a list of its name, its label and optionally its type"), item.place()),
             };
             let column = self.symbol(Some(column), "the column's name", place)?;
             let label = self.symbol(Some(label), "the column's label", place)?;
             let label = self.label_of(labels, label, &format!("the column `{column}` of {what}"), place)?;
+            let declared = match declared {
+                Some(declared) => Some(self.value_type(declared, "a declared type")?),
+                None => None,
+            };
             if !self.named_once(names.iter().copied(), column, what, item.place()) {
                 continue;
             }
             names.push(column);
-            columns.push((ColumnName::Written(column.into()), label));
+            columns.push(LabelColumn { name: ColumnName::Written(column.into()), label, declared });
         }
         Some(columns.into())
     }

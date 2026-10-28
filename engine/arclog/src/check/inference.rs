@@ -25,7 +25,7 @@ use crate::program::{
     Atom, Body, ColumnName, Conjunct, DemoRule, Constraint, Form, Instance, LabelId, NameScope, Node, Operand, OutputOwner, OutputStep, PortName, ProgramRelation, RelationColumn, RelationRef, Site, SiteArg,
 };
 use crate::program::written_inputs;
-use crate::registry::{binding_sites, unbound, Column, ColumnType, Component, ParameterSite, Registry, TypeParameter};
+use crate::registry::{at_or_under, binding_sites, unbound, Column, ColumnType, Component, ParameterSite, Registry, TypeParameter};
 use crate::resolver::columns;
 use crate::resolver::form_columns;
 use crate::resolver::registry_columns;
@@ -301,6 +301,30 @@ impl<'a> FormInference<'a> {
                 _ => None,
             }),
         }
+    }
+
+    /// The faults of the form's bindings of its component's bounded type
+    /// parameters: for each parameter bound to a type that is neither the
+    /// parameter's bound nor under it, the path of the place that binds it,
+    /// relative to the form, and the message.
+    pub fn bound_faults(&self) -> Vec<(NodePath, String)> {
+        let (ScopeOwner::Form(Form::Instance(instance)), Some(component)) = (self.owner, self.component) else { return Vec::new() };
+        let root = NodeRef::Instance(instance.value());
+        let mut faults = Vec::new();
+        for sites in binding_sites(instance.value(), &component.inputs) {
+            let (Some(bound), Some(ty)) = (&sites.parameter.bound, self.bindings.get(sites.parameter)) else { continue };
+            if at_or_under(ty, bound) {
+                continue;
+            }
+            let place = match sites.binding {
+                ParameterSite::Key(key) => NodeRef::KeyClause(key),
+                ParameterSite::Head { site, .. } => NodeRef::Site(site),
+            };
+            let Some(at) = path_to(root, place, NodePath::default()) else { continue };
+            let message = format!("the type parameter `{}` is bound to {ty:?}, which is not under its bound {bound:?}", sites.parameter.name);
+            faults.push((at, message));
+        }
+        faults
     }
 
     /// The Pose type of `label`, where one of its sites gives it one.
@@ -1300,10 +1324,27 @@ fn typed(types: &[(LabelId, Result<Option<ValueType>, LabelFault>)], label: Labe
     }
 }
 
+/// The path of the node `target` among the descendants of `root`, which stands
+/// at `at`, or `None` where `root` does not hold it.
+fn path_to(root: NodeRef<'_>, target: NodeRef<'_>, at: NodePath) -> Option<NodePath> {
+    use crate::program::path::PathNode;
+    for (child, index) in root.children().into_iter().zip(0u32..) {
+        let at = at.child(index);
+        if std::mem::discriminant(&child) == std::mem::discriminant(&target) && child.address() == target.address() {
+            return Some(at);
+        }
+        if let Some(found) = path_to(child, target, at) {
+            return Some(found);
+        }
+    }
+    None
+}
+
 /// The type each parameter of `component` takes by `instance`'s binding
 /// (`docs/arclog/arclog.md#instance`), at the places that [`binding_sites`]
 /// gives, with `label` giving the type of each label of the instance, and
-/// `Unit` for each parameter onto which no place projects.
+/// its bound, or `Unit` where it has none, for each parameter onto which no
+/// place projects.
 fn bind(instance: &Instance, component: &Component, label: &dyn Fn(LabelId) -> Option<ValueType>) -> StableHashMap<TypeParameter, ValueType> {
     let sites = binding_sites(instance, &component.inputs);
     let mut bindings = StableHashMap::default();
@@ -1323,7 +1364,7 @@ fn bind(instance: &Instance, component: &Component, label: &dyn Fn(LabelId) -> O
         }
     }
     for parameter in unbound(&component.type_parameters, &sites) {
-        bindings.insert(parameter.clone(), ValueType::Unit);
+        bindings.insert(parameter.clone(), parameter.bound.clone().unwrap_or(ValueType::Unit));
     }
     bindings
 }

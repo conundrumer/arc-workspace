@@ -30,7 +30,7 @@ impl Check for InstanceInputsCheck {
     /// the same input, each input that stands before an input of its
     /// group that the component declares before it, and each input that
     /// writes no head site on a column of its port other than `key`, other
-    /// than a column of a type parameter that no place of the form binds, as
+    /// than a column of an unbounded type parameter that no place of the form binds, as
     /// `docs/arclog/arclog.md#instance` gives. In a keyed instance, it
     /// refuses as well each input that stands in a group other than its
     /// own: an input after the key clause that reads an output of its
@@ -100,7 +100,7 @@ impl Check for InstanceInputsCheck {
 /// `docs/arclog/arclog.md#instance` gives. The evaluator reads the same
 /// columns ([`crate::eval::init_form`]).
 fn headless_column(port: &InputPort, written: &InstanceInput, unit: &[&TypeParameter]) -> Option<String> {
-    let binds_nothing = |column: &Column| matches!(&column.ty, ColumnType::Parameter(parameter) if unit.contains(&parameter));
+    let binds_nothing = |column: &Column| matches!(&column.ty, ColumnType::Parameter(parameter) if parameter.bound.is_none() && unit.contains(&parameter));
     let column = port.port.columns.iter().find(|column| !is_key(column) && !binds_nothing(column) && !written.head.iter().any(|site| site.column == column.name))?;
     Some(format!("the input writes no head site on column {:?}", column.name))
 }

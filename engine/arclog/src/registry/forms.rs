@@ -55,11 +55,34 @@ impl FileReader {
         match text {
             POSE => Some((ColumnType::Pose, None)),
             SHARED_POSE => Some((ColumnType::SharedPose, None)),
-            _ => match parameters.iter().find(|p| &*p.0 == text) {
+            _ => match parameters.iter().find(|p| &*p.name == text) {
                 Some(parameter) => Some((ColumnType::Parameter(parameter.clone()), None)),
                 None => self.refuse(format!("`{text}` is no type and no type parameter of the component"), expr.place()),
             },
         }
+    }
+
+    /// The type that `expr`, a type name, writes. `what` names the type.
+    pub(super) fn value_type(&mut self, expr: &SExpr, what: &str) -> Option<ValueType> {
+        let text = self.symbol(Some(expr), what, expr.place())?;
+        match spelling::parse(spelling::TYPE_NAMES, text) {
+            Some(name) => Some(name.value_type()),
+            None => self.refuse(format!("`{text}` is no type name"), expr.place()),
+        }
+    }
+
+    /// The type parameter that `expr`, `<name>` or `(<name> <type>)`, writes.
+    fn type_parameter(&mut self, expr: &SExpr, at: SourcePlace) -> Option<TypeParameter> {
+        let SExpr::List { items, .. } = expr else {
+            let name = self.symbol(Some(expr), "a type parameter", at)?;
+            return Some(TypeParameter { name: name.into(), bound: None });
+        };
+        let [name, bound] = &items[..] else {
+            return self.refuse("a type parameter is a name or a list of its name and its bound", expr.place());
+        };
+        let name = self.symbol(Some(name), "the type parameter's name", at)?;
+        let bound = self.value_type(bound, "a type parameter's bound")?;
+        Some(TypeParameter { name: name.into(), bound: Some(bound) })
     }
 
     /// The column that `expr`, `(<Column> <type>)`, writes.
@@ -230,8 +253,7 @@ impl FileReader {
             return self.refuse(format!("`{kind_text}` is no kind of component"), rest[1].place());
         };
         let parameters = self.headed(rest.get(2), TYPE_PARAMETERS, place)?;
-        let parameters: Option<Vec<TypeParameter>> =
-            parameters.iter().map(|p| self.symbol(Some(p), "a type parameter", place).map(|t| TypeParameter(t.into()))).collect();
+        let parameters: Option<Vec<TypeParameter>> = parameters.iter().map(|p| self.type_parameter(p, place)).collect();
         let type_parameters: Box<[TypeParameter]> = parameters?.into();
         let inputs = self.headed(rest.get(3), INPUTS, place)?;
         let inputs: Option<Vec<InputPort>> = inputs.iter().map(|input| self.input(input, &type_parameters)).collect();

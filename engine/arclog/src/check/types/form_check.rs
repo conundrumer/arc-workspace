@@ -118,6 +118,9 @@ fn refusals(form: &FormInference<'_>, order: &CanonicalOrder, scope: &NodePath, 
         };
         refusals.push(Refusal { message: message.into(), at: place(form.walk.first_use(*label)) });
     }
+    for (at, message) in form.bound_faults() {
+        refusals.push(Refusal { message: message.into(), at: place(&at) });
+    }
     for (at, constraint) in &form.walk.constraints {
         if !matches!(constraint.op, ConstraintOp::Lt | ConstraintOp::Le | ConstraintOp::Gt | ConstraintOp::Ge) {
             continue;

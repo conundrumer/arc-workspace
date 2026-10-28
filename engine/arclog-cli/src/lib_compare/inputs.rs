@@ -11,7 +11,7 @@
 //!   `modes`, for each mode, `mode`, the names of its columns, and `rows`,
 //!   the rows of those columns. A relation with no mode has one mode of no
 //!   column and one empty row.
-//! - a component: `type_arguments`, the type each type parameter takes;
+//! - a component: `type_arguments`, the type each unbounded type parameter takes;
 //!   `inputs`, each input's `port`, `columns` and `rows`; `outputs`, each
 //!   output's `port` and `columns`.
 //!
@@ -175,7 +175,7 @@ impl Element<'_> {
                     .map(|output| json!({ "port": &*output.name.0, "columns": columns_json(&output.columns, &ty) }))
                     .collect();
                 out["kind"] = json!("component");
-                out["type_arguments"] = Value::from(vec![PARAMETER_TYPE.1; component.type_parameters.len()]);
+                out["type_arguments"] = Value::from(vec![PARAMETER_TYPE.1; component.type_parameters.iter().filter(|parameter| parameter.bound.is_none()).count()]);
                 out["inputs"] = Value::from(inputs);
                 out["outputs"] = Value::from(outputs);
             }
@@ -256,11 +256,11 @@ pub(super) fn relation_type(column: &Column) -> ValueType {
     }
 }
 
-/// The type of a component's column, a type parameter taking
-/// [`PARAMETER_TYPE`].
+/// The type of a component's column, a type parameter taking its bound,
+/// or [`PARAMETER_TYPE`] where it has none.
 pub(super) fn component_type(column: &Column) -> ValueType {
     match &column.ty {
-        ColumnType::Parameter(_) => PARAMETER_TYPE.0,
+        ColumnType::Parameter(parameter) => parameter.bound.clone().unwrap_or(PARAMETER_TYPE.0),
         _ => relation_type(column),
     }
 }

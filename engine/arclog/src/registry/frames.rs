@@ -13,9 +13,12 @@ pub fn has_frame(ty: &ValueType) -> bool {
 
 impl Column {
     /// Whether the column has a frame: its declared type is fixed and
-    /// [`has_frame`].
+    /// [`has_frame`], or it is a type parameter whose bound is.
     pub fn has_frame(&self) -> bool {
-        self.ty.fixed().is_some_and(has_frame)
+        match &self.ty {
+            ColumnType::Parameter(parameter) => parameter.bound.as_ref().is_some_and(has_frame),
+            ty => ty.fixed().is_some_and(has_frame),
+        }
     }
 }
 
