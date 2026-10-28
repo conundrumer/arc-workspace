@@ -11,18 +11,15 @@ fn study_component_tables(py:Python<'_>,evaluator:&PyStudyTaskEvaluator,gold:&Py
     let expected=expected_kept_json.map(serde_json::from_str::<serde_json::Value>).transpose()
         .map_err(|e|PyValueError::new_err(e.to_string()))?;
     let constructions=constructions()?;
-    let (report,g,m)=py.detach(|| evaluator.with_cache("study_component_tables",|cache| {
-        let mut result=study_pair::component_tables::evaluate_cached(&gold.program,&mutant.inner,&evaluator.task,
-            &evaluator.session,constructions,&evaluator.settings,cache,expected.as_ref())?;
-        let materializer=Materializer::new(&evaluator.session,&result.limits);
-        let g=case_columns_in(&materializer,&evaluator.evidence,&result.gold,evaluator.task.train.len(),None);
-        let m=case_columns_in(&materializer,&evaluator.evidence,&result.mutant,evaluator.task.train.len(),None);
-        packing_status(&mut result.report,[&g,&m]);
-        Ok::<_,String>((result.report.to_string(),g,m))
+    let mut result=py.detach(|| evaluator.with_cache("study_component_tables",|cache| {
+        study_pair::component_tables::evaluate_cached(&gold.program,&mutant.inner,&evaluator.task,
+            &evaluator.session,constructions,&evaluator.settings,cache,expected.as_ref())
     })).map_err(PyValueError::new_err)?;
-    let pack=|side:&str,columns:&_|PyCaseTables::of(py,evaluator.task_name.clone(),side.into(),false,
-        evaluator.settings.projection_cap,columns,None,None);
-    Ok((report,pack("gold-components",&g)?,pack("mutant-components",&m)?))
+    let (g,m)=pack_pair(py,&evaluator.task_name,["gold-components","mutant-components"],evaluator.settings.projection_cap,&mut result,|result,gold| {
+        let materializer=Materializer::new(&evaluator.session,&result.limits);
+        Ok(case_columns_in(&materializer,&evaluator.evidence,if gold {&result.gold} else {&result.mutant},evaluator.task.train.len(),None))
+    })?;
+    Ok((result.report.to_string(),g,m))
 }
 
 pub(super) fn register(names:&Names<'_,'_>)->PyResult<()> {

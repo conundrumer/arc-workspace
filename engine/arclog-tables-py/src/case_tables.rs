@@ -176,10 +176,15 @@ fn owner_module(py:Python<'_>)->PyResult<&Py<PyModule>> {
         let code=std::ffi::CString::new(r#"
 class _Owner:
     __slots__ = ('capsule', 'live')
-    def __init__(self, capsule):
-        self.capsule = capsule
+    def __init__(self):
+        self.capsule = None
         self.live = 0
-    def retain(self):
+    def check(self, capsule):
+        if capsule is not None and self.capsule is not None and capsule is not self.capsule:
+            raise TypeError('a buffer cannot replace its native owner')
+    def retain(self, capsule):
+        if capsule is not None:
+            self.capsule = capsule
         self.live += 1
     def release(self):
         self.live -= 1
@@ -187,12 +192,13 @@ class _Owner:
             self.capsule = None
 
 def _classes(owner):
-    holder = _Owner(owner)
+    holder = _Owner()
     class _OwnedBytes(bytes):
         __slots__ = ()
-        def __new__(cls, value):
+        def __new__(cls, value, capsule=None):
+            holder.check(capsule)
             result = bytes.__new__(cls, value)
-            holder.retain()
+            holder.retain(capsule)
             return result
         def __del__(self):
             holder.release()
@@ -201,22 +207,25 @@ def _classes(owner):
             return holder.capsule
     class _OwnedList(list):
         __slots__ = ()
-        def __new__(cls, value):
+        def __new__(cls, value=(), capsule=None):
+            holder.check(capsule)
             result = list.__new__(cls)
-            holder.retain()
+            holder.retain(capsule)
             return result
+        def __init__(self, value=(), capsule=None):
+            list.__init__(self, value)
         def __del__(self):
             holder.release()
         @property
         def _owner(self):
             return holder.capsule
-    return _OwnedBytes, _OwnedList
+    return _OwnedBytes, _OwnedList, owner
 
 def _own(value, classes):
     if isinstance(value, bytes):
-        return classes[0](value)
+        return classes[0](value, classes[2])
     if isinstance(value, list):
-        return classes[1](_own(item, classes) for item in value)
+        return classes[1]((_own(item, classes) for item in value), classes[2])
     return value
 "#).expect("static Python source has no null");
         PyModule::from_code(py,&code,c"_arclog_buffer_owner.py",c"_arclog_buffer_owner").map(Bound::unbind)

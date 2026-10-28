@@ -7,6 +7,7 @@ use arclog_bindings::{Names, PyMutationPoint, PyStudyProgram, PyValidMutant, con
 use arclog_tables::columns::case_columns_in;
 use arclog::eval::join::Materializer;
 use arclog_tables::tables::{evidence_tables, study_pair};
+use study_pair::STUDY_SESSION_BYTES;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::path::Path;
@@ -27,7 +28,7 @@ mod component_tables;
 /// Undefined OUT counts all expected cells as missing. For non-grid OUT,
 /// count missing/ambiguous/wrong-frame cells and occupied extra positions.
 #[pyfunction]
-#[pyo3(signature = (gold, point, mutant, *, task, tasks, session_bytes=268435456))]
+#[pyo3(signature = (gold, point, mutant, *, task, tasks, session_bytes=STUDY_SESSION_BYTES))]
 fn evaluate_pair(
     py: Python<'_>,
     gold: &PyStudyProgram,
@@ -40,56 +41,19 @@ fn evaluate_pair(
     let constructions = constructions()?;
     let (read, judged) = read_task_files(Path::new(tasks), task).map_err(PyValueError::new_err)?;
     let settings = gold.settings;
-    let (report, g, m) = py.detach(|| {
-        let session = TaskSession::new(
-            SessionBound {
-                bytes: session_bytes,
-            },
-            settings.caps,
-        );
-        let mut result = study_pair::evaluate_pair(
-            &gold.program,
-            &point.inner,
-            &mutant.inner,
-            &read,
-            &judged,
-            &session,
-            constructions,
-            &settings,
-        );
-        let evidence = evidence_tables(&read, Registry::get());
+    let session=TaskSession::new(SessionBound {bytes:session_bytes},settings.caps);
+    let mut result=py.detach(||study_pair::evaluate_pair(
+        &gold.program,&point.inner,&mutant.inner,&read,&judged,&session,constructions,&settings));
+    let evidence=evidence_tables(&read,Registry::get());
+    let (g,m)=pack_pair(py,task,["gold","mutant"],settings.projection_cap,&mut result,|result,gold| {
         let materializer=Materializer::new(&session,&result.limits);
-        let g = case_columns_in(&materializer,&evidence, &result.gold, read.train.len(), None);
-        let m = case_columns_in(&materializer,&evidence, &result.mutant, read.train.len(), None);
-        packing_status(&mut result.report,[&g,&m]);
-        (result.report.to_string(), g, m)
-    });
-    Ok((
-        report,
-        PyCaseTables::of(
-            py,
-            task.into(),
-            "gold".into(),
-            false,
-            settings.projection_cap,
-            &g,
-            None,
-            None,
-        )?,
-        PyCaseTables::of(
-            py,
-            task.into(),
-            "mutant".into(),
-            false,
-            settings.projection_cap,
-            &m,
-            None,
-            None,
-        )?,
-    ))
+        Ok(case_columns_in(&materializer,&evidence,if gold {&result.gold} else {&result.mutant},read.train.len(),None))
+    })?;
+    Ok((result.report.to_string(),g,m))
 }
 
 pub(crate) fn register(names: &Names<'_, '_>) -> PyResult<()> {
+    names.module().add("STUDY_SESSION_BYTES",STUDY_SESSION_BYTES)?;
     names.class::<PyStudyTaskEvaluator>()?;
     continuation::register(names)?;
     component_tables::register(names)?;
@@ -130,7 +94,7 @@ impl PyStudyTaskEvaluator {
 #[pymethods]
 impl PyStudyTaskEvaluator {
     #[new]
-    #[pyo3(signature=(task,tasks,settings,session_bytes=67108864,compact=true,observation_start=0))]
+    #[pyo3(signature=(task,tasks,settings,session_bytes=STUDY_SESSION_BYTES,compact=true,observation_start=0))]
     fn new(py:Python<'_>,task:&str,tasks:&str,settings:arclog_bindings::PyDecodeSettings,session_bytes:usize,compact:bool,observation_start:u64)->PyResult<Self> {
         let settings=settings.engine()?;
         let (read,judged)=py.detach(||read_task_files(Path::new(tasks),task)).map_err(PyValueError::new_err)?;
@@ -211,21 +175,19 @@ impl PyStudyTaskEvaluator {
     fn evaluate_pair(&self,py:Python<'_>,gold:&PyStudyProgram,point:&PyMutationPoint,mutant:&PyValidMutant)->PyResult<(String,PyCaseTables,PyCaseTables)> {
         if gold.settings!=self.settings || mutant.settings!=self.settings {return Err(PyValueError::new_err("task evaluator and program settings differ"));}
         let constructions=constructions()?;
-        let (report,g,m)=py.detach(|| self.with_cache("evaluate_pair",|cache| {
+        let mut result=py.detach(|| self.with_cache("evaluate_pair",|cache| {
             if cache.activate(&gold.program) {self.session.results.clear();}
-            let mut result=study_pair::evaluate_pair_cached(&gold.program,&point.inner,&mutant.inner,&self.task,&self.judged,&self.session,constructions,&self.settings,cache);
-            let started=std::time::Instant::now();
-            let materializer=Materializer::new(&self.session,&result.limits);
-            let (g,m)=study_pair::pair_columns_cached(&materializer,&self.evidence,&result,self.task.train.len(),cache);
-            packing_status(&mut result.report,[&g,&m]);
-            result.report["timings"]["native_columns"]=started.elapsed().as_secs_f64().into();
-            result.report["cache"]=cache.stats();
-            result.report["cache"]["session_result_bytes"]=self.session.results.bytes().into();
-            // Drop the native pair tables before allocating their Python
-            // buffers; the Python API returns only the report and columns.
-            Ok((result.report.to_string(),g,m))
+            Ok(study_pair::evaluate_pair_cached(&gold.program,&point.inner,&mutant.inner,&self.task,&self.judged,&self.session,constructions,&self.settings,cache))
         })).map_err(PyValueError::new_err)?;
-        Ok((report,PyCaseTables::of(py,self.task_name.clone(),"gold".into(),false,self.settings.projection_cap,&g,None,None)?,PyCaseTables::of(py,self.task_name.clone(),"mutant".into(),false,self.settings.projection_cap,&m,None,None)?))
+        let (g,m)=pack_pair(py,&self.task_name,["gold","mutant"],self.settings.projection_cap,&mut result,|result,gold| {
+            self.with_cache("pack_pair_side",|cache| {
+                let materializer=Materializer::new(&self.session,&result.limits);
+                Ok(study_pair::pair_side_columns_cached(&materializer,&self.evidence,result,gold,self.task.train.len(),cache))
+            })
+        })?;
+        result.report["cache"]=self.with_cache("cache_stats",|cache|Ok(cache.stats())).map_err(PyValueError::new_err)?;
+        result.report["cache"]["session_result_bytes"]=self.session.results.bytes().into();
+        Ok((result.report.to_string(),g,m))
     }
 }
 
@@ -233,9 +195,45 @@ impl PyStudyTaskEvaluator {
 // One report adapter for every native study packing entry. Execution evidence
 // remains unchanged: an output-buffer stop is separate collection evidence.
 fn packing_status<'a>(report:&mut serde_json::Value,columns:impl IntoIterator<Item=&'a arclog_tables::columns::CaseColumns>) {
-    let stops:Vec<_>=columns.into_iter().filter_map(|c|c.packing_stop()).map(|stop|serde_json::json!({"bound":format!("{:?}",stop.bound),"form":stop.form.0.iter().map(|s|s.0).collect::<Vec<_>>()})).collect();
+    packing_stops(report,columns.into_iter().filter_map(|c|c.packing_stop()));
+}
+
+fn packing_stops<'a>(report:&mut serde_json::Value,stops:impl IntoIterator<Item=&'a arclog::eval::Stop>) {
+    let stops:Vec<_>=stops.into_iter().map(|stop|serde_json::json!({"bound":format!("{:?}",stop.bound),"form":stop.form.0.iter().map(|s|s.0).collect::<Vec<_>>()})).collect();
     if !stops.is_empty() {
         report["packing"] = serde_json::json!({"status":"stopped","stops":stops});
         if report["status"]!="fault" {report["status"]="stopped".into();report["reason"]=report["packing"]["stops"][0]["bound"].clone();}
     }
+}
+
+trait PackingReport {fn packing_report(&mut self)->&mut serde_json::Value;}
+macro_rules! packing_report {($($ty:ty),*)=>{$(
+    impl PackingReport for $ty {fn packing_report(&mut self)->&mut serde_json::Value {&mut self.report}}
+)*};}
+packing_report!(study_pair::PairEvaluation,study_pair::component_tables::ComponentTables,study_pair::continuation::Continuation);
+
+// Each side keeps its admitted conversion peak until conversion consumes its
+// Rust payload. Both sides use the native evaluation's original limits and
+// session; the completed first output remains charged while packing the next.
+fn pack_pair<R:PackingReport+Send+Sync>(
+    py:Python<'_>,task:&str,sides:[&str;2],projection_cap:u64,result:&mut R,
+    mut pack:impl FnMut(&R,bool)->Result<arclog_tables::columns::CaseColumns,String>+Send,
+)->PyResult<(PyCaseTables,PyCaseTables)> {
+    let mut stops=Vec::new();
+    let mut seconds=0.;
+    let mut side=|index:usize|->PyResult<PyCaseTables> {
+        let (columns,elapsed)=py.detach(|| {
+            let started=std::time::Instant::now();
+            pack(result,index==0).map(|columns|(columns,started.elapsed().as_secs_f64()))
+        }).map_err(PyValueError::new_err)?;
+        seconds+=elapsed;
+        stops.extend(columns.packing_stop().cloned());
+        PyCaseTables::of(py,task.into(),sides[index].into(),false,projection_cap,&columns,None,None)
+    };
+    let gold=side(0)?;
+    let mutant=side(1)?;
+    let report=result.packing_report();
+    packing_stops(report,&stops);
+    report["timings"]["native_columns"]=seconds.into();
+    Ok((gold,mutant))
 }

@@ -23,6 +23,10 @@ pub mod component_tables;
 #[path = "study_judgement.rs"]
 mod judgement;
 
+/// Per-session study budget: 16 workers share the pipeline's 8 GiB memory
+/// alert allowance. Callers can explicitly choose another session bound.
+pub const STUDY_SESSION_BYTES:usize=512*1024*1024;
+
 pub struct PairEvaluation {
     /// Ephemeral current operation policy, never stored in PairCache.
     pub limits:arclog::eval::Limits,
@@ -68,7 +72,7 @@ struct GoldMemo {
 }
 impl Default for PairCache { fn default()->Self {Self::new(false)} }
 impl PairCache {
-    pub fn new(compact:bool)->Self {Self::with_byte_bound(compact,64*1024*1024)}
+    pub fn new(compact:bool)->Self {Self::with_byte_bound(compact,STUDY_SESSION_BYTES)}
     pub fn with_byte_bound(compact:bool,bytes:usize)->Self {
         Self {active:None,gold:HashMap::new(),gold_bodies:HashMap::new(),gold_relations:HashMap::new(),prefix:None,columns:None,source:None,compact,cache_bytes:bytes/2,active_source:0,gold_body_hits:0,gold_hits:0,prefix_hits:0,sequence:0}
     }
@@ -880,27 +884,32 @@ pub fn gold_tables_cached_in(gold:&StudyProgram,task:&Task,session:&TaskSession,
 /// Pack the shared relation prefix once, preserving every exported offset
 /// and run-interning decision. Only the two body tables are appended per side.
 pub fn pair_columns_cached(materializer:&arclog::eval::join::Materializer<'_>,evidence:&[Table],result:&PairEvaluation,train:usize,cache:&mut PairCache)->(crate::columns::CaseColumns,crate::columns::CaseColumns) {
-    let mut pack=|tables:&[(usize,Table)],key:&Vec<u32>| {
-        if tables.len()<2 {return crate::columns::case_columns_in(materializer,evidence,tables,train,None);}
-        let split=tables.len()-2;
-        if cache.columns.as_ref().is_some_and(|(held,_)|held==key) {
-            if let Some(columns)=cache.columns.as_ref().unwrap().1.finish(materializer,&tables[split..],train) {return columns;}
-            cache.columns=None;
-            return crate::columns::case_columns_in(materializer,evidence,tables,train,None);
-        }
+    (pair_side_columns_cached(materializer,evidence,result,true,train,cache),
+     pair_side_columns_cached(materializer,evidence,result,false,train,cache))
+}
+
+/// One side of the same cached fold, allowing a caller to finish conversion
+/// and release that phase's scratch before constructing the other side.
+pub fn pair_side_columns_cached(materializer:&arclog::eval::join::Materializer<'_>,evidence:&[Table],result:&PairEvaluation,gold:bool,train:usize,cache:&mut PairCache)->crate::columns::CaseColumns {
+    let (tables,key)=if gold {(&result.gold,&result.gold_prefix)} else {(&result.mutant,&result.mutant_prefix)};
+    if tables.len()<2 {return crate::columns::case_columns_in(materializer,evidence,tables,train,None);}
+    let split=tables.len()-2;
+    if cache.columns.as_ref().is_some_and(|(held,_)|held==key) {
+        if let Some(columns)=cache.columns.as_ref().unwrap().1.finish(materializer,&tables[split..],train) {return columns;}
         cache.columns=None;
-        let prefix=crate::columns::CaseColumnPrefix::new(materializer,evidence,&tables[..split],train);
-        // The packed fold includes nested string/vector capacities and its
-        // run-interning metadata, not just the values buffer.
-        let native_prefix_bytes=cache.prefix.as_ref().map_or(0,|memo|memo.row_bytes);
-        if prefix.is_complete() && prefix.retained_bytes().saturating_add(native_prefix_bytes)<=cache.cache_bytes {
-            let columns=prefix.finish(materializer,&tables[split..],train);
-            if let Some(columns)=columns {
-                cache.columns=Some((key.clone(),prefix));columns
-            } else {drop(prefix);crate::columns::case_columns_in(materializer,evidence,tables,train,None)}
-        } else {
-            prefix.into_finished(materializer,&tables[split..],train)
-        }
-    };
-    (pack(&result.gold,&result.gold_prefix),pack(&result.mutant,&result.mutant_prefix))
+        return crate::columns::case_columns_in(materializer,evidence,tables,train,None);
+    }
+    cache.columns=None;
+    let prefix=crate::columns::CaseColumnPrefix::new(materializer,evidence,&tables[..split],train);
+    // The packed fold includes nested string/vector capacities and its
+    // run-interning metadata, not just the values buffer.
+    let native_prefix_bytes=cache.prefix.as_ref().map_or(0,|memo|memo.row_bytes);
+    if prefix.is_complete() && prefix.retained_bytes().saturating_add(native_prefix_bytes)<=cache.cache_bytes {
+        let columns=prefix.finish(materializer,&tables[split..],train);
+        if let Some(columns)=columns {
+            cache.columns=Some((key.clone(),prefix));columns
+        } else {drop(prefix);crate::columns::case_columns_in(materializer,evidence,tables,train,None)}
+    } else {
+        prefix.into_finished(materializer,&tables[split..],train)
+    }
 }
