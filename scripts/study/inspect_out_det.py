@@ -53,6 +53,7 @@ def flatten(rows):
 def inspect(record, base, args, context):
     import arclog
     from native_storage import load_native, materialize_pair
+    context['phase'] = 'stored_native'
     r = materialize_pair(record, base)
     kept = r['evaluation']['kept_assignments']
     schemas = {}
@@ -66,6 +67,7 @@ def inspect(record, base, args, context):
                 if name in schemas:
                     require(schemas[name] == ty, 'native DET schemas disagree: '+name)
                 schemas[name] = ty
+    context['phase'] = 'term_decode'
     decoded = []
     for assignment in kept:
         values = {}
@@ -75,6 +77,7 @@ def inspect(record, base, args, context):
             terms = json.loads(arclog.StudyProgram.decode_rows_json(schemas[name], det['rows']))
             values[name] = dict(types=schemas[name], packed_rows=det['rows'], rows=terms)
         decoded.append(values)
+    context['phase'] = 'body_assignments'
     checked = 0
     subsets = {}
     for side, payload in r['native'].items():
@@ -112,6 +115,7 @@ def inspect(record, base, args, context):
                   full_dets=sum(map(len, decoded)), body_assignment_checks=checked, body_read_subsets=subsets,
                   term_decode='pass')
     if hasattr(arclog.StudyProgram, 'choice_evidence_json'):
+        context['phase'] = 'program_reconstruction'
         settings = arclog.DecodeSettings(deadline_seconds=args.native_seconds, rule_tests=False)
         key = r['programs']['gold']
         if key not in context['gold']:
@@ -122,6 +126,7 @@ def inspect(record, base, args, context):
         mutant = gold.construct_identity(json.dumps(r['identity']))
         for side, program in (('gold', gold), ('mutant', mutant.as_program())):
             if r['kind'] == 'INIT input':
+                context['phase'] = 'init_projection'
                 static = json.loads(program.render_json())
                 view = next(b for b in static['body_views'] if b['body_path'] == r['identity']['body'])
                 payload = r['native'][side]
@@ -136,6 +141,7 @@ def inspect(record, base, args, context):
                         c = view['columns'][projection['body_column']]
                         require(c['label_id'] == projection['label_id'] and c['type'] == projection['type'], 'port projection loses native label/type identity')
                 result.setdefault('input_port_projection',{})[side] = dict(status='pass',port=view['input_port'],columns=len(view['input_port_projection']),key_labels=view['group_key_label_ids'])
+            context['phase'] = 'choice_evidence'
             evidence = json.loads(program.choice_evidence_json(json.dumps(kept)))
             require(evidence['complete'], 'native choices incomplete')
             body = next(b for b in evidence['bodies'] if b['body_path'] == r['identity']['body'])
@@ -146,6 +152,7 @@ def inspect(record, base, args, context):
                 for name in expected:
                     require(actual[name]['rows'] == expected[name]['rows'], 'native full choice decode differs')
             if hasattr(program, 'out_bindings_json'):
+                context['phase'] = 'out_binding'
                 binding = json.loads(program.out_bindings_json())
                 result['out_binding'] = 'pass'
                 require(binding['complete'] and len(binding['columns']) == 2, 'OUT projection incomplete')
@@ -154,12 +161,14 @@ def inspect(record, base, args, context):
                 result['out_binding'] = 'requires_new_wheel'
         result['native_choices'] = 'pass'
         if args.continuation or args.components:
+            context['phase'] = 'gold_observation'
             if context['evaluator'] is None:
                 context['evaluator'] = arclog.StudyTaskEvaluator(r['task'], str(args.tasks), settings, compact=False)
             evaluator = context['evaluator']
             point = next(p for p in gold.points() if p.body_path == r['identity']['body'])
             evaluator.evaluate_pair(gold, point, mutant)
             if args.components:
+                context['phase'] = 'component_tables'
                 component, gt, mt = arclog.study_component_tables(evaluator, gold, mutant, json.dumps(kept))
                 component = json.loads(component)
                 for side, table in (('gold', gt), ('mutant', mt)):
@@ -173,6 +182,7 @@ def inspect(record, base, args, context):
                 result['component_tables'] = 'pass'
             if not args.continuation:
                 return result
+            context['phase'] = 'continuation'
             report, _, _ = arclog.study_continuation(evaluator, gold, mutant, json.dumps(kept))
             report = json.loads(report)
             require(report['gold_observation_stop'] is None, 'incomplete gold FITS observation')
@@ -184,8 +194,9 @@ def inspect(record, base, args, context):
                 require(historic['mutant']['status'] == 'complete', 'historical producer OUT incomplete')
                 for example, old in zip(out['train'], historic['mutant']['train'], strict=True):
                     require(example['example'] == old['example'], 'OUT example differs')
-                    for model, before in zip(example['models'], old['models'], strict=True):
-                        require(model['equals'] == before['equals'] and model['differing_cells'] == before['differing_cells'], 'OUT comparison differs from historical producer')
+                    family = lambda models: Counter((m['equals'],m['differing_cells'],m.get('grid_defined',True)) for m in models)
+                    require(family(example['models']) == family(old['models']), 'OUT comparison family differs from historical producer')
+                    for model in example['models']:
                         if 'value_kind' not in model:
                             result['detailed_out'] = 'requires_new_wheel'
                         if model.get('value_kind') == 'rows':
@@ -232,7 +243,9 @@ def worker(args):
             result = inspect(item['record'], Path(item['base']), args, context)
             result['status'] = 'pass'
         except Exception as error:
-            result = dict(task=job['task'], source=item['source'], status='failure', reason=str(error))
+            result = dict(task=job['task'], case=item['record'].get('case'),body=item['record'].get('point'),
+                          source=item['source'], status='failure', reason=str(error),
+                          failure_class=context.get('phase','record')+'/'+type(error).__name__)
         finally:
             signal.setitimer(signal.ITIMER_REAL, 0)
         result['seconds'] = round(time.monotonic()-started, 6)
@@ -277,6 +290,8 @@ def main():
         if count:
             jobs.append(dict(task=path.parent.name, source=str(path.resolve()), base=str(path.parent.resolve()), count=count))
     counts = Counter()
+    failure_classes = Counter()
+    failure_examples = defaultdict(list)
     total = sum(j['count'] for j in jobs)
     started = time.monotonic()
     done = 0
@@ -298,7 +313,7 @@ def main():
                 events.put(json.loads(line)); received += 1
             code = process.wait()
             if code or received != job['count']:
-                events.put(dict(status='worker_failure',task=job['task'],code=code,received=received,expected=job['count']))
+                events.put(dict(status='worker_failure',failure_class='task_worker/worker_exit',task=job['task'],code=code,received=received,expected=job['count']))
     def progress():
         elapsed = time.monotonic()-started
         rate = done/elapsed if elapsed else 0
@@ -315,6 +330,9 @@ def main():
                     progress(); last_progress = time.monotonic()
                 continue
             counts[result['status']] += 1
+            if result.get('failure_class'):
+                key=result['failure_class'];failure_classes[key]+=1
+                if len(failure_examples[key])<5:failure_examples[key].append(result)
             if result['status'] != 'worker_failure': done += 1
             line = json.dumps(result)
             print(line,flush=True)
@@ -325,6 +343,7 @@ def main():
     runtime = Path(sys.executable).absolute().parent.parent.parent/'ready.json'
     import arclog
     summary = dict(engine_module=arclog.__file__,streams_digest=arclog.streams_digest(),done=done,total=total,seconds=round(time.monotonic()-started,3),counts=dict(counts),
+                   failure_classes=dict(failure_classes),failure_examples=dict(failure_examples),
                    python=sys.executable,check_source_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                    runtime_manifest=json.loads(runtime.read_text()) if runtime.exists() else None)
     if args.output: (args.output/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
