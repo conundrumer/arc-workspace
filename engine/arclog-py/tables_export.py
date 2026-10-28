@@ -21,13 +21,23 @@ Where a worker process dies in a call, the export prints on stderr the task and 
 where that one dies too, the task's part holds no case, the fault line `death_line` gives, and a bare `tasks.txt` line. Writes to <out dir>:
   values/<task>/<case>.i32   raw int32 (np.fromfile), every row of the case: the rows of each entry, of each DET
                              at each entry's assignment, and of each projection at each entry, each row's cells in
-                             column order, equal runs of a case sharing one offset (see `arclog.decode.columns`)
+                             column order, and the extent runs of the entries and of the projection rows (see
+                             `extent_offset` below), equal runs of a case sharing one offset (see `arclog.decode.columns`)
   parts/<k>.<name>.parquet   the rows of one part (`bases` has a file in a part with a cut case alone)
   parts/<k>.report.txt       the fault lines of the part's tasks
   parts/<k>.tasks.txt        one line `<task> <seconds> <units> <key> <checks digest>` per task of the part, the wall seconds of its call to 0.1 s,
                              the count of units it ran in, the task's reuse key and the checks digest (see `--previous`; a bare task id where the writer gives none), written last: a part is whole where it stands.
                              A line of an older export, `<task> <seconds> <key> <checks digest>`, gives its seconds with 1 unit and no reuse
-  index.parquet    one row per (table, example, entry): task, case, concept, the table's columns, the entry's columns
+  index.parquet    one row per (table, example, entry): task, case, concept, the table's columns, the entry's columns, among them
+                   `extent_offset`, the offset in `values` of the entry's extent run, and `extent_stop_bound` and `extent_stop_form`. The extent run holds,
+                   for each row of the entry's run in its order, two cells for each column of the table's `extent_columns` in their order: the count
+                   of rows V and then the count of columns H of the frame that the row's value stands in, at that row, as the engine computes it when it
+                   evaluates the atom or the instance that made the frame at that row. A Box in a frame of extent (V, H) has own size (V - top - bottom,
+                   H - left - right), the box it covers, so a reader tells from the value's margins and the extent which cells of its frame it covers.
+                   A row with no extent has `-1 -1`, since each extent is at least 1: its derivations give its value two extents, or the engine cannot
+                   compute one (a frame lying in a source the export does not follow, such as a lifted read of a per-example relation, or the table of
+                   a form other than a clause). `extent_offset` is -1 where the table has no extent columns, the entry holds no rows, or the
+                   evaluation of its extents stopped at a bound or faulted; `extent_stop_bound` and `extent_stop_form` give the bound of a stop
   tables.parquet   one row per table: its columns, its `relation_name` (the relation as the case program writes it: `&x` for a
                    declared relation, `&<instance>.<port>` for an output or input of an instance; the fact relation's name for an
                    evidence table; null for a table that faulted, and, in an export of streams, for each table at a slot), and its
@@ -49,6 +59,9 @@ where that one dies too, the task's part holds no case, the fault line `death_li
                    `Division.tile.P_inner`; or `<maker>@<path> in <frame>`, such a frame lying in `<frame>`, as `relative.X_rel@<path> in input`.
                    The empty string is no frame: only a column of type `Position` or `Box` has one, and a column whose sources give no frame, or
                    give two different frames, has none;
+                   `extent_columns`: the indexes, in increasing order, of the table's columns of type `Box` whose frame is a made frame
+                   (`<maker>@<path>`, with or without ` in <frame>`), an empty list for every other table. Each of these columns gives its
+                   rows' frame extents in the extent runs below;
                    `column_slots`: the slot of each column in the relation's own column order, one int per column in `column_names` order (the
                    order the relation stores its columns in, which differs from its own where a clause stores its columns at the canonical
                    positions of their labels, or a `DET` keeps only the columns that its reads name), a record's fields sharing the slot of
@@ -98,7 +111,10 @@ where that one dies too, the task's part holds no case, the fault line `death_li
                    its `copies` rows are the stream's. A cut case whose stream equals its base's holds no table, entry or flow of its own. An export of the same streams without `bases` gives, for a cut
                    case, rows equal to the base's rows for tables below `k` and the case's own, but for the numbers of Idents, which depend on the session that interned them
   assigned.parquet one row per DET at an entry's assignment: task, case, entry, det, rows, offset
-  projections.parquet    one row per projection (columns) and projection_rows.parquet one row per projection at an entry
+  projections.parquet    one row per projection (columns) and projection_rows.parquet one row per projection at an entry, with its `extent_offset`:
+                   the offset of the extent run of the projection's rows, two cells for each projection column that the table's `extent_columns`
+                   holds, for each row in its order, a row taking the one extent over the table's rows that it projects (`-1 -1` where they give two);
+                   -1 where none of the projection's columns is among them, the row is not defined, or the entry's extents stopped
   orientations.json  [encoding, name] of each orientation constant; an orientation cell is its encoding (written before the first task)
   orientation_types.json  [type name, cells] of each orientation type without a parameter (Dir, DiagDir, Dir8, Axis, DiagAxis,
                    Axis4, D4, C4, Sym, Sense): the cells its columns admit; a Pose type admits D4's

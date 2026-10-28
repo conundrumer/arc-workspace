@@ -41,6 +41,18 @@ use pyo3::types::{PyBytes, PyDict};
 /// - the empty string: no frame. Only a column of type `Position` or `Box` has a frame, and a column
 ///   whose sources give no frame, or give two different frames, has none.
 ///
+/// `tables` also gives `extent_columns`: the indexes, in increasing order, of the table's columns of type
+/// `Box` whose frame is a made frame, empty for every other table. For such a table `entries` and
+/// `projection_rows` give `extent_offset`, the offset in `values` of the run of the extents of those
+/// frames: for each row of the entry's run (of the projection row's run), in its order, two `int32`
+/// cells for each column of `extent_columns` (for each of the projection's columns among them), in their
+/// order, the frame's count of rows V and then of columns H at that row, and `-1 -1` for a row with no
+/// extent, which is a row whose derivations give two extents or whose extent the engine cannot compute;
+/// -1 where the table has no extent columns, the entry holds no rows or its extents stopped, in which
+/// case `extent_stop_bound` and `extent_stop_form` of `entries` give the stop. A Box value in a frame of
+/// extent (V, H) has own size (V - top - bottom, H - left - right), which says which cells of its frame it
+/// covers.
+///
 /// `tables` also gives `column_slots` and `column_labels`, one entry per column in the order of
 /// `column_names`: the column's slot in the relation's own column order (-1 where the engine
 /// knows none) and the name of the label that the table's form writes at it (the empty string
@@ -98,6 +110,7 @@ cell!(u8, "uint8");
 cell!(u32, "uint32");
 cell!(u64, "uint64");
 cell!(i32, "int32");
+cell!(i64, "int64");
 
 fn cell_bytes<T: Cell>(column: &[T]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(column.len() * size_of::<T>());
@@ -179,6 +192,7 @@ impl PyCaseTables {
         t.list("column_names", &c.column_names)?;
         t.list("column_types", &c.column_types)?;
         t.list("column_frames", &c.column_frames)?;
+        t.list("extent_columns", &c.extent_columns)?;
         t.list("column_slots", &c.column_slots)?;
         t.list("column_labels", &c.column_labels)?;
         t.ints("width", &c.width)?;
@@ -208,6 +222,8 @@ impl PyCaseTables {
         e.stop("stop", &c.stop)?;
         e.stop("value_stop", &c.value_stop)?;
         e.list("fault", &c.fault)?;
+        e.ints("extent_offset", &c.extent_offset)?;
+        e.stop("extent_stop", &c.extent_stop)?;
         let a = Part::new(py, "assigned", &dtypes);
         let c = &columns.assigned;
         a.ints("entry", &c.entry)?;
@@ -226,6 +242,7 @@ impl PyCaseTables {
         r.ints("defined", &c.defined)?;
         r.ints("rows", &c.rows)?;
         r.ints("offset", &c.offset)?;
+        r.ints("extent_offset", &c.extent_offset)?;
         let f = Part::new(py, "flows", &dtypes);
         let c = &columns.flows;
         f.ints("table", &c.table)?;

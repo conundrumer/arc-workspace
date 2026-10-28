@@ -645,6 +645,49 @@ pub fn column_placements(checked: &CheckedProgram, node: GraphNodeIndex, output:
     placements
 }
 
+/// The frame rule at each of the `width` row positions of the relation of
+/// `node`, an output of the instance at `form`, whose read names `output`: none
+/// at a position that is no declared column of the output or whose column has
+/// no frame.
+pub fn output_frames(checked: &CheckedProgram, node: GraphNodeIndex, output: Option<&[OutputStep]>, form: &NodePath, width: usize, registry: &Registry) -> Vec<Option<OutputFrame>> {
+    let flows = Flows { checked, program: &checked.program, registry };
+    let mut frames: Vec<Option<OutputFrame>> = vec![None; width];
+    for relation in flows.given_at(node, output).iter().filter(|relation| relation.form == *form) {
+        for placed in flows.placements(relation) {
+            let Placed::Declared { slot, positions } = placed else { continue };
+            let Some(frame) = flows.output_frame(relation, slot) else { continue };
+            for position in positions {
+                if let Some(held @ None) = frames.get_mut(position) {
+                    *held = Some(frame.clone());
+                }
+            }
+        }
+    }
+    frames
+}
+
+/// The input columns that the declared rows of the registry's `copies` map
+/// each of the `width` row positions of the relation of `node`, an output of
+/// the instance at `form` whose read names `output`, from, as the row positions
+/// of each in the rows of its input: a position that no row maps has none.
+pub fn output_copies(checked: &CheckedProgram, node: GraphNodeIndex, output: Option<&[OutputStep]>, form: &NodePath, width: usize, registry: &Registry) -> Vec<Vec<(PortName, Range<usize>)>> {
+    let flows = Flows { checked, program: &checked.program, registry };
+    let mut copies: Vec<Vec<(PortName, Range<usize>)>> = vec![Vec::new(); width];
+    for relation in flows.given_at(node, output).iter().filter(|relation| relation.form == *form) {
+        for placed in flows.placements(relation) {
+            let Placed::Declared { slot, positions } = placed else { continue };
+            let copied = flows.copied_from(relation, slot);
+            for (offset, position) in positions.enumerate() {
+                if let Some(held) = copies.get_mut(position).filter(|held| held.is_empty()) {
+                    // The row position of the column a copy of the input column's field at the same offset.
+                    *held = copied.iter().filter_map(|(port, range)| (offset < range.len()).then(|| (port.clone(), range.start + offset..range.start + offset + 1))).collect();
+                }
+            }
+        }
+    }
+    copies
+}
+
 /// The index among the columns of a relation of each of its row positions,
 /// given the path of each: a record's fields, which share the first name of
 /// their paths, share the index of their record.
@@ -978,16 +1021,43 @@ impl<'p> Flows<'p> {
         let maker = Maker::Output { component: instance.component.clone(), output: port.clone(), column: column.name.clone() };
         Some(OutputFrame { rule, maker, at: relation.form.clone(), named })
     }
+
+    /// The input columns that a declared row of the registry's `copies` maps
+    /// the column at `slot` of the output that `relation` gives from, as the
+    /// row positions of each in the rows of its input.
+    fn copied_from(&self, relation: &Given, slot: usize) -> Vec<(PortName, Range<usize>)> {
+        let Some([OutputStep::Port(port)]) = relation.output.as_deref() else { return Vec::new() };
+        let Some(NodeRef::Instance(instance)) = node_at(NodeRef::Program(self.program.program.value()), &relation.form) else { return Vec::new() };
+        let Some(component) = registry_columns::component(self.registry, &instance.component) else { return Vec::new() };
+        let Some(output) = component.outputs.iter().find(|output| output.name == *port) else { return Vec::new() };
+        let keyed = instance.key.is_some();
+        let Some(column) = output.columns_at(keyed).nth(slot) else { return Vec::new() };
+        let mut copied = Vec::new();
+        for from in output.copies.iter().flat_map(|row| row.alternatives.iter()) {
+            let input = &component.inputs[from.input];
+            let Some(slots) = self.program.instance_port_slots(&relation.form, &input.port, self.registry) else { continue };
+            let ranges = input.port.row_ranges(keyed, slots.iter().map(|slot| slot.width));
+            for &(from_column, _) in from.columns.iter().filter(|&&(_, to)| output.columns[to].name == column.name) {
+                if let Some(range) = ranges[from_column].clone() {
+                    copied.push((input.port.name.clone(), range));
+                }
+            }
+        }
+        copied
+    }
 }
 
 /// The frame rule of a column of an instance's output, with the frame it
 /// makes: the lib column that makes it, the path of the `INIT` form, and the
 /// row positions of the input columns that the rule names.
-struct OutputFrame {
-    rule: FrameRule,
+#[derive(Clone)]
+pub struct OutputFrame {
+    pub rule: FrameRule,
     maker: Maker,
     at: NodePath,
-    named: Vec<(PortName, Range<usize>)>,
+    /// The row positions of each input column that the rule names, in the
+    /// rows of that input.
+    pub named: Vec<(PortName, Range<usize>)>,
 }
 
 impl OutputFrame {

@@ -44,6 +44,21 @@
 //! runs of a case with the same cells, the same rows of the same width, share
 //! one offset, and the cells stand once in `values`. A run without a cell has
 //! offset 0.
+//!
+//! A table that has a column of type `Box` whose frame is a made frame
+//! (`<maker>@<path>`, with or without ` in <frame>`) lists the indexes of those
+//! columns in [`TableColumns::extent_columns`], and each of its entries and of its
+//! projection rows holds one more run, the extents of the made frames, at
+//! [`EntryColumns::extent_offset`] and [`ProjectionRowColumns::extent_offset`]:
+//! for each row of the entry's run, in its order, two cells for each extent
+//! column, in their order, the frame's count of rows V and then of columns H at
+//! that row, or `-1 -1` for a row with no extent. A row has no extent where its
+//! derivations give two extents, or where the engine cannot compute one, and every
+//! extent is at least 1 in each cell, so `-1 -1` tells the two apart. A Box `v` in a
+//! frame of extent (V, H) covers a box of own size (V - top - bottom, H - left -
+//! right), so a reader tells from `v`'s margins and the extent which cells of its
+//! frame `v` covers. An extent run stands in `values` beside the others, and
+//! equal runs of a case share one offset.
 
 use std::hash::Hash;
 
@@ -61,8 +76,9 @@ use arclog::relations::Relation;
 use arclog::terms::{Constant, OrientationConstant, Term, TermId, ORIENTATION_TYPES};
 use arclog::types::ValueType;
 
+use crate::extents::{EntryExtents, Extent, Merged};
 use crate::flows::{ColumnSource, SourceColumn, SourceFrame, SourceKind};
-use crate::tables::{Contents, Point, Table, TableRelation};
+use crate::tables::{evidence_shells, Contents, Point, Table, TableRelation};
 
 /// The point of a table, as the code in [`TableColumns::point`].
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -159,6 +175,10 @@ pub struct TableColumns {
     /// D4 element moves, gives an unknown frame, and a column with such a
     /// source has none.
     pub column_frames: Vec<Vec<String>>,
+    /// The indexes, in increasing order, of the table's columns of type `Box`
+    /// whose frame in `column_frames` is a made frame, empty for every other
+    /// table: the columns that each entry's extent run holds extents for.
+    pub extent_columns: Vec<Vec<u32>>,
     /// The slot of each column in the relation's own column order, in the
     /// order of `column_names`, and -1 for a column that the engine knows no
     /// slot for. The relation's own order is the order the form gives its
@@ -241,6 +261,13 @@ pub struct EntryColumns {
     pub value_stop: StopColumns,
     /// The fault of the example.
     pub fault: Vec<Option<String>>,
+    /// The offset in `values` of the entry's extent run, which holds two cells
+    /// for each column of the table's `extent_columns` for each row of the
+    /// entry's run, in its order; -1 where the table has no extent columns,
+    /// the entry holds no rows, or its extents stopped.
+    pub extent_offset: Vec<i64>,
+    /// The bound that stopped the evaluation of the entry's extents.
+    pub extent_stop: StopColumns,
 }
 
 /// One row for each `DET` of each entry's assignment, in the order of the
@@ -277,6 +304,12 @@ pub struct ProjectionRowColumns {
     pub defined: Vec<u8>,
     pub rows: Vec<u64>,
     pub offset: Vec<u64>,
+    /// The offset of the extent run of the projection's rows, which holds two
+    /// cells for each projection column that the table's `extent_columns` holds, for
+    /// each row in its order, a row taking the one extent over the table's rows it
+    /// projects; -1 where the row is not defined, none of the projection's
+    /// columns is among them, or the entry's extents stopped.
+    pub extent_offset: Vec<i64>,
 }
 
 /// One row for each source of each column of a table, in the order of the
@@ -464,53 +497,89 @@ fn push_cells(out: &mut Vec<i32>, id: TermId, ty: &ValueType) {
 #[derive(Default)]
 struct Runs(StableHashMap<(u64, usize, StableHash), Vec<usize>>);
 
-/// The count of rows and the offset of the run of the rows of `rows`, of
-/// columns of `types`, in the order of their cells: where `values` holds a run
-/// with the same count of rows and the same cells, that run, and otherwise
-/// the run that this call appends to `values`. A run without a cell has
-/// offset 0.
-fn push_rows(values: &mut Vec<i32>, runs: &mut Runs, rows: &Relation, types: &[ValueType]) -> (u64, u64) {
-    let mut written: Vec<Vec<i32>> = Vec::new();
+/// The rows of `rows`, of columns of `types`, as their cells in the order of
+/// the cells, each with its place in the order of [`each_row`].
+fn sorted_rows(rows: &Relation, types: &[ValueType]) -> Vec<(Vec<i32>, usize)> {
+    let mut written: Vec<(Vec<i32>, usize)> = Vec::new();
     each_row(rows, &mut |row| {
         let mut cells = Vec::new();
         for (&id, ty) in row.iter().zip(types) {
             push_cells(&mut cells, id, ty);
         }
-        written.push(cells);
+        written.push((cells, written.len()));
     });
     written.sort();
-    let count = written.len() as u64;
-    let cells: Vec<i32> = written.into_iter().flatten().collect();
+    written
+}
+
+/// The offset of the run of `count` rows with the cells `cells`: where
+/// `values` holds a run with the same count of rows and the same cells, that
+/// run, and otherwise the run that this call appends to `values`. A run
+/// without a cell has offset 0.
+fn push_run(values: &mut Vec<i32>, runs: &mut Runs, count: u64, cells: Vec<i32>) -> u64 {
     if cells.is_empty() {
-        return (count, 0);
+        return 0;
     }
     let mut hasher = StableHasher::new();
     cells.hash(&mut hasher);
     let offsets = runs.0.entry((count, cells.len(), hasher.finish128())).or_default();
     if let Some(&offset) = offsets.iter().find(|&&offset| values[offset..offset + cells.len()] == cells[..]) {
-        return (count, offset as u64);
+        return offset as u64;
     }
     let offset = values.len();
     offsets.push(offset);
     values.extend(cells);
-    (count, offset as u64)
+    offset as u64
+}
+
+/// The count of rows and the offset of the run of the rows of `rows`, of
+/// columns of `types`, in the order of their cells, as [`push_run`] places it.
+fn push_rows(values: &mut Vec<i32>, runs: &mut Runs, rows: &Relation, types: &[ValueType]) -> (u64, u64) {
+    let sorted = sorted_rows(rows, types);
+    let count = sorted.len() as u64;
+    let cells = sorted.into_iter().flat_map(|(cells, _)| cells).collect();
+    (count, push_run(values, runs, count, cells))
+}
+
+/// The offset of the extent run of the rows of `rows`, of columns of `types`,
+/// in the order of their cells, as [`push_run`] places it: for each row, the
+/// extents `per_row` holds for it (its place in the order of [`each_row`] indexes
+/// `per_row`), two cells for each, the frame's count of rows and of columns, or
+/// `-1 -1` for none. `rows` holds a row at least.
+fn push_extents(values: &mut Vec<i32>, runs: &mut Runs, rows: &Relation, types: &[ValueType], per_row: &[Box<[Option<Extent>]>]) -> i64 {
+    let sorted = sorted_rows(rows, types);
+    let count = sorted.len() as u64;
+    let cells = sorted.iter().flat_map(|(_, at)| per_row[*at].iter().flat_map(|extent| extent.map_or([-1, -1], |extent| [extent.rows, extent.columns]))).collect();
+    i64::try_from(push_run(values, runs, count, cells)).expect("an offset within an i64")
 }
 
 /// A table that stands for a relation: the relation as the program spells it,
 /// or the fact relation's name, the table's row, the path of each row position of
 /// its columns where the relation is a program node, and the frame (empty for
 /// none), the slot (-1 for none) and the label (empty for none) of each column.
-struct Named {
-    name: String,
-    row: u32,
-    paths: Option<Vec<Box<[ColumnName]>>>,
-    frames: Vec<String>,
+pub(crate) struct Named {
+    pub(crate) name: String,
+    pub(crate) row: u32,
+    pub(crate) paths: Option<Vec<Box<[ColumnName]>>>,
+    pub(crate) frames: Vec<String>,
     slots: Vec<i32>,
     labels: Vec<String>,
 }
 
 /// The tables so far that stand for a relation, in the order of the rows.
-type TableNames = Vec<Named>;
+pub(crate) type TableNames = Vec<Named>;
+
+/// The tables of `earlier`, the tables of a stream before a point in it, as
+/// the fold of [`case_columns`] names them after the evidence tables: the
+/// evidence tables are the first, and a table of `earlier` stands at its place
+/// among them, after the evidence.
+pub(crate) fn names_of(registry: &Registry, earlier: &[&Table]) -> TableNames {
+    let mut names = Vec::new();
+    for (place, table) in evidence_shells(registry).iter().chain(earlier.iter().copied()).enumerate() {
+        note_name(&mut names, u32::try_from(place).expect("fewer than 2^32 tables"), table);
+    }
+    names
+}
 
 /// The columns of `table`, the table at `row`, after the tables before it.
 fn push_table(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, row: u32, token: usize, table: &Table, train: usize) {
@@ -532,6 +601,7 @@ fn push_table(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, ro
             tables.column_names.push(Vec::new());
             tables.column_types.push(Vec::new());
             tables.column_frames.push(Vec::new());
+            tables.extent_columns.push(Vec::new());
             tables.column_slots.push(Vec::new());
             tables.column_labels.push(Vec::new());
             tables.width.push(0);
@@ -561,7 +631,10 @@ fn push_table(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, ro
             tables.column_names.push(contents.columns.iter().map(|column| column.name.clone()).collect());
             tables.column_types.push(type_names(&types));
             let own = named(names, row, table);
-            tables.column_frames.push(own.as_ref().map_or_else(|| column_frames(names, contents), |own| own.frames.clone()));
+            let frames = own.as_ref().map_or_else(|| column_frames(names, contents), |own| own.frames.clone());
+            let extent_columns = extent_columns(&types, &frames);
+            tables.column_frames.push(frames);
+            tables.extent_columns.push(extent_columns.clone());
             tables.column_slots.push(slots_of(contents));
             tables.column_labels.push(labels_of(contents));
             tables.width.push(row_width(&types));
@@ -587,7 +660,7 @@ fn push_table(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, ro
             tables.output_color.push(contents.selected.color.map_or(-1, i32::from));
             push_flows(out, names, row, contents);
             names.extend(own);
-            push_contents(out, runs, row, contents, &types, train);
+            push_contents(out, runs, row, contents, &types, &extent_columns, train);
         }
     }
 }
@@ -616,7 +689,7 @@ fn named(names: &TableNames, row: u32, table: &Table) -> Option<Named> {
 
 /// The relation `relation` as the program spells it, a fact relation's name,
 /// or the lib name.
-fn source_spelled(relation: &RelationRef) -> String {
+pub(crate) fn source_spelled(relation: &RelationRef) -> String {
     match relation {
         RelationRef::Fact(fact) => spelling(FACT_RELATIONS, fact).to_owned(),
         RelationRef::Lib(name) => name.0.to_string(),
@@ -629,15 +702,15 @@ fn source_spelled(relation: &RelationRef) -> String {
 /// Where a source stands in the case: the relation it reads as spelled, the
 /// latest table of `names` that stands for it, and its place among the reading
 /// table's `DET`s, -1 where it is none of them.
-struct Located<'n> {
-    spelled: String,
-    table: Option<&'n Named>,
-    det: i32,
+pub(crate) struct Located<'n> {
+    pub(crate) spelled: String,
+    pub(crate) table: Option<&'n Named>,
+    pub(crate) det: i32,
 }
 
 /// Where `source` stands, among the tables of `names` and the `DET`s `dets` of
 /// the table that reads it. A constant and a lib name stand nowhere.
-fn locate<'n>(names: &'n TableNames, dets: &[String], source: &ColumnSource) -> Located<'n> {
+pub(crate) fn locate<'n>(names: &'n TableNames, dets: &[String], source: &ColumnSource) -> Located<'n> {
     let spelled = source.relation.as_ref().map(source_spelled).unwrap_or_default();
     let (table, det) = match source.kind {
         SourceKind::Copy | SourceKind::Computed => (names.iter().rev().find(|named| named.name == spelled), dets.iter().position(|det| *det == spelled).map_or(-1, |place| place as i32)),
@@ -649,24 +722,33 @@ fn locate<'n>(names: &'n TableNames, dets: &[String], source: &ColumnSource) -> 
 /// The index of the column of `table` that `source` reads, by the source's path
 /// among the table's row positions: `None` where the source or the table gives
 /// no path, and `Some(None)` where the table has no such path.
-fn position_in(table: &Named, source: &ColumnSource) -> Option<Option<usize>> {
+pub(crate) fn position_in(table: &Named, source: &ColumnSource) -> Option<Option<usize>> {
     match (&table.paths, &source.row) {
         (Some(rows), Some(path)) => Some(rows.iter().position(|row| row == path)),
         _ => None,
     }
 }
 
+/// The index of the column that `source` reads, in the table `located` gives:
+/// the one at the source's path among the table's row positions, or, where the
+/// source or the table gives no path and the source is no `DET`'s, the source's
+/// own position. `None` where the case does not hold the table or it holds no
+/// such column.
+pub(crate) fn read_index(located: &Located<'_>, source: &ColumnSource) -> Option<usize> {
+    let table = located.table?;
+    let SourceColumn::Position(position) = source.column else { return None };
+    match position_in(table, source) {
+        Some(found) => found,
+        None if located.det < 0 => Some(usize::from(position)),
+        None => None,
+    }
+}
+
 /// The frame of the column that `source` reads, in the table `located` gives,
 /// or `None` where that column has no frame or the case does not hold it.
 fn read_frame(located: &Located<'_>, source: &ColumnSource) -> Option<String> {
-    let table = located.table?;
-    let SourceColumn::Position(position) = source.column else { return None };
-    let index = match position_in(table, source) {
-        Some(found) => found?,
-        None if located.det < 0 => usize::from(position),
-        None => return None,
-    };
-    table.frames.get(index).filter(|frame| !frame.is_empty()).cloned()
+    let index = read_index(located, source)?;
+    located.table?.frames.get(index).filter(|frame| !frame.is_empty()).cloned()
 }
 
 /// The frame that `frame` is, where the source gives it, or `None` where it is
@@ -692,11 +774,11 @@ fn resolve_frame(frame: &SourceFrame, read: &Option<String>) -> Option<String> {
 /// where each source that gives a frame gives one, they all give the same, and
 /// none gives an unknown one. A source's frame is resolved in the latest table
 /// of `names` that stands for the relation it reads.
-fn column_frames(names: &TableNames, contents: &Contents) -> Vec<String> {
+pub(crate) fn column_frames(names: &TableNames, contents: &Contents) -> Vec<String> {
     if let TableRelation::Fact(fact) = contents.relation {
         let grid = match fact {
-            FactRelation::ExOutput => "output",
-            FactRelation::Input | FactRelation::ExInput => "input",
+            FactRelation::ExOutput => OUTPUT_FRAME,
+            FactRelation::Input | FactRelation::ExInput => INPUT_FRAME,
         };
         return contents.columns.iter().map(|column| if column.name == "P" && has_frame(&column.ty) { grid.to_owned() } else { String::new() }).collect();
     }
@@ -803,11 +885,12 @@ fn push_flows(out: &mut CaseColumns, names: &TableNames, row: u32, contents: &Co
     }
 }
 
-/// The entries of `contents`, the table at `row`, and its projections.
-fn push_contents(out: &mut CaseColumns, runs: &mut Runs, row: u32, contents: &Contents, types: &[ValueType], train: usize) {
+/// The entries of `contents`, the table at `row`, and its projections;
+/// `extent_columns` are the table's columns that its entries hold extents for.
+fn push_contents(out: &mut CaseColumns, runs: &mut Runs, row: u32, contents: &Contents, types: &[ValueType], extent_columns: &[u32], train: usize) {
     let count_only = contents.projections.is_some();
     let mut starts = Vec::with_capacity(contents.examples.len());
-    for example in contents.examples.iter() {
+    for (place, example) in contents.examples.iter().enumerate() {
         starts.push(out.entries.table.len());
         let (kind, index) = match example.example {
             None => (0, 0),
@@ -817,7 +900,7 @@ fn push_contents(out: &mut CaseColumns, runs: &mut Runs, row: u32, contents: &Co
             }
         };
         let index = u32::try_from(index).expect("fewer than 2^32 examples");
-        let push = |out: &mut CaseColumns, runs: &mut Runs, model: u32, value: Option<&RelationValue>, stop: Option<&Stop>, fault: Option<String>| {
+        let push = |out: &mut CaseColumns, runs: &mut Runs, model: u32, value: Option<&RelationValue>, stop: Option<&Stop>, fault: Option<String>, extents: Option<&EntryExtents>| {
             let faulted = fault.is_some();
             let entries = &mut out.entries;
             entries.table.push(row);
@@ -837,22 +920,30 @@ fn push_contents(out: &mut CaseColumns, runs: &mut Runs, row: u32, contents: &Co
                 Some(RelationValue::Undefined) => (ValueKind::Undefined, 0, 0, None),
                 Some(RelationValue::Stopped(stop)) => (ValueKind::Stopped, 0, 0, Some(stop)),
             };
+            let (extent_offset, extent_stop) = match (value, extents) {
+                (_, Some(EntryExtents::Stopped(stop))) => (-1, Some(stop)),
+                (Some(RelationValue::Rows(rows)), Some(EntryExtents::Rows(held))) if !count_only && !rows.is_empty() => (push_extents(&mut out.values, runs, rows, types, held), None),
+                _ => (-1, None),
+            };
             let entries = &mut out.entries;
             entries.kind.push(value_kind as u8);
             entries.rows.push(rows);
             entries.offset.push(offset);
             entries.value_stop.push(value_stop);
+            entries.extent_offset.push(extent_offset);
+            entries.extent_stop.push(extent_stop);
         };
+        let entry_extents = |at: usize, model: usize| contents.extents.as_ref().and_then(|extents| extents.entry(place, at, model));
         match &example.rows {
-            Err(fault) => push(out, runs, 0, None, None, Some(format!("{} at {}", fault.message, form_path(&fault.form)))),
+            Err(fault) => push(out, runs, 0, None, None, Some(format!("{} at {}", fault.message, form_path(&fault.form))), None),
             Ok(rows) => {
                 if rows.at.is_empty() {
-                    push(out, runs, 0, None, rows.stop.as_ref(), None);
+                    push(out, runs, 0, None, rows.stop.as_ref(), None, None);
                 }
-                for (assigned, models) in &rows.at {
+                for (at, (assigned, models)) in rows.at.iter().enumerate() {
                     let first = out.entries.table.len();
                     for (model, value) in models.iter().enumerate() {
-                        push(out, runs, model as u32, Some(value), rows.stop.as_ref(), None);
+                        push(out, runs, model as u32, Some(value), rows.stop.as_ref(), None, entry_extents(at, model));
                     }
                     let mut assigned_runs = Vec::new();
                     for (position, ((_, det_rows), det)) in assigned.iter().zip(contents.dets.iter()).enumerate() {
@@ -872,28 +963,97 @@ fn push_contents(out: &mut CaseColumns, runs: &mut Runs, row: u32, contents: &Co
         }
     }
     if let Some(Projections::Found(found)) = &contents.projections {
+        let entries = projected_entries(contents);
         for projection in found {
+            let projected_columns: Vec<usize> = projection.columns.iter().map(|column| usize::from(column.0)).collect();
             let projection_row = out.projections.table.len() as u32;
             let projection_types: Vec<ValueType> = projection.columns.iter().map(|column| types[column.0 as usize].clone()).collect();
+            // The extent columns that the projection holds: each with its place among the table's extent columns.
+            let projected_extents: Vec<usize> = projection.columns.iter().filter_map(|column| extent_columns.iter().position(|&held| held == u32::from(column.0))).collect();
             out.projections.table.push(row);
             out.projections.columns.push(projection.columns.iter().map(|column| u32::from(column.0)).collect());
             out.projections.width.push(row_width(&projection_types));
             for (example, assigned) in projection.rows.iter().enumerate() {
-                for (at, (_, projection)) in assigned.at.iter().enumerate() {
-                    let (defined, count, offset) = match projection {
+                for (at, (_, projection_rows)) in assigned.at.iter().enumerate() {
+                    let (defined, count, offset) = match projection_rows {
                         None => (0, 0, 0),
                         Some(rows) => {
                             let (count, offset) = push_rows(&mut out.values, runs, rows, &projection_types);
                             (1, count, offset)
                         }
                     };
+                    let extent_offset = match (projection_rows, entries.get(example).and_then(|flat| flat.get(at))) {
+                        (Some(rows), Some((RelationValue::Rows(table_rows), Some(EntryExtents::Rows(held))))) if !projected_extents.is_empty() && count > 0 => {
+                            let per_row = projected_extent_rows(rows, table_rows, held, &projected_columns, &projected_extents);
+                            push_extents(&mut out.values, runs, rows, &projection_types, &per_row)
+                        }
+                        _ => -1,
+                    };
                     out.projection_rows.projection.push(projection_row);
                     out.projection_rows.entry.push((starts[example] + at) as u32);
                     out.projection_rows.defined.push(defined);
                     out.projection_rows.rows.push(count);
                     out.projection_rows.offset.push(offset);
+                    out.projection_rows.extent_offset.push(extent_offset);
                 }
             }
         }
     }
+}
+
+/// For each example of `contents`, its entries in the order of the models of
+/// its assignments, as the projections of the example follow them: the value
+/// of each and its extents.
+fn projected_entries(contents: &Contents) -> Vec<Vec<(&RelationValue, Option<&EntryExtents>)>> {
+    let mut entries = Vec::new();
+    for (place, example) in contents.examples.iter().enumerate() {
+        let mut flat = Vec::new();
+        if let Ok(rows) = &example.rows {
+            for (at, (_, models)) in rows.at.iter().enumerate() {
+                for (model, value) in models.iter().enumerate() {
+                    flat.push((value, contents.extents.as_ref().and_then(|extents| extents.entry(place, at, model))));
+                }
+            }
+        }
+        entries.push(flat);
+    }
+    entries
+}
+
+/// The extents of each row of `rows`, the projection onto `columns` of the
+/// rows `table_rows` of a table, in the order of [`each_row`]: for each of the
+/// table's extent columns that `extents` indexes, in its order, the one extent
+/// over the table rows that project to the row, as `held` gives their extents
+/// in the order of `table_rows`.
+fn projected_extent_rows(rows: &Relation, table_rows: &Relation, held: &[Box<[Option<Extent>]>], columns: &[usize], extents: &[usize]) -> Vec<Box<[Option<Extent>]>> {
+    let mut merged: StableHashMap<Box<[TermId]>, Vec<Merged>> = StableHashMap::default();
+    let mut at = 0;
+    each_row(table_rows, &mut |row| {
+        let key: Box<[TermId]> = columns.iter().map(|&column| row[column]).collect();
+        let slots = merged.entry(key).or_insert_with(|| vec![Merged::Unset; extents.len()]);
+        for (slot, &extent) in slots.iter_mut().zip(extents) {
+            slot.merge(held[at][extent]);
+        }
+        at += 1;
+    });
+    let mut per_row = Vec::new();
+    each_row(rows, &mut |row| per_row.push(merged.get(row).map_or_else(|| vec![None; extents.len()].into(), |slots| slots.iter().map(Merged::extent).collect())));
+    per_row
+}
+
+/// The indexes, in increasing order, of the columns of `types` of type `Box`
+/// whose frame in `frames` is a made frame.
+pub(crate) fn extent_columns(types: &[ValueType], frames: &[String]) -> Vec<u32> {
+    types.iter().zip(frames).enumerate().filter(|(_, (ty, frame))| **ty == ValueType::Box && is_made(frame)).map(|(index, _)| u32::try_from(index).expect("fewer than 2^32 columns")).collect()
+}
+
+/// The frame of the task's input grid, and of its output grid, as `column_frames`
+/// spells them.
+pub(crate) const INPUT_FRAME: &str = "input";
+pub(crate) const OUTPUT_FRAME: &str = "output";
+
+/// Whether `frame`, a frame as `column_frames` spells it, is a made frame:
+/// `<maker>@<path>`, with or without ` in <frame>`.
+fn is_made(frame: &str) -> bool {
+    frame.contains('@')
 }

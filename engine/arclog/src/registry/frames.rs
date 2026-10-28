@@ -42,10 +42,21 @@ pub struct FrameColumn {
 /// - `new`: a frame the column makes; `makes` is true and `of` is empty.
 /// - `(new (of <column> ...))`: a frame the column makes that lies in the
 ///   frame of those columns' values; `makes` is true.
+///
+/// A `new` rule, with or without `(of ...)`, of a column of type `Box` ends in
+/// `(size <column>)`, the column of the same relation or component whose
+/// values have the own size of the made values: the size of the box that a
+/// value covers, which no move within frames changes. A Box `v` in a frame of
+/// extent (V, H) has own size (V - top - bottom, H - left - right), a
+/// Position has own size (1, 1), and so the made frame's extent is the own
+/// size of the values of the `size` column plus the margins of the made
+/// value. A `new` rule of a column of type `Position` takes no `size`: a
+/// Position's margins give its frame's extent.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct FrameRule {
     pub makes: bool,
     pub of: Box<[FrameColumn]>,
+    pub size: Option<FrameColumn>,
 }
 
 impl FrameRule {
@@ -75,7 +86,14 @@ impl Registry {
             return Some(rule.clone());
         }
         let of = relation.columns.iter().filter(|own| own.has_frame() && mode.bound.contains(&own.name)).map(|own| FrameColumn { input: None, column: own.name.clone() });
-        Some(FrameRule { makes: false, of: of.collect() })
+        Some(FrameRule { makes: false, of: of.collect(), size: None })
+    }
+
+    /// The `size` column of the `new` rule that the lib relation or relation
+    /// macro `name` declares for its column `column`, or `None` where the
+    /// rule has none.
+    pub fn frame_size(&self, name: &LibName, column: &ColumnName) -> Option<&FrameColumn> {
+        declared_rule(&self.algebra_relation(name)?.frames, column)?.size.as_ref()
     }
 
     /// The rule of the column `column` of the output `output` of the component
@@ -94,6 +112,6 @@ impl Registry {
         let of = component.inputs.iter().flat_map(|input| {
             input.port.columns.iter().filter(|own| !is_key(own) && own.has_frame()).map(|own| FrameColumn { input: Some(input.port.name.clone()), column: own.name.clone() })
         });
-        Some(FrameRule { makes: false, of: of.collect() })
+        Some(FrameRule { makes: false, of: of.collect(), size: None })
     }
 }

@@ -29,7 +29,10 @@
 //! Each table also gives the sources of each column's values, its depth in
 //! the dependency graph, its candidate keys, and, for each relation that an
 //! atom of the `OUT` form at which the decode ended reads, the columns that
-//! the form selects in it ([`record_step`]).
+//! the form selects in it ([`record_step`]). A table that has a column of type
+//! `Box` in a made frame also gives the extent of that frame at each of its
+//! rows ([`table_extents`]), which [`step_tables`] computes from the tables
+//! of the steps before.
 //!
 //! Beside the tables of a step, [`evidence_tables`] gives the evidence tables
 //! of a task, `ex_input` and `ex_output`, which stand before the first step.
@@ -59,6 +62,7 @@ use arclog::terms::{Constant, Example, Term};
 use arclog::types::{GraphRelation, ValueType};
 use arclog::write::label_names;
 
+use crate::extents::{table_extents, Extents};
 use crate::flows::{column_flows, column_placements, ColumnSource};
 
 /// Where in a form a table stands.
@@ -157,6 +161,11 @@ pub struct Contents {
     /// The columns of the relation that the `OUT` form at which the decode
     /// ended selects ([`record_step`]).
     pub selected: SelectedColumns,
+    /// The extents of the made frames of the table's `Box` columns
+    /// ([`table_extents`]): none for a table that has no such column, an
+    /// evidence table, and a table that [`step_tables`] gives with no tables
+    /// before it to read.
+    pub extents: Option<Extents>,
 }
 
 /// The columns of a table's relation that an `OUT` form selects, each by its
@@ -184,7 +193,8 @@ pub struct Table {
 /// relation of the atom that selects it, and the Color column in the table of
 /// the relation of the atom that selects that.
 pub fn record_step(tables: &mut Vec<(usize, Table)>, decoder: &Decoder<'_>, index: usize, points: Points) {
-    tables.extend(step_tables(decoder, points).into_iter().map(|table| (index, table)));
+    let stepped = step_tables(decoder, points, tables);
+    tables.extend(stepped.into_iter().map(|table| (index, table)));
     for (slot, selected) in selected_columns(decoder) {
         for (_, table) in tables.iter_mut().filter(|(_, table)| table.point == Point::Relation) {
             if let Ok(contents) = &mut table.contents {
@@ -232,13 +242,14 @@ fn selected_columns(decoder: &Decoder<'_>) -> Vec<(u32, SelectedColumns)> {
 /// the step left the clause in progress as it was, such as a `*` before its
 /// echo, and none where no clause is in progress and no form finished; under
 /// [`Points::Relations`], none where no form finished, and no body table
-/// evaluated.
-pub fn step_tables(decoder: &Decoder<'_>, points: Points) -> Vec<Table> {
+/// evaluated. `earlier` are the tables of the steps before, which a table's
+/// extents read.
+pub fn step_tables(decoder: &Decoder<'_>, points: Points, earlier: &[(usize, Table)]) -> Vec<Table> {
     let Some(before) = decoder.before() else { return Vec::new() };
     if decoder.program().value().forms.len() > before.program().value().forms.len() {
-        relation_tables(decoder, before)
+        relation_tables(decoder, before, earlier)
     } else if points == Points::All {
-        body_table(decoder, before).into_iter().collect()
+        body_table(decoder, before, earlier).into_iter().collect()
     } else {
         Vec::new()
     }
@@ -260,7 +271,7 @@ fn body_point(decoder: &Decoder<'_>, state: &State) -> Option<Point> {
 
 /// The table of the sub-body of the clause in progress, where the step added a
 /// site or a conjunct to it; `before` is the state before the step.
-fn body_table(decoder: &Decoder<'_>, before: &State) -> Option<Table> {
+fn body_table(decoder: &Decoder<'_>, before: &State, earlier: &[(usize, Table)]) -> Option<Table> {
     let point = body_point(decoder, decoder.state())?;
     if Some(point) == body_point(decoder, before) || point == (Point::Body { conjuncts: 0, sites: 0 }) {
         return None;
@@ -272,15 +283,19 @@ fn body_table(decoder: &Decoder<'_>, before: &State) -> Option<Table> {
         let slot = decoder.state().open_slot();
         let work = decoder.table_work();
         let examples = decoder.examples_of(sub.scope).into_iter().zip(decoder.values_of(&sub, Some(&work)).into_vec()).map(|(example, rows)| ExampleRows { example, rows: rows.map(|rows| models_of_body(&rows)) }).collect();
-        contents(decoder, &sub.program, &sub.form, &relation, slot, &walked_dets(&sub.program, relation.node), examples, &work)
+        contents(decoder, &sub.program, &sub.form, &relation, slot, &walked_dets(&sub.program, relation.node), examples, &work).map(|contents| {
+            let seen: Vec<&Table> = earlier.iter().map(|(_, table)| table).collect();
+            let extents = table_extents(decoder, &seen, &sub.program, &relation, &contents);
+            Contents { extents, ..contents }
+        })
     });
     Some(Table { form, point, contents: contents.and_then(|contents| contents) })
 }
 
 /// The table of each relation the form that the step finished declares, but
 /// for each that gets no table ([`gives_no_table`]); `before` is the state
-/// before the step.
-fn relation_tables(decoder: &Decoder<'_>, before: &State) -> Vec<Table> {
+/// before the step, and `earlier` the tables of the steps before it.
+fn relation_tables(decoder: &Decoder<'_>, before: &State, earlier: &[(usize, Table)]) -> Vec<Table> {
     let registry = decoder.registry();
     let program = decoder.program();
     let form = NodePath::top(program.value().forms.len() as u32 - 1);
@@ -291,26 +306,34 @@ fn relation_tables(decoder: &Decoder<'_>, before: &State) -> Vec<Table> {
         Ok(checked) => checked,
         Err(fault) => return vec![Table { form, point: Point::Relation, contents: Err(fault.clone()) }],
     };
+    let mut tables: Vec<Table> = Vec::new();
+    for (slot, declared) in decoder.state().declared_from(before.finished_slots()).filter(|(_, declared)| !gives_no_table(program.value(), &form, declared)) {
+        let contents = match graph_relation(checked, registry, &form, declared) {
+            Some(relation) => {
+                let dets = relation_dets(checked, relation.node);
+                let work = decoder.table_work();
+                let examples = relation_examples(decoder, checked, &relation, &dets, &work);
+                contents(decoder, checked, &form, &relation, slot, &dets, examples, &work).map(|contents| {
+                    let contents = Contents { name: relation_spelled(declared), keys: checked.program.column_keys(relation.node), ..contents };
+                    let seen: Vec<&Table> = earlier.iter().map(|(_, table)| table).chain(&tables).collect();
+                    let extents = table_extents(decoder, &seen, checked, &relation, &contents);
+                    Contents { extents, ..contents }
+                })
+            }
+            None => Err(RunFault { message: "the graph holds no node for a relation the form declares".into(), form: form.clone() }),
+        };
+        tables.push(Table { form: form.clone(), point: Point::Relation, contents });
+    }
+    tables
+}
+
+/// The rows of `relation` in `checked` on each example it is evaluated on, at
+/// each assignment of `dets` and each model, counted in `work`.
+pub(crate) fn relation_examples(decoder: &Decoder<'_>, checked: &CheckedProgram, relation: &GraphRelation, dets: &[Det], work: &TableWork) -> Vec<ExampleRows> {
     decoder
-        .state()
-        .declared_from(before.finished_slots())
-        .filter(|(_, declared)| !gives_no_table(program.value(), &form, declared))
-        .map(|(slot, declared)| {
-            let contents = match graph_relation(checked, registry, &form, declared) {
-                Some(relation) => {
-                    let dets = relation_dets(checked, relation.node);
-                    let work = decoder.table_work();
-                    let examples = decoder
-                        .examples_of(scope_of(checked, &relation))
-                        .into_iter()
-                        .map(|example| ExampleRows { example, rows: decoder.assigned(checked, relation.node, &dets, Some(&work), &mut |evaluation| models_at(evaluation, &relation, example)) })
-                        .collect();
-                    contents(decoder, checked, &form, &relation, slot, &dets, examples, &work).map(|contents| Contents { name: relation_spelled(declared), keys: checked.program.column_keys(relation.node), ..contents })
-                }
-                None => Err(RunFault { message: "the graph holds no node for a relation the form declares".into(), form: form.clone() }),
-            };
-            Table { form: form.clone(), point: Point::Relation, contents }
-        })
+        .examples_of(scope_of(checked, relation))
+        .into_iter()
+        .map(|example| ExampleRows { example, rows: decoder.assigned(checked, relation.node, dets, Some(work), &mut |evaluation| models_at(evaluation, relation, example)) })
         .collect()
 }
 
@@ -349,7 +372,7 @@ fn contents(decoder: &Decoder<'_>, program: &CheckedProgram, form: &NodePath, re
     let flows = column_flows(program, relation.node, relation.output.as_deref(), &types, decoder.registry()).into();
     let depth = program.program.depth(relation.node);
     let rows = program.program.row_paths(relation.node).filter(|rows| relation.output.is_none() && rows.len() == types.len());
-    Ok(Contents { relation: TableRelation::Slot(slot), columns, dets, examples: examples.into(), projections, name: String::new(), flows, rows, depth, keys: Vec::new(), selected: SelectedColumns::default() })
+    Ok(Contents { relation: TableRelation::Slot(slot), columns, dets, examples: examples.into(), projections, name: String::new(), flows, rows, depth, keys: Vec::new(), selected: SelectedColumns::default(), extents: None })
 }
 
 /// The projections of the rows of `examples`, none where an example gives a
@@ -371,24 +394,19 @@ fn projections_of(decoder: &Decoder<'_>, examples: &[ExampleRows], form: &NodePa
 /// as the one model. A grid holds at most 900 cells, so no entry passes a
 /// projection cap of 900 or more, and the function applies no cap.
 pub fn evidence_tables(task: &Task, registry: &Registry) -> Vec<Table> {
-    [FactRelation::ExInput, FactRelation::ExOutput].into_iter().map(|fact| evidence_table(task, registry, fact)).collect()
+    EVIDENCE_FACTS.into_iter().map(|fact| evidence_table(task, registry, fact)).collect()
+}
+
+/// The fact relations of the evidence tables, in their order.
+pub(crate) const EVIDENCE_FACTS: [FactRelation; 2] = [FactRelation::ExInput, FactRelation::ExOutput];
+
+/// The evidence tables with no entries, in the order of [`evidence_tables`]:
+/// the columns of each, for a reader that takes the frames of those columns.
+pub(crate) fn evidence_shells(registry: &Registry) -> Vec<Table> {
+    EVIDENCE_FACTS.into_iter().map(|fact| evidence_table_of(registry, fact, Box::new([]))).collect()
 }
 
 fn evidence_table(task: &Task, registry: &Registry, fact: FactRelation) -> Table {
-    let columns = registry
-        .fact_columns(fact)
-        .iter()
-        .enumerate()
-        .map(|(index, column)| TableColumn {
-            name: match &column.name {
-                ColumnName::Written(text) => text.to_string(),
-                ColumnName::Slot(_) => format!("c{index}"),
-            },
-            ty: column.ty.fixed().expect("a fact column has a fixed type").clone(),
-            slot: Some(u32::try_from(index).expect("fewer than 2^32 columns")),
-            label: None,
-        })
-        .collect();
     let counts = match fact {
         FactRelation::ExOutput => task.train.len(),
         _ => task.train.len() + task.test.len(),
@@ -403,7 +421,26 @@ fn evidence_table(task: &Task, registry: &Registry, fact: FactRelation) -> Table
         .zip(held)
         .map(|(example, rows)| ExampleRows { example: Some(example), rows: Ok(Assigned { at: vec![(Vec::new(), vec![RelationValue::Rows(Arc::new(arclog::eval::join::one_part(rows)))])], stop: None }) })
         .collect();
-    Table { form: NodePath::default(), point: Point::Evidence, contents: Ok(Contents { relation: TableRelation::Fact(fact), columns, dets: Box::new([]), examples, projections: None, name: String::new(), flows: Box::new([]), rows: None, depth: 0, keys: vec![vec![0, 1]], selected: SelectedColumns::default() }) }
+    evidence_table_of(registry, fact, examples)
+}
+
+/// The evidence table of `fact` with the entries `examples`.
+fn evidence_table_of(registry: &Registry, fact: FactRelation, examples: Box<[ExampleRows]>) -> Table {
+    let columns = registry
+        .fact_columns(fact)
+        .iter()
+        .enumerate()
+        .map(|(index, column)| TableColumn {
+            name: match &column.name {
+                ColumnName::Written(text) => text.to_string(),
+                ColumnName::Slot(_) => format!("c{index}"),
+            },
+            ty: column.ty.fixed().expect("a fact column has a fixed type").clone(),
+            slot: Some(u32::try_from(index).expect("fewer than 2^32 columns")),
+            label: None,
+        })
+        .collect();
+    Table { form: NodePath::default(), point: Point::Evidence, contents: Ok(Contents { relation: TableRelation::Fact(fact), columns, dets: Box::new([]), examples, projections: None, name: String::new(), flows: Box::new([]), rows: None, depth: 0, keys: vec![vec![0, 1]], selected: SelectedColumns::default(), extents: None }) }
 }
 
 /// The relation of the graph that the form at `form` of `program` declares as

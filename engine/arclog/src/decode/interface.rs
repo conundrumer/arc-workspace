@@ -19,13 +19,13 @@ use crate::judge::candidates::PairCandidates;
 use crate::judge::run::{Found, Tested};
 use crate::judge::determination::{dets_read, descend_assignments, distinct_values, walk, Assignment, Det, End, EvaluationInputs, Walked};
 use crate::program::path::{NodePath, PathStep};
-use crate::program::{Body, Choose, ChoosePart, Clause, ClauseKeyword, Conjunct, Form, Node, Program, ProgramRelation};
+use crate::program::{Atom, Body, Choose, ChoosePart, Clause, ClauseKeyword, Conjunct, ConstraintLabel, Constraint, DeclaredName, Form, Instance, LabelId, LabelUse, Negated, Node, Operand, PortName, Program, ProgramRelation, RelationName, RelationRef, Site, SiteArg, SiteValue};
 use crate::relations::Relation;
 use crate::stream::Token;
 use crate::terms::Example;
 use crate::resolver::{resolve_last, DependencyKind, GraphNodeIndex, ResolvedProgram};
 use crate::trace::{DecodeRecord, RowsSeen};
-use crate::types::{each_site_label, use_label, GraphRelation};
+use crate::types::{each_site_label, each_site_use, use_label, GraphRelation};
 
 /// The consistency of the relation of an `OUT` form that its `END` finishes,
 /// or, under the rule tests, of a `RULE` clause that its `END` finishes, with
@@ -91,6 +91,17 @@ pub struct SubBody {
     kept: Box<[u32]>,
     pub scope: ExampleScope,
 }
+
+impl SubBody {
+    /// The column of the body's relation that holds the label `label`, a label
+    /// that the body makes: the label's row position.
+    pub fn column_of(&self, label: LabelId) -> Option<usize> {
+        self.program.program.label_position(&self.form, label).map(|position| usize::from(position.0))
+    }
+}
+
+/// The most bodies that [`Decoder::widened_bodies`] gives for one clause.
+pub const WIDENED_BODIES: usize = 32;
 
 impl<'a> Decoder<'a> {
     /// The decode, judging the train pairs of `train`, the candidates of
@@ -282,34 +293,85 @@ impl<'a> Decoder<'a> {
         let (program, open) = self.state.partial()?;
         let open = open?;
         let (last, finished) = program.value().forms.split_last().expect("a partial program holds its partial form");
-        let form = NodePath::top(finished.len() as u32);
         let OpenClause { clause, kept, .. } = open_clause(last, &open, self.context.registry)?;
-        let mut labels = Vec::new();
-        for conjunct in &kept {
-            if let Conjunct::Atom(atom) = conjunct {
-                for site in atom.value().sites.iter() {
-                    each_site_label(site, &mut Vec::new(), &mut |label, _| labels.extend(use_label(label)));
-                }
-            }
+        let labels = atom_labels(&kept);
+        Some(self.body_of(finished, clause, kept, labels))
+    }
+
+    /// The widened bodies of `clause`, a clause of the finished forms: its
+    /// body with each `OR` and each `IF` that holds an atom a frame's extent
+    /// reads replaced by one of its branches (an `IF` by its test and its
+    /// `then`, or by `NOT` of its test and its `otherwise`), one body for
+    /// each choice of a branch of each, and every other `OR` and `IF` left
+    /// as it is. Each body is a [`SubBody`] of the clause, as
+    /// [`Decoder::sub_body`] builds one, ending the program of the finished
+    /// forms and deriving a relation of its own, with a column for each label that
+    /// its conjuncts make (`made_labels`). The extent of a frame reads an atom of a lib
+    /// relation that makes a frame and an atom of a relation the program
+    /// declares. Where the clause widens to more than `WIDENED_BODIES`
+    /// bodies, this gives one fault at the clause.
+    pub fn widened_bodies(&self, clause: &Clause) -> Vec<Outcome<SubBody>> {
+        let registry = self.context.registry;
+        let finished = &self.state.program().value().forms;
+        let reads = |atom: &Atom| match &atom.relation {
+            RelationRef::Declared(_) | RelationRef::Output(_) => true,
+            RelationRef::Lib(name) => registry.algebra_relation(name).is_some_and(|relation| relation.frames.iter().any(|(_, rule)| rule.makes)),
+            RelationRef::Fact(_) | RelationRef::DefinedPort(_) => false,
+        };
+        let mut lists = Vec::new();
+        if !widen(clause.body.value().conjuncts.to_vec(), false, &reads, &mut lists) {
+            let form = NodePath::top(finished.len() as u32);
+            return vec![Err(RunFault { message: format!("the clause widens to more than {WIDENED_BODIES} bodies").into(), form })];
         }
-        let mut distinct = Vec::new();
-        for label in labels {
-            if !distinct.contains(&label) {
-                distinct.push(label);
-            }
-        }
-        let columns = crate::read::columns::slot_columns(distinct, 0);
+        let own = Clause { derives: self.fresh_relation(), ones: Arc::from([]), set: false, ..clause.clone() };
+        let made = |kept: &[Conjunct]| crate::read::columns::made_labels(&Body { conjuncts: kept.into() });
+        lists.into_iter().map(|kept| self.body_of(finished, own.clone(), kept.clone(), made(&kept))).collect()
+    }
+
+    /// The widened bodies ([`Decoder::widened_bodies`]) of each clause that
+    /// `instance` writes for its input `input`, in the order the form writes
+    /// them: the body of the input, and, where the input stands in the key clause,
+    /// the key clause's body before it with its `^` labels made, as the
+    /// instance's evaluation joins the two.
+    pub fn widened_input_bodies(&self, instance: &Instance, input: &PortName) -> Vec<Vec<Outcome<SubBody>>> {
+        let key = instance.key.as_ref();
+        let keyed = key.into_iter().flat_map(|key| key.value().inputs.iter()).map(|own| (true, own));
+        let plain = instance.inputs.iter().map(|own| (false, own));
+        keyed
+            .chain(plain)
+            .filter(|(_, own)| own.value().name == *input)
+            .map(|(in_key, own)| {
+                let before = key.filter(|_| in_key).into_iter().flat_map(|key| key.value().key.body.value().conjuncts.iter().map(unkeyed));
+                let conjuncts: Arc<[Conjunct]> = before.chain(own.value().body.value().conjuncts.iter().cloned()).collect();
+                let clause = Clause { keyword: ClauseKeyword::Rule, derives: self.fresh_relation(), gloss: None, proposers: Arc::from([]), body: Node::new(Body { conjuncts }), ones: Arc::from([]), set: false, columns: Arc::from([]) };
+                self.widened_bodies(&clause)
+            })
+            .collect()
+    }
+
+    /// A relation that no form of the decode declares: the one the next
+    /// declaration would take.
+    fn fresh_relation(&self) -> ProgramRelation {
+        ProgramRelation::Declared(RelationName(DeclaredName::Slot(self.state.open_slot())))
+    }
+
+    /// The sub-body of `clause` with the conjuncts `kept`: a complete clause
+    /// that ends the program of the `finished` forms, whose relation has a
+    /// column for each of `labels`, the labels `kept` makes.
+    fn body_of(&self, finished: &[Form], clause: Clause, kept: Vec<Conjunct>, labels: Vec<LabelId>) -> Outcome<SubBody> {
+        let form = NodePath::top(finished.len() as u32);
+        let columns = crate::read::columns::slot_columns(labels, 0);
         let count = u32::try_from(kept.len()).expect("fewer than 2^32 conjuncts");
         let sub = Clause { body: Node::new(Body { conjuncts: kept.into() }), columns, ..clause };
         let forms = finished.iter().cloned().chain([Form::Clause(Node::new(sub))]).collect();
         let registry = self.context.registry;
         let resolved = resolve_last(&self.state.resolved(registry), &Node::new(Program { forms }), registry);
         let checked = self.checked(Arc::new(resolved), &form);
-        Some(checked.map(|program| {
+        checked.map(|program| {
             let relation = derived_at(&program, &form);
             let scope = scope_of(&program, &relation);
             SubBody { program, form, kept: (0..count).collect(), scope }
-        }))
+        })
     }
 
     /// The program that `resolved` resolves, checked, or a fault at `form`
@@ -402,6 +464,182 @@ impl<'a> Decoder<'a> {
             Ok(Found::Stopped(stop)) => Consistency::Stopped(stop),
             Err(fault) => Consistency::Fault(fault),
         }
+    }
+}
+
+/// Appends to `out` the conjunct lists that `list` widens to, in the order of
+/// the branches ([`Decoder::widened_bodies`]): the first `OR` or `IF` of `list`
+/// that holds an atom `reads` admits is replaced by each branch in turn, and
+/// each result widens again. A list that replaced an `OR` or an `IF` (`split`)
+/// makes, at its first use, each label that only the branches it left made
+/// ([`made_first`]). Gives `false` once `out` holds more than
+/// [`WIDENED_BODIES`] lists.
+fn widen(list: Vec<Conjunct>, split: bool, reads: &dyn Fn(&Atom) -> bool, out: &mut Vec<Vec<Conjunct>>) -> bool {
+    let Some(at) = list.iter().position(|conjunct| splits(conjunct, reads)) else {
+        out.push(if split { made_first(list) } else { list });
+        return out.len() <= WIDENED_BODIES;
+    };
+    let branches: Vec<Vec<Conjunct>> = match &list[at] {
+        Conjunct::Or(branches) => branches.iter().map(|branch| branch.value().conjuncts.to_vec()).collect(),
+        Conjunct::If { test, then, otherwise } => {
+            let negated = match &test.value().conjuncts[..] {
+                [Conjunct::Atom(atom)] => Conjunct::Not(Negated::Atom(atom.clone())),
+                _ => Conjunct::Not(Negated::Form(Arc::new(Conjunct::Or(Arc::from([test.clone()]))))),
+            };
+            vec![test.value().conjuncts.iter().chain(then.value().conjuncts.iter()).cloned().collect(), std::iter::once(negated).chain(otherwise.value().conjuncts.iter().cloned()).collect()]
+        }
+        _ => unreachable!("only an `OR` or an `IF` splits"),
+    };
+    branches.into_iter().all(|branch| {
+        let mut next = list[..at].to_vec();
+        next.extend(branch);
+        next.extend(list[at + 1..].iter().cloned());
+        widen(next, true, reads, out)
+    })
+}
+
+/// The distinct labels of the sites of the positive atoms of `conjuncts`, in
+/// the order of their first use.
+fn atom_labels(conjuncts: &[Conjunct]) -> Vec<LabelId> {
+    let mut labels: Vec<LabelId> = Vec::new();
+    for conjunct in conjuncts {
+        if let Conjunct::Atom(atom) = conjunct {
+            for site in atom.value().sites.iter() {
+                each_site_label(site, &mut Vec::new(), &mut |label, _| {
+                    if let Some(label) = use_label(label)
+                        && !labels.contains(&label)
+                    {
+                        labels.push(label);
+                    }
+                });
+            }
+        }
+    }
+    labels
+}
+
+/// `conjunct` with each `^X` label of a key clause's body made `*X`, since a
+/// clause has no key.
+fn unkeyed(conjunct: &Conjunct) -> Conjunct {
+    let body = |body: &Node<Body>| Node::new(Body { conjuncts: body.value().conjuncts.iter().map(unkeyed).collect() });
+    let atom = |atom: &Node<Atom>| {
+        mapped_atom(atom, &mut |label| match label {
+            LabelUse::Key(label) => LabelUse::Fresh(label),
+            other => other,
+        })
+    };
+    match conjunct {
+        Conjunct::Atom(own) => Conjunct::Atom(atom(own)),
+        Conjunct::Not(Negated::Atom(own)) => Conjunct::Not(Negated::Atom(atom(own))),
+        Conjunct::Not(Negated::Form(inner)) => Conjunct::Not(Negated::Form(Arc::new(unkeyed(inner)))),
+        Conjunct::Constraint(constraint) => Conjunct::Constraint(*constraint),
+        Conjunct::Or(branches) => Conjunct::Or(branches.iter().map(body).collect()),
+        Conjunct::If { test, then, otherwise } => Conjunct::If { test: body(test), then: body(then), otherwise: body(otherwise) },
+        Conjunct::All { domain, body: inner } => Conjunct::All { domain: body(domain), body: body(inner) },
+    }
+}
+
+/// `atom` with each label use at any depth of its sites replaced by what `map` gives.
+fn mapped_atom(atom: &Node<Atom>, map: &mut dyn FnMut(LabelUse) -> LabelUse) -> Node<Atom> {
+    Node::new(Atom { relation: atom.value().relation.clone(), sites: atom.value().sites.iter().map(|site| mapped_site(site, map)).collect() })
+}
+
+/// `site` with each label use at any depth of it replaced by what `map` gives.
+fn mapped_site(site: &Site, map: &mut dyn FnMut(LabelUse) -> LabelUse) -> Site {
+    let args = site
+        .value
+        .args
+        .iter()
+        .map(|arg| match arg {
+            SiteArg::Label(label) => SiteArg::Label(map(*label)),
+            SiteArg::NamedLabel { name, label } => SiteArg::NamedLabel { name: name.clone(), label: map(*label) },
+            SiteArg::Field(field) => SiteArg::Field(mapped_site(field, map)),
+        })
+        .collect();
+    Site { column: site.column.clone(), value: SiteValue { args } }
+}
+
+/// `list`, a list of conjuncts that replaced an `OR` or an `IF`, with the first
+/// use at a site of each label that it reads and no conjunct in it makes made:
+/// an `OR` exports a label that its first branch makes to the later branches
+/// that join it, and a branch alone makes none.
+fn made_first(list: Vec<Conjunct>) -> Vec<Conjunct> {
+    let mut made: Vec<LabelId> = Vec::new();
+    for conjunct in &list {
+        each_made(conjunct, &mut made);
+    }
+    list.into_iter()
+        .map(|conjunct| match &conjunct {
+            Conjunct::Atom(atom) => Conjunct::Atom(mapped_atom(atom, &mut |label| match label {
+                LabelUse::Join(label) if !made.contains(&label) => {
+                    made.push(label);
+                    LabelUse::Fresh(label)
+                }
+                other => other,
+            })),
+            Conjunct::Constraint(constraint) => {
+                let mut make = |label: ConstraintLabel| {
+                    let fresh = label.fresh || !made.contains(&label.label);
+                    made.push(label.label);
+                    ConstraintLabel { fresh, ..label }
+                };
+                let first = make(constraint.first);
+                let second = match constraint.second {
+                    Operand::Label(label) => Operand::Label(make(label)),
+                    Operand::Zero => Operand::Zero,
+                };
+                Conjunct::Constraint(Constraint { first, second, ..*constraint })
+            }
+            _ => conjunct,
+        })
+        .collect()
+}
+
+/// Adds to `made` each label that `conjunct` makes, at any depth of it.
+fn each_made(conjunct: &Conjunct, made: &mut Vec<LabelId>) {
+    let mut add = |label: LabelId| {
+        if !made.contains(&label) {
+            made.push(label);
+        }
+    };
+    match conjunct {
+        Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => {
+            for site in atom.value().sites.iter() {
+                each_site_use(site, &mut |label| {
+                    if let LabelUse::Fresh(label) | LabelUse::Key(label) = label {
+                        add(label);
+                    }
+                });
+            }
+        }
+        Conjunct::Constraint(constraint) => {
+            if constraint.first.fresh {
+                add(constraint.first.label);
+            }
+            if let Operand::Label(second) = constraint.second
+                && second.fresh
+            {
+                add(second.label);
+            }
+        }
+        Conjunct::Not(Negated::Form(inner)) => each_made(inner, made),
+        Conjunct::Or(branches) => branches.iter().flat_map(|branch| branch.value().conjuncts.iter()).for_each(|inner| each_made(inner, made)),
+        Conjunct::If { test, then, otherwise } => [test, then, otherwise].into_iter().flat_map(|body| body.value().conjuncts.iter()).for_each(|inner| each_made(inner, made)),
+        Conjunct::All { domain, body } => [domain, body].into_iter().flat_map(|body| body.value().conjuncts.iter()).for_each(|inner| each_made(inner, made)),
+    }
+}
+
+/// Whether `conjunct` is an `OR` or an `IF` that holds, in its branches or its
+/// test, at any depth of `OR` and `IF`, an atom that `reads` admits.
+fn splits(conjunct: &Conjunct, reads: &dyn Fn(&Atom) -> bool) -> bool {
+    let holds = |body: &Node<Body>| body.value().conjuncts.iter().any(|inner| match inner {
+        Conjunct::Atom(atom) => reads(atom.value()),
+        other => splits(other, reads),
+    });
+    match conjunct {
+        Conjunct::Or(branches) => branches.iter().any(holds),
+        Conjunct::If { test, then, otherwise } => [test, then, otherwise].into_iter().any(holds),
+        _ => false,
     }
 }
 

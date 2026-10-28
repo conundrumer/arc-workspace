@@ -7,7 +7,7 @@
     (when ((A Position) (B Offset)) (C Position))
     (when ((A Offset) (B Position)) (C Position))
     (when ((A Offset) (B Offset)) (C Offset))))
-(relation relative (columns (Base Box) (X Box) (X_rel Box)) (modes (Base X)) (frames (X_rel (new (of Base))))
+(relation relative (columns (Base Box) (X Box) (X_rel Box)) (modes (Base X)) (frames (X_rel (new (of Base) (size X))))
   (types
     (when ((Base Offset) (X Offset)) (X_rel Offset))
     (when ((Base Offset) (X Position)) (X_rel Position))
@@ -399,7 +399,7 @@
   (step_offset *D *V)
   (compose (:A *P) (:B V) (:C *Q)))
 (macro split (columns (P P) (A A) (Along Along) (Across Across))
-  (frames (Across (new (of P))))
+  (frames (Across (new (of P) (size P))))
   (types
     (when ((P Position)) (Across Position))
     (when ((P Offset)) (Across Offset)))

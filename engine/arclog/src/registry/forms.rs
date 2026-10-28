@@ -177,6 +177,15 @@ impl FileReader {
                 return self.refuse(format!("`{text}` is no column of {what}"), column.place());
             };
             let rule = self.frame_rule(rule, what, refer)?;
+            match (own.ty.fixed(), &rule.size) {
+                (Some(ValueType::Box), None) if rule.makes => {
+                    return self.refuse(format!("the `{NEW}` rule of the column `{text}` of {what}, of type `Box`, names the column whose values have the made values' own size, in a `({SIZE} <column>)` form"), item.place());
+                }
+                (Some(ValueType::Position), Some(_)) => {
+                    return self.refuse(format!("the `{NEW}` rule of the column `{text}` of {what}, of type `Position`, takes no `({SIZE} <column>)` form: a Position's margins give its frame's extent"), item.place());
+                }
+                _ => {}
+            }
             if !own.has_frame() {
                 self.fault(CheckId::Scope, format!("the column `{text}` of {what} is no `Position` or `Box`, so a rule gives it no frame"), item.place());
                 continue;
@@ -193,20 +202,32 @@ impl FileReader {
         Some(rules.into())
     }
 
-    /// The rule that `expr` writes: `new`, `(of <column> ...)` or `(new (of <column> ...))`.
+    /// The rule that `expr` writes: `new`, `(of <column> ...)`, or `(new [(of <column> ...)] [(size <column>)])`.
     fn frame_rule(&mut self, expr: &SExpr, what: &str, refer: &dyn Fn(&str) -> Option<FrameColumn>) -> Option<FrameRule> {
         if matches!(expr, SExpr::Symbol { text, .. } if &**text == NEW) {
-            return Some(FrameRule { makes: true, of: Box::default() });
+            return Some(FrameRule { makes: true, of: Box::default(), size: None });
         }
         if let Some(named) = headed(expr, OF) {
-            return Some(FrameRule { makes: false, of: self.frame_columns(named, expr.place(), what, refer)? });
+            return Some(FrameRule { makes: false, of: self.frame_columns(named, expr.place(), what, refer)?, size: None });
         }
-        if let Some([inner]) = headed(expr, NEW)
-            && let Some(named) = headed(inner, OF)
+        if let Some(items) = headed(expr, NEW)
+            && !items.is_empty()
         {
-            return Some(FrameRule { makes: true, of: self.frame_columns(named, inner.place(), what, refer)? });
+            let (of, rest) = match items.first().and_then(|item| headed(item, OF).map(|named| (item, named))) {
+                Some((item, named)) => (self.frame_columns(named, item.place(), what, refer)?, &items[1..]),
+                None => (Box::default(), items),
+            };
+            let size = match rest {
+                [] => None,
+                [item] => match headed(item, SIZE) {
+                    Some([column]) => Some(self.frame_columns(std::slice::from_ref(column), item.place(), what, refer)?[0].clone()),
+                    _ => return self.refuse(format!("a `({SIZE} <column>)` form names one column"), item.place()),
+                },
+                [_, extra, ..] => return self.refuse(format!("a `{NEW}` rule ends in its `({SIZE} <column>)` form"), extra.place()),
+            };
+            return Some(FrameRule { makes: true, of, size });
         }
-        self.refuse(format!("a rule is `{NEW}`, `({OF} <column> ...)` or `({NEW} ({OF} <column> ...))`"), expr.place())
+        self.refuse(format!("a rule is `{NEW}`, `({OF} <column> ...)` or `({NEW} [({OF} <column> ...)] [({SIZE} <column>)])`"), expr.place())
     }
 
     /// The columns that `items`, the items of an `(of ...)` form, name, at least one.

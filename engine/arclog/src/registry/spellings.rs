@@ -25,6 +25,7 @@ pub(super) const WHEN: &str = "when";
 pub(super) const SAME_FRAME: &str = "same-frame";
 pub(super) const OF: &str = "of";
 pub(super) const NEW: &str = "new";
+pub(super) const SIZE: &str = "size";
 pub(super) const EITHER: &str = "either";
 pub(super) const NATIVE: &str = "native";
 pub(super) const DOMAIN: &str = "domain";
