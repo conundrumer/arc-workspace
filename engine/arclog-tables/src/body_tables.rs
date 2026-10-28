@@ -32,6 +32,23 @@ pub fn contents(decoder:&Decoder<'_>,checked:&CheckedProgram,view:&BodyView,slot
         let ty=checked.types.columns(&GraphRelation {node:d.node,output:None}).ok_or_else(||fault("DET has no column types"))?;
         Ok(TableDet {relation:d.relation.clone(),types:ty.into(),columns:checked.program.row_paths(d.node).filter(|p|p.len()==ty.len()).map(Vec::into_boxed_slice)})
     }).collect::<Outcome<Box<[_]>>>()?;
+    // Even an unused held dependency must keep its original schema. Reject
+    // incompatible assignment evidence before it reaches the packed writer;
+    // do not attach original cells to a mutant's shorter DET column list.
+    for example in &examples {
+        if let Ok(assigned) = &example.rows {
+            for (values, _) in &assigned.at {
+                if values.len() != dets.len() {
+                    return Err(fault("body assignment DET count differs from its checked schema"));
+                }
+                for ((name, rows), det) in values.iter().zip(dets.iter()) {
+                    if name != &det.relation || usize::from(rows.arity()) != det.types.len() {
+                        return Err(fault(&format!("body assignment DET {name:?} has native arity {}, incompatible with checked DET {:?} ({} columns)", rows.arity(), det.relation, det.types.len())));
+                    }
+                }
+            }
+        }
+    }
     let over=examples.iter().any(|e|e.rows.as_ref().is_ok_and(|a|a.at.iter().flat_map(|(_,m)|m).any(|v|matches!(v,RelationValue::Rows(r) if r.len()>decoder.settings().projection_cap))));
     let projections=if over {super::projections_of(decoder,&examples,&view.form,work)} else {None};
     let flows=crate::flows::body_column_flows(checked,&view.clause,&view.paths,decoder.registry()).into();

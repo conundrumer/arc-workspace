@@ -143,7 +143,19 @@ impl<'e, 'a> Driver<'e, 'a> {
             },
             ParameterSource::Determined(assigned) => {
                 return match assigned.get(name) {
-                    Some(rows) => Ok(RelationValue::Rows(rows.clone())),
+                    Some(rows) => {
+                        // Held interventions use this program's checked row
+                        // schema. A mutation can remove a globally unused
+                        // column, so an original assignment is not necessarily
+                        // a value of the mutant parameter. Never silently zip
+                        // or truncate its cells into that new schema.
+                        let types = evaluation.program.types.columns(relation)
+                            .ok_or_else(|| fault("the parameter's columns have no types".into()))?;
+                        if usize::from(rows.arity()) != types.len() {
+                            return Err(fault(format!("determined parameter {name:?} has native arity {}, but its checked schema has {} columns", rows.arity(), types.len())));
+                        }
+                        Ok(RelationValue::Rows(rows.clone()))
+                    },
                     None => self.one_value(relation),
                 };
             }
