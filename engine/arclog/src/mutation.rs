@@ -4,6 +4,7 @@
 //! has no task evaluation: it shares the resolver, binder, checker and writer.
 //! Diagnostics from unavailable choices are counted, never silently repaired.
 pub mod edit;
+mod identity;
 #[path = "study_replay.rs"] mod study_replay;
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};

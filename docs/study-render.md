@@ -43,3 +43,34 @@ there is no fingerprint over rewritten program fields.
 
 Renderer meanings of reserved zero are in
 [`study-reserved-zero.md`](study-reserved-zero.md).
+
+## Stored identities and packed assignment rows
+
+```python
+# Reconstruct from the ORIGINAL gold handle, with no redraw or evaluation.
+mutant = gold.construct_identity(json.dumps(stored_identity))
+evidence = json.loads(mutant.render_json())
+
+# Each schema type is the engine's native column_types spelling.
+cell = json.loads(arclog.StudyProgram.decode_term_json("Position", 131074))
+rows = json.loads(arclog.StudyProgram.decode_rows_json(column_types, packed_rows))
+```
+
+Identity reconstruction checks the point belongs to gold, paths are unique
+original leaf paths, replacements are legal original-site alternatives,
+metadata is canonical and exact, and the edited whole program resolves,
+types, checks and writes its stream. It enumerates no complete mutation domain
+and uses no RNG. Invalid historical records raise `ValueError`; they are not
+repaired. The caller binds source task/case/revision to its stored gold record:
+a bare program parsed from sexp does not itself carry those external fields.
+
+Packed-term decoding calls native `Term::decode` with the supplied static type.
+It accepts signed int32 or unsigned u32 encodings, validates finite constants,
+and rejects unsupported types or wrong row widths. Box/Position/Offset cells
+return native unpacked margins; their reference-frame coordinates/extent must
+come from the native table's frame records. It cannot infer a frame size from
+one packed value. Number, Color, Example, Unit and orientations return typed
+values, with orientation names from the engine registry. Ident is explicitly
+an opaque identity in its task session; no interned content is invented.
+Pose values decode as native D4 orientations, retaining the supplied nominal
+type text. Flatten record types to scalar columns first.

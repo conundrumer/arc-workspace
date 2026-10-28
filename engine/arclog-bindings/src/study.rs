@@ -87,9 +87,41 @@ impl PyStudyProgram {
     }
 
     /// Structured engine evidence. JSON schema/capabilities are versioned.
-    fn render_json(&self, py: Python<'_>) -> PyResult<String> {
-        py.detach(|| self.program.render_json(Registry::get()).map(|v|v.to_string()))
+    #[staticmethod]
+    fn decode_term_json(type_name: &str, packed: i64) -> PyResult<String> {
+        arclog::study::render_terms::decode(type_name, packed, Registry::get())
+            .map(|v| v.to_string())
             .map_err(PyValueError::new_err)
+    }
+
+    #[staticmethod]
+    fn decode_rows_json(types: Vec<String>, rows: Vec<Vec<i64>>) -> PyResult<String> {
+        let result: Result<Vec<_>, String> = rows
+            .iter()
+            .map(|row| {
+                if row.len() != types.len() {
+                    return Err("packed row width differs from supplied schema".into());
+                }
+                row.iter()
+                    .zip(&types)
+                    .map(|(value, ty)| {
+                        arclog::study::render_terms::decode(ty, *value, Registry::get())
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .collect();
+        result
+            .map(|rows| arclog::study::render::decoded_rows_json(rows))
+            .map_err(PyValueError::new_err)
+    }
+
+    fn render_json(&self, py: Python<'_>) -> PyResult<String> {
+        py.detach(|| {
+            self.program
+                .render_json(Registry::get())
+                .map(|v| v.to_string())
+        })
+        .map_err(PyValueError::new_err)
     }
 
     fn sexp(&self) -> String {
@@ -192,6 +224,22 @@ impl PyStudyProgram {
                 .map(|v| v.to_string())
         })
         .map_err(PyValueError::new_err)
+    }
+
+    /// Rehydrate and verify a stored identity without drawing its domain.
+    fn construct_identity(&self, py: Python<'_>, identity_json: &str) -> PyResult<PyValidMutant> {
+        let identity =
+            arclog::study::render::parse_json(identity_json).map_err(PyValueError::new_err)?;
+        let inner = py
+            .detach(|| {
+                self.program
+                    .construct_identity(&identity, Registry::get(), &self.settings)
+            })
+            .map_err(PyValueError::new_err)?;
+        Ok(PyValidMutant {
+            inner,
+            settings: self.settings,
+        })
     }
 
     fn construct(&self, spec: &PyMutationSpec) -> PyResult<PyValidMutant> {

@@ -52,7 +52,11 @@ impl StudyProgram {
                         Conjunct::If { .. } => "if",
                         Conjunct::All { .. } => "all",
                     },
-                    conjunct_json(c),
+                    if c.atom().is_some() || matches!(c, Conjunct::Constraint(_)) {
+                        conjunct_json(c)
+                    } else {
+                        json!({"branch_count":node.children().len()})
+                    },
                 ),
                 NodeRef::Atom(a) => (
                     "atom",
@@ -116,4 +120,13 @@ pub(crate) fn program_relation(r: &ProgramRelation) -> Value {
         ProgramRelation::Declared(n) => json!({"kind":"declared","name":name(&n.0)}),
         ProgramRelation::Output(n) => relation_json(&RelationRef::Output(n.clone())),
     }
+}
+
+/// Parse external structured evidence through the engine's JSON dependency.
+pub fn parse_json(text: &str) -> Result<Value, String> {
+    serde_json::from_str(text).map_err(|e| e.to_string())
+}
+
+pub fn decoded_rows_json(rows: Vec<Vec<Value>>) -> String {
+    json!(rows).to_string()
 }
