@@ -16,6 +16,9 @@ pub fn export(checked: &CheckedProgram, registry: &Registry) -> Result<Value, St
     let inference = Inference::new(&checked.program, &cases);
     let mut arguments = Vec::new();
     let mut comparisons = Vec::new();
+    let mut variables = Vec::new();
+    let mut scopes = Vec::new();
+    let names = crate::write::label_names(&checked.program.program, registry);
     fn frame(ty: &ValueType, label: Option<LabelId>, grids: &FormGrids<'_, '_>) -> Value {
         if !crate::registry::has_frame(ty) {
             return json!({"status":"not_applicable"});
@@ -157,6 +160,8 @@ pub fn export(checked: &CheckedProgram, registry: &Registry) -> Result<Value, St
             grids: Some(&grids),
             ..reading
         };
+        let first_argument = arguments.len();
+        let first_comparison = comparisons.len();
         walk(
             NodeRef::from(form),
             &at,
@@ -166,7 +171,58 @@ pub fn export(checked: &CheckedProgram, registry: &Registry) -> Result<Value, St
             &mut arguments,
             &mut comparisons,
         )?;
+        // Index original occurrences once per scope, rather than rescanning
+        // every site and declaration for every variable.
+        let mut occurrence_index = std::collections::BTreeMap::<LabelId,Vec<Value>>::new();
+        for argument in &arguments[first_argument..] {
+            if let Some(label) = argument["label_id"].as_u64() {
+                occurrence_index.entry(LabelId(label as u32)).or_default()
+                    .push(json!({"kind":"site_argument","path":argument["path"]}));
+            }
+        }
+        for comparison in &comparisons[first_comparison..] {
+            for operand in ["first","second"] {
+                if let Some(label) = comparison[operand]["label_id"].as_u64() {
+                    occurrence_index.entry(LabelId(label as u32)).or_default()
+                        .push(json!({"kind":"comparison_operand","path":comparison["path"],"operand":operand}));
+                }
+            }
+        }
+        fn declarations(node: NodeRef<'_>, at: &NodePath, out: &mut std::collections::BTreeMap<LabelId,Vec<Value>>) {
+            let columns = match node {
+                NodeRef::Clause(c) => Some(&c.columns[..]),
+                NodeRef::KeyClause(k) => Some(&k.key.columns[..]),
+                NodeRef::Out(o) => Some(&o.key.columns[..]),
+                _ => None,
+            };
+            if let Some(columns) = columns {
+                for (i,column) in columns.iter().enumerate() {
+                    out.entry(column.label).or_default()
+                        .push(json!({"kind":"declaration_column","path":path_json(at),"column":i}));
+                }
+            }
+            for (i,child) in node.children().into_iter().enumerate() {
+                declarations(child,&at.child(i as u32),out);
+            }
+        }
+        declarations(NodeRef::from(form),&at,&mut occurrence_index);
+        let mut scope_labels = Vec::new();
+        for (label, _) in reading.labels {
+            let ty = typed(reading.labels, *label)
+                .ok_or_else(||format!("no native inferred variable type at {at:?} label {label:?}"))?;
+            let occurrences = occurrence_index.remove(label).unwrap_or_default();
+            if occurrences.is_empty() {
+                return Err(format!("native inferred variable has no original occurrence at {at:?} label {label:?}"));
+            }
+            variables.push(json!({"scope_path":path_json(reading.path),"label_id":label.0,
+                "label_spelling":names[i].iter().find(|(id,_)|id==label).map(|(_,name)|name.as_ref()),
+                "resolved_type":format!("{ty:?}"),"frame":frame(&ty,Some(*label),&grids),"occurrences":occurrences}));
+            scope_labels.push(label.0);
+        }
+        scopes.push(json!({"scope_path":path_json(reading.path),"label_ids":scope_labels,
+            "argument_count":arguments.len()-first_argument,"comparison_count":comparisons.len()-first_comparison}));
     }
-    Ok(json!({"arguments":arguments,"comparisons":comparisons,
+    Ok(json!({"arguments":arguments,"comparisons":comparisons,"variables":variables,"scopes":scopes,
+        "variable_identity":"(scope_path,label_id); includes comparison-only and branch-local variables; occurrence paths are original AST paths",
         "frame_analysis":"native checker grid evidence; made/native table frames are a separate export part"}))
 }

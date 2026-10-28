@@ -347,3 +347,26 @@ renumber a logical column. Stored corpus-v5/v8 tables retain their historical
 Unit-bearing schemas. Join stored body columns by original label identity and
 verify exact schema/layout before using a newer projection; never drop a stored
 column or fabricate a Unit to make a historical schema match.
+
+## Complete scoped clause variables
+
+`typed_sites.variables` exports each inferred variable exactly once within its
+native `scope_path`, keyed by `(scope_path, label_id)`. It includes variables
+that occur only as comparison operands and branch locals, which cannot be
+recovered by deduplicating `typed_sites.arguments`. Each variable carries its
+native `resolved_type`, engine `label_spelling`, static checker `frame` and
+exact original `occurrences`. A site use points to its argument path; a
+comparison use points to the comparison node with an explicit `operand`
+(`first`/`second`). Declaration-only labels (such as proposer DET columns)
+point to the actual declaring node with a `declaration_column` ordinal.
+Comparison operands and declaration fields are not fictitious child nodes.
+`typed_sites.scopes` lists the native label IDs and coverage counts per scope.
+
+Join a body's `frame_sources.bodies[].variables` to this variable list with
+`(owner_path, label_id)`. The body part supplies native IR variable/type,
+optional output `body_column` and actual provenance sources, including locals
+omitted from evaluated result columns. Static checker grid proof and native
+made/read-frame provenance are separate evidence: `not_established` and
+`native_unknown` remain explicit, and per-row sizes still come from the exact
+stored native frames/extents. No frame size, coordinate conversion or nominal
+Pose admissibility is inferred from a type, spelling or packed value.
