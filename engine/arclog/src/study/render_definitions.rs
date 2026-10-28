@@ -29,7 +29,7 @@ fn ast_reads(node: NodeRef<'_>, out: &mut Vec<Value>) {
         ast_reads(child, out);
     }
 }
-fn registry_export(registry: &Registry) -> Result<Value, String> {
+fn registry_export_uncached(registry: &Registry) -> Result<Value, String> {
     let mut forms = std::collections::BTreeMap::new();
     let mut implementations = std::collections::BTreeMap::new();
     for (source, text, into) in [
@@ -115,6 +115,14 @@ fn registry_export(registry: &Registry) -> Result<Value, String> {
         json!({"completeness":"entire_embedded_registry_and_arclog_proposers","entries":entries,
         "native_semantics":"native relations/components/proposers expose their registry contracts; implementation kinds are explicit, no arclog body is invented"}),
     )
+}
+
+fn registry_export(registry:&Registry)->Result<Value,String> {
+    static SHARED:std::sync::OnceLock<Result<std::sync::Arc<Value>,String>>=std::sync::OnceLock::new();
+    if std::ptr::eq(registry,Registry::get()) {
+        SHARED.get_or_init(||registry_export_uncached(registry).map(std::sync::Arc::new))
+            .as_ref().map(|value|(**value).clone()).map_err(Clone::clone)
+    } else {registry_export_uncached(registry)}
 }
 
 pub fn export(program: &StudyProgram, registry: &Registry) -> Result<Value, String> {

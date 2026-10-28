@@ -227,6 +227,11 @@ impl PyStudyProgram {
     }
 
     /// Rehydrate and verify a stored identity without drawing its domain.
+    fn decode_source(&self, py:Python<'_>)->PyResult<Self> {
+        let program=py.detach(|| self.program.decode_source(Registry::get(),&self.settings)).map_err(PyValueError::new_err)?;
+        Ok(Self {program,settings:self.settings})
+    }
+
     fn construct_identity(&self, py: Python<'_>, identity_json: &str) -> PyResult<PyValidMutant> {
         let identity =
             arclog::study::render::parse_json(identity_json).map_err(PyValueError::new_err)?;
@@ -249,7 +254,9 @@ impl PyStudyProgram {
             let mutant =
                 self.program
                     .construct_identity(&identity, Registry::get(), &self.settings)?;
-            arclog::study::render::render_pair(&mutant, Registry::get()).map(|v| v.to_string())
+            let source=if std::sync::Arc::ptr_eq(self.program.checked(),mutant.gold()) {self.program.clone()}
+                else {self.program.decode_source(Registry::get(),&self.settings)?};
+            arclog::study::render::render_pair(&source, &mutant, Registry::get()).map(|v| v.to_string())
         })
         .map_err(|error: String| PyValueError::new_err(error))
     }

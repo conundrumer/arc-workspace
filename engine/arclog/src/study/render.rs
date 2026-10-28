@@ -9,6 +9,18 @@ use serde_json::{Value, json};
 
 impl StudyProgram {
     pub fn render_json(&self, registry: &Registry) -> Result<Value, String> {
+        let key = registry as *const Registry as usize;
+        let cached = self
+            .render_cache
+            .get_or_init(|| (key, self.render_uncached(registry)));
+        if cached.0 == key {
+            cached.1.clone()
+        } else {
+            self.render_uncached(registry)
+        }
+    }
+
+    fn render_uncached(&self, registry: &Registry) -> Result<Value, String> {
         let text = crate::write::node_texts(self.program(), self.layout(), registry)?;
         fn walk(
             node: NodeRef<'_>,
@@ -134,13 +146,11 @@ pub fn decoded_rows_json(rows: Vec<Vec<Value>>) -> String {
 /// Includes the actual rehydrated source AST used to verify a stored decode
 /// identity (which can differ from a sexp reader's presentation wrappers).
 pub fn render_pair(
+    gold: &StudyProgram,
     mutant: &crate::mutation::ValidMutant,
     registry: &Registry,
 ) -> Result<Value, String> {
-    let gold = StudyProgram {
-        checked: std::sync::Arc::clone(mutant.gold()),
-        layout: None,
-    };
+    if !std::sync::Arc::ptr_eq(gold.checked(),mutant.gold()) {return Err("render source handle differs from rehydrated mutation source".into());}
     let mut changed = mutant.program().render_json(registry)?;
     changed["mutation_identity"] = mutant.identity();
     changed["source_path_correspondence"] = mutant.source_paths();

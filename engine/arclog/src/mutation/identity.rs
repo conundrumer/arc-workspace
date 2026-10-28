@@ -182,9 +182,7 @@ impl StudyProgram {
         // that display text creates written names/field wrappers, not the
         // original decode AST. Recover the decode AST through the engine's own
         // stream grammar/binder, never by guessing names or remapping JSON.
-        let stream = self.decode_stream(registry, settings)?;
-        let mut reader = crate::decode::program_read::ProgramReader::new(registry, *settings);
-        let decoded = Self::from_decoded(reader.read(&stream.ids, &stream.model)?, registry)?;
+        let decoded=self.decode_source(registry,settings)?;
         decoded.construct_identity_at_source(identity,registry,settings)
             .map_err(|e|format!("stored identity failed on both source AST and its native decode AST: {e}; source: {}",original.unwrap_err()))
     }

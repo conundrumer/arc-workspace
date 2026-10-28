@@ -4,7 +4,7 @@
 //! Expand solver alternatives with `stream::corpus::case_files` first.
 //! Paths always address the AST in source order, never stream offsets.
 
-use std::sync::Arc;
+use std::sync::{Arc,OnceLock};
 
 pub mod render;
 pub mod render_terms;
@@ -26,6 +26,8 @@ use crate::stream::{DecodeSettings, Emitter, Vocabulary, token_stream_with_paths
 pub struct StudyProgram {
     checked: Arc<CheckedProgram>,
     layout: Option<Layout>,
+    render_cache: Arc<OnceLock<(usize, Result<serde_json::Value,String>)>>,
+    source_cache: Arc<OnceLock<(usize,DecodeSettings,Result<StudyProgram,String>)>>,
 }
 
 /// An engine-written stream and its source-order AST correspondence.
@@ -119,7 +121,22 @@ impl StudyProgram {
         Ok(Self {
             checked: Arc::new(checked),
             layout,
+            render_cache:Arc::new(OnceLock::new()),
+            source_cache:Arc::new(OnceLock::new()),
         })
+    }
+
+    /// Reusable native decode AST for stored anonymous-slot identities.
+    pub fn decode_source(&self, registry:&Registry, settings:&DecodeSettings)->Result<Self,String> {
+        if self.layout.is_none() {return Ok(self.clone());}
+        let key=registry as *const Registry as usize;
+        let read=|| {
+            let stream=self.decode_stream(registry,settings)?;
+            let mut reader=crate::decode::program_read::ProgramReader::new(registry,*settings);
+            Self::from_decoded(reader.read(&stream.ids,&stream.model)?,registry)
+        };
+        let cached=self.source_cache.get_or_init(||(key,*settings,read()));
+        if cached.0==key && cached.1==*settings {cached.2.clone()} else {read()}
     }
 
     pub fn checked(&self) -> &Arc<CheckedProgram> {

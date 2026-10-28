@@ -131,3 +131,18 @@ input/output port metadata. Native implementations expose their exact registry
 contract and implementation kind, not an invented arclog body. Component
 input defaults, copies, frame/type rules are present in the structured native
 registry declaration. Facts have explicit definitions too.
+
+## Reuse and cache bounds
+
+The immutable embedded registry export is parsed once per engine process into
+`OnceLock<Arc<JSON>>`. Each checked StudyProgram shares its immutable render
+result across handle clones, so gold BodyViews and definitions are not rebuilt
+per identity. Stored-sexpression handles cache their native decoded-source
+handle for one exact Registry/settings pair. `gold.decode_source()` exposes
+that reusable handle; render2 should retain it once per task/case and call its
+construct_identity/render_pair_json methods. render_pair_json validates and
+uses that same cached source, including its already computed gold export.
+Custom registries/settings fall back to uncached computation rather than
+reusing a mismatched cache. Per-program caches live as long as caller-owned
+handles, not in an unbounded global program map. JSON results remain complete
+values; render2 may store identical immutable definitions once in artifacts.
