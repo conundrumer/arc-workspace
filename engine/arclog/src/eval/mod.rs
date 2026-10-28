@@ -31,6 +31,7 @@
 
 pub mod body_ir;
 pub mod body_view;
+mod body_context;
 pub mod cache;
 pub mod copies;
 pub mod determinations;

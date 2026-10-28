@@ -25,7 +25,7 @@ pub fn dets(checked:&CheckedProgram,view:&BodyView)->Vec<Det> {
 
 pub fn models(evaluation:&Evaluation<'_>,view:&BodyView,example:Option<Example>)->Result<Vec<RelationValue>,End> {
     let mut values=Vec::new();
-    let end=evaluation.body_models(&view.form,&view.clause,example,&mut |v|{values.push(v.clone());ControlFlow::Continue(())}).map_err(End::Fault)?;
+    let end=evaluation.body_models(view,example,&mut |v|{values.push(v.clone());ControlFlow::Continue(())}).map_err(End::Fault)?;
     if let ModelsEnd::Stopped(stop)=end {values.push(RelationValue::Stopped(stop));}
     Ok(values)
 }

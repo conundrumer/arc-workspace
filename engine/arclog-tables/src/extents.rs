@@ -90,7 +90,7 @@ use arclog::registry::Registry;
 use arclog::relations::Relation;
 use arclog::resolver::given::Given;
 use arclog::resolver::registry_columns;
-use arclog::resolver::{DependencyKind, GraphNodeIndex, Resolution};
+use arclog::resolver::{DependencyKind, Resolution};
 use arclog::terms::{Constant, Example, Margins, Term, TermId};
 use arclog::types::{use_label, GraphRelation, ValueType};
 
@@ -280,6 +280,18 @@ fn derive(decoder: &Decoder<'_>, reads: &Reads<'_>, subject: &Subject<'_>) -> Ve
                 }
                 used+=1;
             }
+            (Some(NodeRef::Instance(instance)),DependencyKind::RecursiveInstance(_))=>{
+                let port=given.output.as_deref().and_then(|steps|match steps {[arclog::program::OutputStep::Port(port)]=>Some(port),_=>None});
+                let component=registry_columns::component(registry,&instance.component).expect("checked component");
+                match port {
+                    Some(port) if !component.outputs.iter().any(|own|own.name==*port)=>{
+                        let placements=placements();
+                        let all=checked.program.input_bodies(&given.form,port);
+                        for at in all {gather_view(decoder,reads,&dets,subject,&given.form.join(&at),&placements,&mut gathered);}
+                    }
+                    _=>gather_output(decoder,reads,subject,&given,instance,&mut gathered),
+                }
+            }
             (Some(NodeRef::Instance(instance)), DependencyKind::InstanceOutput { .. }) => gather_output(decoder, reads, subject, &given, instance, &mut gathered),
             _ => lose_all(&mut gathered, &format!("the rows of a {} form are not derived", kind_spelled(kind))),
         }
@@ -388,7 +400,7 @@ fn gather(decoder: &Decoder<'_>, reads: &Reads<'_>, dets: &[String], subject: &S
 /// wanted, and their derivation.
 struct PortRows {
     name: PortName,
-    node: GraphNodeIndex,
+    relation:GraphRelation,
     key: Option<Range<usize>>,
     wanted: Vec<u32>,
     derived: Option<(Vec<ExampleRows>, Vec<Vec<Gathered>>)>,
@@ -458,12 +470,10 @@ impl OutputPlan {
             if let Some(place) = ports.iter().position(|own| own.name == *name) {
                 return Some(place);
             }
-            let node = checked.program.nodes_of(&given.form).iter().copied().find(|&node| {
-                matches!(&checked.program.graph.nodes[node.0 as usize].kind, DependencyKind::InstanceInput { instance: own, input } if *own == instance.name && input == name)
-            })?;
+            let relation=arclog::eval::input_relation(checked,&instance.name,name)?;
             let input = component.inputs.iter().find(|input| input.port.name == *name)?;
             let slots = checked.program.instance_port_slots(&given.form, &input.port, registry)?;
-            ports.push(PortRows { name: name.clone(), node, key: key_range(slots.iter().map(|slot| (slot.is_key, slot.width))), wanted: Vec::new(), derived: None });
+            ports.push(PortRows { name: name.clone(), relation, key: key_range(slots.iter().map(|slot| (slot.is_key, slot.width))), wanted: Vec::new(), derived: None });
             Some(ports.len() - 1)
         };
         let mut columns: Vec<Option<ColumnPlan>> = Vec::new();
@@ -500,9 +510,9 @@ impl OutputPlan {
     /// Derives the rows of each input whose extents a column wants.
     fn derive_ports(&mut self, decoder: &Decoder<'_>, reads: &Reads<'_>, checked: &CheckedProgram) {
         for port in self.ports.iter_mut().filter(|port| !port.wanted.is_empty()) {
-            let port_relation = GraphRelation { node: port.node, output: None };
+            let port_relation=port.relation.clone();
             let Some(types) = checked.types.columns(&port_relation) else { continue };
-            let examples = relation_examples(decoder, checked, &port_relation, &relation_dets(checked, port.node), &reads.work);
+            let examples = relation_examples(decoder, checked, &port_relation, &relation_dets(checked, port_relation.node), &reads.work);
             let port_subject = Subject { checked, relation: Some(&port_relation), types, examples: &examples, columns: &port.wanted };
             let derived = derive(decoder, reads, &port_subject);
             port.derived = Some((examples, derived));

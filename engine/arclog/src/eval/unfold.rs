@@ -96,7 +96,7 @@ impl UnfoldOutput {
 
     /// Adds to `rows` the rows of this output at `state` on `branch`, the
     /// branch a walk takes there, each `key`, the cursor, then the item.
-    fn add_rows(self, key: &[TermId], state: &UnfoldState, branch: &Branch, rows: &mut RowSet) {
+    pub(super) fn add_rows(self, key: &[TermId], state: &UnfoldState, branch: &Branch, rows: &mut RowSet) {
         let items: &[TermId] = match self {
             UnfoldOutput::Taken => &state.taken,
             UnfoldOutput::Untaken => &state.untaken,
@@ -246,6 +246,10 @@ impl<'g> Walks<'g> {
     }
 }
 
+/// The state-local read context of one reached round in one model.
+#[derive(Clone,Debug)]
+pub struct WalkContext {pub key:Row,pub state:UnfoldState,pub take:Box<[TermId]>}
+
 /// The distinct values of some outputs over the walks of one key's state
 /// graph, found as they are asked for, each the rows of each output at the
 /// states along one walk, with the key before the cursor and the item.
@@ -255,11 +259,12 @@ struct DistinctWalks<'g> {
     key: Row,
     seen: StableHashSet<Vec<Vec<Row>>>,
     found: Vec<Vec<RowSet>>,
+    contexts:Vec<Vec<WalkContext>>,
 }
 
 impl<'g> DistinctWalks<'g> {
     fn new(graph: &'g StateGraph, outputs: &'g [UnfoldOutput], key: Row) -> Self {
-        DistinctWalks { walks: Walks::new(graph), outputs, key, seen: StableHashSet::default(), found: Vec::new() }
+        DistinctWalks { walks: Walks::new(graph), outputs, key, seen: StableHashSet::default(), found: Vec::new(),contexts:Vec::new() }
     }
 
     /// The distinct value at `index`, walking on until it is found, or
@@ -285,7 +290,8 @@ impl<'g> DistinctWalks<'g> {
                 })
                 .collect();
             if self.seen.insert(content) {
-                self.found.push(parts);
+                let contexts=graph.states.iter().zip(&graph.branches).zip(&chosen).filter_map(|((state,branches),branch)|branch.map(|b|WalkContext {key:self.key.clone(),state:state.clone(),take:branches[b as usize].take.clone()})).collect();
+                self.found.push(parts);self.contexts.push(contexts);
             }
         }
         Ok(self.found.get(index).map(|parts| &parts[..]))
@@ -321,18 +327,25 @@ impl<'g> JointWalks<'g> {
 
     /// The next joint walk, or `None` past the last.
     pub fn next(&mut self, budget: &mut Budget<'_>) -> Result<Option<Vec<RowSet>>, ReachedBound> {
+        self.next_with_contexts(budget).map(|found|found.map(|(rows,_)|rows))
+    }
+
+    /// The output rows and their state-local witnesses in this joint walk.
+    pub fn next_with_contexts(&mut self,budget:&mut Budget<'_>)->Result<Option<(Vec<RowSet>,Vec<WalkContext>)>,ReachedBound> {
         let Some(walk) = self.keys.next(|key, index| Ok(key.get(index, budget)?.is_some()))? else {
             return Ok(None);
         };
         let mut rows = vec![RowSet::empty(self.arity); self.outputs];
+        let mut contexts=Vec::new();
         for (key, position) in walk {
+            contexts.extend(key.contexts[position].iter().cloned());
             for (joint, part) in rows.iter_mut().zip(&key.found[position]) {
                 for row in part.rows() {
                     joint.insert(row.into());
                 }
             }
         }
-        Ok(Some(rows))
+        Ok(Some((rows,contexts)))
     }
 }
 

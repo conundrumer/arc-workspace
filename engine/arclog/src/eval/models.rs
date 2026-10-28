@@ -43,12 +43,12 @@ pub(super) type Entry = (GraphNodeIndex, Option<Example>);
 /// factor, the chosen relation's alone for a pick, and each output of an
 /// instance in the order of [`UnfoldOutput::ALL`].
 #[derive(Clone, Debug)]
-pub(super) struct Choice(Box<[RelationValue]>);
+pub(super) struct Choice(Box<[RelationValue]>,Option<Vec<unfold::WalkContext>>);
 
 impl Choice {
     /// The choice that gives `value` at each of `relations` relations.
     fn all(value: RelationValue, relations: usize) -> Choice {
-        Choice(vec![value; relations].into())
+        Choice(vec![value; relations].into(),None)
     }
 }
 
@@ -104,7 +104,7 @@ impl Draw<'_> {
     /// The choice of the next model, `None` past the last, or the bound
     /// its search reached.
     fn next(&mut self) -> Result<Option<Choice>, ReachedBound> {
-        let rows = |parts: Vec<RowSet>| Choice(parts.into_iter().map(|part| RelationValue::Rows(Arc::new(join::one_part(part)))).collect());
+        let rows = |parts: Vec<RowSet>| Choice(parts.into_iter().map(|part| RelationValue::Rows(Arc::new(join::one_part(part)))).collect(),None);
         match self {
             Draw::Pick { rows: options, arity, models } => match models.next() {
                 None => Ok(None),
@@ -117,7 +117,7 @@ impl Draw<'_> {
                     Ok(Some(rows(vec![kept])))
                 }
             },
-            Draw::Walks { walks, budget } => Ok(walks.next(budget)?.map(rows)),
+            Draw::Walks { walks, budget } => Ok(walks.next_with_contexts(budget)?.map(|(parts,contexts)|{let mut choice=rows(parts);choice.1=Some(contexts);choice})),
             Draw::Demonstrated { keys, arity, at } => {
                 let Some(mut chosen) = at.take() else { return Ok(None) };
                 let mut kept = RowSet::empty(*arity);
@@ -184,7 +184,9 @@ pub(super) fn demonstrated_value(driver: &Driver<'_, '_>, relation: &GraphRelati
 /// `example` at the current model, as [`choice`] gives it.
 pub(super) fn walk_value(driver: &Driver<'_, '_>, relation: &GraphRelation, example: Option<Example>) -> Outcome<RelationValue> {
     let Some([OutputStep::Port(port)]) = relation.output.as_deref() else { panic!("an instance output read by its port") };
-    let at = UnfoldOutput::ALL.iter().position(|output| *output == UnfoldOutput::of(port)).expect("an output of `Unfold`");
+    let Some(at)=UnfoldOutput::ALL.iter().position(|output|output.port()==*port) else {
+        return super::body_context::input_value(driver,relation,port,example);
+    };
     let evaluation = driver.evaluation;
     let form = driver.program().form_of(relation.node);
     let build = || {
@@ -200,6 +202,19 @@ pub(super) fn walk_value(driver: &Driver<'_, '_>, relation: &GraphRelation, exam
     let many = "the instance gives more than one value, so the case has more than one model";
     let choice = choice(driver, (relation.node, example), form, build, UnfoldOutput::ALL.len(), Some(many))?;
     Ok(choice.0[at].clone())
+}
+
+pub(super) fn walk_contexts(driver:&Driver<'_, '_>,node:GraphNodeIndex,example:Option<Example>)->Outcome<Result<Vec<unfold::WalkContext>,RelationValue>> {
+    let relation=GraphRelation {node,output:Some(Arc::from([OutputStep::Port(UnfoldOutput::Taken.port())]))};
+    let value=walk_value(driver,&relation,example)?;
+    match value {
+        RelationValue::Rows(_)=>{
+            let held=driver.model.borrow();
+            let contexts=held.get(&(node,example)).and_then(|c|c.1.clone());
+            contexts.map(Ok).ok_or_else(||RunFault {message:"recursive query has no selected walk context".into(),form:driver.program().form_of(node).clone()})
+        }
+        other=>Ok(Err(other)),
+    }
 }
 
 /// The arity of `relation`, whose form stands at `form`.
@@ -338,8 +353,8 @@ impl Evaluation<'_> {
 
     /// Enumerate models of an already checked body query. This preserves
     /// pick enumeration for body views as well as complete relations.
-    pub fn body_models(&self,form:&NodePath,clause:&super::ir::ClauseIr,example:Option<Example>,visit:&mut dyn FnMut(&RelationValue)->ControlFlow<()>)->Outcome<ModelsEnd> {
-        self.enumerate_target(None,Target::Body(form,clause),example,&[],&mut |value,_|visit(value))
+    pub fn body_models(&self,view:&super::body_view::BodyView,example:Option<Example>,visit:&mut dyn FnMut(&RelationValue)->ControlFlow<()>)->Outcome<ModelsEnd> {
+        self.enumerate_target(None,Target::Body(view),example,&[],&mut |value,_|visit(value))
     }
 
     fn enumerate_target(&self,trace:Option<&RefCell<RunTrace>>,target:Target<'_>,example:Option<Example>,picks:&[(GraphRelation,Option<Example>)],visit:&mut dyn FnMut(&RelationValue,&[Option<RelationValue>])->ControlFlow<()>)->Outcome<ModelsEnd> {
@@ -368,14 +383,14 @@ impl Evaluation<'_> {
 #[derive(Clone,Copy)]
 enum Target<'a> {
     Relation(&'a GraphRelation),
-    Body(&'a NodePath,&'a super::ir::ClauseIr),
+    Body(&'a super::body_view::BodyView),
 }
 impl Target<'_> {
     fn value(&self,driver:&Driver<'_, '_>,example:Option<Example>)->Outcome<RelationValue> {
-        match self {Self::Relation(relation)=>driver.value(relation,example),Self::Body(form,clause)=>driver.bodies().relation(form,clause,example)}
+        match self {Self::Relation(relation)=>driver.value(relation,example),Self::Body(view)=>super::body_context::value(driver,view,example)}
     }
     fn form(&self,driver:&Driver<'_, '_>)->NodePath {
-        match self {Self::Relation(relation)=>driver.program().form_of(relation.node).clone(),Self::Body(form,_)=> (*form).clone()}
+        match self {Self::Relation(relation)=>driver.program().form_of(relation.node).clone(),Self::Body(view)=>view.form.clone()}
     }
 }
 

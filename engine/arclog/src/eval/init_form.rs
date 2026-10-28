@@ -166,6 +166,23 @@ pub(super) struct InputClause {
 }
 
 impl InputClause {
+    /// Bind a state-local query at its key and cursor. A Unit cursor
+    /// matches only the Unit state. Variables use the form's canonical IDs.
+    pub(super) fn at_state(&self,key:&[TermId],cursor:TermId)->Option<Vec<(ir::Variable,TermId)>> {
+        if key.len()!=self.key {return None;}
+        let mut bound=self.clause.columns[..self.key].iter().copied().zip(key.iter().copied()).collect::<Vec<_>>();
+        match self.head.first()? {
+            Some(_)=>bound.push((self.clause.columns[self.key],cursor)),
+            None if cursor==Term::Constant(Constant::Unit).encode().expect("Unit term")=>{},
+            None=>return None,
+        }
+        Some(bound)
+    }
+    pub(super) fn expanded_rows(&self,rows:&crate::relations::Relation)->RowSet {
+        let mut expanded=RowSet::empty((self.key+self.head.len()) as u16);
+        super::join::each_row(rows,&mut |row|{expanded.insert(with_unit(self.key,&self.head,&row.into()));});
+        expanded
+    }
     /// The number of columns of the clause's rows.
     pub(super) fn arity(&self) -> usize {
         self.key + self.head.iter().flatten().count()

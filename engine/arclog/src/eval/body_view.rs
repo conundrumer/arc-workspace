@@ -17,6 +17,7 @@ pub struct BodyView {
     pub clause:ClauseIr,
     pub paths:IrPaths,
     pub scope:ExampleScope,
+    pub input:Option<crate::program::PortName>,
 }
 impl BodyView {
     pub fn column_of(&self,label:LabelId)->Option<usize> {
@@ -74,7 +75,9 @@ impl BodyView {
             Some(Side::TaskWide)=>ExampleScope::TaskWide,
             None=>return Err(fault("body owner has no checked evaluation scope".into())),
         };
-        Ok(Self {form,clause,paths,scope})
+        let parent=NodePath(at.0[..at.0.len()-1].into());
+        let input=match node_at(root,&parent) {Some(NodeRef::InstanceInput(input))=>Some(input.name.clone()),_=>None};
+        Ok(Self {form,clause,paths,scope,input})
     }
 
     /// Derivation queries: choose union alternatives in already typed IR,
@@ -116,6 +119,6 @@ impl BodyView {
         }
         let mut out=Vec::new();
         if !expand(self.clause.clone(),self.paths.clone(),&mut out) {return Err(RunFault {message:format!("the checked body widens to more than {} derivations",MAX_DERIVATIONS).into(),form:self.form.clone()});}
-        Ok(out.into_iter().map(|(clause,paths)|Self {form:self.form.clone(),clause,paths,scope:self.scope}).collect())
+        Ok(out.into_iter().map(|(clause,paths)|Self {form:self.form.clone(),clause,paths,scope:self.scope,input:self.input.clone()}).collect())
     }
 }

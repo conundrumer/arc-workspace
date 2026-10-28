@@ -118,3 +118,10 @@ reproduced on gold `009d5c81` in `arclog.stream_tables`, and also removes
 branch-flattening alias and dropped-interface failures. Body query model
 enumeration uses the same native pick walker as relation evaluation.
 Runtime verification requires a wheel rebuilt from these sources.
+
+Recursive instance inputs retain typed relations on their shared graph node.
+An `Unfold` model carries its reached state contexts. Queries of inputs that
+read the instance's outputs run at each state's key/cursor and state-local
+output rows, with the native bound join; their rows are unioned within that
+model. Negations therefore see one state, rather than the union of states.
+The same input relations are available to native table and extent lookup.
