@@ -41,6 +41,7 @@ ANY = None
 HEAVY: dict[str, frozenset[str] | None] = {
     "cargo": frozenset({"build", "test", "run", "bench", "clippy", "check", "doc", "install"}),
     "maturin": frozenset({"build", "develop"}),
+    "codex": frozenset({"app-server"}),
     "arclog-cli": ANY,
     "arclog_convert.convert": ANY,
     "arclog_convert.row_parity": ANY,
