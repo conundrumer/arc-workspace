@@ -45,9 +45,11 @@ struct TableCase {
 /// finished forms are tabled, and with `bodies` the bodies in progress as well.
 /// The second value holds a line for each case that gives no tables and each
 /// solver that gives none, in the form of `corpus_streams`, in the order of
-/// the task ids, and for each case whose last `RULE` end before the stream's
-/// end gives `Stopped` the line `<task> <case>: ended Stopped at token <index>`
-/// of `stream_tables`, with that case's tables kept. The replay runs under no
+/// the task ids (a case whose program holds a `DEMONSTRATED` form gives no
+/// tables, and its line is the writer's fault where its stream has one and
+/// `<task> <case>: the program holds a DEMONSTRATED form` otherwise), and for
+/// each case whose last `RULE` end before the stream's end gives `Stopped`
+/// the line `<task> <case>: ended Stopped at token <index>` of `stream_tables`, with that case's tables kept. The replay runs under no
 /// deadline and computes no token mask.
 /// The call runs on the threads of the corpus harness with the GIL released,
 /// but for the build of each `CaseTables`, in phases. The first reads each
@@ -98,7 +100,12 @@ pub(crate) fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases
         match solver_streams(Path::new(corpus), id, wanted, &vocabulary, prefix) {
             Ok(streams) => match read_task_files(Path::new(tasks), id) {
                 Ok(read) => {
-                    for case in streams.into_iter().filter(|case| !case.demonstrated) {
+                    for case in streams {
+                        if case.demonstrated {
+                            let fault = case.stream.err().unwrap_or_else(|| "the program holds a DEMONSTRATED form".to_string());
+                            faults.push(fault_line(id, Some(&case.case), &fault));
+                            continue;
+                        }
                         let stream = case.stream.map(|stream| (token_ids(&stream.tokens, &vocabulary), stream.relations.iter().map(relation_spelled).collect(), case.labels));
                         cases.push(TableCase { case: case.case, concept: case.concept, stream });
                     }

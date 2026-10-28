@@ -527,19 +527,25 @@ fn push_cells(out: &mut Vec<i32>, id: TermId, ty: &ValueType) {
 #[derive(Default)]
 struct Runs(StableHashMap<(u64, usize, StableHash), Vec<usize>>);
 
-/// The rows of `rows`, of columns of `types`, as their cells in the order of
-/// the cells, each with its place in the order of [`each_row`].
-fn sorted_rows(rows: &Relation, types: &[ValueType]) -> Vec<(Vec<i32>, usize)> {
-    let mut written: Vec<(Vec<i32>, usize)> = Vec::new();
+/// The cells of the rows of `rows`, of columns of `types`, in the order of
+/// [`each_row`] ([`row_width`] cells for each row), and the places of the rows
+/// in that order, sorted by their cells, rows of equal cells in the order of
+/// [`each_row`].
+fn sorted_rows(rows: &Relation, types: &[ValueType]) -> (Vec<i32>, Vec<usize>) {
+    let width = row_width(types) as usize;
+    let count = usize::try_from(rows.len()).expect("a count of rows within a usize");
+    let mut written = Vec::with_capacity(count.saturating_mul(width));
+    let mut visited = 0;
     each_row(rows, &mut |row| {
-        let mut cells = Vec::new();
         for (&id, ty) in row.iter().zip(types) {
-            push_cells(&mut cells, id, ty);
+            push_cells(&mut written, id, ty);
         }
-        written.push((cells, written.len()));
+        visited += 1;
     });
-    written.sort();
-    written
+    let row_cells = |at: usize| &written[at * width..(at + 1) * width];
+    let mut order: Vec<usize> = (0..visited).collect();
+    order.sort_by(|&a, &b| row_cells(a).cmp(row_cells(b)));
+    (written, order)
 }
 
 /// The offset of the run of `count` rows with the cells `cells`: where
@@ -562,24 +568,28 @@ fn push_run(values: &mut Vec<i32>, runs: &mut Runs, count: u64, cells: Vec<i32>)
     offset as u64
 }
 
-/// The count of rows and the offset of the run of the rows of `rows`, of
-/// columns of `types`, in the order of their cells, as [`push_run`] places it.
-fn push_rows(values: &mut Vec<i32>, runs: &mut Runs, rows: &Relation, types: &[ValueType]) -> (u64, u64) {
-    let sorted = sorted_rows(rows, types);
-    let count = sorted.len() as u64;
-    let cells = sorted.into_iter().flat_map(|(cells, _)| cells).collect();
-    (count, push_run(values, runs, count, cells))
+/// The count of rows, the offset of the run of the rows of `rows`, of
+/// columns of `types`, in the order of their cells, as [`push_run`] places it,
+/// and the places of the rows in that order, as [`sorted_rows`] gives them.
+fn push_rows(values: &mut Vec<i32>, runs: &mut Runs, rows: &Relation, types: &[ValueType]) -> (u64, u64, Vec<usize>) {
+    let (written, order) = sorted_rows(rows, types);
+    let width = row_width(types) as usize;
+    let count = order.len() as u64;
+    let mut cells = Vec::with_capacity(written.len());
+    for &at in &order {
+        cells.extend_from_slice(&written[at * width..(at + 1) * width]);
+    }
+    (count, push_run(values, runs, count, cells), order)
 }
 
-/// The offset of the extent run of the rows of `rows`, of columns of `types`,
-/// in the order of their cells, as [`push_run`] places it: for each row, the
+/// The offset of the extent run of the rows that [`push_rows`] gave the places
+/// `order` of, as [`push_run`] places it: for each row in that order, the
 /// extents `per_row` holds for it (its place in the order of [`each_row`] indexes
 /// `per_row`), two cells for each, the frame's count of rows and of columns, or
-/// `-1 -1` for none. `rows` holds a row at least.
-fn push_extents(values: &mut Vec<i32>, runs: &mut Runs, rows: &Relation, types: &[ValueType], per_row: &[Box<[Option<Extent>]>]) -> i64 {
-    let sorted = sorted_rows(rows, types);
-    let count = sorted.len() as u64;
-    let cells = sorted.iter().flat_map(|(_, at)| per_row[*at].iter().flat_map(|extent| extent.map_or([-1, -1], |extent| [extent.rows, extent.columns]))).collect();
+/// `-1 -1` for none. `order` holds a place at least.
+fn push_extents(values: &mut Vec<i32>, runs: &mut Runs, order: &[usize], per_row: &[Box<[Option<Extent>]>]) -> i64 {
+    let count = order.len() as u64;
+    let cells = order.iter().flat_map(|&at| per_row[at].iter().flat_map(|extent| extent.map_or([-1, -1], |extent| [extent.rows, extent.columns]))).collect();
     i64::try_from(push_run(values, runs, count, cells)).expect("an offset within an i64")
 }
 
@@ -970,12 +980,14 @@ fn push_contents(out: &mut CaseColumns, runs: &mut Runs, row: u32, contents: &Co
             entries.model.push(model);
             entries.stop.push(stop);
             entries.fault.push(fault);
+            let mut order = Vec::new();
             let (value_kind, rows, offset, value_stop) = match value {
                 None if faulted => (ValueKind::Fault, 0, 0, None),
                 None => (ValueKind::NoEntries, 0, 0, None),
                 Some(RelationValue::Rows(rows)) if count_only => (ValueKind::Count, rows.len() as u64, 0, None),
                 Some(RelationValue::Rows(rows)) => {
-                    let (count, offset) = push_rows(&mut out.values, runs, rows, types);
+                    let (count, offset, sorted) = push_rows(&mut out.values, runs, rows, types);
+                    order = sorted;
                     (ValueKind::Rows, count, offset, None)
                 }
                 Some(RelationValue::Undefined) => (ValueKind::Undefined, 0, 0, None),
@@ -984,7 +996,7 @@ fn push_contents(out: &mut CaseColumns, runs: &mut Runs, row: u32, contents: &Co
             let (extent_offset, extent_stop, extent_fault) = match (value, extents) {
                 (_, Some(EntryExtents::Stopped(stop))) => (-1, Some(stop), None),
                 (_, Some(EntryExtents::Lost(reason))) => (-1, None, Some(reason.clone())),
-                (Some(RelationValue::Rows(rows)), Some(EntryExtents::Rows(held))) if !count_only && !rows.is_empty() => (push_extents(&mut out.values, runs, rows, types, held), None, None),
+                (Some(RelationValue::Rows(rows)), Some(EntryExtents::Rows(held))) if !count_only && !rows.is_empty() => (push_extents(&mut out.values, runs, &order, held), None, None),
                 _ => (-1, None, None),
             };
             let entries = &mut out.entries;
@@ -1010,7 +1022,7 @@ fn push_contents(out: &mut CaseColumns, runs: &mut Runs, row: u32, contents: &Co
                     }
                     let mut assigned_runs = Vec::new();
                     for (position, ((_, det_rows), det)) in assigned.iter().zip(contents.dets.iter()).enumerate() {
-                        let (count, offset) = push_rows(&mut out.values, runs, det_rows, &det.types);
+                        let (count, offset, _) = push_rows(&mut out.values, runs, det_rows, &det.types);
                         assigned_runs.push((position as u32, count, offset));
                     }
                     for entry in first..out.entries.table.len() {
@@ -1038,17 +1050,19 @@ fn push_contents(out: &mut CaseColumns, runs: &mut Runs, row: u32, contents: &Co
             out.projections.width.push(row_width(&projection_types));
             for (example, assigned) in projection.rows.iter().enumerate() {
                 for (at, (_, projection_rows)) in assigned.at.iter().enumerate() {
+                    let mut order = Vec::new();
                     let (defined, count, offset) = match projection_rows {
                         None => (0, 0, 0),
                         Some(rows) => {
-                            let (count, offset) = push_rows(&mut out.values, runs, rows, &projection_types);
+                            let (count, offset, sorted) = push_rows(&mut out.values, runs, rows, &projection_types);
+                            order = sorted;
                             (1, count, offset)
                         }
                     };
                     let extent_offset = match (projection_rows, entries.get(example).and_then(|flat| flat.get(at))) {
                         (Some(rows), Some((RelationValue::Rows(table_rows), Some(EntryExtents::Rows(held))))) if !projected_extents.is_empty() && count > 0 => {
                             let per_row = projected_extent_rows(rows, table_rows, held, &projected_columns, &projected_extents);
-                            push_extents(&mut out.values, runs, rows, &projection_types, &per_row)
+                            push_extents(&mut out.values, runs, &order, &per_row)
                         }
                         _ => -1,
                     };

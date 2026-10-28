@@ -4,8 +4,9 @@
 
 It needs an interpreter with `arclog`, pandas and pyarrow, such as the LM work's venv. The code that decides a part's rows, values and fault lines is in `export_rows.py`. A change to that module, or to the engine code that writes the export's files (`engine/arclog-tables/src/`, `engine/arclog-tables-py/src/`, `engine/arclog/src/decode/`), runs `engine/arclog-py/roundtrip_check.py` with an `arclog` built from its tree before its merge.
 
-Runs one `arclog.corpus_tables` call per task id, the longest first, on a queue of N worker processes (`run_in_worker`), where N is `ARCLOG_THREADS`
-if set and `os.cpu_count()` otherwise, and checks the parts it writes on N processes. `replay_order` gives the order, which `lm/export.py` takes too: the tasks the export `--previous` gives no seconds for, or all tasks where none is given, by the largest
+Runs one `arclog.corpus_tables` call per task id, the longest first, on a queue of worker processes (`run_in_worker`), at most N jobs at once beside the main process, where N is
+`ARCLOG_THREADS` if set and `os.cpu_count()` otherwise: a call of a task of `u` units holds `u` of N slots while it runs, and each check of a part (in a check process) and each write of a task's directory
+under `tasks/` holds one slot; the check and the writes of a replayed task run in the one slot its call keeps (`Slots`). `replay_order` gives the order, which `lm/export.py` takes too: the tasks the export `--previous` gives no seconds for, or all tasks where none is given, by the largest
 `.arcdata` file first, then the others by the one-thread seconds each took in that export (see `parts/<k>.tasks.txt`: the line's seconds times its units), longest first. A task whose one-thread seconds would end past half the mean load of a worker (the summed one-thread seconds of the
 tasks to replay over N) is replayed in `units` units on `units` engine threads, the least count (at most N and at most the cases the previous export
 holds for the task) at which its expected unit time, `1 + (units - 1) / 14` times its seconds over `units`, is under that bound; any other
@@ -16,7 +17,7 @@ written as parts of the out dir. Its check lines are those of that export where 
 and otherwise the part is checked again in the check processes. The run prints the counts reused, of them to check again, and to replay first.
 An export with no key in its lines gives no reuse.
 `--previous` changes no output file but the Ident numbers of a task it gives more than one unit. The script sets `ARCLOG_THREADS=1` for the engine, and the other variables of `export_checks.POOL_ENVS` to 1, so a call
-of a task of one unit runs on one engine thread, and each worker process starts the next task as its task ends and writes each task as its own part.
+of a task of one unit runs on one engine thread, and each worker process starts the next task once the slots it needs are free and writes each task as its own part.
 Where a worker process dies in a call, the export prints on stderr the task and the exit status, and runs the call once more in a new worker;
 where that one dies too, the task's part holds no case, the fault line `death_line` gives, and a bare `tasks.txt` line. Writes to <out dir>:
   values/<task>/<case>.i32   raw int32 (np.fromfile), every row of the case: the rows of each entry, of each DET
@@ -239,14 +240,34 @@ def write_part(out, k, results, ran=None, keys=None):
     finish_part(out, k, export_checks.check_part(out, k, pairs))
 
 
-MIN_SHARE_BYTES = 50_000_000     # a share of values under this costs more to start than it saves, where the part has more
+class Slots:
+    """A counting gate of `count` slots, the admission of every job of an export. `take(n)` waits until `n` slots are free and the calls before it have taken theirs, and takes all `n` at once, so
+    two calls never each hold part of what both need (`n` is at most `count`); `give(n)` returns `n` slots."""
+    def __init__(self, count):
+        self.free, self.waiting, self.condition = count, collections.deque(), threading.Condition()
 
+    def take(self, count):
+        ticket = object()
+        with self.condition:
+            self.waiting.append(ticket)
+            self.condition.wait_for(lambda: self.waiting[0] is ticket and self.free >= count)
+            self.waiting.popleft()
+            self.free -= count
+            self.condition.notify_all()
 
-def submit_checks(pool, workers, out, k, pairs):
-    """Submits the check of part `k` of the (task, case) pairs, cut into at most `workers` shares, to `pool`. Returns the futures."""
-    size = sum(os.path.getsize(f"{out}/values/{t}/{c}.i32") for t, c in pairs)
-    cut = export_checks.shares(out, pairs, set(pairs), max(1, min(workers, size // MIN_SHARE_BYTES)))
-    return [pool.submit(export_checks.check_part, out, k, share) for share in cut]
+    def give(self, count):
+        with self.condition:
+            self.free += count
+            self.condition.notify_all()
+
+    @contextlib.contextmanager
+    def held(self, count=1):
+        """Within the block, `count` slots are taken."""
+        self.take(count)
+        try:
+            yield
+        finally:
+            self.give(count)
 
 
 def digest_files(files):
@@ -368,18 +389,32 @@ def write_task(out, k, task, previous=None):
     write_marker(directory, DONE)
 
 
-def submit_writes(pool, out, k, tasks, previous, reused):
-    """Submits `write_task` to `pool` for the `tasks` of part `k`, with `previous` for the ones in `reused`. Returns {future: task}."""
-    return {pool.submit(write_task, out, k, t, previous if t in reused else None): t for t in tasks}
+def write_tasks(pool, out, k, tasks, previous, reused):
+    """Runs `write_task` for the `tasks` of part `k`, one after another, in the processes of `pool`, with `previous` for the ones in `reused`. A write that raises gives its task `FAILED` with its traceback."""
+    for task in tasks:
+        with failing_into(f"{out}/tasks/{task}"):
+            pool.submit(write_task, out, k, task, previous if task in reused else None).result()
 
 
-def reuse_parts(out, previous, keys, k, skip, checks, pool, workers):
+def check_and_write(pool, out, k, pairs, previous, reused):
+    """Checks the (task, case) `pairs` of part `k` in a process of `pool` (no check where there are none), makes the part whole with the check lines, and writes the directory of each of its tasks (`write_tasks`).
+    A check that raises gives each task of `pairs` `FAILED` with its traceback."""
+    lines = []
+    if pairs:
+        with contextlib.ExitStack() as stack:
+            for task in dict.fromkeys(task for task, _ in pairs):
+                stack.enter_context(failing_into(f"{out}/tasks/{task}"))
+            lines = pool.submit(export_checks.check_part, out, k, pairs).result()
+    finish_part(out, k, lines)
+    write_tasks(pool, out, k, part_tasks(out, k), previous, reused)
+
+
+def reuse_parts(out, previous, keys, k, skip, checks):
     """Writes parts from `previous`, from its `k`-th on, for each task of `keys` ({task: key}, not in `skip`) whose task key the previous export's `tasks.txt` lines give equal.
 
     A part takes the rows, fault lines and values (hard-linked) of the tasks of one previous part. Where every such line gives the
-    checks digest `checks`, the part takes their check lines and `tasks.txt` lines as well. Otherwise its check is submitted to `pool`, of `workers` processes,
-    and its `tasks.txt` lines are given `checks`, for `main` to finish as it finishes a replayed part.
-    Returns the set of tasks reused, the next part number, {part: [the (task, case) pairs, the check futures, []]} of the parts to check again (`main`'s `open_parts`),
+    checks digest `checks`, the part takes their check lines and `tasks.txt` lines as well. Otherwise its `tasks.txt` lines are given `checks`, for `export_tasks` to check and finish as it finishes a replayed part.
+    Returns the set of tasks reused, the next part number, {part: the (task, case) pairs} of the parts to check again,
     and the numbers of the parts made whole here.
     """
     reused, again, whole = set(), {}, []
@@ -409,7 +444,7 @@ def reuse_parts(out, previous, keys, k, skip, checks, pool, workers):
         else:
             pairs = part_cases(out, k, tasks)
             if pairs:
-                again[k] = [pairs, set(submit_checks(pool, workers, out, k, pairs)), []]
+                again[k] = pairs
             else:
                 finish_part(out, k, [])
                 whole.append(k)
@@ -634,7 +669,8 @@ def main(out, task_ids, previous=None, **options):
 
 
 def export_tasks(out, task_ids, previous, options, settings_text, workers, pool, check_pool):
-    """The run of `main` once its out dir stands: the tasks are replayed on `pool` (threads that each own a worker process) and their parts checked, and written under `tasks/`, on `check_pool`."""
+    """The run of `main` once its out dir stands: each job runs on a thread of `pool` (threads that each own a worker process), within the slots of a `Slots` of `workers`. A task is replayed in the worker process of
+    its thread, in `units` slots, and its part is then checked and its directory under `tasks/` written, on `check_pool`, in one slot. The checks of reused parts and the writes of reused and resumed parts run in one slot each."""
     done, k, whole = set(), 0, []
     for f in sorted(glob.glob(f"{out}/parts/*")):
         stem = os.path.basename(f).split(".")[0]
@@ -648,13 +684,20 @@ def export_tasks(out, task_ids, previous, options, settings_text, workers, pool,
     engine, checks = engine_digest(), checks_digest()
     keys = {t: task_key(engine, t, settings_text, (ROWS,)) for t in task_ids}
     tagged = {t: (key, checks) for t, key in keys.items()}
-    writing = {}        # write_task future -> its task
+    slots = Slots(workers)
+
+    def in_slot(job, *args):
+        with slots.held():
+            job(*args)
+
+    jobs = []
     for part in whole:      # parts of an earlier run whose tasks it did not end
-        writing |= submit_writes(check_pool, out, part, [t for t in part_tasks(out, part) if not os.path.exists(f"{out}/tasks/{t}/{DONE}")], None, ())
-    reused, k, open_parts, reused_whole = reuse_parts(out, previous, keys, k, done, checks, check_pool, workers) if previous else (set(), k, {}, [])
+        jobs.append(pool.submit(in_slot, write_tasks, check_pool, out, part, [t for t in part_tasks(out, part) if not os.path.exists(f"{out}/tasks/{t}/{DONE}")], None, ()))
+    reused, k, again, reused_whole = reuse_parts(out, previous, keys, k, done, checks) if previous else (set(), k, {}, [])
     for part in reused_whole:
-        writing |= submit_writes(check_pool, out, part, part_tasks(out, part), previous, reused)
-    checking = {f: part for part, (_, futures, _) in open_parts.items() for f in futures}   # check future -> its part
+        jobs.append(pool.submit(in_slot, write_tasks, check_pool, out, part, part_tasks(out, part), previous, reused))
+    for part, pairs in again.items():
+        jobs.append(pool.submit(in_slot, check_and_write, check_pool, out, part, pairs, previous, reused))
     done |= reused
     before = {}
     for f in glob.glob(f"{previous}/parts/*.tasks.txt") if previous else []:
@@ -662,65 +705,40 @@ def export_tasks(out, task_ids, previous, options, settings_text, workers, pool,
     todo = replay_order([t for t in task_ids if t not in done], before)
     bound = SPLIT_SHARE * sum(before.get(t, 0) for t in todo) / workers
     units = {t: unit_count(before[t], bound, min(workers, previous_cases(previous, t))) if t in before else 1 for t in todo}
-    print(f"{len(reused)} tasks reused, {len({t for pairs, _, _ in open_parts.values() for t, _ in pairs})} of them to check again, {len(todo)} to replay", flush=True)
-    started, progress = {}, {}
+    print(f"{len(reused)} tasks reused, {len({t for pairs in again.values() for t, _ in pairs})} of them to check again, {len(todo)} to replay", flush=True)
+    running = {}        # task -> (start, arclog.ReplayProgress) while its call runs
 
     def run(task, part):
-        progress[task] = types.SimpleNamespace(done=0, total=0)
-        started[task] = time.time()
-        with failing_into(f"{out}/tasks/{task}"):
+        count = units[task]
+        slots.take(count)
+        try:
+            progress = types.SimpleNamespace(done=0, total=0)
+            running[task] = (time.time(), progress)
             try:
-                return part, run_in_worker([sys.executable, os.path.abspath(__file__)], task, (out, part, task, CORPUS, TASKS, options, units[task], tagged[task]), progress[task])
-            except WorkerDied as died:
-                clear_part(out, part, task)
-                write_files(out, part, [(task, [], [death_line(task, died.status)])])
-                return part, []
+                with failing_into(f"{out}/tasks/{task}"):
+                    try:
+                        pairs = run_in_worker([sys.executable, os.path.abspath(__file__)], task, (out, part, task, CORPUS, TASKS, options, count, tagged[task]), progress)
+                    except WorkerDied as died:
+                        clear_part(out, part, task)
+                        write_files(out, part, [(task, [], [death_line(task, died.status)])])
+                        pairs = []
+            finally:
+                running.pop(task, None)
+            slots.give(count - 1)
+            count = 1
+            check_and_write(check_pool, out, part, pairs, previous, reused)
+        finally:
+            slots.give(count)
 
-    def failed_tasks(future):
-        """The tasks that a raised check or `write_task` leaves with no output: those of the part it checks, or the one it writes. A call that raised has its marker from `run`."""
-        if future in writing:
-            return [writing[future]]
-        return sorted({t for t, _ in open_parts[checking[future]][0]}) if future in checking else []
-
-    futures = {t: pool.submit(run, t, k + i) for i, t in enumerate(todo)}
-    pending, ended, begin, last = set(futures.values()) | set(checking) | set(writing), len(done), time.time(), time.time()
+    runs = {pool.submit(run, t, k + i) for i, t in enumerate(todo)}
+    pending, ended, begin, last = runs | set(jobs), len(done), time.time(), time.time()
     failure = None
     while pending and not failure:
         got, pending = wait(pending, timeout=max(0.0, last + 10 - time.time()), return_when=FIRST_COMPLETED)
-        for f in got:
-            if f.exception():
-                failure = failure or f.exception()
-                for task in failed_tasks(f):
-                    write_marker(f"{out}/tasks/{task}", FAILED, "".join(traceback.format_exception(f.exception())))
-            elif f in writing:
-                pass
-            elif f in checking:
-                pairs, waiting, lines = open_parts[checking[f]]
-                waiting.remove(f)
-                lines += f.result()
-                if not waiting:
-                    position = {f"{t} {c}": i for i, (t, c) in enumerate(pairs)}
-                    finish_part(out, checking[f], sorted(lines, key=lambda l: position[l.split(": ", 1)[0]]))
-                    new = submit_writes(check_pool, out, checking[f], part_tasks(out, checking[f]), previous, reused)
-                    writing |= new
-                    pending |= set(new)
-                    del open_parts[checking[f]]
-            else:
-                part, pairs = f.result()
-                new = submit_checks(check_pool, workers, out, part, pairs) if pairs else []
-                if new:
-                    open_parts[part] = [pairs, set(new), []]
-                    checking.update({c: part for c in new})
-                    pending |= set(new)
-                else:
-                    finish_part(out, part, [])
-                    new = submit_writes(check_pool, out, part, part_tasks(out, part), previous, reused)
-                    writing |= new
-                    pending |= set(new)
-                ended += 1
-        replaying = pending & set(futures.values())
-        if time.time() - last >= 10 or not replaying or failure:
-            print_progress(begin, ended, len(task_ids), len(done), {t: (started[t], progress[t]) for t in list(started) if futures[t] in pending})
+        failure = next((f.exception() for f in got if f.exception()), None)
+        ended += len(got & runs)
+        if time.time() - last >= 10 or not pending & runs or failure:
+            print_progress(begin, ended, len(task_ids), len(done), dict(running))
             last = time.time()
     if failure:
         raise failure
