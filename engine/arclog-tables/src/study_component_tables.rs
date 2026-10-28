@@ -27,6 +27,7 @@ pub fn evaluate_cached(gold:&StudyProgram,mutant:&ValidMutant,task:&Task,session
     let m=relation_tables(mutant.program(),&decoder,&fixed,&limits,&work,&mut budget);
     let status=|tables:&Outcome<Vec<(usize,Table)>>|match tables {Ok(t)=>table_status(t),Err(f)=>faulted(f)};
     let report=json!({"schema":"arclog-study-component-tables-v1","gold_observation_ref":memo.sequence,
+        "full_choice_extents":g.as_ref().ok().map(|tables|full_choice_extents(tables,&fixed,task.train.len())),
         "kept_assignments":records,"gold_observation_stop":walked.stop.as_ref().map(stopped),
         "gold_status":status(&g),"mutant_status":status(&m),
         "gold_assignment_map":g.as_ref().ok().map(|t|assignment_map(t,2,task.train.len())),
@@ -98,3 +99,36 @@ pub fn relation_tables(program:&StudyProgram,decoder:&Decoder<'_>,fixed:&[Vec<As
     Ok(tables)
 }
 
+
+/// Authoritative annotations of exact held gold parameter rows. Example/model
+/// axes are retained; a task-wide value is not assigned an arbitrary example.
+pub fn full_choice_extents(tables:&[(usize,Table)],fixed:&[Vec<Assignment>],train_count:usize)->Value {
+    json!({"schema":"arclog-study-choice-extents-v1","choices":fixed.iter().enumerate().map(|(choice,assigned)| {
+        let dets=assigned.iter().map(|(name,held)| {
+            let source=relation_spelled(name);
+            let contents=tables.iter().rev().filter_map(|(_,t)|t.contents.as_ref().ok()).find(|c|c.name==source);
+            let Some(contents)=contents else {return json!({"source_name":source,"status":"unresolved","reason":"exact held relation table not materialized"});};
+            let mut examples=Vec::new();
+            for (place,e) in contents.examples.iter().enumerate() {
+                let Some((_,models))=e.rows.as_ref().ok().and_then(|r|r.at.get(choice)) else {continue;};
+                let (kind,index)=match e.example {None=>("task",0),Some(e) if usize::from(e.index())<train_count=>("train",usize::from(e.index())),Some(e)=>("test",usize::from(e.index())-train_count)};
+                for (model,value) in models.iter().enumerate() {
+                    let RelationValue::Rows(rows)=value else {continue;};
+                    if rows.rows_hash()!=held.rows_hash() || rows.arity()!=held.arity() || rows.len()!=held.len() {continue;}
+                    let annotations=crate::extents::annotated_rows(contents,place,choice,model,rows);
+                    let columns=contents.columns.iter().enumerate().filter(|(_,c)|c.ty.is_box()).map(|(i,_)|i).collect::<Vec<_>>();
+                    let mut at=0;let mut out=Vec::new();
+                    each_row(rows,&mut |row| {
+                        let cells=columns.iter().zip(&annotations[at]).map(|(column,(status,extent))|json!({
+                            "column":column,"extent_status":match status {0=>"no_grid",1=>"resolved",_=>"unresolved"},
+                            "extent":extent.map(|e|[e.rows,e.columns])})).collect::<Vec<_>>();
+                        out.push(json!({"packed_row":row.iter().map(|t|t.encoding()).collect::<Vec<_>>(),"cells":cells}));at+=1;
+                    });
+                    examples.push(json!({"example_kind":kind,"example_index":index,"model":model,"rows":out}));
+                }
+            }
+            json!({"source_name":source,"status":if examples.is_empty(){"unresolved"}else{"complete"},"examples":examples})
+        }).collect::<Vec<_>>();
+        json!({"assignment":choice,"dets":dets})
+    }).collect::<Vec<_>>(),"identity_contract":"exact cached held gold values only; rows carry packed identity and example/model axes; no cross-example extent merge"})
+}

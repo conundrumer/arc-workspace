@@ -162,9 +162,10 @@ pub enum EntryExtents {
 /// The extents of the made frames of a table's `Box` columns.
 #[derive(Clone, Debug)]
 pub struct Extents {
-    /// The indexes, in increasing order, of the table's columns of type `Box`
-    /// whose frame is a made frame.
+    /// Every Position, Box and Offset column in native scalar-column order.
     pub columns: Vec<u32>,
+    /// Native proof that a column has no reference grid (not missing evidence).
+    pub no_grid: Vec<bool>,
     /// For each example of the table, for each assignment of its rows, for each
     /// model; empty for an example whose rows fault.
     examples: Vec<Vec<Vec<EntryExtents>>>,
@@ -209,6 +210,78 @@ struct Subject<'a> {
     columns: &'a [u32],
 }
 
+/// Only positive native provenance proves no_grid. Empty/unknown frame names
+/// alone do not. Copying a previously proved no-grid column preserves that fact.
+fn no_grid_columns(decoder:&Decoder<'_>, earlier:&[&Table], contents:&Contents, columns:&[u32])->Vec<bool> {
+    let names=names_of(decoder.registry(),earlier);
+    let dets=contents.dets.iter().map(|d|relation_spelled(&d.relation)).collect::<Vec<_>>();
+    columns.iter().map(|c| {
+        if contents.columns[*c as usize].ty==ValueType::Offset {return true;}
+        let Some(sources)=contents.flows.get(*c as usize).filter(|s|!s.is_empty()) else {return false;};
+        sources.iter().all(|source| {
+            if source.frames.is_empty() && matches!(source.kind,crate::flows::SourceKind::Constant|crate::flows::SourceKind::LibName) {return true;}
+            if source.frames.iter().any(|f|!matches!(f,SourceFrame::Read)) {return false;}
+            let located=locate(&names,&dets,source);
+            let Some(named)=located.table else {return false;};
+            let Some(index)=read_index(&located,source) else {return false;};
+            let Some(table)=named.row.checked_sub(EVIDENCE_FACTS.len() as u32).and_then(|i|earlier.get(i as usize)) else {return false;};
+            table.contents.as_ref().ok().and_then(|c|c.extents.as_ref()).is_some_and(|e| {
+                e.columns.iter().position(|c|*c as usize==index).is_some_and(|k|e.no_grid[k])
+            })
+        })
+    }).collect()
+}
+
+fn completed_rows(decoder:&Decoder<'_>,contents:&Contents,example:Option<Example>,relation:&Relation,columns:&[u32],no_grid:&[bool],gathered:Option<&Gathered>)->Vec<Box<[Option<Extent>]>> {
+    let mut result=Vec::new();
+    each_row(relation,&mut |row| {
+        let slots=gathered.and_then(|e|e.rows.get(row));
+        result.push(columns.iter().enumerate().map(|(k,c)| {
+            if no_grid[k] {return None;}
+            let column=*c as usize;
+            match &contents.columns[column].ty {
+                ValueType::Position=>position_extent(row[column],&ValueType::Position),
+                ValueType::Box=>{
+                    let extent=grid_extent(decoder,&contents.frames[column],example)
+                        .or_else(||slots.and_then(|s|s[k].extent()))?;
+                    fitted_size(extent,margins_of(row[column],&ValueType::Box)?).map(|_|extent)
+                },
+                _=>None,
+            }
+        }).collect());
+    });result
+}
+
+fn direct_extents(decoder:&Decoder<'_>,contents:&Contents,columns:Vec<u32>,no_grid:Vec<bool>)->Extents {
+    let work=decoder.table_work();
+    let examples=contents.examples.iter().map(|e|e.rows.as_ref().map_or_else(|_|Vec::new(),|a|a.at.iter().map(|(_,models)|models.iter().map(|v|match v {
+        RelationValue::Rows(rows)=>match work.charge(rows.len()) {
+            Ok(())=>EntryExtents::Rows(completed_rows(decoder,contents,e.example,rows,&columns,&no_grid,None)),
+            Err(bound)=>EntryExtents::Stopped(Stop {bound,form:NodePath::default()}),
+        },
+        _=>EntryExtents::Absent,
+    }).collect()).collect())).collect();
+    Extents {columns,no_grid,examples}
+}
+
+/// Native per-cell annotation, in the relation's each_row order. This is used
+/// for body/component buffers and the full-held-choice sidecar alike.
+pub fn annotated_rows(contents:&Contents,example:usize,assignment:usize,model:usize,relation:&Relation)->Vec<Vec<(u8,Option<Extent>)>> {
+    let columns=contents.columns.iter().enumerate().filter(|(_,c)|c.ty.is_box()).map(|(i,_)|i as u32).collect::<Vec<_>>();
+    let extents=contents.extents.as_ref();
+    let held=extents.and_then(|e|e.entry(example,assignment,model));
+    let mut result=Vec::new();let mut at=0;
+    each_row(relation,&mut |row| {
+        result.push(columns.iter().enumerate().map(|(k,c)| {
+            let no_grid=contents.columns[*c as usize].ty==ValueType::Offset || extents.is_some_and(|e|e.no_grid.get(k)==Some(&true));
+            if no_grid {return (0,None);}
+            let extent=match held {Some(EntryExtents::Rows(rows))=>rows.get(at).and_then(|r|r.get(k)).copied().flatten(),_=>None}
+                .or_else(||(contents.columns[*c as usize].ty==ValueType::Position).then(||position_extent(row[*c as usize],&ValueType::Position)).flatten());
+            (if extent.is_some(){1}else{2},extent)
+        }).collect());at+=1;
+    });result
+}
+
 /// The extents of the made frames of the `Box` columns of the table of
 /// `relation`, whose contents are `contents` with their `frames`, in `checked`:
 /// none where the table has no such column. The columns are those of
@@ -216,18 +289,17 @@ struct Subject<'a> {
 /// that its rows read.
 pub fn table_extents(decoder: &Decoder<'_>, earlier: &[&Table], checked: &CheckedProgram, relation: &GraphRelation, contents: &Contents) -> Option<Extents> {
     let types: Vec<ValueType> = contents.columns.iter().map(|column| column.ty.clone()).collect();
-    if !types.contains(&ValueType::Box) {
-        return None;
+    let columns = extent_columns(&types, &contents.frames);
+    if columns.is_empty() { return None; }
+    let no_grid = no_grid_columns(decoder, earlier, contents, &columns);
+    if !columns.iter().enumerate().any(|(k,c)|types[*c as usize]==ValueType::Box && !no_grid[k]) {
+        return Some(direct_extents(decoder,contents,columns,no_grid));
     }
     let names = names_of(decoder.registry(), earlier);
-    let columns = extent_columns(&types, &contents.frames);
-    if columns.is_empty() {
-        return None;
-    }
     let reads = Reads { names, tables: earlier, cache: RefCell::default(), work: decoder.table_work() };
     let subject = Subject { checked, relation:Some(relation), types: &types, examples: &contents.examples, columns: &columns };
     let gathered = derive(decoder, &reads, &subject);
-    Some(Extents { examples: finish(contents, &gathered, &columns), columns })
+    Some(Extents { examples: finish(decoder, contents, &gathered, &columns, &no_grid), columns, no_grid })
 }
 
 /// Extents of a checked body query, using the same native derivation and
@@ -236,6 +308,10 @@ pub fn body_extents(decoder:&Decoder<'_>,earlier:&[&Table],checked:&CheckedProgr
     let types=contents.columns.iter().map(|c|c.ty.clone()).collect::<Vec<_>>();
     let columns=extent_columns(&types,&contents.frames);
     if columns.is_empty() {return None;}
+    let no_grid=no_grid_columns(decoder,earlier,contents,&columns);
+    if !columns.iter().enumerate().any(|(k,c)|types[*c as usize]==ValueType::Box && !no_grid[k]) {
+        return Some(direct_extents(decoder,contents,columns,no_grid));
+    }
     let reads=Reads {names:names_of(decoder.registry(),earlier),tables:earlier,cache:RefCell::default(),work:decoder.table_work()};
     let subject=Subject {checked,relation:None,types:&types,examples:&contents.examples,columns:&columns};
     let mut gathered=subject.examples.iter().map(|e|e.rows.as_ref().map_or_else(|_|Vec::new(),|a|a.at.iter().map(|_|Gathered::default()).collect())).collect::<Vec<Vec<Gathered>>>();
@@ -245,7 +321,7 @@ pub fn body_extents(decoder:&Decoder<'_>,earlier:&[&Table],checked:&CheckedProgr
         Ok(views)=>for sub in &views {gather(decoder,&reads,&dets,&subject,sub,&placements,&mut gathered)},
         Err(fault)=>lose_all(&mut gathered,&fault_spelled(&fault)),
     }
-    Some(Extents {examples:finish(contents,&gathered,&columns),columns})
+    Some(Extents {examples:finish(decoder,contents,&gathered,&columns,&no_grid),columns,no_grid})
 }
 
 /// What the derivations of the rows of `subject` give for each of its
@@ -644,7 +720,7 @@ fn usable(frame: &OutputFrame) -> bool {
 }
 
 /// The extents of `contents`' entries, from what their derivations gave.
-fn finish(contents: &Contents, gathered: &[Vec<Gathered>], columns: &[u32]) -> Vec<Vec<Vec<EntryExtents>>> {
+fn finish(decoder: &Decoder<'_>, contents: &Contents, gathered: &[Vec<Gathered>], columns: &[u32], no_grid: &[bool]) -> Vec<Vec<Vec<EntryExtents>>> {
     contents
         .examples
         .iter()
@@ -663,7 +739,7 @@ fn finish(contents: &Contents, gathered: &[Vec<Gathered>], columns: &[u32]) -> V
                             (RelationValue::Rows(relation), None) => match &entry.lost {
                                 Some(reason) if !relation.is_empty() => EntryExtents::Lost(reason.clone()),
                                 Some(_) => EntryExtents::Absent,
-                                None => EntryExtents::Rows(row_extents(relation, entry, columns)),
+                                None => EntryExtents::Rows(completed_rows(decoder,contents,example.example,relation,columns,no_grid,Some(entry))),
                             },
                             _ => EntryExtents::Absent,
                         })
@@ -672,30 +748,6 @@ fn finish(contents: &Contents, gathered: &[Vec<Gathered>], columns: &[u32]) -> V
                 .collect(),
         })
         .collect()
-}
-
-/// The extents of each of the extent columns `columns` at each row of
-/// `relation`, in the order of [`each_row`]: none for a row no derivation gave,
-/// and none where the value of the column at the row does not fit in the
-/// extent ([`fitted_size`]), since the box it covers would then lie outside the
-/// frame, which no frame of that extent holds.
-fn row_extents(relation: &Relation, entry: &Gathered, columns: &[u32]) -> Vec<Box<[Option<Extent>]>> {
-    let mut per_row = Vec::new();
-    each_row(relation, &mut |row| {
-        let slots = entry.rows.get(row);
-        per_row.push(
-            columns
-                .iter()
-                .enumerate()
-                .map(|(k, &column)| {
-                    let extent = slots.and_then(|slots| slots[k].extent())?;
-                    let margins = margins_of(row[column as usize], &ValueType::Box)?;
-                    fitted_size(extent, margins).map(|_| extent)
-                })
-                .collect(),
-        );
-    });
-    per_row
 }
 
 /// Whether the assignment `table` of the `DET`s of a table's relation and the
@@ -883,9 +935,8 @@ impl Analysis<'_> {
         let named = located.table?;
         let index = read_index(&located, source)?;
         let frame = named.frames.get(index)?;
-        if frame.is_empty() {
-            return None;
-        }
+        // A global frame name can be unavailable while exact matching source
+        // rows still carry an unambiguous native per-row extent.
         let example = self.read_example(source, row, ctx)?;
         match frame.as_str() {
             INPUT_FRAME | OUTPUT_FRAME => grid_extent(self.decoder, frame, example),
@@ -961,7 +1012,7 @@ impl Analysis<'_> {
 
 /// The extent of the frame of a value of type `ty` that is a Position: (top +
 /// bottom + 1, left + right + 1).
-fn position_extent(id: TermId, ty: &ValueType) -> Option<Extent> {
+pub(crate) fn position_extent(id: TermId, ty: &ValueType) -> Option<Extent> {
     let margins = margins_of(id, ty)?;
     Extent::new(margins.top + margins.bottom + 1, margins.left + margins.right + 1)
 }
