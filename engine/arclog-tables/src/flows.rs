@@ -862,14 +862,15 @@ impl<'p> Flows<'p> {
             let mut known = true;
             for ty in columns {
                 match ty {
-                    ColumnType::Fixed(fixed) => input_types.push(fixed.clone()),
+                    ColumnType::Fixed(fixed) => input_types.push(vec![fixed.clone()]),
                     ColumnType::Parameter(_) => {
                         let Some((_, _, own)) = at.iter().find(|(is_key, declared, _)| !is_key && *declared == Some(ty)) else {
                             known = false;
                             break;
                         };
-                        targets.extend(own.clone().map(|position| (position, input_types.len() + position - own.start)));
-                        input_types.extend(types[own.clone()].iter().cloned());
+                        let offset = input_types.iter().map(Vec::len).sum::<usize>();
+                        targets.extend(own.clone().map(|position| (position, offset + position - own.start)));
+                        input_types.push(types[own.clone()].to_vec());
                     }
                     _ => {
                         known = false;
@@ -880,7 +881,7 @@ impl<'p> Flows<'p> {
             if !known {
                 continue;
             }
-            let Some(positions) = key_fill(&types[key.clone()], &input_types) else { continue };
+            let Some(positions) = key_fill(&types[key.clone()], input_types.iter().map(Vec::as_slice)) else { continue };
             fills.push(Fill { input: *input, key_start: key.start, positions, targets });
         }
         fills

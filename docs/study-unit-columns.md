@@ -44,25 +44,36 @@ native relation arity equals schema arity before visiting a row, so a future
 mismatch cannot silently truncate. Held historical evidence is not rewritten,
 and no historical assignment is re-searched.
 
+## Default input presence
+
+A zero-field parameter has no key label from which a `from-key` default
+can be filled. Key filling therefore matches logical non-key columns before
+flattening their fields. An empty logical column prevents a default fill;
+an input declaring no non-key columns (Cardinality's `domain`) still gets
+one empty tuple per key. An explicitly written successful zero-field input
+also still contains one empty tuple. Evaluation and provenance use the same
+logical-column matcher.
+
+Flattening before matching lost this distinction in the first zero-field
+build: task 62593bfd `$Shape`, form 14, has an unbound Node parameter of
+Distance and only an explicit `source_distance`. Its unwritten `source`
+was accidentally filled with an empty tuple at cost zero, overriding the
+written source distances and making all gold assignments fail FITS. A
+real-data diagnostic on runtime-4e157d2c restores gold FITS by explicitly
+making that default source empty. The matcher fixes its cause without
+restoring Unit positions or special-casing Distance.
+
 ## Runtime verification
 
-Run from ast. The build refuses an existing destination venv, prints the
-source revision and progress, and writes `engine-revision` into the new venv.
+Builds use only `scripts/build_study_runtime.py` at a committed revision,
+which archives the committed tree into a fresh runtime. `ast/run/CURRENT.json`
+selects the runtime and Python for all corpus, export and replay checks.
+Do not use the superseded Unit-specific venv build helper or assume an
+existing venv contains this revision.
 
-```sh
-engine/scripts/run_heavy.py --cpus 4 --need soon \
-  bash engine/scripts/study/build_unit_v6.sh > run/build-unit-v6.log 2>&1
-
-engine/scripts/run_heavy.py --cpus 12 --need soon \
-  venv-s3-unit-v6/bin/python -B -u engine/scripts/study/check_unit_streams.py \
-  --jobs 12 --tables --output unit-old-streams-v6.jsonl \
-  > unit-old-streams-v6.log 2>&1
-
-engine/scripts/run_heavy.py --cpus 12 --need soon \
-  venv-s3-unit-v6/bin/python -B -u check_stage3_fast.py --jobs 12 \
-  --case-manifest stage3-fault-replay.json --replay-identities --gold-tables \
-  --output stage3-fault-unit-v6.jsonl > stage3-fault-unit-v6.log 2>&1
-```
+Use that runtime's Python for `scripts/study/check_unit_streams.py` with
+`--tables` and for the exact historical mutation identity replay. Do not
+start corpus-v6 until both gates and gold FITS regression checks pass.
 
 The stream checker loads each task inventory once, reuses its native task
 session, streams each result, and prints done/total, elapsed time and rate.

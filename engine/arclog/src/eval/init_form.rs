@@ -468,7 +468,7 @@ impl<'p> InstanceShape<'p> {
         if !input.from_key {
             return Ok(vec![rows; groups.len()]);
         }
-        let Some(filled) = self.key_filled(input, types)? else { return Ok(vec![rows; groups.len()]) };
+        let Some(filled) = self.key_filled(input)? else { return Ok(vec![rows; groups.len()]) };
         Ok(groups
             .iter()
             .map(|key| {
@@ -482,12 +482,14 @@ impl<'p> InstanceShape<'p> {
     /// The position in the key of each row position of `input`, where the
     /// input has a `key` column and each of its other positions takes the
     /// one key label of its type.
-    fn key_filled(&self, input: &InputPort, types: &[ValueType]) -> Result<Option<Vec<usize>>, String> {
+    fn key_filled(&self, input: &InputPort) -> Result<Option<Vec<usize>>, String> {
         if !input.port.columns.iter().any(is_key) {
             return Ok(None);
         }
         let key_types: Vec<ValueType> = self.key_labels().into_iter().map(|label| self.label_type(label)).collect::<Result<_, _>>()?;
-        Ok(crate::registry::key_fill(&key_types, types))
+        let columns = input.port.columns.iter().filter(|column|!is_key(column))
+            .map(|column|self.column_types(column)).collect::<Result<Vec<_>,_>>()?;
+        Ok(crate::registry::key_fill(&key_types, columns.iter().map(Vec::as_slice)))
     }
 }
 
