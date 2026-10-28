@@ -577,3 +577,5 @@ fn flatten(rows: &Assigned<Vec<RelationValue>>) -> Assigned<BodyValue> {
     let at = rows.at.iter().flat_map(|(assigned, models): &(Vec<Assignment>, _)| models.iter().map(move |model| (assigned.clone(), BodyValue(model.clone())))).collect();
     Assigned { at, stop: rows.stop.clone() }
 }
+
+#[path = "study_pair.rs"] pub mod study_pair;

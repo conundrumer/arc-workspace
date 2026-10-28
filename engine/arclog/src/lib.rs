@@ -113,3 +113,5 @@ pub mod terms;
 pub mod trace;
 pub mod types;
 pub mod write;
+
+pub mod study_clause;
