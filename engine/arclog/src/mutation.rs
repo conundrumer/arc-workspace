@@ -5,7 +5,6 @@
 //! Diagnostics from unavailable choices are counted, never silently repaired.
 pub mod edit;
 #[path = "study_replay.rs"] mod study_replay;
-#[path = "study_replay.rs"] mod study_replay;
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
