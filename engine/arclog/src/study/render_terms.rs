@@ -4,6 +4,47 @@ use crate::terms::{Constant, Term, TermId};
 use crate::types::ValueType;
 use serde_json::{Value, json};
 
+/// The finite encoding domain, distinct from a task-dependent proposal domain.
+/// Pose has a nominal assembly identity but Term::decode uses D4 encodings.
+pub fn orientation_cells(ty:&ValueType,registry:&Registry)->Option<Vec<i32>> {
+    let encoding_type=if matches!(ty,ValueType::Pose(_)) {&ValueType::D4} else {ty};
+    let families=encoding_type.orientation_types()?;
+    let mut cells=families.iter().flat_map(|of|registry.constants_of(*of).each())
+        .filter(|constant|*encoding_type!=ValueType::C4 || registry.c4_constants().contains(*constant))
+        .map(|constant|Term::Constant(Constant::Orientation(constant)).encode().expect("registry orientation encodes").encoding() as i32)
+        .collect::<Vec<_>>();
+    cells.sort_unstable();cells.dedup();Some(cells)
+}
+
+pub fn orientation_domain(type_name:&str,registry:&Registry)->Result<Value,String> {
+    let ty=scalar_type(type_name)?;
+    let cells=orientation_cells(&ty,registry).ok_or_else(||format!("{type_name:?} is not an orientation-valued type"))?;
+    Ok(json!({"type":type_name,"encoding_type":format!("{ty:?}"),"cells":cells,
+        "constants":cells.iter().map(|cell|decode(type_name,i64::from(*cell),registry)).collect::<Result<Vec<_>,_>>()?,
+        "scope":"finite scalar encoding domain; assembly-specific admissibility is evaluated separately"}))
+}
+
+pub fn program_orientation_domains(program:&super::StudyProgram,registry:&Registry)->Value {
+    fn add(ty:&ValueType,registry:&Registry,out:&mut std::collections::BTreeMap<String,Vec<i32>>) {
+        if let Some(cells)=orientation_cells(ty,registry) {out.insert(format!("{ty:?}"),cells);}
+        if let ValueType::Record(fields)=ty {for (_,ty) in fields.iter() {add(ty,registry,out);}}
+    }
+    fn walk(node:crate::program::path::NodeRef<'_>,at:&crate::program::path::NodePath,program:&super::StudyProgram,
+        registry:&Registry,out:&mut std::collections::BTreeMap<String,Vec<i32>>) {
+        if let Some(form)=program.checked().types.form(at) {
+            for (_,ty) in form.labels() {add(ty,registry,out);}
+            for (_,columns) in form.relations() {for ty in columns {add(ty,registry,out);}}
+        }
+        for (i,child) in node.children().into_iter().enumerate() {walk(child,&at.child(i as u32),program,registry,out);}
+    }
+    let mut domains=std::collections::BTreeMap::new();
+    use ValueType::*;
+    for ty in [Dir,DiagDir,Dir8,Axis,DiagAxis,Axis4,D4,C4,Sym,Sense] {add(&ty,registry,&mut domains);}
+    for (_,columns) in program.checked().types.relations() {for ty in columns {add(ty,registry,&mut domains);}}
+    walk(crate::program::path::NodeRef::Program(program.program().value()),&Default::default(),program,registry,&mut domains);
+    json!(domains)
+}
+
 pub fn scalar_type(name: &str) -> Result<ValueType, String> {
     Ok(match name.to_ascii_lowercase().as_str() {
         "number" => ValueType::Number,

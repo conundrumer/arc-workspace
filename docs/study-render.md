@@ -91,6 +91,26 @@ an opaque identity in its task session; no interned content is invented.
 Pose values decode as native D4 orientations, retaining the supplied nominal
 type text. Flatten record types to scalar columns first.
 
+`orientation_domains` in each static program export maps the exact native type
+name to its finite encoded constants, including **every resolved Pose type** in
+label types and all graph relation/output schemas. The process-global
+`arclog.orientation_types()` lists only non-parameterized types; it cannot
+enumerate assembly-specific nominal Pose names. Merge the per-program maps for
+both sides when rendering.
+
+`StudyProgram.orientation_domain_json(type_name)` also returns `cells` and typed
+native `constants` for a supplied historical scalar type name. Pose delegates
+to D4 exactly as `Term::decode` does; its nominal assembly identity is preserved
+as the supplied `type`. This is an **encoding domain**, not the set of poses
+admissible for a particular assembly/assignment. Actual admissibility remains a
+separate native evaluation. Non-orientation or unsupported type names fail.
+
+On v8/e02 before that binding is built, the same authoritative domain can be
+queried through the existing native decoder: for each encoding from
+`orientation_names()`, call `decode_term_json(actual_type, encoding)` and keep
+only successful `kind=orientation` results. The engine validates each constant;
+Python does not parse the nominal type or guess a domain from its name.
+
 ## Native body columns and stored decode source AST
 
 `body_views` is complete for every mutation point. Each entry has `body_path`,

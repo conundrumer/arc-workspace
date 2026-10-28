@@ -111,6 +111,13 @@ impl PyStudyProgram {
             .map_err(PyValueError::new_err)
     }
 
+    /// Finite native encoding domain, including a historical nominal Pose type.
+    #[staticmethod]
+    fn orientation_domain_json(type_name:&str)->PyResult<String> {
+        arclog::study::render_terms::orientation_domain(type_name,Registry::get())
+            .map(|value|value.to_string()).map_err(PyValueError::new_err)
+    }
+
     #[staticmethod]
     fn decode_rows_json(types: Vec<String>, rows: Vec<Vec<i64>>) -> PyResult<String> {
         let result: Result<Vec<_>, String> = rows
