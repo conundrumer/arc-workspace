@@ -24,7 +24,7 @@ pub(super) fn value(driver:&Driver<'_, '_>,view:&BodyView,example:Option<Example
     let contexts=match models::walk_contexts(driver,node,example)? {Ok(contexts)=>contexts,Err(value)=>return Ok(value)};
     let mut rows=crate::relations::RowSet::empty(view.clause.columns.len() as u16);
     for context in contexts {
-        let Some(bound)=input.at_state(&context.key,context.state.cursor) else {continue};
+        let Some(bound)=input.at_state(&context.key,context.state.cursor).map_err(fault)? else {continue};
         let take=if port.0.as_ref()=="take" {&[][..]} else {&context.take};
         let mut saved=Vec::new();
         for which in UnfoldOutput::ALL {

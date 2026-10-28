@@ -168,15 +168,18 @@ pub(super) struct InputClause {
 impl InputClause {
     /// Bind a state-local query at its key and cursor. A Unit cursor
     /// matches only the Unit state. Variables use the form's canonical IDs.
-    pub(super) fn at_state(&self,key:&[TermId],cursor:TermId)->Option<Vec<(ir::Variable,TermId)>> {
-        if key.len()!=self.key {return None;}
+    pub(super) fn at_state(&self,key:&[TermId],cursor:TermId)->Result<Option<Vec<(ir::Variable,TermId)>>,String> {
+        // An unkeyed input applies at every key, as InputClause::grouped
+        // does. A keyed input binds its own key positions exactly.
+        if self.key!=0 && key.len()!=self.key {return Err("recursive input and state key arities differ".into());}
         let mut bound=self.clause.columns[..self.key].iter().copied().zip(key.iter().copied()).collect::<Vec<_>>();
-        match self.head.first()? {
+        let cursor_head=self.head.first().ok_or("recursive input has no cursor position")?;
+        match cursor_head {
             Some(_)=>bound.push((self.clause.columns[self.key],cursor)),
             None if cursor==Term::Constant(Constant::Unit).encode().expect("Unit term")=>{},
-            None=>return None,
+            None=>return Ok(None),
         }
-        Some(bound)
+        Ok(Some(bound))
     }
     pub(super) fn expanded_rows(&self,rows:&crate::relations::Relation)->RowSet {
         let mut expanded=RowSet::empty((self.key+self.head.len()) as u16);
