@@ -125,3 +125,9 @@ read the instance's outputs run at each state's key/cursor and state-local
 output rows, with the native bound join; their rows are unioned within that
 model. Negations therefore see one state, rather than the union of states.
 The same input relations are available to native table and extent lookup.
+
+`evaluator.replay(gold, identity_json)` returns `(point, mutant)` for one
+exact historical identity. It reconstructs only the recorded leaf edits,
+checks the full candidate again, requires an exact identity round trip, and
+runs the AST audit. A historical mutant that the current checks refuse
+raises its diagnostic; it is never replaced by a new draw.

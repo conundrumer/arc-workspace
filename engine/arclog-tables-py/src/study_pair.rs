@@ -126,6 +126,19 @@ impl PyStudyTaskEvaluator {
         Ok(PyStudyProgram {program,settings:self.settings})
     }
 
+    /// Replay one exact logged identity; native certification and AST audit
+    /// remain mandatory. No new sample can replace a historical mutant.
+    fn replay(&self,py:Python<'_>,gold:&PyStudyProgram,identity_json:&str)->PyResult<(PyMutationPoint,PyValidMutant)> {
+        if gold.settings!=self.settings {return Err(PyValueError::new_err("task evaluator and program settings differ"));}
+        let identity:serde_json::Value=serde_json::from_str(identity_json).map_err(|e|PyValueError::new_err(e.to_string()))?;
+        if identity["source"]["task"].as_str()!=Some(&self.task_name) {return Err(PyValueError::new_err("identity belongs to another task"));}
+        let mutant=py.detach(|| {
+            let spec=gold.program.replay_spec(&identity,Registry::get(),&self.settings)?;
+            gold.program.construct(&spec).map_err(str::to_owned)
+        }).map_err(PyValueError::new_err)?;
+        Ok((PyMutationPoint {inner:mutant.point().clone()},PyValidMutant {inner:mutant,settings:self.settings}))
+    }
+
     /// All export relation tables (plus evidence), in this evaluator's Ident
     /// namespace. Native evaluation is cached once per gold handle. Returns
     /// (status_json, CaseTables); stops and faults retain their native reason.
