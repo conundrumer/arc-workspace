@@ -18,6 +18,8 @@
 //! column it reads. A source computed through a lib atom, or declared by an
 //! instance's output, gives what the registry's frame rule for the column
 //! gives it ([`FrameRule`]), so a chain of lib atoms nests the made frames.
+//! A lib atom that computes no mode for a variable gives it a copy of its
+//! column only where no lib atom of the alternative computes the variable.
 //! A constant and a copy of a lib relation's column give none, nor does a lib
 //! name but that of a component's output column whose rule makes a frame,
 //! which gives the made frame. A source that a D4 element moves gives an
@@ -35,8 +37,8 @@ use arclog::check::CheckedProgram;
 use arclog::eval::body_ir::BodyIr;
 use arclog::eval::ir::{atom_modes, Argument, Arguments, AtomSource, ClauseIr, IrNode, IrPaths, NodePaths, Operand, Union, Variable, VariableInfo};
 use arclog::program::path::{node_at, NodePath, NodeRef};
-use arclog::program::{column_spelled, Atom, ColumnName, Conjunct, ConstraintOp, FactRelation, LabelId, OutputOwner, OutputStep, PortName, RelationRef};
-use arclog::registry::{is_key, key_fill, ColumnType, FrameRule, LibName, Registry};
+use arclog::program::{column_spelled, Atom, ColumnName, Conjunct, ConstraintOp, FactRelation, Instance, LabelId, OutputOwner, OutputStep, PortName, RelationRef};
+use arclog::registry::{is_key, key_fill, Column, ColumnType, Component, FrameRule, LibName, Port, Registry, TypeParameter};
 use arclog::resolver::given::{node_relation, Given, GivenLabel};
 use arclog::resolver::registry_columns;
 use arclog::resolver::{DependencyKind, GraphNodeIndex, ResolvedProgram, Resolution};
@@ -377,7 +379,9 @@ impl<'p> Walk<'p> {
     /// such column, and a variable bound to `0` is a constant. A variable
     /// that only lib atoms bind is computed from the variables at the columns
     /// of a mode of the atom that the alternative binds elsewhere, and
-    /// otherwise copies the lib relation's column. A variable of an
+    /// otherwise, where no lib atom of the alternative computes it through a
+    /// mode that holds, copies the lib relation's column at each such atom. A
+    /// variable of an
     /// orientation type whose class stands at no atom, which the evaluator
     /// binds by the type's domain, copies the column of the lib relation of
     /// one column that holds that domain ([`domain_relation`]), with no atom
@@ -432,10 +436,13 @@ impl<'p> Walk<'p> {
         if !zero && program.is_empty() && !keyed {
             let before = visiting.len();
             visiting.extend(class.iter().copied());
-            for hit in libs {
-                found.extend(self.lib_sources(hit, alt, visiting));
-            }
+            let computed: Vec<Vec<ColumnSource>> = libs.iter().filter_map(|hit| self.lib_sources(hit, alt, visiting)).collect();
             visiting.truncate(before);
+            if computed.is_empty() {
+                found.extend(libs.iter().flat_map(|hit| self.read(hit)));
+            } else {
+                found.extend(computed.into_iter().flatten());
+            }
         }
         let mut distinct = Vec::new();
         add_distinct(&mut distinct, found);
@@ -443,16 +450,16 @@ impl<'p> Walk<'p> {
     }
 
     /// The sources that the lib atom of `hit` gives the variable at its
-    /// column: computed from the variables of each mode that holds and does
-    /// not bind the column, and otherwise a copy of the lib relation's
-    /// column. A mode holds where each of its bound columns holds `0` or a
-    /// variable with sources, and at least one holds a variable: a mode whose
-    /// bound columns hold only `0` computes from no variable. Each computed
-    /// source gives the frames that the registry's rule for the column at the
-    /// mode gives it ([`ColumnSource::framed`]), made at the atom, and none
-    /// where the variable it comes from has type `Offset`.
-    fn lib_sources(&self, hit: &Hit<'_>, alt: &Alt<'_>, visiting: &mut Vec<Variable>) -> Vec<ColumnSource> {
-        let (IrNode::Lib(lib), Some((path, atom))) = (hit.node, self.atom_of(hit.paths)) else { return Vec::new() };
+    /// column, computed from the variables of each mode that holds and does
+    /// not bind the column, or `None` where no mode holds. A mode holds where
+    /// each of its bound columns holds `0` or a variable with sources, and at
+    /// least one holds a variable: a mode whose bound columns hold only `0`
+    /// computes from no variable. Each computed source gives the frames that
+    /// the registry's rule for the column at the mode gives it
+    /// ([`ColumnSource::framed`]), made at the atom, and none where the
+    /// variable it comes from has type `Offset`.
+    fn lib_sources(&self, hit: &Hit<'_>, alt: &Alt<'_>, visiting: &mut Vec<Variable>) -> Option<Vec<ColumnSource>> {
+        let (IrNode::Lib(lib), Some((path, atom))) = (hit.node, self.atom_of(hit.paths)) else { return None };
         let program = self.flows.program;
         let position_of = |column: &ColumnName| {
             let (index, _) = atom.sites.iter().enumerate().find(|(_, site)| &site.column == column)?;
@@ -498,7 +505,7 @@ impl<'p> Walk<'p> {
                 computed.extend(from);
             }
         }
-        if holds { computed } else { self.read(hit) }
+        holds.then_some(computed)
     }
 }
 
@@ -552,8 +559,10 @@ struct Flows<'p> {
 ///   label, computed, since the column holds the part's values at each
 ///   pose;
 /// - a column of a type parameter that an `INIT` form binds: the sources
-///   of the labels the form binds it to, and, on an output port of a
-///   keyed instance, where a `from-key` input the instance leaves
+///   of the labels the form binds it to, computed, with the frames of the
+///   registry's rule for the column, on an output port of an instance where
+///   the parameter has a bound and no declared row of `copies` maps the
+///   column, and, on an output port of a keyed instance, where a `from-key` input the instance leaves
 ///   unwritten stands on the parameter, the sources of the key position
 ///   that the engine's fill gives each row position;
 /// - a column of an instance's output that a declared row of the
@@ -729,8 +738,18 @@ impl<'p> Flows<'p> {
                         let body = held.entry((which, body.clone())).or_insert_with(|| self.checked.body_ir(self.registry, relation, body));
                         let found = self.label_sources(body.as_ref(), *label, visiting);
                         let moved = slot >= relation.sites_from && types.get(position).is_some_and(ValueType::moved_by_d4);
+                        let bounded = self.instance_output(relation).and_then(|output| output.column_at(slot)).is_some_and(|column| matches!(&column.ty, ColumnType::Parameter(TypeParameter { bound: Some(_), .. })));
                         if let Some(sources) = flows.get_mut(position) {
-                            add_distinct(sources, if moved { found.into_iter().map(|source| source.computed().with_frames(vec![SourceFrame::Unknown])).collect() } else { found });
+                            let found = if moved {
+                                found.into_iter().map(|source| source.computed().with_frames(vec![SourceFrame::Unknown])).collect()
+                            } else if bounded {
+                                let frame = self.output_frame(relation, slot);
+                                let rule_at = frame.as_ref().map(OutputFrame::rule_at);
+                                found.into_iter().map(|source| source.computed().framed(rule_at.as_ref(), false)).collect()
+                            } else {
+                                found
+                            };
+                            add_distinct(sources, found);
                         }
                     }
                     Placed::Declared { slot, positions } => {
@@ -883,12 +902,7 @@ impl<'p> Flows<'p> {
     /// flows of the key position that the fill gives it where it is
     /// `from-key`, an unwritten input giving none for its `key`.
     fn add_copied_rows(&self, relation: &Given, types: &[ValueType], flows: &mut [Vec<ColumnSource>], copied: &mut [bool], visiting: &mut Vec<GraphNodeIndex>) {
-        let Some([OutputStep::Port(port)]) = relation.output.as_deref() else { return };
-        let root = NodeRef::Program(self.program.program.value());
-        let Some(NodeRef::Instance(instance)) = node_at(root, &relation.form) else { return };
-        let Some(component) = registry_columns::component(self.registry, &instance.component) else { return };
-        let Some(output) = component.outputs.iter().find(|output| output.name == *port) else { return };
-        let keyed = instance.key.is_some();
+        let Some(InstanceOutput { instance, component, output, keyed }) = self.instance_output(relation) else { return };
         let fills = self.fills(relation, types, flows.len());
         let to_ranges = output.row_ranges(keyed, relation.slots.iter().map(|slot| slot.width));
         let mut found: Vec<Vec<ColumnSource>> = vec![Vec::new(); flows.len()];
@@ -1002,16 +1016,25 @@ impl<'p> Flows<'p> {
         found
     }
 
+    /// The output of an instance that `relation` is, where it is one and the
+    /// registry has the instance's component.
+    fn instance_output(&self, relation: &Given) -> Option<InstanceOutput<'p>> {
+        let [OutputStep::Port(port)] = relation.output.as_deref()? else { return None };
+        let program: &'p ResolvedProgram = self.program;
+        let NodeRef::Instance(instance) = node_at(NodeRef::Program(program.program.value()), &relation.form)? else { return None };
+        let component = registry_columns::component(self.registry, &instance.component)?;
+        let output = component.outputs.iter().find(|output| output.name == *port)?;
+        Some(InstanceOutput { instance, component, output, keyed: instance.key.is_some() })
+    }
+
     /// The frame rule of the column at `slot` of the output that `relation`
     /// gives, where `relation` is an output of an instance of a component of the
     /// registry, and the column has a frame.
     fn output_frame(&self, relation: &Given, slot: usize) -> Option<OutputFrame> {
-        let [OutputStep::Port(port)] = relation.output.as_deref()? else { return None };
-        let NodeRef::Instance(instance) = node_at(NodeRef::Program(self.program.program.value()), &relation.form)? else { return None };
-        let component = registry_columns::component(self.registry, &instance.component)?;
-        let output = component.outputs.iter().find(|output| output.name == *port)?;
-        let keyed = instance.key.is_some();
-        let column = output.columns_at(keyed).nth(slot)?;
+        let located = self.instance_output(relation)?;
+        let column = located.column_at(slot)?;
+        let InstanceOutput { instance, component, output, keyed } = located;
+        let port = &output.name;
         let rule = self.registry.output_frame(&instance.component, port, &column.name)?;
         let named = rule
             .of
@@ -1032,12 +1055,9 @@ impl<'p> Flows<'p> {
     /// the column at `slot` of the output that `relation` gives from, as the
     /// row positions of each in the rows of its input.
     fn copied_from(&self, relation: &Given, slot: usize) -> Vec<(PortName, Range<usize>)> {
-        let Some([OutputStep::Port(port)]) = relation.output.as_deref() else { return Vec::new() };
-        let Some(NodeRef::Instance(instance)) = node_at(NodeRef::Program(self.program.program.value()), &relation.form) else { return Vec::new() };
-        let Some(component) = registry_columns::component(self.registry, &instance.component) else { return Vec::new() };
-        let Some(output) = component.outputs.iter().find(|output| output.name == *port) else { return Vec::new() };
-        let keyed = instance.key.is_some();
-        let Some(column) = output.columns_at(keyed).nth(slot) else { return Vec::new() };
+        let Some(located) = self.instance_output(relation) else { return Vec::new() };
+        let Some(column) = located.column_at(slot) else { return Vec::new() };
+        let InstanceOutput { component, output, keyed, .. } = located;
         let mut copied = Vec::new();
         for from in output.copies.iter().flat_map(|row| row.alternatives.iter()) {
             let input = &component.inputs[from.input];
@@ -1050,6 +1070,22 @@ impl<'p> Flows<'p> {
             }
         }
         copied
+    }
+}
+
+/// An output of an instance: the instance, its component, the output port,
+/// and whether the instance has a key clause.
+struct InstanceOutput<'p> {
+    instance: &'p Instance,
+    component: &'p Component,
+    output: &'p Port,
+    keyed: bool,
+}
+
+impl<'p> InstanceOutput<'p> {
+    /// The column at `slot` of the output's columns at the instance.
+    fn column_at(&self, slot: usize) -> Option<&'p Column> {
+        self.output.columns_at(self.keyed).nth(slot)
     }
 }
 
