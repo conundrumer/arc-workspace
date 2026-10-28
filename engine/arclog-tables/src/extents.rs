@@ -73,6 +73,7 @@
 use std::cell::RefCell;
 use std::ops::Range;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use arclog::algebra::geometry::{Edge, Geometry};
 use arclog::check::CheckedProgram;
@@ -96,7 +97,8 @@ use arclog::types::{use_label, GraphRelation, ValueType};
 
 use crate::columns::{column_frames, extent_columns, fault_spelled, locate, names_of, read_index, Named, TableNames, INPUT_FRAME, OUTPUT_FRAME};
 use crate::flows::{body_column_flows, column_placements, output_copies, output_frames, ColumnSource, Maker, OutputFrame, Placement, SourceFrame};
-use crate::tables::{relation_examples, Contents, ExampleRows, Table, EVIDENCE_FACTS};
+use crate::tables::{relation_examples_with_context, Contents, ExampleRows, Table, EVIDENCE_FACTS};
+use crate::tables::assignment_context::{AssignmentContext, AssignmentLayout, HeldAssignments};
 
 #[path = "frame_context.rs"]
 mod frame_context;
@@ -239,6 +241,7 @@ impl Gathered {
 /// its row positions, its rows on each example at each assignment, and the
 /// row positions (increasing) whose extents are wanted.
 struct Subject<'a> {
+    assignment_layout: &'a AssignmentLayout,
     checked: &'a CheckedProgram,
     relation: Option<&'a GraphRelation>,
     types: &'a [ValueType],
@@ -372,15 +375,18 @@ pub fn annotated_rows(contents:&Contents,example:usize,assignment:usize,model:us
 /// `extent_columns` of `contents.frames`. `earlier` are the tables before it
 /// that its rows read.
 pub fn table_extents(decoder: &Decoder<'_>, earlier: &[&Table], checked: &CheckedProgram, relation: &GraphRelation, contents: &Contents) -> Option<Extents> {
+    table_extents_with_context(decoder, earlier, checked, relation, contents, AssignmentContext::Search)
+}
+
+pub(crate) fn table_extents_with_context(decoder: &Decoder<'_>, earlier: &[&Table], checked: &CheckedProgram, relation: &GraphRelation, contents: &Contents, context: AssignmentContext<'_>) -> Option<Extents> {
     let types: Vec<ValueType> = contents.columns.iter().map(|column| column.ty.clone()).collect();
     let EvidencePlan {columns,no_grid,contexts,needed}=EvidencePlan::new(decoder,earlier,checked,checked.program.form_of(relation.node),contents);
     if columns.is_empty() { return None; }
     if !needed.iter().any(|needed| *needed) {
         return Some(direct_extents(contexts,contents,columns,no_grid));
     }
-    let names = names_of(decoder.registry(), earlier);
-    let reads = Reads { names, tables: earlier, cache: RefCell::default(), work: decoder.table_work() };
-    let subject = Subject { checked, relation:Some(relation), types: &types, examples: &contents.examples, columns: &columns, needed:Some(&needed) };
+    let reads = Reads::with_context(decoder, earlier, checked.program.form_of(relation.node), context);
+    let subject = Subject { assignment_layout:&contents.assignment_layout, checked, relation:Some(relation), types: &types, examples: &contents.examples, columns: &columns, needed:Some(&needed) };
     let gathered = derive(decoder, &reads, &subject);
     Some(Extents { examples: finish(&contexts, contents, &gathered, &columns, &no_grid), columns, no_grid, contexts })
 }
@@ -388,7 +394,11 @@ pub fn table_extents(decoder: &Decoder<'_>, earlier: &[&Table], checked: &Checke
 /// Extents of a checked body query, using the same native derivation and
 /// earlier-table lookup as relation tables, with its exact result interface.
 pub fn body_extents(decoder:&Decoder<'_>,earlier:&[&Table],checked:&CheckedProgram,view:&BodyView,contents:&Contents)->Option<Extents> {
-    let reads=Reads {names:names_of(decoder.registry(),earlier),tables:earlier,cache:RefCell::default(),work:decoder.table_work()};
+    body_extents_with_context(decoder, earlier, checked, view, contents, AssignmentContext::Search)
+}
+
+pub(crate) fn body_extents_with_context(decoder:&Decoder<'_>,earlier:&[&Table],checked:&CheckedProgram,view:&BodyView,contents:&Contents,context:AssignmentContext<'_>)->Option<Extents> {
+    let reads=Reads::with_context(decoder,earlier,&view.form,context);
     body_extents_in(decoder,&reads,checked,view,contents)
 }
 
@@ -400,7 +410,7 @@ fn body_extents_in(decoder:&Decoder<'_>,reads:&Reads<'_>,checked:&CheckedProgram
     if !needed.iter().any(|needed| *needed) {
         return Some(direct_extents(contexts,contents,columns,no_grid));
     }
-    let subject=Subject {checked,relation:None,types:&types,examples:&contents.examples,columns:&columns,needed:Some(&needed)};
+    let subject=Subject {assignment_layout:&contents.assignment_layout,checked,relation:None,types:&types,examples:&contents.examples,columns:&columns,needed:Some(&needed)};
     let mut gathered=subject.examples.iter().map(|e|e.rows.as_ref().map_or_else(|_|Vec::new(),|a|a.at.iter().map(|_|Gathered::default()).collect())).collect::<Vec<Vec<Gathered>>>();
     let placements=view.clause.columns.iter().enumerate().map(|(i,v)|Some(Placement {slot:i as u32,label:Some(view.paths.labels[v.0 as usize])})).collect::<Vec<_>>();
     let dets=contents.dets.iter().map(|d|relation_spelled(&d.relation)).collect::<Vec<_>>();
@@ -530,7 +540,7 @@ fn gather(decoder: &Decoder<'_>, reads: &Reads<'_>, dets: &[String], subject: &S
     };
     let analysis=Analysis {decoder,registry:decoder.registry(),checked,sub,types:&types,sources,reads,dets,keys:&keys};
     let walked=crate::tables::body_tables::dets(checked,sub);
-    let values=crate::tables::body_tables::examples(decoder,checked,sub,&walked,&reads.work);
+    let values=crate::tables::body_tables::examples_with_context(decoder,checked,sub,&walked,&reads.work,reads.query_context());
     for (place, example) in subject.examples.iter().enumerate() {
         let Ok(rows) = &example.rows else { continue };
         let entries = &mut gathered[place];
@@ -545,9 +555,11 @@ fn gather(decoder: &Decoder<'_>, reads: &Reads<'_>, dets: &[String], subject: &S
                 continue;
             }
         };
-        for ((table_assignment, _), entry) in rows.at.iter().zip(entries.iter_mut()) {
+        for (table_at, ((table_assignment, _), entry)) in rows.at.iter().zip(entries.iter_mut()).enumerate() {
             let mut matched = false;
-            for (body_assignment, models) in assigned.at.iter().filter(|(own, _)| consistent(table_assignment, own)) {
+            let body_layout=reads.query_context().layout();
+            for body_at in subject.assignment_layout.select(table_at,table_assignment,&body_layout,assigned) {
+                let (body_assignment,models)=&assigned.at[body_at];
                 matched = true;
                 for value in models {
                     match value {
@@ -556,7 +568,8 @@ fn gather(decoder: &Decoder<'_>, reads: &Reads<'_>, dets: &[String], subject: &S
                                 entry.stop = Some(stop);
                                 continue;
                             }
-                            let ctx = Ctx { example: example.example, assignment: body_assignment };
+                            let Some(full)=body_layout.full(body_at,body_assignment) else {entry.lose("extent query assignment ordinal is outside its held receipt");continue};
+                            let ctx = Ctx { example: example.example, assignment: full, layout:&body_layout, ordinal:body_at };
                             if let Some(stop)=analysis.key_stop(&ctx) {entry.stop=Some(stop);}
                             if let Some(fault)=analysis.key_fault(&ctx) {entry.lose(&fault);}
                             each_row(body_rows, &mut |row| {
@@ -593,18 +606,17 @@ struct PortRows {
     relation:GraphRelation,
     key: Option<Range<usize>>,
     wanted: Vec<u32>,
-    derived: Option<(Vec<ExampleRows>, Vec<Vec<Gathered>>)>,
+    derived: Option<(Vec<ExampleRows>, Vec<Vec<Gathered>>, AssignmentLayout)>,
 }
 
 impl PortRows {
     /// What the derivations give of the port at the assignment `assigned` on
     /// `example`.
-    fn entry(&self, example: Option<Example>, assigned: &[Assignment]) -> Option<&Gathered> {
-        let (examples, gathered) = self.derived.as_ref()?;
-        let place = examples.iter().position(|own| own.example == example)?;
-        let rows = examples[place].rows.as_ref().ok()?;
-        let at = rows.at.iter().position(|(own, _)| consistent(assigned, own))?;
-        gathered[place].get(at)
+    fn entry(&self, ctx:&Ctx<'_>) -> Vec<&Gathered> {
+        let Some((examples, gathered, layout)) = &self.derived else {return Vec::new()};
+        let Some(place) = examples.iter().position(|own| own.example == ctx.example) else {return Vec::new()};
+        let Ok(rows) = &examples[place].rows else {return Vec::new()};
+        ctx.layout.select(ctx.ordinal,ctx.assignment,layout,rows).into_iter().filter_map(|at|gathered[place].get(at)).collect()
     }
 }
 
@@ -708,14 +720,15 @@ impl OutputPlan {
             let form=checked.program.form_of(port_relation.node);
             let types=checked.types.columns(&port_relation).ok_or_else(||arclog::eval::RunFault {message:"component input has no checked types".into(),form:form.clone()})?;
             let dets=relation_dets(checked,port_relation.node);
-            let examples=relation_examples(decoder,checked,&port_relation,&dets,&reads.work);
+            let examples=relation_examples_with_context(decoder,checked,&port_relation,&dets,&reads.work,reads.query_context());
             // This metadata is private to the query, not a published slot.
             let mut contents=crate::tables::relation_metadata(decoder.registry(),checked,form,&port_relation,0,&dets,examples)?;
+            contents.assignment_layout=reads.query_context().layout();
             contents.frames=column_frames(&reads.names,&contents);
             let plan=EvidencePlan::new(decoder,reads.tables,checked,form,&contents);
             let needed=plan.wanted(&port.wanted);
             let examples=contents.examples.to_vec();
-            let port_subject=Subject {checked,relation:Some(&port_relation),types,examples:&examples,columns:&port.wanted,needed:Some(&needed)};
+            let port_subject=Subject {assignment_layout:&contents.assignment_layout,checked,relation:Some(&port_relation),types,examples:&examples,columns:&port.wanted,needed:Some(&needed)};
             let mut derived=if needed.iter().any(|n|*n) {derive(decoder,reads,&port_subject)} else {
                 examples.iter().map(|e|e.rows.as_ref().map_or_else(|_|Vec::new(),|a|a.at.iter().map(|_|Gathered::default()).collect())).collect()
             };
@@ -738,15 +751,15 @@ impl OutputPlan {
                     }
                 }}
             }}
-            port.derived = Some((examples, derived));
+            port.derived = Some((examples, derived, contents.assignment_layout.clone()));
         }
         Ok(())
     }
 
     /// The extents that the inputs give each wanted column at the assignment
     /// `assigned` on `example`; a stop of an input's derivation stops `entry`.
-    fn lookups(&self, example: Option<Example>, assigned: &[Assignment], entry: &mut Gathered) -> Vec<Lookup> {
-        let held: Vec<Option<&Gathered>> = self.ports.iter().map(|port| port.entry(example, assigned)).collect();
+    fn lookups(&self, ctx:&Ctx<'_>, entry: &mut Gathered) -> Vec<Lookup> {
+        let held = self.ports.iter().map(|port| port.entry(ctx)).collect::<Vec<_>>();
         self.columns
             .iter()
             .map(|plan| {
@@ -759,10 +772,8 @@ impl OutputPlan {
                 lookup.keyed = self.key.is_some() && plan.sources.iter().all(|source| self.ports[source.port].key.is_some());
                 for source in &plan.sources {
                     let port = &self.ports[source.port];
-                    let Some(rows) = held[source.port] else {
-                        lookup.bad = true;
-                        continue;
-                    };
+                    if held[source.port].is_empty() { lookup.bad=true; }
+                    for rows in &held[source.port] {
                     if let Some(stop) = &rows.stop {
                         entry.stop = Some(stop.clone());
                     }
@@ -782,6 +793,7 @@ impl OutputPlan {
                         }
                     }
                 }
+                }
                 lookup
             })
             .collect()
@@ -795,8 +807,10 @@ fn gather_output(decoder: &Decoder<'_>, reads: &Reads<'_>, subject: &Subject<'_>
     if let Err(fault)=plan.derive_ports(decoder,reads,subject.checked) {return lose_all(gathered,&fault_spelled(&fault));}
     for (place, example) in subject.examples.iter().enumerate() {
         let Ok(rows) = &example.rows else { continue };
-        for ((assigned, models), entry) in rows.at.iter().zip(gathered[place].iter_mut()) {
-            let lookups = plan.lookups(example.example, assigned, entry);
+        for (ordinal, ((assigned, models), entry)) in rows.at.iter().zip(gathered[place].iter_mut()).enumerate() {
+            let Some(full)=subject.assignment_layout.full(ordinal,assigned) else {entry.lose("component assignment ordinal is outside its held receipt");continue};
+            let ctx=Ctx {example:example.example,assignment:full,layout:subject.assignment_layout,ordinal};
+            let lookups = plan.lookups(&ctx, entry);
             for model in models {
                 let RelationValue::Rows(model_rows) = model else { continue };
                 if let Err(stop) = reads.charge(model_rows.len(), &given.form) {
@@ -899,22 +913,13 @@ fn finish(contexts: &DirectContexts, contents: &Contents, gathered: &[Vec<Gather
         .collect()
 }
 
-/// Whether the assignment `table` of the `DET`s of a table's relation and the
-/// assignment `body` of those of a body that gives its rows give each `DET` the
-/// two share one value.
-fn consistent(table: &[Assignment], body: &[Assignment]) -> bool {
-    table.iter().all(|(relation, value)| body.iter().find(|(own, _)| own == relation).is_none_or(|(_, held)| same_rows(held, value)))
-}
-
-fn same_rows(left: &Relation, right: &Relation) -> bool {
-    arclog::session::same_rows(left,right)
-}
-
 /// Where a row is evaluated: its example, and the assignment of the `DET`s of
 /// the body that gives it.
 struct Ctx<'a> {
     example: Option<Example>,
     assignment: &'a [Assignment],
+    layout: &'a AssignmentLayout,
+    ordinal: usize,
 }
 
 /// The earlier tables that the rows of a table read, and the work count of the
@@ -928,6 +933,8 @@ struct Reads<'a> {
     cache: RefCell<StableHashMap<LookupKey, Rc<StableHashMap<Box<[TermId]>, Merged>>>>,
     /// The count that the derivation's evaluations, and the rows it visits, are charged to.
     work: TableWork,
+    limits: arclog::eval::Limits,
+    receipt: Option<&'a Arc<HeldAssignments>>,
 }
 
 /// A table of the stream by its number, the place of the example and of the
@@ -935,7 +942,29 @@ struct Reads<'a> {
 /// read fixes.
 type LookupKey = (u32, usize, usize, usize, Vec<usize>);
 
-impl Reads<'_> {
+impl<'a> Reads<'a> {
+    fn new(decoder:&Decoder<'a>,tables:&'a [&'a Table],form:&NodePath)->Self {
+        Self::new_in(decoder,tables,form,decoder.limits(),decoder.table_work(),None)
+    }
+
+    fn new_in(decoder:&Decoder<'a>,tables:&'a [&'a Table],_form:&NodePath,limits:arclog::eval::Limits,work:TableWork,receipt:Option<&'a Arc<HeldAssignments>>)->Self {
+        Self {names:names_of(decoder.registry(),tables),tables,cache:RefCell::default(),limits:limits.counted_in(work.clone()),work,receipt}
+    }
+
+    fn with_context(decoder:&Decoder<'a>,tables:&'a [&'a Table],form:&NodePath,context:AssignmentContext<'a>)->Self {
+        match context {
+            AssignmentContext::Search => Self::new(decoder,tables,form),
+            AssignmentContext::Held {receipt,limits,work} => Self::new_in(decoder,tables,form,limits.clone(),work.clone(),Some(receipt)),
+        }
+    }
+
+    fn query_context(&self)->AssignmentContext<'_> {
+        match self.receipt {
+            None => AssignmentContext::Search,
+            Some(receipt) => AssignmentContext::Held {receipt,limits:&self.limits,work:&self.work},
+        }
+    }
+
     /// Adds `rows` visited rows to the table's work count; the stop at the work
     /// cap, at the form `form`, where the count is then past the cap.
     fn charge(&self, rows: u64, form: &NodePath) -> Result<(), Stop> {
@@ -947,26 +976,29 @@ impl Reads<'_> {
     /// with, on `example` at the assignment `assignment`; none where the rows give
     /// two extents, where none matches, or where the table has more than one model at
     /// the assignment.
-    fn extent_at(&self, named: &Named, index: usize, example: Option<Example>, constraints: &[(usize, TermId)], assignment: &[Assignment]) -> Option<Extent> {
+    fn extent_at(&self, named: &Named, index: usize, example: Option<Example>, constraints: &[(usize, TermId)], ctx: &Ctx<'_>) -> Option<Extent> {
         let table = self.tables.get((named.row as usize).checked_sub(EVIDENCE_FACTS.len())?)?;
         let contents = table.contents.as_ref().ok()?;
         let place = contents.examples.iter().position(|own| own.example == example).or_else(|| contents.examples.iter().position(|own| own.example.is_none()))?;
         let rows = contents.examples[place].rows.as_ref().ok()?;
-        let at = rows.at.iter().position(|(assigned, _)| consistent(assigned, assignment))?;
-        let [RelationValue::Rows(relation)] = &rows.at[at].1[..] else { return None };
-        let fixed: Vec<usize> = constraints.iter().map(|&(column, _)| column).collect();
-        let key = (named.row, place, at, index, fixed);
-        let held = self.cache.borrow().get(&key).cloned();
-        let lookup = match held {
-            Some(held) => held,
-            None => {
-                let built = Rc::new(self.build(contents, place, at, relation, index, &key.4));
-                self.cache.borrow_mut().insert(key, Rc::clone(&built));
-                built
-            }
-        };
-        let cells: Box<[TermId]> = constraints.iter().map(|&(_, cell)| cell).collect();
-        lookup.get(&cells).and_then(Merged::extent)
+        let mut result=Merged::Unset;
+        for at in ctx.layout.select(ctx.ordinal,ctx.assignment,&contents.assignment_layout,rows) {
+            let [RelationValue::Rows(relation)] = &rows.at[at].1[..] else {return None};
+            let fixed: Vec<usize> = constraints.iter().map(|&(column, _)| column).collect();
+            let key = (named.row, place, at, index, fixed);
+            let held = self.cache.borrow().get(&key).cloned();
+            let lookup = match held {
+                Some(held) => held,
+                None => {
+                    let built = Rc::new(self.build(contents, place, at, relation, index, &key.4));
+                    self.cache.borrow_mut().insert(key, Rc::clone(&built));
+                    built
+                }
+            };
+            let cells: Box<[TermId]> = constraints.iter().map(|&(_, cell)| cell).collect();
+            result.merge(lookup.get(&cells).and_then(Merged::extent));
+        }
+        result.extent()
     }
 
     /// The merged extent of the frame of the column `index` of the rows `relation` of
@@ -1101,7 +1133,7 @@ impl Analysis<'_> {
         // though it has no single outer example. Match the exact read arguments
         // and use that source column's proved row context, not an arbitrary E.
         let constraints = self.constraints(named, located.det, source, row)?;
-        self.reads.extent_at(named, index, example, &constraints, ctx.assignment)
+        self.reads.extent_at(named, index, example, &constraints, ctx)
     }
 
     /// The arguments of the atom of `source` in the IR of the body, with the

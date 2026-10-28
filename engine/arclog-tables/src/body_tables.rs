@@ -14,17 +14,26 @@ pub fn models(evaluation:&Evaluation<'_>,view:&BodyView,example:Option<Example>)
 }
 
 pub fn examples(decoder:&Decoder<'_>,checked:&CheckedProgram,view:&BodyView,dets:&[Det],work:&TableWork)->Vec<ExampleRows> {
-    let root=checked.program.nodes_of(&view.form).first().copied();
-    decoder.examples_of(view.scope).into_iter().map(|example|ExampleRows {example,rows:match root {
-        Some(root)=>decoder.assigned(checked,root,dets,Some(work),&mut |evaluation|models(evaluation,view,example)),
-        None=>Err(RunFault {message:"checked body owner has no dependency node".into(),form:view.form.clone()}),
-    }}).collect()
+    examples_with_context(decoder, checked, view, dets, work, AssignmentContext::Search)
+}
+
+pub(crate) fn examples_with_context(decoder:&Decoder<'_>,checked:&CheckedProgram,view:&BodyView,dets:&[Det],work:&TableWork,context:AssignmentContext<'_>)->Vec<ExampleRows> {
+    match checked.program.nodes_of(&view.form).first().copied() {
+        Some(root) => assignment_context::examples(decoder, checked, view.scope, root, dets, work, context,
+            &mut |evaluation, example| models(evaluation, view, example)),
+        None => decoder.examples_of(view.scope).into_iter().map(|example| ExampleRows {example, rows:Err(RunFault {message:"checked body owner has no dependency node".into(),form:view.form.clone()})}).collect(),
+    }
 }
 
 pub fn contents(decoder:&Decoder<'_>,checked:&CheckedProgram,view:&BodyView,slot:u32,dets:&[Det],examples:Vec<ExampleRows>,work:&TableWork,earlier:&[&Table])->Outcome<Contents> {
+    contents_with_context(decoder, checked, view, slot, dets, examples, work, earlier, AssignmentContext::Search)
+}
+
+pub(crate) fn contents_with_context(decoder:&Decoder<'_>,checked:&CheckedProgram,view:&BodyView,slot:u32,dets:&[Det],examples:Vec<ExampleRows>,work:&TableWork,earlier:&[&Table],context:AssignmentContext<'_>)->Outcome<Contents> {
     let mut contents = metadata(decoder, checked, view, slot, dets, examples, earlier)?;
+    contents.assignment_layout=context.layout();
     super::add_projections(decoder, &mut contents, &view.form, work);
-    contents.extents=crate::extents::body_extents(decoder,earlier,checked,view,&contents);
+    contents.extents=crate::extents::body_extents_with_context(decoder,earlier,checked,view,&contents,context);
     Ok(contents)
 }
 

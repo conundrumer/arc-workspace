@@ -10,15 +10,16 @@ pub(super) struct KeyEvidence {
     labels: Vec<LabelId>,
     examples: Vec<ExampleRows>,
     entries: Vec<Vec<Gathered>>,
+    layout: AssignmentLayout,
 }
 
 impl KeyEvidence {
     fn entries_at(&self, ctx:&Ctx<'_>)->Vec<&Gathered> {
         let mut result=Vec::new();
         for (i,example) in self.examples.iter().enumerate().filter(|(_,e)|e.example==ctx.example) {
-            if let Ok(assigned)=&example.rows {for (at,(values,_)) in assigned.at.iter().enumerate() {
-                if consistent(values,ctx.assignment) {result.push(&self.entries[i][at]);}
-            }}
+            if let Ok(assigned)=&example.rows {
+                for at in ctx.layout.select(ctx.ordinal,ctx.assignment,&self.layout,assigned) {result.push(&self.entries[i][at]);}
+            }
         }
         result
     }
@@ -56,8 +57,9 @@ pub(super) fn key_evidence(decoder:&Decoder<'_>,reads:&Reads<'_>,checked:&Checke
         let views=key.widened()?;
         for view in views {
             let dets=crate::tables::body_tables::dets(checked,&view);
-            let examples=crate::tables::body_tables::examples(decoder,checked,&view,&dets,&reads.work);
+            let examples=crate::tables::body_tables::examples_with_context(decoder,checked,&view,&dets,&reads.work,reads.query_context());
             let mut contents=crate::tables::body_tables::metadata(decoder,checked,&view,0,&dets,examples,reads.tables)?;
+            contents.assignment_layout=reads.query_context().layout();
             contents.extents=body_extents_in(decoder,reads,checked,&view,&contents);
             let geom=extent_columns(&contents.columns.iter().map(|c|c.ty.clone()).collect::<Vec<_>>(),&contents.frames);
             let labels=geom.iter().map(|c|contents.columns[*c as usize].label_id.expect("IR columns have scoped labels")).collect();
@@ -90,7 +92,7 @@ pub(super) fn key_evidence(decoder:&Decoder<'_>,reads:&Reads<'_>,checked:&Checke
                 }}
                 entries.push(gathered);
             }
-            result.push(KeyEvidence {view,key:key_labels.clone(),labels,examples:contents.examples.into_vec(),entries});
+            result.push(KeyEvidence {view,key:key_labels.clone(),labels,examples:contents.examples.into_vec(),entries,layout:contents.assignment_layout.clone()});
         }
     }
     Ok(result)

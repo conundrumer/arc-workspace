@@ -31,7 +31,7 @@
 //! atom of the `OUT` form at which the decode ended reads, the columns that
 //! the form selects in it ([`record_step`]). A table that has a column of type
 //! `Box` in a made frame also gives the extent of that frame at each of its
-//! rows ([`table_extents`]), which [`step_tables`] computes from the tables
+//! rows ([`crate::extents::table_extents`]), which [`step_tables`] computes from the tables
 //! of the steps before.
 //!
 //! Beside the tables of a step, [`evidence_tables`] gives the evidence tables
@@ -63,7 +63,10 @@ use arclog::types::{GraphRelation, ValueType};
 use arclog::write::label_names;
 
 use crate::columns::{column_frames, fact_frames, names_of};
-use crate::extents::{table_extents, Extents};
+use crate::extents::{table_extents_with_context, Extents};
+#[path = "assignment_context.rs"]
+pub mod assignment_context;
+use assignment_context::{AssignmentContext, AssignmentLayout, HeldAssignments};
 use crate::flows::{column_flows, column_placements, ColumnSource};
 
 /// Where in a form a table stands.
@@ -136,6 +139,8 @@ pub enum TableRelation {
 /// What a table holds once its relation checks and its columns have types.
 #[derive(Clone, Debug)]
 pub struct Contents {
+    /// Native assignment-order identity; this stores no evaluator or limits.
+    pub assignment_layout: AssignmentLayout,
     pub relation: TableRelation,
     pub columns: Box<[TableColumn]>,
     /// The `DET`s of the assignments, in their order.
@@ -170,7 +175,7 @@ pub struct Contents {
     /// tables after this one that resolve a source's frame through it.
     pub frames: Vec<String>,
     /// The extents of the made frames of the table's `Box` columns
-    /// ([`table_extents`]): none for a table that has no such column and an
+    /// ([`crate::extents::table_extents`]): none for a table that has no such column and an
     /// evidence table.
     pub extents: Option<Extents>,
 }
@@ -342,20 +347,25 @@ fn relation_tables(decoder: &Decoder<'_>, before: &State, earlier: &[&Table]) ->
 /// frames and then its extents, both computed from `seen`, the tables of the
 /// stream before the table.
 fn made(decoder: &Decoder<'_>, seen: &[&Table], checked: &CheckedProgram, relation: &GraphRelation, contents: Contents) -> Contents {
+    made_with_context(decoder, seen, checked, relation, contents, AssignmentContext::Search)
+}
+
+fn made_with_context(decoder: &Decoder<'_>, seen: &[&Table], checked: &CheckedProgram, relation: &GraphRelation, contents: Contents, context: AssignmentContext<'_>) -> Contents {
     let frames = column_frames(&names_of(decoder.registry(), seen), &contents);
-    let contents = Contents { frames, ..contents };
-    let extents = table_extents(decoder, seen, checked, relation, &contents);
+    let contents = Contents { frames, assignment_layout:context.layout(), ..contents };
+    let extents = table_extents_with_context(decoder, seen, checked, relation, &contents, context);
     Contents { extents, ..contents }
 }
 
 /// The rows of `relation` in `checked` on each example it is evaluated on, at
 /// each assignment of `dets` and each model, counted in `work`.
 pub(crate) fn relation_examples(decoder: &Decoder<'_>, checked: &CheckedProgram, relation: &GraphRelation, dets: &[Det], work: &TableWork) -> Vec<ExampleRows> {
-    decoder
-        .examples_of(scope_of(checked, relation))
-        .into_iter()
-        .map(|example| ExampleRows { example, rows: decoder.assigned(checked, relation.node, dets, Some(work), &mut |evaluation| models_at(evaluation, relation, example)) })
-        .collect()
+    relation_examples_with_context(decoder, checked, relation, dets, work, AssignmentContext::Search)
+}
+
+pub(crate) fn relation_examples_with_context(decoder: &Decoder<'_>, checked: &CheckedProgram, relation: &GraphRelation, dets: &[Det], work: &TableWork, context: AssignmentContext<'_>) -> Vec<ExampleRows> {
+    assignment_context::examples(decoder, checked, scope_of(checked, relation), relation.node, dets, work, context,
+        &mut |evaluation, example| models_at(evaluation, relation, example))
 }
 
 /// The contents of the table of `relation` in `program`, from its rows on each
@@ -419,7 +429,7 @@ pub(crate) fn metadata(program: &CheckedProgram, form: &NodePath, relation: Tabl
             }
         }
     }}
-    Ok(Contents { relation, columns, dets, examples: examples.into(), projections: None, name: String::new(), flows,
+    Ok(Contents { assignment_layout:AssignmentLayout::Search, relation, columns, dets, examples: examples.into(), projections: None, name: String::new(), flows,
         rows: None, depth: 0, keys: Vec::new(), selected: SelectedColumns::default(), frames: Vec::new(), extents: None })
 }
 
@@ -499,7 +509,7 @@ fn evidence_table_of(registry: &Registry, fact: FactRelation, examples: Box<[Exa
         })
         .collect();
     let frames = fact_frames(fact, &columns);
-    Table { form: NodePath::default(), point: Point::Evidence, contents: Ok(Contents { relation: TableRelation::Fact(fact), columns, dets: Box::new([]), examples, projections: None, name: String::new(), flows: Box::new([]), rows: None, depth: 0, keys: vec![vec![0, 1]], selected: SelectedColumns::default(), frames, extents: None }) }
+    Table { form: NodePath::default(), point: Point::Evidence, contents: Ok(Contents { assignment_layout:AssignmentLayout::Search, relation: TableRelation::Fact(fact), columns, dets: Box::new([]), examples, projections: None, name: String::new(), flows: Box::new([]), rows: None, depth: 0, keys: vec![vec![0, 1]], selected: SelectedColumns::default(), frames, extents: None }) }
 }
 
 /// The relation of the graph that the form at `form` of `program` declares as

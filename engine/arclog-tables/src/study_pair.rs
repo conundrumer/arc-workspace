@@ -97,6 +97,8 @@ impl PairCache {
         self.prefix=None;
         self.columns=None;
         let mut bytes=key.capacity().saturating_mul(4);
+        let mut receipts=HashSet::new();
+        for (_,table) in &tables {if let Ok(c)=&table.contents {bytes=bytes.saturating_add(c.assignment_layout.retained_bytes(&mut receipts));}}
         for (_,table) in &tables {if let Ok(c)=&table.contents {for ex in &c.examples {if let Ok(a)=&ex.rows {for (_,models) in &a.at {for model in models {if let RelationValue::Rows(r)=model {
             bytes=bytes.saturating_add(usize::try_from(r.len()).unwrap_or(usize::MAX).saturating_mul(usize::from(r.arity()).saturating_mul(8)+16));
         }}}}}}}
@@ -104,7 +106,18 @@ impl PairCache {
             self.prefix=Some(PrefixMemo {key,tables,row_bytes:bytes});
         }
     }
-    pub fn stats(&self)->Value {json!({"gold_hits":self.gold_hits,"gold_body_hits":self.gold_body_hits,"gold_body_entries":self.gold_bodies.len(),"gold_relation_entries":self.gold_relations.len(),"gold_entries":self.gold.len(),"prefix_entries":usize::from(self.prefix.is_some()),"prefix_bytes_estimate":self.prefix.as_ref().map_or(0,|memo|memo.row_bytes),"prefix_hits":self.prefix_hits,"column_prefix_entries":usize::from(self.columns.is_some()),"column_prefix_bytes":self.columns.as_ref().map_or(0,|(_,columns)|columns.retained_bytes()),"cache_byte_bound":self.cache_bytes})}
+    fn assignment_receipt_bytes(&self)->usize {
+        let mut seen=HashSet::new();
+        let mut bytes=0usize;
+        let bodies=self.gold_bodies.values().filter_map(|v|v.as_ref().ok()).map(|v|v.tables.as_slice());
+        let relations=self.gold_relations.values().filter_map(|(_,v)|v.as_ref().ok()).map(Vec::as_slice);
+        let prefix=self.prefix.iter().map(|v|v.tables.as_slice());
+        for tables in bodies.chain(relations).chain(prefix) {for (_,table) in tables {if let Ok(c)=&table.contents {
+            bytes=bytes.saturating_add(c.assignment_layout.retained_bytes(&mut seen));
+        }}}
+        bytes
+    }
+    pub fn stats(&self)->Value {json!({"assignment_receipt_bytes_estimate":self.assignment_receipt_bytes(),"gold_hits":self.gold_hits,"gold_body_hits":self.gold_body_hits,"gold_body_entries":self.gold_bodies.len(),"gold_relation_entries":self.gold_relations.len(),"gold_entries":self.gold.len(),"prefix_entries":usize::from(self.prefix.is_some()),"prefix_bytes_estimate":self.prefix.as_ref().map_or(0,|memo|memo.row_bytes),"prefix_hits":self.prefix_hits,"column_prefix_entries":usize::from(self.columns.is_some()),"column_prefix_bytes":self.columns.as_ref().map_or(0,|(_,columns)|columns.retained_bytes()),"cache_byte_bound":self.cache_bytes})}
 }
 
 fn fault(message: impl Into<Box<str>>, form: &NodePath) -> RunFault {
@@ -190,25 +203,12 @@ fn clause_tables(program:&StudyProgram,body:&NodePath,decoder:&mut Decoder<'_>,f
     let held=super::body_tables::contents(decoder,program.checked(),&view,slot,&dets,examples,&work,&seen)?;
     tables.push((index,Table {form:view.form.clone(),point,contents:Ok(held)}));
     let work=decoder.table_work();
-    let examples=decoder.examples_of(view.scope).into_iter().map(|example| {
-        let mut at=Vec::new();
-        for assigned in fixed {
-            let projected=dets.iter().filter_map(|det|assigned.iter().find(|(name,_)|*name==det.relation).cloned()).collect::<Vec<_>>();
-            if projected.len()!=dets.len() {return ExampleRows {example,rows:Err(fault("gold FITS assignment does not assign every DET required by the mutant clause view",body))};}
-            let parameters=ParameterValues::determined(assigned.clone());let limits=decoder.limits().counted_in(work.clone());
-            let (task,session,constructions)=decoder.evaluation_inputs();
-            let evaluation=Evaluation {program:program.checked(),concept:None,task,session,constructions,registry:decoder.registry(),parameters:&parameters,limits:&limits};
-            let models=match super::body_tables::models(&evaluation,&view,example) {
-                Ok(values)=>values,
-                Err(End::Fault(f))=>return ExampleRows {example,rows:Err(f)},
-                Err(End::Stop(stop))=>return ExampleRows {example,rows:Ok(Assigned {at,stop:Some(stop)})},
-            };
-            at.push((projected,models));
-        }
-        ExampleRows {example,rows:Ok(Assigned {at,stop:None})}
-    }).collect();
+    let limits=decoder.limits().counted_in(work.clone());
+    let receipt=HeldAssignments::new(Arc::clone(program.checked()),fixed);
+    let context=AssignmentContext::Held {receipt:&receipt,limits:&limits,work:&work};
+    let examples=super::body_tables::examples_with_context(decoder,program.checked(),&view,&dets,&work,context);
     let seen=tables[..tables.len()-1].iter().map(|(_,t)|t).collect::<Vec<_>>();
-    let held=super::body_tables::contents(decoder,program.checked(),&view,slot,&dets,examples,&work,&seen)?;
+    let held=super::body_tables::contents_with_context(decoder,program.checked(),&view,slot,&dets,examples,&work,&seen,context)?;
     tables.push((index,Table {form:view.form,point,contents:Ok(held)}));
     Ok(ClauseTables {tables,names:written.relations.iter().map(|n|(n.clone(),n.clone())).collect(),prefix})
 }
