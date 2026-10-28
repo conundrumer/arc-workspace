@@ -120,7 +120,8 @@ retained completed cases separately; rates count only new work.
 
 ### Follow-up from the running stage-2 audit
 
-The first 450 case rows from `stage2-rerun-fast` recorded 2,098 phase-seconds
+The first 450 case rows from the pre-Unit-removal `3e15aa83` speed run
+(`stage2-rerun-fast`) recorded 2,098 phase-seconds
 in stream replay, 594 in sexp rereads and 973 in domain requests. There were
 335 case deadlines. Three live workers (65697, 65699, 65701) were sampled for
 three seconds each; the replay stacks contained 87, 107 and 112 samples in
@@ -152,6 +153,9 @@ by completed cases, not by a quicker timeout rate.
 A rebuilt runtime uses a new output prefix. `--resume-from OLD.json` snapshots
 completed cases from a compatible earlier audit into `NEW.inherited.json`,
 including the old native/checker provenance and paths to its JSONL evidence.
+The `stage2-unit-free-v1` coverage contract is mandatory: pre-Unit-removal
+results are speed evidence only and cannot seed the rerun that counts for
+corpus-v6. That rerun starts fresh on the same committed runtime as corpus-v6.
 Policy, corpus, selection and draw parameters must agree; v5 coverage cannot
 be inherited into v6. Incomplete cases and any old row containing a timeout
 are retried, including older rows incorrectly marked complete after a domain

@@ -25,6 +25,7 @@ from check_stage1_all import CaseDeadline, inventory
 
 POLICY = "complete-domain-without-replacement-v5"
 READER = "complete-program-bindings-v2"
+COVERAGE = "stage2-unit-free-v1"
 
 
 def emit(event):
@@ -418,7 +419,7 @@ def main():
         with binary.open("rb") as src:
             for data in iter(lambda: src.read(1 << 20), b""):
                 runtime.update(data)
-    config = dict(schema=2, policy=policy, reader=reader, native_sha256=runtime.hexdigest(),
+    config = dict(schema=3, coverage=COVERAGE, policy=policy, reader=reader, native_sha256=runtime.hexdigest(),
         checker_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         export=str(args.export.resolve()), corpus=str(args.corpus.resolve()), tasks_path=str(args.tasks.resolve()),
         tasks=tasks, cases=args.cases, body=args.body, ks=args.ks, operations=args.operations,
@@ -446,6 +447,8 @@ def main():
             if args.resume_from.resolve() == args.output.resolve():
                 parser.error("--resume-from requires a new output prefix")
             source_config = json.loads(args.resume_from.with_suffix(".config.json").read_text())
+            if source_config.get("coverage") != COVERAGE:
+                parser.error("--resume-from predates the Unit-free audit contract; start fresh for corpus-v6 coverage")
             coverage = ("policy", "export", "corpus", "tasks_path", "tasks", "cases", "body", "ks", "operations", "per_point", "seed")
             if any(source_config.get(key) != config[key] for key in coverage):
                 parser.error("--resume-from mutation policy or audit coverage differs")
