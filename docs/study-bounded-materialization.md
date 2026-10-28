@@ -65,6 +65,21 @@ interpreter infrastructure, allocator retention and consumer-created copies have
 separate lifetimes. The fixed-size empty API envelope remains bounded even if
 there is insufficient room for another table header.
 
+DET header admission uses the same latest-relation lookup as header placement.
+The current relation takes precedence over earlier tables in both paths. Its
+source allowance sizes paths, frames, slots and both native and file label
+spellings without constructing the header before admission. Earlier unrelated
+tables remain a borrowed name index; charging that entire index per DET would
+charge it repeatedly as the prefix grows and stop small exports at the session
+bound.
+
+The corpus checker validates the available packed prefix even when its selected
+clause lies in the unavailable suffix. Only a native `materialization_stop`
+permits that missing clause: inspection records `clause_available=false`,
+`clause_rows=null` and the exact stop. A missing clause without a native packing
+stop remains a fault. Native dumps and stream observations retain packing stops,
+so a bounded prefix cannot be mistaken for a complete or empty clause.
+
 Returned Python bytes/list subclasses retain the native capsule lease on each
 actual escaped buffer/container. Scalars remain ordinary integers; bytes,
 dtypes, list contents and serialized mapping keys are unchanged. A read-only

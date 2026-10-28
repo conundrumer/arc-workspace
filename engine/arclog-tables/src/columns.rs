@@ -587,7 +587,7 @@ fn push_tables<'t>(materializer:&Materializer<'_>,out: &mut CaseColumns, names: 
     for (place, (token, table)) in (first..).zip(tables) {
         // Headers/count-only entries allocate too, even when there is no row
         // buffer. Admit their physical metadata before any output allocation.
-        let allocation=metadata_bytes(materializer,table,names).and_then(|bytes|materializer.copy(bytes));
+        let allocation=metadata_bytes(materializer,table,names,labels).and_then(|bytes|materializer.copy(bytes));
         match allocation {
             Ok(allocation)=>out.allocations.push(allocation),
             Err(bound)=>{out.packing_stop=Some(Stop {bound,form:table.form.clone()});break;},
@@ -601,7 +601,7 @@ fn push_tables<'t>(materializer:&Materializer<'_>,out: &mut CaseColumns, names: 
 // logical row cardinality. Includes output dictionaries, dtype keys, the two
 // owner types/closures, vector growth and nested list/string copies. Row cells
 // and extent matrices have their own admissions. No Cartesian traversal here.
-fn metadata_bytes(materializer:&Materializer<'_>,table:&Table,names:&TableNames)->Result<usize,arclog::eval::ReachedBound> {
+fn metadata_bytes(materializer:&Materializer<'_>,table:&Table,names:&TableNames,labels:Option<&StreamLabels>)->Result<usize,arclog::eval::ReachedBound> {
     materializer.check()?;
     let mut bytes=64usize.saturating_mul(1024).saturating_add(table.form.0.len().saturating_mul(256));
     let Ok(contents)=&table.contents else {return Ok(bytes.saturating_add(table.contents.as_ref().err().map_or(0,|f|f.message.len().saturating_mul(8))));};
@@ -609,10 +609,17 @@ fn metadata_bytes(materializer:&Materializer<'_>,table:&Table,names:&TableNames)
     add(contents.name.len().saturating_mul(8));
     for column in &contents.columns {add(2048usize.saturating_add(column.name.len().saturating_mul(8)).saturating_add(column.label.as_ref().map_or(0,|s|s.len().saturating_mul(8))));}
     for frame in &contents.frames {add(1024usize.saturating_add(frame.len().saturating_mul(8)));}
-    // DET header aliases may copy the earlier native table's typed paths and
-    // source spelling. Charge their owned source bytes before cloning them.
-    add(names.heap_bytes().saturating_mul(contents.dets.len()).saturating_mul(8));
-    for det in &contents.dets {add(2048usize.saturating_add(det.types.len().saturating_mul(2048)).saturating_add(det.columns.heap_bytes().saturating_mul(8)));}
+    // A DET copies metadata from its referenced table only. Charging the
+    // entire preceding name index per DET makes unrelated earlier tables
+    // consume the bound again at every later table. Keep the conservative
+    // source-table allowance, using the same lookup as the header writer.
+    let own=if matches!(table.point,Point::Body {..}) {None} else {
+        Some((table_name(contents),own_header_bytes(&table.form,contents,labels)))
+    };
+    for det in &contents.dets {
+        if let Some(bytes)=det_table(names,own,&det.relation,HeapBytes::heap_bytes) {add(bytes.saturating_mul(8));}
+        add(2048usize.saturating_add(det.types.len().saturating_mul(2048)).saturating_add(det.columns.heap_bytes().saturating_mul(8)));
+    }
     for key in &contents.keys {add(256usize.saturating_add(key.len().saturating_mul(32)));}
     for sources in &contents.flows {for source in sources {add(2048usize.saturating_add(source.row.heap_bytes().saturating_mul(8)).saturating_add(source.atom.0.len().saturating_mul(256)));}}
     for example in &contents.examples {
@@ -928,11 +935,32 @@ fn named(row: u32, table: &Table, labels: Option<&StreamLabels>) -> Option<Named
     if matches!(table.point, Point::Body { .. }) {
         return None;
     }
-    let name = match contents.relation {
-        TableRelation::Slot(_) => contents.name.clone(),
-        TableRelation::Fact(fact) => spelling(FACT_RELATIONS, &fact).to_owned(),
-    };
+    let name = table_name(contents).to_owned();
     Some(Named { name, row, paths: contents.rows.clone(), frames: contents.frames.clone(), slots: slots_of(contents), labels: labels_of(contents), source_labels: source_labels_of(&table.form, contents, labels) })
+}
+
+fn table_name(contents:&Contents)->&str {
+    match contents.relation {
+        TableRelation::Slot(_)=>&contents.name,
+        TableRelation::Fact(fact)=>spelling(FACT_RELATIONS,&fact),
+    }
+}
+
+// Size the current Named's source metadata without building it before
+// admission. Include both label spellings: file labels can differ in size.
+// The caller's source allowance covers native/Python copies and Vec growth.
+fn own_header_bytes(form:&NodePath,contents:&Contents,labels:Option<&StreamLabels>)->usize {
+    let mut bytes=table_name(contents).len().saturating_add(contents.rows.heap_bytes()).saturating_add(contents.frames.heap_bytes());
+    for column in &contents.columns {
+        let label=column.label.as_deref().unwrap_or_default();
+        let source=match (labels,column.label_id) {
+            (Some(labels),Some(id))=>written_label(labels,form,id),
+            _=>label,
+        };
+        bytes=bytes.saturating_add(2*std::mem::size_of::<String>()+std::mem::size_of::<i32>()+96)
+            .saturating_add(label.len()).saturating_add(source.len());
+    }
+    bytes
 }
 
 /// The relation `relation` as the program spells it, a fact relation's name,
@@ -1097,6 +1125,15 @@ fn written_label<'a>(labels: &'a StreamLabels, form: &NodePath, label: LabelId) 
     labels.get(top).and_then(|form| form.get(label.0 as usize)).expect("the stream names each label of each form the decode reaches")
 }
 
+/// Select the current table first, then the latest earlier table. Both
+/// header placement and pre-admission sizing use this precedence; sizing
+/// supplies the current table's byte count without allocating its Named.
+fn det_table<'n,T>(names: &'n TableNames, own: Option<(&str,T)>, relation: &ProgramRelation, earlier: impl FnOnce(&'n Named)->T) -> Option<T> {
+    let name=relation_spelled(relation);
+    if let Some((own_name,own))=own {if own_name==name {return Some(own);}}
+    names.iter().rev().find(|named|named.name==name).map(earlier)
+}
+
 /// For each column of each `DET` of `contents`, the latest table that stands
 /// for the `DET`'s relation, among `names` and `own`, the table of `contents`
 /// itself where it stands for one, and the position in it of the column, found
@@ -1107,7 +1144,7 @@ fn det_places<'n>(names: &'n TableNames, own: Option<&'n Named>, contents: &Cont
         .dets
         .iter()
         .map(|det| {
-            let table = own.into_iter().chain(names.iter().rev()).find(|named| named.name == relation_spelled(&det.relation));
+            let table = det_table(names, own.map(|own|(own.name.as_str(),own)), &det.relation, |named|named);
             let place = |index: usize| -> Option<(&'n Named, usize)> {
                 let path = det.columns.as_ref()?.get(index)?;
                 let table = table?;

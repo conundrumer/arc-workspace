@@ -40,7 +40,8 @@ def column(table, part, name):
 def inspect_native(table, selected):
     """Check actual exported offsets and assignment references, without numpy."""
     n = len(column(table, "tables", "token"))
-    if selected >= n:
+    stop = getattr(table, "materialization_stop", None)
+    if selected < 0 or (selected >= n and not stop):
         raise ValueError(f"clause table {selected} outside {n} native tables")
     widths = column(table, "tables", "width")
     entry_tables = column(table, "entries", "table")
@@ -57,7 +58,8 @@ def inspect_native(table, selected):
         if entry >= len(entry_tables):
             raise ValueError("native DET assignment refers to absent entry")
     return dict(tables=n, entries=len(entry_tables), values=values,
-                clause_rows=[count for t, count in zip(entry_tables, rows) if t == selected])
+                clause_rows=[count for t, count in zip(entry_tables, rows) if t == selected] if selected < n else None,
+                clause_available=selected < n, materialization_stop=stop)
 
 
 def dump_native(table, path):
@@ -65,7 +67,8 @@ def dump_native(table, path):
         return {"base64": base64.b64encode(v).decode()} if isinstance(v, bytes) else v
     parts = {part: {k: encode(v) for k, v in getattr(table, part).items()}
              for part in ("tables", "entries", "assigned", "projections", "projection_rows", "flows", "copies")}
-    path.write_text(json.dumps(dict(dtypes=table.dtypes, values=encode(table.values), **parts)) + "\n")
+    path.write_text(json.dumps(dict(dtypes=table.dtypes, values=encode(table.values),
+                                   materialization_stop=getattr(table, "materialization_stop", None), **parts)) + "\n")
 
 
 def checkpoints(path):
@@ -230,6 +233,8 @@ def main():
                     for native in streams:
                         issues=[(part,key,i,reason) for part in ("tables","entries") for key in ("fault","extent_fault") if key in getattr(native,part) for i,reason in enumerate(getattr(native,part)[key]) if reason]
                         stops=[reason for part in ("tables","entries") for key,values in getattr(native,part).items() if key.endswith('_bound') for reason in values if reason]
+                        if getattr(native, "materialization_stop", None):
+                            stops.append(native.materialization_stop)
                         emit(dict(type="native_stream_gold",**context,status="fault" if issues else "stopped" if stops else "complete",reason="; ".join(dict.fromkeys(v[3] for v in issues)) if issues else "; ".join(dict.fromkeys(stops)) if stops else None,issues=issues,stops=stops,lines=lines))
                     del native, streams, lines
                 points = gold.points()[:args.point_limit]
