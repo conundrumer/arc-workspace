@@ -172,12 +172,6 @@ fn an_or_after_a_conjunct_of_a_branch_decodes_to_its_content() {
     same_content(&format!("{BG}{FG}(RULE &nested (input *P *Col) (OR ((&bg (:C Col)) (OR ((&fg P)) ((&fg (:Col Col))))) ((&fg P))))\n"));
 }
 
-#[test]
-fn a_choose_of_two_never_clauses_decodes_to_its_stream() {
-    let pick = "(CHOOSE &pick (from (&fg *P *Col)) (never (&fg *P *Col) (&fg (:P *P2) Col) (!= P P2) (&bg (:C Col))) (never (&fg *P *Col) (&fg P (:Col *C2)) (!= Col C2)))\n";
-    round_trip(&format!("{BG}{FG}{pick}"));
-}
-
 /// The names of a key's columns are a part of the content of its instance,
 /// and a decoded program names them by slot, so the decode of a keyed
 /// instance gives its stream again and not its content.

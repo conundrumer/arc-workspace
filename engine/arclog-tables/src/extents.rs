@@ -18,7 +18,7 @@
 //! - for a label of type `Position`, the one its value gives: (top + bottom +
 //!   1, left + right + 1);
 //! - for a label of type `Box`, the one of each source of the label in the
-//!   body, as [`column_flows`] gives the sources and their frames, and `None`
+//!   body, using the sources and frames from [`body_column_flows`], and `None`
 //!   where two differ or one has none:
 //!   - the frame of the input or output grid: the extent of the example's
 //!     grid;
