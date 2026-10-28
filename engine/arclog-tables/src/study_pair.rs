@@ -399,12 +399,21 @@ fn comparisons(
         })
         .collect::<Option<Vec<_>>>();
     let compatible = g.columns.len() == m.columns.len() && order.is_some();
+    // Compare on the union of native example domains. A task-wide body is
+    // constant on every example; broadcast it explicitly when a mutation
+    // changes the owner's scope. Native tables retain their actual scope.
+    let mut examples=g.examples.iter().chain(m.examples.iter()).filter_map(|e|e.example).collect::<Vec<_>>();
+    examples.sort_by_key(|e|e.index());examples.dedup();
+    let examples=if examples.is_empty() {vec![None]} else {examples.into_iter().map(Some).collect()};
     let mut out = Vec::new();
-    for ex in &g.examples {
-        let Some(other) = m.examples.iter().find(|e| e.example == ex.example) else {
-            out.push(json!({"example":ex.example.map(|e|e.index()),"status":"fault","reason":"mutant has no matching example scope"}));
-            continue;
+    for example in examples {
+        let find=|rows:&[ExampleRows]|rows.iter().position(|e|e.example==example).or_else(||rows.iter().position(|e|e.example.is_none()));
+        let (Some(gi),Some(mi))=(find(&g.examples),find(&m.examples)) else {
+            out.push(json!({"example":example.map(|e|e.index()),"status":"fault","reason":"native comparison domain is missing an example"}));continue;
         };
+        let (ex,other)=(&g.examples[gi],&m.examples[mi]);
+        let scope_alignment=if ex.example!=other.example {"broadcast_task_wide"} else {"same"};
+        let first=out.len();
         let (Ok(gr), Ok(mr)) = (&ex.rows, &other.rows) else {
             continue;
         };
@@ -418,7 +427,7 @@ fn comparisons(
             }) else {
                 for (model, value) in models.iter().enumerate() {
                     let mut row = absent_assignment(value, true);
-                    row["example"] = json!(ex.example.map(|e| e.index()));
+                    row["example"] = json!(example.map(|e| e.index()));
                     row["assignment"] = json!(a);
                     row["model"] = json!(model);
                     out.push(row);
@@ -427,7 +436,7 @@ fn comparisons(
             };
             for (model, (gv, mv)) in models.iter().zip(others).enumerate() {
                 let mut row =
-                    json!({"example":ex.example.map(|e|e.index()),"assignment":a,"model":model});
+                    json!({"example":example.map(|e|e.index()),"assignment":a,"model":model});
                 match (gv, mv) {
                     (RelationValue::Rows(g), RelationValue::Rows(m)) => {
                         if let Err(bound) = work.charge(g.len().saturating_add(m.len())) {
@@ -483,7 +492,7 @@ fn comparisons(
                 out.push(row);
             }
             if models.len() != others.len() {
-                out.push(json!({"example":ex.example.map(|e|e.index()),"assignment":a,"status":"fault","reason":"model counts differ; unmatched models are not compared"}));
+                out.push(json!({"example":example.map(|e|e.index()),"assignment":a,"status":"fault","reason":"model counts differ; unmatched models are not compared"}));
             }
         }
         for (a, (assigned, models)) in mr.at.iter().enumerate() {
@@ -495,13 +504,14 @@ fn comparisons(
             {
                 for (model, value) in models.iter().enumerate() {
                     let mut row = absent_assignment(value, false);
-                    row["example"] = json!(ex.example.map(|e| e.index()));
+                    row["example"] = json!(example.map(|e| e.index()));
                     row["mutant_assignment"] = json!(a);
                     row["model"] = json!(model);
                     out.push(row);
                 }
             }
         }
+        for row in &mut out[first..] {row["scope_alignment"]=json!(scope_alignment);}
     }
     json!(out)
 }
