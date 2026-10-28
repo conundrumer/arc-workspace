@@ -347,8 +347,9 @@ impl HeldStops {
 const UNPOISONED: &str = "a store that no panic poisoned";
 
 /// The bindings that the evaluations of one table try, counted over all its
-/// examples, assignments, models and projections, and the cap on the count.
-/// Clones share one count.
+/// examples, assignments, models and projections, and the rows that the
+/// derivation of its extents visits, and the cap on the count. Clones share one
+/// count.
 #[derive(Clone, Debug)]
 pub struct TableWork {
     count: Arc<AtomicU64>,

@@ -51,6 +51,18 @@
 //! that give it give ([`Merged`]), and none where they give two or where one
 //! of them gives none.
 //!
+//! Every extent is at least 1 in each cell. A value whose margins reach past
+//! its frame (a negative margin, in `programs/lib/box.dl`) can make a frame's
+//! own size plus margins fall below 1: such a derivation gives no extent, and
+//! so does a value that does not fit in its extent (`fitted_size`).
+//!
+//! The derivation visits no more rows than the table's work cap admits. Each
+//! model of a body or of an output charges its count of rows to the count of
+//! [`TableWork`] before the derivation visits them, as does each read of an
+//! earlier table's rows. An entry whose model is refused the charge, or whose
+//! derivation leaves the count past the cap, gets the stop
+//! ([`EntryExtents::Stopped`]) in place of extents.
+//!
 //! An entry that holds rows and has no extent says why in
 //! [`EntryExtents::Lost`]: the fault of a widened body, or the reason the
 //! extents do not derive its rows.
@@ -87,11 +99,19 @@ use crate::flows::{column_flows, column_placements, output_copies, output_frames
 use crate::tables::{relation_examples, Contents, ExampleRows, Table, EVIDENCE_FACTS};
 
 /// The extent of a frame: its count of rows V and its count of columns H, each
-/// at least 1.
+/// at least 1; [`Extent::new`] is the one constructor.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Extent {
     pub rows: i32,
     pub columns: i32,
+}
+
+impl Extent {
+    /// The extent of `rows` rows and `columns` columns, none where either is
+    /// below 1: no frame has a side below 1.
+    pub fn new(rows: i32, columns: i32) -> Option<Extent> {
+        (rows >= 1 && columns >= 1).then_some(Extent { rows, columns })
+    }
 }
 
 /// The one extent that the derivations of a row give, as the derivations come:
@@ -203,9 +223,9 @@ pub fn table_extents(decoder: &Decoder<'_>, earlier: &[&Table], checked: &Checke
     if columns.is_empty() {
         return None;
     }
-    let reads = Reads { names, tables: earlier, cache: RefCell::default() };
+    let reads = Reads { names, tables: earlier, cache: RefCell::default(), work: decoder.table_work() };
     let subject = Subject { checked, relation, types: &types, examples: &contents.examples, columns: &columns };
-    let gathered = derive(decoder, &reads, &subject, &decoder.table_work());
+    let gathered = derive(decoder, &reads, &subject);
     Some(Extents { examples: finish(contents, &gathered, &columns), columns })
 }
 
@@ -213,7 +233,7 @@ pub fn table_extents(decoder: &Decoder<'_>, earlier: &[&Table], checked: &Checke
 /// examples, for each of its assignments: the widened bodies of the clauses
 /// that give the relation, or of the clauses that an instance writes for an
 /// input, or the inputs of the instance that an output reads.
-fn derive(decoder: &Decoder<'_>, reads: &Reads<'_>, subject: &Subject<'_>, work: &TableWork) -> Vec<Vec<Gathered>> {
+fn derive(decoder: &Decoder<'_>, reads: &Reads<'_>, subject: &Subject<'_>) -> Vec<Vec<Gathered>> {
     let registry = decoder.registry();
     let (checked, relation) = (subject.checked, subject.relation);
     let mut gathered: Vec<Vec<Gathered>> = subject.examples.iter().map(|example| example.rows.as_ref().map_or_else(|_| Vec::new(), |rows| rows.at.iter().map(|_| Gathered::default()).collect())).collect();
@@ -232,19 +252,19 @@ fn derive(decoder: &Decoder<'_>, reads: &Reads<'_>, subject: &Subject<'_>, work:
             (Some(NodeRef::Clause(clause)), _) => {
                 let placements = placements();
                 for body in decoder.widened_bodies(clause) {
-                    gather(decoder, reads, &dets, subject, &body, &placements, work, &mut gathered);
+                    gather(decoder, reads, &dets, subject, &body, &placements, &mut gathered);
                 }
             }
             (Some(NodeRef::Instance(instance)), DependencyKind::InstanceInput { input, .. }) => {
                 let placements = placements();
                 let all = written.get_or_insert_with(|| decoder.widened_input_bodies(instance, input));
                 match all.get(used) {
-                    Some(bodies) => bodies.iter().for_each(|body| gather(decoder, reads, &dets, subject, body, &placements, work, &mut gathered)),
+                    Some(bodies) => bodies.iter().for_each(|body| gather(decoder, reads, &dets, subject, body, &placements, &mut gathered)),
                     None => lose_all(&mut gathered, "the instance writes no clause for the input at this form"),
                 }
                 used += 1;
             }
-            (Some(NodeRef::Instance(instance)), DependencyKind::InstanceOutput { .. }) => gather_output(decoder, reads, subject, &given, instance, work, &mut gathered),
+            (Some(NodeRef::Instance(instance)), DependencyKind::InstanceOutput { .. }) => gather_output(decoder, reads, subject, &given, instance, &mut gathered),
             _ => lose_all(&mut gathered, &format!("the rows of a {} form are not derived", kind_spelled(kind))),
         }
     }
@@ -279,8 +299,7 @@ fn lose_all(gathered: &mut [Vec<Gathered>], reason: &str) {
 /// give: each row of the body derives the relation's row at the label of each of
 /// its columns (`placements`), with the extent of each wanted column. `dets` are
 /// the `DET`s of the relation.
-#[allow(clippy::too_many_arguments)]
-fn gather(decoder: &Decoder<'_>, reads: &Reads<'_>, dets: &[String], subject: &Subject<'_>, body: &Outcome<SubBody>, placements: &[Option<Placement>], work: &TableWork, gathered: &mut [Vec<Gathered>]) {
+fn gather(decoder: &Decoder<'_>, reads: &Reads<'_>, dets: &[String], subject: &Subject<'_>, body: &Outcome<SubBody>, placements: &[Option<Placement>], gathered: &mut [Vec<Gathered>]) {
     let sub = match body {
         Ok(sub) => sub,
         Err(fault) => return lose_all(gathered, &fault_spelled(fault)),
@@ -293,7 +312,7 @@ fn gather(decoder: &Decoder<'_>, reads: &Reads<'_>, dets: &[String], subject: &S
     let Some(types) = sub.program.types.columns(&relation) else { return lose_all(gathered, "the columns of the widened body have no types") };
     let sources = column_flows(&sub.program, relation.node, None, types, decoder.registry());
     let analysis = Analysis { decoder, registry: decoder.registry(), sub, relation: &relation, types, sources, reads, dets, ir: OnceCell::new() };
-    let values = relation_examples(decoder, &sub.program, &relation, &walked_dets(&sub.program, relation.node), work);
+    let values = relation_examples(decoder, &sub.program, &relation, &walked_dets(&sub.program, relation.node), &reads.work);
     for (place, example) in subject.examples.iter().enumerate() {
         let Ok(rows) = &example.rows else { continue };
         let entries = &mut gathered[place];
@@ -315,6 +334,10 @@ fn gather(decoder: &Decoder<'_>, reads: &Reads<'_>, dets: &[String], subject: &S
                 for value in models {
                     match value {
                         RelationValue::Rows(body_rows) => {
+                            if let Err(stop) = reads.charge(body_rows.len(), &sub.form) {
+                                entry.stop = Some(stop);
+                                continue;
+                            }
                             let ctx = Ctx { example: example.example, assignment: body_assignment };
                             each_row(body_rows, &mut |row| {
                                 let derived: Box<[TermId]> = key.iter().map(|&column| row[column]).collect();
@@ -323,6 +346,10 @@ fn gather(decoder: &Decoder<'_>, reads: &Reads<'_>, dets: &[String], subject: &S
                                     slot.merge(analysis.extent_of(key[column as usize], row, &ctx, 0));
                                 }
                             });
+                            // The reads of earlier tables that the rows made may have passed the cap.
+                            if let Err(stop) = reads.charge(0, &sub.form) {
+                                entry.stop = Some(stop);
+                            }
                         }
                         RelationValue::Stopped(stop) => entry.stop = Some(stop.clone()),
                         RelationValue::Undefined => entry.lose("the relation of the widened body is undefined"),
@@ -451,13 +478,13 @@ impl OutputPlan {
     }
 
     /// Derives the rows of each input whose extents a column wants.
-    fn derive_ports(&mut self, decoder: &Decoder<'_>, reads: &Reads<'_>, checked: &CheckedProgram, work: &TableWork) {
+    fn derive_ports(&mut self, decoder: &Decoder<'_>, reads: &Reads<'_>, checked: &CheckedProgram) {
         for port in self.ports.iter_mut().filter(|port| !port.wanted.is_empty()) {
             let port_relation = GraphRelation { node: port.node, output: None };
             let Some(types) = checked.types.columns(&port_relation) else { continue };
-            let examples = relation_examples(decoder, checked, &port_relation, &relation_dets(checked, port.node), work);
+            let examples = relation_examples(decoder, checked, &port_relation, &relation_dets(checked, port.node), &reads.work);
             let port_subject = Subject { checked, relation: &port_relation, types, examples: &examples, columns: &port.wanted };
-            let derived = derive(decoder, reads, &port_subject, work);
+            let derived = derive(decoder, reads, &port_subject);
             port.derived = Some((examples, derived));
         }
     }
@@ -509,15 +536,19 @@ impl OutputPlan {
 
 /// Adds to `gathered` the extents of the rows of the output of the instance
 /// `instance` that `given` gives, as [`OutputPlan::new`] gives them.
-fn gather_output(decoder: &Decoder<'_>, reads: &Reads<'_>, subject: &Subject<'_>, given: &Given, instance: &Instance, work: &TableWork, gathered: &mut [Vec<Gathered>]) {
+fn gather_output(decoder: &Decoder<'_>, reads: &Reads<'_>, subject: &Subject<'_>, given: &Given, instance: &Instance, gathered: &mut [Vec<Gathered>]) {
     let Some(mut plan) = OutputPlan::new(decoder, subject, given, instance) else { return lose_all(gathered, "the component of the instance is not in the registry") };
-    plan.derive_ports(decoder, reads, subject.checked, work);
+    plan.derive_ports(decoder, reads, subject.checked);
     for (place, example) in subject.examples.iter().enumerate() {
         let Ok(rows) = &example.rows else { continue };
         for ((assigned, models), entry) in rows.at.iter().zip(gathered[place].iter_mut()) {
             let lookups = plan.lookups(example.example, assigned, entry);
             for model in models {
                 let RelationValue::Rows(model_rows) = model else { continue };
+                if let Err(stop) = reads.charge(model_rows.len(), &given.form) {
+                    entry.stop = Some(stop);
+                    continue;
+                }
                 each_row(model_rows, &mut |row| {
                     let slots: Vec<Merged> = subject.columns.iter().zip(&lookups).map(|(&column, lookup)| lookup.of(row, column as usize, plan.key.as_ref())).collect();
                     entry.rows.entry(row.into()).or_insert(slots);
@@ -616,8 +647,8 @@ fn finish(contents: &Contents, gathered: &[Vec<Gathered>], columns: &[u32]) -> V
 /// The extents of each of the extent columns `columns` at each row of
 /// `relation`, in the order of [`each_row`]: none for a row no derivation gave,
 /// and none where the value of the column at the row does not fit in the
-/// extent, since the box it covers would then lie outside the frame, which no
-/// frame of that extent holds.
+/// extent ([`fitted_size`]), since the box it covers would then lie outside the
+/// frame, which no frame of that extent holds.
 fn row_extents(relation: &Relation, entry: &Gathered, columns: &[u32]) -> Vec<Box<[Option<Extent>]>> {
     let mut per_row = Vec::new();
     each_row(relation, &mut |row| {
@@ -629,7 +660,7 @@ fn row_extents(relation: &Relation, entry: &Gathered, columns: &[u32]) -> Vec<Bo
                 .map(|(k, &column)| {
                     let extent = slots.and_then(|slots| slots[k].extent())?;
                     let margins = margins_of(row[column as usize], &ValueType::Box)?;
-                    (extent.rows > margins.top + margins.bottom && extent.columns > margins.left + margins.right).then_some(extent)
+                    fitted_size(extent, margins).map(|_| extent)
                 })
                 .collect(),
         );
@@ -655,7 +686,8 @@ struct Ctx<'a> {
     assignment: &'a [Assignment],
 }
 
-/// The earlier tables that the rows of a table read.
+/// The earlier tables that the rows of a table read, and the work count of the
+/// table's derivation.
 struct Reads<'a> {
     /// The tables before the table, as the columns of the case name them.
     names: TableNames,
@@ -663,6 +695,8 @@ struct Reads<'a> {
     /// For a column of a table read, the extent at each key of the cells of the
     /// columns that the read fixes, as [`Reads::extent_at`] builds it.
     cache: RefCell<StableHashMap<LookupKey, Rc<StableHashMap<Box<[TermId]>, Merged>>>>,
+    /// The count that the derivation's evaluations, and the rows it visits, are charged to.
+    work: TableWork,
 }
 
 /// A table of the stream by its number, the place of the example and of the
@@ -671,6 +705,12 @@ struct Reads<'a> {
 type LookupKey = (u32, usize, usize, usize, Vec<usize>);
 
 impl Reads<'_> {
+    /// Adds `rows` visited rows to the table's work count; the stop at the work
+    /// cap, at the form `form`, where the count is then past the cap.
+    fn charge(&self, rows: u64, form: &NodePath) -> Result<(), Stop> {
+        self.work.charge(rows).map_err(|bound| Stop { bound, form: form.clone() })
+    }
+
     /// The extent of the frame of the column `index` of the table `named`, at its rows
     /// whose cells at the columns of `constraints` are the cells they pair them
     /// with, on `example` at the assignment `assignment`; none where the rows give
@@ -708,6 +748,9 @@ impl Reads<'_> {
         };
         let held_at = contents.extents.as_ref().and_then(|extents| extents.columns.iter().position(|&column| column as usize == index));
         let mut merged: StableHashMap<Box<[TermId]>, Merged> = StableHashMap::default();
+        if self.work.charge(relation.len()).is_err() {
+            return merged;
+        }
         let mut row_at = 0;
         each_row(relation, &mut |row| {
             let extent = match ty {
@@ -789,18 +832,18 @@ impl Analysis<'_> {
                 (own_rows, own_columns) = (own_columns, own_rows);
             }
         }
-        Some(Extent { rows: own_rows + margins.top + margins.bottom, columns: own_columns + margins.left + margins.right })
+        Extent::new(own_rows + margins.top + margins.bottom, own_columns + margins.left + margins.right)
     }
 
     /// The own size of the value at column `column` of `row`: (1, 1) for a
-    /// Position, and for a Box the extent of its frame less its margins.
+    /// Position, and for a Box the extent of its frame less its margins
+    /// ([`fitted_size`]).
     fn own_size(&self, column: usize, row: &[TermId], ctx: &Ctx<'_>, depth: u8) -> Option<(i32, i32)> {
         match self.types.get(column)? {
             ValueType::Position => Some((1, 1)),
             ValueType::Box => {
                 let extent = self.extent_of(column, row, ctx, depth + 1)?;
-                let margins = margins_of(row[column], &ValueType::Box)?;
-                Some((extent.rows - margins.top - margins.bottom, extent.columns - margins.left - margins.right))
+                fitted_size(extent, margins_of(row[column], &ValueType::Box)?)
             }
             _ => None,
         }
@@ -898,7 +941,15 @@ impl Analysis<'_> {
 /// bottom + 1, left + right + 1).
 fn position_extent(id: TermId, ty: &ValueType) -> Option<Extent> {
     let margins = margins_of(id, ty)?;
-    Some(Extent { rows: margins.top + margins.bottom + 1, columns: margins.left + margins.right + 1 })
+    Extent::new(margins.top + margins.bottom + 1, margins.left + margins.right + 1)
+}
+
+/// The own size of a Box of margins `margins` in a frame of extent `extent`:
+/// the extent less the margins, none where that is below 1 on an axis, which is
+/// where the value does not fit in the frame.
+fn fitted_size(extent: Extent, margins: Margins) -> Option<(i32, i32)> {
+    let own = Extent::new(extent.rows - margins.top - margins.bottom, extent.columns - margins.left - margins.right)?;
+    Some((own.rows, own.columns))
 }
 
 fn margins_of(id: TermId, ty: &ValueType) -> Option<Margins> {
@@ -920,7 +971,7 @@ fn grid_extent(decoder: &Decoder<'_>, frame: &str, example: Option<Example>) -> 
         _ => return None,
     };
     let rows = grid.rows();
-    Some(Extent { rows: i32::try_from(rows.len()).ok()?, columns: i32::try_from(rows.first()?.len()).ok()? })
+    Extent::new(i32::try_from(rows.len()).ok()?, i32::try_from(rows.first()?.len()).ok()?)
 }
 
 /// The atom at `path` of `program`.

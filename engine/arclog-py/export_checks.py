@@ -298,16 +298,16 @@ def check_case(frames, values, task, orientation_types, size=None, base=None):
 
 
 def _extent_violation(margins, extent):
-    """The rows of `margins` (top, bottom, left, right) for which the extent `extent` (V, H) of the frame is no extent of a frame that the Box covers with an own size of at least (1, 1): V < top + bottom + 1 or H < left + right + 1, or a pair that is `-1 -1` in one cell alone. The pair `-1 -1` is no extent and is none."""
+    """The rows of `margins` (top, bottom, left, right) for which the extent `extent` (V, H) of the frame is no extent of a frame that the Box covers with an own size of at least (1, 1): V < 1 or H < 1, or V < top + bottom + 1 or H < left + right + 1. The pair `-1 -1` is no extent and is none."""
     none = (extent == -1).all(1)
-    half = (extent == -1).any(1) & ~none
+    small = (extent < 1).any(1)
     short = (extent[:, 0] < margins[:, 0] + margins[:, 1] + 1) | (extent[:, 1] < margins[:, 2] + margins[:, 3] + 1)
-    return half | (short & ~none)
+    return (small | short) & ~none
 
 
 def _check_extents(frames, values, tl, en, bad):
     """`extents-size`: each pair of an extent run that is not `-1 -1` holds the extent (V, H) of a frame that its row's Box value covers with an own size of at least (1, 1)
-    (V >= top + bottom + 1 and H >= left + right + 1), and a column of the extent columns is a `Box`; the same of the projection rows' extent runs."""
+    (V >= top + bottom + 1 and H >= left + right + 1), and no cell of the pair is below 1, and a column of the extent columns is a `Box`; the same of the projection rows' extent runs."""
     for r in en:
         if r.extent_offset < 0 or r.kind != ROWS or not r.rows:
             continue
