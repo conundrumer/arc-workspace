@@ -541,3 +541,5 @@ pub(super) fn grouped(groups: &[Row], key: usize, width: usize, rows: Vec<Row>) 
     }
     groups.iter().map(|group| by_key.remove(&group[..]).unwrap_or_else(|| RowSet::empty(width as u16))).collect()
 }
+
+#[path = "render_init.rs"] pub(crate) mod render_metadata;

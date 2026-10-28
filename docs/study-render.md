@@ -190,3 +190,43 @@ relation reference frame; no independent label frame is invented. Offset and
 non-frame types report `not_applicable`. `parts.types_frames` remains pending
 until the separate native made-frame/table provenance part is supplied. This
 bounded checker analysis deliberately does not replace native table extents.
+
+## Native made-frame and column provenance part
+
+```python
+frames = json.loads(arclog.study_frame_sources_json(program))
+```
+
+This separate table-code API accepts the same checked StudyProgram and evaluates
+no task. Its schema is `arclog-study-frame-sources-v1`, `complete=true` for the
+native static provenance walk. `relations` has exact native relation selectors,
+ordered types/names/original label IDs, and each column's actual native sources.
+Known omitted native port tables are explicitly marked, with the input-port
+projection as their contract; they are not empty computed outputs.
+
+`bodies` maps each original body path/owner to all native lexical variables,
+their original label IDs/types, result-body column if present, and native sources.
+It includes branch locals without changing the query's evaluated output schema.
+Sources carry kind/code, exact native source relation name, source row/column,
+original atom path, occurrence and frame expressions. A frame is a read of that
+source column's frame, a `made` frame with explicit maker registry ID/column/
+original path/outer frame, or explicit `native_unknown`. Every source variant
+is handled; unsupported metadata raises ValueError. Non-frame types are
+identified by `frame_applicable=false`. Empty source frames on a constant
+claim no independently named frame, not a grid chosen by the renderer.
+
+Resolve run-specific frame IDs/extents using the already supplied native tables;
+this API does not invent input sizes or reevaluate rows. Cache this immutable
+frame part once per retained program handle in render2's bounded task worker.
+Together with typed_sites' native static grid evidence this completes the
+available native frame/provenance export; the core-only `types_frames=pending`
+flag deliberately does not claim the separate table part has been supplied.
+
+INIT projection implementation uses the evaluator's `InstanceShape.head_labels`
+and `port_types`, including parameter record field order and inserted Unit
+columns. It does not look up resolver column_position on input heads, which
+need not have those entries. Each projection item has native port-column
+ordinal/type, original label/body column or an explicit inserted Unit constant,
+and `head_occurrence_paths` (all exact head occurrences, with a single
+`site_path` only when unique). `group_key_label_ids` names the grouping key
+separately: construction input rows exclude that key and are evaluated per key.
