@@ -614,7 +614,11 @@ fn push_cells(out: &mut Vec<i32>, id: TermId, ty: &ValueType) {
 /// count of cells and the hash of their cells: the offsets of the runs with
 /// those.
 #[derive(Clone, Default)]
-struct Runs(StableHashMap<(u64, usize, StableHash), Vec<usize>>);
+struct Runs(
+    StableHashMap<(u64, usize, StableHash), Vec<usize>>,
+    // Retain the Arc to make allocation identity stable across prefix clones.
+    StableHashMap<(usize, Vec<ValueType>), (Arc<Relation>, u64, Arc<[usize]>)>,
+);
 
 /// The cells of the rows of `rows`, of columns of `types`, in the order of
 /// [`each_row`] ([`row_width`] cells for each row), and the places of the rows
@@ -660,7 +664,11 @@ fn push_run(values: &mut Vec<i32>, runs: &mut Runs, count: u64, cells: Vec<i32>)
 /// The count of rows, the offset of the run of the rows of `rows`, of
 /// columns of `types`, in the order of their cells, as [`push_run`] places it,
 /// and the places of the rows in that order, as [`sorted_rows`] gives them.
-fn push_rows(values: &mut Vec<i32>, runs: &mut Runs, rows: &Relation, types: &[ValueType]) -> (u64, u64, Vec<usize>) {
+fn push_rows(values: &mut Vec<i32>, runs: &mut Runs, rows: &Arc<Relation>, types: &[ValueType]) -> (u64, u64, Arc<[usize]>) {
+    let key=(Arc::as_ptr(rows) as usize,types.to_vec());
+    if let Some((_,offset,order))=runs.1.get(&key) {
+        return (order.len() as u64,*offset,Arc::clone(order));
+    }
     let (written, order) = sorted_rows(rows, types);
     let width = row_width(types) as usize;
     let count = order.len() as u64;
@@ -668,7 +676,10 @@ fn push_rows(values: &mut Vec<i32>, runs: &mut Runs, rows: &Relation, types: &[V
     for &at in &order {
         cells.extend_from_slice(&written[at * width..(at + 1) * width]);
     }
-    (count, push_run(values, runs, count, cells), order)
+    let offset=push_run(values, runs, count, cells);
+    let order:Arc<[usize]>=order.into();
+    runs.1.insert(key,(Arc::clone(rows),offset,Arc::clone(&order)));
+    (count,offset,order)
 }
 
 /// The offset of the extent run of the rows that [`push_rows`] gave the places
@@ -1074,7 +1085,7 @@ fn push_contents(out: &mut CaseColumns, runs: &mut Runs, row: u32, contents: &Co
             entries.model.push(model);
             entries.stop.push(stop);
             entries.fault.push(fault);
-            let mut order = Vec::new();
+            let mut order:Arc<[usize]> = Arc::from([]);
             let (value_kind, rows, offset, value_stop) = match value {
                 None if faulted => (ValueKind::Fault, 0, 0, None),
                 None => (ValueKind::NoEntries, 0, 0, None),
@@ -1144,7 +1155,7 @@ fn push_contents(out: &mut CaseColumns, runs: &mut Runs, row: u32, contents: &Co
             out.projections.width.push(row_width(&projection_types));
             for (example, assigned) in projection.rows.iter().enumerate() {
                 for (at, (_, projection_rows)) in assigned.at.iter().enumerate() {
-                    let mut order = Vec::new();
+                    let mut order:Arc<[usize]> = Arc::from([]);
                     let (defined, count, offset) = match projection_rows {
                         None => (0, 0, 0),
                         Some(rows) => {
