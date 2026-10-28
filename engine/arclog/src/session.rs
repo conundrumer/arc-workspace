@@ -483,6 +483,20 @@ pub struct SessionAllocation {
     allocated: Arc<AtomicUsize>,
 }
 
+impl SessionAllocation {
+    /// The bytes still owned by this reservation.
+    pub fn bytes(&self)->usize {self.bytes}
+
+    /// Release a completed phase's unused allowance after its scratch drops.
+    /// Mutable access excludes shared Arc owners; a retained shared buffer
+    /// cannot have its reservation reduced by another owner. Never grows it.
+    pub fn shrink_to(&mut self,bytes:usize) {
+        let retained=bytes.min(self.bytes);
+        self.allocated.fetch_sub(self.bytes-retained,Ordering::Relaxed);
+        self.bytes=retained;
+    }
+}
+
 impl Drop for SessionAllocation {
     fn drop(&mut self) { self.allocated.fetch_sub(self.bytes, Ordering::Relaxed); }
 }

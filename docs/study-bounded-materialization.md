@@ -58,6 +58,24 @@ Each normal or projected annotation output reserves its own simultaneous
 scratch/status/extent-copy allowance, including repeated interned value-run
 cache hits. That retained lease covers the fallback scratch matrix too; a
 periodic walk check alone is never its allocation admission.
+Packing admission also forecasts physical metadata container growth before
+allocation. At the end of a table, the local pointer memo releases its cloned
+types, sorted row orders and native relation owners. Temporary annotation
+matrices and projection maps have also dropped at that boundary. The new
+packing reservations then settle to the measured growth in owned column, name
+and content-run-index capacities, using the same simultaneous Python-owner
+allowance as prefix-copy admission. Coverage assertions reject an insufficient
+preflight instead of silently reducing the retained allowance. Shared native
+matrix leases remain independent and unchanged.
+
+A deep prefix copy owns its new copy reservation exclusively. It does not keep
+the original prefix's reservations alive after cache eviction. The existing
+single session ledger releases the exact unused phase allowance through mutable
+`SessionAllocation::shrink_to`; shared Arc owners cannot be reduced this way.
+Pointer reuse remains local to one table, while content-run interning spans
+the whole packed result. A packing stop ends the fold before any later table
+can create a gap in the available prefix.
+
 Metadata admission separately covers physical entry/DET/projection headers,
 nested strings/lists, dtype dictionaries and owner-class creation. These are
 conservative admission estimates, not a promise that RSS equals the ledger:

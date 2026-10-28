@@ -184,12 +184,12 @@ subsequent pairs refer to that record through `gold_observation_ref`.
 References are local to the evaluator. Set `compact=False` for standalone
 reports containing repeated gold observations.
 
-From the enclosing `ast` directory, after `build_stage1.sh`:
-
-```bash
-engine/scripts/run_heavy.py --cpus 12 --need soon \
-  venv/bin/python -u check_stage3_fast.py --jobs 12 --output stage3-fast.jsonl
-```
+Run the checker archived at the selected runtime's `ready.checks` with its
+exact `ready.python`, using explicit task and export paths. The scratch
+compatibility entrypoints `check_stage3.py` and `check_stage3_fast.py` delegate
+to that archived checker after canonical provenance authentication. They carry
+no independent inspector, serializer or status policy and fail when the
+selected runtime lacks its checker; they never fall back to a live checkout.
 
 This walks every case in the real stream export, draws one K=1 mutant per
 point by default, and evaluates calls concurrently. JSONL is flushed for
@@ -261,5 +261,5 @@ the build owns its source archive, target, wheel and interpreter directory.
 Select the approved runtime from the corpus workspace's `run/CURRENT.json`
 through the native provenance selector, rather than assuming a venv path.
 Keep output provenance and checkpoint compatibility when using
-`check_stage3_fast.py` with `--case-manifest ... --replay-identities
---gold-tables` or `--resume --output ...`.
+the archived `check_study_pair_corpus.py` with `--case-manifest ...
+--replay-identities --gold-tables` or `--resume --output ...`.

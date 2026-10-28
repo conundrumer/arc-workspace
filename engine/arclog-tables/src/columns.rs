@@ -451,9 +451,6 @@ impl CaseColumnPrefix {
         push_tables(materializer,&mut held.columns,&mut held.names,&mut held.runs,0,evidence.iter().map(|table|(0,table)),train,None);
         held.count=evidence.len();
         held.append(materializer,tables,train);
-        // Pointer memoization serves one packing operation only. Retaining it
-        // in a reusable fold would also retain each relation's native indexes.
-        held.runs.1=StableHashMap::default();
         held
     }
     fn append(&mut self,materializer:&Materializer<'_>,tables:&[(usize,Table)],train:usize) {
@@ -463,9 +460,11 @@ impl CaseColumnPrefix {
     pub fn is_complete(&self)->bool {self.columns.packing_stop.is_none()}
     pub fn finish(&self,materializer:&Materializer<'_>,tables:&[(usize,Table)],train:usize)->Option<CaseColumns> {
         if !self.is_complete() {return None;}
-        let allocation=materializer.copy(self.retained_bytes()).ok()?;
+        let allocation=materializer.copy(packing_allowance(self.retained_bytes())).ok()?;
         let mut copied=self.clone();
-        copied.columns.allocations.push(allocation);
+        // This is a deep copy, with its own admission. It does not keep the
+        // original prefix's reservations alive after that prefix is evicted.
+        copied.columns.allocations=vec![allocation];
         Some(copied.into_finished(materializer,tables,train))
     }
     pub fn into_finished(mut self,materializer:&Materializer<'_>,tables:&[(usize,Table)],train:usize)->CaseColumns {
@@ -474,9 +473,7 @@ impl CaseColumnPrefix {
     /// Owned capacities, including nested strings, table names, and the
     /// run-interning hash table. The fold holds no native relation Arcs.
     pub fn retained_bytes(&self)->usize {
-        std::mem::size_of::<Self>()+self.columns.heap_bytes()+self.names.heap_bytes()+self.columns.allocations.capacity()*std::mem::size_of::<Arc<arclog::session::SessionAllocation>>()
-            +self.runs.0.capacity()*2*std::mem::size_of::<((u64,usize,StableHash),Vec<usize>)>()
-            +self.runs.0.values().map(HeapBytes::heap_bytes).sum::<usize>()
+        std::mem::size_of::<Self>()+packing_bytes(&self.columns,&self.names,&self.runs)
     }
 }
 
@@ -584,17 +581,97 @@ fn fold(materializer:&Materializer<'_>,evidence: &[Table], tables: &[(usize, Tab
 /// The columns of `tables`, each with the index of its token, in `out`, the
 /// first of them the table at `first`, after the tables in `names`.
 fn push_tables<'t>(materializer:&Materializer<'_>,out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, first: usize, tables: impl Iterator<Item = (usize, &'t Table)>, train: usize, labels: Option<&StreamLabels>) {
+    // A stopped fold is a prefix, including when a previous append stopped.
+    // Releasing phase scratch must never admit a later table past a gap.
+    if out.packing_stop.is_some() {return;}
     for (place, (token, table)) in (first..).zip(tables) {
+        let first_allocation=out.allocations.len();
+        let before=packing_bytes(out,names,runs);
         // Headers/count-only entries allocate too, even when there is no row
         // buffer. Admit their physical metadata before any output allocation.
-        let allocation=metadata_bytes(materializer,table,names,labels).and_then(|bytes|materializer.copy(bytes));
+        let allocation=metadata_bytes(materializer,table,names,labels)
+            .and_then(|bytes|materializer.copy(bytes.saturating_add(packing_growth(out,names,runs,table))));
         match allocation {
             Ok(allocation)=>out.allocations.push(allocation),
             Err(bound)=>{out.packing_stop=Some(Stop {bound,form:table.form.clone()});break;},
         }
         let row = u32::try_from(place).expect("fewer than 2^32 tables");
         push_table(materializer,out, names, runs, row, token, table, train, labels);
+        // The pointer memo is scratch for this table: release its cloned
+        // types, sorted orders and relation/index owners before settlement.
+        // Content run interning still spans every table and prefix copy.
+        runs.1=StableHashMap::default();
+        // push_table has returned: annotation matrices, projection maps and
+        // conversion scratch have also dropped.
+        // Only this phase's new reservations may shrink; prefix clones and
+        // native Contents/matrices keep their independent shared leases.
+        let retained=packing_allowance(packing_bytes(out,names,runs).saturating_sub(before));
+        settle_packing(&mut out.allocations[first_allocation..],retained);
+        if out.packing_stop.is_some() {break;}
     }
+}
+
+// The returned Python buffers/lists, their temporary conversion owners and
+// the Rust columns coexist. Keep a conservative eight times their measured
+// owned capacities; borrowing a native relation adds no copied row storage.
+fn packing_bytes(out:&CaseColumns,names:&TableNames,runs:&Runs)->usize {
+    out.heap_bytes().saturating_add(names.heap_bytes()).saturating_add(runs.retained_bytes())
+        .saturating_add(out.allocations.capacity().saturating_mul(std::mem::size_of::<Arc<arclog::session::SessionAllocation>>()))
+}
+
+fn packing_allowance(bytes:usize)->usize {bytes.saturating_mul(8).saturating_add(64*1024)}
+
+fn settle_packing(allocations:&mut [Arc<arclog::session::SessionAllocation>],mut retained:usize) {
+    let admitted=allocations.iter().fold(0usize,|bytes,allocation|bytes.saturating_add(allocation.bytes()));
+    assert!(admitted>=retained,"packing preflight must cover retained ownership before settlement");
+    for allocation in allocations {
+        let bytes=allocation.bytes();
+        if let Some(allocation)=Arc::get_mut(allocation) {
+            allocation.shrink_to(retained);
+        }
+        retained=retained.saturating_sub(bytes.min(retained));
+    }
+    assert_eq!(retained,0,"packing settlement must retain its entire allowance");
+}
+
+// Forecast only metadata container growth. New nested payloads and row
+// buffers keep their existing admissions; values use exact capacity growth.
+// Counting model/assignment headers never traverses a factored row product.
+fn packing_growth(out:&CaseColumns,names:&TableNames,runs:&Runs,table:&Table)->usize {
+    let (mut entries,mut assigned,mut projections,mut projected,mut flows)=(0usize,0usize,0usize,0usize,0usize);
+    let mut det_runs=0usize;
+    if let Ok(contents)=&table.contents {
+        flows=contents.flows.iter().map(Vec::len).sum();
+        for example in &contents.examples {match &example.rows {
+            Err(_)=>entries=entries.saturating_add(1),
+            Ok(rows)=>{
+                if rows.at.is_empty() {entries=entries.saturating_add(1);}
+                for (assignment,models) in &rows.at {
+                    entries=entries.saturating_add(models.len());
+                    let dets=assignment.len().min(contents.dets.len());
+                    assigned=assigned.saturating_add(models.len().saturating_mul(dets));
+                    det_runs=det_runs.saturating_add(dets);
+                }
+            },
+        }}
+        if let Some(Projections::Found(found))=&contents.projections {
+            projections=found.len();
+            for projection in found {for example in &projection.rows {projected=projected.saturating_add(example.at.len());}}
+        }
+    }
+    let new_runs=entries.saturating_mul(2).saturating_add(det_runs).saturating_add(projected.saturating_mul(2));
+    let allocations=new_runs.saturating_add(1);
+    let mut bytes=out.tables.growth_bytes(1).saturating_add(names.growth_bytes(1))
+        .saturating_add(out.entries.growth_bytes(entries)).saturating_add(out.assigned.growth_bytes(assigned))
+        .saturating_add(out.projections.growth_bytes(projections)).saturating_add(out.projection_rows.growth_bytes(projected))
+        .saturating_add(out.flows.growth_bytes(flows)).saturating_add(out.allocations.growth_bytes(allocations));
+    if runs.0.len().saturating_add(new_runs)>runs.0.capacity() {
+        // Hash capacity is bounded by twice the requested entries; the
+        // footprint estimator itself allows two bucket widths per entry.
+        let buckets=runs.0.len().saturating_add(new_runs).checked_next_power_of_two().unwrap_or(usize::MAX).saturating_mul(2);
+        bytes=bytes.saturating_add(buckets.saturating_mul(2*std::mem::size_of::<((u64,usize,StableHash),Vec<usize>)>()));
+    }
+    packing_allowance(bytes)
 }
 
 // Conservative simultaneous Rust/Python metadata ownership, independent of
@@ -723,6 +800,13 @@ struct Runs(
     StableHashMap<(usize, Vec<ValueType>), (Arc<Relation>, u64, Arc<[usize]>)>,
 );
 
+impl Runs {
+    fn retained_bytes(&self)->usize {
+        self.0.capacity().saturating_mul(2*std::mem::size_of::<((u64,usize,StableHash),Vec<usize>)>())
+            .saturating_add(self.0.values().map(HeapBytes::heap_bytes).sum::<usize>())
+    }
+}
+
 /// The cells of the rows of `rows`, of columns of `types`, in the order of
 /// [`arclog::eval::join::each_row`] ([`row_width`] cells for each row), and the places of the rows
 /// in that order, sorted by their cells, rows of equal cells in the order of
@@ -763,6 +847,7 @@ fn push_run(values: &mut Vec<i32>, runs: &mut Runs, count: u64, cells: Vec<i32>)
     }
     let offset = values.len();
     offsets.push(offset);
+    values.reserve_exact(cells.len());
     values.extend(cells);
     offset as u64
 }
@@ -1458,9 +1543,23 @@ pub(crate) const OUTPUT_FRAME: &str = "output";
 // Capacity accounting for the owned column fold. Scalar storage is charged by
 // its enclosing vector; each nested allocation includes allocator slack.
 trait HeapBytes {fn heap_bytes(&self)->usize;}
-macro_rules! scalar_heap {($($ty:ty),*)=>{$(impl HeapBytes for $ty {fn heap_bytes(&self)->usize {0}})*};}
+trait ColumnGrowth {fn growth_bytes(&self,additional:usize)->usize;}
+macro_rules! scalar_heap {($($ty:ty),*)=>{$(
+    impl HeapBytes for $ty {fn heap_bytes(&self)->usize {0}}
+    impl ColumnGrowth for $ty {fn growth_bytes(&self,_additional:usize)->usize {0}}
+)*};}
 scalar_heap!(u8,u32,i32,u64,i64,usize);
 impl HeapBytes for String {fn heap_bytes(&self)->usize {self.capacity()+usize::from(self.capacity()>0)*32}}
+impl ColumnGrowth for String {fn growth_bytes(&self,_additional:usize)->usize {0}}
+impl<T> ColumnGrowth for Vec<T> {
+    fn growth_bytes(&self,additional:usize)->usize {
+        let needed=self.len().saturating_add(additional);
+        if needed<=self.capacity() {0} else {
+            self.capacity().saturating_mul(2).max(needed).max(8).saturating_mul(std::mem::size_of::<T>()).saturating_add(32)
+        }
+    }
+}
+impl<T> ColumnGrowth for Option<T> {fn growth_bytes(&self,_additional:usize)->usize {0}}
 impl<T:HeapBytes> HeapBytes for Vec<T> {
     fn heap_bytes(&self)->usize {self.capacity()*std::mem::size_of::<T>()+usize::from(self.capacity()>0)*32+self.iter().map(HeapBytes::heap_bytes).sum::<usize>()}
 }
@@ -1470,7 +1569,10 @@ impl<T:HeapBytes> HeapBytes for Box<[T]> {
 impl<T:HeapBytes> HeapBytes for Option<T> {fn heap_bytes(&self)->usize {self.as_ref().map_or(0,HeapBytes::heap_bytes)}}
 impl HeapBytes for ColumnName {fn heap_bytes(&self)->usize {match self {ColumnName::Written(name)=>name.len()+32,ColumnName::Slot(_)=>0}}}
 macro_rules! fields_heap {
-    ($ty:ty;$($field:ident),*)=>{impl HeapBytes for $ty {fn heap_bytes(&self)->usize {0 $(+self.$field.heap_bytes())*}}};
+    ($ty:ty;$($field:ident),*)=>{
+        impl HeapBytes for $ty {fn heap_bytes(&self)->usize {0 $(+self.$field.heap_bytes())*}}
+        impl ColumnGrowth for $ty {fn growth_bytes(&self,additional:usize)->usize {0usize $(.saturating_add(self.$field.growth_bytes(additional)))*}}
+    };
 }
 fields_heap!(StopColumns;bound,form);
 fields_heap!(TableColumns;token,form,point,conjuncts,sites,relation,fact,column_names,column_types,column_frames,extent_columns,column_slots,column_labels,column_source_labels,width,det_relations,det_types,det_frames,det_slots,det_labels,det_source_labels,det_widths,det_columns,projections,projections_stop,fault,depth,keys,output_position,output_color);
