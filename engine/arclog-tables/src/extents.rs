@@ -5,7 +5,7 @@
 //! engine keeps no extent, since a Box term is its four margins, so the extent
 //! is computed here, from a second evaluation of the bodies that give the
 //! table's rows, with the label of each of their columns kept
-//! ([`Decoder::widened_bodies`]).
+//! ([`arclog::decode::BodyWidening::clause`]).
 //!
 //! The extent of a frame follows from the own size of a value, the size of the
 //! box it covers, which no move within frames changes: a Box `v` in a frame of
@@ -39,7 +39,7 @@
 //!     holds.
 //!
 //! The rows of an input of an instance come from the clauses that the instance
-//! writes for it, widened in the same way ([`Decoder::widened_input_bodies`]),
+//! writes for it, widened in the same way ([`arclog::decode::BodyWidening::input`]),
 //! and the rows of an output of an instance take the extent of the frame its
 //! rule names (or of the input column it copies) over the rows of the input
 //! with the row's key, or with any key where the output or the input has none.
@@ -241,6 +241,7 @@ fn derive(decoder: &Decoder<'_>, reads: &Reads<'_>, subject: &Subject<'_>) -> Ve
     let dets: Vec<String> = relation_dets(checked, relation.node).iter().map(|det| relation_spelled(&det.relation)).collect();
     let kind = &checked.program.graph.nodes[relation.node.0 as usize].kind;
     let root = NodeRef::Program(checked.program.program.value());
+    let widening = decoder.widening(checked, relation);
     // The clauses that the instance of an input writes, widened, and how many of them the givens have used.
     let mut written: Option<Vec<Vec<Outcome<SubBody>>>> = None;
     let mut used = 0;
@@ -252,13 +253,13 @@ fn derive(decoder: &Decoder<'_>, reads: &Reads<'_>, subject: &Subject<'_>) -> Ve
         match (node_at(root, &given.form), kind) {
             (Some(NodeRef::Clause(clause)), _) => {
                 let placements = placements();
-                for body in decoder.widened_bodies(clause) {
+                for body in widening.clause(clause) {
                     gather(decoder, reads, &dets, subject, &body, &placements, &mut gathered);
                 }
             }
             (Some(NodeRef::Instance(instance)), DependencyKind::InstanceInput { input, .. }) => {
                 let placements = placements();
-                let all = written.get_or_insert_with(|| decoder.widened_input_bodies(instance, input));
+                let all = written.get_or_insert_with(|| widening.input(instance, input));
                 match all.get(used) {
                     Some(bodies) => bodies.iter().for_each(|body| gather(decoder, reads, &dets, subject, body, &placements, &mut gathered)),
                     None => lose_all(&mut gathered, "the instance writes no clause for the input at this form"),
