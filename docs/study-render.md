@@ -74,3 +74,32 @@ values, with orientation names from the engine registry. Ident is explicitly
 an opaque identity in its task session; no interned content is invented.
 Pose values decode as native D4 orientations, retaining the supplied nominal
 type text. Flatten record types to scalar columns first.
+
+## Native body columns and stored decode source AST
+
+`body_views` is complete for every mutation point. Each entry has `body_path`,
+`owner_path`, `kind`, native evaluation `scope`, `input_port`, and ordered
+`columns`. A column has `body_column`, native name `cN`, **original `label_id`**,
+engine-native `label_spelling`, and inferred `type`. This is exactly the ordered
+`BodyView.clause.columns` / `BodyView.paths.labels` used by body_tables.rs,
+not the export's ordinal `column_slots`. Compare identities within the same
+lexical owner; spellings are display metadata.
+
+For an INIT input, `input_port_projection` maps each resolved scalar port
+column to its original head-site path, label ID and body column. Project the
+native body witness rows with this map to obtain the input-port rows; these
+rows are not the component's output. `unprojected_body_label_ids` identifies
+body witnesses omitted by that projection. Native `point=1` identifies body
+tables; use evaluate_pair's explicit `table_indices` to distinguish all/kept
+and gold/mutant, since their structural selectors intentionally coincide.
+
+Prefer `gold.render_pair_json(identity_json)` when loading stored decode sexp.
+It returns `{schema: arclog-study-render-pair-v1, gold, mutant}`. A sexp reader
+turns anonymous decode slots into written names and can materialize named
+record-field wrappers. If direct identity validation fails, the constructor
+recovers the source decode AST via the engine's own stream writer and
+complete-stream grammar/binder, then validates the exact stored identity on
+that AST. It never guesses a slot from a name. `render_pair_json` supplies the
+**actual rehydrated gold AST** whose original paths and label IDs the mutant's
+correspondence references. Loading the display gold sexp and independently
+using that parse's descendant paths is not a correspondence contract.

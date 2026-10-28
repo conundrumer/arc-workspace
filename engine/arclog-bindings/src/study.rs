@@ -242,6 +242,18 @@ impl PyStudyProgram {
         })
     }
 
+    fn render_pair_json(&self, py: Python<'_>, identity_json: &str) -> PyResult<String> {
+        let identity =
+            arclog::study::render::parse_json(identity_json).map_err(PyValueError::new_err)?;
+        py.detach(|| {
+            let mutant =
+                self.program
+                    .construct_identity(&identity, Registry::get(), &self.settings)?;
+            arclog::study::render::render_pair(&mutant, Registry::get()).map(|v| v.to_string())
+        })
+        .map_err(|error: String| PyValueError::new_err(error))
+    }
+
     fn construct(&self, spec: &PyMutationSpec) -> PyResult<PyValidMutant> {
         let inner = self
             .program

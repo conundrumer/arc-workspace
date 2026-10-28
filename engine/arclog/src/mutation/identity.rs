@@ -174,6 +174,27 @@ impl StudyProgram {
         registry: &Registry,
         settings: &DecodeSettings,
     ) -> Result<ValidMutant, String> {
+        let original = self.construct_identity_at_source(identity, registry, settings);
+        if original.is_ok() || self.layout().is_none() {
+            return original;
+        }
+        // A stored decode sexp spells anonymous slots as engine names. Reading
+        // that display text creates written names/field wrappers, not the
+        // original decode AST. Recover the decode AST through the engine's own
+        // stream grammar/binder, never by guessing names or remapping JSON.
+        let stream = self.decode_stream(registry, settings)?;
+        let mut reader = crate::decode::program_read::ProgramReader::new(registry, *settings);
+        let decoded = Self::from_decoded(reader.read(&stream.ids, &stream.model)?, registry)?;
+        decoded.construct_identity_at_source(identity,registry,settings)
+            .map_err(|e|format!("stored identity failed on both source AST and its native decode AST: {e}; source: {}",original.unwrap_err()))
+    }
+
+    fn construct_identity_at_source(
+        &self,
+        identity: &Value,
+        registry: &Registry,
+        settings: &DecodeSettings,
+    ) -> Result<ValidMutant, String> {
         let point = self
             .mutation_points()
             .into_iter()

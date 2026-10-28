@@ -96,8 +96,8 @@ impl StudyProgram {
         )?;
         Ok(
             json!({"schema":"arclog-study-render-v1","parts":{"nodes":"complete",
-            "definitions_readers":"pending","types_frames":"pending","literal_meanings":"pending"},
-            "program_sexp":self.sexp(registry),"nodes":nodes,
+            "definitions_readers":"pending","types_frames":"pending","literal_meanings":"pending","body_views":"complete"},
+            "program_sexp":self.sexp(registry),"nodes":nodes,"body_views":super::render_bodies::export(self,registry)?,
             "source_path_correspondence":"identity; use ValidMutant.render_json for mutation correspondence"}),
         )
     }
@@ -129,4 +129,22 @@ pub fn parse_json(text: &str) -> Result<Value, String> {
 
 pub fn decoded_rows_json(rows: Vec<Vec<Value>>) -> String {
     json!(rows).to_string()
+}
+
+/// Includes the actual rehydrated source AST used to verify a stored decode
+/// identity (which can differ from a sexp reader's presentation wrappers).
+pub fn render_pair(
+    mutant: &crate::mutation::ValidMutant,
+    registry: &Registry,
+) -> Result<Value, String> {
+    let gold = StudyProgram {
+        checked: std::sync::Arc::clone(mutant.gold()),
+        layout: None,
+    };
+    let mut changed = mutant.program().render_json(registry)?;
+    changed["mutation_identity"] = mutant.identity();
+    changed["source_path_correspondence"] = mutant.source_paths();
+    Ok(
+        json!({"schema":"arclog-study-render-pair-v1","gold":gold.render_json(registry)?,"mutant":changed}),
+    )
 }
