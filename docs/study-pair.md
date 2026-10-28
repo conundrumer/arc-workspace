@@ -59,7 +59,13 @@ can have zero kept rows). Counts are `kept`, `extra`, and `missing`.
 Different typed schemas have no equal tuples and report
 `schema_equal=false`. An assignment absent from the other domain is
 explicitly tagged `assignment_presence=gold_only` or `mutant_only`, and its
-rows are missing or extra, respectively. DET names are aligned through
+rows are missing or extra, respectively. Native `Undefined` is a completed
+semantic value, including at non-FITS assignments where a construction's input
+domain is violated. Such comparisons report `comparable=false`,
+`comparison="undefined"`, each side's `gold_value` / `mutant_value` and known
+row counts, with null relation and kept/extra/missing counts. Undefined is
+never replaced by empty rows or reported as an evaluator fault.
+DET names are aligned through
 the engine writer's source/decode correspondence, not numeric slot guesses.
 
 A pair and its components report `complete`, `stopped` with the reached

@@ -304,14 +304,36 @@ fn assignment_json(a: &[Assignment]) -> Value {
     )
 }
 
+/// Undefined is a native semantic value (for example, a construction outside
+/// its input domain), not an evaluator fault and not an empty row set.
+fn undefined_comparison(gold: Option<&RelationValue>, mutant: Option<&RelationValue>) -> Value {
+    let kind = |value: Option<&RelationValue>| match value {
+        None => "absent_assignment",
+        Some(RelationValue::Undefined) => "undefined",
+        Some(RelationValue::Rows(_)) => "rows",
+        Some(RelationValue::Stopped(_)) => "stopped",
+    };
+    let count = |value: Option<&RelationValue>| match value {
+        Some(RelationValue::Rows(rows)) => Some(rows.len()),
+        _ => None,
+    };
+    json!({"status":"complete","comparable":false,"comparison":"undefined",
+        "gold_value":kind(gold),"mutant_value":kind(mutant),
+        "gold_rows":count(gold),"mutant_rows":count(mutant),
+        "relation":null,"kept":null,"extra":null,"missing":null,
+        "reason":"row comparison is undefined because a native table value is undefined"})
+}
+
 fn absent_assignment(value: &RelationValue, gold_only: bool) -> Value {
     match value {
         RelationValue::Rows(rows) => {
-            json!({"status":"complete","relation":if rows.is_empty() {"equal"} else if gold_only {"subset"} else {"superset"},"kept":0,"extra":if gold_only {0} else {rows.len()},"missing":if gold_only {rows.len()} else {0},"assignment_presence":if gold_only {"gold_only"} else {"mutant_only"}})
+            json!({"status":"complete","comparable":true,"relation":if rows.is_empty() {"equal"} else if gold_only {"subset"} else {"superset"},"kept":0,"extra":if gold_only {0} else {rows.len()},"missing":if gold_only {rows.len()} else {0},"assignment_presence":if gold_only {"gold_only"} else {"mutant_only"}})
         }
         RelationValue::Stopped(stop) => stopped(stop),
         RelationValue::Undefined => {
-            json!({"status":"fault","reason":"undefined table at an assignment absent from the other domain"})
+            let mut row = if gold_only {undefined_comparison(Some(value),None)} else {undefined_comparison(None,Some(value))};
+            row["assignment_presence"] = json!(if gold_only {"gold_only"} else {"mutant_only"});
+            row
         }
     }
 }
@@ -401,6 +423,7 @@ fn comparisons(
                         };
                         let extra = m.len() - kept;
                         let missing = g.len() - kept;
+                        row["comparable"] = json!(true);
                         row["schema_equal"] = json!(compatible);
                         row["status"] = json!("complete");
                         row["relation"] = json!(if extra == 0 && missing == 0 {
@@ -421,12 +444,8 @@ fn comparisons(
                         row["status"] = json!("stopped");
                     }
                     _ => {
-                        row["status"] = json!("fault");
-                        row["reason"] = json!(if compatible {
-                            "undefined clause table"
-                        } else {
-                            "clause body column schemas differ"
-                        });
+                        let value = undefined_comparison(Some(gv),Some(mv));
+                        row.as_object_mut().unwrap().extend(value.as_object().unwrap().clone());
                     }
                 }
                 out.push(row);
