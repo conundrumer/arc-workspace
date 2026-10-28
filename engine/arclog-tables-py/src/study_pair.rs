@@ -32,7 +32,7 @@ fn evaluate_pair(
     let constructions = constructions()?;
     let (read, _) = read_task_files(Path::new(tasks), task).map_err(PyValueError::new_err)?;
     let settings = gold.settings;
-    let (result, g, m) = py.detach(|| {
+    let (report, g, m) = py.detach(|| {
         let session = TaskSession::new(
             SessionBound {
                 bytes: session_bytes,
@@ -51,10 +51,10 @@ fn evaluate_pair(
         let evidence = evidence_tables(&read, Registry::get());
         let g = case_columns(&evidence, &result.gold, read.train.len(), None);
         let m = case_columns(&evidence, &result.mutant, read.train.len(), None);
-        (result, g, m)
+        (result.report.to_string(), g, m)
     });
     Ok((
-        result.report.to_string(),
+        report,
         PyCaseTables::of(
             py,
             task.into(),
@@ -98,12 +98,14 @@ struct PyStudyTaskEvaluator {
 #[pymethods]
 impl PyStudyTaskEvaluator {
     #[new]
-    #[pyo3(signature=(task,tasks,settings,session_bytes=67108864,compact=true))]
-    fn new(py:Python<'_>,task:&str,tasks:&str,settings:arclog_bindings::PyDecodeSettings,session_bytes:usize,compact:bool)->PyResult<Self> {
+    #[pyo3(signature=(task,tasks,settings,session_bytes=67108864,compact=true,observation_start=0))]
+    fn new(py:Python<'_>,task:&str,tasks:&str,settings:arclog_bindings::PyDecodeSettings,session_bytes:usize,compact:bool,observation_start:u64)->PyResult<Self> {
         let settings=settings.engine()?;
         let read=py.detach(||read_task_files(Path::new(tasks),task)).map_err(PyValueError::new_err)?.0;
         let evidence=evidence_tables(&read,Registry::get());
-        Ok(Self {task_name:task.into(),task:read,session:TaskSession::new(SessionBound {bytes:session_bytes},settings.caps),settings,evidence,cache:std::sync::Mutex::new(study_pair::PairCache::new(compact))})
+        let mut cache=study_pair::PairCache::with_byte_bound(compact,session_bytes);
+        cache.set_observation_start(observation_start);
+        Ok(Self {task_name:task.into(),task:read,session:TaskSession::new(SessionBound {bytes:session_bytes},settings.caps),settings,evidence,cache:std::sync::Mutex::new(cache)})
     }
 
     /// Exact native ingestion in this task's session, with the GIL released.
@@ -111,6 +113,10 @@ impl PyStudyTaskEvaluator {
         if ids.len()!=model.len() || model.iter().any(|f|*f>1) {return Err(PyValueError::new_err("expected equal-length ids/model and flags 0 or 1"));}
         let constructions=constructions()?;
         let program=py.detach(|| {
+            // A new ingestion starts a case even if decoding subsequently faults.
+            let mut cache=self.cache.lock().expect("task evaluator cache is not poisoned");
+            cache.finish_case();
+            self.session.results.clear();
             let mut decoder=arclog::decode::Decoder::new(&self.task,&self.session,Registry::get(),constructions,&self.settings);
             let mut i=0;
             while i<ids.len() {
@@ -139,6 +145,17 @@ impl PyStudyTaskEvaluator {
         Ok((PyMutationPoint {inner:mutant.point().clone()},PyValidMutant {inner:mutant,settings:self.settings}))
     }
 
+    /// Release all native observations and result-cache entries at the end
+    /// of a case, including a faulted case. Interned identifiers retain the
+    /// task namespace; returned CaseTables own their packed buffers.
+    fn finish_case(&self,py:Python<'_>) {
+        py.detach(|| {
+            let mut cache=self.cache.lock().expect("task evaluator cache is not poisoned");
+            cache.finish_case();
+            self.session.results.clear();
+        });
+    }
+
     /// All export relation tables (plus evidence), in this evaluator's Ident
     /// namespace. Native evaluation is cached once per gold handle. Returns
     /// (status_json, CaseTables); stops and faults retain their native reason.
@@ -147,6 +164,7 @@ impl PyStudyTaskEvaluator {
         let constructions=constructions()?;
         let (report,columns)=py.detach(|| {
             let mut cache=self.cache.lock().expect("task evaluator cache is not poisoned");
+            if cache.activate(&gold.program) {self.session.results.clear();}
             let (mut report,tables)=study_pair::gold_tables_cached(&gold.program,&self.task,&self.session,constructions,&self.settings,&mut cache);
             let started=std::time::Instant::now();
             let columns=case_columns(&self.evidence,&tables,self.task.train.len(),None);
@@ -159,14 +177,19 @@ impl PyStudyTaskEvaluator {
     fn evaluate_pair(&self,py:Python<'_>,gold:&PyStudyProgram,point:&PyMutationPoint,mutant:&PyValidMutant)->PyResult<(String,PyCaseTables,PyCaseTables)> {
         if gold.settings!=self.settings || mutant.settings!=self.settings {return Err(PyValueError::new_err("task evaluator and program settings differ"));}
         let constructions=constructions()?;
-        let (result,g,m)=py.detach(|| {
+        let (report,g,m)=py.detach(|| {
             let mut cache=self.cache.lock().expect("task evaluator cache is not poisoned");
+            if cache.activate(&gold.program) {self.session.results.clear();}
             let mut result=study_pair::evaluate_pair_cached(&gold.program,&point.inner,&mutant.inner,&self.task,&self.session,constructions,&self.settings,&mut cache);
             let started=std::time::Instant::now();
             let (g,m)=study_pair::pair_columns_cached(&self.evidence,&result,self.task.train.len(),&mut cache);
             result.report["timings"]["native_columns"]=started.elapsed().as_secs_f64().into();
-            (result,g,m)
+            result.report["cache"]=cache.stats();
+            result.report["cache"]["session_result_bytes"]=self.session.results.bytes().into();
+            // Drop the native pair tables before allocating their Python
+            // buffers; the Python API returns only the report and columns.
+            (result.report.to_string(),g,m)
         });
-        Ok((result.report.to_string(),PyCaseTables::of(py,self.task_name.clone(),"gold".into(),false,self.settings.projection_cap,&g,None,None)?,PyCaseTables::of(py,self.task_name.clone(),"mutant".into(),false,self.settings.projection_cap,&m,None,None)?))
+        Ok((report,PyCaseTables::of(py,self.task_name.clone(),"gold".into(),false,self.settings.projection_cap,&g,None,None)?,PyCaseTables::of(py,self.task_name.clone(),"mutant".into(),false,self.settings.projection_cap,&m,None,None)?))
     }
 }

@@ -74,28 +74,41 @@ fault. A complete pair can have no FITS assignment.
 ## Task reuse and runtime corpus inspection
 
 For a corpus, construct one `arclog.StudyTaskEvaluator(task, tasks, settings)`
-per task. Use its `from_stream(ids, model)` and
-`evaluate_pair(gold, point, mutant)` methods. This retains the native task
-session and evidence tables across cases, the checked-body compilation
-cache, and bounded prefix tables (128 entries, at most 64 MiB estimated).
-Validated completed token prefixes also retain decoder checkpoints, so later
-body views replay only the suffix beyond their longest shared prefix. Source
-ordering is written once for the active gold program. Native column packing
-retains the exact prefix fold, including row-run interning; each pair appends
-its two body tables. Within a fold, the same native relation at the same typed
-schema is sorted and packed once, including repeated DET assignment rows.
-The cache retains the relation allocation, so an address cannot be reused for
-an unrelated relation. The full returned buffers and their offsets are preserved.
+per task. Its `from_stream(ids, model)` begins a new case and releases the
+previous case's observations and native result-cache allocations, including
+hash-table capacities. Use `evaluate_pair(gold, point, mutant)` for its pairs,
+and call `finish_case()` in a `finally` block. Passing a different gold handle
+to `evaluate_pair` or `gold_tables` also activates a fresh case. Task evidence
+and the interned identifier namespace remain available across cases.
 
-Gold FITS is evaluated once per gold handle; complete gold clause tables
-are cached by `(gold handle, body AST path)`. Each report includes phase
-timings and cache counters. Independent tasks can run concurrently.
+Only one active gold FITS observation, one current gold body, one optional full
+gold relation-table result, one cumulative native dependency prefix and one packed
+column prefix are retained. The body entry is replaced before another body
+is built. Body queries use the original checked IR, without retaining
+synthetic view programs or check caches.
+The task never retains a history of gold handles, mutations or cumulative
+prefix snapshots. A later visit to a released handle creates a fresh observation.
+
+The native prefix's row estimate and packed prefix's owned capacities share
+an admission budget of half `session_bytes` (32 MiB with the default 64 MiB
+session). Packed accounting includes nested vectors, strings, table names and
+run-interning metadata. Packing's relation-address memo is dropped before a
+prefix is retained, so it cannot keep native relation indexes alive. Checked
+program metadata and active gold observations are limited to the current case;
+this admission budget is not a cap on temporary native evaluation or returned
+Python buffers. Native work/row/assignment bounds still apply to that work.
+Each report includes current cache entry counts and byte estimates.
+
+An exact matching source prefix reuses its cumulative native relation tables;
+only declarations after its boundary are evaluated. Source ordering is written once for the active gold program. The
+packed prefix preserves row-run interning and appends each side's two body
+tables, preserving the full buffers and offsets. Repeated relation rows within
+one packing operation are sorted once at each typed schema.
 
 `evaluator.gold_tables(gold)` returns `(status_json, CaseTables)` containing
 the full export relation tables and evidence in the same task session as
-pair tables. Native evaluation is cached once per handle, with explicit
-stops and faults retained. Call it once when recording each gold case.
-Gold handles are retained until the task evaluator is released.
+pair tables. Native evaluation is retained for the active gold case, including
+explicit stops and faults. Call it once when recording each gold case.
 
 The task evaluator defaults to `compact=True`: the first pair for a gold
 handle contains the gold assignment records and train observations;
@@ -149,3 +162,26 @@ remain available to live runs. After the optimized runtime inspection,
 `engine-perf/scripts/compare_study_pair.py stage3-fast.jsonl <candidate.jsonl>` expands compact
 gold references and compares mutation identities, reports, and native buffer
 inspection summaries. Only timing and cache telemetry are excluded.
+
+The bounded corpus driver is versioned as
+`engine-perf/scripts/check_study_pair_corpus.py` (it reads the enclosing `ast`
+helpers). It gives every case its own Python frame and releases pair buffers
+before the next evaluation. Case-finalization also runs on faults.
+
+Resume the existing race from `ast` after rebuilding and stopping its old
+writer:
+
+```bash
+engine/scripts/run_heavy.py --cpus 12 --need soon \
+  venv-perf/bin/python -u engine-perf/scripts/check_study_pair_corpus.py \
+  --jobs 12 --resume --output stage3-fast2.jsonl
+```
+
+`--resume` appends without re-evaluating any task/case with a terminal `case`
+row, including an explicitly faulted case. An interrupted case without that
+row restarts from its beginning, so its earlier partial pair rows remain as
+evidence. Gold observation reference numbers start above the file's per-task
+high-water mark. A torn final JSONL row is truncated before appending; valid
+rows are preserved. `--resume-from PATH` is repeatable and reads additional
+checkpoint files without modifying them. Summaries report this invocation's
+work and its skipped case count; progress continues to print every second.

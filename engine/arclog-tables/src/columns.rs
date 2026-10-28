@@ -426,6 +426,9 @@ impl CaseColumnPrefix {
         push_tables(&mut held.columns,&mut held.names,&mut held.runs,0,evidence.iter().map(|table|(0,table)),train,None);
         held.count=evidence.len();
         held.append(tables,train);
+        // Pointer memoization serves one packing operation only. Retaining it
+        // in a reusable fold would also retain each relation's native indexes.
+        held.runs.1=StableHashMap::default();
         held
     }
     fn append(&mut self,tables:&[(usize,Table)],train:usize) {
@@ -433,7 +436,17 @@ impl CaseColumnPrefix {
         self.count+=tables.len();
     }
     pub fn finish(&self,tables:&[(usize,Table)],train:usize)->CaseColumns {
-        let mut held=self.clone();held.append(tables,train);held.columns
+        self.clone().into_finished(tables,train)
+    }
+    pub fn into_finished(mut self,tables:&[(usize,Table)],train:usize)->CaseColumns {
+        self.append(tables,train);self.columns
+    }
+    /// Owned capacities, including nested strings, table names, and the
+    /// run-interning hash table. The fold holds no native relation Arcs.
+    pub fn retained_bytes(&self)->usize {
+        std::mem::size_of::<Self>()+self.columns.heap_bytes()+self.names.heap_bytes()
+            +self.runs.0.capacity()*2*std::mem::size_of::<((u64,usize,StableHash),Vec<usize>)>()
+            +self.runs.0.values().map(HeapBytes::heap_bytes).sum::<usize>()
     }
 }
 
@@ -1239,3 +1252,31 @@ pub(crate) const OUTPUT_FRAME: &str = "output";
 fn is_made(frame: &str) -> bool {
     frame.contains('@')
 }
+
+// Capacity accounting for the owned column fold. Scalar storage is charged by
+// its enclosing vector; each nested allocation includes allocator slack.
+trait HeapBytes {fn heap_bytes(&self)->usize;}
+macro_rules! scalar_heap {($($ty:ty),*)=>{$(impl HeapBytes for $ty {fn heap_bytes(&self)->usize {0}})*};}
+scalar_heap!(u8,u32,i32,u64,i64,usize);
+impl HeapBytes for String {fn heap_bytes(&self)->usize {self.capacity()+usize::from(self.capacity()>0)*32}}
+impl<T:HeapBytes> HeapBytes for Vec<T> {
+    fn heap_bytes(&self)->usize {self.capacity()*std::mem::size_of::<T>()+usize::from(self.capacity()>0)*32+self.iter().map(HeapBytes::heap_bytes).sum::<usize>()}
+}
+impl<T:HeapBytes> HeapBytes for Box<[T]> {
+    fn heap_bytes(&self)->usize {std::mem::size_of_val(&**self)+32+self.iter().map(HeapBytes::heap_bytes).sum::<usize>()}
+}
+impl<T:HeapBytes> HeapBytes for Option<T> {fn heap_bytes(&self)->usize {self.as_ref().map_or(0,HeapBytes::heap_bytes)}}
+impl HeapBytes for ColumnName {fn heap_bytes(&self)->usize {match self {ColumnName::Written(name)=>name.len()+32,ColumnName::Slot(_)=>0}}}
+macro_rules! fields_heap {
+    ($ty:ty;$($field:ident),*)=>{impl HeapBytes for $ty {fn heap_bytes(&self)->usize {0 $(+self.$field.heap_bytes())*}}};
+}
+fields_heap!(StopColumns;bound,form);
+fields_heap!(TableColumns;token,form,point,conjuncts,sites,relation,fact,column_names,column_types,column_frames,extent_columns,column_slots,column_labels,column_source_labels,width,det_relations,det_types,det_frames,det_slots,det_labels,det_source_labels,det_widths,det_columns,projections,projections_stop,fault,depth,keys,output_position,output_color);
+fields_heap!(EntryColumns;table,example_kind,example_index,model,kind,rows,offset,stop,value_stop,fault,extent_offset,extent_stop,extent_fault);
+fields_heap!(AssignedColumns;entry,det,rows,offset);
+fields_heap!(ProjectionColumns;table,columns,width);
+fields_heap!(ProjectionRowColumns;projection,entry,defined,rows,offset,extent_offset);
+fields_heap!(FlowColumns;table,column,kind,source_table,source_relation,source_column,det,atom,occurrence);
+fields_heap!(CopyColumns;detail);
+fields_heap!(CaseColumns;tables,entries,assigned,projections,projection_rows,flows,copies,values);
+fields_heap!(Named;name,row,paths,frames,slots,labels,source_labels);

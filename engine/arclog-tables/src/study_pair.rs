@@ -10,7 +10,7 @@ use arclog::stream::DecodeSettings;
 use arclog::study::StudyProgram;
 use arclog::task::Grid;
 use serde_json::{Value, json};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 use arclog::check::{CheckedProgram};
 
@@ -25,24 +25,29 @@ pub struct PairEvaluation {
     mutant_prefix: Vec<u32>,
 }
 
-/// One task's reusable observations and bounded native prefix tables.
-/// The binding owns this beside the task session; native identifiers and
-/// cached rows never cross session namespaces.
+/// One active case's observations. A task never retains a history of gold
+/// handles, body tables, decoder states or packed column folds. Only the
+/// current body and one rolling dependency prefix can be reused.
 pub struct PairCache {
+    active: Option<Arc<CheckedProgram>>,
     gold: HashMap<usize,Arc<GoldMemo>>,
     gold_bodies: HashMap<(usize,NodePath),Outcome<ClauseTables>>,
     gold_relations: HashMap<usize,(Arc<CheckedProgram>,Outcome<Vec<(usize,Table)>>)>,
-    gold_body_hits:u64,
-    prefixes: HashMap<Vec<u32>,(Vec<(usize,Table)>,usize)>,
-    columns: HashMap<Vec<u32>,crate::columns::CaseColumnPrefix>,
+    prefix: Option<PrefixMemo>,
+    columns: Option<(Vec<u32>,crate::columns::CaseColumnPrefix)>,
     source: Option<(Arc<CheckedProgram>,Arc<arclog::stream::WrittenStream>)>,
-    order: VecDeque<Vec<u32>>,
-    bytes: usize,
-    active_source:usize,
     pub compact: bool,
+    cache_bytes: usize,
+    active_source:usize,
+    gold_body_hits:u64,
     gold_hits:u64,
     prefix_hits:u64,
     sequence:u64,
+}
+struct PrefixMemo {
+    key:Vec<u32>,
+    tables:Vec<(usize,Table)>,
+    row_bytes:usize,
 }
 struct GoldMemo {
     _source:Arc<CheckedProgram>,
@@ -52,27 +57,45 @@ struct GoldMemo {
 }
 impl Default for PairCache { fn default()->Self {Self::new(false)} }
 impl PairCache {
-    pub fn new(compact:bool)->Self {Self {gold:HashMap::new(),gold_bodies:HashMap::new(),gold_relations:HashMap::new(),gold_body_hits:0,prefixes:HashMap::new(),source:None,columns:HashMap::new(),order:VecDeque::new(),bytes:0,active_source:0,compact,gold_hits:0,prefix_hits:0,sequence:0}}
-    fn prefix(&mut self,key:&[u32])->Option<Vec<(usize,Table)>> {
-        let found=self.prefixes.get(key).map(|(tables,_)|tables.clone());
-        if found.is_some() {self.prefix_hits+=1;}
-        found
+    pub fn new(compact:bool)->Self {Self::with_byte_bound(compact,64*1024*1024)}
+    pub fn with_byte_bound(compact:bool,bytes:usize)->Self {
+        Self {active:None,gold:HashMap::new(),gold_bodies:HashMap::new(),gold_relations:HashMap::new(),prefix:None,columns:None,source:None,compact,cache_bytes:bytes/2,active_source:0,gold_body_hits:0,gold_hits:0,prefix_hits:0,sequence:0}
+    }
+    pub fn set_observation_start(&mut self,sequence:u64) {self.sequence=sequence;}
+    /// End a case even when ingestion or a pair faults. Release allocations,
+    /// including hash-map capacities, rather than leaving them at task high-water.
+    /// Observation sequence numbers remain unique within the evaluator.
+    pub fn finish_case(&mut self) {
+        self.active=None;
+        self.active_source=0;
+        self.gold=HashMap::new();
+        self.gold_bodies=HashMap::new();
+        self.gold_relations=HashMap::new();
+        self.prefix=None;
+        self.columns=None;
+        self.source=None;
+    }
+    pub fn activate(&mut self,gold:&StudyProgram)->bool {
+        if self.active.as_ref().is_some_and(|active|Arc::ptr_eq(active,gold.checked())) {return false;}
+        self.finish_case();
+        self.active_source=Arc::as_ptr(gold.checked()) as usize;
+        self.active=Some(Arc::clone(gold.checked()));
+        true
     }
     fn remember(&mut self,key:Vec<u32>,tables:Vec<(usize,Table)>) {
-        const CAP:usize=64*1024*1024;
-        let mut bytes=key.len().saturating_mul(4)+4096;
+        // Replace, never accumulate cumulative prefix tables. Checked IR
+        // remains owned by the single active gold case.
+        self.prefix=None;
+        self.columns=None;
+        let mut bytes=key.capacity().saturating_mul(4);
         for (_,table) in &tables {if let Ok(c)=&table.contents {for ex in &c.examples {if let Ok(a)=&ex.rows {for (_,models) in &a.at {for model in models {if let RelationValue::Rows(r)=model {
             bytes=bytes.saturating_add(usize::try_from(r.len()).unwrap_or(usize::MAX).saturating_mul(usize::from(r.arity()).saturating_mul(8)+16));
         }}}}}}}
-        if bytes>CAP || self.prefixes.contains_key(&key) {return;}
-        while self.bytes.saturating_add(bytes)>CAP || self.prefixes.len()>=128 {
-            let Some(old)=self.order.pop_front() else {break;};
-            self.columns.remove(&old);
-            if let Some((_,size))=self.prefixes.remove(&old) {self.bytes-=size;}
+        if bytes<=self.cache_bytes {
+            self.prefix=Some(PrefixMemo {key,tables,row_bytes:bytes});
         }
-        self.bytes+=bytes;self.order.push_back(key.clone());self.prefixes.insert(key,(tables,bytes));
     }
-    pub fn stats(&self)->Value {json!({"gold_hits":self.gold_hits,"gold_body_hits":self.gold_body_hits,"gold_body_entries":self.gold_bodies.len(),"gold_relation_entries":self.gold_relations.len(),"prefix_hits":self.prefix_hits,"prefix_entries":self.prefixes.len(),"prefix_bytes_estimate":self.bytes})}
+    pub fn stats(&self)->Value {json!({"gold_hits":self.gold_hits,"gold_body_hits":self.gold_body_hits,"gold_body_entries":self.gold_bodies.len(),"gold_relation_entries":self.gold_relations.len(),"gold_entries":self.gold.len(),"prefix_entries":usize::from(self.prefix.is_some()),"prefix_bytes_estimate":self.prefix.as_ref().map_or(0,|memo|memo.row_bytes),"prefix_hits":self.prefix_hits,"column_prefix_entries":usize::from(self.columns.is_some()),"column_prefix_bytes":self.columns.as_ref().map_or(0,|(_,columns)|columns.retained_bytes()),"cache_byte_bound":self.cache_bytes})}
 }
 
 fn fault(message: impl Into<Box<str>>, form: &NodePath) -> RunFault {
@@ -102,15 +125,25 @@ fn source_stream(program:&StudyProgram,decoder:&Decoder<'_>,cache:&PairCache)->O
 /// and AST paths are never confused across equal-looking token streams.
 fn original_relations(program:&StudyProgram,written:&arclog::stream::WrittenStream,until:Option<&NodePath>,decoder:&Decoder<'_>,cache:&mut PairCache)->Outcome<(Vec<(usize,Table)>,Vec<u32>)> {
     let checked=program.checked();
-    let mut tables=Vec::new();let mut last=Vec::new();
+    let end=until.and_then(|until|written.forms.iter().position(|form|&form.path==until)).unwrap_or(written.forms.len());
+    let forms=&written.forms[..end];
     let mut paths=Vec::new();
-    for form in &written.forms {
-        if until==Some(&form.path) {break;}
+    let keys=forms.iter().map(|form| {
         paths.push(form.path.0.len() as u32);paths.extend(form.path.0.iter().map(|s|s.0));
         let mut key=vec![cache.active_source as u32,(cache.active_source>>32) as u32];
         key.extend(&paths);key.push(u32::MAX);
         key.extend(written.tokens[..form.tokens.end].iter().map(|(token,_)|decoder.vocabulary().id(token).expect("a written vocabulary token")));
-        if let Some(held)=cache.prefix(&key) {tables.extend(held);last=key;continue;}
+        key
+    }).collect::<Vec<_>>();
+    // One cumulative prefix replaces the former map of cloned table vectors.
+    // Find its exact source boundary before evaluating any preceding form.
+    let mut tables=Vec::new();let mut start=0;
+    if let Some(prefix)=&cache.prefix {
+        if let Some(index)=keys.iter().position(|key|key==&prefix.key) {
+            tables=prefix.tables.clone();start=index+1;cache.prefix_hits+=1;
+        }
+    }
+    for form in forms.iter().skip(start) {
         let mut held=Vec::new();
         for &slot in &form.readable {
             let declared=&written.relations[slot];
@@ -125,7 +158,11 @@ fn original_relations(program:&StudyProgram,written:&arclog::stream::WrittenStre
             });
             held.push((form.tokens.end.saturating_sub(1),Table {form:form.path.clone(),point:Point::Relation,contents}));
         }
-        cache.remember(key.clone(),held.clone());tables.extend(held);last=key;
+        tables.extend(held);
+    }
+    let last=keys.last().cloned().unwrap_or_default();
+    if until.is_some() && !last.is_empty() && !cache.prefix.as_ref().is_some_and(|memo|memo.key==last) {
+        cache.remember(last.clone(),tables.clone());
     }
     Ok((tables,last))
 }
@@ -529,6 +566,7 @@ fn evaluate_pair_inner(
         result.report = json!({"status":"fault","reason":"gold, point and mutant do not belong to the same certified pair"});
         return result;
     }
+    cache.activate(gold);
     let mut gd = Decoder::new(task, session, Registry::get(), constructions, settings);
     let mut md = Decoder::new(task, session, Registry::get(), constructions, settings);
     let Some(output) = output_relation(gold.checked()) else {
@@ -630,7 +668,7 @@ fn evaluate_pair_inner(
     let body_key=(gold_key,point.body.clone());
     let gold_body=match cache.gold_bodies.get(&body_key) {
         Some(held)=>{cache.gold_body_hits+=1;held.clone()},
-        None=>{let held=clause_tables(gold,&point.body,&mut gd,&fixed,cache);cache.gold_bodies.insert(body_key,held.clone());held}
+        None=>{cache.gold_bodies=HashMap::new();let held=clause_tables(gold,&point.body,&mut gd,&fixed,cache);cache.gold_bodies.insert(body_key,held.clone());held}
     };
     match gold_body {
         Ok(t) => {
@@ -742,7 +780,8 @@ pub fn evaluate_pair_cached(gold:&StudyProgram,point:&MutationPoint,mutant:&Vali
 /// Full native relation tables, evaluated once per gold handle in this task
 /// session. Faults and work-cap stops are cached as observations too.
 pub fn gold_tables_cached(gold:&StudyProgram,task:&Task,session:&TaskSession,constructions:&Constructions,settings:&DecodeSettings,cache:&mut PairCache)->(Value,Vec<(usize,Table)>) {
-    let key=Arc::as_ptr(gold.checked()) as usize;cache.active_source=key;
+    cache.activate(gold);
+    let key=Arc::as_ptr(gold.checked()) as usize;
     let hit=cache.gold_relations.contains_key(&key);
     if !hit {
         let held=std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -764,11 +803,21 @@ pub fn pair_columns_cached(evidence:&[Table],result:&PairEvaluation,train:usize,
     let mut pack=|tables:&[(usize,Table)],key:&Vec<u32>| {
         if tables.len()<2 {return crate::columns::case_columns(evidence,tables,train,None);}
         let split=tables.len()-2;
-        // An oversized prefix may be deliberately absent from the bounded
-        // replay cache; do not retain its columns under an incomplete key.
-        if !key.is_empty() && !cache.prefixes.contains_key(key) {return crate::columns::case_columns(evidence,tables,train,None);}
-        let prefix=cache.columns.entry(key.clone()).or_insert_with(||crate::columns::CaseColumnPrefix::new(evidence,&tables[..split],train));
-        prefix.finish(&tables[split..],train)
+        if cache.columns.as_ref().is_some_and(|(held,_)|held==key) {
+            return cache.columns.as_ref().unwrap().1.finish(&tables[split..],train);
+        }
+        cache.columns=None;
+        let prefix=crate::columns::CaseColumnPrefix::new(evidence,&tables[..split],train);
+        // The packed fold includes nested string/vector capacities and its
+        // run-interning metadata, not just the values buffer.
+        let native_prefix_bytes=cache.prefix.as_ref().map_or(0,|memo|memo.row_bytes);
+        if prefix.retained_bytes().saturating_add(native_prefix_bytes)<=cache.cache_bytes {
+            let columns=prefix.finish(&tables[split..],train);
+            cache.columns=Some((key.clone(),prefix));
+            columns
+        } else {
+            prefix.into_finished(&tables[split..],train)
+        }
     };
     (pack(&result.gold,&result.gold_prefix),pack(&result.mutant,&result.mutant_prefix))
 }
