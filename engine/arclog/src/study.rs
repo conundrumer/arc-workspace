@@ -9,6 +9,7 @@ use std::sync::Arc;
 pub mod render;
 pub mod render_terms;
 pub mod render_bodies;
+pub mod render_definitions;
 
 use crate::check::{CheckCache, CheckedProgram, SolverClauses, check_shared_program};
 use crate::diagnostic::{Diagnostic, Severity};

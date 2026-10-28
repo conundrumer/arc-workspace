@@ -96,8 +96,8 @@ impl StudyProgram {
         )?;
         Ok(
             json!({"schema":"arclog-study-render-v1","parts":{"nodes":"complete",
-            "definitions_readers":"pending","types_frames":"pending","literal_meanings":"pending","body_views":"complete"},
-            "program_sexp":self.sexp(registry),"nodes":nodes,"body_views":super::render_bodies::export(self,registry)?,
+            "definitions_readers":"complete","types_frames":"pending","literal_meanings":"pending","body_views":"complete"},
+            "definitions":super::render_definitions::export(self,registry)?,"program_sexp":self.sexp(registry),"nodes":nodes,"body_views":super::render_bodies::export(self,registry)?,
             "source_path_correspondence":"identity; use ValidMutant.render_json for mutation correspondence"}),
         )
     }

@@ -103,3 +103,31 @@ that AST. It never guesses a slot from a name. `render_pair_json` supplies the
 **actual rehydrated gold AST** whose original paths and label IDs the mutant's
 correspondence references. Loading the display gold sexp and independently
 using that parse's descendant paths is not a correspondence contract.
+
+## Definitions and readers
+
+`parts.definitions_readers=complete`. `definitions.graph_nodes` exports the
+resolver's actual nodes, definition kinds, source forms, scope/side and read
+edges. `definitions.readers` exports each original atom's path/reference and
+resolved graph node or library ID, plus explicit component/proposer uses.
+Instance input-port identities remain scoped ports, never library predicates
+because their spelling happens to match one.
+
+`definitions.native_relations` maps each engine stream relation slot to its
+structured original relation, exact native `source_name`, defining AST path,
+and native selector `(form, point=0, relation)`. Use `source_name` to join packed
+kept-assignment relation names to schemas; use the actual rehydrated source
+from render_pair_json for stored decode records. Some INIT port aliases have
+no physical table; a selector identifies a table if it is present, not a
+promise that the exporter materialized one. Body tables use the separate
+body_views selector and pair-report table_indices.
+
+`definitions.registry.entries` includes the **entire** embedded registry and
+arclog proposer bodies, so every library reference's definition closure is
+available without Python parsing. Entries have an explicit kind/implementation,
+structured declaration S-expressions (`symbol`/`string`/`list`), engine source
+text, native AST read references for macros/arclog proposers, and component
+input/output port metadata. Native implementations expose their exact registry
+contract and implementation kind, not an invented arclog body. Component
+input defaults, copies, frame/type rules are present in the structured native
+registry declaration. Facts have explicit definitions too.

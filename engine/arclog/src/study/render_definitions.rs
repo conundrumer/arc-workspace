@@ -1,0 +1,191 @@
+//! Resolved program readers and the entire embedded library definition closure.
+use super::StudyProgram;
+use super::render::{column, name, program_relation};
+use crate::mutation::{path_json, relation_json};
+use crate::program::path::{NodePath, NodeRef};
+use crate::program::*;
+use crate::read::SExpr;
+use crate::registry::{LibEntry, Macro, ProposerKind, Registry};
+use crate::resolver::{DependencyKind, GraphNodeIndex, Resolution};
+use serde_json::{Value, json};
+
+fn expression(e: &SExpr) -> Value {
+    match e {
+        SExpr::Symbol { text, .. } => json!({"symbol":text}),
+        SExpr::String { text, .. } => json!({"string":text}),
+        SExpr::List { items, .. } => {
+            json!({"list":items.iter().map(expression).collect::<Vec<_>>()})
+        }
+    }
+}
+fn ast_reads(node: NodeRef<'_>, out: &mut Vec<Value>) {
+    if let Some(a) = node.atom() {
+        let r = relation_json(&a.relation);
+        if !out.contains(&r) {
+            out.push(r);
+        }
+    }
+    for child in node.children() {
+        ast_reads(child, out);
+    }
+}
+fn registry_export(registry: &Registry) -> Result<Value, String> {
+    let mut forms = std::collections::BTreeMap::new();
+    let mut implementations = std::collections::BTreeMap::new();
+    for (source, text, into) in [
+        (
+            crate::layout::SourceFile::LibRegistry,
+            crate::registry::REGISTRY_TEXT,
+            &mut forms,
+        ),
+        (
+            crate::layout::SourceFile::LibProposers,
+            crate::registry::PROPOSERS_TEXT,
+            &mut implementations,
+        ),
+    ] {
+        let (sexps, _) =
+            crate::read::read_sexprs(text, source).map_err(|d| super::diagnostics_text(&d))?;
+        for e in sexps {
+            if let SExpr::List { items, place, .. } = &e {
+                if let Some(SExpr::Symbol { text: name, .. }) = items.get(1) {
+                    into.insert(name.to_string(),json!({"definition":expression(&e),"sexp":&text[place.start as usize..place.end as usize]}));
+                }
+            }
+        }
+    }
+    let mut entries = Vec::new();
+    let mut names = registry.names().collect::<Vec<_>>();
+    names.sort_by_key(|n| &n.0);
+    for lib in names {
+        let entry = registry
+            .entry(lib)
+            .ok_or_else(|| format!("registry entry disappeared: {}", lib.0))?;
+        let mut reads = Vec::new();
+        let (kind, implementation, ports) = match entry {
+            LibEntry::Relation(_) => ("relation", "native_algebra", Value::Null),
+            LibEntry::Macro(Macro::Relation { definition, .. }) => {
+                ast_reads(NodeRef::Body(definition.value()), &mut reads);
+                ("macro", "arclog", Value::Null)
+            }
+            LibEntry::Proposer(p) => {
+                let implementation = match &p.kind {
+                    ProposerKind::Native { .. } => "native_proposer",
+                    ProposerKind::Arclog { body } => {
+                        ast_reads(NodeRef::Body(body.value()), &mut reads);
+                        "arclog"
+                    }
+                };
+                ("proposer", implementation, Value::Null)
+            }
+            LibEntry::Component(c) => (
+                "component",
+                "native_component",
+                json!({"component_kind":format!("{:?}",c.kind),
+                "inputs":c.inputs.iter().map(|i|json!({"name":i.port.name.0,"reads_outputs":i.reads_outputs,"from_key":i.from_key,
+                    "columns":i.port.columns.iter().map(|c|json!({"name":column(&c.name),"type_expression":format!("{:?}",c.ty)})).collect::<Vec<_>>()})).collect::<Vec<_>>(),
+                "outputs":c.outputs.iter().map(|o|json!({"name":o.name.0,"columns":o.columns.iter().map(|c|json!({"name":column(&c.name),"type_expression":format!("{:?}",c.ty)})).collect::<Vec<_>>()})).collect::<Vec<_>>()}),
+            ),
+        };
+        let declaration = forms
+            .get(lib.0.as_ref())
+            .ok_or_else(|| format!("no embedded definition for {}", lib.0))?;
+        entries.push(json!({"id":format!("lib:{}",lib.0),"name":lib.0,"kind":kind,"implementation":implementation,
+            "declaration":declaration,"arclog_implementation":implementations.get(lib.0.as_ref()),"reads":reads,"ports":ports}));
+    }
+    for fact in [
+        FactRelation::Input,
+        FactRelation::ExInput,
+        FactRelation::ExOutput,
+    ] {
+        let key = match fact {
+            FactRelation::Input => "input",
+            FactRelation::ExInput => "ex_input",
+            FactRelation::ExOutput => "ex_output",
+        };
+        let definition = forms
+            .get(key)
+            .ok_or_else(|| format!("missing fact definition {key}"))?;
+        entries.push(
+            json!({"id":format!("fact:{key}"),"name":key,"kind":"fact","declaration":definition,
+            "reads":[],"implementation":"task_grid_evidence"}),
+        );
+    }
+    Ok(
+        json!({"completeness":"entire_embedded_registry_and_arclog_proposers","entries":entries,
+        "native_semantics":"native relations/components/proposers expose their registry contracts; implementation kinds are explicit, no arclog body is invented"}),
+    )
+}
+
+pub fn export(program: &StudyProgram, registry: &Registry) -> Result<Value, String> {
+    let resolved = &program.checked().program;
+    let graph=resolved.graph.nodes.iter().enumerate().map(|(i,n)| {
+        let kind=match &n.kind {
+            DependencyKind::Fact(f)=>json!({"kind":"fact","relation":relation_json(&RelationRef::Fact(*f))}),
+            DependencyKind::Clause(r)=>json!({"kind":"clause","relation":program_relation(r)}),
+            DependencyKind::Parameter(r)=>json!({"kind":"parameter","relation":program_relation(r)}),
+            DependencyKind::InstanceInput{instance,input}=>json!({"kind":"instance_input","instance":name(&instance.0),"port":input.0}),
+            DependencyKind::InstanceOutput{instance,output}=>json!({"kind":"instance_output","instance":name(&instance.0),"port":output.0}),
+            DependencyKind::Chosen(n)=>json!({"kind":"chosen","name":name(&n.0)}),
+            DependencyKind::RigidAssembly(n)=>json!({"kind":"rigid_assembly","name":name(&n.0)}),
+            DependencyKind::Demonstrated(n)=>json!({"kind":"demonstrated","name":name(&n.0)}),
+            DependencyKind::RecursiveInstance(n)=>json!({"kind":"recursive_instance","name":name(&n.0)}),
+            DependencyKind::Out(p)=>json!({"kind":"out","path":path_json(p)}),
+        };
+        json!({"node":i,"definition":kind,"name_scope":format!("{:?}",n.scope),"side":format!("{:?}",resolved.side(GraphNodeIndex(i as u32))),
+            "forms":resolved.forms_of(GraphNodeIndex(i as u32)).iter().map(path_json).collect::<Vec<_>>(),
+            "reads":resolved.graph.reads[i].iter().map(|n|n.0).collect::<Vec<_>>()})
+    }).collect::<Vec<_>>();
+    fn walk(
+        node: NodeRef<'_>,
+        at: &NodePath,
+        program: &StudyProgram,
+        out: &mut Vec<Value>,
+    ) -> Result<(), String> {
+        if let Some(atom) = node.atom() {
+            let resolution = match program.checked().program.resolution(at) {
+                Some(Resolution::Node(n)) => json!({"kind":"graph_node","node":n.0}),
+                Some(Resolution::Lib(n)) => json!({"kind":"library","id":format!("lib:{}",n.0)}),
+                Some(Resolution::Undefined(r)) => {
+                    json!({"kind":"undefined_case_relation","relation":program_relation(r)})
+                }
+                _ => return Err(format!("atom has no resolved read at {at:?}")),
+            };
+            out.push(json!({"reader_path":path_json(at),"reader_owner_path":at.0.first().map(|s|vec![s.0]),
+                "relation":relation_json(&atom.relation),"resolution":resolution}));
+        }
+        if let NodeRef::Instance(i) = node {
+            out.push(json!({"reader_path":path_json(at),"relation":{"component":i.component.0},"resolution":{"kind":"library","id":format!("lib:{}",i.component.0)}}));
+        }
+        if let NodeRef::Clause(c) = node {
+            for p in c.proposers.iter() {
+                out.push(json!({"reader_path":path_json(at),"relation":{"proposer":p.0},"resolution":{"kind":"library","id":format!("lib:{}",p.0)}}));
+            }
+        }
+        for (i, child) in node.children().into_iter().enumerate() {
+            walk(child, &at.child(i as u32), program, out)?;
+        }
+        Ok(())
+    }
+    let mut readers = Vec::new();
+    walk(
+        NodeRef::Program(program.program().value()),
+        &NodePath::default(),
+        program,
+        &mut readers,
+    )?;
+    let settings = crate::stream::DecodeSettings::synthesis();
+    let vocabulary = crate::stream::Vocabulary::new(registry, &settings);
+    let written = crate::stream::written_stream(program.checked(), &vocabulary)
+        .map_err(|d| super::diagnostics_text(&[d]))?;
+    let native_relations=written.relations.iter().enumerate().map(|(slot,r)| {
+        let form=written.forms.iter().find(|f|f.relations.contains(&slot)).map(|f|&f.path);
+        json!({"relation_slot":slot,"relation":program_relation(r),"source_name":crate::eval::determinations::relation_spelled(r),
+            "definition_path":form.map(path_json),"native_selector":{"point":0,"relation":slot,
+                "form":form.map(|p|p.0.iter().map(|s|s.0.to_string()).collect::<Vec<_>>().join("."))},
+            "note":"selector identifies a present relation table; some aliased/omitted INIT ports have no table"})
+    }).collect::<Vec<_>>();
+    Ok(
+        json!({"graph_nodes":graph,"readers":readers,"native_relations":native_relations,"registry":registry_export(registry)?}),
+    )
+}
