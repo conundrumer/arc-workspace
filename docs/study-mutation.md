@@ -62,3 +62,55 @@ and is reported as a failure, never as a diversity improvement.
 
 The batch renderer's reserved-zero meanings are documented in
 [`study-reserved-zero.md`](study-reserved-zero.md).
+
+## Stage-2 streaming audit and resume
+
+The old rerun's recorded timings put 12,179 of 13,215 phase-seconds in
+`mutant_stream_replay`; 1,038 of its 1,135 case deadlines occurred in that
+phase. The complete-program reader above removes the online completion/OUT
+work. Each immutable `StudyProgram` now retains one written stream for its
+first registry/settings pair. Certification, printing and repeated round-trip
+accessors share that stream. Returned arrays are independent copies.
+
+`StudyProgram.from_sexp(text, settings, session=session)` and
+`StudyProgram.from_stream(session, ids, model)` share exact native check results
+within the case. Reading, header/interface validation, name resolution and
+exact stream reproduction remain mandatory. `Session.reset_program_replay()`
+releases the parser checkpoints and check cache between cases, including
+faulted cases. `stream_reader_policy()` advertises the complete-program entry
+point; the audit refuses an older online replay implementation.
+
+The stage-2 checker still draws every point/K/operation and constructs every
+selected certificate. A successful full AST/sexp/stream audit is reused only
+for an identical serialized identity on the same immutable gold handle in
+that case. The recorded old run contained 11,673 duplicate verified identities
+among 39,846 mutant rows, all from `mixed` contexts. Duplicates retain their
+own mutant records, with `verification_cached` and a case-local
+`verification_ref`. Failures never enter the memo. Full-program samples are
+limited to distinct verified identities. No certificates are reused across
+cases or interpreter runs.
+
+Parent supervisors drain bounded eight-record queues and flush each draw,
+mutant, failure and case record directly to its JSONL. A separate heartbeat
+prints case/task progress and active phases every second, including during
+native calls. There is no task-long event list. The requested SIGALRM case
+budget is retained; a parent guard allows at most one native-request deadline
+of dispatch grace. A stuck case is recorded alone, and a fresh worker starts
+at the next unattempted case. Startup failures are task events, not fabricated
+failures for every unstarted case. An explicit `--task-seconds` remains a hard
+whole-task override.
+
+Use `--resume` with the same output prefix to append safely. A case row with
+`complete=true` proves the requested audit matrix finished. Interrupted,
+deadline and watchdog rows have `complete=false` and are retried. Add
+`--retry-failed` to retry completed matrices with substantive audit failures as
+well. Torn final JSONL rows are repaired; intact rows are retained. Runtime
+binary hash, checker source, mutation policy, selections, seed and audit bounds
+must match the output's `.config.json`. A new policy/build requires a new
+output prefix, so an old mutation domain cannot masquerade as new coverage.
+
+Build a committed runtime with `scripts/build_study_runtime.py` into a new
+exclusive directory, then run its `checks/check_stage2.py` with that directory's
+`venv/bin/python`. Supply `--tasks` explicitly, and use `--task-file` for the
+recorded rerun's task list. The summary labels new invocation counts and
+retained completed cases separately; rates count only new work.

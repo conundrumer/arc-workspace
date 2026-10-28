@@ -16,6 +16,7 @@ use crate::vocabulary::PyVocabulary;
 #[derive(Default)]
 pub(crate) struct ProgramReplay {
     reader: Option<arclog::decode::program_read::ProgramReader<'static>>,
+    checks: arclog::check::CheckCache,
 }
 
 /// A checked, standalone gold program through OUT. Mutations address AST
@@ -35,16 +36,32 @@ impl PyStudyProgram {
     fn mutation_policy() -> &'static str {
         "complete-domain-without-replacement-v5"
     }
+    /// Complete-program parsing retains grammar, binding, full checks and exact
+    /// stream reproduction. It performs no online completion or OUT evaluation.
+    #[staticmethod]
+    fn stream_reader_policy() -> &'static str {
+        "complete-program-grammar-v1"
+    }
+
     /// Read standalone case sexp, preserving source column/variable names.
     #[staticmethod]
-    #[pyo3(signature = (text, settings=None))]
-    fn from_sexp(py: Python<'_>, text: &str, settings: Option<PyDecodeSettings>) -> PyResult<Self> {
+    #[pyo3(signature = (text, settings=None, *, session=None))]
+    fn from_sexp(py: Python<'_>, text: &str, settings: Option<PyDecodeSettings>, session:Option<&PySession>) -> PyResult<Self> {
         let settings = settings
             .map(|s| s.engine())
             .transpose()?
-            .unwrap_or_else(DecodeSettings::synthesis);
+            .unwrap_or_else(||session.map_or_else(DecodeSettings::synthesis,PySession::program_settings));
+        if session.is_some_and(|session|session.program_settings()!=settings) {
+            return Err(PyValueError::new_err("session and sexp settings differ"));
+        }
         let program = py
-            .detach(|| StudyProgram::from_sexp(text, Registry::get()))
+            .detach(||match session {
+                Some(session)=> {
+                    let mut cached=session.program_replay.lock().expect("a program reader outside a panic");
+                    StudyProgram::from_sexp_cached(text,Registry::get(),&mut cached.checks)
+                },
+                None=>StudyProgram::from_sexp(text, Registry::get()),
+            })
             .map_err(PyValueError::new_err)?;
         program
             .decode_stream(Registry::get(), &settings)
@@ -73,7 +90,7 @@ impl PyStudyProgram {
                     arclog::decode::program_read::ProgramReader::new(Registry::get(), settings)
                 });
                 let ast = reader.read(&ids, &model)?;
-                let program = StudyProgram::from_decoded(ast, Registry::get())?;
+                let program = StudyProgram::from_decoded_cached(ast, Registry::get(), &mut cached.checks)?;
                 let written = program.decode_stream(Registry::get(), &settings)?;
                 if written.ids != ids || written.model != model {
                     return Err(

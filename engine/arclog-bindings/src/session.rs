@@ -45,6 +45,14 @@ impl PySession {
         Ok(PySession { data: Arc::new(SessionData { task: Arc::clone(&task.data), session, settings }), program_replay: Mutex::default() })
     }
 
+    /// End a complete-program round-trip batch. No parsed/checkpoint state
+    /// from the preceding case remains rooted by this session.
+    fn reset_program_replay(&self,py:Python<'_>) {
+        py.detach(|| {
+            *self.program_replay.lock().expect("a program reader outside a panic")=crate::study::ProgramReplay::default();
+        });
+    }
+
     #[getter]
     fn settings(&self) -> PyDecodeSettings {
         PyDecodeSettings::of(&self.data.settings)

@@ -29,6 +29,7 @@ pub struct StudyProgram {
     layout: Option<Layout>,
     render_cache: Arc<OnceLock<(usize, Result<serde_json::Value,String>)>>,
     source_cache: Arc<OnceLock<(usize,DecodeSettings,Result<StudyProgram,String>)>>,
+    stream_cache: Arc<OnceLock<(usize,DecodeSettings,Result<StudyStream,String>)>>,
 }
 
 /// An engine-written stream and its source-order AST correspondence.
@@ -52,6 +53,12 @@ impl StudyProgram {
     /// Reads a standalone case, preserving the engine's column and label names.
     /// Malformed nodes must never disappear silently from study input.
     pub fn from_sexp(text: &str, registry: &Registry) -> Result<Self, String> {
+        Self::from_sexp_cached(text,registry,&mut CheckCache::default())
+    }
+
+    /// Reuse exact canonical check results within one caller-owned case.
+    /// Reading, interface validation and name resolution are always performed.
+    pub fn from_sexp_cached(text:&str,registry:&Registry,cache:&mut CheckCache)->Result<Self,String> {
         let read =
             crate::read::read_arclog(text, SourceFile::Arclog).map_err(|d| diagnostics_text(&d))?;
         if read
@@ -62,12 +69,16 @@ impl StudyProgram {
             return Err(diagnostics_text(&read.diagnostics));
         }
         let (program, layout) = read.value;
-        Self::from_program(program, Some(layout), registry)
+        Self::from_program_cached(program, Some(layout), registry, cache)
     }
 
     /// Takes a decoder's completed AST directly, without printing/reparsing it.
     pub fn from_decoded(program: Node<Program>, registry: &Registry) -> Result<Self, String> {
         Self::from_program(program, None, registry)
+    }
+
+    pub fn from_decoded_cached(program:Node<Program>,registry:&Registry,cache:&mut CheckCache)->Result<Self,String> {
+        Self::from_program_cached(program,None,registry,cache)
     }
 
     pub(crate) fn from_program(
@@ -124,6 +135,7 @@ impl StudyProgram {
             layout,
             render_cache:Arc::new(OnceLock::new()),
             source_cache:Arc::new(OnceLock::new()),
+            stream_cache:Arc::new(OnceLock::new()),
         })
     }
 
@@ -168,6 +180,12 @@ impl StudyProgram {
         registry: &Registry,
         settings: &DecodeSettings,
     ) -> Result<StudyStream, String> {
+        let key=registry as *const Registry as usize;
+        let cached=self.stream_cache.get_or_init(||(key,*settings,self.write_stream(registry,settings)));
+        if cached.0==key && cached.1==*settings {cached.2.clone()} else {self.write_stream(registry,settings)}
+    }
+
+    fn write_stream(&self,registry:&Registry,settings:&DecodeSettings)->Result<StudyStream,String> {
         let vocabulary = Vocabulary::new(registry, settings);
         let written = token_stream_with_paths(&self.checked, &vocabulary)
             .map_err(|d| diagnostics_text(&[d]))?;
