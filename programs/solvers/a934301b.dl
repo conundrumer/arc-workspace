@@ -186,18 +186,21 @@ spared(A, Id, Kind, U, $CountTable()) :-
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col).
 
-    // An object with a cell the output changes.
-    .decl changed(e: Example, a: Adjacency, id: Ident)
-    changed(E, A, Id) :-
+    // The changed cells of each train object, including objects with none.
+    .type ChangedObject = [e: Example, a: Adjacency, id: Ident]
+    .init changes = Tally<ChangedObject, Position>
+    changes.domain([E, A, Id]) :-
+        parse.object(E, A, Id, _), ex_out(E, _, _).
+    changes.item([E, A, Id], P) :-
         parse.object(E, A, Id, P), ex_in(E, P, Col), ex_out(E, P, Col2), Col != Col2.
 
     .decl keep_count(n: number)
     keep_count(N) :-
-        parse.mark_count([E, A, Id, _], _, N), ex_out(E, _, _),   // a train object's count
-        !changed(E, A, Id).                                       // the output keeps it
+        parse.mark_count([E, A, Id, _], _, N),
+        changes.tally([E, A, Id], 0).   // the output keeps the train object
 
     .decl drop_count(n: number)
     drop_count(N) :-
-        parse.mark_count([E, A, Id, _], _, N),   // a train object's count
-        changed(E, A, Id).                       // the output erases it
+        parse.mark_count([E, A, Id, _], _, N),
+        changes.tally([E, A, Id], C), C > 0.   // the output erases the train object
 }

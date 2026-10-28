@@ -4,7 +4,10 @@
 
 The command checks the programs under `gen/` of `arclog_convert.out`, or of
 `--out`, for the solvers given, every solver of `gen/` where none is given; it
-converts nothing, so run `arclog_convert.convert` first. It replays each case
+converts nothing, so run `arclog_convert.convert` first. It first requires the
+native exact determination end check, recording input-bound receipts under
+`determination_end_check/`. No skip flag or baseline acceptance waives this
+gate. It then replays each case
 of the solvers on the train pairs of its task, records the verdicts under
 `train_replay/`, and reports against the baseline `unreproduced.tsv`
 (`arclog_convert.train_replay` gives the details); then it compares each
@@ -18,7 +21,7 @@ of the solvers checked to the run's counts, keeping the ticket field of each
 line whose task and verdict stay; it is refused with `--no-train-replay`, and
 with `--no-row-parity` it leaves `row_parity.tsv` untouched. The replay runs
 `cargo` in `engine/`, so it needs a Rust toolchain.
-As each phase it runs ends (`train replay`, `row parity`), the run prints a line
+As each phase it runs ends (`determination end check`, `train replay`, `row parity`), the run prints a line
 `<phase>: <seconds> s` with that phase's wall time.
 """
 
@@ -43,6 +46,16 @@ def main(argv: list[str]) -> int:
     use_out(args.out)
     from arclog_convert import row_parity, train_replay
     stems = args.stems or sorted(p.stem for p in paths.OUT_DIR.glob("*.arclog"))
+    # Mandatory even with --no-train-replay/--no-row-parity or --accept:
+    # baseline acceptance cannot waive exact determination equality.
+    from arclog_convert.determination_gate import require, EndCheckFailed
+    from arc.task import TASKS_DIR
+    try:
+        with phase("determination end check"):
+            require(stems, paths.OUT_DIR, TASKS_DIR, paths.OUT_DIR.parent / "determination_end_check")
+    except EndCheckFailed as exc:
+        print(exc, file=sys.stderr)
+        return 1
     status = 0
     if not args.no_train_replay:
         with phase("train replay"):

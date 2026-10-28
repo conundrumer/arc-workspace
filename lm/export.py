@@ -72,6 +72,9 @@ from typing import NamedTuple
 import arclog, numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "engine", "arclog-py"))
 import tables_export as X
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
+from pathlib import Path
+from arclog_convert import determination_gate as D
 
 CORPUS, TASKS = "work/arclog/gen", "data/tasks"
 
@@ -140,8 +143,9 @@ def task_rows(streams):
     return TaskRows(cases, list(table), len(streams), problems, lines)
 
 
-def write_task_dir(directory, task, rows, faults, key, seconds):
+def write_task_dir(directory, task, rows, faults, key, seconds, receipt):
     """Makes `directory` of `task` as the module docstring gives `tasks/<task>/`, `DONE` last, from the `TaskRows` `rows`, the `faults` (report lines) of the task, its reuse `key` and its call's `seconds`."""
+    D.check_unchanged(receipt, Path(CORPUS), Path(TASKS))
     shutil.rmtree(directory, ignore_errors=True)
     os.makedirs(directory)
     cases = rows.cases
@@ -155,7 +159,8 @@ def write_task_dir(directory, task, rows, faults, key, seconds):
              task=np.array([task] * len(cases), dtype=str), case=np.array([c[0] for c in cases], dtype=str),
              concept=np.array([c[1] for c in cases], dtype=bool))
     with open(f"{directory}/key.json", "w") as sink:
-        json.dump({"key": key, "seconds": seconds, "streamed": rows.streamed, "problems": {k: n for k, n in rows.problems.items() if n}}, sink)
+        json.dump({"key": key, "seconds": seconds, "streamed": rows.streamed, "problems": {k: n for k, n in rows.problems.items() if n},
+                   "determination_end_check": receipt}, sink)
     with open(f"{directory}/report.txt", "w") as sink:
         sink.write("".join(line + "\n" for line in [*faults, *rows.lines]))
     X.write_marker(directory, X.DONE)
@@ -163,12 +168,15 @@ def write_task_dir(directory, task, rows, faults, key, seconds):
 
 def stream_task(payload, progress):
     """The call of a worker process: streams the task of `payload` and writes its directory."""
-    task, corpus, tasks, step_cap, key, directory = payload
+    task, corpus, tasks, step_cap, key, directory, receipt = payload
     shutil.rmtree(directory, ignore_errors=True)
+    D.check_unchanged(receipt, Path(corpus), Path(tasks))
+    if receipt["context"] != D.mask_context():
+        raise D.EndCheckFailed(f"{task}: mask engine differs from the checked admission context")
     start = time.time()
     streams, faults = arclog.corpus_streams(corpus, all_cases=True, task_ids=[task], tasks=tasks, progress=progress, step_cap=step_cap)
     seconds = round(time.time() - start, 1)
-    write_task_dir(directory, task, task_rows([types.SimpleNamespace(**X.stream_fields(s)) for s in streams]), faults, key, seconds)
+    write_task_dir(directory, task, task_rows([types.SimpleNamespace(**X.stream_fields(s)) for s in streams]), faults, key, seconds, receipt)
 
 
 def task_dir(data, task):
@@ -180,25 +188,28 @@ def read_key(data, task):
     return json.load(open(f"{task_dir(data, task)}/key.json")) if os.path.exists(f"{task_dir(data, task)}/{X.DONE}") else None
 
 
-def reuse_task(data, previous, task):
+def reuse_task(data, previous, task, receipt):
     """Makes the directory of `task` in `data` from hard links of its directory in `previous`."""
+    D.check_unchanged(receipt, Path(CORPUS), Path(TASKS))
+    D.validate_cached({task: read_key(previous, task).get("determination_end_check", {})}, {task: receipt})
     shutil.rmtree(task_dir(data, task), ignore_errors=True)
     X.link_files(f"{previous}/tasks/{task}", task_dir(data, task), skip=(X.DONE, X.FAILED))
     X.write_marker(task_dir(data, task), X.DONE)
 
 
-def write_from_pickle(data, tasks, cached):
+def write_from_pickle(data, tasks, cached, receipts):
     """Writes the directory of each of `tasks` from `cached`, the content of streams.pkl: its streams and fault lines grouped by task, a null key and no seconds."""
+    D.validate_cached(cached.get("determination_receipts", {}), {t: receipts[t] for t in tasks})
     streams, faults = collections.defaultdict(list), collections.defaultdict(list)
     for s in cached["streams"]:
         streams[s["task"]].append(types.SimpleNamespace(**s))
     for line in cached["faults"]:
         faults[X.line_task(line)].append(line)
     for t in tasks:
-        write_task_dir(task_dir(data, t), t, task_rows(streams[t]), faults[t], None, None)
+        write_task_dir(task_dir(data, t), t, task_rows(streams[t]), faults[t], None, None, receipts[t])
 
 
-def stream_with_workers(data, to_stream, resumed, before, key_of, step_cap, t0):
+def stream_with_workers(data, to_stream, resumed, before, key_of, step_cap, t0, receipts):
     """Streams the `to_stream` tasks on a queue of worker processes, each task into its directory. `resumed` is the count of tasks taken from `data` already, `before` the {task: seconds} of the previous export."""
     workers = X.take_workers()
     running, ended = {}, set()      # task id -> (start, progress) of the tasks running; the tasks whose call ended
@@ -209,7 +220,7 @@ def stream_with_workers(data, to_stream, resumed, before, key_of, step_cap, t0):
         directory = task_dir(data, task)
         with X.failing_into(directory):
             try:
-                X.run_in_worker([sys.executable, os.path.abspath(__file__)], task, (task, CORPUS, TASKS, step_cap, key_of[task], directory), progress)
+                X.run_in_worker([sys.executable, os.path.abspath(__file__)], task, (task, CORPUS, TASKS, step_cap, key_of[task], directory, receipts[task]), progress)
             except X.WorkerDied as death:
                 shutil.rmtree(directory, ignore_errors=True)        # the worker may have died with the files half written
                 X.write_marker(directory, X.FAILED, X.death_line(task, death.status) + "\n")
@@ -285,29 +296,33 @@ def main():
     task_ids = args.task_ids or sorted(os.path.basename(f)[:-len(".arcdata")] for f in glob.glob(f"{CORPUS}/*.arcdata"))
     t0 = time.time()
     try:
+        receipts = D.require(task_ids, Path(CORPUS), Path(TASKS),
+                             Path(data) / "determination_end_check", D.mask_context())
         names, kinds, _ = vocabulary()
         json.dump({"names": names, "kinds": kinds}, open(f"{data}/vocab.json", "w"))
         package_files = [(name, f) for name, f in X.package_files() if not f.endswith(tuple(importlib.machinery.EXTENSION_SUFFIXES))]     # the compiled library is covered by arclog.streams_digest()
-        engine = hashlib.sha256((arclog.streams_digest() + X.digest_files(package_files) + f"{sys.version} {np.__version__}" + open(os.path.abspath(__file__)).read()).encode()).hexdigest()
+        engine = hashlib.sha256((arclog.streams_digest() + X.digest_files(package_files) + f"{sys.version} {np.__version__}" + open(os.path.abspath(__file__)).read() + Path(D.__file__).read_text()).encode()).hexdigest()
         task_keys = {t: X.task_key(engine, t, f"step_cap={args.step_cap}", ()) for t in task_ids}
         previous = json.load(open(f"{args.previous}/keys.json")) if args.previous and os.path.exists(f"{args.previous}/keys.json") else {}
         cached = os.path.exists(f"{data}/streams.pkl") and not args.task_ids      # written by export_chunks.py, one process per chunk of solvers
         if cached:
             task_keys = dict.fromkeys(task_ids)     # export_chunks.py replays with no step cap, so no later --previous may reuse these rows
-        resumed = set() if cached else {t for t in task_ids if (entry := read_key(data, t)) is not None and entry["key"] == task_keys[t]}
-        reused = {t for t in task_ids if t not in resumed and t in previous and previous[t]["key"] == task_keys[t] and os.path.exists(f"{args.previous}/tasks/{t}/{X.DONE}")}
+        resumed = set() if cached else {t for t in task_ids if (entry := read_key(data, t)) is not None and entry["key"] == task_keys[t] and entry.get("determination_end_check", {}).get("proof") == receipts[t]["proof"]}
+        reused = {t for t in task_ids if t not in resumed and t in previous and previous[t]["key"] == task_keys[t] and os.path.exists(f"{args.previous}/tasks/{t}/{X.DONE}") and read_key(args.previous, t).get("determination_end_check", {}).get("proof") == receipts[t]["proof"]}
         to_stream = [t for t in task_ids if t not in resumed | reused]
         if args.previous:
             print(f"{len(reused)} tasks reused, {len(to_stream)} to stream", flush=True)
         if resumed:
             print(f"{len(resumed)} tasks taken from {data}/tasks, {len(to_stream)} to stream", flush=True)
         for t in sorted(reused):
-            reuse_task(data, args.previous, t)
+            reuse_task(data, args.previous, t, receipts[t])
         if cached:
-            write_from_pickle(data, to_stream, pickle.load(open(f"{data}/streams.pkl", "rb")))
+            write_from_pickle(data, to_stream, pickle.load(open(f"{data}/streams.pkl", "rb")), receipts)
         elif to_stream:
             before = {t: v["seconds"] for t, v in previous.items() if v.get("seconds") is not None}
-            stream_with_workers(data, to_stream, len(resumed), before, task_keys, args.step_cap or None, t0)
+            stream_with_workers(data, to_stream, len(resumed), before, task_keys, args.step_cap or None, t0, receipts)
+        for task in task_ids:
+            D.check_unchanged(receipts[task], Path(CORPUS), Path(TASKS))
         print(f"streamed in {time.time() - t0:.0f}s", flush=True)
         entries, counts, distinct = assemble(data, task_ids, held_out)
     except BaseException as stop:       # an exception, a KeyboardInterrupt, or the SIGTERM turned into one

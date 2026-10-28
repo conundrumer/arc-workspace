@@ -2335,6 +2335,17 @@ class Converter:
             return (("Params",), name)   # the determination of the parameter
         return key
 
+    def determines_parameter(self, scope: tuple[str, ...], name: str,
+                             instances: tuple[str, ...] = ()) -> bool:
+        """Whether this source head determines a declared stored parameter.
+
+        Relation identity, including explicit name and instance overrides, is
+        owned by rel_key. A Determine scope alone does not make a helper or
+        an instance port a parameter.
+        """
+        return scope == ("Determine",) and not instances and \
+            self.rel_key(scope, name) == (("Params",), name)
+
     def rel_name(self, scope: tuple[str, ...], name: str) -> str:
         key = self.rel_key(scope, name)
         if key not in self.names:

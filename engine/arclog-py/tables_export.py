@@ -171,6 +171,8 @@ import numpy as np
 import pandas as pd
 import pyarrow
 import arclog
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "src"))
+from engine.package_fingerprint import digest_files, package_files as installed_package_files
 import export_checks
 import export_rows
 from export_rows import PARTS
@@ -270,18 +272,9 @@ class Slots:
             self.give(count)
 
 
-def digest_files(files):
-    """The sha256 of the (name, path) pairs `files`, in the order of the names: each name and the bytes of its file."""
-    digest = hashlib.sha256()
-    for name, f in sorted(files):
-        digest.update(name.encode() + b"\0" + open(f, "rb").read() + b"\0")
-    return digest.hexdigest()
-
-
 def package_files():
-    """The (name, path) pairs of the files of the installed `arclog` package, its compiled library among them (it holds the lib's registry and constructions)."""
-    package = os.path.dirname(arclog.__file__)
-    return [(os.path.relpath(f, package), f) for f in glob.glob(f"{package}/**", recursive=True) if os.path.isfile(f) and "__pycache__" not in f]
+    """The installed arclog files, including its compiled library."""
+    return installed_package_files(os.path.dirname(arclog.__file__))
 
 
 def engine_digest():

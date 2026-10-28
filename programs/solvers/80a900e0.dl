@@ -104,14 +104,15 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(P, _, Ch).
     .init class_color = Mode<Ident, Color, Position>
     class_color.item(Id, Col, P) :- square.id([E, P], Id), ex_in(E, P, Col).
 
-    .decl square_color(e: Example, col: Color)
-    square_color(E, Col) :- square.id([E, _], Id), class_color.mode(Id, Col).
+    // The inputs.
+    .init boards = Tally<Unit, Example>
+    boards.item($U(), E) :- ex_in(E, _, _).
 
-    // Some input whose squares do not take the color.
-    .decl off_board(col: Color)
-    off_board(Col) :- square_color(_, Col), ex_in(E, _, _), !square_color(E, Col).
+    // The inputs in which the color is a square class's most common color.
+    .init color_boards = Tally<Color, Example>
+    color_boards.item(Col, E) :- square.id([E, _], Id), class_color.mode(Id, Col).
 
     // The checkerboard's colors: a square class's most common color, in every input.
     .decl bg(col: Color)
-    bg(Col) :- square_color(_, Col), !off_board(Col).
+    bg(Col) :- color_boards.tally(Col, N), boards.tally($U(), N).
 }

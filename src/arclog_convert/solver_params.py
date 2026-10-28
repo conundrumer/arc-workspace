@@ -45,7 +45,7 @@ from arclog_convert.forms import (
     quote,
 )
 from arclog_convert.leaves import Written
-from arclog_convert.lib import KeyedTable, PROPOSER_COLS, keyed_row, pascal, takes_set_mark
+from arclog_convert.lib import KeyedTable, PROPOSER_COLS, keyed_row, pascal, takes_set_mark, require_exact_set
 from arclog_convert.terms import name_of
 
 
@@ -388,13 +388,20 @@ class ParamsMixin:
     def set_mark(self, amp, r, props, facts, grids) -> str:
         """` (SET)` for a `DET` or `DET_OR_RULE` of `r` with no body, by
         `props`, where each proposer has one column and is no type-domain
-        proposer, and the parameter's `param` form holds several rows: the
-        parameter's one value is the proposers' whole set of rows. Else the
-        empty string."""
+        proposer, and the parameter's `param` form holds several rows with
+        an exact proposer verdict. Coverage alone raises a checked error:
+        row count cannot establish equality with the proposer's whole set.
+        Returns the empty string where no set mark is needed."""
         if not props or not all(takes_set_mark(p) for p in props):
             return ""
         rows, grids = self.param_rows(amp, r, facts, grids)
-        return " (SET)" if len(rows) + len(grids) > 1 else ""
+        if len(rows) + len(grids) <= 1:
+            return ""
+        # All callers (ordinary, rigid part, and @derive) use this checked
+        # boundary. Cardinality never proves proposer-set equality.
+        parameter = r.name.removeprefix("_rigid_")
+        require_exact_set(amp, props, self.plan().get(parameter))
+        return " (SET)"
 
     def param_line(self, amp, r, facts, grids) -> str:
         """The `param` form of `r`'s stored rows, with no column of an open

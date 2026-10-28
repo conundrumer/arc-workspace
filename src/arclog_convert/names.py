@@ -290,7 +290,7 @@ def column_map(s: "Solver", names: dict, insts: dict[str, str], text: ParityText
                 width = None if w is None else c.souffle_arity(w.scope, w.relation)
                 if w is None or w.columns is None or cols is None or width is None or len(cols) != len(w.columns):
                     continue
-                got = _souffle_columns(_read_sites(site_columns(c, cols, inst), _named_sites(c, written, w.scope, ())),
+                got = _souffle_columns(_read_sites(site_columns(c, cols, inst), _named_sites(c, written, w.scope, w.relation, ())),
                                        w.columns, width)
             else:
                 scope, relation = tuple(source["component"]), source["relation"]
@@ -335,14 +335,15 @@ def _entry(writings: dict[frozenset[str], tuple[tuple[Source, ...], ...]], sites
     return {"writings": written} if len(written) > 1 else top
 
 
-def _named_sites(c: "Converter", written: str, scope: tuple[str, ...], instances: tuple[str, ...]
+def _named_sites(c: "Converter", written: str, scope: tuple[str, ...], relation: str, instances: tuple[str, ...]
                  ) -> set[tuple[str, str | None]] | None:
     """The (label, field) sites that a read names of the relation `written`,
-    declared in `scope`, where it is a relation of `Determine` that is no
-    instance's port (`instances` are its instance path): a `DET` has as its
+    declared in `scope`, where its native identity determines a matching
+    Params relation (`instances` are its instance path). A `DET` has as its
     columns the labels that a read names, and a label no read names is
-    existential. None where the relation is no such `DET`, or no read names it."""
-    return c.read_sites.get(written) if scope == (DETERMINE,) and not instances else None
+    existential. Helpers retain their full RULE columns. None where the
+    relation is no such `DET`, or no read names it."""
+    return c.read_sites.get(written) if c.determines_parameter(scope, relation, instances) else None
 
 
 def _read_sites(columns: list[list[Site]], named: set[tuple[str, str | None]] | None) -> list[list[Site]]:
@@ -373,7 +374,7 @@ def _own_columns(c: "Converter", resolved: tuple, scope: tuple[str, ...], relati
     if len(kept) != len(cols):
         return None
     return _entry(c.writings.get(written, {}), site_columns(c, cols, inst, port),
-                  lambda sites: _souffle_columns(sites, kept, width), _named_sites(c, written, scope, ()))
+                  lambda sites: _souffle_columns(sites, kept, width), _named_sites(c, written, scope, relation, ()))
 
 
 def _parity_columns(c: Converter, at: Place) -> list[list[dict]] | dict | None:
@@ -388,7 +389,7 @@ def _parity_columns(c: Converter, at: Place) -> list[list[dict]] | dict | None:
         return None
     return _entry(c.writings.get(written, {}), site_columns(c, cols, inst),
                   lambda sites: _souffle_columns(sites, kept, at.width),
-                  _named_sites(c, written, at.scope, at.relation.instances))
+                  _named_sites(c, written, at.scope, at.relation.name, at.relation.instances))
 
 
 def _souffle_columns(columns: list[list[Site]], placement: tuple[Placement, ...], width: int) -> list[list[dict]]:
