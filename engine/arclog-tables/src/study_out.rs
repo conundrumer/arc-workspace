@@ -21,7 +21,17 @@ pub(super) fn train(e: &Evaluation<'_>, output: &GraphRelation, budget: &mut Bud
                         Err(end) => {model_end=Some(end);return ControlFlow::Break(());}
                     };
                     let decoded = packed.iter().map(|row| row.iter().zip(["Position","Color"]).map(|(term,ty)|
-                        arclog::study::render_terms::decode(ty,i64::from(*term),e.registry)
+                        arclog::study::render_terms::decode(ty,i64::from(*term),e.registry).map(|mut cell| {
+                            if ty=="Position" {
+                                // OUT positions retain their reference extent
+                                // even when colors conflict or no whole grid
+                                // can be read. Never substitute expected_grid.
+                                let extent=crate::extents::position_extent(Term::encode_number(*term as i32),&arclog::types::ValueType::Position);
+                                cell["extent_status"]=json!(if extent.is_some(){"resolved"}else{"unresolved"});
+                                cell["extent"]=json!(extent.map(|x|[x.rows,x.columns]));
+                            }
+                            cell
+                        })
                     ).collect::<Result<Vec<_>,String>>()).collect::<Result<Vec<_>,String>>();
                     let decoded = match decoded {
                         Ok(v) => v,

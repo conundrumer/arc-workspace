@@ -45,3 +45,10 @@ Use equal fresh native body/relation rows only after checking exact historical
 kept values, schema, choice/example/model and row identities. Conflicting
 resolved extents remain a mismatch. Do not reinterpret old missing metadata
 as no_grid, or inject foreign-session Ident values to recreate an observation.
+
+Detailed conditional OUT `choices[].out.train[].models[].rows` also annotates
+each typed Position cell with string `extent_status` and positive `extent` (or
+null when unresolved). This uses the native Position singleton/margin rule
+regardless of `grid_defined`. Conflicting colors, holes or multiple colors per
+point do not remove a Position's determined reference extent. The expected
+output grid is never used to fill missing metadata.
