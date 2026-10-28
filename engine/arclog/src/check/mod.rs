@@ -111,8 +111,7 @@ pub enum CheckId {
     /// and has no body. A column that the clause's label takes from the
     /// rule on `(= *X 0)` above is that rule's.
     Types,
-    /// The pose rule: a Pose label stands only at the sites that
-    /// `docs/arclog/rigid.md#the-pose` gives.
+    /// The pose rule of `docs/arclog/rigid.md#the-pose`.
     PoseRule,
     /// The labels that `=` makes and that an `OR` or an `IF` exports.
     MadeAndExportedLabels,
