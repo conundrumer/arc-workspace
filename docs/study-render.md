@@ -327,10 +327,23 @@ available native frame/provenance export; the core-only `types_frames=pending`
 flag deliberately does not claim the separate table part has been supplied.
 
 INIT projection implementation uses the evaluator's `InstanceShape.head_labels`
-and `port_types`, including parameter record field order and inserted Unit
-columns. It does not look up resolver column_position on input heads, which
-need not have those entries. Each projection item has native port-column
-ordinal/type, original label/body column or an explicit inserted Unit constant,
-and `head_occurrence_paths` (all exact head occurrences, with a single
-`site_path` only when unique). `group_key_label_ids` names the grouping key
-separately: construction input rows exclude that key and are evaluated per key.
+and `port_types`, including parameter record field order. It does not look up
+resolver column_position on input heads, which need not have those entries.
+An unbound parameter is an empty record and contributes **zero** row positions;
+no Unit value or body label is inserted. `input_port_columns` retains every
+registry-declared logical column, its original `logical_port_column` ordinal,
+structured name, role (`group_key`/`input_value`), native `row_columns`, record
+fields and zero-width status. A zero-width column remains addressable by its
+logical identity even though it has no scalar projection entry.
+
+Each `input_port_projection` item has native scalar `port_column` ordinal/type,
+original logical port ordinal/name and record field identity, original
+label/body column, and `head_occurrence_paths` (all exact head occurrences, with
+a single `site_path` only when unique). `inserted_constant` is null.
+`group_key_label_ids` names grouping keys separately: construction input rows
+exclude that key and are evaluated per key. Scalar row ordinals and original
+logical column ordinals have different purposes; zero-width fields never
+renumber a logical column. Stored corpus-v5/v8 tables retain their historical
+Unit-bearing schemas. Join stored body columns by original label identity and
+verify exact schema/layout before using a newer projection; never drop a stored
+column or fabricate a Unit to make a historical schema match.
