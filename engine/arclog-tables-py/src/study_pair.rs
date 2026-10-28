@@ -4,7 +4,8 @@ use arclog::decode::corpus::read_task_files;
 use arclog::registry::Registry;
 use arclog::session::{SessionBound, TaskSession};
 use arclog_bindings::{Names, PyMutationPoint, PyStudyProgram, PyValidMutant, constructions};
-use arclog_tables::columns::case_columns;
+use arclog_tables::columns::case_columns_in;
+use arclog::eval::join::Materializer;
 use arclog_tables::tables::{evidence_tables, study_pair};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -46,7 +47,7 @@ fn evaluate_pair(
             },
             settings.caps,
         );
-        let result = study_pair::evaluate_pair(
+        let mut result = study_pair::evaluate_pair(
             &gold.program,
             &point.inner,
             &mutant.inner,
@@ -57,8 +58,10 @@ fn evaluate_pair(
             &settings,
         );
         let evidence = evidence_tables(&read, Registry::get());
-        let g = case_columns(&evidence, &result.gold, read.train.len(), None);
-        let m = case_columns(&evidence, &result.mutant, read.train.len(), None);
+        let materializer=Materializer::new(&session,&result.limits);
+        let g = case_columns_in(&materializer,&evidence, &result.gold, read.train.len(), None);
+        let m = case_columns_in(&materializer,&evidence, &result.mutant, read.train.len(), None);
+        packing_status(&mut result.report,[&g,&m]);
         (result.report.to_string(), g, m)
     });
     Ok((
@@ -193,9 +196,12 @@ impl PyStudyTaskEvaluator {
         let constructions=constructions()?;
         let (report,columns)=py.detach(|| self.with_cache("gold_tables",|cache| {
             if cache.activate(&gold.program) {self.session.results.clear();}
-            let (mut report,tables)=study_pair::gold_tables_cached(&gold.program,&self.task,&self.session,constructions,&self.settings,cache);
+            let limits=self.settings.operation_limits();
+            let (mut report,tables)=study_pair::gold_tables_cached_in(&gold.program,&self.task,&self.session,constructions,&self.settings,cache,&limits);
             let started=std::time::Instant::now();
-            let columns=case_columns(&self.evidence,&tables,self.task.train.len(),None);
+            let materializer=Materializer::new(&self.session,&limits);
+            let columns=case_columns_in(&materializer,&self.evidence,&tables,self.task.train.len(),None);
+            packing_status(&mut report,[&columns]);
             report["native_columns_seconds"]=started.elapsed().as_secs_f64().into();
             Ok((report,columns))
         })).map_err(PyValueError::new_err)?;
@@ -209,7 +215,9 @@ impl PyStudyTaskEvaluator {
             if cache.activate(&gold.program) {self.session.results.clear();}
             let mut result=study_pair::evaluate_pair_cached(&gold.program,&point.inner,&mutant.inner,&self.task,&self.judged,&self.session,constructions,&self.settings,cache);
             let started=std::time::Instant::now();
-            let (g,m)=study_pair::pair_columns_cached(&self.evidence,&result,self.task.train.len(),cache);
+            let materializer=Materializer::new(&self.session,&result.limits);
+            let (g,m)=study_pair::pair_columns_cached(&materializer,&self.evidence,&result,self.task.train.len(),cache);
+            packing_status(&mut result.report,[&g,&m]);
             result.report["timings"]["native_columns"]=started.elapsed().as_secs_f64().into();
             result.report["cache"]=cache.stats();
             result.report["cache"]["session_result_bytes"]=self.session.results.bytes().into();
@@ -218,5 +226,16 @@ impl PyStudyTaskEvaluator {
             Ok((result.report.to_string(),g,m))
         })).map_err(PyValueError::new_err)?;
         Ok((report,PyCaseTables::of(py,self.task_name.clone(),"gold".into(),false,self.settings.projection_cap,&g,None,None)?,PyCaseTables::of(py,self.task_name.clone(),"mutant".into(),false,self.settings.projection_cap,&m,None,None)?))
+    }
+}
+
+
+// One report adapter for every native study packing entry. Execution evidence
+// remains unchanged: an output-buffer stop is separate collection evidence.
+fn packing_status<'a>(report:&mut serde_json::Value,columns:impl IntoIterator<Item=&'a arclog_tables::columns::CaseColumns>) {
+    let stops:Vec<_>=columns.into_iter().filter_map(|c|c.packing_stop()).map(|stop|serde_json::json!({"bound":format!("{:?}",stop.bound),"form":stop.form.0.iter().map(|s|s.0).collect::<Vec<_>>()})).collect();
+    if !stops.is_empty() {
+        report["packing"] = serde_json::json!({"status":"stopped","stops":stops});
+        if report["status"]!="fault" {report["status"]="stopped".into();report["reason"]=report["packing"]["stops"][0]["bound"].clone();}
     }
 }

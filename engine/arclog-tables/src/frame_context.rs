@@ -85,24 +85,33 @@ impl DirectContexts {
         }
     }
 
-    pub(super) fn complete(&self, contents: &Contents, column: usize) -> bool {
-        // This inspects already materialized cells, not another binding query.
-        for (entry, example) in contents.examples.iter().enumerate() {
-            if self.row_examples[column].is_none() {
-                if self.entries[entry].at(&contents.frames[column]).is_some() { continue; }
-                return false;
-            }
-            let Ok(assigned) = &example.rows else { continue; };
-            for (_, models) in &assigned.at { for model in models {
-                if let RelationValue::Rows(rows) = model {
-                    let mut complete = true;
-                    each_row(rows, &mut |row| { complete &= self.at(contents, entry, column, row).is_some(); });
-                    if !complete { return false; }
+    pub(super) fn complete(&self, materializer:&Materializer<'_>, contents:&Contents, column:usize)->Result<bool,arclog::eval::ReachedBound> {
+        let frame=&contents.frames[column];
+        let grid_for=|value:TermId|RowExample::Column(0).get(&[value]).and_then(|e|self.examples.get(usize::from(e.index()))).and_then(|g|g.at(frame)).is_some();
+        let mut visited=0usize;
+        for (entry,example) in contents.examples.iter().enumerate() {
+            materializer.check()?;
+            let Some(binding)=self.row_examples[column] else {
+                if self.entries[entry].at(frame).is_some() {continue;}return Ok(false);
+            };
+            let Ok(assigned)=&example.rows else {continue;};
+            for (_,models) in &assigned.at {for model in models {if let RelationValue::Rows(rows)=model {
+                if rows.is_empty() {continue;}
+                match binding {
+                    RowExample::Constant(value)=>if !grid_for(value) {return Ok(false);},
+                    RowExample::Column(position)=>{
+                        let Some((part,local))=rows.parts().iter().find_map(|part|part.columns.iter().position(|c|usize::from(c.0)==position).map(|local|(part,local))) else {return Ok(false);};
+                        for cells in part.rows.rows() {
+                            if visited%1024==0 {materializer.check()?;}visited+=1;
+                            if !grid_for(cells[local]) {return Ok(false);}
+                        }
+                    }
                 }
-            }}
+            }}}
         }
-        true
+        Ok(true)
     }
+
 }
 
 struct Proof<'a> {

@@ -13,7 +13,8 @@ use arclog::stream::corpus::{fault_line, solver_streams, token_ids, StreamLabels
 use arclog::stream::{DecodeSettings, Emitter, Vocabulary};
 use arclog::task::{JudgedTask, Task};
 use arclog_bindings::{constructions, walk_corpus, Progress, PyConsistencyKind, PyReplayProgress};
-use arclog_tables::columns::case_columns;
+use arclog_tables::columns::case_columns_in;
+use arclog::eval::join::Materializer;
 use arclog_tables::tables::{evidence_tables, Points, Table};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -150,7 +151,13 @@ pub(crate) fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases
                 steps,
                 &|record: &mut StreamRecord, decoder, stepped| record.step(decoder, stepped, points),
                 &|solver| progress.start(solver),
-                &|solver, stream, replay| replay.into_result().map(|record| (case_columns(&evidence[solver], &record.tables, trains[solver], Some(streamed[solver].2[stream])).with_copies(&record.copies), record.ended)),
+                &|solver, stream, replay| replay.into_result().map(|record| {
+                    let limits=settings.operation_limits();
+                    let empty_session=arclog::session::TaskSession::new(arclog::session::SessionBound {bytes:arclog::session::SESSION_BYTES},settings.caps);
+                    let session=record.session.as_ref().unwrap_or(&empty_session);
+                    let materializer=Materializer::new(session,&limits);
+                    (case_columns_in(&materializer,&evidence[solver],&record.tables,trains[solver],Some(streamed[solver].2[stream])).with_copies(&record.copies),record.ended)
+                }),
                 &|solver| progress.settle(solver),
                 step_cap,
             )
@@ -171,6 +178,7 @@ pub(crate) fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases
             };
             match outcome {
                 Ok(((columns, ended), relations)) => {
+                    if let Some(stop)=columns.packing_stop() {faults.push(format!("{task} {}: native packing stopped {:?} at {:?}",case.case,stop.bound,stop.form));}
                     tables.push(PyCaseTables::of(py, task.clone(), case.case.clone(), case.concept, settings.projection_cap, &columns, Some(relations), None)?);
                     if let Some(at) = ended.filter(|at| matches!(at.kind, PyConsistencyKind::Stopped)) {
                         faults.push(at.line(task, &case.case));

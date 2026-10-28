@@ -28,6 +28,9 @@ impl EndedAt {
 #[derive(Clone, Default)]
 pub(crate) struct StreamRecord {
     pub(crate) tables: Vec<(usize, Table)>,
+    /// Stable native namespace/accounting only. A packing callback binds its
+    /// own current operation; no historical query deadline is cached here.
+    pub(crate) session:Option<arclog::session::TaskSession>,
     /// The declared rows that the constructions' outputs broke, where the replay checks them.
     pub(crate) copies: Vec<CopyViolation>,
     pub(crate) ended: Option<EndedAt>,
@@ -36,6 +39,7 @@ pub(crate) struct StreamRecord {
 impl StreamRecord {
     /// Records the tables of a step and, where the step judged, its consistency.
     pub(crate) fn step(&mut self, decoder: &Decoder<'_>, stepped: Stepped<'_>, points: Points) {
+        if self.session.is_none() {self.session=Some(decoder.evaluation_inputs().1.clone());}
         record_step(&mut self.tables, decoder, stepped.index, points);
         for violation in decoder.take_copy_violations() {
             if !self.copies.contains(&violation) {

@@ -81,7 +81,7 @@ use arclog::decode::{relation_dets, Decoder};
 use arclog::eval::body_view::BodyView;
 use arclog::eval::ir::{Argument, Arguments, IrNode, IrPaths, NodePaths};
 use arclog::eval::determinations::relation_spelled;
-use arclog::eval::join::each_row;
+use arclog::eval::join::{Budget, Materializer};
 use arclog::eval::{RelationValue, Stop, TableWork};
 use arclog::hash::StableHashMap;
 use arclog::judge::determination::Assignment;
@@ -152,9 +152,9 @@ impl Merged {
 /// The extents of one entry of a table, a model at an assignment on an example.
 #[derive(Clone, Debug)]
 pub enum EntryExtents {
-    /// For each row of the model's relation, in the order of [`each_row`], the
+    /// For each row of the model's relation, in the order of [`arclog::eval::join::each_row`], the
     /// extent of each of the table's extent columns, in their order.
-    Rows(Vec<Box<[Option<Extent>]>>),
+    Rows(std::sync::Arc<ExtentRows>),
     /// The entry has no extent: its model holds no rows.
     Absent,
     /// The entry holds rows and has no extent, for this reason: the message
@@ -163,6 +163,34 @@ pub enum EntryExtents {
     Lost(String),
     /// The evaluation of the bodies stopped at this bound.
     Stopped(Stop),
+}
+
+/// Materialized data and the reservation held until its actual last owner
+/// drops it. Clones of an Arc share both; genuine copies need new admission.
+#[derive(Debug)]
+pub struct Materialized<T> {
+    value: T,
+    _allocation: std::sync::Arc<arclog::session::SessionAllocation>,
+}
+impl<T> Materialized<T> {
+    pub(crate) fn new(value:T,allocation:std::sync::Arc<arclog::session::SessionAllocation>)->Self {Self {value,_allocation:allocation}}
+}
+impl<T> std::ops::Deref for Materialized<T> {
+    type Target=T;
+    fn deref(&self)->&T {&self.value}
+}
+
+/// A full-row extent matrix admitted under the session byte bound. Cloning
+/// its Arc shares both the cells and their byte reservation.
+#[derive(Debug)]
+pub struct ExtentRows {
+    rows: Box<[Box<[Option<Extent>]>]>,
+    _allocation: std::sync::Arc<arclog::session::SessionAllocation>,
+}
+
+impl std::ops::Deref for ExtentRows {
+    type Target = [Box<[Option<Extent>]>];
+    fn deref(&self) -> &Self::Target { &self.rows }
 }
 
 /// The extents of the made frames of a table's `Box` columns.
@@ -227,9 +255,17 @@ struct Gathered {
     /// The first reason that a body which gives the entry's rows faulted, or
     /// that the extents cannot derive them.
     lost: Option<String>,
+    allocations: Vec<std::sync::Arc<arclog::session::SessionAllocation>>,
 }
 
 impl Gathered {
+    fn admit(&mut self,reads:&Reads<'_>,rows:&Relation,columns:usize,form:&NodePath)->Result<(),Stop> {
+        let payload=usize::from(rows.arity()).saturating_mul(std::mem::size_of::<TermId>()).saturating_add(columns.saturating_mul(std::mem::size_of::<Merged>()));
+        match reads.materializer().admit(rows,Materializer::row_bytes(payload,4)) {
+            Ok(owner)=>{self.allocations.push(owner);Ok(())},
+            Err(bound)=>{let stop=Stop {bound,form:form.clone()};self.stop=Some(stop.clone());Err(stop)}
+        }
+    }
     /// Records `reason` as the reason the entry lost its extents, where it has
     /// none yet.
     fn lose(&mut self, reason: &str) {
@@ -266,16 +302,19 @@ struct EvidencePlan {
     no_grid: Vec<bool>,
     contexts: DirectContexts,
     needed: Vec<bool>,
+    stop: Option<Stop>,
 }
 
 impl EvidencePlan {
-    fn new(decoder:&Decoder<'_>,earlier:&[&Table],checked:&CheckedProgram,form:&NodePath,contents:&Contents)->Self {
+    fn new(materializer:&Materializer<'_>,decoder:&Decoder<'_>,earlier:&[&Table],checked:&CheckedProgram,form:&NodePath,contents:&Contents)->Self {
         let types=contents.columns.iter().map(|c|c.ty.clone()).collect::<Vec<_>>();
         let columns=extent_columns(&types,&contents.frames);
         let no_grid=no_grid_columns(decoder,earlier,contents,&columns);
         let contexts=DirectContexts::new(decoder,checked,form,contents,earlier);
-        let needed=derivation_mask(contents,&columns,&no_grid,&contexts);
-        Self {columns,no_grid,contexts,needed}
+        let (needed,stop)=match derivation_mask(materializer,contents,&columns,&no_grid,&contexts) {
+            Ok(needed)=>(needed,None),Err(bound)=>(vec![false;columns.len()],Some(Stop {bound,form:form.clone()})),
+        };
+        Self {columns,no_grid,contexts,needed,stop}
     }
 
     fn wanted(&self,columns:&[u32])->Vec<bool> {
@@ -287,11 +326,11 @@ impl EvidencePlan {
 /// Export coverage does not request evaluation. Only a Box without a direct
 /// proof needs a widened derivation. A task-wide row can carry its own proved
 /// Example binding; the absence of an outer example does not erase that proof.
-fn derivation_mask(contents: &Contents, columns: &[u32], no_grid: &[bool], contexts: &DirectContexts) -> Vec<bool> {
-    columns.iter().enumerate().map(|(k, &column)| {
-        let column = column as usize;
-        contents.columns[column].ty == ValueType::Box && !no_grid[k]
-            && !contexts.complete(contents, column)
+fn derivation_mask(materializer:&Materializer<'_>,contents:&Contents,columns:&[u32],no_grid:&[bool],contexts:&DirectContexts)->Result<Vec<bool>,arclog::eval::ReachedBound> {
+    columns.iter().enumerate().map(|(k,&column)| {
+        let column=column as usize;
+        if contents.columns[column].ty!=ValueType::Box || no_grid[k] {return Ok(false);}
+        contexts.complete(materializer,contents,column).map(|complete|!complete)
     }).collect()
 }
 
@@ -317,9 +356,13 @@ fn no_grid_columns(decoder:&Decoder<'_>, earlier:&[&Table], contents:&Contents, 
     }).collect()
 }
 
-fn completed_rows(contexts:&DirectContexts,contents:&Contents,example:usize,relation:&Relation,columns:&[u32],no_grid:&[bool],gathered:Option<&Gathered>)->Vec<Box<[Option<Extent>]>> {
-    let mut result=Vec::new();
-    each_row(relation,&mut |row| {
+fn completed_rows(reads:&Reads<'_>,contexts:&DirectContexts,contents:&Contents,example:usize,relation:&Relation,columns:&[u32],no_grid:&[bool],gathered:Option<&Gathered>)->Result<std::sync::Arc<ExtentRows>,Stop> {
+    let stopped=|bound|Stop {bound,form:reads.form.clone()};
+    let materializer=reads.materializer();
+    let bytes=Materializer::row_bytes(columns.len().saturating_mul(std::mem::size_of::<Option<Extent>>()),2);
+    let allocation=materializer.admit(relation,bytes).map_err(stopped)?;
+    let mut result=Vec::with_capacity(usize::try_from(relation.len()).expect("admitted row count"));
+    materializer.walk(relation,&mut |row| {
         let slots=gathered.and_then(|e|e.rows.get(row));
         result.push(columns.iter().enumerate().map(|(k,c)| {
             if no_grid[k] {return None;}
@@ -334,14 +377,20 @@ fn completed_rows(contexts:&DirectContexts,contents:&Contents,example:usize,rela
                 _=>None,
             }
         }).collect());
-    });result
+    }).map_err(stopped)?;
+    Ok(std::sync::Arc::new(ExtentRows {rows:result.into_boxed_slice(),_allocation:allocation}))
 }
 
-fn direct_extents(contexts:DirectContexts,contents:&Contents,columns:Vec<u32>,no_grid:Vec<bool>)->Extents {
+fn stopped_extents(contexts:DirectContexts,contents:&Contents,columns:Vec<u32>,no_grid:Vec<bool>,stop:Stop)->Extents {
+    let examples=contents.examples.iter().map(|e|e.rows.as_ref().map_or_else(|_|Vec::new(),|a|a.at.iter().map(|(_,models)|models.iter().map(|v|if matches!(v,RelationValue::Rows(_)){EntryExtents::Stopped(stop.clone())}else{EntryExtents::Absent}).collect()).collect())).collect();
+    Extents {columns,no_grid,contexts,examples}
+}
+
+fn direct_extents(reads:&Reads<'_>,contexts:DirectContexts,contents:&Contents,columns:Vec<u32>,no_grid:Vec<bool>)->Extents {
     let examples=contents.examples.iter().enumerate().map(|(example,e)|e.rows.as_ref().map_or_else(|_|Vec::new(),|a|a.at.iter().map(|(_,models)|models.iter().map(|v|match v {
-        // These rows were already materialized and charged. This is the same
-        // formatting walk as the native value buffer, not another evaluation.
-        RelationValue::Rows(rows)=>EntryExtents::Rows(completed_rows(&contexts,contents,example,rows,&columns,&no_grid,None)),
+        RelationValue::Rows(rows)=>match completed_rows(reads,&contexts,contents,example,rows,&columns,&no_grid,None) {
+            Ok(rows)=>EntryExtents::Rows(rows),Err(stop)=>EntryExtents::Stopped(stop),
+        },
         _=>EntryExtents::Absent,
     }).collect()).collect())).collect();
     Extents {columns,no_grid,examples,contexts}
@@ -349,12 +398,17 @@ fn direct_extents(contexts:DirectContexts,contents:&Contents,columns:Vec<u32>,no
 
 /// Native per-cell annotation, in the relation's each_row order. This is used
 /// for body/component buffers and the full-held-choice sidecar alike.
-pub fn annotated_rows(contents:&Contents,example:usize,assignment:usize,model:usize,relation:&Relation)->Vec<Vec<(u8,Option<Extent>)>> {
+pub fn annotated_rows(materializer:&Materializer<'_>,form:&NodePath,contents:&Contents,example:usize,assignment:usize,model:usize,relation:&Relation)->Result<Materialized<Vec<Vec<(u8,Option<Extent>)>>>,Stop> {
     let columns=contents.columns.iter().enumerate().filter(|(_,c)|c.ty.is_box()).map(|(i,_)|i as u32).collect::<Vec<_>>();
     let extents=contents.extents.as_ref();
     let held=extents.and_then(|e|e.entry(example,assignment,model));
-    let mut result=Vec::new();let mut at=0;
-    each_row(relation,&mut |row| {
+    // A stopped lazy product has never been admitted as a full row buffer.
+    // Preserve its stop rather than retrying through direct-cell fallbacks.
+    if let Some(EntryExtents::Stopped(stop))=held { return Err(stop.clone()); }
+    let stopped=|bound|Stop {bound,form:form.clone()};
+    let allocation=materializer.admit(relation,Materializer::row_bytes(columns.len().saturating_mul(std::mem::size_of::<(u8,Option<Extent>)>()),2)).map_err(stopped)?;
+    let mut result=Vec::with_capacity(usize::try_from(relation.len()).expect("admitted row count"));let mut at=0;
+    materializer.walk(relation,&mut |row| {
         result.push(columns.iter().enumerate().map(|(k,c)| {
             let no_grid=contents.columns[*c as usize].ty==ValueType::Offset || extents.is_some_and(|e|e.no_grid.get(k)==Some(&true));
             if no_grid {return (0,None);}
@@ -366,7 +420,7 @@ pub fn annotated_rows(contents:&Contents,example:usize,assignment:usize,model:us
                 });
             (if extent.is_some(){1}else{2},extent)
         }).collect());at+=1;
-    });result
+    }).map_err(stopped)?;Ok(Materialized::new(result,allocation))
 }
 
 /// The extents of the made frames of the `Box` columns of the table of
@@ -380,15 +434,16 @@ pub fn table_extents(decoder: &Decoder<'_>, earlier: &[&Table], checked: &Checke
 
 pub(crate) fn table_extents_with_context(decoder: &Decoder<'_>, earlier: &[&Table], checked: &CheckedProgram, relation: &GraphRelation, contents: &Contents, context: AssignmentContext<'_>) -> Option<Extents> {
     let types: Vec<ValueType> = contents.columns.iter().map(|column| column.ty.clone()).collect();
-    let EvidencePlan {columns,no_grid,contexts,needed}=EvidencePlan::new(decoder,earlier,checked,checked.program.form_of(relation.node),contents);
+    let reads=Reads::with_context(decoder,earlier,checked.program.form_of(relation.node),context);
+    let EvidencePlan {columns,no_grid,contexts,needed,stop}=EvidencePlan::new(&reads.materializer(),decoder,earlier,checked,checked.program.form_of(relation.node),contents);
     if columns.is_empty() { return None; }
+    if let Some(stop)=stop {return Some(stopped_extents(contexts,contents,columns,no_grid,stop));}
     if !needed.iter().any(|needed| *needed) {
-        return Some(direct_extents(contexts,contents,columns,no_grid));
+        return Some(direct_extents(&reads,contexts,contents,columns,no_grid));
     }
-    let reads = Reads::with_context(decoder, earlier, checked.program.form_of(relation.node), context);
     let subject = Subject { assignment_layout:&contents.assignment_layout, checked, relation:Some(relation), types: &types, examples: &contents.examples, columns: &columns, needed:Some(&needed) };
     let gathered = derive(decoder, &reads, &subject);
-    Some(Extents { examples: finish(&contexts, contents, &gathered, &columns, &no_grid), columns, no_grid, contexts })
+    Some(Extents { examples: finish(&reads,&contexts, contents, &gathered, &columns, &no_grid), columns, no_grid, contexts })
 }
 
 /// Extents of a checked body query, using the same native derivation and
@@ -405,10 +460,11 @@ pub(crate) fn body_extents_with_context(decoder:&Decoder<'_>,earlier:&[&Table],c
 /// Nested key evidence shares the parent work count and source lookup cache.
 fn body_extents_in(decoder:&Decoder<'_>,reads:&Reads<'_>,checked:&CheckedProgram,view:&BodyView,contents:&Contents)->Option<Extents> {
     let types=contents.columns.iter().map(|c|c.ty.clone()).collect::<Vec<_>>();
-    let EvidencePlan {columns,no_grid,contexts,needed}=EvidencePlan::new(decoder,reads.tables,checked,&view.form,contents);
+    let EvidencePlan {columns,no_grid,contexts,needed,stop}=EvidencePlan::new(&reads.materializer(),decoder,reads.tables,checked,&view.form,contents);
     if columns.is_empty() {return None;}
+    if let Some(stop)=stop {return Some(stopped_extents(contexts,contents,columns,no_grid,stop));}
     if !needed.iter().any(|needed| *needed) {
-        return Some(direct_extents(contexts,contents,columns,no_grid));
+        return Some(direct_extents(reads,contexts,contents,columns,no_grid));
     }
     let subject=Subject {assignment_layout:&contents.assignment_layout,checked,relation:None,types:&types,examples:&contents.examples,columns:&columns,needed:Some(&needed)};
     let mut gathered=subject.examples.iter().map(|e|e.rows.as_ref().map_or_else(|_|Vec::new(),|a|a.at.iter().map(|_|Gathered::default()).collect())).collect::<Vec<Vec<Gathered>>>();
@@ -418,7 +474,7 @@ fn body_extents_in(decoder:&Decoder<'_>,reads:&Reads<'_>,checked:&CheckedProgram
         Ok(views)=>for sub in &views {gather(decoder,reads,&dets,&subject,sub,&placements,&mut gathered)},
         Err(fault)=>lose_all(&mut gathered,&fault_spelled(&fault)),
     }
-    Some(Extents {examples:finish(&contexts,contents,&gathered,&columns,&no_grid),columns,no_grid,contexts})
+    Some(Extents {examples:finish(reads,&contexts,contents,&gathered,&columns,&no_grid),columns,no_grid,contexts})
 }
 
 /// What the derivations of the rows of `subject` give for each of its
@@ -568,11 +624,12 @@ fn gather(decoder: &Decoder<'_>, reads: &Reads<'_>, dets: &[String], subject: &S
                                 entry.stop = Some(stop);
                                 continue;
                             }
+                            if entry.admit(reads,body_rows,subject.columns.len(),&sub.form).is_err() {continue;}
                             let Some(full)=body_layout.full(body_at,body_assignment) else {entry.lose("extent query assignment ordinal is outside its held receipt");continue};
                             let ctx = Ctx { example: example.example, assignment: full, layout:&body_layout, ordinal:body_at };
                             if let Some(stop)=analysis.key_stop(&ctx) {entry.stop=Some(stop);}
                             if let Some(fault)=analysis.key_fault(&ctx) {entry.lose(&fault);}
-                            each_row(body_rows, &mut |row| {
+                            let walked=reads.materializer().walk(body_rows, &mut |row| {
                                 let derived: Box<[TermId]> = key.iter().map(|&column| row[column]).collect();
                                 let slots = entry.rows.entry(derived).or_insert_with(|| vec![Merged::Unset; subject.columns.len()]);
                                 for (k, (slot, &column)) in slots.iter_mut().zip(subject.columns).enumerate() {
@@ -581,6 +638,7 @@ fn gather(decoder: &Decoder<'_>, reads: &Reads<'_>, dets: &[String], subject: &S
                                     }
                                 }
                             });
+                            if let Err(bound)=walked {entry.stop=Some(Stop {bound,form:sub.form.clone()});}
                             // The reads of earlier tables that the rows made may have passed the cap.
                             if let Err(stop) = reads.charge(0, &sub.form) {
                                 entry.stop = Some(stop);
@@ -725,9 +783,13 @@ impl OutputPlan {
             let mut contents=crate::tables::relation_metadata(decoder.registry(),checked,form,&port_relation,0,&dets,examples)?;
             contents.assignment_layout=reads.query_context().layout();
             contents.frames=column_frames(&reads.names,&contents);
-            let plan=EvidencePlan::new(decoder,reads.tables,checked,form,&contents);
+            let plan=EvidencePlan::new(&reads.materializer(),decoder,reads.tables,checked,form,&contents);
             let needed=plan.wanted(&port.wanted);
             let examples=contents.examples.to_vec();
+            if let Some(stop)=&plan.stop {
+                let derived=examples.iter().map(|e|e.rows.as_ref().map_or_else(|_|Vec::new(),|a|a.at.iter().map(|_|Gathered {stop:Some(stop.clone()),..Gathered::default()}).collect())).collect();
+                port.derived=Some((examples,derived,contents.assignment_layout.clone()));continue;
+            }
             let port_subject=Subject {assignment_layout:&contents.assignment_layout,checked,relation:Some(&port_relation),types,examples:&examples,columns:&port.wanted,needed:Some(&needed)};
             let mut derived=if needed.iter().any(|n|*n) {derive(decoder,reads,&port_subject)} else {
                 examples.iter().map(|e|e.rows.as_ref().map_or_else(|_|Vec::new(),|a|a.at.iter().map(|_|Gathered::default()).collect())).collect()
@@ -737,13 +799,17 @@ impl OutputPlan {
             for (example,e) in examples.iter().enumerate() {if let Ok(assigned)=&e.rows {
                 for (at,(_,models)) in assigned.at.iter().enumerate() {for model in models {
                     if let RelationValue::Rows(rows)=model {
-                        let completed=completed_rows(&plan.contexts,&contents,example,rows,&port.wanted,
-                            &port.wanted.iter().map(|c|plan.columns.iter().position(|x|x==c).is_some_and(|k|plan.no_grid[k])).collect::<Vec<_>>(),Some(&derived[example][at]));
+                        let completed=match completed_rows(reads,&plan.contexts,&contents,example,rows,&port.wanted,
+                            &port.wanted.iter().map(|c|plan.columns.iter().position(|x|x==c).is_some_and(|k|plan.no_grid[k])).collect::<Vec<_>>(),Some(&derived[example][at])) {
+                            Ok(rows)=>rows,Err(stop)=>{derived[example][at].stop=Some(stop);continue;}
+                        };
+                        if derived[example][at].admit(reads,rows,port.wanted.len(),form).is_err() {continue;}
                         let mut i=0;
-                        each_row(rows,&mut |row| {
+                        let mut budget=Budget::new(&reads.limits,reads.session);
+                        if let Err(bound)=budget.walk_rows(rows,&mut |row| {
                             derived[example][at].rows.insert(row.into(),completed[i].iter().map(|v|v.map_or(Merged::None,Merged::One)).collect());
                             i+=1;
-                        });
+                        }) {derived[example][at].stop=Some(Stop {bound,form:form.clone()});}
                     } else if let RelationValue::Stopped(stop)=model {
                         derived[example][at].stop=Some(stop.clone());
                     } else {
@@ -758,7 +824,7 @@ impl OutputPlan {
 
     /// The extents that the inputs give each wanted column at the assignment
     /// `assigned` on `example`; a stop of an input's derivation stops `entry`.
-    fn lookups(&self, ctx:&Ctx<'_>, entry: &mut Gathered) -> Vec<Lookup> {
+    fn lookups(&self,reads:&Reads<'_>, ctx:&Ctx<'_>, entry: &mut Gathered) -> Vec<Lookup> {
         let held = self.ports.iter().map(|port| port.entry(ctx)).collect::<Vec<_>>();
         self.columns
             .iter()
@@ -779,7 +845,17 @@ impl OutputPlan {
                     }
                     lookup.bad |= rows.lost.is_some();
                     let position = port.wanted[source.slot] as usize;
+                    if lookup.by_cell || lookup.keyed {
+                        let width=rows.rows.keys().next().map_or(0,|row|row.len());
+                        let bytes=rows.rows.len().saturating_mul(Materializer::row_bytes(width.saturating_mul(std::mem::size_of::<TermId>()).saturating_add(std::mem::size_of::<Merged>()),3));
+                        match reads.materializer().copy(bytes) {
+                            Ok(owner)=>lookup.allocations.push(owner),
+                            Err(bound)=>{entry.stop=Some(Stop {bound,form:reads.form.clone()});lookup.bad=true;continue;}
+                        }
+                    }
+                    let mut visited=0;
                     for (row, slots) in &rows.rows {
+                        if visited%1024==0 {if let Err(bound)=reads.materializer().check() {entry.stop=Some(Stop {bound,form:reads.form.clone()});break;}}visited+=1;
                         let extent = slots[source.slot].extent();
                         let key: Box<[TermId]> = match (&port.key, lookup.keyed) {
                             (Some(key), true) => row[key.clone()].into(),
@@ -810,17 +886,19 @@ fn gather_output(decoder: &Decoder<'_>, reads: &Reads<'_>, subject: &Subject<'_>
         for (ordinal, ((assigned, models), entry)) in rows.at.iter().zip(gathered[place].iter_mut()).enumerate() {
             let Some(full)=subject.assignment_layout.full(ordinal,assigned) else {entry.lose("component assignment ordinal is outside its held receipt");continue};
             let ctx=Ctx {example:example.example,assignment:full,layout:subject.assignment_layout,ordinal};
-            let lookups = plan.lookups(&ctx, entry);
+            let lookups = plan.lookups(reads,&ctx, entry);
             for model in models {
                 let RelationValue::Rows(model_rows) = model else { continue };
                 if let Err(stop) = reads.charge(model_rows.len(), &given.form) {
                     entry.stop = Some(stop);
                     continue;
                 }
-                each_row(model_rows, &mut |row| {
+                if entry.admit(reads,model_rows,subject.columns.len(),&given.form).is_err() {continue;}
+                let walked=reads.materializer().walk(model_rows, &mut |row| {
                     let slots: Vec<Merged> = subject.columns.iter().zip(&lookups).map(|(&column, lookup)| lookup.of(row, column as usize, plan.key.as_ref())).collect();
                     entry.rows.entry(row.into()).or_insert(slots);
                 });
+                if let Err(bound)=walked {entry.stop=Some(Stop {bound,form:given.form.clone()});}
             }
         }
     }
@@ -830,6 +908,7 @@ fn gather_output(decoder: &Decoder<'_>, reads: &Reads<'_>, subject: &Subject<'_>
 /// column of its output.
 #[derive(Default)]
 struct Lookup {
+    allocations:Vec<std::sync::Arc<arclog::session::SessionAllocation>>,
     /// Whether the column has no extent.
     bad: bool,
     /// Whether the rows match by the key, and by the cell of the column.
@@ -882,7 +961,7 @@ fn usable(frame: &OutputFrame) -> bool {
 }
 
 /// The extents of `contents`' entries, from what their derivations gave.
-fn finish(contexts: &DirectContexts, contents: &Contents, gathered: &[Vec<Gathered>], columns: &[u32], no_grid: &[bool]) -> Vec<Vec<Vec<EntryExtents>>> {
+fn finish(reads:&Reads<'_>,contexts: &DirectContexts, contents: &Contents, gathered: &[Vec<Gathered>], columns: &[u32], no_grid: &[bool]) -> Vec<Vec<Vec<EntryExtents>>> {
     contents
         .examples
         .iter()
@@ -902,7 +981,9 @@ fn finish(contexts: &DirectContexts, contents: &Contents, gathered: &[Vec<Gather
                             (RelationValue::Rows(relation), None) => match &entry.lost {
                                 Some(reason) if !relation.is_empty() => EntryExtents::Lost(reason.clone()),
                                 Some(_) => EntryExtents::Absent,
-                                None => EntryExtents::Rows(completed_rows(contexts,contents,place,relation,columns,no_grid,Some(entry))),
+                                None => match completed_rows(reads,contexts,contents,place,relation,columns,no_grid,Some(entry)) {
+                                    Ok(rows)=>EntryExtents::Rows(rows),Err(stop)=>EntryExtents::Stopped(stop),
+                                },
                             },
                             _ => EntryExtents::Absent,
                         })
@@ -930,11 +1011,14 @@ struct Reads<'a> {
     tables: &'a [&'a Table],
     /// For a column of a table read, the extent at each key of the cells of the
     /// columns that the read fixes, as [`Reads::extent_at`] builds it.
-    cache: RefCell<StableHashMap<LookupKey, Rc<StableHashMap<Box<[TermId]>, Merged>>>>,
+    cache: RefCell<StableHashMap<LookupKey, Rc<Materialized<StableHashMap<Box<[TermId]>, Merged>>>>>,
     /// The count that the derivation's evaluations, and the rows it visits, are charged to.
     work: TableWork,
     limits: arclog::eval::Limits,
     receipt: Option<&'a Arc<HeldAssignments>>,
+    session: &'a arclog::session::TaskSession,
+    form: NodePath,
+    failure: RefCell<Option<Stop>>,
 }
 
 /// A table of the stream by its number, the place of the example and of the
@@ -943,12 +1027,14 @@ struct Reads<'a> {
 type LookupKey = (u32, usize, usize, usize, Vec<usize>);
 
 impl<'a> Reads<'a> {
+    fn materializer(&self)->Materializer<'_> {Materializer::new(self.session,&self.limits)}
+
     fn new(decoder:&Decoder<'a>,tables:&'a [&'a Table],form:&NodePath)->Self {
         Self::new_in(decoder,tables,form,decoder.limits(),decoder.table_work(),None)
     }
 
-    fn new_in(decoder:&Decoder<'a>,tables:&'a [&'a Table],_form:&NodePath,limits:arclog::eval::Limits,work:TableWork,receipt:Option<&'a Arc<HeldAssignments>>)->Self {
-        Self {names:names_of(decoder.registry(),tables),tables,cache:RefCell::default(),limits:limits.counted_in(work.clone()),work,receipt}
+    fn new_in(decoder:&Decoder<'a>,tables:&'a [&'a Table],form:&NodePath,limits:arclog::eval::Limits,work:TableWork,receipt:Option<&'a Arc<HeldAssignments>>)->Self {
+        Self {names:names_of(decoder.registry(),tables),tables,cache:RefCell::default(),limits:limits.counted_in(work.clone()),work,receipt,session:decoder.evaluation_inputs().1,form:form.clone(),failure:RefCell::new(None)}
     }
 
     fn with_context(decoder:&Decoder<'a>,tables:&'a [&'a Table],form:&NodePath,context:AssignmentContext<'a>)->Self {
@@ -968,7 +1054,8 @@ impl<'a> Reads<'a> {
     /// Adds `rows` visited rows to the table's work count; the stop at the work
     /// cap, at the form `form`, where the count is then past the cap.
     fn charge(&self, rows: u64, form: &NodePath) -> Result<(), Stop> {
-        self.work.charge(rows).map_err(|bound| Stop { bound, form: form.clone() })
+        if let Some(stop)=self.failure.borrow().as_ref() {return Err(stop.clone());}
+        self.materializer().check().and_then(|_|self.work.charge(rows)).map_err(|bound| Stop { bound, form: form.clone() })
     }
 
     /// The extent of the frame of the column `index` of the table `named`, at its rows
@@ -990,7 +1077,7 @@ impl<'a> Reads<'a> {
             let lookup = match held {
                 Some(held) => held,
                 None => {
-                    let built = Rc::new(self.build(contents, place, at, relation, index, &key.4));
+                    let built=match self.build(contents,place,at,relation,index,&key.4) {Ok(built)=>Rc::new(built),Err(stop)=>{*self.failure.borrow_mut()=Some(stop);return None;}};
                     self.cache.borrow_mut().insert(key, Rc::clone(&built));
                     built
                 }
@@ -1003,7 +1090,7 @@ impl<'a> Reads<'a> {
 
     /// The merged extent of the frame of the column `index` of the rows `relation` of
     /// the entry (`place`, `at`) of `contents`, by the cells of the columns `fixed`.
-    fn build(&self, contents: &Contents, place: usize, at: usize, relation: &Relation, index: usize, fixed: &[usize]) -> StableHashMap<Box<[TermId]>, Merged> {
+    fn build(&self, contents: &Contents, place: usize, at: usize, relation: &Relation, index: usize, fixed: &[usize]) -> Result<Materialized<StableHashMap<Box<[TermId]>, Merged>>,Stop> {
         let ty = contents.columns.get(index).map(|column| &column.ty);
         let held = match contents.extents.as_ref().and_then(|extents| extents.entry(place, at, 0)) {
             Some(EntryExtents::Rows(held)) => Some(held),
@@ -1011,11 +1098,12 @@ impl<'a> Reads<'a> {
         };
         let held_at = contents.extents.as_ref().and_then(|extents| extents.columns.iter().position(|&column| column as usize == index));
         let mut merged: StableHashMap<Box<[TermId]>, Merged> = StableHashMap::default();
-        if self.work.charge(relation.len()).is_err() {
-            return merged;
-        }
+        self.charge(relation.len(),&self.form)?;
+        let materializer=self.materializer();
+        let bytes=Materializer::row_bytes(fixed.len().saturating_mul(std::mem::size_of::<TermId>()).saturating_add(std::mem::size_of::<Merged>()),3);
+        let allocation=materializer.admit(relation,bytes).map_err(|bound|Stop {bound,form:self.form.clone()})?;
         let mut row_at = 0;
-        each_row(relation, &mut |row| {
+        materializer.walk(relation, &mut |row| {
             let extent = match ty {
                 Some(ValueType::Position) => position_extent(row[index], &ValueType::Position),
                 _ => held.zip(held_at).and_then(|(held, column)| held.get(row_at)?.get(column).copied().flatten())
@@ -1024,8 +1112,8 @@ impl<'a> Reads<'a> {
             let key: Box<[TermId]> = fixed.iter().map(|&column| row[column]).collect();
             merged.entry(key).or_insert(Merged::Unset).merge(extent);
             row_at += 1;
-        });
-        merged
+        }).map_err(|bound|Stop {bound,form:self.form.clone()})?;
+        Ok(Materialized::new(merged,allocation))
     }
 }
 

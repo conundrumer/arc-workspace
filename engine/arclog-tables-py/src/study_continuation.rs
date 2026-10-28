@@ -12,10 +12,12 @@ fn study_continuation(py:Python<'_>,evaluator:&PyStudyTaskEvaluator,gold:&PyStud
         .map_err(|e|PyValueError::new_err(e.to_string()))?;
     let constructions=constructions()?;
     let (report,g,m)=py.detach(|| evaluator.with_cache("study_continuation",|cache| {
-        let result=study_pair::continuation::evaluate(&gold.program,&mutant.inner,&evaluator.task,
+        let mut result=study_pair::continuation::evaluate(&gold.program,&mutant.inner,&evaluator.task,
             &evaluator.judged,&evaluator.session,constructions,&evaluator.settings,cache,expected.as_ref())?;
-        let g=case_columns(&evaluator.evidence,&result.gold,evaluator.task.train.len(),None);
-        let m=case_columns(&evaluator.evidence,&result.mutant,evaluator.task.train.len(),None);
+        let materializer=Materializer::new(&evaluator.session,&result.limits);
+        let g=case_columns_in(&materializer,&evaluator.evidence,&result.gold,evaluator.task.train.len(),None);
+        let m=case_columns_in(&materializer,&evaluator.evidence,&result.mutant,evaluator.task.train.len(),None);
+        packing_status(&mut result.report,[&g,&m]);
         Ok::<_,String>((result.report.to_string(),g,m))
     })).map_err(PyValueError::new_err)?;
     let pack=|side:&str,columns:&_|PyCaseTables::of(py,evaluator.task_name.clone(),side.into(),false,

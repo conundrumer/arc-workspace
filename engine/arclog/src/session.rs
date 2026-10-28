@@ -7,7 +7,7 @@
 //! byte bound, [`crate::eval::cache::cache_bytes_bound`].
 
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
 use crate::eval::pool::InFlight;
@@ -371,24 +371,27 @@ fn entry_bytes(key: &ResultKey) -> usize {
 /// shared reference: the intern table stands behind a read-write lock,
 /// since interning writes it and reading a content reads it, and the
 /// result cache synchronizes its own entries.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TaskSession {
-    pub intern: RwLock<InternTable>,
-    pub results: ResultCache,
+    pub intern: Arc<RwLock<InternTable>>,
+    pub results: Arc<ResultCache>,
     /// The caps of every evaluation in the session.
     pub caps: Caps,
     /// The bound on the session's bytes, which the intern table's bytes
     /// count toward.
     pub bound: SessionBound,
+    /// Byte reservations owned by transient/materialized buffers outside the
+    /// intern and result stores. Shared buffers retain one reservation.
+    allocated: Arc<AtomicUsize>,
     /// The largest bindings tried of any one evaluation that ended with no
     /// stop, an atomic maximum, so it does not depend on the order of the
     /// threads.
-    largest_bindings: AtomicU64,
+    largest_bindings: Arc<AtomicU64>,
     /// The largest rows held of any one such evaluation, an atomic maximum.
-    largest_rows: AtomicU64,
+    largest_rows: Arc<AtomicU64>,
     /// The fact relations built so far, one per fact and example, each
     /// built on its first use. A session serves one task.
-    facts: Mutex<StableHashMap<(FactRelation, Option<Example>), Arc<Relation>>>,
+    facts: Arc<Mutex<StableHashMap<(FactRelation, Option<Example>), Arc<Relation>>>>,
 }
 
 /// A count of bindings tried and a count of rows held.
@@ -419,7 +422,7 @@ impl TaskSession {
     /// A session with an empty intern table and an empty result cache,
     /// whose evaluations run at `caps`.
     pub fn new(bound: SessionBound, caps: Caps) -> Self {
-        TaskSession { intern: RwLock::default(), results: ResultCache::default(), caps, bound, largest_bindings: AtomicU64::new(0), largest_rows: AtomicU64::new(0), facts: Mutex::default() }
+        TaskSession { intern: Arc::new(RwLock::default()), results: Arc::new(ResultCache::default()), caps, bound, allocated: Arc::new(AtomicUsize::new(0)), largest_bindings: Arc::new(AtomicU64::new(0)), largest_rows: Arc::new(AtomicU64::new(0)), facts: Arc::new(Mutex::default()) }
     }
 
     /// The rows of `fact` on `example` of `task`, built on the first request
@@ -434,7 +437,26 @@ impl TaskSession {
     /// cache's, lie within its bound.
     pub fn within_bound(&self) -> Result<(), ReachedSessionBound> {
         let intern = self.intern.read().expect("an intern table that no panic poisoned").bytes();
-        let bytes = intern + self.results.bytes();
+        self.check_bytes(intern, self.allocated.load(Ordering::Relaxed))
+    }
+
+    /// Reserves a buffer before allocation, together with all live buffer
+    /// reservations and the current intern/result stores. Dropping the returned
+    /// owner releases its bytes; sharing an owner does not reserve again.
+    pub fn reserve(&self, bytes: usize) -> Result<SessionAllocation, ReachedSessionBound> {
+        let mut held = self.allocated.load(Ordering::Relaxed);
+        loop {
+            let next = held.checked_add(bytes).ok_or(ReachedSessionBound {bytes:usize::MAX,bound:self.bound})?;
+            self.check_bytes(self.intern.read().expect("an intern table that no panic poisoned").bytes(), next)?;
+            match self.allocated.compare_exchange_weak(held, next, Ordering::Relaxed, Ordering::Relaxed) {
+                Ok(_) => return Ok(SessionAllocation { bytes, allocated: Arc::clone(&self.allocated) }),
+                Err(actual) => held = actual,
+            }
+        }
+    }
+
+    fn check_bytes(&self, intern: usize, allocated: usize) -> Result<(), ReachedSessionBound> {
+        let bytes = intern.saturating_add(self.results.bytes()).saturating_add(allocated);
         if bytes > self.bound.bytes { Err(ReachedSessionBound { bytes, bound: self.bound }) } else { Ok(()) }
     }
 
@@ -450,4 +472,17 @@ impl TaskSession {
     pub fn largest_counts(&self) -> Counts {
         Counts { bindings: self.largest_bindings.load(Ordering::Relaxed), rows: self.largest_rows.load(Ordering::Relaxed) }
     }
+}
+
+/// Ownership of bytes admitted under a task session's existing byte bound.
+/// A shared buffer keeps this in its shared owner, so clones do not multiply
+/// the charge and the last drop releases it, including an aborted build.
+#[derive(Debug)]
+pub struct SessionAllocation {
+    bytes: usize,
+    allocated: Arc<AtomicUsize>,
+}
+
+impl Drop for SessionAllocation {
+    fn drop(&mut self) { self.allocated.fetch_sub(self.bytes, Ordering::Relaxed); }
 }

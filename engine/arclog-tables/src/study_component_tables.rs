@@ -1,11 +1,13 @@
 //! Native relation tables at fixed interventions, independent of OUT evidence.
 use super::*;
-use arclog::eval::join::Budget;
+use arclog::eval::join::{Budget,Materializer};
 
 pub struct ComponentTables {
+    pub limits:arclog::eval::Limits,
     pub report:Value,
     pub gold:Vec<(usize,Table)>,
     pub mutant:Vec<(usize,Table)>,
+    _allocations:Vec<Arc<arclog::session::SessionAllocation>>,
 }
 
 /// A bounded collection retains every table already materialized. A stop
@@ -38,13 +40,15 @@ pub fn evaluate_cached(gold:&StudyProgram,mutant:&ValidMutant,task:&Task,session
     if expected_kept.is_some_and(|expected|expected!=&json!(records)) {
         return Err("stored kept assignments differ from cached gold observation (possibly Ident namespace); refusing alternate assignments".into());
     }
-    let decoder=Decoder::new(task,session,Registry::get(),constructions,settings);
+    let operation=settings.operation_limits();
+    let decoder=Decoder::new(task,session,Registry::get(),constructions,settings).with_operation_limits(operation);
     let work=decoder.table_work();let limits=decoder.limits().counted_in(work.clone());
     let mut budget=Budget::new(&limits,session);
     let g=relation_tables(gold,&decoder,&fixed,&limits,&work,&mut budget);
     let m=relation_tables(mutant.program(),&decoder,&fixed,&limits,&work,&mut budget);
+    let (choice_extents,choice_allocations)=full_choice_extents(&Materializer::new(session,&limits),&g.tables,&fixed,task.train.len());
     let report=json!({"schema":"arclog-study-component-tables-v1","gold_observation_ref":memo.sequence,
-        "full_choice_extents":full_choice_extents(&g.tables,&fixed,task.train.len()),
+        "full_choice_extents":choice_extents,
         "kept_assignments":records,"gold_observation_stop":walked.stop.as_ref().map(stopped),
         "gold_status":g.status(),"mutant_status":m.status(),
         "gold_collection":g.collection(),"mutant_collection":m.collection(),
@@ -53,7 +57,7 @@ pub fn evaluate_cached(gold:&StudyProgram,mutant:&ValidMutant,task:&Task,session
         "scope":"native materialized relations including computed INIT outputs under exact cached gold DET interventions; no new FITS or OUT search",
         "assignment_contract":"table_entry is the zero-based position among native entries for its table; kept_assignment indexes the full kept_assignments list even when DET subsets repeat",
         "bound_scope":"one shared native deadline and table-work budget"});
-    Ok(ComponentTables {report,gold:g.tables,mutant:m.tables})
+    Ok(ComponentTables {limits:limits.clone(),report,gold:g.tables,mutant:m.tables,_allocations:choice_allocations})
 }
 
 /// Mapping uses the exact native entries order, including repeated equal
@@ -110,12 +114,13 @@ pub fn relation_tables(program:&StudyProgram,decoder:&Decoder<'_>,fixed:&[Vec<As
 
 /// Authoritative annotations of exact held gold parameter rows. Example/model
 /// axes are retained; a task-wide value is not assigned an arbitrary example.
-pub fn full_choice_extents(tables:&[(usize,Table)],fixed:&[Vec<Assignment>],train_count:usize)->Value {
-    json!({"schema":"arclog-study-choice-extents-v1","choices":fixed.iter().enumerate().map(|(choice,assigned)| {
+pub fn full_choice_extents(materializer:&Materializer<'_>,tables:&[(usize,Table)],fixed:&[Vec<Assignment>],train_count:usize)->(Value,Vec<Arc<arclog::session::SessionAllocation>>) {
+    let mut allocations=Vec::new();
+    let value=json!({"schema":"arclog-study-choice-extents-v1","choices":fixed.iter().enumerate().map(|(choice,assigned)| {
         let dets=assigned.iter().map(|(name,held)| {
             let source=relation_spelled(name);
-            let contents=tables.iter().rev().filter_map(|(_,t)|t.contents.as_ref().ok()).find(|c|c.name==source);
-            let Some(contents)=contents else {return json!({"source_name":source,"status":"unresolved","reason":"exact held relation table not materialized"});};
+            let contents=tables.iter().rev().find_map(|(_,table)|table.contents.as_ref().ok().filter(|c|c.name==source).map(|c|(&table.form,c)));
+            let Some((form,contents))=contents else {return json!({"source_name":source,"status":"unresolved","reason":"exact held relation table not materialized"});};
             let mut examples=Vec::new();
             for (place,e) in contents.examples.iter().enumerate() {
                 let Some((_,models))=e.rows.as_ref().ok().and_then(|r|r.at.get(choice)) else {continue;};
@@ -123,20 +128,35 @@ pub fn full_choice_extents(tables:&[(usize,Table)],fixed:&[Vec<Assignment>],trai
                 for (model,value) in models.iter().enumerate() {
                     let RelationValue::Rows(rows)=value else {continue;};
                     if !arclog::session::same_rows(rows,held) {continue;}
-                    let annotations=crate::extents::annotated_rows(contents,place,choice,model,rows);
+                    let annotations=match crate::extents::annotated_rows(materializer,form,contents,place,choice,model,rows) {
+                        Ok(rows)=>rows,
+                        Err(stop)=>{
+                            examples.push(json!({"example_kind":kind,"example_index":index,"model":model,"status":"stopped","reason":format!("{:?}",stop.bound),"form":format!("{:?}",stop.form)}));
+                            continue;
+                        }
+                    };
                     let columns=contents.columns.iter().enumerate().filter(|(_,c)|c.ty.is_box()).map(|(i,_)|i).collect::<Vec<_>>();
+                    let payload=usize::from(rows.arity()).saturating_mul(32).saturating_add(columns.len().saturating_mul(1024));
+                    match materializer.admit(rows,Materializer::row_bytes(payload,8)) {
+                        Ok(owner)=>allocations.push(owner),
+                        Err(bound)=>{examples.push(json!({"example_kind":kind,"example_index":index,"model":model,"status":"stopped","reason":format!("{bound:?}")}));continue;}
+                    }
                     let mut at=0;let mut out=Vec::new();
-                    each_row(rows,&mut |row| {
+                    let walked=materializer.walk(rows,&mut |row| {
                         let cells=columns.iter().zip(&annotations[at]).map(|(column,(status,extent))|json!({
                             "column":column,"extent_status":match status {0=>"no_grid",1=>"resolved",_=>"unresolved"},
                             "extent":extent.map(|e|[e.rows,e.columns])})).collect::<Vec<_>>();
                         out.push(json!({"packed_row":row.iter().map(|t|t.encoding()).collect::<Vec<_>>(),"cells":cells}));at+=1;
                     });
-                    examples.push(json!({"example_kind":kind,"example_index":index,"model":model,"rows":out}));
+                    match walked {
+                        Ok(())=>examples.push(json!({"example_kind":kind,"example_index":index,"model":model,"rows":out})),
+                        Err(bound)=>examples.push(json!({"example_kind":kind,"example_index":index,"model":model,"status":"stopped","reason":format!("{bound:?}")})),
+                    }
                 }
             }
-            json!({"source_name":source,"status":if examples.is_empty(){"unresolved"}else{"complete"},"examples":examples})
+            json!({"source_name":source,"status":if examples.iter().any(|e|e["status"]=="stopped"){"stopped"}else if examples.is_empty(){"unresolved"}else{"complete"},"examples":examples})
         }).collect::<Vec<_>>();
         json!({"assignment":choice,"dets":dets})
-    }).collect::<Vec<_>>(),"identity_contract":"exact cached held gold values only; rows carry packed identity and example/model axes; no cross-example extent merge"})
+    }).collect::<Vec<_>>(),"identity_contract":"exact cached held gold values only; rows carry packed identity and example/model axes; no cross-example extent merge"});
+    (value,allocations)
 }

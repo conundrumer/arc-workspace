@@ -86,6 +86,7 @@ pub struct Decoder<'a> {
     /// where the decode judges them.
     train: Option<Arc<[PairCandidates<'a>]>>,
     cancellation: Cancellation,
+    operation_limits: Option<crate::eval::Limits>,
     /// The path of the first `OUT` form that was consistent, at which the
     /// decode ended.
     output: Option<NodePath>,
@@ -182,7 +183,7 @@ impl<'a> Decoder<'a> {
         assert_eq!(settings.caps, session.caps, "the caps of the decode settings are those of the session");
         let context = Context { registry, settings: *settings, vocabulary: Vocabulary::new(registry, settings) };
         let state = state::State::new();
-        Decoder { task, session, constructions, context: Arc::new(context), state, before: None, train: None, cancellation: Cancellation::default(), output: None, assignments: Vec::new(), trace: DecodeTrace::default(), held: Held::default(), copies: settings.check_copies.then(CopyViolations::default), held_stops: Arc::default() }
+        Decoder { task, session, constructions, context: Arc::new(context), state, before: None, train: None, cancellation: Cancellation::default(), operation_limits:None, output: None, assignments: Vec::new(), trace: DecodeTrace::default(), held: Held::default(), copies: settings.check_copies.then(CopyViolations::default), held_stops: Arc::default() }
     }
 
     /// The ids of the decode's tokens.
@@ -484,13 +485,20 @@ impl<'a> Decoder<'a> {
         self.trace.update(step, |record| record.top_k = Some(top_k))
     }
 
+    /// Uses one caller operation for every nested query and materialization.
+    /// Forks retain its absolute deadline; no query starts another clock.
+    pub fn with_operation_limits(mut self,limits:crate::eval::Limits)->Self {
+        self.cancellation=limits.cancellation.clone();
+        self.operation_limits=Some(limits);self
+    }
+
     /// A second decode from the same state, which shares this one's caches
     /// and takes a cancellation of its own, and a store of held stops of its
     /// own that holds the stops at the table work cap this decode holds now
     /// and shares the stops at the deadline ([`HeldStops::snapshot`]).
     pub fn fork(&self) -> Decoder<'a> {
         Decoder {
-            cancellation: Cancellation::default(),
+            cancellation: self.operation_limits.as_ref().map_or_else(Cancellation::default,|limits|limits.cancellation.clone()),
             held: Held::default(),
             copies: self.copies.as_ref().map(|_| CopyViolations::default()),
             held_stops: Arc::new(self.held_stops.snapshot()),

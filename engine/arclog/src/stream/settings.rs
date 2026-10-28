@@ -57,6 +57,11 @@ pub struct DecodeSettings {
 }
 
 impl DecodeSettings {
+    /// Begins one caller operation. All nested decoders, queries and packing
+    /// borrow or clone this absolute deadline and cancellation thereafter.
+    pub fn operation_limits(&self)->crate::eval::Limits {
+        crate::eval::Limits::new(self.deadline.map(|duration|std::time::Instant::now()+duration),crate::eval::Cancellation::default())
+    }
     /// The default settings with the deadline of the synthesis decode, 10 s per
     /// request.
     pub fn synthesis() -> DecodeSettings {

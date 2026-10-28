@@ -9,6 +9,7 @@ use std::collections::BTreeSet;
 mod output;
 
 pub struct Continuation {
+    pub limits:arclog::eval::Limits,
     pub report: Value,
     pub gold: Vec<(usize, Table)>,
     pub mutant: Vec<(usize, Table)>,
@@ -104,7 +105,8 @@ pub fn evaluate(gold:&StudyProgram,mutant:&ValidMutant,task:&Task,judged:&Judged
     if expected_kept.is_some_and(|expected|expected!=&json!(records)) {
         return Err("stored kept assignments differ from this evaluator's gold observation (possibly Ident namespace); refusing alternate FITS".into());
     }
-    let decoder=Decoder::new(task,session,Registry::get(),constructions,settings);
+    let operation=settings.operation_limits();
+    let decoder=Decoder::new(task,session,Registry::get(),constructions,settings).with_operation_limits(operation);
     let work=decoder.table_work();let limits=decoder.limits().counted_in(work.clone());
     let mut budget=Budget::new(&limits,session);
     let mut choices=Vec::new();
@@ -127,5 +129,5 @@ pub fn evaluate(gold:&StudyProgram,mutant:&ValidMutant,task:&Task,judged:&Judged
         "out_scope":"conditional OUT under held gold DET values; held values override DET proposal bodies even when inadmissible",
         "tables_scope":"all materialized native relations in written order, including INIT computed output ports; each table assignment index follows kept_assignments",
         "bound_scope":"one shared native deadline and table-work budget for this operation"});
-    Ok(Continuation {report,gold:g.tables,mutant:m.tables})
+    Ok(Continuation {limits:limits.clone(),report,gold:g.tables,mutant:m.tables})
 }

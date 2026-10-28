@@ -6,7 +6,6 @@
 //! clause, the consistency of the clause's relation read as an output.
 
 use std::sync::Arc;
-use std::time::Instant;
 
 use super::state::State;
 use super::Decoder;
@@ -328,7 +327,9 @@ impl<'a> Decoder<'a> {
     /// The bounds of one request: the deadline of the decode settings from
     /// now, the decode's cancellation, and the stops that the decode holds.
     pub fn limits(&self) -> Limits {
-        let limits = Limits::new(self.context.settings.deadline.map(|deadline| Instant::now() + deadline), self.cancellation.clone()).holding_in(Arc::clone(&self.held_stops));
+        let mut limits=self.operation_limits.clone().unwrap_or_else(||self.context.settings.operation_limits());
+        limits.cancellation=self.cancellation.clone();
+        let limits=limits.holding_in(Arc::clone(&self.held_stops));
         match &self.copies {
             Some(violations) => limits.checking_copies(violations.clone()),
             None => limits,

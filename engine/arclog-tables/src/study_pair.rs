@@ -24,6 +24,8 @@ pub mod component_tables;
 mod judgement;
 
 pub struct PairEvaluation {
+    /// Ephemeral current operation policy, never stored in PairCache.
+    pub limits:arclog::eval::Limits,
     /// Full native tables, including preceding relation tables needed to
     /// resolve provenance/frame references. The last two are the complete
     /// body at all assignments, then at gold FITS assignments.
@@ -612,8 +614,10 @@ fn evaluate_pair_inner(
     constructions: &Constructions,
     settings: &DecodeSettings,
     cache:&mut PairCache,
+    limits:&arclog::eval::Limits,
 ) -> PairEvaluation {
     let mut result = PairEvaluation {
+        limits:limits.clone(),
         gold: Vec::new(),
         mutant: Vec::new(),
         gold_prefix:Vec::new(),
@@ -633,8 +637,8 @@ fn evaluate_pair_inner(
         return result;
     }
     cache.activate(gold);
-    let mut gd = Decoder::new(task, session, Registry::get(), constructions, settings);
-    let mut md = Decoder::new(task, session, Registry::get(), constructions, settings);
+    let mut gd = Decoder::new(task, session, Registry::get(), constructions, settings).with_operation_limits(limits.clone());
+    let mut md = Decoder::new(task, session, Registry::get(), constructions, settings).with_operation_limits(limits.clone());
     let Some(output) = output_relation(gold.checked()) else {
         result.report = faulted(&fault("gold has no OUT", &point.clause));
         return result;
@@ -842,19 +846,26 @@ pub fn evaluate_pair(
 }
 
 pub fn evaluate_pair_cached(gold:&StudyProgram,point:&MutationPoint,mutant:&ValidMutant,task:&Task,judged:&JudgedTask,session:&TaskSession,constructions:&Constructions,settings:&DecodeSettings,cache:&mut PairCache)->PairEvaluation {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(||evaluate_pair_inner(gold,point,mutant,task,judged,session,constructions,settings,cache)))
-        .unwrap_or_else(|payload|PairEvaluation {gold:Vec::new(),mutant:Vec::new(),gold_prefix:Vec::new(),mutant_prefix:Vec::new(),report:json!({"status":"fault","reason":format!("pair evaluation panicked: {}",arclog::decode::corpus::replay_panic(&*payload))})})
+    let limits=settings.operation_limits();
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(||evaluate_pair_inner(gold,point,mutant,task,judged,session,constructions,settings,cache,&limits)))
+        .unwrap_or_else(|payload|PairEvaluation {limits:limits.clone(),gold:Vec::new(),mutant:Vec::new(),gold_prefix:Vec::new(),mutant_prefix:Vec::new(),report:json!({"status":"fault","reason":format!("pair evaluation panicked: {}",arclog::decode::corpus::replay_panic(&*payload))})})
 }
 
 /// Full native relation tables, evaluated once per gold handle in this task
 /// session. Faults and work-cap stops are cached as observations too.
 pub fn gold_tables_cached(gold:&StudyProgram,task:&Task,session:&TaskSession,constructions:&Constructions,settings:&DecodeSettings,cache:&mut PairCache)->(Value,Vec<(usize,Table)>) {
+    let limits=settings.operation_limits();
+    gold_tables_cached_in(gold,task,session,constructions,settings,cache,&limits)
+}
+
+/// Full-table evaluation and packing share the caller's one current clock.
+pub fn gold_tables_cached_in(gold:&StudyProgram,task:&Task,session:&TaskSession,constructions:&Constructions,settings:&DecodeSettings,cache:&mut PairCache,limits:&arclog::eval::Limits)->(Value,Vec<(usize,Table)>) {
     cache.activate(gold);
     let key=Arc::as_ptr(gold.checked()) as usize;
     let hit=cache.gold_relations.contains_key(&key);
     if !hit {
         let held=std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let decoder=Decoder::new(task,session,Registry::get(),constructions,settings);
+            let decoder=Decoder::new(task,session,Registry::get(),constructions,settings).with_operation_limits(limits.clone());
             let written=source_stream(gold,&decoder,cache)?;
             original_relations(gold,&written,None,&decoder,cache).map(|(tables,_)|tables)
         })).unwrap_or_else(|payload|Err(fault(format!("gold relation evaluation panicked: {}",arclog::decode::corpus::replay_panic(&*payload)),&NodePath::default())));
@@ -868,24 +879,27 @@ pub fn gold_tables_cached(gold:&StudyProgram,task:&Task,session:&TaskSession,con
 
 /// Pack the shared relation prefix once, preserving every exported offset
 /// and run-interning decision. Only the two body tables are appended per side.
-pub fn pair_columns_cached(evidence:&[Table],result:&PairEvaluation,train:usize,cache:&mut PairCache)->(crate::columns::CaseColumns,crate::columns::CaseColumns) {
+pub fn pair_columns_cached(materializer:&arclog::eval::join::Materializer<'_>,evidence:&[Table],result:&PairEvaluation,train:usize,cache:&mut PairCache)->(crate::columns::CaseColumns,crate::columns::CaseColumns) {
     let mut pack=|tables:&[(usize,Table)],key:&Vec<u32>| {
-        if tables.len()<2 {return crate::columns::case_columns(evidence,tables,train,None);}
+        if tables.len()<2 {return crate::columns::case_columns_in(materializer,evidence,tables,train,None);}
         let split=tables.len()-2;
         if cache.columns.as_ref().is_some_and(|(held,_)|held==key) {
-            return cache.columns.as_ref().unwrap().1.finish(&tables[split..],train);
+            if let Some(columns)=cache.columns.as_ref().unwrap().1.finish(materializer,&tables[split..],train) {return columns;}
+            cache.columns=None;
+            return crate::columns::case_columns_in(materializer,evidence,tables,train,None);
         }
         cache.columns=None;
-        let prefix=crate::columns::CaseColumnPrefix::new(evidence,&tables[..split],train);
+        let prefix=crate::columns::CaseColumnPrefix::new(materializer,evidence,&tables[..split],train);
         // The packed fold includes nested string/vector capacities and its
         // run-interning metadata, not just the values buffer.
         let native_prefix_bytes=cache.prefix.as_ref().map_or(0,|memo|memo.row_bytes);
-        if prefix.retained_bytes().saturating_add(native_prefix_bytes)<=cache.cache_bytes {
-            let columns=prefix.finish(&tables[split..],train);
-            cache.columns=Some((key.clone(),prefix));
-            columns
+        if prefix.is_complete() && prefix.retained_bytes().saturating_add(native_prefix_bytes)<=cache.cache_bytes {
+            let columns=prefix.finish(materializer,&tables[split..],train);
+            if let Some(columns)=columns {
+                cache.columns=Some((key.clone(),prefix));columns
+            } else {drop(prefix);crate::columns::case_columns_in(materializer,evidence,tables,train,None)}
         } else {
-            prefix.into_finished(&tables[split..],train)
+            prefix.into_finished(materializer,&tables[split..],train)
         }
     };
     (pack(&result.gold,&result.gold_prefix),pack(&result.mutant,&result.mutant_prefix))

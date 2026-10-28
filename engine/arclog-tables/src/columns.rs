@@ -68,7 +68,7 @@ use std::sync::Arc;
 use arclog::decode::Projections;
 use arclog::eval::copies::CopyViolation;
 use arclog::eval::determinations::relation_spelled;
-use arclog::eval::join::each_row;
+use arclog::eval::join::Materializer;
 use arclog::eval::{RelationValue, RunFault, Stop};
 use arclog::hash::{StableHash, StableHashMap, StableHasher};
 use arclog::program::path::NodePath;
@@ -389,9 +389,17 @@ pub struct CaseColumns {
     pub flows: FlowColumns,
     pub copies: CopyColumns,
     pub values: Vec<i32>,
+    /// Reservations follow these owned packed buffers through their last drop.
+    pub(crate) allocations: Vec<Arc<arclog::session::SessionAllocation>>,
+    pub(crate) packing_stop: Option<Stop>,
 }
 
 impl CaseColumns {
+    /// A stop reached before packing a native row buffer; no empty value was
+    /// substituted. Bindings propagate it to their operation report.
+    pub fn packing_stop(&self)->Option<&Stop> {self.packing_stop.as_ref()}
+    /// Stable owners for returned Python buffers and captured raw views.
+    pub fn allocations(&self)->Vec<Arc<arclog::session::SessionAllocation>> {self.allocations.clone()}
     /// These columns with a row for each of `violations`, the declared rows
     /// that the replay of the case found its constructions' outputs break.
     pub fn with_copies(mut self, violations: &[CopyViolation]) -> CaseColumns {
@@ -412,7 +420,20 @@ impl CaseColumns {
 /// labels of its stream, which `column_source_labels` and `det_source_labels`
 /// give; with `None` they give the decoded names.
 pub fn case_columns(evidence: &[Table], tables: &[(usize, Table)], train: usize, labels: Option<&StreamLabels>) -> CaseColumns {
-    fold(evidence, tables, None, train, labels).0
+    default_materializer(|materializer|case_columns_in(materializer,evidence,tables,train,labels))
+}
+
+/// Packs with the caller's CURRENT operation limits and native session.
+pub fn case_columns_in(materializer:&Materializer<'_>,evidence:&[Table],tables:&[(usize,Table)],train:usize,labels:Option<&StreamLabels>)->CaseColumns {
+    fold(materializer,evidence,tables,None,train,labels).0
+}
+
+// Sessionless public helpers retain the native default caps. Engine operation
+// adapters use their explicit current session/limits through the *_in entry.
+fn default_materializer<T>(run:impl FnOnce(&Materializer<'_>)->T)->T {
+    let session=arclog::session::TaskSession::new(arclog::session::SessionBound {bytes:arclog::session::SESSION_BYTES},arclog::eval::Caps::CORPUS);
+    let limits=arclog::eval::Limits::new(None,arclog::eval::Cancellation::default());
+    run(&Materializer::new(&session,&limits))
 }
 
 /// The exact column fold at a completed program prefix. Cloning preserves
@@ -425,30 +446,35 @@ pub struct CaseColumnPrefix {
     count: usize,
 }
 impl CaseColumnPrefix {
-    pub fn new(evidence:&[Table],tables:&[(usize,Table)],train:usize)->Self {
+    pub fn new(materializer:&Materializer<'_>,evidence:&[Table],tables:&[(usize,Table)],train:usize)->Self {
         let mut held=Self {columns:CaseColumns::default(),names:Vec::new(),runs:Runs::default(),count:0};
-        push_tables(&mut held.columns,&mut held.names,&mut held.runs,0,evidence.iter().map(|table|(0,table)),train,None);
+        push_tables(materializer,&mut held.columns,&mut held.names,&mut held.runs,0,evidence.iter().map(|table|(0,table)),train,None);
         held.count=evidence.len();
-        held.append(tables,train);
+        held.append(materializer,tables,train);
         // Pointer memoization serves one packing operation only. Retaining it
         // in a reusable fold would also retain each relation's native indexes.
         held.runs.1=StableHashMap::default();
         held
     }
-    fn append(&mut self,tables:&[(usize,Table)],train:usize) {
-        push_tables(&mut self.columns,&mut self.names,&mut self.runs,self.count,tables.iter().map(|(token,table)|(*token,table)),train,None);
+    fn append(&mut self,materializer:&Materializer<'_>,tables:&[(usize,Table)],train:usize) {
+        push_tables(materializer,&mut self.columns,&mut self.names,&mut self.runs,self.count,tables.iter().map(|(token,table)|(*token,table)),train,None);
         self.count+=tables.len();
     }
-    pub fn finish(&self,tables:&[(usize,Table)],train:usize)->CaseColumns {
-        self.clone().into_finished(tables,train)
+    pub fn is_complete(&self)->bool {self.columns.packing_stop.is_none()}
+    pub fn finish(&self,materializer:&Materializer<'_>,tables:&[(usize,Table)],train:usize)->Option<CaseColumns> {
+        if !self.is_complete() {return None;}
+        let allocation=materializer.copy(self.retained_bytes()).ok()?;
+        let mut copied=self.clone();
+        copied.columns.allocations.push(allocation);
+        Some(copied.into_finished(materializer,tables,train))
     }
-    pub fn into_finished(mut self,tables:&[(usize,Table)],train:usize)->CaseColumns {
-        self.append(tables,train);self.columns
+    pub fn into_finished(mut self,materializer:&Materializer<'_>,tables:&[(usize,Table)],train:usize)->CaseColumns {
+        self.append(materializer,tables,train);self.columns
     }
     /// Owned capacities, including nested strings, table names, and the
     /// run-interning hash table. The fold holds no native relation Arcs.
     pub fn retained_bytes(&self)->usize {
-        std::mem::size_of::<Self>()+self.columns.heap_bytes()+self.names.heap_bytes()
+        std::mem::size_of::<Self>()+self.columns.heap_bytes()+self.names.heap_bytes()+self.columns.allocations.capacity()*std::mem::size_of::<Arc<arclog::session::SessionAllocation>>()
             +self.runs.0.capacity()*2*std::mem::size_of::<((u64,usize,StableHash),Vec<usize>)>()
             +self.runs.0.values().map(HeapBytes::heap_bytes).sum::<usize>()
     }
@@ -466,7 +492,12 @@ impl CaseColumnPrefix {
 /// sources read the tables below `k` as [`case_columns`] reads them. `labels`
 /// are as [`case_columns`] takes them.
 pub fn cut_case_columns(evidence: &[Table], tables: &[(usize, Table)], tokens: usize, train: usize, labels: Option<&StreamLabels>) -> (CaseColumns, u32) {
-    fold(evidence, tables, Some(tokens), train, labels)
+    default_materializer(|materializer|cut_case_columns_in(materializer,evidence,tables,tokens,train,labels))
+}
+
+/// Cut packing under one current operation and the original native namespace.
+pub fn cut_case_columns_in(materializer:&Materializer<'_>,evidence:&[Table],tables:&[(usize,Table)],tokens:usize,train:usize,labels:Option<&StreamLabels>)->(CaseColumns,u32) {
+    fold(materializer,evidence,tables,Some(tokens),train,labels)
 }
 
 /// The tables of a stream up to the end of a step, which the tables of the
@@ -504,6 +535,11 @@ impl StreamTables {
 /// names of the labels are the decoded ones, as [`case_columns`] gives with
 /// `None` for its `labels`.
 pub fn step_case_columns(before: Option<&StreamTables>, evidence: &[Table], tables: Vec<(usize, Table)>, train: usize) -> (CaseColumns, StreamTables) {
+    default_materializer(|materializer|step_case_columns_in(materializer,before,evidence,tables,train))
+}
+
+/// Step packing under the current operation's native limits.
+pub fn step_case_columns_in(materializer:&Materializer<'_>,before:Option<&StreamTables>,evidence:&[Table],tables:Vec<(usize,Table)>,train:usize)->(CaseColumns,StreamTables) {
     let mut columns = CaseColumns::default();
     let mut runs = Runs::default();
     let mut names = Vec::new();
@@ -515,11 +551,11 @@ pub fn step_case_columns(before: Option<&StreamTables>, evidence: &[Table], tabl
             before.count as usize
         }
         None => {
-            push_tables(&mut columns, &mut names, &mut runs, 0, evidence.iter().map(|table| (0, table)), train, None);
+            push_tables(materializer,&mut columns, &mut names, &mut runs, 0, evidence.iter().map(|table| (0, table)), train, None);
             evidence.len()
         }
     };
-    push_tables(&mut columns, &mut names, &mut runs, first, tables.iter().map(|(token, table)| (*token, table)), train, None);
+    push_tables(materializer,&mut columns, &mut names, &mut runs, first, tables.iter().map(|(token, table)| (*token, table)), train, None);
     let count = u32::try_from(first + tables.len()).expect("fewer than 2^32 tables");
     let kept = before.map_or_else(Vec::new, |before| before.tables.clone()).into_iter().chain(tables.into_iter().map(|(_, table)| Arc::new(table))).collect();
     (columns, StreamTables { tables: kept, count })
@@ -532,7 +568,7 @@ pub fn step_case_columns(before: Option<&StreamTables>, evidence: &[Table], tabl
 /// folded into `names` alone, and the count of them is given with the
 /// columns.
 /// `labels` are as [`case_columns`] takes them.
-fn fold(evidence: &[Table], tables: &[(usize, Table)], cut: Option<usize>, train: usize, labels: Option<&StreamLabels>) -> (CaseColumns, u32) {
+fn fold(materializer:&Materializer<'_>,evidence: &[Table], tables: &[(usize, Table)], cut: Option<usize>, train: usize, labels: Option<&StreamLabels>) -> (CaseColumns, u32) {
     let skipped = cut.map_or(0, |tokens| evidence.len() + tables.partition_point(|(token, _)| *token < tokens));
     let mut columns = CaseColumns::default();
     let mut names = Vec::new();
@@ -541,17 +577,60 @@ fn fold(evidence: &[Table], tables: &[(usize, Table)], cut: Option<usize>, train
     for (place, (_, table)) in placed.by_ref().take(skipped).enumerate() {
         note_name(&mut names, u32::try_from(place).expect("fewer than 2^32 tables"), table, labels);
     }
-    push_tables(&mut columns, &mut names, &mut runs, skipped, placed, train, labels);
+    push_tables(materializer,&mut columns, &mut names, &mut runs, skipped, placed, train, labels);
     (columns, u32::try_from(skipped).expect("fewer than 2^32 tables"))
 }
 
 /// The columns of `tables`, each with the index of its token, in `out`, the
 /// first of them the table at `first`, after the tables in `names`.
-fn push_tables<'t>(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, first: usize, tables: impl Iterator<Item = (usize, &'t Table)>, train: usize, labels: Option<&StreamLabels>) {
+fn push_tables<'t>(materializer:&Materializer<'_>,out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, first: usize, tables: impl Iterator<Item = (usize, &'t Table)>, train: usize, labels: Option<&StreamLabels>) {
     for (place, (token, table)) in (first..).zip(tables) {
+        // Headers/count-only entries allocate too, even when there is no row
+        // buffer. Admit their physical metadata before any output allocation.
+        let allocation=metadata_bytes(materializer,table,names).and_then(|bytes|materializer.copy(bytes));
+        match allocation {
+            Ok(allocation)=>out.allocations.push(allocation),
+            Err(bound)=>{out.packing_stop=Some(Stop {bound,form:table.form.clone()});break;},
+        }
         let row = u32::try_from(place).expect("fewer than 2^32 tables");
-        push_table(out, names, runs, row, token, table, train, labels);
+        push_table(materializer,out, names, runs, row, token, table, train, labels);
     }
+}
+
+// Conservative simultaneous Rust/Python metadata ownership, independent of
+// logical row cardinality. Includes output dictionaries, dtype keys, the two
+// owner types/closures, vector growth and nested list/string copies. Row cells
+// and extent matrices have their own admissions. No Cartesian traversal here.
+fn metadata_bytes(materializer:&Materializer<'_>,table:&Table,names:&TableNames)->Result<usize,arclog::eval::ReachedBound> {
+    materializer.check()?;
+    let mut bytes=64usize.saturating_mul(1024).saturating_add(table.form.0.len().saturating_mul(256));
+    let Ok(contents)=&table.contents else {return Ok(bytes.saturating_add(table.contents.as_ref().err().map_or(0,|f|f.message.len().saturating_mul(8))));};
+    let mut add=|value:usize|bytes=bytes.saturating_add(value);
+    add(contents.name.len().saturating_mul(8));
+    for column in &contents.columns {add(2048usize.saturating_add(column.name.len().saturating_mul(8)).saturating_add(column.label.as_ref().map_or(0,|s|s.len().saturating_mul(8))));}
+    for frame in &contents.frames {add(1024usize.saturating_add(frame.len().saturating_mul(8)));}
+    // DET header aliases may copy the earlier native table's typed paths and
+    // source spelling. Charge their owned source bytes before cloning them.
+    add(names.heap_bytes().saturating_mul(contents.dets.len()).saturating_mul(8));
+    for det in &contents.dets {add(2048usize.saturating_add(det.types.len().saturating_mul(2048)).saturating_add(det.columns.heap_bytes().saturating_mul(8)));}
+    for key in &contents.keys {add(256usize.saturating_add(key.len().saturating_mul(32)));}
+    for sources in &contents.flows {for source in sources {add(2048usize.saturating_add(source.row.heap_bytes().saturating_mul(8)).saturating_add(source.atom.0.len().saturating_mul(256)));}}
+    for example in &contents.examples {
+        materializer.check()?;
+        match &example.rows {
+            Err(fault)=>add(4096usize.saturating_add(fault.message.len().saturating_mul(8))),
+            Ok(assigned)=>for (_,models) in &assigned.at {
+                materializer.check()?;
+                add(models.len().max(1).saturating_mul(4096usize.saturating_add(contents.dets.len().saturating_mul(2048))));
+            },
+        }
+    }
+    if let Some(Projections::Found(projections))=&contents.projections {for projection in projections {
+        materializer.check()?;
+        add(4096usize.saturating_add(projection.columns.len().saturating_mul(256)));
+        for example in &projection.rows {add(example.at.len().saturating_mul(4096));}
+    }}
+    Ok(bytes)
 }
 
 /// The name of each orientation constant by its encoding, the cell of its
@@ -638,25 +717,27 @@ struct Runs(
 );
 
 /// The cells of the rows of `rows`, of columns of `types`, in the order of
-/// [`each_row`] ([`row_width`] cells for each row), and the places of the rows
+/// [`arclog::eval::join::each_row`] ([`row_width`] cells for each row), and the places of the rows
 /// in that order, sorted by their cells, rows of equal cells in the order of
-/// [`each_row`].
-fn sorted_rows(rows: &Relation, types: &[ValueType]) -> (Vec<i32>, Vec<usize>) {
+/// [`arclog::eval::join::each_row`].
+fn sorted_rows(materializer:&Materializer<'_>,rows: &Relation, types: &[ValueType]) -> Result<(Vec<i32>, Vec<usize>),arclog::eval::ReachedBound> {
     assert_eq!(usize::from(rows.arity()), types.len(), "native relation arity differs from its packed schema");
     let width = row_width(types) as usize;
     let count = usize::try_from(rows.len()).expect("a count of rows within a usize");
     let mut written = Vec::with_capacity(count.saturating_mul(width));
     let mut visited = 0;
-    each_row(rows, &mut |row| {
+    materializer.walk(rows, &mut |row| {
         for (&id, ty) in row.iter().zip(types) {
             push_cells(&mut written, id, ty);
         }
         visited += 1;
-    });
+    })?;
+    materializer.check()?;
     let row_cells = |at: usize| &written[at * width..(at + 1) * width];
     let mut order: Vec<usize> = (0..visited).collect();
     order.sort_by(|&a, &b| row_cells(a).cmp(row_cells(b)));
-    (written, order)
+    materializer.check()?;
+    Ok((written, order))
 }
 
 /// The offset of the run of `count` rows with the cells `cells`: where
@@ -682,12 +763,15 @@ fn push_run(values: &mut Vec<i32>, runs: &mut Runs, count: u64, cells: Vec<i32>)
 /// The count of rows, the offset of the run of the rows of `rows`, of
 /// columns of `types`, in the order of their cells, as [`push_run`] places it,
 /// and the places of the rows in that order, as [`sorted_rows`] gives them.
-fn push_rows(values: &mut Vec<i32>, runs: &mut Runs, rows: &Arc<Relation>, types: &[ValueType]) -> (u64, u64, Arc<[usize]>) {
+fn push_rows(materializer:&Materializer<'_>,allocations:&mut Vec<Arc<arclog::session::SessionAllocation>>,values: &mut Vec<i32>, runs: &mut Runs, rows: &Arc<Relation>, types: &[ValueType]) -> Result<(u64, u64, Arc<[usize]>),arclog::eval::ReachedBound> {
     let key=(Arc::as_ptr(rows) as usize,types.to_vec());
     if let Some((_,offset,order))=runs.1.get(&key) {
-        return (order.len() as u64,*offset,Arc::clone(order));
+        return Ok((order.len() as u64,*offset,Arc::clone(order)));
     }
-    let (written, order) = sorted_rows(rows, types);
+    // Admit BEFORE full product flattening, sorting, copies or Vec reserve.
+    let payload=(row_width(types) as usize).saturating_mul(32).saturating_add(32);
+    let allocation=materializer.admit(rows,Materializer::row_bytes(payload,4))?;
+    let (written, order) = sorted_rows(materializer,rows, types)?;
     let width = row_width(types) as usize;
     let count = order.len() as u64;
     let mut cells = Vec::with_capacity(written.len());
@@ -697,12 +781,13 @@ fn push_rows(values: &mut Vec<i32>, runs: &mut Runs, rows: &Arc<Relation>, types
     let offset=push_run(values, runs, count, cells);
     let order:Arc<[usize]>=order.into();
     runs.1.insert(key,(Arc::clone(rows),offset,Arc::clone(&order)));
-    (count,offset,order)
+    allocations.push(allocation);
+    Ok((count,offset,order))
 }
 
 /// The offset of the extent run of the rows that [`push_rows`] gave the places
 /// `order` of, as [`push_run`] places it: for each row in that order, the
-/// extents `per_row` holds for it (its place in the order of [`each_row`] indexes
+/// extents `per_row` holds for it (its place in the order of [`arclog::eval::join::each_row`] indexes
 /// `per_row`), two cells for each, the frame's count of rows and of columns, or
 /// `-1 -1` for none. `order` holds a place at least.
 fn push_extents(values: &mut Vec<i32>, runs: &mut Runs, order: &[usize], per_row: &[Box<[Option<Extent>]>]) -> i64 {
@@ -743,7 +828,7 @@ pub(crate) fn names_of(registry: &Registry, earlier: &[&Table]) -> TableNames {
 }
 
 /// The columns of `table`, the table at `row`, after the tables before it.
-fn push_table(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, row: u32, token: usize, table: &Table, train: usize, labels: Option<&StreamLabels>) {
+fn push_table(materializer:&Materializer<'_>,out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, row: u32, token: usize, table: &Table, train: usize, labels: Option<&StreamLabels>) {
     let tables = &mut out.tables;
     tables.token.push(u32::try_from(token).expect("fewer than 2^32 tokens"));
     tables.form.push(form_path(&table.form));
@@ -824,7 +909,7 @@ fn push_table(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, ro
             tables.output_color.push(contents.selected.color.map_or(-1, i32::from));
             push_flows(out, names, row, contents);
             names.extend(own);
-            push_contents(out, runs, row, contents, &types, &extent_columns, train);
+            push_contents(materializer,&table.form,out, runs, row, contents, &types, &extent_columns, train);
         }
     }
 }
@@ -1079,9 +1164,18 @@ fn push_flows(out: &mut CaseColumns, names: &TableNames, row: u32, contents: &Co
     }
 }
 
+// Each annotation output is genuine ownership even when its value run was
+// interned earlier. Cover simultaneous per-row scratch, sorted extent/status
+// copies and Python containers; retain the lease on the returned CaseColumns.
+fn annotation_copy(materializer:&Materializer<'_>,allocations:&mut Vec<Arc<arclog::session::SessionAllocation>>,rows:&Relation,columns:usize)->Result<(),arclog::eval::ReachedBound> {
+    let allocation=materializer.admit(rows,Materializer::row_bytes(columns.saturating_mul(128),8))?;
+    allocations.push(allocation);
+    Ok(())
+}
+
 /// The entries of `contents`, the table at `row`, and its projections;
 /// `extent_columns` are the table's columns that its entries hold extents for.
-fn push_contents(out: &mut CaseColumns, runs: &mut Runs, row: u32, contents: &Contents, types: &[ValueType], extent_columns: &[u32], train: usize) {
+fn push_contents(materializer:&Materializer<'_>,form:&NodePath,out: &mut CaseColumns, runs: &mut Runs, row: u32, contents: &Contents, types: &[ValueType], extent_columns: &[u32], train: usize) {
     let count_only = contents.projections.is_some();
     let mut starts = Vec::with_capacity(contents.examples.len());
     for (place, example) in contents.examples.iter().enumerate() {
@@ -1104,32 +1198,48 @@ fn push_contents(out: &mut CaseColumns, runs: &mut Runs, row: u32, contents: &Co
             entries.stop.push(stop);
             entries.fault.push(fault);
             let mut order:Arc<[usize]> = Arc::from([]);
+            let packing_stop;
             let (value_kind, rows, offset, value_stop) = match value {
                 None if faulted => (ValueKind::Fault, 0, 0, None),
                 None => (ValueKind::NoEntries, 0, 0, None),
                 Some(RelationValue::Rows(rows)) if count_only => (ValueKind::Count, rows.len() as u64, 0, None),
                 Some(RelationValue::Rows(rows)) => {
-                    let (count, offset, sorted) = push_rows(&mut out.values, runs, rows, types);
-                    order = sorted;
-                    (ValueKind::Rows, count, offset, None)
+                    match push_rows(materializer,&mut out.allocations,&mut out.values,runs,rows,types) {
+                        Ok((count,offset,sorted))=>{order=sorted;(ValueKind::Rows,count,offset,None)},
+                        Err(bound)=>{
+                            packing_stop=Some(Stop {bound,form:form.clone()});
+                            out.packing_stop=packing_stop.clone();
+                            (ValueKind::Stopped,rows.len(),0,packing_stop.as_ref())
+                        }
+                    }
                 }
                 Some(RelationValue::Undefined) => (ValueKind::Undefined, 0, 0, None),
                 Some(RelationValue::Stopped(stop)) => (ValueKind::Stopped, 0, 0, Some(stop)),
             };
-            let (mut extent_offset, extent_stop, extent_fault) = match (value, extents) {
+            let annotation_stop;
+            let (mut extent_offset, mut extent_stop, extent_fault) = match (value, extents) {
                 (_, Some(EntryExtents::Stopped(stop))) => (-1, Some(stop), None),
                 (_, Some(EntryExtents::Lost(reason))) => (-1, None, Some(reason.clone())),
                 (Some(RelationValue::Rows(rows)), Some(EntryExtents::Rows(_held))) if !count_only && !rows.is_empty() => (-1, None, None),
                 _ => (-1, None, None),
             };
             let extent_status = if let Some(RelationValue::Rows(relation)) = value {
-                if count_only || relation.is_empty() || extent_columns.is_empty() {Vec::new()} else {
+                if count_only || matches!(value_kind,ValueKind::Stopped) || relation.is_empty() || extent_columns.is_empty() {Vec::new()} else {
                     // Native annotation has each_row order; export in exactly
                     // the same sorted row order as this entry's value buffer.
-                    let cells=crate::extents::annotated_rows(contents,place,at_assignment,model as usize,relation);
-                    let per_row=cells.iter().map(|r|r.iter().map(|(_,e)|*e).collect::<Box<[_]>>()).collect::<Vec<_>>();
-                    extent_offset=push_extents(&mut out.values,runs,&order,&per_row);
-                    order.iter().map(|i|cells[*i].iter().map(|(status,_)|*status).collect()).collect()
+                    let annotated=annotation_copy(materializer,&mut out.allocations,relation,extent_columns.len())
+                        .map_err(|bound|Stop {bound,form:form.clone()})
+                        .and_then(|()|crate::extents::annotated_rows(materializer,form,contents,place,at_assignment,model as usize,relation));
+                    match annotated {
+                        Ok(cells)=>{
+                            let per_row=cells.iter().map(|r|r.iter().map(|(_,e)|*e).collect::<Box<[_]>>()).collect::<Vec<_>>();
+                            extent_offset=push_extents(&mut out.values,runs,&order,&per_row);
+                            order.iter().map(|i|cells[*i].iter().map(|(status,_)|*status).collect()).collect()
+                        }
+                        // The exact stop is already held in extent_stop above;
+                        // values remain native, without an invented annotation.
+                        Err(stop)=>{annotation_stop=stop;extent_stop=Some(&annotation_stop);out.packing_stop=Some(annotation_stop.clone());Vec::new()},
+                    }
                 }
             } else {Vec::new()};
             let entries = &mut out.entries;
@@ -1156,8 +1266,17 @@ fn push_contents(out: &mut CaseColumns, runs: &mut Runs, row: u32, contents: &Co
                     }
                     let mut assigned_runs = Vec::new();
                     for (position, ((_, det_rows), det)) in assigned.iter().zip(contents.dets.iter()).enumerate() {
-                        let (count, offset, _) = push_rows(&mut out.values, runs, det_rows, &det.types);
-                        assigned_runs.push((position as u32, count, offset));
+                        match push_rows(materializer,&mut out.allocations,&mut out.values,runs,det_rows,&det.types) {
+                            Ok((count,offset,_))=>assigned_runs.push((position as u32,count,offset)),
+                            Err(bound)=>{
+                                let stop=Stop {bound,form:form.clone()};out.packing_stop=Some(stop.clone());
+                                for entry in first..out.entries.table.len() {
+                                    out.entries.kind[entry]=ValueKind::Stopped as u8;
+                                    out.entries.value_stop.bound[entry]=Some(format!("{:?}",stop.bound));
+                                    out.entries.value_stop.form[entry]=Some(form_path(form));
+                                }
+                            }
+                        }
                     }
                     for entry in first..out.entries.table.len() {
                         for &(position, count, offset) in &assigned_runs {
@@ -1188,14 +1307,19 @@ fn push_contents(out: &mut CaseColumns, runs: &mut Runs, row: u32, contents: &Co
                     let (defined, count, offset) = match projection_rows {
                         None => (0, 0, 0),
                         Some(rows) => {
-                            let (count, offset, sorted) = push_rows(&mut out.values, runs, rows, &projection_types);
-                            order = sorted;
-                            (1, count, offset)
+                            match push_rows(materializer,&mut out.allocations,&mut out.values,runs,rows,&projection_types) {
+                                Ok((count,offset,sorted))=>{order=sorted;(1,count,offset)},
+                                Err(bound)=>{out.packing_stop=Some(Stop {bound,form:form.clone()});(0,0,0)},
+                            }
                         }
                     };
-                    let (extent_offset,extent_status) = match (projection_rows, entries.get(example).and_then(|flat| flat.get(at))) {
+                    let annotation=(||->Result<(i64,Vec<Vec<u8>>),arclog::eval::ReachedBound> {
+                    if count>0 && !projected_extents.is_empty() {if let Some(rows)=projection_rows {
+                        annotation_copy(materializer,&mut out.allocations,rows,projected_extents.len())?;
+                    }}
+                    let result=match (projection_rows, entries.get(example).and_then(|flat| flat.get(at))) {
                         (Some(rows), Some((RelationValue::Rows(table_rows), Some(EntryExtents::Rows(held))))) if !projected_extents.is_empty() && count > 0 => {
-                            let per_row = projected_extent_rows(rows, table_rows, held, &projected_columns, &projected_extents);
+                            let per_row = projected_extent_rows(materializer,rows, table_rows, held, &projected_columns, &projected_extents)?;
                             let status=order.iter().map(|i|per_row[*i].iter().enumerate().map(|(k,e)| {
                                 let no_grid=contents.extents.as_ref().is_some_and(|x|x.no_grid[projected_extents[k]]);
                                 if no_grid {0} else if e.is_some() {1} else {2}
@@ -1204,17 +1328,24 @@ fn push_contents(out: &mut CaseColumns, runs: &mut Runs, row: u32, contents: &Co
                         }
                         (Some(rows),_) if count>0 && !projected_extents.is_empty()=> {
                             let mut per_row=Vec::new();
-                            each_row(rows,&mut |row|per_row.push(projection.columns.iter().enumerate().filter_map(|(j,c)| {
+                            materializer.walk(rows,&mut |row|per_row.push(projection.columns.iter().enumerate().filter_map(|(j,c)| {
                                 let k=extent_columns.iter().position(|i|*i==u32::from(c.0))?;
                                 let no_grid=contents.extents.as_ref().is_some_and(|x|x.no_grid[k]) || projection_types[j]==ValueType::Offset;
                                 Some(if no_grid {None} else if projection_types[j]==ValueType::Position {crate::extents::position_extent(row[j],&ValueType::Position)} else {None})
-                            }).collect::<Box<[_]>>()));
+                            }).collect::<Box<[_]>>()))?;
                             let status=order.iter().map(|i|per_row[*i].iter().enumerate().map(|(k,e)| {
                                 if contents.extents.as_ref().is_some_and(|x|x.no_grid[projected_extents[k]]) {0} else if e.is_some(){1}else{2}
                             }).collect()).collect();
                             (push_extents(&mut out.values,runs,&order,&per_row),status)
                         }
                         _=>(-1,Vec::new()),
+                    };
+                    materializer.check()?;
+                    Ok(result)
+                    })();
+                    let (extent_offset,extent_status)=match annotation {
+                        Ok(value)=>value,
+                        Err(bound)=>{out.packing_stop=Some(Stop {bound,form:form.clone()});(-1,Vec::new())},
                     };
                     out.projection_rows.extent_status.push(extent_status);
                     out.projection_rows.projection.push(projection_row);
@@ -1249,24 +1380,30 @@ fn projected_entries(contents: &Contents) -> Vec<Vec<(&RelationValue, Option<&En
 }
 
 /// The extents of each row of `rows`, the projection onto `columns` of the
-/// rows `table_rows` of a table, in the order of [`each_row`]: for each of the
+/// rows `table_rows` of a table, in the order of [`arclog::eval::join::each_row`]: for each of the
 /// table's extent columns that `extents` indexes, in its order, the one extent
 /// over the table rows that project to the row, as `held` gives their extents
 /// in the order of `table_rows`.
-fn projected_extent_rows(rows: &Relation, table_rows: &Relation, held: &[Box<[Option<Extent>]>], columns: &[usize], extents: &[usize]) -> Vec<Box<[Option<Extent>]>> {
+fn projected_extent_rows(materializer:&Materializer<'_>,rows: &Relation, table_rows: &Relation, held: &[Box<[Option<Extent>]>], columns: &[usize], extents: &[usize]) -> Result<crate::extents::Materialized<Vec<Box<[Option<Extent>]>>>,arclog::eval::ReachedBound> {
+    // The full matrix is already admitted, but this hash map is a genuine
+    // additional allocation. Its lease lasts until the projected matrix is
+    // built; the returned matrix has its own retained lease.
+    let payload=columns.len().saturating_mul(std::mem::size_of::<TermId>()).saturating_add(extents.len().saturating_mul(std::mem::size_of::<Merged>())).saturating_mul(4);
+    let _map_allocation=materializer.admit(table_rows,Materializer::row_bytes(payload,4))?;
+    let allocation=materializer.admit(rows,Materializer::row_bytes(extents.len().saturating_mul(std::mem::size_of::<Option<Extent>>()),1))?;
     let mut merged: StableHashMap<Box<[TermId]>, Vec<Merged>> = StableHashMap::default();
     let mut at = 0;
-    each_row(table_rows, &mut |row| {
+    materializer.walk(table_rows, &mut |row| {
         let key: Box<[TermId]> = columns.iter().map(|&column| row[column]).collect();
         let slots = merged.entry(key).or_insert_with(|| vec![Merged::Unset; extents.len()]);
         for (slot, &extent) in slots.iter_mut().zip(extents) {
             slot.merge(held[at][extent]);
         }
         at += 1;
-    });
+    })?;
     let mut per_row = Vec::new();
-    each_row(rows, &mut |row| per_row.push(merged.get(row).map_or_else(|| vec![None; extents.len()].into(), |slots| slots.iter().map(Merged::extent).collect())));
-    per_row
+    materializer.walk(rows, &mut |row| per_row.push(merged.get(row).map_or_else(|| vec![None; extents.len()].into(), |slots| slots.iter().map(Merged::extent).collect())))?;
+    Ok(crate::extents::Materialized::new(per_row,allocation))
 }
 
 /// Every geometric scalar column in native row order. A missing global

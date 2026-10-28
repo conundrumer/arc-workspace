@@ -74,16 +74,19 @@ pub(super) fn key_evidence(decoder:&Decoder<'_>,reads:&Reads<'_>,checked:&Checke
                             if let Err(stop)=reads.charge(rows.len(),&view.form) {entry.stop=Some(stop);continue;}
                             if let Some(EntryExtents::Stopped(stop))=contents.extents.as_ref().and_then(|e|e.entry(example,at,model)) {entry.stop=Some(stop.clone());}
                             if let Some(EntryExtents::Lost(reason))=contents.extents.as_ref().and_then(|e|e.entry(example,at,model)) {entry.lose(reason);}
-                            let annotation=annotated_rows(&contents,example,at,model,rows);
+                            let annotation=match annotated_rows(&reads.materializer(),&view.form,&contents,example,at,model,rows) {
+                                Ok(rows)=>rows,Err(stop)=>{entry.stop=Some(stop);continue;}
+                            };
+                            if entry.admit(reads,rows,geom.len(),&view.form).is_err() {continue;}
                             let mut i=0;
-                            each_row(rows,&mut |row| {
+                            if let Err(bound)=reads.materializer().walk(rows,&mut |row| {
                                 if let Some(positions)=&positions {
                                     let key:Box<[_]>=positions.iter().map(|p|row[*p]).collect();
                                     let slots=entry.rows.entry(key).or_insert_with(||vec![Merged::Unset;geom.len()]);
                                     for (slot,(_,extent)) in slots.iter_mut().zip(&annotation[i]) {slot.merge(*extent);}
                                 }
                                 i+=1;
-                            });
+                            }) {entry.stop=Some(Stop {bound,form:view.form.clone()});}
                         },
                         RelationValue::Stopped(stop)=>entry.stop=Some(stop.clone()),
                         RelationValue::Undefined=>entry.lose("key evidence is undefined"),

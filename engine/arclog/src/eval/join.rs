@@ -106,6 +106,31 @@ impl<'a> Budget<'a> {
         }
     }
 
+    /// Admits a new full-row buffer before it reserves memory. The compact
+    /// parts of a relation have not paid for their Cartesian product; flat
+    /// rows pay no binding work again. Output rows and their conservative
+    /// byte size count as new held data, under the existing session bound.
+    pub fn materialize(&mut self, relation: &Relation, bytes_per_row: usize) -> Result<crate::session::SessionAllocation, ReachedBound> {
+        self.charge_work(0)?;
+        self.charge_product(relation)?;
+        self.charge_rows(relation.len())?;
+        let bytes = usize::try_from(relation.len()).unwrap_or(usize::MAX).saturating_mul(bytes_per_row);
+        self.session.reserve(bytes.saturating_add(128)).map_err(ReachedBound::SessionBytes)
+    }
+
+    /// Walks admitted rows, checking the same operation deadline, cancellation
+    /// and session bound each batch without charging their bindings twice.
+    pub fn walk_rows(&mut self, relation: &Relation, visit: &mut dyn FnMut(&[TermId])) -> Result<(), ReachedBound> {
+        let mut count = 0u64;
+        try_each_row(relation, &mut |row| {
+            if count % BATCH == 0 { self.charge_work(0)?; }
+            count += 1;
+            visit(row);
+            Ok(())
+        })
+
+    }
+
     /// Counts `rows` more rows held, and checks the row cap.
     pub fn charge_rows(&mut self, rows: u64) -> Result<(), ReachedBound> {
         self.rows += rows;
@@ -158,6 +183,44 @@ impl<'a> Budget<'a> {
     /// [`TaskSession::record_counts`] gives.
     pub fn record(&self) {
         self.session.record_counts(Counts { bindings: self.bindings, rows: self.rows.max(self.nested_rows) });
+    }
+}
+
+/// One operation's materialization policy. It borrows the current limits;
+/// retained buffers own only their stable session byte reservations.
+#[derive(Clone, Copy)]
+pub struct Materializer<'a> {
+    session: &'a TaskSession,
+    limits: &'a Limits,
+}
+
+impl<'a> Materializer<'a> {
+    /// Uses the caller's current operation, without starting another timer.
+    pub fn new(session:&'a TaskSession, limits:&'a Limits)->Self { Self {session,limits} }
+
+    /// Conservative per-row owned storage, including hash/vector headers and
+    /// allocator slack. Callers supply their actual scalar payload layout.
+    pub fn row_bytes(payload:usize, allocations:usize)->usize {
+        payload.saturating_add(256).saturating_add(allocations.saturating_mul(64))
+    }
+
+    /// Admits all rows and returns the owner of their retained bytes.
+    pub fn admit(&self,rows:&Relation,bytes_per_row:usize)->Result<Arc<crate::session::SessionAllocation>,ReachedBound> {
+        Budget::new(self.limits,self.session).materialize(rows,bytes_per_row).map(Arc::new)
+    }
+
+    /// Admits a genuine copy of an existing buffer before cloning it.
+    pub fn copy(&self,bytes:usize)->Result<Arc<crate::session::SessionAllocation>,ReachedBound> {
+        self.check()?;
+        self.session.reserve(bytes).map(Arc::new).map_err(ReachedBound::SessionBytes)
+    }
+
+    /// A zero-work check under this operation's existing deadline and caps.
+    pub fn check(&self)->Result<(),ReachedBound> {Budget::new(self.limits,self.session).charge_work(0)}
+
+    /// Walks the admitted rows with periodic checks under these same limits.
+    pub fn walk(&self,rows:&Relation,visit:&mut dyn FnMut(&[TermId]))->Result<(),ReachedBound> {
+        Budget::new(self.limits,self.session).walk_rows(rows,visit)
     }
 }
 
@@ -408,20 +471,28 @@ fn branch_order<'a>(branch: &'a ClauseIr, inputs: &'a JoinInputs) -> impl Fn(&[V
 /// Calls `visit` on each row of `relation`, the product of its parts, in an
 /// order of encodings and no order of the content.
 pub fn each_row(relation: &Relation, visit: &mut dyn FnMut(&[TermId])) {
-    fn product(parts: &[RelationPart], row: &mut [TermId], visit: &mut dyn FnMut(&[TermId])) {
-        let Some((part, rest)) = parts.split_first() else {
-            visit(row);
-            return;
-        };
+    let result: Result<(), std::convert::Infallible> = try_each_row(relation, &mut |row| {
+        visit(row);
+        Ok(())
+    });
+    match result { Ok(()) => (), Err(never) => match never {} }
+}
+
+/// Visits the same product and order as [`each_row`], ending immediately at
+/// the visitor's error. No later row is constructed after that error.
+pub fn try_each_row<E>(relation: &Relation, visit: &mut dyn FnMut(&[TermId]) -> Result<(), E>) -> Result<(), E> {
+    fn product<E>(parts: &[RelationPart], row: &mut [TermId], visit: &mut dyn FnMut(&[TermId]) -> Result<(), E>) -> Result<(), E> {
+        let Some((part, rest)) = parts.split_first() else { return visit(row); };
         for part_row in part.rows.rows() {
             for (column, &value) in part.columns.iter().zip(part_row) {
                 row[usize::from(column.0)] = value;
             }
-            product(rest, row, visit);
+            product(rest, row, visit)?;
         }
+        Ok(())
     }
     let mut row = vec![TermId::from_encoding(0); usize::from(relation.arity())];
-    product(relation.parts(), &mut row, visit);
+    product(relation.parts(), &mut row, visit)
 }
 
 /// The relation of one part that holds `rows`.

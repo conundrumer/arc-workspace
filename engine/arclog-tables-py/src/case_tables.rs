@@ -5,7 +5,8 @@ use std::sync::Arc;
 
 use arclog_tables::columns::{CaseColumns, StopColumns, StreamTables, TableColumns};
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyDict};
+use pyo3::types::{PyBytes, PyDict, PyCapsule, PyModule};
+use pyo3::sync::PyOnceLock;
 
 /// The tables of one case program of a solver of a corpus, as flat columns
 /// (`arclog_tables::columns` gives the layout and the codes).
@@ -120,6 +121,10 @@ pub(crate) struct PyCaseTables {
     dtypes: Py<PyDict>,
     /// What the next call of `step_tables` takes from this `CaseTables` as its `before`, for a `CaseTables` of `step_tables`; Python reads none of it.
     step: Option<Step>,
+    /// Packing can return a bounded prefix; its unmaterialized suffix is
+    /// unavailable with this exact stop, never a completed empty table.
+    #[pyo3(get)]
+    materialization_stop: Option<String>,
 }
 
 /// What a `step_tables` call leaves for the call at the decode's next model
@@ -162,26 +167,90 @@ fn cell_bytes<T: Cell>(column: &[T]) -> Vec<u8> {
     bytes
 }
 
+// A raw consumer can retain a field after dropping CaseTables. Keep the
+// reservation on each actual escaped bytes/list object, not on the wrapper
+// or on a serialized mapping key. Buffer contents and isinstance stay native.
+fn owner_module(py:Python<'_>)->PyResult<&Py<PyModule>> {
+    static MODULE:PyOnceLock<Py<PyModule>>=PyOnceLock::new();
+    MODULE.get_or_try_init(py,||{
+        let code=std::ffi::CString::new(r#"
+class _Owner:
+    __slots__ = ('capsule', 'live')
+    def __init__(self, capsule):
+        self.capsule = capsule
+        self.live = 0
+    def retain(self):
+        self.live += 1
+    def release(self):
+        self.live -= 1
+        if not self.live:
+            self.capsule = None
+
+def _classes(owner):
+    holder = _Owner(owner)
+    class _OwnedBytes(bytes):
+        __slots__ = ()
+        def __new__(cls, value):
+            result = bytes.__new__(cls, value)
+            holder.retain()
+            return result
+        def __del__(self):
+            holder.release()
+        @property
+        def _owner(self):
+            return holder.capsule
+    class _OwnedList(list):
+        __slots__ = ()
+        def __new__(cls, value):
+            result = list.__new__(cls)
+            holder.retain()
+            return result
+        def __del__(self):
+            holder.release()
+        @property
+        def _owner(self):
+            return holder.capsule
+    return _OwnedBytes, _OwnedList
+
+def _own(value, classes):
+    if isinstance(value, bytes):
+        return classes[0](value)
+    if isinstance(value, list):
+        return classes[1](_own(item, classes) for item in value)
+    return value
+"#).expect("static Python source has no null");
+        PyModule::from_code(py,&code,c"_arclog_buffer_owner.py",c"_arclog_buffer_owner").map(Bound::unbind)
+    })
+}
+
+fn owned_value<'py>(py:Python<'py>,value:&Bound<'py,PyAny>,owner:&Bound<'py,PyAny>)->PyResult<Bound<'py,PyAny>> {
+    owner_module(py)?.bind(py).getattr("_own")?.call1((value,owner))
+}
+
 /// The dict of one part of a case's columns, and the dtype of each of its
 /// integer columns in `dtypes`.
 struct Part<'a, 'py> {
     dict: Bound<'py, PyDict>,
     name: &'static str,
     dtypes: &'a Bound<'py, PyDict>,
+    owner: &'a Bound<'py,PyAny>,
 }
 
 impl<'a, 'py> Part<'a, 'py> {
-    fn new(py: Python<'py>, name: &'static str, dtypes: &'a Bound<'py, PyDict>) -> Self {
-        Part { dict: PyDict::new(py), name, dtypes }
+    fn new(py: Python<'py>, name: &'static str, dtypes: &'a Bound<'py, PyDict>,owner:&'a Bound<'py,PyAny>) -> Self {
+        Part { dict: PyDict::new(py), name, dtypes,owner }
     }
 
     fn ints<T: Cell>(&self, key: &str, column: &[T]) -> PyResult<()> {
-        self.dict.set_item(key, PyBytes::new(self.dict.py(), &cell_bytes(column)))?;
+        let bytes=PyBytes::new(self.dict.py(),&cell_bytes(column));
+        self.dict.set_item(key,owned_value(self.dict.py(),bytes.as_any(),self.owner)?)?;
         self.dtypes.set_item(format!("{}.{key}", self.name), T::DTYPE)
     }
 
     fn list<V: IntoPyObject<'py>>(&self, key: &str, column: V) -> PyResult<()> {
-        self.dict.set_item(key, column)
+        self.dict.set_item(key,column)?;
+        let value=self.dict.get_item(key)?.expect("the column just inserted");
+        self.dict.set_item(key,owned_value(self.dict.py(),&value,self.owner)?)
     }
 
     fn stop(&self, key: &str, stop: &StopColumns) -> PyResult<()> {
@@ -220,8 +289,10 @@ impl PyCaseTables {
     /// case program, or `None` for a stream that no case program writes. `base`
     /// is the base of a case whose `columns` are cut.
     pub(crate) fn of(py: Python<'_>, task: String, case: String, concept: bool, projection_cap: u64, columns: &CaseColumns, relations: Option<&[String]>, base: Option<Base>) -> PyResult<Self> {
+        let capsule=PyCapsule::new(py,columns.allocations(),None)?;
+        let owner=owner_module(py)?.bind(py).getattr("_classes")?.call1((capsule,))?;
         let dtypes = PyDict::new(py);
-        let t = Part::new(py, "tables", &dtypes);
+        let t = Part::new(py, "tables", &dtypes,&owner);
         let c = &columns.tables;
         t.ints("token", &c.token)?;
         t.list("form", &c.form)?;
@@ -254,7 +325,7 @@ impl PyCaseTables {
         t.list("keys", &c.keys)?;
         t.ints("output_position", &c.output_position)?;
         t.ints("output_color", &c.output_color)?;
-        let e = Part::new(py, "entries", &dtypes);
+        let e = Part::new(py, "entries", &dtypes,&owner);
         let c = &columns.entries;
         e.ints("table", &c.table)?;
         e.ints("example_kind", &c.example_kind)?;
@@ -270,18 +341,18 @@ impl PyCaseTables {
         e.stop("extent_stop", &c.extent_stop)?;
         e.list("extent_fault", &c.extent_fault)?;
         e.list("extent_status", &c.extent_status)?;
-        let a = Part::new(py, "assigned", &dtypes);
+        let a = Part::new(py, "assigned", &dtypes,&owner);
         let c = &columns.assigned;
         a.ints("entry", &c.entry)?;
         a.ints("det", &c.det)?;
         a.ints("rows", &c.rows)?;
         a.ints("offset", &c.offset)?;
-        let v = Part::new(py, "projections", &dtypes);
+        let v = Part::new(py, "projections", &dtypes,&owner);
         let c = &columns.projections;
         v.ints("table", &c.table)?;
         v.list("columns", &c.columns)?;
         v.ints("width", &c.width)?;
-        let r = Part::new(py, "projection_rows", &dtypes);
+        let r = Part::new(py, "projection_rows", &dtypes,&owner);
         let c = &columns.projection_rows;
         r.ints("projection", &c.projection)?;
         r.ints("entry", &c.entry)?;
@@ -290,7 +361,7 @@ impl PyCaseTables {
         r.ints("offset", &c.offset)?;
         r.ints("extent_offset", &c.extent_offset)?;
         r.list("extent_status", &c.extent_status)?;
-        let f = Part::new(py, "flows", &dtypes);
+        let f = Part::new(py, "flows", &dtypes,&owner);
         let c = &columns.flows;
         f.ints("table", &c.table)?;
         f.ints("column", &c.column)?;
@@ -301,7 +372,7 @@ impl PyCaseTables {
         f.ints("det", &c.det)?;
         f.list("atom", &c.atom)?;
         f.ints("occurrence", &c.occurrence)?;
-        let k = Part::new(py, "copies", &dtypes);
+        let k = Part::new(py, "copies", &dtypes,&owner);
         k.list("detail", &columns.copies.detail)?;
         Ok(PyCaseTables {
             task,
@@ -318,9 +389,10 @@ impl PyCaseTables {
             projection_rows: r.dict.unbind(),
             flows: f.dict.unbind(),
             copies: k.dict.unbind(),
-            values: PyBytes::new(py, &cell_bytes(&columns.values)).unbind(),
+            values: owned_value(py,PyBytes::new(py,&cell_bytes(&columns.values)).as_any(),&owner)?.cast_into::<PyBytes>()?.unbind(),
             dtypes: dtypes.unbind(),
             step: None,
+            materialization_stop: columns.packing_stop().map(|stop|format!("{:?} at {:?}",stop.bound,stop.form)),
         })
     }
 
