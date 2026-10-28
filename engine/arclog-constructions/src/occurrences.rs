@@ -20,6 +20,13 @@ use crate::agreement::{compare, outputs, Family, Lib};
 /// A placement is the offset that takes the transformed shape onto the
 /// cells, and it is one correspondence: each shape cell with the cell it
 /// lands on.
+///
+/// - in `cell(key, P, v)`: the cells and their values.
+/// - in `shape(key, P, v)`: the shape's cells and their values.
+/// - in `transform(D)`, shared, default the identity: the D4 images of the shape to place.
+/// - out `occurrence(key, D, P)`: P is an offset, and D is in `transform`. For every shape cell S of value v, the cell that `apply` of D to S, then `compose` with P, gives is a `cell` row of value v. P moves the D-image of the shape onto the cells.
+/// - out `candidate(key, D, P)`: the same, where at least one shape cell lands on a cell of its value. Every occurrence is a candidate.
+/// - Only the cells `cell` holds count.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Occurrences;
 

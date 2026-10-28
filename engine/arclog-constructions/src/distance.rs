@@ -18,6 +18,13 @@ use arclog::terms::{Term, TermId};
 
 /// The least cost from a source to each node, and every predecessor on a
 /// least-cost path.
+///
+/// - in `edge(key, a, b)`: a step from a to b, of cost 1.
+/// - in `weight(key, a, b, W)`: a step from a to b, of cost W.
+/// - in `source(key, n)`, from the key: a node at cost 0.
+/// - in `source_distance(key, n, K)`: a node at start cost K.
+/// - out `distance(key, n, K)`.
+/// - out `predecessor(key, b, a)`: a comes just before b on some least-cost path. Under ties, b has several.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Distance;
 
@@ -54,6 +61,10 @@ impl Construction for Distance {
 
 /// Distance over the steps inside the group's set, the cardinals by
 /// default.
+///
+/// - in `node(key, P)`, `source(key, P)`, `step(Delta)` (shared, default the four cardinal steps).
+/// - out `distance(key, P, K)`: K steps from the nearest source reach P. A source is at 0. A source outside `node` is at 0 and reaches nothing.
+/// - out `predecessor(key, Q, P)`: P comes just before Q on some fewest-step path. Under ties, Q has several.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CellDistance;
 

@@ -21,6 +21,11 @@ use crate::agreement::{compare, outputs, Family, Lib};
 /// the cells of a pair compare alike both ways. Each line pair of a translation,
 /// the line of a cell and the line of its image, is one correspondence, and
 /// a line pair is broken where a cell of it conflicts with its image.
+///
+/// - in `cell(key, P, v)`.
+/// - out `period(key, A, K)`: a move of K along A takes every cell onto a cell of the same value, wherever both cells exist. K runs from 1 to one less than the extent. A K with no pair of cells to compare is a period.
+/// - out `fundamental_period(key, A, K)`: the least period along A that compares at least one pair of cells.
+/// - out `approximate_period(key, A, K)`: a period read through damage: the line pairs the move breaks do not outnumber those it keeps. Every period is one.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Periods;
 

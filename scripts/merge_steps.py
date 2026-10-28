@@ -215,7 +215,8 @@ def checks(tree: Path, base: str, engine_passed: str | None = None) -> list[str]
     the crates `tested` gives, and a `tree` that holds an `engine/` edit
     outside its `HEAD` fails the check `ENGINE_EDITS`, with no cargo run."""
     engine = engine_runs(tree, base, engine_passed)
-    common = list(map(Check, DOCUMENT_CHECKS))
+    common = [*map(Check, DOCUMENT_CHECKS),
+              Check(("uv", "run", "python", "scripts/generate_study_meanings.py", "--check"))]
     with contextlib.redirect_stdout(sys.stderr):
         if not engine:
             return failures(tree, common)

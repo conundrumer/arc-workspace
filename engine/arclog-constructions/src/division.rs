@@ -16,6 +16,12 @@ use arclog::terms::{Margins, Term, TermId};
 use arclog::types::ValueType;
 
 /// Equal parts per axis, by count or by side, with a gap.
+///
+/// - in `cell(key, P)`: the cells to cut.
+/// - in `parts(key, A, N)`: N parts along A. Or `side(key, A, K)`: parts of K cells along A. An axis with neither is one part.
+/// - in `gap(key, A, G)`: G cells between each two parts along A. An axis with no row has gap 0.
+/// - out `tile(key, P, P_outer, P_inner)`: P is the cell P_inner of the part at P_outer. P_outer is a cell of the frame of parts.
+/// - A cell is reported only when its distances from both ends place it in a complete part of the requested size; gap cells and inconsistent extents give no row.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Division;
 
@@ -107,6 +113,11 @@ fn side_of(extent: i32, n: i32, g: i32) -> Option<i32> {
 
 /// The cells of a frame tiled by an inner frame at the outer positions,
 /// with a gap per axis.
+///
+/// - in `outer(key, P)`: the frame of copies.
+/// - in `inner(key, P)`: the frame of one copy.
+/// - in `gap(key, A, G)`: G cells between each two copies along A. An axis with no row has gap 0.
+/// - out `cell(key, P_outer, P_inner, P)`: P is the cell P_inner of the copy at P_outer.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Tiling;
 
@@ -144,6 +155,9 @@ impl Construction for Tiling {
 }
 
 /// The cells of a frame from its extent on each axis.
+///
+/// - in `extent(key, A, N)`, from the key: N cells along A. An axis with no row has extent 1.
+/// - out `cell(key, P)`.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Frame;
 
@@ -178,6 +192,9 @@ impl Construction for Frame {
 }
 
 /// The divisions that a frame's extent admits on each axis.
+///
+/// - in `frame(key, P)`: the frame's cells.
+/// - out `division(key, A, N, K, G)`: along A, N parts of K cells with G cells between each two fill the extent exactly. N is 2 or more and K is 1 or more. G can be less than 0, down to 1 less K: then two neighboring parts share that many lines.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ExtentDivisions;
 

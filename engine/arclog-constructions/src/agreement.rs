@@ -21,6 +21,12 @@ use arclog::terms::{Term, TermId};
 /// The mismatches and conflicts of two valued families under each admitted
 /// D4 element, whose correspondence pairs each source point, a Position or
 /// an Offset, with its image under the element.
+///
+/// - in `source(key, P, v)`, `target(key, P, v)`.
+/// - in `transform(D)`, shared, default all eight.
+/// - out `mismatch(key, D)`: D is in `transform`, and for some source cell P, the cell `apply` of D to P gives is not a target cell of P's value: no target cell is there, or one of another value.
+/// - out `conflict(key, D)`: for some source cell, its image is a target cell of another value. A missing target cell is no conflict.
+/// - A D in `transform` with no `mismatch` row takes the source into the target. Target cells that are no source cell's image are not tested.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Agreement;
 
