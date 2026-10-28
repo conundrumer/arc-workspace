@@ -57,9 +57,9 @@ rerun, `arclog-cli stream <mutant dir>/<task>.arclog`. The kinds:
   panic     a stage panics, or ends by a signal.
   departs   an operator whose rule in `docs/arclog/` gives the verdict of its mutant, and the verdict of the build, as above, differs from it.
   run-fault an accepted mutant whose `decode` gives a fault, a refused case or a case differing in consistency, or a case with no
-            solves outcome because the determination or the judged run faults (a program that no assignment solves, or whose
-            parameters are underdetermined, is an outcome of a mutation and no finding), or whose `tables` fails where `decode`
-            found nothing.
+            solves outcome because the determination or the judged run faults (a program that no assignment solves, a case that stops
+            at a bound, or whose parameters are underdetermined, is an outcome of a mutation and no finding), or whose `tables` fails
+            where `decode` found nothing.
   no-cause  a refusal whose message is empty or has no text after the prefixes that give the stage and the case, such as
             `a fault that stops the stream: the checker refuses the case concept:`.
   stopped   a stage does not end within its time bound.
@@ -578,6 +578,7 @@ def named_solvers(corpus, task):
 
 
 FAULT_LINES = ("first case refused", "first case differing in consistency", "first case with no solves outcome", "a fault that stops the decode")
+FAILURE_LINES = ("first case ", FAULT_LINES[3])  # the two forms in which `decode` writes a failure line, which gives it a non-zero exit
 
 
 def decode_faults(task, output):
@@ -685,7 +686,7 @@ class Runner:
         if not accepted or decode_stopped:
             return accepted, findings, directory
         findings += [(FindingKind.RUN_FAULT, f"decode: {body}") for kind, body in faults if kind not in self.original_faults(task)]
-        if decoded[0] and not any(line.removeprefix(f"{task}: ").startswith(FAULT_LINES) for line in decoded[1].splitlines()):
+        if decoded[0] and not any(line.removeprefix(f"{task}: ").startswith(FAILURE_LINES) for line in decoded[1].splitlines()):
             findings.append((FindingKind.RUN_FAULT, f"decode exits {decoded[0]}: {one_line(decoded[2])}"))
         result = self.cli("tables", str(directory), self.args.tasks, "--bodies", task)
         if self.stage("tables", result, findings):
