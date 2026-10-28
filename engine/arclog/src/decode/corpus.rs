@@ -318,6 +318,24 @@ pub fn replay_prefix_tree<T: Default + Clone>(
     masked: bool,
     record: &dyn Fn(&mut T, &Decoder<'_>, Stepped<'_>),
 ) -> Vec<StreamReplay<T>> {
+    replay_prefix_tree_testing(task, judged, streams, constructions, settings, masked, true, record)
+}
+
+/// As [`replay_prefix_tree`]. Where `test_last` is false, the step of the
+/// last token the model emits in a stream runs no `OUT` test and no rule test
+/// ([`Decoder::step_untested`]), unless a later stream resumes from a
+/// checkpoint at or after that token: the `consistency` and `rule_test` of
+/// that step are `None`.
+fn replay_prefix_tree_testing<T: Default + Clone>(
+    task: &Task,
+    judged: &JudgedTask,
+    streams: &[Vec<(u32, Emitter)>],
+    constructions: &Constructions,
+    settings: &DecodeSettings,
+    masked: bool,
+    test_last: bool,
+    record: &dyn Fn(&mut T, &Decoder<'_>, Stepped<'_>),
+) -> Vec<StreamReplay<T>> {
     let registry = Registry::get();
     let session = corpus_session();
     let train: Arc<[PairCandidates<'_>]> = judged.train.iter().map(|pair| PairCandidates::of(pair, Section::Train, World::Closed)).collect();
@@ -350,8 +368,8 @@ pub fn replay_prefix_tree<T: Default + Clone>(
             Some(checkpoint) => (checkpoint.decoder.fork(), checkpoint.position, checkpoint.forced.clone(), checkpoint.record.clone()),
             None => (root.fork(), 0, Vec::new(), T::default()),
         };
-        let run = |decoder: &mut Decoder<'_>, tokens: &[(Token, Emitter)], from: usize, forced: Vec<Token>, recording: &mut T| {
-            replay_from(decoder, tokens, masked, from, forced, &mut |decoder, stepped| {
+        let run = |decoder: &mut Decoder<'_>, tokens: &[(Token, Emitter)], from: usize, forced: Vec<Token>, untested: Option<usize>, recording: &mut T| {
+            replay_from(decoder, tokens, masked, from, forced, untested, &mut |decoder, stepped| {
                 record(recording, decoder, stepped);
                 std::ops::ControlFlow::Continue(())
             })
@@ -372,7 +390,7 @@ pub fn replay_prefix_tree<T: Default + Clone>(
         }
         let mut result = Ok(());
         for &target in targets.iter().rev() {
-            match run(&mut decoder, &tokens[..target], position, forced.clone(), &mut recording) {
+            match run(&mut decoder, &tokens[..target], position, forced.clone(), None, &mut recording) {
                 Ok(replayed) => {
                     position = replayed.end();
                     forced = replayed.forced().to_vec();
@@ -387,7 +405,9 @@ pub fn replay_prefix_tree<T: Default + Clone>(
                 }
             }
         }
-        let result = result.and_then(|()| run(&mut decoder, &tokens, position, forced, &mut recording));
+        // The runs to the targets are tested, so that each checkpoint holds a tested step.
+        let untested = if test_last { None } else { stream.iter().rposition(|(_, emitter)| *emitter == Emitter::Model).filter(|&last| last >= position) };
+        let result = result.and_then(|()| run(&mut decoder, &tokens, position, forced, untested, &mut recording));
         match result {
             Ok(replayed) => outcomes[index] = Some(StreamReplay { fault: replayed.unfinished(), record: recording }),
             Err(refused) => {
@@ -573,6 +593,45 @@ pub fn replay_units<T: Default + Clone, U: Send>(
     settled: &(dyn Fn(usize) + Sync),
     step_cap: Option<usize>,
 ) -> Vec<Vec<Result<U, String>>> {
+    replay_units_testing(solvers, constructions, settings, masked, true, threads, progress, record, started, ended, settled, step_cap)
+}
+
+/// As [`replay_units`], with the step of the last token the model emits in
+/// a stream untested, as [`replay_prefix_tree`] steps it under `test_last`
+/// false: the `consistency` and `rule_test` that `record` is given there are
+/// `None`, and no other step differs. For a caller whose `record` reads
+/// neither at the last model step of a stream.
+pub fn replay_units_untested_ends<T: Default + Clone, U: Send>(
+    solvers: &[UnitSolver<'_>],
+    constructions: &Constructions,
+    settings: &DecodeSettings,
+    masked: bool,
+    threads: usize,
+    progress: &ReplayProgress,
+    record: &(dyn Fn(&mut T, &Decoder<'_>, Stepped<'_>) + Sync),
+    started: &(dyn Fn(usize) + Sync),
+    ended: &(dyn Fn(usize, usize, StreamReplay<T>) -> U + Sync),
+    settled: &(dyn Fn(usize) + Sync),
+    step_cap: Option<usize>,
+) -> Vec<Vec<Result<U, String>>> {
+    replay_units_testing(solvers, constructions, settings, masked, false, threads, progress, record, started, ended, settled, step_cap)
+}
+
+/// [`replay_units`] and [`replay_units_untested_ends`], by `test_last`.
+fn replay_units_testing<T: Default + Clone, U: Send>(
+    solvers: &[UnitSolver<'_>],
+    constructions: &Constructions,
+    settings: &DecodeSettings,
+    masked: bool,
+    test_last: bool,
+    threads: usize,
+    progress: &ReplayProgress,
+    record: &(dyn Fn(&mut T, &Decoder<'_>, Stepped<'_>) + Sync),
+    started: &(dyn Fn(usize) + Sync),
+    ended: &(dyn Fn(usize, usize, StreamReplay<T>) -> U + Sync),
+    settled: &(dyn Fn(usize) + Sync),
+    step_cap: Option<usize>,
+) -> Vec<Vec<Result<U, String>>> {
     let mut sorted: Vec<Vec<usize>> = solvers.iter().map(|solver| sorted_streams(solver.streams)).collect();
     // For each solver: the indices in its streams of the streams past the cap, and the fault each gives.
     let mut capped: Vec<(Vec<usize>, String)> = solvers.iter().map(|_| (Vec::new(), String::new())).collect();
@@ -616,7 +675,7 @@ pub fn replay_units<T: Default + Clone, U: Send>(
             settled(unit.solver);
             out
         };
-        let replayed = catch_unwind(AssertUnwindSafe(|| replay_prefix_tree(solver.task, solver.judged, &ids, constructions, settings, masked, &counting)));
+        let replayed = catch_unwind(AssertUnwindSafe(|| replay_prefix_tree_testing(solver.task, solver.judged, &ids, constructions, settings, masked, test_last, &counting)));
         let outs: Vec<Result<U, String>> = match replayed {
             Ok(outcomes) => unit.streams.iter().zip(outcomes).map(|(&stream, outcome)| finish(stream, outcome)).collect(),
             // The unit's replay panicked: each stream replays alone, so a panic faults the stream that causes it.
@@ -624,7 +683,7 @@ pub fn replay_units<T: Default + Clone, U: Send>(
                 .streams
                 .iter()
                 .zip(&ids)
-                .map(|(&index, stream)| match catch_unwind(AssertUnwindSafe(|| replay_prefix_tree(solver.task, solver.judged, std::slice::from_ref(stream), constructions, settings, masked, &counting))) {
+                .map(|(&index, stream)| match catch_unwind(AssertUnwindSafe(|| replay_prefix_tree_testing(solver.task, solver.judged, std::slice::from_ref(stream), constructions, settings, masked, test_last, &counting))) {
                     Ok(outcomes) => finish(index, outcomes.into_iter().next().expect("an outcome for the one stream")),
                     Err(payload) => {
                         settled(unit.solver);

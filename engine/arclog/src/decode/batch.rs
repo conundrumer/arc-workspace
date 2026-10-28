@@ -25,7 +25,7 @@ pub fn step_batch(pool: &Pool, decoders: &mut [Decoder<'_>], tokens: &[Token]) -
     assert_eq!(decoders.len(), tokens.len(), "one token per decode");
     let pairs: Vec<(&Decoder<'_>, &Token)> = decoders.iter().zip(tokens).collect();
     let advanced: Vec<Result<Result<Advanced, Refusal>, String>> = pool.map(&pairs, |(decoder, token)| {
-        catch_unwind(AssertUnwindSafe(|| decoder.advance(token))).map_err(|payload| panic_message(&*payload).unwrap_or("a payload that is not a message").to_string())
+        catch_unwind(AssertUnwindSafe(|| decoder.advance(token, true))).map_err(|payload| panic_message(&*payload).unwrap_or("a payload that is not a message").to_string())
     });
     decoders.iter_mut().zip(advanced).map(|(decoder, advanced)| advanced.map(|advanced| decoder.apply(advanced))).collect()
 }

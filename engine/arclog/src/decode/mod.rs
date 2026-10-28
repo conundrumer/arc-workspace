@@ -386,7 +386,17 @@ impl<'a> Decoder<'a> {
     /// it was. The decode ends at the first `OUT` form that is consistent,
     /// and at nothing else, and refuses every token after it.
     pub fn step(&mut self, token: Token) -> StepResult {
-        let advanced = self.advance(&token);
+        let advanced = self.advance(&token, true);
+        self.apply(advanced)
+    }
+
+    /// [`Decoder::step`] with no consistency test of an `OUT` form and no
+    /// rule test: the step gives `None` as its `consistency` and as its
+    /// `rule_test`, so the decode ends at no `OUT` form and takes no
+    /// assignments from the step. A caller that steps no further token that
+    /// reads the output of the step uses it.
+    pub fn step_untested(&mut self, token: Token) -> StepResult {
+        let advanced = self.advance(&token, false);
         self.apply(advanced)
     }
 
@@ -411,11 +421,12 @@ impl<'a> Decoder<'a> {
     }
 
     /// The state after `token`, and what the step gives, which
-    /// [`Decoder::apply`] makes the decode's.
-    fn advance(&self, token: &Token) -> Result<Advanced, Refusal> {
+    /// [`Decoder::apply`] makes the decode's. With `tested` false, the step
+    /// runs no consistency test.
+    fn advance(&self, token: &Token, tested: bool) -> Result<Advanced, Refusal> {
         let (state, forced) = self.next_state(token)?;
-        let consistency = self.consistency(&self.state, &state, Tested::Out);
-        let rule_test = if self.context.settings.rule_tests { self.consistency(&self.state, &state, Tested::Rule) } else { None };
+        let consistency = if tested { self.consistency(&self.state, &state, Tested::Out) } else { None };
+        let rule_test = if tested && self.context.settings.rule_tests { self.consistency(&self.state, &state, Tested::Rule) } else { None };
         Ok(Advanced { token: token.clone(), state, step: Step { forced: forced.into(), consistency, rule_test } })
     }
 

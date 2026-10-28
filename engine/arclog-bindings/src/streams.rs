@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
 
-use arclog::decode::corpus::{read_task_files, replay_units, ReplayProgress, UnitSolver};
+use arclog::decode::corpus::{read_task_files, replay_units_untested_ends, ReplayProgress, UnitSolver};
 use arclog::eval::instance::Constructions;
 use arclog::harness::corpus_threads;
 use arclog::registry::Registry;
@@ -158,7 +158,7 @@ pub(crate) fn corpus_streams(py: Python<'_>, corpus: &str, all_cases: bool, task
 }
 
 /// Replays the streams of `found` whose masks are due, which are those with
-/// `Ok(None)`, on the tasks that `reads` holds, as [`replay_units`] does, and
+/// `Ok(None)`, on the tasks that `reads` holds, as [`replay_units_untested_ends`] does, and
 /// sets each stream's `masks`. A solver whose task did not read, gives each of its streams that fault.
 fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &HashMap<String, Result<(Task, JudgedTask), String>>, constructions: &'static Constructions, steps: &ReplayProgress, started: Option<&Py<PyAny>>, ended: Option<&Py<PyAny>>, step_cap: Option<usize>) {
     let mut faults: HashMap<usize, String> = HashMap::new();
@@ -185,7 +185,7 @@ fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &Hash
         })
         .collect();
     let progress = Progress::new(started, ended, due.iter().map(|(solver, _, _)| found[*solver].0.as_str()).collect(), due.iter().map(|(_, wanted, _)| wanted.len()).collect());
-    let results = replay_units(
+    let results = replay_units_untested_ends(
         &solvers,
         constructions,
         &DecodeSettings::default(),

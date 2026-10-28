@@ -69,7 +69,9 @@ pub struct CaseStream {
 /// and of each case under `cases/<id>/`, hold a prefix of a solver, as
 /// [`crate::check::CaseFiles::prefix`] gives it, so the checker does not
 /// refuse a case program for holding no `OUT` form, and a case's stream ends
-/// with the last token of its last form.
+/// with the last token of its last form. One check cache serves every program
+/// the call checks: the case programs, the program of each case's files, and
+/// each case program read alone.
 pub fn solver_streams(corpus: &Path, id: &str, wanted: WantedCases<'_>, vocabulary: &Vocabulary, prefix: bool) -> Result<Vec<CaseStream>, String> {
     let solver = read_corpus_solver(corpus, id).map_err(|e| format!("the solver's files do not read: {e}"))?;
     let cases = resolve_cases(&solver, Registry::get());
@@ -83,13 +85,14 @@ pub fn solver_streams(corpus: &Path, id: &str, wanted: WantedCases<'_>, vocabula
             vec![found.case.name.clone()]
         }
     };
-    let programs = check_cases(&solver, &cases, &clauses, &mut CheckCache::default(), &|name| names.contains(name), prefix)?;
+    let mut cache = CheckCache::default();
+    let programs = check_cases(&solver, &cases, &clauses, &mut cache, &|name| names.contains(name), prefix)?;
     let concept = &cases.concept().case.name;
     Ok(programs
         .iter()
         .map(|(name, program)| {
             let case = cases.cases().find(|case| case.case.name == *name).expect("a checked case is a case of the solver");
-            let (stream, labels) = match named_case_stream(corpus, id, &solver, case, program, vocabulary, prefix) {
+            let (stream, labels) = match named_case_stream(corpus, id, &solver, case, program, vocabulary, &mut cache, prefix) {
                 Ok((stream, labels)) => (Ok(stream), labels),
                 Err(fault) => (Err(fault), Vec::new()),
             };
@@ -110,12 +113,12 @@ struct FilesProgram {
 /// The program of the files of the case `name` of the solver `id` of `corpus`,
 /// `None` where it has no files, or the fault that the files stand in part, do
 /// not read, or make a solver whose program the checker refuses.
-fn files_program(corpus: &Path, id: &str, name: &CaseName, prefix: bool) -> Result<Option<FilesProgram>, String> {
+fn files_program(corpus: &Path, id: &str, name: &CaseName, cache: &mut CheckCache, prefix: bool) -> Result<Option<FilesProgram>, String> {
     let Some(texts) = files::read_case_files(corpus, id, name)? else { return Ok(None) };
     let solver = read_solver_texts(corpus, id, &texts.arclog, &texts.arcdata).map_err(|e| format!("the case's files do not read: {e}"))?;
     let cases = resolve_cases(&solver, Registry::get());
     let clauses = SolverClauses::of_cases(&cases);
-    let checked = check_case(&solver, cases.concept(), &clauses, &mut CheckCache::default(), "the case's files", prefix)?;
+    let checked = check_case(&solver, cases.concept(), &clauses, cache, "the case's files", prefix)?;
     Ok(Some(FilesProgram { solver, cases, checked }))
 }
 
@@ -127,20 +130,21 @@ fn files_program(corpus: &Path, id: &str, name: &CaseName, prefix: bool) -> Resu
 /// read, or the solver they make has no stream, the fault. Where `prefix`,
 /// the case's files are read as [`solver_streams`] reads them.
 pub fn corpus_case_stream(corpus: &Path, id: &str, case: &ResolvedCase, checked: &CheckedProgram, vocabulary: &Vocabulary, prefix: bool) -> Result<WrittenStream, String> {
-    match files_program(corpus, id, &case.case.name, prefix)? {
-        None => case_stream(case, checked, vocabulary),
-        Some(files) => case_stream(files.cases.concept(), &files.checked, vocabulary),
+    let mut cache = CheckCache::default();
+    match files_program(corpus, id, &case.case.name, &mut cache, prefix)? {
+        None => case_stream_with(case, checked, vocabulary, &mut cache),
+        Some(files) => case_stream_with(files.cases.concept(), &files.checked, vocabulary, &mut cache),
     }
 }
 
 /// The stream of [`corpus_case_stream`] for `case`, a case of `solver`, with
 /// the names that the text of the program it writes gives its labels: the
 /// text of `case` in `solver`, or the text of the concept case of the solver
-/// that the case's files make.
-fn named_case_stream(corpus: &Path, id: &str, solver: &Solver, case: &ResolvedCase, checked: &CheckedProgram, vocabulary: &Vocabulary, prefix: bool) -> Result<(WrittenStream, StreamLabels), String> {
-    match files_program(corpus, id, &case.case.name, prefix)? {
-        None => named_stream(solver, case, checked, vocabulary),
-        Some(files) => named_stream(&files.solver, files.cases.concept(), &files.checked, vocabulary),
+/// that the case's files make. It checks each program with `cache`.
+fn named_case_stream(corpus: &Path, id: &str, solver: &Solver, case: &ResolvedCase, checked: &CheckedProgram, vocabulary: &Vocabulary, cache: &mut CheckCache, prefix: bool) -> Result<(WrittenStream, StreamLabels), String> {
+    match files_program(corpus, id, &case.case.name, cache, prefix)? {
+        None => named_stream(solver, case, checked, vocabulary, cache),
+        Some(files) => named_stream(&files.solver, files.cases.concept(), &files.checked, vocabulary, cache),
     }
 }
 
@@ -151,8 +155,8 @@ fn named_case_stream(corpus: &Path, id: &str, solver: &Solver, case: &ResolvedCa
 /// claim's built forms stand at the claim's path. The reader names each label
 /// it makes, and the layout of a built form names each label of the form, so
 /// a label with no name is a fault of the engine.
-fn named_stream(solver: &Solver, case: &ResolvedCase, checked: &CheckedProgram, vocabulary: &Vocabulary) -> Result<(WrittenStream, StreamLabels), String> {
-    let stream = case_stream(case, checked, vocabulary)?;
+fn named_stream(solver: &Solver, case: &ResolvedCase, checked: &CheckedProgram, vocabulary: &Vocabulary, cache: &mut CheckCache) -> Result<(WrittenStream, StreamLabels), String> {
+    let stream = case_stream_with(case, checked, vocabulary, cache)?;
     let layout = case_layout(solver, &case.case);
     let labels = stream
         .forms
@@ -186,6 +190,12 @@ fn named_stream(solver: &Solver, case: &ResolvedCase, checked: &CheckedProgram, 
 /// ([`crate::solver::Case::several_outs`]) has no stream either, since a
 /// stream holds one.
 pub fn case_stream(case: &ResolvedCase, checked: &CheckedProgram, vocabulary: &Vocabulary) -> Result<WrittenStream, String> {
+    case_stream_with(case, checked, vocabulary, &mut CheckCache::default())
+}
+
+/// [`case_stream`], with the check of the case program read alone made with
+/// `cache`.
+fn case_stream_with(case: &ResolvedCase, checked: &CheckedProgram, vocabulary: &Vocabulary, cache: &mut CheckCache) -> Result<WrittenStream, String> {
     if let Some(fault) = case.case.several_outs() {
         return Err(format!("the writer gives no stream: {fault}"));
     }
@@ -195,7 +205,7 @@ pub fn case_stream(case: &ResolvedCase, checked: &CheckedProgram, vocabulary: &V
     }
     let resolved = resolve_alone(&case.case).map_err(|fault| format!("the writer gives no stream: {fault}"))?;
     let clauses = SolverClauses::of_shared_program(std::sync::Arc::clone(&resolved));
-    let alone = check_shared_program(resolved, &clauses, Registry::get(), &mut CheckCache::default()).map_err(|refusals| {
+    let alone = check_shared_program(resolved, &clauses, Registry::get(), cache).map_err(|refusals| {
         let messages: Vec<&str> = refusals.iter().map(|d| &*d.message).collect();
         format!("the writer gives no stream: the case program read alone is refused: {}", messages.join("; "))
     })?;

@@ -83,20 +83,23 @@ impl Replayed {
 /// part of the program the decode reads ([`Replayed::end`]). A token the mask refuses is a token the
 /// step refuses, so a replay with no mask refuses the same tokens.
 pub fn replay(decoder: &mut Decoder<'_>, stream: &[(Token, Emitter)], masked: bool, after: &mut dyn FnMut(&Decoder<'_>, Stepped<'_>) -> ControlFlow<()>) -> Result<Replayed, String> {
-    replay_from(decoder, stream, masked, 0, Vec::new(), after).map_err(|refused| refused.message)
+    replay_from(decoder, stream, masked, 0, Vec::new(), None, after).map_err(|refused| refused.message)
 }
 
 /// As [`replay`], from the token at position `start` of `stream`, where
 /// `decoder` has stepped the tokens before it and the engine still forces
 /// `forced` there. The indices that `after` and the faults give are those
 /// of `stream`, and the refusal gives the index of its token. The replay ends
-/// as [`replay`] gives.
+/// as [`replay`] gives. The step of the token at the index `untested` of
+/// `stream`, a token the model emits, is [`Decoder::step_untested`]: the
+/// caller's `consistency` and `rule_test` there are `None`.
 pub fn replay_from(
     decoder: &mut Decoder<'_>,
     stream: &[(Token, Emitter)],
     masked: bool,
     start: usize,
     forced: Vec<Token>,
+    untested: Option<usize>,
     after: &mut dyn FnMut(&Decoder<'_>, Stepped<'_>) -> ControlFlow<()>,
 ) -> Result<Replayed, Refused> {
     let mut forced = forced;
@@ -123,7 +126,7 @@ pub fn replay_from(
                 });
                 let admitted = mask.as_ref().is_none_or(|(mask, _)| decoder.vocabulary().id(token).is_some_and(|id| mask.contains(id)));
                 let start = Instant::now();
-                let stepped = decoder.step(token.clone());
+                let stepped = if untested == Some(index) { decoder.step_untested(token.clone()) } else { decoder.step(token.clone()) };
                 let step_seconds = start.elapsed().as_secs_f64();
                 let step = match stepped {
                     Ok(step) if admitted => step,
