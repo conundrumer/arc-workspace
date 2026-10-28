@@ -333,6 +333,16 @@ impl Evaluation<'_> {
         picks: &[(GraphRelation, Option<Example>)],
         visit: &mut dyn FnMut(&RelationValue, &[Option<RelationValue>]) -> ControlFlow<()>,
     ) -> Outcome<ModelsEnd> {
+        self.enumerate_target(trace,Target::Relation(relation),example,picks,visit)
+    }
+
+    /// Enumerate models of an already checked body query. This preserves
+    /// pick enumeration for body views as well as complete relations.
+    pub fn body_models(&self,form:&NodePath,clause:&super::ir::ClauseIr,example:Option<Example>,visit:&mut dyn FnMut(&RelationValue)->ControlFlow<()>)->Outcome<ModelsEnd> {
+        self.enumerate_target(None,Target::Body(form,clause),example,&[],&mut |value,_|visit(value))
+    }
+
+    fn enumerate_target(&self,trace:Option<&RefCell<RunTrace>>,target:Target<'_>,example:Option<Example>,picks:&[(GraphRelation,Option<Example>)],visit:&mut dyn FnMut(&RelationValue,&[Option<RelationValue>])->ControlFlow<()>)->Outcome<ModelsEnd> {
         let driver = Driver::nested(self, trace);
         *driver.met.borrow_mut() = Some(Vec::new());
         let graph = &self.program.program.graph;
@@ -342,9 +352,9 @@ impl Evaluation<'_> {
                 readers[read.0 as usize].push(node);
             }
         }
-        let mut enumeration = Enumeration { driver: &driver, relation, example, picks, visit, readers, seen: 0 };
+        let mut enumeration = Enumeration { driver: &driver, target, example, picks, visit, readers, seen: 0 };
         let end = enumeration.level(Vec::new())?.unwrap_or(ModelsEnd::Exhausted);
-        if let Some(trace) = trace {
+        if let (Some(trace),Target::Relation(relation)) = (trace,target) {
             let stop = match &end {
                 ModelsEnd::Stopped(stop) => Some(stop.bound.into()),
                 ModelsEnd::Visitor | ModelsEnd::Exhausted => None,
@@ -355,10 +365,24 @@ impl Evaluation<'_> {
     }
 }
 
+#[derive(Clone,Copy)]
+enum Target<'a> {
+    Relation(&'a GraphRelation),
+    Body(&'a NodePath,&'a super::ir::ClauseIr),
+}
+impl Target<'_> {
+    fn value(&self,driver:&Driver<'_, '_>,example:Option<Example>)->Outcome<RelationValue> {
+        match self {Self::Relation(relation)=>driver.value(relation,example),Self::Body(form,clause)=>driver.bodies().relation(form,clause,example)}
+    }
+    fn form(&self,driver:&Driver<'_, '_>)->NodePath {
+        match self {Self::Relation(relation)=>driver.program().form_of(relation.node).clone(),Self::Body(form,_)=> (*form).clone()}
+    }
+}
+
 /// One enumeration of the models of a case on an input.
 struct Enumeration<'d, 'e, 'a> {
     driver: &'d Driver<'e, 'a>,
-    relation: &'d GraphRelation,
+    target: Target<'d>,
     example: Option<Example>,
     /// The chosen relations whose values at each model `visit` gets.
     picks: &'d [(GraphRelation, Option<Example>)],
@@ -378,7 +402,7 @@ impl Enumeration<'_, '_, '_> {
     fn level(&mut self, held: Vec<Factor>) -> Outcome<Option<ModelsEnd>> {
         let mut factors = held;
         if factors.is_empty() {
-            let value = self.driver.value(self.relation, self.example)?;
+            let value = self.target.value(self.driver,self.example)?;
             factors = self.driver.met.replace(Some(Vec::new())).expect("the factors met in an enumeration");
             if factors.is_empty() {
                 return Ok(self.visit_model(&value));
@@ -415,7 +439,7 @@ impl Enumeration<'_, '_, '_> {
     fn visit_model(&mut self, value: &RelationValue) -> Option<ModelsEnd> {
         let cap = self.driver.evaluation.session.caps.models;
         if self.seen == cap {
-            let form = self.driver.program().form_of(self.relation.node).clone();
+            let form = self.target.form(self.driver);
             return Some(ModelsEnd::Stopped(Stop { bound: ReachedBound::Models { cap }, form }));
         }
         self.seen += 1;

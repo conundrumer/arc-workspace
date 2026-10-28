@@ -579,3 +579,4 @@ fn flatten(rows: &Assigned<Vec<RelationValue>>) -> Assigned<BodyValue> {
 }
 
 #[path = "study_pair.rs"] pub mod study_pair;
+#[path = "body_tables.rs"] pub(crate) mod body_tables;

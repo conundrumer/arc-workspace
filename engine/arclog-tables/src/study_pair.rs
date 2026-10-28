@@ -12,7 +12,7 @@ use arclog::task::Grid;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::Instant;
-use arclog::check::{CheckCache,CheckedProgram};
+use arclog::check::{CheckedProgram};
 
 pub struct PairEvaluation {
     /// Full native tables, including preceding relation tables needed to
@@ -34,13 +34,11 @@ pub struct PairCache {
     gold_relations: HashMap<usize,(Arc<CheckedProgram>,Outcome<Vec<(usize,Table)>>)>,
     gold_body_hits:u64,
     prefixes: HashMap<Vec<u32>,(Vec<(usize,Table)>,usize)>,
-    replay: HashMap<Vec<u32>, (arclog::decode::ReplayCheckpoint, Vec<(usize,Table)>)>,
-    replay_hits:u64,
     columns: HashMap<Vec<u32>,crate::columns::CaseColumnPrefix>,
     source: Option<(Arc<CheckedProgram>,Arc<arclog::stream::WrittenStream>)>,
     order: VecDeque<Vec<u32>>,
     bytes: usize,
-    checks: CheckCache,
+    active_source:usize,
     pub compact: bool,
     gold_hits:u64,
     prefix_hits:u64,
@@ -54,7 +52,7 @@ struct GoldMemo {
 }
 impl Default for PairCache { fn default()->Self {Self::new(false)} }
 impl PairCache {
-    pub fn new(compact:bool)->Self {Self {gold:HashMap::new(),gold_bodies:HashMap::new(),gold_relations:HashMap::new(),gold_body_hits:0,prefixes:HashMap::new(),replay:HashMap::new(),replay_hits:0,source:None,columns:HashMap::new(),order:VecDeque::new(),bytes:0,checks:CheckCache::default(),compact,gold_hits:0,prefix_hits:0,sequence:0}}
+    pub fn new(compact:bool)->Self {Self {gold:HashMap::new(),gold_bodies:HashMap::new(),gold_relations:HashMap::new(),gold_body_hits:0,prefixes:HashMap::new(),source:None,columns:HashMap::new(),order:VecDeque::new(),bytes:0,active_source:0,compact,gold_hits:0,prefix_hits:0,sequence:0}}
     fn prefix(&mut self,key:&[u32])->Option<Vec<(usize,Table)>> {
         let found=self.prefixes.get(key).map(|(tables,_)|tables.clone());
         if found.is_some() {self.prefix_hits+=1;}
@@ -69,16 +67,12 @@ impl PairCache {
         if bytes>CAP || self.prefixes.contains_key(&key) {return;}
         while self.bytes.saturating_add(bytes)>CAP || self.prefixes.len()>=128 {
             let Some(old)=self.order.pop_front() else {break;};
-            self.replay.remove(&old);
             self.columns.remove(&old);
             if let Some((_,size))=self.prefixes.remove(&old) {self.bytes-=size;}
         }
         self.bytes+=bytes;self.order.push_back(key.clone());self.prefixes.insert(key,(tables,bytes));
     }
-    fn remember_replay(&mut self,key:Vec<u32>,tables:Vec<(usize,Table)>,checkpoint:arclog::decode::ReplayCheckpoint) {
-        if self.prefixes.contains_key(&key) {self.replay.entry(key).or_insert((checkpoint,tables));}
-    }
-    pub fn stats(&self)->Value {json!({"replay_hits":self.replay_hits,"gold_hits":self.gold_hits,"gold_body_hits":self.gold_body_hits,"gold_body_entries":self.gold_bodies.len(),"gold_relation_entries":self.gold_relations.len(),"prefix_hits":self.prefix_hits,"prefix_entries":self.prefixes.len(),"prefix_bytes_estimate":self.bytes})}
+    pub fn stats(&self)->Value {json!({"gold_hits":self.gold_hits,"gold_body_hits":self.gold_body_hits,"gold_body_entries":self.gold_bodies.len(),"gold_relation_entries":self.gold_relations.len(),"prefix_hits":self.prefix_hits,"prefix_entries":self.prefixes.len(),"prefix_bytes_estimate":self.bytes})}
 }
 
 fn fault(message: impl Into<Box<str>>, form: &NodePath) -> RunFault {
@@ -88,9 +82,7 @@ fn fault(message: impl Into<Box<str>>, form: &NodePath) -> RunFault {
     }
 }
 
-/// Replay a checked complete-body view, preserving its INIT/CHOOSE
-/// binding context, then evaluate every complete conjunct through the
-/// native body interface. No partial-decoder approximation is used.
+/// A complete query over the original checked IR and its native prefix.
 #[derive(Clone)]
 struct ClauseTables {
     tables: Vec<(usize, Table)>,
@@ -98,207 +90,81 @@ struct ClauseTables {
     prefix: Vec<u32>,
 }
 
-fn clause_tables(
-    program: &StudyProgram,
-    body: &NodePath,
-    decoder: &mut Decoder<'_>,
-    fixed: &[Vec<Assignment>],
-    cache: &mut PairCache,
-) -> Outcome<ClauseTables> {
-    let source=match &cache.source {
-        Some((checked,written)) if Arc::ptr_eq(checked,program.checked())=>Arc::clone(written),
-        _=>Arc::new(arclog::stream::written_stream(program.checked(),decoder.vocabulary()).map_err(|d|fault(d.message,body))?),
-    };
-    let view = arclog::study_clause::checked_body_from_written(program, body, decoder.registry(), &mut cache.checks,&source)
-        .map_err(|s| fault(s, body))?;
-    let written = arclog::stream::written_stream(&view, decoder.vocabulary())
-        .map_err(|d| fault(d.message, body))?;
-    // Only the synthetic final body differs between gold and its mutant.
-    // Resume the longest exact completed prefix, including its native tables.
-    let ids=written.tokens.iter().map(|(token,_)|decoder.vocabulary().id(token).expect("a written vocabulary token")).collect::<Vec<_>>();
-    let mut tables = Vec::new();
-    let mut index = 0;
-    let mut prefix_end=0;
-    for end in (1..written.tokens.len()).rev() {
-        if let Some(checkpoint)=cache.replay.get(&ids[..end]) {
-            decoder.resume_replay(&checkpoint.0);
-            tables=checkpoint.1.clone();
-            index=end;
-            prefix_end=end;
-            cache.replay_hits+=1;
-            break;
-        }
+fn source_stream(program:&StudyProgram,decoder:&Decoder<'_>,cache:&PairCache)->Outcome<Arc<arclog::stream::WrittenStream>> {
+    match &cache.source {
+        Some((checked,written)) if Arc::ptr_eq(checked,program.checked())=>Ok(Arc::clone(written)),
+        _=>arclog::stream::written_stream(program.checked(),decoder.vocabulary()).map(Arc::new).map_err(|d|fault(d.message,&NodePath::default())),
     }
-    while index < written.tokens.len() {
-        let (token, emitter) = &written.tokens[index];
-        if *emitter != arclog::stream::Emitter::Model {
-            return Err(fault("unexpected engine token", body));
+}
+
+/// Evaluate export relation declarations against their original checked
+/// graph. Prefixes are scoped to the certified gold handle, so source names
+/// and AST paths are never confused across equal-looking token streams.
+fn original_relations(program:&StudyProgram,written:&arclog::stream::WrittenStream,until:Option<&NodePath>,decoder:&Decoder<'_>,cache:&mut PairCache)->Outcome<(Vec<(usize,Table)>,Vec<u32>)> {
+    let checked=program.checked();
+    let mut tables=Vec::new();let mut last=Vec::new();
+    let mut paths=Vec::new();
+    for form in &written.forms {
+        if until==Some(&form.path) {break;}
+        paths.push(form.path.0.len() as u32);paths.extend(form.path.0.iter().map(|s|s.0));
+        let mut key=vec![cache.active_source as u32,(cache.active_source>>32) as u32];
+        key.extend(&paths);key.push(u32::MAX);
+        key.extend(written.tokens[..form.tokens.end].iter().map(|(token,_)|decoder.vocabulary().id(token).expect("a written vocabulary token")));
+        if let Some(held)=cache.prefix(&key) {tables.extend(held);last=key;continue;}
+        let mut held=Vec::new();
+        for slot in form.relations.clone() {
+            let declared=&written.relations[slot];
+            if gives_no_table(program.program().value(),&form.path,declared) {continue;}
+            let relation=graph_relation(checked,decoder.registry(),&form.path,declared).ok_or_else(||fault("the graph holds no node for a relation the form declares",&form.path))?;
+            let dets=relation_dets(checked,relation.node);let work=decoder.table_work();
+            let examples=relation_examples(decoder,checked,&relation,&dets,&work);
+            let contents=contents(decoder,checked,&form.path,&relation,slot as u32,&dets,examples,&work).map(|c| {
+                let c=Contents {name:relation_spelled(declared),keys:checked.program.column_keys(relation.node),..c};
+                let seen=tables.iter().chain(held.iter()).map(|(_,t)|t).collect::<Vec<_>>();
+                made(decoder,&seen,checked,&relation,c)
+            });
+            held.push((form.tokens.end.saturating_sub(1),Table {form:form.path.clone(),point:Point::Relation,contents}));
         }
-        let step = decoder.step_untested(token.clone()).map_err(|e| {
-            fault(
-                format!("complete-body replay at token {index}: {e:?}"),
-                body,
-            )
-        })?;
-        let end = index + 1 + step.forced.len();
-        if end > written.tokens.len()
-            || step
-                .forced
-                .iter()
-                .zip(&written.tokens[index + 1..end])
-                .any(|(a, (b, emitter))| a != b || *emitter != arclog::stream::Emitter::Engine)
-        {
-            return Err(fault("complete-body replay echo mismatch", body));
-        }
-        if end < written.tokens.len() && decoder.before().is_some_and(|before|decoder.program().value().forms.len()>before.program().value().forms.len()) {
-            let key=written.tokens[..end].iter().map(|(token,_)|decoder.vocabulary().id(token).expect("a written vocabulary token")).collect::<Vec<_>>();
-            match cache.prefix(&key) {
-                Some(held)=>tables.extend(held),
-                None=>{
-                    let seen=tables.iter().map(|(_,t)|t).collect::<Vec<_>>();
-                    let held=step_tables(decoder,Points::Relations,&seen).into_iter().map(|t|(index,t)).collect::<Vec<_>>();
-                    cache.remember(key,held.clone());tables.extend(held);
-                }
-            }
-        }
-        if end < written.tokens.len() && decoder.before().is_some_and(|before|decoder.program().value().forms.len()>before.program().value().forms.len()) {
-            prefix_end=end;
-            let key=ids[..end].to_vec();
-            // Prefix tables in this entry include the complete earlier prefix,
-            // not just the last form's tables.
-            cache.remember_replay(key, tables.clone(), decoder.replay_checkpoint());
-        }
-        index = end;
+        cache.remember(key.clone(),held.clone());tables.extend(held);last=key;
     }
-    let prefix=ids[..prefix_end].to_vec();
-    let before = decoder
-        .before()
-        .ok_or_else(|| fault("complete-body replay has no final step", body))?;
-    let checked = decoder
-        .finished_checked(before, decoder.state())
-        .as_ref()
-        .map_err(Clone::clone)?;
-    let form = NodePath::top(decoder.program().value().forms.len() as u32 - 1);
-    let relation = derived_at(checked, &form);
-    let dets = walked_dets(checked, relation.node);
-    let Some(NodeRef::Clause(clause)) = node_at(NodeRef::Program(decoder.program().value()), &form)
-    else {
-        return Err(fault("body view is not a completed clause", body));
-    };
-    let kept = (0..clause.body.value().conjuncts.len() as u32).collect::<Vec<_>>();
-    let point = Point::Body {
-        conjuncts: kept.len() as u32,
-        sites: 0,
-    };
-    let work = decoder.table_work();
-    let examples = decoder
-        .examples_of(scope_of(checked, &relation))
-        .into_iter()
-        .map(|example| ExampleRows {
-            example,
-            rows: decoder.assigned(
-                checked,
-                relation.node,
-                &dets,
-                Some(&work),
-                &mut |evaluation| {
-                    evaluation
-                        .body(&form, &kept, example)
-                        .map(|v| vec![v.0])
-                        .map_err(End::Fault)
-                },
-            ),
-        })
-        .collect();
-    let held = contents(
-        decoder,
-        checked,
-        &form,
-        &relation,
-        decoder.state().finished_slots() - 1,
-        &dets,
-        examples,
-        &work,
-    )?;
-    let seen = tables.iter().map(|(_, t)| t).collect::<Vec<_>>();
-    let held = made(decoder, &seen, checked, &relation, held);
-    tables.push((
-        index,
-        Table {
-            form: form.clone(),
-            point,
-            contents: Ok(held),
-        },
-    ));
-    let work = decoder.table_work();
-    let decoded = decoder.state().declared_from(0).collect::<Vec<_>>();
-    let examples=decoder.examples_of(scope_of(checked,&relation)).into_iter().map(|example| {
+    Ok((tables,last))
+}
+
+fn clause_tables(program:&StudyProgram,body:&NodePath,decoder:&mut Decoder<'_>,fixed:&[Vec<Assignment>],cache:&mut PairCache)->Outcome<ClauseTables> {
+    let view=arclog::eval::body_view::BodyView::at(program.checked(),body)?;
+    let written=source_stream(program,decoder,cache)?;
+    let (mut tables,prefix)=original_relations(program,&written,Some(&view.form),decoder,cache)?;
+    let dets=super::body_tables::dets(program.checked(),&view);
+    let work=decoder.table_work();
+    let examples=super::body_tables::examples(decoder,program.checked(),&view,&dets,&work);
+    let seen=tables.iter().map(|(_,t)|t).collect::<Vec<_>>();
+    let slot=written.relations.len() as u32;
+    let point=Point::Body {conjuncts:view.clause.nodes.len() as u32,sites:0};
+    let index=written.forms.iter().find(|f|f.path==view.form).ok_or_else(||fault("body owner is absent from the written stream",body))?.tokens.end.saturating_sub(1);
+    let held=super::body_tables::contents(decoder,program.checked(),&view,slot,&dets,examples,&work,&seen)?;
+    tables.push((index,Table {form:view.form.clone(),point,contents:Ok(held)}));
+    let work=decoder.table_work();
+    let examples=decoder.examples_of(view.scope).into_iter().map(|example| {
         let mut at=Vec::new();
         for assigned in fixed {
-            let mapped=assigned.iter().filter_map(|(name,rows)| {
-                let slot=written.relations.iter().position(|r|r==name)?;
-                let (_,relation)=decoded.iter().find(|(s,_)|*s==slot as u32)?;
-                Some(((*relation).clone(),rows.clone()))
-            }).collect::<Vec<_>>();
-            let parameters=ParameterValues::determined(mapped.clone());
-            let limits=decoder.limits().counted_in(work.clone());
+            let projected=dets.iter().filter_map(|det|assigned.iter().find(|(name,_)|*name==det.relation).cloned()).collect::<Vec<_>>();
+            if projected.len()!=dets.len() {return ExampleRows {example,rows:Err(fault("gold FITS assignment does not assign every DET required by the mutant clause view",body))};}
+            let parameters=ParameterValues::determined(assigned.clone());let limits=decoder.limits().counted_in(work.clone());
             let (task,session,constructions)=decoder.evaluation_inputs();
-            let evaluation=Evaluation {program:checked,concept:None,task,session,constructions,registry:decoder.registry(),parameters:&parameters,limits:&limits};
-            let models=match evaluation.body(&form,&kept,example) {Ok(v)=>vec![v.0],Err(f)=>return ExampleRows {example,rows:Err(f)}};
-            let projected=dets.iter().filter_map(|det|mapped.iter().find(|(name,_)|name==&det.relation).cloned()).collect::<Vec<_>>();
-            if projected.len()!=dets.len() {
-                return ExampleRows {example,rows:Err(fault("gold FITS assignment does not assign every DET required by the mutant clause view",body))};
-            }
+            let evaluation=Evaluation {program:program.checked(),concept:None,task,session,constructions,registry:decoder.registry(),parameters:&parameters,limits:&limits};
+            let models=match super::body_tables::models(&evaluation,&view,example) {
+                Ok(values)=>values,
+                Err(End::Fault(f))=>return ExampleRows {example,rows:Err(f)},
+                Err(End::Stop(stop))=>return ExampleRows {example,rows:Ok(Assigned {at,stop:Some(stop)})},
+            };
             at.push((projected,models));
         }
         ExampleRows {example,rows:Ok(Assigned {at,stop:None})}
     }).collect();
-    let held = contents(
-        decoder,
-        checked,
-        &form,
-        &relation,
-        decoder.state().finished_slots() - 1,
-        &dets,
-        examples,
-        &work,
-    )?;
-    let seen = tables[..tables.len() - 1]
-        .iter()
-        .map(|(_, t)| t)
-        .collect::<Vec<_>>();
-    let held = made(decoder, &seen, checked, &relation, held);
-    tables.push((
-        index,
-        Table {
-            form,
-            point,
-            contents: Ok(held),
-        },
-    ));
-    // Recover original label identities for comparison; presentation names
-    // remain exactly the native decoded/export names.
-    let written_form = written
-        .forms
-        .last()
-        .ok_or_else(|| fault("body view has no written form", body))?;
-    let count = tables.len();
-    for (_, table) in &mut tables[count - 2..] {
-        if let Ok(c) = &mut table.contents {
-            for column in &mut c.columns {
-                column.label_id = column
-                    .label_id
-                    .and_then(|id| written_form.labels.get(id.0 as usize))
-                    .copied();
-            }
-        }
-    }
-    let names = decoder
-        .state()
-        .declared_from(0)
-        .map(|(slot, name)| (name.clone(), written.relations[slot as usize].clone()))
-        .collect();
-    Ok(ClauseTables { tables, names, prefix })
+    let seen=tables[..tables.len()-1].iter().map(|(_,t)|t).collect::<Vec<_>>();
+    let held=super::body_tables::contents(decoder,program.checked(),&view,slot,&dets,examples,&work,&seen)?;
+    tables.push((index,Table {form:view.form,point,contents:Ok(held)}));
+    Ok(ClauseTables {tables,names:written.relations.iter().map(|n|(n.clone(),n.clone())).collect(),prefix})
 }
 
 fn stopped(stop: &arclog::eval::Stop) -> Value {
@@ -679,6 +545,7 @@ fn evaluate_pair_inner(
     // parameters explicitly; OUT remains the sole FITS criterion.
     let gold_started=Instant::now();
     let gold_key=Arc::as_ptr(gold.checked()) as usize;
+    cache.active_source=gold_key;
     if !cache.source.as_ref().is_some_and(|(checked,_)|Arc::ptr_eq(checked,gold.checked())) {
         match arclog::stream::written_stream(gold.checked(),gd.vocabulary()) {
             Ok(written)=>cache.source=Some((Arc::clone(gold.checked()),Arc::new(written))),
@@ -875,34 +742,13 @@ pub fn evaluate_pair_cached(gold:&StudyProgram,point:&MutationPoint,mutant:&Vali
 /// Full native relation tables, evaluated once per gold handle in this task
 /// session. Faults and work-cap stops are cached as observations too.
 pub fn gold_tables_cached(gold:&StudyProgram,task:&Task,session:&TaskSession,constructions:&Constructions,settings:&DecodeSettings,cache:&mut PairCache)->(Value,Vec<(usize,Table)>) {
-    let key=Arc::as_ptr(gold.checked()) as usize;
+    let key=Arc::as_ptr(gold.checked()) as usize;cache.active_source=key;
     let hit=cache.gold_relations.contains_key(&key);
     if !hit {
         let held=std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let mut decoder=Decoder::new(task,session,Registry::get(),constructions,settings);
-            let written=arclog::stream::written_stream(gold.checked(),decoder.vocabulary()).map_err(|d|fault(d.message,&NodePath::default()))?;
-            let mut tables=Vec::new();
-            let mut index=0;
-            while index<written.tokens.len() {
-                let (token,emitter)=&written.tokens[index];
-                if *emitter!=arclog::stream::Emitter::Model {return Err(fault("unexpected engine token in gold relation replay",&NodePath::default()));}
-                let step=decoder.step_untested(token.clone()).map_err(|e|fault(format!("gold relation replay at token {index}: {e:?}"),&NodePath::default()))?;
-                let end=index+1+step.forced.len();
-                if end>written.tokens.len() || step.forced.iter().zip(&written.tokens[index+1..end]).any(|(a,(b,emitter))|a!=b || *emitter!=arclog::stream::Emitter::Engine) {return Err(fault("gold relation replay echo mismatch",&NodePath::default()));}
-                if decoder.before().is_some_and(|before|decoder.program().value().forms.len()>before.program().value().forms.len()) {
-                    let prefix=written.tokens[..end].iter().map(|(token,_)|decoder.vocabulary().id(token).expect("a written vocabulary token")).collect::<Vec<_>>();
-                    match cache.prefix(&prefix) {
-                        Some(held)=>tables.extend(held),
-                        None=>{
-                            let seen=tables.iter().map(|(_,table)|table).collect::<Vec<_>>();
-                            let held=step_tables(&decoder,Points::Relations,&seen).into_iter().map(|table|(index,table)).collect::<Vec<_>>();
-                            cache.remember(prefix,held.clone());tables.extend(held);
-                        }
-                    }
-                }
-                index=end;
-            }
-            Ok(tables)
+            let decoder=Decoder::new(task,session,Registry::get(),constructions,settings);
+            let written=source_stream(gold,&decoder,cache)?;
+            original_relations(gold,&written,None,&decoder,cache).map(|(tables,_)|tables)
         })).unwrap_or_else(|payload|Err(fault(format!("gold relation evaluation panicked: {}",arclog::decode::corpus::replay_panic(&*payload)),&NodePath::default())));
         cache.gold_relations.insert(key,(Arc::clone(gold.checked()),held));
     }
@@ -920,7 +766,7 @@ pub fn pair_columns_cached(evidence:&[Table],result:&PairEvaluation,train:usize,
         let split=tables.len()-2;
         // An oversized prefix may be deliberately absent from the bounded
         // replay cache; do not retain its columns under an incomplete key.
-        if !key.is_empty() && !cache.replay.contains_key(key) {return crate::columns::case_columns(evidence,tables,train,None);}
+        if !key.is_empty() && !cache.prefixes.contains_key(key) {return crate::columns::case_columns(evidence,tables,train,None);}
         let prefix=cache.columns.entry(key.clone()).or_insert_with(||crate::columns::CaseColumnPrefix::new(evidence,&tables[..split],train));
         prefix.finish(&tables[split..],train)
     };

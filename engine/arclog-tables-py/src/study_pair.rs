@@ -150,8 +150,7 @@ impl PyStudyTaskEvaluator {
             let mut cache=self.cache.lock().expect("task evaluator cache is not poisoned");
             let mut result=study_pair::evaluate_pair_cached(&gold.program,&point.inner,&mutant.inner,&self.task,&self.session,constructions,&self.settings,&mut cache);
             let started=std::time::Instant::now();
-            let g=case_columns(&self.evidence,&result.gold,self.task.train.len(),None);
-            let m=case_columns(&self.evidence,&result.mutant,self.task.train.len(),None);
+            let (g,m)=study_pair::pair_columns_cached(&self.evidence,&result,self.task.train.len(),&mut cache);
             result.report["timings"]["native_columns"]=started.elapsed().as_secs_f64().into();
             (result,g,m)
         });

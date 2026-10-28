@@ -30,6 +30,7 @@
 //! driver evaluates.
 
 pub mod body_ir;
+pub mod body_view;
 pub mod cache;
 pub mod copies;
 pub mod determinations;

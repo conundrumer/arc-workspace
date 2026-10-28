@@ -603,6 +603,14 @@ pub fn column_flows(checked: &CheckedProgram, node: GraphNodeIndex, output: Opti
     flows.flows_visiting(node, output, types.len(), types, &mut Vec::new())
 }
 
+/// Column provenance of a checked body query in the original program.
+/// No synthetic public relation is needed to preserve its bindings/types.
+pub fn body_column_flows(checked:&CheckedProgram,clause:&ClauseIr,paths:&IrPaths,registry:&Registry)->Vec<Vec<ColumnSource>> {
+    let flows=Flows {checked,program:&checked.program,registry};
+    let walk=Walk {flows:&flows,visiting:&[]};
+    clause.columns.iter().map(|v|walk.sources(*v,&Alt::of(clause,paths),&mut Vec::new())).collect()
+}
+
 /// What a form's column gives to the row positions of its relation.
 enum Placed<'g> {
     /// A column with a label written at a path of it, which stands at `position`.

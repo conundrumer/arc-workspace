@@ -5,7 +5,7 @@
 //! engine keeps no extent, since a Box term is its four margins, so the extent
 //! is computed here, from a second evaluation of the bodies that give the
 //! table's rows, with the label of each of their columns kept
-//! ([`arclog::decode::BodyWidening::clause`]).
+//! ([`arclog::eval::body_view::BodyView::widened`]).
 //!
 //! The extent of a frame follows from the own size of a value, the size of the
 //! box it covers, which no move within frames changes: a Box `v` in a frame of
@@ -39,7 +39,7 @@
 //!     holds.
 //!
 //! The rows of an input of an instance come from the clauses that the instance
-//! writes for it, widened in the same way ([`arclog::decode::BodyWidening::input`]),
+//! writes for it, widened in the same way ([`arclog::eval::body_view::BodyView::at`]),
 //! and the rows of an output of an instance take the extent of the frame its
 //! rule names (or of the input column it copies) over the rows of the input
 //! with the row's key, or with any key where the output or the input has none.
@@ -70,18 +70,18 @@
 //! The extents of a table stand beside its rows in [`Contents`], for each
 //! example, assignment and model, as [`Extents::entry`] gives them.
 
-use std::cell::{OnceCell, RefCell};
+use std::cell::RefCell;
 use std::ops::Range;
 use std::rc::Rc;
 
 use arclog::algebra::geometry::{Edge, Geometry};
 use arclog::check::CheckedProgram;
-use arclog::decode::{derived_at, relation_dets, walked_dets, Decoder, SubBody};
-use arclog::eval::body_ir::BodyIr;
+use arclog::decode::{relation_dets, Decoder};
+use arclog::eval::body_view::BodyView;
 use arclog::eval::ir::{Argument, Arguments, IrNode, IrPaths, NodePaths};
 use arclog::eval::determinations::relation_spelled;
 use arclog::eval::join::each_row;
-use arclog::eval::{Outcome, RelationValue, Stop, TableWork};
+use arclog::eval::{RelationValue, Stop, TableWork};
 use arclog::hash::StableHashMap;
 use arclog::judge::determination::Assignment;
 use arclog::program::path::{node_at, NodePath, NodeRef};
@@ -95,7 +95,7 @@ use arclog::terms::{Constant, Example, Margins, Term, TermId};
 use arclog::types::{use_label, GraphRelation, ValueType};
 
 use crate::columns::{extent_columns, fault_spelled, locate, names_of, read_index, Named, TableNames, INPUT_FRAME, OUTPUT_FRAME};
-use crate::flows::{column_flows, column_placements, output_copies, output_frames, ColumnSource, Maker, OutputFrame, Placement, SourceFrame};
+use crate::flows::{body_column_flows, column_placements, output_copies, output_frames, ColumnSource, Maker, OutputFrame, Placement, SourceFrame};
 use crate::tables::{relation_examples, Contents, ExampleRows, Table, EVIDENCE_FACTS};
 
 /// The extent of a frame: its count of rows V and its count of columns H, each
@@ -203,7 +203,7 @@ impl Gathered {
 /// row positions (increasing) whose extents are wanted.
 struct Subject<'a> {
     checked: &'a CheckedProgram,
-    relation: &'a GraphRelation,
+    relation: Option<&'a GraphRelation>,
     types: &'a [ValueType],
     examples: &'a [ExampleRows],
     columns: &'a [u32],
@@ -225,9 +225,27 @@ pub fn table_extents(decoder: &Decoder<'_>, earlier: &[&Table], checked: &Checke
         return None;
     }
     let reads = Reads { names, tables: earlier, cache: RefCell::default(), work: decoder.table_work() };
-    let subject = Subject { checked, relation, types: &types, examples: &contents.examples, columns: &columns };
+    let subject = Subject { checked, relation:Some(relation), types: &types, examples: &contents.examples, columns: &columns };
     let gathered = derive(decoder, &reads, &subject);
     Some(Extents { examples: finish(contents, &gathered, &columns), columns })
+}
+
+/// Extents of a checked body query, using the same native derivation and
+/// earlier-table lookup as relation tables, with its exact result interface.
+pub fn body_extents(decoder:&Decoder<'_>,earlier:&[&Table],checked:&CheckedProgram,view:&BodyView,contents:&Contents)->Option<Extents> {
+    let types=contents.columns.iter().map(|c|c.ty.clone()).collect::<Vec<_>>();
+    let columns=extent_columns(&types,&contents.frames);
+    if columns.is_empty() {return None;}
+    let reads=Reads {names:names_of(decoder.registry(),earlier),tables:earlier,cache:RefCell::default(),work:decoder.table_work()};
+    let subject=Subject {checked,relation:None,types:&types,examples:&contents.examples,columns:&columns};
+    let mut gathered=subject.examples.iter().map(|e|e.rows.as_ref().map_or_else(|_|Vec::new(),|a|a.at.iter().map(|_|Gathered::default()).collect())).collect::<Vec<Vec<Gathered>>>();
+    let placements=view.clause.columns.iter().enumerate().map(|(i,v)|Some(Placement {slot:i as u32,label:Some(view.paths.labels[v.0 as usize])})).collect::<Vec<_>>();
+    let dets=contents.dets.iter().map(|d|relation_spelled(&d.relation)).collect::<Vec<_>>();
+    match view.widened() {
+        Ok(views)=>for sub in &views {gather(decoder,&reads,&dets,&subject,sub,&placements,&mut gathered)},
+        Err(fault)=>lose_all(&mut gathered,&fault_spelled(&fault)),
+    }
+    Some(Extents {examples:finish(contents,&gathered,&columns),columns})
 }
 
 /// What the derivations of the rows of `subject` give for each of its
@@ -236,14 +254,12 @@ pub fn table_extents(decoder: &Decoder<'_>, earlier: &[&Table], checked: &Checke
 /// input, or the inputs of the instance that an output reads.
 fn derive(decoder: &Decoder<'_>, reads: &Reads<'_>, subject: &Subject<'_>) -> Vec<Vec<Gathered>> {
     let registry = decoder.registry();
-    let (checked, relation) = (subject.checked, subject.relation);
+    let (checked, relation) = (subject.checked, subject.relation.expect("relation derivation has a subject"));
     let mut gathered: Vec<Vec<Gathered>> = subject.examples.iter().map(|example| example.rows.as_ref().map_or_else(|_| Vec::new(), |rows| rows.at.iter().map(|_| Gathered::default()).collect())).collect();
     let dets: Vec<String> = relation_dets(checked, relation.node).iter().map(|det| relation_spelled(&det.relation)).collect();
     let kind = &checked.program.graph.nodes[relation.node.0 as usize].kind;
     let root = NodeRef::Program(checked.program.program.value());
-    let widening = decoder.widening(checked, relation);
     // The clauses that the instance of an input writes, widened, and how many of them the givens have used.
-    let mut written: Option<Vec<Vec<Outcome<SubBody>>>> = None;
     let mut used = 0;
     for given in checked.program.given(relation.node, registry) {
         if relation.output.as_deref().zip(given.output.as_deref()).is_some_and(|(read, own)| read != own) {
@@ -251,20 +267,18 @@ fn derive(decoder: &Decoder<'_>, reads: &Reads<'_>, subject: &Subject<'_>) -> Ve
         }
         let placements = || column_placements(checked, relation.node, relation.output.as_deref(), &given.form, subject.types.len(), registry);
         match (node_at(root, &given.form), kind) {
-            (Some(NodeRef::Clause(clause)), _) => {
-                let placements = placements();
-                for body in widening.clause(clause) {
-                    gather(decoder, reads, &dets, subject, &body, &placements, &mut gathered);
-                }
+            (Some(NodeRef::Clause(_)), _) => {
+                let placements=placements();
+                gather_view(decoder,reads,&dets,subject,&given.form.child(0),&placements,&mut gathered);
             }
-            (Some(NodeRef::Instance(instance)), DependencyKind::InstanceInput { input, .. }) => {
-                let placements = placements();
-                let all = written.get_or_insert_with(|| widening.input(instance, input));
+            (Some(NodeRef::Instance(_)), DependencyKind::InstanceInput { input, .. }) => {
+                let placements=placements();
+                let all=checked.program.input_bodies(&given.form,input);
                 match all.get(used) {
-                    Some(bodies) => bodies.iter().for_each(|body| gather(decoder, reads, &dets, subject, body, &placements, &mut gathered)),
-                    None => lose_all(&mut gathered, "the instance writes no clause for the input at this form"),
+                    Some(body)=>gather_view(decoder,reads,&dets,subject,&given.form.join(body),&placements,&mut gathered),
+                    None=>lose_all(&mut gathered,"the instance writes no clause for the input at this form"),
                 }
-                used += 1;
+                used+=1;
             }
             (Some(NodeRef::Instance(instance)), DependencyKind::InstanceOutput { .. }) => gather_output(decoder, reads, subject, &given, instance, &mut gathered),
             _ => lose_all(&mut gathered, &format!("the rows of a {} form are not derived", kind_spelled(kind))),
@@ -301,20 +315,24 @@ fn lose_all(gathered: &mut [Vec<Gathered>], reason: &str) {
 /// give: each row of the body derives the relation's row at the label of each of
 /// its columns (`placements`), with the extent of each wanted column. `dets` are
 /// the `DET`s of the relation.
-fn gather(decoder: &Decoder<'_>, reads: &Reads<'_>, dets: &[String], subject: &Subject<'_>, body: &Outcome<SubBody>, placements: &[Option<Placement>], gathered: &mut [Vec<Gathered>]) {
-    let sub = match body {
-        Ok(sub) => sub,
-        Err(fault) => return lose_all(gathered, &fault_spelled(fault)),
-    };
+fn gather_view(decoder:&Decoder<'_>,reads:&Reads<'_>,dets:&[String],subject:&Subject<'_>,at:&NodePath,placements:&[Option<Placement>],gathered:&mut [Vec<Gathered>]) {
+    match BodyView::at(subject.checked,at).and_then(|view|view.widened()) {
+        Ok(views)=>for view in &views {gather(decoder,reads,dets,subject,view,placements,gathered)},
+        Err(fault)=>lose_all(gathered,&fault_spelled(&fault)),
+    }
+}
+
+fn gather(decoder: &Decoder<'_>, reads: &Reads<'_>, dets: &[String], subject: &Subject<'_>, sub: &BodyView, placements: &[Option<Placement>], gathered: &mut [Vec<Gathered>]) {
     let at_label = |placement: &Option<Placement>| placement.and_then(|placement| placement.label).and_then(|label| sub.column_of(label));
     let Some(key) = placements.iter().map(at_label).collect::<Option<Vec<usize>>>() else {
         return lose_all(gathered, "a column of the relation has no label that the widened body makes");
     };
-    let relation = derived_at(&sub.program, &sub.form);
-    let Some(types) = sub.program.types.columns(&relation) else { return lose_all(gathered, "the columns of the widened body have no types") };
-    let sources = column_flows(&sub.program, relation.node, None, types, decoder.registry());
-    let analysis = Analysis { decoder, registry: decoder.registry(), sub, relation: &relation, types, sources, reads, dets, ir: OnceCell::new() };
-    let values = relation_examples(decoder, &sub.program, &relation, &walked_dets(&sub.program, relation.node), &reads.work);
+    let checked=subject.checked;
+    let types=sub.clause.columns.iter().map(|v|sub.clause.variables[v.0 as usize].ty.clone()).collect::<Vec<_>>();
+    let sources=body_column_flows(checked,&sub.clause,&sub.paths,decoder.registry());
+    let analysis=Analysis {decoder,registry:decoder.registry(),checked,sub,types:&types,sources,reads,dets};
+    let walked=crate::tables::body_tables::dets(checked,sub);
+    let values=crate::tables::body_tables::examples(decoder,checked,sub,&walked,&reads.work);
     for (place, example) in subject.examples.iter().enumerate() {
         let Ok(rows) = &example.rows else { continue };
         let entries = &mut gathered[place];
@@ -428,7 +446,7 @@ impl OutputPlan {
     /// column has no extent.
     fn new(decoder: &Decoder<'_>, subject: &Subject<'_>, given: &Given, instance: &Instance) -> Option<OutputPlan> {
         let registry = decoder.registry();
-        let (checked, relation) = (subject.checked, subject.relation);
+        let (checked, relation) = (subject.checked, subject.relation.expect("relation derivation has a subject"));
         let width = subject.types.len();
         let frames = output_frames(checked, relation.node, relation.output.as_deref(), &given.form, width, registry);
         let copies = output_copies(checked, relation.node, relation.output.as_deref(), &given.form, width, registry);
@@ -485,7 +503,7 @@ impl OutputPlan {
             let port_relation = GraphRelation { node: port.node, output: None };
             let Some(types) = checked.types.columns(&port_relation) else { continue };
             let examples = relation_examples(decoder, checked, &port_relation, &relation_dets(checked, port.node), &reads.work);
-            let port_subject = Subject { checked, relation: &port_relation, types, examples: &examples, columns: &port.wanted };
+            let port_subject = Subject { checked, relation: Some(&port_relation), types, examples: &examples, columns: &port.wanted };
             let derived = derive(decoder, reads, &port_subject);
             port.derived = Some((examples, derived));
         }
@@ -771,9 +789,8 @@ impl Reads<'_> {
 struct Analysis<'a> {
     decoder: &'a Decoder<'a>,
     registry: &'a Registry,
-    sub: &'a SubBody,
-    /// The relation of the body.
-    relation: &'a GraphRelation,
+    checked:&'a CheckedProgram,
+    sub: &'a BodyView,
     /// The type of each column of the body's relation.
     types: &'a [ValueType],
     /// The sources of each column ([`column_flows`]).
@@ -781,8 +798,6 @@ struct Analysis<'a> {
     reads: &'a Reads<'a>,
     /// The `DET`s of the relation the body gives rows of, as their relations are spelled.
     dets: &'a [String],
-    /// The IR that the evaluator joins for the body, made on the first ask.
-    ir: OnceCell<Option<BodyIr>>,
 }
 
 /// The deepest chain of sizes that the extent of a frame follows.
@@ -823,7 +838,7 @@ impl Analysis<'_> {
         // A column of an output makes a frame in the output's table alone: a body reads it as a column of that table.
         let Maker::Relation { relation, column } = maker else { return None };
         let size = self.registry.frame_size(relation, column)?;
-        let atom = atom_at(&self.sub.program, at)?;
+        let atom = atom_at(self.checked, at)?;
         let made = self.sub.column_of(site_label(atom, column)?)?;
         let sized = self.sub.column_of(site_label(atom, &size.column.column)?)?;
         let margins = margins_of(row[made], self.types.get(made)?)?;
@@ -874,12 +889,7 @@ impl Analysis<'_> {
     /// The arguments of the atom of `source` in the IR of the body, with the
     /// paths of the IR; none where the body does not compile.
     fn read_arguments(&self, source: &ColumnSource) -> Option<(&Arguments, &IrPaths)> {
-        let program = &self.sub.program.program;
-        let ir = self.ir.get_or_init(|| {
-            let given = program.given(self.relation.node, self.registry);
-            self.sub.program.body_ir(self.registry, given.first()?, &NodePath::default().child(0))
-        });
-        let (clause, paths) = ir.as_ref()?.parts();
+        let (clause,paths)=(&self.sub.clause,&self.sub.paths);
         let arguments = clause.nodes.iter().zip(paths.nodes.iter()).find_map(|(node, at)| match (node, at) {
             (IrNode::Atom(atom), NodePaths::Atom(path)) if *path == source.atom => Some(&atom.arguments),
             _ => None,
@@ -899,7 +909,7 @@ impl Analysis<'_> {
     /// of its Example label holds. The outer none is a lifted read whose
     /// Example label holds no example.
     fn read_example(&self, source: &ColumnSource, row: &[TermId], ctx: &Ctx<'_>) -> Option<Option<Example>> {
-        if !self.sub.program.program.reads_lifted(&source.atom) {
+        if !self.checked.program.reads_lifted(&source.atom) {
             return Some(ctx.example);
         }
         let (arguments, paths) = self.read_arguments(source)?;
@@ -917,7 +927,7 @@ impl Analysis<'_> {
     /// examples and its first argument is the Example. None where the body does
     /// not compile.
     fn constraints(&self, named: &Named, det: i32, source: &ColumnSource, row: &[TermId]) -> Option<Vec<(usize, TermId)>> {
-        let program = &self.sub.program.program;
+        let program = &self.checked.program;
         let lifted = program.reads_lifted(&source.atom);
         let (arguments, paths) = self.read_arguments(source)?;
         let Some(Resolution::Node(node)) = program.resolution(&source.atom) else { return None };

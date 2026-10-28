@@ -25,9 +25,11 @@ returned objects' table numbering (including the two evidence tables):
 
 Earlier relation tables are included because the native frame and
 provenance records reference them. Their faults and stops are retained.
-Bodies are compiled as separate checked views containing the exact
-conjuncts and their enclosing binding context (INIT keys, CHOOSE context,
-and RIGID_DET keys). Evaluation preserves the checked owner's task-wide or
+Bodies are compiled directly from the original checked program to IR views
+containing the exact conjuncts and their enclosing binding context (INIT
+keys, CHOOSE context, and RIGID_DET keys). No public clause is reconstructed
+or rechecked. Nominal types, zero-valued columns, aliases, recursive reads,
+and original source paths stay in their checked context. Evaluation preserves the checked owner's task-wide or
 per-input side. It does not use a decoder's partial approximation of a
 final negation or constraint.
 
@@ -49,7 +51,8 @@ ambiguous, differently colored, or in a different frame, plus occupied
 extra coordinates. Those cases carry `grid_defined=false` and a reason.
 
 `comparisons` compares native tables over their own assignment domains;
-`kept_comparisons` compares at the same gold FITS assignments. Row tuples
+`kept_comparisons` compares at the same gold FITS assignments. Task-wide values are explicitly broadcast over examples when a mutation
+changes scope; comparison records mark `scope_alignment`. Row tuples
 are aligned by original AST label identity and type. The relation describes
 the **mutant relative to gold**: equal, subset, superset, or overlap (which
 can have zero kept rows). Counts are `kept`, `extra`, and `missing`.
@@ -108,9 +111,10 @@ buffers as base64 alongside their dtype metadata. `--task`, `--case-limit`,
 and `--point-limit` restrict a short inspection; `--work-cap 0` exercises
 explicit stops.
 
-The native widened-body API now takes a checked owner and preserves its
-evaluation scope. This fixes the scope-loss class reproduced on gold
-`009d5c81` in the existing `arclog.stream_tables` path. Other native extent
-and synthetic-body faults remain explicit in reports; the corpus checker
-groups them by reason. Runtime verification of this fix requires a wheel
-rebuilt from the updated sources.
+Native extent derivation now widens the original typed IR, preserving the
+result interface while exposing positive branch witnesses. It never
+constructs a synthetic public clause. This subsumes the owner-scope fix
+reproduced on gold `009d5c81` in `arclog.stream_tables`, and also removes
+branch-flattening alias and dropped-interface failures. Body query model
+enumeration uses the same native pick walker as relation evaluation.
+Runtime verification requires a wheel rebuilt from these sources.

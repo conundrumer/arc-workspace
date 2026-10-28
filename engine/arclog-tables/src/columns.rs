@@ -411,6 +411,32 @@ pub fn case_columns(evidence: &[Table], tables: &[(usize, Table)], train: usize,
     fold(evidence, tables, None, train, labels).0
 }
 
+/// The exact column fold at a completed program prefix. Cloning preserves
+/// row-run interning, so appending produces the same buffers as case_columns.
+#[derive(Clone)]
+pub struct CaseColumnPrefix {
+    columns: CaseColumns,
+    names: TableNames,
+    runs: Runs,
+    count: usize,
+}
+impl CaseColumnPrefix {
+    pub fn new(evidence:&[Table],tables:&[(usize,Table)],train:usize)->Self {
+        let mut held=Self {columns:CaseColumns::default(),names:Vec::new(),runs:Runs::default(),count:0};
+        push_tables(&mut held.columns,&mut held.names,&mut held.runs,0,evidence.iter().map(|table|(0,table)),train,None);
+        held.count=evidence.len();
+        held.append(tables,train);
+        held
+    }
+    fn append(&mut self,tables:&[(usize,Table)],train:usize) {
+        push_tables(&mut self.columns,&mut self.names,&mut self.runs,self.count,tables.iter().map(|(token,table)|(*token,table)),train,None);
+        self.count+=tables.len();
+    }
+    pub fn finish(&self,tables:&[(usize,Table)],train:usize)->CaseColumns {
+        let mut held=self.clone();held.append(tables,train);held.columns
+    }
+}
+
 /// The columns of the tables of a stream that shares its first `tokens`
 /// tokens with a base stream, whose tables with a token below `tokens` are
 /// the base's own, and the count `k` of those tables: `evidence` and each
@@ -587,7 +613,7 @@ fn push_cells(out: &mut Vec<i32>, id: TermId, ty: &ValueType) {
 /// The runs written to the `values` of a case, by their count of rows, their
 /// count of cells and the hash of their cells: the offsets of the runs with
 /// those.
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct Runs(StableHashMap<(u64, usize, StableHash), Vec<usize>>);
 
 /// The cells of the rows of `rows`, of columns of `types`, in the order of
