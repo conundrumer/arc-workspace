@@ -425,6 +425,50 @@ pub fn cut_case_columns(evidence: &[Table], tables: &[(usize, Table)], tokens: u
     fold(evidence, tables, Some(tokens), train, labels)
 }
 
+/// The names of the tables of a stream up to the end of a step, which the
+/// tables of the steps after it read to resolve their sources: the state that
+/// [`step_case_columns`] takes from a step to the next. It holds the
+/// `TableNames` of the tables so far and the count of them.
+#[derive(Clone)]
+pub struct StepNames {
+    names: TableNames,
+    tables: u32,
+}
+
+impl StepNames {
+    /// The count of the tables so far: the evidence tables and each table of
+    /// the steps up to this one.
+    pub fn tables(&self) -> u32 {
+        self.tables
+    }
+}
+
+/// The columns of the tables of one step, `tables`, on a task of `train`
+/// train pairs, and the [`StepNames`] after them. With `before`, the
+/// [`StepNames`] after the previous step of the stream, the columns hold the
+/// step's own tables alone, numbered from the count of the tables before them
+/// as [`cut_case_columns`] numbers its tables, and a table's sources read the
+/// tables before it as [`case_columns`] reads them. With `None`, the step is
+/// the first of the stream and the columns hold the `evidence` tables, at
+/// token 0, and then the step's tables, as [`case_columns`] holds them. The
+/// names of the labels are the decoded ones, as [`case_columns`] gives with
+/// `None` for its `labels`.
+pub fn step_case_columns(before: Option<&StepNames>, evidence: &[Table], tables: &[(usize, Table)], train: usize) -> (CaseColumns, StepNames) {
+    let mut columns = CaseColumns::default();
+    let mut runs = Runs::default();
+    let (mut names, first) = match before {
+        Some(before) => (before.names.clone(), before.tables as usize),
+        None => {
+            let mut names = Vec::new();
+            push_tables(&mut columns, &mut names, &mut runs, 0, evidence.iter().map(|table| (0, table)), train, None);
+            (names, evidence.len())
+        }
+    };
+    push_tables(&mut columns, &mut names, &mut runs, first, tables.iter().map(|(token, table)| (*token, table)), train, None);
+    let count = u32::try_from(first + tables.len()).expect("fewer than 2^32 tables");
+    (columns, StepNames { names, tables: count })
+}
+
 /// The fold of [`case_columns`] and [`cut_case_columns`]: the only state it
 /// keeps across tables is the `names` of the tables so far, with the frames,
 /// slots and labels of their columns, and the `Runs` written, so a table's columns depend on its
@@ -437,15 +481,21 @@ fn fold(evidence: &[Table], tables: &[(usize, Table)], cut: Option<usize>, train
     let mut columns = CaseColumns::default();
     let mut names = Vec::new();
     let mut runs = Runs::default();
-    for (place, (token, table)) in evidence.iter().map(|table| (0, table)).chain(tables.iter().map(|(token, table)| (*token, table))).enumerate() {
-        let row = u32::try_from(place).expect("fewer than 2^32 tables");
-        if place < skipped {
-            note_name(&mut names, row, table, labels);
-        } else {
-            push_table(&mut columns, &mut names, &mut runs, row, token, table, train, labels);
-        }
+    let mut placed = evidence.iter().map(|table| (0, table)).chain(tables.iter().map(|(token, table)| (*token, table)));
+    for (place, (_, table)) in placed.by_ref().take(skipped).enumerate() {
+        note_name(&mut names, u32::try_from(place).expect("fewer than 2^32 tables"), table, labels);
     }
+    push_tables(&mut columns, &mut names, &mut runs, skipped, placed, train, labels);
     (columns, u32::try_from(skipped).expect("fewer than 2^32 tables"))
+}
+
+/// The columns of `tables`, each with the index of its token, in `out`, the
+/// first of them the table at `first`, after the tables in `names`.
+fn push_tables<'t>(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, first: usize, tables: impl Iterator<Item = (usize, &'t Table)>, train: usize, labels: Option<&StreamLabels>) {
+    for (place, (token, table)) in (first..).zip(tables) {
+        let row = u32::try_from(place).expect("fewer than 2^32 tables");
+        push_table(out, names, runs, row, token, table, train, labels);
+    }
 }
 
 /// The name of each orientation constant by its encoding, the cell of its
@@ -598,6 +648,7 @@ fn push_extents(values: &mut Vec<i32>, runs: &mut Runs, order: &[usize], per_row
 /// its columns where the relation is a program node, and the frame (empty for
 /// none), the slot (-1 for none), the label (empty for none) and the label the
 /// case's text writes (empty for none) of each column.
+#[derive(Clone)]
 pub(crate) struct Named {
     pub(crate) name: String,
     pub(crate) row: u32,

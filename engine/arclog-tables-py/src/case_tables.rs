@@ -1,7 +1,9 @@
 //! The tables of one case program as the Python class `CaseTables`: the
 //! flat columns of [`arclog_tables::columns`], each part a dict of columns.
 
-use arclog_tables::columns::{CaseColumns, StopColumns, TableColumns};
+use std::sync::Arc;
+
+use arclog_tables::columns::{CaseColumns, StepNames, StopColumns, TableColumns};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
 
@@ -79,25 +81,55 @@ use pyo3::types::{PyBytes, PyDict};
 /// (the 2 evidence tables and each table whose token is below `base_tokens`).
 /// The case's tables are numbered from `k`, and each table number in its
 /// parts names the base's table of that number where it is below `k`. The
-/// three are `None` for every other case.
-#[pyclass(name = "CaseTables", frozen, get_all, module = "arclog")]
+/// three are `None` for every other case. The `CaseTables` that `step_tables`
+/// gives at a decode's later model step holds its step's tables alone in the
+/// same way, with the step's token index as `base_tokens`.
+#[pyclass(name = "CaseTables", frozen, module = "arclog")]
 pub(crate) struct PyCaseTables {
-    task: String,
-    case: String,
+    #[pyo3(get)]
+    pub(crate) task: String,
+    #[pyo3(get)]
+    pub(crate) case: String,
+    #[pyo3(get)]
     concept: bool,
+    #[pyo3(get)]
     projection_cap: u64,
+    #[pyo3(get)]
     base: Option<String>,
+    #[pyo3(get)]
     base_tokens: Option<usize>,
+    #[pyo3(get)]
     base_tables: Option<u32>,
+    #[pyo3(get)]
     tables: Py<PyDict>,
+    #[pyo3(get)]
     entries: Py<PyDict>,
+    #[pyo3(get)]
     assigned: Py<PyDict>,
+    #[pyo3(get)]
     projections: Py<PyDict>,
+    #[pyo3(get)]
     projection_rows: Py<PyDict>,
+    #[pyo3(get)]
     flows: Py<PyDict>,
+    #[pyo3(get)]
     copies: Py<PyDict>,
+    #[pyo3(get)]
     values: Py<PyBytes>,
+    #[pyo3(get)]
     dtypes: Py<PyDict>,
+    /// What the next call of `step_tables` takes from this `CaseTables` as its `before`, for a `CaseTables` of `step_tables`; Python reads none of it.
+    step: Option<Step>,
+}
+
+/// What a `step_tables` call leaves for the call at the decode's next model
+/// step: the names of the tables up to its step, the `bodies` it was made
+/// with, and its step's token index, or `None` for a decode before its first
+/// step.
+pub(crate) struct Step {
+    pub(crate) names: Arc<StepNames>,
+    pub(crate) bodies: bool,
+    pub(crate) token: Option<usize>,
 }
 
 /// An integer type of a column, with its numpy dtype and its native bytes.
@@ -286,6 +318,18 @@ impl PyCaseTables {
             copies: k.dict.unbind(),
             values: PyBytes::new(py, &cell_bytes(&columns.values)).unbind(),
             dtypes: dtypes.unbind(),
+            step: None,
         })
+    }
+
+    /// This `CaseTables` as the one a `step_tables` call gives, which keeps `step`.
+    pub(crate) fn with_step(mut self, step: Step) -> Self {
+        self.step = Some(step);
+        self
+    }
+
+    /// The `step` that the call which gave this `CaseTables` kept, or `None` for a `CaseTables` of another function.
+    pub(crate) fn step(&self) -> Option<&Step> {
+        self.step.as_ref()
     }
 }
