@@ -14,6 +14,7 @@ pub struct AtomEdit {
     pub at: NodePath,
     pub replacement: Option<Conjunct>,
     pub kind: &'static str,
+    pub choice_kind: &'static str,
 }
 
 /// Translate an original path after simultaneous deletions. No AST field is

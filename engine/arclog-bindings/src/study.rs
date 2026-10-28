@@ -33,7 +33,7 @@ type Stream = (Vec<u32>, Vec<u8>, Vec<Vec<u32>>);
 impl PyStudyProgram {
     #[staticmethod]
     fn mutation_policy() -> &'static str {
-        "complete-domain-without-replacement-v4"
+        "complete-domain-without-replacement-v5"
     }
     /// Read standalone case sexp, preserving source column/variable names.
     #[staticmethod]
@@ -149,6 +149,43 @@ impl PyStudyProgram {
                 .collect(),
             stats.json().to_string(),
         ))
+    }
+
+    /// Compare draw-kind counts before filters, using the legacy traversal
+    /// and the production fair traversal over the same real AST/domain.
+    #[pyo3(signature = (point, k, count, seed, *, source_revision, task, case, operation="mixed"))]
+    fn audit_draw_order(
+        &self,
+        py: Python<'_>,
+        point: &PyMutationPoint,
+        k: usize,
+        count: usize,
+        seed: u64,
+        source_revision: String,
+        task: String,
+        case: String,
+        operation: &str,
+    ) -> PyResult<String> {
+        let origin = arclog::mutation::Source {
+            revision: source_revision,
+            task,
+            case,
+        };
+        py.detach(|| {
+            self.program
+                .audit_draw_order(
+                    &point.inner,
+                    k,
+                    count,
+                    seed,
+                    operation,
+                    origin,
+                    &self.settings,
+                    Registry::get(),
+                )
+                .map(|v| v.to_string())
+        })
+        .map_err(PyValueError::new_err)
     }
 
     fn construct(&self, spec: &PyMutationSpec) -> PyResult<PyValidMutant> {

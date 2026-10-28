@@ -16,7 +16,7 @@ import time
 
 from check_stage1_all import CaseDeadline, inventory, progress, task_completions
 
-POLICY = "complete-domain-without-replacement-v4"
+POLICY = "complete-domain-without-replacement-v5"
 
 
 def emit(event):

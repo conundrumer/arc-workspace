@@ -5,7 +5,7 @@
 //! Diagnostics from unavailable choices are counted, never silently repaired.
 pub mod edit;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 
 use crate::check::safety::form_bodies;
@@ -156,6 +156,54 @@ impl StudyProgram {
         settings: &DecodeSettings,
         registry: &Registry,
     ) -> Result<(Vec<MutationSpec>, DrawStats), String> {
+        self.draw_order(
+            point, k, count, seed, operation, origin, settings, registry, true,
+        )
+    }
+
+    /// Runtime audit on real programs: the old depth-first order and the fair
+    /// order use identical alternatives and certificates. Only the production
+    /// order returns specs to callers; this method returns classified counts.
+    pub fn audit_draw_order(
+        &self,
+        point: &MutationPoint,
+        k: usize,
+        count: usize,
+        seed: u64,
+        operation: &str,
+        origin: Source,
+        settings: &DecodeSettings,
+        registry: &Registry,
+    ) -> Result<Value, String> {
+        let (_, before) = self.draw_order(
+            point,
+            k,
+            count,
+            seed,
+            operation,
+            origin.clone(),
+            settings,
+            registry,
+            false,
+        )?;
+        let (_, after) = self.draw_order(
+            point, k, count, seed, operation, origin, settings, registry, true,
+        )?;
+        Ok(json!({"before":before.json(), "after":after.json()}))
+    }
+
+    fn draw_order(
+        &self,
+        point: &MutationPoint,
+        k: usize,
+        count: usize,
+        seed: u64,
+        operation: &str,
+        origin: Source,
+        settings: &DecodeSettings,
+        registry: &Registry,
+        fair: bool,
+    ) -> Result<(Vec<MutationSpec>, DrawStats), String> {
         if !Arc::ptr_eq(self.checked(), &point.source) {
             return Err("point_belongs_to_another_program".into());
         }
@@ -166,6 +214,20 @@ impl StudyProgram {
             return Err("operation must be substitute, delete or mixed".into());
         }
         let mut rng = Rng(seed);
+        if fair {
+            // Independent deterministic order per source clause, instead of
+            // replaying the same short permutation at every clause.
+            for byte in origin.task.bytes().chain(origin.case.bytes()) {
+                rng.0 = rng
+                    .0
+                    .wrapping_mul(0x100000001b3)
+                    .wrapping_add(u64::from(byte));
+            }
+            for step in &point.body.0 {
+                rng.0 = rng.0.rotate_left(13) ^ u64::from(step.0);
+            }
+            rng.0 ^= k as u64;
+        }
         let mut sites = Vec::new();
         let mut stats = DrawStats::default();
         for at in &point.atoms {
@@ -178,10 +240,16 @@ impl StudyProgram {
                     .unwrap_or(Value::Null)
                     .to_string();
                 if unique.insert(key) {
+                    stats.count(&format!("domain_primitive_kind:{kind}"));
                     values.push(AtomEdit {
                         at: at.clone(),
                         replacement,
-                        kind,
+                        kind: if kind.starts_with("argument_") {
+                            "argument"
+                        } else {
+                            kind
+                        },
+                        choice_kind: kind,
                     });
                 } else {
                     stats.count("domain_duplicate_values_removed");
@@ -215,7 +283,11 @@ impl StudyProgram {
             started: std::time::Instant::now(),
             stopped: false,
         };
-        domain.visit(0, k, &mut Vec::new())?;
+        if fair {
+            domain.fair_visit(k, &mut rng)?;
+        } else {
+            domain.visit(0, k, &mut Vec::new())?;
+        }
         if domain.stopped {
             domain.stats.count("domain_search_stopped:Deadline");
         } else if domain.output.len() < count {
@@ -254,7 +326,198 @@ struct CompletionDomain<'a> {
     stopped: bool,
 }
 
+/// A resumable canonical suffix search. Each root owns disjoint assignments:
+/// its first edited site is fixed and later sites have strictly larger indexes.
+struct AssignmentCursor {
+    edits: Vec<AtomEdit>,
+    frames: Vec<ChoiceFrame>,
+}
+
+struct ChoiceFrame {
+    site: usize,
+    value: usize,
+    remaining: usize,
+}
+
 impl CompletionDomain<'_> {
+    fn fair_visit(&mut self, k: usize, rng: &mut Rng) -> Result<(), String> {
+        // One scheduling option per edit kind, independent of how many
+        // columns/values instantiate it. In particular N zero-valued columns
+        // do not give reserved zero N tickets against a variable substitution.
+        // Within each kind, rotate sites/values and resume suffix searches so
+        // a small requested prefix cannot be filled by one DFS subtree.
+        let mut roots: BTreeMap<&str, Vec<AssignmentCursor>> = BTreeMap::new();
+        for (site, values) in self.sites.iter().enumerate() {
+            if self.sites.len() - site < k {
+                continue;
+            }
+            for edit in values {
+                if self.deletion_only {
+                    let ast = edit::apply(self.gold.program(), std::slice::from_ref(edit))?;
+                    if !crate::study::interfaces_hold(
+                        &ast.value().forms[self.point.body.0[0].0 as usize],
+                    ) {
+                        self.stats.count("domain_pruned:required_column_binding");
+                        continue;
+                    }
+                }
+                roots
+                    .entry(edit.choice_kind)
+                    .or_default()
+                    .push(AssignmentCursor {
+                        edits: vec![edit.clone()],
+                        frames: vec![ChoiceFrame {
+                            site: site + 1,
+                            value: 0,
+                            remaining: k - 1,
+                        }],
+                    });
+            }
+        }
+        let mut kinds = roots
+            .into_iter()
+            .map(|(kind, mut roots)| {
+                rng.shuffle(&mut roots);
+                (kind, VecDeque::from(roots))
+            })
+            .collect::<Vec<_>>();
+        rng.shuffle(&mut kinds);
+        let mut kinds = VecDeque::from(kinds);
+        while let Some((kind, mut roots)) = kinds.pop_front() {
+            if self.output.len() >= self.requested || self.stopped {
+                break;
+            }
+            let before = self.output.len();
+            // Find one certified completion for this kind, or prove the
+            // bucket exhausted. Failures are search constraints, not draws.
+            while let Some(mut cursor) = roots.pop_front() {
+                while self.output.len() == before && !cursor.frames.is_empty() {
+                    if self
+                        .settings
+                        .deadline
+                        .is_some_and(|d| self.started.elapsed() >= d)
+                    {
+                        self.stopped = true;
+                        return Ok(());
+                    }
+                    self.stats.count("domain_search_nodes");
+                    let frame = cursor.frames.last_mut().unwrap();
+                    if frame.remaining == 0 {
+                        cursor.frames.pop();
+                        self.certify(&cursor.edits)?;
+                        cursor.edits.pop();
+                        continue;
+                    }
+                    if self.sites.len().saturating_sub(frame.site) < frame.remaining {
+                        cursor.frames.pop();
+                        cursor.edits.pop();
+                        continue;
+                    }
+                    if frame.value == self.sites[frame.site].len() {
+                        frame.site += 1;
+                        frame.value = 0;
+                        continue;
+                    }
+                    let site = frame.site;
+                    let remaining = frame.remaining;
+                    let edit = self.sites[site][frame.value].clone();
+                    frame.value += 1;
+                    cursor.edits.push(edit);
+                    if self.deletion_only {
+                        let ast = edit::apply(self.gold.program(), &cursor.edits)?;
+                        if !crate::study::interfaces_hold(
+                            &ast.value().forms[self.point.body.0[0].0 as usize],
+                        ) {
+                            self.stats.count("domain_pruned:required_column_binding");
+                            cursor.edits.pop();
+                            continue;
+                        }
+                    }
+                    cursor.frames.push(ChoiceFrame {
+                        site: site + 1,
+                        value: 0,
+                        remaining: remaining - 1,
+                    });
+                }
+                if !cursor.frames.is_empty() {
+                    roots.push_back(cursor);
+                }
+                if self.output.len() > before {
+                    break;
+                }
+            }
+            if !roots.is_empty() {
+                kinds.push_back((kind, roots));
+            }
+        }
+        Ok(())
+    }
+
+    fn certify(&mut self, edits: &[AtomEdit]) -> Result<(), String> {
+        let top = self.point.body.0[0].0 as usize;
+        self.stats.count("domain_complete_assignments");
+        let ast = edit::apply(self.gold.program(), edits)?;
+        if !crate::study::interfaces_hold(&ast.value().forms[top]) {
+            self.stats
+                .count("domain_interface_excluded:exports_changed");
+            return Ok(());
+        }
+        if !declared_in_scopes(NodeRef::from(&ast.value().forms[top])) {
+            self.stats
+                .count("domain_declaration_excluded:missing_maker");
+            return Ok(());
+        }
+        if !named_bindings_hold(
+            &ast.value().forms[top],
+            &NodePath::top(top as u32),
+            self.gold.layout(),
+        ) {
+            self.stats.count("domain_binding_excluded:shadowed_name");
+            return Ok(());
+        }
+        // An edit can change an INIT parameter's inferred type and the
+        // binding modes available in sibling/nested bodies. Gold's types
+        // are not a safety certificate for this assignment. Resolve and
+        // infer the complete candidate before the engine's whole-program
+        // safety walk; only that certificate enters the selectable domain.
+        let checked = match StudyProgram::from_program_cached(
+            ast,
+            edit::layout(self.gold.layout(), edits),
+            self.registry,
+            &mut self.cache,
+        ) {
+            Ok(checked) => checked,
+            Err(error) => {
+                self.stats.refusal("domain_check_excluded", &error);
+                return Ok(());
+            }
+        };
+        if let Err(error) = checked.decode_stream(self.registry, self.settings) {
+            self.stats.refusal("domain_stream_excluded", &error);
+            return Ok(());
+        }
+        // Only now does an assignment belong to the selectable domain.
+        let mut canonical = edits.to_vec();
+        canonical.sort_by(|a, b| a.at.cmp(&b.at));
+        self.output.push(MutationSpec {
+            source: Arc::clone(self.gold.checked()),
+            point: self.point.clone(),
+            origin: self.origin.clone(),
+            edits: canonical,
+            certified: checked,
+        });
+        self.stats.count("specs_drawn");
+        if let Some(edit) = edits.first() {
+            self.stats
+                .count(&format!("drawn_root_kind:{}", edit.choice_kind));
+        }
+        for edit in edits {
+            self.stats
+                .count(&format!("drawn_edit_kind:{}", edit.choice_kind));
+        }
+        Ok(())
+    }
+
     fn visit(
         &mut self,
         start: usize,
@@ -278,59 +541,7 @@ impl CompletionDomain<'_> {
         }
         let top = self.point.body.0[0].0 as usize;
         if remaining == 0 {
-            self.stats.count("domain_complete_assignments");
-            let ast = edit::apply(self.gold.program(), edits)?;
-            if !crate::study::interfaces_hold(&ast.value().forms[top]) {
-                self.stats
-                    .count("domain_interface_excluded:exports_changed");
-                return Ok(());
-            }
-            if !declared_in_scopes(NodeRef::from(&ast.value().forms[top])) {
-                self.stats
-                    .count("domain_declaration_excluded:missing_maker");
-                return Ok(());
-            }
-            if !named_bindings_hold(
-                &ast.value().forms[top],
-                &NodePath::top(top as u32),
-                self.gold.layout(),
-            ) {
-                self.stats.count("domain_binding_excluded:shadowed_name");
-                return Ok(());
-            }
-            // An edit can change an INIT parameter's inferred type and the
-            // binding modes available in sibling/nested bodies. Gold's types
-            // are not a safety certificate for this assignment. Resolve and
-            // infer the complete candidate before the engine's whole-program
-            // safety walk; only that certificate enters the selectable domain.
-            let checked = match StudyProgram::from_program_cached(
-                ast,
-                edit::layout(self.gold.layout(), edits),
-                self.registry,
-                &mut self.cache,
-            ) {
-                Ok(checked) => checked,
-                Err(error) => {
-                    self.stats.refusal("domain_check_excluded", &error);
-                    return Ok(());
-                }
-            };
-            if let Err(error) = checked.decode_stream(self.registry, self.settings) {
-                self.stats.refusal("domain_stream_excluded", &error);
-                return Ok(());
-            }
-            // Only now does an assignment belong to the selectable domain.
-            let mut canonical = edits.clone();
-            canonical.sort_by(|a, b| a.at.cmp(&b.at));
-            self.output.push(MutationSpec {
-                source: Arc::clone(self.gold.checked()),
-                point: self.point.clone(),
-                origin: self.origin.clone(),
-                edits: canonical,
-                certified: checked,
-            });
-            self.stats.count("specs_drawn");
-            return Ok(());
+            return self.certify(edits);
         }
         for index in start..=self.sites.len() - remaining {
             for edit in self.sites[index].clone() {
@@ -811,7 +1022,7 @@ fn alternatives(
                 .column_position(&at.child(site_index as u32))
                 .is_none();
             site_variants(site, types, &labels, record, &mut replacements);
-            for site in replacements {
+            for (site, choice_kind) in replacements {
                 let mut sites = value.sites.to_vec();
                 sites[site_index] = site;
                 result.push((
@@ -822,7 +1033,7 @@ fn alternatives(
                             ..value.clone()
                         },
                     )),
-                    "argument",
+                    choice_kind,
                 ));
             }
         }
@@ -926,7 +1137,7 @@ fn site_variants(
     types: &FormTypes,
     bound: &[LabelId],
     record: bool,
-    result: &mut Vec<Site>,
+    result: &mut Vec<(Site, &'static str)>,
 ) {
     for (index, arg) in site.value.args.iter().enumerate() {
         let mut args = Vec::new();
@@ -950,30 +1161,37 @@ fn site_variants(
                         && types.label(*label).is_some()
                         && types.label(*label) == types.label(*old)
                     {
-                        args.push(replacement(LabelUse::Join(*label)));
+                        args.push((replacement(LabelUse::Join(*label)), "argument_variable"));
                     }
                 }
                 if types.label(*old).is_some_and(ValueType::has_zero) {
-                    args.push(replacement(LabelUse::Zero));
+                    args.push((replacement(LabelUse::Zero), "argument_zero"));
                 }
             }
             SiteArg::Field(field) => {
                 let mut variants = Vec::new();
                 site_variants(field, types, bound, false, &mut variants);
-                args.extend(variants.into_iter().map(SiteArg::Field));
+                args.extend(
+                    variants
+                        .into_iter()
+                        .map(|(site, kind)| (SiteArg::Field(site), kind)),
+                );
             }
             // Fresh/key arguments introduce the clause's interface.
             _ => {}
         }
-        for arg in args {
+        for (arg, kind) in args {
             let mut changed = site.value.args.to_vec();
             changed[index] = arg;
-            result.push(Site {
-                value: SiteValue {
-                    args: changed.into(),
+            result.push((
+                Site {
+                    value: SiteValue {
+                        args: changed.into(),
+                    },
+                    ..site.clone()
                 },
-                ..site.clone()
-            });
+                kind,
+            ));
         }
     }
 }

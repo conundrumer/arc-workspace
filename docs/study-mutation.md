@@ -34,3 +34,31 @@ success. It refuses an existing destination. Later builds cannot reinstall a
 running check's extension or replace its checker source. Every checker uses
 one process per task, streams task results, reports progress and retains the
 case and domain deadlines. Supply `--tasks` explicitly for archived checkers.
+
+## Draw-prefix diversity (policy v5)
+
+The old depth-first traversal could fill a short draw prefix with completions
+of the same early edit. Reusing one seed for every point also correlated those
+short prefixes. The production traversal now rotates among nonempty edit-kind
+buckets (`argument_zero`, `argument_variable`, `relation`, `comparison`,
+`delete`), then among their first-site alternatives. Each cursor resumes a
+canonical suffix search; complete assignments remain unique and checked before
+selection. Reserved zero gets one kind scheduling slot regardless of how many
+columns admit it. An exhausted kind yields its slot to the others. This is a
+stratified draw order, not uniform sampling of all complete K-edit assignments;
+scarce domains can still contain predominantly zero substitutions. It preserves
+the deterministic-prefix contract when a caller increases `count`.
+
+Stats distinguish `domain_primitive_kind:*` (unique alternatives before whole
+assignment constraints), `drawn_root_kind:*` (the interleaved root choices), and
+`drawn_edit_kind:*` (every edited atom in selected complete assignments).
+`audit_draw_order` returns these counts for both the legacy depth-first order
+and production order over the same real ASTs and checks. It exposes no legacy
+mutant handles. `scripts/study/check_mutation_diversity.py` runs the comparison
+in parallel over tasks and streams each point/K report. Draw shares are measured
+before evaluation, filters, quota and publication; a retained judge batch can
+have a different distribution. A domain/deadline stop makes the audit incomplete
+and is reported as a failure, never as a diversity improvement.
+
+The batch renderer's reserved-zero meanings are documented in
+[`study-reserved-zero.md`](study-reserved-zero.md).
