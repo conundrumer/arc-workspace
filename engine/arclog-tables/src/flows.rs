@@ -21,7 +21,10 @@
 //! A constant and a copy of a lib relation's column give none, nor does a lib
 //! name but that of a component's output column whose rule makes a frame,
 //! which gives the made frame. A source that a D4 element moves gives an
-//! unknown frame.
+//! unknown frame, and so does a source that a rule `(of ...)` names and that
+//! gives no frame, so the column gets none. A source computed through a lib
+//! atom from a variable of type `Offset`, which stands in no frame, gives no
+//! frame and no unknown one, so the other operands give the column its frame.
 
 use std::collections::BTreeMap;
 use std::ops::Range;
@@ -64,7 +67,8 @@ pub enum SourceFrame {
     /// the instance at `at`. It lies in the frame that `within` gives, where
     /// that is some.
     Made { maker: Maker, at: NodePath, within: Option<Box<SourceFrame>> },
-    /// A frame the engine cannot name: a D4 element moves the values.
+    /// A frame the engine cannot name: a D4 element moves the values, or a
+    /// rule `(of ...)` names a source that gives no frame.
     Unknown,
 }
 
@@ -164,11 +168,12 @@ impl ColumnSource {
     /// This source, which computes a column's values through a lib column
     /// whose frame rule is `rule_at`, as the column's source: `named` is
     /// whether the rule names the column that this source reads. Under
-    /// `(of ...)` a named source keeps its frames, under `new` each source
-    /// gives the made frame, and under `(new (of ...))` a named source gives
-    /// the made frame lying in each frame it gave, or in none where it gave
-    /// none. A source of no named column gives none, and so does every source
-    /// where there is no rule.
+    /// `(of ...)` a named source keeps its frames, or gives an unknown frame
+    /// where it had none, under `new` each source gives the made frame, and
+    /// under `(new (of ...))` a named source gives the made frame lying in
+    /// each frame it gave, or in none where it gave none. A source of no
+    /// named column gives none, and so does every source where there is no
+    /// rule.
     fn framed(mut self, rule_at: Option<&RuleAt<'_>>, named: bool) -> Self {
         let kept = if named { std::mem::take(&mut self.frames) } else { Vec::new() };
         self.frames = match rule_at {
@@ -176,6 +181,7 @@ impl ColumnSource {
             Some(rule_at) if rule_at.rule.makes && rule_at.rule.of.is_empty() => vec![rule_at.made(None)],
             Some(rule_at) if rule_at.rule.makes && named && kept.is_empty() => vec![rule_at.made(None)],
             Some(rule_at) if rule_at.rule.makes => kept.into_iter().map(|frame| rule_at.made(Some(frame))).collect(),
+            Some(_) if named && kept.is_empty() => vec![SourceFrame::Unknown],
             Some(_) => kept,
         };
         self

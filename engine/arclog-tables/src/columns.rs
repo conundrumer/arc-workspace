@@ -58,7 +58,9 @@
 //! frame of extent (V, H) covers a box of own size (V - top - bottom, H - left -
 //! right), so a reader tells from `v`'s margins and the extent which cells of its
 //! frame `v` covers. An extent run stands in `values` beside the others, and
-//! equal runs of a case share one offset.
+//! equal runs of a case share one offset. An entry of kind `Rows`, of a table
+//! with extent columns, that has rows and no extent run has a stop in
+//! [`EntryColumns::extent_stop`] or a reason in [`EntryColumns::extent_fault`].
 
 use std::hash::Hash;
 
@@ -66,7 +68,7 @@ use arclog::decode::Projections;
 use arclog::eval::copies::CopyViolation;
 use arclog::eval::determinations::relation_spelled;
 use arclog::eval::join::each_row;
-use arclog::eval::{RelationValue, Stop};
+use arclog::eval::{RelationValue, RunFault, Stop};
 use arclog::hash::{StableHash, StableHashMap, StableHasher};
 use arclog::program::path::NodePath;
 use arclog::program::{column_spelled, ColumnName, FactRelation, LabelId, ProgramRelation, RelationRef};
@@ -276,10 +278,16 @@ pub struct EntryColumns {
     /// The offset in `values` of the entry's extent run, which holds two cells
     /// for each column of the table's `extent_columns` for each row of the
     /// entry's run, in its order; -1 where the table has no extent columns,
-    /// the entry holds no rows, or its extents stopped.
+    /// the entry holds no rows, its extents stopped, or `extent_fault` says
+    /// why it has none.
     pub extent_offset: Vec<i64>,
     /// The bound that stopped the evaluation of the entry's extents.
     pub extent_stop: StopColumns,
+    /// Why the entry has no extent run though it holds rows, where the
+    /// extents do not derive its rows: the fault of the widened evaluation at
+    /// its form, as `fault` spells a fault, or the reason the extents do not
+    /// derive them. `None` otherwise.
+    pub extent_fault: Vec<Option<String>>,
 }
 
 /// One row for each `DET` of each entry's assignment, in the order of the
@@ -480,6 +488,12 @@ fn form_path(form: &NodePath) -> String {
     form.0.iter().map(|step| step.0.to_string()).collect::<Vec<_>>().join(".")
 }
 
+/// A fault as a table's, an entry's or an extent's `fault` spells it:
+/// `<message> at <form>`.
+pub(crate) fn fault_spelled(fault: &RunFault) -> String {
+    format!("{} at {}", fault.message, form_path(&fault.form))
+}
+
 fn type_names(types: &[ValueType]) -> Vec<String> {
     types.iter().map(|ty| format!("{ty:?}")).collect()
 }
@@ -634,7 +648,7 @@ fn push_table(out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, ro
             tables.det_columns.push(Vec::new());
             tables.projections.push(ProjectionsKind::None as u8);
             tables.projections_stop.push(None);
-            tables.fault.push(Some(format!("{} at {}", fault.message, form_path(&fault.form))));
+            tables.fault.push(Some(fault_spelled(fault)));
             tables.depth.push(0);
             tables.keys.push(Vec::new());
             tables.output_position.push(-1);
@@ -967,10 +981,11 @@ fn push_contents(out: &mut CaseColumns, runs: &mut Runs, row: u32, contents: &Co
                 Some(RelationValue::Undefined) => (ValueKind::Undefined, 0, 0, None),
                 Some(RelationValue::Stopped(stop)) => (ValueKind::Stopped, 0, 0, Some(stop)),
             };
-            let (extent_offset, extent_stop) = match (value, extents) {
-                (_, Some(EntryExtents::Stopped(stop))) => (-1, Some(stop)),
-                (Some(RelationValue::Rows(rows)), Some(EntryExtents::Rows(held))) if !count_only && !rows.is_empty() => (push_extents(&mut out.values, runs, rows, types, held), None),
-                _ => (-1, None),
+            let (extent_offset, extent_stop, extent_fault) = match (value, extents) {
+                (_, Some(EntryExtents::Stopped(stop))) => (-1, Some(stop), None),
+                (_, Some(EntryExtents::Lost(reason))) => (-1, None, Some(reason.clone())),
+                (Some(RelationValue::Rows(rows)), Some(EntryExtents::Rows(held))) if !count_only && !rows.is_empty() => (push_extents(&mut out.values, runs, rows, types, held), None, None),
+                _ => (-1, None, None),
             };
             let entries = &mut out.entries;
             entries.kind.push(value_kind as u8);
@@ -979,10 +994,11 @@ fn push_contents(out: &mut CaseColumns, runs: &mut Runs, row: u32, contents: &Co
             entries.value_stop.push(value_stop);
             entries.extent_offset.push(extent_offset);
             entries.extent_stop.push(extent_stop);
+            entries.extent_fault.push(extent_fault);
         };
         let entry_extents = |at: usize, model: usize| contents.extents.as_ref().and_then(|extents| extents.entry(place, at, model));
         match &example.rows {
-            Err(fault) => push(out, runs, 0, None, None, Some(format!("{} at {}", fault.message, form_path(&fault.form))), None),
+            Err(fault) => push(out, runs, 0, None, None, Some(fault_spelled(fault)), None),
             Ok(rows) => {
                 if rows.at.is_empty() {
                     push(out, runs, 0, None, rows.stop.as_ref(), None, None);

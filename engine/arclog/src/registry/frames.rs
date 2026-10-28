@@ -44,19 +44,32 @@ pub struct FrameColumn {
 ///   frame of those columns' values; `makes` is true.
 ///
 /// A `new` rule, with or without `(of ...)`, of a column of type `Box` ends in
-/// `(size <column>)`, the column of the same relation or component whose
-/// values have the own size of the made values: the size of the box that a
-/// value covers, which no move within frames changes. A Box `v` in a frame of
-/// extent (V, H) has own size (V - top - bottom, H - left - right), a
-/// Position has own size (1, 1), and so the made frame's extent is the own
-/// size of the values of the `size` column plus the margins of the made
-/// value. A `new` rule of a column of type `Position` takes no `size`: a
+/// `(size <column> [(by <column>)])` ([`FrameSize`]), the column of the same
+/// relation or component whose values have the own size of the made values: the
+/// size of the box that a value covers, which no move within frames changes. A
+/// Box `v` in a frame of extent (V, H) has own size (V - top - bottom, H -
+/// left - right), a Position has own size (1, 1), and so the made frame's
+/// extent is the own size of the values of the `size` column plus the margins
+/// of the made value. With `(by <column>)`, a column of type `D4` of a
+/// relation, the own size is that of the `size` column's values once the D4
+/// element of the `by` column moves them: the element that moves the top edge
+/// to the left or the right edge swaps the rows and the columns of the own
+/// size. A `new` rule of a column of type `Position` takes no `size`: a
 /// Position's margins give its frame's extent.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct FrameRule {
     pub makes: bool,
     pub of: Box<[FrameColumn]>,
-    pub size: Option<FrameColumn>,
+    pub size: Option<FrameSize>,
+}
+
+/// The `(size <column> [(by <column>)])` form of a `new` rule.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct FrameSize {
+    /// The column whose values have the own size of the made values.
+    pub column: FrameColumn,
+    /// The column of type `D4` whose element moves those values.
+    pub by: Option<FrameColumn>,
 }
 
 impl FrameRule {
@@ -89,10 +102,10 @@ impl Registry {
         Some(FrameRule { makes: false, of: of.collect(), size: None })
     }
 
-    /// The `size` column of the `new` rule that the lib relation or relation
+    /// The `size` form of the `new` rule that the lib relation or relation
     /// macro `name` declares for its column `column`, or `None` where the
     /// rule has none.
-    pub fn frame_size(&self, name: &LibName, column: &ColumnName) -> Option<&FrameColumn> {
+    pub fn frame_size(&self, name: &LibName, column: &ColumnName) -> Option<&FrameSize> {
         declared_rule(&self.algebra_relation(name)?.frames, column)?.size.as_ref()
     }
 

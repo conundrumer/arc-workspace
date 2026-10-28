@@ -87,13 +87,8 @@
 //! A column of type `Position` or `Box` has values in a frame: the input
 //! grid's, the output grid's, or a frame that a lib column makes. A
 //! `(frames (<column> <rule>) ...)` form, in a `relation`, a `macro` or an
-//! output of a `component`, gives the rule of each column it names, and a
-//! `<rule>` is one of
-//!
-//! - `(of <column> ...)`: the frame of those columns' values;
-//! - `new`: a frame the column makes, in no frame;
-//! - `(new (of <column> ...))`: a frame the column makes that lies in the
-//!   frame of those columns' values.
+//! output of a `component`, gives the rule of each column it names, and the
+//! forms of a `<rule>` are those of [`FrameRule`].
 //!
 //! A column a rule names is a column of the relation or the macro, and, in
 //! an output, `<input>.<column>`, a column of one of the component's inputs.
@@ -655,7 +650,7 @@ mod rule_forms;
 pub(crate) use bindings::{binding_sites, unbound, ParameterSite};
 pub use bindings::key_fill;
 pub use column_types::{macro_column_types, LabelColumn, MacroDeclarations, RelationMacro};
-pub use frames::{has_frame, FrameColumn, FrameRule};
+pub use frames::{has_frame, FrameColumn, FrameRule, FrameSize};
 pub use type_rules::{ruled_type, TypeRule};
 use type_rules::rule_diagnostics;
 use reader::FileReader;

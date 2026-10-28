@@ -29,15 +29,18 @@ where that one dies too, the task's part holds no case, the fault line `death_li
                              the count of units it ran in, the task's reuse key and the checks digest (see `--previous`; a bare task id where the writer gives none), written last: a part is whole where it stands.
                              A line of an older export, `<task> <seconds> <key> <checks digest>`, gives its seconds with 1 unit and no reuse
   index.parquet    one row per (table, example, entry): task, case, concept, the table's columns, the entry's columns, among them
-                   `extent_offset`, the offset in `values` of the entry's extent run, and `extent_stop_bound` and `extent_stop_form`. The extent run holds,
+                   `extent_offset`, the offset in `values` of the entry's extent run, `extent_stop_bound` and `extent_stop_form`, and `extent_fault`. The extent run holds,
                    for each row of the entry's run in its order, two cells for each column of the table's `extent_columns` in their order: the count
                    of rows V and then the count of columns H of the frame that the row's value stands in, at that row, as the engine computes it when it
-                   evaluates the atom or the instance that made the frame at that row. A Box in a frame of extent (V, H) has own size (V - top - bottom,
+                   evaluates the atom or the instance that made the frame at that row; for `apply.P_out@<path>` it is the extent of `P`'s frame, with V and H
+                   swapped where the row's `D` moves the top edge to the left or the right edge. A Box in a frame of extent (V, H) has own size (V - top - bottom,
                    H - left - right), the box it covers, so a reader tells from the value's margins and the extent which cells of its frame it covers.
                    A row with no extent has `-1 -1`, since each extent is at least 1: its derivations give its value two extents, or the engine cannot
-                   compute one (a frame lying in a source the export does not follow, such as a lifted read of a per-example relation, or the table of
-                   a form other than a clause). `extent_offset` is -1 where the table has no extent columns, the entry holds no rows, or the
-                   evaluation of its extents stopped at a bound or faulted; `extent_stop_bound` and `extent_stop_form` give the bound of a stop
+                   compute one (a frame lying in a source the export does not follow, such as the table of a form other than a clause). `extent_offset`
+                   is -1 where the table has no extent columns, the entry holds no rows, the evaluation of its extents stopped at a bound, or it has no
+                   result; `extent_stop_bound` and `extent_stop_form` give the bound of a stop, and `extent_fault` gives, for an entry that holds rows and
+                   has no result, the message and form (`<message> at <form>`) of the fault of the widened evaluation, or why the extents do not derive
+                   its rows, and is null for any other entry
   tables.parquet   one row per table: its columns, its `relation_name` (the relation as the case program writes it: `&x` for a
                    declared relation, `&<instance>.<port>` for an output or input of an instance; the fact relation's name for an
                    evidence table; null for a table that faulted, and, in an export of streams, for each table at a slot), and its

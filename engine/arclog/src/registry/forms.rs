@@ -177,6 +177,14 @@ impl FileReader {
                 return self.refuse(format!("`{text}` is no column of {what}"), column.place());
             };
             let rule = self.frame_rule(rule, what, refer)?;
+            if let Some(by) = rule.size.as_ref().and_then(|size| size.by.as_ref()) {
+                if by.input.is_some() {
+                    return self.refuse(format!("the `{NEW}` rule of the column `{text}` of {what} takes no `({BY} <column>)` form: a rule of a component's output names no element"), item.place());
+                }
+                if columns.iter().find(|own| own.name == by.column).and_then(|own| own.ty.fixed()) != Some(&ValueType::D4) {
+                    return self.refuse(format!("the `({BY} <column>)` form of the `{NEW}` rule of the column `{text}` of {what} names a column of type `D4`"), item.place());
+                }
+            }
             match (own.ty.fixed(), &rule.size) {
                 (Some(ValueType::Box), None) if rule.makes => {
                     return self.refuse(format!("the `{NEW}` rule of the column `{text}` of {what}, of type `Box`, names the column whose values have the made values' own size, in a `({SIZE} <column>)` form"), item.place());
@@ -202,7 +210,7 @@ impl FileReader {
         Some(rules.into())
     }
 
-    /// The rule that `expr` writes: `new`, `(of <column> ...)`, or `(new [(of <column> ...)] [(size <column>)])`.
+    /// The rule that `expr` writes: `new`, `(of <column> ...)`, or `(new [(of <column> ...)] [(size <column> [(by <column>)])])`.
     fn frame_rule(&mut self, expr: &SExpr, what: &str, refer: &dyn Fn(&str) -> Option<FrameColumn>) -> Option<FrameRule> {
         if matches!(expr, SExpr::Symbol { text, .. } if &**text == NEW) {
             return Some(FrameRule { makes: true, of: Box::default(), size: None });
@@ -219,15 +227,35 @@ impl FileReader {
             };
             let size = match rest {
                 [] => None,
-                [item] => match headed(item, SIZE) {
-                    Some([column]) => Some(self.frame_columns(std::slice::from_ref(column), item.place(), what, refer)?[0].clone()),
-                    _ => return self.refuse(format!("a `({SIZE} <column>)` form names one column"), item.place()),
-                },
-                [_, extra, ..] => return self.refuse(format!("a `{NEW}` rule ends in its `({SIZE} <column>)` form"), extra.place()),
+                [item] => Some(self.frame_size_form(item, what, refer)?),
+                [_, extra, ..] => return self.refuse(format!("a `{NEW}` rule ends in its `({SIZE} <column> [({BY} <column>)])` form"), extra.place()),
             };
             return Some(FrameRule { makes: true, of, size });
         }
-        self.refuse(format!("a rule is `{NEW}`, `({OF} <column> ...)` or `({NEW} [({OF} <column> ...)] [({SIZE} <column>)])`"), expr.place())
+        self.refuse(format!("a rule is `{NEW}`, `({OF} <column> ...)` or `({NEW} [({OF} <column> ...)] [({SIZE} <column> [({BY} <column>)])])`"), expr.place())
+    }
+
+    /// The `(size <column> [(by <column>)])` form that `item` writes.
+    fn frame_size_form(&mut self, item: &SExpr, what: &str, refer: &dyn Fn(&str) -> Option<FrameColumn>) -> Option<FrameSize> {
+        let (column, by) = match headed(item, SIZE) {
+            Some([column]) => (column, None),
+            Some([column, by]) => match headed(by, BY) {
+                Some([element]) => (column, Some(element)),
+                _ => return self.refuse(format!("the second part of a `({SIZE} ...)` form is a `({BY} <column>)` form"), by.place()),
+            },
+            _ => return self.refuse(format!("a `({SIZE} <column> [({BY} <column>)])` form names a column and, after it, may have a `({BY} <column>)` form"), item.place()),
+        };
+        let column = self.frame_column(column, item.place(), what, refer)?;
+        let by = match by {
+            Some(element) => Some(self.frame_column(element, item.place(), what, refer)?),
+            None => None,
+        };
+        Some(FrameSize { column, by })
+    }
+
+    /// The column that `item`, the column a rule names, stands for.
+    fn frame_column(&mut self, item: &SExpr, place: SourcePlace, what: &str, refer: &dyn Fn(&str) -> Option<FrameColumn>) -> Option<FrameColumn> {
+        Some(self.frame_columns(std::slice::from_ref(item), place, what, refer)?[0].clone())
     }
 
     /// The columns that `items`, the items of an `(of ...)` form, name, at least one.

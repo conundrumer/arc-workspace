@@ -36,7 +36,9 @@ use pyo3::types::{PyBytes, PyDict};
 ///   `<path>`. `<maker>` is `<relation>.<column>` for a lib relation or a relation macro, such as
 ///   `relative.X_rel`, and `<component>.<output>.<column>` for a component's output, such as
 ///   `Division.tile.P_inner`. `<path>` is the path of the atom or of the `INIT` form as the `atom` of
-///   `flows` spells a path;
+///   `flows` spells a path. A frame that `apply.P_out` makes is a frame of its own at each row, with
+///   no ` in <frame>`: its extent is `P`'s frame's, with V and H swapped where the row's `D` moves the
+///   top edge to the left or the right edge;
 /// - `<maker>@<path> in <frame>`: such a frame, lying in `<frame>`, as `relative.X_rel@<path> in input`;
 /// - the empty string: no frame. Only a column of type `Position` or `Box` has a frame, and a column
 ///   whose sources give no frame, or give two different frames, has none.
@@ -48,10 +50,12 @@ use pyo3::types::{PyBytes, PyDict};
 /// cells for each column of `extent_columns` (for each of the projection's columns among them), in their
 /// order, the frame's count of rows V and then of columns H at that row, and `-1 -1` for a row with no
 /// extent, which is a row whose derivations give two extents or whose extent the engine cannot compute;
-/// -1 where the table has no extent columns, the entry holds no rows or its extents stopped, in which
-/// case `extent_stop_bound` and `extent_stop_form` of `entries` give the stop. A Box value in a frame of
-/// extent (V, H) has own size (V - top - bottom, H - left - right), which says which cells of its frame it
-/// covers.
+/// -1 where the table has no extent columns, the entry holds no rows, its extents stopped, in which
+/// case `extent_stop_bound` and `extent_stop_form` of `entries` give the stop, or the extents do not
+/// derive its rows, in which case `extent_fault` of `entries` gives the reason: the fault of the widened
+/// evaluation of a body that gives the rows, as `fault` spells it, or why the extents do not derive them.
+/// A Box value in a frame of extent (V, H) has own size (V - top - bottom, H - left - right), which says
+/// which cells of its frame it covers.
 ///
 /// `tables` also gives `column_slots` and `column_labels`, one entry per column in the order of
 /// `column_names`: the column's slot in the relation's own column order (-1 where the engine
@@ -232,6 +236,7 @@ impl PyCaseTables {
         e.list("fault", &c.fault)?;
         e.ints("extent_offset", &c.extent_offset)?;
         e.stop("extent_stop", &c.extent_stop)?;
+        e.list("extent_fault", &c.extent_fault)?;
         let a = Part::new(py, "assigned", &dtypes);
         let c = &columns.assigned;
         a.ints("entry", &c.entry)?;

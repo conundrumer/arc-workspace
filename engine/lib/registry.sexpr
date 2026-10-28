@@ -14,7 +14,7 @@
     (when ((Base Position) (X Position) (same-frame Base X)) (X_rel Offset))))
 (relation edge_inset (columns (D Dir) (K number) (B Box)) (modes (K)))
 (relation margin (columns (B Box) (D Dir) (K number)) (modes (B)))
-(relation apply (columns (D D4) (P Box) (P_out Box)) (modes (P))
+(relation apply (columns (D D4) (P Box) (P_out Box)) (modes (P)) (frames (P_out (new (size P (by D)))))
   (types
     (when ((P Offset)) (P_out Offset))))
 (relation corner_dist (columns (P Box) (Diag DiagDir) (K number)) (modes (P)))

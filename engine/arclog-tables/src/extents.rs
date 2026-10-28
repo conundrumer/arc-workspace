@@ -23,8 +23,10 @@
 //!   - the frame of the input or output grid: the extent of the example's
 //!     grid;
 //!   - a frame that a lib column makes, `Made`: the own size of the label at
-//!     the `size` column of the maker's atom ([`Registry::frame_size`]) plus
-//!     the margins of the label at the maker's column;
+//!     the `size` column of the maker's atom ([`Registry::frame_size`]), with
+//!     its rows and columns swapped where the D4 element that the label at
+//!     the `by` column holds moves the top edge to the left or the right edge,
+//!     plus the margins of the label at the maker's column;
 //!   - the frame of the column the source reads, `Read`: the extent of the
 //!     frame of that column in the latest earlier table of the relation read,
 //!     at the rows of that table whose cells equal the labels of the atom's
@@ -32,16 +34,26 @@
 //!     row's evaluation: the grid's extent where the frame is the input's or
 //!     the output's, the value's where the column is a `Position`, and the
 //!     table's own extent where the column is one of its [`Extents::columns`].
+//!     The example is the row's, or, where the atom reads its relation lifted
+//!     over the examples, the one that the cell of the atom's Example label
+//!     holds.
 //!
 //! The rows of an input of an instance come from the clauses that the instance
 //! writes for it, widened in the same way ([`Decoder::widened_input_bodies`]),
 //! and the rows of an output of an instance take the extent of the frame its
 //! rule names (or of the input column it copies) over the rows of the input
 //! with the row's key, or with any key where the output or the input has none.
+//! The rows of a widened body are those of its relation at each model of each
+//! assignment (`relation_examples` of the `tables` module), all of which give the
+//! entry's rows.
 //!
 //! A row of a table takes the one extent that the rows of the widened bodies
 //! that give it give ([`Merged`]), and none where they give two or where one
 //! of them gives none.
+//!
+//! An entry that holds rows and has no extent says why in
+//! [`EntryExtents::Lost`]: the fault of a widened body, or the reason the
+//! extents do not derive its rows.
 //!
 //! The extents of a table stand beside its rows in [`Contents`], for each
 //! example, assignment and model, as [`Extents::entry`] gives them.
@@ -50,13 +62,14 @@ use std::cell::{OnceCell, RefCell};
 use std::ops::Range;
 use std::rc::Rc;
 
+use arclog::algebra::geometry::{Edge, Geometry};
 use arclog::check::CheckedProgram;
-use arclog::decode::{relation_dets, Decoder, SubBody};
+use arclog::decode::{derived_at, relation_dets, walked_dets, Decoder, SubBody};
 use arclog::eval::body_ir::BodyIr;
-use arclog::eval::ir::{Argument, IrNode, NodePaths};
+use arclog::eval::ir::{Argument, Arguments, IrNode, IrPaths, NodePaths};
 use arclog::eval::determinations::relation_spelled;
 use arclog::eval::join::each_row;
-use arclog::eval::{BodyValue, Outcome, RelationValue, Stop, TableWork};
+use arclog::eval::{Outcome, RelationValue, Stop, TableWork};
 use arclog::hash::StableHashMap;
 use arclog::judge::determination::Assignment;
 use arclog::program::path::{node_at, NodePath, NodeRef};
@@ -66,10 +79,10 @@ use arclog::relations::Relation;
 use arclog::resolver::given::Given;
 use arclog::resolver::registry_columns;
 use arclog::resolver::{DependencyKind, GraphNodeIndex, Resolution};
-use arclog::terms::{Example, Margins, Term, TermId};
+use arclog::terms::{Constant, Example, Margins, Term, TermId};
 use arclog::types::{use_label, GraphRelation, ValueType};
 
-use crate::columns::{column_frames, extent_columns, locate, names_of, read_index, Named, TableNames, INPUT_FRAME, OUTPUT_FRAME};
+use crate::columns::{column_frames, extent_columns, fault_spelled, locate, names_of, read_index, Named, TableNames, INPUT_FRAME, OUTPUT_FRAME};
 use crate::flows::{column_flows, column_placements, output_copies, output_frames, ColumnSource, Maker, OutputFrame, Placement, SourceFrame};
 use crate::tables::{relation_examples, Contents, ExampleRows, Table, EVIDENCE_FACTS};
 
@@ -116,9 +129,12 @@ pub enum EntryExtents {
     /// For each row of the model's relation, in the order of [`each_row`], the
     /// extent of each of the table's extent columns, in their order.
     Rows(Vec<Box<[Option<Extent>]>>),
-    /// The entry has no extent: its model holds no rows, or the evaluation of
-    /// the bodies that give its rows faulted.
+    /// The entry has no extent: its model holds no rows.
     Absent,
+    /// The entry holds rows and has no extent, for this reason: the message
+    /// and form of the fault of a widened body (`"<message> at <form>"`), or
+    /// why the extents do not derive its rows.
+    Lost(String),
     /// The evaluation of the bodies stopped at this bound.
     Stopped(Stop),
 }
@@ -149,9 +165,17 @@ struct Gathered {
     rows: StableHashMap<Box<[TermId]>, Vec<Merged>>,
     /// The bound that stopped the evaluation of a body at this entry.
     stop: Option<Stop>,
-    /// Whether a body that gives the entry's rows faulted, or cannot be
-    /// evaluated.
-    lost: bool,
+    /// The first reason that a body which gives the entry's rows faulted, or
+    /// that the extents cannot derive them.
+    lost: Option<String>,
+}
+
+impl Gathered {
+    /// Records `reason` as the reason the entry lost its extents, where it has
+    /// none yet.
+    fn lose(&mut self, reason: &str) {
+        self.lost.get_or_insert_with(|| reason.to_owned());
+    }
 }
 
 /// The relation whose rows' extents are wanted: its node, the type of each of
@@ -216,21 +240,38 @@ fn derive(decoder: &Decoder<'_>, reads: &Reads<'_>, subject: &Subject<'_>, work:
                 let all = written.get_or_insert_with(|| decoder.widened_input_bodies(instance, input));
                 match all.get(used) {
                     Some(bodies) => bodies.iter().for_each(|body| gather(decoder, reads, &dets, subject, body, &placements, work, &mut gathered)),
-                    None => lose_all(&mut gathered),
+                    None => lose_all(&mut gathered, "the instance writes no clause for the input at this form"),
                 }
                 used += 1;
             }
             (Some(NodeRef::Instance(instance)), DependencyKind::InstanceOutput { .. }) => gather_output(decoder, reads, subject, &given, instance, work, &mut gathered),
-            _ => lose_all(&mut gathered),
+            _ => lose_all(&mut gathered, &format!("the rows of a {} form are not derived", kind_spelled(kind))),
         }
     }
     gathered
 }
 
-/// Marks every entry as lost.
-fn lose_all(gathered: &mut [Vec<Gathered>]) {
+/// The spelling of the kind of form that gives a relation's rows, as the
+/// program writes the form where it has a keyword.
+fn kind_spelled(kind: &DependencyKind) -> &'static str {
+    match kind {
+        DependencyKind::Fact(_) => "fact",
+        DependencyKind::Clause(_) => "clause",
+        DependencyKind::InstanceInput { .. } => "instance input",
+        DependencyKind::InstanceOutput { .. } => "instance output",
+        DependencyKind::Parameter(_) => "parameter",
+        DependencyKind::Chosen(_) => "CHOOSE",
+        DependencyKind::RigidAssembly(_) => "RIGID_DET",
+        DependencyKind::Demonstrated(_) => "DEMONSTRATED",
+        DependencyKind::RecursiveInstance(_) => "recursive instance",
+        DependencyKind::Out(_) => "OUT",
+    }
+}
+
+/// Marks every entry as lost, for `reason`.
+fn lose_all(gathered: &mut [Vec<Gathered>], reason: &str) {
     for entry in gathered.iter_mut().flatten() {
-        entry.lost = true;
+        entry.lose(reason);
     }
 }
 
@@ -240,45 +281,52 @@ fn lose_all(gathered: &mut [Vec<Gathered>]) {
 /// the `DET`s of the relation.
 #[allow(clippy::too_many_arguments)]
 fn gather(decoder: &Decoder<'_>, reads: &Reads<'_>, dets: &[String], subject: &Subject<'_>, body: &Outcome<SubBody>, placements: &[Option<Placement>], work: &TableWork, gathered: &mut [Vec<Gathered>]) {
-    let Ok(sub) = body else { return lose_all(gathered) };
+    let sub = match body {
+        Ok(sub) => sub,
+        Err(fault) => return lose_all(gathered, &fault_spelled(fault)),
+    };
     let at_label = |placement: &Option<Placement>| placement.and_then(|placement| placement.label).and_then(|label| sub.column_of(label));
     let Some(key) = placements.iter().map(at_label).collect::<Option<Vec<usize>>>() else {
-        return lose_all(gathered);
+        return lose_all(gathered, "a column of the relation has no label that the widened body makes");
     };
-    let relation = arclog::decode::derived_at(&sub.program, &sub.form);
-    let Some(types) = sub.program.types.columns(&relation) else { return lose_all(gathered) };
+    let relation = derived_at(&sub.program, &sub.form);
+    let Some(types) = sub.program.types.columns(&relation) else { return lose_all(gathered, "the columns of the widened body have no types") };
     let sources = column_flows(&sub.program, relation.node, None, types, decoder.registry());
     let analysis = Analysis { decoder, registry: decoder.registry(), sub, relation: &relation, types, sources, reads, dets, ir: OnceCell::new() };
-    let values = decoder.values_of(sub, Some(work));
-    let examples = decoder.examples_of(sub.scope);
+    let values = relation_examples(decoder, &sub.program, &relation, &walked_dets(&sub.program, relation.node), work);
     for (place, example) in subject.examples.iter().enumerate() {
         let Ok(rows) = &example.rows else { continue };
         let entries = &mut gathered[place];
-        let Some(found) = examples.iter().position(|own| *own == example.example) else {
-            entries.iter_mut().for_each(|entry| entry.lost = true);
+        let Some(found) = values.iter().find(|own| own.example == example.example) else {
+            entries.iter_mut().for_each(|entry| entry.lose("the widened body is not evaluated on the example"));
             continue;
         };
-        let Ok(assigned) = &values[found] else {
-            entries.iter_mut().for_each(|entry| entry.lost = true);
-            continue;
+        let assigned = match &found.rows {
+            Ok(assigned) => assigned,
+            Err(fault) => {
+                entries.iter_mut().for_each(|entry| entry.lose(&fault_spelled(fault)));
+                continue;
+            }
         };
         for ((table_assignment, _), entry) in rows.at.iter().zip(entries.iter_mut()) {
             let mut matched = false;
-            for (body_assignment, BodyValue(value)) in assigned.at.iter().filter(|(own, _)| consistent(table_assignment, own)) {
+            for (body_assignment, models) in assigned.at.iter().filter(|(own, _)| consistent(table_assignment, own)) {
                 matched = true;
-                match value {
-                    RelationValue::Rows(body_rows) => {
-                        let ctx = Ctx { example: example.example, assignment: body_assignment };
-                        each_row(body_rows, &mut |row| {
-                            let derived: Box<[TermId]> = key.iter().map(|&column| row[column]).collect();
-                            let slots = entry.rows.entry(derived).or_insert_with(|| vec![Merged::Unset; subject.columns.len()]);
-                            for (slot, &column) in slots.iter_mut().zip(subject.columns) {
-                                slot.merge(analysis.extent_of(key[column as usize], row, &ctx, 0));
-                            }
-                        });
+                for value in models {
+                    match value {
+                        RelationValue::Rows(body_rows) => {
+                            let ctx = Ctx { example: example.example, assignment: body_assignment };
+                            each_row(body_rows, &mut |row| {
+                                let derived: Box<[TermId]> = key.iter().map(|&column| row[column]).collect();
+                                let slots = entry.rows.entry(derived).or_insert_with(|| vec![Merged::Unset; subject.columns.len()]);
+                                for (slot, &column) in slots.iter_mut().zip(subject.columns) {
+                                    slot.merge(analysis.extent_of(key[column as usize], row, &ctx, 0));
+                                }
+                            });
+                        }
+                        RelationValue::Stopped(stop) => entry.stop = Some(stop.clone()),
+                        RelationValue::Undefined => entry.lose("the relation of the widened body is undefined"),
                     }
-                    RelationValue::Stopped(stop) => entry.stop = Some(stop.clone()),
-                    RelationValue::Undefined => entry.lost = true,
                 }
             }
             if !matched {
@@ -437,7 +485,7 @@ impl OutputPlan {
                     if let Some(stop) = &rows.stop {
                         entry.stop = Some(stop.clone());
                     }
-                    lookup.bad |= rows.lost;
+                    lookup.bad |= rows.lost.is_some();
                     let position = port.wanted[source.slot] as usize;
                     for (row, slots) in &rows.rows {
                         let extent = slots[source.slot].extent();
@@ -462,7 +510,7 @@ impl OutputPlan {
 /// Adds to `gathered` the extents of the rows of the output of the instance
 /// `instance` that `given` gives, as [`OutputPlan::new`] gives them.
 fn gather_output(decoder: &Decoder<'_>, reads: &Reads<'_>, subject: &Subject<'_>, given: &Given, instance: &Instance, work: &TableWork, gathered: &mut [Vec<Gathered>]) {
-    let Some(mut plan) = OutputPlan::new(decoder, subject, given, instance) else { return lose_all(gathered) };
+    let Some(mut plan) = OutputPlan::new(decoder, subject, given, instance) else { return lose_all(gathered, "the component of the instance is not in the registry") };
     plan.derive_ports(decoder, reads, subject.checked, work);
     for (place, example) in subject.examples.iter().enumerate() {
         let Ok(rows) = &example.rows else { continue };
@@ -551,8 +599,11 @@ fn finish(contents: &Contents, gathered: &[Vec<Gathered>], columns: &[u32]) -> V
                         .iter()
                         .map(|value| match (value, &entry.stop) {
                             (RelationValue::Rows(_), Some(stop)) => EntryExtents::Stopped(stop.clone()),
-                            (RelationValue::Rows(_), None) if entry.lost => EntryExtents::Absent,
-                            (RelationValue::Rows(relation), None) => EntryExtents::Rows(row_extents(relation, entry, columns)),
+                            (RelationValue::Rows(relation), None) => match &entry.lost {
+                                Some(reason) if !relation.is_empty() => EntryExtents::Lost(reason.clone()),
+                                Some(_) => EntryExtents::Absent,
+                                None => EntryExtents::Rows(row_extents(relation, entry, columns)),
+                            },
                             _ => EntryExtents::Absent,
                         })
                         .collect()
@@ -622,15 +673,15 @@ type LookupKey = (u32, usize, usize, usize, Vec<usize>);
 impl Reads<'_> {
     /// The extent of the frame of the column `index` of the table `named`, at its rows
     /// whose cells at the columns of `constraints` are the cells they pair them
-    /// with, on `ctx`'s example at its assignment; none where the rows give two
-    /// extents, where none matches, or where the table has more than one model at
+    /// with, on `example` at the assignment `assignment`; none where the rows give
+    /// two extents, where none matches, or where the table has more than one model at
     /// the assignment.
-    fn extent_at(&self, named: &Named, index: usize, constraints: &[(usize, TermId)], ctx: &Ctx<'_>) -> Option<Extent> {
+    fn extent_at(&self, named: &Named, index: usize, example: Option<Example>, constraints: &[(usize, TermId)], assignment: &[Assignment]) -> Option<Extent> {
         let table = self.tables.get((named.row as usize).checked_sub(EVIDENCE_FACTS.len())?)?;
         let contents = table.contents.as_ref().ok()?;
-        let place = contents.examples.iter().position(|own| own.example == ctx.example).or_else(|| contents.examples.iter().position(|own| own.example.is_none()))?;
+        let place = contents.examples.iter().position(|own| own.example == example).or_else(|| contents.examples.iter().position(|own| own.example.is_none()))?;
         let rows = contents.examples[place].rows.as_ref().ok()?;
-        let at = rows.at.iter().position(|(assigned, _)| consistent(assigned, ctx.assignment))?;
+        let at = rows.at.iter().position(|(assigned, _)| consistent(assigned, assignment))?;
         let [RelationValue::Rows(relation)] = &rows.at[at].1[..] else { return None };
         let fixed: Vec<usize> = constraints.iter().map(|&(column, _)| column).collect();
         let key = (named.row, place, at, index, fixed);
@@ -719,17 +770,25 @@ impl Analysis<'_> {
     }
 
     /// The extent of the frame that the lib column `maker` makes at the atom
-    /// `at`: the own size of the value at the maker's `size` column of the atom
-    /// plus the margins of the value at the maker's column.
+    /// `at`: the own size of the value at the maker's `size` column of the atom,
+    /// with its rows and columns swapped where the D4 element at the `by` column
+    /// moves the top edge to the left or the right edge, plus the margins of the
+    /// value at the maker's column.
     fn made_extent(&self, maker: &Maker, at: &NodePath, row: &[TermId], ctx: &Ctx<'_>, depth: u8) -> Option<Extent> {
         // A column of an output makes a frame in the output's table alone: a body reads it as a column of that table.
         let Maker::Relation { relation, column } = maker else { return None };
         let size = self.registry.frame_size(relation, column)?;
         let atom = atom_at(&self.sub.program, at)?;
         let made = self.sub.column_of(site_label(atom, column)?)?;
-        let sized = self.sub.column_of(site_label(atom, &size.column)?)?;
+        let sized = self.sub.column_of(site_label(atom, &size.column.column)?)?;
         let margins = margins_of(row[made], self.types.get(made)?)?;
-        let (own_rows, own_columns) = self.own_size(sized, row, ctx, depth)?;
+        let (mut own_rows, mut own_columns) = self.own_size(sized, row, ctx, depth)?;
+        if let Some(by) = &size.by {
+            let element = self.sub.column_of(site_label(atom, &by.column)?)?;
+            if matches!(Geometry::get().element(row[element]).image(Edge::Top), Edge::Left | Edge::Right) {
+                (own_rows, own_columns) = (own_columns, own_rows);
+            }
+        }
         Some(Extent { rows: own_rows + margins.top + margins.bottom, columns: own_columns + margins.left + margins.right })
     }
 
@@ -754,26 +813,23 @@ impl Analysis<'_> {
         let named = located.table?;
         let index = read_index(&located, source)?;
         let frame = named.frames.get(index)?;
+        if frame.is_empty() {
+            return None;
+        }
+        let example = self.read_example(source, row, ctx)?;
         match frame.as_str() {
-            "" => None,
-            INPUT_FRAME | OUTPUT_FRAME => grid_extent(self.decoder, frame, ctx.example),
+            INPUT_FRAME | OUTPUT_FRAME => grid_extent(self.decoder, frame, example),
             _ => {
                 let constraints = self.constraints(named, located.det, source, row)?;
-                self.reads.extent_at(named, index, &constraints, ctx)
+                self.reads.extent_at(named, index, example, &constraints, ctx.assignment)
             }
         }
     }
 
-    /// The cells of the columns of the table `named` that the atom of `source`
-    /// fixes in `row`: each argument of the atom that stands on a label of the
-    /// body, with the column of the table at its position. None where the atom
-    /// reads its relation lifted over the examples, and where the body does not
-    /// compile.
-    fn constraints(&self, named: &Named, det: i32, source: &ColumnSource, row: &[TermId]) -> Option<Vec<(usize, TermId)>> {
+    /// The arguments of the atom of `source` in the IR of the body, with the
+    /// paths of the IR; none where the body does not compile.
+    fn read_arguments(&self, source: &ColumnSource) -> Option<(&Arguments, &IrPaths)> {
         let program = &self.sub.program.program;
-        if program.reads_lifted(&source.atom) {
-            return None;
-        }
         let ir = self.ir.get_or_init(|| {
             let given = program.given(self.relation.node, self.registry);
             self.sub.program.body_ir(self.registry, given.first()?, &NodePath::default().child(0))
@@ -783,15 +839,51 @@ impl Analysis<'_> {
             (IrNode::Atom(atom), NodePaths::Atom(path)) if *path == source.atom => Some(&atom.arguments),
             _ => None,
         })?;
+        Some((arguments, paths))
+    }
+
+    /// The column of the body that the label of `argument` stands at, none for
+    /// a term.
+    fn argument_column(&self, argument: &Argument, paths: &IrPaths) -> Option<usize> {
+        let Argument::Variable(variable) = argument else { return None };
+        paths.labels.get(usize::from(variable.0)).and_then(|label| self.sub.column_of(*label))
+    }
+
+    /// The example that the read of `source` is on: the row's, or, where the
+    /// atom reads its relation lifted over the examples, the one that the cell
+    /// of its Example label holds. The outer none is a lifted read whose
+    /// Example label holds no example.
+    fn read_example(&self, source: &ColumnSource, row: &[TermId], ctx: &Ctx<'_>) -> Option<Option<Example>> {
+        if !self.sub.program.program.reads_lifted(&source.atom) {
+            return Some(ctx.example);
+        }
+        let (arguments, paths) = self.read_arguments(source)?;
+        let (_, argument) = arguments.0.iter().find(|(position, _)| position.0 == 0)?;
+        match Term::decode(row[self.argument_column(argument, paths)?], &ValueType::Example) {
+            Term::Constant(Constant::Example(example)) => Some(Some(example)),
+            _ => None,
+        }
+    }
+
+    /// The cells of the columns of the table `named` that the atom of `source`
+    /// fixes in `row`: each argument of the atom that stands on a label of the
+    /// body, with the column of the table at its position, which is one less
+    /// than the atom's where the atom reads its relation lifted over the
+    /// examples and its first argument is the Example. None where the body does
+    /// not compile.
+    fn constraints(&self, named: &Named, det: i32, source: &ColumnSource, row: &[TermId]) -> Option<Vec<(usize, TermId)>> {
+        let program = &self.sub.program.program;
+        let lifted = program.reads_lifted(&source.atom);
+        let (arguments, paths) = self.read_arguments(source)?;
         let Some(Resolution::Node(node)) = program.resolution(&source.atom) else { return None };
         let node_paths = program.row_paths(*node);
         let mut fixed = Vec::new();
         for (position, argument) in arguments.0.iter() {
-            let Argument::Variable(variable) = argument else { continue };
-            let Some(column) = paths.labels.get(usize::from(variable.0)).and_then(|label| self.sub.column_of(*label)) else { continue };
-            let held = match (&named.paths, node_paths.as_ref().and_then(|paths| paths.get(usize::from(position.0)))) {
+            let Some(column) = self.argument_column(argument, paths) else { continue };
+            let Some(position) = (if lifted { position.0.checked_sub(1) } else { Some(position.0) }).map(usize::from) else { continue };
+            let held = match (&named.paths, node_paths.as_ref().and_then(|paths| paths.get(position))) {
                 (Some(held), Some(path)) => held.iter().position(|own| own == path),
-                (None, _) if det < 0 => Some(usize::from(position.0)),
+                (None, _) if det < 0 => Some(position),
                 _ => None,
             };
             if let Some(held) = held {
