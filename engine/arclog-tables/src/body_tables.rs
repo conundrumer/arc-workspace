@@ -18,8 +18,15 @@ pub fn examples(decoder:&Decoder<'_>,checked:&CheckedProgram,view:&BodyView,dets
 }
 
 pub(crate) fn examples_with_context(decoder:&Decoder<'_>,checked:&CheckedProgram,view:&BodyView,dets:&[Det],work:&TableWork,context:AssignmentContext<'_>)->Vec<ExampleRows> {
+    examples_reusing(decoder, checked, view, dets, work, context, None)
+}
+
+/// Reuse complete body models only on the native plain-body branch. Recursive
+/// inputs can read owner state beyond body_dets and must evaluate held values.
+pub(crate) fn examples_reusing(decoder:&Decoder<'_>,checked:&CheckedProgram,view:&BodyView,dets:&[Det],work:&TableWork,context:AssignmentContext<'_>,completed:Option<&[ExampleRows]>)->Vec<ExampleRows> {
+    let completed = if matches!(view.uses_owner_context(checked, decoder.registry()), Ok(false)) { completed } else { None };
     match checked.program.nodes_of(&view.form).first().copied() {
-        Some(root) => assignment_context::examples(decoder, checked, view.scope, root, dets, work, context,
+        Some(root) => assignment_context::examples_reusing(decoder, checked, view.scope, root, dets, work, context, completed,
             &mut |evaluation, example| models(evaluation, view, example)),
         None => decoder.examples_of(view.scope).into_iter().map(|example| ExampleRows {example, rows:Err(RunFault {message:"checked body owner has no dependency node".into(),form:view.form.clone()})}).collect(),
     }

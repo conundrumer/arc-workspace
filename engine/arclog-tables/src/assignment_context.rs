@@ -92,6 +92,17 @@ pub(crate) fn examples(
     root: GraphNodeIndex, dets: &[Det], work: &TableWork, context: AssignmentContext<'_>,
     at: &mut dyn FnMut(&Evaluation<'_>, Option<Example>) -> Result<Vec<RelationValue>, End>,
 ) -> Vec<ExampleRows> {
+    examples_reusing(decoder, checked, scope, root, dets, work, context, None, at)
+}
+
+/// Reuse is admitted only by a caller with a complete native dependency
+/// certificate. Held validation, limits and layout remain in this dispatcher.
+pub(crate) fn examples_reusing(
+    decoder: &Decoder<'_>, checked: &CheckedProgram, scope: arclog::eval::examples::ExampleScope,
+    root: GraphNodeIndex, dets: &[Det], work: &TableWork, context: AssignmentContext<'_>,
+    completed: Option<&[ExampleRows]>,
+    at: &mut dyn FnMut(&Evaluation<'_>, Option<Example>) -> Result<Vec<RelationValue>, End>,
+) -> Vec<ExampleRows> {
     decoder.examples_of(scope).into_iter().map(|example| {
         let rows = match context {
             AssignmentContext::Search => decoder.assigned(checked, root, dets, Some(work), &mut |evaluation| at(evaluation, example)),
@@ -112,10 +123,17 @@ pub(crate) fn examples(
                             .ok_or_else(|| RunFault { message: format!("held assignment lacks required DET {:?}", det.relation).into(), form: form.clone() })
                     }).collect::<Outcome<Vec<_>>>();
                     let projected = match projected { Ok(values) => values, Err(fault) => { end = Err(End::Fault(fault)); break; } };
-                    let parameters = ParameterValues::determined(full.clone());
-                    let evaluation = Evaluation { program: checked, concept: None, task, session, constructions,
-                        registry: decoder.registry(), parameters: &parameters, limits: &limits };
-                    match at(&evaluation, example) {
+                    let reused = completed.and_then(|examples| examples.iter().find(|e| e.example == example))
+                        .and_then(|example| example.rows.as_ref().ok())
+                        .filter(|rows| rows.stop.is_none())
+                        .and_then(|rows| completed_models(rows, &projected));
+                    let value = reused.map_or_else(|| {
+                        let parameters = ParameterValues::determined(full.clone());
+                        let evaluation = Evaluation { program: checked, concept: None, task, session, constructions,
+                            registry: decoder.registry(), parameters: &parameters, limits: &limits };
+                        at(&evaluation, example)
+                    }, Ok);
+                    match value {
                         Ok(value) => found.push((projected, value)),
                         Err(fault) => { end = Err(fault); break; }
                     }
@@ -129,4 +147,20 @@ pub(crate) fn examples(
         };
         ExampleRows { example, rows }
     }).collect()
+}
+
+// Compare the entire ordered model vector at every matching assignment. A
+// stopped or contradictory candidate cannot certify the held query.
+fn completed_models(rows: &Assigned<Vec<RelationValue>>, projected: &[Assignment]) -> Option<Vec<RelationValue>> {
+    let mut matches = rows.at.iter().filter(|(assigned, _)| assigned.len() == projected.len()
+        && assigned.iter().all(|(name, value)| projected.iter().find(|(held, _)| held == name)
+            .is_some_and(|(_, held)| arclog::session::same_rows(value, held))));
+    let (_, first) = matches.next()?;
+    if first.iter().any(|value| matches!(value, RelationValue::Stopped(_))) { return None; }
+    if !matches.all(|(_, models)| models.len() == first.len() && models.iter().zip(first).all(|(left, right)| match (left, right) {
+        (RelationValue::Rows(left), RelationValue::Rows(right)) => arclog::session::same_rows(left, right),
+        (RelationValue::Undefined, RelationValue::Undefined) => true,
+        _ => false,
+    })) { return None; }
+    Some(first.clone())
 }

@@ -118,6 +118,13 @@ pub struct Relation {
 }
 
 impl Relation {
+    /// Exact storage identity of immutable Relation clones. The OnceLock's
+    /// owner is allocated only by from_parts and shared only by Clone;
+    /// comparing its address neither computes nor compares a rows hash.
+    pub(crate) fn shares_storage(&self, other: &Self) -> bool {
+        std::sync::Arc::ptr_eq(&self.rows_hash, &other.rows_hash)
+    }
+
     /// The relation that `parts` hold. The parts' columns are disjoint and
     /// cover `0..arity`.
     pub fn from_parts(arity: u16, parts: Box<[RelationPart]>) -> Self {

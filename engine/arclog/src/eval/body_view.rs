@@ -20,6 +20,21 @@ pub struct BodyView {
     pub input:Option<crate::program::PortName>,
 }
 impl BodyView {
+    /// Whether this query reads the recursive owner's state in addition to its
+    /// literal clause. Both evaluation and completed-model reuse use this
+    /// boundary; unknown inputs retain the native evaluation fault.
+    pub fn uses_owner_context(&self, program:&CheckedProgram, registry:&crate::registry::Registry)->Outcome<bool> {
+        let fault=|message:&str| RunFault {message:message.into(),form:self.form.clone()};
+        let Some(port)=&self.input else {return Ok(false)};
+        let Some(NodeRef::Instance(instance))=node_at(NodeRef::Program(program.program.program.value()),&self.form) else {
+            return Err(fault("input query owner is not an instance"));
+        };
+        let component=crate::resolver::registry_columns::component(registry,&instance.component)
+            .ok_or_else(||fault("body component is absent"))?;
+        let declared=component.inputs.iter().find(|input|input.port.name==*port)
+            .ok_or_else(||fault("body input is absent"))?;
+        Ok(declared.reads_outputs)
+    }
     pub fn column_of(&self,label:LabelId)->Option<usize> {
         self.clause.columns.iter().position(|v|self.paths.labels[v.0 as usize]==label)
     }

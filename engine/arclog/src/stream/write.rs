@@ -56,6 +56,8 @@ pub fn token_stream(program: &CheckedProgram, vocabulary: &Vocabulary) -> Result
 #[derive(Clone, Debug)]
 pub struct WrittenStream {
     pub tokens: Vec<(Token, Emitter)>,
+    /// Source-order AST path at each token, from the same writer run.
+    pub paths: Vec<NodePath>,
     /// The relation declared at each slot, in slot order.
     pub relations: Vec<ProgramRelation>,
     /// Each form of the stream, in the order of the stream.
@@ -82,7 +84,8 @@ pub fn written_stream(program: &CheckedProgram, vocabulary: &Vocabulary) -> Resu
     let WriterOutput { stream, declared, forms } = write_program(program, vocabulary)?;
     let mut relations: Vec<(u32, ProgramRelation)> = declared.into_iter().map(|(relation, declared)| (declared.slot, relation)).collect();
     relations.sort_by_key(|(slot, _)| *slot);
-    Ok(WrittenStream { tokens: stream.into_iter().map(|(token, emitter, _)| (token, emitter)).collect(), relations: relations.into_iter().map(|(_, relation)| relation).collect(), forms })
+    let (tokens,paths)=stream.into_iter().map(|(token,emitter,path)|((token,emitter),path)).unzip();
+    Ok(WrittenStream { tokens, paths, relations: relations.into_iter().map(|(_, relation)| relation).collect(), forms })
 }
 
 /// The token stream of [`token_stream`], each token with the path in
@@ -93,7 +96,8 @@ pub fn written_stream(program: &CheckedProgram, vocabulary: &Vocabulary) -> Resu
 /// body's path, and a clause's proposers stand at its body's path, which
 /// they precede.
 pub fn token_stream_with_paths(program: &CheckedProgram, vocabulary: &Vocabulary) -> Result<Vec<(Token, Emitter, NodePath)>, Diagnostic> {
-    Ok(write_program(program, vocabulary)?.stream)
+    let written=written_stream(program,vocabulary)?;
+    Ok(written.tokens.into_iter().zip(written.paths).map(|((token,emitter),path)|(token,emitter,path)).collect())
 }
 
 /// What one run of the writer gives: the tokens with their paths, the

@@ -85,6 +85,62 @@ fault. A complete pair can have no FITS assignment.
 
 ## Task reuse and runtime corpus inspection
 
+The kept-FITS body pass reuses complete models already evaluated in the
+all-assignment pass on the native plain-body branch. The evaluator and reuse
+eligibility share `BodyView::uses_owner_context`; recursive owner-state inputs
+remain native held queries. Reuse requires the same example and every required
+DET value, and every matching entry must agree on the entire ordered model
+vector, including empty and undefined models. Stops and incomplete walks do
+not certify reuse. Full held assignments are still validated, and held table
+metadata, projections, extents and proofs are built in their own receipt context.
+No searched table is relabeled as a held table.
+
+Corpus consumers share the complete native writer artifact with mutation
+certification. `StudyProgram::written_stream` retains one `WrittenStream`
+(tokens, token paths, declaration slots and form spans) for its immutable
+checked program and first registry/settings context. `decode_stream` derives
+its ids/model/paths from that same artifact, and pair evaluation uses it
+instead of writing each certified mutant again. A different registry or any
+different `DecodeSettings` field gets a write in that context, never the
+first context's cached artifact. The raw checked-program writer adapters
+remain available and derive their results from the same writer.
+
+Dependency-prefix matching constructs only the final retained key. It walks
+form paths once, compares the one possible cached boundary by length and
+then by exact source/path/token content, and avoids allocating every
+cumulative token prefix. The retained key bytes and source-identity contract
+are unchanged. Relation interning also recognizes immutable `Relation`
+clones by their shared hash-cell **owner**, without computing or comparing
+the hash value. `RowSet::shared` identifies only one part and is insufficient
+for that proof. Independently constructed relations still use the existing
+exact row comparison. Within that comparison, a column-matched part sharing
+its `RowSet` storage needs no row membership scan, and every other part is
+still checked; cache keys, eviction and bounds are unchanged.
+
+The recorded corpus-v8 phase shares were evaluate 57.7%, inclusive
+native_decode 26.4%, filters 7.1% and draw 5.6%. The native_decode phase also
+contains lossless storage, not just typed filter views. Eliminating it
+entirely would yield only 1.36x overall; a 2x improvement there would require
+about 2.19x evaluation speed to reach 1.8x overall. The first 80 saved pairs of 15113be4, 47996f11 and 5207a7b5 spent
+119.76/164.04, 54.89/57.78 and 77.34/84.05 seconds respectively in mutant
+clause evaluation. If half of those clause times were eliminated, the
+corresponding evaluation speedups would be 1.57x, 1.90x and 1.85x. At the
+recorded 57.7% evaluation share this is roughly 1.27–1.38x overall. This is
+an optimistic conditional estimate: those timings do not separate held model
+queries from annotations or establish how many queries qualify for reuse.
+It does not establish a 1.8x whole-corpus gain. In fact, all sampled pairs
+from 47996f11 and 5207a7b5 had zero kept assignments, so this reuse saves no
+second query there. All three samples stopped overall; 15113be4 had one
+kept assignment, whose query reuse eligibility is not established by phase
+timings. These are Amdahl limits,
+not measured speedups. Saved expensive-task samples put 73--95% of evaluate
+in mutant_clause. They do not separate its writer/prefix, query and extent
+costs, so the allocation reductions above do not support a numerical 1.8x
+claim. No baseline or measurement run is needed to establish these changes;
+the next real corpus run supplies their runtime evidence. Python storage
+optimization and bounded extent materialization are separate coordinated
+changes; every native table and its stop/fault evidence remains exported.
+
 For a corpus, construct one `arclog.StudyTaskEvaluator(task, tasks, settings)`
 per task. Its `from_stream(ids, model)` begins a new case and releases the
 previous case's observations and native result-cache allocations, including
@@ -199,10 +255,11 @@ checkpoint files without modifying them. Summaries report this invocation's
 work and its skipped case count; progress continues to print every second.
 
 After integrating the checked-IR fixes and memory lifecycle, one isolated
-wheel supports fault replay and corpus resume. From `ast`, run
-`engine-perf/scripts/build_study_unified.sh` through `run_heavy.py`. It uses
-`target-perf`, writes `wheels-s3-unified`, installs only `venv-s3-unified`,
-and checks that both `replay` and `finish_case` are exported. Build progress
-prints every five seconds. Use that interpreter for `check_stage3_fast.py`
-with either `--case-manifest ... --replay-identities --gold-tables` or
-`--resume --output stage3-fast2.jsonl`.
+wheel supports fault replay and corpus resume. Build only committed source
+with `scripts/build_study_runtime.py --revision <commit> --output <fresh-runtime>`;
+the build owns its source archive, target, wheel and interpreter directory.
+Select the approved runtime from the corpus workspace's `run/CURRENT.json`
+through the native provenance selector, rather than assuming a venv path.
+Keep output provenance and checkpoint compatibility when using
+`check_stage3_fast.py` with `--case-manifest ... --replay-identities
+--gold-tables` or `--resume --output ...`.

@@ -138,7 +138,7 @@ struct ClauseTables {
 fn source_stream(program:&StudyProgram,decoder:&Decoder<'_>,cache:&PairCache)->Outcome<Arc<arclog::stream::WrittenStream>> {
     match &cache.source {
         Some((checked,written)) if Arc::ptr_eq(checked,program.checked())=>Ok(Arc::clone(written)),
-        _=>arclog::stream::written_stream(program.checked(),decoder.vocabulary()).map(Arc::new).map_err(|d|fault(d.message,&NodePath::default())),
+        _=>program.written_stream(decoder.registry(),decoder.settings()).map_err(|d|fault(d.message,&NodePath::default())),
     }
 }
 
@@ -149,20 +149,25 @@ fn original_relations(program:&StudyProgram,written:&arclog::stream::WrittenStre
     let checked=program.checked();
     let end=until.and_then(|until|written.forms.iter().position(|form|&form.path==until)).unwrap_or(written.forms.len());
     let forms=&written.forms[..end];
-    let mut paths=Vec::new();
-    let keys=forms.iter().map(|form| {
-        paths.push(form.path.0.len() as u32);paths.extend(form.path.0.iter().map(|s|s.0));
-        let mut key=vec![cache.active_source as u32,(cache.active_source>>32) as u32];
-        key.extend(&paths);key.push(u32::MAX);
-        key.extend(written.tokens[..form.tokens.end].iter().map(|(token,_)|decoder.vocabulary().id(token).expect("a written vocabulary token")));
-        key
-    }).collect::<Vec<_>>();
     // One cumulative prefix replaces the former map of cloned table vectors.
     // Find its exact source boundary before evaluating any preceding form.
     let mut tables=Vec::new();let mut start=0;
-    if let Some(prefix)=&cache.prefix {
-        if let Some(index)=keys.iter().position(|key|key==&prefix.key) {
-            tables=prefix.tables.clone();start=index+1;cache.prefix_hits+=1;
+    let source=[cache.active_source as u32,(cache.active_source>>32) as u32];
+    let mut paths=Vec::new();
+    for (index,form) in forms.iter().enumerate() {
+        paths.push(form.path.0.len() as u32);
+        paths.extend(form.path.0.iter().map(|s|s.0));
+        if let Some(prefix)=&cache.prefix {
+            let header=source.len()+paths.len()+1;
+            // Key lengths strictly increase at form boundaries. Only the
+            // possible matching boundary reads any vocabulary IDs; every
+            // other boundary needs no cumulative token vector at all.
+            if prefix.key.len()==header+form.tokens.end
+                && source.iter().chain(&paths).copied().chain([u32::MAX]).eq(prefix.key[..header].iter().copied())
+                && written.tokens[..form.tokens.end].iter().zip(&prefix.key[header..]).all(|((token,_),id)|decoder.vocabulary().id(token)==Some(*id))
+            {
+                tables=prefix.tables.clone();start=index+1;cache.prefix_hits+=1;
+            }
         }
     }
     for form in forms.iter().skip(start) {
@@ -182,7 +187,11 @@ fn original_relations(program:&StudyProgram,written:&arclog::stream::WrittenStre
         }
         tables.extend(held);
     }
-    let last=keys.last().cloned().unwrap_or_default();
+    let last=match forms.last() {
+        None=>Vec::new(),
+        Some(form)=>source.into_iter().chain(paths).chain([u32::MAX])
+            .chain(written.tokens[..form.tokens.end].iter().map(|(token,_)|decoder.vocabulary().id(token).expect("a written vocabulary token"))).collect(),
+    };
     if until.is_some() && !last.is_empty() && !cache.prefix.as_ref().is_some_and(|memo|memo.key==last) {
         cache.remember(last.clone(),tables.clone());
     }
@@ -206,7 +215,8 @@ fn clause_tables(program:&StudyProgram,body:&NodePath,decoder:&mut Decoder<'_>,f
     let limits=decoder.limits().counted_in(work.clone());
     let receipt=HeldAssignments::new(Arc::clone(program.checked()),fixed);
     let context=AssignmentContext::Held {receipt:&receipt,limits:&limits,work:&work};
-    let examples=super::body_tables::examples_with_context(decoder,program.checked(),&view,&dets,&work,context);
+    let completed=&tables.last().expect("the all-assignment body table just inserted").1.contents.as_ref().expect("body contents was checked").examples;
+    let examples=super::body_tables::examples_reusing(decoder,program.checked(),&view,&dets,&work,context,Some(completed));
     let seen=tables[..tables.len()-1].iter().map(|(_,t)|t).collect::<Vec<_>>();
     let held=super::body_tables::contents_with_context(decoder,program.checked(),&view,slot,&dets,examples,&work,&seen,context)?;
     tables.push((index,Table {form:view.form,point,contents:Ok(held)}));
@@ -641,8 +651,8 @@ fn evaluate_pair_inner(
     let gold_key=Arc::as_ptr(gold.checked()) as usize;
     cache.active_source=gold_key;
     if !cache.source.as_ref().is_some_and(|(checked,_)|Arc::ptr_eq(checked,gold.checked())) {
-        match arclog::stream::written_stream(gold.checked(),gd.vocabulary()) {
-            Ok(written)=>cache.source=Some((Arc::clone(gold.checked()),Arc::new(written))),
+        match gold.written_stream(gd.registry(),gd.settings()) {
+            Ok(written)=>cache.source=Some((Arc::clone(gold.checked()),written)),
             Err(d)=>{result.report=faulted(&fault(d.message,&point.body));return result;}
         }
     }

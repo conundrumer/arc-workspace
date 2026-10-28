@@ -13,11 +13,11 @@ pub(super) fn value(driver:&Driver<'_, '_>,view:&BodyView,example:Option<Example
     let evaluation=driver.evaluation;
     let fault=|message:String|RunFault {message:message.into(),form:view.form.clone()};
     let plain=||driver.bodies().relation(&view.form,&view.clause,example);
-    let Some(port)=&view.input else {return plain()};
+    if !view.uses_owner_context(evaluation.program,evaluation.registry)? {return plain();}
+    let Some(port)=&view.input else {unreachable!("an owner-context query has an input")};
     let Some(NodeRef::Instance(instance))=node_at(NodeRef::Program(evaluation.program.program.program.value()),&view.form) else {return Err(fault("input query owner is not an instance".into()))};
     let component=registry_columns::component(evaluation.registry,&instance.component).ok_or_else(||fault("body component is absent".into()))?;
     let declared=component.inputs.iter().find(|i|i.port.name==*port).ok_or_else(||fault("body input is absent".into()))?;
-    if !declared.reads_outputs {return plain();}
     let node=evaluation.program.program.nodes_of(&view.form).iter().copied().find(|n|matches!(&evaluation.program.program.graph.nodes[n.0 as usize].kind,DependencyKind::RecursiveInstance(_))).ok_or_else(||fault("recursive body has no recursive owner".into()))?;
     let shape=InstanceShape::of(evaluation.program,&view.form,instance,component);
     let input=shape.input_clause(evaluation.program,&view.form,declared).map_err(fault)?.ok_or_else(||fault("recursive body is not written".into()))?;

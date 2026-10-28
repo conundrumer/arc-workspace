@@ -311,9 +311,10 @@ impl CacheState {
 
 /// Whether `a` and `b` hold the same rows. Where their parts split the
 /// columns alike, the parts' rows are compared; otherwise each row of `a`
-/// is looked up in `b`'s parts.
+/// is looked up in `b`'s parts. Immutable clone storage proves equality
+/// without visiting rows; part storage proves only its column-matched part.
 pub fn same_rows(a: &Relation, b: &Relation) -> bool {
-    if std::ptr::eq(a, b) {
+    if std::ptr::eq(a, b) || a.shares_storage(b) {
         return true;
     }
     if a.arity() != b.arity() || a.len() != b.len() {
@@ -328,7 +329,8 @@ pub fn same_rows(a: &Relation, b: &Relation) -> bool {
         && a.parts().iter().filter(|part| !part.columns.is_empty()).all(|part| counterpart(part).is_some());
     if alike {
         return a.parts().iter().filter(|part| !part.columns.is_empty()).all(|part| {
-            counterpart(part).is_some_and(|other| part.rows.rows().all(|row| other.rows.contains(row)))
+            counterpart(part).is_some_and(|other| part.rows.shared()==other.rows.shared()
+                || part.rows.rows().all(|row| other.rows.contains(row)))
         });
     }
     let mut same = true;

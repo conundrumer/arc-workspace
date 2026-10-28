@@ -22,7 +22,7 @@ use crate::program::path::NodePath;
 use crate::program::{Form, Node, Program};
 use crate::registry::Registry;
 use crate::resolver::{SolverScope, resolve};
-use crate::stream::{DecodeSettings, Emitter, Vocabulary, token_stream_with_paths};
+use crate::stream::{DecodeSettings, Emitter, Vocabulary, WrittenStream};
 
 /// An AST together with the checks required to evaluate it. Source layout is
 /// presentation metadata only; it never identifies a program or mutation.
@@ -33,6 +33,7 @@ pub struct StudyProgram {
     render_cache: Arc<OnceLock<(usize, Result<serde_json::Value,String>)>>,
     source_cache: Arc<OnceLock<(usize,DecodeSettings,Result<StudyProgram,String>)>>,
     stream_cache: Arc<OnceLock<(usize,DecodeSettings,Result<StudyStream,String>)>>,
+    written_cache: Arc<OnceLock<(usize,DecodeSettings,Result<Arc<WrittenStream>,Diagnostic>)>>,
     mutation_checks: Arc<OnceLock<Result<Arc<CheckCache>,String>>>,
     typed_sites_cache: Arc<OnceLock<(usize,Result<Arc<crate::check::render_sites::TypedSiteExport>,String>)>>,
 }
@@ -141,6 +142,7 @@ impl StudyProgram {
             render_cache:Arc::new(OnceLock::new()),
             source_cache:Arc::new(OnceLock::new()),
             stream_cache:Arc::new(OnceLock::new()),
+            written_cache:Arc::new(OnceLock::new()),
             mutation_checks:Arc::new(OnceLock::new()),
             typed_sites_cache:Arc::new(OnceLock::new()),
         })
@@ -214,21 +216,29 @@ impl StudyProgram {
         if cached.0==key && cached.1==*settings {cached.2.clone()} else {self.write_stream(registry,settings)}
     }
 
+    /// One complete writer artifact for the certificate and its native
+    /// consumers. Registry/settings mismatches are written in their own
+    /// context, without reading or replacing the first context's artifact.
+    pub fn written_stream(&self,registry:&Registry,settings:&DecodeSettings)->Result<Arc<WrittenStream>,Diagnostic> {
+        let key=registry as *const Registry as usize;
+        let write=||crate::stream::written_stream(&self.checked,&Vocabulary::new(registry,settings)).map(Arc::new);
+        let cached=self.written_cache.get_or_init(||(key,*settings,write()));
+        if cached.0==key && cached.1==*settings {cached.2.clone()} else {write()}
+    }
+
     fn write_stream(&self,registry:&Registry,settings:&DecodeSettings)->Result<StudyStream,String> {
         let vocabulary = Vocabulary::new(registry, settings);
-        let written = token_stream_with_paths(&self.checked, &vocabulary)
-            .map_err(|d| diagnostics_text(&[d]))?;
+        let written = self.written_stream(registry,settings).map_err(|d| diagnostics_text(&[d]))?;
         let mut stream = StudyStream {
             ids: Vec::new(),
             model: Vec::new(),
-            paths: Vec::new(),
+            paths: written.paths.clone(),
         };
-        for (token, emitter, path) in written {
-            stream.ids.push(vocabulary.id(&token).ok_or_else(|| {
+        for (token, emitter) in &written.tokens {
+            stream.ids.push(vocabulary.id(token).ok_or_else(|| {
                 format!("writer emitted a token outside the vocabulary: {token}")
             })?);
-            stream.model.push(u8::from(emitter == Emitter::Model));
-            stream.paths.push(path);
+            stream.model.push(u8::from(*emitter == Emitter::Model));
         }
         Ok(stream)
     }
