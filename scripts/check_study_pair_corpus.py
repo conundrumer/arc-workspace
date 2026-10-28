@@ -103,7 +103,8 @@ def main():
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--export", type=Path, default=Path("/Users/davidlu/code/arc-workspace/work/lm/data-full-9fac8128"))
-    parser.add_argument("--tasks", type=Path, default=ROOT / "data/tasks")
+    parser.add_argument("--tasks", type=Path,
+                        help="task JSON directory; defaults to checkout data/tasks when present; required for archives without task data")
     parser.add_argument("--task", action="append")
     parser.add_argument("--jobs", type=int, default=12)
     parser.add_argument("--case-limit", type=int)
@@ -124,6 +125,15 @@ def main():
     args = parser.parse_args()
     if args.jobs < 1 or args.per_point < 1 or args.k < 1:
         parser.error("jobs, per-point and k must be positive")
+    # Archived checkers have no implicit link back to a source checkout.
+    # Reject missing data before opening output or launching task workers.
+    if args.tasks is None:
+        args.tasks = ROOT / "data/tasks"
+        if not args.tasks.is_dir():
+            parser.error("this checker has no bundled task data; provide --tasks PATH")
+    if not args.tasks.is_dir():
+        parser.error(f"--tasks is not a task directory: {args.tasks}")
+    args.tasks = args.tasks.resolve()
     # One internal engine worker per concurrently evaluated case.
     os.environ["ARCLOG_THREADS"] = "1"
     import arclog
@@ -137,6 +147,10 @@ def main():
             selected.setdefault(case["task"],set()).add(case["case"])
             manifest_cases[(case['task'],case['case'])]=case
         tasks=[task for task in tasks if task in selected]
+    for task in tasks:
+        task_file = args.tasks / f"{task}.json"
+        if not task_file.is_file():
+            parser.error(f"selected task data is missing: {task_file}")
     if args.replay_identities and (not args.case_manifest or not hasattr(arclog.StudyTaskEvaluator,'replay')):
         parser.error('--replay-identities needs a manifest and the exact-replay wheel')
     completed, observation_starts = set(), Counter()
