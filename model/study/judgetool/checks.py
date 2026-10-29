@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from surface import prepare,atoms,tokens,site_bindings
-from tables import TargetStore,Incomplete,kept_groups,compare
+from tables import TargetStore,Incomplete,kept_groups,compare,axis_receipt
 import catalog
 import live_targets
 
@@ -152,6 +152,7 @@ def evaluate(ev,record,clause,target,columns=None,*,explore=False,row_limit=100)
     result['projection_aliases']=proof.get('output_aliases',{})
     result['table']=counts_table(grouped['groups'],actual_columns,row_limit)
     result['context_receipt']=dict(complete=True,required=len(grouped['required']),
+        **axis_receipt(grouped),
         compatible_entry_ids=[e['entry'] for e in grouped['contexts']],
         other_assignment_entry_ids=[e['entry'] for e in grouped['other_contexts']],test_rows='internal artifact only')
     if explore:
@@ -194,7 +195,11 @@ def evaluate(ev,record,clause,target,columns=None,*,explore=False,row_limit=100)
                 result['target_id']=ref['target_id'];break
             if eq['status']=='unknown':gaps.append(ref['target_id'])
     result['comparisons']=comparisons
-    result['comparison']=equality;result['target_receipt']=goldreceipt
+    result['comparison']=equality
+    # Preserve the selected target's OWN axes. Cross-case Cartesian expansion
+    # is a comparator detail, never the target's native assignment namespace.
+    result['target_receipt']=(dict(goldreceipt,**axis_receipt(gold))
+                              if gold is not None else goldreceipt)
     if equality['status']!='equal':
         if target.get('mode')=='alternative' and train_target_match:
             result.update(outcome='unknown' if not catalog_complete or gaps or any(c['comparison']['status']=='unknown' and c['target_id']==train_target_match for c in comparisons) else 'did not verify',

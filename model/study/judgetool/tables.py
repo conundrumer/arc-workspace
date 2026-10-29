@@ -29,6 +29,13 @@ class Incomplete(ValueError):
     pass
 
 
+def axis_receipt(grouped):
+    """Exact native-group axes in their own case-local assignment namespace."""
+    return dict(required_axes=[list(k) for k in sorted(grouped['required'])],
+                present_axes=[list(k) for k in sorted(grouped['groups'])],
+                missing_axes=[list(k) for k in grouped['missing']])
+
+
 def comparison_type(name):
     """The shared comparison schema treats Position and Box as four margins."""
     return 'Box' if name in ('Position','Box') else name
