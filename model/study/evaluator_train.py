@@ -224,6 +224,8 @@ def acquire_case_train(ev, record, case_context, ntrain, ntest):
 
     Persist this packet once per task/case/settings in the exporter. Every call
     requests one fresh replay; there is no per-pair replay or whole-study cache.
+    Missing own-case kept values add one separately receipted native gold-only
+    TRAIN FITS observation, reused for identical source/settings/task inputs.
     The full native export graph is metadata, not a grant of clause availability.
     BODY observers are explicitly disabled: this surface returns original
     native tables only. Point G is acquired independently by acquire_train_point.
@@ -235,10 +237,12 @@ def acquire_case_train(ev, record, case_context, ntrain, ntest):
     if (type(ntrain) is not int or ntrain < 1 or
             type(ntest) is not int or ntest < 0):
         raise Incomplete('case TRAIN acquisition requires authenticated input axes')
-    case, text, kept, names = _context(ev, record, case_context)
+    case, text, kept, names, kept_observation = _context(ev, record, case_context, with_receipt=True)
     if not kept:
         raise Incomplete('case TRAIN acquisition requires a nonempty own kept axis')
     resolved = dict(case=case, gold_sexp=text, kept_assignments=kept)
+    if kept_observation is not None:
+        resolved['_gold_kept_receipt'] = kept_observation
     if names is not None:
         resolved['relation_source_names'] = names
     own = dict(record, case=case, gold_sexp=text, mutant_sexp=text,

@@ -1,8 +1,9 @@
 """Targets are the actual tables returned by fresh full gold-case replays.
 
 Saved snapshots and their alias/population completeness flags are not value
-sources. The export inventory supplies programs; saved gold DET values supply
-only the kept assignment, never table rows.
+sources. The export inventory supplies programs; saved gold DET values or a
+complete native gold-only TRAIN FITS observation supply the kept assignment,
+never table rows.
 """
 from pathlib import Path as _StudyPath
 import sys as _study_sys
@@ -25,6 +26,7 @@ def _scope_policy():
 
 
 def acquire(ev,record,adapter,ntrain,ntest,*,only_case=None):
+    from case_collector import _context
     key=('live-targets',sha(record['gold_sexp']),sha(adapter.get('all_case_targets',{})),ntrain,ntest,only_case)
     if key in ev.target_cache:return ev.target_cache[key]
     sys.path.insert(0,str(ev.run.parent))
@@ -39,16 +41,25 @@ def acquire(ev,record,adapter,ntrain,ntest,*,only_case=None):
         same=case==record['case'];case_meta=contexts.get(case,{})
         values=(record['evaluation']['kept_assignments'] if same else
                 case_meta.get('reference',{}).get('evaluation',{}).get('kept_assignments'))
-        if values is None:raise Incomplete('gold kept assignment is not supplied for case '+case)
         if same:text=record['gold_sexp']
         else:
             lo,hi=offsets[case_index:case_index+2]
             program=ev.task_evaluator(record['task']).from_stream(ids[lo:hi],[int(v) for v in flags[lo:hi]])
             text=program.sexp()
+        try:
+            _,text,values,_,kept_observation=_context(ev,record,
+                dict(case=case,gold_sexp=text,kept_assignments=values),with_receipt=True)
+        except Incomplete as error:
+            gap=dict(case=case,reason=str(error),phase='gold_kept_acquisition')
+            if hasattr(error,'receipt'):gap['kept_observation']=error.receipt
+            gaps.append(gap)
+            continue
         own=dict(record,case=case,gold_sexp=text,mutant_sexp=text,
                  evaluation=dict(record['evaluation'],kept_assignments=values))
         replay=ev.replay_program(own,text,0,candidate=dict(kind='full-gold-case-targets',case=case),retain_all=True)
-        case_receipts.append(dict(case=case,artifact=replay['artifact'],program_sha256=sha(text),engine=replay['engine']))
+        case_receipt=dict(case=case,artifact=replay['artifact'],program_sha256=sha(text),engine=replay['engine'])
+        if kept_observation is not None:case_receipt['kept_observation']=kept_observation
+        case_receipts.append(case_receipt)
         if replay['engine']!='ran':
             gaps.append(dict(case=case,reason=replay.get('reason','gold replay stopped')));continue
         native=ev.captures[-1]['native'];ts=native['tables']
@@ -73,6 +84,7 @@ def acquire(ev,record,adapter,ntrain,ntest,*,only_case=None):
             grouped=dict(grouped,catalog_reference=ref)
             receipt=dict(source='gold_full_replay',artifact=replay['artifact'],table=table,case=case,
                          program_sha256=sha(text),kept_context_sha256=sha(values),complete=True)
+            if kept_observation is not None:receipt['kept_observation']=kept_observation
             if is_target:targets.append((grouped,fields,ref,receipt))
             if same:
                 allowed={d['definition']['display_name'] for d in adapter['availability']['definitions']}

@@ -18,6 +18,7 @@ from pathlib import Path
 import sys
 import time
 from contextlib import contextmanager
+from copy import deepcopy
 
 sys.dont_write_bytecode = True
 HERE = Path(__file__).resolve().parent
@@ -65,8 +66,8 @@ def open_source(path, *, expected_sha256=None):
 class ReplayEvaluator:
     """Reuse one native task evaluator; callers close/finish between source cases.
 
-    No native endpoint/session API is used. Limits reset for each native
-    gold_tables operation, exactly as in P's calibration. They are not a
+    Missing own-case choices use native gold_kept TRAIN FITS. Limits reset for
+    each native operation, exactly as in P's calibration. They are not a
     cumulative search budget. A mechanical search must bound its own total
     candidate work and retain every per-operation native receipt.
     """
@@ -97,7 +98,7 @@ class ReplayEvaluator:
                             budget_scope='one gold_tables operation, not entire candidate search',
                             reference_sha256=hashlib.sha256((self.reference/'engine_verify.py').read_bytes()).hexdigest(),
                             implementation_sha256=sha({name:hashlib.sha256((HERE/name).read_bytes()).hexdigest()
-                                for name in ('../study_paths.py','evaluator.py','surface.py','tables.py','checks.py','catalog.py','registry.py','live_targets.py','program_metadata.py','candidate_train.py','raw_body.py','target_view.py','judge_view.py','judge_tool.py')}))
+                                for name in ('../study_paths.py','evaluator.py','surface.py','tables.py','checks.py','catalog.py','registry.py','live_targets.py','case_collector.py','program_metadata.py','candidate_train.py','raw_body.py','target_view.py','judge_view.py','judge_tool.py')}))
 
     def _reset_session_state(self):
         self.task = None
@@ -107,6 +108,7 @@ class ReplayEvaluator:
         self.target_store = None
         self._point_gold = None
         self._point_kept = None
+        self._gold_kept_cache = {}
 
     @contextmanager
     def fresh_session(self):
@@ -147,6 +149,88 @@ class ReplayEvaluator:
         self.target_store=None
         self._point_gold=None
         self._point_kept=None
+        self._gold_kept_cache.clear()
+
+    def acquire_gold_kept(self, record, *, case, program):
+        """Acquire missing own-case choices through native gold-only TRAIN FITS.
+
+        Pure reports, including stops, are cached per task/program/settings.
+        An independent session keeps this observation out of compact pair memo
+        bookkeeping and leaves the caller's candidate captures untouched. No
+        table replay, TEST fit or assignment intervention is performed here.
+        """
+        self.task_evaluator(record['task'])
+        task_input=Path(self.cfg['tasks'])/(record['task']+'.json')
+        identity=dict(task=record['task'],case=case,program_sha256=sha(program),settings=self.receipt,
+                      task_input_sha256=hashlib.sha256(task_input.read_bytes()).hexdigest())
+        key=sha(identity)
+        if key in self._gold_kept_cache:
+            result=deepcopy(self._gold_kept_cache[key])
+            result.update(python_cached=True,native_gold_kept_calls=0)
+            return result
+        start=time.monotonic();report=None
+        result=dict(schema='judgetool-gold-kept-v1',engine='incomplete',
+                    native_gold_kept_calls=0,python_cached=False,identity=identity)
+        try:
+            with self.fresh_session() as isolated:
+                native=isolated.task_evaluator(record['task'])
+                if not hasattr(native,'gold_kept'):
+                    raise ValueError('runtime lacks gold_kept; a committed gold-kept runtime build is required')
+                checked=isolated.arclog.StudyProgram.from_sexp(program,isolated.settings)
+                result['native_gold_kept_calls']=1
+                report=json.loads(native.gold_kept(program=checked))
+                if not isinstance(report,dict):
+                    raise ValueError('native gold-kept report is not an object')
+                if report.get('schema')!='arclog-study-gold-kept-v1' or report.get('task')!=record['task']:
+                    raise ValueError('native gold-kept report schema/task differs')
+                provenance=report.get('program_provenance',{})
+                if provenance.get('program_sexp')!=checked.sexp():
+                    raise ValueError('native gold-kept report program differs')
+                settings=report.get('settings',{})
+                expected=dict(deadline_seconds=self.deadline,table_work_cap=self.work_cap,
+                              rule_tests=False,session_bytes=self.receipt['session_bytes'])
+                if any(settings.get(k)!=v for k,v in expected.items()):
+                    raise ValueError('native gold-kept report settings differ')
+                if (report.get('status')!='complete' or report.get('observation_complete') is not True
+                        or report.get('gold_observation_stop') is not None):
+                    raise ValueError('native gold-kept observation incomplete: '+str(report.get('reason') or report.get('status')))
+                if (report.get('assignment_coverage_complete') is not True
+                        or any(report.get('kept_assignment_missing_dets',[]))):
+                    raise ValueError('native gold-kept assignments omit Undefined DET slots')
+                choices=report.get('kept_assignments')
+                if report.get('gold_fits') is not True or not isinstance(choices,list) or not choices:
+                    raise ValueError('native gold-kept observation has no kept TRAIN FITS assignment')
+                if (report.get('kept_assignment_count')!=len(choices)
+                        or report.get('kept_assignment_missing_dets')!=[[] for _ in choices]
+                        or not isinstance(provenance.get('stream'),dict)
+                        or not {'ids','model','paths'}<=provenance['stream'].keys()):
+                    raise ValueError('native gold-kept report lacks complete assignment/stream evidence')
+                result.update(engine='ran',kept_assignments=deepcopy(choices))
+        except Exception as error:
+            result['reason']=f'{type(error).__name__}: {error}'
+        result['seconds']=round(time.monotonic()-start,3)
+        folder=self.artifacts/('gold-kept-'+sha(dict(identity=identity,report=report,reason=result.get('reason'))))
+        folder.mkdir(exist_ok=True)
+        result['artifact']=str(folder)
+        observation=report if isinstance(report,dict) else {}
+        result['receipt']=dict(source='native_gold_TRAIN_FITS',artifact=str(folder),
+            program_sha256=sha(program),task=record['task'],case=case,
+            task_input_sha256=identity['task_input_sha256'],report_sha256=sha(report),
+            complete=result['engine']=='ran',native_gold_kept_calls=result['native_gold_kept_calls'],
+            native_observation_cached=observation.get('gold_observation_cached'),
+            native_observation_ref=observation.get('gold_observation_ref'),
+            observation_complete=observation.get('observation_complete'),
+            assignment_coverage_complete=observation.get('assignment_coverage_complete'),
+            kept_assignment_count=observation.get('kept_assignment_count'),
+            program_provenance_sha256=sha(observation.get('program_provenance')),
+            session_scope='independent gold-kept observation; original captures/memos untouched',
+            test_fit=False,settings=self.receipt)
+        (folder/'program.arclog').write_text(program+'\n')
+        (folder/'report.json').write_text(canonical(report)+'\n')
+        (folder/'result.json').write_text(canonical(result)+'\n')
+        (folder/'receipt.json').write_text(canonical(result['receipt'])+'\n')
+        self._gold_kept_cache[key]=deepcopy(result)
+        return result
 
     def gold_tables(self, program):
         """Shared native execution path, also passed as P verifier's evaluator proxy."""

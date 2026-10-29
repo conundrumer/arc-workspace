@@ -57,12 +57,11 @@ def _policy():
     return module
 
 
-def _context(ev,record,context):
+def _context(ev,record,context,*,with_receipt=False):
     case=context.get('case',context.get('name',record['case']))
     values=context.get('kept_assignments')
     if values is None:values=(context.get('reference') or {}).get('evaluation',{}).get('kept_assignments')
     if values is None and case==record['case']:values=record['evaluation']['kept_assignments']
-    if values is None:raise Incomplete('case collector requires the case own gold kept values')
     text=context.get('gold_sexp') or context.get('source_program')
     if text is None and case==record['case']:text=record['gold_sexp']
     if text is None:
@@ -74,9 +73,20 @@ def _context(ev,record,context):
         names,offsets,ids,flags=inventory(path.parents[2],record['task'],True)
         i=names.index(case);lo,hi=offsets[i:i+2]
         text=ev.task_evaluator(record['task']).from_stream(ids[lo:hi],[int(f) for f in flags[lo:hi]]).sexp()
+    observation=context.get('_gold_kept_receipt')
+    if values is None:
+        acquired=ev.acquire_gold_kept(record,case=case,program=text)
+        observation=dict(acquired['receipt'],python_cached=acquired['python_cached'],
+                         current_native_gold_kept_calls=acquired['native_gold_kept_calls'])
+        if acquired['engine']!='ran':
+            error=Incomplete('case own gold kept acquisition: '+acquired['reason']+'; artifact='+acquired['artifact'])
+            error.receipt=observation
+            raise error
+        values=acquired['kept_assignments']
     names=context.get('relation_source_names')
     if names is None and case==record['case']:names=record.get('relation_source_names')
-    return case,text,values,names
+    resolved=(case,text,values,names)
+    return resolved+(observation,) if with_receipt else resolved
 
 
 def _body_binding(view):
@@ -162,6 +172,8 @@ def acquire_case(ev,record,case_context,ntrain,ntest,*,include_bodies=True):
 
     case_context: case/name, gold_sexp/source_program, kept_assignments (or
     reference.evaluation.kept_assignments), optional relation_source_names.
+    Missing kept values require a complete native gold_kept TRAIN FITS walk
+    with complete DET coverage; its separately charged receipt is retained.
     Other cases may supply catalogue_path instead of source text. Cache never
     includes the pair id, mutation point, adapter or later-table selection.
     A bounded/failed collection is cached too; it is not silently retried.
@@ -169,7 +181,7 @@ def acquire_case(ev,record,case_context,ntrain,ntest,*,include_bodies=True):
     that acquire their point G independently. Scope is part of cache identity.
     """
     if type(include_bodies) is not bool:raise ValueError('include_bodies must be boolean')
-    case,text,values,names=_context(ev,record,case_context)
+    case,text,values,names,kept_observation=_context(ev,record,case_context,with_receipt=True)
     identity=dict(task=record['task'],case=case,program=sha(text),kept=sha(values),
                   settings=sha(ev.receipt),ntrain=ntrain,ntest=ntest,
                   include_bodies=include_bodies,collector=_code_receipt()['sha256'])
@@ -221,6 +233,7 @@ def acquire_case(ev,record,case_context,ntrain,ntest,*,include_bodies=True):
         gold_replays=1,observer_count=len(plans),include_bodies=include_bodies,settings=ev.receipt,
         column_witness_program_sha256=sha(observed),
         column_witness_source='exact parsed observed program; unchanged original relation identities')
+    if kept_observation is not None:receipt['kept_observation']=kept_observation
     bundle=dict(schema='judge-case-bundle-v1',task=record['task'],case=case,ntrain=ntrain,ntest=ntest,
         program_sha256=sha(text),kept_context_sha256=sha(values),kept_assignments=values,
         tables=[],bodies=[],export=export,receipt=receipt,gaps=gaps,complete=False)
