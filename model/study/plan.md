@@ -8,7 +8,7 @@ Hypothesis: at each branch point, the set of valid tables is small, so a classif
 
 ## Pipeline
 
-Study code and documents are under `model/study/` in each repository worktree. Data paths are relative to `/Users/davidlu/code/arc-workspace/work/lm/data-study`, resolved by `study_paths.DATA_ROOT` through `engine.checkout.main_worktree`. Source paths stay relative to their modules.
+Study code and documents are under `model/study/` in each repository worktree. Data paths are relative to `/Users/davidlu/code/arc-workspace/work/lm/data-study`, resolved by `study_paths.DATA_ROOT` through `engine.checkout.main_worktree`. Source paths stay relative to their modules. Run output, reviews, reports, patches and handovers are data: they go under the data root, never under `model/study/`.
 
 - **Engine** (branch `master` of the repo). A Codex thread's change gets its own worktree from `scripts/change_worktree.py --name <name>` and lands on `master` only through `scripts/merge_change.py`, which runs the repo's merge checks. The worktree `ast/engine` follows `master`, detached. A build is made only from a commit, with `scripts/build_study_runtime.py --revision <commit> --output run/runtime-<commit>`, run through `run_heavy.py`.
 - **CURRENT** (`ast/run/CURRENT.json`) names the build and the corpus directory that the corpus run and the checks use. It moves to a newer build once that build's fault replay is no worse than CURRENT's, record by record.
