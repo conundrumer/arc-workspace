@@ -237,28 +237,23 @@ def acquire_train_table(ev, native, table, record, *, ntrain, fields=None,
 def acquire_candidate_train(ev, native, table, record, *, ntrain, proof,
                             columns=None, source=None):
     """Apply the canonical candidate's exported labels and resolved aliases."""
-    from surface import tokens
+    from surface import tokens, output_projection
     from tables import Incomplete
     ts = native['tables']
     names = list(ts['column_names'][table])
     exported = {t.lstrip('*^') for t in tokens(proof['canonical']) if t.startswith(('*', '^'))}
     if len(set(names)) != len(names):
         raise Incomplete('candidate native output labels are ambiguous')
-    outputs = [(name, i) for i, name in enumerate(names) if name in exported]
     aliases = proof.get('output_aliases', {})
-    for alias, original in aliases.items():
-        if alias not in exported:
-            continue
-        if original not in names:
-            raise Incomplete('candidate alias source is absent from native output')
-        outputs.append((alias, names.index(original)))
-    if len({name for name, _ in outputs}) != len(outputs):
+    labels = [name for name in names if name in exported]
+    labels += [name for name in aliases if name in exported]
+    if len(set(labels)) != len(labels):
         raise Incomplete('candidate output alias is ambiguous')
     if columns is not None:
-        by_name = dict(outputs)
-        if any(name not in by_name for name in columns):
+        if any(name not in labels for name in columns):
             raise Incomplete('requested candidate output column is absent')
-        outputs = [(name, by_name[name]) for name in columns]
+        labels = list(columns)
+    outputs = list(zip(labels, output_projection(names, labels, aliases)))
     schema = native['_native_reader'].schema(table)
     fields = [dict(deepcopy(schema[index]), field_name=name, source_body_column=index)
               for name, index in outputs]
@@ -636,8 +631,10 @@ def acquire_train_point(ev, record, adapter, ntrain, ntest, side='mutant'):
     names = list(native['tables']['column_names'][table])
     fields = binding['projected_schema']
     labels = ['V'+str(i) for i in range(len(fields))]
-    if any(names.count(label) != 1 for label in labels):
-        raise Incomplete('canonical gold observer output labels are absent or ambiguous')
+    from surface import output_projection
+    projection = output_projection(names, labels, receipt['output_aliases'])
+    if projection != receipt['observer_projection'] or table != receipt['observer_table']:
+        raise Incomplete('typed gold observer differs from its canonical physical projection')
     return acquire_train_table(ev, native, table, record, ntrain=ntrain,
-        fields=fields, projection=[names.index(label) for label in labels],
+        fields=fields, projection=projection, output_aliases=receipt['output_aliases'],
         source=dict(side=side, observation=receipt))

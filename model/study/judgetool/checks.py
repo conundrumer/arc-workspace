@@ -3,7 +3,7 @@ from collections import defaultdict
 import json
 from pathlib import Path
 
-from surface import prepare,atoms,tokens,site_bindings
+from surface import prepare,atoms,tokens,site_bindings,output_projection
 from tables import TargetStore,Incomplete,kept_groups,compare,axis_receipt
 import catalog
 import live_targets
@@ -136,13 +136,13 @@ def evaluate(ev,record,clause,target,columns=None,*,explore=False,row_limit=100)
     grouped=dict(grouped,groups={key:{frozenset(tuple(row[i] for i in visible) for row in rows) for rows in family}
                                  for key,family in grouped['groups'].items()})
     actual_columns=[actual_columns[i] for i in visible]
-    for alias,source in proof.get('output_aliases',{}).items():
-        if alias not in exported:continue
-        try:index=next(i for i,c in enumerate(actual_columns) if c[0]==source)
-        except StopIteration:raise Incomplete('projected source alias not exported by native clause') from None
-        grouped=dict(grouped,groups={k:{frozenset(tuple(row)+(row[index],) for row in rows) for rows in family}
+    aliases=proof.get('output_aliases',{})
+    if any(a in exported for a in aliases):
+        labels=[c[0] for c in actual_columns]+[a for a in aliases if a in exported]
+        indices=output_projection([c[0] for c in actual_columns],labels,aliases)
+        grouped=dict(grouped,groups={k:{frozenset(tuple(row[i] for i in indices) for row in rows) for rows in family}
                                     for k,family in grouped['groups'].items()})
-        actual_columns.append((alias,actual_columns[index][1]))
+        actual_columns=[(label,actual_columns[index][1]) for label,index in zip(labels,indices)]
     if target.get('mode')=='alternative' and columns is not None:
         try:selected=[next(i for i,c in enumerate(actual_columns) if c[0]==name) for name in columns]
         except StopIteration:
@@ -279,12 +279,14 @@ def observe_gold(ev,record,adapter,binding,ntrain,ntest):
     goldbinding=dict(binding,callable_template=goldtemplate)
     goldadapter=dict(adapter,input=dict(handle='&X',binding=goldbinding))
     clause=L.unparse(['RULE','&fix',L.parse(goldbinding['callable_template'])])
-    program,form,_=prepare(L,goldrecord,clause,goldadapter)
+    program,form,proof=prepare(L,goldrecord,clause,goldadapter)
     replay,grouped,columns=_replay_groups(ev,goldrecord,program,form,ntrain,ntest,
                                        dict(kind='gold-full-replay-target-observer',clause=clause))
     if grouped is None or grouped['missing']:raise Incomplete('gold full replay observer lacks compatible train/test entries')
-    try:indices=[next(i for i,c in enumerate(columns) if c[0]==f'V{j}') for j in range(len(binding['projected_schema']))]
-    except StopIteration:raise Incomplete('gold target observer output layout unresolved') from None
+    aliases=proof.get('output_aliases',{})
+    try:indices=output_projection([c[0] for c in columns],
+        [f'V{j}' for j in range(len(binding['projected_schema']))],aliases)
+    except ValueError as error:raise Incomplete('gold target observer output layout unresolved: '+str(error)) from None
     groups={k:{frozenset(tuple(row[i] for i in indices) for row in rows) for rows in family}
             for k,family in grouped['groups'].items()}
     fields=binding['projected_schema']
@@ -295,6 +297,8 @@ def observe_gold(ev,record,adapter,binding,ntrain,ntest):
                  artifact=replay['artifact'],gold_program_sha256=sha(record['gold_sexp']),
                  observer_program_sha256=sha(program),kept_context_sha256=sha(record['evaluation']['kept_assignments']),
                  projection=[f['source_body_column'] for f in fields],fields=fields,
+                 observer_projection=indices,output_aliases=aliases,
+                 observer_table=replay['kept_coverage']['table'],
                  train_crosscheck='not used: fresh gold replay is authoritative',train_complete=True,test_complete=True,
                  saved_train_contexts_complete=None,required_saved_train_contexts=len(required_train),
                  required_train_test_contexts=len(grouped['required']),

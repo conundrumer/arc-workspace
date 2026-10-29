@@ -57,6 +57,24 @@ def site_bindings(L, atom, template):
     return result
 
 
+def output_projection(names, labels, aliases):
+    """Resolve logical output aliases to exact native physical columns.
+
+    Repeated physical indices preserve distinct declared logical fields.
+    Only the canonical preparation proof supplies aliases; no name inference.
+    """
+    result=[]
+    for label in labels:
+        source=label;seen=set()
+        while source in aliases:
+            if source in seen:raise ValueError('cyclic native output alias')
+            seen.add(source);source=aliases[source]
+        if names.count(source)!=1:
+            raise ValueError('native output alias source absent or ambiguous: '+str(source))
+        result.append(names.index(source))
+    return result
+
+
 def explicit_key_fields(node):
     """Keep authored key field identities explicit before alpha-renaming."""
     if not isinstance(node,list):return node
