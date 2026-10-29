@@ -154,6 +154,66 @@ class MetadataProducer:
             case['native_base']=str(base)
         return result
 
+    def raw_side_bindings(self, source_record, *, native_base=None):
+        """Source-bound two-sided DET BODY metadata; no entries or projection.
+
+        This supplies det_receipt's RAW input, not its selected public header
+        union. The caller must certify reader transport before acquisition.
+        """
+        record=copy.deepcopy(source_record)
+        if 'programs' not in record:
+            record['programs']={side:record[side+'_sexp'] for side in ('gold','mutant')}
+        base=Path(native_base).resolve() if native_base is not None else self.corpus/record['task']
+        exports={side:self._export(record['programs'][side], record if side=='gold' else None)
+                 for side in ('gold','mutant')}
+        readers={side:self.read_native(record['native'][side],base)
+                 for side in ('gold','mutant')}
+        bindings={}
+        for side in ('gold','mutant'):
+            export=exports[side];reader=readers[side]
+            views=[v for v in export['body_views'] if v['body_path']==record['point']]
+            _require(len(views)==1 and views[0]['kind']=='Det',
+                     'RAW DET supplier requires one exact DET BODY: '+side)
+            view=views[0]
+            _require(export['parts'].get('definitions_readers')=='complete',
+                     'native reader inventory incomplete: '+side)
+            indices=record['evaluation']['table_indices']
+            candidates=[indices[k] for k in (side+'_kept',side+'_all') if k in indices]
+            _require(bool(candidates),'source lacks exact native point index: '+side)
+            table=candidates[0]
+            _require(type(table) is int and 0<=table<len(reader.tables['form']),
+                     'native point index outside table inventory: '+side)
+            _require(self.selectors['matches'](reader.tables,table,view['native_table_selector']),
+                     'native point selector differs: '+side)
+            ctx=self.policy['Document'].__new__(self.policy['Document'])
+            ctx.r=record;ctx.gexport=exports['gold'];ctx.mexport=exports['mutant']
+            ctx.readers=readers;ctx.owner=view['owner_path'];ctx.body=view
+            ctx.values=SimpleNamespace(f={'column_names':{}})
+            raw=ctx.schema(reader,table,body=True)
+            fields=[]
+            for index,column in enumerate(raw):
+                _require(column['index']==index,'RAW native physical order differs: '+side)
+                identity=column['native_label_identity']
+                if column['type']!='Unit':
+                    _require(identity.get('kind')=='scoped_label' and
+                             identity.get('scope_path')==view['owner_path'] and
+                             identity.get('label_id')==column['ast_label_id'],
+                             'RAW scalar lacks exact native lexical identity: '+side)
+                fields.append(dict(physical_index=index,field_name=column['display_name'],
+                    native_name=column['name'],native_label_identity=copy.deepcopy(identity),
+                    type=column['type'],frame=column['frame'],source_body_column=index))
+            bindings[side]=dict(side=side,kind='Det',body_path=view['body_path'],
+                owner_path=view['owner_path'],scope=view['scope'],
+                native_ref=copy.deepcopy(record['native'][side]),native_table_index=table,
+                native_selector=copy.deepcopy(view['native_table_selector']),
+                source_body_schema=raw,projected_schema=fields,fields=copy.deepcopy(fields),
+                projection_kind='raw_identity',program_sha256=_sha(record['programs'][side]),
+                export_sha256=_sha(export))
+        return dict(schema='judge3-raw-side-bindings-v1',source_sha256=_sha(source_record),
+            native_base=str(base),exports=exports,bindings=bindings,
+            policies=copy.deepcopy(self.sources),
+            authority='metadata only; no selected DET header, rows, acquisition or admission')
+
     def produce(self, source_record, *, native_base=None):
         """Return canonical side bindings, graph packet and own-case catalogue.
 

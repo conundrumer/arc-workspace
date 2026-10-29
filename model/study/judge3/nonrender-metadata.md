@@ -58,3 +58,27 @@ provider explicitly raises `UnsupportedProjection` with the missing LabelIds
 and body path in that case. It does not omit those fields or represent an
 absent key as inserted Unit. Full support requires the evaluator to acquire
 the key and input in their original correlated INIT context.
+
+## Two-sided RAW DET input
+
+`producer.raw_side_bindings(record, native_base=...)` returns
+`judge3-raw-side-bindings-v1`: the original source digest, exact `exports` and
+`bindings` keyed gold/mutant, native base and source-policy identities. Each
+binding carries kind/body/owner/scope, native reference/index/selector, complete
+`source_body_schema`, and identity `projected_schema` with physical indices,
+source body columns, scoped native LabelIds, types and frames. It calls the
+canonical `Document.schema(..., body=True)` and its `bind_body_schema`; it
+never calls an entry decoder, reads rows, inserts fields or selects a header.
+Non-Unit scalars require the exact exported lexical scope. Existing physical
+Unit columns retain their physical index; this supplier inserts no virtual Unit.
+
+Pass the returned exports and RAW bindings to
+`mech3.det_receipt.receipt(record, exports, bindings)`. That consumer owns the
+unchanged-reader/site audit, complete header witnesses and per-reader transport.
+Then pass its certified transport to the DET metadata producer and evaluator's
+dedicated acquisition wrapper. RAW BODY metadata is not itself the public DET
+column selection and must not be exported as a fallback. The existing ordinary
+`produce` method and the judge's DET exclusion are unchanged. Missing/ambiguous
+selectors, lexical bindings or incomplete native reader metadata fail before
+entry acquisition. Implicit input-axis fields and recursive context bindings
+are not invented here; acquisition remains unavailable without native proof.
