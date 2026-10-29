@@ -1,48 +1,245 @@
-"""Read-only normal attribute adapter; missing/stale rows remain open."""
+"""Read stored normal attributes for study counts and fits, without evaluation."""
+from contextlib import contextmanager
+import fcntl
 import hashlib
 import json
+import os
 from pathlib import Path
 import sqlite3
+import sys
+import threading
 
 
 def _digest(value):
-    text=json.dumps(value,sort_keys=True,ensure_ascii=False,separators=(',',':'),allow_nan=False)
+    text = json.dumps(value, sort_keys=True, ensure_ascii=False,
+                      separators=(',', ':'), allow_nan=False)
     return hashlib.sha256(text.encode()).hexdigest()
 
 
-def load_normal(database, pair_id, *, source_sha256, base_result_sha256):
-    """Return a valid stored attribute for the caller's current base receipt.
+def _default_database(area, name):
+    study = str(Path(__file__).resolve().parents[3])
+    if study not in sys.path:
+        sys.path.insert(0, study)
+    from study_paths import DATA_ROOT
+    return DATA_ROOT / 'ast/run' / area / name
 
-    status=open means missing/stale evidence; status=unavailable is a completed
-    stored-data classification whose prefix/stream evidence could not decide.
-    This reader never evaluates a program or writes to either database.
+
+def _signature(path):
+    stat = path.stat()
+    return (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+
+
+def _open(reason):
+    return dict(status='open', normal=None, eligible=False,
+                absence_reason='normal_unavailable', reason=reason)
+
+
+class _Database:
+    """Short read snapshots; never retain a transaction between pair reads."""
+
+    def __init__(self, path, lock):
+        self.path, self.lock = Path(path).resolve(), Path(lock).resolve()
+        self.connection = None
+        self.identity = None
+
+    def close(self):
+        if self.connection is not None:
+            self.connection.close()
+            self.connection = None
+
+    @contextmanager
+    def snapshot(self):
+        guard = None
+        immutable = False
+        try:
+            # Final WAL databases may have no shm file. Immutable reads are safe
+            # only while the producer's lock proves it cannot publish changes.
+            try:
+                guard = self.lock.open('rb')
+                fcntl.flock(guard, fcntl.LOCK_SH | fcntl.LOCK_NB)
+                wal = Path(str(self.path) + '-wal')
+                immutable = not wal.exists() or wal.stat().st_size == 0
+            except OSError:
+                if guard is not None:
+                    guard.close()
+                    guard = None
+            identity = (os.getpid(), immutable, _signature(self.path))
+            if identity != self.identity or self.connection is None:
+                self.close()
+                suffix = '?mode=ro' + ('&immutable=1' if immutable else '')
+                self.connection = sqlite3.connect(
+                    self.path.as_uri() + suffix, uri=True, isolation_level=None,
+                    timeout=0.5)
+                self.identity = identity
+            self.connection.execute('BEGIN')
+            try:
+                yield self.connection
+            finally:
+                self.connection.execute('ROLLBACK')
+        finally:
+            if guard is not None:
+                guard.close()
+
+
+class NormalReader:
+    """Reusable, worker-local read-only reader; use close() or a with statement.
+
+    Each call reads a fresh database snapshot. Source hashes are cached only
+    while device, inode, size, modification time and change time stay unchanged.
+    Explicit source/base hashes bind the caller's base receipt; omitted hashes
+    are obtained from the canonical base database. No classification is run.
     """
-    path=Path(database).resolve()
-    if not path.exists():return dict(status='open',normal=None,reason='normal database absent')
-    with sqlite3.connect(path.as_uri()+'?mode=ro',uri=True) as db:
-        row=db.execute('SELECT source_sha256,base_result_sha256,code_sha256,result_sha256,record_json FROM pairs WHERE pair_id=?',(pair_id,)).fetchone()
-        meta=db.execute("SELECT value FROM metadata WHERE key='code_manifest'").fetchone()
-        compatible=False
-        if row and meta and row[2]!=_digest(json.loads(meta[0])):
-            tables={t for t, in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-            if {'compatible_codes','code_manifests'} <= tables:
-                authority=db.execute('SELECT current_code_sha256 FROM compatible_codes WHERE code_sha256=?',(row[2],)).fetchone()
-                original=db.execute('SELECT manifest_json FROM code_manifests WHERE code_sha256=?',(row[2],)).fetchone()
-                compatible=bool(authority and authority[0]==_digest(json.loads(meta[0]))
-                                and original and _digest(json.loads(original[0]))==row[2]
-                                and json.loads(row[4])['mutant']['normal'] is not None)
-    if not row or not meta:return dict(status='open',normal=None,reason='normal receipt absent')
-    source,base,code,result,text=row;manifest=json.loads(meta[0]);record=json.loads(text)
-    if (source!=source_sha256 or base!=base_result_sha256
-            or (_digest(manifest)!=code and not compatible) or _digest(record)!=result):
-        return dict(status='open',normal=None,reason='normal receipt stale or invalid')
-    for file,expected in manifest['files'].items():
-        try:actual=hashlib.sha256(Path(file).read_bytes()).hexdigest()
-        except OSError:return dict(status='open',normal=None,reason='normal source unavailable: '+file)
-        if actual!=expected:return dict(status='open',normal=None,reason='normal source changed: '+file)
-    mutant=record['mutant']
-    return dict(status='unavailable' if mutant['normal'] is None else 'classified',
-                normal=mutant['normal'],writer_pass=mutant.get('writer_pass'),
-                gold=record['gold'],gold_point_id=record['gold_point_id'],
-                reference=dict(database=str(path),table='pairs',pair_id=pair_id,result_sha256=result),
+
+    def __init__(self, database=None, *, base_database=None):
+        path = Path(database if database is not None else
+                    _default_database('mech2', 'normal.sqlite3')).resolve()
+        self.database = path
+        self.base_database = base_database
+        self._normal = _Database(path, path.with_suffix('.lock'))
+        self._base = None
+        self._files = {}
+        self._manifest_text = None
+        self._manifest = None
+        self._manifest_hash = None
+
+    def close(self):
+        self._normal.close()
+        if self._base is not None:
+            self._base.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+    def _bindings(self, pair_id):
+        if self._base is None:
+            path = Path(self.base_database if self.base_database is not None else
+                        _default_database('mech', 'labels.sqlite3')).resolve()
+            self._base = _Database(path, str(path) + '.lock')
+        with self._base.snapshot() as db:
+            return db.execute('SELECT source_sha256,result_sha256 FROM pairs '
+                              'WHERE pair_id=?', (pair_id,)).fetchone()
+
+    def _check_files(self, manifest):
+        for file, expected in manifest['files'].items():
+            path = Path(file)
+            signature = _signature(path)
+            cached = self._files.get(file)
+            if cached is None or cached[0] != signature:
+                actual = hashlib.sha256(path.read_bytes()).hexdigest()
+                if _signature(path) != signature:
+                    return 'normal source changed during read: ' + file
+                self._files[file] = (signature, actual)
+            if self._files[file][1] != expected:
+                return 'normal source changed: ' + file
+        return None
+
+    def load_normal(self, pair_id, *, source_sha256=None, base_result_sha256=None):
+        """Return status, tri-state normal, eligibility and a durable reference.
+
+        Classified false has absence_reason=non_normal. Open/stale/missing and
+        classified unavailable have absence_reason=normal_unavailable. Only a
+        classified true result is eligible for scientific counts and fits.
+        """
+        try:
+            if source_sha256 is None or base_result_sha256 is None:
+                binding = self._bindings(pair_id)
+                if binding is None:
+                    return _open('base receipt absent')
+                if ((source_sha256 is not None and source_sha256 != binding[0]) or
+                        (base_result_sha256 is not None and base_result_sha256 != binding[1])):
+                    return _open('caller base receipt stale')
+                source_sha256, base_result_sha256 = binding
+            with self._normal.snapshot() as db:
+                row = db.execute(
+                    'SELECT source_sha256,base_result_sha256,code_sha256,'
+                    'result_sha256,normal,record_json FROM pairs WHERE pair_id=?',
+                    (pair_id,)).fetchone()
+                meta = db.execute("SELECT value FROM metadata WHERE key='code_manifest'").fetchone()
+                if row is None or meta is None:
+                    return _open('normal receipt absent')
+                if meta[0] != self._manifest_text:
+                    self._manifest = json.loads(meta[0])
+                    self._manifest_hash = _digest(self._manifest)
+                    self._manifest_text = meta[0]
+                source, base, code, result, normal, text = row
+                record = json.loads(text)
+                compatible = False
+                if code != self._manifest_hash:
+                    tables = {t for t, in db.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table'")}
+                    if {'compatible_codes', 'code_manifests'} <= tables:
+                        receipt = db.execute(
+                            'SELECT c.current_code_sha256,m.manifest_json '
+                            'FROM compatible_codes c JOIN code_manifests m '
+                            'ON c.code_sha256=m.code_sha256 WHERE c.code_sha256=?',
+                            (code,)).fetchone()
+                        compatible = bool(
+                            receipt and receipt[0] == self._manifest_hash and
+                            _digest(json.loads(receipt[1])) == code and
+                            record['mutant']['normal'] is not None)
+            if (source != source_sha256 or base != base_result_sha256 or
+                    (code != self._manifest_hash and not compatible) or
+                    _digest(record) != result or
+                    record['pair_id'] != pair_id or
+                    record['source_sha256'] != source or
+                    record['base_result_sha256'] != base or
+                    record['code_sha256'] != code):
+                return _open('normal receipt stale or invalid')
+            value = record['mutant']['normal']
+            if ((value is not None and type(value) is not bool) or
+                    normal != (None if value is None else int(value))):
+                return _open('normal attribute disagrees with receipt')
+            reason = self._check_files(self._manifest)
+            if reason:
+                return _open(reason)
+            return dict(
+                status='unavailable' if value is None else 'classified',
+                normal=value, eligible=value is True,
+                absence_reason=None if value is True else
+                    'non_normal' if value is False else 'normal_unavailable',
+                writer_pass=record['mutant'].get('writer_pass'),
+                gold=record['gold'], gold_point_id=record['gold_point_id'],
+                reference=dict(database=str(self.database), table='pairs',
+                               pair_id=pair_id, result_sha256=result,
+                               source_sha256=source, base_result_sha256=base,
+                               code_sha256=code,
+                               active_code_sha256=self._manifest_hash),
                 record=record)
+        except (OSError, sqlite3.Error, ValueError, KeyError, TypeError) as exc:
+            return _open(f'normal evidence unavailable: {type(exc).__name__}: {exc}')
+
+
+_local = threading.local()
+
+
+def _reader(database):
+    path = Path(database if database is not None else
+                _default_database('mech2', 'normal.sqlite3')).resolve()
+    readers = getattr(_local, 'readers', None)
+    if readers is None:
+        readers = _local.readers = {}
+    key = (os.getpid(), str(path))
+    if key not in readers:
+        readers[key] = NormalReader(path)
+    return readers[key]
+
+
+def load_normal(database, pair_id, *, source_sha256=None,
+                base_result_sha256=None, reader=None):
+    """Compatibility entry point; repeated calls reuse a thread-local reader."""
+    current = reader if reader is not None else _reader(database)
+    if database is not None and Path(database).resolve() != current.database:
+        raise ValueError('reader database differs from requested database')
+    return current.load_normal(pair_id, source_sha256=source_sha256,
+                               base_result_sha256=base_result_sha256)
+
+
+def is_normal(pair_id, *, source_sha256=None, base_result_sha256=None,
+              database=None, reader=None):
+    """True only for a valid normal mutant; intended for read-time study use."""
+    return load_normal(database, pair_id, source_sha256=source_sha256,
+                       base_result_sha256=base_result_sha256,
+                       reader=reader)['eligible']
