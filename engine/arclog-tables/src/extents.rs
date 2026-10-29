@@ -576,7 +576,7 @@ fn lose_all(gathered: &mut [Vec<Gathered>], reason: &str) {
 /// its columns (`placements`), with the extent of each wanted column. `dets` are
 /// the `DET`s of the relation.
 fn gather_view(decoder:&Decoder<'_>,reads:&Reads<'_>,dets:&[String],subject:&Subject<'_>,at:&NodePath,placements:&[Option<Placement>],gathered:&mut [Vec<Gathered>]) {
-    match BodyView::at(subject.checked,at).and_then(|view|view.widened()) {
+    match BodyView::derivation_at(subject.checked,at).and_then(|view|view.widened()) {
         Ok(views)=>for view in &views {gather(decoder,reads,dets,subject,view,placements,gathered)},
         Err(fault)=>lose_all(gathered,&fault_spelled(&fault)),
     }
@@ -585,7 +585,10 @@ fn gather_view(decoder:&Decoder<'_>,reads:&Reads<'_>,dets:&[String],subject:&Sub
 fn gather(decoder: &Decoder<'_>, reads: &Reads<'_>, dets: &[String], subject: &Subject<'_>, sub: &BodyView, placements: &[Option<Placement>], gathered: &mut [Vec<Gathered>]) {
     let at_label = |placement: &Option<Placement>| placement.and_then(|placement| placement.label).and_then(|label| sub.column_of(label));
     let Some(key) = placements.iter().map(at_label).collect::<Option<Vec<usize>>>() else {
-        return lose_all(gathered, "a relation column has no label in its checked derivation");
+        let missing=placements.iter().enumerate().filter(|(_,placement)|at_label(placement).is_none())
+            .map(|(column,placement)|(column,placement.and_then(|placement|placement.label))).collect::<Vec<_>>();
+        let labels=sub.clause.columns.iter().map(|variable|sub.paths.labels[variable.0 as usize]).collect::<Vec<_>>();
+        return lose_all(gathered, &format!("a relation column has no label in its checked derivation: relation {:?}, form {:?}, input {:?}, missing physical columns/labels {:?}, query labels {:?}",subject.relation,sub.form,sub.input,missing,labels));
     };
     let checked=subject.checked;
     let types=sub.clause.columns.iter().map(|v|sub.clause.variables[v.0 as usize].ty.clone()).collect::<Vec<_>>();

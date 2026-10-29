@@ -40,11 +40,25 @@ impl BodyView {
     }
     /// Compile the exact body in its original checked form and key context.
     pub fn at(program:&CheckedProgram,at:&NodePath)->Outcome<Self> {
+        Self::compile_at(program,at,false)
+    }
+
+    /// Query the full physical rows derived by an input. A broadcast input
+    /// contributes its body rows at every native key group, just as
+    /// init_form::grouped does. Keep the key projected so key-local witnesses
+    /// do not multiply the input's derivations. Source BODY queries use at.
+    pub fn derivation_at(program:&CheckedProgram,at:&NodePath)->Outcome<Self> {
+        Self::compile_at(program,at,true)
+    }
+
+    fn compile_at(program:&CheckedProgram,at:&NodePath,physical_input:bool)->Outcome<Self> {
         let fault=|message:String|RunFault {message:message.into(),form:at.clone()};
         let top=at.0.first().ok_or_else(||fault("body path has no form".into()))?.0;
         let form=NodePath::top(top);
         let root=NodeRef::Program(program.program.program.value());
         let Some(NodeRef::Body(body))=node_at(root,at) else {return Err(fault("path is not a body".into()))};
+        let parent=NodePath(at.0[..at.0.len()-1].into());
+        let input=match node_at(root,&parent) {Some(NodeRef::InstanceInput(input))=>Some(input.name.clone()),_=>None};
         let owner=&program.program.program.value().forms[top as usize];
         let relative=NodePath(at.0[1..].into());
         let mut bodies=Vec::new();
@@ -52,11 +66,11 @@ impl BodyView {
         match owner {
             Form::Instance(instance)=>{
                 if let Some(held)=&instance.value().key {
-                    if relative.0.len()>2 && relative.0[0].0==0 && relative.0[1].0>0 {
+                    if (physical_input && input.is_some()) || (relative.0.len()>2 && relative.0[0].0==0 && relative.0[1].0>0) {
                         let key_at=form.child(0).child(0);
                         let labels=crate::read::columns::key_labels(&held.value().key.body.value());
-                        let (clause,paths)=ir::compile_instance_pathed(program,&form,&[(held.value().key.body.value(),key_at)],&labels).map_err(|e|fault(format!("checked key body compile: {e:?}")))?;
-                        key=Some((KeyRead {form:form.clone(),clause},paths,labels));
+                        let (clause,paths,_)=super::init_form::key_clause_memo(program,&form,&(held.value().key.body.value(),key_at),&labels).map_err(|e|fault(format!("checked key body compile: {e:?}")))?;
+                        key=Some((KeyRead {form:form.clone(),clause:(*clause).clone()},(*paths).clone(),labels));
                     }
                 }
             }
@@ -100,8 +114,6 @@ impl BodyView {
             Some(Side::TaskWide)=>ExampleScope::TaskWide,
             None=>return Err(fault("body owner has no checked evaluation scope".into())),
         };
-        let parent=NodePath(at.0[..at.0.len()-1].into());
-        let input=match node_at(root,&parent) {Some(NodeRef::InstanceInput(input))=>Some(input.name.clone()),_=>None};
         Ok(Self {form,clause,paths,scope,input})
     }
 
