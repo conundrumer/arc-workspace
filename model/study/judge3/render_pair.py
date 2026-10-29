@@ -245,6 +245,12 @@ class Document:
             seeds = {i for i, n in graph.items() if n['definition'].get('instance') == instance
                      and (self.body['kind'] == 'INIT key' or
                           (n['definition']['kind'] == 'instance_input' and n['definition']['port'] == self.body['input_port']))}
+            # A component that reads its own outputs has one native resolver
+            # node for every input and output, rather than per-port nodes.
+            seeds.update(i for i, n in graph.items()
+                         if n['definition']['kind'] == 'recursive_instance'
+                         and n['definition']['name'] == instance
+                         and self.owner in n['forms'])
         elif owner['kind'] == 'choose':
             # CHOOSE is a native chosen definition, not a clause node. Bind
             # its exact declared identity and original owner form together.
