@@ -22,17 +22,17 @@ class RoutingReader:
         if self.reader is not None:self.reader.close()
 
 
-def jobs(base_database,grades_database,*,progress=None,limit=0,lib_database=None):
+def jobs(base_database,grades_database,*,progress=None,limit=0,lib_database=None,defer_routing=False):
     db=readonly(base_database);db.execute('BEGIN')
-    routing=RoutingReader(base_database,grades_database,lib_database)
+    routing=None if defer_routing else RoutingReader(base_database,grades_database,lib_database)
     counts=Counter();total=db.execute('SELECT count(*) FROM pairs').fetchone()[0]
     try:
         for done,row in enumerate(db.execute('SELECT pair_id,source_sha256,code_sha256,config_sha256,'
                 'result_sha256,record_json FROM pairs ORDER BY pair_id'),1):
             value=base_record(row)
             if queue_hint(value):
-                current=routing.read(value['pair_id'])
-                if current['valid'] and current['grade']!='Unknown':counts['routing_skipped']+=1
+                current=routing.read(value['pair_id']) if routing is not None else None
+                if current is not None and current['valid'] and current['grade']!='Unknown':counts['routing_skipped']+=1
                 else:
                     counts['queued']+=1
                     yield dict(pair_id=value['pair_id'],task=value['task'],source=source_locator(value),
@@ -41,7 +41,9 @@ def jobs(base_database,grades_database,*,progress=None,limit=0,lib_database=None
                             pair_id=value['pair_id'],result_sha256=row[4],code_sha256=row[2],config_sha256=row[3]))
             if progress:progress(done,total,counts)
             if limit and counts['queued']>=limit:break
-    finally:routing.close();db.close()
+    finally:
+        if routing is not None:routing.close()
+        db.close()
 
 
 def main():

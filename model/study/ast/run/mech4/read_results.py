@@ -3,6 +3,7 @@ from .common import readonly,digest,decode_payload,resolve,pair_key
 from pathlib import Path
 import gzip
 import json
+import hashlib
 from functools import lru_cache
 
 
@@ -29,32 +30,41 @@ def _producer(db,code,config,legacy=None):
     return manifest,settings
 
 
-def _referenced(db,path,ref):
+def _reference_row(db,path,ref):
     if Path(ref['database']).resolve()!=path or ref['table']!='records':raise ValueError('outside journal reference')
     row=db.execute('SELECT code_sha256,config_sha256,result_sha256,payload FROM records WHERE kind=? AND key=?',
                    (ref['kind'],ref['key'])).fetchone()
     if not row or tuple(row[:3])!=(ref['code_sha256'],ref['config_sha256'],ref['result_sha256']):
         raise ValueError('referenced result identity differs')
+    return row
+
+
+def _referenced(db,path,ref):
+    row=_reference_row(db,path,ref)
     value=decode_payload(db,row[3])
     if digest(value)!=row[2]:raise ValueError('referenced result digest differs')
     return value
 
 
-def _stamp(path):
-    def one(file):
-        stat=Path(file).stat()
-        return stat.st_dev,stat.st_ino,stat.st_size,stat.st_mtime_ns,stat.st_ctime_ns
-    wal=Path(str(path)+'-wal')
-    return one(path),one(wal) if wal.exists() else None
-
-
 @lru_cache(maxsize=512)
-def _observation_valid(path,stamp,reference):
+def _observation_content_valid(path,identity,reference,payload_sha256):
     db=readonly(path)
     try:_referenced(db,Path(path),json.loads(reference))
     finally:db.close()
-    # Cache validation only, not large native tables.
     return True
+
+
+def _observation_valid(db,path,reference):
+    # Check the actual reference row on every hit. Content-addressed objects
+    # are INSERT OR IGNORE and completed observation references are immutable
+    # under the supported writer. Unrelated append commits need not decode
+    # the entire GOLD DAG again. This is a validated snapshot cache, not a
+    # continuing attestation against unsupported in-place object mutation.
+    row=_reference_row(db,path,reference)
+    stat=path.stat()
+    return _observation_content_valid(str(path),(stat.st_dev,stat.st_ino),
+        json.dumps(reference,sort_keys=True,separators=(',',':')),
+        hashlib.sha256(row[3]).hexdigest())
 
 
 def load_result(database,pair_id,*,source_sha256,base_result_sha256,source_record=None):
@@ -81,8 +91,7 @@ def load_result(database,pair_id,*,source_sha256,base_result_sha256,source_recor
         manifest,settings=_producer(db,row[0],row[1],facts)
         state=facts.get('stop',{}).get('state')
         if facts.get('interrupted') or state=='interrupted':raise ValueError('interrupted attempt')
-        if facts.get('gold_ref'):_observation_valid(str(path),_stamp(path),
-            json.dumps(facts['gold_ref'],sort_keys=True,separators=(',',':')))
+        if facts.get('gold_ref'):_observation_valid(db,path,facts['gold_ref'])
         candidates=facts.get('candidates',[])
         if not candidates:
             # Older journals attached references only to normalized clauses.
@@ -95,7 +104,6 @@ def load_result(database,pair_id,*,source_sha256,base_result_sha256,source_recor
             if task_ref.get('inputs_sha256'):
                 if digest(task)!=task_ref['inputs_sha256']:raise ValueError('task inputs changed')
             else:
-                import hashlib
                 if hashlib.sha256(task_bytes).hexdigest()!=task_ref['sha256']:raise ValueError('task inputs changed')
         if candidates:
             record=source_record if source_record is not None else _source(facts['source'],source_sha256)

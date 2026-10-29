@@ -44,11 +44,11 @@ class Sources:
 
 class Worker:
     def __init__(self,args):
-        self.a=args;self.counts=Counter();self.started=time.monotonic();self.last=0;self.task=None;self.plan_cache=OrderedDict()
+        self.a=args;self.counts=Counter();self.seconds=Counter();self.started=time.monotonic();self.last=0;self.task=None;self.plan_cache=OrderedDict()
         # Fail before any execution when required shared source is unmerged.
         import registry_plan
-        if not all(callable(getattr(registry_plan,n,None)) for n in ('registry_atoms','available_atoms')):
-            raise RuntimeError('merge n-mech registry_atoms + available_atoms patches before running (DATA_ROOT/ast/run/mech4/patches/)')
+        if not all(callable(getattr(registry_plan,n,None)) for n in ('registry_atoms','available_atoms','unsupported_named_sites')):
+            raise RuntimeError('merge n-mech registry planning and callable-site guards before running')
         from nonrender_metadata import MetadataProducer
         from case_collector import acquire_case,select_pair,evaluate_cached,clear_cache
         from evaluator import ReplayEvaluator
@@ -99,7 +99,8 @@ class Worker:
         if force or elapsed-self.last>=5:
             rate=done/max(elapsed,.001);eta=f'{(total-done)/rate:.1f}s' if rate else 'unknown'
             print(f'phase={phase} done={done}/{total} elapsed={elapsed:.1f}s rate={rate:.3f}/s ETA={eta} '
-                  f'counts={dict(self.counts)} gold={dict(self.contexts.stats)}',file=sys.stderr,flush=True)
+                  f'counts={dict(self.counts)} gold={dict(self.contexts.stats)} '
+                  f'seconds={dict((k,round(v,3)) for k,v in self.seconds.items())}',file=sys.stderr,flush=True)
             self.last=elapsed
 
     def verify(self,record,job,context,candidate,columns,inputs,budget):
@@ -127,8 +128,10 @@ class Worker:
 
     def process(self,job,base):
         record=self.sources.get(job)
-        context=self.contexts.acquire(record,job)
-        info=self.screen_ev.registry_interfaces(record)
+        phase_start=time.monotonic();context=self.contexts.acquire(record,job)
+        self.seconds['context']+=time.monotonic()-phase_start
+        phase_start=time.monotonic();info=self.screen_ev.registry_interfaces(record)
+        self.seconds['registry']+=time.monotonic()-phase_start
         if info.get('source_sha256')!=job['source_sha256']:raise ValueError('registry source binding differs')
         inputs=dict(pair_id=job['pair_id'],source_sha256=job['source_sha256'],
             base_result_sha256=job['base_result_ref']['result_sha256'],adapter_sha256=digest(context['adapter']),
@@ -146,6 +149,7 @@ class Worker:
         transient=ScreenCache()
         prior_sources=base_source_ids(base,context['available_bindings'])
         def process_batch(batch):
+            comparison_hits=transient.comparison_hits
             gold=context['selection']['point'][0]
             for candidate,screen,resumed in execute(self.screen_ev,record,context['adapter'],batch,gold,
                 context['ntrain'],context['ntest'],self.config,budget,transient,inputs,self.guard):
@@ -162,8 +166,10 @@ class Worker:
                     proof,ref=self.verify(record,job,context,candidate,screen['columns'],inputs,budget)
                     result['mechanical_clauses'].append(proof);result['candidates'].append(ref)
                     if proof['outcome']=='recovery verified':
+                        self.counts['comparison_cache_hits']+=transient.comparison_hits-comparison_hits
                         result.update(found_recovery=True,search_status='recovery_verified')
                         return True
+            self.counts['comparison_cache_hits']+=transient.comparison_hits-comparison_hits
             return False
         start=time.monotonic()
         try:
@@ -243,7 +249,7 @@ class Worker:
         return result
 
     def run(self):
-        queue=list(jobs(self.a.base,self.a.grades,limit=self.a.limit,lib_database=self.a.output,
+        queue=list(jobs(self.a.base,self.a.grades,limit=self.a.limit,lib_database=self.a.output,defer_routing=not self.a.limit,
             progress=lambda done,total,counts:self.report(done,total,phase='selection')))
         queue.sort(key=lambda j:(j['task'],j['source']['corpus'],j['source']['file'],j['source']['line']))
         total=len(queue);done=0;self.report(0,total,force=True)
@@ -253,18 +259,25 @@ class Worker:
                                       'FROM pairs WHERE pair_id=?',(job['pair_id'],)).fetchone()
             base=base_record(base_row)
             if digest(base)!=job['base_result_ref']['result_sha256']:raise ValueError('queue base result changed; prepare again')
-            current=self.routing.read(job['pair_id'],source_record=self.sources.get(job))
-            if not queue_hint(base) or current['valid'] and current['grade']!='Unknown':
-                self.counts['routing_skipped']+=1;done+=1;self.report(done,total);continue
             pair_inputs=dict(source_sha256=job['source_sha256'],target='G')
             key=digest(dict(pair=job['pair_id'],target='G'))
             from mech4.read_results import load_result
+            phase_start=time.monotonic()
             retained=load_result(self.a.output,job['pair_id'],source_sha256=job['source_sha256'],
                 base_result_sha256=job['base_result_ref']['result_sha256'],source_record=self.sources.get(job))
+            self.seconds['resume_read']+=time.monotonic()-phase_start
             result=retained.get('record') if retained.get('valid') else None
             if result is not None and result.get('interrupted') is not True:
                 self.counts['pairs_resumed']+=1
             else:
+                # Selection uses only the stored base hint. Join current pass
+                # facts once here, in source order, only for unfinished work.
+                # Completed own attempts remain input-keyed and need no grade.
+                phase_start=time.monotonic()
+                current=self.routing.read(job['pair_id'],source_record=self.sources.get(job))
+                self.seconds['routing']+=time.monotonic()-phase_start
+                if not queue_hint(base) or current['valid'] and current['grade']!='Unknown':
+                    self.counts['routing_skipped']+=1;done+=1;self.report(done,total);continue
                 if self.task!=job['task']:
                     self.contexts.clear();self.screen_ev.close();self.verify_ev.close();self.task=job['task']
                 self.guard.check();started=time.monotonic()
@@ -275,7 +288,9 @@ class Worker:
                         search_status='unavailable',reason=str(error),error_type=type(error).__name__,
                         admission_authenticated=False,found_recovery=False,mechanical_clauses=[])
                 result=compact_pair(result,job)
+                phase_start=time.monotonic()
                 self.guard.check();self.journal.put('pair',key,pair_inputs,result);self.counts['pairs_written']+=1
+                self.seconds['pair_write']+=time.monotonic()-phase_start
             self.counts['attempts_done']+=1;done+=1
             self.report(done,total)
         self.report(done,total,force=True)

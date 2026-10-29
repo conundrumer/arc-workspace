@@ -7,9 +7,14 @@ from common import digest
 
 
 def atomic(L,info,adapter,*,maximum,per_predicate,per_mode,bindings=()):
-    from registry_plan import registry_atoms,available_atoms
+    from registry_plan import registry_atoms,available_atoms,unsupported_named_sites
     from collections import deque
     x=L.parse(adapter['input']['binding']['callable_template'])
+    bad=unsupported_named_sites(x)
+    if bad:
+        yield dict(kind='unsupported',registry=dict(status='unsupported',
+            reason='X callable template has unsupported named sites',native_sites=bad))
+        return
     count=0
     streams=deque([iter(registry_atoms(L,info,adapter,per_predicate=per_predicate,per_mode=per_mode)),
                    iter(available_atoms(L,bindings,adapter,per_source=per_predicate))])
@@ -33,7 +38,9 @@ def atomic(L,info,adapter,*,maximum,per_predicate,per_mode,bindings=()):
 
 def combined(L,adapter,useful,*,maximum):
     """Native conjunctions, never intersections/unions of decoded model masks."""
+    from registry_plan import unsupported_named_sites
     x=L.parse(adapter['input']['binding']['callable_template'])
+    if unsupported_named_sites(x):return
     selectors=[c for c in useful if not c['computed_fields']]
     computations=[c for c in useful if c['computed_fields']]
     seen=set();count=0

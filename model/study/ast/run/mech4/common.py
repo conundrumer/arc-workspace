@@ -159,7 +159,7 @@ def decode_payload(db,payload):
 
 class ScreenCache:
     """Screen comparisons and failed-batch caches are recomputed in memory."""
-    def __init__(self):self.cache={}
+    def __init__(self):self.cache={};self.comparison_hits=0
     def recall(self,kind,key,inputs):return self.cache.get((kind,key,digest(inputs)))
     def remember(self,kind,key,inputs,result):
         self.cache[kind,key,digest(inputs)]=result

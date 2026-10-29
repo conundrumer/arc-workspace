@@ -20,7 +20,7 @@ def training(grouped,record,ntrain):
     return {k:grouped['groups'][k] for k in sorted(wanted)}
 
 
-def compare_train(native,table,ev,record,adapter,candidate,proof,gold,ntrain,ntest,config,budget):
+def compare_train(native,table,ev,record,adapter,candidate,proof,gold,ntrain,ntest,config,budget,cache):
     from tables import kept_groups,compare
     from registry_plan import projection_labels
     from surface import tokens
@@ -50,7 +50,25 @@ def compare_train(native,table,ev,record,adapter,candidate,proof,gold,ntrain,nte
     if any(max(map(len,groups[k]))<min(map(len,expected[k])) for k in expected):
         return dict(status='too_few_rows',useful=False,required_train_contexts=len(expected))
     budget.check()
-    equal=compare(groups,columns,expected,proposal_fields,seconds=min(config['compare_seconds'],budget.remaining()))
+    # Identical native table families often recur for predicates that keep the
+    # same rows. Memoize only completed shared-comparator answers. Keys retain
+    # exact values, column order/names/types and the explicit projection; no
+    # decoded-value equivalence or library semantics is inferred here.
+    comparison_key=(tuple((k,frozenset(groups[k])) for k in sorted(groups)),
+                    tuple(columns),digest(proposal_fields))
+    comparisons=cache.cache.setdefault('completed-comparisons',{})
+    def compare_projection(explicit=None):
+        key=(comparison_key,tuple(explicit) if explicit is not None else None)
+        if key in comparisons:
+            cache.comparison_hits+=1
+            return comparisons[key]
+        value=compare(groups,columns,expected,proposal_fields,explicit=explicit,
+                      seconds=min(config['compare_seconds'],budget.remaining()))
+        if value['status'] in ('equal','mismatch'):
+            if len(comparisons)>=64:comparisons.pop(next(iter(comparisons)))
+            comparisons[key]=value
+        return value
+    equal=compare_projection()
     # The common comparator coalesces the normal type/permutation choices in
     # one call. Explicit repeated columns also cover native projection aliases.
     alias=aliases
@@ -68,8 +86,7 @@ def compare_train(native,table,ev,record,adapter,candidate,proof,gold,ntrain,nte
             selected=[resolve(p) for p in projection]
             if len(set(selected))==len(selected):continue
             budget.check()
-            trial=compare(groups,columns,expected,proposal_fields,explicit=selected,
-                          seconds=min(config['compare_seconds'],budget.remaining()))
+            trial=compare_projection(selected)
             if trial['status']=='equal':equal=trial;break
     distance=sum(abs(max(map(len,groups[k]))-max(map(len,expected[k]))) for k in expected)
     return dict(status='train_match' if equal['status']=='equal' else 'screened',comparison=equal,
@@ -153,7 +170,7 @@ def _execute_group(ev,record,adapter,prepared,original,at,gold,ntrain,ntest,conf
         try:
             matches=[t for t,f in enumerate(native['tables']['form']) if str(f)==str(at+offset)]
             if len(matches)!=1:raise ValueError('exact appended candidate form is missing or ambiguous')
-            result=compare_train(native,matches[0],ev,record,adapter,candidate,proof,gold,ntrain,ntest,config,budget)
+            result=compare_train(native,matches[0],ev,record,adapter,candidate,proof,gold,ntrain,ntest,config,budget,cache)
             result.update(replay_artifact=replay['artifact'],program_sha256=program_sha,
                           appended_form=at+offset,executed_clause=text,proof=proof)
         except (ValueError,KeyError,IndexError,TypeError) as error:
