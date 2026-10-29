@@ -99,8 +99,7 @@ def run_pair(ev, db, job, config, code, progress):
             if identity in seen:
                 continue
             seen.add(identity)
-            receipt_key = digest(dict(pair_id=pair_id,source=source,code=code,config=config_hash,
-                                      plan=plan_hash,candidate=identity))
+            receipt_key = digest(dict(pair_id=pair_id,source=source,plan=plan_hash,candidate=identity))
             old = db.execute('SELECT result_hash,payload FROM candidates WHERE key=?', (receipt_key,)).fetchone()
             if old and digest(json.loads(old[1])) == old[0]:
                 raw = json.loads(old[1]); reused += 1

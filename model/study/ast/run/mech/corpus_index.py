@@ -25,6 +25,7 @@ def filter_labels(record):
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('corpora',type=Path,nargs='+');p.add_argument('--output',type=Path,required=True)
+    p.add_argument('--reindex',action='store_true',help='rewrite rows that are already stored, after a change to how a row is derived')
     a=p.parse_args();a.output.parent.mkdir(parents=True,exist_ok=True)
     db=sqlite3.connect(a.output);db.execute('PRAGMA journal_mode=WAL');db.execute('PRAGMA synchronous=FULL')
     db.execute('CREATE TABLE IF NOT EXISTS sources(pair_id TEXT,source_sha256 TEXT,result_sha256 TEXT,payload TEXT,PRIMARY KEY(pair_id,source_sha256))')
@@ -39,7 +40,7 @@ def main():
                         source=dict(corpus=str(task.parent),file=task.name+'/'+file,line=line,stream=stream),
                         retained=record.get('retained'),**filter_labels(record))
             old=db.execute('SELECT result_sha256,payload FROM sources WHERE pair_id=? AND source_sha256=?',(pair_id,source)).fetchone()
-            if old and digest(json.loads(old[1]))==old[0] and json.loads(old[1]).get('code_sha256')==code:
+            if old and not a.reindex and digest(json.loads(old[1]))==old[0]:
                 skip+=1
             else:
                 with db:db.execute('INSERT OR REPLACE INTO sources VALUES (?,?,?,?)',(pair_id,source,digest(result),canonical(result)))

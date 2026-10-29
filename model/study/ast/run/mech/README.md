@@ -70,6 +70,15 @@ into any new pass result. New judge ingestion stores references to the tool's
 existing final/source/manifest artifacts, not copied outcomes or joined evidence.
 Legacy owner data is adapted at read time, without native replay.
 
+## Base labeling pass
+
+`run.py` resumes a stored pair row when its payload digest matches, it has no
+error, and its source hash is the source record's hash. Code and config hashes
+in the row are provenance; a code change does not rerun a pair. `--relabel`
+recomputes every pair. `--compatibility` is accepted and ignored.
+`corpus_index.py --reindex` and `mech2/classify_normal.py --reclassify` are the
+matching explicit reruns of those passes.
+
 ## Witness pass
 
 `step2_check.py` reuses the base's stored test result (`test_verified`, or

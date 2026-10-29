@@ -47,10 +47,8 @@ def main():
     lock=a.state.with_suffix('.lock').open('a');fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
     state=sqlite3.connect(a.state);state.execute('PRAGMA journal_mode=WAL');state.execute('PRAGMA synchronous=FULL')
     state.execute('CREATE TABLE IF NOT EXISTS cursors_v2(scope TEXT PRIMARY KEY,seq INTEGER)')
-    from lib_pass import manifest as search_manifest
     scope=digest(dict(base=str(a.base.resolve()),output=str(a.output.resolve()),
-                      code=search_manifest(),follower_sha256=__import__('hashlib').sha256(Path(__file__).read_bytes()).hexdigest(),
-                      python=sys.executable,seconds=a.seconds,candidate_seconds=a.candidate_seconds,max_candidates=a.max_candidates))
+                      seconds=a.seconds,candidate_seconds=a.candidate_seconds,max_candidates=a.max_candidates))
     row=state.execute('SELECT seq FROM cursors_v2 WHERE scope=?',(scope,)).fetchone();cursor=row[0] if row else 0
     signal.signal(signal.SIGTERM,stop);signal.signal(signal.SIGINT,stop)
     start=time.monotonic();done=0;eligible=0

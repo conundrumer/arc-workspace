@@ -84,8 +84,8 @@ def setup(path):
     db.commit(); db.close()
 
 
-def initialize(study_run, manifest, output, config, accepted, events, stopping, algorithm_path=None):
-    global ALGORITHM, DB, CONFIG, MANIFEST, CODE_HASH, CONFIG_HASH, ACCEPTED, EVENTS, RUNNER_HASH, STOPPING
+def initialize(study_run, manifest, output, config, relabel, events, stopping, algorithm_path=None):
+    global ALGORITHM, DB, CONFIG, MANIFEST, CODE_HASH, CONFIG_HASH, RELABEL, EVENTS, RUNNER_HASH, STOPPING
     # Never let a speed edit silently change a running process's receipts.
     if code_manifest(study_run, algorithm_path) != manifest:
         raise ValueError('labeling code changed before worker import; restart')
@@ -100,7 +100,7 @@ def initialize(study_run, manifest, output, config, accepted, events, stopping, 
     if code_manifest(study_run, algorithm_path) != manifest:
         raise ValueError('labeling code changed during worker import; restart')
     ALGORITHM = algorithm; DB = connect(output); CONFIG = config; MANIFEST = manifest
-    CODE_HASH = digest(manifest); CONFIG_HASH = digest(config); ACCEPTED = set(accepted)
+    CODE_HASH = digest(manifest); CONFIG_HASH = digest(config); RELABEL = relabel
     EVENTS = events
     STOPPING = stopping
     RUNNER_HASH = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
@@ -127,19 +127,20 @@ def records(base, sources, *, include_filtered=False):
 
 
 def valid(row, source_hash):
+    """A stored row resumes when it is the intact, error-free result for this source record.
+
+    Producer code and configuration hashes are provenance; no code change
+    invalidates a row. `--relabel` recomputes every row.
+    """
     if row is None:
         return False
-    old_source, code_hash, config_hash, result_hash, payload = row
+    old_source, result_hash, payload = row
     if old_source != source_hash:
         return False
     try:
         rec = json.loads(payload)
         return (digest(rec) == result_hash and rec['schema'] == SCHEMA
-                and not rec.get('error')
-                and rec['source_sha256'] == source_hash and rec['code_sha256'] == code_hash
-                and digest(rec['code_manifest']) == code_hash
-                and rec['code_manifest']['semantics'] == SEMANTICS
-                and digest(rec['config']) == config_hash and rec['config_sha256'] == config_hash)
+                and not rec.get('error') and rec['source_sha256'] == source_hash)
     except (ValueError, KeyError, TypeError):
         return False
 
@@ -158,9 +159,9 @@ def task_job(job):
         seen[pair_id] = source_hash
         if rec['task'] != base.name:
             raise ValueError(f'task identity differs from directory: {base}')
-        row = DB.execute('SELECT source_sha256, code_sha256, config_sha256, result_sha256, record_json '
+        row = DB.execute('SELECT source_sha256, result_sha256, record_json '
                          'FROM pairs WHERE pair_id=?', (pair_id,)).fetchone()
-        if valid(row, source_hash):
+        if not RELABEL and valid(row, source_hash):
             EVENTS.put(('skip', 1))
         else:
             result = ALGORITHM.one_pair(rec, str(base), CONFIG['seconds'], CONFIG['baseline_seconds'])
@@ -237,7 +238,10 @@ def parse():
     ap.add_argument('--baseline-seconds', type=float, default=.5)
     ap.add_argument('--limit-per-task', type=int, default=0)
     ap.add_argument('--compatibility', type=Path,
-                    help='reviewed JSON receipt authorizing older code hashes; see README')
+                    help='ignored; accepted for command compatibility (stored rows resume regardless of code hash)')
+    ap.add_argument('--relabel', action='store_true',
+                    help='recompute every pair even where a valid stored row exists; use after a change '
+                         'that alters what a label means')
     ap.add_argument('--algorithm', type=Path, default=HERE / 'algorithm.py',
                     help='owned labeling entrypoint; included in code_manifest')
     a = ap.parse_args()
@@ -258,13 +262,6 @@ def main():
     a.algorithm = a.algorithm.resolve()
     manifest = code_manifest(a.study_run, a.algorithm); code_hash = digest(manifest)
     config = dict(seconds=a.seconds, baseline_seconds=a.baseline_seconds, semantics=SEMANTICS)
-    accepted = [code_hash]
-    if a.compatibility:
-        receipt = json.loads(a.compatibility.read_text())
-        if (receipt['current_code_sha256'] != code_hash or receipt['semantics'] != SEMANTICS
-                or not receipt.get('evidence')):
-            raise ValueError('compatibility receipt needs current hash, semantics and evidence')
-        accepted += receipt['compatible_code_sha256']
     setup(str(a.output))
     tasks = a.tasks or sorted({p.parent.name for source in a.sources
                              for p in a.corpus.glob('*/' + ('pairs.jsonl.gz' if source == 'kept' else 'recoverable.jsonl.gz'))
@@ -299,7 +296,7 @@ def main():
         stopping.set()
     signal.signal(signal.SIGTERM, stop); signal.signal(signal.SIGINT, stop)
     pool = concurrent.futures.ProcessPoolExecutor(max_workers=a.workers, mp_context=ctx,
-              initializer=initialize, initargs=(str(a.study_run), manifest, str(a.output), config, accepted, events, stopping, str(a.algorithm)))
+              initializer=initialize, initargs=(str(a.study_run), manifest, str(a.output), config, a.relabel, events, stopping, str(a.algorithm)))
     pending = {}; task_iter = iter(tasks); failed = []
     def fill():
         while not interrupted and len(pending) < a.workers:

@@ -37,4 +37,4 @@ For new work or resume:
 /Users/davidlu/code/arc-workspace/scripts/run_heavy.py --cpus 1 /Users/davidlu/code/arc-workspace/work/lm/.venv/bin/python /Users/davidlu/code/arc-workspace/model/study/ast/run/mech2/classify_normal.py
 ```
 
-The producer commits each pair durably and streams done/total, elapsed time, rate and ETA. It resumes matching source/code facts. `--retry-unavailable` retries null mutant classifications while preserving completed compatible facts. Aggregation belongs to the read-time join.
+The producer commits each pair durably and streams done/total, elapsed time, rate and ETA. It resumes every fact whose source record matches; producer manifests are provenance, and a code change does not invalidate a fact. `--reclassify` classifies every pair again and replaces the stored facts. `--retry-unavailable` retries null mutant classifications while preserving completed facts. Aggregation belongs to the read-time join.

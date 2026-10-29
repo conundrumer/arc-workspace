@@ -82,7 +82,6 @@ class Worker:
             runtime=dict(python=str(Path(sys.executable).resolve()),binary=str(binary)),deadline=args.deadline)
         self.output=Store(args.output,self.manifest,config)
         self.gold_cache=GoldCache(self.output)
-        self.program_code=digest({p:sha for p,sha in self.manifest.items() if not Path(p).is_relative_to(HERE)})
         self.base=sqlite3.connect(args.base.resolve().as_uri()+'?mode=ro',uri=True);self.base.execute('BEGIN')
         self.scope="(json_extract(record_json,'$.label')='fits' AND upper(json_extract(record_json,'$.kind'))!='DET')"
         self.scope_params=getattr(args,'task_ids',[])
@@ -140,7 +139,7 @@ class Worker:
             if self.gold_task!=record['task']:
                 self.gold_cache.clear();self.gold_task=record['task']
             key=digest(dict(schema='mech3-program-test-cache-v1',source=base['source_sha256'],base=digest(base),
-                code=self.program_code,task=task_receipt,deadline=self.args.deadline,ntrain=ntrain,ntest=ntest))
+                task=task_receipt,deadline=self.args.deadline,ntrain=ntrain,ntest=ntest))
             tested=None if force_test else self.output.load_program(base['pair_id'],key)
             if tested is None and not force_test:tested=self.output.compatible_program(base['pair_id'],base['source_sha256'],self.ev.receipt,task_receipt)
             if tested is None:

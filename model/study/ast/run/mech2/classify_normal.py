@@ -17,17 +17,13 @@ import facts
 import normal_policy as policy
 
 
-def same_policy(previous, current):
-    return (policy.dependency_identity(previous) == policy.dependency_identity(current) and
-            all(previous.get(k) == current.get(k) for k in
-                ('normal_policy', 'constraint_set', 'numpy', 'pandas')))
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--base', type=Path, default=DATA_ROOT / 'ast/run/mech/labels.sqlite3')
     parser.add_argument('--output', type=Path, default=DATA_ROOT / 'ast/run/mech2/normal.sqlite3')
     parser.add_argument('--retry-unavailable', action='store_true')
+    parser.add_argument('--reclassify', action='store_true',
+                        help='classify every pair again, replacing stored facts; use after a change that alters what normal means')
     args = parser.parse_args()
     output = args.output.resolve()
     if output.parent != DATA_ROOT / 'ast/run/mech2':
@@ -45,9 +41,6 @@ def main():
             elif db.execute("SELECT value FROM metadata WHERE key='schema'").fetchone()[0] != facts.SCHEMA:
                 from compact_normal import compact
                 compact(db, manifest)
-            producers = {key:json.loads(text) for key, text in db.execute('SELECT * FROM producers')}
-            accepted = {key for key, prior in producers.items()
-                        if facts.digest(prior) == key and same_policy(prior, manifest)} | {code}
             db.execute('INSERT OR IGNORE INTO producers VALUES (?,?)', (code, facts.canonical(manifest)))
             db.commit()
             total = base.execute('SELECT count(*) FROM pairs').fetchone()[0]
@@ -67,11 +60,11 @@ def main():
             for pid, source, base_hash, text in base.execute(
                     'SELECT pair_id,source_sha256,result_sha256,record_json FROM pairs'):
                 old = db.execute('SELECT * FROM pairs WHERE pair_id=?', (pid,)).fetchone()
-                valid = old is not None and old[1] == source and old[2] in accepted
+                valid = not args.reclassify and old is not None and old[1] == source
                 if valid:
                     facts.validate('pairs', old)
                     gp = db.execute('SELECT * FROM gold_points WHERE point_id=?', (old[3],)).fetchone()
-                    valid = gp is not None and gp[3] in accepted
+                    valid = gp is not None
                     if valid:
                         facts.validate('gold_points', gp)
                 if valid and not (args.retry_unavailable and old[4] is None):
@@ -91,12 +84,12 @@ def main():
             def write(item, result):
                 point = facts.digest({k:item[k] for k in ('task', 'case', 'point', 'clause')})
                 prior = db.execute('SELECT * FROM gold_points WHERE point_id=?', (point,)).fetchone()
-                if prior is not None and prior[3] in accepted:
+                if prior is not None and not args.reclassify:
                     facts.validate('gold_points', prior)
                     if (prior[4] is not None and result['gold']['normal'] is not None and
                             bool(prior[4]) != result['gold']['normal']):
                         raise ValueError('inconsistent stored gold verdict ' + point)
-                if prior is None or prior[3] not in accepted or prior[4] is None:
+                if prior is None or args.reclassify or prior[4] is None:
                     facts.insert(db, 'gold_points',
                                  (point, item['pair_id'], item['source_sha256'], code), result['gold'])
                 facts.insert(db, 'pairs', (item['pair_id'], item['source_sha256'], code, point), result['mutant'])

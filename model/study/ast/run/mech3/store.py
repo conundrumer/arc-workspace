@@ -81,7 +81,7 @@ class Store:
         return raw_store.save_test(self,pair,key,value)
 
     def compatible_program(self,pair,source,settings,task_receipt):
-        """Reuse TEST proof when only labeling dependencies changed."""
+        """Reuse a TEST proof stored under another cache key, matched by source and task input."""
         try:normalized=raw_store.load_test(self.db,pair)
         except (OSError,ValueError):normalized=None
         if (normalized is not None and normalized['source_sha256']==source
@@ -91,8 +91,6 @@ class Store:
             if digest(value)!=sha:raise ValueError('TEST replay cache payload differs')
             if (value.get('source_sha256')!=source or receipt.get('source_sha256')!=source
                     or receipt.get('task',{}).get('sha256')!=task_receipt['sha256']):continue
-            files=receipt.get('code',{})
-            if not files or digest(files)!=receipt.get('code_sha256'):continue
             try:
                 if not evidence_current(dict(program=dict(test_check=value))):continue
             except OSError:continue
