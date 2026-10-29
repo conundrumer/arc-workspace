@@ -60,17 +60,22 @@ pub fn evaluate_cached(gold:&StudyProgram,mutant:&ValidMutant,task:&Task,session
     Ok(ComponentTables {limits:limits.clone(),report,gold:g.tables,mutant:m.tables,_allocations:choice_allocations})
 }
 
+/// Native example coordinates shared by table maps and held evidence reports.
+pub(crate) fn example_axis(example:Option<Example>,train_count:usize)->(&'static str,usize) {
+    match example {
+        None=>("task",0),
+        Some(e) if usize::from(e.index())<train_count=>("train",usize::from(e.index())),
+        Some(e)=>("test",usize::from(e.index())-train_count),
+    }
+}
+
 /// Mapping uses the exact native entries order, including repeated equal
 /// assignments when a table reads only a subset. Never join choices by values.
 pub fn assignment_map(tables:&[(usize,Table)],table_offset:usize,train_count:usize)->Value {
     json!(tables.iter().enumerate().map(|(number,(_,table))| {
         let mut entries=Vec::new();
         if let Ok(contents)=&table.contents {for example in &contents.examples {
-            let (kind,index)=match example.example {
-                None=>("task",0),
-                Some(e) if usize::from(e.index())<train_count=>("train",usize::from(e.index())),
-                Some(e)=>("test",usize::from(e.index())-train_count),
-            };
+            let (kind,index)=example_axis(example.example,train_count);
             match &example.rows {
                 Ok(rows) if !rows.at.is_empty()=>for (assignment,(_,models)) in rows.at.iter().enumerate() {
                     for model in 0..models.len() {entries.push(json!({"table_entry":entries.len(),
@@ -130,7 +135,7 @@ pub fn full_choice_extents(materializer:&Materializer<'_>,tables:&[(usize,Table)
             let mut examples=Vec::new();
             for (place,e) in contents.examples.iter().enumerate() {
                 let Some((_,models))=e.rows.as_ref().ok().and_then(|r|r.at.get(choice)) else {continue;};
-                let (kind,index)=match e.example {None=>("task",0),Some(e) if usize::from(e.index())<train_count=>("train",usize::from(e.index())),Some(e)=>("test",usize::from(e.index())-train_count)};
+                let (kind,index)=example_axis(e.example,train_count);
                 for (model,value) in models.iter().enumerate() {
                     let RelationValue::Rows(rows)=value else {continue;};
                     if !arclog::session::same_rows(rows,held) {continue;}

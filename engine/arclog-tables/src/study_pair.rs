@@ -20,6 +20,9 @@ pub mod continuation;
 #[path = "study_component_tables.rs"]
 pub mod component_tables;
 
+#[path = "study_gold_body.rs"]
+pub mod gold_body;
+
 #[path = "study_judgement.rs"]
 mod judgement;
 
@@ -236,16 +239,23 @@ fn clause_tables(program:&StudyProgram,origin:&Arc<CheckedProgram>,body:&NodePat
     let index=written.forms.iter().find(|f|f.path==view.form).ok_or_else(||fault("body owner is absent from the written stream",body))?.tokens.end.saturating_sub(1);
     let held=super::body_tables::contents(decoder,program.checked(),&view,slot,&dets,examples,&seen)?;
     tables.push((index,Table {form:view.form.clone(),point,contents:Ok(held)}));
+    let completed=&tables.last().expect("the all-assignment body table just inserted").1.contents.as_ref().expect("body contents was checked").examples;
+    let seen=tables[..tables.len()-1].iter().map(|(_,t)|t).collect::<Vec<_>>();
+    let held=held_body_contents(program,origin,&view,slot,&dets,decoder,fixed,&seen,Some(completed))?;
+    tables.push((index,Table {form:view.form,point,contents:Ok(held)}));
+    Ok(ClauseTables {tables,names:written.relations.iter().map(|n|(n.clone(),n.clone())).collect(),prefix})
+}
+
+/// The original checked BODY query at full gold interventions. Both pair and
+/// gold-only acquisition use this boundary, including recursive owner context.
+fn held_body_contents(program:&StudyProgram,origin:&Arc<CheckedProgram>,view:&arclog::eval::body_view::BodyView,
+    slot:u32,dets:&[Det],decoder:&Decoder<'_>,fixed:&[Vec<Assignment>],earlier:&[&Table],completed:Option<&[ExampleRows]>)->Outcome<Contents> {
     let work=decoder.table_work();
     let limits=decoder.limits().counted_in(work.clone());
     let receipt=HeldAssignments::new(Arc::clone(program.checked()),Arc::clone(origin),fixed)?;
     let context=AssignmentContext::Held {receipt:&receipt,limits:&limits,work:&work};
-    let completed=&tables.last().expect("the all-assignment body table just inserted").1.contents.as_ref().expect("body contents was checked").examples;
-    let examples=super::body_tables::examples_reusing(decoder,program.checked(),&view,&dets,&work,context,Some(completed));
-    let seen=tables[..tables.len()-1].iter().map(|(_,t)|t).collect::<Vec<_>>();
-    let held=super::body_tables::contents_with_context(decoder,program.checked(),&view,slot,&dets,examples,&seen,context)?;
-    tables.push((index,Table {form:view.form,point,contents:Ok(held)}));
-    Ok(ClauseTables {tables,names:written.relations.iter().map(|n|(n.clone(),n.clone())).collect(),prefix})
+    let examples=super::body_tables::examples_reusing(decoder,program.checked(),view,dets,&work,context,completed);
+    super::body_tables::contents_with_context(decoder,program.checked(),view,slot,dets,examples,earlier,context)
 }
 
 fn stopped(stop: &arclog::eval::Stop) -> Value {
@@ -652,6 +662,26 @@ pub fn gold_kept_cached(gold:&StudyProgram,task:&Task,judged:&JudgedTask,session
     cache.activate(gold);
     let limits=settings.operation_limits();
     let decoder=Decoder::new(task,session,Registry::get(),constructions,settings).with_operation_limits(limits);
+    let mut report=gold_observation_report(gold,session,settings);
+    if report["program_provenance"]["stream"].is_null() {return report;}
+    let judge=match judgement::TrainJudge::new(task,judged) {
+        Ok(judge)=>judge,
+        Err(reason)=>{report["reason"]=json!(reason);return report;}
+    };
+    let Some(output)=output_relation(gold.checked()) else {
+        report["reason"]=json!("gold has no OUT");return report;
+    };
+    let work=decoder.table_work();
+    let (memo,hit)=match gold_observation(gold,&output,&judge,&decoder,&work,cache) {
+        Ok(observation)=>observation,
+        Err(fault)=>{report["reason"]=json!(fault.message);return report;}
+    };
+    describe_gold_observation(&mut report,gold,&memo,hit);
+    report
+}
+
+/// Shared provenance and observation serialization for gold-only queries.
+fn gold_observation_report(gold:&StudyProgram,session:&TaskSession,settings:&DecodeSettings)->Value {
     let mut report=json!({"schema":"arclog-study-gold-kept-v1","status":"fault","reason":null,
         "gold_observation_ref":null,"gold_observation_cached":false,"gold_observation_stop":null,
         "observation_complete":false,"gold_assignments":[],"kept_assignments":[],
@@ -674,18 +704,10 @@ pub fn gold_kept_cached(gold:&StudyProgram,task:&Task,judged:&JudgedTask,session
     };
     report["program_provenance"]["stream"]=json!({"ids":stream.ids,"model":stream.model,
         "paths":stream.paths.iter().map(arclog::mutation::path_json).collect::<Vec<_>>()});
-    let judge=match judgement::TrainJudge::new(task,judged) {
-        Ok(judge)=>judge,
-        Err(reason)=>{report["reason"]=json!(reason);return report;}
-    };
-    let Some(output)=output_relation(gold.checked()) else {
-        report["reason"]=json!("gold has no OUT");return report;
-    };
-    let work=decoder.table_work();
-    let (memo,hit)=match gold_observation(gold,&output,&judge,&decoder,&work,cache) {
-        Ok(observation)=>observation,
-        Err(fault)=>{report["reason"]=json!(fault.message);return report;}
-    };
+    report
+}
+
+fn describe_gold_observation(report:&mut Value,gold:&StudyProgram,memo:&GoldMemo,hit:bool) {
     report["gold_observation_ref"]=json!(memo.sequence);
     report["gold_observation_cached"]=json!(hit);
     match &memo.walked {
@@ -712,7 +734,6 @@ pub fn gold_kept_cached(gold:&StudyProgram,task:&Task,judged:&JudgedTask,session
             report["kept_assignment_missing_dets"]=json!(missing);
         }
     }
-    report
 }
 
 /// Evaluate all gold OUT assignments, retain every FITS assignment, and

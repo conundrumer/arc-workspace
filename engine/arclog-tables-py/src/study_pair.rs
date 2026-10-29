@@ -190,6 +190,29 @@ impl PyStudyTaskEvaluator {
         })).map_err(PyValueError::new_err)
     }
 
+    /// Fresh original-scope BODY evidence at the cached full gold choices.
+    /// expected_kept_json asserts the same-session ordered choices; it cannot
+    /// supply assignments. Call gold_kept first with this exact program handle.
+    #[pyo3(signature=(program,body_path,expected_kept_json=None))]
+    fn gold_body(&self,py:Python<'_>,program:&PyStudyProgram,body_path:Vec<u32>,expected_kept_json:Option<&str>)->PyResult<(String,PyCaseTables)> {
+        if program.settings!=self.settings {return Err(PyValueError::new_err("task evaluator and program settings differ"));}
+        let expected=expected_kept_json.map(serde_json::from_str::<serde_json::Value>).transpose().map_err(|e|PyValueError::new_err(e.to_string()))?;
+        let body=arclog::program::path::NodePath(body_path.into_iter().map(arclog::program::path::PathStep).collect());
+        let constructions=constructions()?;
+        let (report,columns)=py.detach(||self.with_cache("gold_body",|cache| {
+            let mut result=study_pair::gold_body::evaluate_cached(&program.program,&body,&self.task,&self.session,
+                constructions,&self.settings,cache,expected.as_ref())?;
+            result.report["task"]=self.task_name.clone().into();
+            let materializer=Materializer::new(&self.session,&result.limits);
+            let columns=case_columns_in(&materializer,&self.evidence,&result.tables,self.task.train.len(),None);
+            packing_status(&mut result.report,[&columns]);
+            result.report["packed_table_count"]=columns.tables.form.len().into();
+            result.report["body_table_packed"]=result.report["body_table"].as_u64().is_some_and(|i|(i as usize)<columns.tables.form.len()).into();
+            Ok((result.report,columns))
+        })).map_err(PyValueError::new_err)?;
+        Ok((report.to_string(),PyCaseTables::of(py,self.task_name.clone(),"gold".into(),false,self.settings.projection_cap,&columns,None,None)?))
+    }
+
     fn evaluate_pair(&self,py:Python<'_>,gold:&PyStudyProgram,point:&PyMutationPoint,mutant:&PyValidMutant)->PyResult<(String,PyCaseTables,PyCaseTables)> {
         if gold.settings!=self.settings || mutant.settings!=self.settings {return Err(PyValueError::new_err("task evaluator and program settings differ"));}
         let constructions=constructions()?;
