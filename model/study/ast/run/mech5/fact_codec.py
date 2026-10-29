@@ -48,6 +48,7 @@ def compact(kind,value):
     if kind=='pair':
         return dict(schema='mech-target-facts-v2',source_sha256=value['source_sha256'],
             base_result_sha256=value['base_result_sha256'],case_refs=value.get('case_refs',[]),axis_ref=value.get('axis_ref'),
+            case_failure_refs=value.get('case_failure_refs',[]),
             comparison_refs=[dict(reference=v['reference']) for v in value.get('comparison_refs',[])],searches=value.get('searches',[]),
             gaps=[g for g in value.get('gaps',[]) if g.get('stage') not in ('comparison','other_target_search')],
             stopped=value.get('work_stop'))

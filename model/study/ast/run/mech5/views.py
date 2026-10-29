@@ -25,6 +25,8 @@ def pair_view(facts,base,resolve,*,source_groups=None):
         base_result_sha256=digest(base),kind=base['kind'],table_only=base['kind'].casefold()=='det',
         case_refs=facts.get('case_refs',[]),grade_comparisons=[],mechanical_clauses=[],
         searches=facts.get('searches',[]),gaps=list(facts.get('gaps',[])),bounded=bool(facts.get('stopped')))
+    for ref in facts.get('case_failure_refs',[]):
+        view['gaps'].append(dict(resolve(ref),receipt_ref=ref))
     cases=[]
     if facts.get('axis_ref'):
         axis=resolve(facts['axis_ref'])['axis'];own=[]

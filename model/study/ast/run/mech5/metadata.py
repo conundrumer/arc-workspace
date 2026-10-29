@@ -5,12 +5,16 @@ import sys
 from ._paths import CODE_ROOT
 
 
-def produce(ev,store,record,corpus,*,producer=None):
+def produce(ev,store,record,corpus,*,producer=None,kind=None):
     from nonrender_metadata import MetadataProducer
     if producer is None:
         producer=MetadataProducer(engine=ev.arclog,
             read_native=lambda ref,base:store.snapshot(ref,base)['_native_reader'],
             corpus=corpus,settings=ev.settings)
+    if kind is not None and kind.casefold()!='det':
+        # The canonical producer authenticates the native BODY kind itself.
+        # Avoid exporting/deep-copying both programs again merely to route it.
+        return producer,producer.produce(record,native_base=corpus/record['task'])
     exports={side:producer.programs.load(record[side+'_sexp'],record if side=='gold' else None)[1]
              for side in ('gold','mutant')}
     views=[v for v in exports['gold']['body_views'] if v['body_path']==record['point']]

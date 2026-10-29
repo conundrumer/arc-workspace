@@ -15,6 +15,11 @@ def require_shared(*,include_det=False):
     for name in ('decode_kept','compatible_kept','comparison_type'):
         if not callable(getattr(tables,name,None)):
             missing.append('judgetool.tables.'+name)
+    if not callable(getattr(tables.TargetStore,'mutant_snapshot',None)):
+        missing.append('TargetStore exact native-ref/index mutant selector')
+    import case_collector
+    if not callable(getattr(case_collector,'_supported_observers',None)):
+        missing.append('case_collector native observer containment')
     from case_collector import evaluate_cached
     # Exact-axis cached_gold repair must be merged. The owner must expose the
     # mechanical DET route separately; a judge-path kind exception is unsafe.

@@ -2,10 +2,10 @@
 
 This pass reads the base index and stored X tables, acquires fresh full gold tables once per case, compares every eligible target, and checks new nonlib selector proposals through the shared evaluator. It stores only its own observations and input/provenance references. Grades, empty certificates, support aggregates, counts and normalized overlays are read-time functions. No summary file is written.
 
-Run from the main checkout after merging:
+Run from the committed snapshot worktree after merging. Use the runtime interpreter for the task:
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 python3 scripts/run_heavy.py --need soon --cpus 1 python3 -m model.study.ast.run.mech5.targets
+PYTHONDONTWRITEBYTECODE=1 /Users/davidlu/code/arc-workspace/work/lm/data-study/ast/run/runtime-5ee2f066/venv/bin/python scripts/run_heavy.py --need soon --cpus 1 /Users/davidlu/code/arc-workspace/work/lm/data-study/ast/run/runtime-5ee2f066/venv/bin/python -m model.study.ast.run.mech5.targets --retry-unavailable
 ```
 
 Default output is `DATA_ROOT/ast/run/mech5/targets.sqlite3`; native audit artifacts stay beneath `DATA_ROOT/ast/run/mech5/replays`. Progress logs done/total, elapsed, rate and ETA. Logs are unfiltered work counters, not grades or scientific fits. Normal-form exclusions belong to study read-time analysis.
@@ -36,3 +36,8 @@ The result has `status: done|open`, `valid`, authoritative `facts`, an ephemeral
 `mech5.evidence.apply_targets(evidence, loaded)` is the canonical pure overlay; it never writes or grades. It preserves other passes' program/reader/attribute evidence, uses the recorded target comparisons and invokes n-mech's clause policy for checked candidates. `certified_empty` validates a read-time `mech-no-x-rows-v1` proof before exposing `comparisons.X_empty`. Callers that already acquired authenticated canonical X groups may supply `source_groups` to derive this proof from existing source data and target observations. X rows are not copied into this store. Raw containment misses never imply all_targets_lossy or search exhaustion.
 
 n-mech owns `read_grades.read_pair`, `read_grades.read_pairs` and `result_grade.grade_results`, which combine stored passes and compute the grade at read time. This pass publishes neither grades nor grade summaries.
+
+
+`--retry-unavailable` explicitly retries failed pair acquisition and pairs linked to case-preparation failures. Completed comparisons, searches, candidates and gold case observations retain their source-bound validity. Bounded comparisons/searches are completed attempts and do not enter this retry scope. DET remains open under the default per-pair gate.
+
+Case-preparation failures are stored once as `case_failure` entries (`mech-case-preparation-failure-v1`) with case, phase/error and message; pair facts link them through `case_failure_refs`. Read-time views resolve those references into gaps. During a task each failed case is attempted once; subsequent pairs reuse its failure reference. A later explicit retry starts a new case attempt while preserving successful case observations. Stored X is authenticated before fresh case preparation. Ordinary metadata routing delegates directly to the canonical producer, avoiding redundant program export/copy work.

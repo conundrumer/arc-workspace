@@ -30,6 +30,19 @@ from .target_search import propose,clause
 STOP=False
 
 
+class PairUnavailable(ValueError):
+    def __init__(self,result,error):
+        super().__init__(str(error))
+        self.result=result
+        result.setdefault('gaps',[]).append(dict(stage='pair unavailable',reason=str(error),error_type=type(error).__name__))
+
+
+def unavailable(facts):
+    """Explicit retry scope; bounded comparisons/searches stay completed."""
+    return bool(facts.get('case_failure_refs') or any(g.get('stage')=='pair unavailable'
+        for g in facts.get('gaps',[])))
+
+
 def stop(*_):
     global STOP
     STOP=True
@@ -72,7 +85,7 @@ class Pass:
         self.journal.register(self.manifest,config)
         self.total=self.base.execute('SELECT count(*) FROM pairs').fetchone()[0]
         self.done=0
-        self.producers={};self.case_cache={};self.current_task=None;self.tasks={}
+        self.producers={};self.case_cache={};self.case_failures={};self.current_task=None;self.tasks={}
 
     @staticmethod
     def code_path(name):
@@ -124,16 +137,16 @@ class Pass:
             self.tasks[task]=(len(value['train']),len(value['test']),dict(path=str(path),sha256=hashlib.sha256(raw).hexdigest()))
         return self.tasks[task]
 
-    def metadata(self,record,corpus):
+    def metadata(self,record,corpus,kind):
         key=str(corpus)
         producer=self.producers.get(key)
-        producer,adapter=produce(self.ev,self.source_store,record,corpus,producer=producer)
+        producer,adapter=produce(self.ev,self.source_store,record,corpus,producer=producer,kind=kind)
         self.producers[key]=producer
         return producer,adapter
 
     def bundles(self,record,adapter,ntrain,ntest):
         from case_collector import acquire_case
-        result=[];gaps=[];references=[]
+        result=[];gaps=[];references=[];failures=[]
         inventory=adapter['all_case_targets']
         for case in inventory['cases']:
             context=dict(case,catalogue_path=inventory['catalogue_path'])
@@ -154,6 +167,9 @@ class Pass:
                 kept_context_sha256=digest(kept),
                 catalogue_sha256=inventory['catalogue_sha256'],task_inputs_sha256=self.task(record['task'])[2]['sha256'],ntrain=ntrain,ntest=ntest)
             key=digest(inputs)
+            if key in self.case_failures:
+                failures.append(self.case_failures[key]);self.counts['case_failures_reused']+=1
+                continue
             try:
                 bundle=self.case_cache.get(key)
                 if bundle is None:
@@ -171,8 +187,17 @@ class Pass:
                     self.case_cache[key]=bundle
                 result.append(bundle);references.append(self.journal.reference('case',key,bundle))
             except (ValueError,KeyError,IndexError,OSError,TypeError) as error:
-                gaps.append(dict(case=case['name'],reason=str(error),stage='case acquisition'))
-        return result,gaps,references
+                failure=dict(schema='mech-case-preparation-failure-v1',case=case['name'],
+                    reason=str(error),error_type=type(error).__name__,stage='case acquisition')
+                # One failure fact per case inputs/attempt, shared by all affected
+                # pairs. Successful observations keep their independent identity.
+                failure_key=digest(dict(case_inputs=inputs,failure=failure))
+                if self.journal.load('case_failure',failure_key,inputs) is None:
+                    self.journal.save('case_failure',failure_key,inputs,failure)
+                ref=self.journal.reference('case_failure',failure_key)
+                self.case_failures[key]=ref;failures.append(ref)
+                self.counts['case_preparation_failures']+=1
+        return result,gaps,references,failures
 
     def callable_metadata(self,producer,adapter,bundles,record):
         own=[b for b in bundles if b['case']==record['case']]
@@ -224,14 +249,22 @@ class Pass:
             raise ValueError('current source differs from the base source receipt')
         corpus=Path(base['source']['corpus']).resolve()
         ntrain,ntest,task_receipt=self.task(record['task']);result['task_receipt']=task_receipt
-        producer,adapter=self.metadata(record,corpus)
-        bundles,gaps,refs=self.bundles(record,adapter,ntrain,ntest)
+        producer,adapter=self.metadata(record,corpus,base['kind'])
+        # Authenticate stored X before any fresh gold preparation/replay.
+        source,fields=self.source_store.mutant_input(record,adapter,ntrain,ntest)
+        bundles,gaps,refs,failures=self.bundles(record,adapter,ntrain,ntest)
+        result.update(case_refs=refs,case_failure_refs=failures,gaps=gaps)
         own=[b for b in bundles if b['case']==record['case']]
         if own and own[0].get('_axis_ref'):result['axis_ref']=own[0]['_axis_ref']
         self.callable_metadata(producer,adapter,bundles,record)
-        selection=select_pair(bundles,record,adapter,ev=self.ev)
-        selection['gaps'].extend(gaps);selection['complete']&=not gaps
-        source,fields=self.source_store.mutant_input(record,adapter,ntrain,ntest)
+        try:
+            selection=select_pair(bundles,record,adapter,ev=self.ev)
+        except (ValueError,KeyError,IndexError,OSError,TypeError) as error:
+            # The case failure already records the precise native refusal.
+            if failures:return result
+            raise PairUnavailable(result,error) from error
+        selection['gaps'].extend(gaps)
+        selection['complete']&=not (gaps or failures)
         targets=([selection['point']] if selection['point'] is not None else [])+selection['targets']
         result.update(complete=selection['complete'],gaps=selection['gaps'],case_refs=refs,
                       adapter_sha256=digest(adapter),point_binding=adapter['comparison_target']['binding'],
@@ -332,12 +365,13 @@ class Pass:
                 saved=self.journal.load('pair',base['pair_id'],inputs)
                 if saved is not None:
                     checked=load_targets(self.a.output,base['pair_id'],source_sha256=base['source_sha256'],base_result_sha256=digest(base),derive=False)
-                    if checked['valid']:
+                    if checked['valid'] and not (self.a.retry_unavailable and unavailable(saved)):
                         self.counts['pairs_resumed']+=1;self.progress(done);continue
-                    self.counts['stale_pair_results']+=1
+                    if checked['valid']:self.counts['unavailable_pairs_retried']+=1
+                    else:self.counts['stale_pair_results']+=1
                 if self.current_task!=base['task']:
                     self.ev.close();clear_cache(self.ev);self.source_store.cache.clear()
-                    self.case_cache.clear();self.producers.clear();self.current_task=base['task']
+                    self.case_cache.clear();self.case_failures.clear();self.producers.clear();self.current_task=base['task']
                 src=base['source'];current=Path(src['corpus']).resolve()/base['task']/src['file'];wanted=src['line']
                 if current!=path:
                     if stream is not None:stream.close()
@@ -356,10 +390,13 @@ class Pass:
                     if failed:raise failed
                     result=self.process(base,record)
                 except InterruptedError:return False
+                except PairUnavailable as error:
+                    result=error.result;self.counts['pairs_unavailable']+=1
                 except (ValueError,KeyError,IndexError,OSError,TypeError) as error:
                     result=dict(schema='mech-step3-pair-v1',pair_id=base['pair_id'],source_sha256=base['source_sha256'],
                         complete=False,gaps=[dict(stage='pair unavailable',reason=str(error),error_type=type(error).__name__)])
                     self.counts['pairs_unavailable']+=1
+                if result.get('case_failure_refs'):self.counts['pairs_case_unavailable']+=1
                 self.guard();self.save_pair(base,result);self.source_store.cache.clear()
                 self.counts['pairs_done']+=1;self.progress(done)
             self.progress(self.done,force=True)
@@ -379,6 +416,7 @@ def main():
     ap.add_argument('--max-candidates',type=int,default=16)
     ap.add_argument('--task',action='append')
     ap.add_argument('--limit',type=int)
+    ap.add_argument('--retry-unavailable',action='store_true',help='retry failed pair/case acquisition; reuse completed child facts')
     ap.add_argument('--include-det',action='store_true',help='requires the future mechanical DET capability')
     a=ap.parse_args()
     for path in (a.output,):
