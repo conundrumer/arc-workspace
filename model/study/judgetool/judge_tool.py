@@ -63,55 +63,11 @@ def check_answer(ev,manifest,record,target,answer,row_limit):
 
 
 def main():
-    parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--pair',required=True,help='pair directory containing manifest.json')
-    parser.add_argument('--record',help='write full checked result to this file inside judgetool')
-    parser.add_argument('--deadline',type=float,default=30)
-    parser.add_argument('--limit',type=int,default=30,help='maximum total printed train rows')
-    commands=parser.add_subparsers(dest='command',required=True)
-    for name in ('run','check','alternative'):
-        p=commands.add_parser(name);p.add_argument('--clause-file',required=True);p.add_argument('--columns',type=json.loads)
-    p=commands.add_parser('view-target');p.add_argument('--target-id',required=True)
-    p.add_argument('--offset',type=int,default=0);p.add_argument('--assignment',type=int)
-    p.add_argument('--example',help='train input name, e.g. train1; omitted means every train input')
-    p=commands.add_parser('final');p.add_argument('--answer',required=True)
-    args=parser.parse_args();start=time.monotonic();ev=None
-    print(f'{args.command} 0/1 elapsed=0.0s',file=sys.stderr,flush=True)
-    try:
-        manifest,record,target=load_pair(args.pair)
-        ev=ReplayEvaluator(deadline=args.deadline)
-        if args.command=='view-target':
-            from target_view import view_target
-            result=view_target(ev,record,target,args.target_id,limit=max(0,args.limit),offset=args.offset,
-                               assignment=args.assignment,example=args.example)
-            result.update(pair_id=manifest['pair_id'],render_version=manifest['render_version'])
-        elif args.command=='final':
-            result=check_answer(ev,manifest,record,target,read_json(args.answer),max(0,args.limit))
-        else:
-            clause=Path(args.clause_file).read_text()
-            result=ev.evaluate(record,clause,dict(target,mode='alternative' if args.command=='alternative' else 'recovery'),
-                args.columns,explore=args.command=='run',row_limit=max(0,args.limit))
-            result.update(pair_id=manifest['pair_id'],render_version=manifest['render_version'])
-    except Exception as error:
-        result=dict(schema='judgetool-clause-v2',outcome='unknown',verified=False,
-                    reason=f'{type(error).__name__}: {error}')
-    finally:
-        if ev is not None:ev.close()
-    if args.command in ('run','view-target'):
-        result.pop('outcome',None);result.pop('verified',None);result['graded']=False
-    if args.record:
-        path=Path(args.record).resolve()
-        if not path.is_relative_to(DATA_ROOT / 'judgetool'):raise ValueError('--record must stay inside judgetool')
-        path.parent.mkdir(parents=True,exist_ok=True)
-        path.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
-    from judge_view import render
-    print(render(result),end='',flush=True)
-    sessions=DATA_ROOT / 'judgetool/sessions';sessions.mkdir(exist_ok=True)
-    with (sessions/(str(result.get('pair_id','input-error'))+'.jsonl')).open('a') as stream:
-        stream.write(canonical(dict(argv=sys.argv,output=result))+'\n')
-    elapsed=time.monotonic()-start
-    print(f'{args.command} 1/1 elapsed={elapsed:.2f}s rate={1/max(elapsed,.001):.2f}/s',file=sys.stderr,flush=True)
-    return 0 if (args.command=='final' and all(o.get('outcome')!='unknown' for o in result.get('outcomes',[{'outcome':'unknown'}]))) or result.get('verified') or result.get('continuation_passed') or args.command in ('run','view-target') and result.get('engine')=='ran' else 2
+    # The public judge interface is data-only. Keep load_pair/check_answer above
+    # as compatibility imports for existing stored-result consumers.
+    sys.path.insert(0, str(CODE_ROOT / 'judge3'))
+    from clause_command import main as data_main
+    return data_main()
 
 
 if __name__=='__main__':raise SystemExit(main())

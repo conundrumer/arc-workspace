@@ -74,7 +74,7 @@ def _policy():
 
 
 class UnsupportedProjection(ValueError):
-    """No canonical reader-named DET projection has been supplied."""
+    """The exact public projection cannot be acquired through this provider."""
 
 
 class MetadataProducer:
@@ -188,6 +188,21 @@ class MetadataProducer:
             _require(bool(candidates),'source record lacks native point table index: '+side)
             table=candidates[0]
             raw=ctx.schema(reader,table,body=True)
+            # Outer key variables are not necessarily outputs of the input
+            # BODY. They must be acquired in the original correlated INIT
+            # context, never joined to an independently evaluated key table.
+            # In particular, None is reserved for a native inserted Unit; it
+            # must not stand in for an absent, non-Unit key scalar.
+            export=ctx.gexport if side=='gold' else ctx.mexport
+            view=next(v for v in export['body_views'] if v['owner_path']==ctx.owner
+                      and v['kind']==ctx.body['kind'] and v['input_port']==ctx.body['input_port'])
+            present={c['ast_label_id'] for c in raw}
+            missing=[label for label in view['group_key_label_ids'] if label not in present]
+            if missing:
+                raise UnsupportedProjection(
+                    f'{side} INIT input {view["body_path"]}: outer key LabelIds {missing} '
+                    'are absent from the stored BODY; the complete correlated '
+                    'key+port tuple requires the evaluator INIT-context adapter')
             projected,_,view=ctx.target_projection(reader,raw,{})
             fields=[dict(physical_index=c['index'],field_name=c['display_name'],native_name=c['name'],
                 native_label_identity=c['native_label_identity'],type=c['type'],frame=c['frame'],
@@ -243,6 +258,53 @@ class MetadataProducer:
         atom=ctx.callable_atom(schema,definition['display_name'],definition)
         return dict(schema=schema,callable_atom=atom,source_name=definition['display_name'],
                     authority='caller-supplied resolver-admitted definition and native schema; no availability granted')
+
+    def case_table_metadata(self, export, item):
+        """Source names/schema for an evaluator-owned fresh original table.
+
+        This is formatting only. The caller still uses dependency_scope and
+        same_case_after for read/target eligibility. No rows or replay handles
+        are accepted here, and native table indices are never transferred.
+        """
+        selector=item['selector']
+        matches=self.selectors['matches']
+        tables={k:[v] for k,v in selector.items()}
+        reader=SimpleNamespace(schema=lambda _:copy.deepcopy(item['native_schema']),tables=tables)
+        ctx=self.policy['Document'].__new__(self.policy['Document'])
+        ctx.values=SimpleNamespace(f={'column_names':{}})
+        names=self.policy['Names'](export)
+        definitions=[d for d in export['definitions']['native_relations']
+                     if matches(tables,0,d['native_selector'])]
+        if selector['point']==1:
+            views=[v for v in export['body_views'] if matches(tables,0,v['native_table_selector'])]
+            _require(len(views)==1,'fresh BODY table has no unique canonical source view')
+            view=views[0]
+            ctx.body=view;ctx.owner=view['owner_path'];ctx.gexport=export
+            ctx.readers={'gold':reader}
+            schema=ctx.schema(reader,0,body=True)
+            source=self.point_source_name(export,view)
+            return dict(schema=schema,source_name=source,callable_atom=None,
+                        body_path=view['body_path'],body_kind=view['kind'],definitions=[])
+        if definitions:
+            chosen=[d for d in definitions if d['display_name']==item['source_name']]
+            _require(len(chosen)==1,'fresh table source alias is not uniquely authenticated')
+            result=self.callable_definition(chosen[0],item['native_schema'])
+            return dict(result,definitions=definitions)
+        _require(bool(selector['fact']),'fresh non-BODY table has no exported source definition')
+        schema=ctx.schema(reader,0)
+        return dict(schema=schema,source_name=selector['fact'],
+                    callable_atom=ctx.callable_atom(schema,selector['fact']),definitions=[])
+
+    def point_source_name(self, export, view):
+        """Exact declared source owner, with the native input port if present."""
+        owner=next(n for n in export['nodes'] if n['path']==view['owner_path'])
+        identity=owner['data'].get('name') or owner['data'].get('defines',{}).get('name')
+        _require(identity is not None,'BODY owner has no exported declared source identity')
+        token=('&r'+str(identity['slot']) if identity['kind']=='slot' else identity['name'])
+        _require(token.startswith('&'),'BODY written source owner lacks its exact token')
+        source=self.policy['Names'](export).text(token)
+        if view['input_port'] is not None:source+='.'+view['input_port']
+        return source
 
     def same_case_after(self, tables, index, metadata):
         """Exact existing selector; None remains unresolved, never an ordinal guess."""

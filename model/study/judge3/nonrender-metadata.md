@@ -41,3 +41,20 @@ source_schema = bound["schema"]
 ```
 
 The tracked module is `model/study/judge3/nonrender_metadata.py`. Source policies resolve in this checkout; stored catalogues and references use `study_paths.DATA_ROOT`. Carrying the code does not regenerate or change frozen document receipts.
+
+## Fresh case table metadata
+
+`producer.case_table_metadata(export, item)` accepts a shared evaluator's fresh
+case export and original-table metadata (`selector`, `source_name`,
+`native_schema`). It returns the canonical physical schema, authenticated source
+name, callable atom where applicable, matching definitions, and BODY identity
+when applicable. It reuses the same source binder and callable formatter. It
+does not read rows, replay, relax native column witnesses, select later targets,
+or grant availability. The caller must use the canonical resolver/ordering
+policy for those decisions.
+
+An INIT input's outer group key can be absent from stored BODY outputs. The
+provider explicitly raises `UnsupportedProjection` with the missing LabelIds
+and body path in that case. It does not omit those fields or represent an
+absent key as inserted Unit. Full support requires the evaluator to acquire
+the key and input in their original correlated INIT context.

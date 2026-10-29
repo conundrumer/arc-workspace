@@ -1,54 +1,158 @@
-# Write recovery and continuation clauses
+# Pair judge
 
-Give clauses with one or two reasons each, naming the supporting relations, columns, rows or cells. If you find none, submit an empty clause list. Give no label or grade.
+Find a recovery or an alternative continuation. Give no label or grade. Your
+input is a directory of complete ordinary files; use inline Python to inspect
+them. The invocation supplies `PAIR_DIR`, `PYTHON`, and `TOOL` (the path to
+`judgetool/judge_tool.py`).
 
-X is the changed table, exposed as `&X`. G is gold’s table there. Targets also include later tables of this case and every other case’s tables; other-case names do not affect equality. INIT pairs use the actual per-key input projection, including `^` key labels and declared port columns. Use the printed binding template.
+## Files and conventions
 
-A **recovery** is one RULE or DET producing `&fix`. Every target column comes from an X site or a lib relation over X’s columns giving exactly one row per X row. Other atoms only restrict X rows. Expanding relations such as axis_elem or dir_elem cannot supply recovery columns. INIT is not allowed. An X-reading union must contribute rows the target needs, and X must not be redundant. A matching clause taking target columns from another atom is a partial source; the tool distinguishes it.
+Start with `pair.json`. Its `change` describes the changed point and forms;
+`programs` names the gold and mutant arclog files. `tables` indexes the table
+files by ID, source name, case and roles. X is the mutant table at the changed
+point; G is gold's table there. An INIT pair uses the actual key and input-port
+columns, not all BODY witnesses or the component's output. `readers.json` gives
+the source readers and columns they need. `train.json` gives train input/output
+grids. `libraries.json` gives native library interfaces.
 
-An **alternative continuation** is one RULE or DET reading X. On every train input its result must be nonempty, different from X and different from every available table. A target match is checked as a recovery instead.
+Each table has ordered physical `fields` and complete `entries`. A field gives
+its source `name`, native `type`, and frame/callable path when present. Use
+`callable_atom` to read X or an available table: printed nested field paths are
+not interchangeable with flat site names. Targets without an available role
+are comparison-only and cannot appear as reads in a clause.
 
-Read only X and the printed available relations: input, ex_input, train ex_output and gold tables independent of G. G and its dependents are comparison-only; viewing them never permits reading them. Invent no fields, rows, ports or frames.
+An entry contains `assignment`, `train`, `model`, `row_count`, and all `rows`.
+Assignment and train indices start at zero. Assignments belong to their case;
+model numbers belong to their table and context. Never pair models or
+other-case assignments by equal ordinal, or union their rows. Native TASK rows
+have already been broadcast to the train inputs by the evaluator. An entry
+with `rows: []` is empty. A context in `missing` is unavailable, not empty. A
+zero-column true relation has `rows: [[]]`. Counts include every entry, so a
+task relation broadcast to several inputs is counted at each input.
 
-G/X comparisons stay complete. Align only on stored candidate keys; without one, inspect G-only and X-only rows. Model ordinals are independent. Later same-case tables are complete when they fit; large tables may be sampled with full counts. Other-case target tables show samples. Use view-target for more rows and ungraded run queries to explore available relations. Samples and exploratory runs never decide verification.
+Cells are native objects: `value` is an array even for a scalar. Position and
+Box values are `[top, bottom, left, right]` margins. An `extent` supplies frame
+height and width when `extent_status` is `resolved`; unresolved evidence stays
+unresolved. Equal frame sizes do not establish common frame identity. Ident
+values are local component IDs; raw numbers across tables need not denote the
+same component. Other nominal values, including colors and orientations, keep
+their native types and domains.
 
-The tool checks recoveries on complete train **and test** targets from full gold replay at compatible kept assignments. ex_output has no test rows. Columns match by name, else type; component IDs match up to renaming; Position and Box compare as four margins. No compatible entry gives unknown. Test rows are not shown.
+`comparisons.json` gives X's canonical comparisons against each target. Targets
+are G, the pair's case's tables after the changed point, and every table of
+every other case. Other-case tables compare without names. The evaluator
+matches columns by name, otherwise type, component IDs up to renaming, and
+Position and Box by their four margins. Python set differences can help explore
+values already in the same identity/frame namespace; they do not replace this
+comparison. There are no test table rows or test output grids in these files.
 
-`(:Field *V)` binds V; `(:Field V)` joins an existing V. NOT binds nothing. A label made in the first OR branch is bare in later branches; the tool normalizes later re-made `*` labels. Use printed nested/positional templates. Literal `0` is allowed only at Number/Box/Position/Offset sites, or as the second constraint label when the first is Number or Box. On Position it is the zero box, a cell only in a 1×1 frame. Never use `0` as Color; obtain colors from relations.
+## Inspect the pair
 
-Each answer clause receives: recovery verified, partial source verified, continuation passed, refused by the engine, did not verify, or unknown. An unknown or unrun candidate is not evidence that no recovery exists.
+Load the index, schema, readers and change before inspecting rows:
 
-## Tool
+```python
+import json, os
+from pathlib import Path
+p = Path(os.environ['PAIR_DIR'])
+load = lambda name: json.loads((p / name).read_text())
+pair = load('pair.json')
+tables = {t['id']: t for t in pair['tables']}
+print(pair['change'])
+print({k: [(f['name'], f['type']) for f in load(t['path'])['fields']]
+       for k, t in tables.items()})
+print(load(pair['readers']))
+```
 
-Use the supplied pair directory and these paths:
+Read the changed forms and their surrounding program to understand what the
+edit removed or weakened. Then inspect X/G and the comparison file: which
+columns still match, which rows are extra, and whether a restriction can remove
+them. For another promising target, inspect that target's own entries as well.
+The comparison names the column mapping and differences; do not assume a key
+that the tables do not supply.
+
+Inspect one context without flattening models:
+
+```python
+x = load(tables['X']['path'])
+for e in x['entries']:
+    if e['assignment'] == 0 and e['train'] == 0:
+        print('model', e['model'], 'rows', e['row_count'])
+        print(e['rows'])
+```
+
+To find possible selector tables, list available tables with a field of the
+needed type and inspect the values in each separate entry. Compare nominal
+values only where identities are shared; Ident column overlap by numeric ID is
+not evidence across fresh tables. Inspect their callable atoms and the reader
+column requirements to choose a join. A target's columns may suggest a lib
+computation; look up its native interface in `libraries.json` and check the
+result with the command rather than implementing the library in Python.
+
+```python
+for t in pair['tables']:
+    if 'available' in t['roles']:
+        a = load(t['path'])
+        print(t['id'], t['source_name'], a['callable_atom'])
+        print([(f['name'], f['type']) for f in a['fields']])
+```
+
+To see spatial evidence, draw a Position/Box only when its native extent is
+resolved. A box occupies rows `top:height-bottom` and columns
+`left:width-right`. A Position cell covers one row and one column. Draw it on
+the train input only when its frame is that input's frame; otherwise draw a
+separate frame of its resolved extent. The train grids are ordinary nested
+integer arrays; print them or build an SVG with one colored rectangle per cell.
+Do not infer an unresolved frame from the apparent shape of its margins.
+
+## Clauses and commands
+
+Write one RULE or DET clause with head `&fix`. Read X as `&X` and other reads
+through their supplied callable atoms. INIT is not allowed. `(:Field *V)`
+binds V; `(:Field V)` joins V. NOT binds nothing. A label made by the first OR
+branch is bare in later branches; the tool also normalizes later re-starred
+labels. A zero-site atom tests nonemptiness.
+
+NOT takes one atom or form. To negate a conjunction, put its atoms together
+in one OR branch: `(NOT (OR ((atom1 ...) (atom2 ...))))`.
+
+A recovery supplies every target column at an X site or through a lib relation
+over X's columns giving exactly one row per X row; other atoms only restrict
+which X rows remain. Multirow generators such as axis_elem or dir_elem cannot
+supply recovery columns. X-reading union branches must supply needed rows and
+X must not be redundant. A clause supplying target columns at another source
+can be a partial source only where a successful path actually uses an X row;
+a syntactic X read with no rows contributes nothing.
+
+Literal `0` is allowed at a numeric, Box, Position or Offset site, or as the
+second label of a constraint whose first label is a number or Box. Position
+zero is the zero box, a cell only in a 1×1 frame. Zero is never a color; get a
+color from a relation that holds it.
+
+Write your clause in a UTF-8 file. Run it as exploration, check it as a
+recovery, or check an alternative continuation. Each command writes a new
+result directory; use a new path for each attempt:
 
 ```sh
-PYTHON=/Users/davidlu/code/arc-workspace/work/lm/data-study/ast/run/runtime-5ee2f066/venv/bin/python
-TOOL=@STUDY_CODE_ROOT@/judgetool/judge_tool.py
+"$PYTHON" "$TOOL" --pair "$PAIR_DIR" run --clause-file query.sexp --output query-result
+"$PYTHON" "$TOOL" --pair "$PAIR_DIR" check --clause-file recovery.sexp --output check-result
+"$PYTHON" "$TOOL" --pair "$PAIR_DIR" alternative --clause-file continuation.sexp --output alternative-result
 ```
 
-```sh
-"$PYTHON" "$TOOL" --pair "$PAIR_DIR" --limit 30 run --clause-file query.sexp
-"$PYTHON" "$TOOL" --pair "$PAIR_DIR" check --clause-file recovery.sexp
-"$PYTHON" "$TOOL" --pair "$PAIR_DIR" alternative --clause-file continuation.sexp
-"$PYTHON" "$TOOL" --pair "$PAIR_DIR" --limit 30 view-target --target-id T7
-"$PYTHON" "$TOOL" --pair "$PAIR_DIR" --limit 30 view-target --target-id T7 --offset 30 --assignment 0 --example train1
-```
+The whole exported result table is the default. Add `--columns '["A","B"]'`
+to select explicit output labels in order. Commands print the result filename;
+read its `result.json` and the optional `table.json` using the same Python
+recipe. Tables contain complete train rows, not previews. Result comparisons
+say how the candidate differs from each target. Receipts stay outside the files
+you read. `run` is exploration, not an answer, and has no graded outcome.
 
-`run` and `view-target` are ungraded exploration, not answers. Use the document’s target ID; G is supported too. The viewer shows only train rows, with complete counts and omissions. Offset skips rows across selected groups; assignment is zero-based in the target’s own case. Assignment and example selectors are optional. Increase the limit or page forward to see more. `--limit 0` shows schemas and counts only. Targets remain comparison-only.
+The check requires equality on every train and test input at gold's kept DET
+values. Test target rows come from gold's full replay. A continuation must read
+X and be nonempty on every train input, unequal to X and all available tables.
+If it equals a target it is checked as a recovery instead. Outcomes are recovery
+verified, partial source verified, continuation passed, refused by the engine,
+did not verify, or unknown. A replay that has no compatible kept entry or stops
+at its bound is unknown; it is not evidence that no clause exists.
 
-Without `--columns`, checks compare the whole exported table. Optional `--columns '["P","Col"]'` selects those ordered `&fix` labels; use your actual output labels. Results show the outcome, reason, source columns, counts and per-target differences.
-
-## Answer
-
-Use the supplied pair_id and render_version. Write JSON:
-
-```json
-{"schema":"judge-tool-answer-v3","pair_id":"PAIR_ID","render_version":"RENDER_VERSION","clauses":[{"kind":"recovery","clause":"(RULE &fix (&X (:P *P) (:Col *Col)))","columns":["P","Col"],"reasons":["Name the actual supporting rows or cells."]}]}
-```
-
-Use your actual clause and binding sites. Each entry has kind `recovery` or `alternative`, clause, optional columns, and one or two reasons. `clauses: []` says none found.
-
-```sh
-"$PYTHON" "$TOOL" --pair "$PAIR_DIR" final --answer answer.json
-```
+Finish with the recovery/alternative clauses you choose, their command outcomes,
+and one or two reasons per clause naming table, column, row or cell evidence.
+If none is found, say no clause found. Give no grade or label.
