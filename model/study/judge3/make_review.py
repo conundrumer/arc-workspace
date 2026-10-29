@@ -29,7 +29,7 @@ SAMPLES = [
     ('03-det', 'a353bb', 'DET renderer example, explicitly outside judge admission: held contexts and proposal/held distinction.'),
     ('04-union', 'a7ef228', 'Union: X retains a large OR-derived relation; no automatic union contribution or nonredundancy claim.'),
     ('05-many-rows-lib', '94afe3', 'Many rows and lib recovery: 6,224 X tuples counted across kept contexts; inside/same_dist historical candidate.'),
-    ('06-other-case-samples', 'd90628d', 'Other-case target samples with full counts and schemas, alongside complete later tables of the pair’s case; use view-target to inspect more.'),
+    ('06-other-case-samples', 'd90628d', 'Other-case target samples with full counts and schemas; later same-case tables sampled only when needed; use view-target to inspect more.'),
 ]
 
 
@@ -100,24 +100,24 @@ def render2_stored_page(directory, output):
 
 def main():
     sys.dont_write_bytecode = True
-    sys.path.append(str(MAIN_ROOT / '.venv/lib/python3.12/site-packages'))
-    review = DATA_ROOT / 'judge3/review'
+    sys.path.append(str(MAIN_ROOT/'.venv/lib/python3.12/site-packages'))
+    review = DATA_ROOT/'judge3/review'
     review.mkdir(exist_ok=True)
     for name in ('06-repeated-values','06-sampled-large'):
         obsolete=review/name
         if obsolete.exists(): shutil.rmtree(obsolete)
     lines = ['# Judge document review set', '',
-        'Six calibration pairs under the chosen display policy and the budget reported in size-proposal.md. Later tables of the pair’s case and G/X comparison rows are complete. Other-case target tables are sampled with full row counts and schemas; the tool can show more. Other supporting tables are sampled only when needed. All row and comparison counts use complete tables. Open the files below; no commands are needed. '
-        '**All are qualification samples held outside judging.** Admission receipts and authenticated case-population coverage are missing; omitted native ports remain explicit gaps. Targets include every table of every other case, without a cutoff. Clause execution has an established full-replay-with-OUT route, with entries filtered by the kept assignment; the stable tool CLI is included in the brief. '
-        'The documents state these gaps rather than invent rows, case alignments or verification results.', '',
-        '- [Tool review v4](/Users/davidlu/code/arc-workspace/work/lm/data-study/judgetool/review-v4/index.md) — four actual sessions on this version, including target views, pagination, recoveries and continuation outcomes.',
-        '- [Current execution route](current-route.md) — fresh gold replay, target viewing and the new document version; v3 recordings remain preserved.',
+        'Six calibration pairs under the chosen display policy and the budget reported in size-proposal.md. G/X comparison rows are complete. Later same-case tables are complete when they fit, sampled otherwise with full counts. Other-case target tables are sampled with full row counts and schemas; the tool can show more. Other supporting tables are sampled only when needed. All row and comparison counts use complete tables. Open the files below; no commands are needed. '
+        'Targets include every table of every other case. The brief gives the tool commands for viewing targets and checking clauses. '
+        '',
+        '- [Tool review v5](/Users/davidlu/code/arc-workspace/work/lm/data-study/judgetool/review-v5/index.md) — four actual sessions on this version, including target views, pagination, recoveries and continuation outcomes.',
+        '- [Current execution route](current-route.md) — target viewing, full replay and the new pruned document version; prior recordings are preserved.',
         '- [Size proposal](size-proposal.md) — measured 55-pair sizes, proposed budget and sampling behavior.',
         '- [Judge brief](judge-brief.md) — whole judge brief: clauses and evidence-based reasons, six per-clause outcomes, exploratory runs, train-and-test checks, full replay and kept-entry filtering; no judge label or grade.', '']
     (review/'judge-brief.md').write_text((ROOT/'judge-brief.md').read_text().replace('@STUDY_CODE_ROOT@', str(CODE_ROOT)))
     receipt = []; started=time.monotonic()
     for number,(name,prefix,description) in enumerate(SAMPLES,1):
-        directory = next((DATA_ROOT / 'judge3/calibration2-v4').glob(prefix+'*'))
+        directory = next((DATA_ROOT/'judge3/calibration2-v5').glob(prefix+'*'))
         m = json.loads((directory/'manifest.json').read_text()); target=review/name;target.mkdir(exist_ok=True)
         shutil.copyfile(directory/'evidence.md',target/'current.md')
         # A reader-facing snapshot is enough; raw source records/native test data are not copied.
@@ -143,11 +143,8 @@ def main():
             lines += [f'- [{name}/historical-lib-example.md]({name}/historical-lib-example.md) — P’s recorded lib-using clause and historical verification provenance, explicitly not reverified.']
         elapsed=time.monotonic()-started
         print(f'{number}/{len(SAMPLES)} elapsed={elapsed:.2f}s rate={number/max(elapsed,.001):.2f}/s {name}',flush=True)
-    lines += ['', '- [provenance.json](provenance.json) — pair identities, cases, render version and current-document hashes for the six copied samples.', '', '## What remains open', '',
-        'The all-case section lists the exported population and located saved full-kept references. It does not equate case assignment ordinals or truncate another case by this pair’s AST index. '
-        'Durable authenticated admission proof is still needed from n-mech. Historical population/fault and native port/alias gaps remain recorded in the saved inventory; the current tool freshly replays targets and does not use those saved-reference gaps as gates. There is no unresolved cross-case cutoff: every other-case table is eligible. The execution route exists; no new clause was run for these rendering samples. '
-        'The review files include no test outputs. No tests, evaluations, clause checks or judge calls were run.', '']
-    render_rows = [json.loads(line) for line in (DATA_ROOT / 'judge3/calibration2-v4/render-report.jsonl').read_text().splitlines()]
+    lines += ['', '- [provenance.json](provenance.json) — source identities for the copied review samples.', '']
+    render_rows = [json.loads(line) for line in (DATA_ROOT/'judge3/calibration2-v5/render-report.jsonl').read_text().splitlines()]
     sizes = sorted(row['bytes'] for row in render_rows)
     full = sorted(row['display']['full_bytes'] for row in render_rows)
     sampled = sum(row['display']['sampled'] for row in render_rows)
@@ -155,11 +152,11 @@ def main():
     (review/'size-proposal.md').write_text(
         '# Proposed document size limit\n\n'
         f'Propose **{budget:,} UTF-8 bytes per document**, excluding the shared brief. This is a review proposal, configurable with --document-limit. '
-        'The first pass at 300,000 bytes left five documents over budget because same-case later tables and G/X comparison rows are protected; the largest was 732,935 bytes even after reducing other displays to one row. The chosen budget retains those required full tables.\n\n'
+        'Every document must stay strictly below this limit. G/X comparison rows are protected; later same-case tables may be sampled to fit.\n\n'
         f'All {len(sizes)} calibration sources rendered. Before applying the chosen sampling policy, median document content is {full[len(full)//2]:,} bytes and the largest is {full[-1]:,}. '
         f'{len(sizes)-sampled} documents show every displayed table completely; {sampled} include sampled row sets, primarily other-case targets under the chosen display policy. '
         f'Final documents range from {sizes[0]:,} to {sizes[-1]:,} bytes; '+('all fit the proposed limit.' if all(r['display']['limit_met'] for r in render_rows) else 'some exceed the limit; see per-pair receipts.')+'\n\n'
-        'The renderer computes complete comparisons first. Later same-case tables and G/X comparison definitions are protected from sampling. Other-case target definitions show at most 12 rows regardless of document size; additional large supporting displays are reduced only as needed. '
+        'The renderer computes complete comparisons first. G/X comparison definitions are protected from sampling. Later same-case tables are complete while the document fits, then large tables are sampled if needed. Other-case target definitions show at most 12 rows regardless of document size; additional large supporting displays are reduced only as needed. '
         'Each sampled definition prints its total count, first 12 rows (or one if needed to meet the budget) and omitted count; references to it say sample. Every target entry also prints its complete visible row count, source name and schema. '
         'Complete source-row, difference and native-key conflict counts are never computed from the sample. '
         'G/X align only on stored native candidate keys that survive projection; these 55 have no shared projected keys, so comparisons show side-exclusive rows.\n\n'

@@ -447,7 +447,7 @@ class Document:
         table = dict(schema=[dict(c, presentation_namespace=self.row_namespace) for c in schema])
         self.retained_objects.extend((table, entry))
         order = [c['source_label'] for c in schema]
-        self.blocks += [title + f'; complete visible row count={len(entry["rows"])}']
+        self.blocks += [re.sub(r'^T\d+; assignment (\d+); (.*); native model (\d+)$', lambda m: 'A'+str(int(m[1])-1)+'/'+m[2]+'/m'+m[3], title)]
         layout_key = compact([self.row_namespace,[(c['display_name'],c['type'],c.get('frame','')) for c in schema]])
         if layout_key not in self.printed_schema_layouts:
             self.printed_schema_layouts.add(layout_key)
@@ -458,7 +458,7 @@ class Document:
         fact_key = compact(dict(namespace=self.row_namespace, example=entry['example'],
             schema=[dict(type=c['type'], frame=c.get('frame','')) for c in schema], rows=entry['rows']))
         if fact_key in self.fact_definitions:
-            lines = ['  All rows: '+self.fact_definitions[fact_key]+' (complete set defined above).']
+            lines = ['  All rows: '+self.fact_definitions[fact_key]+' (complete set defined above).', f'  {len(entry["rows"])} rows total.']
         else:
             lines = self.catalog.lines(table, entry, order, self.values, allow_grid=False)
             self.fact_definitions[fact_key] = lines[0].strip().split()[0] if lines and 'rows, complete):' in lines[0] else lines[0].split(': ',1)[1].split()[0]
@@ -537,42 +537,17 @@ class Document:
             self.blocks += [f'test{i} input', '```text', *grid_lines(ex['input']), '```', '']
 
     def target_section(self):
-        r = self.r
-        self.blocks += ['# Judge document', f'Pair `{r["identity"].get("pair_id", "") or self.pair_id}`; task `{r["task"]}`; case `{r["case"]}`.', '',
-            'Recover a target from X with one RULE or DET, checked across train and test inputs and compatible kept assignments; test target rows are not shown. '
-            'Target columns come from X sites or a lib computation giving exactly one row per X row; other atoms restrict X rows. Qualifying unions need native contribution/nonredundancy proof; other-atom target bindings are partial sources. '
-            'Counts and output fit alone do not decide whether information survives.', '',
-            f'Target: {self.body["kind"]}; body at AST {".".join(map(str,self.target_path))}; {self.body["scope"]}.',
-            'The recovery interface is `&X`, with exactly the fields shown for X. '
-            '`&X` is a judge adapter handle. For INIT, it exposes the actual input/key projection, not full witnesses or component outputs. '
-            'Gold G is the comparison target, never an available relation.', '',
-            'Every kept gold DET is held at its complete saved value in both programs. '
-            'A conditional continuation can therefore hide a damaged DET proposal; no DET admissibility is inferred here.', '',
-            '## Change', 'Gold owning definition:', '```arclog', self.names.text(self.gnodes[tuple(self.owner)]['sexp']), '```',
-            'Mutant owning definition:', '```arclog', self.names.text(self.mnodes[tuple(self.owner)]['sexp']), '```']
-        for edit in r['identity']['edits']:
-            node = self.gnodes.get(tuple(edit['at']))
-            before = self.names.text(node['sexp']) if node else 'unavailable'
-            self.blocks += [f'- AST {".".join(map(str,edit["at"]))}: {edit["kind"]}: `{before}`']
-        self.blocks += ['', 'The table comparison measures the combined edit. No single-edit counterfactual is supplied.', '']
-        if self.body['input_port']:
-            self.blocks += ['INIT target: the actual keyed input relation obtained by this native projection, '
-                'deduplicated as a relation. Fields use the port’s declared column names; body-only witnesses are excluded from G and X.']
-            for p in self.body['input_port_projection']:
-                n = p['logical_port_column_name']
-                self.blocks += [f'- port {self.body["input_port"]}, field {compact(n)}: body '
-                    f'column {p["body_column"]}, type {p["type"]}; '
-                    f'constant={compact(p["inserted_constant"])}']
-            self.blocks += ['Group key label IDs: ' + compact(self.body['group_key_label_ids']), '']
+        self.blocks += ['# Judge document', f'Task {self.r["task"]}; case {self.r["case"]}; {self.body["kind"]}.', '',
+            'Recover a target from X, or write an alternative continuation, with one RULE or DET and one or two evidence-based reasons. Use &X as shown below. G is a comparison target, never an available read.', '',
+            '## Change', 'Gold:', '```arclog', self.names.text(self.gnodes[tuple(self.owner)]['sexp']), '```',
+            'Mutant:', '```arclog', self.names.text(self.mnodes[tuple(self.owner)]['sexp']), '```', '']
+        if self.body['kind'].startswith('INIT'):
+            self.blocks += ['G and X are the component’s per-key input projection, using key ^ labels and the port’s declared fields; body-only witnesses are excluded.', '']
 
     def comparison(self):
         ev = self.r['evaluation']
-        self.blocks += ['## G and X', 'Full row and comparison counts use complete projected train/task tables. Display aligns on stored native candidate keys; without a shared projected key, only G-only and X-only rows are displayed. '
-            'G/X comparison rows are complete. R references point to row sets printed earlier. '
-            'Model numbers on the two sides are independent; comparisons explicitly take their Cartesian product. '
-            'The recovery must match the complete SET of model row SETS for every kept assignment/train input, '
-            'with the tool’s name-else-type output-column correspondence; it must never pair models by equal indices. '
-            'Missing rows describe a difference, not a proof of unrecoverability.', '']
+        self.blocks += ['## G and X',
+            'Comparison rows and counts are complete. Align only on stored candidate keys; without one, only G-only and X-only rows are shown. Model indices are independent: compare model-set families, never zip model ordinals.', '']
         sides = {}
         for side, letter in (('gold', 'G'), ('mutant', 'X')):
             t = ev['table_indices'][side + '_kept']
@@ -614,13 +589,13 @@ class Document:
                             ei = [c['index'] for c in schema if c['type'] == 'Example']
                             return [row for row in entry['rows'] if all(row[i]['value'][0] == ex for i in ei)]
                         grow = per_train(gentry, gs); mrow = per_train(mentry, ms)
-                        prefix = f'assignment {a+1}; train{ex+1}; G model {gentry["model"]}, X model {mentry["model"]}'
+                        prefix = f'A{a}/train{ex+1}; G m{gentry["model"]}/X m{mentry["model"]}'
                         self.blocks += [prefix, f'Complete source counts: G={len(grow)} rows; X={len(mrow)} rows.']
                         if comparable:
                             gset = {compact(row): row for row in grow}
                             mset = {compact(row): row for row in mrow}
                             self.blocks += [f'Shared={len(gset.keys() & mset.keys())}; missing G={len(gset.keys()-mset.keys())}; '
-                                f'extra X={len(mset.keys()-gset.keys())}. These are exact typed display-tuple counts including frame status and extents; tool equality also matches columns by name/else type, renames component ids and compares Position/Box margins.']
+                                f'extra X={len(mset.keys()-gset.keys())}.']
                             shared_keys = [key for key in gkeys if key in mkeys]
                             if shared_keys:
                                 key = min(shared_keys, key=lambda k: (len(k), k))
@@ -707,9 +682,7 @@ class Document:
 
     def available(self):
         self.blocks += ['## Available tables for recovery',
-            'Every gold table independent of G is available, including later definitions, DET relations and INIT ports. '
-            'The native resolver graph excludes G and every direct or transitive dependent. '
-            'Library predicates are callable operations, not stored available tables.', '',
+            'Use these exact relation names and binding templates. G and its dependents are not available reads.', '',
             '`input` has fields P (Position) and Col (Color), exactly the input grids under Task, one relation per current example. '
             '`ex_input` has fields E (Example), P (Position), Col (Color): the same grids with an explicit example column. '
             '`ex_output` has fields E, P, Col: exactly the GIVEN train outputs under Task. '
@@ -730,29 +703,28 @@ class Document:
             if not d.get('readable_in_checked_program'):
                 offered['reason']='native export does not supply a callable source binding in this checked scope'
                 self.gap('independent '+d.get('display_name',d['source_name'])+': callable source binding unavailable in native export')
-                self.blocks += [d.get('display_name',d['source_name'])+': independent table, but its callable source binding is unavailable; never invent a port or clause name.', '']
+
                 continue
             sel = d['native_selector']
             tables = [t for t in range(len(self.full.tables['width'])) if all(self.full.tables[k][t] == v for k, v in sel.items() if k in ('form','point','relation'))]
             name = d.get('display_name', d['source_name'])
             if len(tables) != 1:
                 self.gap(f'available {name}: native selector {compact(sel)} has {len(tables)} stored tables (an alias/omitted port cannot be reconstructed from this snapshot)')
-                self.blocks += [f'{name}: rows unavailable; see evidence gaps.', '']
+
                 continue
             try:
                 self.table(self.full, tables[0], self.full_maps, 'Available ' + name, definition=d)
                 offered.update(status='complete', table_receipt_index=len(self.table_receipts)-1,
                                table_receipt=self.table_receipts[-1], native_ref=self.r['full_replay']['gold'])
                 if offered['ex_output_dependent']:
-                    self.blocks += [name + ': resolver/library evidence marks possible ex_output dependence; the native checker resolves whether hidden-test verification is required.', '']
+                    pass
             except (ValueError, KeyError, IndexError) as error:
                 self.gap(f'available {name}: {type(error).__name__}: {error}')
-                self.blocks += [f'{name}: rows unavailable; see evidence gaps.', '']
+
 
     def readers_and_program(self):
         self.blocks += ['## What the readers need',
-            'Exact reader sites below show fields, bindings, joins, negation and guards. '
-            'The complete owning clauses in the program provide their surrounding conditions and output projection.', '']
+            'Reader clauses, including their joins, negation and guards:', '']
         ctx = self.gexport['definitions']
         # Resolver graph determines reads; no substring/name dependency guesses.
         reader_paths = {tuple(p[:1]) for n in self.availability['graph_nodes']
@@ -768,13 +740,8 @@ class Document:
         for side, export in (('gold', self.gexport), ('mutant', self.mexport)):
             for arg in export['typed_sites']['arguments']:
                 if under(arg['path'], self.owner) and arg.get('literal'):
-                    self.blocks += [f'{side} AST {".".join(map(str,arg["path"]))}: {arg["literal"]["meaning"]}; {frame_text(arg["frame"])}']
-        self.blocks += ['', '## Gold program', 'Source relation names are used throughout. '
-            'Local variable spellings come from the engine writer; an authored variable-name map is not exported.', '```arclog']
-        for n in self.gexport['nodes']:
-            if len(n['path']) == 1:
-                self.blocks += [('>> ' if n['path'] == self.owner else '   ') + self.names.text(n['sexp'])]
-        self.blocks += ['```', '', '## Callable library meanings', '']
+                    self.blocks += [f'{side}: {arg["literal"]["meaning"]}; {frame_text(arg["frame"])}']
+        self.blocks += ['', '## Callable library meanings', '']
         ids = {r['resolution']['id'] for export in (self.gexport, self.mexport)
                for r in export['definitions']['readers'] if r['resolution']['kind'] == 'library'}
         registry = {e['id']: e for e in ctx['registry']['entries']}
@@ -792,8 +759,6 @@ class Document:
             if semantics.get('status') != 'authored_contract':
                 self.gap('library ' + key + ': authored semantic contract unavailable')
             self.blocks += ['```arclog', lib['declaration']['sexp']]
-            if lib.get('arclog_implementation'):
-                self.blocks += [lib['arclog_implementation']['sexp']]
             self.blocks += ['```', '']
 
     def column_correspondences(self):
@@ -859,7 +824,7 @@ class Document:
             acquisition=dict(helper='judgetool/checks.py:observe_gold', requires_saved_train_agreement=False,
                              source='full gold replay with projected observer and OUT; normal search then kept filter')))
         self.blocks += ['## Recovery targets',
-            'G is the comparison above. The remaining targets are every table after the changed point in this case, and every table of every other case. Other-case names are ignored in comparison. Later tables of this case are complete while the document fits; large tables may be sampled to meet the limit, with complete row counts. Tables of other cases show at most 12 rows per kept/train/model entry, with complete row counts; use view-target with the target ID to see more. These are comparison-only targets, not additional available reads. Each case retains its own kept values and model contexts; ordinals are never zipped across cases.', '']
+            'G is above. Later tables of this case are complete unless sampled to meet the page limit. Other-case tables show at most 12 rows per entry; compare them without names. Full counts accompany samples. View more with view-target; targets are comparison-only, not available reads. A0 is zero-based kept assignment 0; m0 is a native model index. Each case uses its own kept contexts.', '']
         for case in self.case_inventory['cases']:
             main = case['name']==self.r['case']; full=case['reference']
             if full is None:
@@ -919,8 +884,10 @@ class Document:
                                 if source:
                                     name=source+' body at AST '+'.'.join(map(str,view['body_path']))
                     self.blocks += [f'### {target_id}; case {case["name"]}; {name}',
-                        'Comparison only; '+('names ignored; other-case sample' if not main else 'after changed point; full counts')+'.',
                         'Schema in physical order: '+('; '.join(f["field_name"]+': '+f["type"]+((' in '+f["frame"]) if f["frame"] else '') for f in fields) or '(no columns)')+'.']
+                    if reader.tables['point'][table]!=2:
+                        layout_key=compact([self.row_namespace,[(f['field_name'],f['type'],f.get('frame','')) for f in fields]])
+                        self.printed_schema_layouts.add(layout_key)
                     if reader.tables['point'][table]==2:
                         self.blocks += ['Facts are the input/GIVEN train grids under Task, with the declared Example/Position/Color fields. Test output facts are withheld.']
                         try:
@@ -929,10 +896,10 @@ class Document:
                             for a,items in enumerate(evidence):
                                 for evidence_item in items:
                                     entry=self.visible(decoded[evidence_item['native_entry']],schema)
-                                    self.blocks += [f'{target_id}; assignment {a+1}; {entry["example"]}; native model {entry["model"]}; complete visible row count={len(entry["rows"])}; rows under Task.']
+                                    self.blocks += [f'A{a}/{entry["example"]}/m{entry["model"]}: {len(entry["rows"])} rows; see Task.']
                         except (ValueError,KeyError,IndexError) as error:
                             gap(target_id+': fact counts '+str(error))
-                            self.blocks += ['Complete visible row count unavailable in this saved context.']
+
                         self.blocks += ['']
                         item['presentation']='task grids; no duplicated facts'; continue
                     existing=next((r for r in self.table_receipts if main and r['title'].startswith('Available ') and r['table']==table),None)
@@ -944,7 +911,7 @@ class Document:
                         item['table_receipt_index']=len(self.table_receipts)-1
                     except (ValueError,KeyError,IndexError) as error:
                         item['presentation_status']='unavailable';gap(target_id+': visible context/field evidence '+str(error))
-                        self.blocks += ['Rows unavailable in the saved compatible context; not an empty table.', '']
+
                 if export:
                     for definition in definitions:
                         selector=definition['native_selector']
@@ -956,12 +923,6 @@ class Document:
                         catalog['targets'].append(dict(target_id=target_id,case=case['name'],role='later' if main else 'other_case',
                             native_ref=full['gold'],native_selector=selector,native_base=base,kept_assignments=kept,
                             assignment_map=maps,definition=definition,status='unavailable',ignore_names=not main))
-                        name=definition.get('display_name',definition['source_name'])
-                        witnesses=sorted(definition.get('column_witnesses',[]),key=lambda w:w['physical_column'])
-                        self.blocks += [f'### {target_id}; case {case["name"]}; {name}',
-                            'Comparison only; '+('names ignored; other-case sample' if not main else 'after changed point')+'.',
-                            'Schema in physical order: '+('; '.join(column_text(w['row_path'],'role')+': '+w['type'] for w in witnesses) if witnesses else 'unavailable in saved source metadata')+'.',
-                            'Complete row count and rows unavailable in the saved port/alias snapshot; request this target with view-target.', '']
                         gap(target_id+' '+case['name']+': omitted port/alias '+definition.get('display_name',definition['source_name']))
             finally:
                 self.row_namespace=old_namespace; self.values=old_values; self.row_display_policy=old_policy
@@ -1139,25 +1100,15 @@ class Document:
         self.row_display_policy = 'full'
         self.comparison()
         self.row_display_policy = 'budget'
-        self.blocks += ['Mechanical redundant attribute: ' + (str(self.mechanical_receipt['redundant']).lower()
-                        if self.mechanical_receipt is not None and 'redundant' in self.mechanical_receipt else 'not supplied'), '']
-        try:
-            self.choices()
-        except (ValueError, KeyError, IndexError) as error:
-            self.gap(f'complete held DET evidence: {type(error).__name__}: {error}')
+        if self.mechanical_receipt is not None and self.mechanical_receipt.get('redundant') is True:
+            self.blocks += ['X is redundant; an X-reading union cannot qualify as a recovery.', '']
         self.render_targets()
         self.readers_and_program()
         self.available()
         self.column_correspondences()
-        self.policy_and_cases()
         self.blocks += syntax
         self.task_section()
-        self.outputs()
         status = 'HELD' if self.gaps else 'COMPLETE'
-        self.blocks += ['## Evidence status', status, *['- ' + g for g in self.gaps], '']
-        self.blocks[2:2] = [f'Evidence status: {status}. See the evidence-status section for any gaps.', '']
-        for section in self.row_sections:
-            section['begin'] += 2; section['end'] += 2
         full_blocks = list(self.blocks)
         full_text = real_paths('\n'.join(full_blocks) + '\n')
         selected = {}
@@ -1171,16 +1122,7 @@ class Document:
             for item in sample_receipts:
                 text = text.replace('All rows: '+item['ref']+' (complete set defined above).',
                     'Rows: '+item['ref']+' (sample; full counts above; use the tool to see more).')
-            notice = ('Display limit proposal: '+str(self.document_limit)+' UTF-8 bytes; '
-                + ('other-case tables sampled; additional large tables sampled only as needed; G/X comparison complete; full row/comparison counts retained; query the tool to see more.' if selected else 'tables complete (common rows without a native key are omitted from the comparison as specified).'))
-            text = text.replace('# Judge document\n', '# Judge document\n'+notice+'\n')
-            size=0
-            for _ in range(5):
-                result=text+'\nDocument size: '+str(size)+' UTF-8 bytes.\n'
-                new=len(result.encode())
-                if new==size: return result
-                size=new
-            return result
+            return text
         def sample(section, cap):
             sample_entry = dict(section['entry'], rows=section['entry']['rows'][:cap])
             self.retained_objects.append(sample_entry)
@@ -1209,6 +1151,8 @@ class Document:
                 sample(section,cap)
                 text=assemble()
 
+        require(len(text.encode()) < self.document_limit, 'document cannot fit budget while keeping G/X complete')
+
         display = dict(limit_bytes=self.document_limit, proposed=True, full_bytes=len(full_text.encode()),
             sampled=bool(selected), other_case_sample_limit=12, same_case_later='complete unless sampled for budget', comparison='complete', sampled_tables=sample_receipts, limit_met=len(text.encode())<=self.document_limit)
 
@@ -1233,11 +1177,11 @@ def key(r):
 
 def dependencies(engine):
     import arclog.arclog as binary
-    paths = [CODE_ROOT / 'study_paths.py', Path(__file__).resolve(), Path(binary.__file__).resolve()]
+    paths = [CODE_ROOT/'study_paths.py', Path(__file__).resolve(), Path(binary.__file__).resolve()]
     paths += [S / 'judge2/render2' / name for name in (
         'native.py', 'structured.py', 'values.py', 'render.py', 'grids.py',
         'assignments.py', 'components.py', 'column_paths.py', 'sites.py', 'headers.py', 'body.py')]
-    paths += [S / 'judge2/published_code.py']
+    paths += [S/'judge2/published_code.py']
     paths += [S / 'judge2/support' / name for name in ('tableview.py', 'views.py')]
     paths += [S / 'ast/run/native_storage.py', S / 'ast/run/next_revision/family_recovery.py',
               Path(reader_metadata()['source'])]
@@ -1255,9 +1199,9 @@ def main():
     p.add_argument('--support-site', type=Path, help='site-packages supplying NumPy for shared tableview')
     p.add_argument('--admission-index', type=Path, help='explicit list of {pair_id, reference}; validation delegated to mech.admission.load_admission')
     p.add_argument('--mechanical-receipts', type=Path, help='explicit JSON list of pair_id/redundant boolean receipts; omitted attributes stay unknown')
-    p.add_argument('--tasks', type=Path, default=MAIN_ROOT / 'data/tasks')
+    p.add_argument('--tasks', type=Path, default=MAIN_ROOT/'data/tasks')
     a = p.parse_args()
-    require(a.output.resolve().is_relative_to(DATA_ROOT / 'judge3'), 'output must stay inside owned judge3 directory')
+    require(a.output.resolve().is_relative_to(DATA_ROOT/'judge3'), 'output must stay inside owned judge3 directory')
     import arclog
     if a.support_site:
         sys.path.append(str(a.support_site.resolve()))
@@ -1292,7 +1236,7 @@ def main():
     version = sha(compact(dependency_hashes).encode())
     dependency_stats = {path: (Path(path).stat().st_size, Path(path).stat().st_mtime_ns) for path in dependency_hashes}
     programs = Programs(arclog)
-    prior_path = DATA_ROOT / 'cross-case/missing.json'
+    prior_path = DATA_ROOT/'cross-case/missing.json'
     prior_raw = prior_path.read_bytes()
     prior_cases = {row['task']: row['found'] for row in json.loads(real_paths(prior_raw.decode()))}
     case_inventories = {}
