@@ -155,3 +155,27 @@ The new display rollout and target-view recordings are in
 55-pair calibration2-v4 document version. Frozen v3 recordings are preserved in
 `review/`. The v4 view recordings include a later same-case target and two
 pages of an other-case target, with kept/input selectors and complete counts.
+
+## Case collection for mechanical consumers
+
+`case_collector.acquire_case(ev, record, case_context, ntrain, ntest)` collects
+unscoped native tables and BODY observers in one full gold replay, cached by
+case/program/kept values/settings. The JSON-serializable bundle retains each
+original table's full `native_schema` from `reader.schema(table)`. Source code
+comes from `CODE_ROOT`; relative catalogue paths resolve under `DATA_ROOT`;
+source-name recovery uses `MAIN_ROOT` through `study_paths`.
+
+`select_pair(bundles, record, adapter, ev=ev)` selects the point projection,
+later same-case tables and all other-case tables without another replay.
+Available references carry their original physical schema for the canonical
+callable provider; this metadata does not grant read access. `compare_target`
+uses the shared comparator, including Cartesian contexts across cases, for
+whole-table equality or projected containment. `evaluate_cached` delegates to
+the existing clause checker with cached targets and one mutant replay by
+default. Additional provenance operations that exceed that cap remain unknown.
+Persist bundles and call `clear_cache(ev)` at the task boundary to release them.
+
+This additive collector has source/syntax review only; no collector replay or
+runtime qualification has been performed. Unsupported BODY observers remain
+explicit gaps. The v5 recorded sessions use the existing tool route and remain
+data under `DATA_ROOT/judgetool/review-v5`, separate from collector qualification.
