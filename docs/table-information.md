@@ -17,7 +17,7 @@ The scripts are under [table-information/](../work/table-information/): `pertabl
 Each stage includes the ones before it:
 
 1. One table per relation.
-2. One table per assignment, as the encoder reads them (`lm/encoder.py`).
+2. One table per assignment, as the encoder reads them (`model/encoder.py`).
 3. Stage 2 minus the engine's one-atom input cut (C20-73), which keeps an input whose atom reads a lib relation. An engine with that cut already has this stage at stage 2.
 4. Clause tables projected onto the columns read.
 5. Instance outputs projected too.

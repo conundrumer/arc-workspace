@@ -5,7 +5,7 @@ separate, versioned sidecar, captured from `WrittenStream.relations` in the
 original case-file writer. No printed-program or source-text matching is used.
 The source pipeline is `stream::corpus::solver_streams` with `WantedCases::Named`,
 including `cases/<task>/` overrides and the same zero-column lowering used by
-`lm/export.py`.
+`model/export.py`.
 
 Obtain a map once per task/case from the gold handle made by `from_stream`:
 

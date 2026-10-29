@@ -2,7 +2,7 @@
 
     <LM venv>/bin/python -u engine/arclog-py/roundtrip_check.py [--export-python <python>] [--keep <dir>] [--from <export dir>]
 
-Run it from the repo root, with the interpreter of the LM work's venv (the `load` stage imports `lm/encoder.py`, which imports
+Run it from the repo root, with the interpreter of the LM work's venv (the `load` stage imports `model/encoder.py`, which imports
 torch). It runs three stages and prints `PASS <stage> (<s>s)` or `FAIL <stage> (<s>s)` with the stage's output for each, and
 exits 1 where any stage fails:
   export  `tables_export.py` with `--all-cases` on `TASKS`, in a temporary directory (`--keep <dir>`, which must not exist,
@@ -10,7 +10,7 @@ exits 1 where any stage fails:
           where the run exits other than 0.
   checks  `export_checks.check_export` on that export with the values of every case checked; fails on any violation and on
           any non-empty line of the export's `checks.txt`.
-  load    `lm/encoder.py` `load_tables` on that export, with a cache directory in the temporary directory, `strict=True` and
+  load    `model/encoder.py` `load_tables` on that export, with a cache directory in the temporary directory, `strict=True` and
           `allow_violations=False`; fails where it raises.
 `--from <export dir>` skips `export` and runs the other two on that export, such as a full export or a kept one.
 
@@ -23,7 +23,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
-sys.path[:0] = [str(HERE), str(ROOT / "lm")]
+sys.path[:0] = [str(HERE), str(ROOT / "model")]
 
 # The tasks whose cases the Evidence of the named tickets gives, less a64e4611 (20-146, 20-150; its export takes about 80 s)
 # and a8d7556c (20-153; about 112 s), whose exports take over 20 s.

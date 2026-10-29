@@ -1,4 +1,4 @@
-//! Reader names from the same case-file pipeline and stream writer as lm/export.
+//! Reader names from the same case-file pipeline and stream writer as model/export.
 use std::path::Path;
 use serde_json::{Value,json};
 use crate::check::CheckedProgram;

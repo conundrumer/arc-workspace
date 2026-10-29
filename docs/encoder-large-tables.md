@@ -171,7 +171,7 @@ The median table has 42 rows, and the median entry 7. Tables over 10,000 rows oc
 
 ## Code
 
-- `lm/encoder.py`: the loader, `unseen_counts`, `mark_over_budget`, and the flags `--enc-budget`
+- `model/encoder.py`: the loader, `unseen_counts`, `mark_over_budget`, and the flags `--enc-budget`
   (the per-entry assertion, 10,000) and `--enc-max-rows` (the table cap, 4,000) in
-  `lm/train.py`.
-- `lm/README.md`, section Encoder: the flags and the development data.
+  `model/train.py`.
+- `model/README.md`, section Encoder: the flags and the development data.

@@ -14,7 +14,7 @@ the case holds only the tables of the steps at or after token `n`, numbered from
 first tables. `check_case` checks the own tables, entries, runs and values of such a case, with the base's tables below `k` as the earlier tables its flow and
 copy checks read, and checks no base table again; a `bases` row whose base is absent, has a base or does not hold `k` tables before token `n`, is a violation.
 
-`--streams <dir>` also reads `cases.npz` of the streams export (`lm/export.py`) in that directory and checks
+`--streams <dir>` also reads `cases.npz` of the streams export (`model/export.py`) in that directory and checks
 that each table of the export other than an evidence table has a token inside its case's stream at a step the
 model writes, that the stream's mask admits each model-written token, and that each case of the streams export
 has tables. The number of cases with tables and no stream is printed and is no violation.

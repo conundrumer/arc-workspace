@@ -6,7 +6,7 @@ It needs an interpreter with `arclog`, pandas and pyarrow, such as the LM work's
 
 Runs one `arclog.corpus_tables` call per task id, the longest first, on a queue of worker processes (`run_in_worker`), at most N jobs at once beside the main process, where N is
 `ARCLOG_THREADS` if set and `os.cpu_count()` otherwise: a call of a task of `u` units holds `u` of N slots while it runs, and each check of a part (in a check process) and each write of a task's directory
-under `tasks/` holds one slot; the check and the writes of a replayed task run in the one slot its call keeps (`Slots`). `replay_order` gives the order, which `lm/export.py` takes too: the tasks the export `--previous` gives no seconds for, or all tasks where none is given, by the largest
+under `tasks/` holds one slot; the check and the writes of a replayed task run in the one slot its call keeps (`Slots`). `replay_order` gives the order, which `model/export.py` takes too: the tasks the export `--previous` gives no seconds for, or all tasks where none is given, by the largest
 `.arcdata` file first, then the others by the one-thread seconds each took in that export (see `parts/<k>.tasks.txt`: the line's seconds times its units), longest first. A task whose one-thread seconds would end past half the mean load of a worker (the summed one-thread seconds of the
 tasks to replay over N) is replayed in `units` units on `units` engine threads, the least count (at most N and at most the cases the previous export
 holds for the task) at which its expected unit time, `1 + (units - 1) / 14` times its seconds over `units`, is under that bound; any other
@@ -153,7 +153,7 @@ Every 10 s a line gives `<k> of <n> tasks ended, <s> s, about <t> s left, runnin
 the ended tasks (done ones of an earlier run included), the seconds since the start, the seconds left (`?` while no
 task has ended in this run), then the tasks running past 10 s, longest first (the first 10 and a count of the rest
 where more), each with the seconds since its call started and the share of its model steps done, as
-arclog.ReplayProgress gives them. `print_progress` prints it, and `lm/export.py` calls it too.
+arclog.ReplayProgress gives them. `print_progress` prints it, and `model/export.py` calls it too.
 
 `export_streams(out, task, streams, names=None, settings=None, bodies=False, step_cap=10000, bases=None)` writes the same layout
 for the token streams of one task, for a caller that imports the module: `streams` is a list of `(ids, model)`
