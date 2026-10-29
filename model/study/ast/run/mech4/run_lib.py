@@ -93,7 +93,6 @@ class Worker:
         if force or elapsed-self.last>=5:
             rate=done/max(elapsed,.001);eta=f'{(total-done)/rate:.1f}s' if rate else 'unknown'
             print(f'phase={phase} done={done}/{total} elapsed={elapsed:.1f}s rate={rate:.3f}/s ETA={eta} '
-                  f'absent_normal={self.queue_meta["summary"].get("normal_excluded",0)+self.counts["normal_excluded"]} '
                   f'counts={dict(self.counts)} gold={dict(self.contexts.stats)}',file=sys.stderr,flush=True)
             self.last=elapsed
 
@@ -223,13 +222,6 @@ class Worker:
             availability={k:v for k,v in current.items() if k!='record'}
             pair_inputs=dict(source_sha256=job['source_sha256'],base_result_sha256=digest(base),
                              availability=availability,hint=job['hint'])
-            normal=normal_evidence(Path(job.get('normal_database',NORMAL_DATABASE)),job['pair_id'],
-                job['source_sha256'],job['base_result_ref']['result_sha256'])
-            if normal.get('normal') is not True:
-                self.counts['normal_excluded']+=1
-                self.counts['non_normal' if normal.get('normal') is False else 'normal_unavailable']+=1
-                done+=1;self.report(done,total);continue
-            pair_inputs['normal']=normal
             key=digest(dict(pair=job['pair_id'],target='G'))
             result=self.journal.get('pair',key,pair_inputs)
             if result is not None and result.get('interrupted') is not True:
@@ -251,8 +243,7 @@ class Worker:
                             search_status='unavailable',reason=str(error),error_type=type(error).__name__,
                             admission_authenticated=False,found_recovery=False,mechanical_clauses=[])
                 result.update(code_sha256=self.journal.code,code_manifest=self.files,config_sha256=self.journal.config,
-                    config=self.config,grade_availability=availability,normal=normal,
-                    normal_database=job.get('normal_database',str(NORMAL_DATABASE)),elapsed_seconds=time.monotonic()-started)
+                    config=self.config,grade_availability=availability,elapsed_seconds=time.monotonic()-started)
                 self.guard.check();self.journal.put('pair',key,pair_inputs,result);self.counts['pairs_written']+=1
                 self.contexts.store.cache.clear()
             self.counts[result['search_status']]+=1;done+=1
@@ -260,11 +251,7 @@ class Worker:
         self.report(done,total,force=True)
         summary=dict(schema='mech4-summary-v1',scope='G only',complete=done==total and not STOP,done=done,total=total,
             queued_total=len(rows),requested_limit=self.a.limit,scope_complete=done==len(rows) and not STOP,
-            counts=dict(self.counts),
-            normal_excluded=self.queue_meta['summary'].get('normal_excluded',0)+self.counts['normal_excluded'],
-            non_normal=self.queue_meta['summary'].get('non_normal',0)+self.counts['non_normal'],
-            normal_unavailable=self.queue_meta['summary'].get('normal_unavailable',0)+self.counts['normal_unavailable'],
-            preparation_normal_excluded=self.queue_meta['summary'].get('normal_excluded',0),gold=dict(self.contexts.stats),elapsed_seconds=time.monotonic()-self.started,
+            counts=dict(self.counts),gold=dict(self.contexts.stats),elapsed_seconds=time.monotonic()-self.started,
             database=str(self.a.output.resolve()),code_sha256=self.journal.code,config_sha256=self.journal.config,
             final_grades='owned by n-mech; this database supplies checked G candidates only')
         self.a.output.with_suffix('.summary.json').write_text(json.dumps(summary,indent=2)+'\n')

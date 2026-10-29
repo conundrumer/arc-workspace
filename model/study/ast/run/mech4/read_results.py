@@ -1,5 +1,5 @@
 """Read-only validity adapter; a valid bounded result is never a negative."""
-from .common import readonly,digest,normal_evidence,NORMAL_DATABASE
+from .common import readonly,digest
 from pathlib import Path
 from functools import lru_cache
 import hashlib
@@ -37,9 +37,6 @@ def load_result(database,pair_id,*,source_sha256,base_result_sha256):
                 or digest(result['code_manifest'])!=row[0] or result['code_sha256']!=row[0]
                 or digest(result['config'])!=row[1] or result['config_sha256']!=row[1]):
             raise ValueError('pair/source/base/code/config/result receipt differs')
-        normal=normal_evidence(result.get('normal_database',NORMAL_DATABASE),pair_id,source_sha256,base_result_sha256)
-        if normal.get('normal') is not True:
-            return dict(status='excluded',valid=False,reason='mutant normal form false or unavailable',normal=normal)
         if result.get('interrupted'):raise ValueError('pair was interrupted before completion')
         for name,expected in result['code_manifest'].items():
             # Older manifests included the prose specification. Preserve its

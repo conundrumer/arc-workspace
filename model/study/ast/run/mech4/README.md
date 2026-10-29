@@ -12,7 +12,7 @@ No tests or native evaluations were run while building this source.
 
 ## Queue and new work
 
-Only mutants for which the shared `mech2.read_normal.load_normal` reader returns `normal is True` enter the queue or execute a labeling pass. Its source/base-bound receipt comes from DATA_ROOT/ast/run/mech2/normal.sqlite3; false, missing, stale and unavailable classifications are excluded. Preparation and runtime summaries report non-normal and unavailable exclusions separately, and runtime summaries retain the preparation exclusion total. A queue prepared before this filter should be rebuilt for complete population exclusion counts. The result reader rechecks current normality and returns `status="excluded", valid=false` when it is false or unavailable.
+Labeling may process all pairs regardless of normal form. Study consumers apply the shared `mech2.read_normal` eligibility check when counting grades or fitting; non-normal and unavailable mutants are absent from those counts. This runner reports search attempts, not scientific grade counts.
 
 The queue is a hint supplied by n-mech: base `overapproximation` without a train-verified witness, or a per-assignment `search_bound`, excluding base fit/error records and currently valid non-Unknown grades. Missing or stale grade evidence and a valid Unknown remain distinct in the queue receipt. This is not an authenticated containment or judge-admission certificate.
 
@@ -49,7 +49,7 @@ result = load_result(database, pair_id,
 
 `status="done", valid=true` means a completed attempt whose producer files and source/base/result bindings remain valid. It returns `search_status`, checked `mechanical_clauses`, `found_recovery` and the full durable record. A clause's receipt references the checked canonical evaluator result. `found_recovery` requires a normalized `recovery verified` clause with complete TRAIN+TEST and admitted X-row provenance. Partial-source outcomes are retained separately. The final grade and attributes are reduced by n-mech.
 
-Missing, stale, interrupted or corrupt result records return `status="open", valid=false` with a reason. A valid done `bound_unknown` or `unavailable` leaves other searches open. Every response has `final_grade=None` and `admission_authenticated=false` when valid; this API grants no admission.
+Missing, stale, interrupted or corrupt records return `status="open", valid=false` with a reason. A valid done `bound_unknown` or `unavailable` leaves other searches open. Every response has `final_grade=None` and `admission_authenticated=false` when valid; this API grants no admission.
 
 ## Coordinator commands after prerequisites merge
 
