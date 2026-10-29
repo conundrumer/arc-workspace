@@ -14,19 +14,28 @@ FORMAT = 'judge-dataset-v1'
 def write_json(path, value):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    text = json.dumps(value, ensure_ascii=False, allow_nan=False, indent=2) + '\n'
     temporary = path.with_suffix(path.suffix + '.tmp')
-    temporary.write_text(text, encoding='utf-8')
-    temporary.replace(path)
+    try:
+        with temporary.open('w', encoding='utf-8') as stream:
+            json.dump(value, stream, ensure_ascii=False, allow_nan=False, indent=2)
+            stream.write('\n')
+        temporary.replace(path)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 def table_packet(acquired, *, table_id, source_name, case, roles,
-                 callable_atom=None):
+                 callable_atom=None, copy_rows=True):
     """Package evaluator_train.acquire_train_table output, without truncation.
 
+    copy_rows=False validates the same cells/axes but shares read-only acquired
+    rows through the synchronous writer; the default retains independent cells.
     Empty rows are real empty relations; missing contexts remain explicit.
     A native TASK entry must have been broadcast by the evaluator, not here.
     """
+    if type(copy_rows) is not bool:
+        raise ValueError("copy_rows must be boolean")
     fields = []
     for index, field in enumerate(acquired['fields']):
         name = field.get('field_name', field.get('display_name', field.get('name')))
@@ -54,7 +63,7 @@ def table_packet(acquired, *, table_id, source_name, case, roles,
                 if not isinstance(cell, dict) or not isinstance(cell.get('value'), list):
                     raise ValueError('cells must retain the native decoded value object')
             # Keep native extent/status evidence, rather than infer a frame.
-            rows.append(deepcopy(row))
+            rows.append(deepcopy(row) if copy_rows else row)
         entries.append(dict(assignment=assignment, train=example, model=model,
                             row_count=len(rows), rows=rows))
     required = [list(k) for k in acquired['required']]

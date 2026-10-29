@@ -164,7 +164,7 @@ def select_train_full_rows(ev, native, record, *, ntrain):
 
 
 def acquire_train_table(ev, native, table, record, *, ntrain, fields=None,
-                        projection=None, output_aliases=None, source=None, held_entries=None):
+                        projection=None, output_aliases=None, source=None, held_entries=None, copy_rows=True):
     """Return full typed TRAIN cells at the case's local kept assignments.
 
     `native` is the canonical native payload/reader, not grouped value tuples.
@@ -172,7 +172,11 @@ def acquire_train_table(ev, native, table, record, *, ntrain, fields=None,
     layout. Repeated indices preserve aliases; None requires a certified Unit.
     Models are local to each (assignment, TRAIN input), never cross-table IDs.
     Missing kept contexts are explicit and do not become empty tables.
+    copy_rows=False shares read-only projected rows across local contexts; the
+    synchronous feature writer retains them until serialization completes.
     """
+    if type(copy_rows) is not bool:
+        raise ValueError("copy_rows must be boolean")
     from tables import Incomplete, comparison_type
     from program_metadata import type_identity, typed_fields
     from evaluator import sha
@@ -224,7 +228,7 @@ def acquire_train_table(ev, native, table, record, *, ntrain, fields=None,
                 model = model_counts.get(axis, 0)
                 model_counts[axis] = model + 1
                 entries.append(dict(assignment=assignment, example_kind=1,
-                    example_index=example, model=model, rows=deepcopy(projected)))
+                    example_index=example, model=model, rows=deepcopy(projected) if copy_rows else projected))
     return dict(fields=fields, entries=entries,
         required=[list(k) for k in sorted(matched['required'])],
         missing=[list(k) for k in matched['missing']],
@@ -462,7 +466,7 @@ def evaluate_train_clause(ev, record, clause, target, columns=None, explore=Fals
     return result, acquired
 
 
-def acquire_det_train_point(ev, record, adapter, ntrain, ntest, side='mutant'):
+def acquire_det_train_point(ev, record, adapter, ntrain, ntest, side='mutant', *, copy_rows=True):
     """Actual mutant BODY or fresh gold BODY, certified public DET fields only.
 
     Gold uses the original native BODY and same-session gold FITS choices.
@@ -534,15 +538,15 @@ def acquire_det_train_point(ev, record, adapter, ntrain, ntest, side='mutant'):
         source.update(native_ref=record['native']['mutant'], selector=binding['native_selector'])
     else:
         return _acquire_original_gold_train(ev, record,
-            dict(binding, projected_schema=fields), ntrain, source=source)
+            dict(binding, projected_schema=fields), ntrain, source=source, copy_rows=copy_rows)
     packet = acquire_train_table(ev, native, table, record, ntrain=ntrain,
-        fields=fields, projection=projection, source=source)
+        fields=fields, projection=projection, source=source, copy_rows=copy_rows)
     if packet['missing']:
         raise Incomplete('DET public TRAIN table lacks required own kept contexts')
     return packet
 
 
-def acquire_train_point(ev, record, adapter, ntrain, ntest, side='mutant'):
+def acquire_train_point(ev, record, adapter, ntrain, ntest, side='mutant', *, copy_rows=True):
     """Exact saved X or fresh original-scope gold BODY, TRAIN cells only.
 
     Gold FITS and BODY share one native handle/session. No RULE reconstruction
@@ -553,7 +557,7 @@ def acquire_train_point(ev, record, adapter, ntrain, ntest, side='mutant'):
         raise ValueError('point side must be mutant or gold')
     binding = adapter['input']['binding'] if side == 'mutant' else adapter['comparison_target']['binding']
     if binding.get('kind') == 'Det':
-        return acquire_det_train_point(ev, record, adapter, ntrain, ntest, side=side)
+        return acquire_det_train_point(ev, record, adapter, ntrain, ntest, side=side, copy_rows=copy_rows)
     if side == 'mutant':
         store = TargetStore(ev.legacy, CODE_ROOT)
         native, table = store.mutant_snapshot(record, adapter)
@@ -561,18 +565,19 @@ def acquire_train_point(ev, record, adapter, ntrain, ntest, side='mutant'):
             fields=binding['projected_schema'],
             projection=[field['source_body_column'] for field in binding['projected_schema']],
             source=dict(side=side, native_ref=record['native']['mutant'],
-                        selector=binding['native_selector']))
-    return _acquire_original_gold_train(ev, record, binding, ntrain)
+                        selector=binding['native_selector']), copy_rows=copy_rows)
+    return _acquire_original_gold_train(ev, record, binding, ntrain, copy_rows=copy_rows)
 
 
-def _acquire_original_gold_train(ev, record, binding, ntrain, *, source=None):
+def _acquire_original_gold_train(ev, record, binding, ntrain, *, source=None, copy_rows=True):
     from tables import Incomplete
     from gold_body import capture,projection
     with capture(ev,record) as body:
         indices=projection(body,record,binding)
         packet=acquire_train_table(body['ev'],body['native'],body['table'],record,ntrain=ntrain,
             fields=binding['projected_schema'],projection=indices,
-            held_entries=body['held_entries'],source=dict(source or {},side='gold',observation=body['receipt']))
+            held_entries=body['held_entries'],source=dict(source or {},side='gold',observation=body['receipt']),
+            copy_rows=copy_rows)
         if packet['missing']:
             raise Incomplete('original gold BODY lacks required kept TRAIN entries')
         return packet

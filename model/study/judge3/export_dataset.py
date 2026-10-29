@@ -114,24 +114,30 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
     point_export = producer._export(record['gold_sexp'], record)
     point_view = next(v for v in point_export['body_views'] if v['body_path'] == record['point'])
     point_name = producer.point_source_name(point_export, point_view)
-    packets = {}; index = []; shared_index = []; comparisons = []; provenance = []; target_bindings = []
+    index = []; shared_index = []; comparisons = []; provenance = []; target_bindings = []
     def add(packet, table_id, name, case, roles, atom=None, **metadata):
         path = 'tables/' + table_id + '.json'
         public = table_packet(packet, table_id=table_id, source_name=name, case=case,
-                              roles=roles, callable_atom=atom)
+                              roles=roles, callable_atom=atom, copy_rows=features is None)
         public.update(metadata)
         where, listing = (shared, shared_index) if features is not None and table_id != 'X' else (output, index)
         write_json(where / path, public)
         listing.append(table_summary(public,path))
-        packets[table_id] = packet
         return public
-    x = acquire_train_point(ev, record, adapter, target['ntrain'], target['ntest'], side='mutant')
+    x = acquire_train_point(ev, record, adapter, target['ntrain'], target['ntest'], side='mutant', copy_rows=features is None)
     add(x, 'X', point_name, record['case'], ['input'], adapter['input']['binding']['callable_template'], side='mutant')
+    if features is not None:
+        x = None  # synchronous write is finished; feature mode never compares X
     if features is None or shared:
-        g = acquire_train_point(ev, record, adapter, target['ntrain'], target['ntest'], side='gold')
+        g = acquire_train_point(ev, record, adapter, target['ntrain'], target['ntest'], side='gold', copy_rows=features is None)
         add(g, 'G', point_name, record['case'], ['target'], side='gold')
-    candidate = grouped(x)
-    columns = [(f.get('field_name', f.get('name')), f['type']) for f in x['fields']]
+        if features is not None:
+            g = None
+    # Feature export never compares candidate values. Avoid constructing an
+    # unused second in-memory copy of large assignment/model row families.
+    candidate = grouped(x) if features is None else None
+    columns = ([(f.get('field_name', f.get('name')), f['type']) for f in x['fields']]
+               if features is None else None)
     def comparison(packet, fields, ref):
         value = compare_target(candidate['groups'], columns, grouped(packet), fields, ref)
         # The public pair contains TRAIN evidence only. A comparator invoked
