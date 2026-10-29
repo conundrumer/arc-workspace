@@ -275,7 +275,21 @@ def acquire_case_train(ev, record, case_context, ntrain, ntest):
     BODY observers are explicitly disabled: this surface returns original
     native tables only. Point G is acquired independently by acquire_train_point.
     No native handle or private TEST table transport escapes this surface.
+    Each case owns a fresh native session through replay and typed extraction;
+    closing it releases prior-case arenas without changing operation bounds.
     """
+    with ev.fresh_session() as isolated:
+        packet = _acquire_case_train(isolated, record, case_context, ntrain, ntest)
+        packet['receipt']['session'] = dict(
+            scope='independent case replay and typed TRAIN extraction',
+            lifetime='closed before returning JSON packet',
+            session_bytes=isolated.receipt['session_bytes'],
+            extra_replays=0)
+        return packet
+
+
+def _acquire_case_train(ev, record, case_context, ntrain, ntest):
+    """Materialize one case while its independent native session is alive."""
     from case_collector import acquire_case, _context, clear_cache
     from tables import Incomplete
     from evaluator import sha
