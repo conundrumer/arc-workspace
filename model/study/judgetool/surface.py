@@ -163,6 +163,17 @@ def prepare(L,record,clause,adapter):
                 try:
                     selection_labels=({t.lstrip('*^') for t in tokens(selected[3][1]) if t.startswith('^')}
                                       if binding['kind']=='INIT key' else body_labels)
+                    if binding['kind']!='INIT key':
+                        inputs=selected[3][2:] if selected[3][0]=='key' else selected[3:]
+                        if len(inputs)!=1 or inputs[0][0]!=binding['input_port']:
+                            raise ValueError('exact selected INIT input is absent or ambiguous')
+                        key_atoms=selected[3][1] if selected[3][0]=='key' else []
+                        # Port identity was fixed by native metadata above.
+                        # The historical inliner selects by every source-local
+                        # label, rather than the public BODY's projected labels.
+                        key_exports={label for label in L.labels_of(key_atoms)
+                                     if '^'+label in json.dumps(key_atoms)}
+                        selection_labels=key_exports|L.labels_of(inputs[0][2:])
                     out.extend(L.inline_init(['RULE','&fix',read],selected,selection_labels)[2:])
                 finally:
                     L.FRESH=old
