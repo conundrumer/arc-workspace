@@ -12,7 +12,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from study_paths import CODE_ROOT, DATA_ROOT
 sys.path.insert(0, str(CODE_ROOT / 'judgetool'))
-from dataset_format import table_packet, pair_packet, write_json
+from dataset_format import table_packet, table_summary, pair_packet, write_json
 from nonrender_metadata import MetadataProducer
 
 
@@ -30,6 +30,8 @@ def grouped(packet):
 def _case(ev, record, context, ntrain, ntest, cache):
     from evaluator import sha, read_json
     from evaluator_train import acquire_case_train, dependency_receipt
+    if not Path(cache).resolve().is_relative_to(DATA_ROOT.resolve()):
+        raise ValueError('case cache must stay under the study data root')
     kept = context.get('kept_assignments')
     if kept is None:
         kept = (context.get('reference') or {}).get('evaluation', {}).get('kept_assignments')
@@ -64,6 +66,8 @@ def export_pair(ev, source_pair, output, cache):
     manifest, record, target = load_pair(source_pair)
     adapter = target['adapter']; pair_id = manifest['pair_id']
     destination = Path(output)
+    if not destination.resolve().is_relative_to(DATA_ROOT.resolve()):
+        raise ValueError('dataset output must stay under the study data root')
     if destination.exists():
         raise ValueError('dataset output must be a new directory: ' + str(output))
     # An interrupted acquisition never publishes a partial public pair.
@@ -87,7 +91,7 @@ def export_pair(ev, source_pair, output, cache):
                               roles=roles, callable_atom=atom)
         public.update(metadata)
         write_json(output / path, public)
-        index.append(dict(id=table_id, source_name=name, case=case, roles=roles, path=path))
+        index.append(table_summary(public,path))
         packets[table_id] = packet
         return public
     x = acquire_train_point(ev, record, adapter, target['ntrain'], target['ntest'], side='mutant')

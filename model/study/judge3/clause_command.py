@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from study_paths import CODE_ROOT, DATA_ROOT
 sys.path.insert(0, str(CODE_ROOT / 'judgetool'))
 from dataset_format import FORMAT, result_packet, table_packet, write_json
+from result_records import publish_checked_result
 
 
 def execute(args):
@@ -24,7 +25,9 @@ def execute(args):
     context = json.loads((DATA_ROOT / 'judgetool/dataset-contexts' / (pair_id + '.json')).read_text())
     from judge_tool import load_pair
     from evaluator import ReplayEvaluator, sha
-    _, record, target = load_pair(context['source_pair'])
+    manifest, record, target = load_pair(context['source_pair'])
+    if manifest['pair_id']!=pair_id:
+        raise ValueError('public/private pair identity differs')
     if sha(record) != context['source_sha256']:
         raise ValueError('source record differs from exported dataset')
     train = importlib.import_module('evaluator_train')
@@ -39,8 +42,9 @@ def execute(args):
     private = DATA_ROOT / 'judgetool/dataset-runs' / (uuid.uuid4().hex + '.json')
     checked=dict(checked,tool_implementation={str(p.resolve()):hashlib.sha256(p.read_bytes()).hexdigest()
         for p in (Path(__file__),Path(__file__).with_name('dataset_format.py'),
+                  Path(__file__).with_name('result_records.py'),
                   CODE_ROOT/'judgetool/judge_tool.py')})
-    write_json(private, checked)
+    native_checked=checked
     comparisons=[]
     for item in checked.get('comparisons',[]):
         if item['target_id']=='G':
@@ -67,6 +71,13 @@ def execute(args):
         write_json(args.output / table_path, packet)
     result = result_packet(checked, command=args.command, pair_id=pair_id, table_path=table_path)
     write_json(args.output / 'result.json', result)
+    expected_axes={name:[[a,kind,i] for a in range(len(record['evaluation']['kept_assignments']))
+                         for i in range(target[count])]
+                   for name,kind,count in (('train',1,'ntrain'),('test',2,'ntest'))}
+    publish_checked_result(args.output/'result.json',private,checked=native_checked,
+        pair_id=pair_id,source_sha256=context['source_sha256'],
+        source_record_path=target['source']['path'],operation=args.command,
+        columns=args.columns,expected_axes=expected_axes)
     return result
 
 
@@ -84,8 +95,12 @@ def main():
     if args.columns is not None and (not isinstance(args.columns, list) or
                                      any(not isinstance(c, str) for c in args.columns)):
         parser.error('--columns must be a JSON list of variable names')
+    if not args.output.resolve().is_relative_to(DATA_ROOT.resolve()):
+        parser.error('--output must stay under the study data root; use a data-root working directory for relative paths')
     # An existing result directory could leave a stale table next to a refusal.
-    if args.output.exists():
+    try:
+        args.output.mkdir(parents=True,exist_ok=False)
+    except FileExistsError:
         parser.error('--output must be a new directory')
     try:
         result = execute(args)
@@ -98,7 +113,7 @@ def main():
     print(json.dumps(dict(result=str(args.output / 'result.json'), table=result.get('table'),
                           **({'outcome': result['outcome']} if 'outcome' in result else {})),
                      ensure_ascii=False))
-    return 0
+    return 0 if result['kind']=='result' else 2
 
 
 if __name__ == '__main__':

@@ -7,7 +7,10 @@ validator. It imports no engine and implements no equality or assignment policy.
 `pair.json` contains `pair_id`, `task`, `case`, `change`, a `tables` index and
 relative paths for `comparisons`, `readers`, `train`, `programs` and `libraries`.
 Each table index entry supplies its `id`, `source_name`, `case`, `roles`, and
-`path`. Roles can overlap: a table may be both a target and an available read.
+`path`, plus `fields`, `callable_atom`, `row_count`, `entry_counts`, `complete`
+and `missing` copied from the table packet. The index contains no row cells:
+schema/count inspection does not require loading every full table. Roles can
+overlap: a table may be both a target and an available read.
 G and X have IDs `G` and `X`. Other IDs are opaque and local to this dataset.
 The programs index names `gold` and `mutant`. Change metadata gives the changed
 point and kind, plus the original and changed form text. No execution-context
@@ -50,6 +53,9 @@ engine, reason, table path and per-target comparisons; `check` and `alternative`
 also give outcome. An exploratory `run` has no outcome/grade. Stdout gives only
 the result path, optional table path and outcome. Full checked records and
 execution receipts remain under the private data-root run directory.
+Public result directories, exported datasets, case caches and recorded sessions
+must stay under the study data root. Relative result paths require a working
+directory there; none of these commands writes generated artifacts into code.
 
 Private `judgetool/dataset-contexts/<pair_id>.json` binds the public pair ID to
 the original source pair and canonical source-record identity. The tool checks

@@ -9,16 +9,23 @@ import argparse
 import json
 from pathlib import Path
 import subprocess
+import sys
 import time
 
 
 def record(plan, output, evidence, *, cwd):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from study_paths import DATA_ROOT
+    if any(not Path(p).resolve().is_relative_to(DATA_ROOT.resolve()) for p in (output,evidence,cwd)):
+        raise ValueError('session output, evidence and working directory must stay under the study data root')
     steps = json.loads(Path(plan).read_text())
+    if not isinstance(steps,list) or not steps:
+        raise ValueError('a session needs a nonempty ordered step list')
     rendered = []
     executions = []
     for step in steps:
         start = time.monotonic()
-        result = subprocess.run(['zsh', '-c', step['command']], cwd=cwd,
+        result = subprocess.run(['zsh', '-ec', step['command']], cwd=cwd,
                                 text=True, capture_output=True)
         executions.append(dict(step, stdout=result.stdout, stderr=result.stderr,
                                returncode=result.returncode, seconds=time.monotonic()-start))
@@ -31,6 +38,7 @@ def record(plan, output, evidence, *, cwd):
     Path(evidence).parent.mkdir(parents=True, exist_ok=True)
     Path(output).write_text('\n'.join(rendered))
     Path(evidence).write_text(json.dumps(executions, ensure_ascii=False, indent=2)+'\n')
+    return len(executions)==len(steps) and all(e['returncode']==0 for e in executions)
 
 
 def main():
@@ -40,8 +48,8 @@ def main():
     parser.add_argument('--evidence', type=Path, required=True)
     parser.add_argument('--cwd', type=Path, required=True)
     args = parser.parse_args()
-    record(args.steps, args.output, args.evidence, cwd=args.cwd)
+    return 0 if record(args.steps, args.output, args.evidence, cwd=args.cwd) else 1
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())

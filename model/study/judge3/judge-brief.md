@@ -2,7 +2,7 @@
 
 Find a recovery or an alternative continuation. Give no label or grade. Your
 input is a directory of complete ordinary files; use inline Python to inspect
-them. The invocation supplies `PAIR_DIR`, `PYTHON`, and `TOOL` (the path to
+them. The invocation supplies `PAIR_DIR`, `WORK_DIR`, `PYTHON`, and `TOOL` (the path to
 `judgetool/judge_tool.py`).
 
 ## Files and conventions
@@ -10,7 +10,9 @@ them. The invocation supplies `PAIR_DIR`, `PYTHON`, and `TOOL` (the path to
 Start with `pair.json`. Its `change` describes the changed point and forms;
 `programs` names the gold and mutant arclog files. `tables` indexes the table
 files by ID, source name, case and roles. X is the mutant table at the changed
-point; G is gold's table there. An INIT pair uses the actual key and input-port
+point. Index entries also include schemas, callable atoms and complete entry
+counts, so inspect those before loading large row files. G is gold's table there.
+An INIT pair uses the actual key and input-port
 columns, not all BODY witnesses or the component's output. `readers.json` gives
 the source readers and columns they need. `train.json` gives train input/output
 grids. `libraries.json` gives native library interfaces.
@@ -58,7 +60,7 @@ load = lambda name: json.loads((p / name).read_text())
 pair = load('pair.json')
 tables = {t['id']: t for t in pair['tables']}
 print(pair['change'])
-print({k: [(f['name'], f['type']) for f in load(t['path'])['fields']]
+print({k: [(f['name'], f['type']) for f in t['fields']]
        for k, t in tables.items()})
 print(load(pair['readers']))
 ```
@@ -91,9 +93,8 @@ result with the command rather than implementing the library in Python.
 ```python
 for t in pair['tables']:
     if 'available' in t['roles']:
-        a = load(t['path'])
-        print(t['id'], t['source_name'], a['callable_atom'])
-        print([(f['name'], f['type']) for f in a['fields']])
+        print(t['id'], t['source_name'], t['callable_atom'])
+        print([(f['name'], f['type']) for f in t['fields']])
 ```
 
 To see spatial evidence, draw a Position/Box only when its native extent is
@@ -132,6 +133,10 @@ Write your clause in a UTF-8 file. Run it as exploration, check it as a
 recovery, or check an alternative continuation. Each command writes a new
 result directory; use a new path for each attempt:
 
+Work in the supplied `WORK_DIR` under the study data root (`cd "$WORK_DIR"`).
+Relative clause and result paths below are relative to that working directory.
+The tool requires result directories under the study data root.
+
 ```sh
 "$PYTHON" "$TOOL" --pair "$PAIR_DIR" run --clause-file query.sexp --output query-result
 "$PYTHON" "$TOOL" --pair "$PAIR_DIR" check --clause-file recovery.sexp --output check-result
@@ -154,5 +159,6 @@ did not verify, or unknown. A replay that has no compatible kept entry or stops
 at its bound is unknown; it is not evidence that no clause exists.
 
 Finish with the recovery/alternative clauses you choose, their command outcomes,
-and one or two reasons per clause naming table, column, row or cell evidence.
+the `result.json` path for each chosen clause, and one or two reasons per clause
+naming table, column, row or cell evidence.
 If none is found, say no clause found. Give no grade or label.

@@ -97,6 +97,18 @@ def result_packet(checked, *, command, pair_id, table_path=None):
     return result
 
 
+def table_summary(table, path):
+    """Small index metadata, copied from the complete table without its rows."""
+    if table.get('format')!=FORMAT or table.get('kind')!='table':
+        raise ValueError('expected a public table packet')
+    return dict(id=table['id'],source_name=table['source_name'],case=table['case'],
+                roles=deepcopy(table['roles']),path=path,fields=deepcopy(table['fields']),
+                callable_atom=table['callable_atom'],row_count=table['row_count'],
+                complete=table['complete'],missing=deepcopy(table['missing']),
+                entry_counts=[{k:entry[k] for k in ('assignment','train','model','row_count')}
+                              for entry in table['entries']])
+
+
 def pair_packet(*, pair_id, task, case, change, tables, comparisons='comparisons.json',
                 readers='readers.json', train='train.json', programs=None, libraries=None):
     """Index ordinary relative files, never private context paths or test data."""
