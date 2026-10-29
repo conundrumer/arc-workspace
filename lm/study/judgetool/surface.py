@@ -1,0 +1,169 @@
+"""Source-name/X projection adapter; all predicates execute in arclog.
+
+INIT layout is supplied by judge3's native projected binding, not inferred
+from a variable spelling. P's existing INIT expansion and OR rewrite are reused.
+"""
+import json
+
+
+def tokens(node):
+    if isinstance(node,str):
+        yield node
+    elif isinstance(node,list):
+        for child in node:
+            yield from tokens(child)
+
+
+def atoms(body):
+    for atom in body:
+        if not isinstance(atom,list) or not atom:
+            continue
+        if atom[0]=='OR':
+            for branch in atom[1:]:
+                yield from atoms(branch)
+        elif atom[0]=='NOT':
+            yield from atoms(atom[1:])
+        else:
+            yield atom
+
+
+def site_bindings(L, atom, template):
+    result={}
+    def match(want, have):
+        expected={s[0]:s for s in want if isinstance(s,list)}
+        for site in have:
+            if isinstance(site,str):
+                site=[':'+site.lstrip('*^'),site]
+            if not isinstance(site,list) or not site or site[0] not in expected:
+                raise ValueError('site not in callable template for '+atom[0])
+            spec=expected[site[0]]
+            if len(spec)!=len(site):
+                raise ValueError('site arity differs from callable template')
+            for a,b in zip(spec[1:],site[1:]):
+                if isinstance(a,list):
+                    if not isinstance(b,list):
+                        raise ValueError('structured site needs the nested callable template')
+                    match([a],[b])
+                elif a.startswith('*V') and a[2:].isdigit() and isinstance(b,str):
+                    result[int(a[2:])]=b
+                else:
+                    raise ValueError('unsupported callable site')
+    match(L.parse(template)[1:],atom[1:])
+    return result
+
+
+def prepare(L,record,clause,adapter):
+    fix=L.parse(clause)
+    if not isinstance(fix,list) or len(fix)<3 or fix[0] not in ('RULE','DET') or fix[1]!='&fix':
+        raise ValueError('submit one RULE or DET named &fix')
+    forms=L.split_forms(record['mutant_sexp']); k=int(record['point'][0]); changed=L.parse(forms[k])
+    if changed[0]=='DET':
+        raise ValueError('DET-kind pairs are not judged')
+    inverse={v:k for k,v in adapter['relation_tokens'].items()}
+    binding=adapter['input']['binding']; fields=binding['projected_schema']
+    body_labels=[c['native_label_identity']['source_label_spelling'] for c in binding['source_body_schema']]
+    reads=[]; private=0; aliases={}; unmake=set()
+    def key_shorthand(node):
+        # In an authored key record, `(:key Id)` is shorthand for the
+        # field named Id. Alpha-renaming Id must not rename that field.
+        # Make its field identity explicit BEFORE P's label renamer runs.
+        if not isinstance(node,list):return node
+        if node and node[0]==':key':
+            return [node[0]]+([[':'+v.lstrip('*^'),v] if isinstance(v,str) and v!='0' else key_shorthand(v) for v in node[1:]])
+        return [key_shorthand(v) for v in node]
+    def names(node):
+        if not isinstance(node,list):
+            return node
+        out=[names(x) for x in node]
+        if out and isinstance(out[0],str):
+            out[0]=inverse.get(out[0],out[0])
+        return out
+    def expand(body):
+        nonlocal private
+        out=[]
+        for atom in body:
+            if not isinstance(atom,list) or not atom:
+                raise ValueError('malformed atom')
+            if atom[0]=='&X':
+                spec=site_bindings(L,atom,binding['callable_template'])
+                reads.append(dict(atom=atom,labels={v.lstrip('*^') for v in spec.values() if v!='0'}))
+                read=[changed[1]]; source_terms={}
+                for i,term in spec.items():
+                    field=fields[i]
+                    if field['source_body_column'] is None:
+                        raise ValueError('explicit inserted Unit site not supported; omit that X site')
+                    source=field['source_body_column']
+                    if source in source_terms:
+                        previous=source_terms[source]
+                        if previous.lstrip('*^')==term.lstrip('*^'):continue
+                        if any(a[0]=='OR' for a in atoms(canonical[2:])):
+                            raise ValueError('duplicate physical-source bindings inside OR require scoped alias support')
+                        if previous=='0' or term=='0':
+                            raise ValueError('duplicate physical-source zero/variable alias requires scoped constant support')
+                        if term.startswith(('*','^')):
+                            aliases[term.lstrip('*^')]=previous.lstrip('*^')
+                        elif previous.startswith(('*','^')):
+                            aliases[previous.lstrip('*^')]=term.lstrip('*^');unmake.add(previous.lstrip('*^'))
+                        else:out.append(['=',previous,term])
+                        continue
+                    source_terms[source]=term
+                    read.append([':'+field['native_label_identity']['source_label_spelling'],term])
+                if changed[0]!='INIT':
+                    out.append(read); continue
+                selected=json.loads(json.dumps(changed))
+                if binding['kind']=='INIT key':
+                    selected=selected[:3]+[['key',selected[3][1]]]
+                else:
+                    port=binding['input_port']
+                    if selected[3][0]=='key':
+                        selected[3]=selected[3][:2]+[p for p in selected[3][2:] if p[0]==port]
+                        selected=selected[:4]+[p for p in selected[4:] if p[0]==port]
+                    else:
+                        selected=selected[:3]+[p for p in selected[3:] if p[0]==port]
+                private+=1
+                selected=key_shorthand(selected)
+                old=L.FRESH
+                # Choose alpha names disjoint from the complete source/submission.
+                suffix='JudgePrivate'+str(private)
+                occupied=set(tokens(fix))|set(tokens(selected))
+                while any(label+suffix in occupied or '*'+label+suffix in occupied for label in body_labels):
+                    suffix+='Q'
+                L.FRESH=suffix
+                try:
+                    selection_labels=({t.lstrip('*^') for t in tokens(selected[3][1]) if t.startswith('^')}
+                                      if binding['kind']=='INIT key' else body_labels)
+                    out.extend(L.inline_init(['RULE','&fix',read],selected,selection_labels)[2:])
+                finally:
+                    L.FRESH=old
+            elif atom[0]=='OR':
+                out.append(['OR']+[expand(branch) for branch in atom[1:]])
+            elif atom[0]=='NOT':
+                out.append(['NOT']+expand(atom[1:]))
+            elif atom[0] in ('ALL','IF'):
+                out.append([atom[0]]+[expand(branch) for branch in atom[1:]])
+            else:
+                out.append(names(atom))
+        return out
+    canonical=L.canonical_or(fix)
+    executed=[canonical[0],canonical[1]]+expand(canonical[2:])
+    def resolve(label):
+        mark=label[:1] if label[:1] in ('*','^') else ''
+        base=label.lstrip('*^');seen=set()
+        if base in unmake:mark=''
+        while base in aliases:
+            if base in seen:raise ValueError('cyclic projected-source alias')
+            seen.add(base);base=aliases[base]
+        return mark+base
+    if aliases:executed=L.rename_labels(executed,resolve)
+    text=L.unparse(executed)
+    # Source programs require declarations before their readers. Independent
+    # later gold relations are permitted inputs, so leave the mutant intact
+    # and insert after the latest actually-read declaration (always after X).
+    # Written relation identities and saved DET slot names are unchanged.
+    owners={L.parse(f)[1]:i for i,f in enumerate(forms) if L.parse(f)[0] not in ('OUT',) and len(L.parse(f))>1}
+    needed={a[0].split('.')[0] for a in atoms(executed[2:]) if isinstance(a[0],str) and a[0].startswith('&')}
+    after=max([k]+[owners[name] for name in needed if name in owners])
+    return '\n'.join(forms[:after+1]+[text]+forms[after+1:]),after+1,dict(
+        submitted=fix,canonical=canonical,expanded=executed,inserted=text,x_reads=reads,
+        output_aliases={name:resolve(name) for name in aliases},
+        changed_relation=changed[1],or_rewritten=fix!=canonical,inserted_after=after,changed_form=k)

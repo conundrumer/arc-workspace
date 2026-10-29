@@ -1,0 +1,7 @@
+From the coordinator, facts from the session that wrote the code in P:
+
+1. rerun_witness.one_pair runs the sibling baseline (the search from each available table with the mutant left out) only inside `if w.get('recoverable')`. labels6.py sets `sibling` from that baseline, so `sibling` in P's labels6.jsonl is false on every lossy pair and on every pair without a witness, without the test having run. pool_pass.py runs the sibling search (`sibling_from`) and the redundant search on every pair whatever the witness result. The study needs `sibling` on every pair, most of all on lossy pairs: lossy with sibling is a clean negative. P's `sibling` values on pairs without a witness are therefore not valid for reuse.
+2. rerun_witness.py replaces family_recovery._comparison_atoms at import.
+3. `generalizes` is tested only where the witness reads no available table, and is null otherwise.
+4. redundant_pass.py and pool_pass.py ran with --seconds 0.5 per search. A search_bound outcome is recorded as unknown, not as a negative.
+5. labels6.py joins the rerun to the corpus records by task, case, point, clause, K, operation and edits.
