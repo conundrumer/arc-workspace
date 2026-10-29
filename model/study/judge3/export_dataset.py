@@ -4,7 +4,9 @@ from copy import deepcopy
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
+import shutil
 import sys
 import time
 
@@ -12,7 +14,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from study_paths import CODE_ROOT, DATA_ROOT
 sys.path.insert(0, str(CODE_ROOT / 'judgetool'))
-from dataset_format import table_packet, table_summary, pair_packet, write_json
+from dataset_format import FORMAT, table_packet, table_summary, pair_packet, write_json
 from nonrender_metadata import MetadataProducer
 
 
@@ -64,11 +66,17 @@ def export_pair(ev, source_pair, output, cache):
 
 
 def export_target(ev, pair_id, record, target, output, cache, *, source,
-                  private=DATA_ROOT / 'judgetool'):
+                  private=DATA_ROOT / 'judgetool', features=None):
     """Write one pair directory from a source record and its target (adapter, ntrain, ntest).
 
     `source` names where the target came from; `private` receives the contexts
     and receipts that the judge clause commands read.
+
+    `features` is a point directory. With it, the pair directory holds X, the
+    mutant program and pair.json, and the point directory holds G, the available
+    tables, train.json, the gold program and libraries.json, written by the
+    first pair of the point. The other targets, the comparisons, the readers
+    and the private files are not computed.
     """
     from evaluator import read_json, sha
     from tables import TargetStore
@@ -85,6 +93,10 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
     output = destination.with_name(destination.name + '.building')
     if output.exists():
         output.rename(output.with_name(output.name + '-' + str(time.time_ns())))
+    shared = None  # the point directory under construction
+    if features is not None and not (features / 'point.json').exists():
+        shared = features.with_name(features.name + '.building-' + str(os.getpid()))
+        shutil.rmtree(shared, ignore_errors=True)
     if adapter['input']['binding']['kind'] == 'Det':
         raise ValueError('DET pairs are not judged')
     store = TargetStore(ev.legacy, CODE_ROOT)
@@ -95,20 +107,22 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
     point_export = producer._export(record['gold_sexp'], record)
     point_view = next(v for v in point_export['body_views'] if v['body_path'] == record['point'])
     point_name = producer.point_source_name(point_export, point_view)
-    packets = {}; index = []; comparisons = []; provenance = []; target_bindings = []
+    packets = {}; index = []; shared_index = []; comparisons = []; provenance = []; target_bindings = []
     def add(packet, table_id, name, case, roles, atom=None, **metadata):
         path = 'tables/' + table_id + '.json'
         public = table_packet(packet, table_id=table_id, source_name=name, case=case,
                               roles=roles, callable_atom=atom)
         public.update(metadata)
-        write_json(output / path, public)
-        index.append(table_summary(public,path))
+        where, listing = (shared, shared_index) if features is not None and table_id != 'X' else (output, index)
+        write_json(where / path, public)
+        listing.append(table_summary(public,path))
         packets[table_id] = packet
         return public
     x = acquire_train_point(ev, record, adapter, target['ntrain'], target['ntest'], side='mutant')
-    g = acquire_train_point(ev, record, adapter, target['ntrain'], target['ntest'], side='gold')
     add(x, 'X', point_name, record['case'], ['input'], adapter['input']['binding']['callable_template'], side='mutant')
-    add(g, 'G', point_name, record['case'], ['target'], side='gold')
+    if features is None or shared:
+        g = acquire_train_point(ev, record, adapter, target['ntrain'], target['ntest'], side='gold')
+        add(g, 'G', point_name, record['case'], ['target'], side='gold')
     candidate = grouped(x)
     columns = [(f.get('field_name', f.get('name')), f['type']) for f in x['fields']]
     def comparison(packet, fields, ref):
@@ -118,13 +132,16 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
         value.pop('test', None)
         value['scope'] = 'train'
         comparisons.append(dict(target_id=ref['target_id'], comparison=value))
-    comparison(g, g['fields'], dict(target_id='G', role='point'))
+    if features is None:
+        comparison(g, g['fields'], dict(target_id='G', role='point'))
     main_export = None
     count = 0
     fresh_cases = {}
     facts = set()
     contexts = adapter['all_case_targets']['cases']
     for context in contexts:
+        if features is not None and not shared and context['name'] != record['case']:
+            continue  # the point directory exists: this pair needs only the export of its own case
         context = dict(context, catalogue_path=adapter['all_case_targets']['catalogue_path'])
         bundle, fresh_cases[context['name']] = _case(ev, record, context, target['ntrain'], target['ntest'], cache)
         if not bundle['native_table_inventory_complete']:
@@ -142,6 +159,14 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
         export = bundle['export']; same = bundle['case'] == record['case']
         if same:
             main_export = export
+        if features is not None and not same:
+            # The tables of the cases before the pair's case number the tables after them.
+            if any(item['table'] is None for item in bundle['tables']):
+                raise ValueError('fresh table unavailable')
+            count += len(bundle['tables'])
+            continue
+        if features is not None and not shared:
+            break
         provenance.append(bundle['receipt'])
         for item in bundle['tables']:
             if item['table'] is None:
@@ -171,9 +196,10 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
             roles = (['target'] if eligible else []) + (['available'] if allowed else [])
             table_id = 'T' + str(count); count += 1
             atom = meta['callable_atom'] if allowed else None
-            add(packet, table_id, meta['source_name'], bundle['case'], roles, atom,
-                **{k: meta[k] for k in ('body_path', 'body_kind') if k in meta})
-            if eligible:
+            if features is None or allowed:
+                add(packet, table_id, meta['source_name'], bundle['case'], roles, atom,
+                    **{k: meta[k] for k in ('body_path', 'body_kind') if k in meta})
+            if eligible and features is None:
                 ref = dict(target_id=table_id, role='later' if same else 'other_case', case=bundle['case'])
                 compared_fields = fields if same else [dict(f, field_name=None) for f in fields]
                 comparison(packet, compared_fields, ref)
@@ -189,17 +215,22 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
                     producer.policy['Document'].callable_atom(
                         object(), [dict(f, display_name=f['name']) for f in inp['fields']], 'input'))
                 facts.add('input')
-    if not {'input', 'ex_input', 'ex_output'} <= facts:
+        if features is not None and same:
+            break  # the cases after the pair's case add no available table
+    if (features is None or shared) and not {'input', 'ex_input', 'ex_output'} <= facts:
         raise ValueError('fresh dataset lacks required available input facts')
     if main_export is None:
         raise ValueError('pair case missing from fresh case catalogue')
     names = producer.policy['Names'](main_export)
     programs = {}
     for side in ('gold', 'mutant'):
+        programs[side] = side + '.arclog'
+        if features is not None and side == 'gold' and not shared:
+            continue
         export = producer._export(record[side + '_sexp'], record if side == 'gold' else None)
         side_names = producer.policy['Names'](export) if side == 'gold' else names
-        programs[side] = side + '.arclog'
-        (output / programs[side]).write_text(side_names.text(record[side + '_sexp']) + '\n')
+        where = shared if features is not None and side == 'gold' else output
+        (where / programs[side]).write_text(side_names.text(record[side + '_sexp']) + '\n')
     nodes = {tuple(n['path']): n for n in main_export['nodes']}
     change = dict(point=record['point'], kind=adapter['input']['binding']['kind'],
                   gold=names.text(nodes[tuple(record['point'])]['sexp']))
@@ -207,7 +238,7 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
     mutant_nodes = {tuple(n['path']): n for n in mutant_export['nodes']}
     change['mutant'] = names.text(mutant_nodes[tuple(record['point'])]['sexp'])
     readers = {}
-    for side, export in (('gold', main_export), ('mutant', mutant_export)):
+    for side, export in (() if features is not None else (('gold', main_export), ('mutant', mutant_export))):
         nodes = {tuple(n['path']): n for n in export['nodes']}
         variables = {(tuple(v['scope_path']),v['label_id']):v
                      for v in export['typed_sites']['variables']}
@@ -224,6 +255,24 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
                     type=a['column_type'], frame=a['frame'], literal=a['literal']))
             readers[side].append(dict(path=path, owner=reader.get('reader_owner_path'),
                 atom=names.text(nodes[tuple(path)]['sexp']), arguments=arguments))
+    if features is not None:
+        if shared:
+            task = read_json(adapter['source']['task_path'])
+            write_json(shared / 'train.json', task['train'])
+            write_json(shared / 'libraries.json', ev.registry_interfaces(record)['entries'])
+            write_json(shared / 'point.json', dict(format=FORMAT, kind='features-point', task=record['task'],
+                case=record['case'], point=record['point'], tables=shared_index,
+                programs=dict(gold=programs['gold']), train='train.json', libraries='libraries.json'))
+            try:
+                shared.rename(features)
+            except OSError:  # another process published the same point first
+                shutil.rmtree(shared)
+        write_json(output / 'pair.json', dict(format=FORMAT, kind='features-pair', pair_id=pair_id,
+            task=record['task'], case=record['case'], change=change, tables=index,
+            programs=dict(mutant=programs['mutant']), point=os.path.relpath(features, destination)))
+        output.rename(destination)
+        return dict(pair_id=pair_id, tables=len(index) + len(shared_index), output=str(destination),
+                    fresh_cases=fresh_cases)
     task = read_json(adapter['source']['task_path'])
     write_json(output / 'train.json', task['train'])
     write_json(output / 'readers.json', readers)
