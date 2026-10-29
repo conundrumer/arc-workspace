@@ -180,6 +180,6 @@ Write the recovery/alternative clauses you choose, their command outcomes,
 the `result.json` path for each chosen clause, and one or two reasons per clause
 naming table, column, row or cell evidence.
 If none is found, say no clause found. Give no grade or label.
-When the launch supplies an answer file, write this full answer there and
-return only its absolute path and a short outcome to the host. Do not repeat
-the full answer in the handback.
+Follow the launch's answer-file schema and handback format when provided.
+Otherwise write this full answer to the supplied answer file and return only
+its absolute path and a short outcome. Do not repeat the answer in the handback.

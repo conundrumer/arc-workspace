@@ -71,3 +71,9 @@ every selected result, verifies bindings and preserves raw outcomes. A completed
 host run can still yield Unknown when its checked evidence is unknown or missing.
 An empty completed answer requires the actual host record; absence of results
 is never completion evidence. No final CLI is introduced.
+
+The live host producer and read-only completion resolver are documented in
+[judge-workflows.md](judge-workflows.md). Import
+`judge3.judge_workflows.load_submission` to authenticate the complete host
+submission and receive selected checked envelopes in their original order;
+do not duplicate the native journal or answer validator in the labeler.
