@@ -97,9 +97,10 @@ def compatible_kept(L,entry_assignment,want,det_relations,det_types,*,seconds=10
     return _id_equal(encode(left),encode(right),['Number']+['Ident']*maximum,time.monotonic()+seconds)
 
 
-def read_table(L,n,t,*,example_kinds=None):
+def read_table(L,n,t,*,example_kinds=None,entry_ids=None):
     reader=n['_native_reader']; entries=[]
     for index in reader.bytable[t]:
+        if entry_ids is not None and index not in entry_ids:continue
         if example_kinds is not None and reader.entries['example_kind'][index] not in example_kinds:continue
         e=reader.entry(index,with_extents=False,projection_stop=False)
         entries.append(dict(entry=index,example=(e['example_kind'],e['example_index']),model=e['model'],
@@ -113,7 +114,7 @@ def kept_groups(L,n,t,record,ntrain,ntest,indices=None):
     return kept_entries(L,read_table(L,n,t),ts['det_relations'][t],ts['det_types'][t],record,ntrain,ntest,indices)
 
 
-def kept_entries(L,entries,det_relations,det_types,record,ntrain,ntest,indices=None):
+def kept_entries(L,entries,det_relations,det_types,record,ntrain,ntest,indices=None,*,held_entries=None):
     """Same kept selection for lossless cached read_table entries (no decoder)."""
     wants=[decode_kept(L,k,det_relations,det_types) for k in record['evaluation']['kept_assignments']]
     slots=set(det_relations); groups={}; contexts=[]; others=[];memo={}
@@ -124,6 +125,9 @@ def kept_entries(L,entries,det_relations,det_types,record,ntrain,ntest,indices=N
             memo[assignment]=[a for a,w in enumerate(wants) if set(w)==slots and compatible_kept(
                 L,assignment,w,det_relations,det_types)]
         matching=memo[assignment]
+        if held_entries is not None:
+            if e['entry'] not in held_entries:raise Incomplete('native BODY entry lacks exact full-kept map')
+            matching=[a for a in matching if a in held_entries[e['entry']]]
         if not matching:
             others.append(e); continue
         rows=tuple(tuple(tuple(c) for c in row) for row in e['rows']) if indices is None else projected_rows(L,e['rows'],indices)
@@ -139,6 +143,20 @@ def kept_entries(L,entries,det_relations,det_types,record,ntrain,ntest,indices=N
     missing=sorted(wanted-groups.keys())
     return dict(groups=groups,missing=missing,contexts=contexts,other_contexts=others,
                 det_relations=det_relations,required=wanted)
+
+
+def full_kept_matches(L, choices, schemas, record):
+    """Joint full-DET Ident match; native ordinals never inferred from subsets."""
+    relations=[d['source_name'] for d in schemas];types=[d['types'] for d in schemas]
+    entries=[]
+    for i,values in enumerate(choices):
+        decoded=decode_kept(L,values,relations,types)
+        if set(decoded)!=set(relations):raise Incomplete('native FITS receipt lacks a full held assignment')
+        entries.append(dict(entry=i,example=(0,0),model=0,
+            assignment=tuple((name,rows) for name,(rows,width) in sorted(decoded.items())),rows=()))
+    matched=kept_entries(L,entries,relations,types,record,1,0)
+    if matched['missing']:raise Incomplete('native gold FITS receipt lacks a saved full kept context')
+    return {e['entry']:e['kept_assignments'] for e in matched['contexts']}
 
 
 def _id_equal(a,b,types,deadline,*,subset=False):

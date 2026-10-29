@@ -98,7 +98,7 @@ class ReplayEvaluator:
                             budget_scope='one gold_tables operation, not entire candidate search',
                             reference_sha256=hashlib.sha256((self.reference/'engine_verify.py').read_bytes()).hexdigest(),
                             implementation_sha256=sha({name:hashlib.sha256((HERE/name).read_bytes()).hexdigest()
-                                for name in ('../study_paths.py','evaluator.py','surface.py','tables.py','checks.py','catalog.py','registry.py','live_targets.py','case_collector.py','program_metadata.py','candidate_train.py','raw_body.py','target_view.py','judge_view.py','judge_tool.py')}))
+                                for name in ('../study_paths.py','evaluator.py','surface.py','tables.py','checks.py','catalog.py','registry.py','live_targets.py','case_collector.py','program_metadata.py','gold_body.py','candidate_train.py','raw_body.py','target_view.py','judge_view.py','judge_tool.py')}))
 
     def _reset_session_state(self):
         self.task = None
@@ -153,6 +153,39 @@ class ReplayEvaluator:
         self._gold_kept_cache.clear()
         self._packing_attempt = None
 
+    def validate_gold_observation(self, checked, report, task, *, schema='arclog-study-gold-kept-v1'):
+        """One completion/program/settings/full-slot gate for native gold reports."""
+        stage='native gold BODY collection' if schema=='arclog-study-gold-body-v1' else 'native gold-kept observation'
+        if not isinstance(report,dict):
+            raise ValueError(stage+' report is not an object')
+        if report.get('schema')!=schema or report.get('task')!=task:
+            raise ValueError(stage+' report schema/task differs')
+        provenance=report.get('program_provenance',{})
+        if provenance.get('program_sexp')!=checked.sexp():
+            raise ValueError(stage+' report program differs')
+        settings=report.get('settings',{})
+        expected=dict(deadline_seconds=self.deadline,table_work_cap=self.work_cap,
+                      rule_tests=False,session_bytes=self.receipt['session_bytes'])
+        if any(settings.get(k)!=v for k,v in expected.items()):
+            raise ValueError(stage+' report settings differ')
+        if report.get('status')!='complete':
+            raise ValueError(stage+' incomplete: '+str(report.get('reason') or report.get('status')))
+        if (report.get('observation_complete') is not True
+                or report.get('gold_observation_stop') is not None):
+            raise ValueError('native gold FITS observation incomplete: '+str(report.get('gold_observation_stop')))
+        if (report.get('assignment_coverage_complete') is not True
+                or any(report.get('kept_assignment_missing_dets',[]))):
+            raise ValueError('native gold-kept assignments omit Undefined DET slots')
+        choices=report.get('kept_assignments')
+        if report.get('gold_fits') is not True or not isinstance(choices,list) or not choices:
+            raise ValueError('native gold-kept observation has no kept TRAIN FITS assignment')
+        if (report.get('kept_assignment_count')!=len(choices)
+                or report.get('kept_assignment_missing_dets')!=[[] for _ in choices]
+                or not isinstance(provenance.get('stream'),dict)
+                or not {'ids','model','paths'}<=provenance['stream'].keys()):
+            raise ValueError('native gold-kept report lacks complete assignment/stream evidence')
+        return choices
+
     def acquire_gold_kept(self, record, *, case, program):
         """Acquire missing own-case choices through native gold-only TRAIN FITS.
 
@@ -181,32 +214,7 @@ class ReplayEvaluator:
                 checked=isolated.arclog.StudyProgram.from_sexp(program,isolated.settings)
                 result['native_gold_kept_calls']=1
                 report=json.loads(native.gold_kept(program=checked))
-                if not isinstance(report,dict):
-                    raise ValueError('native gold-kept report is not an object')
-                if report.get('schema')!='arclog-study-gold-kept-v1' or report.get('task')!=record['task']:
-                    raise ValueError('native gold-kept report schema/task differs')
-                provenance=report.get('program_provenance',{})
-                if provenance.get('program_sexp')!=checked.sexp():
-                    raise ValueError('native gold-kept report program differs')
-                settings=report.get('settings',{})
-                expected=dict(deadline_seconds=self.deadline,table_work_cap=self.work_cap,
-                              rule_tests=False,session_bytes=self.receipt['session_bytes'])
-                if any(settings.get(k)!=v for k,v in expected.items()):
-                    raise ValueError('native gold-kept report settings differ')
-                if (report.get('status')!='complete' or report.get('observation_complete') is not True
-                        or report.get('gold_observation_stop') is not None):
-                    raise ValueError('native gold-kept observation incomplete: '+str(report.get('reason') or report.get('status')))
-                if (report.get('assignment_coverage_complete') is not True
-                        or any(report.get('kept_assignment_missing_dets',[]))):
-                    raise ValueError('native gold-kept assignments omit Undefined DET slots')
-                choices=report.get('kept_assignments')
-                if report.get('gold_fits') is not True or not isinstance(choices,list) or not choices:
-                    raise ValueError('native gold-kept observation has no kept TRAIN FITS assignment')
-                if (report.get('kept_assignment_count')!=len(choices)
-                        or report.get('kept_assignment_missing_dets')!=[[] for _ in choices]
-                        or not isinstance(provenance.get('stream'),dict)
-                        or not {'ids','model','paths'}<=provenance['stream'].keys()):
-                    raise ValueError('native gold-kept report lacks complete assignment/stream evidence')
+                choices=isolated.validate_gold_observation(checked,report,record['task'])
                 result.update(engine='ran',kept_assignments=deepcopy(choices))
         except Exception as error:
             result['reason']=f'{type(error).__name__}: {error}'

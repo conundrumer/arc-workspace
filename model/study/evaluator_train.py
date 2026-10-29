@@ -23,10 +23,12 @@ def dependency_receipt():
     import case_collector
     import program_metadata
     import raw_body
+    import gold_body
     paths = (Path(__file__), Path(tables.__file__), Path(checks.__file__),
              Path(surface.__file__), Path(case_collector.__file__),
-             Path(program_metadata.__file__), Path(raw_body.__file__), CODE_ROOT / 'study_paths.py',
-             CODE_ROOT / 'judge2/render2/body.py', CODE_ROOT / 'judge3/render_pair.py')
+             Path(program_metadata.__file__), Path(raw_body.__file__), Path(gold_body.__file__), CODE_ROOT / 'study_paths.py',
+             CODE_ROOT / 'judge2/render2/body.py', CODE_ROOT / 'judge2/render2/headers.py',
+             CODE_ROOT / 'judge3/render_pair.py')
     return {str(p.resolve()): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
 
 
@@ -104,7 +106,7 @@ def _visibility():
     return namespace['visible']
 
 
-def train_entry_contexts(ev, native, table, record, *, ntrain):
+def train_entry_contexts(ev, native, table, record, *, ntrain, held_entries=None):
     """Canonical kept TRAIN/TASK selection before any value/extent decoding."""
     from tables import Incomplete, kept_entries
     if type(ntrain) is not int or ntrain < 1:
@@ -126,7 +128,7 @@ def train_entry_contexts(ev, native, table, record, *, ntrain):
                                     for d in reader.assignment(index)))))
     ts = native['tables']
     return kept_entries(ev.legacy, metadata, ts['det_relations'][table],
-                           ts['det_types'][table], record, ntrain, 0)
+                           ts['det_types'][table], record, ntrain, 0, held_entries=held_entries)
 
 
 def select_train_full_rows(ev, native, record, *, ntrain):
@@ -162,7 +164,7 @@ def select_train_full_rows(ev, native, record, *, ntrain):
 
 
 def acquire_train_table(ev, native, table, record, *, ntrain, fields=None,
-                        projection=None, output_aliases=None, source=None):
+                        projection=None, output_aliases=None, source=None, held_entries=None):
     """Return full typed TRAIN cells at the case's local kept assignments.
 
     `native` is the canonical native payload/reader, not grouped value tuples.
@@ -202,7 +204,7 @@ def acquire_train_table(ev, native, table, record, *, ntrain, fields=None,
               or comparison_type(type_identity(ev, record, schema[index]['type'])[0]) != comparison_type(field['type'])):
             raise Incomplete('TRAIN projected field type or physical index differs')
 
-    matched = train_entry_contexts(ev, native, table, record, ntrain=ntrain)
+    matched = train_entry_contexts(ev, native, table, record, ntrain=ntrain, held_entries=held_entries)
     entries = []
     model_counts = {}
     for context in matched['contexts']:
@@ -463,13 +465,12 @@ def evaluate_train_clause(ev, record, clause, target, columns=None, explore=Fals
 def acquire_det_train_point(ev, record, adapter, ntrain, ntest, side='mutant'):
     """Actual mutant BODY or fresh gold BODY, certified public DET fields only.
 
-    One ordinary gold observer replay; zero mutant replays. There is no pair
-    fallback, held-gold substitution, kind rewrite or clause-checker bypass.
+    Gold uses the original native BODY and same-session gold FITS choices.
+    No pair fallback, held-gold substitution, kind rewrite or checker bypass.
     """
     from evaluator import sha
     from tables import TargetStore, Incomplete, comparison_type
     from program_metadata import type_identity
-    from raw_body import body_observer_program
     if side not in ('mutant', 'gold'):
         raise ValueError('point side must be mutant or gold')
     if (type(ntrain) is not int or ntrain < 1 or
@@ -532,53 +533,8 @@ def acquire_det_train_point(ev, record, adapter, ntrain, ntest, side='mutant'):
         projection = [f['source_body_column'] for f in fields]
         source.update(native_ref=record['native']['mutant'], selector=binding['native_selector'])
     else:
-        selected = list(dict.fromkeys(f['source_body_column'] for f in fields
-                                     if f['source_body_column'] is not None))
-        raw_fields = {f['source_body_column']: f for f in raw['projected_schema']}
-        if any(index not in raw_fields for index in selected):
-            raise Incomplete('DET selected header lacks its exact RAW physical binding')
-        layout = dict(raw, projected_schema=[raw_fields[index] for index in selected])
-        if raw.get('scope') == 'TaskWide':
-            reason = ('DET gold BODY has TaskWide scope; the RULE observer is PerInput. '
-                      'Native original-scope BODY acquisition is required')
-            folder = ev.artifacts / ('det-scoped-body-required-'+sha(dict(
-                source=sha(record), transport=sha(transport), layout=layout)))
-            folder.mkdir(exist_ok=True)
-            (folder/'program.arclog').write_text(record['gold_sexp']+'\n')
-            (folder/'receipt.json').write_text(json.dumps(dict(reason=reason,
-                source_sha256=sha(record), transport_sha256=sha(transport),
-                original_scope=raw['scope'], body_path=raw['body_path'],
-                original_program_sha256=sha(record['gold_sexp']),
-                native_gold_replays=0, native_mutant_replays=0), indent=2)+'\n')
-            raise Incomplete(reason+'; artifact='+str(folder))
-        observed, form, context = body_observer_program(ev, record, layout)
-        own = dict(record, mutant_sexp=record['gold_sexp'])
-        replay = ev.replay_program(own, observed, form,
-            candidate=dict(kind='mechanical-DET-public-gold-observer',
-                           source_sha256=sha(record), transport_sha256=sha(transport)))
-        if replay['engine'] != 'ran':
-            raise Incomplete('DET gold observer incomplete: '+replay.get('reason', replay['engine'])+
-                             '; artifact='+replay['artifact'])
-        table = replay.get('kept_coverage', {}).get('table')
-        if table is None:
-            raise Incomplete('DET gold observer has no exact kept native table')
-        native = ev.captures[-1]['native']
-        names = list(native['tables']['column_names'][table])
-        columns = {}
-        for ordinal, index in enumerate(selected):
-            name = 'V'+str(ordinal)
-            if names.count(name) != 1:
-                raise Incomplete('DET gold observer lacks an unambiguous selected output')
-            physical = names.index(name)
-            if comparison_type(type_identity(ev,record,native['tables']['column_types'][table][physical])[0]) != comparison_type(type_identity(ev,record,raw_fields[index]['type'])[0]):
-                raise Incomplete('DET gold observer output type differs from certified BODY field')
-            columns[index] = physical
-        projection = [None if f['source_body_column'] is None else columns[f['source_body_column']]
-                      for f in fields]
-        source.update(native_gold_replays=1, artifact=replay['artifact'],
-            original_gold_program_sha256=sha(record['gold_sexp']),
-            observer_program_sha256=sha(observed), kept_context_sha256=sha(record['evaluation']['kept_assignments']),
-            observer_context=context, target_test_fit_claim=False)
+        return _acquire_original_gold_train(ev, record,
+            dict(binding, projected_schema=fields), ntrain, source=source)
     packet = acquire_train_table(ev, native, table, record, ntrain=ntrain,
         fields=fields, projection=projection, source=source)
     if packet['missing']:
@@ -587,11 +543,10 @@ def acquire_det_train_point(ev, record, adapter, ntrain, ntest, side='mutant'):
 
 
 def acquire_train_point(ev, record, adapter, ntrain, ntest, side='mutant'):
-    """Exact saved kept X or fresh canonical full-gold G observer, TRAIN only.
+    """Exact saved X or fresh original-scope gold BODY, TRAIN cells only.
 
-    Missing INIT outer-key values are unsupported; no inferred key joins or
-    raw/private-column replacements. G uses a fresh observer even if value-only
-    gold groups were cached, because those groups do not retain typed geometry.
+    Gold FITS and BODY share one native handle/session. No RULE reconstruction
+    changes the lexical owner context; public fields retain their native proof.
     """
     from tables import TargetStore, Incomplete
     if side not in ('mutant', 'gold'):
@@ -607,34 +562,17 @@ def acquire_train_point(ev, record, adapter, ntrain, ntest, side='mutant'):
             projection=[field['source_body_column'] for field in binding['projected_schema']],
             source=dict(side=side, native_ref=record['native']['mutant'],
                         selector=binding['native_selector']))
-    from checks import observe_gold
-    saved = {}
-    class Observer:
-        target_cache = None
-        def __init__(self):
-            self.target_cache = {}  # Value-only cache cannot serve typed cells.
-        def __getattr__(self, name):
-            return getattr(ev, name)
-        def replay_program(self, *args, **kwargs):
-            result = ev.replay_program(*args, **kwargs)
-            saved['replay'] = result
-            if result.get('engine') == 'ran':
-                saved['native'] = ev.captures[-1]['native']
-            return result
-    _, receipt = observe_gold(Observer(), record, adapter, binding, ntrain, ntest)
-    if 'native' not in saved:
-        raise Incomplete('fresh gold observer has no typed native capture')
-    native = saved['native']
-    table = saved['replay'].get('kept_coverage', {}).get('table')
-    if table is None:
-        raise Incomplete('fresh gold observer table identity is unavailable')
-    names = list(native['tables']['column_names'][table])
-    fields = binding['projected_schema']
-    labels = ['V'+str(i) for i in range(len(fields))]
-    from surface import output_projection
-    projection = output_projection(names, labels, receipt['output_aliases'])
-    if projection != receipt['observer_projection'] or table != receipt['observer_table']:
-        raise Incomplete('typed gold observer differs from its canonical physical projection')
-    return acquire_train_table(ev, native, table, record, ntrain=ntrain,
-        fields=fields, projection=projection, output_aliases=receipt['output_aliases'],
-        source=dict(side=side, observation=receipt))
+    return _acquire_original_gold_train(ev, record, binding, ntrain)
+
+
+def _acquire_original_gold_train(ev, record, binding, ntrain, *, source=None):
+    from tables import Incomplete
+    from gold_body import capture,projection
+    with capture(ev,record) as body:
+        indices=projection(body,record,binding)
+        packet=acquire_train_table(body['ev'],body['native'],body['table'],record,ntrain=ntrain,
+            fields=binding['projected_schema'],projection=indices,
+            held_entries=body['held_entries'],source=dict(source or {},side='gold',observation=body['receipt']))
+        if packet['missing']:
+            raise Incomplete('original gold BODY lacks required kept TRAIN entries')
+        return packet

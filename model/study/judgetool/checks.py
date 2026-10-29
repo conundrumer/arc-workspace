@@ -259,50 +259,28 @@ def evaluate(ev,record,clause,target,columns=None,*,explore=False,row_limit=100)
 
 
 def observe_gold(ev,record,adapter,binding,ntrain,ntest):
-    """Acquire absent gold BODY through the same full-program replay core.
+    """Fresh original BODY at native gold FITS choices, with full TEST guards.
 
-    An observer expands exactly the gold target body/INIT projection. It is
-    not a read of a computed component output. The observed TRAIN rows must
-    agree with the saved target before the TEST evidence is admitted.
+    Original lexical/owner scope and native full-kept entry maps are retained;
+    no reconstructed RULE or historical TRAIN receipt supplies target rows.
     """
     from evaluator import sha
     key=sha(dict(source=sha(record),binding=binding,settings=ev.receipt))
     if key in ev.target_cache:return ev.target_cache[key]
-    L=ev.legacy;goldrecord=dict(record,mutant_sexp=record['gold_sexp'])
-    goldtemplate=binding.get('callable_template')
-    if not goldtemplate:
-        mutant=adapter['input']['binding']
-        if ([f['callable_row_path'] for f in binding['projected_schema']] !=
-                [f['callable_row_path'] for f in mutant['projected_schema']]):
-            raise Incomplete('gold and mutant callable field layouts differ; no gold observer template')
-        goldtemplate=mutant['callable_template']
-    goldbinding=dict(binding,callable_template=goldtemplate)
-    goldadapter=dict(adapter,input=dict(handle='&X',binding=goldbinding))
-    clause=L.unparse(['RULE','&fix',L.parse(goldbinding['callable_template'])])
-    program,form,proof=prepare(L,goldrecord,clause,goldadapter)
-    replay,grouped,columns=_replay_groups(ev,goldrecord,program,form,ntrain,ntest,
-                                       dict(kind='gold-full-replay-target-observer',clause=clause))
-    if grouped is None or grouped['missing']:raise Incomplete('gold full replay observer lacks compatible train/test entries')
-    aliases=proof.get('output_aliases',{})
-    try:indices=output_projection([c[0] for c in columns],
-        [f'V{j}' for j in range(len(binding['projected_schema']))],aliases)
-    except ValueError as error:raise Incomplete('gold target observer output layout unresolved: '+str(error)) from None
-    groups={k:{frozenset(tuple(row[i] for i in indices) for row in rows) for rows in family}
-            for k,family in grouped['groups'].items()}
-    fields=binding['projected_schema']
-    required_train={(a,1,i) for a in range(len(record['evaluation']['kept_assignments'])) for i in range(ntrain)}
-    result=dict(grouped,groups=groups)
-    receipt=dict(source='gold_full_replay',acquisition='full gold program with projected body observer and OUT',
-                 original_source_sha256=sha(record),layout_sha256=sha(binding['projected_schema']),
-                 artifact=replay['artifact'],gold_program_sha256=sha(record['gold_sexp']),
-                 observer_program_sha256=sha(program),kept_context_sha256=sha(record['evaluation']['kept_assignments']),
-                 projection=[f['source_body_column'] for f in fields],fields=fields,
-                 observer_projection=indices,output_aliases=aliases,
-                 observer_table=replay['kept_coverage']['table'],
-                 train_crosscheck='not used: fresh gold replay is authoritative',train_complete=True,test_complete=True,
-                 saved_train_contexts_complete=None,required_saved_train_contexts=len(required_train),
-                 required_train_test_contexts=len(grouped['required']),
-                 callable_layout='gold template or exact gold/mutant native rowpath equality')
+    from gold_body import capture,projection
+    from tables import read_table,kept_entries
+    with capture(ev,record) as body:
+        indices=projection(body,record,binding)
+        native=body['native'];table=body['table'];ts=native['tables']
+        chosen={e for e,assignments in body['held_entries'].items() if assignments}
+        entries=read_table(ev.legacy,native,table,entry_ids=chosen)
+        result=kept_entries(ev.legacy,entries,ts['det_relations'][table],ts['det_types'][table],
+                            record,ntrain,ntest,indices,held_entries=body['held_entries'])
+        if result['missing']:raise Incomplete('original gold BODY lacks compatible train/test contexts')
+        receipt=dict(body['receipt'],fields=binding['projected_schema'],
+            projection=[f['source_body_column'] for f in binding['projected_schema']],
+            original_body_projection=indices,train_complete=True,test_complete=True,
+            required_train_test_contexts=len(result['required']),**axis_receipt(result))
     ev.target_cache[key]=(result,receipt)
     return result,receipt
 

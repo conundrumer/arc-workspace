@@ -17,6 +17,17 @@ from surface import tokens,native_body_labels,native_body_atoms
 from program_metadata import type_identity
 
 
+def body_schema(ev,native,table,view):
+    """Apply the producer's native BODY header binder without reimplementing it."""
+    schema=copy.deepcopy(native['_native_reader'].schema(table))
+    source=S/'judge2/render2/headers.py';tree=ast.parse(source.read_text(),str(source))
+    fn=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='bind_body_schema')
+    namespace={'require':ev.legacy.native.__globals__['_NATIVE'].require}
+    exec(compile(ast.Module(body=[fn],type_ignores=[]),str(source),'exec'),namespace)
+    namespace['bind_body_schema'](dict(schema=schema),view)
+    return schema
+
+
 def binding(ev,record,*,native_base):
     program=ev.arclog.StudyProgram.from_sexp(record['gold_sexp'],ev.settings).decode_source()
     names=json.dumps(record['relation_source_names']) if record.get('relation_source_names') else program.relation_source_names_json(
@@ -29,12 +40,8 @@ def binding(ev,record,*,native_base):
     table=record['evaluation']['table_indices']['gold_all'];ts=native['tables']
     if not all(str(ts[k][table])==str(v) for k,v in view['native_table_selector'].items() if k in ('form','point')):
         raise Incomplete('native gold_all does not identify the requested BODY')
-    schema=copy.deepcopy(native['_native_reader'].schema(table))
-    source=S/'judge2/render2/headers.py';tree=ast.parse(source.read_text(),str(source))
-    fn=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='bind_body_schema')
-    namespace={'require':ev.legacy.native.__globals__['_NATIVE'].require}
-    exec(compile(ast.Module(body=[fn],type_ignores=[]),str(source),'exec'),namespace)
-    namespace['bind_body_schema'](dict(schema=schema),view)
+    schema=body_schema(ev,native,table,view)
+    source=S/'judge2/render2/headers.py'
     labels={c['label_id']:c for c in view['columns']};fields=[];sites=[]
     for c in schema:
         label=labels.get(c['ast_label_id'])
@@ -147,16 +154,8 @@ def _point_gold_body(ev,record,layout,layout_receipt,ntrain,ntest):
     table=report['table_indices']['gold_kept'];view=report['body_view']
     if not all(str(ts[k][table])==str(v) for k,v in view['native_table_selector'].items() if k in ('form','point')):
         raise Incomplete('native gold point table does not match certified BODY')
-    schemas=report['full_det_schemas'];relations=[d['source_name'] for d in schemas];types=[d['types'] for d in schemas]
-    choices=[]
-    for i,values in enumerate(report['kept_assignments']):
-        decoded=decode_kept(ev.legacy,values,relations,types)
-        if set(decoded)!=set(relations):raise Incomplete('native FITS receipt lacks a full held assignment')
-        choices.append(dict(entry=i,example=(0,0),model=0,
-            assignment=tuple((name,rows) for name,(rows,width) in sorted(decoded.items())),rows=()))
-    matched=kept_entries(ev.legacy,choices,relations,types,record,1,0)
-    if matched['missing']:raise Incomplete('native gold FITS receipt lacks a saved full kept context')
-    old_by_fresh={e['entry']:e['kept_assignments'] for e in matched['contexts']}
+    from tables import full_kept_matches
+    old_by_fresh=full_kept_matches(ev.legacy,report['kept_assignments'],report['full_det_schemas'],record)
     # Do not infer fresh held ordinals from body DET subsets: stateful inputs
     # may depend on owner state beyond the public body dependency signature.
     maps=[m for m in report['gold_kept_assignment_map'] if m['table']==table]
@@ -165,11 +164,7 @@ def _point_gold_body(ev,record,layout,layout_receipt,ntrain,ntest):
     reader=native['_native_reader'];ordinals={entry:i for i,entry in enumerate(reader.bytable[table])}
     # The exact source program/point is certified by replay. Authenticate its
     # physical BODY field order using the same native header binder as binding.
-    schema=copy.deepcopy(reader.schema(table));source=S/'judge2/render2/headers.py'
-    fn=next(n for n in ast.parse(source.read_text()).body if isinstance(n,ast.FunctionDef) and n.name=='bind_body_schema')
-    namespace={'require':ev.legacy.native.__globals__['_NATIVE'].require}
-    exec(compile(ast.Module(body=[fn],type_ignores=[]),str(source),'exec'),namespace)
-    namespace['bind_body_schema'](dict(schema=schema),view)
+    schema=body_schema(ev,native,table,view)
     by_label={c['ast_label_id']:c['index'] for c in schema}
     fields=layout['projected_schema']
     indices=[by_label[f['native_label_identity']['label_id']] for f in fields]
