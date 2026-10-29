@@ -14,6 +14,7 @@ from pathlib import Path
 import sys
 from evaluator import sha
 from tables import kept_groups,Incomplete
+from program_metadata import export_named_program
 
 
 def _scope_policy():
@@ -56,7 +57,7 @@ def acquire(ev,record,adapter,ntrain,ntest,*,only_case=None):
         program=ev.arclog.StudyProgram.from_sexp(text,ev.settings)
         source_names=(json.dumps(record['relation_source_names']) if same and record.get('relation_source_names') else
             program.relation_source_names_json(str(MAIN_ROOT / 'work/arclog/gen'),record['task'],case))
-        export=json.loads(ev.arclog.study_program_export_json(program,source_names))
+        export=export_named_program(ev,program,source_names)
         definitions=export['definitions']['native_relations']
         for table in range(len(ts['form'])):
             is_target=not same or after(ts,table,adapter['comparison_target']['binding'],export)

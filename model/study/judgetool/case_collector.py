@@ -20,6 +20,7 @@ from study_paths import CODE_ROOT, DATA_ROOT, MAIN_ROOT
 from evaluator import sha
 from tables import Incomplete,kept_groups,compare,projected_rows
 from surface import prepare,tokens
+from program_metadata import export_named_program
 import catalog
 import checks
 
@@ -149,7 +150,7 @@ def acquire_case(ev,record,case_context,ntrain,ntest):
     program=ev.arclog.StudyProgram.from_sexp(text,ev.settings)
     naming=json.dumps(names) if names is not None else program.relation_source_names_json(
         str(MAIN_ROOT/'work/arclog/gen'),record['task'],case)
-    export=json.loads(ev.arclog.study_program_export_json(program,naming))
+    export=export_named_program(ev,program,naming)
     forms=L.split_forms(text);parsed=[L.parse(f) for f in forms]
     outs=[i for i,f in enumerate(parsed) if f[0]=='OUT']
     if outs!=[len(forms)-1]:raise Incomplete('case collection requires a final single OUT form')

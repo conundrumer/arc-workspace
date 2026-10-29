@@ -102,7 +102,7 @@ class ReplayEvaluator:
                             budget_scope='one gold_tables operation, not entire candidate search',
                             reference_sha256=hashlib.sha256((self.reference/'engine_verify.py').read_bytes()).hexdigest(),
                             implementation_sha256=sha({name:hashlib.sha256((HERE/name).read_bytes()).hexdigest()
-                                for name in ('../study_paths.py','evaluator.py','surface.py','tables.py','checks.py','catalog.py','registry.py','live_targets.py','candidate_train.py','raw_body.py','target_view.py','judge_view.py','judge_tool.py')}))
+                                for name in ('../study_paths.py','evaluator.py','surface.py','tables.py','checks.py','catalog.py','registry.py','live_targets.py','program_metadata.py','candidate_train.py','raw_body.py','target_view.py','judge_view.py','judge_tool.py')}))
 
     def task_evaluator(self, task):
         if self.task != task:
