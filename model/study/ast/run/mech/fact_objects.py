@@ -30,7 +30,16 @@ class FactObjects:
 
     def pack(self,value,*,root=False):
         if isinstance(value,dict):out={str(k):self.pack(v) for k,v in value.items()}
-        elif isinstance(value,(list,tuple)):out=[self.pack(v) for v in value]
+        elif isinstance(value,(list,tuple)):
+            # Rows, ASTs and model reports contain many tiny nested lists. They
+            # are one receipt value: serializing every cell/container merely to
+            # discover that it is too small to intern made packing expensive.
+            # Normalize once, then hash/store the complete list once.
+            def normalize(v):
+                if isinstance(v,dict):return {str(k):normalize(x) for k,x in v.items()}
+                if isinstance(v,(list,tuple)):return [normalize(x) for x in v]
+                return v
+            out=normalize(value)
         else:return value
         raw=canonical(out)
         if root or len(raw)<128:return out

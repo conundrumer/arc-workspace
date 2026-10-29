@@ -49,6 +49,7 @@ def valid_base(row):
 class Pass:
     def __init__(self,args,ev):
         self.args=args;self.ev=ev;self.start=time.monotonic();self.last=0
+        self.phase=None;self.phase_start=self.start
         self.base=sqlite3.connect(args.base.resolve().as_uri()+'?mode=ro',uri=True)
         self.base.execute('BEGIN')
         files=set(HERE/n for n in ('step2_check.py','witness_test.py','fact_objects.py',
@@ -83,7 +84,7 @@ class Pass:
         self.objects=FactObjects(self.db);self.db.commit()
         self.work=[]
         self.checker=Checker(ev,verify_seconds=args.verify_seconds)
-        self.counts=Counter();self.tasks={};self.base_hashes={};self.journal_pair=None;self.journal_values={};self.total=self.base.execute('SELECT count(*) FROM pairs').fetchone()[0]
+        self.counts=Counter();self.tasks={};self.base_hashes={};self.journal_pair=None;self.journal_values={};self.receipt_cache={};self.total=self.base.execute('SELECT count(*) FROM pairs').fetchone()[0]
         self.compatible={tuple(value.split(':',1)) for value in args.compatible_boolean_producer}
         self.retry_unknown=set()
         if args.retry_unknown:
@@ -93,11 +94,13 @@ class Pass:
 
 
     def progress(self,phase,done,total,force=False):
-        elapsed=time.monotonic()-self.start
+        now=time.monotonic()
+        if phase!=self.phase:self.phase=phase;self.phase_start=now
+        elapsed=now-self.start;phase_elapsed=now-self.phase_start
         if force or elapsed-self.last>=5:
-            rate=done/max(elapsed,.001)
+            rate=done/max(phase_elapsed,.001)
             eta=(total-done)/rate if rate else None
-            print(f'phase={phase} done={done}/{total} elapsed={elapsed:.1f}s rate={rate:.2f}/s '
+            print(f'phase={phase} done={done}/{total} elapsed={elapsed:.1f}s phase_elapsed={phase_elapsed:.1f}s rate={rate:.2f}/s '
                   f'ETA={eta if eta is not None else "unknown"}s counters={dict(self.counts)}',file=sys.stderr,flush=True)
             self.last=elapsed
 
@@ -129,8 +132,14 @@ class Pass:
             (pair,assignment)).fetchone()
         expected=(digest(item['witness']),base['source_sha256'],self.base_sha(base),self.store.code,self.store.config_hash)
         result=None
-        if row and tuple(row[:2])==expected[:2] and digest(json.loads(row[6]))==row[5]:
-            value=unpack(self.db,json.loads(row[6]));producer=tuple(row[3:5])
+        packed=json.loads(row[6]) if row else None
+        if row and tuple(row[:2])==expected[:2] and digest(packed)==row[5]:
+            # Resume needs the fact and its actual application inputs, not
+            # the full native report/comparison trees. Those remain stored
+            # and are authenticated by the analysis reader when consumed.
+            if len(self.receipt_cache)>256:self.receipt_cache.clear()
+            value={key:unpack(self.db,packed[key],self.receipt_cache)
+                   for key in ('test_verified','input_sha256','task_receipt') if key in packed}
             # Code/config hashes are provenance, not resume keys. Only an
             # explicit retry revisits an input-bound unknown result.
             reuse=(type(value.get('test_verified')) is bool or (pair,assignment) not in self.retry_unknown)
@@ -177,7 +186,7 @@ class Pass:
 
     def prepare(self):
         cursor=self.base.execute('SELECT pair_id,source_sha256,code_sha256,config_sha256,result_sha256,'
-                                 'record_json FROM pairs ORDER BY pair_id')
+                                 'record_json FROM pairs ORDER BY rowid')
         for done,row in enumerate(cursor,1):
             if STOP:return False
             base=valid_base(row);self.base_hashes[base['pair_id']]=row[4];items=[i for i in base.get('per_assignment',[]) if train_witness(i)]
@@ -231,14 +240,18 @@ class Pass:
             else:
                 try:
                     ntrain,ntest,task_receipt=self.task(base['task'])
+                    check_start=time.monotonic()
                     result=self.checker.check(record,item,native_base=Path(base['source']['corpus']).resolve()/base['task'],
                                               ntrain=ntrain,ntest=ntest)
+                    self.counts['check_seconds']+=round(time.monotonic()-check_start,6)
                     result['task_receipt']=task_receipt
                 except Exception as exc:
                     result=dict(schema='mech-witness-test-v1',test_verified=None,status='unknown',reason=str(exc),
                                 error_type=type(exc).__name__,origin='test preparation unavailable',evaluations=0)
             self.guard()
+            save_start=time.monotonic()
             self.save_check(base,item,result)
+            self.counts['save_seconds']+=round(time.monotonic()-save_start,6)
             self.counts['new_'+('true' if result['test_verified'] is True else
                                'false' if result['test_verified'] is False else 'unknown')]+=1
         self.finish_pair(base)
@@ -248,6 +261,7 @@ class Pass:
         # One sequential gzip scan per source; never decompress from the start
         # separately for every selected pair. Only queued lines are JSON-decoded.
         work=sorted(self.work,key=lambda row:(row[1],row[2],row[3],row[0]))
+        self.phase='missing-tests';self.phase_start=time.monotonic()
         stream=None;path=None;lineno=0;failed=None;last_record=None
         try:
             for done,(pair,corpus,filename,wanted) in enumerate(work,1):

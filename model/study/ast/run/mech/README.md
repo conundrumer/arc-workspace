@@ -87,6 +87,10 @@ Existing witness rows resume by source, witness and task input identity plus
 payload digest; the original base-envelope hash is retained as provenance. Code/config hashes are provenance only.
 Unknown is durable too; `--retry-unknown` explicitly retries it. Completed
 booleans always resume, including the earlier 29,423 and later retry results.
+The resume scan reads only the fact and its input bindings; full native receipt
+trees are expanded by the analysis reader when consumed. Base scanning follows
+ingestion order for locality. Progress reports total and phase elapsed time;
+rate and ETA use the current phase rather than including earlier resume work.
 The old `--compatible-boolean-producer` and `--reuse-completed-booleans` options
 remain accepted for command compatibility but are no longer needed to preserve
 input-identical results.
@@ -96,6 +100,8 @@ assignment, source and witness identities are already in the row columns. Large 
 readers expand their hash-bound references. Old inline v1 payloads remain readable. A result commits before moving to the next
 witness. There is no durable derived work queue, pair grade, combined evidence,
 or summary file. Progress and final work statistics go to stdout/stderr.
+Bulk row/AST lists are interned as chunks rather than serializing every nested
+cell separately. Expanded facts and the witness verification policy are unchanged.
 
 Cheap stored X/selector checks precede fresh gold acquisition. Exact native
 reference/table/source binding results are cached; up to 32 gold target views
