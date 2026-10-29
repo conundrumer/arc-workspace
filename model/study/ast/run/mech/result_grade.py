@@ -76,8 +76,16 @@ def grade_results(base,*,witness_tests=(),fit_split=None,lib_search=None,
             and program_result.get('source_sha256')==base['source_sha256']):
         evidence['program'].update({k:deepcopy(program_result[k]) for k in
             ('fits_train','train_nonfit_complete','train_nonfit_receipt') if k in program_result})
+    admitted=None
     for judge in judge_outcomes:
-        evidence['clauses'].extend(deepcopy(judge.get('clauses',[])))
-        if judge.get('judge_run'):evidence['judge_run']=deepcopy(judge['judge_run'])
+        answers=deepcopy(judge.get('clauses',[]));run=deepcopy(judge.get('judge_run',{}))
+        if run.get('requires_admission') is True:
+            if admitted is None:admitted=judge_eligible(evidence)
+            run['admission_authenticated']=admitted
+            if not admitted:
+                run['complete']=False
+                for answer in answers:answer['judgment_complete']=False
+        evidence['clauses'].extend(answers)
+        if run:evidence['judge_run']=run
     result=reduce_grade(evidence)
     return dict(result,judge_eligible=judge_eligible(evidence),evidence=evidence)

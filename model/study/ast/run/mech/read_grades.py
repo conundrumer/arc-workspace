@@ -125,22 +125,34 @@ class StudyReader:
         if not Path(path).exists():return out,issues
         try:
             db=_open(path)
-            for payload, in db.execute('SELECT payload FROM judge_sessions WHERE pair_id=?',(base['pair_id'],)):
-                item=json.loads(payload)
-                if item['source_sha256']!=base['source_sha256'] or item['base_result_sha256']!=sha:continue
-                final_path=Path(item['final_path']);manifest_path=Path(item['manifest_path']);record_path=Path(item['record_path'])
-                for p,h in ((final_path,item['final_sha256']),(manifest_path,item['manifest_sha256']),(record_path,item['record_sha256'])):
-                    if file_hash(p)!=h:raise ValueError('judge artifact changed: '+str(p))
-                final=json.loads(final_path.read_text());manifest=json.loads(manifest_path.read_text())
-                import gzip
-                with (gzip.open(record_path,'rt') if record_path.suffix=='.gz' else record_path.open()) as stream:record=json.load(stream)
-                if digest(record)!=base['source_sha256']:raise ValueError('judge source differs')
-                from judge_merge import merge_final
-                from step1_reduce import adapt
-                target=dict(adapter=manifest['adapter'],ntrain=item['ntrain'],ntest=item['ntest'])
-                merged=merge_final(record,manifest,target,adapt(base,dict(result_sha256=sha)),final,
-                    dict(path=str(final_path),sha256=item['final_sha256']))
-                out.append(dict(clauses=merged['clauses'],judge_run=merged['judge_run']))
+            tables={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if 'judge_sessions' in tables:
+                for session_sha,payload in db.execute('SELECT session_sha256,payload FROM judge_sessions WHERE pair_id=?',(base['pair_id'],)):
+                    try:
+                        item=json.loads(payload)
+                        if digest(item)!=session_sha:raise ValueError('legacy judge reference integrity differs')
+                        if item['source_sha256']!=base['source_sha256']:continue
+                        final_path=Path(item['final_path']);manifest_path=Path(item['manifest_path']);record_path=Path(item['record_path'])
+                        for p,h in ((final_path,item['final_sha256']),(manifest_path,item['manifest_sha256']),(record_path,item['record_sha256'])):
+                            if file_hash(p)!=h:raise ValueError('judge artifact changed: '+str(p))
+                        final=json.loads(final_path.read_text());manifest=json.loads(manifest_path.read_text())
+                        import gzip
+                        with (gzip.open(record_path,'rt') if record_path.suffix=='.gz' else record_path.open()) as stream:record=json.load(stream)
+                        if digest(record)!=base['source_sha256']:raise ValueError('judge source differs')
+                        from judge_merge import merge_final
+                        from step1_reduce import adapt
+                        target=dict(adapter=manifest['adapter'],ntrain=item['ntrain'],ntest=item['ntest'])
+                        merged=merge_final(record,manifest,target,adapt(base,dict(result_sha256=sha)),final,
+                            dict(path=str(final_path),sha256=item['final_sha256']))
+                        out.append(dict(clauses=merged['clauses'],judge_run=merged['judge_run']))
+                    except Exception as error:issues.append('legacy judge unavailable: '+str(error))
+            if 'judge_submissions' in tables:
+                from judge_submission import load_submission_reference
+                for source,artifact,artifact_sha in db.execute('SELECT source_sha256,path,sha256 FROM judge_submissions WHERE pair_id=?',(base['pair_id'],)):
+                    if source!=base['source_sha256']:continue
+                    loaded=load_submission_reference(dict(path=artifact,sha256=artifact_sha),base)
+                    if loaded.get('status')=='available':out.append(loaded)
+                    else:issues.append('judge submission unavailable: '+loaded.get('reason','unknown'))
         except Exception as error:issues.append(str(error))
         finally:
             if db is not None:db.close()
@@ -177,9 +189,8 @@ class StudyReader:
             lib=self._optional('lib_search','mech4.read_results','load_result',base,sha)
             normal=(self.normal_reader.load_normal(pair,source_sha256=source,base_result_sha256=sha)
                     if self.normal_reader is not None else self._optional('normal','mech2.read_normal','load_normal',base,sha))
-            judges,judge_issues=self._judges(base,sha)
             graded=grade_results(base,witness_tests=tests,fit_split=fits,lib_search=lib,
-                target_comparison=targets,judge_outcomes=judges,base_reference=reference)
+                target_comparison=targets,base_reference=reference)
             program_result=None
             from grades import judge_candidate,program_nonfit
             if (base.get('fits') is False and judge_candidate(graded['evidence'])
@@ -195,9 +206,14 @@ class StudyReader:
                             file=base['task']+'/'+src['file'],line=src['line'],stream=src['stream']))
                     if program_result.get('valid'):
                         graded=grade_results(base,witness_tests=tests,fit_split=fits,lib_search=lib,
-                            target_comparison=targets,judge_outcomes=judges,base_reference=reference,
+                            target_comparison=targets,base_reference=reference,
                             program_result=program_result)
                 except Exception as error:issues.append('stored program nonfit proof unavailable: '+str(error))
+            judges,judge_issues=self._judges(base,sha)
+            if judges:
+                graded=grade_results(base,witness_tests=tests,fit_split=fits,lib_search=lib,
+                    target_comparison=targets,judge_outcomes=judges,base_reference=reference,
+                    program_result=program_result)
             evidence=graded.pop('evidence')
             targets.pop('_source_groups',None)
             record=dict(pair_id=pair,source_sha256=source,source=base.get('source'),base_result_ref=reference,

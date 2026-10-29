@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Index checked tool final artifacts; no grades or copied evidence are stored.
+"""Index host submissions or legacy finals; no grades or evidence copies.
 
 Jobs: pair_directory, base_evidence path, final_result path. The final artifact
 remains the authoritative clause outcome store; only authenticated locators are
@@ -16,14 +16,50 @@ import sqlite3
 from run import digest,pair_key,canonical
 
 
+def index_submissions(db,base,paths):
+    from judge_submission import submission_loader,submission_reference,load_submission_reference,data_file
+    submission_loader()  # reject an incomplete runner deployment before work
+    for path in paths:
+        path=data_file(path);value=json.loads(path.read_text());pair=value['pair_id']
+        row=base.execute('SELECT source_sha256,result_sha256,record_json FROM pairs WHERE pair_id=?',(pair,)).fetchone()
+        if row is None:raise ValueError('judge pair absent from base: '+pair)
+        record=json.loads(row[2])
+        if record['pair_id']!=pair or record['source_sha256']!=row[0] or digest(record)!=row[1]:
+            raise ValueError('judge base/source integrity differs')
+        reference=submission_reference(path)
+        checked=load_submission_reference(reference,record)
+        if checked.get('status')!='available':raise ValueError(checked.get('reason','submission unavailable'))
+        # Store only artifact locators/identities. Native outcomes, completion
+        # proofs and the answer remain in their original host/tool artifacts.
+        with db:db.execute('INSERT OR IGNORE INTO judge_submissions VALUES (?,?,?,?)',
+            (pair,row[0],reference['path'],reference['sha256']))
+        print(json.dumps(dict(pair_id=pair,status='indexed',submission=reference)),flush=True)
+
+
 def main():
-    ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('jobs',type=Path)
+    ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('jobs',type=Path,nargs='?',help='legacy final-v3 jobs JSONL')
+    ap.add_argument('--submissions',type=Path,nargs='+',help='judge-submission-v1 artifact paths')
+    ap.add_argument('--base',type=Path,default=DATA_ROOT/'ast/run/mech/labels.sqlite3')
     ap.add_argument('--output',type=Path,default=DATA_ROOT/'ast/run/mech/judge.sqlite3');a=ap.parse_args()
-    sys.path.insert(0,str(CODE_ROOT/'judgetool'))
-    from judge_tool import load_pair
+    if not a.jobs and not a.submissions:ap.error('provide --submissions or legacy jobs')
+    if a.output.resolve() in (a.base.resolve(),(DATA_ROOT/'ast/run/mech/settled.sqlite3').resolve()):
+        ap.error('judge artifact index must be separate from base/witness stores')
+    if a.submissions:
+        from judge_submission import submission_loader
+        submission_loader()
+    a.output.parent.mkdir(parents=True,exist_ok=True)
     db=sqlite3.connect(a.output);db.execute('PRAGMA journal_mode=WAL');db.execute('PRAGMA synchronous=FULL')
     db.execute('CREATE TABLE IF NOT EXISTS judge_sessions(pair_id TEXT,session_sha256 TEXT,payload TEXT,PRIMARY KEY(pair_id,session_sha256))')
+    db.execute('CREATE TABLE IF NOT EXISTS judge_submissions(pair_id TEXT,source_sha256 TEXT,path TEXT,sha256 TEXT,PRIMARY KEY(pair_id,sha256))')
+    db.commit()
     try:
+        if a.submissions:
+            base=sqlite3.connect(a.base.resolve().as_uri()+'?mode=ro',uri=True)
+            try:index_submissions(db,base,a.submissions)
+            finally:base.close()
+        if not a.jobs:return
+        sys.path.insert(0,str(CODE_ROOT/'judgetool'))
+        from judge_tool import load_pair
         with a.jobs.open() as stream:
             for line in stream:
                 if not line.strip():continue

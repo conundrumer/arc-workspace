@@ -70,6 +70,35 @@ into any new pass result. New judge ingestion stores references to the tool's
 existing final/source/manifest artifacts, not copied outcomes or joined evidence.
 Legacy owner data is adapted at read time, without native replay.
 
+## Judge submissions
+
+`grade_judge.py --submissions /absolute/DATA/run/submissions/*.json` indexes
+`judge-submission-v1` artifacts in `mech/judge.sqlite3`. Use Python 3.12 or
+later. The index stores only pair/source identity and submission path/SHA in
+`judge_submissions`; answers, native outcomes and host journals remain in their
+original artifacts. Legacy `judge_sessions`/final-v3 references stay readable.
+Deploy the updated reader/indexer before ingestion; do not modify a live
+index's schema under an old writer.
+
+The host owner's read-only `judge3.judge_workflows.load_submission` must be
+available. It authenticates the frozen run, immutable answer, selected private
+checked results and actual native started/result journal. The consumer reuses
+that validator; it has no second host-journal parser. Missing loader, changed
+artifacts or incomplete proof return unavailable. Current code/document hashes
+are not validity keys. Indexing and reading execute no clauses and write no
+grades. No submission file or completion is inferred from result files alone.
+
+`read_pair`/`read_pairs` automatically consume indexed submissions. Selected
+outcome/kind echoes must match the private checked envelope. Candidate axes
+must equal source-bound expected TRAIN+TEST axes; each selected target retains
+its own complete native axes, without count-based or Cartesian substitution.
+The existing clause-evidence adapter checks test/provenance/one-row proofs.
+A negative grade additionally requires canonical mechanical admission, actual
+authenticated host completion and complete checking of every selected answer.
+An unknown selected answer prevents that session from establishing a negative;
+an empty answer needs the same host completion proof. This policy remains in
+the single pure grade reducer.
+
 ## Base labeling pass
 
 `run.py` resumes a stored pair row when its payload digest matches, it has no
