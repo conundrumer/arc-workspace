@@ -4,7 +4,7 @@ use arclog::decode::corpus::read_task_files;
 use arclog::registry::Registry;
 use arclog::session::{SessionBound, TaskSession};
 use arclog_bindings::{Names, PyMutationPoint, PyStudyProgram, PyValidMutant, constructions};
-use arclog_tables::columns::{case_columns_in,case_columns_with_full_rows_in};
+use arclog_tables::columns::{case_columns_in,case_columns_with_full_rows_in,case_columns_selected_entries_in,ValueKind};
 use arclog::eval::join::Materializer;
 use arclog_tables::tables::{evidence_tables, study_pair};
 use study_pair::STUDY_SESSION_BYTES;
@@ -156,18 +156,44 @@ impl PyStudyTaskEvaluator {
     /// namespace. Native evaluation is cached once per gold handle. Returns
     /// (status_json, CaseTables); stops and faults retain their native reason.
     /// full_rows packs native rows/extents even when synthesis projections exist.
-    #[pyo3(signature=(gold,*,full_rows=false))]
-    fn gold_tables(&self,py:Python<'_>,gold:&PyStudyProgram,full_rows:bool)->PyResult<(String,PyCaseTables)> {
+    #[pyo3(signature=(gold,*,full_rows=false,full_rows_entries=None,expected_tables_ref=None))]
+    fn gold_tables(&self,py:Python<'_>,gold:&PyStudyProgram,full_rows:bool,mut full_rows_entries:Option<Vec<usize>>,expected_tables_ref:Option<&str>)->PyResult<(String,PyCaseTables)> {
         if gold.settings!=self.settings {return Err(PyValueError::new_err("task evaluator and program settings differ"));}
+        if full_rows_entries.is_some()!=expected_tables_ref.is_some() || full_rows_entries.is_some() && !full_rows {
+            return Err(PyValueError::new_err("entry mask requires full_rows=True and expected_tables_ref together"));
+        }
+        if let Some(entries)=&mut full_rows_entries {
+            entries.sort_unstable();
+            if entries.windows(2).any(|pair|pair[0]==pair[1]) {return Err(PyValueError::new_err("duplicate full_rows_entries index"));}
+        }
         let constructions=constructions()?;
         let (report,columns)=py.detach(|| self.with_cache("gold_tables",|cache| {
-            if cache.activate(&gold.program) {self.session.results.clear();}
             let limits=self.settings.operation_limits();
-            let (mut report,tables)=study_pair::gold_tables_cached_in(&gold.program,&self.task,&self.session,constructions,&self.settings,cache,&limits);
+            let (mut report,tables)=if let Some(expected)=expected_tables_ref {
+                let (report,tables,count)=cache.gold_tables_snapshot(&gold.program,expected)?;
+                if full_rows_entries.as_ref().is_some_and(|entries|entries.last().is_some_and(|last|*last>=count)) {
+                    return Err("full_rows_entries index is outside the default metadata snapshot".into());
+                }
+                (report,tables)
+            } else {
+                if cache.activate(&gold.program) {self.session.results.clear();}
+                study_pair::gold_tables_cached_in(&gold.program,&self.task,&self.session,constructions,&self.settings,cache,&limits)
+            };
             let started=std::time::Instant::now();
             let materializer=Materializer::new(&self.session,&limits);
-            let columns=case_columns_with_full_rows_in(&materializer,&self.evidence,&tables,self.task.train.len(),None,full_rows);
+            let columns=match &full_rows_entries {
+                Some(entries)=>case_columns_selected_entries_in(&materializer,&self.evidence,&tables,self.task.train.len(),None,entries),
+                None=>case_columns_with_full_rows_in(&materializer,&self.evidence,&tables,self.task.train.len(),None,full_rows),
+            };
+            let metadata_complete=columns.packing_stop().is_none() && columns.tables.form.len()==self.evidence.len()+tables.len();
+            if !full_rows && metadata_complete {cache.record_gold_tables_metadata(&gold.program,columns.entries.table.len())?;}
             report["full_rows"]=full_rows.into();
+            report["entry_count"]=columns.entries.table.len().into();
+            report["entry_metadata_complete"]=metadata_complete.into();
+            report["full_rows_entries"]=serde_json::json!(full_rows_entries);
+            if let Some(entries)=&full_rows_entries {
+                report["selected_rows_entries"]=serde_json::json!(entries.iter().copied().filter(|i|columns.entries.kind.get(*i)==Some(&(ValueKind::Rows as u8))).collect::<Vec<_>>());
+            }
             packing_status(&mut report,[&columns]);
             report["native_columns_seconds"]=started.elapsed().as_secs_f64().into();
             Ok((report,columns))

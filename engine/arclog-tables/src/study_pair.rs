@@ -50,7 +50,7 @@ pub struct PairCache {
     active: Option<Arc<CheckedProgram>>,
     gold: HashMap<usize,Arc<GoldMemo>>,
     gold_bodies: HashMap<(usize,NodePath),Outcome<ClauseTables>>,
-    gold_relations: HashMap<usize,(Arc<CheckedProgram>,Outcome<Vec<(usize,Table)>>)>,
+    gold_relations: HashMap<usize,GoldRelationMemo>,
     prefix: Option<PrefixMemo>,
     columns: Option<(Vec<u32>,crate::columns::CaseColumnPrefix)>,
     source: Option<(Arc<CheckedProgram>,Arc<arclog::stream::WrittenStream>)>,
@@ -67,6 +67,33 @@ struct PrefixMemo {
     tables:Vec<(usize,Table)>,
     row_bytes:usize,
 }
+struct GoldRelationMemo {
+    source:Arc<CheckedProgram>,
+    tables:Outcome<Vec<(usize,Table)>>,
+    snapshot_ref:String,
+    /// Entry ordinals are certified by a complete default packing, never a
+    /// second implementation of the packer's entry traversal.
+    metadata_entries:Option<usize>,
+}
+impl GoldRelationMemo {
+    fn new(source:Arc<CheckedProgram>,tables:Outcome<Vec<(usize,Table)>>)->Self {
+        use std::sync::{OnceLock,atomic::{AtomicU64,Ordering}};
+        static START:OnceLock<std::time::SystemTime>=OnceLock::new();
+        static NEXT:AtomicU64=AtomicU64::new(0);
+        let snapshot_ref=format!("{}:{:?}:{}",std::process::id(),START.get_or_init(std::time::SystemTime::now),NEXT.fetch_add(1,Ordering::Relaxed));
+        Self {source,tables,snapshot_ref,metadata_entries:None}
+    }
+    fn view(&self,cached:bool)->(Value,Vec<(usize,Table)>) {
+        let (mut report,tables)=match &self.tables {
+            Ok(tables)=>{let mut report=table_status(tables);report["relation_tables"]=json!(tables.len());(report,tables.clone())},
+            Err(f)=>(faulted(f),Vec::new()),
+        };
+        report["cached"]=json!(cached);
+        report["tables_ref"]=json!(self.snapshot_ref);
+        (report,tables)
+    }
+}
+
 struct GoldMemo {
     _source:Arc<CheckedProgram>,
     walked:Outcome<Assigned<Value>>,
@@ -119,6 +146,26 @@ impl PairCache {
         self.active=Some(Arc::clone(gold.checked()));
         true
     }
+    /// The masked transport must use an already packed native snapshot. A
+    /// different program/case/session cannot reinterpret its entry ordinals.
+    pub fn gold_tables_snapshot(&self,gold:&StudyProgram,expected:&str)->Result<(Value,Vec<(usize,Table)>,usize),String> {
+        let key=Arc::as_ptr(gold.checked()) as usize;
+        let memo=self.gold_relations.get(&key).ok_or("entry mask requires an existing gold_tables snapshot; no replay is performed")?;
+        if !Arc::ptr_eq(&memo.source,gold.checked()) || memo.snapshot_ref!=expected {
+            return Err("entry mask snapshot reference or gold handle differs".into());
+        }
+        let count=memo.metadata_entries.ok_or("entry mask requires a complete default metadata packing first")?;
+        let (report,tables)=memo.view(true);
+        Ok((report,tables,count))
+    }
+
+    pub fn record_gold_tables_metadata(&mut self,gold:&StudyProgram,count:usize)->Result<(),String> {
+        let memo=self.gold_relations.get_mut(&(Arc::as_ptr(gold.checked()) as usize)).ok_or("gold_tables snapshot was discarded")?;
+        if memo.metadata_entries.is_some_and(|previous|previous!=count) {return Err("native gold_tables entry order changed within an immutable snapshot".into());}
+        memo.metadata_entries=Some(count);
+        Ok(())
+    }
+
     fn remember(&mut self,key:Vec<u32>,tables:Vec<(usize,Table)>) {
         // Replace, never accumulate cumulative prefix tables. Checked IR
         // remains owned by the single active gold case.
@@ -138,7 +185,7 @@ impl PairCache {
         let mut seen=HashSet::new();
         let mut bytes=0usize;
         let bodies=self.gold_bodies.values().filter_map(|v|v.as_ref().ok()).map(|v|v.tables.as_slice());
-        let relations=self.gold_relations.values().filter_map(|(_,v)|v.as_ref().ok()).map(Vec::as_slice);
+        let relations=self.gold_relations.values().filter_map(|memo|memo.tables.as_ref().ok()).map(Vec::as_slice);
         let prefix=self.prefix.iter().map(|v|v.tables.as_slice());
         for tables in bodies.chain(relations).chain(prefix) {for (_,table) in tables {if let Ok(c)=&table.contents {
             bytes=bytes.saturating_add(c.assignment_layout.retained_bytes(&mut seen));
@@ -997,12 +1044,9 @@ pub fn gold_tables_cached_in(gold:&StudyProgram,task:&Task,session:&TaskSession,
             let written=source_stream(gold,&decoder,cache)?;
             original_relations(gold,&written,None,&decoder,cache).map(|(tables,_)|tables)
         })).unwrap_or_else(|payload|Err(fault(format!("gold relation evaluation panicked: {}",arclog::decode::corpus::replay_panic(&*payload)),&NodePath::default())));
-        cache.gold_relations.insert(key,(Arc::clone(gold.checked()),held));
+        cache.gold_relations.insert(key,GoldRelationMemo::new(Arc::clone(gold.checked()),held));
     }
-    match &cache.gold_relations[&key].1 {
-        Ok(tables)=>{let mut report=table_status(tables);report["cached"]=json!(hit);report["relation_tables"]=json!(tables.len());(report,tables.clone())},
-        Err(f)=>{let mut report=faulted(f);report["cached"]=json!(hit);(report,Vec::new())}
-    }
+    cache.gold_relations[&key].view(hit)
 }
 
 /// Pack the shared relation prefix once, preserving every exported offset
