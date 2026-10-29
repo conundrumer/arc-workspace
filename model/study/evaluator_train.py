@@ -359,19 +359,7 @@ def acquire_train_point(ev, record, adapter, ntrain, ntest, side='mutant'):
     binding = adapter['input']['binding'] if side == 'mutant' else adapter['comparison_target']['binding']
     if side == 'mutant':
         store = TargetStore(ev.legacy, CODE_ROOT)
-        native = store.snapshot(record['native']['mutant'], adapter['source']['native_base'])
-        ts = native['tables']
-        # The certified report distinguishes ALL/KEPT tables sharing a selector.
-        table = record['evaluation']['table_indices']['mutant_kept']
-        if type(table) is not int or not 0 <= table < len(ts['form']):
-            raise Incomplete('saved X kept table index is absent')
-        if not all(str(ts[key][table]) == str(value)
-                   for key, value in binding['native_selector'].items()
-                   if key in ('form', 'point', 'relation', 'fact')):
-            raise Incomplete('saved X report index differs from canonical BODY selector')
-        expected = binding['source_body_schema']
-        if [field['type'] for field in expected] != list(ts['column_types'][table]):
-            raise Incomplete('saved X physical BODY types differ from canonical binding')
+        native, table = store.mutant_snapshot(record, adapter)
         return acquire_train_table(ev, native, table, record, ntrain=ntrain,
             fields=binding['projected_schema'],
             projection=[field['source_body_column'] for field in binding['projected_schema']],

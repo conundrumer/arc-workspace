@@ -337,11 +337,44 @@ class TargetStore:
                                   for k,family in train.items()},[fields[i] for i in indices])
         return found
 
+    def mutant_snapshot(self,record,adapter):
+        """Exact authenticated X source/index; ALL and KEPT can share a selector."""
+        binding=adapter['input']['binding']
+        ref=binding['native_ref']
+        if ref!=record['native']['mutant']:
+            raise Incomplete('X binding native reference differs from the source record')
+        native=self.snapshot(ref,adapter['source']['native_base']);ts=native['tables']
+        table=binding['native_table_index'];selector=binding['native_selector']
+        if type(table) is not int or not 0<=table<len(ts['form']):
+            raise Incomplete('X binding native table index is absent')
+        if (not {'form','point'}<=selector.keys() or
+                not all(str(ts[k][table])==str(v) for k,v in selector.items()
+                        if k in ('form','point','relation','fact'))):
+            raise Incomplete('X binding native table index differs from its BODY selector')
+        schema=native['_native_reader'].schema(table);expected=binding['source_body_schema']
+        if len(schema)!=len(expected):raise Incomplete('X physical BODY schema width differs from binding')
+        for actual,want in zip(schema,expected):
+            if any(actual[k]!=want[k] for k in ('index','type')):
+                raise Incomplete('X physical BODY column identity/type differs from binding')
+            if any(actual[k]!=want[k] for k in ('name','frame','slot','label') if k in want):
+                raise Incomplete('X physical BODY column metadata differs from binding')
+            if ('native_source_label' in want and
+                    actual['source_label']!=want['native_source_label']):
+                raise Incomplete('X physical BODY source label differs from binding')
+        for field in binding['projected_schema']:
+            index=field['source_body_column']
+            if index is None:
+                if (field['type']!='Unit' or not (
+                        (field.get('source_projection',{}).get('inserted_constant') or {}).get('kind')=='unit'
+                        or field.get('native_label_identity',{}).get('kind')=='implicit_unit')):
+                    raise Incomplete('X projection lacks certified inserted Unit evidence')
+            elif (type(index) is not int or not 0<=index<len(schema)
+                  or comparison_type(schema[index]['type'])!=comparison_type(field['type'])):
+                raise Incomplete('X projection physical column/type differs from binding')
+        return native,table
+
     def mutant_input(self,record,adapter,ntrain,ntest):
-        binding=adapter['input']['binding'];native=self.snapshot(record['native']['mutant'],adapter['source']['native_base'])
-        ts=native['tables'];selector=binding['native_selector']
-        matches=[t for t in range(len(ts['form'])) if all(str(ts[k][t])==str(v) for k,v in selector.items() if k in ('form','point','relation','fact'))]
-        if len(matches)!=1:raise Incomplete('X native body selector missing or ambiguous')
-        grouped=kept_groups(self.L,native,matches[0],record,ntrain,ntest,[f['source_body_column'] for f in binding['projected_schema']])
+        binding=adapter['input']['binding'];native,table=self.mutant_snapshot(record,adapter)
+        grouped=kept_groups(self.L,native,table,record,ntrain,ntest,[f['source_body_column'] for f in binding['projected_schema']])
         if grouped['missing']:raise Incomplete('X lacks compatible contexts')
         return grouped,binding['projected_schema']
