@@ -337,7 +337,7 @@ class ReplayEvaluator:
             selected_form = result.get('form', int(record['point'][0])+1)
             retained_forms=result.get('retain_forms')
             selected_forms={str(f) for f in retained_forms} if retained_forms is not None else {str(selected_form)}
-            with gzip.open(folder/f'entries-{i}.jsonl.gz', 'wt') as stream:
+            with gzip.open(folder/f'entries-{i}.jsonl.gz', 'wt', compresslevel=1) as stream:
                 for t in (t for t, form in enumerate(tables['form']) if result.get('retain_all')
                           or str(form) in selected_forms):
                     for e in reader.bytable[t]:
