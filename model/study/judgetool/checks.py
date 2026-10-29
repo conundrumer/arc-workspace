@@ -237,6 +237,14 @@ def evaluate(ev,record,clause,target,columns=None,*,explore=False,row_limit=100)
     result['provenance']=provenance
     if provenance['status']=='unknown':
         result['reason']=provenance['reason'];return result
+    if provenance['status']=='partial':
+        contribution=partial_source_rows(proof,grouped,replay)
+        provenance['row_contribution']=contribution
+        if contribution.get('X_contributes_rows') is not True:
+            # An empty result or an unsupported path is no completed negative
+            # proof, and a syntactic X read cannot certify a partial positive.
+            result['reason']=contribution['reason'];return result
+        provenance['X_contributes_rows']=True
     result.update(verified=True,outcome='partial source verified' if provenance['status']=='partial' else 'recovery verified',
                   checks=dict(train='equal',test='equal',test_target='gold_full_replay',complete=True))
     return result
@@ -304,6 +312,42 @@ def execution_branches(body,limit=256):
     return branches
 
 
+def partial_source_rows(proof,grouped,replay):
+    """Certify an actual X row on a successful original native clause path.
+
+    A positive outer X is a mandatory conjunct; otherwise every supported OR
+    execution branch must contain one. Nonempty rows from the ORIGINAL complete
+    candidate replay then witness a successful path with X. No row is inferred
+    from syntax, a prefix query, model union, or the disabled-X counterfactual.
+    Branch-dependent X participation remains unknown without native path proof.
+    This check adds no native operations to ordinary/lib/union partial checks.
+    """
+    unknown=dict(complete=False,X_contributes_rows=None)
+    required=grouped.get('required',set())
+    groups=grouped.get('groups',{})
+    if (replay.get('engine')!='ran' or not replay.get('artifact')
+            or not required or grouped.get('missing') or set(groups)!=set(required)
+            or any(not family for family in groups.values())):
+        return dict(unknown,reason='partial source original native TRAIN/TEST contexts incomplete')
+    body=proof['canonical'][2:]
+    def positive_x(branch):
+        return any(isinstance(atom,list) and atom and atom[0]=='&X' for atom in branch)
+    mandatory=positive_x(body)
+    if not mandatory:
+        branches=execution_branches(body)
+        mandatory=bool(branches) and all(positive_x(branch) for branch in branches)
+    if not mandatory:
+        return dict(unknown,reason='partial source needs native successful-path evidence for branch-dependent X')
+    contexts=[list(context) for context,family in sorted(groups.items()) if any(rows for rows in family)]
+    if not contexts:
+        return dict(unknown,reason='partial source has no actual successful X row in the native result')
+    return dict(complete=True,X_contributes_rows=True,
+        source='original_complete_native_candidate_replay',artifact=replay['artifact'],
+        proof='positive X is mandatory on every successful result path',
+        required_train_test_contexts=len(required),nonempty_contexts=contexts,
+        additional_native_operations=0)
+
+
 def union_proof(ev,record,adapter,proof,output,gold,columns,ntrain,ntest,fields):
     if adapter.get('mechanical',{}).get('redundant') is not False:
         return dict(status='unknown',reason='union requires explicit authenticated X-not-redundant evidence')
@@ -323,13 +367,15 @@ def union_proof(ev,record,adapter,proof,output,gold,columns,ntrain,ntest,fields)
         return out
     try:canonical[2:]=disable(canonical[2:])
     except Incomplete as error:return dict(status='unknown',reason=str(error))
-    if not found:return dict(status='partial',reason='union has no X-reading branch')
+    if not found:return dict(status='unknown',reason='union has no positive X-reading branch')
     program,form,_=prepare(L,record,L.unparse(canonical),adapter)
     replay,groups,cols=_replay_groups(ev,record,program,form,ntrain,ntest,dict(kind='union-counterfactual',clause=L.unparse(canonical)))
     if groups is None or groups['missing']:return dict(status='unknown',reason='union counterfactual lacks kept contexts',artifact=replay['artifact'])
     equality=(catalog.equality(groups['groups'],cols,gold,fields,gold['catalog_reference'],explicit=output)
               if 'catalog_reference' in gold else compare(groups['groups'],cols,gold['groups'],fields,explicit=output))
     if equality['status']=='unknown':return dict(status='unknown',reason='union contribution comparison incomplete',artifact=replay['artifact'])
+    # Equality here only says X was unnecessary. It supplies no evidence that
+    # an X-reading branch actually ran; evaluate applies the common partial gate.
     return dict(status='union_X_contributes' if equality['status']=='mismatch' else 'partial',
                 needed_rows=equality['status']=='mismatch',nonredundant=True,redundant=False,
                 one_row_per_X=True,restrictions_only=True,artifact=replay['artifact'])
