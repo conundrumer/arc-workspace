@@ -20,7 +20,7 @@ from study_paths import CODE_ROOT, DATA_ROOT, MAIN_ROOT
 from evaluator import sha
 from tables import Incomplete,kept_groups,compare,projected_rows
 from surface import prepare,tokens
-from program_metadata import export_named_program,typed_fields
+from program_metadata import export_named_program,typed_fields,type_identity
 import catalog
 import checks
 
@@ -258,8 +258,15 @@ def acquire_case(ev,record,case_context,ntrain,ntest,*,include_bodies=True):
             witnesses=definition['column_witnesses']
             if (len(witnesses)!=len(schema) or
                     any(w['physical_column']!=c['index'] or w['native_name']!=c['name']
-                        or w['type']!=c['type'] for w,c in zip(witnesses,schema))):
-                raise Incomplete('observed native column witnesses differ from the replay table schema')
+                        or type_identity(ev,own,w['type'])[0]!=type_identity(ev,own,c['type'])[0]
+                        for w,c in zip(witnesses,schema))):
+                evidence=dict(case=case,selector=selector,table=table,witnesses=witnesses,
+                              native_schema=schema,replay_artifact=replay['artifact'])
+                folder=ev.artifacts/('schema-identity-'+sha(evidence))
+                folder.mkdir(exist_ok=True)
+                (folder/'mismatch.json').write_text(json.dumps(evidence,indent=2)+'\n')
+                raise Incomplete('observed native column witnesses differ from the replay table schema; '
+                                 'artifact='+str(folder))
         bundle['tables'].append(dict(table_id='native:'+str(table),native_table=table,selector=selector,fields=fields,
             native_schema=schema,
             source_name=label,grouped=encode_grouped(grouped),receipt=dict(case=case,artifact=replay['artifact'],table=table,
