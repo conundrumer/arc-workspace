@@ -52,20 +52,14 @@ The labeler makes the grade from the mechanical result and the tool's outcomes, 
 
 Attributes: `redundant`, `sibling`, and the continuation's outcome.
 
-## The document
+## The judge's input
 
-- Every relation and column by its source name at the place it is used. No legend and no lookup table.
-- Every table complete when the document fits under its size limit. Where it does not, the large tables are sampled, with complete row counts and complete comparison counts, and the judge uses the tool to see more. The verdict on a clause always comes from the tool's check against the complete tables.
-- G and X aligned on the candidate keys the native tables store, with the rows only in G, the rows only in X, and the conflicts on a key shown. Without a key, only the rows only in G and only in X are shown.
-- The available tables, each under the exact name and columns a clause uses.
-- Each fact shown once.
-- Sections in the order of the judge's work: the target, the comparison, the readers and the available tables, the clause syntax, then outputs as support.
-- The OR rule: a label the first branch makes is named bare in every later branch.
-- A port's columns by the port's declared column names, not the body labels.
-- The literal rules: `0` stands only as a site argument on a number, Box, Position or Offset column, or as the second label of a constraint whose first label is a number or a Box. On a Position, `0` is the zero box, a cell only in a 1×1 frame. `0` is never a color; a color comes from a relation that holds it.
-- Where a column of X holds the same values as another column or an available table, in another type or form, the document says so.
-- No test output anywhere.
-- The document size is reported for every rendered pair.
+- The judge's input is the brief and the pair's data. The data is files in a standard format that Python reads directly: every table (X, G, the targets, the available tables), the comparisons of X with each target, the readers, the gold and mutant program text, and the task's train grids. Nothing in the brief inlines data.
+- The judge reads the data with its own inline Python. The brief describes the file layout, the data conventions (how each type is stored, how rows split by example and DET assignment) and a few high-level recipes, such as loading a table, comparing X with a target, drawing positions as a grid, and finding a column of X that holds the same values as another column or an available table.
+- Every relation and column carries its source name, the name a clause uses. A port's columns carry the port's declared column names, not the body labels.
+- The brief states the clause rules: the OR rule (a label the first branch makes is named bare in every later branch), and the literal rules (`0` stands only as a site argument on a number, Box, Position or Offset column, or as the second label of a constraint whose first label is a number or a Box; on a Position, `0` is the zero box, a cell only in a 1×1 frame; `0` is never a color, and a color comes from a relation that holds it).
+- Running a clause is the only command: run, check and alternative, each writing its result as data in the same format.
+- No test output is in the data. The verdict on a clause always comes from the tool's check against the complete tables.
 
 ## Ownership
 
