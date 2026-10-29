@@ -45,7 +45,7 @@ The labeler makes the grade from the mechanical result and the tool's outcomes, 
 - `equivalent`: X equals a target.
 - Recovery: a verified recovery to G or to a later table of some case.
 - Partial source: a verified partial source.
-- `fits`: the mutant program gives every train output and the test outputs, and a reader reads a column where X differs from gold. A difference no reader reads is `extension`.
+- `fits`: the mutant program gives every train output and the test outputs, and a reader reads a column where X differs from gold. A difference no reader reads is `extension`. A DET-kind pair never grades `fits` or `extension`: the evaluation holds every DET at gold's kept values, so OUT never reads the mutant's DET, and its table is graded by the rows alone.
 - Reject: the search covered the space and found no recovery, or the judge ran and no clause of it verified as a recovery or a partial source, and the mutant program does not fit. A passing continuation is recorded as an attribute of the Reject.
 - Unknown: the search stopped at its bound, the comparison is incomplete, or the replay gave no kept entry.
 - Refused: the engine refuses the mutant program.
