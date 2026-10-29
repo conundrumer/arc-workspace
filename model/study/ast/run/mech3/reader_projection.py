@@ -4,7 +4,10 @@ One projection per reader atom, preserving its joint tuple. INIT has one
 canonical component-input interface reader. Native graph ids stay within one
 export; the unchanged reader AST and public row paths bind the two sides.
 """
-from common import digest
+if __package__:
+    from .common import digest
+else:
+    from common import digest
 
 
 class Unavailable(ValueError):pass
@@ -120,7 +123,7 @@ def side_readers(export,binding,point):
     return result
 
 
-def pair_readers(record,exports,bindings):
+def pair_readers(record,exports,bindings,*,side_cache=None):
     """Return paired exact physical projections, or a named unavailable cause."""
     require(record.get('audit',{}).get('outside_atoms_unchanged') is True,
             'source lacks native unchanged-outside-body audit')
@@ -140,7 +143,17 @@ def pair_readers(record,exports,bindings):
         return dict(schema='mech3-reader-projection-v1',complete=True,readers=[dict(kind='component_input_interface',
             reader_path=g['body_path'],fields=fields,gold_binding=g,mutant_binding=x)],source_sha256=digest(record),
             policy='canonical projected key/port tuple is one direct interface reader; private witnesses excluded')
-    sides={s:side_readers(exports[s],bindings[s],record['point']) for s in ('gold','mutant')}
+    sides={}
+    for side in ('gold','mutant'):
+        key=None
+        if side=='gold' and side_cache is not None:
+            key=digest(dict(task=record['task'],case=record['case'],program=record['gold_sexp'],binding=bindings[side]))
+        if key is not None and key in side_cache:sides[side]=side_cache[key]
+        else:
+            sides[side]=side_readers(exports[side],bindings[side],record['point'])
+            if key is not None:
+                side_cache[key]=sides[side]
+                while len(side_cache)>64:side_cache.pop(next(iter(side_cache)))
     require(sides['gold'].keys()==sides['mutant'].keys(),'resolved reader inventories differ across mutation')
     result=[]
     for key,g in sides['gold'].items():

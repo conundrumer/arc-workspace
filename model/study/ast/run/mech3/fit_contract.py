@@ -1,11 +1,10 @@
-"""Stored native program fit evidence, and a pure Step 4 grade overlay.
+"""Stored native program fit evidence, and a pure Step 4 evidence overlay.
 
 Stored native verdicts are reused. Missing TEST evidence is acquired by the
 shared whole-program evaluator in the caller, with gold's full replay as truth.
 No evaluator is implemented here.
 """
 from copy import deepcopy
-from grades import reduce_grade
 
 
 def stored_program_fit(record,ntrain,ntest):
@@ -54,8 +53,11 @@ def apply(evidence,result,reference):
         raise ValueError('step 4 source/pair differs')
     if out['base_result_ref']['result_sha256']!=result['base_result_sha256']:
         raise ValueError('step 4 base receipt differs')
-    program=deepcopy(result['program']);program['receipt_ref']=reference
-    read=deepcopy(result['reader_difference']);read['receipt_ref']=reference
+    program=deepcopy(out.get('program',{}));program['fits_test']=result.get('fits_test')
+    program['complete']=all(type(program.get(k)) is bool for k in ('fits_train','fits_test'))
+    program['receipt_ref']=reference
+    different=result.get('read_difference')
+    read=dict(read_difference=different,complete=type(different) is bool,receipt_ref=reference)
     out['program']=program;out.setdefault('comparisons',{})['reader_difference']=read
     owed=[s for s in out.get('missing_steps',[]) if not s.startswith('step_4_')]
     if result.get('kind','').upper()=='DET':
@@ -64,4 +66,4 @@ def apply(evidence,result,reference):
         if not program.get('complete'):owed.append('step_4_test_program_fit_proof')
         if not read.get('complete'):owed.append('step_4_reader_projection_or_rows')
     out['missing_steps']=owed;out['step']=4;out['step4_ref']=reference
-    return out,reduce_grade(out)
+    return out

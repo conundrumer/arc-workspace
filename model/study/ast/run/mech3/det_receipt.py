@@ -4,8 +4,12 @@ No native evaluation, row acquisition, callable formatting or graph copy.
 """
 import hashlib
 from pathlib import Path
-from common import digest
-from reader_projection import side_readers,det_transport
+if __package__:
+    from .common import digest
+    from .reader_projection import side_readers,det_transport
+else:
+    from common import digest
+    from reader_projection import side_readers,det_transport
 
 
 def mapper_receipt():

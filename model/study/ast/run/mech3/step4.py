@@ -5,14 +5,17 @@ Reuses stored TRAIN fit and reader tables. Missing TEST evidence is acquired
 through the shared evaluator, using fresh full gold replay as the authority.
 """
 import argparse
+import concurrent.futures
 from collections import Counter
 import fcntl
 import gzip
 import hashlib
 import json
+import multiprocessing
 import os
 from pathlib import Path
 import signal
+import queue
 from types import SimpleNamespace
 import sqlite3
 import sys
@@ -36,13 +39,14 @@ def stop(*_):
 
 
 class Worker:
-    def __init__(self,args):
+    def __init__(self,args,events=None,worker_id=0,stop_event=None):
         from evaluator import ReplayEvaluator
         from tables import TargetStore,comparison_type
         from nonrender_metadata import MetadataProducer
         import importlib.util
         self.args=args;self.start=time.monotonic();self.last=0;self.counts=Counter();self.reader_counts=Counter()
-        self.tasks={};self.current=None;self.producer=None;self.producer_class=MetadataProducer
+        self.events=events;self.worker_id=worker_id;self.stop_event=stop_event
+        self.tasks={};self.current=None;self.producer=None;self.producer_class=MetadataProducer;self.group_cache={};self.reader_cache={}
         self.cfg=json.loads((DATA_ROOT/'ast/run/corpus-v11/run.json').read_text())
         self.ev=ReplayEvaluator(run=CODE_ROOT/'ast/run',deadline=args.deadline,
             artifacts=DATA_ROOT/'judgetool/mech3-fit-replays',reference=CODE_ROOT/'ref/progsynth-relabel')
@@ -60,34 +64,22 @@ class Worker:
             'judge3/nonrender_metadata.py','judge3/definition_binding.py','judge3/render_pair.py','judge3/catalog.py',
             'judge2/render2/headers.py','judge2/render2/body.py','judge2/render2/column_paths.py',
             'judge2/render2/structured.py','ref/progsynth-relabel/engine_verify.py',
-            'ref/progsynth-relabel/verify_recovery.py','codex-adm/briefs/judge-decisions.md'))
+            'ref/progsynth-relabel/verify_recovery.py'))
         files.extend((CODE_ROOT/'judgetool').glob('*.py'))
         files.append(binary)
         self.manifest={str(p.resolve()):hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
-        self.signatures={p:self.signature(Path(p)) for p in self.manifest}
         config=dict(schema='mech3-step4-config-v1',base=str(args.base.resolve()),compare_seconds=args.compare_seconds,
             scope='base label fits, nonDET; per-reader joint projections',
             program_fit='stored TRAIN+TEST proof first; missing TEST uses shared whole mutant and full gold OUT replay',
-            spec_sha256=self.manifest[str((CODE_ROOT/'codex-adm/briefs/judge-decisions.md').resolve())],
             runtime=dict(python=str(Path(sys.executable).resolve()),binary=str(binary)),deadline=args.deadline)
         self.output=Store(args.output,self.manifest,config)
         self.gold_cache=GoldCache(self.output)
         self.program_code=digest({p:sha for p,sha in self.manifest.items() if not Path(p).is_relative_to(HERE)})
         self.base=sqlite3.connect(args.base.resolve().as_uri()+'?mode=ro',uri=True);self.base.execute('BEGIN')
         self.scope="(json_extract(record_json,'$.label')='fits' AND upper(json_extract(record_json,'$.kind'))!='DET')"
-        self.total=self.base.execute('SELECT count(*) FROM pairs WHERE '+self.scope).fetchone()[0]
-
-    @staticmethod
-    def signature(path):
-        s=path.stat();return s.st_dev,s.st_ino,s.st_size,s.st_mtime_ns,s.st_ctime_ns
-
-    def guard(self):
-        for name,sha in self.manifest.items():
-            p=Path(name);sig=self.signature(p)
-            if sig==self.signatures[name]:continue
-            if hashlib.sha256(p.read_bytes()).hexdigest()!=sha:
-                raise RuntimeError('step 4 dependency changed; restart: '+name)
-            self.signatures[name]=sig
+        self.scope_params=getattr(args,'task_ids',[])
+        if self.scope_params:self.scope+=' AND json_extract(record_json,\'$.task\') IN ('+','.join('?' for _ in self.scope_params)+')'
+        self.total=self.base.execute('SELECT count(*) FROM pairs WHERE '+self.scope,self.scope_params).fetchone()[0]
 
     def task(self,task):
         if task not in self.tasks:
@@ -96,126 +88,117 @@ class Worker:
         return self.tasks[task]
 
     def metadata(self,record,corpus):
-        from raw_body import binding
-        # Metadata-only context: no ReplayEvaluator instance/artifact directory
-        # and no task evaluator are constructed by this pass.
+        # Metadata only: no replay or attribution of a mutant to the gold
+        # source stream. The shared producer owns each side's native binding.
         if self.current!=(record['task'],str(corpus)):
-            self.native.cache.clear();self.current=(record['task'],str(corpus))
+            self.native.cache.clear();self.group_cache.clear();self.reader_cache.clear();self.current=(record['task'],str(corpus))
             self.producer=self.producer_class(engine=self.legacy.arclog,
-                read_native=lambda ref,base:self.native.snapshot(ref,base)['_native_reader'],
+                read_native=lambda ref,base:self.snapshot(ref,base)['_native_reader'],
                 corpus=corpus,settings=self.settings,case_inventory=dict(cases=[]))
         exports={s:self.producer.programs.load(record[s+'_sexp'],record if s=='gold' else None)[1]
                  for s in ('gold','mutant')}
         kind=next(v['kind'] for v in exports['gold']['body_views'] if v['body_path']==record['point'])
-        if kind.startswith('INIT'):
-            adapter=self.producer.produce(record,native_base=corpus/record['task'])
-            bindings=adapter['bindings'];policies=adapter['policies']
-        else:
-            bindings={};policies=[]
-            for side in ('gold','mutant'):
-                # The shared raw binder is only provenance for the columns
-                # selected by actual readers, never a DET all-BODY comparison.
-                own=dict(record,gold_sexp=record[side+'_sexp'],
-                    native=dict(record['native'],gold=record['native'][side]),
-                    evaluation=dict(record['evaluation'],table_indices=dict(record['evaluation']['table_indices'],
-                        gold_all=record['evaluation']['table_indices'][side+'_kept'])))
-                if side=='mutant':own.pop('relation_source_names',None)
-                layout,receipt=binding(self.context,own,native_base=corpus/record['task'])
-                bindings[side]=layout;policies.append(dict(side=side,receipt=receipt,
-                    original_source_sha256=digest(record),adaptation='side-native BODY schema provenance only'))
-        projection=pair_readers(record,exports,bindings)
+        if kind.casefold()=='det':raise ValueError('DET uses the separate table-only target pass')
+        adapter=self.producer.produce(record,native_base=corpus/record['task'])
+        bindings=adapter['bindings'];policies=adapter['policies']
+        projection=pair_readers(record,exports,bindings,side_cache=self.reader_cache)
         projection['metadata_policies']=policies
         projection['source_selectors']={s:bindings[s]['native_selector'] for s in bindings}
         projection['graph_binding']='judge3.definition_binding.definition_node; same-export ids only'
-        if kind.casefold()=='det':
-            from det_receipt import receipt
-            projection['det_transport']=receipt(record,exports,bindings)
         return projection
 
-    def process(self,base,record):
+    def process(self,base,record,existing=None):
         if digest(record)!=base['source_sha256'] or digest(pair_key(record))!=base['pair_id']:
             raise ValueError('fresh source differs from base receipt')
         ntrain,ntest,task_receipt=self.task(base['task'])
         program=stored_program_fit(record,ntrain,ntest)
-        test_evaluations=0;test_reused=False
+        value=dict(pair_id=base['pair_id'],source_sha256=base['source_sha256'],
+            base_result_sha256=digest(base),program=program,task_receipt=task_receipt,kind=base['kind'],
+            reader_difference=dict(read_difference=None),evaluations=0)
+        # A missing reader tuple cannot produce this pass's usable evidence.
+        # Resolve it before requesting any native TEST replay.
+        try:
+            if existing is not None and type(existing.get('read_difference')) is bool and not self.args.rerun_reader:
+                value['reader_difference']=dict(read_difference=existing['read_difference'])
+            else:
+                value['reader_difference']=self.reader_check(base,record,ntrain,ntest)
+        except (OSError,ValueError,KeyError,IndexError,TypeError) as error:
+            value['reader_difference'].update(reason=str(error),error_type=type(error).__name__)
+            return value
+        if value['reader_difference']['read_difference'] is None:return value
+        force_test=self.args.rerun_test or (self.args.retry_test_unknown and existing is not None and existing.get('fits_test') is None)
         if program['fits_test'] is None:
             from out_fit import check
             if self.gold_task!=record['task']:
                 self.gold_cache.clear();self.gold_task=record['task']
-            cache_key=digest(dict(schema='mech3-program-test-cache-v1',source=base['source_sha256'],base=digest(base),code=self.program_code,
-                                 task=task_receipt,deadline=self.args.deadline,ntrain=ntrain,ntest=ntest))
-            tested=self.output.load_program(base['pair_id'],cache_key)
-            test_reused=tested is not None
+            key=digest(dict(schema='mech3-program-test-cache-v1',source=base['source_sha256'],base=digest(base),
+                code=self.program_code,task=task_receipt,deadline=self.args.deadline,ntrain=ntrain,ntest=ntest))
+            tested=None if force_test else self.output.load_program(base['pair_id'],key)
+            if tested is None and not force_test:tested=self.output.compatible_program(base['pair_id'],base['source_sha256'],self.ev.receipt,task_receipt)
             if tested is None:
                 tested=check(self.ev,record,ntrain=ntrain,ntest=ntest,gold_cache=self.gold_cache)
-                self.output.save_program(base['pair_id'],cache_key,tested)
+                self.output.save_program(base['pair_id'],key,tested)
                 counts=tested.get('evaluations',{})
-                test_evaluations=sum(counts.values()) if isinstance(counts,dict) else counts
-            program['test_check']=tested
-            program['test_cache_key']=cache_key
-            if tested.get('complete') is True and type(tested.get('fits_test')) is bool:
-                program['fits_test']=tested['fits_test']
-                program['missing']=[m for m in program.get('missing',[]) if 'test' not in m.lower()]
-            program['complete']=all(type(program[k]) is bool for k in ('fits_train','fits_test'))
-        value=dict(schema='mech3-step4-record-v1',pair_id=base['pair_id'],source_sha256=base['source_sha256'],
-            base_result_sha256=digest(base),program=program,task_receipt=task_receipt,kind=base['kind'],
-            reader_difference=dict(complete=False,read_difference=None),
-            evaluations=test_evaluations,test_evidence_reused=test_reused)
-        try:
-            corpus=Path(base['source']['corpus']).resolve();projection=self.metadata(record,corpus)
-            value['projection']=projection
-            if base['kind'].upper()=='DET':
-                value.update(reader_difference=dict(complete=False,read_difference=None,applicable=False,
-                    reason='DET is table-only; per-reader mappings supplied to canonical target projector'),
-                    grade='Unknown',reader_class='not applicable (DET)',conditional_fit_grade='not applicable (DET)',
-                    status='unavailable',missing_steps=['step_3_det_table_regrade'],
-                    det_table=dict(projection=projection['det_transport'],
-                        stored_train_witnesses=[dict(assignment=a['assignment'],witness_sha256=digest(a['witness']))
-                            for a in base.get('per_assignment',[]) if a.get('witness',{}).get('verified') is True],
-                        reason='reuse stored witnesses; await qualified shared all-target comparison/recovery evidence'))
-                self.native.cache.clear()
-                return value
-            if not projection['readers']:
-                read=dict(complete=True,read_difference=False,reader_count=0,
-                          reason='complete native inventory has no reader of changed relation')
-            else:
-                groups={s:original_groups(record,s,self.native.snapshot(record['native'][s],corpus/record['task']),ntrain,ntest,
-                                         self.legacy,projection['source_selectors'][s])
-                        for s in ('gold','mutant')}
-                read=compare_readers(projection,groups,self.legacy,seconds=self.args.compare_seconds)
-            value['reader_difference']=read
-        except (OSError,ValueError,KeyError,IndexError,TypeError) as error:
-            value['reader_difference'].update(reason=str(error),error_type=type(error).__name__)
-        different=value['reader_difference']['read_difference']
-        if base['kind'].upper()=='DET':
-            value.update(grade='Unknown',reader_class='not applicable (DET)',conditional_fit_grade='not applicable (DET)',
-                         status='unavailable',missing_steps=['step_4_det_projection','step_3_det_table_regrade'])
-            self.native.cache.clear()
-            return value
-        value['reader_class']='read difference' if different is True else 'unread difference' if different is False else 'Unknown'
-        value['conditional_fit_grade']='fits' if different is True else 'extension' if different is False else 'Unknown'
-        value['missing_steps']=[]
-        if not program['complete']:value['missing_steps'].append('step_4_test_program_fit_proof')
-        if program['complete'] and (program['fits_train'] is False or program['fits_test'] is False):
-            value['missing_steps'].append('step_3_nonfitting_target_grade')
-        if different is None:value['missing_steps'].append('step_4_reader_projection_or_rows')
-        value['grade']=value['conditional_fit_grade'] if program['fits_train'] is True and program['fits_test'] is True else 'Unknown'
-        value['status']='complete' if not value['missing_steps'] else 'unavailable'
-        self.native.cache.clear()
+                value['evaluations']=sum(counts.values()) if isinstance(counts,dict) else counts
+            if tested.get('complete') is True:program['fits_test']=tested.get('fits_test')
         return value
+
+    def reader_check(self,base,record,ntrain,ntest):
+        corpus=Path(base['source']['corpus']).resolve();projection=self.metadata(record,corpus)
+        if not projection['readers']:
+            read=dict(read_difference=False)
+        else:
+            groups={side:self.original_groups(record,side,corpus,ntrain,ntest,projection['source_selectors'][side])
+                    for side in ('gold','mutant')}
+            read=compare_readers(projection,groups,self.legacy,seconds=self.args.compare_seconds)
+        return read
+
+
+    def snapshot(self,ref,base):
+        key=(str(Path(base).resolve()),str(ref))
+        value=self.native.snapshot(ref,base)
+        self.native.cache.pop(key,None);self.native.cache[key]=value
+        while len(self.native.cache)>4:self.native.cache.pop(next(iter(self.native.cache)))
+        return value
+
+    def original_groups(self,record,side,corpus,ntrain,ntest,selector):
+        key=digest(dict(side=side,reference=record['native'][side],base=str(corpus/record['task']),
+            table=record['evaluation']['table_indices'][side+'_kept'],kept=record['evaluation']['kept_assignments'],
+            ntrain=ntrain,ntest=ntest,selector=selector))
+        if key not in self.group_cache:
+            self.group_cache[key]=original_groups(record,side,self.snapshot(record['native'][side],corpus/record['task']),
+                ntrain,ntest,self.legacy,selector)
+            while len(self.group_cache)>8:self.group_cache.pop(next(iter(self.group_cache)))
+        return self.group_cache[key]
+
+    def progress(self,done):
+        self.scanned=done
+        elapsed=time.monotonic()-self.start
+        if elapsed-self.last>=5:
+            if self.events is not None:
+                self.events.put((self.worker_id,done,dict(self.counts)));self.last=elapsed;return
+            rate=done/max(elapsed,.001)
+            print(f'done={done}/{self.total} elapsed={elapsed:.1f}s rate={rate:.2f}/s '
+                  f'ETA={(self.total-done)/max(rate,.001):.1f}s counts={dict(self.counts)}',
+                  file=sys.stderr,flush=True)
+            self.last=elapsed
 
     def run(self):
         rows=self.base.execute("SELECT pair_id,source_sha256,code_sha256,config_sha256,result_sha256,record_json FROM pairs "
             'WHERE '+self.scope+" ORDER BY json_extract(record_json,'$.task'),"
-            "json_extract(record_json,'$.source.corpus'),json_extract(record_json,'$.source.file'),json_extract(record_json,'$.source.line')")
+            "json_extract(record_json,'$.source.corpus'),json_extract(record_json,'$.source.file'),json_extract(record_json,'$.source.line')",self.scope_params)
         stream=None;path=None;line_number=0;record=None;failed=None
         try:
             for done,row in enumerate(rows,1):
-                if STOP:return False
-                base=valid_base(row);saved=self.output.load(base['pair_id'],base['source_sha256'],row[4])
+                if STOP or (self.stop_event is not None and self.stop_event.is_set()):return False
+                base=valid_base(row)
                 ntrain,ntest,task_receipt=self.task(base['task'])
-                if saved is not None and saved.get('task_receipt')!=task_receipt:saved=None
-                if saved is not None and saved.get('task_receipt')==task_receipt:
+                existing=self.output.load(base['pair_id'],base['source_sha256'],row[4],task_receipt['sha256'])
+                retry=(self.args.rerun_reader or self.args.rerun_test or
+                       (existing is not None and self.args.retry_reader_unknown and existing.get('read_difference') is None) or
+                       (existing is not None and self.args.retry_test_unknown and existing.get('fits_test') is None))
+                saved=None if retry else existing
+                if saved is not None:
                     value=saved;self.counts['resumed']+=1
                 else:
                     source=base['source'];current=Path(source['corpus']).resolve()/base['task']/source['file'];wanted=source['line']
@@ -232,67 +215,116 @@ class Worker:
                             if line_number!=wanted:raise ValueError('source line order differs')
                         except (OSError,EOFError,ValueError,StopIteration) as error:
                             failed=ValueError(f'{path}: wanted line {wanted}, reached {line_number}: {type(error).__name__}: {error}')
-                    self.guard()
                     try:
                         if failed:raise failed
-                        value=self.process(base,record)
+                        value=self.process(base,record,existing)
                     except (OSError,ValueError,KeyError,IndexError,TypeError) as error:
                         value=dict(schema='mech3-step4-record-v1',pair_id=base['pair_id'],source_sha256=base['source_sha256'],
-                            base_result_sha256=row[4],grade='Unknown',reader_class='Unknown',conditional_fit_grade='Unknown',
+                            base_result_sha256=row[4],
                             status='unavailable',task_receipt=task_receipt,evaluations=0,kind=base['kind'],
                             program=dict(complete=False,fits_train=None,fits_test=None),
                             reader_difference=dict(complete=False,read_difference=None,reason=str(error)),
                             missing_steps=['step_4_source_or_adapter'],reason=str(error))
-                    finally:
-                        self.native.cache.clear()
-                    self.guard();value=self.output.save(value);self.counts['writes']+=1
-                self.counts['grade:'+value['grade']]+=1
+                    value=self.output.save(value);self.counts['writes']+=1
                 self.counts['evaluations']+=value.get('evaluations',0) if saved is None else 0
-                self.counts['test_fit:'+str(value.get('program',{}).get('fits_test'))]+=1
-                if base['kind'].upper()=='DET':self.counts['det_grade:'+value['grade']]+=1
-                self.reader_counts[value['conditional_fit_grade']]+=1
-                self.counts.update('owed:'+s for s in value['missing_steps'])
-                elapsed=time.monotonic()-self.start
-                if elapsed-self.last>=5:
-                    rate=done/max(elapsed,.001)
-                    print(f'done={done}/{self.total} elapsed={elapsed:.1f}s rate={rate:.2f}/s '
-                          f'ETA={(self.total-done)/max(rate,.001):.1f}s counts={dict(self.counts)}',file=sys.stderr,flush=True)
-                    self.last=elapsed
+                read=value.get('read_difference',value.get('reader_difference',{}).get('read_difference'))
+                test=value.get('fits_test',value.get('program',{}).get('fits_test'))
+                self.counts['read_difference:'+str(read)]+=1
+                self.counts['test_fit:'+str(test)]+=1
+                self.progress(done)
             return True
         finally:
             if stream is not None:stream.close()
 
-    def summary(self,complete):
-        value=dict(schema='mech3-step4-summary-v1',complete=complete,total=self.total,counts=dict(self.counts),
-            conditional_fit_counts=dict(self.reader_counts),elapsed_seconds=time.monotonic()-self.start,
-            output=str(self.args.output.resolve()),code_sha256=self.output.code,config_sha256=self.output.config_hash,
-            evaluations=self.counts['evaluations'],grade_scope='nonDET base fits pairs; stronger grades merged by shared reducer',
-            blocked=['DET final table grades await qualified n-mech5 comparison/recovery evidence'])
-        self.args.summary.write_text(json.dumps(value,indent=2)+'\n')
-        print(json.dumps(value,sort_keys=True),file=sys.stderr,flush=True)
+    def finish(self):
+        elapsed=time.monotonic()-self.start
+        if self.events is not None:
+            self.events.put((self.worker_id,getattr(self,'scanned',0),dict(self.counts)));return
+        print(f"done={getattr(self,'scanned',0)}/{self.total} elapsed={elapsed:.1f}s counts={dict(self.counts)}",file=sys.stderr,flush=True)
+
+
+def run_shard(args,tasks,index,events,stop_event):
+    # Native sessions/globals are isolated by process. Total CPU entitlement is
+    # shared between workers instead of multiplying native thread pools.
+    threads=str(max(1,int(os.environ.get('ARC_HEAVY_CPUS',args.workers))//args.workers))
+    for name in ('ARCLOG_THREADS','RAYON_NUM_THREADS','OMP_NUM_THREADS','VECLIB_MAXIMUM_THREADS'):
+        os.environ[name]=threads
+    args.task_ids=tasks
+    worker=Worker(args,events,index,stop_event)
+    try:
+        complete=worker.run();worker.finish();return complete
+    finally:worker.ev.close();worker.output.close();worker.base.close()
+
+
+def parallel(args):
+    db=sqlite3.connect(args.base.resolve().as_uri()+'?mode=ro',uri=True)
+    try:
+        tasks=db.execute("SELECT json_extract(record_json,'$.task'),count(*) FROM pairs WHERE "
+            "json_extract(record_json,'$.label')='fits' AND upper(json_extract(record_json,'$.kind'))!='DET' GROUP BY 1 ORDER BY 2 DESC").fetchall()
+    finally:db.close()
+    count=min(args.workers,len(tasks));shards=[[] for _ in range(count)];loads=[0]*count
+    for task,size in tasks:
+        index=min(range(count),key=lambda i:loads[i]);shards[index].append(task);loads[index]+=size
+    if not count:return True
+    context=multiprocessing.get_context('spawn');start=time.monotonic();total=sum(loads)
+    with context.Manager() as manager:
+        events=manager.Queue();stop_event=manager.Event();latest={};last=0
+        with concurrent.futures.ProcessPoolExecutor(max_workers=count,mp_context=context) as pool:
+            futures=[pool.submit(run_shard,args,tasks,i,events,stop_event) for i,tasks in enumerate(shards)]
+            while any(not f.done() for f in futures):
+                if STOP:stop_event.set()
+                try:
+                    i,done,counts=events.get(timeout=5);latest[i]=(done,counts)
+                except queue.Empty:pass
+                for f in futures:
+                    if f.done() and f.exception() is not None:
+                        stop_event.set();raise f.exception()
+                elapsed=time.monotonic()-start
+                if elapsed-last>=5:
+                    done=sum(v[0] for v in latest.values());counts=Counter()
+                    for _,values in latest.values():counts.update(values)
+                    rate=done/max(elapsed,.001)
+                    print(f'done={done}/{total} elapsed={elapsed:.1f}s rate={rate:.2f}/s ETA={(total-done)/max(rate,.001):.1f}s workers={count} counts={dict(counts)}',file=sys.stderr,flush=True);last=elapsed
+            complete=all(f.result() for f in futures)
+            # A successful shard enqueues its final progress before returning.
+            # Drain without relying on Queue.empty() as a synchronization rule.
+            while True:
+                try:i,done,counts=events.get_nowait();latest[i]=(done,counts)
+                except queue.Empty:break
+            done=sum(v[0] for v in latest.values());counts=Counter()
+            for _,values in latest.values():counts.update(values)
+            elapsed=time.monotonic()-start;rate=done/max(elapsed,.001)
+            print(f'done={done}/{total} elapsed={elapsed:.1f}s rate={rate:.2f}/s ETA={(total-done)/max(rate,.001):.1f}s workers={count} counts={dict(counts)}',file=sys.stderr,flush=True)
+            return complete
 
 
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--base',type=Path,default=DATA_ROOT/'ast/run/mech/labels.sqlite3')
     ap.add_argument('--output',type=Path,default=OUTPUT_ROOT/'step4.sqlite3')
-    ap.add_argument('--summary',type=Path,default=OUTPUT_ROOT/'step4-summary.json')
+    ap.add_argument('--summary',type=Path,help='deprecated; no derived summary is written')
     ap.add_argument('--compare-seconds',type=float,default=1)
     ap.add_argument('--deadline',type=float,default=30)
+    ap.add_argument('--workers',type=int,default=1)
+    ap.add_argument('--retry-reader-unknown',action='store_true',help='explicitly retry unresolved reader facts only')
+    ap.add_argument('--retry-test-unknown',action='store_true',help='explicitly retry unresolved TEST facts only')
+    ap.add_argument('--rerun-reader',action='store_true',help='explicit reader-policy invalidation')
+    ap.add_argument('--rerun-test',action='store_true',help='explicit TEST-policy invalidation')
     args=ap.parse_args()
     if args.compare_seconds<=0:ap.error('positive comparison bound required')
     if args.deadline<=0:ap.error('positive replay deadline required')
+    if args.workers<1:ap.error('positive worker count required')
     if args.base.resolve()==args.output.resolve():ap.error('base must remain read-only')
     if not args.output.resolve().is_relative_to(OUTPUT_ROOT.resolve()):ap.error('outputs must stay under mech3 data root')
-    if not args.summary.resolve().is_relative_to(OUTPUT_ROOT.resolve()):ap.error('summary must stay under mech3 data root')
     args.output.parent.mkdir(parents=True,exist_ok=True)
-    args.summary.parent.mkdir(parents=True,exist_ok=True)
     lock=args.output.with_suffix('.lock').open('a');fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
     os.environ['STUDY_RUN']=str(CODE_ROOT/'ast/run')
     signal.signal(signal.SIGTERM,stop);signal.signal(signal.SIGINT,stop)
     worker=None
     try:
-        worker=Worker(args);complete=worker.run();worker.guard();worker.summary(complete)
+        if args.workers>1:complete=parallel(args)
+        else:
+            worker=Worker(args);complete=worker.run();worker.finish()
     finally:
         if worker is not None:worker.ev.close();worker.output.close();worker.base.close()
         lock.close()

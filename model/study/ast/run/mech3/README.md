@@ -1,31 +1,38 @@
-# Mechanical reader evidence
+# Mechanical reader and TEST facts
 
-`step4.py` reads non-DET pairs labeled fits in the base database and their original source records. It writes its own durable records under `DATA_ROOT/ast/run/mech3`. Stored native TRAIN fit and explicit complete TEST verdicts are reused. When TEST evidence is missing, `judgetool/out_fit.py:check` runs the whole mutant program with OUT and compares its TEST output against fresh full gold replay through the shared evaluator. The base labels remain read-only.
+`step4.py` processes base-label fits pairs outside DET. It uses the shared evaluator for missing whole-mutant TEST OUT evidence and the canonical metadata/projector/comparator for reader-visible differences. The base database remains read-only. Normal-form exclusion belongs to the study at read time.
 
-Reader comparisons preserve each actual reader's joint field projection. Any verified reader-visible difference supplies the fits-versus-extension attribute. Establishing equality requires complete reader and held/input coverage. INIT uses the component's canonical projected key-and-port input interface. Private BODY fields do not enter that interface.
+## Store
 
-DET pairs supply table projection receipts and never receive fits or extension here. Their target projection is the union of actual reader-named declared header identities. Distinct header aliases survive even when they share one BODY column. The final table grade consumes the all-target comparison and recovery evidence.
+The database is `DATA_ROOT/ast/run/mech3/step4.sqlite3`. New writes contain only this pass's facts and their provenance:
 
-The shared TEST check selects the native OUT projection and retains the original OUT program. Complete equality with gold's full replay establishes the positive test check. Extra or differing output families retain the shared helper's Unknown or sound negative result. Reader attributes can be consumed independently of the test-fit gate.
+- `records`: one reader fact per pair. Schema `mech3-reader-fact-v2` contains `read_difference` (bool or null), an unavailable reason or witness reader sites, and an input-task reference. Source/base bindings and producer identities occupy table columns.
+- `test_facts`: the independently acquired `fits_test` (bool or null), an unavailable reason, and replay observation references. It stores no TRAIN verdict or copied base result.
+- `objects`: deduplicated replay references, execution contexts and task input receipts. Native output rows remain in the evaluator's replay artifacts.
+- `producers`: code/config provenance once per producer. It is not compared against whichever code currently happens to be checked out.
 
-## Shared DET receipt
+Legacy `records`, `program_checks` and `gold_out_cache` remain readable in place. New results do not write grades, class aliases, summary files, copied source/base records or gold row transports. Operational progress prints to stderr. The deprecated `--summary` argument is accepted without writing a file.
 
-Add this directory to the import path and call `det_receipt.receipt(record, exports, bindings)`. `exports` has gold and mutant native export objects. `bindings` has the corresponding canonical raw BODY bindings; these establish physical provenance and do not select the compared DET table. `side_receipt(export, raw_binding, point)` exposes the per-reader mapping independently.
+## Read API
 
-The receipt schema is `mech3-det-header-projection-v1`. Each side contains the raw binding, selected header columns with scoped BODY transport, and program/export hashes. Unit insertion requires a native header certificate. Empty selection requires a complete no-reader inventory. Ambiguous or unsupported mappings raise `reader_projection.Unavailable`.
+Package-safe `mech3.store.load_step4(database, pair_id, *, source_sha256, base_result_sha256, task_sha256=None)` returns done/open, valid, `record`, `facts`, `reference`, `result_sha256` and an optional `test_reference`. The ephemeral record exposes top-level `read_difference` and `fits_test` with the pair/source/base binding. Unknown reasons are `reader_problem` and `test_problem`. `facts` is the authoritative stored hash envelope; the joined view is not another stored result.
 
-Record, program and export hashes use shared `mech/run.py:digest`: UTF-8 canonical JSON with sorted keys, compact separators, Unicode preserved and nonfinite numbers refused. The program value is the S-expression string, including its JSON string encoding. `mapper` hashes source files as raw bytes and records their absolute checkout paths.
+Legacy grade/program/reader aliases are projected to those same raw fields. Legacy grades are never used. `fit_contract.apply` and `det_targets.apply_det_targets` return raw evidence only. The canonical shared read entry point owns the grade.
 
-The shared MetadataProducer remains responsible for callable formatting and row projection. This module supplies no copied graph resolver, library evaluator or renderer policy.
+## Resume and explicit retries
 
-## Durable consumption
+Validity uses pair/source/base inputs, task input bytes when supplied, and actual fact/reference hashes. Code, configuration and historical document hashes remain integrity/provenance; unrelated code edits, changed checkout paths or task-path spelling do not invalidate completed facts. New runs use pinned snapshot worktrees.
 
-`store.load_step4(database, pair_id, source_sha256=..., base_result_sha256=...)` returns a validated record or an open/stale status. A valid completed Unknown is distinct from a pair with no valid record. Validation checks payload, source/base, code/config, dependency files and task-file identity. `fit_contract.apply` merges validated evidence through n-mech's reducer.
+The default resumes completed attempts, including unavailable results. `--retry-reader-unknown` explicitly revisits only unresolved reader facts. `--retry-test-unknown` explicitly revisits unresolved TEST facts. `--rerun-reader` and `--rerun-test` are explicit invalidations for a changed policy. Completed TEST observations survive a reader-only retry.
 
-SQLite uses WAL and synchronous FULL, with a transaction per pair. Resume requires matching source, base result, labeling dependency and configuration hashes. Replay artifacts are checked against their file hashes. A separate `program_checks` journal durably records TEST checks before reader processing, allowing a reader-only code change to reuse the same test evidence. `gold_out_cache` stores the shared helper's lossless all-assignment entry transport, keyed by its program/runtime/settings/code/task identity; each pair is selected by the canonical kept matcher. The pass streams progress and writes a separate summary with grade counts, reader attributes and named missing steps.
+## Work reuse
 
-## Run prerequisites
+Reader metadata and stored row comparisons precede TEST replay. An unavailable reader tuple performs no native TEST evaluation. RULE bindings use the canonical two-sided producer; a mutant is never attributed to gold's source stream. INIT compares the complete component key-and-port interface; absent outer-key columns remain unavailable rather than being omitted.
 
-The checkout must contain canonical nonrender metadata, `tables.comparison_type`, the corrected canonical `tables.kept_groups` slot, held-Ident and task-scope handling, and `out_fit.check`. Final DET grades require qualified all-target evidence and the table-only reducer guard; DET records are excluded from the fits-split command.
+Caches retain immutable native snapshots, original held groups, gold reader resolutions and gold OUT observations within a task. They are bounded or released at task boundaries. Artifact file hashes use the shared stat-keyed hash cache. `--workers` shards whole tasks across spawned processes, preserving per-task evaluator reuse and per-pair durable SQLite writes. Each worker's native thread entitlement is divided from the run's CPU allocation.
 
-`det_targets.load_det_targets` delegates to the public mech5 validity loader. `apply_det_targets` applies that owner's pure overlay, disables held-OUT program-fit evidence for DET and calls the central reducer. It preserves reader evidence and other clause producers. A valid Unknown stays a completed bounded or incomplete attempt; missing or stale evidence stays open. This adapter does not acquire targets or run a second recovery search. Its runtime imports resolve only from the current checkout after mech5 merges.
+## DET transport
+
+`det_receipt.receipt(record, exports, bindings)` supplies `mech3-det-header-projection-v1`: the union of actual reader-named declared header identities, with exact scoped BODY transport, aliases retained, native Unit certificates and complete no-reader proof. The raw bindings establish physical provenance. Shared MetadataProducer owns formatting/projection; this module copies no graph or library policy.
+
+`det_targets.load_det_targets` delegates validity to mech5. Its overlay preserves other producers and disables held-OUT program fit for DET. No DET target acquisition or second recovery search is implemented here.

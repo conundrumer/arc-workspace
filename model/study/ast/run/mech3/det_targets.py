@@ -4,7 +4,10 @@ No target acquisition, replay, search or comparison is implemented here. Import
 mech5 only from the current checkout after its source and dependencies merge.
 """
 from copy import deepcopy
-from common import digest
+if __package__:
+    from .common import digest
+else:
+    from common import digest
 
 
 def load_det_targets(database,pair_id,*,source_sha256,base_result_sha256):
@@ -18,13 +21,12 @@ def load_det_targets(database,pair_id,*,source_sha256,base_result_sha256):
 
 
 def apply_det_targets(evidence,loaded):
-    """Return evidence and central grade; never let held OUT imply DET fit.
+    """Return raw evidence; never let held OUT imply DET fit.
 
     Caller must obtain loaded from load_det_targets. Its valid Unknown remains
     a completed attempt; missing or stale target evidence remains open.
     """
     from mech5.evidence import apply_targets
-    from grades import reduce_grade
     if evidence.get('kind','').upper()!='DET':raise ValueError('DET evidence required')
     if (loaded.get('kind','').upper()!='DET' or loaded.get('table_only') is not True
             or loaded.get('record',{}).get('kind','').upper()!='DET'
@@ -41,17 +43,14 @@ def apply_det_targets(evidence,loaded):
                                           if not s.startswith('step_4_')))
     out['step4_det_ref']=deepcopy(loaded['reference'])
     out['step']=max(4,out.get('step',0))
-    grade=reduce_grade(out)
-    if grade['grade'] in ('fits','extension'):
-        raise ValueError('central reducer assigned a forbidden DET fit grade')
-    return out,grade
+    return out
 
 
 def result_identity(loaded):
     """Stable resume input for a future DET journal consumer."""
     if loaded.get('valid') is not True or loaded.get('status')!='done':
         raise ValueError('target result is open')
-    if (digest(loaded['record'])!=loaded['result_sha256']
+    if (digest(loaded.get('facts',loaded['record']))!=loaded['result_sha256']
             or loaded['reference']['result_sha256']!=loaded['result_sha256']):
         raise ValueError('target result payload differs')
     return dict(reference=deepcopy(loaded['reference']),result_sha256=loaded['result_sha256'])

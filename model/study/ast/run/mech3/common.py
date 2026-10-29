@@ -9,4 +9,4 @@ OUTPUT_ROOT=DATA_ROOT/'ast/run/mech3'
 for path in (CODE_ROOT/'ast/run/mech',CODE_ROOT/'ast/run',CODE_ROOT/'judgetool',CODE_ROOT/'judge3'):
     sys.path.append(str(path))
 
-from run import canonical,digest
+from mech.run import canonical,digest

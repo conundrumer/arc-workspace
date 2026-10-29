@@ -1,5 +1,8 @@
 """Read existing original-map families and compare per reader. No replay."""
-from common import digest
+if __package__:
+    from .common import digest
+else:
+    from common import digest
 
 
 def original_groups(record,side,snapshot,ntrain,ntest,legacy,selector):
