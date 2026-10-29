@@ -16,6 +16,24 @@ def compatible(actual, declared):
     return nominal(actual) == nominal(declared) or (declared == 'Box' and actual in ('Box','Position','Offset'))
 
 
+def unsupported_named_sites(tree):
+    """Find native positional names incorrectly emitted as written sites.
+
+    Inspect actual site heads, including nested keys. Canonical positional
+    arguments without a colon remain supported; this is no grammar coverage
+    or native admissibility proof.
+    """
+    found=set()
+    def visit(node):
+        if not isinstance(node,list):return
+        if node and isinstance(node[0],str) and node[0].startswith(':'):
+            name=node[0][1:]
+            if not name or '[' in name or ']' in name or name.isdecimal():found.add(node[0])
+        for child in node:visit(child)
+    visit(tree)
+    return sorted(found)
+
+
 def registry_atoms(L, info, adapter, *, per_predicate=16, per_mode=16):
     """Finite native-site syntax plan, round robin across relations AND modes.
 
@@ -180,6 +198,13 @@ def available_atoms(L, bindings, adapter, *, per_source=12, max_join=2):
         fields = binding['fields'];template = L.parse(binding['callable_atom'])
         ident = hashlib.sha256(json.dumps(binding['definition'],sort_keys=True,
             separators=(',', ':'),ensure_ascii=False).encode()).hexdigest()
+        unsupported=unsupported_named_sites(template)
+        if unsupported:
+            yield dict(status='unsupported',
+                reason='positional/bracket callable sites require canonical written-name adapter',
+                native_sites=unsupported,entry_id='available:'+ident,entry_sha256=ident,
+                source_kind='available',source_receipt=binding.get('receipt'))
+            return
         domains = [[f'V{i}' for i,x in enumerate(xfields) if compatible(x['type'],f['type'])]
                    + (['0'] if f['type'] in ('number','Number','Box','Position','Offset') else [])
                    for f in fields]
