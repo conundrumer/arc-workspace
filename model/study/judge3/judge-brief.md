@@ -60,10 +60,18 @@ load = lambda name: json.loads((p / name).read_text())
 pair = load('pair.json')
 tables = {t['id']: t for t in pair['tables']}
 print(pair['change'])
-print({k: [(f['name'], f['type']) for f in t['fields']]
-       for k, t in tables.items()})
-print(load(pair['readers']))
+for k in ('X', 'G'):
+    t = tables[k]
+    print(k, [(f['name'], f['type']) for f in t['fields']], t['entry_counts'])
+for t in pair['tables']:
+    if 'available' in t['roles']:
+        print(t['id'], t['source_name'], t['callable_atom'])
 ```
+
+Select JSON fields with Python rather than printing a long index or cutting
+JSON at a character limit. Read reader requirements when choosing a join and
+library declarations when considering a computation. Print only the rows or
+grid region needed for the current question; keep their context labels.
 
 Read the changed forms and their surrounding program to understand what the
 edit removed or weakened. Then inspect X/G and the comparison file: which
@@ -133,17 +141,27 @@ Write your clause in a UTF-8 file. Run it as exploration, check it as a
 recovery, or check an alternative continuation. Each command writes a new
 result directory; use a new path for each attempt:
 
+The launch may supply an environment file and a `judge` wrapper. Source that
+environment file in each shell call; the wrapper supplies Python, tool and pair
+paths. It accepts `run|check|alternative` and the same command arguments below.
+
 Work in the supplied `WORK_DIR` under the study data root (`cd "$WORK_DIR"`).
 Relative clause and result paths below are relative to that working directory.
 The tool requires result directories under the study data root.
 
 ```sh
 "$PYTHON" "$TOOL" --pair "$PAIR_DIR" run --clause-file query.sexp --output query-result
-"$PYTHON" "$TOOL" --pair "$PAIR_DIR" check --clause-file recovery.sexp --output check-result
+"$PYTHON" "$TOOL" --pair "$PAIR_DIR" check --clause-file recovery.sexp --output check-result --columns '["A","B"]'
 "$PYTHON" "$TOOL" --pair "$PAIR_DIR" alternative --clause-file continuation.sexp --output alternative-result
 ```
 
-The whole exported result table is the default. Add `--columns '["A","B"]'`
+Before checking a recovery, choose its output labels in the intended target
+schema and pass them with `--columns`. Replace A/B in the example with your
+clause labels. Scratch labels bound by a selector atom also appear in the
+whole exported table: leaving a scratch color in the output can cause an
+arity mismatch even when the intended row restriction is correct.
+
+The whole exported result table is the default, useful for exploration. Add `--columns '["A","B"]'`
 to select explicit output labels in order. Commands print the result filename;
 read its `result.json` and the optional `table.json` using the same Python
 recipe. Tables contain complete train rows, not previews. Result comparisons
@@ -158,7 +176,10 @@ verified, partial source verified, continuation passed, refused by the engine,
 did not verify, or unknown. A replay that has no compatible kept entry or stops
 at its bound is unknown; it is not evidence that no clause exists.
 
-Finish with the recovery/alternative clauses you choose, their command outcomes,
+Write the recovery/alternative clauses you choose, their command outcomes,
 the `result.json` path for each chosen clause, and one or two reasons per clause
 naming table, column, row or cell evidence.
 If none is found, say no clause found. Give no grade or label.
+When the launch supplies an answer file, write this full answer there and
+return only its absolute path and a short outcome to the host. Do not repeat
+the full answer in the handback.
