@@ -297,7 +297,9 @@ class ReplayEvaluator:
                 names,offsets,ids,flags=inventory(Path(self.cfg['export']).resolve(),record['task'],True)
                 case=names.index(record['case']);lo,hi=offsets[case:case+2]
                 gold=self.ev.from_stream(ids[lo:hi],[int(flag) for flag in flags[lo:hi]])
-                if self.legacy.parse(gold.sexp())!=self.legacy.parse(record['gold_sexp']):
+                gold_forms = [self.legacy.parse(form) for form in self.legacy.split_forms(gold.sexp())]
+                source_forms = [self.legacy.parse(form) for form in self.legacy.split_forms(record['gold_sexp'])]
+                if gold_forms != source_forms:
                     raise ValueError('canonical catalogue gold differs from recorded source program')
                 self._point_gold=(key,gold)
                 self._point_kept=None
