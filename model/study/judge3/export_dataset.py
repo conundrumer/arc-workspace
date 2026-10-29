@@ -161,22 +161,13 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
             main_export = export
         if features is not None and not same:
             # The tables of the cases before the pair's case number the tables after them.
-            if any(item['table'] is None for item in bundle['tables']):
-                raise ValueError('fresh table unavailable')
             count += len(bundle['tables'])
             continue
         if features is not None and not shared:
             break
         provenance.append(bundle['receipt'])
         for item in bundle['tables']:
-            if item['table'] is None:
-                raise ValueError('fresh table unavailable: ' + str(item.get('reason')))
             meta = producer.case_table_metadata(export, item)
-            fields = [dict(field, field_name=bound['display_name'])
-                      for field, bound in zip(item['table']['fields'], meta['schema'])]
-            if len(fields) != len(item['table']['fields']):
-                raise ValueError('canonical metadata schema width differs')
-            packet = dict(item['table'], fields=fields)
             eligible = not same
             if same:
                 ts = {k: [v] for k, v in item['selector'].items()}
@@ -195,6 +186,17 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
                 continue
             roles = (['target'] if eligible else []) + (['available'] if allowed else [])
             table_id = 'T' + str(count); count += 1
+            # Feature consumers require only canonically available tables.
+            # Preserve target numbering without decoding later target rows.
+            if features is not None and not allowed:
+                continue
+            if item['table'] is None:
+                raise ValueError('fresh table unavailable: ' + str(item.get('reason')))
+            fields = [dict(field, field_name=bound['display_name'])
+                      for field, bound in zip(item['table']['fields'], meta['schema'])]
+            if len(fields) != len(item['table']['fields']):
+                raise ValueError('canonical metadata schema width differs')
+            packet = dict(item['table'], fields=fields)
             atom = meta['callable_atom'] if allowed else None
             if features is None or allowed:
                 add(packet, table_id, meta['source_name'], bundle['case'], roles, atom,

@@ -167,7 +167,7 @@ def _supported_observers(ev,forms,observers,plans,source_export,gaps):
     return assembled(supported),kept,export
 
 
-def acquire_case(ev,record,case_context,ntrain,ntest,*,include_bodies=True):
+def acquire_case(ev,record,case_context,ntrain,ntest,*,include_bodies=True,acquire_values=True):
     """Return JSON-serializable unscoped case tables/export/own-kept receipt.
 
     case_context: case/name, gold_sexp/source_program, kept_assignments (or
@@ -178,13 +178,19 @@ def acquire_case(ev,record,case_context,ntrain,ntest,*,include_bodies=True):
     includes the pair id, mutation point, adapter or later-table selection.
     A bounded/failed collection is cached too; it is not silently retried.
     include_bodies=False collects original native tables only, for exporters
-    that acquire their point G independently. Scope is part of cache identity.
+    that acquire their point G independently. acquire_values=False returns only
+    original table metadata; typed consumers select and decode their own TRAIN
+    entries. No grouped-value completeness is certified. Both scope flags are
+    part of cache identity.
     """
     if type(include_bodies) is not bool:raise ValueError('include_bodies must be boolean')
+    if type(acquire_values) is not bool:raise ValueError('acquire_values must be boolean')
+    if include_bodies and not acquire_values:
+        raise ValueError('metadata-only case inventory cannot include BODY observers')
     case,text,values,names,kept_observation=_context(ev,record,case_context,with_receipt=True)
     identity=dict(task=record['task'],case=case,program=sha(text),kept=sha(values),
                   settings=sha(ev.receipt),ntrain=ntrain,ntest=ntest,
-                  include_bodies=include_bodies,collector=_code_receipt()['sha256'])
+                  include_bodies=include_bodies,acquire_values=acquire_values,collector=_code_receipt()['sha256'])
     key=sha(identity);cache=_CACHE.setdefault(ev,{})
     if key in cache:return cache[key]
     if names is not None and (names.get('task'),names.get('case'))!=(record['task'],case):
@@ -230,7 +236,8 @@ def acquire_case(ev,record,case_context,ntrain,ntest,*,include_bodies=True):
     receipt=dict(schema='judge-case-receipt-v1',identity=identity,collector=_code_receipt(),
         source='gold_full_replay',gold_program_sha256=sha(text),observer_program_sha256=sha(observed),
         kept_context_sha256=sha(values),artifact=replay['artifact'],engine=replay['engine'],
-        gold_replays=1,observer_count=len(plans),include_bodies=include_bodies,settings=ev.receipt,
+        gold_replays=1,observer_count=len(plans),include_bodies=include_bodies,
+        acquire_values=acquire_values,settings=ev.receipt,
         column_witness_program_sha256=sha(observed),
         column_witness_source='exact parsed observed program; unchanged original relation identities')
     if kept_observation is not None:receipt['kept_observation']=kept_observation
@@ -249,7 +256,7 @@ def acquire_case(ev,record,case_context,ntrain,ntest,*,include_bodies=True):
         selector={k:ts[k][table] for k in ('form','point','relation','fact')}
         definitions_here=[d for d in definitions if all(str(selector[k])==str(v)
             for k,v in d['native_selector'].items() if k in ('form','point','relation'))]
-        grouped=kept_groups(L,native,table,own,ntrain,ntest)
+        grouped=kept_groups(L,native,table,own,ntrain,ntest) if acquire_values else None
         fields=[dict(field_name=n,type=t) for n,t in zip(ts['column_names'][table],ts['column_types'][table])]
         fields=typed_fields(ev,own,fields)
         label=(definitions_here[0]['display_name'] if definitions_here else ts['fact'][table] or ts['relation_name'][table] or 'body')
@@ -270,8 +277,10 @@ def acquire_case(ev,record,case_context,ntrain,ntest,*,include_bodies=True):
                                  'artifact='+str(folder))
         bundle['tables'].append(dict(table_id='native:'+str(table),native_table=table,selector=selector,fields=fields,
             native_schema=schema,
-            source_name=label,grouped=encode_grouped(grouped),receipt=dict(case=case,artifact=replay['artifact'],table=table,
-            source='gold_full_replay',kept_context_sha256=sha(values),complete=not grouped['missing'])))
+            source_name=label,grouped=encode_grouped(grouped) if grouped is not None else None,receipt=dict(case=case,artifact=replay['artifact'],table=table,
+            source='gold_full_replay',kept_context_sha256=sha(values),
+            complete=not grouped['missing'] if grouped is not None else None,
+            values_acquired=acquire_values)))
     for plan in plans:
         try:
             matches=[t for t,f in enumerate(ts['form']) if str(f)==str(plan['observer_form'])]

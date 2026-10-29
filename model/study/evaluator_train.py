@@ -307,7 +307,8 @@ def acquire_case_train(ev, record, case_context, ntrain, ntest):
             return result
     proxy = Capture()
     try:
-        bundle = acquire_case(proxy, record, resolved, ntrain, ntest, include_bodies=False)
+        bundle = acquire_case(proxy, record, resolved, ntrain, ntest,
+                              include_bodies=False, acquire_values=False)
     finally:
         # The collector's value-only cache cannot serve typed cell transport.
         # Release this private proxy cache as soon as acquisition is finished.
