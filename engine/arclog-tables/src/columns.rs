@@ -425,7 +425,13 @@ pub fn case_columns(evidence: &[Table], tables: &[(usize, Table)], train: usize,
 
 /// Packs with the caller's CURRENT operation limits and native session.
 pub fn case_columns_in(materializer:&Materializer<'_>,evidence:&[Table],tables:&[(usize,Table)],train:usize,labels:Option<&StreamLabels>)->CaseColumns {
-    fold(materializer,evidence,tables,None,train,labels).0
+    case_columns_with_full_rows_in(materializer,evidence,tables,train,labels,false)
+}
+
+/// Packs actual native rows and their extents even when synthesis projections
+/// are present. Metadata, projections and bounded admission remain unchanged.
+pub fn case_columns_with_full_rows_in(materializer:&Materializer<'_>,evidence:&[Table],tables:&[(usize,Table)],train:usize,labels:Option<&StreamLabels>,full_rows:bool)->CaseColumns {
+    fold(materializer,evidence,tables,None,train,labels,full_rows).0
 }
 
 // Sessionless public helpers retain the native default caps. Engine operation
@@ -448,13 +454,13 @@ pub struct CaseColumnPrefix {
 impl CaseColumnPrefix {
     pub fn new(materializer:&Materializer<'_>,evidence:&[Table],tables:&[(usize,Table)],train:usize)->Self {
         let mut held=Self {columns:CaseColumns::default(),names:Vec::new(),runs:Runs::default(),count:0};
-        push_tables(materializer,&mut held.columns,&mut held.names,&mut held.runs,0,evidence.iter().map(|table|(0,table)),train,None);
+        push_tables(materializer,&mut held.columns,&mut held.names,&mut held.runs,0,evidence.iter().map(|table|(0,table)),train,None,false);
         held.count=evidence.len();
         held.append(materializer,tables,train);
         held
     }
     fn append(&mut self,materializer:&Materializer<'_>,tables:&[(usize,Table)],train:usize) {
-        push_tables(materializer,&mut self.columns,&mut self.names,&mut self.runs,self.count,tables.iter().map(|(token,table)|(*token,table)),train,None);
+        push_tables(materializer,&mut self.columns,&mut self.names,&mut self.runs,self.count,tables.iter().map(|(token,table)|(*token,table)),train,None,false);
         self.count+=tables.len();
     }
     pub fn is_complete(&self)->bool {self.columns.packing_stop.is_none()}
@@ -494,7 +500,7 @@ pub fn cut_case_columns(evidence: &[Table], tables: &[(usize, Table)], tokens: u
 
 /// Cut packing under one current operation and the original native namespace.
 pub fn cut_case_columns_in(materializer:&Materializer<'_>,evidence:&[Table],tables:&[(usize,Table)],tokens:usize,train:usize,labels:Option<&StreamLabels>)->(CaseColumns,u32) {
-    fold(materializer,evidence,tables,Some(tokens),train,labels)
+    fold(materializer,evidence,tables,Some(tokens),train,labels,false)
 }
 
 /// The tables of a stream up to the end of a step, which the tables of the
@@ -548,11 +554,11 @@ pub fn step_case_columns_in(materializer:&Materializer<'_>,before:Option<&Stream
             before.count as usize
         }
         None => {
-            push_tables(materializer,&mut columns, &mut names, &mut runs, 0, evidence.iter().map(|table| (0, table)), train, None);
+            push_tables(materializer,&mut columns, &mut names, &mut runs, 0, evidence.iter().map(|table| (0, table)), train, None,false);
             evidence.len()
         }
     };
-    push_tables(materializer,&mut columns, &mut names, &mut runs, first, tables.iter().map(|(token, table)| (*token, table)), train, None);
+    push_tables(materializer,&mut columns, &mut names, &mut runs, first, tables.iter().map(|(token, table)| (*token, table)), train, None,false);
     let count = u32::try_from(first + tables.len()).expect("fewer than 2^32 tables");
     let kept = before.map_or_else(Vec::new, |before| before.tables.clone()).into_iter().chain(tables.into_iter().map(|(_, table)| Arc::new(table))).collect();
     (columns, StreamTables { tables: kept, count })
@@ -565,7 +571,7 @@ pub fn step_case_columns_in(materializer:&Materializer<'_>,before:Option<&Stream
 /// folded into `names` alone, and the count of them is given with the
 /// columns.
 /// `labels` are as [`case_columns`] takes them.
-fn fold(materializer:&Materializer<'_>,evidence: &[Table], tables: &[(usize, Table)], cut: Option<usize>, train: usize, labels: Option<&StreamLabels>) -> (CaseColumns, u32) {
+fn fold(materializer:&Materializer<'_>,evidence: &[Table], tables: &[(usize, Table)], cut: Option<usize>, train: usize, labels: Option<&StreamLabels>, full_rows:bool) -> (CaseColumns, u32) {
     let skipped = cut.map_or(0, |tokens| evidence.len() + tables.partition_point(|(token, _)| *token < tokens));
     let mut columns = CaseColumns::default();
     let mut names = Vec::new();
@@ -574,13 +580,13 @@ fn fold(materializer:&Materializer<'_>,evidence: &[Table], tables: &[(usize, Tab
     for (place, (_, table)) in placed.by_ref().take(skipped).enumerate() {
         note_name(&mut names, u32::try_from(place).expect("fewer than 2^32 tables"), table, labels);
     }
-    push_tables(materializer,&mut columns, &mut names, &mut runs, skipped, placed, train, labels);
+    push_tables(materializer,&mut columns, &mut names, &mut runs, skipped, placed, train, labels,full_rows);
     (columns, u32::try_from(skipped).expect("fewer than 2^32 tables"))
 }
 
 /// The columns of `tables`, each with the index of its token, in `out`, the
 /// first of them the table at `first`, after the tables in `names`.
-fn push_tables<'t>(materializer:&Materializer<'_>,out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, first: usize, tables: impl Iterator<Item = (usize, &'t Table)>, train: usize, labels: Option<&StreamLabels>) {
+fn push_tables<'t>(materializer:&Materializer<'_>,out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, first: usize, tables: impl Iterator<Item = (usize, &'t Table)>, train: usize, labels: Option<&StreamLabels>, full_rows:bool) {
     // A stopped fold is a prefix, including when a previous append stopped.
     // Releasing phase scratch must never admit a later table past a gap.
     if out.packing_stop.is_some() {return;}
@@ -596,7 +602,7 @@ fn push_tables<'t>(materializer:&Materializer<'_>,out: &mut CaseColumns, names: 
             Err(bound)=>{out.packing_stop=Some(Stop {bound,form:table.form.clone()});break;},
         }
         let row = u32::try_from(place).expect("fewer than 2^32 tables");
-        push_table(materializer,out, names, runs, row, token, table, train, labels);
+        push_table(materializer,out, names, runs, row, token, table, train, labels,full_rows);
         // The pointer memo is scratch for this table: release its cloned
         // types, sorted orders and relation/index owners before settlement.
         // Content run interning still spans every table and prefix copy.
@@ -920,7 +926,7 @@ pub(crate) fn names_of(registry: &Registry, earlier: &[&Table]) -> TableNames {
 }
 
 /// The columns of `table`, the table at `row`, after the tables before it.
-fn push_table(materializer:&Materializer<'_>,out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, row: u32, token: usize, table: &Table, train: usize, labels: Option<&StreamLabels>) {
+fn push_table(materializer:&Materializer<'_>,out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, row: u32, token: usize, table: &Table, train: usize, labels: Option<&StreamLabels>, full_rows:bool) {
     let tables = &mut out.tables;
     tables.token.push(u32::try_from(token).expect("fewer than 2^32 tokens"));
     tables.form.push(form_path(&table.form));
@@ -1001,7 +1007,7 @@ fn push_table(materializer:&Materializer<'_>,out: &mut CaseColumns, names: &mut 
             tables.output_color.push(contents.selected.color.map_or(-1, i32::from));
             push_flows(out, names, row, contents);
             names.extend(own);
-            push_contents(materializer,&table.form,out, runs, row, contents, &types, &extent_columns, train);
+            push_contents(materializer,&table.form,out, runs, row, contents, &types, &extent_columns, train,full_rows);
         }
     }
 }
@@ -1297,8 +1303,8 @@ fn annotation_copy(materializer:&Materializer<'_>,allocations:&mut Vec<Arc<arclo
 
 /// The entries of `contents`, the table at `row`, and its projections;
 /// `extent_columns` are the table's columns that its entries hold extents for.
-fn push_contents(materializer:&Materializer<'_>,form:&NodePath,out: &mut CaseColumns, runs: &mut Runs, row: u32, contents: &Contents, types: &[ValueType], extent_columns: &[u32], train: usize) {
-    let count_only = contents.projections.is_some();
+fn push_contents(materializer:&Materializer<'_>,form:&NodePath,out: &mut CaseColumns, runs: &mut Runs, row: u32, contents: &Contents, types: &[ValueType], extent_columns: &[u32], train: usize, full_rows:bool) {
+    let count_only = !full_rows && contents.projections.is_some();
     let mut starts = Vec::with_capacity(contents.examples.len());
     for (place, example) in contents.examples.iter().enumerate() {
         starts.push(out.entries.table.len());

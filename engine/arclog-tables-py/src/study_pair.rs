@@ -4,7 +4,7 @@ use arclog::decode::corpus::read_task_files;
 use arclog::registry::Registry;
 use arclog::session::{SessionBound, TaskSession};
 use arclog_bindings::{Names, PyMutationPoint, PyStudyProgram, PyValidMutant, constructions};
-use arclog_tables::columns::case_columns_in;
+use arclog_tables::columns::{case_columns_in,case_columns_with_full_rows_in};
 use arclog::eval::join::Materializer;
 use arclog_tables::tables::{evidence_tables, study_pair};
 use study_pair::STUDY_SESSION_BYTES;
@@ -155,7 +155,9 @@ impl PyStudyTaskEvaluator {
     /// All export relation tables (plus evidence), in this evaluator's Ident
     /// namespace. Native evaluation is cached once per gold handle. Returns
     /// (status_json, CaseTables); stops and faults retain their native reason.
-    fn gold_tables(&self,py:Python<'_>,gold:&PyStudyProgram)->PyResult<(String,PyCaseTables)> {
+    /// full_rows packs native rows/extents even when synthesis projections exist.
+    #[pyo3(signature=(gold,*,full_rows=false))]
+    fn gold_tables(&self,py:Python<'_>,gold:&PyStudyProgram,full_rows:bool)->PyResult<(String,PyCaseTables)> {
         if gold.settings!=self.settings {return Err(PyValueError::new_err("task evaluator and program settings differ"));}
         let constructions=constructions()?;
         let (report,columns)=py.detach(|| self.with_cache("gold_tables",|cache| {
@@ -164,7 +166,8 @@ impl PyStudyTaskEvaluator {
             let (mut report,tables)=study_pair::gold_tables_cached_in(&gold.program,&self.task,&self.session,constructions,&self.settings,cache,&limits);
             let started=std::time::Instant::now();
             let materializer=Materializer::new(&self.session,&limits);
-            let columns=case_columns_in(&materializer,&self.evidence,&tables,self.task.train.len(),None);
+            let columns=case_columns_with_full_rows_in(&materializer,&self.evidence,&tables,self.task.train.len(),None,full_rows);
+            report["full_rows"]=full_rows.into();
             packing_status(&mut report,[&columns]);
             report["native_columns_seconds"]=started.elapsed().as_secs_f64().into();
             Ok((report,columns))
