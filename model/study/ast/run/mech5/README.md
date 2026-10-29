@@ -10,7 +10,7 @@ The nonlib search is a proposal mechanism. Omitted nondeterministic selector sou
 
 ## Deployment status
 
-Source is built; no target run, evaluation or tests have been launched. The all-population entrypoint deliberately fails preflight while the mechanical DET route is unavailable. Ordinary judge checking excludes DET, and the collector does not yet support its public reader-header projection. Raw private BODY columns and kind changes cannot substitute for that route. n-judgetool owns the missing collector/checker capability. The shared DET metadata wrapper and mech3 transport must also be merged. Shared held-slot decoding, global Ident agreement and exact cached context coverage repairs must land before deployment. The evaluator's artifact-root change must permit `DATA_ROOT/ast/run/mech5/replays`.
+Source is built; no target run, evaluation or tests have been launched. The all-population entrypoint deliberately fails preflight while the mechanical DET route is unavailable. Ordinary judge checking excludes DET, and the collector does not yet support its public reader-header projection. Raw private BODY columns and kind changes cannot substitute for that route. n-eval owns the missing collector/checker capability and evaluator relocation; n-judgetool supplies its pending repair handoff. The shared DET metadata wrapper and mech3 transport must also be merged. Shared held-slot decoding, global Ident agreement and exact cached context coverage repairs must land before deployment. The evaluator's artifact-root change must permit `DATA_ROOT/ast/run/mech5/replays`.
 
 After those dependencies are integrated and this preflight is updated, run from the main checkout:
 
@@ -45,6 +45,6 @@ if loaded['valid']:
     evidence = apply_targets(evidence, loaded)
 ```
 
-`load_targets` opens databases read-only. It checks the current base row, code/config manifests, task-input receipt and all referenced journal payloads. It returns `status: done`, `valid: true`, `record`, `reference`, `result_sha256`, `outcome`, `kind` and `table_only`. The reference binds database/table/kind/key and code/config/result hashes. Missing, corrupt or stale evidence returns `status: open`, `valid: false` and a reason. A valid Unknown is done.
+`load_targets` opens databases read-only. It checks the current base row, code/config manifests, task-input receipt and all referenced journal payloads. Policy prose is not read or used as a validity dependency. Legacy specification hashes and manifest entries remain readable as recorded metadata; their files are not checked. It returns `status: done`, `valid: true`, `record`, `reference`, `result_sha256`, `outcome`, `kind` and `table_only`. The reference binds database/table/kind/key and code/config/result hashes. Missing, corrupt or stale evidence returns `status: open`, `valid: false` and a reason. A valid Unknown is done.
 
 `apply_targets` checks source/base/result binding, adds the durable target reference, replaces target comparisons/support, and adds this producer's clauses. It preserves program fit, reader evidence, other mechanical clauses and attributes. It never writes a database. n-mech's central reducer owns grade precedence and DET's exclusion from fits/extension. Child journal payloads are the durable mechanical evidence; replay artifacts retain the evaluator's full audit material.

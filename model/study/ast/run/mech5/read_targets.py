@@ -91,6 +91,9 @@ def load_targets(database,pair_id,*,source_sha256,base_result_sha256):
         manifest,settings=map(json.loads,producer)
         if digest(manifest)!=code or digest(settings)!=config:raise ValueError('producer code/config digest differs')
         for name,expected in manifest.items():
+            # Retain legacy manifest/config hashes as recorded provenance.
+            # Policy prose is not an executable dependency and is never read.
+            if Path(name).name=='judge-decisions.md':continue
             file=Path(name) if Path(name).is_absolute() else CODE_ROOT/name
             if file_hash(file)!=expected:raise ValueError('target producer changed: '+str(file))
         if value.get('task_receipt') and file_hash(value['task_receipt']['path'])!=value['task_receipt']['sha256']:

@@ -58,7 +58,7 @@ class Pass:
             'judge2/render2/structured.py','ast/check_stage1_all.py','ast/run/native_storage.py',
             'ast/run/native_tables.py','ast/run/filters.py','ast/run/recovery.py',
             'ast/run/next_revision/family_recovery.py','ref/progsynth-relabel/engine_verify.py',
-            'ref/progsynth-relabel/verify_recovery.py','codex-adm/briefs/judge-decisions.md'))
+            'ref/progsynth-relabel/verify_recovery.py'))
         files.add(Path(ev.runtime['binary']))
         self.manifest={(str(p.resolve().relative_to(CODE_ROOT)) if p.resolve().is_relative_to(CODE_ROOT) else str(p.resolve())):
                        hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(files)}
