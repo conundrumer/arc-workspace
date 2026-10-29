@@ -1,0 +1,70 @@
+--- a/model/study/ast/run/mech/registry_plan.py
++++ b/model/study/ast/run/mech/registry_plan.py
+@@ -77,3 +77,67 @@
+               if compatible(f['type'],g['type']) or (f['type']=='Box' and g['type']=='Position')]
+              for g in target]
+     for projection in itertools.product(*domains):yield list(projection)
++
++
++def available_atoms(L, bindings, adapter, *, per_source=12, max_join=2):
++    """Ground canonical callable tables admitted by the resolver metadata.
++
++    bindings are caller-authenticated definition/template/schema receipts from
++    MetadataProducer.callable_definition, not fabricated registry declarations.
++    Fresh existential columns only restrict X; they are not computed outputs.
++    """
++    from collections import deque
++    import hashlib
++    import json
++    if per_source < 1 or max_join < 1:
++        raise ValueError('positive source grounding limits required')
++    xfields = adapter['input']['binding']['projected_schema']
++    def one(binding):
++        fields = binding['fields'];template = L.parse(binding['callable_atom'])
++        ident = hashlib.sha256(json.dumps(binding['definition'],sort_keys=True,
++            separators=(',', ':'),ensure_ascii=False).encode()).hexdigest()
++        domains = [[f'V{i}' for i,x in enumerate(xfields) if compatible(x['type'],f['type'])]
++                   + (['0'] if f['type'] in ('number','Number','Box','Position','Offset') else [])
++                   for f in fields]
++        def emit(joined,negated):
++            def rename(value):
++                name = value.lstrip('*^')
++                if name == '0':
++                    return value
++                if not name.startswith('V') or not name[1:].isdigit():
++                    raise ValueError('canonical available template has no physical-column site')
++                index = int(name[1:])
++                return joined.get(index,'*MechSource'+ident[:12]+'C'+str(index))
++            atom = L.rename_labels(template,rename)
++            return dict(status='candidate',kind='antipredicate' if negated else 'predicate',
++                atom=['NOT',atom] if negated else atom,computed_fields=[],mode=sorted(joined),
++                entry_id='available:'+ident,entry_sha256=ident,source_kind='available',
++                source_receipt=binding.get('receipt'))
++        def full(negated):
++            for values in itertools.product(*domains):
++                if not any(v.startswith('V') for v in values):
++                    continue
++                yield emit(dict(enumerate(values)),negated)
++        def partial(width):
++            for columns in itertools.combinations(range(len(fields)),width):
++                for values in itertools.product(*(domains[i] for i in columns)):
++                    if any(v.startswith('V') for v in values):
++                        yield emit(dict(zip(columns,values)),False)
++        streams = deque([iter(full(False)),iter(full(True))])
++        streams.extend(iter(partial(width)) for width in range(1,min(max_join,len(fields))+1))
++        emitted = 0
++        while streams and emitted < per_source:
++            stream = streams.popleft()
++            try:
++                yield next(stream)
++            except StopIteration:
++                continue
++            emitted += 1;streams.append(stream)
++    streams = deque(iter(one(binding)) for binding in bindings)
++    while streams:
++        stream = streams.popleft()
++        try:
++            yield next(stream)
++        except StopIteration:
++            continue
++        streams.append(stream)
