@@ -104,6 +104,63 @@ def _visibility():
     return namespace['visible']
 
 
+def train_entry_contexts(ev, native, table, record, *, ntrain):
+    """Canonical kept TRAIN/TASK selection before any value/extent decoding."""
+    from tables import Incomplete, kept_entries
+    if type(ntrain) is not int or ntrain < 1:
+        raise Incomplete('TRAIN acquisition requires the authenticated train input count')
+    reader = native['_native_reader']
+    # Only assignment metadata is read for eligible entries. Dummy rows allow
+    # the canonical matcher to select contexts without decoding any value rows.
+    metadata = []
+    for index in reader.bytable[table]:
+        kind = reader.entries['example_kind'][index]
+        if kind not in (0, 1):
+            continue
+        example = reader.entries['example_index'][index]
+        if kind == 1 and not 0 <= example < ntrain:
+            raise Incomplete('native TRAIN entry is outside the authenticated input axis')
+        metadata.append(dict(entry=index, example=(kind, example),
+            model=reader.entries['model'][index], rows=(),
+            assignment=tuple(sorted((d['relation'], tuple(tuple(r) for r in d['rows']))
+                                    for d in reader.assignment(index)))))
+    ts = native['tables']
+    return kept_entries(ev.legacy, metadata, ts['det_relations'][table],
+                           ts['det_types'][table], record, ntrain, 0)
+
+
+def select_train_full_rows(ev, native, record, *, ntrain):
+    """Pure mask/receipt from canonical kept metadata; no packed owner escapes."""
+    from tables import axis_receipt
+    reader = native['_native_reader']
+    selected = set()
+    tables = []
+    for table in range(len(native['tables']['form'])):
+        proof = dict(table=table)
+        try:
+            matched = train_entry_contexts(ev, native, table, record, ntrain=ntrain)
+            proof.update(status='matched', **axis_receipt(matched))
+            proof['entries'] = []
+            table_entries = set()
+            for context in matched['contexts']:
+                entry = context['entry']
+                table_entries.add(entry)
+                proof['entries'].append(dict(entry=entry,
+                    example=list(context['example']), model=context['model'],
+                    kept_assignments=list(context['kept_assignments']),
+                    native_kind=int(reader.entries['kind'][entry]),
+                    rows=int(reader.entries['rows'][entry])))
+            selected.update(table_entries)
+        except (ValueError, KeyError, IndexError, TypeError) as error:
+            # The typed consumer retains this table's explicit unavailable
+            # result. A failed match grants no full-row transport selection.
+            proof.update(status='unavailable', reason=str(error))
+        tables.append(proof)
+    return dict(schema='evaluator-train-entry-mask-v1', entries=sorted(selected),
+                tables=tables, test_entries_selected=False,
+                selection='canonical kept_entries over native TRAIN/TASK metadata')
+
+
 def acquire_train_table(ev, native, table, record, *, ntrain, fields=None,
                         projection=None, output_aliases=None, source=None):
     """Return full typed TRAIN cells at the case's local kept assignments.
@@ -114,7 +171,7 @@ def acquire_train_table(ev, native, table, record, *, ntrain, fields=None,
     Models are local to each (assignment, TRAIN input), never cross-table IDs.
     Missing kept contexts are explicit and do not become empty tables.
     """
-    from tables import Incomplete, kept_entries, comparison_type
+    from tables import Incomplete, comparison_type
     from program_metadata import type_identity, typed_fields
     from evaluator import sha
     if type(ntrain) is not int or ntrain < 1:
@@ -145,23 +202,7 @@ def acquire_train_table(ev, native, table, record, *, ntrain, fields=None,
               or comparison_type(type_identity(ev, record, schema[index]['type'])[0]) != comparison_type(field['type'])):
             raise Incomplete('TRAIN projected field type or physical index differs')
 
-    # Only assignment metadata is read for eligible entries. Dummy rows allow
-    # the canonical matcher to select contexts without decoding any value rows.
-    metadata = []
-    for index in reader.bytable[table]:
-        kind = reader.entries['example_kind'][index]
-        if kind not in (0, 1):
-            continue
-        example = reader.entries['example_index'][index]
-        if kind == 1 and not 0 <= example < ntrain:
-            raise Incomplete('native TRAIN entry is outside the authenticated input axis')
-        metadata.append(dict(entry=index, example=(kind, example),
-            model=reader.entries['model'][index], rows=(),
-            assignment=tuple(sorted((d['relation'], tuple(tuple(r) for r in d['rows']))
-                                    for d in reader.assignment(index)))))
-    ts = native['tables']
-    matched = kept_entries(ev.legacy, metadata, ts['det_relations'][table],
-                           ts['det_types'][table], record, ntrain, 0)
+    matched = train_entry_contexts(ev, native, table, record, ntrain=ntrain)
     entries = []
     model_counts = {}
     for context in matched['contexts']:
@@ -316,6 +357,8 @@ def _acquire_case_train(ev, record, case_context, ntrain, ntest):
             # Request the bounded full-row packer; never inflate a decode cap
             # or reconstruct values from counts/projections in Python.
             kwargs['full_rows'] = True
+            kwargs['full_rows_selector'] = lambda native: select_train_full_rows(
+                ev, native, own, ntrain=ntrain)
             result = ev.replay_program(*args, **kwargs)
             if saved:
                 raise Incomplete('case TRAIN collection exceeded its single replay contract')
@@ -374,6 +417,7 @@ def _acquire_case_train(ev, record, case_context, ntrain, ntest):
                      packing=dict(full_rows=True,
                                   native_full_rows=saved.get('replay', {}).get('engine_report', {}).get('full_rows'),
                                   source='native gold_tables packing',
+                                  selection=saved.get('replay', {}).get('packing_selection'),
                                   projection_cap_changed=False)))
 
 

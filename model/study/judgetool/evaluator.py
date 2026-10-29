@@ -109,6 +109,7 @@ class ReplayEvaluator:
         self._point_gold = None
         self._point_kept = None
         self._gold_kept_cache = {}
+        self._packing_attempt = None
 
     @contextmanager
     def fresh_session(self):
@@ -150,6 +151,7 @@ class ReplayEvaluator:
         self._point_gold=None
         self._point_kept=None
         self._gold_kept_cache.clear()
+        self._packing_attempt = None
 
     def acquire_gold_kept(self, record, *, case, program):
         """Acquire missing own-case choices through native gold-only TRAIN FITS.
@@ -232,7 +234,7 @@ class ReplayEvaluator:
         self._gold_kept_cache[key]=deepcopy(result)
         return result
 
-    def gold_tables(self, program, *, full_rows=False):
+    def gold_tables(self, program, *, full_rows=False, full_rows_entries=None, expected_tables_ref=None, full_rows_selector=None):
         """Shared native execution; typed exporters opt into bounded full rows.
 
         The native flag changes packing only. It neither raises the projection
@@ -240,19 +242,76 @@ class ReplayEvaluator:
         """
         if type(full_rows) is not bool:
             raise ValueError('full_rows must be boolean')
-        status, tables = (self.ev.gold_tables(program, full_rows=True) if full_rows
-                          else self.ev.gold_tables(program))
+        if full_rows_selector is not None and (not full_rows or not callable(full_rows_selector)):
+            raise ValueError('full-row selector requires full_rows=True and a callable')
+        if full_rows_selector is not None:
+            if not full_rows or full_rows_entries is not None or expected_tables_ref is not None:
+                raise ValueError('metadata selection needs full_rows without an explicit entry mask')
+            signature = getattr(self.ev.gold_tables, '__text_signature__', '') or ''
+            if 'full_rows_entries' in signature and 'expected_tables_ref' in signature:
+                metadata, selection = self._select_gold_rows(program, full_rows_selector)
+                full_rows_entries = selection['entries']
+                expected_tables_ref = metadata['tables_ref']
+                self._packing_attempt['native_gold_tables_calls'] = 2
+            else:
+                # Select compatibility mode BEFORE execution. There is no
+                # retry after a stop, failed selection or rejected mask.
+                self._packing_attempt = dict(strategy='unmasked full rows; legacy native API',
+                                             native_gold_tables_calls=1)
+        if full_rows_entries is not None or expected_tables_ref is not None:
+            if not full_rows:
+                raise ValueError('entry-masked packing requires full_rows=True')
+            status, tables = self.ev.gold_tables(program, full_rows=True,
+                full_rows_entries=full_rows_entries, expected_tables_ref=expected_tables_ref)
+        else:
+            status, tables = (self.ev.gold_tables(program, full_rows=True) if full_rows
+                              else self.ev.gold_tables(program))
         report = json.loads(status) if isinstance(status, str) else status
         if full_rows and report.get('full_rows') is not True:
             raise ValueError('native gold_tables did not certify requested full-row packing')
+        if full_rows_entries is not None:
+            if (report.get('tables_ref') != expected_tables_ref or
+                    report.get('full_rows_entries') != sorted(full_rows_entries)):
+                raise ValueError('native masked packing report differs from its requested snapshot/entries')
         native = self.legacy.native(tables)
         self.captures.append(dict(program=program.sexp(), report=report, native=native))
         return status, tables
+
+    def _select_gold_rows(self, program, selector):
+        """Own the first packed snapshot only inside this scope.
+
+        Only JSON metadata and integer indices leave it. Thus every payload
+        owner/view is released before the same cached observation is repacked.
+        """
+        self._packing_attempt = dict(strategy='snapshot-bound kept TRAIN entry mask',
+                                     native_gold_tables_calls=1)
+        status, payload = self.ev.gold_tables(program)
+        metadata = json.loads(status) if isinstance(status, str) else status
+        self._packing_attempt['metadata_report'] = metadata
+        if (metadata.get('status') != 'complete' or
+                metadata.get('entry_metadata_complete') is not True or
+                not metadata.get('tables_ref')):
+            raise ValueError('native default packing metadata incomplete: '+canonical(metadata))
+        native = self.legacy.native(payload)
+        if metadata.get('entry_count') != len(native['_native_reader'].entries['table']):
+            raise ValueError('native default packing entry count differs')
+        # Round-trip prohibits leaking a packed view/owner from the callback.
+        selection = json.loads(canonical(selector(native)))
+        entries = selection['entries']
+        if (not isinstance(entries, list) or
+                any(type(i) is not int or not 0 <= i < metadata['entry_count'] for i in entries) or
+                len(entries) != len(set(entries))):
+            raise ValueError('canonical metadata selector returned invalid entry indices')
+        self._packing_attempt['selection'] = selection
+        return metadata, selection
 
     def _artifact(self, record, candidate, result):
         identity = dict(source=sha(record), candidate=candidate, settings=self.receipt)
         if result.get('full_rows'):
             identity['packing'] = dict(full_rows=True)
+            selection = result.get('packing_selection', {}).get('selection')
+            if selection is not None:
+                identity['packing']['entries_sha256'] = sha(selection['entries'])
         key = sha(identity)
         folder = self.artifacts/key
         folder.mkdir(exist_ok=True)
@@ -349,7 +408,7 @@ class ReplayEvaluator:
                     other_assignment_entries=other,
                     rule='saved values on every table dependency slot; absent compatible entry is unknown')
 
-    def replay_program(self, record, program, form, *, candidate=None,retain_all=False,retain_forms=None,full_rows=False):
+    def replay_program(self, record, program, form, *, candidate=None,retain_all=False,retain_forms=None,full_rows=False,full_rows_selector=None):
         """Canonical low-level API for tool and n-mech, no copied evaluator.
 
         Caller supplies the whole generated program including OUT and the
@@ -358,6 +417,8 @@ class ReplayEvaluator:
         """
         if type(full_rows) is not bool:
             raise ValueError('full_rows must be boolean')
+        if full_rows_selector is not None and (not full_rows or not callable(full_rows_selector)):
+            raise ValueError('full-row selector requires full_rows=True and a callable')
         if retain_forms is not None:
             count=len(self.legacy.split_forms(program))
             if (retain_all or not isinstance(retain_forms,(list,tuple))
@@ -367,6 +428,7 @@ class ReplayEvaluator:
             retain_forms=sorted(set(retain_forms))
         self.task_evaluator(record['task'])
         self.captures = []
+        self._packing_attempt = None
         start = time.monotonic()
         result = dict(schema='judgetool-replay-v1', verified=False,retain_all=retain_all,
                       full_rows=full_rows)
@@ -378,7 +440,7 @@ class ReplayEvaluator:
         else:
             try:
                 if full_rows:
-                    self.gold_tables(checked, full_rows=True)
+                    self.gold_tables(checked, full_rows=True, full_rows_selector=full_rows_selector)
                 else:
                     self.gold_tables(checked)
                 report = self.captures[-1]['report']
@@ -391,6 +453,8 @@ class ReplayEvaluator:
                         result['unknown'] = True
             except Exception as error:
                 result.update(engine='incomplete', reason=f'{type(error).__name__}: {error}')
+        if self._packing_attempt is not None:
+            result['packing_selection'] = deepcopy(self._packing_attempt)
         result['seconds'] = round(time.monotonic()-start, 3)
         result['form'] = form
         result['receipt'] = self.receipt
