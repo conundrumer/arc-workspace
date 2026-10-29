@@ -185,7 +185,9 @@ def evaluate(ev,record,clause,target,columns=None,*,explore=False,row_limit=100)
             eq=(dict(status='mismatch',reason='output column count differs',candidate_columns=len(columns if columns is not None else actual_columns),target_columns=len(fields))
                 if len(columns if columns is not None else actual_columns)!=len(fields)
                 else catalog.equality(grouped['groups'],actual_columns,other,fields,ref,explicit=columns))
-            comparisons.append(dict(target_id=ref['target_id'],comparison=eq))
+            comparisons.append(dict(target_id=ref['target_id'],comparison=eq,
+                reference=dict(case=ref['case'],role=ref['role'],
+                               native_selector=dict(ref['native_selector']))))
             if eq.get('train')=='equal':train_target_match=ref['target_id']
             if eq['status']=='equal':
                 equality,gold,goldreceipt,matched_fields=eq,other,receipt,fields
