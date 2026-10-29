@@ -27,3 +27,5 @@ SQLite uses WAL and synchronous FULL, with a transaction per pair. Resume requir
 ## Run prerequisites
 
 The checkout must contain canonical nonrender metadata, `tables.comparison_type`, the corrected canonical `tables.kept_groups` slot, held-Ident and task-scope handling, and `out_fit.check`. Final DET grades require qualified all-target evidence and the table-only reducer guard; DET records are excluded from the fits-split command.
+
+`det_targets.load_det_targets` delegates to the public mech5 validity loader. `apply_det_targets` applies that owner's pure overlay, disables held-OUT program-fit evidence for DET and calls the central reducer. It preserves reader evidence and other clause producers. A valid Unknown stays a completed bounded or incomplete attempt; missing or stale evidence stays open. This adapter does not acquire targets or run a second recovery search. Its runtime imports resolve only from the current checkout after mech5 merges.
