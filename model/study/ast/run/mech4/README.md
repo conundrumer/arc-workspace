@@ -56,3 +56,14 @@ python3 scripts/run_heavy.py --cpus 1 --need soon work/lm/data-study/ast/run/run
 ```
 
 Run the second command without `--limit` for the full hint population. If a deliberate change alters the meaning of results, explicitly use `--fresh-output DATA_ROOT/ast/run/mech4/NEW.sqlite3`; it requires a new database and preserves the original facts/receipts. Changing code or bounds with the same output resumes completed facts and does not rerun them. A previous persisted queue is ignored. Native limits and artifact directories are configuration scoped. No tests or native evaluation were run while building this source.
+
+
+## Performance scheduling
+
+The lib extension keeps available-only restrictions already present in every base assignment as syntax for combinations with libs. It does not replay those restrictions alone or combine two such base-only restrictions. Missing base inventory or newly admitted available sources keep standalone screening active. This is scheduling of an explicitly uncovered search, never an exhaustion/Reject proof.
+
+Unused containment comparisons are omitted. The shared comparison type adapter rejects impossible output-type proposals before native calls; selectors remain available for later computed outputs. A single-clause screen whose largest model has fewer rows than every target model cannot match through projection and is dropped from the recovery beam. This local obstruction never becomes an all-target/union negative.
+
+Syntax plans use a bounded in-memory cache keyed by canonical callable/type/source identities and registry declarations. Native row results are not shared across different mutants without proof. Selector/computation conjunctions are tried first, with fresh existential labels renamed through the canonical helper when they collide. Default native batches contain 16 candidates. Two canonical, read-only native snapshots retain warm gold and the current mutant; task boundaries clear them. Exact TargetStore ref/base keys and miss validation remain unchanged, and cache hits are not disk-integrity attestation. Native budgets, independent positive verification and input-keyed resume remain unchanged.
+
+Routing reuses n-mech's bulk StudyReader when available, with the compatibility reader retained for older source. Pure grade/presentation changes do not interrupt native execution; full producer provenance remains recorded. Native-policy source changes still stop the writer. Performance evidence and retained-result reads are process artifacts under DATA_ROOT/ast/run/mech4/review.

@@ -4,6 +4,19 @@ from collections import Counter,OrderedDict
 import copy
 
 
+class SnapshotCache(OrderedDict):
+    """Two immutable published snapshots: warm gold plus current mutant.
+
+    Canonical TargetStore still owns exact ref/base keys and validates misses.
+    Hits reuse read-only views, not a continuing disk-integrity attestation.
+    """
+    def __getitem__(self,key):
+        value=super().__getitem__(key);self.move_to_end(key);return value
+    def __setitem__(self,key,value):
+        super().__setitem__(key,value);self.move_to_end(key)
+        while len(self)>2:self.popitem(last=False)
+
+
 def g_inventory(case):
     # Explicitly NOT an all-case catalogue/admission certificate. No other
     # case values or stored target rows are needed for this first pass.
@@ -35,7 +48,7 @@ class Contexts:
     def __init__(self,screen_ev,gold_ev,journal,config,guard):
         from tables import TargetStore
         self.screen=screen_ev;self.gold=gold_ev;self.journal=journal;self.config=config;self.guard=guard
-        self.store=TargetStore(screen_ev.legacy,CODE_ROOT);self.producers={};self.cache=OrderedDict();self.stats=Counter()
+        self.store=TargetStore(screen_ev.legacy,CODE_ROOT);self.store.cache=SnapshotCache();self.producers={};self.cache=OrderedDict();self.stats=Counter()
     def clear(self):
         from case_collector import clear_cache
         clear_cache(self.gold);self.gold.close();self.gold.captures=[]

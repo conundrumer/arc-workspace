@@ -2,7 +2,7 @@
 """Resumable G-only library pass; canonical native screening AND verification."""
 from common import *
 import argparse
-from collections import Counter
+from collections import Counter,OrderedDict
 import fcntl
 import gzip
 import itertools
@@ -10,10 +10,9 @@ import signal
 import time
 from budget import Budget,Bound,ReplayProxy
 from context import Contexts,require_axes
-from planner import atomic,combined
+from planner import atomic,combined,base_source_ids
 from screen import execute
-from read_grades import load_grade
-from prepare import jobs
+from prepare import jobs,RoutingReader
 from clause_evidence import clause_evidence
 
 STOP=False
@@ -45,7 +44,7 @@ class Sources:
 
 class Worker:
     def __init__(self,args):
-        self.a=args;self.counts=Counter();self.started=time.monotonic();self.last=0;self.task=None
+        self.a=args;self.counts=Counter();self.started=time.monotonic();self.last=0;self.task=None;self.plan_cache=OrderedDict()
         # Fail before any execution when required shared source is unmerged.
         import registry_plan
         if not all(callable(getattr(registry_plan,n,None)) for n in ('registry_atoms','available_atoms')):
@@ -82,10 +81,17 @@ class Worker:
             coverage='finite one-computation/two-restriction layer; never full-space negative')
         from disk_guard import DiskGuard
         disk=DiskGuard(args.output.parent,min_free_gb=args.min_free_gb);disk.resume()
-        self.guard=Guard(self.files,disk=disk)
+        # Routing/read-time grade and presentation modules are recorded as
+        # provenance but are not dynamically executed native-search policy.
+        # Their unrelated merges must not stop an hours-long native pass.
+        presentation={'judge_tool.py','judge_view.py','target_view.py'}
+        guarded={name:sha for name,sha in self.files.items()
+            if not (Path(name).parent==MECH and Path(name).name=='read_grades.py')
+            and not (Path(name).parent==CODE_ROOT/'judgetool' and Path(name).name in presentation)}
+        self.guard=Guard(guarded,disk=disk)
         self.journal=Journal(args.output,digest(self.files),digest(self.config))
         self.journal.register(self.files,self.config)
-        self.base=readonly(args.base);self.sources=Sources()
+        self.base=readonly(args.base);self.sources=Sources();self.routing=RoutingReader(args.base,args.grades,args.output)
         self.contexts=Contexts(self.screen_ev,self.gold_ev,self.journal,self.config,self.guard)
 
     def report(self,done,total,phase='pairs',force=False):
@@ -136,8 +142,9 @@ class Worker:
             mechanical_clauses=[],candidates=[],screens=[],found_recovery=False,search_status='bound_unknown',
             full_space_covered=False,plan_exhausted=False,uncovered=['other targets','multiple computed libs',
                 'deeper conjunctions','unions','structured/polymorphic registry sites','unvisited registry groundings'])
-        useful=[];seen=set();staged=[];atomic_count=0;combined_count=0;unsupported=0
+        useful=[];available_selectors=[];deferred_selectors=[];seen=set();staged=[];atomic_count=0;combined_count=0;unsupported=0
         transient=ScreenCache()
+        prior_sources=base_source_ids(base,context['available_bindings'])
         def process_batch(batch):
             gold=context['selection']['point'][0]
             for candidate,screen,resumed in execute(self.screen_ev,record,context['adapter'],batch,gold,
@@ -160,14 +167,51 @@ class Worker:
             return False
         start=time.monotonic()
         try:
-            generated=atomic(self.screen_ev.legacy,info,context['adapter'],maximum=self.config['max_atomic'],
-                per_predicate=self.config['per_predicate'],per_mode=self.config['per_mode'],bindings=context['available_bindings'])
+            plan_key=digest(dict(registry=info['registry_sha256'],
+                input=dict(template=context['adapter']['input']['binding']['callable_template'],
+                    types=[f['type'] for f in context['adapter']['input']['binding']['projected_schema']]),
+                available=[dict(definition=b['definition'],types=[f['type'] for f in b['fields']],callable_atom=b['callable_atom'])
+                           for b in context['available_bindings']],
+                caps=(self.config['max_atomic'],self.config['per_predicate'],self.config['per_mode'])))
+            generated=self.plan_cache.get(plan_key)
+            if generated is None:
+                generated=tuple(atomic(self.screen_ev.legacy,info,context['adapter'],maximum=self.config['max_atomic'],
+                    per_predicate=self.config['per_predicate'],per_mode=self.config['per_mode'],bindings=context['available_bindings']))
+                self.plan_cache[plan_key]=generated
+                while len(self.plan_cache)>64:self.plan_cache.popitem(last=False)
+            else:self.plan_cache.move_to_end(plan_key);self.counts['syntax_plan_hits']+=1
             for candidate in generated:
                 budget.check()
                 if candidate['kind']=='unsupported':unsupported+=1;continue
                 atomic_count+=1
-                if candidate['candidate_id'] in seen:continue
-                seen.add(candidate['candidate_id']);staged.append(candidate)
+                clause_key=digest(candidate['clause'])
+                if clause_key in seen:self.counts['duplicate_clauses_avoided']+=1;continue
+                seen.add(clause_key)
+                if candidate.get('source_kind')=='available' and candidate['registry'][0]['entry_sha256'] in prior_sources:
+                    # The base owns lib-free selection/projection. Keep these
+                    # restrictions for computed-lib conjunctions, without
+                    # replaying a standalone result the base already searched.
+                    if len(available_selectors)<self.config['max_useful']:
+                        available_selectors.append(candidate)
+                    self.counts['base_source_screens_deferred']+=1
+                    continue
+                if candidate.get('source_kind')=='available':
+                    candidate={k:v for k,v in candidate.items() if k!='candidate_id'}
+                    candidate['source_kind']='new_available'
+                    candidate['candidate_id']=digest(candidate)
+                from tables import comparison_type
+                from planner import fields
+                have={comparison_type(f['type']) for f in fields(context['adapter'],candidate)}
+                need={comparison_type(f['type']) for f in context['adapter']['comparison_target']['binding']['projected_schema']}
+                if not need<=have:
+                    # A restriction can help a later computation even when
+                    # X alone lacks a target type. No standalone comparison
+                    # of this proposal can supply that type.
+                    if not candidate['computed_fields'] and len(deferred_selectors)<self.config['max_useful']:
+                        deferred_selectors.append(candidate)
+                    self.counts['type_impossible_screens_avoided']+=1
+                    continue
+                staged.append(candidate)
                 if len(staged)>=self.config['batch_size']:
                     if process_batch(staged):break
                     staged=[]
@@ -175,11 +219,15 @@ class Worker:
                 if staged:process_batch(staged)
             if not result['found_recovery']:
                 staged=[]
-                for candidate in combined(self.screen_ev.legacy,context['adapter'],[item[2] for item in useful],
+                selectors=[x[2] for x in useful if not x[2]['computed_fields']]+deferred_selectors
+                computations=[x[2] for x in useful if x[2]['computed_fields']]
+                interleaved=[c for pair in itertools.zip_longest(selectors,available_selectors) for c in pair if c is not None]
+                for candidate in combined(self.screen_ev.legacy,context['adapter'],interleaved+computations,
                                           maximum=self.config['max_combined']):
                     budget.check();combined_count+=1
-                    if candidate['candidate_id'] in seen:continue
-                    seen.add(candidate['candidate_id']);staged.append(candidate)
+                    clause_key=digest(candidate['clause'])
+                    if clause_key in seen:self.counts['duplicate_clauses_avoided']+=1;continue
+                    seen.add(clause_key);staged.append(candidate)
                     if len(staged)>=self.config['batch_size']:
                         if process_batch(staged):break
                         staged=[]
@@ -195,7 +243,7 @@ class Worker:
         return result
 
     def run(self):
-        queue=list(jobs(self.a.base,self.a.grades,limit=self.a.limit,
+        queue=list(jobs(self.a.base,self.a.grades,limit=self.a.limit,lib_database=self.a.output,
             progress=lambda done,total,counts:self.report(done,total,phase='selection')))
         queue.sort(key=lambda j:(j['task'],j['source']['corpus'],j['source']['file'],j['source']['line']))
         total=len(queue);done=0;self.report(0,total,force=True)
@@ -205,7 +253,7 @@ class Worker:
                                       'FROM pairs WHERE pair_id=?',(job['pair_id'],)).fetchone()
             base=base_record(base_row)
             if digest(base)!=job['base_result_ref']['result_sha256']:raise ValueError('queue base result changed; prepare again')
-            current=load_grade(Path(job['grade_database']),job['pair_id'])
+            current=self.routing.read(job['pair_id'],source_record=self.sources.get(job))
             if not queue_hint(base) or current['valid'] and current['grade']!='Unknown':
                 self.counts['routing_skipped']+=1;done+=1;self.report(done,total);continue
             pair_inputs=dict(source_sha256=job['source_sha256'],target='G')
@@ -228,7 +276,6 @@ class Worker:
                         admission_authenticated=False,found_recovery=False,mechanical_clauses=[])
                 result=compact_pair(result,job)
                 self.guard.check();self.journal.put('pair',key,pair_inputs,result);self.counts['pairs_written']+=1
-                self.contexts.store.cache.clear()
             self.counts['attempts_done']+=1;done+=1
             self.report(done,total)
         self.report(done,total,force=True)
@@ -243,7 +290,7 @@ class Worker:
     def close(self):
         self.sources.close();self.contexts.clear()
         self.screen_ev.close();self.verify_ev.close();self.gold_ev.close()
-        self.base.close();self.journal.close()
+        self.routing.close();self.base.close();self.journal.close()
 
 
 def main():
@@ -261,7 +308,7 @@ def main():
     ap.add_argument('--compare-seconds',type=float,default=.25)
     ap.add_argument('--max-native-calls',type=int,default=24)
     ap.add_argument('--max-verify-replays',type=int,default=3)
-    ap.add_argument('--batch-size',type=int,default=8)
+    ap.add_argument('--batch-size',type=int,default=16)
     ap.add_argument('--max-atomic',type=int,default=256)
     ap.add_argument('--max-combined',type=int,default=96)
     ap.add_argument('--per-predicate',type=int,default=12)

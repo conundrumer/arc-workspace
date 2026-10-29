@@ -45,6 +45,10 @@ def compare_train(native,table,ev,record,adapter,candidate,proof,gold,ntrain,nte
     # whose fresh labels differ from G's names. The independent checker keeps
     # the original fields and validates the selected ordered output labels.
     proposal_fields=[dict(f,field_name=None) for f in targets]
+    # A projection cannot increase a model's row count. This rejects only
+    # this single-clause proposal, never the settled union space or a grade.
+    if any(max(map(len,groups[k]))<min(map(len,expected[k])) for k in expected):
+        return dict(status='too_few_rows',useful=False,required_train_contexts=len(expected))
     budget.check()
     equal=compare(groups,columns,expected,proposal_fields,seconds=min(config['compare_seconds'],budget.remaining()))
     # The common comparator coalesces the normal type/permutation choices in
@@ -67,14 +71,9 @@ def compare_train(native,table,ev,record,adapter,candidate,proof,gold,ntrain,nte
             trial=compare(groups,columns,expected,proposal_fields,explicit=selected,
                           seconds=min(config['compare_seconds'],budget.remaining()))
             if trial['status']=='equal':equal=trial;break
-    containment=None
-    if equal['status']!='equal':
-        budget.check()
-        containment=compare(groups,columns,expected,proposal_fields,relation='contains',
-                            seconds=min(config['compare_seconds'],budget.remaining()))
     distance=sum(abs(max(map(len,groups[k]))-max(map(len,expected[k]))) for k in expected)
     return dict(status='train_match' if equal['status']=='equal' else 'screened',comparison=equal,
-        columns=equal.get('columns') if equal['status']=='equal' else None,containment=containment,
+        columns=equal.get('columns') if equal['status']=='equal' else None,
         useful=True,rank=distance,
         projection_attempts=attempts,projection_bound=limit,required_train_contexts=len(expected),
         source='same shared evaluator; TRAIN proposal only',native_table=table)
@@ -83,10 +82,14 @@ def compare_train(native,table,ev,record,adapter,candidate,proof,gold,ntrain,nte
 def execute(ev,record,adapter,candidates,gold,ntrain,ntest,config,budget,cache,inputs,guard):
     """Yield each durably screened candidate; isolate refused combined programs."""
     from surface import prepare,tokens
-    L=ev.legacy;original=L.split_forms(record['mutant_sexp']);trees=[L.parse(f) for f in original]
-    if not trees or trees[-1][0]!='OUT' or sum(f[0]=='OUT' for f in trees)!=1:
-        raise ValueError('batch screening requires original whole mutant with final single OUT')
-    occupied=set(tokens(trees));prepared=[]
+    L=ev.legacy;program_key=digest(record['mutant_sexp'])
+    parsed=cache.recall('program',program_key,{})
+    if parsed is None:
+        original=L.split_forms(record['mutant_sexp']);trees=[L.parse(f) for f in original]
+        if not trees or trees[-1][0]!='OUT' or sum(f[0]=='OUT' for f in trees)!=1:
+            raise ValueError('batch screening requires original whole mutant with final single OUT')
+        parsed=(original,set(tokens(trees)));cache.remember('program',program_key,{},parsed)
+    original,original_names=parsed;occupied=set(original_names);prepared=[]
     for candidate in candidates:
         if STOPPED(budget):return
         key=digest(dict(pair=inputs['pair_id'],candidate=candidate['candidate_id']))
@@ -98,7 +101,7 @@ def execute(ev,record,adapter,candidates,gold,ntrain,ntest,config,budget,cache,i
             forms=L.split_forms(program)
             if L.parse(forms[at])[0]!='RULE':raise ValueError('TRAIN batch candidate is not a RULE')
             if forms[:at]+forms[at+1:]!=original:raise ValueError('canonical preparation changed original program')
-            name='&Mech4_'+digest(dict(source=digest(record),candidate=key))[:24]
+            name='&Mech4_'+digest(dict(source=inputs['source_sha256'],candidate=key))[:24]
             while name in occupied:name+='Q'
             occupied.add(name);tree=L.parse(forms[at]);tree[1]=name
             prepared.append((candidate,at,L.unparse(tree),proof))
@@ -120,7 +123,7 @@ def STOPPED(budget):
 
 def _execute_group(ev,record,adapter,prepared,original,at,gold,ntrain,ntest,config,budget,cache,inputs,guard):
     if not prepared:return
-    identity=digest(dict(source=digest(record),candidates=[p[0]['candidate_id'] for p in prepared],at=at))
+    identity=digest(dict(source=inputs['source_sha256'],candidates=[p[0]['candidate_id'] for p in prepared],at=at))
     old=cache.recall('batch',identity,inputs)
     replay=None;native=None
     if old is None:
@@ -145,12 +148,13 @@ def _execute_group(ev,record,adapter,prepared,original,at,gold,ntrain,ntest,conf
             cache.remember('screen',key,dict(inputs,candidate=candidate),result)
             yield candidate,result,False
         return
+    program_sha=digest(program)
     for offset,(candidate,_,text,proof) in enumerate(prepared):
         try:
             matches=[t for t,f in enumerate(native['tables']['form']) if str(f)==str(at+offset)]
             if len(matches)!=1:raise ValueError('exact appended candidate form is missing or ambiguous')
             result=compare_train(native,matches[0],ev,record,adapter,candidate,proof,gold,ntrain,ntest,config,budget)
-            result.update(replay_artifact=replay['artifact'],program_sha256=digest(program),
+            result.update(replay_artifact=replay['artifact'],program_sha256=program_sha,
                           appended_form=at+offset,executed_clause=text,proof=proof)
         except (ValueError,KeyError,IndexError,TypeError) as error:
             result=dict(status='unavailable',reason=str(error),replay_artifact=replay['artifact'],appended_form=at+offset)
