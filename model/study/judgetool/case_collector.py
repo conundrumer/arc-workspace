@@ -20,7 +20,7 @@ from study_paths import CODE_ROOT, DATA_ROOT, MAIN_ROOT
 from evaluator import sha
 from tables import Incomplete,kept_groups,compare,projected_rows
 from surface import prepare,tokens
-from program_metadata import export_named_program,typed_fields,type_identity
+from program_metadata import export_named_program,typed_fields,type_identity,bind_native_column_names
 import catalog
 import checks
 
@@ -255,7 +255,8 @@ def acquire_case(ev,record,case_context,ntrain,ntest,*,include_bodies=True):
         label=(definitions_here[0]['display_name'] if definitions_here else ts['fact'][table] or ts['relation_name'][table] or 'body')
         schema=deepcopy(native['_native_reader'].schema(table))
         for definition in definitions_here:
-            witnesses=definition['column_witnesses']
+            witnesses=bind_native_column_names(ev,own,definition,schema,artifact=replay['artifact'],table=table)
+            definition['column_witnesses']=witnesses
             if (len(witnesses)!=len(schema) or
                     any(w['physical_column']!=c['index'] or w['native_name']!=c['name']
                         or type_identity(ev,own,w['type'])[0]!=type_identity(ev,own,c['type'])[0]

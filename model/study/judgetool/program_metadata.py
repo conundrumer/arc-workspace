@@ -78,6 +78,40 @@ def typed_fields(ev, record, fields):
     return result
 
 
+def bind_native_column_names(ev, record, definition, schema, *, artifact, table):
+    """Bind absent physical names to the exact replay's certified layout.
+
+    Rigid outputs have native declared-layout row paths but the AST exporter
+    can have no node-level column names. The table packer supplies physical
+    names. Read those actual names; never derive cN or invent source names.
+    Authored/exported names remain exact assertions and are never replaced.
+    """
+    from evaluator import sha
+    from tables import Incomplete
+    witnesses=definition['column_witnesses']
+    if len(witnesses)!=len(schema):return witnesses
+    bound=[]
+    for witness,column in zip(witnesses,schema):
+        if witness.get('native_name') is not None:
+            bound.append(witness);continue
+        if (definition.get('column_witness_status')!='complete'
+                or witness.get('proof')!='declared_layout'
+                or witness.get('status') not in ('resolved','declared_without_local_label')
+                or witness.get('definition_path')!=definition['definition_path']
+                or witness.get('relation')!=definition['relation']
+                or not witness.get('row_path')
+                or witness.get('physical_column')!=column['index']
+                or witness.get('logical_slot')!=column['slot']
+                or not isinstance(column.get('name'),str) or not column['name']
+                or type_identity(ev,record,witness['type'])[0]!=type_identity(ev,record,column['type'])[0]):
+            raise Incomplete('anonymous native column lacks an exact declared-layout replay binding')
+        bound.append(dict(witness,native_name=column['name'],exported_native_name=None,
+            native_name_binding=dict(source='exact native replay schema',artifact=artifact,table=table,
+                physical_column=column['index'],logical_slot=column['slot'],
+                row_path=deepcopy(witness['row_path']),original_witness_sha256=sha(witness))))
+    return bound
+
+
 def export_named_program(ev, program, names):
     """Return native export with preserved source names and exact replay headers.
 
