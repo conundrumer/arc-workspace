@@ -1,15 +1,12 @@
-"""Read-only validity for all-target overlays. No replay or comparison.
-
-A durable Unknown is done. Missing, stale or corrupt inputs/evidence are open.
-Caller supplies the currently authenticated source and base-result identities.
-"""
+"""Read-only target facts and ephemeral evidence views; no replay or writes."""
+from collections import OrderedDict
 from functools import lru_cache
 import hashlib
 import json
 from pathlib import Path
 import sqlite3
 import zlib
-from ._paths import CODE_ROOT
+from ._paths import DATA_ROOT
 from run import digest
 
 
@@ -18,9 +15,12 @@ def signature(path):
     return s.st_dev,s.st_ino,s.st_size,s.st_mtime_ns,s.st_ctime_ns
 
 
-@lru_cache(maxsize=2048)
+@lru_cache(maxsize=512)
 def _file_hash(path,stamp):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    h=hashlib.sha256()
+    with Path(path).open('rb') as stream:
+        for block in iter(lambda:stream.read(1024*1024),b''):h.update(block)
+    return h.hexdigest()
 
 
 def file_hash(path):
@@ -30,86 +30,104 @@ def file_hash(path):
 
 def _refs(value):
     if isinstance(value,dict):
-        if value.get('table')=='entries' and all(k in value for k in ('kind','key','result_sha256')):
-            yield value
+        if value.get('table')=='entries' and all(k in value for k in ('kind','key','result_sha256')):yield value
         else:
             for child in value.values():yield from _refs(child)
     elif isinstance(value,list):
         for child in value:yield from _refs(child)
 
 
-def _db_stamp(path):
-    return (signature(path),signature(str(path)+'-wal') if Path(str(path)+'-wal').exists() else None)
+# Cache only validated hashes/references, never tables. Journal facts retain
+# their input identity across producer versions; this is not a disk-bitrot scan.
+_VALIDATED=OrderedDict()
+_TASK_INPUTS={}
 
 
-@lru_cache(maxsize=256)
-def _verify_child(path,stamp,kind,key,sha,code,config):
-    """Cache only validation, keyed by DB+WAL stat and complete reference."""
-    db=sqlite3.connect(Path(path).as_uri()+'?mode=ro',uri=True)
-    try:
-        row=db.execute('SELECT code,config,result_sha256,payload FROM entries WHERE kind=? AND key=?',(kind,key)).fetchone()
-        if not row or tuple(row[:3])!=(code,config,sha):raise ValueError('child journal identity differs: '+kind+'/'+key)
-        payload=json.loads(zlib.decompress(row[3]))
-        if digest(payload)!=sha:raise ValueError('child journal payload differs: '+kind+'/'+key)
-        return tuple((r['database'],r['kind'],r['key'],r['result_sha256'],r['code_sha256'],r['config_sha256'])
-                     for r in _refs(payload))
-    finally:db.close()
+def load_targets(database,pair_id,*,source_sha256,base_result_sha256=None,source_groups=None,derive=True):
+    """Join pair_id to source-bound facts using one read-only WAL snapshot.
 
-
-def _validate_refs(value,path,code,config,seen):
-    for ref in _refs(value):
-        if Path(ref['database']).resolve()!=path:raise ValueError('child reference uses another database')
-        if (ref['code_sha256'],ref['config_sha256'])!=(code,config):raise ValueError('child producer differs')
-        key=(ref['kind'],ref['key'],ref['result_sha256'])
-        if key in seen:continue
-        seen.add(key)
-        children=_verify_child(str(path),_db_stamp(path),*key,code,config)
-        _validate_refs([dict(database=d,table='entries',kind=k,key=i,result_sha256=s,
-                            code_sha256=c,config_sha256=f) for d,k,i,s,c,f in children],path,code,config,seen)
-
-
-def load_targets(database,pair_id,*,source_sha256,base_result_sha256):
-    """Return done/open, valid, record?, durable reference and result SHA.
-
-    Validity checks producer files/config, current base row and every referenced
-    case/comparison/search/candidate payload. Paths in code manifests are study
-    relative, so merging unchanged tracked files preserves validity.
+    facts/reference/result_sha256 bind the stored payload. record is a derived
+    legacy-shaped view for apply_targets, never written. Historical code/config
+    hashes are provenance, not current-file validity gates. A bounded completed
+    attempt is done; absent, changed-input or corrupt facts are open.
     """
-    db=None;base=None
+    db=None;base_db=None
     try:
         path=Path(database).resolve()
         db=sqlite3.connect(path.as_uri()+'?mode=ro',uri=True);db.execute('BEGIN')
-        row=db.execute("SELECT inputs,code,config,result_sha256,payload FROM entries WHERE kind='pair' AND key=?",(pair_id,)).fetchone()
-        if not row:return dict(status='open',valid=False,reason='no target result')
-        value=json.loads(zlib.decompress(row[4]));code,config=row[1:3]
-        inputs=dict(pair_id=pair_id,source_sha256=source_sha256,base_result_sha256=base_result_sha256)
-        if row[0]!=digest(inputs) or digest(value)!=row[3]:raise ValueError('source/base/result digest differs')
-        if value.get('schema')!='mech-target-pair-v1':raise ValueError('unsupported target schema')
-        if any(value.get(k)!=v for k,v in inputs.items()):raise ValueError('record source/base identity differs')
-        producer=db.execute('SELECT manifest,settings FROM producers WHERE code=? AND config=?',(code,config)).fetchone()
-        if not producer:raise ValueError('producer manifest unavailable')
-        manifest,settings=map(json.loads,producer)
-        if digest(manifest)!=code or digest(settings)!=config:raise ValueError('producer code/config digest differs')
-        for name,expected in manifest.items():
-            # Retain legacy manifest/config hashes as recorded provenance.
-            # Policy prose is not an executable dependency and is never read.
-            if Path(name).name=='judge-decisions.md':continue
-            file=Path(name) if Path(name).is_absolute() else CODE_ROOT/name
-            if file_hash(file)!=expected:raise ValueError('target producer changed: '+str(file))
-        if value.get('task_receipt') and file_hash(value['task_receipt']['path'])!=value['task_receipt']['sha256']:
-            raise ValueError('task train/test inputs changed')
-        ref=value['base_result_ref']
-        base=sqlite3.connect(Path(ref['database']).resolve().as_uri()+'?mode=ro',uri=True);base.execute('BEGIN')
-        prior=base.execute('SELECT source_sha256,code_sha256,config_sha256,result_sha256,record_json FROM pairs WHERE pair_id=?',(pair_id,)).fetchone()
-        if (not prior or tuple(prior[:4])!=(source_sha256,ref['code_sha256'],ref['config_sha256'],base_result_sha256)
-                or digest(json.loads(prior[4]))!=base_result_sha256):raise ValueError('current base receipt differs')
-        _validate_refs(value,path,code,config,set())
-        reference=dict(database=str(path),table='entries',kind='pair',key=pair_id,
-                       result_sha256=row[3],code_sha256=code,config_sha256=config)
-        return dict(status='done',valid=True,record=value,reference=reference,result_sha256=row[3],
-                    outcome=value['outcome'],kind=value['kind'],table_only=value['table_only'])
+        producers={};resolved={};seen=set()
+        def producer(code,config):
+            key=(code,config)
+            if key in producers:return producers[key]
+            row=db.execute('SELECT manifest,settings FROM producers WHERE code=? AND config=?',key).fetchone()
+            if not row:raise ValueError('producer provenance missing')
+            manifest,settings=map(json.loads,row)
+            if digest(manifest)!=code or digest(settings)!=config:raise ValueError('producer provenance digest differs')
+            # Legacy spec hashes stay readable; no document or source file read.
+            producers[key]=settings
+            return settings
+        def entry(kind,key,expected=None,need_value=True):
+            row=db.execute('SELECT code,config,result_sha256 FROM entries WHERE kind=? AND key=?',(kind,key)).fetchone()
+            if not row:raise ValueError('journal entry absent: '+kind+'/'+key)
+            code,config,sha=row;producer(code,config)
+            ref=dict(database=str(path),table='entries',kind=kind,key=key,result_sha256=sha,
+                code_sha256=code,config_sha256=config)
+            if expected and any(ref[k]!=expected[k] for k in ('result_sha256','code_sha256','config_sha256')):
+                raise ValueError('journal reference changed: '+kind+'/'+key)
+            cache_key=(str(path),kind,key,sha,code,config)
+            value=None
+            if need_value or cache_key not in _VALIDATED:
+                payload=db.execute('SELECT payload FROM entries WHERE kind=? AND key=?',(kind,key)).fetchone()[0]
+                value=json.loads(zlib.decompress(payload))
+                if digest(value)!=sha:raise ValueError('journal payload digest differs: '+kind+'/'+key)
+                _VALIDATED[cache_key]=tuple(_refs(value))
+                if value.get('caller_task_inputs'):_TASK_INPUTS[cache_key]=value['caller_task_inputs']
+                _VALIDATED.move_to_end(cache_key)
+                while len(_VALIDATED)>4096:
+                    expired,_=_VALIDATED.popitem(last=False);_TASK_INPUTS.pop(expired,None)
+            if cache_key in _TASK_INPUTS:
+                task=_TASK_INPUTS[cache_key]
+                if file_hash(task['path'])!=task['sha256']:raise ValueError('task train/test inputs changed')
+            refs=_VALIDATED[cache_key]
+            token=(kind,key,sha)
+            if token not in seen:
+                seen.add(token)
+                for child in refs:
+                    if Path(child['database']).resolve()!=path:raise ValueError('cross-database child reference')
+                    entry(child['kind'],child['key'],child,need_value=False)
+            if need_value:resolved[(kind,key,sha)]=value
+            return value,ref
+        row=db.execute("SELECT 1 FROM entries WHERE kind='pair' AND key=?",(pair_id,)).fetchone()
+        if not row:return dict(status='open',valid=False,reason='no target facts (DET may be pending)')
+        facts,ref=entry('pair',pair_id)
+        if facts.get('source_sha256')!=source_sha256:raise ValueError('pair input changed')
+        if facts.get('schema') not in ('mech-target-pair-v1','mech-target-facts-v2'):
+            raise ValueError('unsupported target fact schema')
+        settings=producer(ref['code_sha256'],ref['config_sha256'])
+        base_path=Path(settings.get('base') or facts.get('base_result_ref',{}).get('database')
+                       or DATA_ROOT/'ast/run/mech/labels.sqlite3').resolve()
+        base_db=sqlite3.connect(base_path.as_uri()+'?mode=ro',uri=True);base_db.execute('BEGIN')
+        prior=base_db.execute('SELECT source_sha256,result_sha256,record_json FROM pairs WHERE pair_id=?',(pair_id,)).fetchone()
+        if not prior or prior[0]!=source_sha256 or digest(json.loads(prior[2]))!=prior[1]:
+            raise ValueError('canonical base input/result receipt differs')
+        if base_result_sha256 is not None and prior[1]!=base_result_sha256:
+            raise ValueError('caller base result is no longer current')
+        base=json.loads(prior[2])
+        def resolve(child):
+            token=(child['kind'],child['key'],child['result_sha256'])
+            if token not in resolved:entry(child['kind'],child['key'],child)
+            return resolved[token]
+        from .views import pair_view
+        view=pair_view(facts,base,resolve,source_groups=source_groups) if derive else dict(
+            pair_id=pair_id,source_sha256=source_sha256,base_result_sha256=prior[1],kind=base['kind'],
+            table_only=base['kind'].casefold()=='det')
+        view['base_result_ref']=dict(database=str(base_path),pair_id=pair_id,
+            source_sha256=source_sha256,code_sha256=base['code_sha256'],
+            config_sha256=base['config_sha256'],result_sha256=prior[1])
+        return dict(status='done',valid=True,facts=facts,record=view,reference=ref,
+            result_sha256=ref['result_sha256'],kind=base['kind'],table_only=base['kind'].casefold()=='det')
     except Exception as error:
         return dict(status='open',valid=False,reason=str(error),error_type=type(error).__name__)
     finally:
-        if base is not None:base.close()
+        if base_db is not None:base_db.close()
         if db is not None:db.close()

@@ -1,50 +1,38 @@
-# Target comparisons
+# Target observations
 
-This pass contributes target evidence to the central reducer. It reads the base database and stored X tables, and writes only under `DATA_ROOT/ast/run/mech5`. It does not label the base again or write settled grades.
+This pass reads the base index and stored X tables, acquires fresh full gold tables once per case, compares every eligible target, and checks new nonlib selector proposals through the shared evaluator. It stores only its own observations and input/provenance references. Grades, empty certificates, support aggregates, counts and normalized overlays are read-time functions. No summary file is written.
 
-`targets.py` acquires fresh full gold values once per task/case/program/own-kept context, journals the resulting JSON bundle immediately, and selects G, later tables of the pair's case, and all tables of other cases through the shared collector. The case key excludes the mutation and changed point. Task input content, catalogue content, labeling dependencies and replay settings bind validity. Other-case comparison ignores names and uses the shared Cartesian assignment comparison; model families remain sets of row sets.
-
-Every equality checks the whole projected X table on TRAIN and TEST through the canonical name/type/Ident/margin comparator. INIT and DET projections come from shared metadata providers. The pass searches only other targets with proved TRAIN containment, using the existing nonlib selector search. Available callables come from the canonical resolver and native physical schemas. Every new candidate goes through the shared cached-target evaluator and n-mech's `clause_evidence` adapter. Gold is not replayed per candidate. Candidate verification has a one-mutant-replay cap; operations beyond that cap remain unknown.
-
-The nonlib search is a proposal mechanism. Omitted nondeterministic selector sources, fresh Ident namespaces, unrenderable clauses, bounded enumeration, computed columns and unions can leave recoveries undiscovered. None proves that the settled recovery space is exhausted. Raw containment misses and branch-local row counts are diagnostics. `all_targets_lossy` remains null. `mech-no-x-rows-v1` certifies only absence of X-sourced recovery under complete globally empty X and a nonempty witness for every target; it does not imply search exhaustion or Reject. A validated certificate becomes `comparisons.X_empty` with complete TRAIN, TEST and kept-context evidence. The central reducer owns the empty filter class. Partial source requires actual X-row contribution under the settled policy.
-
-## Deployment status
-
-Source is built; no target run, evaluation or tests have been launched. The all-population entrypoint deliberately fails preflight while the mechanical DET route is unavailable. Ordinary judge checking excludes DET, and the collector does not yet support its public reader-header projection. Raw private BODY columns and kind changes cannot substitute for that route. n-eval owns the missing collector/checker capability and evaluator relocation; n-judgetool supplies its pending repair handoff. The shared DET metadata wrapper and mech3 transport must also be merged. Shared held-slot decoding, global Ident agreement and exact cached context coverage repairs must land before deployment. The evaluator's artifact-root change must permit `DATA_ROOT/ast/run/mech5/replays`.
-
-After those dependencies are integrated and this preflight is updated, run from the main checkout:
+Run from the main checkout after merging:
 
 ```sh
-python3 scripts/run_heavy.py --need soon --cpus 1 python3 -m model.study.ast.run.mech5.targets
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/run_heavy.py --need soon --cpus 1 python3 -m model.study.ast.run.mech5.targets
 ```
 
-This is a future deployment command, currently blocked. Task selection with repeated `--task` and a new-work bound with `--limit` are available for coordinator qualification. Such a selected run reports `complete: false`. Full results go to `work/lm/data-study/ast/run/mech5/targets.sqlite3` and `summary.json`. Progress includes done/total, elapsed, rate, ETA and case replay phases. The summary reports contribution outcomes grouped by base label and kind; central settled grade counts still require the reducer overlay.
+Default output is `DATA_ROOT/ast/run/mech5/targets.sqlite3`; native audit artifacts stay beneath `DATA_ROOT/ast/run/mech5/replays`. Progress logs done/total, elapsed, rate and ETA. Logs are unfiltered work counters, not grades or scientific fits. Normal-form exclusions belong to study read-time analysis.
 
-## Durable format and resume
+The default run leaves DET pairs absent/open. `--include-det` remains blocked until mechanical DET collection/checking over actual mutant BODY and certified public reader-header projection is integrated. Adding that capability fills the same store and skips completed non-DET pairs. Unsupported CHOOSE projections, INIT outer-key layouts or BODY observers remain explicit gaps. A missing adapter does not prove that an input gives no answer. Native bounds and the one-mutant-operation candidate cap remain unknown, never negatives. Shared evaluator/UI dependencies must remain frozen while the dependency guard is active.
 
-`target_store.Journal` uses SQLite WAL and synchronous FULL. Each completed case, comparison, search, candidate and pair commits independently to `entries`. Keys are `(kind,key)`; `inputs`, `code`, `config` and `result_sha256` bind canonical JSON identities. `payload` is zlib-compressed canonical JSON. `producers` retains the code manifest and settings for each code/config hash. Code paths are study-relative, so unchanged files retain validity after merge into the main tree.
+## Authoritative store
 
-A pair result uses `mech-target-pair-v1`. It carries pair/source/base-result identities, the original source locator, base-result reference, kind, `table_only` for DET, target comparisons, support diagnostics, checked mechanical clauses, gaps, missing steps, and durable child references. `outcome` is this pass's strongest contribution: equivalent, Recovery, Partial source or Unknown. Other owners' program/reader/judge evidence can strengthen Unknown in the central reducer.
+SQLite uses WAL and synchronous FULL. `entries` has columns `kind`, `key`, `inputs`, `code`, `config`, `result_sha256`, `payload`, keyed by `(kind,key)`. `payload` is zlib-compressed canonical JSON; `inputs` is its request identity hash. `producers` retains each historical code manifest and settings under code/config identity. No document hash is generated or checked. Code hashes record provenance and are not compared with current files for resume validity.
 
-A restart skips valid pairs before opening corpus source streams. Pair/source/base/code/config hashes and child journal payloads must agree. Stale pairs are computed again. Finished bounded or unavailable attempts remain durable Unknown; they are distinct from open results. A code/config change requires new validity or an explicitly reviewed compatibility mechanism; arbitrary predecessor hashes are not accepted.
+- `pair`: `mech-target-facts-v2`, canonical source hash, historical base-result hash as provenance, case/axis/comparison/search references, own failures and an explicit work stop. The SQL key supplies pair_id. It stores no grade, reduced outcome, base label/kind/source-record copy, target-row copy or derived support/certificate.
+- `case`: `mech-case-observations-v2`, fresh native table/body observations and schemas, replay receipts and gaps. Program export metadata, stored kept values and derived completeness/missing lists are omitted. Required contexts live once in an `axis` entry. Runtime expansion reuses canonical native metadata export without replaying gold.
+- `axis`: `mech-case-axis-v1`, the expected observation context domain for the case.
+- `comparison`: `mech-target-comparison-v2`, the target query identity and canonical equality/TRAIN-containment results. No row-count obstruction, duplicated native schema or copied candidate result.
+- `search`: witness-search facts, limitations and candidate-result reference. The normalized clause and source/target aggregate judgments are not copied here.
+- `candidate`: the shared evaluator's native clause-check result, stored once. Normalized mechanical clause evidence is computed through n-mech's canonical identity adapter when read.
 
-The source index is the base row's `source` object (`corpus`, `stream`, `file`, `line`, plus task) and canonical source hash. Source lines are read sequentially and checked against both source SHA and canonical pair identity. Case acquisition identity is independent of the representative mutant record used to discover its case.
+Every completed operation commits immediately. Pair validity depends on canonical source input identity. Changing code, prose, producer settings or the base run's incidental metadata does not invalidate a completed pair. Historical base-result hashes remain provenance. Deliberately changing interpretation requires an explicit rerun choice; this pass does not infer that choice from a merge. Independent child records retain their original producer references.
 
-## Consumer API
+Legacy `mech-target-pair-v1` and full case journals remain readable in place. They are not rewritten, deleted or replayed for cleanup. Legacy stored grades/outcome/support summaries are not consumed as authoritative facts where independent child comparison/candidate facts exist. Native facts and their recorded source identity remain usable across code changes. No completed observations have been erased or recalculated by this cleanup.
 
-Import the `mech5` package with `model/study/ast/run` on the module path, or use the repository-qualified namespace shown by the command.
+## Read interface
 
-```python
-from mech5.read_targets import load_targets
-from mech5.evidence import apply_targets
+`mech5.read_targets.load_targets(database, pair_id, *, source_sha256, base_result_sha256=None, source_groups=None, derive=True)` opens both stores with `mode=ro`; all journal reads share one WAL snapshot. It validates current canonical source identity, stored payload digests and producer provenance. The optional current base-result hash is a caller snapshot check; historical base-result changes do not invalidate unchanged source inputs. `derive=False` validates/resumes facts without constructing evidence views.
 
-loaded = load_targets(database, pair_id,
-                      source_sha256=current_source_sha,
-                      base_result_sha256=current_base_result_sha)
-if loaded['valid']:
-    evidence = apply_targets(evidence, loaded)
-```
+The result has `status: done|open`, `valid`, authoritative `facts`, an ephemeral legacy-shaped `record`, durable `reference`, `result_sha256`, current `kind` and `table_only`. `result_sha256` hashes **facts**, not the derived record. Old consumers that check the hash should use `loaded.get('facts', loaded['record'])`. Missing DET rows remain open. A bounded completed operation remains done.
 
-`load_targets` opens databases read-only. It checks the current base row, code/config manifests, task-input receipt and all referenced journal payloads. Policy prose is not read or used as a validity dependency. Legacy specification hashes and manifest entries remain readable as recorded metadata; their files are not checked. It returns `status: done`, `valid: true`, `record`, `reference`, `result_sha256`, `outcome`, `kind` and `table_only`. The reference binds database/table/kind/key and code/config/result hashes. Missing, corrupt or stale evidence returns `status: open`, `valid: false` and a reason. A valid Unknown is done.
+`mech5.evidence.apply_targets(evidence, loaded)` is the canonical pure overlay; it never writes or grades. It preserves other passes' program/reader/attribute evidence, uses the recorded target comparisons and invokes n-mech's clause policy for checked candidates. `certified_empty` validates a read-time `mech-no-x-rows-v1` proof before exposing `comparisons.X_empty`. Callers that already acquired authenticated canonical X groups may supply `source_groups` to derive this proof from existing source data and target observations. X rows are not copied into this store. Raw containment misses never imply all_targets_lossy or search exhaustion.
 
-`apply_targets` checks source/base/result binding, adds the durable target reference, replaces target comparisons/support, and adds this producer's clauses. It preserves program fit, reader evidence, other mechanical clauses and attributes. It never writes a database. n-mech's central reducer owns grade precedence and DET's exclusion from fits/extension. Child journal payloads are the durable mechanical evidence; replay artifacts retain the evaluator's full audit material.
+n-mech owns `read_grades.read_pair`, `read_grades.read_pairs` and `result_grade.grade_results`, which combine stored passes and compute the grade at read time. This pass publishes neither grades nor grade summaries.

@@ -6,7 +6,7 @@ from ._paths import CODE_ROOT
 
 
 def produce(ev,store,record,corpus,*,producer=None):
-    from det_metadata import MetadataProducer
+    from nonrender_metadata import MetadataProducer
     if producer is None:
         producer=MetadataProducer(engine=ev.arclog,
             read_native=lambda ref,base:store.snapshot(ref,base)['_native_reader'],

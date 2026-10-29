@@ -39,7 +39,7 @@ def apply_targets(evidence,loaded):
     if loaded.get('valid') is not True or loaded.get('status')!='done':
         raise ValueError('target overlay is open')
     result=loaded['record'];ref=loaded['reference']
-    if digest(result)!=loaded['result_sha256'] or ref['result_sha256']!=loaded['result_sha256']:
+    if digest(loaded.get('facts',result))!=loaded['result_sha256'] or ref['result_sha256']!=loaded['result_sha256']:
         raise ValueError('target overlay digest differs')
     if (result['pair_id']!=evidence['pair_id'] or result['source_sha256']!=evidence['source_sha256']
             or result['base_result_sha256']!=evidence['base_result_ref']['result_sha256']):

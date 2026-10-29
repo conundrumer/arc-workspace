@@ -19,6 +19,7 @@ import time
 
 from ._paths import HERE,CODE_ROOT,DATA_ROOT,DATA
 from .metadata import produce
+from .fact_codec import expand_case,target_identity
 from .read_targets import load_targets,file_hash
 from run import canonical,digest,pair_key
 from step2_check import valid_base
@@ -46,10 +47,9 @@ class Pass:
         self.source_store=TargetStore(ev.legacy,CODE_ROOT)
         self.base=sqlite3.connect(args.base.resolve().as_uri()+'?mode=ro',uri=True);self.base.execute('BEGIN')
         files=set(HERE/n for n in ('targets.py','target_store.py','target_compare.py','target_search.py','metadata.py',
-            'read_targets.py','evidence.py','_paths.py','certificates.py','preflight.py'))
+            'read_targets.py','evidence.py','_paths.py','certificates.py','preflight.py','fact_codec.py','views.py'))
         files.update((CODE_ROOT/'judgetool').glob('*.py'))
         files.update((CODE_ROOT/'judge3').glob('*.py'))
-        files.update(CODE_ROOT/'ast/run/mech3'/n for n in ('common.py','det_receipt.py','reader_projection.py'))
         files.update(CODE_ROOT/'ast/run/mech'/n for n in ('algorithm.py','step2_check.py','run.py','clause_evidence.py','outcomes.py','grades.py'))
         files.add(CODE_ROOT/'study_paths.py')
         files.update((CODE_ROOT/'judge2/render2').glob('*.py'))
@@ -63,7 +63,7 @@ class Pass:
         self.manifest={(str(p.resolve().relative_to(CODE_ROOT)) if p.resolve().is_relative_to(CODE_ROOT) else str(p.resolve())):
                        hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(files)}
         self.signatures={name:self.signature(self.code_path(name)) for name in self.manifest}
-        config=dict(schema='mech-target-config-v1',base=str(args.base.resolve()),
+        config=dict(schema='mech-target-config-v2',fact_contract='mech-target-facts-v2',base=str(args.base.resolve()),
             evaluator=ev.receipt,compare_seconds=args.compare_seconds,search_seconds=args.search_seconds,
             max_targets=args.max_search_targets,max_candidates=args.max_candidates,
             search='bounded nonlib proposals; shared TRAIN+TEST verification; no settled-space negative',
@@ -99,23 +99,21 @@ class Pass:
             self.last=elapsed
 
     def pair_inputs(self,base):
-        return dict(pair_id=base['pair_id'],source_sha256=base['source_sha256'],base_result_sha256=digest(base))
+        return dict(pair_id=base['pair_id'],source_sha256=base['source_sha256'])
 
     def save_pair(self,base,result):
-        result.update(self.pair_inputs(base),schema='mech-target-pair-v1',kind=base['kind'],
+        result.update(self.pair_inputs(base),base_result_sha256=digest(base),schema='mech-target-pair-v1',kind=base['kind'],
             table_only=base['kind'].casefold()=='det',base_label=base.get('label'),source=base['source'],
             base_result_ref=dict(database=str(self.a.base.resolve()),pair_id=base['pair_id'],
                 source_sha256=base['source_sha256'],code_sha256=base['code_sha256'],
                 config_sha256=base['config_sha256'],result_sha256=digest(base)))
-        positive=any(c.get('complete') is True and c.get('equal') is True for c in result.get('grade_comparisons',[]))
-        recovery=any(c.get('outcome')=='recovery verified' for c in result.get('mechanical_clauses',[]))
-        partial=any(c.get('outcome')=='partial source verified' for c in result.get('mechanical_clauses',[]))
-        result['outcome']='equivalent' if positive else 'Recovery' if recovery else 'Partial source' if partial else 'Unknown'
+        # Store only this pass's evidence and owed work. Pair grades are
+        # reduced from all stored passes when read by the shared grade reader.
+        result.pop('outcome',None)
+        result.pop('grade',None)
         result['missing_steps']=[]
         if not result.get('complete'):result['missing_steps'].append('step_3_incomplete_target_catalog')
         if result.get('gaps'):result['missing_steps'].append('step_3_incomplete_comparison_or_search')
-        if result['outcome']=='Unknown':result['missing_steps'].append('step_5_lib_or_step_6_judge_search')
-        if result['outcome']!='Unknown':result['missing_steps']=[]
         self.journal.save('pair',base['pair_id'],self.pair_inputs(base),result)
 
     def task(self,task):
@@ -163,9 +161,13 @@ class Pass:
                     if bundle is None:
                         self.progress(self.done,phase='gold_case:'+case['name'],force=True)
                         self.guard();bundle=acquire_case(self.ev,record,context,ntrain,ntest);self.guard()
-                        self.journal.save('case',key,inputs,bundle)
+                        bundle=dict(bundle,caller_task_inputs=self.task(record['task'])[2])
+                        bundle=self.journal.save('case',key,inputs,bundle)
                         self.counts['gold_case_replays']+=1
                     else:self.counts['gold_cases_resumed']+=1
+                    if bundle.get('axis_ref'):
+                        bundle=dict(bundle,axis=self.journal.read_reference(bundle['axis_ref'])['axis'],_axis_ref=bundle['axis_ref'])
+                    bundle=expand_case(bundle,self.ev,record,context)
                     self.case_cache[key]=bundle
                 result.append(bundle);references.append(self.journal.reference('case',key,bundle))
             except (ValueError,KeyError,IndexError,OSError,TypeError) as error:
@@ -189,8 +191,8 @@ class Pass:
         from clause_evidence import clause_evidence
         # Verification checks every cached target, so its identity is independent
         # of which target suggested the clause. Repeated proposals reuse it.
-        inputs=dict(source_sha256=digest(record),adapter_sha256=digest(adapter),
-                    case_refs=inputs['case_refs'],candidate=candidate,max_mutant_replays=1)
+        inputs=dict(source_sha256=digest(record),case_refs=inputs['case_refs'],
+                    clause=candidate['clause'],columns=candidate['columns'],max_mutant_replays=1)
         key=digest(dict(pair=digest(pair_key(record)),inputs=inputs))
         result=self.journal.load('candidate',key,inputs)
         if adapter['input']['binding'].get('kind','').casefold()=='det':
@@ -204,6 +206,8 @@ class Pass:
                     row_limit=0,max_mutant_replays=1)
             except (ValueError,KeyError,IndexError,TypeError) as error:
                 result=dict(outcome='unknown',reason=str(error))
+            result=dict(result,requested_output_columns=candidate['columns'])
+            result.setdefault('submitted_clause',candidate['clause'])
             self.guard();self.journal.save('candidate',key,inputs,result)
             self.counts['candidate_mutant_replays']+=result.get('cached_case_verification',{}).get('mutant_replays',0)
         else:self.counts['candidates_resumed']+=1
@@ -216,15 +220,14 @@ class Pass:
         self.guard()
         result=dict(schema='mech-step3-pair-v1',pair_id=base['pair_id'],source_sha256=base['source_sha256'],
             complete=False,gaps=[],grade_comparisons=[],mechanical_clauses=[],searches=[],bounded=False)
-        if base.get('error') and ('edb3e4ef' in base['pair_id'] or 'native/tables.pack' in str(base['error'])):
-            result['gaps'].append(dict(stage='step_7_move_retry',reason='specified failed base pair is reserved for step 7'))
-            return result
         if digest(record)!=base['source_sha256'] or digest(pair_key(record))!=base['pair_id']:
             raise ValueError('current source differs from the base source receipt')
         corpus=Path(base['source']['corpus']).resolve()
         ntrain,ntest,task_receipt=self.task(record['task']);result['task_receipt']=task_receipt
         producer,adapter=self.metadata(record,corpus)
         bundles,gaps,refs=self.bundles(record,adapter,ntrain,ntest)
+        own=[b for b in bundles if b['case']==record['case']]
+        if own and own[0].get('_axis_ref'):result['axis_ref']=own[0]['_axis_ref']
         self.callable_metadata(producer,adapter,bundles,record)
         selection=select_pair(bundles,record,adapter,ev=self.ev)
         selection['gaps'].extend(gaps);selection['complete']&=not gaps
@@ -239,8 +242,7 @@ class Pass:
             if STOP:raise InterruptedError('stopping before next target')
             self.progress(self.done,phase='target:'+reference['target_id'])
             target_key=digest(dict(reference=reference,receipt=receipt))
-            inputs=dict(source_sha256=base['source_sha256'],base_result_sha256=digest(base),
-                        adapter_sha256=digest(adapter),case_refs=refs,target_key=target_key)
+            inputs=dict(source_sha256=base['source_sha256'],case_refs=refs,target_key=target_key)
             key=digest(dict(pair=base['pair_id'],target=target_key))
             comparison=self.journal.load('comparison',key,inputs)
             if comparison is None:
@@ -248,8 +250,9 @@ class Pass:
                 self.journal.save('comparison',key,inputs,comparison);self.counts['target_comparisons']+=1
             else:self.counts['comparisons_resumed']+=1
             proof_ref=self.journal.reference('comparison',key,comparison)
-            eq=comparison['equality'];include=comparison['containment'];row=comparison['row_obstruction']
+            eq=comparison['equality'];include=comparison['containment']
             comparisons.append((target,comparison,proof_ref))
+            result.setdefault('comparison_refs',[]).append(dict(reference=proof_ref,target=target_identity(reference)))
             result['grade_comparisons'].append(dict(target_id=reference['target_id'],equal=eq['status']=='equal',
                 train=eq.get('train')=='equal',test=eq.get('test')=='equal',complete=eq['status']=='equal',
                 kept_contexts_complete=not source['missing'] and not grouped['missing'],
@@ -263,15 +266,11 @@ class Pass:
         complete=selection['complete'] and bool(comparisons)
         result['support']=dict(complete=complete,all_targets_lossy=None,
             raw_all_targets_lack_rows=complete and all(c['containment']['status']=='mismatch' for t,c,r in comparisons),
-            row_count_all_targets_branch_obstructed=complete and all(c['row_obstruction']['impossible'] is True for t,c,r in comparisons),
+            
             any_target_contains=any(c['containment']['status']=='contains' for t,c,r in comparisons),
             requires_computed_columns=computed,negative_policy='raw/count misses are diagnostic only; computed libs and needed-row unions remain')
         if any(c['equality']['status']=='unknown' or c['containment']['status']=='unknown' for t,c,r in comparisons):
             result['gaps'].append(dict(stage='comparison',reason='missing or bounded target comparison'))
-        from .certificates import no_x_rows
-        result['no_recovery_certificate']=no_x_rows(source,targets,complete=complete,
-            inputs=self.pair_inputs(base),case_refs=refs,ntrain=ntrain,ntest=ntest,
-            assignment_count=len(record['evaluation']['kept_assignments']))
         # A native equality is already the strongest possible target outcome.
         already=any(c['equal'] and c['complete'] for c in result['grade_comparisons'])
         candidates=0
@@ -279,7 +278,7 @@ class Pass:
             for index,(target,inputs) in enumerate(possible):
                 if STOP:raise InterruptedError('stopping after current durable target')
                 if index>=self.a.max_search_targets or candidates>=self.a.max_candidates:
-                    result['bounded']=True;break
+                    result['bounded']=True;result['work_stop']='candidate_or_target_limit';break
                 self.progress(self.done,phase='other_target_search')
                 reference=target[2];key=digest(dict(pair=base['pair_id'],target=inputs['target_key'],phase='search'))
                 search=self.journal.load('search',key,inputs)
@@ -299,6 +298,11 @@ class Pass:
                 candidates+=bool(search.get('candidate_ref'))
                 search_ref=self.journal.reference('search',key,search)
                 result['searches'].append(search_ref)
+                if search.get('candidate_ref') and not search.get('checked'):
+                    raw=self.journal.read_reference(search['candidate_ref'])
+                    from clause_evidence import clause_evidence
+                    search=dict(search,checked=clause_evidence(raw,record,search['candidate_ref'],
+                        ntrain=ntrain,ntest=ntest))
                 if search.get('proof',{}).get('reason_code')=='search_bound':result['bounded']=True
                 if search.get('checked'):
                     result['mechanical_clauses'].append(search['checked'])
@@ -321,10 +325,13 @@ class Pass:
                 if STOP:return False
                 base=valid_base(row);inputs=self.pair_inputs(base);self.done=done
                 if self.a.task and base['task'] not in self.a.task:continue
+                from .preflight import det_available
+                if base['kind'].casefold()=='det' and (not self.a.include_det or not det_available()):
+                    self.counts['DET_left_open']+=1;self.progress(done,phase='DET_pending');continue
                 if self.a.limit and self.counts['pairs_done']>=self.a.limit:break
                 saved=self.journal.load('pair',base['pair_id'],inputs)
                 if saved is not None:
-                    checked=load_targets(self.a.output,base['pair_id'],source_sha256=base['source_sha256'],base_result_sha256=digest(base))
+                    checked=load_targets(self.a.output,base['pair_id'],source_sha256=base['source_sha256'],base_result_sha256=digest(base),derive=False)
                     if checked['valid']:
                         self.counts['pairs_resumed']+=1;self.progress(done);continue
                     self.counts['stale_pair_results']+=1
@@ -360,28 +367,11 @@ class Pass:
         finally:
             if stream is not None:stream.close()
 
-    def summary(self,complete):
-        import zlib
-        outcomes=Counter();groups=Counter();gaps=Counter()
-        for payload, in self.journal.db.execute("SELECT payload FROM entries WHERE kind='pair' AND code=? AND config=?",(self.journal.code,self.journal.config)):
-            value=json.loads(zlib.decompress(payload));outcomes[value['outcome']]+=1
-            groups[(value.get('base_label'),value.get('kind'),value['outcome'])]+=1
-            gaps.update(g.get('reason','unspecified') for g in value.get('gaps',[]))
-        summary=dict(schema='mech-target-summary-v1',complete=complete,total=self.total,
-            outcome_counts=dict(outcomes),by_base_label_kind=[dict(base_label=b,kind=k,outcome=o,count=n)
-                for (b,k,o),n in sorted(groups.items(),key=lambda item:str(item[0]))],
-            gap_counts=dict(gaps),counters=dict(self.counts),elapsed_seconds=time.monotonic()-self.start,
-            code_sha256=self.journal.code,config_sha256=self.journal.config,output=str(self.a.output.resolve()),
-            grade_scope='target contribution only; central reducer preserves program/reader/judge evidence')
-        self.a.summary.write_text(json.dumps(summary,indent=2)+'\n')
-        print(json.dumps(summary,sort_keys=True),file=sys.stderr,flush=True)
-
 
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--base',type=Path,default=DATA_ROOT/'ast/run/mech/labels.sqlite3')
     ap.add_argument('--output',type=Path,default=DATA/'targets.sqlite3')
-    ap.add_argument('--summary',type=Path,default=DATA/'summary.json')
     ap.add_argument('--deadline',type=float,default=30)
     ap.add_argument('--compare-seconds',type=float,default=1)
     ap.add_argument('--search-seconds',type=float,default=1)
@@ -389,8 +379,9 @@ def main():
     ap.add_argument('--max-candidates',type=int,default=16)
     ap.add_argument('--task',action='append')
     ap.add_argument('--limit',type=int)
+    ap.add_argument('--include-det',action='store_true',help='requires the future mechanical DET capability')
     a=ap.parse_args()
-    for path in (a.output,a.summary):
+    for path in (a.output,):
         if not path.resolve().is_relative_to(DATA):ap.error('outputs must stay under '+str(DATA))
     if a.base.resolve()==a.output.resolve():ap.error('base is read-only')
     if min(a.deadline,a.compare_seconds,a.search_seconds,a.max_search_targets,a.max_candidates)<=0:
@@ -398,9 +389,9 @@ def main():
     if a.limit is not None and a.limit<=0:ap.error('--limit must be positive')
     # Shared repair capabilities must land before this driver is launched.
     from .preflight import require_shared
-    require_shared()
+    require_shared(include_det=a.include_det)
     DATA.mkdir(parents=True,exist_ok=True)
-    a.output.parent.mkdir(parents=True,exist_ok=True);a.summary.parent.mkdir(parents=True,exist_ok=True)
+    a.output.parent.mkdir(parents=True,exist_ok=True)
     lock=a.output.with_suffix('.lock').open('a');fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
     signal.signal(signal.SIGTERM,stop);signal.signal(signal.SIGINT,stop)
     os.environ['STUDY_RUN']=str(CODE_ROOT/'ast/run')
@@ -409,7 +400,7 @@ def main():
                        deadline=a.deadline,artifacts=DATA/'replays')
     worker=None;complete=False
     try:
-        worker=Pass(a,ev);complete=worker.run();worker.guard();worker.summary(complete)
+        worker=Pass(a,ev);complete=worker.run();worker.guard();worker.progress(worker.done,force=True)
     finally:
         if worker is not None:worker.journal.close();worker.base.close()
         ev.close();lock.close()
