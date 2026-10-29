@@ -225,7 +225,8 @@ def acquire_case_train(ev, record, case_context, ntrain, ntest):
     Persist this packet once per task/case/settings in the exporter. Every call
     requests one fresh replay; there is no per-pair replay or whole-study cache.
     The full native export graph is metadata, not a grant of clause availability.
-    Unrelated BODY observer gaps do not erase complete original native tables.
+    BODY observers are explicitly disabled: this surface returns original
+    native tables only. Point G is acquired independently by acquire_train_point.
     No native handle or private TEST table transport escapes this surface.
     """
     from case_collector import acquire_case, _context, clear_cache
@@ -256,7 +257,7 @@ def acquire_case_train(ev, record, case_context, ntrain, ntest):
             return result
     proxy = Capture()
     try:
-        bundle = acquire_case(proxy, record, resolved, ntrain, ntest)
+        bundle = acquire_case(proxy, record, resolved, ntrain, ntest, include_bodies=False)
     finally:
         # The collector's value-only cache cannot serve typed cell transport.
         # Release this private proxy cache as soon as acquisition is finished.

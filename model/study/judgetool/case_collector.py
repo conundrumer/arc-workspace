@@ -128,7 +128,36 @@ def _observed_bindings(ev,source_export,observed):
     return export
 
 
-def acquire_case(ev,record,case_context,ntrain,ntest):
+def _supported_observers(ev,forms,observers,plans,source_export,gaps):
+    """A refused observer cannot make unrelated original tables unavailable.
+
+    Native checking/export owns all scope, pooled/lifted and column rules.
+    Valid combined programs take one metadata pass. On failure, retain a
+    supported prefix, checking each addition in the actual combined context.
+    This compiles metadata only; the caller still performs just ONE replay.
+    """
+    def assembled(items):
+        return '\n'.join(forms[:-1]+items+[forms[-1]])
+    observed=assembled(observers)
+    try:
+        return observed,plans,_observed_bindings(ev,source_export,observed)
+    except (ValueError,KeyError,IndexError,TypeError):
+        pass
+    supported=[];kept=[];export=source_export
+    for observer,plan in zip(observers,plans):
+        candidate=assembled(supported+[observer])
+        try:
+            candidate_export=_observed_bindings(ev,source_export,candidate)
+        except (ValueError,KeyError,IndexError,TypeError) as error:
+            gaps.append(dict(kind='body',body_path=plan['body_path'],
+                phase='native_observer_validation',reason=str(error),error_type=type(error).__name__))
+            continue
+        kept.append(dict(plan,observer_form=len(forms)-1+len(supported)))
+        supported.append(observer);export=candidate_export
+    return assembled(supported),kept,export
+
+
+def acquire_case(ev,record,case_context,ntrain,ntest,*,include_bodies=True):
     """Return JSON-serializable unscoped case tables/export/own-kept receipt.
 
     case_context: case/name, gold_sexp/source_program, kept_assignments (or
@@ -136,10 +165,14 @@ def acquire_case(ev,record,case_context,ntrain,ntest):
     Other cases may supply catalogue_path instead of source text. Cache never
     includes the pair id, mutation point, adapter or later-table selection.
     A bounded/failed collection is cached too; it is not silently retried.
+    include_bodies=False collects original native tables only, for exporters
+    that acquire their point G independently. Scope is part of cache identity.
     """
+    if type(include_bodies) is not bool:raise ValueError('include_bodies must be boolean')
     case,text,values,names=_context(ev,record,case_context)
     identity=dict(task=record['task'],case=case,program=sha(text),kept=sha(values),
-                  settings=sha(ev.receipt),ntrain=ntrain,ntest=ntest,collector=_code_receipt()['sha256'])
+                  settings=sha(ev.receipt),ntrain=ntrain,ntest=ntest,
+                  include_bodies=include_bodies,collector=_code_receipt()['sha256'])
     key=sha(identity);cache=_CACHE.setdefault(ev,{})
     if key in cache:return cache[key]
     if names is not None and (names.get('task'),names.get('case'))!=(record['task'],case):
@@ -157,7 +190,7 @@ def acquire_case(ev,record,case_context,ntrain,ntest):
     observers=[];plans=[];gaps=[];occupied=set(tokens(parsed))
     own=dict(record,case=case,gold_sexp=text,mutant_sexp=text,
              evaluation=dict(record['evaluation'],kept_assignments=values))
-    for view in export['body_views']:
+    for view in (export['body_views'] if include_bodies else ()):
         try:
             binding,sites=_body_binding(view)
             clause=L.unparse(['RULE','&fix',['&X']+sites])
@@ -173,16 +206,19 @@ def acquire_case(ev,record,case_context,ntrain,ntest):
             plans.append(dict(body_path=view['body_path'],view=view,fields=binding['projected_schema'],
                               observer_name=name,observer_form=form))
         except (ValueError,KeyError,IndexError,TypeError) as error:
-            gaps.append(dict(kind='body',body_path=view['body_path'],reason=str(error)))
-    observed='\n'.join(forms[:-1]+observers+[forms[-1]])
+            gaps.append(dict(kind='body',body_path=view['body_path'],phase='observer_preparation',
+                             reason=str(error),error_type=type(error).__name__))
+    if observers:
+        observed,plans,export=_supported_observers(ev,forms,observers,plans,export,gaps)
+    else:
+        observed=text
     if L.split_forms(observed)[:len(forms)-1]!=forms[:-1]:
         raise Incomplete('case observer changed an original source form')
-    export=_observed_bindings(ev,export,observed)
     replay=ev.replay_program(own,observed,0,candidate=dict(kind='all-gold-case-tables-and-bodies',identity=identity),retain_all=True)
     receipt=dict(schema='judge-case-receipt-v1',identity=identity,collector=_code_receipt(),
         source='gold_full_replay',gold_program_sha256=sha(text),observer_program_sha256=sha(observed),
         kept_context_sha256=sha(values),artifact=replay['artifact'],engine=replay['engine'],
-        gold_replays=1,observer_count=len(observers),settings=ev.receipt,
+        gold_replays=1,observer_count=len(plans),include_bodies=include_bodies,settings=ev.receipt,
         column_witness_program_sha256=sha(observed),
         column_witness_source='exact parsed observed program; unchanged original relation identities')
     bundle=dict(schema='judge-case-bundle-v1',task=record['task'],case=case,ntrain=ntrain,ntest=ntest,
