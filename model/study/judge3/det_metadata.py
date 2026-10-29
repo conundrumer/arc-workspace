@@ -71,8 +71,10 @@ def _check_mapper(mapper):
 
 class MetadataProducer(base.MetadataProducer):
     """Canonical producer plus explicit mech3 DET transport, metadata only."""
-    def produce(self, source_record, *, native_base=None, det_projection=None):
+    def produce(self, source_record, *, native_base=None, det_projection=None, feature_only=False):
+        require(type(feature_only) is bool, 'feature_only must be boolean')
         if det_projection is None:
+            require(not feature_only, 'feature-only DET metadata requires certified reader transport')
             return super().produce(source_record, native_base=native_base)
         require(not hasattr(self, '_active_det'), 'one producer cannot process concurrent DET receipts')
         policy = self.policy
@@ -80,12 +82,18 @@ class MetadataProducer(base.MetadataProducer):
         producer = self
 
         class ReceiptDocument(canonical_document):
+            def callable_atom(self, schema, name, definition=None):
+                if producer._feature_only and self.body['kind'] == 'Det' and name == '&X' and definition is None:
+                    return None
+                return super().callable_atom(schema, name, definition)
+
             def target_projection(self, reader, schema, decoded):
                 if self.body['kind'] != 'Det':
                     return super().target_projection(reader, schema, decoded)
                 return producer._project_det(self, reader, schema, decoded)
 
         self._active_det = copy.deepcopy(det_projection)
+        self._feature_only = feature_only
         self._det_source = copy.deepcopy(source_record)
         self.policy = dict(policy, Document=ReceiptDocument)
         try:
@@ -107,6 +115,13 @@ class MetadataProducer(base.MetadataProducer):
                     projection_indices=[f['source_body_column'] for f in binding['projected_schema']],
                     mapper=self._active_det['mapper'],
                     policy='union of actually reader-named native header identities; aliases retained')
+                if feature_only:
+                    binding['callable'] = False
+                    binding['det_projection_receipt'].update(
+                        scope='TRAIN_features_only_noncallable', callable=False)
+            if feature_only:
+                value['input']['callable'] = False
+                value['scope'] = 'TRAIN_features_only_noncallable'
             value['reader_projection'] = copy.deepcopy(self._active_det['reader_projection'])
             value['policies'] = list(value['policies']) + [dict(path=str(Path(__file__).resolve()),
                 sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
@@ -115,6 +130,7 @@ class MetadataProducer(base.MetadataProducer):
         finally:
             self.policy = policy
             del self._active_det
+            del self._feature_only
             del self._det_source
 
     def _validate_det_context(self, ctx, record, native_base):

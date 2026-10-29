@@ -65,7 +65,7 @@ def prepare_det_metadata(ev, record, *, native_base, case_inventory=None):
     if raw.get('schema') != 'judge3-raw-side-bindings-v1' or raw.get('source_sha256') != sha(record):
         raise Incomplete('RAW DET metadata source differs')
     transport = receipt(record, raw['exports'], raw['bindings'])
-    adapter = producer.produce(record, native_base=native_base, det_projection=transport)
+    adapter = producer.produce(record, native_base=native_base, det_projection=transport, feature_only=True)
     adapter['det_acquisition'] = dict(schema='evaluator-det-source-v1', source_sha256=sha(record),
         transport_sha256=sha(transport), implementation=det_dependency_receipt(),
         purpose='mechanical TRAIN feature acquisition; no judge admission')
@@ -414,6 +414,9 @@ def acquire_det_train_point(ev, record, adapter, ntrain, ntest, side='mutant'):
     if (binding.get('kind') != 'Det' or transport.get('schema') != 'mech3-det-header-projection-v1'
             or transport.get('complete') is not True or transport.get('source_sha256') != sha(record)
             or cert.get('schema') != 'judge3-det-binding-receipt-v1'
+            or cert.get('scope') != 'TRAIN_features_only_noncallable'
+            or cert.get('callable') is not False or binding.get('callable') is not False
+            or binding.get('callable_template') is not None
             or cert.get('side') != side or cert.get('source_sha256') != sha(record)
             or cert.get('transport_sha256') != sha(transport)
             or cert.get('program_sha256') != sha(record[side+'_sexp'])
@@ -468,6 +471,19 @@ def acquire_det_train_point(ev, record, adapter, ntrain, ntest, side='mutant'):
         if any(index not in raw_fields for index in selected):
             raise Incomplete('DET selected header lacks its exact RAW physical binding')
         layout = dict(raw, projected_schema=[raw_fields[index] for index in selected])
+        if raw.get('scope') == 'TaskWide':
+            reason = ('DET gold BODY has TaskWide scope; the RULE observer is PerInput. '
+                      'Native original-scope BODY acquisition is required')
+            folder = ev.artifacts / ('det-scoped-body-required-'+sha(dict(
+                source=sha(record), transport=sha(transport), layout=layout)))
+            folder.mkdir(exist_ok=True)
+            (folder/'program.arclog').write_text(record['gold_sexp']+'\n')
+            (folder/'receipt.json').write_text(json.dumps(dict(reason=reason,
+                source_sha256=sha(record), transport_sha256=sha(transport),
+                original_scope=raw['scope'], body_path=raw['body_path'],
+                original_program_sha256=sha(record['gold_sexp']),
+                native_gold_replays=0, native_mutant_replays=0), indent=2)+'\n')
+            raise Incomplete(reason+'; artifact='+str(folder))
         observed, form, context = body_observer_program(ev, record, layout)
         own = dict(record, mutant_sexp=record['gold_sexp'])
         replay = ev.replay_program(own, observed, form,
