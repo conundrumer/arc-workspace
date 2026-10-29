@@ -150,6 +150,8 @@ class StoredRows(writer.CaseRows):
         self.optimistic = False
         self.unavailable = []
         self.probes = {}
+        self.mapping_issues = {}
+        self._uncertain = []
         # CaseRows.setup sets ok before constructing tabs/ents/flows. Finish it
         # before this object can enter Context.rows_cache, so an exception cannot
         # leave a seemingly initialized object available to the next pair.
@@ -222,11 +224,33 @@ class StoredRows(writer.CaseRows):
 
     def columns(self, *args):
         cols = super().columns(*args)
+        k,column,_,head=args
+        lay=self.lays.get(k)
+        if lay is not None and lay.get('kind')=='body':
+            if head in ('DET','INIT','CHOOSE','RIGID_DET') and lay['per_input']:
+                column-=1
+            # Body mappings are cached by CaseRows. Their transitive uncertainty
+            # must survive cache hits just as their selected columns do.
+            for reason in self.mapping_issues.get((k,column),()):
+                if getattr(self,'_probing',False) and reason not in self._uncertain:
+                    self._uncertain.append(reason)
         if cols is None and getattr(self, '_probing', False):
-            lay=self.lays.get(args[0])
             if lay is not None:
                 self._uncertain.append('column-to-native projection unavailable')
         return cols
+
+    def body_groups(self,k,lay,column):
+        parent=self._uncertain;probing=getattr(self,'_probing',False)
+        self._uncertain=[];self._probing=True
+        try:
+            groups=super().body_groups(k,lay,column)
+            issues=tuple(dict.fromkeys(self._uncertain))
+        finally:
+            self._uncertain=parent;self._probing=probing
+        self.mapping_issues[k,column]=issues
+        if probing:
+            parent.extend(reason for reason in issues if reason not in parent)
+        return groups
 
     def distinct(self, *args, **kwargs):
         result = super().distinct(*args, **kwargs)
@@ -382,6 +406,20 @@ class Context:
                                  row_independent=row_independent,
                                  unavailable=gaps, token_span=list(span),
                                  stream_sha256=digest([ids, model]))
+            if name=='gold' and normal is False:
+                failed=defaultdict(list)
+                for component in writer.components(s,{a['seg'] for a in s.atoms if a['args']}-{s.key_seg}):
+                    prior_optimism=getattr(s.rows,'optimistic',None)
+                    if prior_optimism is not None:s.rows.optimistic=True
+                    try:possible=writer.one_row_component(s,component)
+                    finally:
+                        if prior_optimism is not None:s.rows.optimistic=prior_optimism
+                    if not possible:
+                        failed[component[0]['seg']].append([
+                            dict(relation=self.vocab.names[a['rel']],negated=a['neg'],sites=a['sites'])
+                            for a in component])
+                results[name]['failure_segments']=[dict(segment=seg,non_one_row_components=components)
+                    for seg,components in failed.items() if len(components)>1]
         return dict(**results, inputs=dict(**self.receipt, native_gold=ref,
                                           native_prefix_gold=record.get('native',{}).get('gold'),
                                           prefix_policy='unchanged earlier forms from stored full gold replay'))
@@ -438,6 +476,26 @@ def summarize(db, path, total):
                   coverage='Stored base pairs only. Corpus runtime/load omissions and deadline-limited mutants are absent.')
     previous=db.execute("SELECT value FROM metadata WHERE key='repair_input_unavailable'").fetchone()
     if previous:result['repair_input_unavailable_causes']=json.loads(previous[0])
+    producer=db.execute("SELECT value FROM metadata WHERE key='gold_comparison_producer'").fetchone()
+    if producer:
+        old={point:(normal,json.loads(text)) for point,normal,text in db.execute(
+            'SELECT point_id,normal,record_json FROM gold_point_history WHERE producer_sha256=?',(producer[0],))}
+        changes=[];before=Counter();after=Counter()
+        for point,normal,text in db.execute('SELECT point_id,normal,record_json FROM gold_points'):
+            if point not in old:continue
+            prior,prior_record=old[point];record=json.loads(text)
+            prior=None if prior is None else bool(prior)
+            normal=None if normal is None else bool(normal)
+            before[str(prior)]+=1;after[str(normal)]+=1
+            if prior!=normal:
+                changes.append(dict(point_id=point,task=record['task'],case=record['case'],point=record['point'],
+                    before=prior,after=normal,failure_segments=record.get('failure_segments'),
+                    unavailable=record.get('unavailable')))
+        result['gold_previous_snapshot_comparison']=dict(producer_sha256=producer[0],
+            previous_counts=dict(before),current_counts=dict(after),changed_points=changes)
+    historical=path.parent/'gold-run-diff.json'
+    if historical.exists():
+        result['historical_gold_comparison_ref']=dict(path=str(historical),sha256=sha(historical))
     temp = path.with_suffix('.tmp')
     temp.write_text(json.dumps(result, indent=2)+'\n'); temp.replace(path)
     return result
@@ -469,11 +527,18 @@ def main():
         point TEXT,clause TEXT,normal INTEGER,record_json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS code_manifests(code_sha256 TEXT PRIMARY KEY,manifest_json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS compatible_codes(code_sha256 TEXT PRIMARY KEY,current_code_sha256 TEXT NOT NULL,reason TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS gold_point_history(producer_sha256 TEXT,point_id TEXT,normal INTEGER,
+        result_sha256 TEXT NOT NULL,record_json TEXT NOT NULL,PRIMARY KEY(producer_sha256,point_id));
     ''')
     previous_code = db.execute("SELECT value FROM metadata WHERE key='code_manifest'").fetchone()
     accepted_codes = {code_hash}
     if previous_code:
         previous_manifest = json.loads(previous_code[0]); previous_hash = digest(previous_manifest)
+        if previous_hash!=code_hash:
+            db.executemany('INSERT OR IGNORE INTO gold_point_history VALUES (?,?,?,?,?)',
+                ((previous_hash,point,normal,digest(json.loads(text)),text)
+                 for point,normal,text in db.execute('SELECT point_id,normal,record_json FROM gold_points').fetchall()))
+            db.execute('INSERT OR REPLACE INTO metadata VALUES (?,?)',('gold_comparison_producer',previous_hash))
         db.execute('INSERT OR IGNORE INTO code_manifests VALUES (?,?)', (previous_hash,previous_code[0]))
         prior_compat = {p for p, in db.execute('SELECT code_sha256 FROM compatible_codes WHERE current_code_sha256=?',(previous_hash,))}
         if compatible_migration(previous_manifest,code):
