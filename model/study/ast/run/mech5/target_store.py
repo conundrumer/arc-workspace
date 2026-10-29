@@ -3,14 +3,16 @@ import json
 from pathlib import Path
 import sqlite3
 import zlib
+import time
+from contextlib import contextmanager
 from run import canonical,digest
 from .fact_codec import compact
 
 
 class Journal:
-    def __init__(self,path,code,config):
+    def __init__(self,path,code,config,*,counters=None):
         self.path=Path(path).resolve();self.path.parent.mkdir(parents=True,exist_ok=True)
-        self.code=code;self.config=config
+        self.code=code;self.config=config;self.counters=counters;self._transaction=False;self._producers={}
         self.db=sqlite3.connect(self.path)
         self.db.execute('PRAGMA journal_mode=WAL');self.db.execute('PRAGMA synchronous=FULL')
         self.db.execute('CREATE TABLE IF NOT EXISTS entries('
@@ -18,6 +20,25 @@ class Journal:
             'PRIMARY KEY(kind,key))')
         self.db.execute('CREATE TABLE IF NOT EXISTS producers(code TEXT,config TEXT,manifest TEXT,settings TEXT,PRIMARY KEY(code,config))')
         self.db.commit()
+
+    @contextmanager
+    def transaction(self):
+        """Group cheap comparison writes; never spans native replay/search."""
+        if self._transaction:
+            yield
+            return
+        self._transaction=True
+        try:
+            self.db.execute('BEGIN IMMEDIATE')
+            yield
+            started=time.monotonic();self.db.commit()
+            if self.counters is not None:
+                self.counters['journal_commits']+=1
+                self.counters['seconds_journal_commit']+=round(time.monotonic()-started,6)
+        except BaseException:
+            self.db.rollback()
+            raise
+        finally:self._transaction=False
 
     def register(self,manifest,settings):
         if digest(manifest)!=self.code or digest(settings)!=self.config:
@@ -37,13 +58,18 @@ class Journal:
         # Completed facts retain their producer version; adding DET capability
         # does not invalidate already completed non-DET observations.
         producer=self.db.execute('SELECT manifest,settings FROM producers WHERE code=? AND config=?',row[1:3]).fetchone()
-        if not producer or digest(json.loads(producer[0]))!=row[1] or digest(json.loads(producer[1]))!=row[2]:
-            raise ValueError('journal producer provenance differs')
+        identity=tuple(row[1:3])
+        if producer is None:raise ValueError('journal producer provenance missing')
+        if self._producers.get(identity)!=producer:
+            if not producer or digest(json.loads(producer[0]))!=row[1] or digest(json.loads(producer[1]))!=row[2]:
+                raise ValueError('journal producer provenance differs')
+            self._producers[identity]=producer
         value=json.loads(zlib.decompress(row[4]))
         if digest(value)!=row[3]:raise ValueError('step 3 journal payload digest differs: '+kind+'/'+key)
         return value
 
     def save(self,kind,key,inputs,value):
+        started=time.monotonic()
         stored=compact(kind,value)
         if kind=='case' and stored.get('schema')=='mech-case-observations-v2':
             axis=stored.pop('axis')
@@ -52,9 +78,10 @@ class Journal:
             stored['axis_ref']=self.reference('axis',key_axis)
             value=dict(value,_axis_ref=stored['axis_ref'])
         payload=zlib.compress(canonical(stored).encode(),3)
-        with self.db:
+        with self.transaction():
             self.db.execute('INSERT OR REPLACE INTO entries VALUES (?,?,?,?,?,?,?)',
                 (kind,key,digest(inputs),self.code,self.config,digest(stored),payload))
+        if self.counters is not None:self.counters['seconds_journal_save']+=round(time.monotonic()-started,6)
         return value
 
     def reference(self,kind,key,value=None):

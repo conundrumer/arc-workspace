@@ -28,6 +28,7 @@ from .target_store import Journal
 from .target_compare import compare
 from .target_search import propose,clause
 from .target_index import TargetIndexes
+from .runtime_cache import TaskNativeStore
 
 STOP=False
 
@@ -57,12 +58,11 @@ def selector_matches(selector,definition):
 
 class Pass:
     def __init__(self,args,ev):
-        from tables import TargetStore
         self.a=args;self.ev=ev;self.start=time.monotonic();self.last=0;self.counts=Counter()
-        self.source_store=TargetStore(ev.legacy,CODE_ROOT)
+        self.source_store=TaskNativeStore(ev.legacy,CODE_ROOT,counters=self.counts)
         self.base=sqlite3.connect(args.base.resolve().as_uri()+'?mode=ro',uri=True);self.base.execute('BEGIN')
         files=set(HERE/n for n in ('targets.py','target_store.py','target_compare.py','target_search.py','metadata.py',
-            'read_targets.py','evidence.py','_paths.py','certificates.py','preflight.py','fact_codec.py','views.py','target_index.py'))
+            'read_targets.py','evidence.py','_paths.py','certificates.py','preflight.py','fact_codec.py','views.py','target_index.py','runtime_cache.py'))
         files.update((CODE_ROOT/'judgetool').glob('*.py'))
         files.update((CODE_ROOT/'judge3').glob('*.py'))
         files.update(CODE_ROOT/'ast/run/mech'/n for n in ('algorithm.py','step2_check.py','run.py','clause_evidence.py','outcomes.py','grades.py'))
@@ -83,12 +83,12 @@ class Pass:
             max_targets=args.max_search_targets,max_candidates=args.max_candidates,
             search='bounded nonlib proposals; shared TRAIN+TEST verification; no settled-space negative',
             gold='once per case/program/own-kept/settings; durable case JSON; no stored gold target rows')
-        self.journal=Journal(args.output,digest(self.manifest),digest(config))
+        self.journal=Journal(args.output,digest(self.manifest),digest(config),counters=self.counts)
         self.journal.register(self.manifest,config)
         self.total=self.base.execute('SELECT count(*) FROM pairs').fetchone()[0]
         self.done=0
         self.target_indexes=TargetIndexes();self.proposal_cache=OrderedDict()
-        self.producers={};self.case_cache={};self.case_failures={};self.current_task=None;self.tasks={}
+        self.producers={};self.case_cache={};self.case_refs={};self.resolved_case_programs={};self.case_failures={};self.current_task=None;self.tasks={}
 
     @contextmanager
     def timed(self,phase):
@@ -124,18 +124,7 @@ class Pass:
         return dict(pair_id=base['pair_id'],source_sha256=base['source_sha256'])
 
     def save_pair(self,base,result):
-        result.update(self.pair_inputs(base),base_result_sha256=digest(base),schema='mech-target-pair-v1',kind=base['kind'],
-            table_only=base['kind'].casefold()=='det',base_label=base.get('label'),source=base['source'],
-            base_result_ref=dict(database=str(self.a.base.resolve()),pair_id=base['pair_id'],
-                source_sha256=base['source_sha256'],code_sha256=base['code_sha256'],
-                config_sha256=base['config_sha256'],result_sha256=digest(base)))
-        # Store only this pass's evidence and owed work. Pair grades are
-        # reduced from all stored passes when read by the shared grade reader.
-        result.pop('outcome',None)
-        result.pop('grade',None)
-        result['missing_steps']=[]
-        if not result.get('complete'):result['missing_steps'].append('step_3_incomplete_target_catalog')
-        if result.get('gaps'):result['missing_steps'].append('step_3_incomplete_comparison_or_search')
+        result.update(self.pair_inputs(base),base_result_sha256=digest(base))
         self.journal.save('pair',base['pair_id'],self.pair_inputs(base),result)
 
     def task(self,task):
@@ -154,7 +143,7 @@ class Pass:
         return producer,adapter
 
     def bundles(self,record,adapter,ntrain,ntest):
-        from case_collector import acquire_case
+        from case_collector import acquire_case,_context
         result=[];gaps=[];references=[];failures=[]
         inventory=adapter['all_case_targets']
         for case in inventory['cases']:
@@ -175,26 +164,51 @@ class Pass:
             inputs=dict(task=record['task'],case=case['name'],program_sha256=digest(text),
                 kept_context_sha256=digest(kept),
                 catalogue_sha256=inventory['catalogue_sha256'],task_inputs_sha256=self.task(record['task'])[2]['sha256'],ntrain=ntrain,ntest=ntest)
-            key=digest(inputs)
+            key=digest(inputs);legacy_inputs=inputs;legacy_key=key
             if key in self.case_failures:
                 failures.append(self.case_failures[key]);self.counts['case_failures_reused']+=1
                 continue
             try:
+                # Resolve catalogue-backed programs before assigning a case
+                # identity. The same case can first appear as another case
+                # without source text, then as its own pair with explicit text.
+                # Both must reuse one observation and the same own kept axes.
+                if text is None or kept is None:
+                    program_key=(record['task'],case['name'],inventory['catalogue_sha256'])
+                    known=self.resolved_case_programs.get(program_key)
+                    if text is None and known is not None:
+                        context=dict(context,gold_sexp=known[0])
+                        if known[1] is not None:context['relation_source_names']=known[1]
+                    _,text,kept,names=_context(self.ev,record,context)
+                    self.resolved_case_programs[program_key]=(text,names)
+                    context=dict(context,gold_sexp=text,kept_assignments=kept)
+                    if names is not None:context['relation_source_names']=names
+                    inputs=dict(inputs,program_sha256=digest(text),kept_context_sha256=digest(kept))
+                    key=digest(inputs)
+                if key in self.case_failures:
+                    failures.append(self.case_failures[key]);self.counts['case_failures_reused']+=1
+                    continue
                 bundle=self.case_cache.get(key)
                 if bundle is None:
+                    entry_key=key
                     bundle=self.journal.load('case',key,inputs)
+                    if bundle is None and legacy_key!=key:
+                        bundle=self.journal.load('case',legacy_key,legacy_inputs)
+                        if bundle is not None:
+                            entry_key=legacy_key;self.counts['legacy_case_identities_reused']+=1
                     if bundle is None:
                         self.progress(self.done,phase='gold_case:'+case['name'],force=True)
                         self.guard();bundle=acquire_case(self.ev,record,context,ntrain,ntest);self.guard()
                         bundle=dict(bundle,caller_task_inputs=self.task(record['task'])[2])
                         bundle=self.journal.save('case',key,inputs,bundle)
-                        self.counts['gold_case_replays']+=1
+                        self.counts['gold_case_collections']+=1
                     else:self.counts['gold_cases_resumed']+=1
+                    self.case_refs[key]=self.journal.reference('case',entry_key)
                     if bundle.get('axis_ref'):
                         bundle=dict(bundle,axis=self.journal.read_reference(bundle['axis_ref'])['axis'],_axis_ref=bundle['axis_ref'])
                     bundle=expand_case(bundle,self.ev,record,context)
                     self.case_cache[key]=bundle
-                result.append(bundle);references.append(self.journal.reference('case',key,bundle))
+                result.append(bundle);references.append(self.case_refs[key])
             except (ValueError,KeyError,IndexError,OSError,TypeError) as error:
                 failure=dict(schema='mech-case-preparation-failure-v1',case=case['name'],
                     reason=str(error),error_type=type(error).__name__,stage='case acquisition')
@@ -225,7 +239,7 @@ class Pass:
         from clause_evidence import clause_evidence
         # Verification checks every cached target, so its identity is independent
         # of which target suggested the clause. Repeated proposals reuse it.
-        inputs=dict(source_sha256=digest(record),case_refs=inputs['case_refs'],
+        inputs=dict(source_sha256=inputs['source_sha256'],case_refs=inputs['case_refs'],
                     clause=candidate['clause'],columns=candidate['columns'],max_mutant_replays=1)
         key=digest(dict(pair=digest(pair_key(record)),inputs=inputs))
         result=self.journal.load('candidate',key,inputs)
@@ -233,7 +247,7 @@ class Pass:
             raise ValueError('mechanical DET candidate checker unavailable; judge DET path is excluded')
         if result is None:
             self.guard()
-            target=dict(adapter=adapter,source=dict(source_sha256=digest(record)),
+            target=dict(adapter=adapter,source=dict(source_sha256=inputs['source_sha256']),
                 ntrain=selection['ntrain'],ntest=selection['ntest'],mode='recovery')
             try:
                 result=evaluate_cached(self.ev,record,candidate['clause'],target,candidate['columns'],selection,
@@ -279,37 +293,38 @@ class Pass:
         selection['gaps'].extend(gaps)
         selection['complete']&=not (gaps or failures)
         targets=([selection['point']] if selection['point'] is not None else [])+selection['targets']
-        result.update(complete=selection['complete'],gaps=selection['gaps'],case_refs=refs,
-                      adapter_sha256=digest(adapter),point_binding=adapter['comparison_target']['binding'],
-                      X_binding=adapter['input']['binding'])
+        result.update(complete=selection['complete'],gaps=selection['gaps'],case_refs=refs)
         comparisons=[];possible=[];computed=False
-        for target in targets:
-            grouped,target_fields,reference,receipt=target
-            if STOP:raise InterruptedError('stopping before next target')
-            self.progress(self.done,phase='target:'+reference['target_id'])
-            target_key=digest(dict(reference=reference,receipt=receipt))
-            inputs=dict(source_sha256=base['source_sha256'],case_refs=refs,target_key=target_key)
-            key=digest(dict(pair=base['pair_id'],target=target_key))
-            comparison=self.journal.load('comparison',key,inputs)
-            if comparison is None:
-                with self.timed('comparison'):
-                    comparison=compare(source,fields,target,seconds=self.a.compare_seconds,indexes=self.target_indexes)
-                self.journal.save('comparison',key,inputs,comparison);self.counts['target_comparisons']+=1
-            else:self.counts['comparisons_resumed']+=1
-            proof_ref=self.journal.reference('comparison',key,comparison)
-            eq=comparison['equality'];include=comparison['containment']
-            comparisons.append((target,comparison,proof_ref))
-            result.setdefault('comparison_refs',[]).append(dict(reference=proof_ref,target=target_identity(reference)))
-            result['grade_comparisons'].append(dict(target_id=reference['target_id'],equal=eq['status']=='equal',
-                train=eq.get('train')=='equal',test=eq.get('test')=='equal',complete=eq['status']=='equal',
-                kept_contexts_complete=not source['missing'] and not grouped['missing'],
-                test_target='gold_full_replay',receipt_ref=proof_ref,comparison=eq))
-            if include['status']=='contains' and reference.get('role')!='point':possible.append((target,inputs))
-            if include['status']=='mismatch':computed=True
-            if reference.get('role')=='point':
-                result['point']=dict(complete=include['status']!='unknown',
-                    X_holds_every_gold_row=True if include['status']=='contains' else False if include['status']=='mismatch' else None,
-                    receipt_ref=proof_ref,comparison=include)
+        # One durable transaction for this pair's cheap table observations;
+        # expensive candidate results still commit separately as soon as done.
+        with self.journal.transaction():
+            for target in targets:
+                grouped,target_fields,reference,receipt=target
+                if STOP:raise InterruptedError('stopping before next target')
+                self.progress(self.done,phase='target:'+reference['target_id'])
+                target_key=digest(dict(reference=reference,receipt=receipt))
+                inputs=dict(source_sha256=base['source_sha256'],case_refs=refs,target_key=target_key)
+                key=digest(dict(pair=base['pair_id'],target=target_key))
+                comparison=self.journal.load('comparison',key,inputs)
+                if comparison is None:
+                    with self.timed('comparison'):
+                        comparison=compare(source,fields,target,seconds=self.a.compare_seconds,indexes=self.target_indexes)
+                    self.journal.save('comparison',key,inputs,comparison);self.counts['target_comparisons']+=1
+                else:self.counts['comparisons_resumed']+=1
+                proof_ref=self.journal.reference('comparison',key,comparison)
+                eq=comparison['equality'];include=comparison['containment']
+                comparisons.append((target,comparison,proof_ref))
+                result.setdefault('comparison_refs',[]).append(dict(reference=proof_ref,target=target_identity(reference)))
+                result['grade_comparisons'].append(dict(target_id=reference['target_id'],equal=eq['status']=='equal',
+                    train=eq.get('train')=='equal',test=eq.get('test')=='equal',complete=eq['status']=='equal',
+                    kept_contexts_complete=not source['missing'] and not grouped['missing'],
+                    test_target='gold_full_replay',receipt_ref=proof_ref,comparison=eq))
+                if include['status']=='contains' and reference.get('role')!='point':possible.append((target,inputs))
+                if include['status']=='mismatch':computed=True
+                if reference.get('role')=='point':
+                    result['point']=dict(complete=include['status']!='unknown',
+                        X_holds_every_gold_row=True if include['status']=='contains' else False if include['status']=='mismatch' else None,
+                        receipt_ref=proof_ref,comparison=include)
         complete=selection['complete'] and bool(comparisons)
         result['support']=dict(complete=complete,all_targets_lossy=None,
             raw_all_targets_lack_rows=complete and all(c['containment']['status']=='mismatch' for t,c,r in comparisons),
@@ -386,9 +401,10 @@ class Pass:
                     if checked['valid']:self.counts['unavailable_pairs_retried']+=1
                     else:self.counts['stale_pair_results']+=1
                 if self.current_task!=base['task']:
-                    self.ev.close();clear_cache(self.ev);self.source_store.cache.clear()
+                    self.ev.close();clear_cache(self.ev);self.source_store.clear()
                     self.target_indexes=TargetIndexes();self.proposal_cache.clear()
-                    self.case_cache.clear();self.case_failures.clear();self.producers.clear();self.current_task=base['task']
+                    self.case_cache.clear();self.case_refs.clear();self.resolved_case_programs.clear()
+                    self.case_failures.clear();self.producers.clear();self.current_task=base['task']
                 src=base['source'];current=Path(src['corpus']).resolve()/base['task']/src['file'];wanted=src['line']
                 if current!=path:
                     if stream is not None:stream.close()
@@ -414,7 +430,7 @@ class Pass:
                         complete=False,gaps=[dict(stage='pair unavailable',reason=str(error),error_type=type(error).__name__)])
                     self.counts['pairs_unavailable']+=1
                 if result.get('case_failure_refs'):self.counts['pairs_case_unavailable']+=1
-                self.guard();self.save_pair(base,result);self.source_store.cache.clear()
+                self.guard();self.save_pair(base,result)
                 self.counts['pairs_done']+=1;self.progress(done)
             self.progress(self.done,force=True)
             return not bool(self.a.task or self.a.limit)
