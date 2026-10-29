@@ -19,7 +19,7 @@ import sys
 import time
 
 from clause_evidence import clause_evidence
-from grades import reduce_grade, judge_eligible
+from grades import judge_eligible
 from lib_plan import candidates
 from outcomes import canonical
 from review_metadata import load_review_metadata
@@ -45,7 +45,7 @@ def manifest():
 
 
 def valid(row, source, code, config, plan):
-    if row is None or tuple(row[:4]) != (source,code,config,plan):
+    if row is None or row[0]!=source or row[3]!=plan:
         return False
     return digest(json.loads(row[5])) == row[4]
 
@@ -60,7 +60,10 @@ def run_pair(ev, db, job, config, code, progress):
     config_hash = digest(config)
     row = db.execute('SELECT source,code,config,plan,result_hash,payload FROM pairs WHERE pair_id=?', (pair_id,)).fetchone()
     if valid(row,source,code,config_hash,plan_hash) and not json.loads(row[5]).get('interrupted'):
-        return json.loads(row[5]), True
+        saved=json.loads(row[5])
+        if saved.get('schema')=='mech-lib-facts-v2':
+            saved=dict(saved,search=dict(status='recovery_verified' if saved['stop']['reason']=='verified recovery' else 'bound_unknown'))
+        return saved, True
     evidence = dict(job['base_evidence'])
     if (evidence.get('source_sha256') != source or evidence.get('pair_id') != pair_id
             or evidence.get('kind') != record['kind']):
@@ -134,18 +137,16 @@ def run_pair(ev, db, job, config, code, progress):
                   complete=False,settled_space=False,unvisited=None,reason=reason,
                   receipt_ref=dict(database=str(config['output']),table='pairs',pair_id=pair_id))
     evidence['search'] = search
-    result = dict(schema='mech-lib-result-v1',pair_id=pair_id,source_sha256=source,
+    result = dict(schema='mech-lib-facts-v2',pair_id=pair_id,source_sha256=source,
                   code_sha256=code,config_sha256=config_hash,plan_sha256=plan_hash,
-                  evidence=evidence,search=search,registry_receipt=registry_receipt,**reduce_grade(evidence),
-                  visited=visited,reused=reused,unknown_candidates=unknown,
-                  seconds=time.monotonic()-start,interrupted=STOP)
-    result['judge_eligible'] = judge_eligible(evidence)
+                  candidate_refs=[a['receipt_ref'] for a in answers],
+                  stop=dict(reason=reason,seconds=time.monotonic()-start),interrupted=STOP)
     if digest(manifest()) != code:
         raise RuntimeError('labeling source changed during run; restart with new code hash')
     with db:
         db.execute('INSERT OR REPLACE INTO pairs VALUES (?,?,?,?,?,?,?)',
                    (pair_id,source,code,config_hash,plan_hash,digest(result),canonical(result)))
-    return result, False
+    return dict(result,search=search), False
 
 
 def main():
@@ -169,8 +170,7 @@ def main():
     from evaluator import ReplayEvaluator
     ev=ReplayEvaluator(config=a.config,deadline=a.candidate_seconds,artifacts=a.artifacts)
     config=dict(schema='mech-lib-config-v1',seconds=a.seconds,max_candidates=a.max_candidates,
-                evaluator=ev.receipt,output=str(a.output.resolve()),
-                spec_sha256=hashlib.sha256((STUDY/'codex-adm/briefs/judge-decisions.md').read_bytes()).hexdigest())
+                evaluator=ev.receipt,output=str(a.output.resolve()))
     code_files=manifest();code=digest(code_files)
     db=sqlite3.connect(a.output);db.execute('PRAGMA journal_mode=WAL');db.execute('PRAGMA synchronous=FULL')
     db.executescript('CREATE TABLE IF NOT EXISTS pairs(pair_id TEXT PRIMARY KEY,source TEXT,code TEXT,config TEXT,plan TEXT,result_hash TEXT,payload TEXT);'

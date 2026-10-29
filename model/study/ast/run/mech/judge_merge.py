@@ -5,7 +5,6 @@ never affect policy. Receipt storage/authentication belongs to the caller.
 """
 import copy
 from clause_evidence import clause_evidence,digest
-from grades import reduce_grade,judge_eligible
 from run import pair_key
 
 
@@ -43,4 +42,4 @@ def merge_final(record, manifest, target, evidence, final, receipt_ref):
                                       and (not outcomes or all(a['judgment_complete'] for a in answers))),
                             answered=True,receipt_ref=receipt_ref,
                             no_clause_found=not outcomes)
-    return out,dict(**reduce_grade(out),judge_eligible=judge_eligible(out))
+    return out

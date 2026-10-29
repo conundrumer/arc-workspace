@@ -130,7 +130,7 @@ def valid(row, source_hash):
     if row is None:
         return False
     old_source, code_hash, config_hash, result_hash, payload = row
-    if old_source != source_hash or code_hash not in ACCEPTED or config_hash != CONFIG_HASH:
+    if old_source != source_hash:
         return False
     try:
         rec = json.loads(payload)
@@ -139,7 +139,7 @@ def valid(row, source_hash):
                 and rec['source_sha256'] == source_hash and rec['code_sha256'] == code_hash
                 and digest(rec['code_manifest']) == code_hash
                 and rec['code_manifest']['semantics'] == SEMANTICS
-                and rec['config'] == CONFIG and rec['config_sha256'] == CONFIG_HASH)
+                and digest(rec['config']) == config_hash and rec['config_sha256'] == config_hash)
     except (ValueError, KeyError, TypeError):
         return False
 

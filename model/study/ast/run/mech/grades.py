@@ -19,6 +19,17 @@ def checked(check):
             and bool(check.get('receipt_ref')))
 
 
+def contributed_rows(provenance,required):
+    """An actual native successful-path receipt, never syntactic X presence."""
+    proof=provenance.get('row_contribution',{})
+    return (provenance.get('X_contributes_rows') is True
+            and proof.get('complete') is True and proof.get('X_contributes_rows') is True
+            and proof.get('source')=='original_complete_native_candidate_replay'
+            and bool(proof.get('artifact')) and bool(proof.get('nonempty_contexts'))
+            and type(required) is int and required>0
+            and proof.get('required_train_test_contexts')==required)
+
+
 def reduce_grade(evidence):
     if evidence.get('schema') != SCHEMA:
         raise ValueError('expected ' + SCHEMA)
@@ -34,10 +45,24 @@ def reduce_grade(evidence):
     attributes = {key: evidence.get(key) for key in ('redundant', 'sibling')}
     attributes['continuation'] = continuations or None
     program = evidence.get('program', {})
+    is_det = evidence.get('kind','').upper() == 'DET'
     target = evidence.get('target_catalog', {})
     catalog_complete = target.get('complete') is True and bool(target.get('receipt_ref'))
     comparisons = evidence.get('comparisons', {})
     point = comparisons.get('point', {})
+    empty = comparisons.get('X_empty', {})
+    # An authenticated global-empty certificate is a filter result, even if
+    # OUT fits or an unrelated union branch reproduces a target. No successful
+    # path can supply an X row when every kept train/test model is empty.
+    if (empty.get('empty') is True and empty.get('complete') is True
+            and empty.get('train') is True and empty.get('test') is True
+            and empty.get('kept_contexts_complete') is True
+            and bool(empty.get('receipt_ref'))):
+        return dict(grade='empty', grade_reason='X is empty in every kept train/test model',
+                    attributes=attributes, filter_class='empty', missing_steps=[])
+    if empty and empty.get('complete') is not True:
+        return dict(grade='Unknown',grade_reason='original X filter evidence incomplete',
+                    attributes=attributes,filter_class=None,missing_steps=list(evidence.get('missing_steps',[])))
     # Every positive target check must cover train/test; grade order is explicit.
     equal = [c for c in comparisons.get('targets', []) if checked(c) and c.get('equal') is True]
     if equal:
@@ -59,13 +84,14 @@ def reduce_grade(evidence):
                 if from_x and union_ok:
                     recovery.append(c)
             elif (c.get('outcome') == 'partial source verified'
-                  and provenance.get('partial_source') is True):
+                  and provenance.get('partial_source') is True
+                  and contributed_rows(provenance,c['check'].get('required_train_test_contexts'))):
                 partial.append(c)
         if recovery:
             grade, reason = 'Recovery', 'verified target and admitted X provenance'
         elif partial:
-            grade, reason = 'Partial source', 'verified target with partial X provenance'
-        elif (program.get('fits_train') is True and program.get('fits_test') is True
+            grade, reason = 'Partial source', 'verified target with an actual X-contributing path'
+        elif (not is_det and program.get('fits_train') is True and program.get('fits_test') is True
               and program.get('complete') is True and program.get('receipt_ref')):
             read = comparisons.get('reader_difference', {})
             if (read.get('complete') is True and read.get('receipt_ref')
@@ -78,8 +104,8 @@ def reduce_grade(evidence):
         elif program.get('refused') is True and program.get('receipt_ref'):
             grade, reason = 'Refused', 'mutant program refused by engine'
         else:
-            nonfit = (program.get('complete') is True and bool(program.get('receipt_ref'))
-                      and (program.get('fits_train') is False or program.get('fits_test') is False))
+            nonfit = (is_det or (program.get('complete') is True and bool(program.get('receipt_ref'))
+                      and (program.get('fits_train') is False or program.get('fits_test') is False)))
             # Lossy needs the settled projected point comparison, never a legacy
             # label against a different body/target or an incomplete family.
             support = comparisons.get('recovery_support', {})

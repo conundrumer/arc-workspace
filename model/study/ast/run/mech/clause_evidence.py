@@ -4,7 +4,7 @@ Only call this on a result returned by ReplayEvaluator.evaluate, or a result
 loaded from the digest-checked candidate journal with matching source/config.
 This module interprets receipt statuses; it does not execute or compare tables.
 """
-from grades import CLAUSE_OUTCOMES
+from grades import CLAUSE_OUTCOMES,contributed_rows
 from outcomes import canonical
 import hashlib
 
@@ -14,6 +14,16 @@ def digest(value):
 
 
 def clause_evidence(result, record, receipt_ref, *, purpose='answer', role='recovery', ntrain, ntest):
+    return clause_evidence_from_identity(result,digest(record),len(record['evaluation']['kept_assignments']),
+        receipt_ref,purpose=purpose,role=role,ntrain=ntrain,ntest=ntest)
+
+
+def clause_evidence_from_identity(result,source_sha256,kept_count,receipt_ref,*,
+                                  purpose='answer',role='recovery',ntrain,ntest):
+    """Same adapter for compact journals that retain source identity and axes."""
+    if (not isinstance(source_sha256,str) or len(source_sha256)!=64
+            or type(kept_count) is not int or kept_count<0):
+        raise ValueError('source identity/kept count invalid')
     if purpose not in ('answer', 'exploration'):
         raise ValueError('invalid clause purpose')
     out = dict(purpose=purpose, role=role, receipt_ref=receipt_ref,
@@ -24,13 +34,13 @@ def clause_evidence(result, record, receipt_ref, *, purpose='answer', role='reco
         out.update(purpose='exploration', outcome='unknown')
         return out
     if (result.get('schema') != 'judgetool-clause-v2'
-            or result.get('source_sha256') != digest(record)
+            or result.get('source_sha256') != source_sha256
             or result.get('route') != 'replay_search_then_kept_filter'
             or out['outcome'] not in CLAUSE_OUTCOMES):
         out.update(outcome='unknown', reason='tool source/route/schema binding incomplete')
         return out
     contexts = result.get('context_receipt', {})
-    required = len(record['evaluation']['kept_assignments']) * (ntrain + ntest)
+    required = kept_count * (ntrain + ntest)
     full = (required > 0 and contexts.get('complete') is True
             and contexts.get('required') == required
             and not result.get('missing_contexts'))
@@ -39,10 +49,10 @@ def clause_evidence(result, record, receipt_ref, *, purpose='answer', role='reco
     check = dict(train=checks.get('train') == 'equal', test=checks.get('test') == 'equal',
                  complete=checks.get('complete') is True,
                  kept_contexts_complete=full,
-                 test_target=checks.get('test_target'), receipt_ref=receipt_ref)
+                 test_target=checks.get('test_target'), receipt_ref=receipt_ref,required_train_test_contexts=required)
     # Fresh target receipts bind the original record, schema and exact train axis.
     if target.get('source') == 'gold_full_replay' and target.get('observer_program_sha256'):
-        full = (full and target.get('original_source_sha256') == digest(record)
+        full = (full and target.get('original_source_sha256') == source_sha256
                 and target.get('train_complete') is True
                 and target.get('test_complete') is True)
         check['kept_contexts_complete'] = full
@@ -72,9 +82,11 @@ def clause_evidence(result, record, receipt_ref, *, purpose='answer', role='reco
         if not (positive_check and (direct or single or union)):
             out.update(outcome='unknown', reason='target test/context or X-row provenance proof incomplete')
     elif out['outcome'] == 'partial source verified':
-        out['provenance'] = dict(partial_source=status == 'partial')
-        if not (positive_check and status == 'partial'):
-            out.update(outcome='unknown', reason='partial source target check incomplete')
+        contributes = contributed_rows(provenance,required)
+        out['provenance'] = dict(partial_source=status == 'partial',
+                                 X_contributes_rows=contributes,row_contribution=provenance.get('row_contribution',{}))
+        if not (positive_check and status == 'partial' and contributes):
+            out.update(outcome='unknown', reason='partial source target check or actual X-row contribution incomplete')
     elif out['outcome'] == 'continuation passed':
         if not (full and result.get('continuation_passed') is True):
             out.update(outcome='unknown', reason='continuation context check incomplete')

@@ -1,72 +1,46 @@
 #!/usr/bin/env python3
-"""Durably grade checked judge finals together with mechanical evidence.
+"""Index checked tool final artifacts; no grades or copied evidence are stored.
 
-Jobs JSONL: pair_directory, base_evidence (JSON path), final_result (JSON path).
-Inputs are checked tool artifacts, NOT judge answers. Native evidence authority
-for admission is not invented here; unknown input receipts stay unavailable.
+Jobs: pair_directory, base_evidence path, final_result path. The final artifact
+remains the authoritative clause outcome store; only authenticated locators are
+indexed here for the read-time join.
 """
-from pathlib import Path as _StudyPath
-import sys as _study_sys
-_study_sys.path.insert(0, str(_StudyPath(__file__).resolve().parents[3]))
-from study_paths import CODE_ROOT, DATA_ROOT, MAIN_ROOT, REPO_ROOT, data_path
+from pathlib import Path
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[3]))
+from study_paths import CODE_ROOT,DATA_ROOT
 import argparse
 import hashlib
 import json
-from pathlib import Path
-import sys
-import time
-from grade_store import GradeStore
-from judge_merge import merge_final
-from clause_evidence import digest
-
-HERE=Path(__file__).resolve().parent
-STUDY=HERE.parents[2]
+import sqlite3
+from run import digest,pair_key,canonical
 
 
 def main():
     ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('jobs',type=Path)
-    ap.add_argument('--output',type=Path,default=DATA_ROOT / 'ast/run/mech/grades.sqlite3');a=ap.parse_args()
-    sys.path.insert(0,str(STUDY/'judgetool'))
+    ap.add_argument('--output',type=Path,default=DATA_ROOT/'ast/run/mech/judge.sqlite3');a=ap.parse_args()
+    sys.path.insert(0,str(CODE_ROOT/'judgetool'))
     from judge_tool import load_pair
-    paths=[HERE/n for n in ('grade_judge.py','grade_store.py','judge_merge.py','grades.py','admission.py','clause_evidence.py','outcomes.py','run.py')]
-    paths += [STUDY/'judgetool'/n for n in ('judge_tool.py','evaluator.py')]
-    paths.append(CODE_ROOT / 'study_paths.py')
-    code={str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
-    spec=STUDY/'codex-adm/briefs/judge-decisions.md';spec_hash=hashlib.sha256(spec.read_bytes()).hexdigest()
-    store=GradeStore(a.output,code,dict(schema='mech-judge-grade-config-v1',spec_sha256=spec_hash))
-    with a.jobs.open() as src:total=sum(1 for line in src if line.strip())
-    start=time.monotonic();last=0;done=0;skip=0
+    db=sqlite3.connect(a.output);db.execute('PRAGMA journal_mode=WAL');db.execute('PRAGMA synchronous=FULL')
+    db.execute('CREATE TABLE IF NOT EXISTS judge_sessions(pair_id TEXT,session_sha256 TEXT,payload TEXT,PRIMARY KEY(pair_id,session_sha256))')
     try:
-        with a.jobs.open() as src:
-            for lineno,line in enumerate(src,1):
+        with a.jobs.open() as stream:
+            for line in stream:
                 if not line.strip():continue
-                try:
-                    job=json.loads(line)
-                    manifest,record,target=load_pair(job['pair_directory'])
-                    base=json.loads(Path(job['base_evidence']).read_text())
-                    path=Path(job['final_result']).resolve();raw=path.read_bytes();final=json.loads(raw)
-                    if final.get('specification_sha256')!=spec_hash:
-                        raise ValueError('checked final specification hash differs; rerun tool final')
-                    ref=dict(path=str(path),sha256=hashlib.sha256(raw).hexdigest(),canonical_sha256=digest(final))
-                    evidence,_=merge_final(record,manifest,target,base,final,ref)
-                    # Persist combined evidence first, in the same durable DB;
-                    # grade receipts remain inspectable and source-bound.
-                    db=store.db
-                    db.execute('CREATE TABLE IF NOT EXISTS merged_evidence(pair_id TEXT PRIMARY KEY,result_sha256 TEXT,payload TEXT)')
-                    from outcomes import canonical
-                    with db:db.execute('INSERT OR REPLACE INTO merged_evidence VALUES (?,?,?)',
-                                       (evidence['pair_id'],digest(evidence),canonical(evidence)))
-                    _,was_skip=store.save(evidence,inputs_authenticated=False)
-                    skip+=was_skip;done+=1
-                except Exception as error:
-                    raise RuntimeError(f'{a.jobs}:{lineno}: {error}') from error
-                elapsed=time.monotonic()-start
-                if elapsed-last>=5:
-                    rate=done/max(elapsed,.001)
-                    print(f'done={done}/{total} elapsed={elapsed:.1f}s rate={rate:.2f}/s ETA={(total-done)/max(rate,.001):.1f}s skip={skip}',file=sys.stderr,flush=True);last=elapsed
-    finally:store.close()
-    elapsed=time.monotonic()-start
-    print(f'done={done}/{total} elapsed={elapsed:.1f}s rate={done/max(elapsed,.001):.2f}/s ETA=0s skip={skip}',file=sys.stderr,flush=True)
+                job=json.loads(line);manifest,record,target=load_pair(job['pair_directory'])
+                base=json.loads(Path(job['base_evidence']).read_text())
+                if base['pair_id']!=digest(pair_key(record)) or base['source_sha256']!=digest(record):raise ValueError('judge source/base binding differs')
+                final_path=Path(job['final_result']).resolve();final=json.loads(final_path.read_bytes())
+                if final.get('schema')!='judge-tool-final-v3' or final.get('source_sha256')!=digest(record):raise ValueError('checked final binding differs')
+                record_path=Path(target['adapter']['source']['record_path']).resolve()
+                manifest_path=Path(job['pair_directory']).resolve()/'manifest.json'
+                value=dict(source_sha256=digest(record),base_result_sha256=base['base_result_ref']['result_sha256'],
+                    final_path=str(final_path),final_sha256=hashlib.sha256(final_path.read_bytes()).hexdigest(),
+                    record_path=str(record_path),record_sha256=hashlib.sha256(record_path.read_bytes()).hexdigest(),
+                    manifest_path=str(manifest_path),manifest_sha256=hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+                    ntrain=target['ntrain'],ntest=target['ntest'])
+                with db:db.execute('INSERT OR IGNORE INTO judge_sessions VALUES (?,?,?)',(base['pair_id'],digest(value),canonical(value)))
+    finally:db.close()
 
 
 if __name__=='__main__':main()

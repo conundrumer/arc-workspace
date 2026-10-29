@@ -31,6 +31,16 @@ def stored_result(record,item):
     return None,None
 
 
+def witness_inputs(base,item):
+    """Code-independent identity of the actual stored witness application."""
+    witness=item['witness']
+    atoms=[a for branch in witness.get('selection_any',[witness.get('selection',[])]) for a in branch]
+    used=sorted({a['available'] for a in atoms if a['kind'] in ('semijoin','antijoin')})
+    return digest(dict(source_sha256=base['source_sha256'],assignment=item['assignment'],
+        witness=witness,selectors=[item.get('available_metadata',[])[i]
+            if 0<=i<len(item.get('available_metadata',[])) else {'missing_available_metadata':i} for i in used]))
+
+
 def native_equality_verifier(fr):
     """Source-bound canonical verifier with one final equality callback.
 
@@ -70,23 +80,35 @@ def native_equality_verifier(fr):
 
 
 class Checker:
-    def __init__(self,ev,*,verify_seconds=5,cache_entries=8,cache_bytes=128*1024*1024):
+    def __init__(self,ev,*,verify_seconds=5,cache_entries=32,cache_bytes=128*1024*1024):
         from next_revision import family_recovery as fr
         from tables import TargetStore
         self.ev=ev;self.fr=fr;self.verify,self.verifier_receipt=native_equality_verifier(fr)
         self.store=TargetStore(ev.legacy,ev.run.parent.parent)
         self.verify_seconds=verify_seconds;self.cache=OrderedDict();self.cache_charge=0
         self.cache_entries=cache_entries;self.cache_bytes=cache_bytes;self.case=None
-        self.gold_replays=0;self.evaluations=0
+        self.gold_replays=0;self.evaluations=0;self.binding_cache=OrderedDict();self.binding_hits=0;self.target_hits=0
 
     def _target(self,record,native_base,ntrain,ntest):
         from raw_body import binding,observe_gold_body
-        layout,proof=binding(self.ev,record,native_base=native_base)
+        # Full source identity + immutable native reference + exact table index
+        # authenticate this binding. Reuse the canonical binder's output only
+        # for those identical inputs, never on an inferred cross-record layout.
+        binding_key=digest(dict(base=str(Path(native_base).resolve()),gold=record['gold_sexp'],
+            point=record['point'],native=record['native']['gold'],
+            table=record['evaluation']['table_indices']['gold_all'],settings=self.ev.receipt))
+        if binding_key in self.binding_cache:
+            layout,prior=self.binding_cache.pop(binding_key)
+            proof=dict(prior,source_sha256=digest(record))
+            self.binding_hits+=1
+        else:layout,proof=binding(self.ev,record,native_base=native_base)
+        self.binding_cache[binding_key]=(layout,proof)
+        while len(self.binding_cache)>self.cache_entries:self.binding_cache.popitem(last=False)
         key=digest(dict(task=record['task'],case=record['case'],gold=record['gold_sexp'],
                         kept=record['evaluation']['kept_assignments'],point=record['point'],
                         layout=layout,ntrain=ntrain,ntest=ntest,settings=self.ev.receipt))
         if key in self.cache:
-            grouped,receipt,charge=self.cache.pop(key);self.cache[key]=(grouped,receipt,charge)
+            grouped,receipt,charge=self.cache.pop(key);self.cache[key]=(grouped,receipt,charge);self.target_hits+=1
             return grouped,dict(receipt,current_source_sha256=digest(record),
                                 current_binding_receipt=proof,gold_data_identity_sha256=key,reused_gold_replay=True)
         grouped,receipt=observe_gold_body(self.ev,record,native_base=native_base,ntrain=ntrain,ntest=ntest)
@@ -151,15 +173,19 @@ class Checker:
         case=(record['task'],record['case'])
         if case!=self.case:
             self.ev.finish_case();self.ev.target_cache.clear()
-            self.cache.clear();self.cache_charge=0;self.store.cache.clear();self.case=case
+            self.cache.clear();self.binding_cache.clear();self.cache_charge=0;self.store.cache.clear();self.case=case
         try:
             if ntest<1:raise ValueError('no test-input axis')
-            target,target_receipt=self._target(record,native_base,ntrain,ntest)
             mutant=self.store.snapshot(record['native']['mutant'],native_base)
             table=record['evaluation']['table_indices']['mutant_kept']
             source=kept_groups(self.ev.legacy,mutant,table,record,ntrain,ntest)
             types=tuple(f['type'] for f in mutant['_native_reader'].schema(table))
             available,available_receipts=self._available(record,native_base,item,ntrain,ntest)
+            # Stored-input admission is cheap: do it before any fresh gold work.
+            for test in range(ntest):
+                if (assignment,2,test) not in source['groups']:
+                    raise ValueError('stored X test input/kept context missing')
+            target,target_receipt=self._target(record,native_base,ntrain,ntest)
             gold=[];x=[]
             for test in range(ntest):
                 key=(assignment,2,test)

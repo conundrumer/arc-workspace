@@ -46,6 +46,16 @@ def registry_atoms(L, info, adapter, *, per_predicate=16, per_mode=16):
         if not columns or any(len(c)!=2 or not isinstance(c[1],str) for c in columns):
             yield dict(status='unsupported',reason='structured native sites require canonical adapter',**ident)
             return
+        # Native positional names such as [1]/[2] are not written column
+        # labels. The shared checker refuses :[1]; no legal native-to-written
+        # mapping is exposed here, so do not spend a search call on this syntax.
+        unsupported=[name for name,ty in columns if not isinstance(name,str)
+                     or '[' in name or ']' in name or name.isdecimal()]
+        if unsupported:
+            yield dict(status='unsupported',
+                reason='positional/bracket native sites require canonical written-name adapter',
+                native_sites=unsupported,**ident)
+            return
         domains = []
         for name,ty in columns:
             values = [f'V{i}' for i,f in enumerate(fields) if compatible(f['type'],ty)]
