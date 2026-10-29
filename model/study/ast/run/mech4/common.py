@@ -15,6 +15,19 @@ import json
 import sqlite3
 import zlib
 from run import canonical,digest,pair_key
+from mech2.read_normal import load_normal
+
+NORMAL_DATABASE=DATA_ROOT/'ast/run/mech2/normal.sqlite3'
+
+
+def normal_evidence(database,pair_id,source_sha256,base_result_sha256):
+    try:
+        value=load_normal(database,pair_id,source_sha256=source_sha256,
+                          base_result_sha256=base_result_sha256)
+        return {k:v for k,v in value.items() if k not in ('record','gold')}
+    except (OSError,ValueError,KeyError,TypeError,sqlite3.Error) as error:
+        return dict(status='unavailable',normal=None,reason=str(error),error_type=type(error).__name__)
+
 
 
 def readonly(path):
@@ -56,9 +69,8 @@ def manifest():
         'judge3/catalog.py','judge2/render2/headers.py','judge2/render2/body.py','judge2/render2/column_paths.py',
         'judge2/render2/structured.py','ast/run/next_revision/family_recovery.py','ast/run/filters.py',
         'ast/run/native_storage.py','ast/run/native_tables.py','ast/run/recovery.py',
-        'ast/run/disk_guard.py',
-        'ref/progsynth-relabel/engine_verify.py','ref/progsynth-relabel/verify_recovery.py',
-        'codex-adm/briefs/judge-decisions.md'))
+        'ast/run/disk_guard.py','ast/run/mech2/read_normal.py',
+        'ref/progsynth-relabel/engine_verify.py','ref/progsynth-relabel/verify_recovery.py'))
     return {str(p.resolve()):hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(paths)}
 
 
