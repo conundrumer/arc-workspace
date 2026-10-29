@@ -236,6 +236,12 @@ class Document:
             seeds = {i for i, n in graph.items() if n['definition'].get('instance') == instance
                      and (self.body['kind'] == 'INIT key' or
                           (n['definition']['kind'] == 'instance_input' and n['definition']['port'] == self.body['input_port']))}
+        elif owner['kind'] == 'choose':
+            # CHOOSE is a native chosen definition, not a clause node. Bind
+            # its exact declared identity and original owner form together.
+            seeds = {i for i, n in graph.items() if self.owner in n['forms']
+                     and n['definition']['kind'] == 'chosen'
+                     and n['definition']['name'] == owner['data']['name']}
         else:
             seeds = {i for i, n in graph.items() if self.owner in n['forms']
                      and n['definition']['kind'] in ('clause', 'parameter', 'rigid_assembly')}
@@ -281,6 +287,9 @@ class Document:
         for n in self.availability['graph_nodes']:
             d = n['definition']
             match = d.get('relation') == relation
+            if relation.get('kind') == 'declared' and d['kind'] == 'chosen':
+                match = (d['name'] == relation['name']
+                         and definition['definition_path'] in n['forms'])
             if 'owner' in relation:
                 owner = relation['owner']
                 if 'instance' in owner:
@@ -305,6 +314,7 @@ class Document:
             side = 'gold' if reader is self.readers['gold'] else 'mutant'
             export = self.gexport if side == 'gold' else self.mexport
             views = [v for v in export['body_views'] if v['owner_path'] == self.owner
+                     and v['body_path'] == self.body['body_path']
                      and v['kind'] == self.body['kind'] and v['input_port'] == self.body['input_port']
                      and v['native_table_selector']['form'] == reader.tables['form'][table]]
             require(len(views) == 1, 'target body binding is missing or ambiguous: ' + side)

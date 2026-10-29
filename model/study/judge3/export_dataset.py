@@ -128,7 +128,17 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
         context = dict(context, catalogue_path=adapter['all_case_targets']['catalogue_path'])
         bundle, fresh_cases[context['name']] = _case(ev, record, context, target['ntrain'], target['ntest'], cache)
         if not bundle['native_table_inventory_complete']:
-            raise ValueError('fresh case replay returned no complete table inventory: ' + context['name'])
+            # Preserve the real replay refusal/bound instead of presenting it
+            # as a missing-table catalogue. Never publish an incomplete case.
+            from tables import Incomplete
+            observation=bundle.get('receipt',{}).get('observation',{})
+            reasons=[g['reason'] for g in bundle.get('gaps',[])
+                     if g.get('kind')=='replay' and g.get('reason')]
+            error=Incomplete('fresh case replay incomplete: '+context['name']+'; '
+                + ('; '.join(reasons) or observation.get('engine','native capture unavailable'))
+                + '; artifact='+str(observation.get('artifact')))
+            error.receipt=bundle.get('receipt')
+            raise error
         export = bundle['export']; same = bundle['case'] == record['case']
         if same:
             main_export = export
