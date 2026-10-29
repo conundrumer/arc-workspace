@@ -14,6 +14,7 @@ from pathlib import Path
 from evaluator import S,sha
 from tables import TargetStore,Incomplete
 from surface import tokens,native_body_labels,native_body_atoms
+from program_metadata import type_identity
 
 
 def binding(ev,record,*,native_base):
@@ -92,7 +93,7 @@ def body_observer_program(ev,record,layout):
            and v['owner_path']==layout['owner_path']]
     if len(views)!=1:raise Incomplete('BODY observer lacks its exact native owner/view')
     labels={c['label_id']:c for c in views[0]['columns']}
-    if any(label not in labels or labels[label]['type']!=field['type']
+    if any(label not in labels or type_identity(ev,record,labels[label]['type'])[0]!=type_identity(ev,record,field['type'])[0]
            for label,field in zip(identities,fields)):
         raise Incomplete('BODY observer scalar identity/type differs from native source')
     output_names={f['native_label_identity']['label_id']:'V'+str(i) for i,f in enumerate(fields)}

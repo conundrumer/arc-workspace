@@ -25,11 +25,12 @@ def counts_table(groups,columns,limit=100,*,offset=0):
 
 
 def _replay_groups(ev,record,program,form,ntrain,ntest,candidate):
+    from program_metadata import type_identity
     result=ev.replay_program(record,program,form,candidate=candidate)
     if result['engine']!='ran':return result,None,None
     n=ev.captures[-1]['native'];t=result['kept_coverage']['table'];ts=n['tables']
     groups=kept_groups(ev.legacy,n,t,record,ntrain,ntest)
-    columns=list(zip(ts['column_names'][t],ts['column_types'][t]))
+    columns=[(name,type_identity(ev,record,ty)[0]) for name,ty in zip(ts['column_names'][t],ts['column_types'][t])]
     return result,groups,columns
 
 

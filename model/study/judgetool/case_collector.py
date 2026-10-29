@@ -20,7 +20,7 @@ from study_paths import CODE_ROOT, DATA_ROOT, MAIN_ROOT
 from evaluator import sha
 from tables import Incomplete,kept_groups,compare,projected_rows
 from surface import prepare,tokens
-from program_metadata import export_named_program
+from program_metadata import export_named_program,typed_fields
 import catalog
 import checks
 
@@ -251,6 +251,7 @@ def acquire_case(ev,record,case_context,ntrain,ntest,*,include_bodies=True):
             for k,v in d['native_selector'].items() if k in ('form','point','relation'))]
         grouped=kept_groups(L,native,table,own,ntrain,ntest)
         fields=[dict(field_name=n,type=t) for n,t in zip(ts['column_names'][table],ts['column_types'][table])]
+        fields=typed_fields(ev,own,fields)
         label=(definitions_here[0]['display_name'] if definitions_here else ts['fact'][table] or ts['relation_name'][table] or 'body')
         schema=deepcopy(native['_native_reader'].schema(table))
         for definition in definitions_here:
@@ -273,7 +274,7 @@ def acquire_case(ev,record,case_context,ntrain,ntest,*,include_bodies=True):
                 raise Incomplete('observer physical types differ from native BODY view')
             grouped=dict(grouped,groups={k:{frozenset(tuple(row[i] for i in indices) for row in rows) for rows in family}
                                           for k,family in grouped['groups'].items()})
-            bundle['bodies'].append(dict(body_path=plan['body_path'],fields=plan['fields'],grouped=encode_grouped(grouped),
+            bundle['bodies'].append(dict(body_path=plan['body_path'],fields=typed_fields(ev,own,plan['fields']),grouped=encode_grouped(grouped),
                 receipt=dict(case=case,source='gold_full_replay',artifact=replay['artifact'],observer_table=table,
                     body_path=plan['body_path'],label_ids=[f['native_label_identity']['label_id'] for f in plan['fields']],
                     complete=not grouped['missing'])))

@@ -15,7 +15,7 @@ from pathlib import Path
 import sys
 from evaluator import sha
 from tables import kept_groups,Incomplete
-from program_metadata import export_named_program
+from program_metadata import export_named_program,typed_fields
 
 
 def _scope_policy():
@@ -76,6 +76,7 @@ def acquire(ev,record,adapter,ntrain,ntest,*,only_case=None):
             definition=next((d for d in definitions if all(str(ts[k][table])==str(v)
                 for k,v in d['native_selector'].items() if k in ('form','point','relation'))),None)
             fields=[dict(field_name=name,type=ty) for name,ty in zip(ts['column_names'][table],ts['column_types'][table])]
+            fields=typed_fields(ev,own,fields)
             label=(definition or {}).get('display_name') or ts['fact'][table] or ts['relation_name'][table] or 'body'
             ref=dict(target_id=f'{case}: {label}',case=case,role='later' if same else 'other_case',ignore_names=not same,
                      native_selector={k:ts[k][table] for k in ('form','point','relation','fact')})

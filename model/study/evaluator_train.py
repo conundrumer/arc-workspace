@@ -115,6 +115,7 @@ def acquire_train_table(ev, native, table, record, *, ntrain, fields=None,
     Missing kept contexts are explicit and do not become empty tables.
     """
     from tables import Incomplete, kept_entries, comparison_type
+    from program_metadata import type_identity, typed_fields
     from evaluator import sha
     if type(ntrain) is not int or ntrain < 1:
         raise Incomplete('TRAIN acquisition requires the authenticated train input count')
@@ -133,6 +134,7 @@ def acquire_train_table(ev, native, table, record, *, ntrain, fields=None,
         fields = deepcopy(fields)
     if len(fields) != len(projection):
         raise Incomplete('TRAIN fields and physical projection arity differ')
+    fields = typed_fields(ev, record, fields)
     for field, index in zip(fields, projection):
         if index is None:
             evidence = field.get('source_projection', {})
@@ -140,7 +142,7 @@ def acquire_train_table(ev, native, table, record, *, ntrain, fields=None,
                     evidence.get('inserted_constant', {}).get('kind') != 'unit'):
                 raise Incomplete('TRAIN projection lacks certified inserted Unit evidence')
         elif (type(index) is not int or not 0 <= index < len(schema)
-              or comparison_type(schema[index]['type']) != comparison_type(field['type'])):
+              or comparison_type(type_identity(ev, record, schema[index]['type'])[0]) != comparison_type(field['type'])):
             raise Incomplete('TRAIN projected field type or physical index differs')
 
     # Only assignment metadata is read for eligible entries. Dummy rows allow
@@ -277,6 +279,7 @@ def acquire_case_train(ev, record, case_context, ntrain, ntest):
     from case_collector import acquire_case, _context, clear_cache
     from tables import Incomplete
     from evaluator import sha
+    from program_metadata import type_identity
     if (type(ntrain) is not int or ntrain < 1 or
             type(ntest) is not int or ntest < 0):
         raise Incomplete('case TRAIN acquisition requires authenticated input axes')
@@ -324,7 +327,8 @@ def acquire_case_train(ev, record, case_context, ntrain, ntest):
             fields = [dict(deepcopy(column), field_name=field['field_name'])
                       for column, field in zip(item['native_schema'], item['fields'])]
             if (len(fields) != len(item['fields']) or len(fields) != len(item['native_schema']) or
-                    [field['type'] for field in fields] != [field['type'] for field in item['fields']]):
+                    [type_identity(ev,own,field['type'])[0] for field in fields] !=
+                    [type_identity(ev,own,field['type'])[0] for field in item['fields']]):
                 raise Incomplete('canonical case table fields differ from native physical schema')
             packet = acquire_train_table(ev, native, table, own, ntrain=ntrain,
                 fields=fields, projection=list(range(len(fields))),
@@ -402,6 +406,7 @@ def acquire_det_train_point(ev, record, adapter, ntrain, ntest, side='mutant'):
     """
     from evaluator import sha
     from tables import TargetStore, Incomplete, comparison_type
+    from program_metadata import type_identity
     from raw_body import body_observer_program
     if side not in ('mutant', 'gold'):
         raise ValueError('point side must be mutant or gold')
@@ -503,7 +508,7 @@ def acquire_det_train_point(ev, record, adapter, ntrain, ntest, side='mutant'):
             if names.count(name) != 1:
                 raise Incomplete('DET gold observer lacks an unambiguous selected output')
             physical = names.index(name)
-            if comparison_type(native['tables']['column_types'][table][physical]) != comparison_type(raw_fields[index]['type']):
+            if comparison_type(type_identity(ev,record,native['tables']['column_types'][table][physical])[0]) != comparison_type(type_identity(ev,record,raw_fields[index]['type'])[0]):
                 raise Incomplete('DET gold observer output type differs from certified BODY field')
             columns[index] = physical
         projection = [None if f['source_body_column'] is None else columns[f['source_body_column']]
