@@ -1,9 +1,0 @@
-# V5 delivery
-
-Version `5ff7d9a5e84026f7f1a9bf4be3d67b00fec37b860446ef78568ed6426a2ea8b1`;55 rendered,zero errors,95.82s. [Samples](/Users/davidlu/code/arc-workspace/work/lm/data-study/judge3/review/index.md), [section breakdown](/Users/davidlu/code/arc-workspace/work/lm/data-study/judge3/review/section-bytes.md), [size policy](/Users/davidlu/code/arc-workspace/work/lm/data-study/judge3/review/size-proposal.md), [brief](judge-brief.md).
-
-Document bytes: **17,423 minimum;103,439 median;299,999 maximum**. Total7,784,309, down from v4’s12,217,646. Shared brief4,901 bytes. Every page strictly below300,000. G/X comparison never sampled; later same-case targets sampled only for budget; other cases bounded with complete counts/source/schema. Target identities/selectors/physical fields match v4; no sampled comparison blocks. All55 document digests match manifests.
-
-Removed judge-facing evidence status/footers/gaps, admission/case inventory, source hashes/provenance, historical notes, kept-record and saved-fit sections, full-program duplication and unnecessary library implementation detail. Reader clauses, authored lib contracts/declarations and callable tables remain. Context headings compacted; redundant schema/count headings removed. Gaps remain in manifests.
-
-Tool owner completed [four review-v5 sessions](/Users/davidlu/code/arc-workspace/work/lm/data-study/judgetool/review-v5/index.md), including target pagination, exact refusals, rejected candidates, verified recoveries/lib computation and a passing continuation; prior review/review-v4 and v3/v4 data preserved. No renderer tests/evaluation/judge calls. Additive nonrender metadata API and callable-definition producer built separately; existing frozen tool/header/body sources untouched. DET reader-column projection missing is explicit UnsupportedProjection.

@@ -1,6 +1,6 @@
 # LM data study
 
-The live study sources and documents are here. [Moved files](MOVED_FILES.md)
+The live study sources and documents are here.
 lists the source inventory. [Plan](plan.md) describes the pipeline.
 
 `study_paths.CODE_ROOT` names this directory in the current checkout.
