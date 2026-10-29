@@ -5,6 +5,7 @@ and checker copies belong exclusively to this build. Rebuild into a new path.
 """
 import argparse
 import hashlib
+import importlib.metadata
 import json
 import os
 from pathlib import Path
@@ -74,8 +75,10 @@ def main():
     built = list(wheels.glob("arclog-*.whl"))
     if len(built) != 1:
         raise RuntimeError(f"expected exactly one wheel, got {built}")
+    # The study's readers import numpy; pin the repository environment's version.
+    numpy = "numpy==" + importlib.metadata.version("numpy")
     run(["uv", "pip", "install", "--python", venv / "bin/python", "--no-deps",
-         built[0]], "install private wheel")
+         built[0], numpy], "install private wheel")
     helper = checks / "execution_evidence.py"
     manifest = dict(revision=revision, wheel=str(built[0]), python=str(venv / "bin/python"),
                     checks=str(checks), seconds=time.monotonic()-started,
