@@ -1,7 +1,6 @@
 # LM data study
 
-The live study sources and documents are here.
-lists the source inventory.
+The study's code is here.
 
 `study_paths.CODE_ROOT` names this directory in the current checkout.
 `study_paths.DATA_ROOT` names `work/lm/data-study` in the repository's main
