@@ -106,28 +106,26 @@ class Checker:
 
     def _available(self,record,native_base,item,ntrain,ntest):
         """Read only the old selector tables actually referenced by this witness."""
-        from tables import kept_groups
+        from tables import kept_groups,comparison_type
         witness=item['witness'];atoms=[a for branch in witness.get('selection_any',[witness.get('selection',[])]) for a in branch]
         used={a['available'] for a in atoms if a['kind'] in ('semijoin','antijoin')}
         metadata=item.get('available_metadata',[]);tables=[None]*len(metadata);receipts=[]
         if not used:return tables,receipts
-        if record['full_replay'].get('ident_namespace')!='shared task evaluator session':
+        # Certified input facts have no Ident columns and may come from
+        # native.gold even when full replay is absent.
+        needs_namespace=any(metadata[n]['identity'].get('proof')!='det_independent_native_fact' for n in used)
+        if needs_namespace and record['full_replay'].get('ident_namespace')!='shared task evaluator session':
             raise ValueError('stored mutant/available namespace agreement unavailable')
-        native=self.store.snapshot(record['full_replay']['gold'],native_base);ts=native['tables']
         for number in sorted(used):
-            meta=metadata[number];identity=meta['identity'];table=identity['table']
-            if identity.get('fact'):
-                candidates=[i for i,f in enumerate(ts['fact']) if f==identity['fact']]
-                if len(candidates)!=1:raise ValueError('stored selector fact identity ambiguous')
-                table=candidates[0]
-            else:
-                if str(ts['form'][table])!=str(identity['form']) or ts['relation'][table]!=identity['relation']:
-                    raise ValueError('stored selector table identity differs')
+            meta=metadata[number];identity=meta['identity']
+            native,table,selector_receipt=self.store.selector_snapshot(record,native_base,identity)
             grouped=kept_groups(self.ev.legacy,native,table,record,ntrain,ntest)
             fields=native['_native_reader'].schema(table);types=tuple(f['type'] for f in fields)
             local=identity.get('example_scope')=='train-local; leading Example removed'
             if local and (not types or types[0]!='Example'):raise ValueError('selector Example scope/type differs')
-            if tuple(meta['types'])!=(types[1:] if local else types):raise ValueError('stored selector physical schema differs')
+            actual=types[1:] if local else types
+            if tuple(map(comparison_type,meta['types']))!=tuple(map(comparison_type,actual)):
+                raise ValueError('stored selector physical schema differs after canonical comparison normalization')
             values=[]
             for test in range(ntest):
                 family=grouped['groups'].get((item['assignment'],2,test))
@@ -140,7 +138,7 @@ class Checker:
                     rows=frozenset(row[1:] for row in rows if row[0]==(ntrain+test,))
                 values.append(rows)
             tables[number]=dict(types=tuple(meta['types']),rows=tuple(values),identity=identity)
-            receipts.append(dict(available=number,table=table,native_ref=record['full_replay']['gold'],
+            receipts.append(dict(available=number,selector=selector_receipt,
                                  identity=identity,test_contexts=ntest,assignment=item['assignment']))
         return tables,receipts
 

@@ -597,6 +597,24 @@ The index resumes by source/code/result hashes and commits each source immediate
 python3 "$H" --cpus 1 python3 "$M/corpus_index.py" "$M/../corpus-v11" "$M/../corpus-v12-body-full" --output "$M/sources.sqlite3"
 ```
 
+Step 2 retry after the interrupted test check uses `step2_check.py
+--retry-unknown --compatible-boolean-producer CODE_SHA:CONFIG_SHA`. The explicit
+predecessor accepts only boolean witness results whose witness, source, base
+result and payload hashes still match. Their journal rows remain unchanged.
+Null results are retried, and missing checks are completed; base labels and
+completed true/false checks are never evaluated again. A newly written unknown
+is durable for ordinary resume; explicitly passing `--retry-unknown` retries it
+again. Pair grades are reduced from these journals without relabeling the base.
+
+The selector reader uses the shared exact source/identity resolver (including
+certified `native.gold` input facts), and compares Position/Box metadata through
+the canonical comparison type. Shared held-context matching decodes `slot N`
+and `&rN` consistently and permits one Ident renaming across all held slots.
+The shared raw gold BODY observer handles mechanical DET and exact INIT scope
+independently of judge eligibility. Merge the judgetool repair with this
+consumer before running: startup refuses missing helper APIs before opening
+the output journal. No tests or evaluations accompanied this repair.
+
 Remaining dependencies requested from owners: automatic native registry-site
 grounding, complete target-specific replay bindings, full X/G containment and
 reader-visible tuple-difference receipts, program train/test fit/refusal, and

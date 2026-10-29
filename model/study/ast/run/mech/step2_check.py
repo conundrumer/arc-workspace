@@ -66,7 +66,8 @@ class Pass:
             evaluator=ev.receipt,verification_seconds=args.verify_seconds,
             reuse='per-assignment bool; generalizes bool/0/1 on assignment 0',
             target='fresh raw gold BODY; public INIT point admission remains step 3',
-            policy='one application per missing witness; no search or mutant replay')
+            policy='one application per missing witness; no search or mutant replay',
+            compatible_boolean_producers=sorted(args.compatible_boolean_producer))
         self.store=GradeStore(args.output,self.manifest,config);self.db=self.store.db
         self.db.executescript('''
           CREATE TABLE IF NOT EXISTS witness_tests(
@@ -85,6 +86,13 @@ class Pass:
         self.db.execute('DELETE FROM step2_work');self.db.commit()
         self.checker=Checker(ev,verify_seconds=args.verify_seconds)
         self.counts=Counter();self.tasks={};self.total=self.base.execute('SELECT count(*) FROM pairs').fetchone()[0]
+        self.compatible={tuple(value.split(':',1)) for value in args.compatible_boolean_producer}
+        self.retry_unknown=set()
+        if args.retry_unknown:
+            for pair,assignment,payload in self.db.execute('SELECT pair_id,assignment,payload FROM witness_tests'):
+                if json.loads(payload).get('test_verified') is None:self.retry_unknown.add((pair,assignment))
+        self.retry_pairs={pair for pair,assignment in self.retry_unknown}
+
 
     def progress(self,phase,done,total,force=False):
         elapsed=time.monotonic()-self.start
@@ -114,8 +122,14 @@ class Pass:
             'config_sha256,result_sha256,payload FROM witness_tests WHERE pair_id=? AND assignment=?',
             (base['pair_id'],item['assignment'])).fetchone()
         expected=(digest(item['witness']),base['source_sha256'],digest(base),self.store.code,self.store.config_hash)
-        if row and tuple(row[:5])==expected and digest(json.loads(row[6]))==row[5]:
-            return json.loads(row[6])
+        if row and tuple(row[:3])==expected[:3] and digest(json.loads(row[6]))==row[5]:
+            result=json.loads(row[6]);producer=tuple(row[3:5])
+            if type(result.get('test_verified')) is bool and producer in self.compatible:
+                # Explicit predecessor acceptance applies ONLY to unchanged
+                # boolean payloads with exact pair/source/base/witness identity.
+                return result
+            if tuple(row[:5])==expected and (base['pair_id'],item['assignment']) not in self.retry_unknown:
+                return result
         return None
 
     def save_check(self,base,item,result):
@@ -127,9 +141,11 @@ class Pass:
             self.db.execute('INSERT OR REPLACE INTO witness_tests VALUES (?,?,?,?,?,?,?,?,?)',
                 (base['pair_id'],item['assignment'],digest(item['witness']),base['source_sha256'],
                  digest(base),self.store.code,self.store.config_hash,digest(result),canonical(result)))
+        self.retry_unknown.discard((base['pair_id'],item['assignment']))
         return result
 
     def completed(self,base):
+        if base['pair_id'] in self.retry_pairs:return False
         row=self.db.execute('SELECT base_result_sha256,code_sha256,config_sha256,evidence_sha256,'
             'grade_sha256 FROM step2_pairs WHERE pair_id=?',(base['pair_id'],)).fetchone()
         if not row or tuple(row[:3])!=(digest(base),self.store.code,self.store.config_hash):return False
@@ -152,6 +168,7 @@ class Pass:
         references=[dict(database=str(self.args.output.resolve()),table='witness_tests',pair_id=base['pair_id'],
             assignment=c['assignment'],result_sha256=digest(c)) for c in checks]
         evidence['witness_tests']=dict(schema='mech-pair-tests-v1',checks=references,
+            compatible_boolean_producers=sorted(self.args.compatible_boolean_producer),
             verified=sum(c['test_verified'] is True for c in checks),
             mismatch=sum(c['test_verified'] is False for c in checks),
             unknown=sum(c['test_verified'] is None for c in checks))
@@ -183,6 +200,7 @@ class Pass:
             grade,_=self.store.save(evidence,inputs_authenticated=False)
             self.db.execute('INSERT OR REPLACE INTO step2_pairs VALUES (?,?,?,?,?,?)',
                 (base['pair_id'],digest(base),self.store.code,self.store.config_hash,evidence_hash,digest(grade)))
+        self.retry_pairs.discard(base['pair_id'])
         self.counts['pairs_done']+=1
 
     def prepare(self):
@@ -303,16 +321,31 @@ def main():
     ap.add_argument('--base',type=Path,default=DATA_ROOT / 'ast/run/mech/labels.sqlite3')
     ap.add_argument('--output',type=Path,default=DATA_ROOT / 'ast/run/mech/settled.sqlite3')
     ap.add_argument('--summary',type=Path,default=DATA_ROOT / 'ast/run/mech/step2-summary.json')
+    ap.add_argument('--retry-unknown',action='store_true',help='retry null/missing checks; never rerun completed booleans')
+    ap.add_argument('--compatible-boolean-producer',action='append',default=[],metavar='CODE_SHA:CONFIG_SHA',
+                    help='accept byte-identical boolean results from this explicit predecessor')
     ap.add_argument('--deadline',type=float,default=30)
     ap.add_argument('--verify-seconds',type=float,default=5)
     ap.add_argument('--artifacts',type=Path,default=DATA_ROOT / 'judgetool/mech-step2')
     args=ap.parse_args()
+    for value in args.compatible_boolean_producer:
+        parts=value.split(':')
+        if len(parts)!=2 or any(len(p)!=64 or any(c not in '0123456789abcdef' for c in p) for p in parts):
+            ap.error('expected CODE_SHA:CONFIG_SHA for compatible boolean producer')
     if args.base.resolve()==args.output.resolve():ap.error('base and output must differ')
     if not args.output.exists():ap.error('step 1 settled database is required')
     if args.deadline<=0 or args.verify_seconds<=0:ap.error('bounds must be positive')
+    sys.path[:0]=[str(STUDY/'judgetool'),str(STUDY/'ast/run')]
+    # Refuse an incomplete shared-helper deployment before opening the journal.
+    # Missing repair APIs must not turn thousands of pairs into unknown records.
+    import tables
+    required=('comparison_type','decode_kept','compatible_kept')
+    missing=[name for name in required if not callable(getattr(tables,name,None))]
+    if not callable(getattr(tables.TargetStore,'selector_snapshot',None)):
+        missing.append('TargetStore.selector_snapshot')
+    if missing:ap.error('shared test-check repairs must be merged first: '+', '.join(missing))
     lock=args.output.with_suffix('.postprocess.lock').open('a');fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
     signal.signal(signal.SIGTERM,stop);signal.signal(signal.SIGINT,stop)
-    sys.path[:0]=[str(STUDY/'judgetool'),str(STUDY/'ast/run')]
     from evaluator import ReplayEvaluator
     ev=ReplayEvaluator(deadline=args.deadline,artifacts=args.artifacts)
     worker=None
