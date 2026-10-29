@@ -543,6 +543,16 @@ receipt_authenticated remains false until the caller has authenticated its input
 receipts. reduce_grades deliberately does not authenticate arbitrary input JSON.
 The document owner must validate the referenced receipt chain before prompting.
 
+`registry_plan.registry_atoms` exposes finite native atom syntax with independent
+budgets for predicates and each computation mode, rotating relations and modes
+so a predicate budget cannot consume the computation budget. Computed output
+labels and types are explicit. `available_atoms` grounds resolver-admitted
+canonical callable templates as selectors, including positive existential
+joins. Neither helper evaluates library semantics, proves one-row behavior,
+authenticates supplied availability, or certifies exhaustive coverage. The
+caller retains source receipts and the shared evaluator checks each candidate.
+The compatibility `registry_candidates` wrapper supplies explicit output columns.
+
 `lib_plan.py:candidates` lazily produces type-compatible X projections, supplied
 grounded lib computations and combinations of supplied restriction atoms, plus
 explicit clauses (including union candidates). Atoms are syntax, never Python
