@@ -1,7 +1,7 @@
 # LM data study
 
 The live study sources and documents are here.
-lists the source inventory. [Plan](plan.md) describes the pipeline.
+lists the source inventory.
 
 `study_paths.CODE_ROOT` names this directory in the current checkout.
 `study_paths.DATA_ROOT` names `work/lm/data-study` in the repository's main
