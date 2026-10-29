@@ -98,7 +98,14 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
         shared = features.with_name(features.name + '.building-' + str(os.getpid()))
         shutil.rmtree(shared, ignore_errors=True)
     if adapter['input']['binding']['kind'] == 'Det':
-        raise ValueError('DET pairs are not judged')
+        if features is None:
+            raise ValueError('DET pairs are not judged')
+        if (adapter.get('scope') != 'TRAIN_features_only_noncallable'
+                or any(binding.get('callable') is not False or binding.get('callable_template') is not None
+                       for binding in adapter['bindings'].values())):
+            raise ValueError('DET features require the certified noncallable adapter')
+        # acquire_train_point validates the complete source-bound reader/header
+        # certificate before reading X/G. No judge callable is introduced.
     store = TargetStore(ev.legacy, CODE_ROOT)
     producer = MetadataProducer(engine=ev.arclog,
         read_native=lambda ref, base: store.snapshot(ref, base)['_native_reader'],
