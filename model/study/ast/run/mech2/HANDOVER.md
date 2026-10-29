@@ -1,17 +1,17 @@
 # Normal-form owner handover
 
-The repository copy now includes the table identity and atomic setup repair, unavailable-only retry, and mixed-producer read adapter. The refresh patch was applied after changing its paths to `model/study`. No retired source under S was edited during this migration turn. Data outputs remain under `study_paths.DATA_ROOT/ast/run/mech2`.
+The coordinator's retry finished with mutants normal 100,331, non-normal 11,448, unavailable 4,605; gold points normal 14,393, non-normal 100, unavailable 43. Read-only grouping: mutants projection-only 3,919, layout/entries-only 630, both 56; gold points projection-only 18, layout/entries-only 25. These groups were added to the data summary.json with a pending-repair note. No retired source under S was edited.
 
-The initial coordinator run reported mutants normal 87,512, non-normal 997, unavailable 27,875; gold points normal 13,009, non-normal one, unavailable 1,526. Read-only inventory identified 2,658 missing-table errors and 25,217 missing-tabs errors. The repair supplies the writer interface's explicit table IDs and finishes setup before caching objects. The coordinator's retry result is still pending.
+Source/metadata review found adapter defects: trailing INIT SKIP tokens can become a prefix to the next RULE in CaseRows' declaration scanner; the parquet width helper treats native Position/Offset aliases as scalars; full gold replay can be empty while the point-prefix snapshot holds the needed tables. The worktree fixes form spans, uses canonical native widths, and consults both stored gold snapshots through CaseRows. A complete mapped multi-row observation rules out one-row; missing evidence remains explicit. No native/program evaluation or tests were run. Bounded metadata inspection demonstrated correct rule headers/spatial spans and available prefix tables behind empty full replays.
 
-The migration compatibility receipt permits only the reviewed legacy manifest hashes, exact migrated dependencies, and the repaired classifier class ASTs. Existing classified rows retain their producer hashes. Syntax parsing and source comparisons were performed; no classification, evaluation, or tests were launched here.
-
-After merge, the coordinator can run:
+The width defect can affect earlier classified row-dependent attributes. Unavailable-only retry cannot repair those. Current classifier class hashes deliberately fail legacy compatibility. After merge run:
 
 ```sh
-/Users/davidlu/code/arc-workspace/scripts/run_heavy.py --cpus 1 /Users/davidlu/code/arc-workspace/work/lm/.venv/bin/python /Users/davidlu/code/arc-workspace/model/study/ast/run/mech2/classify_normal.py --retry-unavailable
+/Users/davidlu/code/arc-workspace/scripts/run_heavy.py --cpus 1 /Users/davidlu/code/arc-workspace/work/lm/.venv/bin/python /Users/davidlu/code/arc-workspace/model/study/ast/run/mech2/classify_normal.py
 ```
 
-Review the returned counts and any remaining unavailable reasons before reporting completion. The read-only consumer remains `read_normal.load_normal`. Next owner message request ID is 7710007. The earlier codex-adm handover under S is historical; update this worktree file going forward.
+This computes the normal attribute from stored streams and rows, without relabeling the base or replaying programs. Structural cases avoid row acquisition and carry row_independent. New output has source/entry receipts, exclusive cause counts, explanations, and pre-repair counts. Missing/faulted relations or stopped/count-only entries can be intrinsically insufficient; unresolved mapping remains an adapter limitation. Current generic diagnostics do not establish any of the 4,648 rows as intrinsically undecidable.
 
-Git staging and committing were blocked because the sandbox could not create `.git/worktrees/n-mech2/index.lock` in the main repository. The worktree changes remain uncommitted. Proposed commit message: `Fix normal-form stored table adapter and preserve results across study migration`.
+Open work: merge, coordinator run, inspect concrete remaining causes, publish corrected counts. Owner notice sent to n-mech as 7710007. Next request ID: 7710008.
+
+Git staging/commit were blocked at the main repository .git/worktrees/n-mech2/index.lock. Changes remain uncommitted. Proposed commit message: Fix normal-form native spans and prefix mapping; report unavailable causes.
