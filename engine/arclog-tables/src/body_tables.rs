@@ -32,14 +32,14 @@ pub(crate) fn examples_reusing(decoder:&Decoder<'_>,checked:&CheckedProgram,view
     }
 }
 
-pub fn contents(decoder:&Decoder<'_>,checked:&CheckedProgram,view:&BodyView,slot:u32,dets:&[Det],examples:Vec<ExampleRows>,work:&TableWork,earlier:&[&Table])->Outcome<Contents> {
-    contents_with_context(decoder, checked, view, slot, dets, examples, work, earlier, AssignmentContext::Search)
+/// Study body evidence retains full rows through annotation and bounded packing.
+pub fn contents(decoder:&Decoder<'_>,checked:&CheckedProgram,view:&BodyView,slot:u32,dets:&[Det],examples:Vec<ExampleRows>,earlier:&[&Table])->Outcome<Contents> {
+    contents_with_context(decoder, checked, view, slot, dets, examples, earlier, AssignmentContext::Search)
 }
 
-pub(crate) fn contents_with_context(decoder:&Decoder<'_>,checked:&CheckedProgram,view:&BodyView,slot:u32,dets:&[Det],examples:Vec<ExampleRows>,work:&TableWork,earlier:&[&Table],context:AssignmentContext<'_>)->Outcome<Contents> {
+pub(crate) fn contents_with_context(decoder:&Decoder<'_>,checked:&CheckedProgram,view:&BodyView,slot:u32,dets:&[Det],examples:Vec<ExampleRows>,earlier:&[&Table],context:AssignmentContext<'_>)->Outcome<Contents> {
     let mut contents = metadata(decoder, checked, view, slot, dets, examples, earlier)?;
     contents.assignment_layout=context.layout();
-    super::add_projections(decoder, &mut contents, &view.form, work);
     contents.extents=crate::extents::body_extents_with_context(decoder,earlier,checked,view,&contents,context);
     Ok(contents)
 }

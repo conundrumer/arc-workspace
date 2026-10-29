@@ -215,7 +215,7 @@ fn clause_tables(program:&StudyProgram,origin:&Arc<CheckedProgram>,body:&NodePat
     let slot=written.relations.len() as u32;
     let point=Point::Body {conjuncts:view.clause.nodes.len() as u32,sites:0};
     let index=written.forms.iter().find(|f|f.path==view.form).ok_or_else(||fault("body owner is absent from the written stream",body))?.tokens.end.saturating_sub(1);
-    let held=super::body_tables::contents(decoder,program.checked(),&view,slot,&dets,examples,&work,&seen)?;
+    let held=super::body_tables::contents(decoder,program.checked(),&view,slot,&dets,examples,&seen)?;
     tables.push((index,Table {form:view.form.clone(),point,contents:Ok(held)}));
     let work=decoder.table_work();
     let limits=decoder.limits().counted_in(work.clone());
@@ -224,7 +224,7 @@ fn clause_tables(program:&StudyProgram,origin:&Arc<CheckedProgram>,body:&NodePat
     let completed=&tables.last().expect("the all-assignment body table just inserted").1.contents.as_ref().expect("body contents was checked").examples;
     let examples=super::body_tables::examples_reusing(decoder,program.checked(),&view,&dets,&work,context,Some(completed));
     let seen=tables[..tables.len()-1].iter().map(|(_,t)|t).collect::<Vec<_>>();
-    let held=super::body_tables::contents_with_context(decoder,program.checked(),&view,slot,&dets,examples,&work,&seen,context)?;
+    let held=super::body_tables::contents_with_context(decoder,program.checked(),&view,slot,&dets,examples,&seen,context)?;
     tables.push((index,Table {form:view.form,point,contents:Ok(held)}));
     Ok(ClauseTables {tables,names:written.relations.iter().map(|n|(n.clone(),n.clone())).collect(),prefix})
 }
