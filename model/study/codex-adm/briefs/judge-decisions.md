@@ -1,6 +1,6 @@
 # Judge path specification
 
-This file is the complete specification for the judge's document, its brief and its tool. Where another text differs from it, this file holds. S is /Users/davidlu/code/arc-workspace/work/lm/data-study. P is /Users/davidlu/code/arc-workspace/work/lm/data-study/ref/progsynth-relabel, a copy of another session's work.
+This file is the complete specification for the judge's input, its brief and its tool. Where another text differs from it, this file holds. S is /Users/davidlu/code/arc-workspace/work/lm/data-study. P is /Users/davidlu/code/arc-workspace/work/lm/data-study/ref/progsynth-relabel, a copy of another session's work.
 
 ## Terms
 
@@ -63,6 +63,6 @@ Attributes: `redundant`, `sibling`, and the continuation's outcome.
 
 ## Ownership
 
-- n-judgedoc owns the document and the whole judge brief.
+- n-judgedoc owns the pair data and the whole judge brief.
 - n-judgetool owns the tool and the evaluator, and gives n-judgedoc the brief's text on using the tool.
 - n-mech owns the labeler and the grade.
