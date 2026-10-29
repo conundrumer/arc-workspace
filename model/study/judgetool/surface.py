@@ -31,23 +31,28 @@ def site_bindings(L, atom, template):
     result={}
     def match(want, have):
         expected={s[0]:s for s in want if isinstance(s,list)}
+        positional=[s for s in want if isinstance(s,str)]
+        at=0
         for site in have:
             if isinstance(site,str):
+                if positional:
+                    if at>=len(positional):
+                        raise ValueError('too many positional callable arguments')
+                    spec=positional[at];at+=1
+                    if not (spec.startswith('*V') and spec[2:].isdigit()):
+                        raise ValueError('unsupported positional callable field')
+                    index=int(spec[2:])
+                    if index in result:
+                        raise ValueError('callable field bound more than once')
+                    result[index]=site
+                    continue
                 site=[':'+site.lstrip('*^'),site]
             if not isinstance(site,list) or not site or site[0] not in expected:
                 raise ValueError('site not in callable template for '+atom[0])
             spec=expected[site[0]]
             if len(spec)!=len(site):
                 raise ValueError('site arity differs from callable template')
-            for a,b in zip(spec[1:],site[1:]):
-                if isinstance(a,list):
-                    if not isinstance(b,list):
-                        raise ValueError('structured site needs the nested callable template')
-                    match([a],[b])
-                elif a.startswith('*V') and a[2:].isdigit() and isinstance(b,str):
-                    result[int(a[2:])]=b
-                else:
-                    raise ValueError('unsupported callable site')
+            match(spec[1:],site[1:])
     match(L.parse(template)[1:],atom[1:])
     return result
 
