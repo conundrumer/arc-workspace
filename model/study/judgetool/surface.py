@@ -52,6 +52,40 @@ def site_bindings(L, atom, template):
     return result
 
 
+def explicit_key_fields(node):
+    """Keep authored key field identities explicit before alpha-renaming."""
+    if not isinstance(node,list):return node
+    if node and node[0]==':key':
+        return [node[0]]+([[':'+v.lstrip('*^'),v] if isinstance(v,str) and v!='0' else explicit_key_fields(v) for v in node[1:]])
+    return [explicit_key_fields(v) for v in node]
+
+
+def native_body_labels(nodes,node):
+    """Authenticate a copied BODY's spellings against native label-node IDs."""
+    path=tuple(node['path']);names={}
+    for at,label in nodes.items():
+        if at[:len(path)]!=path or label['kind']!='label':continue
+        identity=label['data'].get('label_id')
+        if identity is None:continue
+        name=label['sexp'].strip().lstrip('*^')
+        if name in names and names[name]!=identity:
+            raise ValueError('nested BODY spellings need a path-aware scoped label adapter')
+        names[name]=identity
+    return names
+
+
+def native_body_atoms(L,node,names,output_names,*,given=()):
+    """Copy native BODY text with ID-based alpha names and explicit key fields."""
+    def rename(label):
+        if label=='0':return label
+        identity=names.get(label.lstrip('*^'))
+        if identity is None:raise ValueError('BODY label has no native scoped identity')
+        name=output_names.get(identity,'RawLocal'+str(identity))
+        make=label[:1] in ('*','^') and identity not in given
+        return ('*' if make else '')+name
+    return L.rename_labels(explicit_key_fields(L.parse(node['sexp'])),rename)
+
+
 def prepare(L,record,clause,adapter):
     fix=L.parse(clause)
     if not isinstance(fix,list) or len(fix)<3 or fix[0] not in ('RULE','DET') or fix[1]!='&fix':
@@ -63,14 +97,6 @@ def prepare(L,record,clause,adapter):
     binding=adapter['input']['binding']; fields=binding['projected_schema']
     body_labels=[c['native_label_identity']['source_label_spelling'] for c in binding['source_body_schema']]
     reads=[]; private=0; aliases={}; unmake=set()
-    def key_shorthand(node):
-        # In an authored key record, `(:key Id)` is shorthand for the
-        # field named Id. Alpha-renaming Id must not rename that field.
-        # Make its field identity explicit BEFORE P's label renamer runs.
-        if not isinstance(node,list):return node
-        if node and node[0]==':key':
-            return [node[0]]+([[':'+v.lstrip('*^'),v] if isinstance(v,str) and v!='0' else key_shorthand(v) for v in node[1:]])
-        return [key_shorthand(v) for v in node]
     def names(node):
         if not isinstance(node,list):
             return node
@@ -121,7 +147,7 @@ def prepare(L,record,clause,adapter):
                     else:
                         selected=selected[:3]+[p for p in selected[3:] if p[0]==port]
                 private+=1
-                selected=key_shorthand(selected)
+                selected=explicit_key_fields(selected)
                 old=L.FRESH
                 # Choose alpha names disjoint from the complete source/submission.
                 suffix='JudgePrivate'+str(private)

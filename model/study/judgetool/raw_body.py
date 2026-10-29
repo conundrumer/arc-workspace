@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 from evaluator import S,sha
 from tables import TargetStore,Incomplete
+from surface import tokens,native_body_labels,native_body_atoms
 
 
 def binding(ev,record,*,native_base):
@@ -52,9 +53,147 @@ def binding(ev,record,*,native_base):
         projection='identity in authenticated stored gold BODY physical order',header_helper=str(source)+':bind_body_schema')
 
 
-def observe_gold_body(ev,record,*,native_base,ntrain,ntest):
-    from checks import observe_gold
+def _standalone_gold_body(ev,record,*,native_base,ntrain,ntest):
+    """Mechanical raw BODY observation, including DET and private INIT labels.
+
+    Copy the exact native-exported body node, plus its native key body for an
+    INIT input. This is not a judge admission path and does not read DET's
+    reader-projected relation or select an INIT port by its label set.
+    """
+    from checks import _replay_groups
+    from tables import comparison_type
     layout,receipt=binding(ev,record,native_base=native_base)
-    adapter=dict(input=dict(binding=layout),comparison_target=dict(binding=layout),relation_tokens={})
-    groups,observation=observe_gold(ev,record,adapter,layout,ntrain,ntest)
+    L=ev.legacy
+    program=ev.arclog.StudyProgram.from_sexp(record['gold_sexp'],ev.settings).decode_source()
+    export=json.loads(ev.arclog.study_program_export_json(program))
+    nodes={tuple(node['path']):node for node in export['nodes']}
+    body=nodes[tuple(layout['body_path'])]
+    if body['kind']!='body':raise Incomplete('raw observer path is not a native BODY node')
+    key_body=None;key_path=None;key_exports=set()
+    owner=nodes[tuple(layout['owner_path'])]
+    if owner['kind']=='init' and layout['input_port'] is not None:
+        components=[entry for entry in export['definitions']['registry']['entries']
+                    if entry['kind']=='component' and entry['name']==owner['data']['component']]
+        ports=[port for entry in components for port in entry['ports']['inputs']
+               if port['name']==layout['input_port']]
+        if len(ports)!=1 or ports[0]['reads_outputs']:
+            raise Incomplete('raw INIT input observer lacks an independent native port context')
+        keys=[nodes[tuple(path)] for path in owner['children'] if nodes[tuple(path)]['kind']=='init_key']
+        if len(keys)>1:raise Incomplete('native INIT key owner is ambiguous')
+        if keys:
+            key_bodies=[nodes[tuple(path)] for path in keys[0]['children'] if nodes[tuple(path)]['kind']=='body']
+            if len(key_bodies)!=1:raise Incomplete('native INIT key BODY is unavailable')
+            key_body=key_bodies[0];key_path=key_body['path']
+            key_exports={c['label_id'] for c in keys[0]['data']['columns']}
+    fields=layout['projected_schema']
+    output_names={f['native_label_identity']['label_id']:'V'+str(i) for i,f in enumerate(fields)}
+    key_names=native_body_labels(nodes,key_body) if key_body else {}
+    input_names=native_body_labels(nodes,body)
+    if (set(key_names.values()) & set(input_names.values()))-key_exports:
+        raise Incomplete('input BODY refers to a non-exported key-private identity')
+    atoms=(native_body_atoms(L,key_body,key_names,output_names) if key_body else [])
+    atoms+=native_body_atoms(L,body,input_names,output_names,given=key_exports)
+    clause=L.canonical_or(['RULE','&JudgeRawBody']+atoms)
+    forms=L.split_forms(record['gold_sexp'])
+    if not forms or L.parse(forms[-1])[0]!='OUT':raise Incomplete('raw observer requires final OUT')
+    occupied=set(tokens([L.parse(f) for f in forms]))
+    while clause[1] in occupied:clause[1]+='Q'
+    observed='\n'.join(forms[:-1]+[L.unparse(clause),forms[-1]])
+    own=dict(record,mutant_sexp=record['gold_sexp'])
+    replay,groups,columns=_replay_groups(ev,own,observed,len(forms)-1,ntrain,ntest,
+        dict(kind='mechanical-raw-gold-BODY-observer',body_path=layout['body_path'],key_path=key_path))
+    if groups is None or groups['missing']:raise Incomplete('raw gold BODY replay lacks compatible train/test contexts')
+    if len({name for name,ty in columns})!=len(columns):raise Incomplete('raw observer exported ambiguous scoped labels')
+    try:indices=[next(i for i,c in enumerate(columns) if c[0]=='V'+str(j)) for j in range(len(fields))]
+    except StopIteration:raise Incomplete('raw observer lacks a native BODY output label') from None
+    if any(comparison_type(columns[i][1])!=comparison_type(f['type']) for i,f in zip(indices,fields)):
+        raise Incomplete('raw observer physical types differ from authenticated BODY')
+    groups=dict(groups,groups={k:{frozenset(tuple(row[i] for i in indices) for row in rows) for rows in family}
+                              for k,family in groups['groups'].items()})
+    observation=dict(source='gold_full_replay',artifact=replay['artifact'],original_source_sha256=sha(record),
+        gold_program_sha256=sha(record['gold_sexp']),observer_program_sha256=sha(observed),
+        kept_context_sha256=sha(record['evaluation']['kept_assignments']),layout_sha256=sha(fields),
+        train_complete=True,test_complete=True,body_path=layout['body_path'],key_path=key_path,
+        key_export_label_ids=sorted(key_exports),
+        alpha_binding='native label-node identities per BODY; private identities distinct; input key exports join',
+        acquisition='exact native BODY/key node text; one full gold replay with OUT')
     return groups,dict(receipt,observation=observation,source='gold_full_replay',fields=layout['projected_schema'])
+
+
+def _point_gold_body(ev,record,layout,layout_receipt,ntrain,ntest):
+    from tables import decode_kept,kept_entries,read_table,comparison_type
+    replay=ev.gold_point_body(record)
+    if replay['engine']!='ran':raise Incomplete('native gold point acquisition: '+replay.get('reason','incomplete'))
+    report=replay['gold_report'];native=ev.captures[-1]['native'];ts=native['tables']
+    table=report['table_indices']['gold_kept'];view=report['body_view']
+    if not all(str(ts[k][table])==str(v) for k,v in view['native_table_selector'].items() if k in ('form','point')):
+        raise Incomplete('native gold point table does not match certified BODY')
+    schemas=report['full_det_schemas'];relations=[d['source_name'] for d in schemas];types=[d['types'] for d in schemas]
+    choices=[]
+    for i,values in enumerate(report['kept_assignments']):
+        decoded=decode_kept(ev.legacy,values,relations,types)
+        if set(decoded)!=set(relations):raise Incomplete('native FITS receipt lacks a full held assignment')
+        choices.append(dict(entry=i,example=(0,0),model=0,
+            assignment=tuple((name,rows) for name,(rows,width) in sorted(decoded.items())),rows=()))
+    matched=kept_entries(ev.legacy,choices,relations,types,record,1,0)
+    if matched['missing']:raise Incomplete('native gold FITS receipt lacks a saved full kept context')
+    old_by_fresh={e['entry']:e['kept_assignments'] for e in matched['contexts']}
+    # Do not infer fresh held ordinals from body DET subsets: stateful inputs
+    # may depend on owner state beyond the public body dependency signature.
+    maps=[m for m in report['gold_kept_assignment_map'] if m['table']==table]
+    if len(maps)!=1:raise Incomplete('native gold BODY lacks an exact held entry map')
+    entries=read_table(ev.legacy,native,table);mapping={m['table_entry']:m for m in maps[0]['entries']}
+    reader=native['_native_reader'];ordinals={entry:i for i,entry in enumerate(reader.bytable[table])}
+    # The exact source program/point is certified by replay. Authenticate its
+    # physical BODY field order using the same native header binder as binding.
+    schema=copy.deepcopy(reader.schema(table));source=S/'judge2/render2/headers.py'
+    fn=next(n for n in ast.parse(source.read_text()).body if isinstance(n,ast.FunctionDef) and n.name=='bind_body_schema')
+    namespace={'require':ev.legacy.native.__globals__['_NATIVE'].require}
+    exec(compile(ast.Module(body=[fn],type_ignores=[]),str(source),'exec'),namespace)
+    namespace['bind_body_schema'](dict(schema=schema),view)
+    by_label={c['ast_label_id']:c['index'] for c in schema}
+    fields=layout['projected_schema']
+    indices=[by_label[f['native_label_identity']['label_id']] for f in fields]
+    if any(comparison_type(schema[i]['type'])!=comparison_type(f['type']) for i,f in zip(indices,fields)):
+        raise Incomplete('native gold BODY physical type differs from source binding')
+    groups={};contexts=[]
+    for entry in entries:
+        mapped=mapping.get(ordinals[entry['entry']])
+        if mapped is None:raise Incomplete('native BODY entry has no held identity receipt')
+        kind,index=entry['example'];name={0:'task',1:'train',2:'test'}[kind]
+        if (mapped['example_kind'],mapped['example_index'],mapped['model'])!=(name,index,entry['model']):
+            raise Incomplete('native BODY entry differs from held map example/model')
+        old=old_by_fresh.get(mapped['kept_assignment'],[])
+        rows=frozenset(tuple(row[i] for i in indices) for row in entry['rows'])
+        examples=([(1,i) for i in range(ntrain)]+[(2,i) for i in range(ntest)] if kind==0 else [(kind,index)])
+        for assignment in old:
+            for axis,i in examples:groups.setdefault((assignment,axis,i),set()).add(rows)
+        contexts.append(dict(entry=entry['entry'],kept_assignments=old,native_held_assignment=mapped['kept_assignment']))
+    required={(a,k,i) for a in range(len(record['evaluation']['kept_assignments']))
+              for k,count in ((1,ntrain),(2,ntest)) for i in range(count)}
+    if not required or set(groups)!=required:raise Incomplete('native gold BODY lacks required kept train/test answers')
+    grouped=dict(groups=groups,required=required,missing=[],contexts=contexts,other_contexts=[],det_relations=ts['det_relations'][table])
+    observation=dict(source='gold_full_replay',artifact=replay['artifact'],original_source_sha256=sha(record),
+        gold_program_sha256=sha(record['gold_sexp']),observer_program_sha256=sha(record['gold_sexp']),
+        kept_context_sha256=sha(record['evaluation']['kept_assignments']),layout_sha256=sha(fields),
+        train_complete=True,test_complete=True,body_path=record['point'],table=table,
+        full_held_context='native gold OUT/FITS then original BODY HeldAssignments; complete full-slot Ident match',
+        native_pair_calls=1,mutant_side_work_included=True,mutant_verdicts_used=False,base_label_writes=0,
+        gold_point_receipt=replay)
+    return grouped,dict(layout_receipt,observation=observation,source='gold_full_replay',fields=fields)
+
+
+def observe_gold_body(ev,record,*,native_base,ntrain,ntest):
+    """At most one standalone replay, then one existing certified-pair fallback."""
+    from case_collector import _ReplayBudget
+    bounded=_ReplayBudget(ev,1)
+    try:
+        groups,receipt=_standalone_gold_body(bounded,record,native_base=native_base,ntrain=ntrain,ntest=ntest)
+    except (ValueError,KeyError,IndexError,TypeError) as error:
+        layout,proof=binding(ev,record,native_base=native_base)
+        groups,receipt=_point_gold_body(ev,record,layout,proof,ntrain,ntest)
+        receipt['standalone_failure']=str(error)
+    receipt['evaluations']=dict(standalone_replays=len(bounded.operations),
+        native_pair_calls=receipt['observation'].get('native_pair_calls',0),
+        max_native_operations=2,mutant_side_work_included=receipt['observation'].get('mutant_side_work_included',False))
+    return groups,receipt

@@ -314,6 +314,16 @@ def evaluate_cached(ev,record,clause,target,columns,selection,*,row_limit=100,ma
         if other_record['gold_sexp']!=record['gold_sexp'] or sha(binding['projected_schema'])!=sha(point[1]):
             raise Incomplete('requested gold observer is outside cached point binding')
         if (ntrain,ntest)!=(selection['ntrain'],selection['ntest']):raise Incomplete('cached example axes differ')
+        # The comparator checks keys present in its target, so an incomplete
+        # target must never reach it as if it were a complete gold observation.
+        required={(a,kind,i) for a in range(len(record['evaluation']['kept_assignments']))
+                  for kind,count in ((1,ntrain),(2,ntest)) for i in range(count)}
+        grouped=point[0]
+        if (not required or grouped.get('missing')
+                or set(grouped.get('required',()))!=required
+                or set(grouped.get('groups',{}))!=required
+                or any(not family for family in grouped['groups'].values())):
+            raise Incomplete('cached gold point lacks exact required kept train/test contexts')
         return point[0],point[3]
     def cached_targets(*args,**kwargs):
         return selection['targets'],selection['gaps'],selection['case_receipts'],selection['available']

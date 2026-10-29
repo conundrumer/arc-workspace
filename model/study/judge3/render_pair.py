@@ -1037,8 +1037,6 @@ class Document:
             source=self.source_context,
             programs=dict(gold=self.r['programs']['gold'], mutant=self.r['programs']['mutant']),
             relation_tokens=self.names.tokens,
-            decisions=dict(path=str((S/'codex-adm/briefs/judge-decisions.md').resolve()),
-                           sha256=sha((S/'codex-adm/briefs/judge-decisions.md').read_bytes())),
             equality=dict(scope='for every compatible kept assignment and every train/test input',
                 criterion='equality of complete SETS of model row SETS after the fixed output-field binding',
                 model_alignment='none; model ordinals are independent, never zipped',
@@ -1185,8 +1183,7 @@ def dependencies(engine):
     paths += [S / 'judge2/support' / name for name in ('tableview.py', 'views.py')]
     paths += [S / 'ast/run/native_storage.py', S / 'ast/run/next_revision/family_recovery.py',
               Path(reader_metadata()['source'])]
-    paths += [ROOT/'brief-core.md', ROOT/'catalog.py', ROOT/'tool-usage.md',
-              S/'codex-adm/briefs/judge-decisions.md']
+    paths += [ROOT/'brief-core.md', ROOT/'catalog.py', ROOT/'tool-usage.md']
     return {str(path.resolve()): sha(path.read_bytes()) for path in paths}
 
 

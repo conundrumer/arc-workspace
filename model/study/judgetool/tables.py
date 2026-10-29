@@ -3,6 +3,7 @@ import ast
 from collections import Counter
 import itertools
 from pathlib import Path
+import re
 import time
 
 _PROJECT=None
@@ -28,6 +29,67 @@ class Incomplete(ValueError):
     pass
 
 
+def comparison_type(name):
+    """The shared comparison schema treats Position and Box as four margins."""
+    return 'Box' if name in ('Position','Box') else name
+
+
+def decode_kept(L,kept,det_relations,det_types,skip=()):
+    """Adapt stored ``slot N`` and fresh ``&rN`` identities to P's decoder.
+
+    Native row decoding and prefix compatibility remain in the canonical P
+    helper. Return keys in this table's own namespace, never guessed ordinals.
+    """
+    def canonical(name):
+        match=re.fullmatch(r'(?:slot |&r)([0-9]+)',name)
+        if not match:raise Incomplete('unsupported DET slot identity: '+str(name))
+        return '&r'+str(int(match[1]))
+    aliases={canonical(name):name for name in det_relations}
+    if len(aliases)!=len(det_relations):raise Incomplete('ambiguous native DET slot aliases')
+    adapted=[dict(item,relation='slot '+canonical(item['relation'])[2:]) for item in kept]
+    decoded=L.decode_kept(adapted,[canonical(name) for name in det_relations],det_types,
+                          skip=tuple(canonical(name) for name in skip))
+    return {aliases[name]:value for name,value in decoded.items()}
+
+
+def compatible_kept(L,entry_assignment,want,det_relations,det_types,*,seconds=10):
+    """One Ident renaming across every held DET slot, using _id_equal.
+
+    P decodes held values; native reader decodes entries. Tag their flat prefix
+    rows by slot and non-Ident contents, then compare one relational structure.
+    Padding has an explicit arity tag, so its private sentinel cannot match a
+    real Ident. No values from separate entries/models are combined.
+    """
+    have=dict(entry_assignment);types=dict(zip(det_relations,det_types))
+    if not set(want)<=have.keys():return False
+    plans=[];maximum=0
+    for slot,name in enumerate(sorted(want)):
+        rows,width=want[name];positions=[];at=0
+        for ty in types[name]:
+            if at>=width:break
+            if ty=='Ident':positions.append(at)
+            at+=4 if ty in L.BOXES else 1
+        if at!=width:raise Incomplete('held DET prefix does not end at a physical column boundary')
+        plans.append((slot,name,rows,width,positions))
+        maximum=max(maximum,len(positions))
+    if L.compatible(entry_assignment,want):return True
+    left=[];right=[]
+    for slot,name,rows,width,positions in plans:
+        for collection,values in ((left,rows),(right,have[name])):
+            for row in values:
+                flat=tuple(L.flat(row)[:width])
+                if len(flat)!=width:raise Incomplete('native DET row shorter than held prefix')
+                ids=tuple(flat[i] for i in positions)
+                rest=tuple(v for i,v in enumerate(flat) if i not in positions)
+                collection.append(((slot,len(ids))+rest,ids))
+    ids=[v for collection in (left,right) for _,values in collection for v in values]
+    sentinel=min(ids,default=0)-1
+    def encode(collection):
+        return frozenset((tag,)+tuple((v,) for v in values)+((sentinel,),)*(maximum-len(values))
+                         for tag,values in collection)
+    return _id_equal(encode(left),encode(right),['Number']+['Ident']*maximum,time.monotonic()+seconds)
+
+
 def read_table(L,n,t,*,example_kinds=None):
     reader=n['_native_reader']; entries=[]
     for index in reader.bytable[t]:
@@ -40,14 +102,24 @@ def read_table(L,n,t,*,example_kinds=None):
 
 
 def kept_groups(L,n,t,record,ntrain,ntest,indices=None):
-    ts=n['tables']; entries=read_table(L,n,t)
-    wants=[L.decode_kept(k,ts['det_relations'][t],ts['det_types'][t]) for k in record['evaluation']['kept_assignments']]
-    slots=set(ts['det_relations'][t]); groups={}; contexts=[]; others=[]
+    ts=n['tables']
+    return kept_entries(L,read_table(L,n,t),ts['det_relations'][t],ts['det_types'][t],record,ntrain,ntest,indices)
+
+
+def kept_entries(L,entries,det_relations,det_types,record,ntrain,ntest,indices=None):
+    """Same kept selection for lossless cached read_table entries (no decoder)."""
+    wants=[decode_kept(L,k,det_relations,det_types) for k in record['evaluation']['kept_assignments']]
+    slots=set(det_relations); groups={}; contexts=[]; others=[];memo={}
     for e in entries:
-        matching=[a for a,w in enumerate(wants) if set(w)==slots and L.compatible(e['assignment'],w)]
+        assignment=tuple((name,tuple(tuple(r) for r in rows)) for name,rows in e['assignment'])
+        if assignment not in memo:
+            if len(memo)>=128:memo.clear()
+            memo[assignment]=[a for a,w in enumerate(wants) if set(w)==slots and compatible_kept(
+                L,assignment,w,det_relations,det_types)]
+        matching=memo[assignment]
         if not matching:
             others.append(e); continue
-        rows=e['rows'] if indices is None else projected_rows(L,e['rows'],indices)
+        rows=tuple(tuple(tuple(c) for c in row) for row in e['rows']) if indices is None else projected_rows(L,e['rows'],indices)
         contexts.append(dict(e,kept_assignments=matching))
         kind,index=e['example']
         examples=[(1,i) for i in range(ntrain)]+[(2,i) for i in range(ntest)] if kind==0 else [(kind,index)]
@@ -59,7 +131,7 @@ def kept_groups(L,n,t,record,ntrain,ntest,indices=None):
         raise Incomplete('empty required assignment/example axis')
     missing=sorted(wanted-groups.keys())
     return dict(groups=groups,missing=missing,contexts=contexts,other_contexts=others,
-                det_relations=ts['det_relations'][t],required=wanted)
+                det_relations=det_relations,required=wanted)
 
 
 def _id_equal(a,b,types,deadline,*,subset=False):
@@ -114,7 +186,7 @@ def compare(candidate,columns,target,fields,*,explicit=None,seconds=10,relation=
     names=[c[0] for c in columns]; types=[c[1] for c in columns]
     target_names=[c.get('field_name',c.get('name')) for c in fields]
     target_types=[c['type'] for c in fields]
-    def kind(t):return 'Box' if t in ('Position','Box') else t
+    kind=comparison_type
     def valid(choice):
         return len(choice)==len(fields) and all(kind(types[i])==kind(t) for i,t in zip(choice,target_types))
     if explicit is not None:
@@ -191,6 +263,29 @@ class TargetStore:
         key=(str(Path(base).resolve()),str(ref))
         if key not in self.cache:self.cache[key]=self.L.native(self.load_native(ref,Path(base).resolve()))
         return self.cache[key]
+
+    def selector_snapshot(self,record,base,identity):
+        """Resolve a stored selector in the snapshot that supplied its proof.
+
+        Only the mechanical inventory's explicit DET-independent fact fallback
+        selects the compact gold snapshot. Other selectors use full gold replay.
+        No table index is transferred between these sources.
+        """
+        fallback=identity.get('proof')=='det_independent_native_fact'
+        if fallback and identity.get('fact')!='ex_input':
+            raise Incomplete('unsupported stored selector fallback proof')
+        ref=record['native']['gold'] if fallback else record['full_replay']['gold']
+        native=self.snapshot(ref,base);ts=native['tables'];table=identity['table']
+        if not 0<=table<len(ts['form']):raise Incomplete('stored selector table index absent in its source')
+        if identity.get('fact'):
+            if ts['fact'][table]!=identity['fact']:raise Incomplete('stored selector fact identity differs')
+        elif (str(ts['form'][table])!=str(identity['form'])
+              or ts['relation'][table]!=identity['relation']):
+            raise Incomplete('stored selector table identity differs')
+        if fallback and ts['det_relations'][table]:
+            raise Incomplete('stored fact fallback is not DET-independent')
+        return native,table,dict(native_ref=ref,table=table,identity=identity,
+            source='native_gold_fact_fallback' if fallback else 'gold_full_replay')
 
     def target(self,record,adapter,binding,ntrain,ntest):
         # FULL replay is the source for target test data; compact display

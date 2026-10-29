@@ -127,7 +127,8 @@ no exhaustive branch-available population is inferred.
 acquires a fresh gold table in the exact raw stored mechanical BODY layout,
 including INIT private witnesses. It authenticates gold_all against the exact
 body view and uses the producer's `headers.bind_body_schema` to map physical
-columns by native LabelId, then delegates to the same gold observer/replay core.
+columns by native LabelId, then copies the exact exported BODY/key node into a standalone observer through
+the same replay core, including mechanical DET bodies and private INIT labels.
 It does not assume that body order is written-relation order or substitute an
 INIT public input projection. Missing scalar identities fail closed.
 
@@ -179,3 +180,73 @@ This additive collector has source/syntax review only; no collector replay or
 runtime qualification has been performed. Unsupported BODY observers remain
 explicit gaps. The v5 recorded sessions use the existing tool route and remain
 data under `DATA_ROOT/judgetool/review-v5`, separate from collector qualification.
+
+Stored snapshot consumers use `tables.decode_kept` to bridge native `slot N`
+and fresh `&rN` dependency names while delegating value decoding to the existing
+P helper. `kept_groups` and replay coverage share this adapter. Schema-only
+comparisons use `tables.comparison_type`, which treats Position and Box as four
+margins without changing the lossless native schema.
+
+For historical selector witnesses, `TargetStore.selector_snapshot(record,
+base, identity)` selects the exact saved source: an explicitly certified
+DET-independent `ex_input` fallback comes from `record.native.gold`; other
+selectors come from `record.full_replay.gold`. The original table index and
+selector are authenticated within that source. The returned receipt records
+which source was used; a table index is never transferred between snapshots.
+
+Mechanical pass 4 may set `ReplayEvaluator(artifacts=DATA_ROOT/'ast/run/mech4'/
+SUBDIRECTORY)`. Artifact paths are resolved and restricted to that root or the
+existing `DATA_ROOT/judgetool` root. This is an output-path allowance, not a
+separate evaluator or a change in verification policy.
+
+`tables.compatible_kept` compares held DET contexts with one consistent Ident
+renaming across all slots. It uses P's decoded held prefixes and native entry
+values, encoding slot-tagged rows for the existing bounded relational comparator.
+It never independently renames each slot or unions entries/models. Both replay
+coverage and `kept_groups` use this same matcher.
+
+`raw_body.observe_gold_body` is a mechanical observation route, separate from
+judge admission. It copies the exact exported BODY node text (and the exact
+INIT key BODY for an input), preserving the original full program and OUT.
+It can observe DET bodies without reading a reader-projected DET relation.
+This newly repaired route and the held-context adapter await runtime qualification.
+
+### Shared repair handoff
+
+`raw_body.observe_gold_body` now falls back, at most once, to
+`ReplayEvaluator.gold_point_body(record)` when a standalone observer cannot
+preserve scope or produce complete kept answers. This uses the existing
+`TaskEvaluator.replay` and `evaluate_pair` APIs and the exact canonical catalogue
+source handle. Native gold OUT/FITS precedes the original-scope BODY query under
+full HeldAssignments; native entry maps bind those full contexts to saved kept
+values. Only GOLD evidence is retained. The native API also performs historical
+mutant-side work, disclosed in receipts; its verdict is not reused and no base
+label is written. There is no new endpoint or copied library evaluator. The
+wrapper allows at most one standalone replay plus one native pair call.
+
+`out_fit.check(ev, record, ntrain=..., ntest=..., gold_cache=None)` returns plain
+JSON with `fits_test` (bool/null), `complete`, `reason`, an `evaluations` count
+dictionary, `evidence_files` path/SHA256 pairs and a binding receipt. It copies
+the exact native OUT BODY/key projection into an observer before the original
+OUT, using `out_bindings_json` LabelIds. Gold all-assignment entries are cached
+by task/case/program/runtime/settings/code/task-file/axes, and each pair selects
+its kept contexts through `kept_entries`. Cached values remain JSON-compatible
+and are not mutated. Complete TEST equality to gold is the approved sufficient
+positive. Additional/differing families remain unknown unless a sound negative
+is established; this is not a replacement implementation of accepted-grid fit.
+
+`replay_program(..., retain_forms=[...])` retains all rows/assignments/models at
+those exact form indices in artifacts. It is mutually exclusive with
+`retain_all`; list size and indices are bounded by the submitted program.
+Artifact roots also include `DATA_ROOT/ast/run/mech5`, in addition to mech4 and
+judgetool. These changes are source-reviewed, not runtime-qualified by a
+mechanical launch. Only separately authorized four-session judge-tool recordings
+were regenerated; their reader pages remain under `DATA_ROOT/judgetool/review-v5`.
+The subsequent dataset redesign and six dataset-only sessions are still pending.
+
+Specification prose is not runtime provenance: the CLI and evaluator do not
+read or hash the judge specification, and edits to its wording do not invalidate
+results. Historical records may retain specification hash fields; they are not
+used as validity gates. Pair and render identities identify the input supplied
+for a recorded session, rather than a current prose policy. Code/runtime,
+source-data and configuration receipts remain the execution provenance.

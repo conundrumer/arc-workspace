@@ -1,5 +1,6 @@
 """Small judge-facing view; full receipts stay in stored records."""
 import json
+from collections import Counter
 
 
 def clause(result):
@@ -23,7 +24,7 @@ def clause(result):
                 row_count=g['row_count'],rows=g['rows'],omitted_rows=g['omitted_rows']))
         view['table']=dict(columns=[name+':'+ty for name,ty in table['columns']],groups=groups,
                            total_rows=table['total_rows'],omitted_rows=table['omitted_rows'])
-    groups={}
+    groups={};other=Counter()
     for item in result.get('comparisons',[]):
         c=item['comparison'];name=item['target_id']
         if c['status']=='equal':detail=dict(result='equal on train and test')
@@ -37,14 +38,15 @@ def clause(result):
                 differences.append(value)
             detail=dict(differs=differences)
         else:
-            why=c.get('reason','rows differ')
-            if c.get('target_columns') is not None:why+=f" ({c['candidate_columns']} vs {c['target_columns']} columns)"
-            detail=dict(difference=why)
+            why=c.get('reason','no compatible column binding' if c.get('choices_tried')==0 else 'comparison incomplete')
+            other[why]+=1
+            continue
         key=json.dumps(detail,sort_keys=True)
         if key not in groups:groups[key]=dict(targets=[],**detail)
         groups[key]['targets'].append(name)
     targets=list(groups.values())
     if targets:view['targets']=targets
+    if other:view['other_targets']=[dict(count=count,reason=reason) for reason,count in sorted(other.items())]
     return view
 
 

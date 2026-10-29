@@ -92,7 +92,6 @@ def main():
             result=ev.evaluate(record,clause,dict(target,mode='alternative' if args.command=='alternative' else 'recovery'),
                 args.columns,explore=args.command=='run',row_limit=max(0,args.limit))
             result.update(pair_id=manifest['pair_id'],render_version=manifest['render_version'])
-        result['specification_sha256']=hashlib.sha256((HERE.parent/'codex-adm/briefs/judge-decisions.md').read_bytes()).hexdigest()
     except Exception as error:
         result=dict(schema='judgetool-clause-v2',outcome='unknown',verified=False,
                     reason=f'{type(error).__name__}: {error}')
