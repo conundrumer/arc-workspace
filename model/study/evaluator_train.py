@@ -22,11 +22,54 @@ def dependency_receipt():
     import surface
     import case_collector
     import program_metadata
+    import raw_body
     paths = (Path(__file__), Path(tables.__file__), Path(checks.__file__),
              Path(surface.__file__), Path(case_collector.__file__),
-             Path(program_metadata.__file__), CODE_ROOT / 'study_paths.py',
+             Path(program_metadata.__file__), Path(raw_body.__file__), CODE_ROOT / 'study_paths.py',
              CODE_ROOT / 'judge2/render2/body.py', CODE_ROOT / 'judge3/render_pair.py')
     return {str(p.resolve()): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
+
+
+def det_dependency_receipt():
+    """Actual DET metadata/reader/observer source closure, without prose."""
+    paths = ('judge3/det_metadata.py', 'judge3/nonrender_metadata.py',
+             'judge3/definition_binding.py', 'judge3/catalog.py',
+             'judge2/render2/headers.py', 'judge2/render2/column_paths.py',
+             'judge2/render2/structured.py', 'ast/run/mech3/det_receipt.py',
+             'ast/run/mech3/reader_projection.py', 'ast/run/mech3/common.py',
+             'ast/run/mech/run.py')
+    return dict(dependency_receipt(), **{
+        str((CODE_ROOT / name).resolve()): hashlib.sha256((CODE_ROOT / name).read_bytes()).hexdigest()
+        for name in paths})
+
+
+def prepare_det_metadata(ev, record, *, native_base, case_inventory=None):
+    """Canonical RAW metadata -> certified reader/header union -> DET adapter.
+
+    This mechanical feature surface neither admits a judge pair nor acquires
+    rows. The ordinary producer and judge clause checker retain DET exclusion.
+    """
+    import sys
+    from tables import TargetStore, Incomplete
+    from evaluator import sha
+    sys.path.insert(0, str(CODE_ROOT / 'ast/run'))
+    from mech3.det_receipt import receipt
+    from judge3.det_metadata import MetadataProducer
+    store = TargetStore(ev.legacy, CODE_ROOT)
+    producer = MetadataProducer(engine=ev.arclog, settings=ev.settings,
+        read_native=lambda ref, base: store.snapshot(ref, base)['_native_reader'],
+        corpus=Path(native_base).resolve().parent, case_inventory=case_inventory)
+    if not hasattr(producer, 'raw_side_bindings'):
+        raise Incomplete('canonical raw_side_bindings source dependency is not installed')
+    raw = producer.raw_side_bindings(record, native_base=native_base)
+    if raw.get('schema') != 'judge3-raw-side-bindings-v1' or raw.get('source_sha256') != sha(record):
+        raise Incomplete('RAW DET metadata source differs')
+    transport = receipt(record, raw['exports'], raw['bindings'])
+    adapter = producer.produce(record, native_base=native_base, det_projection=transport)
+    adapter['det_acquisition'] = dict(schema='evaluator-det-source-v1', source_sha256=sha(record),
+        transport_sha256=sha(transport), implementation=det_dependency_receipt(),
+        purpose='mechanical TRAIN feature acquisition; no judge admission')
+    return adapter
 
 
 @lru_cache(maxsize=1)
@@ -351,6 +394,115 @@ def evaluate_train_clause(ev, record, clause, target, columns=None, explore=Fals
     return result, acquired
 
 
+def acquire_det_train_point(ev, record, adapter, ntrain, ntest, side='mutant'):
+    """Actual mutant BODY or fresh gold BODY, certified public DET fields only.
+
+    One ordinary gold observer replay; zero mutant replays. There is no pair
+    fallback, held-gold substitution, kind rewrite or clause-checker bypass.
+    """
+    from evaluator import sha
+    from tables import TargetStore, Incomplete, comparison_type
+    from raw_body import body_observer_program
+    if side not in ('mutant', 'gold'):
+        raise ValueError('point side must be mutant or gold')
+    if (type(ntrain) is not int or ntrain < 1 or
+            type(ntest) is not int or ntest < 0):
+        raise Incomplete('DET TRAIN acquisition requires authenticated input axes')
+    binding = adapter['bindings'][side]
+    transport = adapter.get('det_projection_receipt', {})
+    cert = binding.get('det_projection_receipt', {})
+    if (binding.get('kind') != 'Det' or transport.get('schema') != 'mech3-det-header-projection-v1'
+            or transport.get('complete') is not True or transport.get('source_sha256') != sha(record)
+            or cert.get('schema') != 'judge3-det-binding-receipt-v1'
+            or cert.get('side') != side or cert.get('source_sha256') != sha(record)
+            or cert.get('transport_sha256') != sha(transport)
+            or cert.get('program_sha256') != sha(record[side+'_sexp'])
+            or cert.get('export_sha256') != transport.get('sides', {}).get(side, {}).get('export_sha256')
+            or cert.get('native_ref_sha256') != sha(record['native'][side])
+            or binding.get('native_ref') != record['native'][side]
+            or cert.get('source_body_schema_sha256') != sha(binding['source_body_schema'])
+            or cert.get('projected_schema_sha256') != sha(binding['projected_schema'])
+            or cert.get('callable_template_sha256') != sha(binding['callable_template'])
+            or cert.get('projection_indices') != [f['source_body_column'] for f in binding['projected_schema']]
+            or cert.get('body_path') != record['point']
+            or cert.get('owner_path') != binding['owner_path']
+            or cert.get('native_selector') != binding['native_selector']):
+        raise Incomplete('source-bound certified DET header projection required')
+    raw = transport['sides'][side]['raw_binding']
+    if (raw.get('kind') != 'Det' or raw.get('body_path') != record['point']
+            or raw.get('owner_path') != binding['owner_path']
+            or raw.get('native_ref') != record['native'][side]
+            or raw.get('native_table_index') != binding['native_table_index']
+            or raw.get('native_selector') != binding['native_selector']
+            or raw.get('program_sha256') != sha(record[side+'_sexp'])
+            or raw.get('export_sha256') != cert.get('export_sha256')
+            or raw.get('source_body_schema') != binding['source_body_schema']):
+        raise Incomplete('DET target binding differs from its actual RAW source')
+    fields = deepcopy(binding['projected_schema'])
+    for field in fields:
+        if field['source_body_column'] is not None:
+            continue
+        evidence = field.get('source_projection', {})
+        unit = evidence.get('unit_projection_certificate', {})
+        if (field['type'] != 'Unit' or unit.get('schema') != 'mech3-native-unit-projection-v1'
+                or unit.get('native_header') != evidence.get('native_header')
+                or unit.get('source_body_column') is not None
+                or unit.get('proof') not in ('declared_layout', 'resolved_row_path')
+                or unit.get('proof') != evidence.get('native_header', {}).get('proof')
+                or evidence.get('native_header', {}).get('status') != 'declared_without_local_label'
+                or unit.get('projection_helper') != 'judge2/render2/body.py:project_entries'):
+            raise Incomplete('DET virtual Unit lacks its native header certificate')
+        field['source_projection']['inserted_constant'] = dict(kind='unit', native_certificate=unit)
+    source = dict(side=side, projection='certified native reader-named DET header union',
+        transport_sha256=sha(transport), implementation=det_dependency_receipt(),
+        native_gold_replays=0, native_mutant_replays=0, judge_admission=False)
+    if side == 'mutant':
+        store = TargetStore(ev.legacy, CODE_ROOT)
+        native, table = store.mutant_snapshot(record, adapter)
+        projection = [f['source_body_column'] for f in fields]
+        source.update(native_ref=record['native']['mutant'], selector=binding['native_selector'])
+    else:
+        selected = list(dict.fromkeys(f['source_body_column'] for f in fields
+                                     if f['source_body_column'] is not None))
+        raw_fields = {f['source_body_column']: f for f in raw['projected_schema']}
+        if any(index not in raw_fields for index in selected):
+            raise Incomplete('DET selected header lacks its exact RAW physical binding')
+        layout = dict(raw, projected_schema=[raw_fields[index] for index in selected])
+        observed, form, context = body_observer_program(ev, record, layout)
+        own = dict(record, mutant_sexp=record['gold_sexp'])
+        replay = ev.replay_program(own, observed, form,
+            candidate=dict(kind='mechanical-DET-public-gold-observer',
+                           source_sha256=sha(record), transport_sha256=sha(transport)))
+        if replay['engine'] != 'ran':
+            raise Incomplete('DET gold observer incomplete: '+replay.get('reason', replay['engine'])+
+                             '; artifact='+replay['artifact'])
+        table = replay.get('kept_coverage', {}).get('table')
+        if table is None:
+            raise Incomplete('DET gold observer has no exact kept native table')
+        native = ev.captures[-1]['native']
+        names = list(native['tables']['column_names'][table])
+        columns = {}
+        for ordinal, index in enumerate(selected):
+            name = 'V'+str(ordinal)
+            if names.count(name) != 1:
+                raise Incomplete('DET gold observer lacks an unambiguous selected output')
+            physical = names.index(name)
+            if comparison_type(native['tables']['column_types'][table][physical]) != comparison_type(raw_fields[index]['type']):
+                raise Incomplete('DET gold observer output type differs from certified BODY field')
+            columns[index] = physical
+        projection = [None if f['source_body_column'] is None else columns[f['source_body_column']]
+                      for f in fields]
+        source.update(native_gold_replays=1, artifact=replay['artifact'],
+            original_gold_program_sha256=sha(record['gold_sexp']),
+            observer_program_sha256=sha(observed), kept_context_sha256=sha(record['evaluation']['kept_assignments']),
+            observer_context=context, target_test_fit_claim=False)
+    packet = acquire_train_table(ev, native, table, record, ntrain=ntrain,
+        fields=fields, projection=projection, source=source)
+    if packet['missing']:
+        raise Incomplete('DET public TRAIN table lacks required own kept contexts')
+    return packet
+
+
 def acquire_train_point(ev, record, adapter, ntrain, ntest, side='mutant'):
     """Exact saved kept X or fresh canonical full-gold G observer, TRAIN only.
 
@@ -362,6 +514,8 @@ def acquire_train_point(ev, record, adapter, ntrain, ntest, side='mutant'):
     if side not in ('mutant', 'gold'):
         raise ValueError('point side must be mutant or gold')
     binding = adapter['input']['binding'] if side == 'mutant' else adapter['comparison_target']['binding']
+    if binding.get('kind') == 'Det':
+        return acquire_det_train_point(ev, record, adapter, ntrain, ntest, side=side)
     if side == 'mutant':
         store = TargetStore(ev.legacy, CODE_ROOT)
         native, table = store.mutant_snapshot(record, adapter)

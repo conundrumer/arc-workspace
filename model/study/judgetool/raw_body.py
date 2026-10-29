@@ -53,16 +53,13 @@ def binding(ev,record,*,native_base):
         projection='identity in authenticated stored gold BODY physical order',header_helper=str(source)+':bind_body_schema')
 
 
-def _standalone_gold_body(ev,record,*,native_base,ntrain,ntest):
-    """Mechanical raw BODY observation, including DET and private INIT labels.
+def body_observer_program(ev,record,layout):
+    """Build the exact native BODY observer; no evaluation or kept selection.
 
     Copy the exact native-exported body node, plus its native key body for an
     INIT input. This is not a judge admission path and does not read DET's
     reader-projected relation or select an INIT port by its label set.
     """
-    from checks import _replay_groups
-    from tables import comparison_type
-    layout,receipt=binding(ev,record,native_base=native_base)
     L=ev.legacy
     # This observer is replayed from named source text. Keep that Layout for
     # its node/label metadata, unlike binding()'s stored decoded-native view.
@@ -73,7 +70,7 @@ def _standalone_gold_body(ev,record,*,native_base,ntrain,ntest):
     if body['kind']!='body':raise Incomplete('raw observer path is not a native BODY node')
     key_body=None;key_path=None;key_exports=set()
     owner=nodes[tuple(layout['owner_path'])]
-    if owner['kind']=='init' and layout['input_port'] is not None:
+    if owner['kind']=='init' and layout.get('input_port') is not None:
         components=[entry for entry in export['definitions']['registry']['entries']
                     if entry['kind']=='component' and entry['name']==owner['data']['component']]
         ports=[port for entry in components for port in entry['ports']['inputs']
@@ -88,6 +85,16 @@ def _standalone_gold_body(ev,record,*,native_base,ntrain,ntest):
             key_body=key_bodies[0];key_path=key_body['path']
             key_exports={c['label_id'] for c in keys[0]['data']['columns']}
     fields=layout['projected_schema']
+    identities=[f['native_label_identity']['label_id'] for f in fields]
+    if None in identities or len(set(identities))!=len(identities):
+        raise Incomplete('BODY observer outputs require distinct native scalar labels')
+    views=[v for v in export['body_views'] if v['body_path']==layout['body_path']
+           and v['owner_path']==layout['owner_path']]
+    if len(views)!=1:raise Incomplete('BODY observer lacks its exact native owner/view')
+    labels={c['label_id']:c for c in views[0]['columns']}
+    if any(label not in labels or labels[label]['type']!=field['type']
+           for label,field in zip(identities,fields)):
+        raise Incomplete('BODY observer scalar identity/type differs from native source')
     output_names={f['native_label_identity']['label_id']:'V'+str(i) for i,f in enumerate(fields)}
     key_names=native_body_labels(nodes,key_body) if key_body else {}
     input_names=native_body_labels(nodes,body)
@@ -101,9 +108,19 @@ def _standalone_gold_body(ev,record,*,native_base,ntrain,ntest):
     occupied=set(tokens([L.parse(f) for f in forms]))
     while clause[1] in occupied:clause[1]+='Q'
     observed='\n'.join(forms[:-1]+[L.unparse(clause),forms[-1]])
+    return observed,len(forms)-1,dict(key_path=key_path,key_export_label_ids=sorted(key_exports))
+
+
+def _standalone_gold_body(ev,record,*,native_base,ntrain,ntest):
+    """Mechanical raw BODY observation, including DET and private INIT labels."""
+    from checks import _replay_groups
+    from tables import comparison_type
+    layout,receipt=binding(ev,record,native_base=native_base)
+    observed,form,context=body_observer_program(ev,record,layout)
+    fields=layout['projected_schema']
     own=dict(record,mutant_sexp=record['gold_sexp'])
-    replay,groups,columns=_replay_groups(ev,own,observed,len(forms)-1,ntrain,ntest,
-        dict(kind='mechanical-raw-gold-BODY-observer',body_path=layout['body_path'],key_path=key_path))
+    replay,groups,columns=_replay_groups(ev,own,observed,form,ntrain,ntest,
+        dict(kind='mechanical-raw-gold-BODY-observer',body_path=layout['body_path'],key_path=context['key_path']))
     if groups is None or groups['missing']:raise Incomplete('raw gold BODY replay lacks compatible train/test contexts')
     if len({name for name,ty in columns})!=len(columns):raise Incomplete('raw observer exported ambiguous scoped labels')
     try:indices=[next(i for i,c in enumerate(columns) if c[0]=='V'+str(j)) for j in range(len(fields))]
@@ -115,8 +132,7 @@ def _standalone_gold_body(ev,record,*,native_base,ntrain,ntest):
     observation=dict(source='gold_full_replay',artifact=replay['artifact'],original_source_sha256=sha(record),
         gold_program_sha256=sha(record['gold_sexp']),observer_program_sha256=sha(observed),
         kept_context_sha256=sha(record['evaluation']['kept_assignments']),layout_sha256=sha(fields),
-        train_complete=True,test_complete=True,body_path=layout['body_path'],key_path=key_path,
-        key_export_label_ids=sorted(key_exports),
+        train_complete=True,test_complete=True,body_path=layout['body_path'],**context,
         alpha_binding='native label-node identities per BODY; private identities distinct; input key exports join',
         acquisition='exact native BODY/key node text; one full gold replay with OUT')
     return groups,dict(receipt,observation=observation,source='gold_full_replay',fields=layout['projected_schema'])
