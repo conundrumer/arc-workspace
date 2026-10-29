@@ -86,6 +86,9 @@ pub fn assignment_map(tables:&[(usize,Table)],table_offset:usize,train_count:usi
     }).collect::<Vec<_>>())
 }
 
+/// Collect full native rows for component and continuation evidence. The
+/// synthesis projection policy is applied by `contents`; evidence uses the
+/// same schema adapter directly and retains bounded packing and annotations.
 pub fn relation_tables(program:&StudyProgram,origin:&Arc<CheckedProgram>,decoder:&Decoder<'_>,fixed:&[Vec<Assignment>],limits:&arclog::eval::Limits,
     work:&TableWork,budget:&mut Budget<'_>)->RelationTables {
     let checked=program.checked();
@@ -104,7 +107,7 @@ pub fn relation_tables(program:&StudyProgram,origin:&Arc<CheckedProgram>,decoder
         let dets=relation_dets(checked,relation.node);
         let context=AssignmentContext::Held {receipt:&receipt,limits,work};
         let examples=relation_examples_with_context(decoder,checked,&relation,&dets,work,context);
-        let c=contents(decoder,checked,&form.path,&relation,slot as u32,&dets,examples,work).map(|c| {
+        let c=relation_metadata(decoder.registry(),checked,&form.path,&relation,slot as u32,&dets,examples).map(|c| {
             let c=Contents {name:relation_spelled(declared),keys:checked.program.column_keys(relation.node),..c};
             made_with_context(decoder,&tables.iter().map(|(_,t)|t).collect::<Vec<_>>(),checked,&relation,c,context)
         });
