@@ -81,6 +81,7 @@ def check(ev,record,*,ntrain,ntest,gold_cache=None):
         source_sha256=sha(record),evaluations=evaluations,evidence_files=[])
     receipt=dict(code=code,code_sha256=sha(code),runtime=ev.runtime,settings=ev.receipt,
         source_sha256=sha(record),kept_context_sha256=sha(record['evaluation']['kept_assignments']),
+        native_session_scope='fresh native session per independent gold or mutant OUT observation',
         test_policy='complete TEST OUT equality to full gold replay is sufficient; max two outputs; extra families not decided')
     result['receipt']=receipt
     if record['kind'].lower().startswith('det'):
@@ -95,8 +96,13 @@ def check(ev,record,*,ntrain,ntest,gold_cache=None):
     try:
         gold=cache.get(key)
         if gold is None:
-            gold=_observe(gold_budget,record,record['gold_sexp'],'gold');cache[key]=gold
-        mutant=_observe(mutant_budget,record,record['mutant_sexp'],'mutant')
+            with ev.fresh_session() as isolated:
+                gold_budget=_ReplayBudget(isolated,1)
+                gold=_observe(gold_budget,record,record['gold_sexp'],'gold')
+            cache[key]=gold
+        with ev.fresh_session() as isolated:
+            mutant_budget=_ReplayBudget(isolated,1)
+            mutant=_observe(mutant_budget,record,record['mutant_sexp'],'mutant')
         receipt.update(gold=gold['receipt'],mutant=mutant['receipt'],gold_cache_key=key)
         result['evidence_files']=gold['receipt']['evidence_files']+mutant['receipt']['evidence_files']
         grouped=[]

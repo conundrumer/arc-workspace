@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 import sys
 import time
+from contextlib import contextmanager
 
 sys.dont_write_bytecode = True
 HERE = Path(__file__).resolve().parent
@@ -85,13 +86,7 @@ class ReplayEvaluator:
         if not any(self.artifacts.is_relative_to(root.resolve()) for root in roots):
             raise ValueError('replay artifacts must stay in judgetool, ast/run/mech4 or ast/run/mech5')
         self.artifacts.mkdir(parents=True, exist_ok=True)
-        self.task = None
-        self.ev = None
-        self.captures = []
-        self.target_cache = {}
-        self.target_store = None
-        self._point_gold = None
-        self._point_kept = None
+        self._reset_session_state()
         binary = importlib.util.find_spec('arclog.arclog').origin
         self.runtime = dict(python=str(Path(sys.executable).resolve()), binary=str(Path(binary).resolve()),
                             binary_sha256=hashlib.sha256(Path(binary).read_bytes()).hexdigest())
@@ -103,6 +98,34 @@ class ReplayEvaluator:
                             reference_sha256=hashlib.sha256((self.reference/'engine_verify.py').read_bytes()).hexdigest(),
                             implementation_sha256=sha({name:hashlib.sha256((HERE/name).read_bytes()).hexdigest()
                                 for name in ('../study_paths.py','evaluator.py','surface.py','tables.py','checks.py','catalog.py','registry.py','live_targets.py','program_metadata.py','candidate_train.py','raw_body.py','target_view.py','judge_view.py','judge_tool.py')}))
+
+    def _reset_session_state(self):
+        self.task = None
+        self.ev = None
+        self.captures = []
+        self.target_cache = {}
+        self.target_store = None
+        self._point_gold = None
+        self._point_kept = None
+
+    @contextmanager
+    def fresh_session(self):
+        """The same executor/policy with independent ephemeral native state.
+
+        Use only for independent operations whose durable values are matched by
+        the canonical kept/Ident matcher. Multi-query provenance work must keep
+        its shared session. Reuse the immutable policy/receipt rather than
+        re-reading config and hashing the runtime binary for every operation.
+        """
+        isolated = object.__new__(ReplayEvaluator)
+        for name in ('run','reference','cfg','legacy','arclog','deadline','work_cap',
+                     'settings','artifacts','runtime','receipt'):
+            setattr(isolated, name, getattr(self, name))
+        isolated._reset_session_state()
+        try:
+            yield isolated
+        finally:
+            isolated.close()
 
     def task_evaluator(self, task):
         if self.task != task:
@@ -119,6 +142,7 @@ class ReplayEvaluator:
     def close(self):
         self.finish_case()
         self.ev, self.task = None, None
+        self.captures = []
         if hasattr(self,'target_cache'):self.target_cache.clear()
         self.target_store=None
         self._point_gold=None
