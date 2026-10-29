@@ -64,7 +64,9 @@ def _standalone_gold_body(ev,record,*,native_base,ntrain,ntest):
     from tables import comparison_type
     layout,receipt=binding(ev,record,native_base=native_base)
     L=ev.legacy
-    program=ev.arclog.StudyProgram.from_sexp(record['gold_sexp'],ev.settings).decode_source()
+    # This observer is replayed from named source text. Keep that Layout for
+    # its node/label metadata, unlike binding()'s stored decoded-native view.
+    program=ev.arclog.StudyProgram.from_sexp(record['gold_sexp'],ev.settings)
     export=json.loads(ev.arclog.study_program_export_json(program))
     nodes={tuple(node['path']):node for node in export['nodes']}
     body=nodes[tuple(layout['body_path'])]

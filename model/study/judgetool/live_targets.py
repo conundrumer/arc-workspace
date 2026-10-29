@@ -51,7 +51,9 @@ def acquire(ev,record,adapter,ntrain,ntest,*,only_case=None):
         if replay['engine']!='ran':
             gaps.append(dict(case=case,reason=replay.get('reason','gold replay stopped')));continue
         native=ev.captures[-1]['native'];ts=native['tables']
-        program=ev.arclog.StudyProgram.from_sexp(text,ev.settings).decode_source()
+        # Export the parsed representation just replayed, including its named
+        # column Layout; decode_source would replace it with positional names.
+        program=ev.arclog.StudyProgram.from_sexp(text,ev.settings)
         source_names=(json.dumps(record['relation_source_names']) if same and record.get('relation_source_names') else
             program.relation_source_names_json(str(MAIN_ROOT / 'work/arclog/gen'),record['task'],case))
         export=json.loads(ev.arclog.study_program_export_json(program,source_names))

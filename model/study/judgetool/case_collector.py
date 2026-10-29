@@ -98,6 +98,35 @@ def _body_binding(view):
         owner_path=view['owner_path'],source_body_schema=schema,projected_schema=fields),sites
 
 
+def _observed_bindings(ev,source_export,observed):
+    """Use exact replay-program witnesses for unchanged original definitions.
+
+    Re-decoding a parsed program discards its named Layout. It is not the
+    representation replay_program evaluates. Added observers also have their
+    own reader bindings, so export the exact augmented checked program and
+    authenticate original relation identities before taking its witnesses.
+    The original source-name map cannot be attached to the augmented stream.
+    """
+    program=ev.arclog.StudyProgram.from_sexp(observed,ev.settings)
+    actual=json.loads(ev.arclog.study_program_export_json(program))
+    def identity(definition):
+        selector=definition['native_selector']
+        return tuple(str(selector[key]) for key in ('form','point','relation'))
+    indexed={}
+    for definition in actual['definitions']['native_relations']:
+        indexed.setdefault(identity(definition),[]).append(definition)
+    export=deepcopy(source_export)
+    for definition in export['definitions']['native_relations']:
+        matches=indexed.get(identity(definition),[])
+        if (len(matches)!=1 or matches[0]['relation']!=definition['relation']
+                or matches[0]['definition_path']!=definition['definition_path']):
+            raise Incomplete('observed program changed an original native relation identity')
+        witness=matches[0]
+        definition['column_witnesses']=deepcopy(witness['column_witnesses'])
+        definition['column_witness_status']=witness['column_witness_status']
+    return export
+
+
 def acquire_case(ev,record,case_context,ntrain,ntest):
     """Return JSON-serializable unscoped case tables/export/own-kept receipt.
 
@@ -115,7 +144,9 @@ def acquire_case(ev,record,case_context,ntrain,ntest):
     if names is not None and (names.get('task'),names.get('case'))!=(record['task'],case):
         raise Incomplete('case source-name map belongs to another task/case')
     L=ev.legacy
-    program=ev.arclog.StudyProgram.from_sexp(text,ev.settings).decode_source()
+    # Keep the same parsed named Layout as replay_program, rather than a
+    # separately decoded anonymous-slot AST with positional column headers.
+    program=ev.arclog.StudyProgram.from_sexp(text,ev.settings)
     naming=json.dumps(names) if names is not None else program.relation_source_names_json(
         str(MAIN_ROOT/'work/arclog/gen'),record['task'],case)
     export=json.loads(ev.arclog.study_program_export_json(program,naming))
@@ -143,11 +174,16 @@ def acquire_case(ev,record,case_context,ntrain,ntest):
         except (ValueError,KeyError,IndexError,TypeError) as error:
             gaps.append(dict(kind='body',body_path=view['body_path'],reason=str(error)))
     observed='\n'.join(forms[:-1]+observers+[forms[-1]])
+    if L.split_forms(observed)[:len(forms)-1]!=forms[:-1]:
+        raise Incomplete('case observer changed an original source form')
+    export=_observed_bindings(ev,export,observed)
     replay=ev.replay_program(own,observed,0,candidate=dict(kind='all-gold-case-tables-and-bodies',identity=identity),retain_all=True)
     receipt=dict(schema='judge-case-receipt-v1',identity=identity,collector=_code_receipt(),
         source='gold_full_replay',gold_program_sha256=sha(text),observer_program_sha256=sha(observed),
         kept_context_sha256=sha(values),artifact=replay['artifact'],engine=replay['engine'],
-        gold_replays=1,observer_count=len(observers),settings=ev.receipt)
+        gold_replays=1,observer_count=len(observers),settings=ev.receipt,
+        column_witness_program_sha256=sha(observed),
+        column_witness_source='exact parsed observed program; unchanged original relation identities')
     bundle=dict(schema='judge-case-bundle-v1',task=record['task'],case=case,ntrain=ntrain,ntest=ntest,
         program_sha256=sha(text),kept_context_sha256=sha(values),kept_assignments=values,
         tables=[],bodies=[],export=export,receipt=receipt,gaps=gaps,complete=False)
@@ -166,8 +202,15 @@ def acquire_case(ev,record,case_context,ntrain,ntest):
         grouped=kept_groups(L,native,table,own,ntrain,ntest)
         fields=[dict(field_name=n,type=t) for n,t in zip(ts['column_names'][table],ts['column_types'][table])]
         label=(definitions_here[0]['display_name'] if definitions_here else ts['fact'][table] or ts['relation_name'][table] or 'body')
+        schema=deepcopy(native['_native_reader'].schema(table))
+        for definition in definitions_here:
+            witnesses=definition['column_witnesses']
+            if (len(witnesses)!=len(schema) or
+                    any(w['physical_column']!=c['index'] or w['native_name']!=c['name']
+                        or w['type']!=c['type'] for w,c in zip(witnesses,schema))):
+                raise Incomplete('observed native column witnesses differ from the replay table schema')
         bundle['tables'].append(dict(table_id='native:'+str(table),native_table=table,selector=selector,fields=fields,
-            native_schema=deepcopy(native['_native_reader'].schema(table)),
+            native_schema=schema,
             source_name=label,grouped=encode_grouped(grouped),receipt=dict(case=case,artifact=replay['artifact'],table=table,
             source='gold_full_replay',kept_context_sha256=sha(values),complete=not grouped['missing'])))
     for plan in plans:
