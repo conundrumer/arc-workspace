@@ -232,16 +232,28 @@ class ReplayEvaluator:
         self._gold_kept_cache[key]=deepcopy(result)
         return result
 
-    def gold_tables(self, program):
-        """Shared native execution path, also passed as P verifier's evaluator proxy."""
-        status, tables = self.ev.gold_tables(program)
+    def gold_tables(self, program, *, full_rows=False):
+        """Shared native execution; typed exporters opt into bounded full rows.
+
+        The native flag changes packing only. It neither raises the projection
+        cap nor upgrades Count entries already returned by an older runtime.
+        """
+        if type(full_rows) is not bool:
+            raise ValueError('full_rows must be boolean')
+        status, tables = (self.ev.gold_tables(program, full_rows=True) if full_rows
+                          else self.ev.gold_tables(program))
         report = json.loads(status) if isinstance(status, str) else status
+        if full_rows and report.get('full_rows') is not True:
+            raise ValueError('native gold_tables did not certify requested full-row packing')
         native = self.legacy.native(tables)
         self.captures.append(dict(program=program.sexp(), report=report, native=native))
         return status, tables
 
     def _artifact(self, record, candidate, result):
-        key = sha(dict(source=sha(record), candidate=candidate, settings=self.receipt))
+        identity = dict(source=sha(record), candidate=candidate, settings=self.receipt)
+        if result.get('full_rows'):
+            identity['packing'] = dict(full_rows=True)
+        key = sha(identity)
         folder = self.artifacts/key
         folder.mkdir(exist_ok=True)
         (folder/'result.json').write_text(json.dumps(result, indent=2, ensure_ascii=False)+'\n')
@@ -337,13 +349,15 @@ class ReplayEvaluator:
                     other_assignment_entries=other,
                     rule='saved values on every table dependency slot; absent compatible entry is unknown')
 
-    def replay_program(self, record, program, form, *, candidate=None,retain_all=False,retain_forms=None):
+    def replay_program(self, record, program, form, *, candidate=None,retain_all=False,retain_forms=None,full_rows=False):
         """Canonical low-level API for tool and n-mech, no copied evaluator.
 
         Caller supplies the whole generated program including OUT and the
         inserted table's form index. Returns all matched groups; stores ALL
         returned tables/assignments internally. No policy/target claim implied.
         """
+        if type(full_rows) is not bool:
+            raise ValueError('full_rows must be boolean')
         if retain_forms is not None:
             count=len(self.legacy.split_forms(program))
             if (retain_all or not isinstance(retain_forms,(list,tuple))
@@ -354,7 +368,8 @@ class ReplayEvaluator:
         self.task_evaluator(record['task'])
         self.captures = []
         start = time.monotonic()
-        result = dict(schema='judgetool-replay-v1', verified=False,retain_all=retain_all)
+        result = dict(schema='judgetool-replay-v1', verified=False,retain_all=retain_all,
+                      full_rows=full_rows)
         if retain_forms is not None:result['retain_forms']=retain_forms
         try:
             checked = self.arclog.StudyProgram.from_sexp(program, self.settings)
@@ -362,7 +377,10 @@ class ReplayEvaluator:
             result.update(engine='refused', reason=f'{type(error).__name__}: {error}')
         else:
             try:
-                self.gold_tables(checked)
+                if full_rows:
+                    self.gold_tables(checked, full_rows=True)
+                else:
+                    self.gold_tables(checked)
                 report = self.captures[-1]['report']
                 result['engine_report'] = report
                 if report.get('status') != 'complete':

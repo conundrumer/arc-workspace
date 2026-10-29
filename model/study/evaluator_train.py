@@ -312,6 +312,10 @@ def _acquire_case_train(ev, record, case_context, ntrain, ntest):
         def __getattr__(self, name):
             return getattr(ev, name)
         def replay_program(self, *args, **kwargs):
+            # Native projections may export Count even for complete Rows.
+            # Request the bounded full-row packer; never inflate a decode cap
+            # or reconstruct values from counts/projections in Python.
+            kwargs['full_rows'] = True
             result = ev.replay_program(*args, **kwargs)
             if saved:
                 raise Incomplete('case TRAIN collection exceeded its single replay contract')
@@ -366,7 +370,11 @@ def _acquire_case_train(ev, record, case_context, ntrain, ntest):
         native_table_inventory_complete=native is not None,
         train_tables_complete=native is not None and all(item['status'] == 'complete' for item in rows),
         receipt=dict(observation=bundle['receipt'], original_source_sha256=sha(record),
-                     implementation=dependency_receipt(), test_cells=False))
+                     implementation=dependency_receipt(), test_cells=False,
+                     packing=dict(full_rows=True,
+                                  native_full_rows=saved.get('replay', {}).get('engine_report', {}).get('full_rows'),
+                                  source='native gold_tables packing',
+                                  projection_cap_changed=False)))
 
 
 def evaluate_train_clause(ev, record, clause, target, columns=None, explore=False):
