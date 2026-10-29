@@ -106,7 +106,9 @@ def side_readers(export,binding,point):
         # semantics; don't claim an unchanged downstream observation there.
         require(path[:len(owner)]!=owner,'recursive reader inside changed clause needs explicit correspondence')
         atom=nodes.get(path)
-        require(atom is not None and atom['kind']=='atom','native reader atom is absent')
+        require(atom is not None and atom['kind'] in ('atom','not')
+                and atom['data'].get('node') in ('atom','not_atom'),
+                'native resolved reader lacks an atom or NOT atom export')
         paths=tuple(p for s in atom['data']['sites'] for p in read_paths(s))
         fields=[]
         for read in paths:
@@ -137,9 +139,9 @@ def pair_readers(record,exports,bindings,*,side_cache=None):
         require(gf.keys()==xf.keys(),'gold/mutant component input interfaces differ')
         fields=[]
         for p in sorted(gf):
-            a,b=gf[p],xf[p];require(compatible(a['type'],b['type']),'component input types differ')
+            a,b=gf[p],xf[p]
             fields.append(dict(row_path=list(p),gold=a['source_body_column'],mutant=b['source_body_column'],
-                type=a['type'],gold_identity=a['native_label_identity'],mutant_identity=b['native_label_identity']))
+                type=a['type'],gold_type=a['type'],mutant_type=b['type'],gold_identity=a['native_label_identity'],mutant_identity=b['native_label_identity']))
         return dict(schema='mech3-reader-projection-v1',complete=True,readers=[dict(kind='component_input_interface',
             reader_path=g['body_path'],fields=fields,gold_binding=g,mutant_binding=x)],source_sha256=digest(record),
             policy='canonical projected key/port tuple is one direct interface reader; private witnesses excluded')
@@ -164,9 +166,9 @@ def pair_readers(record,exports,bindings,*,side_cache=None):
         require(gm.keys()==xm.keys(),'reader field identities differ across programs')
         fields=[]
         for p in sorted(gm):
-            a,b=gm[p],xm[p];require(compatible(a['type'],b['type']),'reader field types differ across programs')
+            a,b=gm[p],xm[p]
             fields.append(dict(row_path=list(p),gold=a['physical_index'],mutant=b['physical_index'],
-                               type=a['type'],gold_proof=a['proof'],mutant_proof=b['proof']))
+                               type=a['type'],gold_type=a['type'],mutant_type=b['type'],gold_proof=a['proof'],mutant_proof=b['proof']))
         result.append(dict(kind='resolved_reader_atom',reader_path=g['reader_path'],fields=fields,
                            gold_receipt=g,mutant_receipt=x))
     return dict(schema='mech3-reader-projection-v1',complete=True,readers=result,source_sha256=digest(record),

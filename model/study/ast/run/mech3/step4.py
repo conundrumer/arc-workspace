@@ -38,6 +38,14 @@ def stop(*_):
     STOP=True
 
 
+def retry_test(args,existing):
+    if existing is None or existing.get('fits_test') is not None:return False
+    if args.retry_test_unknown:return True
+    problem=existing.get('test_problem')
+    text=problem if isinstance(problem,str) else canonical(problem)
+    return any(reason in text for reason in args.retry_test_reason)
+
+
 class Worker:
     def __init__(self,args,events=None,worker_id=0,stop_event=None):
         from evaluator import ReplayEvaluator
@@ -126,7 +134,7 @@ class Worker:
             value['reader_difference'].update(reason=str(error),error_type=type(error).__name__)
             return value
         if value['reader_difference']['read_difference'] is None:return value
-        force_test=self.args.rerun_test or (self.args.retry_test_unknown and existing is not None and existing.get('fits_test') is None)
+        force_test=self.args.rerun_test or retry_test(self.args,existing)
         if program['fits_test'] is None:
             from out_fit import check
             if self.gold_task!=record['task']:
@@ -196,7 +204,7 @@ class Worker:
                 existing=self.output.load(base['pair_id'],base['source_sha256'],row[4],task_receipt['sha256'])
                 retry=(self.args.rerun_reader or self.args.rerun_test or
                        (existing is not None and self.args.retry_reader_unknown and existing.get('read_difference') is None) or
-                       (existing is not None and self.args.retry_test_unknown and existing.get('fits_test') is None))
+                       retry_test(self.args,existing))
                 saved=None if retry else existing
                 if saved is not None:
                     value=saved;self.counts['resumed']+=1
@@ -308,6 +316,7 @@ def main():
     ap.add_argument('--workers',type=int,default=1)
     ap.add_argument('--retry-reader-unknown',action='store_true',help='explicitly retry unresolved reader facts only')
     ap.add_argument('--retry-test-unknown',action='store_true',help='explicitly retry unresolved TEST facts only')
+    ap.add_argument('--retry-test-reason',action='append',default=[],help='retry unresolved TEST facts whose stored problem contains this text; repeatable')
     ap.add_argument('--rerun-reader',action='store_true',help='explicit reader-policy invalidation')
     ap.add_argument('--rerun-test',action='store_true',help='explicit TEST-policy invalidation')
     args=ap.parse_args()

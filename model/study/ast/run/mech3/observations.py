@@ -28,13 +28,18 @@ def compare_readers(projection,groups,legacy,*,seconds=1):
     if required!=groups['mutant']['required']:raise ValueError('source held/input axes differ')
     available=required & groups['gold']['groups'].keys() & groups['mutant']['groups'].keys()
     for reader in projection['readers']:
-        fields=reader['fields'];columns=[('Read'+str(i),f['type']) for i,f in enumerate(fields)]
-        gold_fields=[dict(field_name=name,type=ty) for name,ty in columns]
+        fields=reader['fields']
+        columns=[('Read'+str(i),f.get('mutant_type',f['type'])) for i,f in enumerate(fields)]
+        gold_fields=[dict(field_name='Read'+str(i),type=f.get('gold_type',f['type']))
+                     for i,f in enumerate(fields)]
         projected={}
         for side in ('gold','mutant'):
             indices=[f[side] for f in fields]
             projected[side]={key:{frozenset(projected_rows(legacy,rows,indices)) for rows in groups[side]['groups'][key]}
                              for key in available}
+        if not available:
+            gaps.append(dict(reader_path=reader['reader_path'],reason='reader has no complete held/input context'))
+            continue
         eq=compare(projected['mutant'],columns,projected['gold'],gold_fields,
                    explicit=[n for n,t in columns],seconds=seconds)
         # A mismatch on complete known model families is a positive witness to

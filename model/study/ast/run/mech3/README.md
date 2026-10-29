@@ -23,11 +23,11 @@ Legacy grade/program/reader aliases are projected to those same raw fields. Lega
 
 Validity uses pair/source/base inputs, task input bytes when supplied, and actual fact/reference hashes. Code, configuration and historical document hashes remain integrity/provenance; unrelated code edits, changed checkout paths or task-path spelling do not invalidate completed facts. New runs use pinned snapshot worktrees.
 
-The default resumes completed attempts, including unavailable results. `--retry-reader-unknown` explicitly revisits only unresolved reader facts. `--retry-test-unknown` explicitly revisits unresolved TEST facts. `--rerun-reader` and `--rerun-test` are explicit invalidations for a changed policy. Completed TEST observations survive a reader-only retry.
+The default resumes completed attempts, including unavailable results. `--retry-reader-unknown` explicitly revisits only unresolved reader facts. `--retry-test-unknown` explicitly revisits unresolved TEST facts. Repeatable `--retry-test-reason TEXT` narrows that retry to stored problems containing the text, so a bounded-session repair can leave known held-context mismatches untouched. `--rerun-reader` and `--rerun-test` are explicit invalidations for a changed policy. Completed TEST observations survive a reader-only retry.
 
 ## Work reuse
 
-Reader metadata and stored row comparisons precede TEST replay. An unavailable reader tuple performs no native TEST evaluation. RULE bindings use the canonical two-sided producer; a mutant is never attributed to gold's source stream. INIT compares the complete component key-and-port interface; absent outer-key columns remain unavailable rather than being omitted.
+Reader metadata and stored row comparisons precede TEST replay. An unavailable reader tuple performs no native TEST evaluation. RULE bindings use the canonical two-sided producer. Native positive and NOT reader atoms both retain their joint field tuple. Each side retains its native inferred types for the shared comparator; a type-changing mutation is compared rather than refused during mapping. INIT compares the complete component key-and-port interface; absent outer-key columns remain unavailable rather than being omitted.
 
 Caches retain immutable native snapshots, original held groups, gold reader resolutions and gold OUT observations within a task. They are bounded or released at task boundaries. Artifact file hashes use the shared stat-keyed hash cache. `--workers` shards whole tasks across spawned processes, preserving per-task evaluator reuse and per-pair durable SQLite writes. Each worker's native thread entitlement is divided from the run's CPU allocation.
 
