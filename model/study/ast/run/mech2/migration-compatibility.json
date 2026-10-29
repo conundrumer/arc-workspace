@@ -1,0 +1,19 @@
+{
+  "schema": "normal-migration-compatibility-v1",
+  "legacy_manifest_sha256": [
+    "1b6b6ecef473ad460efdc407248c0cf1894824e89a80ecdbb19d537b75592309",
+    "234a89aeadb3057d24a59a7a5125fcf129a7c20b6e4462c6105baeed39bbce75"
+  ],
+  "migrated_dependencies": {
+    "writer.py": "1d7671335dda136ea120698bcc8960789aa5479eeb18fe82ec3d95f4fb63f1ad",
+    "ast/run/native_storage.py": "72711a099802ee99dc48d14a7592e520d6f63c8db0834ee120fca1a86a7e585e",
+    "ast/run/mech/run.py": "b3d53c7be4564bdfbeaed86dd90ebde93d8f9dca96a58fc72b5cfc8f0750f4ff",
+    "detectors.py": "931fe3832f14c5a9af2ac65f5de9bb6ce286943960e3ea54c9931c9f0e9db0cf",
+    "pinned.py": "18609ecab78d6aa97c334112b53ea9fe7e8ffabedc2a557871e505932a87e63c",
+    "study_paths.py": "0b1fecad5dd7d174d2ec416b601b56b0dc88c9a1fe8c19d39e2080cff4ca141d",
+    "engine/lib/registry.sexpr": "4ae71f7f9fe89d38c66b3e68f873004b988a85f089860b487c38b2b1f39b5070",
+    "pinned/encoder.py": "fb575244b87321be77738b2c0d444ce180b0673001f0dba0cb3a691c91dbff28"
+  },
+  "classification_ast_sha256": "eed8071e32e0db7b2288c75bb63a44583e98cb1ed6a45214686c7f2f8def7f6c",
+  "reason": "Reviewed source relocation and table identity/atomic setup repair. Completed first-producer verdicts never reached broken setup. Repaired classifier classes match the retained S implementation. Writer, native storage and detector definitions match S; imported run hash helpers match; pinned encoder and registry bytes match."
+}

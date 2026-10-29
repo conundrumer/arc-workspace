@@ -22,9 +22,19 @@ def load_normal(database, pair_id, *, source_sha256, base_result_sha256):
     with sqlite3.connect(path.as_uri()+'?mode=ro',uri=True) as db:
         row=db.execute('SELECT source_sha256,base_result_sha256,code_sha256,result_sha256,record_json FROM pairs WHERE pair_id=?',(pair_id,)).fetchone()
         meta=db.execute("SELECT value FROM metadata WHERE key='code_manifest'").fetchone()
+        compatible=False
+        if row and meta and row[2]!=_digest(json.loads(meta[0])):
+            tables={t for t, in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if {'compatible_codes','code_manifests'} <= tables:
+                authority=db.execute('SELECT current_code_sha256 FROM compatible_codes WHERE code_sha256=?',(row[2],)).fetchone()
+                original=db.execute('SELECT manifest_json FROM code_manifests WHERE code_sha256=?',(row[2],)).fetchone()
+                compatible=bool(authority and authority[0]==_digest(json.loads(meta[0]))
+                                and original and _digest(json.loads(original[0]))==row[2]
+                                and json.loads(row[4])['mutant']['normal'] is not None)
     if not row or not meta:return dict(status='open',normal=None,reason='normal receipt absent')
     source,base,code,result,text=row;manifest=json.loads(meta[0]);record=json.loads(text)
-    if (source!=source_sha256 or base!=base_result_sha256 or _digest(manifest)!=code or _digest(record)!=result):
+    if (source!=source_sha256 or base!=base_result_sha256
+            or (_digest(manifest)!=code and not compatible) or _digest(record)!=result):
         return dict(status='open',normal=None,reason='normal receipt stale or invalid')
     for file,expected in manifest['files'].items():
         try:actual=hashlib.sha256(Path(file).read_bytes()).hexdigest()

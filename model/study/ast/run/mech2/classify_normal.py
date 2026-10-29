@@ -5,6 +5,7 @@ import sys as _study_sys
 _study_sys.path.insert(0, str(_StudyPath(__file__).resolve().parents[3]))
 from study_paths import CODE_ROOT, DATA_ROOT, MAIN_ROOT, REPO_ROOT, data_path
 import argparse
+import ast
 from collections import Counter, defaultdict
 import fcntl
 import gzip
@@ -30,6 +31,10 @@ import numpy as np
 import pandas as pd
 
 SCHEMA = 'stored-normal-form-v1'
+# Completed results from this producer never reached CaseRows' broken setup:
+# any such call raised before returning a verdict. The transport repair changes
+# only those unavailable results. Other imported policy sources must match.
+REPAIR_PREDECESSOR = '1b6b6ecef473ad460efdc407248c0cf1894824e89a80ecdbb19d537b75592309'
 
 
 def sha(path):
@@ -41,10 +46,32 @@ def policy_manifest():
     import detectors
     paths = [Path(__file__), Path(writer.__file__), Path(storage.__file__),
              RUN / 'mech/run.py', Path(detectors.__file__), Path(detectors.E.__file__),
-             STUDY / 'pinned.py', REPO_ROOT / 'engine/lib/registry.sexpr']
-    return dict(schema=SCHEMA, constraint_set='normal',
-                files={str(p.resolve()): sha(p) for p in paths + [CODE_ROOT / 'study_paths.py']},
+             STUDY / 'pinned.py', Path(writer.ROOT) / 'engine/lib/registry.sexpr']
+    paths += [CODE_ROOT / 'study_paths.py']
+    logical = {str(p.relative_to(CODE_ROOT)) if p.is_relative_to(CODE_ROOT)
+               else 'pinned/encoder.py' if p == Path(detectors.E.__file__)
+               else 'engine/lib/registry.sexpr': sha(p) for p in paths}
+    paths += [HERE / 'migration-compatibility.json']
+    return dict(schema=SCHEMA, constraint_set='normal',logical_files=logical,
+                files={str(p.resolve()): sha(p) for p in paths},
                 numpy=np.__version__, pandas=pd.__version__)
+
+
+def compatible_migration(previous, current):
+    """Authenticate reviewed legacy policy or identical code at another checkout."""
+    if previous.get('logical_files') == current['logical_files']:
+        return True
+    receipt = json.loads((HERE / 'migration-compatibility.json').read_text())
+    if digest(previous) not in receipt['legacy_manifest_sha256']:
+        return False
+    entry = 'ast/run/mech2/classify_normal.py'
+    dependencies = {p:h for p,h in current['logical_files'].items() if p != entry}
+    tree = ast.parse(Path(__file__).read_text())
+    policy = {node.name:ast.dump(node,include_attributes=False) for node in tree.body
+              if isinstance(node,ast.ClassDef) and node.name in ('StoredSource','StoredRows','Context')}
+    return (dependencies == receipt['migrated_dependencies']
+            and digest(policy) == receipt['classification_ast_sha256']
+            and all(previous[k] == current[k] for k in ('schema','constraint_set','numpy','pandas')))
 
 
 class StoredSource:
@@ -54,7 +81,9 @@ class StoredSource:
         self.parts = {part: {k: list(storage.view(raw, part, k)) for k in raw[part]}
                       for part in ('tables', 'entries', 'flows', 'assigned')}
         ts = self.parts['tables']
-        self.t = pd.DataFrame(ts)
+        # Native references address tables by their physical row index; the
+        # parquet TableSource interface exposes that identity as a column.
+        self.t = pd.DataFrame({**ts, 'table': np.arange(len(ts['relation']))})
         self.t_at = {(task, case): np.arange(len(self.t))}
         es = self.parts['entries']
         self.i = {**{k: np.array(es[k]) for k in
@@ -83,6 +112,10 @@ class StoredRows(writer.CaseRows):
         self.optimistic = False
         self.unavailable = []
         self.probes = {}
+        # CaseRows.setup sets ok before constructing tabs/ents/flows. Finish it
+        # before this object can enter Context.rows_cache, so an exception cannot
+        # leave a seemingly initialized object available to the next pair.
+        self.setup()
 
     def rows(self, lay, entry):
         _, _, _, n, off, _ = entry
@@ -269,6 +302,8 @@ def main():
     ap.add_argument('--base', type=Path, default=DATA_ROOT / 'ast/run/mech/labels.sqlite3')
     ap.add_argument('--output', type=Path, default=DATA_ROOT / 'ast/run/mech2/normal.sqlite3')
     ap.add_argument('--summary', type=Path, default=DATA_ROOT / 'ast/run/mech2/summary.json')
+    ap.add_argument('--retry-unavailable', action='store_true',
+                    help='retry only existing null mutant attributes; preserve classified rows')
     a = ap.parse_args()
     a.output = a.output.resolve()
     if a.output.parent != DATA_ROOT/'ast/run/mech2' or a.summary.resolve().parent != DATA_ROOT/'ast/run/mech2':
@@ -286,10 +321,36 @@ def main():
         normal INTEGER, gold_point_id TEXT NOT NULL, base_label TEXT, operation TEXT,K INTEGER,record_json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS gold_points(point_id TEXT PRIMARY KEY,task TEXT,case_name TEXT,
         point TEXT,clause TEXT,normal INTEGER,record_json TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS code_manifests(code_sha256 TEXT PRIMARY KEY,manifest_json TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS compatible_codes(code_sha256 TEXT PRIMARY KEY,current_code_sha256 TEXT NOT NULL,reason TEXT NOT NULL);
     ''')
     previous_code = db.execute("SELECT value FROM metadata WHERE key='code_manifest'").fetchone()
-    if previous_code and digest(json.loads(previous_code[0])) != code_hash:
+    accepted_codes = {code_hash}
+    if previous_code:
+        previous_manifest = json.loads(previous_code[0]); previous_hash = digest(previous_manifest)
+        db.execute('INSERT OR IGNORE INTO code_manifests VALUES (?,?)', (previous_hash,previous_code[0]))
+        prior_compat = {p for p, in db.execute('SELECT code_sha256 FROM compatible_codes WHERE current_code_sha256=?',(previous_hash,))}
+        if compatible_migration(previous_manifest,code):
+            accepted_codes.add(previous_hash)
+            accepted_codes.update(prior_compat)
+        elif previous_hash == REPAIR_PREDECESSOR:
+            old_files = {p:h for p,h in previous_manifest['files'].items() if p != str(Path(__file__).resolve())}
+            new_files = {p:h for p,h in code['files'].items() if p != str(Path(__file__).resolve())}
+            if old_files != new_files or any(previous_manifest[k]!=code[k] for k in ('schema','constraint_set','numpy','pandas')):
+                raise ValueError('repair compatibility requires unchanged writer and dependency receipts')
+            accepted_codes.add(previous_hash)
+        elif previous_hash == code_hash:
+            accepted_codes.update(prior_compat)
+        elif a.retry_unavailable:
+            raise ValueError('unreviewed predecessor: cannot preserve classified rows')
+    elif a.retry_unavailable:
+        raise ValueError('--retry-unavailable requires an existing completed output')
+    if previous_code and previous_hash not in accepted_codes:
         db.execute('DELETE FROM gold_points')
+    db.execute('INSERT OR REPLACE INTO code_manifests VALUES (?,?)',(code_hash,canonical(code)))
+    for previous_hash in accepted_codes - {code_hash}:
+        db.execute('INSERT OR REPLACE INTO compatible_codes VALUES (?,?,?)',
+                   (previous_hash,code_hash,'Reviewed source migration or table identity/atomic setup repair; completed predecessor verdicts unchanged'))
     db.execute('INSERT OR REPLACE INTO metadata VALUES (?,?)', ('code_manifest',canonical(code)))
     db.execute('INSERT OR REPLACE INTO metadata VALUES (?,?)', ('schema',SCHEMA));db.commit()
     total = base.execute('SELECT count(*) FROM pairs').fetchone()[0]
@@ -303,13 +364,18 @@ def main():
         while not stop.wait(5): progress()
     thread=threading.Thread(target=heartbeat,daemon=True);thread.start()
     try:
-        old={p:(s,b,c,h) for p,s,b,c,h in db.execute('SELECT pair_id,source_sha256,base_result_sha256,code_sha256,result_sha256 FROM pairs')}
+        old={p:(s,b,c,h,n) for p,s,b,c,h,n in db.execute('SELECT pair_id,source_sha256,base_result_sha256,code_sha256,result_sha256,normal FROM pairs')}
         wanted=defaultdict(dict)
         for pid, source_hash, base_hash, text in base.execute('SELECT pair_id,source_sha256,result_sha256,record_json FROM pairs'):
-            if pid in old and old[pid][:3] == (source_hash,base_hash,code_hash):
+            valid = (pid in old and old[pid][:2] == (source_hash,base_hash)
+                     and old[pid][2] in accepted_codes)
+            if valid:
                 saved=db.execute('SELECT record_json FROM pairs WHERE pair_id=?',(pid,)).fetchone()[0]
-                if digest(json.loads(saved))==old[pid][3]:
+                valid = digest(json.loads(saved))==old[pid][3]
+                if valid and not (a.retry_unavailable and old[pid][4] is None):
                     state['done']+=1;state['skipped']+=1;continue
+            if a.retry_unavailable and not valid:
+                raise ValueError('retry requires a valid existing receipt for '+pid)
             rec=json.loads(text)
             if digest(rec)!=base_hash or rec['pair_id']!=pid or rec['source_sha256']!=source_hash:
                 raise ValueError('invalid base row '+pid)
