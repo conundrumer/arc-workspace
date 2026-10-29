@@ -229,14 +229,15 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
         programs[side] = side + '.arclog'
         if features is not None and side == 'gold' and not shared:
             continue
-        export = producer._export(record[side + '_sexp'], record if side == 'gold' else None)
+        export = producer._export(record[side + '_sexp'], record if side == 'gold' else None,
+                                  mutant_record=record if side == 'mutant' else None)
         side_names = producer.policy['Names'](export) if side == 'gold' else names
         where = shared if features is not None and side == 'gold' else output
         (where / programs[side]).write_text(side_names.text(record[side + '_sexp']) + '\n')
     nodes = {tuple(n['path']): n for n in main_export['nodes']}
     change = dict(point=record['point'], kind=adapter['input']['binding']['kind'],
                   gold=names.text(nodes[tuple(record['point'])]['sexp']))
-    mutant_export = producer._export(record['mutant_sexp'])
+    mutant_export = producer._export(record['mutant_sexp'],mutant_record=record)
     mutant_nodes = {tuple(n['path']): n for n in mutant_export['nodes']}
     change['mutant'] = names.text(mutant_nodes[tuple(record['point'])]['sexp'])
     readers = {}

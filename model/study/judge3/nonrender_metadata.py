@@ -99,8 +99,8 @@ class MetadataProducer:
         self.programs.names = OrderedDict()
         self.case_cache = {}
 
-    def _export(self, text, record=None):
-        return self.programs.load(text, record)[1]
+    def _export(self, text, record=None, *, mutant_record=None):
+        return self.programs.load(text, record, mutant_record=mutant_record)[1]
 
     def _inventory(self, record):
         task = record['task']; base = self.corpus/task
@@ -164,7 +164,8 @@ class MetadataProducer:
         if 'programs' not in record:
             record['programs']={side:record[side+'_sexp'] for side in ('gold','mutant')}
         base=Path(native_base).resolve() if native_base is not None else self.corpus/record['task']
-        exports={side:self._export(record['programs'][side], record if side=='gold' else None)
+        exports={side:self._export(record['programs'][side], record if side=='gold' else None,
+                                  mutant_record=record if side=='mutant' else None)
                  for side in ('gold','mutant')}
         readers={side:self.read_native(record['native'][side],base)
                  for side in ('gold','mutant')}
@@ -226,7 +227,7 @@ class MetadataProducer:
             r['programs']={side:r[side+'_sexp'] for side in ('gold','mutant')}
         base=Path(native_base).resolve() if native_base is not None else self.corpus/r['task']
         ctx=self.policy['Document'].__new__(self.policy['Document'])
-        ctx.r=r;ctx.gexport=self._export(r['programs']['gold'],r);ctx.mexport=self._export(r['programs']['mutant'])
+        ctx.r=r;ctx.gexport=self._export(r['programs']['gold'],r);ctx.mexport=self._export(r['programs']['mutant'],mutant_record=r)
         ctx.names=self.policy['Names'](ctx.gexport)
         tokens=set(ctx.names.tokens)|set(ctx.names.tokens.values())
         for export in (ctx.gexport,ctx.mexport):

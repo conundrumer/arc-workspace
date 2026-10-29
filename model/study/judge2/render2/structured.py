@@ -64,20 +64,37 @@ class Programs:
         while len(self.frames)>16:self.frames.popitem(last=False)
         return data
 
-    def load(self, text, record=None):
+    def load(self, text, record=None, *, mutant_record=None):
         # A stored map must be authenticated even if the same program was
         # previously exported for another record. Never reuse an unnamed export.
+        mutation_key = (mutant_record['programs']['gold'],
+                        json.dumps(mutant_record['identity'],sort_keys=True),
+                        json.dumps(mutant_record.get('relation_source_names'),sort_keys=True),
+                        mutant_record['task'],mutant_record['case']) if mutant_record is not None else None
         key=(text,json.dumps(record.get('relation_source_names'),sort_keys=True) if record else None,
-             (record['task'],record['case']) if record else None)
+             (record['task'],record['case']) if record else None,mutation_key)
         if key in self.cache:
             self.cache.move_to_end(key)
             return self.cache[key]
-        program = self.engine.StudyProgram.from_sexp(text,self.settings) if self.settings is not None else self.engine.StudyProgram.from_sexp(text)
-        if hasattr(program,'decode_source'):
-            program=program.decode_source()
-        names,naming=self.source_names(program,text,record)
-        require(names is None or hasattr(self.engine,'study_program_export_json'),'runtime cannot authenticate source-name map')
-        export = json.loads(self.engine.study_program_export_json(program,names) if hasattr(self.engine,"study_program_export_json") else program.render_json())
+        if mutant_record is not None:
+            # Reparse/decode can normalize nested sites and allocate different
+            # label spellings. Reconstruct the logged mutation from its exact
+            # gold source, as pair() does, retaining native label identities.
+            require(text == mutant_record['programs']['mutant'], 'requested mutant differs from record')
+            gold,gexport,naming=self.load(mutant_record['programs']['gold'],mutant_record)
+            require(hasattr(gold,'construct_identity'),'runtime cannot reconstruct native mutation identity')
+            program=gold.construct_identity(json.dumps(mutant_record['identity']))
+            names=json.dumps(gexport['relation_source_names']) if gexport.get('relation_source_names') is not None else None
+            require(names is None or hasattr(self.engine,'study_mutant_export_json'),'runtime cannot authenticate mutant source-name map')
+            export=json.loads(self.engine.study_mutant_export_json(program,names) if hasattr(self.engine,'study_mutant_export_json') else program.render_json())
+            require(export['mutation_identity']==mutant_record['identity'],'native mutation identity differs from record')
+        else:
+            program = self.engine.StudyProgram.from_sexp(text,self.settings) if self.settings is not None else self.engine.StudyProgram.from_sexp(text)
+            if hasattr(program,'decode_source'):
+                program=program.decode_source()
+            names,naming=self.source_names(program,text,record)
+            require(names is None or hasattr(self.engine,'study_program_export_json'),'runtime cannot authenticate source-name map')
+            export = json.loads(self.engine.study_program_export_json(program,names) if hasattr(self.engine,"study_program_export_json") else program.render_json())
         require(export['schema'] == 'arclog-study-render-v1', 'unknown engine render schema')
         require(export['parts']['nodes'] == 'complete', 'engine AST export incomplete')
         require(export['program_sexp'] == text, 'engine AST export program differs from record')

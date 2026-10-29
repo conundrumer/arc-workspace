@@ -307,6 +307,13 @@ class Document:
                                 else dict(kind='written', name=native['name']))
                     match = (d.get('instance') == instance and len(relation['path']) == 1
                              and d.get('port') == relation['path'][0].get('port'))
+                    if d['kind'] == 'recursive_instance':
+                        # Native recursive components map all written inputs
+                        # and declared outputs to their one owner node.
+                        match = (d['name'] == instance
+                                 and definition['definition_path'] in n['forms']
+                                 and len(relation['path']) == 1
+                                 and set(relation['path'][0]) == {'port'})
                 elif 'rigid' in owner:
                     native = owner['rigid']
                     rigid = (dict(kind='slot', slot=native['slot']) if 'slot' in native
