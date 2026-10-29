@@ -128,6 +128,15 @@ class Names:
                         token += '.' + part['port']
                     elif set(part) == {'part'} and set(part['part']) == {'slot'}:
                         token += '.r' + str(part['part']['slot'])
+                    elif set(part) == {'part'} and set(part['part']) == {'name'}:
+                        # Native OutputStep::Part(Written) writes the exact
+                        # declared part name after removing its leading &.
+                        # The display spelling still comes from the native
+                        # authenticated source map, never from this suffix.
+                        name = part['part']['name']
+                        require(isinstance(name, str) and name.startswith('&') and len(name) > 1,
+                                'native written RIGID part lacks its declared token')
+                        token += '.' + name.lstrip('&')
                     elif part == {'pose': True}:
                         token += '.pose'
                     else:
