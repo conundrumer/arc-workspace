@@ -180,12 +180,30 @@ class StudyReader:
             judges,judge_issues=self._judges(base,sha)
             graded=grade_results(base,witness_tests=tests,fit_split=fits,lib_search=lib,
                 target_comparison=targets,judge_outcomes=judges,base_reference=reference)
+            program_result=None
+            from grades import judge_candidate,program_nonfit
+            if (base.get('fits') is False and judge_candidate(graded['evidence'])
+                    and not program_nonfit(graded['evidence'].get('program',{}))):
+                # Only open judge routes need this source read. A legacy
+                # fits=False is a hint, never itself the nonfit certificate.
+                try:
+                    original=source_record if source_record is not None else self.sources.record(base)
+                    from program_evidence import stored_train_nonfit
+                    src=base['source']
+                    program_result=stored_train_nonfit(original,pair_id=pair,source_sha256=source,
+                        source_ref=dict(corpus=str(Path(src['corpus']).resolve()),
+                            file=base['task']+'/'+src['file'],line=src['line'],stream=src['stream']))
+                    if program_result.get('valid'):
+                        graded=grade_results(base,witness_tests=tests,fit_split=fits,lib_search=lib,
+                            target_comparison=targets,judge_outcomes=judges,base_reference=reference,
+                            program_result=program_result)
+                except Exception as error:issues.append('stored program nonfit proof unavailable: '+str(error))
             evidence=graded.pop('evidence')
             targets.pop('_source_groups',None)
             record=dict(pair_id=pair,source_sha256=source,source=base.get('source'),base_result_ref=reference,
                         **{k:base[k] for k in ('task','case','point','operation','K','kind')},**graded)
             results=dict(base=base,witness_tests=tests,fit_split=fits,target_comparison=targets,
-                         lib_search=lib,judge_outcomes=judges,normal=normal)
+                         lib_search=lib,judge_outcomes=judges,normal=normal,program_check=program_result)
             return dict(status='done',valid=True,pair_id=pair,facts={k:record[k] for k in ('task','case','point','operation','K','kind')},
                 results=results,normal=normal.get('normal') if normal.get('status') in ('classified','done') else None,
                 **graded,record=record,source_sha256=source,base_result_sha256=sha,

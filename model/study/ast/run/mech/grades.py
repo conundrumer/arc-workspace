@@ -104,8 +104,7 @@ def reduce_grade(evidence):
         elif program.get('refused') is True and program.get('receipt_ref'):
             grade, reason = 'Refused', 'mutant program refused by engine'
         else:
-            nonfit = (is_det or (program.get('complete') is True and bool(program.get('receipt_ref'))
-                      and (program.get('fits_train') is False or program.get('fits_test') is False)))
+            nonfit = is_det or program_nonfit(program)
             # Lossy needs the settled projected point comparison, never a legacy
             # label against a different body/target or an incomplete family.
             support = comparisons.get('recovery_support', {})
@@ -141,8 +140,17 @@ def reduce_grade(evidence):
                 filter_class=evidence.get('filter_class'), missing_steps=missing_steps)
 
 
-def judge_eligible(evidence):
-    """Final admission, never inferred from legacy labels alone."""
+def program_nonfit(program):
+    """Complete fit failure can be decided by TRAIN without a TEST verdict."""
+    return ((program.get('complete') is True and bool(program.get('receipt_ref'))
+             and (program.get('fits_train') is False or program.get('fits_test') is False))
+            or (program.get('fits_train') is False
+                and program.get('train_nonfit_complete') is True
+                and bool(program.get('train_nonfit_receipt'))))
+
+
+def judge_candidate(evidence):
+    """Open table/search route, before requiring a program nonfit proof."""
     program = evidence.get('program', {})
     if (evidence.get('kind', '').upper() == 'DET'
             or (program.get('fits_train') is True and program.get('fits_test') is True)
@@ -156,7 +164,10 @@ def judge_eligible(evidence):
                 or (support.get('any_target_contains') is True and bool(support.get('receipt_ref'))))
     return (possible
             and support.get('all_targets_lossy') is not True
-            and program.get('complete') is True and bool(program.get('receipt_ref'))
-            and (program.get('fits_train') is False or program.get('fits_test') is False)
             and search.get('status') in ('bound_unknown', 'not_covered')
             and bool(search.get('receipt_ref')))
+
+
+def judge_eligible(evidence):
+    """Final admission, never inferred from legacy labels alone."""
+    return judge_candidate(evidence) and program_nonfit(evidence.get('program',{}))

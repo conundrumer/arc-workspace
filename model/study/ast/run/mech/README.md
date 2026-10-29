@@ -130,6 +130,16 @@ preserved. `grade_store.PassStore` stores provenance once and creates no grades.
 
 ## Policy details
 
+An open judge route can reuse original native TRAIN nonfit checks. A complete
+`native_closed_candidate_set` failure at every kept assignment rules out program
+fit without a TEST verdict. `program_evidence.stored_train_nonfit` authenticates
+the original source and records exact counterexample pointers; `program_nonfit`
+is the shared reducer/admission predicate. The legacy aggregate `fits=false`
+alone proves nothing. The joined reader acquires this source evidence only for
+an otherwise open judge route, and stores no derived grade or copied fact.
+`fits_test` and whole-program `complete` remain unchanged. Positive fits still
+requires the complete TRAIN+TEST evidence described below.
+
 Every positive uses complete kept TRAIN+TEST comparisons against fresh gold.
 Partial source requires explicit `X_contributes_rows=true` and a complete
 `row_contribution` receipt binding the original native artifact, required

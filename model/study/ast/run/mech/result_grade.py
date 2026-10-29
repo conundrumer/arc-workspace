@@ -12,7 +12,7 @@ from grades import reduce_grade,judge_eligible
 
 
 def grade_results(base,*,witness_tests=(),fit_split=None,lib_search=None,
-                  target_comparison=None,judge_outcomes=(),base_reference=None):
+                  target_comparison=None,judge_outcomes=(),base_reference=None,program_result=None):
     ref=base_reference or dict(result_sha256=digest(base))
     evidence=adapt(base,ref)
     items=[i for i in base.get('per_assignment',[]) if train_witness(i)]
@@ -71,6 +71,11 @@ def grade_results(base,*,witness_tests=(),fit_split=None,lib_search=None,
     if lib_search and lib_search.get('valid') is True:
         evidence['mechanical_clauses'].extend(deepcopy(lib_search.get('mechanical_clauses',[])))
         # A bounded finite library pass supplies no exhaustive negative.
+    if (program_result and program_result.get('valid') is True
+            and program_result.get('pair_id')==base['pair_id']
+            and program_result.get('source_sha256')==base['source_sha256']):
+        evidence['program'].update({k:deepcopy(program_result[k]) for k in
+            ('fits_train','train_nonfit_complete','train_nonfit_receipt') if k in program_result})
     for judge in judge_outcomes:
         evidence['clauses'].extend(deepcopy(judge.get('clauses',[])))
         if judge.get('judge_run'):evidence['judge_run']=deepcopy(judge['judge_run'])

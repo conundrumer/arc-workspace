@@ -22,7 +22,8 @@ def admission(evidence, grade_ref, *, inputs_authenticated=False):
                   containment={k:v for k,v in evidence.get('comparisons',{}).get('point',{}).items()
                                if k in ('complete','lossy','X_holds_every_gold_row','receipt_ref')},
                   program={k:v for k,v in evidence.get('program',{}).items()
-                           if k in ('complete','fits_train','fits_test','refused','receipt_ref')},
+                           if k in ('complete','fits_train','fits_test','refused','receipt_ref',
+                                    'train_nonfit_complete','train_nonfit_receipt')},
                   kind=evidence.get('kind'),
                   search={k:v for k,v in evidence.get('search',{}).items()
                           if k in ('status','complete','settled_space','unvisited','receipt_ref')},
