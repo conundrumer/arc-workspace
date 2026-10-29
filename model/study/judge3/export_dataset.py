@@ -47,24 +47,35 @@ def _case(ev, record, context, ntrain, ntest, cache):
                     runtime=ev.receipt, adapter=dependency_receipt(), ntrain=ntrain, ntest=ntest)
     path = cache / (sha(identity) + '.json')
     if path.exists():
-        return read_json(path)
+        return read_json(path), False
     print(f"case {context['name']}: fresh gold replay", file=sys.stderr, flush=True)
     case_context = dict(context, catalogue_path=context.get('catalogue_path'))
     value = acquire_case_train(ev, record, case_context, ntrain, ntest)
     # Cache failed/bounded acquisitions too: an exporter retry is explicit.
     write_json(path, value)
-    return value
+    return value, True
 
 
 def export_pair(ev, source_pair, output, cache):
-    from evaluator import read_json, sha
     from judge_tool import load_pair
+    manifest, record, target = load_pair(source_pair)
+    return export_target(ev, manifest['pair_id'], record, target, output, cache,
+                         source=str(Path(source_pair).resolve()))
+
+
+def export_target(ev, pair_id, record, target, output, cache, *, source,
+                  private=DATA_ROOT / 'judgetool'):
+    """Write one pair directory from a source record and its target (adapter, ntrain, ntest).
+
+    `source` names where the target came from; `private` receives the contexts
+    and receipts that the judge clause commands read.
+    """
+    from evaluator import read_json, sha
     from tables import TargetStore
     from evaluator_train import acquire_train_point
     from case_collector import compare_target
     from definition_binding import definition_node
-    manifest, record, target = load_pair(source_pair)
-    adapter = target['adapter']; pair_id = manifest['pair_id']
+    adapter = target['adapter']
     destination = Path(output)
     if not destination.resolve().is_relative_to(DATA_ROOT.resolve()):
         raise ValueError('dataset output must stay under the study data root')
@@ -110,11 +121,12 @@ def export_pair(ev, source_pair, output, cache):
     comparison(g, g['fields'], dict(target_id='G', role='point'))
     main_export = None
     count = 0
+    fresh_cases = {}
     facts = set()
     contexts = adapter['all_case_targets']['cases']
     for context in contexts:
         context = dict(context, catalogue_path=adapter['all_case_targets']['catalogue_path'])
-        bundle = _case(ev, record, context, target['ntrain'], target['ntest'], cache)
+        bundle, fresh_cases[context['name']] = _case(ev, record, context, target['ntrain'], target['ntest'], cache)
         if not bundle['native_table_inventory_complete']:
             raise ValueError('fresh case replay returned no complete table inventory: ' + context['name'])
         export = bundle['export']; same = bundle['case'] == record['case']
@@ -209,16 +221,16 @@ def export_pair(ev, source_pair, output, cache):
     write_json(output / 'comparisons.json', comparisons)
     write_json(output / 'pair.json', pair_packet(pair_id=pair_id, task=record['task'], case=record['case'],
         change=change, tables=index, programs=programs, libraries='libraries.json'))
-    write_json(DATA_ROOT / 'judgetool/dataset-contexts' / (pair_id + '.json'),
-               dict(source_pair=str(Path(source_pair).resolve()), source_sha256=sha(record),
+    write_json(private / 'dataset-contexts' / (pair_id + '.json'),
+               dict(source_pair=source, source_sha256=sha(record),
                     targets=target_bindings))
-    write_json(DATA_ROOT / 'judgetool/dataset-export-receipts' / (pair_id + '.json'),
+    write_json(private / 'dataset-export-receipts' / (pair_id + '.json'),
                dict(source_sha256=sha(record), runtime=ev.receipt, cases=provenance,
                     implementation={str(p.resolve()):hashlib.sha256(p.read_bytes()).hexdigest()
                         for p in (Path(__file__), Path(__file__).with_name('dataset_format.py'),
                                   Path(__file__).with_name('nonrender_metadata.py'))}))
     output.rename(destination)
-    return dict(pair_id=pair_id, tables=len(index), output=str(destination))
+    return dict(pair_id=pair_id, tables=len(index), output=str(destination), fresh_cases=fresh_cases)
 
 
 def main():
