@@ -1,7 +1,8 @@
 """Stored native program fit evidence, and a pure Step 4 grade overlay.
 
-TRAIN success, projected OUT equality, or a set of valid grids after dropping
-undefined models never establishes TEST fit. No evaluator is implemented here.
+Stored native verdicts are reused. Missing TEST evidence is acquired by the
+shared whole-program evaluator in the caller, with gold's full replay as truth.
+No evaluator is implemented here.
 """
 from copy import deepcopy
 from grades import reduce_grade

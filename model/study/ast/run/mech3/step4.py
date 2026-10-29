@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Step 4: stored reader comparison and DET projection receipts.
+"""Step 4: fits/extension split with shared whole-program TEST replay.
 
-No replay, judge call, baseline or base relabel. Missing TEST fit proof is an
-explicit Unknown; it is never replaced with TRAIN fit or a naive OUT equality.
+Reuses stored TRAIN fit and reader tables. Missing TEST evidence is acquired
+through the shared evaluator, using fresh full gold replay as the authority.
 """
 import argparse
 from collections import Counter
@@ -23,7 +23,7 @@ from common import CODE_ROOT,DATA_ROOT,OUTPUT_ROOT,HERE,canonical,digest
 from fit_contract import stored_program_fit
 from observations import original_groups,compare_readers
 from reader_projection import pair_readers
-from store import Store
+from store import Store,GoldCache
 from step2_check import valid_base
 from run import pair_key
 
@@ -37,16 +37,17 @@ def stop(*_):
 
 class Worker:
     def __init__(self,args):
-        from evaluator import legacy_helpers
+        from evaluator import ReplayEvaluator
         from tables import TargetStore,comparison_type
         from nonrender_metadata import MetadataProducer
         import importlib.util
         self.args=args;self.start=time.monotonic();self.last=0;self.counts=Counter();self.reader_counts=Counter()
         self.tasks={};self.current=None;self.producer=None;self.producer_class=MetadataProducer
         self.cfg=json.loads((DATA_ROOT/'ast/run/corpus-v11/run.json').read_text())
-        self.legacy=legacy_helpers(CODE_ROOT/'ast/run',CODE_ROOT/'ref/progsynth-relabel')
-        self.settings=self.legacy.arclog.DecodeSettings(deadline_seconds=self.cfg['deadline'],
-            table_work_cap=self.cfg['work_cap'],rule_tests=False)
+        self.ev=ReplayEvaluator(run=CODE_ROOT/'ast/run',deadline=args.deadline,
+            artifacts=DATA_ROOT/'judgetool/mech3-fit-replays',reference=CODE_ROOT/'ref/progsynth-relabel')
+        self.legacy=self.ev.legacy;self.settings=self.ev.settings
+        self.gold_task=None
         self.context=SimpleNamespace(arclog=self.legacy.arclog,legacy=self.legacy,settings=self.settings)
         self.native=TargetStore(self.legacy,CODE_ROOT)
         binary=Path(importlib.util.find_spec('arclog.arclog').origin).resolve()
@@ -60,17 +61,20 @@ class Worker:
             'judge2/render2/headers.py','judge2/render2/body.py','judge2/render2/column_paths.py',
             'judge2/render2/structured.py','ref/progsynth-relabel/engine_verify.py',
             'ref/progsynth-relabel/verify_recovery.py','codex-adm/briefs/judge-decisions.md'))
+        files.extend((CODE_ROOT/'judgetool').glob('*.py'))
         files.append(binary)
         self.manifest={str(p.resolve()):hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
         self.signatures={p:self.signature(Path(p)) for p in self.manifest}
         config=dict(schema='mech3-step4-config-v1',base=str(args.base.resolve()),compare_seconds=args.compare_seconds,
-            scope='base fits flag true plus every DET for table-only receipt; no replay; per-reader joint projections',
-            program_fit='complete stored native TRAIN+TEST accepted-output verdict only',
+            scope='base label fits, nonDET; per-reader joint projections',
+            program_fit='stored TRAIN+TEST proof first; missing TEST uses shared whole mutant and full gold OUT replay',
             spec_sha256=self.manifest[str((CODE_ROOT/'codex-adm/briefs/judge-decisions.md').resolve())],
-            runtime=dict(python=str(Path(sys.executable).resolve()),binary=str(binary)),replays=0)
+            runtime=dict(python=str(Path(sys.executable).resolve()),binary=str(binary)),deadline=args.deadline)
         self.output=Store(args.output,self.manifest,config)
+        self.gold_cache=GoldCache(self.output)
+        self.program_code=digest({p:sha for p,sha in self.manifest.items() if not Path(p).is_relative_to(HERE)})
         self.base=sqlite3.connect(args.base.resolve().as_uri()+'?mode=ro',uri=True);self.base.execute('BEGIN')
-        self.scope="(json_extract(record_json,'$.fits')=1 OR upper(json_extract(record_json,'$.kind'))='DET')"
+        self.scope="(json_extract(record_json,'$.label')='fits' AND upper(json_extract(record_json,'$.kind'))!='DET')"
         self.total=self.base.execute('SELECT count(*) FROM pairs WHERE '+self.scope).fetchone()[0]
 
     @staticmethod
@@ -133,9 +137,30 @@ class Worker:
             raise ValueError('fresh source differs from base receipt')
         ntrain,ntest,task_receipt=self.task(base['task'])
         program=stored_program_fit(record,ntrain,ntest)
+        test_evaluations=0;test_reused=False
+        if program['fits_test'] is None:
+            from out_fit import check
+            if self.gold_task!=record['task']:
+                self.gold_cache.clear();self.gold_task=record['task']
+            cache_key=digest(dict(schema='mech3-program-test-cache-v1',source=base['source_sha256'],base=digest(base),code=self.program_code,
+                                 task=task_receipt,deadline=self.args.deadline,ntrain=ntrain,ntest=ntest))
+            tested=self.output.load_program(base['pair_id'],cache_key)
+            test_reused=tested is not None
+            if tested is None:
+                tested=check(self.ev,record,ntrain=ntrain,ntest=ntest,gold_cache=self.gold_cache)
+                self.output.save_program(base['pair_id'],cache_key,tested)
+                counts=tested.get('evaluations',{})
+                test_evaluations=sum(counts.values()) if isinstance(counts,dict) else counts
+            program['test_check']=tested
+            program['test_cache_key']=cache_key
+            if tested.get('complete') is True and type(tested.get('fits_test')) is bool:
+                program['fits_test']=tested['fits_test']
+                program['missing']=[m for m in program.get('missing',[]) if 'test' not in m.lower()]
+            program['complete']=all(type(program[k]) is bool for k in ('fits_train','fits_test'))
         value=dict(schema='mech3-step4-record-v1',pair_id=base['pair_id'],source_sha256=base['source_sha256'],
             base_result_sha256=digest(base),program=program,task_receipt=task_receipt,kind=base['kind'],
-            reader_difference=dict(complete=False,read_difference=None),evaluations=0)
+            reader_difference=dict(complete=False,read_difference=None),
+            evaluations=test_evaluations,test_evidence_reused=test_reused)
         try:
             corpus=Path(base['source']['corpus']).resolve();projection=self.metadata(record,corpus)
             value['projection']=projection
@@ -159,7 +184,7 @@ class Worker:
                         for s in ('gold','mutant')}
                 read=compare_readers(projection,groups,self.legacy,seconds=self.args.compare_seconds)
             value['reader_difference']=read
-        except (ValueError,KeyError,IndexError,TypeError) as error:
+        except (OSError,ValueError,KeyError,IndexError,TypeError) as error:
             value['reader_difference'].update(reason=str(error),error_type=type(error).__name__)
         different=value['reader_difference']['read_difference']
         if base['kind'].upper()=='DET':
@@ -171,6 +196,8 @@ class Worker:
         value['conditional_fit_grade']='fits' if different is True else 'extension' if different is False else 'Unknown'
         value['missing_steps']=[]
         if not program['complete']:value['missing_steps'].append('step_4_test_program_fit_proof')
+        if program['complete'] and (program['fits_train'] is False or program['fits_test'] is False):
+            value['missing_steps'].append('step_3_nonfitting_target_grade')
         if different is None:value['missing_steps'].append('step_4_reader_projection_or_rows')
         value['grade']=value['conditional_fit_grade'] if program['fits_train'] is True and program['fits_test'] is True else 'Unknown'
         value['status']='complete' if not value['missing_steps'] else 'unavailable'
@@ -187,11 +214,12 @@ class Worker:
                 if STOP:return False
                 base=valid_base(row);saved=self.output.load(base['pair_id'],base['source_sha256'],row[4])
                 ntrain,ntest,task_receipt=self.task(base['task'])
+                if saved is not None and saved.get('task_receipt')!=task_receipt:saved=None
                 if saved is not None and saved.get('task_receipt')==task_receipt:
                     value=saved;self.counts['resumed']+=1
                 else:
                     source=base['source'];current=Path(source['corpus']).resolve()/base['task']/source['file'];wanted=source['line']
-                    if path!=current:
+                    if path!=current or wanted<line_number:
                         if stream is not None:stream.close()
                         path=current;stream=None;line_number=0;failed=None
                         try:stream=gzip.open(current,'rt')
@@ -219,6 +247,8 @@ class Worker:
                         self.native.cache.clear()
                     self.guard();value=self.output.save(value);self.counts['writes']+=1
                 self.counts['grade:'+value['grade']]+=1
+                self.counts['evaluations']+=value.get('evaluations',0) if saved is None else 0
+                self.counts['test_fit:'+str(value.get('program',{}).get('fits_test'))]+=1
                 if base['kind'].upper()=='DET':self.counts['det_grade:'+value['grade']]+=1
                 self.reader_counts[value['conditional_fit_grade']]+=1
                 self.counts.update('owed:'+s for s in value['missing_steps'])
@@ -236,9 +266,8 @@ class Worker:
         value=dict(schema='mech3-step4-summary-v1',complete=complete,total=self.total,counts=dict(self.counts),
             conditional_fit_counts=dict(self.reader_counts),elapsed_seconds=time.monotonic()-self.start,
             output=str(self.args.output.resolve()),code_sha256=self.output.code,config_sha256=self.output.config_hash,
-            evaluations=0,grade_scope='fits/extension evidence only; stronger grades merged by n-mech reducer',
-            blocked=['no qualified shared test-OUT total-grid/accepted-candidate checker; reuse stored proofs only',
-                     'DET final table grades await qualified n-mech Step3 comparison/recovery evidence'])
+            evaluations=self.counts['evaluations'],grade_scope='nonDET base fits pairs; stronger grades merged by shared reducer',
+            blocked=['DET final table grades await qualified n-mech5 comparison/recovery evidence'])
         self.args.summary.write_text(json.dumps(value,indent=2)+'\n')
         print(json.dumps(value,sort_keys=True),file=sys.stderr,flush=True)
 
@@ -249,11 +278,15 @@ def main():
     ap.add_argument('--output',type=Path,default=OUTPUT_ROOT/'step4.sqlite3')
     ap.add_argument('--summary',type=Path,default=OUTPUT_ROOT/'step4-summary.json')
     ap.add_argument('--compare-seconds',type=float,default=1)
+    ap.add_argument('--deadline',type=float,default=30)
     args=ap.parse_args()
     if args.compare_seconds<=0:ap.error('positive comparison bound required')
+    if args.deadline<=0:ap.error('positive replay deadline required')
     if args.base.resolve()==args.output.resolve():ap.error('base must remain read-only')
     if not args.output.resolve().is_relative_to(OUTPUT_ROOT.resolve()):ap.error('outputs must stay under mech3 data root')
+    if not args.summary.resolve().is_relative_to(OUTPUT_ROOT.resolve()):ap.error('summary must stay under mech3 data root')
     args.output.parent.mkdir(parents=True,exist_ok=True)
+    args.summary.parent.mkdir(parents=True,exist_ok=True)
     lock=args.output.with_suffix('.lock').open('a');fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
     os.environ['STUDY_RUN']=str(CODE_ROOT/'ast/run')
     signal.signal(signal.SIGTERM,stop);signal.signal(signal.SIGINT,stop)
@@ -261,7 +294,7 @@ def main():
     try:
         worker=Worker(args);complete=worker.run();worker.guard();worker.summary(complete)
     finally:
-        if worker is not None:worker.output.close();worker.base.close()
+        if worker is not None:worker.ev.close();worker.output.close();worker.base.close()
         lock.close()
     if not complete:raise SystemExit(130)
 
