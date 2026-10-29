@@ -20,8 +20,9 @@ def dependency_receipt():
     import tables
     import checks
     import surface
+    import case_collector
     paths = (Path(__file__), Path(tables.__file__), Path(checks.__file__),
-             Path(surface.__file__), CODE_ROOT / 'study_paths.py',
+             Path(surface.__file__), Path(case_collector.__file__), CODE_ROOT / 'study_paths.py',
              CODE_ROOT / 'judge2/render2/body.py', CODE_ROOT / 'judge3/render_pair.py')
     return {str(p.resolve()): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
 
@@ -190,6 +191,12 @@ def acquire_input_train(ev, native, table, record, *, ntrain, source=None):
     if native['tables']['fact'][table] != 'ex_input':
         raise Incomplete('input TRAIN acquisition requires the native ex_input fact')
     packet = acquire_train_table(ev, native, table, record, ntrain=ntrain, source=source)
+    return _input_train(packet)
+
+
+def _input_train(packet):
+    """The sole per-input projection, also reused by once-case acquisition."""
+    from tables import Incomplete
     examples = [i for i, field in enumerate(packet['fields']) if field['type'] == 'Example']
     if len(examples) != 1:
         raise Incomplete('native ex_input must have exactly one Example column')
@@ -208,6 +215,89 @@ def acquire_input_train(ev, native, table, record, *, ntrain, source=None):
         receipt=dict(packet['receipt'], input_projection=dict(
             source_fact='ex_input', relation='input', example_column=example_column,
             rule='Example equals destination TRAIN index before Example column removal')))
+
+
+def acquire_case_train(ev, record, case_context, ntrain, ntest):
+    """One fresh canonical case replay, original table inventory and TRAIN cells.
+
+    Persist this packet once per task/case/settings in the exporter. Every call
+    requests one fresh replay; there is no per-pair replay or whole-study cache.
+    The full native export graph is metadata, not a grant of clause availability.
+    Unrelated BODY observer gaps do not erase complete original native tables.
+    No native handle or private TEST table transport escapes this surface.
+    """
+    from case_collector import acquire_case, _context, clear_cache
+    from tables import Incomplete
+    from evaluator import sha
+    if (type(ntrain) is not int or ntrain < 1 or
+            type(ntest) is not int or ntest < 0):
+        raise Incomplete('case TRAIN acquisition requires authenticated input axes')
+    case, text, kept, names = _context(ev, record, case_context)
+    if not kept:
+        raise Incomplete('case TRAIN acquisition requires a nonempty own kept axis')
+    resolved = dict(case=case, gold_sexp=text, kept_assignments=kept)
+    if names is not None:
+        resolved['relation_source_names'] = names
+    own = dict(record, case=case, gold_sexp=text, mutant_sexp=text,
+               evaluation=dict(record['evaluation'], kept_assignments=kept))
+    saved = {}
+    class Capture:
+        def __getattr__(self, name):
+            return getattr(ev, name)
+        def replay_program(self, *args, **kwargs):
+            result = ev.replay_program(*args, **kwargs)
+            if saved:
+                raise Incomplete('case TRAIN collection exceeded its single replay contract')
+            saved['replay'] = result
+            if result.get('engine') == 'ran':
+                saved['native'] = ev.captures[-1]['native']
+            return result
+    proxy = Capture()
+    try:
+        bundle = acquire_case(proxy, record, resolved, ntrain, ntest)
+    finally:
+        # The collector's value-only cache cannot serve typed cell transport.
+        # Release this private proxy cache as soon as acquisition is finished.
+        clear_cache(proxy)
+    rows = []
+    gaps = deepcopy(bundle['gaps'])
+    native = saved.get('native')
+    for item in bundle['tables']:
+        identity = dict(table_id=item['table_id'], native_table=item['native_table'],
+            selector=deepcopy(item['selector']), source_name=item['source_name'],
+            native_schema=deepcopy(item['native_schema']))
+        output = dict(identity, status='unknown', table=None, input=None)
+        try:
+            if native is None:
+                raise Incomplete('case replay did not produce a complete native capture')
+            table = item['native_table']
+            fields = [dict(deepcopy(column), field_name=field['field_name'])
+                      for column, field in zip(item['native_schema'], item['fields'])]
+            if (len(fields) != len(item['fields']) or len(fields) != len(item['native_schema']) or
+                    [field['type'] for field in fields] != [field['type'] for field in item['fields']]):
+                raise Incomplete('canonical case table fields differ from native physical schema')
+            packet = acquire_train_table(ev, native, table, own, ntrain=ntrain,
+                fields=fields, projection=list(range(len(fields))),
+                source=dict(identity, case=case, observation=bundle['receipt']))
+            output.update(table=packet, status='complete' if not packet['missing'] else 'unknown')
+            if packet['missing']:
+                output['reason'] = 'case native table lacks required kept TRAIN entries'
+            if item['selector']['fact'] == 'ex_input':
+                output['input'] = _input_train(packet)
+        except (ValueError, KeyError, IndexError, TypeError) as error:
+            output.update(status='unknown', reason=str(error), error_type=type(error).__name__)
+        if output['status'] != 'complete':
+            gaps.append(dict(kind='train_table', table_id=item['table_id'],
+                             reason=output['reason']))
+        rows.append(output)
+    return dict(schema='evaluator-case-train-v1', task=record['task'], case=case,
+        ntrain=ntrain, program_sha256=bundle['program_sha256'],
+        kept_context_sha256=bundle['kept_context_sha256'], kept_assignments=deepcopy(kept),
+        export=deepcopy(bundle['export']), tables=rows, gaps=gaps,
+        native_table_inventory_complete=native is not None,
+        train_tables_complete=native is not None and all(item['status'] == 'complete' for item in rows),
+        receipt=dict(observation=bundle['receipt'], original_source_sha256=sha(record),
+                     implementation=dependency_receipt(), test_cells=False))
 
 
 def evaluate_train_clause(ev, record, clause, target, columns=None, explore=False):
