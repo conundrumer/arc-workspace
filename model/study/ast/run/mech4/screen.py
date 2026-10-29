@@ -80,7 +80,7 @@ def compare_train(native,table,ev,record,adapter,candidate,proof,gold,ntrain,nte
         source='same shared evaluator; TRAIN proposal only',native_table=table)
 
 
-def execute(ev,record,adapter,candidates,gold,ntrain,ntest,config,budget,journal,inputs,guard):
+def execute(ev,record,adapter,candidates,gold,ntrain,ntest,config,budget,cache,inputs,guard):
     """Yield each durably screened candidate; isolate refused combined programs."""
     from surface import prepare,tokens
     L=ev.legacy;original=L.split_forms(record['mutant_sexp']);trees=[L.parse(f) for f in original]
@@ -90,7 +90,7 @@ def execute(ev,record,adapter,candidates,gold,ntrain,ntest,config,budget,journal
     for candidate in candidates:
         if STOPPED(budget):return
         key=digest(dict(pair=inputs['pair_id'],candidate=candidate['candidate_id']))
-        old=journal.get('screen',key,dict(inputs,candidate=candidate))
+        old=cache.recall('screen',key,dict(inputs,candidate=candidate))
         if old is not None:
             yield candidate,old,True;continue
         try:
@@ -104,13 +104,13 @@ def execute(ev,record,adapter,candidates,gold,ntrain,ntest,config,budget,journal
             prepared.append((candidate,at,L.unparse(tree),proof))
         except (ValueError,KeyError,IndexError,TypeError) as error:
             result=dict(status='unavailable',reason=str(error),stage='canonical preparation')
-            journal.put('screen',key,dict(inputs,candidate=candidate),result)
+            cache.remember('screen',key,dict(inputs,candidate=candidate),result)
             yield candidate,result,False
     # Different insertion positions cannot silently share a program.
     positions=sorted({p[1] for p in prepared})
     for at in positions:
         batch=[p for p in prepared if p[1]==at]
-        yield from _execute_group(ev,record,adapter,batch,original,at,gold,ntrain,ntest,config,budget,journal,inputs,guard)
+        yield from _execute_group(ev,record,adapter,batch,original,at,gold,ntrain,ntest,config,budget,cache,inputs,guard)
 
 
 def STOPPED(budget):
@@ -118,10 +118,10 @@ def STOPPED(budget):
     return False
 
 
-def _execute_group(ev,record,adapter,prepared,original,at,gold,ntrain,ntest,config,budget,journal,inputs,guard):
+def _execute_group(ev,record,adapter,prepared,original,at,gold,ntrain,ntest,config,budget,cache,inputs,guard):
     if not prepared:return
     identity=digest(dict(source=digest(record),candidates=[p[0]['candidate_id'] for p in prepared],at=at))
-    old=journal.get('batch',identity,inputs)
+    old=cache.recall('batch',identity,inputs)
     replay=None;native=None
     if old is None:
         program='\n'.join(original[:at]+[p[2] for p in prepared]+original[at:])
@@ -130,19 +130,19 @@ def _execute_group(ev,record,adapter,prepared,original,at,gold,ntrain,ntest,conf
                              retain_forms=list(range(at,at+len(prepared))))
         guard.check()
         if replay['engine']=='ran':native=ev.captures[-1]['native']
-        else:journal.put('batch',identity,inputs,replay)
+        else:cache.remember('batch',identity,inputs,replay)
     else:replay=old
     if replay['engine']!='ran':
         if len(prepared)>1:
             middle=len(prepared)//2
-            yield from _execute_group(ev,record,adapter,prepared[:middle],original,at,gold,ntrain,ntest,config,budget,journal,inputs,guard)
-            yield from _execute_group(ev,record,adapter,prepared[middle:],original,at,gold,ntrain,ntest,config,budget,journal,inputs,guard)
+            yield from _execute_group(ev,record,adapter,prepared[:middle],original,at,gold,ntrain,ntest,config,budget,cache,inputs,guard)
+            yield from _execute_group(ev,record,adapter,prepared[middle:],original,at,gold,ntrain,ntest,config,budget,cache,inputs,guard)
         else:
             candidate=prepared[0][0]
             result=dict(status='refused' if replay['engine']=='refused' else 'unknown',
                         engine=replay['engine'],reason=replay.get('reason'),replay=replay)
             key=digest(dict(pair=inputs['pair_id'],candidate=candidate['candidate_id']))
-            journal.put('screen',key,dict(inputs,candidate=candidate),result)
+            cache.remember('screen',key,dict(inputs,candidate=candidate),result)
             yield candidate,result,False
         return
     for offset,(candidate,_,text,proof) in enumerate(prepared):
@@ -155,5 +155,5 @@ def _execute_group(ev,record,adapter,prepared,original,at,gold,ntrain,ntest,conf
         except (ValueError,KeyError,IndexError,TypeError) as error:
             result=dict(status='unavailable',reason=str(error),replay_artifact=replay['artifact'],appended_form=at+offset)
         key=digest(dict(pair=inputs['pair_id'],candidate=candidate['candidate_id']))
-        journal.put('screen',key,dict(inputs,candidate=candidate),result)
+        cache.remember('screen',key,dict(inputs,candidate=candidate),result)
         yield candidate,result,False

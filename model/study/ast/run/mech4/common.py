@@ -83,29 +83,84 @@ class Journal:
         self.code=code;self.config=config
         self.db=sqlite3.connect(self.path);self.db.execute('PRAGMA journal_mode=WAL');self.db.execute('PRAGMA synchronous=FULL')
         self.db.executescript('''
-          CREATE TABLE IF NOT EXISTS queue(pair_id TEXT PRIMARY KEY,inputs_sha256 TEXT,result_sha256 TEXT,payload TEXT);
           CREATE TABLE IF NOT EXISTS records(kind TEXT,key TEXT,inputs_sha256 TEXT,code_sha256 TEXT,
             config_sha256 TEXT,result_sha256 TEXT,payload BLOB,PRIMARY KEY(kind,key));
-          CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,payload TEXT);
+          CREATE TABLE IF NOT EXISTS objects(sha256 TEXT PRIMARY KEY,kind TEXT,payload BLOB);
+          CREATE TABLE IF NOT EXISTS producers(code TEXT,config TEXT,manifest_ref TEXT,settings_ref TEXT,PRIMARY KEY(code,config));
           CREATE TABLE IF NOT EXISTS operations(id INTEGER PRIMARY KEY,pair_id TEXT,scope TEXT,
             phase TEXT,identity TEXT,charge REAL,status TEXT,payload TEXT);
           CREATE INDEX IF NOT EXISTS operations_pair_scope ON operations(pair_id,scope,id);
         ''')
         self.db.commit()
+    def register(self,manifest,settings):
+        if digest(manifest)!=self.code or digest(settings)!=self.config:raise ValueError('producer digest differs')
+        with self.db:
+            self.db.execute('INSERT OR IGNORE INTO producers VALUES (?,?,?,?)',
+                (self.code,self.config,intern(self.db,manifest),intern(self.db,settings)))
     def get(self,kind,key,inputs):
         row=self.db.execute('SELECT inputs_sha256,code_sha256,config_sha256,result_sha256,payload FROM records '
                             'WHERE kind=? AND key=?',(kind,key)).fetchone()
-        if not row or tuple(row[:3])!=(digest(inputs),self.code,self.config):return None
-        result=json.loads(zlib.decompress(row[4]))
+        if not row or row[0]!=digest(inputs):return None
+        result=decode_payload(self.db,row[4])
         if digest(result)!=row[3]:raise ValueError('journal result digest differs: '+kind+'/'+key)
         return result
     def put(self,kind,key,inputs,result):
-        payload=zlib.compress(canonical(result).encode(),3)
+        if kind not in ('gold_case','candidate','pair'):raise ValueError('not an owned durable fact kind')
         with self.db:
+            payload=zlib.compress(canonical({'mech4_object':intern(self.db,result)}).encode(),3)
             self.db.execute('INSERT OR REPLACE INTO records VALUES (?,?,?,?,?,?,?)',
                 (kind,key,digest(inputs),self.code,self.config,digest(result),payload))
         return result
     def ref(self,kind,key,result):
-        return dict(database=str(self.path),table='records',kind=kind,key=key,result_sha256=digest(result),
-                    code_sha256=self.code,config_sha256=self.config)
+        sha=digest(result)
+        row=self.db.execute('SELECT code_sha256,config_sha256,result_sha256 FROM records WHERE kind=? AND key=?',
+                            (kind,key)).fetchone()
+        if not row or row[2]!=sha:raise ValueError('reference result differs from stored fact')
+        return dict(database=str(self.path),table='records',kind=kind,key=key,result_sha256=sha,
+                    code_sha256=row[0],config_sha256=row[1])
     def close(self):self.db.close()
+
+
+# Structured values are content-addressed once; repeated receipts are references.
+def intern(db,value,known=None):
+    known=set() if known is None else known
+    sha=digest(value)
+    if sha in known:return sha
+    if db.execute('SELECT 1 FROM objects WHERE sha256=?',(sha,)).fetchone():
+        known.add(sha);return sha
+    if isinstance(value,dict):kind='dict';payload={k:intern(db,v,known) for k,v in value.items()}
+    elif isinstance(value,list):kind='list';payload=[intern(db,v,known) for v in value]
+    else:kind='scalar';payload=value
+    db.execute('INSERT OR IGNORE INTO objects VALUES (?,?,?)',
+        (sha,kind,zlib.compress(canonical(payload).encode(),3)))
+    known.add(sha)
+    return sha
+
+
+def resolve(db,sha,cache=None):
+    cache={} if cache is None else cache
+    if sha in cache:return cache[sha]
+    row=db.execute('SELECT kind,payload FROM objects WHERE sha256=?',(sha,)).fetchone()
+    if not row:raise ValueError('missing content object: '+sha)
+    raw=json.loads(zlib.decompress(row[1]))
+    if row[0]=='dict':value={k:resolve(db,v,cache) for k,v in raw.items()}
+    elif row[0]=='list':value=[resolve(db,v,cache) for v in raw]
+    elif row[0]=='scalar':value=raw
+    else:raise ValueError('unknown content object kind')
+    if digest(value)!=sha:raise ValueError('content object digest differs')
+    cache[sha]=value
+    return value
+
+
+def decode_payload(db,payload):
+    value=json.loads(zlib.decompress(payload))
+    return resolve(db,value['mech4_object']) if set(value)=={'mech4_object'} else value
+
+
+class ScreenCache:
+    """Screen comparisons and failed-batch caches are recomputed in memory."""
+    def __init__(self):self.cache={}
+    def recall(self,kind,key,inputs):return self.cache.get((kind,key,digest(inputs)))
+    def remember(self,kind,key,inputs,result):
+        self.cache[kind,key,digest(inputs)]=result
+        return result

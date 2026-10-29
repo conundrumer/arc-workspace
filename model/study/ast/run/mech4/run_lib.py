@@ -13,6 +13,7 @@ from context import Contexts,require_axes
 from planner import atomic,combined
 from screen import execute
 from read_grades import load_grade
+from prepare import jobs
 from clause_evidence import clause_evidence
 
 STOP=False
@@ -83,9 +84,8 @@ class Worker:
         disk=DiskGuard(args.output.parent,min_free_gb=args.min_free_gb);disk.resume()
         self.guard=Guard(self.files,disk=disk)
         self.journal=Journal(args.output,digest(self.files),digest(self.config))
-        queue=self.journal.db.execute('SELECT payload FROM metadata WHERE key=?',('queue',)).fetchone()
-        if not queue or json.loads(queue[0]).get('ready') is not True:raise ValueError('run prepare.py first; queue snapshot is not ready')
-        self.queue_meta=json.loads(queue[0]);self.base=readonly(self.queue_meta['base']);self.sources=Sources()
+        self.journal.register(self.files,self.config)
+        self.base=readonly(args.base);self.sources=Sources()
         self.contexts=Contexts(self.screen_ev,self.gold_ev,self.journal,self.config,self.guard)
 
     def report(self,done,total,phase='pairs',force=False):
@@ -98,16 +98,18 @@ class Worker:
 
     def verify(self,record,job,context,candidate,columns,inputs,budget):
         from case_collector import evaluate_cached
-        checked_candidate=dict(candidate,columns=columns)
-        key=digest(dict(pair=job['pair_id'],candidate=checked_candidate))
-        raw=self.journal.get('candidate',key,dict(inputs,candidate=checked_candidate))
+        candidate_inputs=dict(pair_id=job['pair_id'],source_sha256=job['source_sha256'],
+            target='G',task_inputs_sha256=context['task_receipt']['inputs_sha256'],
+            clause=candidate['clause'],columns=columns)
+        key=digest(candidate_inputs)
+        raw=self.journal.get('candidate',key,candidate_inputs)
         if raw is None:
             self.guard.check();require_axes(context['selection'],record,context['ntrain'],context['ntest'])
             target=dict(adapter=context['adapter'],source=dict(source_sha256=job['source_sha256']),
                         mode='recovery',target_id='G',ntrain=context['ntrain'],ntest=context['ntest'])
             raw=evaluate_cached(ReplayProxy(self.verify_ev,budget),record,candidate['clause'],target,columns,
                 context['selection'],row_limit=0,max_mutant_replays=self.config['max_verify_replays'])
-            self.guard.check();self.journal.put('candidate',key,dict(inputs,candidate=checked_candidate),raw)
+            self.guard.check();self.journal.put('candidate',key,candidate_inputs,raw)
             self.counts['candidate_checks']+=1
         else:self.counts['candidate_checks_resumed']+=1
         ref=self.journal.ref('candidate',key,raw)
@@ -122,35 +124,25 @@ class Worker:
         context=self.contexts.acquire(record,job)
         info=self.screen_ev.registry_interfaces(record)
         if info.get('source_sha256')!=job['source_sha256']:raise ValueError('registry source binding differs')
-        registry_inputs=dict(registry_sha256=info['registry_sha256'],runtime=info['runtime'])
-        registry=dict(registry=info['registry'],entries=info['entries'])
-        if self.journal.get('registry',info['registry_sha256'],registry_inputs) is None:
-            self.journal.put('registry',info['registry_sha256'],registry_inputs,registry)
-        registry_ref=self.journal.ref('registry',info['registry_sha256'],registry)
         inputs=dict(pair_id=job['pair_id'],source_sha256=job['source_sha256'],
             base_result_sha256=job['base_result_ref']['result_sha256'],adapter_sha256=digest(context['adapter']),
-            gold_ref=context['gold_ref'],registry_ref=registry_ref,task_receipt=context['task_receipt'])
-        context_record=dict(adapter=context['adapter'],source_sha256=job['source_sha256'],
-                            available_binding_gaps=context['available_binding_gaps'],gold_ref=context['gold_ref'])
-        context_key=digest(dict(pair=job['pair_id'],adapter=inputs['adapter_sha256']))
-        if self.journal.get('context',context_key,inputs) is None:self.journal.put('context',context_key,inputs,context_record)
-        inputs['context_ref']=self.journal.ref('context',context_key,context_record)
-        scope=digest(dict(inputs=inputs,code=self.journal.code,config=self.journal.config))
+            gold_ref=context['gold_ref'],registry_sha256=info['registry_sha256'],task_receipt=context['task_receipt'])
+        scope=digest(dict(pair_id=job['pair_id'],source_sha256=job['source_sha256'],
+            target='G',task_inputs_sha256=context['task_receipt']['inputs_sha256']))
         budget=Budget(self.journal,job['pair_id'],scope,self.config,lambda:STOP,self.guard.check)
         result=dict(schema='mech4-lib-result-v1',pair_id=job['pair_id'],source_sha256=job['source_sha256'],
             target_id='G',source=job['source'],base_result_ref=job['base_result_ref'],
-            admission_authenticated=False,queue_hint=job['hint'],inputs=inputs,scope='G only',
+            admission_authenticated=False,queue_hint=None,inputs=inputs,scope='G only',
             mechanical_clauses=[],candidates=[],screens=[],found_recovery=False,search_status='bound_unknown',
             full_space_covered=False,plan_exhausted=False,uncovered=['other targets','multiple computed libs',
                 'deeper conjunctions','unions','structured/polymorphic registry sites','unvisited registry groundings'])
         useful=[];seen=set();staged=[];atomic_count=0;combined_count=0;unsupported=0
+        transient=ScreenCache()
         def process_batch(batch):
             gold=context['selection']['point'][0]
             for candidate,screen,resumed in execute(self.screen_ev,record,context['adapter'],batch,gold,
-                context['ntrain'],context['ntest'],self.config,budget,self.journal,inputs,self.guard):
+                context['ntrain'],context['ntest'],self.config,budget,transient,inputs,self.guard):
                 self.counts['screens_resumed' if resumed else 'screens']+=1
-                key=digest(dict(pair=job['pair_id'],candidate=candidate['candidate_id']))
-                result['screens'].append(self.journal.ref('screen',key,screen))
                 if screen.get('useful'):
                     useful.append((screen.get('rank',0),candidate['candidate_id'],candidate))
                     # Keep selector/computation beams separately. A selector
@@ -203,58 +195,48 @@ class Worker:
         return result
 
     def run(self):
-        rows=self.journal.db.execute("SELECT inputs_sha256,result_sha256,payload FROM queue ORDER BY json_extract(payload,'$.task'),"
-            "json_extract(payload,'$.source.corpus'),json_extract(payload,'$.source.file'),json_extract(payload,'$.source.line')").fetchall()
-        total=min(len(rows),self.a.limit) if self.a.limit else len(rows)
-        done=0;self.report(0,total,force=True)
-        for queue_inputs_sha,queue_result_sha,payload in rows[:total]:
+        queue=list(jobs(self.a.base,self.a.grades,limit=self.a.limit,
+            progress=lambda done,total,counts:self.report(done,total,phase='selection')))
+        queue.sort(key=lambda j:(j['task'],j['source']['corpus'],j['source']['file'],j['source']['line']))
+        total=len(queue);done=0;self.report(0,total,force=True)
+        for job in queue:
             if STOP:break
-            job=json.loads(payload)
-            queue_inputs=dict(source_sha256=job['source_sha256'],
-                base_result_sha256=job['base_result_ref']['result_sha256'],hint=job['hint'])
-            if digest(job)!=queue_result_sha or digest(queue_inputs)!=queue_inputs_sha:
-                raise ValueError('queue source/base/result digest differs; prepare again')
             base_row=self.base.execute('SELECT pair_id,source_sha256,code_sha256,config_sha256,result_sha256,record_json '
                                       'FROM pairs WHERE pair_id=?',(job['pair_id'],)).fetchone()
             base=base_record(base_row)
             if digest(base)!=job['base_result_ref']['result_sha256']:raise ValueError('queue base result changed; prepare again')
             current=load_grade(Path(job['grade_database']),job['pair_id'])
-            availability={k:v for k,v in current.items() if k!='record'}
-            pair_inputs=dict(source_sha256=job['source_sha256'],base_result_sha256=digest(base),
-                             availability=availability,hint=job['hint'])
+            if not queue_hint(base) or current['valid'] and current['grade']!='Unknown':
+                self.counts['routing_skipped']+=1;done+=1;self.report(done,total);continue
+            pair_inputs=dict(source_sha256=job['source_sha256'],target='G')
             key=digest(dict(pair=job['pair_id'],target='G'))
-            result=self.journal.get('pair',key,pair_inputs)
+            from mech4.read_results import load_result
+            retained=load_result(self.a.output,job['pair_id'],source_sha256=job['source_sha256'],
+                base_result_sha256=job['base_result_ref']['result_sha256'],source_record=self.sources.get(job))
+            result=retained.get('record') if retained.get('valid') else None
             if result is not None and result.get('interrupted') is not True:
                 self.counts['pairs_resumed']+=1
             else:
                 if self.task!=job['task']:
                     self.contexts.clear();self.screen_ev.close();self.verify_ev.close();self.task=job['task']
                 self.guard.check();started=time.monotonic()
-                if not queue_hint(base) or current['valid'] and current['grade']!='Unknown':
+                try:result=self.process(job,base)
+                except (ValueError,KeyError,IndexError,OSError,EOFError,StopIteration,TypeError) as error:
                     result=dict(schema='mech4-lib-result-v1',pair_id=job['pair_id'],target_id='G',
                         source_sha256=job['source_sha256'],source=job['source'],base_result_ref=job['base_result_ref'],
-                        search_status='not_eligible_current',reason='queue hint or current grade no longer open',
+                        search_status='unavailable',reason=str(error),error_type=type(error).__name__,
                         admission_authenticated=False,found_recovery=False,mechanical_clauses=[])
-                else:
-                    try:result=self.process(job,base)
-                    except (ValueError,KeyError,IndexError,OSError,EOFError,StopIteration,TypeError) as error:
-                        result=dict(schema='mech4-lib-result-v1',pair_id=job['pair_id'],target_id='G',
-                            source_sha256=job['source_sha256'],source=job['source'],base_result_ref=job['base_result_ref'],
-                            search_status='unavailable',reason=str(error),error_type=type(error).__name__,
-                            admission_authenticated=False,found_recovery=False,mechanical_clauses=[])
-                result.update(code_sha256=self.journal.code,code_manifest=self.files,config_sha256=self.journal.config,
-                    config=self.config,grade_availability=availability,elapsed_seconds=time.monotonic()-started)
+                result=compact_pair(result,job)
                 self.guard.check();self.journal.put('pair',key,pair_inputs,result);self.counts['pairs_written']+=1
                 self.contexts.store.cache.clear()
-            self.counts[result['search_status']]+=1;done+=1
+            self.counts['attempts_done']+=1;done+=1
             self.report(done,total)
         self.report(done,total,force=True)
         summary=dict(schema='mech4-summary-v1',scope='G only',complete=done==total and not STOP,done=done,total=total,
-            queued_total=len(rows),requested_limit=self.a.limit,scope_complete=done==len(rows) and not STOP,
+            queued_total=len(queue),requested_limit=self.a.limit,scope_complete=done==len(queue) and not STOP,
             counts=dict(self.counts),gold=dict(self.contexts.stats),elapsed_seconds=time.monotonic()-self.started,
             database=str(self.a.output.resolve()),code_sha256=self.journal.code,config_sha256=self.journal.config,
             final_grades='owned by n-mech; this database supplies checked G candidates only')
-        self.a.output.with_suffix('.summary.json').write_text(json.dumps(summary,indent=2)+'\n')
         print(canonical(summary),file=sys.stderr,flush=True)
         return summary
 
@@ -266,7 +248,11 @@ class Worker:
 
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('--output',type=Path,default=OUTPUT/'lib.sqlite3')
+    ap.add_argument('--base',type=Path,default=DATA_ROOT/'ast/run/mech/labels.sqlite3')
+    ap.add_argument('--grades',type=Path,default=DATA_ROOT/'ast/run/mech/settled.sqlite3')
+    output=ap.add_mutually_exclusive_group()
+    output.add_argument('--output',type=Path,default=OUTPUT/'lib.sqlite3')
+    output.add_argument('--fresh-output',type=Path,help='explicitly rerun in a new database; retain the previous store')
     ap.add_argument('--limit',type=int,default=0)
     ap.add_argument('--pair-seconds',type=float,default=30)
     ap.add_argument('--native-seconds',type=float,default=2)
@@ -285,7 +271,10 @@ def main():
     ap.add_argument('--case-cache-entries',type=int,default=2)
     ap.add_argument('--min-free-gb',type=float,default=30)
     a=ap.parse_args()
-    if a.limit<0 or min(v for k,v in vars(a).items() if k not in ('output','limit'))<=0:ap.error('positive bounds required')
+    if a.fresh_output is not None:
+        if a.fresh_output.exists():ap.error('--fresh-output must name a new database')
+        a.output=a.fresh_output
+    if a.limit<0 or min(v for k,v in vars(a).items() if k not in ('base','grades','output','fresh_output','limit'))<=0:ap.error('positive bounds required')
     if not a.output.resolve().is_relative_to(OUTPUT.resolve()):ap.error('outputs must stay under mech4 data root')
     a.output.parent.mkdir(parents=True,exist_ok=True)
     lock=a.output.with_suffix('.lock').open('a');fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
@@ -297,6 +286,21 @@ def main():
         if worker is not None:worker.close()
         lock.close()
     if not summary['complete']:raise SystemExit(130)
+
+
+
+def compact_pair(result,job):
+    """Persist observations/references; derived grade/search summaries stay read-time."""
+    inputs=result.get('inputs',{})
+    state=('unavailable' if result.get('search_status')=='unavailable' else
+           'interrupted' if result.get('interrupted') else
+           'returned_after_candidate' if result.get('found_recovery') else
+           'finite_plan_visited' if result.get('plan_exhausted') else 'bound')
+    return dict(schema='mech4-lib-facts-v2',pair_id=job['pair_id'],source_sha256=job['source_sha256'],
+        source=job['source'],base_result_ref=job['base_result_ref'],
+        candidates=result.get('candidates',[]),gold_ref=inputs.get('gold_ref'),
+        task_receipt=inputs.get('task_receipt'),
+        stop=dict(state=state,reason=result.get('reason'),error_type=result.get('error_type')))
 
 
 if __name__=='__main__':main()

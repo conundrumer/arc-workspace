@@ -54,7 +54,7 @@ class Contexts:
         adapter=self.producers[key].produce(record,native_base=Path(job['source']['corpus'])/record['task'])
         inputs=dict(task=record['task'],case=record['case'],program_sha256=digest(record['gold_sexp']),
             kept_context_sha256=digest(record['evaluation']['kept_assignments']),ntrain=ntrain,ntest=ntest,
-            task_file_sha256=hashlib.sha256(raw).hexdigest(),gold_settings=self.gold.receipt)
+            task_inputs_sha256=digest(task))
         case_key=digest(inputs);bundle=self.cache.get(case_key)
         if bundle is None:
             bundle=self.journal.get('gold_case',case_key,inputs)
@@ -63,7 +63,9 @@ class Contexts:
                 bundle=acquire_case(self.gold,record,dict(case=record['case'],gold_sexp=record['gold_sexp'],
                     kept_assignments=record['evaluation']['kept_assignments'],
                     relation_source_names=record.get('relation_source_names')),ntrain,ntest)
-                self.guard.check();self.journal.put('gold_case',case_key,inputs,bundle)
+                self.guard.check()
+                bundle={k:v for k,v in bundle.items() if k not in ('export','complete')}
+                self.journal.put('gold_case',case_key,inputs,bundle)
                 self.stats['gold_replays']+=1
             else:self.stats['gold_journal_hits']+=1
             # The caller owns the bounded cache; never retain a second growing
@@ -73,7 +75,11 @@ class Contexts:
             while len(self.cache)>self.config['case_cache_entries']:self.cache.popitem(last=False)
         else:
             self.cache.move_to_end(case_key);self.stats['gold_memory_hits']+=1
-        selection=select_pair(bundle,record,adapter,ev=self.screen)
+        gold_ref=self.journal.ref('gold_case',case_key,bundle)
+        # AST export is recomputed by the canonical metadata producer, never
+        # copied into the observation store. This performs no table replay.
+        selected_bundle=dict(bundle,export=self.producers[key]._export(record['gold_sexp'],record))
+        selection=select_pair(selected_bundle,record,adapter,ev=self.screen)
         require_axes(selection,record,ntrain,ntest)
         from judge3.catalog import matches
         bindings=[];binding_gaps=[]
@@ -96,5 +102,5 @@ class Contexts:
         selection=dict(selection,targets=[],available=[],gaps=[],complete=True,scope='G only')
         return dict(adapter=adapter,selection=selection,ntrain=ntrain,ntest=ntest,
             available_bindings=bindings,available_binding_gaps=binding_gaps,
-            gold_ref=self.journal.ref('gold_case',case_key,bundle),
-            task_receipt=dict(path=str(task_path),sha256=hashlib.sha256(raw).hexdigest()))
+            gold_ref=gold_ref,
+            task_receipt=dict(path=str(task_path),sha256=hashlib.sha256(raw).hexdigest(),inputs_sha256=digest(task)))
