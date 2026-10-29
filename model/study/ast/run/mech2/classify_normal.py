@@ -10,6 +10,7 @@ from collections import Counter, defaultdict
 import fcntl
 import gzip
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -21,13 +22,43 @@ import time
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
 sys.dont_write_bytecode = True
 HERE = Path(__file__).resolve().parent
-STUDY = HERE.parents[2]
-RUN = HERE.parent
-sys.path[:0] = [str(RUN / 'mech'), str(RUN), str(STUDY)]
-from run import canonical, digest, pair_key
-import native_storage as storage
-from native_tables import width as native_width
-import writer
+if CODE_ROOT.resolve()!=HERE.parents[2]:
+    raise RuntimeError('study_paths was imported from a foreign study checkout')
+STUDY = CODE_ROOT
+RUN = CODE_ROOT / 'ast/run'
+
+
+def repository_module(name, path):
+    """Load exact repository source even if a dependency changes sys.path."""
+    path=Path(path).resolve()
+    existing=sys.modules.get(name)
+    if existing is not None:
+        if Path(existing.__file__).resolve()!=path:
+            raise RuntimeError(f'{name} already loaded from retired/foreign source: {existing.__file__}')
+        return existing
+    # Keep retired study directories out of all transitive import lookups.
+    sys.path[:]=[str(CODE_ROOT),str(RUN/'mech'),str(RUN),str(REPO_ROOT/'model')]+[
+        p for p in sys.path if not Path(p or '.').resolve().is_relative_to(DATA_ROOT)]
+    spec=importlib.util.spec_from_file_location(name,path)
+    module=importlib.util.module_from_spec(spec)
+    sys.modules[name]=module
+    try:spec.loader.exec_module(module)
+    except BaseException:
+        sys.modules.pop(name,None)
+        raise
+    return module
+
+
+repository_module('pinned',CODE_ROOT/'pinned.py')
+runner=repository_module('run',RUN/'mech/run.py')
+canonical,digest,pair_key=runner.canonical,runner.digest,runner.pair_key
+storage=repository_module('native_storage',RUN/'native_storage.py')
+native_reader=repository_module('native_tables',RUN/'native_tables.py')
+native_width=native_reader.width
+writer=repository_module('writer',CODE_ROOT/'writer.py')
+repository_module('encoder',REPO_ROOT/'model/encoder.py')
+repository_module('viability',CODE_ROOT/'viability.py')
+detectors=repository_module('detectors',CODE_ROOT/'detectors.py')
 import numpy as np
 import pandas as pd
 
@@ -44,24 +75,29 @@ def sha(path):
 
 def policy_manifest():
     # Hash actual imported dependencies as well as the policy and adapter.
-    import detectors
+    import arclog
     paths = [Path(__file__), Path(writer.__file__), Path(storage.__file__),
              RUN / 'native_tables.py',
              RUN / 'mech/run.py', Path(detectors.__file__), Path(detectors.E.__file__),
-             STUDY / 'pinned.py', Path(writer.ROOT) / 'engine/lib/registry.sexpr']
+             STUDY / 'pinned.py', CODE_ROOT/'viability.py',
+             Path(writer.ROOT) / 'engine/lib/registry.sexpr']
     paths += [CODE_ROOT / 'study_paths.py']
     logical = {str(p.relative_to(CODE_ROOT)) if p.is_relative_to(CODE_ROOT)
-               else 'pinned/encoder.py' if p == Path(detectors.E.__file__)
+               else 'model/encoder.py' if p == Path(detectors.E.__file__)
                else 'engine/lib/registry.sexpr': sha(p) for p in paths}
-    paths += [HERE / 'migration-compatibility.json']
-    return dict(schema=SCHEMA, constraint_set='normal',logical_files=logical,
+    runtime_paths=[Path(arclog.__file__)]+list(Path(arclog.__file__).parent.glob('*.so'))
+    paths += [HERE / 'migration-compatibility.json']+runtime_paths
+    return dict(schema=SCHEMA, constraint_set='normal',normal_policy='finite-domain-functional-libs-v1',logical_files=logical,
+                runtime={p.name:sha(p) for p in runtime_paths},
                 files={str(p.resolve()): sha(p) for p in paths},
                 numpy=np.__version__, pandas=pd.__version__)
 
 
 def compatible_migration(previous, current):
     """Authenticate reviewed legacy policy or identical code at another checkout."""
-    if previous.get('logical_files') == current['logical_files']:
+    if (previous.get('logical_files') == current['logical_files']
+            and previous.get('normal_policy')==current['normal_policy']
+            and previous.get('runtime')==current['runtime']):
         return True
     receipt = json.loads((HERE / 'migration-compatibility.json').read_text())
     if digest(previous) not in receipt['legacy_manifest_sha256']:
@@ -443,7 +479,8 @@ def main():
         if compatible_migration(previous_manifest,code):
             accepted_codes.add(previous_hash)
             accepted_codes.update(prior_compat)
-        elif previous_hash == REPAIR_PREDECESSOR:
+        elif (previous_hash == REPAIR_PREDECESSOR
+              and previous_manifest.get('normal_policy')==code['normal_policy']):
             old_files = {p:h for p,h in previous_manifest['files'].items() if p != str(Path(__file__).resolve())}
             new_files = {p:h for p,h in code['files'].items() if p != str(Path(__file__).resolve())}
             if old_files != new_files or any(previous_manifest[k]!=code[k] for k in ('schema','constraint_set','numpy','pandas')):

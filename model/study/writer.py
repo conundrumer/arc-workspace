@@ -104,8 +104,10 @@ reads the union over the inputs of one assignment). The table is the prefix
 case's (`gold_source`, as the scorer tables reads it), and `CaseRows` maps a read's column tokens to its columns: by
 the registry's port columns for an instance's relation, in order for a proposer's, and for a clause with a body by
 the copy flows of flows.parquet, to every column whose flows the sites of the token's label explain. A component with
-a NOT conjunct, a lib or fact relation, or a relation with no table, or an entry with no rows to read, is not
-one-row. normal2 applies to RULE, DET and INIT clauses the normal form and "no free domain argument": each label that a `*`
+a NOT conjunct, a fact relation, or a derived relation without readable rows is not one-row. A positive lib atom
+also qualifies when every label it binds is fresh on a finite-domain column determined by its other sites.
+Those sites hold zero or labels fixed outside the component, by a one-row read, or by another qualifying lib
+atom. Such lib dependencies must be grounded; a cycle alone establishes nothing. normal2 applies to RULE, DET and INIT clauses the normal form and "no free domain argument": each label that a `*`
 binds at a site of a lib relation (kinds lib relation and relation macro) on a column of a finite domain type is read
 by another token of the clause, or is determined by the atom's other finite-domain columns whose labels the clause
 reads (`determined`: from the engine's row counts of the relation, for a relation whose columns are all of such
@@ -1647,13 +1649,48 @@ def normal_form(s):   # in each segment, one component of the join graph, or eve
 def one_row_component(s, comp):
     """Whether a component binds no label (each label it reads is bound outside its segment, such as a key label):
     it then holds or not, so it has at most one row whatever its relations are; or whether each of its atoms is a
-    positive read of a derived relation whose projection onto the columns its sites read has at most one distinct
-    row at every input (`CaseRows.one_row`), which needs `s.rows`."""
+    positive one-row derived read (`CaseRows.one_row`), or a positive lib atom whose fresh finite-domain labels
+    are determined by zero, outside labels, and labels from those reads or other qualifying lib atoms. Resolve
+    lib dependencies from those seeds; mutually dependent fresh labels alone do not establish one-row."""
     if not any(a["binds"] or a["fresh"] for a in comp):
         return True
-    return s.rows is not None and all(
-        s.v.is_rel[a["rel"]] and not a["neg"]
-        and s.rows.one_row(s.v.rel_k[a["rel"]], [(c, f) for c, f in a["sites"]], s.head) for a in comp)
+    bound = set().union(*(a["binds"] for a in comp))
+    known = set().union(*(a["reads"] for a in comp)) - bound
+    pending = []
+    for a in comp:
+        if a["neg"]:
+            return False
+        if s.v.is_rel[a["rel"]]:
+            if s.rows is None or not s.rows.one_row(s.v.rel_k[a["rel"]], a["sites"], s.head):
+                return False
+            known |= a["binds"]
+        elif s.v.kinds[a["rel"]] in LIB_HEADS:
+            fresh = {c for c, _ in a["fresh_at"]}
+            domain = s.v.dom_cols.get(a["rel"], ())
+            if (a["other"] or any(fields is not None for _, fields in a["sites"])
+                    or a["fresh"] != len(a["fresh_at"]) or {label for _, label in a["fresh_at"]} != a["binds"]
+                    or any(c not in domain for c in fresh)):
+                return False
+            pending.append(a)
+        else:
+            return False
+    det = determined() if pending else {}
+    while pending:
+        ready = []
+        for a in pending:
+            fresh = {c for c, _ in a["fresh_at"]}
+            fixed = set(a["lit_at"]) | {c for c, label in a["site_labels"] if label in known}
+            if (all(c in fresh or c in fixed for c, _ in a["sites"])
+                    and all(label in known or label in a["binds"] for _, label in a["site_labels"])
+                    and all(any(inputs <= fixed for inputs in det.get((s.v.names[a["rel"]], c), ()))
+                            for c in fresh)):
+                ready.append(a)
+        if not ready:
+            return False
+        for a in ready:
+            known |= a["binds"]
+            pending.remove(a)
+    return True
 
 
 def domain_joined(s):   # each conjunct of a domain shares a variable with another conjunct or a comparison
@@ -1752,8 +1789,7 @@ TESTS = {
                          "an INIT clause's constant input, or filtered or indexed by a lib relation from such labels"),
     "normal form": ("clause", normal_form, "in each segment but an INIT clause's key clause, the join graph is one "
                     "component, or every component "
-                    "but one is one-row: it binds no label, or each of its conjuncts is a positive read of a derived relation with at most one "
-                    "distinct row of the columns it reads at every input (needs --tables)"),
+                    "but one is one-row under the prefix-row and finite-domain lib dependency checks (needs --tables)"),
     "not all literal": ("conjunct", not_all_literal, "no conjunct has every argument a literal"),
     "no literal": ("conjunct", no_literal, "no argument is a literal"),
     "at most one literal": ("conjunct", one_literal, "at most one literal argument per conjunct"),

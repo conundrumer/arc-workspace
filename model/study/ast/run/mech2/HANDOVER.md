@@ -1,17 +1,19 @@
 # Normal-form owner handover
 
-The coordinator's retry finished with mutants normal 100,331, non-normal 11,448, unavailable 4,605; gold points normal 14,393, non-normal 100, unavailable 43. Read-only grouping: mutants projection-only 3,919, layout/entries-only 630, both 56; gold points projection-only 18, layout/entries-only 25. These groups were added to the data summary.json with a pending-repair note. No retired source under S was edited.
+The user approved a change to writer.one_row_component: positive lib atoms may extend a one-row component when their fresh finite-domain outputs are determined by zero or already fixed labels. The implementation seeds labels from outside the component and positive one-row derived reads, then resolves lib atoms to a fixed point. Negated/fact atoms retain their prior rejection in components that bind labels. Unseeded cycles cannot qualify. Writer module documentation, function docstring and normal constraint description were updated.
 
-Source/metadata review found adapter defects: trailing INIT SKIP tokens can become a prefix to the next RULE in CaseRows' declaration scanner; the parquet width helper treats native Position/Offset aliases as scalars; full gold replay can be empty while the point-prefix snapshot holds the needed tables. The worktree fixes form spans, uses canonical native widths, and consults both stored gold snapshots through CaseRows. A complete mapped multi-row observation rules out one-row; missing evidence remains explicit. No native/program evaluation or tests were run. Bounded metadata inspection demonstrated correct rule headers/spatial spans and available prefix tables behind empty full replays.
+Classifier imports now load exact repository files through CODE_ROOT/REPO_ROOT and reject cached retired/foreign modules. Writer, pinned adapter, native readers, run hash helpers, viability, detectors and encoder are covered. Policy receipts bind actual imported files and the arclog runtime used by the existing determined() metadata provider. No untracked study source is imported intentionally. Data remains at DATA_ROOT.
 
-The width defect can affect earlier classified row-dependent attributes. Unavailable-only retry cannot repair those. Current classifier class hashes deliberately fail legacy compatibility. After merge run:
+This policy invalidates every previous normal classification. After merge run from the main repository, without retry-unavailable:
 
 ```sh
-/Users/davidlu/code/arc-workspace/scripts/run_heavy.py --cpus 1 /Users/davidlu/code/arc-workspace/work/lm/.venv/bin/python /Users/davidlu/code/arc-workspace/model/study/ast/run/mech2/classify_normal.py
+/Users/davidlu/code/arc-workspace/scripts/run_heavy.py --need soon --cpus 1 /Users/davidlu/code/arc-workspace/work/lm/.venv/bin/python /Users/davidlu/code/arc-workspace/model/study/ast/run/mech2/classify_normal.py
 ```
 
-This computes the normal attribute from stored streams and rows, without relabeling the base or replaying programs. Structural cases avoid row acquisition and carry row_independent. New output has source/entry receipts, exclusive cause counts, explanations, and pre-repair counts. Missing/faulted relations or stopped/count-only entries can be intrinsically insufficient; unresolved mapping remains an adapter limitation. Current generic diagnostics do not establish any of the 4,648 rows as intrinsically undecidable.
+The pass reads every stored pair/gold point and resumes only the new policy's valid results. It does not relabel base mechanical data or replay pair programs. determined() uses its existing finite-lib metadata enumeration. No classification or tests were launched here.
 
-Open work: merge, coordinator run, inspect concrete remaining causes, publish corrected counts. Owner notice sent to n-mech as 7710007. Next request ID: 7710008.
+Expected effects supplied by the user remain unverified pending the run: clear the cited ALTS points in 2ba387bc/320afe60/62593bfd and the Marked/Stamped and Wall/Solid points in 247ef758/69889d6e; retain failures in 13713586, 230f2e48 and 41ace6b5. Review these and the new unavailable cause groups after the coordinator run. Existing summary counts are from the old policy and remain provisional.
 
-Git staging/commit were blocked at the main repository .git/worktrees/n-mech2/index.lock. Changes remain uncommitted. Proposed commit message: Fix normal-form native spans and prefix mapping; report unavailable causes.
+Owner notice sent to n-mech as 7710008. Next owner message request ID is 7710009.
+
+Import/provenance inspection confirmed every named study module and encoder resolved to repository paths and no retired study lookup directory remained. Syntax parsing and git diff --check passed. Git staging/commit were blocked by sandbox permissions on .git/worktrees/n-mech2/index.lock; changes remain uncommitted. Commit message: Admit grounded functional lib atoms in normal form and bind repository imports.
