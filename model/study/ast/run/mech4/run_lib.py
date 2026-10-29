@@ -48,7 +48,7 @@ class Worker:
         # Fail before any execution when required shared source is unmerged.
         import registry_plan
         if not all(callable(getattr(registry_plan,n,None)) for n in ('registry_atoms','available_atoms')):
-            raise RuntimeError('merge n-mech registry_atoms + available_atoms patches before running (mech4/patches/)')
+            raise RuntimeError('merge n-mech registry_atoms + available_atoms patches before running (DATA_ROOT/ast/run/mech4/patches/)')
         from nonrender_metadata import MetadataProducer
         from case_collector import acquire_case,select_pair,evaluate_cached,clear_cache
         from evaluator import ReplayEvaluator

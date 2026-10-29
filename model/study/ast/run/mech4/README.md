@@ -4,7 +4,7 @@ This directory owns the bounded lib search over the stored base run's G-open que
 
 ## Source prerequisites
 
-Before execution, merge the shared `registry_atoms` and `available_atoms` additions supplied in `patches/` into n-mech's `registry_plan.py`, the canonical `judge3.nonrender_metadata` producer, and the evaluator owner's artifact-root, `retain_forms`, native slot/Ident matcher and exact cached-G context fixes. `run_lib.py` checks the callable interfaces before execution. These checks establish interface presence; runtime qualification is still required.
+Before execution, merge the shared `registry_atoms` and `available_atoms` additions supplied in `/Users/davidlu/code/arc-workspace/work/lm/data-study/ast/run/mech4/patches/` into n-mech's `registry_plan.py`, the canonical `judge3.nonrender_metadata` producer, and n-eval's shared artifact-root, `retain_forms`, native slot/Ident matcher and exact cached-G context fixes. `run_lib.py` checks the callable interfaces before execution. These checks establish interface presence; runtime qualification is still required.
 
 The canonical metadata producer currently reports changed DET and unsupported CHOOSE projections as unavailable. A qualified shared projection provider is needed to search those pairs. This pass records the limitation. It does not interpret judge admission exclusions as evidence about recovery.
 
