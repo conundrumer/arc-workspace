@@ -11,13 +11,18 @@ from pathlib import Path
 FORMAT = 'judge-dataset-v1'
 
 
-def write_json(path, value):
+def write_json(path, value, *, compact=False):
+    if type(compact) is not bool:
+        raise ValueError("compact must be boolean")
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + '.tmp')
     try:
         with temporary.open('w', encoding='utf-8') as stream:
-            json.dump(value, stream, ensure_ascii=False, allow_nan=False, indent=2)
+            options = dict(ensure_ascii=False, allow_nan=False, indent=None if compact else 2)
+            if compact:
+                options['separators'] = (',', ':')
+            json.dump(value, stream, **options)
             stream.write('\n')
         temporary.replace(path)
     except BaseException:
@@ -25,17 +30,29 @@ def write_json(path, value):
         raise
 
 
+def ordered_rows(rows):
+    """Canonical public row order over complete native value/frame cells."""
+    return sorted(rows, key=lambda row: json.dumps(row, ensure_ascii=False,
+        allow_nan=False, sort_keys=True, separators=(',', ':')))
+
+
 def table_packet(acquired, *, table_id, source_name, case, roles,
-                 callable_atom=None, copy_rows=True):
+                 callable_atom=None, copy_rows=True, sort_rows=False):
     """Package evaluator_train.acquire_train_table output, without truncation.
 
     copy_rows=False validates the same cells/axes but shares read-only acquired
     rows through the synchronous writer; the default retains independent cells.
+    sort_rows=True orders full typed cells after validation; repeated rows and
+    all entry/assignment/model axes remain intact. Shared sorting is local to
+    this call and retains the exact source row object alongside its result.
     Empty rows are real empty relations; missing contexts remain explicit.
     A native TASK entry must have been broadcast by the evaluator, not here.
     """
     if type(copy_rows) is not bool:
         raise ValueError("copy_rows must be boolean")
+    if type(sort_rows) is not bool:
+        raise ValueError("sort_rows must be boolean")
+    ordered = {}
     fields = []
     for index, field in enumerate(acquired['fields']):
         name = field.get('field_name', field.get('display_name', field.get('name')))
@@ -64,6 +81,15 @@ def table_packet(acquired, *, table_id, source_name, case, roles,
                     raise ValueError('cells must retain the native decoded value object')
             # Keep native extent/status evidence, rather than infer a frame.
             rows.append(deepcopy(row) if copy_rows else row)
+        if sort_rows:
+            key = id(item['rows'])
+            cached = ordered.get(key) if not copy_rows else None
+            if cached is not None and cached[0] is item['rows']:
+                rows = cached[1]
+            else:
+                rows = ordered_rows(rows)
+                if not copy_rows:
+                    ordered[key] = (item['rows'], rows)
         entries.append(dict(assignment=assignment, train=example, model=model,
                             row_count=len(rows), rows=rows))
     required = [list(k) for k in acquired['required']]

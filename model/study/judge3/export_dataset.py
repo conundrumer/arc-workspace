@@ -115,13 +115,16 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
     point_view = next(v for v in point_export['body_views'] if v['body_path'] == record['point'])
     point_name = producer.point_source_name(point_export, point_view)
     index = []; shared_index = []; comparisons = []; provenance = []; target_bindings = []
+    def write_public(path, value):
+        write_json(path, value, compact=features is not None)
     def add(packet, table_id, name, case, roles, atom=None, **metadata):
         path = 'tables/' + table_id + '.json'
         public = table_packet(packet, table_id=table_id, source_name=name, case=case,
-                              roles=roles, callable_atom=atom, copy_rows=features is None)
+                              roles=roles, callable_atom=atom, copy_rows=features is None,
+                              sort_rows=features is not None)
         public.update(metadata)
         where, listing = (shared, shared_index) if features is not None and table_id != 'X' else (output, index)
-        write_json(where / path, public)
+        write_public(where / path, public)
         listing.append(table_summary(public,path))
         return public
     x = acquire_train_point(ev, record, adapter, target['ntrain'], target['ntest'], side='mutant', copy_rows=features is None)
@@ -274,27 +277,27 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
     if features is not None:
         if shared:
             task = read_json(adapter['source']['task_path'])
-            write_json(shared / 'train.json', task['train'])
-            write_json(shared / 'libraries.json', ev.registry_interfaces(record)['entries'])
-            write_json(shared / 'point.json', dict(format=FORMAT, kind='features-point', task=record['task'],
+            write_public(shared / 'train.json', task['train'])
+            write_public(shared / 'libraries.json', ev.registry_interfaces(record)['entries'])
+            write_public(shared / 'point.json', dict(format=FORMAT, kind='features-point', task=record['task'],
                 case=record['case'], point=record['point'], tables=shared_index,
                 programs=dict(gold=programs['gold']), train='train.json', libraries='libraries.json'))
             try:
                 shared.rename(features)
             except OSError:  # another process published the same point first
                 shutil.rmtree(shared)
-        write_json(output / 'pair.json', dict(format=FORMAT, kind='features-pair', pair_id=pair_id,
+        write_public(output / 'pair.json', dict(format=FORMAT, kind='features-pair', pair_id=pair_id,
             task=record['task'], case=record['case'], change=change, tables=index,
             programs=dict(mutant=programs['mutant']), point=os.path.relpath(features, destination)))
         output.rename(destination)
         return dict(pair_id=pair_id, tables=len(index) + len(shared_index), output=str(destination),
                     fresh_cases=fresh_cases)
     task = read_json(adapter['source']['task_path'])
-    write_json(output / 'train.json', task['train'])
-    write_json(output / 'readers.json', readers)
-    write_json(output / 'libraries.json', ev.registry_interfaces(record)['entries'])
-    write_json(output / 'comparisons.json', comparisons)
-    write_json(output / 'pair.json', pair_packet(pair_id=pair_id, task=record['task'], case=record['case'],
+    write_public(output / 'train.json', task['train'])
+    write_public(output / 'readers.json', readers)
+    write_public(output / 'libraries.json', ev.registry_interfaces(record)['entries'])
+    write_public(output / 'comparisons.json', comparisons)
+    write_public(output / 'pair.json', pair_packet(pair_id=pair_id, task=record['task'], case=record['case'],
         change=change, tables=index, programs=programs, libraries='libraries.json'))
     write_json(private / 'dataset-contexts' / (pair_id + '.json'),
                dict(source_pair=source, source_sha256=sha(record),
