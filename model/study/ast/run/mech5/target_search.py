@@ -50,16 +50,30 @@ def available_for_search(source,selection,adapter,train_axes):
     return result,bindings,omitted
 
 
-def propose(source,fields,target,reference,selection,adapter,*,seconds=1):
+def propose(source,fields,target,reference,selection,adapter,*,seconds=1,cache=None,counters=None):
     from algorithm import solve
     from tables import comparison_type
     gold,gold_fields,ref,receipt=target
     ordered=axes(source,gold,reference)
     available,bindings,omitted=available_for_search(source,selection,adapter,ordered)
     available=[dict(a,types=tuple(comparison_type(t) for t in a['types'])) for a in available]
-    proof=solve(tuple(comparison_type(f['type']) for f in gold_fields),tuple(frozenset(gold['groups'][g]) for x,g in ordered),
-                tuple(comparison_type(f['type']) for f in fields),tuple(frozenset(source['groups'][x]) for x,g in ordered),
-                available,seconds)
+    target_types=tuple(comparison_type(f['type']) for f in gold_fields)
+    target_models=tuple(frozenset(gold['groups'][g]) for x,g in ordered)
+    source_types=tuple(comparison_type(f['type']) for f in fields)
+    source_models=tuple(frozenset(source['groups'][x]) for x,g in ordered)
+    # Alias targets with exactly the same native row families ask the same
+    # proposal question. Reuse only exact values/context ordering and available
+    # inputs; candidate verification still checks the full cached target set.
+    query=(target_types,target_models,source_types,source_models,
+           tuple((a['types'],tuple(a['rows'])) for a in available),seconds)
+    proof=cache.get(query) if cache is not None else None
+    if proof is not None and counters is not None:counters['proposal_queries_reused']+=1
+    if proof is None:
+        if counters is not None:counters['proposal_queries_run']+=1
+        proof=solve(target_types,target_models,source_types,source_models,available,seconds)
+        if cache is not None:
+            cache[query]=proof
+            while len(cache)>64:cache.popitem(last=False)
     return proof,bindings,dict(axes=ordered,available_omitted=omitted,
         grammar='base nonlib selector grammar; not the settled library/union space',
         gold_receipt=receipt,source_to_target='one transform over all listed train contexts')

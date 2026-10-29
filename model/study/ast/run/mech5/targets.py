@@ -5,7 +5,8 @@ Imports shared mechanical checking; never changes the base or settled grades. Ne
 searches main G again. New gold values come from ONE shared replay per case.
 """
 import argparse
-from collections import Counter
+from collections import Counter,OrderedDict
+from contextlib import contextmanager
 import fcntl
 import gzip
 import hashlib
@@ -26,6 +27,7 @@ from step2_check import valid_base
 from .target_store import Journal
 from .target_compare import compare
 from .target_search import propose,clause
+from .target_index import TargetIndexes
 
 STOP=False
 
@@ -60,7 +62,7 @@ class Pass:
         self.source_store=TargetStore(ev.legacy,CODE_ROOT)
         self.base=sqlite3.connect(args.base.resolve().as_uri()+'?mode=ro',uri=True);self.base.execute('BEGIN')
         files=set(HERE/n for n in ('targets.py','target_store.py','target_compare.py','target_search.py','metadata.py',
-            'read_targets.py','evidence.py','_paths.py','certificates.py','preflight.py','fact_codec.py','views.py'))
+            'read_targets.py','evidence.py','_paths.py','certificates.py','preflight.py','fact_codec.py','views.py','target_index.py'))
         files.update((CODE_ROOT/'judgetool').glob('*.py'))
         files.update((CODE_ROOT/'judge3').glob('*.py'))
         files.update(CODE_ROOT/'ast/run/mech'/n for n in ('algorithm.py','step2_check.py','run.py','clause_evidence.py','outcomes.py','grades.py'))
@@ -85,7 +87,14 @@ class Pass:
         self.journal.register(self.manifest,config)
         self.total=self.base.execute('SELECT count(*) FROM pairs').fetchone()[0]
         self.done=0
+        self.target_indexes=TargetIndexes();self.proposal_cache=OrderedDict()
         self.producers={};self.case_cache={};self.case_failures={};self.current_task=None;self.tasks={}
+
+    @contextmanager
+    def timed(self,phase):
+        started=time.monotonic()
+        try:yield
+        finally:self.counts['seconds_'+phase]+=round(time.monotonic()-started,6)
 
     @staticmethod
     def code_path(name):
@@ -249,16 +258,20 @@ class Pass:
             raise ValueError('current source differs from the base source receipt')
         corpus=Path(base['source']['corpus']).resolve()
         ntrain,ntest,task_receipt=self.task(record['task']);result['task_receipt']=task_receipt
-        producer,adapter=self.metadata(record,corpus,base['kind'])
+        with self.timed('metadata'):
+            producer,adapter=self.metadata(record,corpus,base['kind'])
         # Authenticate stored X before any fresh gold preparation/replay.
-        source,fields=self.source_store.mutant_input(record,adapter,ntrain,ntest)
-        bundles,gaps,refs,failures=self.bundles(record,adapter,ntrain,ntest)
+        with self.timed('stored_X'):
+            source,fields=self.source_store.mutant_input(record,adapter,ntrain,ntest)
+        with self.timed('case_acquisition'):
+            bundles,gaps,refs,failures=self.bundles(record,adapter,ntrain,ntest)
         result.update(case_refs=refs,case_failure_refs=failures,gaps=gaps)
         own=[b for b in bundles if b['case']==record['case']]
         if own and own[0].get('_axis_ref'):result['axis_ref']=own[0]['_axis_ref']
         self.callable_metadata(producer,adapter,bundles,record)
         try:
-            selection=select_pair(bundles,record,adapter,ev=self.ev)
+            with self.timed('selection'):
+                selection=self.target_indexes.select(bundles,record,adapter,ev=self.ev)
         except (ValueError,KeyError,IndexError,OSError,TypeError) as error:
             # The case failure already records the precise native refusal.
             if failures:return result
@@ -279,7 +292,8 @@ class Pass:
             key=digest(dict(pair=base['pair_id'],target=target_key))
             comparison=self.journal.load('comparison',key,inputs)
             if comparison is None:
-                comparison=compare(source,fields,target,seconds=self.a.compare_seconds)
+                with self.timed('comparison'):
+                    comparison=compare(source,fields,target,seconds=self.a.compare_seconds,indexes=self.target_indexes)
                 self.journal.save('comparison',key,inputs,comparison);self.counts['target_comparisons']+=1
             else:self.counts['comparisons_resumed']+=1
             proof_ref=self.journal.reference('comparison',key,comparison)
@@ -317,11 +331,13 @@ class Pass:
                 search=self.journal.load('search',key,inputs)
                 if search is None:
                     try:
-                        proof,bindings,receipt=propose(source,fields,target,reference,selection,adapter,seconds=self.a.search_seconds)
+                        with self.timed('proposal'):
+                            proof,bindings,receipt=propose(source,fields,target,reference,selection,adapter,seconds=self.a.search_seconds,cache=self.proposal_cache,counters=self.counts)
                         search=dict(proof=proof,receipt=receipt,status='proposal' if proof.get('recoverable') else 'not_covered')
                         if proof.get('recoverable'):
                             candidate=clause(self.ev.legacy,proof,adapter['input']['binding'],bindings)
-                            checked,ref,raw=self.checked_candidate(record,adapter,selection,candidate,dict(inputs,candidate=candidate))
+                            with self.timed('candidate_check'):
+                                checked,ref,raw=self.checked_candidate(record,adapter,selection,candidate,dict(inputs,candidate=candidate))
                             search.update(checked=checked,candidate_ref=ref,candidate=candidate)
                     except (ValueError,KeyError,IndexError,TypeError) as error:
                         search=dict(status='unknown',reason=str(error))
@@ -371,6 +387,7 @@ class Pass:
                     else:self.counts['stale_pair_results']+=1
                 if self.current_task!=base['task']:
                     self.ev.close();clear_cache(self.ev);self.source_store.cache.clear()
+                    self.target_indexes=TargetIndexes();self.proposal_cache.clear()
                     self.case_cache.clear();self.case_failures.clear();self.producers.clear();self.current_task=base['task']
                 src=base['source'];current=Path(src['corpus']).resolve()/base['task']/src['file'];wanted=src['line']
                 if current!=path:
