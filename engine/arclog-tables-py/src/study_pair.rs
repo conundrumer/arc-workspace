@@ -172,6 +172,24 @@ impl PyStudyTaskEvaluator {
         Ok((report.to_string(),PyCaseTables::of(py,self.task_name.clone(),"gold".into(),false,self.settings.projection_cap,&columns,None,None)?))
     }
 
+    /// Native gold-only TRAIN FITS and ordered kept DET choices, without a mutant.
+    /// Returns self-contained arclog-study-gold-kept-v1 JSON, including on cache
+    /// hits. status/observation_complete describe the walk; callers must also
+    /// check assignment_coverage_complete before requiring every DET's value.
+    /// Cached bounded observations remain bounded. This gives no TEST Fit verdict
+    /// and does not materialize relation tables or change their search policy.
+    fn gold_kept(&self,py:Python<'_>,program:&PyStudyProgram)->PyResult<String> {
+        if program.settings!=self.settings {return Err(PyValueError::new_err("task evaluator and program settings differ"));}
+        let constructions=constructions()?;
+        py.detach(||self.with_cache("gold_kept",|cache| {
+            if cache.activate(&program.program) {self.session.results.clear();}
+            let mut report=study_pair::gold_kept_cached(&program.program,&self.task,&self.judged,
+                &self.session,constructions,&self.settings,cache);
+            report["task"]=self.task_name.clone().into();
+            Ok(report.to_string())
+        })).map_err(PyValueError::new_err)
+    }
+
     fn evaluate_pair(&self,py:Python<'_>,gold:&PyStudyProgram,point:&PyMutationPoint,mutant:&PyValidMutant)->PyResult<(String,PyCaseTables,PyCaseTables)> {
         if gold.settings!=self.settings || mutant.settings!=self.settings {return Err(PyValueError::new_err("task evaluator and program settings differ"));}
         let constructions=constructions()?;

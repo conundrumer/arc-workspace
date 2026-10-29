@@ -76,7 +76,7 @@ fn admissibility(e:&Evaluation<'_>, gold:&CheckedProgram, assigned:&[Assignment]
     }).collect()
 }
 
-/// Requires this evaluator's cached gold observation from evaluate_pair. If
+/// Requires this evaluator's cached gold observation from gold_kept or evaluate_pair. If
 /// supplied, expected_kept must exactly match that observation, including the
 /// session's Ident encodings. A stale/different stored assignment is an error.
 pub fn evaluate(gold:&StudyProgram,mutant:&ValidMutant,task:&Task,judged:&JudgedTask,session:&TaskSession,
@@ -85,10 +85,9 @@ pub fn evaluate(gold:&StudyProgram,mutant:&ValidMutant,task:&Task,judged:&Judged
     gold.checked().check_held_det_interfaces(mutant.program().checked()).map_err(|e| e.to_string())?;
     let judge=judgement::TrainJudge::new(task,judged)?;
     let key=Arc::as_ptr(gold.checked()) as usize;
-    let memo=cache.gold.get(&key).ok_or("call evaluate_pair on this evaluator/gold handle first; no new FITS search is performed")?;
+    let memo=cache.gold.get(&key).ok_or("call gold_kept or evaluate_pair on this evaluator/gold handle first; no new FITS search is performed")?;
     let walked=memo.walked.as_ref().map_err(|f|f.message.to_string())?;
-    let mut fixed=Vec::new();let mut records=Vec::new();
-    for (i,(assigned,train)) in walked.at.iter().enumerate() {if fits(train) {fixed.push(assigned.clone());records.push(memo.records[i].clone());}}
+    let (fixed,records)=memo.kept_values();
     if expected_kept.is_some_and(|expected|expected!=&json!(records)) {
         return Err("stored kept assignments differ from this evaluator's gold observation (possibly Ident namespace); refusing alternate FITS".into());
     }

@@ -70,6 +70,25 @@ struct GoldMemo {
     records:Vec<Value>,
     sequence:u64,
 }
+impl GoldMemo {
+    /// The same FITS selection for pair execution and standalone observations.
+    /// A stopped walk retains its observed prefix; no caller promotes it to full coverage.
+    fn kept(&self) -> impl Iterator<Item=(usize, &[Assignment], &Value)> {
+        self.walked.iter().flat_map(|walked| walked.at.iter().enumerate())
+            .filter(|(_, (_, train))| fits(train))
+            .map(|(index, (assigned, train))| (index, assigned.as_slice(), train))
+    }
+
+    fn assignments_json(&self) -> Value {
+        json!(self.walked.iter().flat_map(|walked| walked.at.iter().enumerate()).map(|(i,(_,train))|
+            json!({"assignment":self.records[i],"fits":fits(train),"train":train})).collect::<Vec<_>>())
+    }
+
+    fn kept_values(&self) -> (Vec<Vec<Assignment>>, Vec<Value>) {
+        self.kept().map(|(index, assigned, _)| (assigned.to_vec(), self.records[index].clone())).unzip()
+    }
+}
+
 impl Default for PairCache { fn default()->Self {Self::new(false)} }
 impl PairCache {
     pub fn new(compact:bool)->Self {Self::with_byte_bound(compact,STUDY_SESSION_BYTES)}
@@ -605,6 +624,97 @@ fn fits(train: &Value) -> bool {
     })
 }
 
+/// Acquire the native gold walk once in this active case's session. Walk all
+/// assignable DETs, including those OUT does not read; OUT alone decides FITS.
+fn gold_observation(gold:&StudyProgram,output:&GraphRelation,judge:&judgement::TrainJudge<'_>,
+    decoder:&Decoder<'_>,work:&TableWork,cache:&mut PairCache)->Outcome<(Arc<GoldMemo>,bool)> {
+    let written=source_stream(gold,decoder,cache)?;
+    cache.source=Some((Arc::clone(gold.checked()),written));
+    let gold_key=Arc::as_ptr(gold.checked()) as usize;
+    let gold_hit=cache.gold.contains_key(&gold_key);
+    let memo=if gold_hit {cache.gold_hits+=1;Arc::clone(&cache.gold[&gold_key])} else {
+        let dets=arclog::decode::held_dets(gold.checked());
+        let walked=decoder.assigned(gold.checked(),output.node,&dets,Some(&work),&mut |e|train(e,&output,&judge));
+        let records=walked.as_ref().map(|w|w.at.iter().map(|(a,_)|assignment_json(a)).collect()).unwrap_or_default();
+        cache.sequence+=1;
+        let memo=Arc::new(GoldMemo {_source:Arc::clone(gold.checked()),walked,records,sequence:cache.sequence});
+        cache.gold.insert(gold_key,Arc::clone(&memo));memo
+    };
+    Ok((memo,gold_hit))
+}
+
+/// Gold-only TRAIN FITS observation in the evaluator's existing session.
+/// No mutant is constructed, no caller assignment is accepted, and no relation
+/// tables or test-output verdict are acquired. Kept JSON always uses the pair
+/// report's original assignment_json encoding, including on compact cache hits.
+pub fn gold_kept_cached(gold:&StudyProgram,task:&Task,judged:&JudgedTask,session:&TaskSession,
+    constructions:&Constructions,settings:&DecodeSettings,cache:&mut PairCache)->Value {
+    cache.activate(gold);
+    let limits=settings.operation_limits();
+    let decoder=Decoder::new(task,session,Registry::get(),constructions,settings).with_operation_limits(limits);
+    let mut report=json!({"schema":"arclog-study-gold-kept-v1","status":"fault","reason":null,
+        "gold_observation_ref":null,"gold_observation_cached":false,"gold_observation_stop":null,
+        "observation_complete":false,"gold_assignments":[],"kept_assignments":[],
+        "kept_assignment_count":0,"gold_fits":null,"assignment_coverage_complete":false,
+        "kept_assignment_missing_dets":[],"held_det_relations":[],
+        "fits_contract":"native closed-world TRAIN candidate-set comparison; no TEST Fit verdict",
+        "settings":{"deadline_seconds":settings.deadline.map(|d|d.as_secs_f64()),
+            "table_work_cap":settings.table_work_cap,"projection_cap":settings.projection_cap,
+            "rule_tests":settings.rule_tests,"check_copies":settings.check_copies,
+            "proposer_tokens":settings.proposer_tokens,"type_domain_proposers":settings.type_domain_proposers,
+            "vocabulary":{"relations":settings.vocabulary.relations,"columns":settings.vocabulary.columns,"labels":settings.vocabulary.labels},
+            "caps":{"bindings":session.caps.bindings,"rows":session.caps.rows,"models":session.caps.models,
+                "nodes":session.caps.nodes,"assignments":session.caps.assignments},"session_bytes":session.bound.bytes},
+        "program_provenance":{"program_sexp":gold.sexp(Registry::get()),"stream":null},
+        "assignment_contract":"kept_assignments are ordered native full-program DET choices; raw rows and relation names use the existing pair encoding; Undefined DETs may have no assigned value and are listed separately",
+        "bound_scope":"one current operation deadline and table-work budget for the native gold walk; cached observations retain their original completion/stop"});
+    let stream=match gold.decode_stream(Registry::get(),settings) {
+        Ok(stream)=>stream,
+        Err(reason)=>{report["reason"]=json!(reason);return report;}
+    };
+    report["program_provenance"]["stream"]=json!({"ids":stream.ids,"model":stream.model,
+        "paths":stream.paths.iter().map(arclog::mutation::path_json).collect::<Vec<_>>()});
+    let judge=match judgement::TrainJudge::new(task,judged) {
+        Ok(judge)=>judge,
+        Err(reason)=>{report["reason"]=json!(reason);return report;}
+    };
+    let Some(output)=output_relation(gold.checked()) else {
+        report["reason"]=json!("gold has no OUT");return report;
+    };
+    let work=decoder.table_work();
+    let (memo,hit)=match gold_observation(gold,&output,&judge,&decoder,&work,cache) {
+        Ok(observation)=>observation,
+        Err(fault)=>{report["reason"]=json!(fault.message);return report;}
+    };
+    report["gold_observation_ref"]=json!(memo.sequence);
+    report["gold_observation_cached"]=json!(hit);
+    match &memo.walked {
+        Err(f)=>{report["reason"]=json!(f.message);report["form"]=json!(format!("{:?}",f.form));}
+        Ok(walked)=>{
+            report["status"]=json!(if walked.stop.is_some(){"stopped"}else{"complete"});
+            report["observation_complete"]=json!(walked.stop.is_none());
+            if let Some(stop)=&walked.stop {
+                let detail=stopped(stop);
+                report["reason"]=detail["reason"].clone();
+                report["gold_observation_stop"]=detail;
+            }
+            report["gold_assignments"]=memo.assignments_json();
+            let records=memo.kept().map(|(i,_,_)|memo.records[i].clone()).collect::<Vec<_>>();
+            report["kept_assignment_count"]=json!(records.len());
+            report["gold_fits"]=if !records.is_empty(){json!(true)}else if walked.stop.is_none(){json!(false)}else{Value::Null};
+            report["kept_assignments"]=json!(records);
+            let dets=arclog::decode::held_dets(gold.checked());
+            report["held_det_relations"]=json!(dets.iter().map(|d|relation_spelled(&d.relation)).collect::<Vec<_>>());
+            let missing=memo.kept().map(|(_,values,_)|dets.iter().filter(|d|
+                !values.iter().any(|(name,_)|*name==d.relation))
+                .map(|d|relation_spelled(&d.relation)).collect::<Vec<_>>()).collect::<Vec<_>>();
+            report["assignment_coverage_complete"]=json!(missing.iter().all(Vec::is_empty));
+            report["kept_assignment_missing_dets"]=json!(missing);
+        }
+    }
+    report
+}
+
 /// Evaluate all gold OUT assignments, retain every FITS assignment, and
 /// evaluate the complete mutant at precisely those native parameter values.
 /// Independent pairs can run concurrently (no GIL in the binding).
@@ -663,20 +773,9 @@ fn evaluate_pair_inner(
     let gold_started=Instant::now();
     let gold_key=Arc::as_ptr(gold.checked()) as usize;
     cache.active_source=gold_key;
-    if !cache.source.as_ref().is_some_and(|(checked,_)|Arc::ptr_eq(checked,gold.checked())) {
-        match gold.written_stream(gd.registry(),gd.settings()) {
-            Ok(written)=>cache.source=Some((Arc::clone(gold.checked()),written)),
-            Err(d)=>{result.report=faulted(&fault(d.message,&point.body));return result;}
-        }
-    }
-    let gold_hit=cache.gold.contains_key(&gold_key);
-    let memo=if gold_hit {cache.gold_hits+=1;Arc::clone(&cache.gold[&gold_key])} else {
-        let dets=arclog::decode::held_dets(gold.checked());
-        let walked=gd.assigned(gold.checked(),output.node,&dets,Some(&work),&mut |e|train(e,&output,&judge));
-        let records=walked.as_ref().map(|w|w.at.iter().map(|(a,_)|assignment_json(a)).collect()).unwrap_or_default();
-        cache.sequence+=1;
-        let memo=Arc::new(GoldMemo {_source:Arc::clone(gold.checked()),walked,records,sequence:cache.sequence});
-        cache.gold.insert(gold_key,Arc::clone(&memo));memo
+    let (memo,gold_hit)=match gold_observation(gold,&output,&judge,&gd,&work,cache) {
+        Ok(observation)=>observation,
+        Err(error)=>{result.report=faulted(&fault(error.message,&point.body));return result;}
     };
     let gold_seconds=gold_started.elapsed().as_secs_f64();
     let include_gold=!cache.compact || !gold_hit;
@@ -684,7 +783,7 @@ fn evaluate_pair_inner(
     result.report["gold_observation_cached"]=json!(gold_hit);
     let mut mutant_out_seconds=0.;
     let mut fixed = Vec::new();
-    let mut gold_assignments = Vec::new();
+    let mut gold_assignments = json!([]);
     match &memo.walked {
         Err(f) => {
             result.report["status"] = json!("fault");
@@ -693,15 +792,14 @@ fn evaluate_pair_inner(
         Ok(walked) => {
             let mut kept = Vec::new();
             let mut outputs = Vec::new();
-            for (assignment_index,(assigned, gold_train)) in walked.at.iter().enumerate() {
-                if include_gold {gold_assignments.push(json!({"assignment":memo.records[assignment_index],"fits":fits(gold_train),"train":gold_train}));}
-                if !fits(&gold_train) {
-                    continue;
-                }
+            if include_gold {
+                gold_assignments=memo.assignments_json();
+            }
+            for (assignment_index,assigned,gold_train) in memo.kept() {
                 let index = fixed.len();
                 if include_gold {kept.push(memo.records[assignment_index].clone());}
-                fixed.push(assigned.clone());
-                let parameters = ParameterValues::determined(assigned.clone());
+                fixed.push(assigned.to_vec());
+                let parameters = ParameterValues::determined(assigned.to_vec());
                 let limits = md.limits().counted_in(work.clone());
                 let evaluation = Evaluation {
                     program: mutant.program().checked(),
@@ -732,7 +830,7 @@ fn evaluate_pair_inner(
             }
         }
     }
-    if include_gold {result.report["gold_assignments"] = json!(gold_assignments);} else {result.report.as_object_mut().unwrap().remove("kept_assignments");}
+    if include_gold {result.report["gold_assignments"] = gold_assignments;} else {result.report.as_object_mut().unwrap().remove("kept_assignments");}
     result.report["kept_assignment_count"]=json!(fixed.len());
     result.report["gold_fits"] = if !fixed.is_empty() {
         json!(true)

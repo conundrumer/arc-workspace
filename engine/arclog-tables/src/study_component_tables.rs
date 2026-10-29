@@ -34,10 +34,9 @@ pub fn evaluate_cached(gold:&StudyProgram,mutant:&ValidMutant,task:&Task,session
     if !Arc::ptr_eq(gold.checked(),mutant.gold()) {return Err("mutant belongs to another gold handle".into());}
     gold.checked().check_held_det_interfaces(mutant.program().checked()).map_err(|e| e.to_string())?;
     let key=Arc::as_ptr(gold.checked()) as usize;
-    let memo=cache.gold.get(&key).ok_or("call evaluate_pair on this evaluator/gold handle first; no FITS search is performed")?;
+    let memo=cache.gold.get(&key).ok_or("call gold_kept or evaluate_pair on this evaluator/gold handle first; no FITS search is performed")?;
     let walked=memo.walked.as_ref().map_err(|f|f.message.to_string())?;
-    let mut fixed=Vec::new();let mut records=Vec::new();
-    for (i,(assigned,train)) in walked.at.iter().enumerate() {if fits(train) {fixed.push(assigned.clone());records.push(memo.records[i].clone());}}
+    let (fixed,records)=memo.kept_values();
     if expected_kept.is_some_and(|expected|expected!=&json!(records)) {
         return Err("stored kept assignments differ from cached gold observation (possibly Ident namespace); refusing alternate assignments".into());
     }
