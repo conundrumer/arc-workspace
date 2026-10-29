@@ -178,6 +178,38 @@ def acquire_candidate_train(ev, native, table, record, *, ntrain, proof,
         output_aliases=aliases, source=source)
 
 
+def acquire_input_train(ev, native, table, record, *, ntrain, source=None):
+    """Expose per-input `input` from the exact native `ex_input` fact table.
+
+    Kept matching, TRAIN visibility, TASK broadcast and typed-cell decoding are
+    the same as acquire_train_table. Restrict the native Example column to the
+    destination TRAIN input before removing it with the canonical projector.
+    Use acquire_train_table separately to retain the full `ex_input` relation.
+    """
+    from tables import Incomplete
+    if native['tables']['fact'][table] != 'ex_input':
+        raise Incomplete('input TRAIN acquisition requires the native ex_input fact')
+    packet = acquire_train_table(ev, native, table, record, ntrain=ntrain, source=source)
+    examples = [i for i, field in enumerate(packet['fields']) if field['type'] == 'Example']
+    if len(examples) != 1:
+        raise Incomplete('native ex_input must have exactly one Example column')
+    example_column = examples[0]
+    projection = [i for i in range(len(packet['fields'])) if i != example_column]
+    entries = []
+    for entry in packet['entries']:
+        rows = [row for row in entry['rows']
+                if row[example_column]['value'] == [entry['example_index']]]
+        projected = _projector()(dict(entries=[dict(entry, rows=rows,
+            example='train'+str(entry['example_index']+1), choice=entry['assignment'])]),
+            projection)[0]['rows']
+        entries.append(dict(entry, rows=deepcopy(projected)))
+    return dict(packet, fields=[deepcopy(packet['fields'][i]) for i in projection],
+        entries=entries, projection=projection,
+        receipt=dict(packet['receipt'], input_projection=dict(
+            source_fact='ex_input', relation='input', example_column=example_column,
+            rule='Example equals destination TRAIN index before Example column removal')))
+
+
 def evaluate_train_clause(ev, record, clause, target, columns=None, explore=False):
     """Canonical checked result plus the original candidate's full TRAIN table.
 
