@@ -1,41 +1,40 @@
-# Stored normal-form attributes
+# Normal-form facts
 
-`classify_normal.py` reads the base mechanical database, its original corpus records, the exported case streams, and stored gold replay/prefix buffers. It writes `normal.sqlite3` and `summary.json` under the shared data root at `ast/run/mech2/`. It performs no decoding, program evaluation, or base labeling.
+`classify_normal.py` applies the writer's normal constraint set to stored streams and native prefix buffers. `normal_policy.py` supplies the adapter and the existing writer check. The pass performs no program replay. Labeling passes may process every pair; study uses the shared normal reader to exclude non-normal and unavailable mutants from its read-time counts and fits.
 
-The policy comes from `writer.py`: `CONSTRAINT_SETS['normal']`, `Shape`, `passes`, `normal_form`, and `CaseRows`. The adapter supplies native buffers through the existing `native_storage.load_native` reader. It retains the writer's column, flow, assignment, and distinct-row rules. Both forms use the unchanged gold prefix; their stored stream prefixes must agree. Each changed top-level form is checked in full, including the writer's segment and INIT-key rules. Gold point identities retain task, case, point, and clause.
+The authoritative store is `DATA_ROOT/ast/run/mech2/normal.sqlite3`. Its `metadata` entry `schema` identifies `normal-facts-v2`:
 
-`pairs.normal` is true, false, or null. A null result records unavailable evidence. `record_json.mutant.writer_pass` preserves the writer's exact conservative result. When missing row evidence caused a failure, the adapter asks the same structural policy whether granting those unavailable one-row claims would change it. A possible change yields null; a failure that persists yields false. It adds no row semantics. Structural decisions can remain available when a native pack is missing. Non-normal means false; unavailable is reported separately.
+```sql
+pairs(pair_id PRIMARY KEY, source_sha256, code_sha256, gold_point_id,
+      normal, diagnostics_json, fact_sha256)
+gold_points(point_id PRIMARY KEY, origin_pair_id, source_sha256, code_sha256,
+            normal, diagnostics_json, fact_sha256)
+producers(code_sha256 PRIMARY KEY, manifest_json)
+metadata(key PRIMARY KEY, value)
+```
 
-The output uses SQLite WAL and synchronous FULL, with a commit for every pair. Resume checks the base source and result hashes, the current code manifest, and each saved result hash. Code receipts bind the actual writer, storage reader, registry, encoder, transport adapter, and library versions. Original source records are checked against their base hashes; native compressed ranges are authenticated by the shared reader. Published source files are treated as immutable during a run. A changed producer requires a fresh run of the affected receipts.
+`pairs.normal` is the mutant check's true/false/null fact. Gold checks occur once in `gold_points`; a pair holds their point key. The point key is the canonical JSON digest of task, case, point and clause, obtained from the upstream pair. `origin_pair_id` locates the source used for the gold check. Source hashes bind the original corpus records; no base label, source locator, operation, K or base-result copy is stored. Producer manifests bind the classification code, runtime and dependencies. Fact hashes bind their canonical payloads as implemented by `facts.payload`.
 
-`gold_points` stores one result per point. `pairs` retains base label, operation, and K. The summary reports normal, non-normal, and unavailable counts separately, marginal and joint breakdowns, and failing gold points. Counts cover the stored base population; runtime and load omissions from the corpus remain outside it.
+`diagnostics_json` retains reasons and failed one-row probe sites from this pass. Native snapshots, their row counts and layouts remain with their owning source. Status, eligibility, conservative writer result, grades and counts are derived at read time. The store contains no summaries, historical result copies or document hashes.
 
-Run from any directory:
+Consumers import `mech2.read_normal`. The boolean API is `is_normal(pair_id, *, source_sha256=None, base_result_sha256=None, database=None, reader=None)`. Only a valid classified normal mutant returns true. For bulk access, use `with NormalReader() as reader` and `reader.load_normal(pair_id, *, source_sha256=None, base_result_sha256=None)`. Its constructor accepts `database=None, *, base_database=None`. Defaults resolve from `study_paths.DATA_ROOT`.
+
+Rich results contain `normal`, `status`, `eligible`, `absence_reason`, gold attributes and a durable reference. Classified false has `absence_reason="non_normal"`; missing/stale evidence has status `open`, while a completed unavailable classification has status `unavailable`. Both have `absence_reason="normal_unavailable"`. The legacy `load_normal(database, pair_id, *, source_sha256=None, base_result_sha256=None, reader=None)` remains supported. Its `record` is a read-time view, not a stored copy.
+
+The reader joins source bindings against the canonical base database when hashes are omitted. A supplied legacy base-result hash is checked against the current base row; base-result changes alone do not invalidate normal facts. It uses short read transactions and caches source hashes while their filesystem signatures stay unchanged. Readers are worker-local and expose `close()` as well as the context-manager interface.
+
+Compact an existing store after deploying the updated reader:
+
+```sh
+/Users/davidlu/code/arc-workspace/scripts/run_heavy.py --cpus 1 /Users/davidlu/code/arc-workspace/work/lm/.venv/bin/python /Users/davidlu/code/arc-workspace/model/study/ast/run/mech2/compact_normal.py
+```
+
+Compaction validates the old result hashes, producer compatibility, classification extraction and dependencies. It preserves all current mutant and gold classifications in one atomic transaction, removes the duplicated tables and legacy `summary.json`, and never opens the base database for writing. A failed validation leaves the database unchanged. Existing v1 records remain readable during deployment through a bounded compatibility check for this storage rewrite. The check binds the reviewed predecessor and the exact extracted policy source.
+
+For new work or resume:
 
 ```sh
 /Users/davidlu/code/arc-workspace/scripts/run_heavy.py --cpus 1 /Users/davidlu/code/arc-workspace/work/lm/.venv/bin/python /Users/davidlu/code/arc-workspace/model/study/ast/run/mech2/classify_normal.py
 ```
 
-Progress includes the indexing phase, done/total, elapsed seconds, rate, and ETA. The same command resumes.
-
-To retry unavailable rows while retaining completed classifications, append `--retry-unavailable`. The transport repair adds the explicit table ID required by the writer's `TableSource` interface and completes setup before caching `CaseRows`. The first producer's classified rows are compatible: any attempt to use its broken row setup raised before returning a verdict. Compatibility is restricted to that exact producer hash with unchanged policy dependencies. `code_manifests` retains the producer receipts; `compatible_codes` records this bounded compatibility decision. Retry validates retained row hashes and rejects changed base receipts. It does not recompute classified pairs or discard gold-point classifications.
-
-Source comes from the active checkout. `study_paths.DATA_ROOT` keeps the databases and corpus data in the main worktree's `work/lm/data-study`. `migration-compatibility.json` binds the reviewed legacy producers to exact migrated dependency hashes and the classifier classes' syntax trees. This permits the source relocation without recomputing their completed attributes. New checkout locations with identical logical source hashes are also compatible. Runtime manifests retain absolute paths to the files actually used, including the registry read by the writer.
-
-Study read-time consumers use `mech2.read_normal.is_normal(pair_id, *, source_sha256=None, base_result_sha256=None, database=None, reader=None)`. Only a valid classified normal mutant returns true. Labeling passes continue over all pairs; study excludes non-normal and unavailable mutants from its counts and fits.
-
-For bulk reads, the constructor is `NormalReader(database=None, *, base_database=None)`; use `with NormalReader() as reader` and call `reader.load_normal(pair_id, *, source_sha256=None, base_result_sha256=None)`. The result exposes `eligible`, tri-state `normal`, `status`, `absence_reason`, gold attributes and a durable `reference` binding the source, base result, producer, active manifest and result hashes. Classified false has `absence_reason="non_normal"`; missing/stale (`open`) and completed unavailable evidence have `absence_reason="normal_unavailable"`. The boolean function also accepts this reader. The legacy `load_normal(database, pair_id, *, source_sha256=None, base_result_sha256=None, reader=None)` entry point remains available.
-
-Default databases are `DATA_ROOT/ast/run/mech2/normal.sqlite3` and `DATA_ROOT/ast/run/mech/labels.sqlite3`. Omitted binding hashes are fetched from the current canonical base row; explicit hashes bind the caller's base receipt. Readers take short database snapshots on every call, including explicit reviewed producer compatibility from `compatible_codes` and `code_manifests`. They validate the active manifest's actual source files; hashes are cached by device, inode, size, modification time and change time. A reusable reader belongs to one worker thread and must be closed after use. Legacy calls reuse a thread-local reader. No normal classification or replay runs in the reader.
-
-The adapter supplies whole top-level form spans to the writer mapper; INIT port/SKIP tails do not become the next rule's header. Native Position/Offset spans use the canonical native reader's four-margin widths. Both full gold replay and point-prefix gold snapshots contribute observations. A mapped, complete multi-row observation rules out one-row; absent or incomplete evidence does not.
-
-`row_independent` identifies decisions made entirely by structural rules. Other decisions load stored row buffers. Unavailable cause groups are exclusive sets whose counts sum to the unavailable population. Probe receipts retain source references and entry kinds. Missing/faulted tables and stopped/count-only entries can leave insufficient stored evidence. Unresolved column mapping or stream declarations remain adapter limitations for investigation, without an intrinsic-undecidability claim.
-
-The form-span, spatial-width and prefix-evidence repair invalidates the earlier row-dependent producer. Run without `--retry-unavailable` for this repair: it reads stored streams again, decides structural cases without row acquisition, and recomputes row-dependent normal attributes. It performs no base labeling or program replay. The summary retains pre-repair groups in `repair_input_unavailable_causes`, current groups in `unavailable_causes`, and their explanations in `unavailable_cause_meanings`.
-
-The writer normal policy now admits finite-domain lib outputs only under its grounded functional-dependency rule. The classifier loads writer, native readers, hash helpers, detector support and encoder by exact repository paths and rejects previously imported foreign copies. Retired study directories are removed from transitive lookup paths. Receipts include the actual arclog runtime used by the writer's existing `determined()` registry metadata acquisition.
-
-This policy version requires a full stored-population run, with no `--retry-unavailable` flag. Earlier classifications are invalidated by their code/policy hashes. The pass performs no pair replay; `determined()` acquires task-independent lib dependency metadata once through its existing implementation. Subsequent starts resume records already written under this policy.
-
-Column-mapping cache entries retain transitive uncertainty along with selected columns. An unavailable mapping therefore cannot become a definite negative just because a later read hits the cache. `gold_point_history` archives each producer's point results before replacement. The summary reports transitions against the previous snapshot and gold failures include the non-one-row components. The separate historical run comparison under `review/` documents reconstructed earlier results and their provenance limits.
+The producer commits each pair durably and streams done/total, elapsed time, rate and ETA. It resumes matching source/code facts. `--retry-unavailable` retries null mutant classifications while preserving completed compatible facts. Aggregation belongs to the read-time join.

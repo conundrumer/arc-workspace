@@ -9,6 +9,11 @@ import sqlite3
 import sys
 import threading
 
+try:
+    from . import facts
+except ImportError:
+    import facts
+
 
 def _digest(value):
     text = json.dumps(value, sort_keys=True, ensure_ascii=False,
@@ -77,8 +82,13 @@ class _Database:
             finally:
                 self.connection.execute('ROLLBACK')
         finally:
-            if guard is not None:
-                guard.close()
+            try:
+                # An immutable handle must not outlive the producer lock.
+                if immutable:
+                    self.close()
+            finally:
+                if guard is not None:
+                    guard.close()
 
 
 class NormalReader:
@@ -133,8 +143,56 @@ class NormalReader:
                     return 'normal source changed during read: ' + file
                 self._files[file] = (signature, actual)
             if self._files[file][1] != expected:
+                if facts.reviewed_storage_rewrite(file, expected):
+                    continue
                 return 'normal source changed: ' + file
         return None
+
+    def _load_facts(self, db, pair_id, source_sha256, base_result_sha256):
+        row = db.execute('SELECT * FROM pairs WHERE pair_id=?', (pair_id,)).fetchone()
+        if row is None:
+            return _open('normal receipt absent')
+        facts.validate('pairs', row)
+        if row[1] != source_sha256:
+            return _open('normal source binding stale')
+        # Base labels/results are not normal dependencies. A supplied legacy
+        # result hash authenticates the caller's current base row at read time.
+        if base_result_sha256 is not None:
+            binding = self._bindings(pair_id)
+            if binding != (source_sha256, base_result_sha256):
+                return _open('caller base receipt stale')
+        gold = db.execute('SELECT * FROM gold_points WHERE point_id=?', (row[3],)).fetchone()
+        if gold is None:
+            return _open('gold normal receipt absent')
+        facts.validate('gold_points', gold)
+        for producer in {row[2], gold[3]}:
+            item = db.execute('SELECT manifest_json FROM producers WHERE code_sha256=?',
+                              (producer,)).fetchone()
+            if item is None:
+                return _open('normal producer absent')
+            manifest = json.loads(item[0])
+            if _digest(manifest) != producer:
+                return _open('normal producer receipt invalid')
+            reason = self._check_files(manifest)
+            if reason:
+                return _open(reason)
+        origin = self._bindings(gold[1])
+        if origin is None or origin[0] != gold[2]:
+            return _open('gold normal source binding stale')
+        mutant = facts.outcome(row); gold_result = facts.outcome(gold)
+        value = mutant['normal']
+        reference = dict(database=str(self.database), table='pairs', pair_id=pair_id,
+                         result_sha256=row[6], source_sha256=row[1], code_sha256=row[2],
+                         gold_point_id=row[3])
+        return dict(status='unavailable' if value is None else 'classified',
+                    normal=value, eligible=value is True,
+                    absence_reason=None if value is True else
+                        'non_normal' if value is False else 'normal_unavailable',
+                    writer_pass=mutant['writer_pass'], gold=gold_result,
+                    gold_point_id=row[3], reference=reference,
+                    record=dict(schema=facts.SCHEMA, pair_id=pair_id,
+                                source_sha256=row[1], code_sha256=row[2],
+                                gold_point_id=row[3], mutant=mutant, gold=gold_result))
 
     def load_normal(self, pair_id, *, source_sha256=None, base_result_sha256=None):
         """Return status, tri-state normal, eligibility and a durable reference.
@@ -153,6 +211,9 @@ class NormalReader:
                     return _open('caller base receipt stale')
                 source_sha256, base_result_sha256 = binding
             with self._normal.snapshot() as db:
+                schema = db.execute("SELECT value FROM metadata WHERE key='schema'").fetchone()
+                if schema and schema[0] == facts.SCHEMA:
+                    return self._load_facts(db, pair_id, source_sha256, base_result_sha256)
                 row = db.execute(
                     'SELECT source_sha256,base_result_sha256,code_sha256,'
                     'result_sha256,normal,record_json FROM pairs WHERE pair_id=?',
