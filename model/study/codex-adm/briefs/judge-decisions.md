@@ -63,5 +63,6 @@ Attributes: `redundant`, `sibling`, and the continuation's outcome.
 
 ## Ownership
 
-- n-judgetool owns the pair data, the whole judge brief, the tool and the evaluator.
+- n-judgetool owns the pair data, the whole judge brief and the tool.
+- n-eval owns the evaluator.
 - n-mech owns the labeler and the grade.
