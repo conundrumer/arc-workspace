@@ -94,10 +94,10 @@ class _Database:
 class NormalReader:
     """Reusable, worker-local read-only reader; use close() or a with statement.
 
-    Each call reads a fresh database snapshot. Source hashes are cached only
-    while device, inode, size, modification time and change time stay unchanged.
-    Explicit source/base hashes bind the caller's base receipt; omitted hashes
-    are obtained from the canonical base database. No classification is run.
+    Each call reads a fresh database snapshot. Validity binds the original
+    pair input and stored fact integrity. Producer code is provenance; later
+    source-file edits do not invalidate completed facts. The legacy base-result
+    argument is accepted without making base labels a normal dependency.
     """
 
     def __init__(self, database=None, *, base_database=None):
@@ -107,10 +107,6 @@ class NormalReader:
         self.base_database = base_database
         self._normal = _Database(path, path.with_suffix('.lock'))
         self._base = None
-        self._files = {}
-        self._manifest_text = None
-        self._manifest = None
-        self._manifest_hash = None
 
     def close(self):
         self._normal.close()
@@ -132,22 +128,6 @@ class NormalReader:
             return db.execute('SELECT source_sha256,result_sha256 FROM pairs '
                               'WHERE pair_id=?', (pair_id,)).fetchone()
 
-    def _check_files(self, manifest):
-        for file, expected in manifest['files'].items():
-            path = Path(file)
-            signature = _signature(path)
-            cached = self._files.get(file)
-            if cached is None or cached[0] != signature:
-                actual = hashlib.sha256(path.read_bytes()).hexdigest()
-                if _signature(path) != signature:
-                    return 'normal source changed during read: ' + file
-                self._files[file] = (signature, actual)
-            if self._files[file][1] != expected:
-                if facts.reviewed_storage_rewrite(file, expected):
-                    continue
-                return 'normal source changed: ' + file
-        return None
-
     def _load_facts(self, db, pair_id, source_sha256, base_result_sha256):
         row = db.execute('SELECT * FROM pairs WHERE pair_id=?', (pair_id,)).fetchone()
         if row is None:
@@ -155,12 +135,6 @@ class NormalReader:
         facts.validate('pairs', row)
         if row[1] != source_sha256:
             return _open('normal source binding stale')
-        # Base labels/results are not normal dependencies. A supplied legacy
-        # result hash authenticates the caller's current base row at read time.
-        if base_result_sha256 is not None:
-            binding = self._bindings(pair_id)
-            if binding != (source_sha256, base_result_sha256):
-                return _open('caller base receipt stale')
         gold = db.execute('SELECT * FROM gold_points WHERE point_id=?', (row[3],)).fetchone()
         if gold is None:
             return _open('gold normal receipt absent')
@@ -173,9 +147,6 @@ class NormalReader:
             manifest = json.loads(item[0])
             if _digest(manifest) != producer:
                 return _open('normal producer receipt invalid')
-            reason = self._check_files(manifest)
-            if reason:
-                return _open(reason)
         origin = self._bindings(gold[1])
         if origin is None or origin[0] != gold[2]:
             return _open('gold normal source binding stale')
@@ -202,14 +173,11 @@ class NormalReader:
         classified true result is eligible for scientific counts and fits.
         """
         try:
-            if source_sha256 is None or base_result_sha256 is None:
+            if source_sha256 is None:
                 binding = self._bindings(pair_id)
                 if binding is None:
                     return _open('base receipt absent')
-                if ((source_sha256 is not None and source_sha256 != binding[0]) or
-                        (base_result_sha256 is not None and base_result_sha256 != binding[1])):
-                    return _open('caller base receipt stale')
-                source_sha256, base_result_sha256 = binding
+                source_sha256 = binding[0]
             with self._normal.snapshot() as db:
                 schema = db.execute("SELECT value FROM metadata WHERE key='schema'").fetchone()
                 if schema and schema[0] == facts.SCHEMA:
@@ -218,32 +186,11 @@ class NormalReader:
                     'SELECT source_sha256,base_result_sha256,code_sha256,'
                     'result_sha256,normal,record_json FROM pairs WHERE pair_id=?',
                     (pair_id,)).fetchone()
-                meta = db.execute("SELECT value FROM metadata WHERE key='code_manifest'").fetchone()
-                if row is None or meta is None:
+                if row is None:
                     return _open('normal receipt absent')
-                if meta[0] != self._manifest_text:
-                    self._manifest = json.loads(meta[0])
-                    self._manifest_hash = _digest(self._manifest)
-                    self._manifest_text = meta[0]
                 source, base, code, result, normal, text = row
                 record = json.loads(text)
-                compatible = False
-                if code != self._manifest_hash:
-                    tables = {t for t, in db.execute(
-                        "SELECT name FROM sqlite_master WHERE type='table'")}
-                    if {'compatible_codes', 'code_manifests'} <= tables:
-                        receipt = db.execute(
-                            'SELECT c.current_code_sha256,m.manifest_json '
-                            'FROM compatible_codes c JOIN code_manifests m '
-                            'ON c.code_sha256=m.code_sha256 WHERE c.code_sha256=?',
-                            (code,)).fetchone()
-                        compatible = bool(
-                            receipt and receipt[0] == self._manifest_hash and
-                            _digest(json.loads(receipt[1])) == code and
-                            record['mutant']['normal'] is not None)
-            if (source != source_sha256 or base != base_result_sha256 or
-                    (code != self._manifest_hash and not compatible) or
-                    _digest(record) != result or
+            if (source != source_sha256 or _digest(record) != result or
                     record['pair_id'] != pair_id or
                     record['source_sha256'] != source or
                     record['base_result_sha256'] != base or
@@ -253,9 +200,6 @@ class NormalReader:
             if ((value is not None and type(value) is not bool) or
                     normal != (None if value is None else int(value))):
                 return _open('normal attribute disagrees with receipt')
-            reason = self._check_files(self._manifest)
-            if reason:
-                return _open(reason)
             return dict(
                 status='unavailable' if value is None else 'classified',
                 normal=value, eligible=value is True,
@@ -266,8 +210,7 @@ class NormalReader:
                 reference=dict(database=str(self.database), table='pairs',
                                pair_id=pair_id, result_sha256=result,
                                source_sha256=source, base_result_sha256=base,
-                               code_sha256=code,
-                               active_code_sha256=self._manifest_hash),
+                               code_sha256=code),
                 record=record)
         except (OSError, sqlite3.Error, ValueError, KeyError, TypeError) as exc:
             return _open(f'normal evidence unavailable: {type(exc).__name__}: {exc}')
