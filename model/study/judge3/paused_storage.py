@@ -8,6 +8,7 @@ import argparse
 import gzip
 import hashlib
 import io
+import itertools
 import json
 import math
 import os
@@ -124,7 +125,7 @@ def restore_file(archive):
     return {'path': str(original), 'restored_bytes': expected[1], 'sha256': expected[0]}
 
 
-def read_gzip_json(path):
+def read_gzip_json(path, *, expected_sha256=None):
     expected = json.loads(sidecar(Path(path)).read_text())
     if expected['schema'] != 'lossless-original-bytes-v1': raise ValueError('unknown cache SHA schema')
     h = hashlib.sha256(); size = 0
@@ -139,34 +140,69 @@ def read_gzip_json(path):
             value = json.load(text)
     if (h.hexdigest(), size) != (expected['sha256'], expected['uncompressed_bytes']):
         raise ValueError('compressed cache SHA differs: ' + str(path))
+    if expected_sha256 is not None and h.hexdigest()!=expected_sha256:
+        raise ValueError('referenced JSON SHA differs: '+str(path))
     return value
 
 
-def write_gzip_json(path, value):
-    """Stream compact new cache JSON; do not create a full plain disk copy."""
+def _write_gzip_chunks(path, chunks, *, compresslevel=6):
+    """The one atomic streaming gzip/original-SHA codec for text and JSON."""
     path = Path(path); path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix='.' + path.name, dir=path.parent)
     h = hashlib.sha256(); size = 0
     try:
         with os.fdopen(fd, 'wb') as raw:
-            with gzip.GzipFile(filename='', fileobj=raw, mode='wb', mtime=0, compresslevel=6) as output:
+            with gzip.GzipFile(filename='', fileobj=raw, mode='wb', mtime=0, compresslevel=compresslevel) as output:
                 pending = []; length = 0
                 def flush():
                     nonlocal length, size
                     data = ''.join(pending).encode('utf-8'); output.write(data)
                     h.update(data); size += len(data); pending.clear(); length = 0
-                for chunk in json.JSONEncoder(ensure_ascii=False, allow_nan=False,
-                        separators=(',', ':')).iterencode(value):
+                for chunk in chunks:
                     pending.append(chunk); length += len(chunk)
                     if length >= 65536: flush()
-                pending.append('\n'); flush()
+                if pending: flush()
             raw.flush(); os.fsync(raw.fileno())
         with gzip.open(temporary, 'rb') as stream:
             if digest_stream(stream) != (h.hexdigest(), size): raise ValueError('new cache gzip differs')
         publish_sha(path, h.hexdigest(), size)
         os.replace(temporary, path); fsync_directory(path.parent)
+        return h.hexdigest()
     finally:
         if os.path.exists(temporary): os.unlink(temporary)
+
+
+
+def write_gzip_json(path, value, *, json_options=None, compresslevel=6, return_sha=False):
+    """Stream JSON directly; existing callers keep compact level-6 bytes/None.
+
+    Options permit exact legacy JSON formatting without a second codec. The
+    optional digest describes the uncompressed UTF-8 bytes including newline.
+    """
+    options=dict(ensure_ascii=False,allow_nan=False,separators=(',',':'))
+    if json_options is not None:options.update(json_options)
+    chunks=itertools.chain(json.JSONEncoder(**options).iterencode(value), ('\n',))
+    digest=_write_gzip_chunks(path,chunks,compresslevel=compresslevel)
+    if return_sha:return digest
+
+
+def write_gzip_text(path, text, *, compresslevel=6):
+    """Write exact UTF-8 text through the same verified atomic gzip codec."""
+    return _write_gzip_chunks(path,(text,),compresslevel=compresslevel)
+
+
+def read_json(path, *, expected_sha256=None):
+    """Plain/legacy gzip or missing logical path's verified gzip sibling."""
+    path=Path(path);missing=not path.exists()
+    actual=path.with_name(path.name+'.gz') if missing else path
+    if actual.suffix=='.gz':
+        if missing or sidecar(actual).exists() or expected_sha256 is not None:
+            return read_gzip_json(actual,expected_sha256=expected_sha256)
+        with gzip.open(actual,'rt',encoding='utf-8') as stream:return json.load(stream)
+    data=actual.read_bytes()
+    if expected_sha256 is not None and hashlib.sha256(data).hexdigest()!=expected_sha256:
+        raise ValueError('referenced JSON SHA differs: '+str(path))
+    return json.loads(data)
 
 
 def files(root):

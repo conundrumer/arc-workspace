@@ -34,12 +34,45 @@ def sha(value):
     return hashlib.sha256(canonical(value).encode()).hexdigest()
 
 
+ARTIFACT_RESULT_SCHEMA = 'judgetool-artifact-result-ref-v1'
+
+
 def read_json(path):
-    path = Path(path)
-    if path.suffix == '.gz':
-        with gzip.open(path, 'rt') as stream:
-            return json.load(stream)
-    return json.loads(path.read_text())
+    from judge3.paused_storage import read_json as read_storage_json
+    path=Path(path);stored=read_storage_json(path)
+    if not isinstance(stored,dict) or stored.get('schema')!=ARTIFACT_RESULT_SCHEMA:return stored
+    if set(stored)!= {'schema','value','engine_report_ref'}:
+        raise ValueError('invalid artifact result reference envelope')
+    result=stored['value'];ref=stored['engine_report_ref']
+    if (not isinstance(result,dict) or result.get('engine_report',False) is not None
+            or not isinstance(ref,dict)):
+        raise ValueError('invalid artifact engine-report placeholder')
+    if not isinstance(ref.get('sha256'),str) or len(ref['sha256'])!=64:
+        raise ValueError('artifact engine-report reference lacks a SHA256')
+    name=ref.get('path')
+    if not isinstance(name,str) or not name or Path(name).name!=name or name in ('.','..'):
+        raise ValueError('artifact engine-report reference is not a sibling file')
+    result['engine_report']=read_storage_json(path.parent/name,expected_sha256=ref['sha256'])
+    return result
+
+
+def _artifact_text(path,text):
+    from judge3.paused_storage import write_gzip_text
+    path=Path(path);digest=write_gzip_text(path.with_name(path.name+'.gz'),text,compresslevel=1)
+    # The codec verifies the gzip and durably publishes its SHA before return.
+    if path.exists():path.unlink()
+    return digest
+
+
+def _artifact_json(path,value,*,indent=2,ensure_ascii=True,sort_keys=False,
+                   separators=None,allow_nan=True):
+    from judge3.paused_storage import write_gzip_json
+    path=Path(path)
+    digest=write_gzip_json(path.with_name(path.name+'.gz'),value,compresslevel=1,return_sha=True,
+        json_options=dict(indent=indent,ensure_ascii=ensure_ascii,sort_keys=sort_keys,
+                          separators=separators,allow_nan=allow_nan))
+    if path.exists():path.unlink()
+    return digest
 
 
 def legacy_helpers(run=S/'ast/run', reference=P):
@@ -101,7 +134,7 @@ class ReplayEvaluator:
                             budget_scope='one gold_tables operation, not entire candidate search',
                             reference_sha256=hashlib.sha256((self.reference/'engine_verify.py').read_bytes()).hexdigest(),
                             implementation_sha256=sha({name:hashlib.sha256((HERE/name).read_bytes()).hexdigest()
-                                for name in ('../study_paths.py','../native_correspondence.py','../normalized_gold.py','../prefix_universe.py','../current_native_names.py','../det_full_body.py','../legacy_body_metadata.py','../legacy_body_worker.py','../ast/run/provenance.py','evaluator.py','derived_fit.py','runtime_compat.py','surface.py','tables.py','checks.py','catalog.py','registry.py','live_targets.py','case_collector.py','program_metadata.py','gold_body.py','candidate_train.py','raw_body.py','target_view.py','judge_view.py','judge_tool.py')}))
+                                for name in ('../study_paths.py','../native_correspondence.py','../normalized_gold.py','../prefix_universe.py','../current_native_names.py','../det_full_body.py','../legacy_body_metadata.py','../legacy_body_worker.py','../ast/run/provenance.py','evaluator.py','../judge3/paused_storage.py','derived_fit.py','runtime_compat.py','surface.py','tables.py','checks.py','catalog.py','registry.py','live_targets.py','case_collector.py','program_metadata.py','gold_body.py','candidate_train.py','raw_body.py','target_view.py','judge_view.py','judge_tool.py')}))
 
     def _reset_session_state(self):
         self.task = None
@@ -246,10 +279,11 @@ class ReplayEvaluator:
             program_provenance_sha256=sha(observation.get('program_provenance')),
             session_scope='independent gold-kept observation; original captures/memos untouched',
             test_fit=False,settings=self.receipt)
-        (folder/'program.arclog').write_text(program+'\n')
-        (folder/'report.json').write_text(canonical(report)+'\n')
-        (folder/'result.json').write_text(canonical(result)+'\n')
-        (folder/'receipt.json').write_text(canonical(result['receipt'])+'\n')
+        _artifact_text(folder/'program.arclog', program+'\n')
+        options=dict(indent=None,ensure_ascii=False,sort_keys=True,separators=(',',':'),allow_nan=False)
+        _artifact_json(folder/'report.json',report,**options)
+        _artifact_json(folder/'result.json',result,**options)
+        _artifact_json(folder/'receipt.json',result['receipt'],**options)
         self._gold_kept_cache[key]=deepcopy(result)
         return result
 
@@ -353,24 +387,27 @@ class ReplayEvaluator:
         key = sha(identity)
         folder = self.artifacts/key
         folder.mkdir(exist_ok=True)
-        (folder/'result.json').write_text(json.dumps(result, indent=2, ensure_ascii=False)+'\n')
-        (folder/'receipt.json').write_text(json.dumps(dict(source_sha256=sha(record),
-            candidate_sha256=sha(candidate), settings=self.receipt), indent=2)+'\n')
+        _artifact_json(folder/'receipt.json',dict(source_sha256=sha(record),
+            candidate_sha256=sha(candidate),settings=self.receipt))
+        engine_ref=None
         for i, capture in enumerate(self.captures):
-            (folder/f'program-{i}.arclog').write_text(capture['program']+'\n')
-            (folder/f'engine-{i}.json').write_text(json.dumps(capture['report'], indent=2)+'\n')
+            _artifact_text(folder/f'program-{i}.arclog',capture['program']+'\n')
+            engine_sha=_artifact_json(folder/f'engine-{i}.json',capture['report'])
+            if result.get('engine_report') is capture['report']:
+                engine_ref=dict(path=f'engine-{i}.json',sha256=engine_sha)
             n = capture['native']
             reader = n['_native_reader']
             tables = n['tables']
             if result.get('artifact_mode')=='metadata':
                 # No entry()/row conversion here. Demand witnesses are written
                 # by the semantic consumer, from exactly the entries it reads.
-                (folder/f'capture-{i}.json').write_text(canonical(dict(
+                _artifact_json(folder/f'capture-{i}.json',dict(
                     schema='judgetool-capture-metadata-v1',
                     artifact_mode='metadata',table_count=len(tables['form']),
                     entry_count=len(reader.entries['table']),
                     retained_native_payload=False,
-                    rows='only consumer-demanded table witnesses retained separately'))+'\n')
+                    rows='only consumer-demanded table witnesses retained separately'),indent=None,ensure_ascii=False,
+                    sort_keys=True,separators=(',',':'),allow_nan=False)
                 continue
             # The full returned assignment entries are retained, including other
             # assignments and test entries. They are internal artifacts, not judge output.
@@ -388,6 +425,11 @@ class ReplayEvaluator:
                         except Exception as error:
                             row = dict(table=t, entry=e, status='unavailable', reason=str(error))
                         stream.write(canonical(row)+'\n')
+        stored=result
+        if engine_ref is not None:
+            value=dict(result);value['engine_report']=None
+            stored=dict(schema=ARTIFACT_RESULT_SCHEMA,value=value,engine_report_ref=engine_ref)
+        _artifact_json(folder/'result.json',stored,ensure_ascii=False)
         return str(folder)
 
     def historical(self, record, clause, tables, *, allow_det=False):
