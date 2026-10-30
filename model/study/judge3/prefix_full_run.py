@@ -9,6 +9,7 @@ from collections import Counter
 import concurrent.futures
 from concurrent.futures.process import BrokenProcessPool
 import hashlib
+import gc
 import json
 import multiprocessing
 import os
@@ -87,6 +88,10 @@ def native_environment():
 
 
 def init_worker(options):
+    # Typed-cell/wrapper graphs are large: automatic collection in their
+    # construction loops repeatedly scans the live graph. Collect once per
+    # point, after its evaluator and available cache have been released.
+    gc.disable()
     native_environment()
     from source_read import SourceReader
     _GLOBAL.update(options=options,reader=SourceReader(CODE_ROOT),
@@ -209,6 +214,19 @@ def dev_match(options,operation,sources,ev):
 
 
 def run_point(operation):
+    result=None
+    try:
+        result=_run_point(operation)
+        return result
+    finally:
+        started=time.monotonic()
+        collected=gc.collect()
+        if result is not None:
+            result['between_point_gc_seconds']=time.monotonic()-started
+            result['between_point_gc_collected']=collected
+
+
+def _run_point(operation):
     options=_GLOBAL['options'];started=time.monotonic();reader=_GLOBAL['reader']
     output=Path(options['output']);scope=options['scope'];stop=output/'operator'/('stop-'+scope+'.json')
     root=output/'points'/operation['point_id']/point_key(scope,operation)
@@ -465,6 +483,7 @@ def main():
                         active_points=len(active),seconds=time.monotonic()-started,counts=dict(Counter(v['status'] for v in results)),
                         pair_counts=dict(sum((Counter(v.get('counts',{})) for v in results),Counter())),
                         observed_pairs=dict(progress),unavailable_classes=dict(reason_counts),stopped=stop.exists(),
+                        between_point_gc_seconds=sum(v.get('between_point_gc_seconds',0) for v in results),
                         acquisition_only=True,features_join='not yet applied; use exact canonical packet/context refs')
                     write(args.output/'summary.json',report);print(json.dumps(report),flush=True);last_print=time.monotonic()
         return 2 if stop.exists() or interrupted else 0
