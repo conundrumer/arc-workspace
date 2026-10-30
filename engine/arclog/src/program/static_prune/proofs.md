@@ -152,10 +152,22 @@ Static sampling rejects a surviving edited atom when the shared classifier
 finds a conclusion at that atom. The atomic editor maps simultaneous original
 edit paths to the checked candidate's paths; neither deletion nor an untouched
 gold test is a newly proposed atom. Exact identity replay remains available for
-stored records, so the shared reader can apply the same rejection to historical
-pairs. Its compatibility adapter joins two existing native exports (the native
-classifier and native source-path correspondence); it computes no path shifts,
-bindings, type relations, or laws in Python.
+stored records, but historical classification does not depend on today's
+alternative domain or held-value admission. `stored_static_prune_json` checks
+and decodes the actual stored mutant, and `matches_at` applies exactly the
+sampler's selected-site predicate to that checked program. Its types and
+bindings come exclusively from the stored form.
+
+`metadata_edits` uses the existing identity payload decoder and atomic editor
+only to locate recorded changed sites. The temporary edited gold AST must emit
+exactly the stored program's native tokens and emitter flags. `trace_paths`
+then certifies unique node-kind/token-coverage correspondence; wrapper AST
+paths need not be identical. Parsed and decoded gold address interpretations
+must agree if both certify. A failed or ambiguous correspondence is explicitly
+unavailable. Deleted-only sites supply no new atom. No current choice-domain
+or held-interface refusal is evidence that a checked stored atom is unmatched.
+These metadata operations neither construct a ValidMutant nor alter execution
+admission, sampling, stored pairs, or classifier laws.
 
 CompletionDomain certification returns before output insertion, `specs_drawn`,
 and draw-kind counters on static rejection. The existing finite suffix search

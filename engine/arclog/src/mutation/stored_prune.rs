@@ -1,0 +1,107 @@
+//! Static classification of authenticated stored source, not sampler replay.
+use super::*;
+use crate::study::render_correspondence::trace_paths;
+
+/// Match a recorded edit's addresses to the stored decoder representation.
+/// The temporary edited AST is an address certificate, never an executable
+/// ValidMutant and never the source of classifier types or conclusions.
+fn site_bridge(
+    origin: &StudyProgram,
+    stored: &StudyProgram,
+    identity: &Value,
+    registry: &Registry,
+    settings: &DecodeSettings,
+) -> Result<Vec<(NodePath, NodePath)>, String> {
+    let edits = identity::metadata_edits(origin, identity)?;
+    let ast = edit::apply(origin.program(), &edits)?;
+    let candidate = StudyProgram::from_program(ast, edit::layout(origin.layout(), &edits), registry)?;
+    let a = candidate.written_stream(registry, settings).map_err(|e| e.message.to_string())?;
+    let b = stored.written_stream(registry, settings).map_err(|e| e.message.to_string())?;
+    if a.tokens != b.tokens {
+        return Err("recorded edit and stored program emit different native tokens/emitters".into());
+    }
+    // Different AST paths are expected for named/record wrappers. Pair only
+    // uniquely matching node kinds and native writer-token coverage.
+    let map = trace_paths(candidate.checked(), stored.checked(), &a, &b);
+    let mut sites = Vec::new();
+    for edit in edits.iter().filter(|e| e.replacement.is_some()) {
+        let at = edit::mapped(&edit.at, &edits).ok_or("surviving recorded edit has no path")?;
+        let found: Vec<_> = map.iter().filter(|(_, before)| **before == at).map(|(after, _)| after.clone()).collect();
+        let [after] = found.as_slice() else {
+            return Err(format!("recorded atom {:?} has {} stored node correspondences", edit.at, found.len()));
+        };
+        sites.push((edit.at.clone(), after.clone()));
+    }
+    Ok(sites)
+}
+
+impl StudyProgram {
+    /// Classify the actual saved program. Historical edit data selects sites;
+    /// current generator alternatives and held-value execution admission are
+    /// deliberately absent. Those checks remain on their original APIs.
+    pub fn stored_static_prune_json(
+        &self,
+        gold: &StudyProgram,
+        identity: &Value,
+        registry: &Registry,
+        settings: &DecodeSettings,
+    ) -> Result<Value, String> {
+        // Canonical decoder syntax comes only from the checked stored source.
+        // This also makes named scalar fields use the sampler's native syntax.
+        let stored = self.decode_source(registry, settings).map_err(|e| format!("stored_decode: {e}"))?;
+        let decoded_gold = gold.decode_source(registry, settings).map_err(|e| format!("gold_decode: {e}"))?;
+        let mut accepted = Vec::new();
+        let mut reasons = Vec::new();
+        for (name, origin) in [("native_decode", &decoded_gold), ("parsed", gold)] {
+            match site_bridge(origin, &stored, identity, registry, settings) {
+                Ok(sites) => accepted.push(sites),
+                Err(error) => reasons.push(format!("{name}: {error}")),
+            }
+        }
+        let Some(sites) = accepted.first() else {
+            return Err(format!("changed_site_mapping: {}", reasons.join("; ")));
+        };
+        if accepted.iter().any(|other| other != sites) {
+            return Err("changed_site_mapping: source representations give different changed-site correspondences".into());
+        }
+        let selected: Vec<_> = sites.iter().map(|(_, at)| at.clone()).collect();
+        let matches = crate::check::static_prune::matches_at(stored.checked(), registry, &selected)
+            .map_err(|e| format!("stored_classifier: {e}"))?;
+        let mut report = crate::check::static_prune::report(&matches);
+        for (row, found) in report["matches"].as_array_mut().unwrap().iter_mut().zip(&matches) {
+            row["original_atom_paths"] = json!(sites.iter().filter(|(_, at)|
+                found.path.0.starts_with(&at.0) || at.0.starts_with(&found.path.0))
+                .map(|(before, _)| path_json(before)).collect::<Vec<_>>());
+        }
+        report["acquisition_schema"] = "arclog-stored-static-prune-v2".into();
+        report["classification_representation"] = "native decode of checked stored mutant source".into();
+        report["changed_sites"] = json!(sites.iter().map(|(before, after)| json!({
+            "original_atom_path":path_json(before),"stored_atom_path":path_json(after)
+        })).collect::<Vec<_>>());
+        report["scope"] = "surviving recorded edited sites; classifier bindings/types are exclusively from stored program".into();
+        Ok(report)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "explicit source-only stored-pair fixtures"]
+    fn stored_pair_metadata() {
+        let path = std::env::var("STORED_PRUNE_FIXTURES").expect("fixture path");
+        let rows: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let registry = Registry::get();
+        for row in rows.as_array().unwrap() {
+            let gold = StudyProgram::from_sexp(row["gold"].as_str().unwrap(), registry).unwrap();
+            let stored = StudyProgram::from_sexp(row["mutant"].as_str().unwrap(), registry).unwrap();
+            let report = stored.stored_static_prune_json(&gold, &row["identity"], registry, &DecodeSettings::default())
+                .unwrap_or_else(|e| panic!("{}: {e}", row["pair_id"]));
+            for expected in row["expected_rules"].as_array().unwrap() {
+                assert!(report["matches"].as_array().unwrap().iter().any(|m| &m["rule"] == expected), "{} missing {expected}", row["pair_id"]);
+            }
+            eprintln!("{}: {}", row["pair_id"], report["matches"].as_array().unwrap().len());
+        }
+    }
+}

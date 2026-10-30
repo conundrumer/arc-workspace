@@ -423,6 +423,12 @@ pub(crate) fn edited_matches(checked: &CheckedProgram, registry: &Registry,
     edits: &[crate::mutation::edit::AtomEdit]) -> Result<Vec<Match>, String> {
     let sites: Vec<_> = edits.iter().filter(|e|e.replacement.is_some())
         .filter_map(|e|crate::mutation::edit::mapped(&e.at,edits)).collect();
+    matches_at(checked,registry,&sites)
+}
+
+/// Shared selected-site classifier for sampling and stored-form reads.
+pub(crate) fn matches_at(checked: &CheckedProgram, registry: &Registry, sites: &[NodePath]) -> Result<Vec<Match>, String> {
+    if sites.is_empty() {return Ok(Vec::new())}
     Ok(matches(checked,registry)?.into_iter().filter(|m| sites.iter().any(|site|
         m.path.0.starts_with(&site.0) || site.0.starts_with(&m.path.0))).collect())
 }

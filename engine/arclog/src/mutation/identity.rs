@@ -285,3 +285,24 @@ impl StudyProgram {
         Ok(ValidMutant { spec })
     }
 }
+
+
+/// Decode historical edit addresses/payloads for metadata only. This never
+/// admits a new mutation or consults the current sampler's choice domain.
+pub(super) fn metadata_edits(program: &StudyProgram, identity: &Value) -> Result<Vec<AtomEdit>, String> {
+    let point=program.mutation_points().into_iter().find(|p|
+        Some(path_json(&p.body))==identity.get("body").cloned()
+        && Some(path_json(&p.clause))==identity.get("clause").cloned())
+        .ok_or("recorded edit body/clause is absent from this source representation")?;
+    let mut edits=Vec::new();let mut seen=BTreeSet::new();
+    for e in array(&identity["edits"])? {
+        let at=path(&e["at"])?;
+        if !point.atoms.contains(&at)||!seen.insert(at.clone()) {
+            return Err(format!("recorded edit has repeated/non-atom address {at:?}"));
+        }
+        let replacement=if e["replacement"].is_null(){None}else{Some(conjunct(&e["replacement"]) ?)};
+        edits.push(AtomEdit{at,replacement,kind:"metadata",choice_kind:"recorded"});
+    }
+    if edits.is_empty(){return Err("recorded edit list is empty".into())}
+    edits.sort_by(|a,b|a.at.cmp(&b.at));Ok(edits)
+}

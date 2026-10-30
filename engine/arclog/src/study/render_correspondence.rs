@@ -40,7 +40,7 @@ pub fn type_json(ty: &ValueType) -> Value {
 
 // A node is paired only when its own native writer-token coverage and node
 // kind agree uniquely. Empty/ambiguous emissions remain explicitly unmapped.
-fn trace_paths(
+pub(crate) fn trace_paths(
     source: &CheckedProgram,
     target: &CheckedProgram,
     a: &WrittenStream,

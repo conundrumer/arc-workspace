@@ -10,7 +10,7 @@ from pathlib import Path
 import sys
 from run import digest
 
-POLICY='native-edited-sites-v1'
+POLICY='native-stored-edited-sites-v2'
 CLASSES=frozenset(('unsatisfiable','valid','alias','constant'))
 
 
@@ -73,50 +73,24 @@ class Pruner:
         if gold is None:gold=arclog.StudyProgram.from_sexp(text,arclog.DecodeSettings.corpus())
         self.gold[text]=gold
         while len(self.gold)>32:self.gold.popitem(last=False)
-        mutant=gold.construct_identity(json.dumps(record['identity']))
-        stored=arclog.StudyProgram.from_sexp(record['programs']['mutant'],arclog.DecodeSettings.corpus())
-        if mutant.decode_stream()!=stored.decode_stream():
-            raise ValueError('stored mutant differs from exact native mutation stream')
-        if hasattr(mutant,'static_prune_json'):
-            result=json.loads(mutant.static_prune_json(survey=self.survey))
-        else:
-            # Older static-prune runtimes already export both the classifier
-            # and the editor's complete original->mutant path correspondence.
-            # Join those native keys; do not reconstruct a path or a law.
-            result=json.loads(mutant.as_program().static_prune_json())
-            exported=json.loads(mutant.render_json())
-            edited={tuple(e['at']) for e in record['identity']['edits'] if e['replacement'] is not None}
-            mapped={tuple(row['after_path']):row['before_path']
-                    for row in exported['source_path_correspondence']
-                    if row['status']=='replaced' and tuple(row['before_path']) in edited and row['after_path'] is not None}
-            result['matches']=[dict(m,original_atom_paths=[mapped[tuple(m['path'])]])
-                               for m in result['matches'] if tuple(m['path']) in mapped]
-        if result.get('schema')!='arclog-static-prune-v1':raise ValueError('unknown native pruning schema')
+        try:
+            stored=arclog.StudyProgram.from_sexp(record['programs']['mutant'],arclog.DecodeSettings.corpus())
+        except Exception as error:
+            raise ValueError('stored_parse: '+str(error)) from error
+        if not hasattr(stored,'stored_static_prune_json'):
+            raise ValueError('runtime lacks native stored-form static classifier v2')
+        result=json.loads(stored.stored_static_prune_json(gold,json.dumps(record['identity'])))
+        if (result.get('schema')!='arclog-static-prune-v1' or
+                result.get('acquisition_schema')!='arclog-stored-static-prune-v2'):
+            raise ValueError('unknown native stored pruning schema')
         matches=result['matches']
         if any(m['class'] not in CLASSES or not m['original_atom_paths'] for m in matches):
             raise ValueError('incomplete native changed-site conclusion')
-        answer=dict(status='matched' if matches else 'unmatched',matches=matches)
+        answer=dict(status='matched' if matches else 'unmatched',matches=matches,
+                    acquisition_schema=result['acquisition_schema'],changed_sites=result['changed_sites'])
         if self.survey:
-            context=(base['task'],base['case'],json.dumps(base['point']),hashlib.sha256(text.encode()).hexdigest())
-            exact=(context,record['programs']['mutant'])
-            duplicate=self.seen_text.get(exact)
-            self.seen_text.setdefault(exact,base['pair_id'])
-            self.survey_counts['text_checked']+=1;self.survey_counts['text_duplicates']+=duplicate is not None
-            view=result.get('survey',{});g=view.get('gold',{});m=view.get('candidate',{})
-            evidence=dict(exact_text_duplicate_of=duplicate,canonical_status='unavailable')
-            if g.get('status')==m.get('status')=='complete':
-                # Compare the full native canonical AST, not just its hash.
-                current=json.dumps(m['rendering'],sort_keys=True,separators=(',',':'))
-                canonical=(context,current)
-                previous=self.seen_canonical.get(canonical)
-                self.seen_canonical.setdefault(canonical,base['pair_id'])
-                equal_gold=g['rendering']==m['rendering']
-                self.survey_counts['canonical_checked']+=1
-                self.survey_counts['canonical_duplicates']+=previous is not None
-                self.survey_counts['canonical_equal_gold']+=equal_gold
-                evidence.update(canonical_status='complete',canonical_duplicate_of=previous,canonical_equal_gold=equal_gold)
-            else:self.survey_counts['canonical_unavailable']+=1
-            answer['survey']=evidence
+            # Survey is optional and is not an acquisition/admission condition.
+            answer['survey']=dict(status='unavailable',reason='stored-form canonical survey deferred')
         return answer
 
     def check(self,base,base_sha,sources,source_record=None):

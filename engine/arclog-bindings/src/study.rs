@@ -298,6 +298,14 @@ impl PyStudyProgram {
         .map_err(PyValueError::new_err)
     }
 
+    /// Read-only stored-form classification; recorded edits locate sites only.
+    fn stored_static_prune_json(&self, py: Python<'_>, gold: &PyStudyProgram, identity_json: &str) -> PyResult<String> {
+        if self.settings != gold.settings {return Err(PyValueError::new_err("stored_settings: gold and stored settings differ"));}
+        let identity=arclog::study::render::parse_json(identity_json).map_err(PyValueError::new_err)?;
+        py.detach(||self.program.stored_static_prune_json(&gold.program,&identity,Registry::get(),&self.settings))
+            .map(|v|v.to_string()).map_err(PyValueError::new_err)
+    }
+
     /// Rehydrate and verify a stored identity without drawing its domain.
     fn decode_source(&self, py:Python<'_>)->PyResult<Self> {
         let program=py.detach(|| self.program.decode_source(Registry::get(),&self.settings)).map_err(PyValueError::new_err)?;

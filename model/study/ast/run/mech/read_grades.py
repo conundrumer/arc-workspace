@@ -174,7 +174,7 @@ class StudyReader:
             if db is not None:self.reads.done(db)
         return out,issues
 
-    def _pair(self,row,source_record=None):
+    def _pair(self,row,source_record=None,*,include_grades=True):
         pair,source,code,config,sha,payload=row
         try:
             base=json.loads(payload)
@@ -185,6 +185,9 @@ class StudyReader:
             pruning=self.pruning.check(base,sha,self.sources,source_record)
             if pruning['status']=='matched':
                 return dict(status='pruned',valid=False,pair_id=pair,source_sha256=source,base_result_sha256=sha)
+            if not include_grades:
+                return dict(status='done',valid=True,pair_id=pair,source_sha256=source,
+                    base_result_sha256=sha,pruning_status=pruning['status'])
             reference=dict(database=self._where('base'),table='pairs',pair_id=pair,
                            result_sha256=sha,code_sha256=code,config_sha256=config)
             tests,issues=self._tests(base,sha)
@@ -251,11 +254,21 @@ class StudyReader:
         row=self.base.execute('SELECT pair_id,source_sha256,code_sha256,config_sha256,result_sha256,record_json FROM pairs WHERE pair_id=?',(pair_id,)).fetchone()
         return self._pair(row,source_record) if row else dict(status='open',valid=False,pair_id=pair_id,reason='base result absent')
 
-    def read_pairs(self):
-        cursor=self.base.execute('SELECT pair_id,source_sha256,code_sha256,config_sha256,result_sha256,record_json FROM pairs ORDER BY rowid')
-        for row in cursor:
-            result=self._pair(row)
-            if result.get('status')!='pruned':yield result
+    def read_pairs(self,*,rowids=None,include_grades=True):
+        # Shards use the identical authenticated/pruning read boundary. Only
+        # the optional grade joins and the SQL row selection differ.
+        columns='pair_id,source_sha256,code_sha256,config_sha256,result_sha256,record_json'
+        if rowids is None:
+            queries=[('SELECT '+columns+' FROM pairs ORDER BY rowid',())]
+        else:
+            ids=sorted(set(rowids))
+            queries=[('SELECT '+columns+' FROM pairs WHERE rowid IN ('+
+                      ','.join('?' for _ in ids[i:i+200])+') ORDER BY rowid',ids[i:i+200])
+                     for i in range(0,len(ids),200)]
+        for query,args in queries:
+            for row in self.base.execute(query,args):
+                result=self._pair(row,include_grades=include_grades)
+                if result.get('status')!='pruned':yield result
 
 
 def read_pair(pair_id,*,paths=None,source_record=None):
