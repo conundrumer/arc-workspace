@@ -1,7 +1,6 @@
 """Complete train/test table acquisition and the shared equality comparator."""
 import ast
 from collections import Counter
-import itertools
 from pathlib import Path
 import re
 import time
@@ -176,35 +175,88 @@ def full_kept_matches(L, choices, schemas, record):
     return {e['entry']:e['kept_assignments'] for e in matched['contexts']}
 
 
+def _check_deadline(deadline,phase):
+    if time.monotonic()>deadline:
+        error=Incomplete(('column comparison' if phase=='column_choices' else phase.replace('_',' '))+
+                         ' reached its time bound')
+        error.phase=phase
+        raise error
+
+
+def _injective_choices(domains,deadline,skip=None):
+    """Original Cartesian lexical order, without duplicate-column subtrees."""
+    _check_deadline(deadline,'column_choices')
+    if not domains:
+        if skip!=():yield ()
+        return
+    stack=[iter(domains[0])];chosen=[];used=set()
+    while stack:
+        # Includes rejected extensions and exhausted iterators: next() cannot
+        # hide an arbitrarily long non-yielding Cartesian rejection loop.
+        _check_deadline(deadline,'column_choices')
+        try:value=next(stack[-1])
+        except StopIteration:
+            stack.pop()
+            if chosen:used.remove(chosen.pop())
+            continue
+        if value in used:continue
+        chosen.append(value);used.add(value)
+        if len(chosen)==len(domains):
+            choice=tuple(chosen)
+            if choice!=skip:yield choice
+            used.remove(chosen.pop())
+        else:stack.append(iter(domains[len(chosen)]))
+
+
 def _id_equal(a,b,types,deadline,*,subset=False):
     """Exact finite relational isomorphism, preserving one consistent Ident bijection."""
+    _check_deadline(deadline,'component_id_comparison')
     if len(a)>len(b) if subset else len(a)!=len(b):return False
     ids=[i for i,t in enumerate(types) if t=='Ident']
-    if not ids:return a<=b if subset else a==b
-    left=set(c[0] for r in a for i,c in enumerate(r) if i in ids)
-    right=set(c[0] for r in b for i,c in enumerate(r) if i in ids)
+    if not ids:
+        result=a<=b if subset else a==b
+        _check_deadline(deadline,'row_comparison')
+        return result
+    def signatures(rows):
+        result={}
+        for row in rows:
+            _check_deadline(deadline,'component_id_signatures')
+            rest=tuple((j,c) for j,c in enumerate(row) if j not in ids)
+            for i in ids:
+                _check_deadline(deadline,'component_id_signatures')
+                result.setdefault(row[i][0],Counter())[(i,rest)]+=1
+        return result
+    ls=signatures(a);rs=signatures(b);left=set(ls);right=set(rs)
     if len(left)>len(right) if subset else len(left)!=len(right):return False
-    def signature(rows,v):
-        return tuple(sorted(Counter((i,tuple((j,c) for j,c in enumerate(r) if j not in ids))
-                            for r in rows for i in ids if r[i][0]==v).items()))
-    ls={v:signature(a,v) for v in left}; rs={v:signature(b,v) for v in right}
-    choices={v:[w for w in right if (Counter(dict(ls[v]))<=Counter(dict(rs[w])) if subset else rs[w]==ls[v])] for v in left}
+    choices={}
+    for v in left:
+        choices[v]=[]
+        for w in right:
+            _check_deadline(deadline,'component_id_choices')
+            if ls[v]<=rs[w] if subset else ls[v]==rs[w]:choices[v].append(w)
     if any(not values for values in choices.values()):return False
-    order=sorted(left,key=lambda v:len(choices[v])); mapping={}; used=set()
+    order=sorted(left,key=lambda v:len(choices[v]));mapping={};used=set()
+    def mapped_rows():
+        result=set()
+        for row in a:
+            _check_deadline(deadline,'component_id_rows')
+            result.add(tuple((mapping[c[0]],) if i in ids else c for i,c in enumerate(row)))
+        return frozenset(result)
     def walk(at):
-        if time.monotonic()>deadline:raise Incomplete('component-id comparison reached its time bound')
+        _check_deadline(deadline,'component_id_search')
         if at==len(order):
-            mapped=frozenset(tuple((mapping[c[0]],) if i in ids else c for i,c in enumerate(r)) for r in a)
-            return mapped<=b if subset else mapped==b
+            mapped=mapped_rows();result=mapped<=b if subset else mapped==b
+            _check_deadline(deadline,'component_id_rows')
+            return result
         v=order[at]
         for w in choices[v]:
+            _check_deadline(deadline,'component_id_search')
             if w in used:continue
-            mapping[v]=w;used.add(w)
-            # Prune every fully mapped row, rather than enumerating permutations blindly.
-            okay=True
-            for r in a:
-                if all(r[i][0] in mapping for i in ids):
-                    mapped=tuple((mapping[c[0]],) if i in ids else c for i,c in enumerate(r))
+            mapping[v]=w;used.add(w);okay=True
+            for row in a:
+                _check_deadline(deadline,'component_id_rows')
+                if all(row[i][0] in mapping for i in ids):
+                    mapped=tuple((mapping[c[0]],) if i in ids else c for i,c in enumerate(row))
                     if mapped not in b:okay=False;break
             if okay and walk(at+1):return True
             used.remove(w);del mapping[v]
@@ -213,9 +265,10 @@ def _id_equal(a,b,types,deadline,*,subset=False):
 
 
 def _family_equal(a,b,types,deadline,*,contains=False):
-    # Families are sets of row sets, independent of model ordinal. Renamings
-    # are validated per model; duplicate isomorphic models have one meaning.
+    # One consistent renaming per model; model ordinals never pair families.
+    _check_deadline(deadline,'model_comparison')
     def matches(x,y):
+        _check_deadline(deadline,'model_comparison')
         return _id_equal(y,x,types,deadline,subset=True) if contains else _id_equal(x,y,types,deadline)
     return (all(any(matches(x,y) for y in b) for x in a)
             and all(any(matches(x,y) for x in a) for y in b))
@@ -224,6 +277,7 @@ def _family_equal(a,b,types,deadline,*,contains=False):
 def compare(candidate,columns,target,fields,*,explicit=None,seconds=10,relation='equal'):
     """Names first, otherwise type-compatible fixed column choices across ALL inputs."""
     if relation not in ('equal','contains'):raise ValueError('unsupported comparison relation')
+    deadline=time.monotonic()+seconds
     success='equal' if relation=='equal' else 'contains'
     names=[c[0] for c in columns]; types=[c[1] for c in columns]
     target_names=[c.get('field_name',c.get('name')) for c in fields]
@@ -240,10 +294,15 @@ def compare(candidate,columns,target,fields,*,explicit=None,seconds=10,relation=
             if by_name is not None and valid(by_name):
                 yield by_name
                 return
-            domains=[([names.index(n)] if n is not None and n in names else [i for i,t in enumerate(types) if kind(t)==kind(w)])
-                     for n,w in zip(target_names,target_types)]
-            for choice in itertools.product(*domains):
-                if len(set(choice))==len(choice) and choice!=by_name:yield choice
+            domains=[]
+            for n,w in zip(target_names,target_types):
+                _check_deadline(deadline,'column_choices')
+                domain=[]
+                for i,t in enumerate(types):
+                    _check_deadline(deadline,'column_choices')
+                    if kind(t)==kind(w) and (n is None or n not in names or i==names.index(n)):domain.append(i)
+                domains.append(domain)
+            yield from _injective_choices(domains,deadline,skip=by_name)
         choices=options()
     if explicit is not None:
         try:selection=tuple(names.index(label) for label in explicit)
@@ -254,25 +313,34 @@ def compare(candidate,columns,target,fields,*,explicit=None,seconds=10,relation=
     keys=set(target)
     if not keys or not keys<=candidate.keys():
         return dict(status='unknown',reason='required target/candidate context missing')
-    deadline=time.monotonic()+seconds; attempted=0;best=None
+    attempted=0;best=None
     try:
         for choice in choices:
-            if time.monotonic()>deadline:raise Incomplete('column comparison reached its time bound')
+            _check_deadline(deadline,'column_choices')
             if not valid(choice):continue
             attempted+=1
-            equal={}
+            equal={};row_counts={}
             for key in sorted(keys):
-                projected={frozenset(tuple(row[i] for i in choice) for row in rows) for rows in candidate[key]}
+                projected=set()
+                for rows in candidate[key]:
+                    model=set()
+                    for row in rows:
+                        _check_deadline(deadline,'row_projection')
+                        model.add(tuple(row[i] for i in choice))
+                    projected.add(frozenset(model))
+                _check_deadline(deadline,'row_projection')
+                row_counts[key]=sorted({len(rows) for rows in projected})
                 equal[key]=_family_equal(projected,target[key],target_types,deadline,contains=relation=='contains')
             train=all(v for k,v in equal.items() if k[1]==1)
             test=all(v for k,v in equal.items() if k[1]==2)
             differences=[]
             for key,matched in equal.items():
+                _check_deadline(deadline,'comparison_details')
                 if matched:continue
                 assignment,example_kind,index=key
                 detail=dict(assignment=assignment,example=('train' if example_kind==1 else 'test')+str(index+1))
                 if example_kind!=2:
-                    detail.update(candidate_rows=sorted({len({tuple(row[i] for i in choice) for row in rows}) for rows in candidate[key]}),
+                    detail.update(candidate_rows=row_counts[key],
                                   target_rows=sorted({len(rows) for rows in target[key]}))
                 differences.append(detail)
             current=dict(train='equal' if train else 'mismatch',test='equal' if test else 'mismatch',
@@ -281,7 +349,7 @@ def compare(candidate,columns,target,fields,*,explicit=None,seconds=10,relation=
             if all(equal.values()):
                 return dict(status=success,relation=relation,columns=[names[i] for i in choice],indices=list(choice),choices_tried=attempted,
                             train='equal',test='equal')
-    except Incomplete as error:return dict(status='unknown',reason=str(error),choices_tried=attempted)
+    except Incomplete as error:return dict(status='unknown',reason=str(error),phase=getattr(error,'phase','comparison'),choices_tried=attempted)
     return dict(status='mismatch',choices_tried=attempted,**(best or {}))
 
 

@@ -43,6 +43,7 @@ class PairUnavailable(ValueError):
 
 def unavailable(facts):
     """Explicit retry scope; bounded comparisons/searches stay completed."""
+    if isinstance(facts.get('stopped'),dict):return False
     return bool(facts.get('case_failure_refs') or any(g.get('stage')=='pair unavailable'
         for g in facts.get('gaps',[])))
 
@@ -75,7 +76,8 @@ def selector_matches(selector,definition):
 
 
 class Pass:
-    def __init__(self,args,ev):
+    def __init__(self,args,ev,*,event=None):
+        self.event=event;self.active_pair=None;self.active_target=None;self.active_phase=None
         self.a=args;self.ev=ev;self.start=time.monotonic();self.last=0;self.counts=Counter()
         from case_collector import evaluate_cached
         # Table presentation is discarded by candidate compaction. Older
@@ -86,7 +88,7 @@ class Pass:
         self.base=sqlite3.connect(args.base.resolve().as_uri()+'?mode=ro',uri=True)
         self.base.execute('PRAGMA temp_store=MEMORY');self.base.execute('BEGIN')
         files=set(HERE/n for n in ('targets.py','target_store.py','target_compare.py','target_search.py','metadata.py',
-            'read_targets.py','evidence.py','_paths.py','certificates.py','preflight.py','fact_codec.py','views.py','negative.py','target_index.py','runtime_cache.py'))
+            'read_targets.py','evidence.py','_paths.py','certificates.py','preflight.py','fact_codec.py','views.py','negative.py','target_index.py','runtime_cache.py','supervisor.py'))
         files.update((CODE_ROOT/'judgetool').glob('*.py'))
         files.update((CODE_ROOT/'judge3').glob('*.py'))
         files.update(CODE_ROOT/'ast/run/mech'/n for n in ('algorithm.py','step2_check.py','run.py','clause_evidence.py','outcomes.py','grades.py'))
@@ -104,7 +106,7 @@ class Pass:
         self.signatures={name:self.signature(self.code_path(name)) for name in self.manifest}
         config=dict(schema='mech-target-config-v2',fact_contract='mech-target-facts-v2',base=str(args.base.resolve()),
             evaluator=ev.receipt,compare_seconds=args.compare_seconds,search_seconds=args.search_seconds,
-            max_targets=args.max_search_targets,max_candidates=args.max_candidates,
+            max_targets=args.max_search_targets,max_candidates=args.max_candidates,pair_seconds=args.pair_seconds,
             search='bounded nonlib proposals; shared TRAIN+TEST verification; no settled-space negative',
             gold='once per case/program/own-kept/settings; durable case JSON; no stored gold target rows')
         self.journal=Journal(args.output,digest(self.manifest),digest(config),counters=self.counts)
@@ -125,8 +127,16 @@ class Pass:
         self.target_indexes=TargetIndexes(counters=self.counts);self.proposal_cache=OrderedDict()
         self.producers={};self.case_cache={};self.case_refs={};self.resolved_case_programs={};self.case_failures={};self.current_task=None;self.tasks={}
 
+    def set_phase(self,phase,target_id=None):
+        if phase.startswith('target:'):phase,target_id='comparison',phase[len('target:'):]
+        if (phase,target_id)==(self.active_phase,self.active_target):return
+        self.active_phase,self.active_target=phase,target_id
+        if self.event is not None and self.active_pair is not None:
+            self.event(dict(event='phase',pair_id=self.active_pair,phase=phase,target_id=target_id))
+
     @contextmanager
     def timed(self,phase):
+        self.set_phase(phase,self.active_target)
         started=time.monotonic()
         try:yield
         finally:self.counts['seconds_'+phase]+=round(time.monotonic()-started,6)
@@ -147,12 +157,13 @@ class Pass:
                 raise RuntimeError('dependency changed during step 3; restart: '+name)
             self.signatures[name]=sig
 
-    def progress(self,done,phase='pairs',force=False):
+    def progress(self,done,phase='pairs',force=False,target_id=None):
+        self.set_phase(phase,target_id if target_id is not None else self.active_target)
         elapsed=time.monotonic()-self.start
         if force or elapsed-self.last>=5:
-            rate=done/max(elapsed,.001);eta=(self.total-done)/rate if rate else 'unknown'
+            rate=(done-getattr(self.a,'start_after',0))/max(elapsed,.001);eta=(self.total-done)/rate if rate else 'unknown'
             print(f'phase={phase} done={done}/{self.total} elapsed={elapsed:.1f}s rate={rate:.2f}/s '
-                  f'ETA={eta}s counters={dict(self.counts)}',file=sys.stderr,flush=True)
+                  f'ETA={eta}s pair_id={self.active_pair} target_id={json.dumps(self.active_target)} counters={dict(self.counts)}',file=sys.stderr,flush=True)
             self.last=elapsed
 
     def pair_inputs(self,base):
@@ -348,6 +359,12 @@ class Pass:
                 else:self.counts['comparisons_resumed']+=1
                 proof_ref=self.journal.reference('comparison',key,comparison)
                 eq=comparison['equality'];include=comparison['containment']
+                for relation,outcome in (('equal',eq),('contains',include)):
+                    if outcome['status']=='unknown':
+                        print(json.dumps(dict(event='target_unknown',pair_id=base['pair_id'],
+                            target_id=reference['target_id'],phase=outcome.get('phase','comparison'),
+                            relation=relation,reason=outcome.get('reason','comparison unavailable')),
+                            sort_keys=True),file=sys.stderr,flush=True)
                 comparisons.append((target,comparison,proof_ref))
                 result.setdefault('comparison_refs',[]).append(dict(reference=proof_ref,target=target_identity(reference)))
                 result['grade_comparisons'].append(dict(target_id=reference['target_id'],equal=eq['status']=='equal',
@@ -369,8 +386,9 @@ class Pass:
                 if STOP:raise InterruptedError('stopping after current durable target')
                 if index>=self.a.max_search_targets or candidates>=self.a.max_candidates:
                     result['bounded']=True;result['work_stop']='candidate_or_target_limit';break
-                self.progress(self.done,phase='other_target_search')
-                reference=target[2];key=digest(dict(pair=base['pair_id'],target=inputs['target_key'],phase='search'))
+                reference=target[2]
+                self.progress(self.done,phase='other_target_search',target_id=reference['target_id'])
+                key=digest(dict(pair=base['pair_id'],target=inputs['target_key'],phase='search'))
                 search=self.journal.load('search',key,inputs)
                 if search is None:
                     try:
@@ -413,9 +431,11 @@ class Pass:
         sql=('SELECT p.pair_id,p.source_sha256,p.code_sha256,p.config_sha256,p.result_sha256,p.record_json FROM '+source+
              " ORDER BY json_extract(p.record_json,'$.task'),json_extract(p.record_json,'$.source.corpus'),"
              "json_extract(p.record_json,'$.source.file'),json_extract(p.record_json,'$.source.line'),p.pair_id")
+        after=getattr(self.a,'start_after',0)
+        if after:sql+=' LIMIT -1 OFFSET '+str(int(after))
         stream=None;path=None;lineno=0;record=None;failed=None
         try:
-            for done,row in enumerate(self.base.execute(sql),1):
+            for done,row in enumerate(self.base.execute(sql),after+1):
                 if STOP:return False
                 base=valid_base(row);inputs=self.pair_inputs(base);self.done=done
                 if selected and self.a.selection[base['pair_id']]!=base['source_sha256']:
@@ -428,15 +448,23 @@ class Pass:
                 saved=self.journal.load('pair',base['pair_id'],inputs)
                 if saved is not None:
                     checked=load_targets(self.a.output,base['pair_id'],source_sha256=base['source_sha256'],base_result_sha256=digest(base),derive=False)
-                    if checked['valid'] and not (self.a.retry_unavailable and unavailable(saved)):
+                    if checked['valid'] and not ((self.a.retry_unavailable and unavailable(saved))
+                            or (self.a.retry_stopped and isinstance(saved.get('stopped'),dict))):
                         self.counts['pairs_resumed']+=1;self.progress(done);continue
                     if checked['valid']:self.counts['unavailable_pairs_retried']+=1
                     else:self.counts['stale_pair_results']+=1
+                self.active_pair=base['pair_id'];self.active_target=None;self.active_phase='pair_setup'
+                if self.event is not None:
+                    prior=self.journal.db.execute("SELECT rowid FROM entries WHERE kind='pair' AND key=?",(base['pair_id'],)).fetchone()
+                    self.event(dict(event='pair_started',pair_id=base['pair_id'],source_sha256=base['source_sha256'],
+                        base_result_sha256=digest(base),done=done,prior_rowid=prior[0] if prior else None,
+                        phase='pair_setup',target_id=None))
                 if self.current_task!=base['task']:
                     self.ev.close();clear_cache(self.ev);self.source_store.clear()
                     self.target_indexes=TargetIndexes(counters=self.counts);self.proposal_cache.clear()
                     self.case_cache.clear();self.case_refs.clear();self.resolved_case_programs.clear()
                     self.case_failures.clear();self.producers.clear();self.current_task=base['task']
+                self.set_phase('source_record')
                 src=base['source'];current=Path(src['corpus']).resolve()/base['task']/src['file'];wanted=src['line']
                 if current!=path:
                     if stream is not None:stream.close()
@@ -462,8 +490,11 @@ class Pass:
                         complete=False,gaps=[dict(stage='pair unavailable',reason=str(error),error_type=type(error).__name__)])
                     self.counts['pairs_unavailable']+=1
                 if result.get('case_failure_refs'):self.counts['pairs_case_unavailable']+=1
+                self.set_phase('pair_commit',self.active_target)
                 self.guard();self.save_pair(base,result)
                 self.counts['pairs_done']+=1;self.progress(done)
+                if self.event is not None:self.event(dict(event='pair_done',pair_id=base['pair_id'],done=done))
+                self.active_pair=None
             self.progress(self.done,force=True)
             return not bool(self.a.task or self.a.limit)
         finally:
@@ -475,6 +506,8 @@ def main():
     ap.add_argument('--base',type=Path,default=DATA_ROOT/'ast/run/mech/labels.sqlite3')
     ap.add_argument('--output',type=Path,default=DATA/'targets.sqlite3')
     ap.add_argument('--deadline',type=float,default=30)
+    ap.add_argument('--pair-seconds',type=float,default=600,help='supervised wall budget per new pair attempt')
+    ap.add_argument('--retry-stopped',action='store_true',help='explicitly retry wall-budget/worker stopped pairs')
     ap.add_argument('--compare-seconds',type=float,default=1)
     ap.add_argument('--search-seconds',type=float,default=1)
     ap.add_argument('--max-search-targets',type=int,default=32)
@@ -492,7 +525,7 @@ def main():
     for path in (a.output,):
         if not path.resolve().is_relative_to(DATA):ap.error('outputs must stay under '+str(DATA))
     if a.base.resolve()==a.output.resolve():ap.error('base is read-only')
-    if min(a.deadline,a.compare_seconds,a.search_seconds,a.max_search_targets,a.max_candidates)<=0:
+    if min(a.pair_seconds,a.deadline,a.compare_seconds,a.search_seconds,a.max_search_targets,a.max_candidates)<=0:
         ap.error('bounds must be positive')
     if a.limit is not None and a.limit<=0:ap.error('--limit must be positive')
     # Shared repair capabilities must land before this driver is launched.
@@ -512,15 +545,9 @@ def main():
         print('phase=writer_acquired output='+str(a.output.resolve()),file=sys.stderr,flush=True)
     signal.signal(signal.SIGTERM,stop);signal.signal(signal.SIGINT,stop)
     os.environ['STUDY_RUN']=str(CODE_ROOT/'ast/run')
-    from evaluator import ReplayEvaluator
-    ev=ReplayEvaluator(run=CODE_ROOT/'ast/run',config=DATA_ROOT/'ast/run/corpus-v11/run.json',
-                       deadline=a.deadline,artifacts=DATA/'replays')
-    worker=None;complete=False
-    try:
-        worker=Pass(a,ev);complete=worker.run();worker.guard();worker.progress(worker.done,force=True)
-    finally:
-        if worker is not None:worker.journal.close();worker.base.close()
-        ev.close();lock.close()
+    from .supervisor import supervise
+    try:supervise(a,lock=lock,stopping=lambda:STOP)
+    finally:lock.close()
     if STOP:raise SystemExit(130)
 
 

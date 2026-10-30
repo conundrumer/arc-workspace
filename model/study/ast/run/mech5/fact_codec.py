@@ -35,7 +35,7 @@ def compact(kind,value):
         return {k:v for k,v in value.items() if k not in ('table','receipt')}
     if kind=='comparison':
         def check(value):
-            return {k:value[k] for k in ('status','indices','reason') if k in value}
+            return {k:value[k] for k in ('status','indices','reason','phase') if k in value}
         target=target_identity(value['target_reference'])
         if 'projection' in value.get('target_receipt',{}):target['projection']=value['target_receipt']['projection']
         return dict(schema='mech-target-comparison-v2',target=target,

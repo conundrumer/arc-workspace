@@ -37,6 +37,7 @@ def derive_support(facts,base,observations,resolve):
     cases=[case_catalog(ref,resolve) for ref in refs]
     if not cases:gaps.append('no case observations')
     if facts.get('case_failure_refs'):gaps.append('case acquisition failed')
+    if isinstance(facts.get('stopped'),dict):gaps.append('pair stopped before completion')
     # Comparison and search unknowns do not imply an incomplete enumeration.
     # A TRAIN mismatch is sufficient for a negative; TEST is required for
     # positive equalities/recoveries, not for disproving TRAIN containment.
