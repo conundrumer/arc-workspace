@@ -101,7 +101,7 @@ class ReplayEvaluator:
                             budget_scope='one gold_tables operation, not entire candidate search',
                             reference_sha256=hashlib.sha256((self.reference/'engine_verify.py').read_bytes()).hexdigest(),
                             implementation_sha256=sha({name:hashlib.sha256((HERE/name).read_bytes()).hexdigest()
-                                for name in ('../study_paths.py','../native_correspondence.py','../normalized_gold.py','../current_native_names.py','../det_full_body.py','../legacy_body_metadata.py','../legacy_body_worker.py','../ast/run/provenance.py','evaluator.py','derived_fit.py','runtime_compat.py','surface.py','tables.py','checks.py','catalog.py','registry.py','live_targets.py','case_collector.py','program_metadata.py','gold_body.py','candidate_train.py','raw_body.py','target_view.py','judge_view.py','judge_tool.py')}))
+                                for name in ('../study_paths.py','../native_correspondence.py','../normalized_gold.py','../prefix_universe.py','../current_native_names.py','../det_full_body.py','../legacy_body_metadata.py','../legacy_body_worker.py','../ast/run/provenance.py','evaluator.py','derived_fit.py','runtime_compat.py','surface.py','tables.py','checks.py','catalog.py','registry.py','live_targets.py','case_collector.py','program_metadata.py','gold_body.py','candidate_train.py','raw_body.py','target_view.py','judge_view.py','judge_tool.py')}))
 
     def _reset_session_state(self):
         self.task = None

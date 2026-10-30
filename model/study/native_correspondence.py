@@ -351,6 +351,103 @@ class AtomicPacked:
             runtime=deepcopy(runtime), payload_ref=live_payload_digest(payload))
 
 
+
+class PrefixCorrespondence:
+    """Read only one native common-U/atomic packed query; never match kept rows."""
+    def __init__(self, opening, report, reader, *, task, source_program_sexp, side):
+        if (opening.get('schema')!='arclog-study-prefix-universe-v1'
+                or opening.get('status')!='complete'
+                or opening.get('task')!=task
+                or opening.get('coverage',{}).get('enumeration_complete') is not True
+                or opening['coverage'].get('assignment_values_complete') is not True):
+            raise Unavailable('native common prefix universe is incomplete')
+        count=opening['coverage'].get('parent_count')
+        parents=opening.get('parent_assignments')
+        if (type(count) is not int or count<0 or not isinstance(parents,list)
+                or [p.get('parent') for p in parents]!=list(range(count))
+                or any(p.get('missing_parameters')!=[] for p in parents)
+                or opening['coverage'].get('zero') is not (count==0)):
+            raise Unavailable('native parent assignment coverage differs')
+        if (report.get('schema')!='arclog-study-prefix-tables-v1'
+                or report.get('task')!=task or report.get('side')!=side
+                or report.get('source_program_sexp')!=source_program_sexp
+                or report.get('universe_ref')!=opening.get('universe_ref')
+                or not opening.get('universe_ref')
+                or report.get('universe_coverage')!=opening['coverage']
+                or report.get('body_path')!=opening['body_path']
+                or report.get('status')!='complete' or report.get('complete') is not True
+                or report.get('packing_complete') is not True
+                or report.get('entry_parent_map_complete') is not True
+                or report.get('query_prefix',{}).get('status')!='complete'):
+            raise Unavailable('native prefix packed query is incomplete or belongs to another universe')
+        packed=report.get('packed_correspondence',{})
+        if (packed.get('universe_ref')!=opening['universe_ref']
+                or packed.get('ident_namespace')!=opening.get('ident_namespace')
+                or not opening.get('ident_namespace')
+                or packed.get('query_prefix')!=report['query_prefix']):
+            raise Unavailable('native prefix packed namespace/frontier binding differs')
+        self.atomic=AtomicPacked(report,reader,program_sexp=report['query_prefix']['program_sexp'],side=side)
+        self.reader=reader;self.report=report;self.opening=opening;self.parent_count=count
+        self.maps=_unique(report.get('entry_parent_map'),lambda r:r['table'],'prefix entry map')
+        self.coverage=_unique(report.get('table_coverage'),lambda r:r['table'],'prefix family coverage')
+        self.available=_unique(report.get('available_schemas'),lambda r:r['table'],'prefix available schema')
+        wanted=set(range(2,len(reader.tables['form'])))
+        if (set(self.maps)!=wanted or set(self.coverage)!=wanted
+                or report.get('packed_table_count')!=len(reader.tables['form'])
+                or report.get('packed_entry_count')!=len(reader.entries['table'])
+                or report.get('packed_value_cells')!=len(reader.values)):
+            raise Unavailable('native prefix packed inventory differs')
+        if report.get('body_table') not in wanted:raise Unavailable('native prefix BODY table absent')
+
+    def role(self,table):
+        return 'prefix_body' if table==self.report['body_table'] else 'prefix_available'
+
+    def entries(self,table):
+        self.atomic.table(table,role=self.role(table))
+        mapping=self.maps[table];actual=self.reader.bytable[table]
+        if (mapping.get('status')!='complete' or len(mapping.get('entries',[]))!=len(actual)
+                or [r.get('entry') for r in mapping['entries']]!=list(actual)):
+            raise Unavailable('native prefix parent map omits actual packed entries')
+        for local,(row,entry) in enumerate(zip(mapping['entries'],actual)):
+            if (row.get('table_entry')!=local or any(row.get(k)!=int(self.reader.entries[k][entry])
+                    for k in ('example_kind','example_index','model'))):
+                raise Unavailable('native prefix parent map differs from packed example/model axes')
+            parent=row.get('parent_assignment')
+            if parent is not None and (type(parent) is not int or not 0<=parent<self.parent_count):
+                raise Unavailable('native prefix entry parent absent from the universe')
+        return deepcopy(mapping['entries'])
+
+    def families(self,table):
+        value=self.coverage[table]
+        if value.get('complete') is not True or not isinstance(value.get('examples'),list):
+            raise Unavailable('native prefix model families incomplete')
+        return deepcopy(value['examples'])
+
+    def fields(self,table):
+        """Physical native fields and native-only identity metadata, no name joins."""
+        result=deepcopy(self.reader.schema(table))
+        if self.role(table)=='prefix_body':
+            columns=_unique(self.report.get('body_columns'),lambda c:c['physical_column'],'prefix BODY column')
+            if set(columns)!=set(range(len(result))):raise Unavailable('native prefix physical BODY width differs')
+            for index,field in enumerate(result):
+                column=columns[index];descriptor=_type(column['physical_type'])
+                if field['type'] not in (descriptor['type'],descriptor['wire_type']):
+                    raise Unavailable('native prefix physical BODY type differs')
+                if (column.get('source_status')!='native_retained_scoped_label'
+                        or column.get('source_body_path')!=self.opening['body_path']
+                        or type(column.get('source_body_column')) is not int):
+                    raise Unavailable('native prefix BODY source identity unsupported')
+                _path(column['scope_path']);_type(column['source_physical_type'])
+                field['prefix_source_identity']=deepcopy(column)
+        else:
+            witness=self.available.get(table)
+            if witness is None:raise Unavailable('native prefix available schema inventory absent')
+            for field in result:
+                field['prefix_available_schema']=dict(table=table,status=witness.get('status'),
+                    physical_column=field['index'])
+        return result
+
+
 def _native_stream(program):
     """Read all three native stream coordinates; no sexp/text normalization."""
     raw = program.decode_stream()
