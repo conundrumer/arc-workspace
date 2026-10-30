@@ -23,6 +23,7 @@ _CACHE={}
 _MANIFESTS={}
 _SOURCES={}
 _BUILDS={}
+_DECODER_BINDINGS={}
 
 
 def _sha(value):
@@ -92,6 +93,45 @@ def _manifest(ref):
     return _MANIFESTS[key]
 
 
+def _decoder_stream_binding(engine, settings, program, actual_stream, observed, *, runtime_sha256):
+    """Bind token stepping, without transferring an emitter AST path map.
+
+    Stored evidence hashes the from_sexp handle. The acquisition may use a
+    decode_source handle with the same writer/ids/model and different scalar
+    emitter paths. Verify the stored full hash in its ORIGINAL representation,
+    then compare only the ordered ids/model that Session.decoder consumed.
+    Source/BODY/column identities remain the normalizer's own native proof.
+    """
+    from native_correspondence import _native_stream
+    writer=program.sexp();writer_sha=hashlib.sha256(writer.encode('utf-8')).hexdigest()
+    actual={k:actual_stream[k] for k in ('ids','model','paths')}
+    key=(runtime_sha256,writer_sha,observed['stream_sha256'],_sha(actual),_sha(settings))
+    if key in _DECODER_BINDINGS:return deepcopy(_DECODER_BINDINGS[key])
+    if _sha(actual)==observed['stream_sha256']:
+        stream=actual;representation='exact acquisition stream'
+    else:
+        evidence_settings=engine.DecodeSettings(**settings)
+        parsed=engine.StudyProgram.from_sexp(writer,evidence_settings)
+        if parsed.sexp()!=writer:raise Unavailable('enabled-decoder from_sexp native writer differs')
+        stream=_native_stream(parsed);representation='from_sexp'
+        if _sha(stream)!=observed['stream_sha256']:
+            raise Unavailable('enabled-decoder from_sexp full native stream SHA differs')
+    if stream['ids']!=actual['ids'] or stream['model']!=actual['model']:
+        raise Unavailable('enabled-decoder ordered token IDs/model flags differ')
+    differences=[i for i,(a,b) in enumerate(zip(stream['paths'],actual['paths'])) if a!=b]
+    binding=dict(schema='enabled-decoder-token-stream-binding-v1',program_sha256=writer_sha,
+        decoder_representation=representation,decoder_full_stream_sha256=_sha(stream),
+        acquisition_full_stream_sha256=_sha(actual),
+        ordered_ids_model_sha256=_sha({k:stream[k] for k in ('ids','model')}),
+        ordered_ids_model_equal=True,paths_equal=not differences,path_difference_count=len(differences),
+        first_path_difference=None if not differences else dict(token_index=differences[0],
+            decoder_path=stream['paths'][differences[0]],acquisition_path=actual['paths'][differences[0]]),
+        authority='token stepping only; no AST path, scoped label, BODY column or row-equivalence authority')
+    if len(_DECODER_BINDINGS)>=32:_DECODER_BINDINGS.clear()
+    _DECODER_BINDINGS[key]=binding
+    return deepcopy(binding)
+
+
 def _decoder_record(ev, files, task, case, view):
     """Bind the real static-on decoder run, separately from row evaluation."""
     original_sha=hashlib.sha256(view.original.sexp().encode('utf-8')).hexdigest()
@@ -101,12 +141,14 @@ def _decoder_record(ev, files, task, case, view):
     row=matches[0]
     if row.get('settings',{}).get('static_pruning') is not True or row.get('decode_operation')!='Session.decoder token stepping':
         raise Unavailable('enabled-decoder operation/settings evidence differs')
+    stream_bindings={}
     for side,program in (('original',view.original),('normalized',view.program)):
         observed=row[side];stream=view.proof[side]['stream']
         if observed['program_sha256']!=hashlib.sha256(program.sexp().encode('utf-8')).hexdigest():
             raise Unavailable('enabled-decoder '+side+' writer SHA differs')
-        if stream.get('status')!='complete' or observed['stream_sha256']!=_sha({k:stream[k] for k in ('ids','model','paths')}):
-            raise Unavailable('enabled-decoder '+side+' full native stream SHA differs')
+        if stream.get('status')!='complete':raise Unavailable('enabled-decoder '+side+' native stream metadata unavailable')
+        stream_bindings[side]=_decoder_stream_binding(ev.arclog,row['settings'],program,stream,observed,
+            runtime_sha256=ev.runtime['binary_sha256'])
     normalized=row['normalized']
     if normalized.get('status')!='complete':raise Unavailable('normalized actual static-on decode did not complete')
     stream=view.proof['normalized']['stream'];total=len(stream['ids']);model=sum(bool(v) for v in stream['model'])
@@ -135,7 +177,7 @@ def _decoder_record(ev, files, task, case, view):
             raise ValueError('decoder evidence build and acquisition native binary differ')
         _BUILDS[build_key]=build
     return dict(record=deepcopy(row),record_sha256=_sha(row),
-        evidence=files['_enabled_decoder']['reference'],build=_BUILDS[build_key],
+        evidence=files['_enabled_decoder']['reference'],build=_BUILDS[build_key],stream_bindings=stream_bindings,
         distinction='actual enabled decoder observation; acquisition settings/row policy are retained separately')
 
 
@@ -179,6 +221,29 @@ def _producer(ev,record,locator):
         corpus=Path(locator['corpus']),settings=ev.settings,case_inventory={})
 
 
+def _normalized_export(ev,view,original_export):
+    """Carry authenticated display names through the native editor relation map.
+
+    The original name map's stream identity cannot be attached to a different
+    normalized stream. Only native source-relation correspondence moves names;
+    native attachment validates the resulting exact stream/slots/identities.
+    """
+    naming=deepcopy(original_export.get('relation_source_names'))
+    if naming is not None:
+        rows=[]
+        for source in naming['relations']:
+            mapped=view.relation(source['relation_slot'])
+            rows.append(dict(source,relation_slot=mapped['relation_slot'],native_relation=mapped['relation']))
+        rows.sort(key=lambda row:row['relation_slot'])
+        if [r['relation_slot'] for r in rows]!=list(range(len(rows))):
+            raise Unavailable('normalized source-name relation map incomplete or ambiguous')
+        naming.update(relations=rows,stream_identity={k:view.proof['normalized']['stream'][k] for k in ('ids','model')},
+            normalization_source_names=dict(original_map_sha256=_sha(original_export['relation_source_names']),
+                normalization_provenance_sha256=_sha(view.proof),authority='native editor source relation correspondence'))
+    return json.loads(ev.arclog.study_program_export_json(view.program,
+        None if naming is None else json.dumps(naming),source_program=view.program))
+
+
 def _case(ev,files,task,case,cache):
     """One normalized case acquisition, shared across affected point artifacts."""
     from evaluator import canonical
@@ -186,7 +251,15 @@ def _case(ev,files,task,case,cache):
     from tables import full_kept_matches
     record,locator,spec=_case_source(files,task,case)
     producer=_producer(ev,record,locator)
-    original,original_export,_=producer.programs.load(record['gold_sexp'],record)
+    # Use the checked source representation used by the frozen decoder
+    # evidence, rather than decode_source()'s different emitter layout.
+    original=ev.arclog.StudyProgram.from_sexp(record['gold_sexp'],ev.settings)
+    names,_=producer.programs.source_names(original,record['gold_sexp'],record)
+    from program_metadata import export_named_program
+    original_export=export_named_program(ev,original,names) if names is not None else json.loads(
+        ev.arclog.study_program_export_json(original,source_program=original))
+    if original_export['program_sexp']!=record['gold_sexp']:
+        raise Unavailable('normalized source SELF export writer differs from original record')
     view=NormalizedGoldView.acquire(original)
     decoder=_decoder_record(ev,files,task,case,view)
     needed=[]
@@ -204,9 +277,7 @@ def _case(ev,files,task,case,cache):
             definitions=[d for d in original_export['definitions']['native_relations'] if d['display_name']==name]
             if len(definitions)!=1:raise Unavailable('required original relation name is ambiguous: '+name)
             selectors.append(view.relation(definitions[0]['relation_slot'])['native_selector'])
-    naming=original_export.get('relation_source_names')
-    export=json.loads(ev.arclog.study_program_export_json(view.program,
-        None if naming is None else json.dumps(naming),source_program=view.program))
+    export=_normalized_export(ev,view,original_export)
     key=dict(task=task,case=case,source=_sha(record['gold_sexp']),normalized=_sha(view.program.sexp()),
         mapper=_sha(view.proof),settings=ev.receipt,row_policy=ROW_POLICY,policy=POLICY,
         required_source_names=sorted(needed),original_kept_sha256=_sha(record['evaluation']['kept_assignments']),
