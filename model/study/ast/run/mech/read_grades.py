@@ -39,7 +39,7 @@ def default_paths():
     return dict(base=root/'mech/labels.sqlite3',witness_tests=root/'mech/settled.sqlite3',
                 normal=root/'mech2/normal.sqlite3',fit_split=root/'mech3/step4.sqlite3',
                 lib_search=root/'mech4/lib.sqlite3',target_comparison=root/'mech5/targets.sqlite3',
-                judge_outcomes=root/'mech/judge.sqlite3')
+                judge_outcomes=root/'mech/judge.sqlite3',pruning=root/'mech/static-pruning.jsonl')
 
 
 def _open(path):
@@ -55,13 +55,15 @@ class StudyReader:
         self.reads=Reads();self.functions={};self.located={}
         from source_read import SourceReader
         self.sources=SourceReader(CODE_ROOT)
+        from static_pruning import Pruner
+        self.pruning=Pruner(self.paths['pruning'],runtime=self.paths.get('pruning_runtime'),audit_path=self.paths.get('pruning_audit'),survey=self.paths.get('pruning_survey',False))
         try:
             from mech2.read_normal import NormalReader
             self.normal_reader=NormalReader(database=self.paths['normal'],base_database=self.paths['base'])
         except (ImportError,OSError,sqlite3.Error):pass
 
     def close(self):
-        self.base.close();self.sources.close();self.reads.close()
+        self.base.close();self.sources.close();self.reads.close();self.pruning.close()
         if self.normal_reader is not None:self.normal_reader.close()
     def __enter__(self):return self
     def __exit__(self,*_):self.close()
@@ -180,9 +182,16 @@ class StudyReader:
                     or digest(base['code_manifest'])!=code or digest(base['config'])!=config):
                 raise ValueError('base source/code/config/result receipt differs')
             if source_record is not None and digest(source_record)!=source:raise ValueError('source changed')
+            pruning=self.pruning.check(base,sha,self.sources,source_record)
+            if pruning['status']=='matched':
+                return dict(status='pruned',valid=False,pair_id=pair,source_sha256=source,base_result_sha256=sha)
             reference=dict(database=self._where('base'),table='pairs',pair_id=pair,
                            result_sha256=sha,code_sha256=code,config_sha256=config)
             tests,issues=self._tests(base,sha)
+            if pruning['status']=='unavailable':
+                # Absence is not a static conclusion, label, or exclusion.
+                # Preserve the existing grade/read behavior and expose it.
+                issues.append('native static pruning unavailable: '+pruning.get('reason','unknown'))
             fits=self._fit(base,sha)
             targets=self._optional('target_comparison','mech5.read_targets','load_targets',base,sha,reads=self.reads)
             # Retained corpus pairs already passed its nonempty TRAIN filter,
@@ -244,7 +253,9 @@ class StudyReader:
 
     def read_pairs(self):
         cursor=self.base.execute('SELECT pair_id,source_sha256,code_sha256,config_sha256,result_sha256,record_json FROM pairs ORDER BY rowid')
-        for row in cursor:yield self._pair(row)
+        for row in cursor:
+            result=self._pair(row)
+            if result.get('status')!='pruned':yield result
 
 
 def read_pair(pair_id,*,paths=None,source_record=None):

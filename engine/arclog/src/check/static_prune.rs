@@ -259,7 +259,7 @@ fn walk_body(
     at: &NodePath,
     columns: &std::collections::BTreeMap<NodePath, render_sites::SiteColumnType>,
     bindings: &mut HashMap<LabelId, ValueType>,
-    out: &mut Vec<Value>,
+    out: &mut Vec<Match>,
 ) {
     let NodeRef::Body(body) = body else {
         return;
@@ -268,8 +268,7 @@ fn walk_body(
         let path = at.child(i as u32);
         let lookup = |id| bindings.get(&id).cloned();
         if let Some(found) = static_prune::classify(conjunct, &lookup) {
-            out.push(json!({"path":crate::mutation::path_json(&path),"class":found.class.name(),"rule":found.rule,
-                "replacement":found.replacement.map(|c|crate::mutation::conjunct_json(&Conjunct::Constraint(c)))}));
+            out.push(Match { path: path.clone(), verdict: found });
         }
         match conjunct {
             Conjunct::Atom(atom) => fresh_atom(atom.value(), &path, columns, bindings),
@@ -297,7 +296,7 @@ fn walk_any(
     at: &NodePath,
     columns: &std::collections::BTreeMap<NodePath, render_sites::SiteColumnType>,
     bindings: &mut HashMap<LabelId, ValueType>,
-    out: &mut Vec<Value>,
+    out: &mut Vec<Match>,
 ) {
     match node {
         NodeRef::Body(_) => walk_body(node, at, columns, bindings, out),
@@ -381,7 +380,12 @@ fn walk_any(
 }
 /// Source-order matches for a checked program. The native site export is
 /// reused for physical binding column types; no JSON type text is reparsed.
-pub fn export(checked: &CheckedProgram, registry: &Registry) -> Result<Value, String> {
+pub(crate) struct Match {
+    pub path: NodePath,
+    pub verdict: static_prune::Verdict,
+}
+
+pub(crate) fn matches(checked: &CheckedProgram, registry: &Registry) -> Result<Vec<Match>, String> {
     let native = render_sites::export_typed(checked, registry)?;
     let columns = binding_columns(checked, registry, &native.columns);
     let mut matches = Vec::new();
@@ -395,6 +399,30 @@ pub fn export(checked: &CheckedProgram, registry: &Registry) -> Result<Value, St
             &mut matches,
         );
     }
-    Ok(json!({"schema":"arclog-static-prune-v1","matches":matches,
-        "binding_contract":"first registry-fixed scalar binding column or earlier declared relation column; current-form parameters and conditional narrowing supply no premise; branch-local bindings stay local"}))
+    Ok(matches)
+}
+
+pub fn export(checked: &CheckedProgram, registry: &Registry) -> Result<Value, String> {
+    Ok(report(&matches(checked, registry)?))
+}
+
+pub(crate) fn report(matches: &[Match]) -> Value {
+    let matches: Vec<_> = matches.iter().map(|m| json!({
+        "path":crate::mutation::path_json(&m.path), "class":m.verdict.class.name(), "rule":m.verdict.rule,
+        "replacement":m.verdict.replacement.clone().map(|c|crate::mutation::conjunct_json(&Conjunct::Constraint(c)))
+    })).collect();
+    json!({"schema":"arclog-static-prune-v1","matches":matches,
+        "binding_contract":"first registry-fixed scalar binding column or earlier declared relation column; current-form parameters and conditional narrowing supply no premise; branch-local bindings stay local"})
+}
+
+
+/// Match only surviving edited sites, mapped by the canonical atomic editor.
+/// Untouched gold tests and deleted atoms are not candidate atoms. A compound
+/// replacement also owns the primitive tests in its replaced subtree.
+pub(crate) fn edited_matches(checked: &CheckedProgram, registry: &Registry,
+    edits: &[crate::mutation::edit::AtomEdit]) -> Result<Vec<Match>, String> {
+    let sites: Vec<_> = edits.iter().filter(|e|e.replacement.is_some())
+        .filter_map(|e|crate::mutation::edit::mapped(&e.at,edits)).collect();
+    Ok(matches(checked,registry)?.into_iter().filter(|m| sites.iter().any(|site|
+        m.path.0.starts_with(&site.0) || site.0.starts_with(&m.path.0))).collect())
 }

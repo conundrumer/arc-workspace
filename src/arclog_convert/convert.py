@@ -384,11 +384,13 @@ def _module_files(roots: Sequence[str]) -> set[Path]:
 def _cases_code_digest() -> str:
     """The hash of the code and the data the case phase reads besides the solvers' texts: the modules that the
     pull-up pass and the projection pass import, followed through their imports under `src/`, this file, the sources
-    that the Souffle runs of `Rows` depend on (`cli.common.SOURCES`), and the lib's files."""
+    that the Souffle runs of `Rows` depend on (`cli.common.SOURCES`), and the lib's files. The native streams digest also binds the static-valid
+    normalization implementation and registry types."""
     from cli.common import SOURCES
     files = {*_module_files(["arclog_convert.pull_up", "arclog_convert.projections"]),
              *checkout.matched(checkout.ROOT, SOURCES), Path(__file__).resolve(), LIB_DL, SIGNATURE, REGISTRY}
-    digest = hashlib.sha256()
+    from arclog import streams_digest
+    digest = hashlib.sha256(streams_digest().encode())
     hash_files(digest, ((str(path.relative_to(checkout.ROOT)), path) for path in sorted(files)))
     return digest.hexdigest()
 
@@ -452,11 +454,13 @@ def _prepare_cases(stem: str, answers: Answers, code: str) -> Prepared:
 def _write_cases(stem: str, answers: Answers, part: CaseTexts) -> tuple[str, int, str | None]:
     """The second round of the case phase for the cases `part` of the solver `stem`: write the files of those whose
     normal form differs from the case as `arclog.case_files` gives it, `gen/cases/<stem>/<case>.arclog` and
-    `.arcdata`. The normal form of a case is that case after the pull-up pass and then the projection pass, which
-    read Souffle's rows of the whole program (`Rows.single`, with `answers`).
+    `.arcdata`. The normal form is the pull-up and projection passes (which read
+    Souffle's rows through `Rows.single`), then deletion of native static-valid
+    tests. The last pass reads only the checked program, not task rows.
 
     Gives the stem, the number of cases it wrote files of, and the error that stopped it."""
     try:
+        from arclog import DecodeSettings, StudyProgram
         columns = json.loads((paths.COLUMNS_DIR / f"{stem}.json").read_text())
         rows = Rows(stem, columns)
         rows.answers.update(answers)
@@ -464,6 +468,13 @@ def _write_cases(stem: str, answers: Answers, part: CaseTexts) -> tuple[str, int
         for file, arclog, arcdata in part:
             pulled = pull_up(arclog, arcdata, rows.single)
             text = project(pulled.arclog, arcdata, drop_columns(columns, pulled.dropped)).arclog
+            # The corpus draw and Decoder use this same native classifier.
+            # It edits original AST paths, preserves clause interfaces, refuses
+            # removal of a binder, and re-resolves/checks the normalized case.
+            pruned = json.loads(StudyProgram.from_sexp(text, DecodeSettings.corpus())
+                                .static_prune_json(normalize=True))
+            if pruned["removed_atom_paths"]:
+                text = pruned["normalized_program_sexp"]
             if text != arclog:
                 written.append((file, text, arcdata))
         directory = paths.OUT_DIR / CASES / stem

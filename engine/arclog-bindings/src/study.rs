@@ -34,7 +34,7 @@ type Stream = (Vec<u32>, Vec<u8>, Vec<Vec<u32>>);
 impl PyStudyProgram {
     #[staticmethod]
     fn mutation_policy() -> &'static str {
-        "complete-domain-unique-text-gold-names-v7"
+        "complete-domain-unique-text-gold-names-static-prune-v8"
     }
     /// Complete-program parsing retains grammar, binding, full checks and exact
     /// stream reproduction. It performs no online completion or OUT evaluation.
@@ -104,8 +104,9 @@ impl PyStudyProgram {
     }
 
     /// Proven local static-pruning conclusions at original AST paths.
-    fn static_prune_json(&self, py: Python<'_>) -> PyResult<String> {
-        py.detach(|| arclog::check::static_prune::export(self.program.checked(), Registry::get()))
+    #[pyo3(signature = (*, normalize=false))]
+    fn static_prune_json(&self, py: Python<'_>, normalize: bool) -> PyResult<String> {
+        py.detach(|| self.program.static_prune_report(Registry::get(), normalize))
             .map(|value| value.to_string()).map_err(PyValueError::new_err)
     }
 

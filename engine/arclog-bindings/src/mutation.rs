@@ -72,6 +72,13 @@ impl PyValidMutant {
     fn k(&self) -> usize {
         self.inner.k()
     }
+    /// Static sample-time rejection, also used by the shared historical reader.
+    #[pyo3(signature = (*, survey=false))]
+    fn static_prune_json(&self, py: Python<'_>, survey: bool) -> PyResult<String> {
+        py.detach(||self.inner.static_prune_json(Registry::get(),survey))
+            .map(|v|v.to_string()).map_err(PyValueError::new_err)
+    }
+
     /// Includes the original-to-mutant AST path correspondence.
     fn render_json(&self, py: Python<'_>) -> PyResult<String> {
         py.detach(|| {

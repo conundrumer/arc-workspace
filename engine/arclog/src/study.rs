@@ -265,6 +265,40 @@ impl StudyProgram {
         }
     }
 
+    /// Extend the existing classifier report with the case-normalization result.
+    /// Only valid tests are deleted; aliases and constants are not deletions.
+    /// See program/static_prune/proofs.md, "Gold case normalization".
+    pub fn static_prune_report(&self, registry: &Registry, normalize: bool) -> Result<serde_json::Value, String> {
+        let matches = crate::check::static_prune::matches(self.checked(), registry)?;
+        let mut report = crate::check::static_prune::report(&matches);
+        if !normalize { return Ok(report); }
+        let mut edits = Vec::new();
+        for found in matches {
+            if found.verdict.class != crate::program::static_prune::Class::Valid { continue; }
+            let node = crate::program::path::node_at(crate::program::path::NodeRef::Program(self.program().value()), &found.path)
+                .ok_or("valid atom path is absent")?;
+            let mut binds = false;
+            crate::safety::each_label_use_at(node, &found.path, &mut |_, use_| {
+                binds |= matches!(use_, crate::program::LabelUse::Fresh(_));
+            });
+            if binds { return Err(format!("valid test at {:?} introduces a label; cannot delete its binder", found.path)); }
+            edits.push(crate::mutation::edit::AtomEdit {
+                at: found.path, replacement: None, kind: "delete", choice_kind: "static_valid",
+            });
+        }
+        let normalized = if edits.is_empty() { self.clone() } else {
+            let program = crate::mutation::edit::apply(self.program(), &edits)?;
+            let layout = crate::mutation::edit::layout(self.layout(), &edits);
+            // Re-resolve and check the whole edited AST with its original clause
+            // interfaces. A missing binder is an error, never an inferred head.
+            Self::from_program(program, layout, registry)?
+        };
+        report["normalized_program_sexp"] = normalized.sexp(registry).into();
+        report["removed_atom_paths"] = serde_json::json!(edits.iter()
+            .map(|edit| crate::mutation::path_json(&edit.at)).collect::<Vec<_>>());
+        Ok(report)
+    }
+
     /// Failure here means the AST is outside the requested decode vocabulary,
     /// not that it should be repaired. Construction will require this to pass.
     pub fn decode_stream(

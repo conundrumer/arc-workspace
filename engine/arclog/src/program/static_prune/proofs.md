@@ -116,3 +116,50 @@ The direct lib bindings are the typed outputs of `axis_inversion`, `d4_inverse`,
 defined columns, including typed INIT keys and rigid outputs. No current-test
 narrowing or overlapping-domain premise is used. The per-program list is a
 study report; none of these conclusions authorizes editing gold.
+
+
+## Gold case normalization
+
+The case-normalization pass uses the same source-order classifier and binding
+premises as the corpus report and Decoder. It deletes only `Valid`, never
+`Alias`, `Constant`, or `Unsatisfiable`. A valid atom is a predicate true of
+every incoming row. Joining that predicate therefore preserves each row and
+its multiplicity (relations are sets). Under NOT the classifier complements
+only the proved valid/unsatisfiable conclusions, so the same argument applies.
+A conjunction may lose such a predicate without changing its rows; replacing
+an inner body by an equal body also preserves OR, IF, ALL, and INIT key/input
+semantics. No branch, projection, or model family is merged.
+
+For `membership.subtype`, the earlier binding's implementation supplies a
+value of T, and the tested membership enumerates all of S with T a subtype of
+S. Thus its join cannot remove a row. Its label use is Join or Key, not Fresh.
+All 41 measured gold matches have this form. Their prior binding atoms stay.
+The native normalizer additionally visits every label use of each proposed
+deletion and refuses one containing Fresh, including constraint binders. It
+uses the mutation editor that preserves declared columns, and runs the native
+resolver and whole-program checker on the edited AST. Deleting an only binder
+cannot silently shrink a head or leave a later reader unbound.
+
+The original checked program and stored study records are not mutated. Case
+normalization writes a derived program with mapped source layout. If no valid
+atom exists, the converter keeps the original text byte for byte. The native
+streams digest participates in the case-normalization cache key, so a previous
+normalization result cannot hide this pass after an engine or type change.
+
+## Sampling and historical read boundary
+
+Static sampling rejects a surviving edited atom when the shared classifier
+finds a conclusion at that atom. The atomic editor maps simultaneous original
+edit paths to the checked candidate's paths; neither deletion nor an untouched
+gold test is a newly proposed atom. Exact identity replay remains available for
+stored records, so the shared reader can apply the same rejection to historical
+pairs. Its compatibility adapter joins two existing native exports (the native
+classifier and native source-path correspondence); it computes no path shifts,
+bindings, type relations, or laws in Python.
+
+CompletionDomain certification returns before output insertion, `specs_drawn`,
+and draw-kind counters on static rejection. The existing finite suffix search
+therefore keeps searching the same bucket for a replacement until quota,
+exhaustion, or its existing deadline. Search-node/attempt counters still count
+the work. Unknown classifier evidence is not a proved rejection. The Decoder
+and its opt-in legal-mask behavior are unchanged.

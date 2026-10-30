@@ -510,6 +510,18 @@ impl CompletionDomain<'_> {
             self.stats.refusal("domain_written_binding_excluded", &error);
             return Ok(());
         }
+        // Domain failures do not fill a draw or quota: the existing suffix
+        // search continues exactly as for every other certification refusal.
+        let pruned = match crate::check::static_prune::edited_matches(checked.checked(),self.registry,edits) {
+            Ok(matches)=>matches,
+            Err(error)=> {self.stats.refusal("domain_static_prune_unavailable",&error);Vec::new()}
+        };
+        if !pruned.is_empty() {
+            for found in pruned {
+                self.stats.count(&format!("domain_static_prune_excluded:{}:{}",found.verdict.class.name(),found.verdict.rule));
+            }
+            return Ok(());
+        }
         if !self.texts.insert(checked.sexp(self.registry)) {
             self.stats.count("domain_text_duplicate_excluded");
             return Ok(());
@@ -651,6 +663,31 @@ impl ValidMutant {
     }
     pub fn k(&self) -> usize {
         self.spec.k()
+    }
+    /// The same changed-site conclusion that excludes a sampled candidate.
+    /// Historical identities remain rehydratable so readers can omit them;
+    /// this report never evaluates a relation or assigns a grade.
+    pub fn static_prune_json(&self, registry: &Registry, survey: bool) -> Result<Value,String> {
+        let matches=crate::check::static_prune::edited_matches(self.program().checked(),registry,&self.spec.edits)?;
+        let mut report=crate::check::static_prune::report(&matches);
+        if let Some(rows)=report["matches"].as_array_mut() {
+            for (row,found) in rows.iter_mut().zip(&matches) {
+                row["original_atom_paths"]=json!(self.spec.edits.iter().filter(|e|e.replacement.is_some()).filter_map(|e| {
+                    let after=edit::mapped(&e.at,&self.spec.edits)?;
+                    (found.path.0.starts_with(&after.0)||after.0.starts_with(&found.path.0)).then(||path_json(&e.at))
+                }).collect::<Vec<_>>());
+            }
+        }
+        report["scope"]="surviving changed sites; native simultaneous-deletion path mapping".into();
+        if survey {
+            let top=self.point().body.0[0].0 as usize;
+            let path=NodePath::top(top as u32);
+            report["survey"]=json!({
+                "gold":crate::study::features::canonical_clause(&self.gold().program.program.value().forms[top],&path),
+                "candidate":crate::study::features::canonical_clause(&self.program().program().value().forms[top],&path),
+                "contract":"existing native canonical form; measurement only, no extra sampling rejection"});
+        }
+        Ok(report)
     }
     /// Exact, source-order evidence that only the requested original atoms
     /// changed. This compares AST values directly, without any fingerprint.
