@@ -236,15 +236,22 @@ impl PyStudyTaskEvaluator {
     /// Fresh original-scope BODY evidence at the cached full gold choices.
     /// expected_kept_json asserts the same-session ordered choices; it cannot
     /// supply assignments. Call gold_kept first with this exact program handle.
-    #[pyo3(signature=(program,body_path,expected_kept_json=None))]
-    fn gold_body(&self,py:Python<'_>,program:&PyStudyProgram,body_path:Vec<u32>,expected_kept_json:Option<&str>)->PyResult<(String,PyCaseTables)> {
+    /// prefix_conjuncts selects completed conjuncts, including an empty
+    /// prefix. A nested OR branch BODY path selects only that branch with
+    /// its preceding outer context. Omitting it preserves the full BODY API.
+    #[pyo3(signature=(program,body_path,expected_kept_json=None,*,prefix_conjuncts=None))]
+    fn gold_body(&self,py:Python<'_>,program:&PyStudyProgram,body_path:Vec<u32>,expected_kept_json:Option<&str>,prefix_conjuncts:Option<usize>)->PyResult<(String,PyCaseTables)> {
         if program.settings!=self.settings {return Err(PyValueError::new_err("task evaluator and program settings differ"));}
         let expected=expected_kept_json.map(serde_json::from_str::<serde_json::Value>).transpose().map_err(|e|PyValueError::new_err(e.to_string()))?;
         let body=arclog::program::path::NodePath(body_path.into_iter().map(arclog::program::path::PathStep).collect());
         let constructions=constructions()?;
         let (report,columns)=py.detach(||self.with_cache("gold_body",|cache| {
-            let mut result=study_pair::gold_body::evaluate_cached(&program.program,&body,&self.task,&self.session,
-                constructions,&self.settings,cache,expected.as_ref())?;
+            let mut result=match prefix_conjuncts {
+                Some(count)=>study_pair::gold_body::evaluate_prefix_cached(&program.program,&body,count,&self.task,&self.session,
+                    constructions,&self.settings,cache,expected.as_ref())?,
+                None=>study_pair::gold_body::evaluate_cached(&program.program,&body,&self.task,&self.session,
+                    constructions,&self.settings,cache,expected.as_ref())?,
+            };
             result.report["task"]=self.task_name.clone().into();
             let materializer=Materializer::new(&self.session,&result.limits);
             let columns=case_columns_in(&materializer,&self.evidence,&result.tables,self.task.train.len(),None);

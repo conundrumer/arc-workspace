@@ -11,6 +11,17 @@ pub struct GoldBody {
 /// evaluator/gold handle's immutable GoldMemo. The optional JSON is an assertion.
 pub fn evaluate_cached(gold:&StudyProgram,body:&NodePath,task:&Task,session:&TaskSession,
     constructions:&Constructions,settings:&DecodeSettings,cache:&mut PairCache,expected_kept:Option<&Value>)->Result<GoldBody,String> {
+    evaluate_query(gold,body,task,session,constructions,settings,cache,expected_kept,None)
+}
+
+/// Native completed-conjunct frontier query at the same cached full choices.
+pub fn evaluate_prefix_cached(gold:&StudyProgram,body:&NodePath,prefix:usize,task:&Task,session:&TaskSession,
+    constructions:&Constructions,settings:&DecodeSettings,cache:&mut PairCache,expected_kept:Option<&Value>)->Result<GoldBody,String> {
+    evaluate_query(gold,body,task,session,constructions,settings,cache,expected_kept,Some(prefix))
+}
+
+fn evaluate_query(gold:&StudyProgram,body:&NodePath,task:&Task,session:&TaskSession,
+    constructions:&Constructions,settings:&DecodeSettings,cache:&mut PairCache,expected_kept:Option<&Value>,prefix:Option<usize>)->Result<GoldBody,String> {
     let limits=settings.operation_limits();
     let key=Arc::as_ptr(gold.checked()) as usize;
     let memo=Arc::clone(cache.gold.get(&key).ok_or("call gold_kept or evaluate_pair on this evaluator/program handle first; gold_body performs no FITS search")?);
@@ -22,6 +33,11 @@ pub fn evaluate_cached(gold:&StudyProgram,body:&NodePath,task:&Task,session:&Tas
     if !report["program_provenance"]["stream"].is_null() {describe_gold_observation(&mut report,gold,&memo,true);}
     report["schema"]=json!("arclog-study-gold-body-v1");
     report["body_path"]=arclog::mutation::path_json(body);
+    if let Some(count)=prefix {
+        report["body_query"]=json!({"kind":"completed_conjunct_prefix","conjuncts":count,
+            "branch_context":"preceding outer conjuncts and the selected OR branch; sibling branches excluded",
+            "scope":"original checked owner; native INIT key and input context retained"});
+    }
     report["body_table"]=Value::Null;
     report["body_assignment_map"]=Value::Null;
     report["body_status"]=json!({"status":"unavailable","reason":"BODY acquisition has not completed"});
@@ -35,7 +51,16 @@ pub fn evaluate_cached(gold:&StudyProgram,body:&NodePath,task:&Task,session:&Tas
     }
     let decoder=Decoder::new(task,session,Registry::get(),constructions,settings).with_operation_limits(limits);
     let acquired=(||->Outcome<()> {
-        let view=arclog::eval::body_view::BodyView::at(gold.checked(),body)?;
+        let view=match prefix {
+            Some(count)=>arclog::eval::body_view::BodyView::prefix_at(gold.checked(),body,count)?,
+            None=>arclog::eval::body_view::BodyView::at(gold.checked(),body)?,
+        };
+        if prefix.is_some() {
+            result.report["body_query"]["columns"]=json!(view.clause.columns.iter().enumerate().map(|(i,v)| {
+                json!({"physical_column":i,"label_id":view.paths.labels[v.0 as usize].0,
+                    "scope_path":arclog::mutation::path_json(&view.form)})
+            }).collect::<Vec<_>>());
+        }
         result.report["owner_path"]=arclog::mutation::path_json(&view.form);
         result.report["body_scope"]=json!(format!("{:?}",view.scope));
         let written=source_stream(gold,&decoder,cache)?;

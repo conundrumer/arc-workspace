@@ -540,7 +540,7 @@ fn compile_instance_conjuncts(
         .iter()
         .flat_map(|(body, path)| body.conjuncts.iter().zip(0u32..).map(|(conjunct, index)| (conjunct, path.child(index))))
         .collect();
-    compile_mapped(program, instance, key, conjuncts, columns).map(|mapped| (mapped.clause, mapped.paths))
+    compile_query(program, instance, key, conjuncts, columns)
 }
 
 /// The types of the labels of the scope that holds the labels of the form
@@ -558,7 +558,19 @@ pub fn compile_safe(
     conjuncts: Vec<(&Conjunct, NodePath)>,
     columns: &[LabelId],
 ) -> Result<(ClauseIr, IrPaths), CompileFault> {
-    compile_mapped(program, form, None, conjuncts, columns).map(|mapped| (mapped.clause, mapped.paths))
+    compile_query(program, form, None, conjuncts, columns)
+}
+
+/// Compile native-path query conjuncts with an optional projected INIT key.
+/// Body views and ordinary safe queries share the binding/type compiler.
+pub fn compile_query(
+    program: &CheckedProgram,
+    form: &NodePath,
+    key: Option<(KeyRead, IrPaths, &[LabelId])>,
+    conjuncts: Vec<(&Conjunct, NodePath)>,
+    columns: &[LabelId],
+) -> Result<(ClauseIr, IrPaths), CompileFault> {
+    compile_mapped(program, form, key, conjuncts, columns).map(|mapped| (mapped.clause, mapped.paths))
 }
 
 /// What [`compile_mapped`] gives.
