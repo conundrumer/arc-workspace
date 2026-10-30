@@ -67,15 +67,22 @@ def _case(ev, record, context, ntrain, ntest, cache):
                     runtime=ev.receipt, adapter=dependency_receipt(), ntrain=ntrain, ntest=ntest)
     path = cache / (sha(identity) + '.json')
     compressed = path.with_name(path.name + '.gz')
-    # A broken representation must not hide its valid sibling and trigger
-    # another native acquisition. Both readers validate before returning.
-    for stored, load in ((path, read_json), (compressed, read_gzip_json)):
-        if not stored.exists():
-            continue
-        try:
-            return load(stored), False
-        except (ValueError, OSError, EOFError, KeyError, TypeError) as error:
-            _quarantine(stored, error)
+    from case_cache_keys import predecessor_identities
+    import evaluator
+    identities = [identity] + predecessor_identities(identity, code_root=CODE_ROOT,
+        evaluator_path=evaluator.__file__, digest=sha)
+    # Try current then exact storage-only predecessor, and both representations.
+    # Returning an old cache preserves its actual old acquisition receipt.
+    for candidate in identities:
+        plain = cache / (sha(candidate) + '.json')
+        archive = plain.with_name(plain.name + '.gz')
+        for stored, load in ((plain, read_json), (archive, read_gzip_json)):
+            if not stored.exists():
+                continue
+            try:
+                return load(stored), False
+            except (ValueError, OSError, EOFError, KeyError, TypeError) as error:
+                _quarantine(stored, error)
     print(f"case {context['name']}: fresh gold replay", file=sys.stderr, flush=True)
     case_context = dict(context, catalogue_path=context.get('catalogue_path'))
     value = acquire_case_train(ev, record, case_context, ntrain, ntest)
