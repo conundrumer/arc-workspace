@@ -88,6 +88,16 @@ fn study_normalize(
         .to_string())
 }
 
+/// nf4f at a search point: the caller supplies only X and preceding tables.
+/// Whole-program used/siblings metadata is never consulted by this route.
+#[pyfunction]
+#[pyo3(signature=(table,*,earlier="[]",max_work=10_000_000,deadline_seconds=5.0))]
+fn study_feature_normalize(py:Python<'_>,table:&str,earlier:&str,max_work:u64,deadline_seconds:f64)->PyResult<String> {
+    let (table,earlier)=(read(table)?,read(earlier)?);
+    let mut work=budget(max_work,deadline_seconds)?;
+    Ok(py.detach(||filters::normal::evaluate_prefix(&table,&earlier,&mut work)).to_string())
+}
+
 #[pyfunction]
 #[pyo3(signature=(mutant,candidates,*,earlier="[]",max_work=10_000_000,deadline_seconds=5.0))]
 fn study_table_equal(
@@ -164,6 +174,7 @@ pub(crate) fn register(names: &Names<'_, '_>) -> PyResult<()> {
     names.function(wrap_pyfunction!(study_filter_policy, names.module())?)?;
     names.function(wrap_pyfunction!(study_recovery, names.module())?)?;
     names.function(wrap_pyfunction!(study_normalize, names.module())?)?;
+    names.function(wrap_pyfunction!(study_feature_normalize, names.module())?)?;
     names.function(wrap_pyfunction!(study_table_equal, names.module())?)?;
     names.function(wrap_pyfunction!(study_final_output, names.module())?)
 }

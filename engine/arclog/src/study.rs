@@ -7,6 +7,7 @@
 use std::sync::{Arc,OnceLock};
 
 pub mod render;
+pub mod features;
 pub mod render_terms;
 pub mod render_choices;
 pub mod render_out;

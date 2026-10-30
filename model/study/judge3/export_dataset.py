@@ -124,6 +124,9 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
     """
     from runtime_compat import require_exporter
     require_exporter(ev.arclog)
+    if features is not None:
+        from feature_payload import require_feature_api
+        require_feature_api(ev.arclog)
     from evaluator import read_json, sha
     from tables import TargetStore
     from evaluator_train import acquire_train_point
@@ -173,9 +176,15 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
         write_public(where / path, public)
         listing.append(table_summary(public,path))
         return public
-    x = acquire_train_point(ev, record, adapter, target['ntrain'], target['ntest'], side='mutant', copy_rows=features is None)
-    add(x, 'X', point_name, record['case'], ['input'], adapter['input']['binding']['callable_template'], side='mutant')
+    x = acquire_train_point(ev, record, adapter, target['ntrain'], target['ntest'], side='mutant',
+                            copy_rows=features is None, include_projected_flows=features is not None)
+    public_x = add(x, 'X', point_name, record['case'], ['input'], adapter['input']['binding']['callable_template'], side='mutant')
+    feature_x_meta = None
     if features is not None:
+        feature_x_meta = dict(projection=list(x['projection']), source_schema=x['source_schema'],
+                              fields=x['fields'], public_fields_sha256=sha(public_x['fields']),
+                              projected_flows=x['receipt'].get('projected_flows'))
+        public_x = None
         x = None  # synchronous write is finished; feature mode never compares X
     if features is None or shared:
         g = acquire_train_point(ev, record, adapter, target['ntrain'], target['ntest'], side='gold', copy_rows=features is None)
@@ -321,20 +330,24 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
             readers[side].append(dict(path=path, owner=reader.get('reader_owner_path'),
                 atom=names.text(nodes[tuple(path)]['sexp']), arguments=arguments))
     if features is not None:
+        from feature_payload import payload, point_payload
+        available_paths = [shared / item['path'] for item in shared_index if 'available' in item['roles'] and 'target' not in item['roles']] if shared else [features / item['path'] for item in read_json(features / 'point.json')['tables'] if 'available' in item['roles'] and 'target' not in item['roles']]
+        feature_program = producer.programs.load(record['mutant_sexp'], mutant_record=record)[0]
+        feature_payload = payload(ev, record, adapter, feature_x_meta, output / 'tables/X.json', available_paths, feature_program)
         if shared:
             task = read_json(adapter['source']['task_path'])
             write_public(shared / 'train.json', task['train'])
             write_public(shared / 'libraries.json', ev.registry_interfaces(record)['entries'])
             write_public(shared / 'point.json', dict(format=FORMAT, kind='features-point', task=record['task'],
                 case=record['case'], point=record['point'], tables=shared_index,
-                programs=dict(gold=programs['gold']), train='train.json', libraries='libraries.json'))
+                programs=dict(gold=programs['gold']), train='train.json', libraries='libraries.json', **point_payload(feature_payload)))
             try:
                 shared.rename(features)
             except OSError:  # another process published the same point first
                 shutil.rmtree(shared)
         write_public(output / 'pair.json', dict(format=FORMAT, kind='features-pair', pair_id=pair_id,
             task=record['task'], case=record['case'], change=change, tables=index,
-            programs=dict(mutant=programs['mutant']), point=os.path.relpath(features, destination)))
+            programs=dict(mutant=programs['mutant']), point=os.path.relpath(features, destination), **feature_payload))
         output.rename(destination)
         return dict(pair_id=pair_id, tables=len(index) + len(shared_index), output=str(destination),
                     fresh_cases=fresh_cases)

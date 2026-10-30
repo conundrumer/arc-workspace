@@ -13,6 +13,7 @@ mod case_tables;
 mod study_pair;
 mod study_filters;
 mod study_render;
+mod study_features;
 mod corpus_tables;
 mod orientation;
 mod record;
@@ -28,6 +29,7 @@ pub fn register(names: &Names<'_, '_>) -> PyResult<()> {
     study_pair::register(names)?;
     study_filters::register(names)?;
     study_render::register(names)?;
+    study_features::register(names)?;
     names.class::<case_tables::PyCaseTables>()?;
     names.function(wrap_pyfunction!(corpus_tables::corpus_tables, module)?)?;
     names.function(wrap_pyfunction!(stream_tables::stream_tables, module)?)?;

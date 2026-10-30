@@ -24,3 +24,4 @@ pub mod extents;
 pub mod flows;
 pub mod tables;
 pub mod study_filters;
+pub mod study_features;

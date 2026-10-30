@@ -13,14 +13,15 @@ use super::walk::{Open, ScopeSink};
 /// atom's edge to a label by its column path as the name writer writes it.
 pub(super) struct GraphBuilder<'n> {
     pub(super) names: &'n dyn NameWriter,
+    feature_sites: bool,
     pub(super) colors: Vec<Vec<u8>>,
     pub(super) edges: Vec<(usize, usize, Vec<u8>)>,
     pub(super) labels: StableHashMap<LabelId, usize>,
 }
 
 impl<'n> GraphBuilder<'n> {
-    pub(super) fn new(names: &'n dyn NameWriter) -> Self {
-        GraphBuilder { names, colors: Vec::new(), edges: Vec::new(), labels: StableHashMap::default() }
+    pub(super) fn new(names: &'n dyn NameWriter, feature_sites: bool) -> Self {
+        GraphBuilder { names, feature_sites, colors: Vec::new(), edges: Vec::new(), labels: StableHashMap::default() }
     }
 
     pub(super) fn vertex(&mut self, tag: Tag, color: impl FnOnce(&mut CanonicalWriter)) -> usize {
@@ -163,6 +164,8 @@ impl ColoredGraph {
 impl<'a> ScopeSink<'a> for GraphBuilder<'_> {
     type At = usize;
 
+    fn feature_sites(&self) -> bool { self.feature_sites }
+
     fn open(&mut self, at: usize, role: Tag, index: usize, node: Open<'a>) -> usize {
         let names = self.names;
         match node {
@@ -183,7 +186,7 @@ impl<'a> ScopeSink<'a> for GraphBuilder<'_> {
                 names.write_name(&atom.relation, out);
             }),
             Open::NotForm => self.vertex_under(at, role, index, Tag::NotForm, |_| {}),
-            Open::Constraint(constraint) => self.vertex_under(at, role, index, Tag::Constraint, |out| out.byte(constraint.op as u8)),
+            Open::Constraint(constraint) => self.vertex_under(at, role, index, Tag::Constraint, |out| out.byte(normalized_constraint(constraint).0 as u8)),
             Open::Or => self.vertex_under(at, role, index, Tag::Or, |_| {}),
             Open::If => self.vertex_under(at, role, index, Tag::If, |_| {}),
             Open::All => self.vertex_under(at, role, index, Tag::All, |_| {}),
@@ -195,9 +198,12 @@ impl<'a> ScopeSink<'a> for GraphBuilder<'_> {
         visit(self);
     }
 
-    fn members<T>(&mut self, _parent: NodeRef<'a>, members: &'a [T], _node: impl Fn(&'a T) -> NodeRef<'a>, visit: impl Fn(&mut Self, &'a T)) {
-        for member in members {
-            visit(self, member);
+    fn members<T>(&mut self,at:usize,_parent: NodeRef<'a>, members: &'a [T],pinned:&[usize], _node: impl Fn(&'a T) -> NodeRef<'a>, visit: impl Fn(&mut Self,usize, &'a T)) {
+        for (index,member) in members.iter().enumerate() {
+            let at=match pinned.iter().position(|i|*i==index) {
+                Some(rank)=>self.vertex_under(at,Tag::Part,rank,Tag::Part,|_|{}),None=>at,
+            };
+            visit(self,at,member);
         }
     }
 
@@ -212,13 +218,14 @@ impl<'a> ScopeSink<'a> for GraphBuilder<'_> {
     /// [`SiteArg::NamedLabel`] ends with its name.
     fn site_label(&mut self, at: usize, index: usize, path: &[ColumnName], named: Option<&ColumnName>, label: LabelUse, relation: Option<&RelationRef>) {
         let names = self.names;
+        let feature_sites = self.feature_sites;
         let path = match named {
             Some(name) => column_path(path, name),
             None => path.to_vec(),
         };
         self.label_use(at, label, |out| {
             site_column(names, relation, &path, out);
-            out.len(index);
+            out.len(if feature_sites && named.is_some(){0}else{index});
         });
     }
 
@@ -240,6 +247,11 @@ impl<'a> ScopeSink<'a> for GraphBuilder<'_> {
         }
     }
 
+    fn constraint(&mut self,at:usize,constraint:&Constraint) {
+        let (_,operands,symmetric)=normalized_constraint(constraint);
+        for(i,label)in operands.into_iter().enumerate(){self.operand(at,if symmetric {0}else{i},label);}
+    }
+
     fn one_label(&mut self, at: usize, index: usize, label: LabelId) {
         let to = self.label(label);
         self.edge(at, to, Tag::Part, |out| out.len(index));
@@ -249,9 +261,9 @@ impl<'a> ScopeSink<'a> for GraphBuilder<'_> {
     /// the name writer writes it.
     fn columns(&mut self, at: usize, columns: &'a [RelationColumn], relation: Option<&RelationRef>) {
         let names = self.names;
-        for column in columns {
+        for (index,column) in columns.iter().enumerate() {
             let to = self.label(column.label);
-            self.edge(at, to, Tag::Column, |out| relation_column(names, relation, &column.name, out));
+            self.edge(at, to, Tag::Column, |out| {relation_column(names, relation, &column.name, out);if relation.is_none(){out.len(index);}});
         }
     }
 

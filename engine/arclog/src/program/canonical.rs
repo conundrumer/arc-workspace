@@ -1,7 +1,7 @@
 //! The canonical form of a node and its hash.
 //!
-//! A body's canonical form is the same under a reorder of its atoms, a
-//! reorder of the branches of an `OR`, and a renaming of its labels, apart
+//! A body's canonical form is the same under a reorder of unordered atoms and a
+//! renaming of its labels, apart
 //! from the renaming that [`canonical_hash`] gives. The labeling comes from
 //! individualization–refinement: color refinement with the column paths as
 //! edge labels, then the first largest cell that is not a singleton, with a
@@ -41,7 +41,7 @@ use order::Recorded;
 pub use order::CanonicalOrder;
 pub(crate) use replay::cached_write;
 
-pub(crate) use form::{canonical_form, form_scope_labels, prediction, relation_of, scope_labels, shares_rule_scope};
+pub(crate) use form::{normalized_constraint,canonical_form, form_scope_labels, prediction, relation_of, scope_labels, shares_rule_scope};
 pub use form::{canonical_hash, opens_scope, AsWritten, Canonical, CanonicalForm, CanonicalWriter, NameWriter};
 pub(in crate::program) use form::form_of;
 
@@ -161,11 +161,13 @@ struct Context<'a> {
     names: &'a dyn NameWriter,
     path: Vec<PathStep>,
     order: Option<Recorded>,
+    /// Feature-only site normalization never participates in resolver/check caches.
+    feature_sites: bool,
 }
 
 impl<'a> Context<'a> {
     fn new(search: &'a mut SearchBudget, names: &'a dyn NameWriter) -> Self {
-        Context { labels: Labels::default(), out: CanonicalWriter::default(), search, names, path: Vec::new(), order: None }
+        Context { labels: Labels::default(), out: CanonicalWriter::default(), search, names, path: Vec::new(), order: None, feature_sites: false }
     }
 
     fn position(&self, label: LabelId) -> u32 {
@@ -212,10 +214,10 @@ impl<'a> Context<'a> {
     }
 
     /// Writes `columns` in the order of their labels' canonical positions,
-    /// each name through `name`.
-    fn columns(&self, out: &mut CanonicalWriter, columns: &[RelationColumn], name: impl Fn(&mut CanonicalWriter, &ColumnName)) {
+    /// each name through `name`. Keys and OUT retain their positional order.
+    fn columns(&self, out: &mut CanonicalWriter, columns: &[RelationColumn], preserve_order: bool, name: impl Fn(&mut CanonicalWriter, &ColumnName)) {
         let mut ordered: Vec<(u32, &ColumnName)> = columns.iter().map(|c| (self.position(c.label), &c.name)).collect();
-        ordered.sort_by_key(|(position, _)| *position);
+        if !preserve_order { ordered.sort_by_key(|(position, _)| *position); }
         out.len(ordered.len());
         for (position, column) in ordered {
             name(out, column);
@@ -243,7 +245,7 @@ impl<'a> Context<'a> {
     /// The canonical labeling of `scope`, and whether its search reached
     /// the cap.
     fn labeling(&mut self, scope: LabelScope) -> (Labels, bool) {
-        let mut graph = GraphBuilder::new(self.names);
+        let mut graph = GraphBuilder::new(self.names, self.feature_sites);
         let root = graph.vertex(Tag::Root, |_| {});
         walk::scope(&mut graph, root, scope);
         let graph = graph.colored();

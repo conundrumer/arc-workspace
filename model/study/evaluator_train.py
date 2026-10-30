@@ -178,8 +178,69 @@ def select_train_full_rows(ev, native, record, *, ntrain):
                 selection='canonical kept_entries over native TRAIN/TASK metadata')
 
 
+PROJECTED_FLOWS_MAX_BYTES = 1024 * 1024
+
+
+def _projected_flow_receipt(reader, table, record, schema, projection, fields, source, axes):
+    """Copy bounded raw edges while the authenticated native reader is owned.
+
+    This transport never interprets a flow or reads entries/values. Virtual
+    columns need an actual native certificate, which this API does not have.
+    """
+    from evaluator import sha
+    result = dict(schema='evaluator-projected-flows-v1', version=1,
+        status='unsupported', source_sha256=sha(record), table=table,
+        kept_context_sha256=sha(record['evaluation']['kept_assignments']),
+        source_schema_sha256=sha(schema), projection_sha256=sha(projection),
+        projected_fields_sha256=sha(fields), packet_axes_sha256=sha(axes),
+        max_bytes=PROJECTED_FLOWS_MAX_BYTES)
+    try:
+        if (not isinstance(source, dict) or source.get('side') != 'mutant'
+                or source.get('native_ref') != record['native']['mutant']):
+            raise ValueError('projected flows require the authenticated mutant snapshot')
+        result.update(native_ref_sha256=sha(source['native_ref']), selector=deepcopy(source['selector']))
+        selector = source['selector']
+        if not {'form', 'point'} <= selector.keys() or any(
+                str(reader.tables[k][table]) != str(v) for k, v in selector.items()
+                if k in ('form', 'point', 'relation', 'fact')):
+            raise ValueError('projected flows selector differs from the native table')
+        if any(type(c) is not int or not 0 <= c < len(schema) for c in projection):
+            raise ValueError('projected flows unavailable for a virtual or absent native column')
+        columns = [dict(public_column=i, source_body_column=c, edges=[])
+                   for i, c in enumerate(projection)]
+        encoded = lambda v: len(json.dumps(v, ensure_ascii=False, sort_keys=True,
+                                           separators=(',', ':'), allow_nan=False).encode('utf-8'))
+        # This floor includes receipt keys and empty lists. Every edge below
+        # charges its serialized occurrence, including duplicate aliases.
+        size = encoded(dict(result, status='complete', columns=columns))
+        if size > PROJECTED_FLOWS_MAX_BYTES:
+            raise ValueError('projected flow receipt exceeds its byte limit')
+        destinations = {}
+        for output in columns:
+            destinations.setdefault(output['source_body_column'], []).append(output['edges'])
+        flow = reader.parts['flows']
+        for i in range(len(flow['table'])):
+            if flow['table'][i] != table:
+                continue
+            c = int(flow['column'][i])
+            if not 0 <= c < len(schema):
+                raise ValueError('native flow column is outside the authenticated schema')
+            edge = [int(flow['kind'][i]), int(flow['source_table'][i])]
+            for target in destinations.get(c, ()):
+                growth = encoded(edge) + bool(target)
+                if size + growth > PROJECTED_FLOWS_MAX_BYTES:
+                    raise ValueError('projected flow receipt exceeds its byte limit')
+                size += growth
+                target.append(edge)
+        result.update(status='complete', columns=columns)
+    except (ValueError, KeyError, IndexError, TypeError) as error:
+        result.update(status='unsupported', reason=str(error))
+    return result
+
+
 def acquire_train_table(ev, native, table, record, *, ntrain, fields=None,
-                        projection=None, output_aliases=None, source=None, held_entries=None, copy_rows=True):
+                        projection=None, output_aliases=None, source=None, held_entries=None, copy_rows=True,
+                        include_projected_flows=False):
     """Return full typed TRAIN cells at the case's local kept assignments.
 
     `native` is the canonical native payload/reader, not grouped value tuples.
@@ -192,6 +253,8 @@ def acquire_train_table(ev, native, table, record, *, ntrain, fields=None,
     """
     if type(copy_rows) is not bool:
         raise ValueError("copy_rows must be boolean")
+    if type(include_projected_flows) is not bool:
+        raise ValueError("include_projected_flows must be boolean")
     from tables import Incomplete, comparison_type
     from program_metadata import type_identity, typed_fields
     from evaluator import sha
@@ -244,7 +307,7 @@ def acquire_train_table(ev, native, table, record, *, ntrain, fields=None,
                 model_counts[axis] = model + 1
                 entries.append(dict(assignment=assignment, example_kind=1,
                     example_index=example, model=model, rows=deepcopy(projected) if copy_rows else projected))
-    return dict(fields=fields, entries=entries,
+    packet = dict(fields=fields, entries=entries,
         required=[list(k) for k in sorted(matched['required'])],
         missing=[list(k) for k in matched['missing']],
         source_schema=schema, projection=projection, output_aliases=dict(output_aliases or {}),
@@ -253,6 +316,13 @@ def acquire_train_table(ev, native, table, record, *, ntrain, fields=None,
             implementation=dependency_receipt(), test_cells=False,
             model_namespace='local to kept assignment and TRAIN input',
             task_broadcast='native TASK entries over authenticated TRAIN axis'))
+    if include_projected_flows:
+        axes = dict(required=packet['required'], missing=packet['missing'], entries=[
+            [e['assignment'], e['example_kind'], e['example_index'], e['model'], len(e['rows'])]
+            for e in entries])
+        packet['receipt']['projected_flows'] = _projected_flow_receipt(
+            reader, table, record, schema, projection, fields, source, axes)
+    return packet
 
 
 def acquire_candidate_train(ev, native, table, record, *, ntrain, proof,
@@ -481,7 +551,8 @@ def evaluate_train_clause(ev, record, clause, target, columns=None, explore=Fals
     return result, acquired
 
 
-def acquire_det_train_point(ev, record, adapter, ntrain, ntest, side='mutant', *, copy_rows=True):
+def acquire_det_train_point(ev, record, adapter, ntrain, ntest, side='mutant', *, copy_rows=True,
+                            include_projected_flows=False):
     """Actual mutant BODY or fresh gold BODY, certified public DET fields only.
 
     Gold uses the original native BODY and same-session gold FITS choices.
@@ -555,13 +626,15 @@ def acquire_det_train_point(ev, record, adapter, ntrain, ntest, side='mutant', *
         return _acquire_original_gold_train(ev, record,
             dict(binding, projected_schema=fields), ntrain, source=source, copy_rows=copy_rows)
     packet = acquire_train_table(ev, native, table, record, ntrain=ntrain,
-        fields=fields, projection=projection, source=source, copy_rows=copy_rows)
+        fields=fields, projection=projection, source=source, copy_rows=copy_rows,
+        include_projected_flows=include_projected_flows)
     if packet['missing']:
         raise Incomplete('DET public TRAIN table lacks required own kept contexts')
     return packet
 
 
-def acquire_train_point(ev, record, adapter, ntrain, ntest, side='mutant', *, copy_rows=True):
+def acquire_train_point(ev, record, adapter, ntrain, ntest, side='mutant', *, copy_rows=True,
+                        include_projected_flows=False):
     """Exact saved X or fresh original-scope gold BODY, TRAIN cells only.
 
     Gold FITS and BODY share one native handle/session. No RULE reconstruction
@@ -572,7 +645,8 @@ def acquire_train_point(ev, record, adapter, ntrain, ntest, side='mutant', *, co
         raise ValueError('point side must be mutant or gold')
     binding = adapter['input']['binding'] if side == 'mutant' else adapter['comparison_target']['binding']
     if binding.get('kind') == 'Det':
-        return acquire_det_train_point(ev, record, adapter, ntrain, ntest, side=side, copy_rows=copy_rows)
+        return acquire_det_train_point(ev, record, adapter, ntrain, ntest, side=side, copy_rows=copy_rows,
+                                       include_projected_flows=include_projected_flows if side == 'mutant' else False)
     if side == 'mutant':
         store = TargetStore(ev.legacy, CODE_ROOT)
         native, table = store.mutant_snapshot(record, adapter)
@@ -580,7 +654,8 @@ def acquire_train_point(ev, record, adapter, ntrain, ntest, side='mutant', *, co
             fields=binding['projected_schema'],
             projection=[field['source_body_column'] for field in binding['projected_schema']],
             source=dict(side=side, native_ref=record['native']['mutant'],
-                        selector=binding['native_selector']), copy_rows=copy_rows)
+                        selector=binding['native_selector']), copy_rows=copy_rows,
+            include_projected_flows=include_projected_flows)
     return _acquire_original_gold_train(ev, record, binding, ntrain, copy_rows=copy_rows)
 
 

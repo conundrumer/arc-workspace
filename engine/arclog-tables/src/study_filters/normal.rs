@@ -501,6 +501,16 @@ fn degenerate(
 }
 
 pub fn normalize(t: &Table, earlier: &[Table], work: &mut Work) -> Result<Normal> {
+    normalize_in(t, earlier, work, true)
+}
+
+/// The same table rules at a search point, without whole-program use or
+/// component-sibling evidence. No future-dependent exclusion is performed.
+pub fn normalize_prefix(t: &Table, earlier: &[Table], work: &mut Work) -> Result<Normal> {
+    normalize_in(t, earlier, work, false)
+}
+
+fn normalize_in(t: &Table, earlier: &[Table], work: &mut Work, whole_program: bool) -> Result<Normal> {
     let original = t;
     let head = t
         .meta
@@ -510,7 +520,7 @@ pub fn normalize(t: &Table, earlier: &[Table], work: &mut Work) -> Result<Normal
     if t.meta.get("flows").and_then(Value::as_array).is_none() {
         return Err("normalization needs explicit native column flows".into());
     }
-    if t.meta.get("used").and_then(Value::as_bool) == Some(false) {
+    if whole_program && t.meta.get("used").and_then(Value::as_bool) == Some(false) {
         return Ok(Normal {
             excluded: true,
             ..Normal::default()
@@ -520,7 +530,7 @@ pub fn normalize(t: &Table, earlier: &[Table], work: &mut Work) -> Result<Normal
     let mut earlier = earlier.to_vec();
     let mut masks = Vec::new();
     let mut removed = Vec::new();
-    if head == "INIT"
+    if whole_program && head == "INIT"
         && t.meta.get("component").is_some()
         && !(t.meta["component"] == "Enclosure" && t.meta["port"] == "enclosed")
     {
@@ -715,10 +725,20 @@ pub fn normalize(t: &Table, earlier: &[Table], work: &mut Work) -> Result<Normal
     })
 }
 pub fn evaluate(table: &Value, earlier: &Value, work: &mut Work) -> Value {
+    evaluate_in(table, earlier, work, true)
+}
+
+pub fn evaluate_prefix(table: &Value, earlier: &Value, work: &mut Work) -> Value {
+    evaluate_in(table, earlier, work, false)
+}
+
+fn evaluate_in(table: &Value, earlier: &Value, work: &mut Work, whole_program: bool) -> Value {
     let mut run = || -> Result<Value> {
         let t = Table::read(table, work)?;
         let earlier = context(earlier, &t, work)?;
-        Ok(normalize(&t, &earlier, work)?.json())
+        let mut result = if whole_program { normalize(&t, &earlier, work)? } else { normalize_prefix(&t, &earlier, work)? }.json();
+        if !whole_program { result["scope"] = json!("prefix_only"); }
+        Ok(result)
     };
     match run() {
         Ok(mut v) => {

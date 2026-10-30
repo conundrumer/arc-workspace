@@ -501,6 +501,17 @@ pub(super) fn label_use(cx: &Context, out: &mut CanonicalWriter, label: LabelUse
     }
 }
 
+/// Normalize converse comparisons; equality with a fresh first operand stays
+/// directional because it binds that operand.
+pub(crate) fn normalized_constraint(c:&Constraint)->(ConstraintOp,[Option<ConstraintLabel>;2],bool) {
+    let operands=[Some(c.first),constraint_second(c)];
+    match c.op {
+        ConstraintOp::Gt=>(ConstraintOp::Lt,[operands[1],operands[0]],false),
+        ConstraintOp::Ge=>(ConstraintOp::Le,[operands[1],operands[0]],false),
+        op=>(op,operands,matches!(op,ConstraintOp::Eq|ConstraintOp::Ne) && !c.first.fresh),
+    }
+}
+
 pub(super) fn constraint_label(cx: &Context, out: &mut CanonicalWriter, label: ConstraintLabel) {
     out.flag(label.fresh);
     cx.label(out, label.label);
@@ -799,6 +810,8 @@ impl WriteForm for DemoRule {
 impl<'a> ScopeSink<'a> for Context<'_> {
     type At = ();
 
+    fn feature_sites(&self) -> bool { self.feature_sites }
+
     fn open(&mut self, _at: (), _role: Tag, _index: usize, node: Open<'a>) {
         let names = self.names;
         let out = &mut self.out;
@@ -848,7 +861,7 @@ impl<'a> ScopeSink<'a> for Context<'_> {
             Open::NotForm => out.tag(Tag::NotForm),
             Open::Constraint(constraint) => {
                 out.tag(Tag::Constraint);
-                out.byte(constraint.op as u8);
+                out.byte(normalized_constraint(constraint).0 as u8);
             }
             Open::Or => out.tag(Tag::Or),
             Open::If => out.tag(Tag::If),
@@ -875,8 +888,8 @@ impl<'a> ScopeSink<'a> for Context<'_> {
     /// among the children of `parent` is not its index in `members`, or
     /// `members` does not hold every child of `parent`, a fault of the path
     /// table or of the form writer.
-    fn members<T>(&mut self, parent: NodeRef<'a>, members: &'a [T], node: impl Fn(&'a T) -> NodeRef<'a>, visit: impl Fn(&mut Self, &'a T)) {
-        let mut forms: Vec<(Vec<u8>, u32)> = Vec::with_capacity(members.len());
+    fn members<T>(&mut self,_at:(), parent: NodeRef<'a>, members: &'a [T], pinned:&[usize],node: impl Fn(&'a T) -> NodeRef<'a>, visit: impl Fn(&mut Self, (), &'a T)) {
+        let mut forms: Vec<(usize,Vec<u8>, u32)> = Vec::with_capacity(members.len());
         for (member, index) in members.iter().zip(0u32..) {
             let outer = std::mem::take(&mut self.out);
             let step = || {
@@ -884,16 +897,16 @@ impl<'a> ScopeSink<'a> for Context<'_> {
                 assert_eq!(step, index, "{CHILD_FAULT}");
                 step
             };
-            self.at_step(step, |cx| visit(cx, member));
-            forms.push((std::mem::replace(&mut self.out, outer).bytes, index));
+            self.at_step(step, |cx| visit(cx, (),member));
+            forms.push((pinned.iter().position(|i|*i==index as usize).unwrap_or(pinned.len()),std::mem::replace(&mut self.out, outer).bytes, index));
         }
         forms.sort();
         if let Some(order) = &mut self.order {
             assert_eq!(members.len(), parent.children().len(), "{CHILD_FAULT}");
-            order.lists.insert(NodePath(self.path.clone().into()), forms.iter().map(|(_, index)| *index).collect());
+            order.lists.insert(NodePath(self.path.clone().into()), forms.iter().map(|(_,_, index)| *index).collect());
         }
         self.out.len(forms.len());
-        for (bytes, _) in &forms {
+        for (_,bytes, _) in &forms {
             self.out.nested(bytes);
         }
     }
@@ -942,6 +955,12 @@ impl<'a> ScopeSink<'a> for Context<'_> {
         self.out = out;
     }
 
+    fn constraint(&mut self,at:(),constraint:&Constraint) {
+        let (_,mut operands,symmetric)=normalized_constraint(constraint);
+        if symmetric {operands.sort_by_key(|v|v.map(|l|self.position(l.label)));}
+        for(i,label)in operands.into_iter().enumerate(){self.operand(at,i,label);}
+    }
+
     fn one_label(&mut self, _at: (), _index: usize, label: LabelId) {
         let mut out = std::mem::take(&mut self.out);
         self.label(&mut out, label);
@@ -951,7 +970,7 @@ impl<'a> ScopeSink<'a> for Context<'_> {
     fn columns(&mut self, _at: (), columns: &'a [RelationColumn], relation: Option<&RelationRef>) {
         let names = self.names;
         let mut out = std::mem::take(&mut self.out);
-        Context::columns(self, &mut out, columns, |out, name| relation_column(names, relation, name, out));
+        Context::columns(self, &mut out, columns, relation.is_none(),|out, name| relation_column(names, relation, name, out));
         self.out = out;
     }
 

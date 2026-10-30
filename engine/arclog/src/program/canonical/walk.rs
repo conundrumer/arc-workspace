@@ -39,6 +39,10 @@ pub(super) trait ScopeSink<'a> {
     /// The place of a node, under which the walk opens its children.
     type At: Copy;
 
+    /// Sort named sites only for an explicit feature write. Production label
+    /// ordering also determines existing callable table layouts.
+    fn feature_sites(&self) -> bool;
+
     /// Opens `node` below the node at `at`, by an edge of `role` and
     /// `index`, and gives its place.
     fn open(&mut self, at: Self::At, role: Tag, index: usize, node: Open<'a>) -> Self::At;
@@ -48,7 +52,7 @@ pub(super) trait ScopeSink<'a> {
 
     /// Runs `visit` on each of `members`, the whole list of the children of
     /// `parent`, which `node` gives as nodes, in the order the sink takes.
-    fn members<T>(&mut self, parent: NodeRef<'a>, members: &'a [T], node: impl Fn(&'a T) -> NodeRef<'a>, visit: impl Fn(&mut Self, &'a T));
+    fn members<T>(&mut self, at:Self::At, parent: NodeRef<'a>, members: &'a [T], pinned:&[usize], node: impl Fn(&'a T) -> NodeRef<'a>, visit: impl Fn(&mut Self, Self::At, &'a T));
 
     /// The length of a list that the walk visits next.
     fn len(&mut self, len: usize);
@@ -70,6 +74,9 @@ pub(super) trait ScopeSink<'a> {
     /// The operand at `index` of a constraint: a label, or `0` where
     /// `label` is `None`.
     fn operand(&mut self, at: Self::At, index: usize, label: Option<ConstraintLabel>);
+
+    /// Constraint operands in the normalized operator's direction.
+    fn constraint(&mut self,at:Self::At,constraint:&Constraint);
 
     /// The label at `index` of a `ONE` mark.
     fn one_label(&mut self, at: Self::At, index: usize, label: LabelId);
@@ -122,8 +129,15 @@ pub(super) fn clause<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, index: usize
 }
 
 pub(super) fn body<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, role: Tag, index: usize, body: &'a Body) {
+    body_order(sink, at, role, index, body, false);
+}
+
+/// CHOOSE selects its candidate source and pair from written reads. Without
+/// resolved alias/IR identity, preserve these whole bodies conservatively.
+fn body_order<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, role: Tag, index: usize, body: &'a Body, ordered: bool) {
     let at = sink.open(at, role, index, Open::Body);
-    sink.members(NodeRef::Body(body), &body.conjuncts, NodeRef::Conjunct, |sink, conjunct| self::conjunct(sink, at, conjunct));
+    let pinned = if ordered { (0..body.conjuncts.len()).collect::<Vec<_>>() } else { Vec::new() };
+    sink.members(at,NodeRef::Body(body), &body.conjuncts, &pinned,NodeRef::Conjunct, |sink, at,conjunct| self::conjunct(sink, at, conjunct));
 }
 
 pub(super) fn conjunct<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, conjunct: &'a Conjunct) {
@@ -137,12 +151,14 @@ pub(super) fn conjunct<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, conjunct: 
         }
         Conjunct::Constraint(constraint) => {
             let at = sink.open(at, Tag::Member, 0, Open::Constraint(constraint));
-            sink.operand(at, 0, Some(constraint.first));
-            sink.operand(at, 1, constraint_second(constraint));
+            sink.constraint(at,constraint);
         }
         Conjunct::Or(branches) => {
             let at = sink.open(at, Tag::Member, 0, Open::Or);
-            sink.members(parent, branches, |branch| NodeRef::Body(branch.value()), |sink, branch| self::body(sink, at, Tag::Branch, 0, branch.value()));
+            sink.len(branches.len());
+            for(index,branch)in branches.iter().enumerate() {
+                sink.child(parent,NodeRef::Body(branch.value()),|sink|self::body(sink,at,Tag::Branch,index,branch.value()));
+            }
         }
         Conjunct::If { test, then, otherwise } => {
             let at = sink.open(at, Tag::Member, 0, Open::If);
@@ -161,9 +177,13 @@ pub(super) fn conjunct<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, conjunct: 
 
 pub(super) fn atom<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, role: Tag, index: usize, atom: &'a Atom, negated: bool, member: bool) {
     let at = sink.open(at, role, index, Open::Atom { atom, negated, member });
-    sink.len(atom.sites.len());
-    for site in atom.sites.iter() {
-        self::site(sink, at, site, &[], Some(&atom.relation));
+    if sink.feature_sites() {
+        sink.members(at,NodeRef::Atom(atom),&atom.sites,&[],NodeRef::Site,|sink,at,site|self::site(sink,at,site,&[],Some(&atom.relation)));
+    } else {
+        sink.len(atom.sites.len());
+        for site in atom.sites.iter() {
+            sink.child(NodeRef::Atom(atom),NodeRef::Site(site),|sink|self::site(sink,at,site,&[],Some(&atom.relation)));
+        }
     }
 }
 
@@ -171,14 +191,22 @@ pub(super) fn atom<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, role: Tag, ind
 pub(super) fn site<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, site: &'a Site, prefix: &[ColumnName], relation: Option<&RelationRef>) {
     let path = column_path(prefix, &site.column);
     sink.site(at, &path, site.value.args.len(), relation);
-    for (index, arg) in site.value.args.iter().enumerate() {
-        match arg {
-            SiteArg::Label(label) => sink.site_label(at, index, &path, None, *label, relation),
-            SiteArg::NamedLabel { name, label } => sink.site_label(at, index, &path, Some(name), *label, relation),
-            SiteArg::Field(field) => {
-                sink.site_field();
-                self::site(sink, at, field, &path, relation);
-            }
+    let visit=|sink:&mut S,at,arg:&'a SiteArg,index|match arg {
+        SiteArg::Label(label)=>sink.site_label(at,index,&path,None,*label,relation),
+        SiteArg::NamedLabel {name,label}=>sink.site_label(at,index,&path,Some(name),*label,relation),
+        SiteArg::Field(field)=>{sink.site_field();self::site(sink,at,field,&path,relation);},
+    };
+    let node = |arg:&'a SiteArg| match arg {
+        SiteArg::Field(s)=>NodeRef::Site(s),
+        SiteArg::Label(l)|SiteArg::NamedLabel {label:l,..}=>NodeRef::Label(l),
+    };
+    if sink.feature_sites() && site.value.args.iter().all(|arg|!matches!(arg,SiteArg::Label(_))) {
+        sink.members(at,NodeRef::Site(site),&site.value.args,&[],node,|sink,at,arg|visit(sink,at,arg,0));
+    } else {
+        for(index,arg)in site.value.args.iter().enumerate() {
+            // Positional children are not sorted, but still enter their AST
+            // path: a nested field may itself record a sorted child list.
+            sink.child(NodeRef::Site(site),node(arg),|sink|visit(sink,at,arg,index));
         }
     }
 }
@@ -226,7 +254,9 @@ pub(super) fn input<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, index: usize,
     sink.len(input.head.len());
     for (index, site) in input.head.iter().enumerate() {
         let head = sink.open(at, Tag::Head, index, Open::Head);
-        self::site(sink, head, site, &[], None);
+        // A head site owns its own children, not the input's BODY/sibling
+        // sites. Keep every recorded list anchored at that actual node.
+        sink.child(NodeRef::InstanceInput(input),NodeRef::Site(site),|sink|self::site(sink, head, site, &[], None));
     }
     let body = input.body.value();
     sink.child(NodeRef::InstanceInput(input), NodeRef::Body(body), |sink| self::body(sink, at, Tag::Body, 0, body));
@@ -241,11 +271,13 @@ pub(super) fn choose<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, index: usize
     }
     sink.columns(at, &choose.candidate_columns, Some(&RelationRef::Declared(choose.name.clone())));
     let from = choose.from.value();
-    sink.child(parent, NodeRef::Body(from), |sink| self::body(sink, at, Tag::Body, 0, from));
+    sink.child(parent, NodeRef::Body(from), |sink| body_order(sink, at, Tag::Body, 0, from, true));
     sink.choose_from_inside_for(choose);
     sink.len(choose.never.len());
     for (index, never) in choose.never.iter().enumerate() {
-        sink.child(parent, NodeRef::Body(never.value()), |sink| self::body(sink, at, Tag::Part, index, never.value()));
+        sink.child(parent, NodeRef::Body(never.value()), |sink| {
+            body_order(sink, at, Tag::Part, index, never.value(), true);
+        });
     }
 }
 
