@@ -8,6 +8,7 @@ witness result commits immediately, independently of every other pair.
 from pathlib import Path as _StudyPath
 import sys as _study_sys
 _study_sys.path.insert(0, str(_StudyPath(__file__).resolve().parents[3]))
+_study_sys.path.insert(0, str(_StudyPath(__file__).resolve().parent))
 from study_paths import CODE_ROOT, DATA_ROOT, MAIN_ROOT, REPO_ROOT, data_path
 import argparse
 from collections import Counter
@@ -47,11 +48,11 @@ def valid_base(row):
 
 
 class Pass:
-    def __init__(self,args,ev):
+    def __init__(self,args,ev,*,streaming=False):
         self.args=args;self.ev=ev;self.start=time.monotonic();self.last=0
         self.phase=None;self.phase_start=self.start
         self.base=sqlite3.connect(args.base.resolve().as_uri()+'?mode=ro',uri=True)
-        self.base.execute('BEGIN')
+        if not streaming:self.base.execute('BEGIN')
         files=set(HERE/n for n in ('step2_check.py','witness_test.py','fact_objects.py',
             'grade_store.py','run.py','source_read.py','source_bindings.py'))
         files.update(STUDY/'judgetool'/n for n in ('evaluator.py','raw_body.py','tables.py',
@@ -85,10 +86,10 @@ class Pass:
         self.objects=FactObjects(self.db);self.db.commit()
         self.work=[]
         self.checker=Checker(ev,verify_seconds=args.verify_seconds)
-        self.counts=Counter();self.tasks={};self.base_hashes={};self.journal_pair=None;self.journal_values={};self.receipt_cache={};self.total=self.base.execute('SELECT count(*) FROM pairs').fetchone()[0]
+        self.counts=Counter();self.tasks={};self.base_hashes={};self.journal_pair=None;self.journal_values={};self.receipt_cache={};self.total=0 if streaming else self.base.execute('SELECT count(*) FROM pairs').fetchone()[0]
         self.compatible={tuple(value.split(':',1)) for value in args.compatible_boolean_producer}
         self.retry_unknown=set()
-        if args.retry_unknown:
+        if args.retry_unknown and not streaming:
             for pair,assignment,payload in self.db.execute('SELECT pair_id,assignment,payload FROM witness_tests'):
                 if json.loads(payload).get('test_verified') is None:self.retry_unknown.add((pair,assignment))
         self.retry_pairs={pair for pair,assignment in self.retry_unknown}
@@ -291,6 +292,62 @@ class Pass:
             code_sha256=self.store.code,config_sha256=self.store.config_hash,
             elapsed_seconds=time.monotonic()-self.start)
         print(json.dumps(summary,sort_keys=True),file=sys.stderr,flush=True)
+
+
+class WitnessTestSession:
+    """Sequential per-sample TEST checker; base reads see newly written pairs.
+
+    Only witness-test facts go into population_passes/witness-tests.sqlite3.
+    SourceReader and the evaluator are reused, with no population scan.
+    """
+    def __init__(self,*,base,population_passes,config,source_reader=None,
+                 deadline=30,verify_seconds=5,artifacts=None):
+        from types import SimpleNamespace
+        from source_read import SourceReader
+        sys.path.insert(0,str(CODE_ROOT/'judgetool'))
+        from evaluator import ReplayEvaluator
+        root=Path(population_passes);root.mkdir(parents=True,exist_ok=True)
+        self.sources=source_reader if source_reader is not None else SourceReader(CODE_ROOT)
+        self.owns_sources=source_reader is None
+        self.ev=ReplayEvaluator(config=Path(config),deadline=deadline,
+            artifacts=Path(artifacts) if artifacts is not None else root/'witness-artifacts')
+        args=SimpleNamespace(base=Path(base),output=root/'witness-tests.sqlite3',
+            verify_seconds=verify_seconds,compatible_boolean_producer=[],
+            reuse_completed_booleans=False,retry_unknown=False)
+        try:self.pass_=Pass(args,self.ev,streaming=True)
+        except BaseException:
+            self.ev.close()
+            if self.owns_sources:self.sources.close()
+            raise
+
+    def check_pair(self,pair_id,*,retry_unknown=False):
+        return check_one(pair_id,self,retry_unknown=retry_unknown)
+
+    def close(self):
+        self.pass_.base.close();self.pass_.db.close();self.ev.close()
+        if self.owns_sources:self.sources.close()
+
+
+def check_one(pair_id,session,*,retry_unknown=False):
+    """Resume/apply only this pair's train witnesses; no search or grade write."""
+    worker=session.pass_;base=worker.get_base(pair_id)
+    worker.journal_pair=None;worker.journal_values={}
+    items=[item for item in base.get('per_assignment',[]) if train_witness(item)]
+    if retry_unknown:
+        for item in items:
+            row=worker.db.execute('SELECT payload FROM witness_tests WHERE pair_id=? AND assignment=?',
+                                 (pair_id,item['assignment'])).fetchone()
+            if row:
+                packed=json.loads(row[0])
+                if unpack(worker.db,packed.get('test_verified')) is None:
+                    worker.retry_unknown.add((pair_id,item['assignment']))
+    if any(worker.journal(base,item) is None for item in items):
+        record=None;error=None
+        try:record=session.sources.record(base)
+        except (OSError,EOFError,ValueError,KeyError,StopIteration) as exc:error=exc
+        worker.evaluate_pair(pair_id,record,error)
+    # Stored base TEST results remain virtual; journal() returns their origin.
+    return dict(pair_id=pair_id,checks=[worker.journal(base,item) for item in items])
 
 
 def main():

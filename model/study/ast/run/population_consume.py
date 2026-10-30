@@ -21,6 +21,7 @@ HERE=Path(__file__).resolve().parent
 sys.path[:0]=[str(HERE/'mech'),str(HERE),str(HERE.parents[1])]
 from study_paths import DATA_ROOT
 from run import canonical,digest,pair_key,SCHEMA
+from judge3.framed_jsonl import JsonlReader,JsonlWriter,iter_json
 
 
 def intact(row,source):
@@ -92,9 +93,9 @@ def candidates(population,stream):
         finally:v.close()
     if stream:
         stream=Path(stream).resolve()
-        with stream.open() as f:
-            for line in f:
-                if not line.endswith('\n'):raise ValueError('incomplete sampler tail; finish or truncate before importing')
+        with JsonlReader(stream) as reader:
+            for line in reader.iter_lines():
+                if not line.endswith(b'\n'):raise ValueError('incomplete sampler tail; finish or truncate before importing')
                 env=json.loads(line)
                 if env['schema']!='study-candidate-v1':raise ValueError('unknown candidate stream')
                 def ref(sha):return dict(path=str(stream.parent/'objects'/(sha+'.json')),sha256=sha)
@@ -243,123 +244,193 @@ def plan(a,db):
     emit(start,counts['members'],counts['members'],**counts)
 
 
-def materialize(a,db):
+class MaterializeSession:
+    """Sequential per-worker native state; reuse across members, close at end.
+
+    args is the existing CLI settings namespace; database is the population
+    membership connection. No task evaluation happens in the constructor.
+    """
+    def __init__(self,args,database):
+        self.a=args;self.db=database;self.current=None;self.store=None;self.task_hashes={}
+        self.ev=self.gold=self.dep=self.relations=self.observations=None
+        self.filter_cache=self.payload_cache=self.task_data=None
+        a=args;db=database
+        import arclog
+        import corpus as c
+        from native_storage import NativeStore
+        from filters import graph
+        producer=dict(consumer_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+            native_binary_sha256={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in Path(arclog.__file__).parent.glob('*.so')},
+            settings=dict(seconds=a.seconds,work_cap=a.work_cap,session_mib=a.session_mib))
+        producer_sha=digest(producer)
+        with db:db.execute('INSERT OR IGNORE INTO metadata VALUES (?,?)',('producer:'+producer_sha,canonical(producer)))
+        settings=arclog.DecodeSettings(deadline_seconds=a.seconds,table_work_cap=a.work_cap,rule_tests=False)
+        self.settings=settings;self.producer_sha=producer_sha
+
+    def close(self):
+        if self.store:self.store.close();self.store=None
+
+
+def _member_pair(member):
+    if member.get('identity'):return digest(pair_key(member))
+    return digest(dict(schema='whole-body-candidate-v1',candidate_id=member['sampler']['candidate_id']))
+
+
+def materialize_one(member,session,*,pair_id=None,input_sha256=None):
+    """Materialize one member durably, or resume its observation/diagnostic."""
+    a=session.a;db=session.db;pair=pair_id or _member_pair(member);task=member['task']
+    inputs=input_sha256 or member_inputs(member)
+    existing=observation(db,pair)
+    if existing is not None:
+        known=db.execute('SELECT input_sha256 FROM members WHERE pair_id=?',(pair,)).fetchone()
+        if known and known[0]!=inputs:raise ValueError('population member inputs changed: '+pair)
+        return dict(status='resumed_observation',pair_id=pair,locator=existing)
     import arclog
     import corpus as c
     from native_storage import NativeStore
     from filters import graph
-    producer=dict(consumer_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-        native_binary_sha256={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in Path(arclog.__file__).parent.glob('*.so')},
-        settings=dict(seconds=a.seconds,work_cap=a.work_cap,session_mib=a.session_mib))
-    producer_sha=digest(producer)
-    with db:db.execute('INSERT OR IGNORE INTO metadata VALUES (?,?)',('producer:'+producer_sha,canonical(producer)))
-    settings=arclog.DecodeSettings(deadline_seconds=a.seconds,table_work_cap=a.work_cap,rule_tests=False)
-    pending=list(db.execute('SELECT pair_id,input_sha256,payload FROM members WHERE pair_id NOT IN (SELECT pair_id FROM observations) ORDER BY json_extract(payload,\'$.task\'),json_extract(payload,\'$.case\')'))
-    start=time.monotonic();counts=Counter();current=None;store=None
+    settings=session.settings;producer_sha=session.producer_sha
+    current=session.current;store=session.store;ev=session.ev;gold=session.gold
+    dep=session.dep;relations=session.relations;observations=session.observations
+    filter_cache=session.filter_cache;payload_cache=session.payload_cache;task_data=session.task_data
+    counts=Counter()
     class AbsoluteStore(NativeStore):
         def block(self,*args,**kwargs):
             ref=super().block(*args,**kwargs);ref['path']=str(self.root/'native/tables.pack');return ref
     try:
-        for done,(pair,inputs,payload) in enumerate(pending,1):
-            member=json.loads(payload)
-            # Recover a source atomically published just before a process died
-            # between file publication and SQLite commit. Never replay it.
-            orphan_root=a.output.parent/'observations'/pair
-            orphan=orphan_root/member['task']/'pairs.jsonl.gz'
-            if orphan.exists():
-                try:
-                    with gzip.open(orphan,'rt') as f:saved=json.loads(next(f))
-                    if saved.get('population_inputs')==inputs and digest(pair_key(saved))==pair:
-                        loc=dict(corpus=str(orphan_root),task=member['task'],file=orphan.name,line=1,stream='kept',source_sha256=digest(saved))
-                        with db:db.execute('INSERT OR REPLACE INTO observations VALUES (?,?,?)',(pair,loc['source_sha256'],canonical(loc)))
-                        counts['recovered_publication']+=1
-                        emit(start,done,len(pending),**counts)
-                        continue
-                except (OSError,EOFError,ValueError,KeyError,StopIteration):pass
-            prior=db.execute('SELECT input_sha256 FROM attempts WHERE pair_id=?',(pair,)).fetchone()
-            if prior and prior[0]==inputs and not a.retry_failures:
-                counts['resumed_unavailable']+=1
-                emit(start,done,len(pending),**counts)
-                continue
+        # Recover a source atomically published just before a process died
+        # between file publication and SQLite commit. Never replay it.
+        orphan_root=a.output.parent/'observations'/pair
+        orphan=orphan_root/member['task']/'pairs.jsonl'
+        if any(Path(str(orphan)+suffix).exists() for suffix in ('','.zst','.gz')):
             try:
-                if hashlib.sha256((a.tasks/(member['task']+'.json')).read_bytes()).hexdigest()!=member['task_sha256']:raise ValueError('task input changed; create new population membership')
-                construction=member['construction']
-                if construction['kind']!='native_edit_identity':raise ValueError('native whole-body reconstruction adapter unavailable; candidate retained')
-                gold_object=object_value(member['gold']);key=(member['task'],member['case'],member['gold']['sha256'])
-                if key!=current:
-                    if store:store.close()
-                    task=member['task'];task_data=json.loads((a.tasks/(task+'.json')).read_text())
-                    ev=arclog.StudyTaskEvaluator(task,str(a.tasks),settings,session_bytes=a.session_mib*1024*1024,compact=True)
-                    gold=ev.from_stream(gold_object['stream']['ids'],gold_object['stream']['model'])
-                    if gold.sexp()!=gold_object['text']:raise ValueError('stored gold reconstruction differs')
-                    packroot=a.output.parent/'packs'/uuid.uuid4().hex;store=AbsoluteStore(packroot)
-                    dep=graph(gold.sexp());relations=c.GoldRelations(ev,gold,packroot,0,dep,store)
-                    observations=c.GoldObservations();filter_cache={};payload_cache={};current=key
-                point=next(p for p in gold.points() if list(p.body_path)==member['point'] and list(p.clause_path)==member['clause'])
-                if point.kind!=member['kind']:raise ValueError('point kind differs')
-                mutant=gold.construct_identity(canonical(construction['identity']))
-                program=object_value(member['program']);expected=program['text'] if isinstance(program,dict) else program
-                if mutant.sexp()!=expected:raise ValueError('candidate reconstruction differs')
-                ms=mutant.decode_stream();audit=json.loads(mutant.audit_json())
-                if isinstance(program,dict) and (ms[0]!=program['stream']['ids'] or list(ms[1])!=program['stream']['model']):raise ValueError('sampler native program stream differs')
-                if audit['changed_atoms']!=member['K']:raise ValueError('candidate edit count differs')
-                row={k:member[k] for k in ('task','case','point','clause','kind','K','operation','identity')}
-                row.update(type='pair',record_format=c.RECORD_FORMAT,programs=dict(gold=gold.sexp(),mutant=mutant.sexp()),gold_sexp=gold.sexp(),mutant_sexp=mutant.sexp(),mutant_stream=dict(ids=ms[0],model=list(ms[1]),paths=ms[2]),audit=audit,
-                    relation_source_names=json.loads(gold.relation_source_names_json(str(c.MAIN_ROOT/'work/arclog/gen'),task,member['case'])),producer_ref=producer_sha,population_inputs=inputs)
-                row,timings,_=c.observe_constructed(row,ev,gold,point,mutant,len(task_data['train']),dep,relations,store,observations,filter_cache,payload_cache)
-                row['timings']=timings
-                store.pack.flush();os.fsync(store.pack.fileno())
-                root=a.output.parent/'observations'/pair;destination=root/task;destination.mkdir(parents=True,exist_ok=True)
-                # Canonical source layout permits every existing pass to read
-                # this record, with absolute immutable native-pack references.
-                with (root/'run.json').open('w') as f:
-                    f.write(canonical(dict(tasks=str(a.tasks.resolve()))));f.flush();os.fsync(f.fileno())
-                path=destination/'pairs.jsonl.gz';tmp=path.with_suffix('.tmp')
-                with gzip.open(tmp,'wt',compresslevel=1) as f:f.write(canonical(row)+'\n')
-                with tmp.open('rb') as f:os.fsync(f.fileno())
-                os.replace(tmp,path)
-                for directory_path in (destination,root,root.parent,store.root/'native',store.root,store.root.parent,a.output.parent):
-                    directory=os.open(directory_path,os.O_RDONLY)
-                    try:os.fsync(directory)
-                    finally:os.close(directory)
-                locator=dict(corpus=str(root),task=task,file=path.name,line=1,stream='kept',source_sha256=digest(row))
-                with db:db.execute('INSERT OR REPLACE INTO observations VALUES (?,?,?)',(pair,digest(row),canonical(locator)))
-                counts['written']+=1
-            except Exception as error:
-                with db:db.execute('INSERT OR REPLACE INTO attempts VALUES (?,?,?)',(pair,inputs,canonical(dict(reason=str(error),error_type=type(error).__name__))))
-                counts['unavailable']+=1
-            emit(start,done,len(pending),**counts)
+                with JsonlReader(orphan) as reader:
+                    saved=json.loads(reader.read_line(1));orphan=reader.path
+                if saved.get('population_inputs')==inputs and digest(pair_key(saved))==pair:
+                    loc=dict(corpus=str(orphan_root),task=member['task'],file=orphan.name,line=1,stream='kept',source_sha256=digest(saved))
+                    with db:db.execute('INSERT OR REPLACE INTO observations VALUES (?,?,?)',(pair,loc['source_sha256'],canonical(loc)))
+                    counts['recovered_publication']+=1
+                    return dict(status='recovered_publication',pair_id=pair,locator=observation(db,pair))
+            except (OSError,EOFError,ValueError,KeyError,StopIteration):pass
+        prior=db.execute('SELECT input_sha256 FROM attempts WHERE pair_id=?',(pair,)).fetchone()
+        if prior and prior[0]==inputs and not a.retry_failures:
+            counts['resumed_unavailable']+=1
+            return dict(status='resumed_unavailable',pair_id=pair)
+        try:
+            task_path=a.tasks/(task+'.json');stat=task_path.stat()
+            signature=(stat.st_dev,stat.st_ino,stat.st_size,stat.st_mtime_ns,stat.st_ctime_ns)
+            cached=session.task_hashes.get(task)
+            if cached is None or cached[0]!=signature:
+                cached=(signature,hashlib.sha256(task_path.read_bytes()).hexdigest());session.task_hashes[task]=cached
+            if cached[1]!=member['task_sha256']:raise ValueError('task input changed; create new population membership')
+            construction=member['construction']
+            if construction['kind']!='native_edit_identity':raise ValueError('native whole-body reconstruction adapter unavailable; candidate retained')
+            gold_object=object_value(member['gold']);key=(member['task'],member['case'],member['gold']['sha256'])
+            if key!=current:
+                if store:store.close()
+                current=None;store=None
+                task=member['task'];task_data=json.loads((a.tasks/(task+'.json')).read_text())
+                ev=arclog.StudyTaskEvaluator(task,str(a.tasks),settings,session_bytes=a.session_mib*1024*1024,compact=True)
+                gold=ev.from_stream(gold_object['stream']['ids'],gold_object['stream']['model'])
+                if gold.sexp()!=gold_object['text']:raise ValueError('stored gold reconstruction differs')
+                packroot=a.output.parent/'packs'/uuid.uuid4().hex;store=AbsoluteStore(packroot)
+                dep=graph(gold.sexp());relations=c.GoldRelations(ev,gold,packroot,0,dep,store)
+                observations=c.GoldObservations();filter_cache={};payload_cache={};current=key
+            point=next(p for p in gold.points() if list(p.body_path)==member['point'] and list(p.clause_path)==member['clause'])
+            if point.kind!=member['kind']:raise ValueError('point kind differs')
+            mutant=gold.construct_identity(canonical(construction['identity']))
+            program=object_value(member['program']);expected=program['text'] if isinstance(program,dict) else program
+            if mutant.sexp()!=expected:raise ValueError('candidate reconstruction differs')
+            ms=mutant.decode_stream();audit=json.loads(mutant.audit_json())
+            if isinstance(program,dict) and (ms[0]!=program['stream']['ids'] or list(ms[1])!=program['stream']['model']):raise ValueError('sampler native program stream differs')
+            if audit['changed_atoms']!=member['K']:raise ValueError('candidate edit count differs')
+            row={k:member[k] for k in ('task','case','point','clause','kind','K','operation','identity')}
+            row.update(type='pair',record_format=c.RECORD_FORMAT,programs=dict(gold=gold.sexp(),mutant=mutant.sexp()),gold_sexp=gold.sexp(),mutant_sexp=mutant.sexp(),mutant_stream=dict(ids=ms[0],model=list(ms[1]),paths=ms[2]),audit=audit,
+                relation_source_names=json.loads(gold.relation_source_names_json(str(c.MAIN_ROOT/'work/arclog/gen'),task,member['case'])),producer_ref=producer_sha,population_inputs=inputs)
+            row,timings,_=c.observe_constructed(row,ev,gold,point,mutant,len(task_data['train']),dep,relations,store,observations,filter_cache,payload_cache)
+            row['timings']=timings
+            store.pack.flush();os.fsync(store.pack.fileno())
+            root=a.output.parent/'observations'/pair;destination=root/task;destination.mkdir(parents=True,exist_ok=True)
+            # Canonical source layout permits every existing pass to read
+            # this record, with absolute immutable native-pack references.
+            with (root/'run.json').open('w') as f:
+                f.write(canonical(dict(tasks=str(a.tasks.resolve()))));f.flush();os.fsync(f.fileno())
+            path=destination/'pairs.jsonl.zst'
+            with JsonlWriter(path) as out:
+                if out.committed_lines!=0:raise ValueError('published observation differs; preserve existing source')
+                out.write(row)
+            for directory_path in (destination,root,root.parent,store.root/'native',store.root,store.root.parent,a.output.parent):
+                directory=os.open(directory_path,os.O_RDONLY)
+                try:os.fsync(directory)
+                finally:os.close(directory)
+            locator=dict(corpus=str(root),task=task,file=path.name,line=1,stream='kept',source_sha256=digest(row))
+            with db:db.execute('INSERT OR REPLACE INTO observations VALUES (?,?,?)',(pair,digest(row),canonical(locator)))
+            counts['written']+=1
+        except Exception as error:
+            with db:db.execute('INSERT OR REPLACE INTO attempts VALUES (?,?,?)',(pair,inputs,canonical(dict(reason=str(error),error_type=type(error).__name__))))
+            counts['unavailable']+=1
     finally:
-        if store:store.close()
+        for name in ('current','store','ev','gold','dep','relations','observations',
+                     'filter_cache','payload_cache','task_data'):
+            setattr(session,name,locals()[name])
+    status=next(iter(counts),'unavailable')
+    return dict(status=status,pair_id=pair,locator=observation(db,pair))
+
+
+def materialize(a,db):
+    pending=list(db.execute("SELECT pair_id,input_sha256,payload FROM members WHERE pair_id NOT IN (SELECT pair_id FROM observations) ORDER BY json_extract(payload,'$.task'),json_extract(payload,'$.case')"))
+    start=time.monotonic();counts=Counter();session=MaterializeSession(a,db)
+    try:
+        for done,(pair,inputs,payload) in enumerate(pending,1):
+            result=materialize_one(json.loads(payload),session,pair_id=pair,input_sha256=inputs)
+            counts[result['status']]+=1;emit(start,done,len(pending),**counts)
+    finally:session.close()
+
+
+class LabelSession:
+    """One sequential base labeler per process; owns the canonical run globals."""
+    def __init__(self,args,database):
+        import run as r
+        from threading import Event
+        class Events:
+            def put(self,value):pass
+        self.a=args;self.db=database;self.r=r
+        manifest=r.code_manifest(HERE,HERE/'mech/algorithm.py')
+        output=args.output.parent/'labels.sqlite3';r.setup(output)
+        r.initialize(str(HERE),manifest,str(output),dict(seconds=args.seconds,baseline_seconds=.5,semantics=r.SEMANTICS),False,Events(),Event())
+        self.old=ro(args.base)
+
+    def close(self):
+        self.old.close();self.r.DB.close()
+
+
+def label_one(pair,session):
+    """Label/resume one published population observation. No population scan."""
+    a=session.a;db=session.db;r=session.r
+    row=db.execute('SELECT source_sha256,locator FROM observations WHERE pair_id=?',(pair,)).fetchone()
+    if row is None:return dict(status='observation_unavailable',pair_id=pair)
+    sha,text=row
+    prior=session.old.execute('SELECT source_sha256,result_sha256,record_json FROM pairs WHERE pair_id=?',(pair,)).fetchone()
+    if intact(prior,sha):return dict(status='reused_base',pair_id=pair,result=json.loads(prior[2]))
+    own=r.DB.execute('SELECT source_sha256,result_sha256,record_json FROM pairs WHERE pair_id=?',(pair,)).fetchone()
+    if intact(own,sha) and not (a.retry_failures and json.loads(own[2]).get('error')):
+        return dict(status='resumed_own',pair_id=pair,result=json.loads(own[2]))
+    loc=json.loads(text);rec=read_source(loc)
+    if set(rec.get('rejection_reasons',[]))-{'post_filter_quota','recoverable_gold'}:
+        return dict(status='filtered',pair_id=pair)
+    r.label_record(rec,Path(loc['corpus'])/rec['task'],loc['stream'],loc['file'],loc['line'])
+    result=r.DB.execute('SELECT record_json FROM pairs WHERE pair_id=?',(pair,)).fetchone()
+    return dict(status='label_members',pair_id=pair,result=json.loads(result[0]))
 
 
 def label(a,db):
-    import run as r
-    from threading import Event
-    class Events:
-        def put(self,value):pass
-    manifest=r.code_manifest(HERE,HERE/'mech/algorithm.py')
-    output=a.output.parent/'labels.sqlite3';r.setup(output)
-    r.initialize(str(HERE),manifest,str(output),dict(seconds=a.seconds,baseline_seconds=.5,semantics=r.SEMANTICS),False,Events(),Event())
-    old=ro(a.base);start=time.monotonic();counts=Counter();rows=list(db.execute('SELECT pair_id,source_sha256,locator FROM observations'))
-    for done,(pair,sha,text) in enumerate(rows,1):
-        prior=old.execute('SELECT source_sha256,result_sha256,record_json FROM pairs WHERE pair_id=?',(pair,)).fetchone()
-        if intact(prior,sha):counts['reused_base']+=1
-        else:
-            own=r.DB.execute('SELECT source_sha256,result_sha256,record_json FROM pairs WHERE pair_id=?',(pair,)).fetchone()
-            if intact(own,sha) and not (a.retry_failures and json.loads(own[2]).get('error')):
-                counts['resumed_own']+=1
-                emit(start,done,len(rows),**counts)
-                continue
-            loc=json.loads(text);rec=read_source(loc)
-            if set(rec.get('rejection_reasons',[]))-{'post_filter_quota','recoverable_gold'}:counts['filtered']+=1
-            else:
-                # A raw observation omitted by old quota is not a semantic filter.
-                # Feed the exact source record, without rewriting its retained bit.
-                r.label_record(rec,Path(loc['corpus'])/rec['task'],loc['stream'],loc['file'],loc['line'])
-                counts['label_members']+=1
-        emit(start,done,len(rows),**counts)
-    old.close();r.DB.close()
+    session=LabelSession(a,db);start=time.monotonic();counts=Counter()
+    rows=list(db.execute('SELECT pair_id FROM observations'))
+    try:
+        for done,(pair,) in enumerate(rows,1):
+            result=label_one(pair,session);counts[result['status']]+=1
+            emit(start,done,len(rows),**counts)
+    finally:session.close()
 
 
 def main():
