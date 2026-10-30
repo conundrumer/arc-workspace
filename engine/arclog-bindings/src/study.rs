@@ -277,6 +277,22 @@ impl PyStudyProgram {
         Ok((specs.into_iter().map(|inner| PyMutationSpec { inner }).collect(), stats.json().to_string()))
     }
 
+    /// Only whole-block proposals; previous atomic draws are not revisited.
+    #[pyo3(signature = (point, at, count, seed, *, source_revision, task, case))]
+    fn draw_block_substitutes_at(&self, py: Python<'_>, point: &PyMutationPoint,
+        at: Vec<u32>, count: usize, seed: u64, source_revision: String,
+        task: String, case: String) -> PyResult<(Vec<PyMutationSpec>, String)> {
+        if source_revision.is_empty() || task.is_empty() || case.is_empty() {
+            return Err(PyValueError::new_err("source revision, task and case must be nonempty"));
+        }
+        let at = arclog::program::path::NodePath(at.into_iter().map(arclog::program::path::PathStep).collect());
+        let origin = arclog::mutation::Source { revision:source_revision, task, case };
+        let (specs, stats) = py.detach(|| self.program.draw_block_substitutes_at(&point.inner,
+            &at, count, seed, origin, &self.settings, Registry::get()))
+            .map_err(PyValueError::new_err)?;
+        Ok((specs.into_iter().map(|inner| PyMutationSpec { inner }).collect(), stats.json().to_string()))
+    }
+
     /// Compare draw-kind counts before filters, using the legacy traversal
     /// and the production fair traversal over the same real AST/domain.
     #[pyo3(signature = (point, k, count, seed, *, source_revision, task, case, operation="mixed"))]

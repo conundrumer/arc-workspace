@@ -44,3 +44,38 @@ reused_selected, new_selected, selected_total, added proposals/attempts/pruning,
 bounds and unavailable facts. `--report-only` uses read-only SQLite connections.
 No grades or labels are written. Predecessor objects remain necessary to read the
 new population; retain both databases.
+
+## Part 3: whole-block delta
+
+`--profile blocks-v3` routes only unfilled OR/IF/ALL/NOT-form occurrences from
+its predecessor. It calls `draw_block_substitutes_at`; no atomic proposal or
+previously completed draw is repeated. Use v2 as the parent and a separate v3
+output. The same read-only View joins all three journals for pre-label counts.
+
+OR proposals select one branch or omit one branch. IF proposals select the
+successful then path or the guarded else path, swap branches, or replace the
+conditional with a union. ALL proposals complement the universal, require an
+existential match, require no match, or negate the body. These are candidate AST
+transformations; native checks decide which are valid at each original scope.
+No test rows, output labels or fitted result influence their construction.
+
+A selected path must retain exactly the original block's exported labels.
+Exports come from the canonical native `read::columns::made_labels` policy.
+The constructor uses two alpha-distinct copies to keep private path variables
+existential under OR's native export intersection. Required first-branch makers
+are promoted at positive sites; the second copy joins shared exports and gives
+private variables new native IDs. The ordinary checker authenticates binding
+modes, scopes, types, frames and clause interface. No Python scope policy or
+second evaluator is introduced. OR enumeration is bounded to the first 64
+source branches; a proposal-bound receipt records larger cases.
+
+The native identity JSON now recursively encodes bodies/blocks while keeping
+historical atomic payloads byte-compatible. Public rehydration authenticates
+both new block choices and already-stored typed-interface/equality choices.
+No old draw needs to run again. Unit/empty-record sites inside blocks are checked
+by the canonical native schema/checker. The editor preserves enclosing heads,
+rejects overlapping edit paths, and refreshes display layout for compound
+replacements using gold's namespace. The audit counts one selected whole
+conjunct as one edit, excludes its descendants from untouched-leaf claims,
+and retains exact checks for all leaves outside that subtree. Source-path
+correspondence marks the replaced subtree without guessing descendant matches.

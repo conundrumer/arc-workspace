@@ -6,6 +6,7 @@
 pub mod edit;
 mod identity;
 mod typed;
+mod blocks;
 mod stored_prune;
 #[path = "study_replay.rs"] mod study_replay;
 
@@ -223,7 +224,17 @@ impl StudyProgram {
         if !Arc::ptr_eq(self.checked(),&point.source) {return Err("point_belongs_to_another_program".into())}
         if !point.atoms.contains(at) {let mut s=DrawStats::default();s.count("occurrence_unsupported_block");return Ok((vec![],s))}
         let mut scoped=point.clone();scoped.atoms=vec![at.clone()];
-        self.draw_profile(&scoped,1,count,seed,"substitute",origin,settings,registry,true,true)
+        self.draw_profile(&scoped,1,count,seed,"substitute",origin,settings,registry,true,1)
+    }
+
+    /// Added-only whole-block substitutions, never historical or typed atoms.
+    pub fn draw_block_substitutes_at(&self,point:&MutationPoint,at:&NodePath,
+        count:usize,seed:u64,origin:Source,settings:&DecodeSettings,registry:&Registry)
+        ->Result<(Vec<MutationSpec>,DrawStats),String> {
+        if !Arc::ptr_eq(self.checked(),&point.source) {return Err("point_belongs_to_another_program".into())}
+        if !blocks::is_site(self,point,at) {let mut s=DrawStats::default();s.count("occurrence_unsupported_block");return Ok((vec![],s))}
+        let mut scoped=point.clone();scoped.atoms=vec![at.clone()];
+        self.draw_profile(&scoped,1,count,seed,"substitute",origin,settings,registry,true,2)
     }
 
     /// Runtime audit on real programs: v5 and v6 use the same fair traversal
@@ -271,12 +282,12 @@ impl StudyProgram {
         registry: &Registry,
         expanded: bool,
     ) -> Result<(Vec<MutationSpec>, DrawStats), String> {
-        self.draw_profile(point,k,count,seed,operation,origin,settings,registry,expanded,false)
+        self.draw_profile(point,k,count,seed,operation,origin,settings,registry,expanded,0)
     }
 
     fn draw_profile(&self, point:&MutationPoint, k:usize, count:usize, seed:u64,
         operation:&str, origin:Source, settings:&DecodeSettings, registry:&Registry,
-        expanded:bool, added_only:bool) -> Result<(Vec<MutationSpec>,DrawStats),String> {
+        expanded:bool, added_profile:u8) -> Result<(Vec<MutationSpec>,DrawStats),String> {
         if !Arc::ptr_eq(self.checked(), &point.source) {
             return Err("point_belongs_to_another_program".into());
         }
@@ -306,8 +317,11 @@ impl StudyProgram {
         for at in &point.atoms {
             let mut unique = BTreeSet::new();
             let mut values = Vec::new();
-            let proposals = if added_only { typed::additions(self,at,registry,&mut stats)? }
-                else { alternatives(self, at, operation, registry, expanded)? };
+            let proposals = match added_profile {
+                1=>typed::additions(self,at,registry,&mut stats)?,
+                2=>blocks::alternatives(self,at,registry,&mut stats)?,
+                _=>alternatives(self, at, operation, registry, expanded)?,
+            };
             for (replacement, kind) in proposals {
                 let key = replacement
                     .as_ref()
@@ -321,7 +335,7 @@ impl StudyProgram {
                         replacement,
                         kind: if kind.starts_with("argument_") {
                             "argument"
-                        } else {
+                        } else if kind.starts_with("block_") { "block" } else {
                             kind
                         },
                         choice_kind: kind,
@@ -784,9 +798,12 @@ impl ValidMutant {
         let mutant = NodeRef::Program(self.program().program().value());
         let mut gold_atoms = Vec::new();
         leaves(gold, &NodePath::default(), &mut gold_atoms);
+        gold_atoms.extend(self.spec.edits.iter().map(|e|e.at.clone()));
+        gold_atoms.sort();gold_atoms.dedup();
         let mut untouched = 0;
         let mut changed = 0;
         for path in gold_atoms {
+            if self.spec.edits.iter().any(|e|path!=e.at && path.0.starts_with(&e.at.0)) {continue}
             let Some(NodeRef::Conjunct(before)) = node_at(gold, &path) else {
                 continue;
             };
@@ -1362,7 +1379,14 @@ pub(crate) fn conjunct_json(c: &Conjunct) -> Value {
         json!({"node":"comparison", "op":format!("{:?}",c.op), "first":{"label":c.first.label.0,"fresh":c.first.fresh},
                "second":match c.second { Operand::Zero => json!({"zero":true}), Operand::Label(l) => json!({"label":l.label.0,"fresh":l.fresh}) }})
     } else {
-        unreachable!("a mutation replaces a leaf atom only")
+        fn body(b:&Node<Body>)->Value {json!(b.value().conjuncts.iter().map(conjunct_json).collect::<Vec<_>>())}
+        match c {
+            Conjunct::Or(branches)=>json!({"node":"or","branches":branches.iter().map(body).collect::<Vec<_>>()}),
+            Conjunct::If{test,then,otherwise}=>json!({"node":"if","test":body(test),"then":body(then),"otherwise":body(otherwise)}),
+            Conjunct::All{domain,body:b}=>json!({"node":"all","domain":body(domain),"body":body(b)}),
+            Conjunct::Not(Negated::Form(inner))=>json!({"node":"not_form","inner":conjunct_json(inner)}),
+            _=>unreachable!("all conjunct kinds covered"),
+        }
     }
 }
 

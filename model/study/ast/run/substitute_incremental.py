@@ -113,7 +113,7 @@ def main():
     parser.add_argument('--parent', type=Path)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--counts', type=Path)
-    parser.add_argument('--profile', choices=['typed-v2'], default='typed-v2')
+    parser.add_argument('--profile', choices=['typed-v2', 'blocks-v3'], default='typed-v2')
     parser.add_argument('--tasks', type=Path, default=DATA_ROOT/'ast/engine/data/tasks')
     parser.add_argument('--deadline', type=float, default=1)
     parser.add_argument('--seed', type=int, default=4231)

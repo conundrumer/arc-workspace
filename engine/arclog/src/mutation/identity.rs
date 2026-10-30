@@ -70,9 +70,8 @@ fn site(v: &Value) -> Result<Site, String> {
             }
         })
         .collect::<Result<Vec<_>, String>>()?;
-    if args.is_empty() {
-        return Err("identity: empty site".into());
-    }
+    // Empty record/Unit sites are legitimate inside a serialized whole block.
+    // The canonical native checker still authenticates their declared schema.
     Ok(Site {
         column: column(&v["column"])?,
         value: SiteValue { args: args.into() },
@@ -129,6 +128,9 @@ fn constraint_label(v: &Value) -> Result<ConstraintLabel, String> {
             .ok_or_else(|| "identity: expected fresh boolean".to_string())?,
     })
 }
+fn body(v:&Value)->Result<Node<Body>,String> {
+    Ok(Node::new(Body{conjuncts:array(v)?.iter().map(conjunct).collect::<Result<Vec<_>,_>>()?.into()}))
+}
 fn conjunct(v: &Value) -> Result<Conjunct, String> {
     Ok(match text(&v["node"])? {
         "atom" | "not_atom" => {
@@ -163,7 +165,15 @@ fn conjunct(v: &Value) -> Result<Conjunct, String> {
                 Operand::Label(constraint_label(&v["second"])?)
             },
         }),
-        _ => return Err("identity: replacement must be a leaf atom or comparison".into()),
+        "or"=> {
+            let branches=array(&v["branches"])?;
+            if branches.is_empty() {return Err("identity: empty OR".into())}
+            Conjunct::Or(branches.iter().map(body).collect::<Result<Vec<_>,_>>()?.into())
+        },
+        "if"=>Conjunct::If{test:body(&v["test"])?,then:body(&v["then"])?,otherwise:body(&v["otherwise"])?},
+        "all"=>Conjunct::All{domain:body(&v["domain"])?,body:body(&v["body"])?},
+        "not_form"=>Conjunct::Not(Negated::Form(Arc::new(conjunct(&v["inner"])?))),
+        _ => return Err("identity: unknown conjunct kind".into()),
     })
 }
 
@@ -214,7 +224,8 @@ impl StudyProgram {
         let mut unique = BTreeSet::new();
         for e in array(&identity["edits"])? {
             let at = path(&e["at"])?;
-            if !point.atoms.contains(&at) || !unique.insert(at.clone()) {
+            let block=blocks::is_site(self,&point,&at) && e["kind"]=="block";
+            if (!point.atoms.contains(&at) && !block) || !unique.insert(at.clone()) {
                 return Err("identity: repeated or non-atom edit path".into());
             }
             let replacement = if e["replacement"].is_null() {
@@ -225,12 +236,16 @@ impl StudyProgram {
             let expected = text(&e["kind"])?;
             // Check this stored primitive at the original site; never enumerate
             // K-edit assignments or draw a replacement for it.
-            let choice = alternatives(self, &at, "mixed", registry, true)?
-                .into_iter()
+            let choices=if expected=="block" {
+                blocks::alternatives(self,&at,registry,&mut DrawStats::default())?
+            } else if expected.starts_with("typed_") {
+                typed::additions(self,&at,registry,&mut DrawStats::default())?
+            } else {alternatives(self, &at, "mixed", registry, true)?};
+            let choice = choices.into_iter()
                 .find(|(c, kind)| {
                     let kind = if kind.starts_with("argument_") {
                         "argument"
-                    } else {
+                    } else if kind.starts_with("block_") {"block"} else {
                         *kind
                     };
                     kind == expected
@@ -244,6 +259,9 @@ impl StudyProgram {
                 "relation" => "relation",
                 "comparison" => "comparison",
                 "delete" => "delete",
+                "typed_interface" => "typed_interface",
+                "typed_equality" => "typed_equality",
+                "block" => "block",
                 _ => return Err("identity: unknown edit kind".into()),
             };
             edits.push(AtomEdit {
@@ -297,7 +315,7 @@ pub(super) fn metadata_edits(program: &StudyProgram, identity: &Value) -> Result
     let mut edits=Vec::new();let mut seen=BTreeSet::new();
     for e in array(&identity["edits"])? {
         let at=path(&e["at"])?;
-        if !point.atoms.contains(&at)||!seen.insert(at.clone()) {
+        if (!point.atoms.contains(&at)&&!blocks::is_site(program,&point,&at))||!seen.insert(at.clone()) {
             return Err(format!("recorded edit has repeated/non-atom address {at:?}"));
         }
         let replacement=if e["replacement"].is_null(){None}else{Some(conjunct(&e["replacement"]) ?)};

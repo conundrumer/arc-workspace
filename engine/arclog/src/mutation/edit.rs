@@ -34,6 +34,10 @@ pub fn mapped(at: &NodePath, edits: &[AtomEdit]) -> Option<NodePath> {
 }
 
 pub fn layout(old: Option<&Layout>, edits: &[AtomEdit]) -> Option<Layout> {
+    // Whole-block replacements may allocate private native IDs and reorder
+    // subtree paths. Rebuild display layout with gold's namespace instead of
+    // applying stale per-path elisions/names to those new sites.
+    if edits.iter().any(|e|e.kind=="block" || e.replacement.as_ref().is_some_and(super::blocks::is_block)) {return None}
     let mut result = old?.clone();
     result.nodes = result
         .nodes
@@ -62,6 +66,10 @@ pub fn apply(program: &Node<Program>, edits: &[AtomEdit]) -> Result<Node<Program
         {
             return Err("duplicate_atom_path".into());
         }
+    }
+    let paths=patches.keys().collect::<Vec<_>>();
+    if paths.iter().enumerate().any(|(i,a)|paths.iter().skip(i+1).any(|b|a.0.starts_with(&b.0)||b.0.starts_with(&a.0))) {
+        return Err("overlapping_edit_paths".into());
     }
     let mut used = 0;
     let forms = program
@@ -93,8 +101,8 @@ fn body(old: &Node<Body>, at: &NodePath, patches: &Patches, used: &mut usize) ->
     for (index, conjunct) in old.value().conjuncts.iter().enumerate() {
         let path = at.child(index as u32);
         if let Some(replacement) = patches.get(&path) {
-            // Public construction checks the same leaf condition before here.
-            if conjunct.atom().is_some() || matches!(conjunct, Conjunct::Constraint(_)) {
+            // Admission authenticates the original conjunct and replacement.
+            if conjunct.atom().is_some() || matches!(conjunct, Conjunct::Constraint(_)) || super::blocks::is_block(conjunct) {
                 *used += 1;
                 conjuncts.extend(replacement.clone());
                 continue;
@@ -109,7 +117,7 @@ fn body(old: &Node<Body>, at: &NodePath, patches: &Patches, used: &mut usize) ->
 
 fn wrapped(old: &Conjunct, at: &NodePath, patches: &Patches, used: &mut usize) -> Conjunct {
     if let Some(Some(replacement)) = patches.get(at) {
-        if old.atom().is_some() || matches!(old, Conjunct::Constraint(_)) {
+        if old.atom().is_some() || matches!(old, Conjunct::Constraint(_)) || super::blocks::is_block(old) {
             *used += 1;
             return replacement.clone();
         }
