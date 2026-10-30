@@ -260,6 +260,75 @@ def _native_stream(program):
                 paths=[list(_path(path)) for path in paths])
 
 
+def validate_stream_path_certificate(value, current, source):
+    """Bind native scalar-emission proof to both complete, unmodified streams."""
+    a, b = _native_stream(current), _native_stream(source)
+    if (not isinstance(value, dict)
+            or value.get('schema') != 'arclog-study-stream-path-certificate-v1'
+            or value.get('status') != 'complete'
+            or value.get('current_program_sexp') != current.sexp()
+            or value.get('source_program_sexp') != source.sexp()
+            or value.get('current_stream') != a or value.get('source_stream') != b
+            or value.get('ids_equal') is not True or value.get('model_equal') is not True
+            or value.get('lengths_equal') is not True
+            or a['ids'] != b['ids'] or a['model'] != b['model']
+            or len(a['paths']) != len(b['paths'])
+            or value.get('paths_equal') is not (a['paths'] == b['paths'])
+            or value.get('unproven') != [] or not value.get('vocabulary')):
+        raise Unavailable('native stream-path certificate binding or completeness differs')
+    wanted = {i for i, (x, y) in enumerate(zip(a['paths'], b['paths'])) if x != y}
+    differences = value.get('differences')
+    if not isinstance(differences, list):
+        raise Unavailable('native stream-path difference inventory missing')
+    seen = set()
+    for row in differences:
+        index = row.get('index')
+        if (type(index) is not int or index not in wanted or index in seen
+                or row.get('token_id') != a['ids'][index] or row.get('model') != a['model'][index]
+                or row.get('current_path') != a['paths'][index]
+                or row.get('source_path') != b['paths'][index]
+                or row.get('status') != 'complete'
+                or not isinstance(row.get('proof'), dict) or not row['proof']):
+            raise Unavailable('native scalar-emission difference proof incomplete')
+        for side in ('current', 'source'):
+            witness = row['proof'].get(side)
+            fields = {'argument', 'scope_path', 'role', 'label_slot', 'atom_path',
+                      'atom_token_index', 'scalar_column', 'header_column', 'input', 'lifted'}
+            if not isinstance(witness, dict) or not fields.issubset(witness):
+                raise Unavailable('native scalar-emission witness incomplete')
+        seen.add(index)
+    if seen != wanted:
+        raise Unavailable('native stream-path certificate does not cover every difference')
+    return deepcopy(value)
+
+
+def rehydrate_stored_mutation(engine, gold, identity, stored):
+    """Use native historical admission when available; keep old admission unchanged."""
+    import json
+    method = getattr(gold, 'rehydrate_recorded_identity', None)
+    if method is None:
+        return gold.construct_identity(json.dumps(identity)), None
+    # RecordedIdentityError(stage, message) intentionally propagates unchanged.
+    program, raw = method(json.dumps(identity), stored)
+    certificate = json.loads(raw)
+    required_checks = ('original_point', 'canonical_identity', 'edit_kind', 'atomic_edit',
+        'interfaces', 'makers', 'names', 'whole_program_check', 'held_det_interfaces',
+        'vocabulary', 'unchanged_outside_edits', 'stored_representation')
+    checks = certificate.get('admission_checks')
+    if (certificate.get('schema') != 'arclog-recorded-identity-certificate-v1'
+            or certificate.get('status') != 'complete'
+            or certificate.get('identity') != identity
+            or certificate.get('gold_program_sexp') != gold.sexp()
+            or certificate.get('current_program_sexp') != program.sexp()
+            or certificate.get('stored_program_sexp') != stored.sexp()
+            or certificate.get('generation_membership_checked') is not False
+            or not isinstance(checks, dict)
+            or any(checks.get(name) is not True for name in required_checks)):
+        raise Unavailable('native recorded-identity admission binding incomplete')
+    validate_stream_path_certificate(certificate.get('stream_path_certificate'), program, stored)
+    return program, deepcopy(certificate)
+
+
 def stored_metadata_program(engine, text, settings=None):
     """Keep exact stored writer text when native decode changes its AST paths.
 
@@ -274,7 +343,7 @@ def stored_metadata_program(engine, text, settings=None):
 
 def certified_metadata_program(engine, execution, export, settings=None):
     """Use the handle belonging to the returned presentation export, not execution."""
-    if execution.sexp() == export['program_sexp']:
+    if execution.sexp() == export['program_sexp'] and 'stored_representation' not in export:
         return execution
     import hashlib
     import json
@@ -288,9 +357,14 @@ def certified_metadata_program(engine, execution, export, settings=None):
             or certificate.get('stream_sha256') != digest(_native_stream(execution))):
         raise Unavailable('presentation handle lacks exact stored stream certificate')
     program = stored_metadata_program(engine, export['program_sexp'], settings)
-    if (program.sexp() != export['program_sexp']
-            or _native_stream(program) != _native_stream(execution)):
-        raise Unavailable('presentation handle differs from certified stored stream')
+    if program.sexp() != export['program_sexp']:
+        raise Unavailable('presentation handle differs from certified stored writer')
+    if _native_stream(program) != _native_stream(execution):
+        proofs = [p['certificate'] for p in certificate.get('stream_path_certificates', [])
+                  if p.get('source_index') == 0]
+        if len(proofs) != 1:
+            raise Unavailable('presentation handle lacks native path-difference certificate')
+        validate_stream_path_certificate(proofs[0], execution, program)
     own = dict(export)
     own.pop('stored_representation', None)
     if certificate.get('stored_export_sha256') != digest(own):
@@ -300,7 +374,7 @@ def certified_metadata_program(engine, execution, export, settings=None):
 
 def certify_stored_representation(rehydrated, stored, *, requested_text,
         rehydrated_export, stored_export, mutation_identity,
-        alternate_programs=(), recorded_stream=None):
+        alternate_programs=(), recorded_stream=None, native_admission=None):
     """Certify an exact stored writer representation of one native mutation.
 
     Both handles and their metadata must be from the same native runtime.
@@ -324,11 +398,23 @@ def certify_stored_representation(rehydrated, stored, *, requested_text,
         raise Unavailable('stored native writer representation differs from exact record text')
     expected = _native_stream(rehydrated)
     compared = [stored, *alternate_programs]
-    if any(_native_stream(program) != expected for program in compared):
-        raise Unavailable('native stored/rehydrated ids, model flags or paths differ')
+    path_proofs = []
+    for index, program in enumerate(compared):
+        if _native_stream(program) == expected:
+            continue
+        if index == 0 and native_admission is not None:
+            proof = native_admission['stream_path_certificate']
+        else:
+            current = rehydrated.as_program() if hasattr(rehydrated, 'as_program') else rehydrated
+            method = getattr(current, 'representation_certificate_json', None)
+            if method is None:
+                raise Unavailable('native stored/rehydrated ids, model flags or paths differ')
+            proof = json.loads(method(program))
+        path_proofs.append(dict(source_index=index,
+            certificate=validate_stream_path_certificate(proof, rehydrated, program)))
     if recorded_stream is not None and recorded_stream != expected:
         raise Unavailable('recorded native stream differs from exact rehydrated stream')
-    return dict(schema='native-stored-representation-v1',
+    result = dict(schema='native-stored-representation-v1',
         mutation_identity=deepcopy(mutation_identity),
         rehydrated_program_sexp=rehydrated_export['program_sexp'],
         stored_program_sexp=requested_text,
@@ -339,6 +425,11 @@ def certify_stored_representation(rehydrated, stored, *, requested_text,
         recorded_stream_checked=recorded_stream is not None,
         node_mapping='none; each representation uses its own native export',
         historical_payload_authority=False)
+    if path_proofs:
+        result['stream_path_certificates'] = path_proofs
+    if native_admission is not None:
+        result['native_admission'] = deepcopy(native_admission)
+    return result
 
 
 # Native source implementation fingerprints, not descriptor-name aliases.

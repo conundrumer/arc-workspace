@@ -85,17 +85,18 @@ class Programs:
             require(text == mutant_record['programs']['mutant'], 'requested mutant differs from record')
             gold,gexport,naming=self.load(mutant_record['programs']['gold'],mutant_record)
             require(hasattr(gold,'construct_identity'),'runtime cannot reconstruct native mutation identity')
-            program=gold.construct_identity(json.dumps(mutant_record['identity']))
+            from native_correspondence import rehydrate_stored_mutation, stored_metadata_program
+            stored=stored_metadata_program(self.engine,text,self.settings)
+            program,native_admission=rehydrate_stored_mutation(self.engine,gold,mutant_record['identity'],stored)
             names=json.dumps(gexport['relation_source_names']) if gexport.get('relation_source_names') is not None else None
             require(names is None or hasattr(self.engine,'study_mutant_export_json'),'runtime cannot authenticate mutant source-name map')
             export=json.loads(self.engine.study_mutant_export_json(program,names) if hasattr(self.engine,'study_mutant_export_json') else program.render_json())
             require(export['mutation_identity']==mutant_record['identity'],'native mutation identity differs from record')
-            from native_correspondence import certify_stored_representation, stored_metadata_program
-            stored = stored_metadata_program(self.engine,text,self.settings)
+            from native_correspondence import certify_stored_representation
             stored_export = json.loads(self.engine.study_program_export_json(stored,source_program=stored))
             certificate = certify_stored_representation(program,stored,
                 requested_text=text,rehydrated_export=export,
-                stored_export=stored_export,mutation_identity=mutant_record['identity'])
+                stored_export=stored_export,mutation_identity=mutant_record['identity'],native_admission=native_admission)
             # Execution retains the certified ValidMutant. Presentation uses
             # the stored handle's own native nodes and source correspondence.
             naming = dict(status='unavailable',
