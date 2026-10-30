@@ -614,7 +614,13 @@ impl Reader {
                 return self.refuse("`NOT` holds one atom or form", list.place);
             }
             let inner = &list.items[1];
-            if matches!(head_of(inner), Some(sp::NOT | sp::OR | sp::IF | sp::ALL)) {
+            // A negated constraint is the same native conjunct parsed below,
+            // with a NOT parent. Its operator is not a relation name.
+            let form = head_of(inner).is_some_and(|head| {
+                matches!(head, sp::NOT | sp::OR | sp::IF | sp::ALL)
+                    || parse(sp::CONSTRAINT_OPS, head).is_some()
+            });
+            if form {
                 Conjunct::Not(Negated::Form(Arc::new(self.conjunct(inner, &path.child(0), scope)?)))
             } else {
                 let atom = self.list(inner, "a negated atom")?;
