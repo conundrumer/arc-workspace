@@ -28,6 +28,34 @@ fn named_source_text(program: &StudyProgram, registry: &Registry) -> String {
     crate::write::write_synthesized_named(program.program(), registry, Some(names.as_ref()))
 }
 
+/// Compare the written envelope before resolving or checking the candidate.
+/// Parsed clause columns are derived from its BODY, so checking a restored
+/// AST here would misclassify a BODY-only interface change. Instead remove
+/// the selected BODY on both sides and use the native file writer. These
+/// empty shells are presentation probes, never admitted or evaluated.
+fn source_shell(
+    ast: &Node<Program>,
+    layout: &crate::layout::Layout,
+    at: &NodePath,
+) -> Result<String, String> {
+    let empty = Node::new(Body {
+        conjuncts: Vec::new().into(),
+    });
+    let shell = edit::replace_body(ast, at, &empty)
+        .map_err(|e| format!("body_replacement:outside_body_changed: {e}"))?;
+    Ok(source_text(&shell, layout))
+}
+
+fn source_text(ast: &Node<Program>, layout: &crate::layout::Layout) -> String {
+    let mut layout = layout.clone();
+    layout.comments = Box::new([]);
+    for node in layout.nodes.values_mut() {
+        node.place = None;
+        node.tokens = Box::new([]);
+    }
+    crate::write::write_arclog(ast, &layout)
+}
+
 impl StudyProgram {
     /// Certify a synthesized BODY without sampling the current atom domain.
     /// The origin belongs to the caller's source record, not to this handle.
@@ -64,22 +92,78 @@ impl StudyProgram {
             ));
         }
         let (ast, layout) = read.value;
+        let (source_ast, source_layout) = if let Some(layout) = self.layout() {
+            (self.program().clone(), layout.clone())
+        } else {
+            // The source reader uses Written names; decoded gold uses Slots.
+            // Compare their written envelopes without mixing their AST nodes.
+            let gold =
+                crate::read::read_arclog(&self.sexp(registry), crate::layout::SourceFile::Arclog)
+                    .map_err(|d| {
+                    format!(
+                        "body_replacement:source_representation: {}",
+                        crate::study::diagnostics_text(&d)
+                    )
+                })?;
+            if gold
+                .diagnostics
+                .iter()
+                .any(|d| d.severity == crate::diagnostic::Severity::Error)
+            {
+                return Err(format!(
+                    "body_replacement:source_representation: {}",
+                    crate::study::diagnostics_text(&gold.diagnostics)
+                ));
+            }
+            gold.value
+        };
+        // This is native parsed-source equality, including every scoped name
+        // and source-order node, with positions/comments removed. It rejects a
+        // no-op before importing any Written-name BODY into a Slot namespace.
+        if source_text(&ast, &layout) == source_text(&source_ast, &source_layout) {
+            return Err("body_replacement:unchanged: selected BODY is unchanged".into());
+        }
+        if source_shell(&ast, &layout, at)? != source_shell(&source_ast, &source_layout, at)? {
+            return Err("body_replacement:outside_body_changed: parsed source outside the selected BODY differs from gold".into());
+        }
+        // Only a BODY-local candidate reaches the complete native checker.
+        // A later-form failure caused by that BODY retains this distinct
+        // whole-program reason; the suffix is never repaired.
         let candidate = StudyProgram::from_program(ast, Some(layout), registry)
             .map_err(|e| format!("body_replacement:whole_program_check: {e}"))?;
+        let candidate = if self.layout().is_none() {
+            // ProgramReader is the decoder's complete-stream grammar/binder,
+            // without task/domain evaluation. It assigns the candidate's
+            // declarations and reads the same native Slot namespace as gold.
+            let decoded = candidate
+                .decode_source(registry, settings)
+                .map_err(|e| format!("body_replacement:candidate_representation: {e}"))?;
+            let proof = decoded
+                .representation_certificate(&candidate, registry, settings)
+                .map_err(|e| format!("body_replacement:candidate_representation: {e}"))?;
+            if proof["status"] != "complete" {
+                return Err(format!(
+                    "body_replacement:candidate_representation: {proof}"
+                ));
+            }
+            decoded.preserve_gold_names(self, registry)
+        } else {
+            candidate
+        };
         let replacement = body_at(&candidate, at)?;
-        // Restoring just this BODY must restore the named source-order
-        // program and token/path artifact. Ignore original byte positions,
-        // while retaining native names, INIT heads and later ports.
+        let valid = self.admit_body_replacement(point, replacement, origin, registry, settings)?;
+        // At this boundary both BODY values use the actual gold namespace.
+        // Retain the stronger whole-stream and native named-source proof.
         let restored = edit::replace_body(candidate.program(), at, &body_at(self, at)?)?;
         let restored = StudyProgram::from_program(restored, candidate.layout().cloned(), registry)
-            .map_err(|e| format!("body_replacement:outside_body_changed: {e}"))?;
+            .map_err(|e| format!("body_replacement:outside_body_changed: {e}"))?
+            .preserve_gold_names(self, registry);
         if !same_stream(self, &restored, registry, settings)? {
             return Err("body_replacement:outside_body_changed: restored full ids/model/paths differ from gold".into());
         }
         if named_source_text(&restored, registry) != named_source_text(self, registry) {
             return Err("body_replacement:outside_body_changed: restored native named source differs from gold".into());
         }
-        let valid = self.admit_body_replacement(point, replacement, origin, registry, settings)?;
         if !same_stream(valid.program(), &candidate, registry, settings)? {
             return Err("body_replacement:candidate_representation: native reconstruction differs from submitted full stream".into());
         }
