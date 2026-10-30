@@ -1,7 +1,7 @@
-"""One exact storage-only predecessor for CURRENT private evidence gzip.
+"""Exact storage-only predecessor keys for private gzip and framed JSONL.
 
 Never drops a source, setting, runtime or kept-context identity. The predecessor
-substitutes only the two authenticated source SHAs below, in the adapter map
+substitutes only exact authenticated storage transitions below, in the adapter map
 and in the declared evaluator implementation aggregate. Cached values/receipts
 are returned unchanged; no key scan, copying, migration or native replay.
 """
@@ -53,34 +53,112 @@ def implementation_names(path, file_signature):
     return tuple(names)
 
 
-def predecessor_identities(identity, *, code_root, evaluator_path, digest):
-    """Return [] unless the complete current declared closure authenticates.
+# Exact storage-only changes. Values are (after, before); no wildcard SHA.
+# The evaluator transition additionally removes its one newly declared framed
+# storage dependency when reconstructing the old implementation aggregate.
+STORAGE_TRANSITIONS = [
+    ({'current_native_names.py': (AFTER, BEFORE)}, {}),
+    ({'normalized_gold.py': ('dcba33318fa9cdb772693716c426c49587dd3ef54cc1468c9fcaf3e11324b778',
+                             'abd8ca57debb074156ed92275e5b0934664f8872b9658f79f910ebe31112c566')}, {}),
+    ({'judgetool/evaluator.py': (
+        '333da6b5898b85d2ff9013ae5d1e7e0f5df40f09614e8c9de086e2d1d38a8e81',
+        '410c5b2f77bd741c7a00a92f8ecd43aa2f16ef1c4291d89521377b275c4c0588')},
+     {'../judge3/framed_jsonl.py': 'b51eeb1b9123290184bd824bffa25e0f11eadc4e9f9c4027e3b13337460642f3'}),
+    ({'judge3/render_pair.py': ('3fc3d896d34be1873f32c6929ddbf7d78911c88f049d0396511d74c224f2ca10', '94835d026a725be8d20bdc4d081c449665dedcba86d556b9232cbcc6cc7cbc7c')}, {}),
+    ({'judge3/nonrender_metadata.py': ('82570d859bd75cffd19b919a9a4a4b9e21fbe1027fff9441d20219e5a160d5d8', '6cc7823a923bb8960a27078fa15feac9195483242f4a20e9b598258e2161b47c')}, {}),
+]
 
-    The caller tries the unchanged current key first. An emitted predecessor is
-    a single exact alternate key, never an exemption from checking other fields.
+
+def predecessor_identities(identity, *, code_root, evaluator_path, digest):
+    """Enumerate only compositions of exact, authenticated storage changes.
+
+    The full current adapter map and evaluator aggregate must first match actual
+    files. Every native/runtime/settings/source/kept field remains unchanged.
     """
-    module = (Path(code_root) / 'current_native_names.py').resolve()
-    evaluator = Path(evaluator_path).resolve()
+    root = Path(code_root).resolve(); evaluator = Path(evaluator_path).resolve()
     try:
-        current_sha = file_sha(str(module), signature(module))
-        if current_sha != AFTER or identity['adapter'].get(str(module)) != AFTER:
-            return []
         names = implementation_names(str(evaluator), signature(evaluator))
-        if names is None:
-            return []
+        if names is None:return []
         sources = {name: file_sha(str((evaluator.parent / name).resolve()),
-                                signature((evaluator.parent / name).resolve()))
-                   for name in names}
-        if digest(sources) != identity['runtime']['implementation_sha256']:
-            return []
-        changed = [name for name in names if (evaluator.parent / name).resolve() == module]
-        if len(changed) != 1 or sources[changed[0]] != AFTER:
-            return []
-    except (OSError, KeyError, TypeError, ValueError, SyntaxError):
-        return []
-    old_sources = dict(sources)
-    old_sources[changed[0]] = BEFORE
-    predecessor = deepcopy(identity)
-    predecessor['adapter'][str(module)] = BEFORE
-    predecessor['runtime']['implementation_sha256'] = digest(old_sources)
-    return [predecessor]
+                                signature((evaluator.parent / name).resolve())) for name in names}
+        if digest(sources) != identity['runtime']['implementation_sha256']:return []
+        for path, expected in identity['adapter'].items():
+            actual = Path(path).resolve()
+            if file_sha(str(actual), signature(actual)) != expected:return []
+    except (OSError, KeyError, TypeError, ValueError, SyntaxError):return []
+    pending = [(dict(identity['adapter']), sources)]; seen = {digest(identity)}; output = []
+    for adapter, implementation in pending:
+        for changes, added_runtime in STORAGE_TRANSITIONS:
+            old_adapter = dict(adapter); old_implementation = dict(implementation); matched = False
+            for relative, (after, before) in changes.items():
+                path = (root / relative).resolve(); bound = []
+                if str(path) in old_adapter:bound.append(('adapter', str(path)))
+                bound += [('runtime', name) for name in old_implementation
+                          if (evaluator.parent / name).resolve() == path]
+                if not bound:break
+                if any((old_adapter if kind == 'adapter' else old_implementation)[name] != after
+                       for kind, name in bound):break
+                for kind, name in bound:
+                    (old_adapter if kind == 'adapter' else old_implementation)[name] = before
+                matched = True
+            else:
+                if not matched or any(old_implementation.get(name) != sha
+                                      for name, sha in added_runtime.items()):continue
+                for name in added_runtime:
+                    del old_implementation[name]
+                    dependency = str((evaluator.parent / name).resolve())
+                    if dependency in old_adapter:
+                        if old_adapter[dependency] != added_runtime[name]:break
+                        del old_adapter[dependency]
+                else:
+                    dependency = None
+                if dependency is not None:continue
+                predecessor = deepcopy(identity)
+                predecessor['adapter'] = old_adapter
+                predecessor['runtime']['implementation_sha256'] = digest(old_implementation)
+                key = digest(predecessor)
+                if key not in seen:
+                    seen.add(key); output.append(predecessor); pending.append((old_adapter, old_implementation))
+    return output
+
+
+def prefix_predecessor_scopes(scope, *, code_root, evaluator_path, digest):
+    """Return exact storage-only predecessors of a PREFIX computational scope.
+
+    The caller excludes worker_implementation before making the computation key.
+    All remaining fields are preserved, including full native/runtime/settings
+    receipts. Authentication and transition composition use the case-cache engine
+    above. No files, row packets or stored receipts are copied or rewritten.
+    """
+    root = Path(code_root).resolve()
+    try:
+        code = scope['code']
+        if not isinstance(code, dict):return []
+        paths = {}
+        for name in code:
+            relative = Path(name)
+            if relative.is_absolute() or '..' in relative.parts:return []
+            path = (root / relative).resolve()
+            if not path.is_relative_to(root) or str(path) in paths:return []
+            paths[str(path)] = name
+        identity = dict(adapter={path: code[name] for path, name in paths.items()},
+                        runtime=deepcopy(scope['runtime_receipt']))
+        predecessors = predecessor_identities(identity, code_root=root,
+                                               evaluator_path=evaluator_path, digest=digest)
+    except (KeyError, TypeError, ValueError):return []
+    output = []
+    for predecessor in predecessors:
+        previous = deepcopy(scope)
+        previous['code'] = {paths[path]: sha for path, sha in predecessor['adapter'].items()}
+        previous['runtime_receipt'] = predecessor['runtime']
+        changes = {name: {'current': code.get(name), 'predecessor': previous['code'].get(name)}
+                   for name in sorted(set(code) | set(previous['code']))
+                   if code.get(name) != previous['code'].get(name)}
+        proof = dict(schema='prefix-storage-predecessor-v1',
+                     current_scope_sha256=digest(scope), predecessor_scope_sha256=digest(previous),
+                     code_substitutions=changes,
+                     current_implementation_sha256=scope['runtime_receipt']['implementation_sha256'],
+                     predecessor_implementation_sha256=previous['runtime_receipt']['implementation_sha256'],
+                     algorithm_sha256=file_sha(str(Path(__file__).resolve()), signature(Path(__file__).resolve())))
+        output.append(dict(scope=previous, proof=proof))
+    return output
