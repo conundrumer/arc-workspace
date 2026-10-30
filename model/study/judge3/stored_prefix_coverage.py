@@ -27,6 +27,11 @@ from native_tables import Native
 from source_read import SourceReader
 from export_by_pair_id import PairSource
 from dataset_format import write_json
+from framed_jsonl import JsonlWriter
+
+
+def jsonl_exists(path):
+    return any(Path(str(path)+suffix).is_file() for suffix in ('','.gz','.zst'))
 
 
 def sha(value):
@@ -211,7 +216,7 @@ def main():
         # Restore exact paused bytes before SQLite can create an empty cache.
         from paused_storage import restore_file, sidecar
         compressed = [p for p in args.output.rglob('*.gz') if sidecar(p).is_file()
-            and ('.sqlite3' in p.name or p.name.endswith('.jsonl.gz'))]
+            and '.sqlite3' in p.name]
         # WAL/SHM before main DB; no SQLite connection exists yet.
         for path in sorted(compressed,key=lambda p:p.name.endswith('.sqlite3.gz')):
             print(json.dumps(dict(stage='restore_paused',**restore_file(path))),flush=True)
@@ -272,7 +277,7 @@ def main():
             if i%1000==0:db.commit();print(json.dumps(dict(stage='source_index',done=i,total=len(selected))),flush=True)
         db.commit()
     if (args.worker_shard is None and (args.output/'summary.json').exists()
-            and (args.output/'pairs.jsonl').exists() and (args.output/'points.jsonl').exists()
+            and jsonl_exists(args.output/'pairs.jsonl') and jsonl_exists(args.output/'points.jsonl')
             and db.execute('SELECT COUNT(*) FROM jobs WHERE pair_id NOT IN (SELECT key FROM pairs)').fetchone()[0]==0):
         summary=json.loads((args.output/'summary.json').read_text())
         print(json.dumps(dict(stage='reused_complete_inventory',points=summary['points'],pairs=summary['pairs'],
@@ -377,10 +382,11 @@ def main():
             universe_status='unproven_no_native_common_prefix_certificate',gold_potential=0,mutant_potential=0,
             gold_source_deficits=0,mutant_source_deficits=0,inventory_errors=0,
             available_mapping_status='whole_relation_snapshots_inventoried; public Tn mapping and prefix coverage not inferred') for g in selection['groups']}
-        with (args.output/'pairs.jsonl').open('w') as pair_out:
-            for (encoded,) in db.execute('SELECT result FROM pairs ORDER BY key'):
+        with JsonlWriter(args.output/'pairs.jsonl.zst') as pair_out:
+            committed=pair_out.committed_lines
+            for number,(encoded,) in enumerate(db.execute('SELECT result FROM pairs ORDER BY key')):
                 encoded=record_text(encoded);row=json.loads(encoded);point=point_stats[row['point_path']]
-                pair_out.write(encoded+'\n')
+                if number>=committed:pair_out.write_line(encoded+'\n')
                 if row['status']!='inventoried':point['inventory_errors']+=1;continue
                 for side in ('gold','mutant'):
                     observed=row['observations'].get(side+'_all',{})
@@ -390,8 +396,10 @@ def main():
                     if statuses in (['potential_raw_values_unproven_universe'],['potential_raw_metadata_unvalidated_values']):point[side+'_potential']+=1
                     elif statuses==['known_selected_source_value_deficit']:point[side+'_source_deficits']+=1
                     else:point['inventory_errors']+=1
-        with (args.output/'points.jsonl').open('w') as points_out:
-            for point in point_stats.values():points_out.write(json.dumps(point,separators=(',',':'))+'\n')
+        with JsonlWriter(args.output/'points.jsonl.zst') as points_out:
+            committed=points_out.committed_lines
+            for number,point in enumerate(point_stats.values()):
+                if number>=committed:points_out.write(point)
         summary = dict(schema='study-stored-prefix-coverage-inventory-v1',points=len(point_stats),pairs=len(selected),
             certified_common_prefix_universes=0,
             certificate_reason='Current source contracts expose dependency-Search or whole-FITS-held observations only; no recognized common full-prior-prefix receipt exists. This does not prove missing rows.',

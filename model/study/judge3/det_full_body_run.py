@@ -6,7 +6,7 @@ This driver only resumes results, hashes public files and publishes discovery.
 """
 import argparse
 from collections import Counter
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 import fcntl
 import hashlib
 import inspect
@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from study_paths import CODE_ROOT, DATA_ROOT
 sys.path[:0] = [str(CODE_ROOT / 'judgetool'), str(CODE_ROOT / 'judge3')]
 from dataset_format import write_json
+from framed_jsonl import JsonlWriter
 
 LAYOUT = 'det-full-body-train-v1'
 PUBLICATION = 'study-det-full-body-publication-v1'
@@ -168,7 +169,14 @@ def main():
     args.cache.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
     counts = Counter()
-    with exclusive(operator / 'publisher.lock'):
+    with exclusive(operator / 'publisher.lock'), ExitStack() as journals:
+        # Publication indexes/receipts resume the work; journals resume at their
+        # committed frame line counts and record only newly performed operations.
+        writers={}
+        def journal(path,value):
+            if path not in writers:
+                writers[path]=journals.enter_context(JsonlWriter(path))
+            writers[path].write(value)
         write_json(operator / 'latest-attempt.json', dict(attempt=attempt, source_revision=revision,
             runtime=runtime, selection=str(args.selection), selection_sha256=selection_sha,
             policy=LAYOUT, deadline=args.deadline), compact=True)
@@ -245,7 +253,7 @@ def main():
                                 except Exception as error:
                                     result.update(status='failed', reason='export attestation: ' + str(error))
                             state['results'][pair] = result
-                            append(operator / 'pair-events.jsonl', result)
+                            journal(operator / 'pair-events.jsonl.zst', result)
                             write_json(state_path, state, compact=True)
                             print(json.dumps(dict(event='pair', point=group['point_id'], **result)), flush=True)
                     failures = [state['results'].get(p['pair_id'], dict(pair_id=p['pair_id'],
@@ -265,18 +273,18 @@ def main():
                             contract=LAYOUT, point_id=group['point_id'], files=manifest_for(root)), compact=True)
                         record = publication_record(group, root, manifest_path)
                         write_json(discovery, record, compact=True)  # Sole publication event.
-                        append(args.output / 'manifest.jsonl', record)
+                        journal(args.output / 'manifest.jsonl.zst', record)
                         counts['published_points'] += 1
                         counts['published_pairs'] += len(group['pairs'])
                 elapsed = time.monotonic() - started
                 progress = dict(event='point', done=number, total=len(groups), point_id=group['point_id'],
                     elapsed=round(elapsed, 3), rate=number / max(elapsed, .001), counts=dict(counts))
-                append(operator / 'progress.jsonl', progress)
+                journal(operator / 'progress.jsonl.zst', progress)
                 print(json.dumps(progress), flush=True)
             summary = dict(schema='study-det-full-body-run-v1', attempt=attempt,
                 source_revision=revision, runtime=runtime['revision'], selection_sha256=selection_sha,
                 total_pairs=5460, total_points=973, counts=dict(counts), seconds=time.monotonic() - started,
-                published_index=relative(public), event_log=relative(args.output / 'manifest.jsonl'))
+                published_index=relative(public), event_log=relative(args.output / 'manifest.jsonl.zst'))
             write_json(operator / 'summary.json', summary, compact=True)
             return int(bool(counts['unavailable_points']))
         finally:

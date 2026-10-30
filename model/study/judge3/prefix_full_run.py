@@ -31,6 +31,7 @@ from dataset_format import write_json
 from det_full_body_run import digest, file_sha, read, exclusive
 from paused_storage import _write_gzip_chunks, compress_file
 from prefix_dev_trial import opening_summary
+from framed_jsonl import JsonlWriter, JsonlReader
 
 POLICY='prefix-full-all-candidates-v1'
 SCHEMA='study-prefix-full-run-v1'
@@ -120,11 +121,25 @@ def reason(value,phase):
 
 
 def event(path,value):
-    # Each point has one writer. Parent tails these small records while native
-    # work continues, so repeated faults do not wait for a whole point to finish.
-    path.parent.mkdir(parents=True,exist_ok=True)
-    with path.open('a') as stream:
-        stream.write(json.dumps(value,separators=(',',':'))+'\n');stream.flush()
+    # One writer per point. Immediate fault frames preserve early-stop reporting;
+    # ordinary progress batches, rather than fsyncing every successful pair.
+    writers=_GLOBAL.setdefault('event_writers',{})
+    out=writers.get(path)
+    if out is None:
+        out=writers[path]=JsonlWriter(path)
+    out.write(value)
+    if value.get('reason_class'):out.flush()
+
+
+def close_events():
+    for out in _GLOBAL.pop('event_writers',{}).values():out.close()
+
+
+def event_lines(path):
+    if not path.is_file():return 0
+    if not path.stat().st_size and not path.with_name(path.name+'.idx.jsonl').is_file():return 0
+    with JsonlReader(path) as source:
+        return sum(frame['line_count'] for frame in source.frames)
 
 
 def packet_json_chunks(value):
@@ -285,6 +300,7 @@ def run_point(operation):
         result=_run_point(operation)
         return result
     finally:
+        close_events()
         try:finish_point_profile()
         except Exception as error:
             print(json.dumps(dict(stage='profile_write_failed',reason=f'{type(error).__name__}: {error}')),file=sys.stderr,flush=True)
@@ -299,7 +315,7 @@ def _run_point(operation):
     options=_GLOBAL['options'];started=time.monotonic();reader=_GLOBAL['reader']
     output=Path(options['output']);scope=options['scope'];stop=output/'operator'/('stop-'+scope+'.json')
     root=output/'points'/operation['point_id']/point_key(scope,operation)
-    events=root/'events.jsonl';root.mkdir(parents=True,exist_ok=True)
+    events=root/'events.jsonl.zst';root.mkdir(parents=True,exist_ok=True)
     pairs=sorted([(p,base(p)) for p in operation['pair_ids']],key=lambda item:(str(item[1]['source']['corpus']),item[1]['source']['file'],item[1]['source']['line']))
     counts=Counter();pending=[];results=[]
     for pair,source in pairs:
@@ -498,14 +514,10 @@ def main():
         signal.signal(signal.SIGTERM,halt);signal.signal(signal.SIGINT,halt)
         def drain():
             for future,(operation,path) in list(active.items()):
-                if not path.is_file():continue
+                if not path.is_file() or not path.with_name(path.name+'.idx.jsonl').is_file():continue
                 position=cursor.get(str(path),0)
-                with path.open() as stream:
-                    stream.seek(position)
-                    while True:
-                        before=stream.tell();line=stream.readline()
-                        if not line:break
-                        if not line.endswith('\n'):stream.seek(before);break
+                with JsonlReader(path) as stream:
+                    for number,line in enumerate(stream.iter_lines(start_line=position+1),position+1):
                         value=json.loads(line)
                         if value.get('progress'):progress[value['status']]+=1
                         elif value.get('reason_class'):
@@ -516,16 +528,17 @@ def main():
                                 if reason_counts[value['reason_class']]>=args.repeat_limit and not stop.exists():
                                     write(stop,dict(status='stopped',scope=scope_key,reason_class=value['reason_class'],
                                         occurrences=reason_counts[value['reason_class']],last=value))
-                        cursor[str(path)]=stream.tell()
+                        # Readers expose only committed frames; resume is by lines.
+                        cursor[str(path)]=number
         ctx=multiprocessing.get_context('spawn');iterator=iter(operations)
         def submit(pool):
             while len(active)<args.workers and not stop.exists():
                 try:op=next(iterator)
                 except StopIteration:break
-                log=args.output/'points'/op['point_id']/point_key(scope_key,op)/'events.jsonl'
+                log=args.output/'points'/op['point_id']/point_key(scope_key,op)/'events.jsonl.zst'
                 # Historical events were already classified in their run. A
                 # resume reuses terminal pairs; count only new observations.
-                cursor[str(log)]=log.stat().st_size if log.is_file() else 0
+                cursor[str(log)]=event_lines(log)
                 active[pool.submit(run_point,op)]=(op,log)
         with concurrent.futures.ProcessPoolExecutor(max_workers=args.workers,mp_context=ctx,
                 initializer=init_worker,initargs=(options,)) as pool:
