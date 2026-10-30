@@ -19,11 +19,17 @@ from types import SimpleNamespace
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from study_paths import CODE_ROOT, DATA_ROOT
+from study_paths import CODE_ROOT, DATA_ROOT, MAIN_ROOT
+# Old immutable runtimes lack zstandard. Append shared dependencies after the
+# runtime site-packages so its authenticated native wheel keeps precedence.
+import importlib.util
+if importlib.util.find_spec("zstandard") is None:
+    sys.path.append(str(MAIN_ROOT / ".venv/lib/python3.12/site-packages"))
+from judge3.framed_jsonl import JsonlWriter
 sys.path[:0] = [str(CODE_ROOT / 'judgetool'), str(CODE_ROOT / 'judge3')]
 from dataset_format import write_json
 # Reuse the existing point publisher's bounded hashing, locking and journals.
-from det_full_body_run import (file_sha, digest, append, exclusive, read, inside,
+from det_full_body_run import (file_sha, digest, exclusive, read, inside,
                               relative, manifest_for, verify_manifest)
 
 POLICY = 'normalized-gold-view-v1'
@@ -93,7 +99,14 @@ def append_publication(operator,path,record):
     # Different points publish concurrently. Keep the shared index JSONL whole.
     with (operator/'manifest.lock').open('a') as handle:
         fcntl.flock(handle,fcntl.LOCK_EX)
-        try:append(path,record)
+        try:
+            # One writer per file: recover/append/commit while holding the
+            # shared publication lock; never retain a buffered writer here.
+            with JsonlWriter(path) as out:
+                line = out.committed_lines + 1
+                out.write(record)
+                out.flush()
+                return line
         finally:fcntl.flock(handle,fcntl.LOCK_UN)
 
 
@@ -155,7 +168,7 @@ def _main():
     from evaluator import ReplayEvaluator
     sys.path.insert(0, str(CODE_ROOT / 'ast/run'))
     from provenance import load_build
-    code_files = [Path(__file__), CODE_ROOT / 'normalized_gold.py', CODE_ROOT / 'native_correspondence.py']
+    code_files = [Path(__file__), CODE_ROOT / 'normalized_gold.py', CODE_ROOT / 'native_correspondence.py', CODE_ROOT / 'judge3/framed_jsonl.py']
     code = {str(p): file_sha(p) for p in code_files}
     attempt = digest(dict(code=code, runtime=runtime, manifest=manifest_ref, deadline=args.deadline))
     selected=None
@@ -170,13 +183,20 @@ def _main():
     ev = None
     journals=operator if selection_ref is None else operator/'retries'/selection_ref['sha256'][:16]
     journal=journals if args.shard_count==1 else journals/'workers'/f'{args.shard_count}-{args.shard_index}'
-    with publication_session(operator), exclusive(journal/'worker.lock'):
+    with (publication_session(operator), exclusive(journal/'worker.lock'),
+          JsonlWriter(journal/'failures.jsonl.zst') as failures,
+          JsonlWriter(journal/'progress.jsonl.zst') as progress_out):
+        # Logs resume at their actual committed append positions. Native work
+        # still resumes by authenticated per-point indexes/receipts, not by
+        # counting progress events (which include retries and reused points).
+        resumed_lines = dict(failures=failures.committed_lines,
+                             progress=progress_out.committed_lines)
         operations=publication_operations(manifest_ref)
         if selected is not None and not selected<={op['point_id'] for op in operations}:
             raise ValueError('retry point IDs are outside the authenticated manifest')
         plan=task_shards([op for op in operations if selected is None or op['point_id'] in selected],args.shard_count)
         write_json(journal / 'latest-attempt.json', dict(attempt=attempt, code=code,
-            runtime=runtime, manifest=manifest_ref, policy=POLICY,task_shards=plan,selection=selection_ref), compact=True)
+            runtime=runtime, manifest=manifest_ref, policy=POLICY,task_shards=plan,selection=selection_ref,journal_committed_lines=resumed_lines), compact=True)
         try:
             for number, operation in enumerate(operations, 1):
                 point_id = operation['point_id']
@@ -261,7 +281,7 @@ def _main():
                             artifact_manifest=dict(path=relative(artifact_path), sha256=file_sha(artifact_path)))
                         record.update(layouts)
                         write_json(index, record, compact=True)
-                        append_publication(operator,args.output / 'manifest.jsonl',record)
+                        append_publication(operator,args.output / 'manifest.jsonl.zst',record)
                         write_json(state_path, dict(status='published', attempt=attempt,
                             result=result, attestation=validated, publication=record), compact=True)
                         counters['published_points'] += 1
@@ -271,7 +291,8 @@ def _main():
                             reason=f'{type(error).__name__}: {error}', traceback=traceback.format_exc(),
                             operation_sha256=digest(operation))
                         write_json(state_path, failure, compact=True)
-                        append(journal / 'failures.jsonl', failure)
+                        failures.write(failure)
+                        failures.flush()
                         counters['failed_points'] += 1
                     finally:
                         gc_started=time.monotonic();gc.collect();gc_seconds=time.monotonic()-gc_started
@@ -280,10 +301,12 @@ def _main():
                             peak_rss_mib=round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/(1024*1024 if sys.platform=='darwin' else 1024),3),
                             shard_index=args.shard_index,shard_count=args.shard_count,done=number, total=manifest['counts']['published_points'],
                             point_id=point_id, elapsed=round(time.monotonic() - started, 3), counts=dict(counters))
-                        append(journal / 'progress.jsonl', progress)
+                        progress_out.write(progress)
+                        progress_out.flush()
                         print(json.dumps(progress), flush=True)
             summary = dict(shard_index=args.shard_index,shard_count=args.shard_count,policy=POLICY, attempt=attempt, manifest=manifest_ref, runtime=runtime['revision'],
                 counts=dict(counters), seconds=time.monotonic() - started,
+                journal_committed_lines=dict(failures=failures.committed_lines,progress=progress_out.committed_lines),
                 point_index=relative(args.output / 'published-points'))
             write_json(journal / 'summary.json', summary, compact=True)
             return int(bool(counters['failed_points'] or counters['terminal_failed_points'] or counters['busy_points']))
