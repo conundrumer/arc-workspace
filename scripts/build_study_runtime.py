@@ -83,9 +83,10 @@ def main():
     # The study's readers import numpy; pin the repository environment's version.
     numpy = "numpy==" + importlib.metadata.version("numpy")
     run(["uv", "pip", "install", "--python", venv / "bin/python", "--no-deps",
-         built[0], numpy], "install private wheel")
+         built[0], numpy, "zstandard==0.23.0"], "install private wheel and study readers")
     verify = (
-        "import hashlib, pathlib, sys, zipfile, arclog\n"
+        "import hashlib, pathlib, sys, zipfile, arclog, zstandard\n"
+        "assert zstandard.__version__ == '0.23.0', 'study zstandard version differs'\n"
         "package = pathlib.Path(arclog.__file__).resolve().parent\n"
         "with zipfile.ZipFile(sys.argv[1]) as wheel:\n"
         "    members = [n for n in wheel.namelist() if n.endswith(('.so', '.pyd'))]\n"
