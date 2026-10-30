@@ -64,7 +64,7 @@ def _policy():
     project, p3 = _extract(paths/'body.py', functions=('project_entries',), namespace=ns)
     ns.update(bind_body_schema=headers['bind_body_schema'], project_entries=project['project_entries'])
     renderer, p4 = _extract(ROOT/'render_pair.py', functions=('under','real_paths'), classes=('Names',),
-        methods={'Document':('schema','target_projection','callable_atom','dependency_scope','definition_node')},
+        methods={'Document':('_legacy_body_binding','schema','target_projection','callable_atom','dependency_scope','definition_node')},
         namespace=dict(ns, S=STUDY, DATA_ROOT=DATA_ROOT, MAIN_ROOT=MAIN_ROOT))
     # dependency_scope uses the exact renderer under() helper.
     renderer['Document'].dependency_scope.__globals__['under'] = renderer['under']
@@ -86,10 +86,13 @@ class MetadataProducer:
     reading corpus manifest/cases.npz/retained.jsonl. It is never an authority
     for admission, row equality or replay completeness.
     """
-    def __init__(self, *, engine, read_native, corpus, settings=None, case_inventory=None):
+    def __init__(self, *, engine, read_native, corpus, settings=None, case_inventory=None, legacy_body_metadata=None):
         self.engine, self.read_native = engine, read_native
         self.corpus = Path(corpus).resolve()
         self.inventory_provider = case_inventory
+        from legacy_body_metadata import LegacyBodyMetadata
+        self.legacy_body_metadata = (legacy_body_metadata if legacy_body_metadata is not None
+                                     else LegacyBodyMetadata.configured())
         renderer, Programs, self.selectors, self.sources = _policy()
         self.policy = renderer
         self.programs = Programs.__new__(Programs)
@@ -188,6 +191,7 @@ class MetadataProducer:
                      'native point selector differs: '+side)
             ctx=self.policy['Document'].__new__(self.policy['Document'])
             ctx.r=record;ctx.gexport=exports['gold'];ctx.mexport=exports['mutant']
+            ctx.legacy_body_context=dict(resolver=self.legacy_body_metadata,programs=self.programs,base=base)
             ctx.readers=readers;ctx.owner=view['owner_path'];ctx.body=view
             ctx.values=SimpleNamespace(f={'column_names':{}})
             raw=ctx.schema(reader,table,body=True)
@@ -227,6 +231,7 @@ class MetadataProducer:
             r['programs']={side:r[side+'_sexp'] for side in ('gold','mutant')}
         base=Path(native_base).resolve() if native_base is not None else self.corpus/r['task']
         ctx=self.policy['Document'].__new__(self.policy['Document'])
+        ctx.legacy_body_context=dict(resolver=self.legacy_body_metadata,programs=self.programs,base=base)
         ctx.r=r;ctx.gexport=self._export(r['programs']['gold'],r);ctx.mexport=self._export(r['programs']['mutant'],mutant_record=r)
         ctx.names=self.policy['Names'](ctx.gexport)
         tokens=set(ctx.names.tokens)|set(ctx.names.tokens.values())

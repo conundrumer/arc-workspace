@@ -52,8 +52,33 @@ def reconcile_computed_headers(tables):
     return names,orders
 
 
-def bind_body_schema(table,view):
+def bind_body_schema(table,view,*,legacy_binding=None):
     columns=view['columns']
+    if legacy_binding is not None:
+        require(legacy_binding['schema']=='native-legacy-body-binding-v1',
+                'unknown native legacy BODY binding')
+        require(legacy_binding['body_path']==view['body_path'],
+                'legacy BODY binding addresses another body')
+        fields={f['physical_column']:f for f in legacy_binding['fields']}
+        require(len(fields)==len(legacy_binding['fields'])==len(table['schema']),
+                'legacy BODY binding field coverage differs')
+        current={c['body_column']:c for c in columns}
+        require(len(current)==len(columns),'duplicate current BODY physical column')
+        names={}
+        for column in table['schema']:
+            require(column['index'] in fields,'legacy BODY physical column missing')
+            field=fields[column['index']]
+            require(column['type']==field['legacy_physical_type']['type'],
+                    'legacy BODY physical type differs from binding')
+            label=current.get(field['current_physical_column'])
+            require(label is not None and label['label_id']==field['label_id'],
+                    'legacy BODY binding/current scoped label differs')
+            column['ast_label_id']=field['label_id']
+            column['source_label']='@label:'+str(field['label_id'])
+            column['native_legacy_binding']=field
+            names[column['source_label']]=label['label_spelling']
+        table['native_legacy_body_receipt']=legacy_binding['receipt']
+        return names
     require(sum(c['type']!='Unit' for c in columns)==sum(c['type']!='Unit' for c in table['schema']),'body AST/native column count mismatch')
     labels={c['label_spelling']:c for c in columns}
     require(len(labels)==len(columns),'duplicate body AST label spelling')

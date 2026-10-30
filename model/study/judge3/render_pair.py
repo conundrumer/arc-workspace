@@ -166,6 +166,9 @@ class Names:
 class Document:
     def __init__(self, record, base, task, engine, programs):
         self.r, self.base, self.engine = record, base, engine
+        from legacy_body_metadata import LegacyBodyMetadata
+        self.legacy_body_context = dict(resolver=LegacyBodyMetadata.configured(),
+            programs=programs, base=base)
         # The input passed to the value printer has no test output field.
         self.task = dict(train=[dict(input=x['input'], output=x['output']) for x in task['train']],
                          test=[dict(input=x['input']) for x in task['test']])
@@ -330,6 +333,22 @@ class Document:
         require(len(matches) == 1, 'callable relation lacks unique resolver node: ' + definition['source_name'])
         return matches[0]
 
+    def _legacy_body_binding(self, reader, table, schema, view):
+        context = getattr(self, 'legacy_body_context', None)
+        if context is None or context['resolver'] is None:
+            return None
+        sides = [side for side, actual in self.readers.items() if reader is actual]
+        # A fresh/full-case payload has no source point acquisition receipt.
+        if len(sides) != 1:
+            return None
+        side = sides[0]
+        program, export, _ = context['programs'].load(self.r['programs'][side],
+            self.r if side == 'gold' else None,
+            mutant_record=self.r if side == 'mutant' else None)
+        return context['resolver'].bind(record=self.r, side=side, base=context['base'],
+            reader=reader, table=table, schema=schema, program=program,
+            export=export, body_path=view['body_path'])
+
     def schema(self, reader, table, *, body=False, definition=None):
         schema = [dict(c) for c in reader.schema(table)]
         if body:
@@ -342,9 +361,10 @@ class Document:
             require(len(views) == 1, 'target body binding is missing or ambiguous: ' + side)
             view = views[0]
             require(reader.tables['point'][table] == view['native_table_selector']['point'], 'body selector differs')
+            binding=self._legacy_body_binding(reader,table,schema,view)
             for c in schema:
                 c['native_source_label'] = c['source_label']
-            bind_body_schema(dict(schema=schema), view)
+            bind_body_schema(dict(schema=schema), view,legacy_binding=binding)
             for c in schema:
                 c['native_label_identity'] = dict(kind='implicit_unit' if c['type'] == 'Unit' else 'scoped_label',
                     label_id=None if c['type'] == 'Unit' else c['ast_label_id'],
@@ -1079,7 +1099,8 @@ class Document:
         if point_table is not None:
             full_schema = [dict(c) for c in self.full.schema(point_table)]
             try:
-                bind_body_schema(dict(schema=full_schema), self.body)
+                binding=self._legacy_body_binding(self.full,point_table,full_schema,self.body)
+                bind_body_schema(dict(schema=full_schema), self.body,legacy_binding=binding)
                 projection_bound = all(index is None or (index < len(full_schema)
                     and full_schema[index]['ast_label_id'] == field['native_label_identity']['label_id']
                     and full_schema[index]['type'] == field['type'])
