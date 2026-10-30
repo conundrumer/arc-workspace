@@ -250,6 +250,9 @@ def evaluate(ev,record,clause,target,columns=None,*,explore=False,row_limit=100)
     result['provenance']=provenance
     if provenance['status']=='unknown':
         result['reason']=provenance['reason'];return result
+    if provenance['status']=='union_X_redundant':
+        result.update(outcome='did not verify',reason=provenance['reason'])
+        return result
     if provenance['status']=='partial':
         contribution=partial_source_rows(proof,grouped,replay)
         provenance['row_contribution']=contribution
@@ -343,6 +346,41 @@ def partial_source_rows(proof,grouped,replay):
         additional_native_operations=0)
 
 
+def header_type_certificate(column,definition):
+    """A checked native field type need not have a local BODY label.
+
+    Declared component headers certify a physical field's type/layout even
+    when no source BODY binds a local label. This is only a schema certificate;
+    it provides no rows, projection from a BODY, or kept-context evidence.
+    """
+    if (column.get('relation')!=definition['relation']
+            or column.get('definition_path')!=definition['definition_path']):
+        return False
+    selected=column.get('selected_header_binding')
+    if column.get('status')=='resolved':
+        return isinstance(selected,dict) and selected.get('status')=='resolved'
+    return (column.get('status')=='declared_without_local_label'
+            and column.get('proof')=='declared_layout' and selected is None
+            and isinstance(column.get('row_path'),list)
+            and type(column.get('logical_slot')) is int and column['logical_slot']>=0)
+
+
+def union_nonredundancy_result(nonredundancy):
+    """Distinguish a verified counterexample from incomplete negative proof."""
+    positives=[s for s in nonredundancy.get('searches',[])
+        if s.get('proof',{}).get('status')=='determined'
+        and s['proof'].get('recoverable') is True and s['proof'].get('verified') is True]
+    if nonredundancy.get('redundant') is True and positives:
+        names=', '.join(sorted({s['source']['name'] for s in positives}))
+        return dict(status='union_X_redundant',redundant=True,nonredundant=False,
+            reason='Union recovery did not verify: X is redundant; available source '+names+' has a verified recovery of X.',
+            nonredundancy=nonredundancy)
+    if nonredundancy.get('complete') is not True or nonredundancy.get('redundant') is not False:
+        return dict(status='unknown',reason=nonredundancy.get('reason','union requires complete X-not-redundant evidence'),
+                    nonredundancy=nonredundancy)
+    return None
+
+
 def union_nonredundancy(ev,record,adapter,ntrain,ntest):
     """Recheck the current readable inventory in the canonical redundancy grammar.
 
@@ -427,8 +465,7 @@ def union_nonredundancy(ev,record,adapter,ntrain,ntest):
                 definition=definitions[0];columns=definition['column_witnesses']
                 if (definition['column_witness_status']!='complete'
                         or [c['physical_column'] for c in columns]!=list(range(len(columns)))
-                        or any(c['status']!='resolved' or c['relation']!=definition['relation']
-                               or c['selected_header_binding']['status']!='resolved' for c in columns)
+                        or any(not header_type_certificate(c,definition) for c in columns)
                         or adapter['relation_tokens'].get(definition['display_name'])!=admitted['display_name']):
                     raise Incomplete('omitted source lacks complete authenticated checked header: '+admitted['display_name'])
                 source_types=tuple(comparison_type(type_identity(ev,record,c['type'])[0]) for c in columns)
@@ -491,7 +528,10 @@ def union_nonredundancy(ev,record,adapter,ntrain,ntest):
                   and all(p.get('status')=='determined' and p.get('recoverable') is False for p in proofs))
         receipt.update(complete=complete,redundant=algorithm.truth_of_searches(proofs,complete),
             source_count=len(packets)+len(headers),assignment_count=len(record['evaluation']['kept_assignments']))
-        if not complete:receipt['reason']='current redundancy search found a recovery or has an incomplete/bounded source proof'
+        if receipt['redundant'] is True:
+            receipt['reason']='current redundancy search found a verified recovery of X from an available source'
+        elif not complete:
+            receipt['reason']='current nonredundancy proof has an incomplete or bounded source search'
     except (ValueError,KeyError,IndexError,TypeError,OSError) as error:
         receipt['reason']='current nonredundancy evidence unavailable: '+str(error)
     ev.target_cache[key]=receipt
@@ -500,9 +540,8 @@ def union_nonredundancy(ev,record,adapter,ntrain,ntest):
 
 def union_proof(ev,record,adapter,proof,output,gold,columns,ntrain,ntest,fields):
     nonredundancy=union_nonredundancy(ev,record,adapter,ntrain,ntest)
-    if nonredundancy.get('complete') is not True or nonredundancy.get('redundant') is not False:
-        return dict(status='unknown',reason=nonredundancy.get('reason','union requires complete X-not-redundant evidence'),
-                    nonredundancy=nonredundancy)
+    failure=union_nonredundancy_result(nonredundancy)
+    if failure is not None:return failure
     L=ev.legacy;canonical=json.loads(json.dumps(proof['canonical']));found=False
     def disable(body):
         nonlocal found
