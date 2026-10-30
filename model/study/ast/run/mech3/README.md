@@ -36,3 +36,12 @@ Caches retain immutable native snapshots, original held groups, gold reader reso
 `det_receipt.receipt(record, exports, bindings)` supplies `mech3-det-header-projection-v1`: the union of actual reader-named declared header identities, with exact scoped BODY transport, aliases retained, native Unit certificates and complete no-reader proof. The raw bindings establish physical provenance. Shared MetadataProducer owns formatting/projection; this module copies no graph or library policy.
 
 `det_targets.load_det_targets` delegates validity to mech5. Its overlay preserves other producers and disables held-OUT program fit for DET. No DET target acquisition or second recovery search is implemented here.
+
+
+## Streaming population pairs
+
+`mech3.pair_api.PairLabeler(*, base, population_passes, config, source_reader=None, deadline=30, compare_seconds=1, artifacts=None)` reuses one step4 worker across sequential samples. `base` is the population `labels.sqlite3`; `config` is its evaluator run configuration, including the task directory. `population_passes` is either a mapping containing `fit_split` or a directory in which to write `fits.sqlite3`. Pass outputs must stay under `DATA_ROOT`. Default replay artifacts use the existing evaluator's mech3 artifact directory.
+
+Use `labeler.label_pair(pair_id, *, relabel=False)` for each committed base pair. It reads the base row afresh, resolves the source through the shared `SourceReader.record`, commits this pass's raw facts per pair and returns the normal `load_step4` result with ephemeral `resumed` and `evaluations` fields. A valid completed attempt, including Unknown, resumes by its inputs. `relabel=True` explicitly recomputes reader and missing TEST evidence. Non-fits and DET pairs return `status="not_applicable"` without writing a fact. No grade is produced.
+
+The object is a context manager with `close()`. It closes an internally created SourceReader; a supplied reader remains caller-owned. Keep one instance per process and call it sequentially. Streaming mode holds no base read transaction and performs no population-wide count, so later committed samples are visible. The standalone CLI retains its existing defaults and scope.

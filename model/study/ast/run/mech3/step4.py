@@ -22,13 +22,20 @@ import sys
 import time
 
 sys.dont_write_bytecode=True
-from common import CODE_ROOT,DATA_ROOT,OUTPUT_ROOT,HERE,canonical,digest
-from fit_contract import stored_program_fit
-from observations import original_groups,compare_readers
-from reader_projection import pair_readers
-from store import Store,GoldCache
-from step2_check import valid_base
-from run import pair_key
+if __package__:
+    from .common import CODE_ROOT,DATA_ROOT,OUTPUT_ROOT,HERE,canonical,digest
+    from .fit_contract import stored_program_fit
+    from .observations import original_groups,compare_readers
+    from .reader_projection import pair_readers
+    from .store import Store,GoldCache
+else:
+    from common import CODE_ROOT,DATA_ROOT,OUTPUT_ROOT,HERE,canonical,digest
+    from fit_contract import stored_program_fit
+    from observations import original_groups,compare_readers
+    from reader_projection import pair_readers
+    from store import Store,GoldCache
+from mech.step2_check import valid_base
+from mech.run import pair_key
 
 STOP=False
 
@@ -55,7 +62,7 @@ def retry_test(args,existing):
 
 
 class Worker:
-    def __init__(self,args,events=None,worker_id=0,stop_event=None):
+    def __init__(self,args,events=None,worker_id=0,stop_event=None,*,config=None,artifacts=None,streaming=False):
         from evaluator import ReplayEvaluator
         from tables import TargetStore,comparison_type
         from nonrender_metadata import MetadataProducer
@@ -63,9 +70,11 @@ class Worker:
         self.args=args;self.start=time.monotonic();self.last=0;self.counts=Counter();self.reader_counts=Counter()
         self.events=events;self.worker_id=worker_id;self.stop_event=stop_event
         self.tasks={};self.current=None;self.producer=None;self.producer_class=MetadataProducer;self.group_cache={};self.reader_cache={}
-        self.cfg=json.loads((DATA_ROOT/'ast/run/corpus-v12-body-full/run.json').read_text())
-        self.ev=ReplayEvaluator(run=CODE_ROOT/'ast/run',deadline=args.deadline,
-            artifacts=DATA_ROOT/'judgetool/mech3-fit-replays',reference=CODE_ROOT/'ref/progsynth-relabel')
+        config_path=Path(config).resolve() if config is not None else DATA_ROOT/'ast/run/corpus-v12-body-full/run.json'
+        self.cfg=json.loads(config_path.read_text())
+        self.ev=ReplayEvaluator(run=CODE_ROOT/'ast/run',config=config_path,deadline=args.deadline,
+            artifacts=artifacts if artifacts is not None else DATA_ROOT/'judgetool/mech3-fit-replays',
+            reference=CODE_ROOT/'ref/progsynth-relabel')
         self.legacy=self.ev.legacy;self.settings=self.ev.settings
         self.gold_task=None
         self.context=SimpleNamespace(arclog=self.legacy.arclog,legacy=self.legacy,settings=self.settings)
@@ -86,16 +95,18 @@ class Worker:
         files.append(binary)
         self.manifest={str(p.resolve()):hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
         config=dict(schema='mech3-step4-config-v1',base=str(args.base.resolve()),compare_seconds=args.compare_seconds,
+            source_config_sha256=hashlib.sha256(config_path.read_bytes()).hexdigest(),
             scope='base label fits, nonDET; per-reader joint projections',
             program_fit='stored TRAIN+TEST proof first; missing TEST uses shared whole mutant and full gold OUT replay',
             runtime=dict(python=str(Path(sys.executable).resolve()),binary=str(binary)),deadline=args.deadline)
         self.output=Store(args.output,self.manifest,config)
         self.gold_cache=GoldCache(self.output)
-        self.base=sqlite3.connect(args.base.resolve().as_uri()+'?mode=ro',uri=True);self.base.execute('BEGIN')
+        self.base=sqlite3.connect(args.base.resolve().as_uri()+'?mode=ro',uri=True)
+        if not streaming:self.base.execute('BEGIN')
         self.scope="(json_extract(record_json,'$.label')='fits' AND upper(json_extract(record_json,'$.kind'))!='DET')"
         self.scope_params=getattr(args,'task_ids',[])
         if self.scope_params:self.scope+=' AND json_extract(record_json,\'$.task\') IN ('+','.join('?' for _ in self.scope_params)+')'
-        self.total=self.base.execute('SELECT count(*) FROM pairs WHERE '+self.scope,self.scope_params).fetchone()[0]
+        self.total=0 if streaming else self.base.execute('SELECT count(*) FROM pairs WHERE '+self.scope,self.scope_params).fetchone()[0]
 
     def task(self,task):
         if task not in self.tasks:
