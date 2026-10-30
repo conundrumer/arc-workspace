@@ -36,6 +36,28 @@ def overlay_snapshot(operation):
     return actual
 
 
+def publication_layouts(validated, generation, expected_pairs):
+    """Keep provider-authenticated layout choices; never infer pair layout."""
+    variants = validated['layout_variants']
+    pairs = validated['per_pair_source_generations']
+    if 'base' not in variants or set(pairs) != expected_pairs:
+        raise ValueError('validated layout receipt lacks exact point/pair coverage')
+    public_files = validated['public_files']
+    for variant in variants.values():
+        name = variant['point_json']
+        if Path(name).is_absolute() or name not in public_files:
+            raise ValueError('layout point is not a validated generation artifact')
+        if not inside(generation / name, generation).is_file():
+            raise ValueError('validated layout point file is missing')
+    for pair in pairs.values():
+        variant = variants[pair['layout']]
+        if (pair['point_json'] != variant['point_json']
+                or pair['source_generation'] != variant['source_generation']):
+            raise ValueError('pair layout provenance differs from its declared variant')
+    # Paths in these two receipt fields remain relative to record.generation.
+    return dict(layout_variants=variants, per_pair_source_generations=pairs)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--manifest', type=Path, required=True)
@@ -144,6 +166,7 @@ def main():
                         pairs = {pair: generation / 'pairs' / pair / 'pair.json' for pair in expected_pairs}
                         if not point_json.is_file() or any(not p.is_file() for p in pairs.values()):
                             raise ValueError('validated normalized point lacks declared point/pair files')
+                        layouts = publication_layouts(validated, generation, expected_pairs)
                         artifact_path = generation / 'artifact-manifest.json'
                         write_json(artifact_path, dict(schema='study-normalized-gold-artifacts-v1',
                             point_id=point_id, policy=POLICY, files=manifest_for(generation)), compact=True)
@@ -153,6 +176,7 @@ def main():
                             source_generation=operation['source_generation'], generation=relative(generation),
                             point_json=relative(point_json), pairs={k: relative(v) for k, v in pairs.items()},
                             artifact_manifest=dict(path=relative(artifact_path), sha256=file_sha(artifact_path)))
+                        record.update(layouts)
                         write_json(index, record, compact=True)
                         append(args.output / 'manifest.jsonl', record)
                         write_json(state_path, dict(status='published', attempt=attempt,
