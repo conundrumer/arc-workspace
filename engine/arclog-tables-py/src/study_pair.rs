@@ -4,7 +4,7 @@ use arclog::decode::corpus::read_task_files;
 use arclog::registry::Registry;
 use arclog::session::{SessionBound, TaskSession};
 use arclog_bindings::{Names, PyMutationPoint, PyStudyProgram, PyValidMutant, constructions};
-use arclog_tables::columns::{case_columns_in,case_columns_with_full_rows_in,case_columns_selected_entries_in,ValueKind};
+use arclog_tables::columns::{case_columns_in,case_columns_with_full_rows_in,case_columns_selected_entries_in,case_columns_metadata_in,ValueKind};
 use arclog::eval::join::Materializer;
 use arclog_tables::tables::{evidence_tables, study_pair};
 use study_pair::STUDY_SESSION_BYTES;
@@ -45,7 +45,7 @@ fn evaluate_pair(
     let mut result=py.detach(||study_pair::evaluate_pair(
         &gold.program,&point.inner,&mutant.inner,&read,&judged,&session,constructions,&settings));
     let evidence=evidence_tables(&read,Registry::get());
-    let (g,m)=pack_pair(py,task,["gold","mutant"],settings.projection_cap,&mut result,|result,gold| {
+    let (g,m)=pack_pair(py,task,["gold","mutant"],settings.projection_cap,&study_pair::table_transport_ref(),[&gold.program,mutant.inner.program()],&mut result,|result,gold| {
         let materializer=Materializer::new(&session,&result.limits);
         Ok(case_columns_in(&materializer,&evidence,if gold {&result.gold} else {&result.mutant},read.train.len(),None))
     })?;
@@ -65,6 +65,7 @@ pub(crate) fn register(names: &Names<'_, '_>) -> PyResult<()> {
 #[pyclass(name="StudyTaskEvaluator", frozen, module="arclog")]
 struct PyStudyTaskEvaluator {
     task_name:String,
+    ident_namespace:String,
     task:arclog::task::Task,
     judged:arclog::task::JudgedTask,
     session:TaskSession,
@@ -101,7 +102,7 @@ impl PyStudyTaskEvaluator {
         let evidence=evidence_tables(&read,Registry::get());
         let mut cache=study_pair::PairCache::with_byte_bound(compact,session_bytes);
         cache.set_observation_start(observation_start);
-        Ok(Self {task_name:task.into(),task:read,judged,session:TaskSession::new(SessionBound {bytes:session_bytes},settings.caps),settings,evidence,cache:std::sync::Mutex::new(cache)})
+        Ok(Self {task_name:task.into(),ident_namespace:study_pair::table_transport_ref(),task:read,judged,session:TaskSession::new(SessionBound {bytes:session_bytes},settings.caps),settings,evidence,cache:std::sync::Mutex::new(cache)})
     }
 
     /// Exact native ingestion in this task's session, with the GIL released.
@@ -156,11 +157,17 @@ impl PyStudyTaskEvaluator {
     /// namespace. Native evaluation is cached once per gold handle. Returns
     /// (status_json, CaseTables); stops and faults retain their native reason.
     /// full_rows packs native rows/extents even when synthesis projections exist.
-    #[pyo3(signature=(gold,*,full_rows=false,full_rows_entries=None,expected_tables_ref=None))]
-    fn gold_tables(&self,py:Python<'_>,gold:&PyStudyProgram,full_rows:bool,mut full_rows_entries:Option<Vec<usize>>,expected_tables_ref:Option<&str>)->PyResult<(String,PyCaseTables)> {
+    #[pyo3(signature=(gold,*,full_rows=false,full_rows_entries=None,expected_tables_ref=None,metadata_only=false,selected_only=false))]
+    fn gold_tables(&self,py:Python<'_>,gold:&PyStudyProgram,full_rows:bool,mut full_rows_entries:Option<Vec<usize>>,expected_tables_ref:Option<&str>,metadata_only:bool,selected_only:bool)->PyResult<(String,PyCaseTables)> {
         if gold.settings!=self.settings {return Err(PyValueError::new_err("task evaluator and program settings differ"));}
         if full_rows_entries.is_some()!=expected_tables_ref.is_some() || full_rows_entries.is_some() && !full_rows {
             return Err(PyValueError::new_err("entry mask requires full_rows=True and expected_tables_ref together"));
+        }
+        if metadata_only && (full_rows || full_rows_entries.is_some() || expected_tables_ref.is_some() || selected_only) {
+            return Err(PyValueError::new_err("metadata_only cannot request row payload or a snapshot mask"));
+        }
+        if selected_only && full_rows_entries.is_none() {
+            return Err(PyValueError::new_err("selected_only requires a full-row snapshot mask"));
         }
         if let Some(entries)=&mut full_rows_entries {
             entries.sort_unstable();
@@ -182,12 +189,16 @@ impl PyStudyTaskEvaluator {
             let started=std::time::Instant::now();
             let materializer=Materializer::new(&self.session,&limits);
             let columns=match &full_rows_entries {
-                Some(entries)=>case_columns_selected_entries_in(&materializer,&self.evidence,&tables,self.task.train.len(),None,entries),
+                Some(entries)=>case_columns_selected_entries_in(&materializer,&self.evidence,&tables,self.task.train.len(),None,entries,selected_only),
+                None if metadata_only=>case_columns_metadata_in(&materializer,&self.evidence,&tables,self.task.train.len(),None),
                 None=>case_columns_with_full_rows_in(&materializer,&self.evidence,&tables,self.task.train.len(),None,full_rows),
             };
             let metadata_complete=columns.packing_stop().is_none() && columns.tables.form.len()==self.evidence.len()+tables.len();
             if !full_rows && metadata_complete {cache.record_gold_tables_metadata(&gold.program,columns.entries.table.len())?;}
             report["full_rows"]=full_rows.into();
+            report["metadata_only"]=metadata_only.into();
+            report["selected_only"]=selected_only.into();
+            report["projection_payload_omitted"]=(metadata_only || selected_only).into();
             report["entry_count"]=columns.entries.table.len().into();
             report["entry_metadata_complete"]=metadata_complete.into();
             report["full_rows_entries"]=serde_json::json!(full_rows_entries);
@@ -195,6 +206,9 @@ impl PyStudyTaskEvaluator {
                 report["selected_rows_entries"]=serde_json::json!(entries.iter().copied().filter(|i|columns.entries.kind.get(*i)==Some(&(ValueKind::Rows as u8))).collect::<Vec<_>>());
             }
             packing_status(&mut report,[&columns]);
+            report["packed_correspondence"]=table_binding(&columns,"gold",&report,&self.ident_namespace);
+            report["packed_correspondence"]["program_sexp"]=gold.program.sexp(Registry::get()).into();
+            report["program_sexp"]=gold.program.sexp(Registry::get()).into();
             report["native_columns_seconds"]=started.elapsed().as_secs_f64().into();
             Ok((report,columns))
         })).map_err(PyValueError::new_err)?;
@@ -235,6 +249,8 @@ impl PyStudyTaskEvaluator {
             let materializer=Materializer::new(&self.session,&result.limits);
             let columns=case_columns_in(&materializer,&self.evidence,&result.tables,self.task.train.len(),None);
             packing_status(&mut result.report,[&columns]);
+            result.report["packed_correspondence"]=table_binding(&columns,"gold",&result.report,&self.ident_namespace);
+            result.report["packed_correspondence"]["program_sexp"]=program.program.sexp(Registry::get()).into();
             result.report["packed_table_count"]=columns.tables.form.len().into();
             result.report["body_table_packed"]=result.report["body_table"].as_u64().is_some_and(|i|(i as usize)<columns.tables.form.len()).into();
             Ok((result.report,columns))
@@ -249,7 +265,7 @@ impl PyStudyTaskEvaluator {
             if cache.activate(&gold.program) {self.session.results.clear();}
             Ok(study_pair::evaluate_pair_cached(&gold.program,&point.inner,&mutant.inner,&self.task,&self.judged,&self.session,constructions,&self.settings,cache))
         })).map_err(PyValueError::new_err)?;
-        let (g,m)=pack_pair(py,&self.task_name,["gold","mutant"],self.settings.projection_cap,&mut result,|result,gold| {
+        let (g,m)=pack_pair(py,&self.task_name,["gold","mutant"],self.settings.projection_cap,&self.ident_namespace,[&gold.program,mutant.inner.program()],&mut result,|result,gold| {
             self.with_cache("pack_pair_side",|cache| {
                 let materializer=Materializer::new(&self.session,&result.limits);
                 Ok(study_pair::pair_side_columns_cached(&materializer,&self.evidence,result,gold,self.task.train.len(),cache))
@@ -264,6 +280,26 @@ impl PyStudyTaskEvaluator {
 
 // One report adapter for every native study packing entry. Execution evidence
 // remains unchanged: an output-buffer stop is separate collection evidence.
+// Actual packed indices identify a view; selector/form alone does not. This
+// references the compiler correspondence without reparsing names or types.
+fn table_binding(columns:&arclog_tables::columns::CaseColumns,side:&str,report:&serde_json::Value,ident_namespace:&str)->serde_json::Value {
+    let tables=&columns.tables;
+    let roles=report["table_indices"].as_object();
+    serde_json::json!({"schema":"arclog-study-packed-correspondence-v1","packing_ref":study_pair::table_transport_ref(),"side":side,
+        "binding_contract":"atomic native returned report/CaseTables tuple; persisted use requires one acquisition receipt binding report and exact payload digests/runtime/source; packing_ref is not a payload digest",
+        "ident_namespace":ident_namespace,"ident_namespace_contract":"one native TaskSession intern table; comparison across namespaces requires native transport, never numeric equality",
+        "ident_columns":(0..tables.form.len()).flat_map(|table|tables.column_types[table].iter().enumerate().filter(|(_,ty)|ty.as_str()=="Ident").map(move|(column,_)|serde_json::json!({"table":table,"physical_column":column}))).collect::<Vec<_>>(),
+        "tables_ref":report["tables_ref"],"tables":(0..tables.form.len()).map(|i| {
+            let mut roles=roles.into_iter().flat_map(|r|r.iter()).filter(|(role,value)|role.starts_with(side) && value.as_u64()==Some(i as u64)).map(|(role,_)|role.clone()).collect::<Vec<_>>();
+            if report["body_table"].as_u64()==Some(i as u64) {roles.push("gold_body_kept".into());}
+            if !report["tables_ref"].is_null() {roles.push("gold_relation_search".into());}
+            serde_json::json!({"table":i,"selector":{"form":tables.form[i],"point":tables.point[i],"relation":tables.relation[i],"fact":tables.fact[i]},
+                "clause_index":tables.form[i].split('.').next().and_then(|n|n.parse::<usize>().ok()),
+                "report_roles":roles,"physical_types":tables.column_types[i],"physical_labels":tables.column_labels[i],"physical_slots":tables.column_slots[i],
+                "physical_names":tables.column_names[i],"cell_width":tables.width[i]})
+        }).collect::<Vec<_>>()})
+}
+
 fn packing_status<'a>(report:&mut serde_json::Value,columns:impl IntoIterator<Item=&'a arclog_tables::columns::CaseColumns>) {
     packing_stops(report,columns.into_iter().filter_map(|c|c.packing_stop()));
 }
@@ -286,11 +322,12 @@ packing_report!(study_pair::PairEvaluation,study_pair::component_tables::Compone
 // Rust payload. Both sides use the native evaluation's original limits and
 // session; the completed first output remains charged while packing the next.
 fn pack_pair<R:PackingReport+Send+Sync>(
-    py:Python<'_>,task:&str,sides:[&str;2],projection_cap:u64,result:&mut R,
+    py:Python<'_>,task:&str,sides:[&str;2],projection_cap:u64,ident_namespace:&str,programs:[&arclog::study::StudyProgram;2],result:&mut R,
     mut pack:impl FnMut(&R,bool)->Result<arclog_tables::columns::CaseColumns,String>+Send,
 )->PyResult<(PyCaseTables,PyCaseTables)> {
     let mut stops=Vec::new();
     let mut seconds=0.;
+    let mut bindings=Vec::new();
     let mut side=|index:usize|->PyResult<PyCaseTables> {
         let (columns,elapsed)=py.detach(|| {
             let started=std::time::Instant::now();
@@ -298,12 +335,16 @@ fn pack_pair<R:PackingReport+Send+Sync>(
         }).map_err(PyValueError::new_err)?;
         seconds+=elapsed;
         stops.extend(columns.packing_stop().cloned());
+        let mut binding=table_binding(&columns,sides[index],result.packing_report(),ident_namespace);
+        binding["program_sexp"]=programs[index].sexp(Registry::get()).into();
+        bindings.push(binding);
         PyCaseTables::of(py,task.into(),sides[index].into(),false,projection_cap,&columns,None,None)
     };
     let gold=side(0)?;
     let mutant=side(1)?;
     let report=result.packing_report();
     packing_stops(report,&stops);
+    report["packed_correspondence"]=serde_json::json!(bindings);
     report["timings"]["native_columns"]=seconds.into();
     Ok((gold,mutant))
 }

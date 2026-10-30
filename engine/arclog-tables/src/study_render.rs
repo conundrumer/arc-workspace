@@ -54,15 +54,19 @@ pub fn export(
     settings: &arclog::stream::DecodeSettings,
 ) -> Result<Value, String> {
     let checked = program.checked();
-    let vocabulary = arclog::stream::Vocabulary::new(registry, settings);
-    let written =
-        arclog::stream::written_stream(checked, &vocabulary).map_err(|d| d.message.to_string())?;
+    let written=program.written_stream(registry,settings).map_err(|d|d.message.to_string())?;
+    let ordered=written.forms.iter().flat_map(|form|materialized_slots(program.program().value(),&written,form).map(move|slot|(form,slot))).collect::<Vec<_>>();
+    let materialized=ordered.iter().map(|(_,slot)|*slot).collect::<std::collections::BTreeSet<_>>();
+    let inventory=ordered.into_iter().enumerate().map(|(ordinal,(form,slot))| {
+        json!({"relation_ordinal":ordinal,"table":EVIDENCE_FACTS.len()+ordinal,"form_path":path_json(&form.path),"relation_slot":slot,
+            "source_name":relation_spelled(&written.relations[slot]),"native_selector":{"form":form.path.0.iter().map(|s|s.0.to_string()).collect::<Vec<_>>().join("."),"point":0,"relation":slot}})
+    }).collect::<Vec<_>>();
     let names = arclog::write::label_names(program.program(), registry);
     let mut relations = Vec::new();
     for form in &written.forms {
         for slot in form.relations.clone() {
             let declared = &written.relations[slot];
-            if !form.readable.contains(&slot) || gives_no_table(program.program().value(), &form.path, declared) {
+            if !materialized.contains(&slot) {
                 relations.push(json!({"relation_slot":slot,"source_name":relation_spelled(declared),"form_path":path_json(&form.path),
                     "materialized_table_expected":false,"schema_status":if form.readable.contains(&slot) {"native_export_omits_this_port"} else {"not_a_readable_relation_in_checked_program"},
                     "reason":if form.readable.contains(&slot) {"native alias/projection or unused specialized output; use INIT input_port_projection and its source relation schema"} else {"writer reserves this registry port slot, but this specialized checked instance defines no readable graph relation for it; registry declaration describes the port"}}));
@@ -113,7 +117,7 @@ pub fn export(
                     "frame_applicable":arclog::registry::has_frame(ty),"sources":flows[i].iter().map(source).collect::<Vec<_>>()})
             }).collect::<Vec<_>>();
             relations.push(json!({"relation_slot":slot,"source_name":relation_spelled(declared),"form_path":path_json(&form.path),
-                "materialized_table_expected":!gives_no_table(program.program().value(),&form.path,declared),"columns":columns,
+                "materialized_table_expected":true,"columns":columns,
                 "native_selector":{"form":form.path.0.iter().map(|s|s.0.to_string()).collect::<Vec<_>>().join("."),"point":0,"relation":slot}}));
         }
     }
@@ -139,6 +143,9 @@ pub fn export(
     }
     Ok(
         json!({"schema":"arclog-study-frame-sources-v1","complete":true,"relations":relations,"bodies":bodies,
+        "table_inventory":{"complete":true,"evidence_table_count":EVIDENCE_FACTS.len(),"relation_table_count":inventory.len(),"table_count":EVIDENCE_FACTS.len()+inventory.len(),
+            "evidence_facts":EVIDENCE_FACTS.iter().map(|f|format!("{f:?}")).collect::<Vec<_>>(),"relations":inventory,
+            "contract":"exact original study gold_tables enumeration before bounded packing; no task evaluation; includes faults as table positions, omits native aliases"},
         "frame_contract":"native static provenance; read_source_column_frame resolves through its source relation/column; native_unknown is explicit, not an unsupported-node omission",
         "runtime_extent_contract":"resolve per-example/per-assignment frame sizes and coordinates using supplied native table frames/extents; this API evaluates no task"}),
     )

@@ -111,7 +111,7 @@ pub enum ProjectionsKind {
 pub enum ValueKind {
     /// Rows, in the run of the entry.
     Rows = 0,
-    /// The count of rows alone, since the table gives projections.
+    /// The count of rows alone, with the row payload omitted by export policy.
     Count = 1,
     Undefined = 2,
     /// The bound that stopped the enumeration of models, in `value_stop`.
@@ -257,6 +257,8 @@ pub struct TableColumns {
 pub struct EntryColumns {
     /// The number of the table.
     pub table: Vec<u32>,
+    /// Original top-level clause index; -1 for task evidence.
+    pub clause_index: Vec<i32>,
     /// 0 for the task, 1 for a train example, 2 for a test example.
     pub example_kind: Vec<u8>,
     /// The example's place among the train or the test examples, and 0 for
@@ -427,11 +429,16 @@ pub fn case_columns(evidence: &[Table], tables: &[(usize, Table)], train: usize,
 enum RowExport<'a> {
     Default,
     All,
-    Selected(&'a [usize]),
+    Selected {entries:&'a [usize],only:bool},
+    Metadata,
 }
 impl RowExport<'_> {
+    fn omit_projections(self)->bool {matches!(self,Self::Metadata|Self::Selected {only:true,..})}
+    fn count_only(self,entry:usize,projected:bool)->bool {
+        match self {Self::Metadata=>true,Self::Selected {entries,only:true}=>entries.binary_search(&entry).is_err(),_=>projected && !self.full_at(entry)}
+    }
     fn full_at(self,entry:usize)->bool {
-        match self {Self::Default=>false,Self::All=>true,Self::Selected(entries)=>entries.binary_search(&entry).is_ok()}
+        match self {Self::Default=>false,Self::All=>true,Self::Selected {entries,..}=>entries.binary_search(&entry).is_ok(),Self::Metadata=>false}
     }
 }
 
@@ -448,8 +455,14 @@ pub fn case_columns_with_full_rows_in(materializer:&Materializer<'_>,evidence:&[
 
 /// Select additional full-row payload by the canonical global entry ordinal.
 /// The snapshot owner validates this sorted, unique mask before packing.
-pub fn case_columns_selected_entries_in(materializer:&Materializer<'_>,evidence:&[Table],tables:&[(usize,Table)],train:usize,labels:Option<&StreamLabels>,entries:&[usize])->CaseColumns {
-    fold(materializer,evidence,tables,None,train,labels,RowExport::Selected(entries)).0
+pub fn case_columns_selected_entries_in(materializer:&Materializer<'_>,evidence:&[Table],tables:&[(usize,Table)],train:usize,labels:Option<&StreamLabels>,entries:&[usize],selected_only:bool)->CaseColumns {
+    fold(materializer,evidence,tables,None,train,labels,RowExport::Selected {entries,only:selected_only}).0
+}
+
+/// Entry/assignment snapshot without ordinary row, extent or projection buffers.
+/// Assigned DET row values remain exact for the canonical kept-choice matcher.
+pub fn case_columns_metadata_in(materializer:&Materializer<'_>,evidence:&[Table],tables:&[(usize,Table)],train:usize,labels:Option<&StreamLabels>)->CaseColumns {
+    fold(materializer,evidence,tables,None,train,labels,RowExport::Metadata).0
 }
 
 // Sessionless public helpers retain the native default caps. Engine operation
@@ -613,8 +626,8 @@ fn push_tables<'t>(materializer:&Materializer<'_>,out: &mut CaseColumns, names: 
         let before=packing_bytes(out,names,runs);
         // Headers/count-only entries allocate too, even when there is no row
         // buffer. Admit their physical metadata before any output allocation.
-        let allocation=metadata_bytes(materializer,table,names,labels)
-            .and_then(|bytes|materializer.copy(bytes.saturating_add(packing_growth(out,names,runs,table))));
+        let allocation=metadata_bytes(materializer,table,names,labels,row_export)
+            .and_then(|bytes|materializer.copy(bytes.saturating_add(packing_growth(out,names,runs,table,row_export))));
         match allocation {
             Ok(allocation)=>out.allocations.push(allocation),
             Err(bound)=>{out.packing_stop=Some(Stop {bound,form:table.form.clone()});break;},
@@ -661,7 +674,7 @@ fn settle_packing(allocations:&mut [Arc<arclog::session::SessionAllocation>],mut
 // Forecast only metadata container growth. New nested payloads and row
 // buffers keep their existing admissions; values use exact capacity growth.
 // Counting model/assignment headers never traverses a factored row product.
-fn packing_growth(out:&CaseColumns,names:&TableNames,runs:&Runs,table:&Table)->usize {
+fn packing_growth(out:&CaseColumns,names:&TableNames,runs:&Runs,table:&Table,row_export:RowExport<'_>)->usize {
     let (mut entries,mut assigned,mut projections,mut projected,mut flows)=(0usize,0usize,0usize,0usize,0usize);
     let mut det_runs=0usize;
     if let Ok(contents)=&table.contents {
@@ -678,7 +691,7 @@ fn packing_growth(out:&CaseColumns,names:&TableNames,runs:&Runs,table:&Table)->u
                 }
             },
         }}
-        if let Some(Projections::Found(found))=&contents.projections {
+        if let Some(Projections::Found(found))=contents.projections.as_ref().filter(|_|!row_export.omit_projections()) {
             projections=found.len();
             for projection in found {for example in &projection.rows {projected=projected.saturating_add(example.at.len());}}
         }
@@ -702,7 +715,7 @@ fn packing_growth(out:&CaseColumns,names:&TableNames,runs:&Runs,table:&Table)->u
 // logical row cardinality. Includes output dictionaries, dtype keys, the two
 // owner types/closures, vector growth and nested list/string copies. Row cells
 // and extent matrices have their own admissions. No Cartesian traversal here.
-fn metadata_bytes(materializer:&Materializer<'_>,table:&Table,names:&TableNames,labels:Option<&StreamLabels>)->Result<usize,arclog::eval::ReachedBound> {
+fn metadata_bytes(materializer:&Materializer<'_>,table:&Table,names:&TableNames,labels:Option<&StreamLabels>,row_export:RowExport<'_>)->Result<usize,arclog::eval::ReachedBound> {
     materializer.check()?;
     let mut bytes=64usize.saturating_mul(1024).saturating_add(table.form.0.len().saturating_mul(256));
     let Ok(contents)=&table.contents else {return Ok(bytes.saturating_add(table.contents.as_ref().err().map_or(0,|f|f.message.len().saturating_mul(8))));};
@@ -733,7 +746,7 @@ fn metadata_bytes(materializer:&Materializer<'_>,table:&Table,names:&TableNames,
             },
         }
     }
-    if let Some(Projections::Found(projections))=&contents.projections {for projection in projections {
+    if let Some(Projections::Found(projections))=contents.projections.as_ref().filter(|_|!row_export.omit_projections()) {for projection in projections {
         materializer.check()?;
         add(4096usize.saturating_add(projection.columns.len().saturating_mul(256)));
         for example in &projection.rows {add(example.at.len().saturating_mul(4096));}
@@ -1334,10 +1347,11 @@ fn push_contents(materializer:&Materializer<'_>,form:&NodePath,out: &mut CaseCol
         };
         let index = u32::try_from(index).expect("fewer than 2^32 examples");
         let push = |out: &mut CaseColumns, runs: &mut Runs, at_assignment:usize, model: u32, value: Option<&RelationValue>, stop: Option<&Stop>, fault: Option<String>, extents: Option<&EntryExtents>| {
-            let count_only=contents.projections.is_some() && !row_export.full_at(out.entries.table.len());
+            let count_only=row_export.count_only(out.entries.table.len(),contents.projections.is_some());
             let faulted = fault.is_some();
             let entries = &mut out.entries;
             entries.table.push(row);
+            entries.clause_index.push(form.0.first().map_or(-1,|s|s.0 as i32));
             entries.example_kind.push(kind);
             entries.example_index.push(index);
             entries.model.push(model);
@@ -1436,7 +1450,7 @@ fn push_contents(materializer:&Materializer<'_>,form:&NodePath,out: &mut CaseCol
             }
         }
     }
-    if let Some(Projections::Found(found)) = &contents.projections {
+    if let Some(Projections::Found(found)) = contents.projections.as_ref().filter(|_|!row_export.omit_projections()) {
         let entries = projected_entries(contents);
         for projection in found {
             let projected_columns: Vec<usize> = projection.columns.iter().map(|column| usize::from(column.0)).collect();
@@ -1600,7 +1614,7 @@ macro_rules! fields_heap {
 }
 fields_heap!(StopColumns;bound,form);
 fields_heap!(TableColumns;token,form,point,conjuncts,sites,relation,fact,column_names,column_types,column_frames,extent_columns,column_slots,column_labels,column_source_labels,width,det_relations,det_types,det_frames,det_slots,det_labels,det_source_labels,det_widths,det_columns,projections,projections_stop,fault,depth,keys,output_position,output_color);
-fields_heap!(EntryColumns;table,example_kind,example_index,model,kind,rows,offset,stop,value_stop,fault,extent_offset,extent_stop,extent_fault,extent_status);
+fields_heap!(EntryColumns;table,clause_index,example_kind,example_index,model,kind,rows,offset,stop,value_stop,fault,extent_offset,extent_stop,extent_fault,extent_status);
 fields_heap!(AssignedColumns;entry,det,rows,offset);
 fields_heap!(ProjectionColumns;table,columns,width);
 fields_heap!(ProjectionRowColumns;projection,entry,defined,rows,offset,extent_offset,extent_status);

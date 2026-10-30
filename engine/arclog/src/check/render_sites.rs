@@ -91,6 +91,8 @@ pub(crate) fn export_typed(checked: &CheckedProgram, registry: &Registry) -> Res
             };
             out.push(json!({"path":path_json(&arg_at),"site_path":path_json(at),"scope_path":path_json(reading.path),
                 "label_id":label_id.map(|l|l.0),"resolved_type":format!("{ty:?}"),
+                "type_identity":crate::study::render_correspondence::type_json(&ty),
+                "column_path":path.iter().map(crate::study::render::column).collect::<Vec<_>>(),
                 "column_type":column_type.map(|t|format!("{t:?}")),"frame":frame(&ty,label_id,grids),"literal":zero}));
         }
         column.pop();

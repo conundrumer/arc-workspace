@@ -552,6 +552,11 @@ fn graph_relation(program: &CheckedProgram, registry: &Registry, form: &NodePath
     Some(GraphRelation { node: *shared, output: Some(Arc::clone(&name.path)) })
 }
 
+/// Export order shared by study collection and compile-only inventory.
+pub(crate) fn materialized_slots<'a>(program:&'a Program,written:&'a arclog::stream::WrittenStream,form:&'a arclog::stream::write::WrittenForm)->impl Iterator<Item=usize>+'a {
+    form.readable.iter().copied().filter(move|slot|!gives_no_table(program,&form.path,&written.relations[*slot]))
+}
+
 /// Whether `declared`, a relation of the form at `form` of `program`, gets no
 /// table: an input that the form writes, in its key clause or after it,
 /// with a body of one positive atom and any number of `NOT` atoms, each of a

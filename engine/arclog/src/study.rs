@@ -14,6 +14,7 @@ pub mod render_bodies;
 pub mod render_definitions;
 pub mod render_meanings;
 pub mod render_names;
+pub mod render_correspondence;
 
 use crate::check::{CheckCache, CheckedProgram, SolverClauses, check_shared_program};
 use crate::diagnostic::{Diagnostic, Severity};

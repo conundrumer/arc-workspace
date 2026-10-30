@@ -337,6 +337,7 @@ impl PyCaseTables {
         let e = Part::new(py, "entries", &dtypes,&owner);
         let c = &columns.entries;
         e.ints("table", &c.table)?;
+        e.ints("clause_index", &c.clause_index)?;
         e.ints("example_kind", &c.example_kind)?;
         e.ints("example_index", &c.example_index)?;
         e.ints("model", &c.model)?;

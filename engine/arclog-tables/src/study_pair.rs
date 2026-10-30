@@ -75,12 +75,16 @@ struct GoldRelationMemo {
     /// second implementation of the packer's entry traversal.
     metadata_entries:Option<usize>,
 }
+/// Export-local native identity shared by immutable snapshots and packed views.
+pub fn table_transport_ref()->String {
+    use std::sync::{OnceLock,atomic::{AtomicU64,Ordering}};
+    static START:OnceLock<std::time::SystemTime>=OnceLock::new();
+    static NEXT:AtomicU64=AtomicU64::new(0);
+    format!("{}:{:?}:{}",std::process::id(),START.get_or_init(std::time::SystemTime::now),NEXT.fetch_add(1,Ordering::Relaxed))
+}
 impl GoldRelationMemo {
     fn new(source:Arc<CheckedProgram>,tables:Outcome<Vec<(usize,Table)>>)->Self {
-        use std::sync::{OnceLock,atomic::{AtomicU64,Ordering}};
-        static START:OnceLock<std::time::SystemTime>=OnceLock::new();
-        static NEXT:AtomicU64=AtomicU64::new(0);
-        let snapshot_ref=format!("{}:{:?}:{}",std::process::id(),START.get_or_init(std::time::SystemTime::now),NEXT.fetch_add(1,Ordering::Relaxed));
+        let snapshot_ref=table_transport_ref();
         Self {source,tables,snapshot_ref,metadata_entries:None}
     }
     fn view(&self,cached:bool)->(Value,Vec<(usize,Table)>) {
@@ -154,7 +158,7 @@ impl PairCache {
         if !Arc::ptr_eq(&memo.source,gold.checked()) || memo.snapshot_ref!=expected {
             return Err("entry mask snapshot reference or gold handle differs".into());
         }
-        let count=memo.metadata_entries.ok_or("entry mask requires a complete default metadata packing first")?;
+        let count=memo.metadata_entries.ok_or("entry mask requires a complete metadata packing first")?;
         let (report,tables)=memo.view(true);
         Ok((report,tables,count))
     }
@@ -247,9 +251,8 @@ fn original_relations(program:&StudyProgram,written:&arclog::stream::WrittenStre
     }
     for form in forms.iter().skip(start) {
         let mut held=Vec::new();
-        for &slot in &form.readable {
+        for slot in materialized_slots(program.program().value(),written,form) {
             let declared=&written.relations[slot];
-            if gives_no_table(program.program().value(),&form.path,declared) {continue;}
             let relation=graph_relation(checked,decoder.registry(),&form.path,declared).ok_or_else(||fault("the graph holds no node for a relation the form declares",&form.path))?;
             let dets=relation_dets(checked,relation.node);let work=decoder.table_work();
             let examples=relation_examples(decoder,checked,&relation,&dets,&work);

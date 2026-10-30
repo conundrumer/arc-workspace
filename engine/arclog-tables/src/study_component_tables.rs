@@ -103,10 +103,9 @@ pub fn relation_tables(program:&StudyProgram,origin:&Arc<CheckedProgram>,decoder
     let mut tables=Vec::new();
     let collected=(|| ->Result<(),End> {
     let written=arclog::stream::written_stream(checked,decoder.vocabulary()).map_err(|d|End::Fault(fault(d.message,&NodePath::default())))?;
-    for form in &written.forms {for &slot in &form.readable {
+    for form in &written.forms {for slot in materialized_slots(program.program().value(),&written,form) {
         budget.charge_work(0).map_err(|bound|End::Stop(arclog::eval::Stop {bound,form:form.path.clone()}))?;
         let declared=&written.relations[slot];
-        if gives_no_table(program.program().value(),&form.path,declared) {continue;}
         let relation=graph_relation(checked,decoder.registry(),&form.path,declared).ok_or_else(||End::Fault(fault("no native graph for continuation relation",&form.path)))?;
         let dets=relation_dets(checked,relation.node);
         let context=AssignmentContext::Held {receipt:&receipt,limits,work};
