@@ -642,40 +642,63 @@ impl CompletionDomain<'_> {
 /// The AST reader gives each fresh/key occurrence an id. Deleting its only
 /// declaration must remove its remaining uses too; positive joins may bind
 /// values, but do not create a new syntactic declaration.
-fn declared_in_scopes(root: NodeRef<'_>) -> bool {
-    fn gather(node: NodeRef<'_>, uses: &mut Vec<LabelUse>, valid: &mut bool) {
+struct MissingDeclaration {
+    label: LabelId,
+    scope: NodePath,
+    at: NodePath,
+    required_by: &'static str,
+}
+
+/// The draw and recorded-admission paths share this maker check. Keep the
+/// exact failing use so a refusal identifies a label, not an unrelated read.
+fn missing_declaration(root: NodeRef<'_>, at: &NodePath) -> Option<MissingDeclaration> {
+    fn gather(
+        node: NodeRef<'_>, at: &NodePath,
+        uses: &mut Vec<(LabelUse, NodePath, &'static str)>,
+        nested: &mut Option<MissingDeclaration>,
+    ) {
         match node {
-            NodeRef::Label(label) => uses.push(*label),
-            NodeRef::Clause(c) => uses.extend(c.columns.iter().map(|c| LabelUse::Join(c.label))),
+            NodeRef::Label(label) => uses.push((*label, at.clone(), "label use")),
+            NodeRef::Clause(c) => {
+                for column in c.columns.iter() {
+                    uses.push((LabelUse::Join(column.label), at.clone(),
+                        "retained clause column"));
+                }
+            }
             NodeRef::Conjunct(Conjunct::Constraint(c)) => {
-                uses.push(c.first.into());
-                uses.extend(constraint_second(c).map(LabelUse::from));
+                uses.push((c.first.into(), at.clone(), "constraint first operand"));
+                if let Some(second) = constraint_second(c) {
+                    uses.push((second.into(), at.clone(), "constraint second operand"));
+                }
             }
             _ => {}
         }
         for (i, child) in node.children().into_iter().enumerate() {
+            let child_at = at.child(i as u32);
             if crate::program::canonical::opens_scope(node, i, child) {
-                *valid &= declared_in_scopes(child);
+                if nested.is_none() { *nested = missing_declaration(child, &child_at); }
             } else {
-                gather(child, uses, valid);
+                gather(child, &child_at, uses, nested);
             }
         }
     }
     let mut uses = Vec::new();
-    let mut valid = true;
-    gather(root, &mut uses, &mut valid);
-    let makers: StableHashSet<_> = uses
-        .iter()
-        .filter_map(|u| match u {
-            LabelUse::Fresh(l) | LabelUse::Key(l) => Some(*l),
-            _ => None,
-        })
-        .collect();
-    valid
-        && uses.iter().all(|u| match u {
-            LabelUse::Join(l) => makers.contains(l),
-            _ => true,
-        })
+    let mut nested = None;
+    gather(root, at, &mut uses, &mut nested);
+    let makers: StableHashSet<_> = uses.iter().filter_map(|(used, _, _)| match used {
+        LabelUse::Fresh(label) | LabelUse::Key(label) => Some(*label),
+        _ => None,
+    }).collect();
+    nested.or_else(|| uses.into_iter().find_map(|(used, use_at, required_by)| match used {
+        LabelUse::Join(label) if !makers.contains(&label) => Some(MissingDeclaration {
+            label, scope: at.clone(), at: use_at, required_by,
+        }),
+        _ => None,
+    }))
+}
+
+fn declared_in_scopes(root: NodeRef<'_>) -> bool {
+    missing_declaration(root, &NodePath::default()).is_none()
 }
 
 /// A named source can shadow a key/candidate label with a local maker in

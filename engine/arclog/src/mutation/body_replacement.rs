@@ -56,6 +56,107 @@ fn source_text(ast: &Node<Program>, layout: &crate::layout::Layout) -> String {
     crate::write::write_arclog(ast, &layout)
 }
 
+/// Import an INIT BODY through unchanged native occurrences in its enclosing
+/// form. Label ids are allocated while reading a BODY, so deleting a private
+/// maker can renumber an unchanged head. The source envelope has already been
+/// checked; neither spelling nor creation order establishes this correspondence.
+fn align_init_body(
+    gold: &StudyProgram,
+    candidate: &StudyProgram,
+    point: &MutationPoint,
+    replacement: &Node<Body>,
+) -> Result<Node<Body>, String> {
+    if point.kind != "INIT input" && point.kind != "INIT key" {
+        return Ok(replacement.clone());
+    }
+    let top = NodePath::top(point.body.0[0].0);
+    let occurrences =
+        |program: &StudyProgram| -> Result<BTreeMap<NodePath, Vec<LabelUse>>, String> {
+            let node = node_at(NodeRef::Program(program.program().value()), &top)
+                .ok_or("body_replacement:label_binding: enclosing form missing")?;
+            let mut uses = BTreeMap::<NodePath, Vec<LabelUse>>::new();
+            crate::safety::each_label_use_at(node, &top, &mut |path, used| {
+                if !path.0.starts_with(&point.body.0) {
+                    uses.entry(path.clone()).or_default().push(used);
+                }
+            });
+            Ok(uses)
+        };
+    let original = occurrences(gold)?;
+    let submitted = occurrences(candidate)?;
+    if original.keys().ne(submitted.keys()) {
+        return Err("body_replacement:label_binding: outside label occurrence paths differ".into());
+    }
+    let mut labels = BTreeMap::<u32, u32>::new();
+    let mut inverse = BTreeMap::<u32, u32>::new();
+    for (path, uses) in &original {
+        let current = &submitted[path];
+        if uses.len() != current.len() {
+            return Err(format!(
+                "body_replacement:label_binding: occurrence count differs at {path:?}"
+            ));
+        }
+        for (old, new) in uses.iter().zip(current) {
+            let pair = match (*old, *new) {
+                (LabelUse::Fresh(a), LabelUse::Fresh(b))
+                | (LabelUse::Join(a), LabelUse::Join(b))
+                | (LabelUse::Key(a), LabelUse::Key(b)) => Some((a, b)),
+                (LabelUse::Zero, LabelUse::Zero) => None,
+                _ => {
+                    return Err(format!(
+                        "body_replacement:label_binding: occurrence role differs at {path:?}"
+                    ));
+                }
+            };
+            if let Some((old, new)) = pair {
+                if labels
+                    .insert(new.0, old.0)
+                    .is_some_and(|previous| previous != old.0)
+                    || inverse
+                        .insert(old.0, new.0)
+                        .is_some_and(|previous| previous != new.0)
+                {
+                    return Err(format!(
+                        "body_replacement:label_binding: outside occurrences are not bijective at {path:?}"
+                    ));
+                }
+            }
+        }
+    }
+    let mut max = None::<u32>;
+    let form = node_at(NodeRef::Program(gold.program().value()), &top)
+        .ok_or("body_replacement:label_binding: gold form missing")?;
+    crate::safety::each_label_use_at(form, &top, &mut |_, used| {
+        if let Some(id) = use_label(used) {
+            max = Some(max.map_or(id.0, |previous| previous.max(id.0)));
+        }
+    });
+    let mut next = max
+        .map_or(Some(0), |id| id.checked_add(1))
+        .ok_or("body_replacement:label_binding: label id overflow")?;
+    // Allocate private labels before mapping so the AST mapper stays infallible.
+    let mut private = BTreeSet::new();
+    crate::safety::each_label_use(replacement.value(), &mut |used| {
+        if let Some(id) = use_label(used) {
+            if !labels.contains_key(&id.0) {
+                private.insert(id.0);
+            }
+        }
+    });
+    for id in private {
+        labels.insert(id, next);
+        next = next
+            .checked_add(1)
+            .ok_or("body_replacement:label_binding: label id overflow")?;
+    }
+    Ok(blocks::map_body(replacement, &mut |used, _| match used {
+        LabelUse::Fresh(id) => LabelUse::Fresh(LabelId(labels[&id.0])),
+        LabelUse::Join(id) => LabelUse::Join(LabelId(labels[&id.0])),
+        LabelUse::Key(id) => LabelUse::Key(LabelId(labels[&id.0])),
+        LabelUse::Zero => LabelUse::Zero,
+    }))
+}
+
 impl StudyProgram {
     /// Certify a synthesized BODY without sampling the current atom domain.
     /// The origin belongs to the caller's source record, not to this handle.
@@ -126,6 +227,29 @@ impl StudyProgram {
         if source_shell(&ast, &layout, at)? != source_shell(&source_ast, &source_layout, at)? {
             return Err("body_replacement:outside_body_changed: parsed source outside the selected BODY differs from gold".into());
         }
+        // A DET's source-derived columns are its retained interface too. Keep
+        // the native reader's names/order as evidence before decoding replaces
+        // them with slots. A changed interface can also retarget unchanged
+        // suffix reads, even when both complete programs check successfully.
+        let det_interface_change = if point.kind == "Det" {
+            let columns = |program: &Node<Program>| match &program.value().forms[at.0[0].0 as usize]
+            {
+                Form::Clause(clause) => clause
+                    .value()
+                    .columns
+                    .iter()
+                    .map(|column| column.name.clone())
+                    .collect::<Vec<_>>(),
+                _ => Vec::new(),
+            };
+            let original = columns(&source_ast);
+            let submitted = columns(&ast);
+            (original != submitted).then(|| format!(
+                "body_replacement:interface_changed: DET source columns {original:?} became {submitted:?}; the retained interface and suffix bindings must remain unchanged"
+            ))
+        } else {
+            None
+        };
         // Only a BODY-local candidate reaches the complete native checker.
         // A later-form failure caused by that BODY retains this distinct
         // whole-program reason; the suffix is never repaired.
@@ -150,19 +274,23 @@ impl StudyProgram {
         } else {
             candidate
         };
-        let replacement = body_at(&candidate, at)?;
+        let replacement = align_init_body(self, &candidate, &point, &body_at(&candidate, at)?)?;
         let valid = self.admit_body_replacement(point, replacement, origin, registry, settings)?;
         // At this boundary both BODY values use the actual gold namespace.
         // Retain the stronger whole-stream and native named-source proof.
-        let restored = edit::replace_body(candidate.program(), at, &body_at(self, at)?)?;
-        let restored = StudyProgram::from_program(restored, candidate.layout().cloned(), registry)
-            .map_err(|e| format!("body_replacement:outside_body_changed: {e}"))?
-            .preserve_gold_names(self, registry);
+        let restored = edit::replace_body(valid.program().program(), at, &body_at(self, at)?)?;
+        let restored =
+            StudyProgram::from_program(restored, valid.program().layout().cloned(), registry)
+                .map_err(|e| format!("body_replacement:outside_body_changed: {e}"))?
+                .preserve_gold_names(self, registry);
         if !same_stream(self, &restored, registry, settings)? {
             return Err("body_replacement:outside_body_changed: restored full ids/model/paths differ from gold".into());
         }
         if named_source_text(&restored, registry) != named_source_text(self, registry) {
             return Err("body_replacement:outside_body_changed: restored native named source differs from gold".into());
+        }
+        if let Some(reason) = det_interface_change {
+            return Err(reason);
         }
         if !same_stream(valid.program(), &candidate, registry, settings)? {
             return Err("body_replacement:candidate_representation: native reconstruction differs from submitted full stream".into());

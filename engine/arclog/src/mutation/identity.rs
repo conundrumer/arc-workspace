@@ -327,8 +327,21 @@ impl StudyProgram {
 
     pub(super) fn certify_mutation_program(&self,ast:Node<Program>,layout:Option<crate::layout::Layout>,point:&MutationPoint,
         registry:&Registry,settings:&DecodeSettings,held_prefix:Option<(&CheckedProgram,&NodePath)>) -> Result<StudyProgram,String> {
-        if !declared_in_scopes(NodeRef::Program(ast.value())) {
-            return Err("identity: deleted declaration still used".into());
+        if let Some(missing) = missing_declaration(NodeRef::Program(ast.value()), &NodePath::default()) {
+            let names = self.label_names(registry);
+            let spelling = missing.scope.0.first()
+                .and_then(|top| names.get(top.0 as usize))
+                .and_then(|scope| scope.iter().find(|(id, _)| *id == missing.label))
+                .map(|(_, name)| name.as_ref()).unwrap_or("<unnamed>");
+            let required_by = match node_at(NodeRef::Program(ast.value()), &missing.at) {
+                Some(NodeRef::Clause(clause)) => clause.columns.iter()
+                    .find(|column| column.label == missing.label)
+                    .map(|column| format!("retained clause column {:?} of {:?}", column.name, clause.derives))
+                    .unwrap_or_else(|| missing.required_by.into()),
+                _ => missing.required_by.into(),
+            };
+            return Err(format!("identity: deleted declaration still used: label maker {spelling:?} (id {}) in scope {:?}, required by {} at {:?}",
+                missing.label.0, missing.scope, required_by, missing.at));
         }
         let top = point.body.0[0].0 as usize;
         if !named_bindings_hold(&ast.value().forms[top], &NodePath::top(top as u32), self.layout()) {

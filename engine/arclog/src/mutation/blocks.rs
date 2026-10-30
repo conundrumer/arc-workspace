@@ -19,7 +19,7 @@ fn negated(b:&Node<Body>)->Conjunct {
 
 /// Change label uses at their exact native AST sites, including constraints.
 /// No names, ordinal pairing or independently inferred label scopes are used.
-fn map_body(old:&Node<Body>,change:&mut dyn FnMut(LabelUse,bool)->LabelUse)->Node<Body> {
+pub(super) fn map_body(old:&Node<Body>,change:&mut dyn FnMut(LabelUse,bool)->LabelUse)->Node<Body> {
     map_body_with(old,change,true)
 }
 fn map_body_with(old:&Node<Body>,change:&mut dyn FnMut(LabelUse,bool)->LabelUse,positive:bool)->Node<Body> {
