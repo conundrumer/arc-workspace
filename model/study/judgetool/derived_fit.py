@@ -28,6 +28,29 @@ def _write(path, value):
     return dict(path=str(path.resolve()), sha256=digest)
 
 
+def _digest_json(value):
+    """Hash a JSON value without making another full serialized copy."""
+    digest=hashlib.sha256()
+    encoder=json.JSONEncoder(ensure_ascii=False,allow_nan=False,sort_keys=True,
+                             separators=(',',':'))
+    for part in encoder.iterencode(value):digest.update(part.encode('utf-8'))
+    return digest.hexdigest()
+
+
+def _report_ref(path, raw, fields):
+    """Write consumed report facts and the hash of the exact native JSON text."""
+    if not isinstance(raw,str):raise ValueError('native report is not JSON text')
+    digest=hashlib.sha256()
+    for offset in range(0,len(raw),1 << 20):
+        digest.update(raw[offset:offset+(1 << 20)].encode('utf-8'))
+    whole_sha=digest.hexdigest()
+    ref=_write(path,dict(schema='evaluator-det-report-summary-v1',
+                         whole_report_sha256=whole_sha,whole_report_hash_of='native JSON UTF-8',
+                         fields=fields))
+    ref['whole_report_sha256']=whole_sha
+    return ref
+
+
 def _code():
     root=Path(__file__).resolve().parent
     names=('derived_fit.py','evaluator.py','tables.py','gold_body.py','raw_body.py',
@@ -58,7 +81,16 @@ def _assignment_tests(ev, record, program, native_ev, report, task, folder, oper
     path=folder/'mutant-out.json'
     status,payload=_operation(ev,operations,'mutant.gold_body.OUT',path,
         lambda:native_ev.gold_body(program,binding['body_path'],canonical(report['kept_assignments'])))
-    body=json.loads(status);_write(path,body)
+    body=json.loads(status)
+    body_ref=_report_ref(path,status,dict(status=body.get('status'),body_path=body.get('body_path'),
+        owner_path=body.get('owner_path'),body_table=body.get('body_table'),
+        body_table_packed=body.get('body_table_packed'),
+        gold_observation_ref=body.get('gold_observation_ref'),
+        gold_observation_cached=body.get('gold_observation_cached'),
+        body_status=body.get('body_status'),
+        body_coverage_complete=(body.get('body_coverage') or {}).get('complete'),
+        body_coverage_examples=len((body.get('body_coverage') or {}).get('examples',[])),
+        body_assignment_entries=len((body.get('body_assignment_map') or {}).get('entries',[]))))
     choices=ev.validate_gold_observation(program,body,record['task'],schema='arclog-study-gold-body-v1')
     if choices!=report['kept_assignments'] or body.get('gold_observation_ref')!=report.get('gold_observation_ref'):
         raise Incomplete('mutant OUT did not reuse the same native TRAIN FITS memo')
@@ -90,8 +122,11 @@ def _assignment_tests(ev, record, program, native_ev, report, task, folder, oper
                 if key not in required or key in counts:raise Incomplete('OUT native axes outside task or duplicated')
                 counts[key]=n
     if set(counts)!=required:raise Incomplete('OUT native coverage lacks exact TRAIN+TEST axes')
-    groups=defaultdict(set);evidence=[];observed_models=defaultdict(set)
+    groups=defaultdict(set);observed_models=defaultdict(set);entry_count=0
+    entries_digest=hashlib.sha256()
     for entry in read_table(ev.legacy,native,table):
+        entry_count+=1
+        entries_digest.update(bytes.fromhex(_digest_json(entry)))
         rows=frozenset(tuple(row[i] for i in projection) for row in entry['rows'])
         kind,index=entry['example']
         if kind==0 and any(c['type']=='Example' for c in schema):
@@ -103,18 +138,18 @@ def _assignment_tests(ev, record, program, native_ev, report, task, folder, oper
                 if key not in required or entry['model'] in observed_models[key]:
                     raise Incomplete('OUT entry axes outside task or model duplicated')
                 observed_models[key].add(entry['model']);groups[key].add(rows)
-        evidence.append(dict(entry=entry['entry'],example=list(entry['example']),model=entry['model'],
-            train_fit_assignments=held[entry['entry']],projected_rows=[list(row) for row in sorted(rows)]))
     if any(observed_models[key]!=set(range(counts[key])) for key in required):
         raise Incomplete('OUT model entries differ from native complete coverage')
     axis_receipt=dict(required_axes=sorted(required),present_axes=sorted(counts),missing_axes=[],
         complete=True,model_counts=[dict(axis=list(key),models=counts[key]) for key in sorted(counts)],
         projection_source='same checked program out_bindings_json native BodyView.column_of',
         body_path=binding['body_path'],owner_path=binding['path'])
-    rows_ref=_write(folder/'mutant-out-rows.json',dict(table=table,projection=projection,
+    rows_ref=_write(folder/'mutant-out-rows.json',dict(schema='evaluator-det-out-rows-summary-v1',
+        table=table,projection=projection,entry_count=entry_count,
+        whole_out_entries_sha256=entries_digest.hexdigest(),
+        whole_out_entries_hash_of='SHA256 of ordered 32-byte SHA256(canonical JSON entry) digests',
         fields=[dict(field_name='P',type=columns[0]['type']),dict(field_name='Col',type=columns[1]['type'])],
-        entries=evidence,native_schema=schema,
-        body_assignment_map=body['body_assignment_map'],body_coverage=body['body_coverage'],axes=axis_receipt))
+        native_schema=schema,whole_body_report_sha256=body_ref['whole_report_sha256'],axes=axis_receipt))
     summaries=[]
     fields=[dict(field_name='P',type='Position'),dict(field_name='Col',type='Color')]
     for a,assignment in enumerate(choices):
@@ -138,7 +173,7 @@ def _assignment_tests(ev, record, program, native_ev, report, task, folder, oper
         value=False if False in flags else True if flags and all(v is True for v in flags) else None
         summaries.append(dict(assignment=a,native_assignment=assignment,fits_train=True,
             fits_test=value,test=examples,test_complete=bool(flags) and all(type(v) is bool for v in flags)))
-    return summaries,dict(report=str(path),rows=rows_ref,binding=binding,projection=projection,
+    return summaries,dict(report=body_ref,rows=rows_ref,binding=binding,projection=projection,
         train_fit_choices_sha256=sha(choices),test_selects_assignments=False,axes=axis_receipt)
 
 
@@ -150,7 +185,12 @@ def _relation_snapshot(ev,record,text,side,base,operations,folder,*,checked_prog
              {s:record[s+'_sexp'] for s in ('gold','mutant')})
     export=producer._export(text,own if side=='gold' else None,
                            mutant_record=own if side=='mutant' else None)
-    export_ref=_write(folder/(side+'-source-export.json'),export)
+    export_ref=_write(folder/(side+'-source-export.json'),dict(
+        schema='evaluator-det-source-summary-v1',whole_export_sha256=_digest_json(export),
+        relation_count=len(export['definitions']['native_relations']),
+        later_relation_count=sum(bool(d['definition_path'] and
+            d['definition_path'][0]>int(record['point'][0]))
+            for d in export['definitions']['native_relations'])))
     definitions=[d for d in export['definitions']['native_relations'] if d['definition_path']]
     replay=_operation(ev,operations,side+'.relations.Search',folder/(side+'-relations.json'),
         lambda:ev.replay_program(record,text,int(record['point'][0]),
@@ -191,10 +231,11 @@ def _relation_value(ev,record,snapshot,definition,side,metrics):
             for axis in axes:families[axis].add(frozenset(e['rows']))
         types=[type_identity(ev,record,ty)[0] for ty in ts['column_types'][table]]
         witness=_write(snapshot['folder']/(side+'-table-'+str(table)+'-witness.json'),dict(
-            schema='evaluator-derived-relation-witness-v1',table=table,native_selector=selector,
+            schema='evaluator-derived-relation-summary-v1',table=table,native_selector=selector,
             program_artifact=snapshot['artifact'],source_export=snapshot['source_export'],
-            native_schema=snapshot['native']['_native_reader'].schema(table),entries=entries,
-            row_scope='complete canonical read_table entries demanded by later-relation comparison'))
+            native_schema=snapshot['native']['_native_reader'].schema(table),entry_count=len(entries),
+            whole_entries_sha256=_digest_json(entries),
+            row_scope='SHA256 of complete canonical entries used by the later-relation comparison'))
         value=dict(columns=list(zip(ts['column_names'][table],types)),groups=dict(families),witness=witness)
         metrics[side+'_decoded_tables']+=1;metrics[side+'_decoded_entries']+=len(entries)
         metrics[side+'_decode_seconds']+=time.monotonic()-started
@@ -302,9 +343,15 @@ def check(ev,record,*,native_base):
         program=ev.arclog.StudyProgram.from_sexp(record['mutant_sexp'],ev.settings)
         phase=time.monotonic()
         report_path=folder/'mutant-train-fits.json'
-        report=json.loads(_operation(ev,operations,'mutant.gold_kept.TRAIN',report_path,
-            lambda:ev.ev.gold_kept(program=program)))
-        result['receipt']['train_report']=_write(report_path,report)
+        raw_report=_operation(ev,operations,'mutant.gold_kept.TRAIN',report_path,
+            lambda:ev.ev.gold_kept(program=program))
+        report=json.loads(raw_report)
+        result['receipt']['train_report']=_report_ref(report_path,raw_report,dict(
+            status=report.get('status'),gold_fits=report.get('gold_fits'),
+            observation_complete=report.get('observation_complete'),
+            assignment_coverage_complete=report.get('assignment_coverage_complete'),
+            kept_assignment_count=report.get('kept_assignment_count'),
+            gold_observation_ref=report.get('gold_observation_ref')))
         result['partial_proof']=dict(native_gold_fits=report.get('gold_fits'),
             observation_complete=report.get('observation_complete'),report=str(report_path))
         choices=ev.validate_gold_observation(program,report,record['task'],require_fit=False)
@@ -347,7 +394,7 @@ def check(ev,record,*,native_base):
         result['receipt'].update(wall_seconds=time.monotonic()-start,
             current_native_calls=sum(op['native_calls'] for op in operations),
             per_operation_bounds=True,code=code,runtime=ev.runtime)
-        _write(folder/'result.json',result);ev.artifacts=old_artifacts
+        ev.artifacts=old_artifacts
         ev.captures=[];ev.finish_case()
     ev._derived_fit_result=(key,deepcopy(result))
     return result
