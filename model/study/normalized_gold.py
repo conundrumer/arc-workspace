@@ -308,16 +308,14 @@ def _body(ev,bundle,body_path,full_det,cache):
         source=_sha(record['gold_sexp']),normalized=_sha(program.sexp()),body_path=mapped['body_path'],
         mapper_sha256=_sha(view.proof),kept_sha256=_sha(record['evaluation']['kept_assignments']),
         task_input=_file(Path(ev.cfg['tasks'])/(record['task']+'.json')),runtime_settings=ev.receipt,
-        full_det=full_det,enabled_decoder_evidence=bundle['key']['enabled_decoder_evidence'])
+        transport='full-physical-body-shared-layouts-v2',enabled_decoder_evidence=bundle['key']['enabled_decoder_evidence'])
     saved=Path(cache)/'normalized-gold/bodies'/(_sha(cache_key)+'.json.gz')
     if saved.exists():
         with gzip.open(saved,'rt') as stream:stored=json.load(stream)
         claimed=stored.pop('content_sha256',None)
         if stored.get('key')!=cache_key or claimed!=_json_digest(stored):
             raise ValueError('normalized BODY cache key/content differs')
-        packet=stored['packet']
-        if packet['missing']:raise ValueError('normalized BODY cache contains incomplete contexts')
-        return packet
+        return _body_layout(ev,record,program,stored,full_det)
     task=_read(Path(ev.cfg['tasks'])/(record['task']+'.json'));ntrain=len(task['train'])
     with ev.fresh_session() as isolated:
         native_ev=isolated.task_evaluator(record['task']);kept=json.loads(native_ev.gold_kept(program))
@@ -338,30 +336,35 @@ def _body(ev,bundle,body_path,full_det,cache):
         ctx.r=dict(point=mapped['body_path']);ctx.readers={'gold':reader};ctx.gexport=export
         ctx.owner=source['owner_path'];ctx.body=source;ctx.values=SimpleNamespace(f={'column_names':{}})
         fields=ctx.schema(reader,table,body=True,body_side='gold')
-        if full_det:
-            fields=[dict(c,source_body_column=c['index'],callable_row_path=None) for c in fields]
-        elif source['kind']=='Det':
-            if str(CODE_ROOT/'ast/run') not in sys.path:sys.path.insert(0,str(CODE_ROOT/'ast/run'))
-            from mech3.det_receipt import side_receipt
-            from mech3.reader_projection import reader_header_union
-            from judge3.det_metadata import project_header_union
-            raw_binding=dict(kind='Det',body_path=mapped['body_path'],owner_path=source['owner_path'],
-                source_body_schema=deepcopy(fields),projected_schema=[dict(c,source_body_column=c['index']) for c in fields])
-            readers=side_receipt(export,raw_binding,mapped['body_path'])
-            columns=reader_header_union(list(readers['readers'].values()))
-            fields=project_header_union(fields,columns,body_path=mapped['body_path'],column_text=producer.policy['column_text'])
-            reader_projection=dict(policy='existing projected DET reader/header union',
-                scope='normalized GOLD feature snapshot; no judge admission',reader_receipt=readers,columns=columns)
-        else:fields,_,_=ctx.target_projection(reader,fields,{},body_side='gold')
+        raw_fields=[dict(c,source_body_column=c['index'],callable_row_path=None) for c in fields]
+        projected_error=None
+        try:
+            if source['kind']=='Det':
+                if str(CODE_ROOT/'ast/run') not in sys.path:sys.path.insert(0,str(CODE_ROOT/'ast/run'))
+                from mech3.det_receipt import side_receipt
+                from mech3.reader_projection import reader_header_union
+                from judge3.det_metadata import project_header_union
+                raw_binding=dict(kind='Det',body_path=mapped['body_path'],owner_path=source['owner_path'],
+                    source_body_schema=deepcopy(fields),projected_schema=[dict(c,source_body_column=c['index']) for c in fields])
+                readers=side_receipt(export,raw_binding,mapped['body_path'])
+                columns=reader_header_union(list(readers['readers'].values()))
+                fields=project_header_union(fields,columns,body_path=mapped['body_path'],column_text=producer.policy['column_text'])
+                reader_projection=dict(policy='existing projected DET reader/header union',
+                    scope='normalized GOLD feature snapshot; no judge admission',reader_receipt=readers,columns=columns)
+            else:fields,_,_=ctx.target_projection(reader,fields,{},body_side='gold')
+        except (ValueError,KeyError,IndexError,TypeError) as error:
+            if not full_det:raise
+            fields=None;projected_error=dict(error_type=type(error).__name__,reason=str(error))
         selection=dict(task=record['task'],case=record['case'],gold_sexp=program.sexp(),context_schema='normalized-gold-selection-v1',evaluation=dict(kept_assignments=record['evaluation']['kept_assignments']))
         packet=acquire_train_table(isolated,native,table,selection,ntrain=ntrain,
-            fields=fields,projection=[c['source_body_column'] for c in fields],
+            fields=raw_fields,projection=list(range(len(raw_fields))),
             held_entries=_held_entries(native,table,report,old),copy_rows=False,
             source=dict(kind='fresh_normalized',normalization_sha256=_sha(view.proof),
                 normalized_program_sha256=_sha(program.sexp()),report=report,packed_acquisition=packed_receipt,
                 reader_projection=reader_projection,test_fit=False))
         if packet['missing']:raise Unavailable('normalized BODY lacks required original kept TRAIN contexts')
-    stored=dict(key=cache_key,packet=packet)
+    stored=dict(key=cache_key,packet=packet,projected_fields=fields,projected_error=projected_error,
+        projected_indices=None if fields is None else [c['source_body_column'] for c in fields])
     stored['content_sha256']=_json_digest(stored)
     saved.parent.mkdir(parents=True,exist_ok=True)
     temporary=saved.with_name(saved.name+'.'+str(os.getpid())+'.tmp')
@@ -370,7 +373,30 @@ def _body(ev,bundle,body_path,full_det,cache):
             json.dump(stored,stream,ensure_ascii=False,allow_nan=False,separators=(',',':'))
         temporary.replace(saved)
     finally:temporary.unlink(missing_ok=True)
-    return packet
+    return _body_layout(ev,record,program,stored,full_det)
+
+
+def _body_layout(ev,record,program,stored,full_det):
+    packet=stored['packet']
+    if packet['missing']:raise ValueError('normalized BODY cache contains incomplete contexts')
+    if full_det:return packet
+    if stored.get('projected_fields') is None:
+        raise Unavailable('normalized projected layout unavailable: '+str(stored.get('projected_error')))
+    from evaluator_train import _projector
+    from program_metadata import typed_fields
+    selection=dict(task=record['task'],gold_sexp=program.sexp())
+    fields=typed_fields(ev,selection,stored['projected_fields'])
+    projection=stored['projected_indices'];entries=[];shared={}
+    for entry in packet['entries']:
+        key=id(entry['rows']);cached=shared.get(key)
+        if cached is None or cached[0] is not entry['rows']:
+            rows=_projector()(dict(entries=[dict(entry,choice=None)]),projection)[0]['rows']
+            shared[key]=(entry['rows'],rows)
+        else:rows=cached[1]
+        entries.append(dict(entry,rows=rows))
+    return dict(packet,fields=fields,entries=entries,projection=projection,
+        receipt=dict(packet['receipt'],layout_projection=dict(indices=projection,fields_sha256=_sha(fields),
+            source='same validated full physical normalized BODY packet; canonical projector')))
 
 
 def _receipt_path(private,point_id):
@@ -380,6 +406,61 @@ def _receipt_path(private,point_id):
 def _capabilities(point):
     return dict(normalized_gold=point.get('gold_view')==POLICY,
         det_layout=point.get('det_layout'),row_policy=point.get('row_policy',ROW_POLICY))
+
+
+def _overlay(operation,files):
+    lookup=operation.get('overlay_publication_lookup',{});path=Path(lookup['path']).resolve()
+    actual=_file(path)['sha256'] if path.is_file() else None
+    expected=lookup.get('sha256') if lookup.get('present_at_snapshot') else None
+    if actual!=expected:raise Unavailable('active DET overlay changed since frozen source snapshot')
+    rows=[r for r in files['overlays.jsonl'] if r['point_id']==operation['point_id']]
+    if not expected:
+        if rows:raise ValueError('unpublished overlay unexpectedly bound by mapper')
+        return None
+    if len(rows)!=1:raise ValueError('published fullBODY overlay lacks unique frozen operation')
+    row=rows[0];source=row['source_generation']
+    if (source['publication_manifest']!=str(path) or source['publication_manifest_sha256']!=actual
+            or row['source_layout_policy']!='det-full-body-train-v1'):
+        raise ValueError('overlay publication/layout binding differs')
+    manifest=Path(source['artifact_manifest']).resolve()
+    if _file(manifest)['sha256']!=source['artifact_manifest_sha256']:raise ValueError('overlay artifact manifest SHA differs')
+    generation=(DATA_ROOT/source['generation']).resolve()
+    if not generation.is_relative_to(DATA_ROOT.resolve()):raise ValueError('overlay generation escapes DATA_ROOT')
+    for relative,wanted in _read(manifest)['files'].items():
+        file=(generation/relative).resolve()
+        if not file.is_relative_to(generation) or _file(file)!=wanted:raise ValueError('overlay source artifact bytes differ')
+    point_file=Path(row['point_json']).resolve()
+    if _file(point_file)['sha256']!=row['point_json_sha256']:raise ValueError('overlay point JSON SHA differs')
+    point=_read(point_file)
+    if point.get('det_layout')!='det-full-body-train-v1':raise ValueError('overlay point is not fullBODY')
+    pairs={r['pair_id']:r for r in row['published_pairs']}
+    if len(pairs)!=len(row['published_pairs']) or not set(pairs)<=set(operation['published_pairs']):
+        raise ValueError('overlay pair coverage differs from base point operation')
+    for pair in pairs.values():
+        if pair['X_contract']!='det-full-body-train-v1' or _file(pair['pair_json'])['sha256']!=pair['pair_json_sha256']:
+            raise ValueError('overlay pair source/layout SHA differs')
+    return dict(row=row,point=point,pairs=pairs,source_generation=source)
+
+
+def _recover_points(root,receipt):
+    pending=receipt.get('pending_points',[])
+    if not pending and receipt.get('pending_point'):
+        pending=[dict(stage=receipt['pending_point'],point=str(root/'points'/receipt['point_id']))]
+    moves=[]
+    for item in pending:
+        point=Path(item['point']).resolve();stage=Path(item['stage']).resolve()
+        if not point.is_relative_to(root) or stage!=point.with_name(point.name+'.building'):
+            raise ValueError('normalized committed stage escapes declared point')
+        if not point.exists():
+            if not stage.is_dir():raise ValueError('normalized committed stage missing')
+            moves.append((stage,point))
+    for relative,wanted in receipt['public_files'].items():
+        file=(root/relative).resolve()
+        if not file.is_relative_to(root):raise ValueError('normalized public file escapes generation')
+        for stage,point in moves:
+            if file.is_relative_to(point):file=stage/file.relative_to(point);break
+        if _file(file)!=wanted:raise ValueError('normalized recovery source SHA differs')
+    for stage,point in moves:stage.rename(point)
 
 
 def export_normalized_gold_point(ev,manifest_ref,operation,generation_dir,cache,private):
@@ -393,9 +474,7 @@ def export_normalized_gold_point(ev,manifest_ref,operation,generation_dir,cache,
     if not root.is_relative_to(DATA_ROOT.resolve()):raise ValueError('normalized generation escapes DATA_ROOT')
     root.mkdir(parents=True,exist_ok=True)
     old=Path(operation['path']).resolve();point_id=operation['point_id']
-    overlay=operation.get('overlay_publication_lookup',{})
-    if overlay.get('path') and Path(overlay['path']).exists():
-        raise Unavailable('active DET overlay not bound by manifest; refresh this point operation before composing')
+    overlay=_overlay(operation,files)
     for artifact in operation['artifacts']:
         if _file(artifact['path'])['sha256']!=artifact['sha256']:
             raise ValueError('normalized input generation artifact changed: '+artifact['path'])
@@ -404,16 +483,7 @@ def export_normalized_gold_point(ev,manifest_ref,operation,generation_dir,cache,
     receipt_path=_receipt_path(private,point_id)
     if receipt_path.exists():
         ref=dict(path=str(receipt_path.resolve()),sha256=_file(receipt_path)['sha256'])
-        pending=_read(receipt_path).get('pending_point')
-        if pending is not None and not point_dir.exists():
-            staging=Path(pending)
-            if staging!=point_dir.with_name(point_dir.name+'.building') or not staging.is_dir():
-                raise ValueError('normalized committed stage missing or differs')
-            for relative,wanted in _read(receipt_path)['public_files'].items():
-                file=root/relative
-                candidate=staging/file.relative_to(point_dir) if file.is_relative_to(point_dir) else file
-                if _file(candidate)!=wanted:raise ValueError('normalized recovery stage SHA differs')
-            staging.rename(point_dir)
+        _recover_points(root,_read(receipt_path))
         validate_normalized_gold_export(root,ref,private=private,point_id=point_id)
         return dict(point_id=point_id,normalized_gold_receipt=ref,reused=True)
     if point_dir.exists():raise Unavailable('incomplete normalized point stage retained; explicit repair required')
@@ -471,14 +541,50 @@ def export_normalized_gold_point(ev,manifest_ref,operation,generation_dir,cache,
     from judge3.feature_payload import point_payload
     prefix=json.loads(ev.arclog.study_feature_metadata_json(own['view'].program,own['view'].body(operation['original_point'])['body_path']))
     newpoint.update(point_payload(prefix));_write(stage/'point.json',newpoint)
+    point_stages=[(stage,point_dir)]
+    layout_variants=dict(base=dict(layout=old_point.get('det_layout','projected-native-point'),
+        point_json=str((point_dir/'point.json').relative_to(root)),
+        source_generation=dict(point_path=str(old),point_json=_file(old/'point.json'))))
+    full_point_dir=None
+    if overlay is not None:
+        full_point_dir=root/'layouts/det-full-body-train-v1/points'/point_id
+        full_stage=full_point_dir.with_name(full_point_dir.name+'.building')
+        if full_point_dir.exists():raise ValueError('uncommitted fullBODY point retained without completion receipt')
+        full_stage.parent.mkdir(parents=True,exist_ok=True)
+        if full_stage.exists():shutil.rmtree(full_stage)
+        shutil.copytree(stage,full_stage)
+        full_point=deepcopy(newpoint);full_point['det_layout']='det-full-body-train-v1'
+        full_packet=_body(ev,own,operation['original_point'],True,cache)
+        g=next(t for t in newpoint['tables'] if t['id']=='G')
+        full_table=table_packet(full_packet,table_id='G',source_name=g['source_name'],case=operation['case'],
+            roles=g['roles'],callable_atom=None,copy_rows=False,sort_rows=True)
+        _write(full_stage/g['path'],full_table)
+        full_point['tables']=[table_summary(full_table,g['path']) if t['id']=='G' else t for t in full_point['tables']]
+        full_point['source_generation']=dict(overlay['source_generation'],manifest_sha256=manifest_ref['sha256'])
+        _write(full_stage/'point.json',full_point)
+        point_stages.append((full_stage,full_point_dir))
+        layout_variants['det-full-body-train-v1']=dict(layout='det-full-body-train-v1',
+            point_json=str((full_point_dir/'point.json').relative_to(root)),source_generation=overlay['source_generation'])
+        acquisitions['G:det-full-body-train-v1']=dict(receipt=full_packet['receipt'],required=full_packet['required'],
+            missing=full_packet['missing'],schema_sha256=_sha(full_packet['fields']))
+    per_pair_source_generations={}
     pair_rows={p['pair_id']:p for p in files['pairs.jsonl'] if p['point_id']==point_id}
     pair_dirs=[]
     for pair_id in operation['published_pairs']:
-        row=pair_rows[pair_id];origin=Path(row['pair_path']);destination=root/'pairs'/pair_id
-        if _file(origin/'pair.json')['sha256']!=row['pair_json_sha256']:raise ValueError('normalized pair input changed')
+        row=pair_rows[pair_id];overlay_pair=None if overlay is None else overlay['pairs'].get(pair_id)
+        if overlay_pair is None:
+            origin=Path(row['pair_path']);target_point=point_dir;layout='base';wanted=row['pair_json_sha256']
+        else:
+            origin=Path(overlay_pair['pair_json']).parent;target_point=full_point_dir;layout='det-full-body-train-v1';wanted=overlay_pair['pair_json_sha256']
+            if overlay_pair['source_binding']['source_sha256']!=row['source_sha256']:
+                raise ValueError('fullBODY/base pair original source identities differ')
+        destination=root/'pairs'/pair_id
+        if _file(origin/'pair.json')['sha256']!=wanted:raise ValueError('normalized pair input changed')
+        per_pair_source_generations[pair_id]=dict(layout=layout,source_pair=dict(path=str(origin/'pair.json'),sha256=wanted),
+            point_json=str((target_point/'point.json').relative_to(root)),source_generation=layout_variants[layout]['source_generation'])
         destination.parent.mkdir(parents=True,exist_ok=True)
-        if not destination.exists():shutil.copytree(origin,destination)
-        public=_read(destination/'pair.json');public['point']=os.path.relpath(point_dir,destination)
+        shutil.copytree(origin,destination,dirs_exist_ok=True)
+        public=_read(destination/'pair.json');public['point']=os.path.relpath(target_point,destination)
         if row.get('gold_change_text_needs_refresh'):
             body=own['view'].body(row['original_point']);nodes={tuple(n['path']):n for n in own['export']['nodes']}
             public['change']['gold']=names.text(nodes[tuple(body['body_path'])]['sexp'])
@@ -492,16 +598,20 @@ def export_normalized_gold_point(ev,manifest_ref,operation,generation_dir,cache,
                     normalized_prefix_reference='normalized_gold_prefix_v1')
         public['gold_view']=POLICY;_write(destination/'pair.json',public);pair_dirs.append(destination)
     outputs={}
-    for directory in [stage,*pair_dirs]:
+    for directory in [*(item[0] for item in point_stages),*pair_dirs]:
         for path in directory.rglob('*'):
             if path.is_file():
-                public_path=point_dir/path.relative_to(stage) if path.is_relative_to(stage) else path
+                public_path=path
+                for staged,final in point_stages:
+                    if path.is_relative_to(staged):public_path=final/path.relative_to(staged);break
                 outputs[str(public_path.relative_to(root))]=_file(path)
     receipt=dict(schema='study-normalized-gold-export-v1',policy=POLICY,row_policy=ROW_POLICY,
         complete=True,test_cells=False,test_fit=False,feature_safe_prefix_rows=False,
-        point_id=point_id,generation_dir=str(root),pending_point=str(stage),manifest=manifest_ref,operation_sha256=_sha(operation),
+        point_id=point_id,generation_dir=str(root),pending_points=[dict(stage=str(a),point=str(b)) for a,b in point_stages],manifest=manifest_ref,operation_sha256=_sha(operation),
         input_generation=dict(point_path=str(old),point_json=_file(old/'point.json'),capabilities=_capabilities(old_point)),
-        output_capabilities=_capabilities(newpoint),original_pair_identity_preserved=True,
+        output_capabilities=dict(_capabilities(newpoint),layouts=list(layout_variants)),
+        layout_variants=layout_variants,per_pair_source_generations=per_pair_source_generations,
+        original_pair_identity_preserved=True,
         normalized_provenance=own['view'].proof,acquisitions=acquisitions,case_evidence=case_evidence,
         enabled_decoder_evidence={k:v for k,v in files['_enabled_decoder'].items() if k!='rows'},
         unchanged_authority='original snapshot files copied byte-for-byte except explicit descriptor edits',
@@ -509,7 +619,7 @@ def export_normalized_gold_point(ev,manifest_ref,operation,generation_dir,cache,
         implementation={str((CODE_ROOT/name).resolve()):_file(CODE_ROOT/name)['sha256'] for name in
             ('normalized_gold.py','native_correspondence.py','evaluator_train.py','judgetool/gold_body.py','judgetool/tables.py')})
     _write(receipt_path,receipt)
-    stage.rename(point_dir)
+    for staged,final in point_stages:staged.rename(final)
     return dict(point_id=point_id,normalized_gold_receipt=dict(path=str(receipt_path.resolve()),sha256=_file(receipt_path)['sha256']))
 
 
@@ -538,4 +648,5 @@ def validate_normalized_gold_export(generation_dir,receipt_ref=None,*,private=No
     return dict(schema='study-normalized-gold-validated-v1',complete=True,point_id=receipt['point_id'],
         policy=POLICY,row_policy=receipt['row_policy'],capabilities=receipt['output_capabilities'],
         manifest=receipt['manifest'],normalized_gold_receipt=receipt_ref,public_files=receipt['public_files'],
+        layout_variants=receipt.get('layout_variants',{}),per_pair_source_generations=receipt.get('per_pair_source_generations',{}),
         test_cells=False,test_fit=False,feature_safe_prefix_rows=False)
