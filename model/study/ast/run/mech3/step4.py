@@ -38,6 +38,14 @@ def stop(*_):
     STOP=True
 
 
+def retry_reader(args,existing):
+    if existing is None or existing.get('read_difference') is not None:return False
+    if args.retry_reader_unknown:return True
+    problem=existing.get('reader_problem',{})
+    reason=problem.get('reason') if isinstance(problem,dict) else problem
+    return reason in args.retry_reader_reason
+
+
 def retry_test(args,existing):
     if existing is None or existing.get('fits_test') is not None:return False
     if args.retry_test_unknown:return True
@@ -201,9 +209,10 @@ class Worker:
                 base=valid_base(row)
                 ntrain,ntest,task_receipt=self.task(base['task'])
                 existing=self.output.load(base['pair_id'],base['source_sha256'],row[4],task_receipt['sha256'])
-                retry=(self.args.rerun_reader or self.args.rerun_test or
-                       (existing is not None and self.args.retry_reader_unknown and existing.get('read_difference') is None) or
+                reader_retry=retry_reader(self.args,existing)
+                retry=(self.args.rerun_reader or self.args.rerun_test or reader_retry or
                        retry_test(self.args,existing))
+                if reader_retry:self.counts['reader_retries']+=1
                 saved=None if retry else existing
                 if saved is not None:
                     value=saved;self.counts['resumed']+=1
@@ -314,6 +323,7 @@ def main():
     ap.add_argument('--deadline',type=float,default=30)
     ap.add_argument('--workers',type=int,default=1)
     ap.add_argument('--retry-reader-unknown',action='store_true',help='explicitly retry unresolved reader facts only')
+    ap.add_argument('--retry-reader-reason',action='append',default=[],help='retry unresolved reader facts with this exact stored problem reason; repeatable')
     ap.add_argument('--retry-test-unknown',action='store_true',help='explicitly retry unresolved TEST facts only')
     ap.add_argument('--retry-test-reason',action='append',default=[],help='retry unresolved TEST facts whose stored problem contains this text; repeatable')
     ap.add_argument('--rerun-reader',action='store_true',help='explicit reader-policy invalidation')

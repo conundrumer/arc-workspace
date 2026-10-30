@@ -23,7 +23,7 @@ Legacy grade/program/reader aliases are projected to those same raw fields. Lega
 
 Validity uses pair/source/base inputs, task input bytes when supplied, and actual fact/reference hashes. Code, configuration and historical document hashes remain integrity/provenance; unrelated code edits, changed checkout paths or task-path spelling do not invalidate completed facts. New runs use pinned snapshot worktrees.
 
-The default resumes completed attempts, including unavailable results. `--retry-reader-unknown` explicitly revisits only unresolved reader facts. `--retry-test-unknown` explicitly revisits unresolved TEST facts. Repeatable `--retry-test-reason TEXT` narrows that retry to stored problems containing the text, so a bounded-session repair can leave known held-context mismatches untouched. `--rerun-reader` and `--rerun-test` are explicit invalidations for a changed policy. Completed TEST observations survive a reader-only retry.
+The default resumes completed attempts, including unavailable results. `--retry-reader-unknown` explicitly revisits only unresolved reader facts. Repeatable `--retry-reader-reason TEXT` selects unresolved reader facts by exact stored reason; completed reader and TEST facts remain reusable. `--retry-test-unknown` explicitly revisits unresolved TEST facts. Repeatable `--retry-test-reason TEXT` narrows that retry to stored problems containing the text, so a bounded-session repair can leave known held-context mismatches untouched. `--rerun-reader` and `--rerun-test` are explicit invalidations for a changed policy. Completed TEST observations survive a reader-only retry.
 
 ## Work reuse
 
