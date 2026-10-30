@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 import subprocess
 import time
+from functools import lru_cache
+from copy import deepcopy
 
 from native_correspondence import Correspondence, Unavailable, bind_legacy_body_schema
 from study_paths import CODE_ROOT, DATA_ROOT
@@ -22,6 +24,92 @@ def canonical(value):
 
 def digest(value):
     return hashlib.sha256(value).hexdigest()
+
+
+@lru_cache(maxsize=64)
+def _native_numeric_source(repo, revision):
+    """Pin the native signed term and packing operations at one full commit."""
+    from native_correspondence import _SIGNED_I32_OPERATIONS
+    terms=subprocess.check_output(['git','-C',str(repo),'show',revision+':engine/arclog/src/terms.rs'],text=True)
+    columns=subprocess.check_output(['git','-C',str(repo),'show',revision+':engine/arclog-tables/src/columns.rs'],text=True)
+    operations={}
+    for name in ('decode_number','encode_number'):
+        start=terms.index('pub fn '+name+'(');end=terms.index('\n    }',start)+6
+        operations[name]=digest(terms[start:end].encode())
+    for name,text,source in (
+        ('number_storage','pub struct Number(pub i32);',terms),
+        ('packed_number','Term::Number(number) => out.push(number.0),',columns)):
+        if source.count(text)!=1:raise Unavailable('native signed numeric implementation differs')
+        operations[name]=digest(text.encode())
+    if operations!=_SIGNED_I32_OPERATIONS or 'pub values: Vec<i32>' not in columns:
+        raise Unavailable('native signed-i32 encoding is not the pinned protocol')
+    dispatches={
+        'Number':'ValueType::Number => Term::Number(Number(Term::decode_number(id)))',
+        'Int|Nat':'ValueType::Int | ValueType::Nat => Term::Number(Number(Term::decode_number(id)))'}
+    found=[name for name,text in dispatches.items() if text in terms]
+    if len(found)!=1:raise Unavailable('native numeric dispatch is not certified')
+    return dict(revision=revision,terms_sha256=digest(terms.encode()),
+                columns_sha256=digest(columns.encode()),operations=operations,dispatch=found[0])
+
+
+_NUMERIC_BUILD_CACHE = {}
+
+
+def _loaded_numeric_build():
+    import arclog
+    import importlib.util
+    from types import SimpleNamespace
+    binary=Path(importlib.util.find_spec('arclog.arclog').origin).resolve()
+    roots=[p.parent for p in binary.parents if p.name=='venv' and (p.parent/'ready.json').is_file()]
+    if len(roots)!=1:raise Unavailable('numeric compatibility requires an immutable native runtime receipt')
+    ready=json.loads((roots[0]/'ready.json').read_text())
+    wheel=Path(ready['wheel'])
+    stamp=lambda p:(str(p),p.stat().st_dev,p.stat().st_ino,p.stat().st_size,p.stat().st_mtime_ns,p.stat().st_ctime_ns)
+    key=(ready['revision'],stamp(binary),stamp(wheel))
+    if key not in _NUMERIC_BUILD_CACHE:
+        spec=importlib.util.spec_from_file_location('_numeric_provenance',CODE_ROOT/'ast/run/provenance.py')
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        _NUMERIC_BUILD_CACHE.clear()
+        _NUMERIC_BUILD_CACHE[key]=module.load_build(arclog,SimpleNamespace(build_receipt=None,
+            engine_commit=ready['revision'],wheel=wheel))
+    return deepcopy(_NUMERIC_BUILD_CACHE[key])
+
+
+def _numeric_scan(reader, table, schema, columns):
+    """Read signed scalars from validated complete runs, without decoding cells."""
+    if reader.tables['projections'][table]!=0 or reader.tables['projections_stop_bound'][table]:
+        raise Unavailable('historical numeric domain cannot use projection payloads')
+    ids=list(reader.bytable[table])
+    if not ids or len(ids)!=len(set(ids)):
+        raise Unavailable('historical numeric domain requires actual complete table entries')
+    width=reader.tables['width'][table]
+    native_width=reader.schema.__func__.__globals__['width']
+    offsets={i:native_width([c['type'] for c in schema[:i]]) for i in columns}
+    stats={i:dict(entries=[],row_count=0,min=None,max=None) for i in columns}
+    coverage=[]
+    for entry in ids:
+        checked=reader.validate_entry(entry,with_extents=False,projection_stop=False)
+        if checked['table']!=table or checked['schema']!=schema:
+            raise Unavailable('numeric domain validation selected another table or schema')
+        count=checked['count']
+        assigned=[{k:v[i] for k,v in reader.parts['assigned'].items()} for i in reader.assigned[entry]]
+        meta=dict(entry=entry,kind=int(reader.entries['kind'][entry]),
+            example_kind=int(reader.entries['example_kind'][entry]),
+            example_index=int(reader.entries['example_index'][entry]),model=int(reader.entries['model'][entry]),
+            rows=count,offset=int(reader.entries['offset'][entry]),status='complete',
+            assignment_metadata_sha256=digest(canonical(assigned)))
+        coverage.append(meta)
+        for column,offset in offsets.items():
+            lo=None;hi=None
+            for row in range(count):
+                value=reader.values[meta['offset']+row*width+offset]
+                lo=value if lo is None else min(lo,value);hi=value if hi is None else max(hi,value)
+            target=stats[column];target['row_count']+=count
+            if count:
+                target['min']=lo if target['min'] is None else min(target['min'],lo)
+                target['max']=hi if target['max'] is None else max(target['max'],hi)
+            target['entries'].append(dict(coverage=meta,row_count=count,min=lo,max=hi))
+    return coverage,stats
 
 
 class LegacyBodyMetadata:
@@ -121,6 +209,41 @@ class LegacyBodyMetadata:
                 producer={k:record.get(k) for k in ('engine_commit','wheel_sha256','native_binary_sha256')}),
             acquisition=acquisition, acquisition_build=value['build'],
             runtime=value['runtime'], mutation=value['mutation'])
+        # Pair only native scoped IDs; the binder repeats the complete stream,
+        # source and exact old-header assertions before admitting this evidence.
+        old=Correspondence(old_export,program_sexp=old_export['program_sexp'],
+            source_program_sexp=old_export['correspondence']['source_program_sexp'])
+        old_fields=old.body(body_path)['columns']
+        now={(tuple(c['scope_path']),c['label_id']):c for c in current.body(body_path)['columns']}
+        numeric=[]
+        for field in old_fields:
+            linked=now.get((tuple(field['scope_path']),field['label_id']))
+            if (field['physical_type']['type']=='Number' and linked is not None
+                    and linked['physical_type']['type'] in ('Int','Nat')):
+                numeric.append((field,linked))
+        if numeric:
+            from native_correspondence import _numeric_context
+            producer=provenance['native_payload']['producer']
+            live=_loaded_numeric_build()
+            encoding=dict(schema='native-signed-i32-protocol-v1',producer=producer,
+                acquisition=live,legacy_acquisition=value['build'])
+            repo=CODE_ROOT.parents[1]
+            encoding['sources']={build['engine_commit']:_native_numeric_source(repo,build['engine_commit'])
+                for build in (producer,live,value['build'])}
+            nat=[old['physical_column'] for old,new in numeric if new['physical_type']['type']=='Nat']
+            coverage,stats=_numeric_scan(reader,table,schema,nat) if nat else (None,{})
+            provenance.update(native_numeric_encoding=encoding,numeric_entry_coverage=coverage,
+                numeric_entry_ids=list(reader.bytable[table]) if nat else None,
+                numeric_program_sha256=digest(program.sexp().encode()),numeric_domains={})
+            for field,linked in numeric:
+                column=field['physical_column']
+                if column in stats:
+                    context=_numeric_context(provenance,body_path=body_path,scope_path=field['scope_path'],
+                        label_id=field['label_id'],physical_column=column,
+                        old_descriptor=field['physical_type'],current_descriptor=linked['physical_type'])
+                    provenance['numeric_domains'][str(column)]=dict(stats[column],
+                        schema='legacy-numeric-domain-v1',context=context,complete=True,
+                        policy=dict(with_extents=False,projection_stop=False))
         return bind_legacy_body_schema(current, program, legacy_export=old_export,
             legacy_stream=evidence['stream'], legacy_schema=schema, body_path=body_path,
             legacy_cell_width=reader.tables['width'][table], provenance=provenance, source_local=True)

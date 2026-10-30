@@ -76,3 +76,43 @@ Facts `input`, `ex_input` and `ex_output` have Position, Color and optional Exam
 ## Survey boundary
 
 Functional dependencies, cross-atom implications, disjointness, relation symmetry and further identities are survey results until the coordinator selects them. Their measurement may inspect clauses, but production pruning must not implement them merely because they appear in the survey.
+
+## Historical Number BODY descriptors
+
+Historical `Number` is the signed-i32 `Term::Number` domain. `Int` keeps that
+same domain: `Term::encode_number` casts i32 to u32, `Term::decode_number` casts
+back, and `push_cells` writes the Number's i32 directly. `Term::decode` dispatches
+both Int and Nat through that same Number branch. The bridge attests these
+operations in the producer, historical-metadata and current acquisition builds;
+a descriptor spelling alone supplies no encoding proof.
+
+`Nat` adds the nonnegative domain; its producers are justified above. A
+historical Number may bind a new Int or Nat only under the certificate's exact
+program, complete stream, native scoped-label and old-header checks, with one
+cell and no nominal type. For Nat, the acquisition owner additionally checks
+every actual historical cell of that physical column in every validated entry.
+Its receipt binds the source/build/payload, side/table/selector, scoped identity,
+assignment/example/model coverage, counts and nonnegative min/max. Complete
+empty runs are valid; a Count, stopped or absent run supplies no such evidence.
+Nat decoding alone does not enforce this domain. Int needs no nonnegative
+restriction, since its whole signed domain equals historical Number.
+
+The same certificate accompanies the field through reader/header comparisons
+and fresh projection. Current checked type and historical storage type remain
+separate evidence; this does not equate Int with Nat in general or normalize
+unrelated names. All other type/encoding, row and assignment checks remain
+unchanged. The owner's source-attested numeric bridge implements these premises.
+
+## The 41 reported gold memberships
+
+The authenticated gold-match readback finds 41 joined membership tests whose
+earlier binding column has exactly the tested type: Dir (12), DiagDir (5),
+Dir8 (1), Axis (1), D4 (5), and C4 (17). Their earlier binding atoms lie in the
+same body or an enclosing body. `dir_elem`, `diag_dir_elem`, `dir8_elem`,
+`axis_elem`, `d4_elem` and `c4_elem` enumerate these complete native domains;
+they introduce no label at these joined sites. Thus each test is redundant.
+The direct lib bindings are the typed outputs of `axis_inversion`, `d4_inverse`,
+`opposite`, `diag_dirs`, or a preceding `d4_elem`. The other bindings read already
+defined columns, including typed INIT keys and rigid outputs. No current-test
+narrowing or overlapping-domain premise is used. The per-program list is a
+study report; none of these conclusions authorizes editing gold.

@@ -63,11 +63,7 @@ def produce(ev,store,record,corpus,*,producer=None,kind=None):
         raise ValueError('DET transport imported outside tracked shared source')
     bindings={}
     for side in ('gold','mutant'):
-        own=dict(record,gold_sexp=record[side+'_sexp'],
-            native=dict(record['native'],gold=record['native'][side]),
-            evaluation=dict(record['evaluation'],table_indices=dict(record['evaluation']['table_indices'],
-                gold_all=record['evaluation']['table_indices'][side+'_kept'])))
-        if side=='mutant':own.pop('relation_source_names',None)
-        bindings[side]=binding(ev,own,native_base=corpus/record['task'])[0]
+        bindings[side]=binding(ev,record,native_base=corpus/record['task'],
+            body_side=side,report_role=side+'_kept')[0]
     projection=module.receipt(record,exports,bindings)
     return producer,producer.produce(record,native_base=corpus/record['task'],det_projection=projection)

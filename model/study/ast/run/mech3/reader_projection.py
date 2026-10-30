@@ -81,7 +81,8 @@ def binding_field(binding,witness,point):
     matches=[f for f in binding['projected_schema'] if field_identity(f)==identity]
     require(len(matches)==1,'read field lacks one scoped physical BODY column')
     field=matches[0]
-    require(compatible(field['type'],witness['type'],proof['field_type']),'reader/header/BODY types disagree')
+    from native_correspondence import canonical_bound_field_type
+    require(compatible(canonical_bound_field_type(field),witness['type'],proof['field_type']),'reader/header/BODY types disagree')
     return field['source_body_column'],dict(header=witness,binding=proof,body_field=field)
 
 

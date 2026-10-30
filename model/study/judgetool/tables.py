@@ -403,7 +403,9 @@ class TargetStore:
             if ('native_source_label' in want and
                     actual['source_label']!=want['native_source_label']):
                 raise Incomplete('X physical BODY source label differs from binding')
+        from native_correspondence import canonical_bound_field_type
         for field in binding['projected_schema']:
+            canonical_bound_field_type(field)
             index=field['source_body_column']
             if index is None:
                 if (field['type']!='Unit' or not (
@@ -411,7 +413,7 @@ class TargetStore:
                         or field.get('native_label_identity',{}).get('kind')=='implicit_unit')):
                     raise Incomplete('X projection lacks certified inserted Unit evidence')
             elif (type(index) is not int or not 0<=index<len(schema)
-                  or comparison_type(schema[index]['type'])!=comparison_type(field['type'])):
+                  or comparison_type(schema[index]['type'])!=comparison_type(field.get('native_type',field['type']))):
                 raise Incomplete('X projection physical column/type differs from binding')
         return native,table
 

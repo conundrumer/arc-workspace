@@ -61,6 +61,10 @@ def typed_fields(ev, record, fields):
     result=[]
     for original in fields:
         field=dict(original)
+        from native_correspondence import canonical_bound_field_type
+        canonical=canonical_bound_field_type(field)
+        if canonical!=field['type']:
+            field.update(native_type=field['type'],type=canonical)
         identity,proof=type_identity(ev,record,field['type'])
         if identity!=field['type']:
             field.update(native_type=field['type'],type=identity,type_identity=proof)

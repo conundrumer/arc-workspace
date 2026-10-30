@@ -183,6 +183,7 @@ class MetadataProducer(base.MetadataProducer):
                                 for r in export['definitions']['readers']), 'empty DET still has native readers')
 
     def _project_det(self, ctx, reader, schema, decoded, *, body_side=None):
+        from native_correspondence import canonical_bound_field_type
         side=ctx._body_side(reader,body_side)
         export = ctx.gexport if side == 'gold' else ctx.mexport
         view = next(v for v in export['body_views'] if v['body_path'] == ctx.r['point'])
@@ -214,8 +215,10 @@ class MetadataProducer(base.MetadataProducer):
                         and proof['body_path'] == ctx.r['point'], 'header lacks resolved changed-BODY binding')
                 identity = source['native_label_identity']
                 require(proof['scope_path'] == identity['scope_path'] and proof['label_id'] == identity['label_id']
-                        and proof['field_type'] == source['type'], 'header/BODY scoped label differs')
+                        and proof['field_type'] == canonical_bound_field_type(source), 'header/BODY scoped label differs')
             path = copy.deepcopy(column['row_path'])
+            if canonical_bound_field_type(source)!=source['type']:
+                source['native_type']=source['type']
             projected.append(dict(source, index=index, type=column['type'], source_body_column=source_index,
                 callable_row_path=path, display_name=self.policy['column_text'](path, 'role'),
                 source_label='@column:' + str(index), source_projection=dict(role='det_reader_header',

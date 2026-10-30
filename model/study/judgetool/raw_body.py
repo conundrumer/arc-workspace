@@ -15,32 +15,49 @@ from evaluator import S,sha
 from tables import TargetStore,Incomplete
 from surface import tokens,native_body_labels,native_body_atoms
 from program_metadata import type_identity
+from native_correspondence import canonical_bound_field_type,source_program_record
 
 
-def body_schema(ev,native,table,view):
+def body_schema(ev,native,table,view,*,legacy_binding=None):
     """Apply the producer's native BODY header binder without reimplementing it."""
     schema=copy.deepcopy(native['_native_reader'].schema(table))
     source=S/'judge2/render2/headers.py';tree=ast.parse(source.read_text(),str(source))
     fn=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='bind_body_schema')
     namespace={'require':ev.legacy.native.__globals__['_NATIVE'].require}
     exec(compile(ast.Module(body=[fn],type_ignores=[]),str(source),'exec'),namespace)
-    namespace['bind_body_schema'](dict(schema=schema),view)
+    namespace['bind_body_schema'](dict(schema=schema),view,legacy_binding=legacy_binding)
     return schema
 
 
-def binding(ev,record,*,native_base):
-    program=ev.arclog.StudyProgram.from_sexp(record['gold_sexp'],ev.settings).decode_source()
-    names=json.dumps(record['relation_source_names']) if record.get('relation_source_names') else program.relation_source_names_json(
-        str(MAIN_ROOT / 'work/arclog/gen'),record['task'],record['case'])
-    export=json.loads(ev.arclog.study_program_export_json(program,names))
+def binding(ev,record,*,native_base,body_side='gold',report_role=None):
+    record=source_program_record(record)
+    if body_side not in ('gold','mutant'):
+        raise Incomplete('raw BODY requires explicit gold or mutant side')
+    text=record['programs'][body_side]
+    if record.get(body_side+'_sexp',text)!=text:
+        raise Incomplete('raw BODY source differs; pass original record and explicit body_side')
+    program=ev.arclog.StudyProgram.from_sexp(text,ev.settings).decode_source()
+    names=None
+    if body_side=='gold':
+        names=json.dumps(record['relation_source_names']) if record.get('relation_source_names') else program.relation_source_names_json(
+            str(MAIN_ROOT / 'work/arclog/gen'),record['task'],record['case'])
+    export=json.loads(ev.arclog.study_program_export_json(program,names,source_program=program))
     views=[v for v in export['body_views'] if v['body_path']==record['point']]
     if len(views)!=1:raise Incomplete('exact gold BODY path unavailable or ambiguous')
     view=views[0]
-    native=TargetStore(ev.legacy,S).snapshot(record['native']['gold'],native_base)
-    table=record['evaluation']['table_indices']['gold_all'];ts=native['tables']
+    native=TargetStore(ev.legacy,S).snapshot(record['native'][body_side],native_base)
+    role=report_role or body_side+'_all'
+    if role not in (body_side+'_all',body_side+'_kept'):
+        raise Incomplete('raw BODY report role differs from explicit side')
+    table=record['evaluation']['table_indices'][role];ts=native['tables']
     if not all(str(ts[k][table])==str(v) for k,v in view['native_table_selector'].items() if k in ('form','point')):
         raise Incomplete('native gold_all does not identify the requested BODY')
-    schema=body_schema(ev,native,table,view)
+    from legacy_body_metadata import LegacyBodyMetadata
+    raw_schema=native['_native_reader'].schema(table)
+    legacy=LegacyBodyMetadata.configured().bind(record=record,side=body_side,base=native_base,
+        reader=native['_native_reader'],table=table,schema=raw_schema,program=program,
+        export=export,body_path=view['body_path'])
+    schema=body_schema(ev,native,table,view,legacy_binding=legacy)
     source=S/'judge2/render2/headers.py'
     labels={c['label_id']:c for c in view['columns']};fields=[];sites=[]
     for c in schema:
@@ -52,11 +69,13 @@ def binding(ev,record,*,native_base):
         path=[dict(kind='written',name=spelling)]
         fields.append(dict(physical_index=c['index'],field_name=spelling,type=c['type'],frame=c['frame'],
             source_body_column=c['index'],callable_row_path=path,native_label_identity=identity))
+        for key in ('native_legacy_binding','native_type'):
+            if key in c:fields[-1][key]=copy.deepcopy(c[key])
         sites.append([':'+spelling,'*V'+str(c['index'])])
     result=dict(kind=view['kind'],input_port=view['input_port'],body_path=view['body_path'],owner_path=view['owner_path'],
         native_selector=view['native_table_selector'],source_body_schema=schema,projected_schema=fields,
         callable_template=ev.legacy.unparse(['&X']+sites),raw_body=True)
-    return result,dict(schema='judgetool-raw-body-layout-v1',source_sha256=sha(record),native_gold_all_table=table,
+    return result,dict(schema='judgetool-raw-body-layout-v1',source_sha256=sha(record),native_gold_all_table=table,body_side=body_side,report_role=role,
         body_path=view['body_path'],layout_sha256=sha(fields),binding_sha256=sha(result),
         projection='identity in authenticated stored gold BODY physical order',header_helper=str(source)+':bind_body_schema')
 
@@ -100,7 +119,7 @@ def body_observer_program(ev,record,layout):
            and v['owner_path']==layout['owner_path']]
     if len(views)!=1:raise Incomplete('BODY observer lacks its exact native owner/view')
     labels={c['label_id']:c for c in views[0]['columns']}
-    if any(label not in labels or type_identity(ev,record,labels[label]['type'])[0]!=type_identity(ev,record,field['type'])[0]
+    if any(label not in labels or type_identity(ev,record,labels[label]['type'])[0]!=type_identity(ev,record,canonical_bound_field_type(field))[0]
            for label,field in zip(identities,fields)):
         raise Incomplete('BODY observer scalar identity/type differs from native source')
     output_names={f['native_label_identity']['label_id']:'V'+str(i) for i,f in enumerate(fields)}
@@ -133,7 +152,7 @@ def _standalone_gold_body(ev,record,*,native_base,ntrain,ntest):
     if len({name for name,ty in columns})!=len(columns):raise Incomplete('raw observer exported ambiguous scoped labels')
     try:indices=[next(i for i,c in enumerate(columns) if c[0]=='V'+str(j)) for j in range(len(fields))]
     except StopIteration:raise Incomplete('raw observer lacks a native BODY output label') from None
-    if any(comparison_type(columns[i][1])!=comparison_type(f['type']) for i,f in zip(indices,fields)):
+    if any(comparison_type(columns[i][1])!=comparison_type(canonical_bound_field_type(f)) for i,f in zip(indices,fields)):
         raise Incomplete('raw observer physical types differ from authenticated BODY')
     groups=dict(groups,groups={k:{frozenset(tuple(row[i] for i in indices) for row in rows) for rows in family}
                               for k,family in groups['groups'].items()})
@@ -168,7 +187,7 @@ def _point_gold_body(ev,record,layout,layout_receipt,ntrain,ntest):
     by_label={c['ast_label_id']:c['index'] for c in schema}
     fields=layout['projected_schema']
     indices=[by_label[f['native_label_identity']['label_id']] for f in fields]
-    if any(comparison_type(schema[i]['type'])!=comparison_type(f['type']) for i,f in zip(indices,fields)):
+    if any(comparison_type(schema[i]['type'])!=comparison_type(canonical_bound_field_type(f)) for i,f in zip(indices,fields)):
         raise Incomplete('native gold BODY physical type differs from source binding')
     groups={};contexts=[]
     for entry in entries:

@@ -163,9 +163,8 @@ class MetadataProducer:
         This supplies det_receipt's RAW input, not its selected public header
         union. The caller must certify reader transport before acquisition.
         """
-        record=copy.deepcopy(source_record)
-        if 'programs' not in record:
-            record['programs']={side:record[side+'_sexp'] for side in ('gold','mutant')}
+        from native_correspondence import source_program_record
+        record=source_program_record(copy.deepcopy(source_record))
         base=Path(native_base).resolve() if native_base is not None else self.corpus/record['task']
         exports={side:self._export(record['programs'][side], record if side=='gold' else None,
                                   mutant_record=record if side=='mutant' else None)
@@ -210,6 +209,8 @@ class MetadataProducer:
             for field,column in zip(fields,raw):
                 if 'native_legacy_binding' in column:
                     field['native_legacy_binding']=copy.deepcopy(column['native_legacy_binding'])
+                    if 'native_type' in column:
+                        field['native_type']=column['native_type']
             bindings[side]=dict(side=side,kind='Det',body_path=view['body_path'],
                 owner_path=view['owner_path'],scope=view['scope'],
                 native_ref=copy.deepcopy(record['native'][side]),native_table_index=table,
@@ -229,9 +230,8 @@ class MetadataProducer:
         Empty projected_entries means NOT ACQUIRED, never an empty relation.
         The caller replays gold once per case and reuses stored X independently.
         """
-        r=copy.deepcopy(source_record)
-        if 'programs' not in r:
-            r['programs']={side:r[side+'_sexp'] for side in ('gold','mutant')}
+        from native_correspondence import source_program_record
+        r=source_program_record(copy.deepcopy(source_record))
         base=Path(native_base).resolve() if native_base is not None else self.corpus/r['task']
         ctx=self.policy['Document'].__new__(self.policy['Document'])
         ctx.legacy_body_context=dict(resolver=self.legacy_body_metadata,programs=self.programs,base=base)
@@ -282,6 +282,8 @@ class MetadataProducer:
             for field,column in zip(fields,projected):
                 if 'native_legacy_binding' in column:
                     field['native_legacy_binding']=copy.deepcopy(column['native_legacy_binding'])
+                    if 'native_type' in column:
+                        field['native_type']=column['native_type']
             bindings[side]=dict(side=side,body_path=view['body_path'],owner_path=view['owner_path'],scope=view['scope'],
                 kind=view['kind'],input_port=view['input_port'],native_ref=r['native'][side],native_table_index=table,
                 native_selector=view['native_table_selector'],source_body_schema=raw,projected_schema=fields,fields=fields,

@@ -257,6 +257,7 @@ def acquire_train_table(ev, native, table, record, *, ntrain, fields=None,
         raise ValueError("include_projected_flows must be boolean")
     from tables import Incomplete, comparison_type
     from program_metadata import type_identity, typed_fields
+    from native_correspondence import canonical_bound_field_type
     from evaluator import sha
     if type(ntrain) is not int or ntrain < 1:
         raise Incomplete('TRAIN acquisition requires the authenticated train input count')
@@ -277,13 +278,14 @@ def acquire_train_table(ev, native, table, record, *, ntrain, fields=None,
         raise Incomplete('TRAIN fields and physical projection arity differ')
     fields = typed_fields(ev, record, fields)
     for field, index in zip(fields, projection):
+        canonical_bound_field_type(field)
         if index is None:
             evidence = field.get('source_projection', {})
             if (field['type'] != 'Unit' or
                     evidence.get('inserted_constant', {}).get('kind') != 'unit'):
                 raise Incomplete('TRAIN projection lacks certified inserted Unit evidence')
         elif (type(index) is not int or not 0 <= index < len(schema)
-              or comparison_type(type_identity(ev, record, schema[index]['type'])[0]) != comparison_type(field['type'])):
+              or comparison_type(type_identity(ev, record, schema[index]['type'])[0]) != comparison_type(type_identity(ev, record, field.get('native_type',field['type']))[0])):
             raise Incomplete('TRAIN projected field type or physical index differs')
 
     matched = train_entry_contexts(ev, native, table, record, ntrain=ntrain, held_entries=held_entries)

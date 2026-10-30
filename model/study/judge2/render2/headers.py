@@ -98,6 +98,7 @@ def bind_body_schema(table,view,*,legacy_binding=None):
 
 def audit_computed_schema(schema,definition,export):
     """Validate the native selected binding, never select an alias in Python."""
+    from native_correspondence import canonical_bound_field_type
     context=definition['display_name'];gaps=[];checked=[]
     if definition.get('column_witness_status')!='complete':
         return dict(status='pending',gaps=[context+': native column witness unavailable'],columns=[])
@@ -107,7 +108,7 @@ def audit_computed_schema(schema,definition,export):
     for i,(c,w) in enumerate(zip(schema,witnesses)):
         require(c['index']==w['physical_column']==i,'native header physical column differs: '+context)
         require(w['definition_path']==definition['definition_path'] and w['relation']==definition['relation'],'native header definition identity differs: '+context)
-        require(c['type']==w['type'],'native header type differs: '+context)
+        require(canonical_bound_field_type(c)==w['type'],'native header type differs: '+context)
         if w.get('native_name') is not None:require(c['name']==w['native_name'],'native canonical column name differs: '+context)
         if w['status']=='unsupported' or w.get('row_path') is None:
             gaps.append(context+': native header identity unsupported at column '+str(i+1));continue

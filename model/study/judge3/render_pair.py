@@ -407,6 +407,7 @@ class Document:
         Positional path members are positional arguments, never invented named
         sites such as :key.c0. Every leaf is included, so slots remain complete.
         """
+        from native_correspondence import canonical_bound_field_type
         tree = {}
         native_paths = definition is not None and 'owner' in definition['relation']
         witnesses = {w['physical_column']: w for w in definition['column_witnesses']} if native_paths else {}
@@ -416,7 +417,7 @@ class Document:
             elif native_paths:
                 witness = witnesses[c['index']]
                 require(witness.get('row_path') is not None, 'callable column path missing')
-                require(witness['native_name'] == c['name'] and witness['type'] == c['type'],
+                require(witness['native_name'] == c['name'] and witness['type'] == canonical_bound_field_type(c),
                         'callable column witness differs from native table')
                 path = column_key(witness['row_path'])
             else:
@@ -1097,6 +1098,7 @@ class Document:
         self.blocks += ['']
 
     def adapter_contract(self):
+        from native_correspondence import canonical_bound_field_type
         require(self.source_context is not None, 'source record/program binding missing')
         point_selector = self.body_bindings['gold']['native_selector']
         point_tables = [t for t in range(len(self.full.tables['width']))
@@ -1111,7 +1113,7 @@ class Document:
                 bind_body_schema(dict(schema=full_schema), self.body,legacy_binding=binding)
                 projection_bound = all(index is None or (index < len(full_schema)
                     and full_schema[index]['ast_label_id'] == field['native_label_identity']['label_id']
-                    and full_schema[index]['type'] == field['type'])
+                    and full_schema[index]['type'] == canonical_bound_field_type(field))
                     for index, field in zip(projection_indices, self.body_bindings['gold']['fields']))
             except (ValueError, KeyError, IndexError):
                 projection_bound = False
