@@ -144,6 +144,7 @@ class ReplayEvaluator:
 
     def close(self):
         self.finish_case()
+        self.__dict__.pop('_det_inventory_cache', None)
         self.ev, self.task = None, None
         self.captures = []
         if hasattr(self,'target_cache'):self.target_cache.clear()

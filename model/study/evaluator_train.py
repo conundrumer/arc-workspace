@@ -39,7 +39,7 @@ def det_dependency_receipt():
              'judge2/render2/headers.py', 'judge2/render2/column_paths.py',
              'judge2/render2/structured.py', 'ast/run/mech3/det_receipt.py',
              'ast/run/mech3/reader_projection.py', 'ast/run/mech3/common.py',
-             'ast/run/mech/run.py')
+             'ast/run/mech/run.py', 'ast/run/mech5/metadata.py', 'ast/run/mech5/_paths.py')
     return dict(dependency_receipt(), **{
         str((CODE_ROOT / name).resolve()): hashlib.sha256((CODE_ROOT / name).read_bytes()).hexdigest()
         for name in paths})
@@ -61,6 +61,21 @@ def prepare_det_metadata(ev, record, *, native_base, case_inventory=None):
     producer = MetadataProducer(engine=ev.arclog, settings=ev.settings,
         read_native=lambda ref, base: store.snapshot(ref, base)['_native_reader'],
         corpus=Path(native_base).resolve().parent, case_inventory=case_inventory)
+    # The immutable corpus inventory is independent of the mutant and its
+    # kept selection. Retain only the current corpus/task, not producers,
+    # native readers, programs or per-pair adapters. Custom inventory suppliers
+    # remain uncached because their lifetime/mutability is caller-owned.
+    if case_inventory is None:
+        from mech5.metadata import bind_inventory_copy
+        key = (producer.corpus, record['task'])
+        cached = getattr(ev, '_det_inventory_cache', None)
+        if cached is None or cached[0] != key:
+            cached = (key, {})
+            ev._det_inventory_cache = cached
+        producer.case_cache = cached[1]
+        # Canonical envelopes are cloned for each pair; only read-only source
+        # evidence leaves are shared, as on the ordinary mechanical path.
+        bind_inventory_copy(producer)
     if not hasattr(producer, 'raw_side_bindings'):
         raise Incomplete('canonical raw_side_bindings source dependency is not installed')
     raw = producer.raw_side_bindings(record, native_base=native_base)
