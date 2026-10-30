@@ -53,7 +53,7 @@ def manifest():
     paths.update(MECH/n for n in ('registry_plan.py','read_grades.py','run.py','clause_evidence.py','grades.py','outcomes.py'))
     paths.update((CODE_ROOT/'judgetool').glob('*.py'))
     paths.update(CODE_ROOT/n for n in ('study_paths.py','judge3/nonrender_metadata.py','judge3/render_pair.py',
-        'judge3/catalog.py','judge2/render2/headers.py','judge2/render2/body.py','judge2/render2/column_paths.py',
+        'judge3/catalog.py','judge3/paused_storage.py','judge2/render2/headers.py','judge2/render2/body.py','judge2/render2/column_paths.py',
         'judge2/render2/structured.py','ast/run/next_revision/family_recovery.py','ast/run/filters.py',
         'ast/run/native_storage.py','ast/run/native_tables.py','ast/run/recovery.py',
         'ast/run/disk_guard.py',
