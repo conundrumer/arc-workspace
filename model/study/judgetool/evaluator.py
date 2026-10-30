@@ -399,9 +399,21 @@ class ReplayEvaluator:
                 assignment=tuple(sorted((d['relation'],tuple(tuple(r) for r in d['rows'])) for d in raw['assignment'])),
                 rows=tuple(sorted({tuple(tuple(c['value']) for c in row) for row in raw['rows']}))))
         from tables import decode_kept,compatible_kept
-        saved = [decode_kept(self.legacy, k, ts['det_relations'][t], ts['det_types'][t])
+        from surface import tokens
+        # Only the exact newly inserted DET declaration is unheld. Its value
+        # comes from this native replay, never from an invented gold choice.
+        forms=self.legacy.split_forms(capture['program'])
+        inserted_form=self.legacy.parse(forms[form])
+        original_tokens=set(tokens([self.legacy.parse(f) for f in
+                                    self.legacy.split_forms(record['mutant_sexp'])]))
+        unheld=[]
+        if (inserted_form[0]=='DET' and isinstance(inserted_form[1],str)
+                and inserted_form[1] not in original_tokens
+                and inserted_form[1] in ts['det_relations'][t]):
+            unheld=[inserted_form[1]]
+        saved = [decode_kept(self.legacy, k, ts['det_relations'][t], ts['det_types'][t],skip=unheld)
                  for k in record['evaluation']['kept_assignments']]
-        slots = set(ts['det_relations'][t])
+        slots = set(ts['det_relations'][t])-set(unheld)
         groups = []
         other = []
         for a, want in enumerate(saved):
@@ -413,6 +425,7 @@ class ReplayEvaluator:
         selected = {g['entry'] for g in groups}
         other = [e['entry'] for e in entries if e['entry'] not in selected]
         return dict(status='complete' if groups else 'unknown', table=t,
+                    unheld_det_relations=unheld,
                     det_relations=ts['det_relations'][t], groups=groups,
                     other_assignment_entries=other,
                     rule='saved values on every table dependency slot; absent compatible entry is unknown')

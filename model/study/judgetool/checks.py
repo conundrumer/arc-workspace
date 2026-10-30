@@ -29,7 +29,8 @@ def _replay_groups(ev,record,program,form,ntrain,ntest,candidate):
     result=ev.replay_program(record,program,form,candidate=candidate)
     if result['engine']!='ran':return result,None,None
     n=ev.captures[-1]['native'];t=result['kept_coverage']['table'];ts=n['tables']
-    groups=kept_groups(ev.legacy,n,t,record,ntrain,ntest)
+    groups=kept_groups(ev.legacy,n,t,record,ntrain,ntest,
+                       unheld=result['kept_coverage'].get('unheld_det_relations',()))
     columns=[(name,type_identity(ev,record,ty)[0]) for name,ty in zip(ts['column_names'][t],ts['column_types'][t])]
     return result,groups,columns
 
@@ -133,7 +134,10 @@ def evaluate(ev,record,clause,target,columns=None,*,explore=False,row_limit=100)
     if replay['engine']=='refused':
         result.update(outcome='refused by the engine',reason=replay['reason']);return result
     if grouped is None or grouped['missing']:
-        result.update(reason='no complete compatible kept train/test entries',missing_contexts=None if grouped is None else grouped['missing']);return result
+        result.update(reason=(replay.get('reason') or 'replay produced no comparison groups') if grouped is None
+                      else 'no complete compatible kept train/test entries',
+                      native_status=replay.get('engine_report',{}).get('status'),
+                      missing_contexts=None if grouped is None else grouped['missing']);return result
     # INIT adapter-private witnesses are existential details of virtual X.
     # They must never become query outputs or candidate target columns.
     exported={t.lstrip('*^') for t in tokens(proof['canonical']) if t.startswith(('*','^'))}

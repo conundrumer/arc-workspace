@@ -51,11 +51,18 @@ def decode_kept(L,kept,det_relations,det_types,skip=()):
         match=re.fullmatch(r'(?:slot |&r)([0-9]+)',name)
         if not match:raise Incomplete('unsupported DET slot identity: '+str(name))
         return '&r'+str(int(match[1]))
-    aliases={canonical(name):name for name in det_relations}
-    if len(aliases)!=len(det_relations):raise Incomplete('ambiguous native DET slot aliases')
+    if len(det_relations)!=len(det_types):raise Incomplete('native DET schema identity/type count differs')
+    skipped=set(skip)
+    active=[(name,ty) for name,ty in zip(det_relations,det_types) if name not in skipped]
+    aliases={canonical(name):name for name,_ in active}
+    if len(aliases)!=len(active):raise Incomplete('ambiguous native DET slot aliases')
     adapted=[dict(item,relation='slot '+canonical(item['relation'])[2:]) for item in kept]
-    decoded=L.decode_kept(adapted,[canonical(name) for name in det_relations],det_types,
-                          skip=tuple(canonical(name) for name in skip))
+    # A certified inserted DET derives its own value. It must never replace a
+    # saved original held slot, even when its spelling is a canonical &rN.
+    held={canonical(item['relation']) for item in kept}
+    if any(re.fullmatch(r'(?:slot |&r)[0-9]+',name) and canonical(name) in held for name in skipped):
+        raise Incomplete('inserted DET identity collides with an original held slot')
+    decoded=L.decode_kept(adapted,[canonical(name) for name,_ in active],[ty for _,ty in active])
     return {aliases[name]:value for name,value in decoded.items()}
 
 
@@ -109,15 +116,15 @@ def read_table(L,n,t,*,example_kinds=None,entry_ids=None):
     return entries
 
 
-def kept_groups(L,n,t,record,ntrain,ntest,indices=None):
+def kept_groups(L,n,t,record,ntrain,ntest,indices=None,*,unheld=()):
     ts=n['tables']
-    return kept_entries(L,read_table(L,n,t),ts['det_relations'][t],ts['det_types'][t],record,ntrain,ntest,indices)
+    return kept_entries(L,read_table(L,n,t),ts['det_relations'][t],ts['det_types'][t],record,ntrain,ntest,indices,unheld=unheld)
 
 
-def kept_entries(L,entries,det_relations,det_types,record,ntrain,ntest,indices=None,*,held_entries=None):
+def kept_entries(L,entries,det_relations,det_types,record,ntrain,ntest,indices=None,*,held_entries=None,unheld=()):
     """Same kept selection for lossless cached read_table entries (no decoder)."""
-    wants=[decode_kept(L,k,det_relations,det_types) for k in record['evaluation']['kept_assignments']]
-    slots=set(det_relations); groups={}; contexts=[]; others=[];memo={}
+    wants=[decode_kept(L,k,det_relations,det_types,skip=unheld) for k in record['evaluation']['kept_assignments']]
+    slots=set(det_relations)-set(unheld); groups={}; contexts=[]; others=[];memo={}
     for e in entries:
         assignment=tuple((name,tuple(tuple(r) for r in rows)) for name,rows in e['assignment'])
         if assignment not in memo:
