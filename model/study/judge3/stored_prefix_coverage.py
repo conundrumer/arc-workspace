@@ -8,6 +8,7 @@ import argparse
 from collections import Counter
 import hashlib
 import json
+import zlib
 import concurrent.futures
 import subprocess
 from pathlib import Path
@@ -41,16 +42,24 @@ def file_sha(path):
     return h.hexdigest()
 
 
+def record_text(value):
+    if isinstance(value, bytes):
+        if not value.startswith(b'ZJ1\0'):
+            raise ValueError('unknown compressed inventory record')
+        return zlib.decompress(value[4:]).decode('utf-8')
+    return value
+
+
 def db_json(db, table, key):
     for connection in (db, *getattr(db, 'parents', ())):
         row = connection.execute('SELECT result FROM ' + table + ' WHERE key=?', (key,)).fetchone()
-        if row:return json.loads(row[0])
+        if row:return json.loads(record_text(row[0]))
     return None
 
 
 def save(db, table, key, result):
     db.execute('INSERT OR REPLACE INTO ' + table + ' VALUES (?,?)',
-               (key, json.dumps(result, ensure_ascii=False, separators=(',', ':'))))
+               (key, b'ZJ1\0' + zlib.compress(json.dumps(result, ensure_ascii=False, separators=(',', ':')).encode('utf-8'), 3)))
 
 
 class CacheDB:
@@ -198,6 +207,14 @@ def main():
     args = p.parse_args()
     if not 1<=args.workers<=16:raise ValueError('workers must be 1..16')
     start = time.monotonic()
+    if args.worker_shard is None and args.output.exists():
+        # Restore exact paused bytes before SQLite can create an empty cache.
+        from paused_storage import restore_file, sidecar
+        compressed = [p for p in args.output.rglob('*.gz') if sidecar(p).is_file()
+            and ('.sqlite3' in p.name or p.name.endswith('.jsonl.gz'))]
+        # WAL/SHM before main DB; no SQLite connection exists yet.
+        for path in sorted(compressed,key=lambda p:p.name.endswith('.sqlite3.gz')):
+            print(json.dumps(dict(stage='restore_paused',**restore_file(path))),flush=True)
     args.output.mkdir(parents=True, exist_ok=True)
     selection = json.loads(args.selection.read_text())
     selected = {pair: group['path'] for group in selection['groups'] for pair in group['pair_ids']}
@@ -254,6 +271,13 @@ def main():
             db.execute('INSERT INTO jobs VALUES (?,?,?,?,?)',(pair,point,source_file,minimal['source']['line'],json.dumps(minimal)))
             if i%1000==0:db.commit();print(json.dumps(dict(stage='source_index',done=i,total=len(selected))),flush=True)
         db.commit()
+    if (args.worker_shard is None and (args.output/'summary.json').exists()
+            and (args.output/'pairs.jsonl').exists() and (args.output/'points.jsonl').exists()
+            and db.execute('SELECT COUNT(*) FROM jobs WHERE pair_id NOT IN (SELECT key FROM pairs)').fetchone()[0]==0):
+        summary=json.loads((args.output/'summary.json').read_text())
+        print(json.dumps(dict(stage='reused_complete_inventory',points=summary['points'],pairs=summary['pairs'],
+            native_evaluations=0)),flush=True)
+        db.close();source_db.close();return 0
     parallel_done=False
     if args.worker_shard is None and args.workers>1:
         # Keep every task's source streams/cache locality together. Partition
@@ -290,7 +314,14 @@ def main():
             db.execute('ATTACH DATABASE ? AS shard',(str(path),))
             for table in ('snapshots','table_blocks','observations','pairs'):
                 db.execute('INSERT OR IGNORE INTO '+table+' SELECT * FROM shard.'+table)
+            # Every ephemeral shard key must exist in the durable main cache
+            # before its duplicate working copy can be discarded.
+            for table in ('snapshots','table_blocks','observations','pairs'):
+                missing=db.execute('SELECT COUNT(*) FROM shard.'+table+' s LEFT JOIN main.'+table+' m ON s.key=m.key WHERE m.key IS NULL').fetchone()[0]
+                if missing:raise ValueError('inventory shard merge is incomplete')
             db.commit();db.execute('DETACH DATABASE shard')
+            path.unlink()
+            for suffix in ('-wal','-shm'):path.with_name(path.name+suffix).unlink(missing_ok=True)
         if any(returns):
             db.close();source_db.close();return 1
         parallel_done=True
@@ -348,7 +379,7 @@ def main():
             available_mapping_status='whole_relation_snapshots_inventoried; public Tn mapping and prefix coverage not inferred') for g in selection['groups']}
         with (args.output/'pairs.jsonl').open('w') as pair_out:
             for (encoded,) in db.execute('SELECT result FROM pairs ORDER BY key'):
-                row=json.loads(encoded);point=point_stats[row['point_path']]
+                encoded=record_text(encoded);row=json.loads(encoded);point=point_stats[row['point_path']]
                 pair_out.write(encoded+'\n')
                 if row['status']!='inventoried':point['inventory_errors']+=1;continue
                 for side in ('gold','mutant'):
@@ -372,7 +403,7 @@ def main():
             worker_summaries=[json.loads(p.read_text()) for p in sorted(shard_dir.glob('worker-*-summary.json'))],
             limits='Source deficits apply to exact observed raw queries, not proof that no alternate cache or future prefix query can supply values. Inventory errors/resource caps are not semantic deficits.',
             native_evaluations=0,decoded_cell_rows=0,full_snapshot_reconstructions=0,original_store_writes=0,
-            metadata_policy='v2: compressed-SHA+selected metadata only; original fully validated cache records retained verbatim')
+            metadata_policy='v3 storage: same metadata-only semantics; lossless compressed cache records, no duplicate committed shards; original stronger records reused')
         public_index = DATA_ROOT/'feat-exp/det-full-body-v1/published-points'
         kept_publications = []
         for path in sorted(public_index.glob('*.json')):

@@ -129,6 +129,11 @@ def main():
     parser.add_argument('--cache', type=Path, default=DATA_ROOT / 'feat-exp/case-cache')
     parser.add_argument('--deadline', type=float, default=30)
     args = parser.parse_args()
+    archive = args.output.with_name(args.output.name + '.paused.tar.zst')
+    if archive.is_file() and not args.output.exists():
+        raise SystemExit('Saved DET publications are archived; restore exact bytes before resume: '
+            + str(DATA_ROOT / 'codex-adm/compress/n-featapi.cmd')
+            + ' restore-det. No acquisition started.')
     for path in (args.selection, args.runtime, args.output, args.cache):
         inside(path, DATA_ROOT)
     selection = read(args.selection)

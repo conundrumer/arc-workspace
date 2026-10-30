@@ -17,13 +17,31 @@ from study_paths import CODE_ROOT, DATA_ROOT, MAIN_ROOT
 sys.path[:0] = [str(CODE_ROOT / 'judge3'), str(CODE_ROOT / 'judgetool'),
                 str(CODE_ROOT / 'ast/run'), str(CODE_ROOT / 'ast/run/mech')]
 from dataset_format import write_json
+from paused_storage import write_gzip_json
+
+# Bump only for an acquisition/status-contract change, not serialization.
+ACQUISITION_POLICY = 'prefix-dev-gold-representative-mutant-v1'
+STORAGE_PREDECESSORS = {'3d3f4ca96b366e7616f14e3427194eb8bc8398120b749f54d7488d8da4ba2ba9'}
 from det_full_body_run import file_sha, digest, read, exclusive, manifest_for, verify_manifest
 
 
 def summarize(value):
     """Retain status and provenance, not a second copy of packet rows."""
     return {key: value[key] for key in ('schema', 'status', 'complete', 'reason',
-        'body_table', 'receipt', 'report_ref') if key in value}
+        'body_table', 'receipt', 'report_ref', 'receipt_ref') if key in value}
+
+
+def opening_summary(report, reference):
+    """Bulk parent values/frontier remain once in the native opening report."""
+    keys = ('schema','status','reason','task','body_path','universe_ref',
+            'ident_namespace','coverage','fanout','timings','receipt_reserved_bytes',
+            'raw_reuse','settings','admission','model_contract')
+    value = {key:report[key] for key in keys if key in report}
+    value['report_ref'] = reference
+    value['parameter_count'] = len(report.get('parameters', []))
+    value['frontier'] = {key:report.get('frontier', {}).get(key)
+                         for key in ('status','reason')}
+    return value
 
 
 def worker(args):
@@ -53,25 +71,24 @@ def worker(args):
         started = time.monotonic()
         with PrefixPoint(ev, record, max_assignments=args.max_assignments,
                          artifacts=args.point_output / 'native') as point:
-            opening = point.report
-            write_json(args.point_output / 'opening.json', opening)
+            opening = opening_summary(point.report, point.opening_ref)
             begin = time.monotonic()
             gold = point.acquire()
             gold_seconds = time.monotonic() - begin
-            write_json(args.point_output / 'gold.json', gold)
+            write_gzip_json(args.point_output / 'gold.json.gz', gold)
             gold_summary = summarize(gold)
             del gold
             begin = time.monotonic()
             mutant = point.acquire(mutant_record=record)
             mutant_seconds = time.monotonic() - begin
-            write_json(args.point_output / 'mutant.json', mutant)
+            write_gzip_json(args.point_output / 'mutant.json.gz', mutant)
             result = dict(status='measured' if point._opening_complete() else 'unavailable', opening=opening,
                 gold=gold_summary, mutant=summarize(mutant),
                 gold_seconds=gold_seconds, mutant_seconds=mutant_seconds,
                 acquisition_seconds=time.monotonic() - started,
-                source_sha256=base['source_sha256'], runtime=build['revision'],
+                opening_ref=point.opening_ref, source_sha256=base['source_sha256'], runtime=build['revision'],
                 point=operation, scope='gold plus one representative mutant on shared U')
-            write_json(args.point_output / 'acquisition.json', result)
+            write_json(args.point_output / 'acquisition.json', result, compact=True)
         return 0
     finally:
         if ev is not None:
@@ -101,6 +118,19 @@ open(sys.argv[2],'w').write(json.dumps(dict(returncode=p.returncode,wall_seconds
                         str(directory / 'process.json')], stdout=log, stderr=log, check=True)
 
 
+def measurement_summary(done, directory):
+    value = {key:item for key,item in done.items() if key != 'files'}
+    report = value.get('opening')
+    if isinstance(report, dict) and 'parent_assignments' in report:
+        path = directory / 'native/universe.json'
+        if not path.is_file():
+            raise ValueError('bulk legacy opening lacks its authoritative native report')
+        value['opening'] = opening_summary(report, dict(path=str(path),sha256=file_sha(path)))
+    value['measurement_ref'] = dict(path=str(directory / 'artifact-manifest.json'),
+        sha256=file_sha(directory / 'artifact-manifest.json'))
+    return value
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--selection', type=Path)
@@ -128,7 +158,7 @@ def main():
     # Refuse a stale or absent adapter before starting any candidate work.
     source_files = [Path(__file__), CODE_ROOT / 'prefix_universe.py',
         CODE_ROOT / 'native_correspondence.py', CODE_ROOT / 'evaluator_train.py',
-        CODE_ROOT / 'judgetool/evaluator.py']
+        CODE_ROOT / 'judgetool/evaluator.py', CODE_ROOT / 'judge3/paused_storage.py']
     code = {str(x.relative_to(CODE_ROOT)): file_sha(x) for x in source_files}
     build = read(args.runtime / 'ready.json')
     if args.expected_revision is not None and not build['revision'].startswith(args.expected_revision):
@@ -136,21 +166,50 @@ def main():
     import arclog
     if not hasattr(arclog.StudyTaskEvaluator,'assignment_cap'):
         raise ValueError('trial requires cap-fixed native runtime with authoritative session assignment_cap')
-    scope = dict(selection_sha256=file_sha(args.selection), runtime=build,
+    previous_scope = read(args.output / 'scope.json', {})
+    acquisition_code = {name:value for name,value in code.items() if name not in ('judge3/prefix_dev_trial.py','judge3/paused_storage.py')}
+    previous_code = previous_scope.get('code', {})
+    legacy_reusable = (previous_code.get('judge3/prefix_dev_trial.py') in STORAGE_PREDECESSORS
+        and {name:value for name,value in previous_code.items() if name not in ('judge3/prefix_dev_trial.py','judge3/paused_storage.py')} == acquisition_code
+        and previous_scope.get('runtime') == build
+        and previous_scope.get('deadline') == args.deadline
+        and previous_scope.get('max_assignments') == args.max_assignments)
+    scope = dict(acquisition_policy=ACQUISITION_POLICY, selection_sha256=file_sha(args.selection), runtime=build,
         code=code, deadline=args.deadline, max_assignments=args.max_assignments)
     rows = []
     with exclusive(args.output / 'trial.lock'):
         write_json(args.output / 'scope.json', scope)
         for operation in operations:
-            key = digest(dict(runtime=build, code=code, deadline=args.deadline,
+            key = digest(dict(runtime=build, acquisition_policy=ACQUISITION_POLICY, code=acquisition_code, deadline=args.deadline,
                               max_assignments=args.max_assignments, operation=operation))
             directory = args.output / 'points' / operation['point_id'] / key
             done = read(directory / 'artifact-manifest.json')
+            if done is None and legacy_reusable:
+                legacy_key = digest(dict(runtime=build, code=previous_code, deadline=args.deadline,
+                    max_assignments=args.max_assignments, operation=operation))
+                legacy_directory = args.output / 'points' / operation['point_id'] / legacy_key
+                legacy = read(legacy_directory / 'artifact-manifest.json')
+                if legacy is not None and legacy['key'] == legacy_key and legacy['point_id'] == operation['point_id']:
+                    verify_manifest(legacy_directory, legacy['files'])
+                    # Save only a small reuse pointer, not another copy of rows.
+                    write_json(directory / 'reused-measurement.json', dict(
+                        source=str(legacy_directory / 'artifact-manifest.json'),
+                        sha256=file_sha(legacy_directory / 'artifact-manifest.json')), compact=True)
+                    rows.append(measurement_summary(legacy, legacy_directory))
+                    continue
+            pointer = read(directory / 'reused-measurement.json')
+            if done is None and pointer is not None:
+                if file_sha(pointer['source']) != pointer['sha256']:
+                    raise ValueError('reused measurement receipt changed')
+                legacy = read(Path(pointer['source']))
+                verify_manifest(Path(pointer['source']).parent, legacy['files'])
+                rows.append(measurement_summary(legacy, Path(pointer['source']).parent))
+                continue
             if done is not None:
                 if done['key'] != key or done['point_id'] != operation['point_id']:
                     raise ValueError('stored point measurement identity differs')
                 verify_manifest(directory, done['files'])
-                rows.append(done)
+                rows.append(measurement_summary(done, directory))
                 continue
             directory.mkdir(parents=True, exist_ok=True)
             run_child(args, operation, directory)
@@ -159,17 +218,21 @@ def main():
             done = dict(point_id=operation['point_id'], kind=operation['kind'], key=key,
                 process=read(directory / 'process.json'),
                 status=acquisition.get('status', 'process_failed'),
-                opening=acquisition.get('opening', read(directory / 'opening.json')), gold=acquisition.get('gold'),
+                opening=acquisition.get('opening', read(directory / 'opening.json')),
+                opening_ref=acquisition.get('opening_ref'), gold=acquisition.get('gold'),
                 mutant=acquisition.get('mutant'),
                 gold_seconds=acquisition.get('gold_seconds'),
                 mutant_seconds=acquisition.get('mutant_seconds'),
                 output_bytes=sum(x['bytes'] for x in files.values()), files=files)
             write_json(directory / 'artifact-manifest.json', done)
-            rows.append(done)
+            rows.append(measurement_summary(done, directory))
             print(json.dumps({k:done[k] for k in ('point_id','kind','process','status','output_bytes')}), flush=True)
             write_json(args.output / 'summary.json', dict(scope=scope, points=rows,
                 count=len(rows), total=len(operations), publication=False,
                 counts=dict(Counter(x['status'] for x in rows))))
+    write_json(args.output / 'summary.json', dict(scope=scope, points=rows,
+        count=len(rows), total=len(operations), publication=False,
+        counts=dict(Counter(x['status'] for x in rows))), compact=True)
     return int(any(x['process']['returncode'] != 0 for x in rows))
 
 
