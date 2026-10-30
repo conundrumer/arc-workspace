@@ -1,6 +1,7 @@
-"""The checks `merge_change.py` runs on the top of its stack, and the steps
-it runs in the main tree after the fast-forward, run in the tree this
-script is run in.
+"""The checks `merge_change.py` runs on the top of its stack, before the
+fast-forward under its `--block` and on the landed commit otherwise, and
+the steps it runs in the main tree after the fast-forward, run in the tree
+this script is run in.
 
     uv run python scripts/merge_steps.py checks [--engine-passed <commit>] <base> [<gate-out>]
     uv run python scripts/merge_steps.py after [<gate-out>]

@@ -248,7 +248,7 @@ The figures below come from a web search by a Sonnet agent on 2026-10-10. Its fe
 - Purpose: merge a verified change into `master` and make it live, with no change that skips verification.
 - Principles: "keep a merge's checks under a minute" (The user's preferences).
 - Outcomes:
-    - Each merge passes the checks of `scripts/merge_change.py`.
+    - Each merge runs the checks of `scripts/merge_change.py` on the landed commit, and before it lands only where the change has an active risk of a silent change.
     - A change merged with no ticket review or no change review (a hotfix) gets both after it merges.
     - A merge that fails or is denied reaches a role that acts on it.
 - Takes from: verification. Gives to: validation.
