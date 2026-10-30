@@ -57,11 +57,9 @@ def _policy():
     return module
 
 
-def _context(ev,record,context,*,with_receipt=False):
+def case_program(ev,record,context):
+    """Canonical case source only; no kept acquisition, FITS or replay."""
     case=context.get('case',context.get('name',record['case']))
-    values=context.get('kept_assignments')
-    if values is None:values=(context.get('reference') or {}).get('evaluation',{}).get('kept_assignments')
-    if values is None and case==record['case']:values=record['evaluation']['kept_assignments']
     text=context.get('gold_sexp') or context.get('source_program')
     if text is None and case==record['case']:text=record['gold_sexp']
     if text is None:
@@ -73,6 +71,16 @@ def _context(ev,record,context,*,with_receipt=False):
         names,offsets,ids,flags=inventory(path.parents[2],record['task'],True)
         i=names.index(case);lo,hi=offsets[i:i+2]
         text=ev.task_evaluator(record['task']).from_stream(ids[lo:hi],[int(f) for f in flags[lo:hi]]).sexp()
+    names=context.get('relation_source_names')
+    if names is None and case==record['case']:names=record.get('relation_source_names')
+    return case,text,names
+
+
+def _context(ev,record,context,*,with_receipt=False):
+    case,text,names=case_program(ev,record,context)
+    values=context.get('kept_assignments')
+    if values is None:values=(context.get('reference') or {}).get('evaluation',{}).get('kept_assignments')
+    if values is None and case==record['case']:values=record['evaluation']['kept_assignments']
     observation=context.get('_gold_kept_receipt')
     if values is None:
         acquired=ev.acquire_gold_kept(record,case=case,program=text)
@@ -83,8 +91,6 @@ def _context(ev,record,context,*,with_receipt=False):
             error.receipt=observation
             raise error
         values=acquired['kept_assignments']
-    names=context.get('relation_source_names')
-    if names is None and case==record['case']:names=record.get('relation_source_names')
     resolved=(case,text,values,names)
     return resolved+(observation,) if with_receipt else resolved
 

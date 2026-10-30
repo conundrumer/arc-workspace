@@ -60,6 +60,30 @@ def _case(ev, record, context, ntrain, ntest, cache):
 
 
 
+def _case_table_count(ev, record, context):
+    """Exact native original-table count for numbering, without acquiring rows."""
+    from case_collector import case_program
+    from evaluator import sha
+    from native_correspondence import Correspondence
+    case, text, _names = case_program(ev, record, context)
+    key = ('original-table-inventory-v1', record['task'], case, sha(text), sha(ev.receipt))
+    if key not in ev.target_cache:
+        program = ev.arclog.StudyProgram.from_sexp(text, ev.settings)
+        export = json.loads(ev.arclog.study_program_export_json(program))
+        inventory = Correspondence(export, program_sexp=export['program_sexp'],
+            source_program_sexp=export['program_sexp']).inventory()
+        count = inventory['table_count']
+        if (type(count) is not int or count < 0 or
+                count != inventory['evidence_table_count'] + inventory['relation_table_count']):
+            raise ValueError('native original-table inventory count is incomplete')
+        ev.target_cache[key] = dict(table_count=count, receipt=dict(
+            schema='evaluator-original-table-count-v1', task=record['task'], case=case,
+            source_program_sha256=sha(text), native_program_sha256=sha(export['program_sexp']),
+            native_inventory_sha256=sha(inventory), settings=ev.receipt,
+            acquisition='native compile-only materialized-table inventory; no kept/FITS/replay'))
+    return ev.target_cache[key]['table_count']
+
+
 def source_bundle(pair_id, record, target, *, private, origin):
     """Persist the full judge command's private source, even without a renderer.
 
@@ -210,10 +234,16 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
     fresh_cases = {}
     facts = set()
     contexts = adapter['all_case_targets']['cases']
+    own_seen = False
     for context in contexts:
         if features is not None and not shared and context['name'] != record['case']:
             continue  # the point directory exists: this pair needs only the export of its own case
         context = dict(context, catalogue_path=adapter['all_case_targets']['catalogue_path'])
+        if features is not None and context['name'] != record['case']:
+            if not own_seen:
+                count += _case_table_count(ev, record, context)
+            continue  # later other cases cannot affect an already assigned public Tn
+        own_seen = own_seen or context['name'] == record['case']
         bundle, fresh_cases[context['name']] = _case(ev, record, context, target['ntrain'], target['ntest'], cache)
         if not bundle['native_table_inventory_complete']:
             # Preserve the real replay refusal/bound instead of presenting it
@@ -230,10 +260,6 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
         export = bundle['export']; same = bundle['case'] == record['case']
         if same:
             main_export = export
-        if features is not None and not same:
-            # The tables of the cases before the pair's case number the tables after them.
-            count += len(bundle['tables'])
-            continue
         if features is not None and not shared:
             break
         provenance.append(bundle['receipt'])

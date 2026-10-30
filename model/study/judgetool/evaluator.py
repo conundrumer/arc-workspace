@@ -280,8 +280,13 @@ class ReplayEvaluator:
         if full_rows_entries is not None or expected_tables_ref is not None:
             if not full_rows:
                 raise ValueError('entry-masked packing requires full_rows=True')
+            signature = getattr(self.ev.gold_tables, '__text_signature__', '') or ''
+            selected_only = 'selected_only' in signature
+            if self._packing_attempt is not None:
+                self._packing_attempt['selected_only'] = selected_only
+            options = dict(selected_only=True) if selected_only else {}
             status, tables = self.ev.gold_tables(program, full_rows=True,
-                full_rows_entries=full_rows_entries, expected_tables_ref=expected_tables_ref)
+                full_rows_entries=full_rows_entries, expected_tables_ref=expected_tables_ref, **options)
         else:
             status, tables = (self.ev.gold_tables(program, full_rows=True) if full_rows
                               else self.ev.gold_tables(program))
@@ -292,6 +297,9 @@ class ReplayEvaluator:
             if (report.get('tables_ref') != expected_tables_ref or
                     report.get('full_rows_entries') != sorted(full_rows_entries)):
                 raise ValueError('native masked packing report differs from its requested snapshot/entries')
+        if full_rows_entries is not None and 'selected_only' in locals() and selected_only:
+            if report.get('selected_only') is not True or report.get('projection_payload_omitted') is not True:
+                raise ValueError('native selected-only packing report differs from request')
         native = self.legacy.native(tables)
         self.captures.append(dict(program=program.sexp(), report=report, native=native))
         return status, tables
@@ -302,15 +310,22 @@ class ReplayEvaluator:
         Only JSON metadata and integer indices leave it. Thus every payload
         owner/view is released before the same cached observation is repacked.
         """
+        signature = getattr(self.ev.gold_tables, '__text_signature__', '') or ''
+        metadata_only = 'metadata_only' in signature
         self._packing_attempt = dict(strategy='snapshot-bound kept TRAIN entry mask',
-                                     native_gold_tables_calls=1)
-        status, payload = self.ev.gold_tables(program)
+                                     native_gold_tables_calls=1,
+                                     metadata_only=metadata_only, selected_only=False)
+        options = dict(metadata_only=True) if metadata_only else {}
+        status, payload = self.ev.gold_tables(program, **options)
         metadata = json.loads(status) if isinstance(status, str) else status
         self._packing_attempt['metadata_report'] = metadata
+        if metadata_only and (metadata.get('metadata_only') is not True or
+                              metadata.get('projection_payload_omitted') is not True):
+            raise ValueError('native metadata-only packing report differs from request')
         if (metadata.get('status') != 'complete' or
                 metadata.get('entry_metadata_complete') is not True or
                 not metadata.get('tables_ref')):
-            raise ValueError('native default packing metadata incomplete: '+canonical(metadata))
+            raise ValueError('native packing metadata incomplete: '+canonical(metadata))
         native = self.legacy.native(payload)
         if metadata.get('entry_count') != len(native['_native_reader'].entries['table']):
             raise ValueError('native default packing entry count differs')
@@ -327,7 +342,9 @@ class ReplayEvaluator:
     def _artifact(self, record, candidate, result):
         identity = dict(source=sha(record), candidate=candidate, settings=self.receipt)
         if result.get('full_rows'):
-            identity['packing'] = dict(full_rows=True)
+            mode = result.get('packing_selection') or {}
+            identity['packing'] = dict(full_rows=True, metadata_only=mode.get('metadata_only', False),
+                                       selected_only=mode.get('selected_only', False))
             selection = result.get('packing_selection', {}).get('selection')
             if selection is not None:
                 identity['packing']['entries_sha256'] = sha(selection['entries'])
