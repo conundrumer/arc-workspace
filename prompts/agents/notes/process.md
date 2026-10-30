@@ -225,3 +225,4 @@
 - A pass's report: the pass writes it, and the coordinator gets the concept faults it gives. Its review: the transcript review of that pass, which files the tickets that the pass's run leads to.
 - A `refactor` ticket whose title ends in `many ideas in one place`: a code reviewer files it, the code editor that next edits the module it cites splits that module, and the merge of that editor's change closes the ticket or logs the part left unsplit. Its reviews: the checks at that merge and the code review that follows it.
 - Each other ticket of a fault: a ticket analyst settles it. Its review: the ticket analyst's check of it against the state that produced it.
+- A throwaway line that carries nothing.
