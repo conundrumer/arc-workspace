@@ -2,6 +2,7 @@
 """Measure OUT after freshly deriving mutant DETs through the shared evaluator."""
 import argparse
 from collections import Counter
+from contextlib import closing
 import fcntl
 import hashlib
 from itertools import groupby
@@ -30,6 +31,47 @@ from mech.source_read import SourceReader
 OUTPUT = DATA_ROOT / 'ast/run/mech/det-later-fit'
 BAD = '0571e3bc196a7b1298723e1015c406b42d38afff45dc933045945fbd819990e0'
 GOOD = '0b6e5ff487e137255a8f9b6a249f60ba0af012b2c0eeb6d28c890c12d87faac7'
+
+
+def label_pair(pair_id, *, base, output, source_reader, evaluator,
+               remeasure=False, retry_unknown=False):
+    """Commit one population DET result using the caller's shared evaluator.
+
+    The evaluator supplies the population task directory through its config;
+    this function never selects a corpus-v11 config. The source comes from
+    mech.SourceReader and the durable result goes to ``output``.
+    """
+    base=Path(base).resolve();output=Path(output).resolve()
+    with closing(sqlite3.connect(base.as_uri()+'?mode=ro',uri=True)) as source_db:
+        row=source_db.execute('SELECT source_sha256,result_sha256,record_json FROM pairs '
+                              'WHERE pair_id=?',(pair_id,)).fetchone()
+    if row is None:raise KeyError('population base pair absent: '+pair_id)
+    source_hash,base_hash,text=row;item=json.loads(text)
+    if (digest(item)!=base_hash or item.get('pair_id')!=pair_id or
+            item.get('source_sha256')!=source_hash):
+        raise ValueError('population base pair integrity differs: '+pair_id)
+    if item.get('kind','').upper()!='DET':
+        raise ValueError('derived later-fit requires a DET pair: '+pair_id)
+    task_file=Path(evaluator.cfg['tasks']).resolve()/(item['task']+'.json')
+    task_sha=hashlib.sha256(task_file.read_bytes()).hexdigest()
+    identity=digest(inputs(source_hash,task_sha))
+    output.parent.mkdir(parents=True,exist_ok=True)
+    with output.with_suffix('.lock').open('a') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        store=Store(output)
+        try:
+            old=None if remeasure else store.load(pair_id,identity)
+            if old is not None and not (retry_unknown and old['status']=='unknown'):
+                return old
+            record=source_reader.record(item)
+            if digest(record)!=source_hash:
+                raise ValueError('population source receipt differs: '+pair_id)
+            native_base=Path(item['source']['corpus']).resolve()/item['task']
+            result=evaluator.det_later_fit(record,native_base=native_base)
+            store.write(pair_id,identity,source_hash,result)
+            return result
+        finally:
+            store.close()
 
 
 def main():

@@ -2,6 +2,7 @@
 """Write normal-form facts from stored streams; no replay or stored summaries."""
 import argparse
 from collections import defaultdict
+from contextlib import closing
 import fcntl
 import gzip
 import json
@@ -15,6 +16,88 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from study_paths import DATA_ROOT
 import facts
 import normal_policy as policy
+
+
+_pair_manifest=None
+
+def _pair_producer():
+    global _pair_manifest
+    if _pair_manifest is None:
+        manifest=policy.policy_manifest()
+        _pair_manifest=(manifest,facts.digest(manifest))
+    return _pair_manifest
+
+def label_pair(pair_id, *, base, output, source_reader, contexts=None,
+               retry_unavailable=False, reclassify=False):
+    """Classify one population pair and commit its normal and gold-point facts.
+
+    ``source_reader`` is the shared mech.SourceReader. A caller may reuse a
+    ``contexts`` dictionary across pairs of one task. The CLI retains its own
+    batch scheduling and output path.
+    """
+    base=Path(base).resolve();output=Path(output).resolve()
+    with closing(sqlite3.connect(base.as_uri()+'?mode=ro',uri=True)) as source_db:
+        row=source_db.execute('SELECT source_sha256,result_sha256,record_json FROM pairs '
+                              'WHERE pair_id=?',(pair_id,)).fetchone()
+    if row is None:raise KeyError('population base pair absent: '+pair_id)
+    source_hash,base_hash,text=row;item=json.loads(text)
+    if (facts.digest(item)!=base_hash or item.get('pair_id')!=pair_id or
+            item.get('source_sha256')!=source_hash):
+        raise ValueError('population base pair integrity differs: '+pair_id)
+    output.parent.mkdir(parents=True,exist_ok=True)
+    with output.with_suffix('.lock').open('a') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        db=sqlite3.connect(output)
+        try:
+            db.execute('PRAGMA journal_mode=WAL');db.execute('PRAGMA synchronous=FULL')
+            if not db.execute("SELECT 1 FROM sqlite_master WHERE name='metadata'").fetchone():
+                facts.initialize(db)
+            elif db.execute("SELECT value FROM metadata WHERE key='schema'").fetchone()[0]!=facts.SCHEMA:
+                raise ValueError('population normal store schema differs')
+            old=db.execute('SELECT * FROM pairs WHERE pair_id=?',(pair_id,)).fetchone()
+            valid=not reclassify and old is not None and old[1]==source_hash
+            if valid:
+                facts.validate('pairs',old)
+                gold=db.execute('SELECT * FROM gold_points WHERE point_id=?',(old[3],)).fetchone()
+                valid=gold is not None
+                if valid:facts.validate('gold_points',gold)
+            if valid and not (retry_unavailable and old[4] is None):
+                return dict(pair_id=pair_id,written=False,mutant=facts.outcome(old),
+                            gold=facts.outcome(gold),gold_point_id=old[3])
+            if retry_unavailable and not valid:
+                raise ValueError('retry requires a valid existing normal fact: '+pair_id)
+            manifest,code=_pair_producer()
+            db.execute('INSERT OR IGNORE INTO producers VALUES (?,?)',
+                       (code,facts.canonical(manifest)))
+            locator=item['source'];corpus=Path(locator['corpus']).resolve()
+            try:
+                record=source_reader.record(item)
+                if (facts.digest(record)!=source_hash or
+                        facts.digest(policy.pair_key(record))!=pair_id):
+                    raise ValueError('population source receipt differs')
+                cache=contexts if contexts is not None else {}
+                key=(str(corpus),item['task'])
+                if key not in cache:cache[key]=policy.Context(corpus,item['task'])
+                result=cache[key].classify(record,corpus/item['task'])
+            except Exception as error:
+                unknown=dict(normal=None,writer_pass=None,
+                             reason=f'{type(error).__name__}: {error}')
+                result=dict(mutant=unknown,gold=unknown)
+            point=facts.digest({k:item[k] for k in ('task','case','point','clause')})
+            prior=db.execute('SELECT * FROM gold_points WHERE point_id=?',(point,)).fetchone()
+            if prior is not None and not reclassify:
+                facts.validate('gold_points',prior)
+                if (prior[4] is not None and result['gold']['normal'] is not None and
+                        bool(prior[4])!=result['gold']['normal']):
+                    raise ValueError('inconsistent population gold verdict: '+point)
+            if prior is None or reclassify or prior[4] is None:
+                facts.insert(db,'gold_points',
+                    (point,pair_id,source_hash,code),result['gold'])
+            facts.insert(db,'pairs',(pair_id,source_hash,code,point),result['mutant'])
+            db.commit()
+            return dict(pair_id=pair_id,written=True,gold_point_id=point,**result)
+        finally:
+            db.close()
 
 
 def main():
