@@ -1338,13 +1338,7 @@ fn push_contents(materializer:&Materializer<'_>,form:&NodePath,out: &mut CaseCol
     let mut starts = Vec::with_capacity(contents.examples.len());
     for (place, example) in contents.examples.iter().enumerate() {
         starts.push(out.entries.table.len());
-        let (kind, index) = match example.example {
-            None => (0, 0),
-            Some(example) => {
-                let index = usize::from(example.index());
-                if index < train { (1, index) } else { (2, index - train) }
-            }
-        };
+        let (kind, index) = crate::tables::example_axis(example.example, train);
         let index = u32::try_from(index).expect("fewer than 2^32 examples");
         let push = |out: &mut CaseColumns, runs: &mut Runs, at_assignment:usize, model: u32, value: Option<&RelationValue>, stop: Option<&Stop>, fault: Option<String>, extents: Option<&EntryExtents>| {
             let count_only=row_export.count_only(out.entries.table.len(),contents.projections.is_some());

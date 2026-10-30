@@ -105,7 +105,7 @@ fn coverage(tables:&[(usize,Table)],parent_count:usize,train_count:usize)->Value
     json!(tables.iter().enumerate().map(|(i,(_,t))| {
         let mut complete=true;
         let examples=t.contents.as_ref().ok().map(|c|c.examples.iter().map(|e| {
-            let (kind,index)=component_tables::example_axis(e.example,train_count);
+            let (kind,index)=super::super::example_axis(e.example,train_count);
             let (status,models,families)=match &e.rows {
                 Ok(a)=>{
                     let stop=a.stop.as_ref().or_else(||a.at.iter().flat_map(|(_,m)|m).find_map(|v|
@@ -215,7 +215,7 @@ pub fn acquire(universe:&mut Universe,candidate:Option<&ValidMutant>,task:&Task,
             None=>json!({"table":i+2,"status":"unsupported","reason":"native declared relation witness unavailable"}),
         }
     }).collect::<Vec<_>>());
-    report["entry_parent_map"]=component_tables::assignment_map(&tables,2,task.train.len());
+    report["entry_parent_map"]=component_tables::assignment_map_numeric(&tables,2,task.train.len());
     if let Some(list)=report["entry_parent_map"].as_array_mut() {for table in list {if let Some(entries)=table["entries"].as_array_mut() {for entry in entries {
         if let Some(fields)=entry.as_object_mut() {
             let parent=fields.remove("kept_assignment").unwrap_or(Value::Null);

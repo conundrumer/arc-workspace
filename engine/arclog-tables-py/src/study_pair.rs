@@ -173,6 +173,7 @@ impl PyStudyTaskEvaluator {
             let side=if mutant.is_some(){"mutant"}else{"gold"};
             result.report["packed_correspondence"]=table_binding(&columns,side,&result.report,&self.ident_namespace);
             result.report["packed_correspondence"]["query_prefix"]=result.report["query_prefix"].clone();
+            result.report["packed_correspondence"]["program_sexp"]=result.report["query_prefix"]["program_sexp"].clone();
             result.report["packed_correspondence"]["universe_ref"]=result.report["universe_ref"].clone();
             let body=result.report["body_table"].as_u64();
             if let Some(tables)=result.report["packed_correspondence"]["tables"].as_array_mut() {for table in tables {

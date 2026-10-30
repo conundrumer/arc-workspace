@@ -62,20 +62,28 @@ pub fn evaluate_cached(gold:&StudyProgram,mutant:&ValidMutant,task:&Task,session
 
 /// Native example coordinates shared by table maps and held evidence reports.
 pub(crate) fn example_axis(example:Option<Example>,train_count:usize)->(&'static str,usize) {
-    match example {
-        None=>("task",0),
-        Some(e) if usize::from(e.index())<train_count=>("train",usize::from(e.index())),
-        Some(e)=>("test",usize::from(e.index())-train_count),
-    }
+    let (kind,index)=super::super::example_axis(example,train_count);
+    (match kind {0=>"task",1=>"train",_=>"test"},index)
 }
 
 /// Mapping uses the exact native entries order, including repeated equal
 /// assignments when a table reads only a subset. Never join choices by values.
 pub fn assignment_map(tables:&[(usize,Table)],table_offset:usize,train_count:usize)->Value {
+    assignment_map_with_axis(tables,table_offset,train_count,false)
+}
+
+/// Prefix packets use exactly the packed wire axis; legacy map strings stay
+/// unchanged. Entry traversal and placeholder semantics have one owner.
+pub(crate) fn assignment_map_numeric(tables:&[(usize,Table)],table_offset:usize,train_count:usize)->Value {
+    assignment_map_with_axis(tables,table_offset,train_count,true)
+}
+
+fn assignment_map_with_axis(tables:&[(usize,Table)],table_offset:usize,train_count:usize,numeric:bool)->Value {
     json!(tables.iter().enumerate().map(|(number,(_,table))| {
         let mut entries=Vec::new();
         if let Ok(contents)=&table.contents {for example in &contents.examples {
-            let (kind,index)=example_axis(example.example,train_count);
+            let (wire,index)=super::super::example_axis(example.example,train_count);
+            let kind=if numeric {json!(wire)}else{json!(example_axis(example.example,train_count).0)};
             match &example.rows {
                 Ok(rows) if !rows.at.is_empty()=>for (assignment,(_,models)) in rows.at.iter().enumerate() {
                     for model in 0..models.len() {entries.push(json!({"table_entry":entries.len(),

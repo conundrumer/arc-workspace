@@ -69,6 +69,17 @@ pub mod assignment_context;
 use assignment_context::{AssignmentContext, AssignmentLayout, HeldAssignments};
 use crate::flows::{column_flows, column_placements, ColumnSource};
 
+/// Canonical wire example axis shared by packing and native receipt maps.
+pub(crate) fn example_axis(example: Option<Example>, train: usize) -> (u8, usize) {
+    match example {
+        None => (0, 0),
+        Some(example) => {
+            let index = usize::from(example.index());
+            if index < train { (1, index) } else { (2, index - train) }
+        }
+    }
+}
+
 /// Where in a form a table stands.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Point {
