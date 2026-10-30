@@ -86,7 +86,8 @@ def run_child(args, operation, directory):
     command = [sys.executable, '-B', str(Path(__file__).resolve()), '--worker',
         '--operation', str(directory / 'operation.json'), '--runtime', str(args.runtime),
         '--labels', str(args.labels), '--point-output', str(directory),
-        '--deadline', str(args.deadline), '--max-assignments', str(args.max_assignments)]
+        '--deadline', str(args.deadline)]
+    if args.max_assignments is not None:command += ['--max-assignments',str(args.max_assignments)]
     # A separate monitor ensures RUSAGE_CHILDREN covers exactly this adapter
     # process and its descendants, including native import/serialization cost.
     monitor = '''import json,resource,subprocess,sys,time
@@ -105,11 +106,12 @@ def main():
     p.add_argument('--selection', type=Path)
     p.add_argument('--splits', type=Path, default=DATA_ROOT / 'feat-exp/stream/splits.json')
     p.add_argument('--runtime', type=Path, required=True)
-    p.add_argument('--expected-revision', default='9173dfe2')
+    p.add_argument('--expected-revision', help='Optional assertion of the selected native build revision')
     p.add_argument('--output', type=Path, default=DATA_ROOT / 'judgetool/prefix-dev-trial/9173dfe2')
     p.add_argument('--labels', type=Path, default=DATA_ROOT / 'ast/run/mech/labels.sqlite3')
     p.add_argument('--deadline', type=float, default=30)
-    p.add_argument('--max-assignments', type=int, default=128)
+    p.add_argument('--max-assignments', type=int, default=None,
+                   help='Optional assertion of the native session assignment cap; omitted uses that session setting')
     p.add_argument('--worker', action='store_true')
     p.add_argument('--operation', type=Path)
     p.add_argument('--point-output', type=Path)
@@ -129,8 +131,11 @@ def main():
         CODE_ROOT / 'judgetool/evaluator.py']
     code = {str(x.relative_to(CODE_ROOT)): file_sha(x) for x in source_files}
     build = read(args.runtime / 'ready.json')
-    if not build['revision'].startswith(args.expected_revision):
+    if args.expected_revision is not None and not build['revision'].startswith(args.expected_revision):
         raise ValueError('trial runtime differs from the coordinator-pinned revision')
+    import arclog
+    if not hasattr(arclog.StudyTaskEvaluator,'assignment_cap'):
+        raise ValueError('trial requires cap-fixed native runtime with authoritative session assignment_cap')
     scope = dict(selection_sha256=file_sha(args.selection), runtime=build,
         code=code, deadline=args.deadline, max_assignments=args.max_assignments)
     rows = []

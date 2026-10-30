@@ -122,17 +122,25 @@ impl PyStudyTaskEvaluator {
         Ok(Self {task_name:task.into(),ident_namespace:study_pair::table_transport_ref(),task:read,judged,session:std::sync::Arc::new(TaskSession::new(SessionBound {bytes:session_bytes},settings.caps)),settings,evidence,cache:std::sync::Mutex::new(cache)})
     }
 
+    /// The immutable cap used by this actual task session.
+    #[getter]
+    fn assignment_cap(&self)->u64 {self.session.caps.assignments}
+
     /// Open the independently checked frontier before this candidate clause.
     /// No caller assignments, later OUT/FITS or target DET value are admitted.
-    #[pyo3(signature=(program,body_path,*,max_assignments=128))]
-    fn prefix_universe(&self,py:Python<'_>,program:&PyStudyProgram,body_path:Vec<u32>,max_assignments:u64)
+    #[pyo3(signature=(program,body_path,*,max_assignments=None))]
+    fn prefix_universe(&self,py:Python<'_>,program:&PyStudyProgram,body_path:Vec<u32>,max_assignments:Option<u64>)
         ->PyResult<(String,PyStudyPrefixUniverse)> {
         if program.settings!=self.settings {return Err(PyValueError::new_err("task evaluator and program settings differ"));}
+        let assignment_cap=self.session.caps.assignments;
+        if max_assignments.is_some_and(|requested|requested!=assignment_cap) {
+            return Err(PyValueError::new_err(format!("max_assignments must equal the native session assignment cap {assignment_cap}; omit it to use the session setting")));
+        }
         let point=arclog::program::path::NodePath(body_path.into_iter().map(arclog::program::path::PathStep).collect());
         let constructions=constructions()?;
         let opened=py.detach(||self.with_cache("prefix_universe",|cache| {
             if cache.activate(&program.program) {self.session.results.clear();}
-            Ok(study_pair::prefix::open(&program.program,&point,&self.task,&self.session,constructions,&self.settings,max_assignments))
+            Ok(study_pair::prefix::open(&program.program,&point,&self.task,&self.session,constructions,&self.settings,assignment_cap))
         })).map_err(PyValueError::new_err)?;
         let (inner,mut report)=match opened {
             Ok(universe)=>{let report=universe.report.clone();(Some(universe),report)},

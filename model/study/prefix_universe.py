@@ -131,11 +131,12 @@ class PrefixPoint:
     it already owns a ValidMutant from point.program; arbitrary ASTs are refused
     by the native interface. No private gold-kept set is used for any selection.
     """
-    def __init__(self,ev,original_record,*,max_assignments=128,artifacts=None):
+    def __init__(self,ev,original_record,*,max_assignments=None,artifacts=None):
         self.ev=ev;self.original_record=original_record;self.source_sha256=_sha(original_record)
         self.record=source_program_record(original_record)
         self.max_assignments=max_assignments
-        if type(max_assignments) is not int or max_assignments<1:raise ValueError('max_assignments must be positive')
+        if max_assignments is not None and (type(max_assignments) is not int or max_assignments<1):
+            raise ValueError('max_assignments must be positive or omitted for the native session cap')
         self.artifacts=Path(artifacts or DATA_ROOT/'judgetool/prefix-universe'/_sha(dict(source=self.source_sha256,cap=max_assignments,runtime=ev.receipt)))
         if not self.artifacts.resolve().is_relative_to(DATA_ROOT.resolve()):raise ValueError('prefix artifacts must remain under DATA_ROOT')
         self.available={};self.sequence=0;self.universe=None;self._context=None;self._available_terminal=None
@@ -145,6 +146,12 @@ class PrefixPoint:
         self._context=self.ev.fresh_session();self.isolated=self._context.__enter__()
         try:
             self.native=self.isolated.task_evaluator(self.record['task'])
+            session_cap=getattr(self.native,'assignment_cap',None)
+            if type(session_cap) is not int or session_cap<1:
+                raise Unavailable('runtime lacks authoritative session assignment_cap; build the cap-fixed prefix runtime')
+            if self.max_assignments is not None and self.max_assignments!=session_cap:
+                raise ValueError('max_assignments must equal the native session assignment cap '+str(session_cap)+'; omit the override')
+            self.max_assignments=session_cap
             if not callable(getattr(self.native,'prefix_universe',None)) or not callable(getattr(self.native,'prefix_tables',None)):
                 raise Unavailable('runtime lacks native prefix-universe acquisition; build the fixed prefix runtime')
             self.program=stored_metadata_program(self.ev.arclog,self.record['programs']['gold'],self.isolated.settings)
@@ -157,7 +164,8 @@ class PrefixPoint:
             self.opening_ref=_write(self.artifacts/'universe.json',self.report)
             self.source_ref=_write(self.artifacts/'source.json',dict(source_sha256=self.source_sha256,
                 source_record=self.original_record,task_input_sha256=self.task_input_sha256,
-                runtime=self.isolated.receipt,implementation=dependency_receipt(),policy=POLICY,private_only=True))
+                runtime=self.isolated.receipt,session_assignment_cap=session_cap,
+                implementation=dependency_receipt(),policy=POLICY,private_only=True))
             return self
         except BaseException:
             self.close();raise

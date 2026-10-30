@@ -49,18 +49,19 @@ fn checked_identity(checked:&CheckedProgram,decoder:&Decoder<'_>)->Value {
 /// the retained frontier participates, even without a downstream reader.
 pub fn open(source:&StudyProgram,point:&NodePath,task:&Task,session:&TaskSession,
     constructions:&Constructions,settings:&DecodeSettings,max_assignments:u64)->Result<Universe,OpenError> {
-    if max_assignments==0 {return Err("max_assignments must be positive".into());}
+    if settings.caps!=session.caps {return Err("prefix settings caps differ from the native task session".into());}
+    let assignment_cap=session.caps.assignments;
+    if max_assignments!=assignment_cap {return Err("prefix assignment cap must be the native task session cap".into());}
+    if assignment_cap==0 {return Err("native session assignment cap must be positive".into());}
     let start=Instant::now();
     let frontier=Arc::new(features::checked_frontier(source,point,Registry::get())?);
     let frontier_seconds=start.elapsed().as_secs_f64();
-    let mut bounded=*settings;
-    bounded.caps.assignments=bounded.caps.assignments.min(max_assignments);
-    let limits=bounded.operation_limits();
-    let decoder=Decoder::new(task,session,Registry::get(),constructions,&bounded).with_operation_limits(limits.clone());
+    let limits=settings.operation_limits();
+    let decoder=Decoder::new(task,session,Registry::get(),constructions,settings).with_operation_limits(limits.clone());
     let dets=arclog::decode::held_dets(&frontier);
     // Pre-admit the canonical walk vector, the retained receipt copy and
     // per-query projections before their bounded capacity can be allocated.
-    let bytes=(bounded.caps.assignments as usize).saturating_mul(4usize.saturating_mul(
+    let bytes=(assignment_cap as usize).saturating_mul(4usize.saturating_mul(
         std::mem::size_of::<Vec<Assignment>>().saturating_add(dets.len().saturating_mul(std::mem::size_of::<Assignment>()))))
         .saturating_add(std::mem::size_of::<Universe>()+512);
     let allocation=Materializer::new(session,&limits).copy(bytes).map_err(OpenError::Stopped)?;
@@ -92,8 +93,8 @@ pub fn open(source:&StudyProgram,point:&NodePath,task:&Task,session:&TaskSession
         "receipt_reserved_bytes":allocation.bytes(),
         "coverage":{"enumeration_complete":complete,"assignment_values_complete":missing.iter().all(Vec::is_empty),
             "parent_count":parents.len(),"zero":complete && parents.is_empty(),"terminal":terminal},
-        "fanout":{"max_assignments":bounded.caps.assignments,"max_models_per_parent_example":session.caps.models,
-            "max_parent_models_per_table_example":bounded.caps.assignments.saturating_mul(session.caps.models)},
+        "fanout":{"max_assignments":assignment_cap,"max_models_per_parent_example":session.caps.models,
+            "max_parent_models_per_table_example":assignment_cap.saturating_mul(session.caps.models)},
         "admission":"all prior assignable DETs at independently checked frontier; no candidate domain, OUT/FITS, later forms or gold kept selection",
         "model_contract":"parents task-wide; models local to table/example; no ordinal or Ident cross-family alignment",
         "raw_reuse":{"status":"unproven","reason":"no stored snapshot authenticated; dependency membership or observed counts alone do not prove coverage","requires_fresh_row_evaluation":null}});
