@@ -10,6 +10,135 @@ use crate::registry::Registry;
 use crate::stream::{Control, DecodeSettings, Emitter, Token, Vocabulary, WrittenStream};
 use serde_json::{Value, json};
 
+// Diagnostics never participate in admission. Keep the exact comparison below,
+// while bounding the extra evidence retained for unsupported scalar paths.
+const DIAGNOSTIC_SCALARS: usize = 8;
+const DIAGNOSTIC_FIELDS: usize = 16;
+const DIAGNOSTIC_VALUE_BYTES: usize = 8192;
+
+fn diagnostic_value(value: &Value) -> Value {
+    let text = value.to_string();
+    if text.len() <= DIAGNOSTIC_VALUE_BYTES {
+        value.clone()
+    } else {
+        let mut end = DIAGNOSTIC_VALUE_BYTES;
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        json!({"truncated":true,"serialized_bytes":text.len(),"json_prefix":&text[..end]})
+    }
+}
+
+fn header_differences(current: &Value, source: &Value) -> Value {
+    fn visit(current: &Value, source: &Value, at: String, out: &mut Vec<Value>, total: &mut usize) {
+        if current == source {
+            return;
+        }
+        if let (Some(a), Some(b)) = (current.as_object(), source.as_object()) {
+            let keys = a
+                .keys()
+                .chain(b.keys())
+                .collect::<std::collections::BTreeSet<_>>();
+            for key in keys {
+                let child = format!("{at}/{}", key.replace('~', "~0").replace('/', "~1"));
+                match (a.get(key), b.get(key)) {
+                    (Some(a), Some(b)) => visit(a, b, child, out, total),
+                    (a, b) => {
+                        *total += 1;
+                        if out.len() < DIAGNOSTIC_FIELDS {
+                            out.push(json!({"path":child,"current_present":a.is_some(),"source_present":b.is_some(),
+                                "current":a.map(diagnostic_value),"source":b.map(diagnostic_value)}));
+                        }
+                    }
+                }
+            }
+        } else {
+            *total += 1;
+            if out.len() < DIAGNOSTIC_FIELDS {
+                out.push(json!({"path":at,"current":diagnostic_value(current),"source":diagnostic_value(source)}));
+            }
+        }
+    }
+    let mut fields = Vec::new();
+    let mut total = 0;
+    visit(
+        current,
+        source,
+        "/header_binding".into(),
+        &mut fields,
+        &mut total,
+    );
+    json!({"fields":fields,"total":total,"omitted":total.saturating_sub(DIAGNOSTIC_FIELDS)})
+}
+
+/// A decoded record may use positional field aliases for a written name.
+/// Authorize that bridge only through the shared native input projection and
+/// the exact model-field emission of this writer run. Other header metadata
+/// continues to compare verbatim.
+fn header_correspondence(current: &Value, source: &Value) -> Result<Value, String> {
+    let a = &current["header_binding"];
+    let b = &source["header_binding"];
+    if a == b {
+        return Ok(Value::Null);
+    }
+    let (Some(a_fields), Some(b_fields)) = (a.as_object(), b.as_object()) else {
+        return Err("native scalar header_binding differs".into());
+    };
+    if a_fields.len() != b_fields.len()
+        || a_fields
+            .iter()
+            .any(|(key, value)| key != "field" && b_fields.get(key) != Some(value))
+    {
+        return Err("native scalar header_binding differs".into());
+    }
+    let field_kinds = (a["field"]["kind"].as_str(), b["field"]["kind"].as_str());
+    if !matches!(
+        field_kinds,
+        (Some("written"), Some("slot")) | (Some("slot"), Some("written"))
+    ) {
+        return Err("native scalar header_binding field lacks a named/positional alias".into());
+    }
+    let x = &current["header_field_coordinates"];
+    let y = &source["header_field_coordinates"];
+    if x["status"] != "complete"
+        || y["status"] != "complete"
+        || x["record"] != true
+        || y["record"] != true
+    {
+        return Err("native scalar header_binding field emission is unproven".into());
+    }
+    for key in [
+        "logical_column",
+        "row_start",
+        "width",
+        "field_ordinal",
+        "physical_column",
+        "record",
+    ] {
+        if x.get(key).is_none() || x[key] != y[key] {
+            return Err(format!("native scalar header_binding field {key} differs"));
+        }
+    }
+    let (Some([xe]), Some([ye])) = (
+        x["emissions"].as_array().map(Vec::as_slice),
+        y["emissions"].as_array().map(Vec::as_slice),
+    ) else {
+        return Err("native scalar header_binding field emission is ambiguous".into());
+    };
+    for key in ["ordinal", "token_index"] {
+        if xe.get(key).is_none() || xe[key] != ye[key] {
+            return Err(format!(
+                "native scalar header_binding field emission {key} differs"
+            ));
+        }
+    }
+    Ok(
+        json!({"status":"complete","kind":"native_init_named_positional_field",
+        "current_field":a["field"],"source_field":b["field"],
+        "current_coordinates":x,"source_coordinates":y}),
+    )
+}
+
 fn path(v: &Value) -> Result<NodePath, String> {
     Ok(NodePath(
         v.as_array()
@@ -261,6 +390,37 @@ fn header_coordinates(
     if port_token >= column_token {
         return Err("INIT header port/column writer order differs".into());
     }
+    // Resolve record-field emissions from this exact head and writer run. This
+    // is observational evidence only; it does not authorize a spelling alias.
+    let head_at = input_at.child(head_index as u32);
+    let field_emissions = written
+        .tokens
+        .iter()
+        .enumerate()
+        .filter_map(|(i, (token, emitter))| {
+            let Token::Column(ordinal) = token else {
+                return None;
+            };
+            let emitted_at = written.paths.get(i)?;
+            (*emitter == Emitter::Model
+                && i > column_token
+                && i < index
+                && emitted_at.0.len() > head_at.0.len()
+                && emitted_at.0.starts_with(&head_at.0)
+                && at.0.starts_with(&emitted_at.0))
+            .then(|| json!({"ordinal":ordinal,"token_index":i,"path":path_json(emitted_at)}))
+        })
+        .collect::<Vec<_>>();
+    let field_emission_matches = if logical.fields.is_some() {
+        matches!(field_emissions.as_slice(), [v] if v["ordinal"].as_u64() == Some(field as u64))
+    } else {
+        field_emissions.is_empty()
+    };
+    let field_coordinates = json!({"status":if field_emission_matches {"complete"} else {"unsupported"},
+        "head_path":path_json(&head_at),"logical_column":logical.ordinal,
+        "row_start":logical.row_start,"width":logical.width,"field_ordinal":field,
+        "record":logical.fields.is_some(),"physical_column":physical,"label_id":argument["label_id"],
+        "emissions":field_emissions});
     let key_slots = key
         .iter()
         .map(|id| {
@@ -280,7 +440,7 @@ fn header_coordinates(
     Ok(
         json!({"binding_kind":"init_header","binding_path":path_json(&input_at),
         "atom_path":null,"atom_token_index":null,"scalar_column":physical,"header_column":key.len()+physical,
-        "input":false,"lifted":false,"header_binding":{"component":instance.component.0,"port":input.name.0,
+        "input":false,"lifted":false,"header_field_coordinates":field_coordinates,"header_binding":{"component":instance.component.0,"port":input.name.0,
             "port_index":port,"port_token_index":port_token,"logical_column":logical.ordinal,
             "logical_column_name":super::render::column(&logical.name),"logical_column_token_index":column_token,
             "field":logical.fields.as_ref().and_then(|v|v.get(field)).map(super::render::column),
@@ -320,6 +480,8 @@ impl StudyProgram {
         };
         let mut differences = Vec::new();
         let mut unproven = Vec::new();
+        let mut diagnostics = Vec::new();
+        let mut diagnostic_candidates = 0usize;
         if !(ids_equal && model_equal && lengths_equal && tokens_equal) {
             unproven.push(json!({"stage":"stream_identity","reason":"native ids, emitters or lengths differ"}));
         }
@@ -333,6 +495,16 @@ impl StudyProgram {
                 }
                 let now = scalar(self, registry, &a, index)?;
                 let prior = scalar(source, registry, &b, index)?;
+                if now["header_binding"] != prior["header_binding"] {
+                    diagnostic_candidates += 1;
+                    if diagnostics.len() < DIAGNOSTIC_SCALARS {
+                        diagnostics.push(json!({"index":index,"current":diagnostic_value(&now),
+                            "source":diagnostic_value(&prior),
+                            "current_header_binding":diagnostic_value(&now["header_binding"]),
+                            "source_header_binding":diagnostic_value(&prior["header_binding"]),
+                            "header_differences":header_differences(&now["header_binding"], &prior["header_binding"])}));
+                    }
+                }
                 let scope = path(&now["scope_path"])?;
                 let prior_scope = path(&prior["scope_path"])?;
                 if map.get(&scope) != Some(&prior_scope) {
@@ -349,9 +521,9 @@ impl StudyProgram {
                         );
                     }
                 }
+                let header_proof = header_correspondence(&now, &prior)?;
                 for key in [
                     "binding_kind",
-                    "header_binding",
                     "role",
                     "label_slot",
                     "atom_token_index",
@@ -369,7 +541,7 @@ impl StudyProgram {
                 {
                     return Err("native scalar physical type or literal meaning differs".into());
                 }
-                Ok(json!({"current":now,"source":prior}))
+                Ok(json!({"current":now,"source":prior,"header_correspondence":header_proof}))
             })();
             let (status, proof) = match proof {
                 Ok(v) => ("complete", v),
@@ -389,7 +561,10 @@ impl StudyProgram {
             "current_stream":{"ids":current.ids,"model":current.model,"paths":current.paths.iter().map(path_json).collect::<Vec<_>>()},
             "source_stream":{"ids":before.ids,"model":before.model,"paths":before.paths.iter().map(path_json).collect::<Vec<_>>()},
             "ids_equal":ids_equal,"model_equal":model_equal,"paths_equal":current.paths==before.paths,"lengths_equal":lengths_equal,
-            "differences":differences,"unproven":unproven}),
+            "differences":differences,"unproven":unproven,
+            "diagnostics":{"schema":"arclog-stream-header-diagnostics-v1","admission_authority":false,
+                "scalar_limit":DIAGNOSTIC_SCALARS,"field_limit":DIAGNOSTIC_FIELDS,"value_byte_limit":DIAGNOSTIC_VALUE_BYTES,
+                "total":diagnostic_candidates,"omitted":diagnostic_candidates.saturating_sub(diagnostics.len()),"headers":diagnostics}}),
         )
     }
 }
