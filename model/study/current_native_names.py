@@ -23,8 +23,12 @@ def bind_adapter(producer, record, adapter):
     base=Path(adapter['source']['native_base']);table=stored_binding['native_table_index']
     reader=producer.read_native(record['native']['mutant'],base)
     schema=deepcopy(reader.schema(table))
+    from legacy_body_metadata import recorded_metadata_context
+    admission=recorded_metadata_context(producer.programs,record,execution=valid,
+        metadata=dict(stored,stored_representation=evidence['identity_certificate']))
     legacy=producer.legacy_body_metadata.bind(record=record,side='mutant',base=base,reader=reader,
-        table=table,schema=schema,program=program,export=stored,body_path=stored_binding['body_path'],force=True)
+        table=table,schema=schema,program=program,export=stored,body_path=stored_binding['body_path'],force=True,
+        recorded_context=admission)
     mapping=namespace_body_columns(own,stored,evidence['namespace_correspondence'],legacy,stored_binding['body_path'])
     views=[v for v in own['body_views'] if v['body_path']==mapping['body']['body_path']]
     if len(views)!=1:raise Unavailable('CURRENT namespace BODY view is ambiguous')

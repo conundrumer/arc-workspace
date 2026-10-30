@@ -356,9 +356,11 @@ class Document:
         from native_correspondence import certified_metadata_program
         program=certified_metadata_program(context['programs'].engine,program,export,
             context['programs'].settings)
+        from legacy_body_metadata import recorded_metadata_context
+        admission=recorded_metadata_context(context['programs'],self.r)
         return context['resolver'].bind(record=self.r, side=side, base=context['base'],
             reader=reader, table=table, schema=schema, program=program,
-            export=export, body_path=view['body_path'])
+            export=export, body_path=view['body_path'],recorded_context=admission)
 
     def schema(self, reader, table, *, body=False, definition=None, body_side=None):
         schema = [dict(c) for c in reader.schema(table)]

@@ -112,6 +112,46 @@ def _numeric_scan(reader, table, schema, columns):
     return coverage,stats
 
 
+def recorded_metadata_context(programs, record, *, execution=None, metadata=None):
+    """Carry current native admission separately from old checked-source metadata."""
+    from native_correspondence import certified_metadata_program, validate_recorded_admission, _native_stream
+    if execution is None:
+        execution,metadata,_=programs.load(record['programs']['mutant'],mutant_record=record)
+    certificate=metadata.get('stored_representation',{}).get('native_admission')
+    if certificate is None:
+        return None
+    stored=certified_metadata_program(programs.engine,execution,metadata,programs.settings)
+    if _native_stream(execution)==_native_stream(stored):
+        return None  # existing exact-path metadata authority stays unchanged
+    gold=programs.load(record['programs']['gold'],record)[0]
+    proof=validate_recorded_admission(certificate,gold,record['identity'],execution,stored)
+    return dict(certificate=proof,gold=gold,stored=stored,execution=execution)
+
+
+def _checked_source_authority(value, record, context):
+    from native_correspondence import validate_recorded_admission, native_vocabulary, _native_stream
+    proof=validate_recorded_admission(context['certificate'],context['gold'],record['identity'],
+                                     context['execution'],context['stored'])
+    if value['mutation']!={
+            'schema':'legacy-checked-source-only-v1','execution_admission':False,
+            'policy':'compiler SELF descriptors only; recorded admission belongs to current runtime'}:
+        raise Unavailable('historical checked-source authority mode differs')
+    for side,program in (('gold',context['gold']),('mutant',context['stored'])):
+        evidence=value['sides'][side];stream=_native_stream(program)
+        if evidence['export']['program_sexp']!=program.sexp() or evidence['stream']!=stream:
+            raise Unavailable('historical checked-source complete stream or writer differs')
+        old=evidence['vocabulary'];now=native_vocabulary(program)
+        for key in ('names','kinds'):
+            if (not isinstance(old.get(key),list) or len(old[key])!=len(old['names'])
+                    or any(i>=len(old[key]) or i>=len(now[key]) or old[key][i]!=now[key][i]
+                           for i in set(stream['ids']))):
+                raise Unavailable('historical/current used native vocabulary differs')
+    return dict(schema='legacy-checked-source-authority-v1',recorded_admission=proof,
+        source_record_sha256=digest(canonical(record)),
+        descriptor_build=value['build'],
+        policy='old checked SELF full streams/vocabulary bind current stored handles; no cross-runtime admission proof')
+
+
 class LegacyBodyMetadata:
     def __init__(self):
         self.metadata = {}
@@ -121,7 +161,7 @@ class LegacyBodyMetadata:
     def configured(cls):
         return cls()
 
-    def acquire(self, record):
+    def acquire(self, record, *, checked_source=False):
         worker = CODE_ROOT / 'legacy_body_worker.py'
         ready_path = self.runtime / 'ready.json'
         if not ready_path.exists():
@@ -133,8 +173,9 @@ class LegacyBodyMetadata:
         if ready['revision'] != METADATA_COMMIT:
             raise Unavailable('historical BODY correspondence runtime revision differs')
         source = canonical(record)
-        key = digest(canonical(dict(source_sha256=digest(source), runtime=ready,
-                                    implementation=implementation)))
+        identity=dict(source_sha256=digest(source),runtime=ready,implementation=implementation)
+        if checked_source:identity['metadata_mode']='checked_source'
+        key=digest(canonical(identity))
         if key in self.metadata:
             return self.metadata[key]
         root = DATA_ROOT / 'judgetool/legacy-body-metadata'
@@ -144,7 +185,8 @@ class LegacyBodyMetadata:
             envelope = json.loads(gzip.decompress(path.read_bytes()))
         else:
             result = subprocess.run([str(self.runtime/'venv/bin/python'), '-B', str(worker)],
-                input=canonical(dict(record=record,runtime_ready=ready)),
+                input=canonical(dict(record=record,runtime_ready=ready,
+                    **(dict(metadata_mode='checked_source') if checked_source else {}))),
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             if result.returncode:
                 raise Unavailable('historical BODY metadata compilation failed: '+
@@ -158,7 +200,7 @@ class LegacyBodyMetadata:
         value = envelope['value']
         if (envelope['implementation'] != implementation or envelope['runtime'] != ready
                 or envelope['value_sha256'] != digest(canonical(value))
-                or value['schema'] != 'legacy-native-body-metadata-v2'
+                or value['schema'] != ('legacy-native-body-metadata-v3' if checked_source else 'legacy-native-body-metadata-v2')
                 or canonical(value['source_record']) != source):
             raise Unavailable('historical BODY cached source/runtime evidence differs')
         if (value['build']['engine_commit'] != ready['revision']
@@ -172,7 +214,7 @@ class LegacyBodyMetadata:
             canonical_value_sha256=envelope['value_sha256'], implementation=implementation)
         return self.metadata[key]
 
-    def bind(self, *, record, side, base, reader, table, schema, program, export, body_path, force=False):
+    def bind(self, *, record, side, base, reader, table, schema, program, export, body_path, force=False, recorded_context=None):
         views = [v for v in export['body_views'] if v['body_path'] == body_path]
         if len(views) != 1:
             raise Unavailable('current BODY descriptor is ambiguous')
@@ -194,7 +236,9 @@ class LegacyBodyMetadata:
             raw = stream.read(ref['bytes'])
         if len(raw) != ref['bytes'] or digest(raw) != ref['sha256']:
             raise Unavailable('historical BODY compressed native payload differs')
-        value, acquisition = self.acquire(record)
+        value, acquisition = self.acquire(record,checked_source=recorded_context is not None)
+        authority=(_checked_source_authority(value,record,recorded_context)
+                   if recorded_context is not None else None)
         evidence = value['sides'][side]
         old_export = evidence['export']
         if old_export['program_sexp'] != record['programs'][side]:
@@ -209,6 +253,7 @@ class LegacyBodyMetadata:
                 producer={k:record.get(k) for k in ('engine_commit','wheel_sha256','native_binary_sha256')}),
             acquisition=acquisition, acquisition_build=value['build'],
             runtime=value['runtime'], mutation=value['mutation'])
+        if authority is not None:provenance['checked_source_authority']=authority
         # Pair only native scoped IDs; the binder repeats the complete stream,
         # source and exact old-header assertions before admitting this evidence.
         old=Correspondence(old_export,program_sexp=old_export['program_sexp'],

@@ -311,6 +311,11 @@ def rehydrate_stored_mutation(engine, gold, identity, stored):
     # RecordedIdentityError(stage, message) intentionally propagates unchanged.
     program, raw = method(json.dumps(identity), stored)
     certificate = json.loads(raw)
+    return program, validate_recorded_admission(certificate,gold,identity,program,stored)
+
+
+def validate_recorded_admission(certificate, gold, identity, program, stored):
+    """Validate the native admission on its actual current-runtime handles."""
     required_checks = ('original_point', 'canonical_identity', 'edit_kind', 'atomic_edit',
         'interfaces', 'makers', 'names', 'whole_program_check', 'held_det_interfaces',
         'vocabulary', 'unchanged_outside_edits', 'stored_representation')
@@ -326,7 +331,14 @@ def rehydrate_stored_mutation(engine, gold, identity, stored):
             or any(checks.get(name) is not True for name in required_checks)):
         raise Unavailable('native recorded-identity admission binding incomplete')
     validate_stream_path_certificate(certificate.get('stream_path_certificate'), program, stored)
-    return program, deepcopy(certificate)
+    return deepcopy(certificate)
+
+
+def native_vocabulary(program):
+    """Return the native ID-indexed spellings/kinds without interpreting tokens."""
+    vocabulary = program.vocabulary
+    return dict(names=[vocabulary.name(i) for i in range(len(vocabulary))],
+                kinds=[vocabulary.kind(i) for i in range(len(vocabulary))])
 
 
 def stored_metadata_program(engine, text, settings=None):
