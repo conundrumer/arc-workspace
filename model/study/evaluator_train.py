@@ -26,7 +26,7 @@ def dependency_receipt():
     import gold_body
     paths = (Path(__file__), Path(tables.__file__), Path(checks.__file__),
              Path(surface.__file__), Path(case_collector.__file__),
-             Path(program_metadata.__file__), Path(raw_body.__file__), Path(gold_body.__file__), CODE_ROOT / 'study_paths.py', CODE_ROOT / 'native_correspondence.py', CODE_ROOT / 'current_native_names.py', CODE_ROOT / 'legacy_body_metadata.py', CODE_ROOT / 'legacy_body_worker.py', CODE_ROOT / 'ast/run/provenance.py',
+             Path(program_metadata.__file__), Path(raw_body.__file__), Path(gold_body.__file__), CODE_ROOT / 'study_paths.py', CODE_ROOT / 'native_correspondence.py', CODE_ROOT / 'current_native_names.py', CODE_ROOT / 'det_full_body.py', CODE_ROOT / 'legacy_body_metadata.py', CODE_ROOT / 'legacy_body_worker.py', CODE_ROOT / 'ast/run/provenance.py',
              CODE_ROOT / 'judge2/render2/body.py', CODE_ROOT / 'judge2/render2/headers.py',
              CODE_ROOT / 'judge3/render_pair.py')
     return {str(p.resolve()): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
@@ -649,6 +649,10 @@ def acquire_train_point(ev, record, adapter, ntrain, ntest, side='mutant', *, co
         from current_native_names import acquire_point
         return acquire_point(ev,record,adapter,ntrain,ntest,copy_rows=copy_rows,
                              include_projected_flows=include_projected_flows)
+    if adapter.get('det_full_body') is not None:
+        from det_full_body import acquire_det_full_body_train_point
+        return acquire_det_full_body_train_point(ev,record,adapter,ntrain,ntest,side=side,
+            copy_rows=copy_rows,include_projected_flows=include_projected_flows)
     binding = adapter['input']['binding'] if side == 'mutant' else adapter['comparison_target']['binding']
     if binding.get('kind') == 'Det':
         return acquire_det_train_point(ev, record, adapter, ntrain, ntest, side=side, copy_rows=copy_rows,

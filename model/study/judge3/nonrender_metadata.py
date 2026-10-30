@@ -228,7 +228,7 @@ class MetadataProducer:
             policies=copy.deepcopy(self.sources),
             authority='metadata only; no selected DET header, rows, acquisition or admission')
 
-    def produce(self, source_record, *, native_base=None):
+    def produce(self, source_record, *, native_base=None, det_full_body=False):
         """Return canonical side bindings, graph packet and own-case catalogue.
 
         Unsupported layouts raise ValueError; no guessed fields/Unit aliases.
@@ -245,12 +245,15 @@ class MetadataProducer:
         tokens=set(ctx.names.tokens)|set(ctx.names.tokens.values())
         for export in (ctx.gexport,ctx.mexport):
             tokens.update(t for t in ctx.names.pattern.findall(export['program_sexp']) if t.startswith('&'))
-        _require(not tokens.intersection({'&X','&fix'}),'reserved recovery relation collision')
+        if not det_full_body:
+            _require(not tokens.intersection({'&X','&fix'}),'reserved recovery relation collision')
         ctx.gnodes={tuple(n['path']):n for n in ctx.gexport['nodes']}
         views=[v for v in ctx.gexport['body_views'] if v['body_path']==r['point']]
         _require(len(views)==1,'exact source body path unavailable or ambiguous')
         ctx.body=views[0];ctx.owner=ctx.body['owner_path']
-        if ctx.body['kind']=='Det':
+        if det_full_body and ctx.body['kind']!='Det':
+            raise UnsupportedProjection('full DET view requires a DET source')
+        if ctx.body['kind']=='Det' and not det_full_body:
             raise UnsupportedProjection('DET reader-named compared-column projection unavailable; raw BODY fields are not a substitute')
         ctx.values=SimpleNamespace(f={'column_names':{}})
         ctx.readers={side:self.read_native(r['native'][side],base) for side in ('gold','mutant')}
@@ -280,7 +283,11 @@ class MetadataProducer:
                     f'{side} INIT input {view["body_path"]}: outer key LabelIds {missing} '
                     'are absent from the stored BODY; the complete correlated '
                     'key+port tuple requires the evaluator INIT-context adapter')
-            projected,_,view=ctx.target_projection(reader,raw,{},body_side=side)
+            if det_full_body:
+                projected=[dict(c,source_body_column=c['index'],callable_row_path=None,
+                    source_projection=dict(role='physical_body')) for c in raw]
+            else:
+                projected,_,view=ctx.target_projection(reader,raw,{},body_side=side)
             fields=[dict(physical_index=c['index'],field_name=c['display_name'],native_name=c['name'],
                 native_label_identity=c['native_label_identity'],type=c['type'],frame=c['frame'],
                 callable_row_path=c['callable_row_path'],source_body_column=c['source_body_column'],source_projection=c['source_projection']) for c in projected]
@@ -293,7 +300,7 @@ class MetadataProducer:
                 kind=view['kind'],input_port=view['input_port'],native_ref=r['native'][side],native_table_index=table,
                 native_selector=view['native_table_selector'],source_body_schema=raw,projected_schema=fields,fields=fields,
                 projected_entries=[],entries_status='not_acquired',
-                callable_template=ctx.callable_atom(projected,'&X'),
+                callable_template=None if det_full_body else ctx.callable_atom(projected,'&X'),
                 init_projection=copy.deepcopy(view['input_port_projection']),group_key_label_ids=view['group_key_label_ids'],
                 input_port_columns=copy.deepcopy(view['input_port_columns']),owner_native_data=ctx.gnodes[tuple(ctx.owner)]['data'],
                 key_declaration=(ctx.gnodes[tuple(view['body_path'][:-1])]['data'] if view['kind']=='INIT key' else None))
@@ -310,7 +317,7 @@ class MetadataProducer:
         for case in inventory['cases']:
             if case['name']==r['case']:
                 case['kept_assignments']=own_kept
-        return dict(schema='judge3-source-metadata-v1',status='metadata_only',programs=r['programs'],source_sha256=_sha(source_record),native_base=str(base),
+        result=dict(schema='judge3-source-metadata-v1',status='metadata_only',programs=r['programs'],source_sha256=_sha(source_record),native_base=str(base),
             source=dict(native_base=str(base),source_sha256=_sha(source_record)),
             bindings=bindings,input=dict(handle='&X',side='mutant',binding=bindings['mutant'],fields=bindings['mutant']['fields'],callable_template=bindings['mutant']['callable_template']),
             comparison_target=dict(side='gold',callable=False,binding=bindings['gold'],
@@ -324,6 +331,13 @@ class MetadataProducer:
             readers=dict(gold=ctx.gexport['definitions']['readers'],mutant=ctx.mexport['definitions']['readers'],
                 gold_typed_sites=ctx.gexport['typed_sites'],mutant_typed_sites=ctx.mexport['typed_sites']),
             policies=self.sources,gaps=gaps,authority='metadata only; no admission, equality or replay-completeness claim')
+        if det_full_body:
+            result['scope']='TRAIN_features_only_noncallable'
+            for binding in bindings.values():binding['callable']=False
+            result['det_full_body']=dict(schema='evaluator-det-full-body-source-v1',
+                source_sha256=_sha(source_record),binding_sha256={side:_sha(b) for side,b in bindings.items()},
+                policy='physical BODY only; reader labels are not feature inputs')
+        return result
 
     def callable_definition(self, definition, native_schema):
         """Bind an admitted source definition to a stored/fresh native schema.

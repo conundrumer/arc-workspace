@@ -50,7 +50,11 @@ def bind_adapter(producer, record, adapter):
     ctx=producer.policy['Document'].__new__(producer.policy['Document'])
     ctx.readers={'mutant':reader};ctx.mexport=own;ctx.body=view;ctx.owner=view['owner_path']
     det_receipt=None
-    if stored_binding['kind']=='Det':
+    full_det=stored_binding['kind']=='Det' and adapter.get('det_full_body') is not None
+    if full_det:
+        projected=[dict(c,source_body_column=c['index'],callable_row_path=None,
+            source_projection=dict(role='physical_body')) for c in current_schema]
+    elif stored_binding['kind']=='Det':
         projected,det_receipt=_current_det_projection(producer,record,adapter,own,view,current_schema)
     else:
         projected,_,_=ctx.target_projection(reader,current_schema,{},body_side='mutant')
@@ -77,15 +81,15 @@ def bind_adapter(producer, record, adapter):
         fields.append(field);storage_fields.append(old);storage_projection.append(storage);columns.append(deepcopy(link))
     if Counter(storage_projection)!=Counter(f['source_body_column'] for f in stored_binding['projected_schema']):
         raise Unavailable('CURRENT and stored native target projections differ in field coverage')
-    atom=None if det_receipt is not None else ctx.callable_atom(projected,'&X')
+    atom=None if det_receipt is not None or full_det else ctx.callable_atom(projected,'&X')
     binding=dict(stored_binding,body_path=view['body_path'],owner_path=view['owner_path'],
         native_selector=deepcopy(view['native_table_selector']),source_body_schema=current_schema,
         fields=fields,projected_schema=fields,callable_template=atom)
-    if det_receipt is not None:
+    if det_receipt is not None or full_det:
         # The stored certificate remains authoritative only for the untouched
         # stored binding used below. Do not attach it to the CURRENT fields.
         binding.pop('det_projection_receipt',None)
-        binding['current_det_reader_receipt']=det_receipt
+        if det_receipt is not None:binding['current_det_reader_receipt']=det_receipt
         binding['callable']=False
     result=dict(adapter,bindings=dict(adapter['bindings'],mutant=binding),
         input=dict(adapter['input'],binding=binding,fields=fields,callable_template=atom))
@@ -162,7 +166,8 @@ def acquire_point(ev, record, adapter, ntrain, ntest, *, copy_rows, include_proj
     """Decode only the certified storage indices through the ordinary evaluator."""
     from evaluator_train import acquire_train_point
     info=adapter['_current_native_names'];det=info.get('current_det_reader_receipt')
-    if det is not None:
+    full_det=adapter.get('det_full_body') is not None
+    if det is not None or full_det:
         old=info['stored_binding']  # every original DET certificate hash stays intact
     else:
         old=dict(info['stored_binding'],projected_schema=info['storage_fields'])
@@ -176,7 +181,7 @@ def acquire_point(ev, record, adapter, ntrain, ntest, *, copy_rows, include_proj
                                include_projected_flows=include_projected_flows)
     if packet['missing']:raise Unavailable('CURRENT namespace X acquisition has missing TRAIN axes')
     acquired_projection=list(packet['projection']);packet_columns=None
-    if det is not None:
+    if det is not None or full_det:
         if acquired_projection!=[f['source_body_column'] for f in old['projected_schema']]:
             raise Unavailable('stored DET acquisition changed its certified projection')
         packet_columns=_det_packet_columns(old,info['storage_projection'])

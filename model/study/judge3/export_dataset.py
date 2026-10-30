@@ -152,7 +152,7 @@ def export_pair(ev, source_pair, output, cache):
 
 
 def export_target(ev, pair_id, record, target, output, cache, *, source,
-                  private=DATA_ROOT / 'judgetool', features=None,current_native_names=False):
+                  private=DATA_ROOT / 'judgetool', features=None,current_native_names=False,det_full_body=False,existing_point=None):
     """Write one pair directory from a source record and its target (adapter, ntrain, ntest).
 
     `source` names where the target came from; `private` receives the contexts
@@ -176,7 +176,14 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
     from evaluator_train import acquire_train_point
     from case_collector import compare_target
     from definition_binding import definition_node
-    adapter = target['adapter']
+    adapter=target['adapter']
+    if det_full_body and (features is None or adapter.get('det_full_body') is None):
+        raise ValueError('full DET export requires features and full physical BODY adapter')
+    if existing_point is not None and not det_full_body:
+        raise ValueError('existing_point requires full DET mode')
+    if det_full_body and features is not None and (features/'point.json').exists():
+        if read_json(features/'point.json').get('det_layout')!='det-full-body-train-v1':
+            raise ValueError('full DET needs a separate point generation; old G cannot be reused as full G')
     destination = Path(output)
     if not destination.resolve().is_relative_to(DATA_ROOT.resolve()):
         raise ValueError('dataset output must stay under the study data root')
@@ -200,8 +207,13 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
         # acquire_train_point validates the complete source-bound reader/header
         # certificate before reading X/G. No judge callable is introduced.
     store = TargetStore(ev.legacy, CODE_ROOT)
+    if det_full_body:
+        from det_full_body import full_body_snapshot
+        read_native=lambda ref,base:full_body_snapshot(ev,record,ref,base)['_native_reader']
+    else:
+        read_native=lambda ref,base:store.snapshot(ref,base)['_native_reader']
     producer = MetadataProducer(engine=ev.arclog,
-        read_native=lambda ref, base: store.snapshot(ref, base)['_native_reader'],
+        read_native=read_native,
         corpus=Path(adapter['source']['native_base']).parent, settings=ev.settings,
         case_inventory=adapter['all_case_targets'])
     if current_native_names:
@@ -209,7 +221,11 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
     point_export = producer._export(record['gold_sexp'], record)
     point_view = next(v for v in point_export['body_views'] if v['body_path'] == record['point'])
     point_name = producer.point_source_name(point_export, point_view)
-    index = []; shared_index = []; comparisons = []; provenance = []; target_bindings = []
+    index=[];shared_index=[];comparisons=[];provenance=[];target_bindings=[]
+    inherited=None;full_x=full_g=None
+    if det_full_body and shared is not None and existing_point is not None:
+        from det_full_body import inherit_available
+        inherited=inherit_available(existing_point,shared,record,adapter['source']['task_path'],producer)
     def write_public(path, value):
         write_json(path, value, compact=features is not None)
     def add(packet, table_id, name, case, roles, atom=None, **metadata):
@@ -224,6 +240,9 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
         return public
     x = acquire_train_point(ev, record, adapter, target['ntrain'], target['ntest'], side='mutant',
                             copy_rows=features is None, include_projected_flows=features is not None)
+    if det_full_body:
+        from det_full_body import packet_summary
+        full_x=packet_summary(x)
     public_x = add(x, 'X', point_name, record['case'], ['input'], adapter['input']['binding']['callable_template'], side='mutant')
     feature_x_meta = None
     receipt_packet=receipt_public=None
@@ -239,7 +258,9 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
         x = None  # synchronous write is finished; feature mode never compares X
     if features is None or shared:
         g = acquire_train_point(ev, record, adapter, target['ntrain'], target['ntest'], side='gold', copy_rows=features is None)
+        if det_full_body:full_g=packet_summary(g)
         add(g, 'G', point_name, record['case'], ['target'], side='gold')
+        if inherited:shared_index.extend(inherited['tables'])
         if features is not None:
             g = None
     # Feature export never compares candidate values. Avoid constructing an
@@ -256,13 +277,15 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
         comparisons.append(dict(target_id=ref['target_id'], comparison=value))
     if features is None:
         comparison(g, g['fields'], dict(target_id='G', role='point'))
-    main_export = None
+    inherited_case=det_full_body and (inherited is not None or shared is None)
+    main_export=point_export if inherited_case else None
     count = 0
     fresh_cases = {}
     repairs_before = len(cache_repairs)
     facts = set()
-    contexts = adapter['all_case_targets']['cases']
-    own_seen = False
+    contexts=[] if inherited_case else adapter['all_case_targets']['cases']
+    own_seen=inherited_case
+    if inherited:facts.update(('input','ex_input','ex_output'))
     for context in contexts:
         if features is not None and not shared and context['name'] != record['case']:
             continue  # the point directory exists: this pair needs only the export of its own case
@@ -360,7 +383,8 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
         side_names = producer.policy['Names'](export) if side == 'gold' else names
         where = shared if features is not None and side == 'gold' else output
         text=side_names.text(export['program_sexp']) if current_native_names and side=='mutant' else side_names.text(record[side + '_sexp'])
-        (where / programs[side]).write_text(text + '\n')
+        if not (inherited and side=='gold'):
+            (where / programs[side]).write_text(text + '\n')
     nodes = {tuple(n['path']): n for n in main_export['nodes']}
     change = dict(point=record['point'], kind=adapter['input']['binding']['kind'],
                   gold=names.text(nodes[tuple(record['point'])]['sexp']))
@@ -394,23 +418,35 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
         feature_payload = payload(ev, record, adapter, feature_x_meta, output / 'tables/X.json', available_paths, feature_program)
         if shared:
             task = read_json(adapter['source']['task_path'])
-            write_public(shared / 'train.json', task['train'])
-            write_public(shared / 'libraries.json', ev.registry_interfaces(record)['entries'])
+            if not inherited:
+                write_public(shared / 'train.json', task['train'])
+                write_public(shared / 'libraries.json', ev.registry_interfaces(record)['entries'])
             write_public(shared / 'point.json', dict(format=FORMAT, kind='features-point', task=record['task'],
                 case=record['case'], point=record['point'], tables=shared_index,
-                programs=dict(gold=programs['gold']), train='train.json', libraries='libraries.json', **point_payload(feature_payload)))
+                programs=dict(gold=programs['gold']), train='train.json', libraries='libraries.json',
+                **(dict(det_layout='det-full-body-train-v1') if det_full_body else {}), **point_payload(feature_payload)))
             try:
                 shared.rename(features)
             except OSError:  # another process published the same point first
                 shutil.rmtree(shared)
+            if det_full_body:
+                from det_full_body import write_export_receipts
+                write_export_receipts(ev,None,record,None,adapter,None,full_g,
+                    None,None,features,private,inherited)
         write_public(output / 'pair.json', dict(format=FORMAT, kind='features-pair', pair_id=pair_id,
             task=record['task'], case=record['case'], change=change, tables=index,
-            programs=dict(mutant=programs['mutant']), point=os.path.relpath(features, destination), **feature_payload))
+            programs=dict(mutant=programs['mutant']), point=os.path.relpath(features, destination),
+            **(dict(det_layout='det-full-body-train-v1') if det_full_body else {}), **feature_payload))
         result_receipt={}
         if current_native_names:
             from current_native_names import write_receipt
             result_receipt['current_native_names_receipt']=write_receipt(ev,pair_id,record,target,adapter,
                 receipt_packet,receipt_public,output,private)
+        if det_full_body:
+            from det_full_body import write_export_receipts
+            result_receipt.update(write_export_receipts(ev,pair_id,record,target,adapter,
+                full_x,None,output,destination,features,private,inherited,
+                namespace_receipt=result_receipt.get('current_native_names_receipt')))
         output.rename(destination)
         return dict(pair_id=pair_id, tables=len(index) + len(shared_index), output=str(destination),
                     fresh_cases=fresh_cases, cache_repaired=len(cache_repairs) - repairs_before,**result_receipt)

@@ -47,7 +47,7 @@ def _receipt_produce(source):
     tree = ast.parse(source.decode(), str(path))
     cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'MetadataProducer')
     fn = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == 'produce')
-    expected = ast.dump(ast.parse("ctx.body['kind']=='Det'", mode='eval').body)
+    expected = ast.dump(ast.parse("ctx.body['kind']=='Det' and not det_full_body", mode='eval').body)
     guards = [n for n in fn.body if isinstance(n, ast.If) and ast.dump(n.test) == expected]
     require(len(guards) == 1, 'canonical DET guard changed')
     guard = guards[0]

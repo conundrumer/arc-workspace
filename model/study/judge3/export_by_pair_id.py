@@ -59,7 +59,7 @@ class PairSource:
         corpus = RUN / Path(base['source']['corpus']).name
         return dict(base, source=dict(base['source'], corpus=str(corpus)))
 
-    def load(self, pair_id, *, include_det=False):
+    def load(self, pair_id, *, include_det=False, det_full_body=False):
         """Return source-bound metadata; DET is an explicit feature-only opt-in."""
         from run import digest, pair_key
         base = self.base(pair_id)
@@ -70,9 +70,14 @@ class PairSource:
             raise ValueError('corpus record does not give this pair_id')
         corpus = Path(base['source']['corpus'])
         if base['kind'].casefold() == 'det':
-            from evaluator_train import prepare_det_metadata
-            adapter = prepare_det_metadata(self.ev, record, native_base=corpus / record['task'])
+            if det_full_body:
+                from det_full_body import prepare_det_full_body_metadata
+                adapter=prepare_det_full_body_metadata(self.ev,record,native_base=corpus/record['task'])
+            else:
+                from evaluator_train import prepare_det_metadata
+                adapter=prepare_det_metadata(self.ev,record,native_base=corpus/record['task'])
         else:
+            if det_full_body:raise ValueError('det_full_body requires a DET source')
             producer, adapter = self.produce(self.ev, self.store, record, corpus,
                                              producer=self.producers.get(corpus), kind=base['kind'])
             self.producers[corpus] = producer
@@ -89,7 +94,7 @@ def point_directory(points, record):
     return points / (record['task'] + '-' + key)
 
 
-def export_pairs(ev, pair_ids, output, cache, private, points=None, *, include_det=False,current_native_names=False):
+def export_pairs(ev, pair_ids, output, cache, private, points=None, *, include_det=False,current_native_names=False,det_full_body=False,existing_points=None):
     """Export each pair; yield one result dict per pair, with its seconds and status.
 
     With `points`, export the features layout: see the module docstring.
@@ -98,6 +103,10 @@ def export_pairs(ev, pair_ids, output, cache, private, points=None, *, include_d
     require_exporter(ev.arclog)
     if include_det and points is None:
         raise ValueError('include_det requires features mode')
+    if det_full_body and (not include_det or points is None):
+        raise ValueError('det_full_body requires features mode and include_det')
+    if existing_points is not None and not det_full_body:
+        raise ValueError('existing_points is only for full DET export')
     source = PairSource(ev)
     try:
         for pair_id in pair_ids:
@@ -108,16 +117,19 @@ def export_pairs(ev, pair_ids, output, cache, private, points=None, *, include_d
                 if destination.exists():
                     result.update(status='exists', reason='output directory exists; left unchanged')
                 else:
-                    base, record, target = source.load(pair_id, include_det=include_det)
+                    base, record, target = source.load(pair_id, include_det=include_det,det_full_body=det_full_body)
                     done = export_target(ev, pair_id, record, target, destination, cache,
                                          source='base label store: ' + pair_id, private=private,
                                          features=None if points is None else point_directory(points, record),
-                                         current_native_names=current_native_names)
+                                         current_native_names=current_native_names,det_full_body=det_full_body,
+                                         existing_point=None if existing_points is None else point_directory(Path(existing_points),record))
                     fresh = done.pop('fresh_cases')
                     result.update(status='exported', label=base['label'], kind=base['kind'],
                                   tables=done['tables'], output=done['output'], cache_repaired=done['cache_repaired'],
                                   cases_new=sorted(c for c, new in fresh.items() if new),
                                   cases_cached=sorted(c for c, new in fresh.items() if not new))
+                    for name in ('det_full_body_receipt','det_full_body_point_receipt'):
+                        if name in done:result[name]=done[name]
                     if 'current_native_names_receipt' in done:
                         result['current_native_names_receipt'] = done['current_native_names_receipt']
             except Exception as error:
@@ -150,6 +162,8 @@ def main():
                         help='with --features only, publish certified CURRENT native X names with private acquisition receipt')
     parser.add_argument('--include-det', action='store_true',
                         help='with --features only, include certified noncallable DET reader fields')
+    parser.add_argument('--det-full-body',action='store_true',help='with features/include-det: full physical TRAIN BODY columns')
+    parser.add_argument('--reuse-points',type=Path,help='validated old point root; inherit available bytes/IDs, rebuild full G')
     parser.add_argument('--points', type=Path, default=FEATURE_ROOT / 'points',
                         help='with --features, directory that receives <task>-<point key>/ (default: %(default)s)')
     parser.add_argument('--deadline', type=float, default=30)
@@ -158,6 +172,10 @@ def main():
         parser.error('--current-native-names requires --features')
     if args.include_det and not args.features:
         parser.error('--include-det requires --features')
+    if args.det_full_body and not (args.features and args.include_det):
+        parser.error('--det-full-body requires --features --include-det')
+    if args.reuse_points is not None and not args.det_full_body:
+        parser.error('--reuse-points requires --det-full-body')
     pair_ids = list(args.pair_id)
     if args.pair_ids_file:
         pair_ids += [line.strip() for line in args.pair_ids_file.read_text().splitlines() if line.strip()]
@@ -177,7 +195,8 @@ def main():
     try:
         for i, result in enumerate(export_pairs(ev, pair_ids, args.output, args.cache, args.private,
                                                         args.points if args.features else None,
-                                                        include_det=args.include_det,current_native_names=args.current_native_names), 1):
+                                                        include_det=args.include_det,current_native_names=args.current_native_names,
+                                                        det_full_body=args.det_full_body,existing_points=args.reuse_points), 1):
             counts[result['status']] = counts.get(result['status'], 0) + 1
             print(json.dumps(result), flush=True)
             elapsed = time.monotonic() - start
