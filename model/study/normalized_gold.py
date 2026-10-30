@@ -16,6 +16,7 @@ import shutil
 import sys
 
 from study_paths import CODE_ROOT, DATA_ROOT
+from judge3.framed_jsonl import iter_json
 from native_correspondence import NormalizedGoldView, Unavailable
 
 POLICY='normalized-gold-view-v1'
@@ -89,7 +90,7 @@ def _manifest(ref):
             raise ValueError('enabled-decoder programs SHA/path differs')
         if programs_ref['index_key']!=['task','case','original_program_sha256']:
             raise ValueError('enabled-decoder index contract differs')
-        decoder_rows=[json.loads(line) for line in programs_path.read_text().splitlines() if line]
+        decoder_rows=list(iter_json(programs_path))
         if len(decoder_rows)!=programs_ref['rows']:raise ValueError('enabled-decoder row count differs')
         if any(manifest['artifacts'].get(str(q))!=h for q,h in
                 ((evidence_path,evidence_ref['sha256']),(programs_path,programs_ref['sha256']))):
@@ -103,7 +104,7 @@ def _manifest(ref):
             resolved=file.resolve()
             if resolved not in loaded:
                 _PERFORMANCE['frozen_artifact_decodes']+=1
-                loaded[resolved]=_read(file) if file.suffix=='.json' else [json.loads(line) for line in file.read_text().splitlines() if line]
+                loaded[resolved]=_read(file) if file.suffix=='.json' else list(iter_json(file))
             files[name]=loaded[resolved]
         for name in ('programs','points','pairs','overlays'):
             selected=Path(manifest[name+'_path']).resolve() if name+'_path' in manifest else (path.parent/(name+('.json' if name=='programs' else '.jsonl'))).resolve()
