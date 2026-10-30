@@ -81,11 +81,13 @@ def main():
     if len(built) != 1:
         raise RuntimeError(f"expected exactly one wheel, got {built}")
     # The study's readers import numpy; pin the repository environment's version.
+    # The labeling passes also read tables through pandas and pyarrow.
     numpy = "numpy==" + importlib.metadata.version("numpy")
     run(["uv", "pip", "install", "--python", venv / "bin/python", "--no-deps",
-         built[0], numpy, "zstandard==0.23.0"], "install private wheel and study readers")
+         built[0], numpy, "zstandard==0.23.0", "pandas==3.1.0", "pyarrow==26.0.0",
+         "python-dateutil==3.0.0", "six==1.17.0"], "install private wheel and study readers")
     verify = (
-        "import hashlib, pathlib, sys, zipfile, arclog, zstandard\n"
+        "import hashlib, pathlib, sys, zipfile, arclog, zstandard, pandas, pyarrow\n"
         "assert zstandard.__version__ == '0.23.0', 'study zstandard version differs'\n"
         "package = pathlib.Path(arclog.__file__).resolve().parent\n"
         "with zipfile.ZipFile(sys.argv[1]) as wheel:\n"
