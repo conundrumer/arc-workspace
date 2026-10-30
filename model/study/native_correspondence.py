@@ -46,6 +46,10 @@ class Correspondence:
     Returning one deep-copied record prevents mutation of cached native exports.
     """
     def __init__(self, export, *, program_sexp, source_program_sexp):
+        self._initialize(export,program_sexp=program_sexp,source_program_sexp=source_program_sexp,
+            bridge_statuses=('same_checked_representation','native_writer_trace'))
+
+    def _initialize(self, export, *, program_sexp, source_program_sexp, bridge_statuses):
         try:
             value = export['correspondence']
             if (value['schema'] != 'arclog-study-correspondence-v1'
@@ -53,7 +57,7 @@ class Correspondence:
                     or export['program_sexp'] != program_sexp
                     or value['source_program_sexp'] != source_program_sexp):
                 raise Unavailable('native correspondence program/schema binding differs')
-            if value['source_bridge_status'] not in ('same_checked_representation', 'native_writer_trace'):
+            if value['source_bridge_status'] not in bridge_statuses:
                 raise Unavailable('native source bridge unsupported')
             self._value = value
             self._bodies = _unique(value['bodies'], lambda r: _path(r['body_path']), 'BODY')
@@ -197,6 +201,107 @@ def live_payload_digest(payload):
                       separators=(',', ':'), allow_nan=False).encode()
     return dict(format='native-live-framed-sha256-v1', sha256=hashlib.sha256(data).hexdigest(),
                 buffer_bytes=buffers, reloadable=False, persisted_payload=False)
+
+
+class NormalizedGoldView:
+    """Native editor provenance for a separate checked normalized gold handle.
+
+    This is source correspondence only. It neither replaces the original source
+    record/ValidMutant nor grants table, held, model-family or OUT equivalence.
+    """
+    @classmethod
+    def acquire(cls, original):
+        import json
+        method=getattr(original,'normalized_gold',None)
+        if method is None:raise Unavailable('runtime lacks checked normalized_gold provenance')
+        normalized,raw=method()
+        return cls(original,normalized,json.loads(raw))
+
+    def __init__(self,original,normalized,report):
+        self.original=original;self.program=normalized;self.report=deepcopy(report)
+        proof=report.get('normalization_provenance')
+        if (not isinstance(proof,dict)
+                or proof.get('schema')!='arclog-study-normalization-provenance-v1'
+                or proof.get('status')!='complete'
+                or proof.get('original',{}).get('program_sexp')!=original.sexp()
+                or proof.get('normalized',{}).get('program_sexp')!=normalized.sexp()
+                or not proof.get('settings') or not proof.get('vocabulary')
+                or any(proof.get('checks',{}).get(k) is not True for k in
+                    ('no_fresh_label_deletion','original_interfaces','whole_program_check'))
+                or proof.get('authority',{}).get('source_correspondence') is not True
+                or any(proof.get('authority',{}).get(k) is not False for k in
+                    ('mutation_admission','evaluation_equivalence','held_equivalence',
+                     'model_family_equivalence','out_equivalence','table_reuse'))):
+            raise Unavailable('normalized gold native provenance binding differs')
+        self.proof=deepcopy(proof)
+        for name,program in (('original',original),('normalized',normalized)):
+            stream=proof[name].get('stream',{})
+            if stream.get('status')=='complete':
+                if {k:stream.get(k) for k in ('ids','model','paths')}!=_native_stream(program):
+                    raise Unavailable('normalized gold '+name+' native stream differs')
+            elif stream.get('status')!='unsupported':
+                raise Unavailable('normalized gold stream status unavailable')
+        descriptors=proof.get('descriptors',{})
+        if descriptors.get('status')!='complete':
+            raise Unavailable('normalized gold native descriptors unsupported')
+        self.exports={};self.correspondences={}
+        for name,program in (('original',original),('normalized',normalized)):
+            own=descriptors.get(name,{});export=own.get('export',{})
+            wrapper=own.get('correspondence',{})
+            if (export.get('schema')!='arclog-study-render-v1'
+                    or export.get('program_sexp')!=program.sexp()
+                    or wrapper.get('status')!='complete'):
+                raise Unavailable('normalized gold SELF export unsupported')
+            value=wrapper.get('value',{})
+            self.exports[name]=deepcopy(export)
+            self.correspondences[name]=Correspondence(dict(export,correspondence=value),
+                program_sexp=program.sexp(),source_program_sexp=program.sexp())
+            if value['source_bridge_status']!='same_checked_representation':
+                raise Unavailable('normalized gold endpoints require native SELF descriptors')
+        wrapper=descriptors.get('normalized_to_original',{})
+        if wrapper.get('status')!='complete':
+            raise Unavailable('normalized gold editor source correspondence unsupported')
+        self.bridge=Correspondence.__new__(Correspondence)
+        self.bridge._initialize(dict(self.exports['normalized'],correspondence=wrapper.get('value')),
+            program_sexp=normalized.sexp(),source_program_sexp=original.sexp(),
+            bridge_statuses=('native_atomic_edit',))
+        nodes=proof.get('nodes')
+        self.nodes=_unique(nodes,lambda row:_path(row['before_path']),'normalization source node')
+        for before,row in self.nodes.items():
+            after=row.get('after_path');status=row.get('address_status')
+            if ((after is None and status!='deleted') or
+                    (after is not None and status!=('unchanged' if _path(after)==before else 'moved'))):
+                raise Unavailable('normalized editor node address status differs')
+
+    def node(self,original_path):
+        row=self.nodes.get(_path(original_path))
+        if row is None:raise Unavailable('normalization source node absent from editor trace')
+        return deepcopy(row)
+
+    def body(self,original_body_path):
+        return self.bridge.body_from_source(original_body_path)
+
+    def body_column(self,original_body_path,column):
+        source=self.correspondences['original'].body_column(original_body_path,column)
+        return self.bridge.body_column_from_source(original_body_path,column,
+            scope_path=source['scope_path'],label_id=source['label_id'])
+
+    def relation(self,original_slot):
+        original=self.correspondences['original'].relation(original_slot)
+        candidates=[r for r in self.bridge._relations.values()
+                    if r.get('source_relation_slot')==original_slot
+                    and (r.get('canonical_source_relation') or {}).get('native_selector')==original['native_selector']]
+        if len(candidates)!=1:raise Unavailable('normalized relation source correspondence missing or ambiguous')
+        return deepcopy(candidates[0])
+
+    def relation_column(self,original_slot,column):
+        original=self.correspondences['original'].relation(original_slot)
+        relation=self.relation(original_slot)
+        candidates=[c for c in relation['columns'] if any(
+            s.get('physical_column')==column and s.get('native_selector')==original['native_selector']
+            for s in c.get('source_columns',[]))]
+        if len(candidates)!=1:raise Unavailable('normalized header source correspondence missing or ambiguous')
+        return deepcopy(candidates[0])
 
 
 class AtomicPacked:

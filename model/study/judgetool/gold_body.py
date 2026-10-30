@@ -120,7 +120,7 @@ def capture(ev,record):
                 Path(ev.legacy.native.__code__.co_filename).resolve(),
                 Path(ev.legacy.native.__globals__['_NATIVE'].__file__).resolve()}
             paths.update(CODE_ROOT/name for name in (
-                'study_paths.py','native_correspondence.py','det_full_body.py','legacy_body_metadata.py','legacy_body_worker.py','ast/run/provenance.py','judgetool/evaluator.py','judgetool/tables.py',
+                'study_paths.py','native_correspondence.py','normalized_gold.py','det_full_body.py','legacy_body_metadata.py','legacy_body_worker.py','ast/run/provenance.py','judgetool/evaluator.py','judgetool/tables.py',
                 'judgetool/raw_body.py','judgetool/program_metadata.py',
                 'judge2/render2/headers.py','judge2/render2/body.py'))
             implementation={str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
