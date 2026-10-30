@@ -6,7 +6,9 @@ component identities. Private execution records are never copied wholesale.
 """
 from copy import deepcopy
 import json
+import os
 from pathlib import Path
+import uuid
 
 FORMAT = 'judge-dataset-v1'
 
@@ -16,7 +18,7 @@ def write_json(path, value, *, compact=False):
         raise ValueError("compact must be boolean")
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + '.tmp')
+    temporary = path.with_name(f'{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp')
     try:
         with temporary.open('w', encoding='utf-8') as stream:
             options = dict(ensure_ascii=False, allow_nan=False, indent=None if compact else 2)
