@@ -69,3 +69,10 @@ Catalogue-backed case programs are resolved by the shared collector context adap
 Catalog completeness uses the gap-free terminal enumeration from the owned producer, the exact G case/body identity, successful case replay receipts, and explicit coverage of every other-case native table. Same-case eligibility remains the producer's canonical source-scope result; no table-index or ordinal cutoff is inferred. Missing case/point/scope evidence blocks completeness. Small case-catalog metadata are cached by their authenticated durable reference; native rows are not copied into this cache.
 
 Catalog and containment coverage are independent of positive equality TEST checks and bounded candidate searches. A complete TRAIN mismatch disproves containment without a TEST negative. Positives still require their existing TRAIN+TEST gates. `apply_targets` forwards `target_catalog.complete` and `comparisons.recovery_support.{complete,all_targets_lossy,receipt_ref}` to the central reader. The central grade/routing predicate is `grades.all_targets_lossy`; empty, equality, Recovery, Partial source and fits retain their grade priority. Legacy facts and input-keyed resume are unchanged.
+
+
+## Exact input retries
+
+`--pairs-from PATH` reads a JSONL selection containing `pair_id` and `source_sha256`. Duplicate or malformed IDs, absent base rows and changed source bindings are refused. Only those IDs are visited, using indexed lookups in the read-only base store and task/source-line ordering. Existing valid completed results still resume; combine with `--retry-unavailable` to retry unavailable attempts within that explicit selection. Code and historical result hashes do not select or invalidate pairs.
+
+The output database has one writer for its lifetime. `--wait-for-writer` waits for its exclusive lock before constructing an evaluator or evaluating pairs; it does not stop the existing job. Separate writers are not coordinated for shared case/comparison records or deterministic artifact paths. A waiting retry starts when the writer releases the lock and reuses the existing output and child facts. It logs a waiting phase separately from labeling progress.

@@ -46,6 +46,23 @@ def unavailable(facts):
         for g in facts.get('gaps',[])))
 
 
+def read_selection(path):
+    """Explicit pair inputs to retry; neither code nor result hashes are keys."""
+    if path is None:return None
+    result={}
+    with Path(path).open() as stream:
+        for number,line in enumerate(stream,1):
+            if not line.strip():continue
+            value=json.loads(line);pair=value['pair_id'];source=value['source_sha256']
+            if any(not isinstance(v,str) or len(v)!=64 or any(c not in '0123456789abcdef' for c in v)
+                   for v in (pair,source)):
+                raise ValueError(f'{path}:{number}: invalid pair/source SHA256')
+            if pair in result:raise ValueError(f'{path}:{number}: duplicate selected pair')
+            result[pair]=source
+    if not result:raise ValueError('pair input selection is empty')
+    return result
+
+
 def stop(*_):
     global STOP
     STOP=True
@@ -60,7 +77,8 @@ class Pass:
     def __init__(self,args,ev):
         self.a=args;self.ev=ev;self.start=time.monotonic();self.last=0;self.counts=Counter()
         self.source_store=TaskNativeStore(ev.legacy,CODE_ROOT,counters=self.counts)
-        self.base=sqlite3.connect(args.base.resolve().as_uri()+'?mode=ro',uri=True);self.base.execute('BEGIN')
+        self.base=sqlite3.connect(args.base.resolve().as_uri()+'?mode=ro',uri=True)
+        self.base.execute('PRAGMA temp_store=MEMORY');self.base.execute('BEGIN')
         files=set(HERE/n for n in ('targets.py','target_store.py','target_compare.py','target_search.py','metadata.py',
             'read_targets.py','evidence.py','_paths.py','certificates.py','preflight.py','fact_codec.py','views.py','negative.py','target_index.py','runtime_cache.py'))
         files.update((CODE_ROOT/'judgetool').glob('*.py'))
@@ -85,7 +103,18 @@ class Pass:
             gold='once per case/program/own-kept/settings; durable case JSON; no stored gold target rows')
         self.journal=Journal(args.output,digest(self.manifest),digest(config),counters=self.counts)
         self.journal.register(self.manifest,config)
-        self.total=self.base.execute('SELECT count(*) FROM pairs').fetchone()[0]
+        if args.selection is None:
+            self.total=self.base.execute('SELECT count(*) FROM pairs').fetchone()[0]
+        else:
+            # TEMP lives only in this read-only connection. CROSS JOIN below
+            # drives indexed base lookups from the selected IDs, not a scan of
+            # every source record. No main-table writes or copied labels.
+            self.base.execute('CREATE TEMP TABLE target_selection(pair_id TEXT PRIMARY KEY,source_sha256 TEXT)')
+            self.base.executemany('INSERT INTO target_selection VALUES (?,?)',args.selection.items())
+            bad=self.base.execute('SELECT s.pair_id FROM target_selection s LEFT JOIN pairs p ON p.pair_id=s.pair_id '
+                'WHERE p.pair_id IS NULL OR p.source_sha256!=s.source_sha256 LIMIT 1').fetchone()
+            if bad:raise ValueError('selected pair input absent or changed: '+bad[0])
+            self.total=len(args.selection)
         self.done=0
         self.target_indexes=TargetIndexes();self.proposal_cache=OrderedDict()
         self.producers={};self.case_cache={};self.case_refs={};self.resolved_case_programs={};self.case_failures={};self.current_task=None;self.tasks={}
@@ -373,14 +402,18 @@ class Pass:
 
     def run(self):
         from case_collector import clear_cache
-        sql=('SELECT pair_id,source_sha256,code_sha256,config_sha256,result_sha256,record_json FROM pairs '
-             "ORDER BY json_extract(record_json,'$.task'),json_extract(record_json,'$.source.corpus'),"
-             "json_extract(record_json,'$.source.file'),json_extract(record_json,'$.source.line'),pair_id")
+        selected=self.a.selection is not None
+        source=('target_selection s CROSS JOIN pairs p ON p.pair_id=s.pair_id' if selected else 'pairs p')
+        sql=('SELECT p.pair_id,p.source_sha256,p.code_sha256,p.config_sha256,p.result_sha256,p.record_json FROM '+source+
+             " ORDER BY json_extract(p.record_json,'$.task'),json_extract(p.record_json,'$.source.corpus'),"
+             "json_extract(p.record_json,'$.source.file'),json_extract(p.record_json,'$.source.line'),p.pair_id")
         stream=None;path=None;lineno=0;record=None;failed=None
         try:
             for done,row in enumerate(self.base.execute(sql),1):
                 if STOP:return False
                 base=valid_base(row);inputs=self.pair_inputs(base);self.done=done
+                if selected and self.a.selection[base['pair_id']]!=base['source_sha256']:
+                    raise ValueError('selected pair input changed: '+base['pair_id'])
                 if self.a.task and base['task'] not in self.a.task:continue
                 from .preflight import det_available
                 if base['kind'].casefold()=='det' and (not self.a.include_det or not det_available()):
@@ -443,8 +476,13 @@ def main():
     ap.add_argument('--task',action='append')
     ap.add_argument('--limit',type=int)
     ap.add_argument('--retry-unavailable',action='store_true',help='retry failed pair/case acquisition; reuse completed child facts')
+    ap.add_argument('--pairs-from',type=Path,help='JSONL of exact pair_id/source_sha256 inputs; no other pairs visited')
+    ap.add_argument('--wait-for-writer',action='store_true',help='wait without evaluation for the output writer lock')
     ap.add_argument('--include-det',action='store_true',help='requires the future mechanical DET capability')
     a=ap.parse_args()
+    try:a.selection=read_selection(a.pairs_from)
+    except (ValueError,KeyError,OSError,TypeError) as error:ap.error(str(error))
+    if a.pairs_from and a.task:ap.error('--pairs-from cannot be combined with --task')
     for path in (a.output,):
         if not path.resolve().is_relative_to(DATA):ap.error('outputs must stay under '+str(DATA))
     if a.base.resolve()==a.output.resolve():ap.error('base is read-only')
@@ -456,7 +494,16 @@ def main():
     require_shared(include_det=a.include_det)
     DATA.mkdir(parents=True,exist_ok=True)
     a.output.parent.mkdir(parents=True,exist_ok=True)
-    lock=a.output.with_suffix('.lock').open('a');fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+    lock=a.output.with_suffix('.lock').open('a')
+    try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+    except BlockingIOError:
+        if not a.wait_for_writer:
+            lock.close();raise
+        print('phase=waiting_for_writer output='+str(a.output.resolve())+
+              ' selected='+str(len(a.selection) if a.selection is not None else 'all')+
+              ' no pair evaluation before lock acquisition',file=sys.stderr,flush=True)
+        fcntl.flock(lock,fcntl.LOCK_EX)
+        print('phase=writer_acquired output='+str(a.output.resolve()),file=sys.stderr,flush=True)
     signal.signal(signal.SIGTERM,stop);signal.signal(signal.SIGINT,stop)
     os.environ['STUDY_RUN']=str(CODE_ROOT/'ast/run')
     from evaluator import ReplayEvaluator
