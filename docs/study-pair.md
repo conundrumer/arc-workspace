@@ -257,7 +257,8 @@ work and its skipped case count; progress continues to print every second.
 After integrating the checked-IR fixes and memory lifecycle, one isolated
 wheel supports fault replay and corpus resume. Build only committed source
 with `scripts/build_study_runtime.py --revision <commit> --output <fresh-runtime>`;
-the build owns its source archive, target, wheel and interpreter directory.
+the build owns its source archive, wheel and interpreter directory,
+and removes its Cargo target once it verifies the install.
 Select the approved runtime from the corpus workspace's `run/CURRENT.json`
 through the native provenance selector, rather than assuming a venv path.
 Keep output provenance and checkpoint compatibility when using

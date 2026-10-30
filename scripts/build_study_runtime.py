@@ -2,6 +2,11 @@
 
 Run through run_heavy.py. The source archive, wheel, interpreter environment,
 and checker copies belong exclusively to this build. Rebuild into a new path.
+
+The Cargo target folder is scratch. About four fifths of it is incremental
+state and workspace artifacts that are keyed by the build's source path, so no
+other build can reuse them. The build removes it after the installed extension
+matches the wheel, and before it writes ready.json.
 """
 import argparse
 import hashlib
@@ -29,7 +34,7 @@ def main():
     destination.mkdir(parents=True, exist_ok=False)
     started = time.monotonic()
     done = 0
-    stages = 5
+    stages = 6
 
     def progress(label):
         elapsed = time.monotonic() - started
@@ -79,6 +84,19 @@ def main():
     numpy = "numpy==" + importlib.metadata.version("numpy")
     run(["uv", "pip", "install", "--python", venv / "bin/python", "--no-deps",
          built[0], numpy], "install private wheel")
+    verify = (
+        "import hashlib, pathlib, sys, zipfile, arclog\n"
+        "package = pathlib.Path(arclog.__file__).resolve().parent\n"
+        "with zipfile.ZipFile(sys.argv[1]) as wheel:\n"
+        "    members = [n for n in wheel.namelist() if n.endswith(('.so', '.pyd'))]\n"
+        "    assert members, 'wheel has no native extension'\n"
+        "    for n in members:\n"
+        "        installed = package / pathlib.Path(n).name\n"
+        "        assert installed.is_file() and hashlib.sha256(installed.read_bytes()).hexdigest() "
+        "== hashlib.sha256(wheel.read(n)).hexdigest(), 'installed extension differs from wheel: ' + str(installed)\n")
+    run([venv / "bin/python", "-I", "-B", "-c", verify, built[0]], "verify installed extension",
+        cwd=destination, env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+    shutil.rmtree(destination / "target")
     helper = checks / "execution_evidence.py"
     manifest = dict(revision=revision, wheel=str(built[0]), python=str(venv / "bin/python"),
                     checks=str(checks), seconds=time.monotonic()-started,

@@ -28,8 +28,9 @@ every already-complete prefix, or evaluate OUT. The online decoder is unchanged.
 
 Build through `scripts/run_heavy.py` using `scripts/build_study_runtime.py
 --revision COMMIT --output NEW_DIRECTORY`. The builder archives that commit,
-builds into an exclusive target/wheel directory, installs into an exclusive
-venv, copies the committed corpus checkers and writes `ready.json` only on
+builds the wheel into an exclusive directory with a scratch Cargo target, installs
+into an exclusive venv, checks the installed extension against the wheel, removes the
+target, copies the committed corpus checkers and writes `ready.json` only on
 success. It refuses an existing destination. Later builds cannot reinstall a
 running check's extension or replace its checker source. Every checker uses
 one process per task, streams task results, reports progress and retains the
