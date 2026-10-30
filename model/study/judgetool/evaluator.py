@@ -118,9 +118,9 @@ class ReplayEvaluator:
                                                    table_work_cap=self.work_cap, rule_tests=False)
         self.artifacts = Path(artifacts).resolve()
         roots=(DATA_ROOT/'judgetool',DATA_ROOT/'ast/run/mech4',DATA_ROOT/'ast/run/mech5',
-               DATA_ROOT/'ast/run/mech/det-later-fit')
+               DATA_ROOT/'ast/run/mech/det-later-fit',DATA_ROOT/'population_passes')
         if not any(self.artifacts.is_relative_to(root.resolve()) for root in roots):
-            raise ValueError('replay artifacts must stay in judgetool, mech4, mech5 or mech/det-later-fit')
+            raise ValueError('replay artifacts must stay in judgetool, mech4, mech5, mech/det-later-fit or population_passes')
         self.artifacts.mkdir(parents=True, exist_ok=True)
         self._reset_session_state()
         binary = importlib.util.find_spec('arclog.arclog').origin
