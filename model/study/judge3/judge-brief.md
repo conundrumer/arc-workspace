@@ -121,6 +121,17 @@ binds V; `(:Field V)` joins V. NOT binds nothing. A label made by the first OR
 branch is bare in later branches; the tool also normalizes later re-starred
 labels. A zero-site atom tests nonemptiness.
 
+A complete clause file has this shape; replace the X atom with its supplied
+callable template and use the pair's exact sites:
+
+```lisp
+(RULE &fix
+ (&X (:P *P) (:Col *Col)))
+```
+
+The head is bare `&fix`; binding sites belong to the atoms. Add restriction
+atoms after X and select the intended output labels with `--columns`.
+
 NOT takes one atom or form. To negate a conjunction, put its atoms together
 in one OR branch: `(NOT (OR ((atom1 ...) (atom2 ...))))`.
 
