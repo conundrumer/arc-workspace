@@ -58,6 +58,8 @@ Canonical metadata inventory copying preserves read-only source-record/reference
 
 Progress reports native view loads/reuse, journal commits, commit seconds and total journal-save seconds in addition to phase timings. Label facts, schemas, comparison/search keys and input-keyed resume remain unchanged.
 
+Determined row-level comparisons reuse exact task-local queries across pairs and target aliases. Keys include native row-set families with their context axes, source and target column names/types, cross-case Cartesian policy, relation and bound. Coverage and conservative obstructions still run before lookup. Unknown or bounded attempts are not retained. Query retention is bounded by count and cell references; task changes release it. Pair receipts and target identities are constructed independently of the cached comparison. Progress reports `comparison_queries_run` and `comparison_queries_reused`.
+
 
 Catalogue-backed case programs are resolved by the shared collector context adapter before assigning a cache identity. An omitted source-program string and an explicit string for the same gold case now share the actual program/kept key. Legacy placeholder-key observations are reused through their original references; existing records are never rewritten or invalidated. The case-collection counter counts collector requests, which may be served by the shared collector cache.
 

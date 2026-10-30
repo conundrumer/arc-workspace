@@ -8,8 +8,47 @@ from collections import OrderedDict
 
 
 class TargetIndexes:
-    def __init__(self):
+    def __init__(self,*,counters=None):
         self.decoded={};self.indexes=OrderedDict();self.schemas={};self.source=None;self.projections=OrderedDict();self.points={}
+        self.counters=counters;self.queries=OrderedDict();self.query_cells=0;self.families=OrderedDict()
+
+    def family_key(self,grouped,relation):
+        """Exact native rows and context axes; retain no mutable envelope."""
+        groups=grouped['groups'];key=(id(groups),relation)
+        if key not in self.families:
+            values=tuple((k,frozenset(family)) for k,family in sorted(groups.items())
+                         if relation!='contains' or k[1]==1)
+            cells=sum(len(rows)*len(next(iter(rows),())) for _,family in values for rows in family)
+            self.families[key]=(groups,values,cells)
+            while len(self.families)>128:self.families.popitem(last=False)
+        self.families.move_to_end(key)
+        return self.families[key][1:]
+
+    def comparison(self,source,columns,target,*,relation,seconds,compute):
+        """Reuse a determined canonical comparison of exactly the same query.
+
+        Pair/source receipts stay with the caller. Neither decoded-cell hashes
+        nor model ordinals substitute for native row identity or family equality.
+        Unknown/bounded attempts always call the comparator again.
+        """
+        grouped,fields,reference,_=target
+        xs,nx=self.family_key(source,relation);gs,ng=self.family_key(grouped,relation)
+        key=(relation,seconds,tuple(columns),tuple((f.get('field_name',f.get('name')),f['type']) for f in fields),
+             reference.get('role')=='other_case',xs,gs)
+        if key in self.queries:
+            self.queries.move_to_end(key)
+            if self.counters is not None:self.counters['comparison_queries_reused']+=1
+            return self.queries[key][0]
+        if self.counters is not None:self.counters['comparison_queries_run']+=1
+        result=compute()
+        # Bound both query count and retained cell references. Large queries
+        # still receive the unchanged full comparison, without cache retention.
+        cells=nx+ng
+        if result['status']!='unknown' and cells<=1000000:
+            self.queries[key]=(result,cells);self.query_cells+=cells
+            while len(self.queries)>2048 or self.query_cells>1000000:
+                _,(_,old)=self.queries.popitem(last=False);self.query_cells-=old
+        return result
 
     def decode(self,value):
         from case_collector import decode_grouped

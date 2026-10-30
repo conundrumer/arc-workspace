@@ -10,6 +10,7 @@ from contextlib import contextmanager
 import fcntl
 import gzip
 import hashlib
+import inspect
 import json
 import os
 from pathlib import Path
@@ -76,6 +77,11 @@ def selector_matches(selector,definition):
 class Pass:
     def __init__(self,args,ev):
         self.a=args;self.ev=ev;self.start=time.monotonic();self.last=0;self.counts=Counter()
+        from case_collector import evaluate_cached
+        # Table presentation is discarded by candidate compaction. Older
+        # evaluator snapshots keep their existing call signature and behavior.
+        self.candidate_options=({'include_table':False}
+            if 'include_table' in inspect.signature(evaluate_cached).parameters else {})
         self.source_store=TaskNativeStore(ev.legacy,CODE_ROOT,counters=self.counts)
         self.base=sqlite3.connect(args.base.resolve().as_uri()+'?mode=ro',uri=True)
         self.base.execute('PRAGMA temp_store=MEMORY');self.base.execute('BEGIN')
@@ -116,7 +122,7 @@ class Pass:
             if bad:raise ValueError('selected pair input absent or changed: '+bad[0])
             self.total=len(args.selection)
         self.done=0
-        self.target_indexes=TargetIndexes();self.proposal_cache=OrderedDict()
+        self.target_indexes=TargetIndexes(counters=self.counts);self.proposal_cache=OrderedDict()
         self.producers={};self.case_cache={};self.case_refs={};self.resolved_case_programs={};self.case_failures={};self.current_task=None;self.tasks={}
 
     @contextmanager
@@ -280,7 +286,7 @@ class Pass:
                 ntrain=selection['ntrain'],ntest=selection['ntest'],mode='recovery')
             try:
                 result=evaluate_cached(self.ev,record,candidate['clause'],target,candidate['columns'],selection,
-                    row_limit=0,max_mutant_replays=1)
+                    row_limit=0,max_mutant_replays=1,**self.candidate_options)
             except (ValueError,KeyError,IndexError,TypeError) as error:
                 result=dict(outcome='unknown',reason=str(error))
             result=dict(result,requested_output_columns=candidate['columns'])
@@ -428,7 +434,7 @@ class Pass:
                     else:self.counts['stale_pair_results']+=1
                 if self.current_task!=base['task']:
                     self.ev.close();clear_cache(self.ev);self.source_store.clear()
-                    self.target_indexes=TargetIndexes();self.proposal_cache.clear()
+                    self.target_indexes=TargetIndexes(counters=self.counts);self.proposal_cache.clear()
                     self.case_cache.clear();self.case_refs.clear();self.resolved_case_programs.clear()
                     self.case_failures.clear();self.producers.clear();self.current_task=base['task']
                 src=base['source'];current=Path(src['corpus']).resolve()/base['task']/src['file'];wanted=src['line']
