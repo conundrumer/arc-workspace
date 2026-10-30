@@ -19,7 +19,8 @@ use arclog::registry::{LibName, Registry};
 use arclog::resolver::{resolve, resolve_last, GraphNodeIndex, ResolvedProgram, SolverScope};
 use arclog::session::{SessionBound, TaskSession};
 use arclog::stream::{token_stream, token_stream_with_paths, Control, DecodeSettings, Emitter, Token, Vocabulary};
-use arclog::task::Task;
+use arclog::task::{Grid, Task, TrainPair};
+use arclog::terms::Color;
 
 /// The checked concept program of the arclog file `arclog`.
 fn checked(arclog: &str) -> CheckedProgram {
@@ -44,8 +45,23 @@ struct Inputs {
 }
 
 fn inputs() -> Inputs {
+    inputs_with_task(Task { train: Box::new([]), test: Box::new([]) })
+}
+
+fn inputs_with_task(task: Task) -> Inputs {
     let constructions = Constructions::new(Vec::new(), Registry::get()).expect("an empty table");
-    Inputs { task: Task { train: Box::new([]), test: Box::new([]) }, session: TaskSession::new(SessionBound { bytes: 1 << 26 }, Caps::CORPUS), constructions }
+    Inputs { task, session: TaskSession::new(SessionBound { bytes: 1 << 26 }, Caps::CORPUS), constructions }
+}
+
+/// Identity evidence gives ScaleRatio the value 1 and UnchangedColor the
+/// color 3, including a model of that color's SET/ONE pick.
+fn proposer_inputs() -> Inputs {
+    let row: Box<[_]> = [Color::from_digit(3).expect("a color")].into();
+    let grid = Grid::from_rows(Box::new([row])).expect("a grid");
+    inputs_with_task(Task {
+        train: Box::new([TrainPair { input: grid.clone(), output: grid }]),
+        test: Box::new([]),
+    })
 }
 
 fn decoder(inputs: &Inputs) -> Decoder<'_> {
@@ -118,11 +134,14 @@ fn shows_each_prefix(decoded: &Node<Program>, paths: &[NodePath], shown: &[Optio
 /// The program written in `arclog`, checked, and the program that the
 /// decode of its stream gives, checked, which gives the same stream.
 fn round_trip(arclog: &str) -> (CheckedProgram, CheckedProgram) {
+    round_trip_with_inputs(arclog, &inputs())
+}
+
+fn round_trip_with_inputs(arclog: &str, inputs: &Inputs) -> (CheckedProgram, CheckedProgram) {
     let written = checked(arclog);
     let vocabulary = Vocabulary::new(Registry::get(), &DecodeSettings::default());
     let stream = token_stream(&written, &vocabulary).expect("the program has a stream");
-    let inputs = inputs();
-    let mut decoder = decoder(&inputs);
+    let mut decoder = decoder(inputs);
     let shown = walk(&mut decoder, &stream);
     let decoded = checked_decoded(decoder.program());
     let paths: Vec<NodePath> = token_stream_with_paths(&decoded, &vocabulary).expect("the decoded program has a stream").into_iter().map(|(_, _, path)| path).collect();
@@ -134,7 +153,11 @@ fn round_trip(arclog: &str) -> (CheckedProgram, CheckedProgram) {
 /// Asserts that the decode of the stream of `arclog` gives a program of
 /// the content of the program written.
 fn same_content(arclog: &str) {
-    let (written, decoded) = round_trip(arclog);
+    same_content_with_inputs(arclog, &inputs());
+}
+
+fn same_content_with_inputs(arclog: &str, inputs: &Inputs) {
+    let (written, decoded) = round_trip_with_inputs(arclog, inputs);
     assert_eq!(decoded.program.content(&NodePath::default()), written.program.content(&NodePath::default()));
 }
 
@@ -165,12 +188,12 @@ fn a_negated_constraint_decodes_to_its_content() {
 
 #[test]
 fn a_det_by_a_proposer_and_a_one_mark_decode_to_their_content() {
-    same_content("(DET &arr_dim ScaleRatio)\n(RULE &cell (input *P *Col) (ONE P))\n");
+    same_content_with_inputs("(DET &arr_dim ScaleRatio)\n(RULE &cell (input *P *Col) (ONE P))\n", &proposer_inputs());
 }
 
 #[test]
 fn a_det_by_a_proposer_with_set_and_one_marks_decodes_to_its_content() {
-    same_content("(DET &arr_dim ScaleRatio (SET))\n(DET &other UnchangedColor (SET) (ONE))\n");
+    same_content_with_inputs("(DET &arr_dim ScaleRatio (SET))\n(DET &other UnchangedColor (SET) (ONE))\n", &proposer_inputs());
 }
 
 #[test]
@@ -313,12 +336,15 @@ struct Retargets {
 /// proposer or a program's relation, retargeted to another's relation,
 /// gives what `resolve_last` gives for that other's program.
 fn compare_retargets(arclog: &str) -> Retargets {
+    compare_retargets_with_inputs(arclog, &inputs())
+}
+
+fn compare_retargets_with_inputs(arclog: &str, inputs: &Inputs) -> Retargets {
     let registry = Registry::get();
     let vocabulary = Vocabulary::new(registry, &DecodeSettings::default());
     let written = checked(arclog);
     let stream = token_stream(&written, &vocabulary).expect("the program has a stream");
-    let inputs = inputs();
-    let mut decoder = decoder(&inputs);
+    let mut decoder = decoder(inputs);
     let mut counts = Retargets::default();
     for (token, emitter) in &stream {
         if matches!(emitter, Emitter::Engine) {
@@ -387,7 +413,7 @@ fn a_retargeted_resolution_of_a_clause_is_what_resolve_last_gives() {
     let lists = "(RULE &lists (input *P *Col) (NOT (&fg P)) (IF ((&bg (:C Col))) ((= *K 0)) ((input P (:Col *D)) (&axis_len (:N K)))) (ALL ((input (:P *Q) (:Col Col))) ((&fg (:P Q)))))\n";
     let det = "(DET &arr_dim ScaleRatio)\n";
     for program in [format!("{BG}{FG}{AXIS}{lists}"), format!("{BG}{FG}{AXIS}{PRIOR}"), format!("{BG}{FG}{det}(RULE &cell (input *P *Col) (&fg P) (&bg (:C Col)) (&arr_dim))\n")] {
-        let counts = compare_retargets(&program);
+        let counts = compare_retargets_with_inputs(&program, &proposer_inputs());
         assert!(counts.to_node > 0 && counts.from_node > 0, "{} retargets to a node, {} from one, of {} candidates", counts.to_node, counts.from_node, counts.compared);
     }
 }
