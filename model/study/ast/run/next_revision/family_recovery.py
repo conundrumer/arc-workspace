@@ -334,6 +334,12 @@ def _supported_projections(choices, gold, mutant, budget, visit):
     yield from search(0)
 
 
+def typed_projection_choices(gold_types, source_types):
+    """All admitted typed source choices, including repeated-column use."""
+    return tuple(tuple(j for j, ty in enumerate(source_types) if ty == gold_ty)
+                 for gold_ty in gold_types)
+
+
 def witness(gold_types, gold, mutant_types, mutant, available=(), seconds=1.0, max_states=20000):
     """One shared transform on whole model SETS; bounded exact finite search."""
     deadline = time.monotonic() + seconds
@@ -367,8 +373,7 @@ def witness(gold_types, gold, mutant_types, mutant, available=(), seconds=1.0, m
                         nonrecoverable_proof='selection/projection cannot increase a model row cardinality',
                         proof_kind='row_cardinality', train=train,
                         gold_model_rows=gold_sizes, mutant_model_rows=mutant_sizes)
-    projection_choices = tuple(tuple(j for j, ty in enumerate(mutant_types) if ty == gold_ty)
-                               for gold_ty in gold_types)
+    projection_choices = typed_projection_choices(gold_types, mutant_types)
     if any(not choices for choices in projection_choices):
         return dict(status='determined', recoverable=False, states=0,
                     nonrecoverable_proof='no typed projection exists')

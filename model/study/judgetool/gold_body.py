@@ -55,6 +55,28 @@ def capture(ev,record):
             views=[v for v in export['body_views'] if v['body_path']==record['point']]
             if len(views)!=1:raise Incomplete('original gold BODY path unavailable or ambiguous')
             view=views[0]
+            # The checked IR's Layout may alpha-name authored labels (Key ->
+            # P, P -> P2). Public bindings use its native decoded-source Layout.
+            # Establish that spelling correspondence from the SAME program,
+            # before acquiring values; never infer it from names or ordinals.
+            decoded_export=json.loads(isolated.arclog.study_program_export_json(program.decode_source()))
+            source_views=[v for v in decoded_export['body_views'] if v['body_path']==record['point']]
+            if len(source_views)!=1:raise Incomplete('decoded source BODY path unavailable or ambiguous')
+            source_view=source_views[0]
+            if (source_view['owner_path']!=view['owner_path'] or source_view['kind']!=view['kind']
+                    or source_view.get('input_port')!=view.get('input_port')):
+                raise Incomplete('native source decoding changed original BODY ownership')
+            physical={c['label_id']:c for c in view['columns']}
+            source_labels={c['label_id']:c for c in source_view['columns']}
+            if (len(physical)!=len(view['columns']) or len(source_labels)!=len(source_view['columns'])
+                    or physical.keys()!=source_labels.keys()):
+                raise Incomplete('native source decoding changed scoped BODY LabelIds')
+            for label,column in physical.items():
+                source_column=source_labels[label]
+                if (column['body_column']!=source_column['body_column'] or
+                        comparison_type(type_identity(isolated,record,column['type'])[0])!=
+                        comparison_type(type_identity(isolated,record,source_column['type'])[0])):
+                    raise Incomplete('native source decoding changed BODY physical column or type')
             evidence=json.loads(program.choice_evidence_json('[]'))
             if evidence.get('schema')!='arclog-study-choices-v1' or evidence.get('complete') is not True:
                 raise Incomplete('original gold full DET schema unavailable')
@@ -103,6 +125,8 @@ def capture(ev,record):
                 original_source_sha256=sha(record),gold_program_sha256=sha(record['gold_sexp']),
                 kept_context_sha256=sha(record['evaluation']['kept_assignments']),
                 body_path=record['point'],owner_path=view['owner_path'],scope=report['body_scope'],table=table,
+                source_label_correspondence=dict(proof='same native program decode_source; exact scoped LabelId, physical column and type',
+                    checked_columns=view['columns'],source_columns=source_view['columns']),
                 native_gold_kept_calls=1,native_gold_body_calls=1,native_mutant_replays=0,
                 gold_observation_ref=report['gold_observation_ref'],native_axis_complete=True,
                 full_kept_match=old_by_fresh,entry_kept_assignments=held,operations=ledger,
@@ -121,7 +145,7 @@ def capture(ev,record):
         (folder/'gold-kept.json').write_text(canonical(kept)+'\n')
         (folder/'gold-body.json').write_text(canonical(report)+'\n')
         (folder/'receipt.json').write_text(canonical(dict(receipt,seconds=time.monotonic()-start))+'\n')
-        yield dict(ev=isolated,native=native,table=table,view=view,schema=schema,
+        yield dict(ev=isolated,native=native,table=table,view=view,source_view=source_view,schema=schema,
                    held_entries=held,report=report,receipt=receipt)
 
 
@@ -132,7 +156,10 @@ def projection(body,record,binding):
         raise Incomplete('public projection belongs to another original BODY')
     by_label={c['ast_label_id']:c for c in schema}
     if len(by_label)!=len(schema):raise Incomplete('original BODY has ambiguous physical LabelIds')
-    labels={c['label_id']:c for c in view['columns']};indices=[]
+    # capture authenticated this decoded-source view against the actual
+    # checked program's LabelIds/physical layout. Authored spelling belongs to
+    # that source Layout, not the compiler's alpha-named checked Layout.
+    labels={c['label_id']:c for c in body['source_view']['columns']};indices=[]
     for field in binding['projected_schema']:
         source=field['source_body_column']
         if source is None:

@@ -3,8 +3,8 @@ from collections import defaultdict
 import json
 from pathlib import Path
 
-from surface import prepare,atoms,tokens,site_bindings,output_projection
-from tables import TargetStore,Incomplete,kept_groups,compare,axis_receipt
+from surface import prepare,atoms,tokens,site_bindings,output_projection,InvalidSubmission
+from tables import TargetStore,Incomplete,kept_groups,compare,axis_receipt,comparison_type
 import catalog
 import live_targets
 
@@ -121,6 +121,11 @@ def evaluate(ev,record,clause,target,columns=None,*,explore=False,row_limit=100)
         unavailable=_relation_reads(proof['canonical'])-allowed
         if unavailable:raise Incomplete('unavailable/G-dependent relations: '+', '.join(sorted(unavailable)))
         replay,grouped,actual_columns=_replay_groups(ev,record,program,form,ntrain,ntest,dict(clause=clause,columns=columns,target=result['target_id'],explore=explore))
+    except InvalidSubmission as error:
+        result.update(outcome='did not verify',engine='not run',reason=str(error),
+                      submission_validation=dict(status='invalid_submission',stage='clause_syntax',
+                                                 native_operations=0))
+        return result
     except (ValueError,KeyError,IndexError,TypeError) as error:
         result['reason']='adapter/context unavailable: '+str(error);return result
     result.update(engine=replay['engine'],replay_artifact=replay['artifact'],seconds=replay['seconds'],
@@ -338,9 +343,166 @@ def partial_source_rows(proof,grouped,replay):
         additional_native_operations=0)
 
 
+def union_nonredundancy(ev,record,adapter,ntrain,ntest):
+    """Recheck the current readable inventory in the canonical redundancy grammar.
+
+    An old base False can cover fewer ports than today's public interface. A
+    bare adapter bit therefore cannot establish this gate. Search failures,
+    missing tables/models and bounds remain unknown; only determined negatives
+    for every source at every kept assignment establish nonredundancy.
+    """
+    import hashlib
+    import sys
+    from evaluator import sha
+    from study_paths import CODE_ROOT
+    from evaluator_train import acquire_train_table,acquire_input_train
+    sys.path.insert(0,str(CODE_ROOT/'ast/run'))
+    from mech import algorithm
+    key=('union-nonredundancy',sha(record),sha(adapter['availability']),ntrain,ntest)
+    if key in ev.target_cache:return ev.target_cache[key]
+    receipt=dict(schema='judgetool-union-nonredundancy-v1',complete=False,redundant=None,
+        source_sha256=sha(record),kept_context_sha256=sha(record['evaluation']['kept_assignments']),
+        availability_sha256=sha(adapter['availability']),
+        grammar='mech.algorithm.solve: typed projection/selection with comparison and semijoin/antijoin restrictions',
+        computed_lib_columns=False,union_sources=False,searches=[])
+    paths=[Path(algorithm.__file__),Path(algorithm.recovery.__file__)]
+    receipt['implementation_dependencies']={str(p.resolve()):hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
+    try:
+        x,fields=ev.target_store.mutant_input(record,adapter,ntrain,ntest)
+        required=sorted(k for k in x['required'] if k[1]==1)
+        receipt.update(required_axes=[list(k) for k in required],X_native_ref=record['native']['mutant'],
+                       X_binding=adapter['input']['binding'])
+        types=tuple(comparison_type(f['type']) for f in fields)
+        if 'Ident' in types:
+            raise Incomplete('cross-replay redundancy Ident correspondence is not certified')
+        # One original-program replay, through the shared executor. Its exact
+        # native selectors authenticate today's inventory, including recursive
+        # ports omitted from older mechanical inventories.
+        own=dict(record,mutant_sexp=record['gold_sexp'])
+        replay=ev.replay_program(own,record['gold_sexp'],0,
+            candidate=dict(kind='union-current-available-inventory',availability_sha256=receipt['availability_sha256']),
+            retain_all=True)
+        cases=[dict(case=record['case'],artifact=replay['artifact'],engine=replay['engine'],
+                    program_sha256=sha(record['gold_sexp']),seconds=replay['seconds'],receipt=replay['receipt'])]
+        receipt['native_operations']=cases
+        if replay['engine']!='ran':
+            raise Incomplete('current available-table replay incomplete')
+        native=ev.captures[-1]['native'];ts=native['tables'];selected=[];omitted=[]
+        for definition in adapter['availability']['definitions']:
+            d=definition['definition'];selector=d['native_selector']
+            matches=[i for i in range(len(ts['form'])) if all(str(ts[k][i])==str(v)
+                for k,v in selector.items() if k in ('form','point','relation','fact'))]
+            if len(matches)>1:raise Incomplete('current readable selector ambiguous: '+d['display_name'])
+            if not matches:
+                omitted.append(d);continue
+            selected.append((d['display_name'],matches[0],selector))
+        facts=adapter['availability'].get('fact_relations',[])
+        for fact in facts:
+            native_fact='ex_input' if fact=='input' else fact
+            matches=[i for i,value in enumerate(ts['fact']) if value==native_fact]
+            if len(matches)!=1:raise Incomplete('current readable fact absent or ambiguous: '+fact)
+            selected.append((fact,matches[0],dict(fact=native_fact)))
+        if not selected:raise Incomplete('current readable inventory is empty or unavailable')
+        packets=[]
+        for name,table,selector in selected:
+            acquire=acquire_input_train if name=='input' else acquire_train_table
+            packet=acquire(ev,native,table,record,ntrain=ntrain,
+                source=dict(artifact=cases[0]['artifact'],native_selector=selector))
+            if packet['missing']:raise Incomplete('available source lacks kept TRAIN contexts: '+name)
+            packets.append((name,selector,packet))
+        headers=[]
+        if omitted:
+            # Some readable INIT ports are deliberately not materialized by
+            # gold_tables. Their complete native selected header can still
+            # prove a row-independent typed-projection impossibility. Never
+            # synthesize rows, substitute another table or infer an alias.
+            from program_metadata import type_identity
+            checked=ev.arclog.StudyProgram.from_sexp(record['gold_sexp'],ev.settings)
+            exported=json.loads(ev.arclog.study_program_export_json(checked))
+            for admitted in omitted:
+                selector=admitted['native_selector']
+                definitions=[d for d in exported['definitions']['native_relations']
+                    if d['native_selector']==selector and d['definition_path']==admitted['definition_path']]
+                if len(definitions)!=1:raise Incomplete('omitted source lacks exact checked definition: '+admitted['display_name'])
+                definition=definitions[0];columns=definition['column_witnesses']
+                if (definition['column_witness_status']!='complete'
+                        or [c['physical_column'] for c in columns]!=list(range(len(columns)))
+                        or any(c['status']!='resolved' or c['relation']!=definition['relation']
+                               or c['selected_header_binding']['status']!='resolved' for c in columns)
+                        or adapter['relation_tokens'].get(definition['display_name'])!=admitted['display_name']):
+                    raise Incomplete('omitted source lacks complete authenticated checked header: '+admitted['display_name'])
+                source_types=tuple(comparison_type(type_identity(ev,record,c['type'])[0]) for c in columns)
+                choices=algorithm.recovery.typed_projection_choices(types,source_types)
+                if not any(not positions for positions in choices):
+                    raise Incomplete('omitted source needs native rows for nonredundancy: '+admitted['display_name'])
+                headers.append(dict(types=source_types,rows=None,
+                    identity=dict(name=admitted['display_name'],native_selector=selector),
+                    receipt=dict(source='original_checked_native_selected_header',
+                        source_sha256=sha(record),gold_program_sha256=sha(record['gold_sexp']),
+                        export_sha256=sha(exported),definition=definition,X_types=types,
+                        typed_projection_choices=choices,rows_acquired=False),
+                    obstruction=dict(status='determined',recoverable=False,states=0,
+                                     nonrecoverable_proof='no typed projection exists')))
+        receipt['header_only_source_count']=len(headers)
+        for assignment in range(len(record['evaluation']['kept_assignments'])):
+            axes=[(assignment,1,i) for i in range(ntrain)]
+            if any(k not in x['groups'] for k in axes):raise Incomplete('X lacks required TRAIN contexts')
+            target=tuple(frozenset(x['groups'][k]) for k in axes)
+            available=[]
+            for name,selector,packet in packets:
+                groups=defaultdict(list)
+                for entry in packet['entries']:
+                    groups[(entry['assignment'],entry['example_kind'],entry['example_index'])].append(
+                        frozenset(tuple(tuple(cell['value']) for cell in row) for row in entry['rows']))
+                # The settled baseline source interface is one row set per
+                # TRAIN input. Do not combine or pair multiple native models.
+                if any(len(groups[k])!=1 for k in axes):
+                    raise Incomplete('redundancy source has unresolved native model families: '+name)
+                available.append(dict(types=tuple(comparison_type(f['type']) for f in packet['fields']),
+                    rows=tuple(groups[k][0] for k in axes),identity=dict(name=name,native_selector=selector),
+                    receipt=packet['receipt']))
+            available.extend(headers)
+            for index,table in enumerate(available):
+                unknown_companions=[i for i,t in enumerate(available) if i!=index and t['rows'] is None]
+                companions=[t for i,t in enumerate(available) if i!=index and t['rows'] is not None]
+                if table['rows'] is None:
+                    proof=table['obstruction']
+                else:
+                    family=tuple(frozenset((rows,)) for rows in table['rows'])
+                    proof=algorithm.solve(types,target,table['types'],family,companions,.5)
+                # Missing companion rows cannot justify an exhaustive-search
+                # negative: extra semijoin/antijoin restrictions might help.
+                # These canonical necessary obstructions are independent of
+                # ALL row restrictions, including unmaterialized companions.
+                independent=(proof.get('proof_kind') in ('row_cardinality','row_support') or
+                    proof.get('nonrecoverable_proof') in ('no typed projection exists',
+                        'a deterministic transform cannot increase model-family cardinality'))
+                if unknown_companions and proof.get('recoverable') is False and not independent:
+                    proof=dict(status='unknown',recoverable=None,
+                        reason='unmaterialized companion values prevent a complete restriction search',
+                        restricted_search=proof)
+                receipt['searches'].append(dict(assignment=assignment,source=table['identity'],
+                    source_receipt=table['receipt'],companion_indices=[i for i in range(len(available)) if i!=index],
+                    unmaterialized_companion_indices=unknown_companions,
+                    row_restriction_independent_obstruction=independent,
+                    proof=proof))
+        proofs=[item['proof'] for item in receipt['searches']]
+        complete=(len(proofs)==(len(packets)+len(headers))*len(record['evaluation']['kept_assignments'])
+                  and all(p.get('status')=='determined' and p.get('recoverable') is False for p in proofs))
+        receipt.update(complete=complete,redundant=algorithm.truth_of_searches(proofs,complete),
+            source_count=len(packets)+len(headers),assignment_count=len(record['evaluation']['kept_assignments']))
+        if not complete:receipt['reason']='current redundancy search found a recovery or has an incomplete/bounded source proof'
+    except (ValueError,KeyError,IndexError,TypeError,OSError) as error:
+        receipt['reason']='current nonredundancy evidence unavailable: '+str(error)
+    ev.target_cache[key]=receipt
+    return receipt
+
+
 def union_proof(ev,record,adapter,proof,output,gold,columns,ntrain,ntest,fields):
-    if adapter.get('mechanical',{}).get('redundant') is not False:
-        return dict(status='unknown',reason='union requires explicit authenticated X-not-redundant evidence')
+    nonredundancy=union_nonredundancy(ev,record,adapter,ntrain,ntest)
+    if nonredundancy.get('complete') is not True or nonredundancy.get('redundant') is not False:
+        return dict(status='unknown',reason=nonredundancy.get('reason','union requires complete X-not-redundant evidence'),
+                    nonredundancy=nonredundancy)
     L=ev.legacy;canonical=json.loads(json.dumps(proof['canonical']));found=False
     def disable(body):
         nonlocal found
@@ -368,6 +530,7 @@ def union_proof(ev,record,adapter,proof,output,gold,columns,ntrain,ntest,fields)
     # an X-reading branch actually ran; evaluate applies the common partial gate.
     return dict(status='union_X_contributes' if equality['status']=='mismatch' else 'partial',
                 needed_rows=equality['status']=='mismatch',nonredundant=True,redundant=False,
+                nonredundancy=nonredundancy,
                 one_row_per_X=True,restrictions_only=True,artifact=replay['artifact'])
 
 

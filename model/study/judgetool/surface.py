@@ -6,6 +6,23 @@ from a variable spelling. P's existing INIT expansion and OR rewrite are reused.
 import json
 
 
+class InvalidSubmission(ValueError):
+    """Authored clause syntax is invalid, independently of source context."""
+
+
+def parse_submission(L, clause):
+    instruction = 'Submit one complete clause: (RULE &fix (&X ...) ...), or (DET &fix ...).'
+    try:
+        fix = L.parse(clause)
+    except (ValueError, IndexError) as error:
+        raise InvalidSubmission('Cannot parse the submitted clause: '+str(error)+'. '+instruction) from error
+    if (not isinstance(fix,list) or len(fix)<3
+            or not isinstance(fix[0],str) or fix[0] not in ('RULE','DET')
+            or fix[1]!='&fix'):
+        raise InvalidSubmission('Missing or invalid clause header. '+instruction)
+    return fix
+
+
 def tokens(node):
     if isinstance(node,str):
         yield node
@@ -110,9 +127,7 @@ def native_body_atoms(L,node,names,output_names,*,given=()):
 
 
 def prepare(L,record,clause,adapter):
-    fix=L.parse(clause)
-    if not isinstance(fix,list) or len(fix)<3 or fix[0] not in ('RULE','DET') or fix[1]!='&fix':
-        raise ValueError('submit one RULE or DET named &fix')
+    fix=parse_submission(L,clause)
     forms=L.split_forms(record['mutant_sexp']); k=int(record['point'][0]); changed=L.parse(forms[k])
     if changed[0]=='DET':
         raise ValueError('DET-kind pairs are not judged')
