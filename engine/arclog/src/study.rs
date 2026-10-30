@@ -17,6 +17,7 @@ pub mod render_meanings;
 pub mod render_names;
 pub mod render_correspondence;
 pub mod stream_certificate;
+pub mod normalization;
 
 use crate::check::{CheckCache, CheckedProgram, SolverClauses, check_shared_program};
 use crate::diagnostic::{Diagnostic, Severity};
@@ -270,9 +271,26 @@ impl StudyProgram {
     /// Only valid tests are deleted; aliases and constants are not deletions.
     /// See program/static_prune/proofs.md, "Gold case normalization".
     pub fn static_prune_report(&self, registry: &Registry, normalize: bool) -> Result<serde_json::Value, String> {
+        self.static_prune_report_with_settings(registry, normalize, &DecodeSettings::default())
+    }
+
+    /// Use the caller's actual vocabulary/settings for additive provenance.
+    pub fn static_prune_report_with_settings(&self, registry: &Registry, normalize: bool,
+        settings: &DecodeSettings) -> Result<serde_json::Value, String> {
+        self.prune_with_program(registry, normalize, settings).map(|(_, report)| report)
+    }
+
+    /// Return the actual checked editor result for fresh native acquisition.
+    pub fn normalized_gold(&self, registry: &Registry, settings: &DecodeSettings)
+        -> Result<(Self, serde_json::Value), String> {
+        self.prune_with_program(registry, true, settings)
+    }
+
+    fn prune_with_program(&self, registry: &Registry, normalize: bool,
+        settings: &DecodeSettings) -> Result<(Self, serde_json::Value), String> {
         let matches = crate::check::static_prune::matches(self.checked(), registry)?;
         let mut report = crate::check::static_prune::report(&matches);
-        if !normalize { return Ok(report); }
+        if !normalize { return Ok((self.clone(), report)); }
         let mut edits = Vec::new();
         for found in matches {
             if found.verdict.class != crate::program::static_prune::Class::Valid { continue; }
@@ -297,7 +315,8 @@ impl StudyProgram {
         report["normalized_program_sexp"] = normalized.sexp(registry).into();
         report["removed_atom_paths"] = serde_json::json!(edits.iter()
             .map(|edit| crate::mutation::path_json(&edit.at)).collect::<Vec<_>>());
-        Ok(report)
+        report["normalization_provenance"] = normalization::provenance(self, &normalized, &edits, registry, settings);
+        Ok((normalized, report))
     }
 
     /// Failure here means the AST is outside the requested decode vocabulary,

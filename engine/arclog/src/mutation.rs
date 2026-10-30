@@ -781,17 +781,7 @@ impl ValidMutant {
     /// Every original node is either mapped exactly, deleted, or belongs
     /// to a replaced subtree. Replacement descendants have no guessed match.
     pub fn source_paths(&self) -> Value {
-        fn walk(node: NodeRef<'_>, at: &NodePath, edits: &[AtomEdit], out: &mut Vec<Value>) {
-            let replaced = edits.iter().any(|e| e.replacement.is_some() && at.0.len()>e.at.0.len() && at.0.starts_with(&e.at.0));
-            let after = if replaced {None} else {edit::mapped(at,edits)};
-            out.push(json!({"before_path":path_json(at),"after_path":after.as_ref().map(path_json),
-                "status":if replaced {"replaced_subtree"} else if after.is_none() {"deleted"}
-                    else if edits.iter().any(|e|e.at==*at) {"replaced"} else {"preserved"}}));
-            for (i,child) in node.children().into_iter().enumerate() {walk(child,&at.child(i as u32),edits,out);}
-        }
-        let mut out=Vec::new();
-        walk(NodeRef::Program(self.gold().program.program.value()),&NodePath::default(),&self.spec.edits,&mut out);
-        json!(out)
+        edit::source_paths(&self.gold().program.program, &self.spec.edits)
     }
 
     pub fn audit(&self) -> Result<Value, String> {

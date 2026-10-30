@@ -106,8 +106,16 @@ impl PyStudyProgram {
     /// Proven local static-pruning conclusions at original AST paths.
     #[pyo3(signature = (*, normalize=false))]
     fn static_prune_json(&self, py: Python<'_>, normalize: bool) -> PyResult<String> {
-        py.detach(|| self.program.static_prune_report(Registry::get(), normalize))
+        py.detach(|| self.program.static_prune_report_with_settings(Registry::get(), normalize, &self.settings))
             .map(|value| value.to_string()).map_err(PyValueError::new_err)
+    }
+
+    /// The actual checked normalized gold and its source-correspondence report.
+    /// This grants no evaluation equivalence or historical table reuse.
+    fn normalized_gold(&self, py: Python<'_>) -> PyResult<(Self, String)> {
+        let (program, report) = py.detach(|| self.program.normalized_gold(Registry::get(), &self.settings))
+            .map_err(PyValueError::new_err)?;
+        Ok((Self { program, settings: self.settings }, report.to_string()))
     }
 
     /// Structured engine evidence. JSON schema/capabilities are versioned.

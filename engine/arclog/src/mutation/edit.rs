@@ -33,6 +33,25 @@ pub fn mapped(at: &NodePath, edits: &[AtomEdit]) -> Option<NodePath> {
     Some(result)
 }
 
+
+/// Source-order node identities under the actual atomic editor. Container
+/// subtrees may change even when their node identity/address is preserved.
+pub fn source_paths(program: &Node<Program>, edits: &[AtomEdit]) -> serde_json::Value {
+    use crate::program::path::NodeRef;
+    use serde_json::{Value, json};
+    fn walk(node: NodeRef<'_>, at: &NodePath, edits: &[AtomEdit], out: &mut Vec<Value>) {
+        let replaced = edits.iter().any(|e| e.replacement.is_some() && at.0.len()>e.at.0.len() && at.0.starts_with(&e.at.0));
+        let after = if replaced {None} else {mapped(at,edits)};
+        out.push(json!({"before_path":super::path_json(at),"after_path":after.as_ref().map(super::path_json),
+            "status":if replaced {"replaced_subtree"} else if after.is_none() {"deleted"}
+                else if edits.iter().any(|e|e.at==*at) {"replaced"} else {"preserved"}}));
+        for (i,child) in node.children().into_iter().enumerate() {walk(child,&at.child(i as u32),edits,out);}
+    }
+    let mut out=Vec::new();
+    walk(NodeRef::Program(program.value()),&NodePath::default(),edits,&mut out);
+    json!(out)
+}
+
 pub fn layout(old: Option<&Layout>, edits: &[AtomEdit]) -> Option<Layout> {
     // Whole-block replacements may allocate private native IDs and reorder
     // subtree paths. Rebuild display layout with gold's namespace instead of
