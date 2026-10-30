@@ -85,8 +85,13 @@ class StudyReader:
 
     def _optional(self,name,module,function,base,sha,**options):
         path=self.paths[name]
-        if not Path(path).exists():return dict(status='open',valid=False,reason=name+' store absent')
         try:
+            if not Path(path).exists():
+                if name=='target_comparison':
+                    # The owner restores only journal bytes from its adjacent
+                    # paused archive; replay artifacts remain compressed.
+                    self._function('mech5.paused_archive','ensure_database')(path)
+                if not Path(path).exists():return dict(status='open',valid=False,reason=name+' store absent')
             fn=self._function(module,function)
             return fn(path,base['pair_id'],source_sha256=base['source_sha256'],base_result_sha256=sha,**options)
         except Exception as error:
