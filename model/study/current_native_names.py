@@ -205,6 +205,32 @@ def file_digest(path):
     return dict(sha256=digest.hexdigest(),bytes=size)
 
 
+
+def read_evidence(ref):
+    """Read a hash-bound private proof, including losslessly converted old refs.
+
+    New gzip refs hash compressed bytes; the canonical codec separately verifies
+    the original JSON byte SHA sidecar. An old missing plain path can resolve to
+    its gzip sibling only after verifying the original byte hash in that sidecar.
+    Callers retain their existing private-root and semantic evidence checks.
+    """
+    from judge3.paused_storage import read_gzip_json, verified
+    if not isinstance(ref,dict) or set(ref)!={'path','sha256'}:
+        raise ValueError('malformed CURRENT-name evidence reference')
+    path=Path(ref['path'])
+    if path.exists():
+        if file_digest(path)['sha256']!=ref['sha256']:
+            raise ValueError('CURRENT-name evidence file SHA differs')
+        if path.suffix=='.gz':return read_gzip_json(path)
+        with path.open(encoding='utf-8') as stream:return json.load(stream)
+    archive=path.with_name(path.name+'.gz')
+    if path.suffix=='.gz' or not archive.is_file():raise FileNotFoundError(path)
+    original=verified(archive)
+    if original['sha256']!=ref['sha256'] or original['original_name']!=path.name:
+        raise ValueError('CURRENT-name compressed original evidence SHA/name differs')
+    return read_gzip_json(archive)
+
+
 def write_receipt(ev, pair_id, record, target, adapter, packet, public, output, private):
     """Persist only evidence from the same validated acquisition/public packet."""
     from evaluator import sha
@@ -229,7 +255,8 @@ def write_receipt(ev, pair_id, record, target, adapter, packet, public, output, 
     if not root.is_relative_to(DATA_ROOT.resolve()):raise Unavailable('CURRENT-name receipt must stay under private data root')
     evidence_root=root/pair_id;evidence_root.mkdir(exist_ok=True)
     def save(name,value):
-        path=evidence_root/(name+'.json');write_json(path,value)
+        from judge3.paused_storage import write_gzip_json
+        path=evidence_root/(name+'.json.gz');write_gzip_json(path,value)
         return dict(path=str(path),sha256=file_digest(path)['sha256'])
     present=sorted({(e['assignment'],1,e['train']) for e in public['entries']})
     if [list(v) for v in present]!=packet['required']:
@@ -247,6 +274,8 @@ def write_receipt(ev, pair_id, record, target, adapter, packet, public, output, 
     public_x=dict(path='tables/X.json',**file_digest(Path(output)/'tables/X.json'),fields_sha256=sha(public['fields']),
         required=deepcopy(public['required']),missing=[],entries=entries)
     implementation=dependency_receipt()
+    from judge3 import paused_storage
+    implementation[str(Path(paused_storage.__file__).resolve())]=file_digest(paused_storage.__file__)['sha256']
     if info.get('current_det_reader_receipt') is not None:
         from evaluator_train import det_dependency_receipt
         implementation.update(det_dependency_receipt())
