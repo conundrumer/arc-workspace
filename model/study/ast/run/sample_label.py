@@ -220,7 +220,8 @@ class Stages:
     def normal(self,pair):
         if str(HERE/'mech2') not in sys.path:sys.path.append(str(HERE/'mech2'))  # classify_normal imports its siblings by bare name
         import classify_normal
-        return classify_normal.label_pair(pair,base=self.labels,output=self.passes/'normal.sqlite3',source_reader=self.sources,contexts=self.contexts)
+        # A sample reaches this stage only while it is pending, so its stored unavailable normal facts are tried again.
+        return classify_normal.label_pair(pair,base=self.labels,output=self.passes/'normal.sqlite3',source_reader=self.sources,contexts=self.contexts,retry_unavailable=True)
 
     def witness_tests(self,pair):
         if self.witness is None:
