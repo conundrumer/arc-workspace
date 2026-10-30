@@ -12,9 +12,18 @@ fn site_bridge(
     registry: &Registry,
     settings: &DecodeSettings,
 ) -> Result<Vec<(NodePath, NodePath)>, String> {
-    let edits = identity::metadata_edits(origin, identity)?;
-    let ast = edit::apply(origin.program(), &edits)?;
-    let candidate = StudyProgram::from_program(ast, edit::layout(origin.layout(), &edits), registry)?;
+    let (candidate,selected)=if identity::is_body_edit(identity) {
+        let (candidate,at)=identity::metadata_body(origin,identity,registry)?;
+        (candidate,vec![(at.clone(),at)])
+    } else {
+        let edits=identity::metadata_edits(origin,identity)?;
+        let ast=edit::apply(origin.program(),&edits)?;
+        let candidate=StudyProgram::from_program(ast,edit::layout(origin.layout(),&edits),registry)?;
+        let selected=edits.iter().filter(|e|e.replacement.is_some()).map(|e|
+            edit::mapped(&e.at,&edits).map(|after|(e.at.clone(),after))
+                .ok_or_else(||"surviving recorded edit has no path".to_string())).collect::<Result<Vec<_>,_>>()?;
+        (candidate,selected)
+    };
     let a = candidate.written_stream(registry, settings).map_err(|e| e.message.to_string())?;
     let b = stored.written_stream(registry, settings).map_err(|e| e.message.to_string())?;
     if a.tokens != b.tokens {
@@ -24,13 +33,12 @@ fn site_bridge(
     // uniquely matching node kinds and native writer-token coverage.
     let map = trace_paths(candidate.checked(), stored.checked(), &a, &b);
     let mut sites = Vec::new();
-    for edit in edits.iter().filter(|e| e.replacement.is_some()) {
-        let at = edit::mapped(&edit.at, &edits).ok_or("surviving recorded edit has no path")?;
-        let found: Vec<_> = map.iter().filter(|(_, before)| **before == at).map(|(after, _)| after.clone()).collect();
-        let [after] = found.as_slice() else {
-            return Err(format!("recorded atom {:?} has {} stored node correspondences", edit.at, found.len()));
+    for (before,at) in selected {
+        let found:Vec<_>=map.iter().filter(|(_,path)|**path==at).map(|(after,_)|after.clone()).collect();
+        let [after]=found.as_slice() else {
+            return Err(format!("recorded site {before:?} has {} stored node correspondences",found.len()));
         };
-        sites.push((edit.at.clone(), after.clone()));
+        sites.push((before,after.clone()));
     }
     Ok(sites)
 }
@@ -72,6 +80,10 @@ impl StudyProgram {
             row["original_atom_paths"] = json!(sites.iter().filter(|(_, at)|
                 found.path.0.starts_with(&at.0) || at.0.starts_with(&found.path.0))
                 .map(|(before, _)| path_json(before)).collect::<Vec<_>>());
+        }
+        if identity::is_body_edit(identity) {
+            report["edit_unit"]="body".into();
+            report["original_body_path"]=identity["body"].clone();
         }
         report["acquisition_schema"] = "arclog-stored-static-prune-v2".into();
         report["classification_representation"] = "native decode of checked stored mutant source".into();

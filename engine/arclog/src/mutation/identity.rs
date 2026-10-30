@@ -233,14 +233,7 @@ impl StudyProgram {
 
     fn admit_identity_at_source(&self,identity:&Value,registry:&Registry,settings:&DecodeSettings,
         generation_membership:bool,held_prefix:Option<(&CheckedProgram,&NodePath)>)->Result<ValidMutant,String> {
-        let point = self
-            .mutation_points()
-            .into_iter()
-            .find(|p| {
-                Some(path_json(&p.body)) == identity.get("body").cloned()
-                    && Some(path_json(&p.clause)) == identity.get("clause").cloned()
-            })
-            .ok_or_else(|| "identity: mutation point does not belong to gold".to_string())?;
+        let point=identity_point(self,identity)?;
         let source = &identity["source"];
         let origin = Source {
             revision: text(&source["revision"])?.into(),
@@ -249,6 +242,13 @@ impl StudyProgram {
         };
         if origin.revision.is_empty() || origin.task.is_empty() || origin.case.is_empty() {
             return Err("identity: source fields must be nonempty".into());
+        }
+        if is_body_edit(identity) {
+            if held_prefix.is_some() {return Err("body_replacement: prefix-held replay is not supported".into())}
+            let replacement=body_edit(identity,&point)?;
+            let valid=self.admit_body_replacement(point,replacement,origin,registry,settings)?;
+            if valid.identity()!=*identity {return Err("identity: unknown/noncanonical body fields".into())}
+            return Ok(valid)
         }
         let mut edits = Vec::new();
         let mut unique = BTreeSet::new();
@@ -310,6 +310,23 @@ impl StudyProgram {
         }
         edits.sort_by(|a, b| a.at.cmp(&b.at));
         let ast = edit::apply(self.program(), &edits)?;
+        let certified=self.certify_mutation_program(ast,edit::layout(self.layout(),&edits),&point,registry,settings,held_prefix)?;
+        let spec = MutationSpec {
+            source: Arc::clone(self.checked()),
+            point,
+            origin,
+            edits,
+            certified,
+            body_replacement: None,
+        };
+        if spec.identity() != *identity {
+            return Err("identity: unknown/noncanonical fields or edit order".into());
+        }
+        Ok(ValidMutant { spec })
+    }
+
+    pub(super) fn certify_mutation_program(&self,ast:Node<Program>,layout:Option<crate::layout::Layout>,point:&MutationPoint,
+        registry:&Registry,settings:&DecodeSettings,held_prefix:Option<(&CheckedProgram,&NodePath)>) -> Result<StudyProgram,String> {
         if !declared_in_scopes(NodeRef::Program(ast.value())) {
             return Err("identity: deleted declaration still used".into());
         }
@@ -318,7 +335,7 @@ impl StudyProgram {
             return Err("identity: edit would shadow an unchanged gold name".into());
         }
         let certified =
-            StudyProgram::from_program(ast, edit::layout(self.layout(), &edits), registry)?
+            StudyProgram::from_program(ast, layout, registry)?
                 .preserve_gold_names(self, registry);
         if let Some((frontier,point))=held_prefix {
             if crate::study::features::frontier(&certified,point)?!=frontier.program.program {
@@ -332,17 +349,7 @@ impl StudyProgram {
         certified.decode_stream(registry, settings)?;
         let mut names_cache = CheckCache::over(self.mutation_check_base(registry)?);
         certified.check_preserved_name_binding(registry, settings, &mut names_cache)?;
-        let spec = MutationSpec {
-            source: Arc::clone(self.checked()),
-            point,
-            origin,
-            edits,
-            certified,
-        };
-        if spec.identity() != *identity {
-            return Err("identity: unknown/noncanonical fields or edit order".into());
-        }
-        Ok(ValidMutant { spec })
+        Ok(certified)
     }
 
     pub fn rehydrate_recorded_identity(&self,identity:&Value,stored:&StudyProgram,
@@ -408,10 +415,7 @@ impl StudyProgram {
 /// Decode historical edit addresses/payloads for metadata only. This never
 /// admits a new mutation or consults the current sampler's choice domain.
 pub(super) fn metadata_edits(program: &StudyProgram, identity: &Value) -> Result<Vec<AtomEdit>, String> {
-    let point=program.mutation_points().into_iter().find(|p|
-        Some(path_json(&p.body))==identity.get("body").cloned()
-        && Some(path_json(&p.clause))==identity.get("clause").cloned())
-        .ok_or("recorded edit body/clause is absent from this source representation")?;
+    let point=identity_point(program,identity)?;
     let mut edits=Vec::new();let mut seen=BTreeSet::new();
     for e in array(&identity["edits"])? {
         let at=path(&e["at"])?;
@@ -423,4 +427,32 @@ pub(super) fn metadata_edits(program: &StudyProgram, identity: &Value) -> Result
     }
     if edits.is_empty(){return Err("recorded edit list is empty".into())}
     edits.sort_by(|a,b|a.at.cmp(&b.at));Ok(edits)
+}
+
+fn identity_point(program:&StudyProgram,identity:&Value)->Result<MutationPoint,String> {
+    program.mutation_points().into_iter().find(|p|
+        Some(path_json(&p.body))==identity.get("body").cloned()
+        && Some(path_json(&p.clause))==identity.get("clause").cloned())
+        .ok_or_else(||"identity: mutation point does not belong to gold".into())
+}
+
+pub(super) fn is_body_edit(identity:&Value)->bool {
+    identity["edits"].as_array().is_some_and(|e|e.len()==1 && e[0]["kind"]=="replace_body")
+}
+
+fn body_edit(identity:&Value,point:&MutationPoint)->Result<Node<Body>,String> {
+    if !is_body_edit(identity) || identity["edits"][0]["at"]!=path_json(&point.body) {
+        return Err("body_replacement: edit/body path differs".into())
+    }
+    body(&identity["edits"][0]["replacement"])
+}
+
+/// Metadata-only reconstruction shares the BODY parser and editor. It does
+/// not claim execution admission or consult the generator's choice domain.
+pub(super) fn metadata_body(program:&StudyProgram,identity:&Value,registry:&Registry)->Result<(StudyProgram,NodePath),String> {
+    let point=identity_point(program,identity)?;
+    let replacement=body_edit(identity,&point)?;
+    let ast=edit::replace_body(program.program(),&point.body,&replacement)?;
+    let candidate=StudyProgram::from_program(ast,None,registry)?.preserve_gold_names(program,registry);
+    Ok((candidate,point.body))
 }

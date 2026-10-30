@@ -5,6 +5,7 @@
 //! Diagnostics from unavailable choices are counted, never silently repaired.
 pub mod edit;
 mod identity;
+mod body_replacement;
 pub use identity::RecordedIdentityFailure;
 mod typed;
 mod blocks;
@@ -57,6 +58,7 @@ pub struct MutationSpec {
     origin: Source,
     edits: Vec<AtomEdit>,
     certified: StudyProgram,
+    body_replacement: Option<Node<Body>>,
 }
 
 #[derive(Clone, Debug)]
@@ -622,6 +624,7 @@ impl CompletionDomain<'_> {
             origin: self.origin.clone(),
             edits: canonical,
             certified: checked,
+            body_replacement: None,
         });
         self.stats.count("specs_drawn");
         if let Some(edit) = edits.first() {
@@ -724,6 +727,11 @@ fn named_bindings_hold(
 
 impl MutationSpec {
     pub fn identity(&self) -> Value {
+        if let Some(body)=&self.body_replacement {
+            return json!({"source":{"revision":self.origin.revision,"task":self.origin.task,"case":self.origin.case},
+                "body":path_json(&self.point.body),"clause":path_json(&self.point.clause),
+                "edits":[{"at":path_json(&self.point.body),"kind":"replace_body","replacement":body_json(body)}]})
+        }
         json!({"source": {"revision": self.origin.revision, "task": self.origin.task, "case": self.origin.case},
                "clause": path_json(&self.point.clause), "body": path_json(&self.point.body),
                "edits": self.edits.iter().map(|e| json!({"at": path_json(&e.at), "kind":e.kind,
@@ -731,7 +739,7 @@ impl MutationSpec {
     }
 
     pub fn k(&self) -> usize {
-        self.edits.len()
+        if self.body_replacement.is_some() {1} else {self.edits.len()}
     }
 }
 
@@ -755,7 +763,13 @@ impl ValidMutant {
     /// Historical identities remain rehydratable so readers can omit them;
     /// this report never evaluates a relation or assigns a grade.
     pub fn static_prune_json(&self, registry: &Registry, survey: bool) -> Result<Value,String> {
-        let matches=crate::check::static_prune::edited_matches(self.program().checked(),registry,&self.spec.edits)?;
+        let body_edits;
+        let edits=if let Some(body)=&self.spec.body_replacement {
+            body_edits=body.value().conjuncts.iter().enumerate().map(|(i,c)|AtomEdit{
+                at:self.point().body.child(i as u32),replacement:Some(c.clone()),kind:"replace_body",choice_kind:"replace_body"}).collect::<Vec<_>>();
+            &body_edits
+        } else {&self.spec.edits};
+        let matches=crate::check::static_prune::edited_matches(self.program().checked(),registry,edits)?;
         let mut report=crate::check::static_prune::report(&matches);
         if let Some(rows)=report["matches"].as_array_mut() {
             for (row,found) in rows.iter_mut().zip(&matches) {
@@ -766,6 +780,10 @@ impl ValidMutant {
             }
         }
         report["scope"]="surviving changed sites; native simultaneous-deletion path mapping".into();
+        if self.spec.body_replacement.is_some() {
+            report["edit_unit"]="body".into();
+            report["original_body_path"]=path_json(&self.point().body);
+        }
         if survey {
             let top=self.point().body.0[0].0 as usize;
             let path=NodePath::top(top as u32);
@@ -781,10 +799,18 @@ impl ValidMutant {
     /// Every original node is either mapped exactly, deleted, or belongs
     /// to a replaced subtree. Replacement descendants have no guessed match.
     pub fn source_paths(&self) -> Value {
+        if self.spec.body_replacement.is_some() {
+            return edit::body_source_paths(&self.gold().program.program,&self.point().body)
+        }
         edit::source_paths(&self.gold().program.program, &self.spec.edits)
     }
 
     pub fn audit(&self) -> Result<Value, String> {
+        if self.spec.body_replacement.is_some() {
+            return Ok(json!({"edit_unit":"body","changed_bodies":1,"outside_body_unchanged":true,
+                "outside_atoms_unchanged":true,"changed_paths":[path_json(&self.point().body)],
+                "certificate":"native editor shell and full writer/stream equality at construction"}))
+        }
         let gold = NodeRef::Program(self.spec.source.program.program.value());
         let mutant = NodeRef::Program(self.program().program().value());
         let mut gold_atoms = Vec::new();
@@ -1360,6 +1386,10 @@ fn site_variants(
         }
     }
     Ok(())
+}
+
+pub(crate) fn body_json(body:&Node<Body>)->Value {
+    json!(body.value().conjuncts.iter().map(conjunct_json).collect::<Vec<_>>())
 }
 
 pub(crate) fn conjunct_json(c: &Conjunct) -> Value {

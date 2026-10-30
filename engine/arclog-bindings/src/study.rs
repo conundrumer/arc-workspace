@@ -367,6 +367,18 @@ impl PyStudyProgram {
         Ok((PyValidMutant{inner,settings:self.settings},certificate.to_string()))
     }
 
+    /// One native BODY edit; checks the complete candidate and preserves gold's shell.
+    #[pyo3(signature=(body_path, program_text, body_stream=None, *, source_revision, task, case))]
+    fn construct_body_replacement(&self,py:Python<'_>,body_path:Vec<u32>,program_text:&str,body_stream:Option<&str>,
+        source_revision:String,task:String,case:String)->PyResult<PyValidMutant> {
+        let at=arclog::program::path::NodePath(body_path.into_iter().map(arclog::program::path::PathStep).collect());
+        let stream=body_stream.map(arclog::study::render::parse_json).transpose().map_err(PyValueError::new_err)?;
+        let origin=arclog::mutation::Source{revision:source_revision,task,case};
+        let inner=py.detach(||self.program.construct_body_replacement(&at,program_text,stream.as_ref(),origin,Registry::get(),&self.settings))
+            .map_err(PyValueError::new_err)?;
+        Ok(PyValidMutant{inner,settings:self.settings})
+    }
+
     fn construct_identity(&self, py: Python<'_>, identity_json: &str) -> PyResult<PyValidMutant> {
         let identity =
             arclog::study::render::parse_json(identity_json).map_err(PyValueError::new_err)?;

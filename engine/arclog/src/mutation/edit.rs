@@ -37,18 +37,23 @@ pub fn mapped(at: &NodePath, edits: &[AtomEdit]) -> Option<NodePath> {
 /// Source-order node identities under the actual atomic editor. Container
 /// subtrees may change even when their node identity/address is preserved.
 pub fn source_paths(program: &Node<Program>, edits: &[AtomEdit]) -> serde_json::Value {
+    let roots=edits.iter().filter(|e|e.replacement.is_some()).map(|e|e.at.clone()).collect::<Vec<_>>();
+    source_paths_with_roots(program,edits,&roots)
+}
+
+fn source_paths_with_roots(program:&Node<Program>,edits:&[AtomEdit],roots:&[NodePath])->serde_json::Value {
     use crate::program::path::NodeRef;
     use serde_json::{Value, json};
-    fn walk(node: NodeRef<'_>, at: &NodePath, edits: &[AtomEdit], out: &mut Vec<Value>) {
-        let replaced = edits.iter().any(|e| e.replacement.is_some() && at.0.len()>e.at.0.len() && at.0.starts_with(&e.at.0));
-        let after = if replaced {None} else {mapped(at,edits)};
+    fn walk(node:NodeRef<'_>,at:&NodePath,edits:&[AtomEdit],roots:&[NodePath],out:&mut Vec<Value>) {
+        let replaced=roots.iter().any(|root|at.0.len()>root.0.len() && at.0.starts_with(&root.0));
+        let after=if replaced {None} else {mapped(at,edits)};
         out.push(json!({"before_path":super::path_json(at),"after_path":after.as_ref().map(super::path_json),
             "status":if replaced {"replaced_subtree"} else if after.is_none() {"deleted"}
-                else if edits.iter().any(|e|e.at==*at) {"replaced"} else {"preserved"}}));
-        for (i,child) in node.children().into_iter().enumerate() {walk(child,&at.child(i as u32),edits,out);}
+                else if roots.contains(at) || edits.iter().any(|e|e.at==*at) {"replaced"} else {"preserved"}}));
+        for (i,child) in node.children().into_iter().enumerate() {walk(child,&at.child(i as u32),edits,roots,out);}
     }
     let mut out=Vec::new();
-    walk(NodeRef::Program(program.value()),&NodePath::default(),edits,&mut out);
+    walk(NodeRef::Program(program.value()),&NodePath::default(),edits,roots,&mut out);
     json!(out)
 }
 
@@ -77,42 +82,57 @@ pub fn layout(old: Option<&Layout>, edits: &[AtomEdit]) -> Option<Layout> {
 }
 
 pub fn apply(program: &Node<Program>, edits: &[AtomEdit]) -> Result<Node<Program>, String> {
-    let mut patches = BTreeMap::new();
+    let mut patches = Patches::default();
     for edit in edits {
         if patches
-            .insert(edit.at.clone(), edit.replacement.clone())
+            .atoms.insert(edit.at.clone(), edit.replacement.clone())
             .is_some()
         {
             return Err("duplicate_atom_path".into());
         }
     }
-    let paths=patches.keys().collect::<Vec<_>>();
+    let paths=patches.atoms.keys().collect::<Vec<_>>();
     if paths.iter().enumerate().any(|(i,a)|paths.iter().skip(i+1).any(|b|a.0.starts_with(&b.0)||b.0.starts_with(&a.0))) {
         return Err("overlapping_edit_paths".into());
     }
-    let mut used = 0;
-    let forms = program
-        .value()
-        .forms
-        .iter()
-        .enumerate()
-        .map(|(index, form)| rewrite_form(form, &NodePath::top(index as u32), &patches, &mut used))
-        .collect::<Vec<_>>();
-    if used != edits.len() {
-        return Err("edit_path_is_not_a_body_atom".into());
-    }
-    Ok(Node::new(Program {
-        forms: forms.into(),
-    }))
+    apply_patches(program,&patches,edits.len(),"edit_path_is_not_a_body_atom")
 }
 
-type Patches = BTreeMap<NodePath, Option<Conjunct>>;
+fn apply_patches(program:&Node<Program>,patches:&Patches,expected:usize,error:&str)->Result<Node<Program>,String> {
+    let mut used=0;
+    let forms=program.value().forms.iter().enumerate().map(|(i,f)|
+        rewrite_form(f,&NodePath::top(i as u32),patches,&mut used)).collect::<Vec<_>>();
+    if used!=expected {return Err(error.into())}
+    Ok(Node::new(Program{forms:forms.into()}))
+}
+
+#[derive(Default)]
+struct Patches {
+    atoms: BTreeMap<NodePath, Option<Conjunct>>,
+    body: Option<(NodePath, Node<Body>)>,
+}
+impl Patches {
+    fn keys(&self) -> impl Iterator<Item=&NodePath> {
+        self.atoms.keys().chain(self.body.iter().map(|(at,_)|at))
+    }
+    fn get(&self, at:&NodePath) -> Option<&Option<Conjunct>> { self.atoms.get(at) }
+}
+
+/// Whole BODY edits use the same traversal as atomic edits, retaining every
+/// enclosing head, key, port and clause interface.
+pub fn replace_body(program:&Node<Program>, at:&NodePath, replacement:&Node<Body>) -> Result<Node<Program>,String> {
+    let patches=Patches{atoms:BTreeMap::new(),body:Some((at.clone(),replacement.clone()))};
+    apply_patches(program,&patches,1,"body_replacement: path is not a native body")
+}
 
 fn relevant(at: &NodePath, patches: &Patches) -> bool {
     patches.keys().any(|path| path.0.starts_with(&at.0))
 }
 
 fn body(old: &Node<Body>, at: &NodePath, patches: &Patches, used: &mut usize) -> Node<Body> {
+    if let Some((target,replacement))=&patches.body {
+        if target==at {*used+=1;return replacement.clone()}
+    }
     if !relevant(at, patches) {
         return old.clone();
     }
@@ -322,4 +342,9 @@ fn rewrite_form(old: &Form, at: &NodePath, patches: &Patches, used: &mut usize) 
         }
         _ => old.clone(),
     }
+}
+
+/// A replacement BODY has no certified descendant correspondence.
+pub fn body_source_paths(program:&Node<Program>,at:&NodePath)->serde_json::Value {
+    source_paths_with_roots(program,&[],std::slice::from_ref(at))
 }
