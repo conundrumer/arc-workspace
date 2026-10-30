@@ -353,6 +353,9 @@ class Document:
         program, export, _ = context['programs'].load(self.r['programs'][side],
             self.r if side == 'gold' else None,
             mutant_record=self.r if side == 'mutant' else None)
+        from native_correspondence import certified_metadata_program
+        program=certified_metadata_program(context['programs'].engine,program,export,
+            context['programs'].settings)
         return context['resolver'].bind(record=self.r, side=side, base=context['base'],
             reader=reader, table=table, schema=schema, program=program,
             export=export, body_path=view['body_path'])

@@ -10,7 +10,7 @@ from study_paths import CODE_ROOT
 sys.path.insert(0, str(CODE_ROOT / 'ast/run'))
 from provenance import load_build
 
-from native_correspondence import _native_stream, certify_stored_representation
+from native_correspondence import _native_stream, certify_stored_representation, stored_metadata_program
 
 
 def acquire(request):
@@ -22,7 +22,7 @@ def acquire(request):
     settings = arclog.DecodeSettings(deadline_seconds=None, rule_tests=False)
     gold = arclog.StudyProgram.from_sexp(record['programs']['gold'], settings).decode_source()
     valid = gold.construct_identity(json.dumps(record['identity']))
-    mutant = arclog.StudyProgram.from_sexp(record['programs']['mutant'], settings).decode_source()
+    mutant = stored_metadata_program(arclog,record['programs']['mutant'],settings)
     constructed = json.loads(arclog.study_mutant_export_json(valid))
     exports = dict(gold=json.loads(arclog.study_program_export_json(gold,source_program=gold)),
                    mutant=json.loads(arclog.study_program_export_json(mutant,source_program=mutant)))

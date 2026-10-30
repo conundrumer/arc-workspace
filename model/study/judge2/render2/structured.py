@@ -90,11 +90,8 @@ class Programs:
             require(names is None or hasattr(self.engine,'study_mutant_export_json'),'runtime cannot authenticate mutant source-name map')
             export=json.loads(self.engine.study_mutant_export_json(program,names) if hasattr(self.engine,'study_mutant_export_json') else program.render_json())
             require(export['mutation_identity']==mutant_record['identity'],'native mutation identity differs from record')
-            from native_correspondence import certify_stored_representation
-            stored = (self.engine.StudyProgram.from_sexp(text,self.settings)
-                      if self.settings is not None else self.engine.StudyProgram.from_sexp(text))
-            require(hasattr(stored,'decode_source'),'runtime cannot decode stored mutation representation')
-            stored = stored.decode_source()
+            from native_correspondence import certify_stored_representation, stored_metadata_program
+            stored = stored_metadata_program(self.engine,text,self.settings)
             stored_export = json.loads(self.engine.study_program_export_json(stored,source_program=stored))
             certificate = certify_stored_representation(program,stored,
                 requested_text=text,rehydrated_export=export,

@@ -260,6 +260,44 @@ def _native_stream(program):
                 paths=[list(_path(path)) for path in paths])
 
 
+def stored_metadata_program(engine, text, settings=None):
+    """Keep exact stored writer text when native decode changes its AST paths.
+
+    The caller must still certify its complete stream against the mutation.
+    This selects a native handle, never edits text or transfers node maps.
+    """
+    parsed = (engine.StudyProgram.from_sexp(text, settings) if settings is not None
+              else engine.StudyProgram.from_sexp(text))
+    decoded = parsed.decode_source()
+    return decoded if decoded.sexp() == text else parsed
+
+
+def certified_metadata_program(engine, execution, export, settings=None):
+    """Use the handle belonging to the returned presentation export, not execution."""
+    if execution.sexp() == export['program_sexp']:
+        return execution
+    import hashlib
+    import json
+    certificate = export.get('stored_representation', {})
+    def digest(value):
+        return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True,
+            separators=(',', ':'), allow_nan=False).encode()).hexdigest()
+    if (certificate.get('schema') != 'native-stored-representation-v1'
+            or certificate.get('rehydrated_program_sexp') != execution.sexp()
+            or certificate.get('stored_program_sexp') != export['program_sexp']
+            or certificate.get('stream_sha256') != digest(_native_stream(execution))):
+        raise Unavailable('presentation handle lacks exact stored stream certificate')
+    program = stored_metadata_program(engine, export['program_sexp'], settings)
+    if (program.sexp() != export['program_sexp']
+            or _native_stream(program) != _native_stream(execution)):
+        raise Unavailable('presentation handle differs from certified stored stream')
+    own = dict(export)
+    own.pop('stored_representation', None)
+    if certificate.get('stored_export_sha256') != digest(own):
+        raise Unavailable('presentation export differs from certified stored export')
+    return program
+
+
 def certify_stored_representation(rehydrated, stored, *, requested_text,
         rehydrated_export, stored_export, mutation_identity,
         alternate_programs=(), recorded_stream=None):

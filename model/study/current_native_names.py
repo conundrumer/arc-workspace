@@ -16,7 +16,8 @@ def bind_adapter(producer, record, adapter):
                                           current_native_names=True)
     evidence=current['current_native_names']
     stored=evidence['stored_export'];own=evidence['current_export']
-    program=producer.engine.StudyProgram.from_sexp(record['programs']['mutant'],producer.programs.settings).decode_source()
+    from native_correspondence import stored_metadata_program
+    program=stored_metadata_program(producer.engine,record['programs']['mutant'],producer.programs.settings)
     if program.sexp()!=stored['program_sexp']:
         raise Unavailable('stored metadata handle differs from certified stored writer')
     base=Path(adapter['source']['native_base']);table=stored_binding['native_table_index']
