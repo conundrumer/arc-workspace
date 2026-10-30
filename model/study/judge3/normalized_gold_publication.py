@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 import sys
 import time
+import traceback
 from types import SimpleNamespace
 
 sys.dont_write_bytecode = True
@@ -185,7 +186,8 @@ def main():
                         counters['published_pairs'] += len(expected_pairs)
                     except Exception as error:
                         failure = dict(status='failed', attempt=attempt, point_id=point_id,
-                            reason=f'{type(error).__name__}: {error}', operation_sha256=digest(operation))
+                            reason=f'{type(error).__name__}: {error}', traceback=traceback.format_exc(),
+                            operation_sha256=digest(operation))
                         write_json(state_path, failure, compact=True)
                         append(operator / 'failures.jsonl', failure)
                         counters['failed_points'] += 1

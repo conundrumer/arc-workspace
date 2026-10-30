@@ -292,10 +292,18 @@ def _case(ev,files,task,case,cache):
     if digest in _CACHE:
         return dict(_CACHE[digest],view=view,producer=producer,record=record,export=export,original_export=original_export)
     folder=Path(cache)/'normalized-gold';folder.mkdir(parents=True,exist_ok=True)
-    saved=folder/(digest+'.json.gz')
+    saved=folder/(digest+'.json.gz');saved_key=key
+    if not saved.exists():
+        # 597e5a8a has identical case acquisition. This fix only adapts the
+        # later cached BODY projection: reuse its authenticated case values,
+        # retaining the actual old key/provenance rather than relabeling it.
+        prior_key=deepcopy(key)
+        prior_key['implementation']['normalized_gold.py']='ef420d27f50c70fa252dd797bdda26fce1ea7cd77cccf057df21d93912c4cbe3'
+        prior=folder/(_sha(prior_key)+'.json.gz')
+        if prior.exists():saved=prior;saved_key=prior_key
     if saved.exists():
         with gzip.open(saved,'rt') as stream:bundle=json.load(stream)
-        if bundle.get('key')!=key:raise ValueError('normalized acquisition cache identity differs')
+        if bundle.get('key')!=saved_key:raise ValueError('normalized acquisition cache identity differs')
         claimed=bundle.pop('content_sha256',None)
         if claimed!=_json_digest(bundle):raise ValueError('normalized acquisition cache content digest differs')
         bundle['content_sha256']=claimed
@@ -461,7 +469,12 @@ def _body_layout(ev,record,program,stored,full_det):
     for entry in packet['entries']:
         key=id(entry['rows']);cached=shared.get(key)
         if cached is None or cached[0] is not entry['rows']:
-            rows=_projector()(dict(entries=[dict(entry,choice=None)]),projection)[0]['rows']
+            # Acquired TRAIN packets store numeric axes, while the canonical
+            # renderer projector expects an example name and choice. Adapt
+            # its input only; retain the packet's exact axes on the output.
+            rows=_projector()(dict(entries=[dict(entry,
+                example='train'+str(entry['example_index']+1),
+                choice=entry['assignment'])]),projection)[0]['rows']
             shared[key]=(entry['rows'],rows)
         else:rows=cached[1]
         entries.append(dict(entry,rows=rows))
