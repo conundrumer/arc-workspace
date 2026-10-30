@@ -93,6 +93,8 @@ def export_pairs(ev, pair_ids, output, cache, private, points=None, *, include_d
 
     With `points`, export the features layout: see the module docstring.
     """
+    from runtime_compat import require_exporter
+    require_exporter(ev.arclog)
     if include_det and points is None:
         raise ValueError('include_det requires features mode')
     source = PairSource(ev)

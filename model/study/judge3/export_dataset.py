@@ -122,6 +122,8 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
     first pair of the point. The other targets, the comparisons, the readers
     and the private files are not computed.
     """
+    from runtime_compat import require_exporter
+    require_exporter(ev.arclog)
     from evaluator import read_json, sha
     from tables import TargetStore
     from evaluator_train import acquire_train_point

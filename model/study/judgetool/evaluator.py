@@ -78,6 +78,8 @@ class ReplayEvaluator:
         self.cfg['tasks'] = str(Path(self.cfg['tasks']).resolve())
         self.legacy = legacy_helpers(self.run, self.reference)
         self.arclog = self.legacy.arclog
+        from runtime_compat import require_evaluator
+        require_evaluator(self.arclog)
         self.deadline = deadline if deadline is not None else self.cfg['deadline']
         self.work_cap = self.cfg['work_cap'] * (64 if deadline is not None else 1)
         self.settings = self.arclog.DecodeSettings(deadline_seconds=self.deadline,
@@ -98,7 +100,7 @@ class ReplayEvaluator:
                             budget_scope='one gold_tables operation, not entire candidate search',
                             reference_sha256=hashlib.sha256((self.reference/'engine_verify.py').read_bytes()).hexdigest(),
                             implementation_sha256=sha({name:hashlib.sha256((HERE/name).read_bytes()).hexdigest()
-                                for name in ('../study_paths.py','evaluator.py','surface.py','tables.py','checks.py','catalog.py','registry.py','live_targets.py','case_collector.py','program_metadata.py','gold_body.py','candidate_train.py','raw_body.py','target_view.py','judge_view.py','judge_tool.py')}))
+                                for name in ('../study_paths.py','evaluator.py','runtime_compat.py','surface.py','tables.py','checks.py','catalog.py','registry.py','live_targets.py','case_collector.py','program_metadata.py','gold_body.py','candidate_train.py','raw_body.py','target_view.py','judge_view.py','judge_tool.py')}))
 
     def _reset_session_state(self):
         self.task = None
