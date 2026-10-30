@@ -1,7 +1,7 @@
 """Read-only lib facts and read-time normalization, including legacy journals."""
 from .common import readonly,digest,decode_payload,resolve,pair_key,ONE_SHOT
 from pathlib import Path
-import gzip
+from judge3.framed_jsonl import JsonlReader
 import json
 import hashlib
 from functools import lru_cache
@@ -9,13 +9,13 @@ from functools import lru_cache
 
 def _source(locator,expected):
     path=Path(locator['corpus'])/locator['file']
-    with gzip.open(path,'rt') as stream:
-        for line,text in enumerate(stream,1):
-            if line==locator['line']:
-                value=json.loads(text)
-                if digest(value)!=expected:raise ValueError('source record changed')
-                return value
-    raise ValueError('source locator line absent')
+    try:
+        with JsonlReader(path) as reader:
+            value=json.loads(reader.read_line(locator['line']))
+    except IndexError as error:
+        raise ValueError('source locator line absent') from error
+    if digest(value)!=expected:raise ValueError('source record changed')
+    return value
 
 
 def _producer(db,code,config,legacy=None):

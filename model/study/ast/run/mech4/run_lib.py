@@ -4,7 +4,7 @@ from common import *
 import argparse
 from collections import Counter,OrderedDict
 import fcntl
-import gzip
+from judge3.framed_jsonl import JsonlReader
 import itertools
 import signal
 import time
@@ -24,12 +24,13 @@ def stop(*_):
 
 
 class Sources:
-    """One forward scan per sorted gzip source; no per-pair decompression."""
-    def __init__(self):self.path=None;self.stream=None;self.line=0;self.record=None
+    """One forward scan per source, with framed seek and legacy format support."""
+    def __init__(self):self.path=None;self.reader=None;self.stream=None;self.line=0;self.record=None
     def get(self,job):
         locator=job['source'];path=Path(locator['corpus'])/locator['file'];line=locator['line']
         if self.path!=path or line<self.line:
-            self.close();self.stream=gzip.open(path,'rt');self.path=path;self.line=0
+            self.close();self.reader=JsonlReader(path)
+            self.stream=self.reader.iter_lines(start_line=line);self.path=path;self.line=line-1
         while self.line<line:
             raw=next(self.stream);self.line+=1
             if self.line==line:self.record=json.loads(raw)
@@ -39,7 +40,8 @@ class Sources:
         return record
     def close(self):
         if self.stream:self.stream.close()
-        self.path=None;self.stream=None;self.line=0;self.record=None
+        if self.reader:self.reader.close()
+        self.path=None;self.reader=None;self.stream=None;self.line=0;self.record=None
 
 
 class Worker:
