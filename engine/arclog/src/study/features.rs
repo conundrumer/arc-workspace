@@ -37,7 +37,11 @@ fn candidate_form(
         let part = relative.first().and_then(|step| choose.parts().nth(step.0 as usize))
             .ok_or("CHOOSE candidate part is absent")?;
         if relative.len() != 1 { return Err("nested CHOOSE candidate BODY scope is unsupported".into()); }
-        choose.candidate_columns = Arc::from([]);
+        // NEVER follows the completed FROM and inherits its checked exports.
+        // FOR/FROM queries have not finished that candidate interface yet.
+        if !matches!(part, ChoosePart::Never(_)) {
+            choose.candidate_columns = Arc::from([]);
+        }
         match part {
             ChoosePart::For => { choose.from = Node::new(Body { conjuncts: Arc::from([]) }); choose.never = Arc::from([]); }
             ChoosePart::From => { choose.never = Arc::from([]); }
