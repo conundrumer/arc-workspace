@@ -5,6 +5,7 @@
 //! Diagnostics from unavailable choices are counted, never silently repaired.
 pub mod edit;
 mod identity;
+mod typed;
 mod stored_prune;
 #[path = "study_replay.rs"] mod study_replay;
 
@@ -214,6 +215,17 @@ impl StudyProgram {
         Ok((specs, stats))
     }
 
+    /// Added-only typed-interface population. Baseline primitives are removed
+    /// before certification so old draws and old failures need no replay.
+    pub fn draw_added_substitutes_at(&self, point:&MutationPoint, at:&NodePath,
+        count:usize, seed:u64, origin:Source, settings:&DecodeSettings, registry:&Registry)
+        -> Result<(Vec<MutationSpec>,DrawStats),String> {
+        if !Arc::ptr_eq(self.checked(),&point.source) {return Err("point_belongs_to_another_program".into())}
+        if !point.atoms.contains(at) {let mut s=DrawStats::default();s.count("occurrence_unsupported_block");return Ok((vec![],s))}
+        let mut scoped=point.clone();scoped.atoms=vec![at.clone()];
+        self.draw_profile(&scoped,1,count,seed,"substitute",origin,settings,registry,true,true)
+    }
+
     /// Runtime audit on real programs: v5 and v6 use the same fair traversal
     /// and validity certificates. The reference retains v5's argument domain
     /// and separate zero bucket; only v6 returns production specs to callers.
@@ -259,6 +271,12 @@ impl StudyProgram {
         registry: &Registry,
         expanded: bool,
     ) -> Result<(Vec<MutationSpec>, DrawStats), String> {
+        self.draw_profile(point,k,count,seed,operation,origin,settings,registry,expanded,false)
+    }
+
+    fn draw_profile(&self, point:&MutationPoint, k:usize, count:usize, seed:u64,
+        operation:&str, origin:Source, settings:&DecodeSettings, registry:&Registry,
+        expanded:bool, added_only:bool) -> Result<(Vec<MutationSpec>,DrawStats),String> {
         if !Arc::ptr_eq(self.checked(), &point.source) {
             return Err("point_belongs_to_another_program".into());
         }
@@ -288,7 +306,9 @@ impl StudyProgram {
         for at in &point.atoms {
             let mut unique = BTreeSet::new();
             let mut values = Vec::new();
-            for (replacement, kind) in alternatives(self, at, operation, registry, expanded)? {
+            let proposals = if added_only { typed::additions(self,at,registry,&mut stats)? }
+                else { alternatives(self, at, operation, registry, expanded)? };
+            for (replacement, kind) in proposals {
                 let key = replacement
                     .as_ref()
                     .map(conjunct_json)
