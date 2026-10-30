@@ -318,6 +318,8 @@ class AtomicPacked:
                 or not isinstance(value.get('packing_ref'), str) or not value['packing_ref']):
             raise Unavailable('atomic native packed program/side binding unavailable')
         self._value = value
+        self._body_path=report.get('body_path')
+        self._owner_path=report.get('owner_path')
         self._reader = reader
         self._tables = _unique(value.get('tables'), lambda r: r['table'], 'packed table')
 
@@ -342,6 +344,63 @@ class AtomicPacked:
             if reader.entries['clause_index'][entry] != row['clause_index']:
                 raise Unavailable('native entry clause identity differs from packed binding')
         return deepcopy(row)
+
+    def body_schema(self, correspondence, index, *, body_path):
+        """Bind a live original-scope BODY through native physical columns.
+
+        Authored AST names and packed decoder/stream names need not agree.
+        Neither spelling chooses a column: the native compiled BODY interface
+        supplies physical columns, scoped IDs and exact physical descriptors.
+        This is only for this authenticated atomic tuple and SELF export.
+        """
+        body=correspondence.body(body_path)
+        if (correspondence._value['program_sexp']!=self._value['program_sexp']
+                or correspondence._value['source_program_sexp']!=self._value['program_sexp']
+                or correspondence._value['source_bridge_status']!='same_checked_representation'
+                or _path(self._body_path)!=_path(body_path)
+                or _path(self._owner_path)!=_path(body['owner_path'])):
+            raise Unavailable('native packed BODY/SELF source context differs')
+        packed=self.table(index,role='gold_body_kept')
+        schema=self._reader.schema(index)
+        if len(schema)!=len(body['columns']):
+            raise Unavailable('native packed BODY physical field coverage differs')
+        fields=[]
+        for physical in schema:
+            column=correspondence.body_column(body_path,physical['index'],source=False)
+            descriptor=column['physical_type']
+            if (physical['type']!=descriptor['type']
+                    or physical['slot']!=column['physical_column']):
+                raise Unavailable('native packed BODY physical type/slot differs')
+            unit=descriptor['type']=='Unit'
+            if unit:
+                label_id=-1-physical['index'];name=physical['name'];scope=body['owner_path']
+            else:
+                authored=correspondence.body_column(body_path,physical['index'])['canonical_source']
+                if (authored['scope_path']!=column['scope_path']
+                        or authored['label_id']!=column['label_id']
+                        or authored['source_type']!=descriptor
+                        or column.get('source_body_column')!=physical['index']
+                        or not isinstance(authored.get('name'),str) or not authored['name']):
+                    raise Unavailable('native BODY SELF scoped source/type differs')
+                label_id=column['label_id'];name=authored['name'];scope=authored['scope_path']
+            identity=dict(kind='implicit_unit' if unit else 'scoped_label',
+                label_id=None if unit else label_id,label_spelling=name,
+                native_slot=physical['slot'],native_source_label=physical['source_label'],
+                owner_path=body['owner_path'],body_path=list(body_path),
+                scope_path=scope,source_label_spelling=name)
+            fields.append(dict(physical,ast_label_id=label_id,label='' if unit else name,
+                display_name=name,source_label='@column:'+str(physical['index']),
+                native_source_label=physical['source_label'],native_label_identity=identity,
+                native_body_binding=dict(schema='native-packed-body-field-v1',
+                    packing_ref=self._value['packing_ref'],table=index,body_path=list(body_path),
+                    physical_column=physical['index'],physical_type=deepcopy(descriptor),
+                    scope_path=scope,label_id=None if unit else label_id,
+                    packed_label=physical['label'],packed_source_label=physical['source_label'])))
+        if len({field['display_name'] for field in fields})!=len(fields):
+            raise Unavailable('duplicate native BODY public field names')
+        if sum(column['physical_type']['cell_width'] for column in body['columns'])!=packed['cell_width']:
+            raise Unavailable('native BODY physical cell width differs')
+        return fields
 
     def receipt(self, payload, *, report_sha256, source_sha256, runtime):
         return dict(schema='evaluator-live-packed-acquisition-v1',

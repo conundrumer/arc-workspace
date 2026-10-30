@@ -97,7 +97,8 @@ def bind_native_column_names(ev, record, definition, schema, *, artifact, table)
                 or witness.get('physical_column')!=column['index']
                 or witness.get('logical_slot')!=column['slot']
                 or not isinstance(column.get('name'),str) or not column['name']
-                or type_identity(ev,record,witness['type'])[0]!=type_identity(ev,record,column['type'])[0]):
+                or (witness['type']!=column['type'] and
+                    type_identity(ev,record,witness['type'])[0]!=type_identity(ev,record,column['type'])[0])):
             raise Incomplete('anonymous native column lacks an exact declared-layout replay binding')
         bound.append(dict(witness,native_name=column['name'],exported_native_name=None,
             native_name_binding=dict(source='exact native replay schema',artifact=artifact,table=table,

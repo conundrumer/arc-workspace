@@ -26,12 +26,16 @@ _CASES=OrderedDict()
 _PERFORMANCE=Counter()
 _PRIOR_RECEIPTS={}
 _ACQUISITION_PREDECESSORS=(
+    'acf923e5591bbf9ca07c53acf2d0c1845f7704e96a7618fdb0b0eba309893b3e',
     '3ac800acaa7f0bdb47046e5a369a82a732a9ccee0bb262eb1276745e64651a03',
     'ef420d27f50c70fa252dd797bdda26fce1ea7cd77cccf057df21d93912c4cbe3')
 _MANIFESTS={}
 _SOURCES={}
 _BUILDS={}
 _DECODER_BINDINGS={}
+
+# Additive metadata binding/anonymous-name checks do not change cached row acquisition.
+_METADATA_PREDECESSORS={'../native_correspondence.py': '2d056498bd8d350147db68faa35df51c403ccbe9d707d4877d5c2c0daf6648f0', 'program_metadata.py': 'a9fa67ae77c69aeea3b1adf9dd8dea2f31879a905ab9bd3631023e9ab4d18f66'}
 
 
 def publication_performance():
@@ -290,6 +294,7 @@ def _prior_receipt(ev,provider_sha):
     hashes={name:_file(source.parent/name)['sha256'] for name in names}
     if _sha(hashes)!=ev.receipt['implementation_sha256']:
         raise ValueError('live evaluator implementation closure differs from receipt')
+    hashes.update(_METADATA_PREDECESSORS)
     hashes['../normalized_gold.py']=provider_sha
     prior=dict(ev.receipt,implementation_sha256=_sha(hashes))
     _PRIOR_RECEIPTS[key]=prior
@@ -372,6 +377,7 @@ def _acquire_case(ev,files,task,case,cache):
         for prior_sha in _ACQUISITION_PREDECESSORS:
             prior_key=deepcopy(key)
             prior_key['implementation']['normalized_gold.py']=prior_sha
+            prior_key['implementation']['native_correspondence.py']=_METADATA_PREDECESSORS['../native_correspondence.py']
             prior_key['settings']=_prior_receipt(ev,prior_sha)
             prior=folder/(_sha(prior_key)+'.json.gz')
             if prior.exists():
@@ -419,7 +425,19 @@ def _acquire_case(ev,files,task,case,cache):
                 schema=native['_native_reader'].schema(table)
                 source_name=(definitions[0]['display_name'] if len(definitions)==1 else selector['fact'])
                 if not source_name:continue
-                meta=producer.case_table_metadata(export,dict(selector=selector,native_schema=schema,source_name=source_name))
+                # Anonymous RIGID fields have a native declared row path but
+                # no AST column name. Bind only those absent names to this
+                # exact replay's physical header via the shared validator.
+                from program_metadata import bind_native_column_names
+                rebound={}
+                for definition in definitions:
+                    if definition['display_name']==source_name and 'owner' in definition['relation']:
+                        witnesses=bind_native_column_names(isolated,selection,definition,schema,
+                            artifact=replay['artifact'],table=table)
+                        rebound[definition['relation_slot']]=dict(definition,column_witnesses=witnesses)
+                metadata_export=export if not rebound else dict(export,definitions=dict(export['definitions'],
+                    native_relations=[rebound.get(d['relation_slot'],d) for d in export['definitions']['native_relations']]))
+                meta=producer.case_table_metadata(metadata_export,dict(selector=selector,native_schema=schema,source_name=source_name))
                 packet=acquire_train_table(isolated,native,table,selection,ntrain=ntrain,
                     fields=[dict(c,field_name=m['display_name']) for c,m in zip(schema,meta['schema'])],
                     projection=list(range(len(schema))),copy_rows=False,
@@ -495,7 +513,10 @@ def _body(ev,bundle,body_path,full_det,cache):
         ctx=producer.policy['Document'].__new__(producer.policy['Document'])
         ctx.r=dict(point=mapped['body_path']);ctx.readers={'gold':reader};ctx.gexport=export
         ctx.owner=source['owner_path'];ctx.body=source;ctx.values=SimpleNamespace(f={'column_names':{}})
-        fields=ctx.schema(reader,table,body=True,body_side='gold')
+        fields=packed.body_schema(view.correspondences['normalized'],table,
+            body_path=mapped['body_path'])
+        for field in fields:
+            ctx.values.f['column_names'][field['source_label']]=field['display_name']
         raw_fields=[dict(c,source_body_column=c['index'],callable_row_path=None) for c in fields]
         projected_error=None
         try:

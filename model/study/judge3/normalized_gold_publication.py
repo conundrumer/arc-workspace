@@ -76,6 +76,19 @@ def publication_session(operator):
         finally:fcntl.flock(handle,fcntl.LOCK_UN)
 
 
+@contextmanager
+def point_lease(path):
+    """Leave an in-flight old/new writer's point and state untouched."""
+    path.parent.mkdir(parents=True,exist_ok=True)
+    with path.open('a') as handle:
+        try:fcntl.flock(handle,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except BlockingIOError:
+            yield False
+            return
+        try:yield True
+        finally:fcntl.flock(handle,fcntl.LOCK_UN)
+
+
 def append_publication(operator,path,record):
     # Different points publish concurrently. Keep the shared index JSONL whole.
     with (operator/'manifest.lock').open('a') as handle:
@@ -114,6 +127,7 @@ def _main():
     parser.add_argument('--deadline', type=float, default=30)
     parser.add_argument('--shard-count',type=int,default=1)
     parser.add_argument('--shard-index',type=int,default=0)
+    parser.add_argument('--point-ids',type=Path,help='Retry only these newline-delimited point IDs')
     parser.add_argument('--point-id',help='Check/publish just this point; still reuse a valid published result')
     args = parser.parse_args()
     if args.shard_count<1 or not 0<=args.shard_index<args.shard_count:
@@ -144,25 +158,38 @@ def _main():
     code_files = [Path(__file__), CODE_ROOT / 'normalized_gold.py', CODE_ROOT / 'native_correspondence.py']
     code = {str(p): file_sha(p) for p in code_files}
     attempt = digest(dict(code=code, runtime=runtime, manifest=manifest_ref, deadline=args.deadline))
+    selected=None
+    selection_ref=None
+    if args.point_ids is not None:
+        inside(args.point_ids,DATA_ROOT)
+        selected=set(args.point_ids.read_text().split())
+        selection_ref=dict(path=str(args.point_ids.resolve()),sha256=file_sha(args.point_ids),count=len(selected))
     operator = args.output / 'operator'
     counters = Counter()
     started = time.monotonic()
     ev = None
-    journal=operator if args.shard_count==1 else operator/'workers'/f'{args.shard_count}-{args.shard_index}'
+    journals=operator if selection_ref is None else operator/'retries'/selection_ref['sha256'][:16]
+    journal=journals if args.shard_count==1 else journals/'workers'/f'{args.shard_count}-{args.shard_index}'
     with publication_session(operator), exclusive(journal/'worker.lock'):
         operations=publication_operations(manifest_ref)
-        plan=task_shards(operations,args.shard_count)
+        if selected is not None and not selected<={op['point_id'] for op in operations}:
+            raise ValueError('retry point IDs are outside the authenticated manifest')
+        plan=task_shards([op for op in operations if selected is None or op['point_id'] in selected],args.shard_count)
         write_json(journal / 'latest-attempt.json', dict(attempt=attempt, code=code,
-            runtime=runtime, manifest=manifest_ref, policy=POLICY,task_shards=plan), compact=True)
+            runtime=runtime, manifest=manifest_ref, policy=POLICY,task_shards=plan,selection=selection_ref), compact=True)
         try:
             for number, operation in enumerate(operations, 1):
                 point_id = operation['point_id']
+                if selected is not None and point_id not in selected:continue
                 if args.point_id and point_id!=args.point_id:continue
                 if plan[operation['task']]!=args.shard_index:continue
                 point_started=time.monotonic()
                 if Path(point_id).name != point_id:
                     raise ValueError('unsafe point identity')
-                with exclusive(operator/'point-locks'/(point_id+'.lock')):
+                with point_lease(operator/'point-locks'/(point_id+'.lock')) as admitted:
+                    if not admitted:
+                        counters['busy_points']+=1
+                        continue
                     generation = args.output / 'generations' / args.manifest_sha256[:16] / point_id
                     private = operator / 'private' / point_id
                     state_path = operator / 'points' / (point_id + '.json')
@@ -259,7 +286,7 @@ def _main():
                 counts=dict(counters), seconds=time.monotonic() - started,
                 point_index=relative(args.output / 'published-points'))
             write_json(journal / 'summary.json', summary, compact=True)
-            return int(bool(counters['failed_points'] or counters['terminal_failed_points']))
+            return int(bool(counters['failed_points'] or counters['terminal_failed_points'] or counters['busy_points']))
         finally:
             if ev is not None:
                 ev.close()
