@@ -406,7 +406,7 @@ class ReplayEvaluator:
         result['artifact'] = self._artifact(record, dict(clause=clause, profile=result['profile']), result)
         return result
 
-    def _coverage(self, record, capture, inserted=None, form=None):
+    def _coverage(self, record, capture, inserted=None, form=None, *, entry_mask=None):
         n = capture['native']; ts = n['tables']
         if form is None:
             form = int(record['point'][0])+1
@@ -414,6 +414,22 @@ class ReplayEvaluator:
         if not indices:
             return dict(status='unknown', reason='inserted form has no returned table')
         t = indices[0]
+        if entry_mask is not None:
+            # Scope the canonical reader before decoding. Its buffers,
+            # assignments and validation remain shared with the original view.
+            from copy import copy
+            original = n['_native_reader']
+            if (not isinstance(entry_mask, list)
+                    or any(type(e) is not int or not 0 <= e < len(original.entries['table'])
+                           for e in entry_mask)
+                    or len(entry_mask) != len(set(entry_mask))):
+                raise ValueError('invalid admitted full-row coverage entry mask')
+            if any(original.entries['example_kind'][e] not in (0, 1) for e in entry_mask):
+                raise ValueError('selected full-row coverage requires TRAIN/TASK entries')
+            allowed = set(entry_mask)
+            scoped = copy(original)
+            scoped.bytable = {t: [e for e in original.bytable[t] if e in allowed]}
+            n = dict(n, _native_reader=scoped, _row_cache={})
         _, train_entries, _ = self.legacy.rows_at(n, t)
         entries = list(train_entries)
         reader = n['_native_reader']
@@ -452,8 +468,11 @@ class ReplayEvaluator:
                     groups.append(dict(kept_assignment=a, **e))
         selected = {g['entry'] for g in groups}
         other = [e['entry'] for e in entries if e['entry'] not in selected]
+        scope = {} if entry_mask is None else dict(
+            entry_scope='selected_full_rows_train_task',
+            admitted_entries=list(entry_mask), entry_mask_sha256=sha(entry_mask))
         return dict(status='complete' if groups else 'unknown', table=t,
-                    unheld_det_relations=unheld,
+                    **scope, unheld_det_relations=unheld,
                     det_relations=ts['det_relations'][t], groups=groups,
                     other_assignment_entries=other,
                     rule='saved values on every table dependency slot; absent compatible entry is unknown')
@@ -505,7 +524,16 @@ class ReplayEvaluator:
                         result.update(engine='ran',derived_coverage=dict(
                             status='complete',assignment_scope='native Search',saved_kept_used=False))
                     else:
-                        result.update(engine='ran', kept_coverage=self._coverage(record, self.captures[-1], form=form))
+                        coverage_options = {}
+                        if (full_rows_selector is not None and self._packing_attempt is not None
+                                and self._packing_attempt.get('selected_only') is True):
+                            selection = self._packing_attempt['selection']
+                            if (selection.get('test_entries_selected') is not False
+                                    or report.get('full_rows_entries') != selection['entries']):
+                                raise ValueError('selected full-row coverage differs from admitted TRAIN/TASK mask')
+                            coverage_options['entry_mask'] = report['full_rows_entries']
+                        result.update(engine='ran', kept_coverage=self._coverage(
+                            record, self.captures[-1], form=form, **coverage_options))
                         if result['kept_coverage']['status'] == 'unknown':
                             result['unknown'] = True
             except Exception as error:
