@@ -13,15 +13,16 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import subprocess
 import sys
 import time
 
 HERE=Path(__file__).resolve().parent
 sys.path[:0]=[str(HERE/'mech'),str(HERE),str(HERE.parents[1])]
-from study_paths import CODE_ROOT,DATA_ROOT,MAIN_ROOT
-# Append the study environment after the runtime's own packages, so the runtime's native wheel keeps precedence.
-# Some study runtimes lack zstandard. The normal-form pass also drops every sys.path entry under DATA_ROOT, which
-# holds the study runtimes, and then imports numpy and pyarrow from this entry.
+from study_paths import CODE_ROOT,DATA_ROOT,MAIN_ROOT,REPO_ROOT
+# Study runtimes lack packages that stages import: zstandard in older runtimes, and pandas and pyarrow, which the
+# normal-form pass needs. Append the study environment after the runtime's own packages, so the runtime's native
+# wheel keeps precedence.
 sys.path.append(str(MAIN_ROOT/'work/lm/.venv/lib/python3.12/site-packages'))
 from judge3.framed_jsonl import JsonlWriter,iter_json,iter_lines
 from run import canonical,digest,pair_key
@@ -125,9 +126,15 @@ def passes_dir(root):
     return DATA_ROOT/'population_passes'/(root.name+'-'+hashlib.sha256(str(root).encode()).hexdigest()[:12])
 
 
+def targets_path(root):
+    """The all-target store of a sample root. The target pass writes only under DATA_ROOT/ast/run/mech5."""
+    return DATA_ROOT/'ast/run/mech5/population'/passes_dir(root).name/'targets.sqlite3'
+
+
 def pass_paths(root):
     passes=passes_dir(root)
-    return dict(witness_tests=passes/'witness-tests.sqlite3',normal=passes/'normal.sqlite3',fit_split=passes/'fits.sqlite3')
+    return dict(witness_tests=passes/'witness-tests.sqlite3',normal=passes/'normal.sqlite3',fit_split=passes/'fits.sqlite3',
+                target_comparison=targets_path(root))
 
 
 def reader(root):
@@ -265,6 +272,33 @@ def label(a):
         log.close();db.close()
 
 
+def targets(a):
+    """All-target comparison of this root's own labeled pairs, then a new label line for each sample whose read changed."""
+    out=a.root/'labels.jsonl.zst'
+    last={}
+    for line in iter_json(out):last[line['sample_id']]=line
+    own={l['pair_id']:l['source_sha256'] for l in last.values()
+         if (l.get('stages') or {}).get('label') in ('label_members','resumed_own') and l.get('source_sha256')}
+    if not own:return print('no own labeled pairs',flush=True)
+    selection=a.root/'targets-pairs.jsonl'
+    with selection.open('w') as f:
+        for pair,source in sorted(own.items()):f.write(canonical(dict(pair_id=pair,source_sha256=source))+'\n')
+    # The target pass streams its own progress and resumes completed pairs.
+    subprocess.run([sys.executable,'-B','-m','model.study.ast.run.mech5.targets','--base',str(a.root/'labels.sqlite3'),
+        '--output',str(targets_path(a.root)),'--pairs-from',str(selection),'--pair-seconds',str(a.pair_seconds)]+(['--retry-unavailable'] if a.retry_unavailable else []),
+        cwd=REPO_ROOT,check=True)
+    keys=('status','grade','grade_reason','missing_steps')
+    with reader(a.root) as r,JsonlWriter(out) as writer:
+        changed=0
+        for line in last.values():
+            if line.get('pair_id') not in own:continue
+            joined=r.read_pair(line['pair_id'])
+            new=label_line(dict(sample_id=line['sample_id']),line['pair_id'],joined)|dict(stages=dict(line.get('stages') or {},target_comparison='run'))
+            if any(new.get(k)!=line.get(k) for k in keys):
+                writer.write(new);writer.flush();changed+=1
+    print(f'pairs={len(own)} changed_lines={changed}',flush=True)
+
+
 def from_population(a):
     from population_consume import candidates,object_value
     a.out.mkdir(parents=True,exist_ok=True)
@@ -296,11 +330,19 @@ def main():
     l.add_argument('--no-reuse-base',dest='reuse_base',action='store_false',help='evaluate a mutant again even where the historical base has an intact label for it')
     l.add_argument('--limit',type=int,default=0,help='read at most this many sample lines')
     l.add_argument('--retry-unavailable',action='store_true',help='process again the samples whose last line is unavailable')
+    t=sub.add_parser('targets',help='run the all-target comparison on the labeled pairs of a root, and add the changed label lines')
+    t.add_argument('--root',type=Path,required=True);t.add_argument('--pair-seconds',type=float,default=120)
+    t.add_argument('--retry-unavailable',action='store_true',help='retry pairs whose target facts are unavailable')
     e=sub.add_parser('from-population',help='write study-sample-v1 records for candidates of a substitute population')
     e.add_argument('--population',type=Path,required=True);e.add_argument('--tasks',type=Path,required=True)
     e.add_argument('--out',type=Path,required=True);e.add_argument('--limit',type=int,required=True)
     a=p.parse_args()
     if a.command=='from-population':return from_population(a)
+    if a.command=='targets':
+        a.root=a.root.resolve()
+        with open(a.root/'sample_label.lock','a') as lock:
+            fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            return targets(a)
     if a.seconds<=0 or a.work_cap<=0 or a.session_mib<=0:p.error('limits must be positive')
     a.root=a.root.resolve();a.tasks=a.tasks.resolve();a.root.mkdir(parents=True,exist_ok=True)
     with open(a.root/'sample_label.lock','a') as lock:

@@ -9,6 +9,8 @@ scripts/run_heavy.py --cpus 1 <runtime python> -B model/study/ast/run/sample_lab
 
 Use one `--root` per sample population. `--limit N` reads only the first N sample lines. `--retry-unavailable` processes again the samples whose last line has status `unavailable`, for example after a constructor for their candidate kind exists. `--no-reuse-base` evaluates a mutant again even where the historical base has an intact label for it. Progress with rate and ETA goes to stdout. Output of the stages goes to `ROOT/stages.log`.
 
+`sample_label.py targets --root ROOT [--pair-seconds S] [--retry-unavailable]` runs the all-target comparison (`mech5.targets`) on the root's own labeled pairs, and adds a label line for each sample whose read changed. The comparison streams its own progress and resumes completed pairs.
+
 `sample_label.py from-population --population DRAWS.sqlite3 --tasks DIR --out DIR --limit N` writes sample records for the first N candidates of a substitute population.
 
 ## Input
@@ -46,11 +48,11 @@ Each sample becomes a member of `ROOT/population.sqlite3`, the population store 
 | `witness_tests` | `mech.step2_check.WitnessTestSession` |
 | `fit_split` | `mech3.pair_api.PairLabeler` |
 
-`normal`, `witness_tests` and `fit_split` run only on base results of this root; a reused mutant keeps the results of the historical passes. Samples of one gold share one evaluator session. Lib search, all-target comparison and the model judge stay in `missing_steps`.
+`normal`, `witness_tests` and `fit_split` run only on base results of this root; a reused mutant keeps the results of the historical passes. Samples of one gold share one evaluator session. The all-target comparison runs in the `targets` command. Lib search and the model judge stay in `missing_steps`. The all-target comparison does not observe DET targets, so in a task with a DET form the target catalog stays incomplete and a pair without a positive result stays Unknown.
 
-The pass stores and replay artifacts are in `DATA_ROOT/population_passes/<root name>-<hash of the root path>`, because the evaluator writes artifacts only under `DATA_ROOT`. `ROOT/evaluator.json` is the corpus-v12 evaluator configuration with this root's task directory.
+The pass stores and replay artifacts are in `DATA_ROOT/population_passes/<root name>-<hash of the root path>`, because the evaluator writes artifacts only under `DATA_ROOT`. The all-target store is `DATA_ROOT/ast/run/mech5/population/<the same name>/targets.sqlite3`. `ROOT/evaluator.json` is the corpus-v12 evaluator configuration with this root's task directory.
 
-The runtime must have the `arclog` wheel that the checkout's native code needs. The driver appends `work/lm/.venv` site-packages after the runtime's own, for zstandard, numpy and pyarrow.
+The runtime must have the `arclog` wheel that the checkout's native code needs. The driver appends `work/lm/.venv` site-packages after the runtime's own, for the packages that study runtimes lack (zstandard in older runtimes, pandas and pyarrow).
 
 ## Output
 

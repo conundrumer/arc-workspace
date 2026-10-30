@@ -265,7 +265,18 @@ class MaterializeSession:
         producer_sha=digest(producer)
         with db:db.execute('INSERT OR IGNORE INTO metadata VALUES (?,?)',('producer:'+producer_sha,canonical(producer)))
         settings=arclog.DecodeSettings(deadline_seconds=a.seconds,table_work_cap=a.work_cap,rule_tests=False)
-        self.settings=settings;self.producer_sha=producer_sha
+        self.settings=settings;self.producer_sha=producer_sha;self.producer=producer
+
+    def task_manifest(self,task,case):
+        """The corpus manifest of the export that the population's gold streams come from, with this producer."""
+        import arclog
+        import corpus as c
+        config=json.loads((DATA_ROOT/'ast/run/corpus-v12-body-full/run.json').read_text())
+        config['tasks']=str(self.a.tasks.resolve())
+        # The keys of the manifest that corpus.py writes beside each task's pairs file.
+        return dict(provenance=dict(producer_ref=self.producer_sha),record_format=c.RECORD_FORMAT,source_hashes=dict(consumer_sha256=self.producer['consumer_sha256']),
+            binary_hashes=self.producer['native_binary_sha256'],config=config,task=task,cases=[case],
+            streams_digest=arclog.streams_digest(),mutation_policy=arclog.StudyProgram.mutation_policy())
 
     def close(self):
         if self.store:self.store.close();self.store=None
@@ -284,6 +295,10 @@ def materialize_one(member,session,*,pair_id=None,input_sha256=None):
     if existing is not None:
         known=db.execute('SELECT input_sha256 FROM members WHERE pair_id=?',(pair,)).fetchone()
         if known and known[0]!=inputs:raise ValueError('population member inputs changed: '+pair)
+        # Observations published before manifests were written get theirs here, without evaluation.
+        manifest=Path(existing['corpus'])/existing['task']/'manifest.json'
+        if Path(existing['corpus']).is_relative_to(a.output.parent/'observations') and not manifest.exists():
+            tmp=manifest.with_suffix('.tmp');tmp.write_text(json.dumps(session.task_manifest(existing['task'],member['case']),indent=2)+'\n');os.replace(tmp,manifest)
         return dict(status='resumed_observation',pair_id=pair,locator=existing)
     import arclog
     import corpus as c
@@ -355,6 +370,8 @@ def materialize_one(member,session,*,pair_id=None,input_sha256=None):
             # this record, with absolute immutable native-pack references.
             with (root/'run.json').open('w') as f:
                 f.write(canonical(dict(tasks=str(a.tasks.resolve()))));f.flush();os.fsync(f.fileno())
+            with (destination/'manifest.json').open('w') as f:
+                f.write(json.dumps(session.task_manifest(task,member['case']),indent=2)+'\n');f.flush();os.fsync(f.fileno())
             path=destination/'pairs.jsonl.zst'
             with JsonlWriter(path) as out:
                 if out.committed_lines!=0:raise ValueError('published observation differs; preserve existing source')
