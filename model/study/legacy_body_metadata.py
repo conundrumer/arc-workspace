@@ -113,7 +113,7 @@ def _numeric_scan(reader, table, schema, columns):
 
 
 def recorded_metadata_context(programs, record, *, execution=None, metadata=None):
-    """Carry current native admission separately from old checked-source metadata."""
+    """Keep current native admission separate from old checked-source metadata."""
     from native_correspondence import certified_metadata_program, validate_recorded_admission, _native_stream
     if execution is None:
         execution,metadata,_=programs.load(record['programs']['mutant'],mutant_record=record)
