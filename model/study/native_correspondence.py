@@ -288,3 +288,87 @@ def certify_stored_representation(rehydrated, stored, *, requested_text,
         recorded_stream_checked=recorded_stream is not None,
         node_mapping='none; each representation uses its own native export',
         historical_payload_authority=False)
+
+
+def bind_legacy_body_schema(current, current_program, *, legacy_export,
+        legacy_stream, legacy_schema, body_path, legacy_cell_width, provenance):
+    """Bind an authenticated historical BODY using its own native descriptor.
+
+    The acquisition owner authenticates the legacy payload/file/runtime/source
+    before this lookup, as for Correspondence. This validates its exact header
+    against the old export, then links scoped native IDs under equal complete
+    streams. It never parses nominal debug strings or borrows a gold node map.
+    No row, assignment or cross-session Ident evidence is established here.
+    """
+    import hashlib
+    import json
+    def digest(value):
+        return hashlib.sha256(json.dumps(value, ensure_ascii=False,
+            sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
+    required = ('legacy_runtime', 'source_record_sha256', 'native_payload_sha256',
+                'legacy_export_sha256', 'legacy_schema_sha256')
+    if (not isinstance(provenance, dict)
+            or any(not isinstance(provenance.get(k), str) or not provenance[k] for k in required)
+            or provenance['legacy_export_sha256'] != digest(legacy_export)
+            or provenance['legacy_schema_sha256'] != digest(legacy_schema)):
+        raise Unavailable('legacy BODY acquisition/export/schema provenance incomplete')
+    if (current._value['program_sexp'] != current_program.sexp()
+            or legacy_export.get('program_sexp') != current_program.sexp()
+            or _native_stream(current_program) != legacy_stream):
+        raise Unavailable('legacy/current BODY program or complete native stream differs')
+    old = Correspondence(legacy_export,
+        program_sexp=legacy_export['program_sexp'],
+        source_program_sexp=legacy_export['correspondence']['source_program_sexp'])
+    before, after = old.body(body_path), current.body(body_path)
+    # Native scope+LabelId is the key. Physical positions are asserted against
+    # the old layout, rather than zipped against a newly emitted header.
+    now = _unique(after['columns'],
+        lambda f: (_path(f['scope_path']), f['label_id']), 'current scoped BODY field')
+    views = [v for v in legacy_export.get('body_views', []) if v.get('body_path') == list(body_path)]
+    if len(views) != 1:
+        raise Unavailable('legacy native BODY view unavailable or ambiguous')
+    view = _unique(views[0]['columns'], lambda f: f['body_column'], 'legacy BODY view field')
+    schema = _unique(legacy_schema, lambda f: f['index'], 'legacy physical header field')
+    if (set(schema) != set(view)
+            or set(schema) != {f['physical_column'] for f in before['columns']}
+            or len(now) != len(schema)):
+        raise Unavailable('legacy/current BODY physical field coverage differs')
+    fields = []
+    for field in before['columns']:
+        index = field['physical_column']
+        header, authored = schema[index], view[index]
+        old_type = _type(field['physical_type'])
+        if (header['type'] != old_type['type'] or header['type'] != authored['type']
+                or header['name'] != authored['native_column_name']
+                or header['source_label'] != authored['label_spelling']
+                or authored['label_id'] != field['label_id']):
+            raise Unavailable('legacy physical BODY header differs from its native descriptor')
+        identity = (_path(field['scope_path']), field['label_id'])
+        linked = now.get(identity)
+        if linked is None:
+            raise Unavailable('legacy BODY scoped label absent from current native descriptor')
+        new_type = _type(linked['physical_type'])
+        old_source, new_source = field['canonical_source'], linked['canonical_source']
+        if (old_source.get('status') != 'resolved' or new_source.get('status') != 'resolved'
+                or (old_source['scope_path'], old_source['label_id'], old_source['name'])
+                    != (new_source['scope_path'], new_source['label_id'], new_source['name'])
+                or old_type['wire_type'] != new_type['wire_type']
+                or old_type['cell_width'] != new_type['cell_width']
+                or old_type['nominal'] != new_type['nominal']
+                or (old_type['type'] != new_type['type'] and not old_type['nominal'])):
+            raise Unavailable('legacy/current native BODY scoped type or encoding differs')
+        fields.append(dict(physical_column=index, current_physical_column=linked['physical_column'],
+            scope_path=list(identity[0]), label_id=identity[1],
+            legacy_physical_type=deepcopy(old_type), physical_type=deepcopy(new_type),
+            canonical_source=deepcopy(new_source)))
+    if sum(f['legacy_physical_type']['cell_width'] for f in fields) != legacy_cell_width:
+        raise Unavailable('legacy native BODY packed width differs from its descriptor')
+    return dict(schema='native-legacy-body-binding-v1', body_path=list(body_path),
+        fields=sorted(fields, key=lambda f: f['physical_column']),
+        receipt=dict(provenance=deepcopy(provenance),
+            program_sha256=hashlib.sha256(current_program.sexp().encode()).hexdigest(),
+            stream_sha256=digest(legacy_stream),
+            legacy_correspondence_sha256=digest(old._value),
+            current_correspondence_sha256=digest(current._value),
+            mapping='native scoped LabelId under exact program and full-stream equality',
+            nominal_strings='retained verbatim; never parsed or normalized', rows_checked=False))
