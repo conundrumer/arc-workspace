@@ -24,14 +24,34 @@ def _code():
             for name in ('out_fit.py','evaluator.py','tables.py','surface.py','case_collector.py','../study_paths.py')}
 
 
-def _observe(ev,record,text,side):
-    L=ev.legacy;program=ev.arclog.StudyProgram.from_sexp(text,ev.settings)
+def native_out_binding(program):
+    """Authoritative native OUT key and its original BODY physical columns."""
     binding=json.loads(program.out_bindings_json())
     if binding.get('complete') is not True:raise Incomplete('native OUT binding incomplete')
     columns=sorted(binding['columns'],key=lambda c:c['out_column'])
     if ([c['out_column'] for c in columns]!=[0,1]
             or [comparison_type(c['type']) for c in columns]!=['Box','Color']):
         raise Incomplete('native OUT lacks exact Position/Color key projection')
+    if binding.get('schema')!='arclog-study-out-bindings-v1':
+        raise Incomplete('native OUT binding schema unsupported')
+    return binding,columns
+
+
+def out_body_projection(binding,columns,schema):
+    """Use native BodyView column_of, independently of mutation-point catalogs."""
+    projection=[column['body_column'] for column in columns]
+    if (len(set(projection))!=len(projection) or
+            any(type(i) is not int or not 0<=i<len(schema) or schema[i]['index']!=i for i in projection)):
+        raise Incomplete('native OUT physical column missing or ambiguous')
+    if ([comparison_type(schema[i]['type']) for i in projection]!=
+            [comparison_type(column['type']) for column in columns]):
+        raise Incomplete('OUT physical projection type differs')
+    return projection
+
+
+def _observe(ev,record,text,side):
+    L=ev.legacy;program=ev.arclog.StudyProgram.from_sexp(text,ev.settings)
+    binding,columns=native_out_binding(program)
     export=json.loads(program.render_json());nodes={tuple(n['path']):n for n in export['nodes']}
     node=nodes[tuple(binding['body_path'])]
     if node['kind']!='body':raise Incomplete('native OUT binding does not identify a BODY')

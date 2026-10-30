@@ -85,9 +85,10 @@ class ReplayEvaluator:
         self.settings = self.arclog.DecodeSettings(deadline_seconds=self.deadline,
                                                    table_work_cap=self.work_cap, rule_tests=False)
         self.artifacts = Path(artifacts).resolve()
-        roots=(DATA_ROOT/'judgetool',DATA_ROOT/'ast/run/mech4',DATA_ROOT/'ast/run/mech5')
+        roots=(DATA_ROOT/'judgetool',DATA_ROOT/'ast/run/mech4',DATA_ROOT/'ast/run/mech5',
+               DATA_ROOT/'ast/run/mech/det-later-fit')
         if not any(self.artifacts.is_relative_to(root.resolve()) for root in roots):
-            raise ValueError('replay artifacts must stay in judgetool, ast/run/mech4 or ast/run/mech5')
+            raise ValueError('replay artifacts must stay in judgetool, mech4, mech5 or mech/det-later-fit')
         self.artifacts.mkdir(parents=True, exist_ok=True)
         self._reset_session_state()
         binary = importlib.util.find_spec('arclog.arclog').origin
@@ -100,7 +101,7 @@ class ReplayEvaluator:
                             budget_scope='one gold_tables operation, not entire candidate search',
                             reference_sha256=hashlib.sha256((self.reference/'engine_verify.py').read_bytes()).hexdigest(),
                             implementation_sha256=sha({name:hashlib.sha256((HERE/name).read_bytes()).hexdigest()
-                                for name in ('../study_paths.py','../native_correspondence.py','evaluator.py','runtime_compat.py','surface.py','tables.py','checks.py','catalog.py','registry.py','live_targets.py','case_collector.py','program_metadata.py','gold_body.py','candidate_train.py','raw_body.py','target_view.py','judge_view.py','judge_tool.py')}))
+                                for name in ('../study_paths.py','../native_correspondence.py','evaluator.py','derived_fit.py','runtime_compat.py','surface.py','tables.py','checks.py','catalog.py','registry.py','live_targets.py','case_collector.py','program_metadata.py','gold_body.py','candidate_train.py','raw_body.py','target_view.py','judge_view.py','judge_tool.py')}))
 
     def _reset_session_state(self):
         self.task = None
@@ -147,6 +148,11 @@ class ReplayEvaluator:
     def close(self):
         self.finish_case()
         self.__dict__.pop('_det_inventory_cache', None)
+        self.__dict__.pop('_derived_fit_gold', None)
+        self.__dict__.pop('_derived_fit_result', None)
+        self.__dict__.pop('_derived_fit_setup', None)
+        self.__dict__.pop('_derived_fit_task', None)
+        self.__dict__.pop('_derived_fit_code', None)
         self.ev, self.task = None, None
         self.captures = []
         if hasattr(self,'target_cache'):self.target_cache.clear()
@@ -156,7 +162,7 @@ class ReplayEvaluator:
         self._gold_kept_cache.clear()
         self._packing_attempt = None
 
-    def validate_gold_observation(self, checked, report, task, *, schema='arclog-study-gold-kept-v1'):
+    def validate_gold_observation(self, checked, report, task, *, schema='arclog-study-gold-kept-v1', require_fit=True):
         """One completion/program/settings/full-slot gate for native gold reports."""
         stage='native gold BODY collection' if schema=='arclog-study-gold-body-v1' else 'native gold-kept observation'
         if not isinstance(report,dict):
@@ -180,7 +186,9 @@ class ReplayEvaluator:
                 or any(report.get('kept_assignment_missing_dets',[]))):
             raise ValueError('native gold-kept assignments omit Undefined DET slots')
         choices=report.get('kept_assignments')
-        if report.get('gold_fits') is not True or not isinstance(choices,list) or not choices:
+        if (not isinstance(choices,list) or type(report.get('gold_fits')) is not bool
+                or report['gold_fits']!=bool(choices)
+                or (require_fit and not choices)):
             raise ValueError('native gold-kept observation has no kept TRAIN FITS assignment')
         if (report.get('kept_assignment_count')!=len(choices)
                 or report.get('kept_assignment_missing_dets')!=[[] for _ in choices]
@@ -323,6 +331,7 @@ class ReplayEvaluator:
             selection = result.get('packing_selection', {}).get('selection')
             if selection is not None:
                 identity['packing']['entries_sha256'] = sha(selection['entries'])
+        if result.get('assignment_mode')=='derived':identity['assignment_mode']='derived'
         key = sha(identity)
         folder = self.artifacts/key
         folder.mkdir(exist_ok=True)
@@ -432,13 +441,15 @@ class ReplayEvaluator:
                     other_assignment_entries=other,
                     rule='saved values on every table dependency slot; absent compatible entry is unknown')
 
-    def replay_program(self, record, program, form, *, candidate=None,retain_all=False,retain_forms=None,full_rows=False,full_rows_selector=None):
+    def replay_program(self, record, program, form, *, candidate=None,retain_all=False,retain_forms=None,full_rows=False,full_rows_selector=None,assignment_mode='kept'):
         """Canonical low-level API for tool and n-mech, no copied evaluator.
 
         Caller supplies the whole generated program including OUT and the
         inserted table's form index. Returns all matched groups; stores ALL
         returned tables/assignments internally. No policy/target claim implied.
         """
+        if assignment_mode not in ('kept','derived'):
+            raise ValueError('assignment_mode must be kept or derived')
         if type(full_rows) is not bool:
             raise ValueError('full_rows must be boolean')
         if full_rows_selector is not None and (not full_rows or not callable(full_rows_selector)):
@@ -456,6 +467,7 @@ class ReplayEvaluator:
         start = time.monotonic()
         result = dict(schema='judgetool-replay-v1', verified=False,retain_all=retain_all,
                       full_rows=full_rows)
+        if assignment_mode=='derived':result['assignment_mode']='derived'
         if retain_forms is not None:result['retain_forms']=retain_forms
         try:
             checked = self.arclog.StudyProgram.from_sexp(program, self.settings)
@@ -472,9 +484,13 @@ class ReplayEvaluator:
                 if report.get('status') != 'complete':
                     result.update(engine='incomplete', reason=report.get('reason', report.get('status')))
                 else:
-                    result.update(engine='ran', kept_coverage=self._coverage(record, self.captures[-1], form=form))
-                    if result['kept_coverage']['status'] == 'unknown':
-                        result['unknown'] = True
+                    if assignment_mode=='derived':
+                        result.update(engine='ran',derived_coverage=dict(
+                            status='complete',assignment_scope='native Search',saved_kept_used=False))
+                    else:
+                        result.update(engine='ran', kept_coverage=self._coverage(record, self.captures[-1], form=form))
+                        if result['kept_coverage']['status'] == 'unknown':
+                            result['unknown'] = True
             except Exception as error:
                 result.update(engine='incomplete', reason=f'{type(error).__name__}: {error}')
         if self._packing_attempt is not None:
@@ -488,6 +504,11 @@ class ReplayEvaluator:
     def registry_interfaces(self,record):
         from registry import registry_interfaces
         return registry_interfaces(self,record)
+
+    def det_later_fit(self, record, *, native_base):
+        """Fresh mutant-derived TRAIN FITS and same-assignment TEST evidence."""
+        from derived_fit import check
+        return check(self, record, native_base=native_base)
 
     def gold_point_body(self,record):
         """One bounded existing evaluate_pair call; retain only GOLD evidence.

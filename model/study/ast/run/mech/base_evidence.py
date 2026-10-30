@@ -101,7 +101,7 @@ def program_fit(ev,record,adapter,ntrain,ntest,receipt_ref):
     Comparisons use the ONE shared comparator. Unsupported accepted-set/task
     formats remain unknown, never a false fit or a synthetic held-out output.
     """
-    from tables import kept_groups,compare
+    from tables import kept_groups,compare,task_output_rows
     L=ev.legacy;forms=L.split_forms(record['mutant_sexp'])
     point=next((i for i,f in enumerate(forms) if L.parse(f)[0]=='OUT'),None)
     result=dict(complete=False,fits_train=None,fits_test=None,refused=False,receipt_ref=receipt_ref)
@@ -118,13 +118,9 @@ def program_fit(ev,record,adapter,ntrain,ntest,receipt_ref):
         expected={};missing=[]
         for kind,key in ((1,'train'),(2,'test')):
             for i,pair in enumerate(task[key]):
-                grid=pair.get('output')
-                if (not isinstance(grid,list) or not grid or not all(isinstance(r,list) and r for r in grid)
-                        or len({len(r) for r in grid})!=1
-                        or any(type(c) is not int or not 0<=c<=9 for row in grid for c in row)):
+                rows=task_output_rows(pair.get('output'))
+                if rows is None:
                     missing.append((kind,i));continue
-                h=len(grid);w=len(grid[0])
-                rows=frozenset(((r,h-r-1,c,w-c-1),(grid[r][c],)) for r in range(h) for c in range(w))
                 for a in range(len(record['evaluation']['kept_assignments'])):expected[(a,kind,i)]={rows}
         columns=list(zip(native['tables']['column_names'][table],native['tables']['column_types'][table]))
         fields=[dict(field_name='P',type='Position'),dict(field_name='Col',type='Color')]

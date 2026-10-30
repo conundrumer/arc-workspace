@@ -29,6 +29,16 @@ class Incomplete(ValueError):
     pass
 
 
+def task_output_rows(grid):
+    """Encode a valid task grid as native Position/Color rows, else None."""
+    if (not isinstance(grid,list) or not grid or not all(isinstance(row,list) and row for row in grid)
+            or len({len(row) for row in grid})!=1
+            or any(type(c) is not int or not 0<=c<=9 for row in grid for c in row)):
+        return None
+    h,w=len(grid),len(grid[0])
+    return frozenset(((r,h-r-1,c,w-c-1),(grid[r][c],)) for r in range(h) for c in range(w))
+
+
 def axis_receipt(grouped):
     """Exact native-group axes in their own case-local assignment namespace."""
     return dict(required_axes=[list(k) for k in sorted(grouped['required'])],
