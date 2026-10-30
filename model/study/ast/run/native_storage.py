@@ -187,6 +187,77 @@ def read_block(ref,base):
     return binary_decode(zlib.decompress(data))
 
 
+def read_block_metadata(ref,base,*,fields,declared_only=(),max_header_bytes=64*1024*1024,
+                        max_metadata_buffer_bytes=64*1024*1024):
+    """Authenticate a block, reading selected metadata, never its value tail.
+
+    fields are tuple paths; '*' selects array members. declared_only paths
+    retain $buffer descriptors instead of reading their bytes. Buffer lengths
+    are declarations, not proof of tail presence, valid rows or zlib EOF.
+    The ordinary read_block/load_native validation contract is unchanged.
+    """
+    path=Path(base)/ref['path']
+    with path.open('rb') as src:
+        src.seek(ref['offset']);data=src.read(ref['bytes'])
+    if len(data)!=ref['bytes'] or hashlib.sha256(data).hexdigest()!=ref['sha256']:
+        raise ValueError('native pack digest mismatch: '+str(path))
+    decoder=zlib.decompressobj()
+    prefix=decoder.decompress(data,16)
+    if len(prefix)!=16 or prefix[:8]!=MAGIC:raise ValueError('bad native pack block magic')
+    size=struct.unpack_from('<Q',prefix,8)[0]
+    if size<2 or size>max_header_bytes:raise ValueError('native metadata header exceeds allowance')
+    encoded=decoder.decompress(decoder.unconsumed_tail,size)
+    if len(encoded)!=size:raise ValueError('truncated native metadata header')
+    header=json.loads(encoded)
+    paths=[tuple(p) for p in fields];declared_only={tuple(p) for p in declared_only}
+    def select(value,paths):
+        if () in paths:return value
+        if isinstance(value,dict):
+            return {key:select(child,[p[1:] for p in paths if p and p[0]==key])
+                    for key,child in value.items() if any(p and p[0]==key for p in paths)}
+        if isinstance(value,list) and any(p and p[0]=='*' for p in paths):
+            return [select(child,[p[1:] for p in paths if p and p[0]=='*']) for child in value]
+        raise ValueError('metadata selector does not match native header')
+    selected=select(header,paths);del header
+    buffers=[];declarations={}
+    def collect(value,at=()):
+        if isinstance(value,dict):
+            if set(value)=={'$buffer'}:
+                off,count=value['$buffer']
+                if type(off) is not int or type(count) is not int or off<0 or count<0:
+                    raise ValueError('invalid declared native metadata buffer')
+                declarations['.'.join(map(str,at))]=dict(offset=off,bytes=count)
+                if at not in declared_only:buffers.append((off,count,at))
+            else:
+                for key,child in value.items():collect(child,at+(key,))
+        elif isinstance(value,list):
+            for i,child in enumerate(value):collect(child,at+(i,))
+    collect(selected)
+    if sum(count for off,count,at in buffers)>max_metadata_buffer_bytes:
+        raise ValueError('selected metadata buffers exceed allowance')
+    # Discard intervening payload in bounded chunks; retain only requested
+    # metadata ranges. In particular values/extent cells are never restored.
+    position=0;pending=decoder.unconsumed_tail
+    for off,count,at in sorted(buffers):
+        if off<position:raise ValueError('overlapping selected native metadata buffers')
+        while position<off:
+            chunk=decoder.decompress(pending,min(off-position,1024*1024));pending=decoder.unconsumed_tail
+            if not chunk:raise ValueError('truncated native metadata buffer prefix')
+            position+=len(chunk)
+        chunks=[];remaining=count
+        while remaining:
+            chunk=decoder.decompress(pending,min(remaining,1024*1024));pending=decoder.unconsumed_tail
+            if not chunk:raise ValueError('truncated native metadata buffer')
+            chunks.append(chunk);remaining-=len(chunk);position+=len(chunk)
+        owner=selected
+        for part in at[:-1]:owner=owner[part]
+        owner[at[-1]]=b''.join(chunks)
+    return dict(metadata=selected,declared_buffers=declarations,
+                authentication=dict(compressed_range_sha256=ref['sha256'],
+                    zlib_tail_validated=False,value_payload_validated=False,
+                    header_bytes=size,metadata_buffer_bytes=sum(x[1] for x in buffers)))
+
+
 def load_native(ref,base):
     manifest=read_block(ref,base)
     if manifest['byteorder']!=sys.byteorder:raise ValueError('native byte order differs from host')
