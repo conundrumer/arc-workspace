@@ -34,7 +34,7 @@ row packet or feature-payload verdict is copied. The checked prefix/candidate
 syntax and actual fields/frames are the metadata on this layout; no native
 nf4f computation is fabricated from old kept packets.
 
-Publication authenticates the explicit f6428307 and 5f01bf6b fixed runtimes
+Publication authenticates the explicit f6428307, 5f01bf6b and 530bf8e7e fixed runtimes
 against their exact wheels/native binaries. Repeat `--runtime-ready` for the
 ready receipts in a mixed store. Each X/G packet selects its own matching
 binary/build; a default or first runtime is never grafted onto another context.
@@ -64,3 +64,10 @@ Run the data-root command `codex-adm/n-eval2-prefix-feature-join/publish.cmd`.
 It serializes stored data only; it can be run incrementally and again when
 acquisition ends. It does not reevaluate native rows. A loader must explicitly
 select this row-universe layout and use only the `inputs` tree for features.
+
+The final affected-only retry uses `runtime-body-replacement-530bf8e7e`.
+`publish-retry.cmd` supplies that ready receipt alongside f642, with optional
+5f01 when that build actually has stored contexts. Exact earlier multi-ready
+publications reuse their original row/label/proof files through the pinned
+e2d3a5c4 source predecessor. Adding runtime authority is not a native row replay
+or a claim that old native scopes became equivalent.

@@ -25,9 +25,12 @@ from judge3.dataset_format import write_json
 LAYOUT = 'prefix-u-full-body-train-v1'
 POLICY = 'native-prefix-parent-universe-v1'
 FIXED_RUNTIME_REVISIONS = frozenset(('f642830734cca0d1003004d1ec07e2ac0b52b358',
-    '5f01bf6beec9430bd7f47868da95a0f2fe8fad52'))
+    '5f01bf6beec9430bd7f47868da95a0f2fe8fad52',
+    '530bf8e7e876d87091ea20f10fd15943d7c717ff'))
 # Exact storage-only predecessor; its fixed-f642 input/policy checks are unchanged.
 PREDECESSOR_IMPLEMENTATION = '26236cb536b828e27521eb79ce023d8cdcabb1712671a91e8fa4af898c6bdc25'
+# Adding one explicitly accepted native build does not rewrite earlier tables.
+LIST_READY_PREDECESSORS = ('e2d3a5c44f036ce9a2329985db2712ae3bffed0c61c2c5c898eaf8fd5115a19c',)
 PREVIEW_LAYOUT = 'recorded-prefix-universe-preview-v1'
 
 
@@ -330,10 +333,11 @@ def publish(acquisition_ref, gold_ref, *, pair_id, point_id, output, result_ref=
             predecessor=sha(dict(X=acquisition_ref,G=gold_ref,result=result_ref,context=context_ref,
                 layout=layout,ready=original_ready,implementation=PREDECESSOR_IMPLEMENTATION))
             previous_list=old.get('runtime_readies')
-            current_predecessor=(sha(dict(X=acquisition_ref,G=gold_ref,result=result_ref,context=context_ref,
-                layout=layout,ready=previous_list,implementation=file_sha(__file__)))
-                if isinstance(previous_list,list) else None)
-            if old.get('key') in (predecessor,current_predecessor):
+            list_predecessors=({sha(dict(X=acquisition_ref,G=gold_ref,result=result_ref,context=context_ref,
+                layout=layout,ready=previous_list,implementation=implementation))
+                for implementation in (file_sha(__file__),*LIST_READY_PREDECESSORS)}
+                if isinstance(previous_list,list) else set())
+            if old.get('key')==predecessor or old.get('key') in list_predecessors:
                 storage_key=old.get('storage_key',old['key'])
                 old.update(key=key,storage_key=storage_key,runtime_readies=ready_refs,
                     reuse_reason='exact publication inputs/implementation; runtime provider list only, no row changes')
