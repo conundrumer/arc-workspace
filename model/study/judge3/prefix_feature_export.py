@@ -7,6 +7,7 @@ Tn are NEW context-local IDs in native packed available-table order; no legacy
 kept-store numbering, model/Ident alignment or relation-name joins are inferred.
 """
 import argparse
+import gc
 from collections import Counter
 from copy import deepcopy
 from functools import lru_cache
@@ -30,8 +31,53 @@ FIXED_RUNTIME_REVISIONS = frozenset(('f642830734cca0d1003004d1ec07e2ac0b52b358',
 # Exact storage-only predecessor; its fixed-f642 input/policy checks are unchanged.
 PREDECESSOR_IMPLEMENTATION = '26236cb536b828e27521eb79ce023d8cdcabb1712671a91e8fa4af898c6bdc25'
 # Adding one explicitly accepted native build does not rewrite earlier tables.
-LIST_READY_PREDECESSORS = ('e2d3a5c44f036ce9a2329985db2712ae3bffed0c61c2c5c898eaf8fd5115a19c',)
+PERFORMANCE_PREDECESSOR = '6cb202265757dca8cc0a3789b41c86dacff294a4a0dc5c851a3376031f287f27'
+LIST_READY_PREDECESSORS = ('e2d3a5c44f036ce9a2329985db2712ae3bffed0c61c2c5c898eaf8fd5115a19c',
+    PERFORMANCE_PREDECESSOR)
 PREVIEW_LAYOUT = 'recorded-prefix-universe-preview-v1'
+
+
+_SESSION=None
+
+
+def stamp(path):
+    path=Path(path);st=path.stat()
+    return (str(path),st.st_dev,st.st_ino,st.st_size,st.st_mtime_ns,st.st_ctime_ns)
+
+
+class JoinSession:
+    """One live context, JSON trees only; drop it before boundary collection.
+
+    JSON values are acyclic, so refcounts release each candidate promptly.
+    Automatic cyclic scans must not repeatedly traverse retained common rows.
+    No native session, inferred identity/model join or unbounded point cache.
+    """
+    def __enter__(self):
+        global _SESSION
+        if _SESSION is not None:raise ValueError('nested prefix join sessions')
+        self.gc_enabled=gc.isenabled();gc.disable();self.context=None
+        self.shared={};self.validated={};self.common_files={};self.gold_checks={};self.source_checks={}
+        self.stats=Counter();_SESSION=self;return self
+
+    def activate(self, context):
+        if context!=self.context:
+            self.shared.clear();self.validated.clear();self.common_files.clear()
+            self.gold_checks.clear();self.source_checks.clear();self.context=context
+            gc.collect();self.stats['context_boundaries']+=1
+
+    def __exit__(self,*unused):
+        global _SESSION
+        self.shared.clear();self.validated.clear();self.common_files.clear()
+        self.gold_checks.clear();self.source_checks.clear();_SESSION=None
+        gc.collect()
+        if self.gc_enabled:gc.enable()
+
+
+def ref_stamp(ref):
+    path=confined(ref['path']);actual=path if path.exists() else path.with_name(path.name+'.gz')
+    values=[stamp(actual)]
+    if actual.suffix=='.gz':values.append(stamp(sidecar(actual)))
+    return tuple(values)
 
 
 def sha(value):
@@ -39,11 +85,18 @@ def sha(value):
         allow_nan=False, separators=(',', ':')).encode()).hexdigest()
 
 
-def file_sha(path):
+@lru_cache(maxsize=2048)
+def _file_sha(path, signature):
     h = hashlib.sha256()
     with Path(path).open('rb') as source:
         for block in iter(lambda: source.read(1024 * 1024), b''): h.update(block)
-    return h.hexdigest()
+    value=h.hexdigest()
+    if stamp(path)!=signature:raise ValueError('file changed while hashing: '+str(path))
+    return value
+
+
+def file_sha(path):
+    path=Path(path);return _file_sha(str(path),stamp(path))
 
 
 def confined(path):
@@ -59,11 +112,20 @@ class Evidence:
         self.refs = []
         self.cache = {}
 
-    def read(self, ref):
+    def read(self, ref, *, shared=False):
         if not isinstance(ref, dict) or not {'path', 'sha256'} <= ref.keys():
             raise ValueError('missing explicit evidence reference')
         path = confined(ref['path']); key = (str(path), ref['sha256'])
         if key in self.cache: return self.cache[key]
+        shared_key=sha(ref)
+        before=ref_stamp(ref)
+        if shared and _SESSION is not None and shared_key in _SESSION.shared:
+            signature,value=_SESSION.shared[shared_key]
+            if before==signature:
+                if ref.get('original_sha_ref'):self.read(ref['original_sha_ref'],shared=True)
+                self.refs.append(deepcopy(ref));self.cache[key]=value
+                _SESSION.stats['shared_json_hits']+=1
+                return value
         if path.exists():
             if ('bytes' in ref and path.stat().st_size != ref['bytes']) or file_sha(path) != ref['sha256']:
                 raise ValueError('prefix evidence file SHA/size differs: ' + str(path))
@@ -81,7 +143,10 @@ class Evidence:
             # lossless conversion. The shared codec verifies the complete tail.
             confined(path.with_name(path.name + '.gz'))
             value = read_json(path, expected_sha256=ref['sha256'])
+        if before!=ref_stamp(ref):raise ValueError('evidence changed while reading: '+str(path))
         self.refs.append(deepcopy(ref)); self.cache[key] = value
+        if shared and _SESSION is not None:
+            _SESSION.shared[shared_key]=(before,value);_SESSION.stats['shared_json_loads']+=1
         return value
 
 
@@ -110,10 +175,10 @@ def checked_acquisition(value, evidence, side):
     if (value.get('policy') != POLICY or value.get('side') != side or
             receipt.get('test_cells') is not False or receipt.get('gold_kept_used') is not False):
         raise ValueError('acquisition lacks native prefix-only TRAIN authority')
-    opening = evidence.read(receipt['opening_ref'])
-    report = evidence.read(value['report_ref'])
-    packed = evidence.read(receipt['packed_acquisition_ref'])
-    source = evidence.read(receipt['source_ref'])
+    opening = evidence.read(receipt['opening_ref'],shared=True)
+    report = evidence.read(value['report_ref'],shared=side=='gold')
+    packed = evidence.read(receipt['packed_acquisition_ref'],shared=side=='gold')
+    source = evidence.read(receipt['source_ref'],shared=True)
     cov = opening.get('coverage', {})
     if (opening.get('schema') != 'arclog-study-prefix-universe-v1' or opening.get('status') != 'complete'
             or cov.get('enumeration_complete') is not True or cov.get('assignment_values_complete') is not True
@@ -135,12 +200,74 @@ def checked_acquisition(value, evidence, side):
             or packed.get('packing_ref') != report['packed_correspondence']['packing_ref']
             or source.get('source_sha256') != receipt['source_sha256']
             or source.get('runtime') != receipt['runtime'] or source.get('policy') != POLICY
-            or sha(source['source_record']) != source['source_sha256']):
+            or source_digest(source) != source['source_sha256']):
         raise ValueError('persisted adapter evidence does not bind original atomic query')
     native = report['packed_correspondence']
     if native.get('ident_namespace') != opening.get('ident_namespace') or native.get('universe_ref') != opening['universe_ref']:
         raise ValueError('native namespace/universe differs')
     return opening, report, source
+
+
+
+def source_digest(source):
+    if _SESSION is None:return sha(source['source_record'])
+    key=id(source);cached=_SESSION.source_checks.get(key)
+    if cached is not None and cached[0] is source:return cached[1]
+    value=sha(source['source_record']);_SESSION.source_checks[key]=(source,value)
+    return value
+
+
+def common_table(table,report,opening,*,source_ref,layout):
+    """Skip repeated cell work ONLY for the same authenticated common packet.
+
+    All metadata used by checked_table is compared, including native actual
+    entry-parent/model maps, physical aliases/types and family coverage. The
+    source ref binds the common rows; no row or numeric-Ident equality inferred.
+    """
+    if _SESSION is None:
+        value=checked_table(table,report,opening);value['row_universe']=layout;return value,None
+    packed=unique(report['packed_correspondence']['tables'],'table')[table['table']]
+    witness=(report['body_columns'] if table['role']=='prefix_body' else
+        unique(report['available_schemas'],'table')[table['table']])
+    signature=sha(dict(source=source_ref,table=table['table'],layout=layout,body_table=report['body_table'],
+        opening={k:opening[k] for k in ('universe_ref','ident_namespace','coverage','body_path')},
+        packed=packed,witness=witness,
+        entries=unique(report['entry_parent_map'],'table')[table['table']],
+        coverage=unique(report['table_coverage'],'table')[table['table']],
+        transport={k:v for k,v in table.items() if k!='entries'}))
+    cached=_SESSION.validated.get(signature)
+    if cached is not None:
+        _SESSION.stats['common_cell_validation_hits']+=1;return cached,signature
+    value=checked_table(table,report,opening);value['row_universe']=layout
+    _SESSION.validated[signature]=value;_SESSION.stats['common_cell_validations']+=1
+    return value,signature
+
+
+def common_file(path,value,identity):
+    key=(str(path),identity)
+    if _SESSION is not None and key in _SESSION.common_files:
+        previous,ref=_SESSION.common_files[key]
+        if ref_stamp(ref)==previous:
+            _SESSION.stats['common_output_hits']+=1;return ref
+    if path.exists():
+        if sha(read_json(path))!=sha(value):raise ValueError('shared context packet differs: '+str(path))
+        ref=reference(path)
+    else:ref=write_packet(path,value)
+    if _SESSION is not None:_SESSION.common_files[key]=(ref_stamp(ref),ref)
+    return ref
+
+
+def checked_gold(value,evidence):
+    if _SESSION is None:return checked_acquisition(value,evidence,'gold')
+    key=sha({k:v for k,v in value.items() if k not in ('tables','available_refs')})
+    cached=_SESSION.gold_checks.get(key)
+    if cached is not None:
+        answer,refs=cached
+        for ref in refs:evidence.read(ref,shared=True)
+        _SESSION.stats['gold_proof_hits']+=1;return answer
+    previous=len(evidence.refs);answer=checked_acquisition(value,evidence,'gold')
+    _SESSION.gold_checks[key]=(answer,evidence.refs[previous:])
+    return answer
 
 
 def unique(rows, key):
@@ -338,18 +465,22 @@ def publish(acquisition_ref, gold_ref, *, pair_id, point_id, output, result_ref=
                 for implementation in (file_sha(__file__),*LIST_READY_PREDECESSORS)}
                 if isinstance(previous_list,list) else set())
             if old.get('key')==predecessor or old.get('key') in list_predecessors:
+                if previous_list==ready_refs:
+                    return dict(status='reused',pair_id=pair_id,key=old['key'],
+                        implementation_predecessor=True)
                 storage_key=old.get('storage_key',old['key'])
                 old.update(key=key,storage_key=storage_key,runtime_readies=ready_refs,
                     reuse_reason='exact publication inputs/implementation; runtime provider list only, no row changes')
                 write_json(index,old,compact=True)
                 return dict(status='reused',pair_id=pair_id,key=key,storage_key=storage_key)
+    if _SESSION is not None:_SESSION.activate(sha(dict(context=context_ref,gold=gold_ref,point=point_id,layout=layout)))
     if result_ref:
         result = evidence.read(result_ref)
         if result.get('pair_id') != pair_id or result.get('point_id') != point_id:
             raise ValueError('discovery result belongs to another pair/point')
     else: result = None
     context = evidence.read(context_ref) if context_ref else None
-    value = evidence.read(acquisition_ref); gold = evidence.read(gold_ref) if gold_ref else None
+    value = evidence.read(acquisition_ref); gold = evidence.read(gold_ref,shared=True) if gold_ref else None
     opening, report, source = checked_acquisition(value,evidence,'mutant')
     authority=runtime_authority(value['receipt'],runtime_ready,preview=preview)
     if context:
@@ -362,6 +493,7 @@ def publish(acquisition_ref, gold_ref, *, pair_id, point_id, output, result_ref=
     if result and value['receipt'].get('candidate_sha256') != result['source_sha256']:
         raise ValueError('candidate source digest differs from indexed source')
     tables = unique(value['tables'], 'table')
+    external_tables=set()
     if value.get('available_refs'):
         if context is None or value.get('context') != context_ref or context.get('gold') != gold_ref:
             raise ValueError('external available refs lack their SAME-context authority')
@@ -374,7 +506,7 @@ def publish(acquisition_ref, gold_ref, *, pair_id, point_id, output, result_ref=
             table = unique(gold['tables'], 'table')[external['packet_table']]
             if table['table'] in tables or table['role'] != 'prefix_available':
                 raise ValueError('duplicate/external nonavailable table')
-            tables[table['table']] = table
+            tables[table['table']] = table;external_tables.add(table['table'])
     packed = report['packed_correspondence']['tables']
     admitted = [t['table'] for t in packed if 'prefix_available' in t['report_roles']]
     if set(tables) != set(admitted + [report['body_table']]):
@@ -384,7 +516,7 @@ def publish(acquisition_ref, gold_ref, *, pair_id, point_id, output, result_ref=
             raise ValueError('X/G retain different native runtime contexts')
         # A G-only failure cannot suppress a usable X; complete G, when present,
         # must still bind this exact U/namespace. Its rows are written label-only.
-        gold_open = evidence.read(gold['receipt']['opening_ref'])
+        gold_open = evidence.read(gold['receipt']['opening_ref'],shared=True)
         if (gold_open['universe_ref'],gold_open['ident_namespace']) != (opening['universe_ref'],opening['ident_namespace']):
             raise ValueError('G context differs; no cross-context/model/Ident join allowed')
     context_id = sha(dict(universe=opening['universe_ref'],namespace=opening['ident_namespace']))
@@ -394,14 +526,13 @@ def publish(acquisition_ref, gold_ref, *, pair_id, point_id, output, result_ref=
     private_dir = output/'private'/pair_id/key
     table_index = []; public_refs = []
     for ordinal, table_id in enumerate(admitted):
-        packet = checked_table(tables[table_id],report,opening);packet['row_universe']=layout
+        if table_id in external_tables:
+            packet,identity=common_table(tables[table_id],report,opening,source_ref=gold_ref,layout=layout)
+        else:
+            packet=checked_table(tables[table_id],report,opening);packet['row_universe']=layout
+            identity=sha(dict(packet=acquisition_ref,table=table_id,layout=layout))
         tn = 'T'+str(ordinal); target = point_dir/'tables'/(tn+'.json.gz')
-        if target.exists():
-            # Never overwrite a shared context with a different native table.
-            existing = read_json(target)
-            if sha(existing) != sha(packet): raise ValueError('shared context Tn packet differs')
-            ref = reference(target)
-        else: ref = write_packet(target,packet)
+        ref=common_file(target,packet,identity)
         public_refs.append(ref)
         witness = unique(report['available_schemas'],'table')[table_id]
         table_index.append(dict(id=tn,native_table=table_id,selector=unique(packed,'table')[table_id]['selector'],
@@ -412,10 +543,7 @@ def publish(acquisition_ref, gold_ref, *, pair_id, point_id, output, result_ref=
         ident_namespace=opening['ident_namespace'],model_policy='local model families; never zip across tables',
         source='independently checked prefix only; G and suffix excluded')
     point_file = point_dir/'point.json.gz'
-    if point_file.exists():
-        if sha(read_json(point_file)) != sha(point_value): raise ValueError('context point metadata differs')
-        public_refs.append(reference(point_file))
-    else: public_refs.append(write_packet(point_file,point_value))
+    public_refs.append(common_file(point_file,point_value,sha(point_value)))
     x = checked_table(tables[report['body_table']],report,opening);x['row_universe']=layout
     public_refs.append(write_packet(pair_dir/'tables'/'X.json.gz',x))
     # Only the independently checked native query prefix is feature syntax.
@@ -426,18 +554,15 @@ def publish(acquisition_ref, gold_ref, *, pair_id, point_id, output, result_ref=
     label = dict(schema='prefix-feature-label-v1',role='label_only',status='unavailable',reason=None)
     if gold is not None:
         try:
-            go, gr, _ = checked_acquisition(gold,evidence,'gold')
+            go, gr, _ = checked_gold(gold,evidence)
             body = unique(gold['tables'],'table')[gold['body_table']]
-            g=checked_table(body,gr,go);g['row_universe']=layout
+            g,g_identity=common_table(body,gr,go,source_ref=gold_ref,layout=layout)
             if not preview:runtime_authority(gold['receipt'],runtime_ready,preview=False)
             label.update(status='complete',table=g)
         except (ValueError,KeyError,TypeError) as error:
             label.update(reason=str(error),native=native_problem(gold,evidence))
     label_path = label_dir/'G.json.gz'
-    if label_path.exists():
-        if sha(read_json(label_path)) != sha(label): raise ValueError('shared native G label differs')
-        label_ref = reference(label_path)
-    else: label_ref = write_packet(label_path,label)
+    label_ref=common_file(label_path,label,sha(dict(source=gold_ref,layout=layout,status=label['status'],reason=label.get('reason'))))
     receipt = dict(schema='prefix-feature-publication-v1',key=key,pair_id=pair_id,point_id=point_id,
         row_universe=layout,coverage_authority=authority,context=context_id,source_sha256=value['receipt'].get('candidate_sha256'),
         acquisition_source=source['source_sha256'],runtime=value['receipt']['runtime'],
@@ -456,6 +581,8 @@ def publish(acquisition_ref, gold_ref, *, pair_id, point_id, output, result_ref=
 def publish_discovery(path, output, *, runtime_ready=None, preview=False):
     evidence=Evidence(); discovery=evidence.read(reference(path)); result=evidence.read(discovery['result'])
     if result.get('status') != 'complete':
+        if _SESSION is not None:
+            _SESSION.activate(('unavailable',result.get('point_id'),sha(result.get('context'))))
         detail=dict(status='unavailable',pair_id=result.get('pair_id'),reason=result.get('reason'))
         if result.get('acquisition'): detail['native']=native_problem(evidence.read(result['acquisition']),evidence)
         return detail
@@ -465,7 +592,24 @@ def publish_discovery(path, output, *, runtime_ready=None, preview=False):
                    output=output,result_ref=discovery['result'],context_ref=result['context'],runtime_ready=runtime_ready,preview=preview)
 
 
-def main():
+def ordered_discoveries(files):
+    groups={}
+    for path in files:
+        try:point=read_json(path).get('point_id',path.stem)
+        except (ValueError,OSError,TypeError,AttributeError):point=path.stem
+        groups.setdefault(point,[]).append(path)
+    for point in sorted(groups):
+        ordered=[]
+        for path in groups[point]:
+            try:
+                evidence=Evidence();discovery=evidence.read(reference(path));result=evidence.read(discovery['result'])
+                context=sha(result.get('context'))
+            except (ValueError,OSError,KeyError,TypeError):context=''
+            ordered.append((context,str(path),path))
+        for _,_,path in sorted(ordered):yield path
+
+
+def _main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--store',type=Path,default=DATA_ROOT/'judgetool/prefix-full-v1')
     parser.add_argument('--output',type=Path,default=DATA_ROOT/'feat-exp/prefix-u-v1')
@@ -485,13 +629,15 @@ def main():
         return 0
     files=([args.store/'published-pairs'/(p+'.json') for p in args.pair_id]
         if args.pair_id else sorted((args.store/'published-pairs').glob('*.json')))
-    for path in files:
+    for path in ordered_discoveries(files):
         operator=output/'operator'/(path.stem+'.json')
         resume_key=sha(dict(discovery=reference(path),implementation=file_sha(__file__),
             ready=ready_references(args.runtime_ready),preview=args.preview))
         if operator.exists():
             previous=read_json(operator)
-            if previous.get('resume_key')==resume_key and previous.get('result',{}).get('status')=='unavailable':
+            predecessor_key=sha(dict(discovery=reference(path),implementation=PERFORMANCE_PREDECESSOR,
+                ready=ready_references(args.runtime_ready),preview=args.preview))
+            if previous.get('resume_key') in (resume_key,predecessor_key) and previous.get('result',{}).get('status')=='unavailable':
                 result=dict(previous['result'],stored=True);counts['stored_unavailable']+=1
                 print(json.dumps(result),flush=True);continue
         try:result=publish_discovery(path,output,runtime_ready=args.runtime_ready,preview=args.preview)
@@ -501,8 +647,12 @@ def main():
             write_json(operator,dict(resume_key=resume_key,result=result),compact=True)
         counts[result['status']]+=1
         print(json.dumps(result),flush=True)
-    print(json.dumps(dict(summary=dict(counts))),flush=True)
+    print(json.dumps(dict(summary=dict(counts),performance=dict(_SESSION.stats) if _SESSION else {})),flush=True)
     return 0
+
+
+def main():
+    with JoinSession():return _main()
 
 
 if __name__=='__main__':raise SystemExit(main())

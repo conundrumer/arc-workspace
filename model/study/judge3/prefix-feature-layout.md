@@ -71,3 +71,31 @@ The final affected-only retry uses `runtime-body-replacement-530bf8e7e`.
 publications reuse their original row/label/proof files through the pinned
 e2d3a5c4 source predecessor. Adding runtime authority is not a native row replay
 or a claim that old native scopes became equivalent.
+
+
+## Publisher work reuse
+
+The offline join orders tiny discovery records by point and actual context before
+loading row packets. It retains only one context's read-only G/available data and
+validated common-table results. Every shared source and output still has an
+initial complete SHA check; dev/inode/size/mtime/ctime changes invalidate cached
+hashes or decoded values. Common cell validation is reused only for the same
+authenticated source packet/table with identical actual native physical schema,
+column aliases, parent/entry/model maps, family coverage, U and Ident namespace.
+Each unique X still receives full validation. No row or model alignment is
+inferred. Context changes drop retained row trees before cyclic collection;
+automatic cyclic GC is disabled during this acyclic JSON-only loop and restored
+on exit. File-digest metadata caches are bounded separately.
+
+Shared Tn, point metadata and G files are verified/written once per matching
+context instead of repeatedly parsing, hashing and comparing their entire row
+trees. G native/source proofs remain private and are checked once with their
+source refs reauthenticated through file stamps on reuse. The canonical codec,
+public packets and raw row order are unchanged. Existing publications and
+unavailable operator records produced by the exact 6cb20226 predecessor are
+retained with their original refs; matching runtime-ready lists need no index
+rewrite. Changed discovery/source/context still retries only that changed item.
+
+Switch by stopping the old publisher at a completed-pair boundary and restarting
+the same command against patched source and the same output root. Do not run
+two publishers against the same output. No native replay or acquisition occurs.
