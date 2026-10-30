@@ -409,12 +409,13 @@ class _ReplayBudget:
         return result
 
 
-def evaluate_cached(ev,record,clause,target,columns,selection,*,row_limit=100,max_mutant_replays=1):
+def evaluate_cached(ev,record,clause,target,columns,selection,*,row_limit=100,max_mutant_replays=1,include_table=True):
     """Canonical checks.evaluate, cached gold values, one mutant replay by default.
 
     Isolated globals bind only gold acquisition to selection. No shared module
     or evaluator method is patched. Lib/union instrumentation that would exceed
     the declared mutant-operation cap stays unknown; no hidden second operation.
+    include_table=False omits presentation only, avoiding row sorting/counts.
     """
     if selection['source_sha256']!=sha(record) or selection['adapter_sha256']!=sha(target['adapter']):
         raise Incomplete('cached pair selection source/adapter identity mismatch')
@@ -443,7 +444,7 @@ def evaluate_cached(ev,record,clause,target,columns,selection,*,row_limit=100,ma
     function=FunctionType(checks.evaluate.__code__,namespace,checks.evaluate.__name__,checks.evaluate.__defaults__,checks.evaluate.__closure__)
     function.__kwdefaults__=dict(checks.evaluate.__kwdefaults__ or {})
     proxy=_ReplayBudget(ev,max_mutant_replays)
-    result=function(proxy,record,clause,target,columns,explore=False,row_limit=row_limit)
+    result=function(proxy,record,clause,target,columns,explore=False,row_limit=row_limit,include_table=include_table)
     result['cached_case_verification']=dict(collector=_code_receipt(),gold_replays=0,
         mutant_replays=len(proxy.operations),max_mutant_replays=max_mutant_replays,operations=proxy.operations,
         selection_source_sha256=selection['source_sha256'],selection_adapter_sha256=selection['adapter_sha256'])

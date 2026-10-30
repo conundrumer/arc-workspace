@@ -105,7 +105,8 @@ def multiplicity(ev,record,adapter,canonical,ntrain,ntest,output):
     return dict(status='single_row_lib',queries=proofs,one_row_per_X=True,restrictions_only=True)
 
 
-def evaluate(ev,record,clause,target,columns=None,*,explore=False,row_limit=100):
+def evaluate(ev,record,clause,target,columns=None,*,explore=False,row_limit=100,include_table=True):
+    """Check a clause; include_table=False skips only the display table."""
     from evaluator import sha
     adapter=target['adapter'];ntrain=target['ntrain'];ntest=target['ntest']
     result=dict(schema='judgetool-clause-v2',outcome='unknown',verified=False,
@@ -160,7 +161,8 @@ def evaluate(ev,record,clause,target,columns=None,*,explore=False,row_limit=100)
                                     for k,family in grouped['groups'].items()})
         actual_columns=[actual_columns[i] for i in selected]
     result['projection_aliases']=proof.get('output_aliases',{})
-    result['table']=counts_table(grouped['groups'],actual_columns,row_limit)
+    if include_table:
+        result['table']=counts_table(grouped['groups'],actual_columns,row_limit)
     result['context_receipt']=dict(complete=True,required=len(grouped['required']),
         **axis_receipt(grouped),
         compatible_entry_ids=[e['entry'] for e in grouped['contexts']],
