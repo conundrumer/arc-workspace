@@ -17,6 +17,10 @@ columns, not all BODY witnesses or the component's output. `readers.json` gives
 the source readers and columns they need. `train.json` gives train input/output
 grids. `libraries.json` gives native library interfaces.
 
+New table files are gzip JSON (`.json.gz`); old plain JSON remains readable.
+Use the indexed path and `gzip.open` for a `.gz` suffix. A neighboring
+`.gz.sha256` records the SHA of the exact uncompressed JSON bytes.
+
 Each table has ordered physical `fields` and complete `entries`. A field gives
 its source `name`, native `type`, and frame/callable path when present. Use
 `callable_atom` to read X or an available table: printed nested field paths are
@@ -53,10 +57,14 @@ comparison. There are no test table rows or test output grids in these files.
 Load the index, schema, readers and change before inspecting rows:
 
 ```python
-import json, os
+import gzip, json, os
 from pathlib import Path
 p = Path(os.environ['PAIR_DIR'])
-load = lambda name: json.loads((p / name).read_text())
+def load(name):
+    path = p / name
+    with (gzip.open(path, 'rt', encoding='utf-8') if path.suffix == '.gz'
+          else path.open(encoding='utf-8')) as stream:
+        return json.load(stream)
 pair = load('pair.json')
 tables = {t['id']: t for t in pair['tables']}
 print(pair['change'])
@@ -174,7 +182,7 @@ arity mismatch even when the intended row restriction is correct.
 
 The whole exported result table is the default, useful for exploration. Add `--columns '["A","B"]'`
 to select explicit output labels in order. Commands print the result filename;
-read its `result.json` and the optional `table.json` using the same Python
+read its `result.json` and the optional table at `result["table"]` (usually `table.json.gz`) using the same Python
 recipe. Tables contain complete train rows, not previews. Result comparisons
 say how the candidate differs from each target. Receipts stay outside the files
 you read. `run` is exploration, not an answer, and has no graded outcome.

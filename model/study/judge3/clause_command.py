@@ -14,6 +14,7 @@ from study_paths import CODE_ROOT, DATA_ROOT
 sys.path.insert(0, str(CODE_ROOT / 'judgetool'))
 from dataset_format import FORMAT, result_packet, table_packet, write_json
 from result_records import publish_checked_result
+from paused_storage import write_gzip_json
 
 
 def execute(args):
@@ -67,10 +68,10 @@ def execute(args):
     if acquired is not None:
         packet = table_packet(acquired, table_id='result', source_name='&fix',
                               case=pair['case'], roles=['result'])
-        table_path = 'table.json'
-        write_json(args.output / table_path, packet)
+        table_path = 'table.json.gz'
+        write_gzip_json(args.output / table_path, packet)
     result = result_packet(checked, command=args.command, pair_id=pair_id, table_path=table_path)
-    write_json(args.output / 'result.json', result)
+    write_json(args.output / 'result.json', result, compact=True)
     expected_axes={name:[[a,kind,i] for a in range(len(record['evaluation']['kept_assignments']))
                          for i in range(target[count])]
                    for name,kind,count in (('train',1,'ntrain'),('test',2,'ntest'))}
@@ -109,7 +110,7 @@ def main():
         # particular it must not masquerade as a TEST replay's "unknown".
         result = dict(format=FORMAT, kind='error', command=args.command, engine=None,
                       reason=f'{type(error).__name__}: {error}', table=None, comparisons=[])
-        write_json(args.output / 'result.json', result)
+        write_json(args.output / 'result.json', result, compact=True)
     print(json.dumps(dict(result=str(args.output / 'result.json'), table=result.get('table'),
                           **({'outcome': result['outcome']} if 'outcome' in result else {})),
                      ensure_ascii=False))

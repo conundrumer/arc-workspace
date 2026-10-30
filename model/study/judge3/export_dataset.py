@@ -17,6 +17,7 @@ from study_paths import CODE_ROOT, DATA_ROOT
 sys.path.insert(0, str(CODE_ROOT / 'judgetool'))
 from dataset_format import FORMAT, table_packet, table_summary, pair_packet, write_json
 from nonrender_metadata import MetadataProducer
+from paused_storage import write_gzip_json
 
 
 def grouped(packet):
@@ -48,6 +49,7 @@ def _quarantine(path, error):
 def _case(ev, record, context, ntrain, ntest, cache):
     from evaluator import sha, read_json
     from evaluator_train import acquire_case_train, dependency_receipt
+    from paused_storage import read_gzip_json, write_gzip_json
     if not Path(cache).resolve().is_relative_to(DATA_ROOT.resolve()):
         raise ValueError('case cache must stay under the study data root')
     kept = context.get('kept_assignments')
@@ -64,16 +66,21 @@ def _case(ev, record, context, ntrain, ntest, cache):
                     relation_source_names=context.get('relation_source_names'),
                     runtime=ev.receipt, adapter=dependency_receipt(), ntrain=ntrain, ntest=ntest)
     path = cache / (sha(identity) + '.json')
-    if path.exists():
+    compressed = path.with_name(path.name + '.gz')
+    # A broken representation must not hide its valid sibling and trigger
+    # another native acquisition. Both readers validate before returning.
+    for stored, load in ((path, read_json), (compressed, read_gzip_json)):
+        if not stored.exists():
+            continue
         try:
-            return read_json(path), False
-        except ValueError as error:
-            _quarantine(path, error)
+            return load(stored), False
+        except (ValueError, OSError, EOFError, KeyError, TypeError) as error:
+            _quarantine(stored, error)
     print(f"case {context['name']}: fresh gold replay", file=sys.stderr, flush=True)
     case_context = dict(context, catalogue_path=context.get('catalogue_path'))
     value = acquire_case_train(ev, record, case_context, ntrain, ntest)
     # Cache failed/bounded acquisitions too: an exporter retry is explicit.
-    write_json(path, value)
+    write_gzip_json(compressed, value)
     return value, True
 
 
@@ -227,9 +234,12 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
         from det_full_body import inherit_available
         inherited=inherit_available(existing_point,shared,record,adapter['source']['task_path'],producer)
     def write_public(path, value):
-        write_json(path, value, compact=features is not None)
+        if Path(path).suffix == ".gz":
+            write_gzip_json(path, value)
+        else:
+            write_json(path, value, compact=True)
     def add(packet, table_id, name, case, roles, atom=None, **metadata):
-        path = 'tables/' + table_id + '.json'
+        path = 'tables/' + table_id + ('.json' if features is not None else '.json.gz')
         public = table_packet(packet, table_id=table_id, source_name=name, case=case,
                               roles=roles, callable_atom=atom, copy_rows=features is None,
                               sort_rows=features is not None)
