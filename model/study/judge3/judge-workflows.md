@@ -13,16 +13,23 @@ per line. Selection/admission belongs to the labeler; this runner does not
 compute a grade or native evidence. Each pair starts one Sonnet session with
 the brief and file directory, a sourced environment, and a short `judge`
 wrapper. Full rows stay on disk. `create` only generates files; it launches
-nothing. Pass an existing immutable repository snapshot, not a working tree:
+nothing. Pass a clean git worktree whose HEAD is the pinned commit, such as one
+kept by `scripts/merge_change.py --keep` or made with
+`git worktree add --detach`:
 
 ```sh
 PYTHON model/study/judge3/judge_workflows.py create \
   --calls DATA_ROOT/judge3/pilot/calls.jsonl \
   --output-dir DATA_ROOT/judge3/pilot/run \
-  --tool-snapshot MAIN_ROOT/.claude/runs/FULL_COMMIT \
+  --tool-snapshot WORKTREE \
   --python DATA_ROOT/ast/run/runtime-COMMIT/venv/bin/python \
   --sessions-per-child 3
 ```
+
+`create` records `git rev-parse HEAD` of that worktree and refuses a worktree
+that has uncommitted or untracked files. `ingest` and the labeler API refuse the
+run if the worktree is not clean, its HEAD differs from the recorded commit, or
+`judge_tool.py` differs from the recorded hash.
 
 The final stdout object names `parent.js`, launchable through the coordinator's
 Workflow tool as `scriptPath`. Children share the host's concurrency/token cap;

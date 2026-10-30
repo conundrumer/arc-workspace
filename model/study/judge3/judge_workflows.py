@@ -18,6 +18,7 @@ from pathlib import Path
 import re
 import shlex
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -46,6 +47,19 @@ def resolve(relative):
     result=data_path(DATA_ROOT/path)
     if result.relative_to(DATA_ROOT).as_posix()!=relative:raise ValueError('noncanonical DATA-relative path')
     return result
+
+def git(worktree,*args):
+    return subprocess.run(['git','-C',str(worktree),*args],check=True,capture_output=True,text=True).stdout.strip()
+def snapshot_head(snapshot,message):
+    """HEAD of a clean worktree of this repository; refuses anything else."""
+    snapshot=Path(snapshot).resolve()
+    try:
+        if Path(git(snapshot,'rev-parse','--show-toplevel')).resolve()!=snapshot:raise ValueError
+        if Path(git(snapshot,'rev-parse','--path-format=absolute','--git-common-dir')).resolve()!=(MAIN_ROOT/'.git').resolve():raise ValueError
+        head=git(snapshot,'rev-parse','HEAD')
+        if not re.fullmatch(r'[0-9a-f]{40}',head) or git(snapshot,'status','--porcelain','--untracked-files=all'):raise ValueError
+    except (ValueError,OSError,subprocess.CalledProcessError):raise ValueError(message) from None
+    return head
 
 def read_identity(ref):
     path=resolve(ref['path']);raw=path.read_bytes()
@@ -133,7 +147,7 @@ Return only pair_id and answer_path="{work/'answer.json'}" through the supplied 
 
 def create(args):
     directory=data_path(args.output_dir);snapshot=args.tool_snapshot.resolve()
-    if snapshot.parent!=MAIN_ROOT/'.claude/runs' or not re.fullmatch(r'[0-9a-f]{40}',snapshot.name):raise ValueError('--tool-snapshot must be MAIN_ROOT/.claude/runs/<40hex>')
+    commit=snapshot_head(snapshot,'--tool-snapshot must be the root of a clean git worktree of this repository')
     tool=snapshot/'model/study/judgetool/judge_tool.py'
     if not tool.is_file():raise ValueError('snapshot tool missing')
     python=Path(args.python).absolute()
@@ -171,7 +185,7 @@ def create(args):
         if len(content)>=SCRIPT_BYTES:raise ValueError('parent exceeds strict script size cap; split calls with make_batches')
         (stage/'parent.js').write_bytes(content);scripts['parent.js']=digest(content)
         manifest=dict(schema='pair-judge-workflow-v2',run_id=run_id,parent=str(directory/'parent.js'),pairs=rows,children=children,scripts=scripts,
-            config=dict(model='sonnet',sessions_per_child=args.sessions_per_child,tool_snapshot=str(snapshot),tool_sha256=digest(tool.read_bytes()),python=str(python)),
+            config=dict(model='sonnet',sessions_per_child=args.sessions_per_child,tool_snapshot=str(snapshot),tool_commit=commit,tool_sha256=digest(tool.read_bytes()),python=str(python)),
             calls=identity(args.calls),producer=dict(path=str(Path(__file__).resolve()),sha256=digest(Path(__file__).read_bytes())))
         save(stage/'run.json',manifest);stage.rename(directory)
     finally:
@@ -185,7 +199,7 @@ def verify_run(directory):
     if manifest['config']['model']!='sonnet':raise ValueError('workflow model differs')
     if 'parent.js' not in manifest['scripts'] or len(manifest['scripts'])<2:raise ValueError('parent/child scripts missing')
     snapshot=Path(manifest['config']['tool_snapshot'])
-    if snapshot.parent!=MAIN_ROOT/'.claude/runs' or not re.fullmatch(r'[0-9a-f]{40}',snapshot.name):raise ValueError('invalid frozen tool snapshot')
+    if snapshot_head(snapshot,'frozen tool snapshot is not a clean worktree')!=manifest['config']['tool_commit']:raise ValueError('snapshot HEAD moved')
     tool=snapshot/'model/study/judgetool/judge_tool.py'
     if digest(tool.read_bytes())!=manifest['config']['tool_sha256']:raise ValueError('snapshot tool changed')
     expected={p['pair_id']:p for p in manifest['pairs']}
