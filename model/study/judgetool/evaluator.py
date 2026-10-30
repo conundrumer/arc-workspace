@@ -9,7 +9,6 @@ from pathlib import Path as _StudyPath
 import sys as _study_sys
 _study_sys.path.insert(0, str(_StudyPath(__file__).resolve().parents[1]))
 from study_paths import CODE_ROOT, DATA_ROOT, MAIN_ROOT, REPO_ROOT, data_path
-import gzip
 import hashlib
 import importlib.util
 import json
@@ -134,7 +133,7 @@ class ReplayEvaluator:
                             budget_scope='one gold_tables operation, not entire candidate search',
                             reference_sha256=hashlib.sha256((self.reference/'engine_verify.py').read_bytes()).hexdigest(),
                             implementation_sha256=sha({name:hashlib.sha256((HERE/name).read_bytes()).hexdigest()
-                                for name in ('../study_paths.py','../native_correspondence.py','../normalized_gold.py','../prefix_universe.py','../current_native_names.py','../det_full_body.py','../legacy_body_metadata.py','../legacy_body_worker.py','../ast/run/provenance.py','evaluator.py','../judge3/paused_storage.py','derived_fit.py','runtime_compat.py','surface.py','tables.py','checks.py','catalog.py','registry.py','live_targets.py','case_collector.py','program_metadata.py','gold_body.py','candidate_train.py','raw_body.py','target_view.py','judge_view.py','judge_tool.py')}))
+                                for name in ('../study_paths.py','../native_correspondence.py','../normalized_gold.py','../prefix_universe.py','../current_native_names.py','../det_full_body.py','../legacy_body_metadata.py','../legacy_body_worker.py','../ast/run/provenance.py','evaluator.py','../judge3/paused_storage.py','../judge3/framed_jsonl.py','derived_fit.py','runtime_compat.py','surface.py','tables.py','checks.py','catalog.py','registry.py','live_targets.py','case_collector.py','program_metadata.py','gold_body.py','candidate_train.py','raw_body.py','target_view.py','judge_view.py','judge_tool.py')}))
 
     def _reset_session_state(self):
         self.task = None
@@ -414,17 +413,26 @@ class ReplayEvaluator:
             selected_form = result.get('form', int(record['point'][0])+1)
             retained_forms=result.get('retain_forms')
             selected_forms={str(f) for f in retained_forms} if retained_forms is not None else {str(selected_form)}
-            with gzip.open(folder/f'entries-{i}.jsonl.gz', 'wt', compresslevel=1) as stream:
-                for t in (t for t, form in enumerate(tables['form']) if result.get('retain_all')
-                          or str(form) in selected_forms):
+            from judge3.framed_jsonl import JsonlWriter
+            selected_tables=[t for t, form in enumerate(tables['form'])
+                             if result.get('retain_all') or str(form) in selected_forms]
+            expected_entries=sum(len(reader.bytable[t]) for t in selected_tables)
+            with JsonlWriter(folder/f'entries-{i}.jsonl.zst') as out:
+                committed=out.committed_lines
+                if committed>expected_entries:
+                    raise ValueError('artifact committed entries exceed native capture')
+                position=0
+                for t in selected_tables:
                     for e in reader.bytable[t]:
+                        position+=1
+                        if position<=committed:continue
                         try:
                             entry = reader.entry(e, with_extents=True, projection_stop=False)
                             row = dict(table=t, form=tables['form'][t],
                                        columns=tables['column_names'][t], types=tables['column_types'][t], entry=entry)
                         except Exception as error:
                             row = dict(table=t, entry=e, status='unavailable', reason=str(error))
-                        stream.write(canonical(row)+'\n')
+                        out.write_line((canonical(row)+'\n').encode('utf-8'))
         stored=result
         if engine_ref is not None:
             value=dict(result);value['engine_report']=None
