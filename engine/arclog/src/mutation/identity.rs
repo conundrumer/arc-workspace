@@ -177,6 +177,31 @@ fn conjunct(v: &Value) -> Result<Conjunct, String> {
     })
 }
 
+#[derive(Debug)]
+pub struct RecordedIdentityFailure { pub stage:&'static str, pub message:String }
+
+fn recorded_kind(program:&StudyProgram,at:&NodePath,kind:&str,replacement:Option<&Conjunct>)->Result<(),String> {
+    let Some(NodeRef::Conjunct(before))=node_at(NodeRef::Program(program.program().value()),at) else {
+        return Err("identity: recorded edit does not address a conjunct".into())
+    };
+    if kind=="delete" {return if replacement.is_none(){Ok(())}else{Err("identity: delete has a replacement".into())}}
+    let after=replacement.ok_or("identity: non-delete has no replacement")?;
+    let a=conjunct_json(before);let b=conjunct_json(after);
+    let valid=match kind {
+        "relation"=>before.atom().is_some() && after.atom().is_some() && a["node"]==b["node"]
+            && a["sites"]==b["sites"] && a["relation"]!=b["relation"],
+        "argument"=>before.atom().is_some() && after.atom().is_some() && a["node"]==b["node"]
+            && a["relation"]==b["relation"] && a["sites"]!=b["sites"],
+        "comparison"=>matches!((before,after),(Conjunct::Constraint(_),Conjunct::Constraint(_)))
+            && a["first"]==b["first"] && a["second"]==b["second"] && a["op"]!=b["op"],
+        "typed_interface"=>before.atom().is_some() && after.atom().is_some(),
+        "typed_equality"=>before.atom().is_some() && matches!(after,Conjunct::Constraint(c) if c.op==ConstraintOp::Eq),
+        "block"=>blocks::is_block(before) || blocks::is_block(after),
+        _=>false,
+    };
+    if valid {Ok(())} else {Err(format!("identity: recorded {kind} primitive has incompatible structure"))}
+}
+
 impl StudyProgram {
     pub fn construct_identity(
         &self,
@@ -203,6 +228,11 @@ impl StudyProgram {
         registry: &Registry,
         settings: &DecodeSettings,
     ) -> Result<ValidMutant, String> {
+        self.admit_identity_at_source(identity,registry,settings,true)
+    }
+
+    fn admit_identity_at_source(&self,identity:&Value,registry:&Registry,settings:&DecodeSettings,
+        generation_membership:bool)->Result<ValidMutant,String> {
         let point = self
             .mutation_points()
             .into_iter()
@@ -234,14 +264,14 @@ impl StudyProgram {
                 Some(conjunct(&e["replacement"])?)
             };
             let expected = text(&e["kind"])?;
-            // Check this stored primitive at the original site; never enumerate
-            // K-edit assignments or draw a replacement for it.
-            let choices=if expected=="block" {
-                blocks::alternatives(self,&at,registry,&mut DrawStats::default())?
+            let choice=if generation_membership {
+                // Generation keeps its original-site domain membership check.
+                let choices=if expected=="block" {
+                    blocks::alternatives(self,&at,registry,&mut DrawStats::default())?
             } else if expected.starts_with("typed_") {
                 typed::additions(self,&at,registry,&mut DrawStats::default())?
             } else {alternatives(self, &at, "mixed", registry, true)?};
-            let choice = choices.into_iter()
+                choices.into_iter()
                 .find(|(c, kind)| {
                     let kind = if kind.starts_with("argument_") {
                         "argument"
@@ -253,7 +283,11 @@ impl StudyProgram {
                 })
                 .ok_or_else(|| {
                     format!("identity: replacement is not a legal original-site choice at {at:?}")
-                })?;
+                })?
+            } else {
+                recorded_kind(self,&at,expected,replacement.as_ref())?;
+                (replacement,"recorded")
+            };
             let kind = match expected {
                 "argument" => "argument",
                 "relation" => "relation",
@@ -302,6 +336,35 @@ impl StudyProgram {
         }
         Ok(ValidMutant { spec })
     }
+
+    pub fn rehydrate_recorded_identity(&self,identity:&Value,stored:&StudyProgram,
+        registry:&Registry,settings:&DecodeSettings)->Result<(ValidMutant,Value),RecordedIdentityFailure> {
+        let attempt=|gold:&StudyProgram| -> Result<(ValidMutant,Value),RecordedIdentityFailure> {
+            let valid=gold.admit_identity_at_source(identity,registry,settings,false)
+                .map_err(|message|RecordedIdentityFailure{stage:"identity_admission",message})?;
+            let audit=valid.audit().map_err(|message|RecordedIdentityFailure{stage:"identity_admission",message})?;
+            let stream=valid.program().representation_certificate(stored,registry,settings)
+                .map_err(|message|RecordedIdentityFailure{stage:"stored_representation",message})?;
+            if stream["status"]!="complete" {
+                return Err(RecordedIdentityFailure{stage:"stored_representation",message:stream.to_string()})
+            }
+            let certificate=json!({"schema":"arclog-recorded-identity-certificate-v1","status":"complete",
+                "identity":valid.identity(),"gold_program_sexp":self.sexp(registry),
+                "current_program_sexp":valid.program().sexp(registry),"stored_program_sexp":stored.sexp(registry),
+                "generation_membership_checked":false,"admission_checks":{
+                    "original_point":true,"canonical_identity":true,"edit_kind":true,"atomic_edit":true,
+                    "interfaces":true,"makers":true,"names":true,"whole_program_check":true,
+                    "held_det_interfaces":true,"vocabulary":true,"unchanged_outside_edits":true,"stored_representation":true},
+                "audit":audit,"stream_path_certificate":stream});
+            Ok((valid,certificate))
+        };
+        let original=attempt(self);
+        if original.is_ok() || self.layout().is_none() {return original}
+        let decoded=self.decode_source(registry,settings)
+            .map_err(|message|RecordedIdentityFailure{stage:"identity_admission",message})?;
+        attempt(&decoded)
+    }
+
 }
 
 

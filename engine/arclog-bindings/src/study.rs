@@ -344,6 +344,21 @@ impl PyStudyProgram {
         Ok(Self {program,settings:self.settings})
     }
 
+    fn representation_certificate_json(&self,py:Python<'_>,source_program:&PyStudyProgram)->PyResult<String> {
+        if self.settings!=source_program.settings {return Err(crate::errors::RecordedIdentityError::new_err(("settings","source and current settings differ")))}
+        py.detach(||self.program.representation_certificate(&source_program.program,Registry::get(),&self.settings))
+            .map(|v|v.to_string()).map_err(|error|crate::errors::RecordedIdentityError::new_err(("stored_representation",error)))
+    }
+
+    fn rehydrate_recorded_identity(&self,py:Python<'_>,identity_json:&str,stored_program:&PyStudyProgram)->PyResult<(PyValidMutant,String)> {
+        if self.settings!=stored_program.settings {return Err(crate::errors::RecordedIdentityError::new_err(("settings","gold and stored settings differ")))}
+        let identity=arclog::study::render::parse_json(identity_json)
+            .map_err(|error|crate::errors::RecordedIdentityError::new_err(("identity_admission",error)))?;
+        let (inner,certificate)=py.detach(||self.program.rehydrate_recorded_identity(&identity,&stored_program.program,Registry::get(),&self.settings))
+            .map_err(|error|crate::errors::RecordedIdentityError::new_err((error.stage,error.message)))?;
+        Ok((PyValidMutant{inner,settings:self.settings},certificate.to_string()))
+    }
+
     fn construct_identity(&self, py: Python<'_>, identity_json: &str) -> PyResult<PyValidMutant> {
         let identity =
             arclog::study::render::parse_json(identity_json).map_err(PyValueError::new_err)?;

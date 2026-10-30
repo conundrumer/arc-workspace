@@ -9,6 +9,8 @@ use pyo3::prelude::*;
 create_exception!(arclog, Refusal, PyValueError, "A decode refuses a token outside its mask.");
 create_exception!(arclog, Fault, PyRuntimeError, "A run of the engine faults.");
 
+create_exception!(arclog, RecordedIdentityError, PyValueError, "Native recorded identity admission failed; args=(stage,message).");
+
 fn fault(fault: RunFault) -> PyErr {
     Fault::new_err(fault.message.to_string())
 }

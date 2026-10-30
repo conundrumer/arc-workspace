@@ -5,6 +5,7 @@
 //! Diagnostics from unavailable choices are counted, never silently repaired.
 pub mod edit;
 mod identity;
+pub use identity::RecordedIdentityFailure;
 mod typed;
 mod blocks;
 mod stored_prune;

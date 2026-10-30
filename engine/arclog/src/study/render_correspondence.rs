@@ -38,6 +38,18 @@ pub fn type_json(ty: &ValueType) -> Value {
         "cell_width":if ty.is_box(){4}else{1},"nominal":matches!(ty,ValueType::Pose(_))})
 }
 
+/// The one resolver/read-coordinate owner used by metadata and stream proofs.
+pub(crate) fn scalar_read_coordinates(checked:&CheckedProgram, at:&NodePath,
+    site:&NodePath, occurrence:&NodePath) -> (bool,bool,Option<u16>,Option<crate::eval::read_coordinates::SourceColumn>) {
+    let root=NodeRef::Program(checked.program.program.value());
+    let column=checked.program.column_position(at).or_else(||checked.program.column_position(site)).map(|p|p.0);
+    let input=node_at(root,occurrence).and_then(|n|n.atom()).is_some_and(|a|
+        matches!(a.relation,crate::program::RelationRef::Fact(crate::program::FactRelation::Input)));
+    let lifted=checked.program.reads_lifted(occurrence);
+    let source=column.and_then(|c|crate::eval::read_coordinates::ReadCoordinates::new(input,lifted).source(c));
+    (input,lifted,column,source)
+}
+
 // A node is paired only when its own native writer-token coverage and node
 // kind agree uniquely. Empty/ambiguous emissions remain explicitly unmapped.
 pub(crate) fn trace_paths(
@@ -361,28 +373,8 @@ pub fn export(
             Some(crate::resolver::Resolution::Lib(n)) => json!({"kind":"library","name":n.0}),
             other => json!({"kind":"unsupported","native":format!("{other:?}")}),
         };
-        let scalar_column = checked
-            .program
-            .column_position(&at)
-            .or_else(|| {
-                path(&argument["site_path"]).and_then(|p| checked.program.column_position(&p))
-            })
-            .map(|p| p.0);
-        let input = node_at(root, &occurrence)
-            .and_then(|n| n.atom())
-            .is_some_and(|atom| {
-                matches!(
-                    atom.relation,
-                    crate::program::RelationRef::Fact(crate::program::FactRelation::Input)
-                )
-            });
-        let source_column = scalar_column.and_then(|column| {
-            crate::eval::read_coordinates::ReadCoordinates::new(
-                input,
-                checked.program.reads_lifted(&occurrence),
-            )
-            .source(column)
-        });
+        let (input,_,scalar_column,source_column)=scalar_read_coordinates(checked,&at,
+            &path(&argument["site_path"]).ok_or("native scalar argument lacks site path")?,&occurrence);
         let entry_axis =
             source_column == Some(crate::eval::read_coordinates::SourceColumn::Example);
         let header_column = match source_column {

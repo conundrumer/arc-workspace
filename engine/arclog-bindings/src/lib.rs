@@ -70,6 +70,7 @@ pub fn register(names: &Names<'_, '_>) -> PyResult<()> {
     names.class::<streams::PyCaseStream>()?;
     names.class::<case_files::PyCaseFiles>()?;
     names.value("Refusal", module.py().get_type::<errors::Refusal>().into_any())?;
+    names.value("RecordedIdentityError", module.py().get_type::<errors::RecordedIdentityError>().into_any())?;
     names.value("Fault", module.py().get_type::<errors::Fault>().into_any())?;
     names.function(wrap_pyfunction!(decoder::step_batch_py, module)?)?;
     names.class::<PyReplayProgress>()?;

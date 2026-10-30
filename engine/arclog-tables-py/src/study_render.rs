@@ -40,6 +40,12 @@ fn study_program_export_json(py:Python<'_>,program:&PyStudyProgram,relation_sour
         }
         let source_export=if std::ptr::eq(source,program){export.clone()}else{source.program.render_json(Registry::get())?};
         export["correspondence"]=arclog::study::render_correspondence::export(&program.program,&source.program,Registry::get(),&program.settings,&export,&source_export,None,None)?;
+        // Exact-path callers keep their existing fast/default proof. Only a
+        // cross-representation path difference needs the additive certificate.
+        if !std::ptr::eq(source,program) && program.program.decode_stream(Registry::get(),&program.settings)?.paths
+            != source.program.decode_stream(Registry::get(),&source.settings)?.paths {
+            export["correspondence"]["stream_path_certificate"]=program.program.representation_certificate(&source.program,Registry::get(),&program.settings)?;
+        }
         Ok::<_,String>(export.to_string())
     })
         .map_err(PyValueError::new_err)
