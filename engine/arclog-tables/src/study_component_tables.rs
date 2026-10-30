@@ -95,20 +95,31 @@ pub fn assignment_map(tables:&[(usize,Table)],table_offset:usize,train_count:usi
 /// same schema adapter directly and retains bounded packing and annotations.
 pub fn relation_tables(program:&StudyProgram,origin:&Arc<CheckedProgram>,decoder:&Decoder<'_>,fixed:&[Vec<Assignment>],limits:&arclog::eval::Limits,
     work:&TableWork,budget:&mut Budget<'_>)->RelationTables {
-    let checked=program.checked();
-    let receipt=match HeldAssignments::new(Arc::clone(program.checked()),Arc::clone(origin),fixed) {
+    relation_tables_checked(program.checked(), origin, decoder, fixed, limits, work, budget)
+}
+
+/// Shared original-IR collector for checked prefix and whole-program owners.
+pub fn relation_tables_checked(checked:&Arc<CheckedProgram>,origin:&Arc<CheckedProgram>,decoder:&Decoder<'_>,fixed:&[Vec<Assignment>],limits:&arclog::eval::Limits,
+    work:&TableWork,budget:&mut Budget<'_>)->RelationTables {
+    let receipt=match HeldAssignments::new(Arc::clone(checked),Arc::clone(origin),fixed) {
         Ok(receipt)=>receipt,
         Err(error)=>return RelationTables {tables:Vec::new(),terminal:Some(End::Fault(error))},
     };
+    relation_tables_with_receipt(checked,decoder,&receipt,limits,work,budget)
+}
+
+/// A common prefix owns one receipt for relation tables and BODY extents.
+pub(crate) fn relation_tables_with_receipt(checked:&Arc<CheckedProgram>,decoder:&Decoder<'_>,receipt:&Arc<HeldAssignments>,
+    limits:&arclog::eval::Limits,work:&TableWork,budget:&mut Budget<'_>)->RelationTables {
     let mut tables=Vec::new();
     let collected=(|| ->Result<(),End> {
     let written=arclog::stream::written_stream(checked,decoder.vocabulary()).map_err(|d|End::Fault(fault(d.message,&NodePath::default())))?;
-    for form in &written.forms {for slot in materialized_slots(program.program().value(),&written,form) {
+    for form in &written.forms {for slot in materialized_slots(checked.program.program.value(),&written,form) {
         budget.charge_work(0).map_err(|bound|End::Stop(arclog::eval::Stop {bound,form:form.path.clone()}))?;
         let declared=&written.relations[slot];
         let relation=graph_relation(checked,decoder.registry(),&form.path,declared).ok_or_else(||End::Fault(fault("no native graph for continuation relation",&form.path)))?;
         let dets=relation_dets(checked,relation.node);
-        let context=AssignmentContext::Held {receipt:&receipt,limits,work};
+        let context=AssignmentContext::Held {receipt,limits,work};
         let examples=relation_examples_with_context(decoder,checked,&relation,&dets,work,context);
         let c=relation_metadata(decoder.registry(),checked,&form.path,&relation,slot as u32,&dets,examples).map(|c| {
             let c=Contents {name:relation_spelled(declared),keys:checked.program.column_keys(relation.node),..c};

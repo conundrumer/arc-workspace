@@ -9,9 +9,8 @@ use crate::registry::{LibEntry, Macro, ProposerKind, Registry};
 use crate::resolver::{DependencyKind, GraphNodeIndex, Resolution};
 use serde_json::{Value, json};
 
-fn column_witnesses(program: &StudyProgram, registry: &Registry, relation: &ProgramRelation, form: &NodePath) -> (String, Vec<Value>, Value) {
+pub fn column_witnesses(checked: &crate::check::CheckedProgram, registry: &Registry, relation: &ProgramRelation, form: &NodePath) -> (String, Vec<Value>, Value) {
     use crate::resolver::given::BindingProof;
-    let checked=program.checked();
     let reference=match relation {ProgramRelation::Declared(n)=>RelationRef::Declared(n.clone()),ProgramRelation::Output(n)=>RelationRef::Output(n.clone())};
     let Some(node)=checked.program.program_read(&reference) else {return ("unsupported_relation".into(),Vec::new(),Value::Null)};
     let output=match (&checked.program.graph.nodes[node.0 as usize].kind,relation) {
@@ -240,7 +239,7 @@ pub fn export(program: &StudyProgram, registry: &Registry) -> Result<Value, Stri
         let form=owner.map(|f|&f.path);
         let reference=match r {ProgramRelation::Declared(n)=>RelationRef::Declared(n.clone()),ProgramRelation::Output(n)=>RelationRef::Output(n.clone())};
         let display_name=crate::write::relation_ref(&reference,|n|match n {DeclaredName::Written(n)=>n.to_string(),DeclaredName::Slot(n)=>format!("&r{n}")});
-        let (witness_status,witnesses,graph)=form.map(|form|column_witnesses(program,registry,r,form))
+        let (witness_status,witnesses,graph)=form.map(|form|column_witnesses(program.checked(),registry,r,form))
             .unwrap_or_else(||("unsupported_definition".into(),Vec::new(),Value::Null));
         json!({"relation_slot":slot,"relation":program_relation(r),"source_name":crate::eval::determinations::relation_spelled(r),
             "display_name":display_name,

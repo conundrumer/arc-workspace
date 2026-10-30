@@ -55,6 +55,7 @@ fn evaluate_pair(
 pub(crate) fn register(names: &Names<'_, '_>) -> PyResult<()> {
     names.module().add("STUDY_SESSION_BYTES",STUDY_SESSION_BYTES)?;
     names.class::<PyStudyTaskEvaluator>()?;
+    names.class::<PyStudyPrefixUniverse>()?;
     continuation::register(names)?;
     component_tables::register(names)?;
     names.function(wrap_pyfunction!(evaluate_pair, names.module())?)
@@ -68,10 +69,26 @@ struct PyStudyTaskEvaluator {
     ident_namespace:String,
     task:arclog::task::Task,
     judged:arclog::task::JudgedTask,
-    session:TaskSession,
+    session:std::sync::Arc<TaskSession>,
     settings:arclog::stream::DecodeSettings,
     evidence:Vec<arclog_tables::tables::Table>,
     cache:std::sync::Mutex<study_pair::PairCache>,
+}
+
+/// Opaque common universe. Parent values and their native Ident namespace
+/// retain the task session until the receipt is closed or its last owner drops.
+#[pyclass(name="StudyPrefixUniverse", frozen, module="arclog")]
+struct PyStudyPrefixUniverse {
+    inner:std::sync::Mutex<Option<study_pair::prefix::Universe>>,
+    report:serde_json::Value,
+    session:std::sync::Arc<TaskSession>,
+    ident_namespace:String,
+}
+
+#[pymethods]
+impl PyStudyPrefixUniverse {
+    fn report_json(&self)->String {self.report.to_string()}
+    fn close(&self) {self.inner.lock().unwrap_or_else(|p|p.into_inner()).take();}
 }
 
 impl PyStudyTaskEvaluator {
@@ -102,7 +119,75 @@ impl PyStudyTaskEvaluator {
         let evidence=evidence_tables(&read,Registry::get());
         let mut cache=study_pair::PairCache::with_byte_bound(compact,session_bytes);
         cache.set_observation_start(observation_start);
-        Ok(Self {task_name:task.into(),ident_namespace:study_pair::table_transport_ref(),task:read,judged,session:TaskSession::new(SessionBound {bytes:session_bytes},settings.caps),settings,evidence,cache:std::sync::Mutex::new(cache)})
+        Ok(Self {task_name:task.into(),ident_namespace:study_pair::table_transport_ref(),task:read,judged,session:std::sync::Arc::new(TaskSession::new(SessionBound {bytes:session_bytes},settings.caps)),settings,evidence,cache:std::sync::Mutex::new(cache)})
+    }
+
+    /// Open the independently checked frontier before this candidate clause.
+    /// No caller assignments, later OUT/FITS or target DET value are admitted.
+    #[pyo3(signature=(program,body_path,*,max_assignments=128))]
+    fn prefix_universe(&self,py:Python<'_>,program:&PyStudyProgram,body_path:Vec<u32>,max_assignments:u64)
+        ->PyResult<(String,PyStudyPrefixUniverse)> {
+        if program.settings!=self.settings {return Err(PyValueError::new_err("task evaluator and program settings differ"));}
+        let point=arclog::program::path::NodePath(body_path.into_iter().map(arclog::program::path::PathStep).collect());
+        let constructions=constructions()?;
+        let opened=py.detach(||self.with_cache("prefix_universe",|cache| {
+            if cache.activate(&program.program) {self.session.results.clear();}
+            Ok(study_pair::prefix::open(&program.program,&point,&self.task,&self.session,constructions,&self.settings,max_assignments))
+        })).map_err(PyValueError::new_err)?;
+        let (inner,mut report)=match opened {
+            Ok(universe)=>{let report=universe.report.clone();(Some(universe),report)},
+            Err(reason)=>{let mut report=reason.report();
+                report["source_program_sexp"]=program.program.sexp(Registry::get()).into();
+                report["body_path"]=arclog::mutation::path_json(&point);
+                (None,report)},
+        };
+        report["task"]=self.task_name.clone().into();
+        report["ident_namespace"]=self.ident_namespace.clone().into();
+        Ok((report.to_string(),PyStudyPrefixUniverse {inner:std::sync::Mutex::new(inner),report,
+            session:std::sync::Arc::clone(&self.session),ident_namespace:self.ident_namespace.clone()}))
+    }
+
+    /// Materialize canonical full native rows against this exact parent receipt.
+    #[pyo3(signature=(universe,*,mutant=None,include_available=true))]
+    fn prefix_tables(&self,py:Python<'_>,universe:&PyStudyPrefixUniverse,mutant:Option<&PyValidMutant>,include_available:bool)
+        ->PyResult<(String,PyCaseTables)> {
+        if !std::sync::Arc::ptr_eq(&self.session,&universe.session) || self.ident_namespace!=universe.ident_namespace {
+            return Err(PyValueError::new_err("prefix universe belongs to another task session"));
+        }
+        if mutant.is_some_and(|m|m.settings!=self.settings) {return Err(PyValueError::new_err("candidate and evaluator settings differ"));}
+        let constructions=constructions()?;
+        let (report,columns)=py.detach(||self.with_cache("prefix_tables",|_| {
+            let mut guard=universe.inner.lock().map_err(|_|"prefix receipt was poisoned")?;
+            let inner=guard.as_mut().ok_or("prefix receipt unavailable or closed")?;
+            let mut result=study_pair::prefix::acquire(inner,mutant.map(|m|&m.inner),&self.task,&self.session,
+                constructions,&self.settings,include_available)?;
+            result.report["task"]=self.task_name.clone().into();
+            let materializer=Materializer::new(&self.session,&result.limits);
+            let pack_start=std::time::Instant::now();
+            let columns=case_columns_in(&materializer,&self.evidence,&result.tables,self.task.train.len(),None);
+            result.report["timings"]["packing_seconds"]=pack_start.elapsed().as_secs_f64().into();
+            result.report["packed_value_cells"]=columns.values.len().into();
+            result.report["packed_entry_count"]=columns.entries.table.len().into();
+            packing_status(&mut result.report,[&columns]);
+            let maps_complete=prefix_packed_map(&mut result.report,&columns);
+            let side=if mutant.is_some(){"mutant"}else{"gold"};
+            result.report["packed_correspondence"]=table_binding(&columns,side,&result.report,&self.ident_namespace);
+            result.report["packed_correspondence"]["query_prefix"]=result.report["query_prefix"].clone();
+            result.report["packed_correspondence"]["universe_ref"]=result.report["universe_ref"].clone();
+            let body=result.report["body_table"].as_u64();
+            if let Some(tables)=result.report["packed_correspondence"]["tables"].as_array_mut() {for table in tables {
+                table["report_roles"]=serde_json::json!(if table["table"].as_u64()==body {vec!["prefix_body"]}
+                    else if table["table"].as_u64().is_some_and(|i|i>=2) {vec!["prefix_available"]}else{Vec::<&str>::new()});
+            }}
+            result.report["packed_table_count"]=columns.tables.form.len().into();
+            let packing_complete=columns.packing_stop().is_none() && columns.tables.form.len()==result.tables.len()+2;
+            result.report["packing_complete"]=packing_complete.into();
+            result.report["complete"]=(packing_complete && maps_complete && result.report["status"]=="complete"
+                && result.report["table_coverage"].as_array().is_some_and(|rows|rows.iter().all(|r|r["complete"]==true))).into();
+            Ok((result.report,columns))
+        })).map_err(PyValueError::new_err)?;
+        let side=if mutant.is_some(){"mutant"}else{"gold"};
+        Ok((report.to_string(),PyCaseTables::of(py,self.task_name.clone(),side.into(),false,self.settings.projection_cap,&columns,None,None)?))
     }
 
     /// Exact native ingestion in this task's session, with the GIL released.
@@ -289,6 +374,36 @@ impl PyStudyTaskEvaluator {
 // remains unchanged: an output-buffer stop is separate collection evidence.
 // Actual packed indices identify a view; selector/form alone does not. This
 // references the compiler correspondence without reparsing names or types.
+/// Validate the shared materializer map against actual packed entry axes.
+/// Missing packed tables keep an explicit unavailable map, never a guessed
+/// ordinal into a separately persisted payload.
+fn prefix_packed_map(report:&mut serde_json::Value,columns:&arclog_tables::columns::CaseColumns)->bool {
+    let source=report["entry_parent_map"].take();
+    let mut complete=source.is_array();let mut maps=Vec::new();
+    for table in source.as_array().into_iter().flatten() {
+        let index=table["table"].as_u64().unwrap_or(u64::MAX) as usize;
+        let packed=columns.entries.table.iter().enumerate().filter_map(|(i,t)|((*t as usize)==index).then_some(i)).collect::<Vec<_>>();
+        let rows=table["entries"].as_array();
+        let valid=index<columns.tables.form.len() && rows.is_some_and(|rows|rows.len()==packed.len() &&
+            rows.iter().zip(&packed).all(|(row,&i)|row["example_kind"].as_u64()==Some(columns.entries.example_kind[i] as u64)
+                && row["example_index"].as_u64()==Some(columns.entries.example_index[i] as u64)
+                && row["model"].as_u64()==Some(columns.entries.model[i] as u64)));
+        let mut map=table.clone();
+        map["status"]=if valid {"complete"}else{"unavailable"}.into();
+        if valid {
+            if let Some(entries)=map["entries"].as_array_mut() {for (row,index) in entries.iter_mut().zip(packed) {row["entry"]=index.into();}}
+        } else {
+            complete=false;map["entries"]=serde_json::json!([]);
+            map["reason"]="materialized entry map not present with exact axes in packed payload".into();
+        }
+        maps.push(map);
+    }
+    report["materialized_entry_parent_map"]=source;
+    report["entry_parent_map"]=maps.into();
+    report["entry_parent_map_complete"]=complete.into();
+    complete
+}
+
 fn table_binding(columns:&arclog_tables::columns::CaseColumns,side:&str,report:&serde_json::Value,ident_namespace:&str)->serde_json::Value {
     let tables=&columns.tables;
     let roles=report["table_indices"].as_object();

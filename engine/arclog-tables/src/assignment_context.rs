@@ -38,6 +38,8 @@ impl HeldAssignments {
         Ok(Arc::new(Self { query: source, origin, values: values.into() }))
     }
 
+    pub(crate) fn parent_count(&self) -> usize { self.values.len() }
+
     fn validate(&self, target: &CheckedProgram) -> Outcome<()> {
         // The immutable queried owner was checked at construction. A query
         // against another program must establish the gold interface again.

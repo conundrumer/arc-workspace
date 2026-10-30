@@ -98,7 +98,43 @@ pub fn checked_prefix(
     point: &NodePath,
     registry: &Registry,
 ) -> Result<CheckedProgram, String> {
-    let prefix = prefix(program, point)?;
+    check_prefix_syntax(prefix(program, point)?, registry)
+}
+
+/// Exact source frontier before the selected clause. INIT retains its key and
+/// earlier inputs, never later ports or the candidate input itself.
+pub fn frontier(program: &StudyProgram, point: &NodePath) -> Result<Node<Program>, String> {
+    let candidate = prefix(program, point)?;
+    let mut forms = candidate.value().forms.to_vec();
+    let last = forms.pop().ok_or("prefix frontier has no candidate")?;
+    if let Form::Instance(instance) = last {
+        let mut instance = instance.value().clone();
+        let relative = &point.0[1..];
+        let first = relative.first().ok_or("INIT frontier path is absent")?.0 as usize;
+        if first == 0 && instance.key.is_some() {
+            let own = relative[1].0 as usize;
+            if own > 0 {
+                let mut key = instance.key.as_ref().unwrap().value().clone();
+                key.inputs = key.inputs[..own - 1].to_vec().into();
+                instance.key = Some(Node::new(key));
+                forms.push(Form::Instance(Node::new(instance)));
+            }
+        } else {
+            let own = first.checked_sub(usize::from(instance.key.is_some()))
+                .ok_or("INIT frontier input is absent")?;
+            instance.inputs = instance.inputs[..own].to_vec().into();
+            forms.push(Form::Instance(Node::new(instance)));
+        }
+    }
+    Ok(Node::new(Program { forms: forms.into() }))
+}
+
+pub fn checked_frontier(program: &StudyProgram, point: &NodePath, registry: &Registry)
+    -> Result<CheckedProgram, String> {
+    check_prefix_syntax(frontier(program, point)?, registry)
+}
+
+fn check_prefix_syntax(prefix: Node<Program>, registry: &Registry) -> Result<CheckedProgram, String> {
     let resolved = resolve(&prefix, None, &SolverScope::default(), registry);
     if resolved
         .diagnostics

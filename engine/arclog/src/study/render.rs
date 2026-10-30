@@ -135,7 +135,7 @@ pub(crate) fn name(n: &DeclaredName) -> Value {
         DeclaredName::Slot(n) => json!({"kind":"slot","slot":n}),
     }
 }
-pub(crate) fn program_relation(r: &ProgramRelation) -> Value {
+pub fn program_relation(r: &ProgramRelation) -> Value {
     match r {
         ProgramRelation::Declared(n) => json!({"kind":"declared","name":name(&n.0)}),
         ProgramRelation::Output(n) => relation_json(&RelationRef::Output(n.clone())),

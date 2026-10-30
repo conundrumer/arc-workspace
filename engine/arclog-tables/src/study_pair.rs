@@ -23,6 +23,9 @@ pub mod component_tables;
 #[path = "study_gold_body.rs"]
 pub mod gold_body;
 
+#[path = "study_prefix.rs"]
+pub mod prefix;
+
 #[path = "study_judgement.rs"]
 mod judgement;
 
