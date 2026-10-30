@@ -40,7 +40,14 @@ impl BodyView {
     }
     /// Compile the exact body in its original checked form and key context.
     pub fn at(program:&CheckedProgram,at:&NodePath)->Outcome<Self> {
-        Self::compile_at(program,at,false,None)
+        let root=NodeRef::Program(program.program.program.value());
+        // A branch's lexical bindings include the outer body's prefix.
+        // Use the same query for a whole branch and its completed prefix.
+        let nested=(1..at.0.len()).any(|end|matches!(node_at(root,&NodePath(at.0[..end].into())),Some(NodeRef::Body(_))));
+        let prefix=if nested {
+            match node_at(root,at) {Some(NodeRef::Body(body))=>Some(body.conjuncts.len()),_=>None}
+        } else {None};
+        Self::compile_at(program,at,false,prefix)
     }
 
     /// Query the full physical rows derived by an input. A broadcast input
@@ -137,9 +144,20 @@ impl BodyView {
         }).collect::<Vec<_>>();
         if prefix.is_some() {
             for (conjunct,_) in &conjuncts {
-                crate::safety::each_label_use(&crate::program::Body {conjuncts:vec![(*conjunct).clone()].into()},&mut |use_| {
-                    if let Some(label)=crate::types::use_label(use_) {if !columns.contains(&label) {columns.push(label);}}
-                });
+                let mut add=|label| {if !columns.contains(&label) {columns.push(label);}};
+                match conjunct {
+                    // A selected branch can join labels whose first spelling
+                    // was in another branch. The checked scalar sites already
+                    // identify those labels; freshness is not their identity.
+                    Conjunct::Atom(_) | Conjunct::Constraint(_)=>
+                        crate::read::columns::site_label_uses(conjunct,&mut |use_| {
+                            if let Some(label)=crate::types::use_label(use_) {add(label);}
+                        }),
+                    // Keep the language's exported interface for an intact OR
+                    // or IF. Its private orientation labels must not become
+                    // query outputs through their finite native domains.
+                    _=>for label in crate::read::columns::made_labels(&crate::program::Body {conjuncts:vec![(*conjunct).clone()].into()}) {add(label)},
+                }
             }
         } else {
             for (body,_) in &bodies {for label in crate::read::columns::made_labels(body) {if !columns.contains(&label) {columns.push(label);}}}
