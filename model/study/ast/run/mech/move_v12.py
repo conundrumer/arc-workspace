@@ -611,7 +611,7 @@ def apply(a,db):
             refreshed,aliases,counters=refresh(value,old,oldroot,new,newroot,proof,a);migrated.update(refreshed);counts.update(counters);counts['base_changed']+=1
         migrated.update(source_sha256=entry[0],source={k:newloc[k] for k in ('corpus','file','line','stream')},retained=new.get('retained'),reasons=new.get('rejection_reasons',[]),old=new.get('code_label'))
         # Original producer metadata describes retained facts. New search facts
-        # carry their own producer/operation ledger in this binding proof.
+        # have their own producer/operation ledger in this binding proof.
         proof=dict(proof,refresh=dict(algorithm_sha256=algorithm_sha,counts=counters))
         migrated.update(code_manifest=manifest,code_sha256=manifest_sha,runner_sha256=runner_sha,
             source_binding=dict(database=str(a.output),old_source_sha256=source,current_source_sha256=entry[0],old_result_sha256=oldsha,input_proof_sha256=entry[2]))
