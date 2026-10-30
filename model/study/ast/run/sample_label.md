@@ -31,7 +31,7 @@ A sample line has schema `study-sample-v1`:
 A candidate has one of these kinds:
 
 - `native_edit_identity`: `{identity, operation, text[, stream]}`. `identity` is the native edit identity that `gold.construct_identity` takes, `text` is the whole mutant program, and `stream` is the whole mutant program's `{ids, model}`.
-- `body_replacement`: `{text[, stream]}`. `text` is the whole program, with the body at `point.body_path` replaced. `stream` holds the replacement body's tokens in the decoder context of gold up to that point. These samples get status `unavailable` until a native constructor for this kind exists.
+- `body_replacement`: `{text, source_revision[, stream]}`. `text` is the whole program, with the body at `point.body_path` replaced. `source_revision` names the producer's revision. `stream` holds the replacement clause's completion tokens in the decoder context of gold up to that point, for RULE and DET points only. Before the sample becomes a member, `population_consume.construct_body` gets its native identity from `gold.construct_body_replacement`, which checks the whole program and that only that body differs. A sample that native refuses gets status `unavailable`, with native's reason, which starts with `body_replacement:`. Where native refuses only the stream, the driver labels the sample without it and records the reason in `stages.body_stream`.
 
 `sample_label.sample_record(...)` builds a sample line and computes `sample_id` and `gold_ref`.
 

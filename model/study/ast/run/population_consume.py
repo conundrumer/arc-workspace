@@ -130,6 +130,16 @@ def _identity_gold(task,case,gold_ref,tasks):
     return ev,gold
 
 
+def construct_body(member,tasks):
+    """The native ValidMutant of a body_replacement member. Native checks the whole candidate program and that only
+    the body at member['point'] differs from gold; their reasons start with 'body_replacement:'."""
+    _,gold=_identity_gold(member['task'],member['case'],canonical(member['gold']),str(tasks))
+    c=member['construction'];program=object_value(member['program'])
+    text=program['text'] if isinstance(program,dict) else program
+    return gold.construct_body_replacement(member['point'],text,canonical(c['body_stream']) if c.get('body_stream') else None,
+        source_revision=c['source_revision'],task=member['task'],case=member['case'])
+
+
 def _same_native_program(member,rec,tasks):
     """Only text mismatches need this check (e.g. repaired writer names)."""
     if not member.get('identity') or not rec.get('mutant_stream'):return False
@@ -339,7 +349,8 @@ def materialize_one(member,session,*,pair_id=None,input_sha256=None):
                 cached=(signature,hashlib.sha256(task_path.read_bytes()).hexdigest());session.task_hashes[task]=cached
             if cached[1]!=member['task_sha256']:raise ValueError('task input changed; create new population membership')
             construction=member['construction']
-            if construction['kind']!='native_edit_identity':raise ValueError('native whole-body reconstruction adapter unavailable; candidate retained')
+            if construction['kind'] not in ('native_edit_identity','body_replacement'):raise ValueError('unknown construction kind: '+str(construction['kind']))
+            if not construction.get('identity'):raise ValueError('member has no native identity')
             gold_object=object_value(member['gold']);key=(member['task'],member['case'],member['gold']['sha256'])
             if key!=current:
                 if store:store.close()
@@ -358,7 +369,9 @@ def materialize_one(member,session,*,pair_id=None,input_sha256=None):
             if mutant.sexp()!=expected:raise ValueError('candidate reconstruction differs')
             ms=mutant.decode_stream();audit=json.loads(mutant.audit_json())
             if isinstance(program,dict) and (ms[0]!=program['stream']['ids'] or list(ms[1])!=program['stream']['model']):raise ValueError('sampler native program stream differs')
-            if audit['changed_atoms']!=member['K']:raise ValueError('candidate edit count differs')
+            if construction['kind']=='body_replacement':
+                if mutant.k!=member['K'] or audit.get('changed_bodies')!=1 or audit.get('outside_body_unchanged') is not True:raise ValueError('candidate body audit differs')
+            elif audit['changed_atoms']!=member['K']:raise ValueError('candidate edit count differs')
             row={k:member[k] for k in ('task','case','point','clause','kind','K','operation','identity')}
             row.update(type='pair',record_format=c.RECORD_FORMAT,programs=dict(gold=gold.sexp(),mutant=mutant.sexp()),gold_sexp=gold.sexp(),mutant_sexp=mutant.sexp(),mutant_stream=dict(ids=ms[0],model=list(ms[1]),paths=ms[2]),audit=audit,
                 relation_source_names=json.loads(gold.relation_source_names_json(str(c.MAIN_ROOT/'work/arclog/gen'),task,member['case'])),producer_ref=producer_sha,population_inputs=inputs)

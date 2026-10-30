@@ -44,9 +44,10 @@ def sample_record(*,task,task_sha256,case,gold,point,candidate,proposal=None):
 
     `point` is {body_path, clause_path, kind} of a point in gold.points(). `candidate` is one of
     {kind: native_edit_identity, identity, operation, text[, stream]} and
-    {kind: body_replacement, text[, stream]}. For native_edit_identity, `stream` is the whole program's stream.
-    For body_replacement, `text` is the whole program with the body at point.body_path replaced, and `stream`
-    holds the replacement body's tokens in the decoder context of gold up to that point.
+    {kind: body_replacement, text, source_revision[, stream]}. For native_edit_identity, `stream` is the whole
+    program's stream. For body_replacement, `text` is the whole program with the body at point.body_path replaced,
+    `source_revision` names the producer's revision, and `stream` holds the replacement clause's completion tokens
+    in the decoder context of gold up to that point (RULE and DET only).
     `proposal` is the producer's own facts.
     """
     if candidate['kind'] not in KINDS:raise ValueError('unknown candidate kind '+str(candidate['kind']))
@@ -97,8 +98,11 @@ def member(a,record,gold):
         value.update(K=len(identity['edits']),operation=candidate['operation'],identity=identity,construction=dict(kind='native_edit_identity',identity=identity))
         return digest(pair_key(value)),value
     if candidate['kind']=='body_replacement':
-        value.update(K=1,operation='replace_body',identity=None,construction=dict(kind='body_replacement',stream=candidate.get('stream')))
-        return digest(dict(schema='study-sample-body-v1',sample_id=record['sample_id'])),value
+        if not candidate.get('source_revision'):raise ValueError('body_replacement candidate has no source_revision')
+        # The pair ID needs the native identity, which Stages.construct gives.
+        value.update(K=1,operation='replace_body',identity=None,
+            construction=dict(kind='body_replacement',source_revision=candidate['source_revision'],body_stream=candidate.get('stream')))
+        return None,value
     raise ValueError('unknown candidate kind '+str(candidate['kind']))
 
 
@@ -179,6 +183,20 @@ class Stages:
             if s is not None:s.close()
         self.sources.close();self.old.close()
 
+    def construct(self,value):
+        """The canonical member and pair ID of a body_replacement sample. A body stream that native rejects is
+        reported and dropped, because the whole candidate text is checked without it."""
+        from population_consume import construct_body
+        note=None
+        try:mutant=construct_body(value,self.a.tasks)
+        except ValueError as error:
+            if not (str(error).startswith('body_replacement:body_stream') and value['construction'].get('body_stream')):raise
+            note=str(error);value=dict(value,construction=dict(value['construction'],body_stream=None))
+            mutant=construct_body(value,self.a.tasks)
+        identity=json.loads(mutant.identity_json)
+        value=dict(value,identity=identity,K=mutant.k,construction=dict(value['construction'],identity=identity),program=put_object(self.a.root,mutant.sexp()))
+        return digest(pair_key(value)),value,note
+
     def run(self,pair,value):
         out={}
         def stage(name,call):
@@ -250,13 +268,20 @@ def label(a):
         stages=Stages(a,db,log)
         with JsonlWriter(out) as writer:
             for record in pending(a,done):
-                try:
-                    pair,value=member(a,record,golds.get(record.get('gold_ref')))
-                    admit(db,pair,value)
+                line=None
+                try:pair,value=member(a,record,golds.get(record.get('gold_ref')))
                 except (ValueError,KeyError,TypeError) as error:
                     line=label_line(record,None,None)|dict(status='rejected',reason=str(error))
-                else:
+                if line is None:
+                    note=None
+                    try:
+                        if pair is None:pair,value,note=stages.construct(value)
+                        admit(db,pair,value)
+                    except ValueError as error:
+                        line=label_line(record,pair,None)|dict(status='unavailable',reason=str(error))
+                if line is None:
                     ran=stages.run(pair,value);log.flush()
+                    if note:ran['body_stream']=dict(dropped=note)
                     if joined_reader is None:joined_reader=reader(a.root)
                     joined=joined_reader.read_pair(pair)
                     line=label_line(record,pair,joined)|dict(stages=ran)
