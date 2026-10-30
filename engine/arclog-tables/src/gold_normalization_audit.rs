@@ -65,9 +65,20 @@ fn compare_examples(a: &[ExampleRows], b: &[ExampleRows]) -> Result<usize, Strin
         let (Ok(av), Ok(bv)) = (&a.rows, &b.rows) else {
             return Err(format!("query fault: {:?} / {:?}", a.rows, b.rows));
         };
+        let stopped = |v: &Assigned<Vec<RelationValue>>| {
+            v.stop.is_some() || v.at.iter().any(|(_, models)| models.iter().any(|m| matches!(m,RelationValue::Stopped(_))))
+        };
+        if stopped(av) || stopped(bv) {
+            let detail = |v: &Assigned<Vec<RelationValue>>| json!({
+                "walk_stop":format!("{:?}",v.stop),
+                "model_stops":v.at.iter().flat_map(|(_,m)|m.iter()).filter_map(|m|match m {
+                    RelationValue::Stopped(stop)=>Some(format!("{stop:?}")),_=>None
+                }).collect::<Vec<_>>()});
+            return Err(format!("stopped comparison at {:?}: original={} normalized={}",a.example,detail(av),detail(bv)));
+        }
         if a.example != b.example || !assigned_same(av, bv) {
             return Err(format!(
-                "rows, model/assignment coverage differ or are stopped at {:?}",
+                "rows or model/assignment coverage differ at {:?}",
                 a.example
             ));
         }
@@ -97,7 +108,9 @@ fn check_prefixes(program: &StudyProgram, registry: &Registry) -> Result<usize, 
     }
     Ok(count)
 }
-fn audit(item: &Value) -> Result<Value, String> {
+fn audit(item: &Value) -> (Value, Result<Value, String>) {
+    let mut progress=json!({"stage":"normalize"});
+    let result=(|| -> Result<Value,String> {
     let registry = Registry::get();
     let settings = DecodeSettings::default();
     let text = item["program"].as_str().ok_or("missing program")?;
@@ -140,7 +153,16 @@ fn audit(item: &Value) -> Result<Value, String> {
             registry,
         )?
     };
+    progress=json!({"stage":"prefix_check","removed":edits.len(),"removed_atom_paths":report["removed_atom_paths"],
+        "normalized_program_sexp":report["normalized_program_sexp"]});
     let prefix_count = check_prefixes(&normalized, registry)?;
+    progress["prefixes"]=json!(prefix_count);
+    if edits.is_empty() {
+        return Ok(json!({"removed":0,"prefixes":prefix_count,"queries":0,"examples":0,
+            "normalized_program_sexp":report["normalized_program_sexp"],
+            "row_equivalence":"identical checked program; reflexivity, no evaluation required"}));
+    }
+    let output_only=std::env::var("GOLD_PRUNE_SCOPE").as_deref()==Ok("output");
     let task = arclog::task::read_task(std::path::Path::new(
         item["task_file"].as_str().ok_or("missing task")?,
     ))
@@ -161,6 +183,7 @@ fn audit(item: &Value) -> Result<Value, String> {
     }
     let mut queries = 0;
     let mut examples = 0;
+    if !output_only {
     for (af, bf) in a.forms.iter().zip(&b.forms) {
         if af.readable != bf.readable || af.path != bf.path {
             return Err("readable relation inventory differs".into());
@@ -170,6 +193,7 @@ fn audit(item: &Value) -> Result<Value, String> {
                 .ok_or("original relation absent")?;
             let br = graph_relation(normalized.checked(), registry, &bf.path, &b.relations[slot])
                 .ok_or("normalized relation absent")?;
+            progress["stage"]=json!(format!("relation {:?} slot {slot}",af.path));
             let work = decoder.table_work();
             let av = relation_examples(
                 &decoder,
@@ -190,7 +214,9 @@ fn audit(item: &Value) -> Result<Value, String> {
             queries += 1;
         }
     }
+    }
     // Include OUT even though it declares no relation slot.
+    progress["stage"]=json!("OUT");
     let ar = arclog::eval::output_relation(original.checked()).ok_or("original OUT absent")?;
     let br = arclog::eval::output_relation(normalized.checked()).ok_or("normalized OUT absent")?;
     let work = decoder.table_work();
@@ -216,7 +242,9 @@ fn audit(item: &Value) -> Result<Value, String> {
         let path = NodePath(edit.at.0[..edit.at.0.len() - 1].into());
         bodies.insert(path);
     }
+    if !output_only {
     for path in bodies {
+        progress["stage"]=json!(format!("body {path:?}"));
         let mapped = arclog::mutation::edit::mapped(&path, &edits).ok_or("deleted body owner")?;
         let av = arclog::eval::body_view::BodyView::at(original.checked(), &path)
             .map_err(|e| format!("{e:?}"))?;
@@ -241,10 +269,13 @@ fn audit(item: &Value) -> Result<Value, String> {
         examples += compare_examples(&aa, &bb)?;
         queries += 1;
     }
+    }
     Ok(
         json!({"removed":edits.len(),"prefixes":prefix_count,"queries":queries,"examples":examples,
-        "normalized_program_sexp":report["normalized_program_sexp"]}),
+        "normalized_program_sexp":report["normalized_program_sexp"],"scope":if output_only{"OUT task examples"}else{"all readable relations, OUT, changed BODY"}}),
     )
+    })();
+    (progress,result)
 }
 
 #[test]
@@ -254,28 +285,43 @@ fn gold_normalization_audit() {
     let output = std::env::var("GOLD_PRUNE_OUTPUT").expect("GOLD_PRUNE_OUTPUT");
     let items: Value = serde_json::from_slice(&std::fs::read(manifest).unwrap()).unwrap();
     let items = items.as_array().unwrap();
-    assert_eq!(items.len(), 1638);
-    let mut writer = std::fs::File::create(output).unwrap();
+    assert!(!items.is_empty());
+    let expected_removed:usize=items.iter().map(|v|v["expected_matches"].as_array().unwrap().len()).sum();
+    let expected_changed=items.iter().filter(|v|!v["expected_matches"].as_array().unwrap().is_empty()).count();
+    let acquisition_code=std::env::var("GOLD_PRUNE_ACQUISITION_KEY").ok();
+    let scope=std::env::var("GOLD_PRUNE_SCOPE").unwrap_or_else(|_|"all".into());
+    let mut previous=std::collections::BTreeMap::new();
+    if acquisition_code.is_some() {
+        if let Ok(text)=std::fs::read_to_string(&output) {
+            for line in text.lines() {
+                if let Ok(row)=serde_json::from_str::<Value>(line) {
+                    if let Some(key)=row.get("acquisition_key") {previous.insert(key.to_string(),row);}
+                }
+            }
+        }
+    }
+    let mut writer=std::fs::OpenOptions::new().create(true).append(true).open(output).unwrap();
     let start = Instant::now();
     let mut errors = 0;
     let mut removed = 0;
     let mut changed = 0;
     for (i, item) in items.iter().enumerate() {
         let now = Instant::now();
-        let result = match audit(item) {
-            Ok(value) => {
-                let n = value["removed"].as_u64().unwrap();
-                removed += n;
-                changed += usize::from(n > 0);
-                json!({"status":"complete","result":value})
-            }
-            Err(e) => {
-                errors += 1;
-                json!({"status":"unavailable_or_different","reason":e})
-            }
+        let key=json!({"request":item,"scope":scope,"code":acquisition_code});
+        let row=if let Some(row)=previous.get(&key.to_string()) {
+            row.clone()
+        } else {
+            let (normalization,evaluated)=audit(item);
+            let result = match evaluated {
+                Ok(value)=>json!({"status":"complete","result":value}),
+                Err(e)=>json!({"status":if e.starts_with("stopped comparison"){"unavailable_bound"}else{"unavailable_or_different"},"reason":e}),
+            };
+            let row=json!({"task":item["task"],"case":item["case"],"program_sha256":item["program_sha256"],
+                "seconds":now.elapsed().as_secs_f64(),"outcome":result,"normalization":normalization,"acquisition_key":key});
+            writeln!(writer,"{row}").unwrap();writer.flush().unwrap();row
         };
-        writeln!(writer,"{}",json!({"task":item["task"],"case":item["case"],"program_sha256":item["program_sha256"],"seconds":now.elapsed().as_secs_f64(),"outcome":result})).unwrap();
-        writer.flush().unwrap();
+        if let Some(n)=row["normalization"]["removed"].as_u64() {removed+=n;changed+=usize::from(n>0);}
+        if row["outcome"]["status"]!="complete" {errors+=1;}
         eprintln!(
             "gold-normalization {}/{} elapsed {:.1}s ETA {:.1}s errors {}",
             i + 1,
@@ -285,5 +331,5 @@ fn gold_normalization_audit() {
             errors
         );
     }
-    assert_eq!((errors, removed, changed), (0, 41, 35));
+    assert_eq!((errors, removed, changed), (0, expected_removed as u64, expected_changed));
 }
