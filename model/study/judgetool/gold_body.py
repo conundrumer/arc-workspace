@@ -10,7 +10,8 @@ from evaluator import canonical, sha
 from study_paths import CODE_ROOT
 from tables import Incomplete, full_kept_matches, comparison_type
 from program_metadata import type_identity
-from raw_body import body_schema
+from native_correspondence import Correspondence, AtomicPacked, Unavailable
+from copy import deepcopy
 
 
 def _held_entries(native, table, report, old_by_fresh):
@@ -52,31 +53,18 @@ def capture(ev,record):
                 raise Incomplete('runtime lacks original gold_body/gold_kept endpoints')
             program=isolated.arclog.StudyProgram.from_sexp(record['gold_sexp'],isolated.settings)
             export=json.loads(isolated.arclog.study_program_export_json(program))
-            views=[v for v in export['body_views'] if v['body_path']==record['point']]
-            if len(views)!=1:raise Incomplete('original gold BODY path unavailable or ambiguous')
-            view=views[0]
-            # The checked IR's Layout may alpha-name authored labels (Key ->
-            # P, P -> P2). Public bindings use its native decoded-source Layout.
-            # Establish that spelling correspondence from the SAME program,
-            # before acquiring values; never infer it from names or ordinals.
-            decoded_export=json.loads(isolated.arclog.study_program_export_json(program.decode_source()))
-            source_views=[v for v in decoded_export['body_views'] if v['body_path']==record['point']]
-            if len(source_views)!=1:raise Incomplete('decoded source BODY path unavailable or ambiguous')
-            source_view=source_views[0]
-            if (source_view['owner_path']!=view['owner_path'] or source_view['kind']!=view['kind']
-                    or source_view.get('input_port')!=view.get('input_port')):
-                raise Incomplete('native source decoding changed original BODY ownership')
-            physical={c['label_id']:c for c in view['columns']}
-            source_labels={c['label_id']:c for c in source_view['columns']}
-            if (len(physical)!=len(view['columns']) or len(source_labels)!=len(source_view['columns'])
-                    or physical.keys()!=source_labels.keys()):
-                raise Incomplete('native source decoding changed scoped BODY LabelIds')
-            for label,column in physical.items():
-                source_column=source_labels[label]
-                if (column['body_column']!=source_column['body_column'] or
-                        comparison_type(type_identity(isolated,record,column['type'])[0])!=
-                        comparison_type(type_identity(isolated,record,source_column['type'])[0])):
-                    raise Incomplete('native source decoding changed BODY physical column or type')
+            # Public fields refer to the decoded-source representation. The
+            # native bridge supplies current paths/columns, including any
+            # permutation or alpha renaming. Never rederive that bridge here.
+            source_program=program.decode_source()
+            source_export=json.loads(isolated.arclog.study_program_export_json(source_program))
+            bridged=json.loads(isolated.arclog.study_program_export_json(program,source_program=source_program))
+            correspondence=Correspondence(bridged,program_sexp=export['program_sexp'],
+                source_program_sexp=source_export['program_sexp'])
+            source_correspondence=Correspondence(source_export,program_sexp=source_export['program_sexp'],
+                source_program_sexp=source_export['program_sexp'])
+            view=correspondence.body_from_source(record['point'])
+            source_view=source_correspondence.body(record['point'])
             evidence=json.loads(program.choice_evidence_json('[]'))
             if evidence.get('schema')!='arclog-study-choices-v1' or evidence.get('complete') is not True:
                 raise Incomplete('original gold full DET schema unavailable')
@@ -88,14 +76,14 @@ def capture(ev,record):
             old_by_fresh=full_kept_matches(ev.legacy,choices,evidence['dets'],record)
             stage='gold_body'
             at=time.monotonic();ledger.append(dict(operation=stage,status='started',fits_walk=False))
-            status,payload=native_ev.gold_body(program,record['point'],canonical(choices))
+            status,payload=native_ev.gold_body(program,view['body_path'],canonical(choices))
             report=json.loads(status)
             ledger[-1].update(status=report.get('status'),seconds=time.monotonic()-at)
             observed=isolated.validate_gold_observation(program,report,record['task'],schema='arclog-study-gold-body-v1')
             if (observed!=choices or report.get('gold_observation_ref')!=kept.get('gold_observation_ref')
                     or report.get('gold_observation_cached') is not True):
                 raise Incomplete('original BODY did not reuse the exact native gold observation')
-            if (report.get('body_path')!=record['point'] or report.get('owner_path')!=view['owner_path']
+            if (report.get('body_path')!=view['body_path'] or report.get('owner_path')!=view['owner_path']
                     or report.get('body_status',{}).get('status')!='complete'
                     or report.get('body_coverage',{}).get('complete') is not True
                     or report.get('body_table_packed') is not True):
@@ -107,12 +95,27 @@ def capture(ev,record):
                         not isinstance(counts,list) or len(counts)!=len(choices) or
                         any(type(c) is not int or c<0 for c in counts)):
                     raise Incomplete('original BODY model enumeration is incomplete')
-            native=isolated.legacy.native(payload);table=report['body_table'];ts=native['tables']
-            if (type(table) is not int or not 0<=table<len(ts['form']) or
-                    any(str(ts[k][table])!=str(v) for k,v in view['native_table_selector'].items() if k in ('form','point'))):
-                raise Incomplete('original BODY native table differs from requested source')
+            # The binding is consumed only alongside its original returned
+            # payload. Persist the complete digest immediately; no later
+            # report/payload rehydration is authorized by this live receipt.
+            stage='packed_binding';binding_start=time.monotonic()
+            native=isolated.legacy.native(payload);table=report['body_table']
+            packed=AtomicPacked(report,native['_native_reader'],program_sexp=export['program_sexp'],side='gold')
+            packed_table=packed.table(table,role='gold_body_kept')
+            packed_receipt=packed.receipt(payload,report_sha256=sha(report),
+                source_sha256=sha(record),runtime=isolated.receipt)
+            (folder/'packed-acquisition.json').write_text(canonical(packed_receipt)+'\n')
+            schema=deepcopy(native['_native_reader'].schema(table))
+            if (len(schema)!=len(view['columns']) or
+                    packed_table['cell_width']!=sum(c['physical_type']['cell_width'] for c in view['columns'])):
+                raise Incomplete('original BODY physical width differs from native correspondence')
+            for field in view['columns']:
+                physical=field['physical_column'];descriptor=field['physical_type']
+                if (type(physical) is not int or not 0<=physical<len(schema)
+                        or schema[physical]['type'] not in (descriptor['type'],descriptor['wire_type'])):
+                    raise Incomplete('original BODY packed physical type differs from native correspondence')
             held=_held_entries(native,table,report,old_by_fresh)
-            schema=body_schema(isolated,native,table,view)
+            binding_seconds=time.monotonic()-binding_start
             paths={Path(__file__).resolve(),Path(ev.legacy.__file__).resolve(),
                 Path(ev.legacy.native.__code__.co_filename).resolve(),
                 Path(ev.legacy.native.__globals__['_NATIVE'].__file__).resolve()}
@@ -125,8 +128,11 @@ def capture(ev,record):
                 original_source_sha256=sha(record),gold_program_sha256=sha(record['gold_sexp']),
                 kept_context_sha256=sha(record['evaluation']['kept_assignments']),
                 body_path=record['point'],owner_path=view['owner_path'],scope=report['body_scope'],table=table,
-                source_label_correspondence=dict(proof='same native program decode_source; exact scoped LabelId, physical column and type',
-                    checked_columns=view['columns'],source_columns=source_view['columns']),
+                source_label_correspondence=dict(schema='arclog-study-correspondence-v1',
+                    proof='native source_body_path/source_body_column and scoped label mappings',
+                    current_export_sha256=sha(bridged),source_export_sha256=sha(source_export),
+                    correspondence_sha256=sha(bridged['correspondence'])),
+                packed_acquisition=packed_receipt,packed_binding_seconds=binding_seconds,
                 native_gold_kept_calls=1,native_gold_body_calls=1,native_mutant_replays=0,
                 gold_observation_ref=report['gold_observation_ref'],native_axis_complete=True,
                 full_kept_match=old_by_fresh,entry_kept_assignments=held,operations=ledger,
@@ -146,32 +152,39 @@ def capture(ev,record):
         (folder/'gold-body.json').write_text(canonical(report)+'\n')
         (folder/'receipt.json').write_text(canonical(dict(receipt,seconds=time.monotonic()-start))+'\n')
         yield dict(ev=isolated,native=native,table=table,view=view,source_view=source_view,schema=schema,
+                   correspondence=correspondence,source_correspondence=source_correspondence,
                    held_entries=held,report=report,receipt=receipt)
 
 
 def projection(body,record,binding):
-    """Map the authenticated public fields to original BODY LabelIds/columns."""
+    """Look up public source fields in the certified current BODY layout."""
     view=body['view'];schema=body['schema'];ev=body['ev']
-    if binding['body_path']!=view['body_path'] or binding['owner_path']!=view['owner_path']:
+    source_view=body['source_correspondence'].body(binding['body_path'])
+    if (binding['body_path']!=record['point'] or binding['owner_path']!=source_view['owner_path']
+            or body['correspondence'].body_from_source(binding['body_path'])['body_path']!=view['body_path']):
         raise Incomplete('public projection belongs to another original BODY')
-    by_label={c['ast_label_id']:c for c in schema}
-    if len(by_label)!=len(schema):raise Incomplete('original BODY has ambiguous physical LabelIds')
-    # capture authenticated this decoded-source view against the actual
-    # checked program's LabelIds/physical layout. Authored spelling belongs to
-    # that source Layout, not the compiler's alpha-named checked Layout.
-    labels={c['label_id']:c for c in body['source_view']['columns']};indices=[]
+    indices=[]
     for field in binding['projected_schema']:
         source=field['source_body_column']
         if source is None:
             if field['type']!='Unit' or field.get('source_projection',{}).get('inserted_constant',{}).get('kind')!='unit':
                 raise Incomplete('original BODY projection lacks certified inserted Unit')
             indices.append(None);continue
-        identity=field['native_label_identity'];label=identity['label_id']
-        if (identity.get('body_path',view['body_path'])!=view['body_path'] or label not in by_label
-                or label not in labels or labels[label]['label_spelling']!=identity['source_label_spelling']):
-            raise Incomplete('original BODY physical field lacks exact scoped source identity')
-        column=by_label[label]
-        if comparison_type(type_identity(ev,record,column['type'])[0])!=comparison_type(type_identity(ev,record,field['type'])[0]):
+        try:
+            original=body['source_correspondence'].body_column(binding['body_path'],source)
+            identity=field['native_label_identity']
+            if (identity.get('body_path',binding['body_path'])!=binding['body_path']
+                    or identity['label_id']!=original['label_id']
+                    or identity.get('owner_path',source_view['owner_path'])!=source_view['owner_path']
+                    or identity.get('scope_path',original['scope_path'])!=original['scope_path']
+                    or identity['source_label_spelling']!=original['canonical_source']['name']):
+                raise Incomplete('public BODY field differs from native source identity')
+            current=body['correspondence'].body_column_from_source(binding['body_path'],source,
+                scope_path=original['scope_path'],label_id=original['label_id'])
+        except Unavailable as error:
+            raise Incomplete(str(error)) from error
+        index=current['physical_column']
+        if comparison_type(type_identity(ev,record,schema[index]['type'])[0])!=comparison_type(type_identity(ev,record,field['type'])[0]):
             raise Incomplete('original BODY physical field type differs')
-        indices.append(column['index'])
+        indices.append(index)
     return indices

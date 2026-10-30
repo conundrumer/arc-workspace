@@ -130,3 +130,104 @@ class Correspondence:
                     yield deepcopy(dict(physical_type=current, source_type=original,
                         relation_slot=relation['relation_slot'], physical_column=field['physical_column'],
                         source_column=source))
+
+    def body_from_source(self, source_path):
+        """Invert only native-certified path links, requiring uniqueness."""
+        wanted = _path(source_path)
+        rows = [r for r in self._bodies.values() if r.get('source_status') == 'resolved'
+                and r.get('source_body_path') is not None and _path(r['source_body_path']) == wanted]
+        if len(rows) != 1:
+            raise Unavailable('native source BODY has no unique current path')
+        return deepcopy(rows[0])
+
+    def body_column_from_source(self, source_path, column, *, scope_path, label_id):
+        """Invert the emitted physical permutation and scoped label proof."""
+        body = self.body_from_source(source_path)
+        rows = [f for f in body['columns'] if f.get('source_body_column') == column
+                and f.get('canonical_source', {}).get('status') == 'resolved'
+                and f['canonical_source'].get('scope_path') == list(scope_path)
+                and f['canonical_source'].get('label_id') == label_id]
+        if len(rows) != 1:
+            raise Unavailable('native source BODY field has no unique current physical column')
+        field = rows[0]
+        _type(field['physical_type']); _type(field['canonical_source']['source_type'])
+        return deepcopy(field)
+
+
+def live_payload_digest(payload):
+    """Hash exact typed native buffers and all metadata without copying values.
+
+    This is a framed content digest, not a storage format. It cannot reload a
+    payload or authenticate a separately supplied persisted payload by itself.
+    """
+    import hashlib
+    import json
+    buffers = 0
+    def describe(value):
+        nonlocal buffers
+        if isinstance(value, (bytes, bytearray, memoryview)):
+            view = memoryview(value).cast('B')
+            buffers += view.nbytes
+            return ['buffer', view.nbytes, hashlib.sha256(view).hexdigest()]
+        if isinstance(value, dict):
+            return ['object', [[k, describe(v)] for k, v in sorted(value.items())]]
+        if isinstance(value, (list, tuple)):
+            return ['array', [describe(v) for v in value]]
+        if value is None or type(value) in (str, int, bool, float):
+            return ['scalar', value]
+        raise Unavailable('unsupported native payload digest metadata')
+    names = ('task', 'case', 'concept', 'projection_cap', 'base', 'base_tokens',
+             'base_tables', 'materialization_stop', 'dtypes', 'values', 'tables',
+             'entries', 'assigned', 'projections', 'projection_rows', 'flows', 'copies')
+    framed = describe({name: getattr(payload, name) for name in names})
+    data = json.dumps(framed, ensure_ascii=False, sort_keys=True,
+                      separators=(',', ':'), allow_nan=False).encode()
+    return dict(format='native-live-framed-sha256-v1', sha256=hashlib.sha256(data).hexdigest(),
+                buffer_bytes=buffers, reloadable=False, persisted_payload=False)
+
+
+class AtomicPacked:
+    """Validate only an original atomic native report/CaseTables acquisition.
+
+    No constructor for persisted reports/payloads is provided. Rule B requires
+    an actual stored-payload binding receipt for any later persisted lookup.
+    """
+    def __init__(self, report, reader, *, program_sexp, side):
+        value = report.get('packed_correspondence', {})
+        if (not isinstance(value, dict)
+                or value.get('schema') != 'arclog-study-packed-correspondence-v1'
+                or value.get('program_sexp') != program_sexp or value.get('side') != side
+                or not isinstance(value.get('packing_ref'), str) or not value['packing_ref']):
+            raise Unavailable('atomic native packed program/side binding unavailable')
+        self._value = value
+        self._reader = reader
+        self._tables = _unique(value.get('tables'), lambda r: r['table'], 'packed table')
+
+    def table(self, index, *, role):
+        row = self._tables.get(index)
+        reader = self._reader
+        if row is None or role not in row.get('report_roles', []):
+            raise Unavailable('native packed table index/role binding unavailable')
+        ts = reader.tables
+        if type(index) is not int or not 0 <= index < len(ts['width']):
+            raise Unavailable('native packed table is outside actual payload')
+        for key, part in (('physical_types', 'column_types'), ('physical_names', 'column_names'),
+                          ('physical_labels', 'column_labels'), ('physical_slots', 'column_slots')):
+            if row[key] != ts[part][index]:
+                raise Unavailable('native packed physical schema differs from actual payload')
+        if row['cell_width'] != ts['width'][index]:
+            raise Unavailable('native packed cell width differs from actual payload')
+        for key, value in row['selector'].items():
+            if key in ('form', 'point', 'relation', 'fact') and value != ts[key][index]:
+                raise Unavailable('native packed selector differs from actual payload')
+        for entry in reader.bytable[index]:
+            if reader.entries['clause_index'][entry] != row['clause_index']:
+                raise Unavailable('native entry clause identity differs from packed binding')
+        return deepcopy(row)
+
+    def receipt(self, payload, *, report_sha256, source_sha256, runtime):
+        return dict(schema='evaluator-live-packed-acquisition-v1',
+            binding_contract='original atomic tuple only; not a persisted payload lookup receipt',
+            packing_ref=self._value['packing_ref'], program_sexp=self._value['program_sexp'],
+            side=self._value['side'], report_sha256=report_sha256, source_sha256=source_sha256,
+            runtime=deepcopy(runtime), payload_ref=live_payload_digest(payload))
