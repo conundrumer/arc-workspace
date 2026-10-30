@@ -346,13 +346,24 @@ def numeric_compatibility(old_descriptor, current_descriptor, *, domain=None,
     hex_digest=lambda value,length:isinstance(value,str) and len(value)==length and all(c in '0123456789abcdef' for c in value)
     for role in ('producer','acquisition','legacy_acquisition'):
         build=encoding[role];source=encoding['sources'].get(build['engine_commit'],{})
-        if (not hex_digest(build['engine_commit'],40)
-                or source.get('revision')!=build['engine_commit']
-                or source.get('operations')!=_SIGNED_I32_OPERATIONS
-                or not hex_digest(source.get('terms_sha256'),64) or not hex_digest(source.get('columns_sha256'),64)
-                or source.get('dispatch')!=('Int|Nat' if role=='acquisition' else 'Number')
-                or not hex_digest(build.get('native_binary_sha256'),64) or not hex_digest(build.get('wheel_sha256'),64)):
-            raise Unavailable('historical numeric native implementation attestation missing')
+        # provenance.load_build returns every wheel extension by basename.
+        # Preserve that exact manifest in the context, including all digests.
+        binaries=build.get('native_binary_sha256')
+        manifest=(isinstance(binaries,dict) and bool(binaries)
+            and all(isinstance(name,str) and name not in ('.','..')
+                and '/' not in name and '\\' not in name and name.endswith(('.so','.pyd'))
+                and hex_digest(value,64) for name,value in binaries.items()))
+        checks=dict(revision=hex_digest(build['engine_commit'],40),
+            source_revision=source.get('revision')==build['engine_commit'],
+            operations=source.get('operations')==_SIGNED_I32_OPERATIONS,
+            terms_sha256=hex_digest(source.get('terms_sha256'),64),
+            columns_sha256=hex_digest(source.get('columns_sha256'),64),
+            dispatch=source.get('dispatch')==('Int|Nat' if role=='acquisition' else 'Number'),
+            native_binary_sha256=manifest,wheel_sha256=hex_digest(build.get('wheel_sha256'),64))
+        failed=[name for name,valid in checks.items() if not valid]
+        if failed:
+            raise Unavailable('historical numeric native implementation attestation missing: '
+                              +role+': '+','.join(failed))
     if new['type']=='Nat':
         if (not isinstance(domain,dict) or domain.get('schema')!='legacy-numeric-domain-v1'
                 or domain.get('context')!=expected_context
