@@ -102,8 +102,13 @@ class MetadataProducer:
         self.programs.names = OrderedDict()
         self.case_cache = {}
 
-    def _export(self, text, record=None, *, mutant_record=None):
-        return self.programs.load(text, record, mutant_record=mutant_record)[1]
+    def _export(self, text, record=None, *, mutant_record=None, current_native_names=False):
+        return self.programs.load(text, record, mutant_record=mutant_record,
+                                  current_native_names=current_native_names)[1]
+
+    def current_native_adapter(self, record, adapter):
+        from current_native_names import bind_adapter
+        return bind_adapter(self, record, adapter)
 
     def _inventory(self, record):
         task = record['task']; base = self.corpus/task

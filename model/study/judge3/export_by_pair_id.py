@@ -79,7 +79,8 @@ class PairSource:
         task_path = (Path(self.ev.cfg['tasks']) / (record['task'] + '.json')).resolve()
         task = json.loads(task_path.read_text())
         adapter = dict(adapter, source=dict(adapter['source'], task_path=str(task_path)))
-        return base, record, dict(adapter=adapter, ntrain=len(task['train']), ntest=len(task['test']))
+        return base, record, dict(adapter=adapter, ntrain=len(task['train']), ntest=len(task['test']),
+                                 source_locator=base['source'],source_original_sha256=base['source_sha256'])
 
 
 def point_directory(points, record):
@@ -88,7 +89,7 @@ def point_directory(points, record):
     return points / (record['task'] + '-' + key)
 
 
-def export_pairs(ev, pair_ids, output, cache, private, points=None, *, include_det=False):
+def export_pairs(ev, pair_ids, output, cache, private, points=None, *, include_det=False,current_native_names=False):
     """Export each pair; yield one result dict per pair, with its seconds and status.
 
     With `points`, export the features layout: see the module docstring.
@@ -110,7 +111,8 @@ def export_pairs(ev, pair_ids, output, cache, private, points=None, *, include_d
                     base, record, target = source.load(pair_id, include_det=include_det)
                     done = export_target(ev, pair_id, record, target, destination, cache,
                                          source='base label store: ' + pair_id, private=private,
-                                         features=None if points is None else point_directory(points, record))
+                                         features=None if points is None else point_directory(points, record),
+                                         current_native_names=current_native_names)
                     fresh = done.pop('fresh_cases')
                     result.update(status='exported', label=base['label'], kind=base['kind'],
                                   tables=done['tables'], output=done['output'], cache_repaired=done['cache_repaired'],
@@ -142,12 +144,16 @@ def main():
     parser.add_argument('--features', action='store_true',
                         help='write only what the features study reads, with the files shared by a branch point '
                              'written once under --points')
+    parser.add_argument('--current-native-names',action='store_true',
+                        help='with --features only, publish certified CURRENT native X names with private acquisition receipt')
     parser.add_argument('--include-det', action='store_true',
                         help='with --features only, include certified noncallable DET reader fields')
     parser.add_argument('--points', type=Path, default=FEATURE_ROOT / 'points',
                         help='with --features, directory that receives <task>-<point key>/ (default: %(default)s)')
     parser.add_argument('--deadline', type=float, default=30)
     args = parser.parse_args()
+    if args.current_native_names and not args.features:
+        parser.error('--current-native-names requires --features')
     if args.include_det and not args.features:
         parser.error('--include-det requires --features')
     pair_ids = list(args.pair_id)
@@ -169,7 +175,7 @@ def main():
     try:
         for i, result in enumerate(export_pairs(ev, pair_ids, args.output, args.cache, args.private,
                                                         args.points if args.features else None,
-                                                        include_det=args.include_det), 1):
+                                                        include_det=args.include_det,current_native_names=args.current_native_names), 1):
             counts[result['status']] = counts.get(result['status'], 0) + 1
             print(json.dumps(result), flush=True)
             elapsed = time.monotonic() - start

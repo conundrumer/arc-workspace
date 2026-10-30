@@ -661,3 +661,40 @@ def canonical_bound_field_type(field):
     if field['type']==old['type'] and storage!=old['type']:
         raise Unavailable('fresh numeric field retains obsolete declared storage type')
     return new['type']
+
+
+def namespace_body_columns(current_export, stored_export, namespace_export, legacy_binding, body_path):
+    """Compose only explicit native old-storage -> stored -> CURRENT edges."""
+    current=Correspondence(current_export,program_sexp=current_export['program_sexp'],
+        source_program_sexp=current_export['program_sexp'])
+    stored=Correspondence(stored_export,program_sexp=stored_export['program_sexp'],
+        source_program_sexp=stored_export['program_sexp'])
+    bridge=Correspondence(namespace_export,program_sexp=current_export['program_sexp'],
+        source_program_sexp=stored_export['program_sexp'])
+    for correspondence in (current,stored):
+        if correspondence._value['source_bridge_status']!='same_checked_representation':
+            raise Unavailable('namespace endpoints require native SELF descriptors')
+    target=bridge.body_from_source(body_path)
+    own=current.body(target['body_path'])
+    if legacy_binding['body_path']!=list(body_path):
+        raise Unavailable('legacy storage binding belongs to another BODY')
+    columns=[]
+    for field in own['columns']:
+        edge=bridge.body_column(target['body_path'],field['physical_column'])
+        original=stored.body_column(body_path,edge['source_body_column'])
+        source=edge['canonical_source']
+        if (edge['scope_path']!=field['scope_path'] or edge['label_id']!=field['label_id']
+                or _type(edge['physical_type'])!=_type(field['physical_type'])
+                or source['scope_path']!=original['scope_path'] or source['label_id']!=original['label_id']
+                or _type(source['source_type'])!=_type(original['physical_type'])):
+            raise Unavailable('namespace bridge differs from its exact native endpoints')
+        old=[f for f in legacy_binding['fields']
+             if f['current_physical_column']==original['physical_column']
+             and f['scope_path']==original['scope_path'] and f['label_id']==original['label_id']]
+        if len(old)!=1 or _type(old[0]['physical_type'])!=_type(original['physical_type']):
+            raise Unavailable('namespace field lacks unique authenticated storage edge')
+        columns.append(dict(current=deepcopy(field),namespace=deepcopy(edge),stored=deepcopy(original),
+                            storage=deepcopy(old[0])))
+    if len({f['storage']['physical_column'] for f in columns})!=len(legacy_binding['fields']):
+        raise Unavailable('namespace BODY does not cover the authenticated storage layout')
+    return dict(body=own,columns=columns,legacy_binding=deepcopy(legacy_binding))

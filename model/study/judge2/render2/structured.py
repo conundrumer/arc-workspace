@@ -64,14 +64,16 @@ class Programs:
         while len(self.frames)>16:self.frames.popitem(last=False)
         return data
 
-    def load(self, text, record=None, *, mutant_record=None):
+    def load(self, text, record=None, *, mutant_record=None, current_native_names=False):
         # A stored map must be authenticated even if the same program was
         # previously exported for another record. Never reuse an unnamed export.
         mutation_key = (mutant_record['programs']['gold'],
                         json.dumps(mutant_record['identity'],sort_keys=True),
                         json.dumps(mutant_record.get('relation_source_names'),sort_keys=True),
                         mutant_record['task'],mutant_record['case']) if mutant_record is not None else None
-        key=(text,json.dumps(record.get('relation_source_names'),sort_keys=True) if record else None,
+        require(type(current_native_names) is bool, 'current_native_names must be boolean')
+        require(not current_native_names or mutant_record is not None, 'CURRENT names require a certified mutant')
+        key=(current_native_names,text,json.dumps(record.get('relation_source_names'),sort_keys=True) if record else None,
              (record['task'],record['case']) if record else None,mutation_key)
         if key in self.cache:
             self.cache.move_to_end(key)
@@ -104,6 +106,17 @@ class Programs:
                 constructed_source_names=naming,
                 stored_representation=certificate)
             export = dict(stored_export,stored_representation=certificate)
+            if current_native_names:
+                from native_correspondence import Correspondence
+                current=program.as_program()
+                current_export=json.loads(self.engine.study_program_export_json(current,source_program=current))
+                bridge=json.loads(self.engine.study_program_export_json(current,source_program=stored))
+                Correspondence(bridge,program_sexp=current.sexp(),source_program_sexp=text)
+                require(current_export['program_sexp']==current.sexp(), 'CURRENT SELF metadata writer differs')
+                export=dict(current_export,current_native_names=dict(current_export=current_export,
+                    stored_export=stored_export,namespace_correspondence=bridge,
+                    identity=mutant_record['identity'],identity_certificate=certificate))
+
         else:
             program = self.engine.StudyProgram.from_sexp(text,self.settings) if self.settings is not None else self.engine.StudyProgram.from_sexp(text)
             if hasattr(program,'decode_source'):
@@ -113,7 +126,7 @@ class Programs:
             export = json.loads(self.engine.study_program_export_json(program,names) if hasattr(self.engine,"study_program_export_json") else program.render_json())
         require(export['schema'] == 'arclog-study-render-v1', 'unknown engine render schema')
         require(export['parts']['nodes'] == 'complete', 'engine AST export incomplete')
-        require(export['program_sexp'] == text, 'engine AST export program differs from record')
+        require(export['program_sexp'] == (program.sexp() if current_native_names else text), 'engine AST export program differs from record')
         nodes = {tuple(n['path']): n for n in export['nodes']}
         require(len(nodes) == len(export['nodes']), 'duplicate engine node paths')
         for path, node in nodes.items():

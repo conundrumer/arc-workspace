@@ -172,13 +172,13 @@ class LegacyBodyMetadata:
             canonical_value_sha256=envelope['value_sha256'], implementation=implementation)
         return self.metadata[key]
 
-    def bind(self, *, record, side, base, reader, table, schema, program, export, body_path):
+    def bind(self, *, record, side, base, reader, table, schema, program, export, body_path, force=False):
         views = [v for v in export['body_views'] if v['body_path'] == body_path]
         if len(views) != 1:
             raise Unavailable('current BODY descriptor is ambiguous')
         # This only decides whether historical acquisition is needed. It
         # supplies no binding or compatibility proof.
-        if [c['type'] for c in schema] == [c['type'] for c in views[0]['columns']]:
+        if not force and [c['type'] for c in schema] == [c['type'] for c in views[0]['columns']]:
             return None
         roles = [role for role,index in record['evaluation']['table_indices'].items()
                  if role in (side+'_all', side+'_kept') and index == table]

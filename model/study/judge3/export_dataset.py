@@ -152,7 +152,7 @@ def export_pair(ev, source_pair, output, cache):
 
 
 def export_target(ev, pair_id, record, target, output, cache, *, source,
-                  private=DATA_ROOT / 'judgetool', features=None):
+                  private=DATA_ROOT / 'judgetool', features=None,current_native_names=False):
     """Write one pair directory from a source record and its target (adapter, ntrain, ntest).
 
     `source` names where the target came from; `private` receives the contexts
@@ -166,6 +166,8 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
     """
     from runtime_compat import require_exporter
     require_exporter(ev.arclog)
+    if type(current_native_names) is not bool or (current_native_names and features is None):
+        raise ValueError('CURRENT native names require explicit FEATURES mode')
     if features is not None:
         from feature_payload import require_feature_api
         require_feature_api(ev.arclog)
@@ -202,6 +204,8 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
         read_native=lambda ref, base: store.snapshot(ref, base)['_native_reader'],
         corpus=Path(adapter['source']['native_base']).parent, settings=ev.settings,
         case_inventory=adapter['all_case_targets'])
+    if current_native_names:
+        adapter=producer.current_native_adapter(record,adapter)
     point_export = producer._export(record['gold_sexp'], record)
     point_view = next(v for v in point_export['body_views'] if v['body_path'] == record['point'])
     point_name = producer.point_source_name(point_export, point_view)
@@ -222,6 +226,11 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
                             copy_rows=features is None, include_projected_flows=features is not None)
     public_x = add(x, 'X', point_name, record['case'], ['input'], adapter['input']['binding']['callable_template'], side='mutant')
     feature_x_meta = None
+    receipt_packet=receipt_public=None
+    if current_native_names:
+        receipt_packet=dict(x,entries=[dict(assignment=e['assignment'],example_index=e['example_index'],
+            model=e['model'],row_count=len(e['rows'])) for e in x['entries']])
+        receipt_public=dict(public_x,entries=[{k:v for k,v in e.items() if k!='rows'} for e in public_x['entries']])
     if features is not None:
         feature_x_meta = dict(projection=list(x['projection']), source_schema=x['source_schema'],
                               fields=x['fields'], public_fields_sha256=sha(public_x['fields']),
@@ -346,16 +355,20 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
         if features is not None and side == 'gold' and not shared:
             continue
         export = producer._export(record[side + '_sexp'], record if side == 'gold' else None,
-                                  mutant_record=record if side == 'mutant' else None)
+                                  mutant_record=record if side == 'mutant' else None,
+                                  current_native_names=current_native_names and side=='mutant')
         side_names = producer.policy['Names'](export) if side == 'gold' else names
         where = shared if features is not None and side == 'gold' else output
-        (where / programs[side]).write_text(side_names.text(record[side + '_sexp']) + '\n')
+        text=side_names.text(export['program_sexp']) if current_native_names and side=='mutant' else side_names.text(record[side + '_sexp'])
+        (where / programs[side]).write_text(text + '\n')
     nodes = {tuple(n['path']): n for n in main_export['nodes']}
     change = dict(point=record['point'], kind=adapter['input']['binding']['kind'],
                   gold=names.text(nodes[tuple(record['point'])]['sexp']))
-    mutant_export = producer._export(record['mutant_sexp'],mutant_record=record)
+    mutant_export = producer._export(record['mutant_sexp'],mutant_record=record,current_native_names=current_native_names)
     mutant_nodes = {tuple(n['path']): n for n in mutant_export['nodes']}
-    change['mutant'] = names.text(mutant_nodes[tuple(record['point'])]['sexp'])
+    mutant_path=adapter['input']['binding']['body_path'] if current_native_names else record['point']
+    change['mutant'] = (names.text(mutant_nodes[tuple(mutant_path)]['sexp']) if current_native_names
+                        else names.text(mutant_nodes[tuple(mutant_path)]['sexp']))
     readers = {}
     for side, export in (() if features is not None else (('gold', main_export), ('mutant', mutant_export))):
         nodes = {tuple(n['path']): n for n in export['nodes']}
@@ -393,9 +406,14 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
         write_public(output / 'pair.json', dict(format=FORMAT, kind='features-pair', pair_id=pair_id,
             task=record['task'], case=record['case'], change=change, tables=index,
             programs=dict(mutant=programs['mutant']), point=os.path.relpath(features, destination), **feature_payload))
+        result_receipt={}
+        if current_native_names:
+            from current_native_names import write_receipt
+            result_receipt['current_native_names_receipt']=write_receipt(ev,pair_id,record,target,adapter,
+                receipt_packet,receipt_public,output,private)
         output.rename(destination)
         return dict(pair_id=pair_id, tables=len(index) + len(shared_index), output=str(destination),
-                    fresh_cases=fresh_cases, cache_repaired=len(cache_repairs) - repairs_before)
+                    fresh_cases=fresh_cases, cache_repaired=len(cache_repairs) - repairs_before,**result_receipt)
     task = read_json(adapter['source']['task_path'])
     write_public(output / 'train.json', task['train'])
     write_public(output / 'readers.json', readers)
