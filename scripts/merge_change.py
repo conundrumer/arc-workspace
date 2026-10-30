@@ -1,6 +1,6 @@
 """Merge the changes of one or more worktrees into `master`.
 
-    uv run python scripts/merge_change.py [--block] <worktree> -m <message> [<worktree> -m <message> ...]
+    uv run python scripts/merge_change.py [--block] [--keep] <worktree> -m <message> [<worktree> -m <message> ...]
 
 The paragraphs below say how the script commits, rebases, checks and lands
 the changes, the merge lock it holds, the cases where it refuses a change,
@@ -16,6 +16,18 @@ the checks run before the fast-forward, and a failed check refuses the
 change. A caller gives `--block` for a change that has an active risk
 of a silent change: a change that alters existing data or outputs without
 failing, which a live consumer reads now.
+
+With `--keep` the script removes no worktree and no branch after the
+landing. Each landed worktree stands where it is, clean, at the commit its
+branch recorded when it landed, with its branch checked out and merged into
+`master`, so that it serves as a pinned copy of the merged state for a long
+job run from it. The script prints a line per kept worktree. A kept
+worktree is removed later like any other, from the main tree, by
+`git worktree remove --force <worktree>` (forced, since it holds
+submodules) and then `git branch -d <branch>`; `git worktree prune`
+forgets it once its directory is deleted. A kept worktree's `work` stays as
+it is, and the move of its files that the removal does (below) is for the
+person who removes it to do first.
 
 Each worktree stands on a branch of its own, and the message given after
 it is the message of its commit. For each worktree in turn, the script
@@ -103,7 +115,7 @@ that fails, it prints on stderr a line that gives the branch and the
 commit, and the check's output, and the call exits with status 3, unless
 a change was refused or a step failed, in which case the status is 1. The
 merge is not undone. The script then removes each worktree and its branch,
-other than where a step after the fast-forward failed.
+other than with `--keep` and where a step after the fast-forward failed.
 
 Before the first fast-forward of `master` of the call whose commits change
 a `.py` file, the script locks the refresh locks
@@ -151,7 +163,7 @@ and fast-forwards `master` to it. So the change that fails is the one
 refused, and under `--block` every check runs on every change before
 `master` moves.
 
-Since git removes a worktree that holds submodules only by force, the
+Without `--keep`, since git removes a worktree that holds submodules only by force, the
 removal is forced, after a check that the worktree holds no change against
 its branch, counting changes and untracked files inside its submodules. A
 worktree locked by a Claude agent, whose lock reason begins with
@@ -894,12 +906,13 @@ def check_landed(main: Path, entry: Landed) -> bool:
     return False
 
 
-def finish(main: Path, landed: Sequence[Landed]) -> tuple[bool, bool]:
+def finish(main: Path, landed: Sequence[Landed], keep: bool) -> tuple[bool, bool]:
     """The work after the merge lock is released, for each stack in `landed`
     in order: the checks on its landed commit (`check_landed`), where they
     did not pass before the fast-forward, and then the removal of the
     worktree and branch of each of its changes, other than where a step
-    after the fast-forward failed. Print each failure of a removal on
+    after the fast-forward failed or `keep` holds, in which case it says
+    that the worktree stays. Print each failure of a removal on
     stderr. Whether every check passed, and whether every removal
     succeeded."""
     passed = removed = True
@@ -910,6 +923,10 @@ def finish(main: Path, landed: Sequence[Landed]) -> tuple[bool, bool]:
         if entry.stays:
             continue
         for c in entry.changes:
+            if keep:
+                say(mctx("kept {worktree} and {branch}, merged into {master}").format(
+                    worktree=c.worktree, branch=c.branch, master=BASE), flush=True)
+                continue
             try:
                 with timed(mctx("the removal of {worktree}").format(worktree=c.worktree)):
                     remove(main, c)
@@ -925,7 +942,7 @@ def print_refusal(exc: Refused) -> None:
     print(f"{REFUSED}{exc}", file=sys.stderr, flush=True)
 
 
-def merge(pairs: Sequence[tuple[Path, str]], block: bool) -> int:
+def merge(pairs: Sequence[tuple[Path, str]], block: bool, keep: bool) -> int:
     """Merge each worktree's change into `master`, committed with its
     message, under the merge lock (`land_all`), with the checks before the
     fast-forward where `block` holds and after it otherwise (`finish`).
@@ -975,7 +992,7 @@ def merge(pairs: Sequence[tuple[Path, str]], block: bool) -> int:
                                "worktree.").format(exc=exc)) from exc
         finally:
             refresh_kept(locks)
-            passed, removed = finish(main, landed)
+            passed, removed = finish(main, landed, keep)
         if not (every and removed):
             return 1
         return 0 if passed else LANDED_CHECK_EXIT
@@ -1028,6 +1045,9 @@ def merge_main(argv: Sequence[str]) -> int:
                          "change on which one fails; otherwise they run on the landed commit "
                          "once master has moved, and a failure exits with status "
                          f"{LANDED_CHECK_EXIT}")
+    ap.add_argument("--keep", action="store_true",
+                    help="leave each landed worktree and its branch in place, at the landed "
+                         "commit, in place of removing them")
     a = ap.parse_intermixed_args(argv)
     if len(a.worktree) != len(a.message):
         ap.error(mctx("{w} worktrees are given with {m} messages").format(
@@ -1039,7 +1059,7 @@ def merge_main(argv: Sequence[str]) -> int:
     if len(set(worktrees)) != len(worktrees):
         ap.error(mctx("a worktree is given twice"))
     try:
-        return merge(list(zip(worktrees, a.message, strict=True)), a.block)
+        return merge(list(zip(worktrees, a.message, strict=True)), a.block, a.keep)
     except Refused as exc:
         print_refusal(exc)
         return 1

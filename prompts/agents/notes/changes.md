@@ -73,6 +73,7 @@
 - Merge a change only once it passes, with `uv run python scripts/merge_change.py <worktree> -m <message>`, and commit in no other way.
     + xref: scripts/merge_change.py:merge_main
 - Give `--block` after `merge_change.py` where the change has an active risk of a silent change: it alters existing data or outputs without failing, and a live consumer reads them now. With `--block` the script runs its checks before it merges and refuses the change when one fails. Without it, the script merges first and then runs the checks.
+- Give `--keep` after `merge_change.py` where a job will run from the merged code, and run that job from the kept worktree. The script then leaves each landed worktree at the landed commit, as `merge_change.py --help` gives.
 - Where that script exits with status 3, it merged the change and a check failed on the merged commit. File that failure as a `bug` ticket on the change, and treat the change as merged.
 - Where that script does not merge the change, act on what it reports:
     - Where it reports that the rebase conflicts and that it moved the branch onto `master`, or, under `--block`, a failed check, send what it reports to the change's editor as a finding of its checks.
