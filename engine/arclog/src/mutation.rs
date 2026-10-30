@@ -163,6 +163,56 @@ impl StudyProgram {
         )
     }
 
+    /// The new population samples source occurrences, independently of each
+    /// site's number of argument variants. Include unsupported blocks in the
+    /// inventory so a zero is a visible grammar shortfall, never a missing row.
+    pub fn substitution_occurrences(&self, point: &MutationPoint) -> Result<Value, String> {
+        if !Arc::ptr_eq(self.checked(), &point.source) {
+            return Err("point_belongs_to_another_program".into());
+        }
+        let Some(NodeRef::Body(body)) = node_at(NodeRef::Program(self.program().value()), &point.body) else {
+            return Err("point_is_not_a_body".into());
+        };
+        let occurrences = body.conjuncts.iter().enumerate().map(|(index, conjunct)| {
+            let at = point.body.child(index as u32);
+            let source = if conjunct.atom().is_some() || matches!(conjunct, Conjunct::Constraint(_)) {
+                conjunct_json(conjunct)
+            } else {
+                json!({"node":match conjunct {
+                    Conjunct::Or(_) => "or", Conjunct::If { .. } => "if",
+                    Conjunct::All { .. } => "all", Conjunct::Not(_) => "not_form",
+                    _ => "unsupported",
+                }})
+            };
+            json!({"at":path_json(&at), "source":source,
+                "supported":point.atoms.contains(&at)})
+        }).collect::<Vec<_>>();
+        Ok(json!({"schema":"substitution-occurrences-v1", "occurrences":occurrences}))
+    }
+
+    /// One occurrence gets its own quota and canonical finite search. This is
+    /// additive: historical draw_specs scheduling and identities are unchanged.
+    pub fn draw_substitutes_at(&self, point: &MutationPoint, at: &NodePath,
+        count: usize, seed: u64, origin: Source, settings: &DecodeSettings,
+        registry: &Registry) -> Result<(Vec<MutationSpec>, DrawStats), String> {
+        if !Arc::ptr_eq(self.checked(), &point.source) {
+            return Err("point_belongs_to_another_program".into());
+        }
+        if !point.atoms.contains(at) {
+            let mut stats = DrawStats::default();
+            stats.count("occurrence_unsupported_block");
+            return Ok((Vec::new(), stats));
+        }
+        let mut scoped = point.clone();
+        scoped.atoms = vec![at.clone()];
+        let (specs, mut stats) = self.draw_specs(&scoped, 1, count, seed,
+            "substitute", origin, settings, registry)?;
+        if stats.counts.get("domain_primitive_values").copied().unwrap_or(0) == 0 {
+            stats.count("occurrence_no_primitive_alternative");
+        }
+        Ok((specs, stats))
+    }
+
     /// Runtime audit on real programs: v5 and v6 use the same fair traversal
     /// and validity certificates. The reference retains v5's argument domain
     /// and separate zero bucket; only v6 returns production specs to callers.
@@ -517,6 +567,7 @@ impl CompletionDomain<'_> {
             Err(error)=> {self.stats.refusal("domain_static_prune_unavailable",&error);Vec::new()}
         };
         if !pruned.is_empty() {
+            self.stats.count("domain_static_prune_candidates_excluded");
             for found in pruned {
                 self.stats.count(&format!("domain_static_prune_excluded:{}:{}",found.verdict.class.name(),found.verdict.rule));
             }
