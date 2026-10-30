@@ -214,6 +214,11 @@ def publish_pair_reference(options,operation,pair,value,path):
         point_id=operation['point_id'],pair_id=pair,status=value['status'],result=ref(path)))
 
 
+def pair_summary(pair,value,result_ref):
+    return dict(pair_id=pair,status=value['status'],reason=value.get('reason'),
+        reason_class=value.get('reason_class'),gold_problem=value.get('gold_problem'),result=result_ref)
+
+
 def saved_pair(options,operation,pair,source):
     output=Path(options['output'])
     for scope in (options['scope'],*options.get('predecessor_scopes',())):
@@ -243,6 +248,55 @@ def predecessor_scopes(scope,output):
         if actual!=previous or digest(actual)!=key:
             raise ValueError('stored predecessor scope differs from exact storage certificate')
         result.append(dict(scope=key,scope_receipt=ref(path),proof=value['proof']))
+    return result
+
+
+def retry_operations(operations,output,scope,prefixes,selection):
+    """Freeze matching unavailable IDs once; completed siblings remain original."""
+    prefixes=sorted(set(prefixes))
+    if not prefixes or any(not prefix for prefix in prefixes):
+        raise ValueError('retry requires nonempty explicit reason prefixes')
+    matches=lambda value:any(str(value.get('reason_class','')).startswith(prefix) for prefix in prefixes)
+    path=output/'operator/retry-selections'/(digest(dict(scope=scope,prefixes=prefixes))+'.json')
+    source=ref(selection);frozen=read(path)
+    if frozen is None:
+        points=[]
+        for operation in operations:
+            discovery=read(output/'published-points'/(operation['point_id']+'.json'),{})
+            if discovery.get('status')!='unavailable':continue
+            baseline=discovery.get('result')
+            if not baseline or not valid_file(baseline):
+                raise ValueError('retry source point result lacks valid original metadata')
+            original=read(Path(baseline['path']));selected=[]
+            for row in original.get('pairs',[]):
+                if row.get('status')!='unavailable' or not matches(row):continue
+                current=read(output/'published-pairs'/(row['pair_id']+'.json'),{})
+                result=current.get('result',row['result'])
+                if not valid_file(result):raise ValueError('retry source pair result bytes differ')
+                value=read(Path(result['path']))
+                if value.get('status')=='unavailable' and matches(value):
+                    selected.append(row['pair_id'])
+            if selected:
+                expected=set(operation['pair_ids'])
+                if (not original.get('coverage_complete') or
+                        {v['pair_id'] for v in original['pairs']}!=expected or not set(selected)<=expected):
+                    raise ValueError('retry source point does not cover the frozen full pair selection')
+                points.append(dict(point_id=operation['point_id'],pair_ids=selected,baseline=baseline))
+        frozen=dict(schema='prefix-reason-retry-selection-v1',scope=scope,reason_prefixes=prefixes,
+            source_selection=source,points=points)
+        write(path,frozen)
+    if (frozen.get('schema')!='prefix-reason-retry-selection-v1' or frozen.get('scope')!=scope
+            or frozen.get('reason_prefixes')!=prefixes or frozen.get('source_selection')!=source):
+        raise ValueError('frozen retry source/config selection differs')
+    selected={v['point_id']:v for v in frozen['points']};result=[]
+    for operation in operations:
+        if operation['point_id'] not in selected:continue
+        item=selected.pop(operation['point_id'])
+        if not set(item['pair_ids'])<=set(operation['pair_ids']) or not item['pair_ids']:
+            raise ValueError('retry IDs are outside the approved point')
+        result.append(dict(operation,pair_ids=item['pair_ids'],retry_baseline=item['baseline'],
+            retry_full_pair_ids=operation['pair_ids'],retry_selection=ref(path)))
+    if selected:raise ValueError('retry selection names an unapproved point')
     return result
 
 
@@ -360,8 +414,7 @@ def _run_point(operation):
             publish_pair_reference(options,operation,pair,saved,path)
             counts['reused']+=1;counts[saved['status']]+=1
             if saved['scope']!=scope:counts['reused_predecessor']+=1
-            results.append(dict(pair_id=pair,status=saved['status'],reason=saved.get('reason'),
-                reason_class=saved.get('reason_class'),gold_problem=saved.get('gold_problem'),result=ref(path)))
+            results.append(pair_summary(pair,saved,ref(path)))
         else:pending.append((pair,source,key))
     if not pending:return finish_point(options,operation,root,counts,results,started)
     if stop.exists():return dict(point_id=operation['point_id'],status='interrupted',counts=dict(counts))
@@ -450,8 +503,7 @@ def _run_point(operation):
                 result['gold_problem']=gold_problem
                 persist_pair(options,operation,root,pair,result)
                 counts[result['status']]+=1;counts['acquired']+=1
-                results.append(dict(pair_id=pair,status=result['status'],reason=result.get('reason'),
-                    reason_class=result.get('reason_class'),gold_problem=result.get('gold_problem'),result=ref(root/'pairs'/(pair+'.json'))))
+                results.append(pair_summary(pair,result,ref(root/'pairs'/(pair+'.json'))))
                 event(events,dict(progress=True,point_id=operation['point_id'],pair_id=pair,status=result['status']))
         return finish_point(options,operation,root,counts,results,started)
     finally:ev.close()
@@ -466,11 +518,42 @@ def finish_point(options,operation,root,counts,results,started):
         reason_classes=dict(Counter(v['reason_class'] for v in results if v.get('reason_class'))+Counter(v['reason_class'] for v in gold_unknown)),
         reasons=list(dict.fromkeys([v['reason'] for v in results if v.get('reason')]+[v['reason'] for v in gold_unknown]))[:8],
         seconds=time.monotonic()-started,join='canonical-prefix-packets; requires features metadata/Tn join, not kept-store replacement')
+    attempt=summary
+    if operation.get('retry_baseline'):
+        baseline=operation['retry_baseline']
+        if not valid_file(baseline):raise ValueError('retry baseline point metadata changed')
+        original=read(Path(baseline['path']));by_pair={v['pair_id']:v for v in original['pairs']}
+        updated={v['pair_id']:v for v in results}
+        for pair in by_pair.keys()-updated.keys():
+            # Another completed retry may have advanced a sibling since this
+            # frozen attempt. Preserve its actual latest result, not a stale ref.
+            discovery=read(Path(options['output'])/'published-pairs'/(pair+'.json'),{})
+            latest=discovery.get('result')
+            if latest and latest!=by_pair[pair]['result']:
+                if not valid_file(latest):raise ValueError('untouched sibling discovery metadata changed')
+                value=read(Path(latest['path']))
+                if value.get('pair_id')!=pair or value.get('point_id')!=operation['point_id']:
+                    raise ValueError('untouched sibling belongs to another point')
+                by_pair[pair]=pair_summary(pair,value,latest)
+        by_pair.update(updated)
+        ordered=[by_pair[p] for p in operation['retry_full_pair_ids']]
+        complete=done and original['coverage_complete']
+        problems=[v['gold_problem'] for v in ordered if v.get('gold_problem')]
+        states=Counter(v['status'] for v in ordered)
+        summary=dict(summary,pairs=ordered,total_pairs=len(ordered),coverage_complete=complete,
+            counts=dict(states),retry_counts=dict(counts),retry_selection=operation['retry_selection'],
+            original_point_result=baseline,
+            status='complete' if complete and not states['unavailable'] and not problems else 'unavailable',
+            reason_classes=dict(Counter(v['reason_class'] for v in ordered if v.get('reason_class'))
+                +Counter(v['reason_class'] for v in problems)),
+            reasons=list(dict.fromkeys([v['reason'] for v in ordered if v.get('reason')]
+                +[v['reason'] for v in problems]))[:8])
+        write(root/'retry-attempt.json',attempt)
     write(root/'result.json',summary)
     write(Path(options['output'])/'published-points'/(operation['point_id']+'.json'),
         dict(schema=SCHEMA,point_id=operation['point_id'],scope=options['scope'],status=summary['status'],
-            coverage_complete=done,result=ref(root/'result.json')))
-    return {k:v for k,v in summary.items() if k!='pairs'}
+            coverage_complete=summary['coverage_complete'],result=ref(root/'result.json')))
+    return {k:v for k,v in attempt.items() if k!='pairs'}
 
 
 def source_scope(ev,build,args):
@@ -501,6 +584,7 @@ def main():
     p.add_argument('--max-assignments',type=int,default=None)
     p.add_argument('--repeat-limit',type=int,default=3)
     p.add_argument('--continue-after-stop',action='store_true',help='explicit operator continuation after diagnosed repeated class')
+    p.add_argument('--retry-reason-prefix',action='append',default=[],help='freeze/retry only currently unavailable candidates in this exact reason class prefix; preserve other results')
     p.add_argument('--profile-one-new-point',action='store_true',help='cProfile one new point with at most8 pending pairs during normal work')
     args=p.parse_args();native_environment();started=time.monotonic()
     granted=int(os.environ.get('ARC_HEAVY_CPUS',str(args.workers)))
@@ -548,6 +632,11 @@ def main():
         options['predecessor_scopes']=[row['scope'] for row in reuse]
         write(args.output/'operator'/('reuse-scopes-'+scope_key+'.json'),dict(
             current_scope=scope_key,predecessors=reuse,policy='exact shared storage transition; original result refs'))
+        if args.retry_reason_prefix:
+            operations=retry_operations(operations,args.output,scope_key,args.retry_reason_prefix,args.selection)
+            write(args.output/'operator'/('retry-summary-'+scope_key+'.json'),dict(
+                points=len(operations),pairs=sum(len(v['pair_ids']) for v in operations),
+                reason_prefixes=args.retry_reason_prefix,unselected_pairs='original refs untouched'))
         seen={};reason_counts=Counter();results=[];progress=Counter();cursor={};active={}
         interrupted=False
         def halt(signum,frame):
